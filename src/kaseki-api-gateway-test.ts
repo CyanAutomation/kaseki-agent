@@ -85,6 +85,7 @@ export interface PiProviderSmokeTestResult {
     nonAssistantFieldsFound?: string[];
     suggestedPatterns?: string[];
     sampleEventStructure?: any;
+    debugOutputPath?: string;
   };
 }
 
@@ -397,12 +398,13 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
     const analysis = analyzeResponseStructure(stdout);
     const sampleEvent = extractSampleEventStructure(stdout);
 
+    let debugOutputPath: string | undefined;
     if (debugMode) {
-      // In debug mode, include raw response for diagnostics
+      // In debug mode, persist raw response for diagnostics.
       try {
         const debugPath = `/tmp/kaseki-pi-debug-${Date.now()}.jsonl`;
         fs.writeFileSync(debugPath, stdout);
-        // This path could be logged/reported in a real implementation
+        debugOutputPath = debugPath;
       } catch {
         // Ignore write errors in debug mode
       }
@@ -437,6 +439,7 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
         nonAssistantFieldsFound: analysis.nonAssistantFieldsFound,
         suggestedPatterns: analysis.suggestedPatterns,
         sampleEventStructure: sampleEvent,
+        ...(debugOutputPath ? { debugOutputPath } : {}),
       },
       remediation:
         analysis.suggestedPatterns.length > 0
