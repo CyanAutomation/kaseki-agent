@@ -29,7 +29,7 @@ import {
 } from './kaseki-api-types';
 import { KasekiApiConfig } from './kaseki-api-config';
 import { validateGitHubAppPrivateKey } from './github-app-private-key';
-import { resolveGatewayApiKey, isResponsesEndpoint } from './kaseki-api-gateway-test';
+import { resolveGatewayApiKey, isResponsesEndpoint } from './kaseki-api-gateway-smoke';
 
 // =============================================================================
 // Constants

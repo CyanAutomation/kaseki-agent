@@ -17,7 +17,7 @@ import { spawnSync } from 'child_process';
 import { KasekiApiConfig } from '../kaseki-api-config';
 import { createEventLogger } from '../logger';
 import { PreflightCheck } from '../kaseki-api-types';
-import { resolveGatewayApiKey } from '../kaseki-api-gateway-test';
+import { resolveGatewayApiKey } from '../kaseki-api-gateway-smoke';
 import { readHostSecret } from '../secrets/host-secrets-reader';
 
 const logger = createEventLogger('container-preflight');

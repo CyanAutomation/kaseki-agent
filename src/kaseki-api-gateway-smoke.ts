@@ -34,7 +34,7 @@ export interface ConnectivityTestResult {
 /**
  * Stage 2: Full response validation test result (model inference smoke test)
  * Tests /responses endpoint with the resolved gateway model to validate inference
- * CONSUMES inference tokens - only run in production or when explicitly triggered
+ * CONSUMES inference tokens - only run when explicitly triggered
  */
 export interface ResponseSmokeTestResult {
   status: 'ok' | 'error';
@@ -237,24 +237,20 @@ export function shouldRunGatewayResponseSmoke(options: GatewayTestOptions = {}):
   // 3. Forced stage 2 for testing in dev/test environments
   if (options.forceStage2) return true;
 
-  // 4. Environment-based default: only run stage 2 in production
-  const environment = detectGatewayTestEnvironment();
-  return environment === 'production';
+  // 4. Safe default: do not consume inference tokens unless explicitly opted in.
+  // Live response smoke probing is enabled by passing responseSmoke=true,
+  // forceStage2=true, or KASEKI_GATEWAY_RESPONSE_SMOKE=true.
+  return false;
 }
 
 export function shouldRunPiProviderSmoke(requested: boolean): boolean {
-  const environment = detectGatewayTestEnvironment();
-
-  // 1. Auto-run in production (no opt-in required)
-  if (environment === 'production') return true;
-
-  // 2. Allow explicit opt-in in any environment (requested=true from ?piProvider=true)
+  // 1. Allow explicit opt-in in any environment (requested=true from ?piProvider=true).
   if (requested) return true;
 
-  // 3. Allow override via env var in non-production environments
+  // 2. Allow override via env var for integration environments.
   if (parseBooleanOverride(process.env.KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE) === true) return true;
 
-  // 4. Default to skip in non-production without opt-in
+  // 3. Default to skip unless explicitly requested.
   return false;
 }
 
@@ -315,14 +311,11 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
   const requestedSmoke = options.requested === true;
 
   if (!shouldRunPiProviderSmoke(requestedSmoke)) {
-    const environment = detectGatewayTestEnvironment();
-    const remediation = environment === 'production'
-      ? 'This should not happen in production (auto-run enabled). Check logs for errors.'
-      : 'Pi provider smoke is opt-in in non-production environments. Add ?piProvider=true to the request, or set KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE=1 to enable for development testing.';
+    const remediation = 'Pi provider smoke is opt-in because it can consume gateway tokens. Add ?piProvider=true to the request, or set KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE=1 to enable for integration testing.';
 
     return {
       status: 'skipped',
-      detail: 'Pi provider smoke skipped. It runs by default in production, but requires opt-in in non-production environments to conserve LLM gateway tokens.',
+      detail: 'Pi provider smoke skipped. It requires opt-in to conserve LLM gateway tokens.',
       responseTime: 0,
       timestamp,
       provider: 'gateway',
@@ -756,7 +749,7 @@ export async function testGatewayConnectivity(options: GatewayTestOptions = {}):
 /**
  * Stage 2: Full response validation test
  * Tests model inference via /responses endpoint with the resolved gateway model
- * CONSUMES inference tokens - only call in production or when explicitly requested
+ * CONSUMES inference tokens - only call when explicitly requested
  *
  * @param gatewayUrl Base gateway URL (e.g., https://llmgateway.local.xyz/v1)
  * @param apiKey LLM gateway API key
