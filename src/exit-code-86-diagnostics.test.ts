@@ -7,6 +7,7 @@ import {
   EXIT_CODE_SCOUTING_VALIDATION_FAILED,
 } from './exit-codes';
 import { classifyFailure } from './instance-failure-extraction';
+import { buildResultsDirectoryNotWritableMessage } from './scouting-filesystem-diagnostics';
 
 const isRoot = () => typeof process.getuid === 'function' && process.getuid() === 0;
 
@@ -96,8 +97,12 @@ describe('Exit Code 86 - Scouting Artifact Diagnostics', () => {
 
   describe('Error message suggestions', () => {
     it('should include docker run fix when filesystem diagnostic triggered', () => {
-      const errorMessage = 'SCOUTING FAILED: /results is not writable. Fix: docker run -v /path/to/results:/results:rw';
+      const errorMessage = buildResultsDirectoryNotWritableMessage({ resultsDir: '/results', containerUid: 10000 });
+
+      expect(errorMessage).toContain('/results is not writable');
       expect(errorMessage).toMatch(/docker run/);
+      expect(errorMessage).toMatch(/-v\s+\S+:/);
+      expect(errorMessage).toMatch(/\/results:rw/);
       expect(errorMessage).toMatch(/:rw/);
     });
 
