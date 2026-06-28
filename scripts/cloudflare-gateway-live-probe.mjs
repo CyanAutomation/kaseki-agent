@@ -30,7 +30,13 @@ function resolveApiKey() {
   const expandedPath = configuredPath.startsWith('~/')
     ? `${os.homedir()}/${configuredPath.slice(2)}`
     : configuredPath;
-  if (fs.existsSync(expandedPath)) return fs.readFileSync(expandedPath, 'utf8').trim();
+  if (fs.existsSync(expandedPath)) {
+    try {
+      return fs.readFileSync(expandedPath, 'utf8').trim();
+    } catch (error) {
+      throw new Error(`Failed to read API key from ${expandedPath}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   return '';
 }
 
