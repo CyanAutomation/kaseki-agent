@@ -208,19 +208,65 @@ describe('Gateway Provider Configuration', () => {
 
   it('handles missing LLM_GATEWAY_URL gracefully', () => {
     /**
-     * Test: Provider registration is skipped if gateway not configured.
-     * This prevents attempting to register with null/undefined baseUrl.
+     * Test: Execute the real gateway provider initialization with
+     * LLM_GATEWAY_URL unset. Provider registration should be skipped and
+     * diagnostics should record the skip reason.
      */
 
-    delete process.env.LLM_GATEWAY_URL;
+    const previousGatewayUrl = process.env.LLM_GATEWAY_URL;
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-gateway-missing-url-'));
+    const diagnosticsPath = path.join(tempDir, '.gateway-diagnostics.jsonl');
 
-    // When LLM_GATEWAY_URL is not set, provider should NOT register
-    // (from .pi-extensions.js: if (gatewayUrl) { ... })
-    const gatewayUrl = process.env.LLM_GATEWAY_URL;
+    try {
+      delete process.env.LLM_GATEWAY_URL;
 
-    expect(gatewayUrl).toBeUndefined();
-    // Provider registration would be skipped in this case
-    console.log('✓ Provider skipped when LLM_GATEWAY_URL not set');
+      const output = executeGatewayProviderRegistration({
+        ...process.env,
+        LLM_GATEWAY_API_KEY: 'test-api-key',
+        LLM_GATEWAY_MAX_OUTPUT_TOKENS: '2048',
+        LLM_GATEWAY_MODEL: '',
+        KASEKI_GATEWAY_DIAGNOSTICS_PATH: diagnosticsPath,
+      });
+
+      const calls = parseProviderRegistrationCalls(output);
+      expect(calls).toHaveLength(0);
+
+      const diagnosticRecords = fs
+        .readFileSync(diagnosticsPath, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+
+      expect(diagnosticRecords).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: 'extension_module_loaded',
+            piExtensionsVersion: 'gateway-provider-v1',
+            timestamp: expect.any(String),
+          }),
+          expect.objectContaining({
+            event: 'provider_skipped',
+            provider: 'gateway',
+            reason: 'missing_llm_gateway_url',
+            timestamp: expect.any(String),
+          }),
+        ])
+      );
+      expect(diagnosticRecords).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: 'provider_registered',
+          }),
+        ])
+      );
+    } finally {
+      if (previousGatewayUrl === undefined) {
+        delete process.env.LLM_GATEWAY_URL;
+      } else {
+        process.env.LLM_GATEWAY_URL = previousGatewayUrl;
+      }
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it('validates API type for Responses format', () => {
