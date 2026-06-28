@@ -7,6 +7,12 @@ jest.mock('./lib/subprocess-helpers', () => {
   };
 });
 
+// Mock Pi provider subprocess calls while keeping other child_process helpers real.
+jest.mock('node:child_process', () => ({
+  ...jest.requireActual('node:child_process'),
+  spawnSync: jest.fn()
+}));
+
 // Mock the host-secrets-reader module
 jest.mock('./secrets/host-secrets-reader', () => ({
   readHostSecret: jest.fn(),
@@ -22,7 +28,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as os from 'os';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import express, { Express } from 'express';
 import { AddressInfo, Server } from 'net';
 import { TextDecoder } from 'util';
@@ -44,6 +50,7 @@ import { createMockScheduler, createTestConfig, type TestScheduler } from './tes
 const { privateKey: defaultGithubPrivateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
 const defaultGithubPrivateKeyPem = defaultGithubPrivateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
 const execDockerCommandMock = jest.mocked(subprocessHelpers.execDockerCommand);
+const spawnSyncMock = jest.mocked(spawnSync);
 
 function mockSuccessfulDockerCommands(): void {
   execDockerCommandMock.mockImplementation((args: string[]) => ({
@@ -63,6 +70,7 @@ function mockReadableGithubAppCredentials(): void {
 }
 
 beforeEach(() => {
+  spawnSyncMock.mockImplementation(jest.requireActual<typeof import('node:child_process')>('node:child_process').spawnSync);
   process.env.KASEKI_SKIP_BOOTSTRAP_CHECK = '1';
   mockSuccessfulDockerCommands();
   mockReadableGithubAppCredentials();
@@ -1256,8 +1264,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
       JSON.stringify({ type: 'message_start', message: { role: 'assistant' } }),
       JSON.stringify({ type: 'message_stop' }),
     ].join('\n');
-    const childProcess = require('node:child_process') as typeof import('node:child_process');
-    const spawnSpy = jest.spyOn(childProcess, 'spawnSync').mockReturnValue({
+    spawnSyncMock.mockReturnValue({
       status: 0,
       signal: null,
       output: [null, rawPiOutput, ''],
@@ -1313,7 +1320,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
         await cleanupTestApp(server, idempotencyStore);
       }
     } finally {
-      spawnSpy.mockRestore();
+      spawnSyncMock.mockReset();
       process.env = envSnapshot;
       fs.rmSync(resultsDir, { recursive: true, force: true });
     }
@@ -1323,8 +1330,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-gateway-test-pi-explicit-fail-results-'));
     const envSnapshot = { ...process.env };
     const originalFetch = global.fetch;
-    const childProcess = require('node:child_process') as typeof import('node:child_process');
-    const spawnSpy = jest.spyOn(childProcess, 'spawnSync').mockReturnValue({
+    spawnSyncMock.mockReturnValue({
       status: 1,
       signal: null,
       output: [null, '', 'provider failed'],
@@ -1375,7 +1381,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
           provider: 'gateway',
           detail: expect.stringContaining('Pi provider smoke exited 1'),
         }));
-        expect(spawnSpy).toHaveBeenCalledWith(
+        expect(spawnSyncMock).toHaveBeenCalledWith(
           'pi',
           expect.arrayContaining(['--provider', 'gateway']),
           expect.any(Object)
@@ -1385,12 +1391,11 @@ describe('kaseki-api-routes preflight diagnostics', () => {
         await cleanupTestApp(server, idempotencyStore);
       }
     } finally {
-      spawnSpy.mockRestore();
+      spawnSyncMock.mockReset();
       process.env = envSnapshot;
       fs.rmSync(resultsDir, { recursive: true, force: true });
     }
   });
-
 
   test('GET /api/preflight reports worker gateway launch config missing when API gateway test uses inline key only', async () => {
     const { readHostSecret, resolveHostSecretPath } = jest.mocked(hostSecretsReader);
