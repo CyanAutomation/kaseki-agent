@@ -78,7 +78,8 @@
     "validate-module-imports": "node dist/validate-module-imports.js",
     "test:pack-artifact": "npm run build && bash scripts/check-packed-artifact.sh",
     "type-check:type-tests": "tsc -p tsconfig.type-tests.json",
-    "test:tree-sitter:functional": "node test-tree-sitter-functional.cjs"
+    "test:tree-sitter:functional": "node test-tree-sitter-functional.cjs",
+    "test:integration:docker": "RUN_DOCKER_INTEGRATION_TESTS=1 bash tests/integration/docker/startup-check-packaging.integration.test.sh"
   },
   "dependencies": {
     "@sentry/node": "^10.54.0",
