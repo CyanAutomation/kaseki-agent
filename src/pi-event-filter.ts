@@ -637,9 +637,6 @@ interface AssistantTurnState {
   toolResultCount: number;
 }
 
-const inputPath = process.argv[2] ?? '/tmp/pi-events.raw.jsonl';
-const filteredPath = process.argv[3] ?? '/results/pi-events.jsonl';
-const summaryPath = process.argv[4] ?? '/results/pi-summary.json';
 
 let rssSampler: NodeJS.Timeout | null = null;
 let maxRssBytes = 0;
@@ -1043,7 +1040,11 @@ function extractModelName(event: PiEvent): string {
   return typeof model === 'string' ? model : 'unknown';
 }
 
-async function main(): Promise<void> {
+export async function runPiEventFilter(
+  inputPath = '/tmp/pi-events.raw.jsonl',
+  filteredPath = '/results/pi-events.jsonl',
+  summaryPath = '/results/pi-summary.json',
+): Promise<void> {
   startRssSampler();
   const input = fs.createReadStream(inputPath, { encoding: 'utf8' });
   const output = fs.createWriteStream(filteredPath, { encoding: 'utf8' });
@@ -1163,8 +1164,14 @@ async function main(): Promise<void> {
   stopRssSampler();
 }
 
-main().catch((error: Error) => {
-  stopRssSampler();
-  console.error(error);
-  process.exit(1);
-});
+function isDirectCliExecution(): boolean {
+  return process.argv[1] ? /pi-event-filter\.(?:ts|js)$/.test(process.argv[1]) : false;
+}
+
+if (isDirectCliExecution()) {
+  runPiEventFilter(process.argv[2], process.argv[3], process.argv[4]).catch((error: Error) => {
+    stopRssSampler();
+    console.error(error);
+    process.exit(1);
+  });
+}
