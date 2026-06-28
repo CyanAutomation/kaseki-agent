@@ -155,13 +155,15 @@ if [ -z "${KASEKI_PROVIDER+x}" ]; then
   fi
 fi
 
-# Select model based on provider
-if [ -z "${KASEKI_MODEL+x}" ]; then
-  if [ "$KASEKI_PROVIDER" = "gateway" ]; then
+# Select model based on provider. Gateway cannot consume the generic "auto"
+# model sentinel, so normalize unset or explicit auto to the gateway default
+# before phase-specific model defaults inherit it below.
+if [ "$KASEKI_PROVIDER" = "gateway" ]; then
+  if [ -z "${KASEKI_MODEL+x}" ] || [ "$KASEKI_MODEL" = "auto" ]; then
     KASEKI_MODEL="${LLM_GATEWAY_MODEL:-dynamic/kaseki-agent}"
-  else
-    KASEKI_MODEL="auto"
   fi
+elif [ -z "${KASEKI_MODEL+x}" ]; then
+  KASEKI_MODEL="auto"
 fi
 KASEKI_DRY_RUN="${KASEKI_DRY_RUN:-0}"
 KASEKI_STARTUP_CHECK_MODE="${KASEKI_STARTUP_CHECK_MODE:-boot}"
