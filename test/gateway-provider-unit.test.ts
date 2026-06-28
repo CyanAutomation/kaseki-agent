@@ -207,10 +207,10 @@ console.log(JSON.stringify(calls));`,
           cwd: process.cwd(),
           env: {
             ...process.env,
-            LLM_GATEWAY_URL: '',
+            LLM_GATEWAY_URL: 'https://llm-gateway.local.xyz/v1',
             LLM_GATEWAY_API_KEY: 'test-api-key',
             LLM_GATEWAY_MAX_OUTPUT_TOKENS: '2048',
-            LLM_GATEWAY_MODEL: '',
+            LLM_GATEWAY_MODEL: undefined,
           },
           encoding: 'utf8',
         }
