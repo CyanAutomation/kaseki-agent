@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regression test: gateway defaults KASEKI_MODEL from LLM_GATEWAY_MODEL when unset.
+# Regression test: gateway defaults KASEKI_MODEL from LLM_GATEWAY_MODEL when unset or auto.
 
 set -euo pipefail
 
@@ -45,5 +45,23 @@ set -e
 [ "$run_exit" -eq 2 ] || fail "expected missing gateway configuration exit 2, got $run_exit"
 grep -Fq 'Provider: gateway' "$RUN_LOG" || fail "run did not use gateway provider"
 grep -Fq 'Model: gateway/custom-default' "$RUN_LOG" || fail "LLM_GATEWAY_MODEL did not become the default KASEKI_MODEL"
+
+: > "$RUN_LOG"
+set +e
+env KASEKI_MODEL=auto \
+  KASEKI_PROVIDER=gateway \
+  LLM_GATEWAY_MODEL=gateway/custom-default \
+  GITHUB_APP_ENABLED=0 \
+  KASEKI_GIT_CACHE_MODE=off \
+  REPO_URL=https://example.invalid/repo.git \
+  GIT_REF=main \
+  TASK_PROMPT="inspect then code" \
+  bash "$MODIFIED_SCRIPT" > "$RUN_LOG" 2>&1
+run_exit=$?
+set -e
+
+[ "$run_exit" -eq 2 ] || fail "expected missing gateway configuration exit 2 for explicit auto, got $run_exit"
+grep -Fq 'Provider: gateway' "$RUN_LOG" || fail "explicit auto run did not use gateway provider"
+grep -Fq 'Model: gateway/custom-default' "$RUN_LOG" || fail "explicit KASEKI_MODEL=auto was not normalized to the gateway default"
 
 echo "PASS: $TEST_NAME"
