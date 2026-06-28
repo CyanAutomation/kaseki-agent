@@ -1,5 +1,45 @@
 import { execFileSync } from 'node:child_process';
 
+const executeGatewayProviderRegistration = (env: NodeJS.ProcessEnv): string => {
+  try {
+    return execFileSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `import registerGatewayProvider from './.pi-extensions.js';
+const calls = [];
+registerGatewayProvider({
+  registerProvider: (...args) => calls.push(args),
+});
+console.log(JSON.stringify(calls));`,
+      ],
+      {
+        env,
+        encoding: 'utf8',
+      }
+    );
+  } catch (error) {
+    throw new Error(`Failed to execute .pi-extensions.js: ${error instanceof Error ? error.message : String(error)}`);
+  }
+};
+
+const parseProviderRegistrationCalls = (output: string): any[] => {
+  try {
+    const calls = JSON.parse(output);
+    if (!Array.isArray(calls)) {
+      throw new Error(`Expected provider registration output to be an array, received ${typeof calls}`);
+    }
+    return calls;
+  } catch (error) {
+    throw new Error(
+      `Failed to parse provider registration output as JSON: ${
+        error instanceof Error ? error.message : String(error)
+      }. Output received: ${output.slice(0, 200)}`
+    );
+  }
+};
+
 /**
  * Unit Test: Validate Gateway Provider Configuration Logic
  *
@@ -33,31 +73,15 @@ describe('Gateway Provider Configuration', () => {
     const gatewayApiKey = 'test-api-key';
     const maxOutputTokens = '2048';
 
-    const output = execFileSync(
-      process.execPath,
-      [
-        '--input-type=module',
-        '-e',
-        `import registerGatewayProvider from './.pi-extensions.js';
-const calls = [];
-registerGatewayProvider({
-  registerProvider: (...args) => calls.push(args),
-});
-console.log(JSON.stringify(calls));`,
-      ],
-      {
-        env: {
-          ...process.env,
-          LLM_GATEWAY_URL: gatewayUrl,
-          LLM_GATEWAY_API_KEY: gatewayApiKey,
-          LLM_GATEWAY_MAX_OUTPUT_TOKENS: maxOutputTokens,
-          LLM_GATEWAY_MODEL: '',
-        },
-        encoding: 'utf8',
-      }
-    );
+    const output = executeGatewayProviderRegistration({
+      ...process.env,
+      LLM_GATEWAY_URL: gatewayUrl,
+      LLM_GATEWAY_API_KEY: gatewayApiKey,
+      LLM_GATEWAY_MAX_OUTPUT_TOKENS: maxOutputTokens,
+      LLM_GATEWAY_MODEL: '',
+    });
 
-    const calls = JSON.parse(output);
+    const calls = parseProviderRegistrationCalls(output);
     expect(calls).toHaveLength(1);
 
     const [providerName, registeredProviderConfig] = calls[0];
@@ -191,36 +215,15 @@ console.log(JSON.stringify(calls));`,
      * the test fails if production provider configuration changes.
      */
 
-    let output: string;
-    try {
-      output = execFileSync(
-        process.execPath,
-        [
-          '--input-type=module',
-          '-e',
-          `import registerGatewayProvider from './.pi-extensions.js';
-const calls = [];
-registerGatewayProvider({
-  registerProvider: (...args) => calls.push(args),
-});
-console.log(JSON.stringify(calls));`,
-        ],
-        {
-          env: {
-            ...process.env,
-            LLM_GATEWAY_URL: 'https://llm-gateway.local.xyz/v1',
-            LLM_GATEWAY_API_KEY: 'test-api-key',
-            LLM_GATEWAY_MAX_OUTPUT_TOKENS: '2048',
-            LLM_GATEWAY_MODEL: 'dynamic/kaseki-agent',
-          },
-          encoding: 'utf8',
-        }
-      );
-    } catch (error) {
-      throw new Error(`Failed to execute .pi-extensions.js: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    const output = executeGatewayProviderRegistration({
+      ...process.env,
+      LLM_GATEWAY_URL: 'https://llm-gateway.local.xyz/v1',
+      LLM_GATEWAY_API_KEY: 'test-api-key',
+      LLM_GATEWAY_MAX_OUTPUT_TOKENS: '2048',
+      LLM_GATEWAY_MODEL: 'dynamic/kaseki-agent',
+    });
 
-    const calls = JSON.parse(output);
+    const calls = parseProviderRegistrationCalls(output);
     expect(calls).toHaveLength(1);
 
     const [providerName, registeredProviderConfig] = calls[0];
@@ -238,34 +241,13 @@ console.log(JSON.stringify(calls));`,
      * instead of documenting manual setup in a console-only test.
      */
 
-    let output: string;
-    try {
-      output = execFileSync(
-        process.execPath,
-        [
-          '--input-type=module',
-          '-e',
-          `import registerGatewayProvider from './.pi-extensions.js';
-const calls = [];
-registerGatewayProvider({
-  registerProvider: (...args) => calls.push(args),
-});
-console.log(JSON.stringify(calls));`,
-        ],
-        {
-          env: {
-            ...process.env,
-            LLM_GATEWAY_URL: 'https://llm-gateway.local.xyz/v1',
-            LLM_GATEWAY_API_KEY: 'test-api-key',
-            LLM_GATEWAY_MAX_OUTPUT_TOKENS: '2048',
-          },
-          encoding: 'utf8',
-        }
-      );
-    } catch (error) {
-      throw new Error(`Failed to execute .pi-extensions.js: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    const calls = JSON.parse(output);
+    const output = executeGatewayProviderRegistration({
+      ...process.env,
+      LLM_GATEWAY_URL: 'https://llm-gateway.local.xyz/v1',
+      LLM_GATEWAY_API_KEY: 'test-api-key',
+      LLM_GATEWAY_MAX_OUTPUT_TOKENS: '2048',
+    });
+    const calls = parseProviderRegistrationCalls(output);
 
     expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual([
