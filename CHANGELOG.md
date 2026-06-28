@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.107.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.106.3...v1.107.0) (2026-06-28)
+
+
+### Features
+
+* add aggregators for event counting, tool reliability, execution time, and token usage ([d25ba24](https://github.com/CyanAutomation/kaseki-agent/commit/d25ba24ab53689d5adadc66ba58eeade85f30505))
+
 ## [1.106.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.106.2...v1.106.3) (2026-06-28)
 
 
