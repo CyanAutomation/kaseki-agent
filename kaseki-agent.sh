@@ -1064,15 +1064,25 @@ validate_scouting_artifact() {
 
   : > "$validation_error_file"
   if [ ! -f "$candidate_artifact" ]; then
+    local provider_diagnostic=""
+    local provider_suggestion=""
+    if [ "$KASEKI_PROVIDER" = "gateway" ] && [ "$KASEKI_SCOUTING_MODEL" = "auto" ]; then
+      provider_diagnostic="Gateway scouting was requested with model=auto, but no scouting candidate artifact was produced. Gateway deployments cannot rely on the generic auto model sentinel for scouting artifact generation."
+      provider_suggestion="set KASEKI_MODEL or LLM_GATEWAY_MODEL to dynamic/kaseki-agent or another supported gateway model before running scouting"
+    fi
+
     if [ -f "${KASEKI_RESULTS_DIR}"/filesystem-readonly-reason.txt ]; then
       reason_code="readonly_filesystem"
       reason_details="1 critical scouting validation error: scouting-candidate.json missing due to read-only filesystem"
     else
       reason_code="missing_file"
       reason_details="1 critical scouting validation error: scouting-candidate.json"
+      if [ -n "$provider_diagnostic" ]; then
+        reason_details="$reason_details; $provider_diagnostic"
+      fi
     fi
     # shellcheck disable=SC2016
-    node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const reason=process.argv[2]; const error={timestamp:new Date().toISOString(),reason_code:reason,field:"scouting-candidate.json",expected:"file at " + process.env.KASEKI_RESULTS_DIR + "/scouting-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:reason==="readonly_filesystem" ? "remount " + process.env.KASEKI_RESULTS_DIR + " as read-write (docker run -v /path:" + process.env.KASEKI_RESULTS_DIR + ":rw)" : "ensure the scouting Pi writes exactly one valid JSON object to " + process.env.KASEKI_RESULTS_DIR + "/scouting-candidate.json"}; fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + "/scouting-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" "$reason_code" 2>/dev/null || true
+    node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const reason=process.argv[2]; const details=process.argv[3]||""; const providerDiagnostic=process.argv[4]||""; const providerSuggestion=process.argv[5]||""; const defaultSuggestion=reason==="readonly_filesystem" ? "remount " + process.env.KASEKI_RESULTS_DIR + " as read-write (docker run -v /path:" + process.env.KASEKI_RESULTS_DIR + ":rw)" : "ensure the scouting Pi writes exactly one valid JSON object to " + process.env.KASEKI_RESULTS_DIR + "/scouting-candidate.json"; const error={timestamp:new Date().toISOString(),reason_code:reason,field:"scouting-candidate.json",expected:"file at " + process.env.KASEKI_RESULTS_DIR + "/scouting-candidate.json",actual:`missing: ${candidate}`,severity:"critical",details:details||undefined,suggestion:providerSuggestion||defaultSuggestion,provider:process.env.KASEKI_PROVIDER||"",model:process.env.KASEKI_SCOUTING_MODEL||""}; if(providerDiagnostic){error.diagnostic=providerDiagnostic; error.gateway_model_hint=providerSuggestion;} fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + "/scouting-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" "$reason_code" "$reason_details" "$provider_diagnostic" "$provider_suggestion" 2>/dev/null || true
   elif ! validate_scouting_artifact_with_node "$candidate_artifact" "$final_artifact" "$validation_error_file"; then
     reason_code="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.reason_code||"schema_mismatch"));}catch{process.stdout.write("schema_mismatch");}' "$validation_error_file" 2>/dev/null || printf 'schema_mismatch')"
     reason_details="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.details||"scouting artifact validation failed"));}catch{process.stdout.write("scouting artifact validation failed");}' "$validation_error_file" 2>/dev/null || printf 'scouting artifact validation failed')"
