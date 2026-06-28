@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process';
+
 /**
  * Unit Test: Validate Gateway Provider Configuration Logic
  *
@@ -181,36 +183,56 @@ describe('Gateway Provider Configuration', () => {
     expect(apiType).toBeDefined();
   });
 
-  it('setup instructions for Step 4 manual integration test', () => {
+  it('registers the actual gateway provider with deterministic configuration', () => {
     /**
-     * This test documents how to manually run the full end-to-end test
-     * with real Pi CLI and gateway (Step 4 in plan).
+     * Test: Execute the real .pi-extensions.js registration entry point
+     * instead of documenting manual setup in a console-only test.
      */
 
-    console.log('\n=== Step 4: Manual Integration Test (When Pi Available) ===');
-    console.log('');
-    console.log('To validate actual gateway payload format:');
-    console.log('');
-    console.log('  export LLM_GATEWAY_URL=https://llm-gateway.local.xyz/v1');
-    console.log('  export LLM_GATEWAY_API_KEY=<your-key>');
-    console.log('  export KASEKI_PROVIDER=gateway');
-    console.log('  export KASEKI_MODEL=dynamic/kaseki-agent');
-    console.log('');
-    console.log('  ./run-kaseki.sh');
-    console.log('');
-    console.log('Then check artifacts:');
-    console.log('  1. /agents/kaseki-results/kaseki-N/.gateway-diagnostics.jsonl');
-    console.log('     Should contain: extension_module_loaded, provider_registered events');
-    console.log('');
-    console.log('  2. Gateway server logs');
-    console.log('     Verify payload format: {model, input, stream, tools, ...}');
-    console.log('     Check if input is STRING or ARRAY');
-    console.log('');
-    console.log('  3. metadata.json phases.gateway_normalization');
-    console.log('     Should contain consolidated diagnostics');
-    console.log('');
+    const output = execFileSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `import registerGatewayProvider from './.pi-extensions.js';
+const calls = [];
+registerGatewayProvider({
+  registerProvider: (...args) => calls.push(args),
+});
+console.log(JSON.stringify(calls));`,
+      ],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          LLM_GATEWAY_URL: 'https://llm-gateway.local.xyz/v1',
+          LLM_GATEWAY_API_KEY: 'test-api-key',
+          LLM_GATEWAY_MAX_OUTPUT_TOKENS: '2048',
+          LLM_GATEWAY_MODEL: '',
+        },
+        encoding: 'utf8',
+      }
+    );
+    const calls = JSON.parse(output);
 
-    expect(true).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual([
+      'gateway',
+      expect.objectContaining({
+        name: 'LLM Gateway (CloudFlare)',
+        baseUrl: 'https://llm-gateway.local.xyz/v1',
+        apiKey: 'test-api-key',
+        api: 'openai-responses',
+        models: [
+          expect.objectContaining({
+            id: 'dynamic/kaseki-agent',
+            name: 'CloudFlare Gateway (dynamic/kaseki-agent)',
+            input: ['text'],
+            maxTokens: 2048,
+          }),
+        ],
+      }),
+    ]);
   });
 });
 
