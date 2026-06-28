@@ -28,6 +28,20 @@ The setup wizard will guide you through providing:
 - **LLM Gateway API Key** (required): Authentication token for your provider
 - **GitHub App Credentials** (optional): App ID, Client ID, Private Key
 
+
+### CloudFlare Gateway Live Probe
+
+The Jest suite uses deterministic unit/contract coverage for CloudFlare gateway behavior and mocks `fetch`; it does not perform live network calls or consume gateway tokens. To run the live CloudFlare probe explicitly, use:
+
+```bash
+CLOUDFLARE_GATEWAY_TEST=1 \
+LLM_GATEWAY_URL=https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat \
+LLM_GATEWAY_API_KEY=<token> \
+npm run test:integration:cloudflare-gateway
+```
+
+The live probe requires `CLOUDFLARE_GATEWAY_TEST=1`, a configured `LLM_GATEWAY_URL`, either `LLM_GATEWAY_API_KEY` or `LLM_GATEWAY_API_KEY_FILE`, and working token/network access to CloudFlare. `LLM_GATEWAY_MODEL` is optional and defaults to `dynamic/kaseki-agent`.
+
 ### 3. Run Your First Task
 
 ```bash
