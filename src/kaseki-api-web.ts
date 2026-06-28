@@ -2424,6 +2424,9 @@ const controllerPage = String.raw`<!doctype html>
                 eventTypesList.push(k + '(' + v + ')');
               }
               diagnosticMsg += '  Event types seen: ' + (eventTypesList.join(', ') || '(none)') + '\n';
+              if (typeof diag.debugOutputPath === 'string' && diag.debugOutputPath) {
+                diagnosticMsg += '  Debug JSONL: ' + stripControlSequences(diag.debugOutputPath).slice(0, 240) + '\n';
+              }
               
               if (suggested.length > 0) {
                 diagnosticMsg += '  Suggested patterns to try: ' + suggested.slice(0, 3).join(', ') + '\n';
