@@ -55,7 +55,7 @@ const response = await fetch(endpoint, {
 });
 
 if (!response.ok) {
-  throw new Error(`CloudFlare gateway probe failed with HTTP ${response.status}: ${await response.text()}`);
+  throw new Error(`CloudFlare gateway probe failed with HTTP ${response.status}`);
 }
 
 const data = await response.json();
