@@ -120,8 +120,52 @@ jobs:
           test -f dist/kaseki-api-service.js
           ls -l dist/kaseki-api-service.js
 
+
+  startup_check_docker_integration:
+    needs: checks
+    runs-on: ubuntu-latest
+    env:
+      RUN_DOCKER_INTEGRATION_TESTS: ${{ vars.RUN_DOCKER_INTEGRATION_TESTS || '0' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Check Docker startup-check integration prerequisites
+        id: prereq
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${RUN_DOCKER_INTEGRATION_TESTS}" != "1" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "reason=Set RUN_DOCKER_INTEGRATION_TESTS=1 as a repository variable to run this opt-in Docker integration suite." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "reason=Docker is not available on this runner." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
+      - name: Skip Docker startup-check integration
+        if: steps.prereq.outputs.run != 'true'
+        shell: bash
+        run: |
+          {
+            echo "### Docker startup-check packaging integration skipped"
+            echo "${{ steps.prereq.outputs.reason }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Docker startup-check integration skipped::${{ steps.prereq.outputs.reason }}"
+
+      - name: Run Docker startup-check packaging integration
+        if: steps.prereq.outputs.run == 'true'
+        shell: bash
+        run: bash tests/integration/docker/startup-check-packaging.integration.test.sh
+
   build:
-    needs: [checks, type_check_full]
+    needs: [checks, type_check_full, startup_check_docker_integration]
     runs-on: ubuntu-latest
 
     steps:
