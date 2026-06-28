@@ -637,7 +637,6 @@ interface AssistantTurnState {
   toolResultCount: number;
 }
 
-
 let rssSampler: NodeJS.Timeout | null = null;
 let maxRssBytes = 0;
 
