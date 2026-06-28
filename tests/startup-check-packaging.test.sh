@@ -11,6 +11,49 @@ ENTRYPOINT="$ROOT_DIR/scripts/docker-entrypoint.sh"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+assert_file_contains() {
+  local file="$1"
+  local pattern="$2"
+  local message="$3"
+
+  if ! grep -Eq "$pattern" "$file"; then
+    printf '%s\n' "$message" >&2
+    exit 1
+  fi
+}
+
+assert_file_match_count() {
+  local file="$1"
+  local pattern="$2"
+  local expected_count="$3"
+  local message="$4"
+  local actual_count
+
+  actual_count="$(grep -Ec "$pattern" "$file")"
+  if [ "$actual_count" != "$expected_count" ]; then
+    printf '%s (expected %s, found %s)\n' "$message" "$expected_count" "$actual_count" >&2
+    exit 1
+  fi
+}
+
+assert_json_array_contains() {
+  local file="$1"
+  local expression="$2"
+  local message="$3"
+
+  node --input-type=module -e '
+    import { readFileSync } from "node:fs";
+    const [file, expression] = process.argv.slice(1);
+    const pkg = JSON.parse(readFileSync(file, "utf8"));
+    if (!Array.isArray(pkg.files) || !pkg.files.includes(expression)) {
+      process.exit(1);
+    }
+  ' "$file" "$expression" || {
+    printf '%s\n' "$message" >&2
+    exit 1
+  }
+}
+
 APP_DIR="$TMP_DIR/app"
 SCRIPTS_DIR="$TMP_DIR/scripts"
 mkdir -p "$APP_DIR/scripts" "$SCRIPTS_DIR"
@@ -58,15 +101,38 @@ if ! bash -n "$ENTRYPOINT"; then
   exit 1
 fi
 
-if ! grep -q "COPY package.json package-lock.json tsconfig.json tsconfig.scripts.json ./" Dockerfile; then
-  printf 'Dockerfile does not copy tsconfig.scripts.json before npm run build\n' >&2
-  exit 1
-fi
+assert_file_contains Dockerfile '^COPY package\.json package-lock\.json tsconfig\.json tsconfig\.scripts\.json \.\/$' \
+  'Dockerfile does not copy tsconfig.scripts.json before npm run build'
+assert_file_contains Dockerfile '^COPY scripts \.\/scripts$' \
+  'Dockerfile does not copy scripts into /app for startup-check packaging'
+assert_file_contains Dockerfile '^[[:space:]]+/app/scripts/startup-check-packaging\.sh \\$' \
+  'Dockerfile does not mark startup-check-packaging.sh executable'
+assert_file_match_count Dockerfile '^[[:space:]]+&& /app/scripts/startup-check-packaging\.sh install \\$' 2 \
+  'Dockerfile must install startup-check symlinks in both runtime and final stages'
+assert_file_contains Dockerfile '^COPY --from=runtime /app/scripts \.\/scripts$' \
+  'Dockerfile final stage does not copy packaged scripts from runtime stage'
+assert_file_contains Dockerfile '^ENTRYPOINT \["/usr/bin/tini", "--", "/usr/local/bin/kaseki-entrypoint"\]$' \
+  'Dockerfile entrypoint does not dispatch through kaseki-entrypoint'
 
-if ! grep -q '^!tsconfig\.scripts\.json$' .dockerignore; then
-  printf '.dockerignore does not allow tsconfig.scripts.json into the Docker build context\n' >&2
-  exit 1
-fi
+assert_file_contains .dockerignore '^!tsconfig\.scripts\.json$' \
+  '.dockerignore does not allow tsconfig.scripts.json into the Docker build context'
+assert_json_array_contains package.json scripts/ \
+  'package.json files does not include scripts/ for npm package startup-check declarations'
+
+assert_file_contains scripts/startup-check-packaging.sh '^: "\$\{KASEKI_STARTUP_CHECK_SOURCE:=/app/scripts/startup-checks\.sh\}"$' \
+  'startup-check packaging source path default changed unexpectedly'
+assert_file_contains scripts/startup-check-packaging.sh '^: "\$\{KASEKI_STARTUP_CHECK_PRIMARY_PATH:=/scripts/startup-checks\.sh\}"$' \
+  'startup-check primary symlink path default changed unexpectedly'
+assert_file_contains scripts/startup-check-packaging.sh '^: "\$\{KASEKI_INIT_CONTAINER_PATH:=/scripts/kaseki-init-container\.sh\}"$' \
+  'init-container symlink path default changed unexpectedly'
+assert_file_contains scripts/startup-check-packaging.sh 'ln -sf "\$KASEKI_STARTUP_CHECK_SOURCE" "\$KASEKI_STARTUP_CHECK_PRIMARY_PATH"' \
+  'startup-check packaging no longer links the primary startup-check path'
+assert_file_contains scripts/startup-check-packaging.sh 'ln -sf "\$KASEKI_STARTUP_CHECK_SOURCE" "\$KASEKI_INIT_CONTAINER_PATH"' \
+  'startup-check packaging no longer links the init-container path'
+assert_file_contains scripts/docker-entrypoint.sh '^KASEKI_STARTUP_CHECK_PACKAGING_CONFIG="\$\{KASEKI_STARTUP_CHECK_PACKAGING_CONFIG:-/app/scripts/startup-check-packaging\.sh\}"$' \
+  'docker entrypoint no longer sources the startup-check packaging config from /app/scripts'
+assert_file_contains scripts/docker-entrypoint.sh '/scripts/startup-checks\.sh "\$\{KASEKI_STARTUP_CHECK_MODE:-all\}"' \
+  'docker entrypoint no longer invokes the packaged startup-check symlink with the selected mode'
 
 for helper in \
   instance-status-derivation.js \
