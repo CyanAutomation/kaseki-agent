@@ -1,274 +1,270 @@
 /**
- * TDD Tests for Go CLI Summarizer
- * Tests extraction of Go structs, functions, methods, and interfaces via tree-sitter CLI
+ * Go CLI summarizer parser contract tests.
+ *
+ * Unit tests mock the tree-sitter CLI JSON boundary so the parser contract is
+ * deterministic. Set RUN_GO_CLI_SUMMARIZER_INTEGRATION=1 to exercise the real
+ * CLI boundary explicitly.
  */
-import { describe, it, expect } from '@jest/globals';
-import { GoCliSummarizer } from '../../src/summarization/go-cli-summarizer';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { GoCliSummarizer } from '../../src/summarization/go-cli-summarizer';
+
+jest.mock('child_process', () => ({
+  execFileSync: jest.fn(),
+}));
+
+type FixtureNode = {
+  type: string;
+  startPoint: [number, number];
+  endPoint: [number, number];
+  startIndex: number;
+  endIndex: number;
+  children?: FixtureNode[];
+};
+
+const mockExecFileSync = execFileSync as jest.MockedFunction<typeof execFileSync>;
+
+const node = (source: string, type: string, text: string, children: FixtureNode[] = []): FixtureNode => {
+  const startIndex = source.indexOf(text);
+  if (startIndex === -1) {
+    throw new Error(`Fixture text not found for ${type}: ${text}`);
+  }
+  return {
+    type,
+    startPoint: [0, 0],
+    endPoint: [0, 0],
+    startIndex,
+    endIndex: startIndex + text.length,
+    children,
+  };
+};
+
+const mockTreeSitterOutput = (tree: FixtureNode): void => {
+  mockExecFileSync.mockReturnValue(JSON.stringify(tree));
+};
+
+const writeFixture = (tmpDir: string, filename: string, code: string): string => {
+  const filePath = path.join(tmpDir, filename);
+  fs.writeFileSync(filePath, code);
+  return filePath;
+};
 
 describe('GoCliSummarizer', () => {
   let summarizer: GoCliSummarizer;
   let tmpDir: string;
 
   beforeEach(() => {
+    jest.clearAllMocks();
     summarizer = new GoCliSummarizer('go');
-    tmpDir = path.join(os.tmpdir(), `go-test-${Date.now()}`);
-    if (!fs.existsSync(tmpDir)) {
-      fs.mkdirSync(tmpDir, { recursive: true });
-    }
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'go-summary-test-'));
   });
 
   afterEach(() => {
-    if (fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  describe('Successful Extraction', () => {
-    // These tests assume Go grammar is available (CI/Docker with proper setup)
-    // If grammar is missing, tests skip gracefully
+  describe('mocked tree-sitter parser contract', () => {
+    it('preserves symbol navigation for Go files when full content is too large by extracting package, imports, structs, interfaces, functions, and receiver methods', () => {
+      const code = `package services
 
-    it('should extract struct declarations when grammar available', () => {
-      const filePath = path.join(tmpDir, 'test.go');
-      const code = `package main
+import (
+    "context"
+    log "github.com/acme/log"
+)
+
+type Store interface {
+    Save(ctx context.Context, user User) error
+}
 
 type User struct {
     ID   int
     Name string
 }
 
-func (u User) GetName() string {
+func NewUser(name string) User {
+    return User{Name: name}
+}
+
+func (u User) DisplayName() string {
     return u.Name
 }
-`;
-      fs.writeFileSync(filePath, code);
-      const summary = summarizer.summarize(filePath);
 
-      // Either extracts types OR has a parseError
-      if (summary.parseError) {
-        const isExpectedError = summary.parseError.includes('language') ||
-                               summary.parseError.includes('not available') ||
-                               summary.parseError.includes('failed') ||
-                               summary.parseError.includes('error');
-        expect(isExpectedError).toBe(true);
-      } else {
-        expect(summary.types.length).toBeGreaterThanOrEqual(1);
-        expect(summary.types.some(t => t.name === 'User')).toBe(true);
-      }
+func (u *User) Rename(name string) {
+    u.Name = name
+}
+`;
+      const tree: FixtureNode = {
+        type: 'source_file',
+        startPoint: [0, 0],
+        endPoint: [0, 0],
+        startIndex: 0,
+        endIndex: code.length,
+        children: [
+          node(code, 'package_clause', 'package services', [node(code, 'package_identifier', 'services')]),
+          node(code, 'import_declaration', 'import (\n    "context"\n    log "github.com/acme/log"\n)', [
+            node(code, 'import_spec_list', '(\n    "context"\n    log "github.com/acme/log"\n)', [
+              node(code, 'import_spec', '"context"'),
+              node(code, 'import_spec', 'log "github.com/acme/log"'),
+            ]),
+          ]),
+          node(code, 'type_declaration', 'type Store interface {\n    Save(ctx context.Context, user User) error\n}', [
+            node(code, 'type_spec', 'Store interface {\n    Save(ctx context.Context, user User) error\n}', [
+              node(code, 'type_identifier', 'Store'),
+              node(code, 'interface_type', 'interface {\n    Save(ctx context.Context, user User) error\n}'),
+            ]),
+          ]),
+          node(code, 'type_declaration', 'type User struct {\n    ID   int\n    Name string\n}', [
+            node(code, 'type_spec', 'User struct {\n    ID   int\n    Name string\n}', [
+              node(code, 'type_identifier', 'User'),
+              node(code, 'struct_type', 'struct {\n    ID   int\n    Name string\n}'),
+            ]),
+          ]),
+          node(code, 'function_declaration', 'func NewUser(name string) User {\n    return User{Name: name}\n}', [
+            node(code, 'identifier', 'NewUser'),
+          ]),
+          node(code, 'method_declaration', 'func (u User) DisplayName() string {\n    return u.Name\n}', [
+            node(code, 'parameter_list', '(u User)'),
+            node(code, 'identifier', 'DisplayName'),
+          ]),
+          node(code, 'method_declaration', 'func (u *User) Rename(name string) {\n    u.Name = name\n}', [
+            node(code, 'parameter_list', '(u *User)'),
+            node(code, 'identifier', 'Rename'),
+          ]),
+        ],
+      };
+      mockTreeSitterOutput(tree);
+
+      const summary = summarizer.summarize(writeFixture(tmpDir, 'services.go', code));
+
+      expect(summary).toMatchObject({
+        language: 'go',
+        packageName: 'services',
+        imports: [{ module: 'context', items: [] }, { module: 'github.com/acme/log', items: [] }],
+        functions: [{ name: 'NewUser', kind: 'function', signature: expect.stringContaining('func NewUser') }],
+        types: [],
+        interfaces: [{ name: 'Store', kind: 'interface', signature: 'type Store' }],
+      });
+      expect(summary.parseError).toBeUndefined();
+      expect(summary.classes).toEqual([
+        {
+          name: 'User',
+          methods: [
+            { name: 'DisplayName', kind: 'method', signature: expect.stringContaining('func (u User) DisplayName') },
+            { name: 'Rename', kind: 'method', signature: expect.stringContaining('func (u *User) Rename') },
+          ],
+        },
+      ]);
+      expect(mockExecFileSync).toHaveBeenCalledWith('tree-sitter', ['parse', expect.any(String), '--json'], expect.objectContaining({ timeout: 1000 }));
+      expect((mockExecFileSync.mock.calls[0][1] as string[])[1]).toEqual(expect.stringContaining('services.go'));
     });
 
-    it('should extract methods on receivers when grammar available', () => {
-      const filePath = path.join(tmpDir, 'test.go');
-      const code = `package main
+    it('summarizes methods for receiver types even when the struct declaration is outside the truncated parser fixture', () => {
+      const code = `package api
 
-type Handler struct {
-    name string
-}
-
-func (h Handler) Process() error {
+func (h *Handler) Serve() error {
     return nil
 }
-
-func (h *Handler) Update(name string) {
-    h.name = name
-}
 `;
-      fs.writeFileSync(filePath, code);
-      const summary = summarizer.summarize(filePath);
+      mockTreeSitterOutput({
+        type: 'source_file',
+        startPoint: [0, 0],
+        endPoint: [0, 0],
+        startIndex: 0,
+        endIndex: code.length,
+        children: [
+          node(code, 'package_clause', 'package api', [node(code, 'package_identifier', 'api')]),
+          node(code, 'method_declaration', 'func (h *Handler) Serve() error {\n    return nil\n}', [
+            node(code, 'parameter_list', '(h *Handler)'),
+            node(code, 'identifier', 'Serve'),
+          ]),
+        ],
+      });
 
-      // Either extracts classes/methods OR has a parseError
-      if (summary.parseError) {
-        const isExpectedError = summary.parseError.includes('language') ||
-                               summary.parseError.includes('not available') ||
-                               summary.parseError.includes('failed') ||
-                               summary.parseError.includes('error');
-        expect(isExpectedError).toBe(true);
-      } else {
-        expect(summary.classes.length).toBeGreaterThanOrEqual(1);
-        expect(summary.classes.some(c => c.name === 'Handler')).toBe(true);
-        const handler = summary.classes.find(c => c.name === 'Handler');
-        expect(handler?.methods.length).toBeGreaterThanOrEqual(2);
-      }
+      const summary = summarizer.summarize(writeFixture(tmpDir, 'handler.go', code));
+
+      expect(summary.packageName).toBe('api');
+      expect(summary.classes).toEqual([
+        {
+          name: 'Handler',
+          methods: [{ name: 'Serve', kind: 'method', signature: expect.stringContaining('func (h *Handler) Serve') }],
+        },
+      ]);
+      expect(summary.functions).toEqual([]);
+      expect(summary.imports).toEqual([]);
+      expect(summary.types).toEqual([]);
+      expect(summary.interfaces).toEqual([]);
     });
 
-    it('should extract import statements or gracefully degrade', () => {
-      const filePath = path.join(tmpDir, 'test.go');
-      const code = `package main
+    it('returns exact empty collections and a user-facing parse error when the Go CLI boundary fails', () => {
+      const cliError = new Error('Command failed');
+      (cliError as Error & { stderr: Buffer }).stderr = Buffer.from('fixture parser failure');
+      mockExecFileSync.mockImplementation(() => {
+        throw cliError;
+      });
 
-import (
-    "fmt"
-    "github.com/user/repo"
-)
+      const summary = summarizer.summarize(writeFixture(tmpDir, 'broken.go', 'package broken\nfunc broken(( {}'));
 
-func main() {
-    fmt.Println("test")
-}
-`;
-      fs.writeFileSync(filePath, code);
-      const summary = summarizer.summarize(filePath);
-
-      // Either extracts imports OR has a parseError
-      if (summary.parseError) {
-        const isExpectedError = summary.parseError.includes('language') ||
-                               summary.parseError.includes('not available') ||
-                               summary.parseError.includes('failed') ||
-                               summary.parseError.includes('error');
-        expect(isExpectedError).toBe(true);
-      } else {
-        expect(summary.imports.length).toBeGreaterThanOrEqual(1);
-        expect(summary.imports.some(i => i.module.includes('fmt'))).toBe(true);
-      }
+      expect(summary).toMatchObject({
+        language: 'go',
+        imports: [],
+        exports: [],
+        classes: [],
+        functions: [],
+        types: [],
+        interfaces: [],
+        parseError: 'tree-sitter-cli failed: fixture parser failure',
+      });
     });
 
-    it('should handle interface declarations', () => {
-      const filePath = path.join(tmpDir, 'test.go');
-      const code = `package main
+    it('returns exact empty collections and ENOENT guidance when tree-sitter is unavailable', () => {
+      const cliError = new Error('spawn tree-sitter ENOENT');
+      (cliError as Error & { code: string }).code = 'ENOENT';
+      mockExecFileSync.mockImplementation(() => {
+        throw cliError;
+      });
 
-type Writer interface {
-    Write(p []byte) (n int, err error)
-}
-`;
-      fs.writeFileSync(filePath, code);
-      const summary = summarizer.summarize(filePath);
+      const summary = summarizer.summarize('package tools\n');
 
-      expect(summary).toBeDefined();
-      if (summary.parseError) {
-        expect(summary.parseError).toMatch(/^tree-sitter-cli (?:not available \(ENOENT\)|failed: [\s\S]+|error: [\s\S]+)$/);
-      } else {
-        const hasWriterInterface = summary.interfaces.some(i => i.name === 'Writer') ||
-          summary.types.some(t => t.name === 'Writer');
-        expect(hasWriterInterface).toBe(true);
-      }
+      expect(summary.imports).toEqual([]);
+      expect(summary.exports).toEqual([]);
+      expect(summary.classes).toEqual([]);
+      expect(summary.functions).toEqual([]);
+      expect(summary.types).toEqual([]);
+      expect(summary.interfaces).toEqual([]);
+      expect(summary.parseError).toBe('tree-sitter-cli not available (ENOENT)');
+      expect(summary.originalSizeBytes).toBe(Buffer.byteLength('package tools\n', 'utf-8'));
     });
   });
 
-  describe('Error Handling', () => {
-    it('should handle non-existent files gracefully', () => {
-      const filePath = path.join(tmpDir, 'nonexistent.go');
-      const summary = summarizer.summarize(filePath);
+  describe('opt-in real Go CLI integration', () => {
+    const integrationIt = process.env.RUN_GO_CLI_SUMMARIZER_INTEGRATION === '1' ? it : it.skip;
 
-      expect(summary).toBeDefined();
-      expect(summary.language).toBe('go');
-      // Should have error or empty results, not crash
-      expect(summary.originalSizeBytes).toBeGreaterThanOrEqual(0);
-    });
-
-    it('should handle syntax errors gracefully', () => {
-      const filePath = path.join(tmpDir, 'broken.go');
+    integrationIt('preserves Go symbol navigation through the real tree-sitter CLI boundary', () => {
+      const actualChildProcess = jest.requireActual<typeof import('child_process')>('child_process');
+      mockExecFileSync.mockImplementation(actualChildProcess.execFileSync as typeof execFileSync);
+      const realSummarizer = new GoCliSummarizer('go');
       const code = `package main
 
-func broken(( {
-    // malformed
-}
+import "fmt"
+
+type Greeter struct{}
+
+func Hello() { fmt.Println("hello") }
+func (g Greeter) Greet() {}
 `;
-      fs.writeFileSync(filePath, code);
-      let summary: ReturnType<GoCliSummarizer['summarize']> | undefined;
-      expect(() => {
-        summary = summarizer.summarize(filePath);
-      }).not.toThrow();
 
-      expect(summary).toBeDefined();
-      expect(summary?.language).toBe('go');
+      const summary = realSummarizer.summarize(writeFixture(tmpDir, 'real.go', code));
 
-      if (summary?.parseError) {
-        expect(summary.parseError).toEqual(expect.any(String));
-      } else {
-        // Tree-sitter can recover a syntax tree from malformed Go, but this input
-        // has no valid declarations to summarize. Do not treat a no-error parse as
-        // a success unless the recovered collections reflect that partial/empty state.
-        expect(summary?.imports).toEqual([]);
-        expect(summary?.exports).toEqual([]);
-        expect(summary?.classes).toEqual([]);
-        expect(summary?.functions).toEqual([]);
-        expect(summary?.types).toEqual([]);
-        expect(summary?.interfaces).toEqual([]);
-      }
-    });
-
-    it('should return metadata', () => {
-      const filePath = path.join(tmpDir, 'test.go');
-      const code = `package main
-
-func greet(name string) string {
-    return "Hello, " + name
-}
-`;
-      fs.writeFileSync(filePath, code);
-      const summary = summarizer.summarize(filePath);
-
-      expect(summary.originalSizeBytes).toBe(Buffer.byteLength(code, 'utf-8'));
-      expect(summary.language).toBe('go');
-      expect(summary.summaryTimeMs).toEqual(expect.any(Number));
-
-      if (summary.parseError) {
-        expect(summary.parseError).toMatch(/^tree-sitter-cli (?:not available \(ENOENT\)|failed: [\s\S]+|error: [\s\S]+)$/);
-      } else {
-        expect(summary.functions.map(f => f.name)).toContain('greet');
-      }
-    });
-  });
-
-  describe('Timeout Handling', () => {
-    it('should complete within timeout for small files', () => {
-      const filePath = path.join(tmpDir, 'small.go');
-      const code = `package main
-
-func a() {}
-func b() {}
-`;
-      fs.writeFileSync(filePath, code);
-      const startTime = performance.now();
-      const summary = summarizer.summarize(filePath, 200);
-      const elapsed = performance.now() - startTime;
-
-      expect(summary).toBeDefined();
-      expect(elapsed).toBeLessThan(5000); // CLI calls should be fast
-    });
-  });
-
-  describe('Complex Go Code', () => {
-    it('should extract multiple types and methods or gracefully degrade', () => {
-      const filePath = path.join(tmpDir, 'complex.go');
-      const code = `package main
-
-type Logger interface {
-    Info(msg string)
-    Error(err error)
-}
-
-type FileLogger struct {
-    path string
-}
-
-func (fl *FileLogger) Info(msg string) {
-    // implementation
-}
-
-func (fl *FileLogger) Error(err error) {
-    // implementation
-}
-
-type ConsoleLogger struct{}
-
-func (cl ConsoleLogger) Info(msg string) {}
-func (cl ConsoleLogger) Error(err error) {}
-`;
-      fs.writeFileSync(filePath, code);
-      const summary = summarizer.summarize(filePath);
-
-      expect(summary).toBeDefined();
-      // Either extracts multiple classes OR has a parseError
-      if (summary.parseError) {
-        const isExpectedError = summary.parseError.includes('language') ||
-                               summary.parseError.includes('not available') ||
-                               summary.parseError.includes('failed') ||
-                               summary.parseError.includes('error');
-        expect(isExpectedError).toBe(true);
-      } else {
-        expect(summary.classes.length).toBeGreaterThanOrEqual(2);
-      }
+      expect(summary.parseError).toBeUndefined();
+      expect(summary.packageName).toBe('main');
+      expect(summary.imports).toEqual([{ module: 'fmt', items: [] }]);
+      expect(summary.functions.map((fn) => fn.name)).toEqual(['Hello']);
+      expect(summary.classes).toEqual([
+        { name: 'Greeter', methods: [{ name: 'Greet', kind: 'method', signature: expect.stringContaining('func (g Greeter) Greet') }] },
+      ]);
     });
   });
 });

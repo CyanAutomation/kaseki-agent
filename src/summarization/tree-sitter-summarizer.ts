@@ -17,6 +17,7 @@ export interface CodeElement {
 
 export interface CodeSummary {
   language: SupportedLanguage;
+  packageName?: string;
   imports: Array<{ module: string; items: string[] }>;
   exports: Array<{ name: string; kind: string }>;
   classes: Array<{ name: string; methods: CodeElement[] }>;

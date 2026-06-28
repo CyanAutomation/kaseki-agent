@@ -131,6 +131,7 @@ export class GoCliSummarizer {
 
   private extractStructure(tree: TreeSitterNode, source: string): Omit<CodeSummary, 'language' | 'originalSizeBytes' | 'summaryTimeMs'> {
     const summary = {
+      packageName: undefined as string | undefined,
       imports: [] as Array<{ module: string; items: string[] }>,
       exports: [] as Array<{ name: string; kind: string }>,
       classes: [] as Array<{ name: string; methods: CodeElement[] }>,
@@ -150,6 +151,11 @@ export class GoCliSummarizer {
 
   private visit(node: TreeSitterNode, source: string, summary: any): void {
     if (!node) return;
+
+    // Extract package name
+    if (node.type === 'package_clause') {
+      this.extractPackage(node, source, summary);
+    }
 
     // Extract imports
     if (node.type === 'import_declaration') {
@@ -175,6 +181,17 @@ export class GoCliSummarizer {
     if (node.children) {
       for (const child of node.children) {
         this.visit(child, source, summary);
+      }
+    }
+  }
+
+  private extractPackage(node: TreeSitterNode, source: string, summary: any): void {
+    if (!node.children) return;
+
+    for (const child of node.children) {
+      if (child.type === 'package_identifier' || child.type === 'identifier') {
+        summary.packageName = source.substring(child.startIndex, child.endIndex);
+        return;
       }
     }
   }
@@ -245,7 +262,11 @@ export class GoCliSummarizer {
         // Already handled above
         return;
       }
-      if (!summary.types.some((t: any) => t.name === name)) {
+      if (kind === 'interface') {
+        if (!summary.interfaces.some((i: any) => i.name === name)) {
+          summary.interfaces.push({ name, signature: `type ${name}`, kind: 'interface' });
+        }
+      } else if (!summary.types.some((t: any) => t.name === name)) {
         summary.types.push({ name, signature: `type ${name}`, kind: 'type' });
       }
     }
