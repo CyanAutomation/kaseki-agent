@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { EXIT_CODE_SCOUTING_PREREQUISITE_FAILED } from './exit-codes';
 
 const isRoot = () => typeof process.getuid === 'function' && process.getuid() === 0;
 
@@ -197,9 +198,7 @@ describe('Exit Code 86 - Scouting Artifact Diagnostics', () => {
 
   describe('Exit code semantics', () => {
     it('should distinguish exit code 83 (prerequisite check failed)', () => {
-      const EXIT_CODE_SCOUTING_PREREQUISITE_FAILED = 83;
-      expect(EXIT_CODE_SCOUTING_PREREQUISITE_FAILED).toBeDefined();
-      expect(EXIT_CODE_SCOUTING_PREREQUISITE_FAILED).toBeGreaterThan(0);
+      expect(EXIT_CODE_SCOUTING_PREREQUISITE_FAILED).toBe(83);
     });
 
     it('should distinguish exit code 86 (scouting validation failed)', () => {
