@@ -81,7 +81,9 @@
     "test:tree-sitter:functional": "node test-tree-sitter-functional.cjs",
     "test:integration:docker": "RUN_DOCKER_INTEGRATION_TESTS=1 bash tests/integration/docker/startup-check-packaging.integration.test.sh",
     "test:packaging-verification": "bash tests/verify-affected-binaries.test.sh && npm run test:pack-artifact && npm pack --dry-run && node dist/cli.js --version && node dist/cli.js --help && node dist/cli.js doctor --help && node dist/cli.js run --help && node dist/cli.js list --help && node dist/cli.js report --help && node dist/cli.js status --help && node dist/cli.js cancel --help && npm run check:dist-dynamic-imports",
-    "test:integration:cloudflare-gateway": "CLOUDFLARE_GATEWAY_TEST=1 node scripts/cloudflare-gateway-live-probe.mjs"
+    "test:integration:cloudflare-gateway": "CLOUDFLARE_GATEWAY_TEST=1 node scripts/cloudflare-gateway-live-probe.mjs",
+    "test:stress:validation-output": "npm run build && RUN_VALIDATION_OUTPUT_STRESS_TESTS=1 bash tests/stress/validation-large-output-stress.test.sh",
+    "test:nightly": "npm run test:stress:validation-output"
   },
   "dependencies": {
     "@sentry/node": "^10.54.0",
