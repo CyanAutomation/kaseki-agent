@@ -25,43 +25,68 @@ describe('Gateway Provider Configuration', () => {
 
   it('validates provider configuration structure', () => {
     /**
-     * Test: Provider config matches Pi API expectations.
-     * This ensures .pi-extensions.js will register correctly.
+     * Test: Provider config matches Pi API expectations by executing the
+     * actual .pi-extensions.js registration path.
      */
 
-    // Expected provider configuration (from .pi-extensions.js logic)
-    const expectedConfig = {
-      name: 'LLM Gateway (CloudFlare)',
-      baseUrl: 'https://llm-gateway.local.xyz/v1',
-      apiKey: 'test-api-key',
-      api: 'openai-responses', // Step 2b: Confirm this is correct
-      models: [
-        {
-          id: 'dynamic/kaseki-agent',
-          name: 'CloudFlare Gateway (dynamic/kaseki-agent)',
-          reasoning: false,
-          input: ['text'],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 128000,
-          maxTokens: 2048,
-        },
-      ],
-    };
+    const gatewayUrl = 'https://llm-gateway.local.xyz/v1';
+    const gatewayApiKey = 'test-api-key';
+    const maxOutputTokens = '2048';
 
-    // Assertions: Structure is correct for Pi's registerProvider API
-    expect(expectedConfig.baseUrl).toBe(process.env.LLM_GATEWAY_URL);
-    expect(expectedConfig.apiKey).toBe(process.env.LLM_GATEWAY_API_KEY);
-    expect(expectedConfig.api).toBe('openai-responses'); // KEY: Confirm api type
-    expect(expectedConfig.models).toHaveLength(1);
-    expect(expectedConfig.models[0].id).toBe('dynamic/kaseki-agent');
-    expect(expectedConfig.models[0].maxTokens).toBe(parseInt(process.env.LLM_GATEWAY_MAX_OUTPUT_TOKENS || '4096', 10));
+    const output = execFileSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `import registerGatewayProvider from './.pi-extensions.js';
+const calls = [];
+registerGatewayProvider({
+  registerProvider: (...args) => calls.push(args),
+});
+console.log(JSON.stringify(calls));`,
+      ],
+      {
+        env: {
+          ...process.env,
+          LLM_GATEWAY_URL: gatewayUrl,
+          LLM_GATEWAY_API_KEY: gatewayApiKey,
+          LLM_GATEWAY_MAX_OUTPUT_TOKENS: maxOutputTokens,
+          LLM_GATEWAY_MODEL: '',
+        },
+        encoding: 'utf8',
+      }
+    );
+
+    const calls = JSON.parse(output);
+    expect(calls).toHaveLength(1);
+
+    const [providerName, registeredProviderConfig] = calls[0];
+    expect(providerName).toBe('gateway');
+    expect(registeredProviderConfig.name).toBe('LLM Gateway (CloudFlare)');
+    expect(registeredProviderConfig.baseUrl).toBe(gatewayUrl);
+    expect(registeredProviderConfig.apiKey).toBe(gatewayApiKey);
+    expect(registeredProviderConfig.api).toBe('openai-responses');
+    expect(registeredProviderConfig.models).toHaveLength(1);
+
+    const [registeredModel] = registeredProviderConfig.models;
+    expect(registeredModel).toEqual(
+      expect.objectContaining({
+        id: 'dynamic/kaseki-agent',
+        name: 'CloudFlare Gateway (dynamic/kaseki-agent)',
+        reasoning: false,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: Number.parseInt(maxOutputTokens, 10),
+      })
+    );
 
     console.log('\n=== Step 3: Provider Configuration Validated ===');
-    console.log(`  ✓ Provider name: ${expectedConfig.name}`);
-    console.log(`  ✓ Base URL: ${expectedConfig.baseUrl}`);
-    console.log(`  ✓ API type: ${expectedConfig.api}`);
-    console.log(`  ✓ Model ID: ${expectedConfig.models[0].id}`);
-    console.log(`  ✓ Max tokens: ${expectedConfig.models[0].maxTokens}`);
+    console.log(`  ✓ Provider name: ${registeredProviderConfig.name}`);
+    console.log(`  ✓ Base URL: ${registeredProviderConfig.baseUrl}`);
+    console.log(`  ✓ API type: ${registeredProviderConfig.api}`);
+    console.log(`  ✓ Model ID: ${registeredModel.id}`);
+    console.log(`  ✓ Max tokens: ${registeredModel.maxTokens}`);
   });
 
   it('allows LLM_GATEWAY_MODEL to override the default model', () => {
