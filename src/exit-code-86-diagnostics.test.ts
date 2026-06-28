@@ -2,7 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { EXIT_CODE_SCOUTING_PREREQUISITE_FAILED } from './exit-codes';
+import {
+  EXIT_CODE_SCOUTING_PREREQUISITE_FAILED,
+  EXIT_CODE_SCOUTING_VALIDATION_FAILED,
+} from './exit-codes';
 
 const isRoot = () => typeof process.getuid === 'function' && process.getuid() === 0;
 
@@ -202,9 +205,8 @@ describe('Exit Code 86 - Scouting Artifact Diagnostics', () => {
     });
 
     it('should distinguish exit code 86 (scouting validation failed)', () => {
-      const EXIT_CODE_SCOUTING_VALIDATION_FAILED = 86;
-      expect(EXIT_CODE_SCOUTING_VALIDATION_FAILED).toBeDefined();
-      expect(EXIT_CODE_SCOUTING_VALIDATION_FAILED).not.toBe(83);
+      expect(EXIT_CODE_SCOUTING_VALIDATION_FAILED).toBe(86);
+      expect(EXIT_CODE_SCOUTING_VALIDATION_FAILED).not.toBe(EXIT_CODE_SCOUTING_PREREQUISITE_FAILED);
     });
 
     it('should exit 83 before Pi invocation, 86 after', () => {
