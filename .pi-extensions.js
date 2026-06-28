@@ -92,8 +92,16 @@ export default function (pi) {
   const maxTokens = resolveGatewayMaxTokens();
   const model = process.env.LLM_GATEWAY_MODEL || 'dynamic/kaseki-agent';
 
-  if (gatewayUrl) {
-    pi.registerProvider('gateway', {
+  if (!gatewayUrl) {
+    recordGatewayDiagnostic({
+      event: 'provider_skipped',
+      provider: 'gateway',
+      reason: 'missing_llm_gateway_url',
+    });
+    return;
+  }
+
+  pi.registerProvider('gateway', {
       name: 'LLM Gateway (CloudFlare)',
       baseUrl: gatewayUrl,
       apiKey: gatewayApiKey || '$LLM_GATEWAY_API_KEY',
