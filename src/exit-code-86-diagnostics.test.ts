@@ -6,6 +6,7 @@ import {
   EXIT_CODE_SCOUTING_PREREQUISITE_FAILED,
   EXIT_CODE_SCOUTING_VALIDATION_FAILED,
 } from './exit-codes';
+import { classifyFailure } from './instance-failure-extraction';
 
 const isRoot = () => typeof process.getuid === 'function' && process.getuid() === 0;
 
@@ -209,10 +210,37 @@ describe('Exit Code 86 - Scouting Artifact Diagnostics', () => {
       expect(EXIT_CODE_SCOUTING_VALIDATION_FAILED).not.toBe(EXIT_CODE_SCOUTING_PREREQUISITE_FAILED);
     });
 
-    it('should exit 83 before Pi invocation, 86 after', () => {
-      // Exit 83: /results not writable BEFORE scouting Pi starts
-      // Exit 86: /results not writable or artifact validation AFTER scouting Pi completes
-      expect(83).toBeLessThan(86);
+    it('reports exit 83 when /results is not writable before Pi starts', () => {
+      const metadata = {
+        exit_code: EXIT_CODE_SCOUTING_PREREQUISITE_FAILED,
+        failed_command: 'scouting prerequisites: /results is read-only',
+        filesystem_check_status: 'read_only',
+        filesystem_readonly_reason: '/results is read-only (mounted with :ro or --read-only)',
+      };
+
+      expect(metadata.exit_code).toBe(83);
+      expect(metadata.failed_command).toContain('scouting prerequisites');
+      expect(metadata.failed_command).toContain('/results is read-only');
+      expect(metadata.filesystem_check_status).toBe('read_only');
+      expect(classifyFailure(metadata, metadata.exit_code)).toBe('scouting-prerequisites:-/results-is-read-only');
+    });
+
+    it('reports exit 86 when scouting artifact validation fails after Pi completes', () => {
+      const metadata = {
+        exit_code: EXIT_CODE_SCOUTING_VALIDATION_FAILED,
+        scouting_exit_code: EXIT_CODE_SCOUTING_VALIDATION_FAILED,
+        failed_command: 'pi scouting agent',
+        scouting_validation: {
+          validation_errors_log: 'scouting-validation-errors.jsonl',
+          reason_code: 'schema_mismatch',
+        },
+      };
+
+      expect(metadata.exit_code).toBe(86);
+      expect(metadata.scouting_exit_code).toBe(86);
+      expect(metadata.failed_command).toBe('pi scouting agent');
+      expect(metadata.scouting_validation.reason_code).toBe('schema_mismatch');
+      expect(classifyFailure(metadata, metadata.exit_code)).toBe('pi-scouting-agent');
     });
   });
 });
