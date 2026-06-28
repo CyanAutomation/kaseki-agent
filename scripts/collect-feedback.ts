@@ -47,7 +47,7 @@ function parseJson(filePath: string): Record<string, unknown> {
   }
 }
 
-function collectGoalCheckFeedback(instanceName: string, goalSettingPath: string, goalCheckPath: string, metadataPath: string): Feedback {
+export function collectGoalCheckFeedback(instanceName: string, goalSettingPath: string, goalCheckPath: string, metadataPath: string): Feedback {
   const goalSetting = parseJson(goalSettingPath) as Record<string, unknown>;
   const goalCheck = parseJson(goalCheckPath) as Record<string, unknown>;
   const metadata = parseJson(metadataPath) as Record<string, unknown>;
@@ -92,7 +92,7 @@ function collectGoalCheckFeedback(instanceName: string, goalSettingPath: string,
   return feedback;
 }
 
-function collectRunEvaluationFeedback(instanceName: string, runEvaluationPath: string, metadataPath: string): Feedback {
+export function collectRunEvaluationFeedback(instanceName: string, runEvaluationPath: string, metadataPath: string): Feedback {
   const runEvaluation = parseJson(runEvaluationPath) as Record<string, unknown>;
   const metadata = parseJson(metadataPath) as Record<string, unknown>;
 
@@ -155,12 +155,11 @@ function parseImprovements(improvements: Record<string, unknown>[]): Improvement
   }));
 }
 
-function main(): void {
-  const args = process.argv.slice(2);
+export function runCollectFeedbackCli(args = process.argv.slice(2)): number {
 
   if (args.length < 2) {
     console.error('Usage: collect-feedback.js <phase> <instance_name> [paths...]');
-    process.exit(1);
+    return 1;
   }
 
   const phase = args[0];
@@ -171,23 +170,31 @@ function main(): void {
   if (phase === 'goal-check') {
     if (args.length < 5) {
       console.error('Usage: collect-feedback.js goal-check <instance_name> <goal_setting_json> <goal_check_json> <metadata_json>');
-      process.exit(1);
+      return 1;
     }
 
     feedback = collectGoalCheckFeedback(instanceName, args[2], args[3], args[4]);
   } else if (phase === 'run-evaluation') {
     if (args.length < 4) {
       console.error('Usage: collect-feedback.js run-evaluation <instance_name> <run_evaluation_json> <metadata_json>');
-      process.exit(1);
+      return 1;
     }
 
     feedback = collectRunEvaluationFeedback(instanceName, args[2], args[3]);
   } else {
     console.error(`Unknown phase: ${phase}`);
-    process.exit(1);
+    return 1;
   }
 
   console.log(JSON.stringify(feedback));
+  return 0;
+}
+
+function main(): void {
+  const exitCode = runCollectFeedbackCli();
+  if (exitCode !== 0) {
+    process.exit(exitCode);
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
