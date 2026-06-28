@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.106.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.106.1...v1.106.2) (2026-06-28)
+
+
+### Bug Fixes
+
+* remove extra blank line in pi event filter ([5b8a96f](https://github.com/CyanAutomation/kaseki-agent/commit/5b8a96f4a9df4afd36c6c3e236fc2e5b19fb519a))
+* remove extra blank line in pi event filter ([#869](https://github.com/CyanAutomation/kaseki-agent/issues/869)) ([5f9556b](https://github.com/CyanAutomation/kaseki-agent/commit/5f9556b2075da0ff3cf1dedf6656a50e4ab55f90))
+
 ## [1.106.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.106.0...v1.106.1) (2026-06-28)
 
 
