@@ -637,10 +637,6 @@ interface AssistantTurnState {
   toolResultCount: number;
 }
 
-const inputPath = process.argv[2] ?? '/tmp/pi-events.raw.jsonl';
-const filteredPath = process.argv[3] ?? '/results/pi-events.jsonl';
-const summaryPath = process.argv[4] ?? '/results/pi-summary.json';
-
 let rssSampler: NodeJS.Timeout | null = null;
 let maxRssBytes = 0;
 
@@ -664,13 +660,13 @@ function stopRssSampler(): void {
 `);
 }
 
-function shouldKeep(event: PiEvent): boolean {
+export function shouldKeep(event: PiEvent): boolean {
   const assistantType = event.assistantMessageEvent?.type;
   if (assistantType?.startsWith('thinking_')) return false;
   return true;
 }
 
-function sanitize(event: PiEvent): PiEvent {
+export function sanitize(event: PiEvent): PiEvent {
   const copy = JSON.parse(JSON.stringify(event)) as PiEvent;
   if (copy.assistantMessageEvent?.partial?.content) {
     copy.assistantMessageEvent.partial.content =
@@ -1043,7 +1039,11 @@ function extractModelName(event: PiEvent): string {
   return typeof model === 'string' ? model : 'unknown';
 }
 
-async function main(): Promise<void> {
+export async function filterPiEvents(
+  inputPath: string,
+  filteredPath: string,
+  summaryPath: string,
+): Promise<void> {
   startRssSampler();
   const input = fs.createReadStream(inputPath, { encoding: 'utf8' });
   const output = fs.createWriteStream(filteredPath, { encoding: 'utf8' });
@@ -1163,8 +1163,17 @@ async function main(): Promise<void> {
   stopRssSampler();
 }
 
-main().catch((error: Error) => {
-  stopRssSampler();
-  console.error(error);
-  process.exit(1);
-});
+async function main(): Promise<void> {
+  const inputPath = process.argv[2] ?? '/tmp/pi-events.raw.jsonl';
+  const filteredPath = process.argv[3] ?? '/results/pi-events.jsonl';
+  const summaryPath = process.argv[4] ?? '/results/pi-summary.json';
+  await filterPiEvents(inputPath, filteredPath, summaryPath);
+}
+
+if (process.argv[1]?.endsWith('pi-event-filter.js')) {
+  main().catch((error: Error) => {
+    stopRssSampler();
+    console.error(error);
+    process.exit(1);
+  });
+}
