@@ -118,33 +118,39 @@ describe('Gateway Provider Configuration', () => {
 
   it('allows LLM_GATEWAY_MODEL to override the default model', () => {
     /**
-     * Test: Custom gateway model override still works.
-     * This protects callers that intentionally route through a specific model.
+     * Test: Custom gateway model override still works through the real
+     * .pi-extensions.js provider registration path. This protects callers
+     * that intentionally route through a specific model.
      */
 
-    process.env.LLM_GATEWAY_MODEL = 'custom/provider-model';
+    const previousGatewayModel = process.env.LLM_GATEWAY_MODEL;
 
-    const model = process.env.LLM_GATEWAY_MODEL || 'dynamic/kaseki-agent';
-    const expectedConfig = {
-      name: 'LLM Gateway (CloudFlare)',
-      baseUrl: process.env.LLM_GATEWAY_URL,
-      apiKey: process.env.LLM_GATEWAY_API_KEY,
-      api: 'openai-responses',
-      models: [
-        {
-          id: model,
-          name: `CloudFlare Gateway (${model})`,
-          reasoning: false,
-          input: ['text'],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 128000,
-          maxTokens: parseInt(process.env.LLM_GATEWAY_MAX_OUTPUT_TOKENS || '4096', 10),
-        },
-      ],
-    };
+    try {
+      process.env.LLM_GATEWAY_MODEL = 'custom/provider-model';
 
-    expect(expectedConfig.models[0].id).toBe('custom/provider-model');
-    expect(expectedConfig.models[0].name).toBe('CloudFlare Gateway (custom/provider-model)');
+      const output = executeGatewayProviderRegistration({
+        ...process.env,
+        LLM_GATEWAY_URL: 'https://llm-gateway.local.xyz/v1',
+        LLM_GATEWAY_API_KEY: 'test-api-key',
+        LLM_GATEWAY_MAX_OUTPUT_TOKENS: '2048',
+      });
+
+      const calls = parseProviderRegistrationCalls(output);
+      expect(calls).toHaveLength(1);
+
+      const [, registeredProviderConfig] = calls[0];
+      expect(registeredProviderConfig.models).toHaveLength(1);
+
+      const [registeredModel] = registeredProviderConfig.models;
+      expect(registeredModel.id).toBe('custom/provider-model');
+      expect(registeredModel.name).toBe('CloudFlare Gateway (custom/provider-model)');
+    } finally {
+      if (previousGatewayModel === undefined) {
+        delete process.env.LLM_GATEWAY_MODEL;
+      } else {
+        process.env.LLM_GATEWAY_MODEL = previousGatewayModel;
+      }
+    }
   });
 
   it('emits diagnostics during gateway provider initialization', () => {
