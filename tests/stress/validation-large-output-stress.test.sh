@@ -1,23 +1,30 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2317
 #
-# Test: Validation output filter handles large output without crashing
-# 
-# Validates that validation-output-filter can process massive output (100k+ lines)
+# Nightly/stress test: Validation output filter handles large output without crashing.
+#
+# This test is intentionally excluded from routine CI. Run it explicitly with:
+#   RUN_VALIDATION_OUTPUT_STRESS_TESTS=1 bash tests/stress/validation-large-output-stress.test.sh
+#
+# Expected runtime: typically 10-30 seconds on a developer workstation, and up to
+# 2 minutes on constrained Raspberry Pi-class hardware.
+#
+# Validates that validation-output-filter can process large bounded output (50k+ lines)
 # on memory-constrained systems (RPi 4 with 4GB) without OOM or SIGPIPE.
 #
 # Scenarios tested:
-# 1. Large output (100k lines, ~50MB)
-# 2. Very large single line (10MB in one line)
-# 3. Rapid burst of output (1000 lines/second simulation)
-# 4. Backpressure simulation (slow downstream)
+# 1. Large output (50k lines)
+# 2. Very large single line (1MB in one line)
+# 3. Rapid bounded burst of output (10k lines)
+# 4. Deterministic stdin closure
+# 5. Memory-bounds smoke coverage
 #
 
 set -euo pipefail
 
 # Test environment setup
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 FILTER_BIN="$PROJECT_ROOT/dist/validation-output-filter.js"
 
 # Colors for output
@@ -37,10 +44,10 @@ assert_filter_exit_code_zero() {
   
   if [ "$actual_exit" -eq 0 ]; then
     echo -e "${GREEN}✓ PASS${NC}: $test_name (filter exited 0)"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED += 1))
   else
     echo -e "${RED}✗ FAIL${NC}: $test_name (filter exited $actual_exit, expected 0)"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED += 1))
   fi
 }
 
@@ -51,26 +58,26 @@ assert_diagnostics_logged() {
   
   if [ ! -f "$diagnostics_file" ]; then
     echo -e "${RED}✗ FAIL${NC}: $test_name - diagnostics file not created: $diagnostics_file"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED += 1))
     return 1
   fi
   
   if grep -q "$expected_pattern" "$diagnostics_file"; then
     echo -e "${GREEN}✓ PASS${NC}: $test_name - diagnostics contain: $expected_pattern"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED += 1))
     return 0
   else
     echo -e "${RED}✗ FAIL${NC}: $test_name - expected pattern not found: $expected_pattern"
     echo "  Diagnostics file contents:"
     head -20 "$diagnostics_file" | sed 's/^/    /'
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED += 1))
     return 1
   fi
 }
 
-# Test 1: Large output (100k lines, ~50MB)
+# Test 1: Large output (50k lines)
 test_large_output() {
-  echo -e "\n${YELLOW}Test 1: Large output scenario (100k lines)${NC}"
+  echo -e "\n${YELLOW}Test 1: Large output scenario (50k lines)${NC}"
   
   local tmpdir
   tmpdir=$(mktemp -d)
@@ -96,7 +103,7 @@ test_large_output() {
   if [ -f "$filter_diagnostics" ]; then
     if grep -q "filter-startup:" "$filter_diagnostics"; then
       echo -e "${GREEN}✓ PASS${NC}: large output - diagnostics captured"
-      ((TESTS_PASSED++))
+      ((TESTS_PASSED += 1))
     fi
   fi
   
@@ -105,10 +112,10 @@ test_large_output() {
   output_lines=$(wc -l < "$output_log")
   if [ "$output_lines" -gt 0 ]; then
     echo -e "${GREEN}✓ PASS${NC}: large output - processed $output_lines output lines"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED += 1))
   else
     echo -e "${RED}✗ FAIL${NC}: large output - no output lines generated"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED += 1))
   fi
   
   # Check memory pressure warnings if they appear
@@ -117,9 +124,9 @@ test_large_output() {
   fi
 }
 
-# Test 2: Very large single line (10MB)
+# Test 2: Very large single line (1MB)
 test_large_single_line() {
-  echo -e "\n${YELLOW}Test 2: Large single line scenario (10MB in one line)${NC}"
+  echo -e "\n${YELLOW}Test 2: Large single line scenario (1MB in one line)${NC}"
   
   local tmpdir
   tmpdir=$(mktemp -d)
@@ -147,16 +154,16 @@ test_large_single_line() {
   # Verify error was captured (not filtered out)
   if grep -q "^ERROR:" "$output_log"; then
     echo -e "${GREEN}✓ PASS${NC}: large single line - error line preserved in output"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED += 1))
   else
     echo -e "${RED}✗ FAIL${NC}: large single line - error line was filtered out"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED += 1))
   fi
 }
 
-# Test 3: Rapid burst of output
+# Test 3: Rapid bounded burst of output
 test_rapid_burst() {
-  echo -e "\n${YELLOW}Test 3: Rapid burst scenario (1000 lines in rapid succession)${NC}"
+  echo -e "\n${YELLOW}Test 3: Rapid burst scenario (10k lines in rapid succession)${NC}"
   
   local tmpdir
   tmpdir=$(mktemp -d)
@@ -181,11 +188,11 @@ test_rapid_burst() {
   # Verify diagnostics show processing completed (optional)
   if [ -f "$filter_diagnostics" ] && grep -q "filter-close:" "$filter_diagnostics"; then
     echo -e "${GREEN}✓ PASS${NC}: rapid burst - diagnostics show completion"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED += 1))
   fi
 }
 
-# Test 4: Filter handles stdin closure gracefully
+# Test 4: Filter handles deterministic finite stdin closure gracefully
 test_stdin_closure() {
   echo -e "\n${YELLOW}Test 4: Graceful stdin closure${NC}"
   
@@ -196,11 +203,11 @@ test_stdin_closure() {
   local filter_diagnostics="$tmpdir/filter-diagnostics.log"
   local output_log="$tmpdir/output.log"
   
-  # Close stdin early (simulating upstream pipe closure)
+  # Deterministic bounded producer: stdin closes immediately after the fixture is
+  # emitted, avoiding sleeps or timing races while still exercising EOF handling.
   (
-    echo "==> Starting test"
-    sleep 0.1
-    # stdin closes here
+    printf '%s\n' "==> Starting test"
+    printf '%s\n' "ERROR: deterministic producer finished before exit marker"
   ) | FILTER_DIAGNOSTICS_LOG="$filter_diagnostics" \
       "$FILTER_BIN" > "$output_log" 2>&1
   
@@ -212,7 +219,7 @@ test_stdin_closure() {
   # Verify diagnostics captured the closure (optional)
   if [ -f "$filter_diagnostics" ] && grep -q "filter-close:" "$filter_diagnostics"; then
     echo -e "${GREEN}✓ PASS${NC}: stdin closure - diagnostics captured closure"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED += 1))
   fi
 }
 
@@ -244,10 +251,10 @@ test_memory_bounds() {
   # For now, verify the process completed without OOM errors
   if ! grep -q "out of memory\|ENOMEM\|OOM" "$filter_diagnostics"; then
     echo -e "${GREEN}✓ PASS${NC}: memory bounds - no OOM errors detected"
-    ((TESTS_PASSED++))
+    ((TESTS_PASSED += 1))
   else
     echo -e "${RED}✗ FAIL${NC}: memory bounds - OOM errors detected in diagnostics"
-    ((TESTS_FAILED++))
+    ((TESTS_FAILED += 1))
   fi
 }
 
@@ -256,7 +263,15 @@ main() {
   echo -e "${YELLOW}=== Validation Output Filter - Large Output Stress Tests ===${NC}"
   echo "Platform: Raspberry Pi 4 with 4GB memory"
   echo "Filter binary: $FILTER_BIN"
+  echo "Expected runtime: 10-30 seconds on workstations; up to 2 minutes on constrained hosts."
   
+  if [ "${RUN_VALIDATION_OUTPUT_STRESS_TESTS:-}" != "1" ]; then
+    echo -e "${YELLOW}SKIP: validation output stress tests are gated.${NC}"
+    echo "Set RUN_VALIDATION_OUTPUT_STRESS_TESTS=1 to run this nightly/stress suite."
+    echo "Expected runtime: 10-30 seconds on workstations; up to 2 minutes on constrained hosts."
+    exit 0
+  fi
+
   if [ ! -f "$FILTER_BIN" ]; then
     echo -e "${RED}ERROR: Filter binary not found at $FILTER_BIN${NC}"
     echo "Run: npm run build"

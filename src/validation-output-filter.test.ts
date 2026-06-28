@@ -269,6 +269,63 @@ exit_code=0`;
   });
 
   describe('Large validation output contracts', () => {
+    it('retains exact deterministic markers and truncates bounded noisy fixture lines', async () => {
+      const lines = ['==> npm run bounded-large-fixture'];
+
+      for (let index = 1; index <= 1200; index++) {
+        lines.push(`NOISE truncate-me-${index}`);
+
+        if (index === 400) {
+          lines.push('PASS: RETAINED_MARKER_ALPHA');
+        }
+
+        if (index === 800) {
+          lines.push('ERROR: RETAINED_MARKER_BRAVO');
+        }
+      }
+
+      lines.push('2 tests passed, 0 tests failed');
+      lines.push('exit_code=0');
+
+      const output = await runFilter(`${lines.join('\n')}\n`);
+
+      expect(output).toBe(
+        [
+          '==> npm run bounded-large-fixture',
+          'PASS: RETAINED_MARKER_ALPHA',
+          'ERROR: RETAINED_MARKER_BRAVO',
+          '2 tests passed, 0 tests failed',
+          'exit_code=0',
+          '',
+        ].join('\n')
+      );
+      expect(output).not.toContain('NOISE truncate-me-1');
+      expect(output).not.toContain('NOISE truncate-me-1200');
+    });
+
+    it('handles a deterministic large single-line fixture with exact retained markers', async () => {
+      const largeVerboseLine = `VERBOSE_SINGLE_LINE_${'x'.repeat(64 * 1024)}`;
+      const input = [
+        '==> npm run large-single-line-fixture',
+        largeVerboseLine,
+        'WARNING: RETAINED_SINGLE_LINE_WARNING',
+        'exit_code=3',
+        '',
+      ].join('\n');
+
+      const output = await runFilter(input);
+
+      expect(output).toBe(
+        [
+          '==> npm run large-single-line-fixture',
+          'WARNING: RETAINED_SINGLE_LINE_WARNING',
+          'exit_code=3',
+          '',
+        ].join('\n')
+      );
+      expect(output).not.toContain('VERBOSE_SINGLE_LINE_');
+    });
+
     it('preserves semantic validation results while filtering representative large noise', async () => {
       const output = await runFilter(representativeLargeValidationOutput());
 
