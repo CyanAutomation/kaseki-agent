@@ -50,6 +50,7 @@ git -C "$FAKE_REPO" -c user.email=kaseki-test@example.invalid -c user.name="Kase
 cat > "$FAKE_BIN/pi" <<EOF_PI
 #!/usr/bin/env bash
 if [ "\${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
+if [ "\${1:-}" = "--list-models" ]; then echo "gateway/auto"; exit 0; fi
 prompt="\${*: -1}"
 if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
   printf 'goal-setting\n' >> "$PI_CALLS"
@@ -88,7 +89,7 @@ chmod +x "$FAKE_BIN"/*
 
 set +e
 env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="make a required change" \
-  OPENROUTER_API_KEY=test KASEKI_PROVIDER=openrouter GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off KASEKI_TASK_MODE=patch \
+  KASEKI_PROVIDER=gateway KASEKI_SCOUTING_MODEL=auto LLM_GATEWAY_URL=http://gateway.test/v1 LLM_GATEWAY_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off KASEKI_TASK_MODE=patch \
   KASEKI_GOAL_SETTING=1 KASEKI_SCOUTING=1 KASEKI_GOAL_CHECK=1 KASEKI_GOAL_CHECK_MAX_RETRIES=0 \
   KASEKI_WORKSPACE_DIR="$TMP_DIR" \
   KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
@@ -105,6 +106,8 @@ actual_calls="$(cat "$PI_CALLS" 2>/dev/null || true)"
 grep -q 'missing_scouting_candidate_for_patch_mode' "$RESULTS_DIR/scouting.json" || fail "fallback reason missing"
 grep -q '"reason_code":"patch_fallback"' "$RESULTS_DIR/scouting-validation-errors.jsonl" || fail "fallback warning missing"
 grep -q '"reason_code":"patch_fallback_recovered"' "$RESULTS_DIR/scouting-validation-errors.jsonl" || fail "fallback recovery marker missing"
+grep -q '"reason_code":"missing_file"' "$RESULTS_DIR/scouting-validation-errors.jsonl" || fail "missing_file validation record missing"
+grep -q 'set KASEKI_MODEL or LLM_GATEWAY_MODEL to dynamic/kaseki-agent or another supported gateway model' "$RESULTS_DIR/scouting-validation-errors.jsonl" || fail "gateway auto diagnostic missing from scouting validation record"
 grep -q '^pi scouting agent[[:space:]]0[[:space:]]' "$RESULTS_DIR/stage-timings.tsv" || fail "scouting stage should remain successful"
 node -e 'const fs=require("node:fs");const f=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(!String(f.diagnostic_reason).includes("critical_change_expectations_failed")) throw new Error(f.diagnostic_reason);if(String(f.diagnostic_reason).includes("missing_file")) throw new Error("stale missing_file diagnostic: "+f.diagnostic_reason);' "$RESULTS_DIR/failure.json" || fail "failure diagnostic reason did not prioritize terminal critical-change failure"
 grep -q 'Failure Detail: critical_change_expectations_failed' "$RESULTS_DIR/result-summary.md" || fail "summary did not report critical-change failure"
