@@ -165,7 +165,7 @@ jobs:
         run: bash tests/integration/docker/startup-check-packaging.integration.test.sh
 
   build:
-    needs: [checks, type_check_full]
+    needs: [checks, type_check_full, startup_check_docker_integration]
     runs-on: ubuntu-latest
 
     steps:
