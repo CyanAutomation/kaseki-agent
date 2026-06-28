@@ -101,8 +101,7 @@ export default function (pi) {
     return;
   }
 
-  if (gatewayUrl) {
-    pi.registerProvider('gateway', {
+  pi.registerProvider('gateway', {
       name: 'LLM Gateway (CloudFlare)',
       baseUrl: gatewayUrl,
       apiKey: gatewayApiKey || '$LLM_GATEWAY_API_KEY',
