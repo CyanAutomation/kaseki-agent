@@ -3,7 +3,7 @@
  * Tests various response scenarios including Cloudflare gateway variations
  */
 
-import { extractSampleEventStructure, analyzeResponseStructure } from '../src/kaseki-api-gateway-test';
+import { extractSampleEventStructure, analyzeResponseStructure } from '../src/kaseki-api-gateway-smoke';
 
 describe('Pi Provider Smoke Test Diagnostics', () => {
   describe('Sample Event Structure Extraction', () => {
