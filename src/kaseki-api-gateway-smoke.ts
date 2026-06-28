@@ -1,6 +1,28 @@
-import { readHostSecret } from './secrets/host-secrets-reader';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import {
+  resolveGatewayApiKey,
+  shouldRunGatewayResponseSmoke,
+  shouldRunPiProviderSmoke,
+  resolveGatewayModel,
+  isCloudflareGateway,
+  buildStage1ProbeRequest,
+  buildResponsesEndpoint,
+  isResponsesEndpoint,
+  isInvalidGatewayPathError,
+  type GatewayTestOptions,
+} from './gateway-detection/detect-gateway-provider';
+import {
+  extractOutputTokens,
+  parseResponsesSse,
+  extractSampleEventStructure,
+  countPiJsonEvents,
+  analyzeResponseStructure,
+} from './gateway-validation/analyze-gateway-response';
+import {
+  extractPiJsonAssistantText,
+  fetchWithTimeout,
+} from './gateway-validation/extract-pi-json';
 
 /**
  * LLM Gateway Responsiveness Test
@@ -122,17 +144,7 @@ export interface GatewayTestResult {
   outputTokens?: number;
 }
 
-export interface GatewayTestOptions {
-  responseSmoke?: boolean;
-  forceStage2?: boolean; // Force stage 2 to run even in dev/test environments
-}
-
 const GATEWAY_LATENCY_WARNING_MS = 5000;
-// Accept base URLs (/v1), full response paths (/v1/responses), and gateway-specific suffixes (e.g., /v1/compat)
-// For Cloudflare and similar gateways, allows /v1/{segments}/compat (e.g., /v1/account/namespace/compat)
-// Pi CLI automatically appends /responses, so either format is valid
-// Does NOT allow arbitrary endpoints like /v1/chat/completions
-const GATEWAY_VALID_PATH_PATTERN = /\/v\d+(?:(?:\/[a-z0-9-]+)*\/compat)?(?:\/responses)?\/?$/;
 // Timeout for /models endpoint (lightweight check)
 const GATEWAY_MODELS_TIMEOUT_MS = 10000;
 // Timeout for /responses endpoint (includes model inference)
@@ -159,7 +171,6 @@ const GATEWAY_RESPONSE_LARGE_SMOKE_PROMPT = [
   ),
 ].join('\n');
 const GATEWAY_RESPONSE_SMOKE_MAX_OUTPUT_TOKENS = 256;
-const CLOUDFLARE_STAGE1_PROBE_PROMPT = 'Reply with ok.';
 const PI_PROVIDER_SMOKE_TIMEOUT_MS = (() => {
   const envValue = process.env.KASEKI_PI_PROVIDER_SMOKE_TIMEOUT_MS;
   if (envValue) {
@@ -169,94 +180,9 @@ const PI_PROVIDER_SMOKE_TIMEOUT_MS = (() => {
   return 60000;
 })();
 
-export interface GatewayApiKeyResolution {
-  configured: boolean;
-  source: 'env' | 'host-secret' | 'missing';
-  value?: string;
-}
-
-export function resolveGatewayApiKey(): GatewayApiKeyResolution {
-  if (process.env.LLM_GATEWAY_API_KEY) {
-    return {
-      configured: true,
-      source: 'env',
-      value: process.env.LLM_GATEWAY_API_KEY,
-    };
-  }
-
-  const hostSecret = readHostSecret('llm_gateway_api_key');
-  if (hostSecret) {
-    return {
-      configured: true,
-      source: 'host-secret',
-      value: hostSecret,
-    };
-  }
-
-  return {
-    configured: false,
-    source: 'missing',
-  };
-}
-
-function parseBooleanOverride(value: unknown): boolean | undefined {
-  if (typeof value !== 'string') return undefined;
-  const normalized = value.trim().toLowerCase();
-  if (['1', 'true', 'on', 'yes'].includes(normalized)) return true;
-  if (['0', 'false', 'off', 'no'].includes(normalized)) return false;
-  return undefined;
-}
-
-/**
- * Detect current environment for stage 2 token consumption decisions
- * Returns 'production' | 'development' | 'test'
- */
-export function detectGatewayTestEnvironment(): 'production' | 'development' | 'test' {
-  // Test environment: Jest runner
-  if (process.env.JEST_WORKER_ID) return 'test';
-
-  // Test/development environment: NODE_ENV
-  if (process.env.NODE_ENV === 'test') return 'test';
-  if (process.env.NODE_ENV === 'development') return 'development';
-
-  // Development environment: KASEKI_ENV
-  if (process.env.KASEKI_ENV === 'development') return 'development';
-
-  // Default to production for safety
-  return 'production';
-}
-
-export function shouldRunGatewayResponseSmoke(options: GatewayTestOptions = {}): boolean {
-  // 1. Explicit query param override (highest priority)
-  if (typeof options.responseSmoke === 'boolean') return options.responseSmoke;
-
-  // 2. Environment variable override
-  const envOverride = parseBooleanOverride(process.env.KASEKI_GATEWAY_RESPONSE_SMOKE);
-  if (typeof envOverride === 'boolean') return envOverride;
-
-  // 3. Forced stage 2 for testing in dev/test environments
-  if (options.forceStage2) return true;
-
-  // 4. Safe default: do not consume inference tokens unless explicitly opted in.
-  // Live response smoke probing is enabled by passing responseSmoke=true,
-  // forceStage2=true, or KASEKI_GATEWAY_RESPONSE_SMOKE=true.
-  return false;
-}
-
-export function shouldRunPiProviderSmoke(requested: boolean): boolean {
-  // 1. Allow explicit opt-in in any environment (requested=true from ?piProvider=true).
-  if (requested) return true;
-
-  // 2. Allow override via env var for integration environments.
-  if (parseBooleanOverride(process.env.KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE) === true) return true;
-
-  // 3. Default to skip unless explicitly requested.
-  return false;
-}
-
-export function resolveGatewayModel(): string {
-  return process.env.KASEKI_MODEL || process.env.LLM_GATEWAY_MODEL || 'dynamic/kaseki-agent';
-}
+// Re-export GatewayApiKeyResolution and GatewayTestOptions from detection module for backward compatibility
+export type { GatewayApiKeyResolution, GatewayTestOptions } from './gateway-detection/detect-gateway-provider';
+export { resolveGatewayApiKey, detectGatewayTestEnvironment, shouldRunGatewayResponseSmoke, shouldRunPiProviderSmoke, resolveGatewayModel } from './gateway-detection/detect-gateway-provider';
 
 /**
  * Options for Pi provider smoke test
@@ -851,6 +777,28 @@ async function runGatewayResponseJsonCheck(
   checkName: 'json-response' | 'large-prompt-response',
   legacyShape: boolean,
 ): Promise<{ result: ResponseSmokeTestResult & GatewayTestResult; check: ResponseSmokeSubcheck }> {
+  // Helper to extract response text
+  const extractResponseText = (value: unknown): string => {
+    if (!value || typeof value !== 'object') return '';
+    const response = value as any;
+    if (typeof response.output_text === 'string') return response.output_text;
+    if (typeof response.text === 'string') return response.text;
+    if (Array.isArray(response.output)) {
+      return response.output.map((item: any) => {
+        if (!item || typeof item !== 'object') return '';
+        if (typeof item.text === 'string') return item.text;
+        if (!Array.isArray(item.content)) return '';
+        return item.content.map((part: any) => {
+          if (!part || typeof part !== 'object') return '';
+          if (typeof part.text === 'string') return part.text;
+          if (typeof part.output_text === 'string') return part.output_text;
+          return '';
+        }).join('');
+      }).join('');
+    }
+    return '';
+  };
+
   const responseEndpoint = buildResponsesEndpoint(gatewayUrl);
   const fetchStartTime = performance.now();
   try {
@@ -1099,481 +1047,20 @@ async function testGatewayResponseSmoke(
   return testGatewayResponseSmokeFull(gatewayUrl, apiKey, timestamp, startTime, true);
 }
 
-/**
- * Detect if a gateway URL is a Cloudflare endpoint (ends with /compat)
- * Exported for testing
- */
-export function isCloudflareGateway(url: string): boolean {
-  try {
-    const normalized = url.endsWith('/') ? url.slice(0, -1) : url;
-    return /\/compat$/.test(new URL(normalized).pathname);
-  } catch {
-    return false;
-  }
-}
+// Re-export builder functions from detection module for backward compatibility
+export {
+  isCloudflareGateway,
+  buildModelsEndpoint,
+  buildResponsesEndpoint,
+  buildCloudflareInferenceEndpoint,
+} from './gateway-detection/detect-gateway-provider';
 
-interface Stage1ProbeRequest {
-  endpoint: string;
-  init: Record<string, unknown>;
-}
+// Re-export analysis functions from validation module
+export { extractSampleEventStructure, analyzeResponseStructure } from './gateway-validation/analyze-gateway-response';
+export { extractPiJsonAssistantText } from './gateway-validation/extract-pi-json';
 
-function buildStage1ProbeRequest(baseUrl: string): Stage1ProbeRequest {
-  const apiKey = resolveGatewayApiKey().value ?? '';
+// Re-export from detection module for backward compatibility
+export { isResponsesEndpoint } from './gateway-detection/detect-gateway-provider';
 
-  if (isCloudflareGateway(baseUrl)) {
-    return {
-      endpoint: buildCloudflareInferenceEndpoint(baseUrl),
-      init: {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: resolveGatewayModel(),
-          messages: [{ role: 'user', content: CLOUDFLARE_STAGE1_PROBE_PROMPT }],
-          max_tokens: 1,
-          stream: false,
-        }),
-      },
-    };
-  }
-
-  return {
-    endpoint: buildModelsEndpoint(baseUrl),
-    init: {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        Accept: 'application/json',
-      },
-    },
-  };
-}
-
-function isInvalidGatewayPathError(errorBody: string): boolean {
-  return /invalid request path/i.test(errorBody);
-}
-
-/**
- * Build the appropriate models endpoint for the gateway
- * Handles both base URLs (/v1) and full paths (/v1/responses or /v1/chat/completions)
- * Exported for testing
- */
-export function buildModelsEndpoint(baseUrl: string): string {
-  const url = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-
-  // Match base version path: /v1, /v2, /v3, etc., optionally with /responses or other paths
-  const versionMatch = url.match(/\/(v\d+)(?:\/|$)/);
-
-  if (versionMatch) {
-    // Extract the base URL up to and including the version (e.g., https://example.com/v1)
-    const baseWithVersion = url.split(versionMatch[0])[0] + '/' + versionMatch[1];
-    return `${baseWithVersion}/models`;
-  }
-
-  // Default to OpenAI-compatible path (shouldn't reach here if validation works)
-  return `${url}/v1/models`;
-}
-
-/**
- * Build the appropriate responses/chat endpoint for the gateway
- * For Cloudflare endpoints (/compat), returns base URL without appending /responses
- * For standard gateways, appends /responses for OpenAI Responses API
- * Exported for testing
- */
-export function buildResponsesEndpoint(baseUrl: string): string {
-  const url = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-
-  // For Cloudflare gateways, return base URL as-is (SDK will handle path appending)
-  if (isCloudflareGateway(url)) {
-    return url;
-  }
-
-  // For standard gateways, append /responses if not already present
-  if (/\/responses$/.test(url)) return url;
-  return `${url}/responses`;
-}
-
-/**
- * Build the chat completions endpoint for Cloudflare gateways
- * Cloudflare requires /chat/completions for inference, not /responses
- * Exported for testing
- */
-export function buildCloudflareInferenceEndpoint(baseUrl: string): string {
-  if (!isCloudflareGateway(baseUrl)) {
-    throw new Error('buildCloudflareInferenceEndpoint should only be used for Cloudflare URLs');
-  }
-  const url = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-  return `${url}/chat/completions`;
-}
-
-function extractResponseText(value: unknown): string {
-  if (!value || typeof value !== 'object') return '';
-  const response = value as any;
-  if (typeof response.output_text === 'string') return response.output_text;
-  if (typeof response.text === 'string') return response.text;
-  if (Array.isArray(response.output)) {
-    return response.output.map((item: any) => {
-      if (!item || typeof item !== 'object') return '';
-      if (typeof item.text === 'string') return item.text;
-      if (!Array.isArray(item.content)) return '';
-      return item.content.map((part: any) => {
-        if (!part || typeof part !== 'object') return '';
-        if (typeof part.text === 'string') return part.text;
-        if (typeof part.output_text === 'string') return part.output_text;
-        return '';
-      }).join('');
-    }).join('');
-  }
-  return '';
-}
-
-function extractOutputTokens(value: unknown): number | undefined {
-  const usage = (value as any)?.usage;
-  if (!usage || typeof usage !== 'object') return undefined;
-  for (const key of ['output_tokens', 'output', 'completion_tokens']) {
-    if (typeof usage[key] === 'number' && Number.isFinite(usage[key])) return usage[key];
-  }
-  return undefined;
-}
-
-function parseResponsesSse(bodyText: string): { text: string; responseId?: string; outputTokens?: number } {
-  let text = '';
-  let responseId: string | undefined;
-  let outputTokens: number | undefined;
-  for (const line of bodyText.split(/\r?\n/)) {
-    if (!line.startsWith('data:')) continue;
-    const data = line.slice('data:'.length).trim();
-    if (!data || data === '[DONE]') continue;
-    let event: any;
-    try {
-      event = JSON.parse(data);
-    } catch {
-      continue;
-    }
-    if (typeof event?.delta === 'string') text += event.delta;
-    if (!responseId && typeof event?.response?.id === 'string') responseId = event.response.id;
-    if (!responseId && typeof event?.item?.id === 'string') responseId = event.item.id;
-    if (event?.response) {
-      text += extractResponseText(event.response);
-      outputTokens = outputTokens ?? extractOutputTokens(event.response);
-    }
-  }
-  return { text, responseId, outputTokens };
-}
-
-/**
- * Extract the structure of the first few events for diagnostics
- * Sanitized to avoid leaking sensitive data
- */
-export function extractSampleEventStructure(stdout: string): any[] {
-  const samples: any[] = [];
-  for (const line of stdout.split(/\r?\n/).slice(0, 5)) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith('{')) continue;
-    try {
-      const event = JSON.parse(trimmed);
-      // Build a sanitized structure showing only field names and types
-      const sanitized = sanitizeEventStructure(event);
-      samples.push(sanitized);
-    } catch {
-      // Skip malformed lines
-    }
-  }
-  return samples;
-}
-
-/**
- * Recursively sanitize event structure to show field names/types without sensitive content
- */
-function sanitizeEventStructure(obj: any, depth = 0, maxDepth = 3): any {
-  if (depth > maxDepth) return '...';
-  if (obj === null || obj === undefined) return null;
-  if (typeof obj !== 'object') return typeof obj;
-  if (Array.isArray(obj)) return `[${obj.length} items]`;
-
-  const result: Record<string, any> = {};
-  for (const [key, value] of Object.entries(obj)) {
-    if (typeof value === 'string') {
-      // Show type and length for strings
-      result[key] = `string(${Math.min(value.length, 50)})`;
-    } else if (typeof value === 'number') {
-      result[key] = 'number';
-    } else if (typeof value === 'boolean') {
-      result[key] = 'boolean';
-    } else if (value === null) {
-      result[key] = 'null';
-    } else if (Array.isArray(value)) {
-      result[key] = `[${value.length} items]`;
-    } else if (typeof value === 'object') {
-      result[key] = sanitizeEventStructure(value, depth + 1, maxDepth);
-    }
-  }
-  return result;
-}
-
-function countPiJsonEvents(stdout: string): number {
-  return stdout
-    .split(/\r?\n/)
-    .filter((line) => line.trim().startsWith('{'))
-    .length;
-}
-
-/**
- * Extract assistant text from Pi provider JSONL output
- * Supports multiple response formats:
- * - Legacy Pi formats: message.text, message.output_text, message.assistantMessage
- * - Chat Completions: choices[0].message.content, choices[0].delta.content
- * - Direct content: message.content (string or array)
- * - Response wrapper: message.response.content
- * - Cloudflare variants: direct string content field
- */
-export function extractPiJsonAssistantText(stdout: string): string {
-  let text = '';
-  for (const line of stdout.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith('{')) continue;
-    let event: any;
-    try {
-      event = JSON.parse(trimmed);
-    } catch {
-      continue;
-    }
-    const message = event?.message;
-    if (!message || message.role !== 'assistant') continue;
-
-    // Legacy Pi formats
-    if (typeof message.text === 'string') text += message.text;
-    if (typeof message.output_text === 'string') text += message.output_text;
-    if (typeof message.assistantMessage === 'string') text += message.assistantMessage;
-
-    // Chat Completions API: standard format with choices
-    if (Array.isArray(message.choices) && message.choices.length > 0) {
-      const choice = message.choices[0];
-      // Standard message format
-      if (typeof choice?.message?.content === 'string') {
-        text += choice.message.content;
-      }
-      // Streaming delta format
-      if (typeof choice?.delta?.content === 'string') {
-        text += choice.delta.content;
-      }
-    }
-
-    // Direct delta field (streaming format without choices wrapper)
-    if (typeof message.delta?.content === 'string') {
-      text += message.delta.content;
-    }
-
-    // Direct content field (Cloudflare and other variants)
-    if (typeof message.content === 'string') {
-      text += message.content;
-    }
-
-    // Content as array of parts (Pi format)
-    if (Array.isArray(message.content)) {
-      for (const part of message.content) {
-        if (typeof part?.text === 'string') text += part.text;
-        if (typeof part?.output_text === 'string') text += part.output_text;
-        // Support content objects with direct content field
-        if (typeof part?.content === 'string') text += part.content;
-      }
-    }
-
-    // Response wrapper (some gateway implementations)
-    if (typeof message.response?.content === 'string') {
-      text += message.response.content;
-    }
-  }
-  return text;
-}
-
-/**
- * Analyze response structure to help diagnose text extraction failures
- * Returns details about what fields were found and which patterns might work
- */
-export function analyzeResponseStructure(stdout: string): {
-  eventCount: number;
-  eventsByType: Record<string, number>;
-  fieldsFound: string[];
-  eventsWithText: number;
-  assistantEventsWithText: number;
-  nonAssistantEventsWithText: number;
-  assistantFieldsFound: string[];
-  nonAssistantFieldsFound: string[];
-  suggestedPatterns: string[];
-} {
-  const eventsByType: Record<string, number> = {};
-  const fieldsFound = new Set<string>();
-  const assistantFieldsFound = new Set<string>();
-  const nonAssistantFieldsFound = new Set<string>();
-  let assistantEventsWithText = 0;
-  let nonAssistantEventsWithText = 0;
-  let eventCount = 0;
-
-  const recordField = (field: string, role: unknown) => {
-    fieldsFound.add(field);
-    if (role === 'assistant') {
-      assistantFieldsFound.add(field);
-    } else {
-      nonAssistantFieldsFound.add(`${typeof role === 'string' ? role : 'unknown'}.${field}`);
-    }
-  };
-
-  const hasText = (value: unknown): boolean => typeof value === 'string' && value.trim().length > 0;
-
-  for (const line of stdout.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith('{')) continue;
-    let event: any;
-    try {
-      event = JSON.parse(trimmed);
-    } catch {
-      continue;
-    }
-    eventCount++;
-
-    if (event.type) {
-      eventsByType[event.type] = (eventsByType[event.type] || 0) + 1;
-    }
-
-    const message = event?.message;
-    if (!message) continue;
-
-    const role = message.role;
-    let messageHasText = false;
-
-    // Track which fields are present, separating assistant output from prompts or other roles.
-    if (typeof message.text === 'string') {
-      recordField('message.text', role);
-      if (hasText(message.text)) messageHasText = true;
-    }
-    if (typeof message.output_text === 'string') {
-      recordField('message.output_text', role);
-      if (hasText(message.output_text)) messageHasText = true;
-    }
-    if (typeof message.assistantMessage === 'string') {
-      recordField('message.assistantMessage', role);
-      if (hasText(message.assistantMessage)) messageHasText = true;
-    }
-    if (typeof message.content === 'string') {
-      recordField('message.content (string)', role);
-      if (hasText(message.content)) messageHasText = true;
-    }
-    if (Array.isArray(message.choices)) {
-      recordField('message.choices[]', role);
-      const choice = message.choices[0];
-      if (typeof choice?.message?.content === 'string') {
-        recordField('message.choices[0].message.content', role);
-        if (hasText(choice.message.content)) messageHasText = true;
-      }
-      if (typeof choice?.delta?.content === 'string') {
-        recordField('message.choices[0].delta.content', role);
-        if (hasText(choice.delta.content)) messageHasText = true;
-      }
-    }
-    // Direct delta field (streaming format without choices wrapper)
-    if (typeof message.delta?.content === 'string') {
-      recordField('message.delta.content', role);
-      if (hasText(message.delta.content)) messageHasText = true;
-    }
-    if (typeof message.response?.content === 'string') {
-      recordField('message.response.content', role);
-      if (hasText(message.response.content)) messageHasText = true;
-    }
-    if (Array.isArray(message.content)) {
-      recordField('message.content (array)', role);
-      for (const part of message.content) {
-        if (typeof part?.text === 'string') {
-          recordField('message.content[].text', role);
-          if (hasText(part.text)) messageHasText = true;
-        }
-        if (typeof part?.output_text === 'string') {
-          recordField('message.content[].output_text', role);
-          if (hasText(part.output_text)) messageHasText = true;
-        }
-        if (typeof part?.content === 'string') {
-          recordField('message.content[].content', role);
-          if (hasText(part.content)) messageHasText = true;
-        }
-      }
-    }
-
-    if (messageHasText) {
-      if (role === 'assistant') assistantEventsWithText++;
-      else nonAssistantEventsWithText++;
-    }
-  }
-
-  // Suggest patterns based only on assistant response fields that were found.
-  const suggestedPatterns: string[] = [];
-  if (assistantFieldsFound.has('message.text')) suggestedPatterns.push('message.text (legacy Pi)');
-  if (assistantFieldsFound.has('message.output_text')) suggestedPatterns.push('message.output_text (legacy Pi)');
-  if (assistantFieldsFound.has('message.content (string)')) suggestedPatterns.push('message.content string (Cloudflare)');
-  if (assistantFieldsFound.has('message.choices[0].message.content')) suggestedPatterns.push('choices[0].message.content (Chat Completions)');
-  if (assistantFieldsFound.has('message.choices[0].delta.content')) suggestedPatterns.push('choices[0].delta.content (streaming)');
-  if (assistantFieldsFound.has('message.delta.content')) suggestedPatterns.push('message.delta.content (streaming direct)');
-  if (assistantFieldsFound.has('message.response.content')) suggestedPatterns.push('response.content (wrapped)');
-
-  return {
-    eventCount,
-    eventsByType,
-    fieldsFound: Array.from(fieldsFound),
-    eventsWithText: assistantEventsWithText,
-    assistantEventsWithText,
-    nonAssistantEventsWithText,
-    assistantFieldsFound: Array.from(assistantFieldsFound),
-    nonAssistantFieldsFound: Array.from(nonAssistantFieldsFound),
-    suggestedPatterns,
-  };
-}
-
-export function isResponsesEndpoint(url: URL): boolean {
-  return GATEWAY_VALID_PATH_PATTERN.test(url.pathname);
-}
-
-/**
- * Fetch with timeout
- */
-async function fetchWithTimeout(
-  url: string,
-  options: Record<string, unknown>,
-  timeoutMs: number,
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-/**
- * Export test result for use in API routes
- */
-export function formatGatewayTestResponse(result: GatewayTestResult): object {
-  return {
-    status: result.status,
-    detail: result.detail,
-    gatewayUrl: result.gatewayUrl,
-    responseTime: result.responseTime,
-    timestamp: result.timestamp,
-    authenticationValidated: result.authenticationValidated,
-    remediation: result.remediation,
-    httpStatus: result.httpStatus,
-    warning: result.warning,
-    responseSmokeValidated: result.responseSmokeValidated,
-    responseId: result.responseId,
-    outputTokens: result.outputTokens,
-    streamSmokeValidated: (result as ResponseSmokeTestResult).streamSmokeValidated,
-    largePromptSmokeValidated: (result as ResponseSmokeTestResult).largePromptSmokeValidated,
-    checks: (result as ResponseSmokeTestResult).checks,
-  };
-}
+// Re-export from extraction module for backward compatibility
+export { formatGatewayTestResponse } from './gateway-validation/extract-pi-json';
