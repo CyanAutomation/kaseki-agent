@@ -17,7 +17,7 @@ import {
   resolveGatewayApiKey,
   shouldRunGatewayResponseSmoke,
   testPiGatewayProviderSmoke,
-} from '../kaseki-api-gateway-test';
+} from '../kaseki-api-gateway-smoke';
 
 const logger = createEventLogger('gateway-test-routes');
 
@@ -138,8 +138,8 @@ export function createGatewayTestRoutes(): Router {
 
   /**
    * GET /api/gateway-test - Orchestrated full test (Stage 1 + Stage 2)
-   * Runs both connectivity and response validation tests
-   * Stage 2 runs by default in production, skipped in dev/test (no token consumption in dev)
+   * Runs connectivity by default and response validation only when explicitly requested
+   * Stage 2 consumes tokens and requires ?stage=2 or ?responseSmoke=true
    * Query params:
    *   ?stage=1          - Run Stage 1 only (connectivity check)
    *   ?stage=2          - Run Stage 2 only (inference test)

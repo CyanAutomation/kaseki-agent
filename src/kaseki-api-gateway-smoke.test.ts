@@ -19,7 +19,7 @@ import {
   buildResponsesEndpoint,
   buildCloudflareInferenceEndpoint,
   resolveGatewayModel,
-} from './kaseki-api-gateway-test';
+} from './kaseki-api-gateway-smoke';
 
 // Mock fetch before importing
 global.fetch = jest.fn();
@@ -83,11 +83,11 @@ describe('LLM Gateway Test', () => {
   });
 
   describe('testGatewayConnectivity', () => {
-    it('should default to response smoke in production-like runtime', async () => {
+    it('should run response smoke when explicitly enabled in production-like runtime', async () => {
       delete process.env.JEST_WORKER_ID;
       delete process.env.NODE_ENV;
       delete process.env.KASEKI_ENV;
-      delete process.env.KASEKI_GATEWAY_RESPONSE_SMOKE;
+      process.env.KASEKI_GATEWAY_RESPONSE_SMOKE = '1';
       process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
       process.env.LLM_GATEWAY_API_KEY = 'test-key';
 
@@ -134,7 +134,7 @@ describe('LLM Gateway Test', () => {
       delete process.env.NODE_ENV;
       delete process.env.KASEKI_ENV;
       delete process.env.KASEKI_GATEWAY_RESPONSE_SMOKE;
-      expect(shouldRunGatewayResponseSmoke()).toBe(true);
+      expect(shouldRunGatewayResponseSmoke()).toBe(false);
       process.env.NODE_ENV = 'development';
       expect(shouldRunGatewayResponseSmoke()).toBe(false);
       process.env.KASEKI_GATEWAY_RESPONSE_SMOKE = '1';
@@ -721,13 +721,13 @@ describe('LLM Gateway Test', () => {
     });
 
     describe('shouldRunGatewayResponseSmoke with environment detection', () => {
-      it('should return true in production by default', () => {
+      it('should return false in production-like environments unless opted in', () => {
         delete process.env.JEST_WORKER_ID;
         delete process.env.NODE_ENV;
         delete process.env.KASEKI_ENV;
         delete process.env.KASEKI_GATEWAY_RESPONSE_SMOKE;
 
-        expect(shouldRunGatewayResponseSmoke()).toBe(true);
+        expect(shouldRunGatewayResponseSmoke()).toBe(false);
       });
 
       it('should return false in test environment by default', () => {
@@ -1269,11 +1269,11 @@ describe('LLM Gateway Test', () => {
       process.env = originalEnv;
     });
 
-    describe('Production environment (auto-run)', () => {
-      it('should auto-run in production without explicit request', () => {
+    describe('Production-like environment (requires opt-in)', () => {
+      it('should skip in production-like runtime without explicit request', () => {
         // Production is the default when no env vars are set
         const result = shouldRunPiProviderSmoke(false);
-        expect(result).toBe(true);
+        expect(result).toBe(false);
       });
 
       it('should allow explicit opt-in in production', () => {
@@ -1281,12 +1281,11 @@ describe('LLM Gateway Test', () => {
         expect(result).toBe(true);
       });
 
-      it('should respect explicit opt-out even in production', () => {
+      it('should keep explicit false disabled in production-like runtime', () => {
         // Note: piProvider=false would be passed as false here
         // This allows consumers to explicitly disable with ?piProvider=false
         const result = shouldRunPiProviderSmoke(false);
-        // In production, false still triggers auto-run (that's the point of this issue)
-        expect(result).toBe(true);
+        expect(result).toBe(false);
       });
     });
 
@@ -1372,10 +1371,10 @@ describe('LLM Gateway Test', () => {
         expect(result).toBe(false);
       });
 
-      it('should default to production when no env vars set', () => {
-        // All unset means production
+      it('should skip when no env vars request integration probing', () => {
+        // All unset still requires opt-in
         const result = shouldRunPiProviderSmoke(false);
-        expect(result).toBe(true);
+        expect(result).toBe(false);
       });
     });
 
