@@ -14,6 +14,36 @@
  */
 
 import fs from 'node:fs';
+import path from 'node:path';
+
+const DEFAULT_GATEWAY_DIAGNOSTICS_PATH = '/results/.gateway-diagnostics.jsonl';
+
+function resolveGatewayDiagnosticsPath() {
+  return (
+    process.env.KASEKI_GATEWAY_DIAGNOSTICS_PATH ||
+    (process.env.KASEKI_RESULTS_DIR
+      ? path.join(process.env.KASEKI_RESULTS_DIR, '.gateway-diagnostics.jsonl')
+      : DEFAULT_GATEWAY_DIAGNOSTICS_PATH)
+  );
+}
+
+function recordGatewayDiagnostic(event) {
+  const diagnosticsPath = resolveGatewayDiagnosticsPath();
+  try {
+    fs.mkdirSync(path.dirname(diagnosticsPath), { recursive: true });
+    fs.appendFileSync(
+      diagnosticsPath,
+      `${JSON.stringify({ timestamp: new Date().toISOString(), ...event })}\n`
+    );
+  } catch {
+    // Diagnostics must never prevent Pi from loading the provider extension.
+  }
+}
+
+recordGatewayDiagnostic({
+  event: 'extension_module_loaded',
+  piExtensionsVersion: 'gateway-provider-v1',
+});
 
 /**
  * Resolve CloudFlare API key from environment or file
@@ -79,6 +109,14 @@ export default function (pi) {
           maxTokens,
         },
       ],
+    });
+    recordGatewayDiagnostic({
+      event: 'provider_registered',
+      provider: 'gateway',
+      baseUrl: gatewayUrl,
+      apiType: 'openai-responses',
+      modelId: model,
+      hasApiKey: Boolean(gatewayApiKey),
     });
   }
 }

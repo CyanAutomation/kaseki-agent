@@ -1,4 +1,7 @@
 import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const executeGatewayProviderRegistration = (env: NodeJS.ProcessEnv): string => {
   try {
@@ -144,49 +147,57 @@ describe('Gateway Provider Configuration', () => {
     expect(expectedConfig.models[0].name).toBe('CloudFlare Gateway (custom/provider-model)');
   });
 
-  it('validates diagnostics file path convention', () => {
+  it('emits diagnostics during gateway provider initialization', () => {
     /**
-     * Test: Diagnostics are written to correct location.
-     * This proves provider loading and registration.
+     * Test: Diagnostics are emitted by the real .pi-extensions.js load and
+     * registration path, using a test-specific diagnostics destination.
      */
 
-    // Expected diagnostics path (from .pi-extensions.js logic)
-    const diagnosticsPath = '/results/.gateway-diagnostics.jsonl';
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-gateway-diagnostics-'));
+    const diagnosticsPath = path.join(tempDir, '.gateway-diagnostics.jsonl');
 
-    // Expected diagnostic events
-    const expectedEvents = [
-      {
-        event: 'extension_module_loaded',
-        piExtensionsVersion: 'gateway-provider-v1',
-        // timestamp is ISO string
-      },
-      {
-        event: 'provider_registered',
-        provider: 'gateway',
-        baseUrl: process.env.LLM_GATEWAY_URL,
-        apiType: 'openai-responses',
-        modelId: 'dynamic/kaseki-agent',
-        hasApiKey: true,
-        // timestamp is ISO string
-      },
-    ];
+    try {
+      executeGatewayProviderRegistration({
+        ...process.env,
+        LLM_GATEWAY_URL: 'https://llm-gateway.local.xyz/v1',
+        LLM_GATEWAY_API_KEY: 'test-api-key',
+        LLM_GATEWAY_MAX_OUTPUT_TOKENS: '2048',
+        LLM_GATEWAY_MODEL: '',
+        KASEKI_GATEWAY_DIAGNOSTICS_PATH: diagnosticsPath,
+      });
 
-    // Verify diagnostic path is correct
-    expect(diagnosticsPath).toBe('/results/.gateway-diagnostics.jsonl');
+      const diagnosticRecords = fs
+        .readFileSync(diagnosticsPath, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
 
-    // Verify events have required structure
-    expectedEvents.forEach((event) => {
-      expect(event).toHaveProperty('event');
-      if (event.event === 'provider_registered') {
-        expect(event).toHaveProperty('provider', 'gateway');
-        expect(event).toHaveProperty('apiType');
-        expect(event).toHaveProperty('modelId', 'dynamic/kaseki-agent');
-      }
-    });
+      expect(diagnosticRecords).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: 'extension_module_loaded',
+            piExtensionsVersion: 'gateway-provider-v1',
+            timestamp: expect.any(String),
+          }),
+          expect.objectContaining({
+            event: 'provider_registered',
+            provider: 'gateway',
+            baseUrl: 'https://llm-gateway.local.xyz/v1',
+            apiType: 'openai-responses',
+            modelId: 'dynamic/kaseki-agent',
+            hasApiKey: true,
+            timestamp: expect.any(String),
+          }),
+        ])
+      );
 
-    console.log('\n=== Step 1: Diagnostics Infrastructure ===');
-    console.log(`  ✓ Diagnostics path: ${diagnosticsPath}`);
-    console.log(`  ✓ Events: ${expectedEvents.map((e) => e.event).join(', ')}`);
+      const emittedEvents = diagnosticRecords.map((record) => record.event);
+      expect(emittedEvents).toEqual(
+        expect.arrayContaining(['extension_module_loaded', 'provider_registered'])
+      );
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it('handles missing LLM_GATEWAY_URL gracefully', () => {
