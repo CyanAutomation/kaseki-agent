@@ -177,7 +177,6 @@ describe('Pi Provider Smoke Test Diagnostics', () => {
       expect(analysis.suggestedPatterns.length).toBe(0);
     });
 
-
     it('should distinguish user text fields from missing assistant text', () => {
       const jsonl = [
         JSON.stringify({
