@@ -132,7 +132,7 @@ describe('CloudFlare Gateway deterministic contract', () => {
         name: 'LLM Gateway (CloudFlare)',
         baseUrl: testGatewayConfig.url,
         apiKey: testGatewayConfig.apiKey,
-        api: 'openai-responses',
+        api: 'openai-completions',
         models: [
           {
             id: '@cf/meta/llama-3.1-8b-instruct',

@@ -1397,7 +1397,7 @@ const controllerPage = String.raw`<!doctype html>
             <button class="health-check-button" data-probe="/health" type="button"><span class="hc-label">Health</span><span class="health-check-status" data-status="health"></span></button>
             <button class="health-check-button" data-probe="/ready" type="button"><span class="hc-label">Readiness</span><span class="health-check-status" data-status="readiness"></span></button>
             <button class="health-check-button" data-probe="/api/gateway-test?stage=1" data-auth="true" type="button" title="Test gateway connectivity. Standard gateways use /models without token consumption; Cloudflare /compat uses a minimal chat-completions probe."><span class="hc-label">Test Gateway</span><span class="health-check-status" data-status="gateway"></span></button>
-            <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true" data-auth="true" type="button" title="Test gateway Responses API inference. Add piProvider=true to also test Pi provider adapter in production."><span class="hc-label">Test LLM</span><span class="health-check-status" data-status="llm-test"></span></button>
+            <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true" data-auth="true" type="button" title="Test an authenticated inference using the gateway protocol. Add piProvider=true to also test the Pi provider adapter in production."><span class="hc-label">Test Inference</span><span class="health-check-status" data-status="llm-test"></span></button>
             <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button"><span class="hc-label">Current Preflight</span><span class="health-check-status" data-status="preflight"></span></button>
           </div>
           <div class="summary-grid" id="health-summary" aria-live="polite">
@@ -2043,6 +2043,9 @@ const controllerPage = String.raw`<!doctype html>
       }
 
       function artifactDisplayText(payload) {
+        if (payload && typeof payload === 'object' && payload.response && typeof payload.response === 'object') {
+          return artifactDisplayText(payload.response);
+        }
         if (payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, 'content')) {
           const parsedContent = maybeParseJsonString(payload.content);
           return typeof parsedContent === 'string' ? parsedContent : JSON.stringify(parsedContent, null, 2);
@@ -3542,6 +3545,9 @@ const controllerPage = String.raw`<!doctype html>
 
 export function createWebRouter(): Router {
   const router = Router();
+
+  // Browsers request this automatically; keep it public and out of auth-failure logs.
+  router.get('/favicon.ico', (_req, res) => res.status(204).end());
   router.get(['/', '/ui'], (_req, res) => {
     res.set('Content-Security-Policy', "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'");
     res.set('Referrer-Policy', 'no-referrer');

@@ -2,7 +2,7 @@
  * Pi CLI Custom Extension: CloudFlare AI Workers Gateway Provider
  *
  * Registers a gateway provider configured for CloudFlare's AI Workers gateway.
- * Uses Pi CLI's native OpenAI Responses API which is OpenAI-compatible.
+ * Uses Pi CLI's OpenAI Chat Completions adapter.
  *
  * Configuration Environment Variables:
  * - LLM_GATEWAY_URL: CloudFlare gateway base URL (required)
@@ -68,7 +68,7 @@ export default function (pi: ExtensionAPI) {
       name: 'LLM Gateway (CloudFlare)',
       baseUrl: gatewayUrl,
       apiKey: gatewayApiKey || '$LLM_GATEWAY_API_KEY',
-      api: 'openai-responses', // Pi's native OpenAI-compatible API support
+      api: 'openai-completions', // Appends /chat/completions to the /compat base URL
       models: [
         {
           id: model,

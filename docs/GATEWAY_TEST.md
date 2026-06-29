@@ -219,13 +219,13 @@ When the Pi provider adapter test fails, detailed diagnostics are provided:
 **Steps:**
 1. Check `fieldsFound` in diagnostics — are there any fields detected?
 2. Check `suggestedPatterns` — which response format is the gateway using?
-3. Verify `.pi-extensions.js` has the correct `api: 'openai-responses'` configuration
+3. Verify `.pi-extensions.js` has the correct `api: 'openai-completions'` configuration
 
 **For Cloudflare:**
 ```javascript
 // .pi-extensions.js should have:
 {
-  api: 'openai-responses',  // IMPORTANT: tells Pi to expect Chat Completions format
+  api: 'openai-completions',  // IMPORTANT: uses /chat/completions
   baseUrl: 'https://api.cloudflare.com/client/v4/accounts/YOUR-ACCOUNT/ai/run/...',
   apiKey: 'your-cf-token',
 }
@@ -328,7 +328,7 @@ module.exports = {
   providers: {
     gateway: {
       model: 'your-model-name',
-      api: 'openai-responses',  // Chat Completions format
+      api: 'openai-completions',  // Chat Completions format
       baseUrl: process.env.LLM_GATEWAY_URL,
       apiKey: process.env.LLM_GATEWAY_API_KEY,
       maxTokens: 8192,
@@ -337,7 +337,7 @@ module.exports = {
 };
 ```
 
-**Key:** `api: 'openai-responses'` tells Pi CLI to expect Chat Completions API response format.
+**Key:** `api: 'openai-completions'` tells Pi CLI to append `/chat/completions` to the configured `/compat` base URL.
 
 ## Testing Checklist
 

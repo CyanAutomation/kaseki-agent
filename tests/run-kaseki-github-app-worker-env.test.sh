@@ -96,12 +96,12 @@ assert_arg_matches() {
 }
 
 assert_arg_present 'GITHUB_APP_ENABLED=1' 'GitHub App enabled flag'
-assert_arg_present 'GITHUB_APP_ID_FILE=/run/secrets/github_app_id' 'GitHub App ID worker file env'
-assert_arg_present 'GITHUB_APP_CLIENT_ID_FILE=/run/secrets/github_app_client_id' 'GitHub App Client ID worker file env'
-assert_arg_present 'GITHUB_APP_PRIVATE_KEY_FILE=/run/secrets/github_app_private_key' 'GitHub App private key worker file env'
-assert_arg_matches '.*/github_app_id:/run/secrets/github_app_id:ro$' 'GitHub App ID root-level secret mount'
-assert_arg_matches '.*/github_app_client_id:/run/secrets/github_app_client_id:ro$' 'GitHub App Client ID root-level secret mount'
-assert_arg_matches '.*/github_app_private_key:/run/secrets/github_app_private_key:ro$' 'GitHub App private key root-level secret mount'
+assert_arg_present 'GITHUB_APP_ID_FILE=/run/secrets/kaseki/github_app_id' 'GitHub App ID worker file env'
+assert_arg_present 'GITHUB_APP_CLIENT_ID_FILE=/run/secrets/kaseki/github_app_client_id' 'GitHub App Client ID worker file env'
+assert_arg_present 'GITHUB_APP_PRIVATE_KEY_FILE=/run/secrets/kaseki/github_app_private_key' 'GitHub App private key worker file env'
+assert_arg_matches '.*/github_app_id:/run/secrets/kaseki/github_app_id:ro$' 'GitHub App ID canonical secret mount'
+assert_arg_matches '.*/github_app_client_id:/run/secrets/kaseki/github_app_client_id:ro$' 'GitHub App Client ID canonical secret mount'
+assert_arg_matches '.*/github_app_private_key:/run/secrets/kaseki/github_app_private_key:ro$' 'GitHub App private key canonical secret mount'
 
 if grep -Fxq -- 'KASEKI_SECRETS_DIR=/run/secrets' "$DOCKER_ARGS_CAPTURE"; then
   printf '✗ launcher should pass explicit GitHub App file env vars instead of KASEKI_SECRETS_DIR\n'
