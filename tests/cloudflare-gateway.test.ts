@@ -131,7 +131,7 @@ describe('CloudFlare Gateway Extension', () => {
       expect(mockPi.registerProvider).not.toHaveBeenCalled();
     });
 
-    it('should use openai-responses API type for CloudFlare compatibility', async () => {
+    it('should use the Chat Completions API type for Cloudflare compatibility', async () => {
       process.env.LLM_GATEWAY_URL = testGatewayConfig.url;
       process.env.LLM_GATEWAY_API_KEY = testGatewayConfig.apiKey;
 
@@ -142,8 +142,7 @@ describe('CloudFlare Gateway Extension', () => {
       const callArgs = (mockPi.registerProvider as jest.Mock).mock.calls[0];
       const providerConfig = callArgs[1];
 
-      // Should use Pi's native OpenAI-compatible API support
-      expect(providerConfig.api).toBe('openai-responses');
+      expect(providerConfig.api).toBe('openai-completions');
     });
 
     it('should configure model with correct max tokens', async () => {
@@ -206,7 +205,7 @@ describe('CloudFlare Gateway Extension', () => {
       const callArgs = (mockPi.registerProvider as jest.Mock).mock.calls[0];
       const providerConfig = callArgs[1];
 
-      // Pi CLI will append /chat/completions automatically for openai-responses API
+      // Pi CLI appends /chat/completions for the openai-completions adapter.
       expect(providerConfig.baseUrl).toBe(baseUrl);
     });
 

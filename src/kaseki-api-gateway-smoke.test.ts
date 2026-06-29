@@ -1092,10 +1092,12 @@ describe('LLM Gateway Test', () => {
         expect(result.detail).toContain('aborted');
       });
 
-      it('should skip full smoke test for Cloudflare gateways but mark as validated', async () => {
-        // For Cloudflare URLs, the full response smoke test is skipped
-        // because Cloudflare only supports Chat Completions, not the Responses API.
-        // Stage 1 validates Cloudflare via the scoped /compat/chat/completions probe.
+      it('should run a Chat Completions inference for Cloudflare gateways', async () => {
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ choices: [{ message: { content: 'ok' } }] }),
+        });
 
         const result = await testGatewayResponseSmoke_Stage2(
           'https://gateway.ai.cloudflare.com/v1/account123/default/compat',
@@ -1110,14 +1112,17 @@ describe('LLM Gateway Test', () => {
           authenticationValidated: true,
           responseSmokeValidated: true,
         });
-        expect(result.detail).toContain('Cloudflare gateway connectivity verified');
-        expect(result.detail).toContain('health check passed');
+        expect(result.detail).toContain('Cloudflare Chat Completions inference verified');
         expect(result.responseTime).toEqual(expect.any(Number));
         expect(result.timestamp).toEqual(expect.any(String));
         expect(result.checks).toHaveLength(1);
-        expect(mockFetch).not.toHaveBeenCalled();
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        expect(mockFetch.mock.calls[0][0]).toBe(
+          'https://gateway.ai.cloudflare.com/v1/account123/default/compat/chat/completions'
+        );
         expect(result.checks?.[0].name).toBe('cloudflare-compat-note');
         expect(result.checks?.[0].status).toBe('ok');
+        expect(result.checks?.[0].detail).toContain('/compat/chat/completions');
       });
     });
 

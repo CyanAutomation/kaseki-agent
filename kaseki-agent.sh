@@ -1192,7 +1192,7 @@ NODE
 
   if [ -s "$candidate_artifact" ]; then
     emit_event "scouting_fallback_created" "candidate=$candidate_artifact" "task_mode=$KASEKI_TASK_MODE"
-    printf '%s\n' '{"timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","reason_code":"'"${KASEKI_TASK_MODE}"'_fallback","field":"scouting-candidate.json","expected":"file at '"${KASEKI_RESULTS_DIR}"'/scouting-candidate.json","actual":"generated fallback for '"${KASEKI_TASK_MODE}"' mode","severity":"warning","suggestion":"'"${KASEKI_TASK_MODE}"' mode continued with original task prompt because scouting did not write a valid candidate artifact"}' >> "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" 2>/dev/null || true
+    printf '%s\n' '{"timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","reason_code":"'"${KASEKI_TASK_MODE}"'_fallback","field":"scouting-candidate.json","expected":"file at '"${KASEKI_RESULTS_DIR}"'/scouting-candidate.json","actual":"generated fallback for '"${KASEKI_TASK_MODE}"' mode; validation pending","severity":"warning","suggestion":"validate the generated fallback before reporting that the run continued"}' >> "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" 2>/dev/null || true
   fi
 }
 
@@ -2589,8 +2589,18 @@ if [ "$allowlist_helper_status" -ne 0 ]; then
   exit "$allowlist_helper_status"
 fi
 SCOUTING_ALLOWLIST_HELPER="$SCRIPT_DIR/scripts/scouting-allowlist.js"
-if [ ! -r "$SCOUTING_ALLOWLIST_HELPER" ] && [ -r /app/scripts/scouting-allowlist.js ]; then
-  SCOUTING_ALLOWLIST_HELPER="/app/scripts/scouting-allowlist.js"
+if [ ! -r "$SCOUTING_ALLOWLIST_HELPER" ] && [ -r "$SCRIPT_DIR/dist/scouting-allowlist.js" ]; then
+  SCOUTING_ALLOWLIST_HELPER="$SCRIPT_DIR/dist/scouting-allowlist.js"
+fi
+if [ ! -r "$SCOUTING_ALLOWLIST_HELPER" ] && [ -r /app/dist/scouting-allowlist.js ]; then
+  SCOUTING_ALLOWLIST_HELPER="/app/dist/scouting-allowlist.js"
+fi
+if [ ! -r "$SCOUTING_ALLOWLIST_HELPER" ] && [ -r /usr/local/bin/scripts/scouting-allowlist.js ]; then
+  SCOUTING_ALLOWLIST_HELPER="/usr/local/bin/scripts/scouting-allowlist.js"
+fi
+if [ ! -r "$SCOUTING_ALLOWLIST_HELPER" ]; then
+  printf 'error: scouting allowlist helper is missing; checked repository dist and packaged runtime paths\n' >&2
+  exit 87
 fi
 # shellcheck source=scripts/allowlist-helper.sh
 . "$ALLOWLIST_HELPER" || {

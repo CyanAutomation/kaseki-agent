@@ -105,7 +105,9 @@ export default function (pi) {
     name: 'LLM Gateway (CloudFlare)',
     baseUrl: gatewayUrl,
     apiKey: gatewayApiKey || '$LLM_GATEWAY_API_KEY',
-    api: 'openai-responses', // Pi's native OpenAI-compatible API support
+    // Cloudflare's OpenAI-compatible /compat base URL implements Chat
+    // Completions. Pi appends /chat/completions for this adapter.
+    api: 'openai-completions',
     models: [
       {
         id: model,
@@ -122,7 +124,7 @@ export default function (pi) {
     event: 'provider_registered',
     provider: 'gateway',
     baseUrl: gatewayUrl,
-    apiType: 'openai-responses',
+    apiType: 'openai-completions',
     modelId: model,
     hasApiKey: Boolean(gatewayApiKey),
   });

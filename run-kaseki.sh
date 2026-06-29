@@ -1198,12 +1198,12 @@ if [ "$KASEKI_PROVIDER" = "gateway" ]; then
 fi
 if [ "$GITHUB_APP_ENABLED" = "1" ]; then
   docker_args+=(
-    -e GITHUB_APP_ID_FILE="/run/secrets/github_app_id"
-    -e GITHUB_APP_CLIENT_ID_FILE="/run/secrets/github_app_client_id"
-    -e GITHUB_APP_PRIVATE_KEY_FILE="/run/secrets/github_app_private_key"
-    -v "$GITHUB_APP_ID_FILE:/run/secrets/github_app_id:ro"
-    -v "$GITHUB_APP_CLIENT_ID_FILE:/run/secrets/github_app_client_id:ro"
-    -v "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE:/run/secrets/github_app_private_key:ro"
+    -e GITHUB_APP_ID_FILE="/run/secrets/kaseki/github_app_id"
+    -e GITHUB_APP_CLIENT_ID_FILE="/run/secrets/kaseki/github_app_client_id"
+    -e GITHUB_APP_PRIVATE_KEY_FILE="/run/secrets/kaseki/github_app_private_key"
+    -v "$GITHUB_APP_ID_FILE:/run/secrets/kaseki/github_app_id:ro"
+    -v "$GITHUB_APP_CLIENT_ID_FILE:/run/secrets/kaseki/github_app_client_id:ro"
+    -v "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE:/run/secrets/kaseki/github_app_private_key:ro"
   )
 fi
 if [ "$KASEKI_DRY_RUN" = "1" ] && [ "$KASEKI_STARTUP_CHECK_MODE" != "baseline-validation" ]; then
