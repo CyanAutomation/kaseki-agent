@@ -63,7 +63,7 @@ describe('CloudFlare Gateway deterministic contract', () => {
               content: 'Say "CloudFlare gateway test successful" in one sentence',
             },
           ],
-          max_tokens: 50,
+          max_tokens: 256,
         }),
       }
     );
@@ -92,6 +92,25 @@ describe('CloudFlare Gateway deterministic contract', () => {
       max_tokens: 7,
     });
     expect(result.content).toBe('custom response');
+  });
+
+  it('explains reasoning-budget exhaustion when no message content is emitted', async () => {
+    const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{
+          finish_reason: 'length',
+          message: { content: null, reasoning: 'The model used the available output budget.' },
+        }],
+      }),
+    } as Response);
+
+    await expect(probeCloudflareGateway({
+      baseUrl: testGatewayConfig.url,
+      apiKey: testGatewayConfig.apiKey,
+      fetchImpl: fetchMock,
+    })).rejects.toThrow('exhausted max_tokens during model reasoning');
   });
 
   it('throws expected failure for non-200 responses without parsing success content', async () => {

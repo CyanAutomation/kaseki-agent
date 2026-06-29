@@ -126,6 +126,7 @@ RUN chmod +x \
     && /app/scripts/startup-check-packaging.sh install \
     && mkdir -p /app/lib/lib /app/lib/secrets \
     && cp dist/pi-event-filter.js /app/lib/pi-event-filter.js \
+    && cp -r dist/pi-event-aggregation /app/lib/pi-event-aggregation \
     && cp dist/ansi-colors.js /app/lib/ansi-colors.js \
     && cp dist/event-aggregator.js /app/lib/event-aggregator.js \
     && cp dist/timestamp-tracker.js /app/lib/timestamp-tracker.js \
@@ -152,8 +153,9 @@ RUN chmod +x \
     && cp -r dist/lib/* /app/lib/lib/ \
     && chmod 0755 /app/dist/*.js \
     && github_app_helper_dependencies="github-app-private-key.js github-utils.js logger.js secrets/host-secrets-reader.js" \
-    && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets /usr/local/bin/scripts \
+    && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets /usr/local/bin/scripts /usr/local/bin/pi-event-aggregation \
     && cp -r /app/lib/lib/* /usr/local/bin/lib/ \
+    && cp -r /app/lib/pi-event-aggregation/* /usr/local/bin/pi-event-aggregation/ \
     && for dependency in $github_app_helper_dependencies; do install -m 0755 "/app/lib/$dependency" "/usr/local/bin/$dependency"; done \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
     && install -m 0755 /app/lib/ansi-colors.js /usr/local/bin/ansi-colors.js \
@@ -192,6 +194,12 @@ RUN chmod +x \
       /usr/local/bin/github-app-token.js \
       /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js \
       /app/scripts/*.sh
+RUN empty_events="$(mktemp)" \
+    && filtered_events="$(mktemp)" \
+    && event_summary="$(mktemp)" \
+    && /usr/local/bin/kaseki-pi-event-filter "$empty_events" "$filtered_events" "$event_summary" \
+    && test -s "$event_summary" \
+    && rm -f "$empty_events" "$filtered_events" "$event_summary"
 
 # Pre-configure git safe.directory for /agents checkout directory
 # This is a system-wide configuration visible to all users (including UID 10000 containers)
@@ -274,8 +282,9 @@ RUN mkdir -p /scripts \
     && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \
     && /app/scripts/startup-check-packaging.sh install \
     && github_app_helper_dependencies="github-app-private-key.js github-utils.js logger.js secrets/host-secrets-reader.js" \
-    && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets /usr/local/bin/scripts \
+    && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets /usr/local/bin/scripts /usr/local/bin/pi-event-aggregation \
     && cp -r /app/lib/lib/* /usr/local/bin/lib/ \
+    && cp -r /app/lib/pi-event-aggregation/* /usr/local/bin/pi-event-aggregation/ \
     && for dependency in $github_app_helper_dependencies; do install -m 0755 "/app/lib/$dependency" "/usr/local/bin/$dependency"; done \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
     && install -m 0755 /app/lib/ansi-colors.js /usr/local/bin/ansi-colors.js \
@@ -313,6 +322,12 @@ RUN mkdir -p /scripts \
       /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js \
       /app/kaseki /app/run-kaseki.sh /app/kaseki-agent.sh \
       /app/scripts/*.sh
+RUN empty_events="$(mktemp)" \
+    && filtered_events="$(mktemp)" \
+    && event_summary="$(mktemp)" \
+    && /usr/local/bin/kaseki-pi-event-filter "$empty_events" "$filtered_events" "$event_summary" \
+    && test -s "$event_summary" \
+    && rm -f "$empty_events" "$filtered_events" "$event_summary"
 
 # Pre-configure git safe.directory for /agents checkout directory
 # This is a system-wide configuration visible to all users (including UID 10000 containers)
