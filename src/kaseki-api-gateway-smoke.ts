@@ -710,7 +710,7 @@ async function testGatewayResponseSmokeFull(
         baseUrl: gatewayUrl,
         apiKey,
         model: resolveGatewayModel(),
-        maxTokens: 20,
+        maxTokens: 256,
       });
       const responseTime = performance.now() - startTime;
       checks.push({

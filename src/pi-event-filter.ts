@@ -580,7 +580,9 @@ export async function runPiEventFilter(
 }
 
 function isDirectCliExecution(): boolean {
-  return process.argv[1] ? /pi-event-filter\.(?:ts|js)$/.test(process.argv[1]) : false;
+  return process.argv[1]
+    ? /(?:^|\/)(?:kaseki-)?pi-event-filter(?:\.(?:ts|js))?$/.test(process.argv[1])
+    : false;
 }
 
 if (isDirectCliExecution()) {
