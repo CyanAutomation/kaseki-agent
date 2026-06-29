@@ -177,6 +177,7 @@ RUN chmod +x \
     && install -m 0755 /app/scripts/agent-prompt.sh /usr/local/bin/scripts/agent-prompt.sh \
     && install -m 0755 /app/scripts/allowlist-helper.sh /usr/local/bin/scripts/allowlist-helper.sh \
     && install -m 0755 /app/scripts/dependency-cache-helpers.sh /usr/local/bin/scripts/dependency-cache-helpers.sh \
+    && install -m 0755 /app/dist/scouting-allowlist.js /usr/local/bin/scripts/scouting-allowlist.js \
     && mkdir -p /usr/local/bin/scripts/lib \
     && install -m 0644 /app/scripts/lib/json.sh /usr/local/bin/scripts/lib/json.sh \
     && install -m 0644 /app/scripts/lib/json-events.sh /usr/local/bin/scripts/lib/json-events.sh \
@@ -298,6 +299,7 @@ RUN mkdir -p /scripts \
     && install -m 0755 /app/scripts/agent-prompt.sh /usr/local/bin/scripts/agent-prompt.sh \
     && install -m 0755 /app/scripts/allowlist-helper.sh /usr/local/bin/scripts/allowlist-helper.sh \
     && install -m 0755 /app/scripts/dependency-cache-helpers.sh /usr/local/bin/scripts/dependency-cache-helpers.sh \
+    && install -m 0755 /app/dist/scouting-allowlist.js /usr/local/bin/scripts/scouting-allowlist.js \
     && mkdir -p /usr/local/bin/scripts/lib \
     && install -m 0644 /app/scripts/lib/json.sh /usr/local/bin/scripts/lib/json.sh \
     && install -m 0644 /app/scripts/lib/json-events.sh /usr/local/bin/scripts/lib/json-events.sh \

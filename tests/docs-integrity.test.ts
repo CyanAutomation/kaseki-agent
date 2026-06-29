@@ -61,6 +61,18 @@ describe('Documentation integrity', () => {
     },
   ];
 
+  // Existing INDEX defects are intentionally tolerated until the documentation
+  // repair task runs. New broken targets or replacement characters still fail.
+  const knownIndexMissingTargets = new Set([
+    'DISASTER_RECOVERY.md',
+    'internal/DEVELOPMENT.md',
+    'repo-maturity.md',
+  ]);
+  const knownIndexReplacementCharacterLines = new Set([
+    '### � Monitoring & Observability',
+    '### �🛠️ Usage & Examples',
+  ]);
+
   const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
   const fencedCodeBlockRegex = /^```[\s\S]*?^```$/gm;
 
@@ -161,5 +173,25 @@ describe('Documentation integrity', () => {
         expect(anchors).toContain(stableAnchor);
       });
     });
+  });
+
+  it('does not introduce new broken links or encoding corruption in docs/INDEX.md', () => {
+    const sourcePath = path.join(docsDir, 'INDEX.md');
+    const sourceContent = fs.readFileSync(sourcePath, 'utf8');
+
+    const unexpectedMissingTargets = extractMarkdownLinks(sourceContent, 'docs/INDEX.md')
+      .map(({ link }) => splitLink(link).filePart)
+      .filter(Boolean)
+      .filter((target) => !isExternalLink(target))
+      .filter((target) => !fs.existsSync(path.resolve(docsDir, target)))
+      .filter((target) => !knownIndexMissingTargets.has(target));
+
+    const unexpectedReplacementCharacterLines = sourceContent
+      .split(/\r?\n/)
+      .filter((line) => line.includes('�'))
+      .filter((line) => !knownIndexReplacementCharacterLines.has(line));
+
+    expect(unexpectedMissingTargets).toEqual([]);
+    expect(unexpectedReplacementCharacterLines).toEqual([]);
   });
 });

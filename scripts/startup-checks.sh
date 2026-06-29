@@ -763,6 +763,7 @@ check_packaged_agent_helpers() {
     "agent-prompt.sh"
     "allowlist-helper.sh"
     "dependency-cache-helpers.sh"
+    "scouting-allowlist.js"
     "lib/json.sh"
   )
 

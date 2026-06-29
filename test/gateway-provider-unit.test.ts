@@ -92,7 +92,7 @@ describe('Gateway Provider Configuration', () => {
     expect(registeredProviderConfig.name).toBe('LLM Gateway (CloudFlare)');
     expect(registeredProviderConfig.baseUrl).toBe(gatewayUrl);
     expect(registeredProviderConfig.apiKey).toBe(gatewayApiKey);
-    expect(registeredProviderConfig.api).toBe('openai-responses');
+    expect(registeredProviderConfig.api).toBe('openai-completions');
     expect(registeredProviderConfig.models).toHaveLength(1);
 
     const [registeredModel] = registeredProviderConfig.models;
@@ -189,7 +189,7 @@ describe('Gateway Provider Configuration', () => {
             event: 'provider_registered',
             provider: 'gateway',
             baseUrl: 'https://llm-gateway.local.xyz/v1',
-            apiType: 'openai-responses',
+            apiType: 'openai-completions',
             modelId: 'dynamic/kaseki-agent',
             hasApiKey: true,
             timestamp: expect.any(String),
@@ -293,7 +293,7 @@ describe('Gateway Provider Configuration', () => {
     expect(providerName).toBe('gateway');
     expect(registeredProviderConfig).toEqual(
       expect.objectContaining({
-        api: 'openai-responses',
+        api: 'openai-completions',
       })
     );
   });
@@ -319,7 +319,7 @@ describe('Gateway Provider Configuration', () => {
         name: 'LLM Gateway (CloudFlare)',
         baseUrl: 'https://llm-gateway.local.xyz/v1',
         apiKey: 'test-api-key',
-        api: 'openai-responses',
+        api: 'openai-completions',
         models: [
           expect.objectContaining({
             id: 'dynamic/kaseki-agent',

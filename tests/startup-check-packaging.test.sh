@@ -113,6 +113,14 @@ assert_file_contains Dockerfile '^COPY --from=runtime /app/scripts \.\/scripts$'
   'Dockerfile final stage does not copy packaged scripts from runtime stage'
 assert_file_contains Dockerfile '^ENTRYPOINT \["/usr/bin/tini", "--", "/usr/local/bin/kaseki-entrypoint"\]$' \
   'Dockerfile entrypoint does not dispatch through kaseki-entrypoint'
+assert_file_match_count Dockerfile 'install -m 0755 /app/dist/scouting-allowlist\.js /usr/local/bin/scripts/scouting-allowlist\.js' 2 \
+  'Dockerfile must install the scouting validator at its packaged runtime path in both image stages'
+assert_file_contains kaseki-agent.sh '/app/dist/scouting-allowlist\.js' \
+  'runner does not fall back to the built scouting validator in the image'
+assert_file_contains kaseki-agent.sh '/usr/local/bin/scripts/scouting-allowlist\.js' \
+  'runner does not recognize the installed scouting validator runtime path'
+assert_file_contains scripts/startup-checks.sh '"scouting-allowlist\.js"' \
+  'worker preflight does not verify the packaged scouting validator'
 
 assert_file_contains .dockerignore '^!tsconfig\.scripts\.json$' \
   '.dockerignore does not allow tsconfig.scripts.json into the Docker build context'
