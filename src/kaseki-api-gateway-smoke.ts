@@ -23,6 +23,7 @@ import {
   extractPiJsonAssistantText,
   fetchWithTimeout,
 } from './gateway-validation/extract-pi-json';
+import { probeCloudflareGateway } from './cloudflare-gateway-probe';
 
 /**
  * LLM Gateway Responsiveness Test
@@ -219,7 +220,7 @@ export function verifyPiProviderRegistration(): {
   }
 
   result.registered = result.issues.length === 0;
-  result.apiType = 'openai-responses';
+  result.apiType = isCloudflareGateway(gatewayUrl ?? '') ? 'openai-completions' : 'openai-responses';
   result.model = model;
   result.baseUrl = gatewayUrl;
 
@@ -701,26 +702,48 @@ async function testGatewayResponseSmokeFull(
 ): Promise<ResponseSmokeTestResult & GatewayTestResult> {
   const checks: ResponseSmokeSubcheck[] = [];
 
-  // For Cloudflare gateways, skip full smoke testing (Cloudflare only supports Chat Completions, not Responses API)
-  // The health check to /models endpoint already validated connectivity and authentication
+  // Cloudflare's /compat endpoint uses Chat Completions, so perform the
+  // stage-2 inference with that protocol instead of skipping it.
   if (isCloudflareGateway(gatewayUrl)) {
-    const responseTime = performance.now() - startTime;
-    checks.push({
-      name: 'cloudflare-compat-note',
-      status: 'ok',
-      detail: 'Cloudflare gateway detected. Full response smoke test skipped (Cloudflare only supports Chat Completions). Stage 1 uses the scoped /compat/chat/completions probe.',
-      responseTime,
-    });
-    return {
-      status: 'ok',
-      detail: 'Cloudflare gateway connectivity verified (health check passed via scoped /compat probe, full Responses smoke test not applicable)',
-      gatewayUrl,
-      responseTime,
-      timestamp,
-      authenticationValidated: true,
-      responseSmokeValidated: true, // Mark as validated since we did the health check
-      checks,
-    };
+    try {
+      await probeCloudflareGateway({
+        baseUrl: gatewayUrl,
+        apiKey,
+        model: resolveGatewayModel(),
+        maxTokens: 20,
+      });
+      const responseTime = performance.now() - startTime;
+      checks.push({
+        name: 'cloudflare-compat-note',
+        status: 'ok',
+        detail: 'Cloudflare Chat Completions inference passed via /compat/chat/completions.',
+        responseTime,
+      });
+      return {
+        status: 'ok',
+        detail: 'Cloudflare Chat Completions inference verified.',
+        gatewayUrl,
+        responseTime,
+        timestamp,
+        authenticationValidated: true,
+        responseSmokeValidated: true,
+        checks,
+      };
+    } catch (error) {
+      const responseTime = performance.now() - startTime;
+      const detail = error instanceof Error ? error.message : String(error);
+      return {
+        status: 'error',
+        detail,
+        gatewayUrl,
+        responseTime,
+        timestamp,
+        authenticationValidated: !/HTTP (401|403)/.test(detail),
+        responseSmokeValidated: false,
+        remediation: 'Verify the Cloudflare token, model route, and /compat Chat Completions endpoint.',
+        checks: [{ name: 'cloudflare-compat-note', status: 'error', detail, responseTime }],
+      };
+    }
   }
 
   const jsonCheck = await runGatewayResponseJsonCheck(

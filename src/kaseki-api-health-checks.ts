@@ -1213,7 +1213,7 @@ export function checkWorkerSmokeTest(
         '/bin/sh',
         image,
         '-c',
-        'for file in /usr/local/bin/kaseki-agent /usr/local/bin/scripts/agent-prompt.sh /usr/local/bin/scripts/allowlist-helper.sh /usr/local/bin/scripts/dependency-cache-helpers.sh /usr/local/bin/scripts/lib/json.sh; do if [ ! -r "$file" ]; then echo "missing packaged worker helper: $file" >&2; exit 66; fi; done; if [ ! -x /usr/local/bin/kaseki-agent ]; then echo "packaged worker agent is not executable: /usr/local/bin/kaseki-agent" >&2; exit 66; fi; exec /scripts/startup-checks.sh worker',
+        'for file in /usr/local/bin/kaseki-agent /usr/local/bin/scripts/agent-prompt.sh /usr/local/bin/scripts/allowlist-helper.sh /usr/local/bin/scripts/dependency-cache-helpers.sh /usr/local/bin/scripts/scouting-allowlist.js /usr/local/bin/scripts/lib/json.sh; do if [ ! -r "$file" ]; then echo "missing packaged worker helper: $file" >&2; exit 66; fi; done; if [ ! -x /usr/local/bin/kaseki-agent ]; then echo "packaged worker agent is not executable: /usr/local/bin/kaseki-agent" >&2; exit 66; fi; exec /scripts/startup-checks.sh worker',
       ],
       30000,
     );

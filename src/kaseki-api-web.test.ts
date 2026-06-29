@@ -151,6 +151,11 @@ function input(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectEleme
 }
 
 describe('kaseki API web console routes', () => {
+  test('serves an empty public favicon response', async () => {
+    const { response } = await fetchConsole('/favicon.ico');
+    expect(response.status).toBe(204);
+  });
+
   test.each(['/', '/ui'])('serves the task console app shell from %s', async (path) => {
     const { response, body } = await fetchConsole(path);
     const dom = new JSDOM(body, { virtualConsole: new VirtualConsole() });
@@ -167,6 +172,7 @@ describe('kaseki API web console routes', () => {
     expect(document.querySelector('[data-testid="issues-repo-url"]')).not.toBeNull();
     expect(document.querySelector('[data-probe="/api/preflight"]')).not.toBeNull();
     expect(document.querySelector('[data-probe="/api/gateway-test?stage=1"]')?.getAttribute('data-auth')).toBe('true');
+    expect(document.querySelector('[data-probe="/api/gateway-test?stage=2&responseSmoke=true"]')?.textContent).toContain('Test Inference');
     expect(document.querySelector('#task-mode')?.getAttribute('name')).toBe('taskMode');
     expect(document.querySelector('#runs-list')).not.toBeNull();
     expect(document.querySelector('#refresh-runs')?.textContent).toContain('Refresh runs');
@@ -237,7 +243,7 @@ describe('kaseki API web console behavior', () => {
     expect(document.querySelector('#run-links')?.hasAttribute('hidden')).toBe(false);
   });
 
-  test('displays gateway and LLM test buttons with correct endpoints', async () => {
+  test('displays gateway and inference test buttons with correct endpoints', async () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: () => createJsonResponse({ status: 'ok' }),
@@ -249,9 +255,9 @@ describe('kaseki API web console behavior', () => {
     expect(gatewayTestButton).toBeDefined();
     expect(gatewayTestButton?.getAttribute('data-probe')).toBe('/api/gateway-test?stage=1');
 
-    // Verify LLM Test button has stage=2 and responseSmoke parameters
+    // Verify inference test button has stage=2 and responseSmoke parameters
     const llmTestButton = [...document.querySelectorAll('.health-check-button')]
-      .find(btn => btn.textContent?.includes('Test LLM'));
+      .find(btn => btn.textContent?.includes('Test Inference'));
     expect(llmTestButton).toBeDefined();
     expect(llmTestButton?.getAttribute('data-probe')).toBe('/api/gateway-test?stage=2&responseSmoke=true');
 
@@ -306,6 +312,15 @@ describe('kaseki API web console behavior', () => {
             ],
           });
         }
+        if (path === '/api/results/kaseki-301/report.json') {
+          return createJsonResponse({
+            response: {
+              file: 'report.json',
+              contentType: 'application/json',
+              content: '{"status":"ok"}',
+            },
+          });
+        }
         return createJsonResponse({});
       },
     });
@@ -328,6 +343,10 @@ describe('kaseki API web console behavior', () => {
     expect(document.querySelector('#artifacts-output .artifact-item-name')?.textContent).toBe('report.json');
     expect(document.querySelector('#artifacts-output')?.textContent).not.toContain('archive.tar');
     expect(document.querySelector('#artifacts-output')?.textContent).not.toContain('missing.txt');
+
+    click(document.querySelector('#artifacts-output .artifact-item'));
+    await waitFor(() => expect(document.querySelector('.artifact-content-pre')?.textContent).toContain('"status": "ok"'));
+    expect(document.querySelector('.artifact-content-pre')?.textContent).not.toContain('report.json');
 
     click(document.querySelector('#modal-close-btn'));
     click(document.querySelector('#full-results-btn'));
