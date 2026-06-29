@@ -10,7 +10,6 @@ import { ExecutionTimeAggregator, type ExecutionTimeSummary, type ExecutionStats
 import { TokenUsageAggregator, type TokenUsageSummary, type ModelTokenStats } from './pi-event-aggregation/token-usage-aggregator.js';
 import {
   type ProviderErrorSummary,
-  classifyProviderError,
   extractMessageTextLength,
   extractProviderError,
 } from './pi-event-filter-helpers.js';
