@@ -58,7 +58,7 @@ export function listRuns(resultsDir: string): RunInfo[] {
 /**
  * Calculate total size of a directory recursively
  */
-function getDirectorySize(dirPath: string): number {
+export function getDirectorySize(dirPath: string): number {
   let totalSize = 0;
 
   try {
@@ -83,26 +83,22 @@ function getDirectorySize(dirPath: string): number {
 }
 
 /**
- * Get all runs associated with a cache entry
+ * Read the set of run names associated with a cache entry from its .used-by-runs file.
+ * Returns an empty set if the file is absent or unreadable.
  */
-function getCacheEntryRuns(cacheEntryPath: string): Set<string> {
+export function getCacheEntryRuns(cacheEntryPath: string): Set<string> {
   const runSet = new Set<string>();
   const usedByRunsFile = path.join(cacheEntryPath, '.used-by-runs');
 
   try {
     if (fs.existsSync(usedByRunsFile)) {
       const content = fs.readFileSync(usedByRunsFile, 'utf-8');
-      const runNames = content
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0);
-
-      for (const runName of runNames) {
-        runSet.add(runName);
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed.length > 0) runSet.add(trimmed);
       }
     }
   } catch (error) {
-    // Silently handle errors reading malformed files
     console.debug(`Error reading cache entry runs from ${usedByRunsFile}:`, error);
   }
 
@@ -110,8 +106,55 @@ function getCacheEntryRuns(cacheEntryPath: string): Set<string> {
 }
 
 /**
- * Clean up old runs, keeping only the most recent N runs
- * Also removes cache entries that are no longer associated with any remaining run
+ * Determine whether a cache directory entry should be removed.
+ * Returns true only when the entry has a non-empty .used-by-runs file and
+ * every referenced run has been deleted (i.e., is absent from retainedRunNames).
+ */
+export function shouldRemoveCacheEntry(
+  cacheEntryPath: string,
+  retainedRunNames: Set<string>,
+): boolean {
+  const associatedRuns = getCacheEntryRuns(cacheEntryPath);
+  if (associatedRuns.size === 0) return false;
+  return Array.from(associatedRuns).every((runName) => !retainedRunNames.has(runName));
+}
+
+/**
+ * Sweep the cache directory and remove entries whose associated runs are all deleted.
+ * Returns the number of cache entries removed.
+ */
+export function cleanupCacheDir(
+  cacheDir: string,
+  retainedRunNames: Set<string>,
+  dryRun: boolean,
+): number {
+  if (!fs.existsSync(cacheDir)) return 0;
+
+  let removed = 0;
+  try {
+    const entries = fs.readdirSync(cacheDir);
+    for (const entry of entries) {
+      const cacheEntryPath = path.join(cacheDir, entry);
+      try {
+        if (!fs.statSync(cacheEntryPath).isDirectory()) continue;
+        if (shouldRemoveCacheEntry(cacheEntryPath, retainedRunNames)) {
+          if (!dryRun) fs.rmSync(cacheEntryPath, { recursive: true, force: true });
+          removed++;
+        }
+      } catch (error) {
+        console.debug(`Error processing cache entry ${entry}:`, error);
+      }
+    }
+  } catch (error) {
+    console.debug('Error scanning cache directory:', error);
+  }
+
+  return removed;
+}
+
+/**
+ * Clean up old runs, keeping only the most recent N runs.
+ * Also removes cache entries that are no longer associated with any remaining run.
  *
  * @param resultsDir - Path to /agents/kaseki-results directory
  * @param cacheDir - Path to /agents/kaseki-cache directory
@@ -123,7 +166,7 @@ export async function cleanupOldRuns(
   resultsDir: string,
   cacheDir: string,
   retentionCount: number,
-  dryRun: boolean = false
+  dryRun: boolean = false,
 ): Promise<CleanupResult> {
   const result: CleanupResult = {
     deletedCount: 0,
@@ -132,76 +175,23 @@ export async function cleanupOldRuns(
     dryRun,
   };
 
-  // List all runs
   const allRuns = listRuns(resultsDir);
-
-  // Determine which runs to delete (all except the most recent N)
   const runsToDelete = allRuns.slice(retentionCount);
+  if (runsToDelete.length === 0) return result;
 
-  if (runsToDelete.length === 0) {
-    return result; // Nothing to delete
-  }
+  const retainedRunNames = new Set(allRuns.slice(0, retentionCount).map((r) => r.name));
 
-  // Track which runs will still exist after cleanup
-  const retainedRunNames = new Set(allRuns.slice(0, retentionCount).map(r => r.name));
-
-  // Delete old runs
   for (const run of runsToDelete) {
     try {
-      // Calculate size before deletion
-      const runSize = getDirectorySize(run.path);
-      result.freedBytes += runSize;
-
-      if (!dryRun) {
-        fs.rmSync(run.path, { recursive: true, force: true });
-      }
-
+      result.freedBytes += getDirectorySize(run.path);
+      if (!dryRun) fs.rmSync(run.path, { recursive: true, force: true });
       result.deletedCount++;
     } catch (error) {
       console.error(`Error deleting run ${run.name}:`, error);
-      // Continue with next run instead of failing entirely
     }
   }
 
-  // Clean up cache entries for deleted runs
-  if (fs.existsSync(cacheDir)) {
-    try {
-      const cacheEntries = fs.readdirSync(cacheDir);
-
-      for (const entry of cacheEntries) {
-        const cacheEntryPath = path.join(cacheDir, entry);
-
-        try {
-          if (fs.statSync(cacheEntryPath).isDirectory()) {
-            const associatedRuns = getCacheEntryRuns(cacheEntryPath);
-
-            // Check if any associated run still exists
-            let shouldDelete = false;
-
-            if (associatedRuns.size === 0) {
-              // Cache entry has no .used-by-runs file or is empty - leave it alone
-              shouldDelete = false;
-            } else {
-              // Delete if all associated runs are gone
-              shouldDelete = Array.from(associatedRuns).every(runName => !retainedRunNames.has(runName));
-            }
-
-            if (shouldDelete) {
-              if (!dryRun) {
-                fs.rmSync(cacheEntryPath, { recursive: true, force: true });
-              }
-              result.cachedEntriesRemoved++;
-            }
-          }
-        } catch (error) {
-          console.debug(`Error processing cache entry ${entry}:`, error);
-          // Continue with next entry
-        }
-      }
-    } catch (error) {
-      console.debug('Error scanning cache directory:', error);
-    }
-  }
+  result.cachedEntriesRemoved = cleanupCacheDir(cacheDir, retainedRunNames, dryRun);
 
   return result;
 }

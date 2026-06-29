@@ -1,7 +1,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { cleanupOldRuns, listRuns } from '../src/cleanup-manager';
+import {
+  cleanupCacheDir,
+  cleanupOldRuns,
+  getCacheEntryRuns,
+  getDirectorySize,
+  listRuns,
+  shouldRemoveCacheEntry,
+} from '../src/cleanup-manager';
 
 describe('cleanup-manager', () => {
   let tempDir: string;
@@ -298,5 +305,114 @@ describe('cleanup-manager', () => {
       const runs = listRuns(resultsDir);
       expect(runs.length).toBe(2);
     });
+  });
+});
+
+// ─── Extracted helper unit tests ─────────────────────────────────────────────
+
+describe('getDirectorySize', () => {
+  let tmp: string;
+  beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'getdirsize-')); });
+  afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
+
+  it('returns 0 for empty directory', () => {
+    expect(getDirectorySize(tmp)).toBe(0);
+  });
+
+  it('sums file sizes recursively', () => {
+    fs.writeFileSync(path.join(tmp, 'a.txt'), 'hello'); // 5 bytes
+    const sub = path.join(tmp, 'sub');
+    fs.mkdirSync(sub);
+    fs.writeFileSync(path.join(sub, 'b.txt'), 'world!'); // 6 bytes
+    expect(getDirectorySize(tmp)).toBe(11);
+  });
+
+  it('returns 0 for non-existent directory (error silently caught)', () => {
+    expect(getDirectorySize(path.join(tmp, 'nope'))).toBe(0);
+  });
+});
+
+describe('getCacheEntryRuns', () => {
+  let tmp: string;
+  beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cacheentry-')); });
+  afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
+
+  it('returns empty set when .used-by-runs absent', () => {
+    expect(getCacheEntryRuns(tmp).size).toBe(0);
+  });
+
+  it('parses run names from .used-by-runs file', () => {
+    fs.writeFileSync(path.join(tmp, '.used-by-runs'), 'kaseki-1\nkaseki-2\n');
+    const result = getCacheEntryRuns(tmp);
+    expect(result.has('kaseki-1')).toBe(true);
+    expect(result.has('kaseki-2')).toBe(true);
+    expect(result.size).toBe(2);
+  });
+
+  it('ignores blank lines', () => {
+    fs.writeFileSync(path.join(tmp, '.used-by-runs'), 'kaseki-3\n\n\n');
+    expect(getCacheEntryRuns(tmp).size).toBe(1);
+  });
+});
+
+describe('shouldRemoveCacheEntry', () => {
+  let tmp: string;
+  beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'shouldremove-')); });
+  afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
+
+  it('returns false when no .used-by-runs file (unknown origin)', () => {
+    expect(shouldRemoveCacheEntry(tmp, new Set(['kaseki-1']))).toBe(false);
+  });
+
+  it('returns false when one associated run is still retained', () => {
+    fs.writeFileSync(path.join(tmp, '.used-by-runs'), 'kaseki-1\nkaseki-2');
+    expect(shouldRemoveCacheEntry(tmp, new Set(['kaseki-2']))).toBe(false);
+  });
+
+  it('returns true when all associated runs have been deleted', () => {
+    fs.writeFileSync(path.join(tmp, '.used-by-runs'), 'kaseki-1\nkaseki-2');
+    expect(shouldRemoveCacheEntry(tmp, new Set(['kaseki-3']))).toBe(true);
+  });
+
+  it('returns false for empty retained set when runs listed', () => {
+    fs.writeFileSync(path.join(tmp, '.used-by-runs'), 'kaseki-1');
+    expect(shouldRemoveCacheEntry(tmp, new Set())).toBe(true);
+  });
+});
+
+describe('cleanupCacheDir', () => {
+  let tmp: string;
+  beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanupcache-')); });
+  afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
+
+  it('returns 0 when cache dir does not exist', () => {
+    expect(cleanupCacheDir(path.join(tmp, 'missing'), new Set(), false)).toBe(0);
+  });
+
+  it('removes cache entries whose runs are all deleted', () => {
+    const entry = path.join(tmp, 'entry1');
+    fs.mkdirSync(entry);
+    fs.writeFileSync(path.join(entry, '.used-by-runs'), 'kaseki-1');
+    const removed = cleanupCacheDir(tmp, new Set(['kaseki-2']), false);
+    expect(removed).toBe(1);
+    expect(fs.existsSync(entry)).toBe(false);
+  });
+
+  it('keeps cache entries with retained runs', () => {
+    const entry = path.join(tmp, 'entry1');
+    fs.mkdirSync(entry);
+    fs.writeFileSync(path.join(entry, '.used-by-runs'), 'kaseki-1');
+    const removed = cleanupCacheDir(tmp, new Set(['kaseki-1']), false);
+    expect(removed).toBe(0);
+    expect(fs.existsSync(entry)).toBe(true);
+  });
+
+  it('respects dryRun=true (does not delete)', () => {
+    const entry = path.join(tmp, 'entry1');
+    fs.mkdirSync(entry);
+    fs.writeFileSync(path.join(entry, '.used-by-runs'), 'kaseki-1');
+    const removed = cleanupCacheDir(tmp, new Set(), true);
+    expect(removed).toBe(1); // counted
+    expect(fs.existsSync(entry)).toBe(true); // not deleted
   });
 });

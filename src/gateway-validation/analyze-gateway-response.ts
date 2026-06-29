@@ -118,8 +118,70 @@ export function countPiJsonEvents(stdout: string): number {
 }
 
 /**
- * Analyze response structure to help diagnose text extraction failures
- * Returns details about what fields were found and which patterns might work
+ * Check all recognized text field paths in a single message object.
+ * Returns the set of field names that were present (even if empty),
+ * and whether any non-empty text was found.
+ */
+export function analyzeMessageFields(
+  message: any,
+): { fieldsPresent: string[]; hasNonEmptyText: boolean } {
+  const fieldsPresent: string[] = [];
+  let hasNonEmptyText = false;
+
+  const hasText = (value: unknown): boolean => typeof value === 'string' && value.trim().length > 0;
+
+  const check = (field: string, value: unknown): void => {
+    if (typeof value !== 'string') return;
+    fieldsPresent.push(field);
+    if (hasText(value)) hasNonEmptyText = true;
+  };
+
+  check('message.text', message.text);
+  check('message.output_text', message.output_text);
+  check('message.assistantMessage', message.assistantMessage);
+  check('message.content (string)', typeof message.content === 'string' ? message.content : undefined);
+
+  if (Array.isArray(message.choices)) {
+    fieldsPresent.push('message.choices[]');
+    const choice = message.choices[0];
+    check('message.choices[0].message.content', choice?.message?.content);
+    check('message.choices[0].delta.content', choice?.delta?.content);
+  }
+
+  // Direct delta field (streaming format without choices wrapper)
+  check('message.delta.content', message.delta?.content);
+  check('message.response.content', message.response?.content);
+
+  if (Array.isArray(message.content)) {
+    fieldsPresent.push('message.content (array)');
+    for (const part of message.content) {
+      check('message.content[].text', part?.text);
+      check('message.content[].output_text', part?.output_text);
+      check('message.content[].content', part?.content);
+    }
+  }
+
+  return { fieldsPresent, hasNonEmptyText };
+}
+
+/**
+ * Build suggested extraction pattern names based on which assistant fields were observed.
+ */
+export function buildSuggestedPatterns(assistantFieldsFound: Set<string>): string[] {
+  const patterns: string[] = [];
+  if (assistantFieldsFound.has('message.text')) patterns.push('message.text (legacy Pi)');
+  if (assistantFieldsFound.has('message.output_text')) patterns.push('message.output_text (legacy Pi)');
+  if (assistantFieldsFound.has('message.content (string)')) patterns.push('message.content string (Cloudflare)');
+  if (assistantFieldsFound.has('message.choices[0].message.content')) patterns.push('choices[0].message.content (Chat Completions)');
+  if (assistantFieldsFound.has('message.choices[0].delta.content')) patterns.push('choices[0].delta.content (streaming)');
+  if (assistantFieldsFound.has('message.delta.content')) patterns.push('message.delta.content (streaming direct)');
+  if (assistantFieldsFound.has('message.response.content')) patterns.push('response.content (wrapped)');
+  return patterns;
+}
+
+/**
+ * Analyze response structure to help diagnose text extraction failures.
+ * Returns details about what fields were found and which patterns might work.
  */
 export function analyzeResponseStructure(stdout: string): {
   eventCount: number;
@@ -140,17 +202,6 @@ export function analyzeResponseStructure(stdout: string): {
   let nonAssistantEventsWithText = 0;
   let eventCount = 0;
 
-  const recordField = (field: string, role: unknown) => {
-    fieldsFound.add(field);
-    if (role === 'assistant') {
-      assistantFieldsFound.add(field);
-    } else {
-      nonAssistantFieldsFound.add(`${typeof role === 'string' ? role : 'unknown'}.${field}`);
-    }
-  };
-
-  const hasText = (value: unknown): boolean => typeof value === 'string' && value.trim().length > 0;
-
   for (const line of stdout.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed.startsWith('{')) continue;
@@ -170,79 +221,22 @@ export function analyzeResponseStructure(stdout: string): {
     if (!message) continue;
 
     const role = message.role;
-    let messageHasText = false;
+    const { fieldsPresent, hasNonEmptyText } = analyzeMessageFields(message);
 
-    // Track which fields are present, separating assistant output from prompts or other roles.
-    if (typeof message.text === 'string') {
-      recordField('message.text', role);
-      if (hasText(message.text)) messageHasText = true;
-    }
-    if (typeof message.output_text === 'string') {
-      recordField('message.output_text', role);
-      if (hasText(message.output_text)) messageHasText = true;
-    }
-    if (typeof message.assistantMessage === 'string') {
-      recordField('message.assistantMessage', role);
-      if (hasText(message.assistantMessage)) messageHasText = true;
-    }
-    if (typeof message.content === 'string') {
-      recordField('message.content (string)', role);
-      if (hasText(message.content)) messageHasText = true;
-    }
-    if (Array.isArray(message.choices)) {
-      recordField('message.choices[]', role);
-      const choice = message.choices[0];
-      if (typeof choice?.message?.content === 'string') {
-        recordField('message.choices[0].message.content', role);
-        if (hasText(choice.message.content)) messageHasText = true;
-      }
-      if (typeof choice?.delta?.content === 'string') {
-        recordField('message.choices[0].delta.content', role);
-        if (hasText(choice.delta.content)) messageHasText = true;
-      }
-    }
-    // Direct delta field (streaming format without choices wrapper)
-    if (typeof message.delta?.content === 'string') {
-      recordField('message.delta.content', role);
-      if (hasText(message.delta.content)) messageHasText = true;
-    }
-    if (typeof message.response?.content === 'string') {
-      recordField('message.response.content', role);
-      if (hasText(message.response.content)) messageHasText = true;
-    }
-    if (Array.isArray(message.content)) {
-      recordField('message.content (array)', role);
-      for (const part of message.content) {
-        if (typeof part?.text === 'string') {
-          recordField('message.content[].text', role);
-          if (hasText(part.text)) messageHasText = true;
-        }
-        if (typeof part?.output_text === 'string') {
-          recordField('message.content[].output_text', role);
-          if (hasText(part.output_text)) messageHasText = true;
-        }
-        if (typeof part?.content === 'string') {
-          recordField('message.content[].content', role);
-          if (hasText(part.content)) messageHasText = true;
-        }
+    for (const field of fieldsPresent) {
+      fieldsFound.add(field);
+      if (role === 'assistant') {
+        assistantFieldsFound.add(field);
+      } else {
+        nonAssistantFieldsFound.add(`${typeof role === 'string' ? role : 'unknown'}.${field}`);
       }
     }
 
-    if (messageHasText) {
+    if (hasNonEmptyText) {
       if (role === 'assistant') assistantEventsWithText++;
       else nonAssistantEventsWithText++;
     }
   }
-
-  // Suggest patterns based only on assistant response fields that were found.
-  const suggestedPatterns: string[] = [];
-  if (assistantFieldsFound.has('message.text')) suggestedPatterns.push('message.text (legacy Pi)');
-  if (assistantFieldsFound.has('message.output_text')) suggestedPatterns.push('message.output_text (legacy Pi)');
-  if (assistantFieldsFound.has('message.content (string)')) suggestedPatterns.push('message.content string (Cloudflare)');
-  if (assistantFieldsFound.has('message.choices[0].message.content')) suggestedPatterns.push('choices[0].message.content (Chat Completions)');
-  if (assistantFieldsFound.has('message.choices[0].delta.content')) suggestedPatterns.push('choices[0].delta.content (streaming)');
-  if (assistantFieldsFound.has('message.delta.content')) suggestedPatterns.push('message.delta.content (streaming direct)');
-  if (assistantFieldsFound.has('message.response.content')) suggestedPatterns.push('response.content (wrapped)');
 
   return {
     eventCount,
@@ -253,6 +247,6 @@ export function analyzeResponseStructure(stdout: string): {
     nonAssistantEventsWithText,
     assistantFieldsFound: Array.from(assistantFieldsFound),
     nonAssistantFieldsFound: Array.from(nonAssistantFieldsFound),
-    suggestedPatterns,
+    suggestedPatterns: buildSuggestedPatterns(assistantFieldsFound),
   };
 }

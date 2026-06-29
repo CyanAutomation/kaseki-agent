@@ -8,6 +8,12 @@ import { EventCounterAggregator, type EventCountMap } from './pi-event-aggregati
 import { ToolReliabilityAggregator, type ToolReliabilitySummary, type ToolStats } from './pi-event-aggregation/tool-reliability-aggregator.js';
 import { ExecutionTimeAggregator, type ExecutionTimeSummary, type ExecutionStats } from './pi-event-aggregation/execution-time-aggregator.js';
 import { TokenUsageAggregator, type TokenUsageSummary, type ModelTokenStats } from './pi-event-aggregation/token-usage-aggregator.js';
+import {
+  type ProviderErrorSummary,
+  classifyProviderError,
+  extractMessageTextLength,
+  extractProviderError,
+} from './pi-event-filter-helpers.js';
 
 // ============================================================================
 // MAIN SCRIPT
@@ -32,20 +38,6 @@ interface Summary {
   model_token_stats?: ModelTokenStats;
   provider_errors?: ProviderErrorSummary[];
   primary_provider_error?: ProviderErrorSummary;
-}
-
-interface ProviderErrorSummary {
-  type: 'model_unavailable' | 'provider_error' | 'provider_empty_assistant_turn';
-  provider?: string;
-  api?: string;
-  model?: string;
-  stop_reason?: string;
-  response_id?: string;
-  input_tokens?: number;
-  output_tokens?: number;
-  total_tokens?: number;
-  message: string;
-  retryable?: boolean; // true if error appears transient (503, 429, connection), false if permanent (404, deprecated)
 }
 
 interface AssistantTurnState {
@@ -199,100 +191,7 @@ function extractUsage(event: PiEvent): any {
   return null;
 }
 
-/**
- * Determine if a provider error should be retried.
- * Retryable errors: transient issues like 503, 429, connection errors, temporary unavailability
- * Non-retryable errors: permanent issues like 404 (not found), deprecated models
- */
-function isProviderErrorRetryable(message: string): boolean {
-  const lower = message.toLowerCase();
-
-  // Non-retryable: permanent errors (check for 404 or "not found" without other retryable indicators)
-  if (lower.includes('404') || lower.includes('deprecated')) {
-    return false; // 404s and deprecated models are permanent
-  }
-
-  // Retryable: transient errors
-  if (
-    lower.includes('503') || // Service Unavailable
-    lower.includes('429') || // Rate Limited / Too Many Requests
-    lower.includes('timeout') || // Connection timeout
-    lower.includes('econnreset') || // Connection reset
-    lower.includes('econnrefused') || // Connection refused
-    lower.includes('etimedout') || // Network timeout
-    lower.includes('ehostunreach') || // No route to host
-    lower.includes('enetunreach') || // Network unreachable
-    lower.includes('unavailable') || // Model/service temporarily unavailable
-    lower.includes('offline') || // Service is temporarily offline
-    lower.includes('service is down') // Service is down
-  ) {
-    return true;
-  }
-
-  // Default: non-retryable (unknown error, assume permanent unless we detect transience)
-  return false;
-}
-
-function classifyProviderError(
-  message: string
-): {
-  type: ProviderErrorSummary['type'];
-  retryable: boolean;
-} {
-  const lower = message.toLowerCase();
-  let type: ProviderErrorSummary['type'] = 'provider_error';
-
-  if (
-    lower.includes('model is unavailable') ||
-    lower.includes('model unavailable') ||
-    lower.includes('no endpoints found') ||
-    lower.includes('not a valid model') ||
-    lower.includes('model_not_found')
-  ) {
-    type = 'model_unavailable';
-  }
-
-  const retryable = isProviderErrorRetryable(message);
-
-  return { type, retryable };
-}
-
-function extractProviderError(event: PiEvent): ProviderErrorSummary | null {
-  const message = (event as any).message;
-  if (!message || typeof message !== 'object') return null;
-
-  // Defensively extract errorMessage as string
-  let errorMessage = '';
-  if (typeof message.errorMessage === 'string') {
-    errorMessage = message.errorMessage.trim();
-  } else if (message.errorMessage !== undefined && message.errorMessage !== null) {
-    // Attempt to convert to string if it exists but isn't already a string
-    try {
-      errorMessage = String(message.errorMessage).trim();
-    } catch {
-      // If conversion fails, treat as empty
-      return null;
-    }
-  }
-
-  // Defensively extract stopReason as string
-  const stopReason = typeof message.stopReason === 'string' ? message.stopReason.trim() : '';
-
-  if (!errorMessage || stopReason !== 'error') return null;
-
-  const { type, retryable } = classifyProviderError(errorMessage);
-
-  return {
-    type,
-    retryable,
-    provider: typeof message.provider === 'string' ? message.provider : undefined,
-    api: typeof message.api === 'string' ? message.api : undefined,
-    model: typeof message.model === 'string' ? message.model : undefined,
-    stop_reason: stopReason,
-    message: errorMessage,
-  };
-}
-
+// (isProviderErrorRetryable, classifyProviderError, extractProviderError moved to pi-event-filter-helpers.ts)
 function numericUsageValue(usage: any, keys: string[]): number | undefined {
   if (!usage || typeof usage !== 'object') return undefined;
   for (const key of keys) {
@@ -300,67 +199,6 @@ function numericUsageValue(usage: any, keys: string[]): number | undefined {
     if (typeof value === 'number' && Number.isFinite(value)) return value;
   }
   return undefined;
-}
-
-function extractMessageTextLength(message: any): number {
-  if (!message || typeof message !== 'object') {
-    return 0;
-  }
-
-  // Primary path: accumulate text from message.content array
-  const content = message?.content;
-  if (typeof content === 'string') return content.trim().length;
-  if (Array.isArray(content)) {
-    const contentLength = content.reduce((sum, part) => {
-      if (typeof part === 'string') return sum + part.trim().length;
-      if (!part || typeof part !== 'object') return sum;
-      const text = typeof part.text === 'string'
-        ? part.text
-        : typeof part.output_text === 'string'
-          ? part.output_text
-          : '';
-      return sum + text.trim().length;
-    }, 0);
-    if (contentLength > 0) return contentLength;
-  }
-
-  // Fallback paths for streaming responses where deltas weren't accumulated into message.content[]
-  // This handles cases where Pi CLI's streaming handler or the gateway provider populates
-  // alternative fields instead of (or in addition to) the standard message.content array.
-
-  // Fallback 1: message.text (used by some streaming implementations)
-  if (typeof message?.text === 'string') {
-    const textLength = message.text.trim().length;
-    if (textLength > 0) return textLength;
-  }
-
-  // Fallback 2: message.output_text (gateway/OpenRouter alternative)
-  if (typeof message?.output_text === 'string') {
-    const outputTextLength = message.output_text.trim().length;
-    if (outputTextLength > 0) return outputTextLength;
-  }
-
-  // Fallback 3: nested body.output[].content[].text (OpenRouter-specific format)
-  if (Array.isArray(message?.body?.output)) {
-    try {
-      const nestedLength = message.body.output.reduce((sum: number, item: any) => {
-        if (!item || typeof item !== 'object') return sum;
-        if (Array.isArray(item.content)) {
-          return sum + item.content.reduce((itemSum: number, part: any) => {
-            const text = typeof part?.text === 'string' ? part.text : '';
-            return itemSum + text.trim().length;
-          }, 0);
-        }
-        return sum;
-      }, 0);
-      if (nestedLength > 0) return nestedLength;
-    } catch {
-      // If extraction fails, continue to fallback
-    }
-  }
-
-  // No content found in any source
-  return 0;
 }
 
 function extractResponseIdFromMessage(message: any): string | undefined {
