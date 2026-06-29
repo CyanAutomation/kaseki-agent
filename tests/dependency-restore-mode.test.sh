@@ -119,11 +119,36 @@ mkdir -p \
   "$TMP_DIR/prune-cache/npm/lock-new/node-24/flags-b/node_modules/pkg"
 printf '%2048s\n' x > "$TMP_DIR/prune-cache/npm/lock-old/node-24/flags-a/node_modules/pkg/blob.txt"
 printf '%2048s\n' y > "$TMP_DIR/prune-cache/npm/lock-new/node-24/flags-b/node_modules/pkg/blob.txt"
+printf '4096\n' > "$TMP_DIR/prune-cache/npm/lock-old/node-24/flags-a/.entry-size-bytes"
+printf '4096\n' > "$TMP_DIR/prune-cache/npm/lock-new/node-24/flags-b/.entry-size-bytes"
 touch -t 202501010000 "$TMP_DIR/prune-cache/npm/lock-old/node-24/flags-a"
 metrics_file="$TMP_DIR/prune-cache/.kaseki-cache-metrics"
-prune_dependency_cache "$TMP_DIR/prune-cache" 50000 0 "$metrics_file"
+prune_dependency_cache "$TMP_DIR/prune-cache" 5000 0 "$metrics_file"
 [ ! -d "$TMP_DIR/prune-cache/npm/lock-old/node-24/flags-a" ] || fail "Oldest dependency cache entry was not pruned"
 [ -f "$metrics_file" ] || fail "Dependency cache metrics file was not written"
 grep -q '^size_bytes=' "$metrics_file" || fail "Dependency cache metrics missing size_bytes"
 grep -q '^entry_count=1$' "$metrics_file" || fail "Dependency cache metrics missing pruned entry_count"
 pass "dependency cache pruning removes oldest entries and writes metrics"
+
+du() { fail "dependency_cache_size_bytes must not recursively scan the shared cache"; }
+[ "$(dependency_cache_size_bytes "$TMP_DIR/prune-cache")" = "4096" ] || fail "metadata-based cache size was incorrect"
+unset -f du
+pass "dependency cache size accounting avoids synchronous whole-cache scans"
+
+invalid_root="$TMP_DIR/invalid-cache"
+mkdir -p "$invalid_root/node_modules/pkg"
+touch "$invalid_root/stamp.txt" "$invalid_root/repo-ref-metadata.tsv"
+invalidate_workspace_dependency_cache \
+  "$invalid_root/node_modules" \
+  "$invalid_root/stamp.txt" \
+  "$invalid_root/repo-ref-metadata.tsv"
+[ ! -e "$invalid_root/node_modules" ] || fail "invalid node_modules cache was not removed"
+[ ! -e "$invalid_root/stamp.txt" ] || fail "invalid cache stamp was not removed"
+[ ! -e "$invalid_root/repo-ref-metadata.tsv" ] || fail "invalid cache metadata was not removed"
+pass "failed cache validation invalidates the workspace cache entry immediately"
+
+legacy_entry="$TMP_DIR/prune-cache/npm/lock-legacy/node-24/flags-c"
+mkdir -p "$legacy_entry/node_modules/pkg"
+prune_dependency_cache "$TMP_DIR/prune-cache" 5000 0 "$metrics_file"
+[ ! -e "$legacy_entry" ] || fail "unmetered legacy cache entry was not removed"
+pass "cache pruning retires legacy entries without recursively scanning them"

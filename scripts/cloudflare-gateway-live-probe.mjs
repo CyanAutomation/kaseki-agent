@@ -56,7 +56,7 @@ const response = await fetch(endpoint, {
   body: JSON.stringify({
     model,
     messages: [{ role: 'user', content: 'Say "CloudFlare gateway test successful" in one sentence' }],
-    max_tokens: 50,
+    max_tokens: 256,
   }),
 });
 

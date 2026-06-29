@@ -73,6 +73,7 @@ export class DiagnosticExtractor {
       response.validationFailureReason,
       response.qualityFailureReason,
       typeof failureJson.goal_check_failure_reason === 'string' ? failureJson.goal_check_failure_reason : undefined,
+      this.extractTerminalRuntimeError(failureJson),
       typeof failureJson.diagnostic_reason === 'string' ? failureJson.diagnostic_reason : undefined,
       typeof failureJson.failed_command === 'string' ? failureJson.failed_command : undefined,
       response.error,
@@ -82,6 +83,22 @@ export class DiagnosticExtractor {
     return candidates
       .map((candidate) => typeof candidate === 'string' ? this.cleanDiagnosticText(candidate) : undefined)
       .find((candidate): candidate is string => Boolean(candidate));
+  }
+
+  private extractTerminalRuntimeError(failureJson: Record<string, unknown>): string | undefined {
+    const stderrTail = this.stringField(failureJson, 'stderr_tail');
+    if (!stderrTail) return undefined;
+
+    const lines = stderrTail.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const runtimeError = lines.find((line) =>
+      /^Error(?:\s+\[[A-Z0-9_]+\])?:/.test(line) || /(?:ERR_MODULE_NOT_FOUND|MODULE_NOT_FOUND)/.test(line)
+    );
+    const wrapperError = lines.find((line) => /^ERROR:\s+/.test(line));
+    const error = runtimeError ?? wrapperError;
+    if (!error) return undefined;
+
+    const failedCommand = this.stringField(failureJson, 'failed_command');
+    return failedCommand ? `${failedCommand}: ${error}` : error;
   }
 
   private formatProviderError(failureJson: Record<string, unknown>): string | undefined {

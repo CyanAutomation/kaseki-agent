@@ -1739,6 +1739,27 @@ extract_failure_diagnostic_reason() {
     return 0
   fi
 
+  # A terminal runtime/import failure is more causal than missing downstream
+  # artifacts produced after that command failed. Prefer the last structured
+  # Node/shell error from stderr before phase-validation fallout.
+  local terminal_runtime_error
+  terminal_runtime_error="$(node - "${KASEKI_RESULTS_DIR}/stderr.log" <<'NODE'
+const fs = require('node:fs');
+const file = process.argv[2];
+if (!fs.existsSync(file)) process.exit(0);
+const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+const runtimeError = lines.find((line) =>
+  /^Error(?:\s+\[[A-Z0-9_]+\])?:/.test(line) || /(?:ERR_MODULE_NOT_FOUND|MODULE_NOT_FOUND)/.test(line)
+);
+const wrapperError = lines.find((line) => /^ERROR:\s+/.test(line));
+if (runtimeError || wrapperError) process.stdout.write(runtimeError || wrapperError);
+NODE
+)"
+  if [ -n "$terminal_runtime_error" ]; then
+    printf '%s: %s' "${FAILED_COMMAND:-runtime failure}" "$terminal_runtime_error"
+    return 0
+  fi
+
   local diagnostic
   diagnostic="$(node - "${KASEKI_RESULTS_DIR}" <<'NODE'
 const fs = require('node:fs');
@@ -3616,13 +3637,29 @@ dependency_cache_entry_roots() {
 
 dependency_cache_size_bytes() {
   local cache_dir="$1"
+  # Sum per-entry metadata instead of recursively scanning the entire shared
+  # cache on every worker run. Older entries without metadata are accounted
+  # for when they are next published.
+  dependency_cache_entry_roots "$cache_dir" | while IFS= read -r entry; do
+    [ -r "$entry/.entry-size-bytes" ] && cat "$entry/.entry-size-bytes"
+  done | awk '{ total += $1 } END { printf "%.0f\n", total + 0 }'
+}
+
+record_dependency_cache_entry_size() {
+  local entry_root="$1"
+  local source_dir="$2"
   local size_kb
-  size_kb="$(du -sk "$cache_dir" 2>/dev/null | awk '{print $1}')"
-  if [ -n "$size_kb" ]; then
-    printf '%s\n' $((size_kb * 1024))
-  else
-    printf '0\n'
-  fi
+  size_kb="$(du -sk "$source_dir" 2>/dev/null | awk '{print $1}')"
+  [ -n "$size_kb" ] || return 0
+  printf '%s\n' $((size_kb * 1024)) > "$entry_root/.entry-size-bytes"
+}
+
+invalidate_workspace_dependency_cache() {
+  local cache_dir="$1"
+  local stamp_file="$2"
+  local metadata_file="$3"
+  rm -rf "$cache_dir"
+  rm -f "$stamp_file" "$metadata_file"
 }
 
 write_dependency_cache_metrics() {
@@ -3663,6 +3700,16 @@ prune_dependency_cache() {
   fi
 
   if [ "$max_bytes" -gt 0 ] 2>/dev/null; then
+    # Entries created before per-entry accounting cannot be included without a
+    # blocking recursive scan. Remove them once so future enforcement remains
+    # fast and exact.
+    dependency_cache_entry_roots "$cache_dir" | while IFS= read -r entry; do
+      [ -n "$entry" ] || continue
+      if [ ! -r "$entry/.entry-size-bytes" ]; then
+        printf 'Dependency cache prune: removing unmetered legacy entry %s\n' "$entry" | tee -a "$DEPENDENCY_CACHE_LOG"
+        rm -rf "$entry"
+      fi
+    done
     size_bytes="$(dependency_cache_size_bytes "$cache_dir")"
     while [ "$size_bytes" -gt "$max_bytes" ]; do
       oldest_entry="$(dependency_cache_entry_roots "$cache_dir" | while IFS= read -r entry; do
@@ -9614,6 +9661,7 @@ prepare_dependencies() {
       # Phase 2D: Emit cache metric to JSON (validation failure)
       append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_invalid" "true" "workspace" "0" "npm_ls_failed"
       rm -rf node_modules
+      invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
       cache_reused="false"
       cache_source="none"
       install_reason="workspace_cache_validation_failed"
@@ -9709,6 +9757,7 @@ prepare_dependencies() {
     exec {cache_lock_fd}>&-
     return 1
   fi
+  record_dependency_cache_entry_size "$workspace_cache_root" "$workspace_cache_dir"
   if ! rm -rf "$old_cache_dir"; then
     exec {cache_lock_fd}>&-
     return 1

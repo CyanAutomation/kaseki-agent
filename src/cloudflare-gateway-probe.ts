@@ -17,8 +17,10 @@ interface GatewayContentPart {
 }
 
 interface GatewayChoice {
+  finish_reason?: unknown;
   message?: {
     content?: unknown;
+    reasoning?: unknown;
   };
 }
 
@@ -28,7 +30,10 @@ interface GatewayResponseBody {
 
 const DEFAULT_MODEL = 'dynamic/kaseki-agent';
 const DEFAULT_PROMPT = 'Say "CloudFlare gateway test successful" in one sentence';
-const DEFAULT_MAX_TOKENS = 50;
+// Dynamic gateway routes may select reasoning models whose hidden reasoning
+// consumes the output budget before message.content is emitted. Keep this
+// probe small, but large enough to validate those routes reliably.
+const DEFAULT_MAX_TOKENS = 256;
 
 export function buildCloudflareGatewayChatCompletionsUrl(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
@@ -67,7 +72,7 @@ export async function probeCloudflareGateway(
           content: options.prompt || DEFAULT_PROMPT,
         },
       ],
-      max_tokens: options.maxTokens || DEFAULT_MAX_TOKENS,
+      max_tokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
     }),
   });
 
@@ -76,8 +81,16 @@ export async function probeCloudflareGateway(
   }
 
   const data = (await response.json()) as GatewayResponseBody;
-  const content = parseGatewayContent(data.choices?.[0]?.message?.content);
+  const choice = data.choices?.[0];
+  const content = parseGatewayContent(choice?.message?.content);
   if (!content) {
+    const finishReason = typeof choice?.finish_reason === 'string' ? choice.finish_reason : 'unknown';
+    const reasoningPresent = parseGatewayContent(choice?.message?.reasoning).length > 0;
+    if (finishReason === 'length' && reasoningPresent) {
+      throw new Error(
+        'CloudFlare gateway probe exhausted max_tokens during model reasoning before message content was emitted'
+      );
+    }
     throw new Error('CloudFlare gateway probe response did not include message content');
   }
 
