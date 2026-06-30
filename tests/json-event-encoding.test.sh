@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
-# Tests JSONL event helpers safely escape shell-provided values.
+# Tests JSONL event helpers preserve event fields while generic escaping is
+# covered by test/json-helpers.test.sh.
 
 set -euo pipefail
 
@@ -17,45 +18,92 @@ INSTANCE_NAME='instance "quoted"'
 
 . "$ROOT_DIR/scripts/lib/json-events.sh"
 
-emit_event 'quoted_event' 'detail=value with "quotes", comma, and = sign' 'path=src/a b.ts' '=ignored-empty-key'
-emit_progress 'stage "one"' $'line one\nline two' 'ok,status'
+emit_event 'edge_event' \
+  'empty_value=' \
+  'duplicate=first' \
+  'duplicate=second' \
+  '=ignored-empty-key' \
+  $'message=line one\nline two\tctrl:\001' \
+  'path=src/a b.ts'
+
+emit_progress 'stage:empty-detail' '' ''
 
 node - "$TMP_DIR/results/progress.jsonl" <<'NODE'
 const fs = require('node:fs');
 
 function assertField(object, field, expected) {
   if (object[field] !== expected) {
-    throw new Error(`unexpected ${field}: ${object[field]}`);
+    throw new Error(`unexpected ${field}: ${JSON.stringify(object[field])}; expected ${JSON.stringify(expected)}`);
   }
 }
 
-const lines = fs.readFileSync(process.argv[2], 'utf8').trimEnd().split('\n');
+function assertNoField(object, field) {
+  if (Object.prototype.hasOwnProperty.call(object, field)) {
+    throw new Error(`unexpected field ${JSON.stringify(field)}: ${JSON.stringify(object[field])}`);
+  }
+}
+
+const raw = fs.readFileSync(process.argv[2], 'utf8').trimEnd();
+const lines = raw === '' ? [] : raw.split('\n');
+if (lines.length !== 2) throw new Error(`expected 2 JSONL records, got ${lines.length}`);
+
 const event = JSON.parse(lines[0]);
 const progress = JSON.parse(lines[1]);
 
-assertField(event, 'event_type', 'quoted_event');
-assertField(event, 'detail', 'value with "quotes", comma, and = sign');
+assertField(event, 'component', 'kaseki-agent');
+assertField(event, 'instance', 'instance "quoted"');
+assertField(event, 'event_type', 'edge_event');
+assertField(event, 'empty_value', '');
+assertField(event, 'duplicate', 'second');
+assertField(event, 'message', 'line one\nline two\tctrl:\u0001');
 assertField(event, 'path', 'src/a b.ts');
-if (Object.prototype.hasOwnProperty.call(event, '')) throw new Error('empty key should be ignored');
+assertNoField(event, '');
+if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(event.timestamp)) {
+  throw new Error(`unexpected event timestamp: ${event.timestamp}`);
+}
 
-assertField(progress, 'stage', 'stage "one"');
-assertField(progress, 'status', 'ok,status');
-assertField(progress, 'detail', 'line one\nline two');
+assertField(progress, 'component', 'kaseki-agent');
+assertField(progress, 'instance', 'instance "quoted"');
+assertField(progress, 'stage', 'stage:empty-detail');
+assertField(progress, 'status', 'info');
+assertField(progress, 'detail', '');
+if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(progress.timestamp)) {
+  throw new Error(`unexpected progress timestamp: ${progress.timestamp}`);
+}
 NODE
-pass 'emit_event and emit_progress write valid escaped JSONL'
+pass 'emit_event and emit_progress write semantically valid event JSONL edge cases'
 
 append_jsonl_object "$TMP_DIR/results/metadata.jsonl" \
   'event=allowlist_merge' \
-  'merged_agent_allowlist=src/"quoted"/** docs/path with spaces/**' \
-  'merged_validation_allowlist=tests/** value=still-one-field'
+  'empty_value=' \
+  'merged_agent_allowlist=src/** docs/path with spaces/**' \
+  'merged_validation_allowlist=tests/** value=still-one-field' \
+  'repeated=old' \
+  'repeated=new' \
+  '=ignored-empty-key'
 
 node - "$TMP_DIR/results/metadata.jsonl" <<'NODE'
 const fs = require('node:fs');
 const metadata = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-if (metadata.event !== 'allowlist_merge') throw new Error('metadata event mismatch');
-if (metadata.merged_agent_allowlist !== 'src/"quoted"/** docs/path with spaces/**') throw new Error('agent allowlist mismatch');
-if (metadata.merged_validation_allowlist !== 'tests/** value=still-one-field') throw new Error('validation allowlist mismatch');
+
+const expected = {
+  event: 'allowlist_merge',
+  empty_value: '',
+  merged_agent_allowlist: 'src/** docs/path with spaces/**',
+  merged_validation_allowlist: 'tests/** value=still-one-field',
+  repeated: 'new',
+};
+
+for (const [field, value] of Object.entries(expected)) {
+  if (metadata[field] !== value) {
+    throw new Error(`unexpected ${field}: ${JSON.stringify(metadata[field])}; expected ${JSON.stringify(value)}`);
+  }
+}
+
+if (Object.prototype.hasOwnProperty.call(metadata, '')) {
+  throw new Error('empty key should be ignored');
+}
 NODE
-pass 'metadata JSONL helper preserves quoted allowlist patterns'
+pass 'append_jsonl_object preserves event metadata semantics'
 
 printf '\n✅ json event encoding tests passed\n'
