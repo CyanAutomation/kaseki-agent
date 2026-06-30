@@ -117,7 +117,7 @@ try {
   ].join('\n') + '\n');
 
   await filterModule.runPiEventFilter(inputPath, filteredPath, summaryPath);
-  const kept = JSON.parse(fs.readFileSync(filteredPath, 'utf8').trim());
+  const kept = JSON.parse(fs.readFileSync(filteredPath, 'utf8').split('\n').filter(Boolean)[0]);
   const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
   assert.deepEqual(kept.message.content, [{ type: 'output_text', text: 'visible' }]);
   assert.deepEqual(kept.assistantMessageEvent.partial.content, [{ type: 'output_text', text: 'kept' }]);
