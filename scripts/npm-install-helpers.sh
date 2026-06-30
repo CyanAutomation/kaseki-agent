@@ -2,6 +2,10 @@
 # Helper functions for npm install flag construction. This file is intended
 # to be sourced by kaseki-agent.sh and tests.
 
+# Install command contract: callers pass these flags directly to
+# `npm ci --prefer-offline "${install_flags[@]}"`. KASEKI_NPM_OMIT_DEV=1
+# adds --omit=dev (default off); KASEKI_INSTALL_IGNORE_SCRIPTS=1 adds
+# --ignore-scripts (default on). Empty values use the same defaults as unset.
 append_npm_install_flags() {
   local -n flags_ref="$1"
   flags_ref=()
