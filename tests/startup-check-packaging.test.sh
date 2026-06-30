@@ -147,7 +147,8 @@ try {
   );
   const app = express();
   app.use('/api', router);
-  assert.ok(app._router ?? app.router);
+  assert.equal(typeof router, 'function');
+  assert.equal(typeof app.handle, 'function');
   assert.deepEqual(
     routesModule.classifyDockerFailure('Cannot connect to the Docker daemon at unix:///var/run/docker.sock'),
     {
