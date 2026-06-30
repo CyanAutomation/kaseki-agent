@@ -109,6 +109,8 @@ function templateStatus(overrides: Partial<TemplateHealthStatus>): TemplateHealt
 }
 
 beforeEach(() => {
+  // Capture the environment at the start of every test so afterEach restores
+  // the pre-test state instead of a stale module-load snapshot.
   savedEnv = { ...process.env };
   jest.clearAllMocks();
   setEnv();
