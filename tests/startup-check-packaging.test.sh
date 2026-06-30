@@ -240,7 +240,8 @@ assert_dockerfile_installs_executable() {
     const [sourcePath, destinationPath, expectedCountText] = process.argv.slice(1);
     const expectedCount = Number(expectedCountText);
     const dockerfile = readFileSync("Dockerfile", "utf8");
-    const installPattern = new RegExp(`install\\s+-m\\s+0755\\s+${sourcePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+${destinationPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=\\s|$)`, "g");
+    const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const installPattern = new RegExp(`install\\s+-m\\s+0755\\s+${escapeRegExp(sourcePath)}\\s+${escapeRegExp(destinationPath)}(?=\\s|$)`, "g");
     const actualCount = [...dockerfile.matchAll(installPattern)].length;
     if (actualCount !== expectedCount) {
       console.error(`expected ${expectedCount}, found ${actualCount}`);
