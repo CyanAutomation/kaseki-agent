@@ -1177,6 +1177,7 @@ docker_args=(
   -e TMPDIR="/workspace/tmp"
   -e NPM_CONFIG_CACHE="/cache/npm-cache"
   -e npm_config_cache="/cache/npm-cache"
+  -e PI_CODING_AGENT_DIR="/cache/pi-agent"
   -e OPENROUTER_API_KEY_FILE="/agents/secrets/openrouter_api_key"
   -v "$WORKSPACE:/workspace:rw"
   -v "$CACHE:/cache:rw"

@@ -381,7 +381,10 @@ VALIDATION_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/validation-timings.tsv"
 PRE_VALIDATION_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/pre-validation-timings.tsv"
 STAGE_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/stage-timings.tsv"
 DEPENDENCY_CACHE_LOG="${KASEKI_RESULTS_DIR}/dependency-cache.log"
-RAW_EVENTS="/tmp/pi-events.raw.jsonl"
+# Raw Pi streams can grow well beyond the deliberately small worker /tmp tmpfs.
+# Keep the coding stream on the persistent results mount, consistent with the
+# scouting, goal-setting, goal-check, and run-evaluation streams below.
+RAW_EVENTS="${KASEKI_RESULTS_DIR}/pi-events.raw.jsonl"
 SCOUTING_ARTIFACT="${KASEKI_RESULTS_DIR}/scouting.json"
 SCOUTING_CANDIDATE_ARTIFACT="${KASEKI_RESULTS_DIR}/scouting-candidate.json"
 SCOUTING_RAW_EVENTS="${KASEKI_RESULTS_DIR}/scouting-events.raw.jsonl"
