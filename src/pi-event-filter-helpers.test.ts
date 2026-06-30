@@ -43,6 +43,17 @@ describe('isProviderErrorRetryable', () => {
   it('returns false for unknown error', () => {
     expect(isProviderErrorRetryable('Something went wrong unexpectedly')).toBe(false);
   });
+
+  it('returns true for an opaque gateway finish reason error', () => {
+    expect(isProviderErrorRetryable('Provider finish_reason: error')).toBe(true);
+  });
+
+  it.each(['401 Unauthorized', '403 Forbidden', 'Invalid API key'])(
+    'returns false for permanent authentication error %s',
+    (message) => {
+      expect(isProviderErrorRetryable(message)).toBe(false);
+    }
+  );
 });
 
 // ─── classifyProviderError ───────────────────────────────────────────────────
@@ -113,6 +124,23 @@ describe('extractProviderError', () => {
     expect(result!.model).toBe('gpt-4');
     expect(result!.stop_reason).toBe('error');
     expect(result!.retryable).toBe(true);
+  });
+
+  it('preserves upstream gateway diagnostics', () => {
+    const result = extractProviderError(
+      makeErrorEvent({
+        errorMessage: 'Provider finish_reason: error',
+        statusCode: 503,
+        errorCode: 'upstream_error',
+        responseId: 'resp-123',
+      }) as any
+    );
+    expect(result).toMatchObject({
+      retryable: true,
+      status_code: 503,
+      error_code: 'upstream_error',
+      response_id: 'resp-123',
+    });
   });
 
   it('converts non-string errorMessage to string', () => {

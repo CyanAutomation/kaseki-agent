@@ -255,6 +255,8 @@ if [ -z "${KASEKI_RUN_EVALUATION+x}" ]; then
 fi
 KASEKI_RUN_EVALUATION_MODEL="${KASEKI_RUN_EVALUATION_MODEL:-$KASEKI_GOAL_CHECK_MODEL}"
 KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS="${KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS:-300}"
+KASEKI_PROVIDER_FALLBACK="${KASEKI_PROVIDER_FALLBACK-openrouter}"
+KASEKI_PROVIDER_FALLBACK_MODEL="${KASEKI_PROVIDER_FALLBACK_MODEL:-auto}"
 INSTANCE_NAME="${KASEKI_INSTANCE:-kaseki}"
 if [ "$KASEKI_TASK_MODE" = "inspect" ]; then
   KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-1}"
@@ -323,6 +325,9 @@ PROVIDER_ERROR_MESSAGE=""
 PROVIDER_ERROR_RETRYABLE=""
 PROVIDER_ERROR_RETRY_ATTEMPT_COUNT=0
 PROVIDER_ERROR_RETRY_RESULT="none"
+PROVIDER_ERROR_FALLBACK_PROVIDER=""
+PROVIDER_ERROR_FALLBACK_MODEL=""
+PROVIDER_ERROR_FALLBACK_RESULT="none"
 VALIDATION_EXIT=0
 VALIDATION_FAILED_COMMAND_DETAIL=""
 VALIDATION_FAILURE_REASON=""
@@ -1554,6 +1559,9 @@ write_metadata() {
   "provider_error_retryable": $(printf '%s' "$PROVIDER_ERROR_RETRYABLE" | json_encode),
   "provider_error_retry_attempt_count": $PROVIDER_ERROR_RETRY_ATTEMPT_COUNT,
   "provider_error_retry_result": $(printf '%s' "$PROVIDER_ERROR_RETRY_RESULT" | json_encode),
+  "provider_error_fallback_provider": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_PROVIDER" | json_encode),
+  "provider_error_fallback_model": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_MODEL" | json_encode),
+  "provider_error_fallback_result": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_RESULT" | json_encode),
   "pi_exit_code": $PI_EXIT,
   "scouting_exit_code": $SCOUTING_EXIT,
   "goal_setting_exit_code": $GOAL_SETTING_EXIT,
@@ -1915,6 +1923,27 @@ clear_provider_error() {
   PROVIDER_ERROR_RETRYABLE=""
   PROVIDER_ERROR_RETRY_ATTEMPT_COUNT=0
   PROVIDER_ERROR_RETRY_RESULT="none"
+  PROVIDER_ERROR_FALLBACK_PROVIDER=""
+  PROVIDER_ERROR_FALLBACK_MODEL=""
+  PROVIDER_ERROR_FALLBACK_RESULT="none"
+}
+
+resolve_openrouter_fallback_key() {
+  openrouter_api_key="${OPENROUTER_API_KEY:-}"
+  [ -n "$openrouter_api_key" ] && return 0
+
+  local candidate
+  for candidate in \
+    "${OPENROUTER_API_KEY_FILE:-}" \
+    "${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/openrouter_api_key" \
+    "/agents/secrets/openrouter_api_key" \
+    "$HOME/.kaseki/secrets/openrouter_api_key"; do
+    if [ -n "$candidate" ] && [ -r "$candidate" ] && [ -s "$candidate" ]; then
+      openrouter_api_key="$(tr -d '\r\n' < "$candidate")"
+      [ -n "$openrouter_api_key" ] && return 0
+    fi
+  done
+  return 1
 }
 
 check_if_provider_error_retryable() {
@@ -1954,6 +1983,7 @@ run_pi_with_retry() {
   #   $5: summary_file_base  - Base path for summary files (without .json extension, e.g., "pi-summary")
   #   $6: stderr_target      - Optional: stderr file path
   #   $7: phase_name         - Phase name for logging (e.g., "coding", "scouting")
+  #   $8: allow_fallback     - Set to 1 to allow gateway -> OpenRouter fallback
   #
   # Returns:
   #   Exit code from Pi invocation (after retry logic applied)
@@ -1976,11 +2006,15 @@ run_pi_with_retry() {
   local summary_file_base="$5"
   local stderr_target="${6:-}"
   local phase_name="${7:-unknown}"
-  local pi_exit summary_file attempt=1
+  local allow_fallback="${8:-0}"
+  local pi_exit summary_file attempt=1 original_provider="$KASEKI_PROVIDER"
   
   # Reset retry tracking
   PROVIDER_ERROR_RETRY_ATTEMPT_COUNT=0
   PROVIDER_ERROR_RETRY_RESULT="none"
+  PROVIDER_ERROR_FALLBACK_PROVIDER=""
+  PROVIDER_ERROR_FALLBACK_MODEL=""
+  PROVIDER_ERROR_FALLBACK_RESULT="none"
   
   invoke_pi() {
     if [ -n "$stderr_target" ]; then
@@ -2038,6 +2072,30 @@ run_pi_with_retry() {
           "$phase_name" >&2
       fi
     fi
+  fi
+
+  if [ "$pi_exit" -eq 88 ] && [ "$PROVIDER_ERROR_RETRYABLE" = "true" ] && [ "$allow_fallback" = "1" ] && \
+    [ "$original_provider" = "gateway" ] && [ "$KASEKI_PROVIDER_FALLBACK" = "openrouter" ] && \
+    resolve_openrouter_fallback_key; then
+    PROVIDER_ERROR_FALLBACK_PROVIDER="openrouter"
+    PROVIDER_ERROR_FALLBACK_MODEL="$KASEKI_PROVIDER_FALLBACK_MODEL"
+    printf '[FALLBACK] Gateway provider failed in %s phase; retrying with provider=%s model=%s\n' \
+      "$phase_name" "$PROVIDER_ERROR_FALLBACK_PROVIDER" "$PROVIDER_ERROR_FALLBACK_MODEL" >&2
+    rm -f "$raw_events_file" 2>/dev/null || true
+    : > "$raw_events_file"
+    KASEKI_PROVIDER="$PROVIDER_ERROR_FALLBACK_PROVIDER"
+    model="$PROVIDER_ERROR_FALLBACK_MODEL"
+    invoke_pi
+    pi_exit=$?
+    KASEKI_PROVIDER="$original_provider"
+    if [ "$pi_exit" -eq 0 ]; then
+      PROVIDER_ERROR_FALLBACK_RESULT="success"
+      printf '[FALLBACK SUCCESS] OpenRouter completed the %s phase\n' "$phase_name" >&2
+    else
+      PROVIDER_ERROR_FALLBACK_RESULT="failed"
+      printf '[FALLBACK FAILED] OpenRouter failed the %s phase with exit %s\n' "$phase_name" "$pi_exit" >&2
+    fi
+    openrouter_api_key=""
   fi
   
   return "$pi_exit"
@@ -2296,6 +2354,12 @@ write_failure_json() {
   "provider_error_api": $(printf '%s' "$PROVIDER_ERROR_API" | json_encode),
   "provider_error_model": $(printf '%s' "$PROVIDER_ERROR_MODEL" | json_encode),
   "provider_error_message": $(printf '%s' "$PROVIDER_ERROR_MESSAGE" | json_encode),
+  "provider_error_retryable": $(printf '%s' "$PROVIDER_ERROR_RETRYABLE" | json_encode),
+  "provider_error_retry_attempt_count": $PROVIDER_ERROR_RETRY_ATTEMPT_COUNT,
+  "provider_error_retry_result": $(printf '%s' "$PROVIDER_ERROR_RETRY_RESULT" | json_encode),
+  "provider_error_fallback_provider": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_PROVIDER" | json_encode),
+  "provider_error_fallback_model": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_MODEL" | json_encode),
+  "provider_error_fallback_result": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_RESULT" | json_encode),
   "goal_check_attempts": $GOAL_CHECK_ATTEMPTS,
   "goal_check_met": $GOAL_CHECK_MET,
   "stage": $(printf '%s' "$CURRENT_STAGE" | json_encode),
@@ -3093,7 +3157,8 @@ run_pi_json_capture() {
     progress_pid=$!
 
     if [ -n "$stderr_target" ]; then
-      LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+      OPENROUTER_API_KEY="${openrouter_api_key:-${OPENROUTER_API_KEY:-}}" \
+        LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
         LLM_GATEWAY_URL="$llm_gateway_url" \
         timeout --signal=SIGTERM "$timeout_seconds" \
         pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
@@ -3131,7 +3196,8 @@ process.stdin.on("end", () => {
 });
 ' "$raw_events_file" "$progress_fifo"
     else
-      LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+      OPENROUTER_API_KEY="${openrouter_api_key:-${OPENROUTER_API_KEY:-}}" \
+        LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
         LLM_GATEWAY_URL="$llm_gateway_url" \
         timeout --signal=SIGTERM "$timeout_seconds" \
         pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
@@ -3184,14 +3250,16 @@ process.stdin.on("end", () => {
     fi
   else
     if [ -n "$stderr_target" ]; then
-      LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+      OPENROUTER_API_KEY="${openrouter_api_key:-${OPENROUTER_API_KEY:-}}" \
+        LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
         LLM_GATEWAY_URL="$llm_gateway_url" \
         timeout --signal=SIGTERM "$timeout_seconds" \
         pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
         > "$raw_events_file" \
         2> >(tee -a "$stderr_target" >&2)
     else
-      LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+      OPENROUTER_API_KEY="${openrouter_api_key:-${OPENROUTER_API_KEY:-}}" \
+        LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
         LLM_GATEWAY_URL="$llm_gateway_url" \
         timeout --signal=SIGTERM "$timeout_seconds" \
         pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
@@ -10170,7 +10238,7 @@ NODE
   
   agent_prompt="$(build_agent_prompt)"
   PI_START_EPOCH="$(date +%s)"
-  run_pi_with_retry "$RAW_EVENTS" "$KASEKI_AGENT_TIMEOUT_SECONDS" "$KASEKI_MODEL" "$agent_prompt" "pi-summary" "${KASEKI_RESULTS_DIR}/pi-stderr.log" "pi coding"
+  run_pi_with_retry "$RAW_EVENTS" "$KASEKI_AGENT_TIMEOUT_SECONDS" "$KASEKI_MODEL" "$agent_prompt" "pi-summary" "${KASEKI_RESULTS_DIR}/pi-stderr.log" "pi coding" "1"
   PI_EXIT="$?"
   unset agent_prompt
   PI_DURATION_SECONDS=$(($(date +%s) - PI_START_EPOCH))

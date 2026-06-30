@@ -4,7 +4,7 @@
  * Robust behavioral coverage for public health-check functions.
  */
 
-import fs = require('fs');
+import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import * as subprocessHelpers from './lib/subprocess-helpers';
 import * as hostSecretsReader from './secrets/host-secrets-reader';
@@ -59,7 +59,6 @@ let readHostSecretSpy: jest.SpyInstance;
 let getSecretLocationsSpy: jest.SpyInstance;
 let validateGitHubKeySpy: jest.SpyInstance;
 let resolveGatewayKeySpy: jest.SpyInstance;
-let isResponsesEndpointSpy: jest.SpyInstance;
 
 function setEnv(overrides: NodeJS.ProcessEnv = {}) {
   process.env = { ...savedEnv, ...defaultEnv, ...overrides };
@@ -121,7 +120,7 @@ beforeEach(() => {
   jest.spyOn(hostSecretsReader, 'resolveHostSecretPath').mockReturnValue('/run/secrets/kaseki/llm_gateway_api_key');
   validateGitHubKeySpy = jest.spyOn(githubAppPrivateKey, 'validateGitHubAppPrivateKey').mockReturnValue({ ok: true });
   resolveGatewayKeySpy = jest.spyOn(gatewaySmoke, 'resolveGatewayApiKey').mockReturnValue({ configured: true, source: 'env-var' });
-  isResponsesEndpointSpy = jest.spyOn(gatewaySmoke, 'isResponsesEndpoint').mockReturnValue(true);
+  jest.spyOn(gatewaySmoke, 'isResponsesEndpoint').mockReturnValue(true);
   mockSecretLocations();
 });
 
