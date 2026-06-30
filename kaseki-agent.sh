@@ -1994,9 +1994,11 @@ run_pi_with_retry() {
   #
   # Behavior:
   # - Calls run_pi_json_capture to invoke Pi
-  # - If exit 88: runs event filter and checks if error is retryable
+  # - Runs the event filter after every invocation because Pi can exit 0 even
+  #   when the provider stream reports a terminal finish_reason:error event
+  # - Normalizes a terminal provider event to exit 88 before retry decisions
   # - If retryable: sleep 3s, clears raw events, retries once
-  # - Caller is responsible for running event filter after this function returns
+  # - Caller may run the event filter again when collecting final artifacts
   # - Max 2 total invocations (initial + 1 retry)
   
   local raw_events_file="$1"
@@ -2008,6 +2010,12 @@ run_pi_with_retry() {
   local phase_name="${7:-unknown}"
   local allow_fallback="${8:-0}"
   local pi_exit summary_file attempt=1 original_provider="$KASEKI_PROVIDER"
+  local previous_retryable="${PROVIDER_ERROR_RETRYABLE:-}"
+  local previous_retry_attempt_count="${PROVIDER_ERROR_RETRY_ATTEMPT_COUNT:-0}"
+  local previous_retry_result="${PROVIDER_ERROR_RETRY_RESULT:-none}"
+  local previous_fallback_provider="${PROVIDER_ERROR_FALLBACK_PROVIDER:-}"
+  local previous_fallback_model="${PROVIDER_ERROR_FALLBACK_MODEL:-}"
+  local previous_fallback_result="${PROVIDER_ERROR_FALLBACK_RESULT:-none}"
   
   # Reset retry tracking
   PROVIDER_ERROR_RETRY_ATTEMPT_COUNT=0
@@ -2023,18 +2031,9 @@ run_pi_with_retry() {
       run_pi_json_capture "$raw_events_file" "$timeout_seconds" "$model" "$prompt"
     fi
   }
-  
-  # First attempt
-  invoke_pi
-  pi_exit=$?
-  
-  # For phase-specific retries, we need to check provider errors
-  # Only retry if we got exit 88 (provider error) on first attempt
-  if [ "$pi_exit" -eq 88 ] && [ "$attempt" -eq 1 ]; then
-    # Determine summary file path
+
+  summarize_invocation() {
     summary_file="${KASEKI_RESULTS_DIR}/${summary_file_base}.json"
-    
-    # Run event filter to get summary for this phase
     if [ "$summary_file_base" = "pi-summary" ]; then
       kaseki-pi-event-filter "$raw_events_file" "${KASEKI_RESULTS_DIR}/pi-events.jsonl" "$summary_file" 2>/dev/null || true
     elif [ "$summary_file_base" = "scouting-summary" ]; then
@@ -2044,10 +2043,27 @@ run_pi_with_retry() {
     elif [ "$summary_file_base" = "goal-check-summary" ]; then
       kaseki-pi-event-filter "$raw_events_file" "${KASEKI_RESULTS_DIR}/goal-check-events.jsonl" "$summary_file" 2>/dev/null || true
     else
-      # Generic case: just copy
       cp "$raw_events_file" "${summary_file_base}.jsonl" 2>/dev/null || true
     fi
-    
+
+    # Pi 0.77 may return success even though an OpenAI-compatible stream ended
+    # with finish_reason:error. Treat the structured event as authoritative.
+    if capture_provider_error_from_summary "$summary_file" "$phase_name"; then
+      pi_exit=88
+      check_if_provider_error_retryable "$summary_file" || true
+      return 0
+    fi
+    return 1
+  }
+
+  # First attempt
+  invoke_pi
+  pi_exit=$?
+  summarize_invocation || true
+
+  # For phase-specific retries, we need to check provider errors
+  # Only retry if we got exit 88 (provider error) on first attempt
+  if [ "$pi_exit" -eq 88 ] && [ "$attempt" -eq 1 ]; then
     # Check if error is retryable
     if check_if_provider_error_retryable "$summary_file"; then
       printf '[RETRY] Provider error is retryable in %s phase; attempting second invocation after 3s delay (model: %s)\n' \
@@ -2061,6 +2077,7 @@ run_pi_with_retry() {
       attempt=2
       invoke_pi
       pi_exit=$?
+      summarize_invocation || true
       
       if [ "$pi_exit" -eq 0 ]; then
         PROVIDER_ERROR_RETRY_RESULT="success"
@@ -2087,6 +2104,7 @@ run_pi_with_retry() {
     model="$PROVIDER_ERROR_FALLBACK_MODEL"
     invoke_pi
     pi_exit=$?
+    summarize_invocation || true
     KASEKI_PROVIDER="$original_provider"
     if [ "$pi_exit" -eq 0 ]; then
       PROVIDER_ERROR_FALLBACK_RESULT="success"
@@ -2096,6 +2114,19 @@ run_pi_with_retry() {
       printf '[FALLBACK FAILED] OpenRouter failed the %s phase with exit %s\n' "$phase_name" "$pi_exit" >&2
     fi
     openrouter_api_key=""
+  fi
+
+  # A later goal-check coding attempt must not erase recovery telemetry from an
+  # earlier attempt when the later invocation itself needed no recovery.
+  if [ "$pi_exit" -eq 0 ] && [ "$PROVIDER_ERROR_RETRY_ATTEMPT_COUNT" -eq 0 ] && \
+    [ "$PROVIDER_ERROR_FALLBACK_RESULT" = "none" ] && \
+    { [ "$previous_retry_attempt_count" -gt 0 ] || [ "$previous_fallback_result" != "none" ]; }; then
+    PROVIDER_ERROR_RETRYABLE="$previous_retryable"
+    PROVIDER_ERROR_RETRY_ATTEMPT_COUNT="$previous_retry_attempt_count"
+    PROVIDER_ERROR_RETRY_RESULT="$previous_retry_result"
+    PROVIDER_ERROR_FALLBACK_PROVIDER="$previous_fallback_provider"
+    PROVIDER_ERROR_FALLBACK_MODEL="$previous_fallback_model"
+    PROVIDER_ERROR_FALLBACK_RESULT="$previous_fallback_result"
   fi
   
   return "$pi_exit"
