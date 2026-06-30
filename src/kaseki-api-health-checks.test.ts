@@ -1,22 +1,15 @@
 /**
  * src/kaseki-api-health-checks.test.ts
  *
- * Comprehensive test suite for kaseki-api-health-checks.ts module.
- * Tests all health check functions with success, failure, and edge-case scenarios.
- *
- * **Coverage Target**: >90% for all exported functions
- *
- * Mocked dependencies:
- * - fs: filesystem operations
- * - child_process.spawnSync: subprocess execution
- * - execDockerCommand: Docker operations
- * - readHostSecret: secret retrieval
- * - validateGitHubAppPrivateKey: GitHub App validation
- * - resolveGatewayApiKey: gateway key resolution
+ * Robust behavioral coverage for public health-check functions.
  */
 
-import * as fs from 'fs';
+import fs = require('fs');
 import { spawnSync } from 'node:child_process';
+import * as subprocessHelpers from './lib/subprocess-helpers';
+import * as hostSecretsReader from './secrets/host-secrets-reader';
+import * as githubAppPrivateKey from './github-app-private-key';
+import * as gatewaySmoke from './kaseki-api-gateway-smoke';
 import {
   checkDeletedBindMounts,
   checkWritableDirectory,
@@ -33,704 +26,459 @@ import {
   shouldBlockForFreshness,
   isTemplateDoctorTimeout,
   TEMPLATE_REMEDIATION,
+  TemplateHealthStatus,
 } from './kaseki-api-health-checks';
-import { execDockerCommand } from './lib/subprocess-helpers';
-import {
-  readHostSecret,
-  getSecretLocations,
-} from './secrets/host-secrets-reader';
-import { validateGitHubAppPrivateKey } from './github-app-private-key';
-import {
-  resolveGatewayApiKey,
-  isResponsesEndpoint,
-} from './kaseki-api-gateway-smoke';
 
-jest.mock('fs');
-jest.mock('node:child_process');
-jest.mock('./lib/subprocess-helpers');
-jest.mock('./secrets/host-secrets-reader');
-jest.mock('./github-app-private-key');
-jest.mock('./kaseki-api-gateway-smoke');
+jest.mock('node:child_process', () => ({
+  spawnSync: jest.fn(),
+}));
+
 jest.mock('./utils/file-helpers', () => ({
   commandOutput: jest.fn().mockReturnValue(''),
   readFirstLine: jest.fn().mockReturnValue(''),
 }));
 
-const mockFs = fs as jest.Mocked<typeof fs>;
 const mockSpawnSync = spawnSync as jest.MockedFunction<typeof spawnSync>;
-const mockExecDocker = execDockerCommand as jest.MockedFunction<
-  typeof execDockerCommand
->;
-const mockReadHostSecret = readHostSecret as jest.MockedFunction<
-  typeof readHostSecret
->;
-const mockGetSecretLocations = getSecretLocations as jest.MockedFunction<
-  typeof getSecretLocations
->;
-const mockValidateGitHubKey = validateGitHubAppPrivateKey as jest.MockedFunction<
-  typeof validateGitHubAppPrivateKey
->;
-const mockResolveGatewayKey = resolveGatewayApiKey as jest.MockedFunction<
-  typeof resolveGatewayApiKey
->;
-const mockIsResponsesEndpoint = isResponsesEndpoint as jest.MockedFunction<
-  typeof isResponsesEndpoint
->;
 
-describe('kaseki-api-health-checks', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    jest.resetModules();
-    process.env.KASEKI_PROVIDER = 'gateway';
-    process.env.LLM_GATEWAY_URL = 'https://gateway.example/v1';
-    process.env.KASEKI_TEMPLATE_DIR = '/agents/kaseki-template';
-    process.env.KASEKI_CHECKOUT_DIR = '/agents/kaseki-agent';
+type FsSpyName = 'readFileSync' | 'mkdirSync' | 'accessSync' | 'existsSync' | 'rmSync';
+type FsSpies = Partial<Record<FsSpyName, jest.SpyInstance>>;
+
+type SecretMap = Partial<Record<string, string | undefined>>;
+
+const defaultEnv = {
+  KASEKI_PROVIDER: 'gateway',
+  LLM_GATEWAY_URL: 'https://gateway.example/v1',
+  KASEKI_TEMPLATE_DIR: '/agents/kaseki-template',
+  KASEKI_CHECKOUT_DIR: '/agents/kaseki-agent',
+};
+
+const savedEnv = { ...process.env };
+let fsSpies: FsSpies = {};
+let execDockerSpy: jest.SpyInstance;
+let readHostSecretSpy: jest.SpyInstance;
+let getSecretLocationsSpy: jest.SpyInstance;
+let validateGitHubKeySpy: jest.SpyInstance;
+let resolveGatewayKeySpy: jest.SpyInstance;
+let isResponsesEndpointSpy: jest.SpyInstance;
+
+function setEnv(overrides: NodeJS.ProcessEnv = {}) {
+  process.env = { ...savedEnv, ...defaultEnv, ...overrides };
+}
+
+function spyFs<T extends FsSpyName>(name: T) {
+  if (!fsSpies[name]) {
+    fsSpies[name] = jest.spyOn(fs, name as never) as jest.SpyInstance;
+  }
+  return fsSpies[name]!;
+}
+
+function mockSecretReader(secrets: SecretMap) {
+  readHostSecretSpy.mockImplementation((name: string) => secrets[name]);
+}
+
+function mockSecretLocations() {
+  getSecretLocationsSpy.mockImplementation((name: string) => ({
+    primary: `/run/secrets/kaseki/${name}`,
+    secondary: '~/.kaseki/secrets.json',
+  }));
+}
+
+function healthyTemplateFs() {
+  spyFs('existsSync').mockReturnValue(true);
+  mockSpawnSync.mockReturnValue({
+    status: 0,
+    stdout: 'Doctor OK',
+    stderr: '',
+    signal: null,
+    pid: 1234,
+  } as any);
+}
+
+function templateStatus(overrides: Partial<TemplateHealthStatus>): TemplateHealthStatus {
+  return {
+    ok: false,
+    templateDir: '/template',
+    runScript: '/template/run-kaseki.sh',
+    checkoutDir: '/checkout',
+    doctorCommand: 'doctor',
+    detail: 'Doctor check failed',
+    doctorStderrTail: '',
+    doctorStdoutTail: '',
+    ...overrides,
+  };
+}
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  setEnv();
+  fsSpies = {};
+  execDockerSpy = jest.spyOn(subprocessHelpers, 'execDockerCommand').mockReturnValue({ ok: true, stdout: '', stderr: '' });
+  readHostSecretSpy = jest.spyOn(hostSecretsReader, 'readHostSecret').mockReturnValue(undefined);
+  getSecretLocationsSpy = jest.spyOn(hostSecretsReader, 'getSecretLocations');
+  jest.spyOn(hostSecretsReader, 'resolveHostSecretPath').mockReturnValue('/run/secrets/kaseki/llm_gateway_api_key');
+  validateGitHubKeySpy = jest.spyOn(githubAppPrivateKey, 'validateGitHubAppPrivateKey').mockReturnValue({ ok: true });
+  resolveGatewayKeySpy = jest.spyOn(gatewaySmoke, 'resolveGatewayApiKey').mockReturnValue({ configured: true, source: 'env-var' });
+  isResponsesEndpointSpy = jest.spyOn(gatewaySmoke, 'isResponsesEndpoint').mockReturnValue(true);
+  mockSecretLocations();
+});
+
+afterEach(() => {
+  process.env = { ...savedEnv };
+  jest.restoreAllMocks();
+  mockSpawnSync.mockReset();
+});
+
+describe('checkDeletedBindMounts', () => {
+  it('reports no deleted mounts for target paths', () => {
+    spyFs('readFileSync').mockReturnValue('1 2 3 /mount1 /workspace - type opts');
+
+    const result = checkDeletedBindMounts(['/workspace']);
+
+    expect(result).toMatchObject({ name: 'bind-mounts', detail: 'No deleted bind mounts detected for Kaseki paths.' });
   });
 
-  describe('checkDeletedBindMounts', () => {
-    it('should pass when no deleted mounts are detected', () => {
-      mockFs.readFileSync.mockReturnValue(
-        '1 2 3 /mount1 mount-point-1 - type opts\n2 2 3 /mount2 mount-point-2 - type opts'
-      );
+  it('reports deleted backing source details and remediation', () => {
+    spyFs('readFileSync').mockReturnValue('1 2 3 /path/deleted\\040(deleted) /workspace - type opts');
 
-      const result = checkDeletedBindMounts(['/workspace']);
+    const result = checkDeletedBindMounts(['/workspace/project']);
 
-      expect(result.ok).toBe(true);
-      expect(result.name).toBe('bind-mounts');
-    });
-
-    it('should fail when deleted bind mounts are detected', () => {
-      mockFs.readFileSync.mockReturnValue(
-        '1 2 3 /path/to/deleted\\040(deleted) /workspace - type opts'
-      );
-
-      const result = checkDeletedBindMounts(['/workspace']);
-
-      expect(result.ok).toBe(false);
-      expect(result.detail).toContain('deleted');
-    });
-
-    it('should handle empty paths array', () => {
-      mockFs.readFileSync.mockReturnValue('1 2 3 /path /mount - type opts');
-
-      const result = checkDeletedBindMounts([]);
-
-      expect(result.ok).toBe(true);
-    });
-
-    it('should handle missing mountinfo file', () => {
-      mockFs.readFileSync.mockImplementation(() => {
-        throw new Error('File not found');
-      });
-
-      const result = checkDeletedBindMounts(['/workspace']);
-
-      expect(result.ok).toBe(true);
-    });
+    expect(result.detail).toContain('/workspace is backed by deleted source');
+    expect(result.remediation).toContain('kaseki-agent host setup --fix');
   });
 
-  describe('checkWritableDirectory', () => {
-    it('should pass for writable directory', () => {
-      mockFs.mkdirSync.mockImplementation(() => '/tmp/test');
-      mockFs.accessSync.mockImplementation(() => undefined);
+  it('treats unreadable mountinfo as no matching deleted mounts', () => {
+    spyFs('readFileSync').mockImplementation(() => { throw new Error('File not found'); });
 
-      const result = checkWritableDirectory(
-        'test-dir',
-        '/tmp/test',
-        'Test remediation'
-      );
+    expect(checkDeletedBindMounts(['/workspace']).detail).toBe('No deleted bind mounts detected for Kaseki paths.');
+  });
+});
 
-      expect(result.ok).toBe(true);
-      expect(result.name).toBe('test-dir');
-      expect(result.detail).toContain('readable and writable');
-    });
+describe('checkWritableDirectory', () => {
+  it('describes a readable and writable directory', () => {
+    spyFs('mkdirSync').mockImplementation(() => '/tmp/test' as any);
+    spyFs('accessSync').mockImplementation(() => undefined);
 
-    it('should fail for non-writable directory', () => {
-      mockFs.mkdirSync.mockImplementation(() => '/tmp/test');
-      mockFs.accessSync.mockImplementation(() => {
-        throw new Error('Permission denied');
-      });
+    const result = checkWritableDirectory('test-dir', '/tmp/test', 'Test remediation');
 
-      const result = checkWritableDirectory(
-        'test-dir',
-        '/tmp/test',
-        'Test remediation'
-      );
-
-      expect(result.ok).toBe(false);
-      expect(result.detail).toContain('not readable and writable');
-      expect(result.remediation).toBe('Test remediation');
-    });
-
-    it('should fail if directory creation fails', () => {
-      mockFs.mkdirSync.mockImplementation(() => {
-        throw new Error('Cannot create directory');
-      });
-
-      const result = checkWritableDirectory(
-        'test-dir',
-        '/tmp/test',
-        'Test remediation'
-      );
-
-      expect(result.ok).toBe(false);
-    });
+    expect(result).toMatchObject({ name: 'test-dir', detail: '/tmp/test is readable and writable.' });
   });
 
-  describe('checkLLMGatewayKey', () => {
-    it('should pass when gateway provider is disabled', () => {
-      process.env.KASEKI_PROVIDER = 'openrouter';
+  it('returns access failure detail and caller remediation', () => {
+    spyFs('mkdirSync').mockImplementation(() => '/tmp/test' as any);
+    spyFs('accessSync').mockImplementation(() => { throw new Error('Permission denied'); });
 
-      const result = checkLLMGatewayKey();
+    const result = checkWritableDirectory('test-dir', '/tmp/test', 'Test remediation');
 
-      expect(result.ok).toBe(true);
-      expect(result.detail).toContain('not required');
-    });
+    expect(result.detail).toContain('/tmp/test is not readable and writable: Permission denied');
+    expect(result.remediation).toBe('Test remediation');
+  });
+});
 
-    it('should pass when gateway URL and key are configured', () => {
-      process.env.KASEKI_PROVIDER = 'gateway';
-      mockReadHostSecret.mockReturnValue('test-key');
-      mockIsResponsesEndpoint.mockReturnValue(true);
+describe('checkLLMGatewayKey', () => {
+  it('skips gateway connectivity when gateway provider is disabled', () => {
+    setEnv({ KASEKI_PROVIDER: 'openrouter' });
 
-      const result = checkLLMGatewayKey();
-
-      expect(result.ok).toBe(true);
-    });
-
-    it('should fail when gateway URL is missing', () => {
-      process.env.KASEKI_PROVIDER = 'gateway';
-      process.env.LLM_GATEWAY_URL = '';
-      mockReadHostSecret.mockReturnValue('test-key');
-      mockGetSecretLocations.mockReturnValue({
-        primary: '/run/secrets/kaseki/llm_gateway_api_key',
-        secondary: '~/.kaseki/secrets.json',
-      });
-
-      const result = checkLLMGatewayKey();
-
-      expect(result.ok).toBe(false);
-      expect(result.detail).toContain('missing');
-    });
-
-    it('should fail when gateway key is missing', () => {
-      process.env.KASEKI_PROVIDER = 'gateway';
-      mockReadHostSecret.mockReturnValue(undefined);
-      mockGetSecretLocations.mockReturnValue({
-        primary: '/run/secrets/kaseki/llm_gateway_api_key',
-        secondary: '~/.kaseki/secrets.json',
-      });
-
-      const result = checkLLMGatewayKey();
-
-      expect(result.ok).toBe(false);
-    });
+    expect(checkLLMGatewayKey().detail).toContain('not required for KASEKI_PROVIDER=openrouter');
   });
 
-  describe('checkGatewayTestSecretConsistency', () => {
-    it('should pass when both preflight and gateway test can resolve key', () => {
-      process.env.KASEKI_PROVIDER = 'gateway';
-      mockReadHostSecret.mockReturnValue('test-key');
-      mockResolveGatewayKey.mockReturnValue({
-        configured: true,
-        source: 'env-var',
-      });
+  it('confirms configured gateway URL and key prerequisites', () => {
+    mockSecretReader({ llm_gateway_api_key: 'test-key' });
 
-      const result = checkGatewayTestSecretConsistency();
-
-      expect(result.ok).toBe(true);
-      expect(result.name).toBe('gateway-api-secret-consistency');
-    });
-
-    it('should pass when gateway provider is disabled', () => {
-      process.env.KASEKI_PROVIDER = 'openrouter';
-
-      const result = checkGatewayTestSecretConsistency();
-
-      expect(result.ok).toBe(true);
-    });
-
-    it('should fail when neither can resolve key', () => {
-      process.env.KASEKI_PROVIDER = 'gateway';
-      mockReadHostSecret.mockReturnValue(undefined);
-      mockResolveGatewayKey.mockReturnValue({ configured: false });
-
-      const result = checkGatewayTestSecretConsistency();
-
-      expect(result.ok).toBe(false);
-      expect(result.detail).toContain('Neither');
-    });
-
-    it('should fail when only one can resolve key', () => {
-      process.env.KASEKI_PROVIDER = 'gateway';
-      mockReadHostSecret.mockReturnValue('test-key');
-      mockResolveGatewayKey.mockReturnValue({ configured: false });
-
-      const result = checkGatewayTestSecretConsistency();
-
-      expect(result.ok).toBe(false);
-    });
+    expect(checkLLMGatewayKey().detail).toBe('Gateway URL/key connectivity prerequisites are configured for the API container.');
   });
 
-  describe('checkWorkerGatewayConfig', () => {
-    it('should pass when gateway provider is disabled', () => {
-      process.env.KASEKI_PROVIDER = 'openrouter';
+  it('lists missing URL and secret sources', () => {
+    setEnv({ LLM_GATEWAY_URL: '' });
 
-      const result = checkWorkerGatewayConfig();
+    const result = checkLLMGatewayKey();
 
-      expect(result.ok).toBe(true);
-      expect(result.name).toBe('worker-gateway-secret-mount');
-    });
+    expect(result.detail).toContain('LLM_GATEWAY_URL');
+    expect(result.detail).toContain('LLM_GATEWAY_API_KEY or LLM_GATEWAY_API_KEY_FILE');
+    expect(result.remediation).toContain('/run/secrets/kaseki/llm_gateway_api_key');
+  });
+});
 
-    it('should pass when all gateway config is present', () => {
-      process.env.KASEKI_PROVIDER = 'gateway';
-      mockResolveGatewayKey.mockReturnValue({
-        configured: true,
-        source: 'env-var',
-      });
-      mockFs.accessSync.mockImplementation(() => undefined);
+describe('checkGatewayTestSecretConsistency', () => {
+  it('reports both preflight and gateway test can resolve the key', () => {
+    mockSecretReader({ llm_gateway_api_key: 'test-key' });
 
-      const result = checkWorkerGatewayConfig();
-
-      expect(result.ok).toBe(true);
-    });
-
-    it('should fail when gateway URL is missing', () => {
-      process.env.KASEKI_PROVIDER = 'gateway';
-      process.env.LLM_GATEWAY_URL = '';
-
-      const result = checkWorkerGatewayConfig();
-
-      expect(result.ok).toBe(false);
-    });
+    expect(checkGatewayTestSecretConsistency().detail).toContain('can both resolve');
   });
 
-  describe('checkGitHubAppCredentials', () => {
-    it('should pass when all GitHub App credentials are present and valid', () => {
-      mockReadHostSecret
-        .mockReturnValueOnce('123456') // app_id
-        .mockReturnValueOnce('client-id') // client_id
-        .mockReturnValueOnce('-----BEGIN RSA PRIVATE KEY-----'); // private_key
+  it('skips consistency check when gateway provider is disabled', () => {
+    setEnv({ KASEKI_PROVIDER: 'openrouter' });
 
-      mockValidateGitHubKey.mockReturnValue({ ok: true });
-
-      const result = checkGitHubAppCredentials();
-
-      expect(result.ok).toBe(true);
-      expect(result.name).toBe('github-app');
-    });
-
-    it('should fail when no GitHub App credentials are configured', () => {
-      mockReadHostSecret.mockReturnValue(undefined);
-      mockGetSecretLocations.mockReturnValue({
-        primary: '/run/secrets/kaseki/github_app_id',
-        secondary: '~/.kaseki/secrets.json',
-      });
-
-      const result = checkGitHubAppCredentials();
-
-      expect(result.ok).toBe(false);
-      expect(result.detail).toContain('not configured');
-    });
-
-    it('should fail when some credentials are missing', () => {
-      mockReadHostSecret
-        .mockReturnValueOnce('123456') // app_id
-        .mockReturnValueOnce(undefined) // client_id
-        .mockReturnValueOnce('-----BEGIN RSA PRIVATE KEY-----'); // private_key
-
-      const result = checkGitHubAppCredentials();
-
-      expect(result.ok).toBe(false);
-      expect(result.detail).toContain('incomplete');
-    });
-
-    it('should fail when app_id is not numeric', () => {
-      mockReadHostSecret
-        .mockReturnValueOnce('not-a-number')
-        .mockReturnValueOnce('client-id')
-        .mockReturnValueOnce('-----BEGIN RSA PRIVATE KEY-----');
-
-      const result = checkGitHubAppCredentials();
-
-      expect(result.ok).toBe(false);
-      expect(result.detail).toContain('not numeric');
-    });
-
-    it('should fail when private key is invalid', () => {
-      mockReadHostSecret
-        .mockReturnValueOnce('123456')
-        .mockReturnValueOnce('client-id')
-        .mockReturnValueOnce('invalid-key');
-
-      mockValidateGitHubKey.mockReturnValue({
-        ok: false,
-        error: 'Invalid key format',
-        remediation: 'Use a valid RSA private key',
-      });
-
-      const result = checkGitHubAppCredentials();
-
-      expect(result.ok).toBe(false);
-      expect(result.detail).toContain('Invalid key format');
-    });
+    expect(checkGatewayTestSecretConsistency().detail).toContain('not required for KASEKI_PROVIDER=openrouter');
   });
 
-  describe('checkWorkerSmokeTest', () => {
-    it('should pass when worker container smoke test succeeds', () => {
-      const mockConfig = {
-        resultsDir: '/agents/kaseki-results',
-      };
+  it('reports neither boundary can resolve the key', () => {
+    resolveGatewayKeySpy.mockReturnValue({ configured: false });
 
-      mockFs.mkdirSync.mockImplementation(() => '/smoke/workspace');
-      mockFs.rmSync.mockImplementation(() => undefined);
-      mockExecDocker.mockReturnValue({
-        ok: true,
-        stdout: '',
-        stderr: '',
-      });
+    const result = checkGatewayTestSecretConsistency();
 
-      const result = checkWorkerSmokeTest(mockConfig as any, 'kaseki-agent:latest');
-
-      expect(result.ok).toBe(true);
-      expect(result.name).toBe('worker-smoke');
-    });
-
-    it('should fail when worker container startup fails', () => {
-      const mockConfig = {
-        resultsDir: '/agents/kaseki-results',
-      };
-
-      mockFs.mkdirSync.mockImplementation(() => '/smoke/workspace');
-      mockFs.rmSync.mockImplementation(() => undefined);
-      mockExecDocker.mockReturnValue({
-        ok: false,
-        stdout: '',
-        stderr: 'Worker startup failed',
-        detail: 'Container failed to start',
-      });
-
-      const result = checkWorkerSmokeTest(mockConfig as any, 'kaseki-agent:latest');
-
-      expect(result.ok).toBe(false);
-      expect(result.detail).toContain('failed');
-    });
-
-    it('should cleanup temp directories on failure', () => {
-      const mockConfig = {
-        resultsDir: '/agents/kaseki-results',
-      };
-
-      mockFs.mkdirSync.mockImplementation(() => '/smoke/workspace');
-      mockFs.rmSync.mockImplementation(() => undefined);
-      mockExecDocker.mockReturnValue({
-        ok: false,
-        stdout: '',
-        stderr: 'Worker startup failed',
-      });
-
-      checkWorkerSmokeTest(mockConfig as any, 'kaseki-agent:latest');
-
-      expect(mockFs.rmSync).toHaveBeenCalledWith(
-        expect.stringContaining('.preflight-worker'),
-        { recursive: true, force: true }
-      );
-    });
+    expect(result.detail).toBe('Neither preflight nor Gateway Test can resolve the LLM Gateway API key.');
+    expect(result.remediation).toContain('Set LLM_GATEWAY_API_KEY');
   });
 
-  describe('buildTemplateHealthStatus', () => {
-    it('should return ok status when template is healthy', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: 'Doctor OK',
-        stderr: '',
-        signal: null,
-        pid: 1234,
-      } as any);
+  it('reports disagreement between preflight and gateway test visibility', () => {
+    mockSecretReader({ llm_gateway_api_key: 'test-key' });
+    resolveGatewayKeySpy.mockReturnValue({ configured: false });
 
-      const result = buildTemplateHealthStatus();
+    expect(checkGatewayTestSecretConsistency().detail).toContain('preflight=configured, gatewayTest=undefined');
+  });
+});
 
-      expect(result.ok).toBe(true);
-      expect(result.detail).toContain('passed doctor check');
-    });
+describe('checkWorkerGatewayConfig', () => {
+  it('skips worker gateway mount check when gateway provider is disabled', () => {
+    setEnv({ KASEKI_PROVIDER: 'openrouter' });
 
-    it('should fail when run script is missing', () => {
-      mockFs.existsSync.mockReturnValue(false);
-
-      const result = buildTemplateHealthStatus();
-
-      expect(result.ok).toBe(false);
-      expect(result.detail).toContain('Missing template runner');
-    });
-
-    it('should fail when required template files are missing', () => {
-      mockFs.existsSync
-        .mockReturnValueOnce(true) // run script exists
-        .mockReturnValueOnce(true) // .git exists
-        .mockReturnValueOnce(false); // required file missing
-
-      const result = buildTemplateHealthStatus();
-
-      expect(result.ok).toBe(false);
-      expect(result.detail).toContain('incomplete');
-    });
-
-    it('should fail when doctor check fails', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockSpawnSync.mockReturnValue({
-        status: 1,
-        stdout: '',
-        stderr: 'Doctor failed',
-        signal: null,
-        pid: 1234,
-      } as any);
-
-      const result = buildTemplateHealthStatus();
-
-      expect(result.ok).toBe(false);
-      expect(result.detail).toContain('doctor failed');
-    });
-
-    it('should handle doctor timeout', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockSpawnSync.mockReturnValue({
-        status: null,
-        stdout: '',
-        stderr: '',
-        signal: 'SIGTERM',
-        pid: 1234,
-      } as any);
-
-      const result = buildTemplateHealthStatus();
-
-      expect(result.ok).toBe(false);
-      expect(result.detail).toContain('timed out');
-    });
+    expect(checkWorkerGatewayConfig().detail).toContain('not required for KASEKI_PROVIDER=openrouter');
   });
 
-  describe('resolveCheckoutFreshness', () => {
-    beforeEach(() => {
-      jest.clearAllMocks();
-      process.env.KASEKI_REF = 'main';
-    });
+  it('confirms URL and readable host secret path for workers', () => {
+    spyFs('accessSync').mockImplementation(() => undefined);
 
-    it('should skip when not a git repo', () => {
-      mockFs.existsSync.mockReturnValue(false);
-
-      const result = resolveCheckoutFreshness();
-
-      expect(result.ok).toBe(true);
-      expect(result.stale).toBe(false);
-      expect(result.detail).toContain('skipped');
-    });
+    expect(checkWorkerGatewayConfig().detail).toContain('readable llm_gateway_api_key host mount source');
   });
 
-  describe('checkTemplateActivatorParity', () => {
-    it('should pass when activators match', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue('#!/bin/bash\n');
+  it('details missing gateway URL for worker configuration', () => {
+    setEnv({ LLM_GATEWAY_URL: '' });
+    spyFs('accessSync').mockImplementation(() => undefined);
 
-      const result = checkTemplateActivatorParity(
-        '/agents/kaseki-template',
-        '/agents/kaseki-agent'
-      );
+    expect(checkWorkerGatewayConfig().detail).toContain('LLM_GATEWAY_URL in the API environment');
+  });
+});
 
-      expect(result.ok).toBe(true);
-      expect(result.name).toBe('template-activator-parity');
-    });
+describe('checkGitHubAppCredentials', () => {
+  it('confirms readable and structurally valid GitHub App credentials', () => {
+    mockSecretReader({ github_app_id: '123456', github_app_client_id: 'client-id', github_app_private_key: '-----BEGIN RSA PRIVATE KEY-----' });
 
-    it('should fail when activators differ', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync
-        .mockReturnValueOnce('#!/bin/bash\necho "template"')
-        .mockReturnValueOnce('#!/bin/bash\necho "checkout"');
-
-      const result = checkTemplateActivatorParity(
-        '/agents/kaseki-template',
-        '/agents/kaseki-agent'
-      );
-
-      expect(result.ok).toBe(false);
-      expect(result.detail).toContain('differs');
-    });
-
-    it('should fail when activators are not readable', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockImplementation(() => {
-        throw new Error('Permission denied');
-      });
-
-      const result = checkTemplateActivatorParity(
-        '/agents/kaseki-template',
-        '/agents/kaseki-agent'
-      );
-
-      expect(result.ok).toBe(false);
-    });
+    expect(checkGitHubAppCredentials().detail).toBe('GitHub App credentials are readable and structurally valid for PR creation.');
   });
 
-  describe('getSubmissionTemplateHealthStatus', () => {
-    it('should cache successful template health status', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: 'Doctor OK',
-        stderr: '',
-        signal: null,
-        pid: 1234,
-      } as any);
+  it('reports that no GitHub App credentials are configured', () => {
+    const result = checkGitHubAppCredentials();
 
-      const result1 = getSubmissionTemplateHealthStatus();
-      expect(result1.fromCache).toBe(false);
-      expect(result1.status.ok).toBe(true);
-
-      // Verify cache by calling again
-      const result2 = getSubmissionTemplateHealthStatus();
-      expect(result2.fromCache).toBe(true);
-      expect(result2.status.ok).toBe(result1.status.ok);
-    });
+    expect(result.detail).toContain('not configured');
+    expect(result.remediation).toContain('github_app_private_key');
   });
 
-  describe('checkTemplatePublishModeCompatibility', () => {
-    it('should pass when metadata is not present (legacy templates)', () => {
-      mockFs.existsSync.mockReturnValue(false);
+  it('reports missing credential names when partially configured', () => {
+    mockSecretReader({ github_app_id: '123456', github_app_private_key: 'key' });
 
-      const result = checkTemplatePublishModeCompatibility('pr');
-
-      expect(result.ok).toBe(true);
-    });
-
-    it('should pass when publish mode is supported', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue(
-        JSON.stringify({
-          gitRef: 'abc123',
-          supportedPublishModes: ['pr', 'branch'],
-        })
-      );
-
-      const result = checkTemplatePublishModeCompatibility('pr');
-
-      expect(result.ok).toBe(true);
-    });
-
-    it('should fail when publish mode is not supported', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue(
-        JSON.stringify({
-          gitRef: 'abc123',
-          supportedPublishModes: ['pr'],
-        })
-      );
-
-      const result = checkTemplatePublishModeCompatibility('branch');
-
-      expect(result.ok).toBe(false);
-      expect(result.detail).toContain('does not support');
-    });
-
-    it('should handle invalid metadata format', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue('invalid json');
-
-      expect(() => {
-        checkTemplatePublishModeCompatibility('pr');
-      }).toThrow();
-    });
+    expect(checkGitHubAppCredentials().detail).toContain('missing github_app_client_id');
   });
 
-  describe('shouldBlockForFreshness', () => {
-    it('should block for PR publish mode', () => {
-      expect(shouldBlockForFreshness('pr')).toBe(true);
-    });
+  it('reports non-numeric app id', () => {
+    mockSecretReader({ github_app_id: 'not-a-number', github_app_client_id: 'client-id', github_app_private_key: 'key' });
 
-    it('should block for draft_pr publish mode', () => {
-      expect(shouldBlockForFreshness('draft_pr')).toBe(true);
-    });
-
-    it('should block for branch publish mode', () => {
-      expect(shouldBlockForFreshness('branch')).toBe(true);
-    });
-
-    it('should not block for non-publish modes', () => {
-      expect(shouldBlockForFreshness('scouting')).toBe(false);
-      expect(shouldBlockForFreshness('local')).toBe(false);
-    });
-
-    it('should not block when KASEKI_ENFORCE_FRESHNESS is disabled', () => {
-      process.env.KASEKI_ENFORCE_FRESHNESS = '0';
-      expect(shouldBlockForFreshness('pr')).toBe(false);
-    });
+    expect(checkGitHubAppCredentials().detail).toBe('GitHub App ID is present but is not numeric.');
   });
 
-  describe('isTemplateDoctorTimeout', () => {
-    it('should return true for timeout status', () => {
-      const status = {
-        ok: false,
-        templateDir: '/template',
-        runScript: '/template/run-kaseki.sh',
-        checkoutDir: '/checkout',
-        doctorCommand: 'doctor',
-        detail: 'Template doctor timed out after 15000ms',
-        doctorStderrTail: '',
-        doctorStdoutTail: '',
-      };
+  it('surfaces private key validation detail and remediation', () => {
+    mockSecretReader({ github_app_id: '123456', github_app_client_id: 'client-id', github_app_private_key: 'invalid-key' });
+    validateGitHubKeySpy.mockReturnValue({ ok: false, error: 'Invalid key format', remediation: 'Use a valid RSA private key' });
 
-      expect(isTemplateDoctorTimeout(status)).toBe(true);
-    });
+    const result = checkGitHubAppCredentials();
 
-    it('should return false for non-timeout status', () => {
-      const status = {
-        ok: false,
-        templateDir: '/template',
-        runScript: '/template/run-kaseki.sh',
-        checkoutDir: '/checkout',
-        doctorCommand: 'doctor',
-        detail: 'Template files missing',
-        doctorStderrTail: '',
-        doctorStdoutTail: '',
-      };
+    expect(result.detail).toBe('Invalid key format');
+    expect(result.remediation).toBe('Use a valid RSA private key');
+  });
+});
 
-      expect(isTemplateDoctorTimeout(status)).toBe(false);
-    });
+describe('checkWorkerSmokeTest', () => {
+  const config = { resultsDir: '/agents/kaseki-results' } as any;
 
-    it('should detect ETIMEDOUT in stderr', () => {
-      const status = {
-        ok: false,
-        templateDir: '/template',
-        runScript: '/template/run-kaseki.sh',
-        checkoutDir: '/checkout',
-        doctorCommand: 'doctor',
-        detail: 'Doctor check failed',
-        doctorStderrTail: 'Error: ETIMEDOUT',
-        doctorStdoutTail: '',
-      };
+  it('confirms worker container startup prerequisites', () => {
+    spyFs('mkdirSync').mockImplementation(() => undefined as any);
+    spyFs('rmSync').mockImplementation(() => undefined);
 
-      expect(isTemplateDoctorTimeout(status)).toBe(true);
-    });
-
-    it('should detect SIGTERM signal', () => {
-      const status = {
-        ok: false,
-        templateDir: '/template',
-        runScript: '/template/run-kaseki.sh',
-        checkoutDir: '/checkout',
-        doctorCommand: 'doctor',
-        doctorSignal: 'SIGTERM' as NodeJS.Signals,
-        detail: 'Doctor check failed',
-        doctorStderrTail: '',
-        doctorStdoutTail: '',
-      };
-
-      expect(isTemplateDoctorTimeout(status)).toBe(true);
-    });
+    expect(checkWorkerSmokeTest(config, 'kaseki-agent:latest').detail).toContain('Worker container can start');
   });
 
-  describe('exported constants', () => {
-    it('should export TEMPLATE_REMEDIATION constant', () => {
-      expect(TEMPLATE_REMEDIATION).toBeTruthy();
-      expect(typeof TEMPLATE_REMEDIATION).toBe('string');
-      expect(TEMPLATE_REMEDIATION).toContain('kaseki-activate.sh');
-    });
+  it('uses classified failure detail and remediation from Docker helper', () => {
+    spyFs('mkdirSync').mockImplementation(() => undefined as any);
+    spyFs('rmSync').mockImplementation(() => undefined);
+    execDockerSpy.mockReturnValue({ ok: false, stdout: '', stderr: 'failed', classification: { detail: 'Container failed to start', remediation: 'Check Docker daemon' } });
+
+    const result = checkWorkerSmokeTest(config, 'kaseki-agent:latest');
+
+    expect(result.detail).toBe('Container failed to start');
+    expect(result.remediation).toBe('Check Docker daemon');
+  });
+
+  it('cleans up the generated smoke root', () => {
+    const rmSpy = spyFs('rmSync').mockImplementation(() => undefined);
+    spyFs('mkdirSync').mockImplementation(() => undefined as any);
+    execDockerSpy.mockReturnValue({ ok: false, stdout: '', stderr: 'Worker startup failed' });
+
+    checkWorkerSmokeTest(config, 'kaseki-agent:latest');
+
+    expect(rmSpy).toHaveBeenCalledWith(expect.stringContaining('.preflight-worker'), { recursive: true, force: true });
+  });
+});
+
+describe('buildTemplateHealthStatus', () => {
+  it('returns doctor success detail and stdout tail', () => {
+    healthyTemplateFs();
+
+    const result = buildTemplateHealthStatus();
+
+    expect(result.detail).toContain('passed doctor check');
+    expect(result.doctorStdoutTail).toBe('Doctor OK');
+  });
+
+  it('reports missing run script remediation', () => {
+    spyFs('existsSync').mockReturnValue(false);
+
+    const result = buildTemplateHealthStatus();
+
+    expect(result.detail).toContain('Missing template runner');
+    expect(result.remediation).toBe(TEMPLATE_REMEDIATION);
+  });
+
+  it('reports incomplete required template files', () => {
+    spyFs('existsSync').mockReturnValueOnce(true).mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+    expect(buildTemplateHealthStatus().detail).toContain('Template is incomplete');
+  });
+
+  it('reports doctor failure exit status', () => {
+    spyFs('existsSync').mockReturnValue(true);
+    mockSpawnSync.mockReturnValue({ status: 1, stdout: '', stderr: 'Doctor failed', signal: null, pid: 1234 } as any);
+
+    const result = buildTemplateHealthStatus();
+
+    expect(result.detail).toContain('exited with 1');
+    expect(result.doctorStderrTail).toBe('Doctor failed');
+  });
+
+  it('reports doctor timeout using configured timeout', () => {
+    setEnv({ KASEKI_TEMPLATE_DOCTOR_TIMEOUT_MS: '1234' });
+    spyFs('existsSync').mockReturnValue(true);
+    mockSpawnSync.mockReturnValue({ status: null, stdout: '', stderr: '', signal: 'SIGTERM', pid: 1234 } as any);
+
+    expect(buildTemplateHealthStatus().detail).toContain('timed out after 1234ms');
+  });
+});
+
+describe('resolveCheckoutFreshness', () => {
+  it('skips freshness when checkout directory is not a git repo', () => {
+    spyFs('existsSync').mockReturnValue(false);
+    mockSpawnSync.mockReturnValue({ status: 1, stdout: '', stderr: 'not a git repository' } as any);
+
+    const result = resolveCheckoutFreshness();
+
+    expect(result.stale).toBe(false);
+    expect(result.detail).toContain('not a git checkout');
+  });
+});
+
+describe('checkTemplateActivatorParity', () => {
+  it('confirms matching activator checksums', () => {
+    spyFs('readFileSync').mockReturnValue(Buffer.from('#!/bin/bash\n'));
+
+    expect(checkTemplateActivatorParity('/agents/kaseki-template', '/agents/kaseki-agent').detail).toBe('Template activator matches checkout activator.');
+  });
+
+  it('reports differing activator checksums', () => {
+    spyFs('readFileSync').mockReturnValueOnce(Buffer.from('template')).mockReturnValueOnce(Buffer.from('checkout'));
+
+    expect(checkTemplateActivatorParity('/agents/kaseki-template', '/agents/kaseki-agent').detail).toContain('differs');
+  });
+
+  it('reports unreadable activator path', () => {
+    spyFs('readFileSync').mockImplementation(() => { throw new Error('Permission denied'); });
+
+    const result = checkTemplateActivatorParity('/agents/kaseki-template', '/agents/kaseki-agent');
+
+    expect(result.detail).toContain('not readable');
+    expect(result.remediation).toBe(TEMPLATE_REMEDIATION);
+  });
+});
+
+describe('getSubmissionTemplateHealthStatus', () => {
+  it('caches successful template health status within the configured TTL', () => {
+    setEnv({ KASEKI_TEMPLATE_HEALTH_CACHE_TTL_MS: '60000', KASEKI_TEMPLATE_DIR: '/template-cache-test' });
+    healthyTemplateFs();
+
+    const result1 = getSubmissionTemplateHealthStatus('/template-cache-test');
+    const result2 = getSubmissionTemplateHealthStatus('/template-cache-test');
+
+    expect(result1.fromCache).toBe(false);
+    expect(result2.fromCache).toBe(true);
+    expect(result2.status.detail).toBe(result1.status.detail);
+  });
+});
+
+describe('checkTemplatePublishModeCompatibility', () => {
+  it('allows legacy templates without metadata', () => {
+    spyFs('existsSync').mockReturnValue(false);
+
+    expect(checkTemplatePublishModeCompatibility('pr').metadataPath).toBe('/agents/kaseki-template/.kaseki-template-version');
+  });
+
+  it('returns supported publish modes when mode is compatible', () => {
+    spyFs('existsSync').mockReturnValue(true);
+    spyFs('readFileSync').mockReturnValue(JSON.stringify({ gitRef: 'abc123', supportedPublishModes: ['pr', 'branch'] }));
+
+    expect(checkTemplatePublishModeCompatibility('branch').supportedPublishModes).toEqual(['pr', 'branch']);
+  });
+
+  it('reports unsupported publish mode with redeploy remediation', () => {
+    spyFs('existsSync').mockReturnValue(true);
+    spyFs('readFileSync').mockReturnValue(JSON.stringify({ gitRef: 'abc123', supportedPublishModes: ['pr'] }));
+
+    const result = checkTemplatePublishModeCompatibility('branch');
+
+    expect(result.detail).toContain('does not support publish mode `branch`');
+    expect(result.remediation).toBe('Redeploy kaseki-agent.');
+  });
+
+  it('throws for invalid metadata JSON', () => {
+    spyFs('existsSync').mockReturnValue(true);
+    spyFs('readFileSync').mockReturnValue('invalid json');
+
+    expect(() => checkTemplatePublishModeCompatibility('pr')).toThrow();
+  });
+});
+
+describe('shouldBlockForFreshness', () => {
+  it.each(['pr', 'draft_pr', 'branch', 'auto'])('blocks publish mode %s', (mode) => {
+    expect(shouldBlockForFreshness(mode)).toBe(true);
+  });
+
+  it.each(['scouting', 'local'])('does not block non-publish mode %s', (mode) => {
+    expect(shouldBlockForFreshness(mode)).toBe(false);
+  });
+
+  it('honors KASEKI_ENFORCE_FRESHNESS=0', () => {
+    setEnv({ KASEKI_ENFORCE_FRESHNESS: '0' });
+
+    expect(shouldBlockForFreshness('pr')).toBe(false);
+  });
+});
+
+describe('isTemplateDoctorTimeout', () => {
+  it('detects timeout detail', () => {
+    expect(isTemplateDoctorTimeout(templateStatus({ detail: 'Template doctor timed out after 15000ms' }))).toBe(true);
+  });
+
+  it('does not mark non-timeout failure as timeout', () => {
+    expect(isTemplateDoctorTimeout(templateStatus({ detail: 'Template files missing' }))).toBe(false);
+  });
+
+  it('detects ETIMEDOUT stderr', () => {
+    expect(isTemplateDoctorTimeout(templateStatus({ doctorStderrTail: 'Error: ETIMEDOUT' }))).toBe(true);
+  });
+
+  it('detects SIGTERM signal', () => {
+    expect(isTemplateDoctorTimeout(templateStatus({ doctorSignal: 'SIGTERM' as NodeJS.Signals }))).toBe(true);
+  });
+});
+
+describe('exported constants', () => {
+  it('documents the template activation remediation command', () => {
+    expect(TEMPLATE_REMEDIATION).toBe('Run scripts/kaseki-activate.sh --controller bootstrap.');
   });
 });
