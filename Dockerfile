@@ -126,6 +126,7 @@ RUN chmod +x \
     && /app/scripts/startup-check-packaging.sh install \
     && mkdir -p /app/lib/lib /app/lib/secrets \
     && cp dist/pi-event-filter.js /app/lib/pi-event-filter.js \
+    && cp dist/pi-event-filter-helpers.js /app/lib/pi-event-filter-helpers.js \
     && cp -r dist/pi-event-aggregation /app/lib/pi-event-aggregation \
     && cp dist/ansi-colors.js /app/lib/ansi-colors.js \
     && cp dist/event-aggregator.js /app/lib/event-aggregator.js \
@@ -158,6 +159,7 @@ RUN chmod +x \
     && cp -r /app/lib/pi-event-aggregation/* /usr/local/bin/pi-event-aggregation/ \
     && for dependency in $github_app_helper_dependencies; do install -m 0755 "/app/lib/$dependency" "/usr/local/bin/$dependency"; done \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
+    && install -m 0755 /app/lib/pi-event-filter-helpers.js /usr/local/bin/pi-event-filter-helpers.js \
     && install -m 0755 /app/lib/ansi-colors.js /usr/local/bin/ansi-colors.js \
     && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \
     && install -m 0755 /app/lib/pi-progress-summarizer.js /usr/local/bin/pi-progress-summarizer.js \
@@ -287,6 +289,7 @@ RUN mkdir -p /scripts \
     && cp -r /app/lib/pi-event-aggregation/* /usr/local/bin/pi-event-aggregation/ \
     && for dependency in $github_app_helper_dependencies; do install -m 0755 "/app/lib/$dependency" "/usr/local/bin/$dependency"; done \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
+    && install -m 0755 /app/lib/pi-event-filter-helpers.js /usr/local/bin/pi-event-filter-helpers.js \
     && install -m 0755 /app/lib/ansi-colors.js /usr/local/bin/ansi-colors.js \
     && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \
     && install -m 0755 /app/lib/pi-progress-summarizer.js /usr/local/bin/pi-progress-summarizer.js \
