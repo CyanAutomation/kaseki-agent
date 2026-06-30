@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.111.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.110.0...v1.111.0) (2026-06-30)
+
+
+### Features
+
+* update raw event stream location and add tests for worker storage layout ([1b9fe6a](https://github.com/CyanAutomation/kaseki-agent/commit/1b9fe6a0214bea16616928e28b596bde0e480316))
+
 # [1.110.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.109.0...v1.110.0) (2026-06-30)
 
 
