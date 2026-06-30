@@ -109,8 +109,12 @@ assert_file_contains Dockerfile '^[[:space:]]+/app/scripts/startup-check-packagi
   'Dockerfile does not mark startup-check-packaging.sh executable'
 assert_file_match_count Dockerfile '^[[:space:]]+&& /app/scripts/startup-check-packaging\.sh install \\$' 2 \
   'Dockerfile must install startup-check symlinks in both runtime and final stages'
+assert_file_contains Dockerfile 'cp dist/pi-event-filter-helpers.js /app/lib/pi-event-filter-helpers.js' \
+  'Dockerfile does not preserve pi-event-filter helper module'
 assert_file_contains Dockerfile 'cp -r dist/pi-event-aggregation /app/lib/pi-event-aggregation' \
   'Dockerfile does not preserve pi-event-filter runtime dependencies'
+assert_file_match_count Dockerfile 'install -m 0755 /app/lib/pi-event-filter-helpers.js /usr/local/bin/pi-event-filter-helpers.js' 2 \
+  'Dockerfile must install pi-event-filter helper in runtime and final stages'
 assert_file_match_count Dockerfile 'cp -r /app/lib/pi-event-aggregation/\* /usr/local/bin/pi-event-aggregation/' 2 \
   'Dockerfile must install pi-event aggregation modules in runtime and final stages'
 assert_file_match_count Dockerfile '/usr/local/bin/kaseki-pi-event-filter "\$empty_events" "\$filtered_events" "\$event_summary"' 2 \

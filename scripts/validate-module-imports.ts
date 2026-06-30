@@ -258,6 +258,7 @@ function main(): void {
     'event-aggregator.js',
     'timestamp-tracker.js',
     'progress-stream-utils.js',
+    'pi-event-filter-helpers.js',
     'pi-progress-summarizer.js',
     'instance-state-derivation.js',
     'instance-status-derivation.js',
