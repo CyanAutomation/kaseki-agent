@@ -8,7 +8,7 @@
  * - Robustness: malformed JSON, missing files, empty files
  */
 
-import { resolveActualModel, runCli } from './resolve-actual-model';
+import { resolveActualModel, resolveActualModelAttribution, runCli } from './resolve-actual-model';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -223,30 +223,58 @@ describe('resolve-actual-model', () => {
     });
   });
 
-  describe('Chain Integration', () => {
-    it('should use event stream if available, ignoring summary', () => {
+  describe('Attribution metadata helper', () => {
+    it('uses the event model over summary fallback and does not mark attribution missing', () => {
       const eventsPath = writeEvents('events.jsonl', [
-        { type: 'init', model: 'event-model' },
+        { type: 'message', model: 'event-model' },
       ]);
       const summaryPath = writeSummary('summary.json', {
         selected_model: 'summary-model',
       });
-      const result = resolveActualModel({ eventsPath, summaryPath });
-      expect(result).toBe('event-model');
+
+      const result = resolveActualModelAttribution({ eventsPath, summaryPath });
+
+      expect(result).toEqual({
+        actualModel: 'event-model',
+        modelAttributionMissing: false,
+      });
     });
 
-    it('should use summary if event stream has no valid model', () => {
+    it('uses summary fallback when the event stream has no valid model', () => {
       const eventsPath = writeEvents('events.jsonl', [
-        { type: 'init', model: 'unknown' },
+        { type: 'message', model: '' },
+        { type: 'message', model: 'unknown' },
       ]);
       const summaryPath = writeSummary('summary.json', {
         selected_model: 'summary-model',
       });
-      const result = resolveActualModel({ eventsPath, summaryPath });
-      expect(result).toBe('summary-model');
+
+      const result = resolveActualModelAttribution({ eventsPath, summaryPath });
+
+      expect(result).toEqual({
+        actualModel: 'summary-model',
+        modelAttributionMissing: false,
+      });
     });
 
-    it('should prefer event stream model over counter extraction', () => {
+    it('marks model_attribution_missing when neither events nor summary resolve a model', () => {
+      const eventsPath = writeEvents('events.jsonl', [
+        { type: 'message', model: null },
+      ]);
+      const summaryPath = writeSummary('summary.json', {
+        selected_model: 'unknown',
+        model: '',
+      });
+
+      const result = resolveActualModelAttribution({ eventsPath, summaryPath });
+
+      expect(result).toEqual({
+        actualModel: 'unknown',
+        modelAttributionMissing: true,
+      });
+    });
+
+    it('keeps the legacy string resolver on the same event-over-summary path', () => {
       const eventsPath = writeEvents('events.jsonl', [
         { type: 'init', model: 'event-model' },
       ]);
