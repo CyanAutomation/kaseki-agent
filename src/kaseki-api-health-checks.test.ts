@@ -52,7 +52,7 @@ const defaultEnv = {
   KASEKI_CHECKOUT_DIR: '/agents/kaseki-agent',
 };
 
-const savedEnv = { ...process.env };
+let savedEnv: NodeJS.ProcessEnv;
 let fsSpies: FsSpies = {};
 let execDockerSpy: jest.SpyInstance;
 let readHostSecretSpy: jest.SpyInstance;
