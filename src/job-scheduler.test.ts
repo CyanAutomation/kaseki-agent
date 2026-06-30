@@ -94,6 +94,41 @@ function persistedRuntimeJob(
   };
 }
 
+describe('JobScheduler queue behavior', () => {
+  afterEach(async () => {
+    await cleanupWebhookManagers();
+    cleanupResultsDirs();
+  });
+
+  test('queues submitted jobs when concurrency is exhausted', async () => {
+    const resultsDir = createResultsDir();
+    const scheduler = new JobScheduler(
+      {
+        port: 3000,
+        workspaceDir: '/tmp/workspace',
+        resultsDir,
+        maxConcurrentRuns: 0,
+        runTimeoutMs: 300000,
+        apiKeys: [],
+      },
+      createMockWebhookManager(),
+    );
+
+    try {
+      const job = await scheduler.submitJob({
+        repoUrl: 'https://github.com/example/repo',
+        ref: 'main',
+        task: 'contract test',
+      });
+
+      expect(job.status).toBe('queued');
+      expect(scheduler.getJob(job.id)).toMatchObject({ id: job.id, status: 'queued' });
+    } finally {
+      await scheduler.shutdown();
+    }
+  });
+});
+
 describe('JobScheduler timeout lifecycle', () => {
   beforeEach(() => {
     jest.useFakeTimers();

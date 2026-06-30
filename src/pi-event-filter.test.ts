@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { runPiEventFilter } from './pi-event-filter';
 
 jest.setTimeout(20000);
 
@@ -74,6 +75,55 @@ async function runFilter(inputLines: string[]): Promise<RunResult> {
 }
 
 describe('pi-event-filter fast correctness tests', () => {
+  test('runPiEventFilter public contract redacts thinking content and summarizes selected model/api', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-event-filter-contract-'));
+    const inputPath = path.join(tmpDir, 'events.raw.jsonl');
+    const filteredPath = path.join(tmpDir, 'events.jsonl');
+    const summaryPath = path.join(tmpDir, 'summary.json');
+
+    try {
+      fs.writeFileSync(inputPath, [
+        JSON.stringify({
+          type: 'tool_execution_start',
+          timestamp: '2026-01-01T00:00:00.000Z',
+          message: { model: 'contract-model', api: 'contract-api' },
+          assistantMessageEvent: { type: 'thinking_delta' },
+        }),
+        JSON.stringify({
+          type: 'tool_execution_end',
+          timestamp: '2026-01-01T00:00:01.000Z',
+          message: {
+            model: 'contract-model',
+            api: 'contract-api',
+            content: [
+              { type: 'thinking', text: 'hidden' },
+              { type: 'output_text', text: 'visible' },
+            ],
+          },
+          assistantMessageEvent: {
+            type: 'output_delta',
+            partial: { content: [{ type: 'thinking', text: 'hidden' }, { type: 'output_text', text: 'kept' }] },
+          },
+        }),
+      ].join('\n') + '\n');
+
+      await runPiEventFilter(inputPath, filteredPath, summaryPath);
+
+      const kept = JSON.parse(fs.readFileSync(filteredPath, 'utf8').trim());
+      const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+      expect(kept.message.content).toEqual([{ type: 'output_text', text: 'visible' }]);
+      expect(kept.assistantMessageEvent.partial.content).toEqual([{ type: 'output_text', text: 'kept' }]);
+      expect(summary).toMatchObject({
+        selected_model: 'contract-model',
+        selected_api: 'contract-api',
+        tool_start_count: 1,
+        tool_end_count: 1,
+      });
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   // Spec: Pi event filter removes thinking blocks and emits clean JSON
   // Critical: Thinking blocks must be stripped from both message.content and assistantMessageEvent.partial
   test('should filter out thinking blocks from output and write summary', async () => {
