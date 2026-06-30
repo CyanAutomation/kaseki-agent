@@ -54,6 +54,113 @@ assert_json_array_contains() {
   }
 }
 
+assert_dist_entry_point_smokes() {
+  for entry_point in pi-event-filter.js job-scheduler.js kaseki-api-routes.js; do
+    if [ ! -f "$ROOT_DIR/dist/$entry_point" ]; then
+      printf 'FAIL: missing compiled entry point dist/%s; run npm run build before this post-build packaging contract\n' "$entry_point" >&2
+      exit 1
+    fi
+  done
+
+  node --input-type=module - \
+    "$ROOT_DIR/dist/pi-event-filter.js" \
+    "$ROOT_DIR/dist/job-scheduler.js" \
+    "$ROOT_DIR/dist/kaseki-api-routes.js" \
+    "$ROOT_DIR/dist/test-utils.js" \
+    "$ROOT_DIR/dist/idempotency-store.js" \
+    "$ROOT_DIR/dist/pre-flight-validator.js" <<'EOF_NODE'
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import express from 'express';
+import { pathToFileURL } from 'node:url';
+
+const [filterPath, schedulerPath, routesPath, testUtilsPath, idempotencyStorePath, preFlightValidatorPath] = process.argv.slice(2);
+
+const filterModule = await import(pathToFileURL(filterPath));
+const schedulerModule = await import(pathToFileURL(schedulerPath));
+const routesModule = await import(pathToFileURL(routesPath));
+const testUtilsModule = await import(pathToFileURL(testUtilsPath));
+const idempotencyStoreModule = await import(pathToFileURL(idempotencyStorePath));
+const preFlightValidatorModule = await import(pathToFileURL(preFlightValidatorPath));
+
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-packaging-entrypoints-'));
+
+try {
+  const inputPath = path.join(tmpDir, 'events.raw.jsonl');
+  const filteredPath = path.join(tmpDir, 'events.jsonl');
+  const summaryPath = path.join(tmpDir, 'summary.json');
+  fs.writeFileSync(inputPath, [
+    JSON.stringify({
+      type: 'tool_execution_start',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message: { model: 'packaging-model', api: 'packaging-api' },
+      assistantMessageEvent: { type: 'thinking_delta' },
+    }),
+    JSON.stringify({
+      type: 'tool_execution_end',
+      timestamp: '2026-01-01T00:00:01.000Z',
+      message: {
+        model: 'packaging-model',
+        api: 'packaging-api',
+        content: [
+          { type: 'thinking', text: 'hidden' },
+          { type: 'output_text', text: 'visible' },
+        ],
+      },
+      assistantMessageEvent: {
+        type: 'output_delta',
+        partial: { content: [{ type: 'thinking', text: 'hidden' }, { type: 'output_text', text: 'kept' }] },
+      },
+    }),
+  ].join('\n') + '\n');
+
+  await filterModule.runPiEventFilter(inputPath, filteredPath, summaryPath);
+  const kept = JSON.parse(fs.readFileSync(filteredPath, 'utf8').split('\n').filter(Boolean)[0]);
+  const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+  assert.deepEqual(kept.message.content, [{ type: 'output_text', text: 'visible' }]);
+  assert.deepEqual(kept.assistantMessageEvent.partial.content, [{ type: 'output_text', text: 'kept' }]);
+  assert.equal(summary.selected_model, 'packaging-model');
+  assert.equal(summary.selected_api, 'packaging-api');
+
+  const schedulerResultsDir = path.join(tmpDir, 'scheduler-results');
+  const scheduler = new schedulerModule.JobScheduler(
+    { ...testUtilsModule.createTestConfig(schedulerResultsDir), maxConcurrentRuns: 0 },
+    { enqueueWebhook() {} },
+  );
+  try {
+    const job = await scheduler.submitJob({ repoUrl: 'https://github.com/example/repo', ref: 'main', task: 'packaging smoke' });
+    assert.equal(job.status, 'queued');
+    assert.equal(scheduler.getJob(job.id)?.status, 'queued');
+  } finally {
+    await scheduler.shutdown();
+  }
+
+  const apiResultsDir = path.join(tmpDir, 'api-results');
+  const config = { ...testUtilsModule.createTestConfig(apiResultsDir), apiKeys: ['secret'] };
+  const router = routesModule.createApiRouter(
+    {},
+    config,
+    new idempotencyStoreModule.IdempotencyStore(apiResultsDir, 24),
+    new preFlightValidatorModule.PreFlightValidator(),
+  );
+  const app = express();
+  app.use('/api', router);
+  assert.ok(app._router ?? app.router);
+  assert.deepEqual(
+    routesModule.classifyDockerFailure('Cannot connect to the Docker daemon at unix:///var/run/docker.sock'),
+    {
+      detail: 'Docker daemon is unreachable from the API process.',
+      remediation: 'Mount /var/run/docker.sock and verify the host Docker daemon is running.',
+    },
+  );
+} finally {
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+EOF_NODE
+}
+
 APP_DIR="$TMP_DIR/app"
 SCRIPTS_DIR="$TMP_DIR/scripts"
 mkdir -p "$APP_DIR/scripts" "$SCRIPTS_DIR"
@@ -127,6 +234,8 @@ assert_file_contains kaseki-agent.sh '/usr/local/bin/scripts/scouting-allowlist\
   'runner does not recognize the installed scouting validator runtime path'
 assert_file_contains scripts/startup-checks.sh '"scouting-allowlist\.js"' \
   'worker preflight does not verify the packaged scouting validator'
+
+assert_dist_entry_point_smokes
 
 assert_file_contains .dockerignore '^!tsconfig\.scripts\.json$' \
   '.dockerignore does not allow tsconfig.scripts.json into the Docker build context'
