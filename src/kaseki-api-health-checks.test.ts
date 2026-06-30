@@ -109,6 +109,7 @@ function templateStatus(overrides: Partial<TemplateHealthStatus>): TemplateHealt
 }
 
 beforeEach(() => {
+  savedEnv = { ...process.env };
   jest.clearAllMocks();
   setEnv();
   fsSpies = {};
