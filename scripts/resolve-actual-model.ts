@@ -97,8 +97,27 @@ function modelFromSummary(summaryPath: string | undefined): string {
  * @param eventsPath - Path to pi-events.jsonl
  * @returns Model string or 'unknown'
  */
+export type ActualModelAttribution = {
+  actualModel: string;
+  modelAttributionMissing: boolean;
+};
+
+/**
+ * Resolve model attribution metadata for a kaseki run.
+ *
+ * Keeps the wrapper-facing model value together with the boolean used to decide
+ * whether the model_attribution_missing warning should be emitted.
+ */
+export function resolveActualModelAttribution({ summaryPath, eventsPath }: { summaryPath?: string; eventsPath?: string } = {}): ActualModelAttribution {
+  const actualModel = modelFromEventStream(eventsPath) || modelFromSummary(summaryPath) || 'unknown';
+  return {
+    actualModel,
+    modelAttributionMissing: actualModel === 'unknown',
+  };
+}
+
 export function resolveActualModel({ summaryPath, eventsPath }: { summaryPath?: string; eventsPath?: string } = {}): string {
-  return modelFromEventStream(eventsPath) || modelFromSummary(summaryPath) || 'unknown';
+  return resolveActualModelAttribution({ summaryPath, eventsPath }).actualModel;
 }
 
 export const CLI_USAGE = 'Usage: resolve-actual-model.js <summaryPath> <eventsPath>';
