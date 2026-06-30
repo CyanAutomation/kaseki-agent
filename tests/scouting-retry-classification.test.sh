@@ -27,7 +27,7 @@ run_case() {
   if [ -f "$REPO_ROOT/scripts/scouting-allowlist.js" ]; then
     cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$case_dir/scripts/scouting-allowlist.js"
   else
-    cp "$REPO_ROOT/dist/scripts/scouting-allowlist.js" "$case_dir/scripts/scouting-allowlist.js"
+    cp "$REPO_ROOT/dist/scouting-allowlist.js" "$case_dir/scripts/scouting-allowlist.js"
   fi
   cp "$REPO_ROOT/scripts/dependency-cache-helpers.sh" "$case_dir/scripts/dependency-cache-helpers.sh"
   cp "$REPO_ROOT/scripts/npm-install-helpers.sh" "$case_dir/scripts/npm-install-helpers.sh"

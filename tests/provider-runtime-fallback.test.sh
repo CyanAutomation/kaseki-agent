@@ -12,7 +12,7 @@ fail() {
 
 # Load the production retry implementation while stubbing the Pi process itself.
 eval "$(awk '
-  /^resolve_openrouter_fallback_key\(\)/ { copy=1 }
+  /^capture_provider_error_from_summary\(\)/ { copy=1 }
   /^append_pre_coding_provider_fallback_error\(\)/ { exit }
   copy { print }
 ' "$REPO_ROOT/kaseki-agent.sh")"
@@ -21,6 +21,10 @@ mkdir -p "$TMP_DIR/bin" "$TMP_DIR/results"
 cat > "$TMP_DIR/bin/kaseki-pi-event-filter" <<'FILTER'
 #!/usr/bin/env bash
 cp "$1" "$2"
+if ! grep -q 'stopReason.*error' "$1"; then
+  printf '%s\n' '{}' > "$3"
+  exit 0
+fi
 cat > "$3" <<'JSON'
 {
   "primary_provider_error": {
@@ -64,7 +68,9 @@ run_pi_json_capture() {
   printf '%s:%s\n' "$KASEKI_PROVIDER" "$3" >> "$TMP_DIR/calls"
   if [ "$PI_CALL_COUNT" -lt 3 ]; then
     printf '%s\n' '{"type":"message_end","message":{"stopReason":"error","errorMessage":"Provider finish_reason: error"}}' > "$raw_events_file"
-    return 88
+    # Pi 0.77 can report a successful process exit for a terminal provider
+    # stream error. The wrapper must derive exit 88 from the event summary.
+    return 0
   fi
   printf '%s\n' '{"type":"agent_end"}' > "$raw_events_file"
   return 0
@@ -85,5 +91,24 @@ set -e
 [ "$PROVIDER_ERROR_FALLBACK_MODEL" = 'auto' ] || fail 'fallback model telemetry is missing'
 [ "$PROVIDER_ERROR_FALLBACK_RESULT" = 'success' ] || fail 'fallback result telemetry is incorrect'
 [ "$KASEKI_PROVIDER" = 'gateway' ] || fail 'primary provider was not restored'
+
+# A subsequent clean coding attempt must retain the earlier recovery telemetry.
+run_pi_json_capture() {
+  local raw_events_file="$1"
+  printf '%s\n' '{"type":"agent_end"}' > "$raw_events_file"
+  return 0
+}
+cat > "$TMP_DIR/bin/kaseki-pi-event-filter" <<'FILTER'
+#!/usr/bin/env bash
+cp "$1" "$2"
+printf '%s\n' '{}' > "$3"
+FILTER
+chmod +x "$TMP_DIR/bin/kaseki-pi-event-filter"
+
+run_pi_with_retry "$TMP_DIR/raw-clean.jsonl" 30 dynamic/kaseki-agent prompt pi-summary "" coding 1 || \
+  fail 'subsequent clean coding attempt failed'
+[ "$PROVIDER_ERROR_RETRY_ATTEMPT_COUNT" -eq 2 ] || fail 'later coding attempt erased retry telemetry'
+[ "$PROVIDER_ERROR_RETRY_RESULT" = 'failed' ] || fail 'later coding attempt erased retry result'
+[ "$PROVIDER_ERROR_FALLBACK_RESULT" = 'success' ] || fail 'later coding attempt erased fallback result'
 
 printf 'PASS: provider runtime fallback\n'

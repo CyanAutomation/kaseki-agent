@@ -179,6 +179,37 @@ describe('artifact-routes', () => {
       }
     });
 
+    it.each([
+      ['hashline-events.jsonl', 'application/x-jsonl', '{"status":"rejected"}\n'],
+      ['hashline-summary.json', 'application/json', '{"errors":1}\n'],
+      ['hashline-validation.log', 'text/plain', 'Fatal error: invalid hashline\n'],
+    ])('serves registered hashline artifact %s', async (fileName, contentType, content) => {
+      const job = mockCompletedJob();
+      (fs.statSync as jest.Mock).mockReturnValue({
+        isFile: () => true,
+        size: Buffer.byteLength(content),
+      });
+      mockCache.getOrLoad.mockReturnValue(content);
+
+      const { server, url } = await listen(createMountedArtifactApp());
+
+      try {
+        const response = await fetch(`${url}/api/results/${job.id}/${fileName}`);
+        const body = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(fs.statSync).toHaveBeenCalledWith(`/results/${job.id}/${fileName}`);
+        expect(body).toEqual({
+          file: fileName,
+          contentType,
+          size: Buffer.byteLength(content),
+          content,
+        });
+      } finally {
+        await close(server);
+      }
+    });
+
     it('returns a contract error for an artifact name outside the registry', async () => {
       const job = mockCompletedJob();
       const { server, url } = await listen(createMountedArtifactApp());

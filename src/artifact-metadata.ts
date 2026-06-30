@@ -78,6 +78,33 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'hashline-events.jsonl': {
+    name: 'hashline-events.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Per-edit hashline processing results, including accepted and rejected edit operations',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 6,
+    sizeHint: 'medium',
+  },
+
+  'hashline-summary.json': {
+    name: 'hashline-summary.json',
+    contentType: 'application/json',
+    description: 'Hashline edit totals and processing error counts',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 5,
+    sizeHint: 'small',
+  },
+
+  'hashline-validation.log': {
+    name: 'hashline-validation.log',
+    contentType: 'text/plain',
+    description: 'Hashline processor diagnostics and fatal exception details',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 4,
+    sizeHint: 'small',
+  },
+
   // Goal-setting (pre-scouting phase)
   'goal-setting.json': {
     name: 'goal-setting.json',
