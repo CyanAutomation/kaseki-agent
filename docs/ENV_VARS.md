@@ -305,6 +305,8 @@ If dependency restore logs show EXDEV/cross-device hardlink failures:
 | Variable | Default | Type | Purpose |
 |----------|---------|------|---------|
 | `KASEKI_MODEL` | `dynamic/kaseki-agent` | string | Model identifier. Gateway production deployments should use the default `dynamic/kaseki-agent` unless a specific gateway model is intentionally configured. |
+| `KASEKI_PROVIDER_FALLBACK` | `openrouter` | string | Runtime fallback used after a retryable gateway error exhausts its gateway retry. Set to an empty value to disable. |
+| `KASEKI_PROVIDER_FALLBACK_MODEL` | `auto` | string | Model selected when runtime recovery switches from the gateway to OpenRouter. |
 
 **Common Model Values:**
 
@@ -500,6 +502,7 @@ curl "http://localhost:3000/api/gateway-test?stage=2&piProvider=true&debug=true"
 ```
 
 **Response with debug mode:** When `?debug=true` is used with a Pi provider adapter error, the response includes detailed diagnostics:
+
 - `fieldsSearched` — All field patterns the text extractor checks
 - `fieldsFound` — Actual fields present in the gateway response
 - `eventsByType` — Count of each event type in Pi JSONL response

@@ -19,6 +19,8 @@ export interface ProviderErrorSummary {
   model?: string;
   stop_reason?: string;
   response_id?: string;
+  status_code?: number;
+  error_code?: string;
   input_tokens?: number;
   output_tokens?: number;
   total_tokens?: number;
@@ -37,7 +39,19 @@ export function isProviderErrorRetryable(message: string): boolean {
   const lower = message.toLowerCase();
 
   // Non-retryable: permanent errors
-  if (lower.includes('404') || lower.includes('deprecated')) return false;
+  if (
+    lower.includes('400') ||
+    lower.includes('401') ||
+    lower.includes('403') ||
+    lower.includes('404') ||
+    lower.includes('invalid api key') ||
+    lower.includes('authentication') ||
+    lower.includes('unauthorized') ||
+    lower.includes('forbidden') ||
+    lower.includes('deprecated')
+  ) {
+    return false;
+  }
 
   // Retryable: transient errors
   return (
@@ -51,7 +65,8 @@ export function isProviderErrorRetryable(message: string): boolean {
     lower.includes('enetunreach') ||
     lower.includes('unavailable') ||
     lower.includes('offline') ||
-    lower.includes('service is down')
+    lower.includes('service is down') ||
+    lower === 'provider finish_reason: error'
   );
 }
 
@@ -101,6 +116,17 @@ export function extractProviderError(event: PiEvent): ProviderErrorSummary | nul
   if (!errorMessage || stopReason !== 'error') return null;
 
   const { type, retryable } = classifyProviderError(errorMessage);
+  const nestedError = message.error && typeof message.error === 'object' ? message.error : undefined;
+  const statusCandidate =
+    message.statusCode ?? message.status_code ?? nestedError?.statusCode ?? nestedError?.status_code;
+  const statusCode =
+    typeof statusCandidate === 'number'
+      ? statusCandidate
+      : typeof statusCandidate === 'string' && /^\d{3}$/.test(statusCandidate)
+        ? Number(statusCandidate)
+        : undefined;
+  const errorCodeCandidate = message.errorCode ?? message.error_code ?? nestedError?.code;
+  const responseIdCandidate = message.responseId ?? message.response_id ?? (event as any).responseId;
 
   return {
     type,
@@ -109,6 +135,9 @@ export function extractProviderError(event: PiEvent): ProviderErrorSummary | nul
     api: typeof message.api === 'string' ? message.api : undefined,
     model: typeof message.model === 'string' ? message.model : undefined,
     stop_reason: stopReason,
+    response_id: typeof responseIdCandidate === 'string' ? responseIdCandidate : undefined,
+    status_code: statusCode,
+    error_code: typeof errorCodeCandidate === 'string' ? errorCodeCandidate : undefined,
     message: errorMessage,
   };
 }
