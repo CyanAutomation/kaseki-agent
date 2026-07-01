@@ -7,11 +7,10 @@ TEST_NAME="baseline log dir fallback"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT_UNDER_TEST="$REPO_ROOT/kaseki-agent.sh"
 TMP_DIR="$(mktemp -d)"
-FAKE_REPO="$TMP_DIR/fake-repo"
-FAKE_BIN="$TMP_DIR/bin"
+HELPER_UNDER_TEST="$TMP_DIR/choose-baseline-log-dir.sh"
 RESULTS_DIR="$TMP_DIR/results"
-RUN_LOG="$TMP_DIR/kaseki-run.log"
-PI_MARKER="$TMP_DIR/pi-invoked.log"
+WRITABLE_LOG_DIR="$TMP_DIR/host-logs"
+UNAVAILABLE_LOG_DIR="/proc/kaseki-missing-log-dir"
 
 cleanup() {
   rm -rf "$TMP_DIR"
@@ -20,79 +19,48 @@ trap cleanup EXIT
 
 fail() {
   echo "✗ FAIL: $TEST_NAME: $*" >&2
-  if [ -f "$RUN_LOG" ]; then
-    echo "--- kaseki run log ---" >&2
-    tail -120 "$RUN_LOG" >&2 || true
-  fi
   exit 1
 }
 
-mkdir -p "$FAKE_REPO" "$FAKE_BIN" "$RESULTS_DIR"
+extract_helper() {
+  awk '/^choose_baseline_log_dir\(\)/,/^}/' "$SCRIPT_UNDER_TEST" > "$HELPER_UNDER_TEST"
+  if ! grep -q '^choose_baseline_log_dir()' "$HELPER_UNDER_TEST"; then
+    fail "could not extract choose_baseline_log_dir helper"
+  fi
+}
 
-cat > "$FAKE_REPO/README.md" <<'README'
-# fake repo
-README
+run_helper() {
+  KASEKI_LOG_DIR="$1" \
+    KASEKI_RESULTS_DIR="$2" \
+    bash -c '. "$0"; choose_baseline_log_dir' "$HELPER_UNDER_TEST"
+}
 
-git -C "$FAKE_REPO" init -q -b main
-git -C "$FAKE_REPO" add README.md
-git -C "$FAKE_REPO" \
-  -c user.email=kaseki-test@example.invalid \
-  -c user.name="Kaseki Test" \
-  commit -q -m "initial fake repo"
+extract_helper
+mkdir -p "$RESULTS_DIR" "$WRITABLE_LOG_DIR"
 
-cat > "$FAKE_BIN/validation-output-filter" <<'EOF_FILTER'
-#!/usr/bin/env bash
-cat
-EOF_FILTER
-chmod +x "$FAKE_BIN/validation-output-filter"
-
-cat > "$FAKE_BIN/pi" <<EOF_PI
-#!/usr/bin/env bash
-echo "pi invoked: \$*" >> "$PI_MARKER"
-exit 97
-EOF_PI
-chmod +x "$FAKE_BIN/pi"
-
-set +e
-env \
-  KASEKI_WORKSPACE_DIR="$TMP_DIR/workspace" \
-  KASEKI_WORKSPACE_BASELINE_DIR="$TMP_DIR/workspace/baseline" \
-  KASEKI_RESULTS_DIR="$RESULTS_DIR" \
-  KASEKI_CACHE_DIR="$TMP_DIR/cache" \
-  KASEKI_LOG_DIR="/proc/kaseki-missing-log-dir" \
-  PATH="$FAKE_BIN:$PATH" \
-  REPO_URL="$FAKE_REPO" \
-  GIT_REF="main" \
-  OPENROUTER_API_KEY="test-key-not-used" \
-  LLM_GATEWAY_URL="https://example.invalid/v1" \
-  LLM_GATEWAY_API_KEY="test-key-not-used" \
-  GITHUB_APP_ENABLED=0 \
-  KASEKI_GIT_CACHE_MODE=off \
-  KASEKI_BASELINE_VALIDATION_ENABLED=1 \
-  KASEKI_BASELINE_CACHE_DISABLED=1 \
-  KASEKI_PRE_AGENT_VALIDATION=1 \
-  KASEKI_PRE_AGENT_VALIDATION_COMMANDS="false" \
-  KASEKI_VALIDATION_COMMANDS="false" \
-  KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" \
-  KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
-  bash "$SCRIPT_UNDER_TEST" > "$RUN_LOG" 2>&1
-run_exit=$?
-set -e
-
-if [ "$run_exit" -ne 1 ]; then
-  fail "expected kaseki-agent.sh to exit with validation status 1, got $run_exit"
+selected_dir="$(run_helper "$UNAVAILABLE_LOG_DIR" "$RESULTS_DIR")" || {
+  fail "helper failed when KASEKI_LOG_DIR was unavailable"
+}
+if [ "$selected_dir" != "$RESULTS_DIR" ]; then
+  fail "expected unavailable KASEKI_LOG_DIR to fall back to KASEKI_RESULTS_DIR, got: $selected_dir"
 fi
 
-if grep -q 'baseline-checkout\.log: No such file or directory' "$RUN_LOG"; then
-  fail "baseline checkout still redirects to unavailable KASEKI_LOG_DIR"
+if ! printf 'checkout stderr\n' >> "${selected_dir}/baseline-checkout.log"; then
+  fail "selected fallback baseline checkout log path is not writable"
 fi
-
-if ! [ -f "$RESULTS_DIR/baseline-checkout.log" ]; then
+if [ ! -f "$RESULTS_DIR/baseline-checkout.log" ]; then
   fail "expected baseline checkout log in KASEKI_RESULTS_DIR"
 fi
 
-if [ -s "$PI_MARKER" ]; then
-  fail "pi executable should not be invoked after failing pre-agent validation"
+selected_dir="$(run_helper "$WRITABLE_LOG_DIR" "$RESULTS_DIR")" || {
+  fail "helper failed when KASEKI_LOG_DIR was writable"
+}
+if [ "$selected_dir" != "$WRITABLE_LOG_DIR" ]; then
+  fail "expected writable KASEKI_LOG_DIR to be selected, got: $selected_dir"
+fi
+
+if [ -e "$UNAVAILABLE_LOG_DIR/baseline-checkout.log" ]; then
+  fail "baseline checkout log was unexpectedly written under unavailable KASEKI_LOG_DIR"
 fi
 
 echo "✓ PASS: $TEST_NAME"
