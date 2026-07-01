@@ -196,6 +196,7 @@ run_kaseki_agent_for_validation() {
     REPO_URL="$fake_repo" \
     GIT_REF="main" \
     OPENROUTER_API_KEY="test-key-not-used" \
+    KASEKI_PROVIDER="openrouter" \
     LLM_GATEWAY_URL="http://127.0.0.1:9/v1" \
     LLM_GATEWAY_API_KEY="test-key-not-used" \
     GITHUB_APP_ENABLED=0 \
@@ -233,6 +234,18 @@ assert_file_contains() {
     printf 'Expected pattern not found in %s: %s\n' "$file" "$pattern" >&2
     tail -80 "$file" >&2 || true
     fail "$message"
+  fi
+}
+
+
+assert_diagnostic_log_contains() {
+  local log_path="$1"
+  local pattern="$2"
+  local diagnostic_string="$3"
+  if ! grep -Eq "$pattern" "$log_path"; then
+    printf 'Expected diagnostic not found in %s: %s\n' "$log_path" "$diagnostic_string" >&2
+    tail -80 "$log_path" >&2 || true
+    fail "Missing diagnostic in $log_path: $diagnostic_string"
   fi
 }
 
