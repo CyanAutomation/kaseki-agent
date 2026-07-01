@@ -4632,6 +4632,8 @@ save_baseline_validation_to_cache() {
 choose_baseline_log_dir() {
   local preferred_log_dir="${KASEKI_LOG_DIR:-}"
   local fallback_log_dir="${KASEKI_RESULTS_DIR}"
+  local temp_parent="${TMPDIR:-/tmp}"
+  local temp_log_dir
 
   if [ -n "$preferred_log_dir" ] && mkdir -p "$preferred_log_dir" 2>/dev/null && [ -w "$preferred_log_dir" ]; then
     printf '%s\n' "$preferred_log_dir"
@@ -4643,6 +4645,12 @@ choose_baseline_log_dir() {
     return 0
   fi
 
+  temp_log_dir="$(TMPDIR="$temp_parent" mktemp -d -t kaseki-baseline-logs.XXXXXX 2>/dev/null)" || return 1
+  if [ -n "$temp_log_dir" ] && [ -d "$temp_log_dir" ] && [ -w "$temp_log_dir" ]; then
+    printf '%s\n' "$temp_log_dir"
+    return 0
+  fi
+
   return 1
 }
 
@@ -4650,7 +4658,7 @@ checkout_baseline_repo() {
   local baseline_dir="${KASEKI_WORKSPACE_BASELINE_DIR}"
   local baseline_log_dir
   if ! baseline_log_dir="$(choose_baseline_log_dir)"; then
-    emit_error_event "baseline_log_dir_failed" "Failed to create writable baseline log directory from KASEKI_LOG_DIR or KASEKI_RESULTS_DIR" "continue"
+    emit_error_event "baseline_log_dir_failed" "Failed to create writable baseline log directory from KASEKI_LOG_DIR, KASEKI_RESULTS_DIR, or a secure temporary directory" "continue"
     return 1
   fi
   local baseline_checkout_log="${baseline_log_dir}/baseline-checkout.log"
