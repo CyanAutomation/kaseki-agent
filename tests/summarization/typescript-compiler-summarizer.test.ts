@@ -259,5 +259,43 @@ describe('TypeScriptCompilerSummarizer', () => {
       expect(summary.parseError).toBeUndefined();
       expect(summary.summaryTimeMs).toBeGreaterThanOrEqual(0);
     });
+
+    it('should summarize large inputs gracefully without crashing', () => {
+      const code = Array.from({ length: 1000 }, (_, index) => `
+        class AuthManager${index} {
+          login(): string {
+            return 'token-${index}';
+          }
+        }
+      `).join('\n');
+
+      const summary = summarizer.summarize(code, 200);
+
+      expect(summary.parseError).toBeUndefined();
+      expect(summary.language).toBe('typescript');
+      expect(summary.originalSizeBytes).toBe(Buffer.byteLength(code, 'utf-8'));
+      expect(summary.classes).toHaveLength(1000);
+      expect(summary.classes[0]).toMatchObject({
+        name: 'AuthManager0',
+        methods: [
+          {
+            name: 'login',
+            signature: 'login(): string {',
+            kind: 'method',
+          },
+        ],
+      });
+      expect(summary.classes[999]).toMatchObject({
+        name: 'AuthManager999',
+        methods: [
+          {
+            name: 'login',
+            signature: 'login(): string {',
+            kind: 'method',
+          },
+        ],
+      });
+      expect(summary.summaryTimeMs).toBeGreaterThanOrEqual(0);
+    });
   });
 });
