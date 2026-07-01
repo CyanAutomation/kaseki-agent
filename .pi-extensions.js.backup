@@ -575,7 +575,7 @@ function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
 
         // Build request in gateway's expected format
         const requestBody = {
-          model: model.id || 'auto',
+          model: model.id || 'free',
           input: userInput,
           store: false,
         };
@@ -647,7 +647,7 @@ function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
             content: [],
             api: 'custom-gateway',
             provider: 'gateway',
-            model: model.id || 'auto',
+            model: model.id || 'free',
             timestamp: Date.now(),
           },
         };
@@ -734,7 +734,7 @@ export default function registerGatewayProvider(pi) {
       api: useLegacyStreamSimple ? 'custom-gateway' : 'openai-responses',
       models: [
         {
-          id: 'auto',
+          id: 'free',
           name: 'Auto (Gateway Default)',
           reasoning: false,
           input: ['text'],
@@ -759,7 +759,7 @@ export default function registerGatewayProvider(pi) {
       baseUrl: gatewayUrl,
       apiType: providerConfig.api,
       streamingHandler: useLegacyStreamSimple ? 'legacy-custom-streamSimple' : 'pi-native-openai-responses',
-      modelId: 'auto',
+      modelId: 'free',
       hasApiKey: !!gatewayApiKey,
       legacyStreamSimple: useLegacyStreamSimple,
     };
