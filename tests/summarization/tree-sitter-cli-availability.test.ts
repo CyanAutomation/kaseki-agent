@@ -16,7 +16,17 @@ const integrationIt = process.env.RUN_TREE_SITTER_CLI_INTEGRATION === '1' ? it :
 
 function formatCliError(error: unknown): string {
   if (error instanceof Error) {
-    return error.message;
+    const execError = error as Error & { stderr?: Buffer | string; stdout?: Buffer | string; status?: number };
+    const parts = [error.message];
+    
+    if (execError.stderr) {
+      parts.push(`stderr: ${execError.stderr.toString().trim()}`);
+    }
+    if (execError.stdout) {
+      parts.push(`stdout: ${execError.stdout.toString().trim()}`);
+    }
+    
+    return parts.join('\n');
   }
 
   return String(error);
