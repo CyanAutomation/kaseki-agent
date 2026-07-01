@@ -38,14 +38,25 @@ func CreateHandler(name string) *Handler {
 }
 `);
 
-      const version = execFileSync('npx', ['tree-sitter', '--version'], { encoding: 'utf-8' }).trim();
+      let version: string;
+      let jsonOutput: string;
+      
+      try {
+        version = execFileSync('npx', ['tree-sitter', '--version'], { encoding: 'utf-8' }).trim();
+      } catch (error) {
+        throw new Error(`Failed to execute tree-sitter CLI: ${error instanceof Error ? error.message : String(error)}`);
+      }
       expect(version).toMatch(/tree-sitter/);
 
       const grammarDir = path.join(process.cwd(), 'node_modules', 'tree-sitter-go');
-      const jsonOutput = execFileSync('npx', ['tree-sitter', 'parse', goFile, '--json'], {
-        cwd: grammarDir,
-        encoding: 'utf-8',
-      });
+      try {
+        jsonOutput = execFileSync('npx', ['tree-sitter', 'parse', goFile, '--json'], {
+          cwd: grammarDir,
+          encoding: 'utf-8',
+        });
+      } catch (error) {
+        throw new Error(`Failed to parse Go file with tree-sitter: ${error instanceof Error ? error.message : String(error)}`);
+      }
       const tree = JSON.parse(jsonOutput);
 
       const newFormatSuccess = Boolean(tree.parse_summaries?.[0]?.successful);
