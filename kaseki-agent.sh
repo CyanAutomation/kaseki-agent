@@ -2770,6 +2770,30 @@ fi
 if [ ! -r "$SCOUTING_ALLOWLIST_HELPER" ] && [ -r /usr/local/bin/scripts/scouting-allowlist.js ]; then
   SCOUTING_ALLOWLIST_HELPER="/usr/local/bin/scripts/scouting-allowlist.js"
 fi
+
+ARTIFACT_RECOVERY_HELPER="$SCRIPT_DIR/dist/artifact-recovery.js"
+if [ ! -r "$ARTIFACT_RECOVERY_HELPER" ] && [ -r /app/dist/artifact-recovery.js ]; then
+  ARTIFACT_RECOVERY_HELPER="/app/dist/artifact-recovery.js"
+fi
+if [ ! -r "$ARTIFACT_RECOVERY_HELPER" ] && [ -r "$SCRIPT_DIR/scripts/artifact-recovery.ts" ]; then
+  ARTIFACT_RECOVERY_HELPER="$SCRIPT_DIR/scripts/artifact-recovery.ts"
+fi
+
+run_artifact_recovery_helper() {
+  local phase="$1"
+  local raw_events_path="$2"
+  local candidate_path="$3"
+  local results_dir="${4:-}"
+
+  if [ ! -r "$ARTIFACT_RECOVERY_HELPER" ]; then
+    return 1
+  fi
+
+  case "$ARTIFACT_RECOVERY_HELPER" in
+    *.ts) npx tsx "$ARTIFACT_RECOVERY_HELPER" "$phase" "$raw_events_path" "$candidate_path" "$results_dir" ;;
+    *) node "$ARTIFACT_RECOVERY_HELPER" "$phase" "$raw_events_path" "$candidate_path" "$results_dir" ;;
+  esac
+}
 if [ ! -r "$SCOUTING_ALLOWLIST_HELPER" ]; then
   printf 'error: scouting allowlist helper is missing; checked repository dist and packaged runtime paths\n' >&2
   exit 87
@@ -5857,102 +5881,7 @@ run_goal_setting_agent() {
 
   # Artifact recovery: if artifact file doesn't exist, try to recover from event stream
   if [ "$GOAL_SETTING_EXIT" -eq 0 ] && [ ! -f "$GOAL_SETTING_CANDIDATE_ARTIFACT" ]; then
-    node - "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_RAW_EVENTS" <<'NODE' || true
-const fs = require("node:fs");
-const candidatePath = process.argv[2];
-const rawPath = process.argv[3];
-
-function stableStringify(obj) {
-  return JSON.stringify(obj, Object.keys(obj).sort());
-}
-
-function collectBalancedJsonObjects(text) {
-  const snippets = [];
-  let start = -1;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === "\"") inString = false;
-      continue;
-    }
-    if (ch === "\"") {
-      inString = true;
-    } else if (ch === "{") {
-      if (depth === 0) start = i;
-      depth += 1;
-    } else if (ch === "}" && depth > 0) {
-      depth -= 1;
-      if (depth === 0 && start >= 0) {
-        snippets.push(text.slice(start, i + 1));
-        start = -1;
-      }
-    }
-  }
-  return snippets;
-}
-
-function schemaErrors(artifact) {
-  const errors = [];
-  if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
-    errors.push("root must be an object");
-    return errors;
-  }
-  // Check required core fields
-  if (!artifact.original_prompt || typeof artifact.original_prompt !== "string") {
-    errors.push("original_prompt must be non-empty string");
-  }
-  if (!artifact.upgraded_goal || typeof artifact.upgraded_goal !== "string") {
-    errors.push("upgraded_goal must be non-empty string");
-  }
-  if (!artifact.reasoning || typeof artifact.reasoning !== "string") {
-    errors.push("reasoning must be non-empty string");
-  }
-  // Check required arrays
-  if (!Array.isArray(artifact.key_requirements)) {
-    errors.push("key_requirements must be array");
-  }
-  if (!Array.isArray(artifact.success_criteria)) {
-    errors.push("success_criteria must be array");
-  }
-  return errors;
-}
-
-function collectStrings(value, out = []) {
-  if (typeof value === "string") out.push(value);
-  else if (Array.isArray(value)) value.forEach((item) => collectStrings(item, out));
-  else if (value && typeof value === "object") Object.values(value).forEach((item) => collectStrings(item, out));
-  return out;
-}
-
-const valid = new Map();
-let text = "";
-try { text = fs.readFileSync(rawPath, "utf8"); } catch { process.exit(1); }
-const snippets = collectBalancedJsonObjects(text);
-for (const snippet of snippets) {
-  try {
-    const parsed = JSON.parse(snippet);
-    if (schemaErrors(parsed).length === 0) valid.set(stableStringify(parsed), parsed);
-    for (const innerText of collectStrings(parsed)) {
-      for (const innerSnippet of collectBalancedJsonObjects(innerText)) {
-        try {
-          const inner = JSON.parse(innerSnippet);
-          if (schemaErrors(inner).length === 0) valid.set(stableStringify(inner), inner);
-        } catch {}
-      }
-    }
-  } catch {}
-}
-
-if (valid.size === 1) {
-  const recovered = [...valid.values()][0];
-  fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
-}
-NODE
+    run_artifact_recovery_helper "goal-setting" "$GOAL_SETTING_RAW_EVENTS" "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$KASEKI_RESULTS_DIR" >/dev/null 2>&1 || true
   fi
 
   kaseki-pi-event-filter "$GOAL_SETTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-setting-events.jsonl "${KASEKI_RESULTS_DIR}"/goal-setting-summary.json 2>/dev/null || cp "$GOAL_SETTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-setting-events.raw.jsonl 2>/dev/null || true
@@ -6753,169 +6682,7 @@ run_scouting_agent() {
 
   # Artifact recovery: if artifact file doesn't exist, try to recover from event stream
   if [ "$SCOUTING_EXIT" -eq 0 ] && [ ! -f "$SCOUTING_CANDIDATE_ARTIFACT" ]; then
-    node - "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_RAW_EVENTS" "$KASEKI_RESULTS_DIR" <<'NODE' || true
-const fs = require("node:fs");
-const candidatePath = process.argv[2];
-const rawPath = process.argv[3];
-const resultsDir = process.argv[4] || "/results";
-
-function stableStringify(obj) {
-  return JSON.stringify(obj, Object.keys(obj).sort());
-}
-
-function collectBalancedJsonObjects(text) {
-  const snippets = [];
-  let start = -1;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === "\"") inString = false;
-      continue;
-    }
-    if (ch === "\"") {
-      inString = true;
-    } else if (ch === "{") {
-      if (depth === 0) start = i;
-      depth += 1;
-    } else if (ch === "}" && depth > 0) {
-      depth -= 1;
-      if (depth === 0 && start >= 0) {
-        snippets.push(text.slice(start, i + 1));
-        start = -1;
-      }
-    }
-  }
-  return snippets;
-}
-
-function schemaErrors(artifact, strict = true) {
-  const errors = [];
-  if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
-    errors.push("root must be an object");
-    return errors;
-  }
-  
-  // In recovery mode (non-strict), only require task field
-  if (!strict) {
-    if (!artifact.task || typeof artifact.task !== "string") {
-      errors.push("task must be non-empty string");
-    }
-    return errors;
-  }
-  
-  // Strict mode (normal validation): require all core fields
-  if (!artifact.task || typeof artifact.task !== "string") {
-    errors.push("task must be non-empty string");
-  }
-  // Check required arrays
-  if (!Array.isArray(artifact.requirements)) {
-    errors.push("requirements must be array");
-  }
-  if (!Array.isArray(artifact.relevant_files)) {
-    errors.push("relevant_files must be array");
-  }
-  if (!Array.isArray(artifact.observations)) {
-    errors.push("observations must be array");
-  }
-  if (!Array.isArray(artifact.plan)) {
-    errors.push("plan must be array");
-  }
-  if (!Array.isArray(artifact.validation)) {
-    errors.push("validation must be array");
-  }
-  if (!Array.isArray(artifact.risks)) {
-    errors.push("risks must be array");
-  }
-  if (!Array.isArray(artifact.test_impact)) {
-    errors.push("test_impact must be array");
-  }
-  return errors;
-}
-
-function collectStrings(value, out = []) {
-  if (typeof value === "string") out.push(value);
-  else if (Array.isArray(value)) value.forEach((item) => collectStrings(item, out));
-  else if (value && typeof value === "object") Object.values(value).forEach((item) => collectStrings(item, out));
-  return out;
-}
-
-function logRecoveryDiagnostic(message, recovered) {
-  const timestamp = new Date().toISOString();
-  const entry = {
-    timestamp,
-    event: "artifact_recovery",
-    message,
-    recovery_attempted: true,
-    recovery_success: !!recovered,
-  };
-  try {
-    fs.appendFileSync(`${resultsDir}/scouting-recovery-diagnostics.jsonl`, JSON.stringify(entry) + "\n");
-  } catch {}
-}
-
-const valid = new Map();
-const partial = new Map();  // For recovery fallback
-let text = "";
-try { text = fs.readFileSync(rawPath, "utf8"); } catch { process.exit(1); }
-const snippets = collectBalancedJsonObjects(text);
-
-for (const snippet of snippets) {
-  try {
-    const parsed = JSON.parse(snippet);
-    // Try strict validation first
-    if (schemaErrors(parsed, true).length === 0) {
-      valid.set(stableStringify(parsed), parsed);
-    } else if (schemaErrors(parsed, false).length === 0) {
-      // If strict fails but recovery validation passes, save as partial
-      partial.set(stableStringify(parsed), parsed);
-    }
-    // Try to find nested objects
-    for (const innerText of collectStrings(parsed)) {
-      for (const innerSnippet of collectBalancedJsonObjects(innerText)) {
-        try {
-          const inner = JSON.parse(innerSnippet);
-          if (schemaErrors(inner, true).length === 0) {
-            valid.set(stableStringify(inner), inner);
-          } else if (schemaErrors(inner, false).length === 0) {
-            partial.set(stableStringify(inner), inner);
-          }
-        } catch {}
-      }
-    }
-  } catch {}
-}
-
-if (valid.size === 1) {
-  const recovered = [...valid.values()][0];
-  fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
-  logRecoveryDiagnostic("Scouting artifact recovered from event stream (strict validation passed)", true);
-} else if (partial.size === 1) {
-  const recovered = [...partial.values()][0];
-  fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
-  logRecoveryDiagnostic("Scouting artifact recovered from event stream (partial recovery - minimal fields only)", true);
-} else if (valid.size > 1 || partial.size > 1) {
-  // Multiple candidates - pick the first complete one, or the largest partial
-  const candidates = [...valid.values(), ...partial.values()];
-  if (candidates.length > 0) {
-    const recovered = candidates.sort((a, b) => {
-      const aScore = Object.keys(a).length;
-      const bScore = Object.keys(b).length;
-      return bScore - aScore;  // Prefer more complete objects
-    })[0];
-    fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
-    logRecoveryDiagnostic(`Scouting artifact recovered from event stream (multiple candidates, selected best: ${Object.keys(recovered).length} fields)`, true);
-  } else {
-    logRecoveryDiagnostic("Scouting artifact recovery failed: no valid JSON objects found in event stream", false);
-  }
-} else {
-  logRecoveryDiagnostic("Scouting artifact recovery failed: no valid JSON objects found in event stream", false);
-}
-NODE
+    run_artifact_recovery_helper "scouting" "$SCOUTING_RAW_EVENTS" "$SCOUTING_CANDIDATE_ARTIFACT" "$KASEKI_RESULTS_DIR" >/dev/null 2>&1 || true
   fi
 
   kaseki-pi-event-filter "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/scouting-events.jsonl "${KASEKI_RESULTS_DIR}"/scouting-summary.json 2>/dev/null || cp "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/scouting-events.raw.jsonl 2>/dev/null || true
