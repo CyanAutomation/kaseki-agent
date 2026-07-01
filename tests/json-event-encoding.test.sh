@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
 # Tests JSONL event helpers preserve event fields while generic escaping is
-# covered by test/json-helpers.test.sh.
+# covered by test/json-helpers.test.ts.
 
 set -euo pipefail
 
