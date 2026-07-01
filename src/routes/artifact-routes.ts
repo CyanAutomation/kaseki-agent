@@ -197,10 +197,11 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
       if (providerFailure) {
         if (artifactName === '.gateway-diagnostics.jsonl') return 0;
         if (artifactName === 'provider-attempts.jsonl') return 1;
-        if (artifactName === 'failure.json') return 2;
-        if (artifactName === 'result-summary.md') return 3;
-        if (artifactName === 'pi-agent-diagnostics.jsonl') return 3;
-        if (artifactName === 'pi-events.jsonl') return 4;
+        if (artifactName === 'gateway-summary.json') return 2;
+        if (artifactName === 'failure.json') return 3;
+        if (artifactName === 'result-summary.md') return 4;
+        if (artifactName === 'pi-agent-diagnostics.jsonl') return 5;
+        if (artifactName === 'pi-events.jsonl') return 6;
       }
       if (preAgentValidationFailed) {
         if (artifactName === 'test-baseline-comparison.json') return 0;

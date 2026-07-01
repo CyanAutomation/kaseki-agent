@@ -69,6 +69,15 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'gateway-summary.json': {
+    name: 'gateway-summary.json',
+    contentType: 'application/json',
+    description: 'Run-level inference health, token budgets, semantic success, and per-model reliability observations',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 3,
+    sizeHint: 'small',
+  },
+
   'pi-agent-diagnostics.jsonl': {
     name: 'pi-agent-diagnostics.jsonl',
     contentType: 'application/x-jsonl',
