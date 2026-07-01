@@ -12,6 +12,8 @@ const ignorePatterns = [
   '/kaseki-results/',
   '/kaseki-cache/',
   'dist/',
+  '**/*.test.d.ts',
+  '**/*.test.d.ts.map',
   '**/*.log',
   '.DS_Store',
   '.tmp'
