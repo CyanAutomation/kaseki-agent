@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate pre-agent validation's dry-run exception without exercising later agent phases.
+# Validate startup validation command execution contracts without exercising later agent phases.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -65,7 +65,7 @@ EOF_PROFILE
   pass "Validation command did not source login shell profiles"
 }
 
-test_pre_agent_validation_executes_in_baseline_dry_run() {
+test_pre_agent_validation_runs_during_baseline_dry_run() {
   local tmpdir fake_repo marker run_log run_exit
   new_test_context tmpdir
   fake_repo="$tmpdir/fake-repo"
@@ -88,10 +88,10 @@ test_pre_agent_validation_executes_in_baseline_dry_run() {
   [ -f "$marker" ] || fail "Pre-agent validation should execute during baseline-validation dry-run startup checks"
   assert_file_contains "$tmpdir/results/pre-validation-timings.tsv" '^npm run validate[[:space:]]+0[[:space:]]' "pre-agent dry-run exception did not record executed command timing"
 
-  pass "Pre-agent validation executes during baseline-validation dry-run checks"
+  pass "Pre-agent validation runs during baseline-validation dry-run checks"
 }
 
-printf '==> Focused validation command execution contract\n'
+printf '==> Validation command execution contract\n'
 test_validation_command_runs_in_cloned_repository_cwd
 test_validation_commands_do_not_source_login_profiles
-test_pre_agent_validation_executes_in_baseline_dry_run
+test_pre_agent_validation_runs_during_baseline_dry_run
