@@ -1565,6 +1565,8 @@ write_metadata() {
   "provider_error_fallback_provider": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_PROVIDER" | json_encode),
   "provider_error_fallback_model": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_MODEL" | json_encode),
   "provider_error_fallback_result": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_RESULT" | json_encode),
+  "provider_error_primary": ${PROVIDER_ERROR_PRIMARY_JSON:-null},
+  "provider_error_recovery": ${PROVIDER_ERROR_RECOVERY_JSON:-null},
   "pi_exit_code": $PI_EXIT,
   "scouting_exit_code": $SCOUTING_EXIT,
   "goal_setting_exit_code": $GOAL_SETTING_EXIT,
@@ -1929,6 +1931,45 @@ clear_provider_error() {
   PROVIDER_ERROR_FALLBACK_PROVIDER=""
   PROVIDER_ERROR_FALLBACK_MODEL=""
   PROVIDER_ERROR_FALLBACK_RESULT="none"
+  PROVIDER_ERROR_PRIMARY_JSON=""
+  PROVIDER_ERROR_RECOVERY_JSON=""
+}
+
+snapshot_provider_attempt() {
+  local raw_events_file="$1" summary_file="$2" phase_name="$3" provider="$4" model="$5" attempt_name="$6"
+  local attempt_dir="${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}"
+  mkdir -p "$attempt_dir"
+  cp "$raw_events_file" "$attempt_dir/${attempt_name}.events.jsonl" 2>/dev/null || true
+  cp "$summary_file" "$attempt_dir/${attempt_name}.summary.json" 2>/dev/null || true
+  node - "$summary_file" "$provider" "$model" "$phase_name" "$attempt_name" > "$attempt_dir/${attempt_name}.json" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [summaryPath, provider, model, phase, attempt] = process.argv.slice(2);
+let summary = {};
+try { summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8')); } catch {}
+const error = summary.primary_provider_error || (Array.isArray(summary.provider_errors) ? summary.provider_errors[0] : null);
+process.stdout.write(JSON.stringify({ phase, attempt, provider, model, error: error || null }, null, 2) + '\n');
+NODE
+  node - "$attempt_dir/${attempt_name}.json" <<'NODE' >> "${KASEKI_RESULTS_DIR}/provider-attempts.jsonl" 2>/dev/null || true
+const fs = require('node:fs');
+const value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+process.stdout.write(JSON.stringify(value) + '\n');
+NODE
+}
+
+provider_error_json_from_summary() {
+  local summary_file="$1" phase_name="$2" provider="$3" model="$4"
+  node - "$summary_file" "$phase_name" "$provider" "$model" <<'NODE' 2>/dev/null || printf '{}'
+const fs = require('node:fs');
+const [summaryPath, phase, provider, model] = process.argv.slice(2);
+let summary = {};
+try { summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8')); } catch {}
+const error = summary.primary_provider_error || (Array.isArray(summary.provider_errors) ? summary.provider_errors[0] : null) || {};
+process.stdout.write(JSON.stringify({
+  type: error.type || 'provider_error', phase, provider: error.provider || provider,
+  api: error.api || '', model: error.model || model, message: error.message || '',
+  retryable: error.retryable === true
+}));
+NODE
 }
 
 resolve_openrouter_fallback_key() {
@@ -2063,6 +2104,10 @@ run_pi_with_retry() {
   invoke_pi
   pi_exit=$?
   summarize_invocation || true
+  snapshot_provider_attempt "$raw_events_file" "$summary_file" "$phase_name" "$original_provider" "$model" "primary-1"
+  if [ "$pi_exit" -eq 88 ]; then
+    PROVIDER_ERROR_PRIMARY_JSON="$(provider_error_json_from_summary "$summary_file" "$phase_name" "$original_provider" "$model")"
+  fi
 
   # For phase-specific retries, we need to check provider errors
   # Only retry if we got exit 88 (provider error) on first attempt
@@ -2081,6 +2126,10 @@ run_pi_with_retry() {
       invoke_pi
       pi_exit=$?
       summarize_invocation || true
+      snapshot_provider_attempt "$raw_events_file" "$summary_file" "$phase_name" "$original_provider" "$model" "primary-2"
+      if [ "$pi_exit" -eq 88 ]; then
+        PROVIDER_ERROR_PRIMARY_JSON="$(provider_error_json_from_summary "$summary_file" "$phase_name" "$original_provider" "$model")"
+      fi
       
       if [ "$pi_exit" -eq 0 ]; then
         PROVIDER_ERROR_RETRY_RESULT="success"
@@ -2108,6 +2157,8 @@ run_pi_with_retry() {
     invoke_pi
     pi_exit=$?
     summarize_invocation || true
+    snapshot_provider_attempt "$raw_events_file" "$summary_file" "$phase_name" "$PROVIDER_ERROR_FALLBACK_PROVIDER" "$PROVIDER_ERROR_FALLBACK_MODEL" "fallback-1"
+    PROVIDER_ERROR_RECOVERY_JSON="$(provider_error_json_from_summary "$summary_file" "$phase_name" "$PROVIDER_ERROR_FALLBACK_PROVIDER" "$PROVIDER_ERROR_FALLBACK_MODEL")"
     KASEKI_PROVIDER="$original_provider"
     if [ "$pi_exit" -eq 0 ]; then
       PROVIDER_ERROR_FALLBACK_RESULT="success"
@@ -2394,6 +2445,8 @@ write_failure_json() {
   "provider_error_fallback_provider": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_PROVIDER" | json_encode),
   "provider_error_fallback_model": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_MODEL" | json_encode),
   "provider_error_fallback_result": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_RESULT" | json_encode),
+  "provider_error_primary": ${PROVIDER_ERROR_PRIMARY_JSON:-null},
+  "provider_error_recovery": ${PROVIDER_ERROR_RECOVERY_JSON:-null},
   "goal_check_attempts": $GOAL_CHECK_ATTEMPTS,
   "goal_check_met": $GOAL_CHECK_MET,
   "stage": $(printf '%s' "$CURRENT_STAGE" | json_encode),

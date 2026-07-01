@@ -44,6 +44,9 @@ export class DiagnosticExtractor {
     ];
     const dependencyCache = this.readDependencyCacheDiagnostics(runDir, readSmallArtifact);
     const primaryReason = this.resolvePrimaryDiagnosticReason(response, rawPhaseDiagnostics);
+    const recoveryFailure = this.formatStructuredProviderError(
+      response.failureJsonContent?.provider_error_recovery
+    );
     const phaseDiagnostics = this.filterPhaseDiagnostics(rawPhaseDiagnostics, primaryReason);
 
     if (!primaryReason && phaseDiagnostics.length === 0 && !dependencyCache) {
@@ -52,6 +55,7 @@ export class DiagnosticExtractor {
 
     response.diagnosticSummary = {
       ...(primaryReason ? { primaryReason } : {}),
+      ...(recoveryFailure ? { recoveryFailure } : {}),
       ...(response.diagnosticEntryPoint ? { recommendedEntryPoint: response.diagnosticEntryPoint } : {}),
       ...(phaseDiagnostics.length > 0 ? { phaseDiagnostics } : {}),
       ...(dependencyCache ? { dependencyCache } : {}),
@@ -67,6 +71,7 @@ export class DiagnosticExtractor {
   ): string | undefined {
     const failureJson = response.failureJsonContent ?? {};
     const candidates = [
+      this.formatStructuredProviderError(failureJson.provider_error_primary),
       this.formatProviderError(failureJson),
       response.goalCheckFailureReason,
       response.validationAllowlistFailureReason,
@@ -83,6 +88,20 @@ export class DiagnosticExtractor {
     return candidates
       .map((candidate) => typeof candidate === 'string' ? this.cleanDiagnosticText(candidate) : undefined)
       .find((candidate): candidate is string => Boolean(candidate));
+  }
+
+  private formatStructuredProviderError(value: unknown): string | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const error = value as Record<string, unknown>;
+    const message = this.stringField(error, 'message');
+    if (!message) return undefined;
+    const type = this.stringField(error, 'type') ?? 'provider_error';
+    const phase = this.stringField(error, 'phase');
+    const provider = this.stringField(error, 'provider');
+    const model = this.stringField(error, 'model');
+    const context = [phase && `phase: ${phase}`, provider && `provider: ${provider}`, model && `model: ${model}`]
+      .filter(Boolean);
+    return this.cleanDiagnosticText(`${type}: ${message}${context.length ? ` (${context.join(', ')})` : ''}`);
   }
 
   private extractTerminalRuntimeError(failureJson: Record<string, unknown>): string | undefined {

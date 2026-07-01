@@ -121,6 +121,13 @@ export function isCloudflareGateway(url: string): boolean {
   }
 }
 
+export function buildGatewayAuthHeaders(baseUrl: string, apiKey: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    ...(isCloudflareGateway(baseUrl) ? { 'cf-aig-authorization': `Bearer ${apiKey}` } : {}),
+  };
+}
+
 interface Stage1ProbeRequest {
   endpoint: string;
   init: Record<string, unknown>;
@@ -137,7 +144,7 @@ export function buildStage1ProbeRequest(baseUrl: string): Stage1ProbeRequest {
       init: {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          ...buildGatewayAuthHeaders(baseUrl, apiKey),
           Accept: 'application/json',
           'Content-Type': 'application/json',
         },
@@ -156,7 +163,7 @@ export function buildStage1ProbeRequest(baseUrl: string): Stage1ProbeRequest {
     init: {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        ...buildGatewayAuthHeaders(baseUrl, apiKey),
         Accept: 'application/json',
       },
     },

@@ -54,6 +54,7 @@ describe('CloudFlare Gateway deterministic contract', () => {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${testGatewayConfig.apiKey}`,
+          'cf-aig-authorization': `Bearer ${testGatewayConfig.apiKey}`,
         },
         body: JSON.stringify({
           model: 'dynamic/kaseki-agent',

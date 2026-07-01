@@ -172,7 +172,7 @@ describe('kaseki API web console routes', () => {
     expect(document.querySelector('[data-testid="issues-repo-url"]')).not.toBeNull();
     expect(document.querySelector('[data-probe="/api/preflight"]')).not.toBeNull();
     expect(document.querySelector('[data-probe="/api/gateway-test?stage=1"]')?.getAttribute('data-auth')).toBe('true');
-    expect(document.querySelector('[data-probe="/api/gateway-test?stage=2&responseSmoke=true"]')?.textContent).toContain('Test Inference');
+    expect(document.querySelector('[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]')?.textContent).toContain('Test Inference');
     expect(document.querySelector('#task-mode')?.getAttribute('name')).toBe('taskMode');
     expect(document.querySelector('#runs-list')).not.toBeNull();
     expect(document.querySelector('#refresh-runs')?.textContent).toContain('Refresh runs');
@@ -259,7 +259,7 @@ describe('kaseki API web console behavior', () => {
     const llmTestButton = [...document.querySelectorAll('.health-check-button')]
       .find(btn => btn.textContent?.includes('Test Inference'));
     expect(llmTestButton).toBeDefined();
-    expect(llmTestButton?.getAttribute('data-probe')).toBe('/api/gateway-test?stage=2&responseSmoke=true');
+    expect(llmTestButton?.getAttribute('data-probe')).toBe('/api/gateway-test?stage=2&responseSmoke=true&piProvider=true');
 
     // Verify Check Status button does not exist
     const checkStatusButton = [...document.querySelectorAll('.health-check-button')]

@@ -12,6 +12,7 @@ import { ContainerPreflightDiagnostics, logContainerPreflightResults } from './s
 import { getNpmVersion } from './kaseki-api/npm-version';
 import { generateStartupHealthReport } from './kaseki-api/startup-health-reporter';
 import { writeStartupHealthArtifacts } from './kaseki-api/startup-summary-artifact';
+import { readHostSecret } from './secrets/host-secrets-reader';
 import {
   initSentry,
   sentryRequestHandler,
@@ -105,7 +106,7 @@ async function main(): Promise<void> {
   const hasOpenRouterFallback = !!(
     process.env.OPENROUTER_API_KEY ||
     process.env.OPENROUTER_API_KEY_FILE ||
-    process.env.KASEKI_API_KEY
+    readHostSecret('openrouter_api_key')
   );
 
   logger.event('service_startup_config', {

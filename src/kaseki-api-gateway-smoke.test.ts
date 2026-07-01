@@ -20,6 +20,7 @@ import {
   buildCloudflareInferenceEndpoint,
   resolveGatewayModel,
 } from './kaseki-api-gateway-smoke';
+import { buildGatewayAuthHeaders } from './gateway-detection/detect-gateway-provider';
 
 // Mock fetch before importing
 global.fetch = jest.fn();
@@ -561,6 +562,19 @@ describe('LLM Gateway Test', () => {
   });
 
   describe('Cloudflare Gateway Endpoint Detection', () => {
+    it('adds Cloudflare authenticated-gateway header while retaining SDK authorization', () => {
+      expect(buildGatewayAuthHeaders(
+        'https://gateway.ai.cloudflare.com/v1/account/default/compat',
+        'test-key'
+      )).toEqual({
+        Authorization: 'Bearer test-key',
+        'cf-aig-authorization': 'Bearer test-key',
+      });
+      expect(buildGatewayAuthHeaders('https://gateway.example/v1', 'test-key')).toEqual({
+        Authorization: 'Bearer test-key',
+      });
+    });
+
     it('should detect Cloudflare URLs ending with /compat', () => {
       expect(isCloudflareGateway('https://gateway.ai.cloudflare.com/v1/account123/default/compat')).toBe(true);
       expect(isCloudflareGateway('https://gateway.ai.cloudflare.com/v1/c40f3cb30efbf8c6d081cf9e50a61931/default/compat')).toBe(true);
