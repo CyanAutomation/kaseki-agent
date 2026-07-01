@@ -199,6 +199,15 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'provider-attempts.jsonl': {
+    name: 'provider-attempts.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Sanitized inference attempt timeline with provider, model, request/response IDs, retry decisions, and errors',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 2,
+    sizeHint: 'small',
+  },
+
   'prompt-diagnostics.jsonl': {
     name: 'prompt-diagnostics.jsonl',
     contentType: 'application/x-jsonl',
