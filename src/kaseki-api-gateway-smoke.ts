@@ -388,7 +388,7 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
 export function testPiOpenRouterFallbackSmoke(requested = false): PiProviderSmokeTestResult {
   const timestamp = new Date().toISOString();
   const startTime = performance.now();
-  const model = process.env.KASEKI_PROVIDER_FALLBACK_MODEL || 'auto';
+  const model = process.env.KASEKI_PROVIDER_FALLBACK_MODEL || 'free';
   if (!shouldRunPiProviderSmoke(requested)) {
     return { status: 'skipped', detail: 'OpenRouter fallback smoke skipped.', responseTime: 0, timestamp, provider: 'openrouter', model };
   }
