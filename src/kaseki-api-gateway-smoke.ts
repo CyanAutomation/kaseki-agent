@@ -5,6 +5,7 @@ import {
   shouldRunGatewayResponseSmoke,
   shouldRunPiProviderSmoke,
   resolveGatewayModel,
+  buildGatewayAuthHeaders,
   isCloudflareGateway,
   buildStage1ProbeRequest,
   buildResponsesEndpoint,
@@ -24,6 +25,7 @@ import {
   fetchWithTimeout,
 } from './gateway-validation/extract-pi-json';
 import { probeCloudflareGateway } from './cloudflare-gateway-probe';
+import { readHostSecret } from './secrets/host-secrets-reader';
 
 /**
  * LLM Gateway Responsiveness Test
@@ -91,7 +93,7 @@ export interface PiProviderSmokeTestResult {
   detail: string;
   responseTime: number;
   timestamp: string;
-  provider: 'gateway';
+  provider: 'gateway' | 'openrouter';
   model: string;
   outputEventCount?: number;
   assistantTextChars?: number;
@@ -381,6 +383,41 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
     outputEventCount: countPiJsonEvents(stdout),
     assistantTextChars: assistantText.trim().length,
   };
+}
+
+export function testPiOpenRouterFallbackSmoke(requested = false): PiProviderSmokeTestResult {
+  const timestamp = new Date().toISOString();
+  const startTime = performance.now();
+  const model = process.env.KASEKI_PROVIDER_FALLBACK_MODEL || 'auto';
+  if (!shouldRunPiProviderSmoke(requested)) {
+    return { status: 'skipped', detail: 'OpenRouter fallback smoke skipped.', responseTime: 0, timestamp, provider: 'openrouter', model };
+  }
+  const apiKey = process.env.OPENROUTER_API_KEY || readHostSecret('openrouter_api_key') || '';
+  if (!apiKey) {
+    return {
+      status: 'error', detail: 'OpenRouter fallback credential is missing.', responseTime: 0,
+      timestamp, provider: 'openrouter', model,
+      remediation: 'Configure a readable openrouter_api_key before enabling gateway fallback.',
+    };
+  }
+  const child = spawnSync('pi', [
+    '--mode', 'json', '--no-session', '--provider', 'openrouter', '--model', model,
+    'Return exactly this plain text and nothing else:\nkaseki fallback smoke ok',
+  ], {
+    encoding: 'utf8', timeout: PI_PROVIDER_SMOKE_TIMEOUT_MS,
+    env: { ...process.env, OPENROUTER_API_KEY: apiKey }, maxBuffer: 1024 * 1024,
+  });
+  const responseTime = Math.round(performance.now() - startTime);
+  const assistantText = extractPiJsonAssistantText(child.stdout || '');
+  if (child.error || child.status !== 0 || !assistantText.trim()) {
+    const detail = child.error?.message || (child.stderr || child.stdout || 'no assistant text').slice(0, 240);
+    return {
+      status: 'error', detail: `OpenRouter fallback Pi smoke failed: ${detail}`, responseTime,
+      timestamp, provider: 'openrouter', model, exitCode: child.status,
+      remediation: 'Replace or re-authorize the OpenRouter key, then rerun the Pi fallback smoke.',
+    };
+  }
+  return { status: 'ok', detail: 'OpenRouter fallback Pi inference verified.', responseTime, timestamp, provider: 'openrouter', model, exitCode: child.status };
 }
 
 /**
@@ -828,7 +865,7 @@ async function runGatewayResponseJsonCheck(
     const response = await fetchWithTimeout(responseEndpoint, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        ...buildGatewayAuthHeaders(gatewayUrl, apiKey),
         Accept: 'application/json',
         'Content-Type': 'application/json',
       },
@@ -952,7 +989,7 @@ async function runGatewayResponseStreamCheck(
     const response = await fetchWithTimeout(responseEndpoint, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        ...buildGatewayAuthHeaders(gatewayUrl, apiKey),
         Accept: 'text/event-stream',
         'Content-Type': 'application/json',
       },
