@@ -30,3 +30,8 @@ fallow_*.json
 
 # Generated API spec
 kaseki-openapi.json
+
+# Generated TypeScript artifacts for script tests
+scripts/**/*.test.d.ts
+scripts/**/*.test.d.ts.map
+scripts/**/*.test.js.map
