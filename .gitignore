@@ -30,3 +30,7 @@ fallow_*.json
 
 # Generated API spec
 kaseki-openapi.json
+
+# Generated script test source maps
+scripts/**/*.test.js.map
+scripts/**/*.test.d.ts.map
