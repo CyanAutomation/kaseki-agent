@@ -42,6 +42,7 @@ if [ "${1:-}" = "run" ]; then
 
   case "$entrypoint" in
     test)
+      [ "${1:-}" = "-f" ] && [ "${2:-}" = "/app/run-kaseki.sh" ]
       exit 0
       ;;
     sha256sum)
