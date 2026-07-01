@@ -14,18 +14,39 @@ import * as path from 'path';
 
 const integrationIt = process.env.RUN_TREE_SITTER_CLI_INTEGRATION === '1' ? it : it.skip;
 
+type CliExecutionError = Error & {
+  stderr?: Buffer | string;
+  stdout?: Buffer | string;
+  status?: number;
+  signal?: NodeJS.Signals | null;
+};
+
+function formatCliOutput(output: Buffer | string | undefined): string | undefined {
+  const formattedOutput = output?.toString().trim();
+
+  return formattedOutput || undefined;
+}
+
 function formatCliError(error: unknown): string {
   if (error instanceof Error) {
-    const execError = error as Error & { stderr?: Buffer | string; stdout?: Buffer | string; status?: number };
+    const execError = error as CliExecutionError;
     const parts = [error.message];
-    
-    if (execError.stderr) {
-      parts.push(`stderr: ${execError.stderr.toString().trim()}`);
+    const stderr = formatCliOutput(execError.stderr);
+    const stdout = formatCliOutput(execError.stdout);
+
+    if (execError.status !== undefined) {
+      parts.push(`exit status: ${execError.status}`);
     }
-    if (execError.stdout) {
-      parts.push(`stdout: ${execError.stdout.toString().trim()}`);
+    if (execError.signal) {
+      parts.push(`signal: ${execError.signal}`);
     }
-    
+    if (stderr) {
+      parts.push(`stderr: ${stderr}`);
+    }
+    if (stdout) {
+      parts.push(`stdout: ${stdout}`);
+    }
+
     return parts.join('\n');
   }
 
