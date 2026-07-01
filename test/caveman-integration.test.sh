@@ -69,8 +69,8 @@ assert_file_mentions_public_env_var() {
 render_agent_prompt() {
   local caveman_enabled="$1"
   local harness results_dir status
-  harness="$(mktemp)"
-  results_dir="$(mktemp -d)"
+  harness="$(mktemp)" || fail "Failed to create temporary harness file"
+  results_dir="$(mktemp -d)" || { rm -f "$harness"; fail "Failed to create temporary results directory"; }
 
   cat > "$harness" <<'EOF_HARNESS'
 #!/usr/bin/env bash
