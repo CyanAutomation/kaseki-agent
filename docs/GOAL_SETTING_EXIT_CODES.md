@@ -126,7 +126,7 @@ When artifact validation fails, structured error details are logged:
   "attempts": 2,
   "total_duration_seconds": 301,
   "timeout_seconds": 300,
-  "model": "openrouter/auto",
+  "model": "openrouter/free",
   "reason": "max_retry_attempts_exhausted",
   "stderr_tail": "Last 400 chars of stderr...",
   "fallback_to_original_prompt": true,
@@ -153,7 +153,7 @@ Summary metrics for the entire phase:
   "retry_count": 2,
   "success": false,
   "failure_reason": "GOAL_SETTING_TIMEOUT",
-  "model": "openrouter/auto",
+  "model": "openrouter/free",
   "timeout_seconds": 300
 }
 ```
@@ -244,7 +244,7 @@ Deterministic failure (exit 88: GOAL_SETTING_PROVIDER_ERROR), not retrying
 - API key invalid or revoked
 
 **Solutions**:
-- Use `openrouter/auto` (free tier auto-selection)
+- Use `openrouter/free` (free tier auto-selection)
 - Check model name is correct
 - Verify API key is valid
 - Check provider status page
