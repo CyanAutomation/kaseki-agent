@@ -105,7 +105,7 @@ EOF_HARNESS
   KASEKI_AGENT_GUARDRAILS="0" \
   KASEKI_CAVEMAN="$caveman_enabled" \
   bash "$harness" || status=$?
-  status="${status:-0}"
+  status="${status:-1}"
 
   rm -f "$harness"
   rm -rf "$results_dir"
