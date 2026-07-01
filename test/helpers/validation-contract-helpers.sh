@@ -38,6 +38,10 @@ if [ "${1:-}" = "--version" ]; then
   printf 'pi fake 0.0.0\n'
   exit 0
 fi
+if [ "${1:-}" = "--list-models" ]; then
+  printf 'gateway\n'
+  exit 0
+fi
 printf 'unexpected pi invocation: %s\n' "$*" >&2
 exit 1
 EOF_PI
@@ -241,4 +245,3 @@ assert_agent_completed() {
     fail "$message (exit $run_exit)"
   fi
 }
-
