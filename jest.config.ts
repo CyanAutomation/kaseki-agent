@@ -10,9 +10,8 @@ const config: Config = {
     '<rootDir>/test/**/*.test.ts',
     '<rootDir>/tests/**/*.test.ts',
   ],
-  testPathIgnorePatterns: ['/node_modules/', '\\.map$'],
+  testPathIgnorePatterns: ['/node_modules/', '\\.map$', '/\\.test\\.js\\.map$'],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
-  testPathIgnorePatterns: ['/\\.test\\.js\\.map$'],
   maxWorkers: process.env.CI ? '50%' : '50%',
   collectCoverageFrom: [
     'src/**/*.ts',
