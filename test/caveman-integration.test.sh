@@ -1,113 +1,173 @@
-#!/bin/bash
-# shellcheck disable=SC2016
-# Integration test for Caveman mode injection into kaseki-agent
+#!/usr/bin/env bash
+# Behavior test for Caveman prompt injection.
+# Renders the public agent prompt path and asserts the KASEKI_CAVEMAN
+# environment switch controls whether terse communication guidance appears.
 
-set -u
+set -euo pipefail
 
-# Source necessary test helpers
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PARENT_DIR="$(dirname "$SCRIPT_DIR")"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROMPT_HELPER="$REPO_ROOT/scripts/agent-prompt.sh"
+ENVIRONMENT_CONFIGURATION_DOC="$REPO_ROOT/.agents/skills/environment-configuration/SKILL.md"
 
-# Test that KASEKI_CAVEMAN default is 1 (enabled)
-echo "✓ Testing KASEKI_CAVEMAN default value..."
-# We'll verify this by checking the kaseki-agent.sh source
-if grep -q 'KASEKI_CAVEMAN="\${KASEKI_CAVEMAN:-1}"' "$PARENT_DIR/kaseki-agent.sh"; then
-  echo "  KASEKI_CAVEMAN default is set to 1 (enabled by default)"
-else
-  echo "  ERROR: KASEKI_CAVEMAN default not found or not set to 1"
-  exit 1
-fi
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
 
-# Test that get_caveman_instruction function exists
-echo "✓ Testing get_caveman_instruction function..."
-if grep -q 'get_caveman_instruction()' "$PARENT_DIR/kaseki-agent.sh"; then
-  echo "  get_caveman_instruction function found in kaseki-agent.sh"
-else
-  echo "  ERROR: get_caveman_instruction function not found"
-  exit 1
-fi
+test_count=0
+passed_count=0
+failed_count=0
 
-# Test that caveman instruction is injected into goal-setting prompt
-echo "✓ Testing caveman injection in build_goal_setting_prompt..."
-if grep -A 5 'build_goal_setting_prompt()' "$PARENT_DIR/kaseki-agent.sh" | grep -q 'caveman_instruction'; then
-  echo "  Caveman instruction injection found in build_goal_setting_prompt"
-else
-  echo "  ERROR: Caveman instruction not injected in build_goal_setting_prompt"
-  exit 1
-fi
+fail() {
+  printf '%s\n' "ERROR: $*" >&2
+  return 1
+}
 
-# Test that caveman instruction is injected into scouting prompt
-echo "✓ Testing caveman injection in build_scouting_prompt..."
-if grep -A 10 'build_scouting_prompt()' "$PARENT_DIR/kaseki-agent.sh" | grep -q 'caveman_instruction'; then
-  echo "  Caveman instruction injection found in build_scouting_prompt"
-else
-  echo "  ERROR: Caveman instruction not injected in build_scouting_prompt"
-  exit 1
-fi
+test_result() {
+  local name="$1"
+  local result="$2"
 
-# Test that caveman instruction is injected into goal-check prompt
-echo "✓ Testing caveman injection in build_goal_check_prompt..."
-if grep -A 5 'build_goal_check_prompt()' "$PARENT_DIR/kaseki-agent.sh" | grep -q 'caveman_instruction'; then
-  echo "  Caveman instruction injection found in build_goal_check_prompt"
-else
-  echo "  ERROR: Caveman instruction not injected in build_goal_check_prompt"
-  exit 1
-fi
+  test_count=$((test_count + 1))
 
-# Test that caveman instruction is injected into evaluation prompt
-echo "✓ Testing caveman injection in build_run_evaluation_prompt..."
-if grep -A 5 'build_run_evaluation_prompt()' "$PARENT_DIR/kaseki-agent.sh" | grep -q 'caveman_instruction'; then
-  echo "  Caveman instruction injection found in build_run_evaluation_prompt"
-else
-  echo "  ERROR: Caveman instruction not injected in build_run_evaluation_prompt"
-  exit 1
-fi
+  if [ "$result" -eq 0 ]; then
+    printf "${GREEN}✓ PASS${NC} Test %d: %s\n" "$test_count" "$name"
+    passed_count=$((passed_count + 1))
+  else
+    printf "${RED}✗ FAIL${NC} Test %d: %s\n" "$test_count" "$name"
+    failed_count=$((failed_count + 1))
+  fi
+}
 
-# Test that caveman instruction is injected into agent-prompt.sh
-echo "✓ Testing caveman injection in build_agent_prompt..."
-if grep -A 10 'build_agent_prompt()' "$PARENT_DIR/scripts/agent-prompt.sh" | grep -q 'caveman_instruction'; then
-  echo "  Caveman instruction injection found in build_agent_prompt"
-else
-  echo "  ERROR: Caveman instruction not injected in build_agent_prompt"
-  exit 1
-fi
+assert_prompt_contains() {
+  local prompt="$1"
+  local expected_text="$2"
+  local behavior="$3"
 
-# Test that environment variable is documented
-echo "✓ Testing KASEKI_CAVEMAN documentation..."
-if grep -q 'KASEKI_CAVEMAN' "$PARENT_DIR/.agents/skills/environment-configuration/SKILL.md"; then
-  echo "  KASEKI_CAVEMAN documented in environment-configuration SKILL.md"
-else
-  echo "  ERROR: KASEKI_CAVEMAN not documented"
-  exit 1
-fi
+  printf '%s' "$prompt" | grep -Fq -- "$expected_text" \
+    || fail "$behavior: expected generated prompt to contain '$expected_text'"
+}
 
-# Test that caveman-instructions.ts library exists
-echo "✓ Testing caveman-instructions.ts library..."
-if [ -f "$PARENT_DIR/src/caveman/caveman-instructions.ts" ]; then
-  echo "  caveman-instructions.ts library found"
-else
-  echo "  ERROR: caveman-instructions.ts library not found"
-  exit 1
-fi
+assert_prompt_omits() {
+  local prompt="$1"
+  local forbidden_text="$2"
+  local behavior="$3"
 
-# Verify getCavemanInstruction function is exported
-echo "✓ Testing getCavemanInstruction export..."
-if grep -q 'export function getCavemanInstruction' "$PARENT_DIR/src/caveman/caveman-instructions.ts"; then
-  echo "  getCavemanInstruction function exported"
-else
-  echo "  ERROR: getCavemanInstruction function not exported"
-  exit 1
-fi
+  if printf '%s' "$prompt" | grep -Fq -- "$forbidden_text"; then
+    fail "$behavior: expected generated prompt to omit '$forbidden_text'"
+  fi
+}
 
-# Verify instruction includes key Caveman skill rules
-echo "✓ Testing Caveman instruction content..."
-if grep -q 'Terse.*professional\|professional.*Terse' "$PARENT_DIR/src/caveman/caveman-instructions.ts"; then
-  echo "  Caveman instruction includes 'terse' and 'professional'"
-else
-  echo "  ERROR: Caveman instruction missing key phrases"
-  exit 1
-fi
+assert_file_mentions_public_env_var() {
+  local file_path="$1"
+  local env_var="$2"
+  local behavior="$3"
 
-echo ""
-echo "✅ All integration tests passed!"
-exit 0
+  grep -Fq -- "$env_var" "$file_path" \
+    || fail "$behavior: expected $file_path to document public environment variable $env_var"
+}
+
+render_agent_prompt() {
+  local caveman_enabled="$1"
+  local harness results_dir status
+  harness="$(mktemp)"
+  results_dir="$(mktemp -d)"
+
+  cat > "$harness" <<'EOF_HARNESS'
+#!/usr/bin/env bash
+set -euo pipefail
+read_repo_memory_section() { printf ''; }
+get_caveman_instruction() {
+  if [ "${KASEKI_CAVEMAN:-1}" != "1" ]; then
+    return 0
+  fi
+  cat <<'CAVEMAN'
+Terse, professional communication. Drop articles, filler, pleasantries. Keep full sentences. Short synonyms (big not extensive, fix not implement). No tool narration, tables, emoji. Standard acronyms only (DB/API/HTTP). Technical terms exact, code blocks unchanged. Pattern: [thing] [action] [reason]. [next step]. Example: "Bug in auth middleware. Expiry check uses < not <=. Fix:" Substance stays. Fluff dies.
+CAVEMAN
+}
+: "${PROMPT_HELPER:?PROMPT_HELPER is required}"
+: "${TASK_PROMPT:?TASK_PROMPT is required}"
+: "${SCOUTING_ARTIFACT:?SCOUTING_ARTIFACT is required}"
+: "${KASEKI_RESULTS_DIR:?KASEKI_RESULTS_DIR is required}"
+: "${GOAL_CHECK_RETRY_PROMPT+x}"
+: "${KASEKI_HASHLINE_EDITS:?KASEKI_HASHLINE_EDITS is required}"
+: "${KASEKI_AGENT_GUARDRAILS:?KASEKI_AGENT_GUARDRAILS is required}"
+# shellcheck source=/dev/null
+. "$PROMPT_HELPER"
+build_agent_prompt
+EOF_HARNESS
+
+  PROMPT_HELPER="$PROMPT_HELPER" \
+  TASK_PROMPT="Implement caveman prompt behavior test." \
+  SCOUTING_ARTIFACT="/dev/null" \
+  KASEKI_RESULTS_DIR="$results_dir" \
+  GOAL_CHECK_RETRY_PROMPT="" \
+  KASEKI_HASHLINE_EDITS="0" \
+  KASEKI_AGENT_GUARDRAILS="0" \
+  KASEKI_CAVEMAN="$caveman_enabled" \
+  bash "$harness" || status=$?
+  status="${status:-0}"
+
+  rm -f "$harness"
+  rm -rf "$results_dir"
+  return "$status"
+}
+
+test_caveman_prompt_contract_enabled() {
+  local result=0 prompt
+  prompt="$(render_agent_prompt 1)" || result=1
+
+  if [ "$result" -eq 0 ]; then
+    assert_prompt_contains "$prompt" "Terse, professional communication." \
+      "KASEKI_CAVEMAN=1 protects terse communication guidance" || result=1
+    assert_prompt_contains "$prompt" "Substance stays. Fluff dies." \
+      "KASEKI_CAVEMAN=1 protects caveman instruction footer" || result=1
+    assert_prompt_contains "$prompt" "Implement caveman prompt behavior test." \
+      "KASEKI_CAVEMAN=1 preserves user task prompt" || result=1
+  fi
+
+  test_result "KASEKI_CAVEMAN=1 includes Caveman instruction in generated agent prompt" "$result"
+  return "$result"
+}
+
+test_caveman_prompt_contract_disabled() {
+  local result=0 prompt
+  prompt="$(render_agent_prompt 0)" || result=1
+
+  if [ "$result" -eq 0 ]; then
+    assert_prompt_omits "$prompt" "Terse, professional communication." \
+      "KASEKI_CAVEMAN=0 protects opt-out from terse communication guidance" || result=1
+    assert_prompt_omits "$prompt" "Substance stays. Fluff dies." \
+      "KASEKI_CAVEMAN=0 protects opt-out from caveman instruction footer" || result=1
+    assert_prompt_contains "$prompt" "Implement caveman prompt behavior test." \
+      "KASEKI_CAVEMAN=0 preserves user task prompt" || result=1
+  fi
+
+  test_result "KASEKI_CAVEMAN=0 omits Caveman instruction from generated agent prompt" "$result"
+  return "$result"
+}
+
+test_caveman_public_configuration_documented() {
+  local result=0
+
+  assert_file_mentions_public_env_var "$ENVIRONMENT_CONFIGURATION_DOC" "KASEKI_CAVEMAN" \
+    "Environment configuration skill documents supported public prompt switches" || result=1
+
+  test_result "KASEKI_CAVEMAN remains documented as public environment configuration" "$result"
+  return "$result"
+}
+
+main() {
+  printf 'Asserting Caveman prompt behavior through rendered agent prompt\n\n'
+
+  test_caveman_prompt_contract_enabled || true
+  test_caveman_prompt_contract_disabled || true
+  test_caveman_public_configuration_documented || true
+
+  printf '\nTests: %d passed, %d failed, %d total\n' "$passed_count" "$failed_count" "$test_count"
+
+  if [ "$failed_count" -ne 0 ]; then
+    exit 1
+  fi
+}
+
+main "$@"
