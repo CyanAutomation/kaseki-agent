@@ -152,6 +152,13 @@ describe('CloudFlare Gateway deterministic contract', () => {
         name: 'LLM Gateway (CloudFlare)',
         baseUrl: testGatewayConfig.url,
         apiKey: testGatewayConfig.apiKey,
+        headers: {
+          'cf-aig-authorization': `Bearer ${testGatewayConfig.apiKey}`,
+          'cf-aig-collect-log-payload': 'false',
+          'cf-aig-metadata': JSON.stringify({
+            run_id: 'unknown', phase: 'unknown', attempt: 'unknown', request_id: 'unknown', component: 'kaseki-agent',
+          }),
+        },
         api: 'openai-completions',
         models: [
           {
