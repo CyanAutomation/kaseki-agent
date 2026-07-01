@@ -196,8 +196,9 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
     const triageRank = (artifactName: string, fallback: number | undefined): number => {
       if (providerFailure) {
         if (artifactName === '.gateway-diagnostics.jsonl') return 0;
-        if (artifactName === 'failure.json') return 1;
-        if (artifactName === 'result-summary.md') return 2;
+        if (artifactName === 'provider-attempts.jsonl') return 1;
+        if (artifactName === 'failure.json') return 2;
+        if (artifactName === 'result-summary.md') return 3;
         if (artifactName === 'pi-agent-diagnostics.jsonl') return 3;
         if (artifactName === 'pi-events.jsonl') return 4;
       }

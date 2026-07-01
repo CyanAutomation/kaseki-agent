@@ -1518,6 +1518,7 @@ const controllerPage = String.raw`<!doctype html>
           <strong class="panel-section-label">Run follow-through</strong>
           <div class="link-grid">
             <button class="secondary toolbar-button-no-wrap" id="full-results-btn" type="button">Full Results</button>
+            <button class="secondary toolbar-button-no-wrap" id="copy-diagnostic-bundle-btn" type="button">Copy diagnostic bundle</button>
           </div>
           <div class="recommended-artifacts" id="recommended-artifacts" hidden>
             <span class="summary-label">Recommended artifacts</span>
@@ -1574,6 +1575,7 @@ const controllerPage = String.raw`<!doctype html>
       const runLinks = document.querySelector('#run-links');
       const recommendedArtifacts = document.querySelector('#recommended-artifacts');
       const recommendedArtifactLinks = document.querySelector('#recommended-artifact-links');
+      const copyDiagnosticBundleBtn = document.querySelector('#copy-diagnostic-bundle-btn');
       const headerStatus = document.querySelector('#header-status');
       const runsList = document.querySelector('#runs-list');
       
@@ -1807,7 +1809,13 @@ const controllerPage = String.raw`<!doctype html>
 
       function setOutputMetadata(status, runId) {
         outputMeta.textContent = 'Status: ' + status + (runId ? ' | Run ID: ' + runId : '');
-        updateHeaderStatus(status);
+        if (runId) {
+          headerStatus.textContent = 'Viewing run: ' + status;
+          updateHeaderStatus(status);
+        } else {
+          headerStatus.textContent = 'Controller: ' + status;
+          updateHeaderStatus(status);
+        }
       }
 
       function formatElapsedSeconds(value) {
@@ -1891,6 +1899,9 @@ const controllerPage = String.raw`<!doctype html>
           }
           if (typeof payload.taskProgressPercent === 'number') {
             items.push(['Progress (%)', payload.taskProgressPercent + '%']);
+            if (payload.status === 'failed') {
+              items.push(['Progress context', 'Estimated workflow position when the run stopped; this is not a completion or success score.', { warning: true, fullWidth: true }]);
+            }
           }
           if (typeof payload.timeoutRiskPercent === 'number') {
             items.push(['Timeout risk', payload.timeoutRiskPercent + '%']);
@@ -1932,7 +1943,7 @@ const controllerPage = String.raw`<!doctype html>
                 .slice(0, 2)
                 .join(' | ');
               if (cacheText) {
-                items.push(['Dependency cache', stripControlSequences(cacheText).slice(0, 220), { warning: true, fullWidth: true }]);
+                items.push(['Dependency cache warning', stripControlSequences(cacheText).slice(0, 220), { warning: true, fullWidth: true }]);
               }
             }
             if (summary.testFailure && typeof summary.testFailure === 'object') {
@@ -2141,6 +2152,22 @@ const controllerPage = String.raw`<!doctype html>
                 })),
             },
             note: 'Showing a compact summary. Open Full Results for artifact links.',
+          }, null, 2);
+        }
+        if (path === '/api/runs' && payload && typeof payload === 'object' && Array.isArray(payload.runs)) {
+          return JSON.stringify({
+            ...base,
+            response: {
+              total: payload.total,
+              returned: payload.runs.length,
+              retention: payload.retention,
+              runs: payload.runs.slice(0, 12).map((run) => ({
+                id: run.id, status: run.status, createdAt: run.createdAt,
+                completedAt: run.completedAt, exitCode: run.exitCode,
+                failureClass: run.failureClass, error: run.error,
+              })),
+            },
+            note: 'Recent runs are summarized; select a run for status and artifacts.',
           }, null, 2);
         }
         return JSON.stringify({
@@ -2390,7 +2417,7 @@ const controllerPage = String.raw`<!doctype html>
         }
         if (path.startsWith('/api/gateway-test')) {
           // Handle both /api/gateway-test (full test), /api/gateway-test?stage=1 (connectivity), and /api/gateway-test?stage=2 (inference)
-          const responseTime = payload.responseTime || 0;
+          const responseTime = Math.round(payload.responseTime || 0);
           const slow = payload.status === 'ok' && typeof payload.warning === 'string';
           const smoke = payload.responseSmokeValidated === true;
           const summary = payload.status === 'ok'
@@ -2455,7 +2482,7 @@ const controllerPage = String.raw`<!doctype html>
           }
         }
         if (path === '/api/gateway-test/responses') {
-          const responseTime = payload.responseTime || 0;
+          const responseTime = Math.round(payload.responseTime || 0);
           const outputTokens = payload.outputTokens || 0;
           const summary = payload.status === 'ok'
             ? responseTime + 'ms ' + outputTokens + ' tokens'
@@ -3255,6 +3282,36 @@ const controllerPage = String.raw`<!doctype html>
 
       fullResultsBtn.addEventListener('click', () => {
         openModal();
+      });
+
+      copyDiagnosticBundleBtn.addEventListener('click', async () => {
+        const runId = runIdInput.value.trim();
+        if (!runId) {
+          showToast('Select a run first.', 'error', 2000);
+          return;
+        }
+        copyDiagnosticBundleBtn.disabled = true;
+        try {
+          const [statusResult, artifactsResult] = await Promise.all([
+            apiRequest(runUrl(runId, '/status'), { auth: true, preserveOutput: true }),
+            apiRequest(runUrl(runId, '/artifacts'), { auth: true, preserveOutput: true }),
+          ]);
+          const recommended = Array.isArray(artifactsResult.payload && artifactsResult.payload.recommended)
+            ? artifactsResult.payload.recommended.slice(0, 5)
+            : [];
+          const artifactSections = await Promise.all(recommended.map(async (name) => {
+            const result = await apiRequest('/api/results/' + encodeURIComponent(runId) + '/' + encodeURIComponent(name), { auth: true, preserveOutput: true });
+            return '## ' + name + '\n' + artifactDisplayText(result.payload);
+          }));
+          const bundle = '# Kaseki diagnostic bundle: ' + runId + '\n\n## Status\n' +
+            JSON.stringify(statusResult.payload, null, 2) + '\n\n' + artifactSections.join('\n\n');
+          const copied = await copyToClipboard(bundle);
+          showToast(copied.ok ? 'Diagnostic bundle copied.' : copied.message, copied.ok ? 'success' : 'error', 2500);
+        } catch (error) {
+          showToast('Could not copy diagnostic bundle: ' + (error instanceof Error ? error.message : String(error)), 'error', 3000);
+        } finally {
+          copyDiagnosticBundleBtn.disabled = false;
+        }
       });
 
       modalCloseBtn.addEventListener('click', () => {

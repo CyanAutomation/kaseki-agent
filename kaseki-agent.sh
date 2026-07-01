@@ -1567,6 +1567,7 @@ write_metadata() {
   "provider_error_fallback_result": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_RESULT" | json_encode),
   "provider_error_primary": ${PROVIDER_ERROR_PRIMARY_JSON:-null},
   "provider_error_recovery": ${PROVIDER_ERROR_RECOVERY_JSON:-null},
+  "provider_failure_chain": {"primary": ${PROVIDER_ERROR_PRIMARY_JSON:-null}, "retry_attempt_count": $PROVIDER_ERROR_RETRY_ATTEMPT_COUNT, "retry_result": $(printf '%s' "$PROVIDER_ERROR_RETRY_RESULT" | json_encode), "recovery": ${PROVIDER_ERROR_RECOVERY_JSON:-null}, "recovery_result": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_RESULT" | json_encode)},
   "pi_exit_code": $PI_EXIT,
   "scouting_exit_code": $SCOUTING_EXIT,
   "goal_setting_exit_code": $GOAL_SETTING_EXIT,
@@ -1941,13 +1942,21 @@ snapshot_provider_attempt() {
   mkdir -p "$attempt_dir"
   cp "$raw_events_file" "$attempt_dir/${attempt_name}.events.jsonl" 2>/dev/null || true
   cp "$summary_file" "$attempt_dir/${attempt_name}.summary.json" 2>/dev/null || true
-  node - "$summary_file" "$provider" "$model" "$phase_name" "$attempt_name" > "$attempt_dir/${attempt_name}.json" <<'NODE' 2>/dev/null || true
+  node - "$summary_file" "$provider" "$model" "$phase_name" "$attempt_name" "${KASEKI_INFERENCE_REQUEST_ID:-}" > "$attempt_dir/${attempt_name}.json" <<'NODE' 2>/dev/null || true
 const fs = require('node:fs');
-const [summaryPath, provider, model, phase, attempt] = process.argv.slice(2);
+const [summaryPath, provider, model, phase, attempt, requestId] = process.argv.slice(2);
 let summary = {};
 try { summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8')); } catch {}
 const error = summary.primary_provider_error || (Array.isArray(summary.provider_errors) ? summary.provider_errors[0] : null);
-process.stdout.write(JSON.stringify({ phase, attempt, provider, model, error: error || null }, null, 2) + '\n');
+process.stdout.write(JSON.stringify({
+  timestamp: new Date().toISOString(), phase, attempt, provider, model,
+  request_id: requestId || undefined,
+  response_id: error?.response_id || undefined,
+  status_code: error?.status_code || undefined,
+  error_code: error?.error_code || undefined,
+  retryable: error?.retryable === true,
+  error: error || null,
+}, null, 2) + '\n');
 NODE
   node - "$attempt_dir/${attempt_name}.json" <<'NODE' >> "${KASEKI_RESULTS_DIR}/provider-attempts.jsonl" 2>/dev/null || true
 const fs = require('node:fs');
@@ -2053,7 +2062,7 @@ run_pi_with_retry() {
   local stderr_target="${6:-}"
   local phase_name="${7:-unknown}"
   local allow_fallback="${8:-0}"
-  local pi_exit summary_file attempt=1 original_provider="$KASEKI_PROVIDER"
+  local pi_exit summary_file attempt=1 original_provider="$KASEKI_PROVIDER" primary_response_id="" retry_response_id=""
   local previous_retryable="${PROVIDER_ERROR_RETRYABLE:-}"
   local previous_retry_attempt_count="${PROVIDER_ERROR_RETRY_ATTEMPT_COUNT:-0}"
   local previous_retry_result="${PROVIDER_ERROR_RETRY_RESULT:-none}"
@@ -2069,6 +2078,14 @@ run_pi_with_retry() {
   PROVIDER_ERROR_FALLBACK_RESULT="none"
   
   invoke_pi() {
+    KASEKI_INFERENCE_PHASE="$phase_name"
+    if [ "$KASEKI_PROVIDER" = "$original_provider" ]; then
+      KASEKI_INFERENCE_ATTEMPT="primary-$attempt"
+    else
+      KASEKI_INFERENCE_ATTEMPT="fallback-1"
+    fi
+    KASEKI_INFERENCE_REQUEST_ID="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"
+    export KASEKI_INFERENCE_PHASE KASEKI_INFERENCE_ATTEMPT KASEKI_INFERENCE_REQUEST_ID
     if [ -n "$stderr_target" ]; then
       run_pi_json_capture "$raw_events_file" "$timeout_seconds" "$model" "$prompt" "$stderr_target"
     else
@@ -2105,6 +2122,7 @@ run_pi_with_retry() {
   pi_exit=$?
   summarize_invocation || true
   snapshot_provider_attempt "$raw_events_file" "$summary_file" "$phase_name" "$original_provider" "$model" "primary-1"
+  primary_response_id="$(node -e 'try{const s=require(process.argv[1]);process.stdout.write(String(s.primary_provider_error?.response_id||""))}catch{}' "$summary_file" 2>/dev/null || true)"
   if [ "$pi_exit" -eq 88 ]; then
     PROVIDER_ERROR_PRIMARY_JSON="$(provider_error_json_from_summary "$summary_file" "$phase_name" "$original_provider" "$model")"
   fi
@@ -2114,11 +2132,15 @@ run_pi_with_retry() {
   if [ "$pi_exit" -eq 88 ] && [ "$attempt" -eq 1 ]; then
     # Check if error is retryable
     if check_if_provider_error_retryable "$summary_file"; then
-      printf '[RETRY] Provider error is retryable in %s phase; attempting second invocation after 3s delay (model: %s)\n' \
-        "$phase_name" "$model" >&2
+      local retry_delay_seconds="${KASEKI_PROVIDER_RETRY_BASE_SECONDS:-3}"
+      if [ "${KASEKI_PROVIDER_RETRY_JITTER:-1}" = "1" ]; then
+        retry_delay_seconds=$((retry_delay_seconds + RANDOM % 3))
+      fi
+      printf '[RETRY] Provider error is retryable in %s phase; attempting second invocation after %ss delay (model: %s)\n' \
+        "$phase_name" "$retry_delay_seconds" "$model" >&2
       
       PROVIDER_ERROR_RETRY_ATTEMPT_COUNT=1
-      sleep 3
+      sleep "$retry_delay_seconds"
       rm -f "$raw_events_file" 2>/dev/null || true
       : > "$raw_events_file"
       
@@ -2127,6 +2149,10 @@ run_pi_with_retry() {
       pi_exit=$?
       summarize_invocation || true
       snapshot_provider_attempt "$raw_events_file" "$summary_file" "$phase_name" "$original_provider" "$model" "primary-2"
+      retry_response_id="$(node -e 'try{const s=require(process.argv[1]);process.stdout.write(String(s.primary_provider_error?.response_id||""))}catch{}' "$summary_file" 2>/dev/null || true)"
+      if [ -n "$primary_response_id" ] && [ "$retry_response_id" = "$primary_response_id" ]; then
+        printf '[RETRY DUPLICATE] Gateway returned the same response_id=%s; treating replay as exhausted\n' "$retry_response_id" >&2
+      fi
       if [ "$pi_exit" -eq 88 ]; then
         PROVIDER_ERROR_PRIMARY_JSON="$(provider_error_json_from_summary "$summary_file" "$phase_name" "$original_provider" "$model")"
       fi
@@ -2447,6 +2473,7 @@ write_failure_json() {
   "provider_error_fallback_result": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_RESULT" | json_encode),
   "provider_error_primary": ${PROVIDER_ERROR_PRIMARY_JSON:-null},
   "provider_error_recovery": ${PROVIDER_ERROR_RECOVERY_JSON:-null},
+  "provider_failure_chain": {"primary": ${PROVIDER_ERROR_PRIMARY_JSON:-null}, "retry_attempt_count": $PROVIDER_ERROR_RETRY_ATTEMPT_COUNT, "retry_result": $(printf '%s' "$PROVIDER_ERROR_RETRY_RESULT" | json_encode), "recovery": ${PROVIDER_ERROR_RECOVERY_JSON:-null}, "recovery_result": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_RESULT" | json_encode)},
   "goal_check_attempts": $GOAL_CHECK_ATTEMPTS,
   "goal_check_met": $GOAL_CHECK_MET,
   "stage": $(printf '%s' "$CURRENT_STAGE" | json_encode),
