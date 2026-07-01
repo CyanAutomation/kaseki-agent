@@ -9,6 +9,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 HELPERS="$REPO_ROOT/scripts/dry-run-artifacts.sh"
+VALIDATION_HELPERS="$REPO_ROOT/scripts/validation-helpers.sh"
 
 pass() { printf '✓ %s\n' "$1"; }
 fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
@@ -34,6 +35,7 @@ assert_file_contains() {
 command -v rg >/dev/null 2>&1 || fail "ripgrep is required for file content assertions"
 command -v node >/dev/null 2>&1 || fail "Node.js is required for JSON assertions"
 [ -x "$HELPERS" ] || fail "Expected executable helper: $HELPERS"
+[ -r "$VALIDATION_HELPERS" ] || fail "Expected readable helper: $VALIDATION_HELPERS"
 
 tmp_root="$(mktemp -d)"
 trap 'rm -rf "$tmp_root"' EXIT
@@ -126,6 +128,48 @@ PI
   assert_file_contains "$result_dir/startup-check.txt" "startup_check=ok"
 )
 
+case_validation_commands_skip_side_effects_in_dry_run() (
+  set -euo pipefail
+  # shellcheck source=../scripts/validation-helpers.sh
+  . "$VALIDATION_HELPERS"
+
+  local result_dir="$tmp_root/validation/results"
+  local workspace_dir="$tmp_root/validation/workspace"
+  local marker="$tmp_root/validation/validation-ran"
+  mkdir -p "$result_dir" "$workspace_dir/repo"
+
+  set_current_stage() { printf '%s\n' "$1" > "$result_dir/current-stage.txt"; }
+  emit_progress() { :; }
+  record_stage_timing() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "${4:-}" >> "$result_dir/validation-timings.tsv"; }
+
+  local validation_exit=99
+  local validation_detail="unexpected-detail"
+  local validation_reason="unexpected-reason"
+  local validation_stopped="unexpected-stopped"
+  local validation_attempted="unexpected-attempted"
+
+  KASEKI_DRY_RUN=1 run_validation_commands \
+    "post-agent validation" \
+    "printf SHOULD_NOT_RUN > '$marker'" \
+    "$result_dir/validation.log" \
+    "$result_dir/validation-raw.log" \
+    "$result_dir/validation-env.log" \
+    "$result_dir/validation-timings.tsv" \
+    "validation_command_failed" \
+    validation_exit \
+    validation_detail \
+    validation_reason \
+    validation_stopped \
+    validation_attempted \
+    "$workspace_dir" \
+    "$result_dir"
+
+  [ "$validation_exit" = "0" ] || fail "Dry-run validation should report success without executing commands"
+  [ ! -e "$marker" ] || fail "Validation command should not execute during fast dry-run helper coverage"
+  assert_file_contains "$result_dir/validation.log" "DRY-RUN MODE"
+  assert_file_contains "$result_dir/validation-timings.tsv" "dry_run=true"
+)
+
 case_host_start_serializes_helper_inputs
 pass "write_dry_run_host_start_artifact serializes helper inputs"
 
@@ -134,5 +178,8 @@ pass "initialize_dry_run_agent_artifacts creates empty helper-owned files"
 
 case_startup_check_writes_stable_public_fields
 pass "write_dry_run_startup_check_artifacts writes stable public fields"
+
+case_validation_commands_skip_side_effects_in_dry_run
+pass "run_validation_commands skips validation side effects in dry-run mode"
 
 printf '\n✅ Fast dry-run helper tests passed!\n'

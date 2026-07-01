@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2016,SC2015
-# Optional Docker-backed integration test for run-kaseki.sh --dry-run.
+# Optional smoke coverage for host-level run-kaseki.sh --dry-run wiring.
+# Intentionally excluded from fast CI; run via npm run test:smoke:dry-run or set
+# KASEKI_RUN_DRY_RUN_INTEGRATION=1 with Docker available to validate the host
+# script wiring against the container dry-run artifact path.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
