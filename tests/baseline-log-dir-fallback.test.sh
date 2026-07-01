@@ -53,7 +53,7 @@ fi
 if [ ! -f "$RESULTS_DIR/baseline-checkout.log" ]; then
   fail "expected baseline checkout log in KASEKI_RESULTS_DIR"
 fi
-  exit 1
+
 selected_dir="$(run_helper "$WRITABLE_LOG_DIR" "$RESULTS_DIR" "$TMP_DIR")" || {
   fail "helper failed when KASEKI_LOG_DIR was writable"
 }

@@ -139,8 +139,7 @@ export function recoverArtifactFromEventStream(options: RecoveryOptions): boolea
     return true;
   }
 
-  const resultsDir = options.resultsDir ?? '.';
-
+  const resultsDir = options.resultsDir ?? process.cwd();
   if (valid.size === 1) {
     fs.writeFileSync(options.candidatePath, JSON.stringify([...valid.values()][0], null, 2) + '\n');
     logScoutingRecoveryDiagnostic(resultsDir, 'Scouting artifact recovered from event stream (strict validation passed)', true);
