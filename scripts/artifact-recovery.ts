@@ -137,11 +137,9 @@ export function recoverArtifactFromEventStream(options: RecoveryOptions): boolea
     if (valid.size !== 1) return false;
     fs.writeFileSync(options.candidatePath, JSON.stringify([...valid.values()][0], null, 2) + '\n');
     return true;
-  private resolveArtifactFilename(): string {
-    if (!this.artifactFilename) {
-      throw new Error('Artifact filename not configured. Cannot proceed with recovery.');
-    }
-    return this.artifactFilename;
+  }
+
+  const resultsDir = options.resultsDir ?? process.cwd();
   if (valid.size === 1) {
     fs.writeFileSync(options.candidatePath, JSON.stringify([...valid.values()][0], null, 2) + '\n');
     logScoutingRecoveryDiagnostic(resultsDir, 'Scouting artifact recovered from event stream (strict validation passed)', true);
