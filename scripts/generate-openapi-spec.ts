@@ -23,8 +23,17 @@ type OpenAPISpecGeneratorModule = {
   generateOpenAPISpec: () => Record<string, unknown>;
 };
 
-const require = createRequire(import.meta.url);
-const { generateOpenAPISpec } = require('../dist/openapi-spec-generator.js') as OpenAPISpecGeneratorModule;
+let generateOpenAPISpec: () => Record<string, unknown>;
+try {
+  const require = createRequire(import.meta.url);
+  const module = require('../dist/openapi-spec-generator.js') as OpenAPISpecGeneratorModule;
+  generateOpenAPISpec = module.generateOpenAPISpec;
+} catch (error) {
+  console.error('✗ Failed to load openapi-spec-generator module:');
+  console.error('  Make sure to run the build process first (npm run build)');
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
