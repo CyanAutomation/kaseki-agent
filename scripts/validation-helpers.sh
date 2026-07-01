@@ -38,6 +38,71 @@ missing_npm_script_for_validation_command() {
   return 0
 }
 
+append_default_validation_command() {
+  local current="$1"
+  local next_command="$2"
+  if [ -z "$current" ]; then
+    printf '%s' "$next_command"
+  else
+    printf '%s;%s' "$current" "$next_command"
+  fi
+}
+
+has_typescript_project() {
+  [ -f tsconfig.json ] && return 0
+  [ -f package.json ] || return 1
+  node - <<'NODE'
+try {
+  const pkg = require('./package.json');
+  const isDep = pkg.dependencies?.typescript ||
+    pkg.devDependencies?.typescript ||
+    pkg.optionalDependencies?.typescript;
+  process.exit(isDep ? 0 : 1);
+} catch {
+  process.exit(1);
+}
+NODE
+}
+
+construct_default_validation_commands() {
+  local commands=""
+
+  if package_json_has_npm_script "build"; then
+    commands="$(append_default_validation_command "$commands" "npm run build")"
+  elif package_json_has_npm_script "type-check"; then
+    commands="$(append_default_validation_command "$commands" "npm run type-check")"
+  elif has_typescript_project; then
+    commands="$(append_default_validation_command "$commands" "tsc --noEmit")"
+  elif package_json_has_npm_script "check"; then
+    commands="$(append_default_validation_command "$commands" "npm run check")"
+  fi
+
+  if package_json_has_npm_script "test"; then
+    commands="$(append_default_validation_command "$commands" "npm run test")"
+  fi
+
+  if [ -n "$commands" ]; then
+    printf '%s' "$commands"
+    return 0
+  fi
+
+  printf '%s' "npm run build;npm run type-check;npm run test"
+}
+
+apply_default_validation_commands() {
+  local detected_commands
+
+  if [ -n "${KASEKI_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
+    return 0
+  fi
+
+  detected_commands="$(construct_default_validation_commands)"
+  KASEKI_VALIDATION_COMMANDS="$detected_commands"
+  if [ -z "${KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
+    KASEKI_PRE_AGENT_VALIDATION_COMMANDS="$detected_commands"
+  fi
+}
+
 append_validation_result() {
   local output_file="$1"
   local command="$2"
