@@ -116,7 +116,7 @@ Connection timeout after 5 seconds
   "attempts": 2,
   "total_duration_seconds": 301,
   "timeout_seconds": 300,
-  "model": "openrouter/auto",
+  "model": "openrouter/free",
   "reason": "max_retry_attempts_exhausted",
   "stderr_tail": "Last 400 chars of stderr...",
   "fallback_to_original_prompt": true
