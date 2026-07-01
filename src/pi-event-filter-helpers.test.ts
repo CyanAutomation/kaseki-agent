@@ -48,6 +48,10 @@ describe('isProviderErrorRetryable', () => {
     expect(isProviderErrorRetryable('Provider finish_reason: error')).toBe(true);
   });
 
+  it('returns true for malformed tool-call JSON', () => {
+    expect(isProviderErrorRetryable('Tool call arguments contain malformed JSON')).toBe(true);
+  });
+
   it.each(['401 Unauthorized', '403 Forbidden', 'Invalid API key'])(
     'returns false for permanent authentication error %s',
     (message) => {
@@ -77,6 +81,11 @@ describe('classifyProviderError', () => {
   it('classifies generic provider_error', () => {
     const result = classifyProviderError('Internal server error');
     expect(result.type).toBe('provider_error');
+  });
+
+  it('classifies malformed tool-call JSON with corrective recovery guidance', () => {
+    const result = classifyProviderError('Failed to parse malformed JSON in tool call arguments');
+    expect(result).toEqual({ type: 'malformed_tool_call', retryable: true });
   });
 
   it('propagates retryable from isProviderErrorRetryable', () => {
@@ -124,6 +133,21 @@ describe('extractProviderError', () => {
     expect(result!.model).toBe('gpt-4');
     expect(result!.stop_reason).toBe('error');
     expect(result!.retryable).toBe(true);
+  });
+
+  it('preserves gateway correlation IDs and malformed-tool recovery guidance', () => {
+    const result = extractProviderError(makeErrorEvent({
+      errorMessage: 'Tool call arguments contain malformed JSON',
+      cloudflareLogId: '01KWFRREEX90G7DAQNM9A5K7ER',
+      gatewayEventId: 'gateway-event-1',
+    }) as any);
+    expect(result).toMatchObject({
+      type: 'malformed_tool_call',
+      retryable: true,
+      cloudflare_log_id: '01KWFRREEX90G7DAQNM9A5K7ER',
+      gateway_event_id: 'gateway-event-1',
+    });
+    expect(result?.recovery_suggestion).toContain('valid JSON tool call');
   });
 
   it('preserves upstream gateway diagnostics', () => {

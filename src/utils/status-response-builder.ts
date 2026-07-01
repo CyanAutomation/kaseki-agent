@@ -348,7 +348,7 @@ export class StatusResponseBuilder {
   ): void {
     const phaseDiagnosticEntryPoints: DiagnosticEntryPoint[] = [
       ...(flags.includePiAgent
-        ? (['.gateway-diagnostics.jsonl', 'pi-agent-diagnostics.jsonl', 'pi-events.jsonl', 'pi-summary.json'] as DiagnosticEntryPoint[])
+        ? (['.gateway-diagnostics.jsonl', 'gateway-summary.json', 'pi-agent-diagnostics.jsonl', 'pi-events.jsonl', 'pi-summary.json'] as DiagnosticEntryPoint[])
         : []),
       ...(flags.includePreValidation
         ? (['test-baseline-comparison.json', 'pre-validation.log'] as DiagnosticEntryPoint[])
