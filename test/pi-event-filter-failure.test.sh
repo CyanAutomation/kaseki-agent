@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Contract: when the Pi event filter helper fails, kaseki-agent propagates the
+# helper exit code, preserves helper stderr, emits failure progress/metadata,
+# keeps artifact permissions private, and leaves the raw Pi event stream intact.
+
 TEST_NAME="pi-event-filter-failure.test"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -14,6 +18,47 @@ cleanup() {
   rm -rf "$TMP_ROOT"
 }
 trap cleanup EXIT
+
+fail() {
+  echo "[$TEST_NAME] $*" >&2
+  exit 1
+}
+
+assert_file_contains() {
+  local target_file="$1"
+  local expected_content="$2"
+  local protected_behavior="$3"
+
+  if ! grep -Fq -- "$expected_content" "$target_file"; then
+    {
+      echo "[$TEST_NAME] assertion failed: $protected_behavior"
+      echo "[$TEST_NAME] target file: $target_file"
+      echo "[$TEST_NAME] expected content: $expected_content"
+      echo "[$TEST_NAME] file contents:"
+      sed 's/^/[file] /' "$target_file" 2>/dev/null || true
+    } >&2
+    exit 1
+  fi
+}
+
+assert_files_equal() {
+  local expected_file="$1"
+  local actual_file="$2"
+  local protected_behavior="$3"
+
+  if ! cmp -s "$expected_file" "$actual_file"; then
+    {
+      echo "[$TEST_NAME] assertion failed: $protected_behavior"
+      echo "[$TEST_NAME] target file: $actual_file"
+      echo "[$TEST_NAME] expected content from: $expected_file"
+      echo "[$TEST_NAME] expected file contents:"
+      sed 's/^/[expected] /' "$expected_file" 2>/dev/null || true
+      echo "[$TEST_NAME] actual file contents:"
+      sed 's/^/[actual] /' "$actual_file" 2>/dev/null || true
+    } >&2
+    exit 1
+  fi
+}
 
 cat > "$RAW_EVENTS" <<'JSONL'
 {"type":"message","model":"fake-model"}
@@ -40,19 +85,38 @@ code=$?
 set -e
 
 if [[ "$code" -ne 7 ]]; then
-  echo "[$TEST_NAME] expected event-filter exit 7, got $code"
-  exit 1
+  fail "expected event-filter exit 7, got $code"
 fi
 
-grep -q 'pi_event_filter_failed' "$RESULTS_DIR/progress.jsonl"
-grep -q 'kaseki-pi-event-filter' "$RESULTS_DIR/metadata.json"
-grep -q 'filter stderr details' "$RESULTS_DIR/pi-stderr.log"
-grep -q 'ERROR: kaseki-pi-event-filter failed' "$RESULTS_DIR/pi-stderr.log"
-mode="$(stat -c '%a' "$RESULTS_DIR/pi-stderr.log")"
-if [[ "$mode" != "600" ]]; then
-  echo "[$TEST_NAME] expected pi-stderr.log mode 600, got $mode"
-  exit 1
+assert_file_contains \
+  "$RESULTS_DIR/progress.jsonl" \
+  'pi_event_filter_failed' \
+  'helper failures emit a progress event visible to callers'
+assert_file_contains \
+  "$RESULTS_DIR/metadata.json" \
+  'kaseki-pi-event-filter' \
+  'metadata records the failing helper for diagnostics'
+assert_file_contains \
+  "$RESULTS_DIR/pi-stderr.log" \
+  'filter stderr details' \
+  'helper stderr persists in the Pi stderr artifact'
+assert_file_contains \
+  "$RESULTS_DIR/pi-stderr.log" \
+  'ERROR: kaseki-pi-event-filter failed' \
+  'the persisted stderr artifact includes the user-facing helper failure banner'
+
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  mode="$(stat -f '%A' "$RESULTS_DIR/pi-stderr.log")"
+else
+  mode="$(stat -c '%a' "$RESULTS_DIR/pi-stderr.log")"
 fi
-cmp -s "$RAW_EVENTS" "$RESULTS_DIR/pi-events.raw.jsonl"
+if [[ "$mode" != "600" ]]; then
+  fail "expected pi-stderr.log mode 600, got $mode"
+fi
+
+assert_files_equal \
+  "$RAW_EVENTS" \
+  "$RESULTS_DIR/pi-events.raw.jsonl" \
+  'raw Pi events are preserved when the helper fails'
 
 echo "[$TEST_NAME] PASS"
