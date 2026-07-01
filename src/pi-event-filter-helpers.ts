@@ -13,7 +13,7 @@ import { PiEvent } from './lib/event-timestamp-helpers.js';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface ProviderErrorSummary {
-  type: 'model_unavailable' | 'provider_error' | 'provider_empty_assistant_turn';
+  type: 'model_unavailable' | 'provider_error' | 'provider_empty_assistant_turn' | 'malformed_tool_call';
   provider?: string;
   api?: string;
   model?: string;
@@ -21,6 +21,9 @@ export interface ProviderErrorSummary {
   response_id?: string;
   status_code?: number;
   error_code?: string;
+  cloudflare_log_id?: string;
+  gateway_event_id?: string;
+  recovery_suggestion?: string;
   input_tokens?: number;
   output_tokens?: number;
   total_tokens?: number;
@@ -55,6 +58,8 @@ export function isProviderErrorRetryable(message: string): boolean {
 
   // Retryable: transient errors
   return (
+    (lower.includes('tool call') &&
+      (lower.includes('json') || lower.includes('parse') || lower.includes('malformed') || lower.includes('unterminated'))) ||
     lower.includes('503') ||
     lower.includes('429') ||
     lower.includes('timeout') ||
@@ -88,6 +93,11 @@ export function classifyProviderError(message: string): {
     lower.includes('model_not_found')
   ) {
     type = 'model_unavailable';
+  } else if (
+    lower.includes('tool call') &&
+    (lower.includes('json') || lower.includes('parse') || lower.includes('malformed') || lower.includes('unterminated'))
+  ) {
+    type = 'malformed_tool_call';
   }
 
   return { type, retryable: isProviderErrorRetryable(message) };
@@ -127,6 +137,10 @@ export function extractProviderError(event: PiEvent): ProviderErrorSummary | nul
         : undefined;
   const errorCodeCandidate = message.errorCode ?? message.error_code ?? nestedError?.code;
   const responseIdCandidate = message.responseId ?? message.response_id ?? (event as any).responseId;
+  const cloudflareLogIdCandidate =
+    message.cloudflareLogId ?? message.cloudflare_log_id ?? nestedError?.cloudflareLogId ?? nestedError?.cloudflare_log_id;
+  const gatewayEventIdCandidate =
+    message.gatewayEventId ?? message.gateway_event_id ?? nestedError?.eventId ?? nestedError?.event_id;
 
   return {
     type,
@@ -138,6 +152,11 @@ export function extractProviderError(event: PiEvent): ProviderErrorSummary | nul
     response_id: typeof responseIdCandidate === 'string' ? responseIdCandidate : undefined,
     status_code: statusCode,
     error_code: typeof errorCodeCandidate === 'string' ? errorCodeCandidate : undefined,
+    cloudflare_log_id: typeof cloudflareLogIdCandidate === 'string' ? cloudflareLogIdCandidate : undefined,
+    gateway_event_id: typeof gatewayEventIdCandidate === 'string' ? gatewayEventIdCandidate : undefined,
+    recovery_suggestion: type === 'malformed_tool_call'
+      ? 'Retry with a corrective instruction to emit one small, valid JSON tool call; use an alternate model if it repeats.'
+      : undefined,
     message: errorMessage,
   };
 }

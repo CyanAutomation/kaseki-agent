@@ -2063,6 +2063,7 @@ run_pi_with_retry() {
   local phase_name="${7:-unknown}"
   local allow_fallback="${8:-0}"
   local pi_exit summary_file attempt=1 original_provider="$KASEKI_PROVIDER" primary_response_id="" retry_response_id=""
+  local original_prompt="$prompt" provider_error_type=""
   local previous_retryable="${PROVIDER_ERROR_RETRYABLE:-}"
   local previous_retry_attempt_count="${PROVIDER_ERROR_RETRY_ATTEMPT_COUNT:-0}"
   local previous_retry_result="${PROVIDER_ERROR_RETRY_RESULT:-none}"
@@ -2132,6 +2133,13 @@ run_pi_with_retry() {
   if [ "$pi_exit" -eq 88 ] && [ "$attempt" -eq 1 ]; then
     # Check if error is retryable
     if check_if_provider_error_retryable "$summary_file"; then
+      provider_error_type="$(node -e 'try{const s=require(process.argv[1]);process.stdout.write(String(s.primary_provider_error?.type||""))}catch{}' "$summary_file" 2>/dev/null || true)"
+      if [ "$provider_error_type" = "malformed_tool_call" ]; then
+        prompt="$original_prompt
+
+Recovery instruction: The previous response emitted malformed tool-call JSON. Emit one small tool call at a time. Ensure every tool argument is complete, valid JSON before continuing."
+        printf '[RETRY CORRECTION] Retrying malformed tool call with constrained JSON guidance\n' >&2
+      fi
       local retry_delay_seconds="${KASEKI_PROVIDER_RETRY_BASE_SECONDS:-3}"
       if [ "${KASEKI_PROVIDER_RETRY_JITTER:-1}" = "1" ]; then
         retry_delay_seconds=$((retry_delay_seconds + RANDOM % 3))
