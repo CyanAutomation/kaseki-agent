@@ -80,7 +80,7 @@ curl -X POST https://llm-gateway.local.xyz/v1/responses \
   -H "Authorization: Bearer mnfst_..." \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "auto",
+    "model": "free",
     "input": "Analyze this file",
     "store": false
   }' | jq .
@@ -214,7 +214,7 @@ rate(provider_empty_assistant_turns_total[1h]) > 0
 ### Nice to Have (Phase 2)
 
 - [ ] Graceful fallback in orchestration
-- [ ] Conditional model retry (legacy `auto` model alias → `gpt-4`; current gateway deployments default to `dynamic/kaseki-agent`)
+- [ ] Conditional model retry (legacy `free` model alias → `gpt-4`; current gateway deployments default to `dynamic/kaseki-agent`)
 - [ ] Provider health check endpoint
 - [ ] Prometheus metrics
 - [ ] Grafana dashboard
@@ -233,7 +233,7 @@ npm test -- test/kaseki-170-integration.test.ts
 
 ### Integration Test
 
-> Historical note: this guide references the older `auto` gateway model alias from the KASEKI-170 investigation. Current gateway deployments should use `dynamic/kaseki-agent` unless an explicit provider-specific model is configured.
+> Historical note: this guide references the older `free` gateway model alias from the KASEKI-170 investigation. Current gateway deployments should use `dynamic/kaseki-agent` unless an explicit provider-specific model is configured.
 
 ```bash
 # Simulate kaseki-170 scenario
@@ -277,7 +277,7 @@ $ cat /results/provider-diagnostics.jsonl | jq .
   "phase": "scouting",
   "provider": "gateway",
   "api": "openai-responses",
-  "model": "auto",
+  "model": "free",
   "responseId": "resp_4e859d2bfb3a457cb34d1e485d0b2958",
   "outputTokens": 146,
   "errorType": "empty_assistant_turn",
