@@ -15,6 +15,7 @@ const ignorePatterns = [
   '**/*.test.d.ts',
   '**/*.test.d.ts.map',
   '**/*.log',
+  '**/*.test.js.map',
   '.DS_Store',
   '.tmp'
 ];

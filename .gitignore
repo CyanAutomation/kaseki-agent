@@ -7,6 +7,7 @@ coverage/
 *.tsbuildinfo
 *.test.d.ts
 *.test.d.ts.map
+*.test.js.map
 *.log
 *.tmp
 .DS_Store
@@ -32,3 +33,7 @@ fallow_*.json
 
 # Generated API spec
 kaseki-openapi.json
+
+# Generated script test source maps
+scripts/**/*.test.js.map
+scripts/**/*.test.d.ts.map

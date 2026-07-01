@@ -5,14 +5,10 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Load only the npm validation helpers from kaseki-agent.sh.
-eval "$(awk '
-  /^npm_run_script_name\(\)/ { emit=1 }
-  /^missing_npm_script_for_validation_command\(\)/ { emit=1 }
-  /^record_skipped_validation_command\(\)/ { emit=1 }
-  /^compute_repo_memory_key\(\)/ { emit=0 }
-  emit { print }
-' "$ROOT_DIR/kaseki-agent.sh")"
+# Load the dedicated validation helper library instead of extracting private
+# functions from the executable entrypoint.
+# shellcheck source=../scripts/validation-helpers.sh
+source "$ROOT_DIR/scripts/validation-helpers.sh"
 
 fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
 pass() { printf '✓ %s\n' "$1"; }
