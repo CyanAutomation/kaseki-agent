@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate pre-agent validation's dry-run exception without exercising later agent phases.
+# Validate command execution behavior for pre-agent validation contracts.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,7 +33,7 @@ test_validation_command_runs_in_cloned_repository_cwd() {
   pass "Validation command ran in the cloned repository cwd"
 }
 
-test_pre_agent_validation_executes_in_baseline_dry_run() {
+test_pre_agent_validation_runs_during_baseline_dry_run() {
   local tmpdir fake_repo marker run_log run_exit
   new_test_context tmpdir
   fake_repo="$tmpdir/fake-repo"
@@ -59,6 +59,6 @@ test_pre_agent_validation_executes_in_baseline_dry_run() {
   pass "Pre-agent validation executes during baseline-validation dry-run checks"
 }
 
-printf '==> Focused validation command execution contract\n'
+printf '==> Validation command execution contract\n'
 test_validation_command_runs_in_cloned_repository_cwd
-test_pre_agent_validation_executes_in_baseline_dry_run
+test_pre_agent_validation_runs_during_baseline_dry_run
