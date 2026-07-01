@@ -179,6 +179,7 @@ describe('kaseki API web console routes', () => {
     expect(document.querySelector('#cancel-run')?.textContent).toContain('Cancel run');
     expect(document.querySelector('[data-tab="artifacts"]')?.textContent).toContain('Artifacts');
     expect(document.querySelector('#recommended-artifacts')?.textContent).toContain('Recommended artifacts');
+    expect(document.querySelector('#copy-diagnostic-bundle-btn')?.textContent).toContain('Copy diagnostic bundle');
     expect(document.querySelector('#response-summary')?.hasAttribute('hidden')).toBe(true);
     expect(document.querySelector('#submit-tab')?.getAttribute('aria-hidden')).toBe('true');
     expect(document.body.textContent).not.toContain('Task Progress');

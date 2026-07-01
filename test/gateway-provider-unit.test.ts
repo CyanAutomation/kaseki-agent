@@ -206,6 +206,27 @@ describe('Gateway Provider Configuration', () => {
     }
   });
 
+  it('adds privacy-preserving Cloudflare correlation headers', () => {
+    const output = executeGatewayProviderRegistration({
+      ...process.env,
+      LLM_GATEWAY_URL: 'https://gateway.ai.cloudflare.com/v1/account/default/compat',
+      LLM_GATEWAY_API_KEY: 'test-api-key',
+      KASEKI_INSTANCE: 'kaseki-183',
+      KASEKI_INFERENCE_PHASE: 'coding',
+      KASEKI_INFERENCE_ATTEMPT: 'primary-1',
+      KASEKI_INFERENCE_REQUEST_ID: 'request-123',
+    });
+    const [, config] = parseProviderRegistrationCalls(output)[0];
+    expect(config.headers['cf-aig-collect-log-payload']).toBe('false');
+    expect(JSON.parse(config.headers['cf-aig-metadata'])).toEqual({
+      run_id: 'kaseki-183',
+      phase: 'coding',
+      attempt: 'primary-1',
+      request_id: 'request-123',
+      component: 'kaseki-agent',
+    });
+  });
+
   it('handles missing LLM_GATEWAY_URL gracefully', () => {
     /**
      * Test: Execute the real gateway provider initialization with

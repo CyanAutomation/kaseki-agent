@@ -91,6 +91,19 @@ export default function (pi) {
   const gatewayApiKey = resolveGatewayApiKey();
   const maxTokens = resolveGatewayMaxTokens();
   const model = process.env.LLM_GATEWAY_MODEL || 'dynamic/kaseki-agent';
+  const gatewayHeaders = gatewayUrl?.includes('gateway.ai.cloudflare.com')
+    ? {
+        'cf-aig-authorization': `Bearer ${gatewayApiKey}`,
+        'cf-aig-collect-log-payload': process.env.KASEKI_GATEWAY_LOG_PAYLOADS === '1' ? 'true' : 'false',
+        'cf-aig-metadata': JSON.stringify({
+          run_id: process.env.KASEKI_INSTANCE || 'unknown',
+          phase: process.env.KASEKI_INFERENCE_PHASE || 'unknown',
+          attempt: process.env.KASEKI_INFERENCE_ATTEMPT || 'unknown',
+          request_id: process.env.KASEKI_INFERENCE_REQUEST_ID || 'unknown',
+          component: 'kaseki-agent',
+        }),
+      }
+    : undefined;
 
   if (!gatewayUrl) {
     recordGatewayDiagnostic({
@@ -105,9 +118,7 @@ export default function (pi) {
     name: 'LLM Gateway (CloudFlare)',
     baseUrl: gatewayUrl,
     apiKey: gatewayApiKey || '$LLM_GATEWAY_API_KEY',
-    ...(gatewayUrl.includes('gateway.ai.cloudflare.com')
-      ? { headers: { 'cf-aig-authorization': `Bearer ${gatewayApiKey}` } }
-      : {}),
+    ...(gatewayHeaders ? { headers: gatewayHeaders } : {}),
     // Cloudflare's OpenAI-compatible /compat base URL implements Chat
     // Completions. Pi appends /chat/completions for this adapter.
     api: 'openai-completions',
@@ -130,5 +141,9 @@ export default function (pi) {
     apiType: 'openai-completions',
     modelId: model,
     hasApiKey: Boolean(gatewayApiKey),
+    requestId: process.env.KASEKI_INFERENCE_REQUEST_ID || undefined,
+    phase: process.env.KASEKI_INFERENCE_PHASE || undefined,
+    attempt: process.env.KASEKI_INFERENCE_ATTEMPT || undefined,
+    payloadLogging: process.env.KASEKI_GATEWAY_LOG_PAYLOADS === '1',
   });
 }

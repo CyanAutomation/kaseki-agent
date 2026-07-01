@@ -2403,6 +2403,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       failed_command: 'pi scouting agent',
     }));
     fs.writeFileSync(path.join(jobDir, '.gateway-diagnostics.jsonl'), '{"event":"provider_registered","apiType":"custom-gateway"}\n');
+    fs.writeFileSync(path.join(jobDir, 'provider-attempts.jsonl'), '{"phase":"coding","attempt":"primary-1"}\n');
     fs.writeFileSync(path.join(jobDir, 'failure.json'), JSON.stringify({ provider_error_type: 'provider_error' }));
     fs.writeFileSync(path.join(jobDir, 'result-summary.md'), '# summary');
 
@@ -2433,6 +2434,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       expect(response.status).toBe(200);
       const body = (await response.json()) as any;
       expect(body.recommended[0]).toBe('.gateway-diagnostics.jsonl');
+      expect(body.recommended[1]).toBe('provider-attempts.jsonl');
       expect(body.recommended).toContain('failure.json');
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
