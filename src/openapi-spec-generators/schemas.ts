@@ -369,6 +369,7 @@ function buildStatusResponseSchema(): Record<string, unknown> {
         type: 'object',
         properties: {
           primaryReason: { type: 'string' },
+          recoveryFailure: { type: 'string' },
           recommendedEntryPoint: { type: 'string' },
           testFailure: {
             type: 'object',

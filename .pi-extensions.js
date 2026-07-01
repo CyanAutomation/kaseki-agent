@@ -105,6 +105,9 @@ export default function (pi) {
     name: 'LLM Gateway (CloudFlare)',
     baseUrl: gatewayUrl,
     apiKey: gatewayApiKey || '$LLM_GATEWAY_API_KEY',
+    ...(gatewayUrl.includes('gateway.ai.cloudflare.com')
+      ? { headers: { 'cf-aig-authorization': `Bearer ${gatewayApiKey}` } }
+      : {}),
     // Cloudflare's OpenAI-compatible /compat base URL implements Chat
     // Completions. Pi appends /chat/completions for this adapter.
     api: 'openai-completions',

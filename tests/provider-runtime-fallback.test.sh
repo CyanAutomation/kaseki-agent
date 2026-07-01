@@ -91,6 +91,12 @@ set -e
 [ "$PROVIDER_ERROR_FALLBACK_MODEL" = 'auto' ] || fail 'fallback model telemetry is missing'
 [ "$PROVIDER_ERROR_FALLBACK_RESULT" = 'success' ] || fail 'fallback result telemetry is incorrect'
 [ "$KASEKI_PROVIDER" = 'gateway' ] || fail 'primary provider was not restored'
+[ -s "$KASEKI_RESULTS_DIR/provider-attempts/coding/primary-1.events.jsonl" ] || fail 'primary attempt 1 events were not preserved'
+[ -s "$KASEKI_RESULTS_DIR/provider-attempts/coding/primary-2.events.jsonl" ] || fail 'primary attempt 2 events were not preserved'
+[ -s "$KASEKI_RESULTS_DIR/provider-attempts/coding/fallback-1.events.jsonl" ] || fail 'fallback events were not preserved'
+[ "$(wc -l < "$KASEKI_RESULTS_DIR/provider-attempts.jsonl" | tr -d ' ')" -eq 3 ] || fail 'provider attempt manifest did not record all attempts'
+printf '%s' "$PROVIDER_ERROR_PRIMARY_JSON" | grep -q '"provider":"gateway"' || fail 'primary provider error attribution was not preserved'
+printf '%s' "$PROVIDER_ERROR_RECOVERY_JSON" | grep -q '"provider":"openrouter"' || fail 'recovery provider error attribution was not preserved'
 
 # A subsequent clean coding attempt must retain the earlier recovery telemetry.
 run_pi_json_capture() {
