@@ -96,16 +96,19 @@ CAVEMAN
 build_agent_prompt
 EOF_HARNESS
 
-  PROMPT_HELPER="$PROMPT_HELPER" \
-  TASK_PROMPT="Implement caveman prompt behavior test." \
-  SCOUTING_ARTIFACT="/dev/null" \
-  KASEKI_RESULTS_DIR="$results_dir" \
-  GOAL_CHECK_RETRY_PROMPT="" \
-  KASEKI_HASHLINE_EDITS="0" \
-  KASEKI_AGENT_GUARDRAILS="0" \
-  KASEKI_CAVEMAN="$caveman_enabled" \
-  bash "$harness" || status=$?
-  status="${status:-1}"
+  if PROMPT_HELPER="$PROMPT_HELPER" \
+    TASK_PROMPT="Implement caveman prompt behavior test." \
+    SCOUTING_ARTIFACT="/dev/null" \
+    KASEKI_RESULTS_DIR="$results_dir" \
+    GOAL_CHECK_RETRY_PROMPT="" \
+    KASEKI_HASHLINE_EDITS="0" \
+    KASEKI_AGENT_GUARDRAILS="0" \
+    KASEKI_CAVEMAN="$caveman_enabled" \
+    bash "$harness"; then
+    status=0
+  else
+    status=$?
+  fi
 
   rm -f "$harness"
   rm -rf "$results_dir"
