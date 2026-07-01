@@ -105,11 +105,10 @@ assert_file_contains \
   'ERROR: kaseki-pi-event-filter failed' \
   'the persisted stderr artifact includes the user-facing helper failure banner'
 
-if [[ "$OSTYPE" == "darwin"* ]]; then
-  mode="$(stat -f '%A' "$RESULTS_DIR/pi-stderr.log")"
-else
-  mode="$(stat -c '%a' "$RESULTS_DIR/pi-stderr.log")"
-fi
+mode="$(
+  python3 -c 'import os, stat, sys; print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode))[2:])' \
+    "$RESULTS_DIR/pi-stderr.log"
+)"
 if [[ "$mode" != "600" ]]; then
   fail "expected pi-stderr.log mode 600, got $mode"
 fi
