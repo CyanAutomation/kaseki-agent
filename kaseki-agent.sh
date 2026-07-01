@@ -4605,16 +4605,32 @@ save_baseline_validation_to_cache() {
   return 0
 }
 
+choose_baseline_log_dir() {
+  local preferred_log_dir="${KASEKI_LOG_DIR:-}"
+  local fallback_log_dir="${KASEKI_RESULTS_DIR}"
+
+  if [ -n "$preferred_log_dir" ] && mkdir -p "$preferred_log_dir" 2>/dev/null && [ -w "$preferred_log_dir" ]; then
+    printf '%s\n' "$preferred_log_dir"
+    return 0
+  fi
+
+  if mkdir -p "$fallback_log_dir" 2>/dev/null && [ -w "$fallback_log_dir" ]; then
+    printf '%s\n' "$fallback_log_dir"
+    return 0
+  fi
+
+  return 1
+}
+
 checkout_baseline_repo() {
   local baseline_dir="${KASEKI_WORKSPACE_BASELINE_DIR}"
-  local baseline_checkout_log="${KASEKI_RESULTS_DIR}/baseline-checkout.log"
-  local baseline_npm_ci_log="${KASEKI_RESULTS_DIR}/baseline-npm-ci.log"
-
-  # Ensure primary baseline log paths are writable before any redirection.
-  if ! mkdir -p "$(dirname "$baseline_checkout_log")" "$(dirname "$baseline_npm_ci_log")"; then
-    emit_error_event "baseline_log_dir_failed" "Failed to create baseline log directory under ${KASEKI_RESULTS_DIR}" "continue"
+  local baseline_log_dir
+  if ! baseline_log_dir="$(choose_baseline_log_dir)"; then
+    emit_error_event "baseline_log_dir_failed" "Failed to create writable baseline log directory from KASEKI_LOG_DIR or KASEKI_RESULTS_DIR" "continue"
     return 1
   fi
+  local baseline_checkout_log="${baseline_log_dir}/baseline-checkout.log"
+  local baseline_npm_ci_log="${baseline_log_dir}/baseline-npm-ci.log"
   
   # Clean up any existing baseline
   rm -rf "$baseline_dir" 2>/dev/null || true
