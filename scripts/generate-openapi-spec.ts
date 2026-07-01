@@ -16,8 +16,24 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
-import { generateOpenAPISpec } from '../dist/openapi-spec-generator.js';
+
+type OpenAPISpecGeneratorModule = {
+  generateOpenAPISpec: () => Record<string, unknown>;
+};
+
+let generateOpenAPISpec: () => Record<string, unknown>;
+try {
+  const require = createRequire(import.meta.url);
+  const module = require('../dist/openapi-spec-generator.js') as OpenAPISpecGeneratorModule;
+  generateOpenAPISpec = module.generateOpenAPISpec;
+} catch (error) {
+  console.error('✗ Failed to load openapi-spec-generator module:');
+  console.error('  Make sure to run the build process first (npm run build)');
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
