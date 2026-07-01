@@ -14,6 +14,14 @@ import * as path from 'path';
 
 const integrationIt = process.env.RUN_TREE_SITTER_CLI_INTEGRATION === '1' ? it : it.skip;
 
+function formatCliError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+}
+
 describe('tree-sitter CLI availability integration', () => {
   integrationIt('parses a Go fixture and returns AST data through the real CLI', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tree-sitter-cli-'));
@@ -40,11 +48,11 @@ func CreateHandler(name string) *Handler {
 
       let version: string;
       let jsonOutput: string;
-      
+
       try {
         version = execFileSync('npx', ['tree-sitter', '--version'], { encoding: 'utf-8' }).trim();
       } catch (error) {
-        throw new Error(`Failed to execute tree-sitter CLI: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`Failed to execute tree-sitter CLI: ${formatCliError(error)}`);
       }
       expect(version).toMatch(/tree-sitter/);
 
@@ -55,7 +63,7 @@ func CreateHandler(name string) *Handler {
           encoding: 'utf-8',
         });
       } catch (error) {
-        throw new Error(`Failed to parse Go file with tree-sitter: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`Failed to parse Go file with tree-sitter: ${formatCliError(error)}`);
       }
       const tree = JSON.parse(jsonOutput);
 
