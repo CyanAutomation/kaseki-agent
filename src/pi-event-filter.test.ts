@@ -499,6 +499,50 @@ describe('pi-event-filter fast correctness tests', () => {
     expect(result.summary.token_usage?.total_cache_creation_tokens).toBe(10);
     expect(result.summary.token_usage?.total_cache_read_tokens).toBe(80);
     expect(result.summary.token_usage?.total_tokens).toBe(315);
+    expect(result.summary.inference_health).toMatchObject({
+      stream_success: true,
+      tool_call_valid: true,
+      agent_turn_success: true,
+      prompt_token_budget_exceeded: false,
+    });
+    expect(result.summary.model_reliability['gemini-3-flash']).toMatchObject({
+      input_tokens: 100,
+      output_tokens: 50,
+      observed_error_count: 0,
+      observed_success: true,
+    });
+  });
+
+  test('writes gateway summary and recommends compaction when token budget is exceeded', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-gateway-summary-'));
+    const inputPath = path.join(tmpDir, 'in.jsonl');
+    const outputPath = path.join(tmpDir, 'out.jsonl');
+    const summaryPath = path.join(tmpDir, 'pi-summary.json');
+    const previousThreshold = process.env.KASEKI_PROMPT_TOKEN_WARN_THRESHOLD;
+    process.env.KASEKI_PROMPT_TOKEN_WARN_THRESHOLD = '100';
+    try {
+      fs.writeFileSync(inputPath, JSON.stringify({
+        type: 'message_end',
+        message: { model: 'coding-model', api: 'gateway', usage: { prompt_tokens: 150, completion_tokens: 25 } },
+      }) + '\n');
+      await runPiEventFilter(inputPath, outputPath, summaryPath);
+      const gatewaySummary = JSON.parse(fs.readFileSync(path.join(tmpDir, 'gateway-summary.json'), 'utf8'));
+      expect(gatewaySummary).toMatchObject({
+        schema_version: 1,
+        logical_agent_turns: 1,
+        routing_steps: null,
+        input_tokens: 150,
+        output_tokens: 25,
+        inference_health: {
+          prompt_token_budget_exceeded: true,
+          context_compaction_recommended: true,
+        },
+      });
+    } finally {
+      if (previousThreshold === undefined) delete process.env.KASEKI_PROMPT_TOKEN_WARN_THRESHOLD;
+      else process.env.KASEKI_PROMPT_TOKEN_WARN_THRESHOLD = previousThreshold;
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   test('should provide per-model token statistics', async () => {

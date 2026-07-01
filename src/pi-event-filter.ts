@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import { once } from 'node:events';
 import readline from 'node:readline';
+import path from 'node:path';
 import { TimestampTracker } from './timestamp-tracker.js';
 import { extractEventTimestamp, PiEvent } from './lib/event-timestamp-helpers.js';
 import { EventCounterAggregator, type EventCountMap } from './pi-event-aggregation/event-counter-aggregator.js';
@@ -37,6 +38,49 @@ interface Summary {
   model_token_stats?: ModelTokenStats;
   provider_errors?: ProviderErrorSummary[];
   primary_provider_error?: ProviderErrorSummary;
+  inference_health?: InferenceHealthSummary;
+  model_reliability?: Record<string, ModelReliabilitySummary>;
+}
+
+interface InferenceHealthSummary {
+  transport_success: boolean;
+  stream_success: boolean;
+  tool_call_valid: boolean;
+  agent_turn_success: boolean;
+  provider_error_count: number;
+  malformed_tool_call_count: number;
+  prompt_token_budget: number;
+  prompt_token_budget_exceeded: boolean;
+  context_compaction_recommended: boolean;
+}
+
+interface ModelReliabilitySummary {
+  input_tokens: number;
+  output_tokens: number;
+  observed_error_count: number;
+  malformed_tool_call_count: number;
+  observed_success: boolean;
+}
+
+function positiveIntEnv(name: string, fallback: number): number {
+  const value = Number.parseInt(process.env[name] || '', 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function buildModelReliability(
+  modelStats: ModelTokenStats,
+  providerErrors: ProviderErrorSummary[],
+): Record<string, ModelReliabilitySummary> {
+  return Object.fromEntries(Object.entries(modelStats).map(([model, stats]) => {
+    const errors = providerErrors.filter((error) => error.model === model);
+    return [model, {
+      input_tokens: stats.input_tokens,
+      output_tokens: stats.output_tokens,
+      observed_error_count: errors.length,
+      malformed_tool_call_count: errors.filter((error) => error.type === 'malformed_tool_call').length,
+      observed_success: errors.length === 0,
+    }];
+  }));
 }
 
 interface AssistantTurnState {
@@ -397,6 +441,21 @@ export async function runPiEventFilter(
   await new Promise<void>((resolve) => output.end(resolve));
 
   // Generate summary
+  const tokenSummary = tokenUsage.getSummary();
+  const modelStats = tokenUsage.getModelStats();
+  const promptTokenBudget = positiveIntEnv('KASEKI_PROMPT_TOKEN_WARN_THRESHOLD', 20_000);
+  const malformedToolCallCount = providerErrors.filter((error) => error.type === 'malformed_tool_call').length;
+  const inferenceHealth: InferenceHealthSummary = {
+    transport_success: invalidJsonLines === 0,
+    stream_success: providerErrors.length === 0,
+    tool_call_valid: malformedToolCallCount === 0,
+    agent_turn_success: providerErrors.length === 0,
+    provider_error_count: providerErrors.length,
+    malformed_tool_call_count: malformedToolCallCount,
+    prompt_token_budget: promptTokenBudget,
+    prompt_token_budget_exceeded: tokenSummary.total_input_tokens > promptTokenBudget,
+    context_compaction_recommended: tokenSummary.total_input_tokens > promptTokenBudget,
+  };
   const summary: Summary = {
     ...aggregator.summary(),
     invalid_json_lines: invalidJsonLines,
@@ -407,12 +466,28 @@ export async function runPiEventFilter(
     execution_time: executionTime.getSummary(),
     execution_api_stats: executionTime.getApiStats(),
     execution_tool_stats: executionTime.getToolStats(),
-    token_usage: tokenUsage.getSummary(),
-    model_token_stats: tokenUsage.getModelStats(),
+    token_usage: tokenSummary,
+    model_token_stats: modelStats,
+    inference_health: inferenceHealth,
+    model_reliability: buildModelReliability(modelStats, providerErrors),
     ...(providerErrors.length > 0 ? { provider_errors: providerErrors, primary_provider_error: providerErrors[0] } : {}),
   };
 
   fs.writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
+  if (path.basename(summaryPath) === 'pi-summary.json') {
+    fs.writeFileSync(path.join(path.dirname(summaryPath), 'gateway-summary.json'), `${JSON.stringify({
+      schema_version: 1,
+      logical_agent_turns: summary.event_counts.message_end || 0,
+      routing_steps: null,
+      note: 'routing_steps requires Cloudflare log enrichment; logical turns exclude gateway-internal routing records.',
+      input_tokens: tokenSummary.total_input_tokens,
+      output_tokens: tokenSummary.total_output_tokens,
+      provider_errors: providerErrors.length,
+      malformed_tool_calls: malformedToolCallCount,
+      inference_health: inferenceHealth,
+      model_reliability: summary.model_reliability,
+    }, null, 2)}\n`);
+  }
   stopRssSampler();
 }
 

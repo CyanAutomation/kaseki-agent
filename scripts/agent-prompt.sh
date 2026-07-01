@@ -102,6 +102,8 @@ Operational guardrails:
 - Do not report success or finish until the required repository diff is present and contains the primary code change, not just tests or scaffolding.
 - Keep edits limited to the requested source and test files. If a tool or command changes unrelated files, restore those unrelated files before finishing.
 - Before finishing, fix minor formatting issues in files you edited, such as trailing whitespace and obvious lint/format inconsistencies, without broad unrelated rewrites.
+- Keep tool calls small and atomic. Prefer several focused edits over one large edit, and ensure every tool argument is complete, valid JSON before invoking it.
+- Avoid repeatedly reading or returning unchanged large files. Reuse prior findings and summarize long tool output to limit context growth.
 - Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
 
 Task:
