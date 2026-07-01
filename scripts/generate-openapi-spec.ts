@@ -16,8 +16,15 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
-import { generateOpenAPISpec } from '../dist/openapi-spec-generator.js';
+
+type OpenAPISpecGeneratorModule = {
+  generateOpenAPISpec: () => Record<string, unknown>;
+};
+
+const require = createRequire(import.meta.url);
+const { generateOpenAPISpec } = require('../dist/openapi-spec-generator.js') as OpenAPISpecGeneratorModule;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
