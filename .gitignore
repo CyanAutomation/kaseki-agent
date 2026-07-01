@@ -5,6 +5,8 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+*.test.d.ts
+*.test.d.ts.map
 *.log
 *.tmp
 .DS_Store

@@ -8,6 +8,10 @@
     "tests/**/*.test.ts",
     "scripts/**/*.test.ts"
   ],
+  "ignorePatterns": [
+    "**/*.test.d.ts",
+    "**/*.test.d.ts.map"
+  ],
   "duplicates": {
     // Hide pair-only clones; focus on widespread copy-paste
     // worth refactoring. Lower to 2 to report every duplicate pair.
