@@ -264,7 +264,7 @@ describe('TypeScriptCompilerSummarizer', () => {
       const code = Array.from({ length: 1000 }, (_, index) => `
         class AuthManager${index} {
           login(): string {
-            return 'token-${index}';
+            return `token-${index}`;
           }
         }
       `).join('\n');
