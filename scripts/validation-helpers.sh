@@ -98,8 +98,10 @@ apply_default_validation_commands() {
 
   detected_commands="$(construct_default_validation_commands)"
   KASEKI_VALIDATION_COMMANDS="$detected_commands"
+  export KASEKI_VALIDATION_COMMANDS
   if [ -z "${KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
     KASEKI_PRE_AGENT_VALIDATION_COMMANDS="$detected_commands"
+    export KASEKI_PRE_AGENT_VALIDATION_COMMANDS
   fi
 }
 
