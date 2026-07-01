@@ -38,6 +38,7 @@ interface TestScore {
 
 function getAllTestFiles(rootDir: string): string[] {
   const testFiles: string[] = [];
+  const isGeneratedSourceMap = (fileName: string) => fileName.endsWith('.map');
   
   function walk(dir: string) {
     try {
@@ -48,7 +49,7 @@ function getAllTestFiles(rootDir: string): string[] {
         
         if (stat.isDirectory() && !file.startsWith('.') && file !== 'node_modules') {
           walk(fullPath);
-        } else if (stat.isFile()) {
+        } else if (stat.isFile() && !isGeneratedSourceMap(file)) {
           if (file.match(/\.test\.(ts|js|sh|bash)$/) || file.match(/\.integration\.test\./)) {
             testFiles.push(fullPath);
           }
