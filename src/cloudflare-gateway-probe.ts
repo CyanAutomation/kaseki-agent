@@ -7,6 +7,13 @@ export interface CloudflareGatewayProbeOptions {
   fetchImpl?: typeof fetch;
 }
 
+function cloudflareAuthHeaders(apiKey: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    'cf-aig-authorization': `Bearer ${apiKey}`,
+  };
+}
+
 export interface CloudflareGatewayProbeResult {
   content: string;
   raw: unknown;
@@ -62,7 +69,7 @@ export async function probeCloudflareGateway(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${options.apiKey}`,
+      ...cloudflareAuthHeaders(options.apiKey),
     },
     body: JSON.stringify({
       model: options.model || DEFAULT_MODEL,

@@ -264,6 +264,7 @@ export interface StatusResponse {
   qualityFailureReason?: string; // e.g., "max_diff_bytes: 250KB exceeds limit of 200KB"
   diagnosticSummary?: {
     primaryReason?: string;
+    recoveryFailure?: string;
     recommendedEntryPoint?: DiagnosticEntryPoint;
     phaseDiagnostics?: Array<{
       phase: 'goal-setting' | 'scouting' | 'goal-check';

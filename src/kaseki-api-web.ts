@@ -1397,7 +1397,7 @@ const controllerPage = String.raw`<!doctype html>
             <button class="health-check-button" data-probe="/health" type="button"><span class="hc-label">Health</span><span class="health-check-status" data-status="health"></span></button>
             <button class="health-check-button" data-probe="/ready" type="button"><span class="hc-label">Readiness</span><span class="health-check-status" data-status="readiness"></span></button>
             <button class="health-check-button" data-probe="/api/gateway-test?stage=1" data-auth="true" type="button" title="Test gateway connectivity. Standard gateways use /models without token consumption; Cloudflare /compat uses a minimal chat-completions probe."><span class="hc-label">Test Gateway</span><span class="health-check-status" data-status="gateway"></span></button>
-            <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true" data-auth="true" type="button" title="Test an authenticated inference using the gateway protocol. Add piProvider=true to also test the Pi provider adapter in production."><span class="hc-label">Test Inference</span><span class="health-check-status" data-status="llm-test"></span></button>
+            <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true" data-auth="true" type="button" title="Test authenticated inference through both the gateway protocol and the same Pi provider adapter used by coding runs."><span class="hc-label">Test Inference</span><span class="health-check-status" data-status="llm-test"></span></button>
             <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button"><span class="hc-label">Current Preflight</span><span class="health-check-status" data-status="preflight"></span></button>
           </div>
           <div class="summary-grid" id="health-summary" aria-live="polite">
@@ -1907,6 +1907,9 @@ const controllerPage = String.raw`<!doctype html>
             if (typeof summary.primaryReason === 'string' && !payload.failureClass && !payload.error && !providerEmptyTurn) {
               items.push(['Failure reason', stripControlSequences(summary.primaryReason).slice(0, 180), { warning: true, fullWidth: true }]);
             }
+            if (typeof summary.recoveryFailure === 'string') {
+              items.push(['Recovery failure', stripControlSequences(summary.recoveryFailure).slice(0, 180), { warning: true, fullWidth: true }]);
+            }
             if (Array.isArray(summary.phaseDiagnostics) && summary.phaseDiagnostics.length > 0) {
               const phaseText = summary.phaseDiagnostics
                 .slice(0, 3)
@@ -2413,7 +2416,14 @@ const controllerPage = String.raw`<!doctype html>
             } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'skipped') {
               setResponseSummary('Gateway Responses API passed. Pi provider adapter smoke was skipped; run production check with piProvider=true.');
             } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'ok') {
-              setResponseSummary('Gateway Responses API and Pi provider adapter passed.');
+              if (payload.fallbackProviderSmoke && payload.fallbackProviderSmoke.status === 'error') {
+                setResponseSummary('Primary gateway and Pi adapter passed. OpenRouter recovery failed: ' +
+                  stripControlSequences(payload.fallbackProviderSmoke.detail || 'unknown fallback error').slice(0, 240));
+              } else if (payload.fallbackProviderSmoke && payload.fallbackProviderSmoke.status === 'ok') {
+                setResponseSummary('Gateway, Pi provider adapter, and OpenRouter recovery passed.');
+              } else {
+                setResponseSummary('Gateway Responses API and Pi provider adapter passed.');
+              }
             } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'error') {
               const diag = payload.piProviderSmoke.diagnostics || {};
               const fieldsFound = diag.fieldsFound || [];
