@@ -1435,7 +1435,15 @@ const controllerPage = String.raw`<!doctype html>
             <strong class="panel-section-label">Recent runs</strong>
             <div class="action-row controller-actions">
               <button class="secondary toolbar-button" id="refresh-runs" type="button">Refresh runs</button>
+              <label for="runs-filter">Show</label>
+              <select id="runs-filter" aria-label="Filter recent runs">
+                <option value="all">All</option>
+                <option value="failed">Failed</option>
+                <option value="completed">Completed</option>
+                <option value="active">Running or queued</option>
+              </select>
             </div>
+            <div id="runs-summary" aria-live="polite"></div>
             <div class="link-grid" id="runs-list"></div>
           </div>
           <div id="state" role="status" aria-live="polite"></div>
@@ -1903,9 +1911,9 @@ const controllerPage = String.raw`<!doctype html>
             items.push(['Response progress stage', progressStageName]);
           }
           if (typeof payload.taskProgressPercent === 'number') {
-            items.push(['Progress (%)', payload.taskProgressPercent + '%']);
+            items.push(['Workflow position', payload.taskProgressPercent + '%']);
             if (payload.status === 'failed') {
-              items.push(['Progress context', 'Estimated workflow position when the run stopped; this is not a completion or success score.', { warning: true, fullWidth: true }]);
+              items.push(['Progress context', 'The run failed. This percentage only locates the failed phase in the workflow; it is not completion or success.', { warning: true, critical: true, fullWidth: true }]);
             }
           }
           if (typeof payload.timeoutRiskPercent === 'number') {
@@ -2347,7 +2355,7 @@ const controllerPage = String.raw`<!doctype html>
         const primary = formatRunButtonLabel(run);
         const secondary = [
           run.progress && run.progress.stage ? cleanProgressText(run.progress.stage) : '',
-          typeof run.taskProgressPercent === 'number' ? run.taskProgressPercent + '%' : '',
+          typeof run.taskProgressPercent === 'number' ? 'workflow ' + run.taskProgressPercent + '%' : '',
         ].filter(Boolean).join(' | ');
         button.replaceChildren();
         const content = document.createElement('span');
@@ -2367,10 +2375,26 @@ const controllerPage = String.raw`<!doctype html>
         button.appendChild(content);
       }
 
+      let recentRuns = [];
+
       function renderRunsList(payload) {
         if (!runsList || !payload || !Array.isArray(payload.runs)) return;
+        recentRuns = payload.runs.slice(0, 12);
         runsList.replaceChildren();
-        payload.runs.slice(0, 12).forEach((run) => {
+        const filter = document.querySelector('#runs-filter').value;
+        const visibleRuns = recentRuns.filter((run) => filter === 'all'
+          || run.status === filter
+          || (filter === 'active' && (run.status === 'running' || run.status === 'queued')));
+        const counts = recentRuns.reduce((result, run) => {
+          const key = run.status || 'unknown';
+          result[key] = (result[key] || 0) + 1;
+          return result;
+        }, {});
+        const summary = document.querySelector('#runs-summary');
+        summary.textContent = recentRuns.length
+          ? Object.entries(counts).map(([status, count]) => count + ' ' + status).join(' · ')
+          : 'No recent runs.';
+        visibleRuns.forEach((run) => {
           const button = document.createElement('button');
           button.className = 'secondary toolbar-button';
           button.type = 'button';
@@ -2384,7 +2408,12 @@ const controllerPage = String.raw`<!doctype html>
           });
           runsList.appendChild(button);
         });
+        if (!visibleRuns.length && recentRuns.length) runsList.textContent = 'No runs match this filter.';
       }
+
+      document.querySelector('#runs-filter').addEventListener('change', () => {
+        renderRunsList({ runs: recentRuns });
+      });
 
       async function loadRunsList(options) {
         try {
