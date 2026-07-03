@@ -182,7 +182,7 @@ export function createGatewayTestRoutes(): Router {
       // heavier Pi provider adapter smoke unless the caller opts in with
       // ?piProvider=true.
       if ((requestedStage === 0 || requestedStage === 2) && piProviderRequested) {
-        piProviderResult = testPiGatewayProviderSmoke({ requested: true, debug: debugMode });
+        piProviderResult = await testPiGatewayProviderSmoke({ requested: true, debug: debugMode });
       }
 
       // Build response based on requested stage
