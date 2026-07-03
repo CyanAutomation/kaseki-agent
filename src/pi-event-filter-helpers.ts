@@ -38,41 +38,100 @@ export interface ProviderErrorSummary {
  * that is worth retrying (503, 429, connection errors) vs. a permanent failure
  * (404, deprecated model).
  */
-export function isProviderErrorRetryable(message: string): boolean {
-  const lower = message.toLowerCase();
+/**
+ * Category of provider error for better routing and observability
+ */
+type ErrorCategory =
+  | 'gateway_timeout'
+  | 'rate_limited'
+  | 'service_unavailable'
+  | 'transient_network'
+  | 'malformed_request'
+  | 'auth_error'
+  | 'model_not_found'
+  | 'unknown';
 
-  // Non-retryable: permanent errors
-  if (
-    lower.includes('400') ||
-    lower.includes('401') ||
-    lower.includes('403') ||
-    lower.includes('404') ||
-    lower.includes('invalid api key') ||
-    lower.includes('authentication') ||
-    lower.includes('unauthorized') ||
-    lower.includes('forbidden') ||
-    lower.includes('deprecated')
-  ) {
-    return false;
+/**
+ * Rich classification result for provider errors
+ */
+interface ProviderErrorClassification {
+  retryable: boolean;
+  reason: string;
+  category: ErrorCategory;
+  matchedPattern: string;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+/**
+ * Classify a provider error with rich context about why it's retryable/non-retryable
+ */
+export function classifyProviderErrorDetailed(message: string): ProviderErrorClassification {
+  const patterns: Array<{
+    regex: RegExp;
+    retryable: boolean;
+    category: ErrorCategory;
+    confidence: 'high' | 'medium' | 'low';
+  }> = [
+    // Auth errors (permanent - check FIRST because 401 is explicit)
+    { regex: /\b401\b|unauthorized|invalid\s+api\s+key|authentication\s+failed|forbidden/i,
+      retryable: false, category: 'auth_error', confidence: 'high' },
+
+    // Not found (permanent - check FIRST because 404 is explicit)
+    { regex: /\b404\b|not\s+found|not\s+a\s+valid\s+model|no\s+endpoints?\s+found|model_not_found|model\s+not\s+found/i,
+      retryable: false, category: 'model_not_found', confidence: 'high' },
+
+    // Bad request / deprecated (permanent - check FIRST because 400 is explicit)
+    { regex: /\b400\b|bad\s+request|deprecated|no\s+longer\s+supported|discontinued/i,
+      retryable: false, category: 'auth_error', confidence: 'high' },
+
+    // Service unavailable (very likely transient - check after explicit 4xx codes)
+    { regex: /\b503\b|service.{0,30}unavailable|service.{0,20}down|temporarily.{0,10}unavailable|model.{0,10}unavailable|model.{0,20}temporarily/i, retryable: true, category: 'service_unavailable', confidence: 'high' },
+
+    // Rate limiting (transient with backoff needed)
+    { regex: /\b429\b|rate\s+limit|throttl/i, retryable: true, category: 'rate_limited', confidence: 'high' },
+
+    // Gateway/network timeouts
+    { regex: /timeout|econnreset|econnrefused|etimedout|ehostunreach|enetunreach|socket\s+hang\s+up/i,
+      retryable: true, category: 'gateway_timeout', confidence: 'high' },
+
+    // Generic provider finish_reason error (we don't know why, but could be transient)
+    { regex: /provider\s+finish_reason\s*:\s*error|finish_reason\s*:\s*error/i,
+      retryable: true, category: 'unknown', confidence: 'medium' },
+
+    // Malformed tool call (transient, can be corrected)
+    { regex: /tool\s+call.*?(json|parse|malformed|unterminated)|malformed.*?tool\s+call/i,
+      retryable: true, category: 'malformed_request', confidence: 'high' },
+
+    // Generic network transience
+    { regex: /offline|connection\s+refused|try\s+again/i,
+      retryable: true, category: 'transient_network', confidence: 'medium' },
+  ];
+
+  // Find first matching pattern
+  for (const pattern of patterns) {
+    if (pattern.regex.test(message)) {
+      return {
+        retryable: pattern.retryable,
+        reason: `Matched pattern: ${pattern.regex.source}`,
+        category: pattern.category,
+        matchedPattern: message.substring(0, 120),
+        confidence: pattern.confidence,
+      };
+    }
   }
 
-  // Retryable: transient errors
-  return (
-    (lower.includes('tool call') &&
-      (lower.includes('json') || lower.includes('parse') || lower.includes('malformed') || lower.includes('unterminated'))) ||
-    lower.includes('503') ||
-    lower.includes('429') ||
-    lower.includes('timeout') ||
-    lower.includes('econnreset') ||
-    lower.includes('econnrefused') ||
-    lower.includes('etimedout') ||
-    lower.includes('ehostunreach') ||
-    lower.includes('enetunreach') ||
-    lower.includes('unavailable') ||
-    lower.includes('offline') ||
-    lower.includes('service is down') ||
-    lower === 'provider finish_reason: error'
-  );
+  // No pattern matched
+  return {
+    retryable: false,
+    reason: 'No retry pattern matched (assuming permanent error)',
+    category: 'unknown',
+    matchedPattern: message.substring(0, 120),
+    confidence: 'low',
+  };
+}
+
+export function isProviderErrorRetryable(message: string): boolean {
+  return classifyProviderErrorDetailed(message).retryable;
 }
 
 /**
@@ -100,7 +159,23 @@ export function classifyProviderError(message: string): {
     type = 'malformed_tool_call';
   }
 
-  return { type, retryable: isProviderErrorRetryable(message) };
+  const classification = classifyProviderErrorDetailed(message);
+  return { type, retryable: classification.retryable };
+}
+
+/**
+ * Classify a provider error and return detailed classification info
+ */
+export function classifyProviderErrorWithContext(message: string): {
+  type: ProviderErrorSummary['type'];
+  retryable: boolean;
+  classification: ProviderErrorClassification;
+} {
+  return {
+    type: classifyProviderError(message).type,
+    retryable: classifyProviderErrorDetailed(message).retryable,
+    classification: classifyProviderErrorDetailed(message),
+  };
 }
 
 /**

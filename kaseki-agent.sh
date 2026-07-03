@@ -1936,6 +1936,201 @@ clear_provider_error() {
   PROVIDER_ERROR_RECOVERY_JSON=""
 }
 
+# Record provider health history for trend tracking
+record_provider_health() {
+  local provider="$1"
+  local phase="$2"
+  local exit_code="$3"
+  local retry_attempt_count="${PROVIDER_ERROR_RETRY_ATTEMPT_COUNT:-0}"
+  local retry_result="${PROVIDER_ERROR_RETRY_RESULT:-none}"
+  local error_type="${PROVIDER_ERROR_TYPE:-}"
+  local error_message="${PROVIDER_ERROR_MESSAGE:-}"
+  
+  local health_status="success"
+  if [ "$exit_code" -eq 88 ]; then
+    health_status="failed"
+  fi
+  
+  local health_cache_dir="${KASEKI_CACHE_DIR:-/agents/kaseki-cache}"
+  mkdir -p "$health_cache_dir" || return 1
+  
+  local health_file="$health_cache_dir/provider-health.jsonl"
+  
+  node - "$health_file" "$provider" "$phase" "$exit_code" "$health_status" "$error_type" "$error_message" "$retry_attempt_count" "$retry_result" "${KASEKI_INFERENCE_REQUEST_ID:-}" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [file, provider, phase, exitCode, status, errorType, errorMsg, retryCount, retryResult, requestId] = process.argv.slice(2);
+
+const entry = {
+  timestamp: new Date().toISOString(),
+  provider,
+  phase,
+  exit_code: parseInt(exitCode),
+  status,
+  error_type: errorType || null,
+  error_message: errorMsg || null,
+  retry_attempt_count: parseInt(retryCount),
+  retry_result: retryResult,
+  correlation_id: requestId || null,
+};
+
+// Append to health file
+try {
+  fs.appendFileSync(file, JSON.stringify(entry) + '\n', { encoding: 'utf8', flag: 'a' });
+} catch (e) {
+  // Ignore write errors; health tracking is non-critical
+}
+NODE
+}
+
+# Check for provider degradation based on recent health history
+check_provider_degradation() {
+  local provider="$1"
+  local lookback_count="${KASEKI_PROVIDER_HEALTH_LOOKBACK:-20}"  # Check last N runs
+  local failure_threshold_percent="${KASEKI_PROVIDER_DEGRADATION_THRESHOLD:-50}"  # Alert if >50% fail
+  
+  local health_cache_dir="${KASEKI_CACHE_DIR:-/agents/kaseki-cache}"
+  local health_file="$health_cache_dir/provider-health.jsonl"
+  
+  if [ ! -f "$health_file" ]; then
+    return 0  # No history yet
+  fi
+  
+  local stats
+  stats=$(tail -"$lookback_count" "$health_file" 2>/dev/null | node - "$provider" <<'NODE'
+const readline = require('readline');
+const provider = process.argv[2];
+let failCount = 0;
+let totalCount = 0;
+
+const lines = require('fs').readFileSync(0, 'utf8').split('\n').filter(Boolean);
+for (const line of lines) {
+  try {
+    const entry = JSON.parse(line);
+    if (entry.provider === provider) {
+      totalCount++;
+      if (entry.exit_code === 88) failCount++;
+    }
+  } catch {}
+}
+
+if (totalCount > 0) {
+  const failPercent = Math.round((failCount / totalCount) * 100);
+  process.stdout.write(JSON.stringify({ fail_count: failCount, total_count: totalCount, fail_percent: failPercent }));
+}
+NODE
+)
+  
+  if [ -n "$stats" ]; then
+    local fail_percent
+    fail_percent=$(echo "$stats" | node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0)).fail_percent)' 2>/dev/null || echo "0")
+    
+    if [ "$((fail_percent))" -gt "$failure_threshold_percent" ]; then
+      printf '[DEGRADATION ALERT] %s provider is failing %d%% of requests (threshold: %d%%)\n' \
+        "$provider" "$fail_percent" "$failure_threshold_percent" >&2
+      printf '[RECOMMENDATION] Switch KASEKI_PROVIDER to alternative or investigate %s service health\n' \
+        "$provider" >&2
+      return 1
+    fi
+  fi
+  
+  return 0
+}
+
+# Calculate exponential backoff delay with optional jitter for retry attempts
+calculate_retry_delay() {
+  local attempt=$1  # 1, 2, 3...
+  local base_seconds="${KASEKI_PROVIDER_RETRY_BASE_SECONDS:-3}"
+  
+  # Exponential: 3 * (2 ^ (attempt - 1))
+  # Attempt 1: 3s, Attempt 2: 6s, Attempt 3: 12s
+  local delay_seconds=$((base_seconds * (2 ** (attempt - 1))))
+  
+  # Cap at max (default 60s)
+  local max_seconds="${KASEKI_PROVIDER_RETRY_MAX_SECONDS:-60}"
+  if [ $delay_seconds -gt $max_seconds ]; then
+    delay_seconds=$max_seconds
+  fi
+  
+  # Add jitter: ±20%
+  local jitter_seconds=0
+  if [ "${KASEKI_PROVIDER_RETRY_JITTER:-1}" = "1" ]; then
+    local jitter_percent=20
+    jitter_seconds=$((delay_seconds * jitter_percent / 100))
+    local jitter_offset=$((-jitter_seconds + RANDOM % (2 * jitter_seconds + 1)))
+    delay_seconds=$((delay_seconds + jitter_offset))
+  fi
+  
+  echo "$delay_seconds"
+}
+
+# Check gateway health before attempting Pi invocation
+pre_check_gateway_health() {
+  local provider="${1:-gateway}"
+  local gateway_url="${KASEKI_GATEWAY_URL:-https://kaseki-tunnel.scheimann.xyz}"
+  
+  printf '[GATEWAY HEALTH] Checking %s health at %s/health\n' "$provider" "$gateway_url" >&2
+  
+  if curl -sf --max-time 5 --connect-timeout 3 "$gateway_url/health" > /tmp/gateway-health.json 2>&1; then
+    local ready
+    ready=$(jq -r '.ready // false' /tmp/gateway-health.json 2>/dev/null || echo "unknown")
+    printf '[GATEWAY HEALTH] ✓ Gateway responsive (ready: %s)\n' "$ready" >&2
+    return 0
+  else
+    printf '[GATEWAY HEALTH] ✗ Gateway unreachable (timeout or error); proceeding with caution\n' >&2
+    return 1
+  fi
+}
+
+# Log the classification reason for why error was marked as retryable
+log_retry_classification_reason() {
+  local phase_name="$1"
+  local error_message="$2"
+  
+  # Extract classification details from error message if available
+  local category="unknown"
+  local confidence="low"
+  
+  if echo "$error_message" | grep -qi "finish_reason.*error"; then
+    category="unknown"
+    confidence="medium"
+  elif echo "$error_message" | grep -qi "503\|service.*unavailable"; then
+    category="service_unavailable"
+    confidence="high"
+  elif echo "$error_message" | grep -qi "429\|rate.*limit"; then
+    category="rate_limited"
+    confidence="high"
+  elif echo "$error_message" | grep -qi "timeout\|econnreset\|etimedout"; then
+    category="gateway_timeout"
+    confidence="high"
+  elif echo "$error_message" | grep -qi "tool.*call.*json\|malformed"; then
+    category="malformed_request"
+    confidence="high"
+  fi
+  
+  printf '[RETRY CLASSIFICATION] %s phase error classified as retryable (category: %s, confidence: %s)\n' \
+    "$phase_name" "$category" "$confidence" >&2
+}
+
+# Log auth key resolution attempts for fallback
+log_fallback_auth_attempt() {
+  printf '[FALLBACK AUTH] Attempting to resolve OpenRouter API key from:\n' >&2
+  printf '  1. OPENROUTER_API_KEY environment variable\n' >&2
+  printf '  2. OPENROUTER_API_KEY_FILE (if set)\n' >&2
+  printf '  3. KASEKI_SECRETS_DIR/openrouter_api_key\n' >&2
+  printf '  4. /agents/secrets/openrouter_api_key\n' >&2
+  printf '  5. $HOME/.kaseki/secrets/openrouter_api_key\n' >&2
+}
+
+# Log which auth key path was successfully resolved
+log_fallback_auth_resolved() {
+  local resolved_path="$1"
+  if [ -n "$resolved_path" ]; then
+    printf '[FALLBACK AUTH RESOLVED] Key found at: %s\n' "$resolved_path" >&2
+  else
+    printf '[FALLBACK AUTH RESOLVED] Key resolved from environment variable\n' >&2
+  fi
+}
+
 snapshot_provider_attempt() {
   local raw_events_file="$1" summary_file="$2" phase_name="$3" provider="$4" model="$5" attempt_name="$6"
   local attempt_dir="${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}"
@@ -1948,6 +2143,21 @@ const [summaryPath, provider, model, phase, attempt, requestId] = process.argv.s
 let summary = {};
 try { summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8')); } catch {}
 const error = summary.primary_provider_error || (Array.isArray(summary.provider_errors) ? summary.provider_errors[0] : null);
+
+// Extract token usage from summary
+const tokens = summary.tokens || summary.usage || {};
+const tokenInfo = {
+  input_tokens: tokens.input_tokens || tokens.prompt_tokens || 0,
+  output_tokens: tokens.output_tokens || tokens.completion_tokens || 0,
+  total_tokens: tokens.total_tokens || 0,
+};
+
+// Extract timing info if available
+const timing = {};
+if (summary.start_time && summary.end_time) {
+  timing.latency_ms = new Date(summary.end_time).getTime() - new Date(summary.start_time).getTime();
+}
+
 process.stdout.write(JSON.stringify({
   timestamp: new Date().toISOString(), phase, attempt, provider, model,
   request_id: requestId || undefined,
@@ -1955,6 +2165,8 @@ process.stdout.write(JSON.stringify({
   status_code: error?.status_code || undefined,
   error_code: error?.error_code || undefined,
   retryable: error?.retryable === true,
+  tokens: tokenInfo,
+  timing: timing,
   error: error || null,
 }, null, 2) + '\n');
 NODE
@@ -1983,9 +2195,13 @@ NODE
 
 resolve_openrouter_fallback_key() {
   openrouter_api_key="${OPENROUTER_API_KEY:-}"
-  [ -n "$openrouter_api_key" ] && return 0
+  if [ -n "$openrouter_api_key" ]; then
+    log_fallback_auth_resolved ""
+    return 0
+  fi
 
   local candidate
+  local resolved_path=""
   for candidate in \
     "${OPENROUTER_API_KEY_FILE:-}" \
     "${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/openrouter_api_key" \
@@ -1993,9 +2209,15 @@ resolve_openrouter_fallback_key() {
     "$HOME/.kaseki/secrets/openrouter_api_key"; do
     if [ -n "$candidate" ] && [ -r "$candidate" ] && [ -s "$candidate" ]; then
       openrouter_api_key="$(tr -d '\r\n' < "$candidate")"
-      [ -n "$openrouter_api_key" ] && return 0
+      if [ -n "$openrouter_api_key" ]; then
+        resolved_path="$candidate"
+        log_fallback_auth_resolved "$resolved_path"
+        return 0
+      fi
     fi
   done
+  
+  printf '[FALLBACK AUTH FAILED] No valid OpenRouter API key found\n' >&2
   return 1
 }
 
@@ -2085,7 +2307,7 @@ run_pi_with_retry() {
     else
       KASEKI_INFERENCE_ATTEMPT="fallback-1"
     fi
-    KASEKI_INFERENCE_REQUEST_ID="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"
+    # Request ID is already generated before calling invoke_pi
     export KASEKI_INFERENCE_PHASE KASEKI_INFERENCE_ATTEMPT KASEKI_INFERENCE_REQUEST_ID
     if [ -n "$stderr_target" ]; then
       run_pi_json_capture "$raw_events_file" "$timeout_seconds" "$model" "$prompt" "$stderr_target"
@@ -2119,6 +2341,17 @@ run_pi_with_retry() {
   }
 
   # First attempt
+  # Generate request ID early for logging
+  KASEKI_INFERENCE_REQUEST_ID="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())' 2>/dev/null || printf 'req-%s' "$(date +%s)")"
+  export KASEKI_INFERENCE_REQUEST_ID
+  
+  if [ "$original_provider" = "gateway" ] && [ -z "${KASEKI_SKIP_GATEWAY_HEALTH_CHECK:-}" ]; then
+    pre_check_gateway_health "$original_provider" || true
+  fi
+  
+  printf '[CORRELATION] Request %s sent to %s (provider: %s, model: %s)\n' \
+    "$KASEKI_INFERENCE_REQUEST_ID" "$phase_name" "$original_provider" "$model" >&2
+  
   invoke_pi
   pi_exit=$?
   summarize_invocation || true
@@ -2133,6 +2366,9 @@ run_pi_with_retry() {
   if [ "$pi_exit" -eq 88 ] && [ "$attempt" -eq 1 ]; then
     # Check if error is retryable
     if check_if_provider_error_retryable "$summary_file"; then
+      provider_error_message="$(node -e 'try{const s=require(process.argv[1]);process.stdout.write(String(s.primary_provider_error?.message||""))}catch{}' "$summary_file" 2>/dev/null || true)"
+      log_retry_classification_reason "$phase_name" "$provider_error_message"
+      
       provider_error_type="$(node -e 'try{const s=require(process.argv[1]);process.stdout.write(String(s.primary_provider_error?.type||""))}catch{}' "$summary_file" 2>/dev/null || true)"
       if [ "$provider_error_type" = "malformed_tool_call" ]; then
         prompt="$original_prompt
@@ -2140,12 +2376,11 @@ run_pi_with_retry() {
 Recovery instruction: The previous response emitted malformed tool-call JSON. Emit one small tool call at a time. Ensure every tool argument is complete, valid JSON before continuing."
         printf '[RETRY CORRECTION] Retrying malformed tool call with constrained JSON guidance\n' >&2
       fi
-      local retry_delay_seconds="${KASEKI_PROVIDER_RETRY_BASE_SECONDS:-3}"
-      if [ "${KASEKI_PROVIDER_RETRY_JITTER:-1}" = "1" ]; then
-        retry_delay_seconds=$((retry_delay_seconds + RANDOM % 3))
-      fi
-      printf '[RETRY] Provider error is retryable in %s phase; attempting second invocation after %ss delay (model: %s)\n' \
-        "$phase_name" "$retry_delay_seconds" "$model" >&2
+      
+      local retry_delay_seconds
+      retry_delay_seconds=$(calculate_retry_delay 1)
+      printf '[RETRY] Provider error is retryable in %s phase; attempting retry 1/1 after %ss delay (model: %s, correlation_id: %s)\n' \
+        "$phase_name" "$retry_delay_seconds" "$model" "$KASEKI_INFERENCE_REQUEST_ID" >&2
       
       PROVIDER_ERROR_RETRY_ATTEMPT_COUNT=1
       sleep "$retry_delay_seconds"
@@ -2158,50 +2393,81 @@ Recovery instruction: The previous response emitted malformed tool-call JSON. Em
       summarize_invocation || true
       snapshot_provider_attempt "$raw_events_file" "$summary_file" "$phase_name" "$original_provider" "$model" "primary-2"
       retry_response_id="$(node -e 'try{const s=require(process.argv[1]);process.stdout.write(String(s.primary_provider_error?.response_id||""))}catch{}' "$summary_file" 2>/dev/null || true)"
-      if [ -n "$primary_response_id" ] && [ "$retry_response_id" = "$primary_response_id" ]; then
-        printf '[RETRY DUPLICATE] Gateway returned the same response_id=%s; treating replay as exhausted\n' "$retry_response_id" >&2
+      
+      # Extract detailed context for duplicate detection
+      local attempt1_latency="" attempt2_latency="" attempt1_tokens="" attempt2_tokens=""
+      if [ -f "${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}/primary-1.json" ]; then
+        attempt1_latency="$(jq -r '.timing.latency_ms // "unknown"' "${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}/primary-1.json" 2>/dev/null || echo "unknown")"
+        attempt1_tokens="$(jq -r '.tokens | "input:\(.input_tokens),output:\(.output_tokens)"' "${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}/primary-1.json" 2>/dev/null || echo "unknown")"
       fi
+      if [ -f "${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}/primary-2.json" ]; then
+        attempt2_latency="$(jq -r '.timing.latency_ms // "unknown"' "${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}/primary-2.json" 2>/dev/null || echo "unknown")"
+        attempt2_tokens="$(jq -r '.tokens | "input:\(.input_tokens),output:\(.output_tokens)"' "${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}/primary-2.json" 2>/dev/null || echo "unknown")"
+      fi
+      
+      if [ -n "$primary_response_id" ] && [ "$retry_response_id" = "$primary_response_id" ]; then
+        printf '[RETRY DUPLICATE] Gateway returned the same response_id=%s (attempt1_latency=%sms, attempt2_latency=%sms, tokens_1=%s, tokens_2=%s); treating as exhausted (not a transient retry candidate)\n' \
+          "$retry_response_id" "$attempt1_latency" "$attempt2_latency" "$attempt1_tokens" "$attempt2_tokens" >&2
+      fi
+      
       if [ "$pi_exit" -eq 88 ]; then
         PROVIDER_ERROR_PRIMARY_JSON="$(provider_error_json_from_summary "$summary_file" "$phase_name" "$original_provider" "$model")"
       fi
       
       if [ "$pi_exit" -eq 0 ]; then
         PROVIDER_ERROR_RETRY_RESULT="success"
-        printf '[RETRY SUCCESS] Provider error resolved on retry in %s phase\n' "$phase_name" >&2
+        printf '[RETRY SUCCESS] Provider error resolved on retry in %s phase (correlation_id: %s)\n' \
+          "$phase_name" "$KASEKI_INFERENCE_REQUEST_ID" >&2
       elif [ "$pi_exit" -eq 88 ]; then
         PROVIDER_ERROR_RETRY_ATTEMPT_COUNT=2
         PROVIDER_ERROR_RETRY_RESULT="failed"
-        printf '[RETRY EXHAUSTED] Provider error persisted after retry in %s phase; exiting with code 88\n' \
-          "$phase_name" >&2
+        printf '[RETRY EXHAUSTED] Provider error persisted after retry in %s phase; budget exhausted (correlation_id: %s); exiting with code 88\n' \
+          "$phase_name" "$KASEKI_INFERENCE_REQUEST_ID" >&2
       fi
     fi
   fi
 
   if [ "$pi_exit" -eq 88 ] && [ "$PROVIDER_ERROR_RETRYABLE" = "true" ] && [ "$allow_fallback" = "1" ] && \
-    [ "$original_provider" = "gateway" ] && [ "$KASEKI_PROVIDER_FALLBACK" = "openrouter" ] && \
-    resolve_openrouter_fallback_key; then
-    PROVIDER_ERROR_FALLBACK_PROVIDER="openrouter"
-    PROVIDER_ERROR_FALLBACK_MODEL="$KASEKI_PROVIDER_FALLBACK_MODEL"
-    printf '[FALLBACK] Gateway provider failed in %s phase; retrying with provider=%s model=%s\n' \
-      "$phase_name" "$PROVIDER_ERROR_FALLBACK_PROVIDER" "$PROVIDER_ERROR_FALLBACK_MODEL" >&2
-    rm -f "$raw_events_file" 2>/dev/null || true
-    : > "$raw_events_file"
-    KASEKI_PROVIDER="$PROVIDER_ERROR_FALLBACK_PROVIDER"
-    model="$PROVIDER_ERROR_FALLBACK_MODEL"
-    invoke_pi
-    pi_exit=$?
-    summarize_invocation || true
-    snapshot_provider_attempt "$raw_events_file" "$summary_file" "$phase_name" "$PROVIDER_ERROR_FALLBACK_PROVIDER" "$PROVIDER_ERROR_FALLBACK_MODEL" "fallback-1"
-    PROVIDER_ERROR_RECOVERY_JSON="$(provider_error_json_from_summary "$summary_file" "$phase_name" "$PROVIDER_ERROR_FALLBACK_PROVIDER" "$PROVIDER_ERROR_FALLBACK_MODEL")"
-    KASEKI_PROVIDER="$original_provider"
-    if [ "$pi_exit" -eq 0 ]; then
-      PROVIDER_ERROR_FALLBACK_RESULT="success"
-      printf '[FALLBACK SUCCESS] OpenRouter completed the %s phase\n' "$phase_name" >&2
+    [ "$original_provider" = "gateway" ] && [ "$KASEKI_PROVIDER_FALLBACK" = "openrouter" ]; then
+    
+    log_fallback_auth_attempt
+    
+    if resolve_openrouter_fallback_key; then
+      PROVIDER_ERROR_FALLBACK_PROVIDER="openrouter"
+      PROVIDER_ERROR_FALLBACK_MODEL="$KASEKI_PROVIDER_FALLBACK_MODEL"
+      
+      # Extract error details from primary attempt for fallback context
+      local primary_error_message=""
+      primary_error_message="$(node -e 'try{const s=require(process.argv[1]);process.stdout.write(String(s.primary_provider_error?.message||""))}catch{}' "$summary_file" 2>/dev/null || true)"
+      
+      printf '[FALLBACK] Gateway provider failed in %s phase (error: %s); attempting fallback with provider=%s model=%s correlation_id=%s\n' \
+        "$phase_name" "$primary_error_message" "$PROVIDER_ERROR_FALLBACK_PROVIDER" "$PROVIDER_ERROR_FALLBACK_MODEL" "$KASEKI_INFERENCE_REQUEST_ID" >&2
+      
+      rm -f "$raw_events_file" 2>/dev/null || true
+      : > "$raw_events_file"
+      KASEKI_PROVIDER="$PROVIDER_ERROR_FALLBACK_PROVIDER"
+      model="$PROVIDER_ERROR_FALLBACK_MODEL"
+      invoke_pi
+      pi_exit=$?
+      summarize_invocation || true
+      snapshot_provider_attempt "$raw_events_file" "$summary_file" "$phase_name" "$PROVIDER_ERROR_FALLBACK_PROVIDER" "$PROVIDER_ERROR_FALLBACK_MODEL" "fallback-1"
+      PROVIDER_ERROR_RECOVERY_JSON="$(provider_error_json_from_summary "$summary_file" "$phase_name" "$PROVIDER_ERROR_FALLBACK_PROVIDER" "$PROVIDER_ERROR_FALLBACK_MODEL")"
+      KASEKI_PROVIDER="$original_provider"
+      if [ "$pi_exit" -eq 0 ]; then
+        PROVIDER_ERROR_FALLBACK_RESULT="success"
+        printf '[FALLBACK SUCCESS] OpenRouter completed the %s phase (correlation_id: %s)\n' \
+          "$phase_name" "$KASEKI_INFERENCE_REQUEST_ID" >&2
+      else
+        PROVIDER_ERROR_FALLBACK_RESULT="failed"
+        local fallback_error_message=""
+        fallback_error_message="$(node -e 'try{const s=require(process.argv[1]);process.stdout.write(String(s.primary_provider_error?.message||""))}catch{}' "$summary_file" 2>/dev/null || true)"
+        printf '[FALLBACK FAILED] OpenRouter failed the %s phase with exit %s (error: %s, correlation_id: %s)\n' \
+          "$phase_name" "$pi_exit" "$fallback_error_message" "$KASEKI_INFERENCE_REQUEST_ID" >&2
+      fi
+      openrouter_api_key=""
     else
-      PROVIDER_ERROR_FALLBACK_RESULT="failed"
-      printf '[FALLBACK FAILED] OpenRouter failed the %s phase with exit %s\n' "$phase_name" "$pi_exit" >&2
+      printf '[FALLBACK SKIPPED] Could not resolve OpenRouter API key; fallback cancelled\n' >&2
     fi
-    openrouter_api_key=""
   fi
 
   # A later goal-check coding attempt must not erase recovery telemetry from an
