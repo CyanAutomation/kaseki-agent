@@ -91,12 +91,60 @@ set -e
 [ "$PROVIDER_ERROR_FALLBACK_MODEL" = 'auto' ] || fail 'fallback model telemetry is missing'
 [ "$PROVIDER_ERROR_FALLBACK_RESULT" = 'success' ] || fail 'fallback result telemetry is incorrect'
 [ "$KASEKI_PROVIDER" = 'gateway' ] || fail 'primary provider was not restored'
+[ "$KASEKI_PROVIDER_FALLBACK" = 'openrouter' ] || fail 'fallback opt-in was unexpectedly changed'
 [ -s "$KASEKI_RESULTS_DIR/provider-attempts/coding/primary-1.events.jsonl" ] || fail 'primary attempt 1 events were not preserved'
 [ -s "$KASEKI_RESULTS_DIR/provider-attempts/coding/primary-2.events.jsonl" ] || fail 'primary attempt 2 events were not preserved'
 [ -s "$KASEKI_RESULTS_DIR/provider-attempts/coding/fallback-1.events.jsonl" ] || fail 'fallback events were not preserved'
 [ "$(wc -l < "$KASEKI_RESULTS_DIR/provider-attempts.jsonl" | tr -d ' ')" -eq 3 ] || fail 'provider attempt manifest did not record all attempts'
 printf '%s' "$PROVIDER_ERROR_PRIMARY_JSON" | grep -q '"provider":"gateway"' || fail 'primary provider error attribution was not preserved'
 printf '%s' "$PROVIDER_ERROR_RECOVERY_JSON" | grep -q '"provider":"openrouter"' || fail 'recovery provider error attribution was not preserved'
+
+
+# Without an explicit supported fallback, retry exhaustion must not switch providers
+# or populate fallback telemetry.
+KASEKI_PROVIDER_FALLBACK=""
+PROVIDER_ERROR_RETRYABLE=""
+PROVIDER_ERROR_RETRY_ATTEMPT_COUNT=0
+PROVIDER_ERROR_RETRY_RESULT="none"
+PROVIDER_ERROR_FALLBACK_PROVIDER=""
+PROVIDER_ERROR_FALLBACK_MODEL=""
+PROVIDER_ERROR_FALLBACK_RESULT="none"
+PROVIDER_ERROR_RECOVERY_JSON=""
+PI_CALL_COUNT=0
+: > "$TMP_DIR/calls-no-fallback"
+run_pi_json_capture() {
+  local raw_events_file="$1"
+  PI_CALL_COUNT=$((PI_CALL_COUNT + 1))
+  printf '%s:%s\n' "$KASEKI_PROVIDER" "$3" >> "$TMP_DIR/calls-no-fallback"
+  printf '%s\n' '{"type":"message_end","message":{"stopReason":"error","errorMessage":"Provider finish_reason: error"}}' > "$raw_events_file"
+  return 0
+}
+
+set +e
+run_pi_with_retry "$TMP_DIR/raw-no-fallback.jsonl" 30 dynamic/kaseki-agent prompt pi-summary "" coding 1
+run_exit=$?
+set -e
+
+[ "$run_exit" -eq 88 ] || fail "expected exhausted gateway retry exit 88 without fallback, got exit $run_exit"
+[ "$(wc -l < "$TMP_DIR/calls-no-fallback" | tr -d ' ')" -eq 2 ] || fail 'unexpected provider switch without fallback opt-in'
+[ "$(sed -n '1p' "$TMP_DIR/calls-no-fallback")" = 'gateway:dynamic/kaseki-agent' ] || fail 'no-fallback first call was not gateway'
+[ "$(sed -n '2p' "$TMP_DIR/calls-no-fallback")" = 'gateway:dynamic/kaseki-agent' ] || fail 'no-fallback retry was not gateway'
+[ "$PROVIDER_ERROR_RETRY_ATTEMPT_COUNT" -eq 2 ] || fail 'no-fallback retry attempt telemetry is incorrect'
+[ "$PROVIDER_ERROR_RETRY_RESULT" = 'failed' ] || fail 'no-fallback retry result telemetry is incorrect'
+[ -z "$PROVIDER_ERROR_FALLBACK_PROVIDER" ] || fail 'no-fallback provider telemetry should be empty'
+[ -z "$PROVIDER_ERROR_FALLBACK_MODEL" ] || fail 'no-fallback model telemetry should be empty'
+[ "$PROVIDER_ERROR_FALLBACK_RESULT" = 'none' ] || fail 'no-fallback result telemetry should be none'
+[ -z "$PROVIDER_ERROR_RECOVERY_JSON" ] || fail 'no-fallback recovery telemetry should be empty'
+[ "$KASEKI_PROVIDER" = 'gateway' ] || fail 'no-fallback primary provider changed'
+
+# Restore OpenRouter fallback telemetry for the preservation check below.
+KASEKI_PROVIDER_FALLBACK="openrouter"
+PROVIDER_ERROR_RETRYABLE="true"
+PROVIDER_ERROR_RETRY_ATTEMPT_COUNT=2
+PROVIDER_ERROR_RETRY_RESULT="failed"
+PROVIDER_ERROR_FALLBACK_PROVIDER="openrouter"
+PROVIDER_ERROR_FALLBACK_MODEL="auto"
+PROVIDER_ERROR_FALLBACK_RESULT="success"
 
 # A subsequent clean coding attempt must retain the earlier recovery telemetry.
 run_pi_json_capture() {

@@ -255,7 +255,7 @@ if [ -z "${KASEKI_RUN_EVALUATION+x}" ]; then
 fi
 KASEKI_RUN_EVALUATION_MODEL="${KASEKI_RUN_EVALUATION_MODEL:-$KASEKI_GOAL_CHECK_MODEL}"
 KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS="${KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS:-300}"
-KASEKI_PROVIDER_FALLBACK="${KASEKI_PROVIDER_FALLBACK-openrouter}"
+KASEKI_PROVIDER_FALLBACK="${KASEKI_PROVIDER_FALLBACK-}"
 KASEKI_PROVIDER_FALLBACK_MODEL="${KASEKI_PROVIDER_FALLBACK_MODEL:-auto}"
 INSTANCE_NAME="${KASEKI_INSTANCE:-kaseki}"
 if [ "$KASEKI_TASK_MODE" = "inspect" ]; then
@@ -2263,7 +2263,7 @@ run_pi_with_retry() {
   #   $5: summary_file_base  - Base path for summary files (without .json extension, e.g., "pi-summary")
   #   $6: stderr_target      - Optional: stderr file path
   #   $7: phase_name         - Phase name for logging (e.g., "coding", "scouting")
-  #   $8: allow_fallback     - Set to 1 to allow gateway -> OpenRouter fallback
+  #   $8: allow_fallback     - Set to 1 to allow explicitly configured gateway fallback
   #
   # Returns:
   #   Exit code from Pi invocation (after retry logic applied)
