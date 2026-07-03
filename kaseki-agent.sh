@@ -1996,22 +1996,27 @@ check_provider_degradation() {
   fi
   
   local stats
-  stats=$(tail -"$lookback_count" "$health_file" 2>/dev/null | node - "$provider" <<'NODE'
-const readline = require('readline');
+  stats=$(node - "$provider" "$health_file" "$lookback_count" <<'NODE'
 const provider = process.argv[2];
+const healthFile = process.argv[3];
+const lookbackCount = parseInt(process.argv[4] || '20', 10);
 let failCount = 0;
 let totalCount = 0;
 
-const lines = require('fs').readFileSync(0, 'utf8').split('\n').filter(Boolean);
-for (const line of lines) {
-  try {
-    const entry = JSON.parse(line);
-    if (entry.provider === provider) {
-      totalCount++;
-      if (entry.exit_code === 88) failCount++;
-    }
-  } catch {}
-}
+try {
+  const fs = require('fs');
+  const lines = fs.readFileSync(healthFile, 'utf8').split('\n').filter(Boolean);
+  const relevantLines = lines.slice(-lookbackCount);
+  for (const line of relevantLines) {
+    try {
+      const entry = JSON.parse(line);
+      if (entry.provider === provider) {
+        totalCount++;
+        if (entry.exit_code === 88) failCount++;
+      }
+    } catch {}
+  }
+} catch {}
 
 if (totalCount > 0) {
   const failPercent = Math.round((failCount / totalCount) * 100);
@@ -2047,8 +2052,8 @@ calculate_retry_delay() {
   
   # Cap at max (default 60s)
   local max_seconds="${KASEKI_PROVIDER_RETRY_MAX_SECONDS:-60}"
-  if [ $delay_seconds -gt $max_seconds ]; then
-    delay_seconds=$max_seconds
+  if [ "$delay_seconds" -gt "$max_seconds" ]; then
+    delay_seconds="$max_seconds"
   fi
   
   # Add jitter: ±20%
