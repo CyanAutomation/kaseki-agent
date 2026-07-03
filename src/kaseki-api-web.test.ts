@@ -268,6 +268,71 @@ describe('kaseki API web console behavior', () => {
     expect(checkStatusButton).toBeUndefined();
   });
 
+  test('summarizes gateway smoke results without OpenRouter recovery status', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/gateway-test?stage=1') {
+          return createJsonResponse({ status: 'error', responseTime: 125 });
+        }
+        if (path === '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true') {
+          return createJsonResponse({
+            status: 'ok',
+            responseTime: 480,
+            outputTokens: 7,
+            streamSmokeValidated: true,
+            largePromptSmokeValidated: true,
+            piProviderSmoke: { status: 'ok' },
+          });
+        }
+        if (path === '/api/runs') return createJsonResponse({ runs: [] });
+        return createJsonResponse({ status: 'ok' });
+      },
+    });
+
+    click(document.querySelector('[data-probe="/api/gateway-test?stage=1"]'));
+    await waitFor(() => expect(document.querySelector('[data-summary="gateway"]')?.textContent).toBe('Failed'));
+    expect(document.querySelector('[data-summary="gateway"]')?.className).toContain('bad');
+
+    click(document.querySelector('[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]'));
+    await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Gateway and Pi provider adapter passed.'));
+    expect(document.querySelector('[data-summary="llm-test"]')?.textContent).toContain('480ms 7 tokens stream ok, large ok');
+    expect(document.querySelector('#response-summary')?.textContent).not.toContain('OpenRouter');
+  });
+
+  test('keeps Pi provider gateway smoke diagnostics for adapter failures', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true') {
+          return createJsonResponse({
+            status: 'ok',
+            responseTime: 510,
+            piProviderSmoke: {
+              status: 'error',
+              remediation: 'Check gateway configuration and Pi provider registration',
+              diagnostics: {
+                fieldsFound: ['message.output_text'],
+                suggestedPatterns: ['message.output_text'],
+                eventsByType: { message: 2 },
+                debugOutputPath: '/tmp/pi-provider-debug.jsonl',
+              },
+            },
+          });
+        }
+        if (path === '/api/runs') return createJsonResponse({ runs: [] });
+        return createJsonResponse({ status: 'ok' });
+      },
+    });
+
+    click(document.querySelector('[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]'));
+
+    await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Pi provider adapter test failed. Diagnostics:'));
+    expect(document.querySelector('#response-summary')?.textContent).toContain('Fields found: message.output_text');
+    expect(document.querySelector('#response-summary')?.textContent).toContain('Event types seen: message(2)');
+    expect(document.querySelector('#response-summary')?.textContent).toContain('Remediation: Check gateway configuration and Pi provider registration');
+  });
+
   test('shows failure reasons and progress context in recent runs', async () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
