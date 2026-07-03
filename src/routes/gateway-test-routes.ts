@@ -17,7 +17,6 @@ import {
   resolveGatewayApiKey,
   shouldRunGatewayResponseSmoke,
   testPiGatewayProviderSmoke,
-  testPiOpenRouterFallbackSmoke,
 } from '../kaseki-api-gateway-smoke';
 
 const logger = createEventLogger('gateway-test-routes');
@@ -158,7 +157,6 @@ export function createGatewayTestRoutes(): Router {
       let stage1Result: any = null;
       let stage2Result: any = null;
       let piProviderResult: any = null;
-      let fallbackProviderResult: any = null;
 
       // Run Stage 1 if requested (or if running both)
       if (requestedStage === 0 || requestedStage === 1) {
@@ -184,8 +182,7 @@ export function createGatewayTestRoutes(): Router {
       // heavier Pi provider adapter smoke unless the caller opts in with
       // ?piProvider=true.
       if ((requestedStage === 0 || requestedStage === 2) && piProviderRequested) {
-        piProviderResult = testPiGatewayProviderSmoke({ requested: true, debug: debugMode });
-        fallbackProviderResult = testPiOpenRouterFallbackSmoke(true);
+        piProviderResult = await testPiGatewayProviderSmoke({ requested: true, debug: debugMode });
       }
 
       // Build response based on requested stage
@@ -201,14 +198,8 @@ export function createGatewayTestRoutes(): Router {
         status = stage1Result.status === 'ok' ? 200 : 503;
       } else if (requestedStage === 2) {
         // Stage 2 only
-        response = {
-          ...buildStage2Response(stage2Result, piProviderResult),
-          ...(fallbackProviderResult?.status === 'error'
-            ? { status: 'error', detail: 'Primary gateway passed, but configured OpenRouter recovery failed its Pi smoke test.' }
-            : {}),
-          fallbackProviderSmoke: fallbackProviderResult,
-        };
-        status = stage2Result?.status === 'ok' && (!piProviderResult || piProviderResult.status !== 'error') && (!fallbackProviderResult || fallbackProviderResult.status !== 'error') ? 200 : 503;
+        response = buildStage2Response(stage2Result, piProviderResult);
+        status = stage2Result?.status === 'ok' && (!piProviderResult || piProviderResult.status !== 'error') ? 200 : 503;
       } else {
         // Both stages (default, backward compatible)
         response = buildDualStageResponse(stage1Result, stage2Result, piProviderResult);
