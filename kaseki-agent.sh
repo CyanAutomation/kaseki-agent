@@ -411,6 +411,7 @@ KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
 KASEKI_GIT_CACHE_MODE="${KASEKI_GIT_CACHE_MODE:-mirror}"
 KASEKI_GIT_CACHE_ROOT="${KASEKI_GIT_CACHE_ROOT:-${KASEKI_CACHE_DIR}/git}"
 KASEKI_GIT_CACHE_FETCH_TIMEOUT_SECONDS="${KASEKI_GIT_CACHE_FETCH_TIMEOUT_SECONDS:-120}"
+KASEKI_PI_EVENTS_MAX_BYTES="${KASEKI_PI_EVENTS_MAX_BYTES:-16777216}"
 GIT_CACHE_KEY=""
 GIT_CACHE_MIRROR=""
 GIT_CACHE_HIT="false"
@@ -2075,13 +2076,35 @@ pre_check_gateway_health() {
   
   if curl -sf --max-time 5 --connect-timeout 3 "$gateway_url/health" > /tmp/gateway-health.json 2>&1; then
     local ready
-    ready=$(jq -r '.ready // false' /tmp/gateway-health.json 2>/dev/null || echo "unknown")
-    printf '[GATEWAY HEALTH] ✓ Gateway responsive (ready: %s)\n' "$ready" >&2
+    ready=$(jq -r 'if has("ready") then (.ready | tostring) else "unknown" end' /tmp/gateway-health.json 2>/dev/null || echo "unknown")
+    if [ "$ready" = "true" ]; then
+      printf '[GATEWAY HEALTH] ✓ Gateway responsive and ready\n' >&2
+      return 0
+    fi
+    if [ "$ready" = "false" ]; then
+      printf '[GATEWAY HEALTH] ✗ Gateway responsive but not ready; refusing provider request\n' >&2
+      return 1
+    fi
+    printf '[GATEWAY HEALTH] Gateway responsive but readiness was not reported; proceeding with caution\n' >&2
     return 0
   else
     printf '[GATEWAY HEALTH] ✗ Gateway unreachable (timeout or error); proceeding with caution\n' >&2
     return 1
   fi
+}
+
+cap_jsonl_artifact() {
+  local file="$1" max_bytes="${2:-$KASEKI_PI_EVENTS_MAX_BYTES}" size tmp
+  [ -f "$file" ] || return 0
+  size=$(wc -c < "$file" 2>/dev/null || echo 0)
+  [ "$size" -le "$max_bytes" ] && return 0
+  tmp="${file}.capped.$$"
+  {
+    printf '{"type":"artifact_truncated","original_bytes":%s,"retained_bytes":%s}\n' "$size" "$max_bytes"
+    tail -c "$max_bytes" "$file" | sed '1d'
+  } > "$tmp"
+  mv "$tmp" "$file"
+  printf '[ARTIFACT CAP] Trimmed %s from %s bytes to the latest %s bytes\n' "$file" "$size" "$max_bytes" >&2
 }
 
 # Log the classification reason for why error was marked as retryable
@@ -2299,7 +2322,16 @@ run_pi_with_retry() {
   export KASEKI_INFERENCE_REQUEST_ID
   
   if [ "$original_provider" = "gateway" ] && [ -z "${KASEKI_SKIP_GATEWAY_HEALTH_CHECK:-}" ]; then
-    pre_check_gateway_health "$original_provider" || true
+    if ! pre_check_gateway_health "$original_provider"; then
+      PROVIDER_ERROR_TYPE="provider_not_ready"
+      PROVIDER_ERROR_MESSAGE="Gateway health endpoint is reachable but not ready"
+      PROVIDER_ERROR_PHASE="$phase_name"
+      PROVIDER_ERROR_PROVIDER="$original_provider"
+      PROVIDER_ERROR_MODEL="$model"
+      PROVIDER_ERROR_RETRYABLE="false"
+      printf '[PROVIDER BLOCKED] %s; skipping inference request\n' "$PROVIDER_ERROR_MESSAGE" >&2
+      return 88
+    fi
   fi
   
   printf '[CORRELATION] Request %s sent to %s (provider: %s, model: %s)\n' \
@@ -3841,7 +3873,8 @@ clone_with_git_cache() {
     GIT_CACHE_STATUS="hit"
     GIT_CACHE_HIT="true"
     emit_progress "clone repository" "git cache hit key=$GIT_CACHE_KEY mirror=$mirror"
-    timeout "$KASEKI_GIT_CACHE_FETCH_TIMEOUT_SECONDS" git -C "$mirror" fetch --prune --tags origin
+    timeout "$KASEKI_GIT_CACHE_FETCH_TIMEOUT_SECONDS" git -C "$mirror" fetch --prune --no-tags origin \
+      "+refs/heads/$GIT_REF:refs/heads/$GIT_REF"
     fetch_rc=$?
     if [ "$fetch_rc" -ne 0 ]; then
       flock -u 9 || true
@@ -3860,7 +3893,10 @@ clone_with_git_cache() {
     fi
     tmp_mirror="${mirror}.tmp.$$"
     rm -rf "$tmp_mirror"
-    timeout "$KASEKI_GIT_CACHE_FETCH_TIMEOUT_SECONDS" git clone --mirror "$REPO_URL" "$tmp_mirror"
+    git init --bare "$tmp_mirror" >/dev/null 2>&1
+    git -C "$tmp_mirror" remote add origin "$REPO_URL"
+    timeout "$KASEKI_GIT_CACHE_FETCH_TIMEOUT_SECONDS" git -C "$tmp_mirror" fetch --no-tags --depth 1 origin \
+      "+refs/heads/$GIT_REF:refs/heads/$GIT_REF"
     mirror_rc=$?
     if [ "$mirror_rc" -eq 0 ] && is_valid_git_mirror "$tmp_mirror"; then
       mv "$tmp_mirror" "$mirror"
@@ -6098,9 +6134,12 @@ run_goal_setting_agent() {
   unset goal_setting_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
   set +e
 
-  # Artifact recovery: if artifact file doesn't exist, try to recover from event stream
-  if [ "$GOAL_SETTING_EXIT" -eq 0 ] && [ ! -f "$GOAL_SETTING_CANDIDATE_ARTIFACT" ]; then
-    run_artifact_recovery_helper "goal-setting" "$GOAL_SETTING_RAW_EVENTS" "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$KASEKI_RESULTS_DIR" >/dev/null 2>&1 || true
+  # Recover a candidate whenever the provider emitted usable JSON, even when Pi
+  # returned a non-zero transport status after producing the response.
+  if [ ! -f "$GOAL_SETTING_CANDIDATE_ARTIFACT" ]; then
+    if run_artifact_recovery_helper "goal-setting" "$GOAL_SETTING_RAW_EVENTS" "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$KASEKI_RESULTS_DIR" >/dev/null 2>&1; then
+      printf '[GOAL SETTING RECOVERY] Recovered candidate artifact from provider events (pi_exit=%s)\n' "$GOAL_SETTING_EXIT" >&2
+    fi
   fi
 
   kaseki-pi-event-filter "$GOAL_SETTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-setting-events.jsonl "${KASEKI_RESULTS_DIR}"/goal-setting-summary.json 2>/dev/null || cp "$GOAL_SETTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-setting-events.raw.jsonl 2>/dev/null || true
@@ -9796,6 +9835,12 @@ prepare_dependencies() {
     fi
   fi
 
+  if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ] && [ ! -f "$workspace_cache_root/validated" ]; then
+    printf 'Dependency cache status: cache has no validation marker; invalidating before restore.\n'
+    set_dependency_cache_status "workspace-cache-invalid" "$cache_detail reason=missing_validation_marker"
+    invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
+  fi
+
   if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ]; then
     printf 'Dependency cache status: restoring node_modules from workspace cache (%s; lock_hash=%s; repo_ref_key=%s).\n' "$workspace_cache_dir" "$lock_hash" "$repo_ref_key"
     set_dependency_cache_status "workspace-cache-hit" "$cache_detail"
@@ -9925,6 +9970,16 @@ prepare_dependencies() {
   fi
   if ! printf 'repo_ref_key=%s	repo_url=%s	git_ref=%s	lock_hash=%s	cache_key=%s	flags_hash=%s	restore_mode=%s	restore_method=%s\n' \
     "$repo_ref_key" "$REPO_URL" "$GIT_REF" "$lock_hash" "$cache_key" "$flags_hash" "$restore_mode" "$restore_method" > "$metadata_file"; then
+    exec {cache_lock_fd}>&-
+    return 1
+  fi
+
+  # Only advertise a cache entry after its installed dependency graph validates.
+  if npm ls --depth=0 >/dev/null 2>&1; then
+    : > "$workspace_cache_root/validated"
+  else
+    invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
+    rm -f "$workspace_cache_root/validated"
     exec {cache_lock_fd}>&-
     return 1
   fi
@@ -10367,6 +10422,7 @@ NODE
 
   if [ "$PI_EXTRACTION_DEPS_OK" -eq 1 ]; then
     run_pi_event_filter_export "$RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/pi-events.jsonl "${KASEKI_RESULTS_DIR}"/pi-summary.json
+    cap_jsonl_artifact "${KASEKI_RESULTS_DIR}/pi-events.jsonl"
   fi
   if [ -s "$RAW_EVENTS" ] && { [ ! -s "${KASEKI_RESULTS_DIR}"/pi-events.jsonl ] || [ ! -s "${KASEKI_RESULTS_DIR}"/pi-summary.json ]; }; then
     printf 'ERROR: pi event export incomplete; raw events are non-empty but event artifacts are missing/empty\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
