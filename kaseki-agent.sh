@@ -255,8 +255,6 @@ if [ -z "${KASEKI_RUN_EVALUATION+x}" ]; then
 fi
 KASEKI_RUN_EVALUATION_MODEL="${KASEKI_RUN_EVALUATION_MODEL:-$KASEKI_GOAL_CHECK_MODEL}"
 KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS="${KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS:-300}"
-KASEKI_PROVIDER_FALLBACK="${KASEKI_PROVIDER_FALLBACK-}"
-KASEKI_PROVIDER_FALLBACK_MODEL="${KASEKI_PROVIDER_FALLBACK_MODEL:-auto}"
 INSTANCE_NAME="${KASEKI_INSTANCE:-kaseki}"
 if [ "$KASEKI_TASK_MODE" = "inspect" ]; then
   KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-1}"
@@ -2116,26 +2114,6 @@ log_retry_classification_reason() {
     "$phase_name" "$category" "$confidence" >&2
 }
 
-# Log auth key resolution attempts for fallback
-log_fallback_auth_attempt() {
-  printf '[FALLBACK AUTH] Attempting to resolve OpenRouter API key from:\n' >&2
-  printf '  1. OPENROUTER_API_KEY environment variable\n' >&2
-  printf '  2. OPENROUTER_API_KEY_FILE (if set)\n' >&2
-  printf '  3. KASEKI_SECRETS_DIR/openrouter_api_key\n' >&2
-  printf '  4. /agents/secrets/openrouter_api_key\n' >&2
-  printf '  5. $HOME/.kaseki/secrets/openrouter_api_key\n' >&2
-}
-
-# Log which auth key path was successfully resolved
-log_fallback_auth_resolved() {
-  local resolved_path="$1"
-  if [ -n "$resolved_path" ]; then
-    printf '[FALLBACK AUTH RESOLVED] Key found at: %s\n' "$resolved_path" >&2
-  else
-    printf '[FALLBACK AUTH RESOLVED] Key resolved from environment variable\n' >&2
-  fi
-}
-
 snapshot_provider_attempt() {
   local raw_events_file="$1" summary_file="$2" phase_name="$3" provider="$4" model="$5" attempt_name="$6"
   local attempt_dir="${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}"
@@ -2198,34 +2176,6 @@ process.stdout.write(JSON.stringify({
 NODE
 }
 
-resolve_openrouter_fallback_key() {
-  openrouter_api_key="${OPENROUTER_API_KEY:-}"
-  if [ -n "$openrouter_api_key" ]; then
-    log_fallback_auth_resolved ""
-    return 0
-  fi
-
-  local candidate
-  local resolved_path=""
-  for candidate in \
-    "${OPENROUTER_API_KEY_FILE:-}" \
-    "${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/openrouter_api_key" \
-    "/agents/secrets/openrouter_api_key" \
-    "$HOME/.kaseki/secrets/openrouter_api_key"; do
-    if [ -n "$candidate" ] && [ -r "$candidate" ] && [ -s "$candidate" ]; then
-      openrouter_api_key="$(tr -d '\r\n' < "$candidate")"
-      if [ -n "$openrouter_api_key" ]; then
-        resolved_path="$candidate"
-        log_fallback_auth_resolved "$resolved_path"
-        return 0
-      fi
-    fi
-  done
-  
-  printf '[FALLBACK AUTH FAILED] No valid OpenRouter API key found\n' >&2
-  return 1
-}
-
 check_if_provider_error_retryable() {
   # Check if the most recent provider error (from summary file) is retryable
   # Sets PROVIDER_ERROR_RETRYABLE variable and returns 0 if retryable, 1 if not
@@ -2263,7 +2213,6 @@ run_pi_with_retry() {
   #   $5: summary_file_base  - Base path for summary files (without .json extension, e.g., "pi-summary")
   #   $6: stderr_target      - Optional: stderr file path
   #   $7: phase_name         - Phase name for logging (e.g., "coding", "scouting")
-  #   $8: allow_fallback     - Set to 1 to allow explicitly configured gateway fallback
   #
   # Returns:
   #   Exit code from Pi invocation (after retry logic applied)
@@ -2288,7 +2237,6 @@ run_pi_with_retry() {
   local summary_file_base="$5"
   local stderr_target="${6:-}"
   local phase_name="${7:-unknown}"
-  local allow_fallback="${8:-0}"
   local pi_exit summary_file attempt=1 original_provider="$KASEKI_PROVIDER" primary_response_id="" retry_response_id=""
   local original_prompt="$prompt" provider_error_type=""
   local previous_retryable="${PROVIDER_ERROR_RETRYABLE:-}"
@@ -2429,49 +2377,6 @@ Recovery instruction: The previous response emitted malformed tool-call JSON. Em
         printf '[RETRY EXHAUSTED] Provider error persisted after retry in %s phase; budget exhausted (correlation_id: %s); exiting with code 88\n' \
           "$phase_name" "$KASEKI_INFERENCE_REQUEST_ID" >&2
       fi
-    fi
-  fi
-
-  if [ "$pi_exit" -eq 88 ] && [ "$PROVIDER_ERROR_RETRYABLE" = "true" ] && [ "$allow_fallback" = "1" ] && \
-    [ "$original_provider" = "gateway" ] && [ "$KASEKI_PROVIDER_FALLBACK" = "openrouter" ]; then
-    
-    log_fallback_auth_attempt
-    
-    if resolve_openrouter_fallback_key; then
-      PROVIDER_ERROR_FALLBACK_PROVIDER="openrouter"
-      PROVIDER_ERROR_FALLBACK_MODEL="$KASEKI_PROVIDER_FALLBACK_MODEL"
-      
-      # Extract error details from primary attempt for fallback context
-      local primary_error_message=""
-      primary_error_message="$(node -e 'try{const s=require(process.argv[1]);process.stdout.write(String(s.primary_provider_error?.message||""))}catch{}' "$summary_file" 2>/dev/null || true)"
-      
-      printf '[FALLBACK] Gateway provider failed in %s phase (error: %s); attempting fallback with provider=%s model=%s correlation_id=%s\n' \
-        "$phase_name" "$primary_error_message" "$PROVIDER_ERROR_FALLBACK_PROVIDER" "$PROVIDER_ERROR_FALLBACK_MODEL" "$KASEKI_INFERENCE_REQUEST_ID" >&2
-      
-      rm -f "$raw_events_file" 2>/dev/null || true
-      : > "$raw_events_file"
-      KASEKI_PROVIDER="$PROVIDER_ERROR_FALLBACK_PROVIDER"
-      model="$PROVIDER_ERROR_FALLBACK_MODEL"
-      invoke_pi
-      pi_exit=$?
-      summarize_invocation || true
-      snapshot_provider_attempt "$raw_events_file" "$summary_file" "$phase_name" "$PROVIDER_ERROR_FALLBACK_PROVIDER" "$PROVIDER_ERROR_FALLBACK_MODEL" "fallback-1"
-      PROVIDER_ERROR_RECOVERY_JSON="$(provider_error_json_from_summary "$summary_file" "$phase_name" "$PROVIDER_ERROR_FALLBACK_PROVIDER" "$PROVIDER_ERROR_FALLBACK_MODEL")"
-      KASEKI_PROVIDER="$original_provider"
-      if [ "$pi_exit" -eq 0 ]; then
-        PROVIDER_ERROR_FALLBACK_RESULT="success"
-        printf '[FALLBACK SUCCESS] OpenRouter completed the %s phase (correlation_id: %s)\n' \
-          "$phase_name" "$KASEKI_INFERENCE_REQUEST_ID" >&2
-      else
-        PROVIDER_ERROR_FALLBACK_RESULT="failed"
-        local fallback_error_message=""
-        fallback_error_message="$(node -e 'try{const s=require(process.argv[1]);process.stdout.write(String(s.primary_provider_error?.message||""))}catch{}' "$summary_file" 2>/dev/null || true)"
-        printf '[FALLBACK FAILED] OpenRouter failed the %s phase with exit %s (error: %s, correlation_id: %s)\n' \
-          "$phase_name" "$pi_exit" "$fallback_error_message" "$KASEKI_INFERENCE_REQUEST_ID" >&2
-      fi
-      openrouter_api_key=""
-    else
-      printf '[FALLBACK SKIPPED] Could not resolve OpenRouter API key; fallback cancelled\n' >&2
     fi
   fi
 
@@ -10422,7 +10327,7 @@ NODE
   
   agent_prompt="$(build_agent_prompt)"
   PI_START_EPOCH="$(date +%s)"
-  run_pi_with_retry "$RAW_EVENTS" "$KASEKI_AGENT_TIMEOUT_SECONDS" "$KASEKI_MODEL" "$agent_prompt" "pi-summary" "${KASEKI_RESULTS_DIR}/pi-stderr.log" "pi coding" "1"
+  run_pi_with_retry "$RAW_EVENTS" "$KASEKI_AGENT_TIMEOUT_SECONDS" "$KASEKI_MODEL" "$agent_prompt" "pi-summary" "${KASEKI_RESULTS_DIR}/pi-stderr.log" "pi coding"
   PI_EXIT="$?"
   unset agent_prompt
   PI_DURATION_SECONDS=$(($(date +%s) - PI_START_EPOCH))
