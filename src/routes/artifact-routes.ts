@@ -198,10 +198,12 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
         if (artifactName === '.gateway-diagnostics.jsonl') return 0;
         if (artifactName === 'provider-attempts.jsonl') return 1;
         if (artifactName === 'gateway-summary.json') return 2;
-        if (artifactName === 'failure.json') return 3;
-        if (artifactName === 'result-summary.md') return 4;
-        if (artifactName === 'pi-agent-diagnostics.jsonl') return 5;
-        if (artifactName === 'pi-events.jsonl') return 6;
+        // Preserve usable work even when the provider fails after editing.
+        if (artifactName === 'git.diff') return 3;
+        if (artifactName === 'failure.json') return 4;
+        if (artifactName === 'result-summary.md') return 5;
+        if (artifactName === 'pi-agent-diagnostics.jsonl') return 6;
+        if (artifactName === 'pi-events.jsonl') return 7;
       }
       if (preAgentValidationFailed) {
         if (artifactName === 'test-baseline-comparison.json') return 0;
