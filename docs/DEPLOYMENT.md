@@ -802,26 +802,25 @@ KASEKI_API_LOG_DIR=/var/log/kaseki-api
 
 ### LLM Provider Configuration
 
-Kaseki Agent uses a two-tier LLM provider system:
+Kaseki Agent uses one active LLM provider per run:
 
 1. **Primary Provider** (selected via `KASEKI_PROVIDER`):
    - `gateway` (default): LLM Gateway for all agent runs
-   - `openrouter`: OpenRouter for all agent runs
+   - `openrouter`: OpenRouter directly for all agent runs
 
-2. **Fallback Provider**: OpenRouter is always validated during startup as a backup, regardless of primary selection
+OpenRouter is supported as an explicit primary provider, not as a backup path for gateway outages. When `KASEKI_PROVIDER=gateway`, gateway failures are retried on the gateway. If retries are exhausted, the run reports a gateway provider failure instead of switching to OpenRouter.
 
 **Provider Selection & Startup Behavior:**
 
 When the API service starts, it logs the active LLM provider:
 
 ```
-ℹ Active LLM provider: gateway (with OpenRouter fallback)
+ℹ Active LLM provider: gateway
 ```
 
 Startup checks are organized by category:
 
 - **Primary LLM Provider** — validates the active provider (gateway or openrouter)
-- **Fallback LLM Provider** — always validates OpenRouter availability
 - **GitHub Integration** — separate from provider choice
 - **Platform Infrastructure** — /agents paths, git config
 
@@ -835,8 +834,8 @@ KASEKI_PROVIDER=gateway
 LLM_GATEWAY_URL=https://gateway.example.com/v1
 LLM_GATEWAY_API_KEY_FILE=/agents/secrets/llm_gateway_api_key
 
-# Also configure OpenRouter as optional fallback
-OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key
+# OpenRouter is not used as a gateway fallback. Configure it only when
+# running OpenRouter directly as the primary provider.
 ```
 
 Then set up secrets:
@@ -846,12 +845,8 @@ sudo tee /agents/secrets/llm_gateway_api_key >/dev/null <<'EOF'
 your-gateway-api-key-here
 EOF
 
-sudo tee /agents/secrets/openrouter_api_key >/dev/null <<'EOF'
-your-openrouter-api-key-here
-EOF
-
-sudo chown 10000:10000 /agents/secrets/llm_gateway_api_key /agents/secrets/openrouter_api_key
-sudo chmod 600 /agents/secrets/llm_gateway_api_key /agents/secrets/openrouter_api_key
+sudo chown 10000:10000 /agents/secrets/llm_gateway_api_key
+sudo chmod 600 /agents/secrets/llm_gateway_api_key
 ```
 
 **Using OpenRouter:**
@@ -861,15 +856,13 @@ sudo chmod 600 /agents/secrets/llm_gateway_api_key /agents/secrets/openrouter_ap
 KASEKI_PROVIDER=openrouter
 OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key
 
-# Optionally keep Gateway configured for reference/fallback testing
-LLM_GATEWAY_URL=https://gateway.example.com/v1
-LLM_GATEWAY_API_KEY_FILE=/agents/secrets/llm_gateway_api_key
+# Gateway settings are not used while OpenRouter is the primary provider.
 ```
 
 **Startup Log Example (Gateway Primary):**
 
 ```
-ℹ Active LLM provider: gateway (with OpenRouter fallback)
+ℹ Active LLM provider: gateway
 
 ℹ Checking primary LLM provider...
 ✓ LLM_GATEWAY_URL is set
