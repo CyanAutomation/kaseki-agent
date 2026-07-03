@@ -93,16 +93,16 @@ export default function (pi) {
   const model = process.env.LLM_GATEWAY_MODEL || 'dynamic/kaseki-agent';
   const gatewayHeaders = gatewayUrl?.includes('gateway.ai.cloudflare.com')
     ? {
-        'cf-aig-authorization': `Bearer ${gatewayApiKey}`,
-        'cf-aig-collect-log-payload': process.env.KASEKI_GATEWAY_LOG_PAYLOADS === '1' ? 'true' : 'false',
-        'cf-aig-metadata': JSON.stringify({
-          run_id: process.env.KASEKI_INSTANCE || 'unknown',
-          phase: process.env.KASEKI_INFERENCE_PHASE || 'unknown',
-          attempt: process.env.KASEKI_INFERENCE_ATTEMPT || 'unknown',
-          request_id: process.env.KASEKI_INFERENCE_REQUEST_ID || 'unknown',
-          component: 'kaseki-agent',
-        }),
-      }
+      'cf-aig-authorization': `Bearer ${gatewayApiKey}`,
+      'cf-aig-collect-log-payload': process.env.KASEKI_GATEWAY_LOG_PAYLOADS === '1' ? 'true' : 'false',
+      'cf-aig-metadata': JSON.stringify({
+        run_id: process.env.KASEKI_INSTANCE || 'unknown',
+        phase: process.env.KASEKI_INFERENCE_PHASE || 'unknown',
+        attempt: process.env.KASEKI_INFERENCE_ATTEMPT || 'unknown',
+        request_id: process.env.KASEKI_INFERENCE_REQUEST_ID || 'unknown',
+        component: 'kaseki-agent',
+      }),
+    }
     : undefined;
 
   if (!gatewayUrl) {
