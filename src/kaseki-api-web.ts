@@ -2443,14 +2443,7 @@ const controllerPage = String.raw`<!doctype html>
             } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'skipped') {
               setResponseSummary('Gateway Responses API passed. Pi provider adapter smoke was skipped; run production check with piProvider=true.');
             } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'ok') {
-              if (payload.fallbackProviderSmoke && payload.fallbackProviderSmoke.status === 'error') {
-                setResponseSummary('Primary gateway and Pi adapter passed. OpenRouter recovery failed: ' +
-                  stripControlSequences(payload.fallbackProviderSmoke.detail || 'unknown fallback error').slice(0, 240));
-              } else if (payload.fallbackProviderSmoke && payload.fallbackProviderSmoke.status === 'ok') {
-                setResponseSummary('Gateway, Pi provider adapter, and OpenRouter recovery passed.');
-              } else {
-                setResponseSummary('Gateway Responses API and Pi provider adapter passed.');
-              }
+              setResponseSummary('Gateway Responses API and Pi provider adapter passed.');
             } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'error') {
               const diag = payload.piProviderSmoke.diagnostics || {};
               const fieldsFound = diag.fieldsFound || [];
