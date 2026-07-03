@@ -1874,6 +1874,11 @@ const controllerPage = String.raw`<!doctype html>
       function setResponseSummary(payload) {
         if (!responseSummary) return;
         responseSummary.replaceChildren();
+        if (typeof payload === 'string') {
+          responseSummary.hidden = false;
+          appendSummaryItem('Gateway test', stripControlSequences(payload), { fullWidth: true });
+          return;
+        }
         const items = [];
         if (payload && typeof payload === 'object') {
           const providerEmptyTurn = isProviderEmptyAssistantTurn(payload);
@@ -2439,11 +2444,11 @@ const controllerPage = String.raw`<!doctype html>
               : 'Failed';
             setSummary('llm-test', llmSummary, payload.status === 'ok' ? 'ok' : 'bad');
             if (!payload.piProviderSmoke) {
-              setResponseSummary('Gateway Responses API passed. Pi provider adapter smoke was not requested; add piProvider=true to run it.');
+              setResponseSummary('Gateway passed. Pi provider adapter smoke was not requested; add piProvider=true to run it.');
             } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'skipped') {
-              setResponseSummary('Gateway Responses API passed. Pi provider adapter smoke was skipped; run production check with piProvider=true.');
+              setResponseSummary('Gateway passed. Pi provider adapter smoke was skipped; run production check with piProvider=true.');
             } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'ok') {
-              setResponseSummary('Gateway Responses API and Pi provider adapter passed.');
+              setResponseSummary('Gateway and Pi provider adapter passed.');
             } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'error') {
               const diag = payload.piProviderSmoke.diagnostics || {};
               const fieldsFound = diag.fieldsFound || [];
