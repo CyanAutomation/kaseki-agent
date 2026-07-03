@@ -305,8 +305,8 @@ If dependency restore logs show EXDEV/cross-device hardlink failures:
 | Variable | Default | Type | Purpose |
 |----------|---------|------|---------|
 | `KASEKI_MODEL` | `dynamic/kaseki-agent` | string | Model identifier. Gateway production deployments should use the default `dynamic/kaseki-agent` unless a specific gateway model is intentionally configured. |
-| `KASEKI_PROVIDER_FALLBACK` | `openrouter` | string | Runtime fallback used after a retryable gateway error exhausts its gateway retry. Set to an empty value to disable. |
-| `KASEKI_PROVIDER_FALLBACK_MODEL` | `auto` | string | Model selected when runtime recovery switches from the gateway to OpenRouter. |
+| `KASEKI_PROVIDER_FALLBACK` | — | string | Reserved opt-in extension point. The current runtime does not switch from the gateway to OpenRouter after retry exhaustion; an empty value explicitly disables provider switching. |
+| `KASEKI_PROVIDER_FALLBACK_MODEL` | — | string | Reserved opt-in extension point for a future fallback model. The current runtime leaves fallback telemetry unset when gateway retries fail. |
 
 **Common Model Values:**
 
