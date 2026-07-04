@@ -187,6 +187,7 @@ RUN chmod +x \
     && mkdir -p /usr/local/bin/scripts/lib \
     && install -m 0644 /app/scripts/lib/json.sh /usr/local/bin/scripts/lib/json.sh \
     && install -m 0644 /app/scripts/lib/json-events.sh /usr/local/bin/scripts/lib/json-events.sh \
+    && install -m 0644 /app/scripts/lib/provider-retry.sh /usr/local/bin/scripts/lib/provider-retry.sh \
     && chmod 0755 \
       /usr/local/bin/kaseki-entrypoint \
       /usr/local/bin/kaseki-pi-event-filter \
@@ -318,6 +319,7 @@ RUN mkdir -p /scripts \
     && mkdir -p /usr/local/bin/scripts/lib \
     && install -m 0644 /app/scripts/lib/json.sh /usr/local/bin/scripts/lib/json.sh \
     && install -m 0644 /app/scripts/lib/json-events.sh /usr/local/bin/scripts/lib/json-events.sh \
+    && install -m 0644 /app/scripts/lib/provider-retry.sh /usr/local/bin/scripts/lib/provider-retry.sh \
     && chmod 0755 \
       /usr/local/bin/kaseki-entrypoint \
       /usr/local/bin/kaseki-pi-event-filter \
