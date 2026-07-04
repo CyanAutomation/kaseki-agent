@@ -83,7 +83,7 @@ function isRetryableStatus(status: number): boolean {
  *
  * Returns success=true and skipped=true for organization repos (expected case).
  * Returns success=true and skipped=false for successful personal repo review requests.
- * Returns success=false for unexpected errors that couldn't be recovered.
+ * Returns success=false for non-successful GitHub API responses and unexpected errors.
  */
 export async function requestOwnerReview(
   pr: GitHubPullRequest,
@@ -159,9 +159,9 @@ export async function requestOwnerReview(
 
       // Handle specific error cases
       if (response.status === 422) {
-        // Already requested or validation error
+        // Already requested or validation error - don't retry
         return {
-          success: true,
+          success: false,
           status: 422,
           message: 'Owner already has review request pending or user cannot be requested',
           skipped: false,
@@ -169,9 +169,9 @@ export async function requestOwnerReview(
       }
 
       if (response.status === 403) {
-        // Permission error - don't retry, but non-fatal
+        // Permission error - don't retry
         return {
-          success: true,
+          success: false,
           status: 403,
           message: 'GitHub App lacks permission to request reviewers (HTTP 403)',
           skipped: false,
@@ -179,9 +179,9 @@ export async function requestOwnerReview(
       }
 
       if (response.status === 404) {
-        // Not found - don't retry, but non-fatal
+        // Not found - don't retry
         return {
-          success: true,
+          success: false,
           status: 404,
           message: `Could not find user ${ownerLogin} or PR #${prNumber} is not accessible`,
           skipped: false,
@@ -204,7 +204,7 @@ export async function requestOwnerReview(
 
       // Unexpected status - don't retry
       return {
-        success: true, // Non-fatal for PR creation
+        success: false,
         status: response.status,
         message: `Unexpected HTTP status ${response.status} requesting owner review`,
         skipped: false,
