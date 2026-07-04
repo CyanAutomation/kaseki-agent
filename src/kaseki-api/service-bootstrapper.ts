@@ -21,8 +21,34 @@ export interface BootstrappedServices {
 }
 
 /**
- * Dependencies required for graceful shutdown orchestration
+ * Factories for constructing bootstrapped service instances.
  */
+export interface ServiceBootstrapFactories {
+  createResultCache: (config: KasekiApiConfig) => ResultCache;
+  createWebhookManager: (config: KasekiApiConfig) => WebhookManager;
+  createIdempotencyStore: (config: KasekiApiConfig) => IdempotencyStore;
+  createPreFlightValidator: (config: KasekiApiConfig) => PreFlightValidator;
+  createJobScheduler: (
+    config: KasekiApiConfig,
+    webhookManager: WebhookManager,
+    artifactCache: ResultCache,
+  ) => JobScheduler;
+}
+
+export const defaultServiceBootstrapFactories: ServiceBootstrapFactories = {
+  createResultCache: (config) =>
+    new ResultCache({
+      maxEntries: config.artifactCacheMaxEntries,
+      ttlMs: config.artifactCacheTtlMs,
+      maxFileBytes: config.artifactCacheMaxFileBytes,
+    }),
+  createWebhookManager: (config) => new WebhookManager(config.resultsDir),
+  createIdempotencyStore: (config) => new IdempotencyStore(config.resultsDir, 24),
+  createPreFlightValidator: () => new PreFlightValidator(),
+  createJobScheduler: (config, webhookManager, artifactCache) =>
+    new JobScheduler(config, webhookManager, artifactCache),
+};
+
 export interface ShutdownDeps {
   server: Server;
   scheduler: Pick<JobScheduler, 'shutdown'>;
@@ -48,6 +74,7 @@ export interface ShutdownDeps {
  */
 export async function bootstrapServices(
   config: KasekiApiConfig,
+  factories: ServiceBootstrapFactories = defaultServiceBootstrapFactories,
 ): Promise<BootstrappedServices> {
   const bootstrapStartTime = performance.now();
   logger.info('Starting service bootstrap');
@@ -61,11 +88,7 @@ export async function bootstrapServices(
     // 1. Create artifact cache (no dependencies)
     const cacheStartTime = performance.now();
     logger.info('Initializing ResultCache');
-    const artifactCache = new ResultCache({
-      maxEntries: config.artifactCacheMaxEntries,
-      ttlMs: config.artifactCacheTtlMs,
-      maxFileBytes: config.artifactCacheMaxFileBytes,
-    });
+    const artifactCache = factories.createResultCache(config);
     const cacheDuration = performance.now() - cacheStartTime;
     componentTimings.push({ name: 'ResultCache', durationMs: cacheDuration });
     logger.info(`ResultCache initialized (${cacheDuration.toFixed(1)}ms)`);
@@ -77,7 +100,7 @@ export async function bootstrapServices(
     // 2. Create webhook manager (depends on: resultsDir)
     const webhookStartTime = performance.now();
     logger.info('Initializing WebhookManager');
-    const webhookManager = new WebhookManager(config.resultsDir);
+    const webhookManager = factories.createWebhookManager(config);
     const webhookDuration = performance.now() - webhookStartTime;
     componentTimings.push({ name: 'WebhookManager', durationMs: webhookDuration });
     logger.info(`WebhookManager initialized (${webhookDuration.toFixed(1)}ms)`);
@@ -89,7 +112,7 @@ export async function bootstrapServices(
     // 3. Create idempotency store (depends on: resultsDir)
     const idempotencyStartTime = performance.now();
     logger.info('Initializing IdempotencyStore');
-    const idempotencyStore = new IdempotencyStore(config.resultsDir, 24);
+    const idempotencyStore = factories.createIdempotencyStore(config);
     const idempotencyDuration = performance.now() - idempotencyStartTime;
     componentTimings.push({ name: 'IdempotencyStore', durationMs: idempotencyDuration });
     logger.info(`IdempotencyStore initialized (${idempotencyDuration.toFixed(1)}ms)`);
@@ -101,7 +124,7 @@ export async function bootstrapServices(
     // 4. Create pre-flight validator (no dependencies)
     const validatorStartTime = performance.now();
     logger.info('Initializing PreFlightValidator');
-    const preFlightValidator = new PreFlightValidator();
+    const preFlightValidator = factories.createPreFlightValidator(config);
     const validatorDuration = performance.now() - validatorStartTime;
     componentTimings.push({ name: 'PreFlightValidator', durationMs: validatorDuration });
     logger.info(`PreFlightValidator initialized (${validatorDuration.toFixed(1)}ms)`);
@@ -109,7 +132,7 @@ export async function bootstrapServices(
     // 5. Create scheduler (depends on: config, webhookManager, artifactCache)
     const schedulerStartTime = performance.now();
     logger.info('Initializing JobScheduler');
-    const scheduler = new JobScheduler(config, webhookManager, artifactCache);
+    const scheduler = factories.createJobScheduler(config, webhookManager, artifactCache);
     await scheduler.ready();
     const schedulerDuration = performance.now() - schedulerStartTime;
     componentTimings.push({ name: 'JobScheduler', durationMs: schedulerDuration });
