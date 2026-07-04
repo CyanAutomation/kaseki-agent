@@ -812,7 +812,9 @@ describe('StatusResponseBuilder', () => {
 
       const responseWithoutMetadataStages = builder.buildStatus(job as Job);
 
-      expect(responseWithoutMetadataStages.taskProgressPercent).not.toBe(50);
+      // API responses preserve the per-run high-water mark even if metadata is
+      // rewritten or temporarily unavailable between polls.
+      expect(responseWithoutMetadataStages.taskProgressPercent).toBe(50);
     });
 
     it('should read progress from progress.jsonl file', () => {
