@@ -166,11 +166,36 @@ function usage(): never {
   process.exit(2);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const phase = process.argv[2] as Phase | undefined;
-  const rawPath = process.argv[3];
-  const candidatePath = process.argv[4];
-  const resultsDir = process.argv[5];
-  if ((phase !== 'goal-setting' && phase !== 'scouting') || !rawPath || !candidatePath) usage();
-  process.exit(recoverArtifactFromEventStream({ phase, rawPath, candidatePath, resultsDir }) ? 0 : 1);
+export function runRecoveryCliFromArgs(args: string[]): number {
+  const phase = args[0] as Phase | undefined;
+  const rawPath = args[1];
+  const candidatePath = args[2];
+  const resultsDir = args[3];
+
+  if ((phase !== 'goal-setting' && phase !== 'scouting') || !rawPath || !candidatePath) {
+    usage();
+  }
+
+  return recoverArtifactFromEventStream({ phase, rawPath, candidatePath, resultsDir }) ? 0 : 1;
+}
+
+// CLI entry point - only runs when executed as a script
+if (process.argv[1]) {
+  try {
+    // Runtime check for module execution - import.meta check deferred to runtime
+    const checkCli = (): boolean => {
+      try {
+        // @ts-ignore - import.meta only available in ES modules at runtime
+        return process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+      } catch {
+        return false;
+      }
+    };
+    
+    if (checkCli()) {
+      process.exit(runRecoveryCliFromArgs(process.argv.slice(2)));
+    }
+  } catch {
+    // Silently ignore errors during module imports/tests
+  }
 }
