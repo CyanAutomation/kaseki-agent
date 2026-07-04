@@ -351,6 +351,8 @@ check_dockerfile_packaging_contracts() {
   # Public container entrypoint: changing this breaks docker run and downstream deployments.
   assert_file_contains Dockerfile '^ENTRYPOINT \["/usr/bin/tini", "--", "/usr/local/bin/kaseki-entrypoint"\]$' \
     'Dockerfile entrypoint does not dispatch through kaseki-entrypoint'
+  assert_file_contains Dockerfile 'apt-get install[^&]*shellcheck' \
+    'Dockerfile runtime image must include shellcheck because repository lint scripts invoke it'
 
   # Scouting validator is run before agent work and must be present in final stripped images.
   assert_dockerfile_installs_executable /app/dist/scouting-allowlist.js /usr/local/bin/scripts/scouting-allowlist.js 2 \
