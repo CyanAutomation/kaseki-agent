@@ -96,6 +96,7 @@ export interface PiProviderSmokeTestResult {
   model: string;
   outputEventCount?: number;
   assistantTextChars?: number;
+  codingShapeValidated?: boolean;
   exitCode?: number | null;
   remediation?: string;
   diagnostics?: {
@@ -267,8 +268,11 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
   }
 
   const prompt = [
-    'Return exactly this plain text and nothing else:',
-    'kaseki pi provider smoke ok',
+    'You are the coding phase of an ephemeral repository agent.',
+    'Synthetic task: inspect docs/INDEX.md and propose one concise documentation improvement.',
+    'Do not call tools or modify files during this smoke test.',
+    'Return exactly one JSON object and no markdown:',
+    '{"status":"ok","phase":"coding","changed_files":[],"summary":"kaseki pi provider smoke ok"}',
   ].join('\n');
   const child = spawnSync('pi', ['--mode', 'json', '--no-session', '--provider', 'gateway', '--model', model, prompt], {
     encoding: 'utf8',
@@ -371,6 +375,29 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
     };
   }
 
+  let codingShapeValidated = false;
+  try {
+    const smokePayload = JSON.parse(assistantText.trim()) as Record<string, unknown>;
+    codingShapeValidated = smokePayload.status === 'ok' && smokePayload.phase === 'coding';
+  } catch {
+    codingShapeValidated = false;
+  }
+  if (!codingShapeValidated) {
+    return {
+      status: 'error',
+      detail: 'Pi provider produced assistant text but did not satisfy the coding-shaped JSON contract',
+      responseTime,
+      timestamp,
+      provider: 'gateway',
+      model,
+      exitCode: child.status,
+      outputEventCount: countPiJsonEvents(stdout),
+      assistantTextChars: assistantText.trim().length,
+      codingShapeValidated: false,
+      remediation: 'Inspect the gateway response body and Pi event stream; a simple text smoke may pass while coding-shaped structured output fails.',
+    };
+  }
+
   return {
     status: 'ok',
     detail: `Pi gateway provider produced assistant text (${responseTime}ms)`,
@@ -381,6 +408,7 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
     exitCode: child.status,
     outputEventCount: countPiJsonEvents(stdout),
     assistantTextChars: assistantText.trim().length,
+    codingShapeValidated,
   };
 }
 

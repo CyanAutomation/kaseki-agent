@@ -2373,6 +2373,14 @@ Recovery instruction: The previous response emitted malformed tool-call JSON. Em
       : > "$raw_events_file"
       
       attempt=2
+      previous_request_id="$KASEKI_INFERENCE_REQUEST_ID"
+      KASEKI_INFERENCE_REQUEST_ID="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())' 2>/dev/null || printf 'req-%s-retry' "$(date +%s)")"
+      export KASEKI_INFERENCE_REQUEST_ID
+      prompt="$prompt
+
+Retry request identity: $KASEKI_INFERENCE_REQUEST_ID. Treat this as a fresh inference attempt; do not replay a cached response from the previous request."
+      printf '[RETRY CORRELATION] Fresh request %s replaces failed request %s for retry attempt\n' \
+        "$KASEKI_INFERENCE_REQUEST_ID" "$previous_request_id" >&2
       invoke_pi
       pi_exit=$?
       summarize_invocation || true
@@ -5587,6 +5595,7 @@ ${caveman_instruction:+$caveman_instruction
 }You are a goal-setting Pi agent. Your task is to upgrade a user's task prompt into a mature, specific goal that maximizes downstream agent success.
 
 - Write exactly one JSON object to $GOAL_SETTING_CANDIDATE_ARTIFACT.
+- Your final action must write and then read back $GOAL_SETTING_CANDIDATE_ARTIFACT; assistant text alone does not satisfy the artifact contract.
 
 === GOAL-SETTING BEST PRACTICES ===
 
@@ -7724,6 +7733,7 @@ Summarize the actual changes and their impact, NOT the original task.
 - Do not run git add, git commit, git push, gh, hub, package installation, or commands that modify files.
 - Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
 - Write exactly one JSON object to $RUN_EVALUATION_CANDIDATE_ARTIFACT.
+- Your final action must write and then read back $RUN_EVALUATION_CANDIDATE_ARTIFACT; assistant text alone does not satisfy the artifact contract.
 - Treat this evaluation as annotate-only. Do not recommend blocking the PR.
 - Use goal-setting quality metrics to ground your confidence. Low-quality goals = lower reviewer_confidence even if goal-check passed.
 
@@ -9836,9 +9846,17 @@ prepare_dependencies() {
   fi
 
   if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ] && [ ! -f "$workspace_cache_root/validated" ]; then
-    printf 'Dependency cache status: cache has no validation marker; invalidating before restore.\n'
-    set_dependency_cache_status "workspace-cache-invalid" "$cache_detail reason=missing_validation_marker"
-    invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
+    if [ -f "$stamp_file" ] && grep -qx "$lock_hash" "$stamp_file" && \
+      (cd "$workspace_cache_root" && npm ls --depth=0 >/dev/null 2>&1); then
+      printf 'Dependency cache status: legacy cache passed lock-hash and npm validation; creating validation marker.\n'
+      : > "$workspace_cache_root/validated"
+      set_dependency_cache_status "workspace-cache-validated" "$cache_detail reason=legacy_marker_repaired"
+      emit_event "dependency_cache_decision" "strategy=repair_validation_marker" "reason=legacy_cache_valid" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key"
+    else
+      printf 'Dependency cache status: cache has no validation marker and failed legacy validation; invalidating before restore.\n'
+      set_dependency_cache_status "workspace-cache-invalid" "$cache_detail reason=missing_validation_marker_validation_failed"
+      invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
+    fi
   fi
 
   if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ]; then
@@ -10806,10 +10824,14 @@ else
     "$GITHUB_APP_ENABLED" | tee -a /dev/null
   emit_progress "github operations" "skipped: $(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")"
 fi
-if [ "$GITHUB_APP_ENABLED" = "1" ]; then
+if [ "$GITHUB_APP_ENABLED" = "1" ] && [ "${#GITHUB_SKIP_REASONS[@]}" -eq 0 ]; then
   emit_progress "github operations" "finished with push exit $GITHUB_PUSH_EXIT and pr exit $GITHUB_PR_EXIT"
 fi
-record_stage_timing "github operations" "$GITHUB_PUSH_EXIT" "$(($(date +%s) - stage_start))" "pr_exit=$GITHUB_PR_EXIT enabled=$GITHUB_APP_ENABLED"
+if [ "${#GITHUB_SKIP_REASONS[@]}" -gt 0 ]; then
+  record_stage_timing "github operations" "0" "$(($(date +%s) - stage_start))" "status=skipped reasons=$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}") enabled=$GITHUB_APP_ENABLED"
+else
+  record_stage_timing "github operations" "$GITHUB_PUSH_EXIT" "$(($(date +%s) - stage_start))" "status=finished pr_exit=$GITHUB_PR_EXIT enabled=$GITHUB_APP_ENABLED"
+fi
 
 if [ "$VALIDATION_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
   STATUS="$VALIDATION_EXIT"

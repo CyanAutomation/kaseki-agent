@@ -61,6 +61,7 @@ export class StatusResponseBuilder {
   private taskProgressCalculator: TaskProgressCalculator;
   private diagnosticExtractor: DiagnosticExtractor;
   private artifactContentLoader: ArtifactContentLoader;
+  private readonly progressHighWater = new Map<string, number>();
 
   constructor(
     private scheduler: JobScheduler,
@@ -104,6 +105,10 @@ export class StatusResponseBuilder {
     this.addTaskProgressInfo(response, job);
     this.addArtifactInfo(response, job);
     this.addDiagnosticSummary(response, job);
+
+    if (job.status === 'failed' && !response.error && response.diagnosticSummary?.primaryReason) {
+      response.error = response.diagnosticSummary.primaryReason;
+    }
 
     return response;
   }
@@ -480,12 +485,23 @@ export class StatusResponseBuilder {
   private addTaskProgressInfo(response: StatusResponse, job: Job): void {
     const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
     const metadata = this.readMetadata(runDir);
-    response.taskProgressPercent = this.taskProgressCalculator.calculateProgressPercent(
+    const calculated = this.taskProgressCalculator.calculateProgressPercent(
       response,
       job,
       runDir,
       metadata
     );
+    if (typeof calculated !== 'number') {
+      return;
+    }
+
+    const previous = this.progressHighWater.get(job.id) ?? 0;
+    response.taskProgressPercent = Math.max(previous, calculated);
+    if (job.status === 'running') {
+      this.progressHighWater.set(job.id, response.taskProgressPercent);
+    } else {
+      this.progressHighWater.delete(job.id);
+    }
   }
 
   private addDiagnosticSummary(response: StatusResponse, job: Job): void {

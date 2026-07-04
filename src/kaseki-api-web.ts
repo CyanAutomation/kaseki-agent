@@ -3102,9 +3102,41 @@ const controllerPage = String.raw`<!doctype html>
        * Fetches an artifact with authentication and displays it inline in the modal.
        * Handles errors gracefully with user-friendly messages.
        */
-      async function openArtifact(runId, artifactName) {
+      const MAX_INLINE_ARTIFACT_BYTES = 512 * 1024;
+
+      async function openArtifact(runId, artifactName, artifactSize) {
         const artifactsOutputEl = document.querySelector('#artifacts-output');
         if (!artifactsOutputEl) return;
+
+        if (Number(artifactSize) > MAX_INLINE_ARTIFACT_BYTES) {
+          artifactsOutputEl.innerHTML = '';
+          const notice = document.createElement('div');
+          notice.className = 'artifact-large-notice';
+          notice.textContent = artifactName + ' is ' + formatBytes(artifactSize) +
+            '. Inline rendering is limited to ' + formatBytes(MAX_INLINE_ARTIFACT_BYTES) + ' to keep the console responsive.';
+          const download = document.createElement('button');
+          download.type = 'button';
+          download.textContent = 'Download full artifact';
+          download.className = 'artifact-download-link';
+          download.addEventListener('click', async () => {
+            const token = getApiToken();
+            const response = await fetch(artifactUrl(runId, artifactName), {
+              headers: { 'Authorization': 'Bearer ' + token },
+            });
+            if (!response.ok) {
+              showToast('Could not download artifact (' + response.status + ').', 'error', 2500);
+              return;
+            }
+            const blobUrl = URL.createObjectURL(await response.blob());
+            const anchor = document.createElement('a');
+            anchor.href = blobUrl;
+            anchor.download = artifactName;
+            anchor.click();
+            URL.revokeObjectURL(blobUrl);
+          });
+          artifactsOutputEl.append(notice, download);
+          return;
+        }
         
         // Show loading state
         const originalContent = artifactsOutputEl.innerHTML;
@@ -3192,7 +3224,8 @@ const controllerPage = String.raw`<!doctype html>
               item.addEventListener('click', async (event) => {
                 event.preventDefault();
                 const name = item.querySelector('.artifact-item-name').textContent;
-                await openArtifact(runId, name);
+                const itemSize = Number(item.dataset.artifactSize || 0);
+                await openArtifact(runId, name, itemSize);
               });
             });
           });
@@ -3266,6 +3299,7 @@ const controllerPage = String.raw`<!doctype html>
           const item = document.createElement('button');
           item.className = 'artifact-item';
           item.type = 'button';
+          item.dataset.artifactSize = String(artifact.size || 0);
           
           const nameSpan = document.createElement('div');
           nameSpan.className = 'artifact-item-name';
@@ -3290,7 +3324,7 @@ const controllerPage = String.raw`<!doctype html>
           if (description.textContent) item.appendChild(description);
           
           item.addEventListener('click', async () => {
-            await openArtifact(runId, artifact.name);
+            await openArtifact(runId, artifact.name, artifact.size);
           });
           
           listDiv.appendChild(item);
