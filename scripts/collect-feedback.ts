@@ -47,7 +47,7 @@ function parseJson(filePath: string): Record<string, unknown> {
   }
 }
 
-export function collectGoalCheckFeedback(instanceName: string, goalSettingPath: string, goalCheckPath: string, metadataPath: string): Feedback {
+function collectGoalCheckFeedback(instanceName: string, goalSettingPath: string, goalCheckPath: string, metadataPath: string): Feedback {
   const goalSetting = parseJson(goalSettingPath) as Record<string, unknown>;
   const goalCheck = parseJson(goalCheckPath) as Record<string, unknown>;
   const metadata = parseJson(metadataPath) as Record<string, unknown>;
@@ -92,7 +92,7 @@ export function collectGoalCheckFeedback(instanceName: string, goalSettingPath: 
   return feedback;
 }
 
-export function collectRunEvaluationFeedback(instanceName: string, runEvaluationPath: string, metadataPath: string): Feedback {
+function collectRunEvaluationFeedback(instanceName: string, runEvaluationPath: string, metadataPath: string): Feedback {
   const runEvaluation = parseJson(runEvaluationPath) as Record<string, unknown>;
   const metadata = parseJson(metadataPath) as Record<string, unknown>;
 
@@ -155,7 +155,7 @@ function parseImprovements(improvements: Record<string, unknown>[]): Improvement
   }));
 }
 
-export function runCollectFeedbackCli(args = process.argv.slice(2)): number {
+function runCollectFeedbackCli(args = process.argv.slice(2)): number {
 
   if (args.length < 2) {
     console.error('Usage: collect-feedback.js <phase> <instance_name> [paths...]');
