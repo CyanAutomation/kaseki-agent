@@ -2,7 +2,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { spawn } from 'child_process';
-import { IdempotencyStore } from './idempotency-store';
+import {
+  createProcessLivenessChecker,
+  IdempotencyStore,
+  withIdempotencyStoreLock,
+} from './idempotency-store';
 import { RunResponse } from './kaseki-api-types';
 
 /**
@@ -110,9 +114,13 @@ describe('IdempotencyStore', () => {
   test('writes pid timestamp and token owner metadata while a lock is held', async () => {
     const lockPath = path.join(resultsDir, '.kaseki-api-idempotency.lock');
     const ownerPath = path.join(lockPath, 'owner.json');
-    const store = new IdempotencyStore(resultsDir, 24);
+    const now = Date.parse('2026-01-03T00:00:00.000Z');
+    const store = new IdempotencyStore(resultsDir, 24, {
+      now: () => now,
+      lockTokenGenerator: () => 'owner-token',
+    });
 
-    await (store as any).withLock(() => {
+    await withIdempotencyStoreLock(store, () => {
       expect(fs.existsSync(ownerPath)).toBe(true);
       const owner = JSON.parse(fs.readFileSync(ownerPath, 'utf-8')) as {
         pid?: number;
@@ -121,10 +129,9 @@ describe('IdempotencyStore', () => {
       };
 
       expect(owner.pid).toBe(process.pid);
-      expect(typeof owner.createdAt).toBe('string');
-      expect(Date.parse(owner.createdAt || '')).not.toBeNaN();
+      expect(owner.createdAt).toBe('2026-01-03T00:00:00.000Z');
       expect(typeof owner.token).toBe('string');
-      expect(owner.token).toContain(`${process.pid}-`);
+      expect(owner.token).toBe(`${process.pid}-${now}-owner-token`);
     });
 
     expect(fs.existsSync(lockPath)).toBe(false);
@@ -136,9 +143,11 @@ describe('IdempotencyStore', () => {
   test('does not release a lock when the owner token was replaced', async () => {
     const lockPath = path.join(resultsDir, '.kaseki-api-idempotency.lock');
     const ownerPath = path.join(lockPath, 'owner.json');
-    const store = new IdempotencyStore(resultsDir, 24);
+    const store = new IdempotencyStore(resultsDir, 24, {
+      lockTokenGenerator: () => 'owner-token',
+    });
 
-    await (store as any).withLock(() => {
+    await withIdempotencyStoreLock(store, () => {
       fs.writeFileSync(
         ownerPath,
         JSON.stringify({
@@ -175,7 +184,9 @@ describe('IdempotencyStore', () => {
       'utf-8',
     );
 
-    const store = new IdempotencyStore(resultsDir, 24);
+    const store = new IdempotencyStore(resultsDir, 24, {
+      processLivenessChecker: () => false,
+    });
     await expect(store.claimOrGet('stale-key', 'stale-fp')).resolves.toEqual({
       kind: 'claimed',
     });
@@ -186,36 +197,14 @@ describe('IdempotencyStore', () => {
 
   // Spec: Windows EPERM (permission denied) means process is dead
   test('treats EPERM process liveness checks as dead on Windows only', () => {
-    const store = new IdempotencyStore(resultsDir, 24);
-    const originalKill = process.kill;
-    const originalPlatform = Object.getOwnPropertyDescriptor(
-      process,
-      'platform',
-    );
     const error = new Error('permission denied') as NodeJS.ErrnoException;
     error.code = 'EPERM';
+    const kill = jest.fn(() => {
+      throw error;
+    }) as unknown as (pid: number, signal: 0) => unknown;
 
-    try {
-      process.kill = jest.fn(() => {
-        throw error;
-      }) as unknown as typeof process.kill;
-
-      Object.defineProperty(process, 'platform', {
-        value: 'linux',
-      });
-      expect((store as any).isProcessAlive(12345)).toBe(true);
-
-      Object.defineProperty(process, 'platform', {
-        value: 'win32',
-      });
-      expect((store as any).isProcessAlive(12345)).toBe(false);
-    } finally {
-      process.kill = originalKill;
-      if (originalPlatform) {
-        Object.defineProperty(process, 'platform', originalPlatform);
-      }
-      store.shutdown();
-    }
+    expect(createProcessLivenessChecker(kill, 'linux')(12345)).toBe(true);
+    expect(createProcessLivenessChecker(kill, 'win32')(12345)).toBe(false);
   });
 
   // ============================================================================
@@ -298,13 +287,13 @@ describe('IdempotencyStore', () => {
       workerPath,
       `
       import * as fs from 'fs';
-      import { IdempotencyStore } from '${path.resolve('src/idempotency-store.ts').replace(/\\/g, '\\\\')}';
+      import { IdempotencyStore, withIdempotencyStoreLock } from '${path.resolve('src/idempotency-store.ts').replace(/\\/g, '\\\\')}';
 
       void (async () => {
         const [resultsDir, markerPath, overlapPath] = process.argv.slice(2);
         const store = new IdempotencyStore(resultsDir, 24);
 
-        await (store as any).withLock(() => {
+        await withIdempotencyStoreLock(store, () => {
         const active = Number(fs.readFileSync(markerPath, 'utf-8'));
         if (active > 0) {
           fs.appendFileSync(overlapPath, 'overlap\\n', 'utf-8');
