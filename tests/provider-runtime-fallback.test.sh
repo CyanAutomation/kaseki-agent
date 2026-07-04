@@ -6,7 +6,7 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 fail() {
-  printf 'FAIL: provider runtime retry without OpenRouter recovery: %s\n' "$*" >&2
+  printf 'FAIL: provider runtime fallback recovery: %s\n' "$*" >&2
   exit 1
 }
 
@@ -62,7 +62,11 @@ run_pi_json_capture() {
   local raw_events_file="$1"
   PI_CALL_COUNT=$((PI_CALL_COUNT + 1))
   printf '%s:%s\n' "$KASEKI_PROVIDER" "$3" >> "$TMP_DIR/calls"
-  printf '%s\n' '{"type":"message_end","message":{"stopReason":"error","errorMessage":"Provider finish_reason: error"}}' > "$raw_events_file"
+  if [ "$KASEKI_PROVIDER" = "openrouter" ]; then
+    printf '%s\n' '{"type":"message_end","message":{"stopReason":"stop","content":"ok"}}' > "$raw_events_file"
+  else
+    printf '%s\n' '{"type":"message_end","message":{"stopReason":"error","errorMessage":"Provider finish_reason: error"}}' > "$raw_events_file"
+  fi
   # Pi 0.77 can report a successful process exit for a terminal provider
   # stream error. The wrapper must derive exit 88 from the event summary.
   return 0
@@ -73,22 +77,22 @@ run_pi_with_retry "$TMP_DIR/raw.jsonl" 30 dynamic/kaseki-agent prompt pi-summary
 run_exit=$?
 set -e
 
-[ "$run_exit" -eq 88 ] || fail "expected exhausted gateway retry exit 88 without OpenRouter recovery, got exit $run_exit"
-[ "$(wc -l < "$TMP_DIR/calls" | tr -d ' ')" -eq 2 ] || fail 'unexpected provider switch after failed gateway retry'
+[ "$run_exit" -eq 0 ] || fail "expected successful OpenRouter recovery, got exit $run_exit"
+[ "$(wc -l < "$TMP_DIR/calls" | tr -d ' ')" -eq 3 ] || fail 'fallback invocation was not recorded'
 [ "$(sed -n '1p' "$TMP_DIR/calls")" = 'gateway:dynamic/kaseki-agent' ] || fail 'first call was not gateway'
 [ "$(sed -n '2p' "$TMP_DIR/calls")" = 'gateway:dynamic/kaseki-agent' ] || fail 'retry was not gateway'
 [ "$PROVIDER_ERROR_RETRY_ATTEMPT_COUNT" -eq 2 ] || fail 'retry attempt telemetry is incorrect'
 [ "$PROVIDER_ERROR_RETRY_RESULT" = 'failed' ] || fail 'retry result telemetry is incorrect'
-[ -z "$PROVIDER_ERROR_FALLBACK_PROVIDER" ] || fail 'fallback provider telemetry should remain empty'
-[ -z "$PROVIDER_ERROR_FALLBACK_MODEL" ] || fail 'fallback model telemetry should remain empty'
-[ "$PROVIDER_ERROR_FALLBACK_RESULT" = 'none' ] || fail 'fallback result telemetry should remain none'
-[ -z "$PROVIDER_ERROR_RECOVERY_JSON" ] || fail 'recovery telemetry should remain empty'
+[ "$(sed -n '3p' "$TMP_DIR/calls")" = 'openrouter:auto' ] || fail 'fallback call did not use configured provider/model'
+[ "$PROVIDER_ERROR_FALLBACK_PROVIDER" = 'openrouter' ] || fail 'fallback provider telemetry is incorrect'
+[ "$PROVIDER_ERROR_FALLBACK_MODEL" = 'auto' ] || fail 'fallback model telemetry is incorrect'
+[ "$PROVIDER_ERROR_FALLBACK_RESULT" = 'success' ] || fail 'fallback result telemetry is incorrect'
 [ "$KASEKI_PROVIDER" = 'gateway' ] || fail 'primary provider was not restored/preserved'
 [ "$KASEKI_PROVIDER_FALLBACK" = 'openrouter' ] || fail 'fallback extension-point env was unexpectedly mutated'
 [ -s "$KASEKI_RESULTS_DIR/provider-attempts/coding/primary-1.events.jsonl" ] || fail 'primary attempt 1 events were not preserved'
 [ -s "$KASEKI_RESULTS_DIR/provider-attempts/coding/primary-2.events.jsonl" ] || fail 'primary attempt 2 events were not preserved'
-[ ! -e "$KASEKI_RESULTS_DIR/provider-attempts/coding/fallback-1.events.jsonl" ] || fail 'OpenRouter fallback events should not be created'
-[ "$(wc -l < "$KASEKI_RESULTS_DIR/provider-attempts.jsonl" | tr -d ' ')" -eq 2 ] || fail 'provider attempt manifest should only record primary attempts'
+[ -s "$KASEKI_RESULTS_DIR/provider-attempts/coding/fallback-1.events.jsonl" ] || fail 'OpenRouter fallback events were not preserved'
+[ "$(wc -l < "$KASEKI_RESULTS_DIR/provider-attempts.jsonl" | tr -d ' ')" -eq 3 ] || fail 'provider attempt manifest should record fallback'
 printf '%s' "$PROVIDER_ERROR_PRIMARY_JSON" | grep -q '"provider":"gateway"' || fail 'primary provider error attribution was not preserved'
 
 # An empty fallback value must also disable provider switching explicitly.
@@ -124,4 +128,4 @@ set -e
 [ "$PROVIDER_ERROR_FALLBACK_RESULT" = 'none' ] || fail 'empty-fallback result telemetry should remain none'
 [ -z "$PROVIDER_ERROR_RECOVERY_JSON" ] || fail 'empty-fallback recovery telemetry should remain empty'
 
-printf 'PASS: provider runtime retry without OpenRouter recovery\n'
+printf 'PASS: provider runtime fallback recovery\n'

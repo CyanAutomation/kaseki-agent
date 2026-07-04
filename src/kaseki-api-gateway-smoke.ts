@@ -111,6 +111,7 @@ export interface PiProviderSmokeTestResult {
     suggestedPatterns?: string[];
     sampleEventStructure?: any;
     debugOutputPath?: string;
+    rawAssistantPreview?: string;
   };
 }
 
@@ -383,6 +384,15 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
     codingShapeValidated = false;
   }
   if (!codingShapeValidated) {
+    let debugOutputPath: string | undefined;
+    try {
+      const diagnosticsDir = process.env.KASEKI_RESULTS_DIR || '/tmp';
+      fs.mkdirSync(diagnosticsDir, { recursive: true });
+      debugOutputPath = `${diagnosticsDir}/pi-provider-smoke-failed-${Date.now()}.jsonl`;
+      fs.writeFileSync(debugOutputPath, stdout, { mode: 0o600 });
+    } catch {
+      debugOutputPath = undefined;
+    }
     return {
       status: 'error',
       detail: 'Pi provider produced assistant text but did not satisfy the coding-shaped JSON contract',
@@ -394,6 +404,10 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
       outputEventCount: countPiJsonEvents(stdout),
       assistantTextChars: assistantText.trim().length,
       codingShapeValidated: false,
+      diagnostics: {
+        ...(debugOutputPath ? { debugOutputPath } : {}),
+        rawAssistantPreview: assistantText.trim().slice(0, 1000),
+      },
       remediation: 'Inspect the gateway response body and Pi event stream; a simple text smoke may pass while coding-shaped structured output fails.',
     };
   }

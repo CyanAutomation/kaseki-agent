@@ -308,6 +308,7 @@ describe('kaseki API web console behavior', () => {
           return createJsonResponse({
             status: 'ok',
             responseTime: 510,
+            partialSuccess: true,
             piProviderSmoke: {
               status: 'error',
               remediation: 'Check gateway configuration and Pi provider registration',
@@ -327,7 +328,7 @@ describe('kaseki API web console behavior', () => {
 
     click(document.querySelector('[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]'));
 
-    await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Pi provider adapter test failed. Diagnostics:'));
+    await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Gateway inference passed; Pi provider adapter contract failed. Diagnostics:'));
     expect(document.querySelector('#response-summary')?.textContent).toContain('Fields found: message.output_text');
     expect(document.querySelector('#response-summary')?.textContent).toContain('Event types seen: message(2)');
     expect(document.querySelector('#response-summary')?.textContent).toContain('Remediation: Check gateway configuration and Pi provider registration');
