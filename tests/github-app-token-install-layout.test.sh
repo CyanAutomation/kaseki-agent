@@ -42,7 +42,7 @@ install -m 0755 "$ROOT_DIR/dist/github-app-token.js" "$BIN_DIR/github-app-token"
 for helper in github-utils.js logger.js secrets/host-secrets-reader.js; do
   helper_path="$BIN_DIR/$helper"
   marker="kaseki-install-layout helper-loaded: $helper from "
-  tmp_helper="$TMP_DIR/$(basename "$helper").instrumented"
+  tmp_helper="$TMP_DIR/$(echo "$helper" | tr '/' '_').instrumented"
   {
     printf 'process.stderr.write(%s + new URL(import.meta.url).pathname + "\\n");\n' "$(node -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$marker")"
     cat "$helper_path"
