@@ -765,6 +765,8 @@ check_packaged_agent_helpers() {
     "dependency-cache-helpers.sh"
     "scouting-allowlist.js"
     "lib/json.sh"
+    "lib/json-events.sh"
+    "lib/provider-retry.sh"
   )
 
   if [ ! -x "$agent_bin" ]; then
