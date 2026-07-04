@@ -85,6 +85,26 @@ describe('extractPiJsonAssistantText', () => {
       const result = extractPiJsonAssistantText(jsonl);
       expect(result).toBe('First second third');
     });
+
+    it('reconciles cumulative Pi snapshots without duplicating JSON prefixes', () => {
+      const snapshots = ['{', '{"status', '{"status":"ok"', '{"status":"ok","phase":"coding"}'];
+      const jsonl = snapshots.map((content) => JSON.stringify({
+        type: 'message_update',
+        message: { role: 'assistant', content, text: content },
+      })).join('\n');
+
+      expect(extractPiJsonAssistantText(jsonl)).toBe('{"status":"ok","phase":"coding"}');
+    });
+
+    it('deduplicates compatibility fields within one assistant event', () => {
+      const content = '{"status":"ok","phase":"coding"}';
+      const jsonl = JSON.stringify({
+        type: 'message_end',
+        message: { role: 'assistant', text: content, output_text: content, content },
+      });
+
+      expect(extractPiJsonAssistantText(jsonl)).toBe(content);
+    });
   });
 
   describe('Chat Completions API formats (standard)', () => {
