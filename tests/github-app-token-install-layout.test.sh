@@ -195,7 +195,7 @@ fi
 node -e '
 const fs = require("fs");
 const output = fs.readFileSync(process.argv[1], "utf8").trim();
-const parsed = JSON.parse(output.split(/\r?\n/).findLast((line) => line.startsWith("{")) || "{}");
+const parsed = JSON.parse(output.split(/\r?\n/).findLast((line) => line.startsWith("{")) || "null");
 if (parsed.token !== "mock-token" || parsed.expires_at !== "2026-07-04T00:00:00Z" || parsed.error) {
   console.error(`Expected mocked token JSON, got: ${output}`);
   process.exit(1);
