@@ -118,6 +118,7 @@ const testNonRetryClassification = async () => {
     const result = await requestOwnerReview(personalPr, 'test-token', fetchStub);
 
     assert.equal(calls.length, 1, `status ${nonRetryableStatus} should not be retried`);
+    assert.equal(result.success, false, `status ${nonRetryableStatus} should report failure`);
     assert.equal(result.status, nonRetryableStatus);
   }
 };
