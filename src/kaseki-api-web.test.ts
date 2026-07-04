@@ -363,6 +363,8 @@ describe('kaseki API web console behavior', () => {
     expect(document.querySelector('#response-summary')?.textContent).toContain('Fields found: message.output_text');
     expect(document.querySelector('#response-summary')?.textContent).toContain('Event types seen: message(2)');
     expect(document.querySelector('#response-summary')?.textContent).toContain('Remediation: Check gateway configuration and Pi provider registration');
+    expect(document.querySelector('[data-summary="llm-test"]')?.textContent).toBe('Gateway passed; Pi adapter failed');
+    expect(document.querySelector('[data-summary="llm-test"]')?.className).toContain('warning');
   });
 
   test('shows failure reasons and progress context in recent runs', async () => {

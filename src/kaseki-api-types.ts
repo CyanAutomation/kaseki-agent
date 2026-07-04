@@ -261,6 +261,7 @@ export interface StatusResponse {
     state: 'running' | 'retrying' | 'succeeded' | 'exhausted';
     provider?: string;
     lastError?: string;
+    nextRetryInSeconds?: number;
   };
   diagnosis?: {
     severity: 'info' | 'warning' | 'error';
