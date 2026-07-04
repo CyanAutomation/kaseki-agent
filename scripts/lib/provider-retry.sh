@@ -247,13 +247,26 @@ NODE
 calculate_retry_delay() {
   local attempt=$1  # 1, 2, 3...
   local base_seconds="${KASEKI_PROVIDER_RETRY_BASE_SECONDS:-3}"
+  local max_seconds="${KASEKI_PROVIDER_RETRY_MAX_SECONDS:-60}"
+
+  # Guard arithmetic inputs explicitly. Parameter expansion defaults only cover
+  # unset/empty values, while whitespace-only or non-numeric values would still
+  # break shell arithmetic and backoff capping.
+  if ! [[ "$attempt" =~ ^[0-9]+$ ]] || [ "$attempt" -lt 1 ]; then
+    attempt=1
+  fi
+  if ! [[ "$base_seconds" =~ ^[0-9]+$ ]] || [ "$base_seconds" -lt 1 ]; then
+    base_seconds=3
+  fi
+  if ! [[ "$max_seconds" =~ ^[0-9]+$ ]] || [ "$max_seconds" -lt 1 ]; then
+    max_seconds=60
+  fi
   
   # Exponential: 3 * (2 ^ (attempt - 1))
   # Attempt 1: 3s, Attempt 2: 6s, Attempt 3: 12s
   local delay_seconds=$((base_seconds * (2 ** (attempt - 1))))
   
   # Cap at max (default 60s)
-  local max_seconds="${KASEKI_PROVIDER_RETRY_MAX_SECONDS:-60}"
   if [ "$delay_seconds" -gt "$max_seconds" ]; then
     delay_seconds="$max_seconds"
   fi
