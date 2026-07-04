@@ -54,8 +54,9 @@ function buildDualStageResponse(
   stage2Result: any,
   piProviderResult: any
 ): any {
+  const piAdapterFailed = piProviderResult?.status === 'error';
   const result: any = {
-    status: stage1Result.status,
+    status: stage1Result.status === 'ok' && !piAdapterFailed ? 'ok' : 'error',
     detail: stage1Result.detail,
     responseTime: stage1Result.responseTime,
     timestamp: new Date().toISOString(),
@@ -85,8 +86,9 @@ function buildDualStageResponse(
  * Build Stage 2-only response
  */
 function buildStage2Response(stage2Result: any, piProviderResult: any): any {
+  const piAdapterFailed = piProviderResult?.status === 'error';
   const result: any = {
-    status: stage2Result?.status === 'ok' ? 'ok' : 'error',
+    status: stage2Result?.status === 'ok' && !piAdapterFailed ? 'ok' : 'error',
     detail: stage2Result?.detail || 'LLM inference test failed',
     responseTime: stage2Result?.responseTime || 0,
     timestamp: new Date().toISOString(),
