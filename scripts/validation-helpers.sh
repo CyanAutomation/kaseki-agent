@@ -134,6 +134,21 @@ record_skipped_validation_command() {
   append_validation_result "${KASEKI_RESULTS_DIR}"/validation-results.json "$command" "127" "$duration" "skipped"
 }
 
+write_validation_command_environment() {
+  local stage_label="$1"
+  local command="$2"
+  local env_log="$3"
+
+  {
+    printf '[validation command] stage=%s\n' "$stage_label"
+    printf '[validation command] command=%s\n' "$command"
+    printf '[validation command] working_directory=%s\n' "$(pwd 2>&1 || echo '<pwd failed>')"
+    printf '[validation command] node_version=%s\n' "$(node --version 2>&1 || echo '<node not found>')"
+    printf '[validation command] npm_version=%s\n' "$(npm --version 2>&1 || echo '<npm not found>')"
+    printf '[validation command] disk_available=%s\n' "$(df -h "$KASEKI_RESULTS_DIR" 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
+  } | tee -a "$env_log"
+}
+
 append_validation_failure_tail() {
   local raw_log="$1"
   local visible_log="$2"
@@ -229,14 +244,7 @@ run_validation_commands() {
       fi
       ((validation_attempted_ref++))
       emit_event "validation_command_started" "stage=$stage_label" "command=$trimmed"
-      {
-        printf '[validation command] stage=%s\n' "$stage_label"
-        printf '[validation command] command=%s\n' "$trimmed"
-        printf '[validation command] working_directory=%s\n' "$(pwd 2>&1 || echo '<pwd failed>')"
-        printf '[validation command] node_version=%s\n' "$(node --version 2>&1 || echo '<node not found>')"
-        printf '[validation command] npm_version=%s\n' "$(npm --version 2>&1 || echo '<npm not found>')"
-        printf '[validation command] disk_available=%s\n' "$(df -h "$KASEKI_RESULTS_DIR" 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
-      } | tee -a "$env_log"
+      write_validation_command_environment "$stage_label" "$trimmed" "$env_log"
       pipefail_was_enabled=0
       if set -o | grep -q '^pipefail[[:space:]]*on'; then
         pipefail_was_enabled=1
