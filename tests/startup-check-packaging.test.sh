@@ -362,6 +362,13 @@ check_dockerfile_packaging_contracts() {
   assert_file_contains scripts/startup-checks.sh '"scouting-allowlist\.js"' \
     'worker preflight does not verify the packaged scouting validator'
 
+  # kaseki-agent.sh sources this helper after startup checks; omitting it lets the
+  # image pass preflight and then fail with exit 127 before agent execution.
+  assert_file_match_count Dockerfile 'install -m 0644 /app/scripts/lib/provider-retry\.sh /usr/local/bin/scripts/lib/provider-retry\.sh' 2 \
+    'Dockerfile must install provider-retry.sh at its sourced runtime path in both image stages'
+  assert_file_contains scripts/startup-checks.sh '"lib/provider-retry\.sh"' \
+    'worker preflight must reject images missing the provider retry helper'
+
   for helper in \
     instance-status-derivation.js \
     instance-stage-derivation.js \
