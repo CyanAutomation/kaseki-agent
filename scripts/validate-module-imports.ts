@@ -264,6 +264,7 @@ function main(): void {
     'instance-status-derivation.js',
     'instance-stage-derivation.js',
     'instance-failure-extraction.js',
+    'provider-error-classifier.js',
     'instance-metadata-reader.js',
     'github-app-token.js',
     'github-utils.js',
