@@ -2366,6 +2366,7 @@ Recovery instruction: The previous response emitted malformed tool-call JSON. Em
       retry_delay_seconds=$(calculate_retry_delay 1)
       printf '[RETRY] Provider error is retryable in %s phase; attempting retry 1/1 after %ss delay (model: %s, correlation_id: %s)\n' \
         "$phase_name" "$retry_delay_seconds" "$model" "$KASEKI_INFERENCE_REQUEST_ID" >&2
+      emit_progress "$phase_name" "provider retry scheduled (attempt 2/2 in ${retry_delay_seconds}s)"
       
       PROVIDER_ERROR_RETRY_ATTEMPT_COUNT=1
       sleep "$retry_delay_seconds"
@@ -2381,6 +2382,7 @@ Recovery instruction: The previous response emitted malformed tool-call JSON. Em
 Retry request identity: $KASEKI_INFERENCE_REQUEST_ID. Treat this as a fresh inference attempt; do not replay a cached response from the previous request."
       printf '[RETRY CORRELATION] Fresh request %s replaces failed request %s for retry attempt\n' \
         "$KASEKI_INFERENCE_REQUEST_ID" "$previous_request_id" >&2
+      emit_progress "$phase_name" "provider retry started (attempt 2/2)"
       invoke_pi
       pi_exit=$?
       summarize_invocation || true
@@ -2409,11 +2411,13 @@ Retry request identity: $KASEKI_INFERENCE_REQUEST_ID. Treat this as a fresh infe
       
       if [ "$pi_exit" -eq 0 ]; then
         PROVIDER_ERROR_RETRY_RESULT="success"
+        emit_progress "$phase_name" "provider retry succeeded (attempt 2/2)"
         printf '[RETRY SUCCESS] Provider error resolved on retry in %s phase (correlation_id: %s)\n' \
           "$phase_name" "$KASEKI_INFERENCE_REQUEST_ID" >&2
       elif [ "$pi_exit" -eq 88 ]; then
         PROVIDER_ERROR_RETRY_ATTEMPT_COUNT=2
         PROVIDER_ERROR_RETRY_RESULT="failed"
+        emit_progress "$phase_name" "provider retry exhausted (attempt 2/2); finalizing diagnostics"
         printf '[RETRY EXHAUSTED] Provider error persisted after retry in %s phase; budget exhausted (correlation_id: %s); exiting with code 88\n' \
           "$phase_name" "$KASEKI_INFERENCE_REQUEST_ID" >&2
       fi

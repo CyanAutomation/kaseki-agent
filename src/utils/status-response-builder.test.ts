@@ -65,6 +65,8 @@ describe('StatusResponseBuilder', () => {
 
       expect(response.id).toBe('job-1');
       expect(response.status).toBe('queued');
+      expect(response.lifecyclePhase).toBe('queued');
+      expect(response.cancellable).toBe(true);
       expect(response.taskProgressPercent).toBeUndefined();
       expect(response.artifacts).toBeUndefined();
     });
@@ -88,6 +90,8 @@ describe('StatusResponseBuilder', () => {
 
       expect(response.id).toBe('job-2');
       expect(response.status).toBe('running');
+      expect(response.lifecyclePhase).toBe('executing');
+      expect(response.cancellable).toBe(true);
       expect(response.elapsedSeconds).toBe(300); // 5 minutes
       expect(response.timeoutRiskPercent).toBeLessThanOrEqual(3); // 5 min / 3 hours
 
@@ -113,8 +117,31 @@ describe('StatusResponseBuilder', () => {
 
       expect(response.id).toBe('job-3');
       expect(response.status).toBe('completed');
+      expect(response.lifecyclePhase).toBe('terminal');
+      expect(response.cancellable).toBe(false);
       expect(response.elapsedSeconds).toBe(3600); // 1 hour
       expect(response.artifacts).toBeDefined();
+    });
+
+    it('exposes finalizing lifecycle and live provider retry exhaustion', () => {
+      const job: Partial<Job> = {
+        id: 'job-finalizing',
+        status: 'running',
+        currentStage: 'pi coding agent',
+      };
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (fileHelpers.readLastJsonlEvent as jest.Mock).mockReturnValue({
+        stage: 'pi coding agent',
+        message: 'provider retry exhausted (attempt 2/2); finalizing diagnostics',
+        timestamp: '2026-07-04T12:00:00.000Z',
+      });
+
+      const response = builder.buildStatus(job as Job);
+
+      expect(response.lifecyclePhase).toBe('finalizing');
+      expect(response.attempt).toMatchObject({ current: 2, maximum: 2, state: 'exhausted' });
+      expect(response.diagnosis).toMatchObject({ retryExhausted: true, severity: 'error' });
+      expect(response.cancellable).toBe(true);
     });
 
     it('should build status response for failed job', () => {
@@ -132,6 +159,8 @@ describe('StatusResponseBuilder', () => {
 
       expect(response.id).toBe('job-4');
       expect(response.status).toBe('failed');
+      expect(response.lifecyclePhase).toBe('terminal');
+      expect(response.cancellable).toBe(false);
       expect(response.failureClass).toBe('validation-failure');
       expect(response.error).toBe('Validation failed');
     });

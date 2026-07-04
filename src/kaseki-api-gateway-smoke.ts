@@ -284,7 +284,11 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
       LLM_GATEWAY_API_KEY: apiKey,
       LLM_GATEWAY_MAX_OUTPUT_TOKENS: '128',
     },
-    maxBuffer: 1024 * 1024,
+    // Pi JSON mode can emit cumulative message snapshots and provider metadata
+    // well beyond Node's small default buffer even for this constrained prompt.
+    // Keep the smoke bounded, but large enough to distinguish adapter failures
+    // from child_process ENOBUFS transport failures.
+    maxBuffer: 16 * 1024 * 1024,
   });
   const responseTime = Math.round(performance.now() - startTime);
   const stdout = child.stdout || '';
@@ -293,6 +297,7 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
 
   if (child.error) {
     const timedOut = child.error.message.includes('ETIMEDOUT');
+    const outputOverflow = child.error.message.includes('ENOBUFS');
     return {
       status: 'error',
       detail: `Pi provider smoke failed to start or complete: ${child.error.message}`,
@@ -303,7 +308,11 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
       exitCode: child.status,
       remediation: timedOut
         ? 'Pi provider smoke timed out. Check gateway latency and Pi provider registration.'
-        : 'Check that Pi CLI is installed in the controller/worker image and gateway provider extension loads.',
+        : outputOverflow
+          ? 'Pi produced excessive JSONL output during the smoke test. Inspect provider event amplification and keep cumulative event payloads bounded.'
+          : child.error.message.includes('ENOENT')
+            ? 'Check that Pi CLI is installed in the controller image.'
+            : 'Check that the gateway provider extension loads and inspect the Pi adapter diagnostics.',
     };
   }
 
