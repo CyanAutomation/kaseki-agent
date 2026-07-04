@@ -87,7 +87,7 @@ describe('requestOwnerReview', () => {
 
       const result = await requestOwnerReview(pr, 'token123', mockFetch);
 
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(false);
       expect(result.skipped).toBe(false);
       expect(result.status).toBe(422);
       expect(result.message).toContain('already has review request');
@@ -101,7 +101,7 @@ describe('requestOwnerReview', () => {
 
       const result = await requestOwnerReview(pr, 'token123', mockFetch);
 
-      expect(result.success).toBe(true); // Non-fatal for PR creation
+      expect(result.success).toBe(false);
       expect(result.skipped).toBe(false);
       expect(result.status).toBe(403);
       expect(result.message).toContain('permission');
@@ -113,7 +113,7 @@ describe('requestOwnerReview', () => {
 
       const result = await requestOwnerReview(pr, 'token123', mockFetch);
 
-      expect(result.success).toBe(true); // Non-fatal
+      expect(result.success).toBe(false);
       expect(result.skipped).toBe(false);
       expect(result.status).toBe(404);
       expect(result.message).toContain('not accessible');
@@ -125,7 +125,7 @@ describe('requestOwnerReview', () => {
 
       const result = await requestOwnerReview(pr, 'token123', mockFetch);
 
-      expect(result.success).toBe(true); // Non-fatal
+      expect(result.success).toBe(false);
       expect(result.skipped).toBe(false);
       expect(result.status).toBe(418);
       expect(result.message).toContain('Unexpected');
@@ -225,9 +225,11 @@ describe('requestOwnerReview', () => {
         };
         const pr = createPRPayload();
 
-        await requestOwnerReview(pr, 'token123', mockFetch);
+        const result = await requestOwnerReview(pr, 'token123', mockFetch);
 
         expect(callCount).toBe(1); // Only called once, no retries
+        expect(result.success).toBe(false);
+        expect(result.status).toBe(code);
       }
     });
   });
