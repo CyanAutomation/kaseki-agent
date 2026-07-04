@@ -62,6 +62,7 @@ if ! grep -Eiq '(^|[^[:alnum:]_-])gateway([^[:alnum:]_-]|$)' "$RUN_LOG"; then
   fail "pi --list-models did not report provider gateway"
 fi
 
+# Use explicit POSIX character class boundaries instead of \b for portable grep -E behavior.
 if ! grep -Eq '(^|[^[:alnum:]])Pi([^[:alnum:]]|$)|(^|[^[:alnum:]])pi([^[:alnum:]]|$)' "$RUN_LOG"; then
   fail "output did not include Pi CLI version/banner, so the real pi executable may not have run"
 fi
