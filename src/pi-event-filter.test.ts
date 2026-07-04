@@ -118,6 +118,11 @@ describe('pi-event-filter fast correctness tests', () => {
         selected_api: 'contract-api',
         tool_start_count: 1,
         tool_end_count: 1,
+        artifact_retention: {
+          output_budget_exhausted: false,
+          dropped_oversized_events: 0,
+          dropped_budget_events: 0,
+        },
       });
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });

@@ -252,6 +252,26 @@ export interface StructuredProgress {
 export interface StatusResponse {
   id: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
+  lifecyclePhase?: 'queued' | 'executing' | 'finalizing' | 'terminal';
+  cancellable?: boolean;
+  attempt?: {
+    phase?: string;
+    current: number;
+    maximum: number;
+    state: 'running' | 'retrying' | 'succeeded' | 'exhausted';
+    provider?: string;
+    lastError?: string;
+  };
+  diagnosis?: {
+    severity: 'info' | 'warning' | 'error';
+    phase?: string;
+    category?: string;
+    summary: string;
+    retryCount?: number;
+    retryExhausted?: boolean;
+    remediation?: string;
+    artifact?: DiagnosticEntryPoint | 'provider-attempts.jsonl';
+  };
   completedAt?: string;
   progress?: StructuredProgress;
   elapsedSeconds?: number;

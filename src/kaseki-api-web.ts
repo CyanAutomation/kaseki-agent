@@ -1900,6 +1900,22 @@ const controllerPage = String.raw`<!doctype html>
           if (typeof payload.status === 'string') {
             items.push(['Response status', stripControlSequences(payload.status)]);
           }
+          if (typeof payload.lifecyclePhase === 'string') {
+            items.push(['Lifecycle', stripControlSequences(payload.lifecyclePhase)]);
+          }
+          if (payload.attempt && typeof payload.attempt === 'object') {
+            const attempt = payload.attempt;
+            items.push(['Provider attempt', String(attempt.current || 1) + '/' + String(attempt.maximum || 1) + ' — ' + String(attempt.state || 'running'), { warning: attempt.state === 'retrying' || attempt.state === 'exhausted', fullWidth: true }]);
+          }
+          if (payload.diagnosis && typeof payload.diagnosis === 'object') {
+            const diagnosis = payload.diagnosis;
+            if (typeof diagnosis.summary === 'string') {
+              items.push(['Diagnosis', stripControlSequences(diagnosis.summary).slice(0, 260), { warning: diagnosis.severity !== 'info', critical: diagnosis.severity === 'error', fullWidth: true }]);
+            }
+            if (typeof diagnosis.remediation === 'string') {
+              items.push(['Recommended action', stripControlSequences(diagnosis.remediation).slice(0, 260), { warning: true, fullWidth: true }]);
+            }
+          }
           const elapsed = formatElapsedSeconds(payload.elapsedSeconds);
           if (elapsed) {
             items.push(['Response elapsed time', elapsed]);
@@ -2165,6 +2181,23 @@ const controllerPage = String.raw`<!doctype html>
                 })),
             },
             note: 'Showing a compact summary. Open Full Results for artifact links.',
+          }, null, 2);
+        }
+        if (path.endsWith('/status') && payload && typeof payload === 'object') {
+          return JSON.stringify({
+            ...base,
+            response: {
+              id: payload.id,
+              status: payload.status,
+              lifecyclePhase: payload.lifecyclePhase,
+              elapsedSeconds: payload.elapsedSeconds,
+              taskProgressPercent: payload.taskProgressPercent,
+              progress: payload.progress,
+              attempt: payload.attempt,
+              diagnosis: payload.diagnosis,
+              exitCode: payload.exitCode,
+            },
+            note: 'Open Full Results for raw status, events, logs, and artifacts.',
           }, null, 2);
         }
         if (path === '/api/runs' && payload && typeof payload === 'object' && Array.isArray(payload.runs)) {
@@ -2532,6 +2565,7 @@ const controllerPage = String.raw`<!doctype html>
         if (!payload || !payload.status) return;
         setSummary('run', payload.status, payload.status === 'failed' ? 'bad' : 'ok');
         setRunDetails(payload.progress);
+        updateCancelRunButtonState(payload);
         if (payload.correlationId || payload.diagnosticEntryPoint) {
           const details = [];
           if (payload.correlationId) details.push('Correlation: ' + payload.correlationId);
@@ -2835,16 +2869,21 @@ const controllerPage = String.raw`<!doctype html>
         });
       }
 
-      function updateCancelRunButtonState() {
+      function updateCancelRunButtonState(run) {
         const cancelRunBtn = document.querySelector('#cancel-run');
         const runId = runIdInput.value.trim();
-        if (runId) {
+        const canCancel = run && typeof run.cancellable === 'boolean'
+          ? run.cancellable
+          : run && typeof run.status === 'string'
+            ? !isTerminalStatus(run.status)
+            : Boolean(runId);
+        if (runId && canCancel) {
           cancelRunBtn.disabled = false;
           cancelRunBtn.setAttribute('title', 'Cancel the active run');
           cancelRunBtn.setAttribute('aria-disabled', 'false');
         } else {
           cancelRunBtn.disabled = true;
-          cancelRunBtn.setAttribute('title', 'No active run');
+          cancelRunBtn.setAttribute('title', runId ? 'Run is no longer cancellable' : 'No active run');
           cancelRunBtn.setAttribute('aria-disabled', 'true');
         }
       }
