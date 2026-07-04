@@ -10044,6 +10044,11 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
 
   pre_validation_goal_check_diff_hash="$(sha256sum "${KASEKI_RESULTS_DIR}"/git.diff 2>/dev/null | awk '{print $1}')"
   run_goal_check "$coding_attempt"
+  if [ "$KASEKI_GOAL_CHECK" = "1" ] && printf '%s' "$GOAL_CHECK_FAILURE_REASON" | grep -Eq '^goal_check_artifact_(missing|malformed|invalid)$'; then
+    printf 'Goal-check evaluator artifact failed validation; retrying the evaluator against the existing diff without rerunning the coding agent.\n' | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+    emit_progress "goal check" "retrying evaluator against unchanged diff"
+    run_goal_check "$coding_attempt"
+  fi
   collect_goal_check_feedback "$INSTANCE_NAME"
   snapshot_attempt_artifacts "$coding_attempt"
 

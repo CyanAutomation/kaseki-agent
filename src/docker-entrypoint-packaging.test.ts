@@ -74,6 +74,12 @@ build_allowlist_regex() {
     expect(dockerfile).toContain('CMD ["agent"]');
   });
 
+  test('runtime image includes shellcheck used by repository lint scripts', () => {
+    const dockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf-8');
+
+    expect(dockerfile).toMatch(/apt-get install[^&]*\bshellcheck\b/);
+  });
+
   test('image installs shared shell helpers beside the packaged agent command', () => {
     const dockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf-8');
 

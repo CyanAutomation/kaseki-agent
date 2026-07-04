@@ -1609,6 +1609,7 @@ const controllerPage = String.raw`<!doctype html>
       
       // Validation state
       let validationState = { isValid: false, lastValidated: null, checks: [] };
+      let piAdapterValidationState = 'unknown';
       const validationStateKey = 'kasekiValidationState';
 
       function getApiToken() {
@@ -1907,6 +1908,16 @@ const controllerPage = String.raw`<!doctype html>
             const attempt = payload.attempt;
             items.push(['Provider attempt', String(attempt.current || 1) + '/' + String(attempt.maximum || 1) + ' — ' + String(attempt.state || 'running'), { warning: attempt.state === 'retrying' || attempt.state === 'exhausted', fullWidth: true }]);
           }
+          if (payload.piProviderSmoke && typeof payload.piProviderSmoke === 'object') {
+            const smoke = payload.piProviderSmoke;
+            items.push(['Pi adapter', smoke.status === 'ok' ? 'Validated' : 'Failed', { warning: smoke.status !== 'ok', critical: smoke.status === 'error' }]);
+            if (typeof smoke.detail === 'string') {
+              items.push(['Pi adapter detail', stripControlSequences(smoke.detail).slice(0, 260), { warning: smoke.status !== 'ok', fullWidth: true }]);
+            }
+            if (typeof smoke.remediation === 'string') {
+              items.push(['Pi adapter remediation', stripControlSequences(smoke.remediation).slice(0, 260), { warning: true, fullWidth: true }]);
+            }
+          }
           if (payload.diagnosis && typeof payload.diagnosis === 'object') {
             const diagnosis = payload.diagnosis;
             if (typeof diagnosis.summary === 'string') {
@@ -1937,6 +1948,10 @@ const controllerPage = String.raw`<!doctype html>
           }
           if (payload.progress && typeof payload.progress.updatedAt === 'string') {
             items.push(['Progress updated', new Date(payload.progress.updatedAt).toLocaleTimeString()]);
+            const phaseElapsedSeconds = Math.max(0, Math.floor((Date.now() - Date.parse(payload.progress.updatedAt)) / 1000));
+            if (Number.isFinite(phaseElapsedSeconds)) {
+              items.push(['Time in current phase', formatElapsedSeconds(phaseElapsedSeconds)]);
+            }
           }
           if (payload.failureClass || payload.error) {
             const failure = compactRunFailure(payload);
@@ -2505,6 +2520,10 @@ const controllerPage = String.raw`<!doctype html>
               ? responseTime + 'ms' + (outputTokens ? ' ' + outputTokens + ' tokens' : '') + (coverage ? ' ' + coverage : '')
               : 'Failed';
             setSummary('llm-test', llmSummary, payload.status === 'ok' ? 'ok' : 'bad');
+            piAdapterValidationState = payload.piProviderSmoke?.status === 'ok'
+              ? 'passed'
+              : payload.piProviderSmoke?.status === 'error' ? 'failed' : 'unknown';
+            updateSubmitButtonState();
             if (!payload.piProviderSmoke) {
               setResponseSummary('Gateway passed. Pi provider adapter smoke was not requested; add piProvider=true to run it.');
             } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'skipped') {
@@ -2835,13 +2854,15 @@ const controllerPage = String.raw`<!doctype html>
 
       function updateSubmitButtonState() {
         const submitBtn = document.querySelector('#submit');
-        if (validationState.isValid) {
+        if (validationState.isValid && piAdapterValidationState !== 'failed') {
           submitBtn.disabled = false;
           submitBtn.setAttribute('title', 'Submit the task');
           submitBtn.setAttribute('aria-disabled', 'false');
         } else {
           submitBtn.disabled = true;
-          submitBtn.setAttribute('title', 'Please validate task first');
+          submitBtn.setAttribute('title', piAdapterValidationState === 'failed'
+            ? 'Pi adapter inference failed; rerun Test Inference successfully before submitting'
+            : 'Please validate task first');
           submitBtn.setAttribute('aria-disabled', 'true');
         }
       }
@@ -3484,6 +3505,12 @@ const controllerPage = String.raw`<!doctype html>
           setResponseSummary(null);
           setOutputBody('Task validation is required before starting a run. Please click "Validate task" first and ensure all checks pass.');
           setState('Validation required', 'bad');
+          return;
+        }
+        if (piAdapterValidationState === 'failed') {
+          setOutputMetadata('blocked');
+          setOutputBody('Submission blocked because the latest Pi adapter inference check failed. Run Test Inference again after fixing model/provider routing.');
+          setState('Pi adapter validation required', 'bad');
           return;
         }
         
