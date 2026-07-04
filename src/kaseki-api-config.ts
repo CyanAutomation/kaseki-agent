@@ -119,7 +119,7 @@ function validateTaskMode(): 'patch' | 'inspect' {
  * @throws Error if level is not debug/info/warn/error
  */
 function validateLogLevel(): 'debug' | 'info' | 'warn' | 'error' {
-  const logLevel = (process.env.KASEKI_API_LOG_LEVEL || 'info') as 'debug' | 'info' | 'warn' | 'error';
+  const logLevel = (process.env.KASEKI_API_LOG_LEVEL ?? 'info') as 'debug' | 'info' | 'warn' | 'error';
   if (!['debug', 'info', 'warn', 'error'].includes(logLevel)) {
     throw new Error(`KASEKI_API_LOG_LEVEL must be debug/info/warn/error, got: ${logLevel}`);
   }

@@ -242,12 +242,12 @@ describe('kaseki-api-config load configuration', () => {
     expect(fs.statSync(newDir).isDirectory()).toBe(true);
   });
 
-  test('loadConfig throws when KASEKI_API_LOG_LEVEL is invalid', () => {
+  test.each(['verbose', 'INVALID', 'GARBAGE', ''])('loadConfig throws when KASEKI_API_LOG_LEVEL is invalid: %p', (invalidLogLevel) => {
     const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue('test-key');
 
     process.env.KASEKI_RESULTS_DIR = testDir;
-    process.env.KASEKI_API_LOG_LEVEL = 'verbose';
+    process.env.KASEKI_API_LOG_LEVEL = invalidLogLevel;
 
     expect(() => loadConfig()).toThrow('KASEKI_API_LOG_LEVEL must be debug/info/warn/error');
   });
