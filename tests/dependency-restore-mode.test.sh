@@ -103,6 +103,10 @@ fi
 if ! grep -q 'hardlink restore fallback to copy (reason=hardlink_cross_device)' "$DEPENDENCY_CACHE_LOG"; then
   fail "Expected dependency-cache.log to include normalized hardlink fallback reason"
 fi
+
+if grep -q 'workspace cache failed npm ls validation; reinstalling' "$DEPENDENCY_CACHE_LOG"; then
+  fail "validated workspace cache should not be discarded by redundant npm ls validation"
+fi
 pass "hardlink EXDEV stderr uses normalized fallback logging without raw cp noise"
 
 rm -rf "$TMP_DIR/workspace/node_modules" "$TMP_DIR/published"

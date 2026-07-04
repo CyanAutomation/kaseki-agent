@@ -144,6 +144,20 @@ describe('StatusResponseBuilder', () => {
       expect(response.cancellable).toBe(true);
     });
 
+    it('exposes the remaining provider retry delay', () => {
+      const job: Partial<Job> = { id: 'job-retrying', status: 'running', currentStage: 'pi coding agent' };
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (fileHelpers.readLastJsonlEvent as jest.Mock).mockReturnValue({
+        stage: 'pi coding agent',
+        message: 'provider retry scheduled (attempt 2/2 in 3s)',
+        timestamp: new Date().toISOString(),
+      });
+
+      const response = builder.buildStatus(job as Job);
+
+      expect(response.attempt).toMatchObject({ current: 2, maximum: 2, state: 'retrying', nextRetryInSeconds: 3 });
+    });
+
     it('should build status response for failed job', () => {
       const job: Partial<Job> = {
         id: 'job-4',

@@ -128,6 +128,12 @@ export class StatusResponseBuilder {
         maximum: Number(liveRetry[3]),
         state: exhausted ? 'exhausted' : liveState === 'succeeded' ? 'succeeded' : 'retrying',
       };
+      const retryDelay = /\bin\s+(\d+)s\b/i.exec(liveRetryMessage);
+      if (liveState === 'scheduled' && retryDelay) {
+        const updatedAtMs = Date.parse(String(response.progress?.updatedAt ?? ''));
+        const elapsedSeconds = Number.isFinite(updatedAtMs) ? Math.floor((Date.now() - updatedAtMs) / 1000) : 0;
+        response.attempt.nextRetryInSeconds = Math.max(0, Number(retryDelay[1]) - elapsedSeconds);
+      }
       response.diagnosis = {
         severity: exhausted ? 'error' : 'warning',
         phase: response.progress?.stage,

@@ -1599,6 +1599,8 @@ const controllerPage = String.raw`<!doctype html>
       
       // Modal state
       let modalTabCache = {};
+      let modalRefreshTimer = null;
+      let activeModalTab = 'status';
       
       let pollTimer = null;
       let activeRunView = 'status';
@@ -2244,16 +2246,25 @@ const controllerPage = String.raw`<!doctype html>
         element.className = 'summary-value' + (kind ? ' ' + kind : '');
       }
 
-      function setRunDetails(progress) {
+      function setRunDetails(payload) {
         const detailsEl = document.getElementById('run-details');
         if (!detailsEl) return;
-        if (!progress) {
+        if (!payload) {
           detailsEl.innerHTML = '';
           return;
         }
+        const progress = payload.progress || {};
         const stage = progress.displayName ? cleanProgressText(progress.displayName) : (progress.stage ? cleanProgressText(progress.stage) : '');
         const percent = typeof progress.percentComplete === 'number' ? progress.percentComplete + '%' : '';
-        const parts = [stage, percent].filter(Boolean);
+        const phaseElapsed = typeof progress.updatedAt === 'string'
+          ? Math.max(0, Math.floor((Date.now() - Date.parse(progress.updatedAt)) / 1000))
+          : null;
+        const retry = payload.attempt && payload.attempt.state === 'retrying'
+          ? 'retry ' + String(payload.attempt.current || 1) + '/' + String(payload.attempt.maximum || 1)
+            + (typeof payload.attempt.nextRetryInSeconds === 'number' ? ' in ' + payload.attempt.nextRetryInSeconds + 's' : '')
+          : '';
+        const timeout = typeof payload.timeoutRiskPercent === 'number' ? 'timeout risk ' + payload.timeoutRiskPercent + '%' : '';
+        const parts = [stage, percent, phaseElapsed === null ? '' : 'phase ' + formatElapsedSeconds(phaseElapsed), retry, timeout].filter(Boolean);
         detailsEl.textContent = parts.join(' | ');
       }
 
@@ -2516,10 +2527,12 @@ const controllerPage = String.raw`<!doctype html>
               streamOk ? 'stream ok' : '',
               largeOk ? 'large ok' : '',
             ].filter(Boolean).join(', ');
-            const llmSummary = payload.status === 'ok'
+            const llmSummary = payload.partialSuccess
+              ? 'Gateway passed; Pi adapter failed'
+              : payload.status === 'ok'
               ? responseTime + 'ms' + (outputTokens ? ' ' + outputTokens + ' tokens' : '') + (coverage ? ' ' + coverage : '')
               : 'Failed';
-            setSummary('llm-test', llmSummary, payload.status === 'ok' ? 'ok' : 'bad');
+            setSummary('llm-test', llmSummary, payload.partialSuccess ? 'warning' : payload.status === 'ok' ? 'ok' : 'bad');
             piAdapterValidationState = payload.piProviderSmoke?.status === 'ok'
               ? 'passed'
               : payload.piProviderSmoke?.status === 'error' ? 'failed' : 'unknown';
@@ -2583,7 +2596,7 @@ const controllerPage = String.raw`<!doctype html>
       function summarizeRun(payload) {
         if (!payload || !payload.status) return;
         setSummary('run', payload.status, payload.status === 'failed' ? 'bad' : 'ok');
-        setRunDetails(payload.progress);
+        setRunDetails(payload);
         updateCancelRunButtonState(payload);
         if (payload.correlationId || payload.diagnosticEntryPoint) {
           const details = [];
@@ -2965,6 +2978,8 @@ const controllerPage = String.raw`<!doctype html>
       });
 
       function closeModal() {
+        if (modalRefreshTimer) window.clearInterval(modalRefreshTimer);
+        modalRefreshTimer = null;
         fullResultsModal.hidden = true;
         modalBackdrop.hidden = true;
         modalTabCache = {};
@@ -2973,6 +2988,7 @@ const controllerPage = String.raw`<!doctype html>
       }
 
       function setModalActiveTab(tabName) {
+        activeModalTab = tabName;
         tabButtons.forEach(btn => {
           const active = btn.dataset.tab === tabName;
           btn.classList.toggle('active', active);
@@ -2996,9 +3012,14 @@ const controllerPage = String.raw`<!doctype html>
         setModalActiveTab('status');
         modalCloseBtn.focus();
         loadModalTab('status');
+        if (modalRefreshTimer) window.clearInterval(modalRefreshTimer);
+        modalRefreshTimer = window.setInterval(() => {
+          if (fullResultsModal.hidden || activeModalTab === 'artifacts') return;
+          loadModalTab(activeModalTab, { background: true });
+        }, 5000);
       }
 
-      async function loadModalTab(tabName) {
+      async function loadModalTab(tabName, options) {
         if (tabName === 'artifacts' && modalTabCache[tabName]) {
           displayModalTab(tabName);
           return;
@@ -3016,7 +3037,7 @@ const controllerPage = String.raw`<!doctype html>
         const tabOutputEl = document.querySelector('#' + tabName + '-output');
         if (!tabOutputEl) return;
         
-        tabOutputEl.textContent = 'Loading...';
+        if (!(options && options.background)) tabOutputEl.textContent = 'Loading...';
         
         try {
           const paths = {
@@ -3042,6 +3063,10 @@ const controllerPage = String.raw`<!doctype html>
               : JSON.stringify(result.payload, null, 2);
             modalTabCache[tabName] = stripControlSequences(content);
             displayModalTab(tabName);
+            if (tabName === 'status' && result.payload && isTerminalStatus(result.payload.status) && modalRefreshTimer) {
+              window.clearInterval(modalRefreshTimer);
+              modalRefreshTimer = null;
+            }
           }
         } catch (error) {
           tabOutputEl.textContent = 'Error loading tab: ' + (error instanceof Error ? error.message : String(error));
