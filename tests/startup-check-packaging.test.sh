@@ -365,7 +365,8 @@ check_dockerfile_packaging_contracts() {
   for helper in \
     instance-status-derivation.js \
     instance-stage-derivation.js \
-    instance-failure-extraction.js
+    instance-failure-extraction.js \
+    provider-error-classifier.js
   do
     # These helpers are dynamic dependencies of the user-visible instance state report/status scripts.
     assert_dockerfile_preserves_runtime_file "dist/$helper" "/app/lib/$helper" "/usr/local/bin/$helper" \
