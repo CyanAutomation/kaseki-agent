@@ -100,7 +100,7 @@ const output = fs.readFileSync(process.argv[1], "utf8").trim();
 const jsonLine = output.split(/\r?\n/).findLast((line) => line.startsWith("{"));
 let parsed;
 try {
-  parsed = JSON.parse(jsonLine || "");
+  parsed = JSON.parse(jsonLine || "null");
 } catch (error) {
   console.error(`Expected structured JSON error, got: ${output}`);
   process.exit(1);
