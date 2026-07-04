@@ -10,12 +10,8 @@ fail() {
   exit 1
 }
 
-# Load the production retry implementation while stubbing the Pi process itself.
-eval "$(awk '
-  /^capture_provider_error_from_summary\(\)/ { copy=1 }
-  /^append_pre_coding_provider_fallback_error\(\)/ { exit }
-  copy { print }
-' "$REPO_ROOT/kaseki-agent.sh")"
+# Load the production retry implementation while injecting Pi and delay behavior.
+source "$REPO_ROOT/scripts/lib/provider-retry.sh"
 
 mkdir -p "$TMP_DIR/bin" "$TMP_DIR/results"
 cat > "$TMP_DIR/bin/kaseki-pi-event-filter" <<'FILTER'
@@ -56,9 +52,10 @@ PROVIDER_ERROR_RECOVERY_JSON=""
 PROVIDER_ERROR_PRIMARY_JSON=""
 PI_CALL_COUNT=0
 
-sleep() { :; }
+provider_retry_no_sleep() { :; }
+KASEKI_PROVIDER_RETRY_SLEEP_HOOK=provider_retry_no_sleep
 
-run_pi_json_capture() {
+fake_pi_json_capture() {
   local raw_events_file="$1"
   PI_CALL_COUNT=$((PI_CALL_COUNT + 1))
   printf '%s:%s\n' "$KASEKI_PROVIDER" "$3" >> "$TMP_DIR/calls"
@@ -71,6 +68,7 @@ run_pi_json_capture() {
   # stream error. The wrapper must derive exit 88 from the event summary.
   return 0
 }
+KASEKI_PROVIDER_RETRY_PI_CAPTURE_HOOK=fake_pi_json_capture
 
 set +e
 run_pi_with_retry "$TMP_DIR/raw.jsonl" 30 dynamic/kaseki-agent prompt pi-summary "" coding 1
@@ -106,13 +104,14 @@ PROVIDER_ERROR_FALLBACK_RESULT="none"
 PROVIDER_ERROR_RECOVERY_JSON=""
 PI_CALL_COUNT=0
 : > "$TMP_DIR/calls-empty-fallback"
-run_pi_json_capture() {
+fake_pi_json_capture_empty_fallback() {
   local raw_events_file="$1"
   PI_CALL_COUNT=$((PI_CALL_COUNT + 1))
   printf '%s:%s\n' "$KASEKI_PROVIDER" "$3" >> "$TMP_DIR/calls-empty-fallback"
   printf '%s\n' '{"type":"message_end","message":{"stopReason":"error","errorMessage":"Provider finish_reason: error"}}' > "$raw_events_file"
   return 0
 }
+KASEKI_PROVIDER_RETRY_PI_CAPTURE_HOOK=fake_pi_json_capture_empty_fallback
 
 set +e
 run_pi_with_retry "$TMP_DIR/raw-empty-fallback.jsonl" 30 dynamic/kaseki-agent prompt pi-summary "" coding 1
