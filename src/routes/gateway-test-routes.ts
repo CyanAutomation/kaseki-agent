@@ -73,6 +73,9 @@ function buildDualStageResponse(
   }
   if (piProviderResult) {
     result.piProviderSmoke = piProviderResult;
+    result.gatewayInferenceValidated = stage2Result?.status === 'ok';
+    result.piAdapterValidated = piProviderResult.status === 'ok';
+    result.partialSuccess = stage2Result?.status === 'ok' && piProviderResult.status === 'error';
   }
 
   return result;
@@ -110,6 +113,9 @@ function buildStage2Response(stage2Result: any, piProviderResult: any): any {
   }
   if (piProviderResult) {
     result.piProviderSmoke = piProviderResult;
+    result.gatewayInferenceValidated = stage2Result?.status === 'ok';
+    result.piAdapterValidated = piProviderResult.status === 'ok';
+    result.partialSuccess = stage2Result?.status === 'ok' && piProviderResult.status === 'error';
   }
 
   return result;

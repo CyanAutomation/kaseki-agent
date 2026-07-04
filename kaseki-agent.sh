@@ -2261,7 +2261,7 @@ run_pi_with_retry() {
   local stderr_target="${6:-}"
   local phase_name="${7:-unknown}"
   local pi_exit summary_file attempt=1 original_provider="$KASEKI_PROVIDER" primary_response_id="" retry_response_id=""
-  local original_prompt="$prompt" provider_error_type=""
+  local original_prompt="$prompt" provider_error_type="" original_model="$model"
   local previous_retryable="${PROVIDER_ERROR_RETRYABLE:-}"
   local previous_retry_attempt_count="${PROVIDER_ERROR_RETRY_ATTEMPT_COUNT:-0}"
   local previous_retry_result="${PROVIDER_ERROR_RETRY_RESULT:-none}"
@@ -2418,6 +2418,44 @@ Retry request identity: $KASEKI_INFERENCE_REQUEST_ID. Treat this as a fresh infe
           "$phase_name" "$KASEKI_INFERENCE_REQUEST_ID" >&2
       fi
     fi
+  fi
+
+  # A configured fallback is an explicit operator opt-in. Use it only after a
+  # retryable primary provider error has exhausted the primary retry budget.
+  if [ "$pi_exit" -eq 88 ] && [ "$PROVIDER_ERROR_RETRY_RESULT" = "failed" ] && \
+    [ -n "${KASEKI_PROVIDER_FALLBACK:-}" ] && \
+    { [ "$KASEKI_PROVIDER_FALLBACK" != "$original_provider" ] || [ -n "${KASEKI_PROVIDER_FALLBACK_MODEL:-}" ]; }; then
+    fallback_provider="$KASEKI_PROVIDER_FALLBACK"
+    fallback_model="${KASEKI_PROVIDER_FALLBACK_MODEL:-$original_model}"
+    PROVIDER_ERROR_FALLBACK_PROVIDER="$fallback_provider"
+    PROVIDER_ERROR_FALLBACK_MODEL="$fallback_model"
+    PROVIDER_ERROR_FALLBACK_RESULT="attempted"
+    KASEKI_PROVIDER="$fallback_provider"
+    model="$fallback_model"
+    attempt=1
+    rm -f "$raw_events_file" 2>/dev/null || true
+    : > "$raw_events_file"
+    previous_request_id="$KASEKI_INFERENCE_REQUEST_ID"
+    KASEKI_INFERENCE_REQUEST_ID="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())' 2>/dev/null || printf 'req-%s-fallback' "$(date +%s)")"
+    export KASEKI_INFERENCE_REQUEST_ID
+    printf '[PROVIDER FALLBACK] Primary provider exhausted; request %s replaces %s using provider=%s model=%s\n' \
+      "$KASEKI_INFERENCE_REQUEST_ID" "$previous_request_id" "$fallback_provider" "$fallback_model" >&2
+    invoke_pi
+    pi_exit=$?
+    summarize_invocation || true
+    snapshot_provider_attempt "$raw_events_file" "$summary_file" "$phase_name" "$fallback_provider" "$fallback_model" "fallback-1"
+    if [ "$pi_exit" -eq 0 ]; then
+      PROVIDER_ERROR_FALLBACK_RESULT="success"
+      PROVIDER_ERROR_RECOVERY_JSON="$(provider_error_json_from_summary "$summary_file" "$phase_name" "$fallback_provider" "$fallback_model")"
+      printf '[PROVIDER FALLBACK SUCCESS] provider=%s model=%s correlation_id=%s\n' \
+        "$fallback_provider" "$fallback_model" "$KASEKI_INFERENCE_REQUEST_ID" >&2
+    else
+      PROVIDER_ERROR_FALLBACK_RESULT="failed"
+      printf '[PROVIDER FALLBACK FAILED] provider=%s model=%s correlation_id=%s exit=%s\n' \
+        "$fallback_provider" "$fallback_model" "$KASEKI_INFERENCE_REQUEST_ID" "$pi_exit" >&2
+    fi
+    KASEKI_PROVIDER="$original_provider"
+    model="$original_model"
   fi
 
   # A later goal-check coding attempt must not erase recovery telemetry from an
@@ -6172,6 +6210,19 @@ run_goal_setting_agent() {
     fi
   fi
 
+  if [ "$GOAL_SETTING_EXIT" -eq 0 ] && [ "$GOAL_SETTING_FALLBACK_USED" != "1" ] && [ ! -f "$GOAL_SETTING_CANDIDATE_ARTIFACT" ]; then
+    printf '%s\n' '{"step":"artifact-contract","status":"failure","reason":"goal-setting completed without required candidate artifact","recovery":"fallback_goal_setting_artifact"}' \
+      >> "${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl"
+    emit_error_event "goal_setting_artifact_missing" "Goal-setting completed without its required candidate artifact; activating degraded fallback before coding" "warning"
+    if create_fallback_goal_setting_artifact "$ORIGINAL_TASK_PROMPT" "$GOAL_SETTING_ARTIFACT"; then
+      GOAL_SETTING_FALLBACK_USED=1
+      GOAL_SETTING_FALLBACK_MODE="missing_candidate_artifact"
+      printf '[GOAL SETTING DEGRADED] Required candidate artifact was missing; coding will use the original task with confidence=low.\n' >&2
+    else
+      GOAL_SETTING_EXIT=86
+    fi
+  fi
+
   if [ "$GOAL_SETTING_EXIT" -eq 0 ] && [ "$GOAL_SETTING_FALLBACK_USED" != "1" ] && ! validate_goal_setting_artifact "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt"; then
     GOAL_SETTING_EXIT=86
     goal_setting_validation_summary="$(cat "${KASEKI_RESULTS_DIR}"/goal-setting-validation-summary.txt 2>/dev/null || printf 'goal-setting artifact validation failed')"
@@ -9857,6 +9908,17 @@ prepare_dependencies() {
       set_dependency_cache_status "workspace-cache-invalid" "$cache_detail reason=missing_validation_marker_validation_failed"
       invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
     fi
+  fi
+
+
+  if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ] && [ -f "$workspace_cache_root/validated" ] && \
+    ! (cd "$workspace_cache_root" && npm ls --depth=0 >/dev/null 2>&1); then
+    printf 'Dependency cache status: validation failed before restore; invalidating workspace cache without copying it.\n'
+    set_dependency_cache_status "workspace-cache-invalid" "$cache_detail reason=pre_restore_npm_ls_failed"
+    emit_event "dependency_cache_decision" "strategy=invalidate_workspace_cache" "reason=pre_restore_npm_ls_failed" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key"
+    append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_invalid" "true" "workspace" "0" "pre_restore_npm_ls_failed"
+    invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
+    install_reason="workspace_cache_validation_failed"
   fi
 
   if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ]; then

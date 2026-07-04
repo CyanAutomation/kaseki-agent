@@ -2484,7 +2484,9 @@ const controllerPage = String.raw`<!doctype html>
               const suggested = diag.suggestedPatterns || [];
               const eventsByType = diag.eventsByType || {};
               
-              let diagnosticMsg = 'Pi provider adapter test failed. Diagnostics:\n';
+              let diagnosticMsg = payload.partialSuccess
+                ? 'Gateway inference passed; Pi provider adapter contract failed. Diagnostics:\n'
+                : 'Pi provider adapter test failed. Diagnostics:\n';
               diagnosticMsg += '  Fields found: ' + (fieldsFound.length > 0 ? fieldsFound.join(', ') : '(none)') + '\n';
               const eventTypesList = [];
               for (const [k, v] of Object.entries(eventsByType)) {
@@ -2493,6 +2495,9 @@ const controllerPage = String.raw`<!doctype html>
               diagnosticMsg += '  Event types seen: ' + (eventTypesList.join(', ') || '(none)') + '\n';
               if (typeof diag.debugOutputPath === 'string' && diag.debugOutputPath) {
                 diagnosticMsg += '  Debug JSONL: ' + stripControlSequences(diag.debugOutputPath).slice(0, 240) + '\n';
+              }
+              if (typeof diag.rawAssistantPreview === 'string' && diag.rawAssistantPreview) {
+                diagnosticMsg += '  Assistant preview: ' + stripControlSequences(diag.rawAssistantPreview).slice(0, 300) + '\n';
               }
               
               if (suggested.length > 0) {
@@ -2527,6 +2532,12 @@ const controllerPage = String.raw`<!doctype html>
         if (!payload || !payload.status) return;
         setSummary('run', payload.status, payload.status === 'failed' ? 'bad' : 'ok');
         setRunDetails(payload.progress);
+        if (payload.correlationId || payload.diagnosticEntryPoint) {
+          const details = [];
+          if (payload.correlationId) details.push('Correlation: ' + payload.correlationId);
+          if (payload.diagnosticEntryPoint) details.push('Start diagnostics: ' + payload.diagnosticEntryPoint);
+          setResponseSummary(details.join('\n'));
+        }
       }
 
       function applyProgressHighWater(payload) {
