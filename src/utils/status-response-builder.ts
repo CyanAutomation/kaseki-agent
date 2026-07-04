@@ -102,6 +102,7 @@ export class StatusResponseBuilder {
 
     this.addTimingInfo(response, job);
     this.addProgressInfo(response, job);
+    this.addLifecycleInfo(response, job, metadata);
     this.addTaskProgressInfo(response, job);
     this.addArtifactInfo(response, job);
     this.addDiagnosticSummary(response, job);
@@ -111,6 +112,75 @@ export class StatusResponseBuilder {
     }
 
     return response;
+  }
+
+  private addLifecycleInfo(response: StatusResponse, job: Job, metadata: any): void {
+    const terminal = job.status === 'completed' || job.status === 'failed';
+    response.cancellable = job.status === 'queued' || job.status === 'running';
+    if (terminal) {
+      response.lifecyclePhase = 'terminal';
+    } else if (job.status === 'queued') {
+      response.lifecyclePhase = 'queued';
+    } else {
+      const stage = String(response.progress?.stage ?? job.currentStage ?? '').toLowerCase();
+      const progressMessage = String(response.progress?.message ?? '').toLowerCase();
+      response.lifecyclePhase = /run evaluation|artifact|report|consolidat|finaliz/.test(`${stage} ${progressMessage}`)
+        ? 'finalizing'
+        : 'executing';
+    }
+
+    const retryCount = Number(metadata?.provider_error_retry_attempt_count ?? 0);
+    const retryResult = String(metadata?.provider_error_retry_result ?? '');
+    const providerError = String(metadata?.provider_error_message ?? '');
+    const providerPhase = String(metadata?.provider_error_phase ?? '').trim() || undefined;
+    const provider = String(metadata?.provider_error_provider ?? '').trim() || undefined;
+    const liveRetryMessage = String(response.progress?.message ?? '');
+    const liveRetry = /provider retry (scheduled|started|succeeded|exhausted).*attempt\s+(\d+)\/(\d+)/i.exec(liveRetryMessage);
+    if (liveRetry && retryCount === 0) {
+      const liveState = liveRetry[1].toLowerCase();
+      const exhausted = liveState === 'exhausted';
+      response.attempt = {
+        phase: response.progress?.stage,
+        current: Number(liveRetry[2]),
+        maximum: Number(liveRetry[3]),
+        state: exhausted ? 'exhausted' : liveState === 'succeeded' ? 'succeeded' : 'retrying',
+      };
+      response.diagnosis = {
+        severity: exhausted ? 'error' : 'warning',
+        phase: response.progress?.stage,
+        category: 'provider_error',
+        summary: liveRetryMessage,
+        retryCount: Math.max(0, Number(liveRetry[2]) - 1),
+        retryExhausted: exhausted,
+        remediation: exhausted
+          ? 'The run is finalizing diagnostics; inspect provider-attempts.jsonl when available.'
+          : 'Wait for the bounded retry to complete.',
+        artifact: 'provider-attempts.jsonl',
+      };
+    }
+    if (retryCount > 0 || retryResult === 'failed' || providerError) {
+      const exhausted = retryResult === 'failed';
+      response.attempt = {
+        phase: providerPhase,
+        current: Math.max(1, retryCount),
+        maximum: Math.max(2, retryCount),
+        state: exhausted ? 'exhausted' : retryResult === 'success' ? 'succeeded' : 'retrying',
+        provider,
+        lastError: providerError || undefined,
+      };
+      response.diagnosis = {
+        severity: exhausted ? 'error' : 'warning',
+        phase: providerPhase,
+        category: String(metadata?.provider_error_type ?? 'provider_error'),
+        summary: providerError || (exhausted ? 'Provider retry budget exhausted.' : 'Provider request is being retried.'),
+        retryCount,
+        retryExhausted: exhausted,
+        remediation: exhausted
+          ? 'Inspect provider-attempts.jsonl, then retry with a healthy model or provider.'
+          : 'Wait for the bounded retry to complete.',
+        artifact: 'provider-attempts.jsonl',
+      };
+    }
   }
 
   private addTimingInfo(response: StatusResponse, job: Job): void {

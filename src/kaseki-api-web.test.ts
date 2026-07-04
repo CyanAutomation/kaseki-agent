@@ -244,6 +244,37 @@ describe('kaseki API web console behavior', () => {
     expect(document.querySelector('#run-links')?.hasAttribute('hidden')).toBe(false);
   });
 
+  test('disables cancellation and surfaces diagnosis for a terminal run', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/runs') {
+          return createJsonResponse({ runs: [{ id: 'kaseki-199', status: 'failed', createdAt: '2026-07-04T12:00:00Z' }] });
+        }
+        if (path === '/api/runs/kaseki-199/status') {
+          return createJsonResponse({
+            id: 'kaseki-199',
+            status: 'failed',
+            lifecyclePhase: 'terminal',
+            cancellable: false,
+            attempt: { current: 2, maximum: 2, state: 'exhausted' },
+            diagnosis: { severity: 'error', summary: 'Provider retry exhausted', remediation: 'Inspect provider attempts' },
+          });
+        }
+        if (path === '/api/runs/kaseki-199/artifacts') return createJsonResponse({ artifacts: [] });
+        return createJsonResponse({});
+      },
+    });
+
+    click(document.querySelector('#refresh-runs'));
+    await waitFor(() => expect(document.querySelectorAll('#runs-list button')).toHaveLength(1));
+    click(document.querySelector('#runs-list button'));
+    await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Provider retry exhausted'));
+    expect(document.querySelector<HTMLButtonElement>('#cancel-run')?.disabled).toBe(true);
+    expect(document.querySelector('#response-summary')?.textContent).toContain('2/2 — exhausted');
+    expect(document.querySelector('#response-summary')?.textContent).toContain('Inspect provider attempts');
+  });
+
   test('displays gateway and inference test buttons with correct endpoints', async () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',

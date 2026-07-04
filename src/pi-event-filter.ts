@@ -40,6 +40,14 @@ interface Summary {
   primary_provider_error?: ProviderErrorSummary;
   inference_health?: InferenceHealthSummary;
   model_reliability?: Record<string, ModelReliabilitySummary>;
+  artifact_retention?: {
+    retained_bytes: number;
+    max_output_bytes: number;
+    max_event_bytes: number;
+    dropped_oversized_events: number;
+    dropped_budget_events: number;
+    output_budget_exhausted: boolean;
+  };
 }
 
 interface InferenceHealthSummary {
@@ -65,6 +73,17 @@ interface ModelReliabilitySummary {
 function positiveIntEnv(name: string, fallback: number): number {
   const value = Number.parseInt(process.env[name] || '', 10);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+const MAX_FILTERED_EVENT_BYTES = positiveIntEnv('KASEKI_PI_EVENT_MAX_BYTES', 256 * 1024);
+const MAX_FILTERED_OUTPUT_BYTES = positiveIntEnv('KASEKI_PI_EVENTS_MAX_BYTES', 16 * 1024 * 1024);
+const CRITICAL_EVENT_RESERVE_BYTES = Math.min(1024 * 1024, Math.floor(MAX_FILTERED_OUTPUT_BYTES / 4));
+
+function isCriticalRetentionEvent(event: PiEvent): boolean {
+  const type = String(event.type ?? '').toLowerCase();
+  const assistantType = String(event.assistantMessageEvent?.type ?? '').toLowerCase();
+  return /error|agent_end|agentend|message_end|message_stop|tool_execution_end/.test(`${type} ${assistantType}`)
+    || extractProviderError(event) !== null;
 }
 
 function buildModelReliability(
@@ -354,6 +373,10 @@ export async function runPiEventFilter(
   const assistantTurnStates = new Map<string, AssistantTurnState>();
   const tracker = new TimestampTracker();
   let invalidJsonLines = 0;
+  let retainedBytes = 0;
+  let droppedOversizedEvents = 0;
+  let droppedBudgetEvents = 0;
+  let outputBudgetExhausted = false;
 
   // Track agent phase timing
   let agentPhaseStart: number | null = null;
@@ -431,7 +454,22 @@ export async function runPiEventFilter(
 
     // Write event if it should be kept
     if (shouldKeep(event)) {
-      const canContinue = output.write(`${JSON.stringify(sanitize(event))}\n`);
+      const serialized = `${JSON.stringify(sanitize(event))}\n`;
+      const serializedBytes = Buffer.byteLength(serialized);
+      if (serializedBytes > MAX_FILTERED_EVENT_BYTES) {
+        droppedOversizedEvents++;
+        continue;
+      }
+      const eventBudget = isCriticalRetentionEvent(event)
+        ? MAX_FILTERED_OUTPUT_BYTES
+        : MAX_FILTERED_OUTPUT_BYTES - CRITICAL_EVENT_RESERVE_BYTES;
+      if (retainedBytes + serializedBytes > eventBudget) {
+        droppedBudgetEvents++;
+        outputBudgetExhausted = true;
+        continue;
+      }
+      retainedBytes += serializedBytes;
+      const canContinue = output.write(serialized);
       if (!canContinue) {
         await once(output, 'drain');
       }
@@ -459,6 +497,14 @@ export async function runPiEventFilter(
   const summary: Summary = {
     ...aggregator.summary(),
     invalid_json_lines: invalidJsonLines,
+    artifact_retention: {
+      retained_bytes: retainedBytes,
+      max_output_bytes: MAX_FILTERED_OUTPUT_BYTES,
+      max_event_bytes: MAX_FILTERED_EVENT_BYTES,
+      dropped_oversized_events: droppedOversizedEvents,
+      dropped_budget_events: droppedBudgetEvents,
+      output_budget_exhausted: outputBudgetExhausted,
+    },
     first_event_at: tracker.firstEpochMs() !== null ? new Date(tracker.firstEpochMs()!).toISOString() : tracker.firstTimestamp(),
     last_event_at: tracker.lastEpochMs() !== null ? new Date(tracker.lastEpochMs()!).toISOString() : tracker.lastTimestamp(),
     tool_reliability: toolReliability.getSummary(),

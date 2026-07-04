@@ -295,6 +295,39 @@ function buildStatusResponseSchema(): Record<string, unknown> {
         type: 'string',
         enum: ['queued', 'running', 'completed', 'failed'],
       },
+      lifecyclePhase: {
+        type: 'string',
+        enum: ['queued', 'executing', 'finalizing', 'terminal'],
+        description: 'Operational lifecycle within the primary run status',
+      },
+      cancellable: {
+        type: 'boolean',
+        description: 'Whether the controller currently accepts cancellation for this run',
+      },
+      attempt: {
+        type: 'object',
+        properties: {
+          phase: { type: 'string' },
+          current: { type: 'integer', minimum: 1 },
+          maximum: { type: 'integer', minimum: 1 },
+          state: { type: 'string', enum: ['running', 'retrying', 'succeeded', 'exhausted'] },
+          provider: { type: 'string' },
+          lastError: { type: 'string' },
+        },
+      },
+      diagnosis: {
+        type: 'object',
+        properties: {
+          severity: { type: 'string', enum: ['info', 'warning', 'error'] },
+          phase: { type: 'string' },
+          category: { type: 'string' },
+          summary: { type: 'string' },
+          retryCount: { type: 'integer', minimum: 0 },
+          retryExhausted: { type: 'boolean' },
+          remediation: { type: 'string' },
+          artifact: { type: 'string' },
+        },
+      },
       progress: {
         type: 'object',
         properties: {
