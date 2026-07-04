@@ -7,15 +7,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/helpers/validation-contract-helpers.sh"
 
 test_pre_agent_validation_env_log_argument() {
-  local tmpdir fixture pre_raw_log pre_timings_file pre_env_log pre_helper_exit
+  local tmpdir pre_raw_log pre_timings_file pre_env_log pre_helper_exit validation_command
   new_production_validation_context tmpdir
-  fixture="$TEST_ROOT/fixture-pre-agent"
   pre_raw_log="$TEST_RESULTS_DIR/pre-validation-raw.log"
   pre_timings_file="$TEST_RESULTS_DIR/pre-validation-timings.tsv"
   pre_env_log="$TEST_RESULTS_DIR/pre-agent-validation-env.log"
+  validation_command="printf 'minimal validation fixture passed\\n'"
 
-  create_validation_script_fixture_repo "$fixture"
-  use_workspace_repo_fixture "$fixture"
+  mkdir -p "$KASEKI_WORKSPACE_DIR/repo"
   cd "$KASEKI_WORKSPACE_DIR/repo"
   reset_production_validation_state
 
@@ -30,7 +29,7 @@ test_pre_agent_validation_env_log_argument() {
   set +e
   run_validation_commands \
     "pre-agent validation" \
-    "npm run check" \
+    "$validation_command" \
     /dev/null \
     "$pre_raw_log" \
     "$pre_timings_file" \
@@ -48,7 +47,7 @@ test_pre_agent_validation_env_log_argument() {
   [[ "$PRE_VALIDATION_EXIT" =~ ^[0-9]+$ ]] || fail "PRE_VALIDATION_EXIT should remain numeric, got $PRE_VALIDATION_EXIT"
   [ "$PRE_VALIDATION_EXIT" -eq 0 ] || fail "PRE_VALIDATION_EXIT should be 0 for successful commands, got $PRE_VALIDATION_EXIT"
   assert_file_contains_literal "$pre_env_log" "[validation command] stage=pre-agent validation" "pre-agent env log should include stage metadata"
-  assert_file_contains_literal "$pre_env_log" "[validation command] command=npm run check" "pre-agent env log should include command metadata"
+  assert_file_contains_literal "$pre_env_log" "[validation command] command=$validation_command" "pre-agent env log should include command metadata"
   pass "Pre-agent validation helper writes env metadata to explicit env-log path"
 }
 
