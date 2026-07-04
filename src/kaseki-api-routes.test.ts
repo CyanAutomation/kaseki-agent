@@ -1376,6 +1376,9 @@ describe('kaseki-api-routes preflight diagnostics', () => {
         const body = (await res.json()) as any;
         expect(res.status).toBe(503);
         expect(body.responseSmokeValidated).toBe(true);
+        expect(body.gatewayInferenceValidated).toBe(true);
+        expect(body.piAdapterValidated).toBe(false);
+        expect(body.partialSuccess).toBe(true);
         expect(body.piProviderSmoke).toEqual(expect.objectContaining({
           status: 'error',
           provider: 'gateway',

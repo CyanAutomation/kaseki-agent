@@ -225,11 +225,13 @@ export class ConfigManager {
       }
 
       // Load user-global config
-      const userConfigPath = path.join(os.homedir(), '.kaseki', 'config.json');
-      const userConfig = await this.tryLoadConfigFile(userConfigPath);
-      if (userConfig) {
-        this.config = this.deepMerge(this.config, userConfig);
-        logger.debug(`Loaded user config: ${userConfigPath}`);
+      if (process.env.KASEKI_TEST_MODE !== '1') {
+        const userConfigPath = path.join(os.homedir(), '.kaseki', 'config.json');
+        const userConfig = await this.tryLoadConfigFile(userConfigPath);
+        if (userConfig) {
+          this.config = this.deepMerge(this.config, userConfig);
+          logger.debug(`Loaded user config: ${userConfigPath}`);
+        }
       }
 
       // Load override config if provided
