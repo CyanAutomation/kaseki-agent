@@ -11,6 +11,13 @@
  * - Per-test control via src/test-utils/log-suppression.ts helpers
  */
 
+// Keep tests hermetic on developer and deployment hosts. Git must never prompt
+// for real credentials, and application config must not resolve from the real
+// home directory unless a test opts in explicitly.
+process.env.GIT_TERMINAL_PROMPT = '0';
+process.env.GCM_INTERACTIVE = 'never';
+process.env.KASEKI_TEST_MODE = '1';
+
 // Initialize captured logs storage
 (global as any).__kasekiCapturedLogs = [];
 
