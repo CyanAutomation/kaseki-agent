@@ -127,7 +127,7 @@ const tests: Array<[string, () => Promise<void>]> = [
   ['personal fixture generates the GitHub review request payload', testPersonalRepoRequestPayload],
   ['organization fixture is skipped without calling GitHub', testOrgRepoOwnerSelection],
   ['retryable statuses are retried by production logic', testRetryClassification],
-  ['non-retryable statuses are not retried by production logic', testNonRetryClassification],
+  ['non-retryable statuses are not retried and report failure', testNonRetryClassification],
 ];
 
 for (const [name, run] of tests) {
