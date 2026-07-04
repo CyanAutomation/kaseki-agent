@@ -40,6 +40,34 @@ export type ClaimResult =
   | { kind: 'pending' }
   | { kind: 'fulfilled'; response: RunResponse };
 
+export type ProcessLivenessChecker = (pid: number) => boolean;
+
+export interface IdempotencyStoreDependencies {
+  now?: () => number;
+  processLivenessChecker?: ProcessLivenessChecker;
+  lockTokenGenerator?: () => string;
+  pid?: number;
+}
+
+export function createProcessLivenessChecker(
+  kill: (pid: number, signal: 0) => unknown = process.kill,
+  platform: NodeJS.Platform = process.platform,
+): ProcessLivenessChecker {
+  return (pid: number): boolean => {
+    try {
+      kill(pid, 0);
+      return true;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (platform === 'win32') {
+        return false;
+      }
+
+      return code === 'EPERM';
+    }
+  };
+}
+
 /**
  * Idempotency store manages request deduplication with persistent storage.
  * Ensures safe retries: same idempotency key always returns the same job ID.
@@ -55,8 +83,16 @@ export class IdempotencyStore {
   private cleanupInterval: NodeJS.Timeout | null = null;
   private lastReadPosition = 0;
   private readRemainder = '';
+  private now: () => number;
+  private processLivenessChecker: ProcessLivenessChecker;
+  private lockTokenGenerator: () => string;
+  private pid: number;
 
-  constructor(resultsDir: string, ttlHours: number = 24) {
+  constructor(
+    resultsDir: string,
+    ttlHours: number = 24,
+    dependencies: IdempotencyStoreDependencies = {},
+  ) {
     fs.mkdirSync(resultsDir, { recursive: true });
     this.persistencePath = path.join(
       resultsDir,
@@ -66,6 +102,12 @@ export class IdempotencyStore {
     this.lockOwnerPath = path.join(this.lockPath, 'owner.json');
     this.logger = createEventLogger('idempotency-store');
     this.ttlHours = ttlHours;
+    this.now = dependencies.now ?? Date.now;
+    this.processLivenessChecker =
+      dependencies.processLivenessChecker ?? createProcessLivenessChecker();
+    this.lockTokenGenerator =
+      dependencies.lockTokenGenerator ?? (() => crypto.randomUUID());
+    this.pid = dependencies.pid ?? process.pid;
     this.loadFromDisk();
     this.startCleanup();
   }
@@ -80,19 +122,19 @@ export class IdempotencyStore {
     return this.withLock(() => {
       this.loadFromDisk();
       const entry = this.cache.get(idempotencyKey);
-      if (!entry || Date.now() > entry.expiresAt) {
+      if (!entry || this.now() > entry.expiresAt) {
         const pendingEntry: IdempotencyCacheEntry = {
           idempotencyKey,
           requestFingerprint,
           state: 'pending',
           jobId: '',
-          requestTime: new Date().toISOString(),
+          requestTime: this.currentIsoString(),
           responsePayload: {
             id: '',
             status: 'queued',
-            createdAt: new Date().toISOString(),
+            createdAt: this.currentIsoString(),
           },
-          expiresAt: Date.now() + this.ttlHours * 3600 * 1000,
+          expiresAt: this.now() + this.ttlHours * 3600 * 1000,
         };
 
         this.cache.set(idempotencyKey, pendingEntry);
@@ -114,7 +156,7 @@ export class IdempotencyStore {
         idempotencyKey,
         jobId: entry.jobId,
         ageSeconds: Math.round(
-          (Date.now() - new Date(entry.requestTime).getTime()) / 1000,
+          (this.now() - new Date(entry.requestTime).getTime()) / 1000,
         ),
       });
 
@@ -146,9 +188,9 @@ export class IdempotencyStore {
           requestFingerprint,
           state: 'fulfilled',
           jobId: response.id,
-          requestTime: new Date().toISOString(),
+          requestTime: this.currentIsoString(),
           responsePayload: response,
-          expiresAt: Date.now() + this.ttlHours * 3600 * 1000,
+          expiresAt: this.now() + this.ttlHours * 3600 * 1000,
         };
 
       this.cache.set(idempotencyKey, entry);
@@ -160,6 +202,10 @@ export class IdempotencyStore {
         ttlHours: this.ttlHours,
       });
     });
+  }
+
+  async runWithIdempotencyLock<T>(fn: () => T | Promise<T>): Promise<T> {
+    return this.withLock(fn);
   }
 
   private async withLock<T>(fn: () => T | Promise<T>): Promise<T> {
@@ -239,7 +285,9 @@ export class IdempotencyStore {
     }
   }
 
-  private readLockOwner(lockOwnerPath = this.lockOwnerPath): LockOwnerMetadata | null {
+  private readLockOwner(
+    lockOwnerPath = this.lockOwnerPath,
+  ): LockOwnerMetadata | null {
     try {
       const content = fs.readFileSync(lockOwnerPath, 'utf-8');
       const parsed = JSON.parse(content) as Partial<LockOwnerMetadata>;
@@ -266,8 +314,8 @@ export class IdempotencyStore {
         ? Date.parse(ownerMetadata.createdAt)
         : Number.NaN;
       const lockAgeMs = Number.isFinite(createdAtMs)
-        ? Date.now() - createdAtMs
-        : Date.now() - fs.statSync(lockPath).mtimeMs;
+        ? this.now() - createdAtMs
+        : this.now() - fs.statSync(lockPath).mtimeMs;
       if (lockAgeMs <= staleThresholdMs) {
         return false;
       }
@@ -279,17 +327,7 @@ export class IdempotencyStore {
   }
 
   private isProcessAlive(pid: number): boolean {
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (process.platform === 'win32') {
-        return false;
-      }
-
-      return code === 'EPERM';
-    }
+    return this.processLivenessChecker(pid);
   }
 
   private releasePartiallyAcquiredLock(
@@ -315,7 +353,7 @@ export class IdempotencyStore {
     ownerMetadata: LockOwnerMetadata | null,
     staleThresholdMs: number,
   ): boolean {
-    const quarantinePath = `${this.lockPath}.stale-${process.pid}-${Date.now()}-${this.generateLockToken()}`;
+    const quarantinePath = `${this.lockPath}.stale-${this.pid}-${this.now()}-${this.generateLockToken()}`;
     try {
       fs.renameSync(this.lockPath, quarantinePath);
     } catch (error) {
@@ -370,14 +408,18 @@ export class IdempotencyStore {
 
   private createLockOwner(): LockOwnerMetadata {
     return {
-      pid: process.pid,
-      createdAt: new Date().toISOString(),
+      pid: this.pid,
+      createdAt: this.currentIsoString(),
       token: this.generateLockToken(),
     };
   }
 
+  private currentIsoString(): string {
+    return new Date(this.now()).toISOString();
+  }
+
   private generateLockToken(): string {
-    return `${process.pid}-${Date.now()}-${crypto.randomUUID()}`;
+    return `${this.pid}-${this.now()}-${this.lockTokenGenerator()}`;
   }
 
   private logLockContention(attempt: number, maxRetries: number): void {
@@ -466,7 +508,7 @@ export class IdempotencyStore {
           const entry = JSON.parse(line) as PersistedIdempotencyEntry;
 
           // Skip expired entries
-          if (Date.now() > entry.expiresAt) {
+          if (this.now() > entry.expiresAt) {
             continue;
           }
 
@@ -525,7 +567,7 @@ export class IdempotencyStore {
    */
   private cleanup(): void {
     try {
-      const now = Date.now();
+      const now = this.now();
       let removedCount = 0;
 
       // Remove expired entries from cache
@@ -587,4 +629,11 @@ export class IdempotencyStore {
       entriesRemaining: this.cache.size,
     });
   }
+}
+
+export function withIdempotencyStoreLock<T>(
+  store: IdempotencyStore,
+  fn: () => T | Promise<T>,
+): Promise<T> {
+  return store.runWithIdempotencyLock(fn);
 }
