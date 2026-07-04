@@ -1,206 +1,141 @@
 #!/bin/bash
 
-# Tests for request_owner_review() function
-# Tests JSON parsing, payload generation, and error handling logic
+# Exercises the production requestOwnerReview implementation with fixture PR payloads.
+# The test stubs only the GitHub API boundary (fetch) and asserts behavior from
+# the generated request rather than duplicating production parsing/status logic.
+
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TESTS_PASSED=0
-TESTS_FAILED=0
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+TEST_SCRIPT="$(mktemp /tmp/kaseki-request-owner-review.XXXXXX.mts)"
+trap 'rm -f "$TEST_SCRIPT"' EXIT
 
-pass_test() {
-  echo "✓ $1"
-  ((TESTS_PASSED++))
+cat > "$TEST_SCRIPT" <<'NODE_TEST'
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+type CapturedCall = {
+  url: string;
+  options: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string;
+  };
+};
+
+const repoRoot = process.env.REPO_ROOT;
+if (!repoRoot) {
+  throw new Error('REPO_ROOT environment variable is required');
 }
 
-fail_test() {
-  echo "✗ $1"
-  if [ -n "${2:-}" ]; then
-    echo "  $2"
-  fi
-  ((TESTS_FAILED++))
+const { requestOwnerReview } = await import(
+  pathToFileURL(join(repoRoot, 'src', 'request-owner-review.ts')).href
+);
+
+const readFixture = (name: string) => JSON.parse(
+  readFileSync(join(repoRoot, 'tests', 'fixtures', name), 'utf8'),
+);
+
+const personalPr = readFixture('pr-response-personal-repo.json');
+const orgPr = readFixture('pr-response-org-repo.json');
+
+const withImmediateTimers = async <T>(run: () => Promise<T>): Promise<T> => {
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = ((callback: (...args: unknown[]) => void, _delay?: number, ...args: unknown[]) => {
+    callback(...args);
+    return 0 as unknown as NodeJS.Timeout;
+  }) as typeof setTimeout;
+
+  try {
+    return await run();
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
+};
+
+const createFetchStub = (statuses: number[]) => {
+  const calls: CapturedCall[] = [];
+  const fetchStub = async (url: string, options: CapturedCall['options']) => {
+    calls.push({ url, options });
+    const status = statuses[Math.min(calls.length - 1, statuses.length - 1)];
+    return new Response('{}', { status });
+  };
+
+  return { calls, fetchStub };
+};
+
+const testPersonalRepoRequestPayload = async () => {
+  const { calls, fetchStub } = createFetchStub([201]);
+
+  const result = await requestOwnerReview(personalPr, 'test-token', fetchStub);
+
+  assert.equal(result.success, true);
+  assert.equal(result.skipped, false);
+  assert.equal(result.status, 201);
+  assert.equal(calls.length, 1);
+  assert.equal(
+    calls[0].url,
+    'https://api.github.com/repos/testuser/test-repo/pulls/42/requested_reviewers',
+  );
+  assert.equal(calls[0].options.method, 'POST');
+  assert.equal(calls[0].options.headers?.Authorization, 'token test-token');
+  assert.equal(calls[0].options.headers?.Accept, 'application/vnd.github.v3+json');
+  assert.equal(calls[0].options.headers?.['Content-Type'], 'application/json');
+  assert.deepEqual(JSON.parse(calls[0].options.body ?? ''), { reviewers: ['testuser'] });
+};
+
+const testOrgRepoOwnerSelection = async () => {
+  const { calls, fetchStub } = createFetchStub([201]);
+
+  const result = await requestOwnerReview(orgPr, 'test-token', fetchStub);
+
+  assert.equal(result.success, true);
+  assert.equal(result.skipped, true);
+  assert.equal(result.skippedReason, 'owner_type_is_organization');
+  assert.equal(calls.length, 0, 'organization-owned repos should not call the GitHub review request API');
+};
+
+const testRetryClassification = async () => {
+  for (const retryableStatus of [429, 500, 502, 503, 504]) {
+    const { calls, fetchStub } = createFetchStub([retryableStatus, 201]);
+
+    const result = await withImmediateTimers(() => requestOwnerReview(personalPr, 'test-token', fetchStub));
+
+    assert.equal(result.success, true, `status ${retryableStatus} should recover after retry`);
+    assert.equal(result.status, 201, `status ${retryableStatus} should return the eventual success status`);
+    assert.equal(calls.length, 2, `status ${retryableStatus} should be retried once before success`);
+    assert.deepEqual(JSON.parse(calls[1].options.body ?? ''), { reviewers: ['testuser'] });
+  }
+};
+
+const testNonRetryClassification = async () => {
+  for (const nonRetryableStatus of [400, 401, 403, 404, 422]) {
+    const { calls, fetchStub } = createFetchStub([nonRetryableStatus, 201]);
+
+    const result = await requestOwnerReview(personalPr, 'test-token', fetchStub);
+
+    assert.equal(calls.length, 1, `status ${nonRetryableStatus} should not be retried`);
+    assert.equal(result.status, nonRetryableStatus);
+  }
+};
+
+const tests: Array<[string, () => Promise<void>]> = [
+  ['personal fixture generates the GitHub review request payload', testPersonalRepoRequestPayload],
+  ['organization fixture is skipped without calling GitHub', testOrgRepoOwnerSelection],
+  ['retryable statuses are retried by production logic', testRetryClassification],
+  ['non-retryable statuses are not retried by production logic', testNonRetryClassification],
+];
+
+for (const [name, run] of tests) {
+  await run();
+  console.log(`✓ ${name}`);
 }
 
-# Test 1: Fixture files exist and are valid JSON
-test_fixture_files_valid() {
-  local fixture_personal fixture_org
-  fixture_personal="$SCRIPT_DIR/fixtures/pr-response-personal-repo.json"
-  fixture_org="$SCRIPT_DIR/fixtures/pr-response-org-repo.json"
-  
-  if [ -f "$fixture_personal" ] && node -e "JSON.parse(require('fs').readFileSync('$fixture_personal', 'utf8'))" 2>/dev/null; then
-    pass_test "Fixture: personal-repo PR response is valid JSON"
-  else
-    fail_test "Fixture: personal-repo PR response not found or invalid"
-    return 1
-  fi
-  
-  if [ -f "$fixture_org" ] && node -e "JSON.parse(require('fs').readFileSync('$fixture_org', 'utf8'))" 2>/dev/null; then
-    pass_test "Fixture: org-repo PR response is valid JSON"
-  else
-    fail_test "Fixture: org-repo PR response not found or invalid"
-    return 1
-  fi
-}
+console.log(`\n${tests.length} request owner review tests passed`);
+NODE_TEST
 
-# Test 2: Personal repo - owner is User
-test_personal_repo_user_type() {
-  local pr_response owner_type owner_login pr_number
-  fixture="$SCRIPT_DIR/fixtures/pr-response-personal-repo.json"
-  
-  pr_response="$(cat "$fixture")"
-  owner_type=$(echo "$pr_response" | node -e "const data = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(data.base.repo.owner.type || '');" 2>/dev/null || echo "")
-  owner_login=$(echo "$pr_response" | node -e "const data = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(data.base.repo.owner.login || '');" 2>/dev/null || echo "")
-  pr_number=$(echo "$pr_response" | node -e "const data = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(String(data.number || ''));" 2>/dev/null || echo "")
-  
-  if [ "$owner_type" = "User" ] && [ "$owner_login" = "testuser" ] && [ "$pr_number" = "42" ]; then
-    pass_test "Personal repo: owner_type=User, login=testuser, pr_number=42"
-  else
-    fail_test "Personal repo: extraction failed" "owner_type=$owner_type login=$owner_login pr=$pr_number"
-  fi
-}
-
-# Test 3: Organization repo - owner is Organization
-test_org_repo_owner_type() {
-  local pr_response owner_type owner_login pr_number
-  fixture="$SCRIPT_DIR/fixtures/pr-response-org-repo.json"
-  
-  pr_response="$(cat "$fixture")"
-  owner_type=$(echo "$pr_response" | node -e "const data = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(data.base.repo.owner.type || '');" 2>/dev/null || echo "")
-  owner_login=$(echo "$pr_response" | node -e "const data = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(data.base.repo.owner.login || '');" 2>/dev/null || echo "")
-  pr_number=$(echo "$pr_response" | node -e "const data = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(String(data.number || ''));" 2>/dev/null || echo "")
-  
-  if [ "$owner_type" = "Organization" ] && [ "$owner_login" = "myorg" ] && [ "$pr_number" = "15" ]; then
-    pass_test "Organization repo: owner_type=Organization, login=myorg, pr_number=15"
-  else
-    fail_test "Organization repo: extraction failed" "owner_type=$owner_type login=$owner_login pr=$pr_number"
-  fi
-}
-
-# Test 4: Reviewer payload generation
-test_reviewer_payload_generation() {
-  local owner_login payload
-  owner_login="testuser"
-  
-  payload=$(node -e "const payload = { reviewers: ['$owner_login'] }; process.stdout.write(JSON.stringify(payload));" 2>/dev/null || echo "")
-  
-  if echo "$payload" | grep -q '"reviewers"' && echo "$payload" | grep -q '"testuser"'; then
-    pass_test "Payload: generated valid reviewer request JSON"
-  else
-    fail_test "Payload: generation failed" "payload=$payload"
-  fi
-}
-
-# Test 5: HTTP status classification - success
-test_http_status_success() {
-  local http_status="201"
-  
-  if [ "$http_status" = "201" ]; then
-    pass_test "HTTP 201: success case"
-  else
-    fail_test "HTTP 201: classification failed"
-  fi
-}
-
-# Test 6: HTTP status classification - already requested
-test_http_status_already_requested() {
-  local http_status="422"
-  
-  if [ "$http_status" = "422" ]; then
-    pass_test "HTTP 422: already requested case"
-  else
-    fail_test "HTTP 422: classification failed"
-  fi
-}
-
-# Test 7: HTTP status classification - permission denied
-test_http_status_permission_denied() {
-  local http_status="403"
-  
-  if [ "$http_status" = "403" ]; then
-    pass_test "HTTP 403: permission denied case"
-  else
-    fail_test "HTTP 403: classification failed"
-  fi
-}
-
-# Test 8: HTTP status classification - not found
-test_http_status_not_found() {
-  local http_status="404"
-  
-  if [ "$http_status" = "404" ]; then
-    pass_test "HTTP 404: not found case"
-  else
-    fail_test "HTTP 404: classification failed"
-  fi
-}
-
-# Test 9: Retryable error classification
-test_retryable_errors() {
-  local retryable_count=0
-  
-  for code in 429 500 502 503 504; do
-    case "$code" in
-      429|500|502|503|504)
-        ((retryable_count++))
-        ;;
-    esac
-  done
-  
-  if [ "$retryable_count" -eq 5 ]; then
-    pass_test "Retryable errors: 429, 500, 502, 503, 504 classified correctly"
-  else
-    fail_test "Retryable errors: classification failed" "count=$retryable_count"
-  fi
-}
-
-# Test 10: Non-retryable error classification
-test_non_retryable_errors() {
-  local non_retryable_count=0
-  
-  for code in 400 401 403 404 422; do
-    case "$code" in
-      429|500|502|503|504)
-        # Should NOT match
-        ;;
-      *)
-        ((non_retryable_count++))
-        ;;
-    esac
-  done
-  
-  if [ "$non_retryable_count" -eq 5 ]; then
-    pass_test "Non-retryable errors: 4xx status codes not retried"
-  else
-    fail_test "Non-retryable errors: classification failed" "count=$non_retryable_count"
-  fi
-}
-
-# Main
-main() {
-  echo "=== Request Owner Review Tests ==="
-  echo ""
-  
-  test_fixture_files_valid
-  test_personal_repo_user_type
-  test_org_repo_owner_type
-  test_reviewer_payload_generation
-  test_http_status_success
-  test_http_status_already_requested
-  test_http_status_permission_denied
-  test_http_status_not_found
-  test_retryable_errors
-  test_non_retryable_errors
-  
-  echo ""
-  echo "=== Test Summary ==="
-  printf "Passed: %d\n" "$TESTS_PASSED"
-  printf "Failed: %d\n" "$TESTS_FAILED"
-  echo ""
-  
-  if [ "$TESTS_FAILED" -gt 0 ]; then
-    exit 1
-  fi
-  
-  exit 0
-}
-
-main "$@"
+cd "$REPO_ROOT"
+REPO_ROOT="$REPO_ROOT" npx tsx "$TEST_SCRIPT"
