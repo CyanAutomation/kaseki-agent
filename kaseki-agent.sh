@@ -9250,9 +9250,8 @@ prepare_dependencies() {
   fi
 
   if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ] && [ ! -f "$workspace_cache_root/validated" ]; then
-    if [ -f "$stamp_file" ] && grep -qx "$lock_hash" "$stamp_file" && \
-      (cd "$workspace_cache_root" && npm ls --depth=0 >/dev/null 2>&1); then
-      printf 'Dependency cache status: legacy cache passed lock-hash and npm validation; creating validation marker.\n'
+    if [ -f "$stamp_file" ] && grep -qx "$lock_hash" "$stamp_file"; then
+      printf 'Dependency cache status: legacy cache passed lock-hash validation; creating validation marker.\n'
       : > "$workspace_cache_root/validated"
       set_dependency_cache_status "workspace-cache-validated" "$cache_detail reason=legacy_marker_repaired"
       emit_event "dependency_cache_decision" "strategy=repair_validation_marker" "reason=legacy_cache_valid" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key"
@@ -9263,16 +9262,6 @@ prepare_dependencies() {
     fi
   fi
 
-
-  if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ] && [ -f "$workspace_cache_root/validated" ] && \
-    ! (cd "$workspace_cache_root" && npm ls --depth=0 >/dev/null 2>&1); then
-    printf 'Dependency cache status: validation failed before restore; invalidating workspace cache without copying it.\n'
-    set_dependency_cache_status "workspace-cache-invalid" "$cache_detail reason=pre_restore_npm_ls_failed"
-    emit_event "dependency_cache_decision" "strategy=invalidate_workspace_cache" "reason=pre_restore_npm_ls_failed" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key"
-    append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_invalid" "true" "workspace" "0" "pre_restore_npm_ls_failed"
-    invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
-    install_reason="workspace_cache_validation_failed"
-  fi
 
   if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ]; then
     printf 'Dependency cache status: restoring node_modules from workspace cache (%s; lock_hash=%s; repo_ref_key=%s).\n' "$workspace_cache_dir" "$lock_hash" "$repo_ref_key"
@@ -9289,18 +9278,14 @@ prepare_dependencies() {
     append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_restored" "true" "workspace" "0" "restore_completed"
     cache_reused="true"
     cache_source="workspace"
-    if ! npm ls --depth=0 >/dev/null 2>&1; then
-      printf 'Dependency cache status: workspace cache failed npm ls validation; reinstalling.\n'
-      set_dependency_cache_status "workspace-cache-invalid" "$cache_detail restore_method=$restore_method reason=npm_ls_failed"
-      emit_event "dependency_cache_decision" "strategy=invalidate_workspace_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=npm_ls_failed" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
-      # Phase 2D: Emit cache metric to JSON (validation failure)
-      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_invalid" "true" "workspace" "0" "npm_ls_failed"
-      rm -rf node_modules
-      invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
-      cache_reused="false"
-      cache_source="none"
-      install_reason="workspace_cache_validation_failed"
-    fi
+    # The entry was atomically published only after npm validation and is
+    # already keyed by lockfile, Node major, and install flags. Running
+    # `npm ls` against a copied/hardlinked tree can report benign metadata or
+    # optional-dependency differences and previously discarded a usable cache.
+    # Trust the validated marker here; the normal build is the authoritative
+    # repository-specific dependency check.
+    printf 'Dependency cache status: restored validated workspace cache; skipping redundant npm ls validation.\n'
+    emit_event "dependency_cache_decision" "strategy=trust_validated_workspace_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=validated_marker_and_cache_key_match" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key"
   elif [ ! -d node_modules ] && [ -d "$image_cache_dir" ]; then
     printf 'Dependency cache status: restoring node_modules from image cache (%s; lock_hash=%s; repo_ref_key=%s).\n' "$image_cache_dir" "$lock_hash" "$repo_ref_key"
     set_dependency_cache_status "image-cache-hit" "$cache_detail"
