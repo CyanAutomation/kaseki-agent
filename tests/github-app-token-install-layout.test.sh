@@ -165,7 +165,17 @@ process.stdout.write(privateKey.export({ type: "pkcs8", format: "pem" }));
 
 SUCCESS_STDOUT_FILE="$TMP_DIR/success-stdout.json"
 SUCCESS_STDERR_FILE="$TMP_DIR/success-stderr.log"
+set +e
 NODE_OPTIONS="--import=$MOCK_HTTPS_IMPORT" node "$BIN_DIR/github-app-token" 123 "$VALID_PRIVATE_KEY_FILE" owner repo >"$SUCCESS_STDOUT_FILE" 2>"$SUCCESS_STDERR_FILE"
+success_status=$?
+set -e
+
+if [ "$success_status" -ne 0 ]; then
+  printf '✗ mocked success path failed unexpectedly (exit code %d)\n' "$success_status" >&2
+  cat "$SUCCESS_STDOUT_FILE" >&2
+  cat "$SUCCESS_STDERR_FILE" >&2
+  exit 1
+fi
 
 assert_no_missing_module_output "$SUCCESS_STDOUT_FILE" "$SUCCESS_STDERR_FILE"
 assert_target_helper_loaded "$SUCCESS_STDERR_FILE" "github-utils.js"
