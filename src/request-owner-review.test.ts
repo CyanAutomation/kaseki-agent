@@ -1,4 +1,30 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { requestOwnerReview, createMockFetch } from './request-owner-review';
+
+type CapturedCall = {
+  url: string;
+  options: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string;
+  };
+};
+
+const readFixture = (name: string): unknown => JSON.parse(
+  readFileSync(join(process.cwd(), 'tests', 'fixtures', name), 'utf8'),
+);
+
+const createFetchStub = (statuses: number[]) => {
+  const calls: CapturedCall[] = [];
+  const fetchStub = async (url: string, options: CapturedCall['options']) => {
+    calls.push({ url, options });
+    const status = statuses[Math.min(calls.length - 1, statuses.length - 1)];
+    return new Response('{}', { status });
+  };
+
+  return { calls, fetchStub };
+};
 
 describe('requestOwnerReview', () => {
   // Use fake timers for retry tests
@@ -10,6 +36,69 @@ describe('requestOwnerReview', () => {
     jest.runOnlyPendingTimers();
     jest.useRealTimers();
   });
+
+  describe('Fixture-backed owner review behavior', () => {
+    const personalPr = readFixture('pr-response-personal-repo.json');
+    const orgPr = readFixture('pr-response-org-repo.json');
+
+    it('personal repository fixture generates the GitHub review request payload', async () => {
+      const { calls, fetchStub } = createFetchStub([201]);
+
+      const result = await requestOwnerReview(personalPr as Parameters<typeof requestOwnerReview>[0], 'test-token', fetchStub);
+
+      expect(result.success).toBe(true);
+      expect(result.skipped).toBe(false);
+      expect(result.status).toBe(201);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].url).toBe(
+        'https://api.github.com/repos/testuser/test-repo/pulls/42/requested_reviewers',
+      );
+      expect(calls[0].options.method).toBe('POST');
+      expect(calls[0].options.headers?.Authorization).toBe('token test-token');
+      expect(calls[0].options.headers?.Accept).toBe('application/vnd.github.v3+json');
+      expect(calls[0].options.headers?.['Content-Type']).toBe('application/json');
+      expect(JSON.parse(calls[0].options.body ?? '')).toEqual({ reviewers: ['testuser'] });
+    });
+
+    it('organization repository fixture is skipped without calling GitHub', async () => {
+      const { calls, fetchStub } = createFetchStub([201]);
+
+      const result = await requestOwnerReview(orgPr as Parameters<typeof requestOwnerReview>[0], 'test-token', fetchStub);
+
+      expect(result.success).toBe(true);
+      expect(result.skipped).toBe(true);
+      expect(result.skippedReason).toBe('owner_type_is_organization');
+      expect(calls).toHaveLength(0);
+    });
+
+    it('retryable statuses are retried by production logic', async () => {
+      for (const retryableStatus of [429, 500, 502, 503, 504]) {
+        const { calls, fetchStub } = createFetchStub([retryableStatus, 201]);
+
+        const result = requestOwnerReview(personalPr as Parameters<typeof requestOwnerReview>[0], 'test-token', fetchStub);
+        await jest.runOnlyPendingTimersAsync();
+        const finalResult = await result;
+
+        expect(finalResult.success).toBe(true);
+        expect(finalResult.status).toBe(201);
+        expect(calls).toHaveLength(2);
+        expect(JSON.parse(calls[1].options.body ?? '')).toEqual({ reviewers: ['testuser'] });
+      }
+    });
+
+    it('non-retryable statuses are not retried and report failure', async () => {
+      for (const nonRetryableStatus of [400, 401, 403, 404, 422]) {
+        const { calls, fetchStub } = createFetchStub([nonRetryableStatus, 201]);
+
+        const result = await requestOwnerReview(personalPr as Parameters<typeof requestOwnerReview>[0], 'test-token', fetchStub);
+
+        expect(calls).toHaveLength(1);
+        expect(result.success).toBe(false);
+        expect(result.status).toBe(nonRetryableStatus);
+      }
+    });
+  });
+
   // Test fixtures
   const createPRPayload = (overrides = {}) => ({
     number: 42,
