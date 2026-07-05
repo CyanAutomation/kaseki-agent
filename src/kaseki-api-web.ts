@@ -2440,7 +2440,7 @@ const controllerPage = String.raw`<!doctype html>
         if (!runsList || !payload || !Array.isArray(payload.runs)) return;
         recentRuns = payload.runs.slice(0, 12);
         runsList.replaceChildren();
-        const filter = document.querySelector('#runs-filter').value;
+        const filter = document.querySelector('#runs-filter')?.value || 'all';
         const visibleRuns = recentRuns.filter((run) => filter === 'all'
           || run.status === filter
           || (filter === 'active' && (run.status === 'running' || run.status === 'queued')));
