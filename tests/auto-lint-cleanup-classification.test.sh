@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || { echo "Error: Failed to determine repository root" >&2; exit 1; }
 HELPER_PATH="$ROOT_DIR/scripts/auto-lint-cleanup-classification.sh"
 if [[ ! -f "$HELPER_PATH" ]]; then
   echo "Error: auto-lint cleanup helper not found at $HELPER_PATH" >&2
