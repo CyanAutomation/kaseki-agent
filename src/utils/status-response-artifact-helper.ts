@@ -83,6 +83,11 @@ export class StatusArtifactHelper {
   }
 
   addTaskProgressInfo(response: StatusResponse, job: Job): void {
+    if (job.status === 'completed') {
+      response.taskProgressPercent = 100;
+      this.progressHighWater.delete(job.id);
+      return;
+    }
     const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
     const metadata = this.readMetadata(runDir);
     const calculated = this.taskProgressCalculator.calculateProgressPercent(response, job, runDir, metadata);

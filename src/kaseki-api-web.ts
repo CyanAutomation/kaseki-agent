@@ -3075,6 +3075,14 @@ const controllerPage = String.raw`<!doctype html>
               : stripControlSequences(content);
             displayModalTab(tabName);
             if (tabName === 'status' && result.payload && isTerminalStatus(result.payload.status) && modalRefreshTimer) {
+              modalTabCache.events = null;
+              modalTabCache.stdout = null;
+              modalTabCache.artifacts = null;
+              void Promise.all([
+                loadModalTab('events', { background: true }),
+                loadModalTab('stdout', { background: true }),
+                loadModalTab('artifacts', { background: true }),
+              ]);
               window.clearInterval(modalRefreshTimer);
               modalRefreshTimer = null;
             }
@@ -3109,6 +3117,9 @@ const controllerPage = String.raw`<!doctype html>
             attempt.current && attempt.maximum ? 'Attempts: ' + String(attempt.current) + '/' + String(attempt.maximum) : '',
             diagnosis.summary || content.error ? 'Reason: ' + String(diagnosis.summary || content.error) : '',
             diagnosis.remediation ? 'Next step: ' + String(diagnosis.remediation) : '',
+            content.resultSummaryContent && /Failure Detail:|Changed Files:\s*0|Diff Lines:\s*0/i.test(content.resultSummaryContent)
+              ? 'Warning: terminal artifacts report fallback/failure signals; review the result summary before accepting this run.'
+              : '',
             recommended.length ? 'Diagnostics: ' + recommended.join(', ') : '',
             '',
             'RAW STATUS',

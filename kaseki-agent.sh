@@ -3099,6 +3099,16 @@ finish() {
   fi
   # Authoritative call site: this runs at EXIT so artifacts reflect final repo state.
   maybe_call_finish_helper collect_git_artifacts
+
+  # A patch run with no durable repository change is not successful. Agent
+  # fallbacks may let orchestration continue, but they must not turn a
+  # schema/provider failure plus an empty result into a green terminal state.
+  if [ "$STATUS" -eq 0 ] && [ "$KASEKI_TASK_MODE" != "inspect" ] &&
+    [ ! -s "${KASEKI_RESULTS_DIR}/git.diff" ] && [ ! -s "${KASEKI_RESULTS_DIR}/changed-files.txt" ]; then
+    STATUS=3
+    FAILED_COMMAND="empty durable patch"
+    emit_error_event "empty_durable_patch" "Run completed without a durable repository change" "exit"
+  fi
   
   # Analyze test failures and compare baseline vs. working results
   if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ -f "${KASEKI_RESULTS_DIR}"/validation-baseline.log ]; then
@@ -3475,17 +3485,19 @@ publish_node_modules_cache() {
 
 dependency_cache_required_bins_valid() {
   local package_json="${1:-package.json}"
+  local node_modules_dir="${2:-node_modules}"
   [ -f "$package_json" ] || return 0
-  node - "$package_json" <<'NODE'
+  node - "$package_json" "$node_modules_dir" <<'NODE'
 const fs = require('node:fs');
 const path = require('node:path');
 const pkg = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const nodeModulesDir = process.argv[3] || 'node_modules';
 const dependencies = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
 const required = [];
 if (dependencies.typescript) required.push('tsc');
 if (dependencies.eslint) required.push('eslint');
 for (const bin of required) {
-  const target = path.join('node_modules', '.bin', bin);
+  const target = path.join(nodeModulesDir, '.bin', bin);
   try { fs.accessSync(target, fs.constants.X_OK); }
   catch { console.error(`missing required dependency executable: ${target}`); process.exit(1); }
 }
@@ -8377,6 +8389,9 @@ if [ "$KASEKI_PROVIDER" = "gateway" ]; then
     exit 0
   fi
   llm_gateway_url="$LLM_GATEWAY_URL"
+  # Provider retries, health checks, and every agent phase must resolve the
+  # same endpoint even after phase-local environment cleanup.
+  export KASEKI_GATEWAY_URL="$llm_gateway_url"
 
   # Stage 2: Check explicit API key
   if [ -n "${LLM_GATEWAY_API_KEY:-}" ]; then
@@ -8524,6 +8539,14 @@ prepare_dependencies() {
     install_reason="workspace_cache_schema_stale"
   fi
 
+
+  if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ] && ! dependency_cache_required_bins_valid package.json "$workspace_cache_dir"; then
+    printf 'Dependency cache status: cached entry failed executable validation; invalidating before restore.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
+    emit_event "dependency_cache_decision" "strategy=invalidate_workspace_cache" "reason=required_executable_missing_before_restore" "location=$workspace_cache_dir"
+    invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
+    rm -f "$workspace_cache_root"/validated "$workspace_cache_root"/validated-v*
+    install_reason="workspace_cache_integrity_failed"
+  fi
 
   if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ]; then
     printf 'Dependency cache status: restoring node_modules from workspace cache (%s; lock_hash=%s; repo_ref_key=%s).\n' "$workspace_cache_dir" "$lock_hash" "$repo_ref_key"

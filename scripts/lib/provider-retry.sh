@@ -313,6 +313,14 @@ pre_check_gateway_health() {
   local readiness_url="${KASEKI_GATEWAY_READINESS_URL:-${gateway_url%/}/ready}"
   local health_file="${KASEKI_RESULTS_DIR:-/tmp}/gateway-health.json"
   mkdir -p "$(dirname "$health_file")" 2>/dev/null || true
+
+  # Cloudflare's /compat endpoint is an inference surface, not a service
+  # health surface. Do not turn a successful gateway configuration into a
+  # deterministic /compat/health failure unless an explicit override exists.
+  if [[ "$gateway_url" == */compat ]] && [ -z "${KASEKI_GATEWAY_HEALTH_URL:-}" ]; then
+    printf '[GATEWAY HEALTH] Cloudflare /compat has no implicit health endpoint; deferring to authenticated inference\n' >&2
+    return 0
+  fi
   
   printf '[GATEWAY HEALTH] Checking %s health at %s\n' "$provider" "$health_url" >&2
   
