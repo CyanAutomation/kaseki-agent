@@ -403,6 +403,7 @@ KASEKI_DEPENDENCY_CACHE_MAX_BYTES="${KASEKI_DEPENDENCY_CACHE_MAX_BYTES:-53687091
 KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS="${KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS:-30}"
 KASEKI_DEPENDENCY_CACHE_PRUNE="${KASEKI_DEPENDENCY_CACHE_PRUNE:-1}"
 KASEKI_DEPENDENCY_CACHE_METRICS_FILE="${KASEKI_DEPENDENCY_CACHE_METRICS_FILE:-${KASEKI_DEPENDENCY_CACHE_DIR}/.kaseki-cache-metrics}"
+KASEKI_DEPENDENCY_CACHE_SCHEMA_VERSION="${KASEKI_DEPENDENCY_CACHE_SCHEMA_VERSION:-2}"
 KASEKI_INSTALL_IGNORE_SCRIPTS="${KASEKI_INSTALL_IGNORE_SCRIPTS:-1}"
 KASEKI_NPM_OMIT_DEV="${KASEKI_NPM_OMIT_DEV:-0}"
 KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR:-/opt/kaseki/workspace-cache}"
@@ -1872,8 +1873,15 @@ write_result_summary() {
   local instance_name="$INSTANCE_NAME"
   
   if [ -f "$metadata_file" ]; then
-    exit_code="$(jq -r '.exit_code // empty' "$metadata_file" 2>/dev/null || true)"
-    failed_command="$(jq -r '.failed_command // empty' "$metadata_file" 2>/dev/null || true)"
+    local metadata_exit_code metadata_failed_command
+    metadata_exit_code="$(jq -r '.exit_code // empty' "$metadata_file" 2>/dev/null || true)"
+    metadata_failed_command="$(jq -r '.failed_command // empty' "$metadata_file" 2>/dev/null || true)"
+    # EXIT finalization can run after metadata was written with an earlier
+    # success state. Never let stale metadata downgrade a live failure.
+    if [ "$STATUS" -eq 0 ]; then
+      exit_code="$metadata_exit_code"
+      failed_command="$metadata_failed_command"
+    fi
     instance_name="$(jq -r '.instance // empty' "$metadata_file" 2>/dev/null || true)"
   fi
   [ -n "$exit_code" ] || exit_code="$STATUS"
@@ -3445,6 +3453,25 @@ publish_node_modules_cache() {
   local tmp_cache_dir="$2"
   rm -rf "$tmp_cache_dir"
   mkdir -p "$tmp_cache_dir" && cp -a "$source_dir/." "$tmp_cache_dir/"
+}
+
+dependency_cache_required_bins_valid() {
+  local package_json="${1:-package.json}"
+  [ -f "$package_json" ] || return 0
+  node - "$package_json" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const pkg = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const dependencies = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+const required = [];
+if (dependencies.typescript) required.push('tsc');
+if (dependencies.eslint) required.push('eslint');
+for (const bin of required) {
+  const target = path.join('node_modules', '.bin', bin);
+  try { fs.accessSync(target, fs.constants.X_OK); }
+  catch { console.error(`missing required dependency executable: ${target}`); process.exit(1); }
+}
+NODE
 }
 
 dependency_cache_entry_roots() {
@@ -6570,7 +6597,7 @@ if (failed > 0) {
 }
 ' 2>/dev/null || true)"
   else
-    validation_summary="Validation log: validation-timings.tsv not yet available (optional evidence for pre-validation checks)"
+    validation_summary="Validation has not run yet. Do not claim that validation or tests passed; evaluate only the diff and requirements at this pre-validation stage."
   fi
   
   if [ -n "$validation_summary" ]; then
@@ -9199,6 +9226,7 @@ prepare_dependencies() {
   image_cache_dir="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR}/${cache_key}/node_modules"
   stamp_file="${workspace_cache_root}/stamp.txt"
   metadata_file="${workspace_cache_root}/repo-ref-metadata.tsv"
+  validation_marker="${workspace_cache_root}/validated-v${KASEKI_DEPENDENCY_CACHE_SCHEMA_VERSION}"
   cache_lock_file="${workspace_cache_root}.lock"
   cache_reused="false"
   cache_source="none"
@@ -9237,6 +9265,13 @@ prepare_dependencies() {
 
   if [ -d node_modules ] && [ -f "$stamp_file" ]; then
     if grep -qx "$lock_hash" "$stamp_file"; then
+      if ! dependency_cache_required_bins_valid package.json; then
+        printf 'Dependency cache status: existing node_modules failed executable validation; reinstalling.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
+        rm -rf node_modules
+        invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
+        rm -f "$workspace_cache_root"/validated "$workspace_cache_root"/validated-v*
+        install_reason="existing_node_modules_integrity_failed"
+      else
       printf 'Dependency cache status: using existing repo node_modules for lock hash %s (repo_ref_key=%s).\n' "$lock_hash" "$repo_ref_key"
       set_dependency_cache_status "existing-node-modules" "$cache_detail restore_method=none"
       emit_event "dependency_cache_decision" "strategy=existing_node_modules" "restore_mode=$restore_mode" "restore_method=none" "reason=lock_hash_match" "location=repo" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
@@ -9246,20 +9281,16 @@ prepare_dependencies() {
       record_stage_timing "dependency install" "0" "0" "cache_hit=true cache_source=repo install_mode=skipped restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
       exec {cache_lock_fd}>&-
       return 0
+      fi
     fi
   fi
 
-  if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ] && [ ! -f "$workspace_cache_root/validated" ]; then
-    if [ -f "$stamp_file" ] && grep -qx "$lock_hash" "$stamp_file"; then
-      printf 'Dependency cache status: legacy cache passed lock-hash validation; creating validation marker.\n'
-      : > "$workspace_cache_root/validated"
-      set_dependency_cache_status "workspace-cache-validated" "$cache_detail reason=legacy_marker_repaired"
-      emit_event "dependency_cache_decision" "strategy=repair_validation_marker" "reason=legacy_cache_valid" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key"
-    else
-      printf 'Dependency cache status: cache has no validation marker and failed legacy validation; invalidating before restore.\n'
-      set_dependency_cache_status "workspace-cache-invalid" "$cache_detail reason=missing_validation_marker_validation_failed"
-      invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
-    fi
+  if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ] && [ ! -f "$validation_marker" ]; then
+    printf 'Dependency cache status: cache schema marker is missing or stale; invalidating before restore.\n'
+    set_dependency_cache_status "workspace-cache-invalid" "$cache_detail reason=missing_or_stale_schema_marker"
+    invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
+    rm -f "$workspace_cache_root"/validated "$workspace_cache_root"/validated-v*
+    install_reason="workspace_cache_schema_stale"
   fi
 
 
@@ -9278,6 +9309,17 @@ prepare_dependencies() {
     append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_restored" "true" "workspace" "0" "restore_completed"
     cache_reused="true"
     cache_source="workspace"
+    if [ ! -f "$validation_marker" ] || ! dependency_cache_required_bins_valid package.json; then
+      printf 'Dependency cache status: restored cache failed executable/schema validation; reinstalling.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
+      emit_event "dependency_cache_decision" "strategy=invalidate_workspace_cache" "reason=required_executable_or_schema_missing" "location=$workspace_cache_dir"
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_invalid" "true" "workspace" "0" "required_executable_or_schema_missing"
+      rm -rf node_modules
+      invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
+      rm -f "$workspace_cache_root"/validated "$workspace_cache_root"/validated-v*
+      cache_reused="false"
+      cache_source="none"
+      install_reason="workspace_cache_integrity_failed"
+    fi
     # The entry was atomically published only after npm validation and is
     # already keyed by lockfile, Node major, and install flags. Running
     # `npm ls` against a copied/hardlinked tree can report benign metadata or
@@ -9393,11 +9435,12 @@ prepare_dependencies() {
   fi
 
   # Only advertise a cache entry after its installed dependency graph validates.
-  if npm ls --depth=0 >/dev/null 2>&1; then
-    : > "$workspace_cache_root/validated"
+  if npm ls --depth=0 >/dev/null 2>&1 && dependency_cache_required_bins_valid package.json; then
+    rm -f "$workspace_cache_root"/validated "$workspace_cache_root"/validated-v*
+    printf '%s\n' "$KASEKI_DEPENDENCY_CACHE_SCHEMA_VERSION" > "$validation_marker"
   else
     invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
-    rm -f "$workspace_cache_root/validated"
+    rm -f "$workspace_cache_root"/validated "$workspace_cache_root"/validated-v*
     exec {cache_lock_fd}>&-
     return 1
   fi
@@ -10107,6 +10150,29 @@ else
     "$VALIDATION_TIMINGS_FILE" \
     "${KASEKI_RESULTS_DIR}/validation-env.log" \
     "validation_command_failed"
+
+  # Exit 127 commonly means a restored dependency tree lost package-manager
+  # executable links. Repair dependencies once and retry the full validation
+  # sequence; ordinary test/type failures remain fail-fast and are not retried.
+  if [ "$VALIDATION_EXIT" -eq 127 ] && [ -f package-lock.json ]; then
+    printf 'Validation command was not found (exit 127); repairing dependencies and retrying once.\n' | tee -a "${KASEKI_RESULTS_DIR}"/validation.log
+    emit_event "validation_dependency_recovery" "reason=command_not_found" "action=reinstall_and_retry"
+    rm -rf node_modules
+    find "$KASEKI_DEPENDENCY_CACHE_DIR" -type f -name 'validated*' -delete 2>/dev/null || true
+    if prepare_dependencies; then
+      VALIDATION_EXIT=0
+      VALIDATION_FAILED_COMMAND=""
+      VALIDATION_FAILURE_REASON=""
+      run_validation_commands \
+        "validation retry after dependency repair" \
+        "$KASEKI_VALIDATION_COMMANDS" \
+        "${KASEKI_RESULTS_DIR}"/validation.log \
+        "/dev/null" \
+        "$VALIDATION_TIMINGS_FILE" \
+        "${KASEKI_RESULTS_DIR}/validation-env.log" \
+        "validation_command_failed"
+    fi
+  fi
   
   # Analyze validation failure causality if validation failed
   if [ "$VALIDATION_EXIT" -ne 0 ]; then
@@ -10125,11 +10191,9 @@ fi
 
 post_validation_goal_check_diff_hash="$(sha256sum "${KASEKI_RESULTS_DIR}"/git.diff 2>/dev/null | awk '{print $1}')"
 if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && [ "$VALIDATION_EXIT" -eq 0 ] && \
-  [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ] && \
-  [ -n "$pre_validation_goal_check_diff_hash" ] && [ -n "$post_validation_goal_check_diff_hash" ] && \
-  [ "$post_validation_goal_check_diff_hash" != "$pre_validation_goal_check_diff_hash" ]; then
-  printf 'Validation commands changed the final git diff; re-running goal check against post-validation artifacts.\n' | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
-  emit_progress "goal check" "re-running after validation changed the final diff (attempt $coding_attempt)"
+  [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ]; then
+  printf 'Validation completed successfully; re-running goal check against final validation evidence and artifacts.\n' | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+  emit_progress "goal check" "re-running after successful validation (attempt $coding_attempt)"
   run_goal_check "$coding_attempt"
   collect_goal_check_feedback "$INSTANCE_NAME"
 

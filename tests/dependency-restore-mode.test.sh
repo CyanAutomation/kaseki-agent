@@ -151,6 +151,23 @@ invalidate_workspace_dependency_cache \
 [ ! -e "$invalid_root/repo-ref-metadata.tsv" ] || fail "invalid cache metadata was not removed"
 pass "failed cache validation invalidates the workspace cache entry immediately"
 
+bin_check_dir="$TMP_DIR/bin-check"
+mkdir -p "$bin_check_dir/node_modules/.bin"
+cat > "$bin_check_dir/package.json" <<'JSON'
+{"devDependencies":{"typescript":"^5.0.0","eslint":"^9.0.0"}}
+JSON
+(
+  cd "$bin_check_dir"
+  if dependency_cache_required_bins_valid package.json; then
+    fail "cache integrity check accepted missing package executables"
+  fi
+  printf '#!/bin/sh\nexit 0\n' > node_modules/.bin/tsc
+  printf '#!/bin/sh\nexit 0\n' > node_modules/.bin/eslint
+  chmod +x node_modules/.bin/tsc node_modules/.bin/eslint
+  dependency_cache_required_bins_valid package.json || fail "cache integrity check rejected executable package bins"
+)
+pass "dependency cache integrity validates required package executables"
+
 legacy_entry="$TMP_DIR/prune-cache/npm/lock-legacy/node-24/flags-c"
 mkdir -p "$legacy_entry/node_modules/pkg"
 prune_dependency_cache "$TMP_DIR/prune-cache" 5000 0 "$metrics_file"
