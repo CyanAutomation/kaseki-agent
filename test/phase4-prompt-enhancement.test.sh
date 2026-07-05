@@ -94,6 +94,7 @@ assert_not_contains() {
   fi
 }
 
+# Task prompt inclusion
 test_task_contract_renders_task_prompt() {
   local result=0
   local prompt
@@ -108,6 +109,7 @@ test_task_contract_renders_task_prompt() {
   return "$result"
 }
 
+# Guardrails enabled/disabled
 test_guardrail_contract_enabled() {
   local result=0
   local prompt
@@ -141,6 +143,7 @@ test_guardrail_contract_disabled() {
   return "$result"
 }
 
+# Hashline edits guidance
 test_hashline_edit_contract_enabled() {
   local result=0
   local prompt
@@ -175,44 +178,91 @@ test_hashline_edit_contract_disabled() {
   return "$result"
 }
 
-test_supported_optional_inputs_render_without_legacy_prompt_files() {
+# Retry prompt inclusion
+test_retry_prompt_contract_included_when_present() {
   local result=0
   local prompt
-  local legacy_prompt_file legacy_test_prompt_file results_dir scouting_artifact
-  legacy_prompt_file="$(mktemp)"
-  legacy_test_prompt_file="$(mktemp)"
+  prompt="$(GOAL_CHECK_RETRY_PROMPT='RETRY_CONTRACT_SENTINEL' render_prompt)" || result=1
+
+  if [ "$result" -eq 0 ]; then
+    assert_contains "$prompt" "Goal-check retry guidance:" || result=1
+    assert_contains "$prompt" "RETRY_CONTRACT_SENTINEL" || result=1
+  fi
+
+  test_result "retry prompt contract renders goal-check retry guidance when present" "$result"
+  return "$result"
+}
+
+test_retry_prompt_contract_omitted_when_empty() {
+  local result=0
+  local prompt
+  prompt="$(GOAL_CHECK_RETRY_PROMPT='' render_prompt)" || result=1
+
+  if [ "$result" -eq 0 ]; then
+    assert_not_contains "$prompt" "Goal-check retry guidance:" || result=1
+  fi
+
+  test_result "retry prompt contract is omitted when no retry guidance is present" "$result"
+  return "$result"
+}
+
+# Mode-specific instructions
+test_mode_specific_contracts_render_supported_sections() {
+  local result=0
+  local prompt
+  local results_dir scouting_artifact
   results_dir="$(mktemp -d)"
   scouting_artifact="$(mktemp)"
 
-  printf '%s\n' 'LEGACY_PROMPT_FILE_CONTENT_SHOULD_NOT_RENDER' > "$legacy_prompt_file"
-  printf '%s\n' 'LEGACY_TEST_PROMPT_FILE_CONTENT_SHOULD_NOT_RENDER' > "$legacy_test_prompt_file"
   printf '%s\n' '{"finding":"SCOUTING_ARTIFACT_CONTENT_IS_NOT_INLINED"}' > "$scouting_artifact"
-  printf '%s\n' 'SUPPORTED_SUMMARIZATION_ANNOTATION_SHOULD_RENDER' > "$results_dir/summarization-annotation.txt"
+  printf '%s\n' 'SUMMARIZATION_CONTRACT_SENTINEL' > "$results_dir/summarization-annotation.txt"
 
   prompt="$(
-    TASK_PROMPT='SUPPORTED_TASK_PROMPT_SHOULD_RENDER' \
-    PROMPT_FILE="$legacy_prompt_file" \
-    TEST_PROMPT_FILE="$legacy_test_prompt_file" \
     SCOUTING_ARTIFACT="$scouting_artifact" \
     KASEKI_RESULTS_DIR="$results_dir" \
-    GOAL_CHECK_RETRY_PROMPT='SUPPORTED_GOAL_CHECK_RETRY_SHOULD_RENDER' \
     KASEKI_HASHLINE_EDITS=0 \
     render_prompt
   )" || result=1
-  rm -f "$legacy_prompt_file" "$legacy_test_prompt_file" "$scouting_artifact"
+  rm -f "$scouting_artifact"
   rm -rf "$results_dir"
 
   if [ "$result" -eq 0 ]; then
-    assert_contains "$prompt" 'SUPPORTED_TASK_PROMPT_SHOULD_RENDER' || result=1
+    assert_contains "$prompt" "Scouting artifact:" || result=1
     assert_contains "$prompt" "$scouting_artifact" || result=1
-    assert_contains "$prompt" 'SUPPORTED_GOAL_CHECK_RETRY_SHOULD_RENDER' || result=1
-    assert_contains "$prompt" 'SUPPORTED_SUMMARIZATION_ANNOTATION_SHOULD_RENDER' || result=1
-    assert_not_contains "$prompt" 'SCOUTING_ARTIFACT_CONTENT_IS_NOT_INLINED' || result=1
+    assert_contains "$prompt" "Summarization Analysis:" || result=1
+    assert_contains "$prompt" "SUMMARIZATION_CONTRACT_SENTINEL" || result=1
+    assert_not_contains "$prompt" "SCOUTING_ARTIFACT_CONTENT_IS_NOT_INLINED" || result=1
+  fi
+
+  test_result "mode-specific contracts render scouting and summarization sections" "$result"
+  return "$result"
+}
+
+test_mode_specific_contract_ignores_legacy_prompt_files() {
+  local result=0
+  local prompt
+  local legacy_prompt_file legacy_test_prompt_file
+  legacy_prompt_file="$(mktemp)"
+  legacy_test_prompt_file="$(mktemp)"
+
+  printf '%s\n' 'LEGACY_PROMPT_FILE_CONTENT_SHOULD_NOT_RENDER' > "$legacy_prompt_file"
+  printf '%s\n' 'LEGACY_TEST_PROMPT_FILE_CONTENT_SHOULD_NOT_RENDER' > "$legacy_test_prompt_file"
+
+  prompt="$(
+    PROMPT_FILE="$legacy_prompt_file" \
+    TEST_PROMPT_FILE="$legacy_test_prompt_file" \
+    KASEKI_HASHLINE_EDITS=0 \
+    render_prompt
+  )" || result=1
+  rm -f "$legacy_prompt_file" "$legacy_test_prompt_file"
+
+  if [ "$result" -eq 0 ]; then
+    assert_contains "$prompt" "Task:" || result=1
     assert_not_contains "$prompt" 'LEGACY_PROMPT_FILE_CONTENT_SHOULD_NOT_RENDER' || result=1
     assert_not_contains "$prompt" 'LEGACY_TEST_PROMPT_FILE_CONTENT_SHOULD_NOT_RENDER' || result=1
   fi
 
-  test_result "supported optional inputs render and legacy prompt-file inputs are ignored" "$result"
+  test_result "mode-specific contract ignores legacy prompt-file inputs" "$result"
   return "$result"
 }
 
@@ -225,7 +275,10 @@ main() {
   test_guardrail_contract_disabled
   test_hashline_edit_contract_enabled
   test_hashline_edit_contract_disabled
-  test_supported_optional_inputs_render_without_legacy_prompt_files
+  test_retry_prompt_contract_included_when_present
+  test_retry_prompt_contract_omitted_when_empty
+  test_mode_specific_contracts_render_supported_sections
+  test_mode_specific_contract_ignores_legacy_prompt_files
 
   printf '\n%s\n' "=== Test Summary ==="
   printf 'Tests run: %d\n' "$test_count"
