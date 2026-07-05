@@ -1,4 +1,4 @@
-# Provider retry/fallback support for kaseki-agent.sh.
+# Gateway retry support for kaseki-agent.sh.
 #
 # Hook variables for tests/integration seams:
 #   KASEKI_PROVIDER_RETRY_PI_CAPTURE_HOOK - function used to invoke Pi (default: run_pi_json_capture)
@@ -389,7 +389,7 @@ try { summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8')); } catch {}
 const error = summary.primary_provider_error || (Array.isArray(summary.provider_errors) ? summary.provider_errors[0] : null);
 
 // Extract token usage from summary
-const tokens = summary.tokens || summary.usage || {};
+const tokens = summary.token_usage || summary.tokens || summary.usage || {};
 const tokenInfo = {
   input_tokens: tokens.input_tokens || tokens.prompt_tokens || 0,
   output_tokens: tokens.output_tokens || tokens.completion_tokens || 0,
@@ -398,8 +398,11 @@ const tokenInfo = {
 
 // Extract timing info if available
 const timing = {};
+const startedAt = process.env.KASEKI_INFERENCE_STARTED_AT;
 if (summary.start_time && summary.end_time) {
   timing.latency_ms = new Date(summary.end_time).getTime() - new Date(summary.start_time).getTime();
+} else if (startedAt) {
+  timing.latency_ms = Math.max(0, Date.now() - new Date(startedAt).getTime());
 }
 
 process.stdout.write(JSON.stringify({
@@ -503,9 +506,6 @@ run_pi_with_retry() {
   local previous_retryable="${PROVIDER_ERROR_RETRYABLE:-}"
   local previous_retry_attempt_count="${PROVIDER_ERROR_RETRY_ATTEMPT_COUNT:-0}"
   local previous_retry_result="${PROVIDER_ERROR_RETRY_RESULT:-none}"
-  local previous_fallback_provider="${PROVIDER_ERROR_FALLBACK_PROVIDER:-}"
-  local previous_fallback_model="${PROVIDER_ERROR_FALLBACK_MODEL:-}"
-  local previous_fallback_result="${PROVIDER_ERROR_FALLBACK_RESULT:-none}"
   
   # Reset retry tracking
   PROVIDER_ERROR_RETRY_ATTEMPT_COUNT=0
@@ -516,13 +516,11 @@ run_pi_with_retry() {
   
   invoke_pi() {
     KASEKI_INFERENCE_PHASE="$phase_name"
-    if [ "$KASEKI_PROVIDER" = "$original_provider" ]; then
-      KASEKI_INFERENCE_ATTEMPT="primary-$attempt"
-    else
-      KASEKI_INFERENCE_ATTEMPT="fallback-1"
-    fi
+    KASEKI_INFERENCE_ATTEMPT="primary-$attempt"
     # Request ID is already generated before calling invoke_pi
     export KASEKI_INFERENCE_PHASE KASEKI_INFERENCE_ATTEMPT KASEKI_INFERENCE_REQUEST_ID
+    KASEKI_INFERENCE_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    export KASEKI_INFERENCE_STARTED_AT
     if [ -n "$stderr_target" ]; then
       provider_retry_pi_capture "$raw_events_file" "$timeout_seconds" "$model" "$prompt" "$stderr_target"
     else
@@ -663,58 +661,14 @@ Retry request identity: $KASEKI_INFERENCE_REQUEST_ID. Treat this as a fresh infe
     fi
   fi
 
-  # A configured fallback is an explicit operator opt-in. Use it only after a
-  # retryable primary provider error has exhausted the primary retry budget.
-  if [ "$pi_exit" -eq 88 ] && [ "$PROVIDER_ERROR_RETRY_RESULT" = "failed" ] && \
-    [ -n "${KASEKI_PROVIDER_FALLBACK:-}" ] && \
-    { [ "$KASEKI_PROVIDER_FALLBACK" != "$original_provider" ] || [ -n "${KASEKI_PROVIDER_FALLBACK_MODEL:-}" ]; }; then
-    fallback_provider="$KASEKI_PROVIDER_FALLBACK"
-    fallback_model="${KASEKI_PROVIDER_FALLBACK_MODEL:-$original_model}"
-    PROVIDER_ERROR_FALLBACK_PROVIDER="$fallback_provider"
-    PROVIDER_ERROR_FALLBACK_MODEL="$fallback_model"
-    PROVIDER_ERROR_FALLBACK_RESULT="attempted"
-    KASEKI_PROVIDER="$fallback_provider"
-    model="$fallback_model"
-    attempt=1
-    rm -f "$raw_events_file" 2>/dev/null || true
-    : > "$raw_events_file"
-    previous_request_id="$KASEKI_INFERENCE_REQUEST_ID"
-    KASEKI_INFERENCE_REQUEST_ID="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())' 2>/dev/null || printf 'req-%s-fallback' "$(date +%s)")"
-    export KASEKI_INFERENCE_REQUEST_ID
-    printf '[PROVIDER FALLBACK] Primary provider exhausted; request %s replaces %s using provider=%s model=%s\n' \
-      "$KASEKI_INFERENCE_REQUEST_ID" "$previous_request_id" "$fallback_provider" "$fallback_model" >&2
-    provider_retry_emit_progress "$phase_name" "provider fallback started (provider=$fallback_provider model=$fallback_model attempt 3/3)"
-    invoke_pi
-    pi_exit=$?
-    summarize_invocation || true
-    snapshot_provider_attempt "$raw_events_file" "$summary_file" "$phase_name" "$fallback_provider" "$fallback_model" "fallback-1"
-    if [ "$pi_exit" -eq 0 ]; then
-      PROVIDER_ERROR_FALLBACK_RESULT="success"
-      PROVIDER_ERROR_RECOVERY_JSON="$(provider_error_json_from_summary "$summary_file" "$phase_name" "$fallback_provider" "$fallback_model")"
-      printf '[PROVIDER FALLBACK SUCCESS] provider=%s model=%s correlation_id=%s\n' \
-        "$fallback_provider" "$fallback_model" "$KASEKI_INFERENCE_REQUEST_ID" >&2
-    else
-      PROVIDER_ERROR_FALLBACK_RESULT="failed"
-      enrich_provider_error_from_attempt "${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}/fallback-1.json"
-      provider_retry_emit_progress "$phase_name" "provider fallback exhausted (provider=$fallback_provider model=$fallback_model attempt 3/3)"
-      printf '[PROVIDER FALLBACK FAILED] provider=%s model=%s correlation_id=%s exit=%s\n' \
-        "$fallback_provider" "$fallback_model" "$KASEKI_INFERENCE_REQUEST_ID" "$pi_exit" >&2
-    fi
-    KASEKI_PROVIDER="$original_provider"
-    model="$original_model"
-  fi
-
   # A later goal-check coding attempt must not erase recovery telemetry from an
   # earlier attempt when the later invocation itself needed no recovery.
   if [ "$pi_exit" -eq 0 ] && [ "$PROVIDER_ERROR_RETRY_ATTEMPT_COUNT" -eq 0 ] && \
     [ "$PROVIDER_ERROR_FALLBACK_RESULT" = "none" ] && \
-    { [ "$previous_retry_attempt_count" -gt 0 ] || [ "$previous_fallback_result" != "none" ]; }; then
+    [ "$previous_retry_attempt_count" -gt 0 ]; then
     PROVIDER_ERROR_RETRYABLE="$previous_retryable"
     PROVIDER_ERROR_RETRY_ATTEMPT_COUNT="$previous_retry_attempt_count"
     PROVIDER_ERROR_RETRY_RESULT="$previous_retry_result"
-    PROVIDER_ERROR_FALLBACK_PROVIDER="$previous_fallback_provider"
-    PROVIDER_ERROR_FALLBACK_MODEL="$previous_fallback_model"
-    PROVIDER_ERROR_FALLBACK_RESULT="$previous_fallback_result"
   fi
   
   return "$pi_exit"

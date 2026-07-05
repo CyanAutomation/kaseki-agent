@@ -5,6 +5,7 @@ export type DockerLogProgressEvent = {
   timestamp: string;
   updatedAt: string;
   status?: 'started' | 'finished';
+  timestampEstimated?: boolean;
 };
 
 const ORCHESTRATOR_STAGE_PATTERN = /^==>\s+(.+?)\s*$/;
@@ -24,7 +25,13 @@ export function progressEventsFromDockerLogTail(
     seenStages.add(key);
     events.push(event);
   };
-  for (const line of content.split(/\r?\n/)) {
+  for (const rawLine of content.split(/\r?\n/)) {
+    // Docker log drivers commonly prefix RFC3339 timestamps. Preserve those
+    // instead of assigning every recovered event the snapshot retrieval time.
+    const timestampMatch = rawLine.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s+(.*)$/);
+    const eventTimestamp = timestampMatch?.[1] || timestamp;
+    // eslint-disable-next-line no-control-regex
+    const line = (timestampMatch?.[2] || rawLine).replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '');
     const stageMatch = line.match(ORCHESTRATOR_STAGE_PATTERN);
     if (stageMatch) {
       append({
@@ -32,8 +39,9 @@ export function progressEventsFromDockerLogTail(
         stage: stageMatch[1].trim(),
         message: 'started',
         status: 'started',
-        timestamp,
-        updatedAt: timestamp,
+        timestamp: eventTimestamp,
+        updatedAt: eventTimestamp,
+        ...(!timestampMatch ? { timestampEstimated: true } : {}),
       });
       continue;
     }
@@ -46,8 +54,9 @@ export function progressEventsFromDockerLogTail(
         stage: progressMatch[1].trim(),
         message,
         status: message.includes('finished') ? 'finished' : undefined,
-        timestamp,
-        updatedAt: timestamp,
+        timestamp: eventTimestamp,
+        updatedAt: eventTimestamp,
+        ...(!timestampMatch ? { timestampEstimated: true } : {}),
       });
     }
   }

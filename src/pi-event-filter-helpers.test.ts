@@ -157,6 +157,10 @@ describe('extractProviderError', () => {
         statusCode: 503,
         errorCode: 'upstream_error',
         responseId: 'resp-123',
+        retryAfter: 12,
+        routedProvider: 'workers-ai',
+        routedModel: '@cf/model',
+        error: { message: 'upstream stream terminated' },
       }) as any
     );
     expect(result).toMatchObject({
@@ -164,6 +168,10 @@ describe('extractProviderError', () => {
       status_code: 503,
       error_code: 'upstream_error',
       response_id: 'resp-123',
+      retry_after: '12',
+      routed_provider: 'workers-ai',
+      routed_model: '@cf/model',
+      upstream_error: 'upstream stream terminated',
     });
   });
 

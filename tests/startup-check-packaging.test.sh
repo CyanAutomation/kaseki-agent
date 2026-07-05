@@ -370,6 +370,10 @@ check_dockerfile_packaging_contracts() {
     'Dockerfile must install provider-retry.sh at its sourced runtime path in both image stages'
   assert_file_contains scripts/startup-checks.sh '"lib/provider-retry\.sh"' \
     'worker preflight must reject images missing the provider retry helper'
+  assert_file_match_count Dockerfile 'install -m 0755 /app/scripts/auto-lint-cleanup-classification\.sh /usr/local/bin/scripts/auto-lint-cleanup-classification\.sh' 2 \
+    'Dockerfile must install auto-lint cleanup classification at its sourced runtime path in both image stages'
+  assert_file_contains scripts/startup-checks.sh '"auto-lint-cleanup-classification\.sh"' \
+    'worker preflight must reject images missing the auto-lint cleanup classification helper'
 
   for helper in \
     instance-status-derivation.js \

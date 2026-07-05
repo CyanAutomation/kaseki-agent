@@ -370,6 +370,7 @@ export async function runPiEventFilter(
   const executionTime = new ExecutionTimeAggregator();
   const tokenUsage = new TokenUsageAggregator();
   const providerErrors: ProviderErrorSummary[] = [];
+  const providerErrorKeys = new Set<string>();
   const assistantTurnStates = new Map<string, AssistantTurnState>();
   const tracker = new TimestampTracker();
   let invalidJsonLines = 0;
@@ -419,7 +420,17 @@ export async function runPiEventFilter(
     recordAssistantTurnState(event, assistantTurnStates);
     const providerError = extractProviderError(event);
     if (providerError) {
-      providerErrors.push(providerError);
+      const key = JSON.stringify([
+        providerError.type,
+        providerError.response_id,
+        providerError.status_code,
+        providerError.error_code,
+        providerError.message,
+      ]);
+      if (!providerErrorKeys.has(key)) {
+        providerErrorKeys.add(key);
+        providerErrors.push(providerError);
+      }
     }
     const emptyAssistantTurn = extractEmptyAssistantTurn(event, assistantTurnStates);
     if (emptyAssistantTurn) {
