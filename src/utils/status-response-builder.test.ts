@@ -140,6 +140,7 @@ describe('StatusResponseBuilder', () => {
 
       expect(response.lifecyclePhase).toBe('finalizing');
       expect(response.attempt).toMatchObject({ current: 2, maximum: 2, state: 'exhausted' });
+      expect(response.progress?.displayName).toBe('Coding attempt 2/2 — exhausted');
       expect(response.diagnosis).toMatchObject({ retryExhausted: true, severity: 'error' });
       expect(response.cancellable).toBe(true);
     });
@@ -156,6 +157,7 @@ describe('StatusResponseBuilder', () => {
       const response = builder.buildStatus(job as Job);
 
       expect(response.attempt).toMatchObject({ current: 2, maximum: 2, state: 'retrying', nextRetryInSeconds: 3 });
+      expect(response.progress?.displayName).toBe('Coding attempt 2/2 — retrying');
     });
 
     it('should build status response for failed job', () => {

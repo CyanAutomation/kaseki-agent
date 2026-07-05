@@ -2259,8 +2259,9 @@ const controllerPage = String.raw`<!doctype html>
         const phaseElapsed = typeof progress.updatedAt === 'string'
           ? Math.max(0, Math.floor((Date.now() - Date.parse(progress.updatedAt)) / 1000))
           : null;
-        const retry = payload.attempt && payload.attempt.state === 'retrying'
-          ? 'retry ' + String(payload.attempt.current || 1) + '/' + String(payload.attempt.maximum || 1)
+        const retry = payload.attempt
+          ? 'attempt ' + String(payload.attempt.current || 1) + '/' + String(payload.attempt.maximum || 1)
+            + ' ' + String(payload.attempt.state || 'running')
             + (typeof payload.attempt.nextRetryInSeconds === 'number' ? ' in ' + payload.attempt.nextRetryInSeconds + 's' : '')
           : '';
         const timeout = typeof payload.timeoutRiskPercent === 'number' ? 'timeout risk ' + payload.timeoutRiskPercent + '%' : '';
