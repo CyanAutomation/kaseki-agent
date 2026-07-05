@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1091,SC2034
-# Tests cleanup command classification for missing tooling and npm scripts.
+# Tests cleanup command classification by sourcing the helper directly.
 
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCRIPT_PATH="$ROOT_DIR/kaseki-agent.sh"
-if [[ ! -f "$SCRIPT_PATH" ]]; then
-  echo "Error: kaseki-agent.sh not found at $SCRIPT_PATH" >&2
+HELPER_PATH="$ROOT_DIR/scripts/auto-lint-cleanup-classification.sh"
+if [[ ! -f "$HELPER_PATH" ]]; then
+  echo "Error: auto-lint cleanup helper not found at $HELPER_PATH" >&2
   exit 1
 fi
 TMP_DIR="$(mktemp -d)"
@@ -19,62 +19,56 @@ export KASEKI_RESULTS_DIR="$TMP_DIR/results"
 pass() { printf '✓ %s\n' "$1"; }
 fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
 assert_file_contains() {
-  local label="$1"
-  local needle="$2"
-  local file="$3"
-  if grep -Fq -- "$needle" "$file"; then
-    pass "$label"
-  else
-    printf '--- %s ---\n' "$file" >&2
-    cat "$file" >&2 || true
-    fail "$label: expected to find '$needle'"
-  fi
+  local label="$1" needle="$2" file="$3"
+  if grep -Fq -- "$needle" "$file"; then pass "$label"; else printf '--- %s ---\n' "$file" >&2; cat "$file" >&2 || true; fail "$label: expected to find '$needle'"; fi
 }
 assert_file_not_contains() {
-  local label="$1"
-  local needle="$2"
-  local file="$3"
-  if grep -Fq -- "$needle" "$file"; then
-    printf '%s\n' "--- $file ---" >&2
-    cat "$file" >&2 || true
-    fail "$label: did not expect to find '$needle'"
-  else
-    pass "$label"
-  fi
+  local label="$1" needle="$2" file="$3"
+  if grep -Fq -- "$needle" "$file"; then printf '%s\n' "--- $file ---" >&2; cat "$file" >&2 || true; fail "$label: did not expect to find '$needle'"; else pass "$label"; fi
 }
 assert_equals() {
-  local label="$1"
-  local expected="$2"
-  local actual="$3"
+  local label="$1" expected="$2" actual="$3"
   [ "$actual" = "$expected" ] || fail "$label: expected '$expected', got '$actual'"
   pass "$label"
 }
 
-# Load the npm helpers and auto-lint cleanup function under test, redirecting
-# container paths into this test's temporary workspace.
-eval "$(awk '
-  /^npm_run_script_name\(\)/ { emit=1 }
-  /^has_typescript_project\(\)/ { emit=0 }
-  emit { print }
-  /^skip_auto_lint_cleanup_before_core_change_verified\(\)/ { core_gate=1 }
-  /^run_trailing_whitespace_cleanup_for_changed_tracked_text_files\(\)/ { core_gate=0 }
-  core_gate { print }
-  /^run_auto_lint_cleanup\(\)/ { cleanup=1 }
-  /^run_validation_commands\(\)/ { cleanup=0 }
-  cleanup { print }
-' "$SCRIPT_PATH" | sed "s#/workspace/repo#$TMP_DIR/repo#g; s#/results#$TMP_DIR/results#g")"
+# Minimal npm helpers normally provided by kaseki-agent.sh before the helper is sourced.
+npm_run_script_name() {
+  local command="$1"
+  local npm_run_regex='^npm[[:space:]]+run[[:space:]]+([^[:space:]-][^[:space:]-]*)($|[[:space:]])'
+  if [[ "$command" =~ $npm_run_regex ]]; then printf '%s' "${BASH_REMATCH[1]}"; return 0; fi
+  return 1
+}
+package_json_has_npm_script() {
+  local script_name="$1"
+  [ -f package.json ] || return 1
+  node - "$script_name" <<'NODE'
+const fs = require('fs');
+const scriptName = process.argv[2];
+try {
+  const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+  const scripts = pkg && typeof pkg.scripts === 'object' && pkg.scripts ? pkg.scripts : {};
+  process.exit(Object.prototype.hasOwnProperty.call(scripts, scriptName) ? 0 : 1);
+} catch { process.exit(1); }
+NODE
+}
+missing_npm_script_for_validation_command() {
+  local command="$1" script_name
+  script_name="$(npm_run_script_name "$command")" || return 1
+  package_json_has_npm_script "$script_name" && return 1
+  printf '%s' "$script_name"
+  return 0
+}
 
-auto_lint_cleanup_enabled_for_mode() { [ "$KASEKI_AUTO_LINT_CLEANUP" = "1" ] && [ "$KASEKI_DRY_RUN" != "1" ]; }
-collect_changed_file_set() { : > "$1"; }
+# Source the helper under test directly.
+# shellcheck source=scripts/auto-lint-cleanup-classification.sh
+. "$HELPER_PATH"
+
 set_current_stage() { :; }
 emit_progress() { printf 'progress %s %s\n' "$1" "$2" >> "$TMP_DIR/results/progress.log"; }
 emit_event() {
-  printf '%s' "$1" >> "$TMP_DIR/results/events.log"
-  shift
-  while [ "$#" -gt 0 ]; do
-    printf ' %s' "$1" >> "$TMP_DIR/results/events.log"
-    shift
-  done
+  printf '%s' "$1" >> "$TMP_DIR/results/events.log"; shift
+  while [ "$#" -gt 0 ]; do printf ' %s' "$1" >> "$TMP_DIR/results/events.log"; shift; done
   printf '\n' >> "$TMP_DIR/results/events.log"
 }
 emit_error_event() { emit_event "error" "error_type=$1" "detail=$2" "recovery_action=${3:-continue}"; }
@@ -101,87 +95,86 @@ reset_workspace() {
   KASEKI_AUTO_LINT_CLEANUP=1
   KASEKI_DRY_RUN=0
   KASEKI_TASK_MODE=implement
+  KASEKI_SKIP_MISSING_NPM_SCRIPTS=1
 }
 
-
-reset_workspace
-cat > package.json <<'JSON'
-{
-  "scripts": {
-    "test": "node -e 'process.exit(0)'"
-  }
-}
+case_skipped_cleanup() {
+  reset_workspace
+  cat > package.json <<'JSON'
+{ "scripts": { "test": "node -e 'process.exit(0)'" } }
 JSON
-: > "$TMP_DIR/results/git.diff"
-KASEKI_TASK_MODE="patch"
-KASEKI_SKIP_MISSING_NPM_SCRIPTS=1
-KASEKI_AUTO_LINT_CLEANUP_COMMANDS='npm run lint:fix'
-run_auto_lint_cleanup_after_core_change_verified
+  : > "$TMP_DIR/results/git.diff"
+  KASEKI_TASK_MODE="patch"
+  KASEKI_AUTO_LINT_CLEANUP_COMMANDS='npm run lint:fix'
+  run_auto_lint_cleanup_after_core_change_verified
 
-assert_equals 'empty patch diff cleanup skip exits successfully' '0' "$AUTO_LINT_CLEANUP_EXIT"
-assert_equals 'empty patch diff cleanup skip result' 'skipped' "$AUTO_LINT_CLEANUP_RESULT"
-assert_equals 'empty patch diff cleanup skip classification' 'skipped_before_core_change_verified' "$AUTO_LINT_CLEANUP_CLASSIFICATION"
-assert_equals 'empty patch diff cleanup skip attempted no cleanup commands' '0' "$AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED"
-assert_equals 'empty patch diff cleanup skip records no skipped npm scripts' '0' "$AUTO_LINT_CLEANUP_COMMANDS_SKIPPED"
-assert_file_contains 'cleanup log records core-change gate skip' 'skipped_before_core_change_verified' "$AUTO_LINT_CLEANUP_LOG"
-assert_file_contains 'cleanup log records empty patch reason' 'reason=patch_diff_empty' "$AUTO_LINT_CLEANUP_LOG"
-assert_file_not_contains 'empty patch diff does not classify missing cleanup script' 'classification=missing_cleanup_command' "$AUTO_LINT_CLEANUP_LOG"
-assert_file_not_contains 'empty patch diff does not report skipped lint:fix' 'skipped cleanup: package.json does not define npm script "lint:fix"' "$AUTO_LINT_CLEANUP_LOG"
-assert_file_contains 'events classify cleanup skip before core change' 'auto_lint_cleanup_finished exit_code=0 result=skipped classification=skipped_before_core_change_verified reason=patch_diff_empty attempted_commands=0 skipped_commands=0' "$TMP_DIR/results/events.log"
-
-reset_workspace
-cat > package.json <<'JSON'
-{
-  "scripts": {
-    "test": "node -e 'process.exit(0)'"
-  }
+  assert_equals 'skipped cleanup exits successfully' '0' "$AUTO_LINT_CLEANUP_EXIT"
+  assert_equals 'skipped cleanup result' 'skipped' "$AUTO_LINT_CLEANUP_RESULT"
+  assert_equals 'skipped cleanup classification' 'skipped_before_core_change_verified' "$AUTO_LINT_CLEANUP_CLASSIFICATION"
+  assert_file_contains 'events classify cleanup skip before core change' 'auto_lint_cleanup_finished exit_code=0 result=skipped classification=skipped_before_core_change_verified reason=patch_diff_empty attempted_commands=0 skipped_commands=0' "$TMP_DIR/results/events.log"
+  assert_file_not_contains 'skipped cleanup does not classify missing cleanup script' 'classification=missing_cleanup_command' "$AUTO_LINT_CLEANUP_LOG"
 }
+
+case_missing_npm_script() {
+  reset_workspace
+  cat > package.json <<'JSON'
+{ "scripts": { "test": "node -e 'process.exit(0)'" } }
 JSON
-KASEKI_SKIP_MISSING_NPM_SCRIPTS=1
-KASEKI_AUTO_LINT_CLEANUP_COMMANDS='npm run lint:fix'
-run_auto_lint_cleanup
+  KASEKI_AUTO_LINT_CLEANUP_COMMANDS='npm run lint:fix'
+  run_auto_lint_cleanup
 
-assert_equals 'missing lint:fix exits successfully' '0' "$AUTO_LINT_CLEANUP_EXIT"
-assert_equals 'missing lint:fix result is warning' 'warning' "$AUTO_LINT_CLEANUP_RESULT"
-assert_equals 'missing lint:fix classification is missing_cleanup_command' 'missing_cleanup_command' "$AUTO_LINT_CLEANUP_CLASSIFICATION"
-assert_equals 'missing lint:fix attempted no cleanup commands' '0' "$AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED"
-assert_equals 'missing lint:fix recorded one skipped cleanup command' '1' "$AUTO_LINT_CLEANUP_COMMANDS_SKIPPED"
-assert_file_contains 'cleanup log records skipped lint:fix' 'skipped cleanup: package.json does not define npm script "lint:fix"' "$AUTO_LINT_CLEANUP_LOG"
-assert_file_contains 'cleanup log records missing cleanup classification' 'classification=missing_cleanup_command' "$AUTO_LINT_CLEANUP_LOG"
-assert_file_contains 'cleanup timings classify missing cleanup command' $'npm run lint:fix\tskipped\t' "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
-assert_file_contains 'cleanup timings include missing cleanup classification' 'classification=missing_cleanup_command' "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
-assert_file_contains 'events classify skipped lint:fix' 'auto_lint_cleanup_command_skipped command=npm run lint:fix reason=missing_cleanup_command' "$TMP_DIR/results/events.log"
-assert_file_contains 'finished event reports warning classification' 'auto_lint_cleanup_finished exit_code=0 result=warning classification=missing_cleanup_command attempted_commands=0 skipped_commands=1' "$TMP_DIR/results/events.log"
-
-reset_workspace
-cat > package.json <<'JSON'
-{
-  "scripts": {
-    "test": "node -e 'process.exit(0)'"
-  }
+  assert_equals 'missing npm script exits successfully' '0' "$AUTO_LINT_CLEANUP_EXIT"
+  assert_equals 'missing npm script result is warning' 'warning' "$AUTO_LINT_CLEANUP_RESULT"
+  assert_equals 'missing npm script classification' 'missing_cleanup_command' "$AUTO_LINT_CLEANUP_CLASSIFICATION"
+  assert_equals 'missing npm script recorded one skipped cleanup command' '1' "$AUTO_LINT_CLEANUP_COMMANDS_SKIPPED"
+  assert_file_contains 'cleanup log records skipped lint:fix' 'skipped cleanup: package.json does not define npm script "lint:fix"' "$AUTO_LINT_CLEANUP_LOG"
+  assert_file_contains 'events classify skipped lint:fix' 'auto_lint_cleanup_command_skipped command=npm run lint:fix reason=missing_cleanup_command' "$TMP_DIR/results/events.log"
 }
+
+case_missing_cleanup_tooling() {
+  reset_workspace
+  KASEKI_AUTO_LINT_CLEANUP_COMMANDS='__definitely_missing_cleanup_command__'
+  run_auto_lint_cleanup
+
+  assert_equals 'missing cleanup tooling preserves exit 127' '127' "$AUTO_LINT_CLEANUP_EXIT"
+  assert_equals 'missing cleanup tooling result is failed' 'failed' "$AUTO_LINT_CLEANUP_RESULT"
+  assert_equals 'missing cleanup tooling classification' 'command_not_found' "$AUTO_LINT_CLEANUP_CLASSIFICATION"
+  assert_file_contains 'cleanup timings include command-not-found classification' 'classification=command_not_found' "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
+  assert_file_contains 'events classify command-not-found failure' 'auto_lint_cleanup_command_finished command=__definitely_missing_cleanup_command__ exit_code=127 classification=command_not_found' "$TMP_DIR/results/events.log"
+}
+
+case_successful_cleanup() {
+  reset_workspace
+  KASEKI_AUTO_LINT_CLEANUP_COMMANDS='true'
+  run_auto_lint_cleanup
+
+  assert_equals 'successful cleanup exits successfully' '0' "$AUTO_LINT_CLEANUP_EXIT"
+  assert_equals 'successful cleanup result is passed' 'passed' "$AUTO_LINT_CLEANUP_RESULT"
+  assert_equals 'successful cleanup classification' 'passed' "$AUTO_LINT_CLEANUP_CLASSIFICATION"
+  assert_equals 'successful cleanup attempted one command' '1' "$AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED"
+  assert_file_contains 'events classify successful cleanup command' 'auto_lint_cleanup_command_finished command=true exit_code=0 classification=passed' "$TMP_DIR/results/events.log"
+}
+
+case_artifact_event_classification() {
+  reset_workspace
+  cat > package.json <<'JSON'
+{ "scripts": { "test": "node -e 'process.exit(0)'" } }
 JSON
-KASEKI_SKIP_MISSING_NPM_SCRIPTS=1
-KASEKI_AUTO_LINT_CLEANUP_COMMANDS='false;npm run lint:fix'
-run_auto_lint_cleanup
+  KASEKI_AUTO_LINT_CLEANUP_COMMANDS='false;npm run lint:fix'
+  run_auto_lint_cleanup
 
-assert_equals 'failed cleanup followed by missing script preserves exit' '1' "$AUTO_LINT_CLEANUP_EXIT"
-assert_equals 'failed cleanup followed by missing script preserves result' 'failed' "$AUTO_LINT_CLEANUP_RESULT"
-assert_equals 'failed cleanup followed by missing script preserves classification' 'lint_fix_error' "$AUTO_LINT_CLEANUP_CLASSIFICATION"
-assert_equals 'failed cleanup followed by missing script records skipped command' '1' "$AUTO_LINT_CLEANUP_COMMANDS_SKIPPED"
-assert_file_contains 'finished event preserves earlier failure classification' 'auto_lint_cleanup_finished exit_code=1 result=failed classification=lint_fix_error attempted_commands=1 skipped_commands=1' "$TMP_DIR/results/events.log"
+  assert_equals 'artifact event classification preserves failure exit' '1' "$AUTO_LINT_CLEANUP_EXIT"
+  assert_equals 'artifact event classification preserves failure result' 'failed' "$AUTO_LINT_CLEANUP_RESULT"
+  assert_equals 'artifact event classification preserves failure classification' 'lint_fix_error' "$AUTO_LINT_CLEANUP_CLASSIFICATION"
+  assert_file_contains 'finished event preserves earlier failure classification' 'auto_lint_cleanup_finished exit_code=1 result=failed classification=lint_fix_error attempted_commands=1 skipped_commands=1' "$TMP_DIR/results/events.log"
+  assert_file_contains 'cleanup timings include lint fix error classification' $'false\t1\t' "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
+  assert_file_contains 'cleanup timings include missing cleanup classification' 'classification=missing_cleanup_command' "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
+}
 
-reset_workspace
-KASEKI_SKIP_MISSING_NPM_SCRIPTS=1
-KASEKI_AUTO_LINT_CLEANUP_COMMANDS='__definitely_missing_cleanup_command__'
-run_auto_lint_cleanup
-
-assert_equals 'command-not-found cleanup preserves exit 127' '127' "$AUTO_LINT_CLEANUP_EXIT"
-assert_equals 'command-not-found cleanup result is failed' 'failed' "$AUTO_LINT_CLEANUP_RESULT"
-assert_equals 'command-not-found cleanup classification' 'command_not_found' "$AUTO_LINT_CLEANUP_CLASSIFICATION"
-assert_equals 'command-not-found cleanup attempted one command' '1' "$AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED"
-assert_file_contains 'cleanup log records command-not-found classification' 'classification=command_not_found' "$AUTO_LINT_CLEANUP_LOG"
-assert_file_contains 'cleanup timings include command-not-found classification' 'classification=command_not_found' "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
-assert_file_contains 'events classify command-not-found failure' 'auto_lint_cleanup_command_finished command=__definitely_missing_cleanup_command__ exit_code=127 classification=command_not_found' "$TMP_DIR/results/events.log"
+case_missing_cleanup_tooling
+case_missing_npm_script
+case_skipped_cleanup
+case_successful_cleanup
+case_artifact_event_classification
 
 printf '\n✅ auto-lint cleanup classification tests passed\n'
