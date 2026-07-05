@@ -15,12 +15,22 @@
  */
 
 import fs from 'fs';
-import { generateGitHubAppToken } from './github-utils';
+import { pathToFileURL } from 'url';
+import type { generateGitHubAppToken as generateGitHubAppTokenFn } from './github-utils';
+import { resolveGitHubAppTokenRuntimeImport } from './github-app-token-runtime';
 
 const APP_ID = process.argv[2];
 const PRIVATE_KEY_FILE = process.argv[3];
 const OWNER = process.argv[4];
 const REPO = process.argv[5];
+
+type GitHubUtilsModule = {
+  generateGitHubAppToken: typeof generateGitHubAppTokenFn;
+};
+
+async function loadGitHubUtils(): Promise<GitHubUtilsModule> {
+  return import(resolveGitHubAppTokenRuntimeImport('./github-utils.js', import.meta.url)) as Promise<GitHubUtilsModule>;
+}
 
 async function main(): Promise<void> {
   if (!APP_ID || !PRIVATE_KEY_FILE || !OWNER || !REPO) {
@@ -32,6 +42,7 @@ async function main(): Promise<void> {
 
   try {
     const privateKeyContent = fs.readFileSync(PRIVATE_KEY_FILE, 'utf8');
+    const { generateGitHubAppToken } = await loadGitHubUtils();
     const tokenData = await generateGitHubAppToken(OWNER, REPO, APP_ID, privateKeyContent);
 
     // Output result as JSON
@@ -47,5 +58,6 @@ async function main(): Promise<void> {
   }
 }
 
-main();
-
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  void main();
+}
