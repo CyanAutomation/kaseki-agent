@@ -1,49 +1,21 @@
 /**
  * Instance Failure Extraction
  *
- * Extracts and classifies failure reasons from metadata and instance artifacts.
+ * Classifies failure reasons from metadata and instance artifacts.
+ * Delegates reason extraction to failure-reason-extractors.ts
  */
 
 import { Metadata } from './instance-metadata-reader';
 import { normalizeExitCodeCandidate } from './instance-status-derivation';
 import { classifyProviderFailure } from './provider-error-classifier';
 
-/**
- * Extract validation failure reason from metadata.
- * Returns the reason if validation failed, otherwise null.
- */
-export function extractValidationAllowlistFailureReason(metadata: Metadata = {}): string | null {
-  const reason = typeof metadata.validation_allowlist_failure_reason === 'string'
-    ? metadata.validation_allowlist_failure_reason.trim()
-    : '';
-  return reason.length > 0 ? reason : null;
-}
-
-export function extractValidationFailureReason(metadata: Metadata = {}): string | null {
-  const reason = typeof metadata.validation_failure_reason === 'string'
-    ? metadata.validation_failure_reason.trim()
-    : '';
-  if (reason.length > 0) return reason;
-  return extractValidationAllowlistFailureReason(metadata);
-}
-
-/**
- * Extract quality gate failure reason from metadata.
- * Returns the reason if quality checks failed, otherwise null.
- */
-export function extractQualityFailureReason(metadata: Metadata = {}): string | null {
-  const reason = typeof metadata.quality_failure_reason === 'string'
-    ? metadata.quality_failure_reason.trim()
-    : '';
-  return reason.length > 0 ? reason : null;
-}
-
-export function extractGoalCheckFailureReason(metadata: Metadata = {}): string | null {
-  const reason = typeof metadata.goal_check_failure_reason === 'string'
-    ? metadata.goal_check_failure_reason.trim()
-    : '';
-  return reason.length > 0 ? reason : null;
-}
+// Re-export for backward compatibility with existing imports
+export {
+  extractValidationFailureReason,
+  extractValidationAllowlistFailureReason,
+  extractQualityFailureReason,
+  extractGoalCheckFailureReason,
+} from './utils/failure-reason-extractors';
 
 /**
  * Classify failure type from metadata and exit code.
