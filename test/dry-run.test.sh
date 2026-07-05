@@ -61,11 +61,13 @@ test_host_start_serializes_public_contract() (
     KASEKI_STARTUP_CHECK_MODE="all" \
     write_dry_run_host_start_artifact "$result_dir"
 
-  assert_json_field_equals "$result_dir/host-start.json" instance "kaseki-helper-test" "host-start public contract preserves instance"
-  assert_json_field_equals "$result_dir/host-start.json" repo_url "https://example.invalid/repo.git" "host-start public contract preserves repository URL"
-  assert_json_field_equals "$result_dir/host-start.json" git_ref "feature/dry-run-helper" "host-start public contract preserves git ref"
-  assert_json_field_equals "$result_dir/host-start.json" dry_run 1 "host-start public contract marks dry-run mode"
-  assert_json_field_equals "$result_dir/host-start.json" startup_check_mode "all" "host-start public contract preserves startup-check mode"
+  # The Docker-backed integration test already proves a dry-run invocation writes
+  # host-start.json. Keep this unit case focused on helper-only serialization
+  # details that are not otherwise exercised end-to-end.
+  assert_json_field_equals "$result_dir/host-start.json" instance "kaseki-helper-test" "host-start helper contract preserves instance"
+  assert_json_field_equals "$result_dir/host-start.json" repo_url "https://example.invalid/repo.git" "host-start helper contract preserves repository URL"
+  assert_json_field_equals "$result_dir/host-start.json" git_ref "feature/dry-run-helper" "host-start helper contract preserves git ref"
+  assert_json_field_equals "$result_dir/host-start.json" startup_check_mode "all" "host-start helper contract preserves startup-check mode"
 )
 
 test_initialize_dry_run_agent_artifacts_truncates_helper_files() (
@@ -87,10 +89,11 @@ test_initialize_dry_run_agent_artifacts_truncates_helper_files() (
 
   initialize_dry_run_agent_artifacts "$result_dir"
 
+  # End-to-end dry-run coverage already asserts pi-events.jsonl and
+  # validation-timings.tsv are initialized. Retain the helper-owned placeholders
+  # that only this initialization helper test covers directly.
   for artifact in \
-    pi-events.jsonl \
     pi-summary.json \
-    validation-timings.tsv \
     validation.log \
     validation-raw.log \
     validation-env.log; do
@@ -121,17 +124,16 @@ PI
     KASEKI_CACHE_DIR="$cache_dir" \
     write_dry_run_startup_check_artifacts "$result_dir" >/dev/null
 
-  # Stable public dry-run startup outputs: metadata exposes both legacy camelCase
-  # and snake_case flags, a successful startup-check exit/stage, and the detected
-  # Pi CLI version; startup-check.txt exposes the machine-readable ok marker.
-  assert_json_field_equals "$result_dir/metadata.json" startupCheck true "metadata public contract exposes legacy startupCheck flag"
-  assert_json_field_equals "$result_dir/metadata.json" startup_check true "metadata public contract exposes startup_check flag"
-  assert_json_field_equals "$result_dir/metadata.json" dryRun true "metadata public contract exposes legacy dryRun flag"
-  assert_json_field_equals "$result_dir/metadata.json" dry_run 1 "metadata public contract marks dry-run mode"
-  assert_json_field_equals "$result_dir/metadata.json" exit_code 0 "metadata public contract reports successful startup-check exit"
-  assert_json_field_equals "$result_dir/metadata.json" current_stage "startup check" "metadata public contract reports startup-check stage"
-  assert_json_field_equals "$result_dir/metadata.json" pi_version "pi fake 0.0.0" "metadata public contract reports detected Pi CLI version"
-  assert_file_contains "$result_dir/startup-check.txt" "startup_check=ok" "startup-check public contract writes ok marker"
+  # The integration test covers metadata.json dry_run. This helper-level
+  # contract protects the additional startup metadata fields and marker emitted
+  # by scripts/dry-run-artifacts.sh itself.
+  assert_json_field_equals "$result_dir/metadata.json" startupCheck true "metadata helper contract exposes legacy startupCheck flag"
+  assert_json_field_equals "$result_dir/metadata.json" startup_check true "metadata helper contract exposes startup_check flag"
+  assert_json_field_equals "$result_dir/metadata.json" dryRun true "metadata helper contract exposes legacy dryRun flag"
+  assert_json_field_equals "$result_dir/metadata.json" exit_code 0 "metadata helper contract reports successful startup-check exit"
+  assert_json_field_equals "$result_dir/metadata.json" current_stage "startup check" "metadata helper contract reports startup-check stage"
+  assert_json_field_equals "$result_dir/metadata.json" pi_version "pi fake 0.0.0" "metadata helper contract reports detected Pi CLI version"
+  assert_file_contains "$result_dir/startup-check.txt" "startup_check=ok" "startup-check helper contract writes ok marker"
 )
 
 test_validation_commands_skip_side_effects_in_dry_run() (
@@ -159,8 +161,8 @@ test_validation_commands_skip_side_effects_in_dry_run() (
     "printf SHOULD_NOT_RUN > '$marker'" \
     "$result_dir/validation.log" \
     "$result_dir/validation-raw.log" \
-    "$result_dir/validation-env.log" \
     "$result_dir/validation-timings.tsv" \
+    "$result_dir/validation-env.log" \
     "validation_command_failed" \
     validation_exit \
     validation_detail \
@@ -170,19 +172,19 @@ test_validation_commands_skip_side_effects_in_dry_run() (
     "$workspace_dir" \
     "$result_dir"
 
-  [ "$validation_exit" = "0" ] || fail "dry-run validation contract reports success without executing commands"
-  [ ! -e "$marker" ] || fail "dry-run validation contract skips command side effects"
-  assert_file_contains "$result_dir/validation.log" "DRY-RUN MODE" "dry-run validation contract announces skipped execution"
-  assert_file_contains "$result_dir/validation-timings.tsv" "dry_run=true" "dry-run validation contract records skipped execution timing"
+  [ "$validation_exit" = "0" ] || fail "dry-run validation helper contract reports success without executing commands"
+  [ ! -e "$marker" ] || fail "dry-run validation helper contract skips command side effects"
+  assert_file_contains "$result_dir/validation.log" "DRY-RUN MODE" "dry-run validation helper contract announces skipped execution"
+  assert_file_contains "$result_dir/validation-timings.tsv" "dry_run=true" "dry-run validation helper contract records skipped execution timing"
 )
 
 run_test test_host_start_serializes_public_contract \
-  "write_dry_run_host_start_artifact serializes public contract fields"
+  "host-start.json: write_dry_run_host_start_artifact serializes helper-only contract fields"
 run_test test_initialize_dry_run_agent_artifacts_truncates_helper_files \
-  "initialize_dry_run_agent_artifacts creates empty helper-owned files"
+  "initialized helper files: initialize_dry_run_agent_artifacts resets helper-only placeholders"
 run_test test_startup_check_writes_stable_public_fields \
-  "write_dry_run_startup_check_artifacts writes stable public fields"
+  "startup metadata: write_dry_run_startup_check_artifacts writes helper-only metadata fields"
 run_test test_validation_commands_skip_side_effects_in_dry_run \
-  "run_validation_commands skips validation side effects in dry-run mode"
+  "validation-command side effects: run_validation_commands suppresses execution in dry-run mode"
 
 printf '\n✅ Fast dry-run helper tests passed!\n'
