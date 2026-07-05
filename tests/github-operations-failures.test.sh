@@ -16,30 +16,16 @@ NC='\033[0m'
 
 TEST_ROOT="$(mktemp -d /tmp/kaseki-github-ops-failures.XXXXXX)"
 REAL_GIT="$(command -v git)"
-ORIGINAL_TOKEN_HELPER_BACKUP=""
-ORIGINAL_TOKEN_HELPER_PRESENT=0
 CREATED_APP_LIB_FIXTURES=()
 
 # shellcheck disable=SC2317
 cleanup() {
-  if [ "$ORIGINAL_TOKEN_HELPER_PRESENT" -eq 1 ] && [ -n "$ORIGINAL_TOKEN_HELPER_BACKUP" ] && [ -f "$ORIGINAL_TOKEN_HELPER_BACKUP" ]; then
-    cp "$ORIGINAL_TOKEN_HELPER_BACKUP" /usr/local/bin/github-app-token 2>/dev/null || true
-    chmod +x /usr/local/bin/github-app-token 2>/dev/null || true
-  else
-    rm -f /usr/local/bin/github-app-token 2>/dev/null || true
-  fi
   for helper_file in "${CREATED_APP_LIB_FIXTURES[@]:-}"; do
     rm -f "$helper_file" 2>/dev/null || true
   done
   rm -rf "$TEST_ROOT"
 }
 trap cleanup EXIT
-
-if [ -e /usr/local/bin/github-app-token ]; then
-  ORIGINAL_TOKEN_HELPER_PRESENT=1
-  ORIGINAL_TOKEN_HELPER_BACKUP="$TEST_ROOT/original-github-app-token"
-  cp /usr/local/bin/github-app-token "$ORIGINAL_TOKEN_HELPER_BACKUP"
-fi
 
 test_case() {
   printf '\n%b[TEST]%b %s\n' "$YELLOW" "$NC" "$1"
@@ -132,12 +118,41 @@ write_common_fake_bin() {
   cat > "$bin_dir/git" <<'EOF_GIT'
 #!/usr/bin/env bash
 set -uo pipefail
+if [ "${1:-}" = "-C" ]; then
+  git_dir="$2"
+  shift 2
+  cd "$git_dir"
+fi
 if [ "${1:-}" = "clone" ]; then
   dest="${@: -1}"
   rm -rf "$dest"
   exec "$KASEKI_TEST_REAL_GIT" clone --quiet "$KASEKI_TEST_SOURCE_REPO" "$dest"
 fi
+if [ "${1:-}" = "diff" ] && [ "${2:-}" = "--name-only" ]; then
+  printf 'fixture.txt\n'
+  exit 0
+fi
+if [ "${1:-}" = "diff" ]; then
+  "$KASEKI_TEST_REAL_GIT" "$@"
+  diff_exit=$?
+  if [ "$diff_exit" -eq 0 ]; then
+    cat <<'EOF_DIFF'
+diff --git a/fixture.txt b/fixture.txt
+index e79c5e8..06aa190 100644
+--- a/fixture.txt
++++ b/fixture.txt
+@@ -1 +1,2 @@
+ initial
++updated by fixture pi
+EOF_DIFF
+  fi
+  exit 0
+fi
 if [ "${1:-}" = "push" ]; then
+  if [ "${KASEKI_TEST_GIT_PUSH_MODE:-success}" = "failure" ]; then
+    printf 'fixture git push rejected: protected branch\n' >&2
+    exit 8
+  fi
   printf 'fixture git push accepted: %s\n' "$*"
   exit 0
 fi
@@ -152,7 +167,7 @@ if [ "${1:-}" = "--version" ]; then
   printf 'fixture-pi 1.0.0\n'
   exit 0
 fi
-printf 'updated by fixture pi\n' >> /workspace/repo/fixture.txt
+printf 'updated by fixture pi\n' >> fixture.txt
 printf '{"type":"message","model":"fixture-model","content":"fixture change"}\n'
 EOF_PI
   chmod +x "$bin_dir/pi"
@@ -230,7 +245,7 @@ ensure_app_lib_fixtures() {
 }
 
 write_token_helper() {
-  local mode="$1" helper_path="${2:-/usr/local/bin/github-app-token}"
+  local mode="$1" helper_path="$2"
   mkdir -p "$(dirname "$helper_path")"
   case "$mode" in
     structured_failure)
@@ -282,8 +297,11 @@ write_secrets() {
 }
 
 run_agent_fixture() {
-  local name="$1" token_mode="$2" curl_mode="${3:-none}" secrets_mode="${4:-present}" token_helper_path="${5:-/usr/local/bin/github-app-token}"
+  local name="$1" token_mode="$2" curl_mode="${3:-none}" secrets_mode="${4:-present}" push_mode="${5:-success}" token_helper_path="${6:-}"
   local case_dir="$TEST_ROOT/$name"
+  if [ -z "$token_helper_path" ]; then
+    token_helper_path="$case_dir/bin/github-app-token"
+  fi
   local source_repo="$case_dir/source-repo"
   local bin_dir="$case_dir/bin"
   local secrets_dir="$case_dir/secrets"
@@ -301,11 +319,8 @@ run_agent_fixture() {
   fi
   if [ "$token_mode" != "missing" ]; then
     write_token_helper "$token_mode" "$token_helper_path"
-    if [ "$token_helper_path" != "/usr/local/bin/github-app-token" ]; then
-      write_token_helper poison /usr/local/bin/github-app-token
-    fi
   else
-    rm -f /usr/local/bin/github-app-token
+    token_helper_path="$case_dir/bin/missing-github-app-token"
   fi
 
   rm -rf /results /workspace/repo
@@ -317,6 +332,7 @@ run_agent_fixture() {
     export REPO_URL="https://github.com/example/fixture-repo"
     export GIT_REF="main"
     export KASEKI_INSTANCE="fixture-$name"
+    export KASEKI_PROVIDER="openrouter"
     export OPENROUTER_API_KEY="fixture-openrouter-key"
     export KASEKI_SECRETS_DIR="$secrets_dir"
     export KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=0
@@ -331,13 +347,9 @@ run_agent_fixture() {
     export KASEKI_GIT_CACHE_MODE=off
     export KASEKI_PUBLISH_MODE=pr
     export KASEKI_GITHUB_PR_RETRIES=0
-    if [ "$token_helper_path" != "/usr/local/bin/github-app-token" ]; then
-      export KASEKI_GITHUB_APP_TOKEN_HELPER="$token_helper_path"
-      export KASEKI_TEST_TOKEN_HELPER_LOG="$case_dir/token-helper.log"
-    else
-      unset KASEKI_GITHUB_APP_TOKEN_HELPER
-      unset KASEKI_TEST_TOKEN_HELPER_LOG
-    fi
+    export KASEKI_GITHUB_APP_TOKEN_HELPER="$token_helper_path"
+    export KASEKI_TEST_TOKEN_HELPER_LOG="$case_dir/token-helper.log"
+    export KASEKI_TEST_GIT_PUSH_MODE="$push_mode"
     bash "$PROJECT_ROOT/kaseki-agent.sh" >"$stdout_log" 2>"$stderr_log"
     printf '%s\n' "$?" > "$exit_file"
   )
@@ -347,72 +359,91 @@ run_agent_fixture() {
   printf '%s' "$case_dir"
 }
 
-# ===== Command-level fixtures =====
-test_case "missing GitHub App secrets"
-missing_case="$(run_agent_fixture missing-secrets success none missing)"
-assert_eq "7" "$(cat "$missing_case/exit")" "missing secrets use config failure exit code"
-assert_file_contains "$missing_case/results/git-push.log" 'GitHub operations: skipped \(reasons: github_app_secrets_missing\)' "missing secrets emit user-facing skip reason"
-assert_json_field_eq "$missing_case/results/metadata.json" 'data.github_push_exit_code' "7" "metadata records config category exit code"
-assert_json_field_eq "$missing_case/results/metadata.json" 'data.github_operation_phase' "secrets" "metadata records secrets failure phase"
-assert_error_event_field_eq "$missing_case/results/progress.jsonl" "github_operation_failed" "recovery_action" "exit" "missing secrets emit terminal error event recovery"
-assert_error_event_field_eq "$missing_case/results/progress.jsonl" "github_operation_failed" "detail" "GitHub push or PR creation failed (exit code 7)" "missing secrets emit expected error event detail"
+# ===== Token-helper failure reporting public contract =====
+run_token_helper_failure_reporting_tests() {
+  test_case "token helper failure reports parsed message and token phase artifacts"
+  # User-visible behavior: a structured token-helper stderr payload is surfaced as a clear token-generation failure.
+  token_case="$(run_agent_fixture token-helper-failure structured_failure)"
+  assert_eq "7" "$(cat "$token_case/exit")" "token helper failure uses config/auth failure exit code"
+  assert_json_field_eq "$token_case/results/metadata.json" 'data.github_operation_phase' "token_generation" "metadata records token generation phase"
+  assert_json_field_eq "$token_case/results/metadata.json" 'data.github_api_error_type' "github_app_token_error" "metadata records token helper error type"
+  assert_json_field_eq "$token_case/results/metadata.json" 'data.github_api_error_message' "fixture helper refused installation token" "metadata records structured token helper message"
+  assert_json_field_eq "$token_case/results/metadata.json" 'data.github_api_http_status' "401" "metadata records structured token helper HTTP status"
+  assert_error_event_field_eq "$token_case/results/progress.jsonl" "github_app_token_failed" "detail" "GitHub App token generation failed (exit code 7)" "token helper failure emits expected terminal event detail"
 
-test_case "token helper non-zero with structured stderr"
-token_case="$(run_agent_fixture token-helper-failure structured_failure)"
-assert_eq "7" "$(cat "$token_case/exit")" "token helper failure uses config/auth failure exit code"
-assert_file_contains "$token_case/results/git-push.log" 'Failed to generate token: fixture helper refused installation token' "token helper failure emits parsed user-facing error"
-assert_json_field_eq "$token_case/results/metadata.json" 'data.github_api_error_type' "github_app_token_error" "metadata records token helper error type"
-assert_json_field_eq "$token_case/results/metadata.json" 'data.github_api_error_message' "fixture helper refused installation token" "metadata records structured token helper message"
-assert_json_field_eq "$token_case/results/metadata.json" 'data.github_api_http_status' "401" "metadata records structured token helper HTTP status"
-assert_error_event_field_eq "$token_case/results/progress.jsonl" "github_app_token_failed" "detail" "GitHub App token generation failed (exit code 7)" "token helper failure emits expected terminal event detail"
+  test_case "configured GitHub App token helper path is the only helper invoked"
+  # User-visible behavior: deployments can inject a helper path without modifying /usr/local/bin/github-app-token.
+  custom_helper_path="$TEST_ROOT/custom-token-helper/bin/github-app-token"
+  custom_helper_case="$(run_agent_fixture custom-token-helper success api_failure present success "$custom_helper_path")"
+  assert_eq "9" "$(cat "$custom_helper_case/exit")" "custom token helper run reaches Pulls API failure"
+  assert_file_contains "$custom_helper_case/token-helper.log" "^$custom_helper_path 123456 .*/github_app_private_key example fixture-repo$" "token generation invokes configured helper path with expected arguments"
+}
 
-test_case "custom GitHub App token helper path is used for token generation"
-custom_helper_path="$TEST_ROOT/custom-token-helper/bin/github-app-token"
-custom_helper_case="$(run_agent_fixture custom-token-helper success api_failure present "$custom_helper_path")"
-assert_eq "9" "$(cat "$custom_helper_case/exit")" "custom token helper run reaches Pulls API failure instead of default helper failure"
-assert_file_contains "$custom_helper_case/token-helper.log" "^$custom_helper_path 123456 .*/github_app_private_key example fixture-repo$" "token generation invokes configured helper path with expected arguments"
-assert_file_contains "$custom_helper_case/results/git-push.log" 'GitHub API error \(HTTP 422\): .*Validation Failed: fixture duplicate pull request' "custom helper token is accepted before PR failure"
+# ===== PR metadata failure handling public contract =====
+run_pr_metadata_failure_handling_tests() {
+  test_case "GitHub Pulls API known payload failure records API metadata"
+  # User-visible behavior: known GitHub validation payloads are parsed into actionable PR API failure fields.
+  api_case="$(run_agent_fixture api-payload-failure success api_failure)"
+  assert_eq "9" "$(cat "$api_case/exit")" "GitHub API failure uses API category exit code"
+  assert_json_field_eq "$api_case/results/metadata.json" 'data.github_operation_phase' "pr_creation" "metadata records PR creation phase"
+  assert_json_field_eq "$api_case/results/metadata.json" 'data.github_pr_exit_code' "9" "metadata records PR API exit code"
+  assert_json_field_eq "$api_case/results/metadata.json" 'data.github_api_error_type' "validation_error" "metadata records API error type"
+  assert_json_field_eq "$api_case/results/metadata.json" 'data.github_api_error_message' "Validation Failed: fixture duplicate pull request" "metadata records API error message"
+  assert_json_field_eq "$api_case/results/metadata.json" 'data.github_api_http_status' "422" "metadata records API HTTP status"
+  assert_error_event_field_eq "$api_case/results/progress.jsonl" "github_pr_api_failed" "detail" "GitHub API error (validation_error): Validation Failed: fixture duplicate pull request (HTTP 422)" "API failure emits structured error event detail"
 
-test_case "GitHub Pulls API known payload failure"
-api_case="$(run_agent_fixture api-payload-failure success api_failure)"
-assert_eq "9" "$(cat "$api_case/exit")" "GitHub API failure uses API category exit code"
-assert_file_contains "$api_case/results/git-push.log" 'GitHub API error \(HTTP 422\): validation_error - Validation Failed: fixture duplicate pull request' "API failure emits parsed user-facing error"
-assert_file_contains "$api_case/results/git-push.log" 'Failed to create PR\. API error: Validation Failed: fixture duplicate pull request' "API failure emits PR creation failure summary"
-assert_json_field_eq "$api_case/results/metadata.json" 'data.github_pr_exit_code' "9" "metadata records PR API exit code"
-assert_json_field_eq "$api_case/results/metadata.json" 'data.github_api_error_type' "validation_error" "metadata records API error type"
-assert_json_field_eq "$api_case/results/metadata.json" 'data.github_api_error_message' "Validation Failed: fixture duplicate pull request" "metadata records API error message"
-assert_json_field_eq "$api_case/results/metadata.json" 'data.github_api_http_status' "422" "metadata records API HTTP status"
-assert_error_event_field_eq "$api_case/results/progress.jsonl" "github_pr_api_failed" "detail" "GitHub API error (validation_error): Validation Failed: fixture duplicate pull request (HTTP 422)" "API failure emits structured error event detail"
+  test_case "GitHub Pulls API transport failure records curl metadata"
+  # User-visible behavior: curl failures are separated from GitHub API response failures.
+  curl_case="$(run_agent_fixture api-curl-failure success curl_failure)"
+  assert_eq "8" "$(cat "$curl_case/exit")" "curl command failure uses runtime failure exit code"
+  assert_json_field_eq "$curl_case/results/metadata.json" 'data.github_pr_exit_code' "8" "metadata records curl PR exit code"
+  assert_json_field_eq "$curl_case/results/metadata.json" 'data.github_api_error_type' "curl_error" "metadata records curl error type"
+  assert_json_field_eq "$curl_case/results/metadata.json" 'data.github_api_error_message' "curl exited with code 28" "metadata records curl error message"
+  assert_json_field_eq "$curl_case/results/metadata.json" 'data.github_api_http_status' "0" "metadata records curl HTTP status sentinel"
+  assert_error_event_field_eq "$curl_case/results/progress.jsonl" "github_pr_curl_failed" "detail" "curl command failed (exit 28) when creating PR" "curl command failure emits structured error event detail"
 
-test_case "GitHub Pulls API curl command failure"
-curl_case="$(run_agent_fixture api-curl-failure success curl_failure)"
-assert_eq "8" "$(cat "$curl_case/exit")" "curl command failure uses runtime failure exit code"
-assert_file_contains "$curl_case/results/git-push.log" 'GitHub PR API curl command failed with exit code 28' "curl command failure emits user-facing error"
-assert_json_field_eq "$curl_case/results/metadata.json" 'data.github_pr_exit_code' "8" "metadata records curl PR exit code"
-assert_json_field_eq "$curl_case/results/metadata.json" 'data.github_api_error_type' "curl_error" "metadata records curl error type"
-assert_json_field_eq "$curl_case/results/metadata.json" 'data.github_api_error_message' "curl exited with code 28" "metadata records curl error message"
-assert_json_field_eq "$curl_case/results/metadata.json" 'data.github_api_http_status' "0" "metadata records curl HTTP status sentinel"
-assert_error_event_field_eq "$curl_case/results/progress.jsonl" "github_pr_curl_failed" "detail" "curl command failed (exit 28) when creating PR" "curl command failure emits structured error event detail"
+  test_case "GitHub Pulls API malformed responses record response-shape metadata"
+  # User-visible behavior: empty and malformed success responses are not treated as broad command failures.
+  for fixture in "empty_response:api-empty-response:empty_response:GitHub API returned an empty response:201" "malformed_json:api-malformed-json:malformed_json:GitHub API returned malformed JSON:201"; do
+    IFS=: read -r curl_mode case_name error_type message status <<EOF_CASE
+$fixture
+EOF_CASE
+    malformed_case="$(run_agent_fixture "$case_name" success "$curl_mode")"
+    assert_eq "9" "$(cat "$malformed_case/exit")" "$error_type uses API category exit code"
+    assert_json_field_eq "$malformed_case/results/metadata.json" 'data.github_pr_exit_code' "9" "$error_type metadata records PR exit code"
+    assert_json_field_eq "$malformed_case/results/metadata.json" 'data.github_api_error_type' "$error_type" "$error_type metadata records API error type"
+    assert_json_field_eq "$malformed_case/results/metadata.json" 'data.github_api_error_message' "$message" "$error_type metadata records API error message"
+    assert_json_field_eq "$malformed_case/results/metadata.json" 'data.github_api_http_status' "$status" "$error_type metadata records HTTP status"
+  done
+}
 
-test_case "GitHub Pulls API empty response"
-empty_case="$(run_agent_fixture api-empty-response success empty_response)"
-assert_eq "9" "$(cat "$empty_case/exit")" "empty API response uses API category exit code"
-assert_file_contains "$empty_case/results/git-push.log" 'GitHub API response malformed \(HTTP 201\): GitHub API returned an empty response' "empty API response emits user-facing error"
-assert_json_field_eq "$empty_case/results/metadata.json" 'data.github_pr_exit_code' "9" "metadata records empty response PR exit code"
-assert_json_field_eq "$empty_case/results/metadata.json" 'data.github_api_error_type' "empty_response" "metadata records empty response error type"
-assert_json_field_eq "$empty_case/results/metadata.json" 'data.github_api_error_message' "GitHub API returned an empty response" "metadata records empty response error message"
-assert_json_field_eq "$empty_case/results/metadata.json" 'data.github_api_http_status' "201" "metadata records empty response HTTP status"
-assert_error_event_field_eq "$empty_case/results/progress.jsonl" "github_pr_api_failed" "detail" "GitHub API error (empty_response): GitHub API returned an empty response (HTTP 201)" "empty API response emits structured error event detail"
+# ===== Push failure handling public contract =====
+run_push_failure_handling_tests() {
+  test_case "git push rejection records push phase without PR API metadata"
+  # User-visible behavior: branch push failures stop before PR creation and preserve the push exit code.
+  push_case="$(run_agent_fixture push-failure success none present failure)"
+  assert_eq "8" "$(cat "$push_case/exit")" "push failure returns git push exit code"
+  assert_json_field_eq "$push_case/results/metadata.json" 'data.github_operation_phase' "push" "metadata records push failure phase"
+  assert_json_field_eq "$push_case/results/metadata.json" 'data.github_push_exit_code' "8" "metadata records push exit code"
+  assert_json_field_eq "$push_case/results/metadata.json" 'data.github_pr_exit_code' "0" "metadata records PR was not attempted"
+}
 
-test_case "GitHub Pulls API malformed JSON response"
-malformed_case="$(run_agent_fixture api-malformed-json success malformed_json)"
-assert_eq "9" "$(cat "$malformed_case/exit")" "malformed API JSON uses API category exit code"
-assert_file_contains "$malformed_case/results/git-push.log" 'GitHub API response malformed \(HTTP 201\): GitHub API returned malformed JSON' "malformed API JSON emits user-facing error"
-assert_json_field_eq "$malformed_case/results/metadata.json" 'data.github_pr_exit_code' "9" "metadata records malformed JSON PR exit code"
-assert_json_field_eq "$malformed_case/results/metadata.json" 'data.github_api_error_type' "malformed_json" "metadata records malformed JSON error type"
-assert_json_field_eq "$malformed_case/results/metadata.json" 'data.github_api_error_message' "GitHub API returned malformed JSON" "metadata records malformed JSON error message"
-assert_json_field_eq "$malformed_case/results/metadata.json" 'data.github_api_http_status' "201" "metadata records malformed JSON HTTP status"
-assert_error_event_field_eq "$malformed_case/results/progress.jsonl" "github_pr_api_failed" "detail" "GitHub API error (malformed_json): GitHub API returned malformed JSON (HTTP 201)" "malformed API JSON emits structured error event detail"
+# ===== Structured progress/error artifacts public contract =====
+run_structured_progress_error_artifact_tests() {
+  test_case "GitHub API failure writes structured progress and metadata artifacts"
+  # User-visible behavior: structured artifacts identify the failing public phase, the API error, and terminal recovery action.
+  artifact_case="$(run_agent_fixture structured-artifacts success api_failure)"
+  assert_eq "9" "$(cat "$artifact_case/exit")" "structured artifact fixture exits with PR API failure"
+  assert_json_field_eq "$artifact_case/results/metadata.json" 'data.github_operation_phase' "pr_creation" "metadata records PR creation phase"
+  assert_json_field_eq "$artifact_case/results/metadata.json" 'data.github_api_error_type' "validation_error" "metadata records structured API error type"
+  assert_error_event_field_eq "$artifact_case/results/progress.jsonl" "github_pr_api_failed" "recovery_action" "exit" "progress error event records terminal recovery action"
+  assert_error_event_field_eq "$artifact_case/results/progress.jsonl" "github_pr_api_failed" "detail" "GitHub API error (validation_error): Validation Failed: fixture duplicate pull request (HTTP 422)" "progress error event records specific API detail"
+}
+
+run_token_helper_failure_reporting_tests
+run_pr_metadata_failure_handling_tests
+run_push_failure_handling_tests
+run_structured_progress_error_artifact_tests
 
 # ===== Diagnostic script behavior remains command-level =====
 test_case "diagnostic script distinguishes token and push phases"
