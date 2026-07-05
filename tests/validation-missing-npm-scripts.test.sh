@@ -18,8 +18,8 @@ assert_equals() {
   local expected="$2"
   local actual="$3"
   [ "$actual" = "$expected" ] || fail "$label: expected '$expected', got '$actual'"
-  pass "$label"
 }
+
 
 assert_missing_script() {
   local label="$1"
@@ -38,26 +38,47 @@ assert_not_missing_script() {
   if missing_npm_script_for_validation_command "$command" >"$tmp_dir/missing-script-test.out" 2>/dev/null; then
     fail "$label: command should not be treated as a missing npm script ($(cat "$tmp_dir/missing-script-test.out"))"
   fi
-  pass "$label"
 }
 
-# Override record_skipped_validation_command to use temp directory instead of /results
-record_skipped_validation_command() {
-  local command="$1"
-  local script_name="$2"
-  local duration_seconds="$3"
-  {
-    printf '\n==> %s\n' "$command"
-    printf 'skipped: package.json does not define npm script "%s"\n' "$script_name"
-  } 2>&1 | tee -a "$tmp_dir/results/validation.log"
-  printf '%s\tskipped\t%s\tmissing_npm_script=%s\n' "$command" "$duration_seconds" "$script_name" >> "$VALIDATION_TIMINGS_FILE"
+write_package_json() {
+  cat > package.json
+}
+
+run_case() {
+  local name="$1"
+  shift
+  printf 'case: %s\n' "$name"
+  "$@"
+  pass "$name"
 }
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 mkdir -p "$tmp_dir/results"
 cd "$tmp_dir"
-cat > package.json <<'JSON'
+
+KASEKI_RESULTS_DIR="$tmp_dir/results"
+VALIDATION_TIMINGS_FILE="$tmp_dir/results/validation-timings.tsv"
+export KASEKI_RESULTS_DIR VALIDATION_TIMINGS_FILE
+: > "$tmp_dir/results/validation.log" || fail "Cannot write to validation.log"
+: > "$VALIDATION_TIMINGS_FILE" || fail "Cannot write to validation timings file"
+
+case_npm_run_script_name_contract() {
+  # Contract: validation commands only use missing-script skip handling for
+  # parseable `npm run <script>` commands, preserving the script token exactly.
+  assert_equals "bare npm run script" "check" "$(npm_run_script_name 'npm run check')"
+  assert_equals "npm run script with trailing args" "test" "$(npm_run_script_name 'npm run test -- --runInBand')"
+  assert_equals "npm run script with extra whitespace" "build" "$(npm_run_script_name 'npm   run   build')"
+
+  if npm_run_script_name 'npx tsc --noEmit' >"$tmp_dir/npm-run-script-name.out"; then
+    fail "non-npm-run validation command should not produce a script name"
+  fi
+}
+
+case_missing_npm_script_for_validation_command_contract() {
+  # Contract: a validation command that targets an undefined npm script is
+  # reported as skippable instead of fatal, while defined scripts still run.
+  write_package_json <<'JSON'
 {
   "scripts": {
     "test": "node -e 'process.exit(0)'",
@@ -66,20 +87,27 @@ cat > package.json <<'JSON'
 }
 JSON
 
-VALIDATION_TIMINGS_FILE="$tmp_dir/results/validation-timings.tsv"
-: > "$tmp_dir/results/validation.log" || fail "Cannot write to validation.log"
-: > "$VALIDATION_TIMINGS_FILE" || fail "Cannot write to validation timings file"
+  assert_missing_script "undefined npm run check is skippable" "npm run check" "check"
+  assert_missing_script "undefined npm run lint with args is skippable" "npm run lint -- --max-warnings=0" "lint"
+  assert_not_missing_script "defined npm run test is not skippable" "npm run test"
+  assert_not_missing_script "defined npm run build is not skippable" "npm run build"
+  assert_not_missing_script "non-npm validation command is not a missing npm script" "node --check index.js"
+}
 
-assert_equals "extracts npm run script names" "check" "$(npm_run_script_name 'npm run check')"
-assert_equals "extracts npm run script with trailing args" "test" "$(npm_run_script_name 'npm run test -- --runInBand')"
+case_construct_default_validation_commands_contract() {
+  # Contract: default validation favors existing npm scripts, then falls back to
+  # common commands so validation remains explicit even for sparse package.jsons.
+  write_package_json <<'JSON'
+{
+  "scripts": {
+    "test": "node -e 'process.exit(0)'",
+    "build": "node -e 'process.exit(0)'"
+  }
+}
+JSON
+  assert_equals "uses build before test when build exists" "npm run build;npm run test" "$(construct_default_validation_commands)"
 
-# Missing npm scripts are now always skipped (non-fatal), regardless of KASEKI_SKIP_MISSING_NPM_SCRIPTS
-assert_missing_script "always skips missing check script" "npm run check" "check"
-assert_not_missing_script "does not skip defined test script" "npm run test"
-assert_not_missing_script "does not skip defined build script" "npm run build"
-assert_equals "default validation uses build when present" "npm run build;npm run test" "$(construct_default_validation_commands)"
-
-cat > package.json <<'JSON'
+  write_package_json <<'JSON'
 {
   "scripts": {
     "type-check": "node -e 'process.exit(0)'",
@@ -87,35 +115,73 @@ cat > package.json <<'JSON'
   }
 }
 JSON
-assert_equals "default validation falls back to type-check without build" "npm run type-check;npm run test" "$(construct_default_validation_commands)"
-assert_not_missing_script "does not skip defined type-check script" "npm run type-check"
+  assert_equals "uses type-check before test when build is absent" "npm run type-check;npm run test" "$(construct_default_validation_commands)"
 
-cat > package.json <<'JSON'
+  write_package_json <<'JSON'
 {
   "scripts": {
     "lint": "node -e 'process.exit(0)'"
   }
 }
 JSON
-assert_equals "default validation stays non-empty when common scripts are missing" "npm run build;npm run type-check;npm run test" "$(construct_default_validation_commands)"
+  assert_equals "keeps non-empty validation fallback when common scripts are missing" "npm run build;npm run type-check;npm run test" "$(construct_default_validation_commands)"
+}
 
-KASEKI_VALIDATION_COMMANDS_EXPLICIT=x
-KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT=""
-KASEKI_VALIDATION_COMMANDS="npm run custom"
-KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run custom"
-apply_default_validation_commands
-assert_equals "explicit validation commands take precedence" "npm run custom" "$KASEKI_VALIDATION_COMMANDS"
-assert_equals "pre-agent commands keep explicit validation default" "npm run custom" "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS"
-unset KASEKI_VALIDATION_COMMANDS_EXPLICIT KASEKI_VALIDATION_COMMANDS KASEKI_PRE_AGENT_VALIDATION_COMMANDS KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT
+case_apply_default_validation_commands_contract() {
+  # Contract: explicit validation-command env vars are authoritative; otherwise
+  # detected defaults are applied to agent and pre-agent validation together.
+  write_package_json <<'JSON'
+{
+  "scripts": {
+    "test": "node -e 'process.exit(0)'",
+    "build": "node -e 'process.exit(0)'"
+  }
+}
+JSON
 
-record_skipped_validation_command "npm run build" "build" "0"
+  unset KASEKI_VALIDATION_COMMANDS_EXPLICIT KASEKI_VALIDATION_COMMANDS KASEKI_PRE_AGENT_VALIDATION_COMMANDS KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT
+  apply_default_validation_commands
+  assert_equals "sets validation commands from defaults" "npm run build;npm run test" "$KASEKI_VALIDATION_COMMANDS"
+  assert_equals "sets pre-agent commands from defaults" "npm run build;npm run test" "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS"
 
-if ! grep -Fq 'skipped: package.json does not define npm script "build"' "$tmp_dir/results/validation.log"; then
-  fail "validation.log should include a clear missing-script skip reason"
-fi
-pass "validation.log records missing-script skip reason"
+  KASEKI_VALIDATION_COMMANDS_EXPLICIT=1
+  KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT=""
+  KASEKI_VALIDATION_COMMANDS="npm run custom"
+  KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run custom"
+  apply_default_validation_commands
+  assert_equals "explicit validation commands take precedence" "npm run custom" "$KASEKI_VALIDATION_COMMANDS"
+  assert_equals "pre-agent commands keep explicit validation default" "npm run custom" "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS"
+  unset KASEKI_VALIDATION_COMMANDS_EXPLICIT KASEKI_VALIDATION_COMMANDS KASEKI_PRE_AGENT_VALIDATION_COMMANDS KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT
+}
 
-assert_equals "validation timing records skipped row" $'npm run build	skipped	0	missing_npm_script=build' "$(cat "$VALIDATION_TIMINGS_FILE")"
+case_record_skipped_validation_command_contract() {
+  # Contract: skipped validation commands emit exact log, timing, and JSONL
+  # artifact fields that downstream validation-report readers consume.
+  local log_file="$tmp_dir/results/validation.log"
+  local timings_file="$VALIDATION_TIMINGS_FILE"
+  local jsonl_file="$tmp_dir/results/.validation-results-temp.jsonl"
+  : > "$log_file"
+  : > "$timings_file"
+  rm -f "$jsonl_file"
+
+  record_skipped_validation_command "npm run build" "build" "0" "$log_file" "$timings_file"
+
+  assert_equals "validation.log skipped text" \
+    'Skipping validation command "npm run build" because package.json does not define script "build".' \
+    "$(cat "$log_file")"
+  assert_equals "validation timing skipped row fields" \
+    $'npm run build\t127\t0\tskipped=missing_npm_script\tscript=build' \
+    "$(cat "$timings_file")"
+  assert_equals "validation JSONL skipped artifact fields" \
+    '{"command": "npm run build", "exit_code": 127, "duration_seconds": 0, "status": "skipped"}' \
+    "$(cat "$jsonl_file")"
+}
+
+run_case "npm_run_script_name follows validation-command parsing contract" case_npm_run_script_name_contract
+run_case "missing_npm_script_for_validation_command follows skip contract" case_missing_npm_script_for_validation_command_contract
+run_case "construct_default_validation_commands follows default-command contract" case_construct_default_validation_commands_contract
+run_case "apply_default_validation_commands follows env precedence contract" case_apply_default_validation_commands_contract
+run_case "record_skipped_validation_command writes validation artifacts contract" case_record_skipped_validation_command_contract
 
 echo ""
 echo "✅ Missing npm script validation tests passed!"
