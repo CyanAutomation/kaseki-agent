@@ -170,6 +170,15 @@ export class StatusResponseBuilder {
         artifact: 'provider-attempts.jsonl',
       };
     }
+
+    if (response.attempt && response.progress) {
+      const phase = String(response.attempt.phase ?? response.progress.stage ?? 'provider');
+      const label = phase.toLowerCase().includes('coding') ? 'Coding' : phase;
+      const state = response.attempt.state === 'retrying'
+        ? 'retrying'
+        : response.attempt.state === 'exhausted' ? 'exhausted' : response.attempt.state;
+      response.progress.displayName = `${label} attempt ${response.attempt.current}/${response.attempt.maximum} — ${state}`;
+    }
   }
 
   private addTimingInfo(response: StatusResponse, job: Job): void {

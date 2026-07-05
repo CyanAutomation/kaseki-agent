@@ -10093,6 +10093,17 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
   fi
 fi
 
+# A terminal coding-provider failure cannot produce a trustworthy diff. Preserve
+# the safety scan, then finalize artifacts instead of presenting validation,
+# evaluation, and GitHub operations as meaningful forward progress.
+if [ "$PI_EXIT" -eq 88 ] && [ "$STATUS" -ne 0 ]; then
+  run_secret_scan
+  set_current_stage "terminal provider failure"
+  emit_progress "terminal provider failure" "coding provider exhausted; skipping downstream validation, evaluation, and GitHub operations"
+  record_stage_timing "terminal provider failure" "$STATUS" 0 "short_circuit_after_provider_failure"
+  exit 0
+fi
+
 printf '\n==> validation environment\n'
 log_validation_environment() {
   {

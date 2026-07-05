@@ -85,6 +85,8 @@ set -e
 [ "$PROVIDER_ERROR_FALLBACK_PROVIDER" = 'openrouter' ] || fail 'fallback provider telemetry is incorrect'
 [ "$PROVIDER_ERROR_FALLBACK_MODEL" = 'auto' ] || fail 'fallback model telemetry is incorrect'
 [ "$PROVIDER_ERROR_FALLBACK_RESULT" = 'success' ] || fail 'fallback result telemetry is incorrect'
+[ -n "$PROVIDER_ERROR_MESSAGE" ] || fail 'provider failure message was not preserved for diagnostics'
+printf '%s' "$PROVIDER_ERROR_MESSAGE" | grep -q 'request_id=' || fail 'provider failure diagnostics omit the request id'
 [ "$KASEKI_PROVIDER" = 'gateway' ] || fail 'primary provider was not restored/preserved'
 [ "$KASEKI_PROVIDER_FALLBACK" = 'openrouter' ] || fail 'fallback extension-point env was unexpectedly mutated'
 [ -s "$KASEKI_RESULTS_DIR/provider-attempts/coding/primary-1.events.jsonl" ] || fail 'primary attempt 1 events were not preserved'
