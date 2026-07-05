@@ -181,6 +181,8 @@ describe('kaseki API web console routes', () => {
     expect(document.querySelector('#recommended-artifacts')?.textContent).toContain('Recommended artifacts');
     expect(document.querySelector('#copy-diagnostic-bundle-btn')?.textContent).toContain('Copy diagnostic bundle');
     expect(document.querySelector('#response-summary')?.hasAttribute('hidden')).toBe(true);
+    expect(body).toContain('terminal artifacts report fallback/failure signals');
+    expect(body).toContain("loadModalTab('events', { background: true })");
     expect(document.querySelector('#submit-tab')?.getAttribute('aria-hidden')).toBe('true');
     expect(document.body.textContent).not.toContain('Task Progress');
   });

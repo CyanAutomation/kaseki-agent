@@ -120,6 +120,7 @@ describe('StatusResponseBuilder', () => {
       expect(response.lifecyclePhase).toBe('terminal');
       expect(response.cancellable).toBe(false);
       expect(response.elapsedSeconds).toBe(3600); // 1 hour
+      expect(response.taskProgressPercent).toBe(100);
       expect(response.artifacts).toBeDefined();
     });
 
@@ -2576,7 +2577,7 @@ describe('StatusResponseBuilder', () => {
         resultDir: '/nonexistent/path',
       });
       expect(response.progress).toBeUndefined();
-      expect(response.taskProgressPercent).toBe(0);
+      expect(response.taskProgressPercent).toBe(100);
       expect(response.artifacts).toEqual({
         metadataJson: false,
         analysisMd: false,

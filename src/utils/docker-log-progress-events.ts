@@ -13,7 +13,7 @@ const STRUCTURED_PROGRESS_PATTERN = /^\[progress\]\s+([^:]+):\s*(.+)$/;
 
 export function progressEventsFromDockerLogTail(
   content: string | undefined,
-  timestamp = new Date().toISOString()
+  timestamp = new Date(0).toISOString()
 ): DockerLogProgressEvent[] {
   if (!content) return [];
 
