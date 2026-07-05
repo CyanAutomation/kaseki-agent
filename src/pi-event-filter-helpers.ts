@@ -23,6 +23,10 @@ export interface ProviderErrorSummary {
   error_code?: string;
   cloudflare_log_id?: string;
   gateway_event_id?: string;
+  upstream_error?: string;
+  retry_after?: string;
+  routed_provider?: string;
+  routed_model?: string;
   recovery_suggestion?: string;
   input_tokens?: number;
   output_tokens?: number;
@@ -216,6 +220,14 @@ export function extractProviderError(event: PiEvent): ProviderErrorSummary | nul
     message.cloudflareLogId ?? message.cloudflare_log_id ?? nestedError?.cloudflareLogId ?? nestedError?.cloudflare_log_id;
   const gatewayEventIdCandidate =
     message.gatewayEventId ?? message.gateway_event_id ?? nestedError?.eventId ?? nestedError?.event_id;
+  const upstreamErrorCandidate =
+    nestedError?.message ?? nestedError?.detail ?? message.errorDetail ?? message.error_detail;
+  const retryAfterCandidate =
+    message.retryAfter ?? message.retry_after ?? nestedError?.retryAfter ?? nestedError?.retry_after;
+  const routedProviderCandidate =
+    message.routedProvider ?? message.routed_provider ?? nestedError?.provider ?? nestedError?.routed_provider;
+  const routedModelCandidate =
+    message.routedModel ?? message.routed_model ?? nestedError?.model ?? nestedError?.routed_model;
 
   return {
     type,
@@ -229,6 +241,12 @@ export function extractProviderError(event: PiEvent): ProviderErrorSummary | nul
     error_code: typeof errorCodeCandidate === 'string' ? errorCodeCandidate : undefined,
     cloudflare_log_id: typeof cloudflareLogIdCandidate === 'string' ? cloudflareLogIdCandidate : undefined,
     gateway_event_id: typeof gatewayEventIdCandidate === 'string' ? gatewayEventIdCandidate : undefined,
+    upstream_error: typeof upstreamErrorCandidate === 'string' ? upstreamErrorCandidate.slice(0, 1000) : undefined,
+    retry_after: typeof retryAfterCandidate === 'string' || typeof retryAfterCandidate === 'number'
+      ? String(retryAfterCandidate)
+      : undefined,
+    routed_provider: typeof routedProviderCandidate === 'string' ? routedProviderCandidate : undefined,
+    routed_model: typeof routedModelCandidate === 'string' ? routedModelCandidate : undefined,
     recovery_suggestion: type === 'malformed_tool_call'
       ? 'Retry with a corrective instruction to emit one small, valid JSON tool call; use an alternate model if it repeats.'
       : undefined,

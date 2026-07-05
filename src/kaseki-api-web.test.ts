@@ -456,6 +456,37 @@ describe('kaseki API web console behavior', () => {
     expect(document.querySelector('#tab-artifacts')?.getAttribute('aria-hidden')).toBe('true');
   });
 
+  test('leads failed status results with an actionable compact summary', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => path === '/api/runs/kaseki-303/status'
+        ? createJsonResponse({
+          id: 'kaseki-303',
+          status: 'failed',
+          exitCode: 88,
+          attempt: { phase: 'coding', current: 2, maximum: 2, provider: 'gateway' },
+          diagnosis: {
+            phase: 'coding',
+            summary: 'Provider finish_reason: error',
+            remediation: 'Inspect provider-attempts.jsonl.',
+          },
+          artifacts: { diagnosticFiles: ['provider-attempts.jsonl', 'gateway-summary.json'] },
+        })
+        : createJsonResponse({}),
+    });
+
+    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
+    if (!runIdInput) throw new Error('Expected #run-id to exist');
+    runIdInput.value = 'kaseki-303';
+    click(document.querySelector('#full-results-btn'));
+    await waitFor(() => expect(document.querySelector('#status-output')?.textContent).toContain('RUN SUMMARY'));
+    const text = document.querySelector('#status-output')?.textContent || '';
+    expect(text).toContain('Provider: gateway');
+    expect(text).toContain('Attempts: 2/2');
+    expect(text).toContain('Diagnostics: provider-attempts.jsonl, gateway-summary.json');
+    expect(text.indexOf('RUN SUMMARY')).toBeLessThan(text.indexOf('RAW STATUS'));
+  });
+
   test('selecting a GitHub issue carries its repository into the submit form', async () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',

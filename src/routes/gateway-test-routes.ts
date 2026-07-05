@@ -77,6 +77,8 @@ function buildDualStageResponse(
     result.gatewayInferenceValidated = stage2Result?.status === 'ok';
     result.piAdapterValidated = piProviderResult.status === 'ok';
     result.partialSuccess = stage2Result?.status === 'ok' && piProviderResult.status === 'error';
+    result.codingShapeValidated = piProviderResult.codingShapeValidated === true;
+    result.multiTurnValidated = piProviderResult.multiTurnValidated === true;
   }
 
   return result;
@@ -118,6 +120,8 @@ function buildStage2Response(stage2Result: any, piProviderResult: any): any {
     result.gatewayInferenceValidated = stage2Result?.status === 'ok';
     result.piAdapterValidated = piProviderResult.status === 'ok';
     result.partialSuccess = stage2Result?.status === 'ok' && piProviderResult.status === 'error';
+    result.codingShapeValidated = piProviderResult.codingShapeValidated === true;
+    result.multiTurnValidated = piProviderResult.multiTurnValidated === true;
   }
 
   return result;

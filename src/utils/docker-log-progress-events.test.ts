@@ -23,4 +23,17 @@ describe('progressEventsFromDockerLogTail', () => {
 
     expect(events).toHaveLength(2);
   });
+
+  it('preserves Docker timestamps and strips ANSI from stage names', () => {
+    const events = progressEventsFromDockerLogTail(
+      '2026-07-05T17:18:19.527Z ==> pi scouting agent\u001b[0;34m\n',
+      '2026-07-05T18:00:00.000Z',
+    );
+
+    expect(events[0]).toEqual(expect.objectContaining({
+      stage: 'pi scouting agent',
+      timestamp: '2026-07-05T17:18:19.527Z',
+    }));
+    expect(events[0].timestampEstimated).toBeUndefined();
+  });
 });

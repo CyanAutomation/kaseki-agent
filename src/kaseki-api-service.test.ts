@@ -570,19 +570,19 @@ describe('Kaseki API LLM Provider Setup', () => {
     expect(mockEnv.KASEKI_MODEL).toBe('explicit/model');
   });
 
-  test('respects explicit KASEKI_PROVIDER when already set', () => {
+  test('overrides an explicit non-gateway provider', () => {
     const mockEnv = {
       KASEKI_PROVIDER: 'openrouter',
       LLM_GATEWAY_URL: 'https://gateway.ai.cloudflare.com/v1/compat',
     };
     setupLlmProviderEnvironment(mockEnv as any);
-    expect(mockEnv.KASEKI_PROVIDER).toBe('openrouter');
+    expect(mockEnv.KASEKI_PROVIDER).toBe('gateway');
   });
 
-  test('does not set KASEKI_PROVIDER when LLM_GATEWAY_URL is not set', () => {
+  test('sets gateway provider even before the gateway URL is validated', () => {
     const mockEnv = {} as any;
     setupLlmProviderEnvironment(mockEnv);
-    expect(mockEnv.KASEKI_PROVIDER).toBeUndefined();
+    expect(mockEnv.KASEKI_PROVIDER).toBe('gateway');
   });
 
   test('operates on process.env when no environment object is passed', () => {
