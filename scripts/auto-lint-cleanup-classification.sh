@@ -367,6 +367,7 @@ run_auto_lint_cleanup() {
       AUTO_LINT_CLEANUP_EXIT="$command_exit"
       AUTO_LINT_CLEANUP_RESULT="failed"
       AUTO_LINT_CLEANUP_CLASSIFICATION="$command_classification"
+      # shellcheck disable=SC2034
       AUTO_LINT_CLEANUP_FAILURE_CLASSIFICATION="$command_classification"
       emit_error_event "auto_lint_cleanup_command_failed" "Auto lint cleanup command failed: $trimmed (exit $command_exit, classification=$command_classification)" "continue"
     fi
