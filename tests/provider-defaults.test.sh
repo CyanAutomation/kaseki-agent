@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regression test: provider resolution prefers the LLM Gateway while allowing OpenRouter override.
+# Regression test: provider resolution enforces the LLM Gateway.
 
 set -euo pipefail
 
@@ -75,12 +75,12 @@ if ! grep -Fq 'LLM_GATEWAY_URL is required for KASEKI_PROVIDER=gateway' "$unset_
   fail 'missing gateway configuration did not report gateway-specific validation when provider resolved to gateway' "$unset_output"
 fi
 
-if ! grep -Fq 'Active LLM provider: openrouter' "$openrouter_output"; then
-  fail 'explicit KASEKI_PROVIDER=openrouter was not preserved' "$openrouter_output"
+if ! grep -Fq 'Unsupported KASEKI_PROVIDER=openrouter. Kaseki is gateway-only' "$openrouter_output"; then
+  fail 'explicit non-gateway provider was not rejected' "$openrouter_output"
 fi
 
-if grep -Fq 'LLM_GATEWAY_URL is required for KASEKI_PROVIDER=gateway' "$openrouter_output"; then
-  fail 'missing gateway configuration was reported even though provider resolved to openrouter' "$openrouter_output"
+if grep -Fq 'Checking fallback LLM provider' "$openrouter_output"; then
+  fail 'startup checks still attempted a fallback provider' "$openrouter_output"
 fi
 
-printf '✓ provider resolution defaults and provider-specific validation passed\n'
+printf '✓ gateway-only provider validation passed\n'

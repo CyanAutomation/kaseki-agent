@@ -97,6 +97,9 @@ export interface PiProviderSmokeTestResult {
   outputEventCount?: number;
   assistantTextChars?: number;
   codingShapeValidated?: boolean;
+  toolCallCount?: number;
+  turnCount?: number;
+  multiTurnValidated?: boolean;
   exitCode?: number | null;
   remediation?: string;
   diagnostics?: {
@@ -270,8 +273,9 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
 
   const prompt = [
     'You are the coding phase of an ephemeral repository agent.',
-    'Synthetic task: inspect docs/INDEX.md and propose one concise documentation improvement.',
-    'Do not call tools or modify files during this smoke test.',
+    'Synthetic task: inspect package.json and propose one concise documentation improvement.',
+    'You must use the read tool to inspect package.json before answering. Do not modify files.',
+    'This validates streamed tool calls and a subsequent assistant turn through the gateway.',
     'Return exactly one JSON object and no markdown:',
     '{"status":"ok","phase":"coding","changed_files":[],"summary":"kaseki pi provider smoke ok"}',
   ].join('\n');
@@ -294,6 +298,10 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
   const stdout = child.stdout || '';
   const stderr = child.stderr || '';
   const assistantText = extractPiJsonAssistantText(stdout);
+  const responseAnalysis = analyzeResponseStructure(stdout);
+  const toolCallCount = responseAnalysis.eventsByType.tool_execution_start || 0;
+  const turnCount = responseAnalysis.eventsByType.turn_start || 0;
+  const multiTurnValidated = toolCallCount > 0 && turnCount >= 2;
 
   if (child.error) {
     const timedOut = child.error.message.includes('ETIMEDOUT');
@@ -330,7 +338,7 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
   }
 
   if (!assistantText.trim()) {
-    const analysis = analyzeResponseStructure(stdout);
+    const analysis = responseAnalysis;
     const sampleEvent = extractSampleEventStructure(stdout);
 
     let debugOutputPath: string | undefined;
@@ -388,7 +396,7 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
   let codingShapeValidated = false;
   try {
     const smokePayload = JSON.parse(assistantText.trim()) as Record<string, unknown>;
-    codingShapeValidated = smokePayload.status === 'ok' && smokePayload.phase === 'coding';
+    codingShapeValidated = smokePayload.status === 'ok' && smokePayload.phase === 'coding' && multiTurnValidated;
   } catch {
     codingShapeValidated = false;
   }
@@ -413,11 +421,16 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
       outputEventCount: countPiJsonEvents(stdout),
       assistantTextChars: assistantText.trim().length,
       codingShapeValidated: false,
+      toolCallCount,
+      turnCount,
+      multiTurnValidated,
       diagnostics: {
         ...(debugOutputPath ? { debugOutputPath } : {}),
         rawAssistantPreview: assistantText.trim().slice(0, 1000),
       },
-      remediation: 'Inspect the gateway response body and Pi event stream; a simple text smoke may pass while coding-shaped structured output fails.',
+      remediation: multiTurnValidated
+        ? 'Inspect the gateway response body and Pi event stream; the multi-turn tool flow passed but the final coding contract failed.'
+        : 'The gateway must sustain a streamed tool call and follow-up assistant turn. Inspect tool-call deltas, finish reasons, and adapter stream handling.',
     };
   }
 
@@ -432,6 +445,9 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
     outputEventCount: countPiJsonEvents(stdout),
     assistantTextChars: assistantText.trim().length,
     codingShapeValidated,
+    toolCallCount,
+    turnCount,
+    multiTurnValidated,
   };
 }
 

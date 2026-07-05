@@ -3062,7 +3062,9 @@ const controllerPage = String.raw`<!doctype html>
                 ? result.payload.content
                 : result.payload)
               : JSON.stringify(result.payload, null, 2);
-            modalTabCache[tabName] = stripControlSequences(content);
+            modalTabCache[tabName] = tabName === 'status'
+              ? result.payload
+              : stripControlSequences(content);
             displayModalTab(tabName);
             if (tabName === 'status' && result.payload && isTerminalStatus(result.payload.status) && modalRefreshTimer) {
               window.clearInterval(modalRefreshTimer);
@@ -3084,6 +3086,29 @@ const controllerPage = String.raw`<!doctype html>
           return;
         }
         
+        if (tabName === 'status' && content && typeof content === 'object') {
+          const diagnosis = content.diagnosis || {};
+          const attempt = content.attempt || {};
+          const recommended = content.artifacts && Array.isArray(content.artifacts.diagnosticFiles)
+            ? content.artifacts.diagnosticFiles.slice(0, 5)
+            : [];
+          const summary = [
+            'RUN SUMMARY',
+            'Status: ' + String(content.status || 'unknown'),
+            content.exitCode == null ? '' : 'Exit code: ' + String(content.exitCode),
+            diagnosis.phase || attempt.phase ? 'Phase: ' + String(diagnosis.phase || attempt.phase) : '',
+            attempt.provider ? 'Provider: ' + String(attempt.provider) : '',
+            attempt.current && attempt.maximum ? 'Attempts: ' + String(attempt.current) + '/' + String(attempt.maximum) : '',
+            diagnosis.summary || content.error ? 'Reason: ' + String(diagnosis.summary || content.error) : '',
+            diagnosis.remediation ? 'Next step: ' + String(diagnosis.remediation) : '',
+            recommended.length ? 'Diagnostics: ' + recommended.join(', ') : '',
+            '',
+            'RAW STATUS',
+            JSON.stringify(content, null, 2),
+          ].filter((line, index, lines) => line !== '' || (index > 0 && lines[index - 1] !== '')).join('\n');
+          tabOutputEl.textContent = stripControlSequences(summary);
+          return;
+        }
         tabOutputEl.textContent = content || '';
       }
 

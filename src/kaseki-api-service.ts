@@ -12,7 +12,6 @@ import { ContainerPreflightDiagnostics, logContainerPreflightResults } from './s
 import { getNpmVersion } from './kaseki-api/npm-version';
 import { generateStartupHealthReport } from './kaseki-api/startup-health-reporter';
 import { writeStartupHealthArtifacts } from './kaseki-api/startup-summary-artifact';
-import { readHostSecret } from './secrets/host-secrets-reader';
 import {
   initSentry,
   sentryRequestHandler,
@@ -25,15 +24,14 @@ export { assertSupportedNodeVersion, ensureTemplateInitialized };
 
 /**
  * Set up LLM provider configuration.
- * If gateway URL is configured and provider is not explicitly set,
- * default to 'gateway' provider. This ensures child processes
- * (worker containers) inherit the correct provider configuration.
+ * Enforce the gateway as the sole LLM provider. This ensures child processes
+ * cannot silently switch to a directly configured provider.
  */
 export function setupLlmProviderEnvironment(env?: NodeJS.ProcessEnv): void {
   const actualEnv = env || process.env;
-  if (!actualEnv.KASEKI_PROVIDER && actualEnv.LLM_GATEWAY_URL) {
-    actualEnv.KASEKI_PROVIDER = 'gateway';
-  }
+  actualEnv.KASEKI_PROVIDER = 'gateway';
+  delete actualEnv.KASEKI_PROVIDER_FALLBACK;
+  delete actualEnv.KASEKI_PROVIDER_FALLBACK_MODEL;
 
   const shouldNormalizeGatewayModel =
     actualEnv.KASEKI_PROVIDER === 'gateway' &&
@@ -103,12 +101,7 @@ async function main(): Promise<void> {
   const npmVersion = await getNpmVersion();
 
   // Determine active LLM provider
-  const activeLLMProvider = process.env.KASEKI_PROVIDER || 'gateway';
-  const hasOpenRouterFallback = !!(
-    process.env.OPENROUTER_API_KEY ||
-    process.env.OPENROUTER_API_KEY_FILE ||
-    readHostSecret('openrouter_api_key')
-  );
+  const activeLLMProvider = 'gateway';
 
   logger.event('service_startup_config', {
     port: config.port,
@@ -127,7 +120,7 @@ async function main(): Promise<void> {
     platform: process.platform,
     arch: process.arch,
     activeLLMProvider,
-    fallbackProviderAvailable: hasOpenRouterFallback,
+    fallbackProviderAvailable: false,
   });
 
   if (config.apiKeys.length === 0) {

@@ -12,6 +12,13 @@ describe('progress-normalizer', () => {
       expect(result).toEqual(event);
     });
 
+    it('sanitizes ANSI and interleaved startup output from the stage', () => {
+      const result = normalizeProgressEvent({
+        stage: 'pi scouting agent\u001b[0;34mℹ Kaseki startup checks (mode: worker)',
+      });
+      expect(result.stage).toBe('pi scouting agent');
+    });
+
     it('should use detail as message when message is missing but detail is provided', () => {
       const event = {
         stage: 'building',

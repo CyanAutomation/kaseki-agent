@@ -15,13 +15,17 @@ fail() {
   exit 1
 }
 
-mkdir -p "$TMP_DIR/results" "$TMP_DIR/workspace" "$TMP_DIR/cache" "$TMP_DIR/app/lib" "$TMP_DIR/scripts/lib"
+mkdir -p "$TMP_DIR/results" "$TMP_DIR/workspace" "$TMP_DIR/cache" "$TMP_DIR/app/lib" "$TMP_DIR/scripts/lib" "$TMP_DIR/dist"
 cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
 cp "$REPO_ROOT/scripts/lib/json-events.sh" "$TMP_DIR/scripts/lib/json-events.sh"
+cp "$REPO_ROOT/scripts/lib/provider-retry.sh" "$TMP_DIR/scripts/lib/provider-retry.sh"
 cp "$REPO_ROOT/scripts/dependency-cache-helpers.sh" "$TMP_DIR/scripts/dependency-cache-helpers.sh"
 cp "$REPO_ROOT/scripts/npm-install-helpers.sh" "$TMP_DIR/scripts/npm-install-helpers.sh"
 cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$TMP_DIR/scripts/allowlist-helper.sh"
 cp "$REPO_ROOT/scripts/agent-prompt.sh" "$TMP_DIR/scripts/agent-prompt.sh"
+cp "$REPO_ROOT/scripts/auto-lint-cleanup-classification.sh" "$TMP_DIR/scripts/auto-lint-cleanup-classification.sh"
+cp "$REPO_ROOT/scripts/github-preflight-auth.sh" "$TMP_DIR/scripts/github-preflight-auth.sh"
+cp "$REPO_ROOT/dist/scouting-allowlist.js" "$TMP_DIR/dist/scouting-allowlist.js"
 touch "$TMP_DIR/app/lib/event-aggregator.js" "$TMP_DIR/app/lib/timestamp-tracker.js" "$TMP_DIR/app/lib/progress-stream-utils.js"
 
 MODIFIED_SCRIPT="$TMP_DIR/kaseki-agent-modified.sh"

@@ -24,6 +24,7 @@ function sanitizeProgressMessage(message: string): string {
 export function normalizeProgressEvent(event: Record<string, unknown>): Record<string, unknown> {
   const normalized: Record<string, unknown> = { ...event };
   if (typeof normalized.stage === 'string') {
+    normalized.stage = sanitizeProgressMessage(normalized.stage);
     if (typeof normalized.message !== 'string' && typeof normalized.detail === 'string') {
       normalized.message = sanitizeProgressMessage(normalized.detail);
     }
