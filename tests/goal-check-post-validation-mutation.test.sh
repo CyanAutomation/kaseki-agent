@@ -95,7 +95,7 @@ set -e
 
 [ "$run_exit" -eq 0 ] || fail "expected zero exit, got $run_exit"
 [ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' ] || fail "expected exactly two goal-check calls after coding"
-grep -q 'Validation commands changed the final git diff; re-running goal check' "$RESULTS_DIR/goal-check-stderr.log" || fail "missing post-validation goal-check rerun log"
+grep -q 'Validation completed successfully; re-running goal check' "$RESULTS_DIR/goal-check-stderr.log" || fail "missing post-validation goal-check rerun log"
 grep -q '^generated.txt$' "$RESULTS_DIR/changed-files.txt" || fail "validation-generated file was not present in final changed files"
 
 goal_check_count="$(grep -c '^goal check[[:space:]]0[[:space:]]' "$RESULTS_DIR/stage-timings.tsv")"
