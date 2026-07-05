@@ -2,17 +2,31 @@
  * Unit tests for validation-output-filter.ts
  */
 
-import { filterValidationOutput } from './validation-output-filter.js';
+import { filterValidationOutput, filterValidationOutputStream } from './validation-output-filter.js';
 import { spawnSync } from 'child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { Readable, Writable } from 'stream';
 
 /**
  * Helper to run the filter with input and capture output
  */
 function runFilter(input: string): Promise<string> {
   return Promise.resolve(filterValidationOutput(input));
+}
+
+async function runFilterStream(input: string): Promise<{ output: string; linesProcessed: number; linesOutput: number }> {
+  let output = '';
+  const writable = new Writable({
+    write(chunk, _encoding, callback) {
+      output += chunk.toString();
+      callback();
+    },
+  });
+
+  const result = await filterValidationOutputStream(Readable.from([input]), writable);
+  return { output, ...result };
 }
 
 function representativeLargeValidationOutput(): string {
@@ -60,6 +74,78 @@ function runFilterEntrypoint(input: string, diagnosticsLog: string): { stdout: s
 }
 
 describe('validation-output-filter', () => {
+  describe('Source stream API', () => {
+    it('filters normal validation output from a finite source stream', async () => {
+      const result = await runFilterStream([
+        '==> npm run build',
+        'Installing dependencies...',
+        'Compiling project...',
+        '✓ Build completed successfully',
+        'exit_code=0',
+        '',
+      ].join('\n'));
+
+      expect(result.output).toBe([
+        '==> npm run build',
+        '✓ Build completed successfully',
+        'exit_code=0',
+        '',
+      ].join('\n'));
+      expect(result.output).not.toContain('Installing dependencies');
+      expect(result.output).not.toContain('Compiling project');
+      expect(result.linesProcessed).toBe(5);
+      expect(result.linesOutput).toBe(3);
+    });
+
+    it('preserves failing validation output from a finite source stream', async () => {
+      const result = await runFilterStream([
+        '==> npm test',
+        'Running verbose setup...',
+        'FAIL src/example.test.ts',
+        'ERROR: expected true to be false',
+        'Tests: 1 failed, 2 passed, 3 total',
+        'exit_code=1',
+        '',
+      ].join('\n'));
+
+      expect(result.output).toContain('==> npm test');
+      expect(result.output).toContain('FAIL src/example.test.ts');
+      expect(result.output).toContain('ERROR: expected true to be false');
+      expect(result.output).toContain('Tests: 1 failed, 2 passed, 3 total');
+      expect(result.output).toContain('exit_code=1');
+      expect(result.output).not.toContain('Running verbose setup');
+      expect(result.linesProcessed).toBe(6);
+      expect(result.linesOutput).toBe(5);
+    });
+
+    it('handles empty finite source streams', async () => {
+      const result = await runFilterStream('');
+
+      expect(result.output).toBe('');
+      expect(result.linesProcessed).toBe(0);
+      expect(result.linesOutput).toBe(0);
+    });
+
+    it('handles truncated finite source streams without requiring exit_code', async () => {
+      const result = await runFilterStream([
+        '==> npm run validation',
+        'Verbose line before stream truncation',
+        'WARNING: retained before truncation',
+        'FAIL retained failing shard before truncation',
+      ].join('\n'));
+
+      expect(result.output).toBe([
+        '==> npm run validation',
+        'WARNING: retained before truncation',
+        'FAIL retained failing shard before truncation',
+        '',
+      ].join('\n'));
+      expect(result.output).not.toContain('Verbose line before stream truncation');
+      expect(result.linesProcessed).toBe(4);
+      expect(result.linesOutput).toBe(3);
+    });
+  });
+
   describe('Error and warning handling', () => {
     it('should always show ERROR lines', async () => {
       const input = `==> npm run test
