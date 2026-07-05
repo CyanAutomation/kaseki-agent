@@ -308,13 +308,20 @@ calculate_retry_delay() {
 # Check gateway health before attempting Pi invocation
 pre_check_gateway_health() {
   local provider="${1:-gateway}"
-  local gateway_url="${KASEKI_GATEWAY_URL:-https://kaseki-tunnel.scheimann.xyz}"
+  local gateway_url="${KASEKI_GATEWAY_URL:-${LLM_GATEWAY_URL:-https://kaseki-tunnel.scheimann.xyz}}"
+  local health_url="${KASEKI_GATEWAY_HEALTH_URL:-${gateway_url%/}/health}"
+  local readiness_url="${KASEKI_GATEWAY_READINESS_URL:-${gateway_url%/}/ready}"
+  local health_file="${KASEKI_RESULTS_DIR:-/tmp}/gateway-health.json"
+  mkdir -p "$(dirname "$health_file")" 2>/dev/null || true
   
-  printf '[GATEWAY HEALTH] Checking %s health at %s/health\n' "$provider" "$gateway_url" >&2
+  printf '[GATEWAY HEALTH] Checking %s health at %s\n' "$provider" "$health_url" >&2
   
-  if curl -sf --max-time 5 --connect-timeout 3 "$gateway_url/health" > /tmp/gateway-health.json 2>&1; then
+  if curl -sf --max-time 5 --connect-timeout 3 "$health_url" > "$health_file" 2>&1; then
     local ready
-    ready=$(jq -r 'if has("ready") then (.ready | tostring) else "unknown" end' /tmp/gateway-health.json 2>/dev/null || echo "unknown")
+    ready=$(jq -r 'if has("ready") then (.ready | tostring) elif .status == "ready" then "true" else "unknown" end' "$health_file" 2>/dev/null || echo "unknown")
+    if [ "$ready" = "unknown" ] && [ "$readiness_url" != "$health_url" ] && curl -sf --max-time 5 --connect-timeout 3 "$readiness_url" > "$health_file" 2>/dev/null; then
+      ready=$(jq -r 'if has("ready") then (.ready | tostring) elif .status == "ready" then "true" else "unknown" end' "$health_file" 2>/dev/null || echo "unknown")
+    fi
     if [ "$ready" = "true" ]; then
       printf '[GATEWAY HEALTH] ✓ Gateway responsive and ready\n' >&2
       return 0
@@ -323,7 +330,7 @@ pre_check_gateway_health() {
       printf '[GATEWAY HEALTH] ✗ Gateway responsive but not ready; refusing provider request\n' >&2
       return 1
     fi
-    printf '[GATEWAY HEALTH] Gateway responsive but readiness was not reported; proceeding with caution\n' >&2
+    printf '[GATEWAY HEALTH] Gateway responsive but readiness was not reported by %s or %s; proceeding with caution\n' "$health_url" "$readiness_url" >&2
     return 0
   else
     printf '[GATEWAY HEALTH] ✗ Gateway unreachable (timeout or error); proceeding with caution\n' >&2
@@ -414,6 +421,14 @@ process.stdout.write(JSON.stringify({
   retryable: error?.retryable === true,
   tokens: tokenInfo,
   timing: timing,
+  finish_reason: summary.finish_reason || summary.finishReason || summary.stop_reason || undefined,
+  event_count: summary.output_event_count || summary.event_count || summary.total_events || undefined,
+  assistant_text_chars: summary.assistant_text_chars || summary.assistantTextChars || undefined,
+  response_shape: {
+    selected_model: summary.selected_model || summary.model || model,
+    event_types: summary.events_by_type || summary.event_types || undefined,
+    fields_found: summary.fields_found || summary.assistant_fields_found || undefined,
+  },
   error: error || null,
 }, null, 2) + '\n');
 NODE
