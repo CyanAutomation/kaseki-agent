@@ -231,7 +231,6 @@ check_auto_lint_cleanup_allowlist() {
   AUTO_LINT_CLEANUP_RESULT="failed"
   AUTO_LINT_CLEANUP_CLASSIFICATION="cleanup_allowlist_failed"
   AUTO_LINT_CLEANUP_FAILURE_CLASSIFICATION="cleanup_allowlist_failed"
-  QUALITY_EXIT=7
   QUALITY_FAILURE_REASON="auto_lint_cleanup_allowlist: $disallowed_count cleanup-created file(s) outside KASEKI_CHANGED_FILES_ALLOWLIST/KASEKI_VALIDATION_ALLOWLIST"
   printf 'ERROR: %s\n' "$QUALITY_FAILURE_REASON" | tee -a "$AUTO_LINT_CLEANUP_LOG" "${KASEKI_RESULTS_DIR}"/quality.log
   emit_error_event "auto_lint_cleanup_allowlist_failed" "$QUALITY_FAILURE_REASON" "continue"
@@ -298,7 +297,7 @@ run_auto_lint_cleanup() {
     AUTO_LINT_CLEANUP_RESULT="failed"
     AUTO_LINT_CLEANUP_CLASSIFICATION="directory_missing"
     AUTO_LINT_CLEANUP_FAILURE_CLASSIFICATION="directory_missing"
-    printf 'ERROR: Working directory "${KASEKI_WORKSPACE_DIR}"/repo does not exist before auto lint cleanup.\n' | tee -a "$AUTO_LINT_CLEANUP_LOG"
+    printf 'ERROR: Working directory %s/repo does not exist before auto lint cleanup.\n' "${KASEKI_WORKSPACE_DIR}" | tee -a "$AUTO_LINT_CLEANUP_LOG"
     printf 'workspace_missing\t%s\t0\tclassification=directory_missing\n' "$AUTO_LINT_CLEANUP_EXIT" >> "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
     record_stage_timing "$stage_label" "$AUTO_LINT_CLEANUP_EXIT" "$(($(date +%s) - stage_start))" "directory_missing classification=directory_missing"
     emit_event "auto_lint_cleanup_finished" "exit_code=$AUTO_LINT_CLEANUP_EXIT" "result=failed" "classification=directory_missing" "reason=directory_missing"
