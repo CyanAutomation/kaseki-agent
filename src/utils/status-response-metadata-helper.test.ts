@@ -32,7 +32,7 @@ describe('StatusMetadataHelper', () => {
         status: 'completed',
         exitCode: 42,
       } as any;
-      
+
       const tempDir = createTempDir();
       try {
         const result = helper.resolveExitCode(job, tempDir);
@@ -48,7 +48,7 @@ describe('StatusMetadataHelper', () => {
         status: 'completed',
         exitCode: 0,
       } as any;
-      
+
       const tempDir = createTempDir();
       try {
         const result = helper.resolveExitCode(job, tempDir);
@@ -63,7 +63,7 @@ describe('StatusMetadataHelper', () => {
         id: 'test-job',
         status: 'running',
       } as any;
-      
+
       const tempDir = createTempDir();
       try {
         const result = helper.resolveExitCode(job, tempDir);
@@ -78,13 +78,13 @@ describe('StatusMetadataHelper', () => {
       try {
         const metadataPath = path.join(tempDir, 'metadata.json');
         fs.writeFileSync(metadataPath, JSON.stringify({ exit_code: 88 }));
-        
+
         const job: Job = {
           id: 'test-job',
           status: 'failed',
           exitCode: undefined,
         } as any;
-        
+
         const result = helper.resolveExitCode(job, tempDir);
         // Note: exact value depends on resolveInstanceExitCode implementation
         // Just verify it doesn't throw and returns something reasonable
@@ -102,7 +102,7 @@ describe('StatusMetadataHelper', () => {
           status: 'failed',
           exitCode: undefined,
         } as any;
-        
+
         const result = helper.resolveExitCode(job, tempDir);
         expect(result).toBeNull();
       } finally {
@@ -115,13 +115,13 @@ describe('StatusMetadataHelper', () => {
       try {
         const metadataPath = path.join(tempDir, 'metadata.json');
         fs.writeFileSync(metadataPath, '{ invalid json }');
-        
+
         const job: Job = {
           id: 'test-job',
           status: 'failed',
           exitCode: undefined,
         } as any;
-        
+
         const result = helper.resolveExitCode(job, tempDir);
         expect(result).toBeNull(); // Should handle error gracefully
       } finally {
@@ -138,7 +138,7 @@ describe('StatusMetadataHelper', () => {
         status: 'completed',
         completedAt: date,
       } as any;
-      
+
       const metadata = {};
       const result = helper.resolveCompletedAt(job, metadata);
       expect(result).toBe(date.toISOString());
@@ -150,7 +150,7 @@ describe('StatusMetadataHelper', () => {
         status: 'running',
         completedAt: undefined,
       } as any;
-      
+
       const metadata = { ended_at: '2026-07-05T12:30:00Z' };
       const result = helper.resolveCompletedAt(job, metadata);
       expect(result).toBeUndefined();
@@ -162,7 +162,7 @@ describe('StatusMetadataHelper', () => {
         status: 'completed',
         completedAt: undefined,
       } as any;
-      
+
       const metadata = { ended_at: '2026-07-05T12:30:00Z' };
       const result = helper.resolveCompletedAt(job, metadata);
       // Date parsing adds milliseconds
@@ -175,7 +175,7 @@ describe('StatusMetadataHelper', () => {
         status: 'completed',
         completedAt: undefined,
       } as any;
-      
+
       const metadata = { completedAt: '2026-07-05T12:30:00Z' };
       const result = helper.resolveCompletedAt(job, metadata);
       expect(result?.startsWith('2026-07-05T12:30:00')).toBe(true);
@@ -187,7 +187,7 @@ describe('StatusMetadataHelper', () => {
         status: 'completed',
         completedAt: undefined,
       } as any;
-      
+
       const metadata = { completed_at: '2026-07-05T12:30:00Z' };
       const result = helper.resolveCompletedAt(job, metadata);
       expect(result?.startsWith('2026-07-05T12:30:00')).toBe(true);
@@ -199,7 +199,7 @@ describe('StatusMetadataHelper', () => {
         status: 'completed',
         completedAt: undefined,
       } as any;
-      
+
       // Format: YYYY-MM-DD HH:MM:SSZ (space instead of T)
       const metadata = { ended_at: '2026-07-05 12:30:00Z' };
       const result = helper.resolveCompletedAt(job, metadata);
@@ -212,7 +212,7 @@ describe('StatusMetadataHelper', () => {
         status: 'completed',
         completedAt: undefined,
       } as any;
-      
+
       const metadata = { ended_at: '' };
       const result = helper.resolveCompletedAt(job, metadata);
       expect(result).toBeUndefined();
@@ -224,7 +224,7 @@ describe('StatusMetadataHelper', () => {
         status: 'completed',
         completedAt: undefined,
       } as any;
-      
+
       const metadata = { ended_at: 'not-a-date' };
       const result = helper.resolveCompletedAt(job, metadata);
       expect(result).toBeUndefined();
@@ -236,7 +236,7 @@ describe('StatusMetadataHelper', () => {
         status: 'completed',
         completedAt: undefined,
       } as any;
-      
+
       const metadata = {};
       const result = helper.resolveCompletedAt(job, metadata);
       expect(result).toBeUndefined();
@@ -248,7 +248,7 @@ describe('StatusMetadataHelper', () => {
         status: 'completed',
         completedAt: undefined,
       } as any;
-      
+
       const result = helper.resolveCompletedAt(job, null as any);
       expect(result).toBeUndefined();
     });
@@ -261,7 +261,7 @@ describe('StatusMetadataHelper', () => {
         const metadataPath = path.join(tempDir, 'metadata.json');
         const testData = { phase: 'scouting', status: 'success' };
         fs.writeFileSync(metadataPath, JSON.stringify(testData));
-        
+
         const result = helper.readMetadata(tempDir);
         expect(result).toEqual(testData);
       } finally {
@@ -284,7 +284,7 @@ describe('StatusMetadataHelper', () => {
       try {
         const metadataPath = path.join(tempDir, 'metadata.json');
         fs.writeFileSync(metadataPath, '{ invalid json }');
-        
+
         const result = helper.readMetadata(tempDir);
         expect(result).toEqual({});
       } finally {
