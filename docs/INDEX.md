@@ -218,7 +218,7 @@ May 2026
 |---------|---------|
 | [README.md](../README.md) | Project overview |
 | [CLAUDE.md](../CLAUDE.md) | AI coding agent guidance |
-| [CHANGELOG.md](../CHANGELOG.md) | Release notes &
+| [CHANGELOG.md](../CHANGELOG.md) | Release notes & archived docs |
 
 ## Internal / Developer Documentation
 
