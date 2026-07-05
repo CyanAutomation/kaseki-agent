@@ -36,4 +36,13 @@ describe('progressEventsFromDockerLogTail', () => {
     }));
     expect(events[0].timestampEstimated).toBeUndefined();
   });
+
+  it('uses a stable epoch fallback instead of changing timestamps on every read', () => {
+    const first = progressEventsFromDockerLogTail('==> clone repository\n');
+    const second = progressEventsFromDockerLogTail('==> clone repository\n');
+
+    expect(first[0].timestamp).toBe('1970-01-01T00:00:00.000Z');
+    expect(second[0].timestamp).toBe(first[0].timestamp);
+    expect(first[0].timestampEstimated).toBe(true);
+  });
 });

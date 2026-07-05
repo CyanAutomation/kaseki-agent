@@ -220,7 +220,10 @@ export class StatusResponseBuilder {
       }
 
       if (!response.progress && typeof this.scheduler.getLiveDockerLogTail === 'function') {
-        const dockerEvents = progressEventsFromDockerLogTail(this.scheduler.getLiveDockerLogTail(job.id, 300) ?? undefined);
+        const dockerEvents = progressEventsFromDockerLogTail(
+          this.scheduler.getLiveDockerLogTail(job.id, 300) ?? undefined,
+          job.startedAt?.toISOString()
+        );
         const lastEvent = dockerEvents[dockerEvents.length - 1];
         if (lastEvent) {
           const structuredProgress = toStructuredProgress(lastEvent, 'running');
