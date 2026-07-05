@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Integration test: pre-agent validation fails before any Pi executable is invoked.
+# Integration test: failing pre-agent validation exits before any Pi executable is invoked.
 
 set -euo pipefail
 
-TEST_NAME="pre-agent validation order"
+TEST_NAME="pre-agent validation ordering contract"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT_UNDER_TEST="$REPO_ROOT/kaseki-agent.sh"
 DIST_FILTER="$REPO_ROOT/dist/validation-output-filter.js"
@@ -11,10 +11,9 @@ TMP_DIR="$(mktemp -d)"
 FAKE_REPO="$TMP_DIR/fake-repo"
 FAKE_BIN="$TMP_DIR/bin"
 PI_MARKER="$TMP_DIR/pi-invoked.log"
+VALIDATION_MARKER="$TMP_DIR/pre-agent-validation-invoked.log"
 RUN_LOG="$TMP_DIR/kaseki-run.log"
 RESULTS_DIR="$TMP_DIR/results"
-WORKSPACE_REPO="$TMP_DIR/repo"
-APP_LIB="$TMP_DIR/app/lib"
 
 cleanup() {
   rm -rf "$TMP_DIR"
@@ -45,68 +44,14 @@ if [ ! -f "$DIST_FILTER" ]; then
   fail "dist/validation-output-filter.js is missing; run npm run build before this test"
 fi
 
-mkdir -p "$RESULTS_DIR" "$FAKE_REPO" "$FAKE_BIN" "$WORKSPACE_REPO" "$APP_LIB" "$TMP_DIR/scripts" "$TMP_DIR/scripts/lib"
-cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$TMP_DIR/scripts/allowlist-helper.sh"
-cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$TMP_DIR/scripts/scouting-allowlist.js"
-cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
-cp "$REPO_ROOT/scripts/lib/json-events.sh" "$TMP_DIR/scripts/lib/json-events.sh"
+mkdir -p "$FAKE_REPO" "$FAKE_BIN"
 
-# Create a temporary version of the script with paths redirected to $TMP_DIR
-MODIFIED_SCRIPT="$TMP_DIR/kaseki-agent-modified.sh"
-sed "s#\"\${KASEKI_WORKSPACE_DIR}\"/repo#$WORKSPACE_REPO#g; s#\${KASEKI_WORKSPACE_DIR}/repo#$WORKSPACE_REPO#g; s#/workspace/repo#$WORKSPACE_REPO#g; s#/results#$RESULTS_DIR#g; s#/app/lib#$APP_LIB#g" "$SCRIPT_UNDER_TEST" > "$MODIFIED_SCRIPT"
-chmod +x "$MODIFIED_SCRIPT"
-
-mkdir -p "$FAKE_REPO/deps/fake-dep"
-cat > "$FAKE_REPO/package.json" <<'JSON'
-{
-  "name": "fake-baseline-validation-repo",
-  "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "check": "echo 'BASELINE FAILURE: lint did not pass'; exit 1",
-    "test": "exit 0"
-  },
-  "dependencies": {
-    "fake-dep": "file:deps/fake-dep"
-  }
-}
-JSON
-
-cat > "$FAKE_REPO/deps/fake-dep/package.json" <<'JSON'
-{
-  "name": "fake-dep",
-  "version": "1.0.0",
-  "private": true
-}
-JSON
-
-cat > "$FAKE_REPO/package-lock.json" <<'JSON'
-{
-  "name": "fake-baseline-validation-repo",
-  "version": "1.0.0",
-  "lockfileVersion": 3,
-  "requires": true,
-  "packages": {
-    "": {
-      "name": "fake-baseline-validation-repo",
-      "version": "1.0.0",
-      "dependencies": {
-        "fake-dep": "file:deps/fake-dep"
-      }
-    },
-    "deps/fake-dep": {
-      "version": "1.0.0"
-    },
-    "node_modules/fake-dep": {
-      "resolved": "deps/fake-dep",
-      "link": true
-    }
-  }
-}
-JSON
+cat > "$FAKE_REPO/README.md" <<'EOF_README'
+# Fake validation-order repository
+EOF_README
 
 git -C "$FAKE_REPO" init -q -b main
-git -C "$FAKE_REPO" add package.json package-lock.json deps/fake-dep/package.json
+git -C "$FAKE_REPO" add README.md
 git -C "$FAKE_REPO" \
   -c user.email=kaseki-test@example.invalid \
   -c user.name="Kaseki Test" \
@@ -119,6 +64,14 @@ exit 97
 EOF_PI
 chmod +x "$FAKE_BIN/pi"
 
+cat > "$FAKE_BIN/fake-pre-agent-validation" <<EOF_VALIDATION
+#!/usr/bin/env bash
+echo "validation invoked" >> "$VALIDATION_MARKER"
+echo "PUBLIC CONTRACT FAILURE: pre-agent validation stopped the run"
+exit 23
+EOF_VALIDATION
+chmod +x "$FAKE_BIN/fake-pre-agent-validation"
+
 cat > "$FAKE_BIN/validation-output-filter" <<EOF_FILTER
 #!/usr/bin/env bash
 exec node "$DIST_FILTER"
@@ -127,57 +80,58 @@ chmod +x "$FAKE_BIN/validation-output-filter"
 
 set +e
 env \
-  KASEKI_WORKSPACE_DIR="$TMP_DIR" \
+  KASEKI_TEST_DEFAULT_PATH_ROOT="$TMP_DIR" \
   PATH="$FAKE_BIN:$PATH" \
   REPO_URL="$FAKE_REPO" \
   GIT_REF="main" \
+  KASEKI_PROVIDER="openrouter" \
   OPENROUTER_API_KEY="test-key-not-used" \
-  LLM_GATEWAY_URL="https://example.invalid/v1" \
-  LLM_GATEWAY_API_KEY="test-key-not-used" \
   GITHUB_APP_ENABLED=0 \
   KASEKI_GIT_CACHE_MODE=off \
-  KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" \
-  KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
-  KASEKI_INSTALL_IGNORE_SCRIPTS=1 \
+  KASEKI_BASELINE_VALIDATION_ENABLED=0 \
   KASEKI_PRE_AGENT_VALIDATION=1 \
-  KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check;npm run test" \
-  KASEKI_VALIDATION_COMMANDS="npm run check;npm run test" \
+  KASEKI_PRE_AGENT_VALIDATION_COMMANDS="fake-pre-agent-validation" \
+  KASEKI_VALIDATION_COMMANDS="fake-post-agent-validation" \
   KASEKI_VALIDATION_FAIL_FAST=1 \
-  bash "$MODIFIED_SCRIPT" > "$RUN_LOG" 2>&1
+  bash "$SCRIPT_UNDER_TEST" > "$RUN_LOG" 2>&1
 run_exit=$?
 set -e
 
-if [ "$run_exit" -eq 0 ]; then
-  fail "expected kaseki-agent.sh to fail on baseline validation"
+if [ "$run_exit" -ne 23 ]; then
+  fail "expected kaseki-agent.sh to exit with pre-agent validation status 23, got $run_exit"
 fi
 
+[ -f "$VALIDATION_MARKER" ] || fail "fake pre-agent validation command was not invoked"
 [ -f "$RESULTS_DIR/stage-timings.tsv" ] || fail "stage timings were not written"
 [ -f "$RESULTS_DIR/pre-validation-timings.tsv" ] || fail "pre-validation timings were not written"
 [ -f "$RESULTS_DIR/metadata.json" ] || fail "metadata.json was not written"
 
-assert_file_contains "$RESULTS_DIR/stage-timings.tsv" '^pre-agent validation[[:space:]]+1[[:space:]]+'
-assert_file_contains "$RESULTS_DIR/pre-validation-timings.tsv" '^npm run check[[:space:]]+1[[:space:]]+'
+assert_file_contains "$RESULTS_DIR/stage-timings.tsv" '^pre-agent validation[[:space:]]+23[[:space:]]+'
+assert_file_contains "$RESULTS_DIR/pre-validation-timings.tsv" '^fake-pre-agent-validation[[:space:]]+23[[:space:]]+'
 assert_file_contains "$RESULTS_DIR/pre-validation.log" 'Raw validation output tail'
-assert_file_contains "$RESULTS_DIR/pre-validation.log" 'BASELINE FAILURE: lint did not pass'
+assert_file_contains "$RESULTS_DIR/pre-validation.log" 'PUBLIC CONTRACT FAILURE: pre-agent validation stopped the run'
 
 if [ -s "$PI_MARKER" ]; then
-  fail "fake pi executable was invoked before baseline validation blocked the run"
+  fail "fake pi executable was invoked even though pre-agent validation failed"
 fi
 
-node - "$RESULTS_DIR/metadata.json" <<'NODE' || fail "metadata did not identify pre-agent baseline validation failure"
+node - "$RESULTS_DIR/metadata.json" <<'NODE' || fail "metadata did not identify pre-agent validation failure fields"
 const fs = require('fs');
 const metadata = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const failures = [];
+if (metadata.exit_code !== 23) {
+  failures.push(`exit_code=${metadata.exit_code}`);
+}
 if (metadata.failed_command !== 'pre-agent validation') {
   failures.push(`failed_command=${JSON.stringify(metadata.failed_command)}`);
 }
-if (metadata.pre_validation_exit_code !== 1) {
+if (metadata.pre_validation_exit_code !== 23) {
   failures.push(`pre_validation_exit_code=${metadata.pre_validation_exit_code}`);
 }
-if (!String(metadata.pre_validation_failed_command || '').includes('npm run check')) {
+if (!String(metadata.pre_validation_failed_command || '').includes('fake-pre-agent-validation')) {
   failures.push(`pre_validation_failed_command=${JSON.stringify(metadata.pre_validation_failed_command)}`);
 }
-if (!String(metadata.pre_validation_failure_reason || '').includes('pre_agent_validation_failed: npm run check (exit 1)')) {
+if (metadata.pre_validation_failure_reason !== 'pre_agent_validation_failed: fake-pre-agent-validation (exit 23)') {
   failures.push(`pre_validation_failure_reason=${JSON.stringify(metadata.pre_validation_failure_reason)}`);
 }
 if (metadata.validation_exit_code !== 0) {
@@ -196,7 +150,7 @@ if (failures.length) {
 NODE
 
 if grep -q '^pi coding agent[[:space:]]' "$RESULTS_DIR/stage-timings.tsv"; then
-  fail "pi coding agent stage should not be timed when baseline validation fails"
+  fail "pi coding agent stage should not be timed when pre-agent validation fails"
 fi
 
 echo "✓ PASS: $TEST_NAME"
