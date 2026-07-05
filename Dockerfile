@@ -154,12 +154,17 @@ RUN chmod +x \
     && cp dist/secrets/host-secrets-reader.js /app/lib/secrets/host-secrets-reader.js \
     && cp dist/lib/validation-causality-analysis.js /app/lib/lib/validation-causality-analysis.js \
     && cp -r dist/lib/* /app/lib/lib/ \
+    && cp -r dist/utils /app/lib/utils \
+    && cp -r dist/secrets /app/lib/secrets \
+    && chmod 0755 /app/lib/utils/*.js /app/lib/secrets/*.js 2>/dev/null || true \
     && chmod 0755 /app/dist/*.js \
     && github_app_helper_dependencies="github-app-private-key.js github-utils.js logger.js secrets/host-secrets-reader.js" \
-    && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets /usr/local/bin/scripts /usr/local/bin/pi-event-aggregation /usr/local/bin/pi-event-filter-helpers \
+    && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets /usr/local/bin/utils /usr/local/bin/scripts /usr/local/bin/pi-event-aggregation /usr/local/bin/pi-event-filter-helpers \
     && cp -r /app/lib/lib/* /usr/local/bin/lib/ \
     && cp -r /app/lib/pi-event-aggregation/* /usr/local/bin/pi-event-aggregation/ \
     && cp -r /app/lib/pi-event-filter-helpers/* /usr/local/bin/pi-event-filter-helpers/ \
+    && cp -r /app/lib/utils/* /usr/local/bin/utils/ \
+    && cp -r /app/lib/secrets/* /usr/local/bin/secrets/ 2>/dev/null || true \
     && for dependency in $github_app_helper_dependencies; do install -m 0755 "/app/lib/$dependency" "/usr/local/bin/$dependency"; done \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
     && install -m 0755 /app/lib/pi-event-filter-helpers.js /usr/local/bin/pi-event-filter-helpers.js \
@@ -290,10 +295,12 @@ RUN mkdir -p /scripts \
     && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \
     && /app/scripts/startup-check-packaging.sh install \
     && github_app_helper_dependencies="github-app-private-key.js github-utils.js logger.js secrets/host-secrets-reader.js" \
-    && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets /usr/local/bin/scripts /usr/local/bin/pi-event-aggregation /usr/local/bin/pi-event-filter-helpers \
+    && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets /usr/local/bin/utils /usr/local/bin/scripts /usr/local/bin/pi-event-aggregation /usr/local/bin/pi-event-filter-helpers \
     && cp -r /app/lib/lib/* /usr/local/bin/lib/ \
     && cp -r /app/lib/pi-event-aggregation/* /usr/local/bin/pi-event-aggregation/ \
     && cp -r /app/lib/pi-event-filter-helpers/* /usr/local/bin/pi-event-filter-helpers/ \
+    && cp -r /app/lib/utils/* /usr/local/bin/utils/ \
+    && cp -r /app/lib/secrets/* /usr/local/bin/secrets/ 2>/dev/null || true \
     && for dependency in $github_app_helper_dependencies; do install -m 0755 "/app/lib/$dependency" "/usr/local/bin/$dependency"; done \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
     && install -m 0755 /app/lib/pi-event-filter-helpers.js /usr/local/bin/pi-event-filter-helpers.js \
