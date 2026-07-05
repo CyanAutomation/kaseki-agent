@@ -173,10 +173,11 @@ EOF_ASKPASS
 
 
 check_github_operations_health() {
-  local repo_url="${1:-}"
   # Preflight health check for github operations before pi agent runs
   # Tests: GitHub App secrets, git config, Node.js token generation capability
   local health_log="${KASEKI_HEALTH_LOG:-${KASEKI_RESULTS_DIR}/github-health-check.log}"
+  # shellcheck disable=SC2153
+  local repo_url="$REPO_URL"
   github_preflight_fail() {
     local classification="$1"
     local remediation="$2"
