@@ -2111,8 +2111,20 @@ collect_git_artifacts() {
       [ -z "$untracked_file" ] && continue
       git -C "${KASEKI_WORKSPACE_DIR}"/repo add -N -- "$untracked_file" 2>/dev/null || true
     done < <(git -C "${KASEKI_WORKSPACE_DIR}"/repo ls-files --others --exclude-standard 2>/dev/null || true)
-    git -C "${KASEKI_WORKSPACE_DIR}"/repo diff -- . > "${KASEKI_RESULTS_DIR}"/git.diff 2>/dev/null || true
-    git -C "${KASEKI_WORKSPACE_DIR}"/repo diff --name-only -- . > "${KASEKI_RESULTS_DIR}"/changed-files.txt 2>/dev/null || true
+    # Compare against HEAD so staged changes and index mutations are not lost.
+    # Some agent tools stage their edits before Kaseki collects artifacts; a
+    # plain `git diff` then reports an empty or incomplete changed-file list.
+    git -C "${KASEKI_WORKSPACE_DIR}"/repo diff HEAD -- . > "${KASEKI_RESULTS_DIR}"/git.diff 2>/dev/null || true
+    {
+      git -C "${KASEKI_WORKSPACE_DIR}"/repo diff --name-only HEAD -- . 2>/dev/null || true
+      git -C "${KASEKI_WORKSPACE_DIR}"/repo ls-files --others --exclude-standard 2>/dev/null || true
+    } | sed 's#^\./##' | awk 'NF && !seen[$0]++' | LC_ALL=C sort > "${KASEKI_RESULTS_DIR}"/changed-files.txt
+    node - "${KASEKI_RESULTS_DIR}/changed-files.txt" "${KASEKI_RESULTS_DIR}/changed-files.json" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [source, output] = process.argv.slice(2);
+const files = fs.readFileSync(source, 'utf8').split(/\r?\n/).filter(Boolean);
+fs.writeFileSync(output, JSON.stringify({ collectedAt: new Date().toISOString(), source: 'git-diff-head-and-untracked', files }, null, 2) + '\n');
+NODE
     if [ -s "${KASEKI_RESULTS_DIR}"/git.diff ]; then
       DIFF_NONEMPTY=true
     fi
@@ -2280,8 +2292,14 @@ const notes = [];
 if (expectations.__invalid) {
   failures.push(`expectation artifact is not valid JSON: ${expectations.__invalid}`);
 } else {
-  const changedFiles = new Set(read(changedFilesPath).split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
   const diff = read(diffPath);
+  const listedFiles = read(changedFilesPath).split(/\r?\n/).map((line) => line.trim().replace(/^\.\//, '')).filter(Boolean);
+  const diffFiles = [...diff.matchAll(/^diff --git a\/(.+?) b\/(.+)$/gm)].map((match) => match[2].trim());
+  const changedFiles = new Set([...listedFiles, ...diffFiles]);
+  if (diffFiles.some((file) => !listedFiles.includes(file))) {
+    notes.push(`recovered_changed_files_from_diff=${diffFiles.filter((file) => !listedFiles.includes(file)).join(',')}`);
+    fs.writeFileSync(changedFilesPath, [...changedFiles].sort().join('\n') + '\n');
+  }
   if (asBoolean(expectations.forbidden_empty_diff) && diff.trim().length === 0) {
     failures.push('git.diff is empty but forbidden_empty_diff is true');
   }
@@ -5214,6 +5232,8 @@ run_goal_setting_agent() {
     if create_fallback_goal_setting_artifact "$ORIGINAL_TASK_PROMPT" "$GOAL_SETTING_ARTIFACT"; then
       GOAL_SETTING_FALLBACK_USED=1
       GOAL_SETTING_FALLBACK_MODE="missing_candidate_artifact"
+      emit_progress "pi goal-setting agent" "degraded: required candidate artifact missing; fallback activated"
+      printf '%s\n' '{"phase":"goal-setting","severity":"warning","code":"fallback_activated","detail":"Required candidate artifact missing; original task preserved with confidence=low"}' >> "${KASEKI_RESULTS_DIR}/stage-warnings.jsonl"
       printf '[GOAL SETTING DEGRADED] Required candidate artifact was missing; coding will use the original task with confidence=low.\n' >&2
     else
       GOAL_SETTING_EXIT=86
@@ -5231,6 +5251,9 @@ run_goal_setting_agent() {
       printf 'Fallback artifact created successfully. Run will proceed with confidence=low goal-setting.\n'
       GOAL_SETTING_EXIT=0  # Mark as success since we have valid artifact
       GOAL_SETTING_FALLBACK_USED=1
+      GOAL_SETTING_FALLBACK_MODE="invalid_candidate_artifact"
+      emit_progress "pi goal-setting agent" "degraded: invalid candidate artifact; fallback activated"
+      printf '%s\n' '{"phase":"goal-setting","severity":"warning","code":"fallback_activated","detail":"Candidate artifact validation failed; original task preserved with confidence=low"}' >> "${KASEKI_RESULTS_DIR}/stage-warnings.jsonl"
       emit_error_event "goal_setting_fallback_activated" "Goal-setting validation failed, using fallback mode (confidence=low)" "warning"
     else
       printf 'Failed to create fallback artifact. Run will fail.\n'
@@ -5243,7 +5266,7 @@ run_goal_setting_agent() {
   append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "goal-setting" "${KASEKI_RESULTS_DIR}"/goal-setting-summary.json
   GOAL_SETTING_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/goal-setting-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
   
-  record_stage_timing "pi goal-setting agent" "$GOAL_SETTING_EXIT" "$GOAL_SETTING_DURATION_SECONDS" "artifact=$GOAL_SETTING_ARTIFACT timeout_seconds=$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS"
+  record_stage_timing "pi goal-setting agent" "$GOAL_SETTING_EXIT" "$GOAL_SETTING_DURATION_SECONDS" "artifact=$GOAL_SETTING_ARTIFACT timeout_seconds=$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS degraded=$GOAL_SETTING_FALLBACK_USED fallback_mode=${GOAL_SETTING_FALLBACK_MODE:-none}"
   
   if [ "$GOAL_SETTING_EXIT" -ne 0 ]; then
     emit_error_event "pi_goal_setting_failed" "Goal-setting agent exited before scouting: $GOAL_SETTING_EXIT; continuing with original TASK_PROMPT" "continue"
@@ -8527,15 +8550,12 @@ prepare_dependencies() {
       cache_reused="false"
       cache_source="none"
       install_reason="workspace_cache_integrity_failed"
+    else
+      # The entry was atomically published only after npm validation and is
+      # already keyed by lockfile, Node major, and install flags.
+      printf 'Dependency cache status: restored validated workspace cache; skipping redundant npm ls validation.\n'
+      emit_event "dependency_cache_decision" "strategy=trust_validated_workspace_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=validated_marker_and_cache_key_match" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key"
     fi
-    # The entry was atomically published only after npm validation and is
-    # already keyed by lockfile, Node major, and install flags. Running
-    # `npm ls` against a copied/hardlinked tree can report benign metadata or
-    # optional-dependency differences and previously discarded a usable cache.
-    # Trust the validated marker here; the normal build is the authoritative
-    # repository-specific dependency check.
-    printf 'Dependency cache status: restored validated workspace cache; skipping redundant npm ls validation.\n'
-    emit_event "dependency_cache_decision" "strategy=trust_validated_workspace_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=validated_marker_and_cache_key_match" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key"
   elif [ ! -d node_modules ] && [ -d "$image_cache_dir" ]; then
     printf 'Dependency cache status: restoring node_modules from image cache (%s; lock_hash=%s; repo_ref_key=%s).\n' "$image_cache_dir" "$lock_hash" "$repo_ref_key"
     set_dependency_cache_status "image-cache-hit" "$cache_detail"
