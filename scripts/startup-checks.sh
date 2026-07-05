@@ -717,12 +717,11 @@ check_git_safe_directory() {
 
 log_provider_info() {
   local active_provider="${KASEKI_PROVIDER:-gateway}"
-  local fallback_status="OpenRouter"
   
   echo ""
   log_info "Kaseki startup checks (mode: $MODE)"
   echo ""
-  log_info "Active LLM provider: $active_provider (with $fallback_status fallback)"
+  log_info "Active LLM provider: $active_provider (gateway-only; provider fallback disabled)"
   echo ""
 }
 
@@ -763,6 +762,7 @@ check_packaged_agent_helpers() {
     "agent-prompt.sh"
     "allowlist-helper.sh"
     "dependency-cache-helpers.sh"
+    "auto-lint-cleanup-classification.sh"
     "scouting-allowlist.js"
     "lib/json.sh"
     "lib/json-events.sh"
@@ -818,13 +818,10 @@ main() {
           overall_exit=$(merge_startup_status "$overall_exit" "$?")
         fi
       else
-        check_api_key || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+        log_error "Unsupported KASEKI_PROVIDER=${KASEKI_PROVIDER}. Kaseki is gateway-only; set KASEKI_PROVIDER=gateway."
+        overall_exit=$(merge_startup_status "$overall_exit" 2)
       fi
       echo ""
-      
-      # Fallback provider validation
-      log_info "Checking fallback LLM provider (OpenRouter)..."
-      check_api_key || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       check_unused_secrets || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       echo ""
       
@@ -866,13 +863,10 @@ main() {
           overall_exit=$(merge_startup_status "$overall_exit" "$?")
         fi
       else
-        check_api_key || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+        log_error "Unsupported KASEKI_PROVIDER=${KASEKI_PROVIDER}. Kaseki is gateway-only; set KASEKI_PROVIDER=gateway."
+        overall_exit=$(merge_startup_status "$overall_exit" 2)
       fi
       echo ""
-      
-      # Fallback provider validation
-      log_info "Checking fallback LLM provider (OpenRouter)..."
-      check_api_key || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       check_unused_secrets || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       echo ""
       
