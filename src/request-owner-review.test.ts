@@ -12,7 +12,7 @@ type CapturedCall = {
 };
 
 const readFixture = (name: string): unknown => JSON.parse(
-  readFileSync(join(process.cwd(), 'tests', 'fixtures', name), 'utf8'),
+  readFileSync(join(__dirname, '..', 'tests', 'fixtures', name), 'utf8'),
 );
 
 const createFetchStub = (statuses: number[]) => {
