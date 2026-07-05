@@ -17,6 +17,7 @@
  */
 
 import { createInterface } from 'readline';
+import type { Readable, Writable } from 'stream';
 import { basename } from 'path';
 import { appendFileSync } from 'fs';
 
@@ -212,6 +213,51 @@ export function filterValidationOutput(input: string): string {
   }
 
   return outputLines.length > 0 ? `${outputLines.join('\n')}\n` : '';
+}
+
+export interface FilterStreamResult {
+  linesProcessed: number;
+  linesOutput: number;
+}
+
+/**
+ * Filter validation output from a finite readable stream into a writable stream.
+ * This is the source-module API used by tests and by wrappers that need the
+ * same line-by-line behavior as the CLI without spawning the built dist file.
+ */
+export async function filterValidationOutputStream(input: Readable, output: Writable): Promise<FilterStreamResult> {
+  const state = createInitialState();
+  let linesProcessed = 0;
+  let linesOutput = 0;
+
+  const rl = createInterface({
+    input,
+    terminal: false,
+  });
+
+  try {
+    for await (const line of rl) {
+      linesProcessed++;
+      const outputLine = processLine(String(line), state);
+
+      if (outputLine !== null) {
+        linesOutput++;
+        await new Promise<void>((resolve, reject) => {
+          output.write(`${outputLine}\n`, (error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        });
+      }
+    }
+  } finally {
+    rl.close();
+  }
+
+  return { linesProcessed, linesOutput };
 }
 
 /**
