@@ -19,7 +19,7 @@ const createFetchStub = (statuses: number[]) => {
   const calls: CapturedCall[] = [];
   const fetchStub = async (url: string, options: CapturedCall['options']) => {
     calls.push({ url, options });
-    const status = statuses[Math.min(calls.length - 1, statuses.length - 1)];
+    const status = statuses[Math.max(0, Math.min(calls.length - 1, statuses.length - 1))];
     return new Response('{}', { status });
   };
 
