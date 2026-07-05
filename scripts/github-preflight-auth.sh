@@ -54,6 +54,17 @@ process.stdout.write(`${error}\t${status}`);
 NODE
 }
 
+constant_time_equals() {
+  local expected="$1"
+  local actual="$2"
+  EXPECTED_VALUE="$expected" ACTUAL_VALUE="$actual" node <<'NODE'
+const crypto = require('node:crypto');
+const expected = Buffer.from(process.env.EXPECTED_VALUE || '', 'utf8');
+const actual = Buffer.from(process.env.ACTUAL_VALUE || '', 'utf8');
+if (expected.length !== actual.length) process.exit(1);
+process.exit(crypto.timingSafeEqual(expected, actual) ? 0 : 1);
+NODE
+}
 
 github_private_key_metadata_json() {
   local key_file="$1"
@@ -145,7 +156,7 @@ EOF_ASKPASS
     GITHUB_PUSH_EXIT=8
     return 8
   }
-  if [ "$username_smoke_output" != "x-access-token" ]; then
+  if ! constant_time_equals "x-access-token" "$username_smoke_output"; then
     rm -f "$askpass_file"
     printf '%s ERROR: GitHub credential helper smoke check returned unexpected username response\n' "$log_prefix" | tee -a "$log_file" >&2
     GITHUB_PUSH_EXIT=8
@@ -323,6 +334,20 @@ check_github_operations_health() {
         token_parse_result="$(parse_github_app_token_helper_failure "$token_data" "$token_stderr" "$token_exit_code")"
         token_error="${token_parse_result%%$'\t'*}"
         github_preflight_fail "github_app_token_generation_failed" "Verify the GitHub App is installed on REPO_URL and the app ID/private key pair are valid." "GitHub App token generation failed for owner/repo: %s" "$token_error"
+        return $?
+      fi
+
+      local github_token
+      github_token="$(TOKEN_HELPER_STDOUT="$token_data" node <<'NODE' 2>/dev/null
+const data = process.env.TOKEN_HELPER_STDOUT || '';
+try {
+  const parsed = JSON.parse(data);
+  process.stdout.write(parsed.token || '');
+} catch (_) {}
+NODE
+)"
+      if [ -z "$github_token" ]; then
+        github_preflight_fail "github_app_token_generation_failed" "Verify the github-app-token helper returns JSON containing a non-empty token field." "GitHub authentication failed: Unable to obtain installation token"
         return $?
       fi
 
