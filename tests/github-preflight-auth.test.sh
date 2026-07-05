@@ -21,8 +21,16 @@ if [ "$#" -eq 0 ]; then
   printf 'Usage: node github-app-token.js <app-id> <private-key-file> <owner> <repo>\n' >&2
   exit 1
 fi
+if [ "$#" -eq 4 ] && [ "${KASEKI_TEST_HELPER_MODE:-failure}" = "success" ]; then
+  printf '{"token":"%s"}\n' "${KASEKI_TEST_INSTALLATION_TOKEN:?}"
+  exit 0
+fi
+if [ "$#" -eq 4 ] && [ "${KASEKI_TEST_HELPER_MODE:-failure}" = "empty-token" ]; then
+  printf '{"token":""}\n'
+  exit 0
+fi
 printf '{"error":"HTTP 404: installation not found for supplied repository","status":404}\n'
-printf 'debug token ghp_abcdefghijklmnopqrstuvwxyz1234567890 should be redacted\n' >&2
+printf 'debug token %s should be redacted\n' "${KASEKI_TEST_REDACTED_TOKEN:?}" >&2
 exit 1
 EOF_HELPER
 chmod +x "$HELPER_PATH"
@@ -44,6 +52,9 @@ KASEKI_HEALTH_LOG="$HEALTH_LOG"
 KASEKI_GITHUB_APP_TOKEN_HELPER="$HELPER_PATH"
 KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=1
 KASEKI_ALLOW_LOCAL_DEV_SECRET_FALLBACK=0
+KASEKI_TEST_REDACTED_TOKEN="ghp_${KASEKI_TEST_TOKEN_SUFFIX:-abcdefghijklmnopqrstuvwxyz1234567890}"
+KASEKI_TEST_INSTALLATION_TOKEN="${KASEKI_TEST_INSTALLATION_TOKEN:-mock-installation-token}"
+export KASEKI_TEST_REDACTED_TOKEN KASEKI_TEST_INSTALLATION_TOKEN
 
 if check_github_operations_health >"$TMP_DIR/stdout.log" 2>"$TMP_DIR/stderr.log"; then
   printf '✗ health check unexpectedly passed when github-app-token returned a structured failure\n'
@@ -87,7 +98,7 @@ if grep -q 'github operations health check PASSED' "$HEALTH_LOG"; then
   exit 1
 fi
 
-if grep -q 'ghp_abcdefghijklmnopqrstuvwxyz1234567890' "$HEALTH_LOG"; then
+if grep -q "$KASEKI_TEST_REDACTED_TOKEN" "$HEALTH_LOG"; then
   printf '✗ health check log leaked token-like stderr content\n'
   cat "$HEALTH_LOG"
   exit 1
@@ -104,13 +115,45 @@ if [ ! -x "$GITHUB_ASKPASS_FILE" ]; then
   printf '✗ askpass helper is not executable\n'
   exit 1
 fi
-username_output="$(KASEKI_GITHUB_TOKEN='askpass-token' "$GITHUB_ASKPASS_FILE" 'Username for https://github.com')"
-password_output="$(KASEKI_GITHUB_TOKEN='askpass-token' "$GITHUB_ASKPASS_FILE" 'Password for https://github.com')"
+TEST_ASKPASS_TOKEN="${KASEKI_TEST_ASKPASS_TOKEN:-mock-askpass-token}"
+username_output="$(KASEKI_GITHUB_TOKEN="$TEST_ASKPASS_TOKEN" "$GITHUB_ASKPASS_FILE" 'Username for https://github.com')"
+password_output="$(KASEKI_GITHUB_TOKEN="$TEST_ASKPASS_TOKEN" "$GITHUB_ASKPASS_FILE" 'Password for https://github.com')"
 rm -f "$GITHUB_ASKPASS_FILE"
-if [ "$username_output" != 'x-access-token' ] || [ "$password_output" != 'askpass-token' ]; then
+if ! constant_time_equals "x-access-token" "$username_output" || ! constant_time_equals "$TEST_ASKPASS_TOKEN" "$password_output"; then
   printf '✗ askpass helper did not return expected username/password prompt responses\n'
   printf 'username=%s password=%s\n' "$username_output" "$password_output"
   exit 1
 fi
 
 printf '✓ health check fails with sanitized structured helper error, safe metadata, token redaction, and working askpass helper\n'
+
+
+KASEKI_TEST_HELPER_MODE=success
+export KASEKI_TEST_HELPER_MODE
+if ! check_github_operations_health >"$TMP_DIR/success-stdout.log" 2>"$TMP_DIR/success-stderr.log"; then
+  printf '✗ health check failed when github-app-token returned a valid token\n'
+  cat "$TMP_DIR/success-stdout.log"
+  cat "$TMP_DIR/success-stderr.log"
+  cat "$HEALTH_LOG"
+  exit 1
+fi
+if ! grep -q 'github operations health check PASSED' "$HEALTH_LOG"; then
+  printf '✗ health check did not report PASSED after valid token generation\n'
+  cat "$HEALTH_LOG"
+  exit 1
+fi
+printf '✓ health check passes with valid mock token and standard success exit code\n'
+
+KASEKI_TEST_HELPER_MODE=empty-token
+export KASEKI_TEST_HELPER_MODE
+if check_github_operations_health >"$TMP_DIR/empty-token-stdout.log" 2>"$TMP_DIR/empty-token-stderr.log"; then
+  printf '✗ health check unexpectedly passed when github-app-token returned an empty token\n'
+  cat "$HEALTH_LOG"
+  exit 1
+fi
+if ! grep -q 'GitHub authentication failed: Unable to obtain installation token' "$HEALTH_LOG"; then
+  printf '✗ health check did not report empty installation token failure\n'
+  cat "$HEALTH_LOG"
+  exit 1
+fi
+printf '✓ health check fails when mock token is empty with standard failure exit code\n'

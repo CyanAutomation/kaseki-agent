@@ -8033,7 +8033,7 @@ run_github_operations() {
   
   # Use helper to extract token from JSON response
   if ! run_node_subprocess token "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.token || '')" "$token_data" /dev/null; then
-    printf -- 'Failed to extract token from response: %s\n' "$token_data"  >&2
+    printf -- 'Failed to extract token from response (malformed helper output)\n'  >&2
     GITHUB_PUSH_EXIT=7
     return 7
   fi
