@@ -10,6 +10,40 @@
 
 import { PiEvent } from './lib/event-timestamp-helpers.js';
 
+// Re-export provider error field extraction helpers for testability
+export {
+  extractErrorMessage,
+  extractStopReason,
+  extractNestedError,
+  extractStatusCode,
+  extractErrorCode,
+  extractResponseId,
+  extractCloudflareLogId,
+  extractGatewayEventId,
+  extractUpstreamError,
+  extractRetryAfter,
+  extractRoutedProvider,
+  extractRoutedModel,
+  extractRecoverySuggestion,
+} from './pi-event-filter-helpers/provider-error-extraction.js';
+
+// Import helpers for use in extractProviderError
+import {
+  extractErrorMessage,
+  extractStopReason,
+  extractNestedError,
+  extractStatusCode,
+  extractErrorCode,
+  extractResponseId,
+  extractCloudflareLogId,
+  extractGatewayEventId,
+  extractUpstreamError,
+  extractRetryAfter,
+  extractRoutedProvider,
+  extractRoutedModel,
+  extractRecoverySuggestion,
+} from './pi-event-filter-helpers/provider-error-extraction.js';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface ProviderErrorSummary {
@@ -185,49 +219,20 @@ export function classifyProviderErrorWithContext(message: string): {
 /**
  * Extract a ProviderErrorSummary from a Pi event whose message has stopReason 'error'.
  * Returns null if the event does not represent a provider error.
+ *
+ * Delegates field extraction to focused helper functions to reduce cognitive complexity.
  */
 export function extractProviderError(event: PiEvent): ProviderErrorSummary | null {
   const message = (event as any).message;
   if (!message || typeof message !== 'object') return null;
 
-  let errorMessage = '';
-  if (typeof message.errorMessage === 'string') {
-    errorMessage = message.errorMessage.trim();
-  } else if (message.errorMessage !== undefined && message.errorMessage !== null) {
-    try {
-      errorMessage = String(message.errorMessage).trim();
-    } catch {
-      return null;
-    }
-  }
+  const errorMessage = extractErrorMessage(message);
+  const stopReason = extractStopReason(message);
 
-  const stopReason = typeof message.stopReason === 'string' ? message.stopReason.trim() : '';
   if (!errorMessage || stopReason !== 'error') return null;
 
   const { type, retryable } = classifyProviderError(errorMessage);
-  const nestedError = message.error && typeof message.error === 'object' ? message.error : undefined;
-  const statusCandidate =
-    message.statusCode ?? message.status_code ?? nestedError?.statusCode ?? nestedError?.status_code;
-  const statusCode =
-    typeof statusCandidate === 'number'
-      ? statusCandidate
-      : typeof statusCandidate === 'string' && /^\d{3}$/.test(statusCandidate)
-        ? Number(statusCandidate)
-        : undefined;
-  const errorCodeCandidate = message.errorCode ?? message.error_code ?? nestedError?.code;
-  const responseIdCandidate = message.responseId ?? message.response_id ?? (event as any).responseId;
-  const cloudflareLogIdCandidate =
-    message.cloudflareLogId ?? message.cloudflare_log_id ?? nestedError?.cloudflareLogId ?? nestedError?.cloudflare_log_id;
-  const gatewayEventIdCandidate =
-    message.gatewayEventId ?? message.gateway_event_id ?? nestedError?.eventId ?? nestedError?.event_id;
-  const upstreamErrorCandidate =
-    nestedError?.message ?? nestedError?.detail ?? message.errorDetail ?? message.error_detail;
-  const retryAfterCandidate =
-    message.retryAfter ?? message.retry_after ?? nestedError?.retryAfter ?? nestedError?.retry_after;
-  const routedProviderCandidate =
-    message.routedProvider ?? message.routed_provider ?? nestedError?.provider ?? nestedError?.routed_provider;
-  const routedModelCandidate =
-    message.routedModel ?? message.routed_model ?? nestedError?.model ?? nestedError?.routed_model;
+  const nestedError = extractNestedError(message);
 
   return {
     type,
@@ -236,20 +241,16 @@ export function extractProviderError(event: PiEvent): ProviderErrorSummary | nul
     api: typeof message.api === 'string' ? message.api : undefined,
     model: typeof message.model === 'string' ? message.model : undefined,
     stop_reason: stopReason,
-    response_id: typeof responseIdCandidate === 'string' ? responseIdCandidate : undefined,
-    status_code: statusCode,
-    error_code: typeof errorCodeCandidate === 'string' ? errorCodeCandidate : undefined,
-    cloudflare_log_id: typeof cloudflareLogIdCandidate === 'string' ? cloudflareLogIdCandidate : undefined,
-    gateway_event_id: typeof gatewayEventIdCandidate === 'string' ? gatewayEventIdCandidate : undefined,
-    upstream_error: typeof upstreamErrorCandidate === 'string' ? upstreamErrorCandidate.slice(0, 1000) : undefined,
-    retry_after: typeof retryAfterCandidate === 'string' || typeof retryAfterCandidate === 'number'
-      ? String(retryAfterCandidate)
-      : undefined,
-    routed_provider: typeof routedProviderCandidate === 'string' ? routedProviderCandidate : undefined,
-    routed_model: typeof routedModelCandidate === 'string' ? routedModelCandidate : undefined,
-    recovery_suggestion: type === 'malformed_tool_call'
-      ? 'Retry with a corrective instruction to emit one small, valid JSON tool call; use an alternate model if it repeats.'
-      : undefined,
+    response_id: extractResponseId(message, event),
+    status_code: extractStatusCode(message, nestedError),
+    error_code: extractErrorCode(message, nestedError),
+    cloudflare_log_id: extractCloudflareLogId(message, nestedError),
+    gateway_event_id: extractGatewayEventId(message, nestedError),
+    upstream_error: extractUpstreamError(message, nestedError),
+    retry_after: extractRetryAfter(message, nestedError),
+    routed_provider: extractRoutedProvider(message, nestedError),
+    routed_model: extractRoutedModel(message, nestedError),
+    recovery_suggestion: extractRecoverySuggestion(type),
     message: errorMessage,
   };
 }
