@@ -2327,8 +2327,16 @@ const controllerPage = String.raw`<!doctype html>
           button.type = 'button';
           button.dataset.artifactFile = fileName;
           button.textContent = fileName;
-          button.addEventListener('click', (event) => {
-            run(event.currentTarget, artifactUrl(runId, fileName), { auth: true });
+          button.addEventListener('click', async () => {
+            const target = document.querySelector('#artifacts-output');
+            if (target) target.textContent = 'Loading ' + fileName + '...';
+            try {
+              const result = await apiRequest(artifactUrl(runId, fileName), { auth: true, preserveOutput: true });
+              if (target) target.textContent = artifactDisplayText(result.payload);
+              setModalActiveTab('artifacts');
+            } catch (error) {
+              if (target) target.textContent = 'Error loading ' + fileName + ': ' + (error instanceof Error ? error.message : String(error));
+            }
           });
           wrapper.appendChild(button);
 
