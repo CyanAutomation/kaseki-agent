@@ -2,7 +2,9 @@
  * Diagnostic Extractor
  *
  * Orchestrates the extraction of diagnostic information from validation errors and cache messages.
- * Delegates specialized extraction logic to helper modules.
+ * Delegates specialized extraction logic to helper classes:
+ * - ProviderErrorFormatter: Formats structured and legacy provider errors
+ * - RuntimeErrorExtractor: Extracts terminal runtime errors from stderr
  */
 
 import { StatusResponse } from '../kaseki-api-types';
@@ -12,11 +14,21 @@ import {
   resolvePrimaryDiagnosticReason,
 } from './phase-diagnostic-extractor';
 import { readDependencyCacheDiagnostics } from './dependency-cache-diagnostic-extractor';
+import { ProviderErrorFormatter } from './provider-error-formatter';
+import { RuntimeErrorExtractor } from './runtime-error-extractor';
 
 // eslint-disable-next-line no-control-regex
 const ANSI_ESCAPE_PATTERN = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 
 export class DiagnosticExtractor {
+  private providerErrorFormatter: ProviderErrorFormatter;
+  private runtimeErrorExtractor: RuntimeErrorExtractor;
+
+  constructor() {
+    this.providerErrorFormatter = new ProviderErrorFormatter();
+    this.runtimeErrorExtractor = new RuntimeErrorExtractor();
+  }
+
   /**
    * Extract diagnostic summary from response and run directory
    */
@@ -38,12 +50,12 @@ export class DiagnosticExtractor {
     const primaryReason = resolvePrimaryDiagnosticReason(
       response,
       rawPhaseDiagnostics,
-      (val) => this.formatStructuredProviderError(val),
-      (failureJson) => this.formatProviderError(failureJson),
-      (failureJson) => this.extractTerminalRuntimeError(failureJson),
+      (val) => this.providerErrorFormatter.formatStructuredProviderError(val),
+      (failureJson) => this.providerErrorFormatter.formatProviderError(failureJson),
+      (failureJson) => this.runtimeErrorExtractor.extractTerminalRuntimeError(failureJson),
       (val) => this.cleanDiagnosticText(val)
     );
-    const recoveryFailure = this.formatStructuredProviderError(
+    const recoveryFailure = this.providerErrorFormatter.formatStructuredProviderError(
       response.failureJsonContent?.provider_error_recovery
     );
     const phaseDiagnostics = filterPhaseDiagnostics(rawPhaseDiagnostics, primaryReason);
@@ -59,60 +71,6 @@ export class DiagnosticExtractor {
       ...(phaseDiagnostics.length > 0 ? { phaseDiagnostics } : {}),
       ...(dependencyCache ? { dependencyCache } : {}),
     };
-  }
-
-  private formatStructuredProviderError(value: unknown): string | undefined {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-    const error = value as Record<string, unknown>;
-    const message = this.stringField(error, 'message');
-    if (!message) return undefined;
-    const type = this.stringField(error, 'type') ?? 'provider_error';
-    const phase = this.stringField(error, 'phase');
-    const provider = this.stringField(error, 'provider');
-    const model = this.stringField(error, 'model');
-    const context = [phase && `phase: ${phase}`, provider && `provider: ${provider}`, model && `model: ${model}`]
-      .filter(Boolean);
-    return this.cleanDiagnosticText(`${type}: ${message}${context.length ? ` (${context.join(', ')})` : ''}`);
-  }
-
-  private extractTerminalRuntimeError(failureJson: Record<string, unknown>): string | undefined {
-    const stderrTail = this.stringField(failureJson, 'stderr_tail');
-    if (!stderrTail) return undefined;
-
-    const lines = stderrTail.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    const runtimeError = lines.find((line) =>
-      /^Error(?:\s+\[[A-Z0-9_]+\])?:/.test(line) || /(?:ERR_MODULE_NOT_FOUND|MODULE_NOT_FOUND)/.test(line)
-    );
-    const wrapperError = lines.find((line) => /^ERROR:\s+/.test(line));
-    const error = runtimeError ?? wrapperError;
-    if (!error) return undefined;
-
-    const failedCommand = this.stringField(failureJson, 'failed_command');
-    return failedCommand ? `${failedCommand}: ${error}` : error;
-  }
-
-  private formatProviderError(failureJson: Record<string, unknown>): string | undefined {
-    const message = this.stringField(failureJson, 'provider_error_message');
-    if (!message) {
-      return undefined;
-    }
-
-    const type = this.stringField(failureJson, 'provider_error_type') ?? 'provider_error';
-    const phase = this.stringField(failureJson, 'provider_error_phase');
-    const model = this.stringField(failureJson, 'provider_error_model');
-    const context = [
-      phase ? `phase: ${phase}` : undefined,
-      model ? `model: ${model}` : undefined,
-    ].filter(Boolean);
-    return this.cleanDiagnosticText(`${type}: ${message}${context.length ? ` (${context.join(', ')})` : ''}`);
-  }
-
-  /**
-   * Extract string field from error object
-   */
-  private stringField(record: Record<string, unknown>, key: string): string | undefined {
-    const value = record[key];
-    return typeof value === 'string' && value.trim().length > 0 ? this.cleanDiagnosticText(value) : undefined;
   }
 
   /**

@@ -72,14 +72,9 @@ export interface ProviderErrorSummary {
 // ─── Provider Error Detection ─────────────────────────────────────────────────
 
 /**
- * Determine whether a provider error message suggests a transient failure
- * that is worth retrying (503, 429, connection errors) vs. a permanent failure
- * (404, deprecated model).
- */
-/**
  * Category of provider error for better routing and observability
  */
-type ErrorCategory =
+export type ErrorCategory =
   | 'gateway_timeout'
   | 'rate_limited'
   | 'service_unavailable'
@@ -92,7 +87,7 @@ type ErrorCategory =
 /**
  * Rich classification result for provider errors
  */
-interface ProviderErrorClassification {
+export interface ProviderErrorClassification {
   retryable: boolean;
   reason: string;
   category: ErrorCategory;
@@ -101,64 +96,75 @@ interface ProviderErrorClassification {
 }
 
 /**
- * Classify a provider error with rich context about why it's retryable/non-retryable
+ * Error pattern registry for provider error classification.
+ * Patterns are ordered by priority (permanent errors first, then transient).
  */
-export function classifyProviderErrorDetailed(message: string): ProviderErrorClassification {
-  const patterns: Array<{
-    regex: RegExp;
-    retryable: boolean;
-    category: ErrorCategory;
-    confidence: 'high' | 'medium' | 'low';
-  }> = [
-    // Auth errors (permanent - check FIRST because 401 is explicit)
-    { regex: /\b401\b|unauthorized|invalid\s+api\s+key|authentication\s+failed|forbidden/i,
-      retryable: false, category: 'auth_error', confidence: 'high' },
+const ERROR_PATTERN_REGISTRY: Array<{
+  regex: RegExp;
+  retryable: boolean;
+  category: ErrorCategory;
+  confidence: 'high' | 'medium' | 'low';
+}> = [
+  // Auth errors (permanent - check FIRST because 401 is explicit)
+  { regex: /\b401\b|unauthorized|invalid\s+api\s+key|authentication\s+failed|forbidden/i,
+    retryable: false, category: 'auth_error', confidence: 'high' },
 
-    // Not found (permanent - check FIRST because 404 is explicit)
-    { regex: /\b404\b|not\s+found|not\s+a\s+valid\s+model|no\s+endpoints?\s+found|model_not_found|model\s+not\s+found/i,
-      retryable: false, category: 'model_not_found', confidence: 'high' },
+  // Not found (permanent - check FIRST because 404 is explicit)
+  { regex: /\b404\b|not\s+found|not\s+a\s+valid\s+model|no\s+endpoints?\s+found|model_not_found|model\s+not\s+found/i,
+    retryable: false, category: 'model_not_found', confidence: 'high' },
 
-    // Bad request / deprecated (permanent - check FIRST because 400 is explicit)
-    { regex: /\b400\b|bad\s+request|deprecated|no\s+longer\s+supported|discontinued/i,
-      retryable: false, category: 'auth_error', confidence: 'high' },
+  // Bad request / deprecated (permanent - check FIRST because 400 is explicit)
+  { regex: /\b400\b|bad\s+request|deprecated|no\s+longer\s+supported|discontinued/i,
+    retryable: false, category: 'auth_error', confidence: 'high' },
 
-    // Service unavailable (very likely transient - check after explicit 4xx codes)
-    { regex: /\b503\b|service.{0,30}unavailable|service.{0,20}down|temporarily.{0,10}unavailable|model.{0,10}unavailable|model.{0,20}temporarily/i, retryable: true, category: 'service_unavailable', confidence: 'high' },
+  // Service unavailable (very likely transient - check after explicit 4xx codes)
+  { regex: /\b503\b|service.{0,30}unavailable|service.{0,20}down|temporarily.{0,10}unavailable|model.{0,10}unavailable|model.{0,20}temporarily/i, retryable: true, category: 'service_unavailable', confidence: 'high' },
 
-    // Rate limiting (transient with backoff needed)
-    { regex: /\b429\b|rate\s+limit|throttl/i, retryable: true, category: 'rate_limited', confidence: 'high' },
+  // Rate limiting (transient with backoff needed)
+  { regex: /\b429\b|rate\s+limit|throttl/i, retryable: true, category: 'rate_limited', confidence: 'high' },
 
-    // Gateway/network timeouts
-    { regex: /timeout|econnreset|econnrefused|etimedout|ehostunreach|enetunreach|socket\s+hang\s+up/i,
-      retryable: true, category: 'gateway_timeout', confidence: 'high' },
+  // Gateway/network timeouts
+  { regex: /timeout|econnreset|econnrefused|etimedout|ehostunreach|enetunreach|socket\s+hang\s+up/i,
+    retryable: true, category: 'gateway_timeout', confidence: 'high' },
 
-    // Generic provider finish_reason error (we don't know why, but could be transient)
-    { regex: /provider\s+finish_reason\s*:\s*error|finish_reason\s*:\s*error/i,
-      retryable: true, category: 'unknown', confidence: 'medium' },
+  // Generic provider finish_reason error (we don't know why, but could be transient)
+  { regex: /provider\s+finish_reason\s*:\s*error|finish_reason\s*:\s*error/i,
+    retryable: true, category: 'unknown', confidence: 'medium' },
 
-    // Malformed tool call (transient, can be corrected)
-    { regex: /tool\s+call.*?(json|parse|malformed|unterminated)|malformed.*?tool\s+call/i,
-      retryable: true, category: 'malformed_request', confidence: 'high' },
+  // Malformed tool call (transient, can be corrected)
+  { regex: /tool\s+call.*?(json|parse|malformed|unterminated)|malformed.*?tool\s+call/i,
+    retryable: true, category: 'malformed_request', confidence: 'high' },
 
-    // Generic network transience
-    { regex: /offline|connection\s+refused|try\s+again/i,
-      retryable: true, category: 'transient_network', confidence: 'medium' },
-  ];
+  // Generic network transience
+  { regex: /offline|connection\s+refused|try\s+again/i,
+    retryable: true, category: 'transient_network', confidence: 'medium' },
+];
 
-  // Find first matching pattern
-  for (const pattern of patterns) {
-    if (pattern.regex.test(message)) {
-      return {
-        retryable: pattern.retryable,
-        reason: `Matched pattern: ${pattern.regex.source}`,
-        category: pattern.category,
-        matchedPattern: message.substring(0, 120),
-        confidence: pattern.confidence,
-      };
-    }
+/**
+ * Find matching error pattern in registry
+ */
+function matchErrorPattern(message: string): typeof ERROR_PATTERN_REGISTRY[0] | undefined {
+  return ERROR_PATTERN_REGISTRY.find((pattern) => pattern.regex.test(message));
+}
+
+/**
+ * Build classification result from matched pattern or default
+ */
+function buildClassificationResult(
+  message: string,
+  pattern: typeof ERROR_PATTERN_REGISTRY[0] | undefined
+): ProviderErrorClassification {
+  if (pattern) {
+    return {
+      retryable: pattern.retryable,
+      reason: `Matched pattern: ${pattern.regex.source}`,
+      category: pattern.category,
+      matchedPattern: message.substring(0, 120),
+      confidence: pattern.confidence,
+    };
   }
 
-  // No pattern matched
+  // No pattern matched (assume permanent error)
   return {
     retryable: false,
     reason: 'No retry pattern matched (assuming permanent error)',
@@ -166,6 +172,14 @@ export function classifyProviderErrorDetailed(message: string): ProviderErrorCla
     matchedPattern: message.substring(0, 120),
     confidence: 'low',
   };
+}
+
+/**
+ * Classify a provider error with rich context about why it's retryable/non-retryable
+ */
+export function classifyProviderErrorDetailed(message: string): ProviderErrorClassification {
+  const pattern = matchErrorPattern(message);
+  return buildClassificationResult(message, pattern);
 }
 
 export function isProviderErrorRetryable(message: string): boolean {
