@@ -113,19 +113,16 @@ create_github_askpass_helper() {
   askpass_dir="$(github_askpass_runtime_dir)"
   if [ -z "$askpass_dir" ]; then
     printf '%s ERROR: GitHub credential helper directory is empty\n' "$log_prefix" | tee -a "$log_file" >&2
-    GITHUB_PUSH_EXIT=8
     return 8
   fi
 
   if ! mkdir -p "$askpass_dir"; then
     printf '%s ERROR: Failed to create GitHub credential helper directory: %s\n' "$log_prefix" "$askpass_dir" | tee -a "$log_file" >&2
-    GITHUB_PUSH_EXIT=8
     return 8
   fi
 
   askpass_file="$(mktemp "$askpass_dir/kaseki-github-askpass.XXXXXX")" || {
     printf '%s ERROR: Failed to create GitHub credential helper in executable runtime directory: %s\n' "$log_prefix" "$askpass_dir" | tee -a "$log_file" >&2
-    GITHUB_PUSH_EXIT=8
     return 8
   }
 
@@ -139,40 +136,34 @@ EOF_ASKPASS
   then
     rm -f "$askpass_file"
     printf '%s ERROR: Failed to write GitHub credential helper: %s\n' "$log_prefix" "$askpass_file" | tee -a "$log_file" >&2
-    GITHUB_PUSH_EXIT=8
     return 8
   fi
 
   if ! chmod 0700 "$askpass_file"; then
     rm -f "$askpass_file"
     printf '%s ERROR: Failed to make GitHub credential helper executable: %s\n' "$log_prefix" "$askpass_file" | tee -a "$log_file" >&2
-    GITHUB_PUSH_EXIT=8
     return 8
   fi
 
   username_smoke_output="$(KASEKI_GITHUB_TOKEN='__kaseki_askpass_smoke_token__' "$askpass_file" 'Username for https://github.com' 2>/dev/null)" || {
     rm -f "$askpass_file"
     printf '%s ERROR: GitHub askpass helper is not executable from %s\n' "$log_prefix" "$askpass_dir" | tee -a "$log_file" >&2
-    GITHUB_PUSH_EXIT=8
     return 8
   }
   if ! constant_time_equals "x-access-token" "$username_smoke_output"; then
     rm -f "$askpass_file"
     printf '%s ERROR: GitHub credential helper smoke check returned unexpected username response\n' "$log_prefix" | tee -a "$log_file" >&2
-    GITHUB_PUSH_EXIT=8
     return 8
   fi
 
   password_smoke_output="$(KASEKI_GITHUB_TOKEN='__kaseki_askpass_smoke_token__' "$askpass_file" 'Password for https://github.com' 2>/dev/null)" || {
     rm -f "$askpass_file"
     printf '%s ERROR: GitHub askpass helper is not executable from %s\n' "$log_prefix" "$askpass_dir" | tee -a "$log_file" >&2
-    GITHUB_PUSH_EXIT=8
     return 8
   }
   if [ -z "$password_smoke_output" ]; then
     rm -f "$askpass_file"
     printf '%s ERROR: GitHub credential helper smoke check returned empty password response\n' "$log_prefix" | tee -a "$log_file" >&2
-    GITHUB_PUSH_EXIT=8
     return 8
   fi
 
@@ -182,6 +173,7 @@ EOF_ASKPASS
 
 
 check_github_operations_health() {
+  local repo_url="${1:-}"
   # Preflight health check for github operations before pi agent runs
   # Tests: GitHub App secrets, git config, Node.js token generation capability
   local health_log="${KASEKI_HEALTH_LOG:-${KASEKI_RESULTS_DIR}/github-health-check.log}"
@@ -299,12 +291,12 @@ check_github_operations_health() {
   # Check 8: Optional live GitHub App auth smoke test. Enabled by default
   # (KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=1) so startup does not report a full
   # GitHub preflight pass when credentials are readable but cannot mint an
-  # installation token for REPO_URL. Set KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=0
+  # installation token for repo_url. Set KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=0
   # to skip this networked auth check; the later GitHub operations stage will
   # still attempt token generation and report any failure.
   if [ "${KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK:-1}" = "1" ]; then
     local owner repo app_id token_stdout_tmp token_stderr_tmp token_exit_code token_data token_stderr token_parse_result token_error
-    if parse_github_repo_url "$REPO_URL"; then
+    if parse_github_repo_url "$repo_url"; then
       owner="$GITHUB_REPO_OWNER"
       repo="$GITHUB_REPO_NAME"
       app_id="$(cat "$github_app_id_file" 2>/dev/null)" || app_id=""
@@ -362,7 +354,7 @@ NODE
       rm -f "$askpass_file"
       printf '[health-check] ✓ GitHub askpass helper returned expected username and non-empty password responses from: %s\n' "$(github_askpass_runtime_dir)" | tee -a "$health_log"
     else
-      printf '[health-check] SKIP: Cannot parse GitHub repo URL for auth smoke test: %s\n' "$REPO_URL" | tee -a "$health_log"
+      printf '[health-check] SKIP: Cannot parse GitHub repo URL for auth smoke test: %s\n' "$repo_url" | tee -a "$health_log"
     fi
   else
     printf '[health-check] SKIP: GitHub App auth smoke test disabled (KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=%s)\n' "${KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK:-}" | tee -a "$health_log"
