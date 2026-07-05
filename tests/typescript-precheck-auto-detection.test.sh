@@ -1,60 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../scripts/validation-helpers.sh
+source "$REPO_ROOT/scripts/validation-helpers.sh"
+
 fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
 pass() { printf '✓ %s\n' "$1"; }
-
-# Define helper functions needed for detection
-npm_run_script_name() {
-  local command="$1"
-  local npm_run_regex='^npm[[:space:]]+run[[:space:]]+([^[:space:]-][^[:space:]-]*)($|[[:space:]])'
-  if [[ "$command" =~ $npm_run_regex ]]; then
-    printf '%s' "${BASH_REMATCH[1]}"
-    return 0
-  fi
-  return 1
-}
-
-package_json_has_npm_script() {
-  local script_name="$1"
-  [ -f package.json ] || return 1
-  node - "$script_name" <<'NODE'
-const fs = require('fs');
-const scriptName = process.argv[2];
-try {
-  const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-  const scripts = pkg && typeof pkg.scripts === 'object' && pkg.scripts ? pkg.scripts : {};
-  process.exit(Object.prototype.hasOwnProperty.call(scripts, scriptName) ? 0 : 1);
-} catch {
-  process.exit(1);
-}
-NODE
-}
-
-has_typescript_project() {
-  # Auto-detect TypeScript presence in the project
-  [ -f tsconfig.json ] && return 0
-  [ -f package.json ] || return 1
-  node - <<'NODE'
-try {
-  const pkg = require('./package.json');
-  const isDep = pkg.dependencies?.typescript || 
-                pkg.devDependencies?.typescript ||
-                pkg.optionalDependencies?.typescript;
-  process.exit(isDep ? 0 : 1);
-} catch {
-  process.exit(1);
-}
-NODE
-}
-
-has_npm_build_command() {
-  local command="$1"
-  local script_name
-  script_name="$(npm_run_script_name "$command")" || return 1
-  package_json_has_npm_script "$script_name" && return 0
-  return 1
-}
 
 assert_equals() {
   local label="$1"
@@ -64,47 +16,28 @@ assert_equals() {
   pass "$label"
 }
 
-assert_exit_code() {
+assert_success() {
   local label="$1"
-  local expected="$2"
-  local actual="$3"
-  [ "$actual" = "$expected" ] || fail "$label: expected exit code $expected, got $actual"
-  pass "$label"
-}
-
-assert_detail_in_timings() {
-  local label="$1"
-  local expected_detail="$2"
-  local timings_file="$3"
-  if grep -q "$expected_detail" "$timings_file"; then
+  shift
+  if "$@"; then
     pass "$label"
   else
-    fail "$label: expected detail '$expected_detail' not found in timings file"
+    fail "$label: expected success"
   fi
 }
 
-# Override record_stage_timing to capture in test file
-record_stage_timing() {
-  local stage="$1"
-  local exit_code="$2"
-  local duration_seconds="$3"
-  local detail="${4:-}"
-  printf '%s\t%s\t%s\t%s\n' "$stage" "$exit_code" "$duration_seconds" "$detail" >> "$STAGE_TIMINGS_FILE"
+assert_failure() {
+  local label="$1"
+  shift
+  if "$@"; then
+    fail "$label: expected failure"
+  else
+    pass "$label"
+  fi
 }
 
-# Override emit_progress to capture messages
-emit_progress() {
-  local stage="$1"
-  local message="$2"
-  printf '[progress] %s: %s\n' "$stage" "$message" >> "$PROGRESS_LOG"
-}
-
-# Override emit_error_event to capture error events
-emit_error_event() {
-  local event_type="$1"
-  local message="$2"
-  local severity="${3:-}"
-  printf '[error] %s: %s (severity=%s)\n' "$event_type" "$message" "$severity" >> "$ERROR_LOG"
+write_package_json() {
+  cat > package.json
 }
 
 tmp_dir="$(mktemp -d)"
@@ -118,97 +51,67 @@ ERROR_LOG="$tmp_dir/results/errors.log"
 KASEKI_RESULTS_DIR="$tmp_dir/results"
 export KASEKI_RESULTS_DIR STAGE_TIMINGS_FILE
 
-# Initialize log files
 : > "$STAGE_TIMINGS_FILE"
 : > "$PROGRESS_LOG"
 : > "$ERROR_LOG"
 : > "$tmp_dir/results/pre-validation-ts-check.log"
 
-echo "=== Test 1: has_typescript_project() detects tsconfig.json ==="
-cat > package.json <<'JSON'
-{
-  "scripts": {}
-}
+echo "=== Decision: TypeScript precheck enabled by tsconfig.json ==="
+write_package_json <<'JSON'
+{}
 JSON
 cat > tsconfig.json <<'JSON'
-{
-  "compilerOptions": {
-    "target": "ES2020"
-  }
-}
+{}
 JSON
-
-if has_typescript_project; then
-  pass "Test 1: has_typescript_project() detects tsconfig.json"
-else
-  fail "Test 1: has_typescript_project() should detect tsconfig.json"
-fi
-
-echo "=== Test 2: has_typescript_project() detects typescript dependency ==="
+assert_success "has_typescript_project() detects tsconfig.json" has_typescript_project
+assert_equals "construct_default_validation_commands() chooses tsc for tsconfig.json" \
+  "tsc --noEmit" \
+  "$(construct_default_validation_commands)"
 rm tsconfig.json
-cat > package.json <<'JSON'
-{
-  "devDependencies": {
-    "typescript": "^5.0.0"
-  },
-  "scripts": {}
-}
+
+echo "=== Decision: TypeScript precheck enabled by TypeScript dependency ==="
+write_package_json <<'JSON'
+{"devDependencies":{"typescript":"^5.0.0"}}
 JSON
+assert_success "has_typescript_project() detects TypeScript dependency" has_typescript_project
+assert_equals "construct_default_validation_commands() chooses tsc for TypeScript dependency" \
+  "tsc --noEmit" \
+  "$(construct_default_validation_commands)"
 
-if has_typescript_project; then
-  pass "Test 2: has_typescript_project() detects typescript dependency"
-else
-  fail "Test 2: has_typescript_project() should detect typescript dependency"
-fi
-
-echo "=== Test 3: has_typescript_project() returns 1 for non-TS project ==="
-cat > package.json <<'JSON'
-{
-  "scripts": {}
-}
+echo "=== Decision: TypeScript precheck skipped for non-TypeScript package ==="
+write_package_json <<'JSON'
+{}
 JSON
+assert_failure "has_typescript_project() rejects package without TypeScript signals" has_typescript_project
+assert_equals "construct_default_validation_commands() falls back when no scripts or TypeScript signals exist" \
+  "npm run build;npm run type-check;npm run test" \
+  "$(construct_default_validation_commands)"
 
-if has_typescript_project; then
-  fail "Test 3: has_typescript_project() should return 1 for non-TS project"
-else
-  pass "Test 3: has_typescript_project() correctly identifies non-TS project"
-fi
-
-echo "=== Test 4: has_npm_build_command() detects existing script ==="
-cat > package.json <<'JSON'
-{
-  "scripts": {
-    "build": "echo 'Build success'"
-  }
-}
+echo "=== Decision: Build command enabled by package script ==="
+write_package_json <<'JSON'
+{"scripts":{"build":"tsc"}}
 JSON
+assert_success "package_json_has_npm_script() detects build script" package_json_has_npm_script build
+assert_equals "construct_default_validation_commands() chooses npm build script" \
+  "npm run build" \
+  "$(construct_default_validation_commands)"
 
-if has_npm_build_command "npm run build"; then
-  pass "Test 4: has_npm_build_command() detects existing script"
-else
-  fail "Test 4: has_npm_build_command() should detect existing script"
-fi
-
-echo "=== Test 5: has_npm_build_command() returns 1 for missing script ==="
-cat > package.json <<'JSON'
-{
-  "scripts": {}
-}
+echo "=== Decision: Build command skipped because npm script is missing ==="
+write_package_json <<'JSON'
+{"scripts":{}}
 JSON
+assert_failure "package_json_has_npm_script() rejects missing build script" package_json_has_npm_script build
+missing_script="$(missing_npm_script_for_validation_command 'npm run build')" || \
+  fail "missing_npm_script_for_validation_command should report missing build script"
+assert_equals "missing_npm_script_for_validation_command() reports observable missing script" \
+  "build" \
+  "$missing_script"
 
-if has_npm_build_command "npm run build"; then
-  fail "Test 5: has_npm_build_command() should return 1 for missing script"
-else
-  pass "Test 5: has_npm_build_command() correctly identifies missing script"
-fi
-
-echo "=== Test 6: npm_run_script_name() extracts script name ==="
-result="$(npm_run_script_name 'npm run build')" || fail "Test 6: npm_run_script_name should succeed"
-assert_equals "Test 6: extracts 'build'" "build" "$result"
-
-echo "=== Test 7: npm_run_script_name() extracts with trailing args ==="
-result="$(npm_run_script_name 'npm run test -- --runInBand')" || fail "Test 7: npm_run_script_name should succeed"
-assert_equals "Test 7: extracts 'test' with trailing args" "test" "$result"
+echo "=== Decision: Npm validation command maps to its package script ==="
+script_name="$(npm_run_script_name 'npm run test -- --runInBand')" || \
+  fail "npm_run_script_name should parse npm run command with arguments"
+assert_equals "npm_run_script_name() extracts script name before trailing args" "test" "$script_name"
+assert_failure "npm_run_script_name() rejects non-npm-run command" npm_run_script_name 'npx tsc --noEmit'
 
 echo ""
-echo "✅ TypeScript detection functions tests passed!"
+echo "✅ TypeScript precheck auto-detection tests passed!"
