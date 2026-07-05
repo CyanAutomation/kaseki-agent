@@ -10003,7 +10003,6 @@ run_quality_checks
 run_static_test_impact_check
 run_expectation_mismatch_detector
 
-pre_validation_goal_check_diff_hash=""
 if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; then
   if [ "$KASEKI_TASK_MODE" = "patch" ] && [ ! -s "${KASEKI_RESULTS_DIR}/git.diff" ]; then
     skip_auto_lint_cleanup_before_core_change_verified "patch_diff_empty" "collect_git_artifacts produced no patch diff before critical-change verification"
@@ -10070,7 +10069,6 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
     emit_progress "critical change verification" "passed after cleanup on attempt $coding_attempt"
   fi
 
-  pre_validation_goal_check_diff_hash="$(sha256sum "${KASEKI_RESULTS_DIR}"/git.diff 2>/dev/null | awk '{print $1}')"
   run_goal_check "$coding_attempt"
   if [ "$KASEKI_GOAL_CHECK" = "1" ] && printf '%s' "$GOAL_CHECK_FAILURE_REASON" | grep -Eq '^goal_check_artifact_(missing|malformed|invalid)$'; then
     printf 'Goal-check evaluator artifact failed validation; retrying the evaluator against the existing diff without rerunning the coding agent.\n' | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
@@ -10161,7 +10159,6 @@ else
     find "$KASEKI_DEPENDENCY_CACHE_DIR" -type f -name 'validated*' -delete 2>/dev/null || true
     if prepare_dependencies; then
       VALIDATION_EXIT=0
-      VALIDATION_FAILED_COMMAND=""
       VALIDATION_FAILURE_REASON=""
       run_validation_commands \
         "validation retry after dependency repair" \
@@ -10189,7 +10186,6 @@ if [ "$VALIDATION_EXIT" -eq 0 ]; then
   fi
 fi
 
-post_validation_goal_check_diff_hash="$(sha256sum "${KASEKI_RESULTS_DIR}"/git.diff 2>/dev/null | awk '{print $1}')"
 if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && [ "$VALIDATION_EXIT" -eq 0 ] && \
   [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ]; then
   printf 'Validation completed successfully; re-running goal check against final validation evidence and artifacts.\n' | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
