@@ -147,7 +147,7 @@ function collectDiagnostics(runDir: string): AnalysisResponse['diagnostics'] | u
 function readStructuredEventSnapshot(
   scheduler: JobScheduler,
   config: KasekiApiConfig,
-  job: { id: string; status: string },
+  job: { id: string; status: string; startedAt?: Date },
   tail: number
 ): { id: string; status: string; events: Array<Record<string, unknown>>; total: number; sources: string[] } {
   const progressFile = path.join(config.resultsDir, job.id, 'progress.jsonl');
@@ -185,7 +185,10 @@ function readStructuredEventSnapshot(
     events.length === 0 &&
     typeof scheduler.getLiveDockerLogTail === 'function'
   ) {
-    const dockerEvents = progressEventsFromDockerLogTail(scheduler.getLiveDockerLogTail(job.id, 300) ?? undefined);
+    const dockerEvents = progressEventsFromDockerLogTail(
+      scheduler.getLiveDockerLogTail(job.id, 300) ?? undefined,
+      job.startedAt?.toISOString()
+    );
     for (const event of dockerEvents) {
       events.push(normalizeProgressEvent(event));
     }
