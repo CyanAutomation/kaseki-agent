@@ -20,6 +20,28 @@ provider_retry_emit_progress() {
   fi
 }
 
+enrich_provider_error_from_attempt() {
+  local attempt_file="$1"
+  [ -s "$attempt_file" ] || return 0
+  local detail
+  detail="$(node - "$attempt_file" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const attempt = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const error = attempt.error && typeof attempt.error === 'object' ? attempt.error : {};
+const fields = [
+  ['error_code', error.error_code],
+  ['status_code', error.status_code],
+  ['response_id', error.response_id],
+  ['request_id', attempt.request_id],
+].filter(([, value]) => value !== undefined && value !== null && String(value).trim());
+process.stdout.write(fields.map(([key, value]) => `${key}=${String(value)}`).join(' '));
+NODE
+)"
+  if [ -n "$detail" ] && ! printf '%s' "$PROVIDER_ERROR_MESSAGE" | grep -Fq "$detail"; then
+    PROVIDER_ERROR_MESSAGE="${PROVIDER_ERROR_MESSAGE:-Provider request failed} ($detail)"
+  fi
+}
+
 capture_provider_error_from_summary() {
   local summary_file="$1"
   local phase="$2"
@@ -633,6 +655,7 @@ Retry request identity: $KASEKI_INFERENCE_REQUEST_ID. Treat this as a fresh infe
       elif [ "$pi_exit" -eq 88 ]; then
         PROVIDER_ERROR_RETRY_ATTEMPT_COUNT=2
         PROVIDER_ERROR_RETRY_RESULT="failed"
+        enrich_provider_error_from_attempt "${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}/primary-2.json"
         provider_retry_emit_progress "$phase_name" "provider retry exhausted (attempt 2/2); finalizing diagnostics"
         printf '[RETRY EXHAUSTED] Provider error persisted after retry in %s phase; budget exhausted (correlation_id: %s); exiting with code 88\n' \
           "$phase_name" "$KASEKI_INFERENCE_REQUEST_ID" >&2
@@ -660,6 +683,7 @@ Retry request identity: $KASEKI_INFERENCE_REQUEST_ID. Treat this as a fresh infe
     export KASEKI_INFERENCE_REQUEST_ID
     printf '[PROVIDER FALLBACK] Primary provider exhausted; request %s replaces %s using provider=%s model=%s\n' \
       "$KASEKI_INFERENCE_REQUEST_ID" "$previous_request_id" "$fallback_provider" "$fallback_model" >&2
+    provider_retry_emit_progress "$phase_name" "provider fallback started (provider=$fallback_provider model=$fallback_model attempt 3/3)"
     invoke_pi
     pi_exit=$?
     summarize_invocation || true
@@ -671,6 +695,8 @@ Retry request identity: $KASEKI_INFERENCE_REQUEST_ID. Treat this as a fresh infe
         "$fallback_provider" "$fallback_model" "$KASEKI_INFERENCE_REQUEST_ID" >&2
     else
       PROVIDER_ERROR_FALLBACK_RESULT="failed"
+      enrich_provider_error_from_attempt "${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}/fallback-1.json"
+      provider_retry_emit_progress "$phase_name" "provider fallback exhausted (provider=$fallback_provider model=$fallback_model attempt 3/3)"
       printf '[PROVIDER FALLBACK FAILED] provider=%s model=%s correlation_id=%s exit=%s\n' \
         "$fallback_provider" "$fallback_model" "$KASEKI_INFERENCE_REQUEST_ID" "$pi_exit" >&2
     fi
