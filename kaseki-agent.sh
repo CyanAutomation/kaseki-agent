@@ -8996,7 +8996,7 @@ validate_critical_executables_for_scouting() {
     npm list typescript 2>&1 | sed 's/^/    /' >&2
     printf '  node_modules/.bin/ contents:\n' >&2
     find node_modules/.bin/ -maxdepth 1 -type f -ls 2>&1 | sed 's/^/    /' >&2
-    printf 'Cache status: cache_source=%s restore_method=%s\n' "$cache_source" "$restore_method" >&2
+    printf 'Cache status: cache_source=%s restore_method=%s\n' "${cache_source:-unknown}" "${restore_method:-unknown}" >&2
     emit_error_event "critical_executables_validation_failed" "Missing critical executables: ${missing[*]}" "exit"
     exit 2
   fi
