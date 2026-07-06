@@ -146,25 +146,20 @@ fi
 REPO_URL="${REPO_URL:-https://github.com/CyanAutomation/crudmapper}"
 GIT_REF="${GIT_REF:-main}"
 
-# Determine LLM provider: infer 'gateway' if gateway URL is set
-if [ -z "${KASEKI_PROVIDER+x}" ]; then
-  if [ -n "${LLM_GATEWAY_URL:-}" ]; then
-    KASEKI_PROVIDER="gateway"
-  else
-    KASEKI_PROVIDER="${KASEKI_PROVIDER:-gateway}"
-  fi
+KASEKI_MODEL_RESOLUTION_HELPER="${KASEKI_MODEL_RESOLUTION_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/lib/model-resolution.sh}"
+if [ ! -r "$KASEKI_MODEL_RESOLUTION_HELPER" ] && [ -r /app/scripts/lib/model-resolution.sh ]; then
+  KASEKI_MODEL_RESOLUTION_HELPER="/app/scripts/lib/model-resolution.sh"
 fi
-
-# Select model based on provider. Gateway cannot consume the generic "auto"
-# model sentinel, so normalize unset or explicit auto to the gateway default
-# before phase-specific model defaults inherit it below.
-if [ "$KASEKI_PROVIDER" = "gateway" ]; then
-  if [ -z "${KASEKI_MODEL+x}" ] || [ "$KASEKI_MODEL" = "auto" ]; then
-    KASEKI_MODEL="${LLM_GATEWAY_MODEL:-dynamic/kaseki-agent}"
-  fi
-elif [ -z "${KASEKI_MODEL+x}" ]; then
-  KASEKI_MODEL="auto"
+if [ ! -r "$KASEKI_MODEL_RESOLUTION_HELPER" ]; then
+  printf 'ERROR: Model resolution helper is not readable. Expected %s or /app/scripts/lib/model-resolution.sh. This worker image or mounted template is incomplete; rebuild the image or restore scripts/lib/model-resolution.sh.\n' "$KASEKI_MODEL_RESOLUTION_HELPER" >&2
+  exit 66
 fi
+# shellcheck source=/dev/null
+. "$KASEKI_MODEL_RESOLUTION_HELPER" || {
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_MODEL_RESOLUTION_HELPER" $? >&2
+  exit 1
+}
+kaseki_resolve_provider_model
 KASEKI_DRY_RUN="${KASEKI_DRY_RUN:-0}"
 KASEKI_STARTUP_CHECK_MODE="${KASEKI_STARTUP_CHECK_MODE:-boot}"
 KASEKI_BASELINE_VALIDATION_DRY_RUN="${KASEKI_BASELINE_VALIDATION_DRY_RUN:-0}"
@@ -7008,8 +7003,7 @@ if [ ! -r "$KASEKI_GITHUB_PREFLIGHT_AUTH_HELPER" ]; then
 fi
 # shellcheck source=/dev/null
 . "$KASEKI_GITHUB_PREFLIGHT_AUTH_HELPER" || {
-  printf 'ERROR: Failed to source %s (exit code: %d)
-' "$KASEKI_GITHUB_PREFLIGHT_AUTH_HELPER" $? >&2
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_GITHUB_PREFLIGHT_AUTH_HELPER" $? >&2
   exit 1
 }
 
