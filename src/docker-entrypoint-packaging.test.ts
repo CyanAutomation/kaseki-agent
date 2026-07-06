@@ -87,6 +87,7 @@ build_allowlist_regex() {
     for (const helper of [
       'agent-prompt.sh',
       'allowlist-helper.sh',
+      'inspect-mode-defaults.sh',
       'dependency-cache-helpers.sh',
     ]) {
       expect(dockerfile).toContain(

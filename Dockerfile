@@ -189,6 +189,7 @@ RUN chmod +x \
     && ln -sf github-app-token /usr/local/bin/github-app-token.js \
     && install -m 0755 /app/scripts/agent-prompt.sh /usr/local/bin/scripts/agent-prompt.sh \
     && install -m 0755 /app/scripts/allowlist-helper.sh /usr/local/bin/scripts/allowlist-helper.sh \
+    && install -m 0755 /app/scripts/inspect-mode-defaults.sh /usr/local/bin/scripts/inspect-mode-defaults.sh \
     && install -m 0755 /app/scripts/dependency-cache-helpers.sh /usr/local/bin/scripts/dependency-cache-helpers.sh \
     && install -m 0755 /app/scripts/auto-lint-cleanup-classification.sh /usr/local/bin/scripts/auto-lint-cleanup-classification.sh \
     && install -m 0755 /app/dist/scouting-allowlist.js /usr/local/bin/scripts/scouting-allowlist.js \
@@ -325,6 +326,7 @@ RUN mkdir -p /scripts \
     && install -m 0755 /app/scripts/docker-entrypoint.sh /usr/local/bin/kaseki-entrypoint \
     && install -m 0755 /app/scripts/agent-prompt.sh /usr/local/bin/scripts/agent-prompt.sh \
     && install -m 0755 /app/scripts/allowlist-helper.sh /usr/local/bin/scripts/allowlist-helper.sh \
+    && install -m 0755 /app/scripts/inspect-mode-defaults.sh /usr/local/bin/scripts/inspect-mode-defaults.sh \
     && install -m 0755 /app/scripts/dependency-cache-helpers.sh /usr/local/bin/scripts/dependency-cache-helpers.sh \
     && install -m 0755 /app/scripts/auto-lint-cleanup-classification.sh /usr/local/bin/scripts/auto-lint-cleanup-classification.sh \
     && install -m 0755 /app/dist/scouting-allowlist.js /usr/local/bin/scripts/scouting-allowlist.js \
