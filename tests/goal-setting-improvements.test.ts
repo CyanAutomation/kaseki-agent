@@ -723,9 +723,13 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'json.sh'), join(scriptsDir, 'lib', 'json.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'json-events.sh'), join(scriptsDir, 'lib', 'json-events.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'provider-retry.sh'), join(scriptsDir, 'lib', 'provider-retry.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'lib', 'model-resolution.sh'), join(scriptsDir, 'lib', 'model-resolution.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'dependency-cache-helpers.sh'), join(scriptsDir, 'dependency-cache-helpers.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'npm-install-helpers.sh'), join(scriptsDir, 'npm-install-helpers.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'agent-prompt.sh'), join(scriptsDir, 'agent-prompt.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'inspect-mode-defaults.sh'), join(scriptsDir, 'inspect-mode-defaults.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'restore-disallowed-changes.sh'), join(scriptsDir, 'restore-disallowed-changes.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'auto-lint-cleanup-classification.sh'), join(scriptsDir, 'auto-lint-cleanup-classification.sh'));
 
         const workspaceBaseline = join(tempDir, 'workspace-baseline');
         const kasekiLogDir = join(tempDir, 'var-log-kaseki');
@@ -803,6 +807,7 @@ validate_goal_setting_artifact "$1" "$2" "$3"
           });
         } catch (err: any) {
           console.error('Modified script failed:');
+          console.error('exit code:', err.status);
           console.error('stdout:', err.stdout?.toString());
           console.error('stderr:', err.stderr?.toString());
           throw err;
