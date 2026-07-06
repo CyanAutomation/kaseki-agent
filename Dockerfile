@@ -324,6 +324,7 @@ RUN mkdir -p /scripts \
     && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \
     && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \
+    && install -m 0755 /app/lib/github-app-token-runtime.js /usr/local/bin/github-app-token-runtime.js \
     && ln -sf github-app-token /usr/local/bin/github-app-token.js \
     && install -m 0755 /app/kaseki-agent.sh /usr/local/bin/kaseki-agent \
     && install -m 0755 /app/scripts/docker-entrypoint.sh /usr/local/bin/kaseki-entrypoint \
