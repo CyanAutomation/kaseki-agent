@@ -40,8 +40,9 @@ restore_disallowed_changes() {
       printf '{"timestamp":"%s","event":"file_restored","file":"%s","status":"restored","reason":"not_in_allowlist"}\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(printf '%s' "$changed_file" | sed 's/"/\\"/g')"
     } >> "${KASEKI_RESULTS_DIR}"/restoration.jsonl
-    git -C "${KASEKI_WORKSPACE_DIR}"/repo restore --staged --worktree -- "$changed_file" 2>/dev/null || true
-    git -C "${KASEKI_WORKSPACE_DIR}"/repo clean -f -- "$changed_file" 2>/dev/null || true
+    if ! git -C "${KASEKI_WORKSPACE_DIR}"/repo restore --staged --worktree -- "$changed_file" 2>/dev/null; then
+      git -C "${KASEKI_WORKSPACE_DIR}"/repo clean -f -- "$changed_file" 2>/dev/null
+    fi
     restored_any=1
   done < "${KASEKI_RESULTS_DIR}"/changed-files.txt
 
