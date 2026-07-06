@@ -168,6 +168,34 @@ JSON
 )
 pass "dependency cache integrity validates required package executables"
 
+repair_dir="$TMP_DIR/bin-repair"
+mkdir -p \
+  "$repair_dir/node_modules/typescript/bin" \
+  "$repair_dir/node_modules/eslint/bin"
+cat > "$repair_dir/package.json" <<'JSON'
+{"scripts":{"build":"tsc --version"},"devDependencies":{"typescript":"^5.0.0","eslint":"^9.0.0"}}
+JSON
+cat > "$repair_dir/node_modules/typescript/package.json" <<'JSON'
+{"name":"typescript","bin":{"tsc":"bin/tsc"}}
+JSON
+cat > "$repair_dir/node_modules/eslint/package.json" <<'JSON'
+{"name":"eslint","bin":{"eslint":"bin/eslint.js"}}
+JSON
+printf '#!/bin/sh\necho tsc-ok\n' > "$repair_dir/node_modules/typescript/bin/tsc"
+printf '#!/bin/sh\necho eslint-ok\n' > "$repair_dir/node_modules/eslint/bin/eslint.js"
+chmod +x "$repair_dir/node_modules/typescript/bin/tsc" "$repair_dir/node_modules/eslint/bin/eslint.js"
+(
+  cd "$repair_dir"
+  # Models restore -> copy fallback/reinstall output where package directories
+  # exist but npm's .bin links disappeared before the build/scouting boundary.
+  validate_or_repair_required_dependency_bins package.json node_modules || fail "required package executable repair failed"
+  [ -x node_modules/.bin/tsc ] || fail "tsc link was not repaired"
+  [ -x node_modules/.bin/eslint ] || fail "eslint link was not repaired"
+  PATH="$PWD/node_modules/.bin:$PATH" tsc --version | grep -q tsc-ok || fail "build boundary could not invoke repaired tsc"
+  PATH="$PWD/node_modules/.bin:$PATH" eslint --version | grep -q eslint-ok || fail "scouting boundary could not invoke repaired eslint"
+)
+pass "cache restore/reinstall repair preserves package executables through build and scouting boundaries"
+
 legacy_entry="$TMP_DIR/prune-cache/npm/lock-legacy/node-24/flags-c"
 mkdir -p "$legacy_entry/node_modules/pkg"
 prune_dependency_cache "$TMP_DIR/prune-cache" 5000 0 "$metrics_file"
