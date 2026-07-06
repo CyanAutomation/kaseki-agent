@@ -2,13 +2,9 @@
 # Resolve Kaseki provider/model defaults.
 
 kaseki_resolve_provider_model() {
-  # Determine LLM provider: infer 'gateway' if gateway URL is set.
+  # Determine LLM provider: default to gateway when no provider is set.
   if [ -z "${KASEKI_PROVIDER+x}" ]; then
-    if [ -n "${LLM_GATEWAY_URL:-}" ]; then
-      KASEKI_PROVIDER="gateway"
-    else
-      KASEKI_PROVIDER="${KASEKI_PROVIDER:-gateway}"
-    fi
+    KASEKI_PROVIDER="gateway"
   fi
 
   # Gateway cannot consume the generic "auto" model sentinel, so normalize
