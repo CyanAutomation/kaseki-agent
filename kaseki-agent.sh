@@ -215,6 +215,19 @@ KASEKI_TS_CHECK_COMMAND="${KASEKI_TS_CHECK_COMMAND:-npm run build}"
 KASEKI_SCOUTING_EXPLICIT="${KASEKI_SCOUTING+x}"
 KASEKI_GOAL_SETTING_EXPLICIT="${KASEKI_GOAL_SETTING+x}"
 KASEKI_GOAL_CHECK_EXPLICIT="${KASEKI_GOAL_CHECK+x}"
+KASEKI_INSPECT_MODE_DEFAULTS_HELPER="${KASEKI_INSPECT_MODE_DEFAULTS_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/inspect-mode-defaults.sh}"
+if [ ! -r "$KASEKI_INSPECT_MODE_DEFAULTS_HELPER" ] && [ -r /app/scripts/inspect-mode-defaults.sh ]; then
+  KASEKI_INSPECT_MODE_DEFAULTS_HELPER="/app/scripts/inspect-mode-defaults.sh"
+fi
+if [ ! -r "$KASEKI_INSPECT_MODE_DEFAULTS_HELPER" ]; then
+  printf 'ERROR: Inspect-mode defaults helper is not readable. Expected %s or /app/scripts/inspect-mode-defaults.sh. This worker image or mounted template is incomplete; rebuild the image or restore scripts/inspect-mode-defaults.sh.\n' "$KASEKI_INSPECT_MODE_DEFAULTS_HELPER" >&2
+  exit 66
+fi
+# shellcheck source=/dev/null
+. "$KASEKI_INSPECT_MODE_DEFAULTS_HELPER" || {
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_INSPECT_MODE_DEFAULTS_HELPER" $? >&2
+  exit 1
+}
 KASEKI_SCOUTING="${KASEKI_SCOUTING:-1}"
 KASEKI_SCOUTING_MODEL="${KASEKI_SCOUTING_MODEL:-$KASEKI_MODEL}"
 KASEKI_SCOUTING_TIMEOUT_SECONDS="${KASEKI_SCOUTING_TIMEOUT_SECONDS:-$KASEKI_AGENT_TIMEOUT_SECONDS}"
@@ -228,12 +241,7 @@ KASEKI_GOAL_CHECK="${KASEKI_GOAL_CHECK:-$KASEKI_SCOUTING}"
 KASEKI_GOAL_CHECK_MAX_RETRIES="${KASEKI_GOAL_CHECK_MAX_RETRIES:-1}"
 KASEKI_GOAL_CHECK_MODEL="${KASEKI_GOAL_CHECK_MODEL:-$KASEKI_SCOUTING_MODEL}"
 KASEKI_GOAL_CHECK_TIMEOUT_SECONDS="${KASEKI_GOAL_CHECK_TIMEOUT_SECONDS:-$KASEKI_SCOUTING_TIMEOUT_SECONDS}"
-KASEKI_TASK_MODE="${KASEKI_TASK_MODE:-patch}"
-if [ "$KASEKI_TASK_MODE" = "inspect" ]; then
-  [ -z "$KASEKI_GOAL_SETTING_EXPLICIT" ] && KASEKI_GOAL_SETTING="0"
-  [ -z "$KASEKI_SCOUTING_EXPLICIT" ] && KASEKI_SCOUTING="0"
-  [ -z "$KASEKI_GOAL_CHECK_EXPLICIT" ] && KASEKI_GOAL_CHECK="0"
-fi
+kaseki_apply_inspect_mode_agent_defaults
 KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-pr}"
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-1}"
 # Auto-disable when no GitHub App credentials are mounted to avoid redundant preflight noise.
@@ -256,11 +264,7 @@ fi
 KASEKI_RUN_EVALUATION_MODEL="${KASEKI_RUN_EVALUATION_MODEL:-$KASEKI_GOAL_CHECK_MODEL}"
 KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS="${KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS:-300}"
 INSTANCE_NAME="${KASEKI_INSTANCE:-kaseki}"
-if [ "$KASEKI_TASK_MODE" = "inspect" ]; then
-  KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-1}"
-else
-  KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-0}"
-fi
+kaseki_apply_task_mode_diff_defaults
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
 KASEKI_VALIDATION_ALLOWLIST="${KASEKI_VALIDATION_ALLOWLIST:-}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-400000}"
@@ -2424,6 +2428,9 @@ SCOUTING_ALLOWLIST_HELPER="$SCRIPT_DIR/scripts/scouting-allowlist.js"
 if [ ! -r "$SCOUTING_ALLOWLIST_HELPER" ] && [ -r "$SCRIPT_DIR/dist/scouting-allowlist.js" ]; then
   SCOUTING_ALLOWLIST_HELPER="$SCRIPT_DIR/dist/scouting-allowlist.js"
 fi
+if [ ! -r "$SCOUTING_ALLOWLIST_HELPER" ] && [ -r "$SCRIPT_DIR/scripts/scouting-allowlist.ts" ]; then
+  SCOUTING_ALLOWLIST_HELPER="$SCRIPT_DIR/scripts/scouting-allowlist.ts"
+fi
 if [ ! -r "$SCOUTING_ALLOWLIST_HELPER" ] && [ -r /app/dist/scouting-allowlist.js ]; then
   SCOUTING_ALLOWLIST_HELPER="/app/dist/scouting-allowlist.js"
 fi
@@ -2488,7 +2495,10 @@ derive_allowlist_from_scouting() {
     return 1
   fi
 
-  node "$SCOUTING_ALLOWLIST_HELPER" derive "$scouting_artifact"
+  case "$SCOUTING_ALLOWLIST_HELPER" in
+    *.ts) npx tsx "$SCOUTING_ALLOWLIST_HELPER" derive "$scouting_artifact" ;;
+    *) node "$SCOUTING_ALLOWLIST_HELPER" derive "$scouting_artifact" ;;
+  esac
 }
 
 
@@ -8960,8 +8970,8 @@ if ! run_scouting_agent_with_retry; then
   exit 0
 fi
 
-if [ "$KASEKI_TASK_MODE" = "inspect" ]; then
-  printf '{"version":1,"source_artifacts":{"goal_setting":null,"scouting":null},"required_files":[],"required_search_strings":[],"forbidden_empty_diff":false}\n' > "$CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT"
+if kaseki_should_skip_critical_change_gates; then
+  kaseki_write_task_mode_critical_change_expectations "$CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT"
 else
   derive_critical_change_expectations
 fi
@@ -9258,7 +9268,7 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
   if [ "$KASEKI_TASK_MODE" = "patch" ] && [ ! -s "${KASEKI_RESULTS_DIR}/git.diff" ]; then
     skip_auto_lint_cleanup_before_core_change_verified "patch_diff_empty" "collect_git_artifacts produced no patch diff before critical-change verification"
   fi
-  if [ "$KASEKI_TASK_MODE" = "inspect" ]; then
+  if kaseki_should_skip_critical_change_gates; then
     emit_progress "critical change verification" "skipped (inspect mode)"
     printf 'critical change verification skipped for inspect mode\n' >> "${KASEKI_RESULTS_DIR}/critical-change-verification.log"
   elif ! critical_change_failure_output="$(verify_critical_change_expectations 2>&1)"; then
