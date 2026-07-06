@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.112.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.112.0...v1.112.1) (2026-07-06)
+
+
+### Bug Fixes
+
+* Implement schema normalization and improve error classification for scouting phase ([1f25303](https://github.com/CyanAutomation/kaseki-agent/commit/1f25303ae658b1cac156c77f0bdc2dbbc2b89103))
+
 # [1.112.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.111.0...v1.112.0) (2026-07-03)
 
 
