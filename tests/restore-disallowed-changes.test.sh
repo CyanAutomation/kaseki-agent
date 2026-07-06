@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1091,SC2034
-# Tests for allowlist restoration behavior in kaseki-agent.sh.
+# Tests for allowlist restoration behavior in restore-disallowed-changes.sh.
 
 set -euo pipefail
 
@@ -11,9 +11,11 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 export KASEKI_WORKSPACE_DIR="$TMP_DIR"
 export KASEKI_RESULTS_DIR="$TMP_DIR/results"
 
-# Load allowlist helper functions used by restore_disallowed_changes().
+# Load dependencies and the sourceable helper under test.
 # shellcheck source=../scripts/allowlist-helper.sh
 . "$ROOT_DIR/scripts/allowlist-helper.sh"
+# shellcheck source=../scripts/restore-disallowed-changes.sh
+. "$ROOT_DIR/scripts/restore-disallowed-changes.sh"
 
 pass() { printf '✓ %s\n' "$1"; }
 fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
@@ -29,19 +31,12 @@ emit_event() {
 }
 
 collect_git_artifacts() {
-  printf 'collect_git_artifacts should not be called when restored_count=0\n' >&2
-  return 1
+  printf 'collect_git_artifacts\n' >> "$TMP_DIR/results/collect-git-artifacts.log"
 }
 
-append_quality_violation() { :; }
-
-# Load restore_disallowed_changes() while redirecting its container-only absolute
-# paths into this test's temporary workspace.
-eval "$(awk '
-  /^restore_disallowed_changes\(\)/ { emit=1 }
-  /^check_validation_allowlist\(\)/ { emit=0 }
-  emit { print }
-' "$ROOT_DIR/kaseki-agent.sh" | sed "s#/workspace/repo#$TMP_DIR/repo#g; s#/results#$TMP_DIR/results#g")"
+append_quality_violation() {
+  printf '%s %s %s %s\n' "$1" "$2" "$3" "$4" >> "$TMP_DIR/results/quality-violations.log"
+}
 
 mkdir -p "$TMP_DIR/results" "$TMP_DIR/repo"
 {
@@ -49,38 +44,77 @@ mkdir -p "$TMP_DIR/results" "$TMP_DIR/repo"
   git init --initial-branch=main -q
   git config user.email "test@kaseki.local"
   git config user.name "Test User"
-  printf 'original\n' > allowed.txt
-  git add allowed.txt
+  printf 'allowed original\n' > allowed.txt
+  printf 'disallowed original\n' > disallowed.txt
+  git add allowed.txt disallowed.txt
   git commit -q -m "initial"
-  printf 'modified\n' > allowed.txt
+  printf 'allowed modified\n' > allowed.txt
+  printf 'disallowed modified\n' > disallowed.txt
+  printf 'generated\n' > generated.log
 }
 
-printf 'allowed.txt\n' > "$TMP_DIR/results/changed-files.txt"
+{
+  printf 'allowed.txt\n'
+  printf 'disallowed.txt\n'
+  printf 'generated.log\n'
+} > "$TMP_DIR/results/changed-files.txt"
 : > "$TMP_DIR/results/quality.log"
 : > "$TMP_DIR/results/events.log"
+: > "$TMP_DIR/results/quality-violations.log"
+: > "$TMP_DIR/results/collect-git-artifacts.log"
 
 KASEKI_RESTORE_DISALLOWED_CHANGES=1
 KASEKI_CHANGED_FILES_ALLOWLIST='allowed.txt'
 
 restore_disallowed_changes
 
-if grep -Fq '[allowlist summary] Restored: 0 files; Kept: 1 files (coverage: 100%)' "$TMP_DIR/results/quality.log"; then
-  pass 'restore_disallowed_changes summarizes 0 restored / 1 kept with coverage under set -u'
+if grep -Fq '[allowlist summary] Restored: 2 files; Kept: 1 files (coverage: 33%)' "$TMP_DIR/results/quality.log"; then
+  pass 'restore_disallowed_changes summarizes kept/restored counts and coverage'
 else
-  fail 'restore_disallowed_changes did not write the expected 0 restored / 1 kept summary'
+  fail 'restore_disallowed_changes did not write the expected kept/restored summary'
 fi
 
-if grep -Fq 'allowlist_restoration_complete restored=0 kept=1 coverage=100' "$TMP_DIR/results/events.log"; then
-  pass 'restore_disallowed_changes emits completion event with computed coverage'
+if grep -Fq 'allowlist_restoration_complete restored=2 kept=1 coverage=33' "$TMP_DIR/results/events.log"; then
+  pass 'restore_disallowed_changes emits completion event fields'
 else
-  fail 'restore_disallowed_changes did not emit expected coverage event'
+  fail 'restore_disallowed_changes did not emit expected completion event fields'
 fi
 
-
-if grep -Fxq 'COPY kaseki-agent.sh /usr/local/bin/kaseki-agent' "$ROOT_DIR/Dockerfile"; then
-  pass 'Docker image installs /usr/local/bin/kaseki-agent directly from repository kaseki-agent.sh'
+if [ "$(grep -Fc 'quality_gate_rule_evaluated rule=allowlist_restore passed=true file=' "$TMP_DIR/results/events.log")" -eq 2 ]; then
+  pass 'restore_disallowed_changes emits one allowlist_restore event per restored file'
 else
-  fail 'Dockerfile must copy repository kaseki-agent.sh to /usr/local/bin/kaseki-agent'
+  fail 'restore_disallowed_changes did not emit expected per-file restore events'
 fi
+
+if grep -Fq '"event":"file_evaluated","file":"allowed.txt","status":"kept","reason":"matched_allowlist"' "$TMP_DIR/results/restoration.jsonl" \
+  && grep -Fq '"event":"file_restored","file":"disallowed.txt","status":"restored","reason":"not_in_allowlist"' "$TMP_DIR/results/restoration.jsonl" \
+  && grep -Fq '"event":"file_restored","file":"generated.log","status":"restored","reason":"not_in_allowlist"' "$TMP_DIR/results/restoration.jsonl"; then
+  pass 'restore_disallowed_changes records semantic restoration fields'
+else
+  fail 'restore_disallowed_changes did not record expected restoration.jsonl fields'
+fi
+
+if [ "$(grep -Fc 'file_outside_allowlist_restored' "$TMP_DIR/results/quality-violations.log")" -eq 2 ]; then
+  pass 'restore_disallowed_changes records a quality violation for each restored file'
+else
+  fail 'restore_disallowed_changes did not record expected quality violations'
+fi
+
+if grep -Fxq 'collect_git_artifacts' "$TMP_DIR/results/collect-git-artifacts.log"; then
+  pass 'restore_disallowed_changes collects git artifacts after restoring files'
+else
+  fail 'restore_disallowed_changes did not collect git artifacts after restoring files'
+fi
+
+{
+  cd "$TMP_DIR/repo"
+  [ "$(cat allowed.txt)" = "allowed modified" ] || fail 'allowed file should remain modified'
+  [ "$(cat disallowed.txt)" = "disallowed original" ] || fail 'tracked disallowed file should be restored'
+  [ ! -e generated.log ] || fail 'untracked disallowed file should be removed'
+  git diff --name-only | grep -Fxq 'allowed.txt' || fail 'allowed file should be the only tracked worktree diff'
+  [ "$(git diff --name-only | wc -l | tr -d ' ')" -eq 1 ] || fail 'repository should contain only the allowed tracked diff'
+  [ -z "$(git ls-files --others --exclude-standard)" ] || fail 'repository should not contain untracked files after restore'
+}
+pass 'restore_disallowed_changes preserves allowed changes and restores disallowed worktree state'
 
 printf '\n✅ restore_disallowed_changes tests passed\n'

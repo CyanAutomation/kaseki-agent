@@ -134,6 +134,8 @@ assert_dockerfile_copies_to_build_context tsconfig.scripts.json ./ \
   'Dockerfile does not copy tsconfig.scripts.json before npm run build'
 assert_dockerfile_copies_to_build_context scripts ./scripts \
   'Dockerfile does not copy scripts into /app for startup-check packaging'
+assert_dockerfile_copies_to_build_context kaseki-agent.sh /usr/local/bin/kaseki-agent \
+  'Dockerfile must copy repository kaseki-agent.sh to /usr/local/bin/kaseki-agent'
 assert_file_contains Dockerfile '^[[:space:]]+/app/scripts/startup-check-packaging\.sh \\$' \
   'Dockerfile does not mark startup-check-packaging.sh executable'
 assert_file_match_count Dockerfile '^[[:space:]]+&& /app/scripts/startup-check-packaging\.sh install \\$' 2 \
@@ -166,6 +168,10 @@ assert_file_contains scripts/startup-checks.sh '"scouting-allowlist\.js"' \
 
 assert_file_match_count Dockerfile 'install -m 0644 /app/scripts/lib/provider-retry\.sh /usr/local/bin/scripts/lib/provider-retry\.sh' 2 \
   'Dockerfile must install provider-retry.sh at its sourced runtime path in both image stages'
+assert_file_match_count Dockerfile 'install -m 0755 /app/scripts/restore-disallowed-changes\.sh /usr/local/bin/scripts/restore-disallowed-changes\.sh' 2 \
+  'Dockerfile must install restore-disallowed-changes.sh at its sourced runtime path in both image stages'
+assert_file_contains scripts/startup-checks.sh '"restore-disallowed-changes\.sh"' \
+  'worker preflight must reject images missing the restore-disallowed-changes helper'
 assert_file_contains scripts/startup-checks.sh '"lib/provider-retry\.sh"' \
   'worker preflight must reject images missing the provider retry helper'
 assert_file_match_count Dockerfile 'install -m 0755 /app/scripts/auto-lint-cleanup-classification\.sh /usr/local/bin/scripts/auto-lint-cleanup-classification\.sh' 2 \

@@ -761,6 +761,7 @@ check_packaged_agent_helpers() {
   local required_helpers=(
     "agent-prompt.sh"
     "allowlist-helper.sh"
+    "restore-disallowed-changes.sh"
     "inspect-mode-defaults.sh"
     "dependency-cache-helpers.sh"
     "auto-lint-cleanup-classification.sh"
