@@ -9,8 +9,11 @@ kaseki_apply_inspect_mode_agent_defaults() {
   KASEKI_TASK_MODE="${KASEKI_TASK_MODE:-patch}"
 
   if [ "$KASEKI_TASK_MODE" = "inspect" ]; then
+    # shellcheck disable=SC2034
     [ -z "${KASEKI_GOAL_SETTING_EXPLICIT:-}" ] && KASEKI_GOAL_SETTING="0"
+    # shellcheck disable=SC2034
     [ -z "${KASEKI_SCOUTING_EXPLICIT:-}" ] && KASEKI_SCOUTING="0"
+    # shellcheck disable=SC2034
     [ -z "${KASEKI_GOAL_CHECK_EXPLICIT:-}" ] && KASEKI_GOAL_CHECK="0"
   fi
 }
