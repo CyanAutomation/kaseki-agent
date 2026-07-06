@@ -1396,8 +1396,8 @@ const controllerPage = String.raw`<!doctype html>
           <div class="health-checks-grid">
             <button class="health-check-button" data-probe="/health" type="button"><span class="hc-label">Health</span><span class="health-check-status" data-status="health"></span></button>
             <button class="health-check-button" data-probe="/ready" type="button"><span class="hc-label">Readiness</span><span class="health-check-status" data-status="readiness"></span></button>
-            <button class="health-check-button" data-probe="/api/gateway-test?stage=1" data-auth="true" type="button" title="Test gateway connectivity. Standard gateways use /models without token consumption; Cloudflare /compat uses a minimal chat-completions probe."><span class="hc-label">Test Gateway</span><span class="health-check-status" data-status="gateway"></span></button>
-            <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true" data-auth="true" type="button" title="Test authenticated inference through both the gateway protocol and the same Pi provider adapter used by coding runs."><span class="hc-label">Test Inference</span><span class="health-check-status" data-status="llm-test"></span></button>
+            <button class="health-check-button" data-probe="/api/gateway-test?stage=1" data-auth="true" type="button" title="Validate gateway reachability and authentication. This does not prove inference or Pi adapter compatibility."><span class="hc-label">Gateway connectivity &amp; auth</span><span class="health-check-status" data-status="gateway"></span></button>
+            <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true" data-auth="true" type="button" title="Run real gateway inference, Responses compatibility checks where applicable, and the Pi provider adapter smoke test used by coding runs."><span class="hc-label">Inference &amp; Pi adapter</span><span class="health-check-status" data-status="llm-test"></span></button>
             <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button"><span class="hc-label">Current Preflight</span><span class="health-check-status" data-status="preflight"></span></button>
           </div>
           <div class="summary-grid" id="health-summary" aria-live="polite">
@@ -2737,7 +2737,10 @@ const controllerPage = String.raw`<!doctype html>
       }
 
       async function run(button, path, options) {
-        button.disabled = true;
+        const diagnosticButtons = Array.from(document.querySelectorAll('.health-check-button'));
+        const isDiagnostic = button.classList.contains('health-check-button');
+        if (isDiagnostic) diagnosticButtons.forEach((candidate) => { candidate.disabled = true; });
+        else button.disabled = true;
         setOutputMetadata('running', String(runIdInput.value || '').trim() || undefined);
         const actionLabel = button.textContent ? button.textContent.trim() : 'request';
         const startedAt = Date.now();
@@ -2763,7 +2766,8 @@ const controllerPage = String.raw`<!doctype html>
           return { payload: null, response: { ok: false } };
         } finally {
           if (elapsedTimer) window.clearInterval(elapsedTimer);
-          button.disabled = false;
+          if (isDiagnostic) diagnosticButtons.forEach((candidate) => { candidate.disabled = false; });
+          else button.disabled = false;
         }
       }
 
