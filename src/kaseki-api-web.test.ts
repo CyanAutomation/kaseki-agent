@@ -172,7 +172,7 @@ describe('kaseki API web console routes', () => {
     expect(document.querySelector('[data-testid="issues-repo-url"]')).not.toBeNull();
     expect(document.querySelector('[data-probe="/api/preflight"]')).not.toBeNull();
     expect(document.querySelector('[data-probe="/api/gateway-test?stage=1"]')?.getAttribute('data-auth')).toBe('true');
-    expect(document.querySelector('[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]')?.textContent).toContain('Test Inference');
+    expect(document.querySelector('[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]')?.textContent).toContain('Inference & Pi adapter');
     expect(document.querySelector('#task-mode')?.getAttribute('name')).toBe('taskMode');
     expect(document.querySelector('#runs-list')).not.toBeNull();
     expect(document.querySelector('#refresh-runs')?.textContent).toContain('Refresh runs');
@@ -285,13 +285,13 @@ describe('kaseki API web console behavior', () => {
 
     // Verify Gateway Test button has stage=1 parameter
     const gatewayTestButton = [...document.querySelectorAll('.health-check-button')]
-      .find(btn => btn.textContent?.includes('Test Gateway'));
+      .find(btn => btn.textContent?.includes('Gateway connectivity & auth'));
     expect(gatewayTestButton).toBeDefined();
     expect(gatewayTestButton?.getAttribute('data-probe')).toBe('/api/gateway-test?stage=1');
 
     // Verify inference test button has stage=2 and responseSmoke parameters
     const llmTestButton = [...document.querySelectorAll('.health-check-button')]
-      .find(btn => btn.textContent?.includes('Test Inference'));
+      .find(btn => btn.textContent?.includes('Inference & Pi adapter'));
     expect(llmTestButton).toBeDefined();
     expect(llmTestButton?.getAttribute('data-probe')).toBe('/api/gateway-test?stage=2&responseSmoke=true&piProvider=true');
 
@@ -299,6 +299,31 @@ describe('kaseki API web console behavior', () => {
     const checkStatusButton = [...document.querySelectorAll('.health-check-button')]
       .find(btn => btn.textContent?.includes('Check Status'));
     expect(checkStatusButton).toBeUndefined();
+  });
+
+  test('serializes diagnostics and always restores controls without disabling the task form', async () => {
+    let rejectRequest: ((error: Error) => void) | undefined;
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/gateway-test?stage=1') {
+          return new Promise((_resolve, reject) => { rejectRequest = reject; });
+        }
+        if (path === '/api/runs') return createJsonResponse({ runs: [] });
+        return createJsonResponse({ status: 'ok' });
+      },
+    });
+    const gateway = document.querySelector<HTMLButtonElement>('[data-probe="/api/gateway-test?stage=1"]');
+    const inference = document.querySelector<HTMLButtonElement>('[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]');
+    const repo = document.querySelector<HTMLInputElement>('[name="repoUrl"]');
+    click(gateway);
+    await waitFor(() => expect(gateway?.disabled).toBe(true));
+    expect(inference?.disabled).toBe(true);
+    expect(repo?.disabled).toBe(false);
+    rejectRequest?.(new Error('gateway unavailable'));
+    await waitFor(() => expect(gateway?.disabled).toBe(false));
+    expect(inference?.disabled).toBe(false);
+    expect(repo?.disabled).toBe(false);
   });
 
   test('summarizes gateway smoke results without OpenRouter recovery status', async () => {
