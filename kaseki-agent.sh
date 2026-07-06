@@ -3112,7 +3112,12 @@ finish() {
   if [ "$code" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
     # Capture diagnostic context for the catch-all error
     STATUS="$code"
-    FAILED_COMMAND="unexpected shell failure"
+    if [ "$CURRENT_STAGE" = "scouting prerequisites validation" ] &&
+      { [ "$LAST_COMMAND" = "validate_critical_executables_for_scouting" ] || [ "$LAST_COMMAND" = "validate_or_repair_required_dependency_bins" ]; }; then
+      FAILED_COMMAND="dependency integrity failure"
+    else
+      FAILED_COMMAND="unexpected shell failure"
+    fi
     # Log the last command that was executed
     {
       printf '[unexpected-failure] Exit code: %d\n' "$code"
@@ -3123,7 +3128,16 @@ finish() {
         tail -5 "${KASEKI_RESULTS_DIR}"/progress.jsonl | sed 's/^/  /'
       fi
     } | tee -a "$LAST_COMMAND_LOG" >&2
-    emit_error_event "unexpected_shell_failure" "Uncaught shell error (exit $code) in stage '$CURRENT_STAGE'. Last command: $LAST_COMMAND. See $LAST_COMMAND_LOG for context." "exit"
+    if [ "$FAILED_COMMAND" = "dependency integrity failure" ]; then
+      emit_error_event "dependency_integrity_failure" "Required project package executables were unavailable after dependency installation" "exit"
+    else
+      emit_error_event "unexpected_shell_failure" "Uncaught shell error (exit $code) in stage '$CURRENT_STAGE'. Last command: $LAST_COMMAND. See $LAST_COMMAND_LOG for context." "exit"
+    fi
+  fi
+  if [ "${KASEKI_LLM_PROVIDER:-}" = "gateway" ] && [ ! -s "${KASEKI_RESULTS_DIR}/gateway-summary.json" ]; then
+    cat > "${KASEKI_RESULTS_DIR}/gateway-summary.json" <<EOF
+{"provider":"gateway","registered":true,"requestAttempted":false,"inferenceAttempted":false,"reason":"run ended before an inference request was attempted","stage":"${CURRENT_STAGE}","status":"not_attempted"}
+EOF
   fi
   # Authoritative call site: this runs at EXIT so artifacts reflect final repo state.
   maybe_call_finish_helper collect_git_artifacts
@@ -3533,6 +3547,45 @@ for (const bin of required) {
 NODE
 }
 
+repair_required_dependency_bins() {
+  local package_json="${1:-package.json}"
+  local node_modules_dir="${2:-node_modules}"
+  [ -f "$package_json" ] || return 0
+  node - "$package_json" "$node_modules_dir" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const pkg = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const nodeModulesDir = process.argv[3] || 'node_modules';
+const dependencies = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+const required = [];
+if (dependencies.typescript) required.push(['typescript', 'tsc']);
+if (dependencies.eslint) required.push(['eslint', 'eslint']);
+fs.mkdirSync(path.join(nodeModulesDir, '.bin'), { recursive: true });
+for (const [packageName, binName] of required) {
+  const packagePath = path.join(nodeModulesDir, packageName, 'package.json');
+  if (!fs.existsSync(packagePath)) continue;
+  const packageMetadata = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+  const bin = typeof packageMetadata.bin === 'string'
+    ? packageMetadata.bin
+    : packageMetadata.bin && packageMetadata.bin[binName];
+  if (!bin) continue;
+  const target = path.join(nodeModulesDir, '.bin', binName);
+  const relativeSource = path.relative(path.dirname(target), path.join(nodeModulesDir, packageName, bin));
+  try { fs.rmSync(target, { force: true }); } catch {}
+  fs.symlinkSync(relativeSource, target);
+}
+NODE
+}
+
+validate_or_repair_required_dependency_bins() {
+  local package_json="${1:-package.json}"
+  local node_modules_dir="${2:-node_modules}"
+  dependency_cache_required_bins_valid "$package_json" "$node_modules_dir" && return 0
+  printf 'Dependency cache status: repairing missing package executable links in %s/.bin.\n' "$node_modules_dir" | tee -a "$DEPENDENCY_CACHE_LOG"
+  repair_required_dependency_bins "$package_json" "$node_modules_dir" || return 1
+  dependency_cache_required_bins_valid "$package_json" "$node_modules_dir"
+}
+
 dependency_cache_entry_roots() {
   local cache_dir="$1"
   find "$cache_dir" -mindepth 4 -maxdepth 4 -type d -name 'flags-*' 2>/dev/null || true
@@ -3682,7 +3735,7 @@ construct_default_validation_commands() {
   elif package_json_has_npm_script "type-check"; then
     commands="$(append_default_validation_command "$commands" "npm run type-check")"
   elif has_typescript_project; then
-    commands="$(append_default_validation_command "$commands" "tsc --noEmit")"
+    commands="$(append_default_validation_command "$commands" "npm exec -- tsc --noEmit")"
   elif package_json_has_npm_script "check"; then
     commands="$(append_default_validation_command "$commands" "npm run check")"
   fi
@@ -8653,6 +8706,11 @@ prepare_dependencies() {
       sentry_error "npm ci failed with exit code $?" "npm-ci" "1" "$(($(date +%s) - install_start))" 2>/dev/null || true
       return 1
     fi
+    if ! validate_or_repair_required_dependency_bins package.json node_modules; then
+      emit_error_event "dependency_integrity_failure" "npm ci completed but required package executables are unavailable" "exit"
+      exec {cache_lock_fd}>&-
+      return 1
+    fi
     install_elapsed="$(($(date +%s) - install_start))"
     install_mode="npm_ci_lockfile"
     emit_progress "dependency install" "finished elapsed=${install_elapsed}s cache_hit=false restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
@@ -8981,13 +9039,18 @@ validate_critical_executables_for_scouting() {
   local missing=()
   local missing_details=""
   
-  # Check for tools needed by scouting phase
-  for exe in tsc eslint npm node; do
-    if ! command -v "$exe" &>/dev/null; then
+  # npm and node are runtime tools. TypeScript and ESLint are repository-local
+  # dependencies and must not depend on a global PATH entry.
+  for exe in npm node; do
+    if ! command -v "$exe" >/dev/null 2>&1; then
       missing+=("$exe")
       missing_details="${missing_details}  - $exe: not found in PATH\n"
     fi
   done
+  if ! validate_or_repair_required_dependency_bins package.json node_modules; then
+    missing+=("project package executables")
+    missing_details="${missing_details}  - project package executables: node_modules/.bin/tsc or eslint unavailable\n"
+  fi
   
   if [[ ${#missing[@]} -gt 0 ]]; then
     printf 'ERROR: Missing critical executables required for scouting phase:\n%b' "$missing_details" >&2
@@ -8997,12 +9060,13 @@ validate_critical_executables_for_scouting() {
     printf '  node_modules/.bin/ contents:\n' >&2
     find node_modules/.bin/ -maxdepth 1 -type f -ls 2>&1 | sed 's/^/    /' >&2
     printf 'Cache status: cache_source=%s restore_method=%s\n' "${cache_source:-unknown}" "${restore_method:-unknown}" >&2
-    emit_error_event "critical_executables_validation_failed" "Missing critical executables: ${missing[*]}" "exit"
+    FAILED_COMMAND="dependency integrity failure"
+    emit_error_event "dependency_integrity_failure" "Missing critical executables: ${missing[*]}" "exit"
     exit 2
   fi
   
   # All checks passed
-  printf '✓ Critical executables validation passed (tsc, eslint, npm, node available)\n'
+  printf '✓ Critical executables validation passed (project tsc/eslint and runtime npm/node available)\n'
   return 0
 }
 
