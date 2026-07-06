@@ -207,9 +207,9 @@ KASEKI_BASELINE_CACHE_MAX_AGE_HOURS="${KASEKI_BASELINE_CACHE_MAX_AGE_HOURS:-24}"
 KASEKI_BASELINE_CACHE_DISABLED="${KASEKI_BASELINE_CACHE_DISABLED:-0}"
 KASEKI_TS_PRE_CHECK="${KASEKI_TS_PRE_CHECK:-1}"
 KASEKI_TS_CHECK_COMMAND="${KASEKI_TS_CHECK_COMMAND:-npm run build}"
-KASEKI_SCOUTING_EXPLICIT="${KASEKI_SCOUTING+x}"
-KASEKI_GOAL_SETTING_EXPLICIT="${KASEKI_GOAL_SETTING+x}"
-KASEKI_GOAL_CHECK_EXPLICIT="${KASEKI_GOAL_CHECK+x}"
+export KASEKI_SCOUTING_EXPLICIT="${KASEKI_SCOUTING+x}"
+export KASEKI_GOAL_SETTING_EXPLICIT="${KASEKI_GOAL_SETTING+x}"
+export KASEKI_GOAL_CHECK_EXPLICIT="${KASEKI_GOAL_CHECK+x}"
 KASEKI_INSPECT_MODE_DEFAULTS_HELPER="${KASEKI_INSPECT_MODE_DEFAULTS_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/inspect-mode-defaults.sh}"
 if [ ! -r "$KASEKI_INSPECT_MODE_DEFAULTS_HELPER" ] && [ -r /app/scripts/inspect-mode-defaults.sh ]; then
   KASEKI_INSPECT_MODE_DEFAULTS_HELPER="/app/scripts/inspect-mode-defaults.sh"
@@ -1093,6 +1093,12 @@ validate_scouting_artifact() {
   elif ! validate_scouting_artifact_with_node "$candidate_artifact" "$final_artifact" "$validation_error_file"; then
     reason_code="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.reason_code||"schema_mismatch"));}catch{process.stdout.write("schema_mismatch");}' "$validation_error_file" 2>/dev/null || printf 'schema_mismatch')"
     reason_details="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.details||"scouting artifact validation failed"));}catch{process.stdout.write("scouting artifact validation failed");}' "$validation_error_file" 2>/dev/null || printf 'scouting artifact validation failed')"
+  else
+    # Additional schema validation for critical array/object fields (kaseki-198 prevention)
+    if ! validate_scouting_output_schema "$final_artifact"; then
+      reason_code="schema_type_mismatch"
+      reason_details="Scouting output schema type validation failed (arrays returned as strings)"
+    fi
   fi
 
   printf '%s\n' "$reason_code" > "$reason_file"
@@ -1100,6 +1106,62 @@ validate_scouting_artifact() {
   # [scouting-validation removed - errors go to scouting-validation-errors.jsonl]
   rm -f "$validation_error_file" 2>/dev/null || true
   [ "$reason_code" = "valid" ]
+}
+
+# Validate scouting output schema - check for type mismatches in critical fields
+# This prevents issues like observations/plan/validation being strings instead of arrays
+validate_scouting_output_schema() {
+  local artifact="$1"
+  local schema_errors=0
+  
+  if [ ! -f "$artifact" ]; then
+    return 0  # Missing file already validated elsewhere
+  fi
+  
+  # Check observations is array
+  if ! jq -e '.observations | type == "array"' "$artifact" >/dev/null 2>&1; then
+    local actual_type
+    actual_type=$(jq -r '.observations | type' "$artifact" 2>/dev/null || echo "unknown")
+    printf '{"timestamp":"%s","reason_code":"schema_mismatch","field":"observations","expected":"array","actual":"%s","severity":"critical","suggestion":"observations must be an array in the scouting handoff"}\n' "$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')" "$actual_type" >> "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl"
+    schema_errors=$((schema_errors + 1))
+  fi
+  
+  # Check plan is array
+  if ! jq -e '.plan | type == "array"' "$artifact" >/dev/null 2>&1; then
+    local actual_type
+    actual_type=$(jq -r '.plan | type' "$artifact" 2>/dev/null || echo "unknown")
+    printf '{"timestamp":"%s","reason_code":"schema_mismatch","field":"plan","expected":"array","actual":"%s","severity":"critical","suggestion":"plan must be an array in the scouting handoff"}\n' "$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')" "$actual_type" >> "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl"
+    schema_errors=$((schema_errors + 1))
+  fi
+  
+  # Check validation is array
+  if ! jq -e '.validation | type == "array"' "$artifact" >/dev/null 2>&1; then
+    local actual_type
+    actual_type=$(jq -r '.validation | type' "$artifact" 2>/dev/null || echo "unknown")
+    printf '{"timestamp":"%s","reason_code":"schema_mismatch","field":"validation","expected":"array","actual":"%s","severity":"critical","suggestion":"validation must be an array in the scouting handoff"}\n' "$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')" "$actual_type" >> "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl"
+    schema_errors=$((schema_errors + 1))
+  fi
+  
+  # Check relevant_files structure (array of objects with path and reason)
+  if jq -e '.relevant_files' "$artifact" >/dev/null 2>&1; then
+    local file_count
+    file_count=$(jq '.relevant_files | length' "$artifact" 2>/dev/null || echo 0)
+    for i in $(seq 0 $((file_count - 1))); do
+      if ! jq -e ".relevant_files[$i] | type == \"object\" and has(\"path\") and has(\"reason\")" "$artifact" >/dev/null 2>&1; then
+        local actual_value
+        actual_value=$(jq -r ".relevant_files[$i]" "$artifact" 2>/dev/null || echo "unknown")
+        printf '{"timestamp":"%s","reason_code":"schema_mismatch","field":"relevant_files[%d]","expected":"object with string path and string reason","actual":"%s","severity":"warning","suggestion":"Each relevant_files entry must include path and reason strings"}\n' "$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')" "$i" "$actual_value" >> "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl"
+        schema_errors=$((schema_errors + 1))
+      fi
+    done
+  fi
+  
+  if [ $schema_errors -gt 0 ]; then
+    printf 'ERROR: Scouting output schema validation failed with %d type mismatches\n' "$schema_errors" >&2
+    return 1
+  fi
+  
+  return 0
 }
 
 write_scouting_fallback_artifact() {
@@ -8913,6 +8975,41 @@ fi
 
 # Call diagnostics before scouting (non-fatal for other checks)
 check_filesystem_capabilities || true  # logs additional diagnostic info
+
+# Validate critical executables are available before scouting
+validate_critical_executables_for_scouting() {
+  local missing=()
+  local missing_details=""
+  
+  # Check for tools needed by scouting phase
+  for exe in tsc eslint npm node; do
+    if ! command -v "$exe" &>/dev/null; then
+      missing+=("$exe")
+      missing_details="${missing_details}  - $exe: not found in PATH\n"
+    fi
+  done
+  
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    printf 'ERROR: Missing critical executables required for scouting phase:\n%b' "$missing_details" >&2
+    printf 'Diagnostic information:\n' >&2
+    printf '  npm list typescript:\n' >&2
+    npm list typescript 2>&1 | sed 's/^/    /' >&2
+    printf '  node_modules/.bin/ contents:\n' >&2
+    ls -la node_modules/.bin/ 2>&1 | sed 's/^/    /' >&2
+    printf 'Cache status: cache_source=%s restore_method=%s\n' "$cache_source" "$restore_method" >&2
+    emit_error_event "critical_executables_validation_failed" "Missing critical executables: ${missing[*]}" "exit"
+    exit 2
+  fi
+  
+  # All checks passed
+  printf '✓ Critical executables validation passed (tsc, eslint, npm, node available)\n'
+  return 0
+}
+
+# Call the validation
+if ! validate_critical_executables_for_scouting; then
+  exit 2
+fi
 
 # Goal-setting agent runs first (before scouting) to upgrade the user prompt into a mature goal
 if [ "$KASEKI_GOAL_SETTING" = "1" ]; then

@@ -148,6 +148,7 @@ RUN chmod +x \
     && cp dist/kaseki-cli.js /app/kaseki-cli.js \
     && cp dist/kaseki-cli-lib.js /app/kaseki-cli-lib.js \
     && cp dist/github-app-token.js /app/lib/github-app-token.js \
+    && cp dist/github-app-token-runtime.js /app/lib/github-app-token-runtime.js \
     && cp dist/github-app-private-key.js /app/lib/github-app-private-key.js \
     && cp dist/github-utils.js /app/lib/github-utils.js \
     && cp dist/logger.js /app/lib/logger.js \
@@ -186,6 +187,7 @@ RUN chmod +x \
     && install -m 0755 /app/lib/analyze-test-failures.js /usr/local/bin/analyze-test-failures \
     && install -m 0755 /app/lib/lib/validation-causality-analysis.js /usr/local/bin/validation-causality-analysis \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \
+    && install -m 0755 /app/lib/github-app-token-runtime.js /usr/local/bin/github-app-token-runtime.js \
     && ln -sf github-app-token /usr/local/bin/github-app-token.js \
     && install -m 0755 /app/scripts/agent-prompt.sh /usr/local/bin/scripts/agent-prompt.sh \
     && install -m 0755 /app/scripts/allowlist-helper.sh /usr/local/bin/scripts/allowlist-helper.sh \

@@ -143,6 +143,38 @@ provider_error_is_terminal() {
   [ -n "$PROVIDER_ERROR_MESSAGE" ]
 }
 
+# Capture and enhance diagnostics for 422 "Unprocessable Entity" errors
+# These typically indicate upstream artifact/data corruption rather than transient issues
+capture_422_diagnostics() {
+  local message="$1"
+  local phase="$2"
+  
+  if [[ ! "$message" =~ "422" ]]; then
+    return 0  # Not a 422 error
+  fi
+  
+  # Log diagnostic context for 422 errors
+  printf '\n[DIAGNOSTIC] 422 Unprocessable Entity from provider gateway\n' >&2
+  printf '[DIAGNOSTIC] This usually indicates malformed or corrupted upstream artifact data.\n' >&2
+  printf '[DIAGNOSTIC] Check these validation logs:\n' >&2
+  printf '[DIAGNOSTIC]   - scouting-validation-errors.jsonl (schema violations in scouting phase)\n' >&2
+  printf '[DIAGNOSTIC]   - goal-setting-validation-errors.jsonl (failed artifact contract)\n' >&2
+  printf '[DIAGNOSTIC]   - goal-setting-stderr.log (upstream errors)\n' >&2
+  printf '[DIAGNOSTIC] Phase: %s\n' "$phase" >&2
+  
+  # Save goal-setting artifact for debugging if it exists
+  if [ -f "${KASEKI_RESULTS_DIR}/goal-setting.json" ]; then
+    printf '[DIAGNOSTIC] Saved goal-setting artifact for inspection\n' >&2
+  fi
+  
+  # Emit diagnostic event
+  printf '{"timestamp":"%s","type":"provider_error_diagnostic","error":"422","phase":"%s","diagnostic":"malformed upstream artifact","remediation":"check scouting/goal-setting validation errors"}\n' \
+    "$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')" "$phase" \
+    >> "${KASEKI_RESULTS_DIR}/provider-diagnostics.jsonl" 2>/dev/null || true
+  
+  return 0
+}
+
 clear_provider_error() {
   PROVIDER_ERROR_TYPE=""
   PROVIDER_ERROR_PHASE=""
@@ -569,6 +601,8 @@ run_pi_with_retry() {
     # with finish_reason:error. Treat the structured event as authoritative.
     if capture_provider_error_from_summary "$summary_file" "$phase_name"; then
       pi_exit=88
+      # Capture 422-specific diagnostics if applicable
+      capture_422_diagnostics "$PROVIDER_ERROR_MESSAGE" "$phase_name" || true
       check_if_provider_error_retryable "$summary_file" || true
       return 0
     fi
