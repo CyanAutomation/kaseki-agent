@@ -1060,6 +1060,36 @@ validate_scouting_artifact_with_node() {
     2>/dev/null
 }
 
+# Normalize scouting artifact schema to handle Pi output variations
+# Converts string arrays to proper object arrays (e.g., relevant_files)
+normalize_scouting_schema() {
+  local candidate_artifact="$1"
+  
+  [ -f "$candidate_artifact" ] || return 0
+  
+  # Check if relevant_files contains strings (common Pi output variation)
+  local has_string_entries
+  has_string_entries=$(jq '.relevant_files | map(type) | map(select(. == "string")) | length' "$candidate_artifact" 2>/dev/null || echo 0)
+  
+  if [ "$has_string_entries" -gt 0 ]; then
+    # Normalize strings to {path, reason} objects
+    jq '.relevant_files |= map(
+      if type == "string"
+        then {path: ., reason: ("scope: " + .)}
+        else .
+      end
+    )' "$candidate_artifact" > "${candidate_artifact}.normalized" 2>/dev/null || return 1
+    
+    # Replace original with normalized version
+    mv "${candidate_artifact}.normalized" "$candidate_artifact"
+    
+    # Log the transformation
+    node -e 'const fs=require("node:fs"); const timestamp=new Date().toISOString(); const error={timestamp,reason_code:"schema_normalized",field:"relevant_files",details:"Normalized string entries to {path,reason} objects",transformation_type:"string_to_object",severity:"info",suggestion:"none_required"}; fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + "/scouting-validation-errors.jsonl", JSON.stringify(error)+"\n");' 2>/dev/null || true
+  fi
+  
+  return 0
+}
+
 # Validate scouting artifact and emit structured reason code
 validate_scouting_artifact() {
   local candidate_artifact="$1"
@@ -1090,14 +1120,19 @@ validate_scouting_artifact() {
     fi
     # shellcheck disable=SC2016
     node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const reason=process.argv[2]; const details=process.argv[3]||""; const providerDiagnostic=process.argv[4]||""; const providerSuggestion=process.argv[5]||""; const defaultSuggestion=reason==="readonly_filesystem" ? "remount " + process.env.KASEKI_RESULTS_DIR + " as read-write (docker run -v /path:" + process.env.KASEKI_RESULTS_DIR + ":rw)" : "ensure the scouting Pi writes exactly one valid JSON object to " + process.env.KASEKI_RESULTS_DIR + "/scouting-candidate.json"; const error={timestamp:new Date().toISOString(),reason_code:reason,field:"scouting-candidate.json",expected:"file at " + process.env.KASEKI_RESULTS_DIR + "/scouting-candidate.json",actual:`missing: ${candidate}`,severity:"critical",details:details||undefined,suggestion:providerSuggestion||defaultSuggestion,provider:process.env.KASEKI_PROVIDER||"",model:process.env.KASEKI_SCOUTING_MODEL||""}; if(providerDiagnostic){error.diagnostic=providerDiagnostic; error.gateway_model_hint=providerSuggestion;} fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + "/scouting-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" "$reason_code" "$reason_details" "$provider_diagnostic" "$provider_suggestion" 2>/dev/null || true
-  elif ! validate_scouting_artifact_with_node "$candidate_artifact" "$final_artifact" "$validation_error_file"; then
-    reason_code="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.reason_code||"schema_mismatch"));}catch{process.stdout.write("schema_mismatch");}' "$validation_error_file" 2>/dev/null || printf 'schema_mismatch')"
-    reason_details="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.details||"scouting artifact validation failed"));}catch{process.stdout.write("scouting artifact validation failed");}' "$validation_error_file" 2>/dev/null || printf 'scouting artifact validation failed')"
   else
-    # Additional schema validation for critical array/object fields (kaseki-198 prevention)
-    if ! validate_scouting_output_schema "$final_artifact"; then
-      reason_code="schema_type_mismatch"
-      reason_details="Scouting output schema type validation failed (arrays returned as strings)"
+    # PHASE 2: Normalize schema before validation
+    normalize_scouting_schema "$candidate_artifact" || true
+    
+    if ! validate_scouting_artifact_with_node "$candidate_artifact" "$final_artifact" "$validation_error_file"; then
+      reason_code="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.reason_code||"schema_mismatch"));}catch{process.stdout.write("schema_mismatch");}' "$validation_error_file" 2>/dev/null || printf 'schema_mismatch')"
+      reason_details="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.details||"scouting artifact validation failed"));}catch{process.stdout.write("scouting artifact validation failed");}' "$validation_error_file" 2>/dev/null || printf 'scouting artifact validation failed')"
+    else
+      # Additional schema validation for critical array/object fields (kaseki-198 prevention)
+      if ! validate_scouting_output_schema "$final_artifact"; then
+        reason_code="schema_type_mismatch"
+        reason_details="Scouting output schema type validation failed (arrays returned as strings)"
+      fi
     fi
   fi
 
@@ -5527,7 +5562,11 @@ run_goal_setting_agent_with_retry() {
           printf '(no stderr captured)\n'
         fi
       } >> "${KASEKI_RESULTS_DIR}/goal-setting-stderr.log"
-      capture_provider_error_from_log "${KASEKI_RESULTS_DIR}/goal-setting-stderr.log" "goal-setting" || true
+      # PHASE 1 FIX: Check validation errors FIRST (e.g., schema_mismatch)
+      # Only fall back to stderr parsing if no validation errors exist
+      if ! capture_validation_error_classification "goal-setting"; then
+        capture_provider_error_from_log "${KASEKI_RESULTS_DIR}/goal-setting-stderr.log" "goal-setting" || true
+      fi
     fi
     rm -f "$goal_setting_stderr_capture"
 
@@ -6213,7 +6252,11 @@ run_scouting_agent_with_retry() {
         printf '[attempt %d exit %d]\n' "$attempt" "$scouting_last_exit"
         printf '%s\n' "$scouting_last_stderr"
       } >> "${KASEKI_RESULTS_DIR}/scouting-stderr.log"
-      capture_provider_error_from_log "${KASEKI_RESULTS_DIR}/scouting-stderr.log" "scouting" || true
+      # PHASE 1 FIX: Check validation errors FIRST (e.g., schema_mismatch)
+      # Only fall back to stderr parsing if no validation errors exist
+      if ! capture_validation_error_classification "scouting"; then
+        capture_provider_error_from_log "${KASEKI_RESULTS_DIR}/scouting-stderr.log" "scouting" || true
+      fi
     fi
     rm -f "$scouting_stderr_capture"
 

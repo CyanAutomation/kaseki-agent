@@ -95,6 +95,24 @@ let text = '';
 try { text = fs.readFileSync(logPath, 'utf8'); } catch { process.exit(0); }
 const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 if (lines.length === 0) process.exit(0);
+
+// Filter out false positives: health checks and diagnostic messages are not errors
+const errorLines = lines.filter((line) => {
+  // Skip health check messages - they're informational, not errors
+  if (/\[gateway\s+health\]/i.test(line) || /health\s+endpoint/i.test(line)) {
+    return false;
+  }
+  // Skip correlation messages - they're diagnostics, not errors
+  if (/correlation|request.*sent/i.test(line)) {
+    return false;
+  }
+  // Skip informational messages
+  if (/deferring\s+to/i.test(line)) {
+    return false;
+  }
+  return true;
+});
+
 const keywords = [
   /gateway/i,
   /provider/i,
@@ -110,13 +128,27 @@ const keywords = [
   /responses/i,
   /openai/i,
 ];
-const matched = lines.filter((line) => keywords.some((pattern) => pattern.test(line)));
-const selected = (matched.length ? matched : lines).slice(-8).join('\n');
+const matched = errorLines.filter((line) => keywords.some((pattern) => pattern.test(line)));
+const selected = (matched.length ? matched : errorLines).slice(-8).join('\n');
 if (!selected) process.exit(0);
 const lower = selected.toLowerCase();
-const type = lower.includes('api key') || lower.includes('auth') || lower.includes('401') || lower.includes('403')
-  ? 'provider_auth_error'
-  : 'provider_error';
+
+// More precise auth error detection - not just the presence of "auth"
+// Must have authentication-specific keywords, not just "authenticated" in benign context
+const hasAuthError = 
+  lower.includes('api key') || 
+  lower.includes('unauthorized') || 
+  lower.includes('401') || 
+  lower.includes('403') ||
+  (lower.includes('auth') && (
+    lower.includes('failed') || 
+    lower.includes('error') || 
+    lower.includes('invalid') ||
+    lower.includes('denied') ||
+    lower.includes('required')
+  ));
+
+const type = hasAuthError ? 'provider_auth_error' : 'provider_error';
 process.stdout.write(JSON.stringify({
   type,
   phase,
@@ -141,6 +173,58 @@ NODE
 
 provider_error_is_terminal() {
   [ -n "$PROVIDER_ERROR_MESSAGE" ]
+}
+
+# NEW: Check for validation errors BEFORE parsing stderr
+# This ensures schema validation failures are correctly classified
+capture_validation_error_classification() {
+  local phase="$1"
+  local validation_error_file
+  
+  validation_error_file="${KASEKI_RESULTS_DIR}/${phase}-validation-errors.jsonl"
+  
+  [ -s "$validation_error_file" ] || return 1
+  
+  # Extract the first validation error's reason_code
+  local reason_code
+  reason_code="$(head -1 "$validation_error_file" 2>/dev/null | node -e 'try { const e = JSON.parse(require("fs").readFileSync(0, "utf8")); process.stdout.write(String(e.reason_code || "")); } catch { process.exit(0); }' 2>/dev/null || true)"
+  
+  if [ -z "$reason_code" ]; then
+    return 1
+  fi
+  
+  # Get the full error message from validation errors
+  local message
+  message="$(node - "$validation_error_file" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const lines = fs.readFileSync(process.argv[1], 'utf8').split('\n').filter(Boolean);
+const errors = lines.map(l => {
+  try { return JSON.parse(l); } catch { return null; }
+}).filter(Boolean);
+
+if (errors.length === 0) process.exit(0);
+
+const summary = errors.map(e => {
+  const field = e.field || 'unknown';
+  const reason = e.reason_code || 'validation_error';
+  return `${reason}: ${field}`;
+}).join('; ');
+
+process.stdout.write(`Schema validation failed (${errors.length} error${errors.length > 1 ? 's' : ''}): ${summary}`);
+NODE
+)"
+  
+  [ -n "$message" ] || message="Schema validation failed"
+  
+  PROVIDER_ERROR_TYPE="$reason_code"
+  PROVIDER_ERROR_PHASE="$phase"
+  PROVIDER_ERROR_PROVIDER="${KASEKI_PROVIDER:-}"
+  PROVIDER_ERROR_API=""
+  PROVIDER_ERROR_MODEL="${KASEKI_SCOUTING_MODEL:-}"
+  PROVIDER_ERROR_MESSAGE="$message"
+  
+  printf '%s\n' "$message" > "${KASEKI_RESULTS_DIR}/provider-error.json" 2>/dev/null || true
+  return 0
 }
 
 # Capture and enhance diagnostics for 422 "Unprocessable Entity" errors
