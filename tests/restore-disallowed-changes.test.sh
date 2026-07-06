@@ -51,12 +51,14 @@ mkdir -p "$TMP_DIR/results" "$TMP_DIR/repo"
   printf 'allowed modified\n' > allowed.txt
   printf 'disallowed modified\n' > disallowed.txt
   printf 'generated\n' > generated.log
+  printf 'generated with metacharacters\n' > 'generated name; touch pwned.log'
 }
 
 {
   printf 'allowed.txt\n'
   printf 'disallowed.txt\n'
   printf 'generated.log\n'
+  printf 'generated name; touch pwned.log\n'
 } > "$TMP_DIR/results/changed-files.txt"
 : > "$TMP_DIR/results/quality.log"
 : > "$TMP_DIR/results/events.log"
@@ -68,19 +70,19 @@ KASEKI_CHANGED_FILES_ALLOWLIST='allowed.txt'
 
 restore_disallowed_changes
 
-if grep -Fq '[allowlist summary] Restored: 2 files; Kept: 1 files (coverage: 33%)' "$TMP_DIR/results/quality.log"; then
+if grep -Fq '[allowlist summary] Restored: 3 files; Kept: 1 files (coverage: 25%)' "$TMP_DIR/results/quality.log"; then
   pass 'restore_disallowed_changes summarizes kept/restored counts and coverage'
 else
   fail 'restore_disallowed_changes did not write the expected kept/restored summary'
 fi
 
-if grep -Fq 'allowlist_restoration_complete restored=2 kept=1 coverage=33' "$TMP_DIR/results/events.log"; then
+if grep -Fq 'allowlist_restoration_complete restored=3 kept=1 coverage=25' "$TMP_DIR/results/events.log"; then
   pass 'restore_disallowed_changes emits completion event fields'
 else
   fail 'restore_disallowed_changes did not emit expected completion event fields'
 fi
 
-if [ "$(grep -Fc 'quality_gate_rule_evaluated rule=allowlist_restore passed=true file=' "$TMP_DIR/results/events.log")" -eq 2 ]; then
+if [ "$(grep -Fc 'quality_gate_rule_evaluated rule=allowlist_restore passed=true file=' "$TMP_DIR/results/events.log")" -eq 3 ]; then
   pass 'restore_disallowed_changes emits one allowlist_restore event per restored file'
 else
   fail 'restore_disallowed_changes did not emit expected per-file restore events'
@@ -88,13 +90,14 @@ fi
 
 if grep -Fq '"event":"file_evaluated","file":"allowed.txt","status":"kept","reason":"matched_allowlist"' "$TMP_DIR/results/restoration.jsonl" \
   && grep -Fq '"event":"file_restored","file":"disallowed.txt","status":"restored","reason":"not_in_allowlist"' "$TMP_DIR/results/restoration.jsonl" \
-  && grep -Fq '"event":"file_restored","file":"generated.log","status":"restored","reason":"not_in_allowlist"' "$TMP_DIR/results/restoration.jsonl"; then
+  && grep -Fq '"event":"file_restored","file":"generated.log","status":"restored","reason":"not_in_allowlist"' "$TMP_DIR/results/restoration.jsonl" \
+  && grep -Fq '"event":"file_restored","file":"generated name; touch pwned.log","status":"restored","reason":"not_in_allowlist"' "$TMP_DIR/results/restoration.jsonl"; then
   pass 'restore_disallowed_changes records semantic restoration fields'
 else
   fail 'restore_disallowed_changes did not record expected restoration.jsonl fields'
 fi
 
-if [ "$(grep -Fc 'file_outside_allowlist_restored' "$TMP_DIR/results/quality-violations.log")" -eq 2 ]; then
+if [ "$(grep -Fc 'file_outside_allowlist_restored' "$TMP_DIR/results/quality-violations.log")" -eq 3 ]; then
   pass 'restore_disallowed_changes records a quality violation for each restored file'
 else
   fail 'restore_disallowed_changes did not record expected quality violations'
@@ -111,6 +114,8 @@ fi
   [ "$(cat allowed.txt)" = "allowed modified" ] || fail 'allowed file should remain modified'
   [ "$(cat disallowed.txt)" = "disallowed original" ] || fail 'tracked disallowed file should be restored'
   [ ! -e generated.log ] || fail 'untracked disallowed file should be removed'
+  [ ! -e 'generated name; touch pwned.log' ] || fail 'untracked disallowed file with metacharacters should be removed'
+  [ ! -e pwned.log ] || fail 'filename metacharacters should not be evaluated as shell syntax'
   git diff --name-only | grep -Fxq 'allowed.txt' || fail 'allowed file should be the only tracked worktree diff'
   [ "$(git diff --name-only | wc -l | tr -d ' ')" -eq 1 ] || fail 'repository should contain only the allowed tracked diff'
   [ -z "$(git ls-files --others --exclude-standard)" ] || fail 'repository should not contain untracked files after restore'
