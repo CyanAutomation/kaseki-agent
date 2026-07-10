@@ -1607,6 +1607,9 @@ const controllerPage = String.raw`<!doctype html>
       let runProgressHighWater = {};
       const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
       const LONG_REQUEST_TIMEOUT_MS = 90000;
+      // Repository validation can take longer than ordinary controller reads,
+      // but must still have a bounded, user-visible failure mode.
+      const VALIDATION_REQUEST_TIMEOUT_MS = 120000;
       const ISSUE_REQUEST_TIMEOUT_MS = 20000;
       
       // Validation state
@@ -2953,7 +2956,12 @@ const controllerPage = String.raw`<!doctype html>
         button.disabled = true;
         setOutputMetadata('running');
         setState('Validating task...');
-        apiRequest('/api/validate', { method: 'POST', auth: true, body: requestBody() })
+        apiRequest('/api/validate', {
+          method: 'POST',
+          auth: true,
+          body: requestBody(),
+          timeoutMs: VALIDATION_REQUEST_TIMEOUT_MS,
+        })
           .then(({ payload, response }) => {
             if (response.ok && payload && payload.isValid === true) {
               setValidationState(true, payload.checks || []);
@@ -2987,8 +2995,13 @@ const controllerPage = String.raw`<!doctype html>
           .catch((error) => {
             resetValidationState();
             setOutputMetadata('failed');
-            setState('Validation failed', 'bad');
-            setOutputBody(sanitizeOutput(error instanceof Error ? error.message : String(error)));
+            const message = sanitizeOutput(error instanceof Error ? error.message : String(error));
+            const timedOut = error instanceof RequestTimeoutError;
+            setState(timedOut ? 'Task validation timed out; controller state is unknown.' : 'Validation failed', 'bad');
+            setResponseSummary(timedOut
+              ? 'Validation exceeded 120 seconds. Check /health and /api/preflight before retrying; no run was submitted.'
+              : null);
+            setOutputBody(message);
           })
           .finally(() => {
             button.disabled = false;
