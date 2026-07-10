@@ -317,6 +317,11 @@ export interface StatusResponse {
       };
     };
   };
+  phaseOutcome?: {
+    scouting: 'completed' | 'failed' | 'skipped' | 'not_reached' | 'running';
+    weaving: 'completed' | 'failed' | 'skipped' | 'not_reached' | 'running';
+    explanation?: string;
+  };
   error?: string;
   resultDir?: string;
   correlationId?: string; // Request correlation ID

@@ -328,6 +328,15 @@ function buildStatusResponseSchema(): Record<string, unknown> {
           artifact: { type: 'string' },
         },
       },
+      phaseOutcome: {
+        type: 'object',
+        description: 'Explicit outcome for scouting and weaving phases, including phases not reached after an earlier failure',
+        properties: {
+          scouting: { type: 'string', enum: ['completed', 'failed', 'skipped', 'not_reached', 'running'] },
+          weaving: { type: 'string', enum: ['completed', 'failed', 'skipped', 'not_reached', 'running'] },
+          explanation: { type: 'string' },
+        },
+      },
       progress: {
         type: 'object',
         properties: {

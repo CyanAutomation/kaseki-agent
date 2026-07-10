@@ -271,6 +271,7 @@ TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback 
 KASEKI_AGENT_GUARDRAILS="${KASEKI_AGENT_GUARDRAILS:-1}"
 KASEKI_RESTORE_DISALLOWED_CHANGES="${KASEKI_RESTORE_DISALLOWED_CHANGES:-1}"
 KASEKI_VALIDATION_FAIL_FAST="${KASEKI_VALIDATION_FAIL_FAST:-1}"
+KASEKI_VALIDATION_TIMEOUT_SECONDS="${KASEKI_VALIDATION_TIMEOUT_SECONDS:-300}"
 KASEKI_VALIDATION_RUN_ALL_COMMANDS="${KASEKI_VALIDATION_RUN_ALL_COMMANDS:-0}"
 # If KASEKI_VALIDATION_RUN_ALL_COMMANDS=1, override fail-fast to ensure all commands run
 if [ "${KASEKI_VALIDATION_RUN_ALL_COMMANDS:-0}" -eq 1 ]; then
@@ -331,6 +332,7 @@ VALIDATION_FAILURE_REASON=""
 VALIDATION_ALLOWLIST_FAILURE_REASON=""
 VALIDATION_STOPPED_EARLY=false
 VALIDATION_COMMANDS_ATTEMPTED=0
+VALIDATION_LAST_COMMAND=""
 PRE_VALIDATION_EXIT=0
 PRE_VALIDATION_FAILED_COMMAND_DETAIL=""
 PRE_VALIDATION_FAILURE_REASON=""
@@ -4393,6 +4395,7 @@ run_validation_commands() {
       for command in "${validation_commands[@]}"; do
         trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
         [ -z "$trimmed" ] && continue
+        VALIDATION_LAST_COMMAND="$trimmed"
         validation_start="$(date +%s)"
         if missing_npm_script="$(missing_npm_script_for_validation_command "$trimmed")"; then
           validation_end="$(date +%s)"
@@ -4402,6 +4405,7 @@ run_validation_commands() {
           continue
         fi
         ((validation_attempted_ref++))
+        emit_progress "$stage_label" "running command=$trimmed timeout_seconds=$KASEKI_VALIDATION_TIMEOUT_SECONDS"
         emit_event "validation_command_started" "stage=$stage_label" "command=$trimmed"
         # Log command environment state before execution.
         write_validation_command_environment "$stage_label" "$trimmed" "$env_log"
@@ -4421,8 +4425,11 @@ run_validation_commands() {
           # Use non-login shell (bash -c) to avoid initialization issues in --read-only containers.
           # Login shell (bash -l) sources /etc/profile and ~/.bashrc, which can fail with getcwd()
           # errors when running in constrained filesystem environments (read-only root, etc.).
-          bash -c "$trimmed"
+          timeout --signal=TERM --kill-after=10s "$KASEKI_VALIDATION_TIMEOUT_SECONDS" bash -c "$trimmed"
           command_exit=$?
+          if [ "$command_exit" -eq 124 ]; then
+            printf 'validation command timed out after %ss\n' "$KASEKI_VALIDATION_TIMEOUT_SECONDS"
+          fi
           printf 'exit_code=%s\n' "$command_exit"
           exit "$command_exit"
         } 2>&1 |
@@ -4447,6 +4454,7 @@ run_validation_commands() {
         duration=$((validation_end - validation_start))
         printf '%s\t%s\t%s\ttee_exit=%s\tfilter_exit=%s\n' "$trimmed" "$command_exit" "$duration" "$tee_exit" "$filter_exit" >> "$timings_file"
         emit_event "validation_command_finished" "stage=$stage_label" "command=$trimmed" "exit_code=$command_exit" "tee_exit_code=$tee_exit" "filter_exit_code=$filter_exit" "duration_seconds=$duration"
+        emit_progress "$stage_label" "command=$trimmed finished exit=$command_exit duration_seconds=$duration"
         
         # Phase 2C: Emit validation result to JSON
         local cmd_status="passed"
@@ -4513,6 +4521,23 @@ run_validation_commands() {
         elif [ "$command_exit" -ne 0 ] && [ "$validation_exit_ref" -eq 0 ]; then
           validation_exit_ref="$command_exit"
           validation_detail_ref="first failing command was \"$trimmed\" with exit $command_exit"
+          if [ "$command_exit" -eq 127 ]; then
+            {
+              printf '\n[DIAGNOSTICS] Command returned exit 127 (command or executable not found).\n'
+              printf '  command=%s\n' "$trimmed"
+              printf '  PATH=%s\n' "${PATH:-<unset>}"
+              printf '  node=%s\n' "$(command -v node 2>&1 || echo '<not found>')"
+              printf '  npm=%s\n' "$(command -v npm 2>&1 || echo '<not found>')"
+              printf '  bash=%s\n' "$(command -v bash 2>&1 || echo '<not found>')"
+              printf '  last_output:\n'
+              tail -30 "$raw_log" 2>/dev/null || true
+            } | tee -a "$log_file" "${KASEKI_RESULTS_DIR}/validation-command-diagnostics.log"
+            validation_detail_ref="first failing command was \"$trimmed\" with exit 127 (command or executable not found; see validation-command-diagnostics.log)"
+          elif [ "$command_exit" -eq 124 ]; then
+            validation_detail_ref="first failing command was \"$trimmed\" (timed out after ${KASEKI_VALIDATION_TIMEOUT_SECONDS}s; see validation-command-diagnostics.log)"
+            printf 'command=%s\ntimeout_seconds=%s\n' "$trimmed" "$KASEKI_VALIDATION_TIMEOUT_SECONDS" >> "${KASEKI_RESULTS_DIR}/validation-command-diagnostics.log"
+            emit_event "validation_command_timeout" "stage=$stage_label" "command=$trimmed" "timeout_seconds=$KASEKI_VALIDATION_TIMEOUT_SECONDS"
+          fi
           # shellcheck disable=SC2034 # Reference variable assigned for external use via nameref
           validation_reason_ref="$failure_reason_prefix: $trimmed (exit $command_exit)"
           append_validation_failure_tail "$raw_log" "$log_file"
@@ -8755,6 +8780,8 @@ prepare_dependencies() {
     # damaged cache cannot reach validation or the agent.
     if [ ! -f "$validation_marker" ] || ! npm ls --depth=0 >/dev/null 2>&1 || ! dependency_cache_required_bins_valid package.json; then
       printf 'Dependency cache status: restored cache failed executable/schema validation; reinstalling.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
+      emit_error_event "dependency_cache_integrity_failed" "Restored dependency cache failed executable/schema validation; invalidating and reinstalling (lock_hash=$lock_hash, restore_method=$restore_method)" "fallback_fresh_install"
+      printf 'cache_source=workspace\nreason=required_executable_or_schema_missing\nlock_hash=%s\nrestore_method=%s\n' "$lock_hash" "$restore_method" >> "${KASEKI_RESULTS_DIR}/dependency-cache-diagnostics.log"
       emit_event "dependency_cache_decision" "strategy=invalidate_workspace_cache" "reason=required_executable_or_schema_missing" "location=$workspace_cache_dir"
       append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_invalid" "true" "workspace" "0" "required_executable_or_schema_missing"
       rm -rf node_modules
@@ -8786,6 +8813,8 @@ prepare_dependencies() {
     cache_source="image"
     if ! npm ls --depth=0 >/dev/null 2>&1 || ! dependency_cache_required_bins_valid package.json; then
       printf 'Dependency cache status: image cache failed npm ls validation; reinstalling.\n'
+      emit_error_event "dependency_cache_integrity_failed" "Image dependency cache failed npm/package validation; invalidating and reinstalling (lock_hash=$lock_hash)" "fallback_fresh_install"
+      printf 'cache_source=image\nreason=npm_ls_failed\nlock_hash=%s\nrestore_method=%s\n' "$lock_hash" "$restore_method" >> "${KASEKI_RESULTS_DIR}/dependency-cache-diagnostics.log"
       set_dependency_cache_status "image-cache-invalid" "$cache_detail restore_method=$restore_method reason=npm_ls_failed"
       emit_event "dependency_cache_decision" "strategy=invalidate_image_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=npm_ls_failed" "location=$image_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
       # Phase 2D: Emit cache metric to JSON (validation failure)
@@ -8968,6 +8997,8 @@ else
   if [ "$PRE_VALIDATION_EXIT" -ne 0 ]; then
     STATUS="$PRE_VALIDATION_EXIT"
     FAILED_COMMAND="pre-agent validation"
+    emit_event "phase_not_reached" "phase=scouting" "reason=pre_agent_validation_failed" "failed_command=${PRE_VALIDATION_FAILED_COMMAND_DETAIL:-unknown}"
+    emit_event "phase_not_reached" "phase=weaving" "reason=pre_agent_validation_failed" "failed_command=${PRE_VALIDATION_FAILED_COMMAND_DETAIL:-unknown}"
     if [ -z "$PRE_VALIDATION_FAILURE_REASON" ]; then
       PRE_VALIDATION_FAILURE_REASON="pre_agent_validation_failed"
     fi
