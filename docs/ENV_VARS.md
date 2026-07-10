@@ -136,6 +136,7 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 | `KASEKI_PRE_AGENT_VALIDATION` | `1` | boolean | Run validation before Pi so existing baseline failures are caught before agent work starts |
 | `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` | same as `KASEKI_VALIDATION_COMMANDS` | string | Semicolon-separated validation commands for the pre-agent baseline phase |
 | `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test` | string | Semicolon-separated validation commands for the post-agent final-diff phase |
+| `KASEKI_VALIDATION_TIMEOUT_SECONDS` | `300` | integer | Maximum time allowed for each validation command; timed-out commands emit structured diagnostics and stop the phase when fail-fast is enabled |
 
 **Behavior:**
 
