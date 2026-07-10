@@ -86,6 +86,7 @@ export class StatusResponseBuilder {
     this.addTimingInfo(response, job);
     this.addProgressInfo(response, job);
     this.addLifecycleInfo(response, job, metadata);
+    this.addPhaseOutcome(response, job, metadata);
     this.addTaskProgressInfo(response, job);
     this.addArtifactInfo(response, job);
     this.addDiagnosticSummary(response, job);
@@ -179,6 +180,36 @@ export class StatusResponseBuilder {
         : response.attempt.state === 'exhausted' ? 'exhausted' : response.attempt.state;
       response.progress.displayName = `${label} attempt ${response.attempt.current}/${response.attempt.maximum} — ${state}`;
     }
+
+    const updatedAt = Date.parse(String(response.progress?.updatedAt ?? ''));
+    if ((job.status === 'running' || job.status === 'queued') && Number.isFinite(updatedAt)) {
+      const staleSeconds = Math.max(0, Math.floor((Date.now() - updatedAt) / 1000));
+      if (staleSeconds >= 120 && !response.diagnosis) {
+        response.diagnosis = {
+          severity: 'warning',
+          phase: response.progress?.stage,
+          category: 'stale_progress',
+          summary: `No progress update received for ${staleSeconds}s while stage "${response.progress?.stage ?? 'unknown'}" is active.`,
+          remediation: 'Inspect the live validation/agent log; the run will be terminated when its bounded stage timeout is reached.',
+        };
+      }
+    }
+  }
+
+  private addPhaseOutcome(response: StatusResponse, job: Job, metadata: any): void {
+    const stage = String(response.progress?.stage ?? job.currentStage ?? '').toLowerCase();
+    const failed = job.status === 'failed';
+    const scoutingStarted = Boolean(metadata?.scouting_attempts || /scout|scouting/.test(stage));
+    const weavingStarted = Boolean(/coding|weav|goal check|validation|quality|github operations/.test(stage));
+    const scoutingFailed = failed && /scout|scouting/.test(String(metadata?.failed_command ?? stage).toLowerCase());
+    const weavingFailed = failed && !scoutingFailed && weavingStarted;
+    response.phaseOutcome = {
+      scouting: scoutingFailed ? 'failed' : scoutingStarted ? (failed ? 'completed' : /scout|scouting/.test(stage) ? 'running' : 'completed') : 'not_reached',
+      weaving: weavingFailed ? 'failed' : weavingStarted ? (failed ? 'completed' : 'running') : 'not_reached',
+      explanation: failed
+        ? `Run failed at ${metadata?.failed_command || response.progress?.stage || 'an unknown stage'}; phase outcomes are derived from recorded lifecycle events.`
+        : undefined,
+    };
   }
 
   private addTimingInfo(response: StatusResponse, job: Job): void {
