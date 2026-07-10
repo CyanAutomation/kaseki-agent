@@ -1,236 +1,135 @@
 # Documentation Index
 
-**Complete guide to kaseki-agent documentation.**
-
----
+**Comprehensive guide to kaseki‑agent**
 
 ## Quick Start
-
-**[GETTING_STARTED.md](GETTING_STARTED.md)** — install, run `quickstart`, submit your first task (45 minutes).
-
-**[EXAMPLES.md](EXAMPLES.md)** — 10+ real-world scenarios (15 minutes).
-
-Everything else is for deeper reading after you have a working setup.
-
----
+- **GETTING_STARTED.md** – Install, run quickstart, submit first task (≈45 min)
+- **EXAMPLES.md** – Real‑world scenarios (≈15 min)
 
 ## Core Concepts
-
-Understand kaseki-agent fundamentals.
-
-| Document | Purpose |
-|---------|---------|
-| [DEVELOPMENT.md](DEVELOPMENT.md) | Architecture and API service |
-| [EXIT_CODES.md](EXIT_CODES.md) | Exit code meanings |
-| [QUALITY_GATES.md](QUALITY_GATES.md) | Quality validation and allowlists |
-| [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) | Effective task prompts |
-| [GOAL_SETTING_GUIDE.md](GOAL_SETTING_GUIDE.md) | Goal-setting phase guide |
-| [AUTH_SETUP.md](AUTH_SETUP.md) | GitHub App credential setup |
-
----
+| Document | Focus |
+|----------|-------|
+| DEVELOPMENT.md | Architecture, API service |
+| EXIT_CODES.md | Exit‑code semantics |
+| QUALITY_GATES.md | Validation, allowlists |
+| TASK_PROMPT_TEMPLATES.md | Prompt design |
+| GOAL_SETTING_GUIDE.md | Goal‑setting phase |
+| AUTH_SETUP.md | GitHub App credentials |
 
 ## Setup & Installation
-
-| Document | Purpose |
-|---------|---------|
-| [NPM_SETUP.md](NPM_SETUP.md) | Install via npm |
-| [DOCKER_SETUP.md](DOCKER_SETUP.md) | Docker and Docker Compose setup |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Deploy API service (Docker, Node.js) |
-
----
+| Document | Focus |
+|----------|-------|
+| NPM_SETUP.md | npm installation |
+| DOCKER_SETUP.md | Docker & Compose |
+| DEPLOYMENT.md | Production deployment |
 
 ## Operations & Deployment
-
-| Document | Purpose |
-|---------|---------|
-| [DISTRIBUTED_SETUP.md](DISTRIBUTED_SETUP.md) | Multi-host and Kubernetes |
-| [CI_CD_INTEGRATION.md](CI_CD_INTEGRATION.md) | GitHub Actions, GitLab CI, Jenkins |
-| [CLI.md](CLI.md) | kaseki-cli monitoring and analysis tool |
-
----
+| Document | Focus |
+|----------|-------|
+| DISTRIBUTED_SETUP.md | Multi‑host, Kubernetes |
+| CI_CD_INTEGRATION.md | CI workflows (GitHub, GitLab, Jenkins) |
+| CLI.md | kaseki‑cli monitoring |
 
 ## Optimization & Cost
-
-| Document | Purpose |
-|---------|---------|
-| [PERFORMANCE_TUNING.md](PERFORMANCE_TUNING.md) | Timeout, cache, allowlist optimization |
-| [COST_ESTIMATION.md](COST_ESTIMATION.md) | Cost analysis and budgeting |
-| [ENV_VARS.md](ENV_VARS.md) | Environment variable reference |
-
----
+| Document | Focus |
+|----------|-------|
+| PERFORMANCE_TUNING.md | Timeouts, cache, allowlist tuning |
+| COST_ESTIMATION.md | Cost analysis, budgeting |
+| ENV_VARS.md | Environment variable reference |
 
 ## Troubleshooting & Support
-
-| Document | Purpose |
-|---------|---------|
-| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common failures and fixes |
-| [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md) | Recovery procedures |
-
----
+| Document | Focus |
+|----------|-------|
+| TROUBLESHOOTING.md | Common failures, fixes |
+| DISASTER_RECOVERY.md | Backup and recovery |
 
 ## Use Cases
-
-### I want to fix a bug
-
-1. GETTING_STARTED.md — get kaseki-agent running
-2. EXAMPLES.md — example: Bug Fix in a Single File
-3. TASK_PROMPT_TEMPLATES.md — write a clear prompt
-4. QUALITY_GATES.md — set allowlist to restrict changes
-5. TROUBLESHOOTING.md — if something goes wrong
-
-### I want to deploy for my team
-
-1. DEPLOYMENT.md — choose Docker Compose or Node.js
-2. AUTH_SETUP.md — set up API keys and credentials
-3. DISTRIBUTED_SETUP.md — plan for HA or multi-region
-4. CI_CD_INTEGRATION.md — automate in CI/CD
-5. DISASTER_RECOVERY.md — set up backup/failover
-
-### I want to automate in CI/CD
-
-1. CI_CD_INTEGRATION.md — platform-specific workflows
-2. DEPLOYMENT.md — deploy the API service
-3. EXAMPLES.md — example: Multi-Repo Batch Processing
-4. TROUBLESHOOTING.md — handle failures in CI/CD
-
-### I want to optimize cost and performance
-
-1. PERFORMANCE_TUNING.md — timeout, cache, allowlist tuning
-2. COST_ESTIMATION.md — understand and predict costs
-3. ENV_VARS.md — configure tuning parameters
-4. EXAMPLES.md — optimization patterns
-
-### My kaseki-agent run failed
-
-1. TROUBLESHOOTING.md — diagnosis flowchart
-2. EXIT_CODES.md — look up the exit code
-3. CLI.md — use kaseki-cli to inspect the run
-4. DISASTER_RECOVERY.md — if recovery is needed
-
-### I need to scale across regions
-
-1. DISTRIBUTED_SETUP.md — multi-host and Kubernetes
-2. DEPLOYMENT.md — deploy API service on multiple hosts
-3. DISASTER_RECOVERY.md — set up replication and failover
-4. PERFORMANCE_TUNING.md — load balancing and concurrency
-
----
+- **Bug fix**: GETTING_STARTED → EXAMPLES → TASK_PROMPT_TEMPLATES → QUALITY_GATES → TROUBLESHOOTING
+- **Team deployment**: DEPLOYMENT → AUTH_SETUP → DISTRIBUTED_SETUP → CI_CD_INTEGRATION → DISASTER_RECOVERY
+- **CI/CD automation**: CI_CD_INTEGRATION → DEPLOYMENT → EXAMPLES → TROUBLESHOOTING
+- **Cost & performance**: PERFORMANCE_TUNING → COST_ESTIMATION → ENV_VARS → EXAMPLES
+- **Run failure**: TROUBLESHOOTING → EXIT_CODES → CLI → DISASTER_RECOVERY
+- **Scale across regions**: DISTRIBUTED_SETUP → DEPLOYMENT → DISASTER_RECOVERY → PERFORMANCE_TUNING
 
 ## Recommended Reading Order
+### First‑time users
+1. GETTING_STARTED.md – install, quickstart, first task
+2. EXAMPLES.md – overview of capabilities
+3. AUTH_SETUP.md – configure GitHub App
+4. QUALITY_GATES.md – safety controls
 
-### First Time Users
+### Production deployment
+1. DEVELOPMENT.md – architecture overview
+2. DEPLOYMENT.md – choose deployment method
+3. AUTH_SETUP.md – secure credentials
+4. DISTRIBUTED_SETUP.md – HA/scale planning
+5. CI_CD_INTEGRATION.md – automate pipelines
+6. DISASTER_RECOVERY.md – failure mitigation
+7. TROUBLESHOOTING.md – familiarise with diagnostics
 
-```
-1. GETTING_STARTED.md       (10 min)  — install, quickstart, first task
-2. EXAMPLES.md              (15 min)  — see what it does
-3. AUTH_SETUP.md            (10 min)  — set up GitHub App credentials
-4. QUALITY_GATES.md         (10 min)  — understand safety features
-```
-
-**Estimated: 45 minutes** to get started
-
-### Production Deployment
-
-```
-1. DEVELOPMENT.md           (15 min)  — understand architecture
-2. DEPLOYMENT.md            (30 min)  — choose deployment method
-3. AUTH_SETUP.md            (15 min)  — secure credentials
-4. DISTRIBUTED_SETUP.md     (20 min)  — plan for HA/scale
-5. CI_CD_INTEGRATION.md     (20 min)  — automate in CI/CD
-6. DISASTER_RECOVERY.md     (20 min)  — plan for failures
-7. TROUBLESHOOTING.md       (15 min)  — familiarize with diagnosis
-```
-
-**Estimated: 2-3 hours** to deploy production-ready
-
-### Optimization & Cost Management
-
-```
-1. PERFORMANCE_TUNING.md    (20 min)  — understand tuning options
-2. COST_ESTIMATION.md       (15 min)  — estimate costs
-3. ENV_VARS.md              (10 min)  — review configuration
-4. EXAMPLES.md              (20 min)  — see optimization patterns
-```
-
-**Estimated: 1 hour** to optimize
-
----
+### Optimization & cost management
+1. PERFORMANCE_TUNING.md – tuning options
+2. COST_ESTIMATION.md – cost modelling
+3. ENV_VARS.md – configuration details
+4. EXAMPLES.md – optimisation patterns
 
 ## Search Tips
-
-**Looking for...** → **Start here**
-
-- How to get started → GETTING_STARTED.md
-- Old setup guide → SETUP_GUIDE.md
-- How to deploy production → DEPLOYMENT.md
-- How to fix a failed run → TROUBLESHOOTING.md
-- How to reduce costs → COST_ESTIMATION.md
-- How to write better prompts → TASK_PROMPT_TEMPLATES.md
-- How to integrate with GitHub Actions → CI_CD_INTEGRATION.md
-- How to set up multi-region → DISTRIBUTED_SETUP.md
-- How to recover from disasters → DISASTER_RECOVERY.md
-- What does exit code X mean → EXIT_CODES.md
-- What environment variables do → ENV_VARS.md
-- Real-world examples → EXAMPLES.md
-- API monitoring → CLI.md
-- Architecture details → DEVELOPMENT.md
-
----
+| Need | Document |
+|------|----------|
+| Get started | GETTING_STARTED.md |
+| Old setup guide | SETUP_GUIDE.md |
+| Deploy production | DEPLOYMENT.md |
+| Fix failed run | TROUBLESHOOTING.md |
+| Reduce costs | COST_ESTIMATION.md |
+| Write better prompts | TASK_PROMPT_TEMPLATES.md |
+| CI integration | CI_CD_INTEGRATION.md |
+| Multi‑region setup | DISTRIBUTED_SETUP.md |
+| Disaster recovery | DISASTER_RECOVERY.md |
+| Exit code X | EXIT_CODES.md |
+| Environment vars | ENV_VARS.md |
+| Real examples | EXAMPLES.md |
+| API monitoring | CLI.md |
+| Architecture details | DEVELOPMENT.md |
 
 ## Documentation Statistics
-
 | Metric | Value |
 |--------|-------|
-| **Total documents** | 22 |
-| **Setup guides** | 4 |
-| **Concepts & reference** | 5 |
-| **Deployment & operations** | 4 |
-| **Usage & examples** | 2 |
-| **Optimization** | 2 |
-| **Troubleshooting** | 2 |
-| **Total pages** | ~200 |
-| **Total examples** | 30+ |
+| Documents | 22 |
+| Setup guides | 4 |
+| Concept refs | 5 |
+| Deployment ops | 4 |
+| Usage examples | 2 |
+| Optimization | 2 |
+| Troubleshooting | 2 |
+| Pages total | ~200 |
+| Examples total | 30+ |
 
----
+## Contributing
+1. Identify missing or outdated sections
+2. Submit PR with improvements
+3. Ensure examples compile and run
+4. Update INDEX.md for new documents
 
-## Contributing to Docs
-
-To improve documentation:
-
-1. Identify gaps or outdated sections
-2. Submit pull requests with improvements
-3. Keep examples executable and tested
-4. Update this INDEX.md if adding new documents
-
-**Maintenance:** Docs are reviewed quarterly for accuracy and relevance.
-
----
+**Maintenance**: Quarterly review for accuracy.
 
 ## Last Updated
-
-May 2026
-
----
+May 2026
 
 ## See Also
-
 | Document | Purpose |
-|---------|---------|
-| [README.md](../README.md) | Project overview |
-| [CLAUDE.md](../CLAUDE.md) | AI coding agent guidance |
-| [CHANGELOG.md](../CHANGELOG.md) | Release notes & archived docs |
+|----------|---------|
+| README.md | Project overview |
+| CLAUDE.md | AI coding agent guidance |
+| CHANGELOG.md | Release notes |
 
-## Internal / Developer Documentation
-
-These documents are for contributors and maintainers. They are not needed for using kaseki-agent.
-
+## Internal / Developer Docs
 | Document | Purpose |
-|---------|---------|
-| [internal/DEVELOPMENT.md](internal/DEVELOPMENT.md) | Architecture, coding conventions |
-| [internal/BUILD_STRATEGY.md](internal/BUILD_STRATEGY.md) | Build pipeline and CI/CD |
-| [internal/BACKLOG.md](internal/BACKLOG.md) | Planned improvements |
-| [internal/IMPLEMENTATION_SUMMARY.md](internal/IMPLEMENTATION_SUMMARY.md) | Phase completion notes |
-| [internal/DUPLICATION_AUDIT.md](internal/DUPLICATION_AUDIT.md) | Code quality audits |
-| [internal/PHASE1_COMPLETION.md](internal/PHASE1_COMPLETION.md) | Phase 1 implementation notes |
-| [internal/PHASE2_COMPLETION.md](internal/PHASE2_COMPLETION.md) | Phase 2 implementation notes |
-| [internal/PHASE6_MIGRATION.md](internal/PHASE6_MIGRATION.md) | Phase 6 migration notes |
+|----------|---------|
+| internal/DEVELOPMENT.md | Architecture, coding conventions |
+| internal/BUILD_STRATEGY.md | Build pipeline, CI/CD |
+| internal/BACKLOG.md | Planned improvements |
+| internal/IMPLEMENTATION_SUMMARY.md | Phase completion notes |
+| internal/DUPLICATION_AUDIT.md | Code‑quality audit |
+| internal/PHASE1_COMPLETION.md | Phase 1 notes |
+| internal/PHASE2_COMPLETION.md | Phase 2 notes |
+| internal/PHASE6_MIGRATION.md | Phase 6 migration |
