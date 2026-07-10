@@ -6132,6 +6132,18 @@ EOF
 $TASK_PROMPT
 EOF
   fi
+
+  if [ "${KASEKI_SCOUTING_CONTRACT_RETRY:-0}" = "1" ]; then
+    cat <<EOF
+
+## [ARTIFACT CONTRACT RETRY]
+
+The previous scouting attempt exited successfully but did not create the required artifact.
+Retry the scouting handoff now. Use the write tool (not final assistant text) to create exactly one valid JSON object at:
+$SCOUTING_CANDIDATE_ARTIFACT
+Before finishing, verify that the file exists, is non-empty, and is valid JSON matching the schema above. Do not finish until that file has been written.
+EOF
+  fi
 }
 
 run_scouting_agent() {
@@ -6173,13 +6185,17 @@ run_scouting_agent() {
   kaseki-pi-event-filter "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/scouting-events.jsonl "${KASEKI_RESULTS_DIR}"/scouting-summary.json 2>/dev/null || cp "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/scouting-events.raw.jsonl 2>/dev/null || true
   SCOUTING_FALLBACK_USED=0
   if capture_provider_error_from_summary "${KASEKI_RESULTS_DIR}/scouting-summary.json" "scouting"; then
-    if [ "$PROVIDER_ERROR_TYPE" = "provider_empty_assistant_turn" ]; then
+    if [ "$PROVIDER_ERROR_TYPE" = "provider_empty_assistant_turn" ] && [ "${KASEKI_SCOUTING_CONTRACT_STRICT:-0}" != "1" ]; then
       emit_error_event "$PROVIDER_ERROR_TYPE" "Scouting provider returned an empty assistant turn; continuing with conservative fallback" "continue"
       append_pre_coding_provider_fallback_error "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" "scouting" "fallback_scouting_artifact" "$SCOUTING_ARTIFACT"
       rm -f "$SCOUTING_CANDIDATE_ARTIFACT" 2>/dev/null || true
       write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
       SCOUTING_FALLBACK_USED=1
       SCOUTING_EXIT=0
+    elif [ "$PROVIDER_ERROR_TYPE" = "provider_empty_assistant_turn" ] && [ "${KASEKI_SCOUTING_CONTRACT_STRICT:-0}" = "1" ]; then
+      SCOUTING_EXIT=86
+      append_pre_coding_provider_fallback_error "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" "scouting" "artifact_contract_retry" "$SCOUTING_ARTIFACT"
+      emit_error_event "pi_scouting_artifact_contract_failed" "Scouting returned an empty assistant turn without creating $SCOUTING_CANDIDATE_ARTIFACT" "retry"
     else
       SCOUTING_EXIT=88
       emit_error_event "$PROVIDER_ERROR_TYPE" "Scouting provider error: $PROVIDER_ERROR_MESSAGE" "exit"
@@ -6192,7 +6208,10 @@ run_scouting_agent() {
   fi
 
   if [ "$SCOUTING_EXIT" -eq 0 ] && ! validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
-    if [ "$KASEKI_TASK_MODE" = "patch" ]; then
+    if [ "${KASEKI_SCOUTING_CONTRACT_STRICT:-0}" = "1" ]; then
+      SCOUTING_EXIT=86
+      emit_error_event "pi_scouting_artifact_contract_failed" "Scouting retry did not produce a valid $SCOUTING_CANDIDATE_ARTIFACT" "retry"
+    elif [ "$KASEKI_TASK_MODE" = "patch" ]; then
       rm -f "$SCOUTING_CANDIDATE_ARTIFACT" 2>/dev/null || true
       write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
       SCOUTING_FALLBACK_USED=1
@@ -6256,6 +6275,13 @@ run_scouting_agent_with_retry() {
     # Capture stderr for failure classification
     scouting_stderr_capture="/tmp/scouting-stderr-$attempt.log"
     set +e
+    export KASEKI_SCOUTING_CONTRACT_STRICT=1
+    if [ "$attempt" -gt 1 ]; then
+      export KASEKI_SCOUTING_CONTRACT_RETRY=1
+      rm -f "$SCOUTING_ARTIFACT" "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_RAW_EVENTS" 2>/dev/null || true
+    else
+      unset KASEKI_SCOUTING_CONTRACT_RETRY
+    fi
     run_scouting_agent 2>"$scouting_stderr_capture"
     scouting_last_exit=$?
     set -e
@@ -6275,6 +6301,22 @@ run_scouting_agent_with_retry() {
     rm -f "$scouting_stderr_capture"
 
     # Success on any attempt
+    node - "$attempt" "$scouting_last_exit" "$SCOUTING_CANDIDATE_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-summary.json" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [attempt, exitCode, artifact, summary] = process.argv.slice(2);
+let stats = {};
+try { stats = JSON.parse(fs.readFileSync(summary, 'utf8')); } catch {}
+const diag = {
+  timestamp: new Date().toISOString(), phase: 'scouting', attempt: Number(attempt),
+  exit_code: Number(exitCode), artifact_path: artifact,
+  artifact_exists: fs.existsSync(artifact), artifact_bytes: fs.existsSync(artifact) ? fs.statSync(artifact).size : 0,
+  message_end_count: Number(stats.event_counts?.message_end || 0),
+  tool_call_count: Number(stats.tool_start_count || 0),
+  provider_error_count: Number(stats.inference_health?.provider_error_count || 0),
+};
+fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + '/scouting-contract-diagnostics.jsonl', JSON.stringify(diag) + '\n');
+NODE
+
     if [ "$scouting_last_exit" -eq 0 ]; then
       export KASEKI_SCOUTING_ATTEMPTS=$attempt
       export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=$attempt
@@ -6283,6 +6325,12 @@ run_scouting_agent_with_retry() {
     fi
 
     if [ "${SCOUTING_EXIT:-0}" -eq 86 ] || [ "${STATUS:-0}" -eq 86 ]; then
+      if [ "$attempt" -lt "$max_attempts" ] && grep -q 'scouting-candidate.json' "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" 2>/dev/null; then
+        printf '[Scouting Phase] Artifact contract failure (exit 86), retrying with explicit write instructions\n'
+        attempt=$((attempt + 1))
+        rm -f "$SCOUTING_ARTIFACT" "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt" 2>/dev/null || true
+        continue
+      fi
       printf '[Scouting Phase] Deterministic validation failure (exit 86), not retrying\n'
       export KASEKI_SCOUTING_ATTEMPTS=$attempt
       export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=""
