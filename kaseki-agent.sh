@@ -3570,14 +3570,24 @@ const fs = require('node:fs');
 const path = require('node:path');
 const pkg = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const nodeModulesDir = process.argv[3] || 'node_modules';
-const dependencies = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+const includeDevDependencies = process.env.KASEKI_NPM_OMIT_DEV !== '1';
+const dependencies = {
+  ...(pkg.dependencies || {}),
+  ...(includeDevDependencies ? (pkg.devDependencies || {}) : {}),
+};
 const required = [];
 if (dependencies.typescript) required.push('tsc');
 if (dependencies.eslint) required.push('eslint');
 for (const bin of required) {
   const target = path.join(nodeModulesDir, '.bin', bin);
   try { fs.accessSync(target, fs.constants.X_OK); }
-  catch { console.error(`missing required dependency executable: ${target}`); process.exit(1); }
+  catch {
+    const section = pkg.dependencies?.[bin === 'tsc' ? 'typescript' : 'eslint']
+      ? 'dependencies'
+      : 'devDependencies';
+    console.error(`missing required dependency executable: ${target} (declared in ${section}; omit_dev=${process.env.KASEKI_NPM_OMIT_DEV || '0'})`);
+    process.exit(1);
+  }
 }
 NODE
 }
@@ -3591,7 +3601,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const pkg = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const nodeModulesDir = process.argv[3] || 'node_modules';
-const dependencies = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+const includeDevDependencies = process.env.KASEKI_NPM_OMIT_DEV !== '1';
+const dependencies = {
+  ...(pkg.dependencies || {}),
+  ...(includeDevDependencies ? (pkg.devDependencies || {}) : {}),
+};
 const required = [];
 if (dependencies.typescript) required.push(['typescript', 'tsc']);
 if (dependencies.eslint) required.push(['eslint', 'eslint']);
@@ -8687,7 +8701,11 @@ prepare_dependencies() {
     append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_restored" "true" "workspace" "0" "restore_completed"
     cache_reused="true"
     cache_source="workspace"
-    if [ ! -f "$validation_marker" ] || ! dependency_cache_required_bins_valid package.json; then
+    # A marker proves that the cache was valid when published, not that the
+    # restored tree survived copy/hardlink across filesystems. Re-run the
+    # shallow npm graph check and executable check after every restore so a
+    # damaged cache cannot reach validation or the agent.
+    if [ ! -f "$validation_marker" ] || ! npm ls --depth=0 >/dev/null 2>&1 || ! dependency_cache_required_bins_valid package.json; then
       printf 'Dependency cache status: restored cache failed executable/schema validation; reinstalling.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
       emit_event "dependency_cache_decision" "strategy=invalidate_workspace_cache" "reason=required_executable_or_schema_missing" "location=$workspace_cache_dir"
       append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_invalid" "true" "workspace" "0" "required_executable_or_schema_missing"
@@ -8718,7 +8736,7 @@ prepare_dependencies() {
     append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_restored" "true" "image" "0" "restore_completed"
     cache_reused="true"
     cache_source="image"
-    if ! npm ls --depth=0 >/dev/null 2>&1; then
+    if ! npm ls --depth=0 >/dev/null 2>&1 || ! dependency_cache_required_bins_valid package.json; then
       printf 'Dependency cache status: image cache failed npm ls validation; reinstalling.\n'
       set_dependency_cache_status "image-cache-invalid" "$cache_detail restore_method=$restore_method reason=npm_ls_failed"
       emit_event "dependency_cache_decision" "strategy=invalidate_image_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=npm_ls_failed" "location=$image_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
@@ -8750,7 +8768,10 @@ prepare_dependencies() {
       return 1
     fi
     if ! validate_or_repair_required_dependency_bins package.json node_modules; then
-      emit_error_event "dependency_integrity_failure" "npm ci completed but required package executables are unavailable" "exit"
+      npm_version="$(npm --version 2>/dev/null || printf 'unknown')"
+      node_version="$(node --version 2>/dev/null || printf 'unknown')"
+      emit_error_event "dependency_integrity_failure" "npm ci completed but required package executables are unavailable (node=$node_version npm=$npm_version omit_dev=${KASEKI_NPM_OMIT_DEV:-0})" "exit"
+      printf 'Dependency cache error: npm ci completed but required executables are unavailable (node=%s npm=%s omit_dev=%s). Check package sections and npm install flags.\n' "$node_version" "$npm_version" "${KASEKI_NPM_OMIT_DEV:-0}" >&2
       exec {cache_lock_fd}>&-
       return 1
     fi
