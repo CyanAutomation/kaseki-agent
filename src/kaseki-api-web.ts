@@ -2762,7 +2762,12 @@ const controllerPage = String.raw`<!doctype html>
           setOutputMetadata('failed', String(runIdInput.value || '').trim() || undefined);
           setResponseSummary(null);
           setOutputBody(sanitizeOutput(error instanceof Error ? error.message : String(error)));
-          setState('Request could not be sent.', 'bad');
+          if (error instanceof RequestTimeoutError) {
+            setResponseSummary('The diagnostic timed out before the controller responded. The gateway or Pi adapter may still be working; check /health, /ready, /api/preflight, and the run logs before retrying.');
+            setState('Diagnostic timed out; controller state is unknown.', 'bad');
+          } else {
+            setState('Request could not be sent.', 'bad');
+          }
           return { payload: null, response: { ok: false } };
         } finally {
           if (elapsedTimer) window.clearInterval(elapsedTimer);
