@@ -14,6 +14,7 @@ import { progressEventsFromDockerLogTail } from '../utils/docker-log-progress-ev
 const VALID_LOG_TYPES = [
   'stdout',
   'stderr',
+  'validation',
   'progress',
   'quality',
   'secret-scan',
