@@ -61,7 +61,7 @@ export function createImprovementRoutes(scheduler: JobScheduler, config: KasekiA
       const evaluationDiagnostic = !validEvaluation
         ? fs.existsSync(evaluationStderrPath)
           ? 'invalid_artifact_with_stderr'
-          : fs.existsSync(evaluationEventsPath) && fs.statSync(evaluationEventsPath).size > 0
+          : hasNonEmptyFile(evaluationEventsPath)
             ? 'missing_artifact_after_events'
             : 'missing_artifact'
         : undefined;
@@ -181,6 +181,14 @@ function readStageTimings(file: string): Array<{ stage: string; seconds: number 
       .filter((row) => row.stage && Number.isFinite(row.seconds));
   } catch {
     return [];
+  }
+}
+
+function hasNonEmptyFile(file: string): boolean {
+  try {
+    return fs.statSync(file).size > 0;
+  } catch {
+    return false;
   }
 }
 
