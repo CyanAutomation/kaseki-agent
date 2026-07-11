@@ -305,6 +305,10 @@ async function main() {
 }
 
 // Only run main if this is being executed directly (not imported as a module)
-if (require.main === module) {
+// This package is ESM (`package.json` sets `type: module`), so `require.main`
+// throws before the analyzer can write diagnostics. Keep the CLI entrypoint
+// check ESM-safe while retaining importability for unit tests.
+const invokedPath = process.argv[1] ? path.basename(process.argv[1]) : '';
+if (invokedPath === 'analyze-test-failures.ts' || invokedPath === 'analyze-test-failures.js') {
   main();
 }

@@ -288,7 +288,12 @@ describe('kaseki-api-routes improvements aggregation', () => {
       const body = (await response.json()) as any;
 
       expect(response.status).toBe(200);
-      expect(body.evaluator).toEqual({ available: 1, missing: 1, invalid: 1 });
+      expect(body.evaluator).toEqual({
+        available: 1,
+        missing: 1,
+        invalid: 1,
+        diagnostics: { missing_artifact: 2 },
+      });
       expect(body.counts.byAssessment.good).toBe(1);
       expect(body.counts.byConfidence.high).toBe(1);
       expect(body.topImprovementOpportunities[0]).toMatchObject({

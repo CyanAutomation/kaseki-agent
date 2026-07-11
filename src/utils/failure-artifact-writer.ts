@@ -35,8 +35,9 @@ export class FailureArtifactWriter {
       fs.mkdirSync(resultDir, { recursive: true });
 
       this.writeFailureJson(resultDir, job, now, cleanup);
-      this.writeMetadata(resultDir, job, now);
+      this.writeMetadata(resultDir, job, now, options?.lastStage);
       this.writeStderrLog(resultDir, job, options?.stdoutTail, options?.stderrTail);
+      this.writeResultSummary(resultDir, job, options?.lastStage);
     } catch (error) {
       // Best effort diagnostics; never mask the primary job failure.
       logWriteError('write failure artifacts', resultDir, error, job.id);
@@ -71,7 +72,7 @@ export class FailureArtifactWriter {
     }
   }
 
-  private writeMetadata(resultDir: string, job: Job, now: string): void {
+  private writeMetadata(resultDir: string, job: Job, now: string, lastStage?: string): void {
     const metadataPath = path.join(resultDir, 'metadata.json');
     const startedAt = job.startedAt?.toISOString();
     const completedAt = job.completedAt?.toISOString() || now;
@@ -105,6 +106,11 @@ export class FailureArtifactWriter {
         error: job.error || 'Job failed before runner failure metadata was written',
         exitCode: job.exitCode,
       },
+      lifecycle: {
+        lastStage: lastStage || 'unknown',
+        phaseOutcome: derivePhaseOutcome(lastStage),
+        diagnosticSource: 'api_finalization',
+      },
     };
     const content = `${JSON.stringify(payload, null, 2)}\n`;
 
@@ -120,6 +126,27 @@ export class FailureArtifactWriter {
       }
     } catch (error) {
       logWriteError('write metadata.json', metadataPath, error, job.id);
+    }
+  }
+
+  private writeResultSummary(resultDir: string, job: Job, lastStage?: string): void {
+    const summaryPath = path.join(resultDir, 'result-summary.md');
+    const phase = derivePhaseOutcome(lastStage);
+    const content = [
+      '# Kaseki Agent Run Summary',
+      '',
+      `- Status: Failed (${job.failureClass || 'api_finalized'})`,
+      `- Exit Code: ${job.exitCode ?? 'unknown'}`,
+      `- Last Stage: ${lastStage || 'unknown'}`,
+      `- Scouting: ${phase.scouting}`,
+      `- Weaving: ${phase.weaving}`,
+      `- Failure Detail: ${job.error || 'Job failed before runner diagnostics were written.'}`,
+      '',
+    ].join('\n');
+    try {
+      writeIfEmptyAtomic(summaryPath, content, {}, { jobId: job.id });
+    } catch (error) {
+      logWriteError('write result-summary.md', summaryPath, error, job.id);
     }
   }
 
@@ -164,4 +191,24 @@ export class FailureArtifactWriter {
     const decoder = new StringDecoder('utf8');
     return decoder.end(tail);
   }
+}
+
+function derivePhaseOutcome(lastStage?: string): { scouting: string; weaving: string; explanation: string } {
+  const stage = String(lastStage || '').toLowerCase();
+  if (!stage) {
+    return { scouting: 'unknown', weaving: 'unknown', explanation: 'No lifecycle stage was captured.' };
+  }
+  const scouting = /scout|goal-setting/.test(stage)
+    ? 'running'
+    : /coding|weav|goal check|validation|quality|github|evaluation|final/.test(stage)
+      ? 'completed'
+      : 'not_reached';
+  const weaving = /coding|weav|goal check|validation|quality|github|evaluation|final/.test(stage)
+    ? 'running'
+    : 'not_reached';
+  return {
+    scouting,
+    weaving,
+    explanation: `Derived from the last recorded stage: ${lastStage}.`,
+  };
 }
