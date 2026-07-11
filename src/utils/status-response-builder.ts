@@ -234,6 +234,7 @@ export class StatusResponseBuilder {
       if (lastFileEvent) {
         const structuredProgress = toStructuredProgress(lastFileEvent);
         if (structuredProgress) {
+          this.refreshEstimatedProgressTimestamp(structuredProgress, lastFileEvent);
           response.progress = structuredProgress;
         }
         return;
@@ -245,6 +246,7 @@ export class StatusResponseBuilder {
         if (lastEvent) {
           const structuredProgress = toStructuredProgress(lastEvent, 'running');
           if (structuredProgress) {
+            this.refreshEstimatedProgressTimestamp(structuredProgress, lastEvent);
             response.progress = structuredProgress;
           }
         }
@@ -259,12 +261,27 @@ export class StatusResponseBuilder {
         if (lastEvent) {
           const structuredProgress = toStructuredProgress(lastEvent, 'running');
           if (structuredProgress) {
+            this.refreshEstimatedProgressTimestamp(structuredProgress, lastEvent);
             response.progress = structuredProgress;
           }
         }
       }
     } catch {
       // Ignore progress file errors; status remains resilient
+    }
+  }
+
+  /**
+   * Docker log recovery often has no per-line timestamp. Do not expose the
+   * worker start time as if it were a live heartbeat; that makes healthy work
+   * look stalled and prevents clients from detecting real stalls.
+   */
+  private refreshEstimatedProgressTimestamp(
+    progress: NonNullable<StatusResponse['progress']>,
+    rawEvent: Record<string, unknown>,
+  ): void {
+    if (rawEvent.timestampEstimated === true) {
+      progress.updatedAt = new Date().toISOString();
     }
   }
 
