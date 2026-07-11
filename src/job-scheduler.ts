@@ -307,7 +307,10 @@ export class JobScheduler {
     // access to stdout/stderr tails for complete diagnostics.
     clearRunArtifactMetadataCache(job.id, job.resultDir);
     this.clearArtifactContentCache(job.id);
-    this.clearLiveProgressCache(job.id);
+    // Keep the last live events until process exit finalizes cancellation.
+    // They are needed to produce accurate phase outcomes and cancellation
+    // diagnostics; clearing them here made cancelled runs appear to have
+    // never reached scouting/weaving.
 
     // Note: Don't call finalizeJobIfNeeded() here - let the process exit handler
     // handle the actual removal from running set to prevent race conditions
@@ -818,7 +821,7 @@ export class JobScheduler {
       this.failureArtifactWriter.writeFailureArtifacts(job, cleanup, {
         stdoutTail,
         stderrTail,
-        lastStage: 'cancelled',
+        lastStage: job.currentStage || 'cancelled',
       });
     } else if (isTimedOut) {
       metricsRegistry.incTimeout();
@@ -1278,6 +1281,11 @@ export class JobScheduler {
       return [];
     }
     const events = this.parseLiveProgressEvents(output);
+    const liveJob = this.jobs.get(id);
+    const lastStage = events[events.length - 1]?.stage;
+    if (liveJob && typeof lastStage === 'string' && lastStage.trim()) {
+      liveJob.currentStage = lastStage.trim();
+    }
     this.cacheLiveProgressEvents(cacheKey, events);
     return tail > 0 ? events.slice(-tail) : [];
   }

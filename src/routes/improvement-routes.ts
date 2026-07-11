@@ -56,6 +56,15 @@ export function createImprovementRoutes(scheduler: JobScheduler, config: KasekiA
       const evaluationPath = path.join(runDir, 'run-evaluation.json');
       const evaluation = readJson(evaluationPath) as EvaluationArtifact | null;
       const validEvaluation = evaluation && typeof evaluation === 'object' && !Array.isArray(evaluation);
+      const evaluationStderrPath = path.join(runDir, 'run-evaluation-stderr.log');
+      const evaluationEventsPath = path.join(runDir, 'run-evaluation-events.jsonl');
+      const evaluationDiagnostic = !validEvaluation
+        ? fs.existsSync(evaluationStderrPath)
+          ? 'invalid_artifact_with_stderr'
+          : fs.existsSync(evaluationEventsPath) && fs.statSync(evaluationEventsPath).size > 0
+            ? 'missing_artifact_after_events'
+            : 'missing_artifact'
+        : undefined;
 
       if (validEvaluation) {
         evaluationAvailable += 1;
@@ -110,6 +119,7 @@ export function createImprovementRoutes(scheduler: JobScheduler, config: KasekiA
         topImprovement,
         durationSeconds: typeof metadata?.duration_seconds === 'number' ? metadata.duration_seconds : undefined,
         prUrl: typeof metadata?.github_pr_url === 'string' ? metadata.github_pr_url : '',
+        evaluationDiagnostic,
       };
     });
 
@@ -124,6 +134,12 @@ export function createImprovementRoutes(scheduler: JobScheduler, config: KasekiA
         available: evaluationAvailable,
         missing: evaluationMissing,
         invalid: evaluationInvalid,
+        diagnostics: runs.reduce<Record<string, number>>((counts, run) => {
+          if (run.evaluationDiagnostic) {
+            counts[run.evaluationDiagnostic] = (counts[run.evaluationDiagnostic] ?? 0) + 1;
+          }
+          return counts;
+        }, {}),
       },
       topImprovementOpportunities: Array.from(opportunityCounts.values())
         .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category))
