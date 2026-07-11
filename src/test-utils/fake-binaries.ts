@@ -105,8 +105,28 @@ fi
   fs.writeFileSync(
     path.join(binDir, 'timeout'),
     `#!/usr/bin/env bash
-shift 2
-"$@"
+set -euo pipefail
+
+while [ "$#" -gt 0 ] && [[ "\${1}" == -* ]]; do
+  case "\${1}" in
+    --signal=*|--kill-after=*)
+      shift
+      ;;
+    --signal|--kill-after)
+      shift
+      if [ "$#" -gt 0 ]; then shift; fi
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+if [ "$#" -gt 0 ]; then
+  shift
+fi
+
+exec "$@"
 `,
     { mode: 0o700 }
   );
