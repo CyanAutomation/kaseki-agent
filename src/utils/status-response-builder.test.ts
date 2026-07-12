@@ -98,6 +98,33 @@ describe('StatusResponseBuilder', () => {
       jest.useRealTimers();
     });
 
+    it('derives monotonic phase outcomes and heartbeat age from lifecycle events', () => {
+      const now = new Date('2026-01-01T00:05:00Z');
+      jest.useFakeTimers();
+      jest.setSystemTime(now);
+      const events = [
+        { stage: 'pi goal-setting agent', status: 'started', timestamp: '2026-01-01T00:00:01Z' },
+        { stage: 'pi scouting agent', status: 'started', timestamp: '2026-01-01T00:00:02Z' },
+        { stage: 'pi scouting agent', status: 'finished', timestamp: '2026-01-01T00:01:00Z' },
+      ];
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => filePath.endsWith('progress.jsonl'));
+      (fs.readFileSync as jest.Mock).mockReturnValue(events.map((event) => JSON.stringify(event)).join('\n'));
+      (fileHelpers.readLastJsonlEvent as jest.Mock).mockReturnValue(events[2]);
+      mockScheduler.getLiveProgressEvents.mockReturnValue([]);
+
+      const response = builder.buildStatus({ id: 'job-phase', status: 'running', startedAt: new Date('2026-01-01T00:00:00Z') } as Job);
+
+      expect(response.phaseOutcome).toMatchObject({
+        scouting: 'completed',
+        weaving: 'running',
+        scoutingStartedAt: '2026-01-01T00:00:02Z',
+        scoutingCompletedAt: '2026-01-01T00:01:00Z',
+        weavingStartedAt: '2026-01-01T00:00:01Z',
+      });
+      expect(response.progressHeartbeat).toEqual({ updatedAt: '2026-01-01T00:01:00Z', ageSeconds: 240, stale: true });
+      jest.useRealTimers();
+    });
+
     it('should build status response for completed job', () => {
       const startTime = new Date('2026-01-01T00:00:00Z');
       const completedTime = new Date('2026-01-01T01:00:00Z');
@@ -390,6 +417,27 @@ describe('StatusResponseBuilder', () => {
       );
       expect(response.diagnosticEntryPoint).toBe('failure.json');
       expect(response.diagnosticSummary?.phaseDiagnostics).toBeUndefined();
+    });
+
+    it('does not report a terminal failed run as still retrying', () => {
+      const job: Partial<Job> = {
+        id: 'job-terminal-retry',
+        status: 'failed',
+        resultDir: '/results/job-terminal-retry',
+      };
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => filePath.endsWith('metadata.json'));
+      (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify({
+        provider_error_retry_attempt_count: 1,
+        provider_error_retry_result: 'none',
+        provider_error_phase: 'scouting',
+        provider_error_message: 'Schema validation failed',
+      }));
+
+      const response = builder.buildStatus(job as Job);
+
+      expect(response.attempt?.state).toBe('exhausted');
+      expect(response.attempt?.current).toBe(1);
+      expect(response.diagnosis?.retryExhausted).toBe(true);
     });
 
     it('points empty assistant turn failures at Pi agent diagnostics first', () => {
