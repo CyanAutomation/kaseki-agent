@@ -150,22 +150,25 @@ export class StatusResponseBuilder {
     }
     if (retryCount > 0 || retryResult === 'failed' || providerError) {
       const exhausted = retryResult === 'failed';
+      const terminalRetryState = job.status === 'failed'
+        ? 'exhausted'
+        : job.status === 'completed' && retryResult === 'success' ? 'succeeded' : undefined;
       response.attempt = {
         phase: providerPhase,
         current: Math.max(1, retryCount),
         maximum: Math.max(2, retryCount),
-        state: exhausted ? 'exhausted' : retryResult === 'success' ? 'succeeded' : 'retrying',
+        state: terminalRetryState || (exhausted ? 'exhausted' : retryResult === 'success' ? 'succeeded' : 'retrying'),
         provider,
         lastError: providerError || undefined,
       };
       response.diagnosis = {
-        severity: exhausted ? 'error' : 'warning',
+        severity: terminalRetryState === 'exhausted' || exhausted ? 'error' : 'warning',
         phase: providerPhase,
         category: String(metadata?.provider_error_type ?? 'provider_error'),
         summary: providerError || (exhausted ? 'Provider retry budget exhausted.' : 'Provider request is being retried.'),
         retryCount,
-        retryExhausted: exhausted,
-        remediation: exhausted
+        retryExhausted: terminalRetryState === 'exhausted' || exhausted,
+        remediation: terminalRetryState === 'exhausted' || exhausted
           ? 'Inspect provider-attempts.jsonl, then retry with a healthy model or provider.'
           : 'Wait for the bounded retry to complete.',
         artifact: 'provider-attempts.jsonl',
@@ -184,6 +187,11 @@ export class StatusResponseBuilder {
     const updatedAt = Date.parse(String(response.progress?.updatedAt ?? ''));
     if ((job.status === 'running' || job.status === 'queued') && Number.isFinite(updatedAt)) {
       const staleSeconds = Math.max(0, Math.floor((Date.now() - updatedAt) / 1000));
+      response.progressHeartbeat = {
+        updatedAt: response.progress?.updatedAt,
+        ageSeconds: staleSeconds,
+        stale: staleSeconds >= 120,
+      };
       if (staleSeconds >= 120 && !response.diagnosis) {
         response.diagnosis = {
           severity: 'warning',
@@ -199,17 +207,58 @@ export class StatusResponseBuilder {
   private addPhaseOutcome(response: StatusResponse, job: Job, metadata: any): void {
     const stage = String(response.progress?.stage ?? job.currentStage ?? '').toLowerCase();
     const failed = job.status === 'failed';
-    const scoutingStarted = Boolean(metadata?.scouting_attempts || /scout|scouting/.test(stage));
-    const weavingStarted = Boolean(/coding|weav|goal check|validation|quality|github operations/.test(stage));
-    const scoutingFailed = failed && /scout|scouting/.test(String(metadata?.failed_command ?? stage).toLowerCase());
+    const events = this.readPhaseEvents(job);
+    const scoutingEvents = events.filter((event) => /scout|scouting/.test(this.eventStage(event)));
+    const weavingEvents = events.filter((event) => /goal-setting|coding|weav|goal check|validation|quality|github operations|evaluation|final/.test(this.eventStage(event)));
+    const scoutingStarted = Boolean(metadata?.scouting_attempts || scoutingEvents.length || /scout|scouting/.test(stage));
+    const weavingStarted = Boolean(weavingEvents.length || /goal-setting|coding|weav|goal check|validation|quality|github operations|evaluation|final/.test(stage));
+    const failedCommand = String(metadata?.failed_command ?? stage).toLowerCase();
+    const scoutingFailed = failed && /scout|scouting/.test(failedCommand);
     const weavingFailed = failed && !scoutingFailed && weavingStarted;
+    const scoutingCompletedAt = this.phaseCompletedAt(scoutingEvents);
+    const weavingCompletedAt = this.phaseCompletedAt(weavingEvents);
     response.phaseOutcome = {
-      scouting: scoutingFailed ? 'failed' : scoutingStarted ? (failed ? 'completed' : /scout|scouting/.test(stage) ? 'running' : 'completed') : 'not_reached',
-      weaving: weavingFailed ? 'failed' : weavingStarted ? (failed ? 'completed' : 'running') : 'not_reached',
+      scouting: scoutingFailed ? 'failed' : scoutingStarted ? (scoutingCompletedAt || weavingStarted || failed ? 'completed' : 'running') : 'not_reached',
+      weaving: weavingFailed ? 'failed' : weavingStarted ? (weavingCompletedAt || failed ? 'completed' : 'running') : 'not_reached',
       explanation: failed
         ? `Run failed at ${metadata?.failed_command || response.progress?.stage || 'an unknown stage'}; phase outcomes are derived from recorded lifecycle events.`
         : undefined,
+      ...(this.phaseStartedAt(scoutingEvents) ? { scoutingStartedAt: this.phaseStartedAt(scoutingEvents) } : {}),
+      ...(scoutingCompletedAt ? { scoutingCompletedAt } : {}),
+      ...(this.phaseStartedAt(weavingEvents) ? { weavingStartedAt: this.phaseStartedAt(weavingEvents) } : {}),
+      ...(weavingCompletedAt ? { weavingCompletedAt } : {}),
     };
+  }
+
+  private readPhaseEvents(job: Job): Array<Record<string, unknown>> {
+    const events: Array<Record<string, unknown>> = [];
+    const progressFile = path.join(this.config.resultsDir, job.id, 'progress.jsonl');
+    if (fs.existsSync(progressFile)) {
+      try {
+        for (const line of fs.readFileSync(progressFile, 'utf8').split('\n')) {
+          try { if (line.trim()) events.push(JSON.parse(line)); } catch { /* tolerate partial tails */ }
+        }
+      } catch { /* status must remain resilient */ }
+    }
+    if (typeof this.scheduler.getLiveProgressEvents === 'function') {
+      const liveEvents = this.scheduler.getLiveProgressEvents(job.id, 200);
+      if (Array.isArray(liveEvents)) events.push(...liveEvents);
+    }
+    return events;
+  }
+
+  private eventStage(event: Record<string, unknown>): string {
+    return String(event.stage ?? event.message ?? '').toLowerCase();
+  }
+
+  private phaseStartedAt(events: Array<Record<string, unknown>>): string | undefined {
+    const event = events.find((item) => typeof item.timestamp === 'string' || typeof item.updatedAt === 'string');
+    return event ? String(event.timestamp ?? event.updatedAt) : undefined;
+  }
+
+  private phaseCompletedAt(events: Array<Record<string, unknown>>): string | undefined {
+    const event = [...events].reverse().find((item) => /finished|completed|failed|exited|success/i.test(String(item.status ?? item.message ?? item.detail ?? '')) && (typeof item.timestamp === 'string' || typeof item.updatedAt === 'string'));
+    return event ? String(event.timestamp ?? event.updatedAt) : undefined;
   }
 
   private addTimingInfo(response: StatusResponse, job: Job): void {
