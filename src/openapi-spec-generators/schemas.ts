@@ -334,6 +334,10 @@ function buildStatusResponseSchema(): Record<string, unknown> {
         properties: {
           scouting: { type: 'string', enum: ['completed', 'failed', 'skipped', 'not_reached', 'running'] },
           weaving: { type: 'string', enum: ['completed', 'failed', 'skipped', 'not_reached', 'running'] },
+          scoutingStartedAt: { type: 'string', format: 'date-time' },
+          scoutingCompletedAt: { type: 'string', format: 'date-time' },
+          weavingStartedAt: { type: 'string', format: 'date-time' },
+          weavingCompletedAt: { type: 'string', format: 'date-time' },
           explanation: { type: 'string' },
         },
       },
@@ -362,6 +366,15 @@ function buildStatusResponseSchema(): Record<string, unknown> {
       timeoutRiskPercent: {
         type: 'number',
         description: 'Percentage of timeout used (0-100+); values >85 indicate imminent timeout',
+      },
+      progressHeartbeat: {
+        type: 'object',
+        description: 'Age and staleness of the most recent progress event',
+        properties: {
+          updatedAt: { type: 'string', format: 'date-time' },
+          ageSeconds: { type: 'integer', minimum: 0 },
+          stale: { type: 'boolean' },
+        },
       },
       taskProgressPercent: {
         type: 'number',
