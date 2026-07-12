@@ -277,6 +277,11 @@ export interface StatusResponse {
   progress?: StructuredProgress;
   elapsedSeconds?: number;
   timeoutRiskPercent?: number;
+  progressHeartbeat?: {
+    updatedAt?: string;
+    ageSeconds: number;
+    stale: boolean;
+  };
   taskProgressPercent?: number;
   goalCheckFailureReason?: string;
   exitCode?: number;
@@ -321,6 +326,10 @@ export interface StatusResponse {
     scouting: 'completed' | 'failed' | 'skipped' | 'not_reached' | 'running';
     weaving: 'completed' | 'failed' | 'skipped' | 'not_reached' | 'running';
     explanation?: string;
+    scoutingStartedAt?: string;
+    scoutingCompletedAt?: string;
+    weavingStartedAt?: string;
+    weavingCompletedAt?: string;
   };
   error?: string;
   resultDir?: string;
