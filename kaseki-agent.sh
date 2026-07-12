@@ -4411,7 +4411,6 @@ run_validation_commands() {
       for command in "${validation_commands[@]}"; do
         trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
         [ -z "$trimmed" ] && continue
-        VALIDATION_LAST_COMMAND="$trimmed"
         validation_start="$(date +%s)"
         if missing_npm_script="$(missing_npm_script_for_validation_command "$trimmed")"; then
           validation_end="$(date +%s)"
