@@ -1088,6 +1088,22 @@ normalize_scouting_schema() {
     # Log the transformation
     node -e 'const fs=require("node:fs"); const timestamp=new Date().toISOString(); const error={timestamp,reason_code:"schema_normalized",field:"relevant_files",details:"Normalized string entries to {path,reason} objects",transformation_type:"string_to_object",severity:"info",suggestion:"none_required"}; fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + "/scouting-validation-errors.jsonl", JSON.stringify(error)+"\n");' 2>/dev/null || true
   fi
+
+  # These fields are safely recoverable when a provider emits one concise
+  # string instead of a one-item list. Do not coerce objects, numbers, or
+  # nulls: those indicate a genuine contract violation and must be retried.
+  for field in observations plan validation; do
+    if jq -e --arg field "$field" '.[$field] | type == "string"' "$candidate_artifact" >/dev/null 2>&1; then
+      jq --arg field "$field" '.[$field] |= [.]' "$candidate_artifact" > "${candidate_artifact}.normalized" 2>/dev/null || return 1
+      mv "${candidate_artifact}.normalized" "$candidate_artifact"
+      node - "$field" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const field = process.argv[2];
+const entry = { timestamp: new Date().toISOString(), reason_code: 'schema_normalized', field, details: `Normalized scalar ${field} to a one-item array`, transformation_type: 'scalar_to_array', severity: 'info', suggestion: 'none_required' };
+fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + '/scouting-validation-errors.jsonl', JSON.stringify(entry) + '\n');
+NODE
+    fi
+  done
   
   return 0
 }
@@ -6167,6 +6183,7 @@ The previous scouting attempt exited successfully but did not create the require
 Retry the scouting handoff now. Use the write tool (not final assistant text) to create exactly one valid JSON object at:
 $SCOUTING_CANDIDATE_ARTIFACT
 Before finishing, verify that the file exists, is non-empty, and is valid JSON matching the schema above. Do not finish until that file has been written.
+If the previous artifact had scalar observations, plan, or validation fields, emit arrays. Do not emit markdown, a JSON string, or a partial object.
 EOF
   fi
 }
@@ -6347,6 +6364,18 @@ NODE
       export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=$attempt
       clear_provider_error
       return 0
+    fi
+
+    # Preserve the rejected provider output and retry decision for postmortem
+    # analysis. The primary raw stream is otherwise replaced on retry.
+    if [ "$scouting_last_exit" -ne 0 ]; then
+      cp "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}/scouting-attempt-${attempt}-events.jsonl" 2>/dev/null || true
+      node - "$attempt" "$scouting_last_exit" "${PROVIDER_ERROR_TYPE:-}" "${PROVIDER_ERROR_MESSAGE:-}" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [attempt, exitCode, errorType, errorMessage] = process.argv.slice(2);
+const entry = { timestamp: new Date().toISOString(), phase: 'scouting', attempt: Number(attempt), exit_code: Number(exitCode), error_type: errorType || 'scouting_contract_failure', error_message: errorMessage || 'Scouting attempt failed before producing a valid handoff', raw_events: `scouting-attempt-${attempt}-events.jsonl`, validation_errors: 'scouting-validation-errors.jsonl' };
+fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + '/scouting-retry-diagnostics.jsonl', JSON.stringify(entry) + '\n');
+NODE
     fi
 
     if [ "${SCOUTING_EXIT:-0}" -eq 86 ] || [ "${STATUS:-0}" -eq 86 ]; then

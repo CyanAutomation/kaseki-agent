@@ -1920,6 +1920,15 @@ const controllerPage = String.raw`<!doctype html>
             if (typeof outcome.explanation === 'string') {
               items.push(['Phase explanation', stripControlSequences(outcome.explanation).slice(0, 280), { warning: true, fullWidth: true }]);
             }
+            const phaseTimes = [
+              ['Scouting started', outcome.scoutingStartedAt],
+              ['Scouting completed', outcome.scoutingCompletedAt],
+              ['Weaving started', outcome.weavingStartedAt],
+              ['Weaving completed', outcome.weavingCompletedAt],
+            ];
+            phaseTimes.forEach(([label, value]) => {
+              if (typeof value === 'string') items.push([label, new Date(value).toLocaleTimeString()]);
+            });
           }
           if (payload.attempt && typeof payload.attempt === 'object') {
             const attempt = payload.attempt;
@@ -1969,6 +1978,12 @@ const controllerPage = String.raw`<!doctype html>
             if (Number.isFinite(phaseElapsedSeconds)) {
               items.push(['Time in current phase', formatElapsedSeconds(phaseElapsedSeconds)]);
             }
+          }
+          if (payload.progressHeartbeat && typeof payload.progressHeartbeat.ageSeconds === 'number') {
+            const heartbeat = payload.progressHeartbeat;
+            items.push(['Heartbeat', heartbeat.stale
+              ? 'Stale — no progress update for ' + formatElapsedSeconds(heartbeat.ageSeconds)
+              : 'Fresh — ' + formatElapsedSeconds(heartbeat.ageSeconds) + ' ago', { warning: heartbeat.stale, fullWidth: true }]);
           }
           if (payload.failureClass || payload.error) {
             const failure = compactRunFailure(payload);
@@ -2753,10 +2768,11 @@ const controllerPage = String.raw`<!doctype html>
       }
 
       async function run(button, path, options) {
-        const diagnosticButtons = Array.from(document.querySelectorAll('.health-check-button'));
         const isDiagnostic = button.classList.contains('health-check-button');
-        if (isDiagnostic) diagnosticButtons.forEach((candidate) => { candidate.disabled = true; });
-        else button.disabled = true;
+        // Keep independent diagnostics available while a long-running probe is in flight.
+        // The controller exposes read-only health endpoints, so disabling the whole group
+        // made Current Preflight appear unavailable during gateway/Pi checks.
+        button.disabled = true;
         setOutputMetadata('running', String(runIdInput.value || '').trim() || undefined);
         const actionLabel = button.textContent ? button.textContent.trim() : 'request';
         const startedAt = Date.now();
@@ -2787,8 +2803,7 @@ const controllerPage = String.raw`<!doctype html>
           return { payload: null, response: { ok: false } };
         } finally {
           if (elapsedTimer) window.clearInterval(elapsedTimer);
-          if (isDiagnostic) diagnosticButtons.forEach((candidate) => { candidate.disabled = false; });
-          else button.disabled = false;
+          button.disabled = false;
         }
       }
 
