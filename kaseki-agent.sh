@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 115222)
-Total output lines: 9912
-
 #!/bin/bash
 # shellcheck disable=SC1090,SC2016,SC2027
 # NOTE: This file uses dynamic helper sourcing and embedded JavaScript/shell snippets.
@@ -3006,7 +3003,3939 @@ run_pi_json_capture() {
 
   set +e
   if [ -p "$progress_fifo" ]; then
-    KASEKI_STREAM_PROGRESS=0 kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"…45222 tokens truncated…at contradictory evidence as a warning and explain the contradiction in warnings and summary/reasoning fields.
+    KASEKI_STREAM_PROGRESS=0 kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null \
+      < "$progress_fifo" \
+      2>>"$progress_stderr" &
+    progress_pid=$!
+
+    if [ -n "$stderr_target" ]; then
+      OPENROUTER_API_KEY="${openrouter_api_key:-${OPENROUTER_API_KEY:-}}" \
+        LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+        LLM_GATEWAY_URL="$llm_gateway_url" \
+        timeout --signal=SIGTERM "$timeout_seconds" \
+        pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
+        2> >(tee -a "$stderr_target" >&2) \
+        | node -e '
+const fs = require("fs");
+const [rawPath, fifoPath] = process.argv.slice(1);
+const raw = fs.openSync(rawPath, "a");
+let fifo;
+try {
+  fifo = fs.openSync(fifoPath, fs.constants.O_WRONLY | fs.constants.O_NONBLOCK);
+} catch {
+  fifo = undefined;
+}
+function writeProgressChunk(chunk) {
+  if (fifo === undefined) return;
+  try {
+    fs.writeSync(fifo, chunk);
+  } catch (error) {
+    if (error && (error.code === "EPIPE" || error.code === "ENXIO")) {
+      try { fs.closeSync(fifo); } catch {}
+      fifo = undefined;
+    } else if (!(error && error.code === "EAGAIN")) {
+      throw error;
+    }
+  }
+}
+process.stdin.on("data", (chunk) => {
+  fs.writeSync(raw, chunk);
+  writeProgressChunk(chunk);
+});
+process.stdin.on("end", () => {
+  if (fifo !== undefined) fs.closeSync(fifo);
+  fs.closeSync(raw);
+});
+' "$raw_events_file" "$progress_fifo"
+    else
+      OPENROUTER_API_KEY="${openrouter_api_key:-${OPENROUTER_API_KEY:-}}" \
+        LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+        LLM_GATEWAY_URL="$llm_gateway_url" \
+        timeout --signal=SIGTERM "$timeout_seconds" \
+        pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
+        | node -e '
+const fs = require("fs");
+const [rawPath, fifoPath] = process.argv.slice(1);
+const raw = fs.openSync(rawPath, "a");
+let fifo;
+try {
+  fifo = fs.openSync(fifoPath, fs.constants.O_WRONLY | fs.constants.O_NONBLOCK);
+} catch {
+  fifo = undefined;
+}
+function writeProgressChunk(chunk) {
+  if (fifo === undefined) return;
+  try {
+    fs.writeSync(fifo, chunk);
+  } catch (error) {
+    if (error && (error.code === "EPIPE" || error.code === "ENXIO")) {
+      try { fs.closeSync(fifo); } catch {}
+      fifo = undefined;
+    } else if (!(error && error.code === "EAGAIN")) {
+      throw error;
+    }
+  }
+}
+process.stdin.on("data", (chunk) => {
+  fs.writeSync(raw, chunk);
+  writeProgressChunk(chunk);
+});
+process.stdin.on("end", () => {
+  if (fifo !== undefined) fs.closeSync(fifo);
+  fs.closeSync(raw);
+});
+' "$raw_events_file" "$progress_fifo"
+    fi
+    pipeline_statuses=("${PIPESTATUS[@]}")
+    pi_exit="${pipeline_statuses[0]:-1}"
+    splitter_exit="${pipeline_statuses[1]:-0}"
+    wait_for_progress_stream "$progress_pid"
+    progress_exit=$?
+    rm -f "$progress_fifo" 2>/dev/null || true
+
+    if [ "$splitter_exit" -ne 0 ]; then
+      printf '%s [kaseki-agent] raw event splitter failed pi_exit=%s splitter_exit=%s raw_events=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$pi_exit" "$splitter_exit" "$raw_events_file" >> "$progress_stderr" 2>/dev/null || true
+      if [ "$pi_exit" -eq 0 ]; then
+        pi_exit="$splitter_exit"
+      fi
+    fi
+  else
+    if [ -n "$stderr_target" ]; then
+      OPENROUTER_API_KEY="${openrouter_api_key:-${OPENROUTER_API_KEY:-}}" \
+        LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+        LLM_GATEWAY_URL="$llm_gateway_url" \
+        timeout --signal=SIGTERM "$timeout_seconds" \
+        pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
+        > "$raw_events_file" \
+        2> >(tee -a "$stderr_target" >&2)
+    else
+      OPENROUTER_API_KEY="${openrouter_api_key:-${OPENROUTER_API_KEY:-}}" \
+        LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+        LLM_GATEWAY_URL="$llm_gateway_url" \
+        timeout --signal=SIGTERM "$timeout_seconds" \
+        pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
+        > "$raw_events_file"
+    fi
+    pi_exit=$?
+
+    KASEKI_STREAM_PROGRESS=0 kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null \
+      < "$raw_events_file" \
+      2>>"$progress_stderr"
+    progress_exit=$?
+  fi
+
+  if [ "$progress_exit" -ne 0 ]; then
+    printf '%s [kaseki-agent] progress stream failed pi_exit=%s progress_exit=%s raw_events=%s\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$pi_exit" "$progress_exit" "$raw_events_file" >> "$progress_stderr" 2>/dev/null || true
+    emit_error_event "pi_progress_stream_failed" "Progress stream failed while processing Pi output: $progress_exit" "continue"
+  fi
+  set +e
+
+  return "$pi_exit"
+}
+
+if [ "${KASEKI_PI_EVENT_FILTER_HELPER_TEST:-0}" = "1" ]; then
+  mkdir -p "$KASEKI_RESULTS_DIR"
+  RAW_EVENTS="${KASEKI_TEST_RAW_EVENTS:-$RAW_EVENTS}"
+  : > "${KASEKI_RESULTS_DIR}/progress.jsonl"
+  : > "${KASEKI_RESULTS_DIR}/quality.log"
+  : > "${KASEKI_RESULTS_DIR}/pi-stderr.log"
+  run_pi_event_filter_export "$RAW_EVENTS" "${KASEKI_RESULTS_DIR}/pi-events.jsonl" "${KASEKI_RESULTS_DIR}/pi-summary.json"
+  helper_exit=$?
+  write_metadata "$STATUS"
+  exit "$helper_exit"
+fi
+
+finish() {
+  local code=$?
+  maybe_call_finish_helper() {
+    local helper="$1"
+    shift
+    if declare -F "$helper" >/dev/null; then
+      "$helper" "$@"
+      return $?
+    fi
+    printf '[finish] helper_missing name=%s status=%s stage=%s\n' "$helper" "$STATUS" "$CURRENT_STAGE" >&2
+    if declare -F emit_event >/dev/null; then
+      emit_event "finish_helper_missing" "helper=$helper" "status=$STATUS" "stage=$CURRENT_STAGE"
+    fi
+    return 0
+  }
+  if [ "$code" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
+    # Capture diagnostic context for the catch-all error
+    STATUS="$code"
+    if [ "$CURRENT_STAGE" = "scouting prerequisites validation" ] &&
+      { [ "$LAST_COMMAND" = "validate_critical_executables_for_scouting" ] || [ "$LAST_COMMAND" = "validate_or_repair_required_dependency_bins" ]; }; then
+      FAILED_COMMAND="dependency integrity failure"
+    else
+      FAILED_COMMAND="unexpected shell failure"
+    fi
+    # Log the last command that was executed
+    {
+      printf '[unexpected-failure] Exit code: %d\n' "$code"
+      printf '[unexpected-failure] Last command: %s\n' "$LAST_COMMAND"
+      printf '[unexpected-failure] Current stage: %s\n' "$CURRENT_STAGE"
+      if [ -f "${KASEKI_RESULTS_DIR}"/progress.jsonl ]; then
+        printf '[unexpected-failure] Last 5 progress events:\n'
+        tail -5 "${KASEKI_RESULTS_DIR}"/progress.jsonl | sed 's/^/  /'
+      fi
+    } | tee -a "$LAST_COMMAND_LOG" >&2
+    if [ "$FAILED_COMMAND" = "dependency integrity failure" ]; then
+      emit_error_event "dependency_integrity_failure" "Required project package executables were unavailable after dependency installation" "exit"
+    else
+      emit_error_event "unexpected_shell_failure" "Uncaught shell error (exit $code) in stage '$CURRENT_STAGE'. Last command: $LAST_COMMAND. See $LAST_COMMAND_LOG for context." "exit"
+    fi
+  fi
+  if [ "${KASEKI_LLM_PROVIDER:-}" = "gateway" ] && [ ! -s "${KASEKI_RESULTS_DIR}/gateway-summary.json" ]; then
+    cat > "${KASEKI_RESULTS_DIR}/gateway-summary.json" <<EOF
+{"provider":"gateway","registered":true,"requestAttempted":false,"inferenceAttempted":false,"reason":"run ended before an inference request was attempted","stage":"${CURRENT_STAGE}","status":"not_attempted"}
+EOF
+  fi
+  # Authoritative call site: this runs at EXIT so artifacts reflect final repo state.
+  maybe_call_finish_helper collect_git_artifacts
+
+  # A patch run with no durable repository change is not successful. Agent
+  # fallbacks may let orchestration continue, but they must not turn a
+  # schema/provider failure plus an empty result into a green terminal state.
+  if [ "$STATUS" -eq 0 ] && [ "$KASEKI_TASK_MODE" != "inspect" ] &&
+    [ ! -s "${KASEKI_RESULTS_DIR}/git.diff" ] && [ ! -s "${KASEKI_RESULTS_DIR}/changed-files.txt" ] &&
+    [ "$KASEKI_ALLOW_EMPTY_DIFF" != "1" ]; then
+    STATUS=3
+    FAILED_COMMAND="empty durable patch"
+    emit_error_event "empty_durable_patch" "Run completed without a durable repository change" "exit"
+  fi
+  
+  # Analyze test failures and compare baseline vs. working results
+  if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ -f "${KASEKI_RESULTS_DIR}"/validation-baseline.log ]; then
+    set_current_stage "test failure analysis"
+    if analyze_test_failures_baseline; then
+      TEST_FAILURE_CLASSIFICATION_STATUS="completed"
+      # Try to extract newly_introduced_failures_count from JSON output (if jq available)
+      if [ -f "${KASEKI_RESULTS_DIR}"/test-baseline-comparison.json ] && command -v jq >/dev/null 2>&1; then
+        NEWLY_INTRODUCED_FAILURES_COUNT=$(jq -r '.summary.total_newly_introduced // 0' "${KASEKI_RESULTS_DIR}"/test-baseline-comparison.json 2>/dev/null || printf '0')
+      elif [ -f "${KASEKI_RESULTS_DIR}"/test-baseline-comparison.json ]; then
+        # Fallback: try to extract with grep/sed if jq not available
+        NEWLY_INTRODUCED_FAILURES_COUNT=$(grep -o '"total_newly_introduced": [0-9]*' "${KASEKI_RESULTS_DIR}"/test-baseline-comparison.json 2>/dev/null | grep -o '[0-9]*$' || printf '0')
+      fi
+    else
+      TEST_FAILURE_CLASSIFICATION_STATUS="failed"
+    fi
+  else
+    if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" != "1" ]; then
+      TEST_FAILURE_CLASSIFICATION_STATUS="disabled"
+    else
+      TEST_FAILURE_CLASSIFICATION_STATUS="skipped"
+    fi
+  fi
+  
+  if [ "${KASEKI_DEBUG_RAW_EVENTS:-0}" = "1" ]; then
+    if [ -f "${KASEKI_RESULTS_DIR}"/restoration.jsonl ]; then
+      printf '[debug] restoration.jsonl exists (size=%d bytes)\n' "$(wc -c < "${KASEKI_RESULTS_DIR}"/restoration.jsonl)" >&2
+    else
+      printf '[debug] restoration.jsonl does not exist\n' >&2
+    fi
+  fi
+  
+  # restoration-report.md artifact removed (Phase 1: low-value artifacts deletion)
+
+  # Calculate and record maturity score without leaking artifact JSON into live logs.
+  if [ -x /app/scripts/kaseki-maturity-score.sh ]; then
+    maturity_score_log="${KASEKI_RESULTS_DIR}/maturity-score.log"
+    if [ -d "${KASEKI_WORKSPACE_DIR}"/repo ]; then
+      if KASEKI_MATURITY_SCORE_STDOUT=0 /app/scripts/kaseki-maturity-score.sh "${KASEKI_WORKSPACE_DIR}"/repo "${KASEKI_RESULTS_DIR}"/maturity-score.json >"$maturity_score_log" 2>&1; then
+        printf 'maturity-score: wrote %s\n' "${KASEKI_RESULTS_DIR}/maturity-score.json" >"$maturity_score_log"
+      else
+        printf 'maturity-score: generation failed; see prior output if any\n' >>"$maturity_score_log"
+      fi
+    else
+      printf 'maturity-score: skipped because repo checkout is missing: %s\n' "${KASEKI_WORKSPACE_DIR}/repo" >"$maturity_score_log"
+    fi
+  fi
+  
+  # Calculate and record performance metrics
+  if [ -x /app/scripts/kaseki-performance-metrics.sh ] && [ -f "${KASEKI_RESULTS_DIR}"/stage-timings.tsv ]; then
+    /app/scripts/kaseki-performance-metrics.sh "${KASEKI_RESULTS_DIR}"/stage-timings.tsv "${KASEKI_RESULTS_DIR}"/performance-metrics.json 2>/dev/null || true
+  fi
+  
+  maybe_call_finish_helper write_result_summary
+  # Phase 3: Generate infrastructure diagnostics report if validation had SIGPIPE failure
+  maybe_call_finish_helper write_validation_infrastructure_diagnostics
+  
+  # Generate inspect-report.md for inspect mode on success
+  if [ "$KASEKI_TASK_MODE" = "inspect" ] && [ "$STATUS" -eq 0 ]; then
+    if [ -x /app/scripts/generate-inspect-report.js ]; then
+      node /app/scripts/generate-inspect-report.js "${KASEKI_RESULTS_DIR}" 2>/dev/null || true
+    fi
+  fi
+  
+  # Phase 3B, 3C, 3D: Consolidate artifacts before finalizing
+  consolidate_timings_to_json "${KASEKI_RESULTS_DIR}"/timings-manifest.json "${VALIDATION_TIMINGS_FILE}" "${PRE_VALIDATION_TIMINGS_FILE}"
+  consolidate_phase_errors "${KASEKI_RESULTS_DIR}"/phase-errors.jsonl "${KASEKI_RESULTS_DIR}"/critical-change-expectations.log "${KASEKI_RESULTS_DIR}"/summarizer-stderr.log "${KASEKI_RESULTS_DIR}"/baseline-npm-ci.log
+  consolidate_validation_errors "${KASEKI_RESULTS_DIR}"/artifact-validation-errors.jsonl "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl "${KASEKI_RESULTS_DIR}"/goal-setting-validation-errors.jsonl "${KASEKI_RESULTS_DIR}"/goal-check-validation-errors.jsonl
+  
+  maybe_call_finish_helper write_failure_json "$STATUS"
+  maybe_call_finish_helper write_repo_memory_summary
+  maybe_call_finish_helper write_metadata "$STATUS"
+  maybe_call_finish_helper remove_low_value_artifacts
+  exit "$STATUS"
+}
+trap finish EXIT
+
+run_step() {
+  local label="$1"
+  shift
+  local step_start step_end code
+  step_start="$(date +%s)"
+  set_current_stage "$label"
+  printf '\n==> %s\n' "$label"
+  emit_progress "$label" "started"
+  # Keep this explicit branch (instead of relying on `set -e`) so we can
+  # always emit progress/timing and preserve FAILED_COMMAND deterministically.
+  if "$@"; then
+    code=0
+  else
+    code=$?
+  fi
+  step_end="$(date +%s)"
+  emit_progress "$label" "finished with exit $code"
+  record_stage_timing "$label" "$code" "$((step_end - step_start))" ""
+  if [ "$code" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
+    STATUS="$code"
+    FAILED_COMMAND="$label"
+  fi
+  return "$code"
+}
+
+run_step_dry() {
+  local label="$1"
+  shift
+  local step_start step_end
+  step_start="$(date +%s)"
+  set_current_stage "$label"
+  printf '\n==> %s (DRY-RUN: simulated)\n' "$label"
+  emit_progress "$label" "started (dry-run)"
+  # Show what commands would be run without executing them
+  printf '%s\n' "$@" >> "${KASEKI_RESULTS_DIR}"/validation.log
+  step_end="$(date +%s)"
+  emit_progress "$label" "finished (dry-run, simulated exit 0)"
+  record_stage_timing "$label" "0" "$((step_end - step_start))" "dry-run"
+  return 0
+}
+
+record_stage_timing() {
+  local stage="$1"
+  local exit_code="$2"
+  local duration_seconds="$3"
+  local detail="${4:-}"
+  printf '%s\t%s\t%s\t%s\n' "$stage" "$exit_code" "$duration_seconds" "$detail" >> "$STAGE_TIMINGS_FILE"
+}
+
+set_dependency_cache_status() {
+  local status="$1"
+  local detail="${2:-}"
+  printf '%s\t%s\n' "$status" "$detail" >> "$DEPENDENCY_CACHE_LOG"
+}
+
+compute_git_cache_key() {
+  local hash
+  hash="$(printf '%s' "$REPO_URL" | sha256sum | awk '{print $1}')"
+  printf 'repo-%s' "$hash"
+}
+
+is_valid_git_mirror() {
+  local mirror="$1"
+  [ -d "$mirror" ] || return 1
+  [ "$(git -C "$mirror" rev-parse --is-bare-repository 2>/dev/null || true)" = "true" ] || return 1
+  git -C "$mirror" remote get-url origin >/dev/null 2>&1 || return 1
+}
+
+run_direct_clone() {
+  rm -rf "${KASEKI_WORKSPACE_DIR}"/repo
+  GIT_CLONE_STRATEGY="direct_shallow"
+  git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" "${KASEKI_WORKSPACE_DIR}"/repo
+}
+
+clone_with_git_cache() {
+  local cache_root="$KASEKI_GIT_CACHE_ROOT"
+  local mirror lock_file tmp_mirror lock_rc fetch_rc mirror_rc clone_rc
+
+  if [ "$KASEKI_GIT_CACHE_MODE" != "mirror" ]; then
+    GIT_CACHE_STATUS="disabled"
+    GIT_CACHE_HIT="false"
+    emit_progress "clone repository" "git cache disabled mode=$KASEKI_GIT_CACHE_MODE"
+    run_direct_clone
+    return $?
+  fi
+
+  GIT_CACHE_KEY="$(compute_git_cache_key)"
+  mirror="$cache_root/${GIT_CACHE_KEY}.git"
+  lock_file="$cache_root/${GIT_CACHE_KEY}.lock"
+  GIT_CACHE_MIRROR="$mirror"
+
+  if ! mkdir -p "$cache_root" 2>/dev/null; then
+    GIT_CACHE_STATUS="unavailable"
+    GIT_CACHE_HIT="false"
+    emit_error_event "git_cache_unavailable" "Cannot create git cache directory $cache_root; using direct clone" "fallback_direct_clone"
+    run_direct_clone
+    return $?
+  fi
+
+  exec 9>"$lock_file"
+  flock 9
+  lock_rc=$?
+  if [ "$lock_rc" -ne 0 ]; then
+    GIT_CACHE_STATUS="lock_failed"
+    GIT_CACHE_HIT="false"
+    emit_error_event "git_cache_lock_failed" "Cannot lock $lock_file; using direct clone" "fallback_direct_clone"
+    run_direct_clone
+    return $?
+  fi
+
+  if is_valid_git_mirror "$mirror"; then
+    GIT_CACHE_STATUS="hit"
+    GIT_CACHE_HIT="true"
+    emit_progress "clone repository" "git cache hit key=$GIT_CACHE_KEY mirror=$mirror"
+    timeout "$KASEKI_GIT_CACHE_FETCH_TIMEOUT_SECONDS" git -C "$mirror" fetch --prune --no-tags origin \
+      "+refs/heads/$GIT_REF:refs/heads/$GIT_REF"
+    fetch_rc=$?
+    if [ "$fetch_rc" -ne 0 ]; then
+      flock -u 9 || true
+      GIT_CACHE_STATUS="fetch_failed"
+      GIT_CACHE_HIT="true"
+      emit_error_event "git_cache_fetch_failed" "Mirror fetch failed or timed out for key=$GIT_CACHE_KEY exit=$fetch_rc; using direct clone" "fallback_direct_clone"
+      run_direct_clone
+      return $?
+    fi
+  else
+    GIT_CACHE_STATUS="miss"
+    GIT_CACHE_HIT="false"
+    emit_progress "clone repository" "git cache miss key=$GIT_CACHE_KEY mirror=$mirror"
+    if [ -e "$mirror" ]; then
+      rm -rf "$mirror"
+    fi
+    tmp_mirror="${mirror}.tmp.$$"
+    rm -rf "$tmp_mirror"
+    git init --bare "$tmp_mirror" >/dev/null 2>&1
+    git -C "$tmp_mirror" remote add origin "$REPO_URL"
+    timeout "$KASEKI_GIT_CACHE_FETCH_TIMEOUT_SECONDS" git -C "$tmp_mirror" fetch --no-tags --depth 1 origin \
+      "+refs/heads/$GIT_REF:refs/heads/$GIT_REF"
+    mirror_rc=$?
+    if [ "$mirror_rc" -eq 0 ] && is_valid_git_mirror "$tmp_mirror"; then
+      mv "$tmp_mirror" "$mirror"
+    else
+      rm -rf "$tmp_mirror"
+      flock -u 9 || true
+      GIT_CACHE_STATUS="populate_failed"
+      emit_error_event "git_cache_populate_failed" "Mirror populate failed or timed out for key=$GIT_CACHE_KEY exit=$mirror_rc; using direct clone" "fallback_direct_clone"
+      run_direct_clone
+      return $?
+    fi
+  fi
+  flock -u 9 || true
+
+  rm -rf "${KASEKI_WORKSPACE_DIR}"/repo
+  GIT_CLONE_STRATEGY="reference_shallow"
+  git clone --reference-if-able "$mirror" --depth 1 --branch "$GIT_REF" "$REPO_URL" "${KASEKI_WORKSPACE_DIR}"/repo
+  clone_rc=$?
+  if [ "$clone_rc" -eq 0 ]; then
+    return 0
+  fi
+
+  rm -rf "${KASEKI_WORKSPACE_DIR}"/repo
+  GIT_CLONE_STRATEGY="mirror_local"
+  emit_error_event "git_cache_reference_clone_failed" "Reference clone failed for key=$GIT_CACHE_KEY exit=$clone_rc; trying local mirror clone" "try_mirror_clone"
+  git clone --branch "$GIT_REF" "$mirror" "${KASEKI_WORKSPACE_DIR}"/repo
+  clone_rc=$?
+  if [ "$clone_rc" -eq 0 ] && git -C "${KASEKI_WORKSPACE_DIR}"/repo rev-parse --verify HEAD >/dev/null 2>&1; then
+    git -C "${KASEKI_WORKSPACE_DIR}"/repo remote set-url origin "$REPO_URL" >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  rm -rf "${KASEKI_WORKSPACE_DIR}"/repo
+  GIT_CACHE_STATUS="mirror_clone_failed"
+  emit_error_event "git_cache_mirror_clone_failed" "Mirror clone failed for key=$GIT_CACHE_KEY exit=$clone_rc; using direct clone" "fallback_direct_clone"
+  run_direct_clone
+}
+
+run_clone_repository() {
+  local step_start step_end code detail
+  step_start="$(date +%s)"
+  set_current_stage "clone repository"
+  printf '\n==> clone repository\n'
+  emit_progress "clone repository" "started cache_mode=$KASEKI_GIT_CACHE_MODE"
+  if clone_with_git_cache; then
+    code=0
+  else
+    code=$?
+  fi
+  step_end="$(date +%s)"
+  GIT_CLONE_DURATION_SECONDS="$((step_end - step_start))"
+  detail="cache_mode=$GIT_CACHE_MODE_USED cache_status=$GIT_CACHE_STATUS cache_hit=$GIT_CACHE_HIT cache_key=$GIT_CACHE_KEY strategy=$GIT_CLONE_STRATEGY mirror=$GIT_CACHE_MIRROR"
+  emit_progress "clone repository" "finished with exit $code elapsed=${GIT_CLONE_DURATION_SECONDS}s $detail"
+  emit_event "git_clone_cache" \
+    "mode=$GIT_CACHE_MODE_USED" \
+    "status=$GIT_CACHE_STATUS" \
+    "cache_hit=$GIT_CACHE_HIT" \
+    "cache_key=$GIT_CACHE_KEY" \
+    "strategy=$GIT_CLONE_STRATEGY" \
+    "mirror=$GIT_CACHE_MIRROR" \
+    "duration_seconds=$GIT_CLONE_DURATION_SECONDS" \
+    "exit_code=$code"
+  record_stage_timing "clone repository" "$code" "$GIT_CLONE_DURATION_SECONDS" "$detail"
+  if [ "$code" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
+    STATUS="$code"
+    FAILED_COMMAND="clone repository"
+    # Report to Sentry if available
+    sentry_error "Git clone failed with exit code $code (strategy=$GIT_CLONE_STRATEGY)" "git-clone" "$code" "$GIT_CLONE_DURATION_SECONDS" 2>/dev/null || true
+  fi
+  return "$code"
+}
+
+
+same_filesystem() {
+  local left="$1"
+  local right="$2"
+  local left_device right_device
+  left_device="$(stat -c %d "$left" 2>/dev/null || stat -f %d "$left" 2>/dev/null || true)"
+  right_device="$(stat -c %d "$right" 2>/dev/null || stat -f %d "$right" 2>/dev/null || true)"
+  [ -n "$left_device" ] && [ "$left_device" = "$right_device" ]
+}
+
+resolve_dependency_restore_mode() {
+  local source_dir="$1"
+  local target_dir="$2"
+  local mode="${3:-auto}"
+  if [ "$mode" != "auto" ]; then
+    printf '%s\n' "$mode"
+    return 0
+  fi
+  if same_filesystem "$source_dir" "$(dirname "$target_dir")"; then
+    printf 'hardlink\n'
+  else
+    printf 'copy\n'
+  fi
+}
+
+restore_node_modules_from_cache() {
+  local source_dir="$1"
+  local target_dir="$2"
+  local mode="${3:-copy}"
+  mode="$(resolve_dependency_restore_mode "$source_dir" "$target_dir" "$mode")"
+  DEPENDENCY_RESTORE_METHOD="$mode"
+  case "$mode" in
+    copy)
+      cp -a "$source_dir" "$target_dir"
+      ;;
+    hardlink)
+      if same_filesystem "$source_dir" "$(dirname "$target_dir")"; then
+        local hardlink_stderr_file hardlink_reason hardlink_stderr_trimmed
+        hardlink_stderr_file="$(mktemp /tmp/kaseki-hardlink-stderr.XXXXXX)" || return 1
+        if cp -al "$source_dir" "$target_dir" 2>"$hardlink_stderr_file"; then
+          rm -f "$hardlink_stderr_file"
+          DEPENDENCY_RESTORE_METHOD="hardlink"
+          return 0
+        fi
+        if grep -q "Invalid cross-device link\|EXDEV" "$hardlink_stderr_file"; then
+          hardlink_reason="hardlink_cross_device"
+        else
+          hardlink_reason="hardlink_failed"
+        fi
+        DEPENDENCY_RESTORE_METHOD="hardlink_fallback_copy"
+        printf 'Dependency cache status: hardlink restore fallback to copy (reason=%s).\n' "$hardlink_reason" | tee -a "$DEPENDENCY_CACHE_LOG"
+        emit_event "dependency_cache_decision" "strategy=hardlink_restore_fallback" "restore_mode=hardlink" "restore_method=hardlink_fallback_copy" "reason=$hardlink_reason"
+        if [ "$hardlink_reason" != "hardlink_cross_device" ]; then
+          hardlink_stderr_trimmed="$(tr '\n' ' ' < "$hardlink_stderr_file" | sed 's/[[:space:]]\+/ /g' | sed 's/^ //; s/ $//' | cut -c1-300)"
+          if [ -n "$hardlink_stderr_trimmed" ]; then
+            printf 'Dependency cache debug: hardlink restore stderr=%s\n' "$hardlink_stderr_trimmed" >&2
+          fi
+        fi
+        rm -f "$hardlink_stderr_file"
+        cp -a "$source_dir" "$target_dir"
+      else
+        DEPENDENCY_RESTORE_METHOD="hardlink_cross_fs_copy"
+        printf 'Dependency cache status: hardlink restore skipped because cache and workspace are on different filesystems; falling back to copy.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
+        emit_event "dependency_cache_decision" "strategy=hardlink_restore_fallback" "restore_mode=hardlink" "restore_method=hardlink_cross_fs_copy" "reason=hardlink_cross_fs"
+        cp -a "$source_dir" "$target_dir"
+      fi
+      ;;
+    symlink)
+      # Experimental: only keep this restore if downstream validation confirms tooling
+      # tolerates a symlinked node_modules tree.
+      DEPENDENCY_RESTORE_METHOD="symlink_experimental"
+      ln -s "$source_dir" "$target_dir"
+      ;;
+    *)
+      printf 'Unsupported KASEKI_DEPENDENCY_RESTORE_MODE: %s (expected auto, copy, hardlink, or symlink)\n' "$mode" >&2
+      return 2
+      ;;
+  esac
+}
+
+publish_node_modules_cache() {
+  local source_dir="$1"
+  local tmp_cache_dir="$2"
+  rm -rf "$tmp_cache_dir"
+  mkdir -p "$tmp_cache_dir" && cp -a "$source_dir/." "$tmp_cache_dir/"
+}
+
+dependency_cache_required_bins_valid() {
+  local package_json="${1:-package.json}"
+  local node_modules_dir="${2:-node_modules}"
+  [ -f "$package_json" ] || return 0
+  node - "$package_json" "$node_modules_dir" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const pkg = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const nodeModulesDir = process.argv[3] || 'node_modules';
+const includeDevDependencies = process.env.KASEKI_NPM_OMIT_DEV !== '1';
+const dependencies = {
+  ...(pkg.dependencies || {}),
+  ...(includeDevDependencies ? (pkg.devDependencies || {}) : {}),
+};
+const required = [];
+if (dependencies.typescript) required.push('tsc');
+if (dependencies.eslint) required.push('eslint');
+for (const bin of required) {
+  const target = path.join(nodeModulesDir, '.bin', bin);
+  try { fs.accessSync(target, fs.constants.X_OK); }
+  catch {
+    const section = pkg.dependencies?.[bin === 'tsc' ? 'typescript' : 'eslint']
+      ? 'dependencies'
+      : 'devDependencies';
+    console.error(`missing required dependency executable: ${target} (declared in ${section}; omit_dev=${process.env.KASEKI_NPM_OMIT_DEV || '0'})`);
+    process.exit(1);
+  }
+}
+NODE
+}
+
+repair_required_dependency_bins() {
+  local package_json="${1:-package.json}"
+  local node_modules_dir="${2:-node_modules}"
+  [ -f "$package_json" ] || return 0
+  node - "$package_json" "$node_modules_dir" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const pkg = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const nodeModulesDir = process.argv[3] || 'node_modules';
+const includeDevDependencies = process.env.KASEKI_NPM_OMIT_DEV !== '1';
+const dependencies = {
+  ...(pkg.dependencies || {}),
+  ...(includeDevDependencies ? (pkg.devDependencies || {}) : {}),
+};
+const required = [];
+if (dependencies.typescript) required.push(['typescript', 'tsc']);
+if (dependencies.eslint) required.push(['eslint', 'eslint']);
+fs.mkdirSync(path.join(nodeModulesDir, '.bin'), { recursive: true });
+for (const [packageName, binName] of required) {
+  const packagePath = path.join(nodeModulesDir, packageName, 'package.json');
+  if (!fs.existsSync(packagePath)) continue;
+  const packageMetadata = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+  const bin = typeof packageMetadata.bin === 'string'
+    ? packageMetadata.bin
+    : packageMetadata.bin && packageMetadata.bin[binName];
+  if (!bin) continue;
+  const target = path.join(nodeModulesDir, '.bin', binName);
+  const relativeSource = path.relative(path.dirname(target), path.join(nodeModulesDir, packageName, bin));
+  try { fs.rmSync(target, { force: true }); } catch {}
+  fs.symlinkSync(relativeSource, target);
+}
+NODE
+}
+
+validate_or_repair_required_dependency_bins() {
+  local package_json="${1:-package.json}"
+  local node_modules_dir="${2:-node_modules}"
+  dependency_cache_required_bins_valid "$package_json" "$node_modules_dir" && return 0
+  printf 'Dependency cache status: repairing missing package executable links in %s/.bin.\n' "$node_modules_dir" | tee -a "$DEPENDENCY_CACHE_LOG"
+  repair_required_dependency_bins "$package_json" "$node_modules_dir" || return 1
+  dependency_cache_required_bins_valid "$package_json" "$node_modules_dir"
+}
+
+dependency_cache_entry_roots() {
+  local cache_dir="$1"
+  find "$cache_dir" -mindepth 4 -maxdepth 4 -type d -name 'flags-*' 2>/dev/null || true
+}
+
+dependency_cache_size_bytes() {
+  local cache_dir="$1"
+  # Sum per-entry metadata instead of recursively scanning the entire shared
+  # cache on every worker run. Older entries without metadata are accounted
+  # for when they are next published.
+  dependency_cache_entry_roots "$cache_dir" | while IFS= read -r entry; do
+    [ -r "$entry/.entry-size-bytes" ] && cat "$entry/.entry-size-bytes"
+  done | awk '{ total += $1 } END { printf "%.0f\n", total + 0 }'
+}
+
+record_dependency_cache_entry_size() {
+  local entry_root="$1"
+  local source_dir="$2"
+  local size_kb
+  size_kb="$(du -sk "$source_dir" 2>/dev/null | awk '{print $1}')"
+  [ -n "$size_kb" ] || return 0
+  printf '%s\n' $((size_kb * 1024)) > "$entry_root/.entry-size-bytes"
+}
+
+invalidate_workspace_dependency_cache() {
+  local cache_dir="$1"
+  local stamp_file="$2"
+  local metadata_file="$3"
+  rm -rf "$cache_dir"
+  rm -f "$stamp_file" "$metadata_file"
+}
+
+write_dependency_cache_metrics() {
+  local cache_dir="$1"
+  local metrics_file="$2"
+  local size_bytes entry_count now
+  mkdir -p "$(dirname "$metrics_file")" 2>/dev/null || return 0
+  size_bytes="$(dependency_cache_size_bytes "$cache_dir")"
+  entry_count="$(dependency_cache_entry_roots "$cache_dir" | wc -l | tr -d ' ')"
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  {
+    printf 'timestamp=%s\n' "$now"
+    printf 'cache_dir=%s\n' "$cache_dir"
+    printf 'size_bytes=%s\n' "$size_bytes"
+    printf 'entry_count=%s\n' "$entry_count"
+    printf 'max_bytes=%s\n' "$KASEKI_DEPENDENCY_CACHE_MAX_BYTES"
+    printf 'max_age_days=%s\n' "$KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS"
+  } > "$metrics_file" 2>/dev/null || true
+}
+
+prune_dependency_cache() {
+  local cache_dir="$1"
+  local max_bytes="$2"
+  local max_age_days="$3"
+  local metrics_file="$4"
+  local size_bytes oldest_entry
+
+  [ "$KASEKI_DEPENDENCY_CACHE_PRUNE" = "1" ] || return 0
+  [ -d "$cache_dir" ] || return 0
+
+  if [ "$max_age_days" -gt 0 ] 2>/dev/null; then
+    dependency_cache_entry_roots "$cache_dir" | while IFS= read -r entry; do
+      if [ -n "$entry" ] && [ "$(find "$entry" -maxdepth 0 -mtime +"$max_age_days" -print 2>/dev/null)" = "$entry" ]; then
+        printf 'Dependency cache prune: removing aged entry %s\n' "$entry" | tee -a "$DEPENDENCY_CACHE_LOG"
+        rm -rf "$entry"
+      fi
+    done
+  fi
+
+  if [ "$max_bytes" -gt 0 ] 2>/dev/null; then
+    # Entries created before per-entry accounting cannot be included without a
+    # blocking recursive scan. Remove them once so future enforcement remains
+    # fast and exact.
+    dependency_cache_entry_roots "$cache_dir" | while IFS= read -r entry; do
+      [ -n "$entry" ] || continue
+      if [ ! -r "$entry/.entry-size-bytes" ]; then
+        printf 'Dependency cache prune: removing unmetered legacy entry %s\n' "$entry" | tee -a "$DEPENDENCY_CACHE_LOG"
+        rm -rf "$entry"
+      fi
+    done
+    size_bytes="$(dependency_cache_size_bytes "$cache_dir")"
+    while [ "$size_bytes" -gt "$max_bytes" ]; do
+      oldest_entry="$(dependency_cache_entry_roots "$cache_dir" | while IFS= read -r entry; do
+        [ -n "$entry" ] || continue
+        printf '%s\t%s\n' "$(stat -c %Y "$entry" 2>/dev/null || stat -f %m "$entry" 2>/dev/null || printf '0')" "$entry"
+      done | sort -n | awk 'NR==1 {print $2}')"
+      [ -n "$oldest_entry" ] || break
+      printf 'Dependency cache prune: removing oldest entry %s (size=%s max=%s)\n' "$oldest_entry" "$size_bytes" "$max_bytes" | tee -a "$DEPENDENCY_CACHE_LOG"
+      rm -rf "$oldest_entry"
+      size_bytes="$(dependency_cache_size_bytes "$cache_dir")"
+    done
+  fi
+
+  write_dependency_cache_metrics "$cache_dir" "$metrics_file"
+}
+
+npm_run_script_name() {
+  local command="$1"
+  local npm_run_regex='^npm[[:space:]]+run[[:space:]]+([^[:space:]-][^[:space:]-]*)($|[[:space:]])'
+  if [[ "$command" =~ $npm_run_regex ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  return 1
+}
+
+package_json_has_npm_script() {
+  local script_name="$1"
+  [ -f package.json ] || return 1
+  node - "$script_name" <<'NODE'
+const fs = require('fs');
+const scriptName = process.argv[2];
+try {
+  const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+  const scripts = pkg && typeof pkg.scripts === 'object' && pkg.scripts ? pkg.scripts : {};
+  process.exit(Object.prototype.hasOwnProperty.call(scripts, scriptName) ? 0 : 1);
+} catch {
+  process.exit(1);
+}
+NODE
+}
+
+missing_npm_script_for_validation_command() {
+  local command="$1"
+  local script_name
+  script_name="$(npm_run_script_name "$command")" || return 1
+  package_json_has_npm_script "$script_name" && return 1
+  printf '%s' "$script_name"
+  return 0
+}
+
+append_default_validation_command() {
+  local current="$1"
+  local next_command="$2"
+  if [ -z "$current" ]; then
+    printf '%s' "$next_command"
+  else
+    printf '%s;%s' "$current" "$next_command"
+  fi
+}
+
+construct_default_validation_commands() {
+  local commands=""
+
+  if package_json_has_npm_script "build"; then
+    commands="$(append_default_validation_command "$commands" "npm run build")"
+  elif package_json_has_npm_script "type-check"; then
+    commands="$(append_default_validation_command "$commands" "npm run type-check")"
+  elif has_typescript_project; then
+    commands="$(append_default_validation_command "$commands" "npm exec -- tsc --noEmit")"
+  elif package_json_has_npm_script "check"; then
+    commands="$(append_default_validation_command "$commands" "npm run check")"
+  fi
+
+  if package_json_has_npm_script "test"; then
+    commands="$(append_default_validation_command "$commands" "npm run test")"
+  fi
+
+  if [ -n "$commands" ]; then
+    printf '%s' "$commands"
+    return 0
+  fi
+
+  # Keep validation non-empty even when the repository does not define common
+  # scripts. The validation runner will report each missing npm script clearly.
+  printf '%s' "npm run build;npm run type-check;npm run test"
+}
+
+apply_default_validation_commands() {
+  local detected_commands
+
+  if [ -n "${KASEKI_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
+    return 0
+  fi
+
+  detected_commands="$(construct_default_validation_commands)"
+  KASEKI_VALIDATION_COMMANDS="$detected_commands"
+  if [ -z "${KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
+    KASEKI_PRE_AGENT_VALIDATION_COMMANDS="$detected_commands"
+  fi
+}
+
+# shellcheck source=scripts/auto-lint-cleanup-classification.sh
+. "${KASEKI_SCRIPT_DIR}/scripts/auto-lint-cleanup-classification.sh"
+
+
+record_skipped_validation_command() {
+  record_skipped_npm_script_command "$1" "$2" "$3" "${4:-${KASEKI_RESULTS_DIR}/validation.log}" "${5:-$VALIDATION_TIMINGS_FILE}" "skipped"
+  # Phase 2C: Emit skipped validation result to JSON
+  append_validation_result "${KASEKI_RESULTS_DIR}"/validation-results.json "$1" "127" "$3" "skipped"
+}
+
+capture_validation_startup_diagnostics() {
+  # Phase 2: Capture system state before validation filter starts
+  # This helps diagnose SIGPIPE failures on memory-constrained systems (RPi 4 with 4GB)
+  local diagnostics_file="${1:-$VALIDATION_STARTUP_DIAGNOSTICS_LOG}"
+  
+  {
+    printf '[validation-startup] timestamp=%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+    printf '[validation-startup] pid=%s\n' "$$"
+    
+    # Memory state
+    if command -v free &>/dev/null; then
+      printf '[validation-startup] memory_state=%s\n' "$(free -h | head -2 | tail -1)"
+    fi
+    
+    # Disk state
+    if command -v df &>/dev/null; then
+      printf '[validation-startup] disk_results=%s\n' "$(df -h "${KASEKI_RESULTS_DIR}" 2>/dev/null | tail -1)"
+    fi
+    
+    # File descriptor count (indicator of resource exhaustion)
+    if [ -d "/proc/self/fd" ]; then
+      printf '[validation-startup] open_file_descriptors=%d\n' "$(find /proc/self/fd -maxdepth 1 2>/dev/null | wc -l)"
+    fi
+    
+    # Process memory usage
+    if [ -f "/proc/self/status" ]; then
+      printf '[validation-startup] process_vm_rss=%s\n' "$(grep '^VmRSS' /proc/self/status | awk '{print $2 " " $3}' || echo 'unknown')"
+    fi
+  } | tee -a "$diagnostics_file"
+}
+
+has_typescript_project() {
+  # Auto-detect TypeScript presence in the project
+  # Checks for:
+  # 1. tsconfig.json file (explicit TypeScript config)
+  # 2. typescript dependency (regular, dev, or optional)
+  # Exit code: 0 if TypeScript detected, 1 otherwise
+  
+  # Check for tsconfig.json
+  [ -f tsconfig.json ] && return 0
+  
+  # Check for typescript in package.json (dev, regular, or optional dependencies)
+  [ -f package.json ] || return 1
+  node - <<'NODE'
+try {
+  const pkg = require('./package.json');
+  const isDep = pkg.dependencies?.typescript || 
+                pkg.devDependencies?.typescript ||
+                pkg.optionalDependencies?.typescript;
+  process.exit(isDep ? 0 : 1);
+} catch {
+  process.exit(1);
+}
+NODE
+}
+
+has_npm_build_command() {
+  # Check if the configured npm script exists in package.json
+  # Returns 0 if script exists, 1 otherwise
+  local command="$1"
+  local script_name
+  
+  script_name="$(npm_run_script_name "$command")" || return 1
+  package_json_has_npm_script "$script_name" && return 0
+  return 1
+}
+
+run_typescript_precheck() {
+  # TypeScript compilation pre-check: runs before agent invocation to catch export/compile errors early
+  # Now with intelligent auto-detection:
+  # - Skips if no TypeScript detected in project
+  # - Skips if configured command (npm script) doesn't exist
+  # - Only fails if TypeScript is present AND the check genuinely fails
+  # Exit code: 0 = passed/skipped, non-zero = failed
+  # Returns silently; exit code stored in TS_PRE_CHECK_EXIT global
+  
+  TS_PRE_CHECK_EXIT=0
+  TS_PRE_CHECK_DURATION_SECONDS=0
+  TS_PRE_CHECK_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  
+  if [ "$KASEKI_TS_PRE_CHECK" != "1" ]; then
+    emit_progress "typescript precheck" "skipped (KASEKI_TS_PRE_CHECK=0)"
+    record_stage_timing "typescript precheck" 0 0 "skipped_by_config"
+    return 0
+  fi
+  
+  # Auto-detect: skip if no TypeScript project detected
+  if ! has_typescript_project; then
+    emit_progress "typescript precheck" "skipped (no TypeScript detected)"
+    record_stage_timing "typescript precheck" 0 0 "skipped_no_typescript"
+    return 0
+  fi
+  
+  # Auto-detect: skip if configured npm script doesn't exist
+  if ! has_npm_build_command "$KASEKI_TS_CHECK_COMMAND"; then
+    local missing_script
+    missing_script="$(npm_run_script_name "$KASEKI_TS_CHECK_COMMAND")" || missing_script="$KASEKI_TS_CHECK_COMMAND"
+    printf '\n==> TypeScript pre-check\n' | tee -a "${KASEKI_RESULTS_DIR}"/pre-validation-ts-check.log
+    printf 'Command: %s\n' "$KASEKI_TS_CHECK_COMMAND" | tee -a "${KASEKI_RESULTS_DIR}"/pre-validation-ts-check.log
+    printf 'skipped: npm script "%s" not found in package.json\n' "$missing_script" | tee -a "${KASEKI_RESULTS_DIR}"/pre-validation-ts-check.log
+    emit_error_event "typescript_precheck_skipped_missing_script" "TypeScript check skipped: npm script '$missing_script' not defined" "continue"
+    emit_progress "typescript precheck" "skipped (npm script '$missing_script' not found)"
+    record_stage_timing "typescript precheck" 0 0 "skipped_missing_script"
+    return 0
+  fi
+  
+  # TypeScript detected and script exists - run the check
+  set +e
+  local ts_check_start ts_check_end ts_check_duration ts_check_exit
+  ts_check_start="$(date +%s)"
+  
+  {
+    printf '\n==> TypeScript pre-check\n'
+    printf 'Command: %s\n' "$KASEKI_TS_CHECK_COMMAND"
+    (
+      cd "${KASEKI_WORKSPACE_DIR}"/repo || exit 1
+      bash -lc "$KASEKI_TS_CHECK_COMMAND"
+    ) 2>&1
+  } 2>&1 | tee -a "${KASEKI_RESULTS_DIR}"/pre-validation-ts-check.log
+  ts_check_exit="${PIPESTATUS[0]}"
+  
+  ts_check_end="$(date +%s)"
+  ts_check_duration=$((ts_check_end - ts_check_start))
+  TS_PRE_CHECK_EXIT=$ts_check_exit
+  TS_PRE_CHECK_DURATION_SECONDS=$ts_check_duration
+  
+  if [ "$ts_check_exit" -eq 0 ]; then
+    emit_progress "typescript precheck" "passed ($ts_check_duration seconds)"
+    record_stage_timing "typescript precheck" 0 "$ts_check_duration" "success"
+  else
+    emit_error_event "typescript_precheck_failed" "TypeScript compilation failed: $KASEKI_TS_CHECK_COMMAND" "continue"
+    emit_progress "typescript precheck" "failed (exit $ts_check_exit, $ts_check_duration seconds)"
+    record_stage_timing "typescript precheck" "$ts_check_exit" "$ts_check_duration" "failed"
+  fi
+  
+  set -e
+  return "$ts_check_exit"
+}
+
+append_validation_failure_tail() {
+  local raw_log="$1"
+  local visible_log="$2"
+  local quality_log="${3:-${KASEKI_RESULTS_DIR}/quality.log}"
+
+  if ! [ -s "$raw_log" ]; then
+    return 0
+  fi
+
+  {
+    printf '\n[DIAGNOSTICS] Raw validation output tail (last 80 lines):\n'
+    tail -80 "$raw_log" 2>/dev/null || printf '<failed to read raw validation log>\n'
+  } | tee -a "$visible_log" "$quality_log" >/dev/null
+}
+
+# === Baseline Test Failure Comparison (Pre-existing vs Newly-Introduced) ===
+
+baseline_validation_cache_key() {
+  # Cache key: repo_url + main_branch_ref + validation commands
+  # This ensures different validation command sets get different cache entries
+  printf '%s\n%s\n%s' "$REPO_URL" "main" "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" | sha256sum | awk '{print $1}'
+}
+
+baseline_validation_cache_dir() {
+  local cache_root="${KASEKI_BASELINE_CACHE_ROOT:-${KASEKI_CACHE_DIR}/kaseki-baseline}"
+  local cache_key
+  cache_key="$(baseline_validation_cache_key)"
+  printf '%s/%s' "$cache_root" "$cache_key"
+}
+
+baseline_validation_cache_is_valid() {
+  local cache_dir="$1"
+  local max_age_hours="${KASEKI_BASELINE_CACHE_MAX_AGE_HOURS:-24}"
+  
+  [ -d "$cache_dir" ] || return 1
+  [ -f "$cache_dir/validation.log" ] || return 1
+  [ -f "$cache_dir/validation-timings.tsv" ] || return 1
+  
+  # Check age: if older than max_age_hours, invalidate
+  local cache_mtime now_seconds age_hours
+  cache_mtime="$(stat -c %Y "$cache_dir/validation.log" 2>/dev/null || printf '0')"
+  now_seconds="$(date +%s)"
+  age_hours=$(( (now_seconds - cache_mtime) / 3600 ))
+  [ "$age_hours" -lt "$max_age_hours" ]
+}
+
+restore_baseline_validation_from_cache() {
+  local cache_dir="$1"
+  
+  if [ "$KASEKI_BASELINE_CACHE_DISABLED" = "1" ]; then
+    return 1
+  fi
+  
+  if ! baseline_validation_cache_is_valid "$cache_dir"; then
+    return 1
+  fi
+  
+  # Restore cached files to results directory
+  mkdir -p "${KASEKI_RESULTS_DIR}"
+  
+  if ! cp "$cache_dir/validation.log" "${KASEKI_RESULTS_DIR}"/validation-baseline.log 2>/dev/null; then
+    return 1
+  fi
+  if ! cp "$cache_dir/validation-raw.log" "${KASEKI_RESULTS_DIR}"/validation-baseline-raw.log 2>/dev/null; then
+    return 1
+  fi
+  if ! cp "$cache_dir/validation-timings.tsv" "${KASEKI_RESULTS_DIR}"/validation-baseline-timings.tsv 2>/dev/null; then
+    return 1
+  fi
+  if [ -f "$cache_dir/validation-env.log" ]; then
+    cp "$cache_dir/validation-env.log" "${KASEKI_RESULTS_DIR}"/validation-baseline-env.log 2>/dev/null || true
+  fi
+  
+  return 0
+}
+
+save_baseline_validation_to_cache() {
+  local cache_dir="$1"
+  
+  if [ "$KASEKI_BASELINE_CACHE_DISABLED" = "1" ]; then
+    return 0
+  fi
+  
+  # Create cache directory
+  mkdir -p "$cache_dir" || return 1
+  
+  # Save validation results to cache
+  if [ -f "${KASEKI_RESULTS_DIR}"/validation-baseline.log ]; then
+    cp "${KASEKI_RESULTS_DIR}"/validation-baseline.log "$cache_dir/validation.log" || return 1
+  fi
+  
+  if [ -f "${KASEKI_RESULTS_DIR}"/validation-baseline-raw.log ]; then
+    cp "${KASEKI_RESULTS_DIR}"/validation-baseline-raw.log "$cache_dir/validation-raw.log" || return 1
+  fi
+  
+  if [ -f "${KASEKI_RESULTS_DIR}"/validation-baseline-timings.tsv ]; then
+    cp "${KASEKI_RESULTS_DIR}"/validation-baseline-timings.tsv "$cache_dir/validation-timings.tsv" || return 1
+  fi
+  
+  if [ -f "${KASEKI_RESULTS_DIR}"/validation-baseline-env.log ]; then
+    cp "${KASEKI_RESULTS_DIR}"/validation-baseline-env.log "$cache_dir/validation-env.log" 2>/dev/null || true
+  fi
+  
+  return 0
+}
+
+choose_baseline_log_dir() {
+  local preferred_log_dir="${KASEKI_LOG_DIR:-}"
+  local fallback_log_dir="${KASEKI_RESULTS_DIR}"
+  local temp_parent="${TMPDIR:-/tmp}"
+  local temp_log_dir
+
+  if [ -n "$preferred_log_dir" ] && mkdir -p "$preferred_log_dir" 2>/dev/null && [ -w "$preferred_log_dir" ]; then
+    printf '%s\n' "$preferred_log_dir"
+    return 0
+  fi
+
+  if mkdir -p "$fallback_log_dir" 2>/dev/null && [ -w "$fallback_log_dir" ]; then
+    printf '%s\n' "$fallback_log_dir"
+    return 0
+  fi
+
+  temp_log_dir="$(TMPDIR="$temp_parent" mktemp -d -t kaseki-baseline-logs.XXXXXX 2>/dev/null)" || return 1
+  if [ -n "$temp_log_dir" ] && [ -d "$temp_log_dir" ] && [ -w "$temp_log_dir" ]; then
+    printf '%s\n' "$temp_log_dir"
+    return 0
+  fi
+
+  return 1
+}
+
+checkout_baseline_repo() {
+  local baseline_dir="${KASEKI_WORKSPACE_BASELINE_DIR}"
+  local baseline_log_dir
+  if ! baseline_log_dir="$(choose_baseline_log_dir)"; then
+    emit_error_event "baseline_log_dir_failed" "Failed to create writable baseline log directory from KASEKI_LOG_DIR, KASEKI_RESULTS_DIR, or a secure temporary directory" "continue"
+    return 1
+  fi
+  local baseline_checkout_log="${baseline_log_dir}/baseline-checkout.log"
+  local baseline_npm_ci_log="${baseline_log_dir}/baseline-npm-ci.log"
+  
+  # Clean up any existing baseline
+  rm -rf "$baseline_dir" 2>/dev/null || true
+  mkdir -p "$baseline_dir"
+  
+  emit_progress "baseline preparation" "checking out main branch"
+  
+  # Clone main branch into baseline directory
+  if ! git clone --depth 1 --branch main "$REPO_URL" "$baseline_dir" 2>>"$baseline_checkout_log"; then
+    emit_error_event "baseline_checkout_failed" "Failed to checkout main branch for baseline comparison" "continue"
+    return 1
+  fi
+  
+  # Install dependencies in baseline
+  if [ -f "$baseline_dir/package.json" ]; then
+    emit_progress "baseline preparation" "installing baseline dependencies"
+    if ! cd "$baseline_dir" && npm ci --prefer-offline 2>>"$baseline_npm_ci_log"; then
+      emit_error_event "baseline_deps_failed" "Failed to install baseline dependencies" "continue"
+      cd "${KASEKI_WORKSPACE_DIR}"/repo
+      return 1
+    fi
+    cd "${KASEKI_WORKSPACE_DIR}"/repo
+  fi
+  
+  return 0
+}
+
+run_baseline_validation() {
+  local baseline_dir="${KASEKI_WORKSPACE_BASELINE_DIR}"
+  local baseline_log="${KASEKI_RESULTS_DIR}/validation-baseline.log"
+  local baseline_timings="${KASEKI_RESULTS_DIR}/validation-baseline-timings.tsv"
+  local baseline_exit_var="BASELINE_VALIDATION_EXIT"
+  local baseline_detail_var="BASELINE_VALIDATION_FAILED_COMMAND_DETAIL"
+  local baseline_reason_var="BASELINE_VALIDATION_FAILURE_REASON"
+  
+  if [ ! -d "$baseline_dir" ]; then
+    return 1
+  fi
+  
+  # Save current working directory
+  local saved_pwd="$PWD"
+  # Change to baseline directory temporarily
+  cd "$baseline_dir" || return 1
+  
+  # Run validation commands in baseline
+  run_validation_commands \
+    "baseline validation" \
+    "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
+    "$baseline_log" \
+    "/dev/null" \
+    "$baseline_timings" \
+    "${KASEKI_RESULTS_DIR}/validation-baseline-env.log" \
+    "baseline_validation_failed" \
+    "$baseline_exit_var" \
+    "$baseline_detail_var" \
+    "$baseline_reason_var" \
+    "BASELINE_VALIDATION_STOPPED_EARLY" \
+    "BASELINE_VALIDATION_COMMANDS_ATTEMPTED"
+  
+  local baseline_exit=$?
+  
+  # Restore working directory
+  cd "$saved_pwd" || return 1
+  
+  # Store baseline exit code for later analysis
+  export BASELINE_VALIDATION_EXIT=$baseline_exit
+  
+  return $baseline_exit
+}
+
+analyze_test_failures_baseline() {
+  local baseline_log="${KASEKI_RESULTS_DIR}/validation-baseline.log"
+  local working_log="${KASEKI_RESULTS_DIR}/pre-validation.log"
+  local output_file="${KASEKI_RESULTS_DIR}/test-baseline-comparison.json"
+  local results_dir="${KASEKI_RESULTS_DIR}"
+  
+  if [ ! -f "$baseline_log" ] || [ ! -f "$working_log" ]; then
+    emit_progress "test failure analysis" "skipped (baseline or working log missing)"
+    return 0
+  fi
+  
+  emit_progress "test failure analysis" "comparing baseline and working test results"
+  
+  # 1. Prefer pre-compiled global binary or library JS (fastest in Docker)
+  if command -v analyze-test-failures >/dev/null 2>&1; then
+    analyze-test-failures "$baseline_log" "$working_log" "$output_file" "$results_dir"
+    return $?
+  fi
+
+  local lib_analyzer_js="/app/lib/analyze-test-failures.js"
+  if [ -f "$lib_analyzer_js" ]; then
+    node "$lib_analyzer_js" "$baseline_log" "$working_log" "$output_file" "$results_dir"
+    return $?
+  fi
+
+  # 2. Fall back to on-the-fly transpilation of .ts source (local development)
+  # In Docker, prefer /app/src/ (installed with image); fall back to local $SCRIPT_DIR for dev
+  local analyzer_ts="/app/src/analyze-test-failures.ts"
+  local analyzer_js="/tmp/analyze-test-failures.js"
+  
+  # For local development (running outside Docker), use source from repo
+  if [ ! -f "$analyzer_ts" ] && [ -f "$SCRIPT_DIR/src/analyze-test-failures.ts" ]; then
+    analyzer_ts="$SCRIPT_DIR/src/analyze-test-failures.ts"
+  fi
+  
+  if [ -f "$analyzer_ts" ]; then
+    # Transpile on-the-fly if npx esbuild or tsc available, otherwise run via node with ts-node
+    if command -v npx >/dev/null 2>&1; then
+      npx -y esbuild "$analyzer_ts" --bundle --platform=node --outfile="$analyzer_js" 2>/dev/null || {
+        # Fallback to ts-node
+        npx -y ts-node "$analyzer_ts" "$baseline_log" "$working_log" "$output_file" "$results_dir" 2>/dev/null
+        return $?
+      }
+      node "$analyzer_js" "$baseline_log" "$working_log" "$output_file" "$results_dir"
+      local result=$?
+      rm -f "$analyzer_js"
+      return $result
+    else
+      # Try running with node's native TypeScript support if available
+      node "$analyzer_ts" "$baseline_log" "$working_log" "$output_file" "$results_dir" 2>/dev/null
+      return $?
+    fi
+  else
+    emit_error_event "test_failure_analyzer_missing" "Test failure analyzer script not found at $analyzer_ts (no global binary or library JS found either)" "continue"
+    return 1
+  fi
+}
+
+analyze_validation_failure_causality() {
+  local baseline_log="${KASEKI_RESULTS_DIR}/validation-baseline.log"
+  local post_change_log="${KASEKI_RESULTS_DIR}/validation.log"
+  local git_diff="${KASEKI_RESULTS_DIR}/git.diff"
+  local changed_files="${KASEKI_RESULTS_DIR}/changed-files.txt"
+  local output_file="${KASEKI_RESULTS_DIR}/validation-causality-analysis.json"
+
+  # Skip if no baseline (first run)
+  if [ ! -f "$baseline_log" ]; then
+    emit_progress "validation causality analysis" "skipped (no baseline validation results)"
+    return 0
+  fi
+
+  # Skip if no post-change validation
+  if [ ! -f "$post_change_log" ]; then
+    emit_progress "validation causality analysis" "skipped (no post-change validation results)"
+    return 0
+  fi
+
+  emit_progress "validation causality analysis" "analyzing failure causality (3 signals)"
+
+  # 1. Prefer pre-compiled global binary or library JS (fastest in Docker)
+  if command -v validation-causality-analysis >/dev/null 2>&1; then
+    validation-causality-analysis "$baseline_log" "$post_change_log" "$git_diff" "$changed_files" "$output_file"
+    return $?
+  fi
+
+  local lib_analyzer_js="/app/lib/lib/validation-causality-analysis.js"
+  if [ -f "$lib_analyzer_js" ]; then
+    node "$lib_analyzer_js" "$baseline_log" "$post_change_log" "$git_diff" "$changed_files" "$output_file"
+    return $?
+  fi
+
+  # 2. Fall back to on-the-fly execution of .ts source (local development)
+  # Use TypeScript utilities to analyze causality
+  local analyzer_module="src/lib/validation-causality-analysis.ts"
+  if [ ! -f "$analyzer_module" ] && [ -f "/app/$analyzer_module" ]; then
+    analyzer_module="/app/$analyzer_module"
+  fi
+
+  if [ -f "$analyzer_module" ]; then
+    # Try to run the analysis through the TypeScript CLI.
+    if command -v npx >/dev/null 2>&1; then
+      npx -y tsx "$analyzer_module" "$baseline_log" "$post_change_log" "$git_diff" "$changed_files" "$output_file" 2>/dev/null || \
+        npx -y ts-node --esm "$analyzer_module" "$baseline_log" "$post_change_log" "$git_diff" "$changed_files" "$output_file" 2>/dev/null || {
+          # If TypeScript execution fails, just note that analysis was attempted.
+          emit_progress "validation causality analysis" "TypeScript analysis unavailable; skipping detailed causality breakdown"
+          return 0
+        }
+    else
+      emit_progress "validation causality analysis" "npx not available; skipping detailed causality breakdown"
+      return 0
+    fi
+  else
+    emit_progress "validation causality analysis" "Causality analyzer script not found; skipping"
+    return 0
+  fi
+
+  # Check if artifact was created
+  if [ -f "$output_file" ]; then
+    # Extract verdict from artifact
+    if command -v jq >/dev/null 2>&1; then
+      local verdict
+      verdict=$(jq -r '.assessment.failureType // "unknown"' "$output_file")
+      local confidence
+      confidence=$(jq -r '.assessment.confidence // 0' "$output_file")
+      emit_progress "validation causality analysis" "completed: $verdict (${confidence}% confidence)"
+      return 0
+    else
+      emit_progress "validation causality analysis" "completed (artifact created)"
+      return 0
+    fi
+  fi
+
+  return 0
+}
+
+write_validation_command_environment() {
+  local stage_label="$1"
+  local command="$2"
+  local env_log="$3"
+
+  {
+    printf '[validation command] stage=%s\n' "$stage_label"
+    printf '[validation command] command=%s\n' "$command"
+    printf '[validation command] working_directory=%s\n' "$(pwd 2>&1 || echo '<pwd failed>')"
+    printf '[validation command] node_version=%s\n' "$(node --version 2>&1 || echo '<node not found>')"
+    printf '[validation command] npm_version=%s\n' "$(npm --version 2>&1 || echo '<npm not found>')"
+    printf '[validation command] disk_available=%s\n' "$(df -h "${KASEKI_RESULTS_DIR}" 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
+  } | tee -a "$env_log"
+}
+
+run_validation_commands() {
+  local stage_label="$1"
+  local commands="$2"
+  local log_file="$3"
+  local raw_log="$4"
+  local timings_file="$5"
+  local env_log="$6"
+  local failure_reason_prefix="${7:-validation_command_failed}"
+  local exit_var="${8:-VALIDATION_EXIT}"
+  local detail_var="${9:-VALIDATION_FAILED_COMMAND_DETAIL}"
+  local reason_var="${10:-VALIDATION_FAILURE_REASON}"
+  local stopped_var="${11:-VALIDATION_STOPPED_EARLY}"
+  local attempted_var="${12:-VALIDATION_COMMANDS_ATTEMPTED}"
+  local -n validation_exit_ref="$exit_var"
+  validation_exit_ref=0
+  local -n validation_detail_ref="$detail_var"
+  # shellcheck disable=SC2034 # These are reference variables assigned indirectly via function parameters
+  local -n validation_reason_ref="$reason_var"
+  local -n validation_stopped_ref="$stopped_var"
+  local -n validation_attempted_ref="$attempted_var"
+  local stage_start validation_start validation_end duration command trimmed missing_npm_script
+  local command_exit tee_exit filter_exit pipe_statuses execute_during_dry_run pipefail_was_enabled
+  local -a validation_commands
+
+  execute_during_dry_run=false
+  if [ "$KASEKI_BASELINE_VALIDATION_DRY_RUN" = "1" ] && [ "$stage_label" = "pre-agent validation" ]; then
+    execute_during_dry_run=true
+  fi
+
+  printf '\n==> %s\n' "$stage_label"
+  set_current_stage "$stage_label"
+  emit_progress "$stage_label" "started"
+  stage_start="$(date +%s)"
+  
+  # Phase 2: Capture pre-filter startup diagnostics for infrastructure failure diagnosis
+  capture_validation_startup_diagnostics "$VALIDATION_STARTUP_DIAGNOSTICS_LOG"
+
+  if [ "$KASEKI_DRY_RUN" = "1" ] && [ "$execute_during_dry_run" != "true" ]; then
+    printf '🔄 DRY-RUN MODE: Validation commands would be executed (not running in dry-run mode):\n' | tee -a "$log_file"
+    IFS=';' read -r -a validation_commands <<< "$commands"
+    for command in "${validation_commands[@]}"; do
+      trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
+      [ -z "$trimmed" ] && continue
+      printf '  - %s\n' "$trimmed" | tee -a "$log_file"
+    done
+    validation_exit_ref=0
+    record_stage_timing "$stage_label" "0" "$(($(date +%s) - stage_start))" "dry_run=true"
+  elif [ -z "$commands" ] || [ "$commands" = "none" ]; then
+    printf 'Validation skipped because commands=%s.\n' "${commands:-<empty>}" | tee -a "$log_file"
+    record_stage_timing "$stage_label" 0 0 "skipped_by_config"
+  else
+    # Checkpoint: Verify working directory exists before validation.
+    if ! [ -d "${KASEKI_WORKSPACE_DIR}"/repo ]; then
+      printf 'ERROR: Working directory %s/repo does not exist before %s\n' "$KASEKI_WORKSPACE_DIR" "$stage_label" | tee -a "$log_file"
+      printf 'Current pwd: %s\n' "$(pwd 2>&1 || echo '<pwd failed>')" | tee -a "$log_file"
+      printf 'Filesystem state:\n' | tee -a "$log_file"
+      find /workspace -maxdepth 3 -type f 2>&1 | head -100 | tee -a "$log_file"
+      validation_exit_ref=1
+      validation_detail_ref="Working directory ${KASEKI_WORKSPACE_DIR}/repo missing before $stage_label"
+      validation_reason_ref="$failure_reason_prefix: workspace_missing"
+      record_stage_timing "$stage_label" "$validation_exit_ref" "$(($(date +%s) - stage_start))" "directory_missing"
+    else
+      set +e
+      IFS=';' read -r -a validation_commands <<< "$commands"
+      for command in "${validation_commands[@]}"; do
+        trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
+        [ -z "$trimmed" ] && continue
+        VALIDATION_LAST_COMMAND="$trimmed"
+        validation_start="$(date +%s)"
+        if missing_npm_script="$(missing_npm_script_for_validation_command "$trimmed")"; then
+          validation_end="$(date +%s)"
+          duration=$((validation_end - validation_start))
+          record_skipped_validation_command "$trimmed" "$missing_npm_script" "$duration" "$log_file" "$timings_file"
+          emit_event "validation_command_skipped" "stage=$stage_label" "command=$trimmed" "reason=missing_npm_script" "script=$missing_npm_script" "duration_seconds=$duration"
+          continue
+        fi
+        ((validation_attempted_ref++))
+        emit_progress "$stage_label" "running command=$trimmed timeout_seconds=$KASEKI_VALIDATION_TIMEOUT_SECONDS"
+        emit_event "validation_command_started" "stage=$stage_label" "command=$trimmed"
+        # Log command environment state before execution.
+        write_validation_command_environment "$stage_label" "$trimmed" "$env_log"
+        # Use pipefail to catch errors in any stage of the pipe.
+        pipefail_was_enabled=0
+        if set -o | grep -q '^pipefail[[:space:]]*on'; then
+          pipefail_was_enabled=1
+        fi
+        set -o pipefail
+        # validation-output-filter may intentionally stop reading early (for
+        # truncation/summary behavior), which can close a downstream pipe.
+        # Use warn-nopipe so tee still reports real file-write problems but
+        # does not emit noisy benign broken-pipe warnings for pipe sinks.
+        {
+          printf '\n==> %s\n' "$trimmed"
+          unset LLM_GATEWAY_API_KEY
+          # Use non-login shell (bash -c) to avoid initialization issues in --read-only containers.
+          # Login shell (bash -l) sources /etc/profile and ~/.bashrc, which can fail with getcwd()
+          # errors when running in constrained filesystem environments (read-only root, etc.).
+          timeout --signal=TERM --kill-after=10s "$KASEKI_VALIDATION_TIMEOUT_SECONDS" bash -c "$trimmed"
+          command_exit=$?
+          if [ "$command_exit" -eq 124 ]; then
+            printf 'validation command timed out after %ss\n' "$KASEKI_VALIDATION_TIMEOUT_SECONDS"
+          fi
+          printf 'exit_code=%s\n' "$command_exit"
+          exit "$command_exit"
+        } 2>&1 |
+          tee --output-error=warn-nopipe \
+            >(cat >> "$log_file") \
+            >(cat >> "$raw_log") \
+            2> >(sed 's/^/[validation-tee] /' >> "$FILTER_STDERR_FILE") |
+          FILTER_DIAGNOSTICS_LOG="$FILTER_DIAGNOSTICS_LOG" validation-output-filter 2>>"$FILTER_STDERR_FILE"
+        pipe_statuses=("${PIPESTATUS[@]}")
+        if [ "$pipefail_was_enabled" -eq 1 ]; then
+          set -o pipefail
+        else
+          set +o pipefail
+        fi
+        # pipe_statuses[0] = bash command exit code
+        # pipe_statuses[1] = tee exit code
+        # pipe_statuses[2] = validation-output-filter exit code
+        command_exit="${pipe_statuses[0]:-1}"
+        tee_exit="${pipe_statuses[1]:-1}"
+        filter_exit="${pipe_statuses[2]:-1}"
+        validation_end="$(date +%s)"
+        duration=$((validation_end - validation_start))
+        printf '%s\t%s\t%s\ttee_exit=%s\tfilter_exit=%s\n' "$trimmed" "$command_exit" "$duration" "$tee_exit" "$filter_exit" >> "$timings_file"
+        emit_event "validation_command_finished" "stage=$stage_label" "command=$trimmed" "exit_code=$command_exit" "tee_exit_code=$tee_exit" "filter_exit_code=$filter_exit" "duration_seconds=$duration"
+        emit_progress "$stage_label" "command=$trimmed finished exit=$command_exit duration_seconds=$duration"
+        
+        # Phase 2C: Emit validation result to JSON
+        local cmd_status="passed"
+        [ "$command_exit" -ne 0 ] && cmd_status="failed"
+        append_validation_result "${KASEKI_RESULTS_DIR}"/validation-results.json "$trimmed" "$command_exit" "$duration" "$cmd_status"
+
+        FILTER_STDERR_TAIL=""
+        {
+          printf '\n[validation pipeline] command=%s\n' "$trimmed"
+          printf '[validation pipeline] statuses: command=%s tee=%s filter=%s\n' "$command_exit" "$tee_exit" "$filter_exit"
+          printf '[validation pipeline] logs: visible=%s diagnostics=%s\n' "$log_file" "$FILTER_DIAGNOSTICS_LOG"
+        } >> "$log_file"
+        {
+          printf '\n[validation pipeline] command=%s\n' "$trimmed"
+          printf '[validation pipeline] statuses: command=%s tee=%s filter=%s\n' "$command_exit" "$tee_exit" "$filter_exit"
+        } >> "$FILTER_DIAGNOSTICS_LOG"
+
+        # Capture and process filter/tee stderr for diagnostics.
+        if [ -f "$FILTER_STDERR_FILE" ] && [ -s "$FILTER_STDERR_FILE" ]; then
+          FILTER_STDERR_TAIL="$(tail -50 "$FILTER_STDERR_FILE" 2>/dev/null || echo '<failed to read filter/tee stderr>')"
+          {
+            printf '\n[DIAGNOSTICS] Validation pipeline stderr from filter/tee (last 50 lines):\n'
+            printf '%s\n' "$FILTER_STDERR_TAIL"
+          } | tee -a "$log_file" "${KASEKI_RESULTS_DIR}"/quality.log
+          {
+            printf '\n[validation pipeline stderr tail]\n'
+            printf '%s\n' "$FILTER_STDERR_TAIL"
+          } >> "$FILTER_DIAGNOSTICS_LOG"
+          rm -f "$FILTER_STDERR_FILE"
+        fi
+
+        # Detect and handle SIGPIPE errors (exit code 141 = 128 + 13).
+        # When tee or the filter also reports a broken pipe/early close, classify
+        # the result as validation infrastructure failure instead of a normal
+        # npm/check failure.
+        validation_infra_failure=false
+        if [ "$command_exit" -eq 141 ] && { [ "$tee_exit" -ne 0 ] || [ "$filter_exit" -ne 0 ]; }; then
+          validation_infra_failure=true
+          {
+            printf '\n[DIAGNOSTICS] Validation infrastructure failure: upstream command received SIGPIPE while output pipeline was unhealthy.\n'
+            printf '  Command exit code: 141 (SIGPIPE)\n'
+            printf '  Tee exit code: %s\n' "$tee_exit"
+            printf '  Filter exit code: %s\n' "$filter_exit"
+            printf '  Classification: validation_infrastructure_failure (not a normal validation command failure)\n'
+            printf '  Full raw command output: %s\n' "$raw_log"
+            printf '  Filter diagnostics: %s\n' "$FILTER_DIAGNOSTICS_LOG"
+            if [ -n "$FILTER_STDERR_TAIL" ]; then
+              printf '  Filter/tee stderr was captured above.\n'
+            else
+              printf '  (No stderr captured from filter/tee)\n'
+            fi
+          } | tee -a "$log_file" "${KASEKI_RESULTS_DIR}"/quality.log "$FILTER_DIAGNOSTICS_LOG"
+        fi
+
+        if [ "$validation_infra_failure" = "true" ] && [ "$validation_exit_ref" -eq 0 ]; then
+          validation_exit_ref=1
+          validation_detail_ref="validation infrastructure failure while running \"$trimmed\": command SIGPIPE with tee exit $tee_exit and filter exit $filter_exit"
+          validation_reason_ref="validation_infrastructure_failure: $trimmed (command exit $command_exit, tee exit $tee_exit, filter exit $filter_exit)"
+          if [ "$KASEKI_VALIDATION_FAIL_FAST" -eq 1 ]; then
+            validation_stopped_ref=true
+            printf 'Validation stopped because the validation output pipeline failed (fail-fast mode enabled).\n' | tee -a "$log_file"
+            break
+          fi
+        elif [ "$command_exit" -ne 0 ] && [ "$validation_exit_ref" -eq 0 ]; then
+          validation_exit_ref="$command_exit"
+          validation_detail_ref="first failing command was \"$trimmed\" with exit $command_exit"
+          if [ "$command_exit" -eq 127 ]; then
+            {
+              printf '\n[DIAGNOSTICS] Command returned exit 127 (command or executable not found).\n'
+              printf '  command=%s\n' "$trimmed"
+              printf '  PATH=%s\n' "${PATH:-<unset>}"
+              printf '  node=%s\n' "$(command -v node 2>&1 || echo '<not found>')"
+              printf '  npm=%s\n' "$(command -v npm 2>&1 || echo '<not found>')"
+              printf '  bash=%s\n' "$(command -v bash 2>&1 || echo '<not found>')"
+              printf '  last_output:\n'
+              tail -30 "$raw_log" 2>/dev/null || true
+            } | tee -a "$log_file" "${KASEKI_RESULTS_DIR}/validation-command-diagnostics.log"
+            validation_detail_ref="first failing command was \"$trimmed\" with exit 127 (command or executable not found; see validation-command-diagnostics.log)"
+          elif [ "$command_exit" -eq 124 ]; then
+            validation_detail_ref="first failing command was \"$trimmed\" (timed out after ${KASEKI_VALIDATION_TIMEOUT_SECONDS}s; see validation-command-diagnostics.log)"
+            printf 'command=%s\ntimeout_seconds=%s\n' "$trimmed" "$KASEKI_VALIDATION_TIMEOUT_SECONDS" >> "${KASEKI_RESULTS_DIR}/validation-command-diagnostics.log"
+            emit_event "validation_command_timeout" "stage=$stage_label" "command=$trimmed" "timeout_seconds=$KASEKI_VALIDATION_TIMEOUT_SECONDS"
+          fi
+          # shellcheck disable=SC2034 # Reference variable assigned for external use via nameref
+          validation_reason_ref="$failure_reason_prefix: $trimmed (exit $command_exit)"
+          append_validation_failure_tail "$raw_log" "$log_file"
+          # Enhanced diagnostics for getcwd-type errors.
+          if grep -q 'getcwd\|No such file or directory\|cannot access parent directories' "$log_file"; then
+            {
+              printf '\n[DIAGNOSTICS] Validation command failed with directory access error:\n'
+              printf 'Working directory status:\n'
+              printf '  Current pwd: %s\n' "$(pwd 2>&1 || echo '<pwd failed>')"
+              printf '  %s/repo exists: %s\n' "$KASEKI_WORKSPACE_DIR" "$([ -d "${KASEKI_WORKSPACE_DIR}/repo" ] && echo 'yes' || echo 'no')"
+              if [ -L "${KASEKI_WORKSPACE_DIR}"/repo/node_modules ]; then
+                printf '  node_modules is symlink → %s\n' "$(readlink "${KASEKI_WORKSPACE_DIR}"/repo/node_modules 2>&1 || echo '<readlink failed>')"
+              fi
+              printf 'Last 20 lines of validation log:\n'
+              tail -20 "$log_file"
+            } | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
+          fi
+          # Fail-fast: if enabled, stop validation loop at first failure.
+          if [ "$KASEKI_VALIDATION_FAIL_FAST" -eq 1 ]; then
+            # shellcheck disable=SC2034 # Reference variable assigned for external use via nameref
+            validation_stopped_ref=true
+            printf 'Validation stopped at first failure (fail-fast mode enabled).\n' | tee -a "$log_file"
+            break
+          fi
+        fi
+      done
+      if [ -n "$validation_detail_ref" ]; then
+        printf 'Validation failed: %s\n' "$validation_detail_ref" | tee -a "$log_file"
+      fi
+      set +e
+    fi
+    record_stage_timing "$stage_label" "$validation_exit_ref" "$(($(date +%s) - stage_start))" ""
+  fi
+  if [[ ! "$validation_exit_ref" =~ ^[0-9]+$ ]]; then
+    printf 'ERROR: Validation exit target %s contained non-integer value: %s\n' "$exit_var" "$validation_exit_ref" | tee -a "$log_file"
+    validation_exit_ref=1
+  fi
+  emit_progress "$stage_label" "finished with exit $validation_exit_ref"
+  return "$validation_exit_ref"
+}
+
+compute_repo_memory_key() {
+  printf '%s\n%s' "$REPO_URL" "$GIT_REF" | sha256sum | awk '{print $1}'
+}
+
+init_repo_memory_paths() {
+  if [ "$KASEKI_REPO_MEMORY_MODE" != "summary" ]; then
+    REPO_MEMORY_STATUS="disabled"
+    return 0
+  fi
+  REPO_MEMORY_KEY="$(compute_repo_memory_key)"
+  REPO_MEMORY_DIR="$KASEKI_REPO_MEMORY_ROOT/$REPO_MEMORY_KEY"
+  REPO_MEMORY_FILE="$REPO_MEMORY_DIR/summary.md"
+  REPO_MEMORY_STATUS="enabled"
+}
+
+repo_memory_is_fresh() {
+  local memory_file="$1"
+  local now modified ttl_seconds age_seconds size_bytes
+  [ -f "$memory_file" ] || return 1
+  size_bytes="$(wc -c < "$memory_file" 2>/dev/null | tr -d ' ' || printf '0')"
+  [ "$size_bytes" -gt 0 ] || return 1
+  [ "$size_bytes" -le "$KASEKI_REPO_MEMORY_MAX_BYTES" ] || return 1
+  now="$(date +%s)"
+  modified="$(stat -c %Y "$memory_file" 2>/dev/null || printf '0')"
+  ttl_seconds=$((KASEKI_REPO_MEMORY_TTL_DAYS * 86400))
+  age_seconds=$((now - modified))
+  [ "$age_seconds" -ge 0 ] && [ "$age_seconds" -le "$ttl_seconds" ]
+}
+
+read_repo_memory_section() {
+  init_repo_memory_paths
+  [ "$KASEKI_REPO_MEMORY_MODE" = "summary" ] || return 0
+  if ! repo_memory_is_fresh "$REPO_MEMORY_FILE"; then
+    REPO_MEMORY_STATUS="miss_or_expired"
+    return 0
+  fi
+  REPO_MEMORY_STATUS="hit"
+  {
+    printf '\n\n---\nPrior repository context (opt-in cache; use only as efficiency hints, not authoritative source of truth):\n'
+    head -c "$KASEKI_REPO_MEMORY_MAX_BYTES" "$REPO_MEMORY_FILE"
+    printf '\n---\n'
+  }
+}
+
+write_repo_memory_summary() {
+  [ "$KASEKI_REPO_MEMORY_MODE" = "summary" ] || return 0
+  [ "$KASEKI_DRY_RUN" != "1" ] || return 0
+  init_repo_memory_paths
+  [ -n "$REPO_MEMORY_FILE" ] || return 0
+  [ "$PI_EXIT" -eq 0 ] || return 0
+  [ "$SECRET_SCAN_EXIT" -eq 0 ] || return 0
+  if [ "$STATUS" -ne 0 ] && [ "$KASEKI_TASK_MODE" != "inspect" ]; then
+    return 0
+  fi
+  if ! mkdir -p "$REPO_MEMORY_DIR" 2>/dev/null; then
+    emit_error_event "repo_memory_unavailable" "Cannot create repository memory directory $REPO_MEMORY_DIR" "continue"
+    return 0
+  fi
+  local updated_at
+  REPO_MEMORY_COMMIT_SHA="$(git -C "${KASEKI_WORKSPACE_DIR}"/repo rev-parse HEAD 2>/dev/null || printf 'unknown')"
+  updated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  node - "$KASEKI_REPO_MEMORY_MAX_BYTES" "$REPO_MEMORY_FILE" "$KASEKI_RESULTS_DIR" "$REPO_URL" "$GIT_REF" "$REPO_MEMORY_COMMIT_SHA" "$updated_at" "$KASEKI_TASK_MODE" "$STATUS" "$PI_EXIT" "$VALIDATION_EXIT" "$QUALITY_EXIT" "$SECRET_SCAN_EXIT" <<'NODE' || {
+const fs = require('fs');
+const path = require('path');
+const [maxBytesArg, outputFile, resultsDir, repoUrl, gitRef, commitSha, timestamp, taskMode, status, piExit, validationExit, qualityExit, secretScanExit] = process.argv.slice(2);
+const maxBytes = Math.max(1024, Number(maxBytesArg) || 8000);
+
+function readFile(file, maxChars = 12000) {
+  try {
+    return fs.readFileSync(file, 'utf8').slice(0, maxChars);
+  } catch {
+    return '';
+  }
+}
+
+function sanitize(text) {
+  return String(text || '')
+    .split(/\r?\n/)
+    .filter((line) => !/(secret|credential|password|api[_ -]?key|token|bearer|authorization|private[_ -]?key|openrouter|task prompt|user prompt|^Task:)/i.test(line))
+    .map((line) => line.replace(/sk-[A-Za-z0-9_-]{12,}/g, '[REDACTED_SECRET]').replace(/gh[pousr]_[A-Za-z0-9_]{12,}/g, '[REDACTED_SECRET]'))
+    .join('\n')
+    .trim();
+}
+
+function compactLines(text, limit = 16) {
+  const lines = sanitize(text)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^Artifacts:?$/i.test(line) && !/^[-*] .*\.log( |$)/i.test(line));
+  return lines.slice(0, limit);
+}
+
+function changedFiles() {
+  return sanitize(readFile(path.join(resultsDir, 'changed-files.txt'), 4000))
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 40);
+}
+
+function validationOutcomes() {
+  const rows = sanitize(readFile(path.join(resultsDir, 'validation-timings.tsv'), 8000))
+    .split(/\r?\n/)
+    .map((line) => line.split('\t'))
+    .filter((parts) => parts.length >= 2 && parts[0]);
+  if (!rows.length) return ['No per-command validation timings recorded.'];
+  return rows.slice(0, 20).map(([command, exitCode, duration]) => `${command}: exit ${exitCode}${duration ? `, ${duration}s` : ''}`);
+}
+
+const resultLines = compactLines(readFile(path.join(resultsDir, 'result-summary.md')));
+const analysisLines = compactLines(readFile(path.join(resultsDir, 'analysis.md')), 10);
+const files = changedFiles();
+const validations = validationOutcomes();
+
+let output = `# Repository Memory Summary\n\n` +
+  `> Opt-in efficiency cache only. Treat this as prior context hints, not authoritative source of truth; inspect the repository before relying on it.\n\n` +
+  `- Repo URL: ${repoUrl}\n` +
+  `- Default ref: ${gitRef}\n` +
+  `- Commit SHA: ${commitSha}\n` +
+  `- Updated at: ${timestamp}\n` +
+  `- Last run mode: ${taskMode}\n` +
+  `- Exit status: overall ${status}, agent ${piExit}, validation ${validationExit}, quality ${qualityExit}, secret scan ${secretScanExit}\n` +
+  `\n## Last run summary\n` +
+  (resultLines.length ? resultLines.map((line) => `- ${line.replace(/^[-*]\s*/, '')}`).join('\n') : '- No result summary available.') +
+  `\n\n## Changed files\n` +
+  (files.length ? files.map((file) => `- ${file}`).join('\n') : '- none') +
+  `\n\n## Validation outcomes\n` +
+  validations.map((line) => `- ${line}`).join('\n');
+
+if (analysisLines.length) {
+  output += `\n\n## Sanitized analysis notes\n` + analysisLines.map((line) => `- ${line.replace(/^[-*]\s*/, '')}`).join('\n');
+}
+
+const marker = '\n\n<!-- repo-memory-truncated -->\n';
+let buffer = Buffer.from(output + '\n', 'utf8');
+if (buffer.length > maxBytes) {
+  buffer = Buffer.from(output.slice(0, Math.max(0, maxBytes - Buffer.byteLength(marker))) + marker, 'utf8');
+}
+fs.mkdirSync(path.dirname(outputFile), { recursive: true });
+fs.writeFileSync(outputFile, buffer);
+NODE
+    emit_error_event "repo_memory_write_failed" "Failed to update repository memory summary" "continue"
+    return 0
+  }
+  REPO_MEMORY_STATUS="updated"
+  emit_event "repo_memory_updated" "mode=$KASEKI_REPO_MEMORY_MODE" "repo_key=$REPO_MEMORY_KEY" "summary=$REPO_MEMORY_FILE" "max_bytes=$KASEKI_REPO_MEMORY_MAX_BYTES"
+}
+
+# shellcheck source=/dev/null
+. "$KASEKI_AGENT_PROMPT_HELPER" || {
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_AGENT_PROMPT_HELPER" $? >&2
+  exit 1
+}
+is_transient_goal_setting_failure() {
+  local exit_code="$1"
+  local stderr_content="$2"
+
+  # First, check if we have an explicit validation reason code from our helper
+  if [ -f "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt ]; then
+    local reason_code
+    reason_code=$(cat "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt 2>/dev/null || echo "")
+    case "$reason_code" in
+      valid)
+        return 1
+        ;;
+      placeholder_content)
+        # Deterministic failure - same prompt will produce same placeholder result
+        # Retry requires a different prompt or model configuration, not just retry
+        return 1
+        ;;
+      schema_mismatch|malformed_json|missing_required_fields|empty_goal)
+        # Deterministic failures - do not retry
+        return 1
+        ;;
+    esac
+  fi
+
+  # EXPLICIT EXIT CODE MAPPING (do not treat unknown codes as transient)
+  case "$exit_code" in
+    # Success cases (should not reach here, but handle for safety)
+    0)
+      return 1  # Not transient, unexpected here
+      ;;
+    # Timeout = transient, should retry
+    124)
+      return 0
+      ;;
+    # Local validation failures = deterministic, do not retry
+    86)
+      return 1
+      ;;
+    # Provider/model errors = deterministic until model/config changes
+    88)
+      return 1
+      ;;
+    # Missing config/API key = deterministic, not retryable
+    2)
+      return 1
+      ;;
+    # Exit code 1 = generic agent error - check stderr for transient indicators
+    # Do NOT assume transient without evidence
+    1)
+      # Only retry if stderr contains transient indicators
+      if echo "$stderr_content" | grep -qi -E "(timeout|ETIMEDOUT|rate.?limit|429|503|temporary|transient|try.?again|connection.?reset|ECONNRESET|EPIPE)" 2>/dev/null; then
+        return 0  # Transient (retry)
+      fi
+      # Otherwise treat as deterministic error
+      return 1
+      ;;
+    # Any other non-zero exit code not explicitly mapped
+    # Require strong evidence of transient condition before retrying
+    *)
+      # Check for clear transient error patterns in stderr
+      if echo "$stderr_content" | grep -qi -E "(timeout|connection.*error|ECONNREFUSED|ECONNRESET|ETIMEDOUT|network.*error|try.?again|rate.?limit|temporarily.*unavailable)" 2>/dev/null; then
+        return 0  # Transient (retry)
+      fi
+      # Default to deterministic for unknown exit codes
+      return 1
+      ;;
+  esac
+  
+  # Should not reach here (all cases above return)
+  # shellcheck disable=SC2317
+  return 1
+}
+
+build_goal_setting_prompt() {
+  local caveman_instruction
+  caveman_instruction="$(get_caveman_instruction)"
+  
+  cat <<EOF
+${caveman_instruction:+$caveman_instruction
+
+}You are a goal-setting Pi agent. Your task is to upgrade a user's task prompt into a mature, specific goal that maximizes downstream agent success.
+
+- Write exactly one JSON object to $GOAL_SETTING_CANDIDATE_ARTIFACT.
+- Your final action must write and then read back $GOAL_SETTING_CANDIDATE_ARTIFACT; assistant text alone does not satisfy the artifact contract.
+
+=== GOAL-SETTING BEST PRACTICES ===
+
+Well-formed goals have:
+- **Explicit anti-patterns**: Concrete "do not" constraints (e.g., "Do not modify src/generated/**")
+- **SMART criteria**: Specific (name function), Measurable (test count), Achievable (file count), Relevant (task scope), Time-bound (single run)
+- **Typed constraints**: Separate Operational, Architectural, Technical, and Business constraints
+- **Codebase context**: Tech stack, folder patterns, naming conventions
+- **Examples**: Input/output before/after if inferrable
+- **Reasoning**: Explain why constraints exist
+
+=== INPUT ANALYSIS ===
+
+User task prompt:
+$ORIGINAL_TASK_PROMPT
+
+Analyze for: success criteria, scope boundaries, anti-patterns, conventions, drivers
+
+=== OUTPUT SCHEMA ===
+
+Write exactly one JSON object to $GOAL_SETTING_CANDIDATE_ARTIFACT (no markdown, no code fences) with this shape:
+
+{
+  "original_prompt": "<the user's original task prompt, verbatim>",
+  "upgraded_goal": "<concise goal (1-3 sentences), actionable for a coding agent>",
+  "key_requirements": ["<requirement 1>", "<requirement 2>"],
+  "success_criteria": [
+    {
+      "criterion": "<specific, measurable criterion>",
+      "smart_score": "high",
+      "reasoning": "<brief reason why this is SMART (Specific, Measurable, Achievable, Relevant, Time-bound)>"
+    }
+  ],
+  "anti_patterns": {
+    "do_not_modify": ["<file/pattern to preserve>"],
+    "do_not_break": ["<functionality/contract to preserve>"],
+    "must_preserve": ["<behavior/structure to preserve>"]
+  },
+  "constraints": {
+    "operational": ["<operational constraint>"],
+    "architectural": ["<architectural constraint>"],
+    "technical": ["<technical constraint>"],
+    "business": ["<business constraint>"]
+  },
+  "examples": {
+    "before": "<input/state before changes>",
+    "after": "<expected output/state after changes>"
+  },
+  "quality_metrics": {
+    "clarity": "high|medium|low",
+    "measurability": "high|medium|low",
+    "specificity": "high|medium|low",
+    "scope_clarity": "high|medium|low",
+    "constraint_strength": "high|medium|low"
+  },
+  "reasoning": "<explanation of upgrades made and key decisions>",
+  "confidence": "high|medium|low"
+}
+
+=== CONCRETE EXAMPLE (for reference - NOT to be copied) ===
+
+For a task like "Fix the parser's null-handling in parseRole()", a valid output would be:
+
+{
+  "original_prompt": "Fix null-safety in parseRole() function. Currently crashes on null input; should return undefined instead.",
+  "upgraded_goal": "Add null-safety checks to parseRole() to handle null/undefined inputs gracefully, with test coverage",
+  "key_requirements": [
+    "Must pass TypeScript type checking",
+    "Must not break existing callers",
+    "All new tests must pass"
+  ],
+  "success_criteria": [
+    {
+      "criterion": "parseRole(null) returns undefined instead of throwing",
+      "smart_score": "high",
+      "reasoning": "Directly addresses the null-safety issue and is immediately testable"
+    },
+    {
+      "criterion": "Add 3 tests covering null, undefined, and invalid-type cases",
+      "smart_score": "high",
+      "reasoning": "Specific, measurable, and verifiable in one run"
+    }
+  ],
+  "anti_patterns": {
+    "do_not_modify": ["src/lib/role-constants.ts", "src/types/**"],
+    "do_not_break": ["API contract for parseRole()", "existing error handling patterns"],
+    "must_preserve": ["Error message format for validation failures"]
+  },
+  "constraints": {
+    "operational": ["Change only src/lib/parser.ts and tests/parser.test.ts"],
+    "architectural": ["Respect the existing error-handling pattern"],
+    "technical": ["Must pass type checking and linting"],
+    "business": ["No breaking changes to API callers"]
+  },
+  "reasoning": "The task is focused on defensive programming (null-handling) in a well-tested function. Constraint to parser.ts+tests is tight, making this achievable in one run.",
+  "confidence": "high"
+}
+
+=== CRITICAL INSTRUCTIONS ===
+
+1. **DO NOT COPY THE SCHEMA TEMPLATE ABOVE.** Replace every field with concrete values from the actual task prompt.
+2. **DO NOT USE PLACEHOLDER TEXT.** Never write "e.g., max 3 files changed" or "path/pattern1/**" or "input/state before changes (if inferrable)". Write actual values.
+3. **DO NOT USE ANGLE BRACKETS <...> IN YOUR OUTPUT.** The angle brackets above are markers only. Replace them with real text.
+4. **CONFIDENCE FIELD**: Use only "high", "medium", or "low" (not "high|medium|low").
+5. **ENUM FIELDS**: quality_metrics.clarity must be one of: "high", "medium", "low" (not all three).
+
+If you find yourself about to output a template or example shape, STOP and rewrite with concrete values instead.
+
+Enum fields must contain only one literal value: "high", "medium", or "low".
+
+=== TEST UPDATE REQUIREMENTS ===
+
+**CRITICAL FOR CODE-MODIFYING TASKS**: If this task involves modifying any of these areas, ALWAYS include explicit test-update success criteria:
+
+- **Parsers or regex logic**: "Add 3-5 tests for [null/empty/invalid input handling]"
+- **Event handling or field changes**: "Update 2-3 tests for [event field validation/timing]"
+- **Response construction or serialization**: "Add round-trip serialization tests covering [format changes]"
+- **Naming conventions or transformations**: "Update test assertions for renamed [fields/functions]"
+
+Examples of strong test-update criteria:
+✓ "Add 4 tests for null-role, empty-string-role, and whitespace-role cases (tests/parser.test.ts lines 120-150)"
+✓ "Update 3 event-timing assertions in tests/event-handler.test.ts for new async behavior"
+✓ "Add backward-compatibility test: serialize new format, deserialize to verify field mapping (tests/serialization.test.ts)"
+
+Include these in success_criteria as SMART criteria with smart_score: "high" (measurable, specific, achievable in one run).
+
+=== GUIDELINES ===
+
+- Be concise but complete. This goal will drive all downstream agents.
+- Distinguish hard constraints (safety-critical) from soft preferences.
+- Include examples if inferrable from the prompt (helps agents avoid false starts).
+- Categorize constraints by type to aid downstream prioritization.
+- When task involves parser/event/response changes, include test-update criteria (see TEST UPDATE REQUIREMENTS above).
+- If confidence is low, explain what's ambiguous and what clarification would help.
+- Focus on goal quality over verbosity.
+EOF
+}
+
+validate_goal_setting_artifact() {
+  local candidate_artifact="$1"
+  local final_artifact="$2"
+  local reason_file="$3"
+  local results_dir="$KASEKI_RESULTS_DIR"
+
+  if ! [ -f "$candidate_artifact" ]; then
+    {
+      echo "{\"step\": \"parse\", \"status\": \"failure\", \"reason\": \"candidate artifact file not found\", \"file\": \"$candidate_artifact\"}"
+    } >> "$results_dir/goal-setting-validation-errors.jsonl"
+    [ -n "$reason_file" ] && echo "missing_file" > "$reason_file"
+    echo "Goal-setting artifact file missing: $candidate_artifact" > "$results_dir/goal-setting-validation-summary.txt"
+    return 1
+  fi
+
+  local json_content
+  json_content=$(cat "$candidate_artifact" 2>/dev/null || true)
+
+  # Try to parse as JSON
+  if ! echo "$json_content" | jq . >/dev/null 2>&1; then
+    {
+      echo "{\"step\": \"parse\", \"status\": \"failure\", \"reason\": \"malformed_json\", \"preview\": \"$(echo "$json_content" | head -c 200)\"}"
+    } >> "$results_dir/goal-setting-validation-errors.jsonl"
+    [ -n "$reason_file" ] && echo "malformed_json" > "$reason_file"
+    echo "Goal-setting artifact is not valid JSON" > "$results_dir/goal-setting-validation-summary.txt"
+    return 1
+  fi
+
+  if ! validate_no_goal_setting_placeholders "$candidate_artifact" "$reason_file"; then
+    echo "Goal-setting artifact contains prompt placeholder text" > "$results_dir/goal-setting-validation-summary.txt"
+    return 1
+  fi
+
+  # Validate with Node.js
+  if ! validate_goal_setting_artifact_with_node "$candidate_artifact" "$reason_file"; then
+    cp "$candidate_artifact" "$final_artifact" 2>/dev/null || true
+    echo "Goal-setting artifact failed Node.js validation" > "$results_dir/goal-setting-validation-summary.txt"
+    return 1
+  fi
+
+  # Success: move candidate to final artifact
+  mv "$candidate_artifact" "$final_artifact" 2>/dev/null || cp "$candidate_artifact" "$final_artifact" 2>/dev/null || true
+  [ -n "$reason_file" ] && echo "valid" > "$reason_file"
+  return 0
+}
+
+validate_no_goal_setting_placeholders() {
+  local candidate_artifact="$1"
+  local reason_file="$2"
+  local results_dir="$KASEKI_RESULTS_DIR"
+
+  if node - "$candidate_artifact" <<'NODE'
+const fs = require('node:fs');
+const artifactPath = process.argv[2];
+const artifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+const patterns = [
+  /\bthe original user prompt\b/i,
+  /\bconcise goal \(1-3 sentences\), actionable for a coding agent\b/i,
+  /\brequirement 1 \(critical constraint or dependency\)\b/i,
+  /\bspecific, measurable criterion\b/i,
+  /\bbrief reason \(e\.g\., clearly measurable, achievable in one run\)\b/i,
+  /\bpath\/pattern[0-9]+\/\*\*/i,
+  /\be\.g\., max 3 files changed\b/i,
+  /\be\.g\., respect service boundaries\b/i,
+  /\be\.g\., must pass type checking\b/i,
+  /\be\.g\., maintain user-facing behavior\b/i,
+  /\binput\/state before changes \(if inferrable\)\b/i,
+  /\bexpected output\/state after changes \(if inferrable\)\b/i,
+  /\bexplanation of upgrades made and key decisions\b/i,
+];
+const hits = [];
+function visit(value, path = []) {
+  if (typeof value === 'string') {
+    const matched = patterns.find((pattern) => pattern.test(value));
+    if (matched) hits.push({ field: path.join('.') || 'root', value });
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => visit(item, [...path, String(index)]));
+    return;
+  }
+  if (value && typeof value === 'object') {
+    Object.entries(value).forEach(([key, item]) => visit(item, [...path, key]));
+  }
+}
+visit(artifact);
+if (hits.length > 0) {
+  console.error(JSON.stringify({
+    status: 'invalid_placeholder_content',
+    errors: hits.map((hit) => ({
+      field: hit.field,
+      expected: 'task-specific goal-setting content',
+      actual: hit.value,
+      severity: 'critical',
+      suggestion: 'Replace prompt-shape placeholder text with concrete task-specific content.',
+    })),
+  }));
+  process.exit(1);
+}
+NODE
+  then
+    return 0
+  fi
+
+  node - "$candidate_artifact" "$results_dir/goal-setting-validation-errors.jsonl" <<'NODE' || true
+const fs = require('node:fs');
+const [artifactPath, logPath] = process.argv.slice(2);
+try {
+  const artifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+  const patterns = [
+    /\bthe original user prompt\b/i,
+    /\bconcise goal \(1-3 sentences\), actionable for a coding agent\b/i,
+    /\brequirement 1 \(critical constraint or dependency\)\b/i,
+    /\bspecific, measurable criterion\b/i,
+    /\bpath\/pattern[0-9]+\/\*\*/i,
+    /\be\.g\., max 3 files changed\b/i,
+    /\bexplanation of upgrades made and key decisions\b/i,
+  ];
+  const hits = [];
+  function visit(value, path = []) {
+    if (typeof value === 'string' && patterns.some((pattern) => pattern.test(value))) {
+      hits.push({ field: path.join('.') || 'root', value });
+    } else if (Array.isArray(value)) {
+      value.forEach((item, index) => visit(item, [...path, String(index)]));
+    } else if (value && typeof value === 'object') {
+      Object.entries(value).forEach(([key, item]) => visit(item, [...path, key]));
+    }
+  }
+  visit(artifact);
+  for (const hit of hits) {
+    fs.appendFileSync(logPath, JSON.stringify({
+      step: 'semantic_validation',
+      status: 'failure',
+      reason: 'placeholder_content',
+      field: hit.field,
+      actual: hit.value,
+    }) + '\n');
+  }
+} catch {}
+NODE
+  [ -n "$reason_file" ] && echo "placeholder_content" > "$reason_file"
+  return 1
+}
+
+validate_goal_setting_artifact_with_node() {
+  local candidate_artifact="$1"
+  local reason_file="$2"
+  local results_dir="$KASEKI_RESULTS_DIR"
+
+  local validation_output
+  validation_output=$(node -e "
+    try {
+      const artifact = require('$candidate_artifact');
+      const errors = [];
+      const warnings = [];
+
+      // === REQUIRED CORE FIELDS ===
+      if (!artifact.original_prompt || typeof artifact.original_prompt !== 'string') {
+        errors.push('missing_or_invalid: original_prompt (must be non-empty string)');
+      }
+      if (!artifact.upgraded_goal || typeof artifact.upgraded_goal !== 'string') {
+        errors.push('missing_or_invalid: upgraded_goal (must be non-empty string)');
+      }
+      if (!artifact.reasoning || typeof artifact.reasoning !== 'string') {
+        errors.push('missing_or_invalid: reasoning (must be non-empty string)');
+      }
+
+      // === REQUIRED ARRAYS ===
+      if (!Array.isArray(artifact.key_requirements)) {
+        errors.push('missing_or_invalid: key_requirements (must be array)');
+      } else if (artifact.key_requirements.length === 0) {
+        warnings.push('empty_key_requirements: at least one requirement recommended');
+      }
+
+      // === SUCCESS CRITERIA (NEW SMART VALIDATION) ===
+      if (!Array.isArray(artifact.success_criteria)) {
+        errors.push('missing_or_invalid: success_criteria (must be array)');
+      } else if (artifact.success_criteria.length === 0) {
+        warnings.push('empty_success_criteria: at least one criterion recommended');
+      } else {
+        // Validate each criterion for SMART properties
+        let weak_criteria = 0;
+        artifact.success_criteria.forEach((c, idx) => {
+          // Accept both old format (string) and new format (object with smart_score)
+          const criterion_text = typeof c === 'string' ? c : (c.criterion || '');
+          const smart_score = typeof c === 'object' ? c.smart_score : 'unknown';
+          
+          if (!criterion_text) {
+            errors.push(\`success_criteria[\${idx}]: criterion must be non-empty string or object with 'criterion' field\`);
+          } else if (smart_score === 'low') {
+            weak_criteria++;
+          }
+        });
+        if (weak_criteria > artifact.success_criteria.length / 2) {
+          warnings.push('weak_smart_criteria: >50% of criteria scored as low SMART quality');
+        }
+      }
+
+      // === ANTI-PATTERNS (NEW FIELD) ===
+      if (artifact.anti_patterns) {
+        if (typeof artifact.anti_patterns !== 'object') {
+          errors.push('invalid: anti_patterns must be object');
+        } else {
+          const valid_keys = ['do_not_modify', 'do_not_break', 'must_preserve'];
+          Object.keys(artifact.anti_patterns).forEach(key => {
+            if (!valid_keys.includes(key)) {
+              warnings.push(\`unexpected_anti_pattern_key: \${key} (expected: do_not_modify, do_not_break, must_preserve)\`);
+            }
+            if (!Array.isArray(artifact.anti_patterns[key])) {
+              errors.push(\`invalid: anti_patterns.\${key} must be array\`);
+            }
+          });
+        }
+      } else {
+        warnings.push('missing_anti_patterns: recommended to include explicit do-NOT clauses');
+      }
+
+      // === CONSTRAINTS BY CATEGORY (NEW FIELD) ===
+      if (artifact.constraints) {
+        if (typeof artifact.constraints !== 'object') {
+          errors.push('invalid: constraints must be object');
+        } else {
+          const valid_categories = ['operational', 'architectural', 'technical', 'business'];
+          Object.keys(artifact.constraints).forEach(cat => {
+            if (!valid_categories.includes(cat)) {
+              warnings.push(\`unexpected_constraint_category: \${cat}\`);
+            }
+            if (!Array.isArray(artifact.constraints[cat])) {
+              errors.push(\`invalid: constraints.\${cat} must be array\`);
+            }
+          });
+        }
+      } else {
+        warnings.push('missing_constraints: recommended to categorize constraints');
+      }
+
+      // === EXAMPLES (NEW FIELD) ===
+      if (artifact.examples) {
+        if (typeof artifact.examples !== 'object') {
+          errors.push('invalid: examples must be object');
+        } else if (!artifact.examples.before && !artifact.examples.after) {
+          warnings.push('empty_examples: before/after examples not provided (helpful for clarity)');
+        }
+      }
+
+      // === QUALITY METRICS (NEW FIELD) ===
+      if (artifact.quality_metrics) {
+        if (typeof artifact.quality_metrics !== 'object') {
+          errors.push('invalid: quality_metrics must be object');
+        } else {
+          const valid_metrics = ['clarity', 'measurability', 'specificity', 'scope_clarity', 'constraint_strength'];
+          const valid_scores = ['high', 'medium', 'low'];
+          Object.keys(artifact.quality_metrics).forEach(metric => {
+            if (!valid_metrics.includes(metric)) {
+              warnings.push(\`unexpected_quality_metric: \${metric}\`);
+            }
+            const score = artifact.quality_metrics[metric];
+            if (!valid_scores.includes(score)) {
+              errors.push(\`invalid: quality_metrics.\${metric} must be high|medium|low (got \${score})\`);
+            }
+          });
+        }
+      } else {
+        warnings.push('missing_quality_metrics: recommended 5-point quality scorecard');
+      }
+
+      // === CONFIDENCE FIELD ===
+      if (artifact.confidence && !['high', 'medium', 'low'].includes(artifact.confidence)) {
+        errors.push('invalid: confidence must be high|medium|low');
+      }
+
+      // === LEGACY FIELD COMPATIBILITY ===
+      // Support old 'potential_constraints' field for backward compatibility
+      if (artifact.potential_constraints && !artifact.constraints) {
+        warnings.push('legacy_potential_constraints: use new constraints schema instead');
+      }
+
+      // === BUILD RESULT ===
+      const result = {
+        status: errors.length > 0 ? 'invalid_fields' : 'valid',
+        errors,
+        warnings,
+        smart_quality: warnings.some(w => w.includes('SMART') || w.includes('smart')) ? 'low' : 'high'
+      };
+
+      console.log(JSON.stringify(result));
+      process.exit(errors.length > 0 ? 1 : 0);
+    } catch (e) {
+      console.log(JSON.stringify({status: 'error', message: e.message}));
+      process.exit(1);
+    }
+  " 2>&1)
+
+  if ! echo "$validation_output" | jq . >/dev/null 2>&1; then
+    {
+      echo "{\"step\": \"node_validation\", \"status\": \"failure\", \"reason\": \"node_error\", \"output\": \"$validation_output\"}"
+    } >> "$results_dir/goal-setting-validation-errors.jsonl"
+    [ -n "$reason_file" ] && echo "schema_mismatch" > "$reason_file"
+    return 1
+  fi
+
+  local status
+  status=$(echo "$validation_output" | jq -r '.status' 2>/dev/null || echo "error")
+
+  if [ "$status" != "valid" ]; then
+    {
+      echo "$validation_output"
+    } >> "$results_dir/goal-setting-validation-errors.jsonl"
+    [ -n "$reason_file" ] && echo "missing_required_fields" > "$reason_file"
+    return 1
+  fi
+
+  # Log warnings to optional file for inspection (non-blocking)
+  local warnings
+  warnings=$(echo "$validation_output" | jq -r '.warnings | @json' 2>/dev/null || echo "[]")
+  if [ "$warnings" != "[]" ] && [ -n "$warnings" ]; then
+    {
+      echo "goal-setting-warnings:"
+      echo "$warnings" | jq -r '.[]' 2>/dev/null || true
+    } >> "$results_dir/goal-setting-validation-notes.txt" 2>/dev/null || true
+  fi
+
+  return 0
+}
+
+create_fallback_goal_setting_artifact() {
+  local task_prompt="$1"
+  local output_path="$2"
+  local results_dir="${KASEKI_RESULTS_DIR:-/results}"
+  
+  # Generate fallback using Node.js utility function
+  node - "$task_prompt" "$output_path" <<'NODE_FALLBACK'
+const fs = require('fs');
+const path = require('path');
+
+const taskPrompt = process.argv[2];
+const outputPath = process.argv[3];
+
+// Use full task prompt as upgraded_goal (no truncation)
+// This preserves rich context for downstream phases
+const fallbackGoal = {
+  original_prompt: taskPrompt,
+  upgraded_goal: taskPrompt,
+  key_requirements: [
+    'Complete the task as specified',
+    'Maintain stability'
+  ],
+  success_criteria: [
+    {
+      criterion: 'Task completed as specified in the original prompt',
+      smart_score: 'medium',
+      reasoning: 'Primary success criterion when goal-setting failed'
+    }
+  ],
+  anti_patterns: {
+    do_not_modify: [],
+    do_not_break: ['Existing functionality', 'API contracts'],
+    must_preserve: []
+  },
+  constraints: {
+    operational: [],
+    architectural: [],
+    technical: ['Must pass type checking if applicable'],
+    business: []
+  },
+  reasoning: 'Fallback goal-setting artifact generated because the goal-setting agent failed to produce valid output with concrete task-specific content. Using original task prompt as primary reference.',
+  confidence: 'low'
+};
+
+fs.writeFileSync(outputPath, JSON.stringify(fallbackGoal, null, 2) + '\n');
+NODE_FALLBACK
+  
+  if [ -f "$output_path" ]; then
+    printf 'Goal-setting fallback artifact created at %s\n' "$output_path" >> "${results_dir}/goal-setting.log" 2>/dev/null || true
+    return 0
+  else
+    printf 'Failed to create fallback goal-setting artifact\n' >> "${results_dir}/goal-setting.log" 2>/dev/null || true
+    return 1
+  fi
+}
+
+run_goal_setting_agent() {
+  local goal_setting_prompt goal_setting_start goal_setting_stderr_capture
+
+  printf '\n==> pi goal-setting agent\n'
+  set_current_stage "pi goal-setting agent"
+  
+  if [ "$KASEKI_GOAL_SETTING" = "0" ]; then
+    printf 'Pi goal-setting agent skipped because KASEKI_GOAL_SETTING=0.\n'
+    record_stage_timing "pi goal-setting agent" 0 0 "skipped_by_config"
+    return 0
+  fi
+  
+  if [ "$KASEKI_DRY_RUN" = "1" ]; then
+    printf 'DRY-RUN: Pi goal-setting agent would upgrade the task prompt into a mature goal.\n'
+    record_stage_timing "pi goal-setting agent" 0 0 "dry_run=true"
+    return 0
+  fi
+
+  goal_setting_prompt="$(build_goal_setting_prompt)"
+  goal_setting_start="$(date +%s)"
+  
+  set +e
+  run_pi_with_retry "$GOAL_SETTING_RAW_EVENTS" "$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS" "$KASEKI_GOAL_SETTING_MODEL" "$goal_setting_prompt" "goal-setting-summary" "" "goal-setting"
+  GOAL_SETTING_EXIT="$?"
+  GOAL_SETTING_DURATION_SECONDS=$(($(date +%s) - goal_setting_start))
+  unset goal_setting_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
+  set +e
+
+  # Recover a candidate whenever the provider emitted usable JSON, even when Pi
+  # returned a non-zero transport status after producing the response.
+  if [ ! -f "$GOAL_SETTING_CANDIDATE_ARTIFACT" ]; then
+    if run_artifact_recovery_helper "goal-setting" "$GOAL_SETTING_RAW_EVENTS" "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$KASEKI_RESULTS_DIR" >/dev/null 2>&1; then
+      printf '[GOAL SETTING RECOVERY] Recovered candidate artifact from provider events (pi_exit=%s)\n' "$GOAL_SETTING_EXIT" >&2
+    fi
+  fi
+
+  kaseki-pi-event-filter "$GOAL_SETTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-setting-events.jsonl "${KASEKI_RESULTS_DIR}"/goal-setting-summary.json 2>/dev/null || cp "$GOAL_SETTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-setting-events.raw.jsonl 2>/dev/null || true
+  if capture_provider_error_from_summary "${KASEKI_RESULTS_DIR}/goal-setting-summary.json" "goal-setting"; then
+    if [ "$PROVIDER_ERROR_TYPE" = "provider_empty_assistant_turn" ]; then
+      emit_error_event "$PROVIDER_ERROR_TYPE" "Goal-setting provider returned an empty assistant turn; using fallback goal-setting artifact" "continue"
+      append_pre_coding_provider_fallback_error "${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl" "goal-setting" "fallback_goal_setting_artifact" "$GOAL_SETTING_ARTIFACT"
+      printf '\n==> Creating fallback goal-setting artifact after empty assistant turn (degraded mode)\n'
+      if create_fallback_goal_setting_artifact "$ORIGINAL_TASK_PROMPT" "$GOAL_SETTING_ARTIFACT"; then
+        printf 'Fallback artifact created successfully. Run will proceed with confidence=low goal-setting.\n'
+        GOAL_SETTING_EXIT=0
+        GOAL_SETTING_FALLBACK_USED=1
+        GOAL_SETTING_FALLBACK_MODE="provider_empty_assistant_turn"
+      else
+        printf 'Failed to create fallback artifact. Run will fail.\n'
+        GOAL_SETTING_EXIT=88
+      fi
+    else
+      GOAL_SETTING_EXIT=88
+      emit_error_event "$PROVIDER_ERROR_TYPE" "Goal-setting provider error: $PROVIDER_ERROR_MESSAGE" "continue"
+    fi
+  fi
+
+  if [ "$GOAL_SETTING_EXIT" -eq 0 ] && [ "$GOAL_SETTING_FALLBACK_USED" != "1" ] && [ ! -f "$GOAL_SETTING_CANDIDATE_ARTIFACT" ]; then
+    printf '%s\n' '{"step":"artifact-contract","status":"failure","reason":"goal-setting completed without required candidate artifact","recovery":"fallback_goal_setting_artifact"}' \
+      >> "${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl"
+    emit_error_event "goal_setting_artifact_missing" "Goal-setting completed without its required candidate artifact; activating degraded fallback before coding" "warning"
+    if create_fallback_goal_setting_artifact "$ORIGINAL_TASK_PROMPT" "$GOAL_SETTING_ARTIFACT"; then
+      GOAL_SETTING_FALLBACK_USED=1
+      GOAL_SETTING_FALLBACK_MODE="missing_candidate_artifact"
+      emit_progress "pi goal-setting agent" "degraded: required candidate artifact missing; fallback activated"
+      printf '%s\n' '{"phase":"goal-setting","severity":"warning","code":"fallback_activated","detail":"Required candidate artifact missing; original task preserved with confidence=low"}' >> "${KASEKI_RESULTS_DIR}/stage-warnings.jsonl"
+      printf '[GOAL SETTING DEGRADED] Required candidate artifact was missing; coding will use the original task with confidence=low.\n' >&2
+    else
+      GOAL_SETTING_EXIT=86
+    fi
+  fi
+
+  if [ "$GOAL_SETTING_EXIT" -eq 0 ] && [ "$GOAL_SETTING_FALLBACK_USED" != "1" ] && ! validate_goal_setting_artifact "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt"; then
+    GOAL_SETTING_EXIT=86
+    goal_setting_validation_summary="$(cat "${KASEKI_RESULTS_DIR}"/goal-setting-validation-summary.txt 2>/dev/null || printf 'goal-setting artifact validation failed')"
+    emit_error_event "pi_goal_setting_artifact_invalid" "Pi goal-setting artifact invalid: $goal_setting_validation_summary (full details: ${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl)" "continue"
+    
+    # TIER 1 FALLBACK: Create minimal valid goal-setting artifact
+    printf '\n==> Creating fallback goal-setting artifact (degraded mode)\n'
+    if create_fallback_goal_setting_artifact "$ORIGINAL_TASK_PROMPT" "$GOAL_SETTING_ARTIFACT"; then
+      printf 'Fallback artifact created successfully. Run will proceed with confidence=low goal-setting.\n'
+      GOAL_SETTING_EXIT=0  # Mark as success since we have valid artifact
+      GOAL_SETTING_FALLBACK_USED=1
+      GOAL_SETTING_FALLBACK_MODE="invalid_candidate_artifact"
+      emit_progress "pi goal-setting agent" "degraded: invalid candidate artifact; fallback activated"
+      printf '%s\n' '{"phase":"goal-setting","severity":"warning","code":"fallback_activated","detail":"Candidate artifact validation failed; original task preserved with confidence=low"}' >> "${KASEKI_RESULTS_DIR}/stage-warnings.jsonl"
+      emit_error_event "goal_setting_fallback_activated" "Goal-setting validation failed, using fallback mode (confidence=low)" "warning"
+    else
+      printf 'Failed to create fallback artifact. Run will fail.\n'
+      # Keep GOAL_SETTING_EXIT=86 to indicate failure
+    fi
+  fi
+  
+  rm -f "$GOAL_SETTING_CANDIDATE_ARTIFACT"
+  # Phase 3A: Consolidate goal-setting summary to all-phase-summaries.json
+  append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "goal-setting" "${KASEKI_RESULTS_DIR}"/goal-setting-summary.json
+  GOAL_SETTING_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/goal-setting-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
+  
+  record_stage_timing "pi goal-setting agent" "$GOAL_SETTING_EXIT" "$GOAL_SETTING_DURATION_SECONDS" "artifact=$GOAL_SETTING_ARTIFACT timeout_seconds=$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS degraded=$GOAL_SETTING_FALLBACK_USED fallback_mode=${GOAL_SETTING_FALLBACK_MODE:-none}"
+  
+  if [ "$GOAL_SETTING_EXIT" -ne 0 ]; then
+    emit_error_event "pi_goal_setting_failed" "Goal-setting agent exited before scouting: $GOAL_SETTING_EXIT; continuing with original TASK_PROMPT" "continue"
+    return 1
+  fi
+  
+  emit_progress "pi goal-setting agent" "wrote goal-setting artifact"
+  rm -f "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt 2>/dev/null || true
+  
+  return 0
+}
+
+write_goal_setting_metrics() {
+  local invoked_at="$1"
+  local completed_at="$2"
+  local retry_count="${KASEKI_GOAL_SETTING_ATTEMPTS:-0}"
+  local success=false
+  local failure_reason=""
+
+  # Determine success/failure using unified classification
+  if [ -n "$KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT" ]; then
+    success=true
+  else
+    # Use unified error classification
+    failure_reason="$(classify_goal_setting_error "$GOAL_SETTING_EXIT" "$goal_setting_last_stderr")"
+  fi
+
+  local duration_ms=$(( (completed_at - invoked_at) * 1000 ))
+
+  # Write metrics JSON
+  node -e "
+    const fs = require('fs');
+    const metrics = {
+      invoked_at: new Date(${invoked_at}000).toISOString(),
+      completed_at: new Date(${completed_at}000).toISOString(),
+      duration_ms: ${duration_ms},
+      retry_count: ${retry_count},
+      success: ${success},
+      $(if [ "$success" = "false" ]; then echo "failure_reason: '$failure_reason',"; fi)
+      model: '${GOAL_SETTING_ACTUAL_MODEL:-unknown}',
+      timeout_seconds: ${KASEKI_GOAL_SETTING_TIMEOUT_SECONDS:-300}
+    };
+    fs.writeFileSync('${KASEKI_RESULTS_DIR}/goal-setting-metrics.json', JSON.stringify(metrics, null, 2) + '\n');
+  " 2>/dev/null || {
+    # Fallback to jq or printf if node fails
+    {
+      printf '{\n'
+      printf '  "invoked_at": "%s",\n' "$(date -d @"${invoked_at}" -u +%Y-%m-%dT%H:%M:%SZ)"
+      printf '  "completed_at": "%s",\n' "$(date -d @"${completed_at}" -u +%Y-%m-%dT%H:%M:%SZ)"
+      printf '  "duration_ms": %d,\n' "$duration_ms"
+      printf '  "retry_count": %d,\n' "$retry_count"
+      printf '  "success": %s,\n' "$([ "$success" = "true" ] && echo "true" || echo "false")"
+      if [ "$success" = "false" ]; then
+        printf '  "failure_reason": "%s",\n' "$failure_reason"
+      fi
+      printf '  "model": "%s",\n' "${GOAL_SETTING_ACTUAL_MODEL:-unknown}"
+      printf '  "timeout_seconds": %d\n' "${KASEKI_GOAL_SETTING_TIMEOUT_SECONDS:-300}"
+      printf '}\n'
+    } > "${KASEKI_RESULTS_DIR}"/goal-setting-metrics.json
+  }
+}
+
+classify_goal_setting_error() {
+  local exit_code="$1"
+  local stderr_content="$2"
+
+  # Check validation reason file first (most authoritative)
+  if [ -f "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt ]; then
+    local reason_code
+    reason_code=$(cat "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt 2>/dev/null || echo "")
+    case "$reason_code" in
+      placeholder_content)
+        echo "GOAL_SETTING_PLACEHOLDER_CONTENT"
+        return 0
+        ;;
+      schema_mismatch)
+        echo "GOAL_SETTING_SCHEMA_MISMATCH"
+        return 0
+        ;;
+      malformed_json)
+        echo "GOAL_SETTING_MALFORMED_JSON"
+        return 0
+        ;;
+      missing_required_fields)
+        echo "GOAL_SETTING_MISSING_REQUIRED_FIELDS"
+        return 0
+        ;;
+      missing_file)
+        echo "GOAL_SETTING_MISSING_FILE"
+        return 0
+        ;;
+    esac
+  fi
+
+  # Classify by exit code
+  case "$exit_code" in
+    0)
+      echo "GOAL_SETTING_SUCCESS"
+      ;;
+    2)
+      echo "GOAL_SETTING_MISSING_CONFIG"
+      ;;
+    86)
+      echo "GOAL_SETTING_VALIDATION_ERROR"
+      ;;
+    124)
+      echo "GOAL_SETTING_TIMEOUT"
+      ;;
+    *)
+      # Check stderr for specific errors
+      if echo "$stderr_content" | grep -qi "timeout" 2>/dev/null; then
+        echo "GOAL_SETTING_TIMEOUT"
+      elif echo "$stderr_content" | grep -qi "rate.?limit" 2>/dev/null; then
+        echo "GOAL_SETTING_RATE_LIMITED"
+      elif echo "$stderr_content" | grep -qi "api.?error\|connection" 2>/dev/null; then
+        echo "GOAL_SETTING_API_ERROR"
+      elif echo "$stderr_content" | grep -qi "schema\|validation\|invalid" 2>/dev/null; then
+        echo "GOAL_SETTING_VALIDATION_ERROR"
+      else
+        echo "GOAL_SETTING_PI_ERROR_EXIT_$exit_code"
+      fi
+      ;;
+  esac
+}
+
+run_goal_setting_agent_with_retry() {
+  local attempt goal_setting_stderr_capture max_attempts goal_setting_last_exit goal_setting_last_stderr
+  local pre_goal_setting_status pre_goal_setting_failed_command goal_setting_phase_start_time
+  local attempt_start_time attempt_end_time attempt_duration_sec
+
+  max_attempts=2
+  attempt=1
+  goal_setting_last_exit=0
+  goal_setting_last_stderr=""
+  pre_goal_setting_status="$STATUS"
+  pre_goal_setting_failed_command="$FAILED_COMMAND"
+  goal_setting_phase_start_time="$(date +%s)"
+
+  # Initialize goal-setting retry tracking env vars
+  export KASEKI_GOAL_SETTING_ATTEMPTS=0
+  export KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT=""
+
+  while [ "$attempt" -le "$max_attempts" ]; do
+    attempt_start_time="$(date +%s.%N)"
+    printf '[Goal-Setting Phase] Attempt %d/%d (timeout: %ds)\n' "$attempt" "$max_attempts" "$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS"
+    rm -f "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt 2>/dev/null || true
+
+    # Capture stderr for failure classification
+    goal_setting_stderr_capture="/tmp/goal-setting-stderr-$attempt.log"
+    set +e
+    run_goal_setting_agent 2>"$goal_setting_stderr_capture"
+    goal_setting_last_exit=$?
+    set -e
+    attempt_end_time="$(date +%s.%N)"
+    attempt_duration_sec=$(printf '%.1f' "$(printf '%s - %s\n' "$attempt_end_time" "$attempt_start_time" | bc -l 2>/dev/null || echo 0)")
+
+    goal_setting_last_stderr="$(cat "$goal_setting_stderr_capture" 2>/dev/null || true)"
+    if [ -n "$goal_setting_last_stderr" ] || [ "$goal_setting_last_exit" -ne 0 ]; then
+      {
+        printf '[attempt %d exit %d duration %.1fs timestamp %s]\n' "$attempt" "$goal_setting_last_exit" "$attempt_duration_sec" "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)"
+        if [ -n "$goal_setting_last_stderr" ]; then
+          printf '%s\n' "$goal_setting_last_stderr"
+        else
+          printf '(no stderr captured)\n'
+        fi
+      } >> "${KASEKI_RESULTS_DIR}/goal-setting-stderr.log"
+      # PHASE 1 FIX: Check validation errors FIRST (e.g., schema_mismatch)
+      # Only fall back to stderr parsing if no validation errors exist
+      if ! capture_validation_error_classification "goal-setting"; then
+        capture_provider_error_from_log "${KASEKI_RESULTS_DIR}/goal-setting-stderr.log" "goal-setting" || true
+      fi
+    fi
+    rm -f "$goal_setting_stderr_capture"
+
+    # Success on any attempt
+    if [ "$goal_setting_last_exit" -eq 0 ]; then
+      export KASEKI_GOAL_SETTING_ATTEMPTS=$attempt
+      export KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT=$attempt
+      clear_provider_error
+      
+      # Extract upgraded goal and replace TASK_PROMPT, BUT only if we didn't use fallback
+      # (If fallback was used, preserve the original rich TASK_PROMPT for better downstream context)
+      if [ "$GOAL_SETTING_FALLBACK_USED" != "1" ] && [ -f "$GOAL_SETTING_ARTIFACT" ]; then
+        local upgraded_goal
+        upgraded_goal="$(node -e 'try { const a=require("'"$GOAL_SETTING_ARTIFACT"'"); console.log(a.upgraded_goal || ""); } catch { console.log(""); }' 2>/dev/null || true)"
+        if [ -n "$upgraded_goal" ]; then
+          export TASK_PROMPT="$upgraded_goal"
+          printf '[Goal-Setting Phase] Upgraded TASK_PROMPT\n'
+        fi
+      elif [ "$GOAL_SETTING_FALLBACK_USED" = "1" ]; then
+        printf '[Goal-Setting Phase] Fallback artifact used; preserving original TASK_PROMPT for downstream agents\n'
+      fi
+      
+      STATUS="$pre_goal_setting_status"
+      FAILED_COMMAND="$pre_goal_setting_failed_command"
+      clear_provider_error
+      write_goal_setting_metrics "$goal_setting_phase_start_time" "$(date +%s)"
+      return 0
+    fi
+
+    # Check if this is a transient failure worth retrying
+    if is_transient_goal_setting_failure "$goal_setting_last_exit" "$goal_setting_last_stderr"; then
+      if [ "$attempt" -lt "$max_attempts" ]; then
+        printf '[Goal-Setting Phase] Transient failure detected (exit %d, %.1fs elapsed), retrying immediately...\n' "$goal_setting_last_exit" "$attempt_duration_sec"
+        # Log retry decision with stderr snippet for debugging
+        if [ -n "$goal_setting_last_stderr" ]; then
+          printf '[Goal-Setting Phase] Retry reason: %s\n' "$(echo "$goal_setting_last_stderr" | head -1)" | head -c 200
+        fi
+        attempt=$((attempt + 1))
+        # Reset goal-setting artifacts for retry
+        rm -f "$GOAL_SETTING_ARTIFACT" "$GOAL_SETTING_RAW_EVENTS" 2>/dev/null || true
+        rm -f "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt 2>/dev/null || true
+        continue
+      fi
+    else
+      # Deterministic failure - do not retry
+      local failure_reason
+      failure_reason="$(classify_goal_setting_error "$goal_setting_last_exit" "$goal_setting_last_stderr")"
+      printf '[Goal-Setting Phase] Deterministic failure (exit %d: %s), not retrying\n' "$goal_setting_last_exit" "$failure_reason"
+      export KASEKI_GOAL_SETTING_ATTEMPTS=$attempt
+      export KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT=""
+      # Fall through to use original TASK_PROMPT without letting optional failures
+      # affect the final run status.
+      STATUS="$pre_goal_setting_status"
+      FAILED_COMMAND="$pre_goal_setting_failed_command"
+      write_goal_setting_metrics "$goal_setting_phase_start_time" "$(date +%s)"
+      return 0
+    fi
+
+    attempt=$((attempt + 1))
+  done
+
+  # Max attempts exhausted - use original TASK_PROMPT
+  export KASEKI_GOAL_SETTING_ATTEMPTS=$max_attempts
+  export KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT=""
+  local total_goal_setting_duration
+  total_goal_setting_duration=$(($(date +%s) - goal_setting_phase_start_time))
+  printf '[Goal-Setting Phase] Max retry attempts exhausted (exit %d after %ds), using original TASK_PROMPT\n' "$goal_setting_last_exit" "$total_goal_setting_duration"
+  
+  # Write structured failure diagnostics to goal-setting-validation-errors.jsonl
+  node -e '
+    const fs = require("fs");
+    const [
+      errorsPath,
+      goalSettingExit,
+      maxAttempts,
+      totalDurationSeconds,
+      timeoutSeconds,
+      model,
+      stderrTail,
+    ] = process.argv.slice(1);
+    const entry = {
+      timestamp: new Date().toISOString(),
+      phase: "goal-setting",
+      exit_code: Number(goalSettingExit),
+      attempts: Number(maxAttempts),
+      total_duration_seconds: Number(totalDurationSeconds),
+      timeout_seconds: Number(timeoutSeconds),
+      model,
+      reason: "max_retry_attempts_exhausted",
+      stderr_tail: stderrTail,
+      fallback_to_original_prompt: true
+    };
+    const content = (fs.existsSync(errorsPath) ? fs.readFileSync(errorsPath, "utf8") : "") + JSON.stringify(entry) + "\n";
+    fs.writeFileSync(errorsPath, content);
+  ' \
+    "${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl" \
+    "$goal_setting_last_exit" \
+    "$max_attempts" \
+    "$total_goal_setting_duration" \
+    "${KASEKI_GOAL_SETTING_TIMEOUT_SECONDS:-300}" \
+    "${GOAL_SETTING_ACTUAL_MODEL:-unknown}" \
+    "$(printf '%s' "$goal_setting_last_stderr" | tail -c 400)" \
+    2>/dev/null || true
+  
+  STATUS="$pre_goal_setting_status"
+  FAILED_COMMAND="$pre_goal_setting_failed_command"
+  clear_provider_error
+  write_goal_setting_metrics "$goal_setting_phase_start_time" "$(date +%s)"
+  return 0
+}
+
+is_transient_scouting_failure() {
+  local exit_code="$1"
+  local stderr_content="$2"
+
+  # First, check if we have an explicit validation reason code from our helper
+  if [ -f "${KASEKI_RESULTS_DIR}"/scouting-validation-reason.txt ]; then
+    local reason_code
+    reason_code=$(cat "${KASEKI_RESULTS_DIR}"/scouting-validation-reason.txt 2>/dev/null || echo "")
+    case "$reason_code" in
+      valid)
+        # This shouldn't happen when exit_code=86, but just in case
+        return 1
+        ;;
+      schema_mismatch|malformed_json|missing_required_fields|missing_file)
+        # Deterministic failures - do not retry
+        return 1
+        ;;
+    esac
+  fi
+
+  # Exit code 124 = timeout (transient, retryable)
+  if [ "$exit_code" -eq 124 ]; then
+    return 0
+  fi
+
+  # Exit code 86 = local validation failure (deterministic, not retryable)
+  if [ "$exit_code" -eq 86 ]; then
+    return 1
+  fi
+
+  # Exit code 88 = provider/model error (deterministic until model/config changes)
+  if [ "$exit_code" -eq 88 ]; then
+    return 1
+  fi
+
+  # Exit code 2 = missing config/API key (not retryable)
+  if [ "$exit_code" -eq 2 ]; then
+    return 1
+  fi
+
+  # Check for deterministic schema/validation errors first
+  if echo "$stderr_content" | grep -qi -E "schema|validation|invalid.?json|malformed" 2>/dev/null; then
+    return 1  # Deterministic (do not retry)
+  fi
+
+  # Check for Pi CLI errors in stderr (transient LLM/network issues)
+  if echo "$stderr_content" | grep -qi -E "error|failed|connection|timeout|rate.?limit|api.?error" 2>/dev/null; then
+    return 0  # Transient (retry)
+  fi
+
+  # Pi non-zero exit (transient, could be model unavailability)
+  if [ "$exit_code" -ne 0 ]; then
+    return 0  # Transient (retry)
+  fi
+
+  # Exit code 0 but validation failed = deterministic
+  return 1
+}
+
+# Phase 2.1: Detect if task requires detailed guidance (parser, events, serialization, etc.)
+# Returns 0 if complex task, 1 if simple task
+is_complex_change_task() {
+  local task_text="$1"
+  # Check for keywords indicating complex changes that need detailed test_impact guidance
+  if printf '%s\n' "$task_text" | grep -qiE '(parser|regex|serializ|event|listen|emit|field|schema|format|type.*change|response|construct|enum|constant|rename|refactor.*[a-z]{3,})' 2>/dev/null; then
+    return 0  # Complex task
+  fi
+  return 1  # Simple task (bug fix, documentation, etc.)
+}
+
+is_docs_only_task() {
+  local task_text="$1"
+  if printf '%s\n' "$task_text" | grep -qiE '(docs?/|README|CHANGELOG|documentation|markdown|\\.md|index\\.md)' 2>/dev/null &&
+     ! printf '%s\n' "$task_text" | grep -qiE '(parser|api|endpoint|runtime|code|test|typescript|javascript|schema|event|provider|gateway|auth|database|server|client)' 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+record_prompt_diagnostics() {
+  local phase="$1"
+  local prompt="$2"
+  local model="$3"
+  local max_output_tokens="${4:-}"
+  local prompt_file
+
+  prompt_file="$(mktemp 2>/dev/null || printf '/tmp/kaseki-prompt-diagnostics-%s.txt' "$$")"
+  printf '%s' "$prompt" > "$prompt_file" 2>/dev/null || return 0
+  node - "$KASEKI_RESULTS_DIR/prompt-diagnostics.jsonl" "$phase" "$model" "$max_output_tokens" "$prompt_file" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [file, phase, model, maxOutputTokens, promptFile] = process.argv.slice(2);
+const prompt = fs.readFileSync(promptFile, 'utf8');
+const entry = {
+  timestamp: new Date().toISOString(),
+  phase,
+  model,
+  prompt_chars: prompt.length,
+  prompt_bytes: Buffer.byteLength(prompt, 'utf8'),
+  estimated_prompt_tokens: Math.ceil(prompt.length / 4),
+  max_output_tokens: maxOutputTokens ? Number(maxOutputTokens) : null,
+  stream: true,
+  tool_count: 4,
+};
+fs.appendFileSync(file, JSON.stringify(entry) + '\n');
+NODE
+  rm -f "$prompt_file" 2>/dev/null || true
+}
+
+build_scouting_prompt() {
+  local task_text="$TASK_PROMPT"
+  local use_detailed_guidance=0
+  local use_compact_guidance=1
+  local caveman_instruction
+  caveman_instruction="$(get_caveman_instruction)"
+  
+  # Keep scouting prompts compact by default. Verbose guidance is opt-in for
+  # local debugging or hard tasks where prompt size is less important.
+  if [ "$KASEKI_SCOUTING_PROMPT_DETAIL" = "verbose" ] && is_complex_change_task "$task_text"; then
+    use_compact_guidance=0
+    use_detailed_guidance=1
+  fi
+  
+  # Prepend caveman instruction if enabled
+  if [ -n "$caveman_instruction" ]; then
+    printf '%s\n\n' "$caveman_instruction"
+  fi
+  
+  if [ "$use_compact_guidance" -eq 1 ]; then
+    cat <<'SCOUTING_COMPACT'
+You are a read-only scouting Pi agent inside a Kaseki-managed ephemeral workspace.
+
+Inspect only files needed to scope the task. Do not edit files, tests, lockfiles, git state, secrets, or environment variables.
+
+Use the write tool to write exactly one JSON object to $SCOUTING_CANDIDATE_ARTIFACT. Do not rely on final assistant text for the artifact.
+
+JSON fields:
+- task: concise actionable task string
+- requirements: 3-8 concrete requirements
+- relevant_files: 2-10 repo-relative files with reasons
+- observations: concrete facts from inspection
+- plan: 3-8 coding steps for the downstream agent
+- validation: 1-5 focused checks
+- risks: known risks or empty array
+- test_impact: empty for pure documentation-only changes, otherwise affected tests
+- critical_change_expectations: include required_files and forbidden_empty_diff when concrete
+- suggested_allowlist: agent_patterns and validation_patterns arrays
+
+For code behavior changes, include impacted tests in test_impact. For renames, parser/output changes, events, schemas, or API fields, include concrete test files and expected assertion patterns. For documentation-only changes, test_impact may be [].
+
+Keep JSON under 20 KB. Prefer accuracy over exhaustiveness.
+SCOUTING_COMPACT
+  else
+    # Build base prompt (always included)
+    cat <<'SCOUTING_BASE'
+You are a read-only scouting Pi agent inside a Kaseki-managed ephemeral workspace.
+
+## [ROLE]
+
+Research the task before a separate coding agent starts. Your job is to analyze the repository, understand the task scope, and produce a structured JSON artifact that helps a downstream coding agent execute the task efficiently and correctly.
+
+## [OPERATIONAL CONSTRAINTS - Read-Only Phase]
+
+- Inspect the repository and relevant files needed to understand the task.
+- Do not edit source files, tests, lockfiles, or git state.
+- Do not run git add, git commit, git push, gh, hub, package installation, or validation commands that modify files.
+- Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
+- The repository tree is read-only during scouting. Use the write tool to write exactly one JSON object to $SCOUTING_CANDIDATE_ARTIFACT. Do not rely on final assistant text for the artifact.
+
+The JSON object must be concise and useful to the coding agent. Use this schema-style shape (field descriptions only; do not copy this text as output):
+- task: string (max 200 characters); a concrete interpretation of the requested task.
+  - Examples: "Fix null-safety in parseRole()", "Add JWT auth to src/auth/middleware.ts"
+  - Constraint: Restate original request concisely; must be actionable by a developer
+  - Too vague: "Make it better", "Improve code quality"
+- requirements: array of 3-8 strings; concrete, testable requirements derived from the task.
+  - Example: ["Handle null role parameter without throwing", "Maintain backward compatibility", "Pass all existing tests"]
+  - Constraint: Each must be independently verifiable; avoid generic items like "code quality"
+  - Min items: 3 (too few suggests incomplete analysis)
+  - Max items: 8 (too many suggests scope creep or lack of prioritization)
+- relevant_files: array of 5-20 objects with path and reason strings; repo-relative files and why each matters.
+  - Example: {"path": "src/lib/role.ts", "reason": "Contains parseRole() function being modified"}
+  - Constraint: Include source files, test files, and config files affected by changes
+  - Min items: 5 (suggests incomplete file discovery)
+  - Max items: 20 (keeps focus on high-impact files; truncate if >20 with "(...X more files)"
+  - Prioritize: files the agent will modify first, then affected tests, then supporting config
+- observations: array of strings; concrete facts learned from repository inspection (git structure, build config, test framework, etc.).
+  - Helps coding agent understand project structure without re-scanning
+  - Truncate with "(...truncated for brevity)" if approaching size limit
+- plan: array of 5-15 strings; ordered, task-specific coding steps.
+  - Example step: "Add null check at start of parseRole() function"
+  - Constraint: No "finish" or "verify" steps; steps should be concrete code changes only
+  - Min items: 5 (too few suggests incomplete breakdown)
+  - Max items: 15 (too many suggests lack of higher-level grouping)
+  - Each step should be independently reviewable
+- validation: array of 2-10 strings; focused commands or checks appropriate for this task.
+  - Examples: "npm run test tests/role.test.ts", "npm run lint -- src/lib/role.ts"
+  - Constraint: Commands must exist in package.json or run without modification
+  - Min items: 2 (suggests incomplete validation strategy)
+  - Max items: 10 (avoid over-testing; focus on core validation)
+  - Avoid: generic "npm test" if specific tests are known
+- risks: array of 0-10 strings; concrete unknowns, boundary conditions, or task assumptions.
+  - Example: "Unclear whether null should be treated as fallback or error"
+  - Empty array is acceptable if no known risks
+  - Constraint: Each risk should suggest remediation or investigation
+- test_impact: array of objects with path, reason, and optional test_examples; describes test coverage implications.
+  - Constraint: MUST include entries for files affected by task (no empty array unless task is pure inspection)
+  - Max per file: 5 test_examples (keep focused on key patterns)
+  - See detailed guidelines below for comprehensive patterns by change type
+- critical_change_expectations: optional object with required_files, required_search_strings, forbidden_empty_diff.
+  - Only include if concrete expected changes can be identified
+  - required_files: array of repo-relative paths that MUST appear in git diff
+  - required_search_strings: array of literal strings expected in git diff (e.g., function name, config key)
+  - forbidden_empty_diff: boolean; true if task is a change request, false if read-only inspection
+  - Constraint: Omit if uncertain; this is enforced before goal-check evaluation
+- suggested_allowlist: object with agent_patterns and validation_patterns arrays.
+  - agent_patterns: glob patterns narrowing which files coding agent can modify (e.g., "src/**/*.ts")
+  - validation_patterns: glob patterns for files validation commands may modify (often same as agent_patterns)
+  - Constraint: Empty arrays acceptable if task scope is unclear; prefer specificity over convenience
+
+Output rules for the JSON artifact:
+- Do not copy the example text or this field description.
+- Every string must be concrete to the task (no generic guidance).
+- Use empty arrays only for optional fields (risks, test_impact) when genuinely no items apply.
+- Prioritize: task clarity > requirement specificity > relevant_files accuracy
+- Total JSON size must not exceed 50 KB (truncate observations or relevant_files if necessary).
+
+## [TASK VALIDATION - Ensure Task is Valid Before Scouting]
+
+Before proceeding with repository inspection, validate that the task is concrete and scoping is possible:
+
+**Valid tasks** (proceed with scouting):
+- ✓ "Fix null-safety in parseRole() function in src/lib/role.ts"
+- ✓ "Add TypeScript type annotations to src/config/loader.ts"
+- ✓ "Implement JWT authentication in src/auth/middleware.ts and update tests"
+- ✓ "Rename parseConfig to loadConfigFromFile across src/lib and tests"
+
+**Ambiguous/Invalid tasks** (ask clarifying questions):
+- ✗ "Make the code better" → Too vague. Ask: Which file(s)? What specific improvement?
+- ✗ "Fix bugs" → No scope. Ask: Which bugs? Which files contain them?
+- ✗ "Refactor everything" → Unbounded. Ask: Which components? What metrics define success?
+
+**Success Criteria for Scouting**:
+Your scouting artifact is successful when:
+1. The task field clearly restates the original request in concrete, actionable language
+2. requirements list 3-8 specific, testable requirements
+3. relevant_files includes 5-20 files with clear rationales
+4. plan has 5-15 distinct coding steps (no step is "finish")
+5. test_impact identifies 80%+ of files that will be affected by code changes
+6. critical_change_expectations, when present, includes concrete search strings
+7. JSON size is <50 KB and completes scouting within 2 minutes
+
+**When to Ask Clarifying Questions**:
+If the task is ambiguous or lacks sufficient scope information, do NOT proceed with scouting. Instead, write a minimal JSON artifact with:
+- task: "[UNCLEAR - needs clarification]"
+- requirements: ["Clarify which files are in scope", "Specify concrete acceptance criteria", "Define what done means"]
+- relevant_files: []
+- observations: ["Task prompt was: <original prompt>", "Unable to scope repository changes without more context"]
+- plan: ["Await clarification from user"]
+- validation: []
+- risks: ["Task scope is undefined; scouting may make incorrect assumptions"]
+- test_impact: []
+- suggested_allowlist: {agent_patterns: [], validation_patterns: []}
+
+Guidelines for test_impact:
+
+**When to Include test_impact**:
+- ALWAYS include test_impact entries for code that affects parsing, validation, output formatting, naming, event structure, or serialization
+- Include entries for files with test cases that assert on concrete implementation details (field names, value types, timing)
+- Include entries when task modifies constants, enum values, API method names, or data structures
+
+**When test_impact Can Be Empty**:
+- ✓ Pure documentation updates (README, comments) with no code changes
+- ✓ Build configuration changes that don't affect runtime behavior
+- ✓ Dependency upgrades where public API is unchanged
+- ✓ File reorganization (move/rename) without behavioral changes
+- ✓ Infrastructure changes (Docker, CI/CD) unrelated to application code
+- In all other cases: provide at least 1 test_impact entry with concrete examples
+
+**test_examples Field Structure**:
+- **type**: "added_assertion", "modified_assertion", "added_test_case", or "added_pattern"
+- **before**: Current or expected-to-fail assertion/test code (1-2 lines max)
+- **after**: Corrected/new assertion/test code (1-2 lines max)
+- **pattern**: Short name of the pattern (e.g., "Null-coalescing assertion", "Event field presence")
+- **description**: 1-2 sentences explaining why this change matters
+- Max 5 test_examples per file (keep focused on key patterns; avoid exhaustive lists)
+SCOUTING_BASE
+  fi
+
+  # Conditionally include detailed guidance for complex tasks
+  if [ $use_detailed_guidance -eq 1 ]; then
+    cat <<'SCOUTING_DETAILED'
+
+**Enhanced Guidelines by Change Type** (with 5+ concrete patterns each):
+
+1. **Parser & Validation Changes** (keywords: parse, validate, input, null safety, type checking)
+   - Detection keywords: parse, parser, regex, validation, sanitize, decode, input handling, edge cases
+   - Test files to check: tests/parser.test.ts, tests/validation.test.ts, tests/sanitization.test.ts
+   - Common test_impact patterns:
+     a) Null/undefined handling: expect().toThrow() → expect().toEqual() or vice versa
+     b) Empty string/whitespace: test edge cases like "", "   ", "\\n\\t"
+     c) Type coercion: number-to-string, boolean-to-string conversions in parsing
+     d) Regex pattern changes: test cases that should now match or no longer match
+     e) Error message changes: expect(error.message).toContain("old") → .toContain("new")
+     f) Boundary value testing: min/max values, overflow conditions
+   - Example test_examples:
+     ✓ Null safety: {"type": "modified_assertion", "before": "expect(parse(null)).toThrow()", "after": "expect(parse(null)).toEqual(defaults())", "pattern": "Null-safe fallback", "description": "Function now handles null as valid input with sensible defaults"}
+     ✓ Whitespace: {"type": "added_assertion", "before": "N/A", "after": "expect(parse('  \\t  ')).toEqual(parse(''))", "pattern": "Whitespace normalization", "description": "Input parsing now treats whitespace as empty"}
+     ✓ Type coercion: {"type": "modified_assertion", "before": "expect(parseNumber('42px')).toThrow()", "after": "expect(parseNumber('42px')).toBe(42)", "pattern": "Unit stripping", "description": "Parser now extracts numeric portion"}
+
+2. **Event Handling & Progress Changes** (keywords: event, emit, listener, signal, progress, field)
+   - Detection keywords: event, emit, listener, on, once, signal, progress, stage, timing, field name
+   - Test files to check: tests/event-handler.test.ts, tests/progress.test.ts, tests/listeners.test.ts
+   - Common test_impact patterns:
+     a) Event structure changes: new/removed/renamed fields in emitted event objects
+     b) Timing expectations: synchronous → async or vice versa, timeout thresholds
+     c) Field presence: assert listener receives expected event properties
+     d) Event ordering: sequence of event emissions, promises/callbacks
+     e) Listener registration: changes to addEventListener, on, once API
+     f) Error event handling: error events now emitted for certain conditions
+   - Example test_examples:
+     ✓ Event field: {"type": "added_assertion", "before": "listener(event); expect(event.stage).toBeDefined()", "after": "listener(event); expect(event.stage).toContain('SCOUTING')", "pattern": "Event field presence", "description": "New stage field now always present in event"}
+     ✓ Async timing: {"type": "modified_assertion", "before": "await done; // within 50ms", "after": "await done; // within 500ms", "pattern": "Async emission delay", "description": "Event emission now batches async; increased timeout"}
+     ✓ Error event: {"type": "added_test_case", "before": "// No error event handling", "after": "emitter.on('error', handler); trigger(); expect(handler).toHaveBeenCalled()", "pattern": "Error event emission", "description": "New error events emitted for recoverable failures"}
+
+3. **Response Construction & Serialization Changes** (keywords: serialize, format, response, construct, transform, payload)
+   - Detection keywords: response, serialize, serialize, format, construct, map, transform, output, payload, toJSON, stringify
+   - Test files to check: tests/response.test.ts, tests/serialization.test.ts, tests/format.test.ts
+   - Common test_impact patterns:
+     a) Field name changes: response.old_field → response.newField
+     b) Field type changes: string → object, number → string, array → map
+     c) Nested structure changes: flat response → nested, vice versa
+     d) Omit/include behavior: fields now optional or always present
+     e) Serialization format: JSON, JSONL, CSV, binary encoding changes
+     f) Round-trip assertions: serialize/deserialize preserves values
+   - Example test_examples:
+     ✓ Field rename: {"type": "modified_assertion", "before": "expect(response.status_code).toBe(200)", "after": "expect(response.statusCode).toBe(200)", "pattern": "camelCase migration", "description": "Response fields now use camelCase convention"}
+     ✓ Type change: {"type": "modified_assertion", "before": "expect(typeof response.metadata).toBe('string')", "after": "expect(typeof response.metadata).toBe('object')", "pattern": "Structured metadata", "description": "Metadata now structured object instead of serialized string"}
+     ✓ Round-trip: {"type": "added_assertion", "before": "N/A", "after": "const original = {...}; const restored = deserialize(serialize(original)); expect(restored).toEqual(original)", "pattern": "Serialization round-trip", "description": "Serialize/deserialize cycle must preserve all fields"}
+
+4. **Naming Conventions & Constants Changes** (keywords: rename, constant, enum, field name, identifier)
+   - Detection keywords: rename, constant, enum, identifier, symbol, property name, method name, migrate naming
+   - Test files to check: tests/**/*.test.ts (grep for old constants/names)
+   - Common test_impact patterns:
+     a) Constant value changes: OLD_VALUE = "x" → NEW_VALUE = "y"
+     b) Enum migrations: Color.RED → Color.PRIMARY_RED
+     c) API method renames: .oldMethod() → .newMethod()
+     d) Export name changes: export MyClass → export MyClassV2
+     e) Configuration key changes: config.old_key → config.newKey
+     f) String literal assertions: ".toContain('oldName')" → ".toContain('newName')"
+   - Example test_examples:
+     ✓ Constant rename: {"type": "modified_assertion", "before": "expect(TIMEOUT_MS).toBe(5000)", "after": "expect(SCOUTING_TIMEOUT_MS).toBe(120000)", "pattern": "Constant renaming & value change", "description": "Timeout constant renamed and value updated"}
+     ✓ Enum value: {"type": "modified_assertion", "before": "expect(phase).toBe('PARSE')", "after": "expect(phase).toBe('SCOUTING')", "pattern": "Enum value rename", "description": "Phase name updated to match new phase names"}
+     ✓ API method: {"type": "modified_assertion", "before": "instance.configure(); expect(result).toBe(true)", "after": "instance.setup(); expect(result).toBe(true)", "pattern": "Method rename", "description": "API method renamed for clarity"}
+
+5. **Configuration & Multi-file Patterns** (keywords: config, multi-file, cross-module, integration)
+   - Detection keywords: config, configuration, settings, environment, multi-file changes, cross-repo coordination
+   - Test files to check: tests/integration.test.ts, tests/config.test.ts, tests/e2e.test.ts
+   - Common test_impact patterns:
+     a) Configuration schema changes: new required fields, deprecated fields
+     b) Multi-file coordination: one change requires updates in 3+ test files
+     c) Integration points: mocking changes, stub contracts
+     d) Allowlist/blocklist changes: file patterns affect test file discovery
+     e) Build-time vs runtime: constants vs environment variable changes
+   - Example test_examples:
+     ✓ Config schema: {"type": "added_assertion", "before": "config = loadConfig(); expect(config.timeout).toBeDefined()", "after": "config = loadConfig(); expect(config.timeout).toBeGreaterThan(0); expect(config.retries).toBeDefined()", "pattern": "Config schema expansion", "description": "New required config fields must be validated"}
+     ✓ Multi-file: {"type": "added_test_case", "before": "// Only single file tested", "after": "// Test mocking across src/a.ts, src/b.ts, tests/mock-factory.ts", "pattern": "Integration mocking", "description": "Mock strategy now affects multiple test files"}
+
+SCOUTING_DETAILED
+  elif [ "$use_compact_guidance" -eq 0 ]; then
+    # For simple tasks, include minimal guidance
+    cat <<'SCOUTING_MINIMAL'
+
+**Minimal test_impact Guidelines** (for simple bug fixes and documentation):
+- Include test_impact for any code changes affecting behavior, especially: null/undefined handling, error cases, field names, timing
+- Empty test_impact is acceptable only for pure documentation, build config, or dependency updates with no behavioral changes
+- Max 2-3 test_examples per file; keep focused on key changes
+SCOUTING_MINIMAL
+  fi
+  
+  # Common section included for all complexity levels
+  if [ "$use_compact_guidance" -eq 0 ]; then
+    cat <<EOF
+
+**Examples of Strong test_impact Entries**:
+✓ Parser change:
+  {"path": "tests/parser.test.ts", "reason": "parseRole() function now handles null with fallback", "test_examples": [{"type": "added_assertion", "pattern": "Null-coalescing", "before": "expect(parseRole(null)).toThrow(NullReferenceError)", "after": "expect(parseRole(null)).toEqual({ name: 'Unnamed', level: 0 })", "description": "Null now treated as valid input with sensible defaults"}]}
+
+✓ Event change:
+  {"path": "tests/event-handler.test.ts", "reason": "Event emission now async with new timing", "test_examples": [{"type": "modified_assertion", "pattern": "Async timing", "before": "await eventPromise; // resolves within 10ms", "after": "await eventPromise; // resolves within 100ms (now batched)", "description": "Async batching adds latency; timeout increased"}]}
+
+✓ Serialization change:
+  {"path": "tests/response.test.ts", "reason": "Response fields now use camelCase", "test_examples": [{"type": "modified_assertion", "pattern": "camelCase fields", "before": "expect(response.status_code).toBe(200)", "after": "expect(response.statusCode).toBe(200)", "description": "All response field names migrated to camelCase"}]}
+
+✓ Config change:
+  {"path": "tests/config.test.ts", "reason": "New required config fields added", "test_examples": [{"type": "added_assertion", "pattern": "Schema validation", "before": "expect(config).toHaveProperty('timeout')", "after": "expect(config).toHaveProperty('timeout'); expect(config).toHaveProperty('maxRetries'); expect(config).toHaveProperty('backoffMs')", "description": "Three new retry-related fields now required"}]}
+
+Guidelines for critical_change_expectations:
+- Include critical_change_expectations when scouting can identify concrete files or literal diff evidence that must change for the goal to be real.
+- required_files must be repo-relative paths and should only list files that must appear in changed-files.txt, not files that are merely relevant for reading.
+- required_search_strings must be literal strings expected to appear in git.diff, such as a new function name, config key, assertion text, or diff hunk marker.
+- Set forbidden_empty_diff to true when the task is a patch/change request rather than read-only inspection.
+- Omit uncertain expectations rather than guessing; this contract is enforced before the LLM goal-check evaluator runs.
+
+Guidelines for suggested_allowlist:
+- agent_patterns: Glob patterns narrowing which files the coding agent can modify. Use specific files (e.g., "src/parser.ts") or directories (e.g., "src/**", "tests/**"). If many related files, use broad patterns like "src/**.ts".
+- validation_patterns: Glob patterns for files that validation commands (npm test, npm run lint, etc.) may legitimately modify. Often identical to agent_patterns, but may differ (e.g., allow ".coverage" or "node_modules/" if generated during validation).
+- Both arrays can be empty if the task scope is unclear; the coding agent will work without allowlist constraints.
+- Prefer accurate scope over convenience: too-broad patterns defeat the purpose; too-narrow patterns will require restoration.
+
+## [EXECUTION CONTEXT - Optimize for Efficiency]
+
+**Timeouts**:
+- Scouting should complete within 2 minutes total.
+- Avoid deep directory recursion (git log, file enumeration across 1000+ files, slow regex searches).
+- Use fast commands: find, grep, head (instead of cat for large files).
+
+**Artifact Size Constraints**:
+- Maximum JSON size: 50 KB.
+- If observations or relevant_files grow large, prioritize the most important ones.
+- Truncate observations with "(...truncated for brevity)" if approaching size limit.
+
+**Error Handling**:
+- If repository inspection fails (unreadable files, malformed code), report the error in observations and proceed with limited scope.
+- Example: "Unable to parse src/config.json due to syntax error; focusing on src/lib instead."
+- Do not fail the entire scouting phase due to isolated file read errors; adapt and continue.
+
+## [ORIGINAL TASK PROMPT FOR REFERENCE]
+
+See goal-setting artifact ($GOAL_SETTING_ARTIFACT) if available for upgraded goal with SMART criteria, anti-patterns, and constraints. Otherwise, use the original task prompt below.
+
+Original task (before goal-setting upgrade):
+$TASK_PROMPT
+EOF
+  else
+    cat <<EOF
+
+## [ORIGINAL TASK PROMPT]
+
+$TASK_PROMPT
+EOF
+  fi
+
+  if [ "${KASEKI_SCOUTING_CONTRACT_RETRY:-0}" = "1" ]; then
+    cat <<EOF
+
+## [ARTIFACT CONTRACT RETRY]
+
+The previous scouting attempt exited successfully but did not create the required artifact.
+Retry the scouting handoff now. Use the write tool (not final assistant text) to create exactly one valid JSON object at:
+$SCOUTING_CANDIDATE_ARTIFACT
+Before finishing, verify that the file exists, is non-empty, and is valid JSON matching the schema above. Do not finish until that file has been written.
+If the previous artifact had scalar observations, plan, or validation fields, emit arrays. Do not emit markdown, a JSON string, or a partial object.
+EOF
+  fi
+}
+
+run_scouting_agent() {
+  local scouting_prompt scouting_start scout_dirty_before scout_dirty_after
+
+  printf '\n==> pi scouting agent\n'
+  set_current_stage "pi scouting agent"
+  if [ "$KASEKI_SCOUTING" = "0" ]; then
+    printf 'Pi scouting agent skipped because KASEKI_SCOUTING=0.\n'
+    record_stage_timing "pi scouting agent" 0 0 "skipped_by_config"
+    return 0
+  fi
+  if [ "$KASEKI_DRY_RUN" = "1" ]; then
+    printf 'DRY-RUN: Pi scouting agent would inspect the task before coding.\n'
+    record_stage_timing "pi scouting agent" 0 0 "dry_run=true"
+    return 0
+  fi
+
+  scouting_prompt="$(build_scouting_prompt)"
+  record_prompt_diagnostics "scouting" "$scouting_prompt" "$KASEKI_SCOUTING_MODEL" "$KASEKI_SCOUTING_MAX_OUTPUT_TOKENS"
+  scouting_start="$(date +%s)"
+  scout_dirty_before="$(git status --porcelain 2>/dev/null || true)"
+  chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
+  set +e
+  LLM_GATEWAY_MAX_OUTPUT_TOKENS="$KASEKI_SCOUTING_MAX_OUTPUT_TOKENS"
+  export LLM_GATEWAY_MAX_OUTPUT_TOKENS
+  run_pi_with_retry "$SCOUTING_RAW_EVENTS" "$KASEKI_SCOUTING_TIMEOUT_SECONDS" "$KASEKI_SCOUTING_MODEL" "$scouting_prompt" "scouting-summary" "" "scouting"
+  SCOUTING_EXIT="$?"
+  SCOUTING_DURATION_SECONDS=$(($(date +%s) - scouting_start))
+  unset scouting_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL LLM_GATEWAY_MAX_OUTPUT_TOKENS
+  set +e
+  chmod -R u+w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
+
+  # Artifact recovery: if artifact file doesn't exist, try to recover from event stream
+  if [ "$SCOUTING_EXIT" -eq 0 ] && [ ! -f "$SCOUTING_CANDIDATE_ARTIFACT" ]; then
+    run_artifact_recovery_helper "scouting" "$SCOUTING_RAW_EVENTS" "$SCOUTING_CANDIDATE_ARTIFACT" "$KASEKI_RESULTS_DIR" >/dev/null 2>&1 || true
+  fi
+
+  kaseki-pi-event-filter "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/scouting-events.jsonl "${KASEKI_RESULTS_DIR}"/scouting-summary.json 2>/dev/null || cp "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/scouting-events.raw.jsonl 2>/dev/null || true
+  SCOUTING_FALLBACK_USED=0
+  if capture_provider_error_from_summary "${KASEKI_RESULTS_DIR}/scouting-summary.json" "scouting"; then
+    if [ "$PROVIDER_ERROR_TYPE" = "provider_empty_assistant_turn" ] && [ "${KASEKI_SCOUTING_CONTRACT_STRICT:-0}" != "1" ]; then
+      emit_error_event "$PROVIDER_ERROR_TYPE" "Scouting provider returned an empty assistant turn; continuing with conservative fallback" "continue"
+      append_pre_coding_provider_fallback_error "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" "scouting" "fallback_scouting_artifact" "$SCOUTING_ARTIFACT"
+      rm -f "$SCOUTING_CANDIDATE_ARTIFACT" 2>/dev/null || true
+      write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
+      SCOUTING_FALLBACK_USED=1
+      SCOUTING_EXIT=0
+    elif [ "$PROVIDER_ERROR_TYPE" = "provider_empty_assistant_turn" ] && [ "${KASEKI_SCOUTING_CONTRACT_STRICT:-0}" = "1" ]; then
+      SCOUTING_EXIT=86
+      append_pre_coding_provider_fallback_error "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" "scouting" "artifact_contract_retry" "$SCOUTING_ARTIFACT"
+      emit_error_event "pi_scouting_artifact_contract_failed" "Scouting returned an empty assistant turn without creating $SCOUTING_CANDIDATE_ARTIFACT" "retry"
+    else
+      SCOUTING_EXIT=88
+      emit_error_event "$PROVIDER_ERROR_TYPE" "Scouting provider error: $PROVIDER_ERROR_MESSAGE" "exit"
+    fi
+  fi
+
+  if [ "$SCOUTING_EXIT" -eq 0 ] && [ "$KASEKI_TASK_MODE" = "inspect" ] && [ ! -f "$SCOUTING_CANDIDATE_ARTIFACT" ]; then
+    write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
+    SCOUTING_FALLBACK_USED=1
+  fi
+
+  if [ "$SCOUTING_EXIT" -eq 0 ] && ! validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
+    if [ "${KASEKI_SCOUTING_CONTRACT_STRICT:-0}" = "1" ]; then
+      SCOUTING_EXIT=86
+      emit_error_event "pi_scouting_artifact_contract_failed" "Scouting retry did not produce a valid $SCOUTING_CANDIDATE_ARTIFACT" "retry"
+    elif [ "$KASEKI_TASK_MODE" = "patch" ]; then
+      rm -f "$SCOUTING_CANDIDATE_ARTIFACT" 2>/dev/null || true
+      write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
+      SCOUTING_FALLBACK_USED=1
+      if ! validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
+        SCOUTING_EXIT=86
+        scouting_validation_error="$(tail -1 "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl 2>/dev/null | jq -r '.details // .reason_code // "validation failed"' 2>/dev/null || printf 'scouting artifact validation failed')"
+        emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid after fallback: $scouting_validation_error (full details: ${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl)" "exit"
+      else
+        mark_scouting_fallback_recovered "patch_fallback_recovered"
+        emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid; continuing with conservative patch fallback (full details: ${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl)" "continue"
+      fi
+    else
+      SCOUTING_EXIT=86
+      scouting_validation_error="$(tail -1 "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl 2>/dev/null | jq -r '.details // .reason_code // "validation failed"' 2>/dev/null || printf 'scouting artifact validation failed')"
+      emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid: $scouting_validation_error (full details: ${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl)" "exit"
+    fi
+  fi
+  if [ "$SCOUTING_EXIT" -eq 0 ] && [ "${SCOUTING_FALLBACK_USED:-0}" -eq 1 ]; then
+    mark_scouting_fallback_recovered "${KASEKI_TASK_MODE}_fallback_recovered"
+  fi
+  scout_dirty_after="$(git status --porcelain 2>/dev/null || true)"
+  if [ "$SCOUTING_EXIT" -eq 0 ] && [ "$scout_dirty_before" != "$scout_dirty_after" ]; then
+    SCOUTING_EXIT=86
+    emit_error_event "pi_scouting_workspace_modified" "Read-only scouting changed repository state before coding" "exit"
+  fi
+  rm -f "$SCOUTING_CANDIDATE_ARTIFACT"
+  git reset --hard -q HEAD 2>/dev/null || true
+  git clean -fd -q 2>/dev/null || true
+  # Phase 3A: Consolidate scouting summary to all-phase-summaries.json
+  append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "scouting" "${KASEKI_RESULTS_DIR}"/scouting-summary.json
+  SCOUTING_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/scouting-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
+  record_stage_timing "pi scouting agent" "$SCOUTING_EXIT" "$SCOUTING_DURATION_SECONDS" "artifact=$SCOUTING_ARTIFACT timeout_seconds=$KASEKI_SCOUTING_TIMEOUT_SECONDS"
+  if [ "$SCOUTING_EXIT" -ne 0 ]; then
+    STATUS="$SCOUTING_EXIT"
+    FAILED_COMMAND="pi scouting agent"
+    emit_error_event "pi_scouting_failed" "Scouting agent exited before the coding agent: $SCOUTING_EXIT" "exit"
+    return "$SCOUTING_EXIT"
+  fi
+  emit_progress "pi scouting agent" "wrote scouting artifact"
+  # Clean up validation reason file on success
+  rm -f "${KASEKI_RESULTS_DIR}"/scouting-validation-reason.txt 2>/dev/null || true
+  return 0
+}
+
+run_scouting_agent_with_retry() {
+  local attempt scouting_stderr_capture max_attempts scouting_last_exit scouting_last_stderr
+
+  max_attempts=2
+  attempt=1
+  scouting_last_exit=0
+  scouting_last_stderr=""
+
+  # Initialize scouting retry tracking env vars
+  export KASEKI_SCOUTING_ATTEMPTS=0
+  export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=""
+  export KASEKI_SCOUTING_ERRORS=""
+
+  while [ "$attempt" -le "$max_attempts" ]; do
+    printf '[Scouting Phase] Attempt %d/%d\n' "$attempt" "$max_attempts"
+
+    # Capture stderr for failure classification
+    scouting_stderr_capture="/tmp/scouting-stderr-$attempt.log"
+    set +e
+    export KASEKI_SCOUTING_CONTRACT_STRICT=1
+    if [ "$attempt" -gt 1 ]; then
+      export KASEKI_SCOUTING_CONTRACT_RETRY=1
+      rm -f "$SCOUTING_ARTIFACT" "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_RAW_EVENTS" 2>/dev/null || true
+    else
+      unset KASEKI_SCOUTING_CONTRACT_RETRY
+    fi
+    run_scouting_agent 2>"$scouting_stderr_capture"
+    scouting_last_exit=$?
+    set -e
+
+    scouting_last_stderr="$(cat "$scouting_stderr_capture" 2>/dev/null || true)"
+    if [ -n "$scouting_last_stderr" ]; then
+      {
+        printf '[attempt %d exit %d]\n' "$attempt" "$scouting_last_exit"
+        printf '%s\n' "$scouting_last_stderr"
+      } >> "${KASEKI_RESULTS_DIR}/scouting-stderr.log"
+      # PHASE 1 FIX: Check validation errors FIRST (e.g., schema_mismatch)
+      # Only fall back to stderr parsing if no validation errors exist
+      if ! capture_validation_error_classification "scouting"; then
+        capture_provider_error_from_log "${KASEKI_RESULTS_DIR}/scouting-stderr.log" "scouting" || true
+      fi
+    fi
+    rm -f "$scouting_stderr_capture"
+
+    # Success on any attempt
+    node - "$attempt" "$scouting_last_exit" "$SCOUTING_CANDIDATE_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-summary.json" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [attempt, exitCode, artifact, summary] = process.argv.slice(2);
+let stats = {};
+try { stats = JSON.parse(fs.readFileSync(summary, 'utf8')); } catch {}
+const diag = {
+  timestamp: new Date().toISOString(), phase: 'scouting', attempt: Number(attempt),
+  exit_code: Number(exitCode), artifact_path: artifact,
+  artifact_exists: fs.existsSync(artifact), artifact_bytes: fs.existsSync(artifact) ? fs.statSync(artifact).size : 0,
+  message_end_count: Number(stats.event_counts?.message_end || 0),
+  tool_call_count: Number(stats.tool_start_count || 0),
+  provider_error_count: Number(stats.inference_health?.provider_error_count || 0),
+};
+fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + '/scouting-contract-diagnostics.jsonl', JSON.stringify(diag) + '\n');
+NODE
+
+    if [ "$scouting_last_exit" -eq 0 ]; then
+      export KASEKI_SCOUTING_ATTEMPTS=$attempt
+      export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=$attempt
+      clear_provider_error
+      return 0
+    fi
+
+    # Preserve the rejected provider output and retry decision for postmortem
+    # analysis. The primary raw stream is otherwise replaced on retry.
+    if [ "$scouting_last_exit" -ne 0 ]; then
+      cp "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}/scouting-attempt-${attempt}-events.jsonl" 2>/dev/null || true
+      node - "$attempt" "$scouting_last_exit" "${PROVIDER_ERROR_TYPE:-}" "${PROVIDER_ERROR_MESSAGE:-}" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [attempt, exitCode, errorType, errorMessage] = process.argv.slice(2);
+const entry = { timestamp: new Date().toISOString(), phase: 'scouting', attempt: Number(attempt), exit_code: Number(exitCode), error_type: errorType || 'scouting_contract_failure', error_message: errorMessage || 'Scouting attempt failed before producing a valid handoff', raw_events: `scouting-attempt-${attempt}-events.jsonl`, validation_errors: 'scouting-validation-errors.jsonl' };
+fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + '/scouting-retry-diagnostics.jsonl', JSON.stringify(entry) + '\n');
+NODE
+    fi
+
+    if [ "${SCOUTING_EXIT:-0}" -eq 86 ] || [ "${STATUS:-0}" -eq 86 ]; then
+      if [ "$attempt" -lt "$max_attempts" ] && grep -q 'scouting-candidate.json' "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" 2>/dev/null; then
+        printf '[Scouting Phase] Artifact contract failure (exit 86), retrying with explicit write instructions\n'
+        attempt=$((attempt + 1))
+        rm -f "$SCOUTING_ARTIFACT" "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt" 2>/dev/null || true
+        continue
+      fi
+      printf '[Scouting Phase] Deterministic validation failure (exit 86), not retrying\n'
+      export KASEKI_SCOUTING_ATTEMPTS=$attempt
+      export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=""
+      return 86
+    fi
+
+    # Check if this is a transient failure worth retrying
+    if is_transient_scouting_failure "$scouting_last_exit" "$scouting_last_stderr"; then
+      if [ "$attempt" -lt "$max_attempts" ]; then
+        printf '[Scouting Phase] Transient failure detected (exit %d), retrying immediately...\n' "$scouting_last_exit"
+        attempt=$((attempt + 1))
+        # Reset scouting artifacts for retry
+        rm -f "$SCOUTING_ARTIFACT" "$SCOUTING_RAW_EVENTS" 2>/dev/null || true
+        # Clean up validation reason file from previous attempt
+        rm -f "${KASEKI_RESULTS_DIR}"/scouting-validation-reason.txt 2>/dev/null || true
+        continue
+      fi
+    else
+      # Deterministic failure - do not retry
+      printf '[Scouting Phase] Deterministic failure (exit %d), not retrying\n' "$scouting_last_exit"
+      export KASEKI_SCOUTING_ATTEMPTS=$attempt
+      export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=""
+      return "$scouting_last_exit"
+    fi
+
+    # Fallthrough to next attempt
+    attempt=$((attempt + 1))
+  done
+
+  # Max attempts exhausted
+  export KASEKI_SCOUTING_ATTEMPTS=$max_attempts
+  export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=""
+  printf '[Scouting Phase] Max retry attempts exhausted (exit %d)\n' "$scouting_last_exit"
+  return "$scouting_last_exit"
+}
+
+snapshot_attempt_artifacts() {
+  local attempt_dir
+  attempt_dir="${KASEKI_RESULTS_DIR}/attempt-$1"
+  mkdir -p "$attempt_dir" 2>/dev/null || return 0
+  for artifact in \
+    pi-events.jsonl pi-summary.json pi-stderr.log git.diff changed-files.txt \
+    quality.log validation.log validation-raw.log validation-timings.tsv goal-check.json \
+    critical-change-expectations.json critical-change-verification.log; do
+    if [ -e "${KASEKI_RESULTS_DIR}/$artifact" ]; then
+      cp "${KASEKI_RESULTS_DIR}/$artifact" "$attempt_dir/$artifact" 2>/dev/null || true
+    fi
+  done
+}
+
+collect_goal_check_feedback() {
+  local instance_name="$1"
+  local goal_setting_path="$GOAL_SETTING_ARTIFACT"
+  local results_dir="$KASEKI_RESULTS_DIR"
+  local goal_check_path="$results_dir/goal-check.json"
+  local metadata_path="$results_dir/metadata.json"
+  local feedback_file="$results_dir/goal-feedback.jsonl"
+
+  # Only collect if goal-check succeeded and artifacts exist
+  if [ "$GOAL_CHECK_EXIT" -ne 0 ] || [ ! -f "$goal_check_path" ]; then
+    return 0
+  fi
+
+  # Use node script to collect feedback, append as JSONL
+  node "$SCRIPT_DIR/scripts/collect-feedback.js" goal-check "$instance_name" "$goal_setting_path" "$goal_check_path" "$metadata_path" 2>/dev/null | tee -a "$feedback_file" >/dev/null || true
+}
+
+collect_run_evaluation_feedback() {
+  local instance_name="$1"
+  local run_evaluation_path="${KASEKI_RESULTS_DIR}/run-evaluation.json"
+  local metadata_path="${KASEKI_RESULTS_DIR}/metadata.json"
+  local feedback_file="${KASEKI_RESULTS_DIR}/kaseki-improvements.jsonl"
+
+  # Only collect if run-evaluation succeeded and artifacts exist
+  if [ ! -f "$run_evaluation_path" ] || [ "$RUN_EVALUATION_EXIT" -ne 0 ]; then
+    return 0
+  fi
+
+  # Use node script to collect feedback, append as JSONL
+  node "$SCRIPT_DIR/scripts/collect-feedback.js" run-evaluation "$instance_name" "$run_evaluation_path" "$metadata_path" 2>/dev/null | tee -a "$feedback_file" >/dev/null || true
+}
+
+
+build_goal_check_prompt() {
+  local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context validation_summary caveman_instruction
+  
+  # Get caveman instruction if enabled
+  caveman_instruction="$(get_caveman_instruction)"
+  
+  # Build validation summary instead of raw tail (reduce from ~400 tokens to ~50)
+  if [ -f "${KASEKI_RESULTS_DIR}"/validation-timings.tsv ]; then
+    validation_summary="$(node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(process.env.KASEKI_RESULTS_DIR + "/validation-timings.tsv", "utf8").trim().split(/\r?\n/).slice(1);
+const passed = lines.filter(l => l.includes("\t0$")).length;
+const failed = lines.filter(l => !l.includes("\t0$")).length;
+const exitCodes = lines.map(l => l.split("\t")[2]).filter(Boolean).sort(String);
+console.log(`Commands: ${passed} passed, ${failed} failed`);
+if (exitCodes.length) console.log(`Exit codes: ${[...new Set(exitCodes)].join(", ")}`);
+if (failed > 0) {
+  const failedCmd = lines.find(l => !l.includes("\t0$"));
+  console.log(`First failure: ${failedCmd ? failedCmd.split("\t")[0] : "unknown"}`);
+}
+' 2>/dev/null || true)"
+  else
+    validation_summary="Validation has not run yet. Do not claim that validation or tests passed; evaluate only the diff and requirements at this pre-validation stage."
+  fi
+  
+  if [ -n "$validation_summary" ]; then
+    validation_context="Validation summary:
+$validation_summary
+
+Full logs available in ${KASEKI_RESULTS_DIR}/validation.log (optional for detailed debugging)"
+  else
+    validation_context="Validation log: not yet available. Rely on goal-setting output, scouting output, changed files, and git diff to determine requirement completion."
+  fi
+  
+  progress_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/progress.jsonl 2>/dev/null || true)"
+  if [ -s "$TEST_IMPACT_WARNINGS_ARTIFACT" ]; then
+    test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT):
+$(cat "$TEST_IMPACT_WARNINGS_ARTIFACT" 2>/dev/null)
+
+---
+"
+  else
+    test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT): no warnings emitted.
+
+---
+"
+  fi
+  
+  # Include goal-setting output if available (provides SMART criteria, quality metrics, anti-patterns)
+  if [ -f "$GOAL_SETTING_ARTIFACT" ]; then
+    goal_setting_context="GOAL-SETTING ARTIFACT: $GOAL_SETTING_ARTIFACT
+(Use to validate SMART criteria, anti-patterns, and constraints)
+
+---
+"
+  else
+    goal_setting_context=""
+  fi
+
+  # Include causality assessment if available (helps interpret validation failures)
+  if [ -f "${KASEKI_RESULTS_DIR}"/validation-causality-analysis.json ]; then
+    # shellcheck disable=SC2016
+    causality_context="VALIDATION FAILURE CAUSALITY ASSESSMENT:
+
+$(node -e '
+let input = "";
+process.stdin.on("data", chunk => input += chunk);
+process.stdin.on("end", () => {
+  try {
+    const data = JSON.parse(input);
+    const assess = data.assessment;
+    console.log(`Type: ${assess.failureType}`);
+    console.log(`Confidence: ${(assess.confidence * 100).toFixed(0)}%`);
+    console.log(`Rationale: ${assess.rationale}`);
+    console.log();
+    if (assess.failureType === "pre_existing") {
+      console.log("⚠️  Key Finding: Validation failures appear to be PRE-EXISTING (not caused by code changes).");
+      console.log("   - You can assess goal-check verdict based on requirements implementation, not blocked by these failures.");
+      console.log("   - Implementation may be valid despite validation failures.");
+    } else if (assess.failureType === "change_related") {
+      console.log("❌ Key Finding: Validation failures are CAUSED BY CODE CHANGES.");
+      console.log("   - Implementation is not valid; failures must be fixed.");
+    } else if (assess.failureType === "mixed") {
+      console.log("⚠️  Key Finding: MIXED causality - some failures from changes, some pre-existing.");
+      console.log("   - Identify and fix change-related failures.");
+      console.log("   - Pre-existing failures may not block goal if implementation is otherwise valid.");
+    } else if (assess.failureType === "inconclusive") {
+      console.log("❓ Key Finding: Causality INCONCLUSIVE - insufficient signal agreement.");
+      console.log("   - Be conservative; base verdict on other available evidence.");
+    }
+  } catch (e) {
+    console.log("(Could not parse causality assessment)");
+  }
+});
+'
+)
+
+---
+"
+  else
+    causality_context=""
+  fi
+
+  # Prepend caveman instruction if enabled
+  if [ -n "$caveman_instruction" ]; then
+    printf '%s\n\n' "$caveman_instruction"
+  fi
+
+  cat <<EOF
+You are a read-only goal-check Pi agent inside a Kaseki-managed ephemeral workspace.
+
+Evaluate whether the coding agent's current repository changes realized the objective from the goal-setting report.
+
+## Your Task
+
+Determine if the agent successfully met the requirements specified in the goal-setting output. This is NOT a code review—focus on requirement completion, not code style.
+
+## Inputs to Inspect
+
+- Goal-setting artifact: $GOAL_SETTING_ARTIFACT (SMART criteria, anti-patterns, constraints)
+- Scouting report: $SCOUTING_ARTIFACT
+- Changed files: "${KASEKI_RESULTS_DIR}"/changed-files.txt
+- Git diff: "${KASEKI_RESULTS_DIR}"/git.diff
+- Agent summary: "${KASEKI_RESULTS_DIR}"/pi-summary.json
+- Optional validation evidence: "${KASEKI_RESULTS_DIR}"/validation.log
+
+## Evaluation: SMART Criteria Check
+
+For each requirement from goal-setting, verify:
+- **Specific**: Did agent address the specific function/module/file mentioned? (not generic improvements)
+- **Measurable**: Can you verify via tests, diff, or goal-setting/scouting context?
+- **Achievable**: Completed in this run? (not timeout or incomplete)
+- **Relevant**: Maps directly to goal? (not scope creep)
+- **Time-bound**: Completed in single run?
+
+Cite specific evidence: file paths, line numbers, test names, validation results.
+
+✅ Good evidence: "parseRole() now handles null at lines 45-52 in src/parser.ts"
+❌ Poor evidence: "The parser was fixed"
+
+## Confidence Mapping
+
+- **high**: ≥3 specific evidence items + ≥4/5 SMART dimensions met
+- **medium**: 2-3 evidence items + 3-4 SMART dimensions  
+- **low**: <2 evidence items OR <3 SMART dimensions
+
+## Retry Guidance
+
+If goal not met, your retry_prompt must:
+1. Name the specific unmet SMART dimension(s)
+2. Reference what agent already did (avoid re-doing work)
+3. Provide actionable next steps
+
+## Required JSON artifact
+
+{
+  "met": true or false,
+  "confidence": "high", "medium", or "low",
+  "summary": "1-2 sentence verdict with key finding",
+  "evidence": ["specific, verifiable evidence item 1 with file/line references", "..."],
+  "missing": ["unmet requirement 1 (empty if met=true)", "..."],
+  "retry_prompt": "actionable repair instructions; empty if met=true",
+  "validation_notes": ["validation command 1: outcome", "..."]
+}
+
+## Context
+$goal_setting_context
+$causality_context
+$test_impact_context
+Original task prompt (for reference):
+$TASK_PROMPT
+
+$validation_context
+
+Progress log tail (last 80 lines):
+$progress_tail
+EOF
+}
+
+run_goal_check() {
+  local attempt goal_prompt goal_start verdict_met retry_prompt verdict_summary confidence goal_check_validation_reason goal_check_validation_summary
+  attempt="$1"
+  GOAL_CHECK_ATTEMPTS="$attempt"
+  GOAL_CHECK_EXIT=0
+  GOAL_CHECK_MET=false
+  GOAL_CHECK_FAILURE_REASON=""
+
+  printf '\n==> goal check\n'
+  set_current_stage "goal check"
+  if [ "$KASEKI_GOAL_CHECK" != "1" ]; then
+    printf 'Goal check skipped because KASEKI_GOAL_CHECK=%s.\n' "$KASEKI_GOAL_CHECK"
+    record_stage_timing "goal check" 0 0 "skipped_by_config attempt=$attempt"
+    return 0
+  fi
+  if [ ! -s "$SCOUTING_ARTIFACT" ]; then
+    printf 'Goal check skipped because scouting artifact is unavailable.\n'
+    record_stage_timing "goal check" 0 0 "skipped_no_scouting attempt=$attempt"
+    return 0
+  fi
+
+  goal_prompt="$(build_goal_check_prompt)"
+  goal_start="$(date +%s)"
+  set +e
+  run_pi_with_retry "$GOAL_CHECK_RAW_EVENTS" "$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS" "$KASEKI_GOAL_CHECK_MODEL" "$goal_prompt" "goal-check-summary" "" "goal-check"
+  GOAL_CHECK_EXIT="$?"
+  unset goal_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
+  GOAL_CHECK_DURATION_SECONDS=$((GOAL_CHECK_DURATION_SECONDS + $(date +%s) - goal_start))
+  set +e
+
+  kaseki-pi-event-filter "$GOAL_CHECK_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-check-events.jsonl "${KASEKI_RESULTS_DIR}"/goal-check-summary.json 2>/dev/null || true
+  # Phase 3A: Consolidate goal-check summary to all-phase-summaries.json
+  append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "goal-check" "${KASEKI_RESULTS_DIR}"/goal-check-summary.json
+
+  if [ "$GOAL_CHECK_EXIT" -eq 0 ] && [ ! -f "$GOAL_CHECK_CANDIDATE_ARTIFACT" ]; then
+    # Recover from goal-check agents that printed the verdict in assistant text instead of writing the artifact.
+    # shellcheck disable=SC2016
+    node -e '
+const fs = require("node:fs");
+const candidatePath = process.argv[1];
+const rawPath = process.argv[2];
+const filteredPath = process.argv[3];
+const attempt = Number(process.argv[4]);
+
+function stableStringify(value) {
+  if (Array.isArray(value)) return "[" + value.map(stableStringify).join(",") + "]";
+  if (value && typeof value === "object") {
+    return "{" + Object.keys(value).sort().map((key) => JSON.stringify(key) + ":" + stableStringify(value[key])).join(",") + "}";
+  }
+  return JSON.stringify(value);
+}
+
+function schemaErrors(artifact) {
+  const errors = [];
+  if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
+    errors.push("root must be an object");
+    return errors;
+  }
+  if (typeof artifact.met !== "boolean") errors.push("met must be boolean");
+  if (!["low", "medium", "high"].includes(artifact.confidence)) errors.push("confidence must be low|medium|high");
+  if (typeof artifact.summary !== "string" || artifact.summary.trim().length === 0) errors.push("summary must be a non-empty string");
+  if (artifact.met === false && (typeof artifact.retry_prompt !== "string" || artifact.retry_prompt.trim().length === 0)) errors.push("retry_prompt must be non-empty when met=false");
+  for (const key of ["evidence", "missing", "validation_notes"]) {
+    if (!Array.isArray(artifact[key]) || !artifact[key].every((v) => typeof v === "string")) errors.push(key + " must be an array of strings");
+  }
+  return errors;
+}
+
+function collectBalancedJsonObjects(text) {
+  const snippets = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === "\"") inString = false;
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+    } else if (ch === "{") {
+      if (depth === 0) start = i;
+      depth += 1;
+    } else if (ch === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        snippets.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  return snippets;
+}
+
+function collectStrings(value, out = []) {
+  if (typeof value === "string") out.push(value);
+  else if (Array.isArray(value)) value.forEach((item) => collectStrings(item, out));
+  else if (value && typeof value === "object") Object.values(value).forEach((item) => collectStrings(item, out));
+  return out;
+}
+
+const valid = new Map();
+for (const path of [rawPath, filteredPath]) {
+  let text = "";
+  try { text = fs.readFileSync(path, "utf8"); } catch { continue; }
+  const snippets = collectBalancedJsonObjects(text);
+  for (const snippet of snippets) {
+    try {
+      const parsed = JSON.parse(snippet);
+      if (schemaErrors(parsed).length === 0) valid.set(stableStringify(parsed), parsed);
+      for (const innerText of collectStrings(parsed)) {
+        for (const innerSnippet of collectBalancedJsonObjects(innerText)) {
+          try {
+            const inner = JSON.parse(innerSnippet);
+            if (schemaErrors(inner).length === 0) valid.set(stableStringify(inner), inner);
+          } catch {}
+        }
+      }
+    } catch {}
+  }
+}
+
+if (valid.size === 1) {
+  const recovered = [...valid.values()][0];
+  fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
+}
+' "$GOAL_CHECK_CANDIDATE_ARTIFACT" "$GOAL_CHECK_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-check-events.jsonl "$attempt" 2>/dev/null || true
+  fi
+
+  if [ "$GOAL_CHECK_EXIT" -eq 0 ] && ! validate_goal_check_artifact "$GOAL_CHECK_CANDIDATE_ARTIFACT" "${KASEKI_RESULTS_DIR}"/goal-check.json "$attempt" "${KASEKI_RESULTS_DIR}"/goal-check-validation-reason.txt; then
+    GOAL_CHECK_EXIT=86
+    goal_check_validation_reason="$(cat "${KASEKI_RESULTS_DIR}"/goal-check-validation-reason.txt 2>/dev/null || printf 'schema_mismatch')"
+    goal_check_validation_summary="$(cat "${KASEKI_RESULTS_DIR}"/goal-check-validation-summary.txt 2>/dev/null || printf 'goal-check artifact validation failed')"
+    case "$goal_check_validation_reason" in
+      missing_file)
+        GOAL_CHECK_FAILURE_REASON="goal_check_artifact_missing"
+        emit_error_event "goal_check_artifact_missing" "Goal-check candidate artifact was missing: $GOAL_CHECK_CANDIDATE_ARTIFACT ($goal_check_validation_summary; full details: ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl)" "continue"
+        ;;
+      malformed_json)
+        GOAL_CHECK_FAILURE_REASON="goal_check_artifact_malformed"
+        emit_error_event "goal_check_artifact_malformed" "Goal-check Pi wrote malformed JSON: $goal_check_validation_summary (full details: ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl)" "continue"
+        ;;
+      *)
+        GOAL_CHECK_FAILURE_REASON="goal_check_artifact_invalid"
+        emit_error_event "goal_check_artifact_invalid" "Goal-check Pi did not write a schema-valid JSON verdict: $goal_check_validation_summary (full details: ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl)" "continue"
+        ;;
+    esac
+  fi
+  rm -f "$GOAL_CHECK_CANDIDATE_ARTIFACT"
+  GOAL_CHECK_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/goal-check-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
+
+  if [ "$GOAL_CHECK_EXIT" -eq 0 ]; then
+    verdict_met="$(node -e 'try { const v=require(process.argv[1]); console.log(v.met ? "true" : "false"); } catch { console.log("false"); }' "${KASEKI_RESULTS_DIR}/goal-check.json" 2>/dev/null || printf 'false')"
+    retry_prompt="$(node -e 'try { const v=require(process.argv[1]); console.log(v.retry_prompt || ""); } catch { console.log(""); }' "${KASEKI_RESULTS_DIR}/goal-check.json" 2>/dev/null || true)"
+    verdict_summary="$(node -e 'try { const v=require(process.argv[1]); console.log(v.summary || ""); } catch { console.log(""); }' "${KASEKI_RESULTS_DIR}/goal-check.json" 2>/dev/null || true)"
+    confidence="$(node -e 'try { const v=require(process.argv[1]); console.log(v.confidence || "unknown"); } catch { console.log("unknown"); }' "${KASEKI_RESULTS_DIR}/goal-check.json" 2>/dev/null || true)"
+    if [ "$verdict_met" = "true" ]; then
+      GOAL_CHECK_MET=true
+      GOAL_CHECK_RETRY_PROMPT=""
+      GOAL_CHECK_FAILURE_REASON=""
+      emit_progress "goal check" "met on attempt $attempt (confidence=$confidence)"
+    else
+      GOAL_CHECK_MET=false
+      GOAL_CHECK_RETRY_PROMPT="$retry_prompt"
+      GOAL_CHECK_FAILURE_REASON="${verdict_summary:-goal unmet}"
+      emit_progress "goal check" "unmet on attempt $attempt (confidence=$confidence)"
+    fi
+  else
+    GOAL_CHECK_MET=false
+    [ -z "$GOAL_CHECK_FAILURE_REASON" ] && GOAL_CHECK_FAILURE_REASON="goal_check_failed_exit_$GOAL_CHECK_EXIT"
+    GOAL_CHECK_RETRY_PROMPT="The goal-check evaluator failed to produce a valid passing verdict. Re-read $SCOUTING_ARTIFACT, inspect the current diff and validation logs, and repair any missing requirement before finishing."
+  fi
+  record_stage_timing "goal check" "$GOAL_CHECK_EXIT" "$(($(date +%s) - goal_start))" "attempt=$attempt met=$GOAL_CHECK_MET timeout_seconds=$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS"
+  return 0
+}
+
+build_run_evaluation_prompt() {
+  local validation_tail progress_tail stage_timings dependency_cache restoration_report draft_pr_body metadata_text goal_setting_context test_impact_context caveman_instruction
+  
+  # Get caveman instruction if enabled
+  caveman_instruction="$(get_caveman_instruction)"
+  
+  validation_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/validation.log 2>/dev/null || true)"
+  progress_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/progress.jsonl 2>/dev/null || true)"
+  stage_timings="$(tail -80 "${KASEKI_RESULTS_DIR}"/stage-timings.tsv 2>/dev/null || true)"
+  dependency_cache="$(tail -80 "${KASEKI_RESULTS_DIR}"/dependency-cache.log 2>/dev/null || true)"
+  restoration_report="$(tail -80 "${KASEKI_RESULTS_DIR}"/restoration.jsonl 2>/dev/null || true)"
+  metadata_text="$(cat "${KASEKI_RESULTS_DIR}"/metadata.json 2>/dev/null || true)"
+  draft_pr_body="$(build_pr_body)"
+  if [ -s "$TEST_IMPACT_WARNINGS_ARTIFACT" ]; then
+    test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT):
+$(cat "$TEST_IMPACT_WARNINGS_ARTIFACT" 2>/dev/null)
+
+---
+"
+  else
+    test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT): no warnings emitted.
+
+---
+"
+  fi
+  
+  # Include goal-setting output for quality context (influences reviewer_confidence)
+  if [ -f "$GOAL_SETTING_ARTIFACT" ]; then
+    goal_setting_context="GOAL-SETTING OUTPUT (use to calibrate reviewer_confidence):
+$(head -n 200 "$GOAL_SETTING_ARTIFACT" 2>/dev/null)
+
+---
+"
+  else
+    goal_setting_context=""
+  fi
+
+  # Prepend caveman instruction if enabled
+  if [ -n "$caveman_instruction" ]; then
+    printf '%s\n\n' "$caveman_instruction"
+  fi
+  
+  cat <<EOF
+You are a read-only run-evaluation Pi agent inside a Kaseki-managed ephemeral workspace.
+
+Evaluate Kaseki's process quality for this run. Be task-agnostic: focus on reviewer confidence, process efficiency, stage value, and opportunities for Kaseki to improve.
+
+## Your Task
+
+This is NOT another goal-check. The goal-check evaluator already determined if the goal was met. Your job is to assess:
+1. **Reviewer Confidence**: Can humans trust this PR without exhaustive manual review?
+2. **Process Value**: Which stages added value? Which could be streamlined?
+3. **Kaseki Improvements**: What should the Kaseki system optimize for next time?
+4. **Task Completion**: Did the agent realize the specific goal? (score 1-5)
+
+## Inputs to Use
+
+**Goal Quality Context** (influences reviewer_confidence assessment):
+- Goal-setting artifact: $GOAL_SETTING_ARTIFACT
+- Quality metrics, SMART criteria, anti-patterns
+
+**Agent Artifacts** (verify goal was realized):
+- Goal-check verdict: "${KASEKI_RESULTS_DIR}"/goal-check.json
+- Scouting report: "${KASEKI_RESULTS_DIR}"/scouting.json
+- Changed files: "${KASEKI_RESULTS_DIR}"/changed-files.txt
+- Git diff: "${KASEKI_RESULTS_DIR}"/git.diff
+- Validation timings/logs: "${KASEKI_RESULTS_DIR}"/pre-validation-timings.tsv, ${KASEKI_RESULTS_DIR}/validation-timings.tsv, ${KASEKI_RESULTS_DIR}/validation.log
+- Static test-impact warnings (non-blocking): $TEST_IMPACT_WARNINGS_ARTIFACT
+- Stage timings: "${KASEKI_RESULTS_DIR}"/stage-timings.tsv
+- Progress events: "${KASEKI_RESULTS_DIR}"/progress.jsonl
+- Metadata: "${KASEKI_RESULTS_DIR}"/metadata.json
+
+## Evaluation Framework
+
+### 1. Reviewer Confidence Grounding
+
+Reviewer confidence should account for goal quality. Poor goals = harder to assess = lower confidence.
+
+**High reviewer_confidence** (80%+ trust for merge):
+- Goal quality ≥80 (high clarity, measurability, specificity)
+- Goal-check: met=true with high confidence
+- Validation: all pass (or failures are pre-existing)
+- Diff: ≤200 lines, ≤3 files
+- No warnings from evaluators
+
+**Medium reviewer_confidence** (50-79% trust; recommend review):
+- Goal quality 60-79 (medium quality)
+- OR Goal-check: met=true but medium confidence
+- OR Validation: mostly pass with 1-2 minor failures
+- OR Diff: 200-500 lines, ≤5 files
+
+**Low reviewer_confidence** (<50% trust; require manual review):
+- Goal quality <60 (low clarity/measurability)
+- OR Goal-check: unmet or low confidence
+- OR Validation: failures (excluding pre-existing)
+- OR Diff: >500 lines or >5 files
+- OR Contradictory signals
+
+Always account for goal quality. A low-quality goal makes success harder to assess.
+
+### 2. Evidence Cross-Check (REQUIRED)
+
+Before assigning reviewer_confidence or task_completion_score, compare all available evidence sources and explicitly handle contradictions:
+
+- Read goal-check.json.met (the met field in "${KASEKI_RESULTS_DIR}"/goal-check.json) as one signal, not as authoritative proof.
+- Compare goal-check.json.met against "${KASEKI_RESULTS_DIR}"/changed-files.txt, "${KASEKI_RESULTS_DIR}"/git.diff, and validation command outcomes from validation.log and validation-timings.tsv.
+- Cross-check required files from goal-setting and scouting (success criteria, relevant_files, plan, test_impact, and validation expectations) against changed-files.txt and git.diff.
+- Cross-check validation command outcomes: note which commands were attempted, passed, failed, skipped, or produced empty logs.
+- Treat contradictory evidence as a warning and explain the contradiction in warnings and summary/reasoning fields.
 
 Explicit contradiction-handling scoring rules:
 
