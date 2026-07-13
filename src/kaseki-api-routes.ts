@@ -148,7 +148,7 @@ export function createApiRouter(
    */
   router.use((req: Request, res: Response, next: NextFunction) => {
     // Skip auth for health check endpoints only
-    if (req.path === '/health' || req.path === '/ready') {
+    if (req.path === '/health' || req.path === '/ready' || req.path === '/readiness') {
       return next();
     }
 
