@@ -209,10 +209,21 @@ export class StatusResponseBuilder {
     const failed = job.status === 'failed';
     const events = this.readPhaseEvents(job);
     const scoutingEvents = events.filter((event) => /scout|scouting/.test(this.eventStage(event)));
-    const weavingEvents = events.filter((event) => /goal-setting|coding|weav|goal check|validation|quality|github operations|evaluation|final/.test(this.eventStage(event)));
-    const scoutingStarted = Boolean(metadata?.scouting_attempts || scoutingEvents.length || /scout|scouting/.test(stage));
-    const weavingStarted = Boolean(weavingEvents.length || /goal-setting|coding|weav|goal check|validation|quality|github operations|evaluation|final/.test(stage));
+    // Validation is not sufficient evidence that weaving started: pre-agent
+    // validation runs before scouting and must leave weaving as not_reached.
+    // The old broad `validation` match made a run report weaving=running while
+    // it was still failing its pre-agent checks.
     const failedCommand = String(metadata?.failed_command ?? stage).toLowerCase();
+    const preAgentValidation = /pre[-_ ]agent validation|pre[-_ ]validation/.test(failedCommand);
+    const weavingEvents = events.filter((event) => {
+      const eventStage = this.eventStage(event);
+      if (preAgentValidation && /pre[-_ ]agent|pre[-_ ]validation/.test(eventStage)) return false;
+      if (preAgentValidation && /validation/.test(eventStage) && !/goal check|quality|post[-_ ]agent/.test(eventStage)) return false;
+      return /goal-setting|coding|weav|goal check|quality|github operations|evaluation|final/.test(eventStage);
+    });
+    const scoutingStarted = Boolean(metadata?.scouting_attempts || scoutingEvents.length || /scout|scouting/.test(stage));
+    const weavingStage = !preAgentValidation || !/pre[-_ ]agent|pre[-_ ]validation|validation/.test(stage);
+    const weavingStarted = Boolean(weavingEvents.length || (weavingStage && /goal-setting|coding|weav|goal check|validation|quality|github operations|evaluation|final/.test(stage)));
     const scoutingFailed = failed && /scout|scouting/.test(failedCommand);
     const weavingFailed = failed && !scoutingFailed && weavingStarted;
     const scoutingCompletedAt = this.phaseCompletedAt(scoutingEvents);
