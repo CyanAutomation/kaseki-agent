@@ -55,9 +55,10 @@ export function createHealthRoutes(
   });
 
   /**
-   * GET /ready - Kubernetes-style readiness probe
+   * GET /ready and /readiness - Kubernetes-style readiness probe.
+   * /readiness is a compatibility alias for clients that use the UI label.
    */
-  router.get('/ready', (_req: Request, res: Response) => {
+  const readinessHandler = (_req: Request, res: Response) => {
     const readiness = scheduler.getReadiness();
     if (readiness.ready) {
       return res.status(200).json({ status: 'ready', timestamp: new Date().toISOString() });
@@ -67,7 +68,9 @@ export function createHealthRoutes(
       timestamp: new Date().toISOString(),
       reasons: readiness.reasons,
     });
-  });
+  };
+  router.get('/ready', readinessHandler);
+  router.get('/readiness', readinessHandler);
 
   /**
    * GET /metrics - Prometheus-formatted metrics
