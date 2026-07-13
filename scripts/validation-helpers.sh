@@ -48,6 +48,24 @@ append_default_validation_command() {
   fi
 }
 
+ensure_build_before_test_validation() {
+  local commands="$1" command trimmed normalized="" has_build=0 has_test=0
+  package_json_has_npm_script "build" || { printf '%s' "$commands"; return 0; }
+  local -a command_array
+  IFS=';' read -r -a command_array <<< "$commands"
+  for command in "${command_array[@]}"; do
+    trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
+    [ -z "$trimmed" ] && continue
+    [[ "$trimmed" == npm\ run\ build* ]] && has_build=1
+    [[ "$trimmed" == npm\ run\ test* ]] && has_test=1
+    normalized="$(append_default_validation_command "$normalized" "$trimmed")"
+  done
+  if [ "$has_test" -eq 1 ] && [ "$has_build" -eq 0 ]; then
+    normalized="$(append_default_validation_command "npm run build" "$normalized")"
+  fi
+  printf '%s' "$normalized"
+}
+
 has_typescript_project() {
   [ -f tsconfig.json ] && return 0
   [ -f package.json ] || return 1
@@ -92,17 +110,16 @@ construct_default_validation_commands() {
 apply_default_validation_commands() {
   local detected_commands
 
-  if [ -n "${KASEKI_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
-    return 0
+  if [ -z "${KASEKI_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
+    detected_commands="$(construct_default_validation_commands)"
+    KASEKI_VALIDATION_COMMANDS="$detected_commands"
   fi
-
-  detected_commands="$(construct_default_validation_commands)"
-  KASEKI_VALIDATION_COMMANDS="$detected_commands"
-  export KASEKI_VALIDATION_COMMANDS
   if [ -z "${KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
-    KASEKI_PRE_AGENT_VALIDATION_COMMANDS="$detected_commands"
-    export KASEKI_PRE_AGENT_VALIDATION_COMMANDS
+    KASEKI_PRE_AGENT_VALIDATION_COMMANDS="${detected_commands:-$KASEKI_VALIDATION_COMMANDS}"
   fi
+  KASEKI_VALIDATION_COMMANDS="$(ensure_build_before_test_validation "$KASEKI_VALIDATION_COMMANDS")"
+  KASEKI_PRE_AGENT_VALIDATION_COMMANDS="$(ensure_build_before_test_validation "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS")"
+  export KASEKI_VALIDATION_COMMANDS KASEKI_PRE_AGENT_VALIDATION_COMMANDS
 }
 
 append_validation_result() {

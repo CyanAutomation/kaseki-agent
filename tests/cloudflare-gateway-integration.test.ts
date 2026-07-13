@@ -138,11 +138,15 @@ describe('CloudFlare Gateway deterministic contract', () => {
       LLM_GATEWAY_API_KEY: process.env.LLM_GATEWAY_API_KEY,
       LLM_GATEWAY_MODEL: process.env.LLM_GATEWAY_MODEL,
       LLM_GATEWAY_MAX_OUTPUT_TOKENS: process.env.LLM_GATEWAY_MAX_OUTPUT_TOKENS,
+      KASEKI_INSTANCE_ID: process.env.KASEKI_INSTANCE_ID,
     };
     process.env.LLM_GATEWAY_URL = testGatewayConfig.url;
     process.env.LLM_GATEWAY_API_KEY = testGatewayConfig.apiKey;
     process.env.LLM_GATEWAY_MODEL = '@cf/meta/llama-3.1-8b-instruct';
     process.env.LLM_GATEWAY_MAX_OUTPUT_TOKENS = '1234';
+    // A live worker may inject its run ID globally. This contract test asserts
+    // the provider's neutral default and must not inherit that runtime state.
+    delete process.env.KASEKI_INSTANCE_ID;
 
     try {
       const mockPi = { registerProvider: jest.fn() };
