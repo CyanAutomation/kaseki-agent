@@ -151,6 +151,11 @@ JSON
   apply_default_validation_commands
   assert_equals "explicit validation commands take precedence" "npm run custom" "$KASEKI_VALIDATION_COMMANDS"
   assert_equals "pre-agent commands keep explicit validation default" "npm run custom" "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS"
+  KASEKI_VALIDATION_COMMANDS="npm run check;npm run test"
+  KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check;npm run test"
+  apply_default_validation_commands
+  assert_equals "explicit test commands prepend the build artifact step" "npm run build;npm run check;npm run test" "$KASEKI_VALIDATION_COMMANDS"
+  assert_equals "pre-agent test commands prepend the build artifact step" "npm run build;npm run check;npm run test" "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS"
   unset KASEKI_VALIDATION_COMMANDS_EXPLICIT KASEKI_VALIDATION_COMMANDS KASEKI_PRE_AGENT_VALIDATION_COMMANDS KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT
 }
 
