@@ -3793,6 +3793,24 @@ append_default_validation_command() {
   fi
 }
 
+ensure_build_before_test_validation() {
+  local commands="$1" command trimmed normalized="" has_build=0 has_test=0
+  package_json_has_npm_script "build" || { printf '%s' "$commands"; return 0; }
+  local -a command_array
+  IFS=';' read -r -a command_array <<< "$commands"
+  for command in "${command_array[@]}"; do
+    trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
+    [ -z "$trimmed" ] && continue
+    [[ "$trimmed" == npm\ run\ build* ]] && has_build=1
+    [[ "$trimmed" == npm\ run\ test* ]] && has_test=1
+    normalized="$(append_default_validation_command "$normalized" "$trimmed")"
+  done
+  if [ "$has_test" -eq 1 ] && [ "$has_build" -eq 0 ]; then
+    normalized="$(append_default_validation_command "npm run build" "$normalized")"
+  fi
+  printf '%s' "$normalized"
+}
+
 construct_default_validation_commands() {
   local commands=""
 
@@ -3823,15 +3841,15 @@ construct_default_validation_commands() {
 apply_default_validation_commands() {
   local detected_commands
 
-  if [ -n "${KASEKI_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
-    return 0
+  if [ -z "${KASEKI_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
+    detected_commands="$(construct_default_validation_commands)"
+    KASEKI_VALIDATION_COMMANDS="$detected_commands"
   fi
-
-  detected_commands="$(construct_default_validation_commands)"
-  KASEKI_VALIDATION_COMMANDS="$detected_commands"
   if [ -z "${KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
-    KASEKI_PRE_AGENT_VALIDATION_COMMANDS="$detected_commands"
+    KASEKI_PRE_AGENT_VALIDATION_COMMANDS="${detected_commands:-$KASEKI_VALIDATION_COMMANDS}"
   fi
+  KASEKI_VALIDATION_COMMANDS="$(ensure_build_before_test_validation "$KASEKI_VALIDATION_COMMANDS")"
+  KASEKI_PRE_AGENT_VALIDATION_COMMANDS="$(ensure_build_before_test_validation "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS")"
 }
 
 # shellcheck source=scripts/auto-lint-cleanup-classification.sh
@@ -4180,7 +4198,8 @@ run_baseline_validation() {
     "$baseline_detail_var" \
     "$baseline_reason_var" \
     "BASELINE_VALIDATION_STOPPED_EARLY" \
-    "BASELINE_VALIDATION_COMMANDS_ATTEMPTED"
+    "BASELINE_VALIDATION_COMMANDS_ATTEMPTED" \
+    "$baseline_dir"
   
   local baseline_exit=$?
   
@@ -4366,6 +4385,7 @@ run_validation_commands() {
   local stage_start validation_start validation_end duration command trimmed missing_npm_script
   local command_exit tee_exit filter_exit pipe_statuses execute_during_dry_run pipefail_was_enabled
   local -a validation_commands
+  local validation_workspace="${13:-$PWD}"
 
   execute_during_dry_run=false
   if [ "$KASEKI_BASELINE_VALIDATION_DRY_RUN" = "1" ] && [ "$stage_label" = "pre-agent validation" ]; then
@@ -4395,13 +4415,13 @@ run_validation_commands() {
     record_stage_timing "$stage_label" 0 0 "skipped_by_config"
   else
     # Checkpoint: Verify working directory exists before validation.
-    if ! [ -d "${KASEKI_WORKSPACE_DIR}"/repo ]; then
-      printf 'ERROR: Working directory %s/repo does not exist before %s\n' "$KASEKI_WORKSPACE_DIR" "$stage_label" | tee -a "$log_file"
+    if ! [ -d "$validation_workspace" ]; then
+      printf 'ERROR: Working directory %s does not exist before %s\n' "$validation_workspace" "$stage_label" | tee -a "$log_file"
       printf 'Current pwd: %s\n' "$(pwd 2>&1 || echo '<pwd failed>')" | tee -a "$log_file"
       printf 'Filesystem state:\n' | tee -a "$log_file"
       find /workspace -maxdepth 3 -type f 2>&1 | head -100 | tee -a "$log_file"
       validation_exit_ref=1
-      validation_detail_ref="Working directory ${KASEKI_WORKSPACE_DIR}/repo missing before $stage_label"
+      validation_detail_ref="Working directory ${validation_workspace} missing before $stage_label"
       validation_reason_ref="$failure_reason_prefix: workspace_missing"
       record_stage_timing "$stage_label" "$validation_exit_ref" "$(($(date +%s) - stage_start))" "directory_missing"
     else
