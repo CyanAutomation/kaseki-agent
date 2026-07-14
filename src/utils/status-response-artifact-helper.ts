@@ -277,7 +277,7 @@ export class StatusArtifactHelper {
         ? (['goal-setting-validation-errors.jsonl', 'goal-setting-stderr.log'] as DiagnosticEntryPoint[])
         : []),
       ...(flags.includeScouting
-        ? (['scouting-validation-errors.jsonl', 'scouting-stderr.log'] as DiagnosticEntryPoint[])
+        ? (['scouting-validation-errors.jsonl', 'scouting-contract-diagnostics.jsonl', 'scouting-retry-diagnostics.jsonl', 'scouting-stderr.log'] as DiagnosticEntryPoint[])
         : []),
       ...(flags.includeGoalCheck
         ? (['goal-check-validation-errors.jsonl', 'goal-check-stderr.log'] as DiagnosticEntryPoint[])

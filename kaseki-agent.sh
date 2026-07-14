@@ -4157,7 +4157,11 @@ checkout_baseline_repo() {
   # Install dependencies in baseline
   if [ -f "$baseline_dir/package.json" ]; then
     emit_progress "baseline preparation" "installing baseline dependencies"
-    if ! cd "$baseline_dir" && npm ci --prefer-offline 2>>"$baseline_npm_ci_log"; then
+    # Keep the directory change and install in one negated command group.  The
+    # previous `! cd ... && npm ci` only negated `cd`, so a successful cd
+    # short-circuited the install and baseline validation ran without its
+    # dependencies (typically as an opaque exit 127).
+    if ! (cd "$baseline_dir" && npm ci --prefer-offline 2>>"$baseline_npm_ci_log"); then
       emit_error_event "baseline_deps_failed" "Failed to install baseline dependencies" "continue"
       cd "${KASEKI_WORKSPACE_DIR}"/repo
       return 1
@@ -6361,11 +6365,25 @@ run_scouting_agent_with_retry() {
     rm -f "$scouting_stderr_capture"
 
     # Success on any attempt
-    node - "$attempt" "$scouting_last_exit" "$SCOUTING_CANDIDATE_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-summary.json" <<'NODE' 2>/dev/null || true
+    node - "$attempt" "$scouting_last_exit" "$SCOUTING_CANDIDATE_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-summary.json" "$SCOUTING_RAW_EVENTS" <<'NODE' 2>/dev/null || true
 const fs = require('node:fs');
-const [attempt, exitCode, artifact, summary] = process.argv.slice(2);
+const [attempt, exitCode, artifact, summary, rawEvents] = process.argv.slice(2);
 let stats = {};
 try { stats = JSON.parse(fs.readFileSync(summary, 'utf8')); } catch {}
+let assistantText = '';
+const toolNames = new Set();
+try {
+  for (const line of fs.readFileSync(rawEvents, 'utf8').split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const event = JSON.parse(line);
+    const type = String(event.type || event.event || '');
+    const text = event?.message?.content ?? event?.content ?? event?.text ?? '';
+    if (/assistant|message_end|text/i.test(type) && typeof text === 'string') assistantText += text;
+    const tool = event?.tool?.name ?? event?.toolName ?? event?.name;
+    if (/tool/i.test(type) && typeof tool === 'string') toolNames.add(tool);
+  }
+} catch {}
+const preview = assistantText.replace(/[\x00-\x1F\x7F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 800);
 const diag = {
   timestamp: new Date().toISOString(), phase: 'scouting', attempt: Number(attempt),
   exit_code: Number(exitCode), artifact_path: artifact,
@@ -6373,6 +6391,9 @@ const diag = {
   message_end_count: Number(stats.event_counts?.message_end || 0),
   tool_call_count: Number(stats.tool_start_count || 0),
   provider_error_count: Number(stats.inference_health?.provider_error_count || 0),
+  assistant_text_chars: assistantText.length,
+  assistant_text_preview: preview || undefined,
+  tool_names: [...toolNames].slice(0, 20),
 };
 fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + '/scouting-contract-diagnostics.jsonl', JSON.stringify(diag) + '\n');
 NODE

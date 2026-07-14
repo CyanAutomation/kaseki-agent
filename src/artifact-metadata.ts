@@ -253,6 +253,24 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'scouting-contract-diagnostics.jsonl': {
+    name: 'scouting-contract-diagnostics.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Per-attempt scouting handoff evidence: candidate path/size, tool usage, and a sanitized assistant-text preview',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 4,
+    sizeHint: 'small',
+  },
+
+  'scouting-retry-diagnostics.jsonl': {
+    name: 'scouting-retry-diagnostics.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Scouting retry decisions, rejected event streams, and artifact-contract failure classification',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 5,
+    sizeHint: 'small',
+  },
+
   'goal-check.json': {
     name: 'goal-check.json',
     contentType: 'application/json',

@@ -124,6 +124,25 @@ describe('StatusResponseBuilder', () => {
       jest.useRealTimers();
     });
 
+    it('does not treat the default scouting attempt count as evidence that scouting started', () => {
+      const metadata = {
+        failed_command: 'pre-agent validation',
+        scouting_attempts: 1,
+        scouting_duration_seconds: 0,
+        scouting_exit_code: 0,
+        scouting_actual_model: 'unknown',
+      };
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => filePath.endsWith('metadata.json'));
+      (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify(metadata));
+      mockScheduler.getLiveProgressEvents.mockReturnValue([
+        { stage: 'phase_not_reached', message: 'phase=scouting reason=pre_agent_validation_failed' },
+      ]);
+
+      const response = builder.buildStatus({ id: 'job-pre-agent-failure', status: 'failed' } as Job);
+
+      expect(response.phaseOutcome).toMatchObject({ scouting: 'not_reached', weaving: 'not_reached' });
+    });
+
     it('reports exhausted scouting artifact retries without misdiagnosing the provider', () => {
       const metadata = {
         failed_command: 'pi scouting agent',
