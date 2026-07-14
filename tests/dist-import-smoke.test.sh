@@ -101,7 +101,8 @@ await withCleanup(async () => {
   ].join('\n') + '\n');
 
   await filterModule.runPiEventFilter(inputPath, filteredPath, summaryPath);
-  const filteredEvents = fs.readFileSync(filteredPath, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+  const filteredContent = fs.readFileSync(filteredPath, 'utf8').trim();
+  const filteredEvents = filteredContent ? filteredContent.split('\n').map((line) => JSON.parse(line)) : [];
   const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
   assert.equal(filteredEvents.length, 2, 'runPiEventFilter should drop thinking events and keep visible events');
   assert.deepEqual(filteredEvents.map((event) => event.type), ['agent_start', 'tool_execution_start']);
