@@ -48,6 +48,17 @@ jobs:
       - name: Publish smoke test
         run: npm run test:publish-smoke
 
+      - name: Fallow - Codebase Intelligence
+        uses: fallow-rs/fallow@v2.95.0
+        with:
+          version: "2.95.0"
+          command: health
+          score: true
+          fail-on-issues: false
+          hotspots: true
+          targets: true
+          save-snapshot: true
+
       - name: Run semantic-release
         id: release
         env:
@@ -77,13 +88,3 @@ jobs:
           name: release-output
           path: release-output.log
           retention-days: 30
-
-      - name: Fallow - Codebase Intelligence
-        uses: fallow-rs/fallow@v2.95.0
-        with:
-          command: health
-          score: true
-          fail-on-issues: false
-          hotspots: true
-          targets: true
-          save-snapshot: true
