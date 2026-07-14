@@ -114,6 +114,24 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'hashline-failure.json': {
+    name: 'hashline-failure.json',
+    contentType: 'application/json',
+    description: 'Structured hashline processor failure with exit code, stderr tail, and retry guidance',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 4,
+    sizeHint: 'small',
+  },
+
+  'empty-diff.json': {
+    name: 'empty-diff.json',
+    contentType: 'application/json',
+    description: 'Structured empty-diff classification distinguishing no-op, empty assistant turn, and edit-processor failure',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 2,
+    sizeHint: 'small',
+  },
+
   // Goal-setting (pre-scouting phase)
   'goal-setting.json': {
     name: 'goal-setting.json',

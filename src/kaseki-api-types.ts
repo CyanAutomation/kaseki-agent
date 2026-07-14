@@ -231,6 +231,8 @@ export type DiagnosticEntryPoint =
   | 'scouting-stderr.log'
   | 'goal-check-validation-errors.jsonl'
   | 'goal-check-stderr.log'
+  | 'hashline-failure.json'
+  | 'empty-diff.json'
   | 'pi-agent-diagnostics.jsonl'
   | 'pi-events.jsonl'
   | 'pi-summary.json'
