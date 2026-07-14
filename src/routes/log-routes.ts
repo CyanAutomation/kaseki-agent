@@ -29,6 +29,8 @@ const DIAGNOSTIC_FILE_CANDIDATES: DiagnosticEntryPoint[] = [
   'goal-setting-validation-errors.jsonl',
   'goal-setting-stderr.log',
   'scouting-validation-errors.jsonl',
+  'scouting-contract-diagnostics.jsonl',
+  'scouting-retry-diagnostics.jsonl',
   'scouting-stderr.log',
   'goal-check-validation-errors.jsonl',
   'goal-check-stderr.log',

@@ -238,7 +238,18 @@ export class StatusResponseBuilder {
       if (preAgentValidation && /validation/.test(eventStage) && !/goal check|quality|post[-_ ]agent/.test(eventStage)) return false;
       return /coding|weav|goal check|quality|github operations|evaluation|final/.test(eventStage);
     });
-    const scoutingStarted = Boolean(metadata?.scouting_attempts || scoutingEvents.length || /scout|scouting/.test(stage));
+    // `scouting_attempts` is initialised to 1 for metadata schema stability,
+    // even when pre-agent validation exits before Pi starts.  Only concrete
+    // timing/model/artifact evidence, lifecycle events, or the current stage
+    // may mark scouting as started.
+    const scoutingArtifactExists = fs.existsSync(path.join(this.config.resultsDir, job.id, 'scouting.json'));
+    const scoutingDuration = Number(metadata?.scouting_duration_seconds ?? 0);
+    const scoutingExitCode = Number(metadata?.scouting_exit_code ?? 0);
+    const scoutingModel = String(metadata?.scouting_actual_model ?? '').trim();
+    const scoutingStarted = Boolean(
+      scoutingEvents.length || /scout|scouting/.test(stage) || scoutingArtifactExists ||
+      scoutingDuration > 0 || scoutingExitCode !== 0 || (scoutingModel && scoutingModel !== 'unknown')
+    );
     const weavingStage = !preAgentValidation || !/pre[-_ ]agent|pre[-_ ]validation|validation/.test(stage);
     const weavingStarted = Boolean(weavingEvents.length || (weavingStage && /coding|weav|goal check|validation|quality|github operations|evaluation|final/.test(stage)));
     const scoutingFailed = failed && /scout|scouting/.test(failedCommand);
