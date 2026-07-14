@@ -52,7 +52,7 @@ const parseDockerEnvAndVolumes = (script: string): DockerEnvAndVolumes => {
     const volumeToken = token === '-v' ? nextToken : token.replace(/^-v\s+/, '');
 
     if (token === '-e' || token.startsWith('-e ')) {
-      const envMatch = envToken.match(/^([A-Za-z_][A-Za-z0-9_]*)=([ '"])(.*?)\2$/);
+      const envMatch = envToken.match(/^([A-Za-z_][A-Za-z0-9_]*)=(['"])(.*?)\2$/);
       if (envMatch) {
         env.set(envMatch[1], envMatch[3]);
       }
