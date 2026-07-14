@@ -72,6 +72,9 @@ const parseDockerEnvAndVolumes = (script: string): DockerEnvAndVolumes => {
           mode: volumeMatch[4],
         });
       }
+      if (token === '-v') {
+        index += 1;
+      }
     }
   }
 
