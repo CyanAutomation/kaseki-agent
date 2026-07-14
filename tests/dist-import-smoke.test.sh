@@ -123,7 +123,7 @@ await withCleanup(async () => {
     { ready: true, reasons: [] },
     'JobScheduler should report ready with writable results and healthy webhooks',
   );
-  scheduler.shutdown();
+  await scheduler.shutdown();
 
   const dockerFailure = routesModule.classifyDockerFailure('Cannot connect to the Docker daemon at unix:///var/run/docker.sock');
   assert.equal(dockerFailure.detail, 'Docker daemon is unreachable from the API process.');
