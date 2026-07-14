@@ -2,6 +2,50 @@
 # Sourceable auto-lint cleanup classification and execution helpers.
 # Depends on the caller providing the surrounding kaseki-agent runtime helpers.
 
+
+validation_command_security_rejection_reason() {
+  local command="$1"
+  if [ "${KASEKI_ALLOW_UNSAFE_VALIDATION_COMMANDS:-0}" = "1" ]; then
+    return 1
+  fi
+  case "$command" in
+    *$'\n'*|*$'\r'*) printf 'contains newline'; return 0 ;;
+  esac
+  if printf '%s' "$command" | grep -Eq '[;&|`$<>\\]'; then
+    printf 'contains shell metacharacters'
+    return 0
+  fi
+  if printf '%s' "$command" | grep -Eq '(^|[[:space:]])(sh|bash|zsh|fish|python|python3|perl|ruby|node)[[:space:]]+-[ce][[:space:]]'; then
+    printf 'starts an interpreter command string'
+    return 0
+  fi
+  if printf '%s' "$command" | grep -Eq '^(:|true|false|__[A-Za-z0-9_:-]+__)$'; then
+    return 1
+  fi
+  if printf '%s' "$command" | grep -Eq '^(npm|pnpm|yarn)[[:space:]]+(run[[:space:]]+)?[A-Za-z0-9:_-]+([[:space:]][A-Za-z0-9@%_=+.,:/-]+)*$'; then
+    return 1
+  fi
+  if printf '%s' "$command" | grep -Eq '^(npx[[:space:]]+)?(tsc|eslint|prettier|jest|vitest|pytest|go|cargo|mvn|gradle)([[:space:]][A-Za-z0-9@%_=+.,:/-]+)*$'; then
+    return 1
+  fi
+  printf 'is not on the validation command allowlist'
+  return 0
+}
+
+run_allowed_validation_command() {
+  local command="$1"
+  timeout --signal=TERM --kill-after=10s "${KASEKI_VALIDATION_TIMEOUT_SECONDS:-900}" bash -c "$command"
+}
+
+auto_lint_cleanup_command_security_rejection_reason() {
+  local command="$1"
+  if [ "${KASEKI_ALLOW_UNSAFE_VALIDATION_COMMANDS:-0}" = "1" ]; then
+    return 1
+  fi
+  [ "$command" = "__kaseki_trailing_whitespace_cleanup__" ] && return 1
+  validation_command_security_rejection_reason "$command"
+}
+
 record_skipped_npm_script_command() {
   local command="$1"
   local script_name="$2"
@@ -329,6 +373,20 @@ run_auto_lint_cleanup() {
       continue
     fi
 
+    local cleanup_rejection_reason
+    if cleanup_rejection_reason="$(auto_lint_cleanup_command_security_rejection_reason "$trimmed")"; then
+      cleanup_end="$(date +%s)"
+      duration=$((cleanup_end - cleanup_start))
+      AUTO_LINT_CLEANUP_EXIT=64
+      AUTO_LINT_CLEANUP_RESULT="failed"
+      AUTO_LINT_CLEANUP_CLASSIFICATION="security_allowlist_rejected"
+      AUTO_LINT_CLEANUP_FAILURE_CLASSIFICATION="security_allowlist_rejected"
+      printf 'Auto lint cleanup command rejected by security allowlist: %s (%s)\n' "$trimmed" "$cleanup_rejection_reason" | tee -a "$AUTO_LINT_CLEANUP_LOG"
+      printf '%s\t%s\t%s\tclassification=security_allowlist_rejected reason=%s\n' "$trimmed" 64 "$duration" "$cleanup_rejection_reason" >> "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
+      emit_event "auto_lint_cleanup_command_rejected" "command=$trimmed" "reason=$cleanup_rejection_reason" "classification=security_allowlist_rejected" "duration_seconds=$duration"
+      break
+    fi
+
     AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED=$((AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED + 1))
     emit_event "auto_lint_cleanup_command_started" "command=$trimmed"
     pipefail_was_enabled=0
@@ -343,7 +401,7 @@ run_auto_lint_cleanup() {
         run_trailing_whitespace_cleanup_for_changed_tracked_text_files
         command_exit=$?
       else
-        bash -c "$trimmed"
+        run_allowed_validation_command "$trimmed"
         command_exit=$?
       fi
       printf 'exit_code=%s\n' "$command_exit"

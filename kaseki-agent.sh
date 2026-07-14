@@ -4347,6 +4347,52 @@ analyze_validation_failure_causality() {
   return 0
 }
 
+
+validation_command_security_rejection_reason() {
+  local command="$1"
+  if [ "${KASEKI_ALLOW_UNSAFE_VALIDATION_COMMANDS:-0}" = "1" ]; then
+    return 1
+  fi
+  case "$command" in
+    *$'\n'*|*$'\r'*) printf 'contains newline'; return 0 ;;
+  esac
+  if printf '%s' "$command" | grep -Eq '[;&|`$<>\\]'; then
+    printf 'contains shell metacharacters'
+    return 0
+  fi
+  if printf '%s' "$command" | grep -Eq '(^|[[:space:]])(sh|bash|zsh|fish|python|python3|perl|ruby|node)[[:space:]]+-[ce][[:space:]]'; then
+    printf 'starts an interpreter command string'
+    return 0
+  fi
+  if printf '%s' "$command" | grep -Eq '^(:|true|false|__[A-Za-z0-9_:-]+__)$'; then
+    return 1
+  fi
+  if printf '%s' "$command" | grep -Eq '^(npm|pnpm|yarn)[[:space:]]+(run[[:space:]]+)?[A-Za-z0-9:_-]+([[:space:]][A-Za-z0-9@%_=+.,:/-]+)*$'; then
+    return 1
+  fi
+  if printf '%s' "$command" | grep -Eq '^(npx[[:space:]]+)?(tsc|eslint|prettier|jest|vitest|pytest|go|cargo|mvn|gradle)([[:space:]][A-Za-z0-9@%_=+.,:/-]+)*$'; then
+    return 1
+  fi
+  printf 'is not on the validation command allowlist'
+  return 0
+}
+
+run_allowed_validation_command() {
+  local command="$1"
+  # Use a non-login shell for compatibility, after rejecting shell syntax and
+  # allowing only known validation command shapes.
+  timeout --signal=TERM --kill-after=10s "$KASEKI_VALIDATION_TIMEOUT_SECONDS" bash -c "$command"
+}
+
+auto_lint_cleanup_command_security_rejection_reason() {
+  local command="$1"
+  if [ "${KASEKI_ALLOW_UNSAFE_VALIDATION_COMMANDS:-0}" = "1" ]; then
+    return 1
+  fi
+  [ "$command" = "__kaseki_trailing_whitespace_cleanup__" ] && return 1
+  validation_command_security_rejection_reason "$command"
+}
+
 write_validation_command_environment() {
   local stage_label="$1"
   local command="$2"
@@ -4431,6 +4477,19 @@ run_validation_commands() {
         trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
         [ -z "$trimmed" ] && continue
         validation_start="$(date +%s)"
+        local rejection_reason
+        if rejection_reason="$(validation_command_security_rejection_reason "$trimmed")"; then
+          validation_end="$(date +%s)"
+          duration=$((validation_end - validation_start))
+          printf 'Validation command rejected by security allowlist: %s (%s)\n' "$trimmed" "$rejection_reason" | tee -a "$log_file" "$raw_log"
+          printf '%s\t%s\t%s\treason=security_allowlist_rejected:%s\n' "$trimmed" 64 "$duration" "$rejection_reason" >> "$timings_file"
+          emit_event "validation_command_rejected" "stage=$stage_label" "command=$trimmed" "reason=$rejection_reason" "duration_seconds=$duration"
+          validation_exit_ref=64
+          validation_detail_ref="Validation command rejected by security allowlist: $trimmed ($rejection_reason)"
+          validation_reason_ref="$failure_reason_prefix: security_allowlist_rejected"
+          validation_stopped_ref=1
+          break
+        fi
         if missing_npm_script="$(missing_npm_script_for_validation_command "$trimmed")"; then
           validation_end="$(date +%s)"
           duration=$((validation_end - validation_start))
@@ -4459,7 +4518,7 @@ run_validation_commands() {
           # Use non-login shell (bash -c) to avoid initialization issues in --read-only containers.
           # Login shell (bash -l) sources /etc/profile and ~/.bashrc, which can fail with getcwd()
           # errors when running in constrained filesystem environments (read-only root, etc.).
-          timeout --signal=TERM --kill-after=10s "$KASEKI_VALIDATION_TIMEOUT_SECONDS" bash -c "$trimmed"
+          run_allowed_validation_command "$trimmed"
           command_exit=$?
           if [ "$command_exit" -eq 124 ]; then
             printf 'validation command timed out after %ss\n' "$KASEKI_VALIDATION_TIMEOUT_SECONDS"

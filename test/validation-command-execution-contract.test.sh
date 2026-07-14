@@ -91,7 +91,33 @@ test_pre_agent_validation_runs_during_baseline_dry_run() {
   pass "Pre-agent validation runs during baseline-validation dry-run checks"
 }
 
+
+test_validation_command_rejects_shell_metacharacters() {
+  local tmpdir fake_repo marker run_log run_exit
+  new_test_context tmpdir
+  fake_repo="$tmpdir/fake-repo"
+  marker="$tmpdir/injected-marker.txt"
+  run_log="$tmpdir/kaseki-agent.log"
+  create_controlled_repo "$fake_repo" 1
+
+  if run_kaseki_agent_for_validation \
+    "$tmpdir" \
+    "$fake_repo" \
+    "npm run validate;touch $marker" \
+    "$run_log"; then
+    run_exit=0
+  else
+    run_exit=$?
+  fi
+
+  [ "$run_exit" -ne 0 ] || fail "Unsafe validation command should reject the run"
+  [ ! -e "$marker" ] || fail "Rejected validation command executed shell injection payload"
+  assert_file_contains "$tmpdir/results/pre-validation.log" 'Validation command rejected by security allowlist: touch .*contains shell metacharacters|Validation command rejected by security allowlist: touch .*not on the validation command allowlist' "pre-validation log should record rejected command"
+  pass "Validation command allowlist rejects shell metacharacter injection"
+}
+
 printf '==> Validation command execution contract\n'
 test_validation_command_runs_in_cloned_repository_cwd
 test_validation_commands_do_not_source_login_profiles
+test_validation_command_rejects_shell_metacharacters
 test_pre_agent_validation_runs_during_baseline_dry_run
