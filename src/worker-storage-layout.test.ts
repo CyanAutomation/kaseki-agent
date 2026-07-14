@@ -85,6 +85,28 @@ describe('worker storage layout contract', () => {
   const agentScript = readRepoFile('kaseki-agent.sh');
   const launcherScript = readRepoFile('run-kaseki.sh');
 
+  it('parses quoted Docker env and volume tokens without reprocessing consumed values', () => {
+    const { env, volumes } = parseDockerEnvAndVolumes(`docker_args=(
+  -e
+  FOO="bar"
+  -e BAZ='qux'
+  -e
+  BROKEN= value
+  -v
+  '$CACHE:/cache:rw'
+  -v '$RESULTS:/results:rw'
+)`);
+
+    expect([...env.entries()]).toEqual([
+      ['FOO', 'bar'],
+      ['BAZ', 'qux'],
+    ]);
+    expect(volumes).toEqual([
+      { source: '$CACHE', target: '/cache', mode: 'rw' },
+      { source: '$RESULTS', target: '/results', mode: 'rw' },
+    ]);
+  });
+
   it('keeps the coding raw event stream on the results mount instead of bounded /tmp', () => {
     const assignments = parseShellAssignments(agentScript);
     const rawEventsPath = assignments.get('RAW_EVENTS');
