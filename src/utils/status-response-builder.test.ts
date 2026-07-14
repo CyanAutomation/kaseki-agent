@@ -116,13 +116,31 @@ describe('StatusResponseBuilder', () => {
 
       expect(response.phaseOutcome).toMatchObject({
         scouting: 'completed',
-        weaving: 'running',
+        weaving: 'not_reached',
         scoutingStartedAt: '2026-01-01T00:00:02Z',
         scoutingCompletedAt: '2026-01-01T00:01:00Z',
-        weavingStartedAt: '2026-01-01T00:00:01Z',
       });
       expect(response.progressHeartbeat).toEqual({ updatedAt: '2026-01-01T00:01:00Z', ageSeconds: 240, stale: true });
       jest.useRealTimers();
+    });
+
+    it('reports exhausted scouting artifact retries without misdiagnosing the provider', () => {
+      const metadata = {
+        failed_command: 'pi scouting agent',
+        scouting_attempts: 2,
+        provider_error_message: 'Schema validation failed',
+        provider_error_provider: 'gateway',
+      };
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => filePath.endsWith('metadata.json'));
+      (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify(metadata));
+
+      const response = builder.buildStatus({ id: 'job-scout-failure', status: 'failed' } as Job);
+
+      expect(response.attempt).toMatchObject({ phase: 'scouting', current: 2, maximum: 2, state: 'exhausted' });
+      expect(response.diagnosis).toMatchObject({
+        category: 'artifact_contract', retryCount: 1, retryExhausted: true,
+        artifact: 'scouting-validation-errors.jsonl',
+      });
     });
 
     it('should build status response for completed job', () => {

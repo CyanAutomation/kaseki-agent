@@ -114,6 +114,7 @@ export class StatusResponseBuilder {
     }
 
     const retryCount = Number(metadata?.provider_error_retry_attempt_count ?? 0);
+    const scoutingAttempts = Number(metadata?.scouting_attempts ?? 0);
     const retryResult = String(metadata?.provider_error_retry_result ?? '');
     const providerError = String(metadata?.provider_error_message ?? '');
     const providerPhase = String(metadata?.provider_error_phase ?? '').trim() || undefined;
@@ -148,7 +149,23 @@ export class StatusResponseBuilder {
         artifact: 'provider-attempts.jsonl',
       };
     }
-    if (retryCount > 0 || retryResult === 'failed' || providerError) {
+    const failedCommand = String(metadata?.failed_command ?? '').toLowerCase();
+    const scoutingArtifactFailure = job.status === 'failed'
+      && /scout|scouting/.test(failedCommand)
+      && scoutingAttempts > 0;
+    if (scoutingArtifactFailure) {
+      response.attempt = {
+        phase: 'scouting', current: scoutingAttempts, maximum: Math.max(2, scoutingAttempts),
+        state: 'exhausted', provider, lastError: providerError || 'Scouting artifact contract failed.',
+      };
+      response.diagnosis = {
+        severity: 'error', phase: 'scouting', category: 'artifact_contract',
+        summary: providerError || 'Scouting did not produce a valid handoff artifact.',
+        retryCount: Math.max(0, scoutingAttempts - 1), retryExhausted: true,
+        remediation: 'Inspect scouting-validation-errors.jsonl and scouting-attempt-*-events.jsonl; verify the agent can write the required candidate artifact.',
+        artifact: 'scouting-validation-errors.jsonl',
+      };
+    } else if (retryCount > 0 || retryResult === 'failed' || providerError) {
       const exhausted = retryResult === 'failed';
       const terminalRetryState = job.status === 'failed'
         ? 'exhausted'
@@ -219,11 +236,11 @@ export class StatusResponseBuilder {
       const eventStage = this.eventStage(event);
       if (preAgentValidation && /pre[-_ ]agent|pre[-_ ]validation/.test(eventStage)) return false;
       if (preAgentValidation && /validation/.test(eventStage) && !/goal check|quality|post[-_ ]agent/.test(eventStage)) return false;
-      return /goal-setting|coding|weav|goal check|quality|github operations|evaluation|final/.test(eventStage);
+      return /coding|weav|goal check|quality|github operations|evaluation|final/.test(eventStage);
     });
     const scoutingStarted = Boolean(metadata?.scouting_attempts || scoutingEvents.length || /scout|scouting/.test(stage));
     const weavingStage = !preAgentValidation || !/pre[-_ ]agent|pre[-_ ]validation|validation/.test(stage);
-    const weavingStarted = Boolean(weavingEvents.length || (weavingStage && /goal-setting|coding|weav|goal check|validation|quality|github operations|evaluation|final/.test(stage)));
+    const weavingStarted = Boolean(weavingEvents.length || (weavingStage && /coding|weav|goal check|validation|quality|github operations|evaluation|final/.test(stage)));
     const scoutingFailed = failed && /scout|scouting/.test(failedCommand);
     const weavingFailed = failed && !scoutingFailed && weavingStarted;
     const scoutingCompletedAt = this.phaseCompletedAt(scoutingEvents);
