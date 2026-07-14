@@ -58,6 +58,9 @@ const parseDockerEnvAndVolumes = (script: string): DockerEnvAndVolumes => {
       if (envMatch) {
         env.set(envMatch[1], envMatch[3]);
       }
+      if (token === '-e') {
+        index += 1;
+      }
     }
 
     if (token === '-v' || token.startsWith('-v ')) {
