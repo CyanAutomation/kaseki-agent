@@ -36,7 +36,9 @@ const parseShellAssignments = (script: string): Map<string, string> => {
 
 const parseDockerEnvAndVolumes = (script: string): DockerEnvAndVolumes => {
   const dockerArgsStart = script.indexOf('docker_args=(\n');
-  expect(dockerArgsStart).toBeGreaterThanOrEqual(0);
+  if (dockerArgsStart < 0) {
+    throw new Error('docker_args=( not found in script');
+  }
 
   const dockerArgsBody = script
     .slice(dockerArgsStart + 'docker_args=(\n'.length)
