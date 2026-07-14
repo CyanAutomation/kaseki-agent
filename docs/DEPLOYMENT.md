@@ -41,6 +41,34 @@ docker-compose up -d
 docker-compose logs -f kaseki-api
 ```
 
+### Verify deployed revisions
+
+After each deployment, confirm that the controller checkout, worker template
+checkout, and worker image are all built from the intended current
+`origin/main` revision. Run the authenticated current preflight first; its
+`checkout-freshness`, `template-doctor`, and `image` checks are the source of
+truth for the running service:
+
+```bash
+curl -sS -H "Authorization: Bearer $KASEKI_API_KEY" \
+  http://localhost:3000/api/preflight | jq '{templateRef, imageDigest, checks: [.checks[] | select(.name == "checkout-freshness" or .name == "template-doctor" or .name == "image")]}'
+```
+
+On the controller host, compare the checked-out commit with the remote before
+building or restarting. The resulting SHA should match the preflight's
+`checkout-freshness` data and the template checkout reported by `template-doctor`:
+
+```bash
+git fetch origin main
+git rev-parse origin/main
+git rev-parse HEAD
+docker compose images kaseki-api
+```
+
+Startup diagnostics may include an older boot-time revision. They are
+historical evidence only; do not treat them as live readiness. Use the current
+preflight response above when the values differ.
+
 **Why the `/agents` prerequisite?** The container runs as UID 10000 (non-root hardening). During startup, it validates that `/agents` is writable by this UID. Without correct ownership:
 
 - Startup checks will fail (exit code 2)

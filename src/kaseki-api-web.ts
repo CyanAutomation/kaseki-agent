@@ -1615,6 +1615,7 @@ const controllerPage = String.raw`<!doctype html>
       // Validation state
       let validationState = { isValid: false, lastValidated: null, checks: [] };
       let piAdapterValidationState = 'unknown';
+      let submittedRunId = '';
       const validationStateKey = 'kasekiValidationState';
 
       function getApiToken() {
@@ -2924,7 +2925,11 @@ const controllerPage = String.raw`<!doctype html>
 
       function updateSubmitButtonState() {
         const submitBtn = document.querySelector('#submit');
-        if (validationState.isValid && piAdapterValidationState !== 'failed') {
+        if (submittedRunId) {
+          submitBtn.disabled = true;
+          submitBtn.setAttribute('title', 'A run has already been submitted. Edit and validate the task to submit another run.');
+          submitBtn.setAttribute('aria-disabled', 'true');
+        } else if (validationState.isValid && piAdapterValidationState !== 'failed') {
           submitBtn.disabled = false;
           submitBtn.setAttribute('title', 'Submit the task');
           submitBtn.setAttribute('aria-disabled', 'false');
@@ -2955,6 +2960,7 @@ const controllerPage = String.raw`<!doctype html>
         const formFields = [repoUrlInput, taskPromptInput, changedFilesAllowlist, validationAllowlist].filter(Boolean);
         formFields.forEach((field) => {
           field.addEventListener('input', () => {
+            submittedRunId = '';
             resetValidationState();
           });
         });
@@ -3675,11 +3681,12 @@ const controllerPage = String.raw`<!doctype html>
             setState('Request could not be sent.', 'bad');
           })
           .finally(() => {
-            button.disabled = false;
+            updateSubmitButtonState();
           });
       });
 
       function activateSubmittedRun(payload, responseStatus, recovered) {
+        submittedRunId = payload.id;
         runIdInput.value = payload.id;
         setOutputMetadata(payload.status || 'queued', payload.id);
         setResponseSummary(payload);
@@ -3688,6 +3695,7 @@ const controllerPage = String.raw`<!doctype html>
         updateCancelRunButtonState();
         showRunLinks(payload.id);
         activeRunView = 'status';
+        updateSubmitButtonState();
         loadRunsList({ preserveOutput: true });
         pollRun(payload.id, { preserveFirstOutput: true });
       }
