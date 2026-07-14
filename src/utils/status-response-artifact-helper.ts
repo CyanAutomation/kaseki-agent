@@ -25,6 +25,8 @@ const PI_AGENT_DIAGNOSTIC_FILES = [
   'pi-agent-diagnostics.jsonl',
   'pi-events.jsonl',
   'pi-summary.json',
+  'hashline-failure.json',
+  'empty-diff.json',
 ] as const;
 const GOAL_SETTING_DIAGNOSTIC_FILES = [
   'goal-setting-validation-errors.jsonl',

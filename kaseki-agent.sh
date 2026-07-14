@@ -5430,11 +5430,11 @@ run_goal_setting_agent() {
   if [ "$GOAL_SETTING_EXIT" -eq 0 ] && [ "$GOAL_SETTING_FALLBACK_USED" != "1" ] && [ ! -f "$GOAL_SETTING_CANDIDATE_ARTIFACT" ]; then
     printf '%s\n' '{"step":"artifact-contract","status":"failure","reason":"goal-setting completed without required candidate artifact","recovery":"fallback_goal_setting_artifact"}' \
       >> "${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl"
-    emit_error_event "goal_setting_artifact_missing" "Goal-setting completed without its required candidate artifact; activating degraded fallback before coding" "warning"
+    emit_error_event "goal_setting_artifact_missing" "Goal-setting completed without its required candidate artifact; activating degraded fallback before coding (candidate=${GOAL_SETTING_CANDIDATE_ARTIFACT}, fallback=${GOAL_SETTING_ARTIFACT}, diagnostics=${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl)" "warning"
     if create_fallback_goal_setting_artifact "$ORIGINAL_TASK_PROMPT" "$GOAL_SETTING_ARTIFACT"; then
       GOAL_SETTING_FALLBACK_USED=1
       GOAL_SETTING_FALLBACK_MODE="missing_candidate_artifact"
-      emit_progress "pi goal-setting agent" "degraded: required candidate artifact missing; fallback activated"
+      emit_progress "pi goal-setting agent" "degraded: candidate artifact missing; fallback activated (confidence=low)"
       printf '%s\n' '{"phase":"goal-setting","severity":"warning","code":"fallback_activated","detail":"Required candidate artifact missing; original task preserved with confidence=low"}' >> "${KASEKI_RESULTS_DIR}/stage-warnings.jsonl"
       printf '[GOAL SETTING DEGRADED] Required candidate artifact was missing; coding will use the original task with confidence=low.\n' >&2
     else
@@ -5445,7 +5445,7 @@ run_goal_setting_agent() {
   if [ "$GOAL_SETTING_EXIT" -eq 0 ] && [ "$GOAL_SETTING_FALLBACK_USED" != "1" ] && ! validate_goal_setting_artifact "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt"; then
     GOAL_SETTING_EXIT=86
     goal_setting_validation_summary="$(cat "${KASEKI_RESULTS_DIR}"/goal-setting-validation-summary.txt 2>/dev/null || printf 'goal-setting artifact validation failed')"
-    emit_error_event "pi_goal_setting_artifact_invalid" "Pi goal-setting artifact invalid: $goal_setting_validation_summary (full details: ${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl)" "continue"
+    emit_error_event "pi_goal_setting_artifact_invalid" "Pi goal-setting artifact invalid: $goal_setting_validation_summary; fallback will preserve the original task (candidate=${GOAL_SETTING_CANDIDATE_ARTIFACT}, fallback=${GOAL_SETTING_ARTIFACT}, diagnostics=${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl)" "continue"
     
     # TIER 1 FALLBACK: Create minimal valid goal-setting artifact
     printf '\n==> Creating fallback goal-setting artifact (degraded mode)\n'
@@ -9506,7 +9506,20 @@ NODE
 
     if [ "$HASHLINE_EXIT" -ne 0 ]; then
       printf 'Warning: hashline validation exited with code %s (non-fatal; continuing pipeline)\n' "$HASHLINE_EXIT" | tee -a "${KASEKI_RESULTS_DIR}"/hashline-validation.log
-      emit_event "warning" "warning_type=hashline_validation_failed" "detail=hashline_edit processing exited with code $HASHLINE_EXIT"
+      node - "${KASEKI_RESULTS_DIR}/hashline-validation.log" "${KASEKI_RESULTS_DIR}/hashline-failure.json" "$HASHLINE_EXIT" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [logPath, outputPath, exitCode] = process.argv.slice(2);
+let log = '';
+try { log = fs.readFileSync(logPath, 'utf8'); } catch {}
+fs.writeFileSync(outputPath, JSON.stringify({
+  timestamp: new Date().toISOString(), exit_code: Number(exitCode),
+  processor: 'hashline-event-handler-cli', log_file: 'hashline-validation.log',
+  stderr_tail: log.slice(-4000),
+  remediation: 'Inspect this artifact and the corresponding hashline_edit events before retrying.',
+}, null, 2) + '\n');
+NODE
+      local_hashline_tail="$(tail -n 8 "${KASEKI_RESULTS_DIR}/hashline-validation.log" 2>/dev/null | tr '\n' ' ' | cut -c1-900)"
+      emit_event "warning" "warning_type=hashline_validation_failed" "detail=hashline_edit processing exited with code $HASHLINE_EXIT" "artifact=hashline-failure.json" "stderr_tail=${local_hashline_tail:-unavailable}"
     else
       emit_progress "hashline validation" "completed"
     fi
@@ -9922,9 +9935,25 @@ if [ "$DIFF_NONEMPTY" != "true" ] &&
   [ "$STATUS" -eq 0 ] &&
   [ "$KASEKI_ALLOW_EMPTY_DIFF" != "1" ] &&
   [ "$KASEKI_TASK_MODE" != "inspect" ]; then
+  EMPTY_DIFF_REASON="agent_no_change"
+  if [ -s "${KASEKI_RESULTS_DIR}/hashline-failure.json" ]; then
+    EMPTY_DIFF_REASON="hashline_validation_failure"
+  elif grep -q 'provider_empty_assistant_turn\|empty assistant turn' "${KASEKI_RESULTS_DIR}/pi-events.jsonl" "${KASEKI_RESULTS_DIR}/stdout.log" 2>/dev/null; then
+    EMPTY_DIFF_REASON="empty_assistant_turn"
+  fi
+  node - "${KASEKI_RESULTS_DIR}/empty-diff.json" "$EMPTY_DIFF_REASON" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [outputPath, reason] = process.argv.slice(2);
+const remediation = {
+  agent_no_change: 'Confirm whether the task requires a repository change; use inspect mode or allow_empty_diff for no-change work.',
+  hashline_validation_failure: 'Inspect hashline-failure.json and retry after correcting the failed edit operation.',
+  empty_assistant_turn: 'Retry with a healthy provider/model and inspect provider diagnostics for the empty assistant turn.',
+}[reason] || 'Inspect the run diagnostics before retrying.';
+fs.writeFileSync(outputPath, JSON.stringify({ timestamp: new Date().toISOString(), reason, changed_files: [], diff_bytes: 0, remediation }, null, 2) + '\n');
+NODE
   STATUS=3
-  FAILED_COMMAND="empty git diff"
-  emit_error_event "empty_diff" "Agent produced no changes to the repository" "exit"
+  FAILED_COMMAND="empty git diff: ${EMPTY_DIFF_REASON}"
+  emit_error_event "empty_diff" "Agent produced no changes to the repository (reason=${EMPTY_DIFF_REASON}); see empty-diff.json" "exit"
 fi
 
 set_current_stage "complete"
