@@ -29,6 +29,33 @@ assert_file_match_count() {
   fi
 }
 
+
+assert_package_files_include() {
+  local message="$1"
+  shift
+
+  node --input-type=module -e '
+    import { readFileSync } from "node:fs";
+    const expectedEntries = process.argv.slice(1);
+    const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+    const files = pkg.files;
+
+    if (!Array.isArray(files)) {
+      console.error("package.json files must be an array");
+      process.exit(1);
+    }
+
+    const missingEntries = expectedEntries.filter((entry) => !files.includes(entry));
+    if (missingEntries.length > 0) {
+      console.error(`missing package.json files entries: ${missingEntries.join(", ")}`);
+      process.exit(1);
+    }
+  ' "$@" || {
+    printf '%s\n' "$message" >&2
+    exit 1
+  }
+}
+
 assert_dockerfile_copies_to_build_context() {
   local source_path="$1"
   local destination_path="$2"
@@ -126,6 +153,16 @@ assert_dockerfile_preserves_runtime_file() {
 }
 
 bash -n scripts/startup-check-packaging.sh || { printf 'startup-check packaging config has invalid shell syntax\n' >&2; exit 1; }
+
+assert_package_files_include \
+  'package.json files does not include all packaged runtime contract entries' \
+  dist/ \
+  kaseki-agent.sh \
+  scripts/ \
+  templates/ \
+  README.md \
+  LICENSE
+
 bash -n scripts/docker-entrypoint.sh || { printf 'docker entrypoint has invalid shell syntax\n' >&2; exit 1; }
 
 assert_file_contains .dockerignore '^!tsconfig\.scripts\.json$' \
