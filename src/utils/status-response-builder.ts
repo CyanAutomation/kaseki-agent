@@ -234,6 +234,10 @@ export class StatusResponseBuilder {
     const preAgentValidation = /pre[-_ ]agent validation|pre[-_ ]validation/.test(failedCommand);
     const weavingEvents = events.filter((event) => {
       const eventStage = this.eventStage(event);
+      // GitHub operations are used for repository/preflight health checks
+      // before Pi begins.  They are not evidence that the coding/weaving
+      // phase has started.
+      if (/github operations.*(preflight|health check)|preflight.*github operations/.test(eventStage)) return false;
       if (preAgentValidation && /pre[-_ ]agent|pre[-_ ]validation/.test(eventStage)) return false;
       if (preAgentValidation && /validation/.test(eventStage) && !/goal check|quality|post[-_ ]agent/.test(eventStage)) return false;
       return /coding|weav|goal check|quality|github operations|evaluation|final/.test(eventStage);
@@ -251,7 +255,8 @@ export class StatusResponseBuilder {
       scoutingDuration > 0 || scoutingExitCode !== 0 || (scoutingModel && scoutingModel !== 'unknown')
     );
     const weavingStage = !preAgentValidation || !/pre[-_ ]agent|pre[-_ ]validation|validation/.test(stage);
-    const weavingStarted = Boolean(weavingEvents.length || (weavingStage && /coding|weav|goal check|validation|quality|github operations|evaluation|final/.test(stage)));
+    const preflightGithubOperations = /github operations.*(preflight|health check)|preflight.*github operations/.test(stage);
+    const weavingStarted = Boolean(weavingEvents.length || (weavingStage && !preflightGithubOperations && /coding|weav|goal check|validation|quality|github operations|evaluation|final/.test(stage)));
     const scoutingFailed = failed && /scout|scouting/.test(failedCommand);
     const weavingFailed = failed && !scoutingFailed && weavingStarted;
     const scoutingCompletedAt = this.phaseCompletedAt(scoutingEvents);

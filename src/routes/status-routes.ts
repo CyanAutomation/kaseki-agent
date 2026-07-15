@@ -33,16 +33,25 @@ export function createStatusRoutes(
     const jobs = allJobs.slice(0, limit);
 
     const response: RunsListResponse = {
-      runs: jobs.map((job) => ({
-        id: job.id,
-        status: job.status,
-        createdAt: job.createdAt.toISOString(),
-        completedAt: job.completedAt?.toISOString(),
-        resultDir: job.resultDir,
-        exitCode: resolveJobExitCode(job, config),
-        failureClass: job.failureClass,
-        error: job.error,
-      })),
+      runs: jobs.map((job) => {
+        const status = statusBuilder.buildStatus(job);
+        return {
+          id: job.id,
+          status: job.status,
+          createdAt: job.createdAt.toISOString(),
+          completedAt: job.completedAt?.toISOString(),
+          resultDir: job.resultDir,
+          exitCode: status.exitCode ?? resolveJobExitCode(job, config),
+          failureClass: status.failureClass,
+          error: status.error,
+          lifecyclePhase: status.lifecyclePhase,
+          elapsedSeconds: status.elapsedSeconds,
+          taskProgressPercent: status.taskProgressPercent,
+          progress: status.progress,
+          phaseOutcome: status.phaseOutcome,
+          diagnosticEntryPoint: status.diagnosticEntryPoint,
+        };
+      }),
       total: allJobs.length,
       retention: {
         terminalJobIndexMaxEntries: config.jobIndexMaxEntries ?? DEFAULT_JOB_INDEX_MAX_ENTRIES,

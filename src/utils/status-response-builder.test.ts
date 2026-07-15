@@ -143,6 +143,21 @@ describe('StatusResponseBuilder', () => {
       expect(response.phaseOutcome).toMatchObject({ scouting: 'not_reached', weaving: 'not_reached' });
     });
 
+    it('does not report weaving during GitHub operations preflight', () => {
+      mockScheduler.getLiveProgressEvents.mockReturnValue([
+        { stage: 'github operations preflight health check', status: 'started', timestamp: '2026-01-01T00:00:00Z' },
+      ]);
+
+      const response = builder.buildStatus({
+        id: 'job-github-preflight',
+        status: 'running',
+        currentStage: 'github operations preflight health check',
+        startedAt: new Date('2026-01-01T00:00:00Z'),
+      } as Job);
+
+      expect(response.phaseOutcome).toMatchObject({ scouting: 'not_reached', weaving: 'not_reached' });
+    });
+
     it('reports exhausted scouting artifact retries without misdiagnosing the provider', () => {
       const metadata = {
         failed_command: 'pi scouting agent',

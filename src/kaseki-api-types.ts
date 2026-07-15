@@ -494,6 +494,12 @@ export interface RunsListResponse {
     exitCode?: number;
     failureClass?: string;
     error?: string;
+    lifecyclePhase?: 'queued' | 'executing' | 'finalizing' | 'terminal';
+    elapsedSeconds?: number;
+    taskProgressPercent?: number;
+    progress?: StructuredProgress;
+    phaseOutcome?: StatusResponse['phaseOutcome'];
+    diagnosticEntryPoint?: string;
   }>;
   total: number;
   retention?: {
