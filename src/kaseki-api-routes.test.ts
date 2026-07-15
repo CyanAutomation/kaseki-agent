@@ -3541,6 +3541,46 @@ describe('kaseki-api-routes status artifact hints', () => {
     }
   });
 
+  test('runs list includes compact phase and diagnostic status for failed runs', async () => {
+    const jobId = 'kaseki-list-diagnostics';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'metadata.json'), JSON.stringify({
+      exit_code: 86,
+      failed_command: 'pi scouting agent',
+      scouting_attempts: 2,
+      provider_error_message: 'Schema validation failed',
+      provider_error_provider: 'gateway',
+    }));
+    fs.writeFileSync(path.join(jobDir, 'scouting-validation-errors.jsonl'), JSON.stringify({
+      reason_code: 'schema_mismatch', field: 'requirements', severity: 'critical',
+    }) + '\n');
+
+    const scheduler = createMockScheduler({
+      [jobId]: { id: jobId, status: 'failed', createdAt: new Date('2026-05-07T12:00:00Z'), resultDir: jobDir } as any,
+    });
+    scheduler.listJobs.mockReturnValue([
+      { id: jobId, status: 'failed', createdAt: new Date('2026-05-07T12:00:00Z'), resultDir: jobDir } as any,
+    ]);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, createTestConfig(resultsDir));
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      expect(response.status).toBe(200);
+      const body = await response.json() as any;
+      expect(body.runs[0]).toMatchObject({
+        id: jobId,
+        exitCode: 86,
+        phaseOutcome: { scouting: 'failed', weaving: 'not_reached' },
+        diagnosticEntryPoint: 'scouting-validation-errors.jsonl',
+      });
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
   test('runs list honors limit query parameter', async () => {
     const jobs = Array.from({ length: 4 }, (_, index) => ({
       id: `kaseki-${index + 1}`,

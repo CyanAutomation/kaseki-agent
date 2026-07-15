@@ -2,6 +2,10 @@
 set -euo pipefail
 
 TEST_NAME="scouting retry classification"
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+  echo "SKIP: $TEST_NAME requires Bash 4+ (worker-compatible helpers use namerefs)"
+  exit 0
+fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -23,6 +27,10 @@ run_case() {
 
   mkdir -p "$fake_repo/deps/fake-dep" "$fake_bin" "$results_dir" "$workspace_repo" "$app_lib" "$case_dir/scripts" "$case_dir/scripts/lib"
   : > "$pi_calls"
+  # The worker now loads several packaged helpers during bootstrap.  Mirror
+  # the packaged layout so this contract test exercises the agent rather than
+  # failing before the scouting phase begins.
+  cp -R "$REPO_ROOT/scripts/." "$case_dir/scripts/"
   cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$case_dir/scripts/allowlist-helper.sh"
   if [ -f "$REPO_ROOT/scripts/scouting-allowlist.js" ]; then
     cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$case_dir/scripts/scouting-allowlist.js"
@@ -34,6 +42,7 @@ run_case() {
   cp "$REPO_ROOT/scripts/agent-prompt.sh" "$case_dir/scripts/agent-prompt.sh"
   cp "$REPO_ROOT/scripts/lib/json.sh" "$case_dir/scripts/lib/json.sh"
   cp "$REPO_ROOT/scripts/lib/json-events.sh" "$case_dir/scripts/lib/json-events.sh"
+  cp "$REPO_ROOT/scripts/lib/model-resolution.sh" "$case_dir/scripts/lib/model-resolution.sh"
   touch "$app_lib/event-aggregator.js" "$app_lib/timestamp-tracker.js" "$app_lib/progress-stream-utils.js"
 
   sed "s#\"\${KASEKI_WORKSPACE_DIR}\"/repo#$workspace_repo#g; s#\${KASEKI_WORKSPACE_DIR}/repo#$workspace_repo#g; s#/workspace/repo#$workspace_repo#g; s#/results#$results_dir#g; s#/app/lib#$app_lib#g" "$REPO_ROOT/kaseki-agent.sh" > "$case_dir/kaseki-agent-modified.sh"

@@ -6418,7 +6418,30 @@ NODE
     fi
 
     if [ "${SCOUTING_EXIT:-0}" -eq 86 ] || [ "${STATUS:-0}" -eq 86 ]; then
-      if [ "$attempt" -lt "$max_attempts" ] && grep -q 'scouting-candidate.json' "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" 2>/dev/null; then
+      # Contract failures can be reported either against the candidate file
+      # itself or against a field within the candidate (for example,
+      # `requirements` or `observations`).  Restricting recovery to the
+      # filename left schema failures unrecoverable even though a conservative
+      # patch fallback is valid for them.
+      local has_scouting_contract_failure=0
+      if node - "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" <<'NODE' >/dev/null 2>&1
+const fs = require('node:fs');
+const file = process.argv[2];
+try {
+  const entries = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+  const contractFailure = entries.some((entry) => [
+    'missing_file', 'malformed_json', 'schema_mismatch', 'schema_validation_failed',
+    'invalid_candidate', 'readonly_filesystem',
+  ].includes(String(entry.reason_code || '')) || String(entry.field || '').includes('scouting-candidate.json'));
+  process.exit(contractFailure ? 0 : 1);
+} catch {
+  process.exit(1);
+}
+NODE
+      then
+        has_scouting_contract_failure=1
+      fi
+      if [ "$attempt" -lt "$max_attempts" ] && [ "$has_scouting_contract_failure" -eq 1 ]; then
         printf '[Scouting Phase] Artifact contract failure (exit 86), retrying with explicit write instructions\n'
         attempt=$((attempt + 1))
         rm -f "$SCOUTING_ARTIFACT" "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt" 2>/dev/null || true
@@ -6427,7 +6450,7 @@ NODE
       # Both attempts have received the explicit artifact-write contract.  For
       # patch runs, retain the failure evidence but use the conservative,
       # validated fallback rather than failing before coding can start.
-      if [ "$KASEKI_TASK_MODE" = "patch" ] && grep -q 'scouting-candidate.json' "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" 2>/dev/null; then
+      if [ "$KASEKI_TASK_MODE" = "patch" ] && [ "$has_scouting_contract_failure" -eq 1 ]; then
         rm -f "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" 2>/dev/null || true
         write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
         if validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
