@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
+import fs, { mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
 import vm from 'node:vm';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -48,7 +48,7 @@ describe('Pi gateway provider registration from .pi-extensions.js', () => {
     });
   });
 
-  it('registers gateway provider configuration from LLM_GATEWAY_API_KEY_FILE', async () => {
+  it('registers gateway provider configuration from LLM_GATEWAY_API_KEY_FILE', () => {
     const keyFile = path.join(tmpDir, 'llm_gateway_api_key');
     writeFileSync(keyFile, 'file-backed-gateway-key\n', 'utf8');
     chmodSync(keyFile, 0o600);
@@ -67,13 +67,11 @@ describe('Pi gateway provider registration from .pi-extensions.js', () => {
       .replace('export default function (pi)', 'module.exports.default = function (pi)');
     const module = { exports: {} as { default?: (pi: typeof pi) => void } };
 
-    const fsModule = await import('node:fs');
-    
     vm.runInNewContext(source, {
       module,
       exports: module.exports,
       process,
-      fs: fsModule,
+      fs,
       path,
       Date,
       JSON,
