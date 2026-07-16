@@ -2,11 +2,17 @@ export function resolveGitHubAppTokenRuntimeImport(
   moduleSpecifier: string,
   moduleUrl: string
 ): string {
-  const decodedModuleSpecifier = decodeURIComponent(moduleSpecifier);
+  let decodedModuleSpecifier = moduleSpecifier;
+  let previousDecoded = '';
+  
+  // Decode recursively until stable to prevent double-encoding bypass
+  while (decodedModuleSpecifier !== previousDecoded) {
+    previousDecoded = decodedModuleSpecifier;
+    decodedModuleSpecifier = decodeURIComponent(decodedModuleSpecifier);
+  }
 
   if (
-    !moduleSpecifier.startsWith('./') ||
-    moduleSpecifier.split('/').includes('..') ||
+    !decodedModuleSpecifier.startsWith('./') ||
     decodedModuleSpecifier.split('/').includes('..')
   ) {
     throw new Error(
