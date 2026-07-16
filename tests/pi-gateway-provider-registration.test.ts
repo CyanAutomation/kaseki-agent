@@ -67,11 +67,13 @@ describe('Pi gateway provider registration from .pi-extensions.js', () => {
       .replace('export default function (pi)', 'module.exports.default = function (pi)');
     const module = { exports: {} as { default?: (pi: typeof pi) => void } };
 
+    const fsModule = await import('node:fs');
+    
     vm.runInNewContext(source, {
       module,
       exports: module.exports,
       process,
-      fs: await import('node:fs'),
+      fs: fsModule,
       path,
       Date,
       JSON,
