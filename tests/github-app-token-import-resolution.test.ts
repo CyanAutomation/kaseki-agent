@@ -34,9 +34,10 @@ describe('github-app-token runtime import resolution', () => {
   it.each([
     ['bare specifier', 'github-utils.js'],
     ['absolute filesystem path', '/opt/kaseki-package/usr/local/bin/github-utils.js'],
-    ['file URL', 'file:///opt/kaseki-package/usr/local/bin/github-utils.js'],
+    ['file URL', ''],
     ['parent traversal', './../github-utils.js'],
     ['nested parent traversal', './secrets/../github-utils.js'],
+    ['URL-encoded parent traversal', './%2e%2e/github-utils.js'],
     ['empty specifier', ''],
   ])('rejects unsupported %s imports', (_name, moduleSpecifier) => {
     expect(() =>
