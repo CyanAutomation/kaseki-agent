@@ -154,15 +154,19 @@ export class StatusResponseBuilder {
       && /scout|scouting/.test(failedCommand)
       && scoutingAttempts > 0;
     if (scoutingArtifactFailure) {
+      const contractFailure = this.readPrimaryScoutingContractFailure(
+        job.resultDir || path.join(this.config.resultsDir, job.id)
+      );
+      const rootCause = contractFailure?.detail || providerError || 'Scouting did not produce a valid handoff artifact.';
       response.attempt = {
         phase: 'scouting', current: scoutingAttempts, maximum: Math.max(2, scoutingAttempts),
-        state: 'exhausted', provider, lastError: providerError || 'Scouting artifact contract failed.',
+        state: 'exhausted', provider, lastError: rootCause,
       };
       response.diagnosis = {
         severity: 'error', phase: 'scouting', category: 'artifact_contract',
-        summary: providerError || 'Scouting did not produce a valid handoff artifact.',
+        summary: rootCause,
         retryCount: Math.max(0, scoutingAttempts - 1), retryExhausted: true,
-        remediation: 'Inspect scouting-validation-errors.jsonl and scouting-attempt-*-events.jsonl; verify the agent can write the required candidate artifact.',
+        remediation: contractFailure?.suggestion || 'Inspect scouting-validation-errors.jsonl and scouting-attempt-*-events.jsonl; verify the agent can write the required candidate artifact.',
         artifact: 'scouting-validation-errors.jsonl',
       };
     } else if (retryCount > 0 || retryResult === 'failed' || providerError) {
@@ -289,6 +293,32 @@ export class StatusResponseBuilder {
       if (Array.isArray(liveEvents)) events.push(...liveEvents);
     }
     return events;
+  }
+
+  /**
+   * Return the first critical scouting-contract issue, not the last JSONL
+   * entry. Informational schema-normalization entries are often appended after
+   * the actual missing-file/schema error and must not become the terminal
+   * diagnosis.
+   */
+  private readPrimaryScoutingContractFailure(runDir: string): { detail: string; suggestion?: string } | undefined {
+    const file = path.join(runDir, 'scouting-validation-errors.jsonl');
+    try {
+      const entries = fs.readFileSync(file, 'utf8')
+        .split('\n')
+        .flatMap((line) => {
+          try { return line.trim() ? [JSON.parse(line) as Record<string, unknown>] : []; } catch { return []; }
+        });
+      const critical = entries.find((entry) => entry.severity === 'critical')
+        || entries.find((entry) => ['missing_file', 'malformed_json', 'schema_mismatch', 'schema_validation_failed'].includes(String(entry.reason_code ?? '')));
+      if (!critical) return undefined;
+      const field = String(critical.field ?? 'scouting artifact');
+      const actual = String(critical.actual ?? critical.details ?? critical.reason_code ?? 'contract validation failed');
+      const suggestion = typeof critical.suggestion === 'string' ? critical.suggestion : undefined;
+      return { detail: `${field}: ${actual}`, suggestion };
+    } catch {
+      return undefined;
+    }
   }
 
   private eventStage(event: Record<string, unknown>): string {
