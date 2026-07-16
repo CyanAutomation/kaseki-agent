@@ -177,6 +177,35 @@ describe('StatusResponseBuilder', () => {
       });
     });
 
+    it('uses the first critical scouting contract error instead of a later informational normalization entry', () => {
+      const metadata = {
+        failed_command: 'pi scouting agent',
+        scouting_attempts: 2,
+        provider_error_message: 'schema_normalized: relevant_files: none_required',
+      };
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) =>
+        filePath.endsWith('metadata.json') || filePath.endsWith('scouting-validation-errors.jsonl')
+      );
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.endsWith('metadata.json')) return JSON.stringify(metadata);
+        if (filePath.endsWith('scouting-validation-errors.jsonl')) {
+          return [
+            JSON.stringify({ severity: 'critical', reason_code: 'missing_file', field: 'scouting-candidate.json', actual: 'missing: /results/scouting-candidate.json', suggestion: 'write the candidate artifact' }),
+            JSON.stringify({ severity: 'info', reason_code: 'schema_normalized', field: 'relevant_files', details: 'Normalized string entries' }),
+          ].join('\n');
+        }
+        return '';
+      });
+
+      const response = builder.buildStatus({ id: 'job-scout-primary-error', status: 'failed' } as Job);
+
+      expect(response.diagnosis).toMatchObject({
+        summary: 'scouting-candidate.json: missing: /results/scouting-candidate.json',
+        remediation: 'write the candidate artifact',
+      });
+      expect(response.attempt?.lastError).toContain('missing: /results/scouting-candidate.json');
+    });
+
     it('should build status response for completed job', () => {
       const startTime = new Date('2026-01-01T00:00:00Z');
       const completedTime = new Date('2026-01-01T01:00:00Z');
