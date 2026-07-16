@@ -188,6 +188,12 @@ assert_file_match_count Dockerfile 'cp -r /app/lib/pi-event-aggregation/\* /usr/
   'Dockerfile must install pi-event aggregation modules in runtime and final stages'
 assert_file_match_count Dockerfile '/usr/local/bin/kaseki-pi-event-filter "\$empty_events" "\$filtered_events" "\$event_summary"' 2 \
   'Dockerfile must execute the packaged pi-event filter in runtime and final stages'
+assert_file_contains Dockerfile 'cp[[:space:]]+dist/hashline-event-handler\.js[[:space:]]+/app/lib/hashline-event-handler\.js' \
+  'Dockerfile does not preserve the hashline event handler runtime dependency'
+assert_file_contains Dockerfile 'cp[[:space:]]+dist/hashline-validator\.js[[:space:]]+/app/lib/hashline-validator\.js' \
+  'Dockerfile does not preserve the hashline validator runtime dependency'
+assert_file_contains kaseki-agent.sh 'node "\$\{KASEKI_APP_LIB_DIR\}"/hashline-event-handler-cli\.js' \
+  'runner does not invoke the packaged hashline handler directly'
 
 assert_file_contains Dockerfile '^ENTRYPOINT \["/usr/bin/tini", "--", "/usr/local/bin/kaseki-entrypoint"\]$' \
   'Dockerfile entrypoint does not dispatch through kaseki-entrypoint'

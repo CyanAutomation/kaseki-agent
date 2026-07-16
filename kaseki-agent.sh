@@ -6335,6 +6335,7 @@ run_scouting_agent_with_retry() {
 
   while [ "$attempt" -le "$max_attempts" ]; do
     printf '[Scouting Phase] Attempt %d/%d\n' "$attempt" "$max_attempts"
+    emit_progress "pi scouting agent" "attempt $attempt/$max_attempts started; required_artifact=$SCOUTING_CANDIDATE_ARTIFACT"
 
     # Capture stderr for failure classification
     scouting_stderr_capture="/tmp/scouting-stderr-$attempt.log"
@@ -6365,9 +6366,9 @@ run_scouting_agent_with_retry() {
     rm -f "$scouting_stderr_capture"
 
     # Success on any attempt
-    node - "$attempt" "$scouting_last_exit" "$SCOUTING_CANDIDATE_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-summary.json" "$SCOUTING_RAW_EVENTS" <<'NODE' 2>/dev/null || true
+    node - "$attempt" "$scouting_last_exit" "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-summary.json" "$SCOUTING_RAW_EVENTS" <<'NODE' 2>/dev/null || true
 const fs = require('node:fs');
-const [attempt, exitCode, artifact, summary, rawEvents] = process.argv.slice(2);
+const [attempt, exitCode, candidateArtifact, finalArtifact, summary, rawEvents] = process.argv.slice(2);
 let stats = {};
 try { stats = JSON.parse(fs.readFileSync(summary, 'utf8')); } catch {}
 let assistantText = '';
@@ -6384,10 +6385,15 @@ try {
   }
 } catch {}
 const preview = assistantText.replace(/[\x00-\x1F\x7F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 800);
+const candidateExists = fs.existsSync(candidateArtifact);
+const finalExists = fs.existsSync(finalArtifact);
 const diag = {
   timestamp: new Date().toISOString(), phase: 'scouting', attempt: Number(attempt),
-  exit_code: Number(exitCode), artifact_path: artifact,
-  artifact_exists: fs.existsSync(artifact), artifact_bytes: fs.existsSync(artifact) ? fs.statSync(artifact).size : 0,
+  exit_code: Number(exitCode), artifact_path: candidateArtifact,
+  artifact_exists: candidateExists, artifact_bytes: candidateExists ? fs.statSync(candidateArtifact).size : 0,
+  finalized_artifact_path: finalArtifact,
+  finalized_artifact_exists: finalExists,
+  finalized_artifact_bytes: finalExists ? fs.statSync(finalArtifact).size : 0,
   message_end_count: Number(stats.event_counts?.message_end || 0),
   tool_call_count: Number(stats.tool_start_count || 0),
   provider_error_count: Number(stats.inference_health?.provider_error_count || 0),
@@ -6401,7 +6407,15 @@ NODE
     if [ "$scouting_last_exit" -eq 0 ]; then
       export KASEKI_SCOUTING_ATTEMPTS=$attempt
       export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=$attempt
+      # A failed first attempt sets STATUS/FAILED_COMMAND inside
+      # run_scouting_agent.  A validated retry is the authoritative outcome;
+      # retaining that stale status made successful runs fail at finalization.
+      if [ "${FAILED_COMMAND:-}" = "pi scouting agent" ]; then
+        STATUS=0
+        FAILED_COMMAND=""
+      fi
       clear_provider_error
+      emit_progress "pi scouting agent" "attempt $attempt/$max_attempts completed; finalized_artifact=$SCOUTING_ARTIFACT"
       return 0
     fi
 
@@ -9561,7 +9575,10 @@ NODE
     emit_progress "hashline validation" "started"
     HASHLINE_EXIT=0
     set +e
-    npx tsx "${KASEKI_APP_LIB_DIR}"/hashline-event-handler-cli.js "${KASEKI_RESULTS_DIR}"/pi-events.jsonl /workspace "${KASEKI_RESULTS_DIR}"/hashline-events.jsonl "${KASEKI_RESULTS_DIR}"/hashline-summary.json 2>> "${KASEKI_RESULTS_DIR}"/hashline-validation.log
+    # The packaged handler is compiled JavaScript.  Running it directly keeps
+    # its relative imports rooted in the shipped /app/lib bundle rather than
+    # asking tsx to resolve a non-existent source tree in the worker image.
+    node "${KASEKI_APP_LIB_DIR}"/hashline-event-handler-cli.js "${KASEKI_RESULTS_DIR}"/pi-events.jsonl /workspace "${KASEKI_RESULTS_DIR}"/hashline-events.jsonl "${KASEKI_RESULTS_DIR}"/hashline-summary.json 2>> "${KASEKI_RESULTS_DIR}"/hashline-validation.log
     HASHLINE_EXIT=$?
     set +e
 
