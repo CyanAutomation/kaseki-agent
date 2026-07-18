@@ -31,6 +31,21 @@ describe('github-app-token runtime import resolution', () => {
     );
   });
 
+  it('surfaces non-URIError decoding failures instead of masking them as validation errors', () => {
+    const originalDecodeURIComponent = globalThis.decodeURIComponent;
+    globalThis.decodeURIComponent = (() => {
+      throw new TypeError('unexpected decoder failure');
+    }) as typeof decodeURIComponent;
+
+    try {
+      expect(() =>
+        resolveGitHubAppTokenRuntimeImport('./github-utils.js', installedHelperUrl)
+      ).toThrow(TypeError);
+    } finally {
+      globalThis.decodeURIComponent = originalDecodeURIComponent;
+    }
+  });
+
   it.each([
     ['bare specifier', 'github-utils.js'],
     ['absolute filesystem path', '/opt/kaseki-package/usr/local/bin/github-utils.js'],
