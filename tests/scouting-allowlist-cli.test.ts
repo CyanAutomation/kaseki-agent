@@ -93,6 +93,34 @@ describe('scouting-allowlist.js CLI', () => {
     expect(result.reason_code).toBe('valid');
   });
 
+  test('should retain warnings without rejecting a valid scouting artifact', () => {
+    const artifact = {
+      task: 'refactor parser',
+      requirements: ['clean'],
+      relevant_files: [{ path: 'src/parser.ts' }],
+      observations: ['file is large'],
+      plan: ['step 1'],
+      validation: ['test passed'],
+      risks: [],
+      test_impact: [],
+    };
+    const artifactPath = path.join(tmpDir, 'scouting-warning.json');
+    const outputPath = path.join(tmpDir, 'scouting-output.json');
+    fs.writeFileSync(artifactPath, JSON.stringify(artifact));
+
+    const output = execSync(
+      `node dist/scouting-allowlist.js validate ${artifactPath} ${outputPath}`,
+      { encoding: 'utf-8', cwd: process.cwd() },
+    );
+    const result = JSON.parse(output.trim());
+
+    expect(result.status).toBe('ok');
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'relevant_files[0]', severity: 'warning' }),
+    ]));
+    expect(fs.existsSync(outputPath)).toBe(true);
+  });
+
   test('should reject artifact with missing required fields', () => {
     const artifact = {
       // missing task field

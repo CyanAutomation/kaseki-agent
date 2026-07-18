@@ -310,7 +310,7 @@ function buildStatusResponseSchema(): Record<string, unknown> {
           phase: { type: 'string' },
           current: { type: 'integer', minimum: 1 },
           maximum: { type: 'integer', minimum: 1 },
-          state: { type: 'string', enum: ['running', 'retrying', 'succeeded', 'exhausted'] },
+          state: { type: 'string', enum: ['running', 'retrying', 'succeeded', 'failed', 'exhausted'] },
           provider: { type: 'string' },
           lastError: { type: 'string' },
         },
