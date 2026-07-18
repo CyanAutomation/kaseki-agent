@@ -42,6 +42,7 @@ describe('github-app-token runtime import resolution', () => {
     ['double URL-encoded parent traversal', './%252e%252e/github-utils.js'],
     ['URL-encoded null byte before parent traversal', './%00../github-utils.js'],
     ['URL-encoded null byte inside parent traversal', './%2e%00%2e/github-utils.js'],
+    ['malformed URI sequence', './%E0%A4%A'],
     ['empty specifier', ''],
   ])('rejects unsupported %s imports', (_name, moduleSpecifier) => {
     expect(() =>
