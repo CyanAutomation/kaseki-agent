@@ -266,7 +266,8 @@ function validateScoutingArtifactObject(artifact: unknown): ValidationResult {
   }
 
   const criticalErrors = errors.filter((error) => error.severity === 'critical');
-  if (criticalErrors.length) {
+  const suggestedAllowlistErrors = errors.filter((error) => error.field.startsWith('suggested_allowlist'));
+  if (criticalErrors.length || suggestedAllowlistErrors.length) {
     const onlyTaskMissing = criticalErrors.length === 1 && criticalErrors[0].field === 'task';
     return {
       status: 'rejected',
