@@ -54,7 +54,11 @@ export function extractStatusCode(message: any, nestedError: any): number | unde
     message?.statusCode ?? message?.status_code ?? nestedError?.statusCode ?? nestedError?.status_code;
 
   if (typeof statusCandidate === 'number') {
-    return statusCandidate;
+    // HTTP status codes must be integers (3-digit codes: 100-599)
+    if (Number.isInteger(statusCandidate) && statusCandidate >= 100 && statusCandidate <= 599) {
+      return statusCandidate;
+    }
+    return undefined;
   }
 
   if (typeof statusCandidate === 'string' && /^\d{3}$/.test(statusCandidate)) {
@@ -68,7 +72,8 @@ export function extractStatusCode(message: any, nestedError: any): number | unde
  * Extract error code from multiple field locations.
  */
 export function extractErrorCode(message: any, nestedError: any): string | undefined {
-  const errorCodeCandidate = message?.errorCode ?? message?.error_code ?? nestedError?.code;
+  const errorCodeCandidate =
+    message?.errorCode ?? message?.error_code ?? nestedError?.code ?? nestedError?.error_code;
   return typeof errorCodeCandidate === 'string' ? errorCodeCandidate : undefined;
 }
 
@@ -106,7 +111,12 @@ export function extractGatewayEventId(message: any, nestedError: any): string | 
  */
 export function extractUpstreamError(message: any, nestedError: any): string | undefined {
   const upstreamErrorCandidate =
-    nestedError?.message ?? nestedError?.detail ?? message?.errorDetail ?? message?.error_detail;
+    nestedError?.message ??
+    nestedError?.detail ??
+    nestedError?.errorDetail ??
+    nestedError?.error_detail ??
+    message?.errorDetail ??
+    message?.error_detail;
   return typeof upstreamErrorCandidate === 'string' ? upstreamErrorCandidate.slice(0, 1000) : undefined;
 }
 
