@@ -9537,6 +9537,17 @@ NODE
     fi
   fi
   if capture_provider_error_from_summary "${KASEKI_RESULTS_DIR}/pi-summary.json" "coding"; then
+    if [ "$PROVIDER_ERROR_TYPE" = "provider_empty_assistant_turn" ] && [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
+      GOAL_CHECK_MET=false
+      GOAL_CHECK_FAILURE_REASON="provider_empty_assistant_turn: $PROVIDER_ERROR_MESSAGE"
+      GOAL_CHECK_RETRY_PROMPT="The coding provider returned an empty assistant turn: no assistant text and no tool calls were received. Re-read the original task prompt, inspect ${SCOUTING_ARTIFACT} and ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}, then make the smallest required repository change before finishing."
+      printf '%s\n' "$GOAL_CHECK_RETRY_PROMPT" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+      emit_error_event "provider_empty_assistant_turn" "Coding provider returned an empty assistant turn; retrying coding attempt $coding_attempt of $max_coding_attempts" "retry"
+      snapshot_attempt_artifacts "$coding_attempt"
+      emit_progress "pi coding agent" "retrying after provider-reported empty assistant turn (attempt $coding_attempt of $max_coding_attempts)"
+      coding_attempt=$((coding_attempt + 1))
+      continue
+    fi
     PI_EXIT=88
     if [ "$STATUS" -eq 0 ]; then
       STATUS=88
