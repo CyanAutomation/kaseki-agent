@@ -15,40 +15,26 @@ export class StatusPhaseOutcomeHelper {
     const stage = String(response.progress?.stage ?? job.currentStage ?? '').toLowerCase();
     const failed = job.status === 'failed';
     const events = this.readPhaseEvents(job);
-    const scoutingEvents = events.filter((event) => /scout|scouting/.test(this.eventStage(event)));
+    const scoutingEvents = events.filter((event) => this.isScoutingStage(this.eventStage(event)));
     const failedCommand = String(metadata?.failed_command ?? stage).toLowerCase();
-    const preAgentValidation = /pre[-_ ]agent validation|pre[-_ ]validation/.test(failedCommand);
-    const weavingEvents = events.filter((event) => {
-      const eventStage = this.eventStage(event);
-      if (/github operations.*(preflight|health check)|preflight.*github operations/.test(eventStage)) return false;
-      if (preAgentValidation && /pre[-_ ]agent|pre[-_ ]validation/.test(eventStage)) return false;
-      if (preAgentValidation && /validation/.test(eventStage) && !/goal check|quality|post[-_ ]agent/.test(eventStage)) return false;
-      return /coding|weav|goal[-_ ]setting|goal check|quality|github operations|evaluation|final/.test(eventStage);
-    });
-    const scoutingArtifactExists = fs.existsSync(path.join(this.config.resultsDir, job.id, 'scouting.json'));
-    const scoutingDuration = Number(metadata?.scouting_duration_seconds ?? 0);
-    const scoutingExitCode = Number(metadata?.scouting_exit_code ?? 0);
-    const scoutingModel = String(metadata?.scouting_actual_model ?? '').trim();
-    const scoutingStarted = Boolean(
-      scoutingEvents.length || /scout|scouting/.test(stage) || scoutingArtifactExists ||
-      scoutingDuration > 0 || scoutingExitCode !== 0 || (scoutingModel && scoutingModel !== 'unknown')
-    );
-    const weavingStage = !preAgentValidation || !/pre[-_ ]agent|pre[-_ ]validation|validation/.test(stage);
-    const preflightGithubOperations = /github operations.*(preflight|health check)|preflight.*github operations/.test(stage);
-    const weavingStarted = Boolean(weavingEvents.length || (weavingStage && !preflightGithubOperations && /coding|weav|goal check|validation|quality|github operations|evaluation|final/.test(stage)));
-    const scoutingFailed = failed && /scout|scouting/.test(failedCommand);
+    const preAgentValidation = this.isPreAgentValidationFailure(failedCommand);
+    const weavingEvents = events.filter((event) => this.isWeavingEvent(event, preAgentValidation));
+    const scoutingStarted = this.hasScoutingStarted(stage, job, metadata, scoutingEvents);
+    const weavingStarted = this.hasWeavingStarted(stage, preAgentValidation, weavingEvents);
+    const scoutingFailed = failed && this.isScoutingStage(failedCommand);
     const weavingFailed = failed && !scoutingFailed && weavingStarted;
     const scoutingCompletedAt = this.phaseCompletedAt(scoutingEvents);
     const weavingCompletedAt = this.phaseCompletedAt(weavingEvents);
+    const scoutingStartedAt = this.phaseStartedAt(scoutingEvents);
+    const weavingStartedAt = this.phaseStartedAt(weavingEvents);
+
     response.phaseOutcome = {
-      scouting: scoutingFailed ? 'failed' : scoutingStarted ? (scoutingCompletedAt || weavingStarted || failed ? 'completed' : 'running') : 'not_reached',
-      weaving: weavingFailed ? 'failed' : weavingStarted ? (weavingCompletedAt || scoutingStarted || failed ? 'completed' : 'running') : 'not_reached',
-      explanation: failed
-        ? `Run failed at ${metadata?.failed_command || response.progress?.stage || 'an unknown stage'}; phase outcomes are derived from recorded lifecycle events.`
-        : undefined,
-      ...(this.phaseStartedAt(scoutingEvents) ? { scoutingStartedAt: this.phaseStartedAt(scoutingEvents) } : {}),
+      scouting: this.resolveScoutingOutcome(scoutingFailed, scoutingStarted, scoutingCompletedAt, weavingStarted, failed),
+      weaving: this.resolveWeavingOutcome(weavingFailed, weavingStarted, weavingCompletedAt, scoutingStarted, failed),
+      explanation: this.buildFailureExplanation(failed, metadata, response),
+      ...(scoutingStartedAt ? { scoutingStartedAt } : {}),
       ...(scoutingCompletedAt ? { scoutingCompletedAt } : {}),
-      ...(this.phaseStartedAt(weavingEvents) ? { weavingStartedAt: this.phaseStartedAt(weavingEvents) } : {}),
+      ...(weavingStartedAt ? { weavingStartedAt } : {}),
       ...(weavingCompletedAt ? { weavingCompletedAt } : {}),
     };
   }
@@ -72,6 +58,92 @@ export class StatusPhaseOutcomeHelper {
 
   private eventStage(event: Record<string, unknown>): string {
     return String(event.stage ?? event.message ?? '').toLowerCase();
+  }
+
+  private isScoutingStage(stage: string): boolean {
+    return /scout|scouting/.test(stage);
+  }
+
+  private isPreAgentValidationFailure(failedCommand: string): boolean {
+    return /pre[-_ ]agent validation|pre[-_ ]validation/.test(failedCommand);
+  }
+
+  private isPreflightGithubOperations(stage: string): boolean {
+    return /github operations.*(preflight|health check)|preflight.*github operations/.test(stage);
+  }
+
+  private isWeavingLikeStage(stage: string): boolean {
+    return /coding|weav|goal[-_ ]setting|goal check|quality|github operations|evaluation|final/.test(stage);
+  }
+
+  private isWeavingEvent(event: Record<string, unknown>, preAgentValidation: boolean): boolean {
+    const stage = this.eventStage(event);
+    if (this.isPreflightGithubOperations(stage)) return false;
+    if (preAgentValidation && /pre[-_ ]agent|pre[-_ ]validation/.test(stage)) return false;
+    if (preAgentValidation && /validation/.test(stage) && !/goal check|quality|post[-_ ]agent/.test(stage)) return false;
+    return this.isWeavingLikeStage(stage);
+  }
+
+  private hasScoutingStarted(
+    stage: string,
+    job: Job,
+    metadata: any,
+    scoutingEvents: Array<Record<string, unknown>>,
+  ): boolean {
+    const scoutingArtifactExists = fs.existsSync(path.join(this.config.resultsDir, job.id, 'scouting.json'));
+    const scoutingDuration = Number(metadata?.scouting_duration_seconds ?? 0);
+    const scoutingExitCode = Number(metadata?.scouting_exit_code ?? 0);
+    const scoutingModel = String(metadata?.scouting_actual_model ?? '').trim();
+    return Boolean(
+      scoutingEvents.length ||
+      this.isScoutingStage(stage) ||
+      scoutingArtifactExists ||
+      scoutingDuration > 0 ||
+      scoutingExitCode !== 0 ||
+      (scoutingModel && scoutingModel !== 'unknown')
+    );
+  }
+
+  private hasWeavingStarted(
+    stage: string,
+    preAgentValidation: boolean,
+    weavingEvents: Array<Record<string, unknown>>,
+  ): boolean {
+    const weavingStage = !preAgentValidation || !/pre[-_ ]agent|pre[-_ ]validation|validation/.test(stage);
+    return Boolean(
+      weavingEvents.length ||
+      (weavingStage && !this.isPreflightGithubOperations(stage) && /coding|weav|goal check|validation|quality|github operations|evaluation|final/.test(stage))
+    );
+  }
+
+  private resolveScoutingOutcome(
+    scoutingFailed: boolean,
+    scoutingStarted: boolean,
+    scoutingCompletedAt: string | undefined,
+    weavingStarted: boolean,
+    failed: boolean,
+  ): NonNullable<StatusResponse['phaseOutcome']>['scouting'] {
+    if (scoutingFailed) return 'failed';
+    if (!scoutingStarted) return 'not_reached';
+    return scoutingCompletedAt || weavingStarted || failed ? 'completed' : 'running';
+  }
+
+  private resolveWeavingOutcome(
+    weavingFailed: boolean,
+    weavingStarted: boolean,
+    weavingCompletedAt: string | undefined,
+    scoutingStarted: boolean,
+    failed: boolean,
+  ): NonNullable<StatusResponse['phaseOutcome']>['weaving'] {
+    if (weavingFailed) return 'failed';
+    if (!weavingStarted) return 'not_reached';
+    return weavingCompletedAt || scoutingStarted || failed ? 'completed' : 'running';
+  }
+
+  private buildFailureExplanation(failed: boolean, metadata: any, response: StatusResponse): string | undefined {
+    return failed
+      ? `Run failed at ${metadata?.failed_command || response.progress?.stage || 'an unknown stage'}; phase outcomes are derived from recorded lifecycle events.`
+      : undefined;
   }
 
   private phaseStartedAt(events: Array<Record<string, unknown>>): string | undefined {

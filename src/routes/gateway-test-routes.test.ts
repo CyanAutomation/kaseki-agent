@@ -219,6 +219,53 @@ describe('gateway-test-routes', () => {
         expect.objectContaining({ debug: true })
       );
     });
+
+    it('should treat invalid stage and boolean query values as defaults', async () => {
+      const response = await fetch(`${baseUrl}/gateway-test?stage=bogus&responseSmoke=maybe&piProvider=maybe`);
+      const body = await response.json() as any;
+
+      expect(response.status).toBe(200);
+      expect(body.status).toBe('ok');
+      expect(kasekiGatewaySmoke.testGatewayConnectivity_Stage1).toHaveBeenCalled();
+      expect(kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2).toHaveBeenCalled();
+      expect(kasekiGatewaySmoke.testPiGatewayProviderSmoke).not.toHaveBeenCalled();
+    });
+
+    it('should skip default stage 2 when responseSmoke=false', async () => {
+      (kasekiGatewaySmoke.shouldRunGatewayResponseSmoke as jest.Mock).mockReturnValueOnce(false);
+
+      const response = await fetch(`${baseUrl}/gateway-test?responseSmoke=false`);
+      const body = await response.json() as any;
+
+      expect(response.status).toBe(200);
+      expect(body.status).toBe('ok');
+      expect(body.responseSmokeValidated).toBe(false);
+      expect(kasekiGatewaySmoke.shouldRunGatewayResponseSmoke).toHaveBeenCalledWith({ responseSmoke: false });
+      expect(kasekiGatewaySmoke.testGatewayConnectivity_Stage1).toHaveBeenCalled();
+      expect(kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2).not.toHaveBeenCalled();
+    });
+
+    it('should force stage 2 when stage=2 even if responseSmoke=false', async () => {
+      const response = await fetch(`${baseUrl}/gateway-test?stage=2&responseSmoke=false`);
+
+      expect(response.status).toBe(200);
+      expect(kasekiGatewaySmoke.testGatewayConnectivity_Stage1).not.toHaveBeenCalled();
+      expect(kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2).toHaveBeenCalled();
+    });
+
+    it('should return 503 for stage 2 only when smoke returns no result', async () => {
+      (kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2 as jest.Mock).mockResolvedValueOnce(undefined);
+
+      const response = await fetch(`${baseUrl}/gateway-test?stage=2`);
+      const body = await response.json() as any;
+
+      expect(response.status).toBe(503);
+      expect(body).toMatchObject({
+        status: 'error',
+        detail: 'LLM inference test failed',
+        responseSmokeValidated: false,
+      });
+    });
   });
 
   describe('GET /gateway-test/stage1', () => {
