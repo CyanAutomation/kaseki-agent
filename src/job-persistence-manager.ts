@@ -633,8 +633,16 @@ export class JobPersistenceManager {
   ): boolean {
     const quarantinePath = `${lockPath}.stale-${this.pid}-${this.now()}-${this.lockTokenGenerator()}`;
     try {
-      fs.renameSync(lockPath, quarantinePath);
-      this.staleLockQuarantineObserver?.(lockPath, quarantinePath);
+    fs.renameSync(lockPath, quarantinePath);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'EEXIST') {
+      return false;
+    }
+    throw error;
+  }
+
+  this.staleLockQuarantineObserver?.(lockPath, quarantinePath);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === 'ENOENT' || code === 'EEXIST') {
