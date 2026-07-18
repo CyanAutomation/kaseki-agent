@@ -15,7 +15,21 @@ APP_LIB="$TMP_DIR/app/lib"
 RUN_LOG="$TMP_DIR/kaseki-run.log"
 PI_CALLS="$TMP_DIR/pi-calls.log"
 
-trap 'status=$?; if [ "$status" -ne 0 ]; then echo "--- $TEST_NAME run log ---" >&2; tail -120 "$RUN_LOG" 2>/dev/null >&2 || true; echo "--- results stderr ---" >&2; tail -120 "$RESULTS_DIR/stderr.log" 2>/dev/null >&2 || true; echo "--- results stdout ---" >&2; tail -80 "$RESULTS_DIR/stdout.log" 2>/dev/null >&2 || true; echo "--- scouting validation errors ---" >&2; cat "$RESULTS_DIR/scouting-validation-errors.jsonl" 2>/dev/null >&2 || true; fi; rm -rf "$TMP_DIR"' EXIT
+cleanup() {
+  local status=$?
+  if [ "$status" -ne 0 ]; then
+    echo "--- $TEST_NAME run log ---" >&2
+    tail -120 "$RUN_LOG" 2>/dev/null >&2 || true
+    echo "--- results stderr ---" >&2
+    tail -120 "$RESULTS_DIR/stderr.log" 2>/dev/null >&2 || true
+    echo "--- results stdout ---" >&2
+    tail -80 "$RESULTS_DIR/stdout.log" 2>/dev/null >&2 || true
+    echo "--- scouting validation errors ---" >&2
+    cat "$RESULTS_DIR/scouting-validation-errors.jsonl" 2>/dev/null >&2 || true
+  fi
+  rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
 
 fail() {
   echo "FAIL: $TEST_NAME: $*" >&2

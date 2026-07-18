@@ -1,5 +1,7 @@
 # Gateway retry support for kaseki-agent.sh.
 #
+# shellcheck disable=SC2034
+#
 # Hook variables for tests/integration seams:
 #   KASEKI_PROVIDER_RETRY_PI_CAPTURE_HOOK - function used to invoke Pi (default: run_pi_json_capture)
 #   KASEKI_PROVIDER_RETRY_SLEEP_HOOK      - function used to delay retries (default: sleep)
@@ -641,7 +643,7 @@ run_pi_with_retry() {
   local stderr_target="${6:-}"
   local phase_name="${7:-unknown}"
   local pi_exit summary_file attempt=1 original_provider="$KASEKI_PROVIDER" primary_response_id="" retry_response_id=""
-  local original_prompt="$prompt" provider_error_type="" original_model="$model"
+  local original_prompt="$prompt" provider_error_type=""
   local previous_retryable="${PROVIDER_ERROR_RETRYABLE:-}"
   local previous_retry_attempt_count="${PROVIDER_ERROR_RETRY_ATTEMPT_COUNT:-0}"
   local previous_retry_result="${PROVIDER_ERROR_RETRY_RESULT:-none}"
