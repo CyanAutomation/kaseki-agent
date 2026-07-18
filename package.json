@@ -50,7 +50,7 @@
     "type-check": "tsc --noEmit -p tsconfig.json",
     "check": "npm run type-check && npm run lint",
     "test": "npm run test:unit",
-    "test:unit": "jest --passWithNoTests",
+    "test:unit": "npm run build && jest --passWithNoTests",
     "test:feature3": "npm run test:unit -- tests/summarization/integration.test.ts",
     "kaseki-summarizer": "node dist/kaseki-summarizer.js",
     "test:cli": "npm run build && npm run test:cli:install && npm run test:cli:verify",
