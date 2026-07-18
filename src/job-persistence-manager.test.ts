@@ -477,7 +477,10 @@ describe('JobPersistenceManager', () => {
     const staleCreatedAt = '2026-05-11T12:00:00.000Z';
     const nowMs = Date.parse('2026-05-11T12:01:00.000Z');
 
-    const writeOwnerLock = (lockName: string, token = 'stale-token'): string => {
+    const writeOwnerLock = (
+      lockName: string,
+      token = 'stale-token',
+    ): string => {
       const lockPath = path.join(tempDir, lockName);
       fs.mkdirSync(lockPath, { recursive: true });
       fs.writeFileSync(
@@ -530,7 +533,9 @@ describe('JobPersistenceManager', () => {
 
       expect(id).toBe('kaseki-1');
       expect(fs.existsSync(lockPath)).toBe(false);
-      expect(fs.readFileSync(path.join(tempDir, '.kaseki-api-next-id'), 'utf-8')).toBe('2\n');
+      expect(
+        fs.readFileSync(path.join(tempDir, '.kaseki-api-next-id'), 'utf-8'),
+      ).toBe('2\n');
     });
 
     test('does not remove stale-looking locks whose owner process is alive', async () => {
@@ -549,11 +554,16 @@ describe('JobPersistenceManager', () => {
         fs.readFileSync(path.join(lockPath, 'owner.json'), 'utf-8'),
       ) as { token: string };
       expect(owner.token).toBe('live-token');
-      expect(fs.existsSync(path.join(tempDir, '.kaseki-api-jobs.json'))).toBe(false);
+      expect(fs.existsSync(path.join(tempDir, '.kaseki-api-jobs.json'))).toBe(
+        false,
+      );
     });
 
     test('does not remove quarantined stale locks when owner token changes before cleanup verification', async () => {
-      const lockPath = writeOwnerLock('.kaseki-api-jobs.lock', 'observed-token');
+      const lockPath = writeOwnerLock(
+        '.kaseki-api-jobs.lock',
+        'observed-token',
+      );
       let livenessChecks = 0;
       manager = new JobPersistenceManager(config, {
         now: () => nowMs,
@@ -583,8 +593,47 @@ describe('JobPersistenceManager', () => {
         fs.readFileSync(path.join(lockPath, 'owner.json'), 'utf-8'),
       ) as { token: string };
       expect(owner.token).toBe('replacement-token');
-      expect(fs.existsSync(path.join(tempDir, '.kaseki-api-jobs.json'))).toBe(false);
+      expect(fs.existsSync(path.join(tempDir, '.kaseki-api-jobs.json'))).toBe(
+        false,
+      );
+    });
+
+    test('does not remove replacement locks created while stale lock is quarantined', async () => {
+      const lockPath = writeOwnerLock(
+        '.kaseki-api-jobs.lock',
+        'observed-token',
+      );
+      manager = new JobPersistenceManager(config, {
+        now: () => nowMs,
+        processLivenessChecker: () => false,
+        lockTokenGenerator: () => 'new-token',
+        pid: 1234,
+        staleLockQuarantineObserver: (observedLockPath) => {
+          if (observedLockPath === lockPath) {
+            fs.mkdirSync(lockPath);
+            fs.writeFileSync(
+              path.join(lockPath, 'owner.json'),
+              JSON.stringify({
+                pid: 5678,
+                createdAt: new Date(nowMs).toISOString(),
+                token: 'replacement-token',
+              }),
+              'utf-8',
+            );
+          }
+        },
+      });
+
+      await manager.persistJobs([makeJob('kaseki-replacement-race')]);
+
+      expect(fs.existsSync(lockPath)).toBe(true);
+      const owner = JSON.parse(
+        fs.readFileSync(path.join(lockPath, 'owner.json'), 'utf-8'),
+      ) as { token: string };
+      expect(owner.token).toBe('replacement-token');
+      expect(fs.existsSync(path.join(tempDir, '.kaseki-api-jobs.json'))).toBe(
+        false,
+      );
     });
   });
-
 });
