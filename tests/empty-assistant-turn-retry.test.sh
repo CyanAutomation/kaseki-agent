@@ -31,8 +31,14 @@ fi
 cp "$REPO_ROOT/scripts/dependency-cache-helpers.sh" "$TMP_DIR/scripts/dependency-cache-helpers.sh"
 cp "$REPO_ROOT/scripts/npm-install-helpers.sh" "$TMP_DIR/scripts/npm-install-helpers.sh"
 cp "$REPO_ROOT/scripts/agent-prompt.sh" "$TMP_DIR/scripts/agent-prompt.sh"
+cp "$REPO_ROOT/scripts/auto-lint-cleanup-classification.sh" "$TMP_DIR/scripts/auto-lint-cleanup-classification.sh"
+cp "$REPO_ROOT/scripts/github-preflight-auth.sh" "$TMP_DIR/scripts/github-preflight-auth.sh"
+cp "$REPO_ROOT/scripts/inspect-mode-defaults.sh" "$TMP_DIR/scripts/inspect-mode-defaults.sh"
+cp "$REPO_ROOT/scripts/restore-disallowed-changes.sh" "$TMP_DIR/scripts/restore-disallowed-changes.sh"
 cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
 cp "$REPO_ROOT/scripts/lib/json-events.sh" "$TMP_DIR/scripts/lib/json-events.sh"
+cp "$REPO_ROOT/scripts/lib/model-resolution.sh" "$TMP_DIR/scripts/lib/model-resolution.sh"
+cp "$REPO_ROOT/scripts/lib/provider-retry.sh" "$TMP_DIR/scripts/lib/provider-retry.sh"
 touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/progress-stream-utils.js"
 MODIFIED_SCRIPT="$TMP_DIR/kaseki-agent-modified.sh"
 sed "s#\"\${KASEKI_WORKSPACE_DIR}\"/repo#$WORKSPACE_REPO#g; s#\${KASEKI_WORKSPACE_DIR}/repo#$WORKSPACE_REPO#g; s#/workspace/repo#$WORKSPACE_REPO#g; s#/results#$RESULTS_DIR#g; s#/app/lib#$APP_LIB#g" "$REPO_ROOT/kaseki-agent.sh" > "$MODIFIED_SCRIPT"
@@ -82,7 +88,11 @@ EOF_PROGRESS
 cat > "$FAKE_BIN/kaseki-pi-event-filter" <<'EOF_FILTER'
 #!/usr/bin/env bash
 cat "$1" > "$2"
-printf '{"selected_model":"test-model"}\n' > "$3"
+if grep -q 'resp_empty_test' "$1"; then
+  printf '%s\n' '{"selected_model":"test-model","primary_provider_error":{"type":"provider_empty_assistant_turn","provider":"gateway","api":"openai-completions","model":"dynamic/kaseki-agent","message":"Provider returned a successful stop response with output tokens but no assistant text or tool calls."}}' > "$3"
+else
+  printf '{"selected_model":"test-model"}\n' > "$3"
+fi
 EOF_FILTER
 cat > "$FAKE_BIN/timeout" <<'EOF_TIMEOUT'
 #!/usr/bin/env bash
@@ -110,8 +120,8 @@ set -e
 expected_calls=$'goal-setting\nscouting\ncoding\ncoding\ngoal-check'
 actual_calls="$(cat "$PI_CALLS" 2>/dev/null || true)"
 [ "$actual_calls" = "$expected_calls" ] || fail "expected empty turn retry then goal-check, got: $(tr '\n' ',' < "$PI_CALLS")"
-[ -s "$RESULTS_DIR/pi-agent-diagnostics.jsonl" ] || fail "missing empty-turn diagnostics"
-grep -q 'provider_empty_assistant_turn' "$RESULTS_DIR/pi-agent-diagnostics.jsonl" || fail "diagnostics did not classify empty assistant turn"
+[ -s "$RESULTS_DIR/provider-error.json" ] || fail "missing provider-summary empty-turn diagnostics"
+grep -q 'provider_empty_assistant_turn' "$RESULTS_DIR/provider-error.json" || fail "provider summary did not classify empty assistant turn"
 grep -q 'empty assistant turn' "$RESULTS_DIR/pi-stderr.log" || fail "retry guidance did not mention empty assistant turn"
 grep -Fq '"required_files": [' "$RESULTS_DIR/critical-change-expectations.json" || fail "critical expectations missing required_files"
 grep -q '"docs/INDEX.md"' "$RESULTS_DIR/critical-change-expectations.json" || fail "fallback did not infer docs/INDEX.md as required file"
