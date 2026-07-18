@@ -6,7 +6,7 @@
  */
 
 import { PiEvent } from '../lib/event-timestamp-helpers.js';
-import { ProviderErrorSummary } from '../pi-event-filter-helpers.js';
+import type { ProviderErrorSummary } from './types.js';
 
 /**
  * Extract and normalize the error message from a Pi event message object.

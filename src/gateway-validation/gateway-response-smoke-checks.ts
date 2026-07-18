@@ -156,7 +156,7 @@ export async function testGatewayResponseSmokeFull(
  * Run JSON response smoke check against gateway
  * Tests basic inference with standard prompt
  */
-export async function runGatewayResponseJsonCheck(
+async function runGatewayResponseJsonCheck(
   gatewayUrl: string,
   apiKey: string,
   timestamp: string,
@@ -318,7 +318,7 @@ export async function runGatewayResponseJsonCheck(
  * Run streaming response smoke check against gateway
  * Tests streaming inference with SSE deltas
  */
-export async function runGatewayResponseStreamCheck(
+async function runGatewayResponseStreamCheck(
   gatewayUrl: string,
   apiKey: string,
   timestamp: string,
