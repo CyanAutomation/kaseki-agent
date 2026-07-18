@@ -217,6 +217,12 @@ export class DockerManager {
       // Handle errors
       child.on('error', (error: Error) => {
         logger.error(`Failed to spawn docker: ${error.message}`);
+        if (timeoutTimer) {
+          clearTimeout(timeoutTimer);
+        }
+        if (forceKillTimer) {
+          clearTimeout(forceKillTimer);
+        }
         finish({
           exitCode: 1,
           stdout,
