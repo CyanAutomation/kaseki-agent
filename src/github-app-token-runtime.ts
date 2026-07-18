@@ -10,10 +10,13 @@ export function resolveGitHubAppTokenRuntimeImport(
     previousDecoded = decodedModuleSpecifier;
     try {
       decodedModuleSpecifier = decodeURIComponent(decodedModuleSpecifier);
-    } catch {
-      throw new Error(
-        'GitHub App token runtime imports must be explicit nested relative paths from the installed helper'
-      );
+    } catch (error) {
+      if (error instanceof URIError) {
+        throw new Error(
+          'GitHub App token runtime imports must be explicit nested relative paths from the installed helper'
+        );
+      }
+      throw error;
     }
   }
 
