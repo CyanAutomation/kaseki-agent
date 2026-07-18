@@ -294,6 +294,7 @@ SCOUTING_EXIT=0
 SCOUTING_DURATION_SECONDS=0
 SCOUTING_ACTUAL_MODEL="unknown"
 KASEKI_SCOUTING_ATTEMPTS=1
+KASEKI_SCOUTING_MAX_ATTEMPTS=2
 KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=""
 GOAL_SETTING_EXIT=0
 GOAL_SETTING_DURATION_SECONDS=0
@@ -1651,6 +1652,7 @@ write_metadata() {
   "pi_duration_seconds": $PI_DURATION_SECONDS,
   "scouting_duration_seconds": $SCOUTING_DURATION_SECONDS,
   "scouting_attempts": ${KASEKI_SCOUTING_ATTEMPTS:-1},
+  "scouting_max_attempts": ${KASEKI_SCOUTING_MAX_ATTEMPTS:-2},
   "scouting_succeeded_on_attempt": $([ -n "${KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT:-}" ] && printf '%s' "$KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT" || printf 'null'),
   "goal_setting_duration_seconds": $GOAL_SETTING_DURATION_SECONDS,
   "goal_setting_attempts": ${KASEKI_GOAL_SETTING_ATTEMPTS:-1},
@@ -1907,7 +1909,10 @@ function firstJsonLine(file) {
   for (const line of lines) {
     try { parsed.push(JSON.parse(line)); } catch {}
   }
-  const unrecovered = parsed.filter((data) => data && data.severity !== 'warning' && !data.recovered);
+  // Normalization and warning entries provide useful context, but neither is a
+  // terminal failure. Prefer an error/critical entry when choosing the reason
+  // surfaced by a failed run.
+  const unrecovered = parsed.filter((data) => data && data.severity !== 'warning' && data.severity !== 'info' && !data.recovered);
   const data = unrecovered.length ? unrecovered[unrecovered.length - 1] : undefined;
   return data ? { file, data } : undefined;
 }
@@ -6323,7 +6328,7 @@ run_scouting_agent() {
 run_scouting_agent_with_retry() {
   local attempt scouting_stderr_capture max_attempts scouting_last_exit scouting_last_stderr
 
-  max_attempts=2
+  max_attempts="$KASEKI_SCOUTING_MAX_ATTEMPTS"
   attempt=1
   scouting_last_exit=0
   scouting_last_stderr=""

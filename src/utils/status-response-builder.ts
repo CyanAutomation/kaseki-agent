@@ -115,6 +115,10 @@ export class StatusResponseBuilder {
 
     const retryCount = Number(metadata?.provider_error_retry_attempt_count ?? 0);
     const scoutingAttempts = Number(metadata?.scouting_attempts ?? 0);
+    const configuredScoutingMaximum = Number(metadata?.scouting_max_attempts ?? 2);
+    const scoutingMaximum = Number.isFinite(configuredScoutingMaximum) && configuredScoutingMaximum > 0
+      ? Math.max(scoutingAttempts, configuredScoutingMaximum)
+      : Math.max(1, scoutingAttempts);
     const retryResult = String(metadata?.provider_error_retry_result ?? '');
     const providerError = String(metadata?.provider_error_message ?? '');
     const providerPhase = String(metadata?.provider_error_phase ?? '').trim() || undefined;
@@ -159,13 +163,13 @@ export class StatusResponseBuilder {
       );
       const rootCause = contractFailure?.detail || providerError || 'Scouting did not produce a valid handoff artifact.';
       response.attempt = {
-        phase: 'scouting', current: scoutingAttempts, maximum: Math.max(2, scoutingAttempts),
-        state: 'exhausted', provider, lastError: rootCause,
+        phase: 'scouting', current: scoutingAttempts, maximum: scoutingMaximum,
+        state: scoutingAttempts >= scoutingMaximum ? 'exhausted' : 'failed', provider, lastError: rootCause,
       };
       response.diagnosis = {
         severity: 'error', phase: 'scouting', category: 'artifact_contract',
         summary: rootCause,
-        retryCount: Math.max(0, scoutingAttempts - 1), retryExhausted: true,
+        retryCount: Math.max(0, scoutingAttempts - 1), retryExhausted: scoutingAttempts >= scoutingMaximum,
         remediation: contractFailure?.suggestion || 'Inspect scouting-validation-errors.jsonl and scouting-attempt-*-events.jsonl; verify the agent can write the required candidate artifact.',
         artifact: 'scouting-validation-errors.jsonl',
       };
@@ -244,7 +248,7 @@ export class StatusResponseBuilder {
       if (/github operations.*(preflight|health check)|preflight.*github operations/.test(eventStage)) return false;
       if (preAgentValidation && /pre[-_ ]agent|pre[-_ ]validation/.test(eventStage)) return false;
       if (preAgentValidation && /validation/.test(eventStage) && !/goal check|quality|post[-_ ]agent/.test(eventStage)) return false;
-      return /coding|weav|goal check|quality|github operations|evaluation|final/.test(eventStage);
+      return /coding|weav|goal[-_ ]setting|goal check|quality|github operations|evaluation|final/.test(eventStage);
     });
     // `scouting_attempts` is initialised to 1 for metadata schema stability,
     // even when pre-agent validation exits before Pi starts.  Only concrete
@@ -267,7 +271,7 @@ export class StatusResponseBuilder {
     const weavingCompletedAt = this.phaseCompletedAt(weavingEvents);
     response.phaseOutcome = {
       scouting: scoutingFailed ? 'failed' : scoutingStarted ? (scoutingCompletedAt || weavingStarted || failed ? 'completed' : 'running') : 'not_reached',
-      weaving: weavingFailed ? 'failed' : weavingStarted ? (weavingCompletedAt || failed ? 'completed' : 'running') : 'not_reached',
+      weaving: weavingFailed ? 'failed' : weavingStarted ? (weavingCompletedAt || scoutingStarted || failed ? 'completed' : 'running') : 'not_reached',
       explanation: failed
         ? `Run failed at ${metadata?.failed_command || response.progress?.stage || 'an unknown stage'}; phase outcomes are derived from recorded lifecycle events.`
         : undefined,

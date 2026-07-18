@@ -116,7 +116,8 @@ describe('StatusResponseBuilder', () => {
 
       expect(response.phaseOutcome).toMatchObject({
         scouting: 'completed',
-        weaving: 'not_reached',
+        weaving: 'completed',
+        weavingStartedAt: '2026-01-01T00:00:01Z',
         scoutingStartedAt: '2026-01-01T00:00:02Z',
         scoutingCompletedAt: '2026-01-01T00:01:00Z',
       });
@@ -175,6 +176,22 @@ describe('StatusResponseBuilder', () => {
         category: 'artifact_contract', retryCount: 1, retryExhausted: true,
         artifact: 'scouting-validation-errors.jsonl',
       });
+    });
+
+    it('does not report exhausted when the first scouting attempt fails before a retry', () => {
+      const metadata = {
+        failed_command: 'pi scouting agent',
+        scouting_attempts: 1,
+        scouting_max_attempts: 2,
+        provider_error_message: 'Schema validation failed',
+      };
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => filePath.endsWith('metadata.json'));
+      (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify(metadata));
+
+      const response = builder.buildStatus({ id: 'job-scout-first-failure', status: 'failed' } as Job);
+
+      expect(response.attempt).toMatchObject({ phase: 'scouting', current: 1, maximum: 2, state: 'failed' });
+      expect(response.diagnosis).toMatchObject({ retryCount: 0, retryExhausted: false });
     });
 
     it('uses the first critical scouting contract error instead of a later informational normalization entry', () => {
