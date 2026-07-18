@@ -36,7 +36,7 @@ export class StatusResponseBuilder {
   private readonly progressHighWater = new Map<string, number>();
 
   constructor(
-    private scheduler: JobScheduler,
+    scheduler: JobScheduler,
     private config: KasekiApiConfig,
     private artifactCache?: Pick<ResultCache, 'getOrLoad'>
   ) {

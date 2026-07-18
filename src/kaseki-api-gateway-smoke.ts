@@ -11,7 +11,15 @@ import {
   isInvalidGatewayPathError,
   type GatewayTestOptions,
 } from './gateway-detection/detect-gateway-provider';
-import { probeCloudflareGateway } from './cloudflare-gateway-probe';
+import {
+  analyzeResponseStructure,
+  extractSampleEventStructure,
+  countPiJsonEvents,
+} from './gateway-validation/analyze-gateway-response';
+import {
+  extractPiJsonAssistantText,
+  fetchWithTimeout,
+} from './gateway-validation/extract-pi-json';
 import {
   testGatewayResponseSmokeFull,
 } from './gateway-validation/gateway-response-smoke-checks';
