@@ -112,10 +112,47 @@ export class DockerManager {
       let stdout = '';
       let stderr = '';
 
+      const timeoutSeconds = config.timeout || 1200;
+      const timeoutMs = timeoutSeconds * 1000;
+      const forceKillGraceMs = 5000;
+      let settled = false;
+      let timedOut = false;
+      let timeoutTimer: NodeJS.Timeout | undefined;
+      let forceKillTimer: NodeJS.Timeout | undefined;
+
+      const finish = (result: ContainerResult): void => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        if (timeoutTimer) {
+          clearTimeout(timeoutTimer);
+        }
+        if (forceKillTimer) {
+          clearTimeout(forceKillTimer);
+        }
+        resolve(result);
+      };
+
       const child = spawn('docker', ['run', ...dockerArgs], {
         stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: (config.timeout || 1200) * 1000,
       });
+
+      timeoutTimer = setTimeout(() => {
+        timedOut = true;
+        logger.warn(`Container timeout after ${timeoutSeconds} seconds`);
+        child.kill('SIGTERM');
+
+        forceKillTimer = setTimeout(() => {
+          child.kill('SIGKILL');
+          finish({
+            exitCode: 124,
+            stdout,
+            stderr: `Container timeout after ${timeoutSeconds} seconds`,
+          });
+        }, forceKillGraceMs);
+      }, timeoutMs);
 
       // Collect stdout
       if (child.stdout) {
@@ -138,6 +175,15 @@ export class DockerManager {
 
       // Handle completion with enhanced error context
       child.on('exit', (code: number | null) => {
+        if (timedOut) {
+          finish({
+            exitCode: 124,
+            stdout,
+            stderr: `Container timeout after ${timeoutSeconds} seconds`,
+          });
+          return;
+        }
+
         // Check for Docker init errors in stderr
         if (code === 127 && stderr.includes('no such file or directory')) {
           const enhancedStderr =
@@ -154,13 +200,13 @@ export class DockerManager {
             'If the problem persists, the image may need to be rebuilt locally:\n' +
             '   docker build -t kaseki-template:latest .';
 
-          resolve({
+          finish({
             exitCode: code ?? 1,
             stdout,
             stderr: enhancedStderr,
           });
         } else {
-          resolve({
+          finish({
             exitCode: code ?? 1,
             stdout,
             stderr,
@@ -171,21 +217,10 @@ export class DockerManager {
       // Handle errors
       child.on('error', (error: Error) => {
         logger.error(`Failed to spawn docker: ${error.message}`);
-        resolve({
+        finish({
           exitCode: 1,
           stdout,
           stderr: error.message,
-        });
-      });
-
-      // Handle timeout
-      child.on('timeout', () => {
-        logger.warn(`Container timeout after ${config.timeout} seconds`);
-        child.kill('SIGTERM');
-        resolve({
-          exitCode: 124,
-          stdout,
-          stderr: `Container timeout after ${config.timeout} seconds`,
         });
       });
     });
