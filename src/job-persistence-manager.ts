@@ -4,6 +4,7 @@
  * Separates persistence concerns from job scheduling logic.
  */
 
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Job } from './kaseki-api-types';
@@ -27,6 +28,39 @@ export type PersistedJob = Omit<
 
 type LoadPersistedJobsStatus = 'loaded' | 'lock_contention' | 'read_error';
 
+interface LockOwnerMetadata {
+  pid: number;
+  createdAt: string;
+  token: string;
+}
+
+export type JobPersistenceProcessLivenessChecker = (pid: number) => boolean;
+
+export interface JobPersistenceManagerDependencies {
+  now?: () => number;
+  processLivenessChecker?: JobPersistenceProcessLivenessChecker;
+  lockTokenGenerator?: () => string;
+  pid?: number;
+}
+
+export function createJobPersistenceProcessLivenessChecker(
+  kill: (pid: number, signal: 0) => unknown = process.kill,
+  platform: NodeJS.Platform = process.platform,
+): JobPersistenceProcessLivenessChecker {
+  return (pid: number): boolean => {
+    try {
+      kill(pid, 0);
+      return true;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (platform === 'win32') {
+        return false;
+      }
+      return code === 'EPERM';
+    }
+  };
+}
+
 class LockAcquisitionError extends Error {
   constructor(lockName: string, lockPath: string) {
     super(`Failed to acquire ${lockName} lock: ${lockPath}`);
@@ -46,14 +80,29 @@ export class JobPersistenceManager {
   private config: KasekiApiConfig;
   private logger: EventLogger;
   private jobs = new Map<string, Job>();
+  private activeLockOwners = new Map<string, LockOwnerMetadata>();
+  private now: () => number;
+  private processLivenessChecker: JobPersistenceProcessLivenessChecker;
+  private lockTokenGenerator: () => string;
+  private pid: number;
 
-  constructor(config: KasekiApiConfig) {
+  constructor(
+    config: KasekiApiConfig,
+    dependencies: JobPersistenceManagerDependencies = {},
+  ) {
     this.config = config;
     this.indexPath = path.join(config.resultsDir, '.kaseki-api-jobs.json');
     this.nextIdPath = path.join(config.resultsDir, '.kaseki-api-next-id');
     this.idLockPath = path.join(config.resultsDir, '.kaseki-api-id.lock');
     this.indexLockPath = path.join(config.resultsDir, '.kaseki-api-jobs.lock');
     this.logger = createEventLogger('job-persistence-manager');
+    this.now = dependencies.now ?? Date.now;
+    this.processLivenessChecker =
+      dependencies.processLivenessChecker ??
+      createJobPersistenceProcessLivenessChecker();
+    this.lockTokenGenerator =
+      dependencies.lockTokenGenerator ?? (() => crypto.randomUUID());
+    this.pid = dependencies.pid ?? process.pid;
   }
 
   /**
@@ -137,8 +186,25 @@ export class JobPersistenceManager {
         fs.writeFileSync(tmpPath, `${json}\n`, { mode: 0o600 });
         fs.renameSync(tmpPath, this.indexPath);
       });
-    } catch {
-      // Keep scheduler progress alive even if persistence is unavailable.
+    } catch (error) {
+      // Keep scheduler progress alive even if persistence is unavailable, but
+      // surface enough context for readiness/preflight diagnostics.
+      this.logger.error('Failed to persist jobs index', {
+        error: error instanceof Error ? error.message : String(error),
+        errorName: error instanceof Error ? error.name : undefined,
+        lockPath: this.indexLockPath,
+        indexPath: this.indexPath,
+        jobCount: allJobs.length,
+      });
+      this.logger.event('job_persistence_degraded', {
+        reason:
+          error instanceof LockAcquisitionError
+            ? 'lock_acquisition_failed'
+            : 'persist_failed',
+        lockPath: this.indexLockPath,
+        indexPath: this.indexPath,
+        jobCount: allJobs.length,
+      });
     }
   }
 
@@ -443,19 +509,39 @@ export class JobPersistenceManager {
     fs.mkdirSync(this.config.resultsDir, { recursive: true });
     const maxRetries = 100;
     const retryDelayMs = 25;
+    const staleThresholdMs = 30000;
 
     for (let attempt = 0; attempt < maxRetries; attempt += 1) {
+      const owner = this.createLockOwner();
       try {
         fs.mkdirSync(lockPath, { mode: 0o700 });
         try {
+          fs.writeFileSync(this.getLockOwnerPath(lockPath), JSON.stringify(owner), {
+            encoding: 'utf-8',
+            flag: 'wx',
+          });
+        } catch (ownerWriteError) {
+          this.releaseLock(lockPath, owner, true);
+          throw ownerWriteError;
+        }
+        this.activeLockOwners.set(lockPath, owner);
+        try {
           return await callback();
         } finally {
-          fs.rmSync(lockPath, { recursive: true, force: true });
+          this.releaseLock(lockPath, owner);
         }
       } catch (err) {
         const code = (err as NodeJS.ErrnoException).code;
-        if (code !== 'EEXIST') {
+        this.releaseLock(lockPath, owner);
+        if (code !== 'EEXIST' && code !== 'ENOTEMPTY') {
           throw err;
+        }
+
+        const ownerMetadata = this.readLockOwner(lockPath);
+        if (this.isLockStale(lockPath, staleThresholdMs, ownerMetadata)) {
+          if (this.removeStaleLock(lockPath, lockName, ownerMetadata, staleThresholdMs)) {
+            continue;
+          }
         }
 
         this.logLockContention(lockName, lockPath, attempt + 1, maxRetries);
@@ -464,6 +550,148 @@ export class JobPersistenceManager {
     }
 
     throw new LockAcquisitionError(lockName, lockPath);
+  }
+
+  private getLockOwnerPath(lockPath: string): string {
+    return path.join(lockPath, 'owner.json');
+  }
+
+  private createLockOwner(): LockOwnerMetadata {
+    return {
+      pid: this.pid,
+      createdAt: new Date(this.now()).toISOString(),
+      token: `${this.pid}-${this.now()}-${this.lockTokenGenerator()}`,
+    };
+  }
+
+  private readLockOwner(lockPath: string): LockOwnerMetadata | null {
+    try {
+      const parsed = JSON.parse(
+        fs.readFileSync(this.getLockOwnerPath(lockPath), 'utf-8'),
+      ) as Partial<LockOwnerMetadata>;
+      if (
+        typeof parsed.pid !== 'number' ||
+        typeof parsed.createdAt !== 'string' ||
+        typeof parsed.token !== 'string'
+      ) {
+        return null;
+      }
+      return parsed as LockOwnerMetadata;
+    } catch {
+      return null;
+    }
+  }
+
+  private isLockStale(
+    lockPath: string,
+    staleThresholdMs: number,
+    ownerMetadata: LockOwnerMetadata | null,
+  ): boolean {
+    try {
+      const createdAtMs = ownerMetadata
+        ? Date.parse(ownerMetadata.createdAt)
+        : Number.NaN;
+      const lockAgeMs = Number.isFinite(createdAtMs)
+        ? this.now() - createdAtMs
+        : this.now() - fs.statSync(lockPath).mtimeMs;
+      if (lockAgeMs <= staleThresholdMs) {
+        return false;
+      }
+      return ownerMetadata?.pid
+        ? !this.processLivenessChecker(ownerMetadata.pid)
+        : true;
+    } catch {
+      return false;
+    }
+  }
+
+  private removeStaleLock(
+    lockPath: string,
+    lockName: string,
+    ownerMetadata: LockOwnerMetadata | null,
+    staleThresholdMs: number,
+  ): boolean {
+    const quarantinePath = `${lockPath}.stale-${this.pid}-${this.now()}-${this.lockTokenGenerator()}`;
+    try {
+      fs.renameSync(lockPath, quarantinePath);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'EEXIST') {
+        return false;
+      }
+      throw error;
+    }
+
+    const quarantinedOwner = this.readLockOwner(quarantinePath);
+    const ownerTokenMatches = ownerMetadata?.token
+      ? quarantinedOwner?.token === ownerMetadata.token
+      : quarantinedOwner === null;
+    const stillStale = this.isLockStale(
+      quarantinePath,
+      staleThresholdMs,
+      quarantinedOwner,
+    );
+
+    if (!ownerTokenMatches || !stillStale) {
+      this.restoreQuarantinedLock(lockPath, quarantinePath);
+      this.logger.event('job_persistence_stale_lock_cleanup_skipped', {
+        lockName,
+        lockPath,
+        ownerTokenMatches,
+        stillStale,
+      });
+      return false;
+    }
+
+    fs.rmSync(quarantinePath, { recursive: true, force: true });
+    this.logger.event('job_persistence_stale_lock_removed', {
+      lockName,
+      lockPath,
+      ownerPid: quarantinedOwner?.pid,
+      ownerCreatedAt: quarantinedOwner?.createdAt,
+    });
+    return true;
+  }
+
+  private restoreQuarantinedLock(
+    lockPath: string,
+    quarantinePath: string,
+  ): void {
+    try {
+      fs.renameSync(quarantinePath, lockPath);
+    } catch {
+      // Leave the quarantined directory untouched rather than deleting a lock
+      // that could not be verified as the stale owner observed before rename.
+    }
+  }
+
+  private releaseLock(
+    lockPath: string,
+    owner: LockOwnerMetadata,
+    allowEmptyOwnerlessDirectory = false,
+  ): void {
+    const activeOwner = this.activeLockOwners.get(lockPath) ?? owner;
+    const ownerMetadata = this.readLockOwner(lockPath);
+    if (ownerMetadata?.token === activeOwner.token) {
+      try {
+        fs.rmSync(this.getLockOwnerPath(lockPath), { force: true });
+        fs.rmdirSync(lockPath);
+      } catch {
+        // Ignore lock release races; token verification prevents removing a
+        // replacement lock owned by another process.
+      }
+      this.activeLockOwners.delete(lockPath);
+      return;
+    }
+
+    if (allowEmptyOwnerlessDirectory && !ownerMetadata) {
+      try {
+        fs.rmdirSync(lockPath);
+      } catch {
+        // Ignore cleanup races.
+      }
+    }
+    this.activeLockOwners.delete(lockPath);
   }
 
   private logLockContention(
