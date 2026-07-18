@@ -4,6 +4,19 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.113.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.112.2...v1.113.0) (2026-07-18)
+
+
+### Bug Fixes
+
+* update dependencies in package-lock.json and refactor constructor in StatusResponseBuilder ([0592a2d](https://github.com/CyanAutomation/kaseki-agent/commit/0592a2d5946b61e3a4cd3caf7496ec6b293ab7d3))
+
+
+### Features
+
+* add gateway response smoke checks and status lifecycle helpers ([6b4c008](https://github.com/CyanAutomation/kaseki-agent/commit/6b4c008ce50fe99acd0197e3431a7c6aa1de81d3))
+* enhance error extraction functions with additional validation and comprehensive unit tests ([8caf0b4](https://github.com/CyanAutomation/kaseki-agent/commit/8caf0b42427a6ac936b29bdf230aa2213a3fe7c1))
+
 ## [1.112.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.112.1...v1.112.2) (2026-07-14)
 
 
