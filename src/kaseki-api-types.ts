@@ -262,7 +262,7 @@ export interface StatusResponse {
     phase?: string;
     current: number;
     maximum: number;
-    state: 'running' | 'retrying' | 'succeeded' | 'exhausted';
+    state: 'running' | 'retrying' | 'succeeded' | 'failed' | 'exhausted';
     provider?: string;
     lastError?: string;
     nextRetryInSeconds?: number;

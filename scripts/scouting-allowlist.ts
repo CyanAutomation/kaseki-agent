@@ -265,8 +265,9 @@ function validateScoutingArtifactObject(artifact: unknown): ValidationResult {
     errors.push(...placeholderErrors);
   }
 
-  if (errors.length) {
-    const onlyTaskMissing = errors.length === 1 && errors[0].field === 'task';
+  const criticalErrors = errors.filter((error) => error.severity === 'critical');
+  if (criticalErrors.length) {
+    const onlyTaskMissing = criticalErrors.length === 1 && criticalErrors[0].field === 'task';
     return {
       status: 'rejected',
       reason_code: onlyTaskMissing ? 'missing_required_fields' : 'schema_mismatch',
@@ -275,7 +276,12 @@ function validateScoutingArtifactObject(artifact: unknown): ValidationResult {
     };
   }
 
-  return { status: 'ok', reason_code: 'valid', details: 'artifact validation passed', errors: [] };
+  return {
+    status: 'ok',
+    reason_code: 'valid',
+    details: errors.length ? `artifact validation passed with ${summarize(errors)}` : 'artifact validation passed',
+    errors,
+  };
 }
 
 function detectPlaceholderContent(artifact: Record<string, unknown>): ValidationError[] {
@@ -358,13 +364,13 @@ function validateScoutingArtifact(
 function writeValidationArtifacts(result: ValidationResult, options: Record<string, unknown>): void {
   const errorLog = options.errorLog as string | undefined;
   const jsonlLog = options.jsonlLog as string | undefined;
-  if (result.status === 'ok') return;
+  if (result.errors.length === 0) return;
   if (jsonlLog) {
     for (const error of result.errors) {
       appendJsonl(jsonlLog, { timestamp: new Date().toISOString(), reason_code: result.reason_code, ...error });
     }
   }
-  if (errorLog) {
+  if (errorLog && result.status === 'rejected') {
     fs.writeFileSync(errorLog, JSON.stringify({ reason_code: result.reason_code, details: result.details, errors: result.errors }) + '\n');
   }
 }

@@ -1933,7 +1933,7 @@ const controllerPage = String.raw`<!doctype html>
           }
           if (payload.attempt && typeof payload.attempt === 'object') {
             const attempt = payload.attempt;
-            items.push(['Provider attempt', String(attempt.current || 1) + '/' + String(attempt.maximum || 1) + ' — ' + String(attempt.state || 'running'), { warning: attempt.state === 'retrying' || attempt.state === 'exhausted', fullWidth: true }]);
+            items.push(['Provider attempt', String(attempt.current || 1) + '/' + String(attempt.maximum || 1) + ' — ' + String(attempt.state || 'running'), { warning: attempt.state === 'retrying' || attempt.state === 'failed' || attempt.state === 'exhausted', fullWidth: true }]);
           }
           if (payload.piProviderSmoke && typeof payload.piProviderSmoke === 'object') {
             const smoke = payload.piProviderSmoke;
