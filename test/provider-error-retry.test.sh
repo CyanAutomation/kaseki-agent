@@ -11,7 +11,6 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RESULTS_DIR="/tmp/kaseki-provider-retry-test.$$"
 mkdir -p "$RESULTS_DIR"
 
@@ -28,7 +27,8 @@ mock_pi() {
     unavailable_then_success)
       # First call: return 503, second call: succeed
       if [ -f "$RESULTS_DIR/.pi_call_count" ]; then
-        local count=$(cat "$RESULTS_DIR/.pi_call_count")
+        local count
+        count=$(cat "$RESULTS_DIR/.pi_call_count")
         count=$((count + 1))
       else
         local count=1

@@ -19,7 +19,7 @@ set_flag_env() {
     unset "$name"
   else
     printf -v "$name" '%s' "$value"
-    export "$name"
+    export "${name?}"
   fi
 }
 
