@@ -4,18 +4,24 @@ function extractResponseText(value: unknown): string {
   if (typeof response.output_text === 'string') return response.output_text;
   if (typeof response.text === 'string') return response.text;
   if (Array.isArray(response.output)) {
-    return response.output.map((item: any) => {
-      if (!item || typeof item !== 'object') return '';
-      if (typeof item.text === 'string') return item.text;
-      if (!Array.isArray(item.content)) return '';
-      return item.content.map((part: any) => {
-        if (!part || typeof part !== 'object') return '';
-        if (typeof part.text === 'string') return part.text;
-        if (typeof part.output_text === 'string') return part.output_text;
-        return '';
-      }).join('');
-    }).join('');
+    return response.output.map(extractOutputItemText).join('');
   }
+  return '';
+}
+
+function extractOutputItemText(item: unknown): string {
+  if (!item || typeof item !== 'object') return '';
+  const outputItem = item as any;
+  if (typeof outputItem.text === 'string') return outputItem.text;
+  if (!Array.isArray(outputItem.content)) return '';
+  return outputItem.content.map(extractContentPartText).join('');
+}
+
+function extractContentPartText(part: unknown): string {
+  if (!part || typeof part !== 'object') return '';
+  const contentPart = part as any;
+  if (typeof contentPart.text === 'string') return contentPart.text;
+  if (typeof contentPart.output_text === 'string') return contentPart.output_text;
   return '';
 }
 
@@ -28,23 +34,37 @@ export function extractOutputTokens(value: unknown): number | undefined {
   return undefined;
 }
 
+function extractSseData(line: string): string | undefined {
+  if (!line.startsWith('data:')) return undefined;
+  const data = line.slice('data:'.length).trim();
+  return data && data !== '[DONE]' ? data : undefined;
+}
+
+function parseSseEvent(data: string): any | undefined {
+  try {
+    return JSON.parse(data);
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveResponseId(event: any): string | undefined {
+  if (typeof event?.response?.id === 'string') return event.response.id;
+  if (typeof event?.item?.id === 'string') return event.item.id;
+  return undefined;
+}
+
 export function parseResponsesSse(bodyText: string): { text: string; responseId?: string; outputTokens?: number } {
   let text = '';
   let responseId: string | undefined;
   let outputTokens: number | undefined;
   for (const line of bodyText.split(/\r?\n/)) {
-    if (!line.startsWith('data:')) continue;
-    const data = line.slice('data:'.length).trim();
-    if (!data || data === '[DONE]') continue;
-    let event: any;
-    try {
-      event = JSON.parse(data);
-    } catch {
-      continue;
-    }
+    const data = extractSseData(line);
+    if (!data) continue;
+    const event = parseSseEvent(data);
+    if (!event) continue;
     if (typeof event?.delta === 'string') text += event.delta;
-    if (!responseId && typeof event?.response?.id === 'string') responseId = event.response.id;
-    if (!responseId && typeof event?.item?.id === 'string') responseId = event.item.id;
+    responseId = responseId ?? resolveResponseId(event);
     if (event?.response) {
       text += extractResponseText(event.response);
       outputTokens = outputTokens ?? extractOutputTokens(event.response);

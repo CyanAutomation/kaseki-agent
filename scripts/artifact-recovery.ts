@@ -9,6 +9,11 @@ export type RecoveryOptions = {
   resultsDir?: string;
 };
 
+type RecoveryCandidates = {
+  valid: Map<string, Record<string, unknown>>;
+  partial: Map<string, Record<string, unknown>>;
+};
+
 export function stableStringify(obj: unknown): string {
   return JSON.stringify(obj, Object.keys(obj as Record<string, unknown>).sort());
 }
@@ -92,36 +97,31 @@ export function logScoutingRecoveryDiagnostic(resultsDir: string, message: strin
   }
 }
 
-export function recoverArtifactFromEventStream(options: RecoveryOptions): boolean {
-  let text = '';
-  try {
-    text = fs.readFileSync(options.rawPath, 'utf8');
-  } catch {
-    return false;
+function inspectCandidate(candidate: unknown, phase: Phase, candidates: RecoveryCandidates): void {
+  if (!isRecord(candidate)) return;
+  const key = stableStringify(candidate);
+  if (phase === 'goal-setting') {
+    if (goalSettingSchemaErrors(candidate).length === 0) candidates.valid.set(key, candidate);
+    return;
   }
+  if (scoutingSchemaErrors(candidate, true).length === 0) candidates.valid.set(key, candidate);
+  else if (scoutingSchemaErrors(candidate, false).length === 0) candidates.partial.set(key, candidate);
+}
 
-  const valid = new Map<string, Record<string, unknown>>();
-  const partial = new Map<string, Record<string, unknown>>();
-  const snippets = collectBalancedJsonObjects(text);
-
-  const inspectCandidate = (candidate: unknown): void => {
-    if (!isRecord(candidate)) return;
-    if (options.phase === 'goal-setting') {
-      if (goalSettingSchemaErrors(candidate).length === 0) valid.set(stableStringify(candidate), candidate);
-      return;
-    }
-    if (scoutingSchemaErrors(candidate, true).length === 0) valid.set(stableStringify(candidate), candidate);
-    else if (scoutingSchemaErrors(candidate, false).length === 0) partial.set(stableStringify(candidate), candidate);
+function collectRecoveryCandidates(text: string, phase: Phase): RecoveryCandidates {
+  const candidates: RecoveryCandidates = {
+    valid: new Map<string, Record<string, unknown>>(),
+    partial: new Map<string, Record<string, unknown>>(),
   };
 
-  for (const snippet of snippets) {
+  for (const snippet of collectBalancedJsonObjects(text)) {
     try {
       const parsed = JSON.parse(snippet) as unknown;
-      inspectCandidate(parsed);
+      inspectCandidate(parsed, phase, candidates);
       for (const innerText of collectStrings(parsed)) {
         for (const innerSnippet of collectBalancedJsonObjects(innerText)) {
           try {
-            inspectCandidate(JSON.parse(innerSnippet) as unknown);
+            inspectCandidate(JSON.parse(innerSnippet) as unknown, phase, candidates);
           } catch {
             // Ignore malformed embedded snippets.
           }
@@ -132,32 +132,60 @@ export function recoverArtifactFromEventStream(options: RecoveryOptions): boolea
     }
   }
 
-  if (options.phase === 'goal-setting') {
-    if (valid.size !== 1) return false;
-    fs.writeFileSync(options.candidatePath, JSON.stringify([...valid.values()][0], null, 2) + '\n');
-    return true;
-  }
+  return candidates;
+}
 
-  const resultsDir = options.resultsDir ?? process.cwd();
-  if (valid.size === 1) {
-    fs.writeFileSync(options.candidatePath, JSON.stringify([...valid.values()][0], null, 2) + '\n');
+function writeRecoveredArtifact(candidatePath: string, artifact: Record<string, unknown>): void {
+  fs.writeFileSync(candidatePath, JSON.stringify(artifact, null, 2) + '\n');
+}
+
+function recoverGoalSettingArtifact(candidatePath: string, candidates: RecoveryCandidates): boolean {
+  if (candidates.valid.size !== 1) return false;
+  writeRecoveredArtifact(candidatePath, [...candidates.valid.values()][0]);
+  return true;
+}
+
+function recoverScoutingArtifact(
+  candidatePath: string,
+  resultsDir: string,
+  candidates: RecoveryCandidates,
+): boolean {
+  if (candidates.valid.size === 1) {
+    writeRecoveredArtifact(candidatePath, [...candidates.valid.values()][0]);
     logScoutingRecoveryDiagnostic(resultsDir, 'Scouting artifact recovered from event stream (strict validation passed)', true);
     return true;
   }
-  if (partial.size === 1) {
-    fs.writeFileSync(options.candidatePath, JSON.stringify([...partial.values()][0], null, 2) + '\n');
+  if (candidates.partial.size === 1) {
+    writeRecoveredArtifact(candidatePath, [...candidates.partial.values()][0]);
     logScoutingRecoveryDiagnostic(resultsDir, 'Scouting artifact recovered from event stream (partial recovery - minimal fields only)', true);
     return true;
   }
-  const candidates = [...valid.values(), ...partial.values()];
-  if (candidates.length > 0) {
-    const recovered = candidates.sort((a, b) => Object.keys(b).length - Object.keys(a).length)[0];
-    fs.writeFileSync(options.candidatePath, JSON.stringify(recovered, null, 2) + '\n');
+  const allCandidates = [...candidates.valid.values(), ...candidates.partial.values()];
+  if (allCandidates.length > 0) {
+    const recovered = allCandidates.sort((a, b) => Object.keys(b).length - Object.keys(a).length)[0];
+    writeRecoveredArtifact(candidatePath, recovered);
     logScoutingRecoveryDiagnostic(resultsDir, `Scouting artifact recovered from event stream (multiple candidates, selected best: ${Object.keys(recovered).length} fields)`, true);
     return true;
   }
   logScoutingRecoveryDiagnostic(resultsDir, 'Scouting artifact recovery failed: no valid JSON objects found in event stream', false);
   return false;
+}
+
+export function recoverArtifactFromEventStream(options: RecoveryOptions): boolean {
+  let text = '';
+  try {
+    text = fs.readFileSync(options.rawPath, 'utf8');
+  } catch {
+    return false;
+  }
+
+  const candidates = collectRecoveryCandidates(text, options.phase);
+
+  if (options.phase === 'goal-setting') {
+    return recoverGoalSettingArtifact(options.candidatePath, candidates);
+  }
+
+  return recoverScoutingArtifact(options.candidatePath, options.resultsDir ?? process.cwd(), candidates);
 }
 
 function usage(): never {

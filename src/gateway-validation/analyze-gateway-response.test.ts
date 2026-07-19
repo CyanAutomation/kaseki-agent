@@ -259,6 +259,32 @@ describe('parseResponsesSse', () => {
     const result = parseResponsesSse(body);
     expect(result.outputTokens).toBe(5);
   });
+
+  it('extracts text from nested response output content parts', () => {
+    const body = [
+      'data: {"response":{"output":[{"content":[{"text":"hello "},{"output_text":"world"}]}]}}',
+      '',
+    ].join('\n');
+    const result = parseResponsesSse(body);
+    expect(result.text).toBe('hello world');
+  });
+
+  it('keeps the first response id and first output token count across events', () => {
+    const body = [
+      'data: {"response":{"id":"resp-first","usage":{"output_tokens":5}}}',
+      'data: {"item":{"id":"item-second"},"response":{"id":"resp-second","usage":{"output_tokens":9}}}',
+      '',
+    ].join('\n');
+    const result = parseResponsesSse(body);
+    expect(result.responseId).toBe('resp-first');
+    expect(result.outputTokens).toBe(5);
+  });
+
+  it('ignores non-data SSE lines and empty data payloads', () => {
+    const body = ': keepalive\nevent: response.output_text.delta\ndata:\ndata: {"delta":"ok"}\n';
+    const result = parseResponsesSse(body);
+    expect(result.text).toBe('ok');
+  });
 });
 
 // ─── extractSampleEventStructure ─────────────────────────────────────────────

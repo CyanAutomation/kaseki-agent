@@ -4,6 +4,16 @@ import { Job } from '../kaseki-api-types';
 import type { StatusResponse } from '../kaseki-api-types';
 import { KasekiApiConfig } from '../kaseki-api-config';
 
+type ProviderRetryMetadata = {
+  retryCount: number;
+  scoutingAttempts: number;
+  scoutingMaximum: number;
+  retryResult: string;
+  providerError: string;
+  providerPhase?: string;
+  provider?: string;
+};
+
 export class StatusLifecycleHelper {
   constructor(private config: KasekiApiConfig) {}
 
@@ -11,21 +21,15 @@ export class StatusLifecycleHelper {
     response.cancellable = job.status === 'queued' || job.status === 'running';
     response.lifecyclePhase = this.resolveLifecyclePhase(response, job);
 
-    const retryCount = Number(metadata?.provider_error_retry_attempt_count ?? 0);
-    const scoutingAttempts = Number(metadata?.scouting_attempts ?? 0);
-    const scoutingMaximum = this.resolveScoutingMaximum(metadata, scoutingAttempts);
-    const retryResult = String(metadata?.provider_error_retry_result ?? '');
-    const providerError = String(metadata?.provider_error_message ?? '');
-    const providerPhase = String(metadata?.provider_error_phase ?? '').trim() || undefined;
-    const provider = String(metadata?.provider_error_provider ?? '').trim() || undefined;
+    const retryMetadata = this.resolveProviderRetryMetadata(metadata);
 
-    this.addLiveRetryInfo(response, retryCount);
+    this.addLiveRetryInfo(response, retryMetadata.retryCount);
 
     const failedCommand = String(metadata?.failed_command ?? '').toLowerCase();
-    if (this.isScoutingArtifactFailure(job, failedCommand, scoutingAttempts)) {
-      this.addScoutingArtifactFailureInfo(response, job, scoutingAttempts, scoutingMaximum, provider, providerError);
-    } else if (retryCount > 0 || retryResult === 'failed' || providerError) {
-      this.addProviderRetryInfo(response, job, metadata, retryCount, retryResult, providerError, providerPhase, provider);
+    if (this.isScoutingArtifactFailure(job, failedCommand, retryMetadata.scoutingAttempts)) {
+      this.addScoutingArtifactFailureInfo(response, job, retryMetadata);
+    } else if (this.hasProviderRetryInfo(retryMetadata)) {
+      this.addProviderRetryInfo(response, job, metadata, retryMetadata);
     }
 
     this.addAttemptDisplayName(response);
@@ -47,6 +51,24 @@ export class StatusLifecycleHelper {
     return Number.isFinite(configuredScoutingMaximum) && configuredScoutingMaximum > 0
       ? Math.max(scoutingAttempts, configuredScoutingMaximum)
       : Math.max(1, scoutingAttempts);
+  }
+
+  private resolveProviderRetryMetadata(metadata: any): ProviderRetryMetadata {
+    const retryCount = Number(metadata?.provider_error_retry_attempt_count ?? 0);
+    const scoutingAttempts = Number(metadata?.scouting_attempts ?? 0);
+    return {
+      retryCount,
+      scoutingAttempts,
+      scoutingMaximum: this.resolveScoutingMaximum(metadata, scoutingAttempts),
+      retryResult: String(metadata?.provider_error_retry_result ?? ''),
+      providerError: String(metadata?.provider_error_message ?? ''),
+      providerPhase: String(metadata?.provider_error_phase ?? '').trim() || undefined,
+      provider: String(metadata?.provider_error_provider ?? '').trim() || undefined,
+    };
+  }
+
+  private hasProviderRetryInfo(metadata: ProviderRetryMetadata): boolean {
+    return metadata.retryCount > 0 || metadata.retryResult === 'failed' || metadata.providerError.length > 0;
   }
 
   private addLiveRetryInfo(response: StatusResponse, retryCount: number): void {
@@ -89,23 +111,23 @@ export class StatusLifecycleHelper {
   private addScoutingArtifactFailureInfo(
     response: StatusResponse,
     job: Job,
-    scoutingAttempts: number,
-    scoutingMaximum: number,
-    provider: string | undefined,
-    providerError: string,
+    metadata: ProviderRetryMetadata,
   ): void {
     const contractFailure = this.readPrimaryScoutingContractFailure(
       job.resultDir || path.join(this.config.resultsDir, job.id)
     );
-    const rootCause = contractFailure?.detail || providerError || 'Scouting did not produce a valid handoff artifact.';
+    const rootCause = contractFailure?.detail || metadata.providerError || 'Scouting did not produce a valid handoff artifact.';
     response.attempt = {
-      phase: 'scouting', current: scoutingAttempts, maximum: scoutingMaximum,
-      state: scoutingAttempts >= scoutingMaximum ? 'exhausted' : 'failed', provider, lastError: rootCause,
+      phase: 'scouting', current: metadata.scoutingAttempts, maximum: metadata.scoutingMaximum,
+      state: metadata.scoutingAttempts >= metadata.scoutingMaximum ? 'exhausted' : 'failed',
+      provider: metadata.provider,
+      lastError: rootCause,
     };
     response.diagnosis = {
       severity: 'error', phase: 'scouting', category: 'artifact_contract',
       summary: rootCause,
-      retryCount: Math.max(0, scoutingAttempts - 1), retryExhausted: scoutingAttempts >= scoutingMaximum,
+      retryCount: Math.max(0, metadata.scoutingAttempts - 1),
+      retryExhausted: metadata.scoutingAttempts >= metadata.scoutingMaximum,
       remediation: contractFailure?.suggestion || 'Inspect scouting-validation-errors.jsonl and scouting-attempt-*-events.jsonl; verify the agent can write the required candidate artifact.',
       artifact: 'scouting-validation-errors.jsonl',
     };
@@ -115,30 +137,26 @@ export class StatusLifecycleHelper {
     response: StatusResponse,
     job: Job,
     metadata: any,
-    retryCount: number,
-    retryResult: string,
-    providerError: string,
-    providerPhase: string | undefined,
-    provider: string | undefined,
+    retryMetadata: ProviderRetryMetadata,
   ): void {
-    const exhausted = retryResult === 'failed';
+    const exhausted = retryMetadata.retryResult === 'failed';
     const terminalRetryState = job.status === 'failed'
       ? 'exhausted'
-      : job.status === 'completed' && retryResult === 'success' ? 'succeeded' : undefined;
+      : job.status === 'completed' && retryMetadata.retryResult === 'success' ? 'succeeded' : undefined;
     response.attempt = {
-      phase: providerPhase,
-      current: Math.max(1, retryCount),
-      maximum: Math.max(2, retryCount),
-      state: terminalRetryState || (exhausted ? 'exhausted' : retryResult === 'success' ? 'succeeded' : 'retrying'),
-      provider,
-      lastError: providerError || undefined,
+      phase: retryMetadata.providerPhase,
+      current: Math.max(1, retryMetadata.retryCount),
+      maximum: Math.max(2, retryMetadata.retryCount),
+      state: terminalRetryState || (exhausted ? 'exhausted' : retryMetadata.retryResult === 'success' ? 'succeeded' : 'retrying'),
+      provider: retryMetadata.provider,
+      lastError: retryMetadata.providerError || undefined,
     };
     response.diagnosis = {
       severity: terminalRetryState === 'exhausted' || exhausted ? 'error' : 'warning',
-      phase: providerPhase,
+      phase: retryMetadata.providerPhase,
       category: String(metadata?.provider_error_type ?? 'provider_error'),
-      summary: providerError || (exhausted ? 'Provider retry budget exhausted.' : 'Provider request is being retried.'),
-      retryCount,
+      summary: retryMetadata.providerError || (exhausted ? 'Provider retry budget exhausted.' : 'Provider request is being retried.'),
+      retryCount: retryMetadata.retryCount,
       retryExhausted: terminalRetryState === 'exhausted' || exhausted,
       remediation: terminalRetryState === 'exhausted' || exhausted
         ? 'Inspect provider-attempts.jsonl, then retry with a healthy model or provider.'
