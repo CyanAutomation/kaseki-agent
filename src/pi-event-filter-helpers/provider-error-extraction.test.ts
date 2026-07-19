@@ -50,6 +50,18 @@ describe('extractErrorMessage', () => {
   it('should handle object without errorMessage', () => {
     expect(extractErrorMessage({ other: 'value' })).toBe('');
   });
+
+  it('should return empty string when errorMessage stringification throws', () => {
+    const message = {
+      errorMessage: {
+        toString() {
+          throw new Error('cannot stringify');
+        },
+      },
+    };
+
+    expect(extractErrorMessage(message)).toBe('');
+  });
 });
 
 describe('extractStopReason', () => {
@@ -100,6 +112,11 @@ describe('extractNestedError', () => {
     const nestedError = { nested: { code: 'DEEP' } };
     expect(extractNestedError({ error: nestedError })).toEqual(nestedError);
   });
+
+  it('should accept array error values because arrays are objects under the existing contract', () => {
+    const nestedError = [{ code: 'ARRAY_ERROR' }];
+    expect(extractNestedError({ error: nestedError })).toBe(nestedError);
+  });
 });
 
 describe('extractStatusCode', () => {
@@ -129,6 +146,10 @@ describe('extractStatusCode', () => {
 
   it('should prioritize message over nested error', () => {
     expect(extractStatusCode({ statusCode: 400 }, { statusCode: 500 })).toBe(400);
+  });
+
+  it('should not fall back when the first present status candidate has an invalid type', () => {
+    expect(extractStatusCode({ statusCode: false, status_code: 429 }, { statusCode: 500 })).toBeUndefined();
   });
 
   it('should return undefined for missing status code', () => {
@@ -174,6 +195,10 @@ describe('extractErrorCode', () => {
     expect(extractErrorCode({ errorCode: 429 }, {})).toBeUndefined();
   });
 
+  it('should not fall back when the first present error code candidate is not a string', () => {
+    expect(extractErrorCode({ errorCode: 429, error_code: 'MESSAGE_FALLBACK' }, { code: 'NESTED' })).toBeUndefined();
+  });
+
   it('should return undefined for missing field', () => {
     expect(extractErrorCode({}, {})).toBeUndefined();
   });
@@ -200,6 +225,10 @@ describe('extractResponseId', () => {
 
   it('should not coerce non-string response id', () => {
     expect(extractResponseId({ responseId: 123 }, {} as PiEvent)).toBeUndefined();
+  });
+
+  it('should not fall back to event responseId when message responseId is present with the wrong type', () => {
+    expect(extractResponseId({ responseId: 123 }, { responseId: 'event-resp' } as any)).toBeUndefined();
   });
 
   it('should return undefined for missing field', () => {
@@ -232,6 +261,12 @@ describe('extractCloudflareLogId', () => {
 
   it('should not coerce non-string cloudflare log id', () => {
     expect(extractCloudflareLogId({ cloudflareLogId: 123 }, {})).toBeUndefined();
+  });
+
+  it('should not fall back when the first present Cloudflare log id is not a string', () => {
+    expect(
+      extractCloudflareLogId({ cloudflareLogId: 123, cloudflare_log_id: 'msg-cf' }, { cloudflareLogId: 'err-cf' })
+    ).toBeUndefined();
   });
 
   it('should return undefined for missing field', () => {
@@ -267,6 +302,12 @@ describe('extractGatewayEventId', () => {
 
   it('should not coerce non-string gateway event id', () => {
     expect(extractGatewayEventId({ gatewayEventId: 12345 }, {})).toBeUndefined();
+  });
+
+  it('should not fall back when the first present gateway event id is not a string', () => {
+    expect(
+      extractGatewayEventId({ gatewayEventId: 12345, gateway_event_id: 'msg-gw' }, { eventId: 'err-event' })
+    ).toBeUndefined();
   });
 
   it('should return undefined for missing field', () => {
@@ -312,6 +353,10 @@ describe('extractUpstreamError', () => {
     expect(extractUpstreamError({}, { message: 12345 })).toBeUndefined();
   });
 
+  it('should not fall back when the first present upstream error candidate is not a string', () => {
+    expect(extractUpstreamError({ errorDetail: 'message-detail' }, { message: 12345, detail: 'nested-detail' })).toBeUndefined();
+  });
+
   it('should return undefined for missing field', () => {
     expect(extractUpstreamError({}, {})).toBeUndefined();
   });
@@ -350,6 +395,10 @@ describe('extractRetryAfter', () => {
     expect(extractRetryAfter({ retryAfter: [] }, {})).toBeUndefined();
   });
 
+  it('should not fall back when the first present retryAfter candidate is not string or number', () => {
+    expect(extractRetryAfter({ retryAfter: [], retry_after: '60' }, { retryAfter: '120' })).toBeUndefined();
+  });
+
   it('should return undefined for missing field', () => {
     expect(extractRetryAfter({}, {})).toBeUndefined();
   });
@@ -382,6 +431,10 @@ describe('extractRoutedProvider', () => {
     expect(extractRoutedProvider({ routedProvider: 123 }, {})).toBeUndefined();
   });
 
+  it('should not fall back when the first present routed provider candidate is not a string', () => {
+    expect(extractRoutedProvider({ routedProvider: 123, routed_provider: 'message-provider' }, { provider: 'nested' })).toBeUndefined();
+  });
+
   it('should return undefined for missing field', () => {
     expect(extractRoutedProvider({}, {})).toBeUndefined();
   });
@@ -412,6 +465,10 @@ describe('extractRoutedModel', () => {
 
   it('should not coerce non-string routed model', () => {
     expect(extractRoutedModel({ routedModel: 123 }, {})).toBeUndefined();
+  });
+
+  it('should not fall back when the first present routed model candidate is not a string', () => {
+    expect(extractRoutedModel({ routedModel: 123, routed_model: 'message-model' }, { model: 'nested' })).toBeUndefined();
   });
 
   it('should return undefined for missing field', () => {
