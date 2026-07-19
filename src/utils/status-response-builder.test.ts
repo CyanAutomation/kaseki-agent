@@ -116,8 +116,7 @@ describe('StatusResponseBuilder', () => {
 
       expect(response.phaseOutcome).toMatchObject({
         scouting: 'completed',
-        weaving: 'completed',
-        weavingStartedAt: '2026-01-01T00:00:01Z',
+        weaving: 'not_reached',
         scoutingStartedAt: '2026-01-01T00:00:02Z',
         scoutingCompletedAt: '2026-01-01T00:01:00Z',
       });
