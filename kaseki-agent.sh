@@ -6450,7 +6450,11 @@ try {
   const entries = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
   const contractFailure = entries.some((entry) => [
     'missing_file', 'malformed_json', 'schema_mismatch', 'schema_validation_failed',
-    'invalid_candidate', 'readonly_filesystem',
+    'schema_type_mismatch', 'invalid_candidate', 'readonly_filesystem',
+    // A normalized candidate that still exits 86 must be retried or use the
+    // patch fallback.  The original validator detail is ephemeral, while this
+    // durable record is the only evidence available to the retry loop.
+    'schema_normalized',
   ].includes(String(entry.reason_code || '')) || String(entry.field || '').includes('scouting-candidate.json'));
   process.exit(contractFailure ? 0 : 1);
 } catch {
