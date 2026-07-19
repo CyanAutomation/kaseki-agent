@@ -479,8 +479,17 @@ export class JobScheduler {
    * Scouting is always enabled by default.
    */
   private setupScoutingAndGoalCheckEnv(job: Job, env: NodeJS.ProcessEnv): void {
-    // Scouting is always enabled for patch mode runs
-    env.KASEKI_SCOUTING = '1';
+    // Scouting is enabled by default for patch mode runs, but controllers may
+    // opt out or select a dedicated model/timeout for constrained tasks.
+    env.KASEKI_SCOUTING = job.request.scouting?.enabled === false ? '0' : '1';
+    if (job.request.scouting?.model) {
+      env.KASEKI_SCOUTING_MODEL = job.request.scouting.model;
+    }
+    if (job.request.scouting?.timeoutSeconds) {
+      env.KASEKI_SCOUTING_TIMEOUT_SECONDS = String(
+        job.request.scouting.timeoutSeconds,
+      );
+    }
     // Goal-setting is enabled by default unless explicitly disabled
     if (job.request.goalSetting?.enabled !== undefined) {
       env.KASEKI_GOAL_SETTING = job.request.goalSetting.enabled ? '1' : '0';

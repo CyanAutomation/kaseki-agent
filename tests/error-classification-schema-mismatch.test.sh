@@ -97,6 +97,34 @@ EOF
   return 0
 }
 
+test_normalization_record_is_not_a_validation_failure() {
+  local results_dir
+  results_dir=$(mktemp -d)
+
+  source "${SCRIPT_DIR}/../scripts/lib/provider-retry.sh"
+  export KASEKI_RESULTS_DIR="$results_dir"
+  export KASEKI_PROVIDER="gateway"
+  export KASEKI_SCOUTING_MODEL="dynamic/kaseki-agent"
+
+  cat > "$results_dir/scouting-validation-errors.jsonl" <<'EOF'
+{"reason_code":"schema_normalized","field":"relevant_files","severity":"info","details":"Normalized string entries"}
+EOF
+
+  clear_provider_error
+  if capture_validation_error_classification "scouting"; then
+    echo "❌ FAILED: informational normalization was classified as a failure"
+    rm -rf "$results_dir"
+    return 1
+  fi
+  if [ -n "${PROVIDER_ERROR_TYPE:-}" ] || [ -n "${PROVIDER_ERROR_MESSAGE:-}" ]; then
+    echo "❌ FAILED: informational normalization mutated provider error state"
+    rm -rf "$results_dir"
+    return 1
+  fi
+  echo "✅ PASS: informational normalization is not classified as a validation failure"
+  rm -rf "$results_dir"
+}
+
 test_health_check_not_auth_error() {
   local test_name="$1"
   local results_dir
@@ -138,7 +166,7 @@ echo ""
 test_count=0
 pass_count=0
 
-for test_func in test_error_classification_schema_mismatch test_error_classification_prefers_validation_errors test_health_check_not_auth_error; do
+for test_func in test_error_classification_schema_mismatch test_error_classification_prefers_validation_errors test_normalization_record_is_not_a_validation_failure test_health_check_not_auth_error; do
   test_count=$((test_count + 1))
   echo "Running: $test_func"
   if "$test_func" "$test_func"; then
