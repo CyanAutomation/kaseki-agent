@@ -121,6 +121,14 @@ const RunRequestShape = z.object({
     })
     .optional()
     .describe('Pre-scouting goal-setting agent controls'),
+  scouting: z
+    .object({
+      enabled: z.boolean().optional().describe('Enable the pre-coding Pi scouting phase (default: enabled for patch runs)'),
+      model: z.string().min(1).optional().describe('Optional Pi model override for scouting'),
+      timeoutSeconds: z.number().int().min(60).max(10800).optional().describe('Optional scouting timeout in seconds'),
+    })
+    .optional()
+    .describe('Pre-coding Pi scouting controls'),
   goalCheck: z
     .object({
       enabled: z.boolean().optional().describe('Enable the post-validation goal-check Pi evaluator'),

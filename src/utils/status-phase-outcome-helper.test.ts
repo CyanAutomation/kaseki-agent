@@ -87,7 +87,7 @@ describe('StatusPhaseOutcomeHelper', () => {
 
     expect(response.phaseOutcome).toMatchObject({
       scouting: 'completed',
-      weaving: 'completed',
+      weaving: 'running',
       scoutingStartedAt: '2026-01-01T00:00:00Z',
       scoutingCompletedAt: '2026-01-01T00:01:00Z',
       weavingStartedAt: '2026-01-01T00:02:00Z',
@@ -105,6 +105,18 @@ describe('StatusPhaseOutcomeHelper', () => {
       weaving: 'not_reached',
       explanation: expect.stringContaining('pi scouting agent'),
     });
+  });
+
+  it('does not mark weaving complete when scouting fails after goal-setting', () => {
+    const helper = new StatusPhaseOutcomeHelper(
+      makeScheduler([{ stage: 'pi goal-setting agent', status: 'started', timestamp: '2026-01-01T00:00:00Z' }]),
+      makeConfig(resultsDir),
+    );
+    const response = makeResponse('pi scouting agent');
+
+    helper.addPhaseOutcome(response, makeJob({ status: 'failed' }), { failed_command: 'pi scouting agent' });
+
+    expect(response.phaseOutcome).toMatchObject({ scouting: 'failed', weaving: 'not_reached' });
   });
 
   it('marks failed weaving after weaving has started', () => {
