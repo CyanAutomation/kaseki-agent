@@ -187,9 +187,20 @@ capture_validation_error_classification() {
   
   [ -s "$validation_error_file" ] || return 1
   
-  # Extract the first validation error's reason_code
+  # Informational normalization records share this file with rejected
+  # validations. Treating the first entry as fatal can turn a successfully
+  # recovered scouting handoff into an exit-86 provider error.
   local reason_code
-  reason_code="$(head -1 "$validation_error_file" 2>/dev/null | node -e 'try { const e = JSON.parse(require("fs").readFileSync(0, "utf8")); process.stdout.write(String(e.reason_code || "")); } catch { process.exit(0); }' 2>/dev/null || true)"
+  reason_code="$(node - "$validation_error_file" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const entries = fs.readFileSync(process.argv[2], 'utf8').split(/\r?\n/)
+  .filter(Boolean)
+  .map((line) => { try { return JSON.parse(line); } catch { return null; } })
+  .filter(Boolean);
+const failure = entries.find((entry) => entry.severity !== 'info');
+if (failure?.reason_code) process.stdout.write(String(failure.reason_code));
+NODE
+)"
   
   if [ -z "$reason_code" ]; then
     return 1
@@ -206,7 +217,10 @@ const errors = lines.map(l => {
 
 if (errors.length === 0) process.exit(0);
 
-const summary = errors.map(e => {
+const failureEntries = errors.filter((entry) => entry.severity !== 'info');
+if (failureEntries.length === 0) process.exit(0);
+
+const summary = failureEntries.map(e => {
   const field = e.field || 'unknown';
   const reason = e.reason_code || 'validation_error';
   return `${reason}: ${field}`;
