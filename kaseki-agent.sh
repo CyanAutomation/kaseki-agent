@@ -39,10 +39,12 @@ if [ "${KASEKI_AGENT_HELPER_RESOLUTION_CHECK:-0}" = "1" ]; then
 
   # Source the helper
   # shellcheck source=/dev/null
-  . "$ALLOWLIST_HELPER" || {
-    printf 'ERROR: Failed to source %s (exit code: %d)\n' "$ALLOWLIST_HELPER" $? >&2
+  . "$ALLOWLIST_HELPER"
+  source_status=$?
+  if [ "$source_status" -ne 0 ]; then
+    printf 'ERROR: Failed to source %s (exit code: %d)\n' "$ALLOWLIST_HELPER" "$source_status" >&2
     exit 1
-  }
+  fi
 
   # Verify the helper was sourced successfully
   if ! declare -f build_allowlist_regex >/dev/null 2>&1; then
@@ -51,10 +53,12 @@ if [ "${KASEKI_AGENT_HELPER_RESOLUTION_CHECK:-0}" = "1" ]; then
   fi
 
   # Call the function to verify it works
-  build_allowlist_regex "${KASEKI_CHANGED_FILES_ALLOWLIST:-}" >/dev/null 2>&1 || {
-    printf 'ERROR: build_allowlist_regex exited with status %d\n' $? >&2
+  build_allowlist_regex "${KASEKI_CHANGED_FILES_ALLOWLIST:-}" >/dev/null 2>&1
+  build_allowlist_status=$?
+  if [ "$build_allowlist_status" -ne 0 ]; then
+    printf 'ERROR: build_allowlist_regex exited with status %d\n' "$build_allowlist_status" >&2
     exit 1
-  }
+  fi
 
   # Output and exit
   printf 'allowlist_helper=%s\n' "$ALLOWLIST_HELPER"
@@ -72,10 +76,12 @@ if [ ! -r "$KASEKI_JSON_HELPER" ]; then
   exit 66
 fi
 # shellcheck source=/dev/null
-. "$KASEKI_JSON_HELPER" || {
-  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_JSON_HELPER" $? >&2
+. "$KASEKI_JSON_HELPER"
+source_status=$?
+if [ "$source_status" -ne 0 ]; then
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_JSON_HELPER" "$source_status" >&2
   exit 1
-}
+fi
 
 KASEKI_JSON_EVENTS_HELPER="${KASEKI_JSON_EVENTS_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/lib/json-events.sh}"
 if [ ! -r "$KASEKI_JSON_EVENTS_HELPER" ] && [ -r /app/scripts/lib/json-events.sh ]; then
@@ -86,10 +92,12 @@ if [ ! -r "$KASEKI_JSON_EVENTS_HELPER" ]; then
   exit 66
 fi
 # shellcheck source=/dev/null
-. "$KASEKI_JSON_EVENTS_HELPER" || {
-  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_JSON_EVENTS_HELPER" $? >&2
+. "$KASEKI_JSON_EVENTS_HELPER"
+source_status=$?
+if [ "$source_status" -ne 0 ]; then
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_JSON_EVENTS_HELPER" "$source_status" >&2
   exit 1
-}
+fi
 
 KASEKI_DEPENDENCY_CACHE_HELPER="${KASEKI_DEPENDENCY_CACHE_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/dependency-cache-helpers.sh}"
 if [ ! -r "$KASEKI_DEPENDENCY_CACHE_HELPER" ] && [ -r /app/scripts/dependency-cache-helpers.sh ]; then
@@ -100,10 +108,12 @@ if [ ! -r "$KASEKI_DEPENDENCY_CACHE_HELPER" ]; then
   exit 66
 fi
 # shellcheck source=/dev/null
-. "$KASEKI_DEPENDENCY_CACHE_HELPER" || {
-  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_DEPENDENCY_CACHE_HELPER" $? >&2
+. "$KASEKI_DEPENDENCY_CACHE_HELPER"
+source_status=$?
+if [ "$source_status" -ne 0 ]; then
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_DEPENDENCY_CACHE_HELPER" "$source_status" >&2
   exit 1
-}
+fi
 
 KASEKI_NPM_INSTALL_HELPER="${KASEKI_NPM_INSTALL_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/npm-install-helpers.sh}"
 if [ ! -r "$KASEKI_NPM_INSTALL_HELPER" ] && [ -r /app/scripts/npm-install-helpers.sh ]; then
@@ -114,10 +124,12 @@ if [ ! -r "$KASEKI_NPM_INSTALL_HELPER" ]; then
   exit 66
 fi
 # shellcheck source=/dev/null
-. "$KASEKI_NPM_INSTALL_HELPER" || {
-  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_NPM_INSTALL_HELPER" $? >&2
+. "$KASEKI_NPM_INSTALL_HELPER"
+source_status=$?
+if [ "$source_status" -ne 0 ]; then
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_NPM_INSTALL_HELPER" "$source_status" >&2
   exit 1
-}
+fi
 
 KASEKI_AGENT_PROMPT_HELPER="${KASEKI_AGENT_PROMPT_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/agent-prompt.sh}"
 if [ ! -r "$KASEKI_AGENT_PROMPT_HELPER" ] && [ -r /app/scripts/agent-prompt.sh ]; then
@@ -135,9 +147,11 @@ if [ ! -r "$KASEKI_SENTRY_SHELL_CLIENT" ] && [ -r /app/scripts/sentry-shell-clie
 fi
 if [ -r "$KASEKI_SENTRY_SHELL_CLIENT" ]; then
   # shellcheck source=/dev/null
-  . "$KASEKI_SENTRY_SHELL_CLIENT" || {
-    printf 'Warning: Failed to source Sentry shell client %s (exit code: %d); continuing without Sentry integration\n' "$KASEKI_SENTRY_SHELL_CLIENT" $? >&2
-  }
+  . "$KASEKI_SENTRY_SHELL_CLIENT"
+  source_status=$?
+  if [ "$source_status" -ne 0 ]; then
+    printf 'Warning: Failed to source Sentry shell client %s (exit code: %d); continuing without Sentry integration\n' "$KASEKI_SENTRY_SHELL_CLIENT" "$source_status" >&2
+  fi
 else
   # Sentry integration is optional; warn but continue
   printf 'Warning: Sentry shell client not found at %s; Sentry error reporting will be unavailable\n' "$KASEKI_SENTRY_SHELL_CLIENT" >&2
@@ -155,10 +169,12 @@ if [ ! -r "$KASEKI_MODEL_RESOLUTION_HELPER" ]; then
   exit 66
 fi
 # shellcheck source=/dev/null
-. "$KASEKI_MODEL_RESOLUTION_HELPER" || {
-  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_MODEL_RESOLUTION_HELPER" $? >&2
+. "$KASEKI_MODEL_RESOLUTION_HELPER"
+source_status=$?
+if [ "$source_status" -ne 0 ]; then
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_MODEL_RESOLUTION_HELPER" "$source_status" >&2
   exit 1
-}
+fi
 kaseki_resolve_provider_model
 KASEKI_DRY_RUN="${KASEKI_DRY_RUN:-0}"
 KASEKI_STARTUP_CHECK_MODE="${KASEKI_STARTUP_CHECK_MODE:-boot}"
@@ -219,10 +235,12 @@ if [ ! -r "$KASEKI_INSPECT_MODE_DEFAULTS_HELPER" ]; then
   exit 66
 fi
 # shellcheck source=/dev/null
-. "$KASEKI_INSPECT_MODE_DEFAULTS_HELPER" || {
-  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_INSPECT_MODE_DEFAULTS_HELPER" $? >&2
+. "$KASEKI_INSPECT_MODE_DEFAULTS_HELPER"
+source_status=$?
+if [ "$source_status" -ne 0 ]; then
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_INSPECT_MODE_DEFAULTS_HELPER" "$source_status" >&2
   exit 1
-}
+fi
 KASEKI_SCOUTING="${KASEKI_SCOUTING:-1}"
 KASEKI_SCOUTING_MODEL="${KASEKI_SCOUTING_MODEL:-$KASEKI_MODEL}"
 KASEKI_SCOUTING_TIMEOUT_SECONDS="${KASEKI_SCOUTING_TIMEOUT_SECONDS:-$KASEKI_AGENT_TIMEOUT_SECONDS}"
@@ -2580,10 +2598,12 @@ if [ ! -r "$SCOUTING_ALLOWLIST_HELPER" ]; then
   exit 87
 fi
 # shellcheck source=scripts/allowlist-helper.sh
-. "$ALLOWLIST_HELPER" || {
-  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$ALLOWLIST_HELPER" $? >&2
+. "$ALLOWLIST_HELPER"
+source_status=$?
+if [ "$source_status" -ne 0 ]; then
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$ALLOWLIST_HELPER" "$source_status" >&2
   exit 1
-}
+fi
 
 # Verify the helper was sourced successfully by checking for the required function
 if ! declare -f build_allowlist_regex >/dev/null 2>&1; then
@@ -2592,10 +2612,12 @@ if ! declare -f build_allowlist_regex >/dev/null 2>&1; then
 fi
 
 if [ "${KASEKI_AGENT_HELPER_RESOLUTION_CHECK:-0}" = "1" ]; then
-  build_allowlist_regex "${KASEKI_CHANGED_FILES_ALLOWLIST:-}" >/dev/null 2>&1 || {
-    printf 'ERROR: build_allowlist_regex exited with status %d\n' $? >&2
+  build_allowlist_regex "${KASEKI_CHANGED_FILES_ALLOWLIST:-}" >/dev/null 2>&1
+  build_allowlist_status=$?
+  if [ "$build_allowlist_status" -ne 0 ]; then
+    printf 'ERROR: build_allowlist_regex exited with status %d\n' "$build_allowlist_status" >&2
     exit 1
-  }
+  fi
   printf 'allowlist_helper=%s\n' "$ALLOWLIST_HELPER"
   exit 0
 fi
@@ -2735,10 +2757,12 @@ if [ ! -r "$KASEKI_RESTORE_DISALLOWED_CHANGES_HELPER" ]; then
   exit 66
 fi
 # shellcheck source=scripts/restore-disallowed-changes.sh
-. "$KASEKI_RESTORE_DISALLOWED_CHANGES_HELPER" || {
-  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_RESTORE_DISALLOWED_CHANGES_HELPER" $? >&2
+. "$KASEKI_RESTORE_DISALLOWED_CHANGES_HELPER"
+source_status=$?
+if [ "$source_status" -ne 0 ]; then
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_RESTORE_DISALLOWED_CHANGES_HELPER" "$source_status" >&2
   exit 1
-}
+fi
 
 check_validation_allowlist() {
   if [ -z "$KASEKI_VALIDATION_ALLOWLIST" ]; then
@@ -4772,10 +4796,12 @@ NODE
 }
 
 # shellcheck source=/dev/null
-. "$KASEKI_AGENT_PROMPT_HELPER" || {
-  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_AGENT_PROMPT_HELPER" $? >&2
+. "$KASEKI_AGENT_PROMPT_HELPER"
+source_status=$?
+if [ "$source_status" -ne 0 ]; then
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_AGENT_PROMPT_HELPER" "$source_status" >&2
   exit 1
-}
+fi
 is_transient_goal_setting_failure() {
   local exit_code="$1"
   local stderr_content="$2"
@@ -7340,10 +7366,12 @@ if [ ! -r "$KASEKI_GITHUB_PREFLIGHT_AUTH_HELPER" ]; then
   exit 66
 fi
 # shellcheck source=/dev/null
-. "$KASEKI_GITHUB_PREFLIGHT_AUTH_HELPER" || {
-  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_GITHUB_PREFLIGHT_AUTH_HELPER" $? >&2
+. "$KASEKI_GITHUB_PREFLIGHT_AUTH_HELPER"
+source_status=$?
+if [ "$source_status" -ne 0 ]; then
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_GITHUB_PREFLIGHT_AUTH_HELPER" "$source_status" >&2
   exit 1
-}
+fi
 
 validate_github_api_response() {
   local http_status response log_file error_type error_message json_valid

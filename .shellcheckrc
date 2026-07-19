@@ -6,6 +6,3 @@ external-sources=true
 
 # Specify the shell dialect (bash)
 shell=bash
-
-# Exclude patterns
-exclude=SC2181
