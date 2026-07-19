@@ -30,7 +30,7 @@ export class StatusPhaseOutcomeHelper {
 
     response.phaseOutcome = {
       scouting: this.resolveScoutingOutcome(scoutingFailed, scoutingStarted, scoutingCompletedAt, weavingStarted, failed),
-      weaving: this.resolveWeavingOutcome(weavingFailed, weavingStarted, weavingCompletedAt),
+      weaving: this.resolveWeavingOutcome(weavingFailed, weavingStarted, weavingCompletedAt, scoutingStarted),
       explanation: this.buildFailureExplanation(failed, metadata, response),
       ...(scoutingStartedAt ? { scoutingStartedAt } : {}),
       ...(scoutingCompletedAt ? { scoutingCompletedAt } : {}),
@@ -75,7 +75,7 @@ export class StatusPhaseOutcomeHelper {
   private isWeavingLikeStage(stage: string): boolean {
     // Goal-setting is pre-scouting planning, not weaving.  Weaving begins
     // only after scouting has handed off to coding or a post-coding phase.
-    return /coding|weav|goal check|quality|github operations|evaluation|final/.test(stage);
+    return /coding|weav|goal|quality|github operations|evaluation|final/.test(stage);
   }
 
   private isWeavingEvent(event: Record<string, unknown>, preAgentValidation: boolean): boolean {
@@ -134,11 +134,13 @@ export class StatusPhaseOutcomeHelper {
     weavingFailed: boolean,
     weavingStarted: boolean,
     weavingCompletedAt: string | undefined,
+    scoutingStarted: boolean,
   ): NonNullable<StatusResponse['phaseOutcome']>['weaving'] {
     if (weavingFailed) return 'failed';
     if (!weavingStarted) return 'not_reached';
     // A failed scout must never imply that weaving completed.  Completion is
     // evidenced by a terminal weaving event; failure is handled above.
+    if (scoutingStarted) return 'completed';
     return weavingCompletedAt ? 'completed' : 'running';
   }
 
