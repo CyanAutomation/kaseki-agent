@@ -18,30 +18,48 @@ function firstPresentString(candidates: unknown[]): string | undefined {
 }
 
 /**
+ * Consolidate field extraction with optional transformation.
+ * Searches multiple objects for candidate values and applies transformer if provided.
+ * @param candidates - Array of candidate values
+ * @param transformer - Optional function to transform the first present candidate
+ * @returns Transformed candidate or undefined
+ */
+function firstPresentThen<T>(
+  candidates: unknown[],
+  transformer: (value: unknown) => T | undefined,
+): T | undefined {
+  const candidate = firstPresent(candidates);
+  return candidate !== undefined && candidate !== null ? transformer(candidate) : undefined;
+}
+
+/**
  * Extract and normalize the error message from a Pi event message object.
  * Handles multiple fallback paths and type coercion.
  */
 export function extractErrorMessage(message: any): string {
-  if (typeof message?.errorMessage === 'string') {
-    return message.errorMessage.trim();
-  }
-
-  if (message?.errorMessage !== undefined && message?.errorMessage !== null) {
-    try {
-      return String(message.errorMessage).trim();
-    } catch {
-      return '';
-    }
-  }
-
-  return '';
+  return (
+    firstPresentThen(
+      [message?.errorMessage],
+      (val) => {
+        if (typeof val === 'string') return val.trim();
+        try {
+          return String(val).trim();
+        } catch {
+          return undefined;
+        }
+      },
+    ) ?? ''
+  );
 }
 
 /**
  * Extract and normalize the stop reason from a message object.
  */
 export function extractStopReason(message: any): string {
-  return typeof message?.stopReason === 'string' ? message.stopReason.trim() : '';
+  return firstPresentThen(
+    [message?.stopReason],
+    (val) => (typeof val === 'string' ? val.trim() : undefined),
+  ) ?? '';
 }
 
 /**
@@ -128,14 +146,17 @@ export function extractGatewayEventId(message: any, nestedError: any): string | 
  * Extract upstream error detail from nested error with length limit.
  */
 export function extractUpstreamError(message: any, nestedError: any): string | undefined {
-  return firstPresentString([
-    nestedError?.message,
-    nestedError?.detail,
-    nestedError?.errorDetail,
-    nestedError?.error_detail,
-    message?.errorDetail,
-    message?.error_detail,
-  ])?.slice(0, 1000);
+  return firstPresentThen(
+    [
+      nestedError?.message,
+      nestedError?.detail,
+      nestedError?.errorDetail,
+      nestedError?.error_detail,
+      message?.errorDetail,
+      message?.error_detail,
+    ],
+    (val) => (typeof val === 'string' ? val.slice(0, 1000) : undefined),
+  );
 }
 
 /**
