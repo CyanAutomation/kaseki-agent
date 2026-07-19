@@ -129,4 +129,94 @@ describe('StatusLifecycleHelper', () => {
     });
     expect(response.diagnosis).toMatchObject({ category: 'stale_progress' });
   });
+
+  it('should not add stale progress heartbeat warning if another diagnosis already exists', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-01-01T00:03:00Z'));
+    const response = makeResponse({
+      progress: { stage: 'pi coding agent', updatedAt: '2026-01-01T00:00:00Z' } as any,
+      diagnosis: { category: 'test', summary: 'test' },
+    });
+
+    new StatusLifecycleHelper(makeConfig(resultsDir)).addLifecycleInfo(response, makeJob(), {});
+
+    expect(response.progressHeartbeat).toMatchObject({ stale: true });
+    expect(response.diagnosis).toMatchObject({ category: 'test' });
+  });
+
+  it('should handle missing progress update timestamp gracefully', () => {
+    const response = makeResponse({
+      progress: { stage: 'pi coding agent', updatedAt: undefined } as any,
+    });
+
+    new StatusLifecycleHelper(makeConfig(resultsDir)).addLifecycleInfo(response, makeJob(), {});
+
+    expect(response.progressHeartbeat).toBeUndefined();
+    expect(response.diagnosis).toBeUndefined();
+  });
+
+  it('should resolve scouting maximum correctly', () => {
+    const helper = new StatusLifecycleHelper(makeConfig(resultsDir));
+    const metadata = { scouting_max_attempts: 5 };
+    const scoutingAttempts = 3;
+    // @ts-expect-error - private method
+    const max = helper.resolveScoutingMaximum(metadata, scoutingAttempts);
+    expect(max).toBe(5);
+  });
+
+  it('should handle invalid scouting maximum from metadata', () => {
+    const helper = new StatusLifecycleHelper(makeConfig(resultsDir));
+    const metadata = { scouting_max_attempts: 'invalid' };
+    const scoutingAttempts = 3;
+    // @ts-expect-error - private method
+    const max = helper.resolveScoutingMaximum(metadata, scoutingAttempts);
+    expect(max).toBe(3);
+  });
+
+  it('should identify scouting artifact failure', () => {
+    const helper = new StatusLifecycleHelper(makeConfig(resultsDir));
+    const job = makeJob({ status: 'failed' });
+    // @ts-expect-error - private method
+    const isFailure = helper.isScoutingArtifactFailure(job, 'scouting', 1);
+    expect(isFailure).toBe(true);
+  });
+
+  it('should not identify non-scouting failures', () => {
+    const helper = new StatusLifecycleHelper(makeConfig(resultsDir));
+    const job = makeJob({ status: 'failed' });
+    // @ts-expect-error - private method
+    const isFailure = helper.isScoutingArtifactFailure(job, 'npm test', 0);
+    expect(isFailure).toBe(false);
+  });
+
+  it('should read primary scouting contract failure', () => {
+    const job = makeJob({ resultDir: path.join(resultsDir, 'job-scout-read') });
+    fs.mkdirSync(job.resultDir!, { recursive: true });
+    fs.writeFileSync(path.join(job.resultDir!, 'scouting-validation-errors.jsonl'), JSON.stringify({
+      severity: 'critical',
+      field: 'test-field',
+      actual: 'test-actual',
+    }));
+    const helper = new StatusLifecycleHelper(makeConfig(resultsDir));
+    // @ts-expect-error - private method
+    const failure = helper.readPrimaryScoutingContractFailure(job.resultDir!);
+    expect(failure).toEqual({ detail: 'test-field: test-actual', suggestion: undefined });
+  });
+
+  it('should return undefined when scouting validation file is missing', () => {
+    const helper = new StatusLifecycleHelper(makeConfig(resultsDir));
+    // @ts-expect-error - private method
+    const failure = helper.readPrimaryScoutingContractFailure('non-existent-dir');
+    expect(failure).toBeUndefined();
+  });
+
+  it('should handle malformed scouting validation file', () => {
+    const job = makeJob({ resultDir: path.join(resultsDir, 'job-scout-malformed') });
+    fs.mkdirSync(job.resultDir!, { recursive: true });
+    fs.writeFileSync(path.join(job.resultDir!, 'scouting-validation-errors.jsonl'), 'not a json');
+    const helper = new StatusLifecycleHelper(makeConfig(resultsDir));
+    // @ts-expect-error - private method
+    const failure = helper.readPrimaryScoutingContractFailure(job.resultDir!);
+    expect(failure).toBeUndefined();
+  });
 });
