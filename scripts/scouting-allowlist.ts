@@ -95,7 +95,11 @@ function validateArrayField(artifact: Record<string, unknown>, errors: Validatio
  * Validates relevant_files array entries
  */
 function validateRelevantFilesArray(relevantFiles: unknown, errors: ValidationError[]): void {
-  if (!Array.isArray(relevantFiles)) return;
+    const current = await control.get();
+    if (!current) {
+      throw new Error('Failed to retrieve current allowlist');
+    }
+    const existingEntries = new Map(current.entries.map((e) => [e.identity, e]));
   relevantFiles.forEach((item: unknown, index: number) => {
     const entry = item as Record<string, unknown>;
     if (!item || !isRepoRelativeFilePath(entry.path) || typeof entry.reason !== 'string' || !entry.reason.trim()) {
