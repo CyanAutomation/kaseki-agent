@@ -128,6 +128,18 @@ describe('StatusPhaseOutcomeHelper', () => {
 
     helper.addPhaseOutcome(response, makeJob({ status: 'failed' }), { failed_command: 'pi coding agent' });
 
-    expect(response.phaseOutcome).toMatchObject({ scouting: 'not_reached', weaving: 'failed' });
+    expect(response.phaseOutcome).toMatchObject({ scouting: 'skipped', weaving: 'failed' });
+  });
+
+  it('reports scouting as skipped rather than not reached once weaving begins without scout evidence', () => {
+    const helper = new StatusPhaseOutcomeHelper(
+      makeScheduler([{ stage: 'pi coding agent', status: 'started' }]),
+      makeConfig(resultsDir),
+    );
+    const response = makeResponse('pi coding agent');
+
+    helper.addPhaseOutcome(response, makeJob(), {});
+
+    expect(response.phaseOutcome).toMatchObject({ scouting: 'skipped', weaving: 'running' });
   });
 });

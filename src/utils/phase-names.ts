@@ -7,7 +7,10 @@
  */
 
 export const PHASE_DISPLAY_NAMES: Record<string, string> = {
-  'pi goal-setting agent': 'Yuzuriha — Weaving',
+  // Goal-setting is a pre-scouting planning step. Keeping its display name
+  // distinct from the post-scouting weaving outcome prevents the console from
+  // implying that coding has begun before scouting has completed.
+  'pi goal-setting agent': 'Yuzuriha — Goal-setting',
   'pi scouting agent': 'Suika — Scouting',
   'pi coding agent': 'Kaseki — Crafting',
   'goal check': 'Senku — Testing',
