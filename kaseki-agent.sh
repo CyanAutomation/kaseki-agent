@@ -9420,6 +9420,26 @@ if [ "$KASEKI_SCOUTING" = "1" ] && [ -f "$SCOUTING_ARTIFACT" ]; then
       
       merged_agent_allowlist="$(merge_allowlists "$scouting_agent_patterns" "$user_agent_patterns")"
       merged_validation_allowlist="$(merge_allowlists "$scouting_validation_patterns" "$user_validation_patterns")"
+
+      # Critical change expectations are enforced after coding.  Admit their
+      # required files to the coding allowlist now so a valid scout handoff
+      # cannot accidentally make the terminal contract impossible to satisfy.
+      required_change_files="$(node - "$CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT" <<'NODE'
+const fs = require('node:fs');
+try {
+  const artifact = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  const files = Array.isArray(artifact.required_files) ? artifact.required_files : [];
+  const safe = files.filter((file) => typeof file === 'string'
+    && file.length > 0
+    && !file.startsWith('/')
+    && !/\s|\\/.test(file)
+    && !file.split('/').includes('..')
+    && /^[A-Za-z0-9_@.+,\-/]+$/.test(file));
+  process.stdout.write([...new Set(safe)].join(' '));
+} catch { /* A missing contract is handled by the later verification gate. */ }
+NODE
+)"
+      merged_agent_allowlist="$(merge_allowlists "$merged_agent_allowlist" "$required_change_files")"
       
       # Export merged allowlists to environment
       export KASEKI_CHANGED_FILES_ALLOWLIST="$merged_agent_allowlist"
@@ -9432,6 +9452,7 @@ if [ "$KASEKI_SCOUTING" = "1" ] && [ -f "$SCOUTING_ARTIFACT" ]; then
         "scouting_agent_patterns=$scouting_agent_patterns" \
         "user_agent_patterns=$user_agent_patterns" \
         "merged_agent_allowlist=$merged_agent_allowlist" \
+        "required_change_files=$required_change_files" \
         "scouting_validation_patterns=$scouting_validation_patterns" \
         "user_validation_patterns=$user_validation_patterns" \
         "merged_validation_allowlist=$merged_validation_allowlist"

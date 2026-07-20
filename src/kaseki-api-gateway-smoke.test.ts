@@ -19,6 +19,7 @@ import {
   buildResponsesEndpoint,
   buildCloudflareInferenceEndpoint,
   resolveGatewayModel,
+  createPiProviderSmokeWorkspace,
 } from './kaseki-api-gateway-smoke';
 import { buildGatewayAuthHeaders } from './gateway-detection/detect-gateway-provider';
 
@@ -81,6 +82,16 @@ describe('LLM Gateway Test', () => {
     fs.rmSync(secretsDir, { recursive: true, force: true });
     process.env = originalEnv;
     mockFetch.mockClear();
+  });
+
+  it('creates a disposable package workspace for the Pi provider smoke prompt', () => {
+    const workspace = createPiProviderSmokeWorkspace();
+    try {
+      const packageJson = JSON.parse(fs.readFileSync(path.join(workspace, 'package.json'), 'utf8'));
+      expect(packageJson).toMatchObject({ name: 'kaseki-pi-provider-smoke', private: true });
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true });
+    }
   });
 
   describe('testGatewayConnectivity', () => {
