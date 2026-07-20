@@ -1931,6 +1931,12 @@ const controllerPage = String.raw`<!doctype html>
               if (typeof value === 'string') items.push([label, new Date(value).toLocaleTimeString()]);
             });
           }
+          if (typeof payload.correlationId === 'string' || typeof payload.diagnosticEntryPoint === 'string') {
+            const diagnostics = [];
+            if (typeof payload.correlationId === 'string') diagnostics.push('Correlation: ' + payload.correlationId);
+            if (typeof payload.diagnosticEntryPoint === 'string') diagnostics.push('Start diagnostics: ' + payload.diagnosticEntryPoint);
+            items.push(['Diagnostics', diagnostics.join(' | '), { fullWidth: true }]);
+          }
           if (payload.attempt && typeof payload.attempt === 'object') {
             const attempt = payload.attempt;
             items.push(['Provider attempt', String(attempt.current || 1) + '/' + String(attempt.maximum || 1) + ' — ' + String(attempt.state || 'running'), { warning: attempt.state === 'retrying' || attempt.state === 'failed' || attempt.state === 'exhausted', fullWidth: true }]);
@@ -2635,16 +2641,16 @@ const controllerPage = String.raw`<!doctype html>
       }
 
       function summarizeRun(payload) {
-        if (!payload || !payload.status) return;
+        // Health and gateway responses also carry a status field. Only a run
+        // status response should replace their purpose-built summary.
+        if (!payload || !payload.status || typeof payload.id !== 'string') return;
         setSummary('run', payload.status, payload.status === 'failed' ? 'bad' : 'ok');
         setRunDetails(payload);
         updateCancelRunButtonState(payload);
-        if (payload.correlationId || payload.diagnosticEntryPoint) {
-          const details = [];
-          if (payload.correlationId) details.push('Correlation: ' + payload.correlationId);
-          if (payload.diagnosticEntryPoint) details.push('Start diagnostics: ' + payload.diagnosticEntryPoint);
-          setResponseSummary(details.join('\n'));
-        }
+        // Keep the structured summary visible while polling. Previously this
+        // was replaced by correlation metadata, which hid phase diagnostics
+        // such as a recovered scouting or goal-setting artifact failure.
+        setResponseSummary(payload);
       }
 
       function applyProgressHighWater(payload) {

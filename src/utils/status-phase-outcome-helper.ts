@@ -126,7 +126,10 @@ export class StatusPhaseOutcomeHelper {
     failed: boolean,
   ): NonNullable<StatusResponse['phaseOutcome']>['scouting'] {
     if (scoutingFailed) return 'failed';
-    if (!scoutingStarted) return 'not_reached';
+    // Coding/weaving cannot start until the optional scouting stage has either
+    // completed or been explicitly bypassed. Avoid showing the contradictory
+    // "not reached" state once a downstream phase is already in progress.
+    if (!scoutingStarted) return weavingStarted ? 'skipped' : 'not_reached';
     return scoutingCompletedAt || weavingStarted || failed ? 'completed' : 'running';
   }
 
