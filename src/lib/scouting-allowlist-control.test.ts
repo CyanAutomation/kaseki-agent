@@ -70,6 +70,61 @@ describe('Scouting allowlist derivation from scouting.json contract', () => {
     ]));
   });
 
+  it('rejects numeric suggested_allowlist.agent_patterns entries with a string-type contract error', () => {
+    const inPath = path.join(tmpDir, 'scouting-numeric-agent-pattern.json');
+    fs.writeFileSync(inPath, JSON.stringify({
+      task: 'Update parser',
+      requirements: [],
+      relevant_files: [],
+      observations: [], plan: [], validation: [], risks: [], test_impact: [],
+      suggested_allowlist: {
+        agent_patterns: ['src/**', 42],
+        validation_patterns: ['tests/**'],
+      },
+    }) + '\n');
+
+    const result = runProductionScoutingAllowlistOrchestration(inPath);
+
+    expect(result.validation.status).toBe('rejected');
+    expect(result.validation.reason_code).toBe('schema_mismatch');
+    expect(result.validation.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        field: 'suggested_allowlist.agent_patterns',
+        expected: 'array of strings',
+        actual: 'array with non-strings',
+        severity: 'warning',
+        suggestion: 'All agent_patterns entries must be strings',
+      }),
+    ]));
+  });
+
+  it('retains the repo-relative-glob diagnostic for invalid validation pattern strings', () => {
+    const inPath = path.join(tmpDir, 'scouting-invalid-validation-glob.json');
+    fs.writeFileSync(inPath, JSON.stringify({
+      task: 'Update parser',
+      requirements: [],
+      relevant_files: [],
+      observations: [], plan: [], validation: [], risks: [], test_impact: [],
+      suggested_allowlist: {
+        agent_patterns: ['src/**'],
+        validation_patterns: ['npm test'],
+      },
+    }) + '\n');
+
+    const result = runProductionScoutingAllowlistOrchestration(inPath);
+
+    expect(result.validation.status).toBe('rejected');
+    expect(result.validation.reason_code).toBe('schema_mismatch');
+    expect(result.validation.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        field: 'suggested_allowlist.validation_patterns',
+        expected: 'array of repo-relative glob strings',
+        actual: 'array with invalid glob patterns',
+        severity: 'warning',
+      }),
+    ]));
+  });
+
   it('rejects prose allowlist entries before they can restrict the coding agent', () => {
     const inPath = path.join(tmpDir, 'scouting-prose-allowlist.json');
     fs.writeFileSync(inPath, JSON.stringify({
