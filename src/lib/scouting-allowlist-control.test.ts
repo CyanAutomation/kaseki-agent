@@ -70,6 +70,47 @@ describe('Scouting allowlist derivation from scouting.json contract', () => {
     ]));
   });
 
+  it('rejects prose allowlist entries before they can restrict the coding agent', () => {
+    const inPath = path.join(tmpDir, 'scouting-prose-allowlist.json');
+    fs.writeFileSync(inPath, JSON.stringify({
+      task: 'Update development documentation',
+      requirements: [],
+      relevant_files: [{ path: 'docs/DEVELOPMENT.md', reason: 'target documentation' }],
+      observations: [], plan: [], validation: [], risks: [], test_impact: [],
+      suggested_allowlist: {
+        agent_patterns: ['kaseki-agent init', 'OPENROUTER_API_KEY_FILE'],
+        validation_patterns: ['docs/**'],
+      },
+    }) + '\n');
+
+    const result = runProductionScoutingAllowlistOrchestration(inPath);
+
+    expect(result.validation.status).toBe('rejected');
+    expect(result.validation.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        field: 'suggested_allowlist.agent_patterns',
+        expected: 'array of repo-relative glob strings',
+      }),
+    ]));
+    expect(result.source).toBe('default_after_rejection');
+  });
+
+  it('rejects prose appended to a relevant file path', () => {
+    const inPath = path.join(tmpDir, 'scouting-prose-path.json');
+    fs.writeFileSync(inPath, JSON.stringify({
+      task: 'Update development documentation',
+      requirements: [],
+      relevant_files: [{ path: 'docs/DEVELOPMENT.md - target file', reason: 'target documentation' }],
+      observations: [], plan: [], validation: [], risks: [], test_impact: [],
+    }) + '\n');
+
+    const result = runProductionScoutingAllowlistOrchestration(inPath);
+    expect(result.validation.status).toBe('rejected');
+    expect(result.validation.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'relevant_files[0]', severity: 'critical' }),
+    ]));
+  });
+
   // Contract reference: docs/ADVANCED_CONFIG.md documents that scouting suggested allowlists
   // are merged with KASEKI_CHANGED_FILES_ALLOWLIST/KASEKI_VALIDATION_ALLOWLIST, whose
   // production script defaults are src/lib/parser.ts tests/parser.validation.ts and empty.

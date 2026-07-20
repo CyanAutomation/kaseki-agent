@@ -33,6 +33,23 @@ interface DeriveScoutingResult {
   source: string;
 }
 
+/**
+ * Keep scouting paths machine-actionable.  These values are fed directly into
+ * the coding allowlist, so prose such as "inspect package.json" must never be
+ * accepted as a pattern.
+ */
+function isRepoRelativePattern(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const pattern = value.trim();
+  if (!pattern || pattern !== value || pattern.startsWith('/') || pattern.includes('\\') || /\s/.test(pattern)) return false;
+  if (pattern.split('/').some((segment) => segment === '..' || segment === '.')) return false;
+  return /^[!A-Za-z0-9_@.+,*?\[\]{}\-/]+$/.test(pattern);
+}
+
+function isRepoRelativeFilePath(value: unknown): value is string {
+  return isRepoRelativePattern(value) && !/[?*\[\]{}]/.test(value);
+}
+
 function actualType(value: unknown): string {
   if (value === null) return 'null';
   if (Array.isArray(value)) return 'array';
@@ -78,16 +95,20 @@ function validateArrayField(artifact: Record<string, unknown>, errors: Validatio
  * Validates relevant_files array entries
  */
 function validateRelevantFilesArray(relevantFiles: unknown, errors: ValidationError[]): void {
-  if (!Array.isArray(relevantFiles)) return;
+    const current = await control.get();
+    if (!current) {
+      throw new Error('Failed to retrieve current allowlist');
+    }
+    const existingEntries = new Map(current.entries.map((e) => [e.identity, e]));
   relevantFiles.forEach((item: unknown, index: number) => {
     const entry = item as Record<string, unknown>;
-    if (!item || typeof entry.path !== 'string' || typeof entry.reason !== 'string') {
+    if (!item || !isRepoRelativeFilePath(entry.path) || typeof entry.reason !== 'string' || !entry.reason.trim()) {
       errors.push({
         field: `relevant_files[${index}]`,
-        expected: 'object with string path and string reason',
+        expected: 'object with a repo-relative path and non-empty reason strings',
         actual: actualType(item),
-        severity: 'warning',
-        suggestion: 'Each relevant_files entry must include path and reason strings',
+        severity: 'critical',
+        suggestion: 'Each relevant_files entry must use a clean repo-relative path (for example docs/DEVELOPMENT.md) and a separate reason.',
       });
     }
   });
@@ -194,13 +215,13 @@ function validateSuggestedAllowlist(suggestedAllowlist: unknown, errors: Validat
       severity: 'warning',
       suggestion: 'agent_patterns must be an array of glob pattern strings',
     });
-  } else if (!(sal.agent_patterns as unknown[]).every((p) => typeof p === 'string')) {
+  } else if (!(sal.agent_patterns as unknown[]).every(isRepoRelativePattern)) {
     errors.push({
       field: 'suggested_allowlist.agent_patterns',
-      expected: 'array of strings',
-      actual: 'array with non-strings',
+      expected: 'array of repo-relative glob strings',
+      actual: 'array with invalid glob patterns',
       severity: 'warning',
-      suggestion: 'All agent_patterns entries must be strings',
+      suggestion: 'All agent_patterns entries must be repo-relative globs, not prose or shell commands.',
     });
   }
   if (!Array.isArray(sal.validation_patterns)) {
@@ -211,13 +232,13 @@ function validateSuggestedAllowlist(suggestedAllowlist: unknown, errors: Validat
       severity: 'warning',
       suggestion: 'validation_patterns must be an array of glob pattern strings',
     });
-  } else if (!(sal.validation_patterns as unknown[]).every((p) => typeof p === 'string')) {
+  } else if (!(sal.validation_patterns as unknown[]).every(isRepoRelativePattern)) {
     errors.push({
       field: 'suggested_allowlist.validation_patterns',
-      expected: 'array of strings',
-      actual: 'array with non-strings',
+      expected: 'array of repo-relative glob strings',
+      actual: 'array with invalid glob patterns',
       severity: 'warning',
-      suggestion: 'All validation_patterns entries must be strings',
+      suggestion: 'All validation_patterns entries must be repo-relative globs, not prose or shell commands.',
     });
   }
 }
