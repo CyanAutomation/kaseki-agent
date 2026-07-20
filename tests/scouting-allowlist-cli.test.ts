@@ -93,7 +93,7 @@ describe('scouting-allowlist.js CLI', () => {
     expect(result.reason_code).toBe('valid');
   });
 
-  test('should retain warnings without rejecting a valid scouting artifact', () => {
+  test('should reject a relevant file entry without a machine-actionable path and reason', () => {
     const artifact = {
       task: 'refactor parser',
       requirements: ['clean'],
@@ -108,17 +108,22 @@ describe('scouting-allowlist.js CLI', () => {
     const outputPath = path.join(tmpDir, 'scouting-output.json');
     fs.writeFileSync(artifactPath, JSON.stringify(artifact));
 
-    const output = execSync(
-      `node dist/scouting-allowlist.js validate ${artifactPath} ${outputPath}`,
-      { encoding: 'utf-8', cwd: process.cwd() },
-    );
+    let output = '';
+    try {
+      output = execSync(
+        `node dist/scouting-allowlist.js validate ${artifactPath} ${outputPath}`,
+        { encoding: 'utf-8', cwd: process.cwd() },
+      );
+    } catch (error: any) {
+      output = error.stdout;
+    }
     const result = JSON.parse(output.trim());
 
-    expect(result.status).toBe('ok');
+    expect(result.status).toBe('rejected');
     expect(result.errors).toEqual(expect.arrayContaining([
-      expect.objectContaining({ field: 'relevant_files[0]', severity: 'warning' }),
+      expect.objectContaining({ field: 'relevant_files[0]', severity: 'critical' }),
     ]));
-    expect(fs.existsSync(outputPath)).toBe(true);
+    expect(fs.existsSync(outputPath)).toBe(false);
   });
 
   test('should reject artifact with missing required fields', () => {

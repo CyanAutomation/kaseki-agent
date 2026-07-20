@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
   resolveGatewayApiKey,
   shouldRunGatewayResponseSmoke,
@@ -173,6 +175,14 @@ export interface PiProviderSmokeTestOptions {
   debug?: boolean; // Log full response and diagnostics
 }
 
+export function createPiProviderSmokeWorkspace(): string {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-pi-provider-smoke-'));
+  fs.writeFileSync(path.join(workspace, 'package.json'), JSON.stringify({
+    name: 'kaseki-pi-provider-smoke', private: true, version: '0.0.0',
+  }) + '\n', { mode: 0o600 });
+  return workspace;
+}
+
 /**
  * Verify Pi provider is registered and configured correctly
  */
@@ -245,6 +255,24 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
     };
   }
 
+  // The smoke prompt deliberately asks Pi to inspect package.json.  Give it a
+  // tiny disposable workspace so this verifies the provider contract rather
+  // than failing because the API process happens to start in an empty folder.
+  let smokeWorkspace: string;
+  try {
+    smokeWorkspace = createPiProviderSmokeWorkspace();
+  } catch (error) {
+    return {
+      status: 'error',
+      detail: `Pi provider smoke could not create its disposable workspace: ${error instanceof Error ? error.message : String(error)}`,
+      responseTime: Math.round(performance.now() - startTime),
+      timestamp,
+      provider: 'gateway',
+      model,
+      remediation: 'Ensure the controller can create temporary directories before running the Pi provider smoke.',
+    };
+  }
+
   const prompt = [
     'You are the coding phase of an ephemeral repository agent.',
     'Synthetic task: inspect package.json and propose one concise documentation improvement.',
@@ -256,6 +284,7 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
   const child = spawnSync('pi', ['--mode', 'json', '--no-session', '--provider', 'gateway', '--model', model, prompt], {
     encoding: 'utf8',
     timeout: PI_PROVIDER_SMOKE_TIMEOUT_MS,
+    cwd: smokeWorkspace,
     env: {
       ...process.env,
       LLM_GATEWAY_URL: gatewayUrl,
@@ -268,6 +297,11 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
     // from child_process ENOBUFS transport failures.
     maxBuffer: 16 * 1024 * 1024,
   });
+  try {
+    fs.rmSync(smokeWorkspace, { recursive: true, force: true });
+  } catch {
+    // The diagnostic result is still valid if best-effort temporary cleanup fails.
+  }
   const responseTime = Math.round(performance.now() - startTime);
   const stdout = child.stdout || '';
   const stderr = child.stderr || '';
