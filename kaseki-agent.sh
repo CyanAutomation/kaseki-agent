@@ -1222,7 +1222,10 @@ validate_scouting_output_schema() {
         local actual_value
         actual_value=$(jq -r ".relevant_files[$i]" "$artifact" 2>/dev/null || echo "unknown")
         printf '{"timestamp":"%s","reason_code":"schema_mismatch","field":"relevant_files[%d]","expected":"object with string path and string reason","actual":"%s","severity":"warning","suggestion":"Each relevant_files entry must include path and reason strings"}\n' "$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')" "$i" "$actual_value" >> "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl"
-        schema_errors=$((schema_errors + 1))
+        # This is deliberately a warning: the primary validator has already
+        # accepted the handoff and downstream allowlist derivation can safely
+        # ignore an incomplete optional entry. Do not turn a recoverable
+        # normalization/schema warning into an exit-86 scouting failure.
       fi
     done
   fi

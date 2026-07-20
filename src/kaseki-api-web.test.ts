@@ -215,6 +215,36 @@ describe('kaseki API web console behavior', () => {
     expect(calls).toHaveLength(0);
   });
 
+  test('keeps phase diagnostics visible while polling a run', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/runs/kaseki-219/status') {
+          return createJsonResponse({
+            id: 'kaseki-219',
+            status: 'failed',
+            correlationId: 'correlation-219',
+            diagnosticEntryPoint: 'scouting-validation-errors.jsonl',
+            error: 'critical change verification failed',
+            phaseOutcome: { scouting: 'completed', weaving: 'failed' },
+            diagnosticSummary: {
+              phaseDiagnostics: [{ phase: 'scouting', severity: 'critical', reason: 'missing_file' }],
+            },
+          });
+        }
+        if (path === '/api/runs') return createJsonResponse({ runs: [{ id: 'kaseki-219', status: 'failed' }] });
+        return createJsonResponse({ status: 'ok' });
+      },
+    });
+
+    click(document.querySelector('#refresh-runs'));
+    await waitFor(() => expect(document.querySelectorAll('#runs-list button')).toHaveLength(1));
+    click(document.querySelector('#runs-list button'));
+    await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Phase diagnostics'));
+    expect(document.querySelector('#response-summary')?.textContent).toContain('scouting: critical: missing_file');
+    expect(document.querySelector('#response-summary')?.textContent).toContain('Correlation: correlation-219');
+  });
+
   test('loads the recent run list into selectable run buttons', async () => {
     const { document, calls } = await renderConsole({
       storedToken: 'token12345',

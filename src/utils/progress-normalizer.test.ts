@@ -103,6 +103,11 @@ describe('progress-normalizer', () => {
   });
 
   describe('toStructuredProgress', () => {
+    it('labels goal-setting independently from the weaving phase', () => {
+      const result = toStructuredProgress({ stage: 'pi goal-setting agent' });
+      expect(result?.displayName).toBe('Yuzuriha — Goal-setting');
+    });
+
     it('should create valid StructuredProgress with all fields', () => {
       const event = {
         stage: 'building',
