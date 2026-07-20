@@ -211,6 +211,14 @@ function validateSuggestedAllowlist(suggestedAllowlist: unknown, errors: Validat
       severity: 'warning',
       suggestion: 'agent_patterns must be an array of glob pattern strings',
     });
+  } else if (!(sal.agent_patterns as unknown[]).every((pattern) => typeof pattern === 'string')) {
+    errors.push({
+      field: 'suggested_allowlist.agent_patterns',
+      expected: 'array of strings',
+      actual: 'array with non-strings',
+      severity: 'warning',
+      suggestion: 'All agent_patterns entries must be strings',
+    });
   } else if (!(sal.agent_patterns as unknown[]).every(isRepoRelativePattern)) {
     errors.push({
       field: 'suggested_allowlist.agent_patterns',
@@ -227,6 +235,14 @@ function validateSuggestedAllowlist(suggestedAllowlist: unknown, errors: Validat
       actual: actualType(sal.validation_patterns),
       severity: 'warning',
       suggestion: 'validation_patterns must be an array of glob pattern strings',
+    });
+  } else if (!(sal.validation_patterns as unknown[]).every((pattern) => typeof pattern === 'string')) {
+    errors.push({
+      field: 'suggested_allowlist.validation_patterns',
+      expected: 'array of strings',
+      actual: 'array with non-strings',
+      severity: 'warning',
+      suggestion: 'All validation_patterns entries must be strings',
     });
   } else if (!(sal.validation_patterns as unknown[]).every(isRepoRelativePattern)) {
     errors.push({
