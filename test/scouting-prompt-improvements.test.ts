@@ -84,6 +84,12 @@ describe('Phase 1 & 2 & 3: Scouting Prompt Structure with Task Validation and Ex
     expect(promptContent).toMatch(/test_impact:/);
   });
 
+  test('uses the writable scouting artifact path and object-shaped relevant files', () => {
+    expect(promptContent).toContain('/results/scouting-candidate.json');
+    expect(promptContent).toContain('/workspace/repo is read-only during scouting');
+    expect(promptContent).toContain('separate non-empty path and reason strings');
+  });
+
   test('test_impact guidelines should be comprehensive', () => {
     // Should have examples of strong test_impact entries
     expect(promptContent).toContain('✓ Parser change');
