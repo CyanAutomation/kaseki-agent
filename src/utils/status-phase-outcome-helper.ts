@@ -27,11 +27,13 @@ export class StatusPhaseOutcomeHelper {
     const weavingCompletedAt = this.phaseCompletedAt(weavingEvents);
     const scoutingStartedAt = this.phaseStartedAt(scoutingEvents);
     const weavingStartedAt = this.phaseStartedAt(weavingEvents);
+    const scoutingFallbackReason = this.scoutingFallbackReason(job);
 
     response.phaseOutcome = {
-      scouting: this.resolveScoutingOutcome(scoutingFailed, scoutingStarted, scoutingCompletedAt, weavingStarted, failed),
-      weaving: this.resolveWeavingOutcome(weavingFailed, weavingStarted, weavingCompletedAt),
-      explanation: this.buildFailureExplanation(failed, metadata, response),
+      scouting: this.resolveScoutingOutcome(scoutingFailed, scoutingStarted, scoutingCompletedAt, weavingStarted, failed, Boolean(scoutingFallbackReason)),
+      weaving: this.resolveWeavingOutcome(weavingFailed, weavingStarted, weavingCompletedAt, stage, job.status),
+      ...(scoutingFallbackReason ? { scoutingFallback: true, scoutingFallbackReason } : {}),
+      explanation: this.buildFailureExplanation(failed, metadata, response, scoutingFallbackReason),
       ...(scoutingStartedAt ? { scoutingStartedAt } : {}),
       ...(scoutingCompletedAt ? { scoutingCompletedAt } : {}),
       ...(weavingStartedAt ? { weavingStartedAt } : {}),
@@ -124,8 +126,10 @@ export class StatusPhaseOutcomeHelper {
     scoutingCompletedAt: string | undefined,
     weavingStarted: boolean,
     failed: boolean,
+    scoutingFallback: boolean,
   ): NonNullable<StatusResponse['phaseOutcome']>['scouting'] {
     if (scoutingFailed) return 'failed';
+    if (scoutingFallback) return 'completed';
     // Coding/weaving cannot start until the optional scouting stage has either
     // completed or been explicitly bypassed. Avoid showing the contradictory
     // "not reached" state once a downstream phase is already in progress.
@@ -137,18 +141,41 @@ export class StatusPhaseOutcomeHelper {
     weavingFailed: boolean,
     weavingStarted: boolean,
     weavingCompletedAt: string | undefined,
+    stage: string,
+    jobStatus: Job['status'],
   ): NonNullable<StatusResponse['phaseOutcome']>['weaving'] {
     if (weavingFailed) return 'failed';
     if (!weavingStarted) return 'not_reached';
     // A failed scout must never imply that weaving completed.  Completion is
     // evidenced by a terminal weaving event; failure is handled above.
-    return weavingCompletedAt ? 'completed' : 'running';
+    // The worker does not emit a distinct "weaving completed" line before it
+    // enters quality/goal-check/evaluation. Those later stages are durable
+    // evidence that the coding phase returned, so do not leave the UI stuck
+    // on "running" while finalization is underway.
+    if (weavingCompletedAt || /quality|goal check|evaluation|final/.test(stage) || jobStatus === 'completed') return 'completed';
+    return 'running';
   }
 
-  private buildFailureExplanation(failed: boolean, metadata: any, response: StatusResponse): string | undefined {
+  private scoutingFallbackReason(job: Job): string | undefined {
+    const file = path.join(this.config.resultsDir, job.id, 'scouting-validation-errors.jsonl');
+    try {
+      for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+        if (!line.trim()) continue;
+        const entry = JSON.parse(line) as Record<string, unknown>;
+        if (entry.recovered === true && typeof entry.recovery_reason_code === 'string') return entry.recovery_reason_code;
+        if (entry.recovered === true && typeof entry.reason_code === 'string' && entry.reason_code.includes('fallback')) return entry.reason_code;
+      }
+    } catch { /* fallback evidence is optional */ }
+    return undefined;
+  }
+
+  private buildFailureExplanation(failed: boolean, metadata: any, response: StatusResponse, scoutingFallbackReason?: string): string | undefined {
+    const fallback = scoutingFallbackReason
+      ? ` Scouting continued with a validated fallback handoff (${scoutingFallbackReason}).`
+      : '';
     return failed
-      ? `Run failed at ${metadata?.failed_command || response.progress?.stage || 'an unknown stage'}; phase outcomes are derived from recorded lifecycle events.`
-      : undefined;
+      ? `Run failed at ${metadata?.failed_command || response.progress?.stage || 'an unknown stage'}; phase outcomes are derived from recorded lifecycle events.${fallback}`
+      : (fallback || undefined);
   }
 
   private phaseStartedAt(events: Array<Record<string, unknown>>): string | undefined {

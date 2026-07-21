@@ -68,25 +68,23 @@ NODE
 
 github_private_key_metadata_json() {
   local key_file="$1"
-  local byte_count first_pem_header_line pem_footer_present sha256_fingerprint
+  local byte_count pem_header_present pem_footer_present
   byte_count="$(wc -c < "$key_file" | awk '{print $1}')"
-  first_pem_header_line="$(grep -aoE -- '-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----' "$key_file" | sed -n '1p')"
+  if grep -aoEq -- '-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----' "$key_file"; then
+    pem_header_present="true"
+  else
+    pem_header_present="false"
+  fi
   if grep -aoEq -- '-----END [A-Z0-9 ]*PRIVATE KEY-----' "$key_file"; then
     pem_footer_present="true"
   else
     pem_footer_present="false"
   fi
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256_fingerprint="$(sha256sum "$key_file" | awk '{print $1}')"
-  else
-    sha256_fingerprint="$(shasum -a 256 "$key_file" | awk '{print $1}')"
-  fi
   cat <<META
 {
   "byte_count": $byte_count,
-  "first_pem_header_line": $(printf '%s' "$first_pem_header_line" | json_encode),
-  "pem_footer_present": $pem_footer_present,
-  "sha256_fingerprint": $(printf '%s' "$sha256_fingerprint" | json_encode)
+  "pem_header_present": $pem_header_present,
+  "pem_footer_present": $pem_footer_present
 }
 META
 }
@@ -443,4 +441,3 @@ resolve_github_secret_file() {
   fi
   printf '%s' "$canonical_path"
 }
-

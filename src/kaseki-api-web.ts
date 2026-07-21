@@ -1918,6 +1918,15 @@ const controllerPage = String.raw`<!doctype html>
               warning: scouting === 'failed' || weaving === 'failed' || scouting === 'not_reached' || weaving === 'not_reached',
               fullWidth: true,
             }]);
+            if (outcome.scoutingFallback === true) {
+              const fallbackReason = typeof outcome.scoutingFallbackReason === 'string'
+                ? outcome.scoutingFallbackReason
+                : 'controller-generated validated handoff';
+              items.push(['Scouting fallback', 'Used — ' + stripControlSequences(fallbackReason), {
+                warning: true,
+                fullWidth: true,
+              }]);
+            }
             if (typeof outcome.explanation === 'string') {
               items.push(['Phase explanation', stripControlSequences(outcome.explanation).slice(0, 280), { warning: true, fullWidth: true }]);
             }
