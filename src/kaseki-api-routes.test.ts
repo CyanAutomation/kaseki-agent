@@ -663,6 +663,94 @@ describe('kaseki-api-routes request aliases', () => {
   });
 });
 
+describe('kaseki-api-routes idempotent submissions', () => {
+  let resultsDir: string;
+  const requestBody = {
+    repoUrl: 'https://github.com/org/repo',
+    ref: 'main',
+    taskPrompt: 'Apply the requested idempotency test change',
+    publishMode: 'none',
+    idempotencyKey: '77777777-7777-4777-8777-777777777777'
+  };
+
+  beforeEach(() => {
+    resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-runs-idempotency-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  });
+
+  test('releases a fresh claim when scheduler submission fails', async () => {
+    const scheduler = createMockScheduler();
+    scheduler.submitJob
+      .mockRejectedValueOnce(new Error('queue unavailable'))
+      .mockResolvedValueOnce({
+        id: 'kaseki-retry',
+        status: 'queued',
+        createdAt: new Date('2026-07-21T00:00:00.000Z'),
+        resultDir: path.join(resultsDir, 'kaseki-retry')
+      });
+    const { server, port, idempotencyStore } = await createTestApp(
+      scheduler,
+      createTestConfig(resultsDir)
+    );
+
+    try {
+      const submit = () => fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+      const failed = await submit();
+      expect(failed.status).toBe(400);
+      await failed.arrayBuffer();
+
+      const retry = await submit();
+      expect(retry.status).toBe(202);
+      expect((await retry.json()) as object).toEqual(expect.objectContaining({ id: 'kaseki-retry' }));
+      expect(scheduler.submitJob).toHaveBeenCalledTimes(2);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('serializes concurrent identical submissions and creates one job', async () => {
+    const scheduler = createMockScheduler();
+    scheduler.submitJob.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return {
+        id: 'kaseki-concurrent',
+        status: 'queued',
+        createdAt: new Date('2026-07-21T00:00:00.000Z'),
+        resultDir: path.join(resultsDir, 'kaseki-concurrent')
+      };
+    });
+    const { server, port, idempotencyStore } = await createTestApp(
+      scheduler,
+      createTestConfig(resultsDir)
+    );
+
+    try {
+      const submit = () => fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+      const [first, second] = await Promise.all([submit(), submit()]);
+      expect([first.status, second.status].sort()).toEqual([200, 202]);
+      const responses = await Promise.all([first.json(), second.json()]) as Array<{ id: string }>;
+      expect(responses.map(({ id }) => id)).toEqual([
+        'kaseki-concurrent',
+        'kaseki-concurrent'
+      ]);
+      expect(scheduler.submitJob).toHaveBeenCalledTimes(1);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+});
+
 describe('kaseki-api-routes template readiness gate', () => {
   let resultsDir: string;
   let originalSkipBootstrapCheck: string | undefined;
