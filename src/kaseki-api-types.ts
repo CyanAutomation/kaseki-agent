@@ -337,6 +337,9 @@ export interface StatusResponse {
   phaseOutcome?: {
     scouting: 'completed' | 'failed' | 'skipped' | 'not_reached' | 'running';
     weaving: 'completed' | 'failed' | 'skipped' | 'not_reached' | 'running';
+    /** Scouting continued with a controller-generated, validated handoff. */
+    scoutingFallback?: boolean;
+    scoutingFallbackReason?: string;
     explanation?: string;
     scoutingStartedAt?: string;
     scoutingCompletedAt?: string;
