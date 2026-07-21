@@ -1,11 +1,15 @@
 import { DockerManager, ContainerConfig } from './DockerManager';
 import { execFileSync, execSync, spawn } from 'child_process';
 import { EventEmitter } from 'events';
+import fs from 'fs';
 
 // Mock child_process
 jest.mock('child_process');
 jest.mock('fs', () => ({
-  execSync: jest.fn(),
+  __esModule: true,
+  default: {
+    mkdirSync: jest.fn(),
+  },
   existsSync: jest.fn(),
 }));
 
@@ -91,7 +95,61 @@ describe('DockerManager', () => {
     });
   });
 
+  describe('image commands', () => {
+    const image = 'registry.example/image name:tag; $(touch /tmp/pwned)';
+
+    it('passes an image containing shell metacharacters as one pull argument', () => {
+      (execFileSync as jest.Mock).mockReturnValue(Buffer.from(''));
+
+      expect(DockerManager.pullImage(image)).toBe(true);
+      expect(execFileSync).toHaveBeenCalledWith('docker', ['pull', image], {
+        stdio: 'inherit',
+        timeout: 5 * 60 * 1000,
+      });
+    });
+
+    it('passes an image containing shell metacharacters as one inspect argument', () => {
+      (execFileSync as jest.Mock).mockReturnValue('sha256:abc\n');
+
+      expect(DockerManager.getImageId(image)).toBe('sha256:abc');
+      expect(execFileSync).toHaveBeenCalledWith(
+        'docker',
+        ['inspect', '-f', '{{.ID}}', image],
+        { encoding: 'utf-8' }
+      );
+    });
+  });
+
   describe('buildDockerArgs', () => {
+    it('creates paths containing spaces and metacharacters without invoking a shell', async () => {
+      const mockChild = {
+        stdout: null,
+        stderr: null,
+        on: jest.fn((event, callback) => {
+          if (event === 'exit') callback(0);
+        }),
+        kill: jest.fn(),
+      };
+      (spawn as jest.Mock).mockReturnValue(mockChild);
+      const workspaceDir = '/tmp/work space; $(touch pwned)';
+      const resultsDir = '/tmp/results & reports';
+      const cacheDir = '/tmp/cache `echo expanded`';
+
+      await DockerManager.runContainer({
+        image: 'test:latest',
+        name: 'test-container',
+        workspaceDir,
+        resultsDir,
+        cacheDir,
+        environment: {},
+      });
+
+      expect(fs.mkdirSync).toHaveBeenNthCalledWith(1, workspaceDir, { recursive: true });
+      expect(fs.mkdirSync).toHaveBeenNthCalledWith(2, resultsDir, { recursive: true });
+      expect(fs.mkdirSync).toHaveBeenNthCalledWith(3, cacheDir, { recursive: true });
+      expect(execSync).not.toHaveBeenCalled();
+    });
+
     it('should invoke docker run with expected arg ordering via runContainer', async () => {
       const mockChild = {
         stdout: null,
@@ -124,6 +182,10 @@ describe('DockerManager', () => {
       };
 
       await DockerManager.runContainer(config);
+
+      expect(fs.mkdirSync).toHaveBeenCalledWith('/workspace', { recursive: true });
+      expect(fs.mkdirSync).toHaveBeenCalledWith('/results', { recursive: true });
+      expect(fs.mkdirSync).toHaveBeenCalledWith('/cache', { recursive: true });
 
       expect(spawn).toHaveBeenCalledTimes(1);
 
@@ -407,17 +469,19 @@ describe('DockerManager', () => {
 
   describe('stopContainer', () => {
     it('should stop a running container', () => {
-      (execSync as jest.Mock).mockReturnValue(Buffer.from(''));
-      const result = DockerManager.stopContainer('test-container');
+      (execFileSync as jest.Mock).mockReturnValue(Buffer.from(''));
+      const containerId = 'test container; $(touch /tmp/pwned)';
+      const result = DockerManager.stopContainer(containerId, 12);
       expect(result).toBe(true);
-      expect(execSync).toHaveBeenCalledWith(
-        expect.stringContaining('docker stop'),
-        expect.any(Object)
+      expect(execFileSync).toHaveBeenCalledWith(
+        'docker',
+        ['stop', '-t', '12', containerId],
+        { stdio: 'ignore' }
       );
     });
 
     it('should return false when stopping fails', () => {
-      (execSync as jest.Mock).mockImplementation(() => {
+      (execFileSync as jest.Mock).mockImplementation(() => {
         throw new Error('Container not found');
       });
       const result = DockerManager.stopContainer('nonexistent');
@@ -427,49 +491,65 @@ describe('DockerManager', () => {
 
   describe('removeContainer', () => {
     it('should remove a container with force flag by default', () => {
-      (execSync as jest.Mock).mockReturnValue(Buffer.from(''));
-      const result = DockerManager.removeContainer('test-container');
+      (execFileSync as jest.Mock).mockReturnValue(Buffer.from(''));
+      const containerId = 'test container; echo expanded';
+      const result = DockerManager.removeContainer(containerId);
       expect(result).toBe(true);
-      expect(execSync).toHaveBeenCalledWith(
-        expect.stringContaining('docker rm -f'),
-        expect.any(Object)
-      );
+      expect(execFileSync).toHaveBeenCalledWith('docker', ['rm', '-f', containerId], {
+        stdio: 'ignore',
+      });
     });
 
     it('should remove a container without force flag when specified', () => {
-      (execSync as jest.Mock).mockReturnValue(Buffer.from(''));
+      (execFileSync as jest.Mock).mockReturnValue(Buffer.from(''));
       const result = DockerManager.removeContainer('test-container', false);
       expect(result).toBe(true);
-      expect(execSync).toHaveBeenCalledWith(
-        expect.stringContaining('docker rm test-container'),
-        expect.any(Object)
-      );
+      expect(execFileSync).toHaveBeenCalledWith('docker', ['rm', 'test-container'], {
+        stdio: 'ignore',
+      });
     });
   });
 
   describe('listContainers', () => {
     it('should list containers matching a pattern', () => {
       // The actual implementation uses { encoding: 'utf-8' } which returns a string
-      const mockExecSync = execSync as jest.Mock;
-      mockExecSync.mockImplementationOnce(() => 'kaseki-1\nkaseki-2\nkaseki-3\n');
-      const result = DockerManager.listContainers('kaseki');
+      const pattern = 'kaseki containers; echo expanded';
+      (execFileSync as jest.Mock).mockReturnValueOnce('kaseki-1\nkaseki-2\nkaseki-3\n');
+      const result = DockerManager.listContainers(pattern);
       expect(result).toEqual(['kaseki-1', 'kaseki-2', 'kaseki-3']);
+      expect(execFileSync).toHaveBeenCalledWith(
+        'docker',
+        ['ps', '--filter', `name=${pattern}`, '--format', '{{.Names}}'],
+        { encoding: 'utf-8' }
+      );
     });
 
     it('should handle empty container list', () => {
-      const mockExecSync = execSync as jest.Mock;
-      mockExecSync.mockImplementationOnce(() => '');
+      (execFileSync as jest.Mock).mockReturnValueOnce('');
       const result = DockerManager.listContainers('kaseki');
       expect(result).toEqual([]);
     });
 
     it('should return empty list on error', () => {
-      const mockExecSync = execSync as jest.Mock;
-      mockExecSync.mockImplementationOnce(() => {
+      (execFileSync as jest.Mock).mockImplementationOnce(() => {
         throw new Error('Docker error');
       });
       const result = DockerManager.listContainers('kaseki');
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('getContainerLogs', () => {
+    it('passes a container containing spaces and metacharacters as one argument', () => {
+      const containerId = 'test container; $(touch /tmp/pwned)';
+      (execFileSync as jest.Mock).mockReturnValue('container output');
+
+      expect(DockerManager.getContainerLogs(containerId, 25)).toBe('container output');
+      expect(execFileSync).toHaveBeenCalledWith(
+        'docker',
+        ['logs', '--tail=25', containerId],
+        { encoding: 'utf-8' }
+      );
     });
   });
 });
