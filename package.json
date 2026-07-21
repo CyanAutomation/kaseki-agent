@@ -78,7 +78,7 @@
     "validate-module-imports": "node dist/validate-module-imports.js",
     "test:pack-artifact": "bash scripts/check-packed-artifact.sh",
     "type-check:type-tests": "tsc -p tsconfig.type-tests.json",
-    "test:tree-sitter:functional": "RUN_TREE_SITTER_CLI_INTEGRATION=1 jest --runInBand tests/summarization/tree-sitter-cli-availability.test.ts",
+    "test:tree-sitter:environment-probe": "RUN_TREE_SITTER_CLI_INTEGRATION=1 jest --runInBand tests/summarization/optional-tree-sitter-cli-environment-probe.test.ts",
     "test:integration:docker": "RUN_DOCKER_INTEGRATION_TESTS=1 bash tests/integration/docker/startup-check-packaging.integration.test.sh && RUN_DOCKER_INTEGRATION_TESTS=1 bash tests/integration/docker/validation-tools.integration.test.sh",
     "test:packaging-verification": "npm run build && bash tests/startup-check-packaging.test.sh && bash tests/packaging-layout.test.sh && bash tests/dist-import-smoke.test.sh && npm run test:pack-artifact && npm pack --dry-run && node dist/cli.js --version && node dist/cli.js --help && node dist/cli.js doctor --help && node dist/cli.js run --help && node dist/cli.js list --help && node dist/cli.js report --help && node dist/cli.js status --help && node dist/cli.js cancel --help && npm run check:dist-dynamic-imports",
     "test:integration:cloudflare-gateway": "CLOUDFLARE_GATEWAY_TEST=1 node scripts/cloudflare-gateway-live-probe.mjs",

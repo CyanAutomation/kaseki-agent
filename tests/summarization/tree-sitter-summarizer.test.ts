@@ -5,11 +5,12 @@
  * classes, functions, methods, types, and interfaces) while reducing content
  * size enough that callers can decide when to request full source.
  */
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import * as fs from 'fs';
 import * as path from 'path';
 
 import { TreeSitterSummarizer } from '../../src/summarization/tree-sitter-summarizer';
+import { GoCliSummarizer } from '../../src/summarization/go-cli-summarizer';
 import type { CodeSummary } from '../../src/summarization/tree-sitter-summarizer';
 import type { SupportedLanguage } from '../../src/summarization/summarizer-config';
 
@@ -36,14 +37,15 @@ const EMPTY_SYMBOLS = {
   interfaces: [],
 };
 
-const GO_GRAMMAR_UNAVAILABLE =
-  /^(tree-sitter-cli not available \(ENOENT\)|tree-sitter-cli failed: .*?(language|langauge|grammar|parser|not found|not configured|No language found|Failed to load|Could not load)|tree-sitter-cli error: .*?(ENOENT|timed out|spawn|language|grammar|parser))/is;
-
 describe('TreeSitterSummarizer', () => {
   let fixturesDir: string;
 
   beforeEach(() => {
     fixturesDir = path.join(__dirname, '../fixtures/summarization');
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   const readFixture = (file: string): string => fs.readFileSync(path.join(fixturesDir, file), 'utf-8');
@@ -219,36 +221,26 @@ describe('TreeSitterSummarizer', () => {
   });
 
   describe('Go fixture contract', () => {
-    it('handler.go preserves handler navigation when grammar is available, otherwise reports a specific parse error', () => {
-      const summary = summarizeFixture('handler.go', 'go');
+    it('delegates Go content to the Go summarizer without depending on an installed CLI or grammar', () => {
+      const content = readFixture('handler.go');
+      const expected: CodeSummary = {
+        language: 'go',
+        packageName: 'handlers',
+        imports: [{ module: 'net/http', items: [] }],
+        exports: [],
+        classes: [{ name: 'UserHandler', methods: [{ name: 'CreateUser', kind: 'method' }] }],
+        functions: [{ name: 'NewUserHandler', kind: 'function' }],
+        types: [{ name: 'UserHandler', kind: 'type' }],
+        interfaces: [],
+        originalSizeBytes: Buffer.byteLength(content, 'utf-8'),
+        summaryTimeMs: 0,
+      };
+      const summarize = jest.spyOn(GoCliSummarizer.prototype, 'summarize').mockReturnValue(expected);
 
-      if (summary.parseError) {
-        expect(summary.parseError).toMatch(GO_GRAMMAR_UNAVAILABLE);
-        expect({
-          imports: summary.imports,
-          exports: summary.exports,
-          classes: summary.classes,
-          functions: summary.functions,
-          types: summary.types,
-          interfaces: summary.interfaces,
-        }).toEqual(EMPTY_SYMBOLS);
-        return;
-      }
+      const summary = new TreeSitterSummarizer('go').summarize(content);
 
-      expect(summary.functions.map(f => f.name)).toEqual([
-        'NewUserHandler',
-        'generateID',
-        'extractUserID',
-        'parseJSON',
-        'respondJSON',
-        'applyUpdates',
-      ]);
-      expect(summary.classes).toEqual([
-        { name: 'User', methods: [] },
-        { name: 'UserHandler', methods: ['CreateUser', 'GetUser', 'UpdateUser', 'DeleteUser'].map(name => expect.objectContaining({ name })) },
-      ]);
-      expect(summary.types.map(t => t.name)).toEqual(['User', 'UserStore', 'UserHandler']);
-      expect(summary.interfaces).toEqual([]);
+      expect(summarize).toHaveBeenCalledWith(content, expect.any(Number));
+      expect(summary).toEqual(expected);
     });
   });
 
