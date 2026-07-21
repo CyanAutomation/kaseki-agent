@@ -192,7 +192,7 @@ describe('DiagnosticExtractor', () => {
     expect(reasons).not.toContain('patch_fallback_recovered');
   });
 
-  test('includes phase diagnostics when primary reason is not provider error', () => {
+  test('omits explicitly recovered diagnostics when a later terminal validation failure is primary', () => {
     const response = {
       status: 'failed',
       validationFailureReason: 'Validation command exited with code 1',
@@ -206,10 +206,37 @@ describe('DiagnosticExtractor', () => {
 
     extractor.extractDiagnosticSummary(response, '/results/kaseki-test', () => null);
 
-    // When primary reason is not provider error, recovered diagnostics should be kept
     const phaseDiags = response.diagnosticSummary?.phaseDiagnostics ?? [];
-    expect(phaseDiags.length).toBeGreaterThan(0);
-    expect(phaseDiags[0]?.recovered).toBe(true);
+    expect(phaseDiags).toEqual([]);
+  });
+
+  test('does not let a recovery marker suppress an unrelated critical diagnostic', () => {
+    const response = {
+      status: 'failed',
+      validationFailureReason: 'Validation command exited with code 1',
+      scoutingValidationErrorsContent: [
+        {
+          reason_code: 'patch_fallback_recovered',
+          field: 'scouting-candidate.json',
+          severity: 'warning',
+        },
+        {
+          reason_code: 'invalid_security_boundary',
+          field: 'scouting.json',
+          severity: 'critical',
+        },
+      ],
+    } as unknown as StatusResponse;
+
+    extractor.extractDiagnosticSummary(response, '/results/kaseki-test', () => null);
+
+    expect(response.diagnosticSummary?.phaseDiagnostics).toEqual([
+      expect.objectContaining({
+        phase: 'scouting',
+        reason: 'invalid_security_boundary',
+        severity: 'critical',
+      }),
+    ]);
   });
 
   test('limits phase diagnostics to first 5 errors', () => {

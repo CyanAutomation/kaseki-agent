@@ -55,10 +55,18 @@ export class DiagnosticExtractor {
       (failureJson) => this.runtimeErrorExtractor.extractTerminalRuntimeError(failureJson),
       (val) => this.cleanDiagnosticText(val)
     );
+    const terminalPrimaryReason = resolvePrimaryDiagnosticReason(
+      response,
+      [],
+      (val) => this.providerErrorFormatter.formatStructuredProviderError(val),
+      (failureJson) => this.providerErrorFormatter.formatProviderError(failureJson),
+      (failureJson) => this.runtimeErrorExtractor.extractTerminalRuntimeError(failureJson),
+      (val) => this.cleanDiagnosticText(val)
+    );
     const recoveryFailure = this.providerErrorFormatter.formatStructuredProviderError(
       response.failureJsonContent?.provider_error_recovery
     );
-    const phaseDiagnostics = filterPhaseDiagnostics(rawPhaseDiagnostics, primaryReason);
+    const phaseDiagnostics = filterPhaseDiagnostics(rawPhaseDiagnostics, primaryReason, Boolean(terminalPrimaryReason));
 
     if (!primaryReason && phaseDiagnostics.length === 0 && !dependencyCache) {
       return;
