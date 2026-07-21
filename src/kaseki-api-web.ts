@@ -1914,8 +1914,9 @@ const controllerPage = String.raw`<!doctype html>
             const outcome = payload.phaseOutcome;
             const scouting = String(outcome.scouting || 'unknown');
             const weaving = String(outcome.weaving || 'unknown');
-            items.push(['Phase outcomes', 'Scouting: ' + scouting + ' | Weaving: ' + weaving, {
-              warning: scouting === 'failed' || weaving === 'failed' || scouting === 'not_reached' || weaving === 'not_reached',
+            const scoutingLabel = outcome.scoutingFallback === true ? scouting + ' (fallback)' : scouting;
+            items.push(['Phase outcomes', 'Scouting: ' + scoutingLabel + ' | Weaving: ' + weaving, {
+              warning: outcome.scoutingFallback === true || scouting === 'failed' || weaving === 'failed' || scouting === 'not_reached' || weaving === 'not_reached',
               fullWidth: true,
             }]);
             if (outcome.scoutingFallback === true) {

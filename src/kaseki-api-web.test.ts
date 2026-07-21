@@ -245,6 +245,25 @@ describe('kaseki API web console behavior', () => {
     expect(document.querySelector('#response-summary')?.textContent).toContain('Correlation: correlation-219');
   });
 
+  test('labels a recovered scouting handoff as fallback in phase outcomes', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => path === '/api/runs/kaseki-220/status'
+        ? createJsonResponse({
+          id: 'kaseki-220', status: 'running',
+          phaseOutcome: { scouting: 'completed', weaving: 'running', scoutingFallback: true },
+        })
+        : path === '/api/runs'
+          ? createJsonResponse({ runs: [{ id: 'kaseki-220', status: 'running' }] })
+          : createJsonResponse({ status: 'ok' }),
+    });
+
+    click(document.querySelector('#refresh-runs'));
+    await waitFor(() => expect(document.querySelectorAll('#runs-list button')).toHaveLength(1));
+    click(document.querySelector('#runs-list button'));
+    await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Scouting: completed (fallback) | Weaving: running'));
+  });
+
   test('loads the recent run list into selectable run buttons', async () => {
     const { document, calls } = await renderConsole({
       storedToken: 'token12345',
