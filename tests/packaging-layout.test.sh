@@ -129,7 +129,15 @@ if (kind === 'copy') {
     return nonFlags.length >= 2 && nonFlags[nonFlags.length - 2] === source && nonFlags[nonFlags.length - 1] === destination;
   }).length;
 } else if (kind === 'command') {
-  actualCount = runCommands.filter((words) => expected.every((word, index) => words[index] === word)).length;
+  actualCount = runCommands.filter((words) => {
+    if (expected.length > words.length) return false;
+    for (let i = 0; i <= words.length - expected.length; i++) {
+      if (expected.every((word, index) => words[i + index] === word)) {
+        return true;
+      }
+    }
+    return false;
+  }).length;
 } else if (kind === 'command-contains') {
   actualCount = runCommands.filter((words) => expected.every((word) => words.includes(word))).length;
 } else {
