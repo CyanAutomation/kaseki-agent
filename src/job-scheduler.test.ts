@@ -1571,7 +1571,7 @@ describe('JobScheduler instance allocation and live progress', () => {
   test('parses live docker progress lines', async () => {
     mockSpawnSync.mockReturnValue({
       stdout:
-        '[progress] clone repository info: started\n[progress] pi agent: working; events=42\n',
+        '2026-07-21T10:00:01.000000000Z [progress] clone repository info: started\n2026-07-21T10:00:04.000000000Z [progress] pi agent: working; events=42\n',
       stderr: '',
       status: 0,
     });
@@ -1600,6 +1600,7 @@ describe('JobScheduler instance allocation and live progress', () => {
         stage: 'clone repository',
         status: 'info',
         message: 'started',
+        timestamp: '2026-07-21T10:00:01.000000000Z',
       })
     );
 
@@ -1609,6 +1610,7 @@ describe('JobScheduler instance allocation and live progress', () => {
         source: 'docker-logs',
         stage: 'pi agent',
         message: 'working; events=42',
+        timestamp: '2026-07-21T10:00:04.000000000Z',
       })
     );
   });
@@ -1898,7 +1900,7 @@ Another regular line
     expect(mockSpawnSync).toHaveBeenCalledTimes(1);
     expect(mockSpawnSync).toHaveBeenCalledWith(
       'docker',
-      ['logs', '--tail', '200', 'kaseki-7'],
+      ['logs', '--timestamps', '--tail', '200', 'kaseki-7'],
       expect.any(Object),
     );
     delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;

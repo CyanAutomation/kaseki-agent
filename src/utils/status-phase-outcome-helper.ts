@@ -30,7 +30,15 @@ export class StatusPhaseOutcomeHelper {
     const scoutingFallbackReason = this.scoutingFallbackReason(job);
 
     response.phaseOutcome = {
-      scouting: this.resolveScoutingOutcome(scoutingFailed, scoutingStarted, scoutingCompletedAt, weavingStarted, failed, Boolean(scoutingFallbackReason)),
+      scouting: this.resolveScoutingOutcome(
+        scoutingFailed,
+        scoutingStarted,
+        scoutingCompletedAt,
+        weavingStarted,
+        failed,
+        Boolean(scoutingFallbackReason),
+        job.request?.scouting?.enabled !== false,
+      ),
       weaving: this.resolveWeavingOutcome(weavingFailed, weavingStarted, weavingCompletedAt, stage, job.status),
       ...(scoutingFallbackReason ? { scoutingFallback: true, scoutingFallbackReason } : {}),
       explanation: this.buildFailureExplanation(failed, metadata, response, scoutingFallbackReason),
@@ -127,13 +135,18 @@ export class StatusPhaseOutcomeHelper {
     weavingStarted: boolean,
     failed: boolean,
     scoutingFallback: boolean,
+    scoutingEnabled: boolean,
   ): NonNullable<StatusResponse['phaseOutcome']>['scouting'] {
     if (scoutingFailed) return 'failed';
     if (scoutingFallback) return 'completed';
     // Coding/weaving cannot start until the optional scouting stage has either
     // completed or been explicitly bypassed. Avoid showing the contradictory
     // "not reached" state once a downstream phase is already in progress.
-    if (!scoutingStarted) return weavingStarted ? 'skipped' : 'not_reached';
+    // Scouting is enabled by default. When coding starts after its durable
+    // artifacts have been rotated or are not mounted yet, do not relabel an
+    // executed/fallback scouting phase as "skipped" merely because its live
+    // event fell outside the Docker log tail.
+    if (!scoutingStarted) return weavingStarted ? (scoutingEnabled ? 'completed' : 'skipped') : 'not_reached';
     return scoutingCompletedAt || weavingStarted || failed ? 'completed' : 'running';
   }
 
