@@ -390,12 +390,12 @@ export class WebhookManager extends EventEmitter {
   private acquireDeliveryLogLock(): string {
     const owner = `${process.pid}:${crypto.randomUUID()}`;
     const staleAfterMs = 30_000;
-    const deadline = Date.now() + 5_000;
+    const deadline = this.now() + 5_000;
 
     while (true) {
       try {
         const fd = fs.openSync(this.deliveryLogLockPath, 'wx', 0o600);
-        fs.writeFileSync(fd, JSON.stringify({ owner, pid: process.pid, acquiredAt: Date.now() }));
+        fs.writeFileSync(fd, JSON.stringify({ owner, pid: process.pid, acquiredAt: this.now() }));
         fs.closeSync(fd);
         return owner;
       } catch (error) {
@@ -410,7 +410,7 @@ export class WebhookManager extends EventEmitter {
           };
           const stat = fs.statSync(this.deliveryLogLockPath);
           const lockTime = typeof metadata.acquiredAt === 'number' ? metadata.acquiredAt : stat.mtimeMs;
-          if (Date.now() - lockTime > staleAfterMs) {
+          if (this.now() - lockTime > staleAfterMs) {
             fs.rmSync(this.deliveryLogLockPath, { force: true });
             continue;
           }
@@ -419,13 +419,13 @@ export class WebhookManager extends EventEmitter {
             continue;
           }
           const stat = fs.statSync(this.deliveryLogLockPath);
-          if (Date.now() - stat.mtimeMs > staleAfterMs) {
+          if (this.now() - stat.mtimeMs > staleAfterMs) {
             fs.rmSync(this.deliveryLogLockPath, { force: true });
             continue;
           }
         }
 
-        if (Date.now() >= deadline) {
+        if (this.now() >= deadline) {
           throw new Error(`Timed out acquiring webhook delivery log lock: ${this.deliveryLogLockPath}`);
         }
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
