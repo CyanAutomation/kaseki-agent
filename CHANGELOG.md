@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.113.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.113.4...v1.113.5) (2026-07-21)
+
+
+### Bug Fixes
+
+* scope goal-setting retry state per invocation ([56b594f](https://github.com/CyanAutomation/kaseki-agent/commit/56b594f62eb052aacd89749dc0756579652b4257))
+
 ## [1.113.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.113.3...v1.113.4) (2026-07-21)
 
 
