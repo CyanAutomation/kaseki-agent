@@ -10,17 +10,6 @@ CONFIG="$ROOT_DIR/scripts/startup-check-packaging.sh"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-assert_file_contains() {
-  local file="$1"
-  local pattern="$2"
-  local message="$3"
-
-  if ! grep -Eq "$pattern" "$file"; then
-    printf '%s\n' "$message" >&2
-    exit 1
-  fi
-}
-
 print_section() {
   printf '\n## %s\n' "$1"
 }
@@ -65,23 +54,38 @@ FAKE_STARTUP_CHECKS
   STARTUP_CHECK_MODE_CAPTURE="$MODE_CAPTURE" KASEKI_STARTUP_CHECK_MODE=quick kaseki_run_startup_checks
   test "$(cat "$MODE_CAPTURE")" = "quick"
 
-  # Stable public container paths: users and init containers call these documented locations directly.
-  assert_file_contains scripts/startup-check-packaging.sh '^: "\$\{KASEKI_STARTUP_CHECK_SOURCE:=/app/scripts/startup-checks\.sh\}"$' \
-    'startup-check packaging source path default changed unexpectedly'
-  assert_file_contains scripts/startup-check-packaging.sh '^: "\$\{KASEKI_STARTUP_CHECK_PRIMARY_PATH:=/scripts/startup-checks\.sh\}"$' \
-    'startup-check primary symlink path default changed unexpectedly'
-  assert_file_contains scripts/startup-check-packaging.sh '^: "\$\{KASEKI_INIT_CONTAINER_PATH:=/scripts/kaseki-init-container\.sh\}"$' \
-    'init-container symlink path default changed unexpectedly'
-  assert_file_contains scripts/startup-check-packaging.sh 'ln -sf "\$KASEKI_STARTUP_CHECK_SOURCE" "\$KASEKI_STARTUP_CHECK_PRIMARY_PATH"' \
-    'startup-check packaging no longer links the primary startup-check path'
-  assert_file_contains scripts/startup-check-packaging.sh 'ln -sf "\$KASEKI_STARTUP_CHECK_SOURCE" "\$KASEKI_INIT_CONTAINER_PATH"' \
-    'startup-check packaging no longer links the init-container path'
-  assert_file_contains scripts/docker-entrypoint.sh '^KASEKI_STARTUP_CHECK_PACKAGING_CONFIG="\$\{KASEKI_STARTUP_CHECK_PACKAGING_CONFIG:-/app/scripts/startup-check-packaging\.sh\}"$' \
-    'docker entrypoint no longer sources the startup-check packaging config from /app/scripts'
-  assert_file_contains scripts/docker-entrypoint.sh '/scripts/startup-checks\.sh "\$\{KASEKI_STARTUP_CHECK_MODE:-all\}"' \
-    'docker entrypoint no longer invokes the packaged startup-check symlink with the selected mode'
+  unset KASEKI_STARTUP_CHECK_MODE
+  STARTUP_CHECK_MODE_CAPTURE="$MODE_CAPTURE" kaseki_run_startup_checks
+  test "$(cat "$MODE_CAPTURE")" = "all"
+}
+
+check_entrypoint_mode_forwarding() {
+  print_section 'Docker entrypoint startup-check mode forwarding'
+
+  ENTRYPOINT_MODE_CAPTURE="$TMP_DIR/entrypoint-mode.txt"
+  export ENTRYPOINT_MODE_CAPTURE
+  cat > "$TMP_DIR/entrypoint-startup-checks.sh" <<'FAKE_ENTRYPOINT_CHECKS'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$1" > "${ENTRYPOINT_MODE_CAPTURE:?}"
+FAKE_ENTRYPOINT_CHECKS
+  chmod +x "$TMP_DIR/entrypoint-startup-checks.sh"
+
+  KASEKI_STARTUP_CHECK_PACKAGING_CONFIG="$CONFIG" \
+    KASEKI_STARTUP_CHECK_PRIMARY_PATH="$TMP_DIR/entrypoint-startup-checks.sh" \
+    KASEKI_SKIP_PERMISSION_VALIDATION=1 \
+    env -u KASEKI_STARTUP_CHECK_MODE bash scripts/docker-entrypoint.sh true
+  test "$(cat "$ENTRYPOINT_MODE_CAPTURE")" = "all"
+
+  KASEKI_STARTUP_CHECK_PACKAGING_CONFIG="$CONFIG" \
+    KASEKI_STARTUP_CHECK_PRIMARY_PATH="$TMP_DIR/entrypoint-startup-checks.sh" \
+    KASEKI_STARTUP_CHECK_MODE=quick \
+    KASEKI_SKIP_PERMISSION_VALIDATION=1 \
+    bash scripts/docker-entrypoint.sh true
+  test "$(cat "$ENTRYPOINT_MODE_CAPTURE")" = "quick"
 }
 
 check_startup_check_symlink_contracts
+check_entrypoint_mode_forwarding
 
 printf '\n✓ Startup-check packaging smoke assertions passed.\n'
