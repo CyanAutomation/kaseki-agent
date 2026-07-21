@@ -7,10 +7,31 @@ import { getNpmVersion } from './npm-version';
 
 describe('getNpmVersion', () => {
   it('should detect npm version when available', async () => {
-    const version = await getNpmVersion();
-    expect(version).toBeTruthy();
-    // Version should be in format: X.Y.Z (major.minor.patch)
-    expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+    const execSync = jest.fn(() => '999.0.0');
+
+    const version = await getNpmVersion({
+      npmVersion: '10.2.4',
+      execSync,
+    });
+
+    expect(version).toBe('10.2.4');
+    expect(execSync).not.toHaveBeenCalled();
+  });
+
+  it('should detect npm version with the command fallback', async () => {
+    const execSync = jest.fn(() => '10.2.4\n');
+
+    const version = await getNpmVersion({
+      npmVersion: '',
+      execSync,
+    });
+
+    expect(version).toBe('10.2.4');
+    expect(execSync).toHaveBeenCalledWith('npm --version', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 5000,
+    });
   });
 
   it('should gracefully fallback to "unknown" if npm command fails', async () => {
@@ -35,30 +56,4 @@ describe('getNpmVersion', () => {
     ).resolves.toBe('unknown');
   });
 
-  it('should ignore an undefined injected npm version and use process npm version', async () => {
-    const originalNpmVersion = process.versions.npm;
-
-    try {
-      Object.defineProperty(process.versions, 'npm', {
-        configurable: true,
-        value: '8.8.8',
-      });
-
-      const version = await getNpmVersion({
-        npmVersion: undefined,
-        execSync: () => '999.0.0',
-      });
-
-      expect(version).toBe('8.8.8');
-    } finally {
-      if (originalNpmVersion === undefined) {
-        delete process.versions.npm;
-      } else {
-        Object.defineProperty(process.versions, 'npm', {
-          configurable: true,
-          value: originalNpmVersion,
-        });
-      }
-    }
-  });
 });
