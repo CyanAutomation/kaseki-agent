@@ -146,6 +146,28 @@ describe('WebhookManager delivery log recovery', () => {
     }
   });
 
+  test('recovers a malformed stale lock using the injected clock', async () => {
+    const resultsDir = fs.mkdtempSync('/tmp/kaseki-webhook-manager-stale-lock-test-');
+    const deliveryLogPath = `${resultsDir}/.kaseki-webhook-delivery.log`;
+    const lockPath = `${deliveryLogPath}.lock`;
+    const clock = new FakeClock(Date.UTC(2026, 0, 1));
+    const manager = new WebhookManager(resultsDir, { now: clock.now });
+    manager.stopProcessing();
+
+    try {
+      fs.writeFileSync(lockPath, '{incomplete-lock-metadata');
+      clock.advanceTo(clock.now() + 30_001);
+
+      manager.enqueueWebhook('job-after-stale-lock', basePayloadFor('job-after-stale-lock'), configForTest());
+
+      expect(readJobIds(deliveryLogPath)).toEqual(['job-after-stale-lock']);
+      expect(fs.existsSync(lockPath)).toBe(false);
+    } finally {
+      await manager.shutdown();
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
   test('should re-enqueue pending deliveries on restart and retry immediately when retry time is stale', async () => {
     // Spec: Entries in delivery log with stale nextRetryTime should be retried immediately
     // Behavioral intent: Old log entries should be picked up and processed on next processQueue() call
