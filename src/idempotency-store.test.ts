@@ -65,6 +65,41 @@ describe('IdempotencyStore', () => {
     store2.shutdown();
   });
 
+  test('reclaims a pending empty-job entry after process restart', async () => {
+    let now = Date.parse('2026-07-21T00:00:00.000Z');
+    const store1 = new IdempotencyStore(resultsDir, 24, { now: () => now });
+    await expect(store1.claimOrGet('orphaned-key', 'same-fp')).resolves.toEqual({
+      kind: 'claimed',
+    });
+    store1.shutdown();
+
+    now += 30_001;
+    const store2 = new IdempotencyStore(resultsDir, 24, { now: () => now });
+    await expect(store2.claimOrGet('orphaned-key', 'same-fp')).resolves.toEqual({
+      kind: 'claimed',
+    });
+    store2.shutdown();
+  });
+
+  test('persists release of a pending claim as a removal record', async () => {
+    const store1 = new IdempotencyStore(resultsDir, 24);
+    await store1.claimOrGet('failed-key', 'same-fp');
+    await store1.releasePendingClaim('failed-key', 'same-fp');
+    store1.shutdown();
+
+    const log = fs.readFileSync(
+      path.join(resultsDir, '.kaseki-api-idempotency.jsonl'),
+      'utf-8',
+    );
+    expect(log).toContain('"operation":"remove"');
+
+    const store2 = new IdempotencyStore(resultsDir, 24);
+    await expect(store2.claimOrGet('failed-key', 'same-fp')).resolves.toEqual({
+      kind: 'claimed',
+    });
+    store2.shutdown();
+  });
+
   // ============================================================================
   // SUITE 2: Backward Compatibility
   // ============================================================================
