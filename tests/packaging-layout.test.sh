@@ -168,8 +168,11 @@ if (kind === 'copy') {
   assert.deepEqual(splitShellCommands('echo "foo && bar" && real_command'), ['echo "foo && bar"', 'real_command']);
   assert.deepEqual(splitShellCommands("echo 'foo && bar' && real_command"), ["echo 'foo && bar'", 'real_command']);
   assert.deepEqual(splitShellCommands('echo foo \\&& bar && real_command'), ['echo foo \\&& bar', 'real_command']);
+  assert.deepEqual(splitShellCommands('echo foo &'), ['echo foo &']);
   assert.equal(matchesInstall(['install', '-m', '0755', '--no-target-directory', 'source', 'destination'], '0755', 'source', 'destination'), true);
   assert.equal(matchesInstall(['install', '--no-target-directory', '--mode=0755', 'source', 'destination'], '0755', 'source', 'destination'), true);
+  assert.equal(matchesInstall(['install', '-m'], '0755', 'source', 'destination'), false);
+  assert.equal(matchesInstall(['install', '-m', '0755', 'destination'], '0755', undefined, 'destination'), false);
   assert.equal(containsSequence(['ENV_VAR=value', 'chmod', '+x', 'file'], ['chmod', '+x', 'file']), true);
   process.exit(0);
 } else {
