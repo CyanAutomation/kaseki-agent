@@ -379,3 +379,15 @@ assert_file_contains_literal() {
     fail "$message"
   fi
 }
+
+assert_validation_directory_diagnostics() {
+  local quality_log="$1"
+  local expected_repo_status="$2"
+  local expected_log_tail="$3"
+
+  assert_file_contains_literal "$quality_log" '[DIAGNOSTICS] Validation command failed with directory access error:' 'quality.log should classify the directory failure'
+  assert_file_contains_literal "$quality_log" 'Working directory status:' 'quality.log should label the directory status'
+  assert_file_contains_literal "$quality_log" "  $KASEKI_WORKSPACE_DIR/repo exists: $expected_repo_status" "quality.log should report workspace status $expected_repo_status"
+  assert_file_contains_literal "$quality_log" 'Last 20 lines of validation log:' 'quality.log should label the validation log tail'
+  assert_file_contains_literal "$quality_log" "$expected_log_tail" 'quality.log should include the validation log tail'
+}
