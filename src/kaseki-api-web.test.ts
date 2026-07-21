@@ -331,7 +331,7 @@ describe('kaseki API web console behavior', () => {
     expect(checkStatusButton).toBeUndefined();
   });
 
-  test('serializes diagnostics and always restores controls without disabling the task form', async () => {
+  test('keeps independent diagnostics available while another diagnostic is running', async () => {
     let rejectRequest: ((error: Error) => void) | undefined;
     const { document } = await renderConsole({
       storedToken: 'token12345',
@@ -348,7 +348,7 @@ describe('kaseki API web console behavior', () => {
     const repo = document.querySelector<HTMLInputElement>('[name="repoUrl"]');
     click(gateway);
     await waitFor(() => expect(gateway?.disabled).toBe(true));
-    expect(inference?.disabled).toBe(true);
+    expect(inference?.disabled).toBe(false);
     expect(repo?.disabled).toBe(false);
     rejectRequest?.(new Error('gateway unavailable'));
     await waitFor(() => expect(gateway?.disabled).toBe(false));

@@ -2583,11 +2583,13 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       expect(response.status).toBe(200);
       const body = (await response.json()) as any;
       expect(body.runStatus).toBe('running');
-      // Running jobs have no recommended artifacts (non-terminal)
-      expect(body.recommended.length).toBe(0);
+      // Materialized general diagnostics stay visible while a run is active.
+      expect(body.recommended).toContain('result-summary.md');
       const stderrFile = body.artifacts.find((artifact: any) => artifact.name === 'stderr.log');
+      const summaryFile = body.artifacts.find((artifact: any) => artifact.name === 'result-summary.md');
       const goalCheckFile = body.artifacts.find((artifact: any) => artifact.name === 'goal-check.json');
       expect(stderrFile.available).toBe(false);
+      expect(summaryFile.available).toBe(true);
       expect(goalCheckFile.available).toBe(false);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));

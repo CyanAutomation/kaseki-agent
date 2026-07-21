@@ -52,8 +52,10 @@ export function getArtifactStatus(
     if (metadata.availability === ArtifactAvailability.ON_FAILURE || metadata.availability === ArtifactAvailability.ON_SUCCESS) {
       return 'not-available-yet';
     }
-    // Otherwise, it's pending (general artifacts available on all jobs)
-    return 'pending';
+    // Diagnostics are useful while an agent is still retrying.  Expose any
+    // materialized general artifact immediately rather than making users wait
+    // for a terminal status to inspect the cause of a stalled phase.
+    return fileExists && fileSize > 0 ? 'available' : 'pending';
   }
 
   // File must exist and have content for any availability
