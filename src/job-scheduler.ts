@@ -1284,7 +1284,7 @@ export class JobScheduler {
       return tail > 0 ? cachedEvents.slice(-tail) : [];
     }
 
-    const output = this.getLiveDockerLogTail(id, Math.max(tail * 8, 80));
+    const output = this.getLiveDockerProgressLogTail(id, Math.max(tail * 8, 80));
     if (!output) {
       this.cacheLiveProgressEvents(cacheKey, []);
       return [];
@@ -1304,10 +1304,14 @@ export class JobScheduler {
   ): Array<Record<string, unknown>> {
     const events: Array<Record<string, unknown>> = [];
     for (const line of output.split(/\r?\n/)) {
-      const match = /^\[progress\]\s+([^:]+):\s*(.*)$/.exec(line);
+      // Docker's --timestamps output is RFC3339Nano followed by the original
+      // log line. Keep that source timestamp instead of assigning one parser
+      // time to every event in a snapshot.
+      const match = /^(?:(\d{4}-\d{2}-\d{2}T[^\s]+Z)\s+)?\[progress\]\s+([^:]+):\s*(.*)$/.exec(line);
       if (match) {
-        const fullBeforeColon = match[1].trim();
-        const message = match[2].trim();
+        const timestamp = match[1] || new Date().toISOString();
+        const fullBeforeColon = match[2].trim();
+        const message = match[3].trim();
 
         // Check if this is shell format: <stage> <status>: <detail>
         // where status is one of: info, started, finished, error
@@ -1322,7 +1326,7 @@ export class JobScheduler {
             stage,
             status,
             message,
-            timestamp: new Date().toISOString(),
+            timestamp,
           });
         } else {
           // Pi stream format: treat everything before colon as stage (backward compatibility)
@@ -1330,12 +1334,21 @@ export class JobScheduler {
             source: 'docker-logs',
             stage: fullBeforeColon,
             message,
-            timestamp: new Date().toISOString(),
+            timestamp,
           });
         }
       }
     }
     return events;
+  }
+
+  private getLiveDockerProgressLogTail(id: string, lines: number): string | null {
+    if (!/^kaseki-\d+$/.test(id)) {
+      return null;
+    }
+    const result = execSubprocess('docker', ['logs', '--timestamps', '--tail', String(lines), id]);
+    const output = [result.stdout || '', result.stderr || ''].join('');
+    return output.trim().length > 0 ? output : null;
   }
 
   private getCachedLiveProgressEvents(

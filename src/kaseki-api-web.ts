@@ -2888,10 +2888,6 @@ const controllerPage = String.raw`<!doctype html>
           if (statusEl) {
             statusEl.className = 'health-check-status spinner';
           }
-          // Disable all health check buttons while one is running
-          const allHealthCheckButtons = document.querySelectorAll('[data-probe]');
-          allHealthCheckButtons.forEach(btn => { btn.disabled = true; });
-          
           run(button, button.dataset.probe, {
             auth: button.dataset.auth === 'true',
           }).then(({ response }) => {
@@ -2899,14 +2895,10 @@ const controllerPage = String.raw`<!doctype html>
             if (statusEl) {
               statusEl.className = response.ok ? 'health-check-status ok' : 'health-check-status bad';
             }
-            // Re-enable all health check buttons after completion
-            allHealthCheckButtons.forEach(btn => { btn.disabled = false; });
           }).catch(() => {
             if (statusEl) {
               statusEl.className = 'health-check-status bad';
             }
-            // Re-enable all health check buttons after failure
-            allHealthCheckButtons.forEach(btn => { btn.disabled = false; });
           });
         });
       });
