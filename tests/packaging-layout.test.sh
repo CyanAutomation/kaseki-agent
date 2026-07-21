@@ -130,6 +130,7 @@ const matchesInstall = (words, mode, source, destination) => {
     if (!optionsEnded && argument === '--') {
       optionsEnded = true;
     } else if (!optionsEnded && optionsWithValues.has(argument)) {
+      if (index + 1 >= args.length) return false;
       const value = args[++index];
       if (value === undefined) return false;
       if (argument === '-m' || argument === '--mode') actualMode = value;
