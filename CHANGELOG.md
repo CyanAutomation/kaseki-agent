@@ -4,6 +4,20 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.113.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.113.2...v1.113.3) (2026-07-21)
+
+
+### Bug Fixes
+
+* align stale lock timestamps with injected clock ([6bec86f](https://github.com/CyanAutomation/kaseki-agent/commit/6bec86f175c68e1ace876ef5e3838ca8b0d6bff9))
+* **api:** recover orphaned /runs idempotency claims ([#1036](https://github.com/CyanAutomation/kaseki-agent/issues/1036)) ([643ba69](https://github.com/CyanAutomation/kaseki-agent/commit/643ba69a5ece449e3f00d2cc1cf56d8e0f877830))
+* **api:** recover orphaned idempotency claims ([5a32775](https://github.com/CyanAutomation/kaseki-agent/commit/5a32775254d5b1111df055e4e0f58f004f279fff))
+* avoid shell expansion in docker commands ([4efbfbd](https://github.com/CyanAutomation/kaseki-agent/commit/4efbfbd9920ad04177de0ce095419b04a772af53))
+* harden job persistence lock ownership ([4ddfe95](https://github.com/CyanAutomation/kaseki-agent/commit/4ddfe95dc90a3f4ecfeb0207cb4cfe415ec93e26))
+* persist webhook queue atomically ([b9ac709](https://github.com/CyanAutomation/kaseki-agent/commit/b9ac70910508e5ccf6476a7c165944966918d887))
+* prioritize terminal artifacts after scouting recovery ([3370c3e](https://github.com/CyanAutomation/kaseki-agent/commit/3370c3eef463fd286b6c29481955fa2e77f49c8f))
+* stabilize docker timeout completion ([9bde124](https://github.com/CyanAutomation/kaseki-agent/commit/9bde124548249785e02d81679be51d71fec28e6a))
+
 ## [1.113.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.113.1...v1.113.2) (2026-07-19)
 
 
