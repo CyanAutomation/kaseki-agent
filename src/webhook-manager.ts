@@ -56,6 +56,8 @@ export class WebhookManager extends EventEmitter {
   private deliveryQueue: WebhookQueueEntry[] = [];
   private logger: EventLogger;
   private deliveryLogPath: string;
+  private deliveryLogLockPath: string;
+  private removedDeliveryKeys = new Set<string>();
   private processInterval: NodeJS.Timeout | null = null;
   private maxConcurrentDeliveries = 5;
   private activeDeliveries = 0;
@@ -65,6 +67,7 @@ export class WebhookManager extends EventEmitter {
     super();
     this.logger = createEventLogger('webhook-manager');
     this.deliveryLogPath = path.join(resultsDir, '.kaseki-webhook-delivery.log');
+    this.deliveryLogLockPath = path.join(resultsDir, '.kaseki-webhook-delivery.log.lock');
     this.now = options.now ?? Date.now;
     this.loadDeliveryLog();
     this.startProcessing();
@@ -221,6 +224,7 @@ export class WebhookManager extends EventEmitter {
         });
 
         // Remove from queue
+        this.removedDeliveryKeys.add(this.deliveryKey(entry));
         this.deliveryQueue = this.deliveryQueue.filter((e) => e !== entry);
         this.persistDeliveryLog();
       } else {
@@ -264,6 +268,7 @@ export class WebhookManager extends EventEmitter {
           });
 
           // Remove from queue after max attempts
+          this.removedDeliveryKeys.add(this.deliveryKey(entry));
           this.deliveryQueue = this.deliveryQueue.filter((e) => e !== entry);
         }
 
@@ -310,6 +315,7 @@ export class WebhookManager extends EventEmitter {
         });
 
         // Remove from queue after max attempts
+        this.removedDeliveryKeys.add(this.deliveryKey(entry));
         this.deliveryQueue = this.deliveryQueue.filter((e) => e !== entry);
       }
 
@@ -334,8 +340,11 @@ export class WebhookManager extends EventEmitter {
    * Persist delivery log to disk.
    */
   private persistDeliveryLog(): void {
+    let lockOwner: string | undefined;
+    let tempPath: string | undefined;
     try {
-      const logEntries = this.deliveryQueue.map((entry) => ({
+      lockOwner = this.acquireDeliveryLogLock();
+      const memoryEntries: PersistedWebhookQueueEntry[] = this.deliveryQueue.map((entry) => ({
         jobId: entry.jobId,
         payload: entry.payload,
         config: entry.config,
@@ -344,16 +353,144 @@ export class WebhookManager extends EventEmitter {
         nextRetryTime: entry.nextRetryTime,
       }));
 
-      fs.writeFileSync(
-        this.deliveryLogPath,
-        logEntries.map((e) => JSON.stringify(e)).join('\n'),
-        'utf-8'
-      );
+      const diskEntries = this.readPersistedEntries();
+      const merged = new Map<string, PersistedWebhookQueueEntry>();
+      for (const entry of diskEntries) {
+        const key = this.deliveryKey(entry);
+        if (!this.removedDeliveryKeys.has(key)) {
+          merged.set(key, entry);
+        }
+      }
+      for (const entry of memoryEntries) {
+        merged.set(this.deliveryKey(entry), entry);
+      }
+
+      tempPath = `${this.deliveryLogPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+      fs.writeFileSync(tempPath, [...merged.values()].map((e) => JSON.stringify(e)).join('\n'), {
+        encoding: 'utf-8',
+        mode: 0o600,
+      });
+      fs.renameSync(tempPath, this.deliveryLogPath);
+      tempPath = undefined;
+      this.removedDeliveryKeys.clear();
     } catch (error) {
       this.logger.error('Failed to persist webhook delivery log', {
         error: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      if (tempPath) {
+        fs.rmSync(tempPath, { force: true });
+      }
+      if (lockOwner) {
+        this.releaseDeliveryLogLock(lockOwner);
+      }
     }
+  }
+
+  private acquireDeliveryLogLock(): string {
+    const owner = `${process.pid}:${crypto.randomUUID()}`;
+    const staleAfterMs = 30_000;
+    const deadline = this.now() + 5_000;
+
+    while (true) {
+      try {
+        const fd = fs.openSync(this.deliveryLogLockPath, 'wx', 0o600);
+        fs.writeFileSync(fd, JSON.stringify({ owner, pid: process.pid, acquiredAt: this.now() }));
+        fs.closeSync(fd);
+        return owner;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== 'EEXIST') {
+          throw error;
+        }
+
+        try {
+          const metadata = JSON.parse(fs.readFileSync(this.deliveryLogLockPath, 'utf-8')) as {
+            acquiredAt?: number;
+          };
+          const stat = fs.statSync(this.deliveryLogLockPath);
+          const lockTime = typeof metadata.acquiredAt === 'number' ? metadata.acquiredAt : stat.mtimeMs;
+          if (this.now() - lockTime > staleAfterMs) {
+            fs.rmSync(this.deliveryLogLockPath, { force: true });
+            continue;
+          }
+        } catch (lockError) {
+          if ((lockError as NodeJS.ErrnoException).code === 'ENOENT') {
+            continue;
+          }
+          const stat = fs.statSync(this.deliveryLogLockPath);
+          if (this.now() - stat.mtimeMs > staleAfterMs) {
+            fs.rmSync(this.deliveryLogLockPath, { force: true });
+            continue;
+          }
+        }
+
+        if (this.now() >= deadline) {
+          throw new Error(`Timed out acquiring webhook delivery log lock: ${this.deliveryLogLockPath}`);
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+      }
+    }
+  }
+
+  private releaseDeliveryLogLock(owner: string): void {
+    try {
+      const content = fs.readFileSync(this.deliveryLogLockPath, 'utf-8');
+      const metadata = JSON.parse(content) as { owner?: string };
+      if (metadata.owner === owner) {
+        fs.rmSync(this.deliveryLogLockPath, { force: true });
+      }
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') {
+        this.logger.warn('Failed to release webhook delivery log lock', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  private readPersistedEntries(): PersistedWebhookQueueEntry[] {
+    if (!fs.existsSync(this.deliveryLogPath)) {
+      return [];
+    }
+
+    const entries: PersistedWebhookQueueEntry[] = [];
+    for (const line of fs.readFileSync(this.deliveryLogPath, 'utf-8').split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const candidate = JSON.parse(line) as Partial<PersistedWebhookQueueEntry>;
+        if (
+          typeof candidate.jobId === 'string' &&
+          candidate.payload &&
+          typeof candidate.payload.eventType === 'string' &&
+          candidate.config &&
+          typeof candidate.config.url === 'string' &&
+          typeof candidate.deliveryAttempts === 'number'
+        ) {
+          entries.push(candidate as PersistedWebhookQueueEntry);
+        } else {
+          this.logger.warn('Skipping malformed webhook delivery log line during persistence', {
+            reason: 'missing_required_fields',
+          });
+        }
+      } catch (error) {
+        this.logger.warn('Skipping malformed webhook delivery log line during persistence', {
+          reason: 'invalid_json',
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return entries;
+  }
+
+  private deliveryKey(entry: Pick<PersistedWebhookQueueEntry, 'jobId' | 'payload' | 'config'>): string {
+    return JSON.stringify([
+      entry.jobId,
+      entry.payload.eventType,
+      entry.payload.timestamp,
+      entry.config.url,
+    ]);
   }
 
   /**
