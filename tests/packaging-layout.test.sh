@@ -81,7 +81,34 @@ const copies = instructions
 
 const runCommands = instructions
   .filter((instruction) => /^RUN\s/i.test(instruction))
-  .flatMap((instruction) => instruction.replace(/^RUN\s+/i, '').split(/\s*&&\s*/))
+  .flatMap((instruction) => {
+    const shellCommand = instruction.replace(/^RUN\s+/i, '');
+    const commands = [];
+    let current = '';
+    let inQuote = null;
+    
+    for (let i = 0; i < shellCommand.length; i++) {
+      const char = shellCommand[i];
+      const prevChar = i > 0 ? shellCommand[i - 1] : '';
+      
+      if ((char === '"' || char === "'") && prevChar !== '\\') {
+        inQuote = inQuote === char ? null : (inQuote || char);
+      }
+      
+      if (!inQuote && char === '&' && shellCommand[i + 1] === '&') {
+        commands.push(current.trim());
+        current = '';
+        i++; // skip second &
+        continue;
+      }
+      
+      current += char;
+    }
+    
+    if (current.trim()) commands.push(current.trim());
+    return commands;
+  })
+  .map(shellWords);
   .map(shellWords);
 
 const wantedCount = kind === 'copy' ? undefined : Number(expected.pop());
