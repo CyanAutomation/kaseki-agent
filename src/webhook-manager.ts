@@ -435,14 +435,14 @@ export class WebhookManager extends EventEmitter {
 
   private releaseDeliveryLogLock(owner: string): void {
     try {
-      const metadata = JSON.parse(fs.readFileSync(this.deliveryLogLockPath, 'utf-8')) as {
-        owner?: string;
-      };
+      const content = fs.readFileSync(this.deliveryLogLockPath, 'utf-8');
+      const metadata = JSON.parse(content) as { owner?: string };
       if (metadata.owner === owner) {
         fs.rmSync(this.deliveryLogLockPath, { force: true });
       }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') {
         this.logger.warn('Failed to release webhook delivery log lock', {
           error: error instanceof Error ? error.message : String(error),
         });
