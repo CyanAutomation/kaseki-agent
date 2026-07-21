@@ -92,7 +92,13 @@ describe('Phase 1 & 2 & 3: Scouting Prompt Structure with Task Validation and Ex
 
   test('keeps goal-setting retry counters local to each invocation', () => {
     const agentScript = fs.readFileSync(path.join(__dirname, '..', 'kaseki-agent.sh'), 'utf-8');
-    expect(agentScript).toMatch(/run_goal_setting_agent_with_retry\(\) \{[\s\S]*?local attempt=1 max_attempts=2/);
+    const retryFunctionPreamble = agentScript.match(
+      /run_goal_setting_agent_with_retry\(\) \{([\s\S]*?)goal_setting_last_exit=0/,
+    )?.[1];
+
+    expect(retryFunctionPreamble).toBeDefined();
+    expect(retryFunctionPreamble).toMatch(/^\s*# Keep retry state[\s\S]*?^\s*local attempt=1 max_attempts=2$/m);
+    expect(retryFunctionPreamble).not.toMatch(/^\s*(?:attempt|max_attempts)=/m);
   });
 
   test('test_impact guidelines should be comprehensive', () => {
