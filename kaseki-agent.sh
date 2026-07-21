@@ -4048,6 +4048,23 @@ append_validation_failure_tail() {
   } | tee -a "$visible_log" "$quality_log" >/dev/null
 }
 
+append_validation_directory_diagnostics() {
+  local validation_log="$1"
+  local quality_log="${2:-${KASEKI_RESULTS_DIR}/quality.log}"
+
+  {
+    printf '\n[DIAGNOSTICS] Validation command failed with directory access error:\n'
+    printf 'Working directory status:\n'
+    printf '  Current pwd: %s\n' "$(pwd 2>&1 || echo '<pwd failed>')"
+    printf '  %s/repo exists: %s\n' "$KASEKI_WORKSPACE_DIR" "$([ -d "${KASEKI_WORKSPACE_DIR}/repo" ] && echo 'yes' || echo 'no')"
+    if [ -L "${KASEKI_WORKSPACE_DIR}"/repo/node_modules ]; then
+      printf '  node_modules is symlink → %s\n' "$(readlink "${KASEKI_WORKSPACE_DIR}"/repo/node_modules 2>&1 || echo '<readlink failed>')"
+    fi
+    printf 'Last 20 lines of validation log:\n'
+    tail -20 "$validation_log"
+  } | tee -a "$quality_log"
+}
+
 # === Baseline Test Failure Comparison (Pre-existing vs Newly-Introduced) ===
 
 baseline_validation_cache_key() {
@@ -4613,17 +4630,7 @@ run_validation_commands() {
           append_validation_failure_tail "$raw_log" "$log_file"
           # Enhanced diagnostics for getcwd-type errors.
           if grep -q 'getcwd\|No such file or directory\|cannot access parent directories' "$log_file"; then
-            {
-              printf '\n[DIAGNOSTICS] Validation command failed with directory access error:\n'
-              printf 'Working directory status:\n'
-              printf '  Current pwd: %s\n' "$(pwd 2>&1 || echo '<pwd failed>')"
-              printf '  %s/repo exists: %s\n' "$KASEKI_WORKSPACE_DIR" "$([ -d "${KASEKI_WORKSPACE_DIR}/repo" ] && echo 'yes' || echo 'no')"
-              if [ -L "${KASEKI_WORKSPACE_DIR}"/repo/node_modules ]; then
-                printf '  node_modules is symlink → %s\n' "$(readlink "${KASEKI_WORKSPACE_DIR}"/repo/node_modules 2>&1 || echo '<readlink failed>')"
-              fi
-              printf 'Last 20 lines of validation log:\n'
-              tail -20 "$log_file"
-            } | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
+            append_validation_directory_diagnostics "$log_file"
           fi
           # Fail-fast: if enabled, stop validation loop at first failure.
           if [ "$KASEKI_VALIDATION_FAIL_FAST" -eq 1 ]; then
