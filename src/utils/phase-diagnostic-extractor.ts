@@ -17,6 +17,23 @@ type PhaseDiagnostic = {
   recovered?: boolean;
 };
 
+function isRecoveredReason(reason: string | undefined): boolean {
+  return Boolean(reason?.endsWith('_recovered'));
+}
+
+function isRecoveryMarker(diagnostic: PhaseDiagnostic): boolean {
+  return diagnostic.recovered === true || isRecoveredReason(diagnostic.reason);
+}
+
+function isFallbackContextReason(reason: string | undefined): boolean {
+  return Boolean(reason && (
+    reason === 'patch_fallback' ||
+    reason === 'inspect_fallback' ||
+    reason.includes('missing_candidate') ||
+    reason === 'missing_file'
+  ));
+}
+
 /**
  * Clean diagnostic text by removing ANSI codes and normalizing whitespace
  */
@@ -58,7 +75,7 @@ export function phaseDiagnosticsFromErrors(
       ...(stringField(error, 'field', ansiPattern) ? { field: stringField(error, 'field', ansiPattern) } : {}),
       ...(detail ? { detail: cleanDiagnosticText(detail, ansiPattern) } : {}),
       ...(stringField(error, 'suggestion', ansiPattern) ? { suggestion: cleanDiagnosticText(stringField(error, 'suggestion', ansiPattern) as string, ansiPattern) } : {}),
-      ...(error.recovered === true || error.recovered === 'true' ? { recovered: true } : {}),
+      ...(error.recovered === true || error.recovered === 'true' || isRecoveredReason(reason) ? { recovered: true } : {}),
     };
   });
 }
@@ -68,23 +85,31 @@ export function phaseDiagnosticsFromErrors(
  */
 export function filterPhaseDiagnostics(
   phaseDiagnostics: PhaseDiagnostic[],
-  primaryReason: string | undefined
+  primaryReason: string | undefined,
+  hasTerminalPrimaryReason = isProviderPrimaryReason(primaryReason ?? '')
 ): PhaseDiagnostic[] {
-  if (!primaryReason || !isProviderPrimaryReason(primaryReason)) {
+  if (!primaryReason || !hasTerminalPrimaryReason) {
     return phaseDiagnostics;
   }
 
+  const recoveryMarkers = phaseDiagnostics.filter(isRecoveryMarker);
   return phaseDiagnostics.filter((diagnostic) => {
-    if (diagnostic.recovered) {
+    if (isRecoveryMarker(diagnostic)) {
       return false;
     }
 
-    const reason = diagnostic.reason ?? '';
-    return ![
-      'placeholder_content',
-      'patch_fallback',
-      'patch_fallback_recovered',
-    ].includes(reason);
+    if (isProviderPrimaryReason(primaryReason) && diagnostic.reason === 'placeholder_content') {
+      return false;
+    }
+
+    if (!isFallbackContextReason(diagnostic.reason)) {
+      return true;
+    }
+
+    return !recoveryMarkers.some((marker) =>
+      marker.phase === diagnostic.phase &&
+      (!marker.field || !diagnostic.field || marker.field === diagnostic.field)
+    );
   });
 }
 
