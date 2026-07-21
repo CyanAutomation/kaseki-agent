@@ -142,4 +142,30 @@ describe('StatusPhaseOutcomeHelper', () => {
 
     expect(response.phaseOutcome).toMatchObject({ scouting: 'skipped', weaving: 'running' });
   });
+
+  it('keeps a validated scouting fallback visible while later quality checks run', () => {
+    const job = makeJob({ id: 'job-fallback' });
+    const runDir = path.join(resultsDir, job.id);
+    fs.mkdirSync(runDir, { recursive: true });
+    fs.writeFileSync(path.join(runDir, 'scouting-validation-errors.jsonl'), JSON.stringify({
+      reason_code: 'patch_retry_exhausted_fallback_recovered',
+      recovered: true,
+      recovery_reason_code: 'patch_retry_exhausted_fallback_recovered',
+    }) + '\n');
+    const helper = new StatusPhaseOutcomeHelper(
+      makeScheduler([{ stage: 'pi coding agent', status: 'started' }]),
+      makeConfig(resultsDir),
+    );
+    const response = makeResponse('quality checks');
+
+    helper.addPhaseOutcome(response, job, {});
+
+    expect(response.phaseOutcome).toMatchObject({
+      scouting: 'completed',
+      scoutingFallback: true,
+      scoutingFallbackReason: 'patch_retry_exhausted_fallback_recovered',
+      weaving: 'completed',
+    });
+    expect(response.phaseOutcome?.explanation).toContain('validated fallback handoff');
+  });
 });

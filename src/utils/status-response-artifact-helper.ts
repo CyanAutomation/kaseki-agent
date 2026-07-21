@@ -333,12 +333,15 @@ export class StatusArtifactHelper {
       return true;
     }
     if (phase === 'scouting') {
-      return this.hasUnrecoveredCriticalScoutingDiagnostics(runDir);
+      // A recovered scouting contract failure is still essential context for
+      // a later no-op or weaving failure. Hiding it made terminal triage point
+      // at generic gateway logs instead of the failed scout handoff.
+      return this.hasScoutingDiagnostics(runDir);
     }
     return files.some((fileName) => fs.existsSync(path.join(runDir, fileName)));
   }
 
-  private hasUnrecoveredCriticalScoutingDiagnostics(runDir: string): boolean {
+  private hasScoutingDiagnostics(runDir: string): boolean {
     const validationErrorsContent = this.readSmallTerminalArtifact(path.join(runDir, 'scouting-validation-errors.jsonl'));
     if (!validationErrorsContent || validationErrorsContent.length > INLINE_ARTIFACT_LIMIT_BYTES) {
       return false;
@@ -350,7 +353,7 @@ export class StatusArtifactHelper {
     }
 
     const hasRecoveryMarker = errors.some((error) => this.isScoutingRecoveredDiagnostic(error));
-    return errors.some((error) => this.isUnrecoveredCriticalScoutingDiagnostic(error, hasRecoveryMarker));
+    return hasRecoveryMarker || errors.some((error) => this.isUnrecoveredCriticalScoutingDiagnostic(error, hasRecoveryMarker));
   }
 
   private parseValidationErrorsJsonl(content: string): Array<Record<string, unknown>> {
