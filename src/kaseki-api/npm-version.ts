@@ -4,6 +4,9 @@
  * Detects the npm version installed in the container.
  * Falls back gracefully to 'unknown' if detection fails.
  *
+ * Contract: API health/startup metadata reports a detected npm version when
+ * available and "unknown" when detection fails.
+ *
  * @returns npm version string (e.g., "10.2.4") or "unknown" on failure
  */
 
