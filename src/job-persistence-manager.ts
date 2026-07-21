@@ -516,6 +516,22 @@ export class JobPersistenceManager {
     callback: () => T | Promise<T>,
   ): Promise<T> {
     fs.mkdirSync(this.config.resultsDir, { recursive: true });
+    const owner = await this.acquireLock(lockPath, lockName);
+    try {
+      return await callback();
+    } finally {
+      this.releaseLock(lockPath, owner);
+    }
+  }
+
+  /**
+   * Acquire a lock without conflating errors from the protected operation with
+   * lock-directory collisions.
+   */
+  private async acquireLock(
+    lockPath: string,
+    lockName: string,
+  ): Promise<LockOwnerMetadata> {
     const maxRetries = 100;
     const retryDelayMs = 25;
     const staleThresholdMs = 30000;
@@ -534,18 +550,13 @@ export class JobPersistenceManager {
             },
           );
         } catch (ownerWriteError) {
-          this.releaseLock(lockPath, owner, true);
+          this.releasePartiallyAcquiredLock(lockPath, owner.token);
           throw ownerWriteError;
         }
         this.activeLockOwners.set(lockPath, owner);
-        try {
-          return await callback();
-        } finally {
-          this.releaseLock(lockPath, owner);
-        }
+        return owner;
       } catch (err) {
         const code = (err as NodeJS.ErrnoException).code;
-        this.releaseLock(lockPath, owner);
         if (code !== 'EEXIST' && code !== 'ENOTEMPTY') {
           throw err;
         }
@@ -570,6 +581,22 @@ export class JobPersistenceManager {
     }
 
     throw new LockAcquisitionError(lockName, lockPath);
+  }
+
+  private releasePartiallyAcquiredLock(lockPath: string, token: string): void {
+    const ownerMetadata = this.readLockOwner(lockPath);
+    if (ownerMetadata?.token === token) {
+      fs.rmSync(lockPath, { recursive: true, force: true });
+      return;
+    }
+
+    if (!ownerMetadata) {
+      try {
+        fs.rmdirSync(lockPath);
+      } catch {
+        // A concurrent owner may have populated or replaced the directory.
+      }
+    }
   }
 
   private getLockOwnerPath(lockPath: string): string {
@@ -694,9 +721,11 @@ export class JobPersistenceManager {
   private releaseLock(
     lockPath: string,
     owner: LockOwnerMetadata,
-    allowEmptyOwnerlessDirectory = false,
   ): void {
-    const activeOwner = this.activeLockOwners.get(lockPath) ?? owner;
+    const activeOwner = this.activeLockOwners.get(lockPath);
+    if (!activeOwner || activeOwner.token !== owner.token) {
+      return;
+    }
     const ownerMetadata = this.readLockOwner(lockPath);
     if (ownerMetadata?.token === activeOwner.token) {
       try {
@@ -710,13 +739,6 @@ export class JobPersistenceManager {
       return;
     }
 
-    if (allowEmptyOwnerlessDirectory && !ownerMetadata) {
-      try {
-        fs.rmdirSync(lockPath);
-      } catch {
-        // Ignore cleanup races.
-      }
-    }
     this.activeLockOwners.delete(lockPath);
   }
 

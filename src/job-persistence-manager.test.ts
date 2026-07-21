@@ -635,5 +635,29 @@ describe('JobPersistenceManager', () => {
         false,
       );
     });
+
+    test('does not mistake EEXIST from the protected operation for lock contention', async () => {
+      const callback = jest.fn(() => {
+        const error = new Error('destination already exists') as NodeJS.ErrnoException;
+        error.code = 'EEXIST';
+        throw error;
+      });
+      const lockPath = path.join(tempDir, '.callback-error.lock');
+
+      await expect(
+        (
+          manager as unknown as {
+            withLock: <T>(
+              path: string,
+              name: string,
+              callback: () => T,
+            ) => Promise<T>;
+          }
+        ).withLock(lockPath, 'callback error test', callback),
+      ).rejects.toThrow('destination already exists');
+
+      expect(callback).toHaveBeenCalledTimes(1);
+      expect(fs.existsSync(lockPath)).toBe(false);
+    });
   });
 });
