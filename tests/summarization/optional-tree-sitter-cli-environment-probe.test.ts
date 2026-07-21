@@ -1,10 +1,13 @@
 /**
- * Optional integration check for the real tree-sitter CLI binary.
+ * Optional environment capability probe for the real tree-sitter CLI binary.
  *
  * Run with RUN_TREE_SITTER_CLI_INTEGRATION=1 when the environment is expected
  * to provide the CLI and Go grammar. The normal Jest suite records this as a
- * skipped environment-gated integration test instead of failing unit tests on
- * machines without tree-sitter CLI support.
+ * skipped probe instead of failing on machines without tree-sitter CLI support.
+ * This probe only verifies that this environment can invoke `npx tree-sitter`
+ * with the Go grammar; it is not
+ * primary behavioral coverage for Go summarization. Deterministic summarizer
+ * behavior is covered by the neighboring unit and integration tests.
  */
 import { describe, expect, it } from '@jest/globals';
 import { execFileSync } from 'child_process';
@@ -53,8 +56,8 @@ function formatCliError(error: unknown): string {
   return String(error);
 }
 
-describe('tree-sitter CLI availability integration', () => {
-  integrationIt('parses a Go fixture and returns AST data through the real CLI', () => {
+describe('optional tree-sitter CLI environment capability probe', () => {
+  integrationIt('reports that npx tree-sitter can parse with the Go grammar', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tree-sitter-cli-'));
     const goFile = path.join(tmpDir, 'handler.go');
 
