@@ -5,8 +5,8 @@
  * to provide the CLI and Go grammar. The normal Jest suite records this as a
  * skipped probe instead of failing on machines without tree-sitter CLI support.
  * This probe only verifies that this environment can invoke `npx tree-sitter`
- * with the Go grammar; it is not
- * primary behavioral coverage for Go summarization. Deterministic summarizer
+ * with the Go grammar; it is not primary behavioral coverage for Go summarization.
+ * Deterministic summarizer behavior is covered by the neighboring unit and integration tests.
  * behavior is covered by the neighboring unit and integration tests.
  */
 import { describe, expect, it } from '@jest/globals';
