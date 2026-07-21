@@ -2,8 +2,8 @@
  * Go CLI summarizer parser contract tests.
  *
  * Unit tests mock the tree-sitter CLI JSON boundary so the parser contract is
- * deterministic. Set RUN_GO_CLI_SUMMARIZER_INTEGRATION=1 to exercise the real
- * CLI boundary explicitly.
+ * deterministic. Availability of the real executable and Go grammar is checked
+ * separately by the opt-in tree-sitter CLI environment probe.
  */
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { execFileSync } from 'child_process';
@@ -239,32 +239,4 @@ func (h *Handler) Serve() error {
     });
   });
 
-  describe('opt-in real Go CLI integration', () => {
-    const integrationIt = process.env.RUN_GO_CLI_SUMMARIZER_INTEGRATION === '1' ? it : it.skip;
-
-    integrationIt('preserves Go symbol navigation through the real tree-sitter CLI boundary', () => {
-      const actualChildProcess = jest.requireActual<typeof import('child_process')>('child_process');
-      mockExecFileSync.mockImplementation(actualChildProcess.execFileSync as typeof execFileSync);
-      const realSummarizer = new GoCliSummarizer('go');
-      const code = `package main
-
-import "fmt"
-
-type Greeter struct{}
-
-func Hello() { fmt.Println("hello") }
-func (g Greeter) Greet() {}
-`;
-
-      const summary = realSummarizer.summarize(writeFixture(tmpDir, 'real.go', code));
-
-      expect(summary.parseError).toBeUndefined();
-      expect(summary.packageName).toBe('main');
-      expect(summary.imports).toEqual([{ module: 'fmt', items: [] }]);
-      expect(summary.functions.map((fn) => fn.name)).toEqual(['Hello']);
-      expect(summary.classes).toEqual([
-        { name: 'Greeter', methods: [{ name: 'Greet', kind: 'method', signature: expect.stringContaining('func (g Greeter) Greet') }] },
-      ]);
-    });
-  });
 });
