@@ -62,6 +62,7 @@ export class WebhookManager extends EventEmitter {
   private maxConcurrentDeliveries = 5;
   private activeDeliveries = 0;
   private readonly now: () => number;
+  private readonly fileSystemClockOffsetMs: number;
 
   constructor(resultsDir: string, options: WebhookManagerOptions = {}) {
     super();
@@ -69,6 +70,9 @@ export class WebhookManager extends EventEmitter {
     this.deliveryLogPath = path.join(resultsDir, '.kaseki-webhook-delivery.log');
     this.deliveryLogLockPath = path.join(resultsDir, '.kaseki-webhook-delivery.log.lock');
     this.now = options.now ?? Date.now;
+    // File timestamps use the system clock. Translate them into the injected
+    // clock's domain so stale-lock recovery remains deterministic in tests.
+    this.fileSystemClockOffsetMs = this.now() - Date.now();
     this.loadDeliveryLog();
     this.startProcessing();
   }
@@ -409,7 +413,10 @@ export class WebhookManager extends EventEmitter {
             acquiredAt?: number;
           };
           const stat = fs.statSync(this.deliveryLogLockPath);
-          const lockTime = typeof metadata.acquiredAt === 'number' ? metadata.acquiredAt : stat.mtimeMs;
+          const lockTime =
+            typeof metadata.acquiredAt === 'number'
+              ? metadata.acquiredAt
+              : stat.mtimeMs + this.fileSystemClockOffsetMs;
           if (this.now() - lockTime > staleAfterMs) {
             fs.rmSync(this.deliveryLogLockPath, { force: true });
             continue;
@@ -419,7 +426,7 @@ export class WebhookManager extends EventEmitter {
             continue;
           }
           const stat = fs.statSync(this.deliveryLogLockPath);
-          if (this.now() - stat.mtimeMs > staleAfterMs) {
+          if (this.now() - (stat.mtimeMs + this.fileSystemClockOffsetMs) > staleAfterMs) {
             fs.rmSync(this.deliveryLogLockPath, { force: true });
             continue;
           }
