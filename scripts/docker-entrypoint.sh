@@ -54,7 +54,7 @@ if [ "${KASEKI_SKIP_STARTUP_CHECKS:-0}" != "1" ]; then
     # Exit code 3 is a warning that the API can surface through /api/preflight.
     if [ "$exit_code" != "3" ]; then
       echo "Startup checks failed: blocking startup issue detected (exit $exit_code)" >&2
-      exit 1
+      exit "$exit_code"
     fi
   }
 fi

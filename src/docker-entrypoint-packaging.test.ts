@@ -303,7 +303,7 @@ kill -TERM "$$"
     const entrypoint = fs.readFileSync(path.join(repoRoot, 'scripts/docker-entrypoint.sh'), 'utf-8');
 
     expect(entrypoint).toContain('KASEKI_SKIP_STARTUP_CHECKS:-0');
-    expect(entrypoint).toContain('/scripts/startup-checks.sh "${KASEKI_STARTUP_CHECK_MODE:-all}"');
+    expect(entrypoint).toContain('kaseki_run_startup_checks');
     expect(entrypoint).toContain('Startup checks failed: blocking startup issue detected');
   });
 
@@ -373,6 +373,19 @@ exit 2
       );
       fs.chmodSync(agentStub, 0o755);
 
+      // Create mock packaging config that defines kaseki_run_startup_checks
+      const packagingConfigMock = path.join(tempRoot, 'startup-check-packaging.sh');
+      fs.writeFileSync(
+        packagingConfigMock,
+        '#!/usr/bin/env bash\n' +
+          'set -euo pipefail\n' +
+          `KASEKI_STARTUP_CHECK_PRIMARY_PATH="${startupChecks}"\n` +
+          'kaseki_run_startup_checks() {\n' +
+          '  "$KASEKI_STARTUP_CHECK_PRIMARY_PATH"\n' +
+          '}\n',
+      );
+      fs.chmodSync(packagingConfigMock, 0o755);
+
       const entrypoint = fs
         .readFileSync(path.join(repoRoot, 'scripts/docker-entrypoint.sh'), 'utf-8')
         .replace('/scripts/startup-checks.sh', startupChecks);
@@ -385,6 +398,8 @@ exit 2
           ...process.env,
           KASEKI_AGENT_BIN: agentStub,
           KASEKI_ENTRYPOINT_AGENT_ENV: agentEnvPath,
+          KASEKI_STARTUP_CHECK_PACKAGING_CONFIG: packagingConfigMock,
+          KASEKI_SKIP_PERMISSION_VALIDATION: '1',
         },
       });
 
