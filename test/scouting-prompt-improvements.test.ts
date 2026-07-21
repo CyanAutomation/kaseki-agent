@@ -90,6 +90,11 @@ describe('Phase 1 & 2 & 3: Scouting Prompt Structure with Task Validation and Ex
     expect(promptContent).toContain('separate non-empty path and reason strings');
   });
 
+  test('keeps goal-setting retry counters local to each invocation', () => {
+    const agentScript = fs.readFileSync(path.join(__dirname, '..', 'kaseki-agent.sh'), 'utf-8');
+    expect(agentScript).toMatch(/run_goal_setting_agent_with_retry\(\) \{[\s\S]*?local attempt=1 max_attempts=2/);
+  });
+
   test('test_impact guidelines should be comprehensive', () => {
     // Should have examples of strong test_impact entries
     expect(promptContent).toContain('✓ Parser change');
