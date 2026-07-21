@@ -5645,12 +5645,13 @@ classify_goal_setting_error() {
 }
 
 run_goal_setting_agent_with_retry() {
-  local attempt goal_setting_stderr_capture max_attempts goal_setting_last_exit goal_setting_last_stderr
+  # Keep retry state invocation-local so one goal-setting run cannot exhaust the
+  # retry budget for a later run in the same shell process.
+  local attempt=1 max_attempts=2
+  local goal_setting_stderr_capture goal_setting_last_exit goal_setting_last_stderr
   local pre_goal_setting_status pre_goal_setting_failed_command goal_setting_phase_start_time
   local attempt_start_time attempt_end_time attempt_duration_sec
 
-  max_attempts=2
-  attempt=1
   goal_setting_last_exit=0
   goal_setting_last_stderr=""
   pre_goal_setting_status="$STATUS"
