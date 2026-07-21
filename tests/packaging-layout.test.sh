@@ -116,14 +116,17 @@ let actualCount;
 if (kind === 'copy') {
   const [stage, source, destination] = expected;
   actualCount = copies.filter((copy) => copy.from === stage && copy.destination === destination && copy.sources.includes(source)).length;
-} else if (kind === 'install') {
   const [mode, source, destination] = expected;
   actualCount = runCommands.filter((words) => {
     const installIndex = words.indexOf('install');
     if (installIndex < 0) return false;
     const args = words.slice(installIndex + 1);
     const modeIndex = args.indexOf('-m');
-    return modeIndex >= 0 && args[modeIndex + 1] === mode && args.at(-2) === source && args.at(-1) === destination;
+    if (modeIndex < 0 || modeIndex + 1 >= args.length || args[modeIndex + 1] !== mode) return false;
+    
+    // Find source and destination by filtering out flags
+    const nonFlags = args.filter((arg) => !arg.startsWith('-'));
+    return nonFlags.length >= 2 && nonFlags[nonFlags.length - 2] === source && nonFlags[nonFlags.length - 1] === destination;
   }).length;
 } else if (kind === 'command') {
   actualCount = runCommands.filter((words) => expected.every((word, index) => words[index] === word)).length;
