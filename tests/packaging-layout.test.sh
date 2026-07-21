@@ -49,6 +49,7 @@ assert_docker_contract() {
   shift
 
   node --input-type=module - "$@" <<'NODE' || fail "$message"
+import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const [kind, ...expected] = process.argv.slice(2);
@@ -79,36 +80,75 @@ const copies = instructions
     return { from: flags.find((flag) => flag.startsWith('--from='))?.slice(7) ?? '', sources: paths.slice(0, -1), destination: paths.at(-1) };
   });
 
+const splitShellCommands = (shellCommand) => {
+  const commands = [];
+  let current = '';
+  let quote = null;
+  let escaped = false;
+
+  for (let index = 0; index < shellCommand.length; index++) {
+    const character = shellCommand[index];
+    if (escaped) {
+      current += character;
+      escaped = false;
+      continue;
+    }
+    if (character === '\\' && quote !== "'") {
+      current += character;
+      escaped = true;
+      continue;
+    }
+    if ((character === '"' || character === "'") && (!quote || quote === character)) {
+      quote = quote === character ? null : character;
+    }
+    if (!quote && character === '&' && shellCommand[index + 1] === '&') {
+      if (current.trim()) commands.push(current.trim());
+      current = '';
+      index++;
+      continue;
+    }
+    current += character;
+  }
+  if (current.trim()) commands.push(current.trim());
+  return commands;
+};
+
+const containsSequence = (words, sequence) => sequence.length <= words.length &&
+  words.some((_, start) => sequence.every((word, offset) => words[start + offset] === word));
+
+const matchesInstall = (words, mode, source, destination) => {
+  const installIndex = words.indexOf('install');
+  if (installIndex < 0) return false;
+
+  const args = words.slice(installIndex + 1);
+  const operands = [];
+  let actualMode;
+  let optionsEnded = false;
+  const optionsWithValues = new Set(['-m', '--mode', '-o', '--owner', '-g', '--group', '-S', '--suffix', '-t', '--target-directory']);
+  for (let index = 0; index < args.length; index++) {
+    const argument = args[index];
+    if (!optionsEnded && argument === '--') {
+      optionsEnded = true;
+    } else if (!optionsEnded && optionsWithValues.has(argument)) {
+      const value = args[++index];
+      if (value === undefined) return false;
+      if (argument === '-m' || argument === '--mode') actualMode = value;
+    } else if (!optionsEnded && /^-m.+/.test(argument)) {
+      actualMode = argument.slice(2);
+    } else if (!optionsEnded && argument.startsWith('--mode=')) {
+      actualMode = argument.slice('--mode='.length);
+    } else if (!optionsEnded && argument.startsWith('-')) {
+      // Boolean install options (for example --no-target-directory) have no operand.
+    } else {
+      operands.push(argument);
+    }
+  }
+  return actualMode === mode && operands.at(-2) === source && operands.at(-1) === destination;
+};
+
 const runCommands = instructions
   .filter((instruction) => /^RUN\s/i.test(instruction))
-  .flatMap((instruction) => {
-    const shellCommand = instruction.replace(/^RUN\s+/i, '');
-    const commands = [];
-    let current = '';
-    let inQuote = null;
-    
-    for (let i = 0; i < shellCommand.length; i++) {
-      const char = shellCommand[i];
-      const prevChar = i > 0 ? shellCommand[i - 1] : '';
-      
-      if ((char === '"' || char === "'") && prevChar !== '\\') {
-        inQuote = inQuote === char ? null : (inQuote || char);
-      }
-      
-      if (!inQuote && char === '&' && shellCommand[i + 1] === '&') {
-        commands.push(current.trim());
-        current = '';
-        i++; // skip second &
-        continue;
-      }
-      
-      current += char;
-    }
-    
-    if (current.trim()) commands.push(current.trim());
-    return commands;
-  })
-  .map(shellWords);
+  .flatMap((instruction) => splitShellCommands(instruction.replace(/^RUN\s+/i, '')))
   .map(shellWords);
 
 const wantedCount = kind === 'copy' ? undefined : Number(expected.pop());
@@ -116,30 +156,21 @@ let actualCount;
 if (kind === 'copy') {
   const [stage, source, destination] = expected;
   actualCount = copies.filter((copy) => copy.from === stage && copy.destination === destination && copy.sources.includes(source)).length;
+} else if (kind === 'install') {
   const [mode, source, destination] = expected;
-  actualCount = runCommands.filter((words) => {
-    const installIndex = words.indexOf('install');
-    if (installIndex < 0) return false;
-    const args = words.slice(installIndex + 1);
-    const modeIndex = args.indexOf('-m');
-    if (modeIndex < 0 || modeIndex + 1 >= args.length || args[modeIndex + 1] !== mode) return false;
-    
-    // Find source and destination by filtering out flags
-    const nonFlags = args.filter((arg) => !arg.startsWith('-'));
-    return nonFlags.length >= 2 && nonFlags[nonFlags.length - 2] === source && nonFlags[nonFlags.length - 1] === destination;
-  }).length;
+  actualCount = runCommands.filter((words) => matchesInstall(words, mode, source, destination)).length;
 } else if (kind === 'command') {
-  actualCount = runCommands.filter((words) => {
-    if (expected.length > words.length) return false;
-    for (let i = 0; i <= words.length - expected.length; i++) {
-      if (expected.every((word, index) => words[i + index] === word)) {
-        return true;
-      }
-    }
-    return false;
-  }).length;
+  actualCount = runCommands.filter((words) => containsSequence(words, expected)).length;
 } else if (kind === 'command-contains') {
   actualCount = runCommands.filter((words) => expected.every((word) => words.includes(word))).length;
+} else if (kind === 'parser-self-test') {
+  assert.deepEqual(splitShellCommands('echo "foo && bar" && real_command'), ['echo "foo && bar"', 'real_command']);
+  assert.deepEqual(splitShellCommands("echo 'foo && bar' && real_command"), ["echo 'foo && bar'", 'real_command']);
+  assert.deepEqual(splitShellCommands('echo foo \\&& bar && real_command'), ['echo foo \\&& bar', 'real_command']);
+  assert.equal(matchesInstall(['install', '-m', '0755', '--no-target-directory', 'source', 'destination'], '0755', 'source', 'destination'), true);
+  assert.equal(matchesInstall(['install', '--no-target-directory', '--mode=0755', 'source', 'destination'], '0755', 'source', 'destination'), true);
+  assert.equal(containsSequence(['ENV_VAR=value', 'chmod', '+x', 'file'], ['chmod', '+x', 'file']), true);
+  process.exit(0);
 } else {
   throw new Error(`unknown Docker contract kind: ${kind}`);
 }
@@ -174,6 +205,7 @@ assert_preserved_executable() {
 
 contract_published_package_contents() {
   print_contract 'Published package contents'
+  assert_docker_contract 'Dockerfile contract parser regression checks failed' parser-self-test
   assert_package_files_include \
     'package.json files does not include all packaged runtime contract entries' \
     dist/ kaseki-agent.sh scripts/ templates/ README.md LICENSE
