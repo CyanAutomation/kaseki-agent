@@ -92,6 +92,60 @@ describe('WebhookManager delivery log recovery', () => {
     jest.restoreAllMocks();
   });
 
+  test('ignores a partial temp file left by a crashed atomic write', async () => {
+    const resultsDir = fs.mkdtempSync('/tmp/kaseki-webhook-manager-temp-crash-test-');
+    const deliveryLogPath = `${resultsDir}/.kaseki-webhook-delivery.log`;
+    fs.writeFileSync(`${deliveryLogPath}.123.crashed.tmp`, '{"jobId":"partial');
+
+    const manager = new WebhookManager(resultsDir);
+    manager.stopProcessing();
+    try {
+      expect(manager.getQueueSize()).toBe(0);
+      manager.enqueueWebhook('job-after-crash', basePayloadFor('job-after-crash'), configForTest());
+      expect(readJobIds(deliveryLogPath)).toEqual(['job-after-crash']);
+    } finally {
+      await manager.shutdown();
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('drops a malformed existing line while atomically preserving valid pending entries', async () => {
+    const resultsDir = fs.mkdtempSync('/tmp/kaseki-webhook-manager-corrupt-persist-test-');
+    const deliveryLogPath = `${resultsDir}/.kaseki-webhook-delivery.log`;
+    fs.writeFileSync(deliveryLogPath, '{truncated-json');
+
+    const manager = new WebhookManager(resultsDir);
+    manager.stopProcessing();
+    try {
+      manager.enqueueWebhook('job-valid-after-corruption', basePayloadFor('job-valid-after-corruption'), configForTest());
+      expect(readJobIds(deliveryLogPath)).toEqual(['job-valid-after-corruption']);
+      expect(fs.existsSync(`${deliveryLogPath}.lock`)).toBe(false);
+    } finally {
+      await manager.shutdown();
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('merges different pending deliveries persisted by two manager instances', async () => {
+    const resultsDir = fs.mkdtempSync('/tmp/kaseki-webhook-manager-multiprocess-test-');
+    const deliveryLogPath = `${resultsDir}/.kaseki-webhook-delivery.log`;
+    const first = new WebhookManager(resultsDir);
+    const second = new WebhookManager(resultsDir);
+    first.stopProcessing();
+    second.stopProcessing();
+
+    try {
+      first.enqueueWebhook('job-from-first', basePayloadFor('job-from-first'), configForTest());
+      second.enqueueWebhook('job-from-second', basePayloadFor('job-from-second'), configForTest());
+
+      expect(readJobIds(deliveryLogPath).sort()).toEqual(['job-from-first', 'job-from-second']);
+    } finally {
+      await first.shutdown();
+      await second.shutdown();
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
   test('should re-enqueue pending deliveries on restart and retry immediately when retry time is stale', async () => {
     // Spec: Entries in delivery log with stale nextRetryTime should be retried immediately
     // Behavioral intent: Old log entries should be picked up and processed on next processQueue() call
@@ -197,3 +251,27 @@ describe('WebhookManager delivery log recovery', () => {
     }
   });
 });
+
+function basePayloadFor(jobId: string): WebhookPayload {
+  return {
+    eventType: WebhookEventType.JOB_FAILED,
+    jobId,
+    timestamp: '2026-01-01T00:00:00.000Z',
+    data: { status: 'failed' },
+  };
+}
+
+function configForTest(): WebhookConfig {
+  return {
+    url: 'https://example.com/webhook',
+    retryPolicy: { maxAttempts: 3, initialDelayMs: 100, maxDelayMs: 500 },
+  };
+}
+
+function readJobIds(deliveryLogPath: string): string[] {
+  return fs
+    .readFileSync(deliveryLogPath, 'utf-8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => (JSON.parse(line) as { jobId: string }).jobId);
+}
