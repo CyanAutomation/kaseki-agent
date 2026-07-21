@@ -101,7 +101,7 @@ const splitShellCommands = (shellCommand) => {
     if ((character === '"' || character === "'") && (!quote || quote === character)) {
       quote = quote === character ? null : character;
     }
-    if (!quote && character === '&' && shellCommand[index + 1] === '&') {
+    if (!quote && character === '&' && index + 1 < shellCommand.length && shellCommand[index + 1] === '&') {
       if (current.trim()) commands.push(current.trim());
       current = '';
       index++;
