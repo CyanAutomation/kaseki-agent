@@ -435,6 +435,76 @@ describe('DockerManager', () => {
       jest.useRealTimers();
     });
 
+    it('should ignore late exit and error events after a successful result has settled', async () => {
+      jest.useFakeTimers();
+      const mockChild = new EventEmitter() as EventEmitter & {
+        stdout: null;
+        stderr: null;
+        kill: jest.Mock;
+      };
+      mockChild.stdout = null;
+      mockChild.stderr = null;
+      mockChild.kill = jest.fn();
+
+      (spawn as jest.Mock).mockReturnValue(mockChild);
+
+      const resultPromise = DockerManager.runContainer({
+        image: 'test:latest',
+        name: 'test-container',
+        workspaceDir: '/tmp/workspace',
+        resultsDir: '/tmp/results',
+        environment: {},
+        timeout: 1,
+      });
+
+      mockChild.emit('exit', 0);
+      await expect(resultPromise).resolves.toEqual({ exitCode: 0, stdout: '', stderr: '' });
+
+      mockChild.emit('exit', 17);
+      mockChild.emit('error', new Error('late error'));
+      jest.advanceTimersByTime(6_000);
+
+      await expect(resultPromise).resolves.toEqual({ exitCode: 0, stdout: '', stderr: '' });
+      expect(mockChild.kill).not.toHaveBeenCalled();
+      jest.useRealTimers();
+    });
+
+    it('should ignore errors during timeout termination and retain timeout reporting', async () => {
+      jest.useFakeTimers();
+      const mockChild = new EventEmitter() as EventEmitter & {
+        stdout: null;
+        stderr: null;
+        kill: jest.Mock;
+      };
+      mockChild.stdout = null;
+      mockChild.stderr = null;
+      mockChild.kill = jest.fn();
+
+      (spawn as jest.Mock).mockReturnValue(mockChild);
+
+      const resultPromise = DockerManager.runContainer({
+        image: 'test:latest',
+        name: 'test-container',
+        workspaceDir: '/tmp/workspace',
+        resultsDir: '/tmp/results',
+        environment: {},
+        timeout: 1,
+      });
+
+      jest.advanceTimersByTime(1_000);
+      mockChild.emit('error', new Error('error while terminating'));
+      mockChild.emit('exit', null);
+
+      await expect(resultPromise).resolves.toEqual({
+        exitCode: 124,
+        stdout: '',
+        stderr: 'Container timeout after 1 seconds',
+      });
+      expect(mockChild.kill).toHaveBeenCalledWith('SIGTERM');
+      expect(mockChild.kill).not.toHaveBeenCalledWith('SIGKILL');
+      jest.useRealTimers();
+    });
+
     it('should handle spawn errors', async () => {
       const mockChild = {
         stdout: null,

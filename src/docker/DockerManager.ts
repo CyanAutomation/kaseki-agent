@@ -141,6 +141,10 @@ export class DockerManager {
       });
 
       timeoutTimer = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+
         timedOut = true;
         logger.warn(`Container timeout after ${timeoutSeconds} seconds`);
         child.kill('SIGTERM');
@@ -176,6 +180,10 @@ export class DockerManager {
 
       // Handle completion with enhanced error context
       child.on('exit', (code: number | null) => {
+        if (settled) {
+          return;
+        }
+
         if (timedOut) {
           finish({
             exitCode: 124,
@@ -217,13 +225,14 @@ export class DockerManager {
 
       // Handle errors
       child.on('error', (error: Error) => {
+        // A kill can be followed by late process events. Once the timeout path
+        // owns completion, wait for exit or the force-kill grace timer so the
+        // caller consistently receives the timeout result.
+        if (settled || timedOut) {
+          return;
+        }
+
         logger.error(`Failed to spawn docker: ${error.message}`);
-        if (timeoutTimer) {
-          clearTimeout(timeoutTimer);
-        }
-        if (forceKillTimer) {
-          clearTimeout(forceKillTimer);
-        }
         finish({
           exitCode: 1,
           stdout,
