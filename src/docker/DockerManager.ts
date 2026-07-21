@@ -5,6 +5,7 @@
  */
 
 import { execFileSync, execSync, spawn } from 'child_process';
+import fs from 'fs';
 import { createLogger } from '../logger';
 
 const logger = createLogger('docker');
@@ -49,7 +50,7 @@ export class DockerManager {
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        execSync(`docker pull ${image}`, {
+        execFileSync('docker', ['pull', image], {
           stdio: 'inherit',
           timeout: 5 * 60 * 1000, // 5 minute timeout
         });
@@ -85,7 +86,7 @@ export class DockerManager {
    */
   static getImageId(image: string): string | null {
     try {
-      const id = execSync(`docker inspect -f '{{.ID}}' ${image}`, {
+      const id = execFileSync('docker', ['inspect', '-f', '{{.ID}}', image], {
         encoding: 'utf-8',
       }).trim();
       return id || null;
@@ -307,7 +308,7 @@ export class DockerManager {
 
     for (const dir of dirs) {
       try {
-        execSync(`mkdir -p "${dir}"`, { shell: '/bin/bash' });
+        fs.mkdirSync(dir, { recursive: true });
         logger.debug(`Created/verified directory: ${dir}`);
       } catch (error) {
         throw new Error(`Failed to create directory ${dir}: ${error}`);
@@ -320,7 +321,7 @@ export class DockerManager {
    */
   static stopContainer(containerId: string, timeout: number = 10): boolean {
     try {
-      execSync(`docker stop -t ${timeout} ${containerId}`, { stdio: 'ignore' });
+      execFileSync('docker', ['stop', '-t', String(timeout), containerId], { stdio: 'ignore' });
       logger.debug(`Stopped container: ${containerId}`);
       return true;
     } catch {
@@ -337,7 +338,7 @@ export class DockerManager {
       const args = ['rm'];
       if (force) args.push('-f');
       args.push(containerId);
-      execSync(`docker ${args.join(' ')}`, { stdio: 'ignore' });
+      execFileSync('docker', args, { stdio: 'ignore' });
       logger.debug(`Removed container: ${containerId}`);
       return true;
     } catch {
@@ -351,8 +352,9 @@ export class DockerManager {
    */
   static listContainers(pattern: string = 'kaseki'): string[] {
     try {
-      const output = execSync(
-        `docker ps --filter "name=${pattern}" --format "{{.Names}}"`,
+      const output = execFileSync(
+        'docker',
+        ['ps', '--filter', `name=${pattern}`, '--format', '{{.Names}}'],
         { encoding: 'utf-8' }
       );
       return output
@@ -375,7 +377,7 @@ export class DockerManager {
       }
       args.push(containerId);
 
-      return execSync(`docker ${args.join(' ')}`, { encoding: 'utf-8' });
+      return execFileSync('docker', args, { encoding: 'utf-8' });
     } catch {
       return '';
     }
