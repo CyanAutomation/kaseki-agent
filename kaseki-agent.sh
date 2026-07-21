@@ -5475,8 +5475,13 @@ run_goal_setting_agent() {
   if [ "$GOAL_SETTING_EXIT" -eq 0 ] && [ "$GOAL_SETTING_FALLBACK_USED" != "1" ] && [ ! -f "$GOAL_SETTING_CANDIDATE_ARTIFACT" ]; then
     printf '%s\n' '{"step":"artifact-contract","status":"failure","reason":"goal-setting completed without required candidate artifact","recovery":"fallback_goal_setting_artifact"}' \
       >> "${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl"
-    emit_error_event "goal_setting_artifact_missing" "Goal-setting completed without its required candidate artifact; activating degraded fallback before coding (candidate=${GOAL_SETTING_CANDIDATE_ARTIFACT}, fallback=${GOAL_SETTING_ARTIFACT}, diagnostics=${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl)" "warning"
-    if create_fallback_goal_setting_artifact "$ORIGINAL_TASK_PROMPT" "$GOAL_SETTING_ARTIFACT"; then
+    if [ "${KASEKI_GOAL_SETTING_CONTRACT_STRICT:-0}" = "1" ]; then
+      GOAL_SETTING_EXIT=86
+      emit_error_event "goal_setting_artifact_missing" "Goal-setting completed without its required candidate artifact; retrying the artifact contract before fallback (candidate=${GOAL_SETTING_CANDIDATE_ARTIFACT}, diagnostics=${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl)" "retry"
+    else
+      emit_error_event "goal_setting_artifact_missing" "Goal-setting completed without its required candidate artifact; activating degraded fallback before coding (candidate=${GOAL_SETTING_CANDIDATE_ARTIFACT}, fallback=${GOAL_SETTING_ARTIFACT}, diagnostics=${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl)" "warning"
+    fi
+    if [ "$GOAL_SETTING_EXIT" -eq 0 ] && create_fallback_goal_setting_artifact "$ORIGINAL_TASK_PROMPT" "$GOAL_SETTING_ARTIFACT"; then
       GOAL_SETTING_FALLBACK_USED=1
       GOAL_SETTING_FALLBACK_MODE="missing_candidate_artifact"
       emit_progress "pi goal-setting agent" "degraded: candidate artifact missing; fallback activated (confidence=low)"
@@ -5664,8 +5669,14 @@ run_goal_setting_agent_with_retry() {
     # Capture stderr for failure classification
     goal_setting_stderr_capture="/tmp/goal-setting-stderr-$attempt.log"
     set +e
+    if [ "$attempt" -lt "$max_attempts" ]; then
+      export KASEKI_GOAL_SETTING_CONTRACT_STRICT=1
+    else
+      unset KASEKI_GOAL_SETTING_CONTRACT_STRICT
+    fi
     run_goal_setting_agent 2>"$goal_setting_stderr_capture"
     goal_setting_last_exit=$?
+    unset KASEKI_GOAL_SETTING_CONTRACT_STRICT
     set -e
     attempt_end_time="$(date +%s.%N)"
     attempt_duration_sec=$(printf '%.1f' "$(printf '%s - %s\n' "$attempt_end_time" "$attempt_start_time" | bc -l 2>/dev/null || echo 0)")
@@ -5687,6 +5698,16 @@ run_goal_setting_agent_with_retry() {
       fi
     fi
     rm -f "$goal_setting_stderr_capture"
+
+    if [ "$goal_setting_last_exit" -eq 86 ] && \
+      grep -q '"step":"artifact-contract"' "${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl" 2>/dev/null && \
+      [ "$attempt" -lt "$max_attempts" ]; then
+      printf '[Goal-Setting Phase] Artifact contract failure, retrying with the required candidate artifact.\n'
+      attempt=$((attempt + 1))
+      rm -f "$GOAL_SETTING_ARTIFACT" "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_RAW_EVENTS" 2>/dev/null || true
+      rm -f "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt 2>/dev/null || true
+      continue
+    fi
 
     # Success on any attempt
     if [ "$goal_setting_last_exit" -eq 0 ]; then
@@ -5908,7 +5929,7 @@ build_scouting_prompt() {
   local task_text="$TASK_PROMPT"
   local use_detailed_guidance=0
   local use_compact_guidance=1
-  local caveman_instruction
+  local caveman_instruction retry_feedback
   caveman_instruction="$(get_caveman_instruction)"
   
   # Keep scouting prompts compact by default. Verbose guidance is opt-in for
@@ -5929,12 +5950,13 @@ You are a read-only scouting Pi agent inside a Kaseki-managed ephemeral workspac
 
 Inspect only files needed to scope the task. Do not edit files, tests, lockfiles, git state, secrets, or environment variables.
 
-Use the write tool to write exactly one JSON object to $SCOUTING_CANDIDATE_ARTIFACT. Do not rely on final assistant text for the artifact.
+The repository at /workspace/repo is read-only during scouting. The only writable handoff location is /results.
+Use the write tool to write exactly one JSON object to /results/scouting-candidate.json. Do not rely on final assistant text for the artifact.
 
 JSON fields:
 - task: concise actionable task string
 - requirements: 3-8 concrete requirements
-- relevant_files: 2-10 repo-relative files with reasons
+- relevant_files: objects with separate repo-relative path and reason fields; for example {"path":"docs/DEVELOPMENT.md","reason":"why this file matters"}
 - observations: concrete facts from inspection
 - plan: 3-8 coding steps for the downstream agent
 - validation: 1-5 focused checks
@@ -5962,7 +5984,8 @@ Research the task before a separate coding agent starts. Your job is to analyze 
 - Do not edit source files, tests, lockfiles, or git state.
 - Do not run git add, git commit, git push, gh, hub, package installation, or validation commands that modify files.
 - Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
-- The repository tree is read-only during scouting. Use the write tool to write exactly one JSON object to $SCOUTING_CANDIDATE_ARTIFACT. Do not rely on final assistant text for the artifact.
+- The repository tree at /workspace/repo is read-only during scouting. Do not write there or to /tmp.
+- Use the write tool to write exactly one JSON object to /results/scouting-candidate.json. This is the only accepted handoff location. Do not rely on final assistant text for the artifact.
 
 The JSON object must be concise and useful to the coding agent. Use this schema-style shape (field descriptions only; do not copy this text as output):
 - task: string (max 200 characters); a concrete interpretation of the requested task.
@@ -5976,6 +5999,7 @@ The JSON object must be concise and useful to the coding agent. Use this schema-
   - Max items: 8 (too many suggests scope creep or lack of prioritization)
 - relevant_files: array of 5-20 objects with path and reason strings; repo-relative files and why each matters.
   - Example: {"path": "src/lib/role.ts", "reason": "Contains parseRole() function being modified"}
+  - Never use a string such as "src/lib/role.ts - reason". Every entry must be an object with separate non-empty path and reason strings.
   - Constraint: Include source files, test files, and config files affected by changes
   - Min items: 5 (suggests incomplete file discovery)
   - Max items: 20 (keeps focus on high-impact files; truncate if >20 with "(...X more files)"
@@ -6238,15 +6262,30 @@ EOF
   fi
 
   if [ "${KASEKI_SCOUTING_CONTRACT_RETRY:-0}" = "1" ]; then
+    retry_feedback="$(node - "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+try {
+  const entries = fs.readFileSync(process.argv[2], 'utf8').split(/\r?\n/).filter(Boolean).map(JSON.parse).slice(-3);
+  process.stdout.write(entries.map((entry) => {
+    const field = entry.field ? ` field=${entry.field}` : '';
+    const expected = entry.expected ? ` expected=${entry.expected}` : '';
+    const actual = entry.actual ? ` actual=${entry.actual}` : '';
+    return `- ${entry.reason_code || 'validation_failed'}${field}${expected}${actual}`;
+  }).join('\n'));
+} catch {}
+NODE
+)"
     cat <<EOF
 
 ## [ARTIFACT CONTRACT RETRY]
 
 The previous scouting attempt exited successfully but did not create the required artifact.
 Retry the scouting handoff now. Use the write tool (not final assistant text) to create exactly one valid JSON object at:
-$SCOUTING_CANDIDATE_ARTIFACT
-Before finishing, verify that the file exists, is non-empty, and is valid JSON matching the schema above. Do not finish until that file has been written.
-If the previous artifact had scalar observations, plan, or validation fields, emit arrays. Do not emit markdown, a JSON string, or a partial object.
+/results/scouting-candidate.json
+The repository is read-only; do not write to /workspace/repo, .agents, or /tmp. Before finishing, use the read tool to verify that /results/scouting-candidate.json exists, is non-empty, and is valid JSON matching the schema above. Do not finish until that verification succeeds.
+Every relevant_files item must be {"path":"repo/relative/path","reason":"why it matters"}. If the previous artifact had scalar observations, plan, or validation fields, emit arrays. Do not emit markdown, a JSON string, or a partial object.
+Previous validator feedback (fix these exact failures):
+${retry_feedback:-'- candidate artifact was missing or invalid'}
 EOF
   fi
 }
@@ -9735,6 +9774,35 @@ restore_disallowed_changes
 collect_git_artifacts
 record_stage_timing "collect agent diff" 0 "$(($(date +%s) - stage_start))" "diff_nonempty=$DIFF_NONEMPTY"
 emit_progress "collect agent diff" "finished"
+
+# A patch-mode run with no diff cannot benefit from quality checks or evaluator
+# calls. Retry the coding agent immediately with focused repair guidance.
+if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$KASEKI_TASK_MODE" = "patch" ] && [ "${KASEKI_ALLOW_EMPTY_DIFF:-0}" != "1" ] && [ ! -s "${KASEKI_RESULTS_DIR}/git.diff" ]; then
+  critical_change_failure_output="$(verify_critical_change_expectations 2>&1 || true)"
+  critical_change_failure_summary="$(printf '%s\n' "$critical_change_failure_output" | awk 'NF { if (seen) printf "; "; printf "%s", $0; seen=1 }')"
+  [ -n "$critical_change_failure_summary" ] || critical_change_failure_summary="git.diff is empty but forbidden_empty_diff is true"
+  GOAL_CHECK_MET=false
+  if critical_change_expectations_from_scouting_fallback; then
+    GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed_empty_diff_after_scouting_fallback: $(format_fallback_empty_diff_critical_change_failure "Pre-quality" "$critical_change_failure_summary")"
+    GOAL_CHECK_RETRY_PROMPT="$(format_fallback_empty_diff_repair_prompt "Pre-quality" "$critical_change_failure_summary")"
+  else
+    GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed: $critical_change_failure_summary"
+    GOAL_CHECK_RETRY_PROMPT="Pre-quality verification found no repository diff. Re-read ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}, inspect ${KASEKI_RESULTS_DIR}/changed-files.txt and ${KASEKI_RESULTS_DIR}/git.diff, then make the required repository change before finishing. Failures: $critical_change_failure_summary"
+  fi
+  printf '%s\n' "$GOAL_CHECK_RETRY_PROMPT" | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+  skip_auto_lint_cleanup_before_core_change_verified "patch_diff_empty" "$critical_change_failure_summary"
+  emit_progress "critical change verification" "failed before quality checks on attempt $coding_attempt"
+  snapshot_attempt_artifacts "$coding_attempt"
+  if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
+    emit_progress "critical change verification" "retrying coding agent before quality checks (attempt $coding_attempt of $max_coding_attempts)"
+    coding_attempt=$((coding_attempt + 1))
+    continue
+  fi
+  STATUS=8
+  FAILED_COMMAND="critical change verification"
+  emit_error_event "critical_change_expectations_failed" "Pre-quality verification failed after $coding_attempt attempt(s): $GOAL_CHECK_FAILURE_REASON" "exit"
+  break
+fi
 
 run_quality_checks
 
