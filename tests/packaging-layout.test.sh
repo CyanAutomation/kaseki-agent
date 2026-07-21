@@ -144,7 +144,7 @@ const matchesInstall = (words, mode, source, destination) => {
       operands.push(argument);
     }
   }
-  return actualMode === mode && operands.at(-2) === source && operands.at(-1) === destination;
+  return operands.length >= 2 && actualMode === mode && operands.at(-2) === source && operands.at(-1) === destination;
 };
 
 const runCommands = instructions
