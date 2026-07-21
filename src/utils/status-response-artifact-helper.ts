@@ -125,6 +125,7 @@ export class StatusArtifactHelper {
     includeGoalSetting: boolean;
     includeScouting: boolean;
     includeGoalCheck: boolean;
+    prioritizeScouting: boolean;
   } {
     return {
       includePiAgent: job.status === 'failed' && this.shouldIncludePiAgentDiagnostics(metadata, runDir),
@@ -136,6 +137,7 @@ export class StatusArtifactHelper {
         job.status === 'failed' &&
         this.shouldIncludePhaseDiagnostics(metadata, 'scouting', SCOUTING_DIAGNOSTIC_FILES, runDir),
       includeGoalCheck: job.status === 'failed' && response.goalCheckFailureReason === GOAL_CHECK_ARTIFACT_INVALID_REASON,
+      prioritizeScouting: job.status === 'failed' && this.shouldPrioritizeScoutingDiagnostics(metadata, runDir),
     };
   }
 
@@ -145,6 +147,7 @@ export class StatusArtifactHelper {
     includeGoalSetting: boolean;
     includeScouting: boolean;
     includeGoalCheck: boolean;
+    prioritizeScouting: boolean;
   }): string[] {
     return [
       ...STATUS_KEY_FILES,
@@ -192,7 +195,7 @@ export class StatusArtifactHelper {
     response: StatusResponse,
     job: Job,
     runDir: string,
-    flags: { includePiAgent: boolean; includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean },
+    flags: { includePiAgent: boolean; includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean; prioritizeScouting: boolean },
     isSmallAvailable: (fileName: string) => boolean
   ): void {
     try {
@@ -229,7 +232,7 @@ export class StatusArtifactHelper {
   private inlinePhaseValidationErrors(
     response: StatusResponse,
     runDir: string,
-    flags: { includePiAgent: boolean; includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean },
+    flags: { includePiAgent: boolean; includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean; prioritizeScouting: boolean },
     isSmallAvailable: (fileName: string) => boolean
   ): void {
     if (flags.includeGoalSetting) {
@@ -263,7 +266,7 @@ export class StatusArtifactHelper {
 
   private setDiagnosticEntryPoint(
     response: StatusResponse,
-    flags: { includePiAgent: boolean; includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean },
+    flags: { includePiAgent: boolean; includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean; prioritizeScouting: boolean },
     isAvailable: (fileName: string) => boolean
   ): void {
     const phaseDiagnosticEntryPoints: DiagnosticEntryPoint[] = [
@@ -276,7 +279,7 @@ export class StatusArtifactHelper {
       ...(flags.includeGoalSetting
         ? (['goal-setting-validation-errors.jsonl', 'goal-setting-stderr.log'] as DiagnosticEntryPoint[])
         : []),
-      ...(flags.includeScouting
+      ...(flags.includeScouting && flags.prioritizeScouting
         ? (['scouting-validation-errors.jsonl', 'scouting-contract-diagnostics.jsonl', 'scouting-retry-diagnostics.jsonl', 'scouting-stderr.log'] as DiagnosticEntryPoint[])
         : []),
       ...(flags.includeGoalCheck
@@ -356,6 +359,32 @@ export class StatusArtifactHelper {
     return hasRecoveryMarker || errors.some((error) => this.isUnrecoveredCriticalScoutingDiagnostic(error, hasRecoveryMarker));
   }
 
+  private shouldPrioritizeScoutingDiagnostics(metadata: any, runDir: string): boolean {
+    const failedCommand = String(metadata?.failed_command ?? '');
+    if (failedCommand.includes('pi scouting agent') || Number(metadata?.scouting_exit_code) === 86) {
+      return true;
+    }
+
+    const content = this.readSmallTerminalArtifact(path.join(runDir, 'scouting-validation-errors.jsonl'));
+    if (!content || content.length > INLINE_ARTIFACT_LIMIT_BYTES) {
+      return false;
+    }
+    const errors = this.parseValidationErrorsJsonl(content);
+    const recoveryMarkers = errors.filter((error) => this.isScoutingRecoveredDiagnostic(error));
+    return errors.some((error) => {
+      const severity = this.stringField(error, 'severity')?.toLowerCase();
+      if (severity !== 'critical' || this.isScoutingRecoveryDiagnostic(error)) {
+        return false;
+      }
+      const field = this.stringField(error, 'field');
+      const isResolved = recoveryMarkers.some((marker) => {
+        const markerField = this.stringField(marker, 'field');
+        return !markerField || !field || markerField === field;
+      });
+      return !isResolved;
+    });
+  }
+
   private parseValidationErrorsJsonl(content: string): Array<Record<string, unknown>> {
     try {
       return content
@@ -380,7 +409,7 @@ export class StatusArtifactHelper {
 
   private isScoutingRecoveredDiagnostic(error: Record<string, unknown>): boolean {
     const reason = this.stringField(error, 'reason_code') ?? this.stringField(error, 'reason');
-    return reason ? this.isRecoveredReason(reason) : false;
+    return error.recovered === true || error.recovered === 'true' || (reason ? this.isRecoveredReason(reason) : false);
   }
 
   private isRecoveredReason(reason: string): boolean {
