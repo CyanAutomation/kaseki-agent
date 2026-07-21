@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { RunResponse } from './kaseki-api-types';
 import { createEventLogger, EventLogger } from './logger';
 
@@ -33,6 +34,7 @@ interface PersistedIdempotencyEntry {
   requestId?: string;
   correlationId?: string;
   expiresAt: number;
+  operation?: 'remove';
 }
 
 export type ClaimResult =
@@ -73,6 +75,7 @@ export function createProcessLivenessChecker(
  * Ensures safe retries: same idempotency key always returns the same job ID.
  */
 export class IdempotencyStore {
+  private static readonly STALE_PENDING_THRESHOLD_MS = 30_000;
   private cache = new Map<string, IdempotencyCacheEntry>();
   private persistencePath: string;
   private lockPath: string;
@@ -87,6 +90,7 @@ export class IdempotencyStore {
   private processLivenessChecker: ProcessLivenessChecker;
   private lockTokenGenerator: () => string;
   private pid: number;
+  private readonly lockContext = new AsyncLocalStorage<boolean>();
 
   constructor(
     resultsDir: string,
@@ -148,6 +152,22 @@ export class IdempotencyStore {
         );
       }
 
+      if (
+        entry.state === 'pending' &&
+        !entry.jobId &&
+        this.now() - Date.parse(entry.requestTime) >
+          IdempotencyStore.STALE_PENDING_THRESHOLD_MS
+      ) {
+        const reclaimedEntry: IdempotencyCacheEntry = {
+          ...entry,
+          requestTime: this.currentIsoString(),
+          expiresAt: this.now() + this.ttlHours * 3600 * 1000,
+        };
+        this.cache.set(idempotencyKey, reclaimedEntry);
+        this.persistToDisk(reclaimedEntry);
+        return { kind: 'claimed' };
+      }
+
       if (entry.state === 'pending') {
         return { kind: 'pending' };
       }
@@ -204,14 +224,46 @@ export class IdempotencyStore {
     });
   }
 
+  /**
+   * Release a claim that did not produce a job so a retry can safely claim it.
+   * The removal is appended to the log to survive process restarts.
+   */
+  async releasePendingClaim(
+    idempotencyKey: string,
+    requestFingerprint: string,
+  ): Promise<void> {
+    await this.withLock(() => {
+      this.loadFromDisk();
+      const existing = this.cache.get(idempotencyKey);
+      if (
+        !existing ||
+        existing.state !== 'pending' ||
+        existing.requestFingerprint !== requestFingerprint ||
+        existing.jobId
+      ) {
+        return;
+      }
+
+      this.cache.delete(idempotencyKey);
+      this.persistRemovalToDisk(idempotencyKey, requestFingerprint);
+      this.logger.event('idempotency_pending_claim_released', {
+        idempotencyKey,
+      });
+    });
+  }
+
   async runWithIdempotencyLock<T>(fn: () => T | Promise<T>): Promise<T> {
     return this.withLock(fn);
   }
 
   private async withLock<T>(fn: () => T | Promise<T>): Promise<T> {
+    if (this.lockContext.getStore()) {
+      return fn();
+    }
+
     await this.acquireLock();
     try {
-      return await fn();
+      return await this.lockContext.run(true, fn);
     } finally {
       this.releaseLock();
     }
@@ -459,6 +511,28 @@ export class IdempotencyStore {
     }
   }
 
+  private persistRemovalToDisk(
+    idempotencyKey: string,
+    requestFingerprint: string,
+  ): void {
+    try {
+      fs.appendFileSync(
+        this.persistencePath,
+        `${JSON.stringify({
+          idempotencyKey,
+          requestFingerprint,
+          operation: 'remove',
+          expiresAt: this.now(),
+        })}\n`,
+        'utf-8',
+      );
+    } catch (error) {
+      this.logger.error('Failed to persist idempotency removal', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   /**
    * Load idempotency entries from disk.
    */
@@ -506,6 +580,11 @@ export class IdempotencyStore {
         }
         try {
           const entry = JSON.parse(line) as PersistedIdempotencyEntry;
+
+          if (entry.operation === 'remove') {
+            this.cache.delete(entry.idempotencyKey);
+            continue;
+          }
 
           // Skip expired entries
           if (this.now() > entry.expiresAt) {
