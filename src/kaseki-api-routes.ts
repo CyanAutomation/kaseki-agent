@@ -507,10 +507,46 @@ export function createApiRouter(
         runRequest as Record<string, unknown>,
       );
 
-      const idempotencyResult = await handleIdempotency(
-        idempotencyKey,
-        requestFingerprint,
+      const submissionResult = await idempotencyStore.runWithIdempotencyLock(
+        async () => {
+          const idempotencyResult = await handleIdempotency(
+            idempotencyKey,
+            requestFingerprint,
+          );
+          if (idempotencyResult.state !== 'fresh') {
+            return idempotencyResult;
+          }
+
+          logger.event('api_run_request', {
+            repoUrl: runRequest.repoUrl,
+            ref: runRequest.ref,
+            taskMode: runRequest.taskMode,
+            publishMode: effectivePublishMode,
+            startupCheck: runRequest.startupCheck,
+            idempotencyKey,
+          });
+
+          try {
+            const job = await scheduler.submitJob(runRequest);
+            job.idempotencyKey = idempotencyKey;
+            const response = buildRunResponse(job);
+            await idempotencyStore.storeResponse(
+              idempotencyKey,
+              response,
+              requestFingerprint,
+            );
+            return { state: 'submitted' as const, response };
+          } catch (error) {
+            await idempotencyStore.releasePendingClaim(
+              idempotencyKey,
+              requestFingerprint,
+            );
+            throw error;
+          }
+        },
       );
+
+      const idempotencyResult = submissionResult;
       if (idempotencyResult.state === 'fulfilled') {
         logger.event('api_idempotent_resubmission', {
           jobId: idempotencyResult.jobId,
@@ -527,32 +563,10 @@ export function createApiRouter(
         );
       }
 
-      // Log request
-      logger.event('api_run_request', {
-        repoUrl: runRequest.repoUrl,
-        ref: runRequest.ref,
-        taskMode: runRequest.taskMode,
-        publishMode: effectivePublishMode,
-        startupCheck: runRequest.startupCheck,
-        idempotencyKey,
-      });
-
-      // Submit to scheduler
-      const job = await scheduler.submitJob(runRequest);
-
-      // Store idempotency key on job
-      job.idempotencyKey = idempotencyKey;
-
-      const response = buildRunResponse(job);
-
-      // Store in idempotency cache
-      await idempotencyStore.storeResponse(
-        idempotencyKey,
-        response,
-        requestFingerprint,
-      );
-
-      res.status(202).json(response); // 202 Accepted
+      if (submissionResult.state !== 'submitted') {
+        throw new Error('Unexpected idempotency submission state');
+      }
+      res.status(202).json(submissionResult.response); // 202 Accepted
     } catch (err: unknown) {
       if (err instanceof Error && 'errors' in err) {
         // Zod validation error
