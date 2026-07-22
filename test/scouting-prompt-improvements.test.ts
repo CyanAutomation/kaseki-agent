@@ -221,21 +221,15 @@ describe('Phase 3: Provider & Error Context', () => {
     expect(promptContent.toLowerCase()).toContain('execution context');
   });
 
-  test('should document artifact size constraints', () => {
-    // Phase 3 requirement: Bounded output JSON
-    // Currently missing - will fail until implemented
-    expect(promptContent).toMatch(/size|limit|bound|50kb/i);
-  });
-
   test('should include error handling guidance', () => {
     // Phase 3 requirement: What to do on failures
     expect(promptContent).toContain('Error Handling');
   });
 
-  test('should mention artifact size constraints', () => {
-    // Phase 3 requirement: Awareness of execution limits
-    expect(promptContent).toContain('Artifact Size');
-    expect(promptContent).toMatch(/50 ?KB/i);
+  test('should mention artifact size constraints [SCOUTING_PROMPT_DESIGN §5]', () => {
+    expect(promptContent).toMatch(
+      /Maximum JSON size:\s*50 KB\.[\s\S]*?Truncate observations[^\n]*approaching (?:the )?size limit/i
+    );
   });
 
   test('should note timeout expectations', () => {
@@ -424,27 +418,6 @@ describe('Integration: Scouting Artifact JSON Structure', () => {
     expect(validArtifact.relevant_files[0]).toHaveProperty('reason');
   });
 
-  test('artifact JSON size should be bounded', () => {
-    // Phase 3 requirement: Enforce size limits
-    const largeArtifact = {
-      task: 'x'.repeat(1000),
-      requirements: Array(100).fill('requirement'),
-      relevant_files: Array(100).fill({ path: 'file.ts', reason: 'reason' }),
-      observations: Array(200).fill('observation'),
-      plan: Array(200).fill('step'),
-      validation: Array(100).fill('command'),
-      risks: Array(100).fill('risk'),
-      test_impact: [],
-      suggested_allowlist: { agent_patterns: [], validation_patterns: [] }
-    };
-
-    const jsonStr = JSON.stringify(largeArtifact);
-    const sizeInKB = Buffer.byteLength(jsonStr, 'utf-8') / 1024;
-
-    // Phase 3 constraint: Max 50KB
-    // Currently no size limit - this test will guide implementation
-    expect(sizeInKB).toBeLessThan(50);
-  });
 });
 
 /**
