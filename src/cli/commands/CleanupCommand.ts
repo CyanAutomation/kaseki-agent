@@ -5,6 +5,7 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
+import * as readline from 'readline';
 import { BaseCommand } from '../BaseCommand';
 import { createLogger } from '../../logger';
 import { cleanupOldRuns } from '../../cleanup-manager';
@@ -159,22 +160,44 @@ export class CleanupCommand extends BaseCommand {
   /**
    * Ask user for confirmation (async, for terminal input)
    */
-  private askConfirmation(_prompt: string): Promise<boolean> {
+  private askConfirmation(prompt: string): Promise<boolean> {
     return new Promise((resolve) => {
-      // For CLI compatibility, we'll use a simple approach:
-      // In a real terminal environment, you'd use readline or similar
-      // For now, we'll just return true (assume yes in non-interactive scenarios)
-      // and log that we're skipping the prompt if not in an interactive terminal
-      const isInteractive = process.stdin.isTTY;
-
-      if (!isInteractive) {
-        logger.debug('Non-interactive mode: skipping confirmation');
-        resolve(true);
+      if (!process.stdin.isTTY) {
+        logger.debug('Non-interactive mode: rejecting cleanup without --force');
+        resolve(false);
         return;
       }
 
-      // In interactive mode, prompt would be handled by shell wrapper
-      resolve(true);
+      let settled = false;
+      let terminal: readline.Interface | undefined;
+      const handleInputError = (): void => finish(false);
+
+      const finish = (confirmed: boolean): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        process.stdin.removeListener('error', handleInputError);
+        terminal?.close();
+        resolve(confirmed);
+      };
+
+      try {
+        terminal = readline.createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
+        terminal.once('close', () => finish(false));
+        terminal.once('error', () => finish(false));
+        process.stdin.once('error', handleInputError);
+        terminal.question(prompt, (answer) => {
+          const normalizedAnswer = answer.trim().toLowerCase();
+          finish(normalizedAnswer === 'y' || normalizedAnswer === 'yes');
+        });
+      } catch (error) {
+        logger.debug(`Unable to read cleanup confirmation: ${error}`);
+        finish(false);
+      }
     });
   }
 }
