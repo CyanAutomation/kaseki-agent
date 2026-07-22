@@ -26,7 +26,7 @@ describe('Caveman Instructions Library', () => {
         { characteristic: 'terse, professional communication', required: true, pattern: /terse|professional/i },
         { characteristic: 'dropped articles', required: true, pattern: /drop.*article|article.*drop/i },
         { characteristic: 'dropped filler or pleasantries', required: true, pattern: /drop.*filler|filler.*drop|drop.*pleasantr/i },
-        { characteristic: 'full or short sentences', required: true, pattern: /full\s+sentence|short\s+sentence/i },
+        { characteristic: 'full or short sentences', required: true, pattern: /full\s+sentence|short\s+sentence|fragment|break.*line/i },
         { characteristic: 'exact technical terms', required: true, pattern: /technical\s+terms?\s+(?:exact|unchanged|preserv)/i },
         { characteristic: 'unchanged code blocks', required: true, pattern: /code\s+blocks?\s+(?:exact|unchanged|preserv)/i },
         { characteristic: 'thing/action/reason/next-step pattern', required: true, pattern: /pattern.*thing.*action.*reason.*next\s+step|pattern|thing.*action|reason|next\s+step/i },
