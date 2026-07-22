@@ -212,6 +212,34 @@ describe('gateway-test-routes', () => {
       expect(body.piAdapterValidated).toBe(false);
     });
 
+    it('should make pi provider failure fatal for stage 2 only requests', async () => {
+      (kasekiGatewaySmoke.testPiGatewayProviderSmoke as jest.Mock).mockResolvedValueOnce({
+        status: 'error',
+        detail: 'Pi provider test failed',
+        codingShapeValidated: false,
+        multiTurnValidated: false,
+      });
+
+      const response = await fetch(`${baseUrl}/gateway-test?stage=2&piProvider=on`);
+      const body = await response.json() as any;
+
+      expect(response.status).toBe(503);
+      expect(body.status).toBe('error');
+      expect(body.gatewayInferenceValidated).toBe(true);
+      expect(body.piAdapterValidated).toBe(false);
+      expect(body.codingShapeValidated).toBe(false);
+      expect(body.multiTurnValidated).toBe(false);
+    });
+
+    it('should accept false boolean aliases without running pi provider smoke', async () => {
+      const response = await fetch(`${baseUrl}/gateway-test?piProvider=no&debug=off`);
+      const body = await response.json() as any;
+
+      expect(response.status).toBe(200);
+      expect(body.piProviderSmoke).toBeUndefined();
+      expect(kasekiGatewaySmoke.testPiGatewayProviderSmoke).not.toHaveBeenCalled();
+    });
+
     it('should handle debug mode query param', async () => {
       await fetch(`${baseUrl}/gateway-test?debug=true&piProvider=true`);
 

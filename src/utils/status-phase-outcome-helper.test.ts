@@ -120,6 +120,46 @@ describe('StatusPhaseOutcomeHelper', () => {
     });
   });
 
+  it('tolerates malformed progress jsonl lines and unreadable fallback diagnostics', () => {
+    const job = makeJob({ id: 'job-malformed' });
+    const runDir = path.join(resultsDir, job.id);
+    fs.mkdirSync(runDir, { recursive: true });
+    fs.writeFileSync(path.join(runDir, 'progress.jsonl'), [
+      '{not json',
+      JSON.stringify({ stage: 'pi scouting agent', status: 'started', timestamp: '2026-01-01T00:00:00Z' }),
+      '',
+    ].join('\n'));
+    const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+    const response = makeResponse('pi scouting agent');
+
+    helper.addPhaseOutcome(response, job, {});
+
+    expect(response.phaseOutcome).toMatchObject({
+      scouting: 'running',
+      weaving: 'not_reached',
+      scoutingStartedAt: '2026-01-01T00:00:00Z',
+    });
+  });
+
+  it('uses fallback reason_code when recovery_reason_code is absent', () => {
+    const job = makeJob({ id: 'job-fallback-reason' });
+    const runDir = path.join(resultsDir, job.id);
+    fs.mkdirSync(runDir, { recursive: true });
+    fs.writeFileSync(path.join(runDir, 'scouting-validation-errors.jsonl'), JSON.stringify({
+      reason_code: 'minimal_fallback_recovered',
+      recovered: true,
+    }) + '\n');
+    const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+    const response = makeResponse('pi coding agent');
+
+    helper.addPhaseOutcome(response, job, {});
+
+    expect(response.phaseOutcome).toMatchObject({
+      scouting: 'completed_with_fallback',
+      scoutingFallbackReason: 'minimal_fallback_recovered',
+    });
+  });
+
   it('marks failed scouting and explains the failed command', () => {
     const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
     const response = makeResponse('pi scouting agent');

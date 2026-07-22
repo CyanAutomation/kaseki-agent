@@ -207,6 +207,30 @@ describe('parseResponsesSse', () => {
     expect(result.text).toContain('Nested');
   });
 
+  it('should combine direct output item text and output_text content parts', () => {
+    const sseResponse = [
+      'data: {"response":{"output":[{"text":"Direct item"},{"content":[{"output_text":"Content part"},{"text":" text"}]}]}}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n');
+
+    const result = parseResponsesSse(sseResponse);
+    expect(result.text).toBe('Direct itemContent part text');
+  });
+
+  it('should ignore non-object response output items and content parts', () => {
+    const sseResponse = [
+      'data: {"response":{"output":[null,"text",{"content":[null,"part",{"type":"unknown"}]}]}}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n');
+
+    const result = parseResponsesSse(sseResponse);
+    expect(result.text).toBe('');
+  });
+
   it('should ignore non-data lines (comments, empty)', () => {
     const sseResponse = [
       ': comment line',

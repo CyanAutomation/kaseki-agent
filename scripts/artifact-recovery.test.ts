@@ -800,6 +800,56 @@ describe('artifact-recovery CLI', () => {
       expect(lastEvent.recovery_success).toBe(false);
     });
 
+    test('selects the most complete scouting candidate when multiple recoverable objects exist', () => {
+      const rawEventsPath = path.join(tmpDir, 'raw-events.jsonl');
+      const candidatePath = path.join(tmpDir, 'candidate.json');
+      const minimal = { task: 'Minimal task' };
+      const richer = {
+        task: 'Richer task',
+        requirements: [],
+        relevant_files: [],
+        observations: [],
+        plan: [],
+        validation: [],
+        risks: [],
+        test_impact: [],
+      };
+
+      fs.writeFileSync(rawEventsPath, [
+        JSON.stringify({ wrapper: JSON.stringify(minimal) }),
+        JSON.stringify({ wrapper: JSON.stringify(richer) }),
+      ].join('\n'));
+
+      const result = runCli(['scouting', rawEventsPath, candidatePath, tmpDir]);
+
+      expect(result.status).toBe(0);
+      expect(JSON.parse(fs.readFileSync(candidatePath, 'utf8'))).toMatchObject({ task: 'Richer task' });
+    });
+
+    test('still recovers scouting artifact when diagnostic log cannot be written', () => {
+      const rawEventsPath = path.join(tmpDir, 'raw-events.jsonl');
+      const candidatePath = path.join(tmpDir, 'candidate.json');
+      const blockedResultsPath = path.join(tmpDir, 'not-a-directory');
+      fs.writeFileSync(blockedResultsPath, 'blocks diagnostic append');
+      fs.writeFileSync(rawEventsPath, JSON.stringify({
+        task: 'Recover without diagnostics',
+        requirements: [],
+        relevant_files: [],
+        observations: [],
+        plan: [],
+        validation: [],
+        risks: [],
+        test_impact: [],
+      }) + '\n');
+
+      const result = runCli(['scouting', rawEventsPath, candidatePath, blockedResultsPath]);
+
+      expect(result.status).toBe(0);
+      expect(JSON.parse(fs.readFileSync(candidatePath, 'utf8'))).toMatchObject({
+        task: 'Recover without diagnostics',
+      });
+    });
+
     test('returns usage error when required arguments missing', () => {
       const result = runCli([]);
 
