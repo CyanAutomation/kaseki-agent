@@ -85,7 +85,42 @@ FAKE_ENTRYPOINT_CHECKS
   test "$(cat "$ENTRYPOINT_MODE_CAPTURE")" = "quick"
 }
 
+check_entrypoint_packaged_config_dispatch() {
+  print_section 'Docker entrypoint packaged-config dispatch'
+
+  local packaged_config_path='/app/scripts/startup-check-packaging.sh'
+  local fixture_config="$TMP_DIR/packaged-startup-check-packaging.sh"
+  local test_entrypoint="$TMP_DIR/docker-entrypoint.sh"
+  local source_capture="$TMP_DIR/packaged-config-source.txt"
+  local mode_capture="$TMP_DIR/packaged-config-mode.txt"
+
+  cat > "$fixture_config" <<'FAKE_PACKAGED_CONFIG'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "${BASH_SOURCE[0]}" > "${PACKAGED_CONFIG_SOURCE_CAPTURE:?}"
+kaseki_run_startup_checks() {
+  printf '%s\n' "${KASEKI_STARTUP_CHECK_MODE:-all}" > "${PACKAGED_CONFIG_MODE_CAPTURE:?}"
+}
+FAKE_PACKAGED_CONFIG
+
+  # Packaging spec: tests/packaging-layout.test.sh::contract_published_package_contents
+  # installs this config at /app/scripts; exercise the entrypoint's default dispatch
+  # against a relocated fixture so this test verifies sourcing and invocation, not text.
+  sed "s|$packaged_config_path|$fixture_config|" scripts/docker-entrypoint.sh > "$test_entrypoint"
+  chmod +x "$test_entrypoint"
+
+  PACKAGED_CONFIG_SOURCE_CAPTURE="$source_capture" \
+    PACKAGED_CONFIG_MODE_CAPTURE="$mode_capture" \
+    KASEKI_STARTUP_CHECK_MODE=quick \
+    KASEKI_SKIP_PERMISSION_VALIDATION=1 \
+    env -u KASEKI_STARTUP_CHECK_PACKAGING_CONFIG bash "$test_entrypoint" true
+
+  test "$(cat "$source_capture")" = "$fixture_config"
+  test "$(cat "$mode_capture")" = "quick"
+}
+
 check_startup_check_symlink_contracts
 check_entrypoint_mode_forwarding
+check_entrypoint_packaged_config_dispatch
 
 printf '\n✓ Startup-check packaging smoke assertions passed.\n'
