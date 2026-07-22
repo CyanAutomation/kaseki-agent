@@ -2085,7 +2085,7 @@ describe('JobScheduler shutdown lifecycle', () => {
     cleanupResultsDirs();
   });
 
-  test('shutdown terminates running children and marks jobs as shutdown-aborted', async () => {
+  test('shutdown force-kills a child that ignores SIGTERM after the grace period', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
@@ -2118,8 +2118,12 @@ describe('JobScheduler shutdown lifecycle', () => {
     expect(job.exitCode).toBe(143);
     expect(job.finalized).toBe(true);
 
-    jest.advanceTimersByTime(5000);
+    jest.advanceTimersByTime(4999);
     expect(proc.kill).toHaveBeenCalledTimes(1);
+
+    jest.advanceTimersByTime(1);
+    expect(proc.kill).toHaveBeenCalledTimes(2);
+    expect(proc.kill).toHaveBeenNthCalledWith(2, 'SIGKILL');
   });
 
   test('shutdown does not escalate if child exits during grace period', async () => {
