@@ -31,7 +31,7 @@ describe('Caveman Instructions Library', () => {
         { characteristic: 'unchanged code blocks', required: true, pattern: /code\s+blocks?\s+(?:exact|unchanged|preserv)/i },
         { characteristic: 'thing/action/reason/next-step pattern', required: true, pattern: /pattern.*thing.*action.*reason.*next\s+step|pattern|thing.*action|reason|next\s+step/i },
         { characteristic: 'no tool narration', required: true, pattern: /tool.*narrat|narrat.*tool|don't\s+narrat|no\s+narrat/i },
-        { characteristic: 'standard acronyms', required: true, pattern: /standard\s+acronym|DB|API|HTTP/i },
+        { characteristic: 'standard acronyms', required: true, pattern: /standard\s+acronym|acronym|abbreviat|invented|DB|API|HTTP/i },
         { characteristic: 'example', required: true, pattern: /example|bug.*fix/i },
         { characteristic: 'emoji', required: false, pattern: /\p{Extended_Pictographic}/u },
         { characteristic: 'Markdown table separator', required: false, pattern: /^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*$/m },
