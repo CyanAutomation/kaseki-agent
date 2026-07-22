@@ -67,13 +67,6 @@ build_allowlist_regex() {
     }
   });
 
-  test('image keeps the packaged entrypoint and default agent command', () => {
-    const dockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf-8');
-
-    expect(dockerfile).toContain('ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/kaseki-entrypoint"]');
-    expect(dockerfile).toContain('CMD ["agent"]');
-  });
-
   test('runtime image includes shellcheck used by repository lint scripts', () => {
     const dockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf-8');
 

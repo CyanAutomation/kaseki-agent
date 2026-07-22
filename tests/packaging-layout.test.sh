@@ -67,6 +67,18 @@ for (const physicalLine of physicalLines) {
 }
 if (logicalLine) instructions.push(logicalLine);
 
+const stages = [];
+let currentStage;
+for (const instruction of instructions) {
+  const fromMatch = instruction.match(/^FROM\s+(?:--\S+\s+)*\S+(?:\s+AS\s+(\S+))?$/i);
+  if (fromMatch) {
+    currentStage = { name: fromMatch[1] ?? '', instructions: [] };
+    stages.push(currentStage);
+  } else if (currentStage) {
+    currentStage.instructions.push(instruction);
+  }
+}
+
 const shellWords = (text) => text.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((word) =>
   word.replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, (_, doubleQuoted, singleQuoted) => doubleQuoted ?? singleQuoted)
 ) ?? [];
@@ -152,7 +164,7 @@ const runCommands = instructions
   .flatMap((instruction) => splitShellCommands(instruction.replace(/^RUN\s+/i, '')))
   .map(shellWords);
 
-const wantedCount = kind === 'copy' ? undefined : Number(expected.pop());
+const wantedCount = kind === 'copy' || kind === 'final-runtime-config' ? undefined : Number(expected.pop());
 let actualCount;
 if (kind === 'copy') {
   const [stage, source, destination] = expected;
@@ -164,6 +176,23 @@ if (kind === 'copy') {
   actualCount = runCommands.filter((words) => containsSequence(words, expected)).length;
 } else if (kind === 'command-contains') {
   actualCount = runCommands.filter((words) => expected.every((word) => words.includes(word))).length;
+} else if (kind === 'final-runtime-config') {
+  const finalStage = stages.at(-1);
+  assert.ok(finalStage, 'Dockerfile must contain at least one FROM instruction');
+
+  const normalizedInstruction = (instructionKind) => {
+    const matches = finalStage.instructions.filter((instruction) =>
+      new RegExp(`^${instructionKind}\\s`, 'i').test(instruction)
+    );
+    assert.equal(matches.length, 1, `final stage must contain exactly one ${instructionKind} instruction`);
+    const value = matches[0].replace(new RegExp(`^${instructionKind}\\s+`, 'i'), '');
+    assert.ok(value.startsWith('['), `final-stage ${instructionKind} must use JSON array form`);
+    return JSON.parse(value);
+  };
+
+  assert.deepEqual(normalizedInstruction('ENTRYPOINT'), JSON.parse(expected[0]));
+  assert.deepEqual(normalizedInstruction('CMD'), JSON.parse(expected[1]));
+  process.exit(0);
 } else if (kind === 'parser-self-test') {
   assert.deepEqual(splitShellCommands('echo "foo && bar" && real_command'), ['echo "foo && bar"', 'real_command']);
   assert.deepEqual(splitShellCommands("echo 'foo && bar' && real_command"), ["echo 'foo && bar'", 'real_command']);
@@ -294,8 +323,11 @@ contract_entrypoint_behavior() {
   bash -n scripts/docker-entrypoint.sh
   assert_docker_copy kaseki-agent.sh /usr/local/bin/kaseki-agent \
     'Dockerfile must copy repository kaseki-agent.sh to /usr/local/bin/kaseki-agent'
-  assert_file_contains Dockerfile '^ENTRYPOINT \["/usr/bin/tini", "--", "/usr/local/bin/kaseki-entrypoint"\]$' \
-    'Dockerfile entrypoint does not dispatch through kaseki-entrypoint'
+  assert_docker_contract \
+    'Dockerfile final stage must use the packaged entrypoint and default agent command' \
+    final-runtime-config \
+    '["/usr/bin/tini","--","/usr/local/bin/kaseki-entrypoint"]' \
+    '["agent"]'
   assert_file_contains Dockerfile 'apt-get install[^&]*shellcheck' \
     'Dockerfile runtime image must include shellcheck because repository lint scripts invoke it'
 }

@@ -54,4 +54,14 @@ if printf '%s\n' "$ENTRYPOINT_OUTPUT" | grep -Fq 'Startup checks failed: blockin
   exit 1
 fi
 
+printf 'Checking the built image starts with its default agent contract...\n'
+DEFAULT_START_OUTPUT="$({
+  docker run --rm \
+    -e KASEKI_SKIP_STARTUP_CHECKS=1 \
+    -e KASEKI_AGENT_HELPER_RESOLUTION_CHECK=1 \
+    "$IMAGE_TAG"
+} 2>&1)"
+printf '%s\n' "$DEFAULT_START_OUTPUT" | grep -Fq \
+  'allowlist_helper=/usr/local/bin/scripts/allowlist-helper.sh'
+
 printf '✓ Startup-check Docker packaging integration assertions passed.\n'
