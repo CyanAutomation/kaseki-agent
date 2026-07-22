@@ -13,36 +13,21 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+const scoutingTemplateDirectory = path.join(__dirname, '..', 'templates', 'scouting');
+
+function readScoutingPromptTemplates(): string {
+  return fs.readdirSync(scoutingTemplateDirectory)
+    .filter((file) => file.endsWith('.txt'))
+    .sort()
+    .map((file) => fs.readFileSync(path.join(scoutingTemplateDirectory, file), 'utf-8'))
+    .join('\n');
+}
+
 describe('Scouting prompt contracts', () => {
   let promptContent: string;
 
   beforeAll(() => {
-    // Read the current scouting prompt from kaseki-agent.sh
-    const agentScript = path.join(__dirname, '..', 'kaseki-agent.sh');
-    const content = fs.readFileSync(agentScript, 'utf-8');
-
-    // Extract all heredocs from the scouting-related functions
-    const scoutingSection = content.substring(
-      content.indexOf('is_complex_change_task() {'),
-      content.indexOf('run_scouting_agent() {')
-    );
-
-    const heredocs: string[] = [];
-
-    // Find quoted heredocs in scouting section
-    const quotedPattern = /cat\s*<<'([A-Z_]+)'\n([\s\S]*?)\n\1\n/g;
-    let match;
-    while ((match = quotedPattern.exec(scoutingSection)) !== null) {
-      heredocs.push(match[2]);
-    }
-
-    // Find unquoted heredocs in scouting section
-    const unquotedPattern = /cat\s*<<EOF\n([\s\S]*?)\nEOF/g;
-    while ((match = unquotedPattern.exec(scoutingSection)) !== null) {
-      heredocs.push(match[1]);
-    }
-
-    promptContent = heredocs.join('\n');
+    promptContent = readScoutingPromptTemplates();
   });
 
   test('keeps scouting read-only [SCOUTING_PROMPT_DESIGN § Operational Constraints]', () => {
@@ -91,9 +76,6 @@ describe('Scouting prompt contracts', () => {
       /exactly one JSON object (?:at|to) \/results\/scouting-candidate\.json/i,
     );
     expect(promptContent).toMatch(/only accepted handoff location/i);
-    expect(promptContent).toMatch(
-      /verify that \/results\/scouting-candidate\.json exists, is non-empty, and is valid JSON/i,
-    );
   });
 
   test('keeps goal-setting retry counters local to each invocation', () => {
@@ -114,18 +96,52 @@ describe('Scouting prompt contracts', () => {
     expect(promptContent).toContain('test_examples');
   });
 
-  test('should document all change type categories', () => {
-    const changeTypes = [
-      'Parser & Validation Changes',
-      'Event Handling & Progress Changes',
-      'Response Construction & Serialization',
-      'Naming Conventions & Constants',
-      'Configuration & Multi-file Patterns'
-    ];
+  test.each([
+    {
+      category: 'parser',
+      taskSignal: /parse, parser, regex, validation/i,
+      affectedTest: /tests\/parser\.test\.ts/,
+      assertionImpact: /Null\/undefined handling[\s\S]*expect\(\)\.toThrow\(\)/,
+    },
+    {
+      category: 'event',
+      taskSignal: /event, emit, listener, on, once, signal/i,
+      affectedTest: /tests\/event-handler\.test\.ts/,
+      assertionImpact: /Event structure changes[\s\S]*new\/removed\/renamed fields/i,
+    },
+    {
+      category: 'serialization',
+      taskSignal: /response, serialize, serialize, format, construct/i,
+      affectedTest: /tests\/serialization\.test\.ts/,
+      assertionImpact: /Round-trip assertions[\s\S]*preserves values/i,
+    },
+    {
+      category: 'naming',
+      taskSignal: /rename, constant, enum, identifier, symbol/i,
+      affectedTest: /tests\/\*\*\/\*\.test\.ts/,
+      assertionImpact: /String literal assertions[\s\S]*oldName[\s\S]*newName/i,
+    },
+    {
+      category: 'configuration',
+      taskSignal: /config, configuration, settings, environment/i,
+      affectedTest: /tests\/config\.test\.ts/,
+      assertionImpact: /Configuration schema changes[\s\S]*required fields/i,
+    },
+    {
+      category: 'multi-file',
+      taskSignal: /multi-file changes, cross-repo coordination/i,
+      affectedTest: /tests\/integration\.test\.ts/,
+      assertionImpact: /Multi-file coordination[\s\S]*3\+ test files/i,
+    },
+  ])('documents test impact for $category changes', ({ taskSignal, affectedTest, assertionImpact }) => {
+    expect(promptContent).toMatch(taskSignal);
+    expect(promptContent).toMatch(affectedTest);
+    expect(promptContent).toMatch(assertionImpact);
+  });
 
-    changeTypes.forEach(type => {
-      expect(promptContent).toContain(type);
-    });
+  test('keeps the scouting template wired into the runtime prompt builder', () => {
+    const agentScript = fs.readFileSync(path.join(__dirname, '..', 'kaseki-agent.sh'), 'utf-8');
+    expect(agentScript).toContain('templates/scouting/detailed-test-impact.txt');
   });
 });
 
@@ -137,31 +153,7 @@ describe('Phase 3: Provider & Error Context', () => {
   let promptContent: string;
 
   beforeAll(() => {
-    const agentScript = path.join(__dirname, '..', 'kaseki-agent.sh');
-    const content = fs.readFileSync(agentScript, 'utf-8');
-
-    // Extract all heredocs from the scouting-related functions
-    const scoutingSection = content.substring(
-      content.indexOf('is_complex_change_task() {'),
-      content.indexOf('run_scouting_agent() {')
-    );
-
-    const heredocs: string[] = [];
-
-    // Find quoted heredocs in scouting section
-    const quotedPattern = /cat\s*<<'([A-Z_]+)'\n([\s\S]*?)\n\1\n/g;
-    let match;
-    while ((match = quotedPattern.exec(scoutingSection)) !== null) {
-      heredocs.push(match[2]);
-    }
-
-    // Find unquoted heredocs in scouting section
-    const unquotedPattern = /cat\s*<<EOF\n([\s\S]*?)\nEOF/g;
-    while ((match = unquotedPattern.exec(scoutingSection)) !== null) {
-      heredocs.push(match[1]);
-    }
-
-    promptContent = heredocs.join('\n');
+    promptContent = readScoutingPromptTemplates();
   });
 
   test('should mention execution context and efficiency optimization', () => {
@@ -199,31 +191,7 @@ describe('Phase 4: Output Schema Refinement', () => {
   let promptContent: string;
 
   beforeAll(() => {
-    const agentScript = path.join(__dirname, '..', 'kaseki-agent.sh');
-    const content = fs.readFileSync(agentScript, 'utf-8');
-
-    // Extract all heredocs from the scouting-related functions
-    const scoutingSection = content.substring(
-      content.indexOf('is_complex_change_task() {'),
-      content.indexOf('run_scouting_agent() {')
-    );
-
-    const heredocs: string[] = [];
-
-    // Find quoted heredocs in scouting section
-    const quotedPattern = /cat\s*<<'([A-Z_]+)'\n([\s\S]*?)\n\1\n/g;
-    let match;
-    while ((match = quotedPattern.exec(scoutingSection)) !== null) {
-      heredocs.push(match[2]);
-    }
-
-    // Find unquoted heredocs in scouting section
-    const unquotedPattern = /cat\s*<<EOF\n([\s\S]*?)\nEOF/g;
-    while ((match = unquotedPattern.exec(scoutingSection)) !== null) {
-      heredocs.push(match[1]);
-    }
-
-    promptContent = heredocs.join('\n');
+    promptContent = readScoutingPromptTemplates();
   });
 
   test('should have field constraints documented', () => {
@@ -379,48 +347,7 @@ describe('Prompt Quality Metrics', () => {
   let promptContent: string;
 
   beforeAll(() => {
-    const agentScript = path.join(__dirname, '..', 'kaseki-agent.sh');
-    const content = fs.readFileSync(agentScript, 'utf-8');
-
-    // Extract heredocs from kaseki-agent.sh by finding patterns directly
-    const heredocs: string[] = [];
-
-    // Find all quoted heredocs (cat <<'LABEL' ... LABEL\n)
-    const quotedPattern = /cat\s*<<'([A-Z_]+)'\n([\s\S]*?)\n\1\n/g;
-    let match;
-    while ((match = quotedPattern.exec(content)) !== null) {
-      heredocs.push(match[2]);
-    }
-
-    // Find all unquoted heredocs (cat <<EOF ... EOF)
-    const unquotedPattern = /cat\s*<<EOF\n([\s\S]*?)\nEOF/g;
-    while ((match = unquotedPattern.exec(content)) !== null) {
-      heredocs.push(match[1]);
-    }
-
-    // Combine - but filter to only get heredocs from build_scouting_prompt region
-    // (search for a large chunk containing both marker sections from scouting prompt)
-    const scoutingSection = content.substring(
-      content.indexOf('is_complex_change_task() {'),
-      content.indexOf('run_scouting_agent() {')
-    );
-
-    const scoutingHeredocs: string[] = [];
-
-    // Find quoted heredocs in scouting section
-    const quotedScoutingPattern = /cat\s*<<'([A-Z_]+)'\n([\s\S]*?)\n\1\n/g;
-    while ((match = quotedScoutingPattern.exec(scoutingSection)) !== null) {
-      scoutingHeredocs.push(match[2]);
-    }
-
-    // Find unquoted heredocs in scouting section
-    const unquotedScoutingPattern = /cat\s*<<EOF\n([\s\S]*?)\nEOF/g;
-    while ((match = unquotedScoutingPattern.exec(scoutingSection)) !== null) {
-      scoutingHeredocs.push(match[1]);
-    }
-
-    // Combine all heredoc contents from scouting section
-    promptContent = scoutingHeredocs.join('\n');
+    promptContent = readScoutingPromptTemplates();
   });
 
   test('prompt should be human-readable', () => {

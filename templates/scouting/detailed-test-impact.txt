@@ -1,0 +1,76 @@
+
+**Enhanced Guidelines by Change Type** (with 5+ concrete patterns each):
+
+1. **Parser & Validation Changes** (keywords: parse, validate, input, null safety, type checking)
+   - Detection keywords: parse, parser, regex, validation, sanitize, decode, input handling, edge cases
+   - Test files to check: tests/parser.test.ts, tests/validation.test.ts, tests/sanitization.test.ts
+   - Common test_impact patterns:
+     a) Null/undefined handling: expect().toThrow() → expect().toEqual() or vice versa
+     b) Empty string/whitespace: test edge cases like "", "   ", "\\n\\t"
+     c) Type coercion: number-to-string, boolean-to-string conversions in parsing
+     d) Regex pattern changes: test cases that should now match or no longer match
+     e) Error message changes: expect(error.message).toContain("old") → .toContain("new")
+     f) Boundary value testing: min/max values, overflow conditions
+   - Example test_examples:
+     ✓ Null safety: {"type": "modified_assertion", "before": "expect(parse(null)).toThrow()", "after": "expect(parse(null)).toEqual(defaults())", "pattern": "Null-safe fallback", "description": "Function now handles null as valid input with sensible defaults"}
+     ✓ Whitespace: {"type": "added_assertion", "before": "N/A", "after": "expect(parse('  \\t  ')).toEqual(parse(''))", "pattern": "Whitespace normalization", "description": "Input parsing now treats whitespace as empty"}
+     ✓ Type coercion: {"type": "modified_assertion", "before": "expect(parseNumber('42px')).toThrow()", "after": "expect(parseNumber('42px')).toBe(42)", "pattern": "Unit stripping", "description": "Parser now extracts numeric portion"}
+
+2. **Event Handling & Progress Changes** (keywords: event, emit, listener, signal, progress, field)
+   - Detection keywords: event, emit, listener, on, once, signal, progress, stage, timing, field name
+   - Test files to check: tests/event-handler.test.ts, tests/progress.test.ts, tests/listeners.test.ts
+   - Common test_impact patterns:
+     a) Event structure changes: new/removed/renamed fields in emitted event objects
+     b) Timing expectations: synchronous → async or vice versa, timeout thresholds
+     c) Field presence: assert listener receives expected event properties
+     d) Event ordering: sequence of event emissions, promises/callbacks
+     e) Listener registration: changes to addEventListener, on, once API
+     f) Error event handling: error events now emitted for certain conditions
+   - Example test_examples:
+     ✓ Event field: {"type": "added_assertion", "before": "listener(event); expect(event.stage).toBeDefined()", "after": "listener(event); expect(event.stage).toContain('SCOUTING')", "pattern": "Event field presence", "description": "New stage field now always present in event"}
+     ✓ Async timing: {"type": "modified_assertion", "before": "await done; // within 50ms", "after": "await done; // within 500ms", "pattern": "Async emission delay", "description": "Event emission now batches async; increased timeout"}
+     ✓ Error event: {"type": "added_test_case", "before": "// No error event handling", "after": "emitter.on('error', handler); trigger(); expect(handler).toHaveBeenCalled()", "pattern": "Error event emission", "description": "New error events emitted for recoverable failures"}
+
+3. **Response Construction & Serialization Changes** (keywords: serialize, format, response, construct, transform, payload)
+   - Detection keywords: response, serialize, serialize, format, construct, map, transform, output, payload, toJSON, stringify
+   - Test files to check: tests/response.test.ts, tests/serialization.test.ts, tests/format.test.ts
+   - Common test_impact patterns:
+     a) Field name changes: response.old_field → response.newField
+     b) Field type changes: string → object, number → string, array → map
+     c) Nested structure changes: flat response → nested, vice versa
+     d) Omit/include behavior: fields now optional or always present
+     e) Serialization format: JSON, JSONL, CSV, binary encoding changes
+     f) Round-trip assertions: serialize/deserialize preserves values
+   - Example test_examples:
+     ✓ Field rename: {"type": "modified_assertion", "before": "expect(response.status_code).toBe(200)", "after": "expect(response.statusCode).toBe(200)", "pattern": "camelCase migration", "description": "Response fields now use camelCase convention"}
+     ✓ Type change: {"type": "modified_assertion", "before": "expect(typeof response.metadata).toBe('string')", "after": "expect(typeof response.metadata).toBe('object')", "pattern": "Structured metadata", "description": "Metadata now structured object instead of serialized string"}
+     ✓ Round-trip: {"type": "added_assertion", "before": "N/A", "after": "const original = {...}; const restored = deserialize(serialize(original)); expect(restored).toEqual(original)", "pattern": "Serialization round-trip", "description": "Serialize/deserialize cycle must preserve all fields"}
+
+4. **Naming Conventions & Constants Changes** (keywords: rename, constant, enum, field name, identifier)
+   - Detection keywords: rename, constant, enum, identifier, symbol, property name, method name, migrate naming
+   - Test files to check: tests/**/*.test.ts (grep for old constants/names)
+   - Common test_impact patterns:
+     a) Constant value changes: OLD_VALUE = "x" → NEW_VALUE = "y"
+     b) Enum migrations: Color.RED → Color.PRIMARY_RED
+     c) API method renames: .oldMethod() → .newMethod()
+     d) Export name changes: export MyClass → export MyClassV2
+     e) Configuration key changes: config.old_key → config.newKey
+     f) String literal assertions: ".toContain('oldName')" → ".toContain('newName')"
+   - Example test_examples:
+     ✓ Constant rename: {"type": "modified_assertion", "before": "expect(TIMEOUT_MS).toBe(5000)", "after": "expect(SCOUTING_TIMEOUT_MS).toBe(120000)", "pattern": "Constant renaming & value change", "description": "Timeout constant renamed and value updated"}
+     ✓ Enum value: {"type": "modified_assertion", "before": "expect(phase).toBe('PARSE')", "after": "expect(phase).toBe('SCOUTING')", "pattern": "Enum value rename", "description": "Phase name updated to match new phase names"}
+     ✓ API method: {"type": "modified_assertion", "before": "instance.configure(); expect(result).toBe(true)", "after": "instance.setup(); expect(result).toBe(true)", "pattern": "Method rename", "description": "API method renamed for clarity"}
+
+5. **Configuration & Multi-file Patterns** (keywords: config, multi-file, cross-module, integration)
+   - Detection keywords: config, configuration, settings, environment, multi-file changes, cross-repo coordination
+   - Test files to check: tests/integration.test.ts, tests/config.test.ts, tests/e2e.test.ts
+   - Common test_impact patterns:
+     a) Configuration schema changes: new required fields, deprecated fields
+     b) Multi-file coordination: one change requires updates in 3+ test files
+     c) Integration points: mocking changes, stub contracts
+     d) Allowlist/blocklist changes: file patterns affect test file discovery
+     e) Build-time vs runtime: constants vs environment variable changes
+   - Example test_examples:
+     ✓ Config schema: {"type": "added_assertion", "before": "config = loadConfig(); expect(config.timeout).toBeDefined()", "after": "config = loadConfig(); expect(config.timeout).toBeGreaterThan(0); expect(config.retries).toBeDefined()", "pattern": "Config schema expansion", "description": "New required config fields must be validated"}
+     ✓ Multi-file: {"type": "added_test_case", "before": "// Only single file tested", "after": "// Test mocking across src/a.ts, src/b.ts, tests/mock-factory.ts", "pattern": "Integration mocking", "description": "Mock strategy now affects multiple test files"}
+
