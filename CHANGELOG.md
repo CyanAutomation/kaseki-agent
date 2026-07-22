@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.114.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.113.8...v1.114.0) (2026-07-22)
+
+
+### Features
+
+* add unit tests for StatusArtifactHelper functionality ([c144323](https://github.com/CyanAutomation/kaseki-agent/commit/c144323a50bbd6342b215d0859dce4cce33b056e))
+* enhance gateway connectivity tests and improve pi event filtering logic ([49731b0](https://github.com/CyanAutomation/kaseki-agent/commit/49731b086d60ad30841834a2248fb589dee4e7f6))
+
 ## [1.113.8](https://github.com/CyanAutomation/kaseki-agent/compare/v1.113.7...v1.113.8) (2026-07-22)
 
 
