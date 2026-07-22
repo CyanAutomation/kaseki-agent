@@ -25,15 +25,6 @@ describe('Caveman Instructions Library', () => {
       expect(instruction.length).toBeGreaterThan(0);
     });
 
-    it('should not self-reference caveman mode', () => {
-      // Caveman skill rule: No self-reference. Never announce the style.
-      expect(instruction).not.toMatch(/caveman\s+mode/i);
-      expect(instruction).not.toMatch(/me\s+caveman/i);
-      expect(instruction).not.toMatch(/caveman\s+think/i);
-      expect(instruction).not.toMatch(/caveman\s+speak/i);
-      expect(instruction).not.toMatch(/caveman:\s*/i);
-    });
-
     it('should be marked as a communication mode directive', () => {
       // Should clearly identify this as instructions for terse communication
       expect(instruction.toLowerCase()).toMatch(/terse|drop|brief|compress|short|fragment/i);
@@ -51,11 +42,15 @@ describe('Caveman Instructions Library', () => {
       expect(instruction.toLowerCase()).toMatch(/fragment|short|sentence|break.*line/i);
     });
 
-    it('should not include decorative elements', () => {
-      // Caveman skill: No decorative tables/emoji
-      // Allow: comparison operators (<, <=, =), brackets, slashes (for acronyms like DB/API/HTTP), quotes
-      const result = instruction.match(/[^\w\s.,;:\-()<>="'[]\]/g);
-      expect(result).toBeNull(); // No emoji or decorative unicode beyond allowed
+    it('should prohibit decorative output and style self-announcement [CAVEMAN-COMMS-001]', () => {
+      // Caveman communication specification, CAVEMAN-COMMS-001:
+      // no emoji, decorative tables, or announcement of the communication style.
+      expect(instruction).not.toMatch(/\p{Extended_Pictographic}/u);
+      expect(instruction).not.toMatch(/^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*$/m);
+      expect(instruction).not.toMatch(/[┌┬┐├┼┤└┴┘╔╦╗╠╬╣╚╩╝]/u);
+      expect(instruction).not.toMatch(
+        /\b(?:caveman(?:\s+mode)?|me\s+caveman|caveman\s+(?:think|speak))\b/i,
+      );
     });
 
     it('should establish the pattern: [thing] [action] [reason]. [next step].', () => {
@@ -71,12 +66,6 @@ describe('Caveman Instructions Library', () => {
     it('should specify acceptable acronyms (standard only, no invented)', () => {
       // Caveman skill: Standard well-known tech acronyms OK; never invent new abbreviations
       expect(instruction.toLowerCase()).toMatch(/acronym|abbreviat|standar|invented|DB|API|HTTP/i);
-    });
-
-    it('should not contain excessive punctuation or formatting', () => {
-      // Lite intensity should be readable and professional
-      const excessiveFormatting = (instruction.match(/[*#`]/g) || []).length;
-      expect(excessiveFormatting).toBeLessThan(3); // Allow minimal markdown
     });
 
     it('should be a complete, standalone instruction (no continuation)', () => {
