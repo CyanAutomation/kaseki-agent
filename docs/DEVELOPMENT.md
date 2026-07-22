@@ -61,6 +61,10 @@ Kaseki Agent is an ephemeral coding-agent runner that:
 - **Validation Pipeline**: Execute user-defined commands
 - **Artifact Collection**: Git diffs, logs, metadata, reports
 
+#### Scouting and Weaving Phases
+
+Kaseki performs a read-only repository analysis before agent execution, writing findings exclusively to `/results/scouting.json` without modifying source files. The scouting run explores codebase patterns and requirements, generating planning data for subsequent transformation. Weaving processes scouting JSON outputs into agent execution instructions, translating research findings into actionable task prompts and structured guidance for the Pi CLI coding agent.
+
 ### 4. Setup System (`src/setup/`)
 **Configuration and initialization**
 
