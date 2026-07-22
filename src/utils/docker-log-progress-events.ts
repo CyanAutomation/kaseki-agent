@@ -34,14 +34,18 @@ export function progressEventsFromDockerLogTail(
     const line = (timestampMatch?.[2] || rawLine).replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '');
     const stageMatch = line.match(ORCHESTRATOR_STAGE_PATTERN);
     if (stageMatch) {
+      const isEstimated = !timestampMatch;
       append({
         source: 'docker-logs',
         stage: stageMatch[1].trim(),
-        message: 'started',
-        status: 'started',
+        // A Docker tail without timestamps is an observation, not durable
+        // lifecycle evidence.  Calling it "started" caused future headings
+        // from buffered logs to appear as active stages in the API timeline.
+        message: isEstimated ? 'observed in log tail' : 'started',
+        ...(isEstimated ? {} : { status: 'started' }),
         timestamp: eventTimestamp,
         updatedAt: eventTimestamp,
-        ...(!timestampMatch ? { timestampEstimated: true } : {}),
+        ...(isEstimated ? { timestampEstimated: true } : {}),
       });
       continue;
     }

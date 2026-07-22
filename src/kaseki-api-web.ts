@@ -3195,9 +3195,9 @@ const controllerPage = String.raw`<!doctype html>
               ? 'Warning: terminal artifacts report fallback/failure signals; review the result summary before accepting this run.'
               : '',
             recommended.length ? 'Diagnostics: ' + recommended.join(', ') : '',
-            '',
-            'RAW STATUS',
-            JSON.stringify(content, null, 2),
+            recommended.length
+              ? 'Open the Artifacts tab for the raw files and the Events tab for the timeline.'
+              : 'Open the Events and Artifacts tabs for detailed diagnostics.',
           ].filter((line, index, lines) => line !== '' || (index > 0 && lines[index - 1] !== '')).join('\n');
           tabOutputEl.textContent = stripControlSequences(summary);
           return;

@@ -30,7 +30,10 @@ export class StatusPhaseOutcomeHelper {
   addPhaseOutcome(response: StatusResponse, job: Job, metadata: any): void {
     const stage = String(response.progress?.stage ?? job.currentStage ?? '').toLowerCase();
     const failed = job.status === 'failed';
-    const events = this.readPhaseEvents(job);
+    // Estimated events recovered from an un-timestamped Docker tail are useful
+    // for display, but must not advance durable phase state.  A buffered tail
+    // can contain headings for later stages before those stages run.
+    const events = this.readPhaseEvents(job).filter((event) => event.timestampEstimated !== true);
     const scoutingEvents = events.filter((event) => this.isScoutingStage(this.eventStage(event)));
     const failedCommand = String(metadata?.failed_command ?? stage).toLowerCase();
     const preAgentValidation = this.isPreAgentValidationFailure(failedCommand);
@@ -102,7 +105,7 @@ export class StatusPhaseOutcomeHelper {
   private isWeavingLikeStage(stage: string): boolean {
     // Goal-setting is pre-scouting planning, not weaving.  Weaving begins
     // only after scouting has handed off to coding or a post-coding phase.
-    return /coding|weav|goal check|quality|github operations|evaluation|final/.test(stage);
+    return /coding|weav|goal check|quality|github operations|evaluation|final|collect (?:agent )?diff|changed files/.test(stage);
   }
 
   private isWeavingEvent(event: Record<string, unknown>, preAgentValidation: boolean): boolean {
@@ -141,7 +144,7 @@ export class StatusPhaseOutcomeHelper {
     const weavingStage = !preAgentValidation || !/pre[-_ ]agent|pre[-_ ]validation|validation/.test(stage);
     return Boolean(
       weavingEvents.length ||
-      (weavingStage && !this.isPreflightGithubOperations(stage) && /coding|weav|goal check|validation|quality|github operations|evaluation|final/.test(stage))
+      (weavingStage && !this.isPreflightGithubOperations(stage) && /coding|weav|goal check|validation|quality|github operations|evaluation|final|collect (?:agent )?diff|changed files/.test(stage))
     );
   }
 

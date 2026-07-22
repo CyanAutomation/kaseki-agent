@@ -560,7 +560,8 @@ describe('kaseki API web console behavior', () => {
     expect(text).toContain('Provider: gateway');
     expect(text).toContain('Attempts: 2/2');
     expect(text).toContain('Diagnostics: provider-attempts.jsonl, gateway-summary.json');
-    expect(text.indexOf('RUN SUMMARY')).toBeLessThan(text.indexOf('RAW STATUS'));
+    expect(text).toContain('Open the Artifacts tab for the raw files and the Events tab for the timeline.');
+    expect(text).not.toContain('RAW STATUS');
   });
 
   test('selecting a GitHub issue carries its repository into the submit form', async () => {
