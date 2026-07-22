@@ -4,7 +4,9 @@
  */
 
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
+import { spawn } from 'child_process';
 
 describe('Artifact Consolidation', () => {
   const KASEKI_RESULTS_DIR = process.env.TEST_RESULTS_DIR || '/tmp/kaseki-test-consolidation';
@@ -155,10 +157,104 @@ describe('Artifact Consolidation', () => {
       expect(true).toBe(true); // Validated by code review
     });
 
-    it('should consolidate timings, errors, and validation errors before finalization', () => {
-      // This is validated by checking that consolidation functions are called
-      // near the end of script (lines 1896-1898), before final status writes
-      expect(true).toBe(true); // Validated by code review
+    it('publishes complete consolidated artifacts before the final status is visible', async () => {
+      const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-finalization-contract-'));
+      const resultsDir = path.join(temporaryRoot, 'results');
+      const workspaceDir = path.join(temporaryRoot, 'workspace');
+      const harnessPath = path.join(__dirname, '..', `.finalization-contract-${process.pid}.sh`);
+      fs.mkdirSync(resultsDir, { recursive: true });
+      fs.mkdirSync(path.join(workspaceDir, 'repo'), { recursive: true });
+
+      const agentScript = fs.readFileSync(path.join(__dirname, '..', 'kaseki-agent.sh'), 'utf-8');
+      const finalizationEntryEnd = agentScript.indexOf('\nrun_step() {');
+      expect(finalizationEntryEnd).toBeGreaterThan(0);
+
+      const harnessSetup = String.raw`
+# Supply representative producer output after normal run initialization, then
+# leave through the production EXIT finalizer (the smallest finalization entry point).
+printf 'command\telapsed_seconds\nnpm test\t12.5\n' > "$KASEKI_RESULTS_DIR/validation-timings.tsv"
+printf 'command\telapsed_seconds\nnpm run build\t3.25\n' > "$KASEKI_RESULTS_DIR/pre-validation-timings.tsv"
+printf 'stage\telapsed_seconds\nscouting\t7\n' > "$KASEKI_RESULTS_DIR/stage-timings.tsv"
+printf 'summarizer warning\n' > "$KASEKI_RESULTS_DIR/summarizer-stderr.log"
+printf '%s\n' '{"reason_code":"schema_mismatch","field":"plan"}' > "$KASEKI_RESULTS_DIR/scouting-validation-errors.jsonl"
+printf '%s\n' '{"reason_code":"missing_artifact","field":"goal-check-candidate.json"}' > "$KASEKI_RESULTS_DIR/goal-check-validation-errors.jsonl"
+
+# Keep this contract focused on finalization ordering rather than unrelated
+# report generation. Metadata is the externally visible terminal publication.
+collect_git_artifacts() { :; }
+write_result_summary() { :; }
+write_validation_infrastructure_diagnostics() { :; }
+write_failure_json() { :; }
+write_repo_memory_summary() { :; }
+remove_low_value_artifacts() { :; }
+write_metadata() {
+  printf '{"status":"%s","exit_code":%s}\n' "$([ "$1" -eq 0 ] && printf completed || printf failed)" "$1" > "$KASEKI_RESULTS_DIR/metadata.json"
+}
+set_current_stage "complete"
+exit 0
+`;
+
+      fs.writeFileSync(harnessPath, agentScript.slice(0, finalizationEntryEnd) + harnessSetup, { mode: 0o700 });
+
+      try {
+        const child = spawn('bash', [harnessPath], {
+          cwd: path.join(__dirname, '..'),
+          env: {
+            ...process.env,
+            KASEKI_RESULTS_DIR: resultsDir,
+            KASEKI_WORKSPACE_DIR: workspaceDir,
+            KASEKI_CACHE_DIR: path.join(temporaryRoot, 'cache'),
+            KASEKI_TASK_MODE: 'inspect',
+            KASEKI_BASELINE_VALIDATION_ENABLED: '0',
+            KASEKI_ALLOW_EMPTY_DIFF: '1',
+          },
+          stdio: ['ignore', 'ignore', 'pipe'],
+        });
+        let stderr = '';
+        child.stderr.setEncoding('utf-8');
+        child.stderr.on('data', chunk => { stderr += chunk; });
+
+        const exitPromise = new Promise<number | null>((resolve, reject) => {
+          child.once('error', reject);
+          child.once('exit', resolve);
+        });
+
+        const metadataPath = path.join(resultsDir, 'metadata.json');
+        const deadline = Date.now() + 8_000;
+        while (!fs.existsSync(metadataPath) && Date.now() < deadline) {
+          if (child.exitCode !== null) break;
+          await new Promise(resolve => setTimeout(resolve, 5));
+        }
+
+        expect(fs.existsSync(metadataPath)).toBe(true);
+        const finalStatus = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
+        expect(finalStatus).toMatchObject({ status: 'completed', exit_code: 0 });
+
+        const timings = JSON.parse(fs.readFileSync(path.join(resultsDir, 'timings-manifest.json'), 'utf-8'));
+        expect(timings).toEqual({
+          validation_timings: [{ command: 'npm test', elapsed_seconds: 12.5 }],
+          pre_validation_timings: [{ command: 'npm run build', elapsed_seconds: 3.25 }],
+          stage_timings: [{ stage: 'scouting', elapsed_seconds: 7 }],
+        });
+
+        const phaseErrors = fs.readFileSync(path.join(resultsDir, 'phase-errors.jsonl'), 'utf-8')
+          .trim().split('\n').map(line => JSON.parse(line));
+        expect(phaseErrors).toHaveLength(1);
+        expect(phaseErrors[0]).toMatchObject({ phase: 'summarizer', message: 'summarizer warning' });
+
+        const validationErrors = fs.readFileSync(path.join(resultsDir, 'artifact-validation-errors.jsonl'), 'utf-8')
+          .trim().split('\n').map(line => JSON.parse(line));
+        expect(validationErrors).toEqual([
+          { reason_code: 'schema_mismatch', field: 'plan', phase: 'scouting' },
+          { reason_code: 'missing_artifact', field: 'goal-check-candidate.json', phase: 'goal-check' },
+        ]);
+
+        const exitCode = await exitPromise;
+        expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: '' });
+      } finally {
+        fs.rmSync(harnessPath, { force: true });
+        fs.rmSync(temporaryRoot, { recursive: true, force: true });
+      }
     });
   });
 
