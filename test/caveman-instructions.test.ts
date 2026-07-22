@@ -22,16 +22,38 @@ describe('Caveman Instructions Library', () => {
     it('should prohibit decorative output and style self-announcement [CAVEMAN-COMMS-001]', () => {
       // Caveman communication specification, CAVEMAN-COMMS-001:
       // require its communication rules and prohibit decorative output or style announcements.
+      // Keep alternatives permissive: each accepted term comes from the assertions consolidated here.
       const contract = [
-        { characteristic: 'terse, professional communication', required: true, pattern: /terse|professional|drop|brief|compress|short|fragment/i },
+        {
+          characteristic: 'terse, professional communication',
+          required: true,
+          pattern: /terse|professional|drop|brief|compress|short|fragment/i,
+        },
         { characteristic: 'dropped articles', required: true, pattern: /drop.*article|article.*drop/i },
         { characteristic: 'dropped filler or pleasantries', required: true, pattern: /drop.*filler|filler.*drop|drop.*pleasantr/i },
-        { characteristic: 'full or short sentences', required: true, pattern: /full\s+sentence|short\s+sentence|fragment|break.*line/i },
+        {
+          characteristic: 'full or short sentences',
+          required: true,
+          pattern: /full\s+sentence|short\s+sentence|fragment|break.*line/i,
+        },
         { characteristic: 'exact technical terms', required: true, pattern: /technical\s+terms?\s+(?:exact|unchanged|preserv)/i },
         { characteristic: 'unchanged code blocks', required: true, pattern: /code\s+blocks?\s+(?:exact|unchanged|preserv)/i },
-        { characteristic: 'thing/action/reason/next-step pattern', required: true, pattern: /pattern.*thing.*action.*reason.*next\s+step|pattern|thing.*action|reason|next\s+step/i },
-        { characteristic: 'no tool narration', required: true, pattern: /tool.*narrat|narrat.*tool|don't\s+narrat|no\s+narrat/i },
-        { characteristic: 'standard acronyms', required: true, pattern: /standard\s+acronym|acronym|abbreviat|invented|DB|API|HTTP/i },
+        {
+          characteristic: 'thing/action/reason/next-step pattern',
+          required: true,
+          pattern:
+            /(?=.*thing)(?=.*action)(?=.*reason)(?=.*next\s+step)|pattern.*thing.*action.*reason.*next\s+step/i,
+        },
+        {
+          characteristic: 'no tool narration',
+          required: true,
+          pattern: /tool.*narrat|narrat.*tool|don't\s+narrat|no\s+narrat/i,
+        },
+        {
+          characteristic: 'standard acronyms',
+          required: true,
+          pattern: /(?=.*acronym)(?=.*standard|abbreviat|invented)|(?=.*DB)(?=.*API|HTTP)/i,
+        },
         { characteristic: 'example', required: true, pattern: /example|bug.*fix/i },
         { characteristic: 'emoji', required: false, pattern: /\p{Extended_Pictographic}/u },
         { characteristic: 'Markdown table separator', required: false, pattern: /^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*$/m },
