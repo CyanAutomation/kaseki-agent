@@ -644,6 +644,7 @@ export class JobScheduler {
 
     proc.on('exit', (code) => {
       this.processExited.set(jobId, true);
+      this.cleanupExitedProcess(jobId);
       if (job.finalized) {
         return;
       }
@@ -657,6 +658,7 @@ export class JobScheduler {
 
     proc.on('error', (err) => {
       this.processExited.set(jobId, true);
+      this.cleanupExitedProcess(jobId);
       if (job.finalized) {
         return;
       }
@@ -1219,23 +1221,32 @@ export class JobScheduler {
     }
     this.running.delete(job.id);
     metricsRegistry.setRunningJobs(this.running.size);
-    this.processes.delete(job.id);
-    const shutdownKillTimer = this.shutdownKillTimers.get(job.id);
-    if (shutdownKillTimer) {
-      clearTimeout(shutdownKillTimer);
-      this.shutdownKillTimers.delete(job.id);
+    // A shutdown can finalize the job before its child has actually exited.
+    // Preserve the process and liveness marker in that case so the shutdown
+    // grace timer can still decide whether SIGKILL is required.
+    if (this.processExited.get(job.id) || !this.processes.has(job.id)) {
+      this.cleanupExitedProcess(job.id);
     }
     const timeoutKillTimer = this.timeoutKillTimers.get(job.id);
     if (timeoutKillTimer) {
       clearTimeout(timeoutKillTimer);
       this.timeoutKillTimers.delete(job.id);
     }
-    this.processExited.delete(job.id);
     this.clearJobCaches(job);
     this.pruneTerminalJobsIndex();
     void this.persistJobs();
     this.processQueue();
     metricsRegistry.setQueuePending(this.queue.length);
+  }
+
+  private cleanupExitedProcess(jobId: string): void {
+    const shutdownKillTimer = this.shutdownKillTimers.get(jobId);
+    if (shutdownKillTimer) {
+      clearTimeout(shutdownKillTimer);
+      this.shutdownKillTimers.delete(jobId);
+    }
+    this.processes.delete(jobId);
+    this.processExited.delete(jobId);
   }
 
   private cleanupContainer(id: string): CleanupResult {
@@ -1504,16 +1515,20 @@ export class JobScheduler {
 
       const proc = this.processes.get(jobId);
       if (proc) {
-        proc.kill('SIGTERM');
+        if (!this.shutdownKillTimers.has(jobId)) {
+          const shutdownKillTimer = setTimeout(() => {
+            if (!this.processExited.get(jobId)) {
+              proc.kill('SIGKILL');
+            }
+            this.shutdownKillTimers.delete(jobId);
+          }, JobScheduler.SHUTDOWN_GRACE_MS);
+          this.unrefTimer(shutdownKillTimer);
+          this.shutdownKillTimers.set(jobId, shutdownKillTimer);
+        }
 
-        const shutdownKillTimer = setTimeout(() => {
-          if (!this.processExited.get(jobId)) {
-            proc.kill('SIGKILL');
-          }
-          this.shutdownKillTimers.delete(jobId);
-        }, JobScheduler.SHUTDOWN_GRACE_MS);
-        this.unrefTimer(shutdownKillTimer);
-        this.shutdownKillTimers.set(jobId, shutdownKillTimer);
+        // Register the grace timer before signalling so even a synchronous
+        // exit notification can clear the timer through the normal exit path.
+        proc.kill('SIGTERM');
       }
 
       // Proactively clean up the Docker container
@@ -1546,12 +1561,6 @@ export class JobScheduler {
 
     this.queue = [];
     this.liveProgressCache.clear();
-
-    // Clear any pending shutdown kill timers
-    for (const timer of this.shutdownKillTimers.values()) {
-      clearTimeout(timer);
-    }
-    this.shutdownKillTimers.clear();
 
     // Clear any pending timeout kill timers
     for (const timer of this.timeoutKillTimers.values()) {
