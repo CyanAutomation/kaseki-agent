@@ -332,7 +332,7 @@ function buildStatusResponseSchema(): Record<string, unknown> {
         type: 'object',
         description: 'Explicit outcome for scouting and weaving phases, including phases not reached after an earlier failure',
         properties: {
-          scouting: { type: 'string', enum: ['completed', 'failed', 'skipped', 'not_reached', 'running'] },
+          scouting: { type: 'string', enum: ['completed', 'completed_with_fallback', 'failed', 'skipped', 'not_reached', 'running'] },
           weaving: { type: 'string', enum: ['completed', 'failed', 'skipped', 'not_reached', 'running'] },
           scoutingFallback: { type: 'boolean', description: 'True when scouting continued with a controller-generated validated fallback handoff' },
           scoutingFallbackReason: { type: 'string', description: 'Reason the controller generated the scouting fallback handoff' },

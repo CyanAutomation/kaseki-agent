@@ -173,7 +173,7 @@ describe('StatusPhaseOutcomeHelper', () => {
     helper.addPhaseOutcome(response, job, {});
 
     expect(response.phaseOutcome).toMatchObject({
-      scouting: 'completed',
+      scouting: 'completed_with_fallback',
       scoutingFallback: true,
       scoutingFallbackReason: 'patch_retry_exhausted_fallback_recovered',
       weaving: 'completed',

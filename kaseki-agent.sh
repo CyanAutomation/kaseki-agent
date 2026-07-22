@@ -2996,6 +2996,41 @@ process.exit(1);
 NODE
 }
 
+detect_actionless_patch_coding_turn() {
+  local events_file="$1"
+  local diagnostics_file="$2"
+
+  [ -s "$events_file" ] || return 1
+  git -C "${KASEKI_WORKSPACE_DIR}/repo" diff --quiet 2>/dev/null || return 1
+
+  node - "$events_file" "$diagnostics_file" <<'NODE' 2>/dev/null
+const fs = require('node:fs');
+const [eventsPath, diagnosticsPath] = process.argv.slice(2);
+let assistantTextChars = 0;
+let toolCalls = 0;
+for (const line of fs.readFileSync(eventsPath, 'utf8').split(/\r?\n/)) {
+  if (!line.trim()) continue;
+  let event; try { event = JSON.parse(line); } catch { continue; }
+  if (['tool_call', 'tool_start', 'function_call'].includes(event?.type)) toolCalls += 1;
+  const content = event?.message?.role === 'assistant' ? event.message.content : undefined;
+  if (typeof content === 'string') assistantTextChars += content.trim().length;
+  if (Array.isArray(content)) for (const item of content) {
+    if (typeof item === 'string') assistantTextChars += item.trim().length;
+    else if (item && typeof item.text === 'string') assistantTextChars += item.text.trim().length;
+  }
+}
+if (assistantTextChars > 0 && toolCalls === 0) {
+  fs.appendFileSync(diagnosticsPath, JSON.stringify({
+    timestamp: new Date().toISOString(), reason_code: 'actionless_patch_coding_turn', phase: 'coding',
+    assistant_text_chars: assistantTextChars, tool_calls: toolCalls, severity: 'critical',
+    suggestion: 'Patch-mode coding produced reasoning but no tool call or diff. Retry with an explicit edit-and-verify instruction before running broad validation.',
+  }) + '\n');
+  process.exit(0);
+}
+process.exit(1);
+NODE
+}
+
 run_pi_json_capture() {
   local raw_events_file="$1"
   local timeout_seconds="$2"
@@ -5952,7 +5987,7 @@ You are a read-only scouting Pi agent inside a Kaseki-managed ephemeral workspac
 Inspect only files needed to scope the task. Do not edit files, tests, lockfiles, git state, secrets, or environment variables.
 
 The repository at /workspace/repo is read-only during scouting. The only writable handoff location is /results.
-Use the write tool to write exactly one JSON object to /results/scouting-candidate.json. Do not rely on final assistant text for the artifact.
+Create exactly one JSON object at /results/scouting-candidate.json. Prefer the write tool; if it is unavailable, use the available bash tool with a quoted heredoc or printf to write that exact path. Do not rely on final assistant text for the artifact.
 
 JSON fields:
 - task: concise actionable task string
@@ -5986,7 +6021,7 @@ Research the task before a separate coding agent starts. Your job is to analyze 
 - Do not run git add, git commit, git push, gh, hub, package installation, or validation commands that modify files.
 - Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
 - The repository tree at /workspace/repo is read-only during scouting. Do not write there or to /tmp.
-- Use the write tool to write exactly one JSON object to /results/scouting-candidate.json. This is the only accepted handoff location. Do not rely on final assistant text for the artifact.
+- Create exactly one JSON object at /results/scouting-candidate.json. This is the only accepted handoff location. Prefer the write tool; if it is unavailable, use the available bash tool with a quoted heredoc or printf. Do not rely on final assistant text for the artifact.
 
 The JSON object must be concise and useful to the coding agent. Use this schema-style shape (field descriptions only; do not copy this text as output):
 - task: string (max 200 characters); a concrete interpretation of the requested task.
@@ -6281,9 +6316,9 @@ NODE
 ## [ARTIFACT CONTRACT RETRY]
 
 The previous scouting attempt exited successfully but did not create the required artifact.
-Retry the scouting handoff now. Use the write tool (not final assistant text) to create exactly one valid JSON object at:
+Retry the scouting handoff now. Create exactly one valid JSON object at:
 /results/scouting-candidate.json
-The repository is read-only; do not write to /workspace/repo, .agents, or /tmp. Before finishing, use the read tool to verify that /results/scouting-candidate.json exists, is non-empty, and is valid JSON matching the schema above. Do not finish until that verification succeeds.
+The repository is read-only; do not write to /workspace/repo, .agents, or /tmp. Prefer the write tool; if it is unavailable, use the available bash tool with a quoted heredoc or printf. Before finishing, use the read tool to verify that /results/scouting-candidate.json exists, is non-empty, and is valid JSON matching the schema above. Do not finish until that verification succeeds.
 Every relevant_files item must be {"path":"repo/relative/path","reason":"why it matters"}. If the previous artifact had scalar observations, plan, or validation fields, emit arrays. Do not emit markdown, a JSON string, or a partial object.
 Previous validator feedback (fix these exact failures):
 ${retry_feedback:-'- candidate artifact was missing or invalid'}
@@ -9687,6 +9722,19 @@ NODE
       PROVIDER_ERROR_MESSAGE="Coding agent returned a successful Pi exit code but produced no assistant text and no tool calls."
     fi
     emit_error_event "provider_empty_assistant_turn" "$PROVIDER_ERROR_MESSAGE" "exit"
+  fi
+  if [ "$PI_EXIT" -eq 0 ] && [ "$KASEKI_TASK_MODE" = "patch" ] && detect_actionless_patch_coding_turn "${KASEKI_RESULTS_DIR}/pi-events.jsonl" "${KASEKI_RESULTS_DIR}/pi-agent-diagnostics.jsonl"; then
+    GOAL_CHECK_MET=false
+    GOAL_CHECK_FAILURE_REASON="actionless_patch_coding_turn: Coding returned reasoning but made no tool call and produced no repository diff."
+    GOAL_CHECK_RETRY_PROMPT="The previous patch-mode coding attempt only reasoned; it did not call a tool or change the repository. Use an available edit mechanism now, modify the required files from ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}, then run git diff -- <required file> and do not finish until the diff is non-empty."
+    printf '%s\n' "$GOAL_CHECK_RETRY_PROMPT" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+    emit_error_event "actionless_patch_coding_turn" "Coding agent returned text without tool calls or a diff; retrying before validation" "retry"
+    snapshot_attempt_artifacts "$coding_attempt"
+    if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
+      emit_progress "pi coding agent" "retrying after actionless patch attempt (attempt $coding_attempt of $max_coding_attempts)"
+      coding_attempt=$((coding_attempt + 1))
+      continue
+    fi
   fi
 
   # Process hashline_edit events (non-fatal phase; failures don't block pipeline)
