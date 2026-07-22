@@ -1,0 +1,5 @@
+
+**Minimal test_impact Guidelines** (for simple bug fixes and documentation):
+- Include test_impact for any code changes affecting behavior, especially: null/undefined handling, error cases, field names, timing
+- Empty test_impact is acceptable only for pure documentation, build config, or dependency updates with no behavioral changes
+- Max 2-3 test_examples per file; keep focused on key changes

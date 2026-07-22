@@ -1,0 +1,44 @@
+
+**Examples of Strong test_impact Entries**:
+✓ Parser change:
+  {"path": "tests/parser.test.ts", "reason": "parseRole() function now handles null with fallback", "test_examples": [{"type": "added_assertion", "pattern": "Null-coalescing", "before": "expect(parseRole(null)).toThrow(NullReferenceError)", "after": "expect(parseRole(null)).toEqual({ name: 'Unnamed', level: 0 })", "description": "Null now treated as valid input with sensible defaults"}]}
+
+✓ Event change:
+  {"path": "tests/event-handler.test.ts", "reason": "Event emission now async with new timing", "test_examples": [{"type": "modified_assertion", "pattern": "Async timing", "before": "await eventPromise; // resolves within 10ms", "after": "await eventPromise; // resolves within 100ms (now batched)", "description": "Async batching adds latency; timeout increased"}]}
+
+✓ Serialization change:
+  {"path": "tests/response.test.ts", "reason": "Response fields now use camelCase", "test_examples": [{"type": "modified_assertion", "pattern": "camelCase fields", "before": "expect(response.status_code).toBe(200)", "after": "expect(response.statusCode).toBe(200)", "description": "All response field names migrated to camelCase"}]}
+
+✓ Config change:
+  {"path": "tests/config.test.ts", "reason": "New required config fields added", "test_examples": [{"type": "added_assertion", "pattern": "Schema validation", "before": "expect(config).toHaveProperty('timeout')", "after": "expect(config).toHaveProperty('timeout'); expect(config).toHaveProperty('maxRetries'); expect(config).toHaveProperty('backoffMs')", "description": "Three new retry-related fields now required"}]}
+
+Guidelines for critical_change_expectations:
+- Include critical_change_expectations when scouting can identify concrete files or literal diff evidence that must change for the goal to be real.
+- required_files must be repo-relative paths and should only list files that must appear in changed-files.txt, not files that are merely relevant for reading.
+- required_search_strings must be literal strings expected to appear in git.diff, such as a new function name, config key, assertion text, or diff hunk marker.
+- Set forbidden_empty_diff to true when the task is a patch/change request rather than read-only inspection.
+- Omit uncertain expectations rather than guessing; this contract is enforced before the LLM goal-check evaluator runs.
+
+Guidelines for suggested_allowlist:
+- agent_patterns: Glob patterns narrowing which files the coding agent can modify. Use specific files (e.g., "src/parser.ts") or directories (e.g., "src/**", "tests/**"). If many related files, use broad patterns like "src/**.ts".
+- validation_patterns: Glob patterns for files that validation commands (npm test, npm run lint, etc.) may legitimately modify. Often identical to agent_patterns, but may differ (e.g., allow ".coverage" or "node_modules/" if generated during validation).
+- Both arrays can be empty if the task scope is unclear; the coding agent will work without allowlist constraints.
+- Prefer accurate scope over convenience: too-broad patterns defeat the purpose; too-narrow patterns will require restoration.
+
+## [EXECUTION CONTEXT - Optimize for Efficiency]
+
+**Timeouts**:
+- Scouting should complete within 2 minutes total.
+- Avoid deep directory recursion (git log, file enumeration across 1000+ files, slow regex searches).
+- Use fast commands: find, grep, head (instead of cat for large files).
+
+**Artifact Size Constraints**:
+- Maximum JSON size: 50 KB.
+- If observations or relevant_files grow large, prioritize the most important ones.
+- Truncate observations with "(...truncated for brevity)" if approaching size limit.
+
+**Error Handling**:
+- If repository inspection fails (unreadable files, malformed code), report the error in observations and proceed with limited scope.
+- Example: "Unable to parse src/config.json due to syntax error; focusing on src/lib instead."
+- Do not fail the entire scouting phase due to isolated file read errors; adapt and continue.
+
