@@ -157,6 +157,27 @@ describe('StatusPhaseOutcomeHelper', () => {
     expect(response.phaseOutcome).toMatchObject({ scouting: 'completed', weaving: 'running' });
   });
 
+  it('does not report scouting as running after the job reaches a terminal status', () => {
+    const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+    const response = makeResponse('pi scouting agent');
+
+    helper.addPhaseOutcome(response, makeJob({ status: 'completed' }), {});
+
+    expect(response.phaseOutcome).toMatchObject({ scouting: 'completed', weaving: 'not_reached' });
+  });
+
+  it('does not report weaving as running after the job reaches a terminal status', () => {
+    const helper = new StatusPhaseOutcomeHelper(
+      makeScheduler([{ stage: 'pi coding agent', status: 'started' }]),
+      makeConfig(resultsDir),
+    );
+    const response = makeResponse('pi coding agent');
+
+    helper.addPhaseOutcome(response, makeJob({ status: 'completed' }), {});
+
+    expect(response.phaseOutcome).toMatchObject({ scouting: 'completed', weaving: 'completed' });
+  });
+
   it('reports scouting as skipped when it was explicitly disabled', () => {
     const helper = new StatusPhaseOutcomeHelper(
       makeScheduler([{ stage: 'pi coding agent', status: 'started' }]),

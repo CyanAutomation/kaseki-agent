@@ -54,6 +54,7 @@ export class StatusPhaseOutcomeHelper {
         failed,
         Boolean(scoutingFallbackReason),
         job.request?.scouting?.enabled !== false,
+        job.status,
       ),
       weaving: this.resolveWeavingOutcome(weavingFailed, weavingStarted, weavingCompletedAt, stage, job.status),
       ...(scoutingFallbackReason ? { scoutingFallback: true, scoutingFallbackReason } : {}),
@@ -152,6 +153,7 @@ export class StatusPhaseOutcomeHelper {
     failed: boolean,
     scoutingFallback: boolean,
     scoutingEnabled: boolean,
+    jobStatus: Job['status'],
   ): NonNullable<StatusResponse['phaseOutcome']>['scouting'] {
     if (scoutingFailed) return 'failed';
     if (scoutingFallback) return 'completed_with_fallback';
@@ -163,7 +165,11 @@ export class StatusPhaseOutcomeHelper {
     // executed/fallback scouting phase as "skipped" merely because its live
     // event fell outside the Docker log tail.
     if (!scoutingStarted) return weavingStarted ? (scoutingEnabled ? 'completed' : 'skipped') : 'not_reached';
-    return scoutingCompletedAt || weavingStarted || failed ? 'completed' : 'running';
+    if (scoutingCompletedAt || weavingStarted || failed) return 'completed';
+    return isExecutionInProgress({
+      phase: jobStatus === 'running' ? 'RUNNING' : jobStatus.toUpperCase(),
+      outcome: 'IN_PROGRESS',
+    }) ? 'running' : 'completed';
   }
 
   private resolveWeavingOutcome(
@@ -181,8 +187,11 @@ export class StatusPhaseOutcomeHelper {
     // enters quality/goal-check/evaluation. Those later stages are durable
     // evidence that the coding phase returned, so do not leave the UI stuck
     // on "running" while finalization is underway.
-    if (weavingCompletedAt || /quality|goal check|evaluation|final/.test(stage) || jobStatus === 'completed') return 'completed';
-    return 'running';
+    if (weavingCompletedAt || /quality|goal check|evaluation|final/.test(stage)) return 'completed';
+    return isExecutionInProgress({
+      phase: jobStatus === 'running' ? 'RUNNING' : jobStatus.toUpperCase(),
+      outcome: 'IN_PROGRESS',
+    }) ? 'running' : 'completed';
   }
 
   private scoutingFallbackReason(job: Job): string | undefined {
