@@ -1,5 +1,6 @@
 // Public API contract: initializeSetup returns a SetupContext, and the
-// kaseki-api barrel export preserves that same SetupContext alias.
+// kaseki-api barrel export preserves that same SetupContext alias. The stable
+// public fields are documented by https://github.com/CyanAutomation/kaseki-agent/pull/842.
 import { initializeSetup, type SetupContext } from './setup-orchestrator';
 import type { SetupContext as BarrelSetupContext } from './index';
 
@@ -22,22 +23,13 @@ type _initializeSetupReturnsSetupContext = Assert<
   IsAssignable<InitializedSetupReturn, SetupContext>
 >;
 
-type _setupContextHasExpectedProperties = Assert<
-  IsAssignable<
-    ExpectedSetupContextFields,
-    Pick<SetupContext, keyof ExpectedSetupContextFields>
+type _setupContextHasDocumentedPublicFields = Assert<
+  IsExact<
+    Pick<SetupContext, keyof ExpectedSetupContextFields>,
+    ExpectedSetupContextFields
   >
 >;
 
 type _barrelExportsSetupContextAlias = Assert<
   IsExact<BarrelSetupContext, SetupContext>
 >;
-
-type _setupContextIncludesExpectedFields = Assert<
-  IsAssignable<SetupContext, ExpectedSetupContextFields>
->;
-
-void (0 as unknown as _initializeSetupReturnsSetupContext);
-void (0 as unknown as _setupContextHasExpectedProperties);
-void (0 as unknown as _barrelExportsSetupContextAlias);
-void (0 as unknown as _setupContextIncludesExpectedFields);
