@@ -4,7 +4,9 @@
  */
 
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
+import { execFileSync } from 'child_process';
 
 describe('Artifact Consolidation', () => {
   const KASEKI_RESULTS_DIR = process.env.TEST_RESULTS_DIR || '/tmp/kaseki-test-consolidation';
@@ -149,10 +151,52 @@ describe('Artifact Consolidation', () => {
   });
 
   describe('Consolidation Order & Dependencies', () => {
-    it('should consolidate phase summaries immediately after each phase completes', () => {
-      // This is validated by checking that append_phase_summary is called
-      // right after kaseki-pi-event-filter in the script (lines 4141-4143, etc.)
-      expect(true).toBe(true); // Validated by code review
+    it('persists a completed phase before the next phase or finalization begins', () => {
+      const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-phase-consolidation-'));
+      const helper = path.join(__dirname, '..', 'scripts', 'lib', 'artifact-consolidation.sh');
+      const script = `
+        set -euo pipefail
+        source "$1"
+        results_dir="$2"
+        artifact="$results_dir/all-phase-summaries.json"
+        timeline="$results_dir/timeline.jsonl"
+        printf '{"phases": []}\n' > "$artifact"
+        printf '{"model":"scout-model","tokens":200}\n' > "$results_dir/scouting-summary.json"
+
+        consolidate_completed_phase "$artifact" scouting "$results_dir/scouting-summary.json"
+        jq -c '{event:"next-phase-start", phases:.phases}' "$artifact" >> "$timeline"
+
+        printf '{"model":"evaluation-model","tokens":75}\n' > "$results_dir/run-evaluation-summary.json"
+        consolidate_completed_phase "$artifact" run-evaluation "$results_dir/run-evaluation-summary.json"
+        jq -c '{event:"finalization-start", phases:.phases}' "$artifact" >> "$timeline"
+      `;
+
+      try {
+        execFileSync('bash', ['-c', script, 'phase-workflow', helper, testDir]);
+
+        const artifact = JSON.parse(fs.readFileSync(path.join(testDir, 'all-phase-summaries.json'), 'utf-8'));
+        const timeline = fs.readFileSync(path.join(testDir, 'timeline.jsonl'), 'utf-8')
+          .trim()
+          .split('\n')
+          .map(line => JSON.parse(line));
+
+        expect(timeline).toEqual([
+          {
+            event: 'next-phase-start',
+            phases: [{ model: 'scout-model', tokens: 200, phase: 'scouting' }],
+          },
+          {
+            event: 'finalization-start',
+            phases: [
+              { model: 'scout-model', tokens: 200, phase: 'scouting' },
+              { model: 'evaluation-model', tokens: 75, phase: 'run-evaluation' },
+            ],
+          },
+        ]);
+        expect(artifact).toEqual({ phases: timeline[1].phases });
+      } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+      }
     });
 
     it('should consolidate timings, errors, and validation errors before finalization', () => {
