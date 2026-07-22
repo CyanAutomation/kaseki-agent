@@ -175,7 +175,10 @@ describe('Phase 3: Provider & Error Context', () => {
   });
 
   test('should enforce the artifact size limit from SCOUTING_PROMPT_DESIGN.md §5', () => {
-    const artifactSizeLimitInKB = promptContent.match(/JSON size[^\n]*?(\d+)\s*KB/i)?.[1];
+    const artifactSizeMatch = promptContent.match(/JSON size[^\n]*?(\d+)\s*KB/i);
+    expect(artifactSizeMatch).not.toBeNull();
+
+    const artifactSizeLimitInKB = artifactSizeMatch?.[1];
 
     // SCOUTING_PROMPT_DESIGN.md §5 specifies 50 KB to keep scouting output bounded.
     expect(Number(artifactSizeLimitInKB)).toBe(50);
