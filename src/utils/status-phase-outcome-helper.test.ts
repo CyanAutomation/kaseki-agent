@@ -218,6 +218,18 @@ describe('StatusPhaseOutcomeHelper', () => {
     expect(response.phaseOutcome).toMatchObject({ scouting: 'completed', weaving: 'running' });
   });
 
+  it('does not regress completed phase visibility during secret scanning', () => {
+    const helper = new StatusPhaseOutcomeHelper(
+      makeScheduler([{ stage: 'pi coding agent', status: 'started' }]),
+      makeConfig(resultsDir),
+    );
+    const response = makeResponse('secret scan');
+
+    helper.addPhaseOutcome(response, makeJob(), {});
+
+    expect(response.phaseOutcome).toMatchObject({ scouting: 'completed', weaving: 'completed' });
+  });
+
   it('does not report scouting as running after the job reaches a terminal status', () => {
     const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
     const response = makeResponse('pi scouting agent');

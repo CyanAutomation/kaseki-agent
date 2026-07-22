@@ -40,7 +40,10 @@ const DEFAULT_PROMPT = 'Say "CloudFlare gateway test successful" in one sentence
 // Dynamic gateway routes may select reasoning models whose hidden reasoning
 // consumes the output budget before message.content is emitted. Keep this
 // probe small, but large enough to validate those routes reliably.
-const DEFAULT_MAX_TOKENS = 256;
+// Dynamic routes can select reasoning models. Leave enough room for hidden
+// reasoning plus the tiny visible answer so a health probe does not report a
+// false gateway failure merely because its own token budget was too small.
+const DEFAULT_MAX_TOKENS = 1024;
 
 export function buildCloudflareGatewayChatCompletionsUrl(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/chat/completions`;

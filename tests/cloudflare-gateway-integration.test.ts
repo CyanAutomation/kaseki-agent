@@ -64,7 +64,7 @@ describe('CloudFlare Gateway deterministic contract', () => {
               content: 'Say "CloudFlare gateway test successful" in one sentence',
             },
           ],
-          max_tokens: 256,
+          max_tokens: 1024,
         }),
       }
     );
