@@ -52,7 +52,7 @@ describe('Caveman Instructions Library', () => {
         {
           characteristic: 'standard acronyms',
           required: true,
-          pattern: /standard\s+acronym|acronym|abbreviat|invented|DB|API|HTTP/i,
+          pattern: /(?=.*acronym)(?=.*standard|abbreviat|invented)|(?=.*DB)(?=.*API|HTTP)/i,
         },
         { characteristic: 'example', required: true, pattern: /example|bug.*fix/i },
         { characteristic: 'emoji', required: false, pattern: /\p{Extended_Pictographic}/u },
