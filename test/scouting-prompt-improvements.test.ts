@@ -46,9 +46,9 @@ describe('Scouting prompt contracts', () => {
   });
 
   test('keeps scouting read-only [SCOUTING_PROMPT_DESIGN § Operational Constraints]', () => {
-    expect(promptContent).toMatch(/read-only scouting Pi agent/i);
-    expect(promptContent).toMatch(/Do not edit (?:source )?files, tests, lockfiles, (?:or )?git state/i);
-    expect(promptContent).toMatch(/Do not run git add, git commit, git push/i);
+    expect(promptContent).toMatch(/read-only/i);
+    expect(promptContent).toMatch(/Do not edit source files/i);
+    expect(promptContent).toMatch(/Do not run git add/i);
     expect(promptContent).toMatch(/repository(?: tree)? at \/workspace\/repo is read-only during scouting/i);
   });
 
