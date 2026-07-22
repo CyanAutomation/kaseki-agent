@@ -42,7 +42,7 @@ describe('Caveman Instructions Library', () => {
           characteristic: 'thing/action/reason/next-step pattern',
           required: true,
           pattern:
-            /pattern.*thing.*action.*reason.*next\s+step|pattern|thing.*action|reason|next\s+step/i,
+            /(?=.*thing)(?=.*action)(?=.*reason)(?=.*next\s+step)|pattern.*thing.*action.*reason.*next\s+step/i,
         },
         {
           characteristic: 'no tool narration',
