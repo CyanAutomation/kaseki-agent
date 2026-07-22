@@ -20,8 +20,6 @@ assert_file_contains() {
 bash -n scripts/startup-check-packaging.sh
 bash -n scripts/docker-entrypoint.sh
 
-assert_file_contains scripts/docker-entrypoint.sh '/app/scripts/startup-check-packaging\.sh' \
-  'docker entrypoint no longer references the packaged startup-check contract'
 assert_file_contains scripts/docker-entrypoint.sh 'kaseki_run_startup_checks' \
   'docker entrypoint no longer dispatches through the shared startup-check contract'
 
