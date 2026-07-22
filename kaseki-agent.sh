@@ -83,6 +83,22 @@ if [ "$source_status" -ne 0 ]; then
   exit 1
 fi
 
+KASEKI_ARTIFACT_CONSOLIDATION_HELPER="${KASEKI_ARTIFACT_CONSOLIDATION_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/lib/artifact-consolidation.sh}"
+if [ ! -r "$KASEKI_ARTIFACT_CONSOLIDATION_HELPER" ] && [ -r /app/scripts/lib/artifact-consolidation.sh ]; then
+  KASEKI_ARTIFACT_CONSOLIDATION_HELPER="/app/scripts/lib/artifact-consolidation.sh"
+fi
+if [ ! -r "$KASEKI_ARTIFACT_CONSOLIDATION_HELPER" ]; then
+  printf 'ERROR: Artifact consolidation helper is not readable. Expected %s or /app/scripts/lib/artifact-consolidation.sh.\n' "$KASEKI_ARTIFACT_CONSOLIDATION_HELPER" >&2
+  exit 66
+fi
+# shellcheck source=/dev/null
+. "$KASEKI_ARTIFACT_CONSOLIDATION_HELPER"
+source_status=$?
+if [ "$source_status" -ne 0 ]; then
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_ARTIFACT_CONSOLIDATION_HELPER" "$source_status" >&2
+  exit 1
+fi
+
 KASEKI_JSON_EVENTS_HELPER="${KASEKI_JSON_EVENTS_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/lib/json-events.sh}"
 if [ ! -r "$KASEKI_JSON_EVENTS_HELPER" ] && [ -r /app/scripts/lib/json-events.sh ]; then
   KASEKI_JSON_EVENTS_HELPER="/app/scripts/lib/json-events.sh"
@@ -822,23 +838,6 @@ run_secret_scan() {
     record_stage_timing "secret scan" "$SECRET_SCAN_EXIT" "$(($(date +%s) - stage_start))" ""
   fi
   emit_progress "secret scan" "finished with exit $SECRET_SCAN_EXIT"
-}
-
-# Append a phase summary to all-phase-summaries.json consolidation artifact
-append_phase_summary() {
-  local output_file="$1"
-  local phase_name="$2"
-  local summary_file="$3"
-  
-  if [ ! -f "$summary_file" ]; then
-    return 0
-  fi
-  
-  jq \
-    --slurpfile phase_data "$summary_file" \
-    --arg phase "$phase_name" \
-    '.phases += [($phase_data[0] + {"phase": $phase})]' \
-    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
 }
 
 : > "${KASEKI_RESULTS_DIR}"/run-evaluation-summary.json
@@ -2937,7 +2936,7 @@ run_pi_event_filter_export() {
 
   if [ "$filter_exit" -eq 0 ]; then
     # Phase 3A: Consolidate pi-agent summary to all-phase-summaries.json
-    append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "pi-agent" "$summary_file"
+    consolidate_completed_phase "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "pi-agent" "$summary_file"
     return 0
   fi
 
@@ -5572,7 +5571,7 @@ run_goal_setting_agent() {
   
   rm -f "$GOAL_SETTING_CANDIDATE_ARTIFACT"
   # Phase 3A: Consolidate goal-setting summary to all-phase-summaries.json
-  append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "goal-setting" "${KASEKI_RESULTS_DIR}"/goal-setting-summary.json
+  consolidate_completed_phase "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "goal-setting" "${KASEKI_RESULTS_DIR}"/goal-setting-summary.json
   GOAL_SETTING_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/goal-setting-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
   
   record_stage_timing "pi goal-setting agent" "$GOAL_SETTING_EXIT" "$GOAL_SETTING_DURATION_SECONDS" "artifact=$GOAL_SETTING_ARTIFACT timeout_seconds=$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS degraded=$GOAL_SETTING_FALLBACK_USED fallback_mode=${GOAL_SETTING_FALLBACK_MODE:-none}"
@@ -6443,7 +6442,7 @@ run_scouting_agent() {
   git reset --hard -q HEAD 2>/dev/null || true
   git clean -fd -q 2>/dev/null || true
   # Phase 3A: Consolidate scouting summary to all-phase-summaries.json
-  append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "scouting" "${KASEKI_RESULTS_DIR}"/scouting-summary.json
+  consolidate_completed_phase "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "scouting" "${KASEKI_RESULTS_DIR}"/scouting-summary.json
   SCOUTING_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/scouting-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
   record_stage_timing "pi scouting agent" "$SCOUTING_EXIT" "$SCOUTING_DURATION_SECONDS" "artifact=$SCOUTING_ARTIFACT timeout_seconds=$KASEKI_SCOUTING_TIMEOUT_SECONDS"
   if [ "$SCOUTING_EXIT" -ne 0 ]; then
@@ -6914,7 +6913,7 @@ run_goal_check() {
 
   kaseki-pi-event-filter "$GOAL_CHECK_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-check-events.jsonl "${KASEKI_RESULTS_DIR}"/goal-check-summary.json 2>/dev/null || true
   # Phase 3A: Consolidate goal-check summary to all-phase-summaries.json
-  append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "goal-check" "${KASEKI_RESULTS_DIR}"/goal-check-summary.json
+  consolidate_completed_phase "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "goal-check" "${KASEKI_RESULTS_DIR}"/goal-check-summary.json
 
   if [ "$GOAL_CHECK_EXIT" -eq 0 ] && [ ! -f "$GOAL_CHECK_CANDIDATE_ARTIFACT" ]; then
     # Recover from goal-check agents that printed the verdict in assistant text instead of writing the artifact.
@@ -7427,7 +7426,7 @@ fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
     clear_provider_error
   fi
   # Phase 3A: Consolidate run-evaluation summary to all-phase-summaries.json
-  append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "run-evaluation" "${KASEKI_RESULTS_DIR}"/run-evaluation-summary.json
+  consolidate_completed_phase "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "run-evaluation" "${KASEKI_RESULTS_DIR}"/run-evaluation-summary.json
   RUN_EVALUATION_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/run-evaluation-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
   if [ -s "$RUN_EVALUATION_ARTIFACT" ]; then
     node - "$RUN_EVALUATION_ARTIFACT" "$RUN_EVALUATION_ACTUAL_MODEL" <<'NODE' 2>/dev/null || true
