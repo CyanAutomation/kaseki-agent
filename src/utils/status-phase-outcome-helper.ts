@@ -105,7 +105,7 @@ export class StatusPhaseOutcomeHelper {
   private isWeavingLikeStage(stage: string): boolean {
     // Goal-setting is pre-scouting planning, not weaving.  Weaving begins
     // only after scouting has handed off to coding or a post-coding phase.
-    return /coding|weav|goal check|quality|github operations|evaluation|final|collect (?:agent )?diff|changed files/.test(stage);
+    return /coding|weav|goal check|quality|secret scan|github operations|evaluation|final|collect (?:agent )?diff|changed files/.test(stage);
   }
 
   private isWeavingEvent(event: Record<string, unknown>, preAgentValidation: boolean): boolean {
@@ -144,7 +144,7 @@ export class StatusPhaseOutcomeHelper {
     const weavingStage = !preAgentValidation || !/pre[-_ ]agent|pre[-_ ]validation|validation/.test(stage);
     return Boolean(
       weavingEvents.length ||
-      (weavingStage && !this.isPreflightGithubOperations(stage) && /coding|weav|goal check|validation|quality|github operations|evaluation|final|collect (?:agent )?diff|changed files/.test(stage))
+      (weavingStage && !this.isPreflightGithubOperations(stage) && /coding|weav|goal check|validation|quality|secret scan|github operations|evaluation|final|collect (?:agent )?diff|changed files/.test(stage))
     );
   }
 
@@ -190,7 +190,7 @@ export class StatusPhaseOutcomeHelper {
     // enters quality/goal-check/evaluation. Those later stages are durable
     // evidence that the coding phase returned, so do not leave the UI stuck
     // on "running" while finalization is underway.
-    if (weavingCompletedAt || /quality|goal check|evaluation|final/.test(stage)) return 'completed';
+    if (weavingCompletedAt || /quality|goal check|secret scan|evaluation|final/.test(stage)) return 'completed';
     return isExecutionInProgress({
       phase: jobStatus === 'running' ? 'RUNNING' : jobStatus.toUpperCase(),
       outcome: 'IN_PROGRESS',

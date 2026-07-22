@@ -185,6 +185,29 @@ describe('gateway-test-routes', () => {
       expect(kasekiGatewaySmoke.testPiGatewayProviderSmoke).toHaveBeenCalled();
     });
 
+    it('reports partial capability rather than a controller outage when Pi succeeds but the generic smoke fails', async () => {
+      (kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2 as jest.Mock).mockResolvedValueOnce({
+        status: 'error',
+        detail: 'CloudFlare gateway probe exhausted max_tokens during model reasoning before message content was emitted',
+        responseTime: 3000,
+      });
+      (kasekiGatewaySmoke.testPiGatewayProviderSmoke as jest.Mock).mockResolvedValueOnce({
+        status: 'ok',
+        detail: 'Pi gateway provider produced assistant text',
+        codingShapeValidated: true,
+        multiTurnValidated: true,
+      });
+
+      const response = await fetch(`${baseUrl}/gateway-test?stage=2&piProvider=true`);
+      const body = await response.json() as any;
+
+      expect(response.status).toBe(200);
+      expect(body.status).toBe('partial');
+      expect(body.partialSuccess).toBe(true);
+      expect(body.gatewayInferenceValidated).toBe(false);
+      expect(body.piAdapterValidated).toBe(true);
+    });
+
     it('should handle errors gracefully', async () => {
       (kasekiGatewaySmoke.testGatewayConnectivity_Stage1 as jest.Mock).mockRejectedValueOnce(
         new Error('Unexpected error')

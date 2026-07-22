@@ -2251,6 +2251,9 @@ FAILURE
 collect_git_artifacts() {
   DIFF_NONEMPTY=false
   if [ -d "${KASEKI_WORKSPACE_DIR}"/repo/.git ]; then
+    local collected_diff collected_files
+    collected_diff="$(mktemp)"
+    collected_files="$(mktemp)"
     while IFS= read -r untracked_file || [ -n "$untracked_file" ]; do
       [ -z "$untracked_file" ] && continue
       git -C "${KASEKI_WORKSPACE_DIR}"/repo add -N -- "$untracked_file" 2>/dev/null || true
@@ -2258,11 +2261,25 @@ collect_git_artifacts() {
     # Compare against HEAD so staged changes and index mutations are not lost.
     # Some agent tools stage their edits before Kaseki collects artifacts; a
     # plain `git diff` then reports an empty or incomplete changed-file list.
-    git -C "${KASEKI_WORKSPACE_DIR}"/repo diff HEAD -- . > "${KASEKI_RESULTS_DIR}"/git.diff 2>/dev/null || true
+    git -C "${KASEKI_WORKSPACE_DIR}"/repo diff HEAD -- . > "$collected_diff" 2>/dev/null || true
     {
       git -C "${KASEKI_WORKSPACE_DIR}"/repo diff --name-only HEAD -- . 2>/dev/null || true
       git -C "${KASEKI_WORKSPACE_DIR}"/repo ls-files --others --exclude-standard 2>/dev/null || true
-    } | sed 's#^\./##' | awk 'NF && !seen[$0]++' | LC_ALL=C sort > "${KASEKI_RESULTS_DIR}"/changed-files.txt
+    } | sed 's#^\./##' | awk 'NF && !seen[$0]++' | LC_ALL=C sort > "$collected_files"
+    # Publishing commits the working tree. Preserve the pre-publish evidence
+    # collected for quality/goal checks instead of replacing it with a clean
+    # post-commit diff at EXIT; otherwise a successfully published patch is
+    # incorrectly reported as an empty durable patch.
+    if [ -s "$collected_diff" ]; then
+      mv "$collected_diff" "${KASEKI_RESULTS_DIR}"/git.diff
+      mv "$collected_files" "${KASEKI_RESULTS_DIR}"/changed-files.txt
+    elif [ -s "${KASEKI_RESULTS_DIR}"/git.diff ] || [ -s "${KASEKI_RESULTS_DIR}"/changed-files.txt ]; then
+      rm -f "$collected_diff" "$collected_files"
+      printf '[artifacts] preserving pre-publish durable patch evidence after clean working tree\n' >&2
+    else
+      mv "$collected_diff" "${KASEKI_RESULTS_DIR}"/git.diff
+      mv "$collected_files" "${KASEKI_RESULTS_DIR}"/changed-files.txt
+    fi
     node - "${KASEKI_RESULTS_DIR}/changed-files.txt" "${KASEKI_RESULTS_DIR}/changed-files.json" <<'NODE' 2>/dev/null || true
 const fs = require('node:fs');
 const [source, output] = process.argv.slice(2);
@@ -9940,7 +9957,7 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
 
   if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ] && [ "$GOAL_CHECK_MET" != "true" ]; then
     if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
-      emit_progress "goal check" "retrying coding agent after pre-validation unmet verdict (attempt $coding_attempt of $max_coding_attempts)"
+      emit_progress "goal check" "retrying coding agent after pre-validation unmet verdict (attempt $coding_attempt of $max_coding_attempts; reason=${GOAL_CHECK_FAILURE_REASON:-unmet})"
       coding_attempt=$((coding_attempt + 1))
       continue
     fi
@@ -10067,7 +10084,7 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && [
   if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ] && [ "$GOAL_CHECK_MET" != "true" ]; then
     snapshot_attempt_artifacts "$coding_attempt"
     if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
-      emit_progress "goal check" "retrying coding agent after post-validation unmet verdict (attempt $coding_attempt of $max_coding_attempts)"
+      emit_progress "goal check" "retrying coding agent after post-validation unmet verdict (attempt $coding_attempt of $max_coding_attempts; reason=${GOAL_CHECK_FAILURE_REASON:-unmet})"
       coding_attempt=$((coding_attempt + 1))
       continue
     fi
