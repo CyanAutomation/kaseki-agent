@@ -730,6 +730,7 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         copyFileSync(join(repoRoot, 'scripts', 'inspect-mode-defaults.sh'), join(scriptsDir, 'inspect-mode-defaults.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'restore-disallowed-changes.sh'), join(scriptsDir, 'restore-disallowed-changes.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'auto-lint-cleanup-classification.sh'), join(scriptsDir, 'auto-lint-cleanup-classification.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'lib', 'artifact-consolidation.sh'), join(scriptsDir, 'lib', 'artifact-consolidation.sh'));
 
         const workspaceBaseline = join(tempDir, 'workspace-baseline');
         const kasekiLogDir = join(tempDir, 'var-log-kaseki');
