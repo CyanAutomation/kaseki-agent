@@ -1021,7 +1021,7 @@ consolidate_phase_errors() {
     if [ -f "$stderr_file" ] && [ -s "$stderr_file" ]; then
       phase_name=$(basename "$stderr_file" -stderr.log)
       while IFS= read -r line || [ -n "$line" ]; do
-        jq -n --arg phase "$phase_name" --arg msg "$line" '{phase: $phase, message: $msg, timestamp: (now | todate)}' >> "$output_file"
+        jq -c -n --arg phase "$phase_name" --arg msg "$line" '{phase: $phase, message: $msg, timestamp: (now | todate)}' >> "$output_file"
       done < "$stderr_file"
     fi
   done
@@ -1041,7 +1041,7 @@ consolidate_validation_errors() {
       phase_name=$(basename "$error_file" -validation-errors.jsonl)
       while IFS= read -r line || [ -n "$line" ]; do
         [ -z "$line" ] && continue
-        jq --arg phase "$phase_name" '. + {phase: $phase}' <<< "$line" >> "$output_file" 2>/dev/null || true
+        jq -c --arg phase "$phase_name" '. + {phase: $phase}' <<< "$line" >> "$output_file" 2>/dev/null || true
       done < "$error_file"
     fi
   done
