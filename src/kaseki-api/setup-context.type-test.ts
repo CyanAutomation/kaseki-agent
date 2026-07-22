@@ -19,17 +19,21 @@ type ExpectedSetupContextFields = {
   templateDir: string;
 };
 
-type _initializeSetupReturnsSetupContext = Assert<
+const initializeSetupReturnsSetupContext: Assert<
   IsAssignable<InitializedSetupReturn, SetupContext>
->;
+> = true;
 
-type _setupContextHasDocumentedPublicFields = Assert<
+const setupContextHasDocumentedPublicFields: Assert<
   IsExact<
     Pick<SetupContext, keyof ExpectedSetupContextFields>,
     ExpectedSetupContextFields
   >
->;
+> = true;
 
-type _barrelExportsSetupContextAlias = Assert<
+const barrelExportsSetupContextAlias: Assert<
   IsExact<BarrelSetupContext, SetupContext>
->;
+> = true;
+
+void initializeSetupReturnsSetupContext;
+void setupContextHasDocumentedPublicFields;
+void barrelExportsSetupContextAlias;
