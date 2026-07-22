@@ -55,8 +55,9 @@ function buildDualStageResponse(
   piProviderResult: any
 ): any {
   const piAdapterFailed = piProviderResult?.status === 'error';
+  const partialSuccess = stage2Result?.status === 'error' && piProviderResult?.status === 'ok';
   const result: any = {
-    status: stage1Result.status === 'ok' && !piAdapterFailed ? 'ok' : 'error',
+    status: stage1Result.status === 'ok' && !piAdapterFailed ? (partialSuccess ? 'partial' : 'ok') : 'error',
     detail: stage1Result.detail,
     responseTime: stage1Result.responseTime,
     timestamp: new Date().toISOString(),
@@ -76,7 +77,7 @@ function buildDualStageResponse(
     result.piProviderSmoke = piProviderResult;
     result.gatewayInferenceValidated = stage2Result?.status === 'ok';
     result.piAdapterValidated = piProviderResult.status === 'ok';
-    result.partialSuccess = stage2Result?.status === 'ok' && piProviderResult.status === 'error';
+    result.partialSuccess = partialSuccess || (stage2Result?.status === 'ok' && piProviderResult.status === 'error');
     result.codingShapeValidated = piProviderResult.codingShapeValidated === true;
     result.multiTurnValidated = piProviderResult.multiTurnValidated === true;
   }
@@ -89,8 +90,9 @@ function buildDualStageResponse(
  */
 function buildStage2Response(stage2Result: any, piProviderResult: any): any {
   const piAdapterFailed = piProviderResult?.status === 'error';
+  const partialSuccess = stage2Result?.status === 'error' && piProviderResult?.status === 'ok';
   const result: any = {
-    status: stage2Result?.status === 'ok' && !piAdapterFailed ? 'ok' : 'error',
+    status: stage2Result?.status === 'ok' && !piAdapterFailed ? 'ok' : partialSuccess ? 'partial' : 'error',
     detail: stage2Result?.detail || 'LLM inference test failed',
     responseTime: stage2Result?.responseTime || 0,
     timestamp: new Date().toISOString(),
@@ -119,7 +121,7 @@ function buildStage2Response(stage2Result: any, piProviderResult: any): any {
     result.piProviderSmoke = piProviderResult;
     result.gatewayInferenceValidated = stage2Result?.status === 'ok';
     result.piAdapterValidated = piProviderResult.status === 'ok';
-    result.partialSuccess = stage2Result?.status === 'ok' && piProviderResult.status === 'error';
+    result.partialSuccess = partialSuccess || (stage2Result?.status === 'ok' && piProviderResult.status === 'error');
     result.codingShapeValidated = piProviderResult.codingShapeValidated === true;
     result.multiTurnValidated = piProviderResult.multiTurnValidated === true;
   }
@@ -135,9 +137,10 @@ function getResponseStatus(
   stage2Result: any,
   piProviderResult: any
 ): number {
+  const piProvesCodingPath = piProviderResult?.status === 'ok' && stage2Result?.status === 'error';
   return (
     stage1Result.status === 'ok' &&
-    (!stage2Result || stage2Result.status === 'ok') &&
+    (!stage2Result || stage2Result.status === 'ok' || piProvesCodingPath) &&
     (!piProviderResult || piProviderResult.status !== 'error')
   ) ? 200 : 503;
 }
@@ -211,7 +214,7 @@ export function createGatewayTestRoutes(): Router {
       } else if (requestedStage === 2) {
         // Stage 2 only
         response = buildStage2Response(stage2Result, piProviderResult);
-        status = stage2Result?.status === 'ok' && (!piProviderResult || piProviderResult.status !== 'error') ? 200 : 503;
+        status = (stage2Result?.status === 'ok' || (stage2Result?.status === 'error' && piProviderResult?.status === 'ok')) && (!piProviderResult || piProviderResult.status !== 'error') ? 200 : 503;
       } else {
         // Both stages (default, backward compatible)
         response = buildDualStageResponse(stage1Result, stage2Result, piProviderResult);

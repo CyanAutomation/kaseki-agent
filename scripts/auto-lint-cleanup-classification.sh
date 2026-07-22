@@ -89,8 +89,16 @@ run_trailing_whitespace_cleanup_for_changed_tracked_text_files() {
   # Use KASEKI_APP_ROOT if set (container context), otherwise try to resolve from script location
   app_root="${KASEKI_APP_ROOT:-}"
   if [ -z "$app_root" ]; then
-    # Fallback: try relative to script location (for host execution)
-    app_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # The installed helper lives in /usr/local/bin/scripts. Its parent is
+    # the app root; treating the scripts directory as the root produced the
+    # invalid /usr/local/bin/scripts/scripts/... path.
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [ "$(basename "$script_dir")" = "scripts" ]; then
+      app_root="$(dirname "$script_dir")"
+    else
+      app_root="$script_dir"
+    fi
     if [ "$app_root" = "/usr/local/bin" ] || [ "$app_root" = "/usr/bin" ]; then
       # Script is in a bin directory; prefer /app/scripts if it exists
       app_root="/app"
