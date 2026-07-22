@@ -107,6 +107,24 @@ interface AssistantTurnState {
   toolResultCount: number;
 }
 
+type PiEventFilterState = {
+  aggregator: EventCounterAggregator;
+  toolReliability: ToolReliabilityAggregator;
+  executionTime: ExecutionTimeAggregator;
+  tokenUsage: TokenUsageAggregator;
+  providerErrors: ProviderErrorSummary[];
+  providerErrorKeys: Set<string>;
+  assistantTurnStates: Map<string, AssistantTurnState>;
+  tracker: TimestampTracker;
+  invalidJsonLines: number;
+  retainedBytes: number;
+  droppedOversizedEvents: number;
+  droppedBudgetEvents: number;
+  outputBudgetExhausted: boolean;
+  agentPhaseStart: number | null;
+  lastPhase: string;
+};
+
 let rssSampler: NodeJS.Timeout | null = null;
 let maxRssBytes = 0;
 
@@ -355,6 +373,188 @@ function extractModelName(event: PiEvent): string {
   return typeof model === 'string' ? model : 'unknown';
 }
 
+function createFilterState(): PiEventFilterState {
+  return {
+    aggregator: new EventCounterAggregator(),
+    toolReliability: new ToolReliabilityAggregator(),
+    executionTime: new ExecutionTimeAggregator(),
+    tokenUsage: new TokenUsageAggregator(),
+    providerErrors: [],
+    providerErrorKeys: new Set<string>(),
+    assistantTurnStates: new Map<string, AssistantTurnState>(),
+    tracker: new TimestampTracker(),
+    invalidJsonLines: 0,
+    retainedBytes: 0,
+    droppedOversizedEvents: 0,
+    droppedBudgetEvents: 0,
+    outputBudgetExhausted: false,
+    agentPhaseStart: null,
+    lastPhase: 'unknown',
+  };
+}
+
+function recordParsedEvent(event: PiEvent, state: PiEventFilterState): void {
+  state.aggregator.recordEventType(event.type);
+
+  const timestamp = extractEventTimestamp(event);
+  if (timestamp) {
+    state.tracker.record(timestamp);
+  }
+
+  state.aggregator.recordModelAndApi(event.message);
+  state.aggregator.recordModelAndApi(event.assistantMessageEvent?.message);
+  state.aggregator.recordModelAndApi(event.assistantMessageEvent?.partial);
+  state.aggregator.recordAssistantEventType(event.assistantMessageEvent?.type);
+
+  const usage = extractUsage(event);
+  if (usage) {
+    state.tokenUsage.recordUsage(extractModelName(event), usage);
+  }
+
+  recordProviderErrors(event, state);
+  recordAgentTiming(event, state);
+  recordToolExecution(event, state);
+}
+
+function recordProviderErrors(event: PiEvent, state: PiEventFilterState): void {
+  recordAssistantTurnState(event, state.assistantTurnStates);
+  const providerError = extractProviderError(event);
+  if (providerError) {
+    const key = JSON.stringify([
+      providerError.type,
+      providerError.response_id,
+      providerError.status_code,
+      providerError.error_code,
+      providerError.message,
+    ]);
+    if (!state.providerErrorKeys.has(key)) {
+      state.providerErrorKeys.add(key);
+      state.providerErrors.push(providerError);
+    }
+  }
+  const emptyAssistantTurn = extractEmptyAssistantTurn(event, state.assistantTurnStates);
+  if (emptyAssistantTurn) {
+    state.providerErrors.push(emptyAssistantTurn);
+  }
+}
+
+function recordAgentTiming(event: PiEvent, state: PiEventFilterState): void {
+  const timestampSecs = extractTimestampSeconds(event);
+  if (isAgentStart(event)) {
+    state.lastPhase = extractPhase(event);
+    state.agentPhaseStart = timestampSecs;
+    return;
+  }
+  if (isAgentEnd(event) && state.agentPhaseStart !== null && timestampSecs !== null) {
+    const duration = timestampSecs - state.agentPhaseStart;
+    if (duration >= 0) {
+      state.executionTime.recordApiCall(state.lastPhase, duration);
+    }
+    state.agentPhaseStart = null;
+  }
+}
+
+function recordToolExecution(event: PiEvent, state: PiEventFilterState): void {
+  if (event.type === 'tool_execution_start') {
+    state.aggregator.recordToolStart();
+    state.toolReliability.recordToolStart(extractToolName(event));
+  }
+  if (event.type === 'tool_execution_end') {
+    state.aggregator.recordToolEnd();
+    state.toolReliability.recordToolEnd(extractToolOutput(event));
+  }
+}
+
+async function writeRetainedEvent(
+  event: PiEvent,
+  output: fs.WriteStream,
+  state: PiEventFilterState,
+): Promise<void> {
+  if (!shouldKeep(event)) return;
+
+  const serialized = `${JSON.stringify(sanitize(event))}\n`;
+  const serializedBytes = Buffer.byteLength(serialized);
+  if (serializedBytes > MAX_FILTERED_EVENT_BYTES) {
+    state.droppedOversizedEvents++;
+    return;
+  }
+  const eventBudget = isCriticalRetentionEvent(event)
+    ? MAX_FILTERED_OUTPUT_BYTES
+    : MAX_FILTERED_OUTPUT_BYTES - CRITICAL_EVENT_RESERVE_BYTES;
+  if (state.retainedBytes + serializedBytes > eventBudget) {
+    state.droppedBudgetEvents++;
+    state.outputBudgetExhausted = true;
+    return;
+  }
+  state.retainedBytes += serializedBytes;
+  const canContinue = output.write(serialized);
+  if (!canContinue) {
+    await once(output, 'drain');
+  }
+}
+
+function buildSummary(state: PiEventFilterState): Summary {
+  const tokenSummary = state.tokenUsage.getSummary();
+  const modelStats = state.tokenUsage.getModelStats();
+  const promptTokenBudget = positiveIntEnv('KASEKI_PROMPT_TOKEN_WARN_THRESHOLD', 20_000);
+  const malformedToolCallCount = state.providerErrors.filter((error) => error.type === 'malformed_tool_call').length;
+  const inferenceHealth: InferenceHealthSummary = {
+    transport_success: state.invalidJsonLines === 0,
+    stream_success: state.providerErrors.length === 0,
+    tool_call_valid: malformedToolCallCount === 0,
+    agent_turn_success: state.providerErrors.length === 0,
+    provider_error_count: state.providerErrors.length,
+    malformed_tool_call_count: malformedToolCallCount,
+    prompt_token_budget: promptTokenBudget,
+    prompt_token_budget_exceeded: tokenSummary.total_input_tokens > promptTokenBudget,
+    context_compaction_recommended: tokenSummary.total_input_tokens > promptTokenBudget,
+  };
+  return {
+    ...state.aggregator.summary(),
+    invalid_json_lines: state.invalidJsonLines,
+    artifact_retention: {
+      retained_bytes: state.retainedBytes,
+      max_output_bytes: MAX_FILTERED_OUTPUT_BYTES,
+      max_event_bytes: MAX_FILTERED_EVENT_BYTES,
+      dropped_oversized_events: state.droppedOversizedEvents,
+      dropped_budget_events: state.droppedBudgetEvents,
+      output_budget_exhausted: state.outputBudgetExhausted,
+    },
+    first_event_at: state.tracker.firstEpochMs() !== null ? new Date(state.tracker.firstEpochMs()!).toISOString() : state.tracker.firstTimestamp(),
+    last_event_at: state.tracker.lastEpochMs() !== null ? new Date(state.tracker.lastEpochMs()!).toISOString() : state.tracker.lastTimestamp(),
+    tool_reliability: state.toolReliability.getSummary(),
+    tool_stats: state.toolReliability.getToolStats(),
+    execution_time: state.executionTime.getSummary(),
+    execution_api_stats: state.executionTime.getApiStats(),
+    execution_tool_stats: state.executionTime.getToolStats(),
+    token_usage: tokenSummary,
+    model_token_stats: modelStats,
+    inference_health: inferenceHealth,
+    model_reliability: buildModelReliability(modelStats, state.providerErrors),
+    ...(state.providerErrors.length > 0 ? { provider_errors: state.providerErrors, primary_provider_error: state.providerErrors[0] } : {}),
+  };
+}
+
+function writeSummaryFiles(summaryPath: string, summary: Summary): void {
+  fs.writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
+  if (path.basename(summaryPath) !== 'pi-summary.json') return;
+
+  const providerErrors = summary.provider_errors ?? [];
+  const inferenceHealth = summary.inference_health!;
+  fs.writeFileSync(path.join(path.dirname(summaryPath), 'gateway-summary.json'), `${JSON.stringify({
+    schema_version: 1,
+    logical_agent_turns: summary.event_counts.message_end || 0,
+    routing_steps: null,
+    note: 'routing_steps requires Cloudflare log enrichment; logical turns exclude gateway-internal routing records.',
+    input_tokens: summary.token_usage!.total_input_tokens,
+    output_tokens: summary.token_usage!.total_output_tokens,
+    provider_errors: providerErrors.length,
+    malformed_tool_calls: inferenceHealth.malformed_tool_call_count,
+    inference_health: inferenceHealth,
+    model_reliability: summary.model_reliability,
+  }, null, 2)}\n`);
+}
+
 export async function runPiEventFilter(
   inputPath = '/tmp/pi-events.raw.jsonl',
   filteredPath = '/results/pi-events.jsonl',
@@ -365,23 +565,7 @@ export async function runPiEventFilter(
   const output = fs.createWriteStream(filteredPath, { encoding: 'utf8' });
   const lines = readline.createInterface({ input, crlfDelay: Infinity });
 
-  const aggregator = new EventCounterAggregator();
-  const toolReliability = new ToolReliabilityAggregator();
-  const executionTime = new ExecutionTimeAggregator();
-  const tokenUsage = new TokenUsageAggregator();
-  const providerErrors: ProviderErrorSummary[] = [];
-  const providerErrorKeys = new Set<string>();
-  const assistantTurnStates = new Map<string, AssistantTurnState>();
-  const tracker = new TimestampTracker();
-  let invalidJsonLines = 0;
-  let retainedBytes = 0;
-  let droppedOversizedEvents = 0;
-  let droppedBudgetEvents = 0;
-  let outputBudgetExhausted = false;
-
-  // Track agent phase timing
-  let agentPhaseStart: number | null = null;
-  let lastPhase = 'unknown';
+  const state = createFilterState();
 
   for await (const line of lines) {
     if (!line.trim()) continue;
@@ -389,162 +573,16 @@ export async function runPiEventFilter(
     try {
       event = JSON.parse(line);
     } catch {
-      invalidJsonLines++;
+      state.invalidJsonLines++;
       continue;
     }
 
-    // Record event type
-    aggregator.recordEventType(event.type);
-
-    // Track timestamp
-    const timestamp = extractEventTimestamp(event);
-    if (timestamp) {
-      tracker.record(timestamp);
-    }
-
-    // Record model and API observations
-    aggregator.recordModelAndApi(event.message);
-    aggregator.recordModelAndApi(event.assistantMessageEvent?.message);
-    aggregator.recordModelAndApi(event.assistantMessageEvent?.partial);
-
-    // Record assistant event type
-    const assistantType = event.assistantMessageEvent?.type;
-    aggregator.recordAssistantEventType(assistantType);
-
-    // Track token usage from events
-    const usage = extractUsage(event);
-    if (usage) {
-      const modelName = extractModelName(event);
-      tokenUsage.recordUsage(modelName, usage);
-    }
-    recordAssistantTurnState(event, assistantTurnStates);
-    const providerError = extractProviderError(event);
-    if (providerError) {
-      const key = JSON.stringify([
-        providerError.type,
-        providerError.response_id,
-        providerError.status_code,
-        providerError.error_code,
-        providerError.message,
-      ]);
-      if (!providerErrorKeys.has(key)) {
-        providerErrorKeys.add(key);
-        providerErrors.push(providerError);
-      }
-    }
-    const emptyAssistantTurn = extractEmptyAssistantTurn(event, assistantTurnStates);
-    if (emptyAssistantTurn) {
-      providerErrors.push(emptyAssistantTurn);
-    }
-
-    // Track agent timing (API invocation time)
-    const timestampSecs = extractTimestampSeconds(event);
-    if (isAgentStart(event)) {
-      const phase = extractPhase(event);
-      lastPhase = phase;
-      agentPhaseStart = timestampSecs;
-    } else if (isAgentEnd(event) && agentPhaseStart !== null && timestampSecs !== null) {
-      const duration = timestampSecs - agentPhaseStart;
-      if (duration >= 0) {
-        executionTime.recordApiCall(lastPhase, duration);
-      }
-      agentPhaseStart = null;
-    }
-
-    // Track tool executions with reliability metrics
-    if (event.type === 'tool_execution_start') {
-      aggregator.recordToolStart();
-      const toolName = extractToolName(event);
-      toolReliability.recordToolStart(toolName);
-    }
-    if (event.type === 'tool_execution_end') {
-      aggregator.recordToolEnd();
-      const toolOutput = extractToolOutput(event);
-      toolReliability.recordToolEnd(toolOutput);
-    }
-
-    // Write event if it should be kept
-    if (shouldKeep(event)) {
-      const serialized = `${JSON.stringify(sanitize(event))}\n`;
-      const serializedBytes = Buffer.byteLength(serialized);
-      if (serializedBytes > MAX_FILTERED_EVENT_BYTES) {
-        droppedOversizedEvents++;
-        continue;
-      }
-      const eventBudget = isCriticalRetentionEvent(event)
-        ? MAX_FILTERED_OUTPUT_BYTES
-        : MAX_FILTERED_OUTPUT_BYTES - CRITICAL_EVENT_RESERVE_BYTES;
-      if (retainedBytes + serializedBytes > eventBudget) {
-        droppedBudgetEvents++;
-        outputBudgetExhausted = true;
-        continue;
-      }
-      retainedBytes += serializedBytes;
-      const canContinue = output.write(serialized);
-      if (!canContinue) {
-        await once(output, 'drain');
-      }
-    }
+    recordParsedEvent(event, state);
+    await writeRetainedEvent(event, output, state);
   }
 
   await new Promise<void>((resolve) => output.end(resolve));
-
-  // Generate summary
-  const tokenSummary = tokenUsage.getSummary();
-  const modelStats = tokenUsage.getModelStats();
-  const promptTokenBudget = positiveIntEnv('KASEKI_PROMPT_TOKEN_WARN_THRESHOLD', 20_000);
-  const malformedToolCallCount = providerErrors.filter((error) => error.type === 'malformed_tool_call').length;
-  const inferenceHealth: InferenceHealthSummary = {
-    transport_success: invalidJsonLines === 0,
-    stream_success: providerErrors.length === 0,
-    tool_call_valid: malformedToolCallCount === 0,
-    agent_turn_success: providerErrors.length === 0,
-    provider_error_count: providerErrors.length,
-    malformed_tool_call_count: malformedToolCallCount,
-    prompt_token_budget: promptTokenBudget,
-    prompt_token_budget_exceeded: tokenSummary.total_input_tokens > promptTokenBudget,
-    context_compaction_recommended: tokenSummary.total_input_tokens > promptTokenBudget,
-  };
-  const summary: Summary = {
-    ...aggregator.summary(),
-    invalid_json_lines: invalidJsonLines,
-    artifact_retention: {
-      retained_bytes: retainedBytes,
-      max_output_bytes: MAX_FILTERED_OUTPUT_BYTES,
-      max_event_bytes: MAX_FILTERED_EVENT_BYTES,
-      dropped_oversized_events: droppedOversizedEvents,
-      dropped_budget_events: droppedBudgetEvents,
-      output_budget_exhausted: outputBudgetExhausted,
-    },
-    first_event_at: tracker.firstEpochMs() !== null ? new Date(tracker.firstEpochMs()!).toISOString() : tracker.firstTimestamp(),
-    last_event_at: tracker.lastEpochMs() !== null ? new Date(tracker.lastEpochMs()!).toISOString() : tracker.lastTimestamp(),
-    tool_reliability: toolReliability.getSummary(),
-    tool_stats: toolReliability.getToolStats(),
-    execution_time: executionTime.getSummary(),
-    execution_api_stats: executionTime.getApiStats(),
-    execution_tool_stats: executionTime.getToolStats(),
-    token_usage: tokenSummary,
-    model_token_stats: modelStats,
-    inference_health: inferenceHealth,
-    model_reliability: buildModelReliability(modelStats, providerErrors),
-    ...(providerErrors.length > 0 ? { provider_errors: providerErrors, primary_provider_error: providerErrors[0] } : {}),
-  };
-
-  fs.writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
-  if (path.basename(summaryPath) === 'pi-summary.json') {
-    fs.writeFileSync(path.join(path.dirname(summaryPath), 'gateway-summary.json'), `${JSON.stringify({
-      schema_version: 1,
-      logical_agent_turns: summary.event_counts.message_end || 0,
-      routing_steps: null,
-      note: 'routing_steps requires Cloudflare log enrichment; logical turns exclude gateway-internal routing records.',
-      input_tokens: tokenSummary.total_input_tokens,
-      output_tokens: tokenSummary.total_output_tokens,
-      provider_errors: providerErrors.length,
-      malformed_tool_calls: malformedToolCallCount,
-      inference_health: inferenceHealth,
-      model_reliability: summary.model_reliability,
-    }, null, 2)}\n`);
-  }
+  writeSummaryFiles(summaryPath, buildSummary(state));
   stopRssSampler();
 }
 

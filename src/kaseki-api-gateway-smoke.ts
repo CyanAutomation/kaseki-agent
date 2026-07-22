@@ -175,6 +175,154 @@ export interface PiProviderSmokeTestOptions {
   debug?: boolean; // Log full response and diagnostics
 }
 
+type GatewayConnectivityConfig =
+  | { ok: true; gatewayUrl: string; apiKey: string }
+  | { ok: false; result: ConnectivityTestResult };
+
+function latencyWarning(responseTime: number): string | undefined {
+  return responseTime >= GATEWAY_LATENCY_WARNING_MS
+    ? `Gateway responded slowly (${responseTime}ms; warning threshold ${GATEWAY_LATENCY_WARNING_MS}ms).`
+    : undefined;
+}
+
+function validateGatewayConnectivityConfig(timestamp: string): GatewayConnectivityConfig {
+  const gatewayUrl = process.env.LLM_GATEWAY_URL;
+  const apiKey = resolveGatewayApiKey().value;
+
+  if (!gatewayUrl) {
+    return {
+      ok: false,
+      result: {
+        status: 'error',
+        detail: 'LLM_GATEWAY_URL is not configured',
+        gatewayUrl: '',
+        responseTime: 0,
+        timestamp,
+        authenticationValidated: false,
+        remediation: 'Set the LLM_GATEWAY_URL environment variable to your gateway endpoint (e.g., https://llmgateway.local.xyz/v1/responses)',
+      },
+    };
+  }
+
+  if (!apiKey) {
+    return {
+      ok: false,
+      result: {
+        status: 'error',
+        detail: 'LLM_GATEWAY_API_KEY is not configured',
+        gatewayUrl,
+        responseTime: 0,
+        timestamp,
+        authenticationValidated: false,
+        remediation: 'Set LLM_GATEWAY_API_KEY or provide a readable llm_gateway_api_key file in the configured Kaseki secrets directory',
+      },
+    };
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(gatewayUrl);
+    if (!parsedUrl.protocol.startsWith('http')) {
+      throw new Error('URL must use HTTP or HTTPS');
+    }
+  } catch {
+    return {
+      ok: false,
+      result: {
+        status: 'error',
+        detail: `Gateway URL is invalid: ${gatewayUrl}`,
+        gatewayUrl,
+        responseTime: 0,
+        timestamp,
+        authenticationValidated: false,
+        remediation: 'Ensure LLM_GATEWAY_URL is a valid HTTP/HTTPS URL',
+      },
+    };
+  }
+
+  if (!isResponsesEndpoint(parsedUrl)) {
+    return {
+      ok: false,
+      result: {
+        status: 'error',
+        detail: `Gateway URL must point to a versioned OpenAI API endpoint (/v1, /v2, etc.): ${gatewayUrl}`,
+        gatewayUrl,
+        responseTime: 0,
+        timestamp,
+        authenticationValidated: false,
+        remediation: 'Set LLM_GATEWAY_URL to a base API endpoint such as https://gateway.example/v1. Pi CLI will automatically append /responses for the OpenAI Responses API. Examples: https://api.openai.com/v1, https://llmgateway.local.xyz/v1',
+      },
+    };
+  }
+
+  return { ok: true, gatewayUrl, apiKey };
+}
+
+async function runGatewayStage1Probe(
+  gatewayUrl: string,
+  timestamp: string,
+  startTime: number,
+): Promise<ConnectivityTestResult> {
+  const stage1Probe = buildStage1ProbeRequest(gatewayUrl);
+
+  try {
+    const fetchStartTime = performance.now();
+    const response = await fetchWithTimeout(stage1Probe.endpoint, stage1Probe.init, GATEWAY_MODELS_TIMEOUT_MS);
+    const responseTime = Math.round(performance.now() - fetchStartTime);
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      const authError = response.status === 401 || response.status === 403;
+      const invalidPathError = isInvalidGatewayPathError(errorBody);
+
+      return {
+        status: 'error',
+        detail: `Gateway returned HTTP ${response.status}: ${errorBody.substring(0, 100)}`,
+        gatewayUrl,
+        responseTime,
+        timestamp,
+        authenticationValidated: !authError && !invalidPathError,
+        httpStatus: response.status,
+        remediation: authError
+          ? 'Authentication failed. Check that LLM_GATEWAY_API_KEY is valid, or that the llm_gateway_api_key file in the configured Kaseki secrets directory contains the expected token'
+          : invalidPathError
+            ? 'Gateway request path is invalid. For Cloudflare /compat gateways, preserve the scoped /v1/{account_id}/{gateway_id}/compat path and do not reduce it to /v1/models.'
+            : `Gateway returned an error. Verify the gateway is healthy and the URL is correct (${response.status})`,
+      };
+    }
+
+    const warning = latencyWarning(responseTime);
+    return {
+      status: 'ok',
+      detail: `Gateway is responsive (${responseTime}ms)`,
+      gatewayUrl,
+      responseTime,
+      timestamp,
+      authenticationValidated: true,
+      ...(warning ? { warning } : {}),
+    };
+  } catch (error) {
+    const responseTime = Math.round(performance.now() - startTime);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('Timeout');
+    const isNetwork = errorMessage.includes('fetch') || errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ENOTFOUND');
+
+    return {
+      status: 'error',
+      detail: `Gateway is unreachable: ${errorMessage}`,
+      gatewayUrl,
+      responseTime,
+      timestamp,
+      authenticationValidated: false,
+      remediation: isTimeout
+        ? 'Gateway is slow or not responding. Check gateway health and network connectivity'
+        : isNetwork
+          ? 'Cannot reach gateway endpoint. Verify the URL is reachable and check network/firewall rules'
+          : 'Unexpected error connecting to gateway. Check logs for details',
+    };
+  }
+}
+
 export function createPiProviderSmokeWorkspace(): string {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-pi-provider-smoke-'));
   fs.writeFileSync(path.join(workspace, 'package.json'), JSON.stringify({
@@ -469,133 +617,10 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
 export async function testGatewayConnectivity_Stage1(): Promise<ConnectivityTestResult> {
   const startTime = performance.now();
   const timestamp = new Date().toISOString();
+  const config = validateGatewayConnectivityConfig(timestamp);
 
-  // Check configuration
-  const gatewayUrl = process.env.LLM_GATEWAY_URL;
-  const apiKey = resolveGatewayApiKey().value;
-
-  if (!gatewayUrl) {
-    return {
-      status: 'error',
-      detail: 'LLM_GATEWAY_URL is not configured',
-      gatewayUrl: '',
-      responseTime: 0,
-      timestamp,
-      authenticationValidated: false,
-      remediation: 'Set the LLM_GATEWAY_URL environment variable to your gateway endpoint (e.g., https://llmgateway.local.xyz/v1/responses)',
-    };
-  }
-
-  if (!apiKey) {
-    return {
-      status: 'error',
-      detail: 'LLM_GATEWAY_API_KEY is not configured',
-      gatewayUrl,
-      responseTime: 0,
-      timestamp,
-      authenticationValidated: false,
-      remediation: 'Set LLM_GATEWAY_API_KEY or provide a readable llm_gateway_api_key file in the configured Kaseki secrets directory',
-    };
-  }
-
-  // Validate URL format
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(gatewayUrl);
-    if (!parsedUrl.protocol.startsWith('http')) {
-      throw new Error('URL must use HTTP or HTTPS');
-    }
-  } catch {
-    return {
-      status: 'error',
-      detail: `Gateway URL is invalid: ${gatewayUrl}`,
-      gatewayUrl,
-      responseTime: 0,
-      timestamp,
-      authenticationValidated: false,
-      remediation: 'Ensure LLM_GATEWAY_URL is a valid HTTP/HTTPS URL',
-    };
-  }
-
-  if (!isResponsesEndpoint(parsedUrl)) {
-    return {
-      status: 'error',
-      detail: `Gateway URL must point to a versioned OpenAI API endpoint (/v1, /v2, etc.): ${gatewayUrl}`,
-      gatewayUrl,
-      responseTime: 0,
-      timestamp,
-      authenticationValidated: false,
-      remediation: 'Set LLM_GATEWAY_URL to a base API endpoint such as https://gateway.example/v1. Pi CLI will automatically append /responses for the OpenAI Responses API. Examples: https://api.openai.com/v1, https://llmgateway.local.xyz/v1',
-    };
-  }
-
-  // Make test request to the appropriate Stage 1 probe endpoint. Standard
-  // OpenAI-compatible gateways can use /models; Cloudflare /compat gateways must
-  // preserve the scoped /v1/{account_id}/{gateway_id}/compat path and probe chat completions.
-  const stage1Probe = buildStage1ProbeRequest(gatewayUrl);
-
-  try {
-    const fetchStartTime = performance.now();
-    const response = await fetchWithTimeout(stage1Probe.endpoint, stage1Probe.init, GATEWAY_MODELS_TIMEOUT_MS);
-
-    const responseTime = Math.round(performance.now() - fetchStartTime);
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      const authError = response.status === 401 || response.status === 403;
-      const invalidPathError = isInvalidGatewayPathError(errorBody);
-
-      return {
-        status: 'error',
-        detail: `Gateway returned HTTP ${response.status}: ${errorBody.substring(0, 100)}`,
-        gatewayUrl,
-        responseTime,
-        timestamp,
-        authenticationValidated: !authError && !invalidPathError,
-        httpStatus: response.status,
-        remediation: authError
-          ? 'Authentication failed. Check that LLM_GATEWAY_API_KEY is valid, or that the llm_gateway_api_key file in the configured Kaseki secrets directory contains the expected token'
-          : invalidPathError
-            ? 'Gateway request path is invalid. For Cloudflare /compat gateways, preserve the scoped /v1/{account_id}/{gateway_id}/compat path and do not reduce it to /v1/models.'
-            : `Gateway returned an error. Verify the gateway is healthy and the URL is correct (${response.status})`,
-      };
-    }
-
-    // Successful response
-    const warning = responseTime >= GATEWAY_LATENCY_WARNING_MS
-      ? `Gateway responded slowly (${responseTime}ms; warning threshold ${GATEWAY_LATENCY_WARNING_MS}ms).`
-      : undefined;
-    return {
-      status: 'ok',
-      detail: `Gateway is responsive (${responseTime}ms)`,
-      gatewayUrl,
-      responseTime,
-      timestamp,
-      authenticationValidated: true,
-      ...(warning ? { warning } : {}),
-    };
-  } catch (error) {
-    const responseTime = Math.round(performance.now() - startTime);
-    const errorMessage = error instanceof Error ? error.message : String(error);
-
-    // Network errors, timeouts, etc.
-    const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('Timeout');
-    const isNetwork = errorMessage.includes('fetch') || errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ENOTFOUND');
-
-    return {
-      status: 'error',
-      detail: `Gateway is unreachable: ${errorMessage}`,
-      gatewayUrl,
-      responseTime,
-      timestamp,
-      authenticationValidated: false,
-      remediation: isTimeout
-        ? 'Gateway is slow or not responding. Check gateway health and network connectivity'
-        : isNetwork
-          ? 'Cannot reach gateway endpoint. Verify the URL is reachable and check network/firewall rules'
-          : 'Unexpected error connecting to gateway. Check logs for details',
-    };
-  }
+  if (!config.ok) return config.result;
+  return runGatewayStage1Probe(config.gatewayUrl, timestamp, startTime);
 }
 
 /**
@@ -606,147 +631,32 @@ export async function testGatewayConnectivity_Stage1(): Promise<ConnectivityTest
 export async function testGatewayConnectivity(options: GatewayTestOptions = {}): Promise<GatewayTestResult> {
   const startTime = performance.now();
   const timestamp = new Date().toISOString();
+  const config = validateGatewayConnectivityConfig(timestamp);
 
-  // Check configuration
-  const gatewayUrl = process.env.LLM_GATEWAY_URL;
-  const apiKey = resolveGatewayApiKey().value;
+  if (!config.ok) {
+    if (config.result.gatewayUrl) return config.result;
+    const { gatewayUrl: _gatewayUrl, ...result } = config.result;
+    return result;
+  }
 
-  if (!gatewayUrl) {
+  const stage1Result = await runGatewayStage1Probe(config.gatewayUrl, timestamp, startTime);
+  if (stage1Result.status === 'error') return stage1Result;
+
+  if (shouldRunGatewayResponseSmoke(options)) {
+    const smokeResult = await testGatewayResponseSmoke(config.gatewayUrl, config.apiKey, timestamp, startTime);
+    if (smokeResult.status === 'error') return smokeResult;
+
     return {
-      status: 'error',
-      detail: 'LLM_GATEWAY_URL is not configured',
-      responseTime: 0,
-      timestamp,
-      authenticationValidated: false,
-      remediation: 'Set the LLM_GATEWAY_URL environment variable to your gateway endpoint (e.g., https://llmgateway.local.xyz/v1/responses)',
+      ...smokeResult,
+      detail: `Gateway is responsive and returned usable Responses API content (${smokeResult.responseTime}ms)`,
+      warning: stage1Result.warning,
     };
   }
 
-  if (!apiKey) {
-    return {
-      status: 'error',
-      detail: 'LLM_GATEWAY_API_KEY is not configured',
-      gatewayUrl,
-      responseTime: 0,
-      timestamp,
-      authenticationValidated: false,
-      remediation: 'Set LLM_GATEWAY_API_KEY or provide a readable llm_gateway_api_key file in the configured Kaseki secrets directory',
-    };
-  }
-
-  // Validate URL format
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(gatewayUrl);
-    if (!parsedUrl.protocol.startsWith('http')) {
-      throw new Error('URL must use HTTP or HTTPS');
-    }
-  } catch {
-    return {
-      status: 'error',
-      detail: `Gateway URL is invalid: ${gatewayUrl}`,
-      gatewayUrl,
-      responseTime: 0,
-      timestamp,
-      authenticationValidated: false,
-      remediation: 'Ensure LLM_GATEWAY_URL is a valid HTTP/HTTPS URL',
-    };
-  }
-
-  if (!isResponsesEndpoint(parsedUrl)) {
-    return {
-      status: 'error',
-      detail: `Gateway URL must point to a versioned OpenAI API endpoint (/v1, /v2, etc.): ${gatewayUrl}`,
-      gatewayUrl,
-      responseTime: 0,
-      timestamp,
-      authenticationValidated: false,
-      remediation: 'Set LLM_GATEWAY_URL to a base API endpoint such as https://gateway.example/v1. Pi CLI will automatically append /responses for the OpenAI Responses API. Examples: https://api.openai.com/v1, https://llmgateway.local.xyz/v1',
-    };
-  }
-
-  // Make test request to the appropriate Stage 1 probe endpoint. Standard
-  // OpenAI-compatible gateways can use /models; Cloudflare /compat gateways must
-  // preserve the scoped /v1/{account_id}/{gateway_id}/compat path and probe chat completions.
-  const stage1Probe = buildStage1ProbeRequest(gatewayUrl);
-
-  try {
-    const fetchStartTime = performance.now();
-    const response = await fetchWithTimeout(stage1Probe.endpoint, stage1Probe.init, GATEWAY_MODELS_TIMEOUT_MS);
-
-    const responseTime = Math.round(performance.now() - fetchStartTime);
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      const authError = response.status === 401 || response.status === 403;
-      const invalidPathError = isInvalidGatewayPathError(errorBody);
-
-      return {
-        status: 'error',
-        detail: `Gateway returned HTTP ${response.status}: ${errorBody.substring(0, 100)}`,
-        gatewayUrl,
-        responseTime,
-        timestamp,
-        authenticationValidated: !authError && !invalidPathError,
-        httpStatus: response.status,
-        remediation: authError
-          ? 'Authentication failed. Check that LLM_GATEWAY_API_KEY is valid, or that the llm_gateway_api_key file in the configured Kaseki secrets directory contains the expected token'
-          : invalidPathError
-            ? 'Gateway request path is invalid. For Cloudflare /compat gateways, preserve the scoped /v1/{account_id}/{gateway_id}/compat path and do not reduce it to /v1/models.'
-            : `Gateway returned an error. Verify the gateway is healthy and the URL is correct (${response.status})`,
-      };
-    }
-
-    if (shouldRunGatewayResponseSmoke(options)) {
-      const smokeResult = await testGatewayResponseSmoke(gatewayUrl, apiKey, timestamp, startTime);
-      if (smokeResult.status === 'error') return smokeResult;
-
-      const warning = responseTime >= GATEWAY_LATENCY_WARNING_MS
-        ? `Gateway responded slowly (${responseTime}ms; warning threshold ${GATEWAY_LATENCY_WARNING_MS}ms).`
-        : undefined;
-      return {
-        ...smokeResult,
-        detail: `Gateway is responsive and returned usable Responses API content (${smokeResult.responseTime}ms)`,
-        warning,
-      };
-    }
-
-    // Successful response
-    const warning = responseTime >= GATEWAY_LATENCY_WARNING_MS
-      ? `Gateway responded slowly (${responseTime}ms; warning threshold ${GATEWAY_LATENCY_WARNING_MS}ms).`
-      : undefined;
-    return {
-      status: 'ok',
-      detail: `Gateway is responsive (${responseTime}ms)`,
-      gatewayUrl,
-      responseTime,
-      timestamp,
-      authenticationValidated: true,
-      responseSmokeValidated: false,
-      ...(warning ? { warning } : {}),
-    };
-  } catch (error) {
-    const responseTime = Math.round(performance.now() - startTime);
-    const errorMessage = error instanceof Error ? error.message : String(error);
-
-    // Network errors, timeouts, etc.
-    const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('Timeout');
-    const isNetwork = errorMessage.includes('fetch') || errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ENOTFOUND');
-
-    return {
-      status: 'error',
-      detail: `Gateway is unreachable: ${errorMessage}`,
-      gatewayUrl,
-      responseTime,
-      timestamp,
-      authenticationValidated: false,
-      remediation: isTimeout
-        ? 'Gateway is slow or not responding. Check gateway health and network connectivity'
-        : isNetwork
-          ? 'Cannot reach gateway endpoint. Verify the URL is reachable and check network/firewall rules'
-          : 'Unexpected error connecting to gateway. Check logs for details',
-    };
-  }
+  return {
+    ...stage1Result,
+    responseSmokeValidated: false,
+  };
 }
 
 /**
