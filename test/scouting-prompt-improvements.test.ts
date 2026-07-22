@@ -13,11 +13,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-/**
- * Phase 1: System Message Structure Tests
- * Validates that the prompt has clear, separated sections
- */
-describe('Phase 1 & 2 & 3: Scouting Prompt Structure with Task Validation and Execution Context', () => {
+describe('Scouting prompt contracts', () => {
   let promptContent: string;
 
   beforeAll(() => {
@@ -49,45 +45,55 @@ describe('Phase 1 & 2 & 3: Scouting Prompt Structure with Task Validation and Ex
     promptContent = heredocs.join('\n');
   });
 
-  test('should contain all required sections', () => {
-    const requiredSections = [
-      'You are a read-only scouting Pi agent',
-      '## [ROLE]',
-      '## [OPERATIONAL CONSTRAINTS - Read-Only Phase]',
-      '## [TASK VALIDATION - Ensure Task is Valid Before Scouting]',
-      '## [EXECUTION CONTEXT - Optimize for Efficiency]',
-      'test_impact',
-      'critical_change_expectations',
-      'suggested_allowlist',
-      '## [ORIGINAL TASK PROMPT FOR REFERENCE]'
-    ];
+  test('keeps scouting read-only [SCOUTING_PROMPT_DESIGN § Operational Constraints]', () => {
+    expect(promptContent).toMatch(/read-only scouting Pi agent/i);
+    expect(promptContent).toMatch(/Do not edit (?:source )?files, tests, lockfiles, (?:or )?git state/i);
+    expect(promptContent).toMatch(/Do not run git add, git commit, git push/i);
+    expect(promptContent).toMatch(/repository(?: tree)? at \/workspace\/repo is read-only during scouting/i);
+  });
 
-    requiredSections.forEach(section => {
-      expect(promptContent).toContain(section);
+  test('defines the artifact schema [SCOUTING_PROMPT_DESIGN § Output Schema]', () => {
+    const schemaText = promptContent.match(
+      /schema-style shape[^\n]*:\n([\s\S]*?)\nOutput rules for the JSON artifact:/,
+    )?.[1];
+    expect(schemaText).toBeDefined();
+
+    const fields = new Map(
+      [...schemaText!.matchAll(/^- ([a-z_]+): (string|array|object|optional object)\b/gm)]
+        .map(([, name, type]) => [name, type]),
+    );
+    expect(Object.fromEntries(fields)).toEqual({
+      task: 'string',
+      requirements: 'array',
+      relevant_files: 'array',
+      observations: 'array',
+      plan: 'array',
+      validation: 'array',
+      risks: 'array',
+      test_impact: 'array',
+      critical_change_expectations: 'optional object',
+      suggested_allowlist: 'object',
     });
+    expect(schemaText).toMatch(
+      /relevant_files:[^\n]*objects with path and reason strings[\s\S]*separate non-empty path and reason strings/i,
+    );
   });
 
-  test('should have clear role statement', () => {
-    expect(promptContent).toMatch(/You are a read-only scouting Pi agent/);
+  test('validates task scope before scouting [SCOUTING_PROMPT_DESIGN § Task Validation]', () => {
+    expect(promptContent).toMatch(/Before proceeding with repository inspection, validate that the task is concrete/i);
+    expect(promptContent).toMatch(/Valid tasks[\s\S]*Fix null-safety in parseRole/);
+    expect(promptContent).toMatch(/Ambiguous\/Invalid tasks[\s\S]*Make the code better/);
+    expect(promptContent).toMatch(/If the task is ambiguous[\s\S]*\[UNCLEAR - needs clarification\]/i);
   });
 
-  test('should include read-only constraints', () => {
-    expect(promptContent).toMatch(/read-only/);
-    expect(promptContent).toMatch(/Do not edit source files/);
-    expect(promptContent).toMatch(/Do not run git add/);
-  });
-
-  test('should have output schema documentation', () => {
-    expect(promptContent).toMatch(/task:\s*string/);
-    expect(promptContent).toMatch(/requirements:\s*array/);
-    expect(promptContent).toMatch(/relevant_files:/);
-    expect(promptContent).toMatch(/test_impact:/);
-  });
-
-  test('uses the writable scouting artifact path and object-shaped relevant files', () => {
-    expect(promptContent).toContain('/results/scouting-candidate.json');
-    expect(promptContent).toContain('/workspace/repo is read-only during scouting');
-    expect(promptContent).toContain('separate non-empty path and reason strings');
+  test('writes and verifies the handoff artifact [SCOUTING_PROMPT_DESIGN § Operational Constraints]', () => {
+    expect(promptContent).toMatch(
+      /exactly one JSON object (?:at|to) \/results\/scouting-candidate\.json/i,
+    );
+    expect(promptContent).toMatch(/only accepted handoff location/i);
+    expect(promptContent).toMatch(
+      /verify that \/results\/scouting-candidate\.json exists, is non-empty, and is valid JSON/i,
+    );
   });
 
   test('keeps goal-setting retry counters local to each invocation', () => {
@@ -120,64 +126,6 @@ describe('Phase 1 & 2 & 3: Scouting Prompt Structure with Task Validation and Ex
     changeTypes.forEach(type => {
       expect(promptContent).toContain(type);
     });
-  });
-});
-
-/**
- * Phase 2: Task Validation & Ambiguity Tests
- * Validates guidance on ambiguity detection and validation
- */
-describe('Phase 2: Task Validation & Ambiguity', () => {
-  let promptContent: string;
-
-  beforeAll(() => {
-    const agentScript = path.join(__dirname, '..', 'kaseki-agent.sh');
-    const content = fs.readFileSync(agentScript, 'utf-8');
-
-    // Extract all heredocs from the scouting-related functions
-    const scoutingSection = content.substring(
-      content.indexOf('is_complex_change_task() {'),
-      content.indexOf('run_scouting_agent() {')
-    );
-
-    const heredocs: string[] = [];
-
-    // Find quoted heredocs in scouting section
-    const quotedPattern = /cat\s*<<'([A-Z_]+)'\n([\s\S]*?)\n\1\n/g;
-    let match;
-    while ((match = quotedPattern.exec(scoutingSection)) !== null) {
-      heredocs.push(match[2]);
-    }
-
-    // Find unquoted heredocs in scouting section
-    const unquotedPattern = /cat\s*<<EOF\n([\s\S]*?)\nEOF/g;
-    while ((match = unquotedPattern.exec(scoutingSection)) !== null) {
-      heredocs.push(match[1]);
-    }
-
-    promptContent = heredocs.join('\n');
-  });
-
-  test('should mention task validation', () => {
-    // Phase 2 requirement: prompt should guide task validation
-    expect(promptContent).toContain('TASK VALIDATION');
-    expect(promptContent.toLowerCase()).toContain('validate');
-  });
-
-  test('should provide examples of valid vs invalid tasks', () => {
-    // Phase 2 requirement: Examples to help agent discriminate
-    expect(promptContent).toContain('Valid tasks');
-    expect(promptContent).toContain('Ambiguous/Invalid tasks');
-  });
-
-  test('should mention when to ask clarifying questions', () => {
-    // Phase 2 requirement: Guidance on escalation
-    expect(promptContent.toLowerCase()).toContain('clarifying');
-  });
-
-  test('should define success criteria for scouting', () => {
-    // Phase 2 requirement: What makes a good scouting artifact
-    expect(promptContent).toContain('Success Criteria');
   });
 });
 
