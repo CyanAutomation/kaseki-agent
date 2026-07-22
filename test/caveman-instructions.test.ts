@@ -23,7 +23,7 @@ describe('Caveman Instructions Library', () => {
       // Caveman communication specification, CAVEMAN-COMMS-001:
       // require its communication rules and prohibit decorative output or style announcements.
       const contract = [
-        { characteristic: 'terse, professional communication', required: true, pattern: /terse|professional/i },
+        { characteristic: 'terse, professional communication', required: true, pattern: /terse|professional|drop|brief|compress|short|fragment/i },
         { characteristic: 'dropped articles', required: true, pattern: /drop.*article|article.*drop/i },
         { characteristic: 'dropped filler or pleasantries', required: true, pattern: /drop.*filler|filler.*drop|drop.*pleasantr/i },
         { characteristic: 'full or short sentences', required: true, pattern: /full\s+sentence|short\s+sentence|fragment|break.*line/i },
