@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.113.6](https://github.com/CyanAutomation/kaseki-agent/compare/v1.113.5...v1.113.6) (2026-07-22)
+
+
+### Bug Fixes
+
+* apply in-progress validation to phase outcomes ([04a39e2](https://github.com/CyanAutomation/kaseki-agent/commit/04a39e270f64ae9df5d224b8577b4af27b5a16e7))
+* validate in-progress execution phase ([225d30a](https://github.com/CyanAutomation/kaseki-agent/commit/225d30ac3ed1f8154dfb467f12fd01d8eaf86c1d))
+
 ## [1.113.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.113.4...v1.113.5) (2026-07-21)
 
 
