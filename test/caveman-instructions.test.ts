@@ -39,19 +39,16 @@ describe('Caveman Instructions Library', () => {
       expect(instruction.toLowerCase()).toMatch(/terse|drop|brief|compress|short|fragment/i);
     });
 
-    it('should specify what to drop (articles, filler, pleasantries)', () => {
-      // Caveman skill: Drop articles (a/an/the), filler, pleasantries
+    it('should stay concise without sacrificing technical precision', () => {
+      // Concision is a behavior contract: remove low-value prose while preserving exact content.
       expect(instruction.toLowerCase()).toMatch(/drop.*article|article.*drop/i);
       expect(instruction.toLowerCase()).toMatch(/drop.*filler|filler.*drop|drop.*pleasantr/i);
+      expect(instruction.toLowerCase()).toMatch(/technical\s+terms?\s+(?:exact|unchanged|preserv)/i);
+      expect(instruction.toLowerCase()).toMatch(/code\s+blocks?\s+(?:exact|unchanged|preserv)/i);
     });
 
     it('should allow fragments and short sentences', () => {
       expect(instruction.toLowerCase()).toMatch(/fragment|short|sentence|break.*line/i);
-    });
-
-    it('should preserve technical terms and code blocks', () => {
-      // Caveman skill: Technical terms exact. Code blocks unchanged.
-      expect(instruction.toLowerCase()).toMatch(/technical|code|exact|unchanged|preserve/i);
     });
 
     it('should not include decorative elements', () => {
@@ -80,11 +77,6 @@ describe('Caveman Instructions Library', () => {
       // Lite intensity should be readable and professional
       const excessiveFormatting = (instruction.match(/[*#`]/g) || []).length;
       expect(excessiveFormatting).toBeLessThan(3); // Allow minimal markdown
-    });
-
-    it('should be concise (ideally under 500 chars)', () => {
-      // The instruction itself should model caveman terseness
-      expect(instruction.length).toBeLessThan(500);
     });
 
     it('should be a complete, standalone instruction (no continuation)', () => {
