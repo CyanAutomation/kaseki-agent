@@ -11,6 +11,11 @@
 
 import { getCavemanInstruction } from '../src/caveman/caveman-instructions';
 
+const STRUCTURED_MESSAGE_PATTERN =
+  /(?=[\s\S]*\bthing\b)(?=[\s\S]*\baction\b)(?=[\s\S]*\breason\b)(?=[\s\S]*\bnext\s+step\b)/i;
+const STANDARD_ACRONYM_PATTERN =
+  /(?:(?=[\s\S]*\bacronyms?\b)(?=[\s\S]*\b(?:standard|abbreviat\w*|invented)\b)|(?=[\s\S]*\bDB\b)(?=[\s\S]*\b(?:API|HTTP)\b))/i;
+
 describe('Caveman Instructions Library', () => {
   describe('getCavemanInstruction()', () => {
     let instruction: string;
@@ -41,8 +46,7 @@ describe('Caveman Instructions Library', () => {
         {
           characteristic: 'thing/action/reason/next-step pattern',
           required: true,
-          pattern:
-            /(?=.*thing)(?=.*action)(?=.*reason)(?=.*next\s+step)|pattern.*thing.*action.*reason.*next\s+step/i,
+          pattern: STRUCTURED_MESSAGE_PATTERN,
         },
         {
           characteristic: 'no tool narration',
@@ -52,7 +56,7 @@ describe('Caveman Instructions Library', () => {
         {
           characteristic: 'standard acronyms',
           required: true,
-          pattern: /(?=.*acronym)(?=.*standard|abbreviat|invented)|(?=.*DB)(?=.*API|HTTP)/i,
+          pattern: STANDARD_ACRONYM_PATTERN,
         },
         { characteristic: 'example', required: true, pattern: /example|bug.*fix/i },
         { characteristic: 'emoji', required: false, pattern: /\p{Extended_Pictographic}/u },
@@ -68,6 +72,16 @@ describe('Caveman Instructions Library', () => {
           characteristic,
           satisfied: true,
         });
+      }
+    });
+
+    it('should reject incomplete communication contract fragments', () => {
+      for (const fragment of ['pattern', 'thing action', 'reason', 'next step']) {
+        expect(STRUCTURED_MESSAGE_PATTERN.test(fragment)).toBe(false);
+      }
+
+      for (const fragment of ['acronym', 'DB', 'API', 'HTTP']) {
+        expect(STANDARD_ACRONYM_PATTERN.test(fragment)).toBe(false);
       }
     });
   });
