@@ -41,10 +41,25 @@ export class DiagnosticExtractor {
       return;
     }
 
+    const activeErrors = (entries: Array<Record<string, unknown>> | undefined) =>
+      entries?.filter((entry) => {
+        if (entry.recovered !== true) return true;
+        const reason = String(entry.reason_code ?? '');
+        // Preserve recovered diagnostics that still describe a real issue, but
+        // hide the bookkeeping records for a successfully validated fallback.
+        return !(
+          typeof entry.recovery_reason_code === 'string' ||
+          reason === 'missing_file' ||
+          reason.includes('fallback')
+        );
+      });
     const rawPhaseDiagnostics = [
-      ...phaseDiagnosticsFromErrors('goal-setting', response.goalSettingValidationErrorsContent, ANSI_ESCAPE_PATTERN),
-      ...phaseDiagnosticsFromErrors('scouting', response.scoutingValidationErrorsContent, ANSI_ESCAPE_PATTERN),
-      ...phaseDiagnosticsFromErrors('goal-check', response.goalCheckValidationErrorsContent, ANSI_ESCAPE_PATTERN),
+      ...phaseDiagnosticsFromErrors('goal-setting', activeErrors(response.goalSettingValidationErrorsContent), ANSI_ESCAPE_PATTERN),
+      // Recovered fallback attempts are historical context, not current
+      // critical diagnostics. Keeping them out of the primary summary avoids
+      // contradicting a successful fallback handoff.
+      ...phaseDiagnosticsFromErrors('scouting', activeErrors(response.scoutingValidationErrorsContent), ANSI_ESCAPE_PATTERN),
+      ...phaseDiagnosticsFromErrors('goal-check', activeErrors(response.goalCheckValidationErrorsContent), ANSI_ESCAPE_PATTERN),
     ];
     const dependencyCache = readDependencyCacheDiagnostics(runDir, readSmallArtifact, ANSI_ESCAPE_PATTERN);
     const primaryReason = resolvePrimaryDiagnosticReason(
