@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.113.7](https://github.com/CyanAutomation/kaseki-agent/compare/v1.113.6...v1.113.7) (2026-07-22)
+
+
+### Bug Fixes
+
+* clarify compact scouting artifact write ([cacc065](https://github.com/CyanAutomation/kaseki-agent/commit/cacc0651915d40d667eff8f0bda55c71abeaea58))
+
 ## [1.113.6](https://github.com/CyanAutomation/kaseki-agent/compare/v1.113.5...v1.113.6) (2026-07-22)
 
 
