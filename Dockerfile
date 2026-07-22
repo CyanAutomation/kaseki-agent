@@ -197,6 +197,7 @@ RUN chmod +x \
     && install -m 0755 /app/scripts/inspect-mode-defaults.sh /usr/local/bin/scripts/inspect-mode-defaults.sh \
     && install -m 0755 /app/scripts/dependency-cache-helpers.sh /usr/local/bin/scripts/dependency-cache-helpers.sh \
     && install -m 0755 /app/scripts/auto-lint-cleanup-classification.sh /usr/local/bin/scripts/auto-lint-cleanup-classification.sh \
+    && install -m 0755 /app/scripts/cleanup-trailing-whitespace.sh /usr/local/bin/scripts/cleanup-trailing-whitespace.sh \
     && install -m 0755 /app/dist/scouting-allowlist.js /usr/local/bin/scripts/scouting-allowlist.js \
     && mkdir -p /usr/local/bin/scripts/lib \
     && install -m 0644 /app/scripts/lib/json.sh /usr/local/bin/scripts/lib/json.sh \
@@ -250,7 +251,7 @@ FROM ${NODE_IMAGE} AS final
 
 # Minimal setup: only runtime requirements (no build tools or package managers beyond npm for app startup check)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io git jq procps tini \
+    && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io git jq procps shellcheck tini \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10000 kaseki \
     && useradd --system --uid 10000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
@@ -336,6 +337,7 @@ RUN mkdir -p /scripts \
     && install -m 0755 /app/scripts/inspect-mode-defaults.sh /usr/local/bin/scripts/inspect-mode-defaults.sh \
     && install -m 0755 /app/scripts/dependency-cache-helpers.sh /usr/local/bin/scripts/dependency-cache-helpers.sh \
     && install -m 0755 /app/scripts/auto-lint-cleanup-classification.sh /usr/local/bin/scripts/auto-lint-cleanup-classification.sh \
+    && install -m 0755 /app/scripts/cleanup-trailing-whitespace.sh /usr/local/bin/scripts/cleanup-trailing-whitespace.sh \
     && install -m 0755 /app/dist/scouting-allowlist.js /usr/local/bin/scripts/scouting-allowlist.js \
     && mkdir -p /usr/local/bin/scripts/lib \
     && install -m 0644 /app/scripts/lib/json.sh /usr/local/bin/scripts/lib/json.sh \
