@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { StatusPhaseOutcomeHelper } from './status-phase-outcome-helper';
+import { isExecutionInProgress, StatusPhaseOutcomeHelper } from './status-phase-outcome-helper';
 import type { Job, StatusResponse } from '../kaseki-api-types';
 import type { KasekiApiConfig } from '../kaseki-api-config';
 import type { JobScheduler } from '../job-scheduler';
@@ -21,6 +21,20 @@ function makeJob(overrides: Partial<Job> = {}): Job {
 function makeResponse(stage?: string): StatusResponse {
   return { id: 'job-1', status: 'running', progress: stage ? { stage } as any : undefined };
 }
+
+describe('isExecutionInProgress', () => {
+  it('returns true for an IN_PROGRESS outcome with a RUNNING phase', () => {
+    expect(isExecutionInProgress({ phase: 'RUNNING', outcome: 'IN_PROGRESS' })).toBe(true);
+  });
+
+  it('returns false for an IN_PROGRESS outcome with a non-RUNNING phase', () => {
+    expect(isExecutionInProgress({ phase: 'COMPLETED', outcome: 'IN_PROGRESS' })).toBe(false);
+  });
+
+  it('returns false when a RUNNING phase has a terminal outcome', () => {
+    expect(isExecutionInProgress({ phase: 'RUNNING', outcome: 'COMPLETED' })).toBe(false);
+  });
+});
 
 describe('StatusPhaseOutcomeHelper', () => {
   let resultsDir: string;
