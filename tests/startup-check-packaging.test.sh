@@ -119,8 +119,65 @@ FAKE_PACKAGED_CONFIG
   test "$(cat "$mode_capture")" = "quick"
 }
 
+check_entrypoint_startup_check_dispatch_contract() {
+  print_section 'Docker entrypoint startup-check dispatch contract'
+
+  local fixture_config="$TMP_DIR/dispatch-startup-check-packaging.sh"
+  local dispatched_command="$TMP_DIR/dispatched-command.sh"
+  local invocation_capture="$TMP_DIR/dispatch-invocations.txt"
+
+  cat > "$fixture_config" <<'FAKE_DISPATCH_CONFIG'
+#!/usr/bin/env bash
+kaseki_run_startup_checks() {
+  printf 'startup-check:%s:argc=%s\n' \
+    "${KASEKI_STARTUP_CHECK_MODE:-all}" "$#" >> "${ENTRYPOINT_INVOCATION_CAPTURE:?}"
+  local arg
+  for arg in "$@"; do
+    printf 'startup-check-arg:%s\n' "$arg" >> "${ENTRYPOINT_INVOCATION_CAPTURE:?}"
+  done
+  return "${ENTRYPOINT_STARTUP_CHECK_STATUS:-0}"
+}
+FAKE_DISPATCH_CONFIG
+
+  cat > "$dispatched_command" <<'FAKE_DISPATCHED_COMMAND'
+#!/usr/bin/env bash
+printf 'command:argc=%s\n' "$#" >> "${ENTRYPOINT_INVOCATION_CAPTURE:?}"
+for arg in "$@"; do
+  printf 'command-arg:%s\n' "$arg" >> "${ENTRYPOINT_INVOCATION_CAPTURE:?}"
+done
+FAKE_DISPATCHED_COMMAND
+  chmod +x "$dispatched_command"
+
+  ENTRYPOINT_INVOCATION_CAPTURE="$invocation_capture" \
+    KASEKI_STARTUP_CHECK_PACKAGING_CONFIG="$fixture_config" \
+    KASEKI_STARTUP_CHECK_MODE=quick \
+    KASEKI_SKIP_PERMISSION_VALIDATION=1 \
+    bash scripts/docker-entrypoint.sh "$dispatched_command" first second
+
+  cat > "$TMP_DIR/expected-dispatch-invocations.txt" <<EOF
+startup-check:quick:argc=0
+command:argc=2
+command-arg:first
+command-arg:second
+EOF
+  cmp "$TMP_DIR/expected-dispatch-invocations.txt" "$invocation_capture"
+
+  : > "$invocation_capture"
+  local exit_status=0
+  ENTRYPOINT_INVOCATION_CAPTURE="$invocation_capture" \
+    ENTRYPOINT_STARTUP_CHECK_STATUS=42 \
+    KASEKI_STARTUP_CHECK_PACKAGING_CONFIG="$fixture_config" \
+    KASEKI_STARTUP_CHECK_MODE=all \
+    KASEKI_SKIP_PERMISSION_VALIDATION=1 \
+    bash scripts/docker-entrypoint.sh "$dispatched_command" not-dispatched || exit_status=$?
+
+  test "$exit_status" = 42
+  test "$(cat "$invocation_capture")" = 'startup-check:all:argc=0'
+}
+
 check_startup_check_symlink_contracts
 check_entrypoint_mode_forwarding
 check_entrypoint_packaged_config_dispatch
+check_entrypoint_startup_check_dispatch_contract
 
 printf '\n✓ Startup-check packaging smoke assertions passed.\n'
