@@ -5,6 +5,22 @@ import type { StatusResponse } from '../kaseki-api-types';
 import { KasekiApiConfig } from '../kaseki-api-config';
 import { JobScheduler } from '../job-scheduler';
 
+type ExecutionStatus = {
+  phase?: string;
+  outcome?: string;
+};
+
+/**
+ * Returns whether a phase/outcome pair represents active execution.
+ *
+ * An IN_PROGRESS outcome is only valid while the enclosing phase is RUNNING;
+ * treating an inconsistent, terminal phase as active can leave clients polling
+ * indefinitely.
+ */
+export function isExecutionInProgress(status: ExecutionStatus): boolean {
+  return status.outcome === 'IN_PROGRESS' && status.phase === 'RUNNING';
+}
+
 export class StatusPhaseOutcomeHelper {
   constructor(
     private scheduler: JobScheduler,
