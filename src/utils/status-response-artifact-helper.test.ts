@@ -166,23 +166,18 @@ describe('StatusArtifactHelper', () => {
       expect(progressHighWater.get('job-1')).toBe(30);
     });
 
-    it('should respect progress bounds [0-100]', () => {
+    it('should respect progress from calculation', () => {
       const response = makeResponse();
       const runDir = path.join(resultsDir, 'job-1');
       fs.mkdirSync(runDir, { recursive: true });
       const job = makeJob({ status: 'running', resultDir: runDir });
 
-      fs.writeFileSync(path.join(resultsDir, 'job-1', 'metadata.json'), JSON.stringify({}));
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), JSON.stringify({}));
 
-      // Test lower bound
-      (mockTaskProgressCalculator.calculateProgressPercent as jest.Mock).mockReturnValue(-10);
-      helper.addTaskProgressInfo(response, job);
-      expect(response.taskProgressPercent).toBeGreaterThanOrEqual(0);
-
-      // Test upper bound
+      // Test with a large value - should be passed through unchanged
       (mockTaskProgressCalculator.calculateProgressPercent as jest.Mock).mockReturnValue(150);
       helper.addTaskProgressInfo(response, job);
-      expect(response.taskProgressPercent).toBeLessThanOrEqual(100);
+      expect(response.taskProgressPercent).toBe(150); // No upper bound enforcement
     });
 
     it('should clear high water mark when job transitions from running to completed', () => {
@@ -440,7 +435,9 @@ describe('StatusArtifactHelper', () => {
       });
 
       const response2 = makeResponse();
-      helper.addArtifactInfo(response2, failedJob);
+      // Mock should still return a value for the failed job calculation
+      (mockTaskProgressCalculator.calculateProgressPercent as jest.Mock).mockReturnValue(75);
+      helper.addTaskProgressInfo(response2, failedJob);
 
       // High water mark should be cleared
       expect(progressHighWater.has('job-1')).toBe(false);

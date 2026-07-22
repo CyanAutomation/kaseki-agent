@@ -2013,6 +2013,113 @@ describe('StatusResponseBuilder', () => {
         'goal-check-attempts.jsonl',
       ]);
     });
+
+    it('should maintain monotonic progress through addTaskProgressInfo and addArtifactInfo integration', () => {
+      // Simulate job running with progress being tracked
+      const job: Partial<Job> = {
+        id: 'job-progress-integration',
+        status: 'running',
+        resultDir: '/results/job-progress-integration',
+      };
+
+      const response1: StatusResponse = {
+        id: 'job-progress-integration',
+        status: 'running',
+      };
+
+      // First progress update - 30%
+      (fileHelpers.readLastJsonlEvent as jest.Mock).mockReturnValue({ stage: 'phase1', status: 'running' });
+      builder['addTaskProgressInfo'](response1, job as Job);
+      expect(response1.taskProgressPercent).toBeDefined();
+
+      // Second progress update - 50% (should not decrease)
+      const response2: StatusResponse = {
+        id: 'job-progress-integration',
+        status: 'running',
+      };
+      builder['addTaskProgressInfo'](response2, job as Job);
+      expect((response2.taskProgressPercent ?? 0) >= (response1.taskProgressPercent ?? 0)).toBe(true);
+    });
+
+    it('should transition from running with progress to completed with artifacts', () => {
+      // Running state with progress
+      const runningJob: Partial<Job> = {
+        id: 'job-transition',
+        status: 'running',
+        resultDir: '/results/job-transition',
+      };
+
+      const runningResponse: StatusResponse = {
+        id: 'job-transition',
+        status: 'running',
+      };
+
+      (fileHelpers.readLastJsonlEvent as jest.Mock).mockReturnValue({ stage: 'phase1', status: 'running' });
+      builder['addTaskProgressInfo'](runningResponse, runningJob as Job);
+
+      // Transition to completed
+      const completedJob: Partial<Job> = {
+        id: 'job-transition',
+        status: 'completed',
+        resultDir: '/results/job-transition',
+      };
+
+      const completedResponse: StatusResponse = {
+        id: 'job-transition',
+        status: 'completed',
+      };
+
+      (fs.existsSync as jest.Mock).mockReturnValue(true);
+      builder['addTaskProgressInfo'](completedResponse, completedJob as Job);
+      builder['addArtifactInfo'](completedResponse, completedJob as Job);
+
+      // Should have both progress set to 100% and artifacts defined
+      expect(completedResponse.taskProgressPercent).toBe(100);
+      expect(completedResponse.artifacts).toBeDefined();
+    });
+
+    it('should include diagnostic entry point when transitioning from running to failed', () => {
+      // Running state
+      const runningJob: Partial<Job> = {
+        id: 'job-failure-transition',
+        status: 'running',
+        resultDir: '/results/job-failure-transition',
+      };
+
+      const runningResponse: StatusResponse = {
+        id: 'job-failure-transition',
+        status: 'running',
+      };
+
+      builder['addTaskProgressInfo'](runningResponse, runningJob as Job);
+
+      // Transition to failed
+      const failedJob: Partial<Job> = {
+        id: 'job-failure-transition',
+        status: 'failed',
+        resultDir: '/results/job-failure-transition',
+      };
+
+      const failedResponse: StatusResponse = {
+        id: 'job-failure-transition',
+        status: 'failed',
+      };
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'failure.json': { exists: true, size: 100 },
+        'analysis.md': { exists: true, size: 200 },
+        'result-summary.md': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+        'metadata.json': { exists: true, size: 50 },
+      });
+
+      builder['addArtifactInfo'](failedResponse, failedJob as Job);
+
+      // Should have artifacts and diagnostic entry point
+      expect(failedResponse.artifacts).toBeDefined();
+      expect(failedResponse.diagnosticEntryPoint).toBeDefined();
+    });
   });
 
   describe('addProgressInfo', () => {
