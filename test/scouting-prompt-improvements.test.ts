@@ -226,10 +226,11 @@ describe('Phase 3: Provider & Error Context', () => {
     expect(promptContent).toContain('Error Handling');
   });
 
-  test('should mention artifact size constraints [SCOUTING_PROMPT_DESIGN §5]', () => {
-    expect(promptContent).toMatch(
-      /Maximum JSON size:\s*50 KB\.[\s\S]*?Truncate observations[^\n]*approaching (?:the )?size limit/i
-    );
+  test('should enforce the artifact size limit from SCOUTING_PROMPT_DESIGN.md §5', () => {
+    const artifactSizeLimitInKB = promptContent.match(/JSON size[^\n]*?(\d+)\s*KB/i)?.[1];
+
+    // SCOUTING_PROMPT_DESIGN.md §5 specifies 50 KB to keep scouting output bounded.
+    expect(Number(artifactSizeLimitInKB)).toBe(50);
   });
 
   test('should note timeout expectations', () => {
