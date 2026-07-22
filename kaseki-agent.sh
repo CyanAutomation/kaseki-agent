@@ -1257,7 +1257,12 @@ function extractPromptFiles(prompt) {
   const pattern = /(?:^|[\s`'":(])((?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+)(?=$|[\s`'",:).;!?])/g;
   let match;
   while ((match = pattern.exec(prompt)) !== null) {
-    const candidate = match[1].replace(/^\/+/, '');
+    // The filename character class deliberately accepts dots, so a sentence
+    // terminator can otherwise become part of a path (for example,
+    // "docs/DEVELOPMENT.md.").  Those paths feed both the fallback allowlist
+    // and the critical-change contract, where the extra punctuation makes a
+    // real edit look like a missing file.
+    const candidate = match[1].replace(/^\/+/, '').replace(/[),.;!?]+$/, '');
     if (
       candidate &&
       !candidate.includes('..') &&
