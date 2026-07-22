@@ -71,6 +71,18 @@ describe('StatusPhaseOutcomeHelper', () => {
     expect(response.phaseOutcome).toMatchObject({ scouting: 'not_reached', weaving: 'not_reached' });
   });
 
+  it('does not advance phases from an un-timestamped Docker log observation', () => {
+    const helper = new StatusPhaseOutcomeHelper(
+      makeScheduler([{ stage: 'pi coding agent', status: 'started', timestampEstimated: true }]),
+      makeConfig(resultsDir),
+    );
+    const response = makeResponse('');
+
+    helper.addPhaseOutcome(response, makeJob(), {});
+
+    expect(response.phaseOutcome).toMatchObject({ scouting: 'not_reached', weaving: 'not_reached' });
+  });
+
   it('uses scouting artifact metadata as scouting-start evidence', () => {
     const job = makeJob({ id: 'job-artifact' });
     fs.mkdirSync(path.join(resultsDir, job.id), { recursive: true });
@@ -151,6 +163,15 @@ describe('StatusPhaseOutcomeHelper', () => {
       makeConfig(resultsDir),
     );
     const response = makeResponse('pi coding agent');
+
+    helper.addPhaseOutcome(response, makeJob(), {});
+
+    expect(response.phaseOutcome).toMatchObject({ scouting: 'completed', weaving: 'running' });
+  });
+
+  it('keeps completed scouting visible while collecting the coding diff', () => {
+    const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+    const response = makeResponse('collect agent diff');
 
     helper.addPhaseOutcome(response, makeJob(), {});
 

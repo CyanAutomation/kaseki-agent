@@ -10,7 +10,8 @@ describe('progressEventsFromDockerLogTail', () => {
     expect(events).toEqual([
       expect.objectContaining({
         stage: 'typescript pre-check',
-        status: 'started',
+        message: 'observed in log tail',
+        timestampEstimated: true,
         timestamp: '2026-06-28T21:24:10.671Z',
       }),
     ]);
@@ -44,5 +45,7 @@ describe('progressEventsFromDockerLogTail', () => {
     expect(first[0].timestamp).toBe('1970-01-01T00:00:00.000Z');
     expect(second[0].timestamp).toBe(first[0].timestamp);
     expect(first[0].timestampEstimated).toBe(true);
+    expect(first[0].status).toBeUndefined();
+    expect(first[0].message).toBe('observed in log tail');
   });
 });
