@@ -199,10 +199,71 @@ describe('Artifact Consolidation', () => {
       }
     });
 
-    it('should consolidate timings, errors, and validation errors before finalization', () => {
-      // This is validated by checking that consolidation functions are called
-      // near the end of script (lines 1896-1898), before final status writes
-      expect(true).toBe(true); // Validated by code review
+    it('publishes complete timing and error artifacts before the final status', () => {
+      const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-finalization-contract-'));
+      const helper = path.join(__dirname, '..', 'scripts', 'lib', 'artifact-consolidation.sh');
+      const script = String.raw`
+        set -euo pipefail
+        source "$1"
+        results_dir="$2"
+        observed_dir="$results_dir/observed-at-final-status"
+        mkdir -p "$observed_dir"
+
+        printf 'command\telapsed_seconds\nnpm test\t12.5\n' > "$results_dir/validation-timings.tsv"
+        printf 'command\telapsed_seconds\nnpm run type-check\t3.25\n' > "$results_dir/pre-validation-timings.tsv"
+        printf 'stage\telapsed_seconds\nvalidation\t15.75\n' > "$results_dir/stage-timings.tsv"
+        printf 'critical expectation failed\nsecond diagnostic\n' > "$results_dir/critical-change-expectations.log"
+        printf '%s\n' '{"reason":"schema_mismatch","field":"requirements"}' > "$results_dir/scouting-validation-errors.jsonl"
+        printf '%s\n' '{"reason":"invalid_verdict","field":"met"}' > "$results_dir/goal-check-validation-errors.jsonl"
+
+        publish_status() {
+          local status="$1"
+          printf '{"status":"%s"}\n' "$status" > "$results_dir/metadata.json.tmp"
+          mv "$results_dir/metadata.json.tmp" "$results_dir/metadata.json"
+        }
+
+        (
+          until [ -f "$results_dir/metadata.json" ] && [ "$(jq -r .status "$results_dir/metadata.json")" = completed ]; do
+            sleep 0.01
+          done
+          cp "$results_dir/timings-manifest.json" "$results_dir/phase-errors.jsonl" \
+            "$results_dir/artifact-validation-errors.jsonl" "$observed_dir/"
+          cp "$results_dir/metadata.json" "$observed_dir/"
+        ) &
+        observer_pid=$!
+
+        finalize_artifacts_and_publish_status "$results_dir" publish_status completed
+        wait "$observer_pid"
+      `;
+
+      try {
+        execFileSync('bash', ['-c', script, 'finalization-contract', helper, testDir]);
+
+        const observedDir = path.join(testDir, 'observed-at-final-status');
+        const status = JSON.parse(fs.readFileSync(path.join(observedDir, 'metadata.json'), 'utf-8'));
+        const timings = JSON.parse(fs.readFileSync(path.join(observedDir, 'timings-manifest.json'), 'utf-8'));
+        const phaseErrors = fs.readFileSync(path.join(observedDir, 'phase-errors.jsonl'), 'utf-8')
+          .trim().split('\n').map(line => JSON.parse(line));
+        const validationErrors = fs.readFileSync(path.join(observedDir, 'artifact-validation-errors.jsonl'), 'utf-8')
+          .trim().split('\n').map(line => JSON.parse(line));
+
+        expect(status).toEqual({ status: 'completed' });
+        expect(timings).toEqual({
+          validation_timings: [{ command: 'npm test', elapsed_seconds: 12.5 }],
+          pre_validation_timings: [{ command: 'npm run type-check', elapsed_seconds: 3.25 }],
+          stage_timings: [{ stage: 'validation', elapsed_seconds: 15.75 }],
+        });
+        expect(phaseErrors.map(({ phase, message }) => ({ phase, message }))).toEqual([
+          { phase: 'critical-change-expectations.log', message: 'critical expectation failed' },
+          { phase: 'critical-change-expectations.log', message: 'second diagnostic' },
+        ]);
+        expect(validationErrors).toEqual([
+          { reason: 'schema_mismatch', field: 'requirements', phase: 'scouting' },
+          { reason: 'invalid_verdict', field: 'met', phase: 'goal-check' },
+        ]);
+      } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+      }
     });
   });
 
