@@ -270,80 +270,78 @@ async function runGatewayStage1Probe(
 ): Promise<ConnectivityTestResult> {
   const stage1Probe = buildStage1ProbeRequest(gatewayUrl);
 
-  for (let attempt = 1; attempt <= GATEWAY_CONNECTIVITY_ATTEMPTS; attempt++) {
+  for (let attempt = 1; ; attempt++) {
     try {
-    const fetchStartTime = performance.now();
-    const response = await fetchWithTimeout(stage1Probe.endpoint, stage1Probe.init, GATEWAY_MODELS_TIMEOUT_MS);
-    const responseTime = Math.round(performance.now() - fetchStartTime);
+      const fetchStartTime = performance.now();
+      const response = await fetchWithTimeout(stage1Probe.endpoint, stage1Probe.init, GATEWAY_MODELS_TIMEOUT_MS);
+      const responseTime = Math.round(performance.now() - fetchStartTime);
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      const authError = response.status === 401 || response.status === 403;
-      const invalidPathError = isInvalidGatewayPathError(errorBody);
+      if (!response.ok) {
+        const errorBody = await response.text();
+        const authError = response.status === 401 || response.status === 403;
+        const invalidPathError = isInvalidGatewayPathError(errorBody);
 
+        return {
+          status: 'error',
+          detail: `Gateway returned HTTP ${response.status}: ${errorBody.substring(0, 100)}`,
+          gatewayUrl,
+          responseTime,
+          timestamp,
+          authenticationValidated: !authError && !invalidPathError,
+          httpStatus: response.status,
+          remediation: authError
+            ? 'Authentication failed. Check that LLM_GATEWAY_API_KEY is valid, or that the llm_gateway_api_key file in the configured Kaseki secrets directory contains the expected token'
+            : invalidPathError
+              ? 'Gateway request path is invalid. For Cloudflare /compat gateways, preserve the scoped /v1/{account_id}/{gateway_id}/compat path and do not reduce it to /v1/models.'
+              : `Gateway returned an error. Verify the gateway is healthy and the URL is correct (${response.status})`,
+          attempts: attempt,
+        };
+      }
+
+      const warning = latencyWarning(responseTime);
       return {
-        status: 'error',
-        detail: `Gateway returned HTTP ${response.status}: ${errorBody.substring(0, 100)}`,
+        status: 'ok',
+        detail: `Gateway is responsive (${responseTime}ms)`,
         gatewayUrl,
         responseTime,
         timestamp,
-        authenticationValidated: !authError && !invalidPathError,
-        httpStatus: response.status,
-        remediation: authError
-          ? 'Authentication failed. Check that LLM_GATEWAY_API_KEY is valid, or that the llm_gateway_api_key file in the configured Kaseki secrets directory contains the expected token'
-          : invalidPathError
-            ? 'Gateway request path is invalid. For Cloudflare /compat gateways, preserve the scoped /v1/{account_id}/{gateway_id}/compat path and do not reduce it to /v1/models.'
-            : `Gateway returned an error. Verify the gateway is healthy and the URL is correct (${response.status})`,
+        authenticationValidated: true,
+        ...(warning ? { warning } : {}),
         attempts: attempt,
       };
-    }
-
-    const warning = latencyWarning(responseTime);
-    return {
-      status: 'ok',
-      detail: `Gateway is responsive (${responseTime}ms)`,
-      gatewayUrl,
-      responseTime,
-      timestamp,
-      authenticationValidated: true,
-      ...(warning ? { warning } : {}),
-      attempts: attempt,
-    };
     } catch (error) {
-    const responseTime = Math.round(performance.now() - startTime);
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const isTimeout = /timeout/i.test(errorMessage);
-    const isAborted = /abort/i.test(errorMessage);
-    const isNetwork = /fetch|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET/i.test(errorMessage);
-    const errorKind = isTimeout ? 'timeout' : isAborted ? 'aborted' : isNetwork ? 'network' : 'unexpected';
+      const responseTime = Math.round(performance.now() - startTime);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isTimeout = /timeout/i.test(errorMessage);
+      const isAborted = /abort/i.test(errorMessage);
+      const isNetwork = /fetch|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET/i.test(errorMessage);
+      const errorKind = isTimeout ? 'timeout' : isAborted ? 'aborted' : isNetwork ? 'network' : 'unexpected';
 
-    if (attempt < GATEWAY_CONNECTIVITY_ATTEMPTS && (isTimeout || isAborted || isNetwork)) {
-      await new Promise((resolve) => setTimeout(resolve, GATEWAY_CONNECTIVITY_RETRY_DELAY_MS));
-      continue;
-    }
+      if (attempt < GATEWAY_CONNECTIVITY_ATTEMPTS && (isTimeout || isAborted || isNetwork)) {
+        await new Promise((resolve) => setTimeout(resolve, GATEWAY_CONNECTIVITY_RETRY_DELAY_MS));
+        continue;
+      }
 
-    return {
-      status: 'error',
-      detail: `Gateway is unreachable after ${attempt} attempt${attempt === 1 ? '' : 's'} (${errorKind}): ${errorMessage}`,
-      gatewayUrl,
-      responseTime,
-      timestamp,
-      authenticationValidated: false,
-      remediation: isTimeout
-        ? 'Gateway timed out. Check gateway health, DNS/TLS reachability, and upstream latency before retrying.'
-        : isAborted
-          ? 'The connectivity probe was aborted. Check controller egress, proxy timeouts, and gateway availability before retrying.'
-          : isNetwork
-            ? 'Cannot reach the gateway endpoint. Verify DNS, URL, firewall/proxy rules, and controller egress before retrying.'
-            : 'Unexpected error connecting to gateway. Check controller logs and gateway health before retrying.',
-      attempts: attempt,
-      retryDelayMs: attempt > 1 ? GATEWAY_CONNECTIVITY_RETRY_DELAY_MS : undefined,
-      errorKind,
-    };
+      return {
+        status: 'error',
+        detail: `Gateway is unreachable after ${attempt} attempt${attempt === 1 ? '' : 's'} (${errorKind}): ${errorMessage}`,
+        gatewayUrl,
+        responseTime,
+        timestamp,
+        authenticationValidated: false,
+        remediation: isTimeout
+          ? 'Gateway timed out. Check gateway health, DNS/TLS reachability, and upstream latency before retrying.'
+          : isAborted
+            ? 'The connectivity probe was aborted. Check controller egress, proxy timeouts, and gateway availability before retrying.'
+            : isNetwork
+              ? 'Cannot reach the gateway endpoint. Verify DNS, URL, firewall/proxy rules, and controller egress before retrying.'
+              : 'Unexpected error connecting to gateway. Check controller logs and gateway health before retrying.',
+        attempts: attempt,
+        retryDelayMs: attempt > 1 ? GATEWAY_CONNECTIVITY_RETRY_DELAY_MS : undefined,
+        errorKind,
+      };
     }
   }
-
-  throw new Error('Gateway connectivity retry loop exited unexpectedly');
 }
 
 export function createPiProviderSmokeWorkspace(): string {
