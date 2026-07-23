@@ -41,6 +41,7 @@ setup_case() {
   cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$CASE_DIR/scripts/scouting-allowlist.js" || fail "failed to copy scouting allowlist"
   cp "$REPO_ROOT/scripts/lib/json.sh" "$CASE_DIR/scripts/lib/json.sh" || fail "failed to copy json helper"
   cp "$REPO_ROOT/scripts/lib/json-events.sh" "$CASE_DIR/scripts/lib/json-events.sh" || fail "failed to copy json events helper"
+  cp "$REPO_ROOT/scripts/lib/artifact-consolidation.sh" "$CASE_DIR/scripts/lib/artifact-consolidation.sh" || fail "failed to copy artifact consolidation helper"
   touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/progress-stream-utils.js" || fail "failed to create app stubs"
   : > "$PI_CALLS" || fail "failed to initialize Pi calls"
 
