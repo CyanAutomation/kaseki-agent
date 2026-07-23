@@ -37,6 +37,7 @@ cp "$REPO_ROOT/scripts/inspect-mode-defaults.sh" "$TMP_DIR/scripts/inspect-mode-
 cp "$REPO_ROOT/scripts/restore-disallowed-changes.sh" "$TMP_DIR/scripts/restore-disallowed-changes.sh"
 cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
 cp "$REPO_ROOT/scripts/lib/json-events.sh" "$TMP_DIR/scripts/lib/json-events.sh"
+cp "$REPO_ROOT/scripts/lib/artifact-consolidation.sh" "$TMP_DIR/scripts/lib/artifact-consolidation.sh"
 cp "$REPO_ROOT/scripts/lib/model-resolution.sh" "$TMP_DIR/scripts/lib/model-resolution.sh"
 cp "$REPO_ROOT/scripts/lib/provider-retry.sh" "$TMP_DIR/scripts/lib/provider-retry.sh"
 touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/progress-stream-utils.js"

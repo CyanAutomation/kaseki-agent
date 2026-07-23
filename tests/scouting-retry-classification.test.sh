@@ -42,6 +42,7 @@ run_case() {
   cp "$REPO_ROOT/scripts/agent-prompt.sh" "$case_dir/scripts/agent-prompt.sh"
   cp "$REPO_ROOT/scripts/lib/json.sh" "$case_dir/scripts/lib/json.sh"
   cp "$REPO_ROOT/scripts/lib/json-events.sh" "$case_dir/scripts/lib/json-events.sh"
+  cp "$REPO_ROOT/scripts/lib/artifact-consolidation.sh" "$case_dir/scripts/lib/artifact-consolidation.sh"
   cp "$REPO_ROOT/scripts/lib/model-resolution.sh" "$case_dir/scripts/lib/model-resolution.sh"
   touch "$app_lib/event-aggregator.js" "$app_lib/timestamp-tracker.js" "$app_lib/progress-stream-utils.js"
 

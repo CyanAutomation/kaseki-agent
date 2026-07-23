@@ -57,6 +57,7 @@ assert_gateway_model_resolution "KASEKI_MODEL=auto" auto_model_gateway_env
 mkdir -p "$TMP_DIR/results" "$TMP_DIR/workspace" "$TMP_DIR/cache" "$TMP_DIR/app/lib" "$TMP_DIR/scripts/lib" "$TMP_DIR/dist"
 cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
 cp "$REPO_ROOT/scripts/lib/json-events.sh" "$TMP_DIR/scripts/lib/json-events.sh"
+cp "$REPO_ROOT/scripts/lib/artifact-consolidation.sh" "$TMP_DIR/scripts/lib/artifact-consolidation.sh"
 cp "$REPO_ROOT/scripts/lib/model-resolution.sh" "$TMP_DIR/scripts/lib/model-resolution.sh"
 cp "$REPO_ROOT/scripts/lib/provider-retry.sh" "$TMP_DIR/scripts/lib/provider-retry.sh"
 cp "$REPO_ROOT/scripts/dependency-cache-helpers.sh" "$TMP_DIR/scripts/dependency-cache-helpers.sh"
