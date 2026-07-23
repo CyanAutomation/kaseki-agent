@@ -82,6 +82,27 @@ export function createCleanupPlan(
   return { allRuns, activeRunNames, runsToDelete, retainedRunNames };
 }
 
+/** Refresh active scheduler state and remove newly active runs from a plan. */
+export function refreshCleanupPlanActiveRuns(
+  resultsDir: string,
+  plan: CleanupPlan,
+): CleanupPlan {
+  const activeRunNames = getActiveRunNames(resultsDir);
+  const retainedRunNames = new Set(plan.retainedRunNames);
+  for (const activeRunName of activeRunNames) {
+    retainedRunNames.add(activeRunName);
+  }
+
+  return {
+    ...plan,
+    activeRunNames,
+    runsToDelete: plan.runsToDelete.filter(
+      (run) => !activeRunNames.has(run.name),
+    ),
+    retainedRunNames,
+  };
+}
+
 /**
  * List all kaseki runs in the results directory, sorted by mtime (newest first)
  */
@@ -243,13 +264,18 @@ export async function cleanupOldRuns(
     dryRun,
   };
 
-  const { runsToDelete, retainedRunNames } = createCleanupPlan(
+  let plan = createCleanupPlan(
     resultsDir,
     retentionCount,
   );
-  if (runsToDelete.length === 0) return result;
+  if (plan.runsToDelete.length === 0) return result;
 
-  for (const run of runsToDelete) {
+  // The scheduler index may have changed since the retention plan was built.
+  // Refresh it immediately before deletion so a run that became queued or
+  // running in that window is neither removed nor allowed to lose its cache.
+  plan = refreshCleanupPlanActiveRuns(resultsDir, plan);
+
+  for (const run of plan.runsToDelete) {
     try {
       result.freedBytes += getDirectorySize(run.path);
       if (!dryRun) fs.rmSync(run.path, { recursive: true, force: true });
@@ -261,7 +287,7 @@ export async function cleanupOldRuns(
 
   result.cachedEntriesRemoved = cleanupCacheDir(
     cacheDir,
-    retainedRunNames,
+    plan.retainedRunNames,
     dryRun,
   );
 
