@@ -303,8 +303,10 @@ build_run_evaluation_prompt
       tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scouting-renderer-'));
       const functionPath = path.join(tmpDir, 'scouting-function.sh');
       const rendererPath = path.join(tmpDir, 'render-scouting-prompt.sh');
+      const artifactFixturePath = path.join(tmpDir, 'artifacts');
       const templateFixturePath = path.join(tmpDir, 'templates', 'scouting');
 
+      fs.mkdirSync(artifactFixturePath);
       fs.mkdirSync(templateFixturePath, { recursive: true });
       for (const templateName of [
         'base.txt',
@@ -329,8 +331,9 @@ set -euo pipefail
 
 FUNCTION_SOURCE="$1"
 SCRIPT_DIR="$2"
-SCOUTING_CANDIDATE_ARTIFACT="$SCRIPT_DIR/scouting-candidate.json"
-GOAL_SETTING_ARTIFACT="$SCRIPT_DIR/goal-setting.json"
+ARTIFACT_DIR="$3"
+SCOUTING_CANDIDATE_ARTIFACT="$ARTIFACT_DIR/scouting-candidate.json"
+GOAL_SETTING_ARTIFACT="$ARTIFACT_DIR/goal-setting.json"
 TASK_PROMPT=${JSON.stringify(taskPrompt)}
 KASEKI_CAVEMAN=0
 KASEKI_SCOUTING_PROMPT_DETAIL=${JSON.stringify(promptDetail)}
@@ -350,7 +353,9 @@ build_scouting_prompt
         { mode: 0o700 }
       );
 
-      return execFileSync('bash', [rendererPath, functionPath, tmpDir], { encoding: 'utf8' });
+      return execFileSync('bash', [rendererPath, functionPath, tmpDir, artifactFixturePath], {
+        encoding: 'utf8',
+      });
     } finally {
       if (tmpDir) {
         fs.rmSync(tmpDir, { recursive: true, force: true });
