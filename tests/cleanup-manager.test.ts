@@ -9,6 +9,7 @@ import {
   getCacheEntryRuns,
   getDirectorySize,
   listRuns,
+  refreshCleanupPlanActiveRuns,
   shouldRemoveCacheEntry,
 } from '../src/cleanup-manager';
 
@@ -338,6 +339,51 @@ describe('cleanup-manager', () => {
       expect(fs.existsSync(activeCache)).toBe(true);
       expect(fs.existsSync(terminalCache)).toBe(false);
       expect(result.cachedEntriesRemoved).toBe(1);
+    });
+
+    it('removes newly active runs when refreshing a cleanup plan', () => {
+      const runPath = path.join(resultsDir, 'kaseki-1');
+      fs.mkdirSync(runPath);
+      const indexPath = path.join(resultsDir, '.kaseki-api-jobs.json');
+      fs.writeFileSync(
+        indexPath,
+        JSON.stringify({ jobs: [{ id: 'kaseki-1', status: 'completed' }] }),
+      );
+      const plan = createCleanupPlan(resultsDir, 0);
+      expect(plan.runsToDelete.map((run) => run.name)).toEqual(['kaseki-1']);
+
+      fs.writeFileSync(
+        indexPath,
+        JSON.stringify({ jobs: [{ id: 'kaseki-1', status: 'running' }] }),
+      );
+      const refreshedPlan = refreshCleanupPlanActiveRuns(resultsDir, plan);
+
+      expect(refreshedPlan.runsToDelete).toEqual([]);
+      expect(refreshedPlan.activeRunNames).toEqual(new Set(['kaseki-1']));
+      expect(refreshedPlan.retainedRunNames).toEqual(new Set(['kaseki-1']));
+    });
+
+    it('continues terminal cleanup when the scheduler index is malformed', async () => {
+      const runPath = path.join(resultsDir, 'kaseki-1');
+      fs.mkdirSync(runPath);
+      fs.writeFileSync(
+        path.join(resultsDir, '.kaseki-api-jobs.json'),
+        '{not-json',
+      );
+      const consoleErrorSpy = jest
+        .spyOn(console, 'error')
+        .mockImplementation(() => undefined);
+
+      try {
+        expect(getActiveRunNames(resultsDir)).toEqual(new Set());
+        const result = await cleanupOldRuns(resultsDir, cacheDir, 0, false);
+
+        expect(result.deletedCount).toBe(1);
+        expect(fs.existsSync(runPath)).toBe(false);
+        expect(consoleErrorSpy).toHaveBeenCalled();
+      } finally {
+        consoleErrorSpy.mockRestore();
+      }
     });
   });
 
