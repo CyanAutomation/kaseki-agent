@@ -35,26 +35,50 @@ describe('Artifact Consolidation', () => {
     });
 
     it('should aggregate multiple phase summaries', () => {
-      // Simulate appending phase summaries
-      const testFile = path.join(KASEKI_RESULTS_DIR, 'all-phase-summaries-multi.json');
-      let manifest = { phases: [] };
-
-      // Add mock phase data
+      const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-all-phase-summaries-'));
+      const testFile = path.join(testDir, 'all-phase-summaries.json');
+      const helper = path.join(__dirname, '..', 'scripts', 'lib', 'artifact-consolidation.sh');
       const phases = [
-        { phase: 'goal-setting', model: 'test-model-1', tokens: 100 },
-        { phase: 'scouting', model: 'test-model-2', tokens: 200 },
-        { phase: 'goal-check', model: 'test-model-3', tokens: 150 },
-        { phase: 'pi-agent', model: 'test-model-4', tokens: 500 },
-        { phase: 'run-evaluation', model: 'test-model-5', tokens: 75 },
+        { phase: 'goal-setting', summary: { model: 'test-model-1', tokens: 100, duration_ms: 11, succeeded: true } },
+        { phase: 'scouting', summary: { model: 'test-model-2', tokens: 200, duration_ms: 22, succeeded: true } },
+        { phase: 'goal-check', summary: { model: 'test-model-3', tokens: 150, duration_ms: 33, succeeded: false } },
+        { phase: 'pi-agent', summary: { model: 'test-model-4', tokens: 500, duration_ms: 44, succeeded: true } },
+        { phase: 'run-evaluation', summary: { model: 'test-model-5', tokens: 75, duration_ms: 55, succeeded: true } },
       ];
 
-      manifest.phases = phases;
-      fs.writeFileSync(testFile, JSON.stringify(manifest, null, 2));
+      try {
+        fs.writeFileSync(testFile, JSON.stringify({ phases: [] }));
+        const appendArguments = phases.flatMap(({ phase, summary }) => {
+          const summaryFile = path.join(testDir, `${phase}-summary.json`);
+          fs.writeFileSync(summaryFile, JSON.stringify(summary));
+          return [phase, summaryFile];
+        });
+        const appendAll = `
+          set -euo pipefail
+          source "$1"
+          artifact="$2"
+          shift 2
+          while [ "$#" -gt 0 ]; do
+            consolidate_completed_phase "$artifact" "$1" "$2"
+            shift 2
+          done
+        `;
 
-      const content = JSON.parse(fs.readFileSync(testFile, 'utf-8'));
-      expect(content.phases).toHaveLength(5);
-      expect(content.phases[0].phase).toBe('goal-setting');
-      expect(content.phases[4].phase).toBe('run-evaluation');
+        execFileSync('bash', ['-c', appendAll, 'append-phase-summaries', helper, testFile, ...appendArguments]);
+
+        const content = JSON.parse(fs.readFileSync(testFile, 'utf-8'));
+        const expectedPhases = phases.map(({ phase, summary }) => ({ ...summary, phase }));
+        const phaseCounts = content.phases.reduce((counts: Record<string, number>, entry: { phase: string }) => {
+          counts[entry.phase] = (counts[entry.phase] ?? 0) + 1;
+          return counts;
+        }, {});
+
+        expect(content).toEqual({ phases: expectedPhases });
+        expect(phaseCounts).toEqual(Object.fromEntries(phases.map(({ phase }) => [phase, 1])));
+        expect(content.phases.map(({ phase }: { phase: string }) => phase)).toEqual(phases.map(({ phase }) => phase));
+      } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+      }
     });
   });
 
