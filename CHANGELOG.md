@@ -4,6 +4,17 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.114.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.114.0...v1.114.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* classify child process spawn errors ([60be09b](https://github.com/CyanAutomation/kaseki-agent/commit/60be09b8e52c31169351fc6e7952b9ab9a740520))
+* exclude active runs from cleanup ([409f104](https://github.com/CyanAutomation/kaseki-agent/commit/409f1041c33b9345d2bd4eded27ff804332136b9))
+* preserve published run artifacts and diagnostics ([bdf4515](https://github.com/CyanAutomation/kaseki-agent/commit/bdf4515e2d182612e34dec9b2c364943f024e140))
+* recheck active runs before cleanup deletion ([87b1706](https://github.com/CyanAutomation/kaseki-agent/commit/87b170606c3d0227351e44c7d34480aae4654d51))
+* require interactive cleanup confirmation ([711eb9e](https://github.com/CyanAutomation/kaseki-agent/commit/711eb9e3f64ac5151959e8fdac58c12f1b906593))
+
 # [1.114.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.113.8...v1.114.0) (2026-07-22)
 
 
