@@ -15,7 +15,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 // Use global describe, it, expect from Jest
@@ -683,6 +683,7 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         const workspaceRepo = join(tempDir, 'repo');
         const appLib = join(tempDir, 'app', 'lib');
         const scriptsDir = join(tempDir, 'scripts');
+        const scoutingTemplatesDir = join(tempDir, 'templates', 'scouting');
         const piCalls = join(tempDir, 'pi-calls.log');
         const piState = join(tempDir, 'pi-goal-setting-attempt');
         const modifiedScript = join(tempDir, 'kaseki-agent-modified.sh');
@@ -712,6 +713,7 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         mkdirSync(workspaceRepo, { recursive: true });
         mkdirSync(appLib, { recursive: true });
         mkdirSync(scriptsDir, { recursive: true });
+        mkdirSync(scoutingTemplatesDir, { recursive: true });
         writeFileSync(piCalls, '');
         writeFileSync(join(appLib, 'event-aggregator.js'), '');
         writeFileSync(join(appLib, 'timestamp-tracker.js'), '');
@@ -731,6 +733,12 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         copyFileSync(join(repoRoot, 'scripts', 'restore-disallowed-changes.sh'), join(scriptsDir, 'restore-disallowed-changes.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'auto-lint-cleanup-classification.sh'), join(scriptsDir, 'auto-lint-cleanup-classification.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'artifact-consolidation.sh'), join(scriptsDir, 'lib', 'artifact-consolidation.sh'));
+        for (const templateFile of readdirSync(join(repoRoot, 'templates', 'scouting'))) {
+          copyFileSync(
+            join(repoRoot, 'templates', 'scouting', templateFile),
+            join(scoutingTemplatesDir, templateFile),
+          );
+        }
 
         const workspaceBaseline = join(tempDir, 'workspace-baseline');
         const kasekiLogDir = join(tempDir, 'var-log-kaseki');
@@ -769,6 +777,8 @@ validate_goal_setting_artifact "$1" "$2" "$3"
           piCalls,
           piState,
         });
+
+        expect(() => readFileSync(join(tempDir, 'templates', 'scouting', 'compact.txt'), 'utf8')).not.toThrow();
 
         try {
           execFileSync('bash', [modifiedScript], {
