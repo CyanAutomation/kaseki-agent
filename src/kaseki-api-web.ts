@@ -2891,18 +2891,23 @@ const controllerPage = String.raw`<!doctype html>
           if (statusEl) {
             statusEl.className = 'health-check-status spinner';
           }
-          run(button, button.dataset.probe, {
-            auth: button.dataset.auth === 'true',
-          }).then(({ response }) => {
-            loadRunsList({ preserveOutput: true });
-            if (statusEl) {
-              statusEl.className = response.ok ? 'health-check-status ok' : 'health-check-status bad';
+          void (async () => {
+            let ok = false;
+            try {
+              const result = await run(button, button.dataset.probe, {
+                auth: button.dataset.auth === 'true',
+              });
+              ok = result.response.ok === true;
+            } catch {
+              ok = false;
+            } finally {
+              // A failing probe must always clear its own spinner. In particular,
+              // a Stage 1 gateway failure must not leave the inference probe looking
+              // active after its request has already settled.
+              if (statusEl) statusEl.className = ok ? 'health-check-status ok' : 'health-check-status bad';
+              void loadRunsList({ preserveOutput: true });
             }
-          }).catch(() => {
-            if (statusEl) {
-              statusEl.className = 'health-check-status bad';
-            }
-          });
+          })();
         });
       });
 
