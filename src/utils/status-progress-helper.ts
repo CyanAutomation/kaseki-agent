@@ -24,7 +24,6 @@ export class StatusProgressHelper {
       if (lastFileEvent) {
         const structuredProgress = toStructuredProgress(lastFileEvent);
         if (structuredProgress) {
-          this.refreshEstimatedProgressTimestamp(structuredProgress, lastFileEvent);
           response.progress = structuredProgress;
         }
         return;
@@ -36,7 +35,6 @@ export class StatusProgressHelper {
         if (lastEvent) {
           const structuredProgress = toStructuredProgress(lastEvent, 'running');
           if (structuredProgress) {
-            this.refreshEstimatedProgressTimestamp(structuredProgress, lastEvent);
             response.progress = structuredProgress;
           }
         }
@@ -51,7 +49,6 @@ export class StatusProgressHelper {
         if (lastEvent) {
           const structuredProgress = toStructuredProgress(lastEvent, 'running');
           if (structuredProgress) {
-            this.refreshEstimatedProgressTimestamp(structuredProgress, lastEvent);
             response.progress = structuredProgress;
           }
         }
@@ -61,12 +58,4 @@ export class StatusProgressHelper {
     }
   }
 
-  private refreshEstimatedProgressTimestamp(
-    progress: NonNullable<StatusResponse['progress']>,
-    rawEvent: Record<string, unknown>,
-  ): void {
-    if (rawEvent.timestampEstimated === true) {
-      progress.updatedAt = new Date().toISOString();
-    }
-  }
 }
