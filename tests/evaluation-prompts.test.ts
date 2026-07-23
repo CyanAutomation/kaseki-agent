@@ -329,8 +329,8 @@ set -euo pipefail
 
 FUNCTION_SOURCE="$1"
 SCRIPT_DIR="$2"
-SCOUTING_CANDIDATE_ARTIFACT="$2/scouting-candidate.json"
-GOAL_SETTING_ARTIFACT="$2/goal-setting.json"
+SCOUTING_CANDIDATE_ARTIFACT="$SCRIPT_DIR/scouting-candidate.json"
+GOAL_SETTING_ARTIFACT="$SCRIPT_DIR/goal-setting.json"
 TASK_PROMPT=${JSON.stringify(taskPrompt)}
 KASEKI_CAVEMAN=0
 KASEKI_SCOUTING_PROMPT_DETAIL=${JSON.stringify(promptDetail)}
