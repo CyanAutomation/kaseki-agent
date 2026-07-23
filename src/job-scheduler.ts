@@ -22,6 +22,7 @@ import { clearRunArtifactMetadataCache } from './run-artifact-metadata-cache';
 import { getSecretFilePath } from './secrets/host-secrets-reader';
 import type { ResultCache } from './result-cache';
 import { JobPersistenceManager } from './job-persistence-manager';
+import { EXIT_CODE_SPAWN_FAILED } from './exit-codes';
 
 function isDocsOnlyTaskPrompt(prompt?: string): boolean {
   if (!prompt) {
@@ -659,6 +660,9 @@ export class JobScheduler {
     proc.on('error', (err) => {
       this.processExited.set(jobId, true);
       this.cleanupExitedProcess(jobId);
+      if (job.timeout) {
+        clearTimeout(job.timeout);
+      }
       if (job.finalized) {
         return;
       }
@@ -675,9 +679,24 @@ export class JobScheduler {
       });
       this.finalizeJobIfNeeded(job, {
         status: 'failed',
+        exitCode: EXIT_CODE_SPAWN_FAILED,
+        failureClass: 'spawn_error',
         error: errorMsg,
         completedAt: new Date(),
       });
+      this.failureArtifactWriter.writeFailureArtifacts(
+        job,
+        {
+          attempted: false,
+          ok: false,
+          detail: 'Worker process could not be spawned.',
+        },
+        {
+          stdoutTail: streamState.stdoutTailRef.current,
+          stderrTail: streamState.stderrTailRef.current,
+          lastStage: 'spawn',
+        },
+      );
     });
   }
 
