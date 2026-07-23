@@ -99,28 +99,58 @@ describe('Artifact Consolidation', () => {
     });
 
     it('should aggregate timing data from TSV files', () => {
-      // Simulate TSV to JSON conversion
-      const testFile = path.join(KASEKI_RESULTS_DIR, 'timings-manifest-multi.json');
-      const manifest = {
-        validation_timings: [
-          { command: 'npm run build', elapsed_seconds: 5.2 },
-          { command: 'npm run test', elapsed_seconds: 12.8 },
-        ],
-        pre_validation_timings: [
-          { command: 'npm run type-check', elapsed_seconds: 3.1 },
-        ],
-        stage_timings: [
-          { stage: 'setup', elapsed_seconds: 2.5 },
-          { stage: 'scouting', elapsed_seconds: 45.0 },
-          { stage: 'pi-agent', elapsed_seconds: 120.5 },
-        ],
-      };
-      fs.writeFileSync(testFile, JSON.stringify(manifest, null, 2));
+      const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-timings-consolidation-'));
+      const manifestFile = path.join(testDir, 'timings-manifest.json');
+      const validationFile = path.join(testDir, 'validation-timings.tsv');
+      const preValidationFile = path.join(testDir, 'pre-validation-timings.tsv');
+      const stageFile = path.join(testDir, 'stage-timings.tsv');
+      const helper = path.join(__dirname, '..', 'scripts', 'lib', 'artifact-consolidation.sh');
+      const consolidate = `
+        set -euo pipefail
+        source "$1"
+        consolidate_timings_to_json "$2" "$3" "$4" "$5"
+      `;
 
-      const content = JSON.parse(fs.readFileSync(testFile, 'utf-8'));
-      expect(content.validation_timings).toHaveLength(2);
-      expect(content.stage_timings).toHaveLength(3);
-      expect(content.stage_timings[2].elapsed_seconds).toBe(120.5);
+      try {
+        fs.writeFileSync(validationFile, 'command\telapsed_seconds\nnpm run build\t5.2\nnpm run test\t12.875\n');
+        fs.writeFileSync(preValidationFile, '');
+        fs.writeFileSync(stageFile, 'stage\telapsed_seconds\nsetup\t2.5\nscouting\t45\npi-agent\t120.5\n');
+
+        const args = [
+          '-c',
+          consolidate,
+          'consolidate-timings',
+          helper,
+          manifestFile,
+          validationFile,
+          preValidationFile,
+          stageFile,
+        ];
+        execFileSync('bash', args);
+
+        // Empty inputs are ignored, leaving the initialized array empty.
+        expect(JSON.parse(fs.readFileSync(manifestFile, 'utf-8')).pre_validation_timings).toEqual([]);
+
+        fs.writeFileSync(preValidationFile, 'command\telapsed_seconds\nnpm run type-check\t3.125\n');
+        execFileSync('bash', args);
+
+        expect(JSON.parse(fs.readFileSync(manifestFile, 'utf-8'))).toEqual({
+          validation_timings: [
+            { command: 'npm run build', elapsed_seconds: 5.2 },
+            { command: 'npm run test', elapsed_seconds: 12.875 },
+          ],
+          pre_validation_timings: [
+            { command: 'npm run type-check', elapsed_seconds: 3.125 },
+          ],
+          stage_timings: [
+            { stage: 'setup', elapsed_seconds: 2.5 },
+            { stage: 'scouting', elapsed_seconds: 45 },
+            { stage: 'pi-agent', elapsed_seconds: 120.5 },
+          ],
+        });
+      } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+      }
     });
   });
 
