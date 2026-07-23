@@ -126,6 +126,12 @@ describe('Artifact Consolidation', () => {
           preValidationFile,
           stageFile,
         ];
+        const initialManifest = {
+          validation_timings: [],
+          pre_validation_timings: [],
+          stage_timings: [],
+        };
+        fs.writeFileSync(manifestFile, JSON.stringify(initialManifest));
         execFileSync('bash', args);
 
         // Empty inputs are ignored, leaving the initialized array empty.
