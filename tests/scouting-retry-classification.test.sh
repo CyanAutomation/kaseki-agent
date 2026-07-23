@@ -48,6 +48,7 @@ run_case() {
 
   sed "s#\"\${KASEKI_WORKSPACE_DIR}\"/repo#$workspace_repo#g; s#\${KASEKI_WORKSPACE_DIR}/repo#$workspace_repo#g; s#/workspace/repo#$workspace_repo#g; s#/results#$results_dir#g; s#/app/lib#$app_lib#g" "$REPO_ROOT/kaseki-agent.sh" > "$case_dir/kaseki-agent-modified.sh"
   chmod +x "$case_dir/kaseki-agent-modified.sh"
+  "$REPO_ROOT/tests/helpers/stage-scouting-templates.sh" "$REPO_ROOT" "$case_dir/kaseki-agent-modified.sh"
 
   printf '%s\n' '{"name":"fake-scouting-repo","version":"1.0.0","private":true,"scripts":{"check":"exit 0"},"dependencies":{"fake-dep":"file:deps/fake-dep"}}' > "$fake_repo/package.json"
   printf '%s\n' '# fake scouting repo' > "$fake_repo/README.md"
