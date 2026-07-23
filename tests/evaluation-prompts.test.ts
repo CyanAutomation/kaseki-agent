@@ -273,10 +273,12 @@ build_run_evaluation_prompt
       'is_complex_change_task() {',
       'is_docs_only_task() {',
       'build_scouting_prompt() {',
-      'The JSON object must be concise and useful to the coding agent. Use this schema-style shape (field descriptions only; do not copy this text as output):',
-      'Guidelines for test_impact:',
-      '**Enhanced Guidelines by Change Type**',
-      'Guidelines for critical_change_expectations:',
+      'if [ "$KASEKI_SCOUTING_PROMPT_DETAIL" = "verbose" ] && is_complex_change_task "$task_text"; then',
+      '$SCRIPT_DIR/templates/scouting/compact.txt',
+      '$SCRIPT_DIR/templates/scouting/base.txt',
+      '$SCRIPT_DIR/templates/scouting/detailed-test-impact.txt',
+      '$SCRIPT_DIR/templates/scouting/minimal-test-impact.txt',
+      '$SCRIPT_DIR/templates/scouting/common.txt',
       '$TASK_PROMPT',
       'EOF',
     ];
@@ -301,6 +303,21 @@ build_run_evaluation_prompt
       tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scouting-renderer-'));
       const functionPath = path.join(tmpDir, 'scouting-function.sh');
       const rendererPath = path.join(tmpDir, 'render-scouting-prompt.sh');
+      const templateFixturePath = path.join(tmpDir, 'templates', 'scouting');
+
+      fs.mkdirSync(templateFixturePath, { recursive: true });
+      for (const templateName of [
+        'base.txt',
+        'common.txt',
+        'compact.txt',
+        'detailed-test-impact.txt',
+        'minimal-test-impact.txt',
+      ]) {
+        fs.copyFileSync(
+          path.join(projectRoot, 'templates', 'scouting', templateName),
+          path.join(templateFixturePath, templateName),
+        );
+      }
 
       fs.writeFileSync(functionPath, `${extractScoutingPromptFunction()}\n`, { mode: 0o600 });
       execFileSync('bash', ['-n', functionPath]);
@@ -311,6 +328,7 @@ build_run_evaluation_prompt
 set -euo pipefail
 
 FUNCTION_SOURCE="$1"
+SCRIPT_DIR="$2"
 SCOUTING_CANDIDATE_ARTIFACT="$2/scouting-candidate.json"
 GOAL_SETTING_ARTIFACT="$2/goal-setting.json"
 TASK_PROMPT=${JSON.stringify(taskPrompt)}
