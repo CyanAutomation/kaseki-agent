@@ -5,6 +5,7 @@ import { JobScheduler } from './job-scheduler';
 import { WebhookManager } from './webhook-manager';
 import { secretValueCache } from './secret-value-cache';
 import * as hostSecretsReader from './secrets/host-secrets-reader';
+import { EXIT_CODE_SPAWN_FAILED } from './exit-codes';
 
 // Mock the host-secrets-reader module
 jest.mock('./secrets/host-secrets-reader', () => ({
@@ -201,6 +202,83 @@ describe('JobScheduler timeout lifecycle', () => {
     expect(
       fs.readFileSync(`${runDir}/stderr.log`, 'utf-8').trim().length,
     ).toBeGreaterThan(0);
+  });
+
+  test('child-process spawn errors persist classified failure diagnostics and webhook data', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+    const resultsDir = createResultsDir();
+    const webhookManager = {
+      enqueueWebhook: jest.fn(),
+    } as unknown as WebhookManager;
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir,
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      webhookManager,
+    );
+
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      webhookConfig: { url: 'https://example.com/webhook' },
+    });
+
+    proc.emit('error', new Error('bash executable unavailable'));
+    await jest.runAllTimersAsync();
+    await (
+      scheduler as unknown as { persistJobs: () => Promise<void> }
+    ).persistJobs();
+
+    expect(job).toMatchObject({
+      status: 'failed',
+      exitCode: EXIT_CODE_SPAWN_FAILED,
+      failureClass: 'spawn_error',
+      finalized: true,
+    });
+
+    const persisted = JSON.parse(
+      fs.readFileSync(path.join(resultsDir, '.kaseki-api-jobs.json'), 'utf-8'),
+    ) as { jobs: Array<Record<string, unknown>> };
+    expect(persisted.jobs).toContainEqual(
+      expect.objectContaining({
+        id: job.id,
+        status: 'failed',
+        exitCode: EXIT_CODE_SPAWN_FAILED,
+        failureClass: 'spawn_error',
+      }),
+    );
+
+    expect(
+      JSON.parse(
+        fs.readFileSync(path.join(resultsDir, job.id, 'failure.json'), 'utf-8'),
+      ),
+    ).toMatchObject({
+      failureClass: 'spawn_error',
+      exitCode: EXIT_CODE_SPAWN_FAILED,
+      apiFinalized: true,
+    });
+
+    expect(webhookManager.enqueueWebhook).toHaveBeenCalledWith(
+      job.id,
+      expect.objectContaining({
+        eventType: 'job.failed',
+        data: expect.objectContaining({
+          status: 'failed',
+          exitCode: EXIT_CODE_SPAWN_FAILED,
+          failureClass: 'spawn_error',
+        }),
+      }),
+      job.webhookConfig,
+    );
   });
 
   test('passes parent results directory as host log directory', async () => {
