@@ -22,18 +22,20 @@ export function isExecutionInProgress(status: ExecutionStatus): boolean {
 }
 
 export class StatusPhaseOutcomeHelper {
+  private readonly runningOutcomeHighWater = new Map<string, NonNullable<StatusResponse['phaseOutcome']>>();
+
   constructor(
     private scheduler: JobScheduler,
     private config: KasekiApiConfig
   ) {}
 
   addPhaseOutcome(response: StatusResponse, job: Job, metadata: any): void {
-    const stage = String(response.progress?.stage ?? job.currentStage ?? '').toLowerCase();
     const failed = job.status === 'failed';
     // Estimated events recovered from an un-timestamped Docker tail are useful
     // for display, but must not advance durable phase state.  A buffered tail
     // can contain headings for later stages before those stages run.
     const events = this.readPhaseEvents(job).filter((event) => event.timestampEstimated !== true);
+    const stage = String(response.progress?.stage ?? job.currentStage ?? '').toLowerCase();
     const scoutingEvents = events.filter((event) => this.isScoutingStage(this.eventStage(event)));
     const failedCommand = String(metadata?.failed_command ?? stage).toLowerCase();
     const preAgentValidation = this.isPreAgentValidationFailure(failedCommand);
@@ -48,7 +50,7 @@ export class StatusPhaseOutcomeHelper {
     const weavingStartedAt = this.phaseStartedAt(weavingEvents);
     const scoutingFallbackReason = this.scoutingFallbackReason(job);
 
-    response.phaseOutcome = {
+    const derived: NonNullable<StatusResponse['phaseOutcome']> = {
       scouting: this.resolveScoutingOutcome(
         scoutingFailed,
         scoutingStarted,
@@ -67,6 +69,45 @@ export class StatusPhaseOutcomeHelper {
       ...(weavingStartedAt ? { weavingStartedAt } : {}),
       ...(weavingCompletedAt ? { weavingCompletedAt } : {}),
     };
+    response.phaseOutcome = this.monotonicPhaseOutcome(job, derived);
+  }
+
+  private monotonicPhaseOutcome(
+    job: Job,
+    next: NonNullable<StatusResponse['phaseOutcome']>,
+  ): NonNullable<StatusResponse['phaseOutcome']> {
+    if (job.status !== 'running') {
+      this.runningOutcomeHighWater.delete(job.id);
+      return next;
+    }
+    const previous = this.runningOutcomeHighWater.get(job.id);
+    const merged = previous ? {
+      ...next,
+      scouting: this.moreAdvancedScouting(previous.scouting, next.scouting),
+      weaving: this.moreAdvancedWeaving(previous.weaving, next.weaving),
+      ...(previous.scoutingStartedAt && !next.scoutingStartedAt ? { scoutingStartedAt: previous.scoutingStartedAt } : {}),
+      ...(previous.scoutingCompletedAt && !next.scoutingCompletedAt ? { scoutingCompletedAt: previous.scoutingCompletedAt } : {}),
+      ...(previous.weavingStartedAt && !next.weavingStartedAt ? { weavingStartedAt: previous.weavingStartedAt } : {}),
+      ...(previous.weavingCompletedAt && !next.weavingCompletedAt ? { weavingCompletedAt: previous.weavingCompletedAt } : {}),
+    } : next;
+    this.runningOutcomeHighWater.set(job.id, merged);
+    return merged;
+  }
+
+  private moreAdvancedScouting(
+    previous: NonNullable<StatusResponse['phaseOutcome']>['scouting'],
+    next: NonNullable<StatusResponse['phaseOutcome']>['scouting'],
+  ): NonNullable<StatusResponse['phaseOutcome']>['scouting'] {
+    const rank = (value: string) => ({ not_reached: 0, running: 1, skipped: 2, completed: 2, completed_with_fallback: 2, failed: 3 }[value] ?? 0);
+    return rank(previous) > rank(next) ? previous : next;
+  }
+
+  private moreAdvancedWeaving(
+    previous: NonNullable<StatusResponse['phaseOutcome']>['weaving'],
+    next: NonNullable<StatusResponse['phaseOutcome']>['weaving'],
+  ): NonNullable<StatusResponse['phaseOutcome']>['weaving'] {
+    const rank = (value: string) => ({ not_reached: 0, running: 1, skipped: 2, completed: 2, failed: 3 }[value] ?? 0);
+    return rank(previous) > rank(next) ? previous : next;
   }
 
   private readPhaseEvents(job: Job): Array<Record<string, unknown>> {
