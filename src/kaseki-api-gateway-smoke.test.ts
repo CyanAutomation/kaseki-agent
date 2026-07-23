@@ -311,12 +311,16 @@ describe('LLM Gateway Test', () => {
       process.env.LLM_GATEWAY_URL = 'https://unreachable-gateway-xyz.invalid/v1/responses';
       process.env.LLM_GATEWAY_API_KEY = 'test-key';
 
-      mockFetch.mockRejectedValueOnce(new Error('ENOTFOUND'));
+      mockFetch.mockRejectedValue(new Error('ENOTFOUND'));
 
       const result = await testGatewayConnectivity();
 
       expect(result.status).toBe('error');
       expect(result.detail).toContain('unreachable');
+      expect(result.errorKind).toBe('network');
+      expect(result.attempts).toBe(2);
+      expect(result.retryDelayMs).toBe(250);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
       expect(result.responseTime).toBeGreaterThanOrEqual(0);
     });
 

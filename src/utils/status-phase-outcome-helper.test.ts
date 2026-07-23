@@ -120,6 +120,22 @@ describe('StatusPhaseOutcomeHelper', () => {
     });
   });
 
+  it('does not regress completed scouting or active weaving when a later status read lacks retained events', () => {
+    const job = makeJob({ id: 'job-monotonic' });
+    const scheduler = makeScheduler([{ stage: 'pi coding agent', status: 'started', timestamp: '2026-01-01T00:02:00Z' }]);
+    const helper = new StatusPhaseOutcomeHelper(scheduler, makeConfig(resultsDir));
+
+    const first = makeResponse('pi coding agent');
+    helper.addPhaseOutcome(first, job, {});
+    expect(first.phaseOutcome).toMatchObject({ scouting: 'completed', weaving: 'running' });
+
+    (scheduler.getLiveProgressEvents as jest.Mock).mockReturnValue([]);
+    const second = makeResponse('pre-agent validation');
+    helper.addPhaseOutcome(second, job, {});
+
+    expect(second.phaseOutcome).toMatchObject({ scouting: 'completed', weaving: 'running' });
+  });
+
   it('tolerates malformed progress jsonl lines and unreadable fallback diagnostics', () => {
     const job = makeJob({ id: 'job-malformed' });
     const runDir = path.join(resultsDir, job.id);

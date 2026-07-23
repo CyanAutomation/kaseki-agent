@@ -53,6 +53,9 @@ export interface ConnectivityTestResult {
   remediation?: string; // Error recovery steps
   httpStatus?: number; // HTTP status from /models endpoint
   warning?: string; // Non-fatal issues (e.g., slow response)
+  attempts?: number; // Number of bounded connectivity attempts made
+  retryDelayMs?: number; // Backoff used before the final attempt
+  errorKind?: 'timeout' | 'network' | 'aborted' | 'unexpected';
 }
 
 /**
@@ -154,6 +157,8 @@ export interface GatewayTestResult {
 const GATEWAY_LATENCY_WARNING_MS = 5000;
 // Timeout for /models endpoint (lightweight check)
 const GATEWAY_MODELS_TIMEOUT_MS = 10000;
+const GATEWAY_CONNECTIVITY_ATTEMPTS = 2;
+const GATEWAY_CONNECTIVITY_RETRY_DELAY_MS = 250;
 const PI_PROVIDER_SMOKE_TIMEOUT_MS = (() => {
   const envValue = process.env.KASEKI_PI_PROVIDER_SMOKE_TIMEOUT_MS;
   if (envValue) {
@@ -265,7 +270,8 @@ async function runGatewayStage1Probe(
 ): Promise<ConnectivityTestResult> {
   const stage1Probe = buildStage1ProbeRequest(gatewayUrl);
 
-  try {
+  for (let attempt = 1; attempt <= GATEWAY_CONNECTIVITY_ATTEMPTS; attempt++) {
+    try {
     const fetchStartTime = performance.now();
     const response = await fetchWithTimeout(stage1Probe.endpoint, stage1Probe.init, GATEWAY_MODELS_TIMEOUT_MS);
     const responseTime = Math.round(performance.now() - fetchStartTime);
@@ -288,6 +294,7 @@ async function runGatewayStage1Probe(
           : invalidPathError
             ? 'Gateway request path is invalid. For Cloudflare /compat gateways, preserve the scoped /v1/{account_id}/{gateway_id}/compat path and do not reduce it to /v1/models.'
             : `Gateway returned an error. Verify the gateway is healthy and the URL is correct (${response.status})`,
+        attempts: attempt,
       };
     }
 
@@ -300,27 +307,43 @@ async function runGatewayStage1Probe(
       timestamp,
       authenticationValidated: true,
       ...(warning ? { warning } : {}),
+      attempts: attempt,
     };
-  } catch (error) {
+    } catch (error) {
     const responseTime = Math.round(performance.now() - startTime);
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('Timeout');
-    const isNetwork = errorMessage.includes('fetch') || errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ENOTFOUND');
+    const isTimeout = /timeout/i.test(errorMessage);
+    const isAborted = /abort/i.test(errorMessage);
+    const isNetwork = /fetch|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET/i.test(errorMessage);
+    const errorKind = isTimeout ? 'timeout' : isAborted ? 'aborted' : isNetwork ? 'network' : 'unexpected';
+
+    if (attempt < GATEWAY_CONNECTIVITY_ATTEMPTS && (isTimeout || isAborted || isNetwork)) {
+      await new Promise((resolve) => setTimeout(resolve, GATEWAY_CONNECTIVITY_RETRY_DELAY_MS));
+      continue;
+    }
 
     return {
       status: 'error',
-      detail: `Gateway is unreachable: ${errorMessage}`,
+      detail: `Gateway is unreachable after ${attempt} attempt${attempt === 1 ? '' : 's'} (${errorKind}): ${errorMessage}`,
       gatewayUrl,
       responseTime,
       timestamp,
       authenticationValidated: false,
       remediation: isTimeout
-        ? 'Gateway is slow or not responding. Check gateway health and network connectivity'
-        : isNetwork
-          ? 'Cannot reach gateway endpoint. Verify the URL is reachable and check network/firewall rules'
-          : 'Unexpected error connecting to gateway. Check logs for details',
+        ? 'Gateway timed out. Check gateway health, DNS/TLS reachability, and upstream latency before retrying.'
+        : isAborted
+          ? 'The connectivity probe was aborted. Check controller egress, proxy timeouts, and gateway availability before retrying.'
+          : isNetwork
+            ? 'Cannot reach the gateway endpoint. Verify DNS, URL, firewall/proxy rules, and controller egress before retrying.'
+            : 'Unexpected error connecting to gateway. Check controller logs and gateway health before retrying.',
+      attempts: attempt,
+      retryDelayMs: attempt > 1 ? GATEWAY_CONNECTIVITY_RETRY_DELAY_MS : undefined,
+      errorKind,
     };
+    }
   }
+
+  throw new Error('Gateway connectivity retry loop exited unexpectedly');
 }
 
 export function createPiProviderSmokeWorkspace(): string {
