@@ -4,6 +4,8 @@ import * as os from 'os';
 import {
   cleanupCacheDir,
   cleanupOldRuns,
+  createCleanupPlan,
+  getActiveRunNames,
   getCacheEntryRuns,
   getDirectorySize,
   listRuns,
@@ -80,7 +82,12 @@ describe('cleanup-manager', () => {
 
       const runs = listRuns(resultsDir);
       // kaseki-2 newest (now - 100000), kaseki-5 (now - 200000), kaseki-1 (now - 300000), kaseki-3 oldest (now - 400000)
-      expect(runs.map(r => r.name)).toEqual(['kaseki-2', 'kaseki-5', 'kaseki-1', 'kaseki-3']);
+      expect(runs.map((r) => r.name)).toEqual([
+        'kaseki-2',
+        'kaseki-5',
+        'kaseki-1',
+        'kaseki-3',
+      ]);
     });
   });
 
@@ -91,7 +98,10 @@ describe('cleanup-manager', () => {
       for (let i = 1; i <= 5; i++) {
         const runPath = path.join(resultsDir, `kaseki-${i}`);
         fs.mkdirSync(runPath);
-        fs.writeFileSync(path.join(runPath, 'metadata.json'), '{"instance":"kaseki-' + i + '"}');
+        fs.writeFileSync(
+          path.join(runPath, 'metadata.json'),
+          '{"instance":"kaseki-' + i + '"}',
+        );
         const mtime = now - 500000 + i * 100000;
         fs.utimesSync(runPath, mtime, mtime);
       }
@@ -147,7 +157,10 @@ describe('cleanup-manager', () => {
         const runPath = path.join(resultsDir, `kaseki-${i}`);
         fs.mkdirSync(runPath);
         // Write test files with known sizes
-        fs.writeFileSync(path.join(runPath, 'metadata.json'), JSON.stringify({ instance: `kaseki-${i}` }, null, 2));
+        fs.writeFileSync(
+          path.join(runPath, 'metadata.json'),
+          JSON.stringify({ instance: `kaseki-${i}` }, null, 2),
+        );
         fs.writeFileSync(path.join(runPath, 'git.diff'), 'x'.repeat(100000)); // 100KB
         const mtime = now - 300000 + i * 100000;
         fs.utimesSync(runPath, mtime, mtime);
@@ -175,7 +188,10 @@ describe('cleanup-manager', () => {
       const cacheEntry2 = path.join(cacheDir, 'cache-def456');
       fs.mkdirSync(cacheEntry1, { recursive: true });
       fs.mkdirSync(cacheEntry2, { recursive: true });
-      fs.writeFileSync(path.join(cacheEntry1, '.used-by-runs'), 'kaseki-1\nkaseki-2');
+      fs.writeFileSync(
+        path.join(cacheEntry1, '.used-by-runs'),
+        'kaseki-1\nkaseki-2',
+      );
       fs.writeFileSync(path.join(cacheEntry2, '.used-by-runs'), 'kaseki-3');
 
       const result = await cleanupOldRuns(resultsDir, cacheDir, 1, false);
@@ -201,12 +217,18 @@ describe('cleanup-manager', () => {
       // Create cache entry used by kaseki-1 and kaseki-2 (both will be deleted)
       const cacheEntry1 = path.join(cacheDir, 'cache-abc123');
       fs.mkdirSync(cacheEntry1, { recursive: true });
-      fs.writeFileSync(path.join(cacheEntry1, '.used-by-runs'), 'kaseki-1\nkaseki-2');
+      fs.writeFileSync(
+        path.join(cacheEntry1, '.used-by-runs'),
+        'kaseki-1\nkaseki-2',
+      );
 
       // Create cache entry used by kaseki-1 and kaseki-4 (kaseki-4 is kept)
       const cacheEntry2 = path.join(cacheDir, 'cache-def456');
       fs.mkdirSync(cacheEntry2, { recursive: true });
-      fs.writeFileSync(path.join(cacheEntry2, '.used-by-runs'), 'kaseki-1\nkaseki-4');
+      fs.writeFileSync(
+        path.join(cacheEntry2, '.used-by-runs'),
+        'kaseki-1\nkaseki-4',
+      );
 
       const result = await cleanupOldRuns(resultsDir, cacheDir, 2, false);
 
@@ -271,6 +293,52 @@ describe('cleanup-manager', () => {
       expect(fs.existsSync(path.join(resultsDir, 'kaseki-2'))).toBe(false);
       expect(fs.existsSync(path.join(resultsDir, 'kaseki-3'))).toBe(false);
     });
+
+    it('excludes an old active run and preserves its cache with retention count 0', async () => {
+      const now = Date.now() / 1000;
+      for (let i = 1; i <= 3; i++) {
+        const runPath = path.join(resultsDir, `kaseki-${i}`);
+        fs.mkdirSync(runPath);
+        fs.utimesSync(runPath, now - (4 - i) * 1000, now - (4 - i) * 1000);
+      }
+      fs.writeFileSync(
+        path.join(resultsDir, '.kaseki-api-jobs.json'),
+        JSON.stringify({
+          jobs: [
+            { id: 'kaseki-1', status: 'running' },
+            { id: 'kaseki-2', status: 'completed' },
+            { id: 'kaseki-3', status: 'failed' },
+          ],
+        }),
+      );
+      const activeCache = path.join(cacheDir, 'active-cache');
+      const terminalCache = path.join(cacheDir, 'terminal-cache');
+      fs.mkdirSync(activeCache);
+      fs.mkdirSync(terminalCache);
+      fs.writeFileSync(path.join(activeCache, '.used-by-runs'), 'kaseki-1\n');
+      fs.writeFileSync(
+        path.join(terminalCache, '.used-by-runs'),
+        'kaseki-2\nkaseki-3\n',
+      );
+
+      const plan = createCleanupPlan(resultsDir, 0);
+      expect(getActiveRunNames(resultsDir)).toEqual(new Set(['kaseki-1']));
+      expect(plan.runsToDelete.map((run) => run.name)).toEqual([
+        'kaseki-3',
+        'kaseki-2',
+      ]);
+      expect(plan.retainedRunNames).toEqual(new Set(['kaseki-1']));
+
+      const result = await cleanupOldRuns(resultsDir, cacheDir, 0, false);
+
+      expect(result.deletedCount).toBe(2);
+      expect(fs.existsSync(path.join(resultsDir, 'kaseki-1'))).toBe(true);
+      expect(fs.existsSync(path.join(resultsDir, 'kaseki-2'))).toBe(false);
+      expect(fs.existsSync(path.join(resultsDir, 'kaseki-3'))).toBe(false);
+      expect(fs.existsSync(activeCache)).toBe(true);
+      expect(fs.existsSync(terminalCache)).toBe(false);
+      expect(result.cachedEntriesRemoved).toBe(1);
+    });
   });
 
   describe('edge cases', () => {
@@ -312,8 +380,12 @@ describe('cleanup-manager', () => {
 
 describe('getDirectorySize', () => {
   let tmp: string;
-  beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'getdirsize-')); });
-  afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'getdirsize-'));
+  });
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
 
   it('returns 0 for empty directory', () => {
     expect(getDirectorySize(tmp)).toBe(0);
@@ -334,8 +406,12 @@ describe('getDirectorySize', () => {
 
 describe('getCacheEntryRuns', () => {
   let tmp: string;
-  beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cacheentry-')); });
-  afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cacheentry-'));
+  });
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
 
   it('returns empty set when .used-by-runs absent', () => {
     expect(getCacheEntryRuns(tmp).size).toBe(0);
@@ -357,8 +433,12 @@ describe('getCacheEntryRuns', () => {
 
 describe('shouldRemoveCacheEntry', () => {
   let tmp: string;
-  beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'shouldremove-')); });
-  afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'shouldremove-'));
+  });
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
 
   it('returns false when no .used-by-runs file (unknown origin)', () => {
     expect(shouldRemoveCacheEntry(tmp, new Set(['kaseki-1']))).toBe(false);
@@ -382,11 +462,17 @@ describe('shouldRemoveCacheEntry', () => {
 
 describe('cleanupCacheDir', () => {
   let tmp: string;
-  beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanupcache-')); });
-  afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanupcache-'));
+  });
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
 
   it('returns 0 when cache dir does not exist', () => {
-    expect(cleanupCacheDir(path.join(tmp, 'missing'), new Set(), false)).toBe(0);
+    expect(cleanupCacheDir(path.join(tmp, 'missing'), new Set(), false)).toBe(
+      0,
+    );
   });
 
   it('removes cache entries whose runs are all deleted', () => {

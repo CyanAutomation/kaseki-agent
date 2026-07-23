@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as readline from 'readline';
-import { cleanupOldRuns } from '../src/cleanup-manager';
+import { cleanupOldRuns, createCleanupPlan } from '../src/cleanup-manager';
 import { CleanupCommand } from '../src/cli/commands/CleanupCommand';
 import type { ConfigManager } from '../src/config/ConfigManager';
 
@@ -11,10 +11,12 @@ jest.mock('readline', () => ({
 }));
 jest.mock('../src/cleanup-manager', () => ({
   cleanupOldRuns: jest.fn(),
+  createCleanupPlan: jest.fn(),
 }));
 
 const createInterfaceMock = jest.mocked(readline.createInterface);
 const cleanupOldRunsMock = jest.mocked(cleanupOldRuns);
+const createCleanupPlanMock = jest.mocked(createCleanupPlan);
 
 type InterfaceEvent = 'close' | 'error';
 
@@ -32,7 +34,9 @@ function preparePrompt(answer?: string): Map<InterfaceEvent, () => void> {
       }
     }),
   };
-  createInterfaceMock.mockReturnValue(terminal as unknown as readline.Interface);
+  createInterfaceMock.mockReturnValue(
+    terminal as unknown as readline.Interface,
+  );
   return handlers;
 }
 
@@ -56,13 +60,27 @@ describe('CleanupCommand confirmation', () => {
     process.env.KASEKI_RESULTS_DIR = resultsDir;
     process.env.KASEKI_CACHE_DIR = path.join(tempDir, 'cache');
     originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
-    Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: true });
+    Object.defineProperty(process.stdin, 'isTTY', {
+      configurable: true,
+      value: true,
+    });
 
     jest.spyOn(console, 'log').mockImplementation(() => undefined);
     cleanupOldRunsMock.mockResolvedValue({
       deletedCount: 1,
       freedBytes: 0,
       cachedEntriesRemoved: 0,
+    });
+    createCleanupPlanMock.mockReturnValue({
+      allRuns: [
+        { name: 'kaseki-2', path: path.join(resultsDir, 'kaseki-2'), mtime: 2 },
+        { name: 'kaseki-1', path: path.join(resultsDir, 'kaseki-1'), mtime: 1 },
+      ],
+      activeRunNames: new Set(),
+      runsToDelete: [
+        { name: 'kaseki-1', path: path.join(resultsDir, 'kaseki-1'), mtime: 1 },
+      ],
+      retainedRunNames: new Set(['kaseki-2']),
     });
   });
 
@@ -85,13 +103,16 @@ describe('CleanupCommand confirmation', () => {
     return command.execute(['--count=1', ...args]);
   }
 
-  it.each(['y', 'yes', ' YES '])('cleans up after explicit confirmation %j', async answer => {
-    preparePrompt(answer);
+  it.each(['y', 'yes', ' YES '])(
+    'cleans up after explicit confirmation %j',
+    async (answer) => {
+      preparePrompt(answer);
 
-    await expect(execute()).resolves.toBe(0);
+      await expect(execute()).resolves.toBe(0);
 
-    expect(cleanupOldRunsMock).toHaveBeenCalledTimes(1);
-  });
+      expect(cleanupOldRunsMock).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('rejects a no response', async () => {
     preparePrompt('no');
@@ -128,7 +149,10 @@ describe('CleanupCommand confirmation', () => {
   });
 
   it('rejects non-TTY input without opening a prompt', async () => {
-    Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: false });
+    Object.defineProperty(process.stdin, 'isTTY', {
+      configurable: true,
+      value: false,
+    });
 
     await expect(execute()).resolves.toBe(0);
 
@@ -137,7 +161,10 @@ describe('CleanupCommand confirmation', () => {
   });
 
   it('uses --force as the non-interactive cleanup path', async () => {
-    Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: false });
+    Object.defineProperty(process.stdin, 'isTTY', {
+      configurable: true,
+      value: false,
+    });
 
     await expect(execute(['--force'])).resolves.toBe(0);
 
