@@ -3,12 +3,15 @@
  * Manage retention of kaseki run artifacts
  */
 
-import * as path from 'path';
 import * as fs from 'fs';
 import * as readline from 'readline';
 import { BaseCommand } from '../BaseCommand';
 import { createLogger } from '../../logger';
-import { cleanupOldRuns } from '../../cleanup-manager';
+import {
+  cleanupOldRuns,
+  createCleanupPlan,
+  type CleanupPlan,
+} from '../../cleanup-manager';
 import type { ConfigManager } from '../../config/ConfigManager';
 
 const logger = createLogger('cleanup-cmd');
@@ -25,7 +28,9 @@ export class CleanupCommand extends BaseCommand {
       // Parse flags
       const dryRun = flags.has('dry-run') || flags.has('dry_run');
       const force = flags.has('force');
-      let retentionCount = parseInt(flags.get('count') as string, 10) || 5;
+      const countFlag = flags.get('count');
+      let retentionCount =
+        typeof countFlag === 'string' ? parseInt(countFlag, 10) : 5;
 
       // Get retention count from environment or use default
       if (process.env.KASEKI_RETENTION_RUNS) {
@@ -39,7 +44,8 @@ export class CleanupCommand extends BaseCommand {
       }
 
       // Get paths
-      const resultsDir = process.env.KASEKI_RESULTS_DIR || '/agents/kaseki-results';
+      const resultsDir =
+        process.env.KASEKI_RESULTS_DIR || '/agents/kaseki-results';
       const cacheDir = process.env.KASEKI_CACHE_DIR || '/agents/kaseki-cache';
 
       // Check if results directory exists
@@ -48,17 +54,19 @@ export class CleanupCommand extends BaseCommand {
         return 0;
       }
 
-      // Count existing runs
-      const runCount = this.countRuns(resultsDir);
+      // Consult the scheduler-owned durable job index before presenting any run
+      // as deletable. cleanupOldRuns reads it again immediately before deletion.
+      const plan = createCleanupPlan(resultsDir, retentionCount);
+      const runCount = plan.allRuns.length;
 
-      if (runCount <= retentionCount) {
+      if (plan.runsToDelete.length === 0) {
         console.log(
-          `✓ No cleanup needed: ${runCount} run(s) found, keeping ${retentionCount}`
+          `✓ No cleanup needed: ${runCount} run(s) found, keeping ${retentionCount}`,
         );
         return 0;
       }
 
-      const runsToDelete = runCount - retentionCount;
+      const runsToDelete = plan.runsToDelete.length;
 
       // Display summary
       console.log('Cleanup Summary');
@@ -69,7 +77,7 @@ export class CleanupCommand extends BaseCommand {
       console.log('');
 
       // List runs with markers
-      this.displayRuns(resultsDir, runsToDelete);
+      this.displayRuns(plan);
       console.log('');
 
       // Handle dry-run
@@ -80,7 +88,9 @@ export class CleanupCommand extends BaseCommand {
 
       // Ask for confirmation unless --force is set
       if (!force) {
-        const confirm = await this.askConfirmation('Proceed with deletion? (y/N) ');
+        const confirm = await this.askConfirmation(
+          'Proceed with deletion? (y/N) ',
+        );
         if (!confirm) {
           console.log('Cancelled');
           return 0;
@@ -89,12 +99,17 @@ export class CleanupCommand extends BaseCommand {
 
       // Execute cleanup
       console.log('Executing cleanup...\n');
-      const result = await cleanupOldRuns(resultsDir, cacheDir, retentionCount, false);
+      const result = await cleanupOldRuns(
+        resultsDir,
+        cacheDir,
+        retentionCount,
+        false,
+      );
 
       console.log('✓ Cleanup complete:');
       console.log(`  Deleted runs:        ${result.deletedCount}`);
       console.log(
-        `  Freed space:         ${(result.freedBytes / 1024 / 1024).toFixed(2)} MB`
+        `  Freed space:         ${(result.freedBytes / 1024 / 1024).toFixed(2)} MB`,
       );
       console.log(`  Cache entries removed: ${result.cachedEntriesRemoved}`);
 
@@ -102,54 +117,23 @@ export class CleanupCommand extends BaseCommand {
     } catch (error) {
       logger.error(`Cleanup failed: ${error}`);
       console.error(
-        `❌ Cleanup failed: ${error instanceof Error ? error.message : String(error)}`
+        `❌ Cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
       );
       return 1;
     }
   }
 
   /**
-   * Count runs in the results directory
-   */
-  private countRuns(resultsDir: string): number {
-    try {
-      const entries = fs.readdirSync(resultsDir);
-      return entries.filter((entry) => entry.match(/^kaseki-\d+$/)).length;
-    } catch {
-      return 0;
-    }
-  }
-
-  /**
    * Display runs with KEEP/DELETE markers
    */
-  private displayRuns(resultsDir: string, runsToDelete: number): void {
+  private displayRuns(plan: CleanupPlan): void {
     try {
-      const entries = fs.readdirSync(resultsDir);
-      const runs: { name: string; path: string; mtime: number }[] = [];
-
-      for (const entry of entries) {
-        if (!entry.match(/^kaseki-\d+$/)) {
-          continue;
-        }
-
-        const fullPath = path.join(resultsDir, entry);
-        const stats = fs.statSync(fullPath);
-        runs.push({
-          name: entry,
-          path: fullPath,
-          mtime: stats.mtimeMs,
-        });
-      }
-
-      // Sort by mtime descending (newest first)
-      runs.sort((a, b) => b.mtime - a.mtime);
+      const runsToDelete = new Set(plan.runsToDelete.map((run) => run.name));
 
       console.log('Runs (newest first):');
-      for (let i = 0; i < runs.length; i++) {
-        const run = runs[i];
+      for (const run of plan.allRuns) {
         const modTime = new Date(run.mtime).toISOString().substring(0, 19);
-        const marker = i < runs.length - runsToDelete ? '[KEEP]' : '[DELETE]';
+        const marker = runsToDelete.has(run.name) ? '[DELETE]' : '[KEEP]';
         console.log(`  ${marker} ${run.name}  (${modTime})`);
       }
     } catch (error) {

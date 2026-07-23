@@ -14,10 +14,72 @@ export interface CleanupResult {
 /**
  * Run metadata with directory path and mtime
  */
-interface RunInfo {
+export interface RunInfo {
   name: string;
   path: string;
   mtime: number;
+}
+
+export interface CleanupPlan {
+  allRuns: RunInfo[];
+  activeRunNames: Set<string>;
+  runsToDelete: RunInfo[];
+  retainedRunNames: Set<string>;
+}
+
+const JOBS_INDEX_NAME = '.kaseki-api-jobs.json';
+
+/** Read the scheduler-owned durable index and return every queued or running run ID. */
+export function getActiveRunNames(resultsDir: string): Set<string> {
+  const indexPath = path.join(resultsDir, JOBS_INDEX_NAME);
+  if (!fs.existsSync(indexPath)) return new Set();
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(indexPath, 'utf-8')) as {
+      jobs?: Array<{ id?: unknown; status?: unknown }>;
+    };
+    if (parsed.jobs !== undefined && !Array.isArray(parsed.jobs)) {
+      throw new Error('jobs must be an array');
+    }
+
+    return new Set(
+      (parsed.jobs ?? [])
+        .filter((job) => job.status === 'queued' || job.status === 'running')
+        .map((job) => job.id)
+        .filter(
+          (id): id is string =>
+            typeof id === 'string' && /^kaseki-\d+$/.test(id),
+        ),
+    );
+  } catch (error) {
+    // Deleting nothing is safer than guessing when scheduler state is unavailable.
+    throw new Error(`Unable to read active runs from ${indexPath}`, {
+      cause: error,
+    });
+  }
+}
+
+/** Build a retention plan after excluding active scheduler jobs. */
+export function createCleanupPlan(
+  resultsDir: string,
+  retentionCount: number,
+): CleanupPlan {
+  const allRuns = listRuns(resultsDir);
+  const activeRunNames = getActiveRunNames(resultsDir);
+  const terminalRuns = allRuns.filter((run) => !activeRunNames.has(run.name));
+  const runsToDelete = terminalRuns.slice(retentionCount);
+  const deletedRunNames = new Set(runsToDelete.map((run) => run.name));
+  // Calculate this after active-run exclusion so their cache associations survive.
+  const retainedRunNames = new Set(
+    allRuns
+      .filter((run) => !deletedRunNames.has(run.name))
+      .map((run) => run.name),
+  );
+  for (const activeRunName of activeRunNames) {
+    retainedRunNames.add(activeRunName);
+  }
+
+  return { allRuns, activeRunNames, runsToDelete, retainedRunNames };
 }
 
 /**
@@ -99,7 +161,10 @@ export function getCacheEntryRuns(cacheEntryPath: string): Set<string> {
       }
     }
   } catch (error) {
-    console.debug(`Error reading cache entry runs from ${usedByRunsFile}:`, error);
+    console.debug(
+      `Error reading cache entry runs from ${usedByRunsFile}:`,
+      error,
+    );
   }
 
   return runSet;
@@ -116,7 +181,9 @@ export function shouldRemoveCacheEntry(
 ): boolean {
   const associatedRuns = getCacheEntryRuns(cacheEntryPath);
   if (associatedRuns.size === 0) return false;
-  return Array.from(associatedRuns).every((runName) => !retainedRunNames.has(runName));
+  return Array.from(associatedRuns).every(
+    (runName) => !retainedRunNames.has(runName),
+  );
 }
 
 /**
@@ -138,7 +205,8 @@ export function cleanupCacheDir(
       try {
         if (!fs.statSync(cacheEntryPath).isDirectory()) continue;
         if (shouldRemoveCacheEntry(cacheEntryPath, retainedRunNames)) {
-          if (!dryRun) fs.rmSync(cacheEntryPath, { recursive: true, force: true });
+          if (!dryRun)
+            fs.rmSync(cacheEntryPath, { recursive: true, force: true });
           removed++;
         }
       } catch (error) {
@@ -175,11 +243,11 @@ export async function cleanupOldRuns(
     dryRun,
   };
 
-  const allRuns = listRuns(resultsDir);
-  const runsToDelete = allRuns.slice(retentionCount);
+  const { runsToDelete, retainedRunNames } = createCleanupPlan(
+    resultsDir,
+    retentionCount,
+  );
   if (runsToDelete.length === 0) return result;
-
-  const retainedRunNames = new Set(allRuns.slice(0, retentionCount).map((r) => r.name));
 
   for (const run of runsToDelete) {
     try {
@@ -191,7 +259,11 @@ export async function cleanupOldRuns(
     }
   }
 
-  result.cachedEntriesRemoved = cleanupCacheDir(cacheDir, retainedRunNames, dryRun);
+  result.cachedEntriesRemoved = cleanupCacheDir(
+    cacheDir,
+    retainedRunNames,
+    dryRun,
+  );
 
   return result;
 }
