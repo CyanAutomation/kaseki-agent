@@ -978,74 +978,6 @@ run_node_subprocess() {
   return 0
 }
 
-# Phase 3B: Consolidate timing TSV files into timings-manifest.json
-consolidate_timings_to_json() {
-  local output_file="$1"
-  local validation_timings="${2:-${KASEKI_RESULTS_DIR}/validation-timings.tsv}"
-  local pre_validation_timings="${3:-${KASEKI_RESULTS_DIR}/pre-validation-timings.tsv}"
-  local stage_timings="${4:-${KASEKI_RESULTS_DIR}/stage-timings.tsv}"
-  
-  if [ ! -f "$output_file" ]; then
-    printf '{"validation_timings": [], "pre_validation_timings": [], "stage_timings": []}\n' > "$output_file"
-  fi
-  
-  # Convert TSV files to JSON arrays and merge into manifest
-  local validation_json pre_validation_json stage_json
-  if [ -f "$validation_timings" ] && [ -s "$validation_timings" ]; then
-    validation_json=$(tail -n +2 "$validation_timings" | jq -R 'split("\t") | {command: .[0], elapsed_seconds: (.[1] | tonumber)}' | jq -s '.' 2>/dev/null)
-    [ -n "$validation_json" ] && jq --argjson data "$validation_json" '.validation_timings = $data' "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
-  fi
-
-  if [ -f "$pre_validation_timings" ] && [ -s "$pre_validation_timings" ]; then
-    pre_validation_json=$(tail -n +2 "$pre_validation_timings" | jq -R 'split("\t") | {command: .[0], elapsed_seconds: (.[1] | tonumber)}' | jq -s '.' 2>/dev/null)
-    [ -n "$pre_validation_json" ] && jq --argjson data "$pre_validation_json" '.pre_validation_timings = $data' "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
-  fi
-  
-  if [ -f "$stage_timings" ] && [ -s "$stage_timings" ]; then
-    stage_json=$(tail -n +2 "$stage_timings" | jq -R 'split("\t") | {stage: .[0], elapsed_seconds: (.[1] | tonumber)}' | jq -s '.' 2>/dev/null)
-    [ -n "$stage_json" ] && jq --argjson data "$stage_json" '.stage_timings = $data' "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
-  fi
-}
-
-# Phase 3C: Consolidate stderr files into phase-errors.jsonl
-consolidate_phase_errors() {
-  local output_file="$1"
-  shift
-  local -a stderr_files=("$@")
-  
-  : > "$output_file"  # Initialize empty JSONL
-  
-  local stderr_file phase_name
-  for stderr_file in "${stderr_files[@]}"; do
-    if [ -f "$stderr_file" ] && [ -s "$stderr_file" ]; then
-      phase_name=$(basename "$stderr_file" -stderr.log)
-      while IFS= read -r line || [ -n "$line" ]; do
-        jq -n --arg phase "$phase_name" --arg msg "$line" '{phase: $phase, message: $msg, timestamp: (now | todate)}' >> "$output_file"
-      done < "$stderr_file"
-    fi
-  done
-}
-
-# Phase 3D: Consolidate validation error files into artifact-validation-errors.jsonl
-consolidate_validation_errors() {
-  local output_file="$1"
-  shift
-  local -a error_files=("$@")
-  
-  : > "$output_file"  # Initialize empty JSONL
-  
-  local error_file phase_name
-  for error_file in "${error_files[@]}"; do
-    if [ -f "$error_file" ] && [ -s "$error_file" ]; then
-      phase_name=$(basename "$error_file" -validation-errors.jsonl)
-      while IFS= read -r line || [ -n "$line" ]; do
-        [ -z "$line" ] && continue
-        jq --arg phase "$phase_name" '. + {phase: $phase}' <<< "$line" >> "$output_file" 2>/dev/null || true
-      done < "$error_file"
-    fi
-  done
-}
-
 # Validate that a variable contains only numeric digits (for use before arithmetic)
 validate_numeric() {
   local var_name="$1"
@@ -3357,13 +3289,9 @@ EOF
   fi
   
   # Phase 3B, 3C, 3D: Consolidate artifacts before finalizing
-  consolidate_timings_to_json "${KASEKI_RESULTS_DIR}"/timings-manifest.json "${VALIDATION_TIMINGS_FILE}" "${PRE_VALIDATION_TIMINGS_FILE}"
-  consolidate_phase_errors "${KASEKI_RESULTS_DIR}"/phase-errors.jsonl "${KASEKI_RESULTS_DIR}"/critical-change-expectations.log "${KASEKI_RESULTS_DIR}"/summarizer-stderr.log "${KASEKI_RESULTS_DIR}"/baseline-npm-ci.log
-  consolidate_validation_errors "${KASEKI_RESULTS_DIR}"/artifact-validation-errors.jsonl "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl "${KASEKI_RESULTS_DIR}"/goal-setting-validation-errors.jsonl "${KASEKI_RESULTS_DIR}"/goal-check-validation-errors.jsonl
-  
   maybe_call_finish_helper write_failure_json "$STATUS"
   maybe_call_finish_helper write_repo_memory_summary
-  maybe_call_finish_helper write_metadata "$STATUS"
+  finalize_artifacts_and_publish_status "${KASEKI_RESULTS_DIR}" write_metadata "$STATUS" "${VALIDATION_TIMINGS_FILE}" "${PRE_VALIDATION_TIMINGS_FILE}"
   maybe_call_finish_helper remove_low_value_artifacts
   exit "$STATUS"
 }
