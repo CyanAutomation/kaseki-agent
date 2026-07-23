@@ -161,27 +161,58 @@ describe('Artifact Consolidation', () => {
   });
 
   describe('artifact-validation-errors.jsonl consolidation', () => {
-    it('should create valid JSONL from validation error sources', () => {
-      const testFile = path.join(KASEKI_RESULTS_DIR, 'artifact-validation-errors.jsonl');
+    let testDir: string;
 
-      // Simulate JSONL error entries
-      const errors = [
-        { phase: 'scouting', error: 'validation failed', code: 'E001' },
-        { phase: 'goal-setting', error: 'schema mismatch', code: 'E002' },
-        { phase: 'goal-check', error: 'type error', code: 'E003' },
+    beforeEach(() => {
+      testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-validation-errors-'));
+    });
+
+    afterEach(() => {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    });
+
+    it('consolidates actual validation error sources into valid JSONL', () => {
+      const outputFile = path.join(testDir, 'artifact-validation-errors.jsonl');
+      const helper = path.join(__dirname, '..', 'scripts', 'lib', 'artifact-consolidation.sh');
+      const sourceErrors = [
+        { source: 'scouting', error: 'validation failed', code: 'E001' },
+        { source: 'goal-setting', error: 'schema mismatch\nrequired field missing', code: 'E002' },
+        { source: 'goal-check', error: 'type error', code: 'E003' },
       ];
-
-      const jsonlContent = errors.map(e => JSON.stringify(e)).join('\n') + '\n';
-      fs.writeFileSync(testFile, jsonlContent);
-
-      const lines = fs.readFileSync(testFile, 'utf-8').trim().split('\n');
-      expect(lines).toHaveLength(3);
-
-      lines.forEach((line, _i) => {
-        const obj = JSON.parse(line);
-        expect(obj).toHaveProperty('phase');
-        expect(obj).toHaveProperty('error');
+      const sourceFiles = sourceErrors.map(({ source, error, code }) => {
+        const sourceFile = path.join(testDir, `${source}-validation-errors.jsonl`);
+        fs.writeFileSync(sourceFile, `${JSON.stringify({ error, code })}\n`);
+        return sourceFile;
       });
+
+      // Malformed source records are ignored rather than copied to the output.
+      fs.appendFileSync(sourceFiles[2], '{"error":"truncated"\n');
+
+      const consolidate = `
+        set -euo pipefail
+        source "$1"
+        shift
+        consolidate_validation_errors "$@"
+      `;
+      execFileSync('bash', [
+        '-c',
+        consolidate,
+        'consolidate-validation-errors',
+        helper,
+        outputFile,
+        ...sourceFiles,
+      ]);
+
+      const lines = fs.readFileSync(outputFile, 'utf-8').trim().split('\n');
+      const records = lines.map(line => JSON.parse(line));
+
+      expect(lines).toHaveLength(sourceErrors.length);
+      expect(records).toEqual(sourceErrors.map(({ source, error, code }) => ({
+        error,
+        code,
+        phase: source,
+      })));
+      expect(records[1].error).toBe('schema mismatch\nrequired field missing');
     });
   });
 
