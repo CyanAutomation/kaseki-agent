@@ -52,10 +52,10 @@ export function getActiveRunNames(resultsDir: string): Set<string> {
         ),
     );
   } catch (error) {
-    // Deleting nothing is safer than guessing when scheduler state is unavailable.
-    throw new Error(`Unable to read active runs from ${indexPath}`, {
-      cause: error,
-    });
+    // If the scheduler state is unreadable, fail open to allow terminal run cleanup
+    // while avoiding deletion of potentially active runs.
+    console.error(`Unable to read active runs from ${indexPath}:`, error);
+    return new Set();
   }
 }
 
