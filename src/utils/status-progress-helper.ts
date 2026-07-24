@@ -43,7 +43,10 @@ export class StatusProgressHelper {
       if (typeof this.scheduler.getLiveDockerLogTail === 'function') {
         const dockerEvents = progressEventsFromDockerLogTail(
           this.scheduler.getLiveDockerLogTail(job.id, 300) ?? undefined,
-          job.startedAt?.toISOString()
+          // Docker's in-memory tail often has no per-line timestamp. In that
+          // case this is the time the API observed the active stage, not the
+          // time the job was originally queued.
+          new Date().toISOString()
         );
         const lastEvent = dockerEvents[dockerEvents.length - 1];
         if (lastEvent) {

@@ -147,6 +147,22 @@ function collectDiagnostics(runDir: string): AnalysisResponse['diagnostics'] | u
   };
 }
 
+function safelyReadAnalysisArtifact<T>(
+  artifact: string,
+  warnings: string[],
+  reader: () => T
+): T | undefined {
+  try {
+    return reader();
+  } catch {
+    // Analysis artifacts are produced independently while a run is finalizing.
+    // One truncated or malformed optional file must not turn the whole endpoint
+    // into a 500 response.
+    warnings.push(`Could not read ${artifact}; it may be incomplete or malformed.`);
+    return undefined;
+  }
+}
+
 function readStructuredEventSnapshot(
   scheduler: JobScheduler,
   config: KasekiApiConfig,
@@ -190,7 +206,9 @@ function readStructuredEventSnapshot(
   ) {
     const dockerEvents = progressEventsFromDockerLogTail(
       scheduler.getLiveDockerLogTail(job.id, 300) ?? undefined,
-      job.startedAt?.toISOString()
+      // Timestamp-less Docker headings are a current tail observation. Using
+      // job.startedAt made newly observed stages appear stale immediately.
+      new Date().toISOString()
     );
     for (const event of dockerEvents) {
       events.push(normalizeProgressEvent(event));
@@ -472,6 +490,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
         exitCode: job.exitCode,
         failureClass: job.failureClass
       };
+      const analysisWarnings: string[] = [];
 
       // Add timing
       if (job.startedAt) {
@@ -482,57 +501,70 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
       // Try to read metadata
       const metadataPath = path.join(runDir, 'metadata.json');
       if (fs.existsSync(metadataPath)) {
-        const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
-        response.metadata = {
-          model: metadata.model,
-          instance: metadata.instance,
-          repo: metadata.repo,
-          ref: metadata.ref
-        };
+        const metadata = safelyReadAnalysisArtifact('metadata.json', analysisWarnings, () =>
+          JSON.parse(fs.readFileSync(metadataPath, 'utf-8')) as Record<string, unknown>
+        );
+        if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+          response.metadata = {
+            model: typeof metadata.model === 'string' ? metadata.model : undefined,
+            instance: typeof metadata.instance === 'string' ? metadata.instance : undefined,
+            repo: typeof metadata.repo === 'string' ? metadata.repo : undefined,
+            ref: typeof metadata.ref === 'string' ? metadata.ref : undefined
+          };
+        } else if (metadata !== undefined) {
+          analysisWarnings.push('Could not read metadata.json; expected a JSON object.');
+        }
       }
 
       // Try to read changed files
       const changedFilesPath = path.join(runDir, 'changed-files.txt');
       if (fs.existsSync(changedFilesPath)) {
-        const changedFiles = fs
-          .readFileSync(changedFilesPath, 'utf-8')
-          .trim()
-          .split('\n')
-          .filter((f) => f);
-
-        const diffPath = path.join(runDir, 'git.diff');
-        const diffSize = fs.existsSync(diffPath) ? fs.statSync(diffPath).size : 0;
-
-        response.changes = {
-          changedFiles,
-          diffSize
-        };
+        const changes = safelyReadAnalysisArtifact('changed-files.txt', analysisWarnings, () => {
+          const changedFiles = fs
+            .readFileSync(changedFilesPath, 'utf-8')
+            .trim()
+            .split('\n')
+            .filter((f) => f);
+          const diffPath = path.join(runDir, 'git.diff');
+          return {
+            changedFiles,
+            diffSize: fs.existsSync(diffPath) ? fs.statSync(diffPath).size : 0
+          };
+        });
+        if (changes) response.changes = changes;
       }
 
       // Try to read validation results
       const validationPath = path.join(runDir, 'validation-timings.tsv');
       if (fs.existsSync(validationPath)) {
-        const lines = fs.readFileSync(validationPath, 'utf-8').trim().split('\n');
-        const commandResults = lines
-          .slice(1) // Skip header
-          .map((line) => {
-            const [command, exitCode, elapsed] = line.split('\t');
-            return {
-              command,
-              exitCode: parseInt(exitCode, 10),
-              elapsed: parseInt(elapsed, 10)
-            };
-          });
-
-        response.validation = {
-          passed: commandResults.every((r) => r.exitCode === 0),
-          commandResults
-        };
+        const validation = safelyReadAnalysisArtifact('validation-timings.tsv', analysisWarnings, () => {
+          const lines = fs.readFileSync(validationPath, 'utf-8').trim().split('\n');
+          const commandResults = lines
+            .slice(1) // Skip header
+            .flatMap((line) => {
+              const [command, exitCode, elapsed] = line.split('\t');
+              const parsedExitCode = Number.parseInt(exitCode, 10);
+              const parsedElapsed = Number.parseInt(elapsed, 10);
+              if (!command || !Number.isFinite(parsedExitCode) || !Number.isFinite(parsedElapsed)) {
+                analysisWarnings.push('Skipped malformed validation-timings.tsv record.');
+                return [];
+              }
+              return [{ command, exitCode: parsedExitCode, elapsed: parsedElapsed }];
+            });
+          return {
+            passed: commandResults.every((result) => result.exitCode === 0),
+            commandResults
+          };
+        });
+        if (validation) response.validation = validation;
       }
 
       const diagnostics = collectDiagnostics(runDir);
       if (diagnostics) {
         response.diagnostics = diagnostics;
+      }
+      if (analysisWarnings.length > 0) {
+        response.analysisWarnings = analysisWarnings;
       }
 
       res.json(response);
