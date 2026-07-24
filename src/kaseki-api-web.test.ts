@@ -170,7 +170,7 @@ describe('kaseki API web console routes', () => {
     expect(document.querySelector('label[for="issues-repo-url"]')?.textContent).toBe('Issues repository URL');
     expect(document.querySelector('[data-testid="task-repo-url"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="issues-repo-url"]')).not.toBeNull();
-    expect(document.querySelector('[data-probe="/api/preflight"]')).not.toBeNull();
+    expect(document.querySelector('[data-probe="/api/preflight?agentCapability=true"]')).not.toBeNull();
     expect(document.querySelector('[data-probe="/api/gateway-test?stage=1"]')?.getAttribute('data-auth')).toBe('true');
     expect(document.querySelector('[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]')?.textContent).toContain('Inference & Pi adapter');
     expect(document.querySelector('#task-mode')?.getAttribute('name')).toBe('taskMode');
@@ -200,16 +200,16 @@ describe('kaseki API web console behavior', () => {
     change(tokenInput!, 'newtoken456');
     expect(dom.window.sessionStorage.getItem('kasekiApiToken')).toBe('newtoken456');
 
-    click(document.querySelector('[data-probe="/api/preflight"]'));
+    click(document.querySelector('[data-probe="/api/preflight?agentCapability=true"]'));
     await waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls[0]).toMatchObject({ path: '/api/preflight' });
+    expect(calls[0]).toMatchObject({ path: '/api/preflight?agentCapability=true' });
     expect(calls[0].init?.headers).toMatchObject({ Authorization: 'Bearer newtoken456' });
     expect(dom.window.sessionStorage.getItem('kasekiApiToken')).toBe('newtoken456');
     await waitFor(() => expect(document.querySelector('#state')?.textContent).toBe('Current preflight completed.'));
     calls.length = 0;
 
     change(tokenInput!, 'bad token with spaces');
-    click(document.querySelector('[data-probe="/api/preflight"]'));
+    click(document.querySelector('[data-probe="/api/preflight?agentCapability=true"]'));
     await waitFor(() => expect(document.querySelector('#state')?.textContent).toBe('Request could not be sent.'));
     expect(document.querySelector('#output')?.textContent).toContain('Token format looks invalid');
     expect(calls).toHaveLength(0);
@@ -718,7 +718,7 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: (path) => {
-        if (path === '/api/preflight') {
+        if (path === '/api/preflight?agentCapability=true') {
           return createJsonResponse({
             status: 'ok',
             checks: [
@@ -756,7 +756,7 @@ describe('kaseki API web console behavior', () => {
       },
     });
 
-    click(document.querySelector('[data-probe="/api/preflight"]'));
+    click(document.querySelector('[data-probe="/api/preflight?agentCapability=true"]'));
     await waitFor(() => expect(document.querySelector('#output')?.textContent).toContain('"checkCount": 2'));
     expect(document.querySelector('#output')?.textContent).toContain('"currentDiagnostics"');
     expect(document.querySelector('#output')?.textContent).toContain('"startupDiagnostics"');
@@ -773,7 +773,7 @@ describe('kaseki API web console behavior', () => {
     click(document.querySelector('.tab-btn[data-tab="artifacts"]'));
     await waitFor(() => expect(document.querySelector('#artifacts-output')?.textContent).toContain('failure.json'));
     expect(document.querySelector('#artifacts-output')?.textContent).not.toContain('missing.txt');
-    expect(document.querySelector('#output')?.textContent).toContain('"path": "/api/preflight"');
+    expect(document.querySelector('#output')?.textContent).toContain('"path": "/api/preflight?agentCapability=true"');
     expect(document.querySelector('#output')?.textContent).not.toContain('"availableArtifacts"');
   });
 
