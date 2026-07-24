@@ -3681,10 +3681,15 @@ NODE
 validate_or_repair_required_dependency_bins() {
   local package_json="${1:-package.json}"
   local node_modules_dir="${2:-node_modules}"
+  DEPENDENCY_CACHE_BIN_REPAIRED=0
   dependency_cache_required_bins_valid "$package_json" "$node_modules_dir" && return 0
   printf 'Dependency cache status: repairing missing package executable links in %s/.bin.\n' "$node_modules_dir" | tee -a "$DEPENDENCY_CACHE_LOG"
   repair_required_dependency_bins "$package_json" "$node_modules_dir" || return 1
-  dependency_cache_required_bins_valid "$package_json" "$node_modules_dir"
+  if dependency_cache_required_bins_valid "$package_json" "$node_modules_dir"; then
+    DEPENDENCY_CACHE_BIN_REPAIRED=1
+    return 0
+  fi
+  return 1
 }
 
 dependency_cache_entry_roots() {
@@ -8595,7 +8600,7 @@ prepare_dependencies() {
 
   local repo_ref_key lock_hash flags_hash cache_key workspace_cache_root workspace_cache_dir image_cache_dir stamp_file metadata_file
   local cache_lock_file cache_lock_fd tmp_cache_dir old_cache_dir install_start install_elapsed install_flags_display cache_detail
-  local node_major cache_reused cache_source install_mode restore_mode restore_method
+  local node_major cache_reused cache_source install_mode restore_mode restore_method cache_repaired restore_validation_reason
   local -a install_flags
   repo_ref_key="$(printf '%s@%s' "$REPO_URL" "$GIT_REF" | sha256sum | awk '{print $1}')"
   lock_hash="$(sha256sum "$lock_source" | awk '{print $1}')"
@@ -8611,6 +8616,7 @@ prepare_dependencies() {
   cache_lock_file="${workspace_cache_root}.lock"
   cache_reused="false"
   cache_source="none"
+  cache_repaired="false"
   install_mode="skipped"
   install_reason="no_cache_available"
   restore_mode="$KASEKI_DEPENDENCY_RESTORE_MODE"
@@ -8675,8 +8681,8 @@ prepare_dependencies() {
   fi
 
 
-  if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ] && ! dependency_cache_required_bins_valid package.json "$workspace_cache_dir"; then
-    printf 'Dependency cache status: cached entry failed executable validation; invalidating before restore.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
+  if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ] && ! validate_or_repair_required_dependency_bins package.json "$workspace_cache_dir"; then
+    printf 'Dependency cache status: cached entry failed executable validation and repair; invalidating before restore.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
     emit_event "dependency_cache_decision" "strategy=invalidate_workspace_cache" "reason=required_executable_missing_before_restore" "location=$workspace_cache_dir"
     invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
     rm -f "$workspace_cache_root"/validated "$workspace_cache_root"/validated-v*
@@ -8702,12 +8708,26 @@ prepare_dependencies() {
     # restored tree survived copy/hardlink across filesystems. Re-run the
     # shallow npm graph check and executable check after every restore so a
     # damaged cache cannot reach validation or the agent.
-    if [ ! -f "$validation_marker" ] || ! npm ls --depth=0 >/dev/null 2>&1 || ! dependency_cache_required_bins_valid package.json; then
-      printf 'Dependency cache status: restored cache failed executable/schema validation; reinstalling.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
-      emit_error_event "dependency_cache_integrity_failed" "Restored dependency cache failed executable/schema validation; invalidating and reinstalling (lock_hash=$lock_hash, restore_method=$restore_method)" "fallback_fresh_install"
-      printf 'cache_source=workspace\nreason=required_executable_or_schema_missing\nlock_hash=%s\nrestore_method=%s\n' "$lock_hash" "$restore_method" >> "${KASEKI_RESULTS_DIR}/dependency-cache-diagnostics.log"
-      emit_event "dependency_cache_decision" "strategy=invalidate_workspace_cache" "reason=required_executable_or_schema_missing" "location=$workspace_cache_dir"
-      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_invalid" "true" "workspace" "0" "required_executable_or_schema_missing"
+    restore_validation_reason=""
+    DEPENDENCY_CACHE_BIN_REPAIRED=0
+    if [ ! -f "$validation_marker" ]; then
+      restore_validation_reason="missing_or_stale_schema_marker"
+    elif ! npm ls --depth=0 >/dev/null 2>&1; then
+      restore_validation_reason="npm_ls_failed_after_restore"
+    elif ! validate_or_repair_required_dependency_bins package.json; then
+      restore_validation_reason="required_executable_missing_after_repair"
+    elif [ "${DEPENDENCY_CACHE_BIN_REPAIRED:-0}" -eq 1 ]; then
+      cache_repaired="true"
+      printf 'Dependency cache status: restored cache had missing executable links; repaired links and will republish the workspace cache.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
+      emit_event "dependency_cache_decision" "strategy=repair_workspace_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=required_executable_links_repaired" "location=$workspace_cache_dir"
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_repaired" "true" "workspace" "0" "required_executable_links_repaired"
+    fi
+    if [ -n "$restore_validation_reason" ]; then
+      printf 'Dependency cache status: restored cache failed executable/schema validation; reinstalling (reason=%s).\n' "$restore_validation_reason" | tee -a "$DEPENDENCY_CACHE_LOG"
+      emit_error_event "dependency_cache_integrity_failed" "Restored dependency cache failed validation (reason=$restore_validation_reason; lock_hash=$lock_hash, restore_method=$restore_method); invalidating and reinstalling" "fallback_fresh_install"
+      printf 'cache_source=workspace\nreason=%s\nlock_hash=%s\nrestore_method=%s\n' "$restore_validation_reason" "$lock_hash" "$restore_method" >> "${KASEKI_RESULTS_DIR}/dependency-cache-diagnostics.log"
+      emit_event "dependency_cache_decision" "strategy=invalidate_workspace_cache" "reason=$restore_validation_reason" "location=$workspace_cache_dir"
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_invalid" "true" "workspace" "0" "$restore_validation_reason"
       rm -rf node_modules
       invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
       rm -f "$workspace_cache_root"/validated "$workspace_cache_root"/validated-v*
@@ -8735,14 +8755,25 @@ prepare_dependencies() {
     append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_restored" "true" "image" "0" "restore_completed"
     cache_reused="true"
     cache_source="image"
-    if ! npm ls --depth=0 >/dev/null 2>&1 || ! dependency_cache_required_bins_valid package.json; then
-      printf 'Dependency cache status: image cache failed npm ls validation; reinstalling.\n'
-      emit_error_event "dependency_cache_integrity_failed" "Image dependency cache failed npm/package validation; invalidating and reinstalling (lock_hash=$lock_hash)" "fallback_fresh_install"
-      printf 'cache_source=image\nreason=npm_ls_failed\nlock_hash=%s\nrestore_method=%s\n' "$lock_hash" "$restore_method" >> "${KASEKI_RESULTS_DIR}/dependency-cache-diagnostics.log"
-      set_dependency_cache_status "image-cache-invalid" "$cache_detail restore_method=$restore_method reason=npm_ls_failed"
-      emit_event "dependency_cache_decision" "strategy=invalidate_image_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=npm_ls_failed" "location=$image_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+    restore_validation_reason=""
+    DEPENDENCY_CACHE_BIN_REPAIRED=0
+    if ! npm ls --depth=0 >/dev/null 2>&1; then
+      restore_validation_reason="npm_ls_failed_after_restore"
+    elif ! validate_or_repair_required_dependency_bins package.json; then
+      restore_validation_reason="required_executable_missing_after_repair"
+    elif [ "${DEPENDENCY_CACHE_BIN_REPAIRED:-0}" -eq 1 ]; then
+      printf 'Dependency cache status: repaired missing executable links after restoring image cache.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
+      emit_event "dependency_cache_decision" "strategy=repair_image_cache_restore" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=required_executable_links_repaired" "location=$image_cache_dir"
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_repaired" "true" "image" "0" "required_executable_links_repaired"
+    fi
+    if [ -n "$restore_validation_reason" ]; then
+      printf 'Dependency cache status: image cache failed validation (reason=%s); reinstalling.\n' "$restore_validation_reason"
+      emit_error_event "dependency_cache_integrity_failed" "Image dependency cache failed validation (reason=$restore_validation_reason; lock_hash=$lock_hash); invalidating and reinstalling" "fallback_fresh_install"
+      printf 'cache_source=image\nreason=%s\nlock_hash=%s\nrestore_method=%s\n' "$restore_validation_reason" "$lock_hash" "$restore_method" >> "${KASEKI_RESULTS_DIR}/dependency-cache-diagnostics.log"
+      set_dependency_cache_status "image-cache-invalid" "$cache_detail restore_method=$restore_method reason=$restore_validation_reason"
+      emit_event "dependency_cache_decision" "strategy=invalidate_image_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=$restore_validation_reason" "location=$image_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
       # Phase 2D: Emit cache metric to JSON (validation failure)
-      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_invalid" "true" "image" "0" "npm_ls_failed"
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_invalid" "true" "image" "0" "$restore_validation_reason"
       rm -rf node_modules
       cache_reused="false"
       cache_source="none"
@@ -8792,7 +8823,7 @@ prepare_dependencies() {
     fi
   fi
 
-  if [ "$cache_reused" = "true" ] && [ "$cache_source" = "workspace" ]; then
+  if [ "$cache_reused" = "true" ] && [ "$cache_source" = "workspace" ] && [ "$cache_repaired" != "true" ]; then
     printf 'Dependency cache status: workspace cache already current; skipping cache publish.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
     set_dependency_cache_status "workspace-cache-publish-skipped" "$cache_detail restore_method=$restore_method reason=workspace_cache_hit"
     emit_event "dependency_cache_decision" "strategy=skip_workspace_cache_publish" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=workspace_cache_hit" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
@@ -9263,6 +9294,7 @@ FILTER_STDERR_TAIL=""
 printf '\n==> pi coding agent\n'
 set_current_stage "pi coding agent"
 emit_event "coding_attempt_started" "attempt=$coding_attempt" "max_attempts=$max_coding_attempts"
+emit_progress "pi coding agent" "started (attempt $coding_attempt of $max_coding_attempts)"
 if [ "$KASEKI_DRY_RUN" = "1" ]; then
   printf '🔄 DRY-RUN MODE: Skipping Pi coding agent execution\n'
   PI_START_EPOCH="$(date +%s)"
@@ -9360,7 +9392,11 @@ NODE
     fi
   fi
   if capture_provider_error_from_summary "${KASEKI_RESULTS_DIR}/pi-summary.json" "coding"; then
-    if [ "$PROVIDER_ERROR_TYPE" = "provider_empty_assistant_turn" ] && [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
+    # Empty assistant turns are retried inside run_pi_with_retry. Do not turn
+    # one exhausted provider retry into a second duplicate coding cycle.
+    if [ "$PROVIDER_ERROR_TYPE" = "provider_empty_assistant_turn" ] && \
+      [ "${PROVIDER_ERROR_RETRY_ATTEMPT_COUNT:-0}" -eq 0 ] && \
+      [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
       GOAL_CHECK_MET=false
       GOAL_CHECK_FAILURE_REASON="provider_empty_assistant_turn: $PROVIDER_ERROR_MESSAGE"
       GOAL_CHECK_RETRY_PROMPT="The coding provider returned an empty assistant turn: no assistant text and no tool calls were received. Re-read the original task prompt, inspect ${SCOUTING_ARTIFACT} and ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}, then make the smallest required repository change before finishing."

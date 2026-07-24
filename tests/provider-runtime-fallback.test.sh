@@ -6,7 +6,7 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 fail() {
-  printf 'FAIL: gateway-only provider retry: %s\n' "$*" >&2
+  printf 'FAIL: empty-assistant provider retry: %s\n' "$*" >&2
   exit 1
 }
 
@@ -24,12 +24,12 @@ fi
 cat > "$3" <<'JSON'
 {
   "primary_provider_error": {
-    "type": "provider_error",
+    "type": "provider_empty_assistant_turn",
     "provider": "gateway",
     "api": "openai-completions",
     "model": "dynamic/kaseki-agent",
-    "message": "Provider finish_reason: error",
-    "retryable": true
+    "message": "Provider returned no assistant text or tool calls",
+    "retryable": false
   }
 }
 JSON
@@ -82,6 +82,8 @@ set -e
 [ "$PROVIDER_ERROR_FALLBACK_RESULT" = 'none' ] || fail 'fallback result telemetry must remain none'
 [ -n "$PROVIDER_ERROR_MESSAGE" ] || fail 'provider failure message was not preserved for diagnostics'
 printf '%s' "$PROVIDER_ERROR_MESSAGE" | grep -q 'request_id=' || fail 'provider failure diagnostics omit the request id'
+[ "$(node -e 'const fs=require("node:fs"); const entries=fs.readFileSync(process.argv[1], "utf8").trim().split(/\n/).map(JSON.parse); process.stdout.write(String(entries.every((entry) => entry.retryable === true)))' "$KASEKI_RESULTS_DIR/provider-attempts.jsonl")" = 'true' ] \
+  || fail 'empty assistant turns should be marked retryable in attempt telemetry'
 [ "$KASEKI_PROVIDER" = 'gateway' ] || fail 'primary provider was not restored/preserved'
 [ -s "$KASEKI_RESULTS_DIR/provider-attempts/coding/primary-1.events.jsonl" ] || fail 'primary attempt 1 events were not preserved'
 [ -s "$KASEKI_RESULTS_DIR/provider-attempts/coding/primary-2.events.jsonl" ] || fail 'primary attempt 2 events were not preserved'
@@ -89,4 +91,4 @@ printf '%s' "$PROVIDER_ERROR_MESSAGE" | grep -q 'request_id=' || fail 'provider 
 [ "$(wc -l < "$KASEKI_RESULTS_DIR/provider-attempts.jsonl" | tr -d ' ')" -eq 2 ] || fail 'provider attempt manifest should contain gateway attempts only'
 printf '%s' "$PROVIDER_ERROR_PRIMARY_JSON" | grep -q '"provider":"gateway"' || fail 'primary provider error attribution was not preserved'
 
-printf 'PASS: gateway-only provider retry\n'
+printf 'PASS: empty-assistant provider retry\n'

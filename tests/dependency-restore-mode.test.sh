@@ -197,6 +197,7 @@ chmod +x "$repair_dir/node_modules/typescript/bin/tsc" "$repair_dir/node_modules
   # Models restore -> copy fallback/reinstall output where package directories
   # exist but npm's .bin links disappeared before the build/scouting boundary.
   validate_or_repair_required_dependency_bins package.json node_modules || fail "required package executable repair failed"
+  [ "${DEPENDENCY_CACHE_BIN_REPAIRED:-0}" = "1" ] || fail "dependency executable repair telemetry was not set"
   [ -x node_modules/.bin/tsc ] || fail "tsc link was not repaired"
   [ -x node_modules/.bin/eslint ] || fail "eslint link was not repaired"
   PATH="$PWD/node_modules/.bin:$PATH" tsc --version | grep -q tsc-ok || fail "build boundary could not invoke repaired tsc"

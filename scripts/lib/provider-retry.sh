@@ -534,6 +534,7 @@ const [summaryPath, provider, model, phase, attempt, requestId] = process.argv.s
 let summary = {};
 try { summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8')); } catch {}
 const error = summary.primary_provider_error || (Array.isArray(summary.provider_errors) ? summary.provider_errors[0] : null);
+const retryable = error?.retryable === true || error?.type === 'provider_empty_assistant_turn';
 
 // Extract token usage from summary
 const tokens = summary.token_usage || summary.tokens || summary.usage || {};
@@ -558,7 +559,11 @@ process.stdout.write(JSON.stringify({
   response_id: error?.response_id || undefined,
   status_code: error?.status_code || undefined,
   error_code: error?.error_code || undefined,
-  retryable: error?.retryable === true,
+  // A response that contains neither assistant content nor tool calls is a
+  // transport/provider failure even when the gateway did not label it as
+  // retryable. Give it the same bounded recovery opportunity as other
+  // transient provider failures.
+  retryable,
   tokens: tokenInfo,
   timing: timing,
   finish_reason: summary.finish_reason || summary.finishReason || summary.stop_reason || undefined,
@@ -587,10 +592,11 @@ const [summaryPath, phase, provider, model] = process.argv.slice(2);
 let summary = {};
 try { summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8')); } catch {}
 const error = summary.primary_provider_error || (Array.isArray(summary.provider_errors) ? summary.provider_errors[0] : null) || {};
+const retryable = error.retryable === true || error.type === 'provider_empty_assistant_turn';
 process.stdout.write(JSON.stringify({
   type: error.type || 'provider_error', phase, provider: error.provider || provider,
   api: error.api || '', model: error.model || model, message: error.message || '',
-  retryable: error.retryable === true
+  retryable
 }));
 NODE
 }
@@ -610,7 +616,9 @@ const summary = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
 const error = summary && typeof summary === 'object'
   ? summary.primary_provider_error || (Array.isArray(summary.provider_errors) ? summary.provider_errors[0] : null)
   : null;
-if (error && typeof error === 'object' && error.retryable === true) {
+if (error && typeof error === 'object' && (
+  error.retryable === true || error.type === 'provider_empty_assistant_turn'
+)) {
   process.exit(0);  // Retryable
 }
 process.exit(1);  // Not retryable or no error
@@ -730,10 +738,16 @@ run_pi_with_retry() {
   printf '[CORRELATION] Request %s sent to %s (provider: %s, model: %s)\n' \
     "$KASEKI_INFERENCE_REQUEST_ID" "$phase_name" "$original_provider" "$model" >&2
   
+  provider_retry_emit_progress "$phase_name" "provider request started (attempt 1/2; provider=$original_provider model=$model)"
   invoke_pi
   pi_exit=$?
   summarize_invocation || true
   snapshot_provider_attempt "$raw_events_file" "$summary_file" "$phase_name" "$original_provider" "$model" "primary-1"
+  if [ "$pi_exit" -eq 0 ]; then
+    provider_retry_emit_progress "$phase_name" "provider request completed (attempt 1/2)"
+  elif [ "$pi_exit" -eq 88 ]; then
+    provider_retry_emit_progress "$phase_name" "provider request failed (attempt 1/2); evaluating bounded retry" "warning"
+  fi
   primary_response_id="$(node -e 'try{const s=require(process.argv[1]);process.stdout.write(String(s.primary_provider_error?.response_id||""))}catch{}' "$summary_file" 2>/dev/null || true)"
   if [ "$pi_exit" -eq 88 ]; then
     PROVIDER_ERROR_PRIMARY_JSON="$(provider_error_json_from_summary "$summary_file" "$phase_name" "$original_provider" "$model")"
@@ -776,10 +790,16 @@ Retry request identity: $KASEKI_INFERENCE_REQUEST_ID. Treat this as a fresh infe
       printf '[RETRY CORRELATION] Fresh request %s replaces failed request %s for retry attempt\n' \
         "$KASEKI_INFERENCE_REQUEST_ID" "$previous_request_id" >&2
       provider_retry_emit_progress "$phase_name" "provider retry started (attempt 2/2)"
+      provider_retry_emit_progress "$phase_name" "provider request started (attempt 2/2; provider=$original_provider model=$model)"
       invoke_pi
       pi_exit=$?
       summarize_invocation || true
       snapshot_provider_attempt "$raw_events_file" "$summary_file" "$phase_name" "$original_provider" "$model" "primary-2"
+      if [ "$pi_exit" -eq 0 ]; then
+        provider_retry_emit_progress "$phase_name" "provider request completed (attempt 2/2)"
+      elif [ "$pi_exit" -eq 88 ]; then
+        provider_retry_emit_progress "$phase_name" "provider request failed (attempt 2/2)" "warning"
+      fi
       retry_response_id="$(node -e 'try{const s=require(process.argv[1]);process.stdout.write(String(s.primary_provider_error?.response_id||""))}catch{}' "$summary_file" 2>/dev/null || true)"
       
       # Extract detailed context for duplicate detection
