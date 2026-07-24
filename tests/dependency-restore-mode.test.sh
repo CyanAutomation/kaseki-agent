@@ -109,6 +109,14 @@ if grep -q 'workspace cache failed npm ls validation; reinstalling' "$DEPENDENCY
 fi
 pass "hardlink EXDEV stderr uses normalized fallback logging without raw cp noise"
 
+# A cache entry that has already rejected hardlinks should select copy directly
+# in auto mode instead of repeating a costly EXDEV attempt on every run.
+: > "$TMP_DIR/cache/.kaseki-hardlink-disabled"
+[ "$(resolve_dependency_restore_mode "$TMP_DIR/cache/node_modules" "$TMP_DIR/workspace/node_modules" auto)" = "copy" ] \
+  || fail "Auto restore did not honor the cached hardlink EXDEV marker"
+pass "auto restore remembers cross-device hardlink failures"
+rm -f "$TMP_DIR/cache/.kaseki-hardlink-disabled"
+
 rm -rf "$TMP_DIR/workspace/node_modules" "$TMP_DIR/published"
 ln -s "$TMP_DIR/cache/node_modules" "$TMP_DIR/workspace/node_modules"
 publish_node_modules_cache "$TMP_DIR/workspace/node_modules" "$TMP_DIR/published"

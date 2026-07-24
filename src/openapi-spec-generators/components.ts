@@ -62,6 +62,14 @@ export function buildTags(): Array<Record<string, unknown>> {
       name: 'Webhooks',
       description: 'Webhook configuration and testing',
     },
+    {
+      name: 'Gateway Diagnostics',
+      description: 'Gateway connectivity, inference, and Pi adapter diagnostics',
+    },
+    {
+      name: 'GitHub Issues',
+      description: 'Fetch repository issues for task creation',
+    },
   ];
 }
 

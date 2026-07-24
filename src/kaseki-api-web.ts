@@ -1912,15 +1912,22 @@ const controllerPage = String.raw`<!doctype html>
           }
           if (payload.phaseOutcome && typeof payload.phaseOutcome === 'object') {
             const outcome = payload.phaseOutcome;
+            const goalSetting = String(outcome.goalSetting || 'unknown');
             const scouting = String(outcome.scouting || 'unknown');
             const weaving = String(outcome.weaving || 'unknown');
             const scoutingLabel = scouting === 'completed_with_fallback'
               ? 'completed with fallback'
               : (outcome.scoutingFallback === true ? scouting + ' (fallback)' : scouting);
-            items.push(['Phase outcomes', 'Scouting: ' + scoutingLabel + ' | Weaving: ' + weaving, {
-              warning: outcome.scoutingFallback === true || scouting === 'failed' || weaving === 'failed' || scouting === 'not_reached' || weaving === 'not_reached',
+            items.push(['Phase outcomes', 'Goal-setting: ' + goalSetting + ' | Scouting: ' + scoutingLabel + ' | Weaving: ' + weaving, {
+              warning: outcome.goalSettingFallback === true || outcome.scoutingFallback === true || goalSetting === 'failed' || scouting === 'failed' || weaving === 'failed' || scouting === 'not_reached' || weaving === 'not_reached',
               fullWidth: true,
             }]);
+            if (outcome.goalSettingFallback === true) {
+              items.push(['Goal-setting fallback', 'Used — ' + stripControlSequences(String(outcome.goalSettingFallbackReason || 'the original task prompt')), {
+                warning: true,
+                fullWidth: true,
+              }]);
+            }
             if (outcome.scoutingFallback === true) {
               const fallbackReason = typeof outcome.scoutingFallbackReason === 'string'
                 ? outcome.scoutingFallbackReason
@@ -2034,7 +2041,7 @@ const controllerPage = String.raw`<!doctype html>
             }
             if (summary.dependencyCache && summary.dependencyCache.reinstallTriggered && Array.isArray(summary.dependencyCache.messages)) {
               const cacheText = summary.dependencyCache.messages
-                .filter((message) => /failed npm ls validation|cache miss|running install/.test(String(message)))
+                .filter((message) => /failed npm ls validation|restored cache failed|cache miss|running install|workspace_cache_integrity_failed/.test(String(message)))
                 .slice(0, 2)
                 .join(' | ');
               if (cacheText) {

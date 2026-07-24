@@ -1981,13 +1981,21 @@ write_result_summary() {
 SUMMARY
   
   if [ -n "$failed_command" ]; then
-    printf -- "- Failed Command: %s\n" "$failed_command" >> "$summary_file"
+    if [ "$exit_code" -eq 0 ]; then
+      printf -- "- Recovered Phase: %s\n" "$failed_command" >> "$summary_file"
+    else
+      printf -- "- Failed Command: %s\n" "$failed_command" >> "$summary_file"
+    fi
   fi
 
   local diagnostic_reason
   diagnostic_reason="$(extract_failure_diagnostic_reason)"
   if [ -n "$diagnostic_reason" ]; then
-    printf -- "- Failure Detail: %s\n" "$diagnostic_reason" >> "$summary_file"
+    if [ "$exit_code" -eq 0 ]; then
+      printf -- "- Recovered Diagnostic: %s\n" "$diagnostic_reason" >> "$summary_file"
+    else
+      printf -- "- Failure Detail: %s\n" "$diagnostic_reason" >> "$summary_file"
+    fi
   fi
   
   # Add git diff info if available
@@ -3343,6 +3351,9 @@ record_stage_timing() {
   local exit_code="$2"
   local duration_seconds="$3"
   local detail="${4:-}"
+  if [ ! -s "$STAGE_TIMINGS_FILE" ]; then
+    printf 'stage\texit_code\telapsed_seconds\tdetails\n' > "$STAGE_TIMINGS_FILE"
+  fi
   printf '%s\t%s\t%s\t%s\n' "$stage" "$exit_code" "$duration_seconds" "$detail" >> "$STAGE_TIMINGS_FILE"
 }
 
@@ -3525,6 +3536,13 @@ resolve_dependency_restore_mode() {
     printf '%s\n' "$mode"
     return 0
   fi
+  # A bind mount can report the same device at its root yet reject hardlinks
+  # for nested cache entries. Persist the observed EXDEV outcome beside the
+  # cache entry so later runs do not pay for the same failed hardlink attempt.
+  if [ -f "$(dirname "$source_dir")/.kaseki-hardlink-disabled" ]; then
+    printf 'copy\n'
+    return 0
+  fi
   if same_filesystem "$source_dir" "$(dirname "$target_dir")"; then
     printf 'hardlink\n'
   else
@@ -3553,6 +3571,7 @@ restore_node_modules_from_cache() {
         fi
         if grep -q "Invalid cross-device link\|EXDEV" "$hardlink_stderr_file"; then
           hardlink_reason="hardlink_cross_device"
+          : > "$(dirname "$source_dir")/.kaseki-hardlink-disabled" 2>/dev/null || true
         else
           hardlink_reason="hardlink_failed"
         fi

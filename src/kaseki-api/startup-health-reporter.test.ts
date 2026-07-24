@@ -4,7 +4,7 @@
  * Consolidates bootstrap, preflight, and environment data into a unified health report
  */
 
-import { generateStartupHealthReport, categorizeStartupIssues } from './startup-health-reporter';
+import { generateStartupHealthReport, categorizeStartupIssues, healthReportToMarkdown } from './startup-health-reporter';
 import type { PreflightCheck } from '../kaseki-api-types';
 
 describe('Startup Health Reporter', () => {
@@ -130,6 +130,15 @@ describe('Startup Health Reporter', () => {
 
       // git-safe-directory is auto-fixable based on issue type
       expect(issues[0]).toHaveProperty('autoFixable');
+    });
+  });
+
+  describe('healthReportToMarkdown', () => {
+    it('labels startup health as historical and directs users to live preflight', () => {
+      const report = generateStartupHealthReport(1, 1, [], {});
+
+      expect(healthReportToMarkdown(report)).toContain('Historical boot-time snapshot only');
+      expect(healthReportToMarkdown(report)).toContain('/api/preflight');
     });
   });
 });

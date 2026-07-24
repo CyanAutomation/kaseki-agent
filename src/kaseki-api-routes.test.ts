@@ -2542,7 +2542,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     }
   });
 
-  test('running run does not expose failure-only artifacts as available', async () => {
+  test('running run exposes materialized diagnostic artifacts as available', async () => {
     const jobId = 'kaseki-running-artifacts';
     const fallbackDir = path.join(resultsDir, jobId);
     fs.mkdirSync(fallbackDir, { recursive: true });
@@ -2588,7 +2588,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       const stderrFile = body.artifacts.find((artifact: any) => artifact.name === 'stderr.log');
       const summaryFile = body.artifacts.find((artifact: any) => artifact.name === 'result-summary.md');
       const goalCheckFile = body.artifacts.find((artifact: any) => artifact.name === 'goal-check.json');
-      expect(stderrFile.available).toBe(false);
+      expect(stderrFile.available).toBe(true);
       expect(summaryFile.available).toBe(true);
       expect(goalCheckFile.available).toBe(false);
     } finally {
