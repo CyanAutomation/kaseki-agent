@@ -83,6 +83,22 @@ const expectedEndpoints: EndpointContract[] = [
     errorCodes: ['404', '500', '401'],
   },
   {
+    path: '/api/gateway-test',
+    method: 'get',
+    operationId: 'testGateway',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['401'],
+  },
+  {
+    path: '/api/github-issues',
+    method: 'post',
+    operationId: 'listGitHubIssues',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['400', '404', '401'],
+  },
+  {
     path: '/api/validate',
     method: 'post',
     operationId: 'validateTask',
