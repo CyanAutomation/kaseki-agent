@@ -1068,6 +1068,11 @@ function buildRunAnalysisPaths(errorResponseSchema: Record<string, unknown>): Re
                         commandResults: { type: 'array', items: { type: 'object' } }
                       }
                     },
+                    analysisWarnings: {
+                      type: 'array',
+                      description: 'Optional artifacts that could not be parsed; remaining analysis is still returned.',
+                      items: { type: 'string' }
+                    },
                     errors: { type: 'array', items: { type: 'string' } }
                   }
                 }

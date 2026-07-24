@@ -102,6 +102,7 @@ const AnalysisResponseSchema = z.object({
       elapsed: z.number(),
     })),
   }).optional(),
+  analysisWarnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
 });
 
