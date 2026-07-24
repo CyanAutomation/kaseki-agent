@@ -40,7 +40,7 @@ consolidate_timings_to_json() {
   if [ -s "$stage_timings" ]; then
     # Current runner rows are stage, exit_code, elapsed_seconds, details. Keep
     # accepting the former two-column format so historical artifacts remain readable.
-    stage_json=$(tail -n +2 "$stage_timings" | jq -R 'split("\t") | if length >= 3 then {stage: .[0], exit_code: (.[1] | tonumber), elapsed_seconds: (.[2] | tonumber), details: (.[3] // "")} else {stage: .[0], elapsed_seconds: (.[1] | tonumber)} end' | jq -s '.' 2>/dev/null)
+    stage_json=$(tail -n +2 "$stage_timings" | jq -R 'split("\t") | if length >= 4 then {stage: .[0], exit_code: (.[1] | tonumber), elapsed_seconds: (.[2] | tonumber), details: .[3]} elif length >= 3 then {stage: .[0], exit_code: (.[1] | tonumber), elapsed_seconds: (.[2] | tonumber), details: ""} else {stage: .[0], elapsed_seconds: (.[1] | tonumber)} end' | jq -s '.' 2>/dev/null)
     [ -n "$stage_json" ] && jq --argjson data "$stage_json" '.stage_timings = $data' "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
   fi
 }
