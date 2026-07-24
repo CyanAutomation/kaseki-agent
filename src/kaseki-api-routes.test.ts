@@ -3619,6 +3619,37 @@ describe('kaseki-api-routes status artifact hints', () => {
     }
   });
 
+  test('analysis remains available when optional artifacts are malformed', async () => {
+    const jobId = 'kaseki-analysis-malformed-optional-artifacts';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'metadata.json'), '{"model":"broken": fallback}');
+    fs.writeFileSync(path.join(jobDir, 'changed-files.txt'), 'README.md\n');
+    fs.writeFileSync(path.join(jobDir, 'git.diff'), 'diff --git a/README.md b/README.md\n');
+    fs.writeFileSync(path.join(jobDir, 'validation-timings.tsv'), 'command\texit\telapsed\nvalid\t0\t3\nbroken\tnot-a-number\t?\n');
+
+    const scheduler = createMockScheduler({
+      [jobId]: { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir } as any,
+    });
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, createTestConfig(resultsDir));
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/analysis`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      expect(response.status).toBe(200);
+      const body = await response.json() as any;
+      expect(body.changes).toEqual({ changedFiles: ['README.md'], diffSize: expect.any(Number) });
+      expect(body.validation).toEqual({ passed: true, commandResults: [{ command: 'valid', exitCode: 0, elapsed: 3 }] });
+      expect(body.analysisWarnings).toEqual(expect.arrayContaining([
+        expect.stringContaining('metadata.json'),
+        expect.stringContaining('Skipped malformed validation-timings.tsv record')
+      ]));
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
   test('runs list includes terminal exit code from result metadata when scheduler job lacks it', async () => {
     const jobId = 'kaseki-list-exit-code';
     const jobDir = path.join(resultsDir, jobId);

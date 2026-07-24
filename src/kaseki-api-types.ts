@@ -495,6 +495,8 @@ export interface AnalysisResponse {
     files: string[];
     details?: Array<Record<string, unknown>>;
   };
+  /** Optional artifacts that could not be parsed; remaining analysis is still returned. */
+  analysisWarnings?: string[];
   errors?: string[];
 }
 
