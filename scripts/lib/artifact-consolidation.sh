@@ -115,6 +115,8 @@ finalize_artifacts_and_publish_status() {
   consolidate_timings_to_json "$results_dir/timings-manifest.json" "$validation_timings" "$pre_validation_timings" "$results_dir/stage-timings.tsv"
   consolidate_phase_errors "$results_dir/phase-errors.jsonl" "$results_dir/critical-change-expectations.log" "$results_dir/summarizer-stderr.log" "$results_dir/baseline-npm-ci.log"
   consolidate_validation_errors "$results_dir/artifact-validation-errors.jsonl" "$results_dir/scouting-validation-errors.jsonl" "$results_dir/goal-setting-validation-errors.jsonl" "$results_dir/goal-check-validation-errors.jsonl"
-  reconcile_gateway_summary "$results_dir/gateway-summary.json" "$results_dir/provider-attempts.jsonl"
+  reconcile_gateway_summary "$results_dir/gateway-summary.json" "$results_dir/provider-attempts.jsonl" || {
+    echo "Warning: Failed to reconcile gateway summary" >&2
+  }
   "$status_writer" "$status"
 }
