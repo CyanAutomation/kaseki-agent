@@ -73,10 +73,18 @@ kaseki-agent status kaseki-1
 Kaseki provides three deployment patterns:
 
 - **NPM CLI**: Admin/helper workflows and task clients
-- **Docker**: Containerized execution without host Node.js  
+- **Docker**: Containerized execution without host Node.js
 - **REST API**: Local/distributed orchestration via `kaseki-agent serve`
 
 Each task execution produces isolated workspace and results for reproducible AI coding workflows.
+
+---
+
+## Development
+
+- Node.js >= 24 required
+- Install dependencies: `npm ci`
+- Run validation: `npm run check`
 
 ---
 
@@ -164,7 +172,7 @@ kaseki-agent serve --port 8080
 ### Programmatic Usage
 
 - **Live monitoring**: Query running instances
-- **Error detection**: Identify failures and anomalies  
+- **Error detection**: Identify failures and anomalies
 - **Post-run analysis**: Detailed result summaries
 - **Log streaming**: Real-time log consumption
 - **Automatic review requests**: PRs on personal repositories automatically request the owner as a reviewer
@@ -178,7 +186,7 @@ See [docs/API.md](docs/API.md) and [docs/CLI.md](docs/CLI.md) for complete API a
 Kaseki orchestrates ephemeral coding-agent instances with:
 
 - **Host layer**: Workspace management, credential resolution, Docker runtime
-- **Container layer**: Git cloning, dependency caching, Pi agent invocation  
+- **Container layer**: Git cloning, dependency caching, Pi agent invocation
 - **Result layer**: Artifact collection, validation gates, quality metrics
 - **API layer**: REST service for external orchestration
 
