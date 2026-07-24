@@ -1398,7 +1398,7 @@ const controllerPage = String.raw`<!doctype html>
             <button class="health-check-button" data-probe="/ready" type="button"><span class="hc-label">Readiness</span><span class="health-check-status" data-status="readiness"></span></button>
             <button class="health-check-button" data-probe="/api/gateway-test?stage=1" data-auth="true" type="button" title="Validate gateway reachability and authentication. This does not prove inference or Pi adapter compatibility."><span class="hc-label">Gateway connectivity &amp; auth</span><span class="health-check-status" data-status="gateway"></span></button>
             <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true" data-auth="true" type="button" title="Run real gateway inference, Responses compatibility checks where applicable, and the Pi provider adapter smoke test used by coding runs."><span class="hc-label">Inference &amp; Pi adapter</span><span class="health-check-status" data-status="llm-test"></span></button>
-            <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button"><span class="hc-label">Current Preflight</span><span class="health-check-status" data-status="preflight"></span></button>
+            <button class="health-check-button" data-probe="/api/preflight?agentCapability=true" data-auth="true" type="button" title="Run current controller checks plus the Pi provider adapter smoke used by coding runs."><span class="hc-label">Current Preflight</span><span class="health-check-status" data-status="preflight"></span></button>
           </div>
           <div class="summary-grid" id="health-summary" aria-live="polite">
             <div class="summary-card">
@@ -2137,7 +2137,7 @@ const controllerPage = String.raw`<!doctype html>
         if (path === '/health') return 'Health check completed.';
         if (path === '/ready') return 'Readiness check completed.';
         if (path === '/api/gateway-test') return 'Gateway test completed.';
-        if (path === '/api/preflight') return 'Current preflight completed.';
+        if (path.startsWith('/api/preflight')) return 'Current preflight completed.';
         if (path === '/api/runs') return verb === 'POST' ? 'Run submitted.' : 'Recent runs refreshed.';
         if (path.endsWith('/status')) return 'Run status updated.';
         if (path.endsWith('/cancel')) return 'Cancel request sent.';
@@ -2181,7 +2181,7 @@ const controllerPage = String.raw`<!doctype html>
               : 'The request failed. Check the response status, authentication, and controller readiness.',
           }, null, 2);
         }
-        if (path === '/api/preflight' && payload && typeof payload === 'object') {
+        if (path.startsWith('/api/preflight') && payload && typeof payload === 'object') {
           const checks = Array.isArray(payload.checks) ? payload.checks : [];
           const failed = checks.filter((check) => !check.ok);
           return JSON.stringify({
@@ -2652,7 +2652,7 @@ const controllerPage = String.raw`<!doctype html>
             : 'Failed';
           setSummary('llm-test', summary, payload.status === 'ok' ? 'ok' : 'bad');
         }
-        if (path === '/api/preflight') {
+        if (path.startsWith('/api/preflight')) {
           const checks = Array.isArray(payload.checks) ? payload.checks : [];
           const failed = checks.filter((check) => !check.ok);
           setSummary('preflight', failed.length === 0 ? String(checks.length) + ' checks passed' : String(failed.length) + ' failed', failed.length === 0 ? 'ok' : 'bad');
@@ -2724,7 +2724,7 @@ const controllerPage = String.raw`<!doctype html>
 
       function requestTimeoutFor(path, options) {
         if (options && typeof options.timeoutMs === 'number') return options.timeoutMs;
-        if (path === '/api/preflight') return LONG_REQUEST_TIMEOUT_MS;
+        if (path.startsWith('/api/preflight')) return LONG_REQUEST_TIMEOUT_MS;
         // Gateway tests (especially Stage 2 LLM inference) need more time (~15-20s for LLM response)
         if (path.startsWith('/api/gateway-test')) return LONG_REQUEST_TIMEOUT_MS;
         return DEFAULT_REQUEST_TIMEOUT_MS;

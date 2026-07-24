@@ -39,6 +39,7 @@ import {
 } from './kaseki-api-health-checks';
 import { buildPreflightResponse as buildPreflightResponseImpl } from './kaseki-api-routes-preflight';
 import { createGatewayTestRoutes } from './routes/gateway-test-routes';
+import { testPiGatewayProviderSmoke } from './kaseki-api-gateway-smoke';
 
 function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
   if (!remoteAddress) {
@@ -211,6 +212,26 @@ export function createApiRouter(
    */
   router.get('/preflight', (_req: Request, res: Response) => {
     const response = buildPreflightResponse(config);
+
+    // This opt-in probe uses the same Pi provider path as coding runs. It is
+    // intentionally not part of the inexpensive default preflight because it
+    // consumes inference tokens, but callers that request it must not receive
+    // a green readiness report when the coding adapter is unusable.
+    if (String(_req.query.agentCapability ?? '').toLowerCase() === 'true') {
+      const piProviderResult = testPiGatewayProviderSmoke({ requested: true });
+      const capabilityCheck = {
+        name: 'pi-provider-adapter',
+        ok: piProviderResult.status === 'ok',
+        detail: piProviderResult.detail,
+        remediation: piProviderResult.remediation,
+      };
+      response.checks.push(capabilityCheck);
+      response.checkCount = response.checks.length;
+      if (!capabilityCheck.ok) {
+        response.failedChecks.push(capabilityCheck);
+        response.status = 'error';
+      }
+    }
 
     // Include cached container startup diagnostics as boot history only.
     // These observations are not rerun for this request and are excluded from

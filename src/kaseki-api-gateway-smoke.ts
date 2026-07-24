@@ -167,6 +167,17 @@ const PI_PROVIDER_SMOKE_TIMEOUT_MS = (() => {
   }
   return 60000;
 })();
+const PI_PROVIDER_SMOKE_MAX_OUTPUT_TOKENS = (() => {
+  const envValue = process.env.KASEKI_PI_PROVIDER_SMOKE_MAX_OUTPUT_TOKENS;
+  if (envValue) {
+    const parsed = parseInt(envValue, 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  // The smoke must sustain a tool call and a follow-up assistant turn. A
+  // 128-token ceiling frequently ends the turn before Pi can complete that
+  // contract, producing a misleading adapter failure.
+  return 512;
+})();
 
 // Re-export GatewayApiKeyResolution and GatewayTestOptions from detection module for backward compatibility
 export type { GatewayApiKeyResolution, GatewayTestOptions } from './gateway-detection/detect-gateway-provider';
@@ -458,7 +469,7 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
       ...process.env,
       LLM_GATEWAY_URL: gatewayUrl,
       LLM_GATEWAY_API_KEY: apiKey,
-      LLM_GATEWAY_MAX_OUTPUT_TOKENS: '128',
+      LLM_GATEWAY_MAX_OUTPUT_TOKENS: String(PI_PROVIDER_SMOKE_MAX_OUTPUT_TOKENS),
     },
     // Pi JSON mode can emit cumulative message snapshots and provider metadata
     // well beyond Node's small default buffer even for this constrained prompt.
