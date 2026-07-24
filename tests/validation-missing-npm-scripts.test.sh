@@ -182,11 +182,31 @@ case_record_skipped_validation_command_contract() {
     "$(cat "$jsonl_file")"
 }
 
+case_validation_heartbeat_contract() {
+  # Contract: a long-running validation command refreshes progress.jsonl while
+  # it is still executing, so status consumers do not report it as stalled.
+  local progress_file="$tmp_dir/results/progress.jsonl"
+  : > "$progress_file"
+  emit_progress() {
+    printf '%s|%s\n' "$1" "$2" >> "$progress_file"
+  }
+
+  KASEKI_VALIDATION_HEARTBEAT_SECONDS=5
+  local heartbeat_pid
+  heartbeat_pid="$(start_validation_heartbeat 'pre-agent validation' 'npm run test')"
+  sleep 6
+  stop_validation_heartbeat "$heartbeat_pid"
+
+  grep -Fq 'pre-agent validation|running validation command: npm run test' "$progress_file" \
+    || fail 'validation heartbeat refreshes progress while a command is active'
+}
+
 run_case "npm_run_script_name follows validation-command parsing contract" case_npm_run_script_name_contract
 run_case "missing_npm_script_for_validation_command follows skip contract" case_missing_npm_script_for_validation_command_contract
 run_case "construct_default_validation_commands follows default-command contract" case_construct_default_validation_commands_contract
 run_case "apply_default_validation_commands follows env precedence contract" case_apply_default_validation_commands_contract
 run_case "record_skipped_validation_command writes validation artifacts contract" case_record_skipped_validation_command_contract
+run_case "long validation commands emit progress heartbeats" case_validation_heartbeat_contract
 
 echo ""
 echo "✅ Missing npm script validation tests passed!"
