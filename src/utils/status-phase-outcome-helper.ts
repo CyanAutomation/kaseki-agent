@@ -36,6 +36,7 @@ export class StatusPhaseOutcomeHelper {
     // can contain headings for later stages before those stages run.
     const events = this.readPhaseEvents(job).filter((event) => event.timestampEstimated !== true);
     const stage = String(response.progress?.stage ?? job.currentStage ?? '').toLowerCase();
+    const goalSettingEvents = events.filter((event) => this.isGoalSettingStage(this.eventStage(event)));
     const scoutingEvents = events.filter((event) => this.isScoutingStage(this.eventStage(event)));
     const failedCommand = String(metadata?.failed_command ?? stage).toLowerCase();
     const preAgentValidation = this.isPreAgentValidationFailure(failedCommand);
@@ -49,8 +50,28 @@ export class StatusPhaseOutcomeHelper {
     const scoutingStartedAt = this.phaseStartedAt(scoutingEvents);
     const weavingStartedAt = this.phaseStartedAt(weavingEvents);
     const scoutingFallbackReason = this.scoutingFallbackReason(job);
+    const goalSettingFallbackReason = this.goalSettingFallbackReason(job);
+    const goalSettingStartedAt = this.phaseStartedAt(goalSettingEvents);
+    const goalSettingCompletedAt = this.phaseCompletedAt(goalSettingEvents);
+    const goalSettingExitCode = Number(metadata?.goal_setting_exit_code);
+    const goalSettingStarted = Boolean(
+      goalSettingEvents.length ||
+      this.isGoalSettingStage(stage) ||
+      Number(metadata?.goal_setting_duration_seconds ?? 0) > 0 ||
+      Number.isFinite(goalSettingExitCode) ||
+      (typeof metadata?.goal_setting_actual_model === 'string' && metadata.goal_setting_actual_model !== 'unknown')
+    );
+    const goalSettingFailed = Number.isFinite(goalSettingExitCode) && goalSettingExitCode !== 0;
 
     const derived: NonNullable<StatusResponse['phaseOutcome']> = {
+      goalSetting: this.resolveGoalSettingOutcome(
+        goalSettingStarted,
+        goalSettingFailed,
+        Boolean(goalSettingFallbackReason),
+        goalSettingCompletedAt,
+        scoutingStarted,
+        job.status,
+      ),
       scouting: this.resolveScoutingOutcome(
         scoutingFailed,
         scoutingStarted,
@@ -62,10 +83,13 @@ export class StatusPhaseOutcomeHelper {
         job.status,
       ),
       weaving: this.resolveWeavingOutcome(weavingFailed, weavingStarted, weavingCompletedAt, stage, job.status),
+      ...(goalSettingFallbackReason ? { goalSettingFallback: true, goalSettingFallbackReason } : {}),
       ...(scoutingFallbackReason ? { scoutingFallback: true, scoutingFallbackReason } : {}),
       explanation: this.buildFailureExplanation(failed, metadata, response, scoutingFallbackReason),
       ...(scoutingStartedAt ? { scoutingStartedAt } : {}),
       ...(scoutingCompletedAt ? { scoutingCompletedAt } : {}),
+      ...(goalSettingStartedAt ? { goalSettingStartedAt } : {}),
+      ...(goalSettingCompletedAt ? { goalSettingCompletedAt } : {}),
       ...(weavingStartedAt ? { weavingStartedAt } : {}),
       ...(weavingCompletedAt ? { weavingCompletedAt } : {}),
     };
@@ -83,10 +107,13 @@ export class StatusPhaseOutcomeHelper {
     const previous = this.runningOutcomeHighWater.get(job.id);
     const merged = previous ? {
       ...next,
+      goalSetting: this.moreAdvancedScouting(previous.goalSetting, next.goalSetting),
       scouting: this.moreAdvancedScouting(previous.scouting, next.scouting),
       weaving: this.moreAdvancedWeaving(previous.weaving, next.weaving),
       ...(previous.scoutingStartedAt && !next.scoutingStartedAt ? { scoutingStartedAt: previous.scoutingStartedAt } : {}),
       ...(previous.scoutingCompletedAt && !next.scoutingCompletedAt ? { scoutingCompletedAt: previous.scoutingCompletedAt } : {}),
+      ...(previous.goalSettingStartedAt && !next.goalSettingStartedAt ? { goalSettingStartedAt: previous.goalSettingStartedAt } : {}),
+      ...(previous.goalSettingCompletedAt && !next.goalSettingCompletedAt ? { goalSettingCompletedAt: previous.goalSettingCompletedAt } : {}),
       ...(previous.weavingStartedAt && !next.weavingStartedAt ? { weavingStartedAt: previous.weavingStartedAt } : {}),
       ...(previous.weavingCompletedAt && !next.weavingCompletedAt ? { weavingCompletedAt: previous.weavingCompletedAt } : {}),
     } : next;
@@ -133,6 +160,24 @@ export class StatusPhaseOutcomeHelper {
 
   private isScoutingStage(stage: string): boolean {
     return /scout|scouting/.test(stage);
+  }
+
+  private isGoalSettingStage(stage: string): boolean {
+    return /goal[-_ ]?setting/.test(stage);
+  }
+
+  private resolveGoalSettingOutcome(
+    started: boolean,
+    failed: boolean,
+    fallback: boolean,
+    completedAt: string | undefined,
+    downstreamStarted: boolean,
+    jobStatus: Job['status'],
+  ): NonNullable<StatusResponse['phaseOutcome']>['goalSetting'] {
+    if (!started) return 'not_reached';
+    if (failed) return fallback ? 'completed_with_fallback' : 'failed';
+    if (completedAt || downstreamStarted || jobStatus !== 'running') return 'completed';
+    return 'running';
   }
 
   private isPreAgentValidationFailure(failedCommand: string): boolean {
@@ -248,6 +293,19 @@ export class StatusPhaseOutcomeHelper {
         if (entry.recovered === true && typeof entry.reason_code === 'string' && entry.reason_code.includes('fallback')) return entry.reason_code;
       }
     } catch { /* fallback evidence is optional */ }
+    return undefined;
+  }
+
+  private goalSettingFallbackReason(job: Job): string | undefined {
+    const file = path.join(this.config.resultsDir, job.id, 'goal-setting-validation-errors.jsonl');
+    try {
+      for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+        if (!line.trim()) continue;
+        const entry = JSON.parse(line) as Record<string, unknown>;
+        if (typeof entry.recovery === 'string' && entry.recovery) return entry.recovery;
+        if (typeof entry.reason === 'string' && entry.reason) return entry.reason;
+      }
+    } catch { /* goal-setting fallback evidence is optional */ }
     return undefined;
   }
 

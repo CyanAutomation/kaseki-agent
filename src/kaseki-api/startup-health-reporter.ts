@@ -135,6 +135,7 @@ export function healthReportToMarkdown(report: StartupHealthReport): string {
   const lines: string[] = [];
 
   lines.push('# Startup Health Report\n');
+  lines.push('> Historical boot-time snapshot only. It does not determine current readiness; use `/api/preflight` for live diagnostics.\n');
   lines.push(`**Status:** ${getStatusEmoji(report.status)} ${report.status.toUpperCase()}\n`);
 
   lines.push('## Summary');

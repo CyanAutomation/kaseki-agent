@@ -320,6 +320,82 @@ function buildServiceInfoPaths(
   };
 }
 
+function buildInteractiveConsolePaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
+  return {
+    '/api/gateway-test': {
+      get: {
+        operationId: 'testGateway',
+        summary: 'Test gateway connectivity, inference, and Pi adapter support',
+        description: 'Stage 1 validates gateway connectivity without inference tokens. Stage 2 can run real inference and an optional Pi adapter provider smoke test.',
+        tags: ['Gateway Diagnostics'],
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'stage', in: 'query', required: false, schema: { type: 'string', enum: ['1', '2'] }, description: 'Run connectivity (1) or inference (2) diagnostics.' },
+          { name: 'responseSmoke', in: 'query', required: false, schema: { type: 'boolean' }, description: 'Run the inference response smoke test.' },
+          { name: 'piProvider', in: 'query', required: false, schema: { type: 'boolean' }, description: 'Run the Pi provider adapter smoke test.' },
+        ],
+        responses: {
+          '200': { description: 'Gateway diagnostic completed', content: { 'application/json': { schema: { type: 'object' } } } },
+          '401': { description: 'Unauthorized', content: { 'application/json': { schema: errorResponseSchema } } },
+          '503': { description: 'Gateway diagnostic failed', content: { 'application/json': { schema: { type: 'object' } } } },
+        },
+      },
+    },
+    '/api/github-issues': {
+      post: {
+        operationId: 'listGitHubIssues',
+        summary: 'Fetch repository issues for task creation',
+        description: 'Fetches repository issues through the configured GitHub App for task creation in the console.',
+        tags: ['GitHub Issues'],
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['repoUrl'],
+                properties: {
+                  repoUrl: { type: 'string', description: 'GitHub repository URL or owner/repo' },
+                  label: { type: 'string' },
+                  labels: { type: 'array', items: { type: 'string' } },
+                  limit: { type: 'integer', minimum: 1, maximum: 100 },
+                  state: { type: 'string', enum: ['open', 'closed', 'all'] },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Repository issues',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      number: { type: 'integer' },
+                      title: { type: 'string' },
+                      body: { type: ['string', 'null'] },
+                      url: { type: 'string', format: 'uri' },
+                      created_at: { type: 'string', format: 'date-time' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          '400': { description: 'Invalid repository request', content: { 'application/json': { schema: errorResponseSchema } } },
+          '401': { description: 'Unauthorized', content: { 'application/json': { schema: errorResponseSchema } } },
+          '404': { description: 'Repository not found', content: { 'application/json': { schema: errorResponseSchema } } },
+        },
+      },
+    },
+  };
+}
+
 /**
  * Build run management endpoints.
  * These endpoints allow triggering, listing, and controlling kaseki runs.
@@ -1161,6 +1237,7 @@ export function buildAllPaths(
   return {
     ...buildHealthCheckPaths(errorResponseSchema),
     ...buildServiceInfoPaths(errorResponseSchema, runRequestSchema),
+    ...buildInteractiveConsolePaths(errorResponseSchema),
     ...buildRunManagementPaths(errorResponseSchema, runRequestSchema, runResponseSchema),
     ...buildLogsProgressPaths(errorResponseSchema),
     ...buildArtifactPaths(errorResponseSchema),
