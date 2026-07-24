@@ -57,7 +57,7 @@ reconcile_gateway_summary() {
   attempts=$(jq -s 'map(select(type == "object"))' "$attempts_file" 2>/dev/null) || return 0
   errors=$(printf '%s' "$attempts" | jq '[.[] | select(.error != null)]') || return 0
 
-  jq --argjson attempts "$attempts" --argjson errors "$errors" '
+  if jq --argjson attempts "$attempts" --argjson errors "$errors" '
     .provider_attempt_count = ($attempts | length)
     | .provider_errors = ($errors | length)
     | .provider_error_history = $errors
@@ -66,7 +66,12 @@ reconcile_gateway_summary() {
     | .inference_health.provider_error_count = ($errors | length)
     | .inference_health.had_provider_error = (($errors | length) > 0)
     | .inference_health.agent_turn_success = ((.inference_health.agent_turn_success // true) and (($errors | length) == 0))
-  ' "$summary_file" > "${summary_file}.tmp" && mv "${summary_file}.tmp" "$summary_file"
+  ' "$summary_file" > "${summary_file}.tmp"; then
+    mv "${summary_file}.tmp" "$summary_file"
+  else
+    rm -f "${summary_file}.tmp"
+    return 1
+  fi
 }
 
 consolidate_phase_errors() {
