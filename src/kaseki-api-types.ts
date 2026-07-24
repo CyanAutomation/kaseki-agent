@@ -335,14 +335,20 @@ export interface StatusResponse {
     };
   };
   phaseOutcome?: {
+    goalSetting: 'completed' | 'completed_with_fallback' | 'failed' | 'skipped' | 'not_reached' | 'running';
     scouting: 'completed' | 'completed_with_fallback' | 'failed' | 'skipped' | 'not_reached' | 'running';
     weaving: 'completed' | 'failed' | 'skipped' | 'not_reached' | 'running';
+    /** Goal-setting failed but the run continued with the original task prompt. */
+    goalSettingFallback?: boolean;
+    goalSettingFallbackReason?: string;
     /** Scouting continued with a controller-generated, validated handoff. */
     scoutingFallback?: boolean;
     scoutingFallbackReason?: string;
     explanation?: string;
     scoutingStartedAt?: string;
     scoutingCompletedAt?: string;
+    goalSettingStartedAt?: string;
+    goalSettingCompletedAt?: string;
     weavingStartedAt?: string;
     weavingCompletedAt?: string;
   };

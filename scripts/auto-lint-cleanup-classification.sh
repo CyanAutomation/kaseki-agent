@@ -205,8 +205,6 @@ check_auto_lint_cleanup_allowlist() {
       printf 'Auto lint cleanup created changed file outside allowlist: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" "${KASEKI_RESULTS_DIR}"/quality.log
       printf '%s\n' "$changed_file" >> "$disallowed_file"
       emit_event "quality_gate_rule_evaluated" "rule=auto_lint_cleanup_allowlist" "passed=false" "file=$changed_file"
-      # Phase 2C: Emit quality violation to JSON
-      append_quality_violation "${KASEKI_RESULTS_DIR}"/quality-gates.json "auto_lint_cleanup_file_outside_allowlist" "File $changed_file created by auto lint cleanup outside allowlist" "error"
     fi
   done < "$cleanup_created_file"
 
@@ -223,13 +221,13 @@ check_auto_lint_cleanup_allowlist() {
       if grep -Fxq -- "$changed_file" "$post_restore_file"; then
         printf 'ERROR: Cleanup-created disallowed change could not be restored: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" "${KASEKI_RESULTS_DIR}"/quality.log
         unrestored_count=$((unrestored_count + 1))
-        # Phase 2C: Emit quality violation to JSON
-        append_quality_violation "${KASEKI_RESULTS_DIR}"/quality-gates.json "cleanup_restoration_failure" "File $changed_file from auto lint cleanup could not be restored" "error"
+        append_quality_violation "${KASEKI_RESULTS_DIR}"/quality-gates.json "auto_lint_cleanup_file_outside_allowlist" "File $changed_file created by auto lint cleanup outside allowlist and could not be restored" "error"
       fi
     done < "$disallowed_file"
     if [ "$unrestored_count" -eq 0 ]; then
       printf 'Auto lint cleanup restored %s cleanup-created file(s) outside allowlist.\n' "$disallowed_count" | tee -a "$AUTO_LINT_CLEANUP_LOG" "${KASEKI_RESULTS_DIR}"/quality.log
       emit_event "auto_lint_cleanup_allowlist_restoration_complete" "restored=$disallowed_count" "unrestored=0"
+      append_quality_violation "${KASEKI_RESULTS_DIR}"/quality-gates.json "auto_lint_cleanup_file_outside_allowlist_restored" "Restored $disallowed_count cleanup-created file(s) outside allowlist before finalizing the run" "info"
       collect_git_artifacts
       return 0
     fi
@@ -240,6 +238,12 @@ check_auto_lint_cleanup_allowlist() {
   AUTO_LINT_CLEANUP_CLASSIFICATION="cleanup_allowlist_failed"
   AUTO_LINT_CLEANUP_FAILURE_CLASSIFICATION="cleanup_allowlist_failed"
   QUALITY_FAILURE_REASON="auto_lint_cleanup_allowlist: $disallowed_count cleanup-created file(s) outside KASEKI_CHANGED_FILES_ALLOWLIST/KASEKI_VALIDATION_ALLOWLIST"
+  while IFS= read -r changed_file || [ -n "$changed_file" ]; do
+    [ -z "$changed_file" ] && continue
+    if [ "${KASEKI_RESTORE_DISALLOWED_CHANGES:-}" != "1" ] || ! grep -Fxq -- "$changed_file" "$post_restore_file"; then
+      append_quality_violation "${KASEKI_RESULTS_DIR}"/quality-gates.json "auto_lint_cleanup_file_outside_allowlist" "File $changed_file created by auto lint cleanup outside allowlist" "error"
+    fi
+  done < "$disallowed_file"
   printf 'ERROR: %s\n' "$QUALITY_FAILURE_REASON" | tee -a "$AUTO_LINT_CLEANUP_LOG" "${KASEKI_RESULTS_DIR}"/quality.log
   emit_error_event "auto_lint_cleanup_allowlist_failed" "$QUALITY_FAILURE_REASON" "continue"
   return 1

@@ -354,8 +354,8 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   'stdout.log': {
     name: 'stdout.log',
     contentType: 'text/plain',
-    description: 'Container stdout: all script output, logging, debugging info',
-    availability: ArtifactAvailability.ON_FAILURE,
+    description: 'Container stdout: all script output, logging, debugging info; available whenever non-empty',
+    availability: ArtifactAvailability.CONDITIONAL,
     triageOrder: 8,
     sizeHint: 'large',
   },
@@ -363,8 +363,8 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   'stderr.log': {
     name: 'stderr.log',
     contentType: 'text/plain',
-    description: 'Container stderr: errors and warnings from all processes',
-    availability: ArtifactAvailability.ON_FAILURE,
+    description: 'Container stderr: errors and warnings from all processes; available whenever non-empty',
+    availability: ArtifactAvailability.CONDITIONAL,
     triageOrder: 9,
     sizeHint: 'medium',
   },

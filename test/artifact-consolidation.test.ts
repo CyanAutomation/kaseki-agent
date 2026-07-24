@@ -114,7 +114,7 @@ describe('Artifact Consolidation', () => {
       try {
         fs.writeFileSync(validationFile, 'command\telapsed_seconds\nnpm run build\t5.2\nnpm run test\t12.875\n');
         fs.writeFileSync(preValidationFile, '');
-        fs.writeFileSync(stageFile, 'stage\telapsed_seconds\nsetup\t2.5\nscouting\t45\npi-agent\t120.5\n');
+        fs.writeFileSync(stageFile, 'stage\texit_code\telapsed_seconds\tdetails\nsetup\t0\t2.5\tready\nscouting\t86\t45\tfallback\npi-agent\t0\t120.5\t\n');
 
         const args = [
           '-c',
@@ -149,10 +149,54 @@ describe('Artifact Consolidation', () => {
             { command: 'npm run type-check', elapsed_seconds: 3.125 },
           ],
           stage_timings: [
-            { stage: 'setup', elapsed_seconds: 2.5 },
-            { stage: 'scouting', elapsed_seconds: 45 },
-            { stage: 'pi-agent', elapsed_seconds: 120.5 },
+            { stage: 'setup', exit_code: 0, elapsed_seconds: 2.5, details: 'ready' },
+            { stage: 'scouting', exit_code: 86, elapsed_seconds: 45, details: 'fallback' },
+            { stage: 'pi-agent', exit_code: 0, elapsed_seconds: 120.5, details: '' },
           ],
+        });
+      } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+      }
+    });
+
+    it('keeps legacy two-column stage timings readable', () => {
+      const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-legacy-stage-timings-'));
+      const manifestFile = path.join(testDir, 'timings-manifest.json');
+      const stageFile = path.join(testDir, 'stage-timings.tsv');
+      const helper = path.join(__dirname, '..', 'scripts', 'lib', 'artifact-consolidation.sh');
+      try {
+        fs.writeFileSync(manifestFile, JSON.stringify({ validation_timings: [], pre_validation_timings: [], stage_timings: [] }));
+        fs.writeFileSync(stageFile, 'stage\telapsed_seconds\nlegacy stage\t12.25\n');
+        execFileSync('bash', ['-c', 'source "$1"; consolidate_timings_to_json "$2" /dev/null /dev/null "$3"', 'legacy-stage-timings', helper, manifestFile, stageFile]);
+        expect(JSON.parse(fs.readFileSync(manifestFile, 'utf-8')).stage_timings).toEqual([
+          { stage: 'legacy stage', elapsed_seconds: 12.25 },
+        ]);
+      } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+      }
+    });
+
+    it('reconciles gateway health with provider attempts from all phases', () => {
+      const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-gateway-reconciliation-'));
+      const summaryFile = path.join(testDir, 'gateway-summary.json');
+      const attemptsFile = path.join(testDir, 'provider-attempts.jsonl');
+      const helper = path.join(__dirname, '..', 'scripts', 'lib', 'artifact-consolidation.sh');
+      try {
+        fs.writeFileSync(summaryFile, JSON.stringify({
+          provider_errors: 0,
+          inference_health: { agent_turn_success: true, provider_error_count: 0 },
+        }));
+        fs.writeFileSync(attemptsFile, [
+          { phase: 'goal-setting', attempt: 'primary-1', error: { type: 'provider_error', message: 'temporary gateway error' } },
+          { phase: 'coding', attempt: 'retry-1', error: null },
+        ].map(JSON.stringify).join('\n') + '\n');
+        execFileSync('bash', ['-c', 'source "$1"; reconcile_gateway_summary "$2" "$3"', 'gateway-reconciliation', helper, summaryFile, attemptsFile]);
+        expect(JSON.parse(fs.readFileSync(summaryFile, 'utf-8'))).toMatchObject({
+          provider_attempt_count: 2,
+          provider_errors: 1,
+          primary_provider_error: { type: 'provider_error', message: 'temporary gateway error' },
+          provider_error_history: [{ phase: 'goal-setting' }],
+          inference_health: { provider_error_count: 1, had_provider_error: true, agent_turn_success: false },
         });
       } finally {
         fs.rmSync(testDir, { recursive: true, force: true });
