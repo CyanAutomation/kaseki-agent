@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.115.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.114.1...v1.115.0) (2026-07-24)
+
+
+### Features
+
+* Add new endpoint contracts for gateway test and GitHub issues ([9440ca3](https://github.com/CyanAutomation/kaseki-agent/commit/9440ca35e3f2dd9082f6049047a225f74d463d71))
+
 ## [1.114.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.114.0...v1.114.1) (2026-07-23)
 
 
