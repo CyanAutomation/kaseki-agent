@@ -115,6 +115,7 @@ describe('StatusResponseBuilder', () => {
       const response = builder.buildStatus({ id: 'job-phase', status: 'running', startedAt: new Date('2026-01-01T00:00:00Z') } as Job);
 
       expect(response.phaseOutcome).toMatchObject({
+        goalSetting: 'completed',
         scouting: 'completed',
         weaving: 'not_reached',
         scoutingStartedAt: '2026-01-01T00:00:02Z',
@@ -141,6 +142,36 @@ describe('StatusResponseBuilder', () => {
       const response = builder.buildStatus({ id: 'job-pre-agent-failure', status: 'failed' } as Job);
 
       expect(response.phaseOutcome).toMatchObject({ scouting: 'not_reached', weaving: 'not_reached' });
+    });
+
+    it('reports a recovered goal-setting failure without hiding it behind scouting progress', () => {
+      const metadata = {
+        goal_setting_duration_seconds: 63,
+        goal_setting_exit_code: 86,
+        goal_setting_actual_model: 'dynamic/kaseki-agent',
+      };
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) =>
+        filePath.endsWith('metadata.json') || filePath.endsWith('goal-setting-validation-errors.jsonl')
+      );
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.endsWith('metadata.json')) return JSON.stringify(metadata);
+        if (filePath.endsWith('goal-setting-validation-errors.jsonl')) {
+          return JSON.stringify({ status: 'failure', reason: 'goal-setting completed without required candidate artifact', recovery: 'fallback_goal_setting_artifact' }) + '\n';
+        }
+        return '';
+      });
+      mockScheduler.getLiveProgressEvents.mockReturnValue([
+        { stage: 'pi scouting agent', status: 'started', timestamp: '2026-01-01T00:02:00Z' },
+      ]);
+
+      const response = builder.buildStatus({ id: 'job-goal-setting-fallback', status: 'running' } as Job);
+
+      expect(response.phaseOutcome).toMatchObject({
+        goalSetting: 'completed_with_fallback',
+        goalSettingFallback: true,
+        goalSettingFallbackReason: 'fallback_goal_setting_artifact',
+        scouting: 'running',
+      });
     });
 
     it('does not report weaving during GitHub operations preflight', () => {

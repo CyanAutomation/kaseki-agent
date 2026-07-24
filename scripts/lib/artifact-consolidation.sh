@@ -38,9 +38,35 @@ consolidate_timings_to_json() {
     [ -n "$pre_validation_json" ] && jq --argjson data "$pre_validation_json" '.pre_validation_timings = $data' "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
   fi
   if [ -s "$stage_timings" ]; then
-    stage_json=$(tail -n +2 "$stage_timings" | jq -R 'split("\t") | {stage: .[0], elapsed_seconds: (.[1] | tonumber)}' | jq -s '.' 2>/dev/null)
+    # Current runner rows are stage, exit_code, elapsed_seconds, details. Keep
+    # accepting the former two-column format so historical artifacts remain readable.
+    stage_json=$(tail -n +2 "$stage_timings" | jq -R 'split("\t") | if length >= 4 then {stage: .[0], exit_code: (.[1] | tonumber), elapsed_seconds: (.[2] | tonumber), details: .[3]} elif length >= 3 then {stage: .[0], exit_code: (.[1] | tonumber), elapsed_seconds: (.[2] | tonumber), details: ""} else {stage: .[0], elapsed_seconds: (.[1] | tonumber)} end' | jq -s '.' 2>/dev/null)
     [ -n "$stage_json" ] && jq --argjson data "$stage_json" '.stage_timings = $data' "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
   fi
+}
+
+# The Pi event filter writes a summary for the most recently executed phase.
+# Reconcile it with the durable attempt manifest so the run-level artifact does
+# not erase retried provider errors from earlier phases.
+reconcile_gateway_summary() {
+  local summary_file="$1"
+  local attempts_file="$2"
+  [ -s "$summary_file" ] && [ -s "$attempts_file" ] || return 0
+
+  local attempts errors
+  attempts=$(jq -s 'map(select(type == "object"))' "$attempts_file" 2>/dev/null) || return 0
+  errors=$(printf '%s' "$attempts" | jq '[.[] | select(.error != null)]') || return 0
+
+  jq --argjson attempts "$attempts" --argjson errors "$errors" '
+    .provider_attempt_count = ($attempts | length)
+    | .provider_errors = ($errors | length)
+    | .provider_error_history = $errors
+    | .primary_provider_error = ($errors[0].error // .primary_provider_error // null)
+    | .inference_health = (.inference_health // {})
+    | .inference_health.provider_error_count = ($errors | length)
+    | .inference_health.had_provider_error = (($errors | length) > 0)
+    | .inference_health.agent_turn_success = ((.inference_health.agent_turn_success // true) and (($errors | length) == 0))
+  ' "$summary_file" > "${summary_file}.tmp" && mv "${summary_file}.tmp" "$summary_file"
 }
 
 consolidate_phase_errors() {
@@ -89,5 +115,8 @@ finalize_artifacts_and_publish_status() {
   consolidate_timings_to_json "$results_dir/timings-manifest.json" "$validation_timings" "$pre_validation_timings" "$results_dir/stage-timings.tsv"
   consolidate_phase_errors "$results_dir/phase-errors.jsonl" "$results_dir/critical-change-expectations.log" "$results_dir/summarizer-stderr.log" "$results_dir/baseline-npm-ci.log"
   consolidate_validation_errors "$results_dir/artifact-validation-errors.jsonl" "$results_dir/scouting-validation-errors.jsonl" "$results_dir/goal-setting-validation-errors.jsonl" "$results_dir/goal-check-validation-errors.jsonl"
+  reconcile_gateway_summary "$results_dir/gateway-summary.json" "$results_dir/provider-attempts.jsonl" || {
+    echo "Warning: Failed to reconcile gateway summary" >&2
+  }
   "$status_writer" "$status"
 }

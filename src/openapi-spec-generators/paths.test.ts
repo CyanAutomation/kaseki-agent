@@ -61,6 +61,22 @@ describe('OpenAPI Path Builders', () => {
       tags: ['Service Info']
     },
     {
+      path: '/api/gateway-test',
+      method: 'get',
+      operationId: 'testGateway',
+      requiresAuth: true,
+      statuses: ['200', '401', '503'],
+      tags: ['Gateway Diagnostics']
+    },
+    {
+      path: '/api/github-issues',
+      method: 'post',
+      operationId: 'listGitHubIssues',
+      requiresAuth: true,
+      statuses: ['200', '400', '401', '404'],
+      tags: ['GitHub Issues']
+    },
+    {
       path: '/api/validate',
       method: 'post',
       operationId: 'validateTask',
@@ -399,7 +415,9 @@ describe('OpenAPI Path Builders', () => {
         getRunProgress: ['legacy', 'progress', 'event'],
         streamRunEvents: ['stream', 'run', 'events'],
         getRunStatus: ['run', 'status'],
+        listGitHubIssues: ['repository', 'issues', 'task'],
         listRuns: ['list', 'runs'],
+        testGateway: ['gateway', 'inference', 'adapter'],
         testWebhook: ['test', 'webhook'],
         triggerRun: ['trigger', 'run'],
         validateTask: ['validate', 'task']
@@ -456,6 +474,14 @@ describe('OpenAPI Path Builders', () => {
         {
           operationId: 'getRunImprovements',
           terms: ['run-evaluation artifacts', 'stage timings', 'dashboards']
+        },
+        {
+          operationId: 'testGateway',
+          terms: ['gateway connectivity', 'inference', 'pi adapter']
+        },
+        {
+          operationId: 'listGitHubIssues',
+          terms: ['repository issues', 'task creation']
         }
       ];
       const operations = Object.entries(paths).flatMap(([route, pathDef]) => {
@@ -927,6 +953,7 @@ describe('OpenAPI Path Builders', () => {
 
     it('each GET operation should document its expected success status', () => {
       const expectedGetSuccessStatusByRoute: Record<string, string> = {
+        '/api/gateway-test': '200',
         '/api/improvements': '200',
         '/api/metrics': '200',
         '/api/preflight': '200',

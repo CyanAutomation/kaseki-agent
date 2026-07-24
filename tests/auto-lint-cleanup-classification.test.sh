@@ -171,10 +171,40 @@ JSON
   assert_file_contains 'cleanup timings include missing cleanup classification' 'classification=missing_cleanup_command' "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
 }
 
+case_restored_allowlist_change_is_not_an_error() {
+  reset_workspace
+  # Re-source to restore the real allowlist checker after the lightweight stub
+  # used by the command-classification cases above.
+  . "$HELPER_PATH"
+  merge_allowlists() { printf '%s' "$1"; }
+  build_allowlist_regex() { printf '%s' "$1"; }
+  append_quality_violation() {
+    printf '%s\t%s\t%s\n' "$2" "$3" "$4" >> "$TMP_DIR/results/quality-violations.log"
+  }
+  collect_git_artifacts() { :; }
+
+  local before_file after_file
+  before_file="$TMP_DIR/before-files.txt"
+  after_file="$TMP_DIR/after-files.txt"
+  collect_changed_file_set "$before_file"
+  printf 'temporary cleanup output\n' > outside-allowlist.txt
+  collect_changed_file_set "$after_file"
+  KASEKI_CHANGED_FILES_ALLOWLIST='README.md'
+  KASEKI_VALIDATION_ALLOWLIST=''
+  KASEKI_RESTORE_DISALLOWED_CHANGES=1
+
+  check_auto_lint_cleanup_allowlist "$before_file" "$after_file"
+
+  [ ! -e outside-allowlist.txt ] || fail 'restored cleanup output should be removed from the worktree'
+  assert_file_contains 'restored allowlist change is recorded as informational' 'auto_lint_cleanup_file_outside_allowlist_restored' "$TMP_DIR/results/quality-violations.log"
+  assert_file_not_contains 'restored allowlist change is not recorded as an error' $'auto_lint_cleanup_file_outside_allowlist\tFile outside-allowlist.txt created by auto lint cleanup outside allowlist\terror' "$TMP_DIR/results/quality-violations.log"
+}
+
 case_missing_cleanup_tooling
 case_missing_npm_script
 case_skipped_cleanup
 case_successful_cleanup
 case_artifact_event_classification
+case_restored_allowlist_change_is_not_an_error
 
 printf '\n✅ auto-lint cleanup classification tests passed\n'
