@@ -122,9 +122,18 @@ function buildServiceInfoPaths(
         operationId: 'getPreFlight',
         summary: 'Pre-flight validation',
         description:
-          'Validates that the controller (Docker, image, GitHub App) is configured correctly. Returns checks for all dependencies.',
+          'Validates that the controller (Docker, image, GitHub App) is configured correctly. Set agentCapability=true to also run the token-consuming Pi provider adapter smoke used by coding runs.',
         tags: ['Service Info'],
         security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'agentCapability',
+            in: 'query',
+            required: false,
+            schema: { type: 'boolean' },
+            description: 'Run the Pi provider adapter smoke used by coding runs. This consumes inference tokens.'
+          }
+        ],
         responses: {
           '200': {
             description: 'Pre-flight checks complete',
