@@ -1398,7 +1398,7 @@ const controllerPage = String.raw`<!doctype html>
             <button class="health-check-button" data-probe="/ready" type="button"><span class="hc-label">Readiness</span><span class="health-check-status" data-status="readiness"></span></button>
             <button class="health-check-button" data-probe="/api/gateway-test?stage=1" data-auth="true" type="button" title="Validate gateway reachability and authentication. This does not prove inference or Pi adapter compatibility."><span class="hc-label">Gateway connectivity &amp; auth</span><span class="health-check-status" data-status="gateway"></span></button>
             <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true" data-auth="true" type="button" title="Run real gateway inference, Responses compatibility checks where applicable, and the Pi provider adapter smoke test used by coding runs."><span class="hc-label">Inference &amp; Pi adapter</span><span class="health-check-status" data-status="llm-test"></span></button>
-            <button class="health-check-button" data-probe="/api/preflight?agentCapability=true" data-auth="true" type="button" title="Run current controller checks plus the Pi provider adapter smoke used by coding runs."><span class="hc-label">Current Preflight</span><span class="health-check-status" data-status="preflight"></span></button>
+            <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button" title="Run current controller readiness checks. Use Inference & Pi adapter for the separate, token-consuming model compatibility smoke test."><span class="hc-label">Current Preflight</span><span class="health-check-status" data-status="preflight"></span></button>
           </div>
           <div class="summary-grid" id="health-summary" aria-live="polite">
             <div class="summary-card">
@@ -2003,6 +2003,9 @@ const controllerPage = String.raw`<!doctype html>
             const phaseElapsedSeconds = Math.max(0, Math.floor((Date.now() - Date.parse(payload.progress.updatedAt)) / 1000));
             if (Number.isFinite(phaseElapsedSeconds)) {
               items.push(['Time in current phase', formatElapsedSeconds(phaseElapsedSeconds)]);
+              if (payload.status === 'running' && phaseElapsedSeconds >= 120) {
+                items.push(['Progress attention', 'No new phase update for ' + formatElapsedSeconds(phaseElapsedSeconds) + '. Open Events or Stdout to confirm the agent is still making progress.', { warning: true, fullWidth: true }]);
+              }
             }
           }
           if (payload.progressHeartbeat && typeof payload.progressHeartbeat.ageSeconds === 'number') {
@@ -2322,7 +2325,8 @@ const controllerPage = String.raw`<!doctype html>
             + (typeof payload.attempt.nextRetryInSeconds === 'number' ? ' in ' + payload.attempt.nextRetryInSeconds + 's' : '')
           : '';
         const timeout = typeof payload.timeoutRiskPercent === 'number' ? 'timeout risk ' + payload.timeoutRiskPercent + '%' : '';
-        const parts = [stage, percent, phaseElapsed === null ? '' : 'phase ' + formatElapsedSeconds(phaseElapsed), retry, timeout].filter(Boolean);
+        const stalled = payload.status === 'running' && phaseElapsed !== null && phaseElapsed >= 120 ? 'awaiting update' : '';
+        const parts = [stage, percent, phaseElapsed === null ? '' : 'phase ' + formatElapsedSeconds(phaseElapsed), stalled, retry, timeout].filter(Boolean);
         detailsEl.textContent = parts.join(' | ');
       }
 
@@ -3502,7 +3506,10 @@ const controllerPage = String.raw`<!doctype html>
         
         // Filter to only text artifacts (exclude binary)
         const textArtifacts = artifacts.filter((artifact) => {
-          if (!artifact.available) return false;
+          // The controller creates the complete artifact manifest at run start.
+          // A zero-byte entry is a reserved future output, not a file a user can
+          // inspect yet; listing it makes a live run look like it produced data.
+          if (!artifact.available || Number(artifact.size || 0) <= 0) return false;
           return isTextContentType(artifact.contentType);
         });
         
