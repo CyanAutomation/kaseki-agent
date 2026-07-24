@@ -166,6 +166,30 @@ write_validation_command_environment() {
   } | tee -a "$env_log"
 }
 
+start_validation_heartbeat() {
+  local stage_label="$1"
+  local command="$2"
+  local interval_seconds="${KASEKI_VALIDATION_HEARTBEAT_SECONDS:-30}"
+
+  if ! [[ "$interval_seconds" =~ ^[0-9]+$ ]] || [ "$interval_seconds" -lt 5 ]; then
+    interval_seconds=30
+  fi
+
+  (
+    while sleep "$interval_seconds"; do
+      emit_progress "$stage_label" "running validation command: $command"
+    done
+  ) >/dev/null 2>&1 &
+  printf '%s' "$!"
+}
+
+stop_validation_heartbeat() {
+  local heartbeat_pid="${1:-}"
+  [ -n "$heartbeat_pid" ] || return 0
+  kill "$heartbeat_pid" 2>/dev/null || true
+  wait "$heartbeat_pid" 2>/dev/null || true
+}
+
 append_validation_failure_tail() {
   local raw_log="$1"
   local visible_log="$2"
@@ -221,7 +245,7 @@ run_validation_commands() {
   local -n validation_stopped_ref="$stopped_var"
   local -n validation_attempted_ref="$attempted_var"
   local stage_start validation_start validation_end duration command trimmed missing_npm_script
-  local command_exit tee_exit filter_exit pipe_statuses execute_during_dry_run pipefail_was_enabled validation_infra_failure cmd_status
+  local command_exit tee_exit filter_exit pipe_statuses execute_during_dry_run pipefail_was_enabled validation_infra_failure cmd_status heartbeat_pid
   local -a validation_commands
 
   KASEKI_WORKSPACE_DIR="$workspace_dir"
@@ -279,6 +303,7 @@ run_validation_commands() {
       ((validation_attempted_ref++))
       emit_event "validation_command_started" "stage=$stage_label" "command=$trimmed"
       write_validation_command_environment "$stage_label" "$trimmed" "$env_log"
+      heartbeat_pid="$(start_validation_heartbeat "$stage_label" "$trimmed")"
       pipefail_was_enabled=0
       if set -o | grep -q '^pipefail[[:space:]]*on'; then
         pipefail_was_enabled=1
@@ -298,6 +323,8 @@ run_validation_commands() {
           2> >(sed 's/^/[validation-tee] /' >> "$FILTER_STDERR_FILE") |
         FILTER_DIAGNOSTICS_LOG="$FILTER_DIAGNOSTICS_LOG" validation-output-filter 2>>"$FILTER_STDERR_FILE"
       pipe_statuses=("${PIPESTATUS[@]}")
+      stop_validation_heartbeat "$heartbeat_pid"
+      heartbeat_pid=""
       if [ "$pipefail_was_enabled" -eq 1 ]; then set -o pipefail; else set +o pipefail; fi
       command_exit="${pipe_statuses[0]:-1}"
       tee_exit="${pipe_statuses[1]:-1}"

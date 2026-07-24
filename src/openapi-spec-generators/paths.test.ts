@@ -673,6 +673,11 @@ describe('OpenAPI Path Builders', () => {
       const preflightPath = (paths['/api/preflight'] as Record<string, any>).get;
       expect(preflightPath.operationId).toBe('getPreFlight');
       expect(preflightPath.security).toEqual([{ BearerAuth: [] }]);
+      expect(preflightPath.parameters).toContainEqual(expect.objectContaining({
+        name: 'agentCapability',
+        in: 'query',
+        schema: { type: 'boolean' }
+      }));
       const responseProps = (preflightPath.responses['200'].content['application/json'].schema as Record<string, any>)
         .properties;
       expect(responseProps.isValid.type).toBe('boolean');

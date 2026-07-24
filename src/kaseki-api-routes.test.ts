@@ -46,6 +46,7 @@ import type { StartupHealthReport } from './kaseki-api-types';
 import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
 import { createMockScheduler, createTestConfig, type TestScheduler } from './test-utils';
+import * as gatewaySmoke from './kaseki-api-gateway-smoke';
 
 const { privateKey: defaultGithubPrivateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
 const defaultGithubPrivateKeyPem = defaultGithubPrivateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
@@ -1032,6 +1033,42 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     } finally {
       process.env = envSnapshot;
       fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('GET /api/preflight reports Pi adapter capability failures when requested', async () => {
+    const piProviderSmokeSpy = jest.spyOn(gatewaySmoke, 'testPiGatewayProviderSmoke').mockReturnValueOnce({
+      status: 'error',
+      detail: 'Pi provider did not complete the coding-shaped tool-call contract',
+      responseTime: 20,
+      timestamp: '2026-07-24T00:00:00.000Z',
+      provider: 'gateway',
+      model: 'dynamic/kaseki-agent',
+      remediation: 'Inspect the Pi adapter stream and gateway tool-call deltas.',
+    });
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-capability-results-'));
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/preflight?agentCapability=true`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      const body = (await res.json()) as any;
+      expect(res.status).toBe(503);
+      expect(body.status).toBe('error');
+      expect(body.checks).toContainEqual(expect.objectContaining({
+        name: 'pi-provider-adapter',
+        ok: false,
+        remediation: expect.stringContaining('tool-call deltas'),
+      }));
+      expect(body.failedChecks).toContainEqual(expect.objectContaining({ name: 'pi-provider-adapter', ok: false }));
+      expect(piProviderSmokeSpy).toHaveBeenCalledWith({ requested: true });
+    } finally {
+      piProviderSmokeSpy.mockRestore();
+      await cleanupTestApp(server, idempotencyStore);
       fs.rmSync(resultsDir, { recursive: true, force: true });
     }
   });
