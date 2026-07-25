@@ -264,7 +264,7 @@ build_run_evaluation_prompt
     const getCavemanFunctionText = extractBashFunctionWithCache('get_caveman_instruction', 'require_or_warn_binary');
     const isComplexFunctionText = extractBashFunctionWithCache('is_complex_change_task', 'is_docs_only_task');
     const isDocsOnlyFunctionText = extractBashFunctionWithCache('is_docs_only_task', 'record_prompt_diagnostics');
-    const buildScoutingFunctionText = extractBashFunctionWithCache('build_scouting_prompt', 'run_scouting_agent');
+    const buildScoutingFunctionText = extractBashFunctionWithCache('build_scouting_prompt', 'check_scouting_templates');
 
     // Combine all functions in dependency order.
     const functionText = getCavemanFunctionText + '\n\n' + isComplexFunctionText + '\n\n' + isDocsOnlyFunctionText + '\n\n' + buildScoutingFunctionText;
