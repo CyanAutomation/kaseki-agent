@@ -1,5 +1,6 @@
 #!/bin/bash
 # shellcheck disable=SC1090,SC2016,SC2027
+# SC1090/SC2016/SC2027 are file-scoped for dynamic helper sourcing and embedded shell/JS snippets.
 # NOTE: This file uses dynamic helper sourcing and embedded JavaScript/shell snippets.
 # The file passes bash syntax validation and functional tests.
 # NOTE: This script intentionally avoids global `set -e` so each stage can
@@ -2123,14 +2124,14 @@ write_validation_infrastructure_diagnostics() {
       
       printf '### Filter Startup\n\n'
       if [ -n "$filter_startup" ]; then
-        printf '```\n%s\n```\n\n' "$filter_startup"
+        printf '%s\n%s\n%s\n\n' '```' "$filter_startup" '```'
       else
         printf '*(No startup events captured)*\n\n'
       fi
       
       printf '### Filter Shutdown\n\n'
       if [ -n "$filter_close" ]; then
-        printf '```\n%s\n```\n\n' "$filter_close"
+        printf '%s\n%s\n%s\n\n' '```' "$filter_close" '```'
       else
         printf '*(No shutdown events captured)*\n\n'
       fi
@@ -2176,7 +2177,7 @@ write_validation_infrastructure_diagnostics() {
     printf '   ```\n\n'
     
     printf '2. **Review validation command output** to identify noisy commands:\n'
-    printf '   - Check `validation-raw.log` for lines that can be suppressed\n'
+    printf '   - Check validation-raw.log for lines that can be suppressed\n'
     printf '   - Filter patterns already exclude npm notices/progress bars\n'
     printf '   - Consider disabling verbose test reporters\n\n'
     
@@ -2187,8 +2188,8 @@ write_validation_infrastructure_diagnostics() {
     
     printf '## References\n\n'
     printf '- **Exit Code 141**: SIGPIPE (signal 13) — Broken pipe, upstream process crashed\n'
-    printf '- **Validation Log**: `validation.log` (filtered) and `validation-raw.log` (unfiltered)\n'
-    printf '- **Filter Diagnostics**: `filter-diagnostics.log` (detailed process events)\n'
+    printf '- **Validation Log**: validation.log (filtered) and validation-raw.log (unfiltered)\n'
+    printf '- **Filter Diagnostics**: filter-diagnostics.log (detailed process events)\n'
   } > "$diagnostics_file"
 }
 
@@ -8481,11 +8482,11 @@ check_filesystem_capabilities() {
       printf '  - Container UID: %d\n' "$(id -u)"
       printf '  - Expected reason: Docker mounted with :ro flag or container --read-only\n'
       printf '\nImpact:\n'
-      printf '  - Scouting Pi agent will exit 0 but "${KASEKI_RESULTS_DIR}"/scouting-candidate.json will be MISSING\n'
+      printf '  - Scouting Pi agent will exit 0 but %s/scouting-candidate.json will be MISSING\n' "$KASEKI_RESULTS_DIR"
       printf '  - Validation logs and artifacts cannot be written\n'
       printf '  - This causes exit code 86 (scouting validation failure)\n'
-      printf '\nFix: Remount ${KASEKI_RESULTS_DIR} as read-write\n'
-      printf '  docker run -v /path/to${KASEKI_RESULTS_DIR}:${KASEKI_RESULTS_DIR}:rw ...\n'
+      printf '\nFix: Remount %s as read-write\n' "$KASEKI_RESULTS_DIR"
+      printf '  docker run -v /path/to%s:%s:rw ...\n' "$KASEKI_RESULTS_DIR" "$KASEKI_RESULTS_DIR"
       printf 'Or remove --read-only flag from Docker run command\n'
     } | tee -a "${KASEKI_RESULTS_DIR}"/scouting-stderr.log
   else
