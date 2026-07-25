@@ -15,6 +15,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { createGatewayProviderConfig } from './dist/gateway/create-provider-config.js';
 
 const DEFAULT_GATEWAY_DIAGNOSTICS_PATH = '/results/.gateway-diagnostics.jsonl';
 
@@ -46,66 +47,13 @@ recordGatewayDiagnostic({
 });
 
 /**
- * Resolve CloudFlare API key from environment or file
- * Prefers environment variable, falls back to file
- * @returns {string} API key or empty string if not configured
- */
-function resolveGatewayApiKey() {
-  if (process.env.LLM_GATEWAY_API_KEY) {
-    return process.env.LLM_GATEWAY_API_KEY;
-  }
-
-  const filePath = process.env.LLM_GATEWAY_API_KEY_FILE || '~/.kaseki/secrets.json';
-  if (filePath) {
-    try {
-      const expandedPath = filePath.startsWith('~')
-        ? filePath.replace('~', process.env.HOME || '')
-        : filePath;
-      const value = fs.readFileSync(expandedPath, 'utf8').trim();
-      if (value) return value;
-    } catch {
-      // Extension initialization will surface the failure
-    }
-  }
-
-  return '';
-}
-
-/**
- * Resolve max output tokens from environment
- * @returns {number} Max tokens (default: 4096)
- */
-function resolveGatewayMaxTokens() {
-  const raw = process.env.LLM_GATEWAY_MAX_OUTPUT_TOKENS;
-  if (!raw) return 4096;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 4096;
-}
-
-/**
  * Register CloudFlare gateway provider with Pi CLI
  * @param {object} pi - Pi CLI extension API
  */
 export default function (pi) {
-  const gatewayUrl = process.env.LLM_GATEWAY_URL;
-  const gatewayApiKey = resolveGatewayApiKey();
-  const maxTokens = resolveGatewayMaxTokens();
-  const model = process.env.LLM_GATEWAY_MODEL || 'dynamic/kaseki-agent';
-  const gatewayHeaders = gatewayUrl?.includes('gateway.ai.cloudflare.com')
-    ? {
-      'cf-aig-authorization': `Bearer ${gatewayApiKey}`,
-      'cf-aig-collect-log-payload': process.env.KASEKI_GATEWAY_LOG_PAYLOADS === '1' ? 'true' : 'false',
-      'cf-aig-metadata': JSON.stringify({
-        run_id: process.env.KASEKI_INSTANCE || 'unknown',
-        phase: process.env.KASEKI_INFERENCE_PHASE || 'unknown',
-        attempt: process.env.KASEKI_INFERENCE_ATTEMPT || 'unknown',
-        request_id: process.env.KASEKI_INFERENCE_REQUEST_ID || 'unknown',
-        component: 'kaseki-agent',
-      }),
-    }
-    : undefined;
+  const config = createGatewayProviderConfig(process.env, fs.readFileSync);
 
-  if (!gatewayUrl) {
+  if (!config) {
     recordGatewayDiagnostic({
       event: 'provider_skipped',
       provider: 'gateway',
@@ -114,33 +62,14 @@ export default function (pi) {
     return;
   }
 
-  pi.registerProvider('gateway', {
-    name: 'LLM Gateway (CloudFlare)',
-    baseUrl: gatewayUrl,
-    apiKey: gatewayApiKey || '$LLM_GATEWAY_API_KEY',
-    ...(gatewayHeaders ? { headers: gatewayHeaders } : {}),
-    // Cloudflare's OpenAI-compatible /compat base URL implements Chat
-    // Completions. Pi appends /chat/completions for this adapter.
-    api: 'openai-completions',
-    models: [
-      {
-        id: model,
-        name: `CloudFlare Gateway (${model})`,
-        reasoning: false,
-        input: ['text'],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 128000,
-        maxTokens,
-      },
-    ],
-  });
+  pi.registerProvider('gateway', config);
   recordGatewayDiagnostic({
     event: 'provider_registered',
     provider: 'gateway',
-    baseUrl: gatewayUrl,
+    baseUrl: config.baseUrl,
     apiType: 'openai-completions',
-    modelId: model,
-    hasApiKey: Boolean(gatewayApiKey),
+    modelId: config.models[0].id,
+    hasApiKey: config.apiKey !== '$LLM_GATEWAY_API_KEY',
     requestId: process.env.KASEKI_INFERENCE_REQUEST_ID || undefined,
     phase: process.env.KASEKI_INFERENCE_PHASE || undefined,
     attempt: process.env.KASEKI_INFERENCE_ATTEMPT || undefined,
