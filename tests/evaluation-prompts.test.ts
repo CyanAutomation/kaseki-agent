@@ -11,6 +11,7 @@ type PromptName = 'goal-check' | 'run-evaluation' | 'agent';
 type RenderOptions = {
   files?: Record<string, string>;
   env?: Record<string, string>;
+  goalSettingArtifact?: string;
 };
 
 const renderPrompt = (name: PromptName, options: RenderOptions = {}) => {
@@ -27,7 +28,7 @@ const renderPrompt = (name: PromptName, options: RenderOptions = {}) => {
         ...process.env,
         KASEKI_RESULTS_DIR: resultsDir,
         TASK_PROMPT: 'Implement pagination with regression coverage.',
-        GOAL_SETTING_ARTIFACT: path.join(resultsDir, 'goal-setting.json'),
+        GOAL_SETTING_ARTIFACT: path.join(resultsDir, options.goalSettingArtifact ?? 'goal-setting.json'),
         SCOUTING_ARTIFACT: path.join(resultsDir, 'scouting.json'),
         TEST_IMPACT_WARNINGS_ARTIFACT: path.join(resultsDir, 'test-impact-warnings.json'),
         ...options.env,
@@ -143,27 +144,20 @@ describe('rendered prompt contracts', () => {
 
   it('reads artifact paths containing spaces without interpreting their contents', () => {
     const relativePath = 'artifact fixtures/goal setting.json';
-    const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki prompt paths '));
-    const artifactPath = path.join(resultsDir, relativePath);
-    const touched = path.join(resultsDir, 'executed');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki prompt paths '));
+    const touched = path.join(tmpDir, 'executed');
     const hostile = `PATH_SAFE_$(touch ${touched})_\`touch ${touched}\``;
 
     try {
-      fs.mkdirSync(path.dirname(artifactPath), { recursive: true });
-      fs.writeFileSync(artifactPath, hostile);
-      const prompt = execFileSync('bash', [renderer, 'run-evaluation'], {
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          KASEKI_RESULTS_DIR: resultsDir,
-          GOAL_SETTING_ARTIFACT: artifactPath,
-        },
+      const prompt = renderPrompt('run-evaluation', {
+        files: { [relativePath]: hostile },
+        goalSettingArtifact: relativePath,
       });
 
       expect(prompt).toContain(hostile);
       expect(fs.existsSync(touched)).toBe(false);
     } finally {
-      fs.rmSync(resultsDir, { recursive: true, force: true });
+      fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
 });
