@@ -11,6 +11,16 @@ fail() {
   exit 1
 }
 
+file_mode() {
+  local path="$1"
+
+  # GNU stat and BSD/macOS stat expose file modes through different flags.
+  if stat -c '%a' "$path" 2>/dev/null; then
+    return
+  fi
+  stat -f '%Lp' "$path"
+}
+
 printf '\n## Produced npm package contents\n'
 npm pack --pack-destination "$TMP_DIR" >/dev/null 2>&1
 mapfile -t archives < <(find "$TMP_DIR" -maxdepth 1 -type f -name '*.tgz' -print)
@@ -53,7 +63,7 @@ for item in "${package_manifest[@]}"; do
   IFS='|' read -r path mode <<<"$item"
   [[ -e "$PACKAGE_DIR/$path" ]] || fail "installed npm package is missing $path"
   if [[ -n "$mode" ]]; then
-    actual_mode="$(stat -c '%a' "$PACKAGE_DIR/$path" 2>/dev/null || stat -f '%Lp' "$PACKAGE_DIR/$path")"
+    actual_mode="$(file_mode "$PACKAGE_DIR/$path")"
     [[ "$actual_mode" == "$mode" ]] || fail "installed npm package $path has mode $actual_mode, expected $mode"
   fi
 done
