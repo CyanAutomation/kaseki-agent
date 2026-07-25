@@ -99,6 +99,22 @@ if [ "$source_status" -ne 0 ]; then
   exit 1
 fi
 
+KASEKI_MATURITY_SCORE_HELPER="${KASEKI_MATURITY_SCORE_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/lib/maturity-score.sh}"
+if [ ! -r "$KASEKI_MATURITY_SCORE_HELPER" ] && [ -r /app/scripts/lib/maturity-score.sh ]; then
+  KASEKI_MATURITY_SCORE_HELPER="/app/scripts/lib/maturity-score.sh"
+fi
+if [ ! -r "$KASEKI_MATURITY_SCORE_HELPER" ]; then
+  printf 'ERROR: Maturity score helper is not readable. Expected %s or /app/scripts/lib/maturity-score.sh.\n' "$KASEKI_MATURITY_SCORE_HELPER" >&2
+  exit 66
+fi
+# shellcheck source=/dev/null
+. "$KASEKI_MATURITY_SCORE_HELPER"
+source_status=$?
+if [ "$source_status" -ne 0 ]; then
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_MATURITY_SCORE_HELPER" "$source_status" >&2
+  exit 1
+fi
+
 KASEKI_JSON_EVENTS_HELPER="${KASEKI_JSON_EVENTS_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/lib/json-events.sh}"
 if [ ! -r "$KASEKI_JSON_EVENTS_HELPER" ] && [ -r /app/scripts/lib/json-events.sh ]; then
   KASEKI_JSON_EVENTS_HELPER="/app/scripts/lib/json-events.sh"
@@ -3296,18 +3312,7 @@ EOF
   # restoration-report.md artifact removed (Phase 1: low-value artifacts deletion)
 
   # Calculate and record maturity score without leaking artifact JSON into live logs.
-  if [ -x /app/scripts/kaseki-maturity-score.sh ]; then
-    maturity_score_log="${KASEKI_RESULTS_DIR}/maturity-score.log"
-    if [ -d "${KASEKI_WORKSPACE_DIR}"/repo ]; then
-      if KASEKI_MATURITY_SCORE_STDOUT=0 /app/scripts/kaseki-maturity-score.sh "${KASEKI_WORKSPACE_DIR}"/repo "${KASEKI_RESULTS_DIR}"/maturity-score.json >"$maturity_score_log" 2>&1; then
-        printf 'maturity-score: wrote %s\n' "${KASEKI_RESULTS_DIR}/maturity-score.json" >"$maturity_score_log"
-      else
-        printf 'maturity-score: generation failed; see prior output if any\n' >>"$maturity_score_log"
-      fi
-    else
-      printf 'maturity-score: skipped because repo checkout is missing: %s\n' "${KASEKI_WORKSPACE_DIR}/repo" >"$maturity_score_log"
-    fi
-  fi
+  record_maturity_score "$KASEKI_WORKSPACE_DIR" "$KASEKI_RESULTS_DIR"
   
   # Calculate and record performance metrics
   if [ -x /app/scripts/kaseki-performance-metrics.sh ] && [ -f "${KASEKI_RESULTS_DIR}"/stage-timings.tsv ]; then
