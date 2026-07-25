@@ -2,7 +2,8 @@
 
 **Issue**: Exit code 86 (validation failure) during scouting phase was misclassified as "provider_auth_error" with misleading error messages.
 
-**Root Cause**: 
+**Root Cause**:
+
 1. Error classification incorrectly parsed stderr keywords and matched "authenticated" in health check message
 2. Validation errors (actual issue: schema_mismatch) were not prioritized
 3. Pi returned `relevant_files` as strings instead of objects, causing schema validation to fail
@@ -19,6 +20,7 @@
 **Objective**: Fix misleading error classification; correctly identify schema validation failures.
 
 **Files Changed**:
+
 1. **scripts/lib/provider-retry.sh**
    - Added `capture_validation_error_classification()` function (lines 142-177)
    - Improved `capture_provider_error_from_log()` function (lines 179-240)
@@ -32,11 +34,13 @@
    - Applied comment: "PHASE 1 FIX: Check validation errors FIRST"
 
 **Impact**:
+
 - ✅ Schema validation errors now correctly classified as "schema_mismatch" instead of "provider_auth_error"
 - ✅ Health check messages no longer misclassified as auth failures
 - ✅ Users see accurate error types matching the actual problem
 
 **Tests Added**: `tests/error-classification-schema-mismatch.test.sh`
+
 - test_error_classification_schema_mismatch: Validates schema errors prioritized ✅
 - test_error_classification_prefers_validation_errors: Documents expected behavior ✅
 - test_health_check_not_auth_error: Prevents regression on false positives ✅
@@ -48,6 +52,7 @@
 **Objective**: Allow scouting to succeed even when Pi returns schema-mismatched output.
 
 **Files Changed**:
+
 1. **kaseki-agent.sh**
    - Added `normalize_scouting_schema()` function (lines 1062-1090)
    - Integrated into `validate_scouting_artifact()` function (line 1127)
@@ -55,6 +60,7 @@
    - Logs transformations to `scouting-validation-errors.jsonl` with reason_code="schema_normalized"
 
 **How It Works**:
+
 ```bash
 # Before normalization:
 {"relevant_files": ["src/parser.ts", "tests/test.ts"]}
@@ -67,12 +73,14 @@
 ```
 
 **Impact**:
+
 - ✅ Scouting can proceed even if Pi returns schema variations
 - ✅ No exit code 86 due to relevant_files type mismatches
 - ✅ Transformation is logged for debugging and auditability
 - ✅ Downstream agents receive properly-formatted schema
 
 **Tests Added**: `tests/scouting-schema-normalization.test.sh`
+
 - test_normalize_relevant_files_strings_to_objects: Confirms schema issue ✅
 - test_normalize_function_exists: Function implementation verified ✅
 - test_normalization_output_schema: Schema structure correct ✅
@@ -82,7 +90,9 @@
 ## Verification & Testing
 
 ### Test Status
+
 All tests passing:
+
 ```bash
 $ bash tests/error-classification-schema-mismatch.test.sh
 Results: 3/3 tests passed ✅
@@ -99,6 +109,7 @@ $ npm run build
 ### Manual Testing Instructions
 
 **To test error classification fix** (Phase 1):
+
 ```bash
 # Scenario 1: Schema error (not auth error)
 # Create mock validation error file with schema_mismatch
@@ -112,6 +123,7 @@ echo "[GATEWAY HEALTH] Cloudflare /compat has no implicit health endpoint" > /re
 ```
 
 **To test schema normalization** (Phase 2):
+
 ```bash
 # Scenario 2: Pi returns strings in relevant_files
 # Create mock scouting artifact
@@ -170,6 +182,7 @@ jq '.relevant_files' /results/scouting-candidate.json
 ### If Scouting Still Exits 86
 
 Check validation errors in this order:
+
 ```bash
 # 1. Check what type of validation error
 jq '.reason_code' /results/scouting-validation-errors.jsonl | head -1
@@ -187,6 +200,7 @@ jq '.type' /results/provider-error.json 2>/dev/null || echo "No provider error (
 ### For Cloudflare Gateway Specifically
 
 The health check message for Cloudflare /compat is **informational**, not an error:
+
 ```
 [GATEWAY HEALTH] Cloudflare /compat has no implicit health endpoint; deferring to authenticated inference
 ```
@@ -213,11 +227,13 @@ This is **expected behavior** and should never be classified as an auth failure.
 ## Next Steps
 
 ### Phase 3: Prompt Tuning (Future)
+
 - Review scouting prompt in kaseki-agent.sh
 - Add explicit examples of correct `relevant_files` schema
 - Reduce chance of Pi producing schema-mismatched output initially
 
 ### Monitoring
+
 - Track schema_normalized events in production
 - Monitor frequency of schema_mismatch validations
 - If >5% of runs need normalization, escalate to Phase 3 prompt tuning
@@ -233,6 +249,7 @@ This is **expected behavior** and should never be classified as an auth failure.
 ✅ **Backward Compatible**: No breaking changes.
 
 **Impact on kaseki-201**: Both phases 1 and 2 will resolve the exit code 86 issue through:
+
 1. Correct error classification (Phase 1)
 2. Resilient schema handling (Phase 2)
 3. Fewer validation failures overall

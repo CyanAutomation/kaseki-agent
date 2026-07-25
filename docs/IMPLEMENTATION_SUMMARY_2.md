@@ -7,17 +7,20 @@
 ## Changes Made
 
 ### Phase 1: Docker Image Build Fix ✅
+
 **File**: [Dockerfile](Dockerfile)
 
 **Issue**: Missing `github-app-token-runtime.js` installation preventing GitHub App token generation
 
 **Changes**:
+
 - Line 151: Added copy of `dist/github-app-token-runtime.js` to `/app/lib/`
 - Line 189: Added install command to place file in `/usr/local/bin/github-app-token-runtime.js`
 
 **Result**: Node.js ES module imports in `github-app-token.js` will now find the `github-app-token-runtime.js` dependency
 
 **Verification**:
+
 ```bash
 docker build -t kaseki-test:local .
 docker run --rm kaseki-test:local ls -la /usr/local/bin/github-app-token-runtime.js
@@ -27,11 +30,13 @@ docker run --rm kaseki-test:local ls -la /usr/local/bin/github-app-token-runtime
 ---
 
 ### Phase 2: Dependency Cache Integrity Fix ✅
+
 **File**: [kaseki-agent.sh](kaseki-agent.sh)
 
 **Issue**: TypeScript compiler (`tsc`) missing at runtime despite successful pre-validation build
 
 **Changes**:
+
 - Added `validate_critical_executables_for_scouting()` function (line 8980)
 - Checks for: `tsc`, `eslint`, `npm`, `node`
 - Validates before scouting phase starts (line 9010)
@@ -41,6 +46,7 @@ docker run --rm kaseki-test:local ls -la /usr/local/bin/github-app-token-runtime
 **Result**: Early detection of missing dependencies with actionable error messages
 
 **Verification**:
+
 ```bash
 # In container, after dependency install
 test -x node_modules/.bin/tsc && echo "✓ tsc is executable"
@@ -51,11 +57,13 @@ npm list typescript
 ---
 
 ### Phase 3: Executable Integrity Checks ✅
+
 **File**: [kaseki-agent.sh](kaseki-agent.sh)
 
 **Issue**: No pre-execution validation that critical tools are available
 
 **Changes**:
+
 - Integrated with Phase 2: `validate_critical_executables_for_scouting()` runs before scouting
 - Checks PATH for all required executables
 - Provides diagnostic output including:
@@ -66,6 +74,7 @@ npm list typescript
 **Result**: Fail-fast behavior with comprehensive diagnostics
 
 **Verification**:
+
 ```bash
 # Look for this in logs before scouting:
 # ✓ Critical executables validation passed (tsc, eslint, npm, node available)
@@ -74,11 +83,13 @@ npm list typescript
 ---
 
 ### Phase 4: Scouting Output Schema Validation ✅
+
 **File**: [kaseki-agent.sh](kaseki-agent.sh)
 
 **Issue**: Invalid scouting output (arrays as strings) passed to goal-setting, causing 422 errors downstream
 
 **Changes**:
+
 - Added `validate_scouting_output_schema()` function (line 1113)
 - Validates after scouting artifact is generated
 - Checks:
@@ -92,6 +103,7 @@ npm list typescript
 **Result**: Schema violations caught before reaching goal-setting phase
 
 **Verification**:
+
 ```bash
 # If schema is invalid, should see:
 # ERROR: Scouting output schema validation failed with N type mismatches
@@ -102,11 +114,13 @@ npm list typescript
 ---
 
 ### Phase 5: Enhanced 422 Error Diagnostics ✅
+
 **Files**: [scripts/lib/provider-retry.sh](scripts/lib/provider-retry.sh)
 
 **Issue**: 422 errors appeared without context about upstream artifact corruption
 
 **Changes**:
+
 - Added `capture_422_diagnostics()` function (line 155)
 - Detects "422" in provider error messages
 - Logs diagnostic context:
@@ -119,6 +133,7 @@ npm list typescript
 **Result**: 422 errors now include diagnostic guidance pointing to root cause
 
 **Verification**:
+
 ```bash
 # When 422 error occurs, should see:
 # [DIAGNOSTIC] 422 Unprocessable Entity from provider gateway
@@ -134,6 +149,7 @@ npm list typescript
 ## Testing Strategy
 
 ### Unit Tests (Fast)
+
 ```bash
 # 1. Syntax validation (already passed)
 bash -n /workspaces/kaseki-agent/kaseki-agent.sh
@@ -145,6 +161,7 @@ grep "capture_422_diagnostics" scripts/lib/provider-retry.sh
 ```
 
 ### Integration Tests (Slow - requires Docker)
+
 ```bash
 # 1. Build image with fixes
 docker build -t kaseki-agent:test .
@@ -163,6 +180,7 @@ docker run --rm kaseki-agent:test ls -la /usr/local/bin/github-app-token-runtime
 ```
 
 ### End-to-End Test (Re-run kaseki-198 task)
+
 ```bash
 # Re-run the exact task that caused kaseki-198
 REPO_URL=https://github.com/cyanautomation/kaseki-agent \
@@ -231,4 +249,3 @@ OPENROUTER_API_KEY=sk-or-... \
 - Original failure analysis: [KASEKI-198-FAILURE-ANALYSIS.md](KASEKI-198-FAILURE-ANALYSIS.md)
 - Remediation plan: Stored in session memory `/memories/session/plan.md`
 - Exit code reference: [docs/EXIT_CODES.md](docs/EXIT_CODES.md)
-
