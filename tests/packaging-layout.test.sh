@@ -314,6 +314,8 @@ contract_provider_retry_helpers() {
     'Dockerfile must install provider-retry.sh at its sourced runtime path in both image stages'
   assert_docker_install 0755 /app/scripts/restore-disallowed-changes.sh /usr/local/bin/scripts/restore-disallowed-changes.sh 2 \
     'Dockerfile must install restore-disallowed-changes.sh at its sourced runtime path in both image stages'
+  assert_docker_install 0755 /app/scripts/evaluation-prompts.sh /usr/local/bin/scripts/evaluation-prompts.sh 2 \
+    'Dockerfile must install evaluation-prompts.sh at its sourced runtime path in both image stages'
   assert_docker_install 0755 /app/scripts/auto-lint-cleanup-classification.sh /usr/local/bin/scripts/auto-lint-cleanup-classification.sh 2 \
     'Dockerfile must install auto-lint cleanup classification at its sourced runtime path in both image stages'
   assert_file_contains scripts/startup-checks.sh '"lib/provider-retry\.sh"' \

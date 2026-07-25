@@ -40,6 +40,7 @@ run_case() {
   cp "$REPO_ROOT/scripts/dependency-cache-helpers.sh" "$case_dir/scripts/dependency-cache-helpers.sh"
   cp "$REPO_ROOT/scripts/npm-install-helpers.sh" "$case_dir/scripts/npm-install-helpers.sh"
   cp "$REPO_ROOT/scripts/agent-prompt.sh" "$case_dir/scripts/agent-prompt.sh"
+  cp "$REPO_ROOT/scripts/evaluation-prompts.sh" "$case_dir/scripts/evaluation-prompts.sh"
   cp "$REPO_ROOT/scripts/lib/json.sh" "$case_dir/scripts/lib/json.sh"
   cp "$REPO_ROOT/scripts/lib/json-events.sh" "$case_dir/scripts/lib/json-events.sh"
   cp "$REPO_ROOT/scripts/lib/artifact-consolidation.sh" "$case_dir/scripts/lib/artifact-consolidation.sh"

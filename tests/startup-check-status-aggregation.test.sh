@@ -150,7 +150,7 @@ test_worker_preflight_blocks_when_a_scouting_template_is_missing() {
   chmod +x "$agent_bin"
 
   local helper
-  for helper in agent-prompt.sh allowlist-helper.sh restore-disallowed-changes.sh inspect-mode-defaults.sh dependency-cache-helpers.sh auto-lint-cleanup-classification.sh scouting-allowlist.js; do
+  for helper in agent-prompt.sh evaluation-prompts.sh allowlist-helper.sh restore-disallowed-changes.sh inspect-mode-defaults.sh dependency-cache-helpers.sh auto-lint-cleanup-classification.sh scouting-allowlist.js; do
     : > "$helper_root/$helper"
   done
   for helper in json.sh json-events.sh provider-retry.sh; do

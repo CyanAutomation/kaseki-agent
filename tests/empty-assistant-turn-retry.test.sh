@@ -31,6 +31,7 @@ fi
 cp "$REPO_ROOT/scripts/dependency-cache-helpers.sh" "$TMP_DIR/scripts/dependency-cache-helpers.sh"
 cp "$REPO_ROOT/scripts/npm-install-helpers.sh" "$TMP_DIR/scripts/npm-install-helpers.sh"
 cp "$REPO_ROOT/scripts/agent-prompt.sh" "$TMP_DIR/scripts/agent-prompt.sh"
+cp "$REPO_ROOT/scripts/evaluation-prompts.sh" "$TMP_DIR/scripts/evaluation-prompts.sh"
 cp "$REPO_ROOT/scripts/auto-lint-cleanup-classification.sh" "$TMP_DIR/scripts/auto-lint-cleanup-classification.sh"
 cp "$REPO_ROOT/scripts/github-preflight-auth.sh" "$TMP_DIR/scripts/github-preflight-auth.sh"
 cp "$REPO_ROOT/scripts/inspect-mode-defaults.sh" "$TMP_DIR/scripts/inspect-mode-defaults.sh"
