@@ -891,6 +891,61 @@ Variables for dependency caching and performance optimization.
   KASEKI_NPM_OMIT_DEV=true
   ```
 
+### `KASEKI_CAVEMAN_LEVEL`
+
+- **Type**: `number` (integer: 0-3)
+- **Default**: `1` (output-only compression)
+- **Paths**: Single-run, Local API, Production API
+- **Description**: Control prompt compression for token usage optimization
+- **Levels**:
+  - **0** — Off (verbose mode): No compression, full prompts sent to LLM
+  - **1** — Output-only (default): LLM instructed to respond tersely (~75% output token reduction)
+  - **2** — Medium: Output compression + compressed static prompt sections (~50-60% total token reduction)
+  - **3** — Aggressive (future): Output + static + artifact compression (~60-70% total token reduction)
+- **Token savings** (estimated):
+  - Level 0: 0% savings (baseline)
+  - Level 1: ~40-50% total savings (output compression only)
+  - Level 2: ~50-60% total savings (output + static sections)
+  - Level 3: ~60-70% total savings (output + static + artifacts, not yet implemented)
+- **Impact on quality**: Minimal when technical terms and key facts are preserved
+- **Backward compatibility**: Level 1 is default (existing behavior); opt into level 2+ for additional savings
+- **Use cases**:
+  - Level 0: Debugging, when you want full verbose context
+  - Level 1: Default production use (balanced)
+  - Level 2: Cost optimization, high-volume runs
+  - Level 3: Future aggressive optimization (Phase 3, not yet available)
+- **Cost impact** (level 2 vs level 0): ~26% reduction per run at typical model pricing
+- **What gets compressed** (level 2+):
+  - Agent guardrails (400 → ~200 tokens)
+  - Goal-check SMART criteria instructions (700 → ~350 tokens)
+  - Run-evaluation instructions (600 → ~300 tokens)
+  - Total static section savings: ~700 tokens per run
+- **What is NOT compressed**: Task prompts, code diffs, error messages, validation output
+- **Compression technique**: "Caveman" communication pattern
+  - Drops articles (a/an/the), filler words (just/really/please)
+  - Uses short synonyms (utilize → use, begin → start)
+  - Preserves full sentences and exact technical terms
+  - Maintains semantic completeness
+- **Examples**:
+
+  ```bash
+  # Default (output-only compression)
+  KASEKI_CAVEMAN_LEVEL=1
+
+  # Medium compression (recommended for cost optimization)
+  KASEKI_CAVEMAN_LEVEL=2
+
+  # Verbose mode (debugging, no compression)
+  KASEKI_CAVEMAN_LEVEL=0
+
+  # Aggressive (future, not yet implemented)
+  KASEKI_CAVEMAN_LEVEL=3
+  ```
+
+- **Legacy compatibility**: `KASEKI_CAVEMAN=0` maps to level 0, `KASEKI_CAVEMAN=1` maps to level 1
+- **Measurement**: Use `scripts/measure-caveman-impact.sh` to compare token usage at different levels
+- **Documentation**: See [docs/CAVEMAN_PHASE2_COMPLETE.md](CAVEMAN_PHASE2_COMPLETE.md) for implementation details
+
 ---
 
 ## Logging & Debugging Zone
