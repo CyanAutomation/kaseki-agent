@@ -3,6 +3,7 @@
  *
  * Tracks token usage including input, output, cache creation, and cache read tokens.
  * Maintains per-model breakdowns for cost estimation and cache efficiency analysis.
+ * Tracks per-phase usage for caveman optimization measurement.
  */
 
 export interface UsageObject {
@@ -33,6 +34,16 @@ export interface ModelTokenStats {
   };
 }
 
+export interface PhaseTokenStats {
+  [phase: string]: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_tokens: number;
+    cache_read_tokens: number;
+    total_tokens: number;
+  };
+}
+
 /**
  * TokenUsageAggregator tracks token usage across Pi event streams.
  *
@@ -43,6 +54,7 @@ export interface ModelTokenStats {
  * - Cache read tokens (prompt_tokens_details.cache_read_input_tokens)
  *
  * Also tracks per-model usage for cost estimation and performance analysis.
+ * Tracks per-phase usage for caveman optimization measurement.
  */
 export class TokenUsageAggregator {
   private totalInputTokens = 0;
@@ -60,6 +72,26 @@ export class TokenUsageAggregator {
       cache_read_tokens: number;
     }
   > = new Map();
+
+  // Per-phase tracking
+  private currentPhase: string = 'unknown';
+  private phaseStats: Map<
+    string,
+    {
+      input_tokens: number;
+      output_tokens: number;
+      cache_creation_tokens: number;
+      cache_read_tokens: number;
+    }
+  > = new Map();
+
+  /**
+   * Set the current phase for token tracking.
+   * Phases: goal-setting, scouting, coding, goal-check, run-eval
+   */
+  setCurrentPhase(phase: string): void {
+    this.currentPhase = phase;
+  }
 
   /**
    * Get or initialize model stats.
@@ -84,12 +116,38 @@ export class TokenUsageAggregator {
   }
 
   /**
+   * Get or initialize phase stats.
+   */
+  private ensurePhaseStats(
+    phase: string
+  ): {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_tokens: number;
+    cache_read_tokens: number;
+  } {
+    if (!this.phaseStats.has(phase)) {
+      this.phaseStats.set(phase, {
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_creation_tokens: 0,
+        cache_read_tokens: 0,
+      });
+    }
+    return this.phaseStats.get(phase)!;
+  }
+
+  /**
    * Record input tokens for a model.
    */
   recordInputTokens(modelName: string, tokens: number): void {
     this.totalInputTokens += tokens;
     const stats = this.ensureModelStats(modelName);
     stats.input_tokens += tokens;
+
+    // Track per-phase
+    const phaseStats = this.ensurePhaseStats(this.currentPhase);
+    phaseStats.input_tokens += tokens;
   }
 
   /**
@@ -99,6 +157,10 @@ export class TokenUsageAggregator {
     this.totalOutputTokens += tokens;
     const stats = this.ensureModelStats(modelName);
     stats.output_tokens += tokens;
+
+    // Track per-phase
+    const phaseStats = this.ensurePhaseStats(this.currentPhase);
+    phaseStats.output_tokens += tokens;
   }
 
   /**
@@ -108,6 +170,10 @@ export class TokenUsageAggregator {
     this.totalCacheCreationTokens += tokens;
     const stats = this.ensureModelStats(modelName);
     stats.cache_creation_tokens += tokens;
+
+    // Track per-phase
+    const phaseStats = this.ensurePhaseStats(this.currentPhase);
+    phaseStats.cache_creation_tokens += tokens;
   }
 
   /**
@@ -117,6 +183,10 @@ export class TokenUsageAggregator {
     this.totalCacheReadTokens += tokens;
     const stats = this.ensureModelStats(modelName);
     stats.cache_read_tokens += tokens;
+
+    // Track per-phase
+    const phaseStats = this.ensurePhaseStats(this.currentPhase);
+    phaseStats.cache_read_tokens += tokens;
   }
 
   /**
@@ -189,6 +259,28 @@ export class TokenUsageAggregator {
         stats.cache_read_tokens;
 
       result[modelName] = {
+        ...stats,
+        total_tokens: total,
+      };
+    }
+
+    return result;
+  }
+
+  /**
+   * Get per-phase token usage statistics.
+   */
+  getPhaseStats(): PhaseTokenStats {
+    const result: PhaseTokenStats = {};
+
+    for (const [phase, stats] of this.phaseStats.entries()) {
+      const total =
+        stats.input_tokens +
+        stats.output_tokens +
+        stats.cache_creation_tokens +
+        stats.cache_read_tokens;
+
+      result[phase] = {
         ...stats,
         total_tokens: total,
       };

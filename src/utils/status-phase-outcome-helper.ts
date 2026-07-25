@@ -101,14 +101,14 @@ export class StatusPhaseOutcomeHelper {
     next: NonNullable<StatusResponse['phaseOutcome']>,
   ): NonNullable<StatusResponse['phaseOutcome']> {
     const previous = this.runningOutcomeHighWater.get(job.id);
-    
+
     if (job.status !== 'running') {
       // For non-running jobs, store the outcome but don't merge.
       // This preserves terminal states for when the job transitions back to running.
       this.runningOutcomeHighWater.set(job.id, next);
       return next;
     }
-    
+
     // Job is running: merge with previous high-water mark
     const merged = previous ? {
       ...next,

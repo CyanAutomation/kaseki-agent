@@ -281,4 +281,138 @@ describe('TokenUsageAggregator', () => {
       expect(summary.total_tokens).toBe(0);
     });
   });
+
+  describe('per-phase tracking', () => {
+    test('initializes with no current phase', () => {
+      const phaseStats = aggregator.getPhaseStats();
+      expect(phaseStats).toEqual({});
+    });
+
+    test('sets current phase and tracks tokens', () => {
+      aggregator.setCurrentPhase('scouting');
+      aggregator.recordInputTokens('gemini-3-flash', 100);
+      aggregator.recordOutputTokens('gemini-3-flash', 50);
+
+      const phaseStats = aggregator.getPhaseStats();
+      expect(phaseStats['scouting']).toBeDefined();
+      expect(phaseStats['scouting'].input_tokens).toBe(100);
+      expect(phaseStats['scouting'].output_tokens).toBe(50);
+      expect(phaseStats['scouting'].total_tokens).toBe(150);
+    });
+
+    test('tracks multiple phases separately', () => {
+      // Scouting phase
+      aggregator.setCurrentPhase('scouting');
+      aggregator.recordInputTokens('gemini-3-flash', 100);
+      aggregator.recordOutputTokens('gemini-3-flash', 50);
+
+      // Coding phase
+      aggregator.setCurrentPhase('coding');
+      aggregator.recordInputTokens('gemini-3-flash', 200);
+      aggregator.recordOutputTokens('gemini-3-flash', 100);
+
+      // Goal-check phase
+      aggregator.setCurrentPhase('goal-check');
+      aggregator.recordInputTokens('gemini-3-flash', 150);
+      aggregator.recordOutputTokens('gemini-3-flash', 75);
+
+      const phaseStats = aggregator.getPhaseStats();
+      expect(phaseStats['scouting'].total_tokens).toBe(150);
+      expect(phaseStats['coding'].total_tokens).toBe(300);
+      expect(phaseStats['goal-check'].total_tokens).toBe(225);
+    });
+
+    test('accumulates tokens within same phase', () => {
+      aggregator.setCurrentPhase('coding');
+      aggregator.recordInputTokens('gemini-3-flash', 100);
+      aggregator.recordInputTokens('gemini-3-flash', 50);
+      aggregator.recordOutputTokens('gemini-3-flash', 25);
+
+      const phaseStats = aggregator.getPhaseStats();
+      expect(phaseStats['coding'].input_tokens).toBe(150);
+      expect(phaseStats['coding'].output_tokens).toBe(25);
+      expect(phaseStats['coding'].total_tokens).toBe(175);
+    });
+
+    test('tracks cache tokens per phase', () => {
+      aggregator.setCurrentPhase('goal-setting');
+      aggregator.recordInputTokens('gemini-3-flash', 100);
+      aggregator.recordCacheCreationTokens('gemini-3-flash', 20);
+      aggregator.recordCacheReadTokens('gemini-3-flash', 80);
+
+      const phaseStats = aggregator.getPhaseStats();
+      expect(phaseStats['goal-setting'].input_tokens).toBe(100);
+      expect(phaseStats['goal-setting'].cache_creation_tokens).toBe(20);
+      expect(phaseStats['goal-setting'].cache_read_tokens).toBe(80);
+      expect(phaseStats['goal-setting'].total_tokens).toBe(200);
+    });
+
+    test('handles switching back to previous phase', () => {
+      // Scouting phase: first time
+      aggregator.setCurrentPhase('scouting');
+      aggregator.recordInputTokens('gemini-3-flash', 100);
+
+      // Coding phase
+      aggregator.setCurrentPhase('coding');
+      aggregator.recordInputTokens('gemini-3-flash', 200);
+
+      // Scouting phase: second time (accumulates)
+      aggregator.setCurrentPhase('scouting');
+      aggregator.recordInputTokens('gemini-3-flash', 50);
+
+      const phaseStats = aggregator.getPhaseStats();
+      expect(phaseStats['scouting'].input_tokens).toBe(150);
+      expect(phaseStats['coding'].input_tokens).toBe(200);
+    });
+
+    test('total tokens match sum of all phases', () => {
+      aggregator.setCurrentPhase('scouting');
+      aggregator.recordInputTokens('gemini-3-flash', 100);
+      aggregator.recordOutputTokens('gemini-3-flash', 50);
+
+      aggregator.setCurrentPhase('coding');
+      aggregator.recordInputTokens('gemini-3-flash', 200);
+      aggregator.recordOutputTokens('gemini-3-flash', 100);
+
+      const summary = aggregator.getSummary();
+      const phaseStats = aggregator.getPhaseStats();
+
+      const phaseTotal =
+        phaseStats['scouting'].total_tokens + phaseStats['coding'].total_tokens;
+
+      expect(summary.total_tokens).toBe(450);
+      expect(phaseTotal).toBe(450);
+    });
+
+    test('handles tokens recorded before setting phase', () => {
+      // Record tokens without setting phase
+      aggregator.recordInputTokens('gemini-3-flash', 100);
+      aggregator.recordOutputTokens('gemini-3-flash', 50);
+
+      const phaseStats = aggregator.getPhaseStats();
+      expect(phaseStats['unknown']).toBeDefined();
+      expect(phaseStats['unknown'].total_tokens).toBe(150);
+    });
+
+    test('all standard phases can be tracked', () => {
+      const phases = [
+        'goal-setting',
+        'scouting',
+        'coding',
+        'goal-check',
+        'run-eval',
+      ];
+
+      phases.forEach((phase, index) => {
+        aggregator.setCurrentPhase(phase);
+        aggregator.recordInputTokens('gemini-3-flash', (index + 1) * 100);
+      });
+
+      const phaseStats = aggregator.getPhaseStats();
+      phases.forEach((phase, index) => {
+        expect(phaseStats[phase]).toBeDefined();
+        expect(phaseStats[phase].input_tokens).toBe((index + 1) * 100);
+      });
+    });
+  });
 });

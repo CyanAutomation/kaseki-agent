@@ -91,7 +91,28 @@ Fallback behavior:
     printf '%s\n\n' "$caveman_instruction"
   fi
 
-  cat <<EOF
+  # Use compressed guardrails if caveman level >= 2
+  local compressed_guardrails=""
+  if [ "${KASEKI_CAVEMAN_LEVEL:-1}" -ge 2 ]; then
+    compressed_guardrails="$(get_caveman_compressed_prompt guardrails 2>/dev/null || true)"
+  fi
+
+  if [ -n "$compressed_guardrails" ]; then
+    # Compressed version (caveman level 2+)
+    cat <<EOF
+$compressed_guardrails
+
+Task:
+$TASK_PROMPT
+$memory_section
+$scouting_section
+$retry_section
+$hashline_edits_section
+$summarization_section
+EOF
+  else
+    # Verbose version (caveman level 0-1)
+    cat <<EOF
 You are editing inside a Kaseki-managed ephemeral workspace.
 
 Operational guardrails:
@@ -114,4 +135,5 @@ $retry_section
 $hashline_edits_section
 $summarization_section
 EOF
+  fi
 }

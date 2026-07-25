@@ -516,6 +516,13 @@ REPO_MEMORY_COMMIT_SHA="unknown"
 # Caveman communication mode (enabled by default)
 KASEKI_CAVEMAN="${KASEKI_CAVEMAN:-1}"
 
+# Caveman compression level (0=off, 1=output-only, 2=medium, 3=aggressive)
+# Level 0: No compression (verbose mode)
+# Level 1: Output-only compression (current default, LLM responds tersely)
+# Level 2: Output + static sections compressed (guardrails, instructions)
+# Level 3: Output + static + artifacts compressed (logs, repeated context)
+KASEKI_CAVEMAN_LEVEL="${KASEKI_CAVEMAN_LEVEL:-${KASEKI_CAVEMAN}}"
+
 # Track last executed command for better error reporting
 LAST_COMMAND=""
 LAST_COMMAND_LOG="${KASEKI_RESULTS_DIR}/last-command.log"
@@ -553,6 +560,23 @@ get_caveman_instruction() {
     cat <<'CAVEMAN'
 Terse, professional communication. Drop articles, filler, pleasantries. Keep full sentences. Short synonyms (big not extensive, fix not implement). No tool narration, tables, emoji. Standard acronyms only (DB/API/HTTP). Technical terms exact, code blocks unchanged. Pattern: [thing] [action] [reason]. [next step]. Example: "Bug in auth middleware. Expiry check uses < not <=. Fix:" Substance stays. Fluff dies.
 CAVEMAN
+  }
+}
+
+# Get caveman-compressed prompt for specified type
+# Args: $1 = prompt type (guardrails | goal-check | run-eval)
+# Returns: Compressed prompt string (empty if level < 2)
+get_caveman_compressed_prompt() {
+  local prompt_type="${1:-guardrails}"
+  
+  if [ "$KASEKI_CAVEMAN_LEVEL" -lt 2 ]; then
+    return 0  # No input compression at level 0-1
+  fi
+  
+  # Call TypeScript CLI wrapper to get compressed prompt
+  node dist/get-caveman-prompt.js --type "$prompt_type" --level "$KASEKI_CAVEMAN_LEVEL" 2>/dev/null || {
+    # Fallback: return empty (use verbose prompts)
+    return 1
   }
 }
 
