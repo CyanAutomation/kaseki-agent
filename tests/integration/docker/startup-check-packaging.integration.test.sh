@@ -25,9 +25,37 @@ fi
 printf 'Building Docker image for startup-check packaging verification...\n'
 docker build -t "$IMAGE_TAG" .
 
-printf 'Checking final image contains executable startup-check and init-container paths...\n'
+printf 'Checking required final-image destinations and modes...\n'
 docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c '
   set -eu
+  # destination|mode. Keep this focused on the installed image contract rather
+  # than the Dockerfile instructions used to produce it.
+  manifest="
+    /usr/local/bin/kaseki-agent|755
+    /usr/local/bin/kaseki-entrypoint|755
+    /usr/local/bin/kaseki-pi-event-filter|755
+    /usr/local/bin/pi-event-filter-helpers.js|755
+    /usr/local/bin/instance-status-derivation.js|755
+    /usr/local/bin/instance-stage-derivation.js|755
+    /usr/local/bin/instance-failure-extraction.js|755
+    /usr/local/bin/provider-error-classifier.js|755
+    /usr/local/bin/scripts/scouting-allowlist.js|755
+    /usr/local/bin/scripts/lib/provider-retry.sh|644
+    /usr/local/bin/scripts/restore-disallowed-changes.sh|755
+    /usr/local/bin/scripts/evaluation-prompts.sh|755
+    /usr/local/bin/scripts/auto-lint-cleanup-classification.sh|755
+    /usr/local/bin/templates/scouting/compact.txt|644
+    /usr/local/bin/templates/scouting/detailed-test-impact.txt|644
+    /app/scripts/startup-check-packaging.sh|755
+  "
+  echo "$manifest" | while IFS="|" read -r path mode; do
+    [ -n "$path" ] || continue
+    path="$(printf "%s" "$path" | sed "s/^[[:space:]]*//")"
+    test -e "$path"
+    actual_mode="$(stat -c "%a" "$path")"
+    test "$actual_mode" = "$mode"
+  done
+
   test -L /scripts/startup-checks.sh
   test -L /scripts/kaseki-init-container.sh
   test -x /scripts/startup-checks.sh
@@ -36,8 +64,23 @@ docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c '
   test "$(readlink /scripts/kaseki-init-container.sh)" = "/app/scripts/startup-checks.sh"
   test "$(readlink -f /scripts/startup-checks.sh)" = "/app/scripts/startup-checks.sh"
   test "$(readlink -f /scripts/kaseki-init-container.sh)" = "/app/scripts/startup-checks.sh"
-  test -f /app/scripts/startup-check-packaging.sh
 '
+
+printf 'Checking installed JavaScript entry points are importable...\n'
+docker run --rm --entrypoint node "$IMAGE_TAG" --input-type=module -e '
+  const entries = [
+    "/usr/local/bin/pi-event-filter-helpers.js",
+    "/usr/local/bin/instance-status-derivation.js",
+    "/usr/local/bin/instance-stage-derivation.js",
+    "/usr/local/bin/instance-failure-extraction.js",
+    "/usr/local/bin/provider-error-classifier.js",
+  ];
+  for (const entry of entries) await import(`file://${entry}`);
+'
+
+printf 'Checking installed entrypoint and default command configuration...\n'
+test "$(docker image inspect --format '{{json .Config.Entrypoint}}' "$IMAGE_TAG")" = '["/usr/bin/tini","--","/usr/local/bin/kaseki-entrypoint"]'
+test "$(docker image inspect --format '{{json .Config.Cmd}}' "$IMAGE_TAG")" = '["agent"]'
 
 printf 'Checking entrypoint invokes the packaged startup-check path successfully...\n'
 ENTRYPOINT_OUTPUT="$({
