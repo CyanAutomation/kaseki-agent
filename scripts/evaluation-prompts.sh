@@ -110,7 +110,32 @@ process.stdin.on("end", () => {
     printf '%s\n\n' "$caveman_instruction"
   fi
 
-  cat <<EOF
+  # Use compressed instructions if caveman level >= 2
+  local compressed_instructions=""
+  if [ "${KASEKI_CAVEMAN_LEVEL:-1}" -ge 2 ]; then
+    compressed_instructions="$(get_caveman_compressed_prompt goal-check 2>/dev/null || true)"
+  fi
+
+  if [ -n "$compressed_instructions" ]; then
+    # Compressed version (caveman level 2+)
+    cat <<EOF
+$compressed_instructions
+
+## Context
+$goal_setting_context
+$causality_context
+$test_impact_context
+Original task prompt:
+$TASK_PROMPT
+
+$validation_context
+
+Progress log tail (last 80 lines):
+$progress_tail
+EOF
+  else
+    # Verbose version (caveman level 0-1)
+    cat <<EOF
 You are a read-only goal-check Pi agent inside a Kaseki-managed ephemeral workspace.
 
 Evaluate whether the coding agent's current repository changes realized the objective from the goal-setting report.
@@ -179,6 +204,7 @@ $validation_context
 Progress log tail (last 80 lines):
 $progress_tail
 EOF
+  fi
 }
 
 build_run_evaluation_prompt() {
@@ -223,7 +249,47 @@ $(head -n 200 "$GOAL_SETTING_ARTIFACT" 2>/dev/null)
     printf '%s\n\n' "$caveman_instruction"
   fi
   
-  cat <<EOF
+  # Use compressed instructions if caveman level >= 2
+  local compressed_instructions=""
+  if [ "${KASEKI_CAVEMAN_LEVEL:-1}" -ge 2 ]; then
+    compressed_instructions="$(get_caveman_compressed_prompt run-eval 2>/dev/null || true)"
+  fi
+
+  if [ -n "$compressed_instructions" ]; then
+    # Compressed version (caveman level 2+)
+    cat <<EOF
+$compressed_instructions
+
+## Context
+$goal_setting_context
+$test_impact_context
+Original task prompt:
+$TASK_PROMPT
+
+Metadata:
+$metadata_text
+
+Stage timings:
+$stage_timings
+
+Validation log tail (last 80 lines):
+$validation_tail
+
+Progress log tail (last 80 lines):
+$progress_tail
+
+Dependency cache log tail (last 80 lines):
+$dependency_cache
+
+Restoration report tail (last 80 lines):
+$restoration_report
+
+Draft PR body:
+$draft_pr_body
+EOF
+  else
+    # Verbose version (caveman level 0-1) - keeping existing full instructions
+    cat <<EOF
 You are a read-only run-evaluation Pi agent inside a Kaseki-managed ephemeral workspace.
 
 Evaluate Kaseki's process quality for this run. Be task-agnostic: focus on reviewer confidence, process efficiency, stage value, and opportunities for Kaseki to improve.
@@ -443,4 +509,5 @@ $restoration_report
 Draft PR body:
 $draft_pr_body
 EOF
+  fi
 }

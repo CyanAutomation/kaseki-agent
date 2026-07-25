@@ -8,7 +8,7 @@ import { extractEventTimestamp, PiEvent } from './lib/event-timestamp-helpers.js
 import { EventCounterAggregator, type EventCountMap } from './pi-event-aggregation/event-counter-aggregator.js';
 import { ToolReliabilityAggregator, type ToolReliabilitySummary, type ToolStats } from './pi-event-aggregation/tool-reliability-aggregator.js';
 import { ExecutionTimeAggregator, type ExecutionTimeSummary, type ExecutionStats } from './pi-event-aggregation/execution-time-aggregator.js';
-import { TokenUsageAggregator, type TokenUsageSummary, type ModelTokenStats } from './pi-event-aggregation/token-usage-aggregator.js';
+import { TokenUsageAggregator, type TokenUsageSummary, type ModelTokenStats, type PhaseTokenStats } from './pi-event-aggregation/token-usage-aggregator.js';
 import {
   type ProviderErrorSummary,
   extractMessageTextLength,
@@ -36,6 +36,7 @@ interface Summary {
   execution_tool_stats?: ExecutionStats;
   token_usage?: TokenUsageSummary;
   model_token_stats?: ModelTokenStats;
+  phase_token_stats?: PhaseTokenStats;
   provider_errors?: ProviderErrorSummary[];
   primary_provider_error?: ProviderErrorSummary;
   inference_health?: InferenceHealthSummary;
@@ -496,6 +497,7 @@ async function writeRetainedEvent(
 function buildSummary(state: PiEventFilterState): Summary {
   const tokenSummary = state.tokenUsage.getSummary();
   const modelStats = state.tokenUsage.getModelStats();
+  const phaseStats = state.tokenUsage.getPhaseStats();
   const promptTokenBudget = positiveIntEnv('KASEKI_PROMPT_TOKEN_WARN_THRESHOLD', 20_000);
   const malformedToolCallCount = state.providerErrors.filter((error) => error.type === 'malformed_tool_call').length;
   const inferenceHealth: InferenceHealthSummary = {
@@ -529,6 +531,7 @@ function buildSummary(state: PiEventFilterState): Summary {
     execution_tool_stats: state.executionTime.getToolStats(),
     token_usage: tokenSummary,
     model_token_stats: modelStats,
+    phase_token_stats: phaseStats,
     inference_health: inferenceHealth,
     model_reliability: buildModelReliability(modelStats, state.providerErrors),
     ...(state.providerErrors.length > 0 ? { provider_errors: state.providerErrors, primary_provider_error: state.providerErrors[0] } : {}),
