@@ -28,6 +28,16 @@ docker build -t "$IMAGE_TAG" .
 printf 'Checking required final-image destinations and modes...\n'
 docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c '
   set -eu
+  file_mode() {
+    path="$1"
+
+    # GNU stat and BSD/macOS stat expose file modes through different flags.
+    if stat -c "%a" "$path" 2>/dev/null; then
+      return
+    fi
+    stat -f "%Lp" "$path"
+  }
+
   # destination|mode. Keep this focused on the installed image contract rather
   # than the Dockerfile instructions used to produce it.
   manifest="
@@ -52,7 +62,7 @@ docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c '
     [ -n "$path" ] || continue
     path="$(printf "%s" "$path" | sed "s/^[[:space:]]*//")"
     test -e "$path"
-    actual_mode="$(stat -c "%a" "$path" 2>/dev/null || stat -f "%Lp" "$path")"
+    actual_mode="$(file_mode "$path")"
     test "$actual_mode" = "$mode"
   done
 
