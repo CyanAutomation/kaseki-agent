@@ -1604,9 +1604,13 @@ const controllerPage = String.raw`<!doctype html>
       let activeModalTab = 'status';
       
       let pollTimer = null;
+      let repoBlurTimer = null;
+      let issuesRepoBlurTimer = null;
       let activeRunView = 'status';
       let runProgressHighWater = {};
       let diagnosticInFlight = false;
+      let pageDisposed = false;
+      const activeRequestControllers = new Set();
       const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
       const LONG_REQUEST_TIMEOUT_MS = 90000;
       // Repository validation can take longer than ordinary controller reads,
@@ -1757,8 +1761,10 @@ const controllerPage = String.raw`<!doctype html>
 
       repoUrlInput.addEventListener('blur', () => {
         // Delay to allow click on dropdown items
-        setTimeout(() => {
+        if (repoBlurTimer) window.clearTimeout(repoBlurTimer);
+        repoBlurTimer = window.setTimeout(() => {
           hideRecentReposDropdown(recentReposDropdown);
+          repoBlurTimer = null;
         }, 150);
       });
 
@@ -1769,8 +1775,10 @@ const controllerPage = String.raw`<!doctype html>
 
       issuesRepoUrlInput.addEventListener('blur', () => {
         // Delay to allow click on dropdown items
-        setTimeout(() => {
+        if (issuesRepoBlurTimer) window.clearTimeout(issuesRepoBlurTimer);
+        issuesRepoBlurTimer = window.setTimeout(() => {
           hideRecentReposDropdown(issuesRecentReposDropdown);
+          issuesRepoBlurTimer = null;
         }, 150);
       });
 
@@ -2472,9 +2480,10 @@ const controllerPage = String.raw`<!doctype html>
       }
 
       async function loadRecommendedArtifacts(runId) {
-        if (!runId) return;
+        if (!runId || pageDisposed) return;
         try {
           const result = await apiRequest(runUrl(runId, '/artifacts'), { auth: true, preserveOutput: true });
+          if (pageDisposed) return;
           if (result.response.ok) {
             showRecommendedArtifacts(runId, result.payload);
           }
@@ -2561,8 +2570,10 @@ const controllerPage = String.raw`<!doctype html>
       });
 
       async function loadRunsList(options) {
+        if (pageDisposed) return;
         try {
           const result = await apiRequest('/api/runs?limit=12', { auth: true, preserveOutput: options && options.preserveOutput });
+          if (pageDisposed) return;
           if (result.response.ok) {
             renderRunsList(result.payload);
           }
@@ -2580,8 +2591,21 @@ const controllerPage = String.raw`<!doctype html>
       }
 
       function stopPolling() {
-        if (pollTimer) clearTimeout(pollTimer);
+        if (pollTimer) window.clearTimeout(pollTimer);
         pollTimer = null;
+      }
+
+      function stopPageTimers() {
+        pageDisposed = true;
+        stopPolling();
+        if (modalRefreshTimer) window.clearInterval(modalRefreshTimer);
+        modalRefreshTimer = null;
+        if (repoBlurTimer) window.clearTimeout(repoBlurTimer);
+        repoBlurTimer = null;
+        if (issuesRepoBlurTimer) window.clearTimeout(issuesRepoBlurTimer);
+        issuesRepoBlurTimer = null;
+        activeRequestControllers.forEach((controller) => controller.abort());
+        activeRequestControllers.clear();
       }
 
       function summarizeHealth(path, payload) {
@@ -2751,7 +2775,11 @@ const controllerPage = String.raw`<!doctype html>
       }
 
       async function fetchWithTimeout(path, fetchOptions, timeoutMs) {
+        if (pageDisposed) {
+          throw new Error('Page is closing; request cancelled.');
+        }
         const controller = new AbortController();
+        activeRequestControllers.add(controller);
         const timer = window.setTimeout(() => controller.abort(), timeoutMs);
         try {
           return await fetch(path, { ...fetchOptions, signal: controller.signal });
@@ -2762,6 +2790,7 @@ const controllerPage = String.raw`<!doctype html>
           throw error;
         } finally {
           window.clearTimeout(timer);
+          activeRequestControllers.delete(controller);
         }
       }
 
@@ -2806,7 +2835,7 @@ const controllerPage = String.raw`<!doctype html>
           summarizeHealth(path, payload);
           summarizeRun(payload);
           if (runId) showRunLinks(runId);
-          if (runId && payload.status) {
+          if (runId && payload.status && path === runUrl(runId, '/status')) {
             loadRecommendedArtifacts(runId);
           }
         }
@@ -2879,6 +2908,7 @@ const controllerPage = String.raw`<!doctype html>
         let firstPoll = true;
         const maxRetries = 36;
         async function poll() {
+          if (pageDisposed) return;
           try {
             const preserveOutput = (options && options.preserveFirstOutput && firstPoll) || activeRunView !== 'status';
             firstPoll = false;
@@ -2886,15 +2916,17 @@ const controllerPage = String.raw`<!doctype html>
             summarizeRun(result.payload);
             retryCount = 0;
             if (result.response.ok && result.payload && result.payload.status && !isTerminalStatus(result.payload.status)) {
-              pollTimer = setTimeout(poll, 5000);
+              if (pageDisposed) return;
+              pollTimer = window.setTimeout(poll, 5000);
               loadRunsList({ preserveOutput: true });
             } else {
               loadRunsList({ preserveOutput: true });
             }
           } catch {
+            if (pageDisposed) return;
             retryCount++;
             if (retryCount < maxRetries) {
-              pollTimer = setTimeout(poll, 10000);
+              pollTimer = window.setTimeout(poll, 10000);
             } else {
               setState('Polling stopped after repeated failures.', 'bad');
             }
@@ -3121,6 +3153,10 @@ const controllerPage = String.raw`<!doctype html>
         if (modalOpener) { modalOpener.focus(); modalOpener = null; }
       }
 
+      window.__kasekiDispose = stopPageTimers;
+      window.addEventListener('pagehide', stopPageTimers);
+      window.addEventListener('beforeunload', stopPageTimers);
+
       function setModalActiveTab(tabName) {
         activeModalTab = tabName;
         tabButtons.forEach(btn => {
@@ -3272,8 +3308,10 @@ const controllerPage = String.raw`<!doctype html>
         container.appendChild(toast);
 
         // Remove toast after duration (total animation is 2.6s with fadeInOut, but we control removal)
-        setTimeout(() => {
-          container.removeChild(toast);
+        window.setTimeout(() => {
+          if (toast.parentNode === container) {
+            container.removeChild(toast);
+          }
         }, durationMs + 300); // Add 300ms for fade-out animation
       }
 
@@ -3948,15 +3986,31 @@ const controllerPage = String.raw`<!doctype html>
 </html>
 `;
 
+const controllerPageHeaders = {
+  'Content-Security-Policy': "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'",
+  'Referrer-Policy': 'no-referrer',
+  'Content-Type': 'text/html; charset=utf-8',
+};
+
+export function getWebConsoleResponse(path: string): { status: number; headers: Record<string, string>; body: string } {
+  if (path === '/favicon.ico') {
+    return { status: 204, headers: {}, body: '' };
+  }
+  if (path === '/' || path === '/ui') {
+    return { status: 200, headers: controllerPageHeaders, body: controllerPage };
+  }
+  return { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' }, body: 'Not found' };
+}
+
 export function createWebRouter(): Router {
   const router = Router();
 
   // Browsers request this automatically; keep it public and out of auth-failure logs.
   router.get('/favicon.ico', (_req, res) => res.status(204).end());
   router.get(['/', '/ui'], (_req, res) => {
-    res.set('Content-Security-Policy', "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'");
-    res.set('Referrer-Policy', 'no-referrer');
-    res.type('html').send(controllerPage);
+    const response = getWebConsoleResponse('/');
+    Object.entries(response.headers).forEach(([name, value]) => res.set(name, value));
+    res.status(response.status).send(response.body);
   });
   return router;
 }

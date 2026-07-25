@@ -1,8 +1,6 @@
-import express from 'express';
-import { Server } from 'http';
 /* global HTMLTextAreaElement, HTMLSelectElement */
 import { JSDOM, VirtualConsole } from 'jsdom';
-import { createWebRouter } from './kaseki-api-web';
+import { getWebConsoleResponse } from './kaseki-api-web';
 
 type FetchInit = {
   method?: string;
@@ -25,35 +23,12 @@ type MockResponse = {
 
 const openDoms: JSDOM[] = [];
 
-async function listen(app: express.Express): Promise<{ server: Server; url: string }> {
-  const server = await new Promise<Server>((resolve) => {
-    const nextServer = app.listen(0, '127.0.0.1', () => resolve(nextServer));
-  });
-  const address = server.address();
-  if (!address || typeof address === 'string') {
-    throw new Error('Expected test server to bind to a TCP port');
-  }
-  return { server, url: `http://127.0.0.1:${address.port}` };
-}
-
-function close(server: Server): Promise<void> {
-  return new Promise((resolve, reject) => {
-    server.close((error) => error ? reject(error) : resolve());
-  });
-}
-
 async function fetchConsole(path = '/'): Promise<{ response: Response; body: string }> {
-  const app = express();
-  app.use(createWebRouter());
-  const { server, url } = await listen(app);
-
-  try {
-    const response = await fetch(`${url}${path}`);
-    const body = await response.text();
-    return { response, body };
-  } finally {
-    await close(server);
-  }
+  const { status, headers, body } = getWebConsoleResponse(path);
+  return {
+    response: new Response(status === 204 ? null : body, { status, headers }),
+    body,
+  };
 }
 
 function createJsonResponse(payload: unknown, status = 200): MockResponse {
@@ -109,7 +84,9 @@ async function renderConsole(options: {
 
 afterEach(() => {
   while (openDoms.length > 0) {
-    openDoms.pop()?.window.close();
+    const dom = openDoms.pop();
+    (dom?.window as unknown as { __kasekiDispose?: () => void }).__kasekiDispose?.();
+    dom?.window.close();
   }
 });
 
