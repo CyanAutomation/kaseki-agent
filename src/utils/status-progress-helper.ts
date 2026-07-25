@@ -17,7 +17,13 @@ function timestampMs(event: ProgressCandidate): number {
 }
 
 function latestProgress(events: ProgressCandidate[]): ProgressCandidate | undefined {
-  return events.sort((left, right) => timestampMs(right) - timestampMs(left))[0];
+  // Docker log tails without line timestamps are all observed at the same
+  // instant.  In that case the event order is the only reliable ordering, so
+  // prefer the last event rather than retaining the first (often preflight).
+  return events.reduce<ProgressCandidate | undefined>((latest, event) => {
+    if (!latest || timestampMs(event) >= timestampMs(latest)) return event;
+    return latest;
+  }, undefined);
 }
 
 function isValidationHeartbeat(event: ProgressCandidate): boolean {
