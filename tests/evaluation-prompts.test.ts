@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 
 const projectRoot = process.cwd();
 const renderer = path.join(projectRoot, 'scripts', 'render-prompt.sh');
@@ -47,6 +47,13 @@ const requiredJsonFields = (prompt: string, heading: string, nextHeading: string
 };
 
 describe('rendered prompt contracts', () => {
+  it('rejects a missing prompt name with usage guidance', () => {
+    const result = spawnSync('bash', [renderer], { encoding: 'utf8' });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('Usage:');
+  });
+
   it.each([
     {
       name: 'goal-check' as const,
@@ -133,6 +140,32 @@ describe('rendered prompt contracts', () => {
       }
     },
   );
+
+  it('reads artifact paths containing spaces without interpreting their contents', () => {
+    const relativePath = 'artifact fixtures/goal setting.json';
+    const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki prompt paths '));
+    const artifactPath = path.join(resultsDir, relativePath);
+    const touched = path.join(resultsDir, 'executed');
+    const hostile = `PATH_SAFE_$(touch ${touched})_\`touch ${touched}\``;
+
+    try {
+      fs.mkdirSync(path.dirname(artifactPath), { recursive: true });
+      fs.writeFileSync(artifactPath, hostile);
+      const prompt = execFileSync('bash', [renderer, 'run-evaluation'], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          KASEKI_RESULTS_DIR: resultsDir,
+          GOAL_SETTING_ARTIFACT: artifactPath,
+        },
+      });
+
+      expect(prompt).toContain(hostile);
+      expect(fs.existsSync(touched)).toBe(false);
+    } finally {
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('shell orchestration integration', () => {
