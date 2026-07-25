@@ -761,6 +761,7 @@ check_packaged_agent_helpers() {
   local helper template
   local required_helpers=(
     "agent-prompt.sh"
+    "evaluation-prompts.sh"
     "allowlist-helper.sh"
     "restore-disallowed-changes.sh"
     "inspect-mode-defaults.sh"

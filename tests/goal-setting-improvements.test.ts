@@ -729,6 +729,7 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         copyFileSync(join(repoRoot, 'scripts', 'dependency-cache-helpers.sh'), join(scriptsDir, 'dependency-cache-helpers.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'npm-install-helpers.sh'), join(scriptsDir, 'npm-install-helpers.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'agent-prompt.sh'), join(scriptsDir, 'agent-prompt.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'evaluation-prompts.sh'), join(scriptsDir, 'evaluation-prompts.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'inspect-mode-defaults.sh'), join(scriptsDir, 'inspect-mode-defaults.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'restore-disallowed-changes.sh'), join(scriptsDir, 'restore-disallowed-changes.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'auto-lint-cleanup-classification.sh'), join(scriptsDir, 'auto-lint-cleanup-classification.sh'));
