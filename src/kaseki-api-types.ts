@@ -256,6 +256,8 @@ export interface StructuredProgress {
   percentComplete?: number; // Optional: 0-100
   message?: string; // Optional: detailed message
   updatedAt?: string; // Optional: ISO 8601 timestamp
+  source?: 'progress.jsonl' | 'docker-logs'; // Where the event originated
+  timestampEstimated?: boolean; // True when the timestamp came from a log-tail observation
 }
 
 /**
@@ -293,7 +295,16 @@ export interface StatusResponse {
     updatedAt?: string;
     ageSeconds: number;
     stale: boolean;
+    source?: 'progress.jsonl' | 'docker-logs';
   };
+  validationCommands?: Array<{
+    stage: string;
+    command: string;
+    status: 'running' | 'passed' | 'failed' | 'skipped';
+    startedAt?: string;
+    finishedAt?: string;
+    durationSeconds?: number;
+  }>;
   taskProgressPercent?: number;
   goalCheckFailureReason?: string;
   exitCode?: number;

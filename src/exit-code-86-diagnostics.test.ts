@@ -247,5 +247,17 @@ describe('Exit Code 86 - Scouting Artifact Diagnostics', () => {
       expect(metadata.scouting_validation.reason_code).toBe('schema_mismatch');
       expect(classifyFailure(metadata, metadata.exit_code)).toBe('pi-scouting-agent');
     });
+
+    it('classifies missing local templates as a worker failure, not a provider failure', () => {
+      const metadata = {
+        exit_code: 87,
+        failed_command: 'pi scouting agent',
+        worker_error_type: 'worker_template_missing',
+        worker_error_message: 'Required local scouting template is missing or unreadable',
+        provider_error_type: '',
+      };
+
+      expect(classifyFailure(metadata, metadata.exit_code)).toBe('worker_template_missing');
+    });
   });
 });

@@ -361,6 +361,9 @@ PROVIDER_ERROR_RETRY_RESULT="none"
 PROVIDER_ERROR_FALLBACK_PROVIDER=""
 PROVIDER_ERROR_FALLBACK_MODEL=""
 PROVIDER_ERROR_FALLBACK_RESULT="none"
+WORKER_ERROR_TYPE=""
+WORKER_ERROR_PHASE=""
+WORKER_ERROR_MESSAGE=""
 VALIDATION_EXIT=0
 VALIDATION_FAILED_COMMAND_DETAIL=""
 VALIDATION_FAILURE_REASON=""
@@ -1625,6 +1628,9 @@ write_metadata() {
   "pre_validation_failure_reason": $(printf '%s' "$PRE_VALIDATION_FAILURE_REASON" | json_encode),
   "quality_failure_reason": $(printf '%s' "$QUALITY_FAILURE_REASON" | json_encode),
   "goal_check_failure_reason": $(printf '%s' "$GOAL_CHECK_FAILURE_REASON" | json_encode),
+  "worker_error_type": $(printf '%s' "$WORKER_ERROR_TYPE" | json_encode),
+  "worker_error_phase": $(printf '%s' "$WORKER_ERROR_PHASE" | json_encode),
+  "worker_error_message": $(printf '%s' "$WORKER_ERROR_MESSAGE" | json_encode),
   "provider_error_type": $(printf '%s' "$PROVIDER_ERROR_TYPE" | json_encode),
   "provider_error_phase": $(printf '%s' "$PROVIDER_ERROR_PHASE" | json_encode),
   "provider_error_provider": $(printf '%s' "$PROVIDER_ERROR_PROVIDER" | json_encode),
@@ -1800,6 +1806,10 @@ build_stages_array() {
 extract_failure_diagnostic_reason() {
   # Prefer terminal failure state captured by the main flow over validation
   # diagnostics from earlier phases that recovered and completed successfully.
+  if [ -n "$WORKER_ERROR_MESSAGE" ]; then
+    printf '%s: %s%s' "$WORKER_ERROR_TYPE" "$WORKER_ERROR_MESSAGE" "$([ -n "$WORKER_ERROR_PHASE" ] && printf ' (phase: %s)' "$WORKER_ERROR_PHASE")"
+    return 0
+  fi
   if [ -n "$PROVIDER_ERROR_MESSAGE" ]; then
     printf '%s: %s%s' "$PROVIDER_ERROR_TYPE" "$PROVIDER_ERROR_MESSAGE" "$([ -n "$PROVIDER_ERROR_PHASE" ] && printf ' (phase: %s)' "$PROVIDER_ERROR_PHASE")"
     return 0
@@ -2157,6 +2167,9 @@ write_failure_json() {
   "pre_validation_failure_reason": $(printf '%s' "$PRE_VALIDATION_FAILURE_REASON" | json_encode),
   "quality_failure_reason": $(printf '%s' "$QUALITY_FAILURE_REASON" | json_encode),
   "goal_check_failure_reason": $(printf '%s' "$GOAL_CHECK_FAILURE_REASON" | json_encode),
+  "worker_error_type": $(printf '%s' "$WORKER_ERROR_TYPE" | json_encode),
+  "worker_error_phase": $(printf '%s' "$WORKER_ERROR_PHASE" | json_encode),
+  "worker_error_message": $(printf '%s' "$WORKER_ERROR_MESSAGE" | json_encode),
   "provider_error_type": $(printf '%s' "$PROVIDER_ERROR_TYPE" | json_encode),
   "provider_error_phase": $(printf '%s' "$PROVIDER_ERROR_PHASE" | json_encode),
   "provider_error_provider": $(printf '%s' "$PROVIDER_ERROR_PROVIDER" | json_encode),
@@ -5856,6 +5869,11 @@ is_transient_scouting_failure() {
     return 1
   fi
 
+  # Exit code 87 = worker image/template layout failure (deterministic, not retryable)
+  if [ "$exit_code" -eq 87 ]; then
+    return 1
+  fi
+
   # Exit code 88 = provider/model error (deterministic until model/config changes)
   if [ "$exit_code" -eq 88 ]; then
     return 1
@@ -6011,6 +6029,30 @@ EOF
   fi
 }
 
+check_scouting_templates() {
+  local template_root="$SCRIPT_DIR/templates/scouting"
+  local template
+  local required_templates=(
+    "compact.txt"
+    "base.txt"
+    "detailed-test-impact.txt"
+    "minimal-test-impact.txt"
+    "common.txt"
+  )
+
+  for template in "${required_templates[@]}"; do
+    if [ ! -r "$template_root/$template" ]; then
+      WORKER_ERROR_TYPE="worker_template_missing"
+      WORKER_ERROR_PHASE="scouting"
+      WORKER_ERROR_MESSAGE="Required local scouting template is missing or unreadable: $template_root/$template"
+      printf '%s\n' "$WORKER_ERROR_MESSAGE" >&2
+      return 87
+    fi
+  done
+
+  return 0
+}
+
 run_scouting_agent() {
   local scouting_prompt scouting_start scout_dirty_before scout_dirty_after
 
@@ -6025,6 +6067,16 @@ run_scouting_agent() {
     printf 'DRY-RUN: Pi scouting agent would inspect the task before coding.\n'
     record_stage_timing "pi scouting agent" 0 0 "dry_run=true"
     return 0
+  fi
+
+  if ! check_scouting_templates; then
+    SCOUTING_EXIT=87
+    SCOUTING_DURATION_SECONDS=0
+    STATUS="$SCOUTING_EXIT"
+    FAILED_COMMAND="pi scouting agent"
+    emit_error_event "$WORKER_ERROR_TYPE" "$WORKER_ERROR_MESSAGE" "exit"
+    record_stage_timing "pi scouting agent" "$SCOUTING_EXIT" "$SCOUTING_DURATION_SECONDS" "worker_template_missing"
+    return "$SCOUTING_EXIT"
   fi
 
   scouting_prompt="$(build_scouting_prompt)"

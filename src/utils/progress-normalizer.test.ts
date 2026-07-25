@@ -124,6 +124,17 @@ describe('progress-normalizer', () => {
       });
     });
 
+    it('preserves Docker-tail provenance without treating it as a durable timestamp', () => {
+      const result = toStructuredProgress({
+        stage: 'pre-agent validation',
+        message: 'observed in log tail',
+        timestamp: '2026-05-05T10:00:00Z',
+        source: 'docker-logs',
+        timestampEstimated: true,
+      });
+      expect(result).toMatchObject({ source: 'docker-logs', timestampEstimated: true });
+    });
+
     it('should use fallbackStage when stage is missing', () => {
       const event = { message: 'Processing' };
       const result = toStructuredProgress(event);
