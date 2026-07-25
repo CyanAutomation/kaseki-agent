@@ -4,6 +4,22 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.116.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.115.1...v1.116.0) (2026-07-25)
+
+
+### Bug Fixes
+
+* diagnose Pi JSON capture timeouts ([1700479](https://github.com/CyanAutomation/kaseki-agent/commit/1700479c8ebf86da82121f6cb90bca53bd068ff2))
+* durably claim recovered queued jobs ([f754bf7](https://github.com/CyanAutomation/kaseki-agent/commit/f754bf7232a63f7dc10c834f83c06e1325967cfc))
+* **scheduler:** abort queued jobs safely on shutdown ([706ee54](https://github.com/CyanAutomation/kaseki-agent/commit/706ee548a76dc2e79257ac37d782c5091a25f843))
+* suppress shellcheck warning for validation summary in evaluation prompts ([8ceb242](https://github.com/CyanAutomation/kaseki-agent/commit/8ceb24213e1369995141c6e26dfa2ae0fdcb33e7))
+* update pi-coding-agent version to 0.82.1 in Dockerfile and BUILD_STRATEGY.md ([011f6d1](https://github.com/CyanAutomation/kaseki-agent/commit/011f6d1c3e9c0e3ecbeaebf0ccfb1c7a6c00cff4))
+
+
+### Features
+
+* add pi-json-capture and maturity-score scripts to goal-setting improvements ([b9d93d6](https://github.com/CyanAutomation/kaseki-agent/commit/b9d93d6b5c69800d54793013b24151d36a45d25d))
+
 ## [1.115.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.115.0...v1.115.1) (2026-07-25)
 
 
