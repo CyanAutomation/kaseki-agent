@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2016,SC1091
+# shellcheck disable=SC2016,SC1091 # Literal dry-run command strings and repo-relative helper sourcing.
 # Fast unit tests for pure helpers in scripts/dry-run-artifacts.sh.
 # Broader run-kaseki.sh/startup integration tests assert the dry-run artifact set
 # end-to-end (metadata.json, host-start.json, and empty placeholder files), so
@@ -146,14 +146,21 @@ test_validation_commands_skip_side_effects_in_dry_run() (
   local marker="$tmp_root/validation/validation-ran"
   mkdir -p "$result_dir" "$workspace_dir/repo"
 
+  # shellcheck disable=SC2317 # Called indirectly by sourced run_validation_commands.
   set_current_stage() { printf '%s\n' "$1" > "$result_dir/current-stage.txt"; }
+  # shellcheck disable=SC2317 # Called indirectly by sourced run_validation_commands.
   emit_progress() { :; }
+  # shellcheck disable=SC2317 # Called indirectly by sourced run_validation_commands.
   record_stage_timing() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "${4:-}" >> "$result_dir/validation-timings.tsv"; }
 
   local validation_exit=99
+  # shellcheck disable=SC2034 # Assigned through namerefs inside sourced run_validation_commands.
   local validation_detail="unexpected-detail"
+  # shellcheck disable=SC2034 # Assigned through namerefs inside sourced run_validation_commands.
   local validation_reason="unexpected-reason"
+  # shellcheck disable=SC2034 # Assigned through namerefs inside sourced run_validation_commands.
   local validation_stopped="unexpected-stopped"
+  # shellcheck disable=SC2034 # Assigned through namerefs inside sourced run_validation_commands.
   local validation_attempted="unexpected-attempted"
 
   KASEKI_DRY_RUN=1 run_validation_commands \

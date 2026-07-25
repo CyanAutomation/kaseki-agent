@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2317,SC2016,SC2002,SC2155,SC2064
+# shellcheck disable=SC2317 # Test functions are invoked indirectly by run_test.
 # Integration tests for goal-setting fallback logic
 # Tests the kaseki-agent.sh fallback mechanism when goal-setting fails
 
@@ -56,7 +56,7 @@ assert_json_valid() {
     return 0
   else
     echo "  JSON in $file is invalid"
-    cat "$file" | head -20 | sed 's/^/    /'
+    head -20 "$file" | sed 's/^/    /'
     return 1
   fi
 }
@@ -65,7 +65,8 @@ assert_json_has_field() {
   local file="$1"
   local field="$2"
   local value="$3"
-  local actual=$(jq -r ".$field" < "$file" 2>/dev/null || echo "")
+  local actual
+  actual=$(jq -r ".$field" < "$file" 2>/dev/null || echo "")
   if [ "$actual" = "$value" ]; then
     return 0
   else
@@ -76,7 +77,7 @@ assert_json_has_field() {
 
 # Setup
 TEMP_DIR=$(mktemp -d)
-trap "rm -rf $TEMP_DIR" EXIT
+trap 'rm -rf "$TEMP_DIR"' EXIT
 
 # Test 1: Fallback artifact is valid JSON
 test_fallback_produces_valid_json() {

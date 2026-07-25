@@ -1,5 +1,4 @@
 #!/bin/bash
-# shellcheck disable=SC2086,SC2016
 #
 # Sentry Shell Client
 # Sends error events to Sentry from shell scripts

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2016,SC2015
+# shellcheck disable=SC2016,SC2015 # Literal validation command string and intentional skip chaining.
 # Optional smoke coverage for host-level run-kaseki.sh --dry-run wiring.
 # Intentionally excluded from fast CI; run via npm run test:smoke:dry-run or set
 # KASEKI_RUN_DRY_RUN_INTEGRATION=1 with Docker available to validate the host

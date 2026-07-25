@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1090,SC2034
+# shellcheck disable=SC1090 # source_validate_numeric extracts a function dynamically for focused testing.
 # Test suite for printf safety fixes
 # Tests edge cases that could cause the "printf: - : invalid option" error
 
@@ -12,7 +12,6 @@ KASEKI_SCRIPT="${SCRIPT_DIR}/kaseki-agent.sh"
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Test counters
