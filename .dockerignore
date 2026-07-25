@@ -21,6 +21,8 @@
 !STYLE.md
 !docs/
 !docs/**
+!templates/
+!templates/**
 !docker/ops/
 !docker/ops/**
 !scripts/
