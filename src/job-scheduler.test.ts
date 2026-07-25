@@ -2262,6 +2262,74 @@ describe('JobScheduler shutdown lifecycle', () => {
     expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
   });
 
+  test('shutdown aborts every queued job without starting additional processes', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager(),
+    );
+
+    const runningJob = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/running',
+      ref: 'main',
+    });
+    const queuedJobs = [
+      await scheduler.submitJob({
+        repoUrl: 'https://github.com/org/queued-one',
+        ref: 'main',
+      }),
+      await scheduler.submitJob({
+        repoUrl: 'https://github.com/org/queued-two',
+        ref: 'main',
+      }),
+      await scheduler.submitJob({
+        repoUrl: 'https://github.com/org/queued-three',
+        ref: 'main',
+      }),
+    ];
+
+    expect(runningJob.status).toBe('running');
+    expect(queuedJobs.every((job) => job.status === 'queued')).toBe(true);
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+
+    scheduler.shutdown();
+
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    expect(queuedJobs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: 'failed',
+          failureClass: 'shutdown_aborted',
+          finalized: true,
+        }),
+      ]),
+    );
+    expect(
+      queuedJobs.every(
+        (job) =>
+          job.status === 'failed' &&
+          job.failureClass === 'shutdown_aborted' &&
+          job.finalized === true,
+      ),
+    ).toBe(true);
+    expect(scheduler.getQueueStatus().pending).toBe(0);
+    expect(scheduler.listJobs().filter((job) => job.status === 'queued')).toEqual(
+      [],
+    );
+  });
+
   test('shutdown emits failed terminal webhook for queued jobs aborted before execution', async () => {
     mockSpawn.mockReturnValue(new MockProcess());
     mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
