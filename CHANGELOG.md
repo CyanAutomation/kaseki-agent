@@ -4,6 +4,15 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.117.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.116.0...v1.117.0) (2026-07-25)
+
+
+### Features
+
+* add implementation summaries for Kaseki-198 failure analysis and KASEKI-201 fix ([af0a8ec](https://github.com/CyanAutomation/kaseki-agent/commit/af0a8ec43192c7568e57ca0871f7878765c4a607))
+* add KASEKI_CAVEMAN_LEVEL configuration and enhance gateway and status helper tests ([ad461c6](https://github.com/CyanAutomation/kaseki-agent/commit/ad461c6d9d909ebed8e1a1b2c3048b410efb7b89))
+* **caveman:** implement per-phase token usage tracking and compression ([25c5562](https://github.com/CyanAutomation/kaseki-agent/commit/25c55628d0da36422baabb19c7a128a9d296b7e1))
+
 # [1.116.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.115.1...v1.116.0) (2026-07-25)
 
 
