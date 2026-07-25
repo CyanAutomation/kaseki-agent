@@ -489,8 +489,8 @@ describe('StatusPhaseOutcomeHelper', () => {
     it('enforces failed > completed ranking for weaving', () => {
       const job = makeJob({ id: 'job-ranking-weaving' });
       const scheduler = makeScheduler([
-        { stage: 'pi coding agent', status: 'started' },
-        { stage: 'pi coding agent', status: 'finished' },
+        { stage: 'pi coding agent', status: 'started', timestamp: '2026-01-01T00:00:00Z' },
+        { stage: 'pi coding agent', status: 'finished', timestamp: '2026-01-01T00:01:00Z' },
       ]);
       const helper = new StatusPhaseOutcomeHelper(scheduler, makeConfig(resultsDir));
 
