@@ -52,7 +52,7 @@ docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c '
     [ -n "$path" ] || continue
     path="$(printf "%s" "$path" | sed "s/^[[:space:]]*//")"
     test -e "$path"
-    actual_mode="$(stat -c "%a" "$path")"
+    actual_mode="$(stat -c "%a" "$path" 2>/dev/null || stat -f "%Lp" "$path")"
     test "$actual_mode" = "$mode"
   done
 
