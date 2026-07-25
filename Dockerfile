@@ -101,6 +101,8 @@ COPY test ./test
 # Copy Pi CLI custom extensions (LLM Gateway provider)
 RUN mkdir -p /opt/kaseki/pi-extensions
 COPY .pi-extensions.js /opt/kaseki/pi-extensions/llm-gateway.js
+RUN mkdir -p /opt/kaseki/pi-extensions/dist/gateway \
+    && cp /app/dist/gateway/create-provider-config.js /opt/kaseki/pi-extensions/dist/gateway/
 # Also install at ~/.pi/extensions/ — the path Pi CLI actually scans for extensions
 RUN mkdir -p /tmp/kaseki-home/.pi/extensions \
     && mkdir -p /tmp/kaseki-home/.pi/agent/extensions \
