@@ -3960,7 +3960,8 @@ describe('kaseki-api-routes status artifact hints', () => {
         displayName: 'Kaseki — Crafting',
         percentComplete: 42,
         message: 'pi coding agent',
-        updatedAt: '2026-05-05T00:00:00.000Z'
+        updatedAt: '2026-05-05T00:00:00.000Z',
+        source: 'progress.jsonl'
       });
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -4017,7 +4018,8 @@ describe('kaseki-api-routes status artifact hints', () => {
       expect(body.progress).toEqual({
         stage: 'live fallback',
         message: 'file tail was malformed',
-        updatedAt: '2026-05-05T00:00:01.000Z'
+        updatedAt: '2026-05-05T00:00:01.000Z',
+        source: 'docker-logs'
       });
       expect(scheduler.getLiveProgressEvents).toHaveBeenCalledWith(jobId, 100);
     } finally {
@@ -4066,7 +4068,8 @@ describe('kaseki-api-routes status artifact hints', () => {
       expect(body.progress).toEqual({
         stage: 'startup check',
         message: 'container booted',
-        updatedAt: '2026-05-05T00:00:02.000Z'
+        updatedAt: '2026-05-05T00:00:02.000Z',
+        source: 'docker-logs'
       });
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));

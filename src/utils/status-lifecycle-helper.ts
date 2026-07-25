@@ -177,6 +177,23 @@ export class StatusLifecycleHelper {
   }
 
   private addProgressHeartbeat(response: StatusResponse, job: Job): void {
+    if (response.progressHeartbeat) {
+      if (response.progressHeartbeat.stale && !response.diagnosis) {
+        response.diagnosis = {
+          severity: 'warning',
+          phase: response.progress?.stage,
+          category: 'stale_progress',
+          summary: `No substantive progress update received for ${response.progressHeartbeat.ageSeconds}s while stage "${response.progress?.stage ?? 'unknown'}" is active.`,
+          remediation: 'Inspect the live validation/agent log; the run will be terminated when its bounded stage timeout is reached.',
+        };
+      }
+      return;
+    }
+
+    // Timestamp-less Docker-tail observations must never make the heartbeat
+    // appear fresh: they only prove that the API can still read a log buffer.
+    if (response.progress?.timestampEstimated === true) return;
+
     const updatedAt = Date.parse(String(response.progress?.updatedAt ?? ''));
     if ((job.status === 'running' || job.status === 'queued') && Number.isFinite(updatedAt)) {
       const staleSeconds = Math.max(0, Math.floor((Date.now() - updatedAt) / 1000));
