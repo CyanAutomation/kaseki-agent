@@ -126,6 +126,7 @@ export class JobScheduler {
   private timeoutKillTimers = new Map<string, NodeJS.Timeout>();
   private liveProgressCache = new Map<string, LiveProgressCacheEntry>();
   private executionState = new Map<string, JobExecutionState>();
+  private isShuttingDown = false;
   private config: KasekiApiConfig;
   private logger: EventLogger;
   private webhookManager: WebhookManager;
@@ -329,6 +330,10 @@ export class JobScheduler {
    * Process the queue, respecting max concurrent limit.
    */
   private processQueue(): void {
+    if (this.isShuttingDown) {
+      return;
+    }
+
     while (
       this.queue.length > 0 &&
       this.running.size < this.config.maxConcurrentRuns
@@ -1253,8 +1258,10 @@ export class JobScheduler {
     }
     this.clearJobCaches(job);
     this.pruneTerminalJobsIndex();
-    void this.persistJobs();
-    this.processQueue();
+    if (!this.isShuttingDown) {
+      void this.persistJobs();
+      this.processQueue();
+    }
     metricsRegistry.setQueuePending(this.queue.length);
   }
 
@@ -1530,6 +1537,15 @@ export class JobScheduler {
    * Shutdown the scheduler, aborting running jobs.
    */
   shutdown(): void {
+    this.isShuttingDown = true;
+
+    // Detach pending work before finalizing running jobs. A running job may
+    // complete synchronously while it is being terminated, and its completion
+    // must not start or mutate the jobs being aborted below.
+    const queuedJobs = this.queue;
+    this.queue = [];
+    metricsRegistry.setQueuePending(0);
+
     for (const jobId of this.running) {
       const j = this.jobs.get(jobId);
       if (j?.timeout) {
@@ -1568,7 +1584,7 @@ export class JobScheduler {
     }
 
     const now = new Date();
-    for (const queuedJob of this.queue) {
+    for (const queuedJob of queuedJobs) {
       if (queuedJob.finalized) {
         continue;
       }
@@ -1582,7 +1598,6 @@ export class JobScheduler {
       });
     }
 
-    this.queue = [];
     this.liveProgressCache.clear();
 
     // Clear any pending timeout kill timers
