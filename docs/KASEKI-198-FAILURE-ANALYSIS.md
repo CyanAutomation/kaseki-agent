@@ -14,6 +14,7 @@
 Kaseki-198 failed during the **Pi coding phase** with a **422 HTTP status code** from the provider gateway. However, the root cause is **not a transient provider issue** but rather **upstream build/dependency problems** that prevented the agent from generating valid output during the goal-setting phase.
 
 **Bottom Line**: The run failed due to a combination of:
+
 1. Missing GitHub App token helper module (docker image build issue)
 2. Missing TypeScript compiler executable (npm dependency cache corruption)
 3. Invalid goal-setting output schema (downstream consequence)
@@ -24,18 +25,21 @@ Kaseki-198 failed during the **Pi coding phase** with a **422 HTTP status code**
 ## Detailed Root Cause Analysis
 
 ### Phase 1: Pre-Validation (✅ Success)
+
 - **Command**: `npm run build`
 - **Exit Code**: 0
 - **Duration**: 37 seconds
 - **Status**: Pre-flight TypeScript check passed
 
 ### Phase 2: Scouting Phase (⚠️ Degraded)
+
 - **Duration**: 54 seconds
 - **Attempts**: 1
 - **Result**: Completed with **critical schema violations**
 - **Key Issue**: Scouting output contained arrays as strings instead of properly formatted arrays
 
 ### Phase 3: Goal-Setting Phase (❌ Failure)
+
 - **Duration**: 28 seconds
 - **Attempts**: 1
 - **Result**: **Failed artifact contract**
@@ -47,6 +51,7 @@ Kaseki-198 failed during the **Pi coding phase** with a **422 HTTP status code**
   - `relevant_files[*]`: Expected objects with {path, reason}, got strings (8 violations)
 
 ### Phase 4: Pi Coding Phase (❌ Provider Error)
+
 - **Duration**: 63 seconds
 - **Event Counts**: 16 agent turns, 32 messages, 15 tool calls
 - **Provider Error**: `422 status code (no body)`
@@ -56,6 +61,7 @@ Kaseki-198 failed during the **Pi coding phase** with a **422 HTTP status code**
 - **Retry Attempts**: 0 (immediately classified as non-retryable)
 
 **Provider Health Metrics**:
+
 - Transport success: ✅ YES
 - Stream success: ❌ NO
 - Tool calls valid: ✅ YES (100% success rate)
@@ -68,7 +74,8 @@ Kaseki-198 failed during the **Pi coding phase** with a **422 HTTP status code**
 
 ### 🔴 Issue #1: Missing GitHub App Token Helper Module
 
-**Location in stderr**: 
+**Location in stderr**:
+
 ```
 ERROR: github-app-token helper failed to load: node:internal/modules/esm/resolve:271
 Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/usr/local/bin/github-app-token-runtime.js'
@@ -76,6 +83,7 @@ imported from /usr/local/bin/github-app-token
 ```
 
 **Why This Matters**:
+
 - The docker image was built with a reference to `github-app-token-runtime.js` that doesn't exist
 - This is a build-time issue: the image setup script referenced a missing file
 - Even though the run continued, it may have affected credential/auth handling downstream
@@ -87,21 +95,25 @@ imported from /usr/local/bin/github-app-token
 ### 🔴 Issue #2: Missing TypeScript Compiler (`tsc`)
 
 **Location in stderr**:
+
 ```
 missing required dependency executable: node_modules/.bin/tsc
 ```
 
 **Timeline**:
+
 1. Pre-validation ran `npm run build` → **succeeded** (exit 0)
 2. But `tsc` was missing when actually needed during scouting
 
 **Why This Matters**:
+
 - Indicates **dependency cache corruption** or **partial npm install**
 - The workspace cache was restored but then failed validation
 - Fallback reinstall was triggered but may have been incomplete
 - The agent ran without proper TypeScript support, affecting code analysis
 
 **Cache Recovery Log**:
+
 ```
 "restored cache failed executable/schema validation; reinstalling."
 "installing after restored dependency cache failed validation (reason=workspace_cache_integrity_failed)"
@@ -124,6 +136,7 @@ missing required dependency executable: node_modules/.bin/tsc
 ```
 
 **Why This Matters**:
+
 - This is a **direct consequence** of Issues #1 and #2
 - The scouting agent couldn't properly analyze the codebase without:
   - Correct GitHub integration (Issue #1)
@@ -135,18 +148,21 @@ missing required dependency executable: node_modules/.bin/tsc
 
 ### 🔴 Issue #4: 422 Provider Error (Non-Retryable)
 
-**The 422 Error**: 
+**The 422 Error**:
+
 - HTTP 422 = "Unprocessable Entity"
 - No response body provided (explains "no body" message)
 - Cloudflare gateway returned this for `dynamic/kaseki-agent` model
 
 **Probable Cause Chain**:
+
 1. Malformed request was sent to Cloudflare gateway
 2. Likely due to corrupted/incomplete goal-setting artifact from Issue #3
 3. Provider rejected with 422 instead of a retryable 5xx error
 4. System classified as non-retryable (correct classification)
 
 **Why No Retry**:
+
 - 422 is an HTTP 4xx error (client error, not server error)
 - Client errors aren't transient → no automatic retry
 - Retrying the same malformed request would fail identically
@@ -178,6 +194,7 @@ Layer 4: Why is tsc missing?
 ```
 
 **Evidence**:
+
 - Pre-validation: `npm run build` worked (exit 0) → tsc WAS available then
 - During pi-run: tsc missing → cache wasn't properly carried over
 - Diagnostic: "workspace_cache_integrity_failed"
@@ -205,6 +222,7 @@ Layer 4: Why is tsc missing?
 **Issue**: GitHub App token helper module missing from image build
 
 **Action**:
+
 ```bash
 # 1. Locate the dockerfile build script that references github-app-token-runtime.js
 grep -r "github-app-token" Dockerfile docker/
@@ -224,6 +242,7 @@ docker build -t kaseki-agent:latest .
 ```
 
 **Verification**:
+
 ```bash
 # Should NOT see this error in stderr
 docker run --rm kaseki-agent:latest bash -c \
@@ -239,12 +258,14 @@ docker run --rm kaseki-agent:latest bash -c \
 **Actions**:
 
 1. **Verify npm package lockfile hasn't drifted**:
+
    ```bash
    npm install --frozen-lockfile --audit
    npm list typescript
    ```
 
 2. **Check TypeScript post-install hooks**:
+
    ```bash
    # Verify the bin entry in typescript package.json
    npm list -s typescript | head -5
@@ -254,12 +275,14 @@ docker run --rm kaseki-agent:latest bash -c \
 3. **Validate cache layer integrity**:
    - Check if cached node_modules have all executables
    - May need to invalidate cache and regenerate:
+
    ```bash
    rm -rf /agents/kaseki-cache/*
    # Next run will rebuild from scratch
    ```
 
 4. **Add explicit executable check to startup**:
+
    ```bash
    # In startup-checks.sh
    if [[ ! -x node_modules/.bin/tsc ]]; then
@@ -433,4 +456,3 @@ grep "exit_code.*88" /agents/kaseki-results/kaseki-test-2/failure.json && echo "
 5. **Provider error**: Received 422 when trying to send corrupted/incomplete data to coding phase
 
 The 422 error itself is a symptom, not the root cause. Fixing the docker image build and dependency cache will resolve this.
-
