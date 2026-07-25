@@ -304,4 +304,227 @@ describe('StatusPhaseOutcomeHelper', () => {
     });
     expect(response.phaseOutcome?.explanation).toContain('validated fallback handoff');
   });
+
+  describe('monotonic high-water mark behavior', () => {
+    it('enforces scouting failed outcome even after cleared live events', () => {
+      const job = makeJob({ id: 'job-hwm-failed' });
+      const scheduler = makeScheduler([
+        { stage: 'pi scouting agent', status: 'started', timestamp: '2026-01-01T00:00:00Z' }
+      ]);
+      const helper = new StatusPhaseOutcomeHelper(scheduler, makeConfig(resultsDir));
+
+      // First status read: scouting fails
+      const first = makeResponse('pi scouting agent');
+      helper.addPhaseOutcome(first, makeJob({ ...job, status: 'failed' }), { failed_command: 'pi scouting agent' });
+      expect(first.phaseOutcome).toMatchObject({ scouting: 'failed', weaving: 'not_reached' });
+
+      // Second status read: job recovered to running with empty events (should preserve failed)
+      (scheduler.getLiveProgressEvents as jest.Mock).mockReturnValue([]);
+      const second = makeResponse('');
+      helper.addPhaseOutcome(second, job, {});
+
+      expect(second.phaseOutcome).toMatchObject({ scouting: 'failed' });
+    });
+
+    it('does not downgrade completed scouting to running even with running stage', () => {
+      const job = makeJob({ id: 'job-hwm-completed' });
+      const scheduler = makeScheduler([{ stage: 'pi coding agent', status: 'started' }]);
+      const helper = new StatusPhaseOutcomeHelper(scheduler, makeConfig(resultsDir));
+
+      // First status read: scouting completed, weaving running
+      const first = makeResponse('pi coding agent');
+      helper.addPhaseOutcome(first, job, {});
+      expect(first.phaseOutcome).toMatchObject({ scouting: 'completed', weaving: 'running' });
+
+      // Second status read: events suggest scouting running (should preserve completed)
+      (scheduler.getLiveProgressEvents as jest.Mock).mockReturnValue([
+        { stage: 'pi scouting agent', status: 'started' }
+      ]);
+      const second = makeResponse('pi scouting agent');
+      helper.addPhaseOutcome(second, job, {});
+
+      expect(second.phaseOutcome).toMatchObject({ scouting: 'completed' });
+    });
+
+    it('preserves phase timestamps across status reads when events are lost', () => {
+      const job = makeJob({ id: 'job-hwm-timestamps' });
+      const scheduler = makeScheduler([
+        { stage: 'pi scouting agent', status: 'started', timestamp: '2026-01-01T00:00:00Z' },
+        { stage: 'pi scouting agent', status: 'finished', timestamp: '2026-01-01T00:01:00Z' },
+      ]);
+      const helper = new StatusPhaseOutcomeHelper(scheduler, makeConfig(resultsDir));
+
+      // First status read: capture timestamps
+      const first = makeResponse('pi coding agent');
+      helper.addPhaseOutcome(first, job, {});
+      expect(first.phaseOutcome).toMatchObject({
+        scoutingStartedAt: '2026-01-01T00:00:00Z',
+        scoutingCompletedAt: '2026-01-01T00:01:00Z',
+      });
+
+      // Second status read: events cleared (should preserve timestamps)
+      (scheduler.getLiveProgressEvents as jest.Mock).mockReturnValue([]);
+      const second = makeResponse('');
+      helper.addPhaseOutcome(second, job, {});
+
+      expect(second.phaseOutcome).toMatchObject({
+        scoutingStartedAt: '2026-01-01T00:00:00Z',
+        scoutingCompletedAt: '2026-01-01T00:01:00Z',
+      });
+    });
+
+    it('clears high-water mark cache when job transitions to terminal state', () => {
+      const job = makeJob({ id: 'job-hwm-terminal' });
+      const scheduler = makeScheduler([{ stage: 'pi scouting agent', status: 'started' }]);
+      const helper = new StatusPhaseOutcomeHelper(scheduler, makeConfig(resultsDir));
+
+      // First: running job with scouting running
+      const first = makeResponse('pi scouting agent');
+      helper.addPhaseOutcome(first, job, {});
+      expect(first.phaseOutcome).toMatchObject({ scouting: 'running' });
+
+      // Second: job completed (should derive fresh outcome, not use cache)
+      const second = makeResponse('pi scouting agent');
+      helper.addPhaseOutcome(second, makeJob({ ...job, status: 'completed' }), {});
+
+      expect(second.phaseOutcome).toMatchObject({ scouting: 'completed' });
+    });
+  });
+
+  describe('event source fallback and malformed stream handling', () => {
+    it('handles missing progress.jsonl file gracefully', () => {
+      const job = makeJob({ id: 'job-no-progress' });
+      fs.mkdirSync(path.join(resultsDir, job.id), { recursive: true });
+      // No progress.jsonl file created
+      const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+      const response = makeResponse('');
+
+      helper.addPhaseOutcome(response, job, {});
+
+      expect(response.phaseOutcome).toMatchObject({ scouting: 'not_reached', weaving: 'not_reached' });
+    });
+
+    it('handles empty progress.jsonl file', () => {
+      const job = makeJob({ id: 'job-empty-progress' });
+      const runDir = path.join(resultsDir, job.id);
+      fs.mkdirSync(runDir, { recursive: true });
+      fs.writeFileSync(path.join(runDir, 'progress.jsonl'), '');
+      const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+      const response = makeResponse('');
+
+      helper.addPhaseOutcome(response, job, {});
+
+      expect(response.phaseOutcome).toMatchObject({ scouting: 'not_reached', weaving: 'not_reached' });
+    });
+
+    it('tolerates all-malformed progress.jsonl (no valid events)', () => {
+      const job = makeJob({ id: 'job-all-malformed' });
+      const runDir = path.join(resultsDir, job.id);
+      fs.mkdirSync(runDir, { recursive: true });
+      fs.writeFileSync(path.join(runDir, 'progress.jsonl'), [
+        '{not json',
+        'also not json',
+        '{"incomplete":',
+        '',
+      ].join('\n'));
+      const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+      const response = makeResponse('');
+
+      helper.addPhaseOutcome(response, job, {});
+
+      expect(response.phaseOutcome).toMatchObject({ scouting: 'not_reached', weaving: 'not_reached' });
+    });
+
+    it('uses live events when progress.jsonl is missing', () => {
+      const job = makeJob({ id: 'job-live-only' });
+      fs.mkdirSync(path.join(resultsDir, job.id), { recursive: true });
+      // No progress.jsonl, but live events available
+      const helper = new StatusPhaseOutcomeHelper(
+        makeScheduler([
+          { stage: 'pi scouting agent', status: 'started', timestamp: '2026-01-01T00:00:00Z' }
+        ]),
+        makeConfig(resultsDir),
+      );
+      const response = makeResponse('pi scouting agent');
+
+      helper.addPhaseOutcome(response, job, {});
+
+      expect(response.phaseOutcome).toMatchObject({
+        scouting: 'running',
+        scoutingStartedAt: '2026-01-01T00:00:00Z',
+      });
+    });
+
+    it('merges valid events from partially malformed progress.jsonl with live events', () => {
+      const job = makeJob({ id: 'job-partial-malformed' });
+      const runDir = path.join(resultsDir, job.id);
+      fs.mkdirSync(runDir, { recursive: true });
+      fs.writeFileSync(path.join(runDir, 'progress.jsonl'), [
+        '{malformed',
+        JSON.stringify({ stage: 'pi scouting agent', status: 'started', timestamp: '2026-01-01T00:00:00Z' }),
+        'also bad',
+        JSON.stringify({ stage: 'pi scouting agent', status: 'finished', timestamp: '2026-01-01T00:01:00Z' }),
+      ].join('\n'));
+      const helper = new StatusPhaseOutcomeHelper(
+        makeScheduler([
+          { stage: 'pi coding agent', status: 'started', timestamp: '2026-01-01T00:02:00Z' }
+        ]),
+        makeConfig(resultsDir),
+      );
+      const response = makeResponse('pi coding agent');
+
+      helper.addPhaseOutcome(response, job, {});
+
+      expect(response.phaseOutcome).toMatchObject({
+        scouting: 'completed',
+        weaving: 'running',
+        scoutingStartedAt: '2026-01-01T00:00:00Z',
+        scoutingCompletedAt: '2026-01-01T00:01:00Z',
+        weavingStartedAt: '2026-01-01T00:02:00Z',
+      });
+    });
+  });
+
+  describe('phase ranking edge cases', () => {
+    it('enforces failed > completed ranking for weaving', () => {
+      const job = makeJob({ id: 'job-ranking-weaving' });
+      const scheduler = makeScheduler([
+        { stage: 'pi coding agent', status: 'started' },
+        { stage: 'pi coding agent', status: 'finished' },
+      ]);
+      const helper = new StatusPhaseOutcomeHelper(scheduler, makeConfig(resultsDir));
+
+      // First: weaving completed
+      const first = makeResponse('validation');
+      helper.addPhaseOutcome(first, job, {});
+      expect(first.phaseOutcome).toMatchObject({ weaving: 'completed' });
+
+      // Second: weaving failed (should override completed)
+      const second = makeResponse('pi coding agent');
+      helper.addPhaseOutcome(second, makeJob({ ...job, status: 'failed' }), { failed_command: 'pi coding agent' });
+
+      expect(second.phaseOutcome).toMatchObject({ weaving: 'failed' });
+    });
+
+    it('enforces skipped > running ranking for scouting', () => {
+      const job = makeJob({ id: 'job-ranking-skipped', request: { scouting: { enabled: false } } as any });
+      const scheduler = makeScheduler([{ stage: 'pi coding agent', status: 'started' }]);
+      const helper = new StatusPhaseOutcomeHelper(scheduler, makeConfig(resultsDir));
+
+      // First: scouting skipped (disabled)
+      const first = makeResponse('pi coding agent');
+      helper.addPhaseOutcome(first, job, {});
+      expect(first.phaseOutcome).toMatchObject({ scouting: 'skipped' });
+
+      // Second: events suggest scouting running (should preserve skipped)
+      (scheduler.getLiveProgressEvents as jest.Mock).mockReturnValue([
+        { stage: 'pi scouting agent', status: 'started' }
+      ]);
+      const second = makeResponse('pi scouting agent');
+      helper.addPhaseOutcome(second, job, {});
+
+      expect(second.phaseOutcome).toMatchObject({ scouting: 'skipped' });
+    });
+  });
 });
+
