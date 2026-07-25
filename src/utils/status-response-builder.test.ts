@@ -121,7 +121,7 @@ describe('StatusResponseBuilder', () => {
         scoutingStartedAt: '2026-01-01T00:00:02Z',
         scoutingCompletedAt: '2026-01-01T00:01:00Z',
       });
-      expect(response.progressHeartbeat).toEqual({ updatedAt: '2026-01-01T00:01:00Z', ageSeconds: 240, stale: true });
+      expect(response.progressHeartbeat).toEqual({ updatedAt: '2026-01-01T00:01:00Z', ageSeconds: 240, stale: true, source: 'progress.jsonl' });
       jest.useRealTimers();
     });
 

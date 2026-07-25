@@ -72,5 +72,7 @@ export function toStructuredProgress(
     percentComplete,
     message: message || stage,
     updatedAt,
+    ...(event.source === 'progress.jsonl' || event.source === 'docker-logs' ? { source: event.source } : {}),
+    ...(event.timestampEstimated === true ? { timestampEstimated: true } : {}),
   };
 }

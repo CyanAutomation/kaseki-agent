@@ -293,6 +293,21 @@ contract_scouting_allowlist_runtime_path() {
     'worker preflight does not verify the packaged scouting validator'
 }
 
+contract_scouting_template_runtime_path() {
+  print_contract 'Scouting template runtime path'
+  assert_docker_copy templates ./templates \
+    'Dockerfile does not copy scouting templates into the runtime application stage'
+  assert_docker_copy /app/templates ./templates \
+    'Dockerfile final stage does not retain scouting templates from runtime' runtime
+  assert_docker_contract \
+    'Dockerfile must install scouting templates beside the runner in both image stages' \
+    command cp -r /app/templates/scouting /usr/local/bin/templates/scouting 2
+  assert_file_contains scripts/startup-checks.sh '"compact\.txt"' \
+    'worker preflight does not require the compact scouting template'
+  assert_file_contains scripts/startup-checks.sh '"detailed-test-impact\.txt"' \
+    'worker preflight does not require all scouting templates'
+}
+
 contract_provider_retry_helpers() {
   print_contract 'Provider retry and cleanup helper installation'
   assert_docker_install 0644 /app/scripts/lib/provider-retry.sh /usr/local/bin/scripts/lib/provider-retry.sh 2 \
@@ -336,6 +351,7 @@ contract_published_package_contents
 contract_startup_check_availability
 contract_pi_event_filter_runtime_dependencies
 contract_scouting_allowlist_runtime_path
+contract_scouting_template_runtime_path
 contract_provider_retry_helpers
 contract_transitive_instance_state_helpers
 contract_entrypoint_behavior

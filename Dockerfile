@@ -92,6 +92,7 @@ RUN test -f /app/dist/kaseki-api-service.js
 # Copy all application files (after build, so layer invalidation is minimal)
 COPY Dockerfile .dockerignore README.md CLAUDE.md CONTRIBUTING.md ./
 COPY kaseki run-kaseki.sh kaseki-agent.sh ./
+COPY templates ./templates
 COPY docs ./docs
 COPY docker/ops ./ops
 COPY docker ./docker
@@ -162,7 +163,8 @@ RUN chmod +x \
     && chmod 0755 /app/lib/utils/*.js /app/lib/secrets/*.js 2>/dev/null || true \
     && chmod 0755 /app/dist/*.js \
     && github_app_helper_dependencies="github-app-private-key.js github-utils.js logger.js secrets/host-secrets-reader.js" \
-    && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets /usr/local/bin/utils /usr/local/bin/scripts /usr/local/bin/pi-event-aggregation /usr/local/bin/pi-event-filter-helpers \
+    && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets /usr/local/bin/utils /usr/local/bin/scripts /usr/local/bin/pi-event-aggregation /usr/local/bin/pi-event-filter-helpers /usr/local/bin/templates \
+    && cp -r /app/templates/scouting /usr/local/bin/templates/scouting \
     && cp -r /app/lib/lib/* /usr/local/bin/lib/ \
     && cp -r /app/lib/pi-event-aggregation/* /usr/local/bin/pi-event-aggregation/ \
     && cp -r /app/lib/pi-event-filter-helpers/* /usr/local/bin/pi-event-filter-helpers/ \
@@ -278,6 +280,7 @@ WORKDIR /app
 COPY --from=runtime /app/package.json /app/package-lock.json /app/
 COPY --from=runtime /app/Dockerfile /app/.dockerignore /app/README.md /app/CLAUDE.md /app/CONTRIBUTING.md ./
 COPY --from=runtime /app/kaseki /app/run-kaseki.sh /app/kaseki-agent.sh ./
+COPY --from=runtime /app/templates ./templates
 COPY --from=runtime /app/ops ./ops
 COPY --from=runtime /app/scripts ./scripts
 COPY --from=runtime /app/docker ./docker
@@ -302,7 +305,8 @@ RUN mkdir -p /scripts \
     && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \
     && /app/scripts/startup-check-packaging.sh install \
     && github_app_helper_dependencies="github-app-private-key.js github-utils.js logger.js secrets/host-secrets-reader.js" \
-    && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets /usr/local/bin/utils /usr/local/bin/scripts /usr/local/bin/pi-event-aggregation /usr/local/bin/pi-event-filter-helpers \
+    && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets /usr/local/bin/utils /usr/local/bin/scripts /usr/local/bin/pi-event-aggregation /usr/local/bin/pi-event-filter-helpers /usr/local/bin/templates \
+    && cp -r /app/templates/scouting /usr/local/bin/templates/scouting \
     && cp -r /app/lib/lib/* /usr/local/bin/lib/ \
     && cp -r /app/lib/pi-event-aggregation/* /usr/local/bin/pi-event-aggregation/ \
     && cp -r /app/lib/pi-event-filter-helpers/* /usr/local/bin/pi-event-filter-helpers/ \

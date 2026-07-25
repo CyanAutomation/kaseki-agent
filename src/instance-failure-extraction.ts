@@ -27,9 +27,12 @@ export function classifyFailure(
   const normalizedExitCode = normalizeExitCodeCandidate(exitCode);
   const failedCommand =
     typeof metadata.failed_command === 'string' ? metadata.failed_command.trim() : '';
+  const workerErrorType =
+    typeof metadata.worker_error_type === 'string' ? metadata.worker_error_type.trim() : '';
   const providerFailure = classifyProviderFailure(metadata, failedCommand);
 
   if (normalizedExitCode === 0) return 'none';
+  if (workerErrorType) return workerErrorType;
   if (providerFailure) return providerFailure;
   if (normalizedExitCode === 124) return 'timeout';
   if (normalizedExitCode === 8 || failedCommand === 'goal check') return 'goal-unmet';

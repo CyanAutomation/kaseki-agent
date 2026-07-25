@@ -1693,6 +1693,31 @@ describe('JobScheduler instance allocation and live progress', () => {
     );
   });
 
+  test('marks progress events without Docker timestamps as estimated', () => {
+    mockSpawnSync.mockReturnValue({
+      stdout: '[progress] clone repository info: started\n',
+      stderr: '',
+      status: 0,
+    });
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager(),
+    );
+
+    expect(scheduler.getLiveProgressEvents('kaseki-7', 1)).toEqual([
+      expect.objectContaining({ timestampEstimated: true }),
+    ]);
+  });
+
   test('parses various shell progress formats correctly', () => {
     const scheduler = new JobScheduler(
       {

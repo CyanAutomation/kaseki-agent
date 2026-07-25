@@ -1335,10 +1335,12 @@ export class JobScheduler {
     const events: Array<Record<string, unknown>> = [];
     for (const line of output.split(/\r?\n/)) {
       // Docker's --timestamps output is RFC3339Nano followed by the original
-      // log line. Keep that source timestamp instead of assigning one parser
-      // time to every event in a snapshot.
+      // log line. Keep that source timestamp. When a log driver omits it, mark
+      // the parser-time fallback as estimated so status polling cannot mistake
+      // a re-read log tail for fresh worker progress.
       const match = /^(?:(\d{4}-\d{2}-\d{2}T[^\s]+Z)\s+)?\[progress\]\s+([^:]+):\s*(.*)$/.exec(line);
       if (match) {
+        const timestampEstimated = !match[1];
         const timestamp = match[1] || new Date().toISOString();
         const fullBeforeColon = match[2].trim();
         const message = match[3].trim();
@@ -1357,6 +1359,7 @@ export class JobScheduler {
             status,
             message,
             timestamp,
+            ...(timestampEstimated ? { timestampEstimated: true } : {}),
           });
         } else {
           // Pi stream format: treat everything before colon as stage (backward compatibility)
@@ -1365,6 +1368,7 @@ export class JobScheduler {
             stage: fullBeforeColon,
             message,
             timestamp,
+            ...(timestampEstimated ? { timestampEstimated: true } : {}),
           });
         }
       }

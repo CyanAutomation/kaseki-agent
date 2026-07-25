@@ -1995,24 +1995,38 @@ const controllerPage = String.raw`<!doctype html>
               items.push(['Progress context', 'The run failed. This percentage only locates the failed phase in the workflow; it is not completion or success.', { warning: true, critical: true, fullWidth: true }]);
             }
           }
+          if (Array.isArray(payload.validationCommands) && payload.validationCommands.length > 0) {
+            const validationSummary = payload.validationCommands.slice(-8).map((entry) => {
+              if (!entry || typeof entry !== 'object' || typeof entry.command !== 'string') return '';
+              const details = [];
+              if (typeof entry.startedAt === 'string') details.push('started ' + new Date(entry.startedAt).toLocaleTimeString());
+              if (typeof entry.finishedAt === 'string') details.push('finished ' + new Date(entry.finishedAt).toLocaleTimeString());
+              if (typeof entry.durationSeconds === 'number') details.push('duration ' + formatElapsedSeconds(entry.durationSeconds));
+              if (entry.status === 'running' && typeof entry.startedAt === 'string') {
+                const startedAt = Date.parse(entry.startedAt);
+                if (Number.isFinite(startedAt)) details.push('running for ' + formatElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000))));
+              }
+              return stripControlSequences(entry.command).slice(0, 140) + ' — ' + String(entry.status || 'unknown') + (details.length > 0 ? ' (' + details.join('; ') + ')' : '');
+            }).filter(Boolean).join('\n');
+            if (validationSummary) items.push(['Validation commands', validationSummary, { warning: payload.validationCommands.some((entry) => entry && entry.status === 'failed'), fullWidth: true }]);
+          }
           if (typeof payload.timeoutRiskPercent === 'number') {
             items.push(['Timeout risk', payload.timeoutRiskPercent + '%']);
           }
           if (payload.progress && typeof payload.progress.updatedAt === 'string') {
-            items.push(['Progress updated', new Date(payload.progress.updatedAt).toLocaleTimeString()]);
-            const phaseElapsedSeconds = Math.max(0, Math.floor((Date.now() - Date.parse(payload.progress.updatedAt)) / 1000));
-            if (Number.isFinite(phaseElapsedSeconds)) {
-              items.push(['Time in current phase', formatElapsedSeconds(phaseElapsedSeconds)]);
-              if (payload.status === 'running' && phaseElapsedSeconds >= 120) {
-                items.push(['Progress attention', 'No new phase update for ' + formatElapsedSeconds(phaseElapsedSeconds) + '. Open Events or Stdout to confirm the agent is still making progress.', { warning: true, fullWidth: true }]);
-              }
-            }
+            const timestampEstimated = payload.progress.timestampEstimated === true;
+            items.push([timestampEstimated ? 'Log-tail observation' : 'Latest progress event', timestampEstimated
+              ? 'Timestamp unavailable; this observation does not refresh the substantive-progress timer.'
+              : new Date(payload.progress.updatedAt).toLocaleTimeString(), { warning: timestampEstimated, fullWidth: timestampEstimated }]);
           }
           if (payload.progressHeartbeat && typeof payload.progressHeartbeat.ageSeconds === 'number') {
             const heartbeat = payload.progressHeartbeat;
-            items.push(['Heartbeat', heartbeat.stale
-              ? 'Stale — no progress update for ' + formatElapsedSeconds(heartbeat.ageSeconds)
-              : 'Fresh — ' + formatElapsedSeconds(heartbeat.ageSeconds) + ' ago', { warning: heartbeat.stale, fullWidth: true }]);
+            items.push(['Last substantive progress', heartbeat.stale
+              ? 'Stale — no material progress for ' + formatElapsedSeconds(heartbeat.ageSeconds)
+              : formatElapsedSeconds(heartbeat.ageSeconds) + ' ago', { warning: heartbeat.stale, fullWidth: true }]);
+            if (heartbeat.stale && payload.status === 'running') {
+              items.push(['Progress attention', 'The worker may still be alive, but it has not emitted a substantive stage or command update. Open Events or Stdout to inspect the active operation.', { warning: true, fullWidth: true }]);
+            }
           }
           if (payload.failureClass || payload.error) {
             const failure = compactRunFailure(payload);
