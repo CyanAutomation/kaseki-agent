@@ -43,7 +43,7 @@ describe('Pi gateway provider configuration', () => {
         LLM_GATEWAY_URL: 'https://gateway.example.invalid/v1',
         LLM_GATEWAY_API_KEY_FILE: '~/.kaseki/gateway-key',
       },
-      (filePath) => {
+      (filePath, encoding) => {
         pathsRead.push(filePath);
         return 'key-from-unexpanded-path';
       }
