@@ -108,11 +108,14 @@ describe('validation-output-filter', () => {
         '',
       ].join('\n'));
 
-      expect(result.output).toContain('==> npm test');
-      expect(result.output).toContain('FAIL src/example.test.ts');
-      expect(result.output).toContain('ERROR: expected true to be false');
-      expect(result.output).toContain('Tests: 1 failed, 2 passed, 3 total');
-      expect(result.output).toContain('exit_code=1');
+      expect(result.output).toBe([
+        '==> npm test',
+        'FAIL src/example.test.ts',
+        'ERROR: expected true to be false',
+        'Tests: 1 failed, 2 passed, 3 total',
+        'exit_code=1',
+        '',
+      ].join('\n'));
       expect(result.output).not.toContain('Running verbose setup');
       expect(result.linesProcessed).toBe(6);
       expect(result.linesOutput).toBe(5);
