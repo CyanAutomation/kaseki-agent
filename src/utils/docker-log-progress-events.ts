@@ -10,6 +10,7 @@ export type DockerLogProgressEvent = {
 
 const ORCHESTRATOR_STAGE_PATTERN = /^==>\s+(.+?)\s*$/;
 const STRUCTURED_PROGRESS_PATTERN = /^\[progress\]\s+([^:]+):\s*(.+)$/;
+const DEPENDENCY_CACHE_MISS_PATTERN = /^Dependency cache status:\s*.*\bcache miss\b.*$/i;
 
 export function progressEventsFromDockerLogTail(
   content: string | undefined,
@@ -58,6 +59,18 @@ export function progressEventsFromDockerLogTail(
         stage: progressMatch[1].trim(),
         message,
         status: message.includes('finished') ? 'finished' : undefined,
+        timestamp: eventTimestamp,
+        updatedAt: eventTimestamp,
+        ...(!timestampMatch ? { timestampEstimated: true } : {}),
+      });
+      continue;
+    }
+
+    if (DEPENDENCY_CACHE_MISS_PATTERN.test(line)) {
+      append({
+        source: 'docker-logs',
+        stage: 'cold-cache setup',
+        message: 'Dependency cache miss; installing packages',
         timestamp: eventTimestamp,
         updatedAt: eventTimestamp,
         ...(!timestampMatch ? { timestampEstimated: true } : {}),

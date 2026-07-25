@@ -1400,6 +1400,7 @@ const controllerPage = String.raw`<!doctype html>
             <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true" data-auth="true" type="button" title="Run real gateway inference, Responses compatibility checks where applicable, and the Pi provider adapter smoke test used by coding runs."><span class="hc-label">Inference &amp; Pi adapter</span><span class="health-check-status" data-status="llm-test"></span></button>
             <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button" title="Run current controller readiness checks. Use Inference & Pi adapter for the separate, token-consuming model compatibility smoke test."><span class="hc-label">Current Preflight</span><span class="health-check-status" data-status="preflight"></span></button>
           </div>
+          <p id="diagnostic-queue-state" class="field-helper" role="status" aria-live="polite">Diagnostics are ready.</p>
           <div class="summary-grid" id="health-summary" aria-live="polite">
             <div class="summary-card">
               <span class="summary-label">Controller</span>
@@ -1605,6 +1606,7 @@ const controllerPage = String.raw`<!doctype html>
       let pollTimer = null;
       let activeRunView = 'status';
       let runProgressHighWater = {};
+      let diagnosticInFlight = false;
       const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
       const LONG_REQUEST_TIMEOUT_MS = 90000;
       // Repository validation can take longer than ordinary controller reads,
@@ -2804,7 +2806,7 @@ const controllerPage = String.raw`<!doctype html>
           summarizeHealth(path, payload);
           summarizeRun(payload);
           if (runId) showRunLinks(runId);
-          if (runId && payload.status && isTerminalStatus(payload.status)) {
+          if (runId && payload.status) {
             loadRecommendedArtifacts(runId);
           }
         }
@@ -2813,10 +2815,23 @@ const controllerPage = String.raw`<!doctype html>
 
       async function run(button, path, options) {
         const isDiagnostic = button.classList.contains('health-check-button');
-        // Keep independent diagnostics available while a long-running probe is in flight.
-        // The controller exposes read-only health endpoints, so disabling the whole group
-        // made Current Preflight appear unavailable during gateway/Pi checks.
-        button.disabled = true;
+        if (isDiagnostic && diagnosticInFlight) {
+          return { payload: null, response: { ok: false } };
+        }
+        const diagnosticButtons = isDiagnostic
+          ? Array.from(document.querySelectorAll('.health-check-button'))
+          : [];
+        const diagnosticState = document.querySelector('#diagnostic-queue-state');
+        // Gateway and inference probes consume shared controller resources.
+        // Serialize them so users never accidentally launch overlapping tests
+        // and make the waiting state explicit rather than silently disabling a
+        // single button.
+        diagnosticButtons.forEach((probeButton) => { probeButton.disabled = true; });
+        if (isDiagnostic) diagnosticInFlight = true;
+        if (diagnosticState) diagnosticState.textContent = isDiagnostic
+          ? 'Diagnostic running: ' + (button.textContent ? button.textContent.trim() : 'controller check') + '. Other diagnostics are disabled until it finishes.'
+          : diagnosticState.textContent;
+        if (!isDiagnostic) button.disabled = true;
         setOutputMetadata('running', String(runIdInput.value || '').trim() || undefined);
         const actionLabel = button.textContent ? button.textContent.trim() : 'request';
         const startedAt = Date.now();
@@ -2847,7 +2862,13 @@ const controllerPage = String.raw`<!doctype html>
           return { payload: null, response: { ok: false } };
         } finally {
           if (elapsedTimer) window.clearInterval(elapsedTimer);
-          button.disabled = false;
+          if (isDiagnostic) {
+            diagnosticInFlight = false;
+            diagnosticButtons.forEach((probeButton) => { probeButton.disabled = false; });
+            if (diagnosticState) diagnosticState.textContent = 'Diagnostics are ready.';
+          } else {
+            button.disabled = false;
+          }
         }
       }
 

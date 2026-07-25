@@ -74,4 +74,27 @@ describe('StatusProgressHelper', () => {
     expect(response.progress).toMatchObject({ updatedAt: '2026-01-01T00:00:00Z', source: 'progress.jsonl' });
     expect(response.progressHeartbeat).toMatchObject({ updatedAt: '2026-01-01T00:00:00Z', ageSeconds: 300, stale: true });
   });
+
+  it('uses the newest stage when Docker tail observations share a timestamp', () => {
+    const id = 'kaseki-3';
+    const scheduler = {
+      getLiveProgressEvents: jest.fn(() => []),
+      getLiveDockerLogTail: jest.fn(() => [
+        '==> github operations preflight health check',
+        '==> clone repository',
+        '==> prepare node dependencies',
+        '==> pi coding agent',
+      ].join('\n')),
+    } as unknown as JobScheduler;
+    const helper = new StatusProgressHelper(scheduler, { resultsDir } as KasekiApiConfig);
+    const response = { id, status: 'running' } as StatusResponse;
+
+    helper.addProgressInfo(response, makeJob(id));
+
+    expect(response.progress).toMatchObject({
+      stage: 'pi coding agent',
+      source: 'docker-logs',
+      timestampEstimated: true,
+    });
+  });
 });
