@@ -21,6 +21,26 @@ import {
 
 const logger = createEventLogger('gateway-test-routes');
 
+type GatewayRequestedStage = 0 | 1 | 2;
+
+type GatewayTestRequest = {
+  requestedStage: GatewayRequestedStage;
+  responseSmoke?: boolean;
+  piProviderRequested: boolean;
+  debugMode: boolean;
+};
+
+type GatewayStageResults = {
+  stage1Result: any;
+  stage2Result: any;
+  piProviderResult: any;
+};
+
+type GatewayHttpResponse = {
+  status: number;
+  body: any;
+};
+
 /**
  * Parse query parameter as boolean
  * Handles: '1', 'true', 'on', 'yes' → true; '0', 'false', 'off', 'no' → false; undefined → undefined
@@ -44,6 +64,15 @@ function parseQueryStage(value: unknown): 0 | 1 | 2 {
   if (lower === '1') return 1;
   if (lower === '2') return 2;
   return 0; // both stages
+}
+
+function parseGatewayTestRequest(req: Request): GatewayTestRequest {
+  return {
+    requestedStage: parseQueryStage(req.query.stage),
+    responseSmoke: parseQueryBoolean(req.query.responseSmoke),
+    piProviderRequested: parseQueryBoolean(req.query.piProvider) ?? false,
+    debugMode: parseQueryBoolean(req.query.debug) ?? false,
+  };
 }
 
 /**
@@ -145,6 +174,92 @@ function getResponseStatus(
   ) ? 200 : 503;
 }
 
+function shouldRunStage1(request: GatewayTestRequest): boolean {
+  return request.requestedStage === 0 || request.requestedStage === 1;
+}
+
+function shouldRunStage2(
+  request: GatewayTestRequest,
+  stage1Result: any,
+): boolean {
+  if (request.requestedStage === 2) return true;
+  return request.requestedStage === 0 && stage1Result?.status === 'ok';
+}
+
+function shouldRunPiProvider(request: GatewayTestRequest): boolean {
+  return request.piProviderRequested && (request.requestedStage === 0 || request.requestedStage === 2);
+}
+
+async function runGatewayStage2(request: GatewayTestRequest): Promise<any> {
+  const options = typeof request.responseSmoke === 'boolean'
+    ? { responseSmoke: request.responseSmoke }
+    : undefined;
+  const runStage2 = shouldRunGatewayResponseSmoke(options);
+
+  if (!runStage2 && request.requestedStage !== 2) {
+    return null;
+  }
+
+  const gatewayUrl = process.env.LLM_GATEWAY_URL || '';
+  const apiKeyResult = resolveGatewayApiKey();
+  const apiKey = apiKeyResult?.value || '';
+  const timestamp = new Date().toISOString();
+  const startTime = performance.now();
+  return testGatewayResponseSmoke_Stage2(gatewayUrl, apiKey, timestamp, startTime);
+}
+
+async function runGatewayStages(request: GatewayTestRequest): Promise<GatewayStageResults> {
+  const stage1Result = shouldRunStage1(request)
+    ? await testGatewayConnectivity_Stage1()
+    : null;
+
+  const stage2Result = shouldRunStage2(request, stage1Result)
+    ? await runGatewayStage2(request)
+    : null;
+
+  const piProviderResult = shouldRunPiProvider(request)
+    ? await testPiGatewayProviderSmoke({ requested: true, debug: request.debugMode })
+    : null;
+
+  return { stage1Result, stage2Result, piProviderResult };
+}
+
+function getStage2OnlyStatus(stage2Result: any, piProviderResult: any): number {
+  return (
+    (stage2Result?.status === 'ok' || (stage2Result?.status === 'error' && piProviderResult?.status === 'ok')) &&
+    (!piProviderResult || piProviderResult.status !== 'error')
+  ) ? 200 : 503;
+}
+
+function shapeGatewayTestResponse(
+  request: GatewayTestRequest,
+  results: GatewayStageResults,
+): GatewayHttpResponse {
+  const { stage1Result, stage2Result, piProviderResult } = results;
+
+  if (request.requestedStage === 1) {
+    return {
+      body: {
+        ...stage1Result,
+        responseSmokeValidated: false,
+      },
+      status: stage1Result.status === 'ok' ? 200 : 503,
+    };
+  }
+
+  if (request.requestedStage === 2) {
+    return {
+      body: buildStage2Response(stage2Result, piProviderResult),
+      status: getStage2OnlyStatus(stage2Result, piProviderResult),
+    };
+  }
+
+  return {
+    body: buildDualStageResponse(stage1Result, stage2Result, piProviderResult),
+    status: getResponseStatus(stage1Result, stage2Result, piProviderResult),
+  };
+}
+
 /**
  * Create gateway test routes
  */
@@ -160,68 +275,13 @@ export function createGatewayTestRoutes(): Router {
    *   ?stage=2          - Run Stage 2 only (inference test)
    *   ?responseSmoke=true/false - Override stage 2 decision
    */
-  router.get('/gateway-test', async (_req: Request, res: Response) => {
+  router.get('/gateway-test', async (req: Request, res: Response) => {
     try {
-      const requestedStage = parseQueryStage(_req.query.stage);
-      const responseSmoke = parseQueryBoolean(_req.query.responseSmoke);
-      const piProviderRequested = parseQueryBoolean(_req.query.piProvider) ?? false;
-      const debugMode = parseQueryBoolean(_req.query.debug) ?? false;
+      const request = parseGatewayTestRequest(req);
+      const results = await runGatewayStages(request);
+      const response = shapeGatewayTestResponse(request, results);
 
-      const options = typeof responseSmoke === 'boolean' ? { responseSmoke } : undefined;
-
-      let stage1Result: any = null;
-      let stage2Result: any = null;
-      let piProviderResult: any = null;
-
-      // Run Stage 1 if requested (or if running both)
-      if (requestedStage === 0 || requestedStage === 1) {
-        stage1Result = await testGatewayConnectivity_Stage1();
-      }
-
-      // Run Stage 2 if requested (or if running both and Stage 1 passed)
-      if (requestedStage === 2 || (requestedStage === 0 && stage1Result && stage1Result.status === 'ok')) {
-        const runStage2 = shouldRunGatewayResponseSmoke(options);
-
-        if (runStage2 || requestedStage === 2) {
-          const gatewayUrl = process.env.LLM_GATEWAY_URL || '';
-          const apiKeyResult = resolveGatewayApiKey();
-          const apiKey = apiKeyResult?.value || '';
-          const timestamp = new Date().toISOString();
-          const startTime = performance.now();
-          stage2Result = await testGatewayResponseSmoke_Stage2(gatewayUrl, apiKey, timestamp, startTime);
-        }
-      }
-
-      // Run PI provider test only when explicitly requested. The UI's Stage 2 LLM
-      // probe validates the Responses API and should not be made fatal by the
-      // heavier Pi provider adapter smoke unless the caller opts in with
-      // ?piProvider=true.
-      if ((requestedStage === 0 || requestedStage === 2) && piProviderRequested) {
-        piProviderResult = await testPiGatewayProviderSmoke({ requested: true, debug: debugMode });
-      }
-
-      // Build response based on requested stage
-      let response: any;
-      let status: number;
-
-      if (requestedStage === 1) {
-        // Stage 1 only
-        response = {
-          ...stage1Result,
-          responseSmokeValidated: false,
-        };
-        status = stage1Result.status === 'ok' ? 200 : 503;
-      } else if (requestedStage === 2) {
-        // Stage 2 only
-        response = buildStage2Response(stage2Result, piProviderResult);
-        status = (stage2Result?.status === 'ok' || (stage2Result?.status === 'error' && piProviderResult?.status === 'ok')) && (!piProviderResult || piProviderResult.status !== 'error') ? 200 : 503;
-      } else {
-        // Both stages (default, backward compatible)
-        response = buildDualStageResponse(stage1Result, stage2Result, piProviderResult);
-        status = getResponseStatus(stage1Result, stage2Result, piProviderResult);
-      }
-
-      res.status(status).json(response);
+      res.status(response.status).json(response.body);
     } catch (error) {
       logger.error('Gateway test error', {
         error: error instanceof Error ? error.message : String(error),

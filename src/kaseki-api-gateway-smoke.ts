@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -190,6 +190,12 @@ export interface PiProviderSmokeTestOptions {
   requested?: boolean;
   debug?: boolean; // Log full response and diagnostics
 }
+
+type PiProviderSmokeConfig =
+  | { ok: true; gatewayUrl: string; apiKey: string; model: string; timestamp: string }
+  | { ok: false; result: PiProviderSmokeTestResult };
+
+type PiProviderSmokeChild = SpawnSyncReturns<string>;
 
 type GatewayConnectivityConfig =
   | { ok: true; gatewayUrl: string; apiKey: string }
@@ -397,27 +403,37 @@ export function verifyPiProviderRegistration(): {
   return result;
 }
 
-export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeTestOptions = false): PiProviderSmokeTestResult {
-  const timestamp = new Date().toISOString();
-  const startTime = performance.now();
-  const model = resolveGatewayModel();
-
-  // Handle both boolean (backward compat) and options object
+function normalizePiProviderSmokeOptions(
+  requested: boolean | PiProviderSmokeTestOptions,
+): Required<PiProviderSmokeTestOptions> {
   const options: PiProviderSmokeTestOptions = typeof requested === 'object' ? requested : { requested };
-  const debugMode = options.debug === true;
-  const requestedSmoke = options.requested === true;
+  return {
+    requested: options.requested === true,
+    debug: options.debug === true,
+  };
+}
 
+function skippedPiProviderSmokeResult(timestamp: string, model: string): PiProviderSmokeTestResult {
+  return {
+    status: 'skipped',
+    detail: 'Pi provider smoke skipped. It requires opt-in to conserve LLM gateway tokens.',
+    responseTime: 0,
+    timestamp,
+    provider: 'gateway',
+    model,
+    remediation: 'Pi provider smoke is opt-in because it can consume gateway tokens. Add ?piProvider=true to the request, or set KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE=1 to enable for integration testing.',
+  };
+}
+
+function resolvePiProviderSmokeConfig(
+  timestamp: string,
+  model: string,
+  requestedSmoke: boolean,
+): PiProviderSmokeConfig {
   if (!shouldRunPiProviderSmoke(requestedSmoke)) {
-    const remediation = 'Pi provider smoke is opt-in because it can consume gateway tokens. Add ?piProvider=true to the request, or set KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE=1 to enable for integration testing.';
-
     return {
-      status: 'skipped',
-      detail: 'Pi provider smoke skipped. It requires opt-in to conserve LLM gateway tokens.',
-      responseTime: 0,
-      timestamp,
-      provider: 'gateway',
-      model,
-      remediation,
+      ok: false,
+      result: skippedPiProviderSmokeResult(timestamp, model),
     };
   }
 
@@ -425,35 +441,24 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
   const apiKey = resolveGatewayApiKey().value;
   if (!gatewayUrl || !apiKey) {
     return {
-      status: 'error',
-      detail: 'Pi provider smoke cannot run because LLM_GATEWAY_URL or LLM_GATEWAY_API_KEY is missing',
-      responseTime: 0,
-      timestamp,
-      provider: 'gateway',
-      model,
-      remediation: 'Configure gateway URL and API key before running Pi provider smoke.',
+      ok: false,
+      result: {
+        status: 'error',
+        detail: 'Pi provider smoke cannot run because LLM_GATEWAY_URL or LLM_GATEWAY_API_KEY is missing',
+        responseTime: 0,
+        timestamp,
+        provider: 'gateway',
+        model,
+        remediation: 'Configure gateway URL and API key before running Pi provider smoke.',
+      },
     };
   }
 
-  // The smoke prompt deliberately asks Pi to inspect package.json.  Give it a
-  // tiny disposable workspace so this verifies the provider contract rather
-  // than failing because the API process happens to start in an empty folder.
-  let smokeWorkspace: string;
-  try {
-    smokeWorkspace = createPiProviderSmokeWorkspace();
-  } catch (error) {
-    return {
-      status: 'error',
-      detail: `Pi provider smoke could not create its disposable workspace: ${error instanceof Error ? error.message : String(error)}`,
-      responseTime: Math.round(performance.now() - startTime),
-      timestamp,
-      provider: 'gateway',
-      model,
-      remediation: 'Ensure the controller can create temporary directories before running the Pi provider smoke.',
-    };
-  }
+  return { ok: true, gatewayUrl, apiKey, model, timestamp };
+}
 
-  const prompt = [
+function buildPiProviderSmokePrompt(): string {
+  return [
     'You are the coding phase of an ephemeral repository agent.',
     'Synthetic task: inspect package.json and propose one concise documentation improvement.',
     'You must use the read tool to inspect package.json before answering. Do not modify files.',
@@ -461,14 +466,48 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
     'Return exactly one JSON object and no markdown:',
     '{"status":"ok","phase":"coding","changed_files":[],"summary":"kaseki pi provider smoke ok"}',
   ].join('\n');
-  const child = spawnSync('pi', ['--mode', 'json', '--no-session', '--provider', 'gateway', '--model', model, prompt], {
+}
+
+function createPiProviderWorkspaceOrError(
+  timestamp: string,
+  model: string,
+  startTime: number,
+): { ok: true; workspace: string } | { ok: false; result: PiProviderSmokeTestResult } {
+  try {
+    return { ok: true, workspace: createPiProviderSmokeWorkspace() };
+  } catch (error) {
+    return {
+      ok: false,
+      result: {
+        status: 'error',
+        detail: `Pi provider smoke could not create its disposable workspace: ${error instanceof Error ? error.message : String(error)}`,
+        responseTime: Math.round(performance.now() - startTime),
+        timestamp,
+        provider: 'gateway',
+        model,
+        remediation: 'Ensure the controller can create temporary directories before running the Pi provider smoke.',
+      },
+    };
+  }
+}
+
+function cleanupPiProviderSmokeWorkspace(workspace: string): void {
+  try {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  } catch {
+    // The diagnostic result is still valid if best-effort temporary cleanup fails.
+  }
+}
+
+function runPiProviderSmokeChild(config: Extract<PiProviderSmokeConfig, { ok: true }>, workspace: string): PiProviderSmokeChild {
+  return spawnSync('pi', ['--mode', 'json', '--no-session', '--provider', 'gateway', '--model', config.model, buildPiProviderSmokePrompt()], {
     encoding: 'utf8',
     timeout: PI_PROVIDER_SMOKE_TIMEOUT_MS,
-    cwd: smokeWorkspace,
+    cwd: workspace,
     env: {
       ...process.env,
-      LLM_GATEWAY_URL: gatewayUrl,
-      LLM_GATEWAY_API_KEY: apiKey,
+      LLM_GATEWAY_URL: config.gatewayUrl,
+      LLM_GATEWAY_API_KEY: config.apiKey,
       LLM_GATEWAY_MAX_OUTPUT_TOKENS: String(PI_PROVIDER_SMOKE_MAX_OUTPUT_TOKENS),
     },
     // Pi JSON mode can emit cumulative message snapshots and provider metadata
@@ -477,14 +516,182 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
     // from child_process ENOBUFS transport failures.
     maxBuffer: 16 * 1024 * 1024,
   });
+}
+
+function debugPiProviderSmokeOutput(stdout: string): string | undefined {
   try {
-    fs.rmSync(smokeWorkspace, { recursive: true, force: true });
+    const debugPath = `/tmp/kaseki-pi-debug-${Date.now()}.jsonl`;
+    fs.writeFileSync(debugPath, stdout);
+    return debugPath;
   } catch {
-    // The diagnostic result is still valid if best-effort temporary cleanup fails.
+    return undefined;
   }
-  const responseTime = Math.round(performance.now() - startTime);
-  const stdout = child.stdout || '';
+}
+
+function failedCodingContractDebugOutput(stdout: string): string | undefined {
+  try {
+    const diagnosticsDir = process.env.KASEKI_RESULTS_DIR || '/tmp';
+    fs.mkdirSync(diagnosticsDir, { recursive: true });
+    const debugOutputPath = `${diagnosticsDir}/pi-provider-smoke-failed-${Date.now()}.jsonl`;
+    fs.writeFileSync(debugOutputPath, stdout, { mode: 0o600 });
+    return debugOutputPath;
+  } catch {
+    return undefined;
+  }
+}
+
+function piProviderChildErrorResult(
+  child: PiProviderSmokeChild,
+  responseTime: number,
+  timestamp: string,
+  model: string,
+): PiProviderSmokeTestResult {
+  const errorMessage = child.error?.message ?? 'Unknown child process error';
+  const timedOut = errorMessage.includes('ETIMEDOUT');
+  const outputOverflow = errorMessage.includes('ENOBUFS');
+  return {
+    status: 'error',
+    detail: `Pi provider smoke failed to start or complete: ${errorMessage}`,
+    responseTime,
+    timestamp,
+    provider: 'gateway',
+    model,
+    exitCode: child.status,
+    remediation: timedOut
+      ? 'Pi provider smoke timed out. Check gateway latency and Pi provider registration.'
+      : outputOverflow
+        ? 'Pi produced excessive JSONL output during the smoke test. Inspect provider event amplification and keep cumulative event payloads bounded.'
+        : errorMessage.includes('ENOENT')
+          ? 'Check that Pi CLI is installed in the controller image.'
+          : 'Check that the gateway provider extension loads and inspect the Pi adapter diagnostics.',
+  };
+}
+
+function piProviderExitErrorResult(
+  child: PiProviderSmokeChild,
+  stdout: string,
+  responseTime: number,
+  timestamp: string,
+  model: string,
+): PiProviderSmokeTestResult {
   const stderr = child.stderr || '';
+  return {
+    status: 'error',
+    detail: `Pi provider smoke exited ${child.status}: ${(stderr || stdout).slice(0, 240)}`,
+    responseTime,
+    timestamp,
+    provider: 'gateway',
+    model,
+    exitCode: child.status,
+    remediation: 'Gateway HTTP smoke can pass while Pi provider registration fails. Check .gateway-diagnostics.jsonl and provider api type.',
+  };
+}
+
+function missingAssistantTextResult(
+  stdout: string,
+  child: PiProviderSmokeChild,
+  responseTime: number,
+  timestamp: string,
+  model: string,
+  debugMode: boolean,
+): PiProviderSmokeTestResult {
+  const analysis = analyzeResponseStructure(stdout);
+  const sampleEvent = extractSampleEventStructure(stdout);
+  const debugOutputPath = debugMode ? debugPiProviderSmokeOutput(stdout) : undefined;
+
+  return {
+    status: 'error',
+    detail: 'Pi provider smoke completed but produced no assistant text',
+    responseTime,
+    timestamp,
+    provider: 'gateway',
+    model,
+    exitCode: child.status,
+    outputEventCount: countPiJsonEvents(stdout),
+    assistantTextChars: 0,
+    diagnostics: {
+      fieldsSearched: [
+        'message.text',
+        'message.output_text',
+        'message.assistantMessage',
+        'message.content (string)',
+        'message.choices[0].message.content',
+        'message.choices[0].delta.content',
+        'message.response.content',
+      ],
+      fieldsFound: analysis.fieldsFound,
+      eventsByType: analysis.eventsByType,
+      eventsWithText: analysis.eventsWithText,
+      assistantEventsWithText: analysis.assistantEventsWithText,
+      nonAssistantEventsWithText: analysis.nonAssistantEventsWithText,
+      assistantFieldsFound: analysis.assistantFieldsFound,
+      nonAssistantFieldsFound: analysis.nonAssistantFieldsFound,
+      suggestedPatterns: analysis.suggestedPatterns,
+      sampleEventStructure: sampleEvent,
+      ...(debugOutputPath ? { debugOutputPath } : {}),
+    },
+    remediation:
+      analysis.suggestedPatterns.length > 0
+        ? `Found assistant response fields but text not extracted. Try patterns: ${analysis.suggestedPatterns.slice(0, 2).join(', ')}. Check Pi provider registration and gateway response format.`
+        : analysis.nonAssistantFieldsFound.length > 0
+          ? `Found text fields only on non-assistant messages (${analysis.nonAssistantFieldsFound.slice(0, 2).join(', ')}), but no assistant text was produced. Verify Pi provider api uses openai-responses and gateway assistant output is streamed with role=assistant.`
+          : 'No assistant response fields found. Verify Pi provider api uses openai-responses and gateway is returning valid assistant responses.',
+  };
+}
+
+function parseCodingShapeValidated(assistantText: string, multiTurnValidated: boolean): boolean {
+  try {
+    const smokePayload = JSON.parse(assistantText.trim()) as Record<string, unknown>;
+    return smokePayload.status === 'ok' && smokePayload.phase === 'coding' && multiTurnValidated;
+  } catch {
+    return false;
+  }
+}
+
+function codingContractErrorResult(
+  stdout: string,
+  assistantText: string,
+  child: PiProviderSmokeChild,
+  responseTime: number,
+  timestamp: string,
+  model: string,
+  toolCallCount: number,
+  turnCount: number,
+  multiTurnValidated: boolean,
+): PiProviderSmokeTestResult {
+  const debugOutputPath = failedCodingContractDebugOutput(stdout);
+  return {
+    status: 'error',
+    detail: 'Pi provider produced assistant text but did not satisfy the coding-shaped JSON contract',
+    responseTime,
+    timestamp,
+    provider: 'gateway',
+    model,
+    exitCode: child.status,
+    outputEventCount: countPiJsonEvents(stdout),
+    assistantTextChars: assistantText.trim().length,
+    codingShapeValidated: false,
+    toolCallCount,
+    turnCount,
+    multiTurnValidated,
+    diagnostics: {
+      ...(debugOutputPath ? { debugOutputPath } : {}),
+      rawAssistantPreview: assistantText.trim().slice(0, 1000),
+    },
+    remediation: multiTurnValidated
+      ? 'Inspect the gateway response body and Pi event stream; the multi-turn tool flow passed but the final coding contract failed.'
+      : 'The gateway must sustain a streamed tool call and follow-up assistant turn. Inspect tool-call deltas, finish reasons, and adapter stream handling.',
+  };
+}
+
+function analyzePiProviderSmokeChild(
+  child: PiProviderSmokeChild,
+  responseTime: number,
+  timestamp: string,
+  model: string,
+  debugMode: boolean,
+): PiProviderSmokeTestResult {
+  const stdout = child.stdout || '';
   const assistantText = extractPiJsonAssistantText(stdout);
   const responseAnalysis = analyzeResponseStructure(stdout);
   const toolCallCount = responseAnalysis.eventsByType.tool_execution_start || 0;
@@ -492,134 +699,20 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
   const multiTurnValidated = toolCallCount > 0 && turnCount >= 2;
 
   if (child.error) {
-    const timedOut = child.error.message.includes('ETIMEDOUT');
-    const outputOverflow = child.error.message.includes('ENOBUFS');
-    return {
-      status: 'error',
-      detail: `Pi provider smoke failed to start or complete: ${child.error.message}`,
-      responseTime,
-      timestamp,
-      provider: 'gateway',
-      model,
-      exitCode: child.status,
-      remediation: timedOut
-        ? 'Pi provider smoke timed out. Check gateway latency and Pi provider registration.'
-        : outputOverflow
-          ? 'Pi produced excessive JSONL output during the smoke test. Inspect provider event amplification and keep cumulative event payloads bounded.'
-          : child.error.message.includes('ENOENT')
-            ? 'Check that Pi CLI is installed in the controller image.'
-            : 'Check that the gateway provider extension loads and inspect the Pi adapter diagnostics.',
-    };
+    return piProviderChildErrorResult(child, responseTime, timestamp, model);
   }
 
   if (child.status !== 0) {
-    return {
-      status: 'error',
-      detail: `Pi provider smoke exited ${child.status}: ${(stderr || stdout).slice(0, 240)}`,
-      responseTime,
-      timestamp,
-      provider: 'gateway',
-      model,
-      exitCode: child.status,
-      remediation: 'Gateway HTTP smoke can pass while Pi provider registration fails. Check .gateway-diagnostics.jsonl and provider api type.',
-    };
+    return piProviderExitErrorResult(child, stdout, responseTime, timestamp, model);
   }
 
   if (!assistantText.trim()) {
-    const analysis = responseAnalysis;
-    const sampleEvent = extractSampleEventStructure(stdout);
-
-    let debugOutputPath: string | undefined;
-    if (debugMode) {
-      // In debug mode, persist raw response for diagnostics.
-      try {
-        const debugPath = `/tmp/kaseki-pi-debug-${Date.now()}.jsonl`;
-        fs.writeFileSync(debugPath, stdout);
-        debugOutputPath = debugPath;
-      } catch {
-        // Ignore write errors in debug mode
-      }
-    }
-
-    return {
-      status: 'error',
-      detail: 'Pi provider smoke completed but produced no assistant text',
-      responseTime,
-      timestamp,
-      provider: 'gateway',
-      model,
-      exitCode: child.status,
-      outputEventCount: countPiJsonEvents(stdout),
-      assistantTextChars: 0,
-      diagnostics: {
-        fieldsSearched: [
-          'message.text',
-          'message.output_text',
-          'message.assistantMessage',
-          'message.content (string)',
-          'message.choices[0].message.content',
-          'message.choices[0].delta.content',
-          'message.response.content',
-        ],
-        fieldsFound: analysis.fieldsFound,
-        eventsByType: analysis.eventsByType,
-        eventsWithText: analysis.eventsWithText,
-        assistantEventsWithText: analysis.assistantEventsWithText,
-        nonAssistantEventsWithText: analysis.nonAssistantEventsWithText,
-        assistantFieldsFound: analysis.assistantFieldsFound,
-        nonAssistantFieldsFound: analysis.nonAssistantFieldsFound,
-        suggestedPatterns: analysis.suggestedPatterns,
-        sampleEventStructure: sampleEvent,
-        ...(debugOutputPath ? { debugOutputPath } : {}),
-      },
-      remediation:
-        analysis.suggestedPatterns.length > 0
-          ? `Found assistant response fields but text not extracted. Try patterns: ${analysis.suggestedPatterns.slice(0, 2).join(', ')}. Check Pi provider registration and gateway response format.`
-          : analysis.nonAssistantFieldsFound.length > 0
-            ? `Found text fields only on non-assistant messages (${analysis.nonAssistantFieldsFound.slice(0, 2).join(', ')}), but no assistant text was produced. Verify Pi provider api uses openai-responses and gateway assistant output is streamed with role=assistant.`
-            : 'No assistant response fields found. Verify Pi provider api uses openai-responses and gateway is returning valid assistant responses.',
-    };
+    return missingAssistantTextResult(stdout, child, responseTime, timestamp, model, debugMode);
   }
 
-  let codingShapeValidated = false;
-  try {
-    const smokePayload = JSON.parse(assistantText.trim()) as Record<string, unknown>;
-    codingShapeValidated = smokePayload.status === 'ok' && smokePayload.phase === 'coding' && multiTurnValidated;
-  } catch {
-    codingShapeValidated = false;
-  }
+  const codingShapeValidated = parseCodingShapeValidated(assistantText, multiTurnValidated);
   if (!codingShapeValidated) {
-    let debugOutputPath: string | undefined;
-    try {
-      const diagnosticsDir = process.env.KASEKI_RESULTS_DIR || '/tmp';
-      fs.mkdirSync(diagnosticsDir, { recursive: true });
-      debugOutputPath = `${diagnosticsDir}/pi-provider-smoke-failed-${Date.now()}.jsonl`;
-      fs.writeFileSync(debugOutputPath, stdout, { mode: 0o600 });
-    } catch {
-      debugOutputPath = undefined;
-    }
-    return {
-      status: 'error',
-      detail: 'Pi provider produced assistant text but did not satisfy the coding-shaped JSON contract',
-      responseTime,
-      timestamp,
-      provider: 'gateway',
-      model,
-      exitCode: child.status,
-      outputEventCount: countPiJsonEvents(stdout),
-      assistantTextChars: assistantText.trim().length,
-      codingShapeValidated: false,
-      toolCallCount,
-      turnCount,
-      multiTurnValidated,
-      diagnostics: {
-        ...(debugOutputPath ? { debugOutputPath } : {}),
-        rawAssistantPreview: assistantText.trim().slice(0, 1000),
-      },
-      remediation: multiTurnValidated
-        ? 'Inspect the gateway response body and Pi event stream; the multi-turn tool flow passed but the final coding contract failed.'
-        : 'The gateway must sustain a streamed tool call and follow-up assistant turn. Inspect tool-call deltas, finish reasons, and adapter stream handling.',
-    };
+    return codingContractErrorResult(stdout, assistantText, child, responseTime, timestamp, model, toolCallCount, turnCount, multiTurnValidated);
   }
 
   return {
@@ -637,6 +730,30 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
     turnCount,
     multiTurnValidated,
   };
+}
+
+export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeTestOptions = false): PiProviderSmokeTestResult {
+  const timestamp = new Date().toISOString();
+  const startTime = performance.now();
+  const model = resolveGatewayModel();
+  const options = normalizePiProviderSmokeOptions(requested);
+  const config = resolvePiProviderSmokeConfig(timestamp, model, options.requested);
+
+  if (!config.ok) return config.result;
+
+  const workspace = createPiProviderWorkspaceOrError(timestamp, model, startTime);
+  if (!workspace.ok) return workspace.result;
+
+  const child = runPiProviderSmokeChild(config, workspace.workspace);
+  cleanupPiProviderSmokeWorkspace(workspace.workspace);
+
+  return analyzePiProviderSmokeChild(
+    child,
+    Math.round(performance.now() - startTime),
+    timestamp,
+    model,
+    options.debug,
+  );
 }
 
 /**

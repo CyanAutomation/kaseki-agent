@@ -171,13 +171,9 @@ export class StatusArtifactHelper {
       },
       {} as Record<(typeof STATUS_KEY_FILES)[number], boolean>
     );
-    const diagnosticFiles = [
-      ...PI_AGENT_DIAGNOSTIC_FILES,
-      ...GOAL_SETTING_DIAGNOSTIC_FILES,
-      ...SCOUTING_DIAGNOSTIC_FILES,
-      ...PRE_VALIDATION_DIAGNOSTIC_FILES,
-      ...GOAL_CHECK_DIAGNOSTIC_FILES,
-    ].filter((fileName) => isAvailable(fileName));
+    const diagnosticFiles = artifactFiles.filter((fileName) => {
+      return !STATUS_KEY_FILES.includes(fileName as (typeof STATUS_KEY_FILES)[number]) && isAvailable(fileName);
+    });
 
     response.artifacts = {
       metadataJson: keyFileAvailability['metadata.json'],
