@@ -756,8 +756,9 @@ check_unused_secrets() {
 check_packaged_agent_helpers() {
   local agent_bin="${KASEKI_AGENT_BIN:-/usr/local/bin/kaseki-agent}"
   local helper_root="${KASEKI_AGENT_HELPER_ROOT:-/usr/local/bin/scripts}"
+  local scouting_template_root="${KASEKI_SCOUTING_TEMPLATE_ROOT:-$(dirname "$agent_bin")/templates/scouting}"
   local missing=()
-  local helper
+  local helper template
   local required_helpers=(
     "agent-prompt.sh"
     "allowlist-helper.sh"
@@ -769,6 +770,13 @@ check_packaged_agent_helpers() {
     "lib/json.sh"
     "lib/json-events.sh"
     "lib/provider-retry.sh"
+  )
+  local required_scouting_templates=(
+    "compact.txt"
+    "base.txt"
+    "detailed-test-impact.txt"
+    "minimal-test-impact.txt"
+    "common.txt"
   )
 
   if [ ! -x "$agent_bin" ]; then
@@ -783,14 +791,20 @@ check_packaged_agent_helpers() {
     fi
   done
 
+  for template in "${required_scouting_templates[@]}"; do
+    if [ ! -r "$scouting_template_root/$template" ]; then
+      missing+=("$scouting_template_root/$template")
+    fi
+  done
+
   if [ "${#missing[@]}" -gt 0 ]; then
-    log_error "Packaged agent helper files are missing or unreadable:"
+    log_error "Packaged agent helper or scouting template files are missing or unreadable:"
     printf '  - %s\n' "${missing[@]}" >&2
-    log_info "  Rebuild the worker image so sourced scripts are installed beside $agent_bin."
+    log_info "  Rebuild the worker image so sourced scripts and scouting templates are installed beside $agent_bin."
     return 2
   fi
 
-  log_pass "Packaged agent helpers are readable under $helper_root"
+  log_pass "Packaged agent helpers are readable under $helper_root; scouting templates are readable under $scouting_template_root"
   return 0
 }
 
