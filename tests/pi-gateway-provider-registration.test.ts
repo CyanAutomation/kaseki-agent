@@ -37,19 +37,19 @@ describe('Pi gateway provider configuration', () => {
   });
 
   it('preserves a tilde-prefixed key path when HOME is unavailable', () => {
-    const pathsRead: string[] = [];
+    const reads: Array<{ path: string; encoding: 'utf8' }> = [];
     const config = createGatewayProviderConfig(
       {
         LLM_GATEWAY_URL: 'https://gateway.example.invalid/v1',
         LLM_GATEWAY_API_KEY_FILE: '~/.kaseki/gateway-key',
       },
       (filePath, encoding) => {
-        pathsRead.push(filePath);
+        reads.push({ path: filePath, encoding });
         return 'key-from-unexpanded-path';
       }
     );
 
-    expect(pathsRead).toEqual(['~/.kaseki/gateway-key']);
+    expect(reads).toEqual([{ path: '~/.kaseki/gateway-key', encoding: 'utf8' }]);
     expect(config?.apiKey).toBe('key-from-unexpanded-path');
   });
 });
