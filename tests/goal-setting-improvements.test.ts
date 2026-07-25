@@ -734,6 +734,8 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         copyFileSync(join(repoRoot, 'scripts', 'restore-disallowed-changes.sh'), join(scriptsDir, 'restore-disallowed-changes.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'auto-lint-cleanup-classification.sh'), join(scriptsDir, 'auto-lint-cleanup-classification.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'artifact-consolidation.sh'), join(scriptsDir, 'lib', 'artifact-consolidation.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'lib', 'pi-json-capture.sh'), join(scriptsDir, 'lib', 'pi-json-capture.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'lib', 'maturity-score.sh'), join(scriptsDir, 'lib', 'maturity-score.sh'));
         for (const templateFile of readdirSync(join(repoRoot, 'templates', 'scouting'))) {
           copyFileSync(
             join(repoRoot, 'templates', 'scouting', templateFile),
