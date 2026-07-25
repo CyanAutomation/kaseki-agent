@@ -53,7 +53,7 @@ for item in "${package_manifest[@]}"; do
   IFS='|' read -r path mode <<<"$item"
   [[ -e "$PACKAGE_DIR/$path" ]] || fail "installed npm package is missing $path"
   if [[ -n "$mode" ]]; then
-    actual_mode="$(stat -c '%a' "$PACKAGE_DIR/$path")"
+    actual_mode="$(stat -c '%a' "$PACKAGE_DIR/$path" 2>/dev/null || stat -f '%Lp' "$PACKAGE_DIR/$path")"
     [[ "$actual_mode" == "$mode" ]] || fail "installed npm package $path has mode $actual_mode, expected $mode"
   fi
 done
