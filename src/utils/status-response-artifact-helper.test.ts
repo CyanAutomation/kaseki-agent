@@ -443,4 +443,277 @@ describe('StatusArtifactHelper', () => {
       expect(progressHighWater.has('job-1')).toBe(false);
     });
   });
+
+  describe('addDiagnosticSummary', () => {
+    it('should extract diagnostic summary for failed jobs', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-1');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), '{}');
+
+      helper.addDiagnosticSummary(response, job);
+
+      expect(mockDiagnosticExtractor.extractDiagnosticSummary).toHaveBeenCalledWith(
+        response,
+        runDir,
+        expect.any(Function)
+      );
+    });
+
+    it('should extract diagnostic summary for completed jobs', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-1');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'completed', resultDir: runDir });
+
+      helper.addDiagnosticSummary(response, job);
+
+      expect(mockDiagnosticExtractor.extractDiagnosticSummary).toHaveBeenCalledWith(
+        response,
+        runDir,
+        expect.any(Function)
+      );
+    });
+
+    it('should handle missing diagnostic files gracefully', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-missing-diag');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      // Don't create any diagnostic files
+
+      expect(() => {
+        helper.addDiagnosticSummary(response, job);
+      }).not.toThrow();
+
+      expect(mockDiagnosticExtractor.extractDiagnosticSummary).toHaveBeenCalled();
+    });
+  });
+
+  describe('diagnostic inclusion flag logic', () => {
+    it('should include Pi agent diagnostics when pi-events.jsonl exists in failed job', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-pi-diag');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), JSON.stringify({
+        failed_command: 'pi coding agent'
+      }));
+      fs.writeFileSync(path.join(runDir, 'pi-events.jsonl'), '{"event":"test"}');
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'pi-events.jsonl': { exists: true, size: 50 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'failure.json': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      // Should include pi-events.jsonl in diagnostic files
+      expect(response.artifacts?.diagnosticFiles).toContain('pi-events.jsonl');
+    });
+
+    it('should include goal-setting diagnostics when goal-setting fails', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-goal-setting-fail');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), JSON.stringify({
+        failed_command: 'pi goal-setting agent',
+        goal_setting_exit_code: 1
+      }));
+      fs.writeFileSync(path.join(runDir, 'goal-setting-validation-errors.jsonl'), '{"error":"test"}');
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'goal-setting-validation-errors.jsonl': { exists: true, size: 50 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'failure.json': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      expect(response.artifacts?.diagnosticFiles).toContain('goal-setting-validation-errors.jsonl');
+    });
+
+    it('should include scouting diagnostics when scouting fails', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-scouting-fail');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), JSON.stringify({
+        failed_command: 'pi scouting agent'
+      }));
+      fs.writeFileSync(path.join(runDir, 'scouting-validation-errors.jsonl'), '{"error":"test"}');
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'scouting-validation-errors.jsonl': { exists: true, size: 50 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'failure.json': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      expect(response.artifacts?.diagnosticFiles).toContain('scouting-validation-errors.jsonl');
+    });
+
+    it('should include pre-validation diagnostics when pre-validation fails', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-pre-validation-fail');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), JSON.stringify({
+        failed_command: 'pre-agent validation',
+        pre_validation_exit_code: 1
+      }));
+      fs.writeFileSync(path.join(runDir, 'pre-validation.log'), 'validation failed');
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'pre-validation.log': { exists: true, size: 50 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'failure.json': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      expect(response.artifacts?.diagnosticFiles).toContain('pre-validation.log');
+    });
+
+    it('should include goal-check diagnostics when goal check artifact is invalid', () => {
+      const response = makeResponse();
+      response.goalCheckFailureReason = 'goal_check_artifact_invalid';
+      const runDir = path.join(resultsDir, 'job-goal-check-invalid');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), JSON.stringify({
+        failed_command: 'goal check'
+      }));
+      fs.writeFileSync(path.join(runDir, 'goal-check-validation-errors.jsonl'), '{"error":"invalid"}');
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'goal-check-validation-errors.jsonl': { exists: true, size: 50 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'failure.json': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      expect(response.artifacts?.diagnosticFiles).toContain('goal-check-validation-errors.jsonl');
+    });
+
+    it('should NOT include diagnostics for successful completed jobs', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-success');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'completed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), '{}');
+      fs.writeFileSync(path.join(runDir, 'result-summary.md'), '# Success');
+      // Create diagnostic files that should NOT be included for success
+      fs.writeFileSync(path.join(runDir, 'pi-events.jsonl'), '{}');
+      fs.writeFileSync(path.join(runDir, 'scouting-validation-errors.jsonl'), '{}');
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'result-summary.md': { exists: true, size: 50 },
+        'pi-events.jsonl': { exists: true, size: 20 },
+        'scouting-validation-errors.jsonl': { exists: true, size: 20 },
+        'analysis.md': { exists: false, size: 0 },
+        'failure.json': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      // Should NOT include diagnostic files for successful jobs
+      expect(response.artifacts?.diagnosticFiles).toBeUndefined();
+    });
+
+    it('should handle multiple diagnostic file types in a single failed job', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-multi-diag');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), JSON.stringify({
+        failed_command: 'pi coding agent',
+        goal_setting_exit_code: 0,
+        scouting_exit_code: 0
+      }));
+      fs.writeFileSync(path.join(runDir, 'pi-events.jsonl'), '{}');
+      fs.writeFileSync(path.join(runDir, 'goal-setting-validation-errors.jsonl'), '{}');
+      fs.writeFileSync(path.join(runDir, 'scouting-validation-errors.jsonl'), '{}');
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'pi-events.jsonl': { exists: true, size: 50 },
+        'goal-setting-validation-errors.jsonl': { exists: true, size: 50 },
+        'scouting-validation-errors.jsonl': { exists: true, size: 50 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'failure.json': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      // Should include all relevant diagnostic files
+      expect(response.artifacts?.diagnosticFiles?.length).toBeGreaterThan(0);
+      expect(response.artifacts?.diagnosticFiles).toContain('pi-events.jsonl');
+    });
+
+    it('should handle empty metadata gracefully when determining diagnostic inclusion', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-empty-metadata');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      // Create empty metadata
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), '{}');
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 2 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'failure.json': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      expect(() => {
+        helper.addArtifactInfo(response, job);
+      }).not.toThrow();
+
+      expect(response.artifacts).toBeDefined();
+    });
+  });
 });
