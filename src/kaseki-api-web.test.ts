@@ -149,14 +149,14 @@ describe('kaseki API web console routes', () => {
     expect(document.querySelector('[data-testid="issues-repo-url"]')).not.toBeNull();
     expect(document.querySelector('[data-probe="/api/preflight"]')).not.toBeNull();
     expect(document.querySelector('[data-probe="/api/gateway-test?stage=1"]')?.getAttribute('data-auth')).toBe('true');
-    expect(document.querySelector('[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]')?.textContent).toContain('Inference & Pi adapter');
+    expect(document.querySelector('[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]')?.textContent).toContain('AI Model Test');
     expect(document.querySelector('#task-mode')?.getAttribute('name')).toBe('taskMode');
     expect(document.querySelector('#runs-list')).not.toBeNull();
     expect(document.querySelector('#refresh-runs')?.textContent).toContain('Refresh runs');
     expect(document.querySelector('#cancel-run')?.textContent).toContain('Cancel run');
     expect(document.querySelector('[data-tab="artifacts"]')?.textContent).toContain('Artifacts');
-    expect(document.querySelector('#recommended-artifacts')?.textContent).toContain('Recommended artifacts');
-    expect(document.querySelector('#copy-diagnostic-bundle-btn')?.textContent).toContain('Copy diagnostic bundle');
+    expect(document.querySelector('#recommended-artifacts')?.textContent).toContain('Key Diagnostics');
+    expect(document.querySelector('#copy-diagnostic-bundle-btn')?.textContent).toContain('Copy Debug Summary');
     expect(document.querySelector('#response-summary')?.hasAttribute('hidden')).toBe(true);
     expect(body).toContain('terminal artifacts report fallback/failure signals');
     expect(body).toContain("loadModalTab('events', { background: true })");
@@ -219,7 +219,7 @@ describe('kaseki API web console behavior', () => {
     click(document.querySelector('#runs-list button'));
     await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Phase diagnostics'));
     expect(document.querySelector('#response-summary')?.textContent).toContain('scouting: critical: missing_file');
-    expect(document.querySelector('#response-summary')?.textContent).toContain('Correlation: correlation-219');
+    // Note: Correlation ID is no longer displayed (removed for simplicity)
   });
 
   test('labels a recovered scouting handoff as fallback in phase outcomes', async () => {
@@ -238,7 +238,9 @@ describe('kaseki API web console behavior', () => {
     click(document.querySelector('#refresh-runs'));
     await waitFor(() => expect(document.querySelectorAll('#runs-list button')).toHaveLength(1));
     click(document.querySelector('#runs-list button'));
-    await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Scouting: completed (fallback) | Weaving: running'));
+    // Simplified phase display: "Yuzuriha: unknown, Suika: completed (fallback), Kaseki: running"
+    await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Suika: completed (fallback)'));
+    expect(document.querySelector('#response-summary')?.textContent).toContain('Kaseki: running');
   });
 
   test('loads the recent run list into selectable run buttons', async () => {
@@ -299,7 +301,7 @@ describe('kaseki API web console behavior', () => {
     click(document.querySelector('#runs-list button'));
     await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Provider retry exhausted'));
     expect(document.querySelector<HTMLButtonElement>('#cancel-run')?.disabled).toBe(true);
-    expect(document.querySelector('#response-summary')?.textContent).toContain('2/2 — exhausted');
+    // Note: "Provider attempt" field is no longer displayed (removed for simplicity)
     expect(document.querySelector('#response-summary')?.textContent).toContain('Inspect provider attempts');
   });
 
@@ -311,13 +313,13 @@ describe('kaseki API web console behavior', () => {
 
     // Verify Gateway Test button has stage=1 parameter
     const gatewayTestButton = [...document.querySelectorAll('.health-check-button')]
-      .find(btn => btn.textContent?.includes('Gateway connectivity & auth'));
+      .find(btn => btn.textContent?.includes('API Connection'));
     expect(gatewayTestButton).toBeDefined();
     expect(gatewayTestButton?.getAttribute('data-probe')).toBe('/api/gateway-test?stage=1');
 
     // Verify inference test button has stage=2 and responseSmoke parameters
     const llmTestButton = [...document.querySelectorAll('.health-check-button')]
-      .find(btn => btn.textContent?.includes('Inference & Pi adapter'));
+      .find(btn => btn.textContent?.includes('AI Model Test'));
     expect(llmTestButton).toBeDefined();
     expect(llmTestButton?.getAttribute('data-probe')).toBe('/api/gateway-test?stage=2&responseSmoke=true&piProvider=true');
 
@@ -346,7 +348,7 @@ describe('kaseki API web console behavior', () => {
     await waitFor(() => expect(gateway?.disabled).toBe(true));
     expect(inference?.disabled).toBe(true);
     expect(repo?.disabled).toBe(false);
-    expect(document.querySelector('#diagnostic-queue-state')?.textContent).toContain('Diagnostic running: Gateway connectivity & auth');
+    expect(document.querySelector('#diagnostic-queue-state')?.textContent).toContain('Diagnostic running: API Connection');
     rejectRequest?.(new Error('gateway unavailable'));
     await waitFor(() => expect(gateway?.disabled).toBe(false));
     expect(inference?.disabled).toBe(false);

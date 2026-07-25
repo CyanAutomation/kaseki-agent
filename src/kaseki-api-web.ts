@@ -1394,11 +1394,11 @@ const controllerPage = String.raw`<!doctype html>
             <p>Run current diagnostics for the Kaseki API controller. Startup diagnostics shown in preflight responses are cached boot-time history, not live readiness.</p>
           </div>
           <div class="health-checks-grid">
-            <button class="health-check-button" data-probe="/health" type="button"><span class="hc-label">Health</span><span class="health-check-status" data-status="health"></span></button>
-            <button class="health-check-button" data-probe="/ready" type="button"><span class="hc-label">Readiness</span><span class="health-check-status" data-status="readiness"></span></button>
-            <button class="health-check-button" data-probe="/api/gateway-test?stage=1" data-auth="true" type="button" title="Validate gateway reachability and authentication. This does not prove inference or Pi adapter compatibility."><span class="hc-label">Gateway connectivity &amp; auth</span><span class="health-check-status" data-status="gateway"></span></button>
-            <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true" data-auth="true" type="button" title="Run real gateway inference, Responses compatibility checks where applicable, and the Pi provider adapter smoke test used by coding runs."><span class="hc-label">Inference &amp; Pi adapter</span><span class="health-check-status" data-status="llm-test"></span></button>
-            <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button" title="Run current controller readiness checks. Use Inference & Pi adapter for the separate, token-consuming model compatibility smoke test."><span class="hc-label">Current Preflight</span><span class="health-check-status" data-status="preflight"></span></button>
+            <button class="health-check-button" data-probe="/health" type="button" title="Check basic controller health status"><span class="hc-label">System Status</span><span class="health-check-status" data-status="health"></span></button>
+            <button class="health-check-button" data-probe="/ready" type="button" title="Verify controller is ready to accept tasks"><span class="hc-label">Startup Checks</span><span class="health-check-status" data-status="readiness"></span></button>
+            <button class="health-check-button" data-probe="/api/gateway-test?stage=1" data-auth="true" type="button" title="Validate API gateway connection and authentication"><span class="hc-label">API Connection</span><span class="health-check-status" data-status="gateway"></span></button>
+            <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true" data-auth="true" type="button" title="Test AI model inference and compatibility (uses tokens)"><span class="hc-label">AI Model Test</span><span class="health-check-status" data-status="llm-test"></span></button>
+            <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button" title="Run complete controller readiness diagnostics"><span class="hc-label">Current Health</span><span class="health-check-status" data-status="preflight"></span></button>
           </div>
           <p id="diagnostic-queue-state" class="field-helper" role="status" aria-live="polite">Diagnostics are ready.</p>
           <div class="summary-grid" id="health-summary" aria-live="polite">
@@ -1435,9 +1435,9 @@ const controllerPage = String.raw`<!doctype html>
           <div class="run-links" id="runs-list-panel">
             <strong class="panel-section-label">Recent runs</strong>
             <div class="action-row controller-actions">
-              <button class="secondary toolbar-button" id="refresh-runs" type="button">Refresh runs</button>
+              <button class="secondary toolbar-button" id="refresh-runs" type="button" title="Reload the list of recent runs">Refresh runs</button>
               <label for="runs-filter">Show</label>
-              <select id="runs-filter" aria-label="Filter recent runs">
+              <select id="runs-filter" aria-label="Filter recent runs" title="Filter runs by status">
                 <option value="all">All</option>
                 <option value="failed">Failed</option>
                 <option value="completed">Completed</option>
@@ -1481,15 +1481,15 @@ const controllerPage = String.raw`<!doctype html>
                 <option value="patch" selected>Patch</option>
                 <option value="inspect">Inspect</option>
               </select>
-              <p class="field-helper">Patch: require code changes. Inspect: read-only analysis (skips pre-validation for speed).</p>
+              <p class="field-helper">Patch mode makes code changes. Inspect mode is read-only analysis (faster, skips validation).</p>
             </div>
           </fieldset>
           <fieldset>
             <legend>Run actions</legend>
             <div class="action-row run-actions">
-            <button class="secondary" id="validate" type="button">Validate task <span id="validation-badge" class="validation-badge" style="display: none;">✓</span></button>
+            <button class="secondary" id="validate" type="button" title="Check repository and configuration before starting">Validate task <span id="validation-badge" class="validation-badge" style="display: none;">✓</span></button>
             <button class="run" id="submit" type="submit" disabled title="Please validate task first">Start run</button>
-            <button class="secondary" id="cancel-run" type="button">Cancel run</button>
+            <button class="secondary" id="cancel-run" type="button" title="Stop the currently running task">Cancel run</button>
             </div>
           </fieldset>
         </form>
@@ -1527,10 +1527,10 @@ const controllerPage = String.raw`<!doctype html>
           <strong class="panel-section-label">Run follow-through</strong>
           <div class="link-grid">
             <button class="secondary toolbar-button-no-wrap" id="full-results-btn" type="button">Full Results</button>
-            <button class="secondary toolbar-button-no-wrap" id="copy-diagnostic-bundle-btn" type="button">Copy diagnostic bundle</button>
+            <button class="secondary toolbar-button-no-wrap" id="copy-diagnostic-bundle-btn" type="button">Copy Debug Summary</button>
           </div>
           <div class="recommended-artifacts" id="recommended-artifacts" hidden>
-            <span class="summary-label">Recommended artifacts</span>
+            <span class="summary-label">Key Diagnostics</span>
             <div class="link-grid" id="recommended-artifact-links"></div>
           </div>
         </div>
@@ -1552,8 +1552,8 @@ const controllerPage = String.raw`<!doctype html>
         <div class="modal-body">
           <div class="tabs-nav">
             <button class="tab-btn active" data-tab="status" type="button">Status</button>
-            <button class="tab-btn" data-tab="events" type="button">Events</button>
-            <button class="tab-btn" data-tab="stdout" type="button">Stdout</button>
+            <button class="tab-btn" data-tab="events" type="button">Progress Timeline</button>
+            <button class="tab-btn" data-tab="stdout" type="button">Output Log</button>
             <button class="tab-btn" data-tab="artifacts" type="button">Artifacts</button>
           </div>
           <div class="modal-tabs-container">
@@ -1915,20 +1915,20 @@ const controllerPage = String.raw`<!doctype html>
             ]);
           }
           if (typeof payload.status === 'string') {
-            items.push(['Response status', stripControlSequences(payload.status)]);
+            items.push(['Status', stripControlSequences(payload.status)]);
           }
-          if (typeof payload.lifecyclePhase === 'string') {
-            items.push(['Lifecycle', stripControlSequences(payload.lifecyclePhase)]);
-          }
+          // Removed: Lifecycle field (too technical for non-technical users)
           if (payload.phaseOutcome && typeof payload.phaseOutcome === 'object') {
             const outcome = payload.phaseOutcome;
             const goalSetting = String(outcome.goalSetting || 'unknown');
             const scouting = String(outcome.scouting || 'unknown');
             const weaving = String(outcome.weaving || 'unknown');
             const scoutingLabel = scouting === 'completed_with_fallback'
-              ? 'completed with fallback'
+              ? 'completed (fallback)'
               : (outcome.scoutingFallback === true ? scouting + ' (fallback)' : scouting);
-            items.push(['Phase outcomes', 'Goal-setting: ' + goalSetting + ' | Scouting: ' + scoutingLabel + ' | Weaving: ' + weaving, {
+            // Simplified phase outcomes display - keep character names, reduce verbosity
+            const phaseDisplay = 'Yuzuriha: ' + goalSetting + ', Suika: ' + scoutingLabel + ', Kaseki: ' + weaving;
+            items.push(['Phases', phaseDisplay, {
               warning: outcome.goalSettingFallback === true || outcome.scoutingFallback === true || goalSetting === 'failed' || scouting === 'failed' || weaving === 'failed' || scouting === 'not_reached' || weaving === 'not_reached',
               fullWidth: true,
             }]);
@@ -1960,16 +1960,8 @@ const controllerPage = String.raw`<!doctype html>
               if (typeof value === 'string') items.push([label, new Date(value).toLocaleTimeString()]);
             });
           }
-          if (typeof payload.correlationId === 'string' || typeof payload.diagnosticEntryPoint === 'string') {
-            const diagnostics = [];
-            if (typeof payload.correlationId === 'string') diagnostics.push('Correlation: ' + payload.correlationId);
-            if (typeof payload.diagnosticEntryPoint === 'string') diagnostics.push('Start diagnostics: ' + payload.diagnosticEntryPoint);
-            items.push(['Diagnostics', diagnostics.join(' | '), { fullWidth: true }]);
-          }
-          if (payload.attempt && typeof payload.attempt === 'object') {
-            const attempt = payload.attempt;
-            items.push(['Provider attempt', String(attempt.current || 1) + '/' + String(attempt.maximum || 1) + ' — ' + String(attempt.state || 'running'), { warning: attempt.state === 'retrying' || attempt.state === 'failed' || attempt.state === 'exhausted', fullWidth: true }]);
-          }
+          // Removed: Correlation ID and Diagnostic entry point (too technical)
+          // Removed: Provider attempt (too technical)
           if (payload.piProviderSmoke && typeof payload.piProviderSmoke === 'object') {
             const smoke = payload.piProviderSmoke;
             items.push(['Pi adapter', smoke.status === 'ok' ? 'Validated' : 'Failed', { warning: smoke.status !== 'ok', critical: smoke.status === 'error' }]);
@@ -1991,13 +1983,13 @@ const controllerPage = String.raw`<!doctype html>
           }
           const elapsed = formatElapsedSeconds(payload.elapsedSeconds);
           if (elapsed) {
-            items.push(['Response elapsed time', elapsed]);
+            items.push(['Elapsed time', elapsed]);
           }
           if (payload.progress && typeof payload.progress.stage === 'string') {
             const progressStageName = payload.progress.displayName 
               ? cleanProgressText(payload.progress.displayName)
               : cleanProgressText(payload.progress.stage);
-            items.push(['Response progress stage', progressStageName]);
+            items.push(['Current phase', progressStageName]);
           }
           if (typeof payload.taskProgressPercent === 'number') {
             items.push(['Workflow position', payload.taskProgressPercent + '%']);
