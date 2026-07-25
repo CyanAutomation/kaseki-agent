@@ -97,4 +97,49 @@ describe('StatusProgressHelper', () => {
       timestampEstimated: true,
     });
   });
+
+  it('summarizes skipped validation commands', () => {
+    const id = 'kaseki-4';
+    const jobDir = path.join(resultsDir, id);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'progress.jsonl'), JSON.stringify({
+      event_type: 'validation_command_skipped',
+      stage: 'secret scan',
+      command: 'detect-secrets scan',
+      timestamp: '2026-01-01T00:01:00Z',
+    }) + '\n');
+
+    const scheduler = { getLiveProgressEvents: jest.fn(() => []) } as unknown as JobScheduler;
+    const helper = new StatusProgressHelper(scheduler, { resultsDir } as KasekiApiConfig);
+    const response = { id, status: 'running' } as StatusResponse;
+
+    helper.addProgressInfo(response, makeJob(id));
+
+    expect(response.validationCommands).toEqual([
+      {
+        stage: 'secret scan',
+        command: 'detect-secrets scan',
+        status: 'skipped',
+        startedAt: '2026-01-01T00:01:00Z',
+        finishedAt: '2026-01-01T00:01:00Z',
+      },
+    ]);
+  });
+
+  it('does not read progress for non-running jobs', () => {
+    const id = 'kaseki-5';
+    const scheduler = {
+      getLiveProgressEvents: jest.fn(() => [{ stage: 'pi coding agent', status: 'started' }]),
+      getLiveDockerLogTail: jest.fn(() => '==> pi coding agent'),
+    } as unknown as JobScheduler;
+    const helper = new StatusProgressHelper(scheduler, { resultsDir } as KasekiApiConfig);
+    const response = { id, status: 'completed' } as StatusResponse;
+
+    helper.addProgressInfo(response, { ...makeJob(id), status: 'completed' } as Job);
+
+    expect(response.progress).toBeUndefined();
+    expect(response.validationCommands).toBeUndefined();
+    expect(scheduler.getLiveProgressEvents).not.toHaveBeenCalled();
+    expect(scheduler.getLiveDockerLogTail).not.toHaveBeenCalled();
+  });
 });

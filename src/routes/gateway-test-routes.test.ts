@@ -304,6 +304,34 @@ describe('gateway-test-routes', () => {
       expect(kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2).toHaveBeenCalled();
     });
 
+    it('should include stage 2 checks in stage 2 only responses', async () => {
+      (kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2 as jest.Mock).mockResolvedValueOnce({
+        status: 'ok',
+        detail: 'Model response validated',
+        responseTime: 500,
+        responseId: 'resp_checked',
+        checks: [
+          {
+            name: 'json-response',
+            status: 'ok',
+            detail: 'JSON response validated',
+            responseTime: 500,
+          },
+        ],
+      });
+
+      const response = await fetch(`${baseUrl}/gateway-test?stage=2`);
+      const body = await response.json() as any;
+
+      expect(response.status).toBe(200);
+      expect(body.checks).toEqual([
+        expect.objectContaining({
+          name: 'json-response',
+          status: 'ok',
+        }),
+      ]);
+    });
+
     it('should return 503 for stage 2 only when smoke returns no result', async () => {
       (kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2 as jest.Mock).mockResolvedValueOnce(undefined);
 

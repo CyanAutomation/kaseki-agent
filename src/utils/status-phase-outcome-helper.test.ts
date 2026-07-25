@@ -176,6 +176,61 @@ describe('StatusPhaseOutcomeHelper', () => {
     });
   });
 
+  it('reports goal-setting as running when it has started without completion evidence', () => {
+    const helper = new StatusPhaseOutcomeHelper(
+      makeScheduler([{ stage: 'pi goal-setting agent', status: 'started', timestamp: '2026-01-01T00:00:00Z' }]),
+      makeConfig(resultsDir),
+    );
+    const response = makeResponse('pi goal-setting agent');
+
+    helper.addPhaseOutcome(response, makeJob(), {});
+
+    expect(response.phaseOutcome).toMatchObject({
+      goalSetting: 'running',
+      scouting: 'not_reached',
+      weaving: 'not_reached',
+      goalSettingStartedAt: '2026-01-01T00:00:00Z',
+    });
+  });
+
+  it('uses goal-setting recovery text as a fallback reason', () => {
+    const job = makeJob({ id: 'job-goal-setting-recovery' });
+    const runDir = path.join(resultsDir, job.id);
+    fs.mkdirSync(runDir, { recursive: true });
+    fs.writeFileSync(path.join(runDir, 'goal-setting-validation-errors.jsonl'), JSON.stringify({
+      recovery: 'goal_setting_minimal_fallback',
+    }) + '\n');
+    const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+    const response = makeResponse('pi goal-setting agent');
+
+    helper.addPhaseOutcome(response, job, { goal_setting_exit_code: 1 });
+
+    expect(response.phaseOutcome).toMatchObject({
+      goalSetting: 'completed_with_fallback',
+      goalSettingFallback: true,
+      goalSettingFallbackReason: 'goal_setting_minimal_fallback',
+    });
+  });
+
+  it('uses goal-setting reason text when recovery text is absent', () => {
+    const job = makeJob({ id: 'job-goal-setting-reason' });
+    const runDir = path.join(resultsDir, job.id);
+    fs.mkdirSync(runDir, { recursive: true });
+    fs.writeFileSync(path.join(runDir, 'goal-setting-validation-errors.jsonl'), JSON.stringify({
+      reason: 'goal_setting_schema_fallback',
+    }) + '\n');
+    const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+    const response = makeResponse('pi goal-setting agent');
+
+    helper.addPhaseOutcome(response, job, { goal_setting_exit_code: 1 });
+
+    expect(response.phaseOutcome).toMatchObject({
+      goalSetting: 'completed_with_fallback',
+      goalSettingFallback: true,
+      goalSettingFallbackReason: 'goal_setting_schema_fallback',
+    });
+  });
+
   it('marks failed scouting and explains the failed command', () => {
     const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
     const response = makeResponse('pi scouting agent');
@@ -527,4 +582,3 @@ describe('StatusPhaseOutcomeHelper', () => {
     });
   });
 });
-

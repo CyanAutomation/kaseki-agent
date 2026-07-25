@@ -715,5 +715,316 @@ describe('StatusArtifactHelper', () => {
 
       expect(response.artifacts).toBeDefined();
     });
+
+    it('should include phase diagnostics when the phase exits with contract validation code 86', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-phase-exit-86');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), JSON.stringify({
+        failed_command: 'goal check',
+        goal_setting_exit_code: 86,
+        scouting_exit_code: 86,
+      }));
+      fs.writeFileSync(path.join(runDir, 'goal-setting-validation-errors.jsonl'), '{"error":"goal"}');
+      fs.writeFileSync(path.join(runDir, 'scouting-validation-errors.jsonl'), '{"error":"scout"}');
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'goal-setting-validation-errors.jsonl': { exists: true, size: 20 },
+        'scouting-validation-errors.jsonl': { exists: true, size: 20 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'failure.json': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      expect(response.artifacts?.diagnosticFiles).toEqual(expect.arrayContaining([
+        'goal-setting-validation-errors.jsonl',
+        'scouting-validation-errors.jsonl',
+      ]));
+      expect(mockArtifactContentLoader.addValidationErrorsContent).toHaveBeenCalledWith(
+        response,
+        runDir,
+        'goal-setting-validation-errors.jsonl',
+        'goalSetting',
+        expect.any(Function),
+      );
+      expect(mockArtifactContentLoader.addValidationErrorsContent).toHaveBeenCalledWith(
+        response,
+        runDir,
+        'scouting-validation-errors.jsonl',
+        'scouting',
+        expect.any(Function),
+      );
+    });
+
+    it('should expose the inline-size predicate to validation error content loading', () => {
+      const response = makeResponse();
+      response.goalCheckFailureReason = 'goal_check_artifact_invalid';
+      const runDir = path.join(resultsDir, 'job-small-predicate');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), '{}');
+      fs.writeFileSync(path.join(runDir, 'goal-check-validation-errors.jsonl'), '{"error":"invalid"}');
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'goal-check-validation-errors.jsonl': { exists: true, size: 20 },
+        'goal-check-stderr.log': { exists: true, size: 70000 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'failure.json': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      const isSmallAvailable = mockArtifactContentLoader.addValidationErrorsContent.mock.calls.find(
+        (call) => call[3] === 'goalCheck',
+      )?.[4];
+      expect(isSmallAvailable).toEqual(expect.any(Function));
+      expect(isSmallAvailable?.('goal-check-validation-errors.jsonl')).toBe(true);
+      expect(isSmallAvailable?.('goal-check-stderr.log')).toBe(false);
+      expect(isSmallAvailable?.('missing.jsonl')).toBe(false);
+    });
+
+    it('should prioritize unresolved critical scouting diagnostics over generic failures', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-unresolved-scouting-critical');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), JSON.stringify({
+        failed_command: 'pi coding agent',
+      }));
+      fs.writeFileSync(path.join(runDir, 'failure.json'), '{"error":"coding failed"}');
+      fs.writeFileSync(path.join(runDir, 'scouting-validation-errors.jsonl'), [
+        JSON.stringify({ severity: 'critical', field: 'requirements', reason_code: 'schema_mismatch' }),
+        JSON.stringify({ recovered: true, field: 'summary', reason_code: 'patch_fallback_recovered' }),
+      ].join('\n'));
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'scouting-validation-errors.jsonl': { exists: true, size: 120 },
+        'failure.json': { exists: true, size: 30 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      expect(response.artifacts?.diagnosticFiles).toContain('scouting-validation-errors.jsonl');
+      expect(response.diagnosticEntryPoint).toBe('scouting-validation-errors.jsonl');
+    });
+
+    it('should not prioritize scouting diagnostics when a recovery marker resolves the same field', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-resolved-scouting-critical');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), JSON.stringify({
+        failed_command: 'pi coding agent',
+      }));
+      fs.writeFileSync(path.join(runDir, 'failure.json'), '{"error":"coding failed"}');
+      fs.writeFileSync(path.join(runDir, 'scouting-validation-errors.jsonl'), [
+        JSON.stringify({ severity: 'critical', field: 'requirements', reason_code: 'schema_mismatch' }),
+        JSON.stringify({ recovered: true, field: 'requirements', reason_code: 'patch_fallback_recovered' }),
+      ].join('\n'));
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'scouting-validation-errors.jsonl': { exists: true, size: 120 },
+        'failure.json': { exists: true, size: 30 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      expect(response.artifacts?.diagnosticFiles).toContain('scouting-validation-errors.jsonl');
+      expect(response.diagnosticEntryPoint).toBe('failure.json');
+    });
+
+    it('should ignore malformed scouting validation diagnostics discovered outside a scouting failure', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-malformed-scouting-diagnostics');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), JSON.stringify({
+        failed_command: 'pi coding agent',
+      }));
+      fs.writeFileSync(path.join(runDir, 'failure.json'), '{"error":"coding failed"}');
+      fs.writeFileSync(path.join(runDir, 'scouting-validation-errors.jsonl'), '{"severity":"critical"\n{not json');
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'scouting-validation-errors.jsonl': { exists: true, size: 40 },
+        'failure.json': { exists: true, size: 30 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      expect(response.artifacts?.diagnosticFiles).toBeUndefined();
+      expect(response.diagnosticEntryPoint).toBe('failure.json');
+    });
+
+    it('should prioritize critical scouting diagnostics even when the entry has no reason code', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-scouting-critical-no-reason');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), JSON.stringify({
+        failed_command: 'pi coding agent',
+      }));
+      fs.writeFileSync(path.join(runDir, 'failure.json'), '{"error":"coding failed"}');
+      fs.writeFileSync(path.join(runDir, 'scouting-validation-errors.jsonl'), JSON.stringify({
+        severity: 'critical',
+        field: 'requirements',
+      }));
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'scouting-validation-errors.jsonl': { exists: true, size: 60 },
+        'failure.json': { exists: true, size: 30 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      expect(response.artifacts?.diagnosticFiles).toContain('scouting-validation-errors.jsonl');
+      expect(response.diagnosticEntryPoint).toBe('scouting-validation-errors.jsonl');
+    });
+
+    it('should ignore critical scouting entries that are themselves recovery diagnostics', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-scouting-recovery-diagnostic');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), JSON.stringify({
+        failed_command: 'pi coding agent',
+      }));
+      fs.writeFileSync(path.join(runDir, 'failure.json'), '{"error":"coding failed"}');
+      fs.writeFileSync(path.join(runDir, 'scouting-validation-errors.jsonl'), JSON.stringify({
+        severity: 'critical',
+        reason_code: 'patch_fallback',
+      }));
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'scouting-validation-errors.jsonl': { exists: true, size: 60 },
+        'failure.json': { exists: true, size: 30 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      expect(response.artifacts?.diagnosticFiles).toBeUndefined();
+      expect(response.diagnosticEntryPoint).toBe('failure.json');
+    });
+  });
+
+  describe('test failure diagnostic summary', () => {
+    it('should summarize Jest failure logs and unreliable baseline comparisons', () => {
+      const response = makeResponse();
+      response.diagnosticSummary = { provider: { errorType: 'provider_error' } } as any;
+      const runDir = path.join(resultsDir, 'job-test-failure-summary');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'pre-validation.log'), [
+        'setup noise',
+        'Summary of all failing tests',
+        '  FAIL  src/example.test.ts',
+        '  ● example suite › fails clearly',
+        '    expect(received).toBe(expected)',
+      ].join('\n'));
+      fs.writeFileSync(path.join(runDir, 'test-baseline-comparison.json'), JSON.stringify({
+        baseline_validation_exit_code: 2,
+        summary: {
+          total_newly_introduced: 3,
+          total_pre_existing: 4,
+          total_fixed: 1,
+        },
+      }));
+
+      helper.addDiagnosticSummary(response, job);
+
+      expect(response.diagnosticSummary?.provider).toEqual({ errorType: 'provider_error' });
+      expect(response.diagnosticSummary?.testFailure).toMatchObject({
+        failedSuite: 'src/example.test.ts',
+        failedTest: 'example suite › fails clearly',
+        assertionSummary: 'expect(received).toBe(expected)',
+        baselineComparison: {
+          totalNewlyIntroduced: 3,
+          totalPreExisting: 4,
+          totalFixed: 1,
+          baselineValidationExitCode: 2,
+          baselineComparisonReliable: false,
+          baselineComparisonWarning: 'Baseline validation exited 2; failure classification may be incomplete.',
+        },
+      });
+    });
+
+    it('should omit test failure summary for malformed comparison content with no log evidence', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-malformed-comparison');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'test-baseline-comparison.json'), '{not json');
+
+      helper.addDiagnosticSummary(response, job);
+
+      expect(response.diagnosticSummary?.testFailure).toBeUndefined();
+    });
+
+    it('should treat missing or passing baseline exit codes as reliable', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-reliable-comparison');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'test-baseline-comparison.json'), JSON.stringify({
+        summary: {
+          total_newly_introduced: 0,
+          total_pre_existing: 'not-a-number',
+          total_fixed: Number.NaN,
+        },
+      }));
+
+      helper.addDiagnosticSummary(response, job);
+
+      expect(response.diagnosticSummary?.testFailure?.baselineComparison).toEqual({
+        totalNewlyIntroduced: 0,
+        totalPreExisting: undefined,
+        totalFixed: undefined,
+        baselineComparisonReliable: true,
+      });
+    });
   });
 });
