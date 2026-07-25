@@ -103,9 +103,9 @@ kaseki_run_startup_checks() {
 }
 FAKE_PACKAGED_CONFIG
 
-  # Packaging spec: tests/packaging-layout.test.sh::contract_published_package_contents
-  # installs this config at /app/scripts; exercise the entrypoint's default dispatch
-  # against a relocated fixture so this test verifies sourcing and invocation, not text.
+  # The Docker integration test verifies that this config is installed at
+  # /app/scripts. Exercise dispatch against a relocated fixture here so this
+  # unit test verifies sourcing and invocation without duplicating artifact checks.
   sed "s|$packaged_config_path|$fixture_config|" scripts/docker-entrypoint.sh > "$test_entrypoint"
   chmod +x "$test_entrypoint"
 
