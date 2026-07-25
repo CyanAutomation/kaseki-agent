@@ -167,6 +167,14 @@ process.stdin.on("end", () => {
       "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$pi_exit" "$progress_exit" "$raw_events_file" >> "$progress_stderr" 2>/dev/null || true
     emit_error_event "pi_progress_stream_failed" "Progress stream failed while processing Pi output: $progress_exit" "continue"
   fi
+
+  if [ "$pi_exit" -eq 124 ]; then
+    printf '%s [kaseki-agent] Pi JSON capture timed out after %ss raw_events=%s\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$timeout_seconds" "$raw_events_file" >> "$progress_stderr" 2>/dev/null || true
+  elif [ "$pi_exit" -ne 0 ]; then
+    printf '%s [kaseki-agent] Pi JSON capture failed pi_exit=%s raw_events=%s\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$pi_exit" "$raw_events_file" >> "$progress_stderr" 2>/dev/null || true
+  fi
   set +e
 
   return "$pi_exit"

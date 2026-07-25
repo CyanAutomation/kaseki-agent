@@ -69,4 +69,41 @@ BASH
   echo ""
 }
 
+run_pi_json_capture_timeout_status_test() {
+  echo "TEST 8: Pi JSON capture preserves and diagnoses timeout status"
+
+  tmp_dir=$(mktemp -d)
+  trap cleanup_tmp_dir EXIT
+  fake_bin="$tmp_dir/bin"
+  mkdir -p "$fake_bin" "$tmp_dir/results"
+
+  cat > "$fake_bin/timeout" <<'BASH'
+#!/usr/bin/env bash
+exit 124
+BASH
+  cat > "$fake_bin/kaseki-pi-progress-stream" <<'BASH'
+#!/usr/bin/env bash
+cat >/dev/null
+BASH
+  chmod +x "$fake_bin/timeout" "$fake_bin/kaseki-pi-progress-stream"
+
+  set +e
+  run_pi_capture_fixture_with_timeout "$tmp_dir/raw.jsonl"
+  local capture_exit=$?
+  set -e
+
+  [[ "$capture_exit" == "124" ]] || fail "Pi capture timeout status" "returned $capture_exit (expected 124)"
+  grep -q 'Pi JSON capture timed out after 60s' "$tmp_dir/results/progress-stream-diagnostics.log" || {
+    print_file_if_exists "progress diagnostics" "$tmp_dir/results/progress-stream-diagnostics.log"
+    fail "Pi capture timeout diagnostics" "timeout was not diagnosed distinctly"
+  }
+
+  rm -rf "$tmp_dir"
+  tmp_dir=""
+  trap - EXIT
+  echo "  ✓ PASS: Pi timeout status remains distinct from other capture failures"
+  echo ""
+}
+
 run_pi_json_capture_no_reader_test
+run_pi_json_capture_timeout_status_test
