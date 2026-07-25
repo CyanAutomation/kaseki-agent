@@ -24,7 +24,15 @@ export type PersistedJob = Omit<
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
+  /** Durable ownership of a queued job recovered after scheduler startup. */
+  restartClaim?: RestartClaim;
 };
+
+export interface RestartClaim {
+  ownerToken: string;
+  pid: number;
+  leasedAt: string;
+}
 
 type LoadPersistedJobsStatus = 'loaded' | 'lock_contention' | 'read_error';
 
@@ -41,6 +49,7 @@ export interface JobPersistenceManagerDependencies {
   processLivenessChecker?: JobPersistenceProcessLivenessChecker;
   lockTokenGenerator?: () => string;
   pid?: number;
+  restartClaimLeaseMs?: number;
   staleLockQuarantineObserver?: (
     lockPath: string,
     quarantinePath: string,
@@ -89,6 +98,8 @@ export class JobPersistenceManager {
   private processLivenessChecker: JobPersistenceProcessLivenessChecker;
   private lockTokenGenerator: () => string;
   private pid: number;
+  private restartClaimLeaseMs: number;
+  private restartOwnerToken: string;
   private staleLockQuarantineObserver?: (
     lockPath: string,
     quarantinePath: string,
@@ -111,6 +122,9 @@ export class JobPersistenceManager {
     this.lockTokenGenerator =
       dependencies.lockTokenGenerator ?? (() => crypto.randomUUID());
     this.pid = dependencies.pid ?? process.pid;
+    this.restartClaimLeaseMs =
+      dependencies.restartClaimLeaseMs ?? 5 * 60 * 1000;
+    this.restartOwnerToken = `${this.pid}-${this.now()}-${this.lockTokenGenerator()}`;
     this.staleLockQuarantineObserver = dependencies.staleLockQuarantineObserver;
   }
 
@@ -137,7 +151,9 @@ export class JobPersistenceManager {
           const parsed = JSON.parse(
             fs.readFileSync(this.indexPath, 'utf-8'),
           ) as { jobs?: PersistedJob[] };
-          for (const persisted of parsed.jobs || []) {
+          const persistedJobs = parsed.jobs || [];
+          let indexChanged = false;
+          for (const persisted of persistedJobs) {
             const job = this.deserializeJob(persisted);
             if (job.status === 'running') {
               job.status = 'failed';
@@ -146,12 +162,21 @@ export class JobPersistenceManager {
               job.error = 'API service restarted while job was running';
               job.completedAt = job.completedAt || new Date();
               job.finalized = true;
+              delete persisted.restartClaim;
+              Object.assign(persisted, this.serializeJob(job));
+              indexChanged = true;
             }
             if (job.status === 'queued') {
-              queuedJobs.push(job);
+              if (this.claimRestartableJob(persisted)) {
+                queuedJobs.push(job);
+                indexChanged = true;
+              }
             }
             jobs.push(job);
             this.jobs.set(job.id, job);
+          }
+          if (indexChanged) {
+            this.writePersistedJobsIndex(persistedJobs);
           }
         } catch {
           // A corrupt index should not prevent the API from starting; existing
@@ -253,8 +278,11 @@ export class JobPersistenceManager {
    * Serialize a job for persistence (dates → ISO strings, remove non-persistent fields).
    */
   private serializeJob(job: Job): PersistedJob {
-    const serializableJob = { ...job };
+    const serializableJob = { ...job } as Job & {
+      restartClaim?: RestartClaim;
+    };
     delete serializableJob.timeout;
+    delete serializableJob.restartClaim;
     return {
       ...serializableJob,
       createdAt: job.createdAt.toISOString(),
@@ -267,8 +295,9 @@ export class JobPersistenceManager {
    * Deserialize a persisted job (ISO strings → dates).
    */
   private deserializeJob(job: PersistedJob): Job {
+    const { restartClaim: _restartClaim, ...persistedJob } = job;
     return {
-      ...job,
+      ...persistedJob,
       createdAt: new Date(job.createdAt),
       startedAt: job.startedAt ? new Date(job.startedAt) : undefined,
       completedAt: job.completedAt ? new Date(job.completedAt) : undefined,
@@ -278,6 +307,41 @@ export class JobPersistenceManager {
           ? true
           : job.finalized,
     };
+  }
+
+  /** Claim a queued restart under the index lock, recovering dead/expired owners. */
+  private claimRestartableJob(job: PersistedJob): boolean {
+    const claim = job.restartClaim;
+    if (claim && claim.ownerToken !== this.restartOwnerToken) {
+      const leasedAt = Date.parse(claim.leasedAt);
+      const leaseIsLive =
+        Number.isFinite(leasedAt) &&
+        this.now() - leasedAt < this.restartClaimLeaseMs;
+      if (leaseIsLive && this.processLivenessChecker(claim.pid)) {
+        return false;
+      }
+    }
+
+    job.restartClaim = {
+      ownerToken: this.restartOwnerToken,
+      pid: this.pid,
+      leasedAt: new Date(this.now()).toISOString(),
+    };
+    return true;
+  }
+
+  private writePersistedJobsIndex(jobs: PersistedJob[]): void {
+    const payload = {
+      version: 1,
+      updatedAt: new Date(this.now()).toISOString(),
+      jobs,
+    };
+    const tmpPath = `${this.indexPath}.tmp-${this.pid}-${this.lockTokenGenerator()}`;
+    const json = this.shouldWriteCompactIndex(jobs)
+      ? JSON.stringify(payload)
+      : JSON.stringify(payload, null, 2);
+    fs.writeFileSync(tmpPath, `${json}\n`, { mode: 0o600 });
+    fs.renameSync(tmpPath, this.indexPath);
   }
 
   /**

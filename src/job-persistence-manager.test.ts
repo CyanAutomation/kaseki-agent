@@ -141,6 +141,75 @@ describe('JobPersistenceManager', () => {
       expect(result.queuedJobs[0].id).toBe('kaseki-1');
     });
 
+    test('durably gives a queued job to only one manager', async () => {
+      const queuedJob: PersistedJob = {
+        id: 'kaseki-claim',
+        status: 'queued',
+        request: { repoUrl: 'https://github.com/test/repo', ref: 'main' },
+        createdAt: '2026-05-11T12:00:00Z',
+        resultDir: manager.getResultDir('kaseki-claim'),
+        correlationId: 'corr-claim',
+        requestId: 'req-claim',
+      };
+      fs.writeFileSync(
+        path.join(tempDir, '.kaseki-api-jobs.json'),
+        JSON.stringify({ jobs: [queuedJob] }),
+      );
+      const first = new JobPersistenceManager(config, {
+        pid: 101,
+        processLivenessChecker: () => true,
+        lockTokenGenerator: () => 'first',
+      });
+      const second = new JobPersistenceManager(config, {
+        pid: 202,
+        processLivenessChecker: () => true,
+        lockTokenGenerator: () => 'second',
+      });
+
+      expect((await first.loadPersistedJobs()).queuedJobs).toHaveLength(1);
+      expect((await second.loadPersistedJobs()).queuedJobs).toHaveLength(0);
+      const stored = JSON.parse(
+        fs.readFileSync(path.join(tempDir, '.kaseki-api-jobs.json'), 'utf-8'),
+      ) as { jobs: PersistedJob[] };
+      expect(stored.jobs[0].restartClaim?.pid).toBe(101);
+    });
+
+    test('recovers a queued job when its durable claim is stale', async () => {
+      let now = Date.parse('2026-05-11T12:00:00Z');
+      const queuedJob: PersistedJob = {
+        id: 'kaseki-stale-claim',
+        status: 'queued',
+        request: { repoUrl: 'https://github.com/test/repo', ref: 'main' },
+        createdAt: new Date(now).toISOString(),
+        resultDir: manager.getResultDir('kaseki-stale-claim'),
+        correlationId: 'corr-stale',
+        requestId: 'req-stale',
+        restartClaim: {
+          ownerToken: 'dead-owner',
+          pid: 303,
+          leasedAt: new Date(now).toISOString(),
+        },
+      };
+      fs.writeFileSync(
+        path.join(tempDir, '.kaseki-api-jobs.json'),
+        JSON.stringify({ jobs: [queuedJob] }),
+      );
+      now += 60_001;
+      const recovering = new JobPersistenceManager(config, {
+        now: () => now,
+        pid: 404,
+        restartClaimLeaseMs: 60_000,
+        processLivenessChecker: () => true,
+        lockTokenGenerator: () => 'recovering',
+      });
+
+      expect((await recovering.loadPersistedJobs()).queuedJobs).toHaveLength(1);
+      const stored = JSON.parse(
+        fs.readFileSync(path.join(tempDir, '.kaseki-api-jobs.json'), 'utf-8'),
+      ) as { jobs: PersistedJob[] };
+      expect(stored.jobs[0].restartClaim?.pid).toBe(404);
+    });
+
     test('should retry sync lock acquisition during initial contention and eventually load jobs', async () => {
       // Spec: If lock exists (held by another process), retry with exponential backoff
       // Behavioral intent: Polling strategy allows concurrent safe access to shared index file
