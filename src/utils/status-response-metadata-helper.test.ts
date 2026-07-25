@@ -128,6 +128,25 @@ describe('StatusMetadataHelper', () => {
         cleanupTempDir(tempDir);
       }
     });
+
+    it('should return null when metadata resolution throws unexpectedly', () => {
+      const throwingHelper = new StatusMetadataHelper();
+      jest.spyOn(throwingHelper, 'readMetadata').mockImplementation(() => {
+        throw new Error('metadata unavailable');
+      });
+      const tempDir = createTempDir();
+      try {
+        const job: Job = {
+          id: 'test-job',
+          status: 'failed',
+          exitCode: undefined,
+        } as any;
+
+        expect(throwingHelper.resolveExitCode(job, tempDir)).toBeNull();
+      } finally {
+        cleanupTempDir(tempDir);
+      }
+    });
   });
 
   describe('resolveCompletedAt', () => {
