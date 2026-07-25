@@ -9,6 +9,7 @@ build_goal_check_prompt() {
   
   # Build validation summary instead of raw tail (reduce from ~400 tokens to ~50)
   if [ -f "${KASEKI_RESULTS_DIR}"/validation-timings.tsv ]; then
+    # shellcheck disable=SC2016
     validation_summary="$(node -e '
 const fs = require("node:fs");
 const lines = fs.readFileSync(process.env.KASEKI_RESULTS_DIR + "/validation-timings.tsv", "utf8").trim().split(/\r?\n/).slice(1);
