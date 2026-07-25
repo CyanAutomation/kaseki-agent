@@ -28,6 +28,7 @@ Created `src/caveman/caveman-prompts.ts` with three compression functions:
   - JSON output schema preserved
 
 All templates follow caveman patterns validated by tests:
+
 - No articles (a/an/the)
 - No filler (just/really/please/sure)
 - Short synonyms (use → apply, utilize → use)
@@ -73,6 +74,7 @@ KASEKI_CAVEMAN=1 ./run-kaseki.sh  # Level 1
 ### 4. Shell Script Integration (Step 7)
 
 **agent-prompt.sh** (lines 74-130):
+
 ```bash
 local compressed_guardrails=""
 if [ "${KASEKI_CAVEMAN_LEVEL:-1}" -ge 2 ]; then
@@ -87,6 +89,7 @@ fi
 ```
 
 **evaluation-prompts.sh** (goal-check: lines 108-206, run-eval: lines 250-512):
+
 - Same conditional pattern for both functions
 - Preserves all context sections (goal-setting, test-impact, metadata)
 - Falls back gracefully if compression unavailable
@@ -98,6 +101,7 @@ fi
 ### Unit Tests (24 tests, 100% passing)
 
 **src/caveman/caveman-prompts.test.ts**:
+
 - Length validation (compression targets met)
 - Technical term preservation (SMART, git, npm, lockfiles)
 - Caveman pattern enforcement (no articles/filler/pleasantries)
@@ -107,6 +111,7 @@ fi
 ### Integration Tests (3176 tests, 100% passing)
 
 **Full test suite**:
+
 - Token usage aggregator (32 tests)
 - Evaluation prompt contracts (renders correctly at all caveman levels)
 - Bash script syntax validation (all scripts pass `bash -n`)
@@ -172,6 +177,7 @@ Based on template lengths and compression ratios:
 ## Next Steps (Optional Future Work)
 
 ### Immediate (Recommended)
+
 1. **Run baseline measurements** (Phase 1 Step 3 deferred)
    - Use `scripts/measure-caveman-impact.sh` on 3-5 representative tasks
    - Populate `docs/CAVEMAN_BASELINE.md` with actual token metrics
@@ -182,13 +188,14 @@ Based on template lengths and compression ratios:
    - Add caveman level guidance to `.agents/skills/cost-optimization/SKILL.md`
 
 ### Future Enhancements (Phase 3)
+
 3. **Dynamic artifact compression** (Phase 3 Steps 8-11)
    - Compress 80-line log tails to 5-10 key highlights
    - Deduplicate repeated artifacts (goal-setting referenced 3+ times)
    - Sample progress events instead of full tail
    - Target: Additional 200-500 tokens saved per evaluation
 
-4. **Quality validation** (Phase 4 Step 13)
+2. **Quality validation** (Phase 4 Step 13)
    - Run test suite at all caveman levels (0-3)
    - Manual inspection: compare agent outputs
    - Validate SMART criteria checks still work
@@ -284,6 +291,7 @@ KASEKI_CAVEMAN_LEVEL=2 npm test
 ## Impact Summary
 
 **Phase 2 Achievements**:
+
 - ✅ 50% reduction in static prompt sections (guardrails, instructions)
 - ✅ Estimated 15-25% reduction in total input tokens at level 2
 - ✅ Combined with existing output compression: ~50-60% total token savings
@@ -292,6 +300,7 @@ KASEKI_CAVEMAN_LEVEL=2 npm test
 - ✅ TDD approach ensures maintainability
 
 **Cost Impact** (estimated, based on OpenRouter pricing):
+
 - Typical run: 50,000 input tokens → 37,500 tokens at level 2 (25% reduction)
 - At $1.50 per million tokens: $0.075 → $0.056 per run (26% savings)
 - 1000 runs/month: $75 → $56 ($19/month savings)
@@ -303,6 +312,7 @@ KASEKI_CAVEMAN_LEVEL=2 npm test
 ## Questions & Feedback
 
 If you have questions about caveman configuration, token optimization, or Phase 3 enhancements:
+
 - See [docs/ADVANCED_CONFIG.md](ADVANCED_CONFIG.md) for configuration reference
 - See [.agents/skills/cost-optimization/SKILL.md](../.agents/skills/cost-optimization/SKILL.md) for cost optimization strategies
 - Open an issue or discussion on GitHub
