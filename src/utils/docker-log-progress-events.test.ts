@@ -48,4 +48,17 @@ describe('progressEventsFromDockerLogTail', () => {
     expect(first[0].status).toBeUndefined();
     expect(first[0].message).toBe('observed in log tail');
   });
+
+  it('reports a dependency cache miss as a cold-cache setup phase', () => {
+    const events = progressEventsFromDockerLogTail(
+      'Dependency cache status: cache miss for lock hash abc, running install.\n',
+      '2026-07-25T18:09:31.000Z',
+    );
+
+    expect(events).toEqual([expect.objectContaining({
+      stage: 'cold-cache setup',
+      message: 'Dependency cache miss; installing packages',
+      timestampEstimated: true,
+    })]);
+  });
 });
