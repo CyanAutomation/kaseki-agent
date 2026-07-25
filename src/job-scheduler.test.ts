@@ -2397,6 +2397,49 @@ describe('JobScheduler persistence merge safety', () => {
     cleanupResultsDirs();
   });
 
+  test('two schedulers execute a persisted queued job only once', async () => {
+    const resultsDir = createResultsDir();
+    fs.writeFileSync(
+      path.join(resultsDir, '.kaseki-api-jobs.json'),
+      JSON.stringify({
+        version: 1,
+        jobs: [
+          {
+            id: 'kaseki-1',
+            status: 'queued',
+            request: {
+              repoUrl: 'https://github.com/org/repo',
+              ref: 'main',
+            },
+            createdAt: '2026-05-04T00:00:00.000Z',
+            resultDir: path.join(resultsDir, 'kaseki-1'),
+            correlationId: 'claim-correlation',
+            requestId: 'claim-request',
+          },
+        ],
+      }),
+    );
+    const config = {
+      port: 8080,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 400000,
+      agentTimeoutSeconds: 30,
+      logLevel: 'info' as const,
+    };
+
+    const schedulerA = new JobScheduler(config, createMockWebhookManager());
+    const schedulerB = new JobScheduler(config, createMockWebhookManager());
+    await Promise.all([schedulerA.ready(), schedulerB.ready()]);
+
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    expect(
+      schedulerA.getQueueStatus().running + schedulerB.getQueueStatus().running,
+    ).toBe(1);
+  });
+
   test('persistJobs skips writes when index lock is already held', async () => {
     const resultsDir = createResultsDir();
     const config = {

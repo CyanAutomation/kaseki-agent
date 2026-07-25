@@ -1462,12 +1462,15 @@ export class JobScheduler {
   }
 
   private async loadPersistedJobs(): Promise<void> {
-    const { jobs, queuedJobs, status } =
+    // The persistence manager returns only queued jobs durably claimed by this
+    // scheduler instance; jobs claimed by another live scheduler remain visible
+    // in `jobs`, but must never enter this process's execution queue.
+    const { jobs, queuedJobs: claimedQueuedJobs, status } =
       await this.persistenceManager.loadPersistedJobs();
     for (const job of jobs) {
       this.jobs.set(job.id, job);
     }
-    for (const job of queuedJobs) {
+    for (const job of claimedQueuedJobs) {
       this.queue.push(job);
     }
     this.pruneTerminalJobsIndex();
