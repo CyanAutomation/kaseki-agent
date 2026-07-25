@@ -601,7 +601,11 @@ export class PreFlightValidator {
    * Estimate job duration based on request characteristics.
    */
   private estimateDuration(request: RunRequest): number {
-    let estimateSeconds = 180; // Base: 3 minutes
+    // A patch run includes repository setup plus goal-setting, scouting,
+    // coding, validation, and post-run checks.  A cold dependency cache alone
+    // can add several minutes, so do not present the old three-minute base as
+    // a realistic end-to-end estimate.
+    let estimateSeconds = 720; // Base: 12 minutes, including cold-cache setup
 
     // Add for validation commands
     if (request.validationCommands) {
@@ -613,6 +617,6 @@ export class PreFlightValidator {
       estimateSeconds += Math.min(request.taskPrompt.length / 100, 120);
     }
 
-    return Math.min(estimateSeconds, 1200); // Cap at 20 minutes
+    return Math.min(estimateSeconds, 1800); // Cap at 30 minutes
   }
 }

@@ -350,7 +350,7 @@ describe('kaseki API web console behavior', () => {
     expect(checkStatusButton).toBeUndefined();
   });
 
-  test('keeps independent diagnostics available while another diagnostic is running', async () => {
+  test('serializes diagnostics and shows the queue state while one is running', async () => {
     let rejectRequest: ((error: Error) => void) | undefined;
     const { document } = await renderConsole({
       storedToken: 'token12345',
@@ -367,12 +367,14 @@ describe('kaseki API web console behavior', () => {
     const repo = document.querySelector<HTMLInputElement>('[name="repoUrl"]');
     click(gateway);
     await waitFor(() => expect(gateway?.disabled).toBe(true));
-    expect(inference?.disabled).toBe(false);
+    expect(inference?.disabled).toBe(true);
     expect(repo?.disabled).toBe(false);
+    expect(document.querySelector('#diagnostic-queue-state')?.textContent).toContain('Diagnostic running: Gateway connectivity & auth');
     rejectRequest?.(new Error('gateway unavailable'));
     await waitFor(() => expect(gateway?.disabled).toBe(false));
     expect(inference?.disabled).toBe(false);
     expect(repo?.disabled).toBe(false);
+    expect(document.querySelector('#diagnostic-queue-state')?.textContent).toBe('Diagnostics are ready.');
   });
 
   test('summarizes gateway smoke results without OpenRouter recovery status', async () => {

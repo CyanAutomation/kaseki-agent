@@ -22,6 +22,7 @@ const PI_STREAM_ONLY_STAGES = new Set(['pi agent', 'pi tool batch']);
 const STAGE_ALIASES = new Map<string, string>([
   ['typescript pre-check', 'typescript precheck'],
   ['dependency install', 'prepare node dependencies'],
+  ['cold-cache setup', 'prepare node dependencies'],
   ['scouting prerequisites check', 'scouting prerequisites validation'],
 ]);
 
@@ -178,7 +179,10 @@ export class TaskProgressCalculator {
       }
     }
 
-    if (!fs.existsSync(progressFile) && typeof this.scheduler.getLiveProgressEvents === 'function') {
+    // The durable progress file can lag behind the live Docker stream.  Always
+    // ingest the latter after file events so a current phase advances the
+    // status response instead of leaving it at an older setup phase.
+    if (typeof this.scheduler.getLiveProgressEvents === 'function') {
       try {
         const liveEvents = this.scheduler.getLiveProgressEvents(job.id, 100);
         for (const event of liveEvents) {
