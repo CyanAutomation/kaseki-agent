@@ -169,6 +169,47 @@ Start local API service:
 kaseki-agent serve --port 8080
 ```
 
+### Kaseki Task Console
+
+Web UI served at `/ui` (and `/`) by `kaseki-agent serve`. Use it to monitor health, browse GitHub issues, and submit tasks.
+
+**Base URL:** `http://<host>:<port>/ui` (default `http://localhost:8080/ui`).
+Override host/port with `KASEKI_API_URL` env var (e.g., `KASEKI_API_URL=http://localhost:9090`).
+
+**Authentication:** Bearer token. Enter token in the header input field or set `KASEKI_API_KEY` env var. Requests to authenticated endpoints include `Authorization: Bearer <token>`.
+Server validates tokens listed in `KASEKI_API_KEYS` config (comma-separated).
+
+**Usage examples:**
+
+```bash
+# Health check (no auth required)
+curl http://localhost:8080/health
+
+# Health check with bearer token
+curl -H "Authorization: Bearer sk-kaseki-..." http://localhost:8080/api/preflight
+
+# Submit a task run via the API
+curl -X POST http://localhost:8080/api/run \
+  -H "Authorization: Bearer sk-kaseki-..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo": "https://github.com/org/repo",
+    "ref": "main",
+    "prompt": "Fix the failing test"
+  }'
+
+# Access the Task Console in browser
+open http://localhost:8080/ui
+```
+
+**Tabs:**
+
+- **Health** — Preflight checks and recent run status
+- **Issues** — Browse GitHub issues
+- **Submit Task** — Submit a coding task with repo, ref, and prompt
+
+Swagger API documentation available at `/docs`.
+
 ### Programmatic Usage
 
 - **Live monitoring**: Query running instances
