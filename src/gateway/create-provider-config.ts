@@ -24,7 +24,7 @@ function resolveGatewayApiKey(env: GatewayEnvironment, readFile: ReadTextFile): 
 
   const filePath = env.LLM_GATEWAY_API_KEY_FILE || '~/.kaseki/secrets.json';
   const expandedPath = filePath.startsWith('~')
-    ? filePath.replace('~', env.HOME || '')
+    ? env.HOME ? filePath.replace('~', env.HOME) : filePath
     : filePath;
 
   try {
