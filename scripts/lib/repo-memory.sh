@@ -83,7 +83,12 @@ function sanitize(text) {
     .join('\n').trim();
 }
 function compactLines(text, limit = 16) { return sanitize(text).split(/\r?\n/).map((line) => line.trim()).filter(Boolean).filter((line) => !/^Artifacts:?$/i.test(line) && !/^[-*] .*\.log( |$)/i.test(line)).slice(0, limit); }
-function changedFiles() { return sanitize(readFile(path.join(resultsDir, 'changed-files.txt'), 4000)).split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 40); }
+function changedFiles() {
+  // Treat filenames as data only. In particular, never pass git-controlled text
+  // through a shell parser such as eval when loading the changed-files artifact.
+  return sanitize(readFile(path.join(resultsDir, 'changed-files.txt'), 4000))
+    .split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 40);
+}
 function validationOutcomes() {
   const rows = sanitize(readFile(path.join(resultsDir, 'validation-timings.tsv'), 8000)).split(/\r?\n/).map((line) => line.split('\t')).filter((parts) => parts.length >= 2 && parts[0]);
   return rows.length ? rows.slice(0, 20).map(([command, exitCode, duration]) => `${command}: exit ${exitCode}${duration ? `, ${duration}s` : ''}`) : ['No per-command validation timings recorded.'];
