@@ -5,7 +5,7 @@ import {
 } from './phase-diagnostic-extractor';
 import type { StatusResponse } from '../kaseki-api-types';
 
-const ansiPattern = /\u001b\[[0-?]*[ -/]*[@-~]/g;
+const ansiPattern = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, 'g');
 
 describe('phase-diagnostic-extractor', () => {
   it('extracts sanitized phase diagnostics and limits noisy error arrays', () => {

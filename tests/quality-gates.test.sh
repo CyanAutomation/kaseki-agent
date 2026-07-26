@@ -17,7 +17,12 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 . "$ROOT_DIR/scripts/allowlist-helper.sh"
 eval "$(awk '
   /^append_quality_violation\(\)/ { emit=1 }
-  /^# Append a phase summary/ { emit=0 }
+  /^: > "\$\{KASEKI_RESULTS_DIR\}"\/run-evaluation-summary.json/ { emit=0 }
+  emit { print }
+' "$ROOT_DIR/kaseki-agent.sh")"
+eval "$(awk '
+  /^is_lightweight_validation_file\(\)/ { emit=1 }
+  /^# Ensure validation command/ { emit=0 }
   emit { print }
 ' "$ROOT_DIR/kaseki-agent.sh")"
 
@@ -110,6 +115,44 @@ echo "==> Test: Allowlist validation"
     pass "Allowlist: production quality gate rejects changed file outside allowlist"
   else
     fail "Allowlist: expected exit 5, failure reason, diagnostic, and failed allowlist event"
+  fi
+}
+
+# Test 3: Unified lightweight validation command selection via actual changed files
+echo "==> Test: Unified lightweight validation selection"
+{
+  reset_results
+  printf 'docs/SETUP_GUIDE.md\nREADME.md\n' > "$KASEKI_RESULTS_DIR/changed-files.txt"
+  unset KASEKI_VALIDATION_COMMANDS_EXPLICIT
+  KASEKI_VALIDATION_COMMANDS="npm run build;npm run type-check;npm run test"
+  KASEKI_LIGHTWEIGHT_VALIDATION_COMMANDS="npm run type-check"
+  maybe_select_lightweight_validation_commands
+
+  if [ "$KASEKI_VALIDATION_COMMANDS" = "npm run type-check" ] &&
+    [ "${KASEKI_LIGHTWEIGHT_VALIDATION:-}" = "1" ] &&
+    [ "${KASEKI_LIGHTWEIGHT_VALIDATION_REASON:-}" = "low_risk_changed_files" ] &&
+    grep -q 'selected lightweight validation commands based on changed files' "$KASEKI_RESULTS_DIR/events.log"; then
+    pass "Unified lightweight validation: production helper narrows default validation after inspecting changed files"
+  else
+    fail "Unified lightweight validation: expected actual changed files to narrow default validation in the standard pipeline"
+  fi
+}
+
+# Test 4: Explicit validation commands are never overridden by lightweight selection
+echo "==> Test: Explicit validation commands are preserved"
+{
+  reset_results
+  printf 'docs/SETUP_GUIDE.md\n' > "$KASEKI_RESULTS_DIR/changed-files.txt"
+  KASEKI_VALIDATION_COMMANDS_EXPLICIT=1
+  KASEKI_VALIDATION_COMMANDS="npm run test -- docs"
+  KASEKI_LIGHTWEIGHT_VALIDATION_COMMANDS="npm run type-check"
+  maybe_select_lightweight_validation_commands
+
+  if [ "$KASEKI_VALIDATION_COMMANDS" = "npm run test -- docs" ] &&
+    ! grep -q 'selected lightweight validation commands' "$KASEKI_RESULTS_DIR/events.log"; then
+    pass "Unified lightweight validation: explicit validation commands remain authoritative"
+  else
+    fail "Unified lightweight validation: explicit validation commands should not be overridden"
   fi
 }
 

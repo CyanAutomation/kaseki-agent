@@ -430,6 +430,8 @@ export interface ArtifactResponse {
   size: number;
   content?: string; // For text artifacts
   url?: string; // For large artifacts, provide signed URL
+  truncated?: boolean;
+  tailLines?: number;
 }
 
 export interface RunEvaluationRenderedResponse {

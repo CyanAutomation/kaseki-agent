@@ -24,7 +24,7 @@ import type { ResultCache } from './result-cache';
 import { JobPersistenceManager } from './job-persistence-manager';
 import { EXIT_CODE_SPAWN_FAILED } from './exit-codes';
 
-function isDocsOnlyTaskPrompt(prompt?: string): boolean {
+function isLowRiskTaskPrompt(prompt?: string): boolean {
   if (!prompt) {
     return false;
   }
@@ -445,10 +445,11 @@ export class JobScheduler {
       job.request.validationCommands ?? job.request.validation?.commands;
     if (validationCommands) {
       env.KASEKI_VALIDATION_COMMANDS = validationCommands.join(';');
-    } else if (isDocsOnlyTaskPrompt(job.request.taskPrompt)) {
+    } else if (isLowRiskTaskPrompt(job.request.taskPrompt)) {
       env.KASEKI_VALIDATION_COMMANDS = 'npm run type-check';
       env.KASEKI_PRE_AGENT_VALIDATION = '0';
-      env.KASEKI_DOCS_ONLY_TASK = '1';
+      env.KASEKI_LIGHTWEIGHT_VALIDATION = '1';
+      env.KASEKI_LIGHTWEIGHT_VALIDATION_REASON = 'low_risk_task_prompt';
     }
   }
 
@@ -475,7 +476,7 @@ export class JobScheduler {
       job.request.changedFilesAllowlist ?? job.request.allowlist?.include;
     if (changedFilesAllowlist) {
       env.KASEKI_CHANGED_FILES_ALLOWLIST = changedFilesAllowlist.join(' ');
-    } else if (isDocsOnlyTaskPrompt(job.request.taskPrompt)) {
+    } else if (isLowRiskTaskPrompt(job.request.taskPrompt)) {
       env.KASEKI_CHANGED_FILES_ALLOWLIST = 'README.md docs/**/*.md *.md';
     }
   }

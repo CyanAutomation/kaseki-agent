@@ -324,7 +324,7 @@ describe('JobScheduler timeout lifecycle', () => {
     expect(fs.existsSync(job.resultDir || '')).toBe(false);
   });
 
-  test('infers lightweight docs-only defaults when validation and allowlist are omitted', async () => {
+  test('infers unified lightweight validation defaults when validation and allowlist are omitted for low-risk docs tasks', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
@@ -355,13 +355,16 @@ describe('JobScheduler timeout lifecycle', () => {
       expect.any(Array),
       expect.objectContaining({
         env: expect.objectContaining({
-          KASEKI_DOCS_ONLY_TASK: '1',
+          KASEKI_LIGHTWEIGHT_VALIDATION: '1',
+          KASEKI_LIGHTWEIGHT_VALIDATION_REASON: 'low_risk_task_prompt',
           KASEKI_PRE_AGENT_VALIDATION: '0',
           KASEKI_VALIDATION_COMMANDS: 'npm run type-check',
           KASEKI_CHANGED_FILES_ALLOWLIST: 'README.md docs/**/*.md *.md',
         }),
       }),
     );
+    const spawnedEnv = mockSpawn.mock.calls[0][2].env;
+    expect(Object.keys(spawnedEnv).filter((key) => key.includes('DOCS_ONLY'))).toEqual([]);
   });
 
   test('allows empty diffs for conditional no-change patch prompts', async () => {

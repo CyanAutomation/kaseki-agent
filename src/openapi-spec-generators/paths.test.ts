@@ -831,6 +831,9 @@ describe('OpenAPI Path Builders', () => {
       expect(formatParam.in).toBe('query');
       expect(formatParam.required).toBe(false);
       expect(formatParam.schema.enum).toContain('rendered');
+      const tailParam = downloadPath.parameters.find((p: Record<string, any>) => p.name === 'tail');
+      expect(tailParam.in).toBe('query');
+      expect(tailParam.schema).toMatchObject({ type: 'integer', minimum: 1 });
       expect(downloadPath.responses['422']).toBeDefined();
     });
   });

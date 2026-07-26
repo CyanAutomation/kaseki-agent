@@ -32,4 +32,17 @@ printf 'stage\texit_code\telapsed_seconds\tdetails\nvalidate\t0\t12\n' > "$stage
 consolidate_timings_to_json "$timings_manifest" "$TMP_DIR/missing-validation.tsv" "$TMP_DIR/missing-pre-validation.tsv" "$stage_timings"
 jq -e '.stage_timings == [{stage: "validate", exit_code: 0, elapsed_seconds: 12, details: ""}]' "$timings_manifest" >/dev/null
 
+validation_timings="$TMP_DIR/validation-timings.tsv"
+pre_validation_timings="$TMP_DIR/pre-validation-timings.tsv"
+printf 'command\texit_code\telapsed_seconds\tdetails\nnpm run check\t0\t137\ttee_exit=0 filter_exit=0\nnpm run test\t1\t152\ttee_exit=0 filter_exit=0\n' > "$validation_timings"
+printf 'command\texit_code\telapsed_seconds\tdetails\nnpm run check\t0\t141\ttee_exit=0 filter_exit=0\n' > "$pre_validation_timings"
+consolidate_timings_to_json "$timings_manifest" "$validation_timings" "$pre_validation_timings" "$stage_timings"
+jq -e '.validation_timings == [
+  {command: "npm run check", exit_code: 0, elapsed_seconds: 137, details: "tee_exit=0 filter_exit=0"},
+  {command: "npm run test", exit_code: 1, elapsed_seconds: 152, details: "tee_exit=0 filter_exit=0"}
+]' "$timings_manifest" >/dev/null
+jq -e '.pre_validation_timings == [
+  {command: "npm run check", exit_code: 0, elapsed_seconds: 141, details: "tee_exit=0 filter_exit=0"}
+]' "$timings_manifest" >/dev/null
+
 echo "artifact consolidation tests passed"
