@@ -42,7 +42,7 @@ read_repo_memory_section() {
   local now="${1:-${REPO_MEMORY_NOW_EPOCH:-$(date +%s)}}"
   local max_bytes="${2:-$KASEKI_REPO_MEMORY_MAX_BYTES}"
   local ttl_days="${3:-$KASEKI_REPO_MEMORY_TTL_DAYS}"
-  init_repo_memory_paths
+  init_repo_memory_paths "$KASEKI_REPO_MEMORY_MODE" "$KASEKI_REPO_MEMORY_ROOT" "$REPO_URL" "$GIT_REF"
   [ "$KASEKI_REPO_MEMORY_MODE" = "summary" ] || return 0
   if ! repo_memory_is_fresh "$REPO_MEMORY_FILE" "$max_bytes" "$ttl_days" "$now"; then
     REPO_MEMORY_STATUS="miss_or_expired"
@@ -60,7 +60,7 @@ write_repo_memory_summary() {
   local updated_at="${1:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
   [ "$KASEKI_REPO_MEMORY_MODE" = "summary" ] || return 0
   [ "$KASEKI_DRY_RUN" != "1" ] || return 0
-  init_repo_memory_paths
+  init_repo_memory_paths "$KASEKI_REPO_MEMORY_MODE" "$KASEKI_REPO_MEMORY_ROOT" "$REPO_URL" "$GIT_REF"
   [ -n "$REPO_MEMORY_FILE" ] || return 0
   [ "$PI_EXIT" -eq 0 ] || return 0
   [ "$SECRET_SCAN_EXIT" -eq 0 ] || return 0
@@ -108,6 +108,7 @@ NODE
     emit_error_event "repo_memory_write_failed" "Failed to update repository memory summary" "continue"
     return 0
   }
+  # shellcheck disable=SC2034 # Global status consumed by the sourcing agent script.
   REPO_MEMORY_STATUS="updated"
   emit_event "repo_memory_updated" "mode=$KASEKI_REPO_MEMORY_MODE" "repo_key=$REPO_MEMORY_KEY" "summary=$REPO_MEMORY_FILE" "max_bytes=$KASEKI_REPO_MEMORY_MAX_BYTES"
 }

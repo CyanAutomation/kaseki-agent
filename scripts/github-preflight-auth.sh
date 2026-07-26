@@ -4,12 +4,16 @@
 parse_github_repo_url() {
   local repo_url repo_name
   repo_url="$1"
+  # shellcheck disable=SC2034 # Global output consumed by callers after sourcing this helper.
   GITHUB_REPO_OWNER=""
+  # shellcheck disable=SC2034 # Global output consumed by callers after sourcing this helper.
   GITHUB_REPO_NAME=""
 
   if [[ "$repo_url" =~ ^https?://github\.com/([^/]+)/([^/]+)(/|\.git)?$ ]]; then
     repo_name="${BASH_REMATCH[2]}"
+    # shellcheck disable=SC2034 # Global output consumed by callers after sourcing this helper.
     GITHUB_REPO_OWNER="${BASH_REMATCH[1]}"
+    # shellcheck disable=SC2034 # Global output consumed by callers after sourcing this helper.
     GITHUB_REPO_NAME="${repo_name%.git}"
     return 0
   fi
@@ -89,6 +93,7 @@ create_github_askpass_helper() {
   local log_file log_prefix askpass_dir askpass_file username_smoke_output password_smoke_output
   log_file="${1:-/dev/null}"
   log_prefix="${2:-[github-askpass]}"
+  # shellcheck disable=SC2034 # Global output consumed by callers after sourcing this helper.
   GITHUB_ASKPASS_FILE=""
 
   askpass_dir="$(github_askpass_runtime_dir)"
@@ -148,6 +153,7 @@ EOF_ASKPASS
     return 8
   fi
 
+  # shellcheck disable=SC2034 # Global output consumed by callers after sourcing this helper.
   GITHUB_ASKPASS_FILE="$askpass_file"
   return 0
 }

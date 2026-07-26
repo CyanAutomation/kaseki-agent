@@ -9,6 +9,9 @@ run_pi_json_capture() {
   local prompt="$4"
   local stderr_target="${5:-}"
   local pi_exit progress_exit progress_stderr progress_fifo progress_pid splitter_exit
+  local pi_openrouter_api_key="${openrouter_api_key:-${OPENROUTER_API_KEY:-}}"
+  local pi_llm_gateway_api_key="${llm_gateway_api_key:-${LLM_GATEWAY_API_KEY:-}}"
+  local pi_llm_gateway_url="${llm_gateway_url:-${LLM_GATEWAY_URL:-}}"
   local -a pipeline_statuses
 
   wait_for_progress_stream() {
@@ -46,9 +49,9 @@ run_pi_json_capture() {
     progress_pid=$!
 
     if [ -n "$stderr_target" ]; then
-      OPENROUTER_API_KEY="${openrouter_api_key:-${OPENROUTER_API_KEY:-}}" \
-        LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
-        LLM_GATEWAY_URL="$llm_gateway_url" \
+      OPENROUTER_API_KEY="$pi_openrouter_api_key" \
+        LLM_GATEWAY_API_KEY="$pi_llm_gateway_api_key" \
+        LLM_GATEWAY_URL="$pi_llm_gateway_url" \
         timeout --signal=SIGTERM "$timeout_seconds" \
         pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
         2> >(tee -a "$stderr_target" >&2) \
@@ -85,9 +88,9 @@ process.stdin.on("end", () => {
 });
 ' "$raw_events_file" "$progress_fifo"
     else
-      OPENROUTER_API_KEY="${openrouter_api_key:-${OPENROUTER_API_KEY:-}}" \
-        LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
-        LLM_GATEWAY_URL="$llm_gateway_url" \
+      OPENROUTER_API_KEY="$pi_openrouter_api_key" \
+        LLM_GATEWAY_API_KEY="$pi_llm_gateway_api_key" \
+        LLM_GATEWAY_URL="$pi_llm_gateway_url" \
         timeout --signal=SIGTERM "$timeout_seconds" \
         pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
         | node -e '
@@ -139,17 +142,17 @@ process.stdin.on("end", () => {
     fi
   else
     if [ -n "$stderr_target" ]; then
-      OPENROUTER_API_KEY="${openrouter_api_key:-${OPENROUTER_API_KEY:-}}" \
-        LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
-        LLM_GATEWAY_URL="$llm_gateway_url" \
+      OPENROUTER_API_KEY="$pi_openrouter_api_key" \
+        LLM_GATEWAY_API_KEY="$pi_llm_gateway_api_key" \
+        LLM_GATEWAY_URL="$pi_llm_gateway_url" \
         timeout --signal=SIGTERM "$timeout_seconds" \
         pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
         > "$raw_events_file" \
         2> >(tee -a "$stderr_target" >&2)
     else
-      OPENROUTER_API_KEY="${openrouter_api_key:-${OPENROUTER_API_KEY:-}}" \
-        LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
-        LLM_GATEWAY_URL="$llm_gateway_url" \
+      OPENROUTER_API_KEY="$pi_openrouter_api_key" \
+        LLM_GATEWAY_API_KEY="$pi_llm_gateway_api_key" \
+        LLM_GATEWAY_URL="$pi_llm_gateway_url" \
         timeout --signal=SIGTERM "$timeout_seconds" \
         pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
         > "$raw_events_file"
