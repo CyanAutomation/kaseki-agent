@@ -3218,11 +3218,14 @@ const controllerPage = String.raw`<!doctype html>
             displayArtifactsTab(runId, artifactsResponse);
           } else {
             // Format as JSON for status, events, and stdout
-            const content = tabName === 'stdout' 
+            const rawContent = tabName === 'stdout'
               ? (result.payload && typeof result.payload === 'object' && 'content' in result.payload
                 ? result.payload.content
                 : result.payload)
-              : JSON.stringify(result.payload, null, 2);
+              : result.payload;
+            const content = typeof rawContent === 'string'
+              ? rawContent
+              : JSON.stringify(rawContent, null, 2);
             modalTabCache[tabName] = tabName === 'status'
               ? result.payload
               : stripControlSequences(content);
@@ -3270,7 +3273,8 @@ const controllerPage = String.raw`<!doctype html>
             attempt.current && attempt.maximum ? 'Attempts: ' + String(attempt.current) + '/' + String(attempt.maximum) : '',
             diagnosis.summary || content.error ? 'Reason: ' + String(diagnosis.summary || content.error) : '',
             diagnosis.remediation ? 'Next step: ' + String(diagnosis.remediation) : '',
-            content.resultSummaryContent && /Failure Detail:|Changed Files:\s*0|Diff Lines:\s*0/i.test(content.resultSummaryContent)
+            (['failed', 'cancelled', 'canceled', 'timed_out'].includes(String(content.status || '').toLowerCase()) ||
+              (content.resultSummaryContent && /Failure Detail:/i.test(content.resultSummaryContent)))
               ? 'Warning: terminal artifacts report fallback/failure signals; review the result summary before accepting this run.'
               : '',
             recommended.length ? 'Diagnostics: ' + recommended.join(', ') : '',
