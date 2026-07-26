@@ -96,13 +96,11 @@ export function getActiveRunNames(resultsDir: string): Set<string> {
   } catch (error) {
     throw new SchedulerStateUnavailableError(indexPath, error);
   } finally {
-  } finally {
     try {
       fs.closeSync(descriptor);
     } catch (closeError) {
       console.debug(`Failed to close descriptor for ${indexPath}:`, closeError);
     }
-  }
   }
 }
 
