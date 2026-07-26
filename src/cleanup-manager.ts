@@ -1,5 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  JobIndexUnavailableError,
+  JobPersistenceManager,
+  type PersistedJob,
+} from './job-persistence-manager';
 
 /**
  * Result structure returned by cleanupOldRuns
@@ -18,6 +23,10 @@ export interface RunInfo {
   name: string;
   path: string;
   mtime: number;
+  ctime: number;
+  birthtime: number;
+  dev: number;
+  ino: number;
 }
 
 export interface CleanupPlan {
@@ -37,10 +46,7 @@ export class SchedulerStateUnavailableError extends Error {
   }
 }
 
-function schedulerIndexChanged(
-  before: fs.Stats,
-  after: fs.Stats,
-): boolean {
+function schedulerIndexChanged(before: fs.Stats, after: fs.Stats): boolean {
   return (
     before.dev !== after.dev ||
     before.ino !== after.ino ||
@@ -166,13 +172,17 @@ export function listRuns(resultsDir: string): RunInfo[] {
     }
 
     const fullPath = path.join(resultsDir, entry);
-    const stats = fs.statSync(fullPath);
+    const stats = fs.lstatSync(fullPath);
 
     if (stats.isDirectory()) {
       runs.push({
         name: entry,
         path: fullPath,
         mtime: stats.mtimeMs,
+        ctime: stats.ctimeMs,
+        birthtime: stats.birthtimeMs,
+        dev: stats.dev,
+        ino: stats.ino,
       });
     }
   }
@@ -269,10 +279,17 @@ export function cleanupCacheDir(
     for (const entry of entries) {
       const cacheEntryPath = path.join(cacheDir, entry);
       try {
-        if (!fs.statSync(cacheEntryPath).isDirectory()) continue;
+        const identity = fs.lstatSync(cacheEntryPath);
+        if (!identity.isDirectory() || identity.isSymbolicLink()) continue;
         if (shouldRemoveCacheEntry(cacheEntryPath, retainedRunNames)) {
-          if (!dryRun)
-            fs.rmSync(cacheEntryPath, { recursive: true, force: true });
+          if (!dryRun) {
+            safelyClaimAndRemoveDirectory(
+              cacheDir,
+              cacheEntryPath,
+              `.kaseki-cache-cleanup-${process.pid}-${Date.now()}`,
+              identity,
+            );
+          }
           removed++;
         }
       } catch (error) {
@@ -301,6 +318,7 @@ export async function cleanupOldRuns(
   cacheDir: string,
   retentionCount: number,
   dryRun: boolean = false,
+  options: { afterPlanning?: () => void | Promise<void> } = {},
 ): Promise<CleanupResult> {
   const result: CleanupResult = {
     deletedCount: 0,
@@ -309,32 +327,154 @@ export async function cleanupOldRuns(
     dryRun,
   };
 
-  let plan = createCleanupPlan(
-    resultsDir,
-    retentionCount,
-  );
+  const plan = createCleanupPlan(resultsDir, retentionCount);
   if (plan.runsToDelete.length === 0) return result;
 
-  // The scheduler index may have changed since the retention plan was built.
-  // Refresh it immediately before deletion so a run that became queued or
-  // running in that window is neither removed nor allowed to lose its cache.
-  plan = refreshCleanupPlanActiveRuns(resultsDir, plan);
-
+  const plannedDescriptors = new Map<string, number>();
   for (const run of plan.runsToDelete) {
     try {
-      result.freedBytes += getDirectorySize(run.path);
-      if (!dryRun) fs.rmSync(run.path, { recursive: true, force: true });
-      result.deletedCount++;
-    } catch (error) {
-      console.error(`Error deleting run ${run.name}:`, error);
+      plannedDescriptors.set(
+        run.name,
+        fs.openSync(
+          run.path,
+          fs.constants.O_RDONLY |
+            (fs.constants.O_DIRECTORY ?? 0) |
+            (fs.constants.O_NOFOLLOW ?? 0),
+        ),
+      );
+    } catch {
+      // The lock-scoped identity check will conservatively skip this run.
     }
   }
 
-  result.cachedEntriesRemoved = cleanupCacheDir(
-    cacheDir,
-    plan.retainedRunNames,
-    dryRun,
-  );
+  try {
+    await options.afterPlanning?.();
+    const persistence = new JobPersistenceManager({ resultsDir });
+    await persistence.withLockedJobsIndex((jobs) => {
+      const activeRunNames = activeNamesFromJobs(jobs);
+      const retainedRunNames = new Set(plan.retainedRunNames);
+      for (const name of activeRunNames) retainedRunNames.add(name);
+
+      for (const run of plan.runsToDelete) {
+        if (activeRunNames.has(run.name)) continue;
+        try {
+          result.freedBytes += getDirectorySize(run.path);
+          if (!dryRun) {
+            safelyRemovePlannedRun(
+              resultsDir,
+              run,
+              plannedDescriptors.get(run.name),
+            );
+          }
+          result.deletedCount++;
+        } catch (error) {
+          console.error(`Error deleting run ${run.name}:`, error);
+          retainedRunNames.add(run.name);
+        }
+      }
+
+      result.cachedEntriesRemoved = cleanupCacheDir(
+        cacheDir,
+        retainedRunNames,
+        dryRun,
+      );
+    });
+  } catch (error) {
+    if (error instanceof JobIndexUnavailableError) {
+      throw new SchedulerStateUnavailableError(
+        path.join(resultsDir, JOBS_INDEX_NAME),
+        error,
+      );
+    }
+    throw error;
+  } finally {
+    for (const descriptor of plannedDescriptors.values()) {
+      try {
+        fs.closeSync(descriptor);
+      } catch {
+        // Best-effort descriptor cleanup.
+      }
+    }
+  }
 
   return result;
+}
+
+function activeNamesFromJobs(jobs: readonly PersistedJob[]): Set<string> {
+  return new Set(
+    jobs
+      .filter((job) => job.status === 'queued' || job.status === 'running')
+      .map((job) => job.id)
+      .filter((id) => /^kaseki-\d+$/.test(id)),
+  );
+}
+
+/** Revalidate identity, atomically claim the directory, then remove the claim. */
+function safelyRemovePlannedRun(
+  resultsDir: string,
+  run: RunInfo,
+  plannedDescriptor?: number,
+): void {
+  if (plannedDescriptor === undefined) {
+    throw new Error('planned run descriptor is unavailable');
+  }
+  const before = fs.lstatSync(run.path);
+  if (!before.isDirectory() || before.isSymbolicLink()) {
+    throw new Error('planned run is no longer a real directory');
+  }
+
+  safelyClaimAndRemoveDirectory(
+    resultsDir,
+    run.path,
+    `.kaseki-cleanup-${run.name}-${process.pid}-${Date.now()}`,
+    before,
+    run,
+    plannedDescriptor,
+  );
+}
+
+function safelyClaimAndRemoveDirectory(
+  parentDir: string,
+  directoryPath: string,
+  claimName: string,
+  before: fs.Stats,
+  planned?: Pick<RunInfo, 'dev' | 'ino' | 'ctime' | 'birthtime'>,
+  existingDescriptor?: number,
+): void {
+  const descriptor =
+    existingDescriptor ??
+    fs.openSync(
+      directoryPath,
+      fs.constants.O_RDONLY |
+        (fs.constants.O_DIRECTORY ?? 0) |
+        (fs.constants.O_NOFOLLOW ?? 0),
+    );
+  try {
+    const opened = fs.fstatSync(descriptor);
+    if (
+      (planned !== undefined &&
+        (before.dev !== planned.dev ||
+          before.ino !== planned.ino ||
+          before.ctimeMs !== planned.ctime ||
+          before.birthtimeMs !== planned.birthtime)) ||
+      opened.dev !== before.dev ||
+      opened.ino !== before.ino ||
+      !opened.isDirectory()
+    ) {
+      throw new Error('planned run identity changed before deletion');
+    }
+
+    const claimedPath = path.join(parentDir, claimName);
+    fs.renameSync(directoryPath, claimedPath);
+    const claimed = fs.lstatSync(claimedPath);
+    if (claimed.dev !== opened.dev || claimed.ino !== opened.ino) {
+      if (!fs.existsSync(directoryPath)) {
+        fs.renameSync(claimedPath, directoryPath);
+      }
+      throw new Error('cleanup claim identity changed');
+    }
+    fs.rmSync(claimedPath, { recursive: true, force: true });
+  } finally {
+    if (existingDescriptor === undefined) fs.closeSync(descriptor);
+  }
 }
