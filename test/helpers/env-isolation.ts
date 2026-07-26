@@ -16,22 +16,11 @@ export const CLOUDFLARE_METADATA_ENV_VARS = [
 ] as const;
 
 /**
- * Gateway Configuration Environment Variables
- */
-export const GATEWAY_CONFIG_ENV_VARS = [
-  'LLM_GATEWAY_URL',
-  'LLM_GATEWAY_API_KEY',
-  'LLM_GATEWAY_MODEL',
-  'LLM_GATEWAY_MAX_OUTPUT_TOKENS',
-  'KASEKI_GATEWAY_LOG_PAYLOADS',
-] as const;
-
-/**
  * Snapshot environment variable state for restoration
  * @param keys - Environment variable keys to snapshot
  * @returns Object mapping keys to their original values (undefined if not set)
  */
-export function snapshotEnv(
+function snapshotEnv(
   keys: readonly string[]
 ): Record<string, string | undefined> {
   const snapshot: Record<string, string | undefined> = {};
@@ -45,7 +34,7 @@ export function snapshotEnv(
  * Restore environment variables from a snapshot
  * @param snapshot - Snapshot created by snapshotEnv()
  */
-export function restoreEnv(snapshot: Record<string, string | undefined>): void {
+function restoreEnv(snapshot: Record<string, string | undefined>): void {
   for (const [key, value] of Object.entries(snapshot)) {
     if (value === undefined) {
       delete process.env[key];
@@ -59,40 +48,9 @@ export function restoreEnv(snapshot: Record<string, string | undefined>): void {
  * Delete environment variables (for isolation tests)
  * @param keys - Environment variable keys to delete
  */
-export function deleteEnv(keys: readonly string[]): void {
+function deleteEnv(keys: readonly string[]): void {
   for (const key of keys) {
     delete process.env[key];
-  }
-}
-
-/**
- * Execute a function with isolated environment variables
- * Automatically snapshots, cleans up, and restores specified variables
- *
- * @example
- * ```typescript
- * await withIsolatedEnv(
- *   CLOUDFLARE_METADATA_ENV_VARS,
- *   async () => {
- *     // Test code here - metadata vars are deleted
- *     registerGatewayProvider(mockPi);
- *     expect(mockPi.registerProvider).toHaveBeenCalledWith(...);
- *   }
- * );
- * // Original values automatically restored
- * ```
- */
-export async function withIsolatedEnv<T>(
-  keysToDelete: readonly string[],
-  fn: () => T | Promise<T>
-): Promise<T> {
-  const snapshot = snapshotEnv(keysToDelete);
-  deleteEnv(keysToDelete);
-
-  try {
-    return await fn();
-  } finally {
-    restoreEnv(snapshot);
   }
 }
 
