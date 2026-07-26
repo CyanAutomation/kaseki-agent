@@ -1453,8 +1453,9 @@ const controllerPage = String.raw`<!doctype html>
           <div>
             <h2 id="submit-heading">Submit Repository Task</h2>
             <p>Configure and submit a task for the ephemeral agent to execute.</p>
-            <!-- Simplified UI: Git ref, timeout, and publish mode use defaults (main, 3h, auto).
-                 For advanced options, use the CLI or API directly with explicit parameters. -->
+            <!-- Simplified UI: Git ref and timeout use defaults (main, 3h). Patch runs explicitly
+                 create a normal (non-draft) pull request after validation. Use the CLI or API for
+                 branch-only, draft, or no-publish workflows. -->
           </div>
         <form id="run-form">
           <fieldset class="form-fields">
@@ -1482,6 +1483,7 @@ const controllerPage = String.raw`<!doctype html>
                 <option value="inspect">Inspect</option>
               </select>
               <p class="field-helper">Patch mode makes code changes. Inspect mode is read-only analysis (faster, skips validation).</p>
+              <p class="field-helper">Patch runs publish a normal pull request after successful validation.</p>
             </div>
           </fieldset>
           <fieldset>
@@ -1917,6 +1919,15 @@ const controllerPage = String.raw`<!doctype html>
           if (typeof payload.status === 'string') {
             items.push(['Status', stripControlSequences(payload.status)]);
           }
+          if (payload.runEvaluation && typeof payload.runEvaluation === 'object' && payload.runEvaluation.status === 'warning') {
+            const warning = typeof payload.runEvaluation.warning === 'string'
+              ? stripControlSequences(payload.runEvaluation.warning)
+              : 'The evaluator did not produce a usable report.';
+            const exitCode = typeof payload.runEvaluation.exitCode === 'number'
+              ? ' (exit ' + String(payload.runEvaluation.exitCode) + ')'
+              : '';
+            items.push(['Run evaluation warning', 'The task completed, but the final evaluator report is unavailable' + exitCode + ': ' + warning + '. Review the diff, validation results, and run-evaluation artifacts before relying on automated review.', { warning: true, critical: true, fullWidth: true }]);
+          }
           // Removed: Lifecycle field (too technical for non-technical users)
           if (payload.phaseOutcome && typeof payload.phaseOutcome === 'object') {
             const outcome = payload.phaseOutcome;
@@ -1990,6 +2001,17 @@ const controllerPage = String.raw`<!doctype html>
               ? cleanProgressText(payload.progress.displayName)
               : cleanProgressText(payload.progress.stage);
             items.push(['Current phase', progressStageName]);
+            const inferred = payload.progress.timestampEstimated === true;
+            const source = inferred
+              ? 'Inferred from an un-timestamped Docker log tail'
+              : payload.progress.source === 'progress.jsonl'
+                ? 'Confirmed controller progress event'
+                : 'Confirmed timestamped Docker log event';
+            items.push(['Progress evidence', source, { warning: inferred, fullWidth: inferred }]);
+            if (!inferred && typeof payload.progress.updatedAt === 'string') {
+              const startedAt = Date.parse(payload.progress.updatedAt);
+              if (Number.isFinite(startedAt)) items.push(['Stage elapsed', formatElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)))]);
+            }
           }
           if (typeof payload.taskProgressPercent === 'number') {
             items.push(['Workflow position', payload.taskProgressPercent + '%']);
@@ -1998,6 +2020,12 @@ const controllerPage = String.raw`<!doctype html>
             }
           }
           if (Array.isArray(payload.validationCommands) && payload.validationCommands.length > 0) {
+            const activeCommand = payload.validationCommands.slice().reverse().find((entry) => entry && entry.status === 'running');
+            if (activeCommand && typeof activeCommand.command === 'string') {
+              const startedAt = typeof activeCommand.startedAt === 'string' ? Date.parse(activeCommand.startedAt) : NaN;
+              const elapsed = Number.isFinite(startedAt) ? ' — running for ' + formatElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000))) : '';
+              items.push(['Active command', stripControlSequences(activeCommand.command).slice(0, 180) + elapsed, { fullWidth: true }]);
+            }
             const validationSummary = payload.validationCommands.slice(-8).map((entry) => {
               if (!entry || typeof entry !== 'object' || typeof entry.command !== 'string') return '';
               const details = [];
@@ -2332,7 +2360,8 @@ const controllerPage = String.raw`<!doctype html>
         const progress = payload.progress || {};
         const stage = progress.displayName ? cleanProgressText(progress.displayName) : (progress.stage ? cleanProgressText(progress.stage) : '');
         const percent = typeof progress.percentComplete === 'number' ? progress.percentComplete + '%' : '';
-        const phaseElapsed = typeof progress.updatedAt === 'string'
+        const inferredProgress = progress.timestampEstimated === true;
+        const phaseElapsed = !inferredProgress && typeof progress.updatedAt === 'string'
           ? Math.max(0, Math.floor((Date.now() - Date.parse(progress.updatedAt)) / 1000))
           : null;
         const retry = payload.attempt
@@ -2342,7 +2371,8 @@ const controllerPage = String.raw`<!doctype html>
           : '';
         const timeout = typeof payload.timeoutRiskPercent === 'number' ? 'timeout risk ' + payload.timeoutRiskPercent + '%' : '';
         const stalled = payload.status === 'running' && phaseElapsed !== null && phaseElapsed >= 120 ? 'awaiting update' : '';
-        const parts = [stage, percent, phaseElapsed === null ? '' : 'phase ' + formatElapsedSeconds(phaseElapsed), stalled, retry, timeout].filter(Boolean);
+        const evidence = inferredProgress ? 'inferred log tail' : (progress.source === 'progress.jsonl' ? 'confirmed event' : 'timestamped log');
+        const parts = [stage, percent, phaseElapsed === null ? '' : 'phase ' + formatElapsedSeconds(phaseElapsed), inferredProgress ? evidence : '', stalled, retry, timeout].filter(Boolean);
         detailsEl.textContent = parts.join(' | ');
       }
 
@@ -2742,6 +2772,8 @@ const controllerPage = String.raw`<!doctype html>
           repoUrl: String(data.get('repoUrl') || '').trim(),
           taskPrompt: String(data.get('taskPrompt') || '').trim(),
           taskMode: String(data.get('taskMode') || 'patch'),
+          // The web console deliberately creates normal PRs for patch tasks.
+          publishMode: 'pr',
         };
         if (idempotencyKey) {
           body.idempotencyKey = idempotencyKey;

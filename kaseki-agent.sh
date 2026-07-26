@@ -6443,8 +6443,39 @@ fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + '\n');
 NODE
 }
 
+validate_run_evaluation_candidate() {
+  node -e '
+const fs = require("node:fs");
+const input = process.argv[1];
+const output = process.argv[2];
+const model = process.argv[3];
+const actualModel = process.argv[4] || "unknown";
+const assessmentValues = new Set(["excellent", "good", "mixed", "poor", "unknown"]);
+const confidenceValues = new Set(["high", "medium", "low"]);
+const stageValueValues = new Set(["high", "medium", "low", "unknown"]);
+const priorityValues = new Set(["high", "medium", "low"]);
+const invalid = [];
+const artifact = JSON.parse(fs.readFileSync(input, "utf8"));
+if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") invalid.push("root");
+if (!assessmentValues.has(artifact.overall_assessment)) invalid.push("overall_assessment");
+if (!confidenceValues.has(artifact.reviewer_confidence)) invalid.push("reviewer_confidence");
+if (!Number.isInteger(artifact.task_completion_score) || artifact.task_completion_score < 1 || artifact.task_completion_score > 5) invalid.push("task_completion_score");
+for (const key of ["summary", "pr_summary"]) if (typeof artifact[key] !== "string") invalid.push(key);
+for (const key of ["human_review_focus", "efficiency_findings", "warnings"]) {
+  if (!Array.isArray(artifact[key]) || !artifact[key].every((v) => typeof v === "string")) invalid.push(key);
+}
+if (!Array.isArray(artifact.stage_value) || !artifact.stage_value.every((item) => item && typeof item.stage === "string" && stageValueValues.has(item.value) && typeof item.reason === "string")) invalid.push("stage_value");
+if (!Array.isArray(artifact.kaseki_improvement_opportunities) || !artifact.kaseki_improvement_opportunities.every((item) => item && typeof item.category === "string" && priorityValues.has(item.priority) && typeof item.suggestion === "string")) invalid.push("kaseki_improvement_opportunities");
+if (invalid.length) throw new Error("invalid run-evaluation fields: " + invalid.join(", "));
+artifact.timestamp = new Date().toISOString();
+artifact.model = model;
+artifact.actual_model = actualModel;
+fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\\n");
+' "$RUN_EVALUATION_CANDIDATE_ARTIFACT" "$RUN_EVALUATION_ARTIFACT" "$KASEKI_RUN_EVALUATION_MODEL" "$RUN_EVALUATION_ACTUAL_MODEL" 2>/dev/null
+}
+
 run_run_evaluation() {
-  local evaluation_prompt evaluation_start eval_dirty_before eval_dirty_after
+  local evaluation_prompt evaluation_retry_prompt evaluation_start evaluation_retry_start eval_dirty_before eval_dirty_after
   RUN_EVALUATION_EXIT=0
   RUN_EVALUATION_WARNING=""
 
@@ -6475,36 +6506,23 @@ run_run_evaluation() {
   chmod -R u+w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
 
-  if [ "$RUN_EVALUATION_EXIT" -eq 0 ] && ! node -e '
-const fs = require("node:fs");
-const input = process.argv[1];
-const output = process.argv[2];
-const model = process.argv[3];
-const actualModel = process.argv[4] || "unknown";
-const assessmentValues = new Set(["excellent", "good", "mixed", "poor", "unknown"]);
-const confidenceValues = new Set(["high", "medium", "low"]);
-const stageValueValues = new Set(["high", "medium", "low", "unknown"]);
-const priorityValues = new Set(["high", "medium", "low"]);
-const invalid = [];
-const artifact = JSON.parse(fs.readFileSync(input, "utf8"));
-if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") invalid.push("root");
-if (!assessmentValues.has(artifact.overall_assessment)) invalid.push("overall_assessment");
-if (!confidenceValues.has(artifact.reviewer_confidence)) invalid.push("reviewer_confidence");
-if (!Number.isInteger(artifact.task_completion_score) || artifact.task_completion_score < 1 || artifact.task_completion_score > 5) invalid.push("task_completion_score");
-for (const key of ["summary", "pr_summary"]) if (typeof artifact[key] !== "string") invalid.push(key);
-for (const key of ["human_review_focus", "efficiency_findings", "warnings"]) {
-  if (!Array.isArray(artifact[key]) || !artifact[key].every((v) => typeof v === "string")) invalid.push(key);
-}
-if (!Array.isArray(artifact.stage_value) || !artifact.stage_value.every((item) => item && typeof item.stage === "string" && stageValueValues.has(item.value) && typeof item.reason === "string")) invalid.push("stage_value");
-if (!Array.isArray(artifact.kaseki_improvement_opportunities) || !artifact.kaseki_improvement_opportunities.every((item) => item && typeof item.category === "string" && priorityValues.has(item.priority) && typeof item.suggestion === "string")) invalid.push("kaseki_improvement_opportunities");
-if (invalid.length) throw new Error("invalid run-evaluation fields: " + invalid.join(", "));
-artifact.timestamp = new Date().toISOString();
-artifact.model = model;
-artifact.actual_model = actualModel;
-fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
-' "$RUN_EVALUATION_CANDIDATE_ARTIFACT" "$RUN_EVALUATION_ARTIFACT" "$KASEKI_RUN_EVALUATION_MODEL" "$RUN_EVALUATION_ACTUAL_MODEL" 2>/dev/null; then
-    RUN_EVALUATION_EXIT=86
-    emit_error_event "run_evaluation_artifact_invalid" "Run-evaluation Pi did not write a schema-valid JSON artifact" "continue"
+  if [ "$RUN_EVALUATION_EXIT" -eq 0 ] && ! validate_run_evaluation_candidate; then
+    emit_error_event "run_evaluation_artifact_invalid" "Run-evaluation Pi did not write a schema-valid JSON artifact; retrying once with the artifact contract." "continue"
+    rm -f "$RUN_EVALUATION_CANDIDATE_ARTIFACT"
+    evaluation_retry_prompt="$evaluation_prompt
+
+Recovery attempt: the previous response did not satisfy the run-evaluation artifact schema. Before finishing, write exactly one valid JSON object to $RUN_EVALUATION_CANDIDATE_ARTIFACT with every required field and read it back. Do not return prose instead of the artifact."
+    evaluation_retry_start="$(date +%s)"
+    run_pi_with_retry "$RUN_EVALUATION_RAW_EVENTS" "$KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS" "$KASEKI_RUN_EVALUATION_MODEL" "$evaluation_retry_prompt" "run-evaluation-summary" "" "run-evaluation"
+    RUN_EVALUATION_EXIT="$?"
+    RUN_EVALUATION_DURATION_SECONDS=$((RUN_EVALUATION_DURATION_SECONDS + $(date +%s) - evaluation_retry_start))
+    if [ "$RUN_EVALUATION_EXIT" -eq 0 ] && validate_run_evaluation_candidate; then
+      RUN_EVALUATION_WARNING="run_evaluation_recovered_invalid_artifact"
+      emit_progress "run evaluation" "recovered after invalid artifact retry"
+    else
+      RUN_EVALUATION_EXIT=86
+      emit_error_event "run_evaluation_artifact_invalid" "Run-evaluation retry did not write a schema-valid JSON artifact" "continue"
+    fi
   fi
   rm -f "$RUN_EVALUATION_CANDIDATE_ARTIFACT"
   kaseki-pi-event-filter "$RUN_EVALUATION_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/run-evaluation-events.jsonl "${KASEKI_RESULTS_DIR}"/run-evaluation-summary.json 2>/dev/null || true
