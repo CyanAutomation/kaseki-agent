@@ -529,6 +529,171 @@ describe('artifact-recovery helper functions (direct unit tests)', () => {
       expect(entry.recovery_attempted).toBe(true);
     });
   });
+
+  describe('recoverArtifactFromEventStream direct recovery paths', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-recovery-direct-'));
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    function writeRawEvents(...objects: unknown[]): string {
+      const rawPath = path.join(tmpDir, 'raw-events.jsonl');
+      fs.writeFileSync(rawPath, objects.map((object) => JSON.stringify(object)).join('\n'));
+      return rawPath;
+    }
+
+    test('returns false when the raw event stream cannot be read', () => {
+      const candidatePath = path.join(tmpDir, 'candidate.json');
+
+      expect(recoverArtifactFromEventStream({
+        phase: 'goal-setting',
+        rawPath: path.join(tmpDir, 'missing.jsonl'),
+        candidatePath,
+        resultsDir: tmpDir,
+      })).toBe(false);
+      expect(fs.existsSync(candidatePath)).toBe(false);
+    });
+
+    test('recovers a single valid goal-setting candidate directly', () => {
+      const candidatePath = path.join(tmpDir, 'goal-setting.json');
+      const rawPath = writeRawEvents({
+        original_prompt: 'Fix issue',
+        upgraded_goal: 'Fix issue with tests',
+        reasoning: 'Clarify requirements',
+        key_requirements: [],
+        success_criteria: [],
+      });
+
+      expect(recoverArtifactFromEventStream({
+        phase: 'goal-setting',
+        rawPath,
+        candidatePath,
+        resultsDir: tmpDir,
+      })).toBe(true);
+      expect(JSON.parse(fs.readFileSync(candidatePath, 'utf8'))).toMatchObject({
+        upgraded_goal: 'Fix issue with tests',
+      });
+    });
+
+    test('does not recover goal-setting when multiple valid candidates exist', () => {
+      const candidatePath = path.join(tmpDir, 'goal-setting.json');
+      const first = {
+        original_prompt: 'Prompt one',
+        upgraded_goal: 'Goal one',
+        reasoning: 'Reason one',
+        key_requirements: [],
+        success_criteria: [],
+      };
+      const second = {
+        original_prompt: 'Prompt two',
+        upgraded_goal: 'Goal two',
+        reasoning: 'Reason two',
+        key_requirements: [],
+        success_criteria: [],
+      };
+      const rawPath = writeRawEvents(first, second);
+
+      expect(recoverArtifactFromEventStream({
+        phase: 'goal-setting',
+        rawPath,
+        candidatePath,
+        resultsDir: tmpDir,
+      })).toBe(false);
+      expect(fs.existsSync(candidatePath)).toBe(false);
+    });
+
+    test('recovers strict scouting candidates directly', () => {
+      const candidatePath = path.join(tmpDir, 'scouting.json');
+      const rawPath = writeRawEvents({
+        task: 'Implement route tests',
+        requirements: [],
+        relevant_files: [],
+        observations: [],
+        plan: [],
+        validation: [],
+        risks: [],
+        test_impact: [],
+      });
+
+      expect(recoverArtifactFromEventStream({
+        phase: 'scouting',
+        rawPath,
+        candidatePath,
+        resultsDir: tmpDir,
+      })).toBe(true);
+      expect(JSON.parse(fs.readFileSync(candidatePath, 'utf8'))).toMatchObject({
+        task: 'Implement route tests',
+      });
+    });
+
+    test('recovers partial scouting candidates directly', () => {
+      const candidatePath = path.join(tmpDir, 'scouting.json');
+      const rawPath = writeRawEvents({ task: 'Recover minimal scouting output' });
+
+      expect(recoverArtifactFromEventStream({
+        phase: 'scouting',
+        rawPath,
+        candidatePath,
+        resultsDir: tmpDir,
+      })).toBe(true);
+      expect(JSON.parse(fs.readFileSync(candidatePath, 'utf8'))).toEqual({
+        task: 'Recover minimal scouting output',
+      });
+    });
+
+    test('selects the most complete scouting candidate directly', () => {
+      const candidatePath = path.join(tmpDir, 'scouting.json');
+      const rawPath = writeRawEvents(
+        { task: 'Minimal candidate' },
+        {
+          task: 'Richer candidate',
+          requirements: [],
+          relevant_files: [],
+          observations: [],
+        },
+      );
+
+      expect(recoverArtifactFromEventStream({
+        phase: 'scouting',
+        rawPath,
+        candidatePath,
+        resultsDir: tmpDir,
+      })).toBe(true);
+      expect(JSON.parse(fs.readFileSync(candidatePath, 'utf8'))).toMatchObject({
+        task: 'Richer candidate',
+      });
+    });
+
+    test('returns false and logs when no scouting candidate is recoverable', () => {
+      const candidatePath = path.join(tmpDir, 'scouting.json');
+      const rawPath = writeRawEvents({ message: 'not an artifact' });
+
+      expect(recoverArtifactFromEventStream({
+        phase: 'scouting',
+        rawPath,
+        candidatePath,
+        resultsDir: tmpDir,
+      })).toBe(false);
+      expect(fs.existsSync(candidatePath)).toBe(false);
+      expect(fs.readFileSync(path.join(tmpDir, 'scouting-recovery-diagnostics.jsonl'), 'utf8'))
+        .toContain('no valid JSON objects found');
+    });
+
+    test('returns CLI success code when direct args recover an artifact', () => {
+      const candidatePath = path.join(tmpDir, 'scouting.json');
+      const rawPath = writeRawEvents({ task: 'Direct CLI args' });
+
+      expect(runRecoveryCliFromArgs(['scouting', rawPath, candidatePath, tmpDir])).toBe(0);
+      expect(JSON.parse(fs.readFileSync(candidatePath, 'utf8'))).toMatchObject({
+        task: 'Direct CLI args',
+      });
+    });
+  });
 });
 
 describe('artifact-recovery CLI', () => {

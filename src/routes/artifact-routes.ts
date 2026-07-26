@@ -1,34 +1,17 @@
 import { Router, Request, Response } from 'express';
-import * as path from 'path';
-import * as fs from 'fs';
 import { JobScheduler } from '../job-scheduler';
 import { ResultCache } from '../result-cache';
 import { KasekiApiConfig } from '../kaseki-api-config';
-import { ArtifactResponse, RunArtifactsResponse } from '../kaseki-api-types';
-import { sendErrorResponse } from '../utils/response-helpers';
 import { getJobOrRespond } from '../utils/route-helpers';
-import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
-import { ARTIFACT_METADATA_REGISTRY } from '../artifact-metadata';
-import { isTerminalJobStatus, isArtifactAvailable, getArtifactStatus, getArtifactUnavailableReason, getSafeFileStats } from '../lib/artifact-availability';
-import { renderRunEvaluationPayload, artifactContentType } from './artifact-content-helpers';
+import {
+  buildRunArtifactsResponse,
+  parseArtifactDownloadRequest,
+  readArtifactContent,
+  sendArtifactDownloadResponse,
+  validateRegisteredArtifact,
+} from './artifact-route-helpers';
 
-// All artifacts from the metadata registry
-const ALL_ARTIFACT_NAMES = Object.keys(ARTIFACT_METADATA_REGISTRY);
-
-export function readArtifactContent(
-  filePath: string,
-  jobStatus: 'queued' | 'running' | 'completed' | 'failed',
-  cache: ResultCache
-): string | null {
-  if (!isTerminalJobStatus(jobStatus)) {
-    try {
-      return fs.readFileSync(filePath, 'utf-8');
-    } catch {
-      return null;
-    }
-  }
-  return cache.getOrLoad(filePath);
-}
+export { readArtifactContent };
 
 /**
  * Create artifact-related routes (list artifacts, download artifacts).
@@ -46,116 +29,12 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
       return;
     }
 
-    const fileName = req.params.file;
-    const format = typeof req.query.format === 'string' ? req.query.format.toLowerCase() : undefined;
-    const includeMarkdown = req.query.markdown === 'true' || req.query.markdown === '1';
-    const tailRaw = typeof req.query.tail === 'string' ? req.query.tail : undefined;
-    const tailLines = tailRaw !== undefined && /^\d+$/.test(tailRaw) ? Number.parseInt(tailRaw, 10) : undefined;
-
-    // Validate that the artifact is in the registry
-    if (!ALL_ARTIFACT_NAMES.includes(fileName)) {
-      return sendErrorResponse(
-        res,
-        400,
-        'Bad Request',
-        `Artifact not found in registry: ${fileName}. Available: ${ALL_ARTIFACT_NAMES.join(', ')}`
-      );
+    const request = parseArtifactDownloadRequest(req.params.file, req.query);
+    if (!validateRegisteredArtifact(request.fileName, res)) {
+      return;
     }
 
-    try {
-      // Determine artifact availability
-      const filePath = path.join(config.resultsDir, job.id, fileName);
-      const fileStats = getSafeFileStats(filePath);
-      const status = getArtifactStatus(fileName, job.status, fileStats.exists, fileStats.size);
-
-      // Handle non-available artifacts
-      if (status !== 'available') {
-        if (
-          job.status === 'running' &&
-          fileName === 'stdout.log' &&
-          typeof scheduler.getLiveDockerLogTail === 'function'
-        ) {
-          const liveContent = scheduler.getLiveDockerLogTail(job.id, 300);
-          if (liveContent) {
-            const contentType = artifactContentType(fileName);
-            const response: ArtifactResponse = {
-              file: fileName,
-              contentType,
-              size: Buffer.byteLength(liveContent, 'utf-8'),
-              content: liveContent,
-            };
-            res.setHeader('Content-Type', contentType);
-            return res.json(response);
-          }
-        }
-        const reason = getArtifactUnavailableReason(status, fileName);
-        const statusCode = status === 'pending' ? 202 : 400;
-        return sendErrorResponse(res, statusCode, 'Bad Request', reason);
-      }
-
-      const contentType = artifactContentType(fileName);
-
-      // Read from disk for non-terminal jobs; cache only terminal artifacts.
-      const content = readArtifactContent(filePath, job.status, cache);
-      if (content === null) {
-        return sendErrorResponse(res, 500, 'Internal Server Error', `Failed to read artifact: ${fileName}`);
-      }
-
-      if (tailRaw !== undefined && (tailLines === undefined || tailLines < 1)) {
-        return sendErrorResponse(res, 400, 'Bad Request', 'tail must be a positive integer');
-      }
-
-      if (tailRaw !== undefined && !isLineOrientedArtifact(contentType)) {
-        return sendErrorResponse(res, 400, 'Bad Request', `tail is only supported for line-oriented artifacts, got ${fileName}`);
-      }
-
-      const responseContent = tailLines !== undefined ? tailArtifactContentByLines(content, tailLines) : content;
-
-      const response: ArtifactResponse = {
-        file: fileName,
-        contentType,
-        size: fileStats.size,
-        content: responseContent,
-        ...(tailLines !== undefined ? { truncated: responseContent !== content, tailLines } : {}),
-      };
-
-      // Handle format transformation (rendered JSON)
-      if (format !== undefined) {
-        if (format !== 'rendered') {
-          return sendErrorResponse(res, 400, 'Bad Request', `Unsupported format: ${format}. Supported: rendered`);
-        }
-
-        if (fileName !== 'run-evaluation.json') {
-          return sendErrorResponse(res, 400, 'Bad Request', 'Rendered format is only supported for run-evaluation.json');
-        }
-
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(content);
-        } catch {
-          return sendErrorResponse(res, 422, 'Unprocessable Entity', 'Invalid JSON in run-evaluation.json artifact');
-        }
-
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-          return sendErrorResponse(res, 422, 'Unprocessable Entity', 'run-evaluation.json must contain a JSON object');
-        }
-
-        const rendered = renderRunEvaluationPayload(parsed as Record<string, unknown>, includeMarkdown);
-        res.setHeader('Content-Type', 'application/json');
-        return res.json(rendered);
-      }
-
-      // Return raw artifact response
-      res.setHeader('Content-Type', contentType);
-      res.json(response);
-    } catch (err) {
-      sendErrorResponse(
-        res,
-        500,
-        'Internal Server Error',
-        `Failed to read artifact: ${(err as Error).message}`
-      );
-    }
+    sendArtifactDownloadResponse(request, job, scheduler, config, cache, res);
   });
 
   /**
@@ -168,111 +47,8 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
       return;
     }
 
-    const runDir = job.resultDir || path.join(config.resultsDir, job.id);
-    const artifactMetadata = getRunArtifactMetadata(job.id, runDir, ALL_ARTIFACT_NAMES, isTerminalJobStatus(job.status));
-
-    // Build comprehensive artifact list with metadata
-    const artifacts = ALL_ARTIFACT_NAMES.map((fileName) => {
-      const artifactMeta = ARTIFACT_METADATA_REGISTRY[fileName];
-      const fileMeta = artifactMetadata[fileName] ?? { exists: false, size: 0 };
-      const liveStdout =
-        job.status === 'running' &&
-        fileName === 'stdout.log' &&
-        !fileMeta.exists &&
-        typeof scheduler.getLiveDockerLogTail === 'function'
-          ? scheduler.getLiveDockerLogTail(job.id, 300)
-          : '';
-      const effectiveSize = liveStdout ? Buffer.byteLength(liveStdout, 'utf-8') : fileMeta.size;
-      const available = liveStdout
-        ? true
-        : isArtifactAvailable(fileName, job.status, fileMeta.exists, fileMeta.size);
-
-      return {
-        name: fileName,
-        size: effectiveSize,
-        contentType: artifactMeta?.contentType || 'application/octet-stream',
-        available,
-        description: artifactMeta?.description,
-        availability: artifactMeta?.availability,
-        triageOrder: artifactMeta?.triageOrder,
-      };
-    });
-
-    const runMetadata = readArtifactMetadata(runDir);
-    const preAgentValidationFailed =
-      String(runMetadata?.failed_command ?? '').includes('pre-agent validation') ||
-      Number(runMetadata?.pre_validation_exit_code ?? 0) !== 0;
-    const providerFailure =
-      String(runMetadata?.provider_error_type ?? '').trim().length > 0 ||
-      String(runMetadata?.failed_command ?? '').includes('pi provider');
-
-    const triageRank = (artifactName: string, fallback: number | undefined): number => {
-      if (providerFailure) {
-        if (artifactName === '.gateway-diagnostics.jsonl') return 0;
-        if (artifactName === 'provider-attempts.jsonl') return 1;
-        if (artifactName === 'gateway-summary.json') return 2;
-        // Preserve usable work even when the provider fails after editing.
-        if (artifactName === 'git.diff') return 3;
-        if (artifactName === 'failure.json') return 4;
-        if (artifactName === 'result-summary.md') return 5;
-        if (artifactName === 'pi-agent-diagnostics.jsonl') return 6;
-        if (artifactName === 'pi-events.jsonl') return 7;
-      }
-      if (preAgentValidationFailed) {
-        if (artifactName === 'test-baseline-comparison.json') return 0;
-        if (artifactName === 'pre-validation.log') return 1;
-        if (artifactName === 'failure.json') return 2;
-        if (artifactName === 'result-summary.md') return 3;
-      }
-      return fallback ?? 999;
-    };
-
-    // Determine recommended triage order (failure-aware triageOrder, then availability)
-    const recommended = artifacts
-      .filter((a) => a.available)
-      .sort((a, b) => triageRank(a.name, a.triageOrder) - triageRank(b.name, b.triageOrder))
-      .slice(0, 5) // Top 5 for quick triage
-      .map((a) => a.name);
-
-    const response: RunArtifactsResponse = {
-      id: job.id,
-      runStatus: job.status,
-      exitCode: job.exitCode,
-      artifacts,
-      recommended,
-      artifactCount: artifacts.filter((a) => a.available).length,
-      downloadBaseUrl: `/api/results/${job.id}/`,
-    };
-
-    res.json(response);
+    res.json(buildRunArtifactsResponse(job, scheduler, config));
   });
 
   return router;
-}
-
-function readArtifactMetadata(runDir: string): Record<string, unknown> {
-  try {
-    const metadataPath = path.join(runDir, 'metadata.json');
-    if (fs.existsSync(metadataPath)) {
-      return JSON.parse(fs.readFileSync(metadataPath, 'utf8')) as Record<string, unknown>;
-    }
-  } catch {
-    // Keep artifact listing resilient when metadata is malformed.
-  }
-  return {};
-}
-
-function isLineOrientedArtifact(contentType: string): boolean {
-  return contentType.startsWith('text/') || contentType === 'application/x-jsonl' || contentType === 'application/jsonl';
-}
-
-function tailArtifactContentByLines(content: string, maxLines: number): string {
-  if (maxLines <= 0) {
-    return '';
-  }
-  const hadTrailingNewline = /\r?\n$/.test(content);
-  const normalized = hadTrailingNewline ? content.replace(/\r?\n$/, '') : content;
-  const lines = normalized.split(/\r?\n/);
-  const tailed = lines.length > maxLines ? lines.slice(-maxLines).join('\n') : normalized;
-  return hadTrailingNewline && tailed.length > 0 ? `${tailed}\n` : tailed;
 }
