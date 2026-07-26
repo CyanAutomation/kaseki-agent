@@ -208,6 +208,7 @@ RUN chmod +x \
     && install -m 0644 /app/scripts/lib/json.sh /usr/local/bin/scripts/lib/json.sh \
     && install -m 0644 /app/scripts/lib/json-events.sh /usr/local/bin/scripts/lib/json-events.sh \
     && install -m 0644 /app/scripts/lib/provider-retry.sh /usr/local/bin/scripts/lib/provider-retry.sh \
+    && install -m 0644 /app/scripts/lib/repo-memory.sh /usr/local/bin/scripts/lib/repo-memory.sh \
     && chmod 0755 \
       /usr/local/bin/kaseki-entrypoint \
       /usr/local/bin/kaseki-pi-event-filter \
@@ -351,6 +352,7 @@ RUN mkdir -p /scripts \
     && install -m 0644 /app/scripts/lib/json.sh /usr/local/bin/scripts/lib/json.sh \
     && install -m 0644 /app/scripts/lib/json-events.sh /usr/local/bin/scripts/lib/json-events.sh \
     && install -m 0644 /app/scripts/lib/provider-retry.sh /usr/local/bin/scripts/lib/provider-retry.sh \
+    && install -m 0644 /app/scripts/lib/repo-memory.sh /usr/local/bin/scripts/lib/repo-memory.sh \
     && chmod 0755 \
       /usr/local/bin/kaseki-entrypoint \
       /usr/local/bin/kaseki-pi-event-filter \
