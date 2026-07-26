@@ -61,11 +61,40 @@ run_startup_check() {
   fi
 }
 
+run_missing_gateway_configuration_check() {
+  local output_file="$1"
+
+  set +e
+  (
+    set -euo pipefail
+    # shellcheck source=../scripts/lib/model-resolution.sh
+    . "$PROJECT_ROOT/scripts/lib/model-resolution.sh"
+    KASEKI_PROVIDER=gateway
+    KASEKI_MODEL=gateway/custom-default
+    unset LLM_GATEWAY_URL
+    kaseki_resolve_provider_model
+    printf 'Provider: %s\n' "$KASEKI_PROVIDER"
+    printf 'Model: %s\n' "$KASEKI_MODEL"
+    kaseki_validate_early_provider_configuration
+  ) >"$output_file" 2>&1
+  local status=$?
+  set -e
+
+  [ "$status" -eq 2 ] || fail "expected missing gateway configuration exit 2, got $status" "$output_file"
+}
+
 unset_output="$TMP_DIR/unset-provider.out"
 openrouter_output="$TMP_DIR/openrouter-provider.out"
 
 run_startup_check "__unset__" "$unset_output"
 run_startup_check "openrouter" "$openrouter_output"
+
+missing_gateway_output="$TMP_DIR/missing-gateway.out"
+run_missing_gateway_configuration_check "$missing_gateway_output"
+
+grep -Fq 'Missing LLM Gateway configuration for provider=gateway.' "$missing_gateway_output" || fail "missing gateway configuration message was not emitted" "$missing_gateway_output"
+grep -Fqx 'Provider: gateway' "$missing_gateway_output" || fail "missing config validation did not select exactly provider gateway" "$missing_gateway_output"
+grep -Fqx 'Model: gateway/custom-default' "$missing_gateway_output" || fail "missing config validation did not preserve the explicit gateway model" "$missing_gateway_output"
 
 if ! grep -Fq 'Active LLM provider: gateway' "$unset_output"; then
   fail 'unset KASEKI_PROVIDER did not resolve to gateway' "$unset_output"
