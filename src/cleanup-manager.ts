@@ -338,7 +338,7 @@ export async function cleanupOldRuns(
         fs.openSync(
           run.path,
           fs.constants.O_RDONLY |
-            (fs.constants.O_DIRECTORY ?? 0) |
+            fs.constants.O_DIRECTORY |
             (fs.constants.O_NOFOLLOW ?? 0),
         ),
       );
