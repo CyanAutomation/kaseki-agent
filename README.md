@@ -66,6 +66,24 @@ kaseki-agent report kaseki-1
 kaseki-agent status kaseki-1
 ```
 
+### 5. Run API Locally
+
+```bash
+# Start local API on port 8080
+kaseki-agent serve --port 8080 &
+
+# Health check (no auth required)
+curl http://localhost:8080/health
+
+# Authenticated endpoint
+KASEKI_API_KEYS=sk-local-secret \
+  curl -H "Authorization: Bearer sk-local-secret" \
+  http://localhost:8080/api/preflight
+
+# Override default URL
+KASEKI_API_URL=http://localhost:9090 kaseki-agent serve --port 9090
+```
+
 ---
 
 ## Overview
