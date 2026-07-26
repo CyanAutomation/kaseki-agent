@@ -241,6 +241,21 @@ if [ "$source_status" -ne 0 ]; then
   exit 1
 fi
 kaseki_resolve_provider_model
+KASEKI_PROVIDER_VALIDATION_HELPER="${KASEKI_PROVIDER_VALIDATION_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/lib/provider-validation.sh}"
+if [ ! -r "$KASEKI_PROVIDER_VALIDATION_HELPER" ] && [ -r /app/scripts/lib/provider-validation.sh ]; then
+  KASEKI_PROVIDER_VALIDATION_HELPER="/app/scripts/lib/provider-validation.sh"
+fi
+if [ ! -r "$KASEKI_PROVIDER_VALIDATION_HELPER" ]; then
+  printf 'ERROR: Provider validation helper is not readable. Expected %s or /app/scripts/lib/provider-validation.sh. This worker image or mounted template is incomplete; rebuild the image or restore scripts/lib/provider-validation.sh.\n' "$KASEKI_PROVIDER_VALIDATION_HELPER" >&2
+  exit 66
+fi
+# shellcheck source=/dev/null
+. "$KASEKI_PROVIDER_VALIDATION_HELPER"
+source_status=$?
+if [ "$source_status" -ne 0 ]; then
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_PROVIDER_VALIDATION_HELPER" "$source_status" >&2
+  exit 1
+fi
 KASEKI_DRY_RUN="${KASEKI_DRY_RUN:-0}"
 KASEKI_STARTUP_CHECK_MODE="${KASEKI_STARTUP_CHECK_MODE:-boot}"
 KASEKI_BASELINE_VALIDATION_DRY_RUN="${KASEKI_BASELINE_VALIDATION_DRY_RUN:-0}"
@@ -7973,15 +7988,8 @@ llm_gateway_api_key_source=""
 # Other providers (openrouter, anthropic, etc.) use their own credential mechanisms.
 if [ "$KASEKI_PROVIDER" = "gateway" ]; then
   # Stage 1: Check explicit gateway URL
-  if [ -z "${LLM_GATEWAY_URL:-}" ]; then
+  if ! kaseki_validate_early_provider_configuration 2> >(tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2); then
     set_current_stage "agent setup"
-    printf 'Missing LLM Gateway configuration for provider=gateway.\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
-    printf '  Set LLM_GATEWAY_URL with an OpenAI-compatible endpoint:\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
-    printf '    - CloudFlare AI: https://gateway.ai.cloudflare.com/v1/{account_id}/{namespace}/compat\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
-    printf '    - Azure OpenAI: https://{resource}.openai.azure.com/\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
-    printf '    - Ollama: http://localhost:11434/v1\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
-    printf '    - Other: {your-endpoint}\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
-    printf '  Or set KASEKI_PROVIDER=openrouter and provide OPENROUTER_API_KEY to use OpenRouter instead.\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
     : > "$RAW_EVENTS"
     PI_EXIT=2
     STATUS=2
