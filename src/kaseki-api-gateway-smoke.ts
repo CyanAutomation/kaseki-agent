@@ -709,13 +709,55 @@ function missingAssistantTextResult(
   };
 }
 
-function parseCodingShapeValidated(assistantText: string, multiTurnValidated: boolean): boolean {
-  try {
-    const smokePayload = JSON.parse(assistantText.trim()) as Record<string, unknown>;
-    return smokePayload.status === 'ok' && smokePayload.phase === 'coding' && multiTurnValidated;
-  } catch {
-    return false;
+/**
+ * Find JSON objects embedded in an assistant response without treating braces
+ * inside JSON strings as object boundaries.
+ */
+function extractJsonObjects(text: string): Record<string, unknown>[] {
+  const objects: Record<string, unknown>[] = [];
+
+  for (let start = text.indexOf('{'); start !== -1; start = text.indexOf('{', start + 1)) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let index = start; index < text.length; index += 1) {
+      const character = text[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (character === '\\') escaped = true;
+        else if (character === '"') inString = false;
+        continue;
+      }
+
+      if (character === '"') inString = true;
+      else if (character === '{') depth += 1;
+      else if (character === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          try {
+            const value = JSON.parse(text.slice(start, index + 1));
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+              objects.push(value as Record<string, unknown>);
+            }
+          } catch {
+            // Continue looking for a later, valid JSON object.
+          }
+          break;
+        }
+      }
+    }
   }
+
+  return objects;
+}
+
+export function parseCodingShapeValidated(assistantText: string, multiTurnValidated: boolean): boolean {
+  if (!multiTurnValidated) return false;
+
+  return extractJsonObjects(assistantText).some(
+    (smokePayload) => smokePayload.status === 'ok' && smokePayload.phase === 'coding',
+  );
 }
 
 function codingContractErrorResult(

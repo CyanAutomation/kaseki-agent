@@ -20,6 +20,7 @@ import {
   buildCloudflareInferenceEndpoint,
   resolveGatewayModel,
   createPiProviderSmokeWorkspace,
+  parseCodingShapeValidated,
 } from './kaseki-api-gateway-smoke';
 import { buildGatewayAuthHeaders } from './gateway-detection/detect-gateway-provider';
 
@@ -92,6 +93,28 @@ describe('LLM Gateway Test', () => {
     } finally {
       fs.rmSync(workspace, { recursive: true, force: true });
     }
+  });
+
+  describe('parseCodingShapeValidated', () => {
+    it('accepts the coding contract after explanatory prose or a markdown fence', () => {
+      const response = [
+        'I inspected package.json and found one documentation improvement.',
+        '```json',
+        '{"status":"ok","phase":"coding","changed_files":[]}',
+        '```',
+      ].join('\n');
+
+      expect(parseCodingShapeValidated(response, true)).toBe(true);
+    });
+
+    it('rejects a coding-shaped response without the required multi-turn tool flow', () => {
+      expect(parseCodingShapeValidated('{"status":"ok","phase":"coding"}', false)).toBe(false);
+    });
+
+    it('rejects malformed or unrelated JSON objects', () => {
+      expect(parseCodingShapeValidated('Summary: {not JSON}', true)).toBe(false);
+      expect(parseCodingShapeValidated('{"status":"ok","phase":"scouting"}', true)).toBe(false);
+    });
   });
 
   describe('testGatewayConnectivity', () => {
