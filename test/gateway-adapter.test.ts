@@ -1,3 +1,5 @@
+import { normalizeGatewayRequest } from '../src/gateway/normalize-request';
+
 /**
  * Gateway Adapter Request Format Tests (TDD)
  *
@@ -13,18 +15,23 @@ describe('Gateway Adapter Request Format', () => {
      * Test 1: Simple string input should pass through unchanged
      * Expected: input stays as string in the request body
      */
-    it('should handle simple string input without modification', () => {
+    it('should preserve the complete string-input payload through production normalization', () => {
       const simpleInput = 'You are validating an OpenAI Responses API gateway for Kaseki agent prompts.';
 
-      // Gateway adapter should pass this through as-is to /responses endpoint
-      const requestPayload = {
+      const requestPayload = normalizeGatewayRequest({
         model: 'auto',
         input: simpleInput,
         max_output_tokens: 256,
-      };
+        metadata: { phase: 'validation' },
+      });
 
-      expect(requestPayload.input).toEqual(simpleInput);
-      expect(typeof requestPayload.input).toBe('string');
+      expect(requestPayload).toEqual({
+        model: 'auto',
+        input: simpleInput,
+        max_output_tokens: 256,
+        metadata: { phase: 'validation' },
+      });
+      expect(requestPayload).not.toHaveProperty('messages');
     });
 
     /**
