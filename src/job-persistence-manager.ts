@@ -56,6 +56,14 @@ export interface JobPersistenceManagerDependencies {
   ) => void;
 }
 
+/** Raised when a lock-scoped consumer cannot safely inspect the jobs index. */
+export class JobIndexUnavailableError extends Error {
+  constructor(indexPath: string, cause?: unknown) {
+    super(`Unable to read jobs index ${indexPath}`, { cause });
+    this.name = 'JobIndexUnavailableError';
+  }
+}
+
 export function createJobPersistenceProcessLivenessChecker(
   kill: (pid: number, signal: 0) => unknown = process.kill,
   platform: NodeJS.Platform = process.platform,
@@ -90,7 +98,7 @@ export class JobPersistenceManager {
   private nextIdPath: string;
   private idLockPath: string;
   private indexLockPath: string;
-  private config: KasekiApiConfig;
+  private config: Pick<KasekiApiConfig, 'resultsDir' | 'jobIndexMaxEntries'>;
   private logger: EventLogger;
   private jobs = new Map<string, Job>();
   private activeLockOwners = new Map<string, LockOwnerMetadata>();
@@ -106,7 +114,7 @@ export class JobPersistenceManager {
   ) => void;
 
   constructor(
-    config: KasekiApiConfig,
+    config: Pick<KasekiApiConfig, 'resultsDir' | 'jobIndexMaxEntries'>,
     dependencies: JobPersistenceManagerDependencies = {},
   ) {
     this.config = config;
@@ -126,6 +134,37 @@ export class JobPersistenceManager {
       dependencies.restartClaimLeaseMs ?? 5 * 60 * 1000;
     this.restartOwnerToken = `${this.pid}-${this.now()}-${this.lockTokenGenerator()}`;
     this.staleLockQuarantineObserver = dependencies.staleLockQuarantineObserver;
+  }
+
+  /**
+   * Inspect the durable jobs index and perform a related filesystem operation
+   * while holding the scheduler's jobs-index lock. Consumers must keep the
+   * callback short and synchronous so scheduler transitions are not delayed.
+   */
+  async withLockedJobsIndex<T>(
+    operation: (jobs: readonly PersistedJob[]) => T,
+  ): Promise<T> {
+    return this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
+      if (!fs.existsSync(this.indexPath)) return operation([]);
+
+      let jobs: readonly PersistedJob[];
+      try {
+        const parsed = JSON.parse(fs.readFileSync(this.indexPath, 'utf-8')) as {
+          jobs?: unknown;
+        };
+        if (
+          parsed === null ||
+          typeof parsed !== 'object' ||
+          (parsed.jobs !== undefined && !Array.isArray(parsed.jobs))
+        ) {
+          throw new Error('jobs index must contain a jobs array');
+        }
+        jobs = (parsed.jobs ?? []) as PersistedJob[];
+      } catch (error) {
+        throw new JobIndexUnavailableError(this.indexPath, error);
+      }
+      return operation(jobs);
+    });
   }
 
   /**
@@ -782,10 +821,7 @@ export class JobPersistenceManager {
     }
   }
 
-  private releaseLock(
-    lockPath: string,
-    owner: LockOwnerMetadata,
-  ): void {
+  private releaseLock(lockPath: string, owner: LockOwnerMetadata): void {
     const activeOwner = this.activeLockOwners.get(lockPath);
     if (!activeOwner || activeOwner.token !== owner.token) {
       return;

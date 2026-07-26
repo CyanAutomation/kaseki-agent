@@ -365,6 +365,59 @@ describe('cleanup-manager', () => {
       expect(refreshedPlan.retainedRunNames).toEqual(new Set(['kaseki-1']));
     });
 
+    it.each(['queued', 'running'] as const)(
+      'preserves a candidate that transitions to %s after cleanup planning',
+      async (status) => {
+        const runPath = path.join(resultsDir, 'kaseki-1');
+        const cacheEntry = path.join(cacheDir, 'candidate-cache');
+        fs.mkdirSync(runPath);
+        fs.writeFileSync(path.join(runPath, 'result.txt'), 'keep me');
+        fs.mkdirSync(cacheEntry);
+        fs.writeFileSync(path.join(cacheEntry, '.used-by-runs'), 'kaseki-1\n');
+        fs.writeFileSync(
+          path.join(resultsDir, '.kaseki-api-jobs.json'),
+          JSON.stringify({ jobs: [{ id: 'kaseki-1', status: 'completed' }] }),
+        );
+
+        const result = await cleanupOldRuns(resultsDir, cacheDir, 0, false, {
+          afterPlanning: () => {
+            fs.writeFileSync(
+              path.join(resultsDir, '.kaseki-api-jobs.json'),
+              JSON.stringify({ jobs: [{ id: 'kaseki-1', status }] }),
+            );
+          },
+        });
+
+        expect(result.deletedCount).toBe(0);
+        expect(fs.readFileSync(path.join(runPath, 'result.txt'), 'utf-8')).toBe(
+          'keep me',
+        );
+        expect(fs.existsSync(cacheEntry)).toBe(true);
+      },
+    );
+
+    it('does not delete a directory that replaced the planned run', async () => {
+      const runPath = path.join(resultsDir, 'kaseki-1');
+      fs.mkdirSync(runPath);
+      fs.writeFileSync(
+        path.join(resultsDir, '.kaseki-api-jobs.json'),
+        JSON.stringify({ jobs: [{ id: 'kaseki-1', status: 'completed' }] }),
+      );
+
+      const result = await cleanupOldRuns(resultsDir, cacheDir, 0, false, {
+        afterPlanning: () => {
+          fs.rmSync(runPath, { recursive: true });
+          fs.mkdirSync(runPath);
+          fs.writeFileSync(path.join(runPath, 'replacement.txt'), 'safe');
+        },
+      });
+
+      expect(result.deletedCount).toBe(0);
+      expect(
+        fs.readFileSync(path.join(runPath, 'replacement.txt'), 'utf-8'),
+      ).toBe('safe');
+    });
+
     it('aborts cleanup when the scheduler index is malformed', async () => {
       const runPath = path.join(resultsDir, 'kaseki-1');
       fs.mkdirSync(runPath);
@@ -416,12 +469,16 @@ describe('cleanup-manager', () => {
         indexPath,
         `${JSON.stringify({ jobs: [] })}${' '.repeat(16 * 1024 * 1024)}`,
       );
-      const writer = spawn('bash', [
-        '-c',
-        'while true; do printf " " >> "$1"; done',
-        'scheduler-index-writer',
-        indexPath,
-      ], { stdio: 'ignore' });
+      const writer = spawn(
+        'bash',
+        [
+          '-c',
+          'while true; do printf " " >> "$1"; done',
+          'scheduler-index-writer',
+          indexPath,
+        ],
+        { stdio: 'ignore' },
+      );
 
       try {
         // The large file ensures the concurrent writer changes its metadata
