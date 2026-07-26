@@ -2,7 +2,7 @@
 name: environment-configuration
 description: Complete reference for configuring kaseki-agent via environment variables
 tags: [kaseki, configuration, environment-variables, settings, secrets, tuning]
-relatedSkills: [cost-optimization, performance-tuning, docker-image-management, distributed-deployment]
+relatedSkills: [cost-optimization, performance-tuning, docker-image-management, distributed-deployment, ci-cd-integration, quality-gate-config, disaster-recovery]
 ---
 
 # Environment Configuration for Kaseki Agent

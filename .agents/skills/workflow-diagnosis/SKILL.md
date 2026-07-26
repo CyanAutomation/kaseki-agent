@@ -2,7 +2,7 @@
 name: workflow-diagnosis
 description: Diagnosing kaseki run failures and interpreting artifacts
 tags: [kaseki, troubleshooting, diagnostics, debugging]
-relatedSkills: [prompt-engineering, quality-gate-config, test-automation, docker-image-management, dependency-cache-optimization, result-report-analysis, ci-cd-integration, distributed-deployment, disaster-recovery]
+relatedSkills: [prompt-engineering, quality-gate-config, test-automation, docker-image-management, dependency-cache-optimization, result-report-analysis, ci-cd-integration, distributed-deployment, disaster-recovery, environment-configuration]
 ---
 
 # Workflow Diagnosis for Kaseki Agent
@@ -102,6 +102,8 @@ Use the **Exit Code Mapping** table below to jump to the right artifact.
 | 4 | Diff exceeds max bytes | `git.diff`, `changed-files.txt` | [Quality Gate Configuration](quality-gate-config.md) |
 | 5 | Changed file outside allowlist | `changed-files.txt`, `quality.log` | [Quality Gate Configuration](quality-gate-config.md) |
 | 6 | Secret scan hit (sk-or-* leak) | `secret-scan.log` | [Prompt Engineering](prompt-engineering.md) |
+| 7 | Validation phase files outside allowlist | `quality.log`, `changed-files.txt` | [Quality Gate Configuration](quality-gate-config.md) |
+| 88 | Provider/Model error (non-retryable) | `metadata.json`, `quality.log`, `pi-events.jsonl` | [Environment Configuration](environment-configuration.md) |
 | 124 | Pi agent timeout | `pi-summary.json`, `stdout.log` | [Prompt Engineering](prompt-engineering.md) or [Docker Image Management](docker-image-management.md) |
 | Other | Validation command failure | `validation.log`, exit code in metadata | [Test Automation](test-automation.md) |
 
@@ -296,6 +298,109 @@ grep "sk-or-" /agents/kaseki-results/kaseki-N/pi-events.jsonl
 # Revoke/rotate any exposed credentials immediately
 ```
 
+### Pattern 7: LLM Provider Error (Exit Code 88)
+
+**Symptom**: The LLM provider returned an error that could not be recovered after automatic retry.
+
+**Quick Diagnosis**:
+```bash
+cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.provider_error_type, .provider_error_message, .provider_error_retry_result'
+# Output: Error classification, full error text, retry outcome
+
+cat /agents/kaseki-results/kaseki-N/quality.log | grep -i provider
+# Shows provider error details
+```
+
+**Automatic Retry Behavior**:
+
+Kaseki-agent automatically retries once for transient provider errors:
+- **HTTP 503** (Service Unavailable)
+- **HTTP 429** (Rate Limited)  
+- **Connection errors** (ECONNRESET, ETIMEDOUT)
+- **Model temporarily unavailable**
+
+Exit code 88 means the error was non-retryable OR the retry also failed.
+
+**Root Causes**:
+
+**Transient Errors (Retried Automatically)**:
+1. **Service unavailable (503)** → Provider experiencing outage
+   - Remediation: Wait 5-10 minutes and retry the run
+   - Check provider status page (e.g., https://status.openrouter.io)
+
+2. **Rate limited (429)** → Quota exceeded or request rate too high
+   - Remediation: Wait for rate limit reset or upgrade plan
+   - Check your account quota/credits
+
+**Permanent Errors (Non-Retryable)**:
+1. **Model not found (404)** → Model name is incorrect or model was removed
+   - Remediation: Update `KASEKI_MODEL` to a valid model
+   - List available models: Check OpenRouter.ai or provider docs
+   - Example: `KASEKI_MODEL=openrouter/free`
+
+2. **Deprecated model** → Model discontinued by provider
+   - Remediation: Switch to current model version
+   - See provider migration guide
+
+3. **Authentication error** → Invalid or expired API key
+   - Remediation: Verify `OPENROUTER_API_KEY` is correct
+   - Check account is active and has available credits
+   - See [Environment Configuration](environment-configuration.md) for API key setup
+
+4. **Invalid configuration** → Malformed request parameters
+   - Remediation: Review model-specific parameters
+   - Check for unsupported options in `KASEKI_MODEL`
+
+**Diagnosis Steps**:
+```bash
+# Check provider error metadata
+cat /agents/kaseki-results/kaseki-N/metadata.json | jq '{
+  error_type: .provider_error_type,
+  message: .provider_error_message,
+  retryable: .provider_error_retryable,
+  retry_attempts: .provider_error_retry_attempt_count,
+  retry_result: .provider_error_retry_result
+}'
+
+# Output example:
+# {
+#   "error_type": "model_not_found",
+#   "message": "Model 'anthropic/claude-3-opus' not found",
+#   "retryable": false,
+#   "retry_attempts": 0,
+#   "retry_result": "none"
+# }
+
+# Check what model was used
+cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.model'
+
+# Check Pi events for error details
+cat /agents/kaseki-results/kaseki-N/pi-events.jsonl | grep -i error | head -5
+```
+
+**Remediation Decision Tree**:
+```
+Exit Code 88 Detected
+│
+├─ Is error_type = "model_unavailable" or "service_unavailable"?
+│  ├─ YES → Wait 5-10 min, check provider status, retry
+│  └─ NO → Continue
+│
+├─ Is error_type = "model_not_found" or "deprecated"?
+│  ├─ YES → Update KASEKI_MODEL to valid model
+│  └─ NO → Continue
+│
+├─ Is error_type = "auth_error" or "invalid_api_key"?
+│  ├─ YES → Verify OPENROUTER_API_KEY, check account credits
+│  └─ NO → Continue
+│
+└─ Is error_type = "rate_limit_exceeded"?
+   ├─ YES → Wait for quota reset or upgrade plan
+   └─ NO → Review full error message in metadata.json
+```
+
+**See Also**: [docs/EXIT_CODES.md](../../docs/EXIT_CODES.md#88--providermodel-error-non-retryable) for comprehensive troubleshooting guidance.
+
 ---
 
 ## Performance Analysis
@@ -402,6 +507,8 @@ START: Kaseki run completed
    ├─ 4 → Diff too large (see Pattern 4)
    ├─ 5 → Allowlist violation (see Pattern 3)
    ├─ 6 → Secret leak (see Pattern 6)
+   ├─ 7 → Validation allowlist violation (see Pattern 3)
+   ├─ 88 → Provider/Model error (see Pattern 7)
    ├─ 124 → Timeout (see Pattern 2)
    └─ Other → Check validation.log (Pattern 5)
 

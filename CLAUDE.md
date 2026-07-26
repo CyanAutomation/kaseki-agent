@@ -128,6 +128,20 @@ Two layers, each with its own script:
 /agents/kaseki-cache/             # Optional host-level dependency cache
 ```
 
+**Skills directory** (AI agent domain knowledge):
+
+```
+.agents/skills/                   # Specialized domain knowledge for operations, troubleshooting, optimization
+├── README.md                     # Skills index with decision tree and skill interconnections
+├── workflow-diagnosis/           # Troubleshooting and failure diagnosis
+├── environment-configuration/    # Configuration reference
+├── quality-gate-config/          # Quality gates and validation
+├── prompt-engineering/           # Task prompt design
+├── [11 other skills]/            # See .agents/skills/README.md for complete index
+```
+
+See [.agents/skills/README.md](.agents/skills/README.md) for the complete skills inventory, decision tree, and cross-reference map.
+
 ## Common Commands
 
 ### 🎯 Setup (All New Users Start Here)
@@ -279,7 +293,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for comprehensive deployment guidan
 ## Key Environment Variables
 
 | Variable | Default | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `OPENROUTER_API_KEY` | — | Required (or use file) |
 | `OPENROUTER_API_KEY_FILE` | `~/.kaseki/secrets.json` | Preferred; set by setup wizard |
 | `REPO_URL` | CyanAutomation/crudmapper | Target repo |
@@ -301,7 +315,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for comprehensive deployment guidan
 Quality gates run after the agent completes, before reporting success:
 
 | Gate | Exit Code | Variable |
-|---|---|---|
+| --- | --- | --- |
 | Missing API key / config | 2 | — |
 | Empty git diff | 3 | — |
 | Diff exceeds max bytes | 4 | `KASEKI_MAX_DIFF_BYTES` |
@@ -319,18 +333,21 @@ Quality gates run after the agent completes, before reporting success:
 Kaseki-agent implements automatic retry logic for transient provider/model errors to improve reliability when interacting with LLM gateways (OpenRouter, etc.):
 
 **Automatic retry triggers on:**
+
 - HTTP 503 (Service Unavailable)
 - HTTP 429 (Rate Limited)
 - Connection errors (ECONNRESET, ETIMEDOUT, etc.)
 - "Model is unavailable" (temporary service issue)
 
 **Non-retryable errors** (exit 88 immediately):
+
 - HTTP 404 (Model not found — permanent)
 - "Deprecated" or "discontinued" model (permanent removal)
 - Authentication errors (invalid API key)
 - Malformed requests
 
 **How retry works:**
+
 1. Pi CLI invocation fails with transient error
 2. Error classification in `pi-event-filter.ts` detects retryable pattern
 3. Bash wrapper `run_pi_with_retry()` retries the same invocation once after 3-second delay
@@ -339,6 +356,7 @@ Kaseki-agent implements automatic retry logic for transient provider/model error
 6. If retry also fails, exit code 88
 
 **Metadata fields for provider errors:**
+
 - `provider_error_type` — Classification (model_unavailable, auth_error, etc.)
 - `provider_error_message` — Full error text from provider
 - `provider_error_retryable` — Whether transient (true/false, "true"/"false" string)

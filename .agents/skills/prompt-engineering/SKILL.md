@@ -2,7 +2,7 @@
 name: prompt-engineering
 description: Composing, testing, and validating TASK_PROMPT for kaseki agent runs
 tags: [kaseki, prompts, task-design, security]
-relatedSkills: [quality-gate-config, workflow-diagnosis, cost-optimization, environment-configuration]
+relatedSkills: [quality-gate-config, workflow-diagnosis, cost-optimization, environment-configuration, ci-cd-integration]
 ---
 
 # Prompt Engineering for Kaseki Agent

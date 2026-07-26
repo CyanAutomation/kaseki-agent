@@ -2,7 +2,7 @@
 name: docker-image-management
 description: Managing base images, Pi CLI versions, and multi-arch builds
 tags: [kaseki, docker, devops, image-management, ci-cd]
-relatedSkills: [test-automation, dependency-cache-optimization]
+relatedSkills: [test-automation, dependency-cache-optimization, environment-configuration]
 ---
 
 # Docker Image Management for Kaseki Agent
