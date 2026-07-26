@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.119.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.118.0...v1.119.0) (2026-07-26)
+
+
+### Features
+
+* add skills index and enhance relatedSkills references across multiple skills ([70761bc](https://github.com/CyanAutomation/kaseki-agent/commit/70761bc17f267b4354dd402a8032ef14762cf470))
+* enhance lightweight validation commands and add tail support for artifacts ([7da39b3](https://github.com/CyanAutomation/kaseki-agent/commit/7da39b31af6d0fec574f9511a92a2c7697bd34d9))
+
 # [1.118.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.117.0...v1.118.0) (2026-07-26)
 
 
