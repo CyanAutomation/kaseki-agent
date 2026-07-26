@@ -23,17 +23,32 @@ parse_github_app_token_helper_failure() {
   helper_stderr="$2"
   helper_exit_code="$3"
 
-  TOKEN_HELPER_STDOUT="$helper_stdout" TOKEN_HELPER_STDERR="$helper_stderr" TOKEN_HELPER_EXIT_CODE="$helper_exit_code" node <<'NODE' 2>/dev/null || printf 'github-app-token helper exited with code %s	' "$helper_exit_code"
+  TOKEN_HELPER_STDOUT="$helper_stdout" \
+    TOKEN_HELPER_STDERR="$helper_stderr" \
+    TOKEN_HELPER_EXIT_CODE="$helper_exit_code" \
+    TOKEN_HELPER_GITHUB_PAT="${KASEKI_GITHUB_PAT:-}" \
+    TOKEN_HELPER_GITHUB_TOKEN="${KASEKI_GITHUB_TOKEN:-}" \
+    node <<'NODE' 2>/dev/null || printf 'github-app-token helper exited with code %s	' "$helper_exit_code"
 const stdout = process.env.TOKEN_HELPER_STDOUT || '';
 const stderr = process.env.TOKEN_HELPER_STDERR || '';
 const exitCode = process.env.TOKEN_HELPER_EXIT_CODE || 'unknown';
-const sanitize = (value) => String(value || '')
-  .replace(/-----BEGIN [^-]+ PRIVATE KEY-----[\s\S]*?-----END [^-]+ PRIVATE KEY-----/g, '[redacted private key]')
-  .replace(/\b(?:gh[opsru]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, '[redacted token]')
-  .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[redacted jwt]')
-  .replace(/[\r\n\t]+/g, ' ')
-  .replace(/ {2,}/g, ' ')
-  .trim();
+const configuredSecrets = [
+  process.env.TOKEN_HELPER_GITHUB_PAT,
+  process.env.TOKEN_HELPER_GITHUB_TOKEN,
+].filter(Boolean);
+const sanitize = (value) => {
+  let sanitized = String(value || '');
+  for (const secret of configuredSecrets) {
+    sanitized = sanitized.split(secret).join('[redacted token]');
+  }
+  return sanitized
+    .replace(/-----BEGIN [^-]+ PRIVATE KEY-----[\s\S]*?-----END [^-]+ PRIVATE KEY-----/g, '[redacted private key]')
+    .replace(/\b(?:gh[opsru]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, '[redacted token]')
+    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[redacted jwt]')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/ {2,}/g, ' ')
+    .trim();
+};
 let error = '';
 let status = '';
 try {
