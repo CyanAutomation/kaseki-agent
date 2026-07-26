@@ -11,6 +11,8 @@
  */
 
 import * as fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 const scoutingTemplateDirectory = path.join(__dirname, '..', 'templates', 'scouting');
@@ -256,86 +258,136 @@ describe('Phase 5: Documentation & Maintainability', () => {
     expect(content).toContain('build_scouting_prompt');
   });
 
-  test('should have test cases for scouting prompt examples', () => {
-    const testDir = path.join(__dirname);
-    const testFiles = fs.readdirSync(testDir);
-
-    // Phase 5 requirement: Test examples
-    // Currently minimal - will improve over time
-    expect(testFiles.length).toBeGreaterThan(0);
-  });
 });
 
 /**
  * Integration tests: Validate prompt output JSON structure
  */
 describe('Integration: Scouting Artifact JSON Structure', () => {
-  test('valid scouting artifact should have all required fields', () => {
-    const validArtifact = {
-      task: 'Fix null-safety in parseRole()',
-      requirements: [
-        'Handle null input gracefully',
-        'Return fallback for undefined'
-      ],
-      relevant_files: [
-        { path: 'src/lib/role.ts', reason: 'Contains parseRole function' },
-        { path: 'tests/role.test.ts', reason: 'Tests null cases' }
-      ],
-      observations: [
-        'parseRole() throws on null input',
-        'No fallback logic exists'
-      ],
-      plan: [
-        'Add null check in parseRole()',
-        'Return default Role object on null',
-        'Update tests to verify fallback'
-      ],
-      validation: [
-        'npm test -- role.test.ts',
-        'npm run lint src/lib/role.ts'
-      ],
-      risks: [
-        'Other code may depend on exception',
-        'API contract change'
-      ],
-      test_impact: [
-        {
+  const validateWithScoutingWorkflow = (artifact: unknown) => {
+    const fixtureDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'scouting-prompt-example-'));
+    const fixturePath = path.join(fixtureDirectory, 'scouting-candidate.json');
+    fs.writeFileSync(fixturePath, JSON.stringify(artifact));
+
+    const validation = spawnSync(
+      process.execPath,
+      [path.join(__dirname, '..', 'dist', 'scouting-allowlist.js'), 'validate', fixturePath],
+      { encoding: 'utf8' },
+    );
+    try {
+      fs.rmSync(fixtureDirectory, { recursive: true, force: true });
+    } catch (e) {
+      // Non-fatal cleanup failure, log but continue
+      console.warn(`Failed to clean up temp directory ${fixtureDirectory}:`, e);
+    }
+
+    expect([0, 1]).toContain(validation.status);
+    expect(validation.stderr).toBe('');
+    let result;
+    try {
+      result = JSON.parse(validation.stdout);
+    } catch (e) {
+      throw new Error(`Validator output is not valid JSON: ${validation.stdout}`);
+    }
+    return result;
+  };
+
+  const requiredFields = {
+    requirements: ['Preserve the documented behavior'],
+    relevant_files: [{ path: 'src/lib/role.ts', reason: 'Contains the behavior under test' }],
+    observations: ['The current assertion documents the old behavior'],
+    plan: ['Update the implementation and its focused assertion'],
+    validation: ['npm test -- role.test.ts'],
+    risks: [],
+    suggested_allowlist: {
+      agent_patterns: ['src/lib/role.ts', 'tests/role.test.ts'],
+      validation_patterns: ['tests/role.test.ts'],
+    },
+  };
+
+  test.each([
+    {
+      section: '§ Common Patterns / Pattern 1: Parser/Validation Change',
+      artifact: {
+        ...requiredFields,
+        task: 'Fix null-safety in parseRole()',
+        test_impact: [{
           path: 'tests/role.test.ts',
-          reason: 'null/undefined handling',
-          test_examples: [
-            {
-              type: 'modified_assertion',
-              pattern: 'Null-coalescing',
-              before: 'expect(() => parseRole(null)).toThrow()',
-              after: 'expect(parseRole(null)).toEqual({ name: \'Unnamed\' })',
-              description: 'Updated spec treats null as fallback, not error'
-            }
-          ]
-        }
-      ],
-      suggested_allowlist: {
-        agent_patterns: ['src/lib/role.ts', 'tests/role.test.ts'],
-        validation_patterns: ['src/lib/role.ts', 'tests/role.test.ts', '.coverage/**']
-      }
-    };
+          reason: 'Cover the documented null fallback',
+          test_examples: [{
+            type: 'modified_assertion',
+            pattern: 'Null fallback',
+            description: 'Null becomes a fallback role',
+            before: 'expect(() => parseRole(null)).toThrow()',
+            after: "expect(parseRole(null)).toEqual({ name: 'Unnamed' })",
+          }],
+        }],
+      },
+      expected: { status: 'ok', reason_code: 'valid', details: 'artifact validation passed', errors: [] },
+    },
+    {
+      section: '§ Common Patterns / Pattern 2: Event Field Changes',
+      artifact: {
+        ...requiredFields,
+        task: 'Add async timing to event listeners',
+        test_impact: [{
+          path: 'tests/event-handler.test.ts',
+          reason: 'Update the documented asynchronous timing assertion',
+          test_examples: [{
+            type: 'modified_assertion',
+            pattern: 'Async timing',
+            description: 'The listener now permits 50ms',
+            before: 'await eventPromise; // within 10ms',
+            after: 'await eventPromise; // within 50ms (now async)',
+          }],
+        }],
+      },
+      expected: { status: 'ok', reason_code: 'valid', details: 'artifact validation passed', errors: [] },
+    },
+  ])('accepts a complete example [$section]', ({ artifact, expected }) => {
+    expect(validateWithScoutingWorkflow(artifact)).toEqual(expected);
+  });
 
-    // Validate structure
-    expect(validArtifact).toHaveProperty('task');
-    expect(validArtifact).toHaveProperty('requirements');
-    expect(validArtifact).toHaveProperty('relevant_files');
-    expect(validArtifact).toHaveProperty('observations');
-    expect(validArtifact).toHaveProperty('plan');
-    expect(validArtifact).toHaveProperty('validation');
-    expect(validArtifact).toHaveProperty('risks');
-    expect(validArtifact).toHaveProperty('test_impact');
-    expect(validArtifact).toHaveProperty('suggested_allowlist');
-
-    // Validate field types
-    expect(typeof validArtifact.task).toBe('string');
-    expect(Array.isArray(validArtifact.requirements)).toBe(true);
-    expect(Array.isArray(validArtifact.relevant_files)).toBe(true);
-    expect(validArtifact.relevant_files[0]).toHaveProperty('path');
-    expect(validArtifact.relevant_files[0]).toHaveProperty('reason');
+  test.each([
+    {
+      section: '§ Task Validation / Ambiguous/Invalid tasks',
+      artifact: { ...requiredFields, task: '', test_impact: [] },
+      expected: {
+        status: 'rejected',
+        reason_code: 'missing_required_fields',
+        details: '1 critical scouting validation error: task',
+        errors: [{
+          field: 'task',
+          expected: 'non-empty string',
+          actual: 'empty string',
+          severity: 'critical',
+          suggestion: 'task must be a non-empty string describing the requested work',
+        }],
+      },
+    },
+    {
+      section: '§ Output Schema / relevant_files',
+      artifact: {
+        ...requiredFields,
+        task: 'Rename parseConfig to loadConfigFromFile',
+        relevant_files: [{ path: '../src/config.ts', reason: '' }],
+        test_impact: [],
+      },
+      expected: {
+        status: 'rejected',
+        reason_code: 'schema_mismatch',
+        details: '1 critical scouting validation error: relevant_files[0]',
+        errors: [{
+          field: 'relevant_files[0]',
+          expected: 'object with a repo-relative path and non-empty reason strings',
+          actual: 'object',
+          severity: 'critical',
+          suggestion: 'Each relevant_files entry must use a clean repo-relative path (for example docs/DEVELOPMENT.md) and a separate reason.',
+        }],
+      },
+    },
+  ])('rejects an invalid example with diagnostics [$section]', ({ artifact, expected }) => {
+    expect(validateWithScoutingWorkflow(artifact)).toEqual(expected);
   });
 
 });
