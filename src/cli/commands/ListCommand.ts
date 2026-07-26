@@ -3,9 +3,8 @@
  * List all kaseki instances from the local API service.
  */
 
-import { BaseCommand } from '../BaseCommand';
+import { ApiBackedCommand, type ApiClientFactory } from '../ApiBackedCommand';
 import { createLogger } from '../../logger';
-import { LocalKasekiApiClient } from '../api/LocalKasekiApiClient';
 import type { ConfigManager } from '../../config/ConfigManager';
 import type { RunsListResponse } from '../../kaseki-api-types';
 
@@ -18,17 +17,14 @@ export interface ListApiClient {
   listRuns(): Promise<RunsListResponse>;
 }
 
-type ListApiClientFactory = (configManager: ConfigManager) => ListApiClient;
+type ListApiClientFactory = ApiClientFactory<ListApiClient>;
 
-export class ListCommand extends BaseCommand {
-  private readonly apiClientFactory: ListApiClientFactory;
-
+export class ListCommand extends ApiBackedCommand<ListApiClient> {
   constructor(
     configManager: ConfigManager,
-    apiClientFactory: ListApiClientFactory = (manager) => LocalKasekiApiClient.fromConfig(manager)
+    apiClientFactory?: ListApiClientFactory,
   ) {
-    super(configManager);
-    this.apiClientFactory = apiClientFactory;
+    super(configManager, apiClientFactory);
   }
 
   async execute(args: string[]): Promise<number> {

@@ -17,81 +17,80 @@
 export function extractPiJsonAssistantText(stdout: string): string {
   let text = '';
   for (const line of stdout.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith('{')) continue;
-    let event: any;
-    try {
-      event = JSON.parse(trimmed);
-    } catch {
-      continue;
-    }
+    const event = parseJsonLine(line);
+    if (!event) continue;
+
     const message = event?.message;
     if (!message || message.role !== 'assistant') continue;
-
-    const fragments: string[] = [];
-    const add = (value: unknown) => {
-      if (typeof value === 'string' && value.length > 0 && !fragments.includes(value)) fragments.push(value);
-    };
-
-    // Pi may expose the same assistant snapshot through several compatibility
-    // fields. Collect first so one event contributes the text only once.
-    add(message.text);
-    add(message.output_text);
-    add(message.assistantMessage);
-
-    // Chat Completions API: standard format with choices
-    if (Array.isArray(message.choices) && message.choices.length > 0) {
-      const choice = message.choices[0];
-      // Standard message format
-      if (typeof choice?.message?.content === 'string') {
-        add(choice.message.content);
-      }
-      // Streaming delta format
-      if (typeof choice?.delta?.content === 'string') {
-        add(choice.delta.content);
-      }
-    }
-
-    // Direct delta field (streaming format without choices wrapper)
-    if (typeof message.delta?.content === 'string') {
-      add(message.delta.content);
-    }
-
-    // Direct content field (Cloudflare and other variants)
-    if (typeof message.content === 'string') {
-      add(message.content);
-    }
-
-    // Content as array of parts (Pi format)
-    if (Array.isArray(message.content)) {
-      let contentParts = '';
-      for (const part of message.content) {
-        if (typeof part?.text === 'string') contentParts += part.text;
-        else if (typeof part?.output_text === 'string') contentParts += part.output_text;
-        // Support content objects with direct content field
-        else if (typeof part?.content === 'string') contentParts += part.content;
-      }
-      add(contentParts);
-    }
-
-    // Response wrapper (some gateway implementations)
-    if (typeof message.response?.content === 'string') {
-      add(message.response.content);
-    }
 
     // Prefer the richest representation in an event. Pi JSON mode can emit
     // cumulative assistant snapshots ("{", then "{\"status\"", ...), while
     // gateway adapters can emit true deltas. Replace on a cumulative snapshot,
     // ignore stale/repeated snapshots, and append only independent deltas.
-    const fragment = fragments.sort((a, b) => b.length - a.length)[0];
-    if (!fragment) continue;
-    if (fragment.startsWith(text)) {
-      text = fragment;
-    } else if (!text.startsWith(fragment)) {
-      text += fragment;
-    }
+    text = mergeAssistantFragment(text, richestFragment(collectAssistantTextFragments(message)));
   }
   return text;
+}
+
+function parseJsonLine(line: string): any | undefined {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('{')) return undefined;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return undefined;
+  }
+}
+
+function collectAssistantTextFragments(message: any): string[] {
+  const fragments: string[] = [];
+  const add = (value: unknown) => addUniqueTextFragment(fragments, value);
+
+  add(message.text);
+  add(message.output_text);
+  add(message.assistantMessage);
+  addChoiceContentFragments(message, add);
+  add(message.delta?.content);
+  add(typeof message.content === 'string' ? message.content : undefined);
+  add(contentArrayText(message.content));
+  add(message.response?.content);
+
+  return fragments;
+}
+
+function addUniqueTextFragment(fragments: string[], value: unknown): void {
+  if (typeof value === 'string' && value.length > 0 && !fragments.includes(value)) {
+    fragments.push(value);
+  }
+}
+
+function addChoiceContentFragments(message: any, add: (value: unknown) => void): void {
+  if (!Array.isArray(message.choices) || message.choices.length === 0) return;
+  const choice = message.choices[0];
+  add(choice?.message?.content);
+  add(choice?.delta?.content);
+}
+
+function contentArrayText(content: unknown): string | undefined {
+  if (!Array.isArray(content)) return undefined;
+
+  let contentParts = '';
+  for (const part of content) {
+    if (typeof part?.text === 'string') contentParts += part.text;
+    else if (typeof part?.output_text === 'string') contentParts += part.output_text;
+    else if (typeof part?.content === 'string') contentParts += part.content;
+  }
+  return contentParts;
+}
+
+function richestFragment(fragments: string[]): string | undefined {
+  return fragments.sort((a, b) => b.length - a.length)[0];
+}
+
+function mergeAssistantFragment(text: string, fragment: string | undefined): string {
+  if (!fragment) return text;
+  if (fragment.startsWith(text)) return fragment;
+  return text.startsWith(fragment) ? text : text + fragment;
 }
 
 /**

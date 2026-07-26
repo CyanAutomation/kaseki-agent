@@ -3,10 +3,9 @@
  * Submit kaseki agent runs to the local API service.
  */
 
-import { BaseCommand } from '../BaseCommand';
+import { ApiBackedCommand, type ApiClientFactory } from '../ApiBackedCommand';
 import { createLogger } from '../../logger';
 import { RunRequestSchema, type RunRequest, type RunResponse } from '../../kaseki-api-types';
-import { LocalKasekiApiClient } from '../api/LocalKasekiApiClient';
 import type { ConfigManager } from '../../config/ConfigManager';
 
 const logger = createLogger('run-cmd');
@@ -17,17 +16,14 @@ export interface RunApiClient {
   getRunStatusUrl(runId: string): string;
 }
 
-type RunApiClientFactory = (configManager: ConfigManager) => RunApiClient;
+type RunApiClientFactory = ApiClientFactory<RunApiClient>;
 
-export class RunCommand extends BaseCommand {
-  private readonly apiClientFactory: RunApiClientFactory;
-
+export class RunCommand extends ApiBackedCommand<RunApiClient> {
   constructor(
     configManager: ConfigManager,
-    apiClientFactory: RunApiClientFactory = (manager) => LocalKasekiApiClient.fromConfig(manager)
+    apiClientFactory?: RunApiClientFactory,
   ) {
-    super(configManager);
-    this.apiClientFactory = apiClientFactory;
+    super(configManager, apiClientFactory);
   }
 
   async execute(args: string[]): Promise<number> {

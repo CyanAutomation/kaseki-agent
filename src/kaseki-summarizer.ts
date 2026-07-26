@@ -162,13 +162,41 @@ export function generateTaskPromptAnnotation(stats: SummarizationStats): string 
 }
 
 async function main() {
-  const args = process.argv.slice(2);
+  const options = parseSummarizerArgs(process.argv.slice(2));
+
+  if (!options.repoDir || !options.resultsDir) {
+    console.error('Error: --repo-dir and --results-dir are required');
+    process.exit(1);
+  }
+
+  logSummarizerStart(options);
+
+  // Ensure results directory exists
+  fs.mkdirSync(options.resultsDir, { recursive: true });
+
+  try {
+    const filePaths = await resolveFilesToSummarize(options);
+    if (options.verbose) console.log('Processing files...');
+
+    const stats = await summarizeFiles(options.repoDir, filePaths, options.maxFiles);
+    logSummarizerStats(options, stats);
+    writeSummarizerOutputs(options, stats);
+    flushSummaryCache();
+    writeSummaryCacheStats(options.resultsDir);
+
+    if (options.verbose) console.log('kaseki-summarizer: Complete');
+  } catch (error) {
+    console.error('Error:', error instanceof Error ? error.message : error);
+    process.exit(1);
+  }
+}
+
+function parseSummarizerArgs(args: string[]): KasekiSummarizerOptions {
   const options: KasekiSummarizerOptions = {
     repoDir: '',
     resultsDir: '',
   };
 
-  // Parse arguments
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
     case '--repo-dir':
@@ -184,7 +212,16 @@ async function main() {
       options.maxFiles = parseInt(args[++i], 10);
       break;
     case '--help':
-      console.log(`
+      printUsageAndExit();
+      break;
+    }
+  }
+
+  return options;
+}
+
+function printUsageAndExit(): never {
+  console.log(`
 Usage: kaseki-summarizer [options]
 
 Options:
@@ -194,93 +231,67 @@ Options:
   --max-files <n>      Process only first n files (for testing)
   --help               Show this help message
 `);
-      process.exit(0);
-    }
+  process.exit(0);
+}
+
+function logSummarizerStart(options: KasekiSummarizerOptions): void {
+  if (!options.verbose) return;
+  console.log('kaseki-summarizer: Starting');
+  console.log('  Repo directory:', options.repoDir);
+  console.log('  Results directory:', options.resultsDir);
+}
+
+async function resolveFilesToSummarize(options: KasekiSummarizerOptions): Promise<string[]> {
+  const changedFiles = await getChangedFiles(options.repoDir);
+  if (changedFiles.length > 0) {
+    if (options.verbose) console.log(`Found ${changedFiles.length} changed files`);
+    return changedFiles;
   }
 
-  if (!options.repoDir || !options.resultsDir) {
-    console.error('Error: --repo-dir and --results-dir are required');
-    process.exit(1);
+  const sourceFiles = listSourceFiles(options.repoDir);
+  if (options.verbose) console.log(`Using ${sourceFiles.length} source files from src/`);
+  return sourceFiles;
+}
+
+function listSourceFiles(repoDir: string): string[] {
+  const filePaths: string[] = [];
+  const srcDir = path.join(repoDir, 'src');
+  if (!fs.existsSync(srcDir)) return filePaths;
+
+  for (const file of fs.readdirSync(srcDir, { recursive: true })) {
+    const filePath = path.join(srcDir, file as string);
+    if (fs.statSync(filePath).isFile() && /\.(ts|js|tsx|jsx|go)$/.test(filePath)) {
+      filePaths.push(path.relative(repoDir, filePath));
+    }
   }
+  return filePaths;
+}
 
-  if (options.verbose) {
-    console.log('kaseki-summarizer: Starting');
-    console.log('  Repo directory:', options.repoDir);
-    console.log('  Results directory:', options.resultsDir);
-  }
+function logSummarizerStats(options: KasekiSummarizerOptions, stats: SummarizationStats): void {
+  if (!options.verbose) return;
+  console.log(`Processed ${stats.files_processed} files`);
+  console.log(`  Tokens full: ${stats.estimated_tokens_full}`);
+  console.log(`  Tokens returned: ${stats.estimated_tokens_returned}`);
+  console.log(`  Tokens saved: ${Math.round(stats.estimated_tokens_saved)}`);
+}
 
-  // Ensure results directory exists
-  fs.mkdirSync(options.resultsDir, { recursive: true });
+function writeSummarizerOutputs(options: KasekiSummarizerOptions, stats: SummarizationStats): void {
+  const metricsPath = path.join(options.resultsDir, 'summarization-metadata.json');
+  fs.writeFileSync(metricsPath, JSON.stringify(stats, null, 2) + '\n');
+  if (options.verbose) console.log(`Wrote metrics to ${metricsPath}`);
 
-  try {
-    // Get changed files
-    let filePaths = await getChangedFiles(options.repoDir);
-    if (options.verbose && filePaths.length > 0) {
-      console.log(`Found ${filePaths.length} changed files`);
-    }
+  const annotation = generateTaskPromptAnnotation(stats);
+  const annotationPath = path.join(options.resultsDir, 'summarization-annotation.txt');
+  fs.writeFileSync(annotationPath, annotation + '\n');
+  if (options.verbose) console.log(`Wrote TASK_PROMPT annotation to ${annotationPath}`);
+}
 
-    // If no changed files detected, use all source files
-    if (filePaths.length === 0) {
-      filePaths = [];
-      const srcDir = path.join(options.repoDir, 'src');
-      if (fs.existsSync(srcDir)) {
-        for (const file of fs.readdirSync(srcDir, { recursive: true })) {
-          const filePath = path.join(srcDir, file as string);
-          if (fs.statSync(filePath).isFile() && /\.(ts|js|tsx|jsx|go)$/.test(filePath)) {
-            filePaths.push(path.relative(options.repoDir, filePath));
-          }
-        }
-      }
-      if (options.verbose) {
-        console.log(`Using ${filePaths.length} source files from src/`);
-      }
-    }
+function writeSummaryCacheStats(resultsDir: string): void {
+  const cacheStats = getSummaryCacheStats();
+  if (!cacheStats) return;
 
-    // Summarize files
-    if (options.verbose) {
-      console.log('Processing files...');
-    }
-    const stats = await summarizeFiles(options.repoDir, filePaths, options.maxFiles);
-
-    if (options.verbose) {
-      console.log(`Processed ${stats.files_processed} files`);
-      console.log(`  Tokens full: ${stats.estimated_tokens_full}`);
-      console.log(`  Tokens returned: ${stats.estimated_tokens_returned}`);
-      console.log(`  Tokens saved: ${Math.round(stats.estimated_tokens_saved)}`);
-    }
-
-    // Write metrics
-    const metricsPath = path.join(options.resultsDir, 'summarization-metadata.json');
-    fs.writeFileSync(metricsPath, JSON.stringify(stats, null, 2) + '\n');
-    if (options.verbose) {
-      console.log(`Wrote metrics to ${metricsPath}`);
-    }
-
-    // Write TASK_PROMPT annotation
-    const annotation = generateTaskPromptAnnotation(stats);
-    const annotationPath = path.join(options.resultsDir, 'summarization-annotation.txt');
-    fs.writeFileSync(annotationPath, annotation + '\n');
-    if (options.verbose) {
-      console.log(`Wrote TASK_PROMPT annotation to ${annotationPath}`);
-    }
-
-    // Flush cache
-    flushSummaryCache();
-
-    // Write cache stats
-    const cacheStats = getSummaryCacheStats();
-    if (cacheStats) {
-      const cacheStatsPath = path.join(options.resultsDir, 'summarization-cache-stats.json');
-      fs.writeFileSync(cacheStatsPath, JSON.stringify(cacheStats, null, 2) + '\n');
-    }
-
-    if (options.verbose) {
-      console.log('kaseki-summarizer: Complete');
-    }
-  } catch (error) {
-    console.error('Error:', error instanceof Error ? error.message : error);
-    process.exit(1);
-  }
+  const cacheStatsPath = path.join(resultsDir, 'summarization-cache-stats.json');
+  fs.writeFileSync(cacheStatsPath, JSON.stringify(cacheStats, null, 2) + '\n');
 }
 
 // Only run main if this is being executed directly (not imported as a module)

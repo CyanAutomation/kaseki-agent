@@ -3,9 +3,8 @@
  * Poll a kaseki run through the local API service.
  */
 
-import { BaseCommand } from '../BaseCommand';
+import { ApiBackedCommand, type ApiClientFactory } from '../ApiBackedCommand';
 import { createLogger } from '../../logger';
-import { LocalKasekiApiClient } from '../api/LocalKasekiApiClient';
 import type { ConfigManager } from '../../config/ConfigManager';
 import type { StatusResponse } from '../../kaseki-api-types';
 
@@ -16,17 +15,14 @@ export interface StatusApiClient {
   getRunStatus(runId: string): Promise<StatusResponse>;
 }
 
-type StatusApiClientFactory = (configManager: ConfigManager) => StatusApiClient;
+type StatusApiClientFactory = ApiClientFactory<StatusApiClient>;
 
-export class StatusCommand extends BaseCommand {
-  private readonly apiClientFactory: StatusApiClientFactory;
-
+export class StatusCommand extends ApiBackedCommand<StatusApiClient> {
   constructor(
     configManager: ConfigManager,
-    apiClientFactory: StatusApiClientFactory = (manager) => LocalKasekiApiClient.fromConfig(manager)
+    apiClientFactory?: StatusApiClientFactory,
   ) {
-    super(configManager);
-    this.apiClientFactory = apiClientFactory;
+    super(configManager, apiClientFactory);
   }
 
   async execute(args: string[]): Promise<number> {

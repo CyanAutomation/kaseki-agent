@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { JobScheduler } from '../job-scheduler';
 import { KasekiApiConfig } from '../kaseki-api-config';
-import { DiagnosticEntryPoint, LogResponse, AnalysisResponse } from '../kaseki-api-types';
+import { DiagnosticEntryPoint, LogResponse, AnalysisResponse, type Job } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
 import { isNonEmptyFile } from '../utils/file-helpers';
 import { decodeUtf8TailSafely, tailLogByLines, readTailBytes } from '../utils/utf8-helpers';
@@ -309,6 +309,117 @@ function streamProgressEvents(
   });
 }
 
+function buildAnalysisResponse(job: Job, config: KasekiApiConfig): AnalysisResponse {
+  const runDir = job.resultDir || path.join(config.resultsDir, job.id);
+  const response: AnalysisResponse = {
+    id: job.id,
+    status: job.status,
+    createdAt: job.createdAt.toISOString(),
+    completedAt: job.completedAt?.toISOString(),
+    exitCode: job.exitCode,
+    failureClass: job.failureClass
+  };
+  const analysisWarnings: string[] = [];
+
+  addElapsedSeconds(response, job);
+  addAnalysisMetadata(response, runDir, analysisWarnings);
+  addAnalysisChanges(response, runDir, analysisWarnings);
+  addAnalysisValidation(response, runDir, analysisWarnings);
+
+  const diagnostics = collectDiagnostics(runDir);
+  if (diagnostics) {
+    response.diagnostics = diagnostics;
+  }
+  if (analysisWarnings.length > 0) {
+    response.analysisWarnings = analysisWarnings;
+  }
+
+  return response;
+}
+
+function addElapsedSeconds(response: AnalysisResponse, job: Job): void {
+  if (!job.startedAt) return;
+  const elapsed = (job.completedAt || new Date()).getTime() - job.startedAt.getTime();
+  response.elapsedSeconds = Math.round(elapsed / 1000);
+}
+
+function addAnalysisMetadata(response: AnalysisResponse, runDir: string, analysisWarnings: string[]): void {
+  const metadataPath = path.join(runDir, 'metadata.json');
+  if (!fs.existsSync(metadataPath)) return;
+
+  const metadata = safelyReadAnalysisArtifact('metadata.json', analysisWarnings, () =>
+    JSON.parse(fs.readFileSync(metadataPath, 'utf-8')) as Record<string, unknown>
+  );
+  if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+    response.metadata = {
+      model: typeof metadata.model === 'string' ? metadata.model : undefined,
+      instance: typeof metadata.instance === 'string' ? metadata.instance : undefined,
+      repo: typeof metadata.repo === 'string' ? metadata.repo : undefined,
+      ref: typeof metadata.ref === 'string' ? metadata.ref : undefined
+    };
+  } else if (metadata !== undefined) {
+    analysisWarnings.push('Could not read metadata.json; expected a JSON object.');
+  }
+}
+
+function addAnalysisChanges(response: AnalysisResponse, runDir: string, analysisWarnings: string[]): void {
+  const changedFilesPath = path.join(runDir, 'changed-files.txt');
+  if (!fs.existsSync(changedFilesPath)) return;
+
+  const changes = safelyReadAnalysisArtifact('changed-files.txt', analysisWarnings, () => {
+    const changedFiles = fs
+      .readFileSync(changedFilesPath, 'utf-8')
+      .trim()
+      .split('\n')
+      .filter((f) => f);
+    const diffPath = path.join(runDir, 'git.diff');
+    return {
+      changedFiles,
+      diffSize: fs.existsSync(diffPath) ? fs.statSync(diffPath).size : 0
+    };
+  });
+  if (changes) response.changes = changes;
+}
+
+function addAnalysisValidation(response: AnalysisResponse, runDir: string, analysisWarnings: string[]): void {
+  const validationPath = path.join(runDir, 'validation-timings.tsv');
+  if (!fs.existsSync(validationPath)) return;
+
+  const validation = safelyReadAnalysisArtifact('validation-timings.tsv', analysisWarnings, () =>
+    readValidationTimingSummary(validationPath, analysisWarnings)
+  );
+  if (validation) response.validation = validation;
+}
+
+function readValidationTimingSummary(
+  validationPath: string,
+  analysisWarnings: string[],
+): NonNullable<AnalysisResponse['validation']> {
+  const lines = fs.readFileSync(validationPath, 'utf-8').trim().split('\n');
+  const commandResults = lines
+    .slice(1)
+    .flatMap((line) => validationTimingRecord(line, analysisWarnings));
+
+  return {
+    passed: commandResults.every((result) => result.exitCode === 0),
+    commandResults
+  };
+}
+
+function validationTimingRecord(
+  line: string,
+  analysisWarnings: string[],
+): NonNullable<AnalysisResponse['validation']>['commandResults'] {
+  const [command, exitCode, elapsed] = line.split('\t');
+  const parsedExitCode = Number.parseInt(exitCode, 10);
+  const parsedElapsed = Number.parseInt(elapsed, 10);
+  if (!command || !Number.isFinite(parsedExitCode) || !Number.isFinite(parsedElapsed)) {
+    analysisWarnings.push('Skipped malformed validation-timings.tsv record.');
+    return [];
+  }
+  return [{ command, exitCode: parsedExitCode, elapsed: parsedElapsed }];
+}
+
 /**
  * Create log-related routes (progress, events, logs, analysis).
  */
@@ -481,93 +592,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
     }
 
     try {
-      const runDir = job.resultDir || path.join(config.resultsDir, job.id);
-      const response: AnalysisResponse = {
-        id: job.id,
-        status: job.status,
-        createdAt: job.createdAt.toISOString(),
-        completedAt: job.completedAt?.toISOString(),
-        exitCode: job.exitCode,
-        failureClass: job.failureClass
-      };
-      const analysisWarnings: string[] = [];
-
-      // Add timing
-      if (job.startedAt) {
-        const elapsed = (job.completedAt || new Date()).getTime() - job.startedAt.getTime();
-        response.elapsedSeconds = Math.round(elapsed / 1000);
-      }
-
-      // Try to read metadata
-      const metadataPath = path.join(runDir, 'metadata.json');
-      if (fs.existsSync(metadataPath)) {
-        const metadata = safelyReadAnalysisArtifact('metadata.json', analysisWarnings, () =>
-          JSON.parse(fs.readFileSync(metadataPath, 'utf-8')) as Record<string, unknown>
-        );
-        if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
-          response.metadata = {
-            model: typeof metadata.model === 'string' ? metadata.model : undefined,
-            instance: typeof metadata.instance === 'string' ? metadata.instance : undefined,
-            repo: typeof metadata.repo === 'string' ? metadata.repo : undefined,
-            ref: typeof metadata.ref === 'string' ? metadata.ref : undefined
-          };
-        } else if (metadata !== undefined) {
-          analysisWarnings.push('Could not read metadata.json; expected a JSON object.');
-        }
-      }
-
-      // Try to read changed files
-      const changedFilesPath = path.join(runDir, 'changed-files.txt');
-      if (fs.existsSync(changedFilesPath)) {
-        const changes = safelyReadAnalysisArtifact('changed-files.txt', analysisWarnings, () => {
-          const changedFiles = fs
-            .readFileSync(changedFilesPath, 'utf-8')
-            .trim()
-            .split('\n')
-            .filter((f) => f);
-          const diffPath = path.join(runDir, 'git.diff');
-          return {
-            changedFiles,
-            diffSize: fs.existsSync(diffPath) ? fs.statSync(diffPath).size : 0
-          };
-        });
-        if (changes) response.changes = changes;
-      }
-
-      // Try to read validation results
-      const validationPath = path.join(runDir, 'validation-timings.tsv');
-      if (fs.existsSync(validationPath)) {
-        const validation = safelyReadAnalysisArtifact('validation-timings.tsv', analysisWarnings, () => {
-          const lines = fs.readFileSync(validationPath, 'utf-8').trim().split('\n');
-          const commandResults = lines
-            .slice(1) // Skip header
-            .flatMap((line) => {
-              const [command, exitCode, elapsed] = line.split('\t');
-              const parsedExitCode = Number.parseInt(exitCode, 10);
-              const parsedElapsed = Number.parseInt(elapsed, 10);
-              if (!command || !Number.isFinite(parsedExitCode) || !Number.isFinite(parsedElapsed)) {
-                analysisWarnings.push('Skipped malformed validation-timings.tsv record.');
-                return [];
-              }
-              return [{ command, exitCode: parsedExitCode, elapsed: parsedElapsed }];
-            });
-          return {
-            passed: commandResults.every((result) => result.exitCode === 0),
-            commandResults
-          };
-        });
-        if (validation) response.validation = validation;
-      }
-
-      const diagnostics = collectDiagnostics(runDir);
-      if (diagnostics) {
-        response.diagnostics = diagnostics;
-      }
-      if (analysisWarnings.length > 0) {
-        response.analysisWarnings = analysisWarnings;
-      }
-
-      res.json(response);
+      res.json(buildAnalysisResponse(job, config));
     } catch (err) {
       sendErrorResponse(res, 500, 'Internal Server Error', `Failed to analyze run: ${(err as Error).message}`);
     }
