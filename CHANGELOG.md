@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.120.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.120.1...v1.120.2) (2026-07-26)
+
+
+### Bug Fixes
+
+* **cleanup:** require directory-only open support ([536f45a](https://github.com/CyanAutomation/kaseki-agent/commit/536f45a68a720f313061e7de776c38d9ee1aca0c))
+* coordinate cleanup with scheduler persistence ([8c379aa](https://github.com/CyanAutomation/kaseki-agent/commit/8c379aa235dcbe35c7425b85d0d8403e1daf5f6b))
+
 ## [1.120.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.120.0...v1.120.1) (2026-07-26)
 
 
