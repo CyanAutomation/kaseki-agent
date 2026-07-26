@@ -3,9 +3,8 @@
  * Generate report for a run using the local API by default.
  */
 
-import { BaseCommand } from '../BaseCommand';
+import { ApiBackedCommand, type ApiClientFactory } from '../ApiBackedCommand';
 import { createLogger } from '../../logger';
-import { LocalKasekiApiClient } from '../api/LocalKasekiApiClient';
 import type { ConfigManager } from '../../config/ConfigManager';
 import type { AnalysisResponse, LogResponse, RunArtifactsResponse, StatusResponse } from '../../kaseki-api-types';
 
@@ -19,7 +18,7 @@ export interface ReportApiClient {
   getRunLog(runId: string, logType: LogResponse['logType']): Promise<LogResponse>;
 }
 
-type ReportApiClientFactory = (configManager: ConfigManager) => ReportApiClient;
+type ReportApiClientFactory = ApiClientFactory<ReportApiClient>;
 
 interface DiskRunMetadata {
   id?: string;
@@ -33,15 +32,12 @@ interface DiskRunMetadata {
   exitCode?: number;
 }
 
-export class ReportCommand extends BaseCommand {
-  private readonly apiClientFactory: ReportApiClientFactory;
-
+export class ReportCommand extends ApiBackedCommand<ReportApiClient> {
   constructor(
     configManager: ConfigManager,
-    apiClientFactory: ReportApiClientFactory = (manager) => LocalKasekiApiClient.fromConfig(manager)
+    apiClientFactory?: ReportApiClientFactory,
   ) {
-    super(configManager);
-    this.apiClientFactory = apiClientFactory;
+    super(configManager, apiClientFactory);
   }
 
   async execute(args: string[]): Promise<number> {

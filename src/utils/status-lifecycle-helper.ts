@@ -14,6 +14,14 @@ type ProviderRetryMetadata = {
   provider?: string;
 };
 
+type LiveRetryInfo = {
+  state: string;
+  current: number;
+  maximum: number;
+  exhausted: boolean;
+  delaySeconds?: number;
+};
+
 export class StatusLifecycleHelper {
   constructor(private config: KasekiApiConfig) {}
 
@@ -73,35 +81,51 @@ export class StatusLifecycleHelper {
 
   private addLiveRetryInfo(response: StatusResponse, retryCount: number): void {
     const liveRetryMessage = String(response.progress?.message ?? '');
-    const liveRetry = /provider retry (scheduled|started|succeeded|exhausted).*attempt\s+(\d+)\/(\d+)/i.exec(liveRetryMessage);
+    const liveRetry = this.parseLiveRetryInfo(liveRetryMessage);
     if (!liveRetry || retryCount !== 0) return;
 
-    const liveState = liveRetry[1].toLowerCase();
-    const exhausted = liveState === 'exhausted';
     response.attempt = {
       phase: response.progress?.stage,
-      current: Number(liveRetry[2]),
-      maximum: Number(liveRetry[3]),
-      state: exhausted ? 'exhausted' : liveState === 'succeeded' ? 'succeeded' : 'retrying',
+      current: liveRetry.current,
+      maximum: liveRetry.maximum,
+      state: liveRetry.exhausted ? 'exhausted' : liveRetry.state === 'succeeded' ? 'succeeded' : 'retrying',
     };
-    const retryDelay = /\bin\s+(\d+)s\b/i.exec(liveRetryMessage);
-    if (liveState === 'scheduled' && retryDelay) {
-      const updatedAtMs = Date.parse(String(response.progress?.updatedAt ?? ''));
-      const elapsedSeconds = Number.isFinite(updatedAtMs) ? Math.floor((Date.now() - updatedAtMs) / 1000) : 0;
-      response.attempt.nextRetryInSeconds = Math.max(0, Number(retryDelay[1]) - elapsedSeconds);
+    if (liveRetry.state === 'scheduled' && liveRetry.delaySeconds !== undefined) {
+      response.attempt.nextRetryInSeconds = this.remainingRetryDelaySeconds(response, liveRetry.delaySeconds);
     }
     response.diagnosis = {
-      severity: exhausted ? 'error' : 'warning',
+      severity: liveRetry.exhausted ? 'error' : 'warning',
       phase: response.progress?.stage,
       category: 'provider_error',
       summary: liveRetryMessage,
-      retryCount: Math.max(0, Number(liveRetry[2]) - 1),
-      retryExhausted: exhausted,
-      remediation: exhausted
+      retryCount: Math.max(0, liveRetry.current - 1),
+      retryExhausted: liveRetry.exhausted,
+      remediation: liveRetry.exhausted
         ? 'The run is finalizing diagnostics; inspect provider-attempts.jsonl when available.'
         : 'Wait for the bounded retry to complete.',
       artifact: 'provider-attempts.jsonl',
     };
+  }
+
+  private parseLiveRetryInfo(message: string): LiveRetryInfo | undefined {
+    const liveRetry = /provider retry (scheduled|started|succeeded|exhausted).*attempt\s+(\d+)\/(\d+)/i.exec(message);
+    if (!liveRetry) return undefined;
+
+    const state = liveRetry[1].toLowerCase();
+    const retryDelay = /\bin\s+(\d+)s\b/i.exec(message);
+    return {
+      state,
+      current: Number(liveRetry[2]),
+      maximum: Number(liveRetry[3]),
+      exhausted: state === 'exhausted',
+      delaySeconds: retryDelay ? Number(retryDelay[1]) : undefined,
+    };
+  }
+
+  private remainingRetryDelaySeconds(response: StatusResponse, delaySeconds: number): number {
+    const updatedAtMs = Date.parse(String(response.progress?.updatedAt ?? ''));
+    const elapsedSeconds = Number.isFinite(updatedAtMs) ? Math.floor((Date.now() - updatedAtMs) / 1000) : 0;
+    return Math.max(0, delaySeconds - elapsedSeconds);
   }
 
   private isScoutingArtifactFailure(job: Job, failedCommand: string, scoutingAttempts: number): boolean {
@@ -139,30 +163,41 @@ export class StatusLifecycleHelper {
     metadata: any,
     retryMetadata: ProviderRetryMetadata,
   ): void {
-    const exhausted = retryMetadata.retryResult === 'failed';
-    const terminalRetryState = job.status === 'failed'
-      ? 'exhausted'
-      : job.status === 'completed' && retryMetadata.retryResult === 'success' ? 'succeeded' : undefined;
+    const retryExhausted = this.isProviderRetryExhausted(job, retryMetadata);
     response.attempt = {
       phase: retryMetadata.providerPhase,
       current: Math.max(1, retryMetadata.retryCount),
       maximum: Math.max(2, retryMetadata.retryCount),
-      state: terminalRetryState || (exhausted ? 'exhausted' : retryMetadata.retryResult === 'success' ? 'succeeded' : 'retrying'),
+      state: this.providerRetryState(job, retryMetadata),
       provider: retryMetadata.provider,
       lastError: retryMetadata.providerError || undefined,
     };
     response.diagnosis = {
-      severity: terminalRetryState === 'exhausted' || exhausted ? 'error' : 'warning',
+      severity: retryExhausted ? 'error' : 'warning',
       phase: retryMetadata.providerPhase,
       category: String(metadata?.provider_error_type ?? 'provider_error'),
-      summary: retryMetadata.providerError || (exhausted ? 'Provider retry budget exhausted.' : 'Provider request is being retried.'),
+      summary: retryMetadata.providerError || (retryExhausted ? 'Provider retry budget exhausted.' : 'Provider request is being retried.'),
       retryCount: retryMetadata.retryCount,
-      retryExhausted: terminalRetryState === 'exhausted' || exhausted,
-      remediation: terminalRetryState === 'exhausted' || exhausted
+      retryExhausted,
+      remediation: retryExhausted
         ? 'Inspect provider-attempts.jsonl, then retry with a healthy model or provider.'
         : 'Wait for the bounded retry to complete.',
       artifact: 'provider-attempts.jsonl',
     };
+  }
+
+  private providerRetryState(
+    job: Job,
+    retryMetadata: ProviderRetryMetadata,
+  ): NonNullable<StatusResponse['attempt']>['state'] {
+    if (job.status === 'failed') return 'exhausted';
+    if (job.status === 'completed' && retryMetadata.retryResult === 'success') return 'succeeded';
+    if (retryMetadata.retryResult === 'failed') return 'exhausted';
+    return retryMetadata.retryResult === 'success' ? 'succeeded' : 'retrying';
+  }
+
+  private isProviderRetryExhausted(job: Job, retryMetadata: ProviderRetryMetadata): boolean {
+    return job.status === 'failed' || retryMetadata.retryResult === 'failed';
   }
 
   private addAttemptDisplayName(response: StatusResponse): void {
@@ -178,15 +213,7 @@ export class StatusLifecycleHelper {
 
   private addProgressHeartbeat(response: StatusResponse, job: Job): void {
     if (response.progressHeartbeat) {
-      if (response.progressHeartbeat.stale && !response.diagnosis) {
-        response.diagnosis = {
-          severity: 'warning',
-          phase: response.progress?.stage,
-          category: 'stale_progress',
-          summary: `No substantive progress update received for ${response.progressHeartbeat.ageSeconds}s while stage "${response.progress?.stage ?? 'unknown'}" is active.`,
-          remediation: 'Inspect the live validation/agent log; the run will be terminated when its bounded stage timeout is reached.',
-        };
-      }
+      this.addExistingHeartbeatDiagnosis(response);
       return;
     }
 
@@ -202,16 +229,37 @@ export class StatusLifecycleHelper {
         ageSeconds: staleSeconds,
         stale: staleSeconds >= 120,
       };
-      if (staleSeconds >= 120 && !response.diagnosis) {
-        response.diagnosis = {
-          severity: 'warning',
-          phase: response.progress?.stage,
-          category: 'stale_progress',
-          summary: `No progress update received for ${staleSeconds}s while stage "${response.progress?.stage ?? 'unknown'}" is active.`,
-          remediation: 'Inspect the live validation/agent log; the run will be terminated when its bounded stage timeout is reached.',
-        };
-      }
+      this.addCalculatedHeartbeatDiagnosis(response, staleSeconds);
     }
+  }
+
+  private addExistingHeartbeatDiagnosis(response: StatusResponse): void {
+    if (!response.progressHeartbeat?.stale || response.diagnosis) return;
+    response.diagnosis = this.staleProgressDiagnosis(
+      response,
+      `No substantive progress update received for ${response.progressHeartbeat.ageSeconds}s while stage "${response.progress?.stage ?? 'unknown'}" is active.`,
+    );
+  }
+
+  private addCalculatedHeartbeatDiagnosis(response: StatusResponse, staleSeconds: number): void {
+    if (staleSeconds < 120 || response.diagnosis) return;
+    response.diagnosis = this.staleProgressDiagnosis(
+      response,
+      `No progress update received for ${staleSeconds}s while stage "${response.progress?.stage ?? 'unknown'}" is active.`,
+    );
+  }
+
+  private staleProgressDiagnosis(
+    response: StatusResponse,
+    summary: string,
+  ): NonNullable<StatusResponse['diagnosis']> {
+    return {
+      severity: 'warning',
+      phase: response.progress?.stage,
+      category: 'stale_progress',
+      summary,
+      remediation: 'Inspect the live validation/agent log; the run will be terminated when its bounded stage timeout is reached.',
+    };
   }
 
   private readPrimaryScoutingContractFailure(runDir: string): { detail: string; suggestion?: string } | undefined {

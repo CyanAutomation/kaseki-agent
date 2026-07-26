@@ -195,43 +195,18 @@ function cleanupHttpAgentsAggressive(): void {
     // @ts-ignore - Accessing Node's internal HTTP agents
     const http = require('http');
     const https = require('https');
-    
-    if (http.globalAgent) {
-      // Destroy sockets
-      const httpSockets = http.globalAgent.sockets || {};
-      for (const [, socketList] of Object.entries(httpSockets)) {
-        if (Array.isArray(socketList)) {
-          while (socketList.length > 0) {
-            const socket = socketList.pop();
-            if (socket) {
-              socket.destroy();
-            }
-          }
-        }
-      }
-      // Destroy pending requests
-      destroyAgentRequests(http.globalAgent);
-    }
-    
-    if (https.globalAgent) {
-      // Destroy sockets
-      const httpsSockets = https.globalAgent.sockets || {};
-      for (const [, socketList] of Object.entries(httpsSockets)) {
-        if (Array.isArray(socketList)) {
-          while (socketList.length > 0) {
-            const socket = socketList.pop();
-            if (socket) {
-              socket.destroy();
-            }
-          }
-        }
-      }
-      // Destroy pending requests
-      destroyAgentRequests(https.globalAgent);
-    }
-  } catch (e) {
+
+    cleanupAgentAggressive(http.globalAgent);
+    cleanupAgentAggressive(https.globalAgent);
+  } catch {
     // If agents don't exist or we can't access them, continue
   }
+}
+
+function cleanupAgentAggressive(agent: any): void {
+  if (!agent) return;
+  destroyAgentSockets(agent);
+  destroyAgentRequests(agent);
 }
 
 /**

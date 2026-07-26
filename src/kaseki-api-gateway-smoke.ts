@@ -289,75 +289,145 @@ async function runGatewayStage1Probe(
 
   for (let attempt = 1; ; attempt++) {
     try {
-      const fetchStartTime = performance.now();
-      const response = await fetchWithTimeout(stage1Probe.endpoint, stage1Probe.init, GATEWAY_MODELS_TIMEOUT_MS);
-      const responseTime = Math.round(performance.now() - fetchStartTime);
+      const { response, responseTime } = await executeGatewayStage1Fetch(stage1Probe);
 
       if (!response.ok) {
         const errorBody = await response.text();
-        const authError = response.status === 401 || response.status === 403;
-        const invalidPathError = isInvalidGatewayPathError(errorBody);
-
-        return {
-          status: 'error',
-          detail: `Gateway returned HTTP ${response.status}: ${errorBody.substring(0, 100)}`,
+        return stage1HttpErrorResult({
           gatewayUrl,
-          responseTime,
           timestamp,
-          authenticationValidated: !authError && !invalidPathError,
-          httpStatus: response.status,
-          remediation: authError
-            ? 'Authentication failed. Check that LLM_GATEWAY_API_KEY is valid, or that the llm_gateway_api_key file in the configured Kaseki secrets directory contains the expected token'
-            : invalidPathError
-              ? 'Gateway request path is invalid. For Cloudflare /compat gateways, preserve the scoped /v1/{account_id}/{gateway_id}/compat path and do not reduce it to /v1/models.'
-              : `Gateway returned an error. Verify the gateway is healthy and the URL is correct (${response.status})`,
+          responseTime,
+          status: response.status,
+          errorBody,
           attempts: attempt,
-        };
+        });
       }
 
-      const warning = latencyWarning(responseTime);
-      return {
-        status: 'ok',
-        detail: `Gateway is responsive (${responseTime}ms)`,
-        gatewayUrl,
-        responseTime,
-        timestamp,
-        authenticationValidated: true,
-        ...(warning ? { warning } : {}),
-        attempts: attempt,
-      };
+      return stage1SuccessResult(gatewayUrl, timestamp, responseTime, attempt);
     } catch (error) {
       const responseTime = Math.round(performance.now() - startTime);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      const isTimeout = /timeout/i.test(errorMessage);
-      const isAborted = /abort/i.test(errorMessage);
-      const isNetwork = /fetch|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET/i.test(errorMessage);
-      const errorKind = isTimeout ? 'timeout' : isAborted ? 'aborted' : isNetwork ? 'network' : 'unexpected';
+      const errorKind = classifyStage1ProbeError(errorMessage);
 
-      if (attempt < GATEWAY_CONNECTIVITY_ATTEMPTS && (isTimeout || isAborted || isNetwork)) {
+      if (shouldRetryStage1Probe(attempt, errorKind)) {
         await new Promise((resolve) => setTimeout(resolve, GATEWAY_CONNECTIVITY_RETRY_DELAY_MS));
         continue;
       }
 
-      return {
-        status: 'error',
-        detail: `Gateway is unreachable after ${attempt} attempt${attempt === 1 ? '' : 's'} (${errorKind}): ${errorMessage}`,
-        gatewayUrl,
-        responseTime,
-        timestamp,
-        authenticationValidated: false,
-        remediation: isTimeout
-          ? 'Gateway timed out. Check gateway health, DNS/TLS reachability, and upstream latency before retrying.'
-          : isAborted
-            ? 'The connectivity probe was aborted. Check controller egress, proxy timeouts, and gateway availability before retrying.'
-            : isNetwork
-              ? 'Cannot reach the gateway endpoint. Verify DNS, URL, firewall/proxy rules, and controller egress before retrying.'
-              : 'Unexpected error connecting to gateway. Check controller logs and gateway health before retrying.',
-        attempts: attempt,
-        retryDelayMs: attempt > 1 ? GATEWAY_CONNECTIVITY_RETRY_DELAY_MS : undefined,
-        errorKind,
-      };
+      return stage1FetchErrorResult(gatewayUrl, timestamp, responseTime, attempt, errorMessage, errorKind);
     }
+  }
+}
+
+async function executeGatewayStage1Fetch(
+  stage1Probe: ReturnType<typeof buildStage1ProbeRequest>,
+): Promise<{ response: Response; responseTime: number }> {
+  const fetchStartTime = performance.now();
+  const response = await fetchWithTimeout(stage1Probe.endpoint, stage1Probe.init, GATEWAY_MODELS_TIMEOUT_MS);
+  return {
+    response,
+    responseTime: Math.round(performance.now() - fetchStartTime),
+  };
+}
+
+function stage1SuccessResult(
+  gatewayUrl: string,
+  timestamp: string,
+  responseTime: number,
+  attempt: number,
+): ConnectivityTestResult {
+  const warning = latencyWarning(responseTime);
+  return {
+    status: 'ok',
+    detail: `Gateway is responsive (${responseTime}ms)`,
+    gatewayUrl,
+    responseTime,
+    timestamp,
+    authenticationValidated: true,
+    ...(warning ? { warning } : {}),
+    attempts: attempt,
+  };
+}
+
+function stage1HttpErrorResult(options: {
+  gatewayUrl: string;
+  timestamp: string;
+  responseTime: number;
+  status: number;
+  errorBody: string;
+  attempts: number;
+}): ConnectivityTestResult {
+  const authError = options.status === 401 || options.status === 403;
+  const invalidPathError = isInvalidGatewayPathError(options.errorBody);
+
+  return {
+    status: 'error',
+    detail: `Gateway returned HTTP ${options.status}: ${options.errorBody.substring(0, 100)}`,
+    gatewayUrl: options.gatewayUrl,
+    responseTime: options.responseTime,
+    timestamp: options.timestamp,
+    authenticationValidated: !authError && !invalidPathError,
+    httpStatus: options.status,
+    remediation: stage1HttpRemediation(options.status, authError, invalidPathError),
+    attempts: options.attempts,
+  };
+}
+
+function stage1HttpRemediation(status: number, authError: boolean, invalidPathError: boolean): string {
+  if (authError) {
+    return 'Authentication failed. Check that LLM_GATEWAY_API_KEY is valid, or that the llm_gateway_api_key file in the configured Kaseki secrets directory contains the expected token';
+  }
+  if (invalidPathError) {
+    return 'Gateway request path is invalid. For Cloudflare /compat gateways, preserve the scoped /v1/{account_id}/{gateway_id}/compat path and do not reduce it to /v1/models.';
+  }
+  return `Gateway returned an error. Verify the gateway is healthy and the URL is correct (${status})`;
+}
+
+type Stage1ProbeErrorKind = 'timeout' | 'aborted' | 'network' | 'unexpected';
+
+function classifyStage1ProbeError(errorMessage: string): Stage1ProbeErrorKind {
+  if (/timeout/i.test(errorMessage)) return 'timeout';
+  if (/abort/i.test(errorMessage)) return 'aborted';
+  if (/fetch|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET/i.test(errorMessage)) return 'network';
+  return 'unexpected';
+}
+
+function shouldRetryStage1Probe(attempt: number, errorKind: Stage1ProbeErrorKind): boolean {
+  return attempt < GATEWAY_CONNECTIVITY_ATTEMPTS && errorKind !== 'unexpected';
+}
+
+function stage1FetchErrorResult(
+  gatewayUrl: string,
+  timestamp: string,
+  responseTime: number,
+  attempt: number,
+  errorMessage: string,
+  errorKind: Stage1ProbeErrorKind,
+): ConnectivityTestResult {
+  return {
+    status: 'error',
+    detail: `Gateway is unreachable after ${attempt} attempt${attempt === 1 ? '' : 's'} (${errorKind}): ${errorMessage}`,
+    gatewayUrl,
+    responseTime,
+    timestamp,
+    authenticationValidated: false,
+    remediation: stage1FetchErrorRemediation(errorKind),
+    attempts: attempt,
+    retryDelayMs: attempt > 1 ? GATEWAY_CONNECTIVITY_RETRY_DELAY_MS : undefined,
+    errorKind,
+  };
+}
+
+function stage1FetchErrorRemediation(errorKind: Stage1ProbeErrorKind): string {
+  switch (errorKind) {
+  case 'timeout':
+    return 'Gateway timed out. Check gateway health, DNS/TLS reachability, and upstream latency before retrying.';
+  case 'aborted':
+    return 'The connectivity probe was aborted. Check controller egress, proxy timeouts, and gateway availability before retrying.';
+  case 'network':
+    return 'Cannot reach the gateway endpoint. Verify DNS, URL, firewall/proxy rules, and controller egress before retrying.';
+  case 'unexpected':
+    return 'Unexpected error connecting to gateway. Check controller logs and gateway health before retrying.';
   }
 }
 
