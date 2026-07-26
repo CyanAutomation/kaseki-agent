@@ -725,6 +725,7 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         mkdirSync(join(scriptsDir, 'lib'), { recursive: true });
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'json.sh'), join(scriptsDir, 'lib', 'json.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'json-events.sh'), join(scriptsDir, 'lib', 'json-events.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'lib', 'repo-memory.sh'), join(scriptsDir, 'lib', 'repo-memory.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'provider-retry.sh'), join(scriptsDir, 'lib', 'provider-retry.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'model-resolution.sh'), join(scriptsDir, 'lib', 'model-resolution.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'dependency-cache-helpers.sh'), join(scriptsDir, 'dependency-cache-helpers.sh'));
