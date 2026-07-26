@@ -155,7 +155,9 @@ describe('WebhookManager delivery log recovery', () => {
     first.enqueueWebhook('job-shared', basePayloadFor('job-shared'), configForTest());
     const second = new WebhookManager(resultsDir);
     second.stopProcessing();
-    let resolveFetch!: (response: { ok: boolean; status: number; text: () => Promise<string> }) => void;
+    let resolveFetch:
+      | ((response: { ok: boolean; status: number; text: () => Promise<string> }) => void)
+      | undefined;
     const fetchMock = jest.fn().mockReturnValue(
       new Promise((resolve) => {
         resolveFetch = resolve;
@@ -168,7 +170,8 @@ describe('WebhookManager delivery log recovery', () => {
       await new Promise((resolve) => setImmediate(resolve));
       expect(await second.drainQueueForTest()).toBe(0);
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      resolveFetch({ ok: true, status: 200, text: async () => '' });
+      expect(resolveFetch).toBeDefined();
+      resolveFetch?.({ ok: true, status: 200, text: async () => '' });
       await firstDrain;
       expect(fetchMock).toHaveBeenCalledTimes(1);
     } finally {
