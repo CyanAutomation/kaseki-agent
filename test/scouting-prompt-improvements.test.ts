@@ -267,7 +267,7 @@ describe('Integration: Scouting Artifact JSON Structure', () => {
   const validateWithScoutingWorkflow = (artifact: unknown) => {
     const fixtureDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'scouting-prompt-example-'));
     const fixturePath = path.join(fixtureDirectory, 'scouting-candidate.json');
-    let validation;
+    let validation: ReturnType<typeof spawnSync>;
 
     try {
       fs.writeFileSync(fixturePath, JSON.stringify(artifact));
