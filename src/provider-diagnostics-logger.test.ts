@@ -220,12 +220,24 @@ describe('Provider Diagnostics Logger', () => {
   });
 
   describe('getSummary()', () => {
-    it('should provide error summary', () => {
+    it('should summarize error patterns for monitoring', () => {
+      // Start with a baseline, then vary exactly one grouping dimension per entry.
       logger.logEmptyAssistantTurn('scouting', 'gateway', 'openai-responses', 'auto', 100, 146, 'resp_1');
-      logger.logProviderError('scouting', 'gateway', 'openai-responses', 'auto', 'timeout', 'Timeout');
+      logger.logEmptyAssistantTurn('scouting', 'openai', 'openai-responses', 'auto', 200, 146, 'resp_2');
+      logger.logEmptyAssistantTurn('scouting', 'gateway', 'chat-completions', 'auto', 300, 146, 'resp_3');
+      logger.logEmptyAssistantTurn('scouting', 'gateway', 'openai-responses', 'gpt-4', 400, 146, 'resp_4');
+      logger.logEmptyAssistantTurn('scouting', 'gateway', 'openai-responses', 'auto', 500, 147, 'resp_5');
 
       const summary = logger.getSummary();
-      expect(Object.keys(summary).length).toBe(2);
+
+      expect(Object.keys(summary)).toHaveLength(5);
+      expect(summary).toEqual({
+        'gateway:openai-responses:auto:146': 1,
+        'openai:openai-responses:auto:146': 1,
+        'gateway:chat-completions:auto:146': 1,
+        'gateway:openai-responses:gpt-4:146': 1,
+        'gateway:openai-responses:auto:147': 1,
+      });
     });
   });
 
