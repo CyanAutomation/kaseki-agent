@@ -278,7 +278,13 @@ describe('Integration: Scouting Artifact JSON Structure', () => {
 
     expect([0, 1]).toContain(validation.status);
     expect(validation.stderr).toBe('');
-    return JSON.parse(validation.stdout);
+    let result;
+    try {
+      result = JSON.parse(validation.stdout);
+    } catch (e) {
+      throw new Error(`Validator output is not valid JSON: ${validation.stdout}`);
+    }
+    return result;
   };
 
   const requiredFields = {
