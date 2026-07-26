@@ -798,6 +798,9 @@ validate_goal_setting_artifact "$1" "$2" "$3"
               KASEKI_CACHE_DIR: cacheDir,
               KASEKI_STRICT_HOST_LOGGING: '0',
               KASEKI_BASELINE_VALIDATION_ENABLED: '0',
+              KASEKI_AUTO_LINT_CLEANUP: '0',
+              KASEKI_TS_PRE_CHECK: '0',
+              KASEKI_RUN_EVALUATION: '0',
               REPO_URL: fakeRepo,
               GIT_REF: 'main',
               TASK_PROMPT: 'retry original prompt',
@@ -830,17 +833,29 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         }
 
         const piCallOrder = readFileSync(piCalls, 'utf8').trim().split('\n');
-        // This no-diff fixture may skip goal-check; the goal-setting retry,
-        // scouting, and coding order is the behavior under test.
-        // Note: goal-check retries can occasionally add an extra iteration, so we allow up to 8 calls.
         console.log('PI Call Order:', piCallOrder);
-        expect(piCallOrder.length).toBeGreaterThanOrEqual(4);
-        expect(piCallOrder.length).toBeLessThanOrEqual(8);
-        expect(piCallOrder.slice(0, 4)).toEqual(['goal-setting', 'goal-setting', 'scouting', 'coding']);
-        if (piCallOrder.length > 4) {
-          console.log('Remaining calls:', piCallOrder.slice(4));
-          expect(piCallOrder.slice(4).every((stage) => stage === 'goal-check')).toBe(true);
-        }
+        const goalSettingCallIndexes = piCallOrder.flatMap((stage, index) =>
+          stage === 'goal-setting' ? [index] : [],
+        );
+        const scoutingCallIndex = piCallOrder.indexOf('scouting');
+        const firstCodingCallIndex = piCallOrder.indexOf('coding');
+        const goalCheckCalls = piCallOrder.filter((stage) => stage === 'goal-check');
+
+        expect(goalSettingCallIndexes).toHaveLength(2);
+        expect(goalSettingCallIndexes[1]).toBeLessThan(scoutingCallIndex);
+        expect(scoutingCallIndex).toBeLessThan(firstCodingCallIndex);
+        // Goal-check evaluates once before validation and once after validation.
+        expect(goalCheckCalls).toHaveLength(2);
+        // Compare the complete sequence so a newly introduced orchestration stage
+        // is named directly in the regression failure.
+        expect(piCallOrder).toEqual([
+          'goal-setting',
+          'goal-setting',
+          'scouting',
+          'coding',
+          'goal-check',
+          'goal-check',
+        ]);
 
         // Debug: check what goal-setting artifacts exist
         const goalSettingFinalFile = join(resultsDir, 'goal-setting.json');
