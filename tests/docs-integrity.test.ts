@@ -1,5 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  collectMarkdownAnchors,
+  extractMarkdownLinks,
+  isExternalMarkdownLink,
+  splitMarkdownLink,
+} from './helpers/markdown';
 
 /**
  * Tests for documentation integrity.
@@ -12,12 +18,6 @@ import * as path from 'path';
 describe('Documentation integrity', () => {
   const projectRoot = process.cwd();
   const docsDir = path.join(projectRoot, 'docs');
-
-  type MarkdownLink = {
-    text: string;
-    link: string;
-    sourceFile: string;
-  };
 
   type EvaluationDocContract = {
     fileName: string;
@@ -61,84 +61,20 @@ describe('Documentation integrity', () => {
     },
   ];
 
-  // Existing INDEX defects are intentionally tolerated until the documentation
-  // repair task runs. New broken targets or replacement characters still fail.
-  const knownIndexMissingTargets = new Set([
-    'DISASTER_RECOVERY.md',
-    'internal/DEVELOPMENT.md',
-    'repo-maturity.md',
-  ]);
-  const knownIndexReplacementCharacterLines = new Set([
-    '### � Monitoring & Observability',
-    '### �🛠️ Usage & Examples',
-  ]);
-
-  const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
-  const fencedCodeBlockRegex = /^```[\s\S]*?^```$/gm;
-
-  const stripFencedCodeBlocks = (content: string): string => content.replace(fencedCodeBlockRegex, '');
-
-  const slugifyHeading = (heading: string): string => heading
-    .trim()
-    .toLowerCase()
-    .replace(/[`*_~[\]()]/g, '')
-    .replace(/&/g, '')
-    .replace(/[^\p{Letter}\p{Number}\s-]/gu, '')
-    .trim()
-    .replace(/\s/g, '-');
-
-  const collectAnchors = (content: string): Set<string> => {
-    const anchors = new Set<string>();
-    const headingRegex = /^#{1,6}\s+(.+)$/gm;
-    let headingMatch: RegExpExecArray | null;
-    const markdownWithoutCode = stripFencedCodeBlocks(content);
-
-    while ((headingMatch = headingRegex.exec(markdownWithoutCode)) !== null) {
-      anchors.add(slugifyHeading(headingMatch[1]));
-    }
-
-    return anchors;
-  };
-
-  const extractMarkdownLinks = (content: string, sourceFile: string): MarkdownLink[] => {
-    const links: MarkdownLink[] = [];
-    let match: RegExpExecArray | null;
-    const markdownWithoutCode = stripFencedCodeBlocks(content);
-
-    markdownLinkRegex.lastIndex = 0;
-    while ((match = markdownLinkRegex.exec(markdownWithoutCode)) !== null) {
-      links.push({ text: match[1], link: match[2], sourceFile });
-    }
-
-    return links;
-  };
-
-  const isExternalLink = (link: string): boolean => /^[a-z][a-z0-9+.-]*:/i.test(link);
-
-  const splitLink = (link: string): { filePart: string; anchor?: string } => {
-    const [rawFilePart, rawAnchor] = link.split('#');
-    const [filePart] = rawFilePart.split(/[?;]/).map(s => s.trim());
-
-    return {
-      filePart: filePart ? decodeURIComponent(filePart) : '',
-      anchor: rawAnchor ? decodeURIComponent(rawAnchor) : undefined,
-    };
-  };
-
   it('resolves internal markdown links and anchors in evaluation docs', () => {
     evaluationDocContracts.forEach(({ fileName }) => {
       const sourcePath = path.join(docsDir, fileName);
       const sourceContent = fs.readFileSync(sourcePath, 'utf8');
       const sourceDir = path.dirname(sourcePath);
       const sourceFile = path.relative(projectRoot, sourcePath);
-      const sourceAnchors = collectAnchors(sourceContent);
+      const sourceAnchors = collectMarkdownAnchors(sourceContent);
 
       extractMarkdownLinks(sourceContent, sourceFile).forEach(({ link }) => {
-        if (isExternalLink(link)) {
+        if (isExternalMarkdownLink(link)) {
           return;
         }
 
-        const { filePart, anchor } = splitLink(link);
+        const { filePart, anchor } = splitMarkdownLink(link);
         const targetPath = filePart ? path.resolve(sourceDir, filePart) : sourcePath;
 
         expect(fs.existsSync(targetPath)).toBe(true);
@@ -147,7 +83,7 @@ describe('Documentation integrity', () => {
           const targetContent = targetPath === sourcePath
             ? sourceContent
             : fs.readFileSync(targetPath, 'utf8');
-          const targetAnchors = targetPath === sourcePath ? sourceAnchors : collectAnchors(targetContent);
+          const targetAnchors = targetPath === sourcePath ? sourceAnchors : collectMarkdownAnchors(targetContent);
 
           expect(targetAnchors).toContain(anchor);
         }
@@ -163,7 +99,7 @@ describe('Documentation integrity', () => {
 
       const sourceContent = fs.readFileSync(sourcePath, 'utf8');
       const linkTargets = extractMarkdownLinks(sourceContent, fileName).map(({ link }) => link);
-      const anchors = collectAnchors(sourceContent);
+      const anchors = collectMarkdownAnchors(sourceContent);
 
       requiredLinks?.forEach((requiredLink) => {
         expect(linkTargets).toContain(requiredLink);
@@ -175,23 +111,31 @@ describe('Documentation integrity', () => {
     });
   });
 
-  it('does not introduce new broken links or encoding corruption in docs/INDEX.md', () => {
+  it('resolves every repository target in docs/INDEX.md without encoding corruption', () => {
     const sourcePath = path.join(docsDir, 'INDEX.md');
     const sourceContent = fs.readFileSync(sourcePath, 'utf8');
+    const failures: string[] = [];
 
-    const unexpectedMissingTargets = extractMarkdownLinks(sourceContent, 'docs/INDEX.md')
-      .map(({ link }) => splitLink(link).filePart)
-      .filter(Boolean)
-      .filter((target) => !isExternalLink(target))
-      .filter((target) => !fs.existsSync(path.resolve(docsDir, target)))
-      .filter((target) => !knownIndexMissingTargets.has(target));
+    if (sourceContent.includes('\uFFFD')) {
+      failures.push('docs/INDEX.md: contains a Unicode replacement character');
+    }
 
-    const unexpectedReplacementCharacterLines = sourceContent
-      .split(/\r?\n/)
-      .filter((line) => line.includes('�'))
-      .filter((line) => !knownIndexReplacementCharacterLines.has(line));
+    extractMarkdownLinks(sourceContent, 'docs/INDEX.md').forEach(({ link }) => {
+      if (isExternalMarkdownLink(link)) return;
 
-    expect(unexpectedMissingTargets).toEqual([]);
-    expect(unexpectedReplacementCharacterLines).toEqual([]);
+      const { filePart, anchor } = splitMarkdownLink(link);
+      const targetPath = filePart ? path.resolve(docsDir, filePart) : sourcePath;
+      if (!fs.existsSync(targetPath)) {
+        failures.push(`docs/INDEX.md: missing target ${link}`);
+        return;
+      }
+
+      if (anchor && fs.statSync(targetPath).isFile()) {
+        const anchors = collectMarkdownAnchors(fs.readFileSync(targetPath, 'utf8'));
+        if (!anchors.has(anchor)) failures.push(`docs/INDEX.md: missing anchor ${link}`);
+      }
+    });
+
+    expect(failures).toEqual([]);
   });
 });
