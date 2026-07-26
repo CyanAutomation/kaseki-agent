@@ -267,29 +267,34 @@ describe('Integration: Scouting Artifact JSON Structure', () => {
   const validateWithScoutingWorkflow = (artifact: unknown) => {
     const fixtureDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'scouting-prompt-example-'));
     const fixturePath = path.join(fixtureDirectory, 'scouting-candidate.json');
-    fs.writeFileSync(fixturePath, JSON.stringify(artifact));
+    let validation;
 
-    const validation = spawnSync(
-      process.execPath,
-      [path.join(__dirname, '..', 'dist', 'scouting-allowlist.js'), 'validate', fixturePath],
-      { encoding: 'utf8' },
-    );
     try {
-      fs.rmSync(fixtureDirectory, { recursive: true, force: true });
-    } catch (e) {
-      // Non-fatal cleanup failure, log but continue
-      console.warn(`Failed to clean up temp directory ${fixtureDirectory}:`, e);
+      fs.writeFileSync(fixturePath, JSON.stringify(artifact));
+      validation = spawnSync(
+        process.execPath,
+        [path.join(__dirname, '..', 'dist', 'scouting-allowlist.js'), 'validate', fixturePath],
+        { encoding: 'utf8' },
+      );
+    } finally {
+      try {
+        fs.rmSync(fixtureDirectory, { recursive: true, force: true });
+      } catch (error) {
+        // Cleanup failures should not obscure the validator result.
+        console.warn(`Failed to clean up temp directory ${fixtureDirectory}:`, error);
+      }
     }
 
     expect([0, 1]).toContain(validation.status);
     expect(validation.stderr).toBe('');
-    let result;
     try {
-      result = JSON.parse(validation.stdout);
-    } catch (e) {
-      throw new Error(`Validator output is not valid JSON: ${validation.stdout}`);
+      return JSON.parse(validation.stdout);
+    } catch (error) {
+      const parseFailure = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Validator output is not valid JSON (${parseFailure}): ${validation.stdout}`,
+      );
     }
-    return result;
   };
 
   const requiredFields = {
