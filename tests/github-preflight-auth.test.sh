@@ -41,8 +41,8 @@ printf '%s' '-----BEGIN RSA PRIVATE KEY----- SUPER-SECRET-PRIVATE-KEY-BODY -----
 # Stable entry point for helper functions under test.
 # shellcheck source=../scripts/lib/json.sh
 . "$PROJECT_ROOT/scripts/lib/json.sh"
-# shellcheck source=../scripts/github-preflight-auth.sh
-. "$PROJECT_ROOT/scripts/github-preflight-auth.sh"
+# shellcheck source=../scripts/github-preflight-health.sh
+. "$PROJECT_ROOT/scripts/github-preflight-health.sh"
 
 # Test setup variables (SC2034: assigned for external use by sourced functions)
 REPO_URL="https://github.com/acme/widgets"

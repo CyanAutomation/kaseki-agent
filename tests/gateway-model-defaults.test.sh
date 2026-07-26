@@ -68,6 +68,7 @@ cp "$REPO_ROOT/scripts/evaluation-prompts.sh" "$TMP_DIR/scripts/evaluation-promp
 cp "$REPO_ROOT/scripts/inspect-mode-defaults.sh" "$TMP_DIR/scripts/inspect-mode-defaults.sh"
 cp "$REPO_ROOT/scripts/auto-lint-cleanup-classification.sh" "$TMP_DIR/scripts/auto-lint-cleanup-classification.sh"
 cp "$REPO_ROOT/scripts/github-preflight-auth.sh" "$TMP_DIR/scripts/github-preflight-auth.sh"
+cp "$REPO_ROOT/scripts/github-preflight-health.sh" "$TMP_DIR/scripts/github-preflight-health.sh"
 [ ! -f "$REPO_ROOT/dist/scouting-allowlist.js" ] || cp "$REPO_ROOT/dist/scouting-allowlist.js" "$TMP_DIR/dist/scouting-allowlist.js"
 touch "$TMP_DIR/dist/scouting-allowlist.js"
 touch "$TMP_DIR/app/lib/event-aggregator.js" "$TMP_DIR/app/lib/timestamp-tracker.js" "$TMP_DIR/app/lib/progress-stream-utils.js"

@@ -6699,6 +6699,22 @@ if [ "$source_status" -ne 0 ]; then
   exit 1
 fi
 
+KASEKI_GITHUB_PREFLIGHT_HEALTH_HELPER="${KASEKI_GITHUB_PREFLIGHT_HEALTH_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/github-preflight-health.sh}"
+if [ ! -r "$KASEKI_GITHUB_PREFLIGHT_HEALTH_HELPER" ] && [ -r /app/scripts/github-preflight-health.sh ]; then
+  KASEKI_GITHUB_PREFLIGHT_HEALTH_HELPER="/app/scripts/github-preflight-health.sh"
+fi
+if [ ! -r "$KASEKI_GITHUB_PREFLIGHT_HEALTH_HELPER" ]; then
+  printf 'ERROR: GitHub preflight health helper is not readable: %s\n' "$KASEKI_GITHUB_PREFLIGHT_HEALTH_HELPER" >&2
+  exit 66
+fi
+# shellcheck source=/dev/null
+. "$KASEKI_GITHUB_PREFLIGHT_HEALTH_HELPER"
+source_status=$?
+if [ "$source_status" -ne 0 ]; then
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_GITHUB_PREFLIGHT_HEALTH_HELPER" "$source_status" >&2
+  exit 1
+fi
+
 validate_github_api_response() {
   local http_status response log_file error_type error_message json_valid
   http_status="$1"
@@ -8049,7 +8065,11 @@ printf 'Pi version: %s\n' "${PI_VERSION:-not checked before pre-agent validation
 # Run preflight health check for GitHub operations if enabled
 if [ "$GITHUB_APP_ENABLED" = "1" ]; then
   printf '\n==> github operations preflight health check\n'
-  if ! check_github_operations_health; then
+  if ! check_github_operations_health \
+    "${KASEKI_GITHUB_APP_TOKEN_HELPER:-/usr/local/bin/github-app-token}" \
+    "${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}" \
+    "$KASEKI_RESULTS_DIR" \
+    "${KASEKI_HEALTH_LOG:-${KASEKI_RESULTS_DIR}/github-health-check.log}"; then
     printf 'ERROR: GitHub operations preflight health check failed\n' >&2
     printf 'GitHub App is enabled but configuration or dependencies are missing.\n' >&2
     printf 'Proceeding with kaseki run, but GitHub operations will be skipped or fail.\n' >&2
