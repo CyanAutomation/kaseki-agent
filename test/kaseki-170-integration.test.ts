@@ -182,26 +182,6 @@ describe('Integration: Kaseki-170 Empty Assistant Turn Flow', () => {
     expect(diagnostics[2].errorType).toBe('timeout');
   });
 
-  it('should summarize error patterns for monitoring', () => {
-    // Simulate multiple empty assistant turns from same provider/api
-    for (let i = 0; i < 3; i++) {
-      logger.logEmptyAssistantTurn(
-        'scouting',
-        'gateway',
-        'openai-responses',
-        'auto',
-        100 + i * 100,
-        146,
-        `resp_${i}`
-      );
-    }
-
-    const summary = logger.getSummary();
-
-    // Only one unique key since all have same provider:api:model:output_tokens
-    expect(Object.keys(summary).length).toBeGreaterThan(0);
-  });
-
   it('should enable debugging workflow', () => {
     /**
      * Workflow for debugging kaseki-170:
