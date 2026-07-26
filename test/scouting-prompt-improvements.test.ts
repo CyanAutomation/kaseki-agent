@@ -274,7 +274,12 @@ describe('Integration: Scouting Artifact JSON Structure', () => {
       [path.join(__dirname, '..', 'dist', 'scouting-allowlist.js'), 'validate', fixturePath],
       { encoding: 'utf8' },
     );
-    fs.rmSync(fixtureDirectory, { recursive: true, force: true });
+    try {
+      fs.rmSync(fixtureDirectory, { recursive: true, force: true });
+    } catch (e) {
+      // Non-fatal cleanup failure, log but continue
+      console.warn(`Failed to clean up temp directory ${fixtureDirectory}:`, e);
+    }
 
     expect([0, 1]).toContain(validation.status);
     expect(validation.stderr).toBe('');
