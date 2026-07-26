@@ -19,9 +19,10 @@ unset _GITHUB_PREFLIGHT_HEALTH_DIR
 
 github_private_key_metadata_json() {
   local key_file="$1"
-  local byte_count pem_header_present pem_footer_present
+  local byte_count first_pem_header_line pem_header_present pem_footer_present sha256_fingerprint
   byte_count="$(wc -c < "$key_file" | awk '{print $1}')"
-  if grep -aoEq -- '-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----' "$key_file"; then
+  first_pem_header_line="$(grep -aoEm1 -- '-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----' "$key_file" || true)"
+  if [ -n "$first_pem_header_line" ]; then
     pem_header_present="true"
   else
     pem_header_present="false"
@@ -31,11 +32,14 @@ github_private_key_metadata_json() {
   else
     pem_footer_present="false"
   fi
+  sha256_fingerprint="$(sha256sum "$key_file" | awk '{print $1}')"
   cat <<META
 {
   "byte_count": $byte_count,
+  "first_pem_header_line": "$first_pem_header_line",
   "pem_header_present": $pem_header_present,
-  "pem_footer_present": $pem_footer_present
+  "pem_footer_present": $pem_footer_present,
+  "sha256_fingerprint": "$sha256_fingerprint"
 }
 META
 }
