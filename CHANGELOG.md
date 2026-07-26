@@ -4,6 +4,19 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.120.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.120.0...v1.120.1) (2026-07-26)
+
+
+### Bug Fixes
+
+* abort cleanup when scheduler state is unknown ([a6305e9](https://github.com/CyanAutomation/kaseki-agent/commit/a6305e900014bc0af7a6e816f990ebb6a1cf0d87))
+* claim persisted webhook deliveries ([9fb1dd9](https://github.com/CyanAutomation/kaseki-agent/commit/9fb1dd9cb0f8ba4fd32c33fd954bc2aafeeccf8e))
+* enforce documentation index integrity ([3297c9f](https://github.com/CyanAutomation/kaseki-agent/commit/3297c9faa78a914ec226147a4701de9f0d424e94))
+* handle unavailable sha256 fingerprint tool ([3c59d93](https://github.com/CyanAutomation/kaseki-agent/commit/3c59d9367837aa2c8d6c1fade85a75efb61cdad3))
+* redact GitHub credentials from preflight failures ([d536cda](https://github.com/CyanAutomation/kaseki-agent/commit/d536cda95d743245d372cd692791de4b44425166))
+* safely close scheduler index descriptor ([829ed6e](https://github.com/CyanAutomation/kaseki-agent/commit/829ed6e9fb8dd4d9171a2d0dbd1a072e6f680705))
+* synchronize webhook claim state ([6c501f1](https://github.com/CyanAutomation/kaseki-agent/commit/6c501f1b2791e408d97a6fb6a462804867441d18))
+
 # [1.120.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.119.0...v1.120.0) (2026-07-26)
 
 
