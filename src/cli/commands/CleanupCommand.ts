@@ -10,6 +10,7 @@ import { createLogger } from '../../logger';
 import {
   cleanupOldRuns,
   createCleanupPlan,
+  SchedulerStateUnavailableError,
   type CleanupPlan,
 } from '../../cleanup-manager';
 import type { ConfigManager } from '../../config/ConfigManager';
@@ -56,7 +57,19 @@ export class CleanupCommand extends BaseCommand {
 
       // Consult the scheduler-owned durable job index before presenting any run
       // as deletable. cleanupOldRuns reads it again immediately before deletion.
-      const plan = createCleanupPlan(resultsDir, retentionCount);
+      let plan: CleanupPlan;
+      try {
+        plan = createCleanupPlan(resultsDir, retentionCount);
+      } catch (error) {
+        if (error instanceof SchedulerStateUnavailableError) {
+          const prefix = dryRun ? '[DRY RUN] ' : '';
+          console.error(
+            `❌ ${prefix}No deletion plan was produced because active-job safety could not be established.`,
+          );
+          return 1;
+        }
+        throw error;
+      }
       const runCount = plan.allRuns.length;
 
       if (plan.runsToDelete.length === 0) {

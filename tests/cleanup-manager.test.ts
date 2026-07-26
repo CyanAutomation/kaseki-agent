@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { spawn } from 'child_process';
 import {
   cleanupCacheDir,
   cleanupOldRuns,
@@ -10,6 +11,7 @@ import {
   getDirectorySize,
   listRuns,
   refreshCleanupPlanActiveRuns,
+  SchedulerStateUnavailableError,
   shouldRemoveCacheEntry,
 } from '../src/cleanup-manager';
 
@@ -363,26 +365,74 @@ describe('cleanup-manager', () => {
       expect(refreshedPlan.retainedRunNames).toEqual(new Set(['kaseki-1']));
     });
 
-    it('continues terminal cleanup when the scheduler index is malformed', async () => {
+    it('aborts cleanup when the scheduler index is malformed', async () => {
       const runPath = path.join(resultsDir, 'kaseki-1');
       fs.mkdirSync(runPath);
+      const cacheEntry = path.join(cacheDir, 'cache-1');
+      fs.mkdirSync(cacheEntry);
+      fs.writeFileSync(path.join(cacheEntry, '.used-by-runs'), 'kaseki-1\n');
       fs.writeFileSync(
         path.join(resultsDir, '.kaseki-api-jobs.json'),
         '{not-json',
       );
-      const consoleErrorSpy = jest
-        .spyOn(console, 'error')
-        .mockImplementation(() => undefined);
+
+      expect(() => getActiveRunNames(resultsDir)).toThrow(
+        SchedulerStateUnavailableError,
+      );
+      await expect(
+        cleanupOldRuns(resultsDir, cacheDir, 0, false),
+      ).rejects.toThrow(SchedulerStateUnavailableError);
+      expect(fs.existsSync(runPath)).toBe(true);
+      expect(fs.existsSync(cacheEntry)).toBe(true);
+    });
+
+    it('aborts cleanup when the scheduler index cannot be read', async () => {
+      const runPath = path.join(resultsDir, 'kaseki-1');
+      const indexPath = path.join(resultsDir, '.kaseki-api-jobs.json');
+      const cacheEntry = path.join(cacheDir, 'cache-1');
+      fs.mkdirSync(runPath);
+      fs.mkdirSync(cacheEntry);
+      fs.writeFileSync(path.join(cacheEntry, '.used-by-runs'), 'kaseki-1\n');
+      // A directory can be opened for reading on Linux, but cannot be read as a
+      // scheduler JSON file. This reliably exercises the I/O failure path even
+      // when the test process runs as root and bypasses file permission bits.
+      fs.mkdirSync(indexPath);
+
+      await expect(
+        cleanupOldRuns(resultsDir, cacheDir, 0, false),
+      ).rejects.toThrow(SchedulerStateUnavailableError);
+      expect(fs.existsSync(runPath)).toBe(true);
+      expect(fs.existsSync(cacheEntry)).toBe(true);
+    });
+
+    it('aborts cleanup when the scheduler index changes during inspection', async () => {
+      const runPath = path.join(resultsDir, 'kaseki-1');
+      const indexPath = path.join(resultsDir, '.kaseki-api-jobs.json');
+      const cacheEntry = path.join(cacheDir, 'cache-1');
+      fs.mkdirSync(runPath);
+      fs.mkdirSync(cacheEntry);
+      fs.writeFileSync(path.join(cacheEntry, '.used-by-runs'), 'kaseki-1\n');
+      fs.writeFileSync(
+        indexPath,
+        `${JSON.stringify({ jobs: [] })}${' '.repeat(16 * 1024 * 1024)}`,
+      );
+      const writer = spawn('bash', [
+        '-c',
+        'while true; do printf " " >> "$1"; done',
+        'scheduler-index-writer',
+        indexPath,
+      ], { stdio: 'ignore' });
 
       try {
-        expect(getActiveRunNames(resultsDir)).toEqual(new Set());
-        const result = await cleanupOldRuns(resultsDir, cacheDir, 0, false);
-
-        expect(result.deletedCount).toBe(1);
-        expect(fs.existsSync(runPath)).toBe(false);
-        expect(consoleErrorSpy).toHaveBeenCalled();
+        // The large file ensures the concurrent writer changes its metadata
+        // between the before/after descriptor inspections.
+        await expect(
+          cleanupOldRuns(resultsDir, cacheDir, 0, false),
+        ).rejects.toThrow(SchedulerStateUnavailableError);
+        expect(fs.existsSync(runPath)).toBe(true);
+        expect(fs.existsSync(cacheEntry)).toBe(true);
       } finally {
-        consoleErrorSpy.mockRestore();
+        writer.kill('SIGKILL');
       }
     });
   });

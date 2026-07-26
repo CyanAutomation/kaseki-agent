@@ -2,17 +2,25 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as readline from 'readline';
-import { cleanupOldRuns, createCleanupPlan } from '../src/cleanup-manager';
+import {
+  cleanupOldRuns,
+  createCleanupPlan,
+  SchedulerStateUnavailableError,
+} from '../src/cleanup-manager';
 import { CleanupCommand } from '../src/cli/commands/CleanupCommand';
 import type { ConfigManager } from '../src/config/ConfigManager';
 
 jest.mock('readline', () => ({
   createInterface: jest.fn(),
 }));
-jest.mock('../src/cleanup-manager', () => ({
-  cleanupOldRuns: jest.fn(),
-  createCleanupPlan: jest.fn(),
-}));
+jest.mock('../src/cleanup-manager', () => {
+  const actual = jest.requireActual('../src/cleanup-manager');
+  return {
+    ...actual,
+    cleanupOldRuns: jest.fn(),
+    createCleanupPlan: jest.fn(),
+  };
+});
 
 const createInterfaceMock = jest.mocked(readline.createInterface);
 const cleanupOldRunsMock = jest.mocked(cleanupOldRuns);
@@ -176,6 +184,26 @@ describe('CleanupCommand confirmation', () => {
     await expect(execute(['--dry-run', '--force'])).resolves.toBe(0);
 
     expect(createInterfaceMock).not.toHaveBeenCalled();
+    expect(cleanupOldRunsMock).not.toHaveBeenCalled();
+  });
+
+  it('reports that dry-run cannot produce a safe deletion plan', async () => {
+    const consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    createCleanupPlanMock.mockImplementation(() => {
+      throw new SchedulerStateUnavailableError(
+        path.join(resultsDir, '.kaseki-api-jobs.json'),
+      );
+    });
+
+    await expect(execute(['--dry-run'])).resolves.toBe(1);
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '[DRY RUN] No deletion plan was produced because active-job safety could not be established',
+      ),
+    );
     expect(cleanupOldRunsMock).not.toHaveBeenCalled();
   });
 });
