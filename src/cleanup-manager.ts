@@ -446,7 +446,7 @@ function safelyClaimAndRemoveDirectory(
     fs.openSync(
       directoryPath,
       fs.constants.O_RDONLY |
-        (fs.constants.O_DIRECTORY ?? 0) |
+        fs.constants.O_DIRECTORY |
         (fs.constants.O_NOFOLLOW ?? 0),
     );
   try {
