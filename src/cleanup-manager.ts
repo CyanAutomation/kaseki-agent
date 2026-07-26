@@ -38,6 +38,20 @@ export interface CleanupPlan {
 
 const JOBS_INDEX_NAME = '.kaseki-api-jobs.json';
 
+/** Build flags that guarantee openSync only opens a real directory. */
+function directoryOpenFlags(): number {
+  const directoryFlag = fs.constants.O_DIRECTORY as number | undefined;
+  if (directoryFlag === undefined) {
+    throw new Error('Safe cleanup requires fs.constants.O_DIRECTORY');
+  }
+
+  return (
+    fs.constants.O_RDONLY |
+    directoryFlag |
+    (fs.constants.O_NOFOLLOW ?? 0)
+  );
+}
+
 /** Indicates that cleanup cannot safely determine which scheduler runs are active. */
 export class SchedulerStateUnavailableError extends Error {
   constructor(indexPath: string, cause?: unknown) {
@@ -337,9 +351,7 @@ export async function cleanupOldRuns(
         run.name,
         fs.openSync(
           run.path,
-          fs.constants.O_RDONLY |
-            fs.constants.O_DIRECTORY |
-            (fs.constants.O_NOFOLLOW ?? 0),
+          directoryOpenFlags(),
         ),
       );
     } catch {
@@ -445,9 +457,7 @@ function safelyClaimAndRemoveDirectory(
     existingDescriptor ??
     fs.openSync(
       directoryPath,
-      fs.constants.O_RDONLY |
-        fs.constants.O_DIRECTORY |
-        (fs.constants.O_NOFOLLOW ?? 0),
+      directoryOpenFlags(),
     );
   try {
     const opened = fs.fstatSync(descriptor);
