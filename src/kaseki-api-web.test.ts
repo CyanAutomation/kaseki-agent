@@ -158,7 +158,7 @@ describe('kaseki API web console routes', () => {
     expect(document.querySelector('#recommended-artifacts')?.textContent).toContain('Key Diagnostics');
     expect(document.querySelector('#copy-diagnostic-bundle-btn')?.textContent).toContain('Copy Debug Summary');
     expect(document.querySelector('#response-summary')?.hasAttribute('hidden')).toBe(true);
-    expect(body).toContain('terminal artifacts report fallback/failure signals');
+    expect(body).toContain("['failed', 'cancelled', 'canceled', 'timed_out']");
     expect(body).toContain("loadModalTab('events', { background: true })");
     expect(document.querySelector('#submit-tab')?.getAttribute('aria-hidden')).toBe('true');
     expect(document.body.textContent).not.toContain('Task Progress');
@@ -693,6 +693,53 @@ describe('kaseki API web console behavior', () => {
     click(document.querySelector('.tab-btn[data-tab="stdout"]'));
     await waitFor(() => expect(document.querySelector('#stdout-output')?.textContent).toBe('line one\nline two\n'));
     expect(document.querySelector('#stdout-output')?.textContent).not.toBe('[object Object]');
+  });
+
+  test('serializes structured stdout content instead of rendering [object Object]', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/runs/kaseki-303/status') return createJsonResponse({ id: 'kaseki-303', status: 'completed' });
+        if (path === '/api/runs/kaseki-303/logs/stdout?tail=lines&lines=200') {
+          return createJsonResponse({ logType: 'stdout', content: { message: 'structured agent output' } });
+        }
+        return createJsonResponse({});
+      },
+    });
+
+    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
+    if (!runIdInput) throw new Error('Expected #run-id to exist');
+    runIdInput.value = 'kaseki-303';
+    click(document.querySelector('#full-results-btn'));
+    await waitFor(() => expect(document.querySelector('#full-results-modal')?.hasAttribute('hidden')).toBe(false));
+
+    click(document.querySelector('.tab-btn[data-tab="stdout"]'));
+    await waitFor(() => expect(document.querySelector('#stdout-output')?.textContent).toContain('structured agent output'));
+    expect(document.querySelector('#stdout-output')?.textContent).not.toBe('[object Object]');
+  });
+
+  test('does not warn about a successful empty-diff run', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/runs/kaseki-304/status') {
+          return createJsonResponse({
+            id: 'kaseki-304',
+            status: 'completed',
+            exitCode: 0,
+            resultSummaryContent: '# Summary\nChanged Files: 0\nDiff Lines: 0',
+          });
+        }
+        return createJsonResponse({});
+      },
+    });
+
+    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
+    if (!runIdInput) throw new Error('Expected #run-id to exist');
+    runIdInput.value = 'kaseki-304';
+    click(document.querySelector('#full-results-btn'));
+    await waitFor(() => expect(document.querySelector('#status-output')?.textContent).toContain('Status: completed'));
+    expect(document.querySelector('#status-output')?.textContent).not.toContain('fallback/failure signals');
   });
 
   test('summarizes noisy preflight and artifact responses in the response panel', async () => {
