@@ -297,6 +297,12 @@ export interface StatusResponse {
     stale: boolean;
     source?: 'progress.jsonl' | 'docker-logs';
   };
+  /** A non-blocking problem in the final evaluator for an otherwise terminal run. */
+  runEvaluation?: {
+    status: 'passed' | 'warning';
+    warning?: string;
+    exitCode?: number;
+  };
   validationCommands?: Array<{
     stage: string;
     command: string;

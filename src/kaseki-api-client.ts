@@ -14,9 +14,12 @@ const ValidationResponseSchema = z.object({
 
 const StructuredProgressSchema = z.object({
   stage: z.string(),
+  displayName: z.string().optional(),
   percentComplete: z.number().optional(),
   message: z.string().optional(),
   updatedAt: z.string().optional(),
+  source: z.enum(['progress.jsonl', 'docker-logs']).optional(),
+  timestampEstimated: z.boolean().optional(),
 });
 
 const StatusResponseSchema = z.object({
@@ -36,6 +39,11 @@ const StatusResponseSchema = z.object({
   requestId: z.string().optional(),
   resultDir: z.string().optional(),
   progress: StructuredProgressSchema.optional(),
+  runEvaluation: z.object({
+    status: z.enum(['passed', 'warning']),
+    warning: z.string().optional(),
+    exitCode: z.number().optional(),
+  }).optional(),
   artifacts: z.object({
     metadataJson: z.boolean(),
     analysisMd: z.boolean(),

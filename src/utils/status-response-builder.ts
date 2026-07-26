@@ -96,6 +96,7 @@ export class StatusResponseBuilder {
     this.addTaskProgressInfo(response, job);
     this.addArtifactInfo(response, job);
     this.addDiagnosticSummary(response, job);
+    this.addRunEvaluationInfo(response, metadata);
 
     if (job.status === 'failed' && !response.error && response.diagnosticSummary?.primaryReason) {
       response.error = response.diagnosticSummary.primaryReason;
@@ -150,5 +151,18 @@ export class StatusResponseBuilder {
 
   private addDiagnosticSummary(response: StatusResponse, job: Job): void {
     return this.artifactHelper.addDiagnosticSummary(response, job);
+  }
+
+  private addRunEvaluationInfo(response: StatusResponse, metadata: Record<string, unknown>): void {
+    const warning = this.metadataHelper.stringField(metadata, 'run_evaluation_warning');
+    const exitCode = Number(metadata.run_evaluation_exit_code);
+    const evaluatorFailed = Number.isFinite(exitCode) && exitCode !== 0;
+    if (!warning && !evaluatorFailed) return;
+
+    response.runEvaluation = {
+      status: 'warning',
+      ...(warning ? { warning } : { warning: `run_evaluation_failed_exit_${exitCode}` }),
+      ...(Number.isFinite(exitCode) ? { exitCode } : {}),
+    };
   }
 }
