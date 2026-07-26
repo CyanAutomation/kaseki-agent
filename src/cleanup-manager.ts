@@ -29,15 +29,57 @@ export interface CleanupPlan {
 
 const JOBS_INDEX_NAME = '.kaseki-api-jobs.json';
 
+/** Indicates that cleanup cannot safely determine which scheduler runs are active. */
+export class SchedulerStateUnavailableError extends Error {
+  constructor(indexPath: string, cause?: unknown) {
+    super(`Unable to establish active-job safety from ${indexPath}`, { cause });
+    this.name = 'SchedulerStateUnavailableError';
+  }
+}
+
+function schedulerIndexChanged(
+  before: fs.Stats,
+  after: fs.Stats,
+): boolean {
+  return (
+    before.dev !== after.dev ||
+    before.ino !== after.ino ||
+    before.size !== after.size ||
+    before.mtimeMs !== after.mtimeMs ||
+    before.ctimeMs !== after.ctimeMs
+  );
+}
+
 /** Read the scheduler-owned durable index and return every queued or running run ID. */
 export function getActiveRunNames(resultsDir: string): Set<string> {
   const indexPath = path.join(resultsDir, JOBS_INDEX_NAME);
-  if (!fs.existsSync(indexPath)) return new Set();
+  let descriptor: number;
 
   try {
-    const parsed = JSON.parse(fs.readFileSync(indexPath, 'utf-8')) as {
+    descriptor = fs.openSync(indexPath, 'r');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return new Set();
+    throw new SchedulerStateUnavailableError(indexPath, error);
+  }
+
+  try {
+    const before = fs.fstatSync(descriptor);
+    const content = fs.readFileSync(descriptor, 'utf-8');
+    const after = fs.fstatSync(descriptor);
+    const currentPath = fs.statSync(indexPath);
+    if (
+      schedulerIndexChanged(before, after) ||
+      schedulerIndexChanged(after, currentPath)
+    ) {
+      throw new Error('scheduler index changed while it was being read');
+    }
+
+    const parsed = JSON.parse(content) as {
       jobs?: Array<{ id?: unknown; status?: unknown }>;
     };
+    if (parsed === null || typeof parsed !== 'object') {
+      throw new Error('scheduler index must be an object');
+    }
     if (parsed.jobs !== undefined && !Array.isArray(parsed.jobs)) {
       throw new Error('jobs must be an array');
     }
@@ -52,10 +94,13 @@ export function getActiveRunNames(resultsDir: string): Set<string> {
         ),
     );
   } catch (error) {
-    // If the scheduler state is unreadable, fail open to allow terminal run cleanup
-    // while avoiding deletion of potentially active runs.
-    console.error(`Unable to read active runs from ${indexPath}:`, error);
-    return new Set();
+    throw new SchedulerStateUnavailableError(indexPath, error);
+  } finally {
+    try {
+      fs.closeSync(descriptor);
+    } catch (error) {
+      throw new SchedulerStateUnavailableError(indexPath, error);
+    }
   }
 }
 
