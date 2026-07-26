@@ -32,7 +32,7 @@ github_private_key_metadata_json() {
   else
     pem_footer_present="false"
   fi
-  sha256_fingerprint="$(sha256sum "$key_file" | awk '{print $1}')"
+  sha256_fingerprint="$(sha256sum "$key_file" 2>/dev/null | awk '{print $1}')" || sha256_fingerprint="unavailable"
   cat <<META
 {
   "byte_count": $byte_count,
