@@ -12,6 +12,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const scoutingTemplateDirectory = path.join(__dirname, '..', 'templates', 'scouting');
 
@@ -21,6 +22,28 @@ function readScoutingPromptTemplates(): string {
     .sort()
     .map((file) => fs.readFileSync(path.join(scoutingTemplateDirectory, file), 'utf-8'))
     .join('\n');
+}
+
+function buildRuntimeScoutingPrompt(taskPrompt: string): string {
+  const agentScript = path.join(__dirname, '..', 'kaseki-agent.sh');
+
+  return execFileSync('bash', ['-c', `
+    set -euo pipefail
+    get_caveman_instruction() { printf ''; }
+    eval "$(sed -n '/^build_scouting_prompt() {$/,/^}$/p' "$AGENT_SCRIPT")"
+    build_scouting_prompt
+  `], {
+    encoding: 'utf-8',
+    env: {
+      ...process.env,
+      AGENT_SCRIPT: agentScript,
+      SCRIPT_DIR: path.join(__dirname, '..'),
+      TASK_PROMPT: taskPrompt,
+      KASEKI_SCOUTING_PROMPT_DETAIL: 'compact',
+      KASEKI_SCOUTING_CONTRACT_RETRY: '0',
+      GOAL_SETTING_ARTIFACT: '/results/goal-setting.json',
+    },
+  });
 }
 
 describe('Scouting prompt contracts', () => {
@@ -139,9 +162,16 @@ describe('Scouting prompt contracts', () => {
     expect(promptContent).toMatch(assertionImpact);
   });
 
-  test('keeps the scouting template wired into the runtime prompt builder', () => {
-    const agentScript = fs.readFileSync(path.join(__dirname, '..', 'kaseki-agent.sh'), 'utf-8');
-    expect(agentScript).toContain('templates/scouting/detailed-test-impact.txt');
+  test('builds the user-visible scouting prompt [SCOUTING_PROMPT_DESIGN § Operational Constraints; § Raw Task Prompt]', () => {
+    const taskPrompt = 'Fix null-safety in parseRole()';
+    const runtimePrompt = buildRuntimeScoutingPrompt(taskPrompt);
+
+    expect(runtimePrompt).toMatch(/read-only scouting Pi agent/i);
+    expect(runtimePrompt).toMatch(/Do not edit files, tests, lockfiles, git state, secrets, or environment variables/i);
+    expect(runtimePrompt).toContain('The repository at /workspace/repo is read-only during scouting.');
+    expect(runtimePrompt).toContain('write exactly one JSON object to /results/scouting-candidate.json');
+    expect(runtimePrompt).toContain('## [ORIGINAL TASK PROMPT]');
+    expect(runtimePrompt).toContain(taskPrompt);
   });
 });
 
@@ -245,15 +275,6 @@ describe('Phase 5: Documentation & Maintainability', () => {
     // Phase 5 requirement: Design documentation exists
     // Currently missing - will fail until created
     expect(() => fs.readFileSync(docPath, 'utf-8')).not.toThrow();
-  });
-
-  test('should have inline comments in kaseki-agent.sh prompt', () => {
-    const agentScript = path.join(__dirname, '..', 'kaseki-agent.sh');
-    const content = fs.readFileSync(agentScript, 'utf-8');
-
-    // Phase 5 requirement: Comments explaining sections
-    // Currently minimal - will fail until improved
-    expect(content).toContain('build_scouting_prompt');
   });
 
   test('should have test cases for scouting prompt examples', () => {
