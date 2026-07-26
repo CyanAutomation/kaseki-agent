@@ -508,9 +508,11 @@ GIT_CACHE_MODE_USED="$KASEKI_GIT_CACHE_MODE"
 GIT_CLONE_STRATEGY="not_started"
 GIT_CLONE_DURATION_SECONDS=0
 REPO_MEMORY_KEY=""
+# shellcheck disable=SC2034 # Updated by sourceable repo-memory helpers and emitted in run artifacts.
 REPO_MEMORY_DIR=""
 REPO_MEMORY_FILE=""
 REPO_MEMORY_STATUS="disabled"
+# shellcheck disable=SC2034 # Updated by sourceable repo-memory helpers and emitted in run artifacts.
 REPO_MEMORY_COMMIT_SHA="unknown"
 
 # Caveman communication mode (enabled by default)

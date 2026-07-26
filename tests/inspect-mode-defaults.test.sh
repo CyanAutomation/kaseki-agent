@@ -63,7 +63,7 @@ assert_eq() {
   assert_eq 0 "$KASEKI_GOAL_CHECK" "inspect defaults still disable implicit goal-check"
 )
 (
-  KASEKI_TASK_MODE=patch
+  KASEKI_TASK_MODE="patch"
   unset KASEKI_ALLOW_EMPTY_DIFF
   kaseki_apply_task_mode_diff_defaults
   assert_eq 0 "$KASEKI_ALLOW_EMPTY_DIFF" "patch defaults forbid empty diffs"
@@ -104,7 +104,10 @@ printf '{"selected_model":"test-model"}\n' > "$3"
 EOF_FILTER
 cat > "$FAKE_BIN/timeout" <<'EOF_TIMEOUT'
 #!/usr/bin/env bash
-shift 2
+while [[ "${1:-}" == --* ]]; do
+  shift
+done
+shift
 "$@"
 EOF_TIMEOUT
 cat > "$FAKE_BIN/validation-output-filter" <<'EOF_VALIDATION_FILTER'
@@ -118,6 +121,7 @@ env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspe
   OPENROUTER_API_KEY=test KASEKI_PROVIDER=openrouter GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off KASEKI_TASK_MODE=inspect \
   KASEKI_HASHLINE_EDITS=0 KASEKI_BASELINE_VALIDATION_ENABLED=0 KASEKI_TEST_DEFAULT_PATH_ROOT="$TMP_DIR" \
   KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
+  KASEKI_CHANGED_FILES_ALLOWLIST="node_modules/**" \
   KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" KASEKI_VALIDATION_COMMANDS=":" \
   bash "$REPO_ROOT/kaseki-agent.sh" > "$RUN_LOG" 2>&1
 run_exit=$?
