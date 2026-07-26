@@ -19,7 +19,7 @@ unset _GITHUB_PREFLIGHT_HEALTH_DIR
 
 github_private_key_metadata_json() {
   local key_file="$1"
-  local byte_count first_pem_header_line pem_header_present pem_footer_present sha256_fingerprint
+  local byte_count first_pem_header_line pem_header_present pem_footer_present sha256_fingerprint sha256_output
   byte_count="$(wc -c < "$key_file" | awk '{print $1}')"
   first_pem_header_line="$(grep -aoEm1 -- '-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----' "$key_file" || true)"
   if [ -n "$first_pem_header_line" ]; then
@@ -32,7 +32,12 @@ github_private_key_metadata_json() {
   else
     pem_footer_present="false"
   fi
-  sha256_fingerprint="$(sha256sum "$key_file" 2>/dev/null | awk '{print $1}')" || sha256_fingerprint="unavailable"
+  if sha256_output="$(sha256sum "$key_file" 2>/dev/null)"; then
+    sha256_fingerprint="${sha256_output%%[[:space:]]*}"
+    [ -n "$sha256_fingerprint" ] || sha256_fingerprint="unavailable"
+  else
+    sha256_fingerprint="unavailable"
+  fi
   cat <<META
 {
   "byte_count": $byte_count,
@@ -250,4 +255,3 @@ NODE
   printf '[preflight] github operations health check PASSED\n' | tee -a "$health_log"
   return 0
 }
-
