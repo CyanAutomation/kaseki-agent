@@ -86,9 +86,11 @@ describe('WebhookManager retry attempts', () => {
 });
 
 describe('WebhookManager delivery log recovery', () => {
+  const originalFetch = global.fetch;
   // Spec: Webhook manager must recover pending deliveries from disk on restart
   // Critical for durability: All pending webhook deliveries should survive manager restart
   afterEach(() => {
+    global.fetch = originalFetch;
     jest.restoreAllMocks();
   });
 
@@ -142,6 +144,68 @@ describe('WebhookManager delivery log recovery', () => {
     } finally {
       await first.shutdown();
       await second.shutdown();
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('allows only one manager to deliver a shared pending entry', async () => {
+    const resultsDir = fs.mkdtempSync('/tmp/kaseki-webhook-manager-claim-test-');
+    const first = new WebhookManager(resultsDir);
+    first.stopProcessing();
+    first.enqueueWebhook('job-shared', basePayloadFor('job-shared'), configForTest());
+    const second = new WebhookManager(resultsDir);
+    second.stopProcessing();
+    let resolveFetch!: (response: { ok: boolean; status: number; text: () => Promise<string> }) => void;
+    const fetchMock = jest.fn().mockReturnValue(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      })
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      const firstDrain = first.drainQueueForTest();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(await second.drainQueueForTest()).toBe(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      resolveFetch({ ok: true, status: 200, text: async () => '' });
+      await firstDrain;
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      await first.shutdown();
+      await second.shutdown();
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('recovers a delivery after another manager claim lease expires', async () => {
+    const resultsDir = fs.mkdtempSync('/tmp/kaseki-webhook-manager-expired-claim-test-');
+    const deliveryLogPath = `${resultsDir}/.kaseki-webhook-delivery.log`;
+    const clock = new FakeClock(Date.UTC(2026, 0, 1));
+    fs.writeFileSync(
+      deliveryLogPath,
+      JSON.stringify({
+        jobId: 'job-expired-claim',
+        payload: basePayloadFor('job-expired-claim'),
+        config: configForTest(),
+        deliveryAttempts: 0,
+        attempts: [{ timestamp: new Date(clock.now()).toISOString(), status: 'pending' }],
+        nextRetryTime: clock.now(),
+        deliveryClaimOwner: 'terminated-manager',
+        deliveryClaimExpiresAt: clock.now() - 1,
+      })
+    );
+    const manager = new WebhookManager(resultsDir, { now: clock.now });
+    manager.stopProcessing();
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '' });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      expect(await manager.drainQueueForTest()).toBe(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(manager.getQueueSize()).toBe(0);
+    } finally {
+      await manager.shutdown();
       fs.rmSync(resultsDir, { recursive: true, force: true });
     }
   });

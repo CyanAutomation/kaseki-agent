@@ -27,6 +27,8 @@ interface WebhookQueueEntry {
   attempts: WebhookDeliveryAttempt[];
   nextRetryTime?: number; // Unix timestamp
   inFlight?: boolean; // In-memory flag to prevent duplicate deliveries
+  deliveryClaimOwner?: string;
+  deliveryClaimExpiresAt?: number;
 }
 
 interface PersistedWebhookQueueEntry {
@@ -36,10 +38,13 @@ interface PersistedWebhookQueueEntry {
   deliveryAttempts: number;
   attempts?: WebhookDeliveryAttempt[];
   nextRetryTime?: number;
+  deliveryClaimOwner?: string;
+  deliveryClaimExpiresAt?: number;
 }
 
 export interface WebhookManagerOptions {
   now?: () => number;
+  deliveryClaimLeaseMs?: number;
 }
 
 export interface WebhookQueueSnapshotEntry {
@@ -63,6 +68,8 @@ export class WebhookManager extends EventEmitter {
   private activeDeliveries = 0;
   private readonly now: () => number;
   private readonly fileSystemClockOffsetMs: number;
+  private readonly deliveryClaimOwner = `${process.pid}:${crypto.randomUUID()}`;
+  private readonly deliveryClaimLeaseMs: number;
 
   constructor(resultsDir: string, options: WebhookManagerOptions = {}) {
     super();
@@ -70,6 +77,7 @@ export class WebhookManager extends EventEmitter {
     this.deliveryLogPath = path.join(resultsDir, '.kaseki-webhook-delivery.log');
     this.deliveryLogLockPath = path.join(resultsDir, '.kaseki-webhook-delivery.log.lock');
     this.now = options.now ?? Date.now;
+    this.deliveryClaimLeaseMs = options.deliveryClaimLeaseMs ?? 30_000;
     // File timestamps use the system clock. Translate them into the injected
     // clock's domain so stale-lock recovery remains deterministic in tests.
     this.fileSystemClockOffsetMs = this.now() - Date.now();
@@ -164,8 +172,13 @@ export class WebhookManager extends EventEmitter {
       return false;
     }
 
-    // Mark entry as in-flight before starting delivery
+    // The in-memory flag only protects this instance. The durable claim below
+    // serializes delivery with every manager sharing the log.
     entry.inFlight = true;
+    if (!this.claimDelivery(entry)) {
+      entry.inFlight = false;
+      return false;
+    }
     this.activeDeliveries++;
 
     try {
@@ -192,7 +205,6 @@ export class WebhookManager extends EventEmitter {
     const startTime = this.now();
 
     try {
-      entry.deliveryAttempts++;
       const response = await fetch(config.url, {
         method: 'POST',
         headers: {
@@ -227,10 +239,7 @@ export class WebhookManager extends EventEmitter {
           attempts: entry.deliveryAttempts,
         });
 
-        // Remove from queue
-        this.removedDeliveryKeys.add(this.deliveryKey(entry));
-        this.deliveryQueue = this.deliveryQueue.filter((e) => e !== entry);
-        this.persistDeliveryLog();
+        this.finishClaimedDelivery(entry, true);
       } else {
         // Transient error, schedule retry
         const retryPolicy = config.retryPolicy || {
@@ -272,11 +281,10 @@ export class WebhookManager extends EventEmitter {
           });
 
           // Remove from queue after max attempts
-          this.removedDeliveryKeys.add(this.deliveryKey(entry));
-          this.deliveryQueue = this.deliveryQueue.filter((e) => e !== entry);
+          this.finishClaimedDelivery(entry, true);
+          return;
         }
-
-        this.persistDeliveryLog();
+        this.finishClaimedDelivery(entry, false);
       }
     } catch (error) {
       const durationMs = this.now() - startTime;
@@ -319,11 +327,10 @@ export class WebhookManager extends EventEmitter {
         });
 
         // Remove from queue after max attempts
-        this.removedDeliveryKeys.add(this.deliveryKey(entry));
-        this.deliveryQueue = this.deliveryQueue.filter((e) => e !== entry);
+        this.finishClaimedDelivery(entry, true);
+        return;
       }
-
-      this.persistDeliveryLog();
+      this.finishClaimedDelivery(entry, false);
     }
   }
 
@@ -338,6 +345,98 @@ export class WebhookManager extends EventEmitter {
     const body = JSON.stringify(payload);
     const signature = crypto.createHmac('sha256', config.secret).update(body).digest('hex');
     return `sha256=${signature}`;
+  }
+
+  /** Record a lease while holding the same lock used to rewrite the log. */
+  private claimDelivery(entry: WebhookQueueEntry): boolean {
+    let lockOwner: string | undefined;
+    try {
+      lockOwner = this.acquireDeliveryLogLock();
+      const entries = this.readPersistedEntries();
+      const key = this.deliveryKey(entry);
+      const persisted = entries.find((candidate) => this.deliveryKey(candidate) === key);
+      if (!persisted) {
+        this.deliveryQueue = this.deliveryQueue.filter((candidate) => candidate !== entry);
+        return false;
+      }
+
+      const claimIsLive =
+        typeof persisted.deliveryClaimOwner === 'string' &&
+        typeof persisted.deliveryClaimExpiresAt === 'number' &&
+        persisted.deliveryClaimExpiresAt > this.now();
+      if (claimIsLive && persisted.deliveryClaimOwner !== this.deliveryClaimOwner) {
+        return false;
+      }
+
+      persisted.deliveryClaimOwner = this.deliveryClaimOwner;
+      persisted.deliveryClaimExpiresAt = this.now() + this.deliveryClaimLeaseMs;
+      // Persist the attempt before issuing the request. If this process dies,
+      // another manager can recover the entry after the lease expires.
+      persisted.deliveryAttempts++;
+      this.writePersistedEntries(entries);
+      Object.assign(entry, persisted);
+      return true;
+    } catch (error) {
+      this.logger.error('Failed to claim webhook delivery', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    } finally {
+      if (lockOwner) this.releaseDeliveryLogLock(lockOwner);
+    }
+  }
+
+  /** Commit a claimed result only if the durable claim is still ours. */
+  private finishClaimedDelivery(entry: WebhookQueueEntry, remove: boolean): void {
+    let lockOwner: string | undefined;
+    try {
+      lockOwner = this.acquireDeliveryLogLock();
+      const entries = this.readPersistedEntries();
+      const key = this.deliveryKey(entry);
+      const index = entries.findIndex((candidate) => this.deliveryKey(candidate) === key);
+      if (index < 0 || entries[index].deliveryClaimOwner !== this.deliveryClaimOwner) {
+        this.logger.warn('Webhook delivery claim ownership changed before result was persisted', {
+          jobId: entry.jobId,
+        });
+        return;
+      }
+
+      if (remove) {
+        entries.splice(index, 1);
+        this.deliveryQueue = this.deliveryQueue.filter((candidate) => candidate !== entry);
+      } else {
+        delete entry.deliveryClaimOwner;
+        delete entry.deliveryClaimExpiresAt;
+        entries[index] = {
+          jobId: entry.jobId,
+          payload: entry.payload,
+          config: entry.config,
+          deliveryAttempts: entry.deliveryAttempts,
+          attempts: entry.attempts,
+          nextRetryTime: entry.nextRetryTime,
+        };
+      }
+      this.writePersistedEntries(entries);
+    } catch (error) {
+      this.logger.error('Failed to persist claimed webhook delivery result', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      if (lockOwner) this.releaseDeliveryLogLock(lockOwner);
+    }
+  }
+
+  private writePersistedEntries(entries: PersistedWebhookQueueEntry[]): void {
+    const tempPath = `${this.deliveryLogPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+    try {
+      fs.writeFileSync(tempPath, entries.map((entry) => JSON.stringify(entry)).join('\n'), {
+        encoding: 'utf-8',
+        mode: 0o600,
+      });
+      fs.renameSync(tempPath, this.deliveryLogPath);
+    } finally {
+      fs.rmSync(tempPath, { force: true });
+    }
   }
 
   /**
@@ -355,6 +454,8 @@ export class WebhookManager extends EventEmitter {
         deliveryAttempts: entry.deliveryAttempts,
         attempts: entry.attempts,
         nextRetryTime: entry.nextRetryTime,
+        deliveryClaimOwner: entry.deliveryClaimOwner,
+        deliveryClaimExpiresAt: entry.deliveryClaimExpiresAt,
       }));
 
       const diskEntries = this.readPersistedEntries();
@@ -366,7 +467,13 @@ export class WebhookManager extends EventEmitter {
         }
       }
       for (const entry of memoryEntries) {
-        merged.set(this.deliveryKey(entry), entry);
+        const key = this.deliveryKey(entry);
+        const diskEntry = merged.get(key);
+        const hasForeignLiveClaim =
+          diskEntry?.deliveryClaimOwner !== undefined &&
+          diskEntry.deliveryClaimOwner !== this.deliveryClaimOwner &&
+          (diskEntry.deliveryClaimExpiresAt ?? 0) > this.now();
+        if (!hasForeignLiveClaim) merged.set(key, entry);
       }
 
       tempPath = `${this.deliveryLogPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
@@ -569,6 +676,8 @@ export class WebhookManager extends EventEmitter {
             typeof candidate.nextRetryTime === 'number' && candidate.nextRetryTime > now
               ? candidate.nextRetryTime
               : now,
+          deliveryClaimOwner: candidate.deliveryClaimOwner,
+          deliveryClaimExpiresAt: candidate.deliveryClaimExpiresAt,
         });
       }
 
