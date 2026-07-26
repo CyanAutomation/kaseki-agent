@@ -50,6 +50,7 @@ package_manifest=(
   'scripts/startup-check-packaging.sh|755'
   'scripts/docker-entrypoint.sh|755'
   'scripts/lib/provider-retry.sh|644'
+  'scripts/lib/repo-memory.sh|644'
   'scripts/restore-disallowed-changes.sh|755'
   'scripts/evaluation-prompts.sh|755'
   'scripts/auto-lint-cleanup-classification.sh|755'
