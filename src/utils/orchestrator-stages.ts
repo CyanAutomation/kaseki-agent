@@ -35,6 +35,10 @@ interface OrchestratorFeatureFlags {
   githubAppEnabled: boolean;
 }
 
+// Patch runs publish a reviewable, non-draft pull request unless a caller
+// deliberately selects another publish mode.
+export const DEFAULT_PATCH_PUBLISH_MODE = 'pr';
+
 /**
  * Derive feature flags based on job request and config.
  * Encapsulates complex ternary logic for condition derivation.
@@ -96,7 +100,7 @@ function deriveAutoLintCleanupEnabled(taskMode: string, request: Job['request'])
 export function deriveFeatureFlags(job: Job, config: KasekiApiConfig): OrchestratorFeatureFlags {
   const request = job.request ?? ({} as Job['request']);
   const taskMode: 'patch' | 'inspect' = (request.taskMode ?? config.defaultTaskMode) as 'patch' | 'inspect';
-  const publishMode = request.publishMode || 'pr';
+  const publishMode = request.publishMode || DEFAULT_PATCH_PUBLISH_MODE;
   const startupCheck = request.startupCheck === true;
 
   // Pre-compute comparisons to avoid TypeScript type narrowing issues

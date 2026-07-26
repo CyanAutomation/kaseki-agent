@@ -98,6 +98,24 @@ describe('StatusResponseBuilder', () => {
       jest.useRealTimers();
     });
 
+    it('surfaces a non-blocking run-evaluation failure on a completed run', () => {
+      const metadata = {
+        run_evaluation_exit_code: 86,
+        run_evaluation_warning: 'run_evaluation_failed_exit_86',
+      };
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => filePath.endsWith('metadata.json'));
+      (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify(metadata));
+
+      const response = builder.buildStatus({ id: 'job-evaluation-warning', status: 'completed' } as Job);
+
+      expect(response.status).toBe('completed');
+      expect(response.runEvaluation).toEqual({
+        status: 'warning',
+        warning: 'run_evaluation_failed_exit_86',
+        exitCode: 86,
+      });
+    });
+
     it('derives monotonic phase outcomes and heartbeat age from lifecycle events', () => {
       const now = new Date('2026-01-01T00:05:00Z');
       jest.useFakeTimers();
