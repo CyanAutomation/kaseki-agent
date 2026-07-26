@@ -365,6 +365,7 @@ export class WebhookManager extends EventEmitter {
         typeof persisted.deliveryClaimExpiresAt === 'number' &&
         persisted.deliveryClaimExpiresAt > this.now();
       if (claimIsLive && persisted.deliveryClaimOwner !== this.deliveryClaimOwner) {
+        this.synchronizeQueueEntry(entry, persisted);
         return false;
       }
 
@@ -374,7 +375,7 @@ export class WebhookManager extends EventEmitter {
       // another manager can recover the entry after the lease expires.
       persisted.deliveryAttempts++;
       this.writePersistedEntries(entries);
-      Object.assign(entry, persisted);
+      this.synchronizeQueueEntry(entry, persisted);
       return true;
     } catch (error) {
       this.logger.error('Failed to claim webhook delivery', {
@@ -394,7 +395,15 @@ export class WebhookManager extends EventEmitter {
       const entries = this.readPersistedEntries();
       const key = this.deliveryKey(entry);
       const index = entries.findIndex((candidate) => this.deliveryKey(candidate) === key);
-      if (index < 0 || entries[index].deliveryClaimOwner !== this.deliveryClaimOwner) {
+      if (index < 0) {
+        this.deliveryQueue = this.deliveryQueue.filter((candidate) => candidate !== entry);
+        this.logger.warn('Webhook delivery claim ownership changed before result was persisted', {
+          jobId: entry.jobId,
+        });
+        return;
+      }
+      if (entries[index].deliveryClaimOwner !== this.deliveryClaimOwner) {
+        this.synchronizeQueueEntry(entry, entries[index]);
         this.logger.warn('Webhook delivery claim ownership changed before result was persisted', {
           jobId: entry.jobId,
         });
@@ -439,6 +448,18 @@ export class WebhookManager extends EventEmitter {
     }
   }
 
+  /** Copy persisted delivery state without sharing mutable attempt records. */
+  private synchronizeQueueEntry(
+    entry: WebhookQueueEntry,
+    persisted: PersistedWebhookQueueEntry
+  ): void {
+    entry.deliveryAttempts = persisted.deliveryAttempts;
+    entry.attempts = (persisted.attempts ?? []).map((attempt) => ({ ...attempt }));
+    entry.nextRetryTime = persisted.nextRetryTime;
+    entry.deliveryClaimOwner = persisted.deliveryClaimOwner;
+    entry.deliveryClaimExpiresAt = persisted.deliveryClaimExpiresAt;
+  }
+
   /**
    * Persist delivery log to disk.
    */
@@ -447,16 +468,26 @@ export class WebhookManager extends EventEmitter {
     let tempPath: string | undefined;
     try {
       lockOwner = this.acquireDeliveryLogLock();
-      const memoryEntries: PersistedWebhookQueueEntry[] = this.deliveryQueue.map((entry) => ({
-        jobId: entry.jobId,
-        payload: entry.payload,
-        config: entry.config,
-        deliveryAttempts: entry.deliveryAttempts,
-        attempts: entry.attempts,
-        nextRetryTime: entry.nextRetryTime,
-        deliveryClaimOwner: entry.deliveryClaimOwner,
-        deliveryClaimExpiresAt: entry.deliveryClaimExpiresAt,
-      }));
+      const now = this.now();
+      const memoryEntries: PersistedWebhookQueueEntry[] = this.deliveryQueue.map((entry) => {
+        if (
+          entry.deliveryClaimOwner === this.deliveryClaimOwner &&
+          (entry.deliveryClaimExpiresAt ?? 0) <= now
+        ) {
+          delete entry.deliveryClaimOwner;
+          delete entry.deliveryClaimExpiresAt;
+        }
+        return {
+          jobId: entry.jobId,
+          payload: entry.payload,
+          config: entry.config,
+          deliveryAttempts: entry.deliveryAttempts,
+          attempts: entry.attempts,
+          nextRetryTime: entry.nextRetryTime,
+          deliveryClaimOwner: entry.deliveryClaimOwner,
+          deliveryClaimExpiresAt: entry.deliveryClaimExpiresAt,
+        };
+      });
 
       const diskEntries = this.readPersistedEntries();
       const merged = new Map<string, PersistedWebhookQueueEntry>();
@@ -472,7 +503,7 @@ export class WebhookManager extends EventEmitter {
         const hasForeignLiveClaim =
           diskEntry?.deliveryClaimOwner !== undefined &&
           diskEntry.deliveryClaimOwner !== this.deliveryClaimOwner &&
-          (diskEntry.deliveryClaimExpiresAt ?? 0) > this.now();
+          (diskEntry.deliveryClaimExpiresAt ?? 0) > now;
         if (!hasForeignLiveClaim) merged.set(key, entry);
       }
 
