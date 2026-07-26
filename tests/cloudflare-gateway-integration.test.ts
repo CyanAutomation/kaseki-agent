@@ -13,6 +13,7 @@ import {
   buildCloudflareGatewayChatCompletionsUrl,
   probeCloudflareGateway,
 } from '../src/cloudflare-gateway-probe.js';
+import { CLOUDFLARE_METADATA_ENV_VARS, withIsolatedEnvSync } from '../test/helpers/env-isolation.js';
 
 const testGatewayConfig = {
   url: 'https://gateway.ai.cloudflare.com/v1/PLACEHOLDER_ACCOUNT_ID/default/compat',
@@ -144,38 +145,40 @@ describe('CloudFlare Gateway deterministic contract', () => {
     process.env.LLM_GATEWAY_API_KEY = testGatewayConfig.apiKey;
     process.env.LLM_GATEWAY_MODEL = '@cf/meta/llama-3.1-8b-instruct';
     process.env.LLM_GATEWAY_MAX_OUTPUT_TOKENS = '1234';
-    // A live worker may inject its run ID globally. This contract test asserts
-    // the provider's neutral default and must not inherit that runtime state.
-    delete process.env.KASEKI_INSTANCE;
 
     try {
-      const mockPi = { registerProvider: jest.fn() };
-      registerGatewayProvider(mockPi as unknown as ExtensionAPI);
+      // A live worker may inject its run ID and metadata globally. This contract test asserts
+      // the provider's neutral default and must not inherit that runtime state.
+      // Using withIsolatedEnvSync to ensure all CloudFlare metadata variables are cleaned up.
+      withIsolatedEnvSync(CLOUDFLARE_METADATA_ENV_VARS, () => {
+        const mockPi = { registerProvider: jest.fn() };
+        registerGatewayProvider(mockPi as unknown as ExtensionAPI);
 
-      expect(mockPi.registerProvider).toHaveBeenCalledWith('gateway', {
-        name: 'LLM Gateway (CloudFlare)',
-        baseUrl: testGatewayConfig.url,
-        apiKey: testGatewayConfig.apiKey,
-        headers: {
-          'cf-aig-authorization': `Bearer ${testGatewayConfig.apiKey}`,
-          'cf-aig-collect-log-payload': 'false',
-          'cf-aig-metadata': JSON.stringify({
-            run_id: 'unknown', phase: 'unknown', attempt: 'unknown', request_id: 'unknown', component: 'kaseki-agent',
-          }),
-        },
-        api: 'openai-completions',
-        models: [
-          {
-            id: '@cf/meta/llama-3.1-8b-instruct',
-            name: 'CloudFlare Gateway (@cf/meta/llama-3.1-8b-instruct)',
-            reasoning: false,
-            input: ['text'],
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-            contextWindow: 128000,
-            maxTokens: 1234,
+        expect(mockPi.registerProvider).toHaveBeenCalledWith('gateway', {
+          name: 'LLM Gateway (CloudFlare)',
+          baseUrl: testGatewayConfig.url,
+          apiKey: testGatewayConfig.apiKey,
+          headers: {
+            'cf-aig-authorization': `Bearer ${testGatewayConfig.apiKey}`,
+            'cf-aig-collect-log-payload': 'false',
+            'cf-aig-metadata': JSON.stringify({
+              run_id: 'unknown', phase: 'unknown', attempt: 'unknown', request_id: 'unknown', component: 'kaseki-agent',
+            }),
           },
-        ],
-      });
+          api: 'openai-completions',
+          models: [
+            {
+              id: '@cf/meta/llama-3.1-8b-instruct',
+              name: 'CloudFlare Gateway (@cf/meta/llama-3.1-8b-instruct)',
+              reasoning: false,
+              input: ['text'],
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              contextWindow: 128000,
+              maxTokens: 1234,
+            },
+          ],
+        });
+      }); // End withIsolatedEnvSync - CloudFlare metadata vars automatically restored
     } finally {
       Object.entries(originalEnv).forEach(([key, value]) => {
         if (value === undefined) delete process.env[key];
