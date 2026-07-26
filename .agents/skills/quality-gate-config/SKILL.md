@@ -1,5 +1,5 @@
 ---
-name: quality-gate-configuration
+name: quality-gate-config
 description: Defining and validating quality gates for kaseki runs
 tags: [kaseki, quality-gates, validation, constraints, security]
 relatedSkills: [prompt-engineering, workflow-diagnosis, cost-optimization, environment-configuration, performance-tuning]

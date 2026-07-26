@@ -2,7 +2,7 @@
 name: test-automation
 description: Testing kaseki-agent behavior changes and adding new test coverage
 tags: [kaseki, testing, qa, automation, vitest]
-relatedSkills: [workflow-diagnosis]
+relatedSkills: [workflow-diagnosis, docker-image-management]
 ---
 
 # Test Automation for Kaseki Agent
