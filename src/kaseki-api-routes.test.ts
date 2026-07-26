@@ -47,6 +47,7 @@ import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
 import { createMockScheduler, createTestConfig, type TestScheduler } from './test-utils';
 import * as gatewaySmoke from './kaseki-api-gateway-smoke';
+import { applyHttpHardening } from './kaseki-api-service';
 
 const { privateKey: defaultGithubPrivateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
 const defaultGithubPrivateKeyPem = defaultGithubPrivateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
@@ -100,6 +101,7 @@ async function createTestApp(
   const preFlightValidator = new PreFlightValidator();
 
   const app = express();
+  applyHttpHardening(app);
   app.use(express.json());
   app.use('/api', createApiRouter(scheduler as any, config, idempotencyStore, preFlightValidator));
 
@@ -122,6 +124,30 @@ async function listenTestApp(app: Express): Promise<{ server: Server; port: numb
   });
   return { server, port: (server.address() as AddressInfo).port };
 }
+
+describe('HTTP hardening headers', () => {
+  let harness: Awaited<ReturnType<typeof createTestApp>> | undefined;
+
+  afterEach(async () => {
+    if (harness) {
+      await cleanupTestApp(harness.server, harness.idempotencyStore);
+      harness = undefined;
+    }
+  });
+
+  test('does not expose Express and sets nosniff on API responses', async () => {
+    const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-api-headers-'));
+    const config = createTestConfig(resultsDir);
+    harness = await createTestApp(createMockScheduler(), config);
+
+    const res = await fetch(`http://127.0.0.1:${harness.port}/api/ready`);
+
+    expect(res.headers.get('x-powered-by')).toBeNull();
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  });
+});
 
 /**
  * Clean shutdown of server and idempotency store.

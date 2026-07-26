@@ -30,11 +30,11 @@ consolidate_timings_to_json() {
 
   local validation_json pre_validation_json stage_json
   if [ -s "$validation_timings" ]; then
-    validation_json=$(tail -n +2 "$validation_timings" | jq -R 'split("\t") | {command: .[0], elapsed_seconds: (.[1] | tonumber)}' | jq -s '.' 2>/dev/null)
+    validation_json=$(tail -n +2 "$validation_timings" | jq -R 'split("\t") | if length >= 4 then {command: .[0], exit_code: (.[1] | tonumber), elapsed_seconds: (.[2] | tonumber), details: .[3]} elif length >= 3 then {command: .[0], exit_code: (.[1] | tonumber), elapsed_seconds: (.[2] | tonumber), details: ""} else {command: .[0], elapsed_seconds: (.[1] | tonumber)} end' | jq -s '.' 2>/dev/null)
     [ -n "$validation_json" ] && jq --argjson data "$validation_json" '.validation_timings = $data' "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
   fi
   if [ -s "$pre_validation_timings" ]; then
-    pre_validation_json=$(tail -n +2 "$pre_validation_timings" | jq -R 'split("\t") | {command: .[0], elapsed_seconds: (.[1] | tonumber)}' | jq -s '.' 2>/dev/null)
+    pre_validation_json=$(tail -n +2 "$pre_validation_timings" | jq -R 'split("\t") | if length >= 4 then {command: .[0], exit_code: (.[1] | tonumber), elapsed_seconds: (.[2] | tonumber), details: .[3]} elif length >= 3 then {command: .[0], exit_code: (.[1] | tonumber), elapsed_seconds: (.[2] | tonumber), details: ""} else {command: .[0], elapsed_seconds: (.[1] | tonumber)} end' | jq -s '.' 2>/dev/null)
     [ -n "$pre_validation_json" ] && jq --argjson data "$pre_validation_json" '.pre_validation_timings = $data' "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
   fi
   if [ -s "$stage_timings" ]; then

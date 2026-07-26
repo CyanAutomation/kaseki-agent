@@ -54,6 +54,15 @@ export function ensureResultsDir(resultsDir: string): void {
   fs.accessSync(resultsDir, fs.constants.R_OK | fs.constants.W_OK);
 }
 
+export function applyHttpHardening(app: express.Express): void {
+  app.disable('x-powered-by');
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
+}
+
 /**
  * Main Kaseki API service.
  */
@@ -203,6 +212,7 @@ async function main(): Promise<void> {
 
   // Create Express app
   const app = express();
+  applyHttpHardening(app);
   app.use(express.json());
 
   // Mount Sentry request handler to track incoming requests

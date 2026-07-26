@@ -919,6 +919,13 @@ function buildArtifactPaths(errorResponseSchema: Record<string, unknown>): Recor
             required: false,
             schema: { type: 'string', enum: ['true', 'false', '1', '0'] },
             description: 'When format=rendered for run-evaluation.json, include optional markdown summary.'
+          },
+          {
+            name: 'tail',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Return only the last N lines for line-oriented artifacts such as logs and JSONL event files.'
           }
         ],
         security: [{ BearerAuth: [] }],
@@ -936,7 +943,9 @@ function buildArtifactPaths(errorResponseSchema: Record<string, unknown>): Recor
                         file: { type: 'string' },
                         contentType: { type: 'string' },
                         size: { type: 'integer' },
-                        content: { type: 'string' }
+                        content: { type: 'string' },
+                        truncated: { type: 'boolean' },
+                        tailLines: { type: 'integer' }
                       }
                     },
                     {

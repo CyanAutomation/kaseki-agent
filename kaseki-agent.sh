@@ -3151,8 +3151,11 @@ EOF
   
   # Analyze test failures and compare baseline vs. working results
   if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ -f "${KASEKI_RESULTS_DIR}"/validation-baseline.log ]; then
+    local comparison_log
     set_current_stage "test failure analysis"
-    if analyze_test_failures_baseline; then
+    comparison_log="${KASEKI_RESULTS_DIR}/pre-validation.log"
+    [ -f "${KASEKI_RESULTS_DIR}/validation.log" ] && comparison_log="${KASEKI_RESULTS_DIR}/validation.log"
+    if analyze_test_failures_baseline "$comparison_log"; then
       TEST_FAILURE_CLASSIFICATION_STATUS="completed"
       # Try to extract newly_introduced_failures_count from JSON output (if jq available)
       if [ -f "${KASEKI_RESULTS_DIR}"/test-baseline-comparison.json ] && command -v jq >/dev/null 2>&1; then
@@ -3738,6 +3741,58 @@ append_default_validation_command() {
   fi
 }
 
+# Low-risk validation is selected inside the standard pipeline after the actual
+# diff is known. Explicit validation commands always win.
+is_lightweight_validation_file() {
+  local file="$1"
+  case "$file" in
+    README|README.*|CHANGELOG.md|LICENSE|*.md|*.mdx|*.txt|docs/*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+default_lightweight_validation_commands() {
+  if [ -n "${KASEKI_LIGHTWEIGHT_VALIDATION_COMMANDS:-}" ]; then
+    printf '%s' "$KASEKI_LIGHTWEIGHT_VALIDATION_COMMANDS"
+  elif package_json_has_npm_script "type-check"; then
+    printf '%s' "npm run type-check"
+  elif has_typescript_project; then
+    printf '%s' "npm exec -- tsc --noEmit"
+  elif package_json_has_npm_script "check"; then
+    printf '%s' "npm run check"
+  else
+    printf '%s' ":"
+  fi
+}
+
+maybe_select_lightweight_validation_commands() {
+  [ -z "${KASEKI_VALIDATION_COMMANDS_EXPLICIT:-}" ] || return 0
+  [ -s "${KASEKI_RESULTS_DIR}/changed-files.txt" ] || return 0
+
+  local file has_changed_file=0
+  while IFS= read -r file || [ -n "$file" ]; do
+    [ -n "$file" ] || continue
+    has_changed_file=1
+    if ! is_lightweight_validation_file "$file"; then
+      return 0
+    fi
+  done < "${KASEKI_RESULTS_DIR}/changed-files.txt"
+
+  [ "$has_changed_file" -eq 1 ] || return 0
+
+  KASEKI_VALIDATION_COMMANDS="$(default_lightweight_validation_commands)"
+  KASEKI_LIGHTWEIGHT_VALIDATION=1
+  KASEKI_LIGHTWEIGHT_VALIDATION_REASON="low_risk_changed_files"
+  export KASEKI_VALIDATION_COMMANDS KASEKI_LIGHTWEIGHT_VALIDATION KASEKI_LIGHTWEIGHT_VALIDATION_REASON
+  emit_event "validation_commands_selected" "selected lightweight validation commands based on changed files" "strategy=lightweight" "reason=low_risk_changed_files" "commands=$KASEKI_VALIDATION_COMMANDS"
+  emit_progress "validation" "selected lightweight validation commands based on changed files"
+}
+
+# Ensure validation command defaults include build before test when both are needed.
 ensure_build_before_test_validation() {
   local commands="$1" command trimmed normalized="" has_build=0 has_test=0
   package_json_has_npm_script "build" || { printf '%s' "$commands"; return 0; }
@@ -4180,7 +4235,7 @@ run_baseline_validation() {
 
 analyze_test_failures_baseline() {
   local baseline_log="${KASEKI_RESULTS_DIR}/validation-baseline.log"
-  local working_log="${KASEKI_RESULTS_DIR}/pre-validation.log"
+  local working_log="${1:-${KASEKI_RESULTS_DIR}/pre-validation.log}"
   local output_file="${KASEKI_RESULTS_DIR}/test-baseline-comparison.json"
   local results_dir="${KASEKI_RESULTS_DIR}"
   
@@ -9192,6 +9247,7 @@ log_validation_environment() {
     printf '[validation environment] disk_space_used=%s\n' "$(du -sh "${KASEKI_RESULTS_DIR}" 2>/dev/null | cut -f1 || echo '<du failed>')"
   } | tee -a "${KASEKI_RESULTS_DIR}"/validation.log >/dev/null
 }
+maybe_select_lightweight_validation_commands
 log_validation_environment
 collect_changed_file_state "${KASEKI_RESULTS_DIR}"/validation-before-state.txt
 
@@ -9256,8 +9312,13 @@ else
   
   # Analyze validation failure causality if validation failed
   if [ "$VALIDATION_EXIT" -ne 0 ]; then
+    analyze_test_failures_baseline "${KASEKI_RESULTS_DIR}/validation.log" || true
     analyze_validation_failure_causality
   fi
+fi
+
+if [ "$VALIDATION_EXIT" -eq 0 ] && [ -f "${KASEKI_RESULTS_DIR}/validation-baseline.log" ] && [ -f "${KASEKI_RESULTS_DIR}/validation.log" ]; then
+  analyze_test_failures_baseline "${KASEKI_RESULTS_DIR}/validation.log" || true
 fi
 
 # Check validation-phase allowlist (if configured)

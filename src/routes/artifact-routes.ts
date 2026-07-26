@@ -49,6 +49,8 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
     const fileName = req.params.file;
     const format = typeof req.query.format === 'string' ? req.query.format.toLowerCase() : undefined;
     const includeMarkdown = req.query.markdown === 'true' || req.query.markdown === '1';
+    const tailRaw = typeof req.query.tail === 'string' ? req.query.tail : undefined;
+    const tailLines = tailRaw !== undefined && /^\d+$/.test(tailRaw) ? Number.parseInt(tailRaw, 10) : undefined;
 
     // Validate that the artifact is in the registry
     if (!ALL_ARTIFACT_NAMES.includes(fileName)) {
@@ -99,11 +101,22 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
         return sendErrorResponse(res, 500, 'Internal Server Error', `Failed to read artifact: ${fileName}`);
       }
 
+      if (tailRaw !== undefined && (tailLines === undefined || tailLines < 1)) {
+        return sendErrorResponse(res, 400, 'Bad Request', 'tail must be a positive integer');
+      }
+
+      if (tailRaw !== undefined && !isLineOrientedArtifact(contentType)) {
+        return sendErrorResponse(res, 400, 'Bad Request', `tail is only supported for line-oriented artifacts, got ${fileName}`);
+      }
+
+      const responseContent = tailLines !== undefined ? tailArtifactContentByLines(content, tailLines) : content;
+
       const response: ArtifactResponse = {
         file: fileName,
         contentType,
         size: fileStats.size,
-        content,
+        content: responseContent,
+        ...(tailLines !== undefined ? { truncated: responseContent !== content, tailLines } : {}),
       };
 
       // Handle format transformation (rendered JSON)
@@ -247,4 +260,19 @@ function readArtifactMetadata(runDir: string): Record<string, unknown> {
     // Keep artifact listing resilient when metadata is malformed.
   }
   return {};
+}
+
+function isLineOrientedArtifact(contentType: string): boolean {
+  return contentType.startsWith('text/') || contentType === 'application/x-jsonl' || contentType === 'application/jsonl';
+}
+
+function tailArtifactContentByLines(content: string, maxLines: number): string {
+  if (maxLines <= 0) {
+    return '';
+  }
+  const hadTrailingNewline = /\r?\n$/.test(content);
+  const normalized = hadTrailingNewline ? content.replace(/\r?\n$/, '') : content;
+  const lines = normalized.split(/\r?\n/);
+  const tailed = lines.length > maxLines ? lines.slice(-maxLines).join('\n') : normalized;
+  return hadTrailingNewline && tailed.length > 0 ? `${tailed}\n` : tailed;
 }

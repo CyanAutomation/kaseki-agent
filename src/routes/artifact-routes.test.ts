@@ -210,6 +210,35 @@ describe('artifact-routes', () => {
       }
     });
 
+    it('returns a bounded tail for line-oriented artifacts', async () => {
+      const job = mockCompletedJob();
+      const content = '{"line":1}\n{"line":2}\n{"line":3}\n';
+      (fs.statSync as jest.Mock).mockReturnValue({
+        isFile: () => true,
+        size: Buffer.byteLength(content),
+      });
+      mockCache.getOrLoad.mockReturnValue(content);
+
+      const { server, url } = await listen(createMountedArtifactApp());
+
+      try {
+        const response = await fetch(`${url}/api/results/${job.id}/pi-events.jsonl?tail=2`);
+        const body = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(body).toEqual({
+          file: 'pi-events.jsonl',
+          contentType: 'application/x-jsonl',
+          size: Buffer.byteLength(content),
+          content: '{"line":2}\n{"line":3}\n',
+          truncated: true,
+          tailLines: 2,
+        });
+      } finally {
+        await close(server);
+      }
+    });
+
     it('returns a contract error for an artifact name outside the registry', async () => {
       const job = mockCompletedJob();
       const { server, url } = await listen(createMountedArtifactApp());
