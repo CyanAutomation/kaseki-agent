@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect } from '@jest/globals';
+import { extractProviderError } from '../src/pi-event-filter.js';
 
 /**
  * Mock streamSimple event emission to validate structure
@@ -231,8 +232,11 @@ describe('pi-event-filter extractProviderError robustness', () => {
       message: null, // null message
     };
 
-    const message = event.message;
-    expect(!message || typeof message !== 'object').toBe(true);
+    let result: ReturnType<typeof extractProviderError> | undefined;
+    expect(() => {
+      result = extractProviderError(event);
+    }).not.toThrow();
+    expect(result).toBeNull();
   });
 
   it('should extract provider error from properly typed message', () => {

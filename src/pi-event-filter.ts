@@ -15,6 +15,8 @@ import {
   extractProviderError,
 } from './pi-event-filter-helpers.js';
 
+export { extractProviderError };
+
 // ============================================================================
 // MAIN SCRIPT
 // ============================================================================
