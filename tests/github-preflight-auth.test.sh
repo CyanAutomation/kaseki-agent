@@ -29,6 +29,10 @@ if [ "$#" -eq 4 ] && [ "${KASEKI_TEST_HELPER_MODE:-failure}" = "empty-token" ]; 
   printf '{"token":""}\n'
   exit 0
 fi
+if [ "$#" -eq 4 ] && [ "${KASEKI_TEST_HELPER_MODE:-failure}" = "pat-failure" ]; then
+  printf '{"error":"authentication rejected token %s","status":401}\n' "${KASEKI_GITHUB_PAT:?}"
+  exit 1
+fi
 printf '{"error":"HTTP 404: installation not found for supplied repository","status":404}\n'
 printf 'debug token %s should be redacted\n' "${KASEKI_TEST_REDACTED_TOKEN:?}" >&2
 exit 1
@@ -157,3 +161,21 @@ if ! grep -q 'GitHub authentication failed: Unable to obtain installation token'
   exit 1
 fi
 printf '✓ health check fails when mock token is empty with standard failure exit code\n'
+
+KASEKI_TEST_HELPER_MODE=pat-failure
+KASEKI_GITHUB_PAT="${KASEKI_TEST_SHORT_PAT:-nonstandard-short-pat}"
+export KASEKI_TEST_HELPER_MODE KASEKI_GITHUB_PAT
+if check_github_operations_health >"$TMP_DIR/pat-failure-stdout.log" 2>"$TMP_DIR/pat-failure-stderr.log"; then
+  printf '✗ health check unexpectedly passed when PAT authentication failed\n'
+  exit 1
+fi
+if grep -Fq "$KASEKI_GITHUB_PAT" "$HEALTH_LOG" "$TMP_DIR/pat-failure-stdout.log" "$TMP_DIR/pat-failure-stderr.log"; then
+  printf '✗ health check output leaked the configured GitHub PAT\n'
+  exit 1
+fi
+if ! grep -q 'authentication rejected token \[redacted token\]' "$HEALTH_LOG"; then
+  printf '✗ health check did not safely report the redacted authentication failure\n'
+  cat "$HEALTH_LOG"
+  exit 1
+fi
+printf '✓ health check returns failure without logging a configured GitHub PAT\n'
