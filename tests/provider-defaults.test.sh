@@ -63,9 +63,46 @@ run_startup_check() {
 
 unset_output="$TMP_DIR/unset-provider.out"
 openrouter_output="$TMP_DIR/openrouter-provider.out"
+missing_gateway_output="$TMP_DIR/missing-gateway-config.out"
 
 run_startup_check "__unset__" "$unset_output"
 run_startup_check "openrouter" "$openrouter_output"
+
+# Exercise the same sourceable, early validation used by kaseki-agent.sh. This
+# deliberately avoids constructing a fake worker tree or running later phases.
+set +e
+(
+  set -euo pipefail
+  # shellcheck source=../scripts/lib/model-resolution.sh
+  . "$PROJECT_ROOT/scripts/lib/model-resolution.sh"
+  # shellcheck source=../scripts/lib/provider-validation.sh
+  . "$PROJECT_ROOT/scripts/lib/provider-validation.sh"
+  KASEKI_PROVIDER=gateway
+  KASEKI_MODEL=gateway/explicit-model
+  unset LLM_GATEWAY_URL
+  kaseki_resolve_provider_model
+  printf 'Provider: %s\n' "$KASEKI_PROVIDER"
+  printf 'Model: %s\n' "$KASEKI_MODEL"
+  kaseki_validate_early_provider_configuration
+) >"$missing_gateway_output" 2>&1
+missing_gateway_status=$?
+set -e
+
+if [ "$missing_gateway_status" -ne 2 ]; then
+  fail "early provider validation exited with $missing_gateway_status instead of 2" "$missing_gateway_output"
+fi
+
+if ! grep -Fxq 'Missing LLM Gateway configuration for provider=gateway.' "$missing_gateway_output"; then
+  fail 'missing gateway configuration message was not emitted' "$missing_gateway_output"
+fi
+
+if ! grep -Fxq 'Provider: gateway' "$missing_gateway_output"; then
+  fail 'missing gateway configuration case did not select gateway' "$missing_gateway_output"
+fi
+
+if ! grep -Fxq 'Model: gateway/explicit-model' "$missing_gateway_output"; then
+  fail 'missing gateway configuration case changed the explicit model' "$missing_gateway_output"
+fi
 
 if ! grep -Fq 'Active LLM provider: gateway' "$unset_output"; then
   fail 'unset KASEKI_PROVIDER did not resolve to gateway' "$unset_output"
