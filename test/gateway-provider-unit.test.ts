@@ -529,30 +529,6 @@ describe('Gateway Custom Stream Handler', () => {
     });
   });
 
-  describe('Tier 2: Streaming Details (Future)', () => {
-    it('documents stream event tracking for future implementation', () => {
-      /**
-       * Placeholder for Tier 2: Stream event diagnostics
-       * Will track each event pushed to readable stream
-       * Planned for kaseki-167+
-       */
-
-      const tier2Plans = [
-        'Event type and payload size tracking',
-        'SSE event parsing details',
-        'Timing metrics (latency, duration)',
-        'Event sequence validation',
-      ];
-
-      console.log('\n🔄 Tier 2 (Future - kaseki-167+):');
-      for (const plan of tier2Plans) {
-        console.log(`  ⏳ ${plan}`);
-      }
-
-      expect(tier2Plans.length).toBeGreaterThan(0);
-    });
-  });
-
   it('extracts user input from context correctly', () => {
     /**
      * Test: Extract last user message from Pi's context.messages
