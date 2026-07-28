@@ -6,12 +6,27 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { Job } from '../kaseki-api-types';
 import { resolveInstanceExitCode } from '../instance-state-derivation';
+import { CachedArtifactReader } from './cached-artifact-reader';
 
 export class StatusMetadataHelper {
+  private reader?: CachedArtifactReader;
+
+  constructor(reader?: CachedArtifactReader) {
+    this.reader = reader;
+  }
+
   /**
    * Read metadata.json from run directory
    */
   readMetadata(runDir: string): any {
+    // Use cached reader if available
+    if (this.reader) {
+      const metadataPath = path.join(runDir, 'metadata.json');
+      const metadata = this.reader.readMetadata(metadataPath);
+      return metadata ?? {};
+    }
+
+    // Fallback to direct fs read
     try {
       const metadataPath = path.join(runDir, 'metadata.json');
       if (fs.existsSync(metadataPath)) {
