@@ -157,6 +157,7 @@ describe('gateway-test-routes', () => {
 
       expect(response.status).toBe(503);
       expect(body.status).toBe('error');
+      expect(kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2).not.toHaveBeenCalled();
     });
 
     it('should return 503 when stage 2 fails', async () => {
@@ -233,6 +234,27 @@ describe('gateway-test-routes', () => {
       expect(response.status).toBe(503);
       expect(body.partialSuccess).toBe(true);
       expect(body.piAdapterValidated).toBe(false);
+    });
+
+    it('should make pi provider failure fatal even when the generic smoke succeeds in the dual-stage response', async () => {
+      (kasekiGatewaySmoke.testPiGatewayProviderSmoke as jest.Mock).mockResolvedValueOnce({
+        status: 'error',
+        detail: 'Pi provider shape was invalid',
+        codingShapeValidated: false,
+        multiTurnValidated: false,
+      });
+
+      const response = await fetch(`${baseUrl}/gateway-test?piProvider=true`);
+      const body = await response.json() as any;
+
+      expect(response.status).toBe(503);
+      expect(body.status).toBe('error');
+      expect(body.responseSmokeValidated).toBe(true);
+      expect(body.gatewayInferenceValidated).toBe(true);
+      expect(body.piAdapterValidated).toBe(false);
+      expect(body.partialSuccess).toBe(true);
+      expect(body.codingShapeValidated).toBe(false);
+      expect(body.multiTurnValidated).toBe(false);
     });
 
     it('should make pi provider failure fatal for stage 2 only requests', async () => {
@@ -343,6 +365,34 @@ describe('gateway-test-routes', () => {
         status: 'error',
         detail: 'LLM inference test failed',
         responseSmokeValidated: false,
+      });
+    });
+
+    it('should return partial for stage 2 only when generic smoke fails but Pi provider succeeds', async () => {
+      (kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2 as jest.Mock).mockResolvedValueOnce({
+        status: 'error',
+        detail: 'Generic response smoke failed',
+        responseTime: 3000,
+      });
+      (kasekiGatewaySmoke.testPiGatewayProviderSmoke as jest.Mock).mockResolvedValueOnce({
+        status: 'ok',
+        detail: 'Pi provider path worked',
+        codingShapeValidated: true,
+        multiTurnValidated: false,
+      });
+
+      const response = await fetch(`${baseUrl}/gateway-test?stage=2&piProvider=yes&debug=on`);
+      const body = await response.json() as any;
+
+      expect(response.status).toBe(200);
+      expect(body.status).toBe('partial');
+      expect(body.gatewayInferenceValidated).toBe(false);
+      expect(body.piAdapterValidated).toBe(true);
+      expect(body.codingShapeValidated).toBe(true);
+      expect(body.multiTurnValidated).toBe(false);
+      expect(kasekiGatewaySmoke.testPiGatewayProviderSmoke).toHaveBeenCalledWith({
+        requested: true,
+        debug: true,
       });
     });
   });
