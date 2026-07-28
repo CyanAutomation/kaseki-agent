@@ -91,15 +91,23 @@ Parse the JSON to list specific files and exports that became unused.
 ### GitHub Actions: Basic
 
 ```yaml
+# Option 1: Install then run (recommended for multiple fallow commands)
+- name: Install fallow
+  run: npm install -g fallow
+
 - name: Dead code check
-  run: npx fallow dead-code --fail-on-issues --quiet
+  run: fallow dead-code --fail-on-issues --quiet
+
+# Option 2: One-off with npx (use -y to auto-accept installation)
+- name: Dead code check
+  run: npx -y fallow dead-code --fail-on-issues --quiet
 ```
 
 ### GitHub Actions: With SARIF Upload
 
 ```yaml
 - name: Fallow analysis
-  run: npx fallow dead-code --ci > fallow.sarif
+  run: npx -y fallow dead-code --ci > fallow.sarif
   continue-on-error: true  # --ci sets --fail-on-issues; continue to upload SARIF even if issues found
 
 - name: Upload SARIF
@@ -175,14 +183,14 @@ Annotations appear as inline warnings on the PR diff. They work with all command
 
 ```yaml
 - name: Check for new dead code
-  run: npx fallow dead-code --format json --quiet --changed-since ${{ github.event.pull_request.base.sha }} --fail-on-issues
+  run: npx -y fallow dead-code --format json --quiet --changed-since ${{ github.event.pull_request.base.sha }} --fail-on-issues
 ```
 
 ### GitHub Actions: Duplication Gate
 
 ```yaml
 - name: Duplication check
-  run: npx fallow dupes --format json --quiet --threshold 5 --mode mild
+  run: npx -y fallow dupes --format json --quiet --threshold 5 --mode mild
 ```
 
 Fails if overall duplication exceeds 5%.
@@ -191,7 +199,7 @@ Fails if overall duplication exceeds 5%.
 
 ```yaml
 - name: Check duplication in changed files
-  run: npx fallow dupes --format json --quiet --changed-since ${{ github.event.pull_request.base.sha }}
+  run: npx -y fallow dupes --format json --quiet --changed-since ${{ github.event.pull_request.base.sha }}
 ```
 
 Only reports duplication in files modified by the PR.
@@ -288,7 +296,7 @@ Computes the health score and compares against saved snapshots. The MR comment i
 fallow:
   image: node:20-slim
   script:
-    - npx fallow dead-code --fail-on-issues --quiet --format json > fallow-results.json
+    - npx -y fallow dead-code --fail-on-issues --quiet --format json > fallow-results.json
   artifacts:
     paths:
       - fallow-results.json
