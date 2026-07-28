@@ -171,7 +171,7 @@ If an export IS flagged as unused despite being in a barrel file, it means no do
 ## Exit Code 1 vs 2
 
 | Code | Meaning | Action |
-|------|---------|--------|
+| ------ | --------- | -------- |
 | 0 | No error-severity issues | Success |
 | 1 | Error-severity issues found | Review findings |
 | 2 | Runtime error (`fix` without `--yes` in non-TTY, invalid config) | Fix config or add `--yes` |
@@ -627,7 +627,7 @@ fallow license refresh: your stored license is too stale to refresh. Reactivate 
 Stable codes the CLI surfaces today:
 
 | Code | Operation | Meaning |
-|------|-----------|---------|
+| ------ | ----------- | --------- |
 | `token_stale` | `refresh` | Stored JWT is more than 45 days past its `exp`. Reactivate. |
 | `invalid_token` | `refresh` | Stored JWT is missing required claims (e.g. `sub`). Reactivate. |
 | `unauthorized` | `refresh` or `trial` | Auth failed. Reactivate. |

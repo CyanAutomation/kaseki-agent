@@ -489,7 +489,7 @@ fallow dupes --format json --quiet
 ### Detection mode mapping
 
 | jscpd | fallow |
-|-------|--------|
+| ------- | -------- |
 | Default (exact tokens) | `strict` |
 | — | `mild` (fallow default, syntax normalized) |
 | — | `weak` (literal normalization) |

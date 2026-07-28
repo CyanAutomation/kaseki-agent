@@ -37,7 +37,7 @@ Analyzes the project for unused files, exports, dependencies, types, members, an
 ### Flags
 
 | Flag | Type | Default | Description |
-|------|------|---------|-------------|
+| ------ | ------ | --------- | ------------- |
 | `--format` | `human\|json\|sarif\|compact\|markdown\|codeclimate\|gitlab-codequality\|pr-comment-github\|pr-comment-gitlab\|review-github\|review-gitlab` | `human` | Output format |
 | `--quiet` | bool | `false` | Suppress progress bars and timing on stderr |
 | `--legacy-envelope` | bool | `false` | Remove the top-level `kind` field from typed JSON roots for one migration cycle |
@@ -60,7 +60,7 @@ Analyzes the project for unused files, exports, dependencies, types, members, an
 ### Issue Type Filters
 
 | Flag | Issue Type |
-|------|------------|
+| ------ | ------------ |
 | `--unused-files` | Unused files |
 | `--unused-exports` | Unused exports |
 | `--unused-types` | Unused types |
@@ -143,7 +143,7 @@ By default, `fallow dupes` skips generated framework output matching `**/.next/*
 ### Flags
 
 | Flag | Type | Default | Description |
-|------|------|---------|-------------|
+| ------ | ------ | --------- | ------------- |
 | `--format` | `human\|json\|sarif\|compact\|markdown\|codeclimate\|gitlab-codequality\|pr-comment-github\|pr-comment-gitlab\|review-github\|review-gitlab` | `human` | Output format |
 | `--quiet` | bool | `false` | Suppress progress bars |
 | `--top` | number | — | Show only the N most-duplicated clone groups (sorted by instance count desc, tiebreak: line count desc, then path/line). Summary stats reflect the full project. |
@@ -167,7 +167,7 @@ By default, `fallow dupes` skips generated framework output matching `**/.next/*
 ### Detection Modes
 
 | Mode | Behavior |
-|------|----------|
+| ------ | ---------- |
 | `strict` | Exact token match (no normalization) |
 | `mild` | Syntax normalized (whitespace, semicolons) |
 | `weak` | Different literal values treated as equivalent |
@@ -208,7 +208,7 @@ Auto-removes unused exports, dependencies, enum members, and pnpm catalog entrie
 ### Flags
 
 | Flag | Type | Default | Description |
-|------|------|---------|-------------|
+| ------ | ------ | --------- | ------------- |
 | `--dry-run` | bool | `false` | Show what would be removed without modifying files. For `add-to-config` actions, prints a unified-diff preview of the proposed config write; JSON mode includes the diff under a `proposed_diff` field on the fix entry. |
 | `--yes` | bool | `false` | Skip confirmation prompt (**required** in non-TTY) |
 | `--force` | bool | `false` | Alias for `--yes` |
@@ -266,7 +266,7 @@ Inspect discovered files, entry points, detected frameworks, and architecture bo
 ### Flags
 
 | Flag | Type | Description |
-|------|------|-------------|
+| ------ | ------ | ------------- |
 | `--files` | bool | List all discovered files |
 | `--entry-points` | bool | List detected entry points |
 | `--plugins` | bool | List active framework plugins |
@@ -299,7 +299,7 @@ Creates a config file in the project root.
 ### Flags
 
 | Flag | Type | Description |
-|------|------|-------------|
+| ------ | ------ | ------------- |
 | `--toml` | bool | Create `fallow.toml` instead of `.fallowrc.json` |
 | `--hooks` | bool | Scaffold a pre-commit git hook that runs `fallow audit --base <ref> --quiet`. Alias for `fallow hooks install --target git` |
 | `--branch` | string | Fallback base branch for the pre-commit hook when no upstream is set (default: `main`). Only used with `--hooks` |
@@ -322,7 +322,7 @@ Migrates configuration from knip and/or jscpd to fallow. Auto-detects config fil
 ### Flags
 
 | Flag | Type | Description |
-|------|------|-------------|
+| ------ | ------ | ------------- |
 | `--toml` | bool | Output as `fallow.toml` (mutually exclusive with `--jsonc`) |
 | `--jsonc` | bool | Write to `.fallowrc.jsonc` instead of `.fallowrc.json`. Same JSONC content either way; the `.jsonc` extension lets editors auto-detect JSON-with-comments syntax highlighting |
 | `--dry-run` | bool | Preview without writing |
@@ -358,7 +358,7 @@ Angular templates contribute synthetic `<template>` complexity findings whenever
 ### Flags
 
 | Flag | Type | Default | Description |
-|------|------|---------|-------------|
+| ------ | ------ | --------- | ------------- |
 | `--format` | `human\|json\|sarif\|compact\|markdown\|codeclimate\|gitlab-codequality\|pr-comment-github\|pr-comment-gitlab\|review-github\|review-gitlab\|badge` | `human` | Output format |
 | `--quiet` | bool | `false` | Suppress progress bars |
 | `--max-cyclomatic` | number | `20` | Fail if any function exceeds this cyclomatic complexity |
@@ -399,7 +399,7 @@ Angular templates contribute synthetic `<template>` complexity findings whenever
 The gate flag in play determines what drives the exit code. Plain `fallow health` (no gate flag) stays advisory but still fails on any finding (back-compat).
 
 | Invocation | Exit 0 when | Exit 1 when |
-|------------|-------------|-------------|
+| ------------ | ------------- | ------------- |
 | `fallow health` (no gate flag) | no function exceeds a threshold | any function exceeds a threshold |
 | `--min-score N` | score >= N (findings informational) | score < N |
 | `--min-severity LEVEL` | no finding at or above LEVEL | any finding at or above LEVEL |
@@ -791,7 +791,7 @@ Audits changed files for dead code, complexity, and duplication. Returns a verdi
 ### Flags
 
 | Flag | Type | Default | Description |
-|------|------|---------|-------------|
+| ------ | ------ | --------- | ------------- |
 | `--base` | string | auto-detect | Git ref to compare against (alias for `--changed-since`) |
 | `--gate` | `new-only\|all` | `new-only` | Which findings affect the verdict. `new-only` gates only introduced findings; `all` gates every finding in changed files and skips the extra base-snapshot attribution pass. |
 | `--production` | bool | false | Exclude test/story/dev files (applies to dead-code, health, and dupes) |
@@ -817,7 +817,7 @@ Audits changed files for dead code, complexity, and duplication. Returns a verdi
 ### Verdicts
 
 | Verdict | Exit code | When |
-|---------|-----------|------|
+| --------- | ----------- | ------ |
 | pass | 0 | No issues in changed files |
 | warn | 0 | Issues found, all warn-severity |
 | fail | 1 | Error-severity issues found |
@@ -828,7 +828,7 @@ With `--gate new-only`, inherited error-severity findings can be present in the 
 ### JSON contract: which fields are severity-aware
 
 | Field | Severity-aware? | What it counts |
-|-------|-----------------|----------------|
+| ------- | ----------------- | ---------------- |
 | `verdict` | **yes** | Overall outcome honoring per-rule severity (`pass` / `warn` / `fail`) |
 | `attribution.*_introduced` | no | Findings introduced by the changeset under `gate: new-only`, ignoring severity |
 | `summary.*` | no | All findings in changed files, ignoring severity |
@@ -925,7 +925,7 @@ Detects feature flag patterns in the codebase. Identifies environment variable f
 ### Flags
 
 | Flag | Type | Default | Description |
-|------|------|---------|-------------|
+| ------ | ------ | --------- | ------------- |
 | `--format` | `human\|json\|sarif\|compact\|markdown\|codeclimate\|gitlab-codequality\|pr-comment-github\|pr-comment-gitlab\|review-github\|review-gitlab` | `human` | Output format |
 | `--quiet` | bool | `false` | Suppress progress bars |
 | `--top` | number | — | Show only the top N flags |
@@ -966,7 +966,7 @@ Findings are not confirmed vulnerabilities. Use the structural trace to verify w
 The second rule family is a data-driven `tainted-sink` catalogue: syntactic dangerous-sink candidates across 9 CWE categories. A candidate fires only when the relevant argument is non-literal, so a fully-literal value (`el.innerHTML = "<b>x</b>"`, `child_process.exec("ls")`) never fires; fallow prefers false-negatives over false-positives.
 
 | Category | CWE | Sink |
-|----------|-----|------|
+| ---------- | ----- | ------ |
 | `dangerous-html` | 79 | `innerHTML` / `outerHTML` / `insertAdjacentHTML` / `dangerouslySetInnerHTML` |
 | `command-injection` | 78 | `child_process` `exec` / `execSync` / `spawn` / `spawnSync` (provenance-gated to `node:child_process`) |
 | `code-injection` | 94 | `eval` / `vm.runInNewContext` |
@@ -982,7 +982,7 @@ Build-config and test files are excluded from candidate generation. Both rule fa
 ### Flags
 
 | Flag | Type | Default | Description |
-|------|------|---------|-------------|
+| ------ | ------ | --------- | ------------- |
 | `--format` | `human\|json\|sarif` | `human` | Output format |
 | `--quiet` | bool | `false` | Suppress progress output |
 | `--summary` | bool | `false` | Show a compact human summary |
@@ -1109,7 +1109,7 @@ fallow license deactivate
 ### `activate` flags
 
 | Flag | Type | Description |
-|------|------|-------------|
+| ------ | ------ | ------------- |
 | `--trial` | bool | Start a 30-day email-gated trial. Requires `--email`. **Rate-limited to 5 requests per hour per IP** — in CI or behind a shared NAT, start the trial locally and set `FALLOW_LICENSE` on the runner. |
 | `--email <ADDR>` | string | Email for the trial flow. On success, `trialEndsAt` is printed to stdout so you can see the trial window without decoding the JWT. |
 | `--from-file <PATH>` | path | Read a JWT from a file. |
@@ -1124,7 +1124,7 @@ fallow license deactivate
 ### Grace ladder
 
 | Days past `exp` | State | Behavior |
-|-----------------|-------|----------|
+| ----------------- | ------- | ---------- |
 | `<= 7` | ExpiredWarning | Analysis runs; CLI prints a refresh hint |
 | `> 7, <= 30` | ExpiredWatermark | Analysis runs; output gains a visible watermark until refreshed |
 | `> 30` | HardFail | Continuous/cloud runtime monitoring is blocked; run `fallow license refresh` or start a new trial |
@@ -1134,7 +1134,7 @@ fallow license deactivate
 On HTTP error from `api.fallow.cloud`, fallow parses the `{error, message, code}` envelope and maps known codes to targeted hints:
 
 | Operation + code | CLI message |
-|------------------|-------------|
+| ------------------ | ------------- |
 | `refresh` + `token_stale` | `your stored license is too stale to refresh. Reactivate with: fallow license activate --trial --email <addr>` |
 | `refresh` + `invalid_token` | `your stored license token is missing required claims. Reactivate with: fallow license activate --trial --email <addr>` |
 | `refresh` or `trial` + `unauthorized` | `authentication failed. Reactivate with: fallow license activate --trial --email <addr>` |
@@ -1228,7 +1228,7 @@ fallow coverage upload-source-maps --dry-run            # print maps and fileNam
 ### `analyze` flags
 
 | Flag | Type | Default | Description |
-|------|------|---------|-------------|
+| ------ | ------ | --------- | ------------- |
 | `--runtime-coverage <PATH>` | path | none | Local V8 directory, V8 JSON file, or Istanbul coverage map. Mutually exclusive with cloud mode. |
 | `--cloud`, `--runtime-coverage-cloud` | bool | false | Explicitly fetch cloud runtime facts from `/v1/coverage/:repo/runtime-context`. |
 | `--api-key <KEY>` | string | `$FALLOW_API_KEY` | Fallow cloud bearer token, used only after explicit cloud opt-in. |
@@ -1254,7 +1254,7 @@ Each finding's `actions[].type` uses the canonical kebab-case vocabulary: `delet
 ### `upload-inventory` flags
 
 | Flag | Type | Default | Description |
-|------|------|---------|-------------|
+| ------ | ------ | --------- | ------------- |
 | `--api-key <KEY>` | string | `$FALLOW_API_KEY` | Fallow cloud bearer token. Generate at `https://fallow.cloud/settings#api-keys`. **Prefer `$FALLOW_API_KEY` on shared CI runners**: `--api-key` on the command line may be visible to other processes via `ps`. |
 | `--api-endpoint <URL>` | string | `$FALLOW_API_URL` or `https://api.fallow.cloud` | Override for staging / on-prem. |
 | `--project-id <OWNER/REPO>` | string | `$GITHUB_REPOSITORY` → `$CI_PROJECT_PATH` → `git remote get-url origin` | Project identifier. |
@@ -1281,7 +1281,7 @@ Coverage CI helper for bundled/minified runtime coverage. It scans a build direc
 Uploads retry network failures, HTTP 429, and HTTP 502/503/504 up to three attempts. HTTP 429 honors `Retry-After` delta seconds and HTTP-date values, capped at 60 seconds. Setup or transport failures that prevent every map from uploading exit 7; mixed per-map failures still exit 1.
 
 | Flag | Type | Default | Description |
-|------|------|---------|-------------|
+| ------ | ------ | --------- | ------------- |
 | `--dir <PATH>` | path | `dist` | Directory scanned recursively. |
 | `--include <GLOB>` | glob | `**/*.map` | Include glob relative to `--dir`. |
 | `--exclude <GLOB>` | glob | `**/node_modules/**` | Exclude glob, repeatable. |
@@ -1327,7 +1327,7 @@ fallow config --path     # only the path (scriptable)
 ### Exit Codes
 
 | Code | Meaning |
-|------|---------|
+| ------ | --------- |
 | `0` | Config file found and loaded |
 | `2` | Error (parse failure, explicit `--config` path missing) |
 | `3` | No config file found; defaults are in effect |
@@ -1343,7 +1343,7 @@ The `loaded config: <path>` line is also emitted to stderr automatically at the 
 Available on all commands:
 
 | Flag | Type | Description |
-|------|------|-------------|
+| ------ | ------ | ------------- |
 | `-r, --root` | path | Project root directory |
 | `-c, --config` | path | Config file path |
 | `-f, --format` (alias: `--output`) | string | Output format |
@@ -1380,7 +1380,7 @@ Available on all commands:
 ## Environment Variables
 
 | Variable | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | `FALLOW_FORMAT` | Default output format. CLI `--format` overrides. |
 | `FALLOW_QUIET` | Set to `1` to suppress progress. CLI `--quiet` overrides. |
 | `FALLOW_BIN` | Path to fallow binary (used by the MCP server). |
@@ -1416,7 +1416,7 @@ Set `FALLOW_FORMAT=json` and `FALLOW_QUIET=1` in your agent environment to avoid
 ## Output Formats
 
 | Format | Description | Use Case |
-|--------|-------------|----------|
+| -------- | ------------- | ---------- |
 | `human` | Colored terminal output | Interactive use |
 | `json` | Machine-readable JSON | Agent integration, CI pipelines |
 | `sarif` | Static Analysis Results Interchange Format | GitHub Code Scanning, SARIF-compatible tools |
@@ -1437,7 +1437,7 @@ Provider mutations are fail-fast. If a preflight check, permission error, or pro
 ### Flags
 
 | Flag | Type | Description |
-|------|------|-------------|
+| ------ | ------ | ------------- |
 | `--provider` | `github\|gitlab` | Required. Selects the provider API. |
 | `--pr` | `<number>` | GitHub PR number. Required when `--provider github`. |
 | `--mr` | `<iid>` | GitLab MR internal id. Required when `--provider gitlab`. |
@@ -1460,7 +1460,7 @@ The HTTP layer mirrors the bash `gh_api_retry` / `curl_retry` helpers: `FALLOW_A
 ### GitLab CI Variables
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| ---------- | --------- | ------------- |
 | `FALLOW_COMMAND` | `dead-code` | Command to run (`dead-code`, `dupes`, `health`, or default combined) |
 | `FALLOW_FAIL_ON_ISSUES` | `false` | Exit 1 if issues found |
 | `FALLOW_CHANGED_SINCE` | auto | Git ref for incremental analysis. Auto-detected in MR pipelines (`origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME`) |
@@ -1539,7 +1539,7 @@ For dependency findings, `used_in_workspaces` means the package is imported by a
 Every issue in `dead-code` JSON output includes an `actions` array with structured fix suggestions. Each action has:
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
+| ------- | ------ | ---------- | ------------- |
 | `type` | string | yes | Action type in kebab-case (for example `remove-export`, `remove-file`, `remove-dependency`, `move-dependency`, `suppress-line`, `add-to-config`) |
 | `auto_fixable` | bool | yes | `true` if `fallow fix` handles this action automatically. Evaluated PER FINDING, not per action type: the same `type` may carry `true` on one finding and `false` on another when per-instance guards in the applier discriminate. Filter on this bool of each individual action, not on `type` alone. |
 | `description` | string | yes | Human-readable description of the action |
@@ -1611,7 +1611,7 @@ Per-instance `auto_fixable` flips today (the same action `type` flipping between
 Health findings (`fallow health` JSON output) include an `actions` array. Primary action selection is formula-aware: the rule first checks whether full coverage CAN bring CRAP under threshold (CRAP bottoms out at `cyclomatic` at 100% coverage, so `cyclomatic < maxCrap` means coverage is a viable remediation), then uses `coverage_tier` to choose the description.
 
 | Condition | Primary action |
-|-----------|----------------|
+| ----------- | ---------------- |
 | `cyclomatic >= maxCrap` (coverage cannot remediate, regardless of tier) | `refactor-function` |
 | `cyclomatic < maxCrap` and `coverage_tier=none` | `add-tests` ("start from scratch") |
 | `cyclomatic < maxCrap` and `coverage_tier=partial` or `high` | `increase-coverage` ("targeted branch coverage") |
@@ -1893,7 +1893,7 @@ preset = "bulletproof"
 ## Inline Suppression Comments
 
 | Comment | Effect |
-|---------|--------|
+| --------- | -------- |
 | `// fallow-ignore-next-line` | Suppress any issue on the next line |
 | `// fallow-ignore-next-line unused-export` | Suppress specific issue type |
 | `// fallow-ignore-file` | Suppress all issues in a file |
