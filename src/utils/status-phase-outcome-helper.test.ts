@@ -581,4 +581,217 @@ describe('StatusPhaseOutcomeHelper', () => {
       expect(second.phaseOutcome).toMatchObject({ scouting: 'skipped' });
     });
   });
+
+  describe('metadata-driven phase detection', () => {
+    it('detects goal-setting started from duration_seconds metadata', () => {
+      const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+      const response = makeResponse('');
+
+      helper.addPhaseOutcome(response, makeJob({ status: 'completed' }), { goal_setting_duration_seconds: 10 });
+
+      expect(response.phaseOutcome).toMatchObject({ goalSetting: 'completed', scouting: 'not_reached' });
+    });
+
+    it('detects goal-setting started from actual_model metadata', () => {
+      const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+      const response = makeResponse('');
+
+      helper.addPhaseOutcome(response, makeJob({ status: 'completed' }), { goal_setting_actual_model: 'claude-3-sonnet' });
+
+      expect(response.phaseOutcome).toMatchObject({ goalSetting: 'completed', scouting: 'not_reached' });
+    });
+
+    it('ignores goal_setting_actual_model when it equals "unknown"', () => {
+      const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+      const response = makeResponse('');
+
+      helper.addPhaseOutcome(response, makeJob(), { goal_setting_actual_model: 'unknown' });
+
+      expect(response.phaseOutcome).toMatchObject({ goalSetting: 'not_reached', scouting: 'not_reached' });
+    });
+
+    it('detects scouting started from scouting_duration_seconds metadata', () => {
+      const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+      const response = makeResponse('');
+
+      helper.addPhaseOutcome(response, makeJob({ status: 'completed' }), { scouting_duration_seconds: 15 });
+
+      expect(response.phaseOutcome).toMatchObject({ scouting: 'completed', weaving: 'not_reached' });
+    });
+
+    it('detects scouting started from non-zero scouting_exit_code metadata', () => {
+      const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+      const response = makeResponse('');
+
+      helper.addPhaseOutcome(response, makeJob({ status: 'failed' }), { scouting_exit_code: 1, failed_command: 'pi scouting agent' });
+
+      expect(response.phaseOutcome).toMatchObject({ scouting: 'failed' });
+    });
+
+    it('detects scouting started from scouting_actual_model metadata', () => {
+      const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+      const response = makeResponse('');
+
+      helper.addPhaseOutcome(response, makeJob({ status: 'completed' }), { scouting_actual_model: 'claude-3-opus' });
+
+      expect(response.phaseOutcome).toMatchObject({ scouting: 'completed', weaving: 'not_reached' });
+    });
+
+    it('ignores scouting_actual_model when it equals "unknown"', () => {
+      const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+      const response = makeResponse('');
+
+      helper.addPhaseOutcome(response, makeJob(), { scouting_actual_model: 'unknown' });
+
+      expect(response.phaseOutcome).toMatchObject({ scouting: 'not_reached', weaving: 'not_reached' });
+    });
+
+    it('ignores scouting_actual_model when it is empty string', () => {
+      const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+      const response = makeResponse('');
+
+      helper.addPhaseOutcome(response, makeJob(), { scouting_actual_model: '' });
+
+      expect(response.phaseOutcome).toMatchObject({ scouting: 'not_reached', weaving: 'not_reached' });
+    });
+  });
+
+  describe('timestamp extraction edge cases', () => {
+    it('handles events without timestamp or updatedAt fields', () => {
+      const helper = new StatusPhaseOutcomeHelper(
+        makeScheduler([{ stage: 'pi scouting agent', status: 'started' }]),
+        makeConfig(resultsDir),
+      );
+      const response = makeResponse('pi scouting agent');
+
+      helper.addPhaseOutcome(response, makeJob(), {});
+
+      expect(response.phaseOutcome).toMatchObject({ scouting: 'running' });
+      expect(response.phaseOutcome?.scoutingStartedAt).toBeUndefined();
+    });
+
+    it('extracts timestamp from updatedAt field when timestamp is missing', () => {
+      const helper = new StatusPhaseOutcomeHelper(
+        makeScheduler([{ stage: 'pi scouting agent', status: 'started', updatedAt: '2026-01-01T00:00:00Z' }]),
+        makeConfig(resultsDir),
+      );
+      const response = makeResponse('pi scouting agent');
+
+      helper.addPhaseOutcome(response, makeJob(), {});
+
+      expect(response.phaseOutcome).toMatchObject({
+        scouting: 'running',
+        scoutingStartedAt: '2026-01-01T00:00:00Z',
+      });
+    });
+
+    it('finds completion timestamp from last event with completion signal', () => {
+      const helper = new StatusPhaseOutcomeHelper(
+        makeScheduler([
+          { stage: 'pi scouting agent', status: 'started', timestamp: '2026-01-01T00:00:00Z' },
+          { stage: 'pi scouting agent', message: 'in progress', timestamp: '2026-01-01T00:00:30Z' },
+          { stage: 'pi scouting agent', status: 'finished', timestamp: '2026-01-01T00:01:00Z' },
+        ]),
+        makeConfig(resultsDir),
+      );
+      const response = makeResponse('pi coding agent');
+
+      helper.addPhaseOutcome(response, makeJob(), {});
+
+      expect(response.phaseOutcome).toMatchObject({
+        scoutingCompletedAt: '2026-01-01T00:01:00Z',
+      });
+    });
+
+    it('recognizes various completion signals in status/message/detail fields', () => {
+      const completionSignals = ['finished', 'completed', 'failed', 'exited', 'success'];
+      
+      for (const signal of completionSignals) {
+        const helper = new StatusPhaseOutcomeHelper(
+          makeScheduler([
+            { stage: 'pi scouting agent', status: 'started', timestamp: '2026-01-01T00:00:00Z' },
+            { stage: 'pi scouting agent', status: signal, timestamp: '2026-01-01T00:01:00Z' },
+          ]),
+          makeConfig(resultsDir),
+        );
+        const response = makeResponse('pi coding agent');
+
+        helper.addPhaseOutcome(response, makeJob(), {});
+
+        expect(response.phaseOutcome?.scoutingCompletedAt).toBe('2026-01-01T00:01:00Z');
+      }
+    });
+  });
+
+  describe('stage pattern matching edge cases', () => {
+    it('recognizes goal-setting stage with various separators', () => {
+      const patterns = ['pi goal-setting agent', 'pi goal_setting agent', 'pi goalsetting agent'];
+      
+      for (const stage of patterns) {
+        const helper = new StatusPhaseOutcomeHelper(
+          makeScheduler([{ stage, status: 'started', timestamp: '2026-01-01T00:00:00Z' }]),
+          makeConfig(resultsDir),
+        );
+        const response = makeResponse(stage);
+
+        helper.addPhaseOutcome(response, makeJob(), {});
+
+        expect(response.phaseOutcome).toMatchObject({ goalSetting: 'running' });
+      }
+    });
+
+    it('recognizes various weaving-like stages', () => {
+      const weavingStages = [
+        'pi coding agent',
+        'weaving',
+        'goal check',
+        'quality gates',
+        'secret scan',
+        'github operations',
+        'evaluation',
+        'final checks',
+        'collect agent diff',
+        'changed files',
+      ];
+      
+      for (const stage of weavingStages) {
+        const helper = new StatusPhaseOutcomeHelper(
+          makeScheduler([{ stage, status: 'started', timestamp: '2026-01-01T00:00:00Z' }]),
+          makeConfig(resultsDir),
+        );
+        const response = makeResponse(stage);
+
+        helper.addPhaseOutcome(response, makeJob(), {});
+
+        expect(response.phaseOutcome?.weaving).not.toBe('not_reached');
+      }
+    });
+
+    it('does not treat validation as weaving when pre-agent validation failed', () => {
+      const helper = new StatusPhaseOutcomeHelper(
+        makeScheduler([{ stage: 'validation', status: 'started' }]),
+        makeConfig(resultsDir),
+      );
+      const response = makeResponse('validation');
+
+      helper.addPhaseOutcome(response, makeJob({ status: 'failed' }), { failed_command: 'pre-agent validation' });
+
+      expect(response.phaseOutcome).toMatchObject({ weaving: 'not_reached' });
+    });
+
+    it('treats quality check as weaving completion signal', () => {
+      const helper = new StatusPhaseOutcomeHelper(
+        makeScheduler([
+          { stage: 'pi coding agent', status: 'started', timestamp: '2026-01-01T00:00:00Z' },
+          { stage: 'quality check', status: 'started', timestamp: '2026-01-01T00:01:00Z' }
+        ]),
+        makeConfig(resultsDir),
+      );
+      const response = makeResponse('quality check');
+
+      helper.addPhaseOutcome(response, makeJob(), {});
+
+      expect(response.phaseOutcome).toMatchObject({ weaving: 'completed' });
+    });
+  });
 });
