@@ -69,6 +69,64 @@ describe('StatusLifecycleHelper', () => {
     expect(response.progress?.displayName).toBe('Coding attempt 2/3 — retrying');
   });
 
+  it.each([
+    ['provider retry started after failure attempt 1/3', 'retrying', undefined],
+    ['provider retry succeeded after failure attempt 2/3', 'succeeded', undefined],
+    ['provider retry exhausted after failure attempt 3/3', 'exhausted', undefined],
+  ] as const)('derives live retry state from "%s"', (message, state, nextRetryInSeconds) => {
+    const response = makeResponse({
+      progress: {
+        stage: 'goal-check',
+        message,
+        updatedAt: '2026-01-01T00:00:00Z',
+      } as any,
+    });
+
+    new StatusLifecycleHelper(makeConfig(resultsDir)).addLifecycleInfo(response, makeJob(), {});
+
+    expect(response.attempt).toMatchObject({
+      current: Number(message.match(/attempt (\d)\//)?.[1]),
+      maximum: 3,
+      state,
+    });
+    expect(response.attempt?.nextRetryInSeconds).toBe(nextRetryInSeconds);
+    expect(response.diagnosis).toMatchObject({
+      severity: state === 'exhausted' ? 'error' : 'warning',
+      retryExhausted: state === 'exhausted',
+    });
+  });
+
+  it('does not let live progress retry text override persisted retry metadata', () => {
+    const response = makeResponse({
+      progress: {
+        stage: 'pi coding agent',
+        message: 'provider retry scheduled after failure attempt 1/3 in 30s',
+        updatedAt: '2026-01-01T00:00:00Z',
+      } as any,
+    });
+
+    new StatusLifecycleHelper(makeConfig(resultsDir)).addLifecycleInfo(response, makeJob(), {
+      provider_error_retry_attempt_count: 2,
+      provider_error_retry_result: 'success',
+      provider_error_message: 'temporary gateway error',
+      provider_error_phase: 'pi coding agent',
+      provider_error_provider: 'gateway',
+    });
+
+    expect(response.attempt).toMatchObject({
+      current: 2,
+      maximum: 2,
+      state: 'succeeded',
+      provider: 'gateway',
+      lastError: 'temporary gateway error',
+    });
+    expect(response.diagnosis).toMatchObject({
+      severity: 'warning',
+      retryCount: 2,
+      retryExhausted: false,
+    });
+  });
+
   it('uses critical scouting contract failure diagnostics', () => {
     const job = makeJob({ status: 'failed', resultDir: path.join(resultsDir, 'job-scout') });
     fs.mkdirSync(job.resultDir!, { recursive: true });
@@ -113,6 +171,52 @@ describe('StatusLifecycleHelper', () => {
     expect(response.progress?.displayName).toBe('Coding attempt 3/3 — exhausted');
   });
 
+  it('reports provider retry metadata for completed retry success', () => {
+    const response = makeResponse({ status: 'completed', progress: { stage: 'goal-check' } as any });
+
+    new StatusLifecycleHelper(makeConfig(resultsDir)).addLifecycleInfo(response, makeJob({ status: 'completed' }), {
+      provider_error_retry_attempt_count: 1,
+      provider_error_retry_result: 'success',
+      provider_error_message: '',
+      provider_error_phase: 'goal-check',
+      provider_error_type: 'model_unavailable',
+    });
+
+    expect(response.attempt).toMatchObject({ current: 1, maximum: 2, state: 'succeeded' });
+    expect(response.diagnosis).toMatchObject({
+      severity: 'warning',
+      category: 'model_unavailable',
+      summary: 'Provider request is being retried.',
+      retryExhausted: false,
+    });
+    expect(response.lifecyclePhase).toBe('terminal');
+  });
+
+  it('uses metadata error when scouting validation artifact is unavailable', () => {
+    const response = makeResponse({ status: 'failed' });
+
+    new StatusLifecycleHelper(makeConfig(resultsDir)).addLifecycleInfo(response, makeJob({ status: 'failed' }), {
+      failed_command: 'scouting agent',
+      scouting_attempts: 1,
+      scouting_max_attempts: 3,
+      provider_error_message: 'model returned no candidate',
+    });
+
+    expect(response.attempt).toMatchObject({
+      phase: 'scouting',
+      current: 1,
+      maximum: 3,
+      state: 'failed',
+      lastError: 'model returned no candidate',
+    });
+    expect(response.diagnosis).toMatchObject({
+      category: 'artifact_contract',
+      summary: 'model returned no candidate',
+      retryCount: 0,
+      retryExhausted: false,
+    });
+  });
+
   it('adds stale progress heartbeat warning only when no diagnosis exists', () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-01-01T00:03:00Z'));
@@ -128,6 +232,41 @@ describe('StatusLifecycleHelper', () => {
       stale: true,
     });
     expect(response.diagnosis).toMatchObject({ category: 'stale_progress' });
+  });
+
+  it('adds stale diagnosis for an existing stale heartbeat only when diagnosis is absent', () => {
+    const response = makeResponse({
+      progress: { stage: 'goal-check' } as any,
+      progressHeartbeat: {
+        updatedAt: '2026-01-01T00:00:00Z',
+        ageSeconds: 240,
+        stale: true,
+      },
+    } as any);
+
+    new StatusLifecycleHelper(makeConfig(resultsDir)).addLifecycleInfo(response, makeJob(), {});
+
+    expect(response.diagnosis).toMatchObject({
+      category: 'stale_progress',
+      summary: 'No substantive progress update received for 240s while stage "goal-check" is active.',
+    });
+  });
+
+  it('does not calculate heartbeat freshness from estimated timestamps', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-01-01T00:03:00Z'));
+    const response = makeResponse({
+      progress: {
+        stage: 'pi coding agent',
+        updatedAt: '2026-01-01T00:00:00Z',
+        timestampEstimated: true,
+      } as any,
+    });
+
+    new StatusLifecycleHelper(makeConfig(resultsDir)).addLifecycleInfo(response, makeJob(), {});
+
+    expect(response.progressHeartbeat).toBeUndefined();
+    expect(response.diagnosis).toBeUndefined();
   });
 
   it('should not add stale progress heartbeat warning if another diagnosis already exists', () => {
