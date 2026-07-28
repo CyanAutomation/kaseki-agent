@@ -710,6 +710,76 @@ function missingAssistantTextResult(
 }
 
 /**
+ * Process a character while inside a JSON string, tracking escape sequences.
+ * Returns the updated escape state and whether we're still in the string.
+ */
+function processStringCharacter(
+  character: string,
+  escaped: boolean
+): { escaped: boolean; inString: boolean } {
+  if (escaped) {
+    return { escaped: false, inString: true };
+  }
+  if (character === '\\') {
+    return { escaped: true, inString: true };
+  }
+  if (character === '"') {
+    return { escaped: false, inString: false };
+  }
+  return { escaped: false, inString: true };
+}
+
+/**
+ * Find the end index of a JSON object starting at `start`, or -1 if malformed.
+ * Handles nested braces and string escaping correctly.
+ */
+function findJsonObjectEnd(text: string, start: number): number {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < text.length; index += 1) {
+    const character = text[index];
+
+    if (inString) {
+      const state = processStringCharacter(character, escaped);
+      escaped = state.escaped;
+      inString = state.inString;
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+    } else if (character === '{') {
+      depth += 1;
+    } else if (character === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+
+  return -1; // No matching closing brace found
+}
+
+/**
+ * Try to parse a JSON object from text[start..end] and return it if valid.
+ * Returns null if the slice is not a valid JSON object or is an array.
+ */
+function tryParseJsonObject(text: string, start: number, end: number): Record<string, unknown> | null {
+  try {
+    const value = JSON.parse(text.slice(start, end + 1));
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+  } catch {
+    // Continue looking for a later, valid JSON object.
+  }
+  return null;
+}
+
+/**
  * Find JSON objects embedded in an assistant response without treating braces
  * inside JSON strings as object boundaries.
  */
@@ -717,35 +787,14 @@ function extractJsonObjects(text: string): Record<string, unknown>[] {
   const objects: Record<string, unknown>[] = [];
 
   for (let start = text.indexOf('{'); start !== -1; start = text.indexOf('{', start + 1)) {
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
+    const end = findJsonObjectEnd(text, start);
+    if (end === -1) {
+      continue;
+    }
 
-    for (let index = start; index < text.length; index += 1) {
-      const character = text[index];
-      if (inString) {
-        if (escaped) escaped = false;
-        else if (character === '\\') escaped = true;
-        else if (character === '"') inString = false;
-        continue;
-      }
-
-      if (character === '"') inString = true;
-      else if (character === '{') depth += 1;
-      else if (character === '}') {
-        depth -= 1;
-        if (depth === 0) {
-          try {
-            const value = JSON.parse(text.slice(start, index + 1));
-            if (value && typeof value === 'object' && !Array.isArray(value)) {
-              objects.push(value as Record<string, unknown>);
-            }
-          } catch {
-            // Continue looking for a later, valid JSON object.
-          }
-          break;
-        }
-      }
+    const obj = tryParseJsonObject(text, start, end);
+    if (obj !== null) {
+      objects.push(obj);
     }
   }
 
