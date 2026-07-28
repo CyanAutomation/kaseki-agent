@@ -34,6 +34,8 @@
   "ignoreDependencies": [
     "@earendil-works/pi-coding-agent",
     "tree-sitter-cli",
+    "tree-sitter-go",
+    "tree-sitter-typescript",
     "tree-sitter"
   ],
   "usedClassMembers": [
@@ -63,6 +65,22 @@
     }
   ],
   "ignoreExports": [
+    {
+      "file": "src/event-aggregator.ts",
+      "exports": ["*"]
+    },
+    {
+      "file": "src/execution-time-aggregator.ts",
+      "exports": ["*"]
+    },
+    {
+      "file": "src/token-usage-aggregator.ts",
+      "exports": ["*"]
+    },
+    {
+      "file": "src/tool-reliability-aggregator.ts",
+      "exports": ["*"]
+    },
     {
       "file": "src/lib/subprocess-helpers.ts",
       "exports": ["*"]
