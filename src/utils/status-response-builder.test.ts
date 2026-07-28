@@ -36,7 +36,17 @@ describe('StatusResponseBuilder', () => {
       logLevel: 'info',
     } as unknown as KasekiApiConfig;
     mockCache = {
-      getOrLoad: jest.fn(),
+      getOrLoad: jest.fn().mockImplementation((filePath: string) => {
+        // Default: try to read from fs mock if file contains metadata.json
+        if (filePath.includes('metadata.json')) {
+          try {
+            return (fs.readFileSync as jest.Mock)(filePath, 'utf-8');
+          } catch {
+            return null;
+          }
+        }
+        return null;
+      }),
     } as unknown as jest.Mocked<ResultCache>;
 
     // Mock getRunArtifactMetadata to return default empty object
@@ -2275,7 +2285,7 @@ describe('StatusResponseBuilder', () => {
 
       (fs.existsSync as jest.Mock).mockReturnValue(false);
       (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(keyFiles);
-      mockCache.getOrLoad.mockReturnValue(null);
+      mockCache.getOrLoad.mockImplementation((filePath: string) => filePath.includes("metadata.json") ? (fs.readFileSync as jest.Mock)(filePath, "utf-8") : null);
 
       const response: StatusResponse = {
         id: 'job-completed',
@@ -2489,7 +2499,7 @@ describe('StatusResponseBuilder', () => {
         throw new Error(`Unexpected read: ${filePath}`);
       });
       (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
-      mockCache.getOrLoad.mockReturnValue(null);
+      mockCache.getOrLoad.mockImplementation((filePath: string) => filePath.includes("metadata.json") ? (fs.readFileSync as jest.Mock)(filePath, "utf-8") : null);
 
       const response: StatusResponse = {
         id: 'job-pre-validation-failed',
@@ -2532,7 +2542,7 @@ describe('StatusResponseBuilder', () => {
         throw new Error(`Unexpected read: ${filePath}`);
       });
       (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
-      mockCache.getOrLoad.mockReturnValue(null);
+      mockCache.getOrLoad.mockImplementation((filePath: string) => filePath.includes("metadata.json") ? (fs.readFileSync as jest.Mock)(filePath, "utf-8") : null);
 
       const response: StatusResponse = {
         id: 'job-goal-setting-failed',
@@ -2575,7 +2585,7 @@ describe('StatusResponseBuilder', () => {
         throw new Error(`Unexpected read: ${filePath}`);
       });
       (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
-      mockCache.getOrLoad.mockReturnValue(null);
+      mockCache.getOrLoad.mockImplementation((filePath: string) => filePath.includes("metadata.json") ? (fs.readFileSync as jest.Mock)(filePath, "utf-8") : null);
 
       const response: StatusResponse = {
         id: 'job-scouting-failed',
@@ -2607,7 +2617,7 @@ describe('StatusResponseBuilder', () => {
 
       (fs.existsSync as jest.Mock).mockReturnValue(false);
       (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
-      mockCache.getOrLoad.mockReturnValue(null);
+      mockCache.getOrLoad.mockImplementation((filePath: string) => filePath.includes("metadata.json") ? (fs.readFileSync as jest.Mock)(filePath, "utf-8") : null);
 
       const response: StatusResponse = {
         id: 'job-goal-check-invalid',
@@ -2640,7 +2650,7 @@ describe('StatusResponseBuilder', () => {
 
       (fs.existsSync as jest.Mock).mockReturnValue(false);
       (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
-      mockCache.getOrLoad.mockReturnValue(null);
+      mockCache.getOrLoad.mockImplementation((filePath: string) => filePath.includes("metadata.json") ? (fs.readFileSync as jest.Mock)(filePath, "utf-8") : null);
 
       const response: StatusResponse = {
         id: 'job-entry-point',
@@ -2672,7 +2682,7 @@ describe('StatusResponseBuilder', () => {
 
       (fs.existsSync as jest.Mock).mockReturnValue(false);
       (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
-      mockCache.getOrLoad.mockReturnValue(null);
+      mockCache.getOrLoad.mockImplementation((filePath: string) => filePath.includes("metadata.json") ? (fs.readFileSync as jest.Mock)(filePath, "utf-8") : null);
 
       const response: StatusResponse = {
         id: 'job-entry-point-fallback',
@@ -2698,7 +2708,7 @@ describe('StatusResponseBuilder', () => {
 
       (fs.existsSync as jest.Mock).mockReturnValue(false);
       (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
-      mockCache.getOrLoad.mockReturnValue(null);
+      mockCache.getOrLoad.mockImplementation((filePath: string) => filePath.includes("metadata.json") ? (fs.readFileSync as jest.Mock)(filePath, "utf-8") : null);
 
       const response: StatusResponse = {
         id: 'job-no-entry-point',
@@ -2815,7 +2825,7 @@ describe('StatusResponseBuilder', () => {
         throw new Error(`Unexpected read: ${filePath}`);
       });
       (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
-      mockCache.getOrLoad.mockReturnValue(null);
+      mockCache.getOrLoad.mockImplementation((filePath: string) => filePath.includes("metadata.json") ? (fs.readFileSync as jest.Mock)(filePath, "utf-8") : null);
 
       const response: StatusResponse = {
         id: 'job-complex-failure',
@@ -2845,7 +2855,7 @@ describe('StatusResponseBuilder', () => {
 
       (fs.existsSync as jest.Mock).mockReturnValue(false);
       (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
-      mockCache.getOrLoad.mockReturnValue(null);
+      mockCache.getOrLoad.mockImplementation((filePath: string) => filePath.includes("metadata.json") ? (fs.readFileSync as jest.Mock)(filePath, "utf-8") : null);
 
       const response: StatusResponse = {
         id: 'job-zero-size',
