@@ -46,7 +46,7 @@ describe('kaseki-cli-lib cache integration', () => {
 
       expect(result1).toEqual(metadata);
       expect(result2).toEqual(metadata);
-      
+
       // Second call should hit cache
       const stats = reader.getStats();
       expect(stats.hits).toBeGreaterThan(0);
@@ -124,7 +124,7 @@ describe('kaseki-cli-lib cache integration', () => {
     it('should cache artifacts per instance', () => {
       const metadata1Path = path.join(tmpDir, 'kaseki-1', 'metadata.json');
       const metadata2Path = path.join(tmpDir, 'kaseki-2', 'metadata.json');
-      
+
       const metadata1 = { instance_name: 'kaseki-1' };
       const metadata2 = { instance_name: 'kaseki-2' };
 
@@ -150,7 +150,7 @@ describe('kaseki-cli-lib cache integration', () => {
 
       reader.readMetadata(metadataPath);
       reader.clearForJob('kaseki-1');
-      
+
       const statsAfterClear = reader.getStats();
       expect(statsAfterClear.entries).toBe(0);
     });
@@ -163,9 +163,9 @@ describe('kaseki-cli-lib cache integration', () => {
 
       reader.readMetadata(metadata1Path);
       reader.readMetadata(metadata2Path);
-      
+
       reader.clearAll();
-      
+
       const statsAfterClear = reader.getStats();
       expect(statsAfterClear.entries).toBe(0);
     });

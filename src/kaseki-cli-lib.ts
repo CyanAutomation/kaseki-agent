@@ -301,7 +301,7 @@ function readArtifact(instance: string, filename: string): string | null {
  */
 function readJsonArtifact(instance: string, filename: string): Record<string, any> {
   const filePath = path.join(config.KASEKI_RESULTS_DIR, instance, filename);
-  
+
   // Use specialized methods for known artifacts
   if (filename === 'metadata.json') {
     return artifactCache.readMetadata(filePath) ?? {};
@@ -309,7 +309,7 @@ function readJsonArtifact(instance: string, filename: string): Record<string, an
   if (filename === 'pi-summary.json') {
     return artifactCache.readPiSummary(filePath) ?? {};
   }
-  
+
   // Generic JSON artifact
   return artifactCache.readJsonArtifact(filePath) ?? {};
 }

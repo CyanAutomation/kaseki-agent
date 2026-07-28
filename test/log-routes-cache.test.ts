@@ -19,7 +19,7 @@ describe('log-routes cache integration', () => {
 
   beforeEach(() => {
     tmpDir = path.join(os.tmpdir(), `kaseki-test-${Date.now()}`);
-    
+
     // Mock cache that delegates to fs for metadata.json
     mockCache = {
       getOrLoad: jest.fn().mockImplementation((filePath: string) => {
@@ -169,7 +169,7 @@ describe('log-routes cache integration', () => {
       (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify(metadata));
 
       const reader = new CachedArtifactReader(mockCache as ResultCache);
-      
+
       reader.readMetadata(metadataPath);
       reader.readMetadata(metadataPath);
 
