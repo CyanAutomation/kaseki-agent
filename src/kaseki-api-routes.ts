@@ -744,7 +744,7 @@ export function createApiRouter(
 
   // Register domain-focused route modules
   router.use(createStatusRoutes(scheduler, config, artifactCache));
-  router.use(createLogRoutes(scheduler, config));
+  router.use(createLogRoutes(scheduler, config, artifactCache));
   router.use(createArtifactRoutes(scheduler, config, artifactCache));
   router.use(createImprovementRoutes(scheduler, config));
   router.use(createWebhookRoutes());

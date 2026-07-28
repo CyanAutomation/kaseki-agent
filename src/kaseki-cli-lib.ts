@@ -27,6 +27,7 @@ import {
   classifyFailure as importedClassifyFailure,
   normalizeExitCodeCandidate as importedNormalizeExitCodeCandidate,
 } from './instance-state-derivation';
+import { CachedArtifactReader } from './utils/cached-artifact-reader';
 
 // ============================================================================
 // Types
@@ -107,6 +108,13 @@ const config: Config = {
   KASEKI_RESULTS_DIR: process.env.KASEKI_RESULTS_DIR || '/agents/kaseki-results',
   KASEKI_RUNS_DIR: process.env.KASEKI_RUNS_DIR || '/agents/kaseki-runs',
 };
+
+// Singleton artifact cache for CLI operations
+const artifactCache = new CachedArtifactReader({
+  maxEntries: 20,
+  ttlMs: 5 * 60 * 1000, // 5 minutes
+  maxFileBytes: 10 * 1024 * 1024, // 10 MB
+});
 
 // For backwards compatibility, also export as constants
 const KASEKI_RESULTS_DIR = config.KASEKI_RESULTS_DIR;
@@ -279,17 +287,31 @@ function listInstances(): KasekiInstance[] {
 /**
  * Read an artifact file from a kaseki results directory.
  * Returns file contents as string, or null if not found.
+ * Uses caching to reduce redundant file I/O.
  */
 function readArtifact(instance: string, filename: string): string | null {
   const filePath = path.join(config.KASEKI_RESULTS_DIR, instance, filename);
-  if (!fs.existsSync(filePath)) {
-    return null;
+  return artifactCache.readTextArtifact(filePath);
+}
+
+/**
+ * Read a JSON artifact file from a kaseki results directory.
+ * Returns parsed JSON as Record<string, any>, or {} if not found or invalid.
+ * Uses caching to reduce redundant file I/O.
+ */
+function readJsonArtifact(instance: string, filename: string): Record<string, any> {
+  const filePath = path.join(config.KASEKI_RESULTS_DIR, instance, filename);
+  
+  // Use specialized methods for known artifacts
+  if (filename === 'metadata.json') {
+    return artifactCache.readMetadata(filePath) ?? {};
   }
-  try {
-    return fs.readFileSync(filePath, 'utf8');
-  } catch {
-    return null;
+  if (filename === 'pi-summary.json') {
+    return artifactCache.readPiSummary(filePath) ?? {};
   }
+  
+  // Generic JSON artifact
+  return artifactCache.readJsonArtifact(filePath) ?? {};
 }
 
 /**
@@ -330,16 +352,6 @@ function readProgressEvents(instance: string, tailLines: number = 20): ProgressE
  * Parse JSON artifact file.
  * Returns parsed object, or empty object if not found or invalid.
  */
-function readJsonArtifact(instance: string, filename: string): Record<string, any> {
-  const content = readArtifact(instance, filename);
-  if (!content) return {};
-  try {
-    return JSON.parse(content);
-  } catch {
-    return {};
-  }
-}
-
 function parseTimestampSeconds(value: string | null | undefined): number | null {
   if (!value) return null;
   const parsed = new Date(value).getTime();

@@ -10,6 +10,9 @@ import { decodeUtf8TailSafely, tailLogByLines, readTailBytes } from '../utils/ut
 import { getJobOrRespond } from '../utils/route-helpers';
 import { normalizeProgressEvent } from '../utils/progress-normalizer';
 import { progressEventsFromDockerLogTail } from '../utils/docker-log-progress-events';
+import { CachedArtifactReader } from '../utils/cached-artifact-reader';
+import { AnalysisArtifactHelper } from '../utils/analysis-artifact-helper';
+import type { ResultCache } from '../result-cache';
 
 const VALID_LOG_TYPES = [
   'stdout',
@@ -145,22 +148,6 @@ function collectDiagnostics(runDir: string): AnalysisResponse['diagnostics'] | u
     files,
     ...(details.length > 0 ? { details } : {}),
   };
-}
-
-function safelyReadAnalysisArtifact<T>(
-  artifact: string,
-  warnings: string[],
-  reader: () => T
-): T | undefined {
-  try {
-    return reader();
-  } catch {
-    // Analysis artifacts are produced independently while a run is finalizing.
-    // One truncated or malformed optional file must not turn the whole endpoint
-    // into a 500 response.
-    warnings.push(`Could not read ${artifact}; it may be incomplete or malformed.`);
-    return undefined;
-  }
 }
 
 function readStructuredEventSnapshot(
@@ -309,7 +296,11 @@ function streamProgressEvents(
   });
 }
 
-function buildAnalysisResponse(job: Job, config: KasekiApiConfig): AnalysisResponse {
+function buildAnalysisResponse(
+  job: Job,
+  config: KasekiApiConfig,
+  analysisHelper: AnalysisArtifactHelper
+): AnalysisResponse {
   const runDir = job.resultDir || path.join(config.resultsDir, job.id);
   const response: AnalysisResponse = {
     id: job.id,
@@ -322,9 +313,9 @@ function buildAnalysisResponse(job: Job, config: KasekiApiConfig): AnalysisRespo
   const analysisWarnings: string[] = [];
 
   addElapsedSeconds(response, job);
-  addAnalysisMetadata(response, runDir, analysisWarnings);
-  addAnalysisChanges(response, runDir, analysisWarnings);
-  addAnalysisValidation(response, runDir, analysisWarnings);
+  addAnalysisMetadata(response, runDir, analysisWarnings, analysisHelper);
+  addAnalysisChanges(response, runDir, analysisWarnings, analysisHelper);
+  addAnalysisValidation(response, runDir, analysisWarnings, analysisHelper);
 
   const diagnostics = collectDiagnostics(runDir);
   if (diagnostics) {
@@ -343,12 +334,14 @@ function addElapsedSeconds(response: AnalysisResponse, job: Job): void {
   response.elapsedSeconds = Math.round(elapsed / 1000);
 }
 
-function addAnalysisMetadata(response: AnalysisResponse, runDir: string, analysisWarnings: string[]): void {
-  const metadataPath = path.join(runDir, 'metadata.json');
-  if (!fs.existsSync(metadataPath)) return;
-
-  const metadata = safelyReadAnalysisArtifact('metadata.json', analysisWarnings, () =>
-    JSON.parse(fs.readFileSync(metadataPath, 'utf-8')) as Record<string, unknown>
+function addAnalysisMetadata(
+  response: AnalysisResponse,
+  runDir: string,
+  analysisWarnings: string[],
+  analysisHelper: AnalysisArtifactHelper
+): void {
+  const metadata = analysisHelper.safelyReadArtifact('metadata.json', analysisWarnings, () =>
+    analysisHelper.readMetadata(runDir)
   );
   if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
     response.metadata = {
@@ -362,16 +355,15 @@ function addAnalysisMetadata(response: AnalysisResponse, runDir: string, analysi
   }
 }
 
-function addAnalysisChanges(response: AnalysisResponse, runDir: string, analysisWarnings: string[]): void {
-  const changedFilesPath = path.join(runDir, 'changed-files.txt');
-  if (!fs.existsSync(changedFilesPath)) return;
-
-  const changes = safelyReadAnalysisArtifact('changed-files.txt', analysisWarnings, () => {
-    const changedFiles = fs
-      .readFileSync(changedFilesPath, 'utf-8')
-      .trim()
-      .split('\n')
-      .filter((f) => f);
+function addAnalysisChanges(
+  response: AnalysisResponse,
+  runDir: string,
+  analysisWarnings: string[],
+  analysisHelper: AnalysisArtifactHelper
+): void {
+  const changes = analysisHelper.safelyReadArtifact('changed-files.txt', analysisWarnings, () => {
+    const changedFiles = analysisHelper.readChangedFiles(runDir);
+    if (!changedFiles) return undefined;
     const diffPath = path.join(runDir, 'git.diff');
     return {
       changedFiles,
@@ -381,21 +373,26 @@ function addAnalysisChanges(response: AnalysisResponse, runDir: string, analysis
   if (changes) response.changes = changes;
 }
 
-function addAnalysisValidation(response: AnalysisResponse, runDir: string, analysisWarnings: string[]): void {
-  const validationPath = path.join(runDir, 'validation-timings.tsv');
-  if (!fs.existsSync(validationPath)) return;
+function addAnalysisValidation(
+  response: AnalysisResponse,
+  runDir: string,
+  analysisWarnings: string[],
+  analysisHelper: AnalysisArtifactHelper
+): void {
+  const validationTimingsContent = analysisHelper.readValidationTimings(runDir);
+  if (!validationTimingsContent) return;
 
-  const validation = safelyReadAnalysisArtifact('validation-timings.tsv', analysisWarnings, () =>
-    readValidationTimingSummary(validationPath, analysisWarnings)
+  const validation = analysisHelper.safelyReadArtifact('validation-timings.tsv', analysisWarnings, () =>
+    readValidationTimingSummary(validationTimingsContent, analysisWarnings)
   );
   if (validation) response.validation = validation;
 }
 
 function readValidationTimingSummary(
-  validationPath: string,
+  validationTimingsContent: string,
   analysisWarnings: string[],
 ): NonNullable<AnalysisResponse['validation']> {
-  const lines = fs.readFileSync(validationPath, 'utf-8').trim().split('\n');
+  const lines = validationTimingsContent.trim().split('\n');
   const commandResults = lines
     .slice(1)
     .flatMap((line) => validationTimingRecord(line, analysisWarnings));
@@ -423,8 +420,14 @@ function validationTimingRecord(
 /**
  * Create log-related routes (progress, events, logs, analysis).
  */
-export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig): Router {
+export function createLogRoutes(
+  scheduler: JobScheduler,
+  config: KasekiApiConfig,
+  artifactCache?: Pick<ResultCache, 'getOrLoad'>
+): Router {
   const router = Router();
+  const cachedReader = artifactCache ? new CachedArtifactReader(artifactCache as ResultCache) : undefined;
+  const analysisHelper = new AnalysisArtifactHelper(cachedReader);
 
   /**
    * GET /api/runs/:id/events - Canonical structured event snapshot.
@@ -592,7 +595,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
     }
 
     try {
-      res.json(buildAnalysisResponse(job, config));
+      res.json(buildAnalysisResponse(job, config, analysisHelper));
     } catch (err) {
       sendErrorResponse(res, 500, 'Internal Server Error', `Failed to analyze run: ${(err as Error).message}`);
     }
