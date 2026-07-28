@@ -33,14 +33,14 @@ export interface KasekiMetadata {
   secret_scan_exit_code?: number | string;
   pi_version?: string;
   diff_nonempty?: boolean;
-  
+
   // Phase consolidation (schema v2.0)
   phases?: {
     validation?: ValidationPhase;
     quality_gates?: QualityGatesPhase;
     secret_scan?: SecretScanPhase;
   };
-  
+
   [key: string]: any;
 }
 

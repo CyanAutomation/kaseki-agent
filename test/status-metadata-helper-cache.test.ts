@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StatusMetadataHelper } from '../src/utils/status-response-metadata-helper';
@@ -65,7 +65,6 @@ describe('StatusMetadataHelper with CachedArtifactReader', () => {
       const metadata = { exit_code: 42 };
       writeFileSync(runDir, '', { flag: 'wx' });
       rmSync(runDir);
-      const { mkdirSync } = require('node:fs');
       mkdirSync(runDir, { recursive: true });
       writeFileSync(metadataPath, JSON.stringify(metadata));
 
@@ -109,7 +108,6 @@ describe('StatusMetadataHelper with CachedArtifactReader', () => {
     it('should track cache usage across multiple calls', () => {
       const dir1 = join(tempDir, 'job1');
       const dir2 = join(tempDir, 'job2');
-      const { mkdirSync } = require('node:fs');
       mkdirSync(dir1, { recursive: true });
       mkdirSync(dir2, { recursive: true });
       writeFileSync(join(dir1, 'metadata.json'), '{"exit_code": 1}');
