@@ -42,8 +42,8 @@ export class StatusResponseBuilder {
     private config: KasekiApiConfig,
     private artifactCache?: Pick<ResultCache, 'getOrLoad'>
   ) {
-    // Create CachedArtifactReader if artifactCache is available
-    this.cachedReader = artifactCache ? new CachedArtifactReader() : undefined;
+    // Create CachedArtifactReader wrapping the existing artifactCache if available
+    this.cachedReader = artifactCache ? new CachedArtifactReader(artifactCache as ResultCache) : undefined;
 
     this.taskProgressCalculator = new TaskProgressCalculator(scheduler, config);
     this.diagnosticExtractor = new DiagnosticExtractor();
