@@ -8,8 +8,14 @@ import type { KasekiMetadata } from '../types/kaseki-metadata';
 export class CachedArtifactReader {
   private cache: ResultCache;
 
-  constructor(options?: ResultCacheOptions) {
-    this.cache = new ResultCache(options);
+  constructor(cacheOrOptions?: ResultCache | ResultCacheOptions) {
+    if (cacheOrOptions && 'getOrLoad' in cacheOrOptions) {
+      // Passed an existing ResultCache instance
+      this.cache = cacheOrOptions as ResultCache;
+    } else {
+      // Create new ResultCache with options
+      this.cache = new ResultCache(cacheOrOptions as ResultCacheOptions | undefined);
+    }
   }
 
   /**
