@@ -21,6 +21,30 @@ Always preview with `--dry-run` before applying. This is a destructive operation
 
 ---
 
+## `npx` Requires `-y` Flag in Non-Interactive Environments
+
+The `npx fallow` command (without the `-y` flag) prompts for installation confirmation when fallow is not already installed. In agent subprocesses, CI pipelines, or automated workflows (non-TTY), this prompt blocks execution indefinitely.
+
+```bash
+# WRONG: blocks waiting for user confirmation in non-TTY
+npx fallow dead-code --format json --quiet
+# Output: "Need to install the following packages:
+#          fallow@3.10.0
+#          Ok to proceed? (y)" [hangs]
+
+# CORRECT: auto-accept installation prompt
+npx -y fallow dead-code --format json --quiet
+
+# BEST: pre-install in persistent environments
+npm install -g fallow                    # global (developer machines, long-lived containers)
+npm install --save-dev fallow           # project devDependency (CI, version pinning)
+fallow dead-code --format json --quiet  # no npx needed when installed
+```
+
+For projects using fallow regularly, add it to `devDependencies` in `package.json` to avoid external fetches and enable version pinning. For one-off CI runs, `npx -y fallow` is sufficient.
+
+---
+
 ## Don't Create Config Unless Needed
 
 Fallow works with zero configuration for most projects thanks to 114 auto-detecting framework plugins. Creating an unnecessary config file can mask issues or override detection behavior.
