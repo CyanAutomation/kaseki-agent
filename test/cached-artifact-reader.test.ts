@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { mkdtempSync, writeFileSync, rmSync, utimesSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CachedArtifactReader } from '../src/utils/cached-artifact-reader';
@@ -232,7 +232,6 @@ describe('CachedArtifactReader', () => {
     it('should clear cache entries for a specific job', () => {
       const job1Dir = join(tempDir, 'kaseki-1');
       const job2Dir = join(tempDir, 'kaseki-2');
-      const { mkdirSync } = require('node:fs');
       mkdirSync(job1Dir, { recursive: true });
       mkdirSync(job2Dir, { recursive: true });
       const job1Path = join(job1Dir, 'metadata.json');
