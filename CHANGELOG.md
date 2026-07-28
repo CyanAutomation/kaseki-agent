@@ -4,6 +4,27 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.122.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.121.0...v1.122.0) (2026-07-28)
+
+
+### Bug Fixes
+
+* improve error handling in readMetadata method to throw on parse failure ([054d9a5](https://github.com/CyanAutomation/kaseki-agent/commit/054d9a5ab5aab087747e51c5b05deb7654ca92ee))
+* remove redundant imports and clean up test files for CachedArtifactReader and StatusMetadataHelper ([39c3265](https://github.com/CyanAutomation/kaseki-agent/commit/39c3265decd22b4b66ea07e1ae1fd6f2f4a2edce))
+* remove unnecessary whitespace in artifact reading and caching tests ([5b56e0e](https://github.com/CyanAutomation/kaseki-agent/commit/5b56e0ef8f6309b73fe0c88179a844f3923e10c8))
+* standardize string quotes in mockCache.getOrLoad implementations ([779219e](https://github.com/CyanAutomation/kaseki-agent/commit/779219ec22efac99753b505ca2a6cb095eb74eab))
+
+
+### Features
+
+* add CachedArtifactReader and KasekiMetadata interfaces for improved metadata handling ([8ebf457](https://github.com/CyanAutomation/kaseki-agent/commit/8ebf4571a4a181b5fb0e73dc0edfc8acb2cdb1cc))
+* add health coverage scripts and enhance artifact recovery tests ([9a6615d](https://github.com/CyanAutomation/kaseki-agent/commit/9a6615d6fe9443bc528e067a2db3e41a2081fc76))
+* enhance CachedArtifactReader initialization for improved flexibility ([f31c2ea](https://github.com/CyanAutomation/kaseki-agent/commit/f31c2ea48a7dd265ccdac5940cccbfc1553e9a19))
+* enhance mockCache.getOrLoad implementation to read metadata.json from fs mock ([75425b7](https://github.com/CyanAutomation/kaseki-agent/commit/75425b746f4837a22a8e40fccfdaebe19c51abe1))
+* enhance test utilities and improve response handling in kaseki API web console ([08fb183](https://github.com/CyanAutomation/kaseki-agent/commit/08fb183ac49767f99c499016713b337bcc5f2748))
+* enhance tests and metadata handling in StatusMetadataHelper and related utilities ([51c5be8](https://github.com/CyanAutomation/kaseki-agent/commit/51c5be863d7768455712da51126f71be08d5fadc))
+* integrate CachedArtifactReader into CLI and log routes for improved artifact caching ([cf765a9](https://github.com/CyanAutomation/kaseki-agent/commit/cf765a9100084e2f5fad90970d72dbfba4250982))
+
 # [1.121.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.120.2...v1.121.0) (2026-07-28)
 
 
