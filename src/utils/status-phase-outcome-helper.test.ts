@@ -193,6 +193,38 @@ describe('StatusPhaseOutcomeHelper', () => {
     });
   });
 
+  it('uses metadata-only goal-setting evidence when event logs are unavailable', () => {
+    const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+    const response = makeResponse('');
+
+    helper.addPhaseOutcome(response, makeJob(), {
+      goal_setting_duration_seconds: 12,
+      goal_setting_actual_model: 'gpt-5',
+    });
+
+    expect(response.phaseOutcome).toMatchObject({
+      goalSetting: 'running',
+      scouting: 'not_reached',
+      weaving: 'not_reached',
+    });
+  });
+
+  it('treats non-zero metadata-only goal-setting exit code as failure without fallback evidence', () => {
+    const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
+    const response = makeResponse('');
+
+    helper.addPhaseOutcome(response, makeJob({ status: 'failed' }), {
+      goal_setting_exit_code: 1,
+      failed_command: 'pi goal-setting agent',
+    });
+
+    expect(response.phaseOutcome).toMatchObject({
+      goalSetting: 'failed',
+      scouting: 'not_reached',
+      weaving: 'not_reached',
+    });
+  });
+
   it('uses goal-setting recovery text as a fallback reason', () => {
     const job = makeJob({ id: 'job-goal-setting-recovery' });
     const runDir = path.join(resultsDir, job.id);

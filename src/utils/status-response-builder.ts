@@ -11,6 +11,7 @@ import {
   extractGoalCheckFailureReason,
 } from '../instance-state-derivation';
 import type { ResultCache } from '../result-cache';
+import { CachedArtifactReader } from './cached-artifact-reader';
 import { TaskProgressCalculator } from './task-progress-calculator';
 import { DiagnosticExtractor } from './diagnostic-extractor';
 import { ArtifactContentLoader } from './artifact-content-loader';
@@ -34,16 +35,20 @@ export class StatusResponseBuilder {
   private phaseOutcomeHelper: StatusPhaseOutcomeHelper;
   private progressHelper: StatusProgressHelper;
   private readonly progressHighWater = new Map<string, number>();
+  private cachedReader?: CachedArtifactReader;
 
   constructor(
     scheduler: JobScheduler,
     private config: KasekiApiConfig,
     private artifactCache?: Pick<ResultCache, 'getOrLoad'>
   ) {
+    // Create CachedArtifactReader if artifactCache is available
+    this.cachedReader = artifactCache ? new CachedArtifactReader() : undefined;
+
     this.taskProgressCalculator = new TaskProgressCalculator(scheduler, config);
     this.diagnosticExtractor = new DiagnosticExtractor();
     this.artifactContentLoader = new ArtifactContentLoader(artifactCache);
-    this.metadataHelper = new StatusMetadataHelper();
+    this.metadataHelper = new StatusMetadataHelper(this.cachedReader);
     this.lifecycleHelper = new StatusLifecycleHelper(config);
     this.phaseOutcomeHelper = new StatusPhaseOutcomeHelper(scheduler, config);
     this.progressHelper = new StatusProgressHelper(scheduler, config);

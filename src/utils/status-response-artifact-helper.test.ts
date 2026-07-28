@@ -329,6 +329,32 @@ describe('StatusArtifactHelper', () => {
       expect(response.artifacts).toBeDefined();
     });
 
+    it('should inline valid failure JSON and ignore malformed failure JSON content', () => {
+      const runDir = path.join(resultsDir, 'job-failure-json');
+      fs.mkdirSync(runDir, { recursive: true });
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), '{}');
+      fs.writeFileSync(path.join(runDir, 'failure.json'), JSON.stringify({ error: 'first failure' }));
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'failure.json': { exists: true, size: 30 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      const validResponse = makeResponse();
+      helper.addArtifactInfo(validResponse, makeJob({ id: 'job-failure-json', status: 'failed', resultDir: runDir }));
+      expect(validResponse.failureJsonContent).toEqual({ error: 'first failure' });
+
+      fs.writeFileSync(path.join(runDir, 'failure.json'), '{not json');
+      const malformedResponse = makeResponse();
+      helper.addArtifactInfo(malformedResponse, makeJob({ id: 'job-failure-json', status: 'failed', resultDir: runDir }));
+
+      expect(malformedResponse.failureJsonContent).toBeUndefined();
+    });
+
     it('should use custom resultDir when provided by job', () => {
       const customDir = path.join(resultsDir, 'custom-results');
       fs.mkdirSync(customDir, { recursive: true });
@@ -519,6 +545,64 @@ describe('StatusArtifactHelper', () => {
 
       // Should include pi-events.jsonl in diagnostic files
       expect(response.artifacts?.diagnosticFiles).toContain('pi-events.jsonl');
+    });
+
+    it.each([
+      ['provider_error'],
+      ['model_unavailable'],
+      ['provider_empty_assistant_turn'],
+    ])('should include Pi agent diagnostics for provider_error_type=%s', (providerErrorType) => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, `job-pi-type-${providerErrorType}`);
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ id: `job-pi-type-${providerErrorType}`, status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), JSON.stringify({
+        provider_error_type: providerErrorType,
+      }));
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'pi-agent-diagnostics.jsonl': { exists: true, size: 50 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'failure.json': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      expect(response.artifacts?.diagnosticFiles).toContain('pi-agent-diagnostics.jsonl');
+    });
+
+    it.each([
+      ['pi provider empty assistant turn'],
+      ['pi provider error'],
+    ])('should include Pi agent diagnostics when failed_command contains "%s"', (failedCommand) => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, `job-pi-command-${failedCommand.replaceAll(' ', '-')}`);
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ id: path.basename(runDir), status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), JSON.stringify({
+        failed_command: failedCommand,
+      }));
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        '.gateway-diagnostics.jsonl': { exists: true, size: 50 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'failure.json': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      expect(response.artifacts?.diagnosticFiles).toContain('.gateway-diagnostics.jsonl');
+      expect(response.diagnosticEntryPoint).toBe('.gateway-diagnostics.jsonl');
     });
 
     it('should include goal-setting diagnostics when goal-setting fails', () => {
