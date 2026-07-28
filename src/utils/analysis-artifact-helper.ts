@@ -25,15 +25,15 @@ export class AnalysisArtifactHelper {
 
     if (this.reader) {
       const metadata = this.reader.readMetadata(metadataPath);
-      return metadata as Record<string, unknown> | null ?? undefined;
+      if (metadata === null) {
+        // File exists but failed to parse - throw so safelyReadArtifact catches it
+        throw new Error('Failed to parse metadata.json');
+      }
+      return metadata as Record<string, unknown> | undefined;
     }
 
     // Fallback to direct read
-    try {
-      return JSON.parse(fs.readFileSync(metadataPath, 'utf-8')) as Record<string, unknown>;
-    } catch {
-      return undefined;
-    }
+    return JSON.parse(fs.readFileSync(metadataPath, 'utf-8')) as Record<string, unknown>;
   }
 
   /**
