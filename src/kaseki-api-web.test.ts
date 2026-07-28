@@ -1,4 +1,4 @@
-/* global HTMLTextAreaElement, HTMLSelectElement */
+/* global Document, HTMLTextAreaElement, HTMLSelectElement */
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { getWebConsoleResponse } from './kaseki-api-web';
 
@@ -20,6 +20,10 @@ type MockResponse = {
   json(): Promise<unknown>;
   text(): Promise<string>;
 };
+
+type FetchHandler = (path: string, init?: FetchInit) => MockResponse | Promise<MockResponse>;
+type RouteResponse = MockResponse | Promise<MockResponse> | FetchHandler;
+type RouteResponses = Record<string, RouteResponse>;
 
 const openDoms: JSDOM[] = [];
 
@@ -127,6 +131,74 @@ function input(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectEleme
   element.dispatchEvent(new view.Event('change', { bubbles: true }));
 }
 
+function routeResponses(routes: RouteResponses, fallback: MockResponse = createJsonResponse({})): FetchHandler {
+  return (path, init) => {
+    const route = routes[path];
+    if (typeof route === 'function') return route(path, init);
+    return route || fallback;
+  };
+}
+
+function getElement<T extends Element = Element>(document: Document, selector: string): T {
+  const element = document.querySelector<T>(selector);
+  if (!element) throw new Error(`Expected ${selector} to exist`);
+  return element;
+}
+
+function getText(document: Document, selector: string): string {
+  return getElement(document, selector).textContent || '';
+}
+
+function expectText(document: Document, selector: string, expected: string): void {
+  expect(getText(document, selector)).toBe(expected);
+}
+
+function expectTextContains(document: Document, selector: string, expected: string): void {
+  expect(getText(document, selector)).toContain(expected);
+}
+
+function expectTextNotContains(document: Document, selector: string, expected: string): void {
+  expect(getText(document, selector)).not.toContain(expected);
+}
+
+function expectAttribute(document: Document, selector: string, name: string, expected: string): void {
+  expect(getElement(document, selector).getAttribute(name)).toBe(expected);
+}
+
+function expectHidden(document: Document, selector: string, expected: boolean): void {
+  expect(getElement(document, selector).hasAttribute('hidden')).toBe(expected);
+}
+
+function clickSelector(document: Document, selector: string): void {
+  click(getElement(document, selector));
+}
+
+function inputSelector(document: Document, selector: string, value: string): void {
+  input(getElement<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(document, selector), value);
+}
+
+function setRunId(document: Document, runId: string): void {
+  getElement<HTMLInputElement>(document, '#run-id').value = runId;
+}
+
+function openFullResults(document: Document, runId: string): void {
+  setRunId(document, runId);
+  clickSelector(document, '#full-results-btn');
+}
+
+function healthCheckButton(document: Document, label: string): Element {
+  const button = [...document.querySelectorAll('.health-check-button')]
+    .find((candidate) => (candidate.textContent || '').includes(label));
+  if (!button) throw new Error(`Expected health check button ${label} to exist`);
+  return button;
+}
+
+async function refreshAndSelectFirstRun(document: Document): Promise<void> {
+  clickSelector(document, '#refresh-runs');
+  await waitFor(() => expect(document.querySelectorAll('#runs-list button')).not.toHaveLength(0));
+  clickSelector(document, '#runs-list button');
+}
+
 describe('kaseki API web console routes', () => {
   test('serves an empty public favicon response', async () => {
     const { response } = await fetchConsole('/favicon.ico');
@@ -141,26 +213,26 @@ describe('kaseki API web console routes', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/html');
     expect(response.headers.get('content-security-policy')).toContain("style-src 'unsafe-inline'");
-    expect(document.querySelector('h1')?.textContent).toBe('Kaseki Task Console');
-    expect(document.querySelector('#header-api-token')?.getAttribute('aria-label')).toBe('API bearer token');
-    expect(document.querySelector('label[for="repo-url"]')?.textContent).toBe('Task repository URL');
-    expect(document.querySelector('label[for="issues-repo-url"]')?.textContent).toBe('Issues repository URL');
-    expect(document.querySelector('[data-testid="task-repo-url"]')).not.toBeNull();
-    expect(document.querySelector('[data-testid="issues-repo-url"]')).not.toBeNull();
-    expect(document.querySelector('[data-probe="/api/preflight"]')).not.toBeNull();
-    expect(document.querySelector('[data-probe="/api/gateway-test?stage=1"]')?.getAttribute('data-auth')).toBe('true');
-    expect(document.querySelector('[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]')?.textContent).toContain('AI Model Test');
-    expect(document.querySelector('#task-mode')?.getAttribute('name')).toBe('taskMode');
-    expect(document.querySelector('#runs-list')).not.toBeNull();
-    expect(document.querySelector('#refresh-runs')?.textContent).toContain('Refresh runs');
-    expect(document.querySelector('#cancel-run')?.textContent).toContain('Cancel run');
-    expect(document.querySelector('[data-tab="artifacts"]')?.textContent).toContain('Artifacts');
-    expect(document.querySelector('#recommended-artifacts')?.textContent).toContain('Key Diagnostics');
-    expect(document.querySelector('#copy-diagnostic-bundle-btn')?.textContent).toContain('Copy Debug Summary');
-    expect(document.querySelector('#response-summary')?.hasAttribute('hidden')).toBe(true);
+    expectText(document, 'h1', 'Kaseki Task Console');
+    expectAttribute(document, '#header-api-token', 'aria-label', 'API bearer token');
+    expectText(document, 'label[for="repo-url"]', 'Task repository URL');
+    expectText(document, 'label[for="issues-repo-url"]', 'Issues repository URL');
+    getElement(document, '[data-testid="task-repo-url"]');
+    getElement(document, '[data-testid="issues-repo-url"]');
+    getElement(document, '[data-probe="/api/preflight"]');
+    expectAttribute(document, '[data-probe="/api/gateway-test?stage=1"]', 'data-auth', 'true');
+    expectTextContains(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]', 'AI Model Test');
+    expectAttribute(document, '#task-mode', 'name', 'taskMode');
+    getElement(document, '#runs-list');
+    expectTextContains(document, '#refresh-runs', 'Refresh runs');
+    expectTextContains(document, '#cancel-run', 'Cancel run');
+    expectTextContains(document, '[data-tab="artifacts"]', 'Artifacts');
+    expectTextContains(document, '#recommended-artifacts', 'Key Diagnostics');
+    expectTextContains(document, '#copy-diagnostic-bundle-btn', 'Copy Debug Summary');
+    expectHidden(document, '#response-summary', true);
     expect(body).toContain("['failed', 'cancelled', 'canceled', 'timed_out']");
     expect(body).toContain("loadModalTab('events', { background: true })");
-    expect(document.querySelector('#submit-tab')?.getAttribute('aria-hidden')).toBe('true');
+    expectAttribute(document, '#submit-tab', 'aria-hidden', 'true');
     expect(document.body.textContent).not.toContain('Task Progress');
   });
 });
@@ -225,36 +297,32 @@ describe('kaseki API web console behavior', () => {
   test('labels a recovered scouting handoff as fallback in phase outcomes', async () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
-      fetchHandler: (path) => path === '/api/runs/kaseki-220/status'
-        ? createJsonResponse({
+      fetchHandler: routeResponses({
+        '/api/runs/kaseki-220/status': createJsonResponse({
           id: 'kaseki-220', status: 'running',
           phaseOutcome: { scouting: 'completed', weaving: 'running', scoutingFallback: true },
-        })
-        : path === '/api/runs'
-          ? createJsonResponse({ runs: [{ id: 'kaseki-220', status: 'running' }] })
-          : createJsonResponse({ status: 'ok' }),
+        }),
+        '/api/runs': createJsonResponse({ runs: [{ id: 'kaseki-220', status: 'running' }] }),
+      }, createJsonResponse({ status: 'ok' })),
     });
 
-    click(document.querySelector('#refresh-runs'));
-    await waitFor(() => expect(document.querySelectorAll('#runs-list button')).toHaveLength(1));
-    click(document.querySelector('#runs-list button'));
+    await refreshAndSelectFirstRun(document);
     // Simplified phase display: "Yuzuriha: unknown, Suika: completed (fallback), Kaseki: running"
-    await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Suika: completed (fallback)'));
-    expect(document.querySelector('#response-summary')?.textContent).toContain('Kaseki: running');
+    await waitFor(() => expectTextContains(document, '#response-summary', 'Suika: completed (fallback)'));
+    expectTextContains(document, '#response-summary', 'Kaseki: running');
   });
 
   test('loads the recent run list into selectable run buttons', async () => {
     const { document, calls } = await renderConsole({
       storedToken: 'token12345',
-      fetchHandler: (path) => {
-        if (path !== '/api/runs') return createJsonResponse({});
-        return createJsonResponse({
+      fetchHandler: routeResponses({
+        '/api/runs': createJsonResponse({
           runs: [
             { id: 'kaseki-101', status: 'running', createdAt: '2026-06-09T12:00:00Z' },
             { id: 'kaseki-102', status: 'completed', createdAt: '2026-06-09T12:05:00Z' },
           ],
-        });
-      },
+        }),
+      }),
     });
 
     click(document.querySelector('#refresh-runs'));
@@ -265,44 +333,37 @@ describe('kaseki API web console behavior', () => {
       expect.stringContaining('kaseki-101'),
       expect.stringContaining('kaseki-102'),
     ]);
-    expect(document.querySelector('#runs-list')?.textContent).toContain('running');
-    expect(document.querySelector('#runs-list')?.textContent).toContain('completed');
+    expectTextContains(document, '#runs-list', 'running');
+    expectTextContains(document, '#runs-list', 'completed');
 
-    click(document.querySelector('#runs-list button'));
-    expect(document.querySelector<HTMLInputElement>('#run-id')?.value).toBe('kaseki-101');
-    expect(document.querySelector<HTMLButtonElement>('#cancel-run')?.disabled).toBe(false);
-    expect(document.querySelector('#run-links')?.hasAttribute('hidden')).toBe(false);
+    clickSelector(document, '#runs-list button');
+    expect(getElement<HTMLInputElement>(document, '#run-id').value).toBe('kaseki-101');
+    expect(getElement<HTMLButtonElement>(document, '#cancel-run').disabled).toBe(false);
+    expectHidden(document, '#run-links', false);
   });
 
   test('disables cancellation and surfaces diagnosis for a terminal run', async () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
-      fetchHandler: (path) => {
-        if (path === '/api/runs') {
-          return createJsonResponse({ runs: [{ id: 'kaseki-199', status: 'failed', createdAt: '2026-07-04T12:00:00Z' }] });
-        }
-        if (path === '/api/runs/kaseki-199/status') {
-          return createJsonResponse({
-            id: 'kaseki-199',
-            status: 'failed',
-            lifecyclePhase: 'terminal',
-            cancellable: false,
-            attempt: { current: 2, maximum: 2, state: 'exhausted' },
-            diagnosis: { severity: 'error', summary: 'Provider retry exhausted', remediation: 'Inspect provider attempts' },
-          });
-        }
-        if (path === '/api/runs/kaseki-199/artifacts') return createJsonResponse({ artifacts: [] });
-        return createJsonResponse({});
-      },
+      fetchHandler: routeResponses({
+        '/api/runs': createJsonResponse({ runs: [{ id: 'kaseki-199', status: 'failed', createdAt: '2026-07-04T12:00:00Z' }] }),
+        '/api/runs/kaseki-199/status': createJsonResponse({
+          id: 'kaseki-199',
+          status: 'failed',
+          lifecyclePhase: 'terminal',
+          cancellable: false,
+          attempt: { current: 2, maximum: 2, state: 'exhausted' },
+          diagnosis: { severity: 'error', summary: 'Provider retry exhausted', remediation: 'Inspect provider attempts' },
+        }),
+        '/api/runs/kaseki-199/artifacts': createJsonResponse({ artifacts: [] }),
+      }),
     });
 
-    click(document.querySelector('#refresh-runs'));
-    await waitFor(() => expect(document.querySelectorAll('#runs-list button')).toHaveLength(1));
-    click(document.querySelector('#runs-list button'));
-    await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Provider retry exhausted'));
-    expect(document.querySelector<HTMLButtonElement>('#cancel-run')?.disabled).toBe(true);
+    await refreshAndSelectFirstRun(document);
+    await waitFor(() => expectTextContains(document, '#response-summary', 'Provider retry exhausted'));
+    expect(getElement<HTMLButtonElement>(document, '#cancel-run').disabled).toBe(true);
     // Note: "Provider attempt" field is no longer displayed (removed for simplicity)
-    expect(document.querySelector('#response-summary')?.textContent).toContain('Inspect provider attempts');
+    expectTextContains(document, '#response-summary', 'Inspect provider attempts');
   });
 
   test('displays gateway and inference test buttons with correct endpoints', async () => {
@@ -311,21 +372,12 @@ describe('kaseki API web console behavior', () => {
       fetchHandler: () => createJsonResponse({ status: 'ok' }),
     });
 
-    // Verify Gateway Test button has stage=1 parameter
-    const gatewayTestButton = [...document.querySelectorAll('.health-check-button')]
-      .find(btn => btn.textContent?.includes('API Connection'));
-    expect(gatewayTestButton).toBeDefined();
-    expect(gatewayTestButton?.getAttribute('data-probe')).toBe('/api/gateway-test?stage=1');
+    expect(healthCheckButton(document, 'API Connection').getAttribute('data-probe')).toBe('/api/gateway-test?stage=1');
+    expect(healthCheckButton(document, 'AI Model Test').getAttribute('data-probe'))
+      .toBe('/api/gateway-test?stage=2&responseSmoke=true&piProvider=true');
 
-    // Verify inference test button has stage=2 and responseSmoke parameters
-    const llmTestButton = [...document.querySelectorAll('.health-check-button')]
-      .find(btn => btn.textContent?.includes('AI Model Test'));
-    expect(llmTestButton).toBeDefined();
-    expect(llmTestButton?.getAttribute('data-probe')).toBe('/api/gateway-test?stage=2&responseSmoke=true&piProvider=true');
-
-    // Verify Check Status button does not exist
     const checkStatusButton = [...document.querySelectorAll('.health-check-button')]
-      .find(btn => btn.textContent?.includes('Check Status'));
+      .find(btn => (btn.textContent || '').includes('Check Status'));
     expect(checkStatusButton).toBeUndefined();
   });
 
@@ -333,27 +385,26 @@ describe('kaseki API web console behavior', () => {
     let rejectRequest: ((error: Error) => void) | undefined;
     const { document } = await renderConsole({
       storedToken: 'token12345',
-      fetchHandler: (path) => {
-        if (path === '/api/gateway-test?stage=1') {
+      fetchHandler: routeResponses({
+        '/api/gateway-test?stage=1': () => {
           return new Promise((_resolve, reject) => { rejectRequest = reject; });
-        }
-        if (path === '/api/runs') return createJsonResponse({ runs: [] });
-        return createJsonResponse({ status: 'ok' });
-      },
+        },
+        '/api/runs': createJsonResponse({ runs: [] }),
+      }, createJsonResponse({ status: 'ok' })),
     });
-    const gateway = document.querySelector<HTMLButtonElement>('[data-probe="/api/gateway-test?stage=1"]');
-    const inference = document.querySelector<HTMLButtonElement>('[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]');
-    const repo = document.querySelector<HTMLInputElement>('[name="repoUrl"]');
+    const gateway = getElement<HTMLButtonElement>(document, '[data-probe="/api/gateway-test?stage=1"]');
+    const inference = getElement<HTMLButtonElement>(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]');
+    const repo = getElement<HTMLInputElement>(document, '[name="repoUrl"]');
     click(gateway);
-    await waitFor(() => expect(gateway?.disabled).toBe(true));
-    expect(inference?.disabled).toBe(true);
-    expect(repo?.disabled).toBe(false);
-    expect(document.querySelector('#diagnostic-queue-state')?.textContent).toContain('Diagnostic running: API Connection');
+    await waitFor(() => expect(gateway.disabled).toBe(true));
+    expect(inference.disabled).toBe(true);
+    expect(repo.disabled).toBe(false);
+    expectTextContains(document, '#diagnostic-queue-state', 'Diagnostic running: API Connection');
     rejectRequest?.(new Error('gateway unavailable'));
-    await waitFor(() => expect(gateway?.disabled).toBe(false));
-    expect(inference?.disabled).toBe(false);
-    expect(repo?.disabled).toBe(false);
-    expect(document.querySelector('#diagnostic-queue-state')?.textContent).toBe('Diagnostics are ready.');
+    await waitFor(() => expect(gateway.disabled).toBe(false));
+    expect(inference.disabled).toBe(false);
+    expect(repo.disabled).toBe(false);
+    expectText(document, '#diagnostic-queue-state', 'Diagnostics are ready.');
   });
 
   test('summarizes gateway smoke results without OpenRouter recovery status', async () => {
@@ -391,37 +442,34 @@ describe('kaseki API web console behavior', () => {
   test('keeps Pi provider gateway smoke diagnostics for adapter failures', async () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
-      fetchHandler: (path) => {
-        if (path === '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true') {
-          return createJsonResponse({
-            status: 'ok',
-            responseTime: 510,
-            partialSuccess: true,
-            piProviderSmoke: {
-              status: 'error',
-              remediation: 'Check gateway configuration and Pi provider registration',
-              diagnostics: {
-                fieldsFound: ['message.output_text'],
-                suggestedPatterns: ['message.output_text'],
-                eventsByType: { message: 2 },
-                debugOutputPath: '/tmp/pi-provider-debug.jsonl',
-              },
+      fetchHandler: routeResponses({
+        '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true': createJsonResponse({
+          status: 'ok',
+          responseTime: 510,
+          partialSuccess: true,
+          piProviderSmoke: {
+            status: 'error',
+            remediation: 'Check gateway configuration and Pi provider registration',
+            diagnostics: {
+              fieldsFound: ['message.output_text'],
+              suggestedPatterns: ['message.output_text'],
+              eventsByType: { message: 2 },
+              debugOutputPath: '/tmp/pi-provider-debug.jsonl',
             },
-          });
-        }
-        if (path === '/api/runs') return createJsonResponse({ runs: [] });
-        return createJsonResponse({ status: 'ok' });
-      },
+          },
+        }),
+        '/api/runs': createJsonResponse({ runs: [] }),
+      }, createJsonResponse({ status: 'ok' })),
     });
 
-    click(document.querySelector('[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]'));
+    clickSelector(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]');
 
-    await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Gateway inference passed; Pi provider adapter contract failed. Diagnostics:'));
-    expect(document.querySelector('#response-summary')?.textContent).toContain('Fields found: message.output_text');
-    expect(document.querySelector('#response-summary')?.textContent).toContain('Event types seen: message(2)');
-    expect(document.querySelector('#response-summary')?.textContent).toContain('Remediation: Check gateway configuration and Pi provider registration');
-    expect(document.querySelector('[data-summary="llm-test"]')?.textContent).toBe('Gateway passed; Pi adapter failed');
-    expect(document.querySelector('[data-summary="llm-test"]')?.className).toContain('warning');
+    await waitFor(() => expectTextContains(document, '#response-summary', 'Gateway inference passed; Pi provider adapter contract failed. Diagnostics:'));
+    expectTextContains(document, '#response-summary', 'Fields found: message.output_text');
+    expectTextContains(document, '#response-summary', 'Event types seen: message(2)');
+    expectTextContains(document, '#response-summary', 'Remediation: Check gateway configuration and Pi provider registration');
+    expectText(document, '[data-summary="llm-test"]', 'Gateway passed; Pi adapter failed');
+    expect(getElement(document, '[data-summary="llm-test"]').className).toContain('warning');
   });
 
   test('shows failure reasons and progress context in recent runs', async () => {
@@ -458,66 +506,58 @@ describe('kaseki API web console behavior', () => {
   test('loads artifact lists in the full-results modal with DOM controls for text artifacts only', async () => {
     const { document, calls } = await renderConsole({
       storedToken: 'token12345',
-      fetchHandler: (path) => {
-        if (path === '/api/runs/kaseki-301/status') return createJsonResponse({ id: 'kaseki-301', status: 'running' });
-        if (path === '/api/runs/kaseki-301/artifacts') {
-          return createJsonResponse({
-            artifacts: [
-              { name: 'report.json', available: true, contentType: 'application/json', size: '1 KB' },
-              { name: 'archive.tar', available: true, contentType: 'application/x-tar', size: '8 KB' },
-              { name: 'missing.txt', available: false, contentType: 'text/plain', size: '1 KB' },
-            ],
-          });
-        }
-        if (path === '/api/results/kaseki-301/report.json') {
-          return createJsonResponse({
-            response: {
-              file: 'report.json',
-              contentType: 'application/json',
-              content: '{"status":"ok"}',
-            },
-          });
-        }
-        return createJsonResponse({});
-      },
+      fetchHandler: routeResponses({
+        '/api/runs/kaseki-301/status': createJsonResponse({ id: 'kaseki-301', status: 'running' }),
+        '/api/runs/kaseki-301/artifacts': createJsonResponse({
+          artifacts: [
+            { name: 'report.json', available: true, contentType: 'application/json', size: '1 KB' },
+            { name: 'archive.tar', available: true, contentType: 'application/x-tar', size: '8 KB' },
+            { name: 'missing.txt', available: false, contentType: 'text/plain', size: '1 KB' },
+          ],
+        }),
+        '/api/results/kaseki-301/report.json': createJsonResponse({
+          response: {
+            file: 'report.json',
+            contentType: 'application/json',
+            content: '{"status":"ok"}',
+          },
+        }),
+      }),
     });
 
-    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
-    if (!runIdInput) throw new Error('Expected #run-id to exist');
-    runIdInput.value = 'kaseki-301';
-    click(document.querySelector('#full-results-btn'));
+    openFullResults(document, 'kaseki-301');
     await waitFor(() => expect(calls.map((call) => call.path)).toContain('/api/runs/kaseki-301/status'));
 
-    click(document.querySelector('.tab-btn[data-tab="artifacts"]'));
+    clickSelector(document, '.tab-btn[data-tab="artifacts"]');
     await waitFor(() => expect(document.querySelectorAll('#artifacts-output .artifact-item')).toHaveLength(1));
 
-    expect(document.querySelector('#full-results-modal')?.hasAttribute('hidden')).toBe(false);
-    expect(document.querySelector('#modal-title-heading')?.textContent).toBe('Full Results — kaseki-301');
-    expect(document.querySelector('#tab-artifacts')?.hasAttribute('hidden')).toBe(false);
-    expect(document.querySelector('#tab-artifacts')?.getAttribute('aria-hidden')).toBe('false');
-    expect(document.querySelector('#tab-status')?.hasAttribute('hidden')).toBe(true);
-    expect(document.querySelector('#tab-status')?.getAttribute('aria-hidden')).toBe('true');
-    expect(document.querySelector('#artifacts-output .artifact-item-name')?.textContent).toBe('report.json');
-    expect(document.querySelector('#artifacts-output')?.textContent).not.toContain('archive.tar');
-    expect(document.querySelector('#artifacts-output')?.textContent).not.toContain('missing.txt');
+    expectHidden(document, '#full-results-modal', false);
+    expectText(document, '#modal-title-heading', 'Full Results — kaseki-301');
+    expectHidden(document, '#tab-artifacts', false);
+    expectAttribute(document, '#tab-artifacts', 'aria-hidden', 'false');
+    expectHidden(document, '#tab-status', true);
+    expectAttribute(document, '#tab-status', 'aria-hidden', 'true');
+    expectText(document, '#artifacts-output .artifact-item-name', 'report.json');
+    expectTextNotContains(document, '#artifacts-output', 'archive.tar');
+    expectTextNotContains(document, '#artifacts-output', 'missing.txt');
 
-    click(document.querySelector('#artifacts-output .artifact-item'));
-    await waitFor(() => expect(document.querySelector('.artifact-content-pre')?.textContent).toContain('"status": "ok"'));
-    expect(document.querySelector('.artifact-content-pre')?.textContent).not.toContain('report.json');
+    clickSelector(document, '#artifacts-output .artifact-item');
+    await waitFor(() => expectTextContains(document, '.artifact-content-pre', '"status": "ok"'));
+    expectTextNotContains(document, '.artifact-content-pre', 'report.json');
 
-    click(document.querySelector('#modal-close-btn'));
-    click(document.querySelector('#full-results-btn'));
-    await waitFor(() => expect(document.querySelector('#tab-status')?.hasAttribute('hidden')).toBe(false));
-    expect(document.querySelector('#tab-status')?.getAttribute('aria-hidden')).toBe('false');
-    expect(document.querySelector('#tab-artifacts')?.hasAttribute('hidden')).toBe(true);
-    expect(document.querySelector('#tab-artifacts')?.getAttribute('aria-hidden')).toBe('true');
+    clickSelector(document, '#modal-close-btn');
+    clickSelector(document, '#full-results-btn');
+    await waitFor(() => expectHidden(document, '#tab-status', false));
+    expectAttribute(document, '#tab-status', 'aria-hidden', 'false');
+    expectHidden(document, '#tab-artifacts', true);
+    expectAttribute(document, '#tab-artifacts', 'aria-hidden', 'true');
   });
 
   test('leads failed status results with an actionable compact summary', async () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
-      fetchHandler: (path) => path === '/api/runs/kaseki-303/status'
-        ? createJsonResponse({
+      fetchHandler: routeResponses({
+        '/api/runs/kaseki-303/status': createJsonResponse({
           id: 'kaseki-303',
           status: 'failed',
           exitCode: 88,
@@ -528,16 +568,13 @@ describe('kaseki API web console behavior', () => {
             remediation: 'Inspect provider-attempts.jsonl.',
           },
           artifacts: { diagnosticFiles: ['provider-attempts.jsonl', 'gateway-summary.json'] },
-        })
-        : createJsonResponse({}),
+        }),
+      }),
     });
 
-    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
-    if (!runIdInput) throw new Error('Expected #run-id to exist');
-    runIdInput.value = 'kaseki-303';
-    click(document.querySelector('#full-results-btn'));
-    await waitFor(() => expect(document.querySelector('#status-output')?.textContent).toContain('RUN SUMMARY'));
-    const text = document.querySelector('#status-output')?.textContent || '';
+    openFullResults(document, 'kaseki-303');
+    await waitFor(() => expectTextContains(document, '#status-output', 'RUN SUMMARY'));
+    const text = getText(document, '#status-output');
     expect(text).toContain('Provider: gateway');
     expect(text).toContain('Attempts: 2/2');
     expect(text).toContain('Diagnostics: provider-attempts.jsonl, gateway-summary.json');
@@ -548,37 +585,31 @@ describe('kaseki API web console behavior', () => {
   test('selecting a GitHub issue carries its repository into the submit form', async () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
-      fetchHandler: (path) => {
-        if (path === '/api/github-issues') {
-          return createJsonResponse([
-            {
-              number: 517,
-              title: 'Stage names drift',
-              body: 'Align the setup stage name.',
-              created_at: new Date().toISOString(),
-            },
-          ]);
-        }
-        return createJsonResponse({});
-      },
+      fetchHandler: routeResponses({
+        '/api/github-issues': createJsonResponse([
+          {
+            number: 517,
+            title: 'Stage names drift',
+            body: 'Align the setup stage name.',
+            created_at: new Date().toISOString(),
+          },
+        ]),
+      }),
     });
 
-    click(document.querySelector('[data-tab="issues"]'));
-    const issuesRepoInput = document.querySelector<HTMLInputElement>('#issues-repo-url');
-    const repoInput = document.querySelector<HTMLInputElement>('#repo-url');
-    const taskPrompt = document.querySelector<HTMLTextAreaElement>('#task-prompt');
-    if (!issuesRepoInput || !repoInput || !taskPrompt) throw new Error('Expected issue and submit inputs to exist');
+    clickSelector(document, '[data-tab="issues"]');
+    inputSelector(document, '#issues-repo-url', 'CyanAutomation/kaseki-agent');
+    clickSelector(document, '#load-issues-btn');
+    await waitFor(() => expectTextContains(document, '#issues-list', 'Stage names drift'));
+    expect(getElement(document, '.issues-list-item').tagName).toBe('BUTTON');
+    expectText(document, '#state', 'Issues loaded.');
+    expectText(document, '#output-meta', 'Status: ok');
+    expectTextContains(document, '#output', '"issueCount": 1');
 
-    input(issuesRepoInput, 'CyanAutomation/kaseki-agent');
-    click(document.querySelector('#load-issues-btn'));
-    await waitFor(() => expect(document.querySelector('#issues-list')?.textContent).toContain('Stage names drift'));
-    expect(document.querySelector('.issues-list-item')?.tagName).toBe('BUTTON');
-    expect(document.querySelector('#state')?.textContent).toBe('Issues loaded.');
-    expect(document.querySelector('#output-meta')?.textContent).toBe('Status: ok');
-    expect(document.querySelector('#output')?.textContent).toContain('"issueCount": 1');
-
-    click(document.querySelector('.issues-list-item'));
-    expect(document.querySelector('#submit-tab')?.getAttribute('aria-hidden')).toBe('false');
+    clickSelector(document, '.issues-list-item');
+    expectAttribute(document, '#submit-tab', 'aria-hidden', 'false');
+    const repoInput = getElement<HTMLInputElement>(document, '#repo-url');
+    const taskPrompt = getElement<HTMLTextAreaElement>(document, '#task-prompt');
     expect(repoInput.value).toBe('https://github.com/CyanAutomation/kaseki-agent');
     expect(taskPrompt.value).toBe([
       'GitHub issue #517: Stage names drift',
@@ -626,46 +657,36 @@ describe('kaseki API web console behavior', () => {
   test('submitting a validated task immediately surfaces the new run id', async () => {
     const { document, calls } = await renderConsole({
       storedToken: 'token12345',
-      fetchHandler: (path) => {
-        if (path === '/api/validate') {
-          return createJsonResponse({
-            isValid: true,
-            checks: [{ name: 'repo-reachable', status: 'pass', message: 'ok' }],
-            estimatedDurationSeconds: 10,
-          });
-        }
-        if (path === '/api/runs') {
-          return createJsonResponse({
-            id: 'kaseki-777',
-            status: 'queued',
-            createdAt: '2026-06-12T21:30:00.000Z',
-          }, 202);
-        }
-        if (path === '/api/runs/kaseki-777/status') {
-          return createJsonResponse({ id: 'kaseki-777', status: 'running', elapsedSeconds: 1 });
-        }
-        return createJsonResponse({ runs: [] });
-      },
+      fetchHandler: routeResponses({
+        '/api/validate': createJsonResponse({
+          isValid: true,
+          checks: [{ name: 'repo-reachable', status: 'pass', message: 'ok' }],
+          estimatedDurationSeconds: 10,
+        }),
+        '/api/runs': createJsonResponse({
+          id: 'kaseki-777',
+          status: 'queued',
+          createdAt: '2026-06-12T21:30:00.000Z',
+        }, 202),
+        '/api/runs/kaseki-777/status': createJsonResponse({ id: 'kaseki-777', status: 'running', elapsedSeconds: 1 }),
+      }, createJsonResponse({ runs: [] })),
     });
 
-    const repoInput = document.querySelector<HTMLInputElement>('#repo-url');
-    const taskPrompt = document.querySelector<HTMLTextAreaElement>('#task-prompt');
-    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
-    if (!repoInput || !taskPrompt || !runIdInput) throw new Error('Expected submit inputs to exist');
+    const runIdInput = getElement<HTMLInputElement>(document, '#run-id');
 
-    input(repoInput, 'https://github.com/CyanAutomation/kaseki-agent');
-    input(taskPrompt, 'Inspect the repository and report stage naming drift.');
+    inputSelector(document, '#repo-url', 'https://github.com/CyanAutomation/kaseki-agent');
+    inputSelector(document, '#task-prompt', 'Inspect the repository and report stage naming drift.');
     runIdInput.value = 'kaseki-old';
-    click(document.querySelector('#validate'));
-    await waitFor(() => expect(document.querySelector<HTMLButtonElement>('#submit')?.disabled).toBe(false));
+    clickSelector(document, '#validate');
+    await waitFor(() => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
 
-    click(document.querySelector('#submit'));
+    clickSelector(document, '#submit');
     expect(runIdInput.value).toBe('');
-    expect(document.querySelector('#output-meta')?.textContent).toBe('Status: submitting');
-    expect(document.querySelector('#output-meta')?.textContent).not.toContain('kaseki-old');
-    await waitFor(() => expect(document.querySelector<HTMLInputElement>('#run-id')?.value).toBe('kaseki-777'));
-    expect(document.querySelector('#output-meta')?.textContent).toContain('Run ID: kaseki-777');
-    expect(document.querySelector('#state')?.textContent).toBe('Run submitted.');
+    expectText(document, '#output-meta', 'Status: submitting');
+    expectTextNotContains(document, '#output-meta', 'kaseki-old');
+    await waitFor(() => expect(getElement<HTMLInputElement>(document, '#run-id').value).toBe('kaseki-777'));
+    expectTextContains(document, '#output-meta', 'Run ID: kaseki-777');
+    expectText(document, '#state', 'Run submitted.');
     const submitCall = calls.find((call) => call.path === '/api/runs' && call.init?.method === 'POST');
     expect(submitCall).toBeDefined();
     const submitBody = JSON.parse(String(submitCall?.init?.body || '{}')) as { idempotencyKey?: string };
@@ -745,96 +766,81 @@ describe('kaseki API web console behavior', () => {
   test('summarizes noisy preflight and artifact responses in the response panel', async () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
-      fetchHandler: (path) => {
-        if (path === '/api/preflight') {
-          return createJsonResponse({
-            status: 'ok',
+      fetchHandler: routeResponses({
+        '/api/preflight': createJsonResponse({
+          status: 'ok',
+          checks: [
+            { name: 'results-dir', ok: true, detail: 'writable' },
+            { name: 'template', ok: false, detail: 'stale', remediation: 'bootstrap' },
+          ],
+          image: 'docker.io/cyanautomation/kaseki-agent:latest',
+          templateRef: 'abc123',
+          resultsDir: '/agents/kaseki-results',
+          containerStartup: {
+            scope: 'startup',
+            current: false,
+            readinessImpact: 'excluded-from-current-readiness',
+            timestamp: '2026-06-15T21:47:29.203Z',
             checks: [
-              { name: 'results-dir', ok: true, detail: 'writable' },
-              { name: 'template', ok: false, detail: 'stale', remediation: 'bootstrap' },
+              { name: 'git-freshness', ok: true, detail: 'Git repository is readable and at ref: d8cf3954' },
             ],
-            image: 'docker.io/cyanautomation/kaseki-agent:latest',
-            templateRef: 'abc123',
-            resultsDir: '/agents/kaseki-results',
-            containerStartup: {
-              scope: 'startup',
-              current: false,
-              readinessImpact: 'excluded-from-current-readiness',
-              timestamp: '2026-06-15T21:47:29.203Z',
-              checks: [
-                { name: 'git-freshness', ok: true, detail: 'Git repository is readable and at ref: d8cf3954' },
-              ],
-            },
-            doctorStdoutTail: 'large nested payload should not be displayed',
-          });
-        }
-        if (path === '/api/runs/kaseki-303/artifacts') {
-          return createJsonResponse({
-            id: 'kaseki-303',
-            runStatus: 'failed',
-            artifactCount: 3,
-            recommended: ['failure.json'],
-            artifacts: [
-              { name: 'failure.json', available: true, contentType: 'application/json', size: 100 },
-              { name: 'pending-summary.md', available: true, contentType: 'text/markdown', size: 0 },
-              { name: 'missing.txt', available: false, contentType: 'text/plain', size: 0 },
-            ],
-          });
-        }
-        return createJsonResponse({});
-      },
+          },
+          doctorStdoutTail: 'large nested payload should not be displayed',
+        }),
+        '/api/runs/kaseki-303/artifacts': createJsonResponse({
+          id: 'kaseki-303',
+          runStatus: 'failed',
+          artifactCount: 3,
+          recommended: ['failure.json'],
+          artifacts: [
+            { name: 'failure.json', available: true, contentType: 'application/json', size: 100 },
+            { name: 'pending-summary.md', available: true, contentType: 'text/markdown', size: 0 },
+            { name: 'missing.txt', available: false, contentType: 'text/plain', size: 0 },
+          ],
+        }),
+      }),
     });
 
-    click(document.querySelector('[data-probe="/api/preflight"]'));
-    await waitFor(() => expect(document.querySelector('#output')?.textContent).toContain('"checkCount": 2'));
-    expect(document.querySelector('#output')?.textContent).toContain('"currentDiagnostics"');
-    expect(document.querySelector('#output')?.textContent).toContain('"startupDiagnostics"');
-    expect(document.querySelector('#output')?.textContent).toContain('Historical startup diagnostics only');
-    expect(document.querySelector('#output')?.textContent).toContain('"failedChecks"');
-    expect(document.querySelector('#output')?.textContent).not.toContain('large nested payload');
-    expect(document.querySelector('#response-summary')?.textContent).toContain('Startup diagnostics');
+    clickSelector(document, '[data-probe="/api/preflight"]');
+    await waitFor(() => expectTextContains(document, '#output', '"checkCount": 2'));
+    expectTextContains(document, '#output', '"currentDiagnostics"');
+    expectTextContains(document, '#output', '"startupDiagnostics"');
+    expectTextContains(document, '#output', 'Historical startup diagnostics only');
+    expectTextContains(document, '#output', '"failedChecks"');
+    expectTextNotContains(document, '#output', 'large nested payload');
+    expectTextContains(document, '#response-summary', 'Startup diagnostics');
 
-    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
-    if (!runIdInput) throw new Error('Expected #run-id to exist');
-    runIdInput.value = 'kaseki-303';
-    click(document.querySelector('#full-results-btn'));
-    await waitFor(() => expect(document.querySelector('#full-results-modal')?.hasAttribute('hidden')).toBe(false));
-    click(document.querySelector('.tab-btn[data-tab="artifacts"]'));
-    await waitFor(() => expect(document.querySelector('#artifacts-output')?.textContent).toContain('failure.json'));
-    expect(document.querySelector('#artifacts-output')?.textContent).not.toContain('pending-summary.md');
-    expect(document.querySelector('#artifacts-output')?.textContent).not.toContain('missing.txt');
-    expect(document.querySelector('#output')?.textContent).toContain('"path": "/api/preflight"');
-    expect(document.querySelector('#output')?.textContent).not.toContain('"availableArtifacts"');
+    openFullResults(document, 'kaseki-303');
+    await waitFor(() => expectHidden(document, '#full-results-modal', false));
+    clickSelector(document, '.tab-btn[data-tab="artifacts"]');
+    await waitFor(() => expectTextContains(document, '#artifacts-output', 'failure.json'));
+    expectTextNotContains(document, '#artifacts-output', 'pending-summary.md');
+    expectTextNotContains(document, '#artifacts-output', 'missing.txt');
+    expectTextContains(document, '#output', '"path": "/api/preflight"');
+    expectTextNotContains(document, '#output', '"availableArtifacts"');
   });
 
   test('renders gateway failures with retry guidance', async () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
-      fetchHandler: (path) => {
-        if (path === '/api/validate') {
-          return createJsonResponse({
-            isValid: true,
-            checks: [{ name: 'repo-reachable', status: 'pass', message: 'ok' }],
-          });
-        }
-        if (path === '/api/runs') return createTextResponse('Bad Gateway', 502);
-        return createJsonResponse({ runs: [] });
-      },
+      fetchHandler: routeResponses({
+        '/api/validate': createJsonResponse({
+          isValid: true,
+          checks: [{ name: 'repo-reachable', status: 'pass', message: 'ok' }],
+        }),
+        '/api/runs': createTextResponse('Bad Gateway', 502),
+      }, createJsonResponse({ runs: [] })),
     });
 
-    const repoInput = document.querySelector<HTMLInputElement>('#repo-url');
-    const taskPrompt = document.querySelector<HTMLTextAreaElement>('#task-prompt');
-    if (!repoInput || !taskPrompt) throw new Error('Expected submit inputs to exist');
+    inputSelector(document, '#repo-url', 'https://github.com/CyanAutomation/kaseki-agent');
+    inputSelector(document, '#task-prompt', 'Inspect the repository and report docs formatting drift.');
+    clickSelector(document, '#validate');
+    await waitFor(() => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
 
-    input(repoInput, 'https://github.com/CyanAutomation/kaseki-agent');
-    input(taskPrompt, 'Inspect the repository and report docs formatting drift.');
-    click(document.querySelector('#validate'));
-    await waitFor(() => expect(document.querySelector<HTMLButtonElement>('#submit')?.disabled).toBe(false));
-
-    click(document.querySelector('#submit'));
-    await waitFor(() => expect(document.querySelector('#state')?.textContent).toContain('web gateway'));
-    expect(document.querySelector('#output')?.textContent).toContain('"status": 502');
-    expect(document.querySelector('#output')?.textContent).toContain('retry once');
-    expect(document.querySelector('#output')?.textContent).toContain('Bad Gateway');
+    clickSelector(document, '#submit');
+    await waitFor(() => expectTextContains(document, '#state', 'web gateway'));
+    expectTextContains(document, '#output', '"status": 502');
+    expectTextContains(document, '#output', 'retry once');
+    expectTextContains(document, '#output', 'Bad Gateway');
   });
 });
