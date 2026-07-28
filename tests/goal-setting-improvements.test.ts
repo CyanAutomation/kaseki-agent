@@ -728,6 +728,7 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'repo-memory.sh'), join(scriptsDir, 'lib', 'repo-memory.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'provider-retry.sh'), join(scriptsDir, 'lib', 'provider-retry.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'model-resolution.sh'), join(scriptsDir, 'lib', 'model-resolution.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'lib', 'provider-validation.sh'), join(scriptsDir, 'lib', 'provider-validation.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'dependency-cache-helpers.sh'), join(scriptsDir, 'dependency-cache-helpers.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'npm-install-helpers.sh'), join(scriptsDir, 'npm-install-helpers.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'agent-prompt.sh'), join(scriptsDir, 'agent-prompt.sh'));
