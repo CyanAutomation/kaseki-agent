@@ -705,7 +705,7 @@ describe('StatusPhaseOutcomeHelper', () => {
 
     it('recognizes various completion signals in status/message/detail fields', () => {
       const completionSignals = ['finished', 'completed', 'failed', 'exited', 'success'];
-      
+
       for (const signal of completionSignals) {
         const helper = new StatusPhaseOutcomeHelper(
           makeScheduler([
@@ -726,7 +726,7 @@ describe('StatusPhaseOutcomeHelper', () => {
   describe('stage pattern matching edge cases', () => {
     it('recognizes goal-setting stage with various separators', () => {
       const patterns = ['pi goal-setting agent', 'pi goal_setting agent', 'pi goalsetting agent'];
-      
+
       for (const stage of patterns) {
         const helper = new StatusPhaseOutcomeHelper(
           makeScheduler([{ stage, status: 'started', timestamp: '2026-01-01T00:00:00Z' }]),
@@ -753,7 +753,7 @@ describe('StatusPhaseOutcomeHelper', () => {
         'collect agent diff',
         'changed files',
       ];
-      
+
       for (const stage of weavingStages) {
         const helper = new StatusPhaseOutcomeHelper(
           makeScheduler([{ stage, status: 'started', timestamp: '2026-01-01T00:00:00Z' }]),
