@@ -159,10 +159,33 @@ describe('analyzeResponseStructure', () => {
     expect(result.nonAssistantEventsWithText).toBe(1);
   });
 
+  it('labels non-assistant fields with unknown role when role is missing', () => {
+    const stdout = JSON.stringify({ type: 'message', message: { text: 'system note' } });
+
+    const result = analyzeResponseStructure(stdout);
+
+    expect(result.nonAssistantFieldsFound).toContain('unknown.message.text');
+    expect(result.nonAssistantEventsWithText).toBe(1);
+    expect(result.assistantEventsWithText).toBe(0);
+  });
+
   it('skips non-JSON lines', () => {
     const stdout = 'not json\n  \n' + makeEvent('message', 'assistant', { text: 'hi' });
     const result = analyzeResponseStructure(stdout);
     expect(result.eventCount).toBe(1);
+  });
+
+  it('skips malformed JSON event lines without counting them', () => {
+    const stdout = [
+      '{"type":"message","message":{"role":"assistant","text":"ok"}}',
+      '{"type":',
+      '{"type":"message","message":{"role":"assistant","text":"again"}}',
+    ].join('\n');
+
+    const result = analyzeResponseStructure(stdout);
+
+    expect(result.eventCount).toBe(2);
+    expect(result.assistantEventsWithText).toBe(2);
   });
 
   it('skips events without message field', () => {
@@ -299,6 +322,36 @@ describe('extractSampleEventStructure', () => {
     const result = extractSampleEventStructure(stdout);
     expect(result).toHaveLength(1);
     expect(result[0].type).toBe('string(7)');
+  });
+
+  it('sanitizes primitive, array, null, and nested object values', () => {
+    const stdout = JSON.stringify({
+      type: 'message',
+      count: 3,
+      ok: true,
+      missing: null,
+      items: [{ text: 'secret' }],
+      nested: { text: 'x'.repeat(80) },
+    });
+
+    const result = extractSampleEventStructure(stdout);
+
+    expect(result[0]).toMatchObject({
+      type: 'string(7)',
+      count: 'number',
+      ok: 'boolean',
+      missing: 'null',
+      items: '[1 items]',
+      nested: { text: 'string(50)' },
+    });
+  });
+
+  it('truncates deeply nested structures', () => {
+    const stdout = JSON.stringify({ a: { b: { c: { d: { e: 'hidden' } } } } });
+
+    const result = extractSampleEventStructure(stdout);
+
+    expect(result[0]).toEqual({ a: { b: { c: { d: '...' } } } });
   });
 
   it('limits to 5 lines', () => {

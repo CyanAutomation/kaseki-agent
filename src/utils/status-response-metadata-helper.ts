@@ -7,6 +7,12 @@ import * as fs from 'fs';
 import { Job } from '../kaseki-api-types';
 import { resolveInstanceExitCode } from '../instance-state-derivation';
 import { CachedArtifactReader } from './cached-artifact-reader';
+import {
+  isRecordValue,
+  optionalNumberValue,
+  resolveCompletedAtValue,
+  stringFieldValue,
+} from './status-metadata-fields';
 
 export class StatusMetadataHelper {
   private reader?: CachedArtifactReader;
@@ -60,42 +66,27 @@ export class StatusMetadataHelper {
    * Resolve completion timestamp from job or metadata
    */
   resolveCompletedAt(job: Job, metadata: any): string | undefined {
-    if (job.completedAt) {
-      return job.completedAt.toISOString();
-    }
-    if (!(job.status === 'completed' || job.status === 'failed')) {
-      return undefined;
-    }
-    const rawEndedAt = metadata?.ended_at ?? metadata?.completedAt ?? metadata?.completed_at;
-    if (typeof rawEndedAt !== 'string' || rawEndedAt.trim().length === 0) {
-      return undefined;
-    }
-    const normalized = /^\d{4}-\d{2}-\d{2}T.*Z$/.test(rawEndedAt)
-      ? rawEndedAt
-      : rawEndedAt.replace(' ', 'T');
-    const parsed = new Date(normalized);
-    return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+    return resolveCompletedAtValue(job, metadata);
   }
 
   /**
    * Type guard for record objects
    */
   isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
+    return isRecordValue(value);
   }
 
   /**
    * Extract string field from record
    */
   stringField(record: Record<string, unknown>, key: string): string | undefined {
-    const value = record[key];
-    return typeof value === 'string' ? value : undefined;
+    return stringFieldValue(record, key);
   }
 
   /**
    * Convert value to optional number
    */
   optionalNumber(value: unknown): number | undefined {
-    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+    return optionalNumberValue(value);
   }
 }

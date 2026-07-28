@@ -52,6 +52,41 @@ describe('phase-diagnostic-extractor', () => {
     ]);
   });
 
+  it('returns diagnostics unchanged when primary reason is absent or non-terminal', () => {
+    const diagnostics = [
+      { phase: 'goal-setting' as const, reason: 'patch_fallback', field: 'candidate' },
+      { phase: 'goal-setting' as const, reason: 'patch_fallback_recovered', field: 'candidate', recovered: true },
+    ];
+
+    expect(filterPhaseDiagnostics(diagnostics, undefined)).toEqual(diagnostics);
+    expect(filterPhaseDiagnostics(diagnostics, 'provider_error', false)).toEqual(diagnostics);
+  });
+
+  it('keeps fallback context only when no recovery marker matches the same phase and field', () => {
+    const filtered = filterPhaseDiagnostics([
+      { phase: 'goal-setting', reason: 'patch_fallback', field: 'candidate' },
+      { phase: 'scouting', reason: 'patch_fallback_recovered', field: 'candidate', recovered: true },
+      { phase: 'goal-setting', reason: 'missing_file', field: 'other' },
+      { phase: 'goal-setting', reason: 'missing_file_recovered', field: 'candidate', recovered: true },
+    ], 'Bad Gateway');
+
+    expect(filtered).toEqual([
+      { phase: 'goal-setting', reason: 'missing_file', field: 'other' },
+    ]);
+  });
+
+  it('suppresses placeholder content only for provider primary reasons', () => {
+    const diagnostics = [
+      { phase: 'scouting' as const, reason: 'placeholder_content', field: 'candidate' },
+      { phase: 'scouting' as const, reason: 'schema_mismatch', field: 'candidate' },
+    ];
+
+    expect(filterPhaseDiagnostics(diagnostics, 'gateway timeout')).toEqual([
+      { phase: 'scouting', reason: 'schema_mismatch', field: 'candidate' },
+    ]);
+    expect(filterPhaseDiagnostics(diagnostics, 'schema validation failed')).toEqual(diagnostics);
+  });
+
   it('resolves primary diagnostics by precedence and sanitizes candidate text', () => {
     const response = {
       status: 'failed',
@@ -73,5 +108,60 @@ describe('phase-diagnostic-extractor', () => {
     );
 
     expect(result).toBe('validation failed');
+  });
+
+  it('resolves structured provider errors before legacy and response fallbacks', () => {
+    const response = {
+      status: 'failed',
+      failureJsonContent: {
+        provider_error_primary: { message: 'structured' },
+        provider_error_message: 'legacy',
+        diagnostic_reason: 'diagnostic',
+      },
+      validationFailureReason: 'validation',
+      error: 'error',
+    } as unknown as StatusResponse;
+
+    const result = resolvePrimaryDiagnosticReason(
+      response,
+      [{ phase: 'goal-check', detail: 'phase detail' }],
+      () => 'provider_error: structured',
+      () => 'provider_error: legacy',
+      () => 'runtime error',
+      (value) => value.trim(),
+    );
+
+    expect(result).toBe('provider_error: structured');
+  });
+
+  it('falls back through terminal runtime, failed command, response error, and phase detail', () => {
+    const clean = (value: string) => value.replace(ansiPattern, '').trim();
+
+    expect(resolvePrimaryDiagnosticReason(
+      { failureJsonContent: {} } as StatusResponse,
+      [{ phase: 'goal-check', detail: '\u001b[31mphase detail\u001b[0m' }],
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      clean,
+    )).toBe('phase detail');
+
+    expect(resolvePrimaryDiagnosticReason(
+      { failureJsonContent: { failed_command: 'npm test' }, error: 'response error' } as StatusResponse,
+      [],
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      clean,
+    )).toBe('npm test');
+
+    expect(resolvePrimaryDiagnosticReason(
+      { failureJsonContent: {}, error: 'response error' } as StatusResponse,
+      [],
+      () => undefined,
+      () => undefined,
+      () => 'runtime error',
+      clean,
+    )).toBe('runtime error');
   });
 });
