@@ -580,6 +580,31 @@ describe('artifact-recovery helper functions (direct unit tests)', () => {
       });
     });
 
+    test('recovers a goal-setting candidate embedded inside an event string', () => {
+      const candidatePath = path.join(tmpDir, 'goal-setting.json');
+      const embeddedArtifact = {
+        original_prompt: 'Tighten tests',
+        upgraded_goal: 'Add branch coverage for recovery',
+        reasoning: 'The model emitted the artifact as text inside an event payload',
+        key_requirements: [],
+        success_criteria: [],
+      };
+      const rawPath = writeRawEvents({
+        event: 'assistant_message',
+        text: `prefix ${JSON.stringify(embeddedArtifact)} suffix`,
+      });
+
+      expect(recoverArtifactFromEventStream({
+        phase: 'goal-setting',
+        rawPath,
+        candidatePath,
+        resultsDir: tmpDir,
+      })).toBe(true);
+      expect(JSON.parse(fs.readFileSync(candidatePath, 'utf8'))).toMatchObject({
+        upgraded_goal: 'Add branch coverage for recovery',
+      });
+    });
+
     test('does not recover goal-setting when multiple valid candidates exist', () => {
       const candidatePath = path.join(tmpDir, 'goal-setting.json');
       const first = {
@@ -644,6 +669,20 @@ describe('artifact-recovery helper functions (direct unit tests)', () => {
       expect(JSON.parse(fs.readFileSync(candidatePath, 'utf8'))).toEqual({
         task: 'Recover minimal scouting output',
       });
+    });
+
+    test('deduplicates equivalent scouting candidates before choosing a recovery strategy', () => {
+      const candidatePath = path.join(tmpDir, 'scouting.json');
+      const duplicate = { task: 'Same recovered scout' };
+      const rawPath = writeRawEvents(duplicate, { wrapper: JSON.stringify(duplicate) });
+
+      expect(recoverArtifactFromEventStream({
+        phase: 'scouting',
+        rawPath,
+        candidatePath,
+        resultsDir: tmpDir,
+      })).toBe(true);
+      expect(JSON.parse(fs.readFileSync(candidatePath, 'utf8'))).toEqual(duplicate);
     });
 
     test('selects the most complete scouting candidate directly', () => {
