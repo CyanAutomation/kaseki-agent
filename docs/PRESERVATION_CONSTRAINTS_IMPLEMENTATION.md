@@ -1,4 +1,5 @@
 # Preservation Constraints Implementation
+
 ## kaseki-241 Prevention System (Items 1-5)
 
 **Date**: 2026-07-29  
@@ -21,12 +22,14 @@ Implemented 5-layer prevention system to stop agents from removing protected con
 **Addition**: New section "Preservation-Focused Language (kaseki-241 Prevention)"
 
 **Key Patterns**:
+
 - ✅ AUGMENT/ADD/SUPPLEMENT (safe verbs)
 - ❌ Restructure/Replace/Migrate (risky verbs)
 - Explicit MUST PRESERVE sections with line numbers
 - Maximum line reduction limits
 
 **Template Example**:
+
 ```markdown
 AUGMENT [file] by ADDING [new content] WHILE PRESERVING [protected].
 
@@ -47,6 +50,7 @@ Constraints:
 **File**: [`src/types/goal-setting.ts`](../src/types/goal-setting.ts)
 
 **New Interfaces**:
+
 ```typescript
 interface PreservationConstraints {
   protected_sections?: string[];
@@ -64,11 +68,13 @@ interface ProtectedLineRange {
 ```
 
 **Added to GoalSettingOutput**:
+
 ```typescript
 preservation_constraints?: PreservationConstraints;
 ```
 
 **Helper Functions**:
+
 - `extractPreservationViolations()` - Detect violations in analysis
 - `buildPreservationWarnings()` - Generate caveman-style warnings
 
@@ -83,6 +89,7 @@ preservation_constraints?: PreservationConstraints;
 **Purpose**: Inject terse warnings into Pi prompt before coding
 
 **Output Example**:
+
 ```
 ⚠ PRESERVATION CONSTRAINTS:
 
@@ -108,11 +115,13 @@ AUGMENT, not replace. ADD around protected content.
 **Function**: `analyzeDiffForViolations()`
 
 **Detects**:
+
 1. Protected line range deletions (hunk analysis)
 2. Excessive net line reduction
 3. Protected section removals
 
 **Algorithm**:
+
 ```typescript
 // Parse git diff hunks: @@ -31,28 +31,0 @@
 // Check overlap with protected ranges
@@ -135,6 +144,7 @@ AUGMENT, not replace. ADD around protected content.
 **Purpose**: Provide specific restoration guidance on preservation violations
 
 **Output Example**:
+
 ```
 ⚠ PRESERVATION VIOLATION:
 Exit code table (lines 31-58) removed
@@ -160,7 +170,7 @@ Protected: Exit Code Reference
 All prompts follow caveman principles for token efficiency:
 
 | Before | After | Savings |
-|--------|-------|---------|
+| -------- | ------- | --------- |
 | "You must preserve the exit code reference table located at lines 31-58" | "PRESERVE lines 31-58: Exit code table" | ~60% |
 | "Do not delete, move, or restructure this content" | "DO NOT: Delete, move, restructure" | ~40% |
 | "You may add new content before or after the protected section" | "MAY: Add content before/after" | ~55% |
@@ -174,6 +184,7 @@ All prompts follow caveman principles for token efficiency:
 **File**: [`tests/preservation-constraints.test.ts`](../tests/preservation-constraints.test.ts) (new)
 
 **11 Tests** (all passing):
+
 1. Schema validation (preservation_constraints in goal-setting)
 2. Violation detection (section removed, line reduction)
 3. Pre-coding checkpoint generation (caveman style)
@@ -195,6 +206,7 @@ All prompts follow caveman principles for token efficiency:
 ### Phase 1: Goal-Setting (Existing)
 
 Goal-setting agent can now output:
+
 ```json
 {
   "preservation_constraints": {
@@ -300,6 +312,7 @@ fi
 ### Task: Restructure TROUBLESHOOTING.md
 
 **❌ Original (Failed) Prompt**:
+
 ```
 Restructure TROUBLESHOOTING.md from exit-code-centric to symptom-oriented,
 replacing the old organization with a new symptom-based structure.
@@ -308,6 +321,7 @@ replacing the old organization with a new symptom-based structure.
 **Result**: Exit code 8, exit code table (lines 31-58) removed
 
 **✅ Fixed Prompt**:
+
 ```
 AUGMENT docs/TROUBLESHOOTING.md by ADDING symptom-oriented sections 
 WHILE PRESERVING all existing exit code tables.
@@ -327,6 +341,7 @@ Constraints:
 ```
 
 **Goal-Setting Output**:
+
 ```json
 {
   "upgraded_goal": "AUGMENT with symptom sections, PRESERVE exit tables",
@@ -340,6 +355,7 @@ Constraints:
 ```
 
 **Pre-Coding Checkpoint** (injected into Pi prompt):
+
 ```
 ⚠ PRESERVATION CONSTRAINTS:
 
@@ -352,9 +368,11 @@ Max removal: 150 lines
 ```
 
 **If Agent Violates** (diff shows deletion at lines 31-58):
+
 - Diff validator catches immediately (1-2s)
 - Exit code 9 (preservation violation)
 - Enhanced retry prompt:
+
   ```
   ⚠ PRESERVATION VIOLATION:
   Exit code table (lines 31-58) removed
@@ -373,7 +391,7 @@ Max removal: 150 lines
 ## Token Efficiency Metrics
 
 | Component | Tokens (Verbose) | Tokens (Caveman) | Savings |
-|-----------|------------------|------------------|---------|
+| ----------- | ------------------ | ------------------ | --------- |
 | Pre-coding checkpoint | ~350 | ~150 | 57% |
 | Retry prompt | ~400 | ~200 | 50% |
 | Template instructions | ~800 | ~350 | 56% |
