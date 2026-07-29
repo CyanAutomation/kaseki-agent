@@ -97,6 +97,52 @@ export interface QualityMetrics {
 }
 
 /**
+ * Preservation constraints for structural safety
+ * Prevents kaseki-241-style failures where agents remove protected content
+ */
+export const ProtectedLineRangeSchema = z.object({
+  start: z.number().int().positive(),
+  end: z.number().int().positive(),
+  pattern: z.string().optional(),
+  description: z.string().optional(),
+});
+
+export const StructuralRequirementsSchema = z.object({
+  preserve_headings: z.boolean().optional(),
+  preserve_code_blocks: z.boolean().optional(),
+  preserve_tables: z.boolean().optional(),
+  preserve_links: z.boolean().optional(),
+});
+
+export const PreservationConstraintsSchema = z.object({
+  protected_sections: z.array(z.string()).optional(),
+  protected_line_ranges: z.array(ProtectedLineRangeSchema).optional(),
+  max_line_reduction: z.number().int().nonnegative().optional(),
+  structural_requirements: StructuralRequirementsSchema.optional(),
+});
+
+export interface ProtectedLineRange {
+  start: number;
+  end: number;
+  pattern?: string;
+  description?: string;
+}
+
+export interface StructuralRequirements {
+  preserve_headings?: boolean;
+  preserve_code_blocks?: boolean;
+  preserve_tables?: boolean;
+  preserve_links?: boolean;
+}
+
+export interface PreservationConstraints {
+  protected_sections?: string[];
+  protected_line_ranges?: ProtectedLineRange[];
+  max_line_reduction?: number;
+  structural_requirements?: StructuralRequirements;
+}
+
+/**
  * Complete goal-setting output
  * Produced by the goal-setting agent and used to upgrade TASK_PROMPT
  */
@@ -109,6 +155,7 @@ export const GoalSettingOutputSchema = z.object({
   constraints: CategorizedConstraintsSchema.optional(),
   examples: GoalExamplesSchema.optional(),
   quality_metrics: QualityMetricsSchema.optional(),
+  preservation_constraints: PreservationConstraintsSchema.optional(),
   reasoning: z.string(),
   confidence: z.enum(['high', 'medium', 'low']),
 });
@@ -122,6 +169,7 @@ export interface GoalSettingOutput {
   constraints?: CategorizedConstraints;
   examples?: GoalExamples;
   quality_metrics?: QualityMetrics;
+  preservation_constraints?: PreservationConstraints;
   reasoning: string;
   confidence: 'high' | 'medium' | 'low';
 }
@@ -231,4 +279,92 @@ export function hasQualityWarnings(goal: GoalSettingOutput): string[] {
  */
 export function getCriterionText(criterion: SuccessCriterion): string {
   return typeof criterion === 'string' ? criterion : criterion.criterion;
+}
+
+/**
+ * Preservation violation types
+ */
+export interface PreservationViolation {
+  type: 'section_removed' | 'line_reduction_exceeded' | 'protected_range_deleted' | 'structural_requirement_broken';
+  detail?: string;
+  lineRange?: { start: number; end: number };
+  actual?: number;
+  limit?: number;
+}
+
+/**
+ * Extract preservation violations from analysis result
+ */
+export function extractPreservationViolations(analysis: {
+  originalLines: number;
+  modifiedLines: number;
+  removedSections?: string[];
+  removedLineRanges?: Array<{ start: number; end: number }>;
+  constraints: {
+    max_line_reduction?: number;
+    protected_sections?: string[];
+  };
+}): PreservationViolation[] {
+  const violations: PreservationViolation[] = [];
+
+  // Check removed sections
+  if (analysis.removedSections && analysis.constraints.protected_sections) {
+    for (const section of analysis.removedSections) {
+      if (analysis.constraints.protected_sections.includes(section)) {
+        violations.push({
+          type: 'section_removed',
+          detail: `Protected section removed: ${section}`,
+        });
+      }
+    }
+  }
+
+  // Check line reduction
+  if (analysis.constraints.max_line_reduction !== undefined) {
+    const netReduction = analysis.originalLines - analysis.modifiedLines;
+    if (netReduction > analysis.constraints.max_line_reduction) {
+      violations.push({
+        type: 'line_reduction_exceeded',
+        detail: `File reduced by ${netReduction} lines, max allowed: ${analysis.constraints.max_line_reduction}`,
+        actual: netReduction,
+        limit: analysis.constraints.max_line_reduction,
+      });
+    }
+  }
+
+  return violations;
+}
+
+/**
+ * Build caveman-style preservation warnings for Pi prompt
+ * Token-efficient, no articles, direct imperatives
+ */
+export function buildPreservationWarnings(constraints: {
+  must_preserve?: string[];
+  max_line_reduction?: number;
+}): string {
+  const parts: string[] = ['⚠ PRESERVATION CONSTRAINTS:'];
+
+  if (constraints.must_preserve && constraints.must_preserve.length > 0) {
+    parts.push('');
+    parts.push('MUST PRESERVE:');
+    for (const item of constraints.must_preserve) {
+      // Extract line range if present
+      const match = item.match(/\(lines? (\d+)-(\d+)\)/);
+      if (match) {
+        parts.push(`  • ${item}`);
+        parts.push(`    DO NOT: Delete, move, restructure`);
+        parts.push(`    MAY: Add content before/after`);
+      } else {
+        parts.push(`  • ${item}`);
+      }
+    }
+  }
+
+  if (constraints.max_line_reduction !== undefined) {
+    parts.push('');
+    parts.push(`Max removal: ${constraints.max_line_reduction} lines`);
+  }
+
+  return parts.join('\n');
 }

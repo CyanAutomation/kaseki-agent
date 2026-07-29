@@ -22,12 +22,89 @@ With constraints (template):
 ❌ Everything else prevented by allowlist
 ```
 
+## Preservation-Focused Language (New: kaseki-241 Prevention)
+
+**Problem:** Tasks involving restructuring or refactoring can inadvertently remove protected content.
+
+**Solution:** Use explicit preservation language and augmentation verbs.
+
+### ✅ Preservation Language (SAFE)
+
+Use these verbs and patterns:
+
+- **AUGMENT** [file] by ADDING [new content] WHILE PRESERVING [existing content]
+- **SUPPLEMENT** [section] with [additions] WITHOUT REMOVING [protected parts]
+- **ADD** [new structure] AROUND [preserved content]
+- **KEEP** [specific sections/lines] exactly as-is
+- **DO NOT remove** [explicit list of protected content]
+
+### ❌ Replacement Language (RISKY)
+
+Avoid these verbs that imply removal:
+
+- "Restructure" (implies removal of old structure)
+- "Replace" (implies deletion)
+- "Migrate" (implies removal of source)
+- "Refactor" (without explicit preservation constraints)
+
+### Example: Restructuring Documentation
+
+**❌ BAD (kaseki-241 pattern):**
+
+```
+Restructure TROUBLESHOOTING.md from exit-code-centric to symptom-oriented,
+replacing the old organization with a new symptom-based structure.
+```
+
+**✅ GOOD (preservation-focused):**
+
+```
+AUGMENT docs/TROUBLESHOOTING.md by ADDING symptom-oriented sections 
+WHILE PRESERVING all existing exit code tables and reference sections.
+
+ADD new content:
+- Symptom index at top (before line 30)
+- Symptom-based decision trees in new sections
+- Cross-references to EXIT_CODES.md
+
+MUST PRESERVE (DO NOT remove):
+- Exit code reference table (lines 31-58)
+- All 77 existing section headings
+- See Also section (final section)
+- All existing diagnostic commands
+
+Constraints:
+- Maximum 150 lines removed (dedupe only)
+- Keep all existing cross-references
+- Add, do not replace
+```
+
+### Preservation Template
+
+```markdown
+AUGMENT [file] by ADDING [new structure] WHILE PRESERVING [protected content].
+
+ADD new content:
+- [Addition 1]
+- [Addition 2]
+
+MUST PRESERVE (DO NOT remove):
+- [Protected content 1] (lines X-Y)
+- [Protected content 2]
+- [Protected sections]
+
+Constraints:
+- Maximum [N] lines removed
+- Keep [structural elements]
+- Add around, not replace
+```
+
 ## Template Structure
 
 Effective prompts contain:
 
 | Element | Description |
-|---------|-------------|
+| --------- | ------------- |
 | **Clear Task Goal** | What to do, not how |
 | **Scope Boundaries** | What files to touch/avoid |
 | **Success Criteria** | How to verify it works |
