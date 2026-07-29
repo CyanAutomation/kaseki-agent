@@ -353,8 +353,8 @@ export function buildPreservationWarnings(constraints: {
       const match = item.match(/\(lines? (\d+)-(\d+)\)/);
       if (match) {
         parts.push(`  • ${item}`);
-        parts.push(`    DO NOT: Delete, move, restructure`);
-        parts.push(`    MAY: Add content before/after`);
+        parts.push('    DO NOT: Delete, move, restructure');
+        parts.push('    MAY: Add content before/after');
       } else {
         parts.push(`  • ${item}`);
       }
