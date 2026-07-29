@@ -4,6 +4,18 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.123.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.122.0...v1.123.0) (2026-07-29)
+
+
+### Bug Fixes
+
+* remove unnecessary whitespace in preservation validator and test files ([41c2709](https://github.com/CyanAutomation/kaseki-agent/commit/41c2709d15082415aab6ef3ca5cdeffcf8697b3d))
+
+
+### Features
+
+* implement preservation constraints system to prevent content removal ([34d8784](https://github.com/CyanAutomation/kaseki-agent/commit/34d87849e6d87b010e85caa2ae3847d18d1ef61b))
+
 # [1.122.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.121.0...v1.122.0) (2026-07-28)
 
 
