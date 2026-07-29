@@ -1,6 +1,6 @@
 /**
  * Preservation Validator
- * 
+ *
  * Prevents kaseki-241-style failures where agents remove protected content.
  * Implements items 2, 3, 5 from prevention plan.
  */
@@ -10,7 +10,7 @@ import { PreservationConstraints, PreservationViolation } from '../types/goal-se
 /**
  * Generate caveman-style pre-coding preservation checkpoint
  * Injected into Pi prompt before coding phase
- * 
+ *
  * Caveman principles:
  * - No articles (a/an/the)
  * - Direct imperatives
@@ -26,8 +26,8 @@ export function generatePreservationCheckpoint(constraints: PreservationConstrai
     for (const range of constraints.protected_line_ranges) {
       const desc = range.description || `lines ${range.start}-${range.end}`;
       lines.push(`  ⚠ PRESERVE lines ${range.start}-${range.end}: ${desc}`);
-      lines.push(`     DO NOT: Delete, move, restructure`);
-      lines.push(`     MAY: Add content before/after`);
+      lines.push('     DO NOT: Delete, move, restructure');
+      lines.push('     MAY: Add content before/after');
     }
   }
 
@@ -136,7 +136,7 @@ function isDeletingProtectedRange(diff: string, start: number, end: number): boo
         const nextMatch = nextHunkMatch.exec(diff);
         const hunkEndIndex = nextMatch ? nextMatch.index : diff.length;
         const hunkContent = diff.slice(hunkStartIndex, hunkEndIndex);
-        
+
         // Count deletion lines (lines starting with -)
         const deletions = (hunkContent.match(/^-[^-]/gm) || []).length;
         if (deletions > 0) {

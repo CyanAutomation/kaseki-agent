@@ -1,9 +1,9 @@
 /**
  * Preservation Constraints Tests
- * 
+ *
  * Tests for prevention of kaseki-241-style failures where agents
  * remove protected content during restructuring tasks.
- * 
+ *
  * TDD approach for items 1-5:
  * - Preservation schema extensions
  * - Pre-coding checkpoint
@@ -13,14 +13,11 @@
 
 import {
   GoalSettingOutput,
-  PreservationConstraints,
-  parseGoalSettingOutput,
   isGoalSettingOutput,
   extractPreservationViolations,
   buildPreservationWarnings,
 } from '../src/types/goal-setting';
 import {
-  validatePreservationConstraints,
   generatePreservationCheckpoint,
   analyzeDiffForViolations,
   buildTargetedRetryPrompt,
