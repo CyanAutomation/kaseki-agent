@@ -5503,6 +5503,11 @@ run_goal_setting_agent_with_retry() {
   local goal_setting_stderr_capture goal_setting_last_exit goal_setting_last_stderr
   local pre_goal_setting_status pre_goal_setting_failed_command goal_setting_phase_start_time
   local attempt_start_time attempt_end_time attempt_duration_sec
+  local goal_setting_errexit_was_enabled=0
+
+  case $- in
+    *e*) goal_setting_errexit_was_enabled=1 ;;
+  esac
 
   goal_setting_last_exit=0
   goal_setting_last_stderr=""
@@ -5530,7 +5535,11 @@ run_goal_setting_agent_with_retry() {
     run_goal_setting_agent 2>"$goal_setting_stderr_capture"
     goal_setting_last_exit=$?
     unset KASEKI_GOAL_SETTING_CONTRACT_STRICT
-    set -e
+    if [ "$goal_setting_errexit_was_enabled" -eq 1 ]; then
+      set -e
+    else
+      set +e
+    fi
     attempt_end_time="$(date +%s.%N)"
     attempt_duration_sec=$(printf '%.1f' "$(printf '%s - %s\n' "$attempt_end_time" "$attempt_start_time" | bc -l 2>/dev/null || echo 0)")
 
@@ -6006,6 +6015,11 @@ run_scouting_agent() {
 
 run_scouting_agent_with_retry() {
   local attempt scouting_stderr_capture max_attempts scouting_last_exit scouting_last_stderr
+  local scouting_errexit_was_enabled=0
+
+  case $- in
+    *e*) scouting_errexit_was_enabled=1 ;;
+  esac
 
   max_attempts="$KASEKI_SCOUTING_MAX_ATTEMPTS"
   attempt=1
@@ -6033,7 +6047,11 @@ run_scouting_agent_with_retry() {
     fi
     run_scouting_agent 2>"$scouting_stderr_capture"
     scouting_last_exit=$?
-    set -e
+    if [ "$scouting_errexit_was_enabled" -eq 1 ]; then
+      set -e
+    else
+      set +e
+    fi
 
     scouting_last_stderr="$(cat "$scouting_stderr_capture" 2>/dev/null || true)"
     if [ -n "$scouting_last_stderr" ]; then
