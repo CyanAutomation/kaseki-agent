@@ -71,6 +71,15 @@ describe('Goal-Setting: Anti-Patterns Extraction (#1)', () => {
         },
       }).success,
     ).toBe(false);
+
+    expect(
+      GoalSettingOutputSchema.safeParse({
+        ...baseGoal,
+        anti_patterns: {
+          do_not_remove: ['public API compatibility'],
+        },
+      }).success,
+    ).toBe(false);
   });
 
   it('should support empty anti-pattern categories', () => {
