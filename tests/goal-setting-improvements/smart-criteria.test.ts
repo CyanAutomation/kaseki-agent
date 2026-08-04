@@ -198,16 +198,13 @@ describe('Goal-Setting: SMART Criteria Validation (#2)', () => {
       confidence: 'medium',
     });
 
-    expect(vagueResult.success).toBe(true);
-    if (!vagueResult.success) {
-      throw new Error('Expected vague goal fixture to satisfy schema');
+    expect(vagueResult.success).toBe(false);
+    if (vagueResult.success) {
+      throw new Error('Expected vague goal fixture to fail measurable criteria validation');
     }
 
-    expect(hasQualityWarnings(vagueResult.data)).toContain(
-      'Success criteria not measurable (low smart_score)'
-    );
-    expect(vagueResult.data.success_criteria[0]).toEqual(
-      expect.objectContaining({ criterion: 'make it better', smart_score: 'low' })
+    expect(vagueResult.error.issues.map((issue) => issue.message)).toContain(
+      'success_criteria must include at least one measurable SMART criterion'
     );
   });
 

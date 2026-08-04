@@ -12,7 +12,7 @@ import { z } from 'zod';
  * Specific, Measurable, Achievable, Relevant, Time-bound
  */
 export const SmartCriterionSchema = z.object({
-  criterion: z.string(),
+  criterion: z.string().trim().min(1),
   smart_score: z.enum(['high', 'medium', 'low']),
   reasoning: z.string().optional(),
 });
@@ -37,7 +37,12 @@ export const AntiPatternsSchema = z.object({
   do_not_modify: z.array(z.string()).optional(),
   do_not_break: z.array(z.string()).optional(),
   must_preserve: z.array(z.string()).optional(),
-});
+}).strict().refine(
+  (antiPatterns) =>
+    [antiPatterns.do_not_modify, antiPatterns.do_not_break, antiPatterns.must_preserve]
+      .some((entries) => entries?.some((entry) => entry.trim().length > 0)),
+  { message: 'anti_patterns must include at least one non-empty boundary' },
+);
 
 export interface AntiPatterns {
   do_not_modify?: string[];
@@ -150,7 +155,10 @@ export const GoalSettingOutputSchema = z.object({
   original_prompt: z.string(),
   upgraded_goal: z.string(),
   key_requirements: z.array(z.string()),
-  success_criteria: z.array(SuccessCriterionSchema),
+  success_criteria: z.array(SuccessCriterionSchema).min(1).refine(
+    (criteria) => criteria.some((criterion) => typeof criterion === 'string' || criterion.smart_score !== 'low'),
+    { message: 'success_criteria must include at least one measurable SMART criterion' },
+  ),
   anti_patterns: AntiPatternsSchema.optional(),
   constraints: CategorizedConstraintsSchema.optional(),
   examples: GoalExamplesSchema.optional(),
