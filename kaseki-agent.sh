@@ -2704,6 +2704,18 @@ derive_allowlist_from_scouting() {
   esac
 }
 
+split_scouting_allowlist_output() {
+  local scouting_output
+  scouting_output="${1-}"
+
+  if [[ "$scouting_output" == *$'\n'* ]]; then
+    scouting_agent_patterns="${scouting_output%%$'\n'*}"
+    scouting_validation_patterns="${scouting_output##*$'\n'}"
+  else
+    scouting_agent_patterns="$scouting_output"
+    scouting_validation_patterns="$scouting_output"
+  fi
+}
 
 validate_allowlist_patterns() {
   local patterns_str test_regex
@@ -2744,15 +2756,19 @@ merge_allowlists() {
 }
 
 run_scouting_allowlist_coverage() {
-  local scouting_artifact agent_patterns validation_patterns
+  local scouting_artifact scouting_output agent_patterns validation_patterns
   scouting_artifact="${1:?missing scouting artifact path}"
   
   if [ ! -f "$scouting_artifact" ] || [ ! -f "${KASEKI_RESULTS_DIR}"/changed-files.txt ]; then
     return 0
   fi
   
-  agent_patterns="$(derive_allowlist_from_scouting "$scouting_artifact" | head -n 1)"
-  validation_patterns="$(derive_allowlist_from_scouting "$scouting_artifact" | tail -n 1)"
+  if ! scouting_output="$(derive_allowlist_from_scouting "$scouting_artifact")"; then
+    return 0
+  fi
+  split_scouting_allowlist_output "$scouting_output"
+  agent_patterns="$scouting_agent_patterns"
+  validation_patterns="$scouting_validation_patterns"
   
   # Calculate coverage metrics using dry-run script if available
   local agent_coverage validation_coverage agent_warnings validation_warnings
@@ -8691,8 +8707,7 @@ if [ "$KASEKI_SCOUTING" = "1" ] && [ -f "$SCOUTING_ARTIFACT" ]; then
   allowlist_merge_status="skipped"
   
   if scouting_output="$(derive_allowlist_from_scouting "$SCOUTING_ARTIFACT" 2>&1)"; then
-    scouting_agent_patterns="$(printf '%s' "$scouting_output" | head -n 1)"
-    scouting_validation_patterns="$(printf '%s' "$scouting_output" | tail -n 1)"
+    split_scouting_allowlist_output "$scouting_output"
     
     # Validate patterns parse correctly
     if validate_allowlist_patterns "$scouting_agent_patterns" && validate_allowlist_patterns "$scouting_validation_patterns"; then
