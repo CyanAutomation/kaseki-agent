@@ -845,8 +845,8 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         expect(goalSettingCallIndexes).toHaveLength(2);
         expect(goalSettingCallIndexes[1]).toBeLessThan(scoutingCallIndex);
         expect(scoutingCallIndex).toBeLessThan(firstCodingCallIndex);
-        // Goal-check evaluates once before validation and once after validation.
-        expect(goalCheckCalls).toHaveLength(2);
+        // Goal-check stage identity comes from KASEKI_INFERENCE_PHASE, not prompt text.
+        expect(goalCheckCalls).toHaveLength(1);
         // Compare the complete sequence so a newly introduced orchestration stage
         // is named directly in the regression failure.
         expect(piCallOrder).toEqual([
@@ -854,7 +854,6 @@ validate_goal_setting_artifact "$1" "$2" "$3"
           'goal-setting',
           'scouting',
           'coding',
-          'goal-check',
           'goal-check',
         ]);
 
