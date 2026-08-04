@@ -31,11 +31,12 @@ export function createFakeBinariesDir(binDir: string, config: FakeBinariesConfig
   const piScript = `#!/usr/bin/env bash
 set -euo pipefail
 if [ "\${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
+stage="\${KASEKI_INFERENCE_PHASE:-coding}"
 prompt="\${*: -1}"
 
 ${
   piCalls
-    ? `if printf '%s' "$prompt" | grep -q 'goal-setting Pi agent'; then
+    ? `if [ "$stage" = "goal-setting" ]; then
   printf 'goal-setting\\n' >> "${piCalls}"
   attempt=1
   if [ -f "${piState}" ]; then attempt=$(( $(cat "${piState}") + 1 )); fi
@@ -47,10 +48,11 @@ ${
   cat > "${resultsDir}/goal-setting-candidate.json" <<'JSON'
 {"original_prompt":"retry original prompt","upgraded_goal":"retry-upgraded prompt from attempt two","reasoning":"second attempt succeeded after a transient failure","key_requirements":["persist retry metadata"],"success_criteria":[{"criterion":"metadata records the successful retry attempt","smart_score":"high","reasoning":"numeric metadata can be asserted"}],"anti_patterns":{"do_not_modify":[],"do_not_break":["retry metadata"],"must_preserve":["original prompt fallback"]},"constraints":{"operational":["retry once after transient goal-setting failure"],"architectural":[],"technical":[],"business":[]},"quality_metrics":{"clarity":"high","measurability":"high","specificity":"high","scope_clarity":"high","constraint_strength":"high"},"confidence":"high"}
 JSON
-elif printf '%s' "$prompt" | grep -q 'read-only scouting Pi agent'; then
+elif [ "$stage" = "scouting" ]; then
   printf 'scouting\\n' >> "${piCalls}"
-  printf '%s\\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[]}' > "${resultsDir}/scouting-candidate.json"
-elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
+  printf '%s\\n' '{"task":"Validate retry orchestration","requirements":["Run the retry workflow"],"relevant_files":[{"path":"src/lib/parser.ts","reason":"Fixture target for a permitted coding change"}],"observations":["The retry scenario uses a fake Pi executable."],"plan":["Exercise each orchestration phase."],"validation":["Run the focused retry test."],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["src/lib/parser.ts"],"validation_patterns":["src/lib/parser.ts"]}}' > "${resultsDir}/scouting-candidate.json"
+  cp "${resultsDir}/scouting-candidate.json" "${resultsDir}/scouting.json"
+elif [ "$stage" = "goal-check" ]; then
   printf 'goal-check\\n' >> "${piCalls}"
   case "${scenario}" in
     pi-exit-failure)
@@ -67,6 +69,8 @@ elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
 else
   printf 'coding\\n' >> "${piCalls}"
   printf '%s' "$prompt" > "${resultsDir}/coding-prompt.txt"
+  mkdir -p "$KASEKI_WORKSPACE_DIR/repo/src/lib"
+  printf '%s\\n' 'export const goalCheckFixture = true;' > "$KASEKI_WORKSPACE_DIR/repo/src/lib/parser.ts"
 fi`
     : '# pi stub (no logging)'
 }
@@ -175,6 +179,7 @@ export function createPiWithOrchestrationLogging(
   const piScript = `#!/usr/bin/env bash
 set -uo pipefail
 if [ "\${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
+stage="\${KASEKI_INFERENCE_PHASE:-coding}"
 prompt="\${*: -1}"
 
 append_event() {
@@ -185,13 +190,13 @@ fs.appendFileSync(file, JSON.stringify({ event: 'pi', stage, scenario, at: Date.
 NODE
 }
 
-if printf '%s' "$prompt" | grep -q 'goal-setting Pi agent'; then
+if [ "$stage" = "goal-setting" ]; then
   append_event goal-setting
   printf '%s\\n' '{"original_prompt":"inspect then code","upgraded_goal":"Upgraded: inspect then code","reasoning":"test","key_requirements":[],"success_criteria":["goal-check should run"]}' > "$KASEKI_RESULTS_DIR/goal-setting-candidate.json"
-elif printf '%s' "$prompt" | grep -q 'read-only scouting Pi agent'; then
+elif [ "$stage" = "scouting" ]; then
   append_event scouting
   printf '%s\\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[]}' > "$KASEKI_RESULTS_DIR/scouting-candidate.json"
-elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
+elif [ "$stage" = "goal-check" ]; then
   append_event goal-check
   if [ "${scenario}" = "pi-exit-failure" ]; then
     printf '{"type":"message","model":"test-model"}\\n'
