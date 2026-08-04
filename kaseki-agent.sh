@@ -1385,8 +1385,12 @@ const updated = lines.map((line) => {
     if (entry && entry.reason_code === reasonCode) alreadyMarked = true;
     if (
       entry &&
-      (entry.severity === 'critical' && entry.reason_code === 'missing_file' && entry.field === 'scouting-candidate.json' ||
-        fallbackCodes.has(entry.reason_code))
+      (
+        (entry.severity === 'critical' &&
+          entry.reason_code === 'missing_file' &&
+          entry.field === 'scouting-candidate.json') ||
+        fallbackCodes.has(entry.reason_code)
+      )
     ) {
       return JSON.stringify({ ...entry, recovered: true, recovery_reason_code: reasonCode });
     }
@@ -5095,7 +5099,9 @@ validate_goal_setting_artifact_with_node() {
             weak_criteria++;
           }
         });
-        if (weak_criteria > artifact.success_criteria.length / 2) {
+        if (weak_criteria === artifact.success_criteria.length) {
+          errors.push('invalid: success_criteria must include at least one high or medium SMART criterion');
+        } else if (weak_criteria > artifact.success_criteria.length / 2) {
           warnings.push('weak_smart_criteria: >50% of criteria scored as low SMART quality');
         }
       }
@@ -5106,14 +5112,20 @@ validate_goal_setting_artifact_with_node() {
           errors.push('invalid: anti_patterns must be object');
         } else {
           const valid_keys = ['do_not_modify', 'do_not_break', 'must_preserve'];
+          let anti_pattern_count = 0;
           Object.keys(artifact.anti_patterns).forEach(key => {
             if (!valid_keys.includes(key)) {
               warnings.push(\`unexpected_anti_pattern_key: \${key} (expected: do_not_modify, do_not_break, must_preserve)\`);
             }
             if (!Array.isArray(artifact.anti_patterns[key])) {
               errors.push(\`invalid: anti_patterns.\${key} must be array\`);
+            } else {
+              anti_pattern_count += artifact.anti_patterns[key].filter(item => typeof item === 'string' && item.trim()).length;
             }
           });
+          if (anti_pattern_count === 0) {
+            errors.push('invalid: anti_patterns must include at least one non-empty boundary');
+          }
         }
       } else {
         warnings.push('missing_anti_patterns: recommended to include explicit do-NOT clauses');
@@ -5196,9 +5208,8 @@ validate_goal_setting_artifact_with_node() {
   " 2>&1)
 
   if ! echo "$validation_output" | jq . >/dev/null 2>&1; then
-    {
-      echo "{\"step\": \"node_validation\", \"status\": \"failure\", \"reason\": \"node_error\", \"output\": \"$validation_output\"}"
-    } >> "$results_dir/goal-setting-validation-errors.jsonl"
+    jq -cn --arg output "$validation_output" '{step:"node_validation",status:"failure",reason:"node_error",output:$output}' \
+      >> "$results_dir/goal-setting-validation-errors.jsonl"
     [ -n "$reason_file" ] && echo "schema_mismatch" > "$reason_file"
     return 1
   fi
