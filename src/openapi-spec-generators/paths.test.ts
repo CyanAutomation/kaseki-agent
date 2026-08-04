@@ -542,7 +542,6 @@ describe('OpenAPI Path Builders', () => {
       const emptyErrorSchema = {};
       const paths = buildAllPaths(emptyErrorSchema, requestSchema, responseSchema);
       const expectedErrorResponsesByOperation: Record<string, Record<string, string[]>> = {
-        '/ready': { get: ['503'] },
         '/api/metrics': { get: ['401'] },
         '/api/preflight': { get: ['401'] },
         '/api/validate': { post: ['400', '401'] },
@@ -646,12 +645,20 @@ describe('OpenAPI Path Builders', () => {
       expect(readyPath.responses['503'].description).toContain('not ready');
     });
 
-    it('GET /ready should return boolean ready flag', () => {
+    it('GET /ready should match the ready and not-ready response contracts', () => {
       const readyPath = (paths['/ready'] as Record<string, any>).get;
-      const responseSchema = (readyPath.responses['200'].content['application/json'].schema as Record<string, any>)
-        .properties;
-      expect(responseSchema.ready.type).toBe('boolean');
-      expect(responseSchema.message.type).toBe('string');
+      const readySchema = readyPath.responses['200'].content['application/json'].schema as Record<string, any>;
+      const notReadySchema = readyPath.responses['503'].content['application/json'].schema as Record<string, any>;
+
+      expect(readySchema.required).toEqual(['status', 'timestamp']);
+      expect(readySchema.properties.status).toEqual({ type: 'string', enum: ['ready'] });
+      expect(readySchema.properties.timestamp).toEqual({ type: 'string', format: 'date-time' });
+      expect(notReadySchema.required).toEqual(['status', 'timestamp', 'reasons']);
+      expect(notReadySchema.properties.status).toEqual({ type: 'string', enum: ['not_ready'] });
+      expect(notReadySchema.properties.reasons).toEqual({
+        type: 'array',
+        items: { type: 'string' },
+      });
     });
   });
 
