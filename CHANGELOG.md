@@ -4,6 +4,18 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.123.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.123.0...v1.123.1) (2026-08-04)
+
+
+### Bug Fixes
+
+* align goal-check harness and readiness spec ([bc99f65](https://github.com/CyanAutomation/kaseki-agent/commit/bc99f654449745034bb474c5307da67d03092115))
+* align goal-check harness and readiness spec ([863cd83](https://github.com/CyanAutomation/kaseki-agent/commit/863cd8349222e36dd1547ac16df412614c8340bd))
+* align goal-check harness and readiness spec ([50250e1](https://github.com/CyanAutomation/kaseki-agent/commit/50250e1806e52153db310f1f278d8206bccd2fb4))
+* align goal-check harness and readiness spec ([82a649a](https://github.com/CyanAutomation/kaseki-agent/commit/82a649af61939b1b5054a94ca9fd36c777a34740))
+* align goal-check harness and readiness spec ([d8e269a](https://github.com/CyanAutomation/kaseki-agent/commit/d8e269aee449e0d0e9db295e851522788d55c5de))
+* align goal-check harness and readiness spec ([#1143](https://github.com/CyanAutomation/kaseki-agent/issues/1143)) ([cd0e5ba](https://github.com/CyanAutomation/kaseki-agent/commit/cd0e5bab63a269ef5afa3df4f1cad55d5ebc062e))
+
 # [1.123.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.122.0...v1.123.0) (2026-07-29)
 
 
