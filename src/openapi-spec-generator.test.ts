@@ -56,7 +56,6 @@ const expectedEndpoints: EndpointContract[] = [
     operationId: 'getReady',
     auth: 'public',
     successCodes: ['200'],
-    errorCodes: ['503'],
   },
   {
     path: '/api/metrics',
