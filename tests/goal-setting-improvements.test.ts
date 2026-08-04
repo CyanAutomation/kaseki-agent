@@ -783,6 +783,16 @@ validate_goal_setting_artifact "$1" "$2" "$3"
           piCalls,
           piState,
         });
+        const fakePi = join(fakeBin, 'pi');
+        const largeValidationAllowlist = `"src/generated/retry-fixture-${'x'.repeat(100000)}.ts"`;
+        writeFileSync(
+          fakePi,
+          readFileSync(fakePi, 'utf8').replace(
+            '"validation_patterns":["src/lib/parser.ts"]',
+            `"validation_patterns":[${largeValidationAllowlist}]`,
+          ),
+          { mode: 0o700 },
+        );
 
         expect(() => readFileSync(join(tempDir, 'templates', 'scouting', 'compact.txt'), 'utf8')).not.toThrow();
 
@@ -886,6 +896,8 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         expect(metadata.goal_setting_exit_code).toBe(0);
         expect(metadata.goal_setting_attempts).toBe(2);
         expect(metadata.goal_setting_succeeded_on_attempt).toBe(2);
+        expect(readFileSync(join(resultsDir, 'quality.log'), 'utf8')).not.toContain('exit 141');
+        expect(readFileSync(join(resultsDir, 'quality.log'), 'utf8')).not.toContain('allowlist derivation from scouting');
 
         const codingPrompt = readFileSync(join(resultsDir, 'coding-prompt.txt'), 'utf8');
         expect(codingPrompt).toContain('retry-upgraded prompt from attempt two');
