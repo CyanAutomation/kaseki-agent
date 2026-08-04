@@ -16,7 +16,7 @@
  * Build health and status check endpoints.
  * These are unauthenticated endpoints for service health verification.
  */
-function buildHealthCheckPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
+function buildHealthCheckPaths(): Record<string, unknown> {
   return {
     '/health': {
       get: {
@@ -56,9 +56,10 @@ function buildHealthCheckPaths(errorResponseSchema: Record<string, unknown>): Re
               'application/json': {
                 schema: {
                   type: 'object',
+                  required: ['status', 'timestamp'],
                   properties: {
-                    ready: { type: 'boolean' },
-                    message: { type: 'string' }
+                    status: { type: 'string', enum: ['ready'] },
+                    timestamp: { type: 'string', format: 'date-time' },
                   }
                 }
               }
@@ -68,7 +69,18 @@ function buildHealthCheckPaths(errorResponseSchema: Record<string, unknown>): Re
             description: 'Service is not ready',
             content: {
               'application/json': {
-                schema: errorResponseSchema
+                schema: {
+                  type: 'object',
+                  required: ['status', 'timestamp', 'reasons'],
+                  properties: {
+                    status: { type: 'string', enum: ['not_ready'] },
+                    timestamp: { type: 'string', format: 'date-time' },
+                    reasons: {
+                      type: 'array',
+                      items: { type: 'string' },
+                    },
+                  },
+                }
               }
             }
           }
@@ -1258,7 +1270,7 @@ export function buildAllPaths(
   assertRunRequestSchema(runRequestSchema);
 
   return {
-    ...buildHealthCheckPaths(errorResponseSchema),
+    ...buildHealthCheckPaths(),
     ...buildServiceInfoPaths(errorResponseSchema, runRequestSchema),
     ...buildInteractiveConsolePaths(errorResponseSchema),
     ...buildRunManagementPaths(errorResponseSchema, runRequestSchema, runResponseSchema),
