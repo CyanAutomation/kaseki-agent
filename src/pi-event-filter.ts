@@ -584,9 +584,13 @@ function buildSummary(state: PiEventFilterState): Summary {
   // Compaction is a per-request decision. A run with many short turns should
   // not be flagged merely because its aggregate usage is high, while a single
   // uncached 45k-token request must be flagged immediately.
-  const largestContextTokens = Math.max(0, ...state.completionUsage.values().map((usage) =>
-    usage.input_tokens + usage.cache_creation_tokens + usage.cache_read_tokens,
-  ));
+  const largestContextTokens = Math.max(
+    0,
+    ...Array.from(
+      state.completionUsage.values(),
+      (usage) => usage.input_tokens + usage.cache_creation_tokens + usage.cache_read_tokens,
+    ),
+  );
   const malformedToolCallCount = state.providerErrors.filter((error) => error.type === 'malformed_tool_call').length;
   const inferenceHealth: InferenceHealthSummary = {
     transport_success: state.invalidJsonLines === 0,
