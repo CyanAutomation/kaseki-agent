@@ -319,7 +319,10 @@ function numericUsageValue(usage: any, keys: string[]): number | undefined {
 }
 
 function extractResponseIdFromMessage(message: any): string | undefined {
-  return typeof message?.responseId === 'string' ? message.responseId : undefined;
+  for (const value of [message?.responseId, message?.response_id]) {
+    if (typeof value === 'string') return value;
+  }
+  return undefined;
 }
 
 function extractResponseIdFromEvent(event: PiEvent): string | undefined {
