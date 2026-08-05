@@ -1,301 +1,189 @@
 # Troubleshooting Guide
 
-This guide helps you diagnose and resolve common kaseki-agent failures using systematic decision trees and diagnostic commands.
+Diagnose and resolve common kaseki-agent failures. Start with the symptom table, then drill into the matching category.
 
-## Quick Diagnosis Flowchart
+---
 
-```
-Start: Run Failed
-  ↓
-  → Check exit code (0 = success)
-  ↓
-Exit Code?
-  ├─ 0: Success ✓
-  ├─ 1: Generic failure → Run diagnostics
-  ├─ 2: Config error → Check env vars & auth
-  ├─ 3: Empty diff → Code unchanged, expected
-  ├─ 4: Diff too large → Increase KASEKI_MAX_DIFF_BYTES
-      or use allowlist
-  ├─ 5: Allowlist violation → Review changed files
-  ├─ 6: Secret detected → Audit code for credentials
-  ├─ 7: Validation failed → Check pre-validation.log or
-      validation.log
-  ├─ 86: Scouting failed → Check Docker volume mounts
-      (read-only /results?)
-  ├─ 124: Timeout → Increase KASEKI_AGENT_TIMEOUT_SECONDS
-  └─ 127: Command not found → Verify installation
+## Quick Reference
+
+### Symptom Lookup
+
+| Symptom | Likely Category | Start Here |
+|---------|----------------|------------|
+| Agent starts but produces no output | Gateway | [Gateway Failures](#gateway-failures) |
+| Container exits immediately with code 86 | Docker | [Docker Failures](#docker-failures) |
+| Permission denied or secret file errors | Authentication | [Authentication Failures](#authentication-failures) |
+| Validation commands fail after agent runs | Validation | [Validation Failures](#validation-failures) |
+| Agent modifies too many files or wrong files | Validation | [Validation Failures](#validation-failures) |
+| Run hangs and exits with code 124 | Task-Execution | [Task-Execution Failures](#task-execution-failures) |
+| Agent produces low-quality or incomplete output | Task-Execution | [Task-Execution Failures](#task-execution-failures) |
+| API key errors or 401 responses | Authentication | [Authentication Failures](#authentication-failures) |
+| Docker volume mount or filesystem errors | Docker | [Docker Failures](#docker-failures) |
+| Provider returns 503, 429, or model-not-found | Gateway | [Gateway Failures](#gateway-failures) |
+
+### Exit Code to Category Map
+
+| Code | Category | Quick Diagnosis |
+|------|----------|-----------------|
+| 86 | Docker | Volume mount read-only |
+| 127 | Docker | Command not found |
+| 2 | Authentication | Config/auth missing |
+| 88 | Gateway | Provider/model error |
+| 3, 4, 5, 6, 7 | Validation | Diff, allowlist, secret, validation command |
+| 1, 124 | Task-Execution | Generic failure, timeout |
+| 0 | Success | — |
+
+See [EXIT_CODES.md](EXIT_CODES.md) for detailed per-code reference.
+
+### Automated Diagnostics
+
+Run automated checks before manual troubleshooting:
+
+```bash
+# Doctor command — checks Docker, Node.js, npm, Git, auth files, image, disk space
+kaseki-agent doctor --json        # Machine-readable output
+kaseki-agent doctor --fix         # Auto-remediate detected issues
+
+# Host preflight — submits to /api/preflight endpoint
+kaseki-agent host preflight [--url URL]
+
+# Preflight script — guided dependency checks
+bash scripts/kaseki-preflight.sh doctor --guide
 ```
 
 ---
 
-## Exit Code Troubleshooting
+## Gateway Failures
 
-See [EXIT_CODES.md](EXIT_CODES.md) for detailed per-code reference. Quick lookup:
-
-| Code | Issue | Check | Fix |
-|------|-------|-------|-----|
-| **0** | ✓ Success | None | N/A |
-| **1** | Generic failure | metadata.json `exit_code_stage`, logs | See "Generic
-  Failure" below |
-| **2** | Config/auth missing | KASEKI_API_KEYS, OPENROUTER_API_KEY | Set API key in
-  env or file |
-| **3** | No changes made | result-summary.md | Expected if code
-  unchanged |
-| **4** | Diff exceeds limit | changed-files.txt, git.diff size | Use allowlist or
-  increase KASEKI_MAX_DIFF_BYTES |
-| **5** | File outside allowlist | quality.log, changed-files.txt | Review
-  KASEKI_CHANGED_FILES_ALLOWLIST |
-| **6** | Secret detected | secret-scan.log | Audit code for `sk-or-*`
-  credentials |
-| **7** | Validation failed | pre-validation.log or validation.log | See "Validation
-  Failures" below |
-| **86** | Scouting validation failed | filesystem-readonly-reason.txt, scouting-validation-errors.jsonl | Check /results volume mount flags (must be :rw) |
-| **124** | Agent timeout | pi-summary.json `elapsed_seconds` | Increase
-  KASEKI_AGENT_TIMEOUT_SECONDS |
-| **127** | Command not found | stdout.log, stderr.log | Reinstall; verify
-  Node.js v24+ |
-
----
-
-## Permission Issues & Secret Path Access
-
-### Problem: Secret Files Are Inaccessible (Permission Denied)
+### Problem: LLM Provider Error (Exit Code 88)
 
 **Symptoms:**
 
-- Container startup shows: `✗ /agents/secrets is not traversable by UID 10000`
-- API key fails to load silently
-- API service binds only to loopback (127.0.0.1) instead of 0.0.0.0
-- Preflight checks fail with "Cannot read secret file"
+- Run exits with code 88
+- Error messages: "model is unavailable", "404 Not Found", "model is deprecated", "503 Service Unavailable" (after retry), "429 Rate limited" (after retry)
+- Agent starts but produces no output
 
 **Root Cause:**
 
-The `/agents/secrets` directory (or other secret paths) has restrictive permissions that prevent the container (running as UID 10000) from traversing the directory, even if the UID matches the group owner.
+The LLM provider (OpenRouter, gateway, etc.) returned an error. Kaseki-agent automatically retries transient errors (503, 429, connection issues) once. Exit code 88 means either the error was non-retryable (404, deprecated, auth failure) or the automatic retry also failed.
 
-**Example:**
+**Dynamic model resolution:**
 
-```bash
-# Host filesystem:
-ls -ld /home/pi/secrets
-drwx------  pi  10000  /home/pi/secrets  # Mode 0700 (only owner can access)
+Model selection is resolved at runtime. See:
 
-# Inside container (UID 10000):
-ls /home/pi/secrets
-Permission denied  # Cannot traverse 0700 dir, even as group 10000
-```
+- `scripts/lib/model-resolution.sh` — resolution logic: when `KASEKI_PROVIDER=gateway`, `KASEKI_MODEL` defaults to `dynamic/kaseki-agent`
+- [ENV_VARS.md](ENV_VARS.md) — `KASEKI_MODEL`, `LLM_GATEWAY_MODEL`, `KASEKI_SCOUTING_MODEL`, `KASEKI_PROVIDER` documentation
+- [GATEWAY_TEST.md](GATEWAY_TEST.md) — two-stage gateway connectivity and inference testing
 
-### Automatic Fix (Enabled by Default)
-
-On startup, `scripts/startup-checks.sh` automatically detects and fixes common permission issues:
-
-1. **Detection:** Checks if secret directories/files are traversable and readable by UID 10000
-2. **Auto-fix:** Attempts to chmod directories to `0750` (owner rwx, group rx) and files to `0640` (owner rw, group r)
-3. **Logging:** Shows status in startup output:
-   - `✓ Fixed permissions: /agents/secrets (0700 → 0750)` — success
-   - `✗ Cannot auto-fix ... (possibly on read-only mount)` — requires manual intervention
-
-**Permission Targets:**
-
-- **Directories: 0750** — allows group traversal without world access
-- **Files: 0640** — allows group read without world read or group write
-
-### Manual Fix (If Auto-Fix Not Possible)
-
-**Scenario: Read-Only Mount or No Auto-Fix Permission**
-
-If the container logs:
-
-```
-✗ Cannot auto-fix /agents/secrets (possibly on read-only mount)
-Fix on host: sudo chmod 0750 /agents/secrets
-```
-
-Fix permissions **on the host**:
+**Diagnosis:**
 
 ```bash
-# Fix /agents/secrets directory
-sudo chmod 0750 /agents/secrets
+# Check provider error details
+cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.provider_error_type, .provider_error_message, .provider_error_retryable, .provider_error_retry_attempt_count, .provider_error_retry_result'
 
-# Fix secret files (if present)
-sudo chmod 0640 /agents/secrets/openrouter_api_key
-sudo chmod 0640 /agents/secrets/github_app_*
-
-# Fix fallback paths
-sudo chmod 0750 ~/.kaseki/secrets
-sudo chmod 0640 ~/.kaseki/secrets.json
+# Check provider error log
+cat /agents/kaseki-results/kaseki-N/quality.log | grep -A5 "provider error"
 ```
 
-**For Docker Compose:**
+### Common Scenarios
 
-If using Docker Compose and containers don't have permission to modify mounts:
+**Scenario 1: Transient error with failed retry (503, 429, timeout)**
 
-```bash
-# On host, before starting container:
-docker-compose down
-
-# Fix permissions
-sudo chmod 0750 /home/pi/secrets
-sudo chmod 0750 ~/.kaseki/secrets
-
-# Restart
-docker-compose up -d
+```
+provider_error_retryable: "true"
+provider_error_retry_attempt_count: 2
+provider_error_retry_result: "failed"
+provider_error_message: "503 Service Unavailable"
 ```
 
-**For Kubernetes:**
-
-If running in Kubernetes with PersistentVolumes:
+**Fix:** Provider is having issues. Wait 5-10 minutes and retry:
 
 ```bash
-# Check PV owner/permissions
-kubectl exec -it <pod> -- ls -ld /agents/secrets
+# Verify provider status
+curl -s https://status.openrouter.io | grep -i status
 
-# If owned by root:
-kubectl exec -it <pod> -- sudo chmod 0750 /agents/secrets
-
-# If PV is mounted read-only, update the PersistentVolume:
-kubectl patch pv <pv-name> -p '{"spec":{"accessModes":["ReadWriteOnce"]}}'
-# Then update the Pod to allow permission modifications
+# Retry
+kaseki-agent run <repo> <ref> <task>
 ```
 
-### Secret Paths (Modern)
+If it persists, contact provider support or switch providers.
 
-Startup checks verify these paths (in order):
+**Scenario 2: Permanent error (404 model not found)**
 
-1. `OPENROUTER_API_KEY` — Inline environment variable (preferred for security)
-2. `OPENROUTER_API_KEY_FILE` — Explicit file path (can be set to any location)
-3. `~/.kaseki/secrets.json` — Default file location (created by `kaseki-agent init`)
-4. `/agents/secrets/openrouter_api_key` — Container mount point (Docker Compose)
+```
+provider_error_type: "model_not_found"
+provider_error_message: "404 Model not found"
+provider_error_retryable: "false"
+```
 
-### Migrating from Legacy Docker Secrets
-
-If you are using Docker's native `secrets:` feature with `/run/secrets/openrouter_api_key`:
+**Fix:** Model is no longer available. Switch to a working model:
 
 ```bash
-# Option 1: Use the new init wizard
+# List available models
+kaseki-agent models list
+
+# Update config — see KASEKI_MODEL in ENV_VARS.md
+kaseki-agent config set model <model-id>
+
+# Or set via environment
+export KASEKI_MODEL=<model-id>
+kaseki-agent run <repo> <ref> <task>
+```
+
+See `scripts/lib/model-resolution.sh` for default resolution when no model is explicitly set.
+
+**Scenario 3: Deprecated model**
+
+```
+provider_error_message: "This model is deprecated"
+provider_error_retryable: "false"
+```
+
+**Fix:** Switch to a current model version. Configure via `KASEKI_MODEL` or `LLM_GATEWAY_MODEL` (see [ENV_VARS.md](ENV_VARS.md)).
+
+**Scenario 4: Authentication failure (invalid API key)**
+
+```
+provider_error_type: "auth_error"
+provider_error_message: "401 Unauthorized: Invalid API key"
+```
+
+**Fix:**
+
+```bash
+# Check if API key is set
+echo $OPENROUTER_API_KEY
+
+# Verify it is valid at provider dashboard. Regenerate if needed.
+
+# Update credential via wizard
 kaseki-agent init
 
-# Option 2: Set OPENROUTER_API_KEY_FILE explicitly
-export OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key
-./run-kaseki.sh
-
-# Option 3: Migrate to file-based secrets
-cp /run/secrets/openrouter_api_key ~/.kaseki/secrets.json
-chmod 600 ~/.kaseki/secrets.json
+# Or set directly
+export OPENROUTER_API_KEY=sk-or-...
+kaseki-agent run <repo> <ref> <task>
 ```
 
-The modern approach (file-based) is more portable and works across Docker Compose, Kubernetes, and local execution.
+**Scenario 5: Quota exceeded (out of credits)**
 
-### Verification
-
-After fixing permissions, verify the startup checks pass:
-
-```bash
-# Inside container
-/scripts/startup-checks.sh all
-# Expected: ✓ All checks passed
-
-# Or restart the service
-docker-compose restart kaseki-api
 ```
+provider_error_message: "429 Quota exceeded for your account"
+provider_error_retry_attempt_count: 2
+```
+
+**Fix:** Add credits to provider account or wait for quota reset.
+
+### Prevention
+
+- Use stable models: prefer pinned versions over floating tags
+- Monitor credits in provider dashboard
+- Configure gateway testing per [GATEWAY_TEST.md](GATEWAY_TEST.md) to validate connectivity before running agents
+- Increase timeout for slow providers: `KASEKI_AGENT_TIMEOUT_SECONDS=1800`
+- Check `provider_error_retry_result` in metadata to distinguish transient from permanent failures
 
 ---
 
-## Git Safe.directory Configuration Issues
-
-### Problem: "Dubious Ownership" or Git Errors When Reading Repository
-
-**Symptoms:**
-
-- Container preflight check fails with: `fatal: unsafe repository (...) is owned by someone else`
-- Error message: `Git safe.directory not configured for /agents/kaseki-agent`
-- Template doctor check fails after successful host setup
-- Error output: `Writable Kaseki directories: failed to create /agents/kaseki-runs, ...`
-
-**Root Cause:**
-
-Git enforces strict ownership checks when a repository is owned by a different user than the one running git. When the checkout directory is owned by root but the container runs as UID 10000, git refuses to read the repository unless `safe.directory` is configured.
-
-The issue typically manifests as a multi-stage problem:
-1. **Host setup** (runs as root) configures git only for root context → passes doctor check on host
-2. **Container startup** (runs as UID 10000) cannot access root's git config → fails preflight check in container
-
-### Solution: Three-Layered Approach
-
-#### Layer 1: Automatic Remediation (Active by Default)
-
-The container automatically attempts to configure git safe.directory during startup (via `container-preflight.ts`):
-
-```bash
-# Enabled by default; disable with:
-KASEKI_STARTUP_CHECK_AUTO_REMEDIATE=0  # Diagnostic mode: see all problems
-```
-
-This auto-remediation is safe and non-blocking—if it fails, the API continues to start but will surface the issue via `/api/preflight` endpoint.
-
-#### Layer 2: System-Wide Configuration (Persistent & Visible to All Users)
-
-During host setup, git safe.directory is configured at the system level (`/etc/gitconfig`), which is visible to all users including UID 10000 containers:
-
-```bash
-# Run this on the host to fix:
-sudo kaseki-agent host setup --fix
-
-# Verification on host:
-git config --system --get-all safe.directory | grep kaseki-agent
-# Expected: /agents/kaseki-agent
-```
-
-This is the **preferred approach** for multi-user systems and containers.
-
-#### Layer 3: Pre-Configured in Docker Image (Defense-in-Depth)
-
-The Dockerfile pre-configures git safe.directory at image build time:
-
-```dockerfile
-RUN git config --system --add safe.directory /agents/kaseki-agent
-```
-
-This eliminates runtime configuration entirely and guarantees the setting exists regardless of host setup.
-
-### Manual Troubleshooting
-
-If preflight still fails after setup, diagnose and fix manually:
-
-```bash
-# 1. Check current status
-sudo kaseki-agent host preflight
-
-# 2. Verify system config exists
-git config --system --get-all safe.directory | grep kaseki-agent
-
-# 3. Manual system-wide configuration (if needed)
-sudo git config --system --add safe.directory /agents/kaseki-agent
-
-# 4. Verify inside container
-docker-compose exec kaseki-api git config --system --get-all safe.directory
-
-# 5. Restart API service
-docker-compose restart kaseki-api
-```
-
-### Environment Variables for Customization
-
-| Variable | Values | Default | Purpose |
-|----------|--------|---------|---------|
-| `KASEKI_STARTUP_CHECK_AUTO_REMEDIATE` | `1` / `0` | `1` | Enable auto-remediation in container |
-| `KASEKI_SAFE_DIRECTORY_SCOPE` | `global` / `system` | `global` | Git config scope (auto-remediation only) |
-
-### Best Practices
-
-1. **Always run** `sudo kaseki-agent host setup --fix` after deploying or upgrading
-2. **Verify system config**: `git config --system --get-all safe.directory` should include `/agents/kaseki-agent`
-3. **Check container access**: `docker-compose exec kaseki-api git config --system --get-all safe.directory`
-4. **Use system scope** for containers (not global), as system config is visible to all users
-5. **Disable auto-remediate** (`KASEKI_STARTUP_CHECK_AUTO_REMEDIATE=0`) only for diagnostics, then re-enable
-
----
-
-## Read-Only Filesystem Issues (Exit Code 86)
+## Docker Failures
 
 ### Problem: Scouting Fails with Exit Code 86
 
@@ -304,51 +192,34 @@ docker-compose restart kaseki-api
 - Container exits with code 86 immediately after scouting phase
 - Error message: "scouting-candidate.json" missing
 - stderr shows: "Read-only file system"
-- File `/results/filesystem-readonly-reason.txt` exists and indicates read-only mount
+- File `/results/filesystem-readonly-reason.txt` exists
 
 **Root Cause:**
 
-The `/results` directory is mounted with read-only (`:ro`) flag, preventing the scouting Pi agent from writing the artifact file. This is different from the `--read-only` container security flag, which is intentional security hardening. The issue is an accidental read-only mount flag on the `/results` volume.
+The `/results` directory is mounted read-only (`:ro`), preventing the scouting agent from writing the artifact file. This is distinct from the `--read-only` container security flag, which is intentional hardening.
 
-### Diagnosis
+**Diagnosis:**
 
-1. **Check filesystem status:**
+```bash
+# Check filesystem status
+cat /agents/kaseki-results/kaseki-N/filesystem-readonly-reason.txt
+cat /agents/kaseki-results/kaseki-N/filesystem-writable-at-start.txt
 
-   ```bash
-   cat /agents/kaseki-results/kaseki-N/filesystem-readonly-reason.txt
-   cat /agents/kaseki-results/kaseki-N/filesystem-writable-at-start.txt
-   ```
+# Check scouting validation errors
+cat /agents/kaseki-results/kaseki-N/scouting-validation-errors.jsonl
 
-2. **Check scouting validation errors:**
+# Verify /results volume mount (run-kaseki.sh)
+grep -A 5 "RESULT_DIR.*results" run-kaseki.sh
+# Must show: -v "$RESULT_DIR:/results:rw"
 
-   ```bash
-   cat /agents/kaseki-results/kaseki-N/scouting-validation-errors.jsonl
-   ```
+# Verify /results volume mount (docker-compose.yml)
+grep -A 2 "volumes:" docker-compose.yml
+# Must show /agents:/agents:rw (includes /results)
+```
 
-3. **Verify /results volume mount (if using run-kaseki.sh):**
+**Fixes:**
 
-   ```bash
-   # Check the run-kaseki.sh script:
-   grep -A 5 "RESULT_DIR.*results" run-kaseki.sh
-   
-   # Should show:
-   # -v "$RESULT_DIR:/results:rw"  ← must have :rw flag
-   ```
-
-4. **Verify /results volume mount (if using docker-compose.yml):**
-
-   ```bash
-   # Check the docker-compose.yml:
-   grep -A 2 "volumes:" docker-compose.yml
-   
-   # Should show /results as writable:
-   # /agents:/agents:rw
-   # (or /results:/results:rw if mounted separately)
-   ```
-
-### Fixes
-
-#### Fix 1: For `run-kaseki.sh` (single-run execution)
+**Fix 1: For `run-kaseki.sh`**
 
 Verify the volume mount has `:rw` flag:
 
@@ -360,13 +231,7 @@ docker run -v /path/to/results:/results:rw kaseki-template:latest
 docker run -v /path/to/results:/results:ro kaseki-template:latest
 ```
 
-The `run-kaseki.sh` script should automatically set `:rw`, but if it doesn't, edit the script and verify line ~1104:
-
-```bash
--v "$RESULT_DIR:/results:rw"  # ← Must have :rw flag
-```
-
-#### Fix 2: For `docker-compose.yml` (API service)
+**Fix 2: For `docker-compose.yml` (API service)**
 
 Ensure `/results` is mounted as writable:
 
@@ -374,519 +239,220 @@ Ensure `/results` is mounted as writable:
 services:
   kaseki-api:
     volumes:
-      - /agents:/agents:rw  # ← Correct: includes /results
-      # or explicitly:
-      - /agents/kaseki-results:/results:rw  # ← Also correct
+      - /agents:/agents:rw  # Correct: includes /results
 ```
 
-Do NOT mount `/results` with `:ro` flag.
-
-#### Fix 3: For container with `--read-only` flag
-
-The `--read-only` container flag is intentional security hardening. To make it compatible with artifact writing:
-
-**Option A: Use volume mount with :rw flag** (Recommended)
+**Fix 3: For container with `--read-only` flag**
 
 ```bash
+# Option A: Volume mount with :rw flag (Recommended)
 docker run --read-only \
-  -v /agents/kaseki-results:/results:rw \  # ← Override read-only for /results
-  kaseki-template:latest
-```
-
-**Option B: Use tmpfs mount** (In-memory, cleared on container exit)
-
-```bash
-docker run --read-only \
-  --tmpfs /results:rw,size=256m \  # ← tmpfs allows writes even in read-only container
-  kaseki-template:latest
-```
-
-**Option C: Remove --read-only flag** (Less secure)
-
-```bash
-docker run \
   -v /agents/kaseki-results:/results:rw \
   kaseki-template:latest
+
+# Option B: tmpfs mount (in-memory, cleared on exit)
+docker run --read-only \
+  --tmpfs /results:rw,size=256m \
+  kaseki-template:latest
 ```
 
-### Prevention
+**Prevention:**
 
-1. Always use `:rw` flag for artifact volume mounts:
+- Always use `:rw` flag for artifact volume mounts
+- In docker-compose.yml, mount `/agents` as writable
+- Verify volume mounts: `docker inspect <container-id> | jq '.Mounts'`
 
-   ```bash
-   -v "$RESULT_DIR:/results:rw"  # Always add :rw
-   ```
+### Problem: Command Not Found (Exit Code 127)
 
-2. In docker-compose.yml, mount `/agents` as writable (which includes `/results`):
+**Symptoms:** Container exits with code 127. Command not found in stdout.log.
 
-   ```yaml
-   volumes:
-     - /agents:/agents:rw  # ← Covers /agents/kaseki-results too
-   ```
+**Root Cause:** Missing dependency or broken installation. Node.js not installed, npm not in PATH, script not executable.
 
-3. Verify volume mounts before running:
+**Fix:**
 
-   ```bash
-   # Check what's mounted in the container
-   docker inspect <container-id> | jq '.Mounts'
-   ```
+```bash
+# Run doctor check
+kaseki-agent doctor --fix
+```
+
+### Problem: Docker Volume or Permission Issues
+
+See [HOST_SETUP_TROUBLESHOOTING.md](HOST_SETUP_TROUBLESHOOTING.md) for host-level Docker setup failures including:
+
+- Docker daemon not running
+- Volume mount permissions
+- Docker socket access (`DOCKER_GID` configuration)
+- Container UID mismatch
 
 ---
 
-## Generic Failure Diagnosis (Exit Code 1)
+## Authentication Failures
 
-### Step 1: Check Stage Where Failure Occurred
-
-```bash
-# Extract per-stage exit codes
-cat /agents/kaseki-results/kaseki-N/metadata.json |
-  jq '.stages'
-
-# Output example:
-# {
-#   "agent_phase": {"exit_code": 0},
-#   "validation_phase": {"exit_code": 1, "failed_command": "npm run test"},
-#   "secret_scan": {"exit_code": 0},
-#   "quality_gates": {"exit_code": 0}
-# }
-```
-
-### Step 2: Locate Failure Details by Stage
-
-**Agent Phase Failed** (exit_code_stage: agent):
-
-```bash
-tail -100 /agents/kaseki-results/kaseki-N/stdout.log |
-  grep -i error
-tail -50 /agents/kaseki-results/kaseki-N/pi-stderr.log
-
-# Agent timeout?
-cat /agents/kaseki-results/kaseki-N/pi-summary.json |
-  jq '.elapsed_seconds, .timeout_seconds'
-```
-
-**Pre-Agent Validation Failed** (baseline failure before Pi):
-
-```bash
-cat /agents/kaseki-results/kaseki-N/pre-validation.log
-cat /agents/kaseki-results/kaseki-N/pre-validation-timings.tsv
-  # Which baseline command failed?
-```
-
-This means the requested repo/ref failed validation before Pi
-made any changes. Fix the baseline or choose a passing ref
-before judging agent output.
-
-**Post-Agent Validation Failed** (final diff failed
-  validation):
-
-```bash
-cat /agents/kaseki-results/kaseki-N/validation.log
-cat /agents/kaseki-results/kaseki-N/validation-timings.tsv
-  # Which final-diff command failed?
-```
-
-**Quality Gates Failed** (exit_code_stage: quality_gates):
-
-```bash
-cat /agents/kaseki-results/kaseki-N/quality.log
-# Check:
-#   - Diff size in bytes?
-#   - Which files outside allowlist?
-#   - Secret patterns detected?
-```
-
-**Secret Scan Failed** (exit_code_stage: secret_scan):
-
-```bash
-cat /agents/kaseki-results/kaseki-N/secret-scan.log
-# Lists files with detected credential patterns
-# (sk-or-*)
-```
-
-### Step 3: Read Structured Failure Reason
-
-```bash
-# Machine-readable failure reason
-cat /agents/kaseki-results/kaseki-N/metadata.json |
-  jq '.pre_validation_failure_reason, .validation_failure_reason, .quality_failure_reason'
-
-# Examples:
-# "pre_validation_failure_reason": "pre_agent_validation_failed: npm run check (exit 1)"
-# "validation_failure_reason": "validation_command_failed: npm run test (exit 1)"
-# "quality_failure_reason": "max_diff_bytes: 250000 exceeds limit of 200000"
-```
-
----
-
-## Validation Failures (Exit Code 7)
-
-### Problem: Validation Commands Fail
-
-Validation commands are executed sequentially (default: `npm run check;npm run test`). Kaseki runs them in two phases:
-
-- **Pre-agent validation** runs before Pi. If this phase fails, the baseline repo/ref was already failing and Pi was not invoked. Use `pre-validation.log`, `pre-validation-raw.log`, `pre-validation-env.log`, and `pre-validation-timings.tsv`.
-- **Post-agent validation** runs after Pi, allowlist restoration, and quality gates. If this phase fails, the final agent output failed validation. Use `validation.log`, `validation-raw.log`, `validation-env.log`, and `validation-timings.tsv`.
-
-**Note on Log Output:** Validation command output is automatically filtered in real-time Docker logs to show only key milestones (test results, errors, warnings) and command boundaries, while preserving full unfiltered output in `/agents/kaseki-results/kaseki-N/pre-validation.log` and `/agents/kaseki-results/kaseki-N/validation.log`. This keeps `docker logs kaseki-N` clean while enabling full debugging via the stored log files.
-
-### Diagnosis
-
-```bash
-# 1. Which validation phase failed?
-cat /agents/kaseki-results/kaseki-N/metadata.json |
-  jq '.failed_command, .pre_validation_failure_reason, .validation_failure_reason'
-cat /agents/kaseki-results/kaseki-N/stage-timings.tsv
-
-# 2. If failed_command is "pre-agent validation", inspect
-#    baseline logs
-cat /agents/kaseki-results/kaseki-N/pre-validation.log |
-  head -20
-cat /agents/kaseki-results/kaseki-N/pre-validation-timings.tsv
-
-# 3. If failed_command is "validation", inspect final-diff logs
-cat /agents/kaseki-results/kaseki-N/validation.log |
-  head -20
-cat /agents/kaseki-results/kaseki-N/validation-timings.tsv
-
-# 4. Full error output for a specific command
-grep -A 50 "npm run test" /agents/kaseki-results/kaseki-N/validation.log
-```
-
-### Common Issues
-
-**Issue: `npm run check` / `npm run test` exits with "not found"**
-
-```
-npm ERR! missing script: check
-npm ERR! missing script: test
-```
-
-**Fix:** The script doesn't exist in package.json; this is non-fatal by design. Validation continues to next command.
-
-**Issue: Pre-agent validation fails before Pi starts**
-
-```
-FAIL: src/__tests__/index.test.ts
-TypeError: expected X to be Y
-```
-
-**Fix:** This is a baseline problem, not an agent regression. The
-selected repo/ref failed before Pi changed anything. Either:
-
-- Re-run against a known-good ref
-- Fix the baseline repository state
-- Adjust `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` if the
-  baseline phase is intentionally narrower than final validation
-- Set `KASEKI_PRE_AGENT_VALIDATION=0` only when you knowingly
-  accept baseline failures
-
-**Issue: Post-agent validation fails due to code changes**
-
-```
-FAIL: src/__tests__/index.test.ts
-TypeError: expected X to be Y
-```
-
-**Fix:** The final diff failed validation, so the agent likely
-introduced or failed to resolve a regression. Either:
-
-- Adjust agent task prompt (see
-  [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md))
-- Adjust allowlist to restrict agent changes (see
-  [QUALITY_GATES.md](QUALITY_GATES.md))
-- Review agent's changes and accept/modify them manually
-
-**Issue: Validation fails due to missing dependencies**
-
-```
-FAIL: Module not found: react
-npm ERR! code E401 Unauthorized
-```
-
-**Fix:** Dependency cache may be stale. Try:
-
-- Increase timeout: `KASEKI_AGENT_TIMEOUT_SECONDS=2400`
-- Force clean install: `KASEKI_CACHE_ENABLED=0`
-
----
-
-## Goal Check Artifact Validation Failures
-
-### Problem: Goal Check Fails with "goal_check_artifact_invalid"
-
-Goal check validation happens after initial validation, before attempting retry. If the goal-check artifact (JSON verdict) fails schema validation, the run logs exit code **86** and may retry (if `KASEKI_GOAL_CHECK_MAX_RETRIES > 0`).
+### Problem: Config or Auth Missing (Exit Code 2)
 
 **Symptoms:**
 
-```json
-{
-  "exit_code": 86,
-  "goal_check_failure_reason": "goal_check_artifact_invalid",
-  "goal_check_met": false
-}
-```
-
-### Diagnosis
-
-Goal check errors are recorded in `/results/goal-check-validation-errors.jsonl` with per-field details:
-
-```bash
-# 1. View validation errors
-cat /agents/kaseki-results/kaseki-N/goal-check-validation-errors.jsonl | jq .
-
-# Output includes:
-# {
-#   "timestamp": "2026-05-25T23:30:00Z",
-#   "attempt": 1,
-#   "summary": "critical",
-#   "errors": [
-#     {"field": "confidence", "expected": "low|medium|high", "actual": "MEDIUM", ...},
-#     {"field": "retry_prompt", "expected": "non-empty string (when met=false)", ...}
-#   ]
-# }
-
-# 2. View all attempted verdicts
-cat /agents/kaseki-results/kaseki-N/goal-check-attempts.jsonl | jq .
-
-# 3. Check raw goal-check output
-tail -100 /agents/kaseki-results/kaseki-N/goal-check-stderr.log
-
-# 4. Check goal-check prompt that was sent
-grep -A 200 "build_goal_check_prompt" /results/metadata.jsonl 2>/dev/null || echo "N/A"
-```
-
-### Common Issues & Fixes
-
-**Issue: Confidence value is wrong case** (`"MEDIUM"` instead of `"medium"`)
-
-```
-errors: [
-  {"field": "confidence", "expected": "low|medium|high", "actual": "MEDIUM", ...}
-]
-```
-
-**Fix:** Goal check model is generating the wrong case. This usually happens due to ambiguous instructions. The model will be retried with clarified instructions.
-
-**Issue: Retry prompt missing when met=false**
-
-```
-errors: [
-  {"field": "retry_prompt", "expected": "non-empty string (when met=false)", "actual": "empty string", ...}
-]
-```
-
-**Fix:** When the goal is unmet, the evaluator must provide guidance. If this persists, the agent may need clearer task instructions or simpler goals.
-
-**Issue: Summary is empty**
-
-```
-errors: [
-  {"field": "summary", "expected": "non-empty string", "actual": "empty string", ...}
-]
-```
-
-**Fix:** Goal check verdict summary cannot be empty. The evaluator will retry.
-
-**Issue: Root artifact is not an object** (null, array, primitive)
-
-```
-errors: [
-  {"field": "root", "expected": "object", "actual": "null", "severity": "critical", ...}
-]
-```
-
-**Fix:** Goal check output was malformed JSON or not an object. Check `goal-check-stderr.log` for parse errors.
-
-### Prevention
-
-- Goal check validation is automatic and transparent
-- Errors are logged but retries proceed if `KASEKI_GOAL_CHECK_MAX_RETRIES > 0` (default: 1)
-- If retries are exhausted (exit code 8), review the artifact structure in `goal-check-attempts.jsonl`
-- To disable goal check entirely: `KASEKI_GOAL_CHECK=0`
-
----
-
-## TypeScript Pre-Check Failures
-
-### Problem: TypeScript Pre-Check Fails Before Agent Runs
-
-TypeScript pre-check runs automatically after dependencies install, before the agent is invoked. It catches TypeScript compilation errors early (within ~30 seconds) instead of wasting 15+ minutes on agent invocation.
-
-**Symptoms:**
-
-```json
-{
-  "typescript_precheck": {
-    "enabled": true,
-    "exit_code": 1,
-    "duration_seconds": 25,
-    "log_file": "pre-validation-ts-check.log"
-  }
-}
-```
-
-If `KASEKI_TS_PRE_CHECK=1` (default), TypeScript detection is **automatic**:
-
-- Non-TypeScript projects skip gracefully (no fatal error)
-- Missing npm scripts are warned about but don't fail
-- Only genuine compilation failures trigger exit (fatal if scouting disabled)
-
-### Diagnosis
-
-```bash
-# 1. View TypeScript pre-check output
-cat /agents/kaseki-results/kaseki-N/pre-validation-ts-check.log
-
-# Output examples:
-# - "skipped (no TypeScript detected)" → Non-TS project, skipped safely
-# - "skipped (npm script 'build' not found)" → TS project but script missing
-# - "error TS2307: Cannot find module 'missing-dep'" → Real compilation error
-
-# 2. Check metadata for detail status
-cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.typescript_precheck'
-
-# Possible detail values:
-# - success: Check passed
-# - failed: Genuine TypeScript compilation errors
-# - skipped_no_typescript: Non-TS project (no tsconfig.json, no typescript dependency)
-# - skipped_missing_script: TS detected but npm script not defined
-# - skipped_by_config: KASEKI_TS_PRE_CHECK=0
-
-# 3. Check stage timings for all pre-check details
-cat /agents/kaseki-results/kaseki-N/stage-timings.tsv | grep "typescript precheck"
-```
-
-### Common Scenarios & Fixes
-
-**Scenario: TypeScript pre-check skipped, non-TS project**
-
-```
-✓ typescript precheck: skipped (no TypeScript detected)
-detail: skipped_no_typescript
-```
-
-Expected for Python, Go, pure JS projects. No action needed.
-
-**Scenario: TypeScript detected but npm script missing (warning)**
-
-```
-⚠ typescript precheck: skipped (npm script 'build' not found)
-detail: skipped_missing_script
-error event: typescript_precheck_skipped_missing_script
-```
-
-**Fix (optional):** Either:
-
-- Define the script in `package.json`: `"build": "tsc"`
-- Use a different existing script: `KASEKI_TS_CHECK_COMMAND="npm run compile"`
-- Explicitly use tsc: `KASEKI_TS_CHECK_COMMAND="tsc --noEmit"`
-
-**Scenario: "Cannot find module" error (actual compilation failure)**
-
-```
-error TS2307: Cannot find module '@types/node' or its corresponding type declarations
-```
-
-**Fix:** Missing type definitions:
-
-- Run `npm install @types/node` to add missing dependency
-- Use `npm ci --include=optional` in your build script
-- Verify `tsconfig.json` has correct `types` array
-
-**Scenario: Build script doesn't exist in non-TS project**
-
-```
-✓ typescript precheck: skipped (no TypeScript detected)
-```
-
-This is normal. Non-TS projects skip even if `npm run build` doesn't exist.
-
-**Scenario: TypeScript configuration error**
-
-```
-error TS5024: 'rootDir' is not specified, and there are files found in the project.
-```
-
-**Fix:** `tsconfig.json` misconfiguration:
-
-- Add `"rootDir": "src"` to tsconfig.json
-- Verify tsconfig.json is in repo root
-- Check for conflicting tsconfig files
-
-**Scenario: Type errors in source code**
-
-```
-error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'
-```
-
-**Fix:** Genuine type errors:
-
-- Fix the source code
-- Disable TS pre-check if not critical: `KASEKI_TS_PRE_CHECK=0`
-- Use lighter check: `KASEKI_TS_CHECK_COMMAND="tsc --noEmit"`
-
-### Configuration & Prevention
-
-**Disable TS pre-check entirely** (not recommended, defeats early error detection):
-
-```bash
-KASEKI_TS_PRE_CHECK=0
-```
-
-**Use lighter TS check** (type-check only, no emit):
-
-```bash
-KASEKI_TS_CHECK_COMMAND="tsc --noEmit"
-```
-
-**Custom build command** (must exist in package.json):
-
-```bash
-KASEKI_TS_CHECK_COMMAND="npm run build:validate"
-```
-
-**Continue despite TS failures** (experimental, only with scouting):
-
-```bash
-KASEKI_TS_PRE_CHECK=1
-KASEKI_SCOUTING=1
-```
-
-**Multi-language repos** (Python, Go, JS mixed):
-
-```bash
-# Default is safe - TS auto-detection skips non-TS projects
-KASEKI_TS_PRE_CHECK=1  # stays enabled, works safely
-```
-
----
-
-## Quality Gate Failures
-
-### Exit Code 4: Diff Exceeds Maximum Size
-
-**Problem:** Agent made changes totaling > 200 KB (default KASEKI_MAX_DIFF_BYTES)
+- Run exits with code 2
+- Error: API key not found
+- Container startup shows: "Cannot read secret file"
+
+**Root Cause:** API key or configuration not set, or secret files are inaccessible.
 
 **Diagnosis:**
 
 ```bash
-# Check actual diff size
-wc -c /agents/kaseki-results/kaseki-N/git.diff
-
-# Review changed files
-cat /agents/kaseki-results/kaseki-N/changed-files.txt
-
-# Check configured limit
-echo $KASEKI_MAX_DIFF_BYTES  # Default: 200000
+# Check which API key is configured
+echo $OPENROUTER_API_KEY              # Inline env var
+echo $OPENROUTER_API_KEY_FILE         # Explicit file path
+cat ~/.kaseki/secrets.json             # Default file location
 ```
 
-**Fixes (pick one):**
+### Problem: Secret Files Inaccessible (Permission Denied)
+
+**Symptoms:**
+
+- Container startup shows: "Cannot traverse /agents/secrets by UID 10000"
+- API key fails to load silently
+- API service binds only to loopback (127.0.0.1) instead of 0.0.0.0
+- Preflight checks fail with "Cannot read secret file"
+
+**Root Cause:**
+
+The `/agents/secrets` directory has restrictive permissions preventing the container (UID 10000) from traversing it.
+
+**Automatic Fix (Enabled by Default):**
+
+`scripts/startup-checks.sh` detects and fixes common permission issues on startup:
+
+1. Checks if secret directories/files are traversable and readable by UID 10000
+2. Auto-fix: chmod directories to `0750`, files to `0640`
+3. Logs status in startup output
+
+**Manual Fix (If Auto-Fix Not Possible):**
+
+If the container logs `Cannot auto-fix /agents/secrets (possibly on read-only mount)`, fix permissions on the host:
+
+```bash
+# Fix /agents/secrets directory
+sudo chmod 0750 /agents/secrets
+
+# Fix secret files
+sudo chmod 0640 /agents/secrets/openrouter_api_key
+sudo chmod 0640 ~/.kaseki/secrets.json
+```
+
+**Secret Paths (in order of resolution):**
+
+1. `OPENROUTER_API_KEY` — Inline environment variable (preferred)
+2. `OPENROUTER_API_KEY_FILE` — Explicit file path
+3. `~/.kaseki/secrets.json` — Default file location (created by `kaseki-agent init`)
+4. `/agents/secrets/openrouter_api_key` — Container mount point (Docker Compose)
+
+**Migrating from Legacy Docker Secrets:**
+
+```bash
+# Use the init wizard
+kaseki-agent init
+
+# Or set OPENROUTER_API_KEY_FILE explicitly
+export OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key
+./run-kaseki.sh
+```
+
+**Verification:**
+
+```bash
+# Inside container
+/scripts/startup-checks.sh all
+# Expected: All checks passed
+```
+
+### Problem: Git Safe.directory Configuration
+
+**Symptoms:**
+
+- Container preflight check fails: "unsafe repository (...) is owned by someone else"
+- Error: "Git safe.directory not configured for /agents/kaseki-agent"
+- Template doctor check fails after successful host setup
+
+**Root Cause:**
+
+Git enforces ownership checks. When the checkout directory is owned by root but the container runs as UID 10000, git refuses to read the repository.
+
+**Solution: Three-Layered Approach**
+
+**Layer 1: Automatic Remediation (Active by Default)**
+
+Container auto-configures git safe.directory during startup (via `container-preflight.ts`). Disable with `KASEKI_STARTUP_CHECK_AUTO_REMEDIATE=0`.
+
+**Layer 2: System-Wide Configuration (Persistent)**
+
+```bash
+sudo kaseki-agent host setup --fix
+git config --system --get-all safe.directory | grep kaseki-agent
+```
+
+**Layer 3: Pre-Configured in Docker Image**
+
+Dockerfile pre-configures git safe.directory at build time. This eliminates runtime configuration.
+
+**Manual Troubleshooting:**
+
+```bash
+# Check current status
+sudo kaseki-agent host preflight
+
+# Verify system config
+git config --system --get-all safe.directory | grep kaseki-agent
+
+# Manual system-wide configuration
+sudo git config --system --add safe.directory /agents/kaseki-agent
+```
+
+**Environment Variables:**
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `KASEKI_STARTUP_CHECK_AUTO_REMEDIATE` | 1 | Enable auto-remediation in container |
+| `KASEKI_SAFE_DIRECTORY_SCOPE` | global | Git config scope (auto-remediation) |
+
+**Best Practices:**
+
+1. Run `sudo kaseki-agent host setup --fix` after deploying or upgrading
+2. Verify system config: `git config --system --get-all safe.directory`
+3. Use system scope for containers
+
+See [HOST_SETUP_TROUBLESHOOTING.md](HOST_SETUP_TROUBLESHOOTING.md) for additional host-level authentication failures.
+
+---
+
+## Validation Failures
+
+### Exit Code 3: No Changes Made
+
+**Problem:** Agent produced no diff.
+
+**Diagnosis:** `cat /agents/kaseki-results/kaseki-N/result-summary.md`
+
+**Fix:** Expected if codebase already satisfies the task. If changes were expected, refine `TASK_PROMPT`.
+
+### Exit Code 4: Diff Exceeds Maximum Size
+
+**Problem:** Agent changes exceed `KASEKI_MAX_DIFF_BYTES` (default 200000 bytes / ~200 KB).
+
+**Diagnosis:**
+
+```bash
+wc -c /agents/kaseki-results/kaseki-N/git.diff
+echo $KASEKI_MAX_DIFF_BYTES
+```
+
+**Fixes:**
 
 - **Increase limit** (if diff is legitimate):
 
   ```bash
-  export KASEKI_MAX_DIFF_BYTES=500000  # 500 KB
+  export KASEKI_MAX_DIFF_BYTES=500000
   ```
 
 - **Use allowlist** (restrict agent to specific files):
@@ -905,18 +471,13 @@ echo $KASEKI_MAX_DIFF_BYTES  # Default: 200000
 
 ### Exit Code 5: File Changed Outside Allowlist
 
-**Problem:** Agent modified files not in KASEKI_CHANGED_FILES_ALLOWLIST
+**Problem:** Agent modified files not in `KASEKI_CHANGED_FILES_ALLOWLIST`.
 
 **Diagnosis:**
 
 ```bash
-# Which files are outside allowlist?
 cat /agents/kaseki-results/kaseki-N/quality.log | grep "not in allowlist"
-
-# All changed files
 cat /agents/kaseki-results/kaseki-N/changed-files.txt
-
-# Current allowlist
 echo $KASEKI_CHANGED_FILES_ALLOWLIST
 ```
 
@@ -937,330 +498,177 @@ echo $KASEKI_CHANGED_FILES_ALLOWLIST
 - **Auto-suggest allowlist** (from a test run):
 
   ```bash
-  bash /path/to/kaseki-agent/scripts/suggest-allowlist.sh \
-    /agents/kaseki-results/kaseki-N
+  bash /path/to/kaseki-agent/scripts/suggest-allowlist.sh /agents/kaseki-results/kaseki-N
   ```
 
 ### Exit Code 6: Secret Detected
 
-**Problem:** Code contains credential pattern (e.g., `sk-or-...`)
+**Problem:** Code contains credential pattern (e.g., `sk-or-...`).
 
 **Diagnosis:**
 
 ```bash
-# Which files have credentials?
 cat /agents/kaseki-results/kaseki-N/secret-scan.log
-
-# Audit for leaked keys
-grep -r "sk-or-" /agents/kaseki-results/kaseki-N/  # Search result artifacts
+grep -r "sk-or-" /agents/kaseki-results/kaseki-N/
 ```
 
 **Fix:**
 
-1. **Revoke leaked credentials immediately** (if applicable)
-2. Review agent's code changes — likely unintentional
+1. Revoke leaked credentials immediately (if applicable)
+2. Review agent's code changes
 3. Refine task prompt to warn about credential safety:
 
    ```bash
    export TASK_PROMPT="Fix the parser bug. NEVER hardcode credentials or API keys."
    ```
 
----
+### Exit Code 7: Validation Commands Fail
 
-## Provider/Model Errors (Exit Code 88)
+**Problem:**
+Validation commands run in two phases:
 
-### Problem: LLM Provider Error (Non-Retryable)
+- **Pre-agent validation** runs before the agent. If this fails, the baseline repo/ref was already failing and the agent was not invoked. Use `pre-validation.log`, `pre-validation-timings.tsv`.
+- **Post-agent validation** runs after the agent, allowlist restoration, and quality gates. If this fails, the final output failed validation. Use `validation.log`, `validation-timings.tsv`.
 
-**Symptom:** Run exits with code 88. Error may say:
-
-- "This model is unavailable"
-- "404 Not Found"
-- "Model is deprecated"
-- "Service Unavailable" (after retry)
-- "Rate limited" (after retry)
-- Connection timeout (after retry)
-
-**What happened:** The LLM provider (OpenRouter, etc.) returned an error. Kaseki-agent automatically retries transient errors once (503, 429, connection issues). Exit code 88 means either:
-
-- The error was non-retryable (404, deprecated, auth failure)
-- The automatic retry also failed
-
-### Diagnosis
+**Diagnosis:**
 
 ```bash
-# Check provider error details
-cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.provider_error_*'
+# Which validation phase failed?
+cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.failed_command, .pre_validation_failure_reason, .validation_failure_reason'
 
-# What was the original error message?
-cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.provider_error_message'
+# Pre-agent baseline logs
+cat /agents/kaseki-results/kaseki-N/pre-validation.log | head -20
 
-# Was it retryable? Did retry succeed?
-cat /agents/kaseki-results/kaseki-N/metadata.json | jq '{retryable: .provider_error_retryable, attempts: .provider_error_retry_attempt_count, result: .provider_error_retry_result}'
-
-# Check provider error log
-cat /agents/kaseki-results/kaseki-N/quality.log | grep -A5 "provider error"
-```
-
-### Common Scenarios & Fixes
-
-**Scenario 1: Transient error with failed retry (503, 429, timeout)**
-
-```
-provider_error_retryable: "true"
-provider_error_retry_attempt_count: 2
-provider_error_retry_result: "failed"
-provider_error_message: "503 Service Unavailable"
-```
-
-**Fix:** The provider is having issues. Wait 5-10 minutes and retry:
-
-```bash
-# Verify provider status
-curl -s https://status.openrouter.io | grep -i status
-
-# Retry the run
-kaseki-agent run <repo> <ref> <task>
-```
-
-If it persists, contact provider support or switch providers.
-
-**Scenario 2: Permanent error (404 model not found)**
-
-```
-provider_error_type: "model_not_found"
-provider_error_message: "404 Model 'gpt-4-turbo' not found"
-provider_error_retryable: "false"
-```
-
-**Fix:** Model is no longer available. Switch to a working model:
-
-```bash
-# List available models
-kaseki-agent models list
-
-# Update your config
-kaseki-agent config set model openrouter/free
-
-# Or set via environment
-export KASEKI_MODEL=openrouter/free
-kaseki-agent run <repo> <ref> <task>
-```
-
-**Scenario 3: Deprecated model**
-
-```
-provider_error_message: "This model is deprecated as of 2024-01-01"
-provider_error_retryable: "false"
-```
-
-**Fix:** Switch to a newer model:
-
-```bash
-export KASEKI_MODEL=openrouter/free  # Current free model
-kaseki-agent run <repo> <ref> <task>
-```
-
-Check provider's model list for recommended replacements.
-
-**Scenario 4: Authentication failure (invalid API key)**
-
-```
-provider_error_type: "auth_error"
-provider_error_message: "401 Unauthorized: Invalid API key"
-```
-
-**Fix:**
-
-```bash
-# Check if API key is set
-echo $OPENROUTER_API_KEY
-
-# Verify it's valid (check at https://openrouter.ai)
-# Regenerate if needed
-
-# Update credential
-kaseki-agent setup  # Interactive wizard
-
-# Or set directly
-export OPENROUTER_API_KEY=sk-or-...
-kaseki-agent run <repo> <ref> <task>
-```
-
-**Scenario 5: Quota exceeded (out of credits)**
-
-```
-provider_error_message: "429 Quota exceeded for your account"
-provider_error_retry_attempt_count: 2
-```
-
-**Fix:** Add credits to your account or wait for quota reset:
-
-```bash
-# Check account status at provider's dashboard
-# Add more credits or wait for monthly reset
-
-# Retry after quota is available
-kaseki-agent run <repo> <ref> <task>
-```
-
-### Prevention
-
-- **Use stable models:** Prefer `openrouter/free` or pinned versions
-- **Monitor credits:** Check provider account regularly
-- **Enable alerts:** Set up budget/quota alerts in provider dashboard
-- **Increase timeout:** Some providers are slow; allow more time:
-
-  ```bash
-  export KASEKI_AGENT_TIMEOUT_SECONDS=1800  # 30 minutes
-  ```
-
-- **Handle retry metadata:** Your integration can check `provider_error_retry_result` in metadata to distinguish transient failures from permanent errors
-
----
-
-## API Service Issues
-
-### API Won't Start
-
-```bash
-docker-compose logs kaseki-api --tail 50
+# Post-agent final-diff logs
+cat /agents/kaseki-results/kaseki-N/validation.log | head -20
 ```
 
 **Common Issues:**
 
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| `Permission denied /agents/kaseki-results` | Host dir not writable by UID 10000 | `sudo chmod 777 /agents` |
-| `Cannot connect to Docker daemon` | No Docker socket access | Set `DOCKER_GID` in env |
-| `EADDRINUSE: address already in use :::8080` | Port 8080 in use | Change `KASEKI_API_PORT=8081` |
-| `Error: ENOENT: no such file or directory, mkdir '/agents'` | Host mount missing | `mkdir -p /agents` |
+**Issue: `npm run check` / `npm run test` exits with "not found"**
 
-### API Runs Fail with Permission Error
-
-```bash
-# Inside container: check permission to /agents
-docker exec kaseki-api ls -ld /agents
-
-# Fix: make writable
-sudo chmod 777 /agents
-docker-compose restart kaseki-api
+```
+npm ERR! missing script: check
 ```
 
----
+**Fix:** Script does not exist in package.json; this is non-fatal by design. Validation continues to the next command.
 
-## Monitoring & Debugging Commands
+**Issue: Pre-agent validation fails before agent starts**
 
-### Check Run Status
-
-```bash
-# List all runs
-kaseki-cli list
-
-# Get detailed status of a running/completed run
-kaseki-cli status kaseki-5
-
-# Check for errors
-kaseki-cli errors kaseki-5
-
-# Get post-run analysis
-kaseki-cli analysis kaseki-5
+```
+FAIL: src/__tests__/index.test.ts
+TypeError: expected X to be Y
 ```
 
-### Live Monitoring
+**Fix:** Baseline problem, not an agent regression. Either:
 
-```bash
-# Watch a running instance in real-time
-kaseki-cli watch kaseki-5 --interval=2
+- Re-run against a known-good ref
+- Fix the baseline repository state
+- Adjust `KASEKI_PRE_AGENT_VALIDATION_COMMANDS`
+- Set `KASEKI_PRE_AGENT_VALIDATION=0` to accept baseline failures
 
-# Stream logs as they happen
-kaseki-cli follow kaseki-5
+**Issue: Post-agent validation fails due to code changes**
 
-# Follow with search filter (e.g., only errors)
-kaseki-cli follow kaseki-5 |
-  grep -i error
+```
+FAIL: src/__tests__/index.test.ts
 ```
 
-### Post-Run Analysis
+**Fix:** Final diff failed validation; agent introduced or failed to resolve a regression. Either:
 
-```bash
-# Generate diagnostic report
-kaseki-report /agents/kaseki-results/kaseki-5
+- Adjust task prompt (see [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md))
+- Adjust allowlist (see [QUALITY_GATES.md](QUALITY_GATES.md))
+- Review agent's changes manually
 
-# Review what changed
-cat /agents/kaseki-results/kaseki-5/git.diff |
-  head -100
+**Issue: Validation fails due to missing dependencies**
 
-# Check validation results
-cat /agents/kaseki-results/kaseki-5/validation-timings.tsv
+```
+FAIL: Module not found: react
+npm ERR! code E401 Unauthorized
 ```
 
----
+**Fix:** Dependency cache may be stale:
 
-## Allowlist Troubleshooting
+- Increase timeout: `KASEKI_AGENT_TIMEOUT_SECONDS=2400`
+- Force clean install: `KASEKI_CACHE_ENABLED=0`
 
-### Too Many Files Being Restored
+### Quality Gate Failures
 
-When validation runs, files outside the allowlist are
-restored to their original state. If many files are restored,
-it means the agent modified files outside the intended scope.
+**Problem:** Too many files restored before validation, or allowlist violations.
+
+See [QUALITY_GATES.md](QUALITY_GATES.md) for:
+
+- Allowlist pattern syntax and examples
+- Pre-built templates by task type
+- `scripts/suggest-allowlist.sh` and `scripts/dry-run-allowlist.sh`
+- Decision tree for choosing the right allowlist
+
+**Restoration troubleshooting:**
 
 ```bash
 # Count restored files
-grep "restore:" /agents/kaseki-results/kaseki-N/restoration.jsonl |
-  wc -l
+grep "restore:" /agents/kaseki-results/kaseki-N/restoration.jsonl | wc -l
 
 # Review restoration report
 cat /agents/kaseki-results/kaseki-N/restoration-report.md
 ```
 
-**Solutions:**
+Solutions:
 
-1. **Use pre-flight validation** to preview what agent will
-   change:
-
-   ```bash
-   bash /path/to/scripts/dry-run-allowlist.sh <repo_url> 
-     <git_ref> "<task>"
-   ```
-
-2. **Use suggested allowlist** from a test run:
-
-   ```bash
-   bash /path/to/scripts/suggest-allowlist.sh \
-     /agents/kaseki-results/kaseki-N > allowlist.txt
-   ```
-
-3. **Auto-generate from templates**:
-
-   ```bash
-   # See QUALITY_GATES.md for templates by task type
-   bash /path/to/scripts/allowlist-helper.sh --type "bug-fix"
-   ```
+1. Use pre-flight validation to preview changes: `bash /path/to/scripts/dry-run-allowlist.sh`
+2. Use suggested allowlist from a test run: `bash /path/to/scripts/suggest-allowlist.sh`
+3. Auto-generate from templates: `bash /path/to/scripts/allowlist-helper.sh --type "bug-fix"`
 
 ---
 
-## Agent Timeout
+## Task-Execution Failures
 
-### Problem: Agent Takes Longer Than Timeout
+### Problem: Generic Failure (Exit Code 1)
 
+**Step 1: Check stage where failure occurred**
+
+```bash
+cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.stages'
 ```
-Exit code 124: command timed out after KASEKI_AGENT_TIMEOUT_SECONDS
+
+**Step 2: Locate failure details by stage**
+
+Agent phase failed:
+
+```bash
+tail -100 /agents/kaseki-results/kaseki-N/stdout.log | grep -i error
+cat /agents/kaseki-results/kaseki-N/pi-summary.json | jq '.elapsed_seconds, .timeout_seconds'
 ```
+
+Pre-agent or post-agent validation failed:
+
+```bash
+cat /agents/kaseki-results/kaseki-N/pre-validation.log
+cat /agents/kaseki-results/kaseki-N/validation.log
+```
+
+**Step 3: Read structured failure reason**
+
+```bash
+cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.pre_validation_failure_reason, .validation_failure_reason, .quality_failure_reason'
+```
+
+### Problem: Agent Timeout (Exit Code 124)
+
+**Symptoms:** Run exits with code 124 after `KASEKI_AGENT_TIMEOUT_SECONDS`.
 
 **Diagnosis:**
 
 ```bash
-# How much time elapsed?
-cat /agents/kaseki-results/kaseki-N/pi-summary.json |
-  jq '.elapsed_seconds, .timeout_seconds'
+# Time elapsed vs timeout
+cat /agents/kaseki-results/kaseki-N/pi-summary.json | jq '.elapsed_seconds, .timeout_seconds'
 
-# What was agent doing when timeout hit?
+# What was the agent doing?
 tail -50 /agents/kaseki-results/kaseki-N/progress.log
 ```
 
 **Fixes:**
 
-- **Increase timeout**:
+- **Increase timeout:**
 
   ```bash
   export KASEKI_AGENT_TIMEOUT_SECONDS=2400  # 40 minutes
@@ -1278,32 +686,53 @@ tail -50 /agents/kaseki-results/kaseki-N/progress.log
   export KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts tests/parser.test.ts"
   ```
 
----
+See [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) for writing focused, scoped prompts and anti-patterns that cause scope creep.
 
-## Performance & Resource Issues
+### Performance & Resource Issues
 
-### Slow Validation
+**Slow validation:**
 
 ```bash
-# Check validation timing
 cat /agents/kaseki-results/kaseki-N/validation-timings.tsv
-
-# Which command is slow?
 awk -F'\t' '{print $1, $3 " seconds"}' /agents/kaseki-results/kaseki-N/validation-timings.tsv
 ```
 
-**Fix:** Check [PERFORMANCE_TUNING.md](PERFORMANCE_TUNING.md) for
-optimization tips.
+**Fix:** See [PERFORMANCE_TUNING.md](PERFORMANCE_TUNING.md).
 
-### High API Queue Backlog
+**High API queue backlog:**
 
 ```bash
-# Check queue
 curl http://localhost:8080/health | jq '.queue'
-
-# If many pending: increase concurrency
 export KASEKI_API_MAX_CONCURRENT_RUNS=5  # Default: 3
 docker-compose restart kaseki-api
+```
+
+---
+
+## Monitoring & Debugging Commands
+
+### Check Run Status
+
+```bash
+kaseki-cli list
+kaseki-cli status kaseki-5
+kaseki-cli errors kaseki-5
+kaseki-cli analysis kaseki-5
+```
+
+### Live Monitoring
+
+```bash
+kaseki-cli watch kaseki-5 --interval=2
+kaseki-cli follow kaseki-5 | grep -i error
+```
+
+### Post-Run Analysis
+
+```bash
+kaseki-report /agents/kaseki-results/kaseki-5
+cat /agents/kaseki-results/kaseki-5/git.diff | head -100
+cat /agents/kaseki-results/kaseki-5/validation-timings.tsv
 ```
 
 ---
@@ -1313,11 +742,9 @@ docker-compose restart kaseki-api
 ### Collecting Diagnostic Info for Support
 
 ```bash
-# Create diagnostic bundle
 mkdir kaseki-debug-kaseki-N
 cd kaseki-debug-kaseki-N
 
-# Copy key artifacts
 cp /agents/kaseki-results/kaseki-N/metadata.json .
 cp /agents/kaseki-results/kaseki-N/result-summary.md .
 cp /agents/kaseki-results/kaseki-N/validation.log .
@@ -1328,7 +755,6 @@ cp /agents/kaseki-results/kaseki-N/pi-summary.json .
 # Sanitize credentials
 sed -i 's/sk-or-[^ ]*/sk-or-REDACTED/g' *
 
-# Zip and share
 zip -r kaseki-debug-kaseki-N.zip .
 ```
 
@@ -1343,82 +769,12 @@ zip -r kaseki-debug-kaseki-N.zip .
 
 ---
 
-## Understanding Output Filtering
-
-### Real-Time Logs vs Stored Files
-
-Kaseki-agent applies intelligent filtering to real-time Docker logs while preserving full output in stored result files. This reduces noise during execution while maintaining complete debugging information.
-
-#### What's Filtered in Docker Logs
-
-Real-time `docker logs kaseki-N` output filters OUT verbose lines including:
-
-- Verbose progress indicators (e.g., build initialization, package resolution)
-- Npm notice messages and warnings
-- Non-critical debug output
-- Progress bars and spinners
-
-#### What's Always Shown
-
-The following are always displayed in real-time Docker logs:
-
-- ❌ **Error and warning lines** — ERROR, WARN, FATAL, CRITICAL, Exception
-- ✅ **Test result indicators** — PASS, FAIL, passed, failed, ✓, ✗
-- ℹ️ **Command boundaries** — Command start (`==> npm run X`) and exit codes
-- 📊 **Summaries** — Test counts, build status, completion messages
-- 🔍 **Stack traces** — Full exception stack traces
-
-#### Finding Full Output
-
-If you need to see the complete unfiltered output:
-
-```bash
-# Full validation output (including all verbose lines)
-cat /agents/kaseki-results/kaseki-N/validation.log
-
-# Separate by command
-grep -A 500 "^==> npm run test" /agents/kaseki-results/kaseki-N/validation.log | head -100
-```
-
-#### Example: Test Run
-
-**Docker logs** (filtered — only key milestones):
-
-```
-==> npm run test
-PASS: Suite 1 - basic operations
-PASS: Suite 2 - edge cases
-15 tests passed, 0 failed
-exit_code=0
-```
-
-**validation.log** (full — includes all output):
-
-```
-==> npm run test
-npm WARN notice This is npm version 8.5.0
-npm WARN notice Welcome to npm!
-npm WARN notice See more at https://docs.npmjs.com/...
-Loading test fixtures...
-Compiling test files...
-Running test suite 'basic operations'...
-  Test 1: should handle empty input ... PASS
-  Test 2: should handle null values ... PASS
-  ...
-PASS: Suite 1 - basic operations
-Running test suite 'edge cases'...
-  Test 3: should reject invalid types ... PASS
-  ...
-PASS: Suite 2 - edge cases
-Test Results: 15 tests passed, 0 failed, 100% coverage
-exit_code=0
-```
-
----
-
 ## See Also
 
 - [EXIT_CODES.md](EXIT_CODES.md) — Detailed exit code reference
 - [QUALITY_GATES.md](QUALITY_GATES.md) — Allowlist configuration & patterns
 - [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) — Writing better task prompts
 - [CLI.md](CLI.md) — Monitoring with kaseki-cli
+- [GATEWAY_TEST.md](GATEWAY_TEST.md) — Gateway connectivity and inference testing
+- [HOST_SETUP_TROUBLESHOOTING.md](HOST_SETUP_TROUBLESHOOTING.md) — Host-level setup failures
+- [ENV_VARS.md](ENV_VARS.md) — Environment variable reference, dynamic model resolution
