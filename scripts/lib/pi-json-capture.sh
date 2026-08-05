@@ -8,11 +8,40 @@ run_pi_json_capture() {
   local model="$3"
   local prompt="$4"
   local stderr_target="${5:-}"
-  local pi_exit progress_exit progress_stderr progress_fifo progress_pid splitter_exit
+  local pi_exit progress_exit progress_stderr progress_fifo progress_pid splitter_exit pi_tools bounded_prompt
   local pi_openrouter_api_key="${openrouter_api_key:-${OPENROUTER_API_KEY:-}}"
   local pi_llm_gateway_api_key="${llm_gateway_api_key:-${LLM_GATEWAY_API_KEY:-}}"
   local pi_llm_gateway_url="${llm_gateway_url:-${LLM_GATEWAY_URL:-}}"
   local -a pipeline_statuses
+
+  # Keep the tool schema—and therefore every provider request—specific to the
+  # phase.  Read-only phases must not receive mutation or shell tools.  This
+  # also makes accidental writes impossible during evaluation.
+  case "${KASEKI_INFERENCE_PHASE:-coding}" in
+    goal-setting)
+      pi_tools="read,write"
+      ;;
+    scouting)
+      pi_tools="read,search,write"
+      ;;
+    goal-check|run-evaluation)
+      pi_tools="read,search"
+      ;;
+    *)
+      pi_tools="bash,read,write,search"
+      if [ "${KASEKI_HASHLINE_EDITS:-1}" != "0" ]; then
+        pi_tools="${pi_tools},hashline_edit"
+      fi
+      ;;
+  esac
+
+  # Tool output is fed back into Pi's next completion.  Require bounded,
+  # artifact-first output so a broad command or file read cannot dominate all
+  # subsequent context.  The full result remains available on disk for a
+  # targeted follow-up read.
+  bounded_prompt="${prompt}
+
+Tool-output budget: keep each tool result under ${KASEKI_TOOL_OUTPUT_MAX_CHARS:-8000} characters. Use targeted reads/searches and bounded commands (for example head, tail, or a focused matcher). For large output, write the full result to /results and return a short structured summary containing the artifact path, byte size, hash, failures, and only the relevant excerpt. Do not re-read or repeat unchanged large output."
 
   wait_for_progress_stream() {
     local pid="$1"
@@ -53,7 +82,7 @@ run_pi_json_capture() {
         LLM_GATEWAY_API_KEY="$pi_llm_gateway_api_key" \
         LLM_GATEWAY_URL="$pi_llm_gateway_url" \
         timeout --signal=SIGTERM "$timeout_seconds" \
-        pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
+        pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" --tools "$pi_tools" "$bounded_prompt" \
         2> >(tee -a "$stderr_target" >&2) \
         | node -e '
 const fs = require("fs");
@@ -92,7 +121,7 @@ process.stdin.on("end", () => {
         LLM_GATEWAY_API_KEY="$pi_llm_gateway_api_key" \
         LLM_GATEWAY_URL="$pi_llm_gateway_url" \
         timeout --signal=SIGTERM "$timeout_seconds" \
-        pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
+        pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" --tools "$pi_tools" "$bounded_prompt" \
         | node -e '
 const fs = require("fs");
 const [rawPath, fifoPath] = process.argv.slice(1);
@@ -146,7 +175,7 @@ process.stdin.on("end", () => {
         LLM_GATEWAY_API_KEY="$pi_llm_gateway_api_key" \
         LLM_GATEWAY_URL="$pi_llm_gateway_url" \
         timeout --signal=SIGTERM "$timeout_seconds" \
-        pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
+        pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" --tools "$pi_tools" "$bounded_prompt" \
         > "$raw_events_file" \
         2> >(tee -a "$stderr_target" >&2)
     else
@@ -154,7 +183,7 @@ process.stdin.on("end", () => {
         LLM_GATEWAY_API_KEY="$pi_llm_gateway_api_key" \
         LLM_GATEWAY_URL="$pi_llm_gateway_url" \
         timeout --signal=SIGTERM "$timeout_seconds" \
-        pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
+        pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" --tools "$pi_tools" "$bounded_prompt" \
         > "$raw_events_file"
     fi
     pi_exit=$?
