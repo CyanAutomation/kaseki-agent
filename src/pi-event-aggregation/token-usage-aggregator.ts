@@ -9,6 +9,11 @@
 export interface UsageObject {
   prompt_tokens?: number;
   completion_tokens?: number;
+  /** Pi/OpenAI-compatible stream shape. */
+  input?: number;
+  output?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
   prompt_tokens_details?: {
     cache_creation_input_tokens?: number;
     cache_read_input_tokens?: number;
@@ -197,13 +202,18 @@ export class TokenUsageAggregator {
   recordUsage(modelName: string, usage: UsageObject | null | undefined): void {
     if (!usage || typeof usage !== 'object') return;
 
-    if (typeof usage.prompt_tokens === 'number') {
-      this.recordInputTokens(modelName, usage.prompt_tokens);
+    const inputTokens = usage.prompt_tokens ?? usage.input;
+    if (typeof inputTokens === 'number') {
+      this.recordInputTokens(modelName, inputTokens);
     }
 
-    if (typeof usage.completion_tokens === 'number') {
-      this.recordOutputTokens(modelName, usage.completion_tokens);
+    const outputTokens = usage.completion_tokens ?? usage.output;
+    if (typeof outputTokens === 'number') {
+      this.recordOutputTokens(modelName, outputTokens);
     }
+
+    if (typeof usage.cacheWrite === 'number') this.recordCacheCreationTokens(modelName, usage.cacheWrite);
+    if (typeof usage.cacheRead === 'number') this.recordCacheReadTokens(modelName, usage.cacheRead);
 
     if (usage.prompt_tokens_details) {
       const details = usage.prompt_tokens_details;

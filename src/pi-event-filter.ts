@@ -39,6 +39,8 @@ interface Summary {
   token_usage?: TokenUsageSummary;
   model_token_stats?: ModelTokenStats;
   phase_token_stats?: PhaseTokenStats;
+  completion_usage?: ProviderCompletionUsage[];
+  tool_output_usage?: ToolOutputUsageSummary;
   provider_errors?: ProviderErrorSummary[];
   primary_provider_error?: ProviderErrorSummary;
   inference_health?: InferenceHealthSummary;
@@ -51,6 +53,26 @@ interface Summary {
     dropped_budget_events: number;
     output_budget_exhausted: boolean;
   };
+}
+
+/** Usage reported by the provider for one completed assistant response. */
+interface ProviderCompletionUsage {
+  phase: string;
+  turn: number;
+  response_id?: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_tokens: number;
+  cache_read_tokens: number;
+  total_tokens: number;
+}
+
+interface ToolOutputUsageSummary {
+  total_results: number;
+  total_bytes: number;
+  estimated_tokens: number;
+  by_tool: Record<string, { results: number; bytes: number; estimated_tokens: number }>;
 }
 
 interface InferenceHealthSummary {
@@ -115,6 +137,8 @@ type PiEventFilterState = {
   toolReliability: ToolReliabilityAggregator;
   executionTime: ExecutionTimeAggregator;
   tokenUsage: TokenUsageAggregator;
+  completionUsage: Map<string, ProviderCompletionUsage>;
+  toolOutputUsage: ToolOutputUsageSummary;
   providerErrors: ProviderErrorSummary[];
   providerErrorKeys: Set<string>;
   assistantTurnStates: Map<string, AssistantTurnState>;
@@ -182,8 +206,17 @@ function extractToolName(event: PiEvent): string | null {
   if ((event as any).tool_name) {
     return (event as any).tool_name;
   }
+  if (typeof (event as any).toolName === 'string') return (event as any).toolName;
+  if (typeof (event as any).tool?.name === 'string') return (event as any).tool.name;
   // Could extract from message content in future if needed
   return null;
+}
+
+function toolOutputBytes(event: PiEvent): number {
+  const value = (event as any).result ?? (event as any).output ?? (event as any).message?.content;
+  if (value === undefined || value === null) return 0;
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  return Buffer.byteLength(text);
 }
 
 /**
@@ -377,11 +410,16 @@ function extractModelName(event: PiEvent): string {
 }
 
 function createFilterState(): PiEventFilterState {
+  const phase = process.env.KASEKI_INFERENCE_PHASE || 'unknown';
+  const tokenUsage = new TokenUsageAggregator();
+  tokenUsage.setCurrentPhase(phase);
   return {
     aggregator: new EventCounterAggregator(),
     toolReliability: new ToolReliabilityAggregator(),
     executionTime: new ExecutionTimeAggregator(),
-    tokenUsage: new TokenUsageAggregator(),
+    tokenUsage,
+    completionUsage: new Map(),
+    toolOutputUsage: { total_results: 0, total_bytes: 0, estimated_tokens: 0, by_tool: {} },
     providerErrors: [],
     providerErrorKeys: new Set<string>(),
     assistantTurnStates: new Map<string, AssistantTurnState>(),
@@ -412,11 +450,41 @@ function recordParsedEvent(event: PiEvent, state: PiEventFilterState): void {
   const usage = extractUsage(event);
   if (usage) {
     state.tokenUsage.recordUsage(extractModelName(event), usage);
+    recordCompletionUsage(event, usage, state);
   }
 
   recordProviderErrors(event, state);
   recordAgentTiming(event, state);
   recordToolExecution(event, state);
+}
+
+function recordCompletionUsage(event: PiEvent, usage: any, state: PiEventFilterState): void {
+  const input = numericUsageValue(usage, ['input', 'input_tokens', 'prompt_tokens']) ?? 0;
+  const output = numericUsageValue(usage, ['output', 'output_tokens', 'completion_tokens']) ?? 0;
+  const details = usage?.prompt_tokens_details ?? usage?.input_tokens_details ?? {};
+  const cacheCreation = numericUsageValue(details, ['cache_creation_input_tokens', 'cache_creation_tokens'])
+    ?? numericUsageValue(usage, ['cacheWrite', 'cache_write_tokens']) ?? 0;
+  const cacheRead = numericUsageValue(details, ['cache_read_input_tokens', 'cache_read_tokens'])
+    ?? numericUsageValue(usage, ['cacheRead', 'cache_read_tokens']) ?? 0;
+  if (input + output + cacheCreation + cacheRead === 0) return;
+
+  const responseId = extractResponseIdFromEvent(event);
+  // Providers often emit the final usage on several stream events. Keep the
+  // largest cumulative value for that response instead of double-counting it.
+  const key = responseId || `event-${state.completionUsage.size + 1}`;
+  const existing = state.completionUsage.get(key);
+  const candidate: ProviderCompletionUsage = {
+    phase: process.env.KASEKI_INFERENCE_PHASE || 'unknown',
+    turn: state.completionUsage.size + (existing ? 0 : 1),
+    ...(responseId ? { response_id: responseId } : {}),
+    model: extractModelName(event),
+    input_tokens: input,
+    output_tokens: output,
+    cache_creation_tokens: cacheCreation,
+    cache_read_tokens: cacheRead,
+    total_tokens: input + output + cacheCreation + cacheRead,
+  };
+  if (!existing || candidate.total_tokens > existing.total_tokens) state.completionUsage.set(key, candidate);
 }
 
 function recordProviderErrors(event: PiEvent, state: PiEventFilterState): void {
@@ -465,6 +533,17 @@ function recordToolExecution(event: PiEvent, state: PiEventFilterState): void {
   if (event.type === 'tool_execution_end') {
     state.aggregator.recordToolEnd();
     state.toolReliability.recordToolEnd(extractToolOutput(event));
+    const name = extractToolName(event) || 'unknown';
+    const bytes = toolOutputBytes(event);
+    const estimatedTokens = Math.ceil(bytes / 4);
+    const stats = state.toolOutputUsage.by_tool[name] ?? { results: 0, bytes: 0, estimated_tokens: 0 };
+    stats.results++;
+    stats.bytes += bytes;
+    stats.estimated_tokens += estimatedTokens;
+    state.toolOutputUsage.by_tool[name] = stats;
+    state.toolOutputUsage.total_results++;
+    state.toolOutputUsage.total_bytes += bytes;
+    state.toolOutputUsage.estimated_tokens += estimatedTokens;
   }
 }
 
@@ -534,6 +613,8 @@ function buildSummary(state: PiEventFilterState): Summary {
     token_usage: tokenSummary,
     model_token_stats: modelStats,
     phase_token_stats: phaseStats,
+    completion_usage: [...state.completionUsage.values()],
+    tool_output_usage: state.toolOutputUsage,
     inference_health: inferenceHealth,
     model_reliability: buildModelReliability(modelStats, state.providerErrors),
     ...(state.providerErrors.length > 0 ? { provider_errors: state.providerErrors, primary_provider_error: state.providerErrors[0] } : {}),
