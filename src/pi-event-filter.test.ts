@@ -1031,5 +1031,23 @@ describe('pi-event-filter fast correctness tests', () => {
         by_tool: { read: { results: 1, bytes: 40, estimated_tokens: 10 } },
       }));
     });
+
+    test('accepts camelCase and snake_case response IDs, preferring the first string value', async () => {
+      const fixture = [
+        { responseId: 'camel-id', response_id: 'snake-id' },
+        { response_id: 'snake-only-id' },
+        { responseId: 42, response_id: 'snake-fallback-id' },
+      ].map((message) => JSON.stringify({
+        type: 'message_end',
+        message: { role: 'assistant', model: 'gateway-model', usage: { input: 1, output: 1 }, ...message },
+      }));
+
+      const result = await runFilter(fixture);
+      expect(result.summary.completion_usage.map((usage: { response_id: string }) => usage.response_id)).toEqual([
+        'camel-id',
+        'snake-only-id',
+        'snake-fallback-id',
+      ]);
+    });
   });
 });
