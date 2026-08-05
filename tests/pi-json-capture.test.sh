@@ -19,6 +19,35 @@ run_pi_capture_fixture() {
   local raw_events_file="$1"
   PATH="$fake_bin:$PATH" KASEKI_RESULTS_DIR="$tmp_dir/results" KASEKI_PROVIDER=gateway llm_gateway_api_key=test llm_gateway_url=https://example.invalid bash -c ". scripts/lib/pi-json-capture.sh; emit_error_event() { printf 'emit_error_event %s\n' "\$*" >> '$tmp_dir/results/events.log'; }; run_pi_json_capture '$raw_events_file' 60 auto 'test prompt'"
 }
+run_phase_tool_manifest_test() {
+  echo "TEST 6A: Pi capture uses phase-specific tool manifests"
+  tmp_dir=$(mktemp -d)
+  trap cleanup_tmp_dir EXIT
+  fake_bin="$tmp_dir/bin"
+  mkdir -p "$fake_bin" "$tmp_dir/results"
+  cat > "$fake_bin/pi" <<'BASH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$KASEKI_RESULTS_DIR/pi-args.log"
+printf '{"type":"agent_end"}\n'
+BASH
+  chmod +x "$fake_bin/pi"
+  cat > "$fake_bin/kaseki-pi-progress-stream" <<'BASH'
+#!/usr/bin/env bash
+cat >/dev/null
+BASH
+  chmod +x "$fake_bin/kaseki-pi-progress-stream"
+  make_timeout_passthrough "$fake_bin/timeout"
+
+  PATH="$fake_bin:$PATH" KASEKI_RESULTS_DIR="$tmp_dir/results" KASEKI_PROVIDER=gateway KASEKI_INFERENCE_PHASE=goal-check bash -c ". scripts/lib/pi-json-capture.sh; emit_error_event() { :; }; run_pi_json_capture '$tmp_dir/raw.jsonl' 60 auto 'test prompt'"
+  grep -q -- '--tools read,search' "$tmp_dir/results/pi-args.log" || fail "Pi phase tools" "goal-check did not use read-only tools"
+  if grep -Eq -- '--tools .*\b(write|bash)\b' "$tmp_dir/results/pi-args.log"; then
+    fail "Pi phase tools" "goal-check received a mutation or shell tool"
+  fi
+  grep -q 'Tool-output budget:' "$tmp_dir/results/pi-args.log" || fail "Pi output budget" "bounded-output instruction was not supplied"
+  rm -rf "$tmp_dir"; tmp_dir=""; trap - EXIT
+  echo "  ✓ PASS: Pi phase-specific tools and output budget are applied"
+  echo ""
+}
 run_pi_json_capture_progress_failure_test() {
   echo "SECTION: Pi JSON capture behavior"
   echo "TEST 6: Pi JSON capture preserves raw events when progress stream fails"
@@ -64,4 +93,5 @@ BASH
   echo ""
 }
 
+run_phase_tool_manifest_test
 run_pi_json_capture_progress_failure_test

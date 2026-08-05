@@ -967,5 +967,41 @@ describe('pi-event-filter fast correctness tests', () => {
       // SHOULD have provider_empty_assistant_turn error (legitimate empty response)
       expect(result.summary.primary_provider_error?.type).toBe('provider_empty_assistant_turn');
     });
+
+    test('records one provider usage ledger entry per response and tool-output pressure', async () => {
+      const fixture = [
+        JSON.stringify({
+          type: 'tool_execution_end',
+          tool_name: 'read',
+          result: 'x'.repeat(40),
+          message: { model: 'gateway-model', api: 'openai-completions' },
+        }),
+        JSON.stringify({
+          type: 'message_end',
+          message: {
+            role: 'assistant', model: 'gateway-model', responseId: 'resp-usage',
+            usage: { input: 120, output: 30, cacheRead: 40, cacheWrite: 10 },
+          },
+        }),
+        // Streaming implementations can repeat cumulative usage on a final event.
+        JSON.stringify({
+          type: 'message_end',
+          message: {
+            role: 'assistant', model: 'gateway-model', responseId: 'resp-usage',
+            usage: { input: 120, output: 30, cacheRead: 40, cacheWrite: 10 },
+          },
+        }),
+      ];
+
+      const result = await runFilter(fixture);
+      expect(result.summary.completion_usage).toEqual([expect.objectContaining({
+        response_id: 'resp-usage', input_tokens: 120, output_tokens: 30,
+        cache_read_tokens: 40, cache_creation_tokens: 10, total_tokens: 200,
+      })]);
+      expect(result.summary.tool_output_usage).toEqual(expect.objectContaining({
+        total_results: 1, total_bytes: 40, estimated_tokens: 10,
+        by_tool: { read: { results: 1, bytes: 40, estimated_tokens: 10 } },
+      }));
+    });
   });
 });
