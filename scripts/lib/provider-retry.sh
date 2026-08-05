@@ -536,12 +536,22 @@ try { summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8')); } catch {}
 const error = summary.primary_provider_error || (Array.isArray(summary.provider_errors) ? summary.provider_errors[0] : null);
 const retryable = error?.retryable === true || error?.type === 'provider_empty_assistant_turn';
 
-// Extract token usage from summary
+// Extract token usage from the event filter summary. These are separate
+// dimensions: cache reads are context sent to the model, but are often billed
+// differently from uncached input. Never collapse them into a misleading
+// single "input" figure.
 const tokens = summary.token_usage || summary.tokens || summary.usage || {};
+const uncachedInput = tokens.total_input_tokens ?? tokens.input_tokens ?? tokens.prompt_tokens ?? 0;
+const output = tokens.total_output_tokens ?? tokens.output_tokens ?? tokens.completion_tokens ?? 0;
+const cacheRead = tokens.total_cache_read_tokens ?? tokens.cache_read_tokens ?? 0;
+const cacheCreation = tokens.total_cache_creation_tokens ?? tokens.cache_creation_tokens ?? 0;
 const tokenInfo = {
-  input_tokens: tokens.input_tokens || tokens.prompt_tokens || 0,
-  output_tokens: tokens.output_tokens || tokens.completion_tokens || 0,
-  total_tokens: tokens.total_tokens || 0,
+  uncached_input_tokens: uncachedInput,
+  cache_read_tokens: cacheRead,
+  cache_creation_tokens: cacheCreation,
+  output_tokens: output,
+  context_tokens: uncachedInput + cacheRead + cacheCreation,
+  total_tokens: tokens.total_tokens ?? (uncachedInput + cacheRead + cacheCreation + output),
 };
 
 // Extract timing info if available
@@ -701,6 +711,8 @@ run_pi_with_retry() {
       kaseki-pi-event-filter "$raw_events_file" "${KASEKI_RESULTS_DIR}/goal-setting-events.jsonl" "$summary_file" 2>/dev/null || true
     elif [ "$summary_file_base" = "goal-check-summary" ]; then
       kaseki-pi-event-filter "$raw_events_file" "${KASEKI_RESULTS_DIR}/goal-check-events.jsonl" "$summary_file" 2>/dev/null || true
+    elif [ "$summary_file_base" = "run-evaluation-summary" ]; then
+      kaseki-pi-event-filter "$raw_events_file" "${KASEKI_RESULTS_DIR}/run-evaluation-events.jsonl" "$summary_file" 2>/dev/null || true
     else
       cp "$raw_events_file" "${summary_file_base}.jsonl" 2>/dev/null || true
     fi
@@ -806,11 +818,11 @@ Retry request identity: $KASEKI_INFERENCE_REQUEST_ID. Treat this as a fresh infe
       local attempt1_latency="" attempt2_latency="" attempt1_tokens="" attempt2_tokens=""
       if [ -f "${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}/primary-1.json" ]; then
         attempt1_latency="$(jq -r '.timing.latency_ms // "unknown"' "${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}/primary-1.json" 2>/dev/null || echo "unknown")"
-        attempt1_tokens="$(jq -r '.tokens | "input:\(.input_tokens),output:\(.output_tokens)"' "${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}/primary-1.json" 2>/dev/null || echo "unknown")"
+        attempt1_tokens="$(jq -r '.tokens | "uncached_input:\(.uncached_input_tokens),cache_read:\(.cache_read_tokens),output:\(.output_tokens)"' "${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}/primary-1.json" 2>/dev/null || echo "unknown")"
       fi
       if [ -f "${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}/primary-2.json" ]; then
         attempt2_latency="$(jq -r '.timing.latency_ms // "unknown"' "${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}/primary-2.json" 2>/dev/null || echo "unknown")"
-        attempt2_tokens="$(jq -r '.tokens | "input:\(.input_tokens),output:\(.output_tokens)"' "${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}/primary-2.json" 2>/dev/null || echo "unknown")"
+        attempt2_tokens="$(jq -r '.tokens | "uncached_input:\(.uncached_input_tokens),cache_read:\(.cache_read_tokens),output:\(.output_tokens)"' "${KASEKI_RESULTS_DIR}/provider-attempts/${phase_name}/primary-2.json" 2>/dev/null || echo "unknown")"
       fi
       
       if [ -n "$primary_response_id" ] && [ "$retry_response_id" = "$primary_response_id" ]; then

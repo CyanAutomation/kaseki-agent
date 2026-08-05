@@ -83,6 +83,7 @@ interface InferenceHealthSummary {
   provider_error_count: number;
   malformed_tool_call_count: number;
   prompt_token_budget: number;
+  largest_context_tokens: number;
   prompt_token_budget_exceeded: boolean;
   context_compaction_recommended: boolean;
 }
@@ -580,6 +581,12 @@ function buildSummary(state: PiEventFilterState): Summary {
   const modelStats = state.tokenUsage.getModelStats();
   const phaseStats = state.tokenUsage.getPhaseStats();
   const promptTokenBudget = positiveIntEnv('KASEKI_PROMPT_TOKEN_WARN_THRESHOLD', 20_000);
+  // Compaction is a per-request decision. A run with many short turns should
+  // not be flagged merely because its aggregate usage is high, while a single
+  // uncached 45k-token request must be flagged immediately.
+  const largestContextTokens = Math.max(0, ...state.completionUsage.values().map((usage) =>
+    usage.input_tokens + usage.cache_creation_tokens + usage.cache_read_tokens,
+  ));
   const malformedToolCallCount = state.providerErrors.filter((error) => error.type === 'malformed_tool_call').length;
   const inferenceHealth: InferenceHealthSummary = {
     transport_success: state.invalidJsonLines === 0,
@@ -589,8 +596,9 @@ function buildSummary(state: PiEventFilterState): Summary {
     provider_error_count: state.providerErrors.length,
     malformed_tool_call_count: malformedToolCallCount,
     prompt_token_budget: promptTokenBudget,
-    prompt_token_budget_exceeded: tokenSummary.total_input_tokens > promptTokenBudget,
-    context_compaction_recommended: tokenSummary.total_input_tokens > promptTokenBudget,
+    largest_context_tokens: largestContextTokens,
+    prompt_token_budget_exceeded: largestContextTokens > promptTokenBudget,
+    context_compaction_recommended: largestContextTokens > promptTokenBudget,
   };
   return {
     ...state.aggregator.summary(),

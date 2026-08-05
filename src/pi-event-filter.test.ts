@@ -539,9 +539,36 @@ describe('pi-event-filter fast correctness tests', () => {
         input_tokens: 150,
         output_tokens: 25,
         inference_health: {
+          largest_context_tokens: 150,
           prompt_token_budget_exceeded: true,
           context_compaction_recommended: true,
         },
+      });
+    } finally {
+      if (previousThreshold === undefined) delete process.env.KASEKI_PROMPT_TOKEN_WARN_THRESHOLD;
+      else process.env.KASEKI_PROMPT_TOKEN_WARN_THRESHOLD = previousThreshold;
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test('does not recommend compaction solely from aggregate usage across small turns', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-context-budget-'));
+    const inputPath = path.join(tmpDir, 'in.jsonl');
+    const outputPath = path.join(tmpDir, 'out.jsonl');
+    const summaryPath = path.join(tmpDir, 'pi-summary.json');
+    const previousThreshold = process.env.KASEKI_PROMPT_TOKEN_WARN_THRESHOLD;
+    process.env.KASEKI_PROMPT_TOKEN_WARN_THRESHOLD = '100';
+    try {
+      fs.writeFileSync(inputPath, [
+        { type: 'message_end', message: { response_id: 'turn-1', model: 'coding-model', api: 'gateway', usage: { prompt_tokens: 75, completion_tokens: 10 } } },
+        { type: 'message_end', message: { response_id: 'turn-2', model: 'coding-model', api: 'gateway', usage: { prompt_tokens: 75, completion_tokens: 10 } } },
+      ].map(JSON.stringify).join('\n') + '\n');
+      const result = await runPiEventFilter(inputPath, outputPath, summaryPath);
+      expect(result.summary.token_usage?.total_input_tokens).toBe(150);
+      expect(result.summary.inference_health).toMatchObject({
+        largest_context_tokens: 75,
+        prompt_token_budget_exceeded: false,
+        context_compaction_recommended: false,
       });
     } finally {
       if (previousThreshold === undefined) delete process.env.KASEKI_PROMPT_TOKEN_WARN_THRESHOLD;
