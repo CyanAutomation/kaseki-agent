@@ -563,9 +563,10 @@ describe('pi-event-filter fast correctness tests', () => {
         { type: 'message_end', message: { response_id: 'turn-1', model: 'coding-model', api: 'gateway', usage: { prompt_tokens: 75, completion_tokens: 10 } } },
         { type: 'message_end', message: { response_id: 'turn-2', model: 'coding-model', api: 'gateway', usage: { prompt_tokens: 75, completion_tokens: 10 } } },
       ].map(JSON.stringify).join('\n') + '\n');
-      const result = await runPiEventFilter(inputPath, outputPath, summaryPath);
-      expect(result.summary.token_usage?.total_input_tokens).toBe(150);
-      expect(result.summary.inference_health).toMatchObject({
+      await runPiEventFilter(inputPath, outputPath, summaryPath);
+      const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+      expect(summary.token_usage?.total_input_tokens).toBe(150);
+      expect(summary.inference_health).toMatchObject({
         largest_context_tokens: 75,
         prompt_token_budget_exceeded: false,
         context_compaction_recommended: false,
