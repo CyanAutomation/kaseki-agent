@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.123.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.123.1...v1.123.2) (2026-08-05)
+
+
+### Bug Fixes
+
+* accept snake case Pi response IDs ([2426a79](https://github.com/CyanAutomation/kaseki-agent/commit/2426a79e79b814a751c40c1e8134c3ac4d5d0fe4))
+
 ## [1.123.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.123.0...v1.123.1) (2026-08-04)
 
 
