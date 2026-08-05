@@ -335,6 +335,7 @@ KASEKI_GOAL_CHECK="${KASEKI_GOAL_CHECK:-$KASEKI_SCOUTING}"
 KASEKI_GOAL_CHECK_MAX_RETRIES="${KASEKI_GOAL_CHECK_MAX_RETRIES:-1}"
 KASEKI_GOAL_CHECK_MODEL="${KASEKI_GOAL_CHECK_MODEL:-$KASEKI_SCOUTING_MODEL}"
 KASEKI_GOAL_CHECK_TIMEOUT_SECONDS="${KASEKI_GOAL_CHECK_TIMEOUT_SECONDS:-$KASEKI_SCOUTING_TIMEOUT_SECONDS}"
+KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS:-$KASEKI_SCOUTING_MAX_OUTPUT_TOKENS}"
 kaseki_apply_inspect_mode_agent_defaults
 KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-pr}"
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-1}"
@@ -357,6 +358,7 @@ if [ -z "${KASEKI_RUN_EVALUATION+x}" ]; then
 fi
 KASEKI_RUN_EVALUATION_MODEL="${KASEKI_RUN_EVALUATION_MODEL:-$KASEKI_GOAL_CHECK_MODEL}"
 KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS="${KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS:-300}"
+KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS="${KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS:-$KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS}"
 INSTANCE_NAME="${KASEKI_INSTANCE:-kaseki}"
 kaseki_apply_task_mode_diff_defaults
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
@@ -5314,7 +5316,7 @@ run_goal_setting_agent() {
   fi
 
   goal_setting_prompt="$(build_goal_setting_prompt)"
-  record_prompt_diagnostics "goal-setting" "$goal_setting_prompt" "$KASEKI_GOAL_SETTING_MODEL" "$KASEKI_GOAL_SETTING_MAX_OUTPUT_TOKENS"
+  record_prompt_diagnostics "goal-setting" "$goal_setting_prompt" "$KASEKI_GOAL_SETTING_MODEL" "${KASEKI_GOAL_SETTING_MAX_OUTPUT_TOKENS:-}"
   goal_setting_start="$(date +%s)"
   
   set +e
@@ -5956,12 +5958,12 @@ run_scouting_agent() {
   fi
 
   scouting_prompt="$(build_scouting_prompt)"
-  record_prompt_diagnostics "scouting" "$scouting_prompt" "$KASEKI_SCOUTING_MODEL" "$KASEKI_SCOUTING_MAX_OUTPUT_TOKENS"
+  record_prompt_diagnostics "scouting" "$scouting_prompt" "$KASEKI_SCOUTING_MODEL" "${KASEKI_SCOUTING_MAX_OUTPUT_TOKENS:-}"
   scouting_start="$(date +%s)"
   scout_dirty_before="$(git status --porcelain 2>/dev/null || true)"
   chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
-  LLM_GATEWAY_MAX_OUTPUT_TOKENS="$KASEKI_SCOUTING_MAX_OUTPUT_TOKENS"
+  LLM_GATEWAY_MAX_OUTPUT_TOKENS="${KASEKI_SCOUTING_MAX_OUTPUT_TOKENS:-}"
   export LLM_GATEWAY_MAX_OUTPUT_TOKENS
   run_pi_with_retry "$SCOUTING_RAW_EVENTS" "$KASEKI_SCOUTING_TIMEOUT_SECONDS" "$KASEKI_SCOUTING_MODEL" "$scouting_prompt" "scouting-summary" "" "scouting"
   SCOUTING_EXIT="$?"
@@ -6325,7 +6327,7 @@ run_goal_check() {
   fi
 
   goal_prompt="$(build_goal_check_prompt)"
-  record_prompt_diagnostics "goal-check" "$goal_prompt" "$KASEKI_GOAL_CHECK_MODEL" "$KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS"
+  record_prompt_diagnostics "goal-check" "$goal_prompt" "$KASEKI_GOAL_CHECK_MODEL" "${KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS:-}"
   goal_start="$(date +%s)"
   set +e
   run_pi_with_retry "$GOAL_CHECK_RAW_EVENTS" "$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS" "$KASEKI_GOAL_CHECK_MODEL" "$goal_prompt" "goal-check-summary" "" "goal-check"
@@ -6565,7 +6567,7 @@ run_run_evaluation() {
   emit_progress "run evaluation" "started"
   write_metadata "$STATUS"
   evaluation_prompt="$(build_run_evaluation_prompt)"
-  record_prompt_diagnostics "run-evaluation" "$evaluation_prompt" "$KASEKI_RUN_EVALUATION_MODEL" "$KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS"
+  record_prompt_diagnostics "run-evaluation" "$evaluation_prompt" "$KASEKI_RUN_EVALUATION_MODEL" "${KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS:-}"
   evaluation_start="$(date +%s)"
   eval_dirty_before="$(git status --porcelain 2>/dev/null || true)"
   chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
@@ -8866,7 +8868,7 @@ NODE
   fi
   
   agent_prompt="$(build_agent_prompt)"
-  record_prompt_diagnostics "coding" "$agent_prompt" "$KASEKI_MODEL" "$KASEKI_MAX_OUTPUT_TOKENS"
+  record_prompt_diagnostics "coding" "$agent_prompt" "$KASEKI_MODEL" "${KASEKI_MAX_OUTPUT_TOKENS:-}"
   PI_START_EPOCH="$(date +%s)"
   run_pi_with_retry "$RAW_EVENTS" "$KASEKI_AGENT_TIMEOUT_SECONDS" "$KASEKI_MODEL" "$agent_prompt" "pi-summary" "${KASEKI_RESULTS_DIR}/pi-stderr.log" "pi coding"
   PI_EXIT="$?"
