@@ -324,7 +324,10 @@ fi
 KASEKI_SCOUTING="${KASEKI_SCOUTING:-1}"
 KASEKI_SCOUTING_MODEL="${KASEKI_SCOUTING_MODEL:-$KASEKI_MODEL}"
 KASEKI_SCOUTING_TIMEOUT_SECONDS="${KASEKI_SCOUTING_TIMEOUT_SECONDS:-$KASEKI_AGENT_TIMEOUT_SECONDS}"
-KASEKI_SCOUTING_MAX_OUTPUT_TOKENS="${KASEKI_SCOUTING_MAX_OUTPUT_TOKENS:-3072}"
+# These phases produce compact hand-off artifacts, not user-facing prose. Keep
+# their default ceilings small so a malformed or overly-chatty evaluator does
+# not consume a coding-sized output budget.
+KASEKI_SCOUTING_MAX_OUTPUT_TOKENS="${KASEKI_SCOUTING_MAX_OUTPUT_TOKENS:-2048}"
 KASEKI_SCOUTING_PROMPT_DETAIL="${KASEKI_SCOUTING_PROMPT_DETAIL:-compact}"
 KASEKI_HASHLINE_EDITS="${KASEKI_HASHLINE_EDITS:-1}"
 KASEKI_GOAL_SETTING="${KASEKI_GOAL_SETTING:-1}"
@@ -335,7 +338,7 @@ KASEKI_GOAL_CHECK="${KASEKI_GOAL_CHECK:-$KASEKI_SCOUTING}"
 KASEKI_GOAL_CHECK_MAX_RETRIES="${KASEKI_GOAL_CHECK_MAX_RETRIES:-1}"
 KASEKI_GOAL_CHECK_MODEL="${KASEKI_GOAL_CHECK_MODEL:-$KASEKI_SCOUTING_MODEL}"
 KASEKI_GOAL_CHECK_TIMEOUT_SECONDS="${KASEKI_GOAL_CHECK_TIMEOUT_SECONDS:-$KASEKI_SCOUTING_TIMEOUT_SECONDS}"
-KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS:-$KASEKI_SCOUTING_MAX_OUTPUT_TOKENS}"
+KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS:-1536}"
 kaseki_apply_inspect_mode_agent_defaults
 KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-pr}"
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-1}"
@@ -358,7 +361,10 @@ if [ -z "${KASEKI_RUN_EVALUATION+x}" ]; then
 fi
 KASEKI_RUN_EVALUATION_MODEL="${KASEKI_RUN_EVALUATION_MODEL:-$KASEKI_GOAL_CHECK_MODEL}"
 KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS="${KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS:-300}"
-KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS="${KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS:-$KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS}"
+KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS="${KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS:-1024}"
+# A failed run already has a deterministic failure artifact. Do not spend an
+# additional long evaluator turn unless an operator explicitly opts in.
+KASEKI_RUN_EVALUATION_ON_FAILURE="${KASEKI_RUN_EVALUATION_ON_FAILURE:-0}"
 INSTANCE_NAME="${KASEKI_INSTANCE:-kaseki}"
 kaseki_apply_task_mode_diff_defaults
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
@@ -2760,6 +2766,36 @@ merge_allowlists() {
   fi
   
   printf '%s' "$merged_patterns"
+}
+
+admit_goal_check_retry_files() {
+  # A goal-check retry prompt is the one source that can name a newly required
+  # file after scouting. Admit only safe repo-relative paths from that prompt
+  # before the next coding attempt, so allowlist restoration cannot erase the
+  # very repair the evaluator requested (kaseki-244).
+  local retry_prompt="$1" retry_files
+  [ -n "$retry_prompt" ] || return 0
+  retry_files="$(node - "$retry_prompt" <<'NODE'
+const input = process.argv[2] || '';
+{
+  const matches = input.matchAll(/(?<![A-Za-z0-9_.-])([A-Za-z0-9_@.+,-]+(?:\/[A-Za-z0-9_@.+,-]+)+)(?![A-Za-z0-9_.-])/g);
+  const files = [...matches]
+    // Prompts commonly put a path before a comma or full stop. Preserve the
+    // file extension while removing only that sentence punctuation.
+    .map((match) => match[1].replace(/([A-Za-z0-9_-])[.,;:!?]+$/, '$1'))
+    .filter((file) => !file.startsWith('/') && !file.split('/').includes('..'));
+  process.stdout.write([...new Set(files)].join(' '));
+}
+NODE
+)"
+  [ -n "$retry_files" ] || return 0
+  KASEKI_CHANGED_FILES_ALLOWLIST="$(merge_allowlists "${KASEKI_CHANGED_FILES_ALLOWLIST:-}" "$retry_files")"
+  export KASEKI_CHANGED_FILES_ALLOWLIST
+  append_jsonl_object "${KASEKI_RESULTS_DIR}"/metadata.jsonl \
+    "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "event=goal_check_retry_allowlist_admission" \
+    "files=$retry_files"
+  emit_progress "goal check" "admitted retry-requested file paths to coding allowlist"
 }
 
 run_scouting_allowlist_coverage() {
@@ -5320,10 +5356,12 @@ run_goal_setting_agent() {
   goal_setting_start="$(date +%s)"
   
   set +e
+  LLM_GATEWAY_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_SETTING_MAX_OUTPUT_TOKENS:-}"
+  export LLM_GATEWAY_MAX_OUTPUT_TOKENS
   run_pi_with_retry "$GOAL_SETTING_RAW_EVENTS" "$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS" "$KASEKI_GOAL_SETTING_MODEL" "$goal_setting_prompt" "goal-setting-summary" "" "goal-setting"
   GOAL_SETTING_EXIT="$?"
   GOAL_SETTING_DURATION_SECONDS=$(($(date +%s) - goal_setting_start))
-  unset goal_setting_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
+  unset goal_setting_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL LLM_GATEWAY_MAX_OUTPUT_TOKENS
   set +e
 
   # Recover a candidate whenever the provider emitted usable JSON, even when Pi
@@ -6330,9 +6368,11 @@ run_goal_check() {
   record_prompt_diagnostics "goal-check" "$goal_prompt" "$KASEKI_GOAL_CHECK_MODEL" "${KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS:-}"
   goal_start="$(date +%s)"
   set +e
+  LLM_GATEWAY_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS:-}"
+  export LLM_GATEWAY_MAX_OUTPUT_TOKENS
   run_pi_with_retry "$GOAL_CHECK_RAW_EVENTS" "$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS" "$KASEKI_GOAL_CHECK_MODEL" "$goal_prompt" "goal-check-summary" "" "goal-check"
   GOAL_CHECK_EXIT="$?"
-  unset goal_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
+  unset goal_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL LLM_GATEWAY_MAX_OUTPUT_TOKENS
   GOAL_CHECK_DURATION_SECONDS=$((GOAL_CHECK_DURATION_SECONDS + $(date +%s) - goal_start))
   set +e
 
@@ -6563,6 +6603,13 @@ run_run_evaluation() {
     record_stage_timing "run evaluation" 0 0 "dry_run=true"
     return 0
   fi
+  if [ "$KASEKI_RUN_EVALUATION_ON_FAILURE" != "1" ] && [ "${STATUS:-0}" -ne 0 ]; then
+    RUN_EVALUATION_WARNING="skipped_failed_run"
+    write_run_evaluation_fallback "$RUN_EVALUATION_WARNING"
+    emit_progress "run evaluation" "skipped after failed run (set KASEKI_RUN_EVALUATION_ON_FAILURE=1 to override)"
+    record_stage_timing "run evaluation" 0 0 "$RUN_EVALUATION_WARNING"
+    return 0
+  fi
 
   emit_progress "run evaluation" "started"
   write_metadata "$STATUS"
@@ -6572,9 +6619,11 @@ run_run_evaluation() {
   eval_dirty_before="$(git status --porcelain 2>/dev/null || true)"
   chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
+  LLM_GATEWAY_MAX_OUTPUT_TOKENS="${KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS:-}"
+  export LLM_GATEWAY_MAX_OUTPUT_TOKENS
   run_pi_with_retry "$RUN_EVALUATION_RAW_EVENTS" "$KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS" "$KASEKI_RUN_EVALUATION_MODEL" "$evaluation_prompt" "run-evaluation-summary" "" "run-evaluation"
   RUN_EVALUATION_EXIT="$?"
-  unset evaluation_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
+  unset LLM_GATEWAY_API_KEY LLM_GATEWAY_URL LLM_GATEWAY_MAX_OUTPUT_TOKENS
   RUN_EVALUATION_DURATION_SECONDS=$((RUN_EVALUATION_DURATION_SECONDS + $(date +%s) - evaluation_start))
   chmod -R u+w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
@@ -6597,6 +6646,7 @@ Recovery attempt: the previous response did not satisfy the run-evaluation artif
       emit_error_event "run_evaluation_artifact_invalid" "Run-evaluation retry did not write a schema-valid JSON artifact" "continue"
     fi
   fi
+  unset evaluation_prompt evaluation_retry_prompt
   rm -f "$RUN_EVALUATION_CANDIDATE_ARTIFACT"
   kaseki-pi-event-filter "$RUN_EVALUATION_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/run-evaluation-events.jsonl "${KASEKI_RESULTS_DIR}"/run-evaluation-summary.json 2>/dev/null || true
   if capture_provider_error_from_summary "${KASEKI_RESULTS_DIR}/run-evaluation-summary.json" "run-evaluation"; then
@@ -9313,6 +9363,7 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && [
   if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ] && [ "$GOAL_CHECK_MET" != "true" ]; then
     snapshot_attempt_artifacts "$coding_attempt"
     if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
+      admit_goal_check_retry_files "${GOAL_CHECK_RETRY_PROMPT:-}"
       emit_progress "goal check" "retrying coding agent after post-validation unmet verdict (attempt $coding_attempt of $max_coding_attempts; reason=${GOAL_CHECK_FAILURE_REASON:-unmet})"
       coding_attempt=$((coding_attempt + 1))
       continue
