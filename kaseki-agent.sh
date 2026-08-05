@@ -5313,6 +5313,7 @@ run_goal_setting_agent() {
   fi
 
   goal_setting_prompt="$(build_goal_setting_prompt)"
+  record_prompt_diagnostics "goal-setting" "$goal_setting_prompt" "$KASEKI_GOAL_SETTING_MODEL" "$KASEKI_GOAL_SETTING_MAX_OUTPUT_TOKENS"
   goal_setting_start="$(date +%s)"
   
   set +e
@@ -5795,13 +5796,20 @@ record_prompt_diagnostics() {
   local prompt="$2"
   local model="$3"
   local max_output_tokens="${4:-}"
-  local prompt_file
+  local prompt_file tool_count
+
+  case "${phase}" in
+    goal-setting) tool_count=2 ;;
+    scouting) tool_count=3 ;;
+    goal-check|run-evaluation) tool_count=2 ;;
+    *) tool_count=5 ;;
+  esac
 
   prompt_file="$(mktemp 2>/dev/null || printf '/tmp/kaseki-prompt-diagnostics-%s.txt' "$$")"
   printf '%s' "$prompt" > "$prompt_file" 2>/dev/null || return 0
-  node - "$KASEKI_RESULTS_DIR/prompt-diagnostics.jsonl" "$phase" "$model" "$max_output_tokens" "$prompt_file" <<'NODE' 2>/dev/null || true
+  node - "$KASEKI_RESULTS_DIR/prompt-diagnostics.jsonl" "$phase" "$model" "$max_output_tokens" "$prompt_file" "$tool_count" <<'NODE' 2>/dev/null || true
 const fs = require('node:fs');
-const [file, phase, model, maxOutputTokens, promptFile] = process.argv.slice(2);
+const [file, phase, model, maxOutputTokens, promptFile, toolCount] = process.argv.slice(2);
 const prompt = fs.readFileSync(promptFile, 'utf8');
 const entry = {
   timestamp: new Date().toISOString(),
@@ -5812,7 +5820,7 @@ const entry = {
   estimated_prompt_tokens: Math.ceil(prompt.length / 4),
   max_output_tokens: maxOutputTokens ? Number(maxOutputTokens) : null,
   stream: true,
-  tool_count: 4,
+  tool_count: Number(toolCount),
 };
 fs.appendFileSync(file, JSON.stringify(entry) + '\n');
 NODE
@@ -6316,6 +6324,7 @@ run_goal_check() {
   fi
 
   goal_prompt="$(build_goal_check_prompt)"
+  record_prompt_diagnostics "goal-check" "$goal_prompt" "$KASEKI_GOAL_CHECK_MODEL" "$KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS"
   goal_start="$(date +%s)"
   set +e
   run_pi_with_retry "$GOAL_CHECK_RAW_EVENTS" "$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS" "$KASEKI_GOAL_CHECK_MODEL" "$goal_prompt" "goal-check-summary" "" "goal-check"
@@ -6555,6 +6564,7 @@ run_run_evaluation() {
   emit_progress "run evaluation" "started"
   write_metadata "$STATUS"
   evaluation_prompt="$(build_run_evaluation_prompt)"
+  record_prompt_diagnostics "run-evaluation" "$evaluation_prompt" "$KASEKI_RUN_EVALUATION_MODEL" "$KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS"
   evaluation_start="$(date +%s)"
   eval_dirty_before="$(git status --porcelain 2>/dev/null || true)"
   chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
@@ -8855,6 +8865,7 @@ NODE
   fi
   
   agent_prompt="$(build_agent_prompt)"
+  record_prompt_diagnostics "coding" "$agent_prompt" "$KASEKI_MODEL" "$KASEKI_MAX_OUTPUT_TOKENS"
   PI_START_EPOCH="$(date +%s)"
   run_pi_with_retry "$RAW_EVENTS" "$KASEKI_AGENT_TIMEOUT_SECONDS" "$KASEKI_MODEL" "$agent_prompt" "pi-summary" "${KASEKI_RESULTS_DIR}/pi-stderr.log" "pi coding"
   PI_EXIT="$?"
