@@ -41,7 +41,7 @@ run_pi_json_capture() {
   # targeted follow-up read.
   bounded_prompt="${prompt}
 
-Tool-output budget: keep each tool result under ${KASEKI_TOOL_OUTPUT_MAX_CHARS:-8000} characters. Use targeted reads/searches and bounded commands (for example head, tail, or a focused matcher). For large output, write the full result to /results and return a short structured summary containing the artifact path, byte size, hash, failures, and only the relevant excerpt. Do not re-read or repeat unchanged large output."
+Tool budget: each result <=${KASEKI_TOOL_OUTPUT_MAX_CHARS:-8000} chars. Read/search exact ranges. Large output -> /results; return path, bytes, hash, failures, relevant excerpt. Do not repeat unchanged output. Speak terse. Keep paths, commands, JSON, code, and errors exact."
 
   wait_for_progress_stream() {
     local pid="$1"
