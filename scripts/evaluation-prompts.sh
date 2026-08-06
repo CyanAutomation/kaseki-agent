@@ -132,6 +132,8 @@ $validation_context
 
 Progress log tail (last 80 lines):
 $progress_tail
+
+Return exactly one JSON object matching the schema below as your final assistant message. Do not write files, use markdown/code fences, or add prose; Kaseki validates and persists the verdict itself.
 EOF
   else
     # Verbose version (caveman level 0-1)
@@ -180,7 +182,9 @@ If goal not met, your retry_prompt must:
 2. Reference what agent already did (avoid re-doing work)
 3. Provide actionable next steps
 
-## Required JSON artifact
+## Required JSON response
+
+Return exactly one JSON object as the final assistant message. Do not write a file, use markdown/code fences, or include prose before/after the JSON. Kaseki validates and persists this response.
 
 {
   "met": true or false,

@@ -247,6 +247,7 @@ export type DiagnosticEntryPoint =
   | 'pi-events.jsonl'
   | 'pi-summary.json'
   | 'gateway-summary.json'
+  | 'token-ledger.jsonl'
   | 'progress-stream-diagnostics.log'
   | '.gateway-diagnostics.jsonl';
 

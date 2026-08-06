@@ -235,6 +235,24 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'token-ledger.jsonl': {
+    name: 'token-ledger.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Canonical per-response token and estimated-cost ledger keyed by response, phase, request, and retry attempt',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 1,
+    sizeHint: 'small',
+  },
+
+  'context-handoff.json': {
+    name: 'context-handoff.json',
+    contentType: 'application/json',
+    description: 'Optional compact structured handoff for continuing work with a fresh context; phase-budget targets remain advisory',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 1,
+    sizeHint: 'small',
+  },
+
   'prompt-diagnostics.jsonl': {
     name: 'prompt-diagnostics.jsonl',
     contentType: 'application/x-jsonl',

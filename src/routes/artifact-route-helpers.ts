@@ -320,9 +320,10 @@ function triageRank(
 
 function providerFailureTriageRank(artifactName: string, fallback: number | undefined): number {
   const ranks: Record<string, number> = {
-    '.gateway-diagnostics.jsonl': 0,
-    'provider-attempts.jsonl': 1,
-    'gateway-summary.json': 2,
+    'token-ledger.jsonl': 0,
+    '.gateway-diagnostics.jsonl': 1,
+    'provider-attempts.jsonl': 2,
+    'gateway-summary.json': 3,
     'git.diff': 3,
     'failure.json': 4,
     'result-summary.md': 5,
