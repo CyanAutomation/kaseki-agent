@@ -1535,6 +1535,10 @@ const controllerPage = String.raw`<!doctype html>
             <span class="summary-label">Key Diagnostics</span>
             <div class="link-grid" id="recommended-artifact-links"></div>
           </div>
+          <div class="recommended-artifacts" id="token-timeline" hidden>
+            <span class="summary-label">Token timeline</span>
+            <pre class="response-log" id="token-timeline-output"></pre>
+          </div>
         </div>
         <div class="response-panel">
           <p class="response-meta" id="output-meta" aria-live="polite">Status: idle</p>
@@ -1585,6 +1589,8 @@ const controllerPage = String.raw`<!doctype html>
       const runIdInput = document.querySelector('#run-id');
       const runLinks = document.querySelector('#run-links');
       const recommendedArtifacts = document.querySelector('#recommended-artifacts');
+      const tokenTimeline = document.querySelector('#token-timeline');
+      const tokenTimelineOutput = document.querySelector('#token-timeline-output');
       const recommendedArtifactLinks = document.querySelector('#recommended-artifact-links');
       const copyDiagnosticBundleBtn = document.querySelector('#copy-diagnostic-bundle-btn');
       const headerStatus = document.querySelector('#header-status');
@@ -2389,6 +2395,8 @@ const controllerPage = String.raw`<!doctype html>
         runLinks.hidden = true;
         recommendedArtifacts.hidden = true;
         if (recommendedArtifactLinks) recommendedArtifactLinks.replaceChildren();
+        if (tokenTimeline) tokenTimeline.hidden = true;
+        if (tokenTimelineOutput) tokenTimelineOutput.textContent = '';
         activeRunView = null;
       }
 
@@ -2508,9 +2516,34 @@ const controllerPage = String.raw`<!doctype html>
           if (pageDisposed) return;
           if (result.response.ok) {
             showRecommendedArtifacts(runId, result.payload);
+            loadTokenTimeline(runId);
           }
         } catch {
           if (recommendedArtifacts) recommendedArtifacts.hidden = true;
+        }
+      }
+
+      async function loadTokenTimeline(runId) {
+        if (!tokenTimeline || !tokenTimelineOutput || !runId) return;
+        try {
+          const result = await apiRequest(artifactUrl(runId, 'token-ledger.jsonl'), { auth: true, preserveOutput: true });
+          const content = result.payload && typeof result.payload.content === 'string' ? result.payload.content : '';
+          const entries = content.split(/\r?\n/).filter(Boolean).flatMap((line) => {
+            try { return [JSON.parse(line)]; } catch { return []; }
+          });
+          if (!entries.length) { tokenTimeline.hidden = true; return; }
+          tokenTimelineOutput.textContent = entries.map((entry) => {
+            const context = Number(entry.context_tokens || 0).toLocaleString();
+            const uncached = Number(entry.input_tokens || 0).toLocaleString();
+            const cached = Number(entry.cache_read_tokens || 0).toLocaleString();
+            const output = Number(entry.output_tokens || 0).toLocaleString();
+            const cost = typeof entry.estimated_cost_usd === 'number' ? ' | $' + entry.estimated_cost_usd.toFixed(4) : '';
+            return [entry.phase || 'unknown', entry.attempt_id || 'attempt', entry.response_id || 'response'].join(' · ')
+              + '\\n  context ' + context + ' | uncached ' + uncached + ' | cache ' + cached + ' | output ' + output + cost;
+          }).join('\\n');
+          tokenTimeline.hidden = false;
+        } catch {
+          tokenTimeline.hidden = true;
         }
       }
 
@@ -2580,6 +2613,13 @@ const controllerPage = String.raw`<!doctype html>
             updateCancelRunButtonState();
             showRunLinks(run.id);
             activeRunView = 'status';
+            // A previously rendered task-validation response is not evidence
+            // about this run. Reset it before the status request begins so a
+            // failed run can never be shown beside stale success JSON.
+            setOutputMetadata('loading', run.id);
+            setResponseSummary(null);
+            setOutputBody('Loading status for ' + run.id + '...');
+            setState('Loading selected run...');
             pollRun(run.id);
           });
           runsList.appendChild(button);

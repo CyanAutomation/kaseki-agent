@@ -44,6 +44,7 @@ interface Summary {
   provider_errors?: ProviderErrorSummary[];
   primary_provider_error?: ProviderErrorSummary;
   inference_health?: InferenceHealthSummary;
+  phase_budget?: PhaseBudgetSummary;
   model_reliability?: Record<string, ModelReliabilitySummary>;
   artifact_retention?: {
     retained_bytes: number;
@@ -58,6 +59,9 @@ interface Summary {
 /** Usage reported by the provider for one completed assistant response. */
 interface ProviderCompletionUsage {
   phase: string;
+  /** Stable orchestration attempt identity, distinct from the provider response ID. */
+  attempt_id?: string;
+  request_id?: string;
   turn: number;
   response_id?: string;
   model: string;
@@ -66,6 +70,12 @@ interface ProviderCompletionUsage {
   cache_creation_tokens: number;
   cache_read_tokens: number;
   total_tokens: number;
+}
+
+interface TokenLedgerEntry extends ProviderCompletionUsage {
+  context_tokens: number;
+  estimated_cost_usd: number | null;
+  pricing_source: 'configured' | 'unpriced';
 }
 
 interface ToolOutputUsageSummary {
@@ -88,6 +98,18 @@ interface InferenceHealthSummary {
   context_compaction_recommended: boolean;
 }
 
+interface PhaseBudgetSummary {
+  /** Budgets are advisory targets: they are reported, never enforced as run limits. */
+  enforcement: 'soft_target';
+  max_context_tokens: number;
+  max_turns: number;
+  max_tool_output_tokens: number;
+  context_exceeded: boolean;
+  turns_exceeded: boolean;
+  tool_output_exceeded: boolean;
+  exceeded: boolean;
+}
+
 interface ModelReliabilitySummary {
   input_tokens: number;
   output_tokens: number;
@@ -99,6 +121,11 @@ interface ModelReliabilitySummary {
 function positiveIntEnv(name: string, fallback: number): number {
   const value = Number.parseInt(process.env[name] || '', 10);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function nonNegativeNumberEnv(name: string): number | null {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 const MAX_FILTERED_EVENT_BYTES = positiveIntEnv('KASEKI_PI_EVENT_MAX_BYTES', 256 * 1024);
@@ -479,6 +506,8 @@ function recordCompletionUsage(event: PiEvent, usage: any, state: PiEventFilterS
   const existing = state.completionUsage.get(key);
   const candidate: ProviderCompletionUsage = {
     phase: process.env.KASEKI_INFERENCE_PHASE || 'unknown',
+    attempt_id: process.env.KASEKI_INFERENCE_ATTEMPT || undefined,
+    request_id: process.env.KASEKI_INFERENCE_REQUEST_ID || undefined,
     turn: state.completionUsage.size + (existing ? 0 : 1),
     ...(responseId ? { response_id: responseId } : {}),
     model: extractModelName(event),
@@ -489,6 +518,22 @@ function recordCompletionUsage(event: PiEvent, usage: any, state: PiEventFilterS
     total_tokens: input + output + cacheCreation + cacheRead,
   };
   if (!existing || candidate.total_tokens > existing.total_tokens) state.completionUsage.set(key, candidate);
+}
+
+function buildTokenLedger(completions: Iterable<ProviderCompletionUsage>): TokenLedgerEntry[] {
+  const inputPrice = nonNegativeNumberEnv('KASEKI_LLM_INPUT_USD_PER_MTOKEN');
+  const cacheReadPrice = nonNegativeNumberEnv('KASEKI_LLM_CACHE_READ_USD_PER_MTOKEN');
+  const cacheWritePrice = nonNegativeNumberEnv('KASEKI_LLM_CACHE_WRITE_USD_PER_MTOKEN');
+  const outputPrice = nonNegativeNumberEnv('KASEKI_LLM_OUTPUT_USD_PER_MTOKEN');
+  const priced = [inputPrice, cacheReadPrice, cacheWritePrice, outputPrice].every((value) => value !== null);
+  return Array.from(completions, (completion) => {
+    const context_tokens = completion.input_tokens + completion.cache_creation_tokens + completion.cache_read_tokens;
+    const estimated_cost_usd = priced
+      ? ((completion.input_tokens * inputPrice! + completion.cache_read_tokens * cacheReadPrice!
+        + completion.cache_creation_tokens * cacheWritePrice! + completion.output_tokens * outputPrice!) / 1_000_000)
+      : null;
+    return { ...completion, context_tokens, estimated_cost_usd, pricing_source: priced ? 'configured' : 'unpriced' };
+  });
 }
 
 /**
@@ -651,6 +696,20 @@ function buildSummary(state: PiEventFilterState): Summary {
     prompt_token_budget_exceeded: largestContextTokens > promptTokenBudget,
     context_compaction_recommended: largestContextTokens > promptTokenBudget,
   };
+  const phaseBudget: PhaseBudgetSummary = {
+    enforcement: 'soft_target',
+    max_context_tokens: positiveIntEnv('KASEKI_PHASE_MAX_CONTEXT_TOKENS', promptTokenBudget),
+    max_turns: positiveIntEnv('KASEKI_PHASE_MAX_TURNS', 24),
+    max_tool_output_tokens: positiveIntEnv('KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS', 12_000),
+    context_exceeded: false,
+    turns_exceeded: false,
+    tool_output_exceeded: false,
+    exceeded: false,
+  };
+  phaseBudget.context_exceeded = largestContextTokens > phaseBudget.max_context_tokens;
+  phaseBudget.turns_exceeded = state.completionUsage.size > phaseBudget.max_turns;
+  phaseBudget.tool_output_exceeded = state.toolOutputUsage.estimated_tokens > phaseBudget.max_tool_output_tokens;
+  phaseBudget.exceeded = phaseBudget.context_exceeded || phaseBudget.turns_exceeded || phaseBudget.tool_output_exceeded;
   return {
     ...state.aggregator.summary(),
     invalid_json_lines: state.invalidJsonLines,
@@ -675,6 +734,7 @@ function buildSummary(state: PiEventFilterState): Summary {
     completion_usage: [...state.completionUsage.values()],
     tool_output_usage: state.toolOutputUsage,
     inference_health: inferenceHealth,
+    phase_budget: phaseBudget,
     model_reliability: buildModelReliability(modelStats, state.providerErrors),
     ...(state.providerErrors.length > 0 ? { provider_errors: state.providerErrors, primary_provider_error: state.providerErrors[0] } : {}),
   };
@@ -682,6 +742,23 @@ function buildSummary(state: PiEventFilterState): Summary {
 
 function writeSummaryFiles(summaryPath: string, summary: Summary): void {
   fs.writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
+  const ledger = buildTokenLedger(summary.completion_usage ?? []);
+  const ledgerPath = path.join(path.dirname(summaryPath), 'token-ledger.jsonl');
+  if (ledger.length > 0) {
+    const existing = fs.existsSync(ledgerPath)
+      ? fs.readFileSync(ledgerPath, 'utf8').split(/\r?\n/).filter(Boolean).flatMap((line) => {
+        try { return [JSON.parse(line) as TokenLedgerEntry]; } catch { return []; }
+      })
+      : [];
+    const entries = new Map<string, TokenLedgerEntry>();
+    for (const entry of existing) entries.set(`${entry.phase}:${entry.attempt_id ?? ''}:${entry.response_id ?? entry.turn}`, entry);
+    for (const entry of ledger) entries.set(`${entry.phase}:${entry.attempt_id ?? ''}:${entry.response_id ?? entry.turn}`, {
+      timestamp: new Date().toISOString(),
+      ...entry,
+      resolved_model: process.env.KASEKI_RESOLVED_MODEL || entry.model,
+    } as TokenLedgerEntry);
+    fs.writeFileSync(ledgerPath, `${Array.from(entries.values()).map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+  }
   if (path.basename(summaryPath) !== 'pi-summary.json') return;
 
   const providerErrors = summary.provider_errors ?? [];
@@ -690,13 +767,21 @@ function writeSummaryFiles(summaryPath: string, summary: Summary): void {
     schema_version: 1,
     logical_agent_turns: summary.event_counts.message_end || 0,
     routing_steps: null,
-    note: 'routing_steps requires Cloudflare log enrichment; logical turns exclude gateway-internal routing records.',
+    note: 'See token-ledger.jsonl for canonical per-response totals. routing_steps requires Cloudflare log enrichment.',
     input_tokens: summary.token_usage!.total_input_tokens,
     output_tokens: summary.token_usage!.total_output_tokens,
     provider_errors: providerErrors.length,
     malformed_tool_calls: inferenceHealth.malformed_tool_call_count,
     inference_health: inferenceHealth,
     model_reliability: summary.model_reliability,
+    token_ledger: {
+      artifact: 'token-ledger.jsonl',
+      response_count: ledger.length,
+      priced_response_count: ledger.filter((entry) => entry.estimated_cost_usd !== null).length,
+      estimated_cost_usd: ledger.every((entry) => entry.estimated_cost_usd !== null)
+        ? ledger.reduce((total, entry) => total + entry.estimated_cost_usd!, 0)
+        : null,
+    },
   }, null, 2)}\n`);
 }
 

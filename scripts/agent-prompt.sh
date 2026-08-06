@@ -2,7 +2,7 @@
 # Shared prompt rendering helpers for kaseki-agent.sh and tests.
 
 build_agent_prompt() {
-  local memory_section scouting_section retry_section hashline_edits_section summarization_section allowlist_section caveman_instruction
+  local memory_section scouting_section retry_section hashline_edits_section summarization_section allowlist_section handoff_section caveman_instruction
   
   # Get caveman instruction if enabled
   caveman_instruction="$(get_caveman_instruction)"
@@ -13,6 +13,13 @@ build_agent_prompt() {
   hashline_edits_section=""
   summarization_section=""
   allowlist_section=""
+  handoff_section=""
+  if [ -s "${KASEKI_RESULTS_DIR}/context-handoff.json" ]; then
+    handoff_section="
+Context checkpoint:
+- A previous phase produced a compact handoff at ${KASEKI_RESULTS_DIR}/context-handoff.json.
+- Read it first. Treat it as the compact replacement for prior conversation history; inspect raw artifacts only when its evidence is insufficient."
+  fi
   if [ -n "${KASEKI_CHANGED_FILES_ALLOWLIST:-}" ]; then
     allowlist_section="
 Write allowlist: ${KASEKI_CHANGED_FILES_ALLOWLIST}
@@ -91,6 +98,7 @@ Fallback behavior:
     printf '%s' "$hashline_edits_section"
     printf '%s' "$summarization_section"
     printf '%s' "$allowlist_section"
+    printf '%s' "$handoff_section"
     return 0
   fi
 
@@ -113,6 +121,7 @@ $retry_section
 $hashline_edits_section
 $summarization_section
 $allowlist_section
+$handoff_section
 EOF
   else
     # Verbose version (caveman level 0-1)
@@ -139,6 +148,7 @@ $retry_section
 $hashline_edits_section
 $summarization_section
 $allowlist_section
+$handoff_section
 EOF
   fi
 }
