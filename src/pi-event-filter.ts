@@ -491,6 +491,52 @@ function recordCompletionUsage(event: PiEvent, usage: any, state: PiEventFilterS
   if (!existing || candidate.total_tokens > existing.total_tokens) state.completionUsage.set(key, candidate);
 }
 
+/**
+ * Streaming providers can repeat the current response usage on several events.
+ * `completionUsage` keeps the final maximum for each response ID, so derive
+ * cost-facing aggregates from it rather than summing every streamed event.
+ */
+function summarizeCompletedResponses(completions: Iterable<ProviderCompletionUsage>): {
+  tokenUsage: TokenUsageSummary;
+  modelStats: ModelTokenStats;
+  phaseStats: PhaseTokenStats;
+} {
+  const tokenUsage: TokenUsageSummary = {
+    total_input_tokens: 0,
+    total_output_tokens: 0,
+    total_cache_creation_tokens: 0,
+    total_cache_read_tokens: 0,
+    total_tokens: 0,
+    cache_efficiency_percent: 0,
+  };
+  const modelStats: ModelTokenStats = {};
+  const phaseStats: PhaseTokenStats = {};
+
+  for (const completion of completions) {
+    const add = (target: { input_tokens: number; output_tokens: number; cache_creation_tokens: number; cache_read_tokens: number; total_tokens: number }) => {
+      target.input_tokens += completion.input_tokens;
+      target.output_tokens += completion.output_tokens;
+      target.cache_creation_tokens += completion.cache_creation_tokens;
+      target.cache_read_tokens += completion.cache_read_tokens;
+      target.total_tokens += completion.total_tokens;
+    };
+    tokenUsage.total_input_tokens += completion.input_tokens;
+    tokenUsage.total_output_tokens += completion.output_tokens;
+    tokenUsage.total_cache_creation_tokens += completion.cache_creation_tokens;
+    tokenUsage.total_cache_read_tokens += completion.cache_read_tokens;
+    tokenUsage.total_tokens += completion.total_tokens;
+
+    const model = modelStats[completion.model] ??= { input_tokens: 0, output_tokens: 0, cache_creation_tokens: 0, cache_read_tokens: 0, total_tokens: 0 };
+    add(model);
+    const phase = phaseStats[completion.phase] ??= { input_tokens: 0, output_tokens: 0, cache_creation_tokens: 0, cache_read_tokens: 0, total_tokens: 0 };
+    add(phase);
+  }
+  tokenUsage.cache_efficiency_percent = tokenUsage.total_tokens === 0
+    ? 0
+    : Math.round((tokenUsage.total_cache_read_tokens / tokenUsage.total_tokens) * 10000) / 100;
+  return { tokenUsage, modelStats, phaseStats };
+}
+
 function recordProviderErrors(event: PiEvent, state: PiEventFilterState): void {
   recordAssistantTurnState(event, state.assistantTurnStates);
   const providerError = extractProviderError(event);
@@ -580,9 +626,7 @@ async function writeRetainedEvent(
 }
 
 function buildSummary(state: PiEventFilterState): Summary {
-  const tokenSummary = state.tokenUsage.getSummary();
-  const modelStats = state.tokenUsage.getModelStats();
-  const phaseStats = state.tokenUsage.getPhaseStats();
+  const { tokenUsage: tokenSummary, modelStats, phaseStats } = summarizeCompletedResponses(state.completionUsage.values());
   const promptTokenBudget = positiveIntEnv('KASEKI_PROMPT_TOKEN_WARN_THRESHOLD', 20_000);
   // Compaction is a per-request decision. A run with many short turns should
   // not be flagged merely because its aggregate usage is high, while a single

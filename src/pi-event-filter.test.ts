@@ -578,6 +578,21 @@ describe('pi-event-filter fast correctness tests', () => {
     }
   });
 
+  test('uses final per-response usage instead of summing repeated stream events', async () => {
+    const fixture = [
+      { type: 'message_update', message: { response_id: 'same-response', model: 'coding-model', usage: { prompt_tokens: 100, completion_tokens: 10 } } },
+      { type: 'message_end', message: { response_id: 'same-response', model: 'coding-model', usage: { prompt_tokens: 120, completion_tokens: 20 } } },
+    ];
+    const result = await runFilter(fixture.map(JSON.stringify));
+
+    expect(result.summary.token_usage).toMatchObject({
+      total_input_tokens: 120,
+      total_output_tokens: 20,
+      total_tokens: 140,
+    });
+    expect(result.summary.completion_usage).toHaveLength(1);
+  });
+
   test('should provide per-model token statistics', async () => {
     // Spec: Summary must track token usage broken down by model
     // Behavioral intent: Each model gets separate input/output token accounting

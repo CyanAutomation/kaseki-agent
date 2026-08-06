@@ -2,7 +2,7 @@
 # Shared prompt rendering helpers for kaseki-agent.sh and tests.
 
 build_agent_prompt() {
-  local memory_section scouting_section retry_section hashline_edits_section summarization_section caveman_instruction
+  local memory_section scouting_section retry_section hashline_edits_section summarization_section allowlist_section caveman_instruction
   
   # Get caveman instruction if enabled
   caveman_instruction="$(get_caveman_instruction)"
@@ -12,6 +12,13 @@ build_agent_prompt() {
   retry_section=""
   hashline_edits_section=""
   summarization_section=""
+  allowlist_section=""
+  if [ -n "${KASEKI_CHANGED_FILES_ALLOWLIST:-}" ]; then
+    allowlist_section="
+Write allowlist: ${KASEKI_CHANGED_FILES_ALLOWLIST}
+- Change only matching repo-relative paths. Before creating a file, verify it matches.
+- Need another path? Do not create it; explain why it is required in the final terse summary."
+  fi
   if [ -s "$SCOUTING_ARTIFACT" ]; then
     scouting_section="
 Scouting artifact:
@@ -83,12 +90,8 @@ Fallback behavior:
     printf '%s' "$retry_section"
     printf '%s' "$hashline_edits_section"
     printf '%s' "$summarization_section"
+    printf '%s' "$allowlist_section"
     return 0
-  fi
-
-  # Print caveman instruction before guardrails prompt (if enabled)
-  if [ -n "$caveman_instruction" ]; then
-    printf '%s\n\n' "$caveman_instruction"
   fi
 
   # Use compressed guardrails if caveman level >= 2
@@ -109,6 +112,7 @@ $scouting_section
 $retry_section
 $hashline_edits_section
 $summarization_section
+$allowlist_section
 EOF
   else
     # Verbose version (caveman level 0-1)
@@ -134,6 +138,7 @@ $scouting_section
 $retry_section
 $hashline_edits_section
 $summarization_section
+$allowlist_section
 EOF
   fi
 }
