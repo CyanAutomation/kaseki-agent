@@ -2889,16 +2889,16 @@ const controllerPage = String.raw`<!doctype html>
         const actionLabel = button.textContent ? button.textContent.trim() : 'request';
         const startedAt = Date.now();
         setResponseSummary(null);
-        setOutputBody(actionLabel === 'Current Preflight'
-          ? 'Running current preflight checks... 0s elapsed'
+        setOutputBody(isDiagnostic
+          ? 'Running ' + actionLabel + '... 0s elapsed'
           : 'Contacting the controller...');
-        const elapsedTimer = actionLabel === 'Current Preflight'
+        const elapsedTimer = isDiagnostic
           ? window.setInterval(() => {
-              setOutputBody('Running current preflight checks... ' + String(Math.floor((Date.now() - startedAt) / 1000)) + 's elapsed');
+              setOutputBody('Running ' + actionLabel + '... ' + String(Math.floor((Date.now() - startedAt) / 1000)) + 's elapsed');
             }, 1000)
           : null;
-        setState(actionLabel === 'Current Preflight'
-          ? 'Running current preflight checks...'
+        setState(isDiagnostic
+          ? 'Running ' + actionLabel + '...'
           : 'Contacting the controller...');
         try {
           return await apiRequest(path, options);

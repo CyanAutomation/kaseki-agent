@@ -547,7 +547,9 @@ KASEKI_CAVEMAN="${KASEKI_CAVEMAN:-1}"
 # Level 1: Output-only compression (current default, LLM responds tersely)
 # Level 2: Output + static sections compressed (guardrails, instructions)
 # Level 3: Output + static + artifacts compressed (logs, repeated context)
-KASEKI_CAVEMAN_LEVEL="${KASEKI_CAVEMAN_LEVEL:-${KASEKI_CAVEMAN}}"
+# Level 2 compresses static prompt material as well as model prose. JSON
+# contracts, commands, paths, and error text remain exact.
+KASEKI_CAVEMAN_LEVEL="${KASEKI_CAVEMAN_LEVEL:-2}"
 
 # Track last executed command for better error reporting
 LAST_COMMAND=""
@@ -595,6 +597,10 @@ CAVEMAN
 get_caveman_compressed_prompt() {
   local prompt_type="${1:-guardrails}"
   
+  if [ "$KASEKI_CAVEMAN" != "1" ]; then
+    return 0
+  fi
+
   if [ "$KASEKI_CAVEMAN_LEVEL" -lt 2 ]; then
     return 0  # No input compression at level 0-1
   fi
@@ -6607,6 +6613,15 @@ run_run_evaluation() {
     RUN_EVALUATION_WARNING="skipped_failed_run"
     write_run_evaluation_fallback "$RUN_EVALUATION_WARNING"
     emit_progress "run evaluation" "skipped after failed run (set KASEKI_RUN_EVALUATION_ON_FAILURE=1 to override)"
+    record_stage_timing "run evaluation" 0 0 "$RUN_EVALUATION_WARNING"
+    return 0
+  fi
+  # An allowlist violation is deterministic policy failure. A second LLM
+  # evaluator cannot repair it and only adds cost after the run is terminal.
+  if [ "${QUALITY_FAILURE_REASON:-}" != "" ] && printf '%s' "$QUALITY_FAILURE_REASON" | grep -q '^allowlist_check:'; then
+    RUN_EVALUATION_WARNING="skipped_deterministic_allowlist_failure"
+    write_run_evaluation_fallback "$RUN_EVALUATION_WARNING"
+    emit_progress "run evaluation" "skipped after deterministic allowlist failure"
     record_stage_timing "run evaluation" 0 0 "$RUN_EVALUATION_WARNING"
     return 0
   fi
