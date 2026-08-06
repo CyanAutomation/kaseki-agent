@@ -18,5 +18,9 @@ kaseki_resolve_provider_model() {
     KASEKI_MODEL="auto"
   fi
 
-  export KASEKI_PROVIDER KASEKI_MODEL
+  # Preserve the model selected before the gateway adapter serializes requests.
+  # Gateways that perform dynamic routing can override this with the concrete
+  # routed model in their response/log enrichment without losing lineage.
+  KASEKI_RESOLVED_MODEL="${KASEKI_RESOLVED_MODEL:-$KASEKI_MODEL}"
+  export KASEKI_PROVIDER KASEKI_MODEL KASEKI_RESOLVED_MODEL
 }
