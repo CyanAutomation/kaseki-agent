@@ -75,6 +75,19 @@ async function runFilter(inputLines: string[]): Promise<RunResult> {
 }
 
 describe('pi-event-filter fast correctness tests', () => {
+  test('returns an empty filtered event collection when no events are retained', async () => {
+    const result = await runFilter([
+      JSON.stringify({
+        type: 'message_update',
+        assistantMessageEvent: { type: 'thinking_delta' },
+      }),
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.lines).toEqual([]);
+    expect(result.summary.event_counts).toMatchObject({ message_update: 1 });
+  });
+
   test('runPiEventFilter public contract redacts thinking content and summarizes selected model/api', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-event-filter-contract-'));
     const inputPath = path.join(tmpDir, 'events.raw.jsonl');
