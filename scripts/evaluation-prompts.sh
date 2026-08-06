@@ -182,7 +182,7 @@ If goal not met, your retry_prompt must:
 2. Reference what agent already did (avoid re-doing work)
 3. Provide actionable next steps
 
-## Required JSON response
+## Required JSON artifact
 
 Return exactly one JSON object as the final assistant message. Do not write a file, use markdown/code fences, or include prose before/after the JSON. Kaseki validates and persists this response.
 
