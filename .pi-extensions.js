@@ -69,6 +69,7 @@ export default function (pi) {
     baseUrl: config.baseUrl,
     apiType: 'openai-completions',
     modelId: config.models[0].id,
+    resolvedModel: process.env.KASEKI_RESOLVED_MODEL || config.models[0].id,
     hasApiKey: config.apiKey !== '$LLM_GATEWAY_API_KEY',
     requestId: process.env.KASEKI_INFERENCE_REQUEST_ID || undefined,
     phase: process.env.KASEKI_INFERENCE_PHASE || undefined,

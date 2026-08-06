@@ -22,6 +22,7 @@ const GOAL_CHECK_DIAGNOSTIC_FILES = [
 ] as const;
 const PI_AGENT_DIAGNOSTIC_FILES = [
   '.gateway-diagnostics.jsonl',
+  'token-ledger.jsonl',
   'pi-agent-diagnostics.jsonl',
   'pi-events.jsonl',
   'pi-summary.json',
@@ -267,7 +268,7 @@ export class StatusArtifactHelper {
   ): void {
     const phaseDiagnosticEntryPoints: DiagnosticEntryPoint[] = [
       ...(flags.includePiAgent
-        ? (['.gateway-diagnostics.jsonl', 'gateway-summary.json', 'pi-agent-diagnostics.jsonl', 'pi-events.jsonl', 'pi-summary.json'] as DiagnosticEntryPoint[])
+        ? (['token-ledger.jsonl', '.gateway-diagnostics.jsonl', 'gateway-summary.json', 'pi-agent-diagnostics.jsonl', 'pi-events.jsonl', 'pi-summary.json'] as DiagnosticEntryPoint[])
         : []),
       ...(flags.includePreValidation
         ? (['test-baseline-comparison.json', 'pre-validation.log'] as DiagnosticEntryPoint[])

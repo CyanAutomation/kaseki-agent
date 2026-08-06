@@ -8,7 +8,7 @@ run_pi_json_capture() {
   local model="$3"
   local prompt="$4"
   local stderr_target="${5:-}"
-  local pi_exit progress_exit progress_stderr progress_fifo progress_pid splitter_exit pi_tools bounded_prompt
+  local pi_exit progress_exit progress_stderr progress_fifo progress_pid splitter_exit pi_tools bounded_prompt phase_tool_output_cap
   local pi_openrouter_api_key="${openrouter_api_key:-${OPENROUTER_API_KEY:-}}"
   local pi_llm_gateway_api_key="${llm_gateway_api_key:-${LLM_GATEWAY_API_KEY:-}}"
   local pi_llm_gateway_url="${llm_gateway_url:-${LLM_GATEWAY_URL:-}}"
@@ -35,13 +35,19 @@ run_pi_json_capture() {
       ;;
   esac
 
+  case "${KASEKI_INFERENCE_PHASE:-coding}" in
+    goal-setting|scouting) phase_tool_output_cap="${KASEKI_PRECODING_TOOL_OUTPUT_MAX_CHARS:-4000}" ;;
+    goal-check|run-evaluation) phase_tool_output_cap="${KASEKI_EVALUATOR_TOOL_OUTPUT_MAX_CHARS:-2000}" ;;
+    *) phase_tool_output_cap="${KASEKI_TOOL_OUTPUT_MAX_CHARS:-4000}" ;;
+  esac
+
   # Tool output is fed back into Pi's next completion.  Require bounded,
   # artifact-first output so a broad command or file read cannot dominate all
   # subsequent context.  The full result remains available on disk for a
   # targeted follow-up read.
   bounded_prompt="${prompt}
 
-Tool budget: each result <=${KASEKI_TOOL_OUTPUT_MAX_CHARS:-8000} chars. Read/search exact ranges. Large output -> /results; return path, bytes, hash, failures, relevant excerpt. Do not repeat unchanged output. Speak terse. Keep paths, commands, JSON, code, and errors exact."
+Tool-output target: aim for each result <=${phase_tool_output_cap} chars. Read/search exact ranges. Large output -> /results; return only path, bytes, hash, failures, and a <=400-character relevant excerpt. Do not repeat unchanged output. At a context checkpoint, finish with a compact handoff: task status, accepted plan, changed files, validation status, and next action. Speak terse. Keep paths, commands, JSON, code, and errors exact."
 
   wait_for_progress_stream() {
     local pid="$1"

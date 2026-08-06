@@ -328,17 +328,23 @@ KASEKI_SCOUTING_TIMEOUT_SECONDS="${KASEKI_SCOUTING_TIMEOUT_SECONDS:-$KASEKI_AGEN
 # their default ceilings small so a malformed or overly-chatty evaluator does
 # not consume a coding-sized output budget.
 KASEKI_SCOUTING_MAX_OUTPUT_TOKENS="${KASEKI_SCOUTING_MAX_OUTPUT_TOKENS:-2048}"
+KASEKI_SCOUTING_MAX_CONTEXT_TOKENS="${KASEKI_SCOUTING_MAX_CONTEXT_TOKENS:-16000}"
+KASEKI_SCOUTING_MAX_TURNS="${KASEKI_SCOUTING_MAX_TURNS:-8}"
 KASEKI_SCOUTING_PROMPT_DETAIL="${KASEKI_SCOUTING_PROMPT_DETAIL:-compact}"
 KASEKI_HASHLINE_EDITS="${KASEKI_HASHLINE_EDITS:-1}"
 KASEKI_GOAL_SETTING="${KASEKI_GOAL_SETTING:-1}"
 KASEKI_GOAL_SETTING_MODEL="${KASEKI_GOAL_SETTING_MODEL:-$KASEKI_SCOUTING_MODEL}"
 KASEKI_GOAL_SETTING_TIMEOUT_SECONDS="${KASEKI_GOAL_SETTING_TIMEOUT_SECONDS:-300}"
 KASEKI_GOAL_SETTING_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_SETTING_MAX_OUTPUT_TOKENS:-$KASEKI_SCOUTING_MAX_OUTPUT_TOKENS}"
+KASEKI_GOAL_SETTING_MAX_CONTEXT_TOKENS="${KASEKI_GOAL_SETTING_MAX_CONTEXT_TOKENS:-12000}"
+KASEKI_GOAL_SETTING_MAX_TURNS="${KASEKI_GOAL_SETTING_MAX_TURNS:-6}"
 KASEKI_GOAL_CHECK="${KASEKI_GOAL_CHECK:-$KASEKI_SCOUTING}"
 KASEKI_GOAL_CHECK_MAX_RETRIES="${KASEKI_GOAL_CHECK_MAX_RETRIES:-1}"
 KASEKI_GOAL_CHECK_MODEL="${KASEKI_GOAL_CHECK_MODEL:-$KASEKI_SCOUTING_MODEL}"
 KASEKI_GOAL_CHECK_TIMEOUT_SECONDS="${KASEKI_GOAL_CHECK_TIMEOUT_SECONDS:-$KASEKI_SCOUTING_TIMEOUT_SECONDS}"
 KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS:-1536}"
+KASEKI_GOAL_CHECK_MAX_CONTEXT_TOKENS="${KASEKI_GOAL_CHECK_MAX_CONTEXT_TOKENS:-12000}"
+KASEKI_GOAL_CHECK_MAX_TURNS="${KASEKI_GOAL_CHECK_MAX_TURNS:-4}"
 kaseki_apply_inspect_mode_agent_defaults
 KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-pr}"
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-1}"
@@ -362,6 +368,8 @@ fi
 KASEKI_RUN_EVALUATION_MODEL="${KASEKI_RUN_EVALUATION_MODEL:-$KASEKI_GOAL_CHECK_MODEL}"
 KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS="${KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS:-300}"
 KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS="${KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS:-1024}"
+KASEKI_RUN_EVALUATION_MAX_CONTEXT_TOKENS="${KASEKI_RUN_EVALUATION_MAX_CONTEXT_TOKENS:-12000}"
+KASEKI_RUN_EVALUATION_MAX_TURNS="${KASEKI_RUN_EVALUATION_MAX_TURNS:-3}"
 # A failed run already has a deterministic failure artifact. Do not spend an
 # additional long evaluator turn unless an operator explicitly opts in.
 KASEKI_RUN_EVALUATION_ON_FAILURE="${KASEKI_RUN_EVALUATION_ON_FAILURE:-0}"
@@ -5359,6 +5367,7 @@ run_goal_setting_agent() {
 
   goal_setting_prompt="$(build_goal_setting_prompt)"
   record_prompt_diagnostics "goal-setting" "$goal_setting_prompt" "$KASEKI_GOAL_SETTING_MODEL" "${KASEKI_GOAL_SETTING_MAX_OUTPUT_TOKENS:-}"
+  configure_phase_budget "goal-setting"
   goal_setting_start="$(date +%s)"
   
   set +e
@@ -5874,6 +5883,30 @@ NODE
   rm -f "$prompt_file" 2>/dev/null || true
 }
 
+# Pi reports observed usage against advisory targets. These values are for
+# review and compaction guidance only; exceeding one never stops a run.
+configure_phase_budget() {
+  case "$1" in
+    goal-setting)
+      KASEKI_PHASE_MAX_CONTEXT_TOKENS="$KASEKI_GOAL_SETTING_MAX_CONTEXT_TOKENS"
+      KASEKI_PHASE_MAX_TURNS="$KASEKI_GOAL_SETTING_MAX_TURNS" ;;
+    scouting)
+      KASEKI_PHASE_MAX_CONTEXT_TOKENS="$KASEKI_SCOUTING_MAX_CONTEXT_TOKENS"
+      KASEKI_PHASE_MAX_TURNS="$KASEKI_SCOUTING_MAX_TURNS" ;;
+    goal-check)
+      KASEKI_PHASE_MAX_CONTEXT_TOKENS="$KASEKI_GOAL_CHECK_MAX_CONTEXT_TOKENS"
+      KASEKI_PHASE_MAX_TURNS="$KASEKI_GOAL_CHECK_MAX_TURNS" ;;
+    run-evaluation)
+      KASEKI_PHASE_MAX_CONTEXT_TOKENS="$KASEKI_RUN_EVALUATION_MAX_CONTEXT_TOKENS"
+      KASEKI_PHASE_MAX_TURNS="$KASEKI_RUN_EVALUATION_MAX_TURNS" ;;
+    *)
+      KASEKI_PHASE_MAX_CONTEXT_TOKENS="${KASEKI_CODING_MAX_CONTEXT_TOKENS:-20000}"
+      KASEKI_PHASE_MAX_TURNS="${KASEKI_CODING_MAX_TURNS:-24}" ;;
+  esac
+  KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS="${KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS:-12000}"
+  export KASEKI_PHASE_MAX_CONTEXT_TOKENS KASEKI_PHASE_MAX_TURNS KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS
+}
+
 build_scouting_prompt() {
   local task_text="$TASK_PROMPT"
   local use_detailed_guidance=0
@@ -6003,6 +6036,7 @@ run_scouting_agent() {
 
   scouting_prompt="$(build_scouting_prompt)"
   record_prompt_diagnostics "scouting" "$scouting_prompt" "$KASEKI_SCOUTING_MODEL" "${KASEKI_SCOUTING_MAX_OUTPUT_TOKENS:-}"
+  configure_phase_budget "scouting"
   scouting_start="$(date +%s)"
   scout_dirty_before="$(git status --porcelain 2>/dev/null || true)"
   chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
@@ -6372,6 +6406,7 @@ run_goal_check() {
 
   goal_prompt="$(build_goal_check_prompt)"
   record_prompt_diagnostics "goal-check" "$goal_prompt" "$KASEKI_GOAL_CHECK_MODEL" "${KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS:-}"
+  configure_phase_budget "goal-check"
   goal_start="$(date +%s)"
   set +e
   LLM_GATEWAY_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS:-}"
@@ -6387,7 +6422,9 @@ run_goal_check() {
   consolidate_completed_phase "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "goal-check" "${KASEKI_RESULTS_DIR}"/goal-check-summary.json
 
   if [ "$GOAL_CHECK_EXIT" -eq 0 ] && [ ! -f "$GOAL_CHECK_CANDIDATE_ARTIFACT" ]; then
-    # Recover from goal-check agents that printed the verdict in assistant text instead of writing the artifact.
+    # Goal-check is read-only: the controller owns persistence. Recover the
+    # single schema-valid JSON verdict from the final assistant response and
+    # write the temporary candidate itself before validation/finalization.
     # shellcheck disable=SC2016
     node -e '
 const fs = require("node:fs");
@@ -6492,15 +6529,15 @@ if (valid.size === 1) {
     case "$goal_check_validation_reason" in
       missing_file)
         GOAL_CHECK_FAILURE_REASON="goal_check_artifact_missing"
-        emit_error_event "goal_check_artifact_missing" "Goal-check candidate artifact was missing: $GOAL_CHECK_CANDIDATE_ARTIFACT ($goal_check_validation_summary; full details: ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl)" "continue"
+        emit_error_event "goal_check_artifact_missing" "Goal-check response did not contain one schema-valid JSON verdict ($goal_check_validation_summary; full details: ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl)" "exit"
         ;;
       malformed_json)
         GOAL_CHECK_FAILURE_REASON="goal_check_artifact_malformed"
-        emit_error_event "goal_check_artifact_malformed" "Goal-check Pi wrote malformed JSON: $goal_check_validation_summary (full details: ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl)" "continue"
+        emit_error_event "goal_check_artifact_malformed" "Goal-check response contained malformed JSON: $goal_check_validation_summary (full details: ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl)" "exit"
         ;;
       *)
         GOAL_CHECK_FAILURE_REASON="goal_check_artifact_invalid"
-        emit_error_event "goal_check_artifact_invalid" "Goal-check Pi did not write a schema-valid JSON verdict: $goal_check_validation_summary (full details: ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl)" "continue"
+        emit_error_event "goal_check_artifact_invalid" "Goal-check response did not contain a schema-valid JSON verdict: $goal_check_validation_summary (full details: ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl)" "exit"
         ;;
     esac
   fi
@@ -6630,6 +6667,7 @@ run_run_evaluation() {
   write_metadata "$STATUS"
   evaluation_prompt="$(build_run_evaluation_prompt)"
   record_prompt_diagnostics "run-evaluation" "$evaluation_prompt" "$KASEKI_RUN_EVALUATION_MODEL" "${KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS:-}"
+  configure_phase_budget "run-evaluation"
   evaluation_start="$(date +%s)"
   eval_dirty_before="$(git status --porcelain 2>/dev/null || true)"
   chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
@@ -8934,6 +8972,7 @@ NODE
   
   agent_prompt="$(build_agent_prompt)"
   record_prompt_diagnostics "coding" "$agent_prompt" "$KASEKI_MODEL" "${KASEKI_MAX_OUTPUT_TOKENS:-}"
+  configure_phase_budget "coding"
   PI_START_EPOCH="$(date +%s)"
   run_pi_with_retry "$RAW_EVENTS" "$KASEKI_AGENT_TIMEOUT_SECONDS" "$KASEKI_MODEL" "$agent_prompt" "pi-summary" "${KASEKI_RESULTS_DIR}/pi-stderr.log" "pi coding"
   PI_EXIT="$?"
@@ -9235,11 +9274,8 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
   fi
 
   run_goal_check "$coding_attempt"
-  if [ "$KASEKI_GOAL_CHECK" = "1" ] && printf '%s' "$GOAL_CHECK_FAILURE_REASON" | grep -Eq '^goal_check_artifact_(missing|malformed|invalid)$'; then
-    printf 'Goal-check evaluator artifact failed validation; retrying the evaluator against the existing diff without rerunning the coding agent.\n' | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
-    emit_progress "goal check" "retrying evaluator against unchanged diff"
-    run_goal_check "$coding_attempt"
-  fi
+  # A malformed/missing evaluator verdict is deterministic contract failure.
+  # Do not spend a second full-context evaluator call against the unchanged diff.
   collect_goal_check_feedback "$INSTANCE_NAME"
   snapshot_attempt_artifacts "$coding_attempt"
 
