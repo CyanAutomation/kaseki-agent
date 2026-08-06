@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.123.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.123.2...v1.123.3) (2026-08-06)
+
+
+### Bug Fixes
+
+* restore goal-check artifact heading ([6a6c0d6](https://github.com/CyanAutomation/kaseki-agent/commit/6a6c0d6d7e06bd5eb5e94f859dd3edace5e26ada))
+* restore goal-check JSON artifact heading ([#1159](https://github.com/CyanAutomation/kaseki-agent/issues/1159)) ([8dfbcd8](https://github.com/CyanAutomation/kaseki-agent/commit/8dfbcd8e3fb19bf3a0b5d02c6192e9544847335e))
+
 ## [1.123.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.123.1...v1.123.2) (2026-08-05)
 
 
