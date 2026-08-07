@@ -299,15 +299,27 @@ describe('ReadWrapper', () => {
       expectMetricsDerivedFromActualResult(secondRead!, filePath, 'cache_hit');
     });
 
-    it('should report read path strategy (cache/tree-sitter/full)', async () => {
+    it('should report the full-read path strategy and rationale', async () => {
       const filePath = path.join(testDir, 'test.ts');
       fs.writeFileSync(filePath, 'export class A {}');
+      const sizeBytes = fs.statSync(filePath).size;
 
       const result = await readFileWithSummaryAndMetrics(filePath);
       expect(result).not.toBeNull();
-      expect(result?.metrics).toBeDefined();
-      expect(result?.metrics?.strategy).toBe('full');
-      expect(result?.metrics?.decisionPath).toBe('full_read');
+      if (result === null) {
+        throw new Error('Expected a read result');
+      }
+
+      expect(result.metrics).toBeDefined();
+      if (!result.metrics) {
+        throw new Error('Expected read metrics');
+      }
+
+      expect(result.metrics.strategy).toBe('full');
+      expect(result.metrics.decisionPath).toBe('full_read');
+      expect(result.metrics.strategyReason).toBe(
+        `File too small (${sizeBytes} < ${getConfig().minSizeBytes} bytes)`,
+      );
     });
 
     it('should return null for missing files with metrics', async () => {
@@ -346,16 +358,6 @@ describe('ReadWrapper', () => {
       });
     });
 
-    it('should track decision rationale', async () => {
-      const filePath = path.join(testDir, 'test.ts');
-      fs.writeFileSync(filePath, 'export class Test {}');
-
-      const result = await readFileWithSummaryAndMetrics(filePath);
-      if (result?.metrics) {
-        expect(result.metrics.strategyReason).toBeDefined();
-        expect(result.metrics.strategyReason.length).toBeGreaterThan(0);
-      }
-    });
   });
 
   describe('Graceful Degradation', () => {
