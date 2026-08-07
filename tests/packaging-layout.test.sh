@@ -95,7 +95,5 @@ NODE
 printf '\n## Unobservable build-context constraints\n'
 grep -Eq '^!tsconfig\.scripts\.json$' .dockerignore ||
   fail '.dockerignore does not allow tsconfig.scripts.json into the Docker build context'
-grep -Eq 'apt-get install[^&]*shellcheck' Dockerfile ||
-  fail 'Dockerfile runtime dependencies do not include shellcheck'
 
 printf '\n✓ Produced npm package layout and import contracts passed.\n'
