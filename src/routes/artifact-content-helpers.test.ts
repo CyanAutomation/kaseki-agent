@@ -25,10 +25,8 @@ describe('artifact-content-helpers', () => {
   // ===== artifactContentType Tests =====
   describe('artifactContentType', () => {
     test('should return content type from metadata registry', () => {
-      // Mock metadata - test with a known artifact
       const contentType = artifactContentType('metadata.json');
-      expect(contentType).toBeDefined();
-      expect(typeof contentType).toBe('string');
+      expect(contentType).toBe('application/json');
     });
 
     test('should return application/json for .json files', () => {
@@ -909,10 +907,9 @@ describe('artifact-content-helpers', () => {
     });
 
     test('should check ARTIFACT_METADATA_REGISTRY first', () => {
-      // metadata.json has a specific type in the registry
-      const result = artifactContentType('metadata.json');
-      expect(result).toBeDefined();
-      expect(typeof result).toBe('string');
+      // The registry type intentionally differs from the .jsonl fallback.
+      const result = artifactContentType('phase-errors.jsonl');
+      expect(result).toBe('application/jsonl');
     });
 
     test('should handle case-sensitive extension matching', () => {
