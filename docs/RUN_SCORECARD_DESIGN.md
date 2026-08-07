@@ -6,9 +6,29 @@ The API exposes the canonical artifact at `GET /api/runs/:id/scorecard` (or
 
 ## Purpose and compatibility
 
-`RunScorecard` is the durable, machine-readable assessment of one Kaseki run. The TypeScript and Zod contract is in `src/types/run-scorecard.ts`. Producers MUST validate the object before publishing it and consumers MUST reject an unknown `schema_version`; `rubric_version` identifies scoring semantics independently. Version 1 uses `schema_version: "1.0.0"` and `rubric_version: "2026-08-07"`.
+> **The scorecard is an analytical signal, not an automatic merge authorization.** A human or a
+> separately configured quality gate must still decide whether to merge. This is especially
+> important while solution-quality measurements and evaluator calibration are being validated;
+> a high score can neither prove correctness nor override a failed required check.
+
+`RunScorecard` is the durable, machine-readable assessment of one Kaseki run. The TypeScript and Zod contract is in `src/types/run-scorecard.ts`. Producers MUST validate the object before publishing it and consumers MUST reject an unknown `schema_version`; `rubric_version` identifies scoring semantics independently. The current defaults use `schema_version: "1.0"` and `rubric_version: "2026-08-07.1"`.
 
 The scorecard records run identity, lifecycle and ISO-8601 timestamps; the score, grade, evidence coverage, confidence and completeness; dimensions; all six phases; token and timing totals; warnings; and the complete scoring configuration. `scoring_config` is data, not a pointer to mutable defaults, so a historical result can always be reproduced.
+
+### Rubric-change policy
+
+Every scoring release has an explicit rubric version, and every artifact preserves the complete
+configuration snapshot that produced it. A bug fix may retain the existing rubric version **only
+when scorecard outputs are byte-for-byte unchanged** for the same inputs. Any change to dimension
+or component weights, thresholds, normalization formulas, caps, target selection, or missing-data
+rules requires a new rubric version. Calibration reports must group different versions rather than
+silently combining them.
+
+Use `node dist/calibrate-scorecards.js <historical-results-directory>` after building to
+produce a read-only JSON report of score distributions and 75th-percentile duration/token target
+candidates by task-size band, model, and rubric version. The report also flags dimensions whose
+observed range is below ten points as potentially low-discrimination. Review the sample size and
+task mix before adopting a suggested default; the script never rewrites historical artifacts.
 
 ## Required dimensions and weights
 
