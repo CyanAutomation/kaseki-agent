@@ -322,11 +322,29 @@ describe('ReadWrapper', () => {
       );
     });
 
-    it('should return null for missing files with metrics', async () => {
+    it('should return complete error metrics for missing files', async () => {
       const filePath = path.join(testDir, 'missing.ts');
       const result = await readFileWithSummaryAndMetrics(filePath);
-      // Function handles missing files gracefully
-      expect(typeof result === 'object' || result === null).toBe(true);
+
+      expect(result).toEqual({
+        error: 'File not found',
+        content: null,
+        metrics: {
+          strategy: 'full',
+          strategyReason: 'File not found',
+          language: 'typescript',
+          fullSizeBytes: 0,
+          returnedSizeBytes: 0,
+          compressionRatio: 1,
+          parseTimeMs: expect.any(Number),
+          cacheHit: false,
+          decisionPath: 'error',
+          estimatedTokensFull: 0,
+          estimatedTokensReturned: 0,
+          estimatedTokensSaved: 0,
+        },
+      });
+      expect(result?.metrics?.parseTimeMs).toBeGreaterThanOrEqual(0);
     });
 
     it('should handle very large files gracefully', async () => {

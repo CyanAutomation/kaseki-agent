@@ -199,13 +199,27 @@ describe('Summarization Integration', () => {
     expectSizeMetrics(result, content);
   });
 
-  it('missing file reports the documented null/error fallback', async () => {
+  it('missing file reports null content with complete error metrics', async () => {
     const missingFile = path.join(testDir, 'missing.ts');
 
     await expect(readFileWithSummary(missingFile)).resolves.toBeNull();
     await expect(readFileWithSummaryAndMetrics(missingFile)).resolves.toEqual({
       error: 'File not found',
       content: null,
+      metrics: {
+        strategy: 'full',
+        strategyReason: 'File not found',
+        language: 'typescript',
+        fullSizeBytes: 0,
+        returnedSizeBytes: 0,
+        compressionRatio: 1,
+        parseTimeMs: expect.any(Number),
+        cacheHit: false,
+        decisionPath: 'error',
+        estimatedTokensFull: 0,
+        estimatedTokensReturned: 0,
+        estimatedTokensSaved: 0,
+      },
     });
   });
 });
