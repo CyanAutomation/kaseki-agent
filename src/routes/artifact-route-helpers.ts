@@ -127,6 +127,7 @@ export function buildRunArtifactsResponse(
   job: Job,
   scheduler: JobScheduler,
   config: KasekiApiConfig,
+  includeManifest = false,
 ): RunArtifactsResponse {
   const runDir = job.resultDir || path.join(config.resultsDir, job.id);
   const artifactMetadata = getRunArtifactMetadata(job.id, runDir, ALL_ARTIFACT_NAMES, isTerminalJobStatus(job.status));
@@ -150,15 +151,16 @@ export function buildRunArtifactsResponse(
     };
   });
   const runMetadata = readArtifactMetadata(runDir);
-  const recommended = recommendedArtifactNames(artifacts, runMetadata);
+  const availableArtifacts = artifacts.filter((artifact) => artifact.available);
+  const recommended = recommendedArtifactNames(availableArtifacts, runMetadata);
 
   return {
     id: job.id,
     runStatus: job.status,
     exitCode: job.exitCode,
-    artifacts,
+    artifacts: includeManifest ? artifacts : availableArtifacts,
     recommended,
-    artifactCount: artifacts.filter((a) => a.available).length,
+    artifactCount: availableArtifacts.length,
     downloadBaseUrl: `/api/results/${job.id}/`,
   };
 }

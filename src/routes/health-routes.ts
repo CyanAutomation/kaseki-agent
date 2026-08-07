@@ -50,6 +50,7 @@ export function createHealthRoutes(
       status,
       timestamp: new Date().toISOString(),
       queue: queueStatus,
+      dependencyCache: readDependencyCacheMetrics(config),
       errors: errors.length > 0 ? errors : undefined,
     });
   });
@@ -110,7 +111,7 @@ export function createHealthRoutes(
   return router;
 }
 
-function readDependencyCacheMetrics(config: KasekiApiConfig): DependencyCacheMetrics {
+export function readDependencyCacheMetrics(config: KasekiApiConfig): DependencyCacheMetrics {
   const metricsFile = config.dependencyCacheMetricsFile;
   const metrics: DependencyCacheMetrics = {
     maxBytes: config.dependencyCacheMaxBytes,

@@ -348,6 +348,18 @@ function buildStatusResponseSchema(): Record<string, unknown> {
           explanation: { type: 'string' },
         },
       },
+      phaseHealth: {
+        type: 'object',
+        description: 'Current phase heartbeat and stall state. A stalled phase remains cancellable but has not emitted durable progress for at least two minutes.',
+        required: ['state'],
+        properties: {
+          stage: { type: 'string' },
+          heartbeatAgeSeconds: { type: 'integer', minimum: 0 },
+          timeoutSeconds: { type: 'integer', minimum: 1 },
+          state: { type: 'string', enum: ['healthy', 'stalled'] },
+          message: { type: 'string' },
+        },
+      },
       progress: {
         type: 'object',
         properties: {

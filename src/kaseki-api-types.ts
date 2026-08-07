@@ -371,6 +371,14 @@ export interface StatusResponse {
     weavingStartedAt?: string;
     weavingCompletedAt?: string;
   };
+  /** Health of the currently executing phase, derived from its last durable progress event. */
+  phaseHealth?: {
+    stage?: string;
+    heartbeatAgeSeconds?: number;
+    timeoutSeconds?: number;
+    state: 'healthy' | 'stalled';
+    message?: string;
+  };
   error?: string;
   resultDir?: string;
   correlationId?: string; // Request correlation ID
