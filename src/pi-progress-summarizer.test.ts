@@ -365,9 +365,8 @@ describe('pi-progress-summarizer', () => {
 
     it('capitalizes first letter of extracted topic', () => {
       const result = extractTopic('let me implement a new parser module for JSON files');
-      if (result) {
-        expect(result).toMatch(/\[thinking\] [A-Z]/);
-      }
+      expect(result).toBe('[thinking] Implement a new parser module for JSON files');
+      expect(result).toMatch(/^\[thinking\] [A-Z]/);
     });
 
     it('handles multiple indicator keywords - picks first', () => {
