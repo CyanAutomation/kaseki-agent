@@ -195,6 +195,14 @@ describe('OpenAPI Path Builders', () => {
       tags: ['Run Details']
     },
     {
+      path: '/api/runs/{id}/scorecard', method: 'get', operationId: 'getRunScorecard',
+      requiresAuth: true, statuses: ['200','400','401','404','409','422'], tags: ['Artifacts']
+    },
+    {
+      path: '/api/scorecards', method: 'get', operationId: 'listScorecards',
+      requiresAuth: true, statuses: ['200','401'], tags: ['Run Details']
+    },
+    {
       path: '/api/webhooks/test',
       method: 'post',
       operationId: 'testWebhook',
@@ -415,8 +423,10 @@ describe('OpenAPI Path Builders', () => {
         getRunProgress: ['legacy', 'progress', 'event'],
         streamRunEvents: ['stream', 'run', 'events'],
         getRunStatus: ['run', 'status'],
+        getRunScorecard: ['run', 'scorecard'],
         listGitHubIssues: ['repository', 'issues', 'task'],
         listRuns: ['list', 'runs'],
+        listScorecards: ['list', 'scorecards'],
         testGateway: ['gateway', 'inference', 'adapter'],
         testWebhook: ['test', 'webhook'],
         triggerRun: ['trigger', 'run'],
@@ -982,6 +992,8 @@ describe('OpenAPI Path Builders', () => {
         '/api/runs/{id}/logs/{logtype}': '200',
         '/api/runs/{id}/progress': '200',
         '/api/runs/{id}/status': '200',
+        '/api/runs/{id}/scorecard': '200',
+        '/api/scorecards': '200',
         '/health': '200',
         '/ready': '200'
       };

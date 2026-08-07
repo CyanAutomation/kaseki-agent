@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { RunScorecard } from './types/run-scorecard';
 
 /**
  * Artifact availability classification.
@@ -459,6 +460,32 @@ export interface RunEvaluationRenderedResponse {
   };
   markdown?: string;
   raw: Record<string, unknown>;
+}
+
+export interface ScorecardResponse extends RunScorecard {}
+
+export interface ScorecardSummary {
+  runId: string;
+  lifecycleStatus: RunScorecard['lifecycle_status'];
+  overallScore: number;
+  grade: RunScorecard['grade'];
+  rubricVersion: string;
+  completeness: RunScorecard['completeness'];
+  confidence: number;
+  startedAt: string;
+  endedAt: string | null;
+  scoredAt: string;
+  model?: string;
+  repository?: string;
+}
+
+export interface ScorecardsListResponse {
+  scorecards: ScorecardSummary[];
+  pagination: { limit: number; offset: number; returned: number; hasMore: boolean };
+  filters: {
+    lifecycleStatus?: string; grade?: string; rubricVersion?: string; model?: string;
+    repository?: string; startedAfter?: string; startedBefore?: string;
+  };
 }
 
 export interface RunArtifactFileMetadata {
