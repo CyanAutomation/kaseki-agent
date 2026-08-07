@@ -25,6 +25,11 @@ fi
 printf 'Building Docker image for startup-check packaging verification...\n'
 docker build -t "$IMAGE_TAG" .
 
+# Packaging requirement: the final runtime image must provide an executable
+# shellcheck CLI because repository lint workflows invoke it at runtime.
+printf 'Checking the final runtime image can execute shellcheck --version...\n'
+docker run --rm --entrypoint shellcheck "$IMAGE_TAG" --version
+
 printf 'Checking required final-image destinations and modes...\n'
 docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c '
   set -eu
