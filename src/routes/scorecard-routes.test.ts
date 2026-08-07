@@ -6,6 +6,21 @@ import { createScorecardRoutes } from './scorecard-routes';
 import { ResultCache } from '../result-cache';
 import { buildScorecard, collectEvidence, normalizeConfig } from '../run-scorecard';
 
+const temporaryDirectories = new Set<string>();
+
+function createTemporaryDirectory(prefix: string): string {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  temporaryDirectories.add(directory);
+  return directory;
+}
+
+afterEach(() => {
+  for (const directory of temporaryDirectories) {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+  temporaryDirectories.clear();
+});
+
 async function get(app: express.Express, url: string): Promise<{status:number;body:any;text:string}> {
   const server=app.listen(0,'127.0.0.1');
   await new Promise<void>(resolve=>server.once('listening',resolve));
@@ -17,7 +32,7 @@ async function get(app: express.Express, url: string): Promise<{status:number;bo
 }
 
 function fixture(status: 'running'|'completed' = 'completed') {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scorecard-route-'));
+  const dir = createTemporaryDirectory('scorecard-route-');
   const card = buildScorecard(collectEvidence({ json: { 'metadata.json': { instance:'kaseki-1', status, started_at:'2026-08-07T00:00:00.000Z', ended_at: status === 'completed' ? '2026-08-07T00:01:00.000Z' : undefined } }, text:{}, summaries:[] }), normalizeConfig({}), new Date('2026-08-07T00:02:00.000Z'));
   const job = { id:'kaseki-1', status, request:{repoUrl:'https://github.com/acme/repo',ref:'main'}, createdAt:new Date(), resultDir:dir, finalized:status === 'completed' };
   const scheduler = { getJob:(id:string)=>id === job.id ? job : undefined, listJobs:()=>[job] };
@@ -52,7 +67,7 @@ describe('scorecard routes', () => {
       { ...first.card, run_id: 'kaseki-2' },
       { ...first.card, run_id: 'kaseki-3' },
     ].map(card => {
-      const dir=fs.mkdtempSync(path.join(os.tmpdir(),'scorecard-page-'));
+      const dir=createTemporaryDirectory('scorecard-page-');
       fs.writeFileSync(path.join(dir,'run-scorecard.json'),JSON.stringify(card));
       return { id:card.run_id,status:'completed',request:{repoUrl:'https://github.com/acme/repo',ref:'main'},
         createdAt:new Date(),resultDir:dir,finalized:true };
