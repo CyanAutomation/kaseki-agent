@@ -14,15 +14,22 @@ function createTemporaryDirectory(prefix: string): string {
   return directory;
 }
 
-afterEach(() => {
-  for (const directory of temporaryDirectories) {
-    try {
-      fs.rmSync(directory, { recursive: true, force: true });
-    } catch (error) {
-      console.error(`Failed to remove temporary directory ${directory}:`, error);
+function removeTemporaryDirectories(): void {
+  try {
+    for (const directory of temporaryDirectories) {
+      try {
+        fs.rmSync(directory, { recursive: true, force: true });
+      } catch (error) {
+        console.error(`Failed to remove temporary directory ${directory}:`, error);
+      }
     }
+  } finally {
+    temporaryDirectories.clear();
   }
-  temporaryDirectories.clear();
+}
+
+afterEach(() => {
+  removeTemporaryDirectories();
 });
 
 async function get(app: express.Express, url: string): Promise<{status:number;body:any;text:string}> {
@@ -45,6 +52,30 @@ function fixture(status: 'running'|'completed' = 'completed') {
 }
 
 describe('scorecard routes', () => {
+  test('attempts every temporary directory cleanup after a removal fails', () => {
+    temporaryDirectories.add('/tmp/scorecard-cleanup-first');
+    temporaryDirectories.add('/tmp/scorecard-cleanup-second');
+    const removalError = new Error('simulated removal failure');
+    const removeSpy = jest.spyOn(fs, 'rmSync')
+      .mockImplementationOnce(() => { throw removalError; })
+      .mockImplementationOnce(() => undefined);
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      removeTemporaryDirectories();
+
+      expect(removeSpy).toHaveBeenCalledTimes(2);
+      expect(errorSpy).toHaveBeenCalledWith(
+        'Failed to remove temporary directory /tmp/scorecard-cleanup-first:',
+        removalError,
+      );
+      expect(temporaryDirectories).toHaveProperty('size', 0);
+    } finally {
+      removeSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+  });
+
   test('returns canonical JSON and PR-format Markdown', async () => {
     const {app,dir,card}=fixture(); fs.writeFileSync(path.join(dir,'run-scorecard.json'),JSON.stringify(card));
     expect((await get(app,'/runs/kaseki-1/scorecard')).body.run_id).toBe('kaseki-1');
