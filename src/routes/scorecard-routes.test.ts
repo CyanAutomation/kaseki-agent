@@ -45,4 +45,24 @@ describe('scorecard routes', () => {
     expect(response.status).toBe(200); expect(response.body.pagination.limit).toBe(100);
     expect(response.body.scorecards[0]).not.toHaveProperty('dimensions');
   });
+  test('reports another page only when an additional match exists', async () => {
+    const first=fixture(); fs.writeFileSync(path.join(first.dir,'run-scorecard.json'),JSON.stringify(first.card));
+    const jobs = [
+      { ...first.card, run_id: 'kaseki-1' },
+      { ...first.card, run_id: 'kaseki-2' },
+      { ...first.card, run_id: 'kaseki-3' },
+    ].map(card => {
+      const dir=fs.mkdtempSync(path.join(os.tmpdir(),'scorecard-page-'));
+      fs.writeFileSync(path.join(dir,'run-scorecard.json'),JSON.stringify(card));
+      return { id:card.run_id,status:'completed',request:{repoUrl:'https://github.com/acme/repo',ref:'main'},
+        createdAt:new Date(),resultDir:dir,finalized:true };
+    });
+    const scheduler={ getJob:()=>undefined,listJobs:()=>jobs };
+    const app=express(); app.use(createScorecardRoutes(scheduler as any,new ResultCache()));
+
+    const fullPage=await get(app,'/scorecards?limit=2');
+    expect(fullPage.body.pagination).toMatchObject({ returned:2,hasMore:true });
+    const lastPage=await get(app,'/scorecards?limit=2&offset=2');
+    expect(lastPage.body.pagination).toMatchObject({ returned:1,hasMore:false });
+  });
 });
