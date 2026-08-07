@@ -36,7 +36,7 @@ function normalizedUsage(raw: Record<string, unknown>): UsageObject {
 function hasUsage(v: UsageObject): boolean { return [v.prompt_tokens,v.completion_tokens,v.input,v.output,v.cacheRead,v.cacheWrite].some(x => number(x) !== undefined) || v.prompt_tokens_details !== undefined; }
 function tokenRecord(summary: ReturnType<TokenUsageAggregator['getSummary']>, unknown: number): RunScorecard['token_totals'] {
   const unavailable = summary.total_tokens === 0;
-  return { input_tokens: summary.total_input_tokens, output_tokens: summary.total_output_tokens, cache_read_tokens: summary.total_cache_read_tokens, cache_write_tokens: summary.total_cache_creation_tokens, unknown_tokens: unknown, unavailable, completeness: unavailable ? 'unavailable' : unknown ? 'provisional' : 'complete' };
+  return { input_tokens: summary.total_input_tokens, output_tokens: summary.total_output_tokens, cache_read_tokens: summary.total_cache_read_tokens, cache_write_tokens: summary.total_cache_creation_tokens, unknown_tokens: unknown, unavailable, completeness: unavailable ? 'unavailable' : (unknown > 0 ? 'provisional' : 'complete') };
 }
 function lifecycle(metadata: Record<string, unknown>): RunScorecard['lifecycle_status'] {
   const explicit = metadata.lifecycle_status ?? metadata.status ?? metadata.run_status;
