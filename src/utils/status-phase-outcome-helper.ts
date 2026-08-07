@@ -50,7 +50,6 @@ export class StatusPhaseOutcomeHelper {
     const scoutingStartedAt = this.phaseStartedAt(scoutingEvents);
     const weavingStartedAt = this.phaseStartedAt(weavingEvents);
     const scoutingFallbackReason = this.scoutingFallbackReason(job);
-    const goalSettingFallbackReason = this.goalSettingFallbackReason(job);
     const goalSettingStartedAt = this.phaseStartedAt(goalSettingEvents);
     const goalSettingCompletedAt = this.phaseCompletedAt(goalSettingEvents);
     const goalSettingExitCode = Number(metadata?.goal_setting_exit_code);
@@ -62,6 +61,10 @@ export class StatusPhaseOutcomeHelper {
       (typeof metadata?.goal_setting_actual_model === 'string' && metadata.goal_setting_actual_model !== 'unknown')
     );
     const goalSettingFailed = Number.isFinite(goalSettingExitCode) && goalSettingExitCode !== 0;
+    const goalSettingFallbackReason = this.goalSettingFallbackReason(job)
+      ?? (goalSettingFailed && job.status === 'running' && scoutingStarted
+        ? `GOAL_SETTING_PI_ERROR_EXIT_${goalSettingExitCode}`
+        : undefined);
 
     const derived: NonNullable<StatusResponse['phaseOutcome']> = {
       goalSetting: this.resolveGoalSettingOutcome(
@@ -94,6 +97,33 @@ export class StatusPhaseOutcomeHelper {
       ...(weavingCompletedAt ? { weavingCompletedAt } : {}),
     };
     response.phaseOutcome = this.monotonicPhaseOutcome(job, derived);
+    response.phaseHealth = this.buildPhaseHealth(response, job);
+  }
+
+  private buildPhaseHealth(response: StatusResponse, job: Job): NonNullable<StatusResponse['phaseHealth']> {
+    const stage = String(response.progress?.stage ?? job.currentStage ?? '').trim() || undefined;
+    const updatedAt = response.progress?.updatedAt;
+    const updatedMs = updatedAt ? Date.parse(updatedAt) : Number.NaN;
+    const heartbeatAgeSeconds = Number.isFinite(updatedMs)
+      ? Math.max(0, Math.floor((Date.now() - updatedMs) / 1000))
+      : undefined;
+    const requestedTimeout = stage && /goal check/i.test(stage)
+      ? Number(job.request?.goalCheck?.timeoutSeconds)
+      : Number(job.request?.timeoutSeconds);
+    const timeoutSeconds = Number.isFinite(requestedTimeout) && requestedTimeout > 0
+      ? requestedTimeout
+      : this.config.agentTimeoutSeconds ?? 3600;
+    // A phase that is silent for two minutes is actionable even when its hard
+    // timeout is much larger. Keep the run running, but make the condition
+    // explicit so callers can decide whether to cancel or inspect logs.
+    const stalled = job.status === 'running' && heartbeatAgeSeconds !== undefined && heartbeatAgeSeconds >= 120;
+    return {
+      ...(stage ? { stage } : {}),
+      ...(heartbeatAgeSeconds !== undefined ? { heartbeatAgeSeconds } : {}),
+      timeoutSeconds,
+      state: stalled ? 'stalled' : 'healthy',
+      ...(stalled ? { message: `No durable progress heartbeat for ${heartbeatAgeSeconds}s; inspect logs or cancel the run.` } : {}),
+    };
   }
 
   private monotonicPhaseOutcome(

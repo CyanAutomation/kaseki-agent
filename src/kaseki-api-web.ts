@@ -1616,7 +1616,6 @@ const controllerPage = String.raw`<!doctype html>
       let issuesRepoBlurTimer = null;
       let activeRunView = 'status';
       let runProgressHighWater = {};
-      let diagnosticInFlight = false;
       let pageDisposed = false;
       const activeRequestControllers = new Set();
       const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
@@ -1976,6 +1975,11 @@ const controllerPage = String.raw`<!doctype html>
             phaseTimes.forEach(([label, value]) => {
               if (typeof value === 'string') items.push([label, new Date(value).toLocaleTimeString()]);
             });
+          }
+          if (payload.phaseHealth && typeof payload.phaseHealth === 'object') {
+            const health = payload.phaseHealth;
+            const details = [health.stage, typeof health.heartbeatAgeSeconds === 'number' ? health.heartbeatAgeSeconds + 's since heartbeat' : '', typeof health.timeoutSeconds === 'number' ? health.timeoutSeconds + 's phase timeout' : ''].filter(Boolean).join(' · ');
+            items.push(['Phase health', health.state === 'stalled' ? 'STALLED — ' + (health.message || details) : 'Healthy' + (details ? ' — ' + details : ''), { warning: health.state === 'stalled', critical: health.state === 'stalled', fullWidth: true }]);
           }
           // Removed: Correlation ID and Diagnostic entry point (too technical)
           // Removed: Provider attempt (too technical)
@@ -2908,21 +2912,13 @@ const controllerPage = String.raw`<!doctype html>
 
       async function run(button, path, options) {
         const isDiagnostic = button.classList.contains('health-check-button');
-        if (isDiagnostic && diagnosticInFlight) {
-          return { payload: null, response: { ok: false } };
-        }
-        const diagnosticButtons = isDiagnostic
-          ? Array.from(document.querySelectorAll('.health-check-button'))
-          : [];
+        const diagnosticButtons = isDiagnostic ? [button] : [];
         const diagnosticState = document.querySelector('#diagnostic-queue-state');
-        // Gateway and inference probes consume shared controller resources.
-        // Serialize them so users never accidentally launch overlapping tests
-        // and make the waiting state explicit rather than silently disabling a
-        // single button.
+        // Keep the active control disabled, but allow independent read-only
+        // health and status probes while a long diagnostic is in flight.
         diagnosticButtons.forEach((probeButton) => { probeButton.disabled = true; });
-        if (isDiagnostic) diagnosticInFlight = true;
         if (diagnosticState) diagnosticState.textContent = isDiagnostic
-          ? 'Diagnostic running: ' + (button.textContent ? button.textContent.trim() : 'controller check') + '. Other diagnostics are disabled until it finishes.'
+          ? 'Diagnostic running: ' + (button.textContent ? button.textContent.trim() : 'controller check') + '. Other read-only diagnostics remain available.'
           : diagnosticState.textContent;
         if (!isDiagnostic) button.disabled = true;
         setOutputMetadata('running', String(runIdInput.value || '').trim() || undefined);
@@ -2956,7 +2952,6 @@ const controllerPage = String.raw`<!doctype html>
         } finally {
           if (elapsedTimer) window.clearInterval(elapsedTimer);
           if (isDiagnostic) {
-            diagnosticInFlight = false;
             diagnosticButtons.forEach((probeButton) => { probeButton.disabled = false; });
             if (diagnosticState) diagnosticState.textContent = 'Diagnostics are ready.';
           } else {

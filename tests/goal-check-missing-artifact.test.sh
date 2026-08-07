@@ -96,7 +96,7 @@ env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspe
 run_exit=$?
 
 [ "$run_exit" -eq 8 ] || fail "expected goal-check failure exit 8, got $run_exit"
-[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check' ] || fail "Pi calls did not reach the missing goal-check artifact"
+[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' ] || fail "missing evaluator-only retry after goal-check artifact failure"
 [ -s "$RESULTS_DIR/goal-check-validation-errors.jsonl" ] || fail "missing goal-check-validation-errors.jsonl"
 [ "$(cat "$RESULTS_DIR/goal-check-validation-reason.txt")" = "missing_file" ] || fail "expected missing_file reason"
 grep -q 'goal-check-candidate.json' "$RESULTS_DIR/goal-check-validation-summary.txt" || fail "missing goal-check validation summary"
@@ -104,7 +104,7 @@ grep -q '^goal check[[:space:]]86[[:space:]]' "$RESULTS_DIR/stage-timings.tsv" |
 node - "$RESULTS_DIR/goal-check-validation-errors.jsonl" "$RESULTS_DIR" <<'NODE' || fail "goal-check validation error log did not capture missing artifact"
 const fs = require('node:fs');
 const lines = fs.readFileSync(process.argv[2], 'utf8').trim().split(/\n+/).filter(Boolean);
-if (lines.length !== 1) throw new Error(`expected exactly one JSONL entry, got ${lines.length}`);
+if (lines.length !== 2) throw new Error(`expected exactly two JSONL entries (one per evaluator attempt), got ${lines.length}`);
 const entry = JSON.parse(lines[0]);
 if (entry.field !== 'goal-check-candidate.json') throw new Error(`expected field goal-check-candidate.json, got ${entry.field}`);
 if (entry.expected !== `file at ${process.argv[3]}/goal-check-candidate.json`) throw new Error(`expected file at ${process.argv[3]}/goal-check-candidate.json, got ${entry.expected}`);

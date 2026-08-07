@@ -756,6 +756,33 @@ describe('StatusPhaseOutcomeHelper', () => {
   });
 
   describe('stage pattern matching edge cases', () => {
+    it('reports a deterministic goal-setting failure as a fallback once scouting continues', () => {
+      const helper = new StatusPhaseOutcomeHelper(
+        makeScheduler([{ stage: 'pi scouting agent', status: 'started', timestamp: '2026-01-01T00:00:00Z' }]),
+        makeConfig(resultsDir),
+      );
+      const response = makeResponse('pi scouting agent');
+
+      helper.addPhaseOutcome(response, makeJob(), { goal_setting_exit_code: 1 });
+
+      expect(response.phaseOutcome).toMatchObject({
+        goalSetting: 'completed_with_fallback',
+        goalSettingFallback: true,
+        goalSettingFallbackReason: 'GOAL_SETTING_PI_ERROR_EXIT_1',
+      });
+    });
+
+    it('marks a running phase stalled after two minutes without a durable heartbeat', () => {
+      const helper = new StatusPhaseOutcomeHelper(makeScheduler([]), makeConfig(resultsDir));
+      const response = makeResponse('goal check');
+      response.progress = { stage: 'goal check', updatedAt: new Date(Date.now() - 121_000).toISOString() } as any;
+
+      helper.addPhaseOutcome(response, makeJob(), {});
+
+      expect(response.phaseHealth).toMatchObject({ state: 'stalled', stage: 'goal check', timeoutSeconds: 3600 });
+      expect(response.phaseHealth?.heartbeatAgeSeconds).toBeGreaterThanOrEqual(120);
+    });
+
     it('recognizes goal-setting stage with various separators', () => {
       const patterns = ['pi goal-setting agent', 'pi goal_setting agent', 'pi goalsetting agent'];
 
