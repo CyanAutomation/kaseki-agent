@@ -195,7 +195,7 @@ RUN chmod +x \
     && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \
     && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
     && install -m 0755 /app/lib/run-scorecard.js /usr/local/bin/kaseki-run-scorecard \
-    && install -m 0755 /app/lib/run-scorecard-markdown.js /usr/local/bin/kaseki-run-scorecard-markdown \
+    && ln -sf /app/dist/run-scorecard-markdown.js /usr/local/bin/kaseki-run-scorecard-markdown \
     && install -m 0755 /app/lib/analyze-test-failures.js /usr/local/bin/analyze-test-failures \
     && install -m 0755 /app/lib/lib/validation-causality-analysis.js /usr/local/bin/validation-causality-analysis \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \
@@ -343,7 +343,7 @@ RUN mkdir -p /scripts \
     && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \
     && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
     && install -m 0755 /app/lib/run-scorecard.js /usr/local/bin/kaseki-run-scorecard \
-    && install -m 0755 /app/lib/run-scorecard-markdown.js /usr/local/bin/kaseki-run-scorecard-markdown \
+    && ln -sf /app/dist/run-scorecard-markdown.js /usr/local/bin/kaseki-run-scorecard-markdown \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \
     && install -m 0755 /app/lib/github-app-token-runtime.js /usr/local/bin/github-app-token-runtime.js \
     && ln -sf github-app-token /usr/local/bin/github-app-token.js \

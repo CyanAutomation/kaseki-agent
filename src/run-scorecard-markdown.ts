@@ -26,6 +26,9 @@ export function sanitizeScorecardText(value: unknown, limit = MAX_ITEM_LENGTH): 
 const cell = (value: unknown): string => sanitizeScorecardText(value).replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
 const number = (value: number): string => Number.isInteger(value) ? String(value) : value.toFixed(1);
 const tokens = (usage: RunScorecard['token_totals']): number => usage.input_tokens + usage.output_tokens + usage.cache_read_tokens + usage.cache_write_tokens;
+const tokenSummary = (usage: RunScorecard['token_totals']): string => usage.unavailable || usage.completeness === 'unavailable'
+  ? 'unavailable'
+  : `${tokens(usage)} total (${usage.input_tokens} input, ${usage.output_tokens} output, ${usage.cache_read_tokens} cache read, ${usage.cache_write_tokens} cache write${usage.unknown_tokens ? `, ${usage.unknown_tokens} unknown` : ''})`;
 const duration = (milliseconds: number | null): string => milliseconds === null ? 'unavailable' : `${number(milliseconds / 1000)}s`;
 const metrics = (values: Record<string, string | number | boolean | null>): string => Object.entries(values)
   .filter(([key]) => !/(?:prompt|secret|credential|raw|response|evidence|prose)/i.test(key))
@@ -50,14 +53,14 @@ export function formatRunScorecardMarkdown(input: unknown): string {
     `- **Evidence coverage:** ${card.evidence_coverage.available}/${card.evidence_coverage.required} (${number(card.evidence_coverage.ratio * 100)}%)`,
     '', '| Dimension | Weight | Score | Weighted points | Status |', '| --- | ---: | ---: | ---: | --- |',
     ...dimensions.map(d => `| ${cell(DIMENSION_LABELS[d.id])} | ${number(d.effective_weight * 100)}% | ${number(d.normalized_score)} | ${number(d.weighted_points)} | ${cell(d.status)} |`),
-    '', `- **Elapsed:** ${duration(card.timing_totals.wall_clock_ms)}`,
-    `- **Tokens:** ${tokens(card.token_totals)} total (${card.token_totals.input_tokens} input, ${card.token_totals.output_tokens} output, ${card.token_totals.cache_read_tokens} cache read, ${card.token_totals.cache_write_tokens} cache write${card.token_totals.unknown_tokens ? `, ${card.token_totals.unknown_tokens} unknown` : ''})`,
+    '', `- **Elapsed:** ${card.timing_totals.completeness === 'complete' ? duration(card.timing_totals.wall_clock_ms) : 'unavailable'}`,
+    `- **Tokens:** ${tokenSummary(card.token_totals)}`,
     `- **Strengths:** ${strengths.length ? strengths.join('; ') : 'None identified from bounded score data.'}`,
     `- **Penalties:** ${penalties.length ? penalties.join('; ') : 'None.'}`,
     `- **Warnings:** ${warnings.length ? warnings.join('; ') : 'None.'}`,
     '', '<details><summary>Per-phase breakdown</summary>', '',
     '| Phase | Outcome | Elapsed | Tokens | Metrics | Completeness | Confidence |', '| --- | --- | ---: | ---: | --- | --- | ---: |',
-    ...PHASE_ORDER.map(id => { const p = card.phases[id]; return `| ${PHASE_LABELS[id]} | ${cell(p.outcome)} | ${duration(p.duration_ms)} | ${tokens(p.token_usage)} | ${cell(metrics(p.measurements))} | ${cell(p.completeness)} | ${number(p.confidence)}% |`; }),
+    ...PHASE_ORDER.map(id => { const p = card.phases[id]; return `| ${PHASE_LABELS[id]} | ${cell(p.outcome)} | ${duration(p.duration_ms)} | ${p.token_usage.unavailable || p.token_usage.completeness === 'unavailable' ? 'unavailable' : tokens(p.token_usage)} | ${cell(metrics(p.measurements))} | ${cell(p.completeness)} | ${number(p.confidence)}% |`; }),
     '', '</details>',
   ];
   if (card.completeness !== 'complete' || card.evidence_coverage.ratio < 1 || card.token_totals.unavailable) {
@@ -72,5 +75,11 @@ export function formatRunScorecardFile(file: string): string {
 }
 
 if (process.argv[1] && /run-scorecard-markdown\.(?:js|ts)$/.test(process.argv[1])) {
-  process.stdout.write(`${formatRunScorecardFile(process.argv[2] ?? '')}\n`);
+  const file = process.argv[2];
+  if (!file) {
+    process.stderr.write('Error: Missing required file path argument\n');
+    process.exitCode = 1;
+  } else {
+    process.stdout.write(`${formatRunScorecardFile(file)}\n`);
+  }
 }
