@@ -256,3 +256,11 @@ export function getProviderDiagnosticsLogger(): ProviderDiagnosticsLogger {
   }
   return globalLogger;
 }
+
+/**
+ * Reset the application-wide logger between tests.
+ */
+export function resetProviderDiagnosticsLoggerForTests(): void {
+  globalLogger?.flush();
+  globalLogger = null;
+}
