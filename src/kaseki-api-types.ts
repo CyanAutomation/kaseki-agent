@@ -462,7 +462,7 @@ export interface RunEvaluationRenderedResponse {
   raw: Record<string, unknown>;
 }
 
-export interface ScorecardResponse extends RunScorecard {}
+export type ScorecardResponse = RunScorecard;
 
 export interface ScorecardSummary {
   runId: string;
