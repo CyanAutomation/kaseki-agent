@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { RunRequest, StatusResponse, ValidationResponse } from './kaseki-api-types';
+import { RunRequest, StatusResponse, ValidationResponse, type ScorecardResponse, type ScorecardsListResponse } from './kaseki-api-types';
+import { RunScorecardSchema } from './types/run-scorecard';
 
 /**
  * Zod schemas for response validation.
@@ -75,6 +76,7 @@ const StatusResponseSchema = z.object({
     'goal-check-stderr.log',
   ]).optional(),
 });
+const ScorecardResponseSchema = RunScorecardSchema;
 
 /**
  * Kaseki API client for TypeScript/Node.js applications.
@@ -174,6 +176,19 @@ export class KasekiApiClient {
 
     const data = await res.json();
     return StatusResponseSchema.parse(data);
+  }
+
+  async getScorecard(runId: string): Promise<ScorecardResponse> {
+    const res = await fetch(`${this.baseUrl}/api/runs/${encodeURIComponent(runId)}/scorecard`, { headers: this.baseHeaders });
+    if (!res.ok) { await res.text().catch(() => {}); throw new Error(`Failed to get scorecard: ${res.status}`); }
+    return ScorecardResponseSchema.parse(await res.json());
+  }
+
+  async listScorecards(query: Record<string, string | number> = {}): Promise<ScorecardsListResponse> {
+    const params = new URLSearchParams(Object.entries(query).map(([key, value]) => [key, String(value)]));
+    const res = await fetch(`${this.baseUrl}/api/scorecards${params.size ? `?${params}` : ''}`, { headers: this.baseHeaders });
+    if (!res.ok) { await res.text().catch(() => {}); throw new Error(`Failed to list scorecards: ${res.status}`); }
+    return await res.json() as ScorecardsListResponse;
   }
 
 }

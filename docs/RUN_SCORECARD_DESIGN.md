@@ -1,5 +1,9 @@
 # Run scorecard design
 
+The API exposes the canonical artifact at `GET /api/runs/:id/scorecard` (or
+`?format=markdown`) and bounded compact history at `GET /api/scorecards`. See the
+[REST API reference](API.md#run-scorecards) for lifecycle errors, filters, and pagination.
+
 ## Purpose and compatibility
 
 `RunScorecard` is the durable, machine-readable assessment of one Kaseki run. The TypeScript and Zod contract is in `src/types/run-scorecard.ts`. Producers MUST validate the object before publishing it and consumers MUST reject an unknown `schema_version`; `rubric_version` identifies scoring semantics independently. Version 1 uses `schema_version: "1.0.0"` and `rubric_version: "2026-08-07"`.

@@ -49,6 +49,20 @@ import { createMockScheduler, createTestConfig, type TestScheduler } from './tes
 import * as gatewaySmoke from './kaseki-api-gateway-smoke';
 import { applyHttpHardening } from './kaseki-api-service';
 
+describe('kaseki-api-routes scorecard integration', () => {
+  test('registers the protected scorecard route in the /api assembly', async () => {
+    const config = createTestConfig(fs.mkdtempSync(path.join(os.tmpdir(), 'scorecard-api-')));
+    const harness = await createTestApp(createMockScheduler(), config);
+    try {
+      const response = await fetch(`http://127.0.0.1:${harness.port}/api/runs/missing/scorecard`, {
+        headers: { Authorization: `Bearer ${config.apiKeys[0]}` },
+      });
+      expect(response.status).toBe(404);
+      expect((await response.json()).title).toBe('Run not found');
+    } finally { await new Promise<void>(resolve => harness.server.close(() => resolve())); }
+  });
+});
+
 const { privateKey: defaultGithubPrivateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
 const defaultGithubPrivateKeyPem = defaultGithubPrivateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
 const execDockerCommandMock = jest.mocked(subprocessHelpers.execDockerCommand);
