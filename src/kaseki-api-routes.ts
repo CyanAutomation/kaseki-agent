@@ -39,6 +39,7 @@ import {
 } from './kaseki-api-health-checks';
 import { buildPreflightResponse as buildPreflightResponseImpl } from './kaseki-api-routes-preflight';
 import { createGatewayTestRoutes } from './routes/gateway-test-routes';
+import { createScorecardRoutes } from './routes/scorecard-routes';
 import { testPiGatewayProviderSmoke } from './kaseki-api-gateway-smoke';
 
 function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
@@ -746,6 +747,7 @@ export function createApiRouter(
   router.use(createStatusRoutes(scheduler, config, artifactCache));
   router.use(createLogRoutes(scheduler, config, artifactCache));
   router.use(createArtifactRoutes(scheduler, config, artifactCache));
+  router.use(createScorecardRoutes(scheduler, artifactCache));
   router.use(createImprovementRoutes(scheduler, config));
   router.use(createWebhookRoutes());
   router.use(createGitHubIssuesRoutes());

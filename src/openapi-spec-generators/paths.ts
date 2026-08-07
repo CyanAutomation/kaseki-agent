@@ -1241,6 +1241,22 @@ function buildImprovementPaths(errorResponseSchema: Record<string, unknown>): Re
   };
 }
 
+function buildScorecardPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
+  const error = (description: string) => ({ description, content: { 'application/json': { schema: errorResponseSchema } } });
+  return {
+    '/api/runs/{id}/scorecard': { get: { operationId: 'getRunScorecard', summary: 'Get canonical run scorecard', description: 'Returns the validated structured run scorecard or its reviewer-safe Markdown representation.', tags: ['Artifacts'], security: [{ BearerAuth: [] }],
+      parameters: [{ name:'id', in:'path', required:true, schema:{type:'string'} }, { name:'format', in:'query', required:false, schema:{type:'string',enum:['markdown']}, description:'Render with the same reviewer-safe formatter used for pull requests.' }],
+      responses: { '200': { description:'Canonical scorecard', content: { 'application/json': { schema:{$ref:'#/components/schemas/RunScorecard'}, example:{run_id:'kaseki-42',overall_score:86,grade:'B',rubric_version:'1.0'} }, 'text/markdown': { schema:{type:'string'}, example:'- **Overall:** 86/100 (B)' } } },
+        '400':error('Invalid format'), '401':error('Unauthorized'), '404':error('Run or scorecard not found'), '409':error('In-progress run has no provisional score'), '422':error('Malformed scorecard artifact') } } },
+    '/api/scorecards': { get: { operationId:'listScorecards', summary:'List compact run scorecards', description:'Queries only the bounded scheduler index and returns summaries without dimension evidence.', tags:['Run Details'], security:[{BearerAuth:[]}],
+      parameters: [
+        {name:'limit',in:'query',schema:{type:'integer',minimum:1,maximum:100,default:25}}, {name:'offset',in:'query',schema:{type:'integer',minimum:0}},
+        ...['lifecycleStatus','grade','rubricVersion','model','repository'].map(name=>({name,in:'query',schema:{type:'string'}})),
+        {name:'startedAfter',in:'query',schema:{type:'string',format:'date-time'}}, {name:'startedBefore',in:'query',schema:{type:'string',format:'date-time'}}],
+      responses:{'200':{description:'Paginated compact scorecard summaries',content:{'application/json':{schema:{type:'object',required:['scorecards','pagination','filters'],properties:{scorecards:{type:'array',items:{type:'object',required:['runId','overallScore','grade','rubricVersion'],properties:{runId:{type:'string'},overallScore:{type:'number'},grade:{type:'string'},rubricVersion:{type:'string'},lifecycleStatus:{type:'string'},completeness:{type:'string'},confidence:{type:'number'},startedAt:{type:'string',format:'date-time'},endedAt:{type:['string','null']},scoredAt:{type:'string',format:'date-time'},model:{type:'string'},repository:{type:'string'}}}},pagination:{type:'object'},filters:{type:'object'}}},example:{scorecards:[{runId:'kaseki-42',overallScore:86,grade:'B',rubricVersion:'1.0'}],pagination:{limit:25,offset:0,returned:1,hasMore:false},filters:{}}}}},'401':error('Unauthorized')}} }
+  };
+}
+
 function assertRunRequestSchema(runRequestSchema: Record<string, unknown>): void {
   const properties = runRequestSchema.properties as Record<string, unknown> | undefined;
   const repoUrl = properties?.repoUrl as Record<string, unknown> | undefined;
@@ -1278,6 +1294,7 @@ export function buildAllPaths(
     ...buildArtifactPaths(errorResponseSchema),
     ...buildRunAnalysisPaths(errorResponseSchema),
     ...buildImprovementPaths(errorResponseSchema),
+    ...buildScorecardPaths(errorResponseSchema),
     ...buildWebhookPaths(errorResponseSchema)
   };
 }

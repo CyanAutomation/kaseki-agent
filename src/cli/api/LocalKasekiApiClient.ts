@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ConfigManager } from '../../config/ConfigManager';
-import { ArtifactAvailability, type AnalysisResponse, type ArtifactResponse, type LogResponse, type RunArtifactsResponse, type RunRequest, type RunResponse, type RunsListResponse, type StatusResponse } from '../../kaseki-api-types';
+import { ArtifactAvailability, type AnalysisResponse, type ArtifactResponse, type LogResponse, type RunArtifactsResponse, type RunRequest, type RunResponse, type RunsListResponse, type ScorecardResponse, type ScorecardsListResponse, type StatusResponse } from '../../kaseki-api-types';
+import { RunScorecardSchema } from '../../types/run-scorecard';
 
 const DEFAULT_LOCAL_API_BASE_URL = 'http://localhost:8080/api';
 
@@ -150,6 +151,7 @@ const RunResponseSchema = z.object({
   failureClass: z.string().optional(),
   error: z.string().optional(),
 });
+const ScorecardResponseSchema = RunScorecardSchema;
 
 export interface LocalKasekiApiClientOptions {
   baseUrl?: string;
@@ -222,6 +224,16 @@ export class LocalKasekiApiClient {
   async getRunArtifacts(runId: string): Promise<RunArtifactsResponse> {
     const data = await this.requestJson(`/runs/${encodeURIComponent(runId)}/artifacts`, 'Failed to fetch run artifacts from local Kaseki API');
     return RunArtifactsResponseSchema.parse(data);
+  }
+
+  async getRunScorecard(runId: string): Promise<ScorecardResponse> {
+    const data = await this.requestJson(`/runs/${encodeURIComponent(runId)}/scorecard`, 'Failed to fetch run scorecard from local Kaseki API');
+    return ScorecardResponseSchema.parse(data);
+  }
+
+  async listScorecards(query: Record<string, string | number> = {}): Promise<ScorecardsListResponse> {
+    const params = new URLSearchParams(Object.entries(query).map(([key, value]) => [key, String(value)]));
+    return await this.requestJson(`/scorecards${params.size ? `?${params}` : ''}`, 'Failed to list scorecards from local Kaseki API') as ScorecardsListResponse;
   }
 
   async getRunLog(runId: string, logType: LogResponse['logType']): Promise<LogResponse> {

@@ -421,3 +421,8 @@ Breaking changes increment major version. Tools should check `schema_version` on
 - [CLAUDE.md](CLAUDE.md) — Artifact inventory and availability
 - [ARTIFACT_EVALUATION_REVISED.md](ARTIFACT_EVALUATION_REVISED.md) — Phase 1-4 implementation
 - [Quality Gates](QUALITY_GATES.md) — Exit codes and gate definitions
+# Scorecard API
+
+`run-scorecard.json` is available as a validated contract through
+[`GET /api/runs/:id/scorecard`](API.md#run-scorecards); consumers should prefer that endpoint over
+reading the result directory directly. Cross-run consumers can use the bounded compact summary API.
