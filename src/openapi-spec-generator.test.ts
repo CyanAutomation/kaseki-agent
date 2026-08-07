@@ -122,6 +122,14 @@ const expectedEndpoints: EndpointContract[] = [
     errorCodes: ['401'],
   },
   {
+    path: '/api/scorecards',
+    method: 'get',
+    operationId: 'listScorecards',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['401'],
+  },
+  {
     path: '/api/runs/{id}/status',
     method: 'get',
     operationId: 'getRunStatus',
@@ -200,6 +208,15 @@ const expectedEndpoints: EndpointContract[] = [
     auth: 'protected',
     successCodes: ['200'],
     errorCodes: ['404', '401'],
+    pathParams: ['id'],
+  },
+  {
+    path: '/api/runs/{id}/scorecard',
+    method: 'get',
+    operationId: 'getRunScorecard',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['400', '401', '404', '409', '422'],
     pathParams: ['id'],
   },
   {
