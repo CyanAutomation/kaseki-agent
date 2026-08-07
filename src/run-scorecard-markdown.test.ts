@@ -33,4 +33,20 @@ describe('run scorecard Markdown formatter', () => {
     fixture.completeness = 'provisional';
     expect(formatRunScorecardMarkdown(fixture)).toContain('Provisional score');
   });
+
+  test('does not present unavailable timing and token sentinels as measured zeroes', () => {
+    const fixture = card();
+    fixture.timing_totals.wall_clock_ms = 0;
+    fixture.timing_totals.completeness = 'unavailable';
+    fixture.token_totals.unavailable = true;
+    fixture.token_totals.completeness = 'unavailable';
+    fixture.phases.coding.token_usage.unavailable = true;
+    fixture.phases.coding.token_usage.completeness = 'unavailable';
+
+    const markdown = formatRunScorecardMarkdown(fixture);
+    expect(markdown).toContain('- **Elapsed:** unavailable');
+    expect(markdown).toContain('- **Tokens:** unavailable');
+    expect(markdown).toContain('| Coding | succeeded | unavailable | unavailable |');
+    expect(markdown).not.toContain('- **Tokens:** 0 total');
+  });
 });
