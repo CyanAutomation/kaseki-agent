@@ -4,6 +4,33 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.124.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.123.3...v1.124.0) (2026-08-07)
+
+
+### Bug Fixes
+
+* address run scorecard review feedback ([606e9d6](https://github.com/CyanAutomation/kaseki-agent/commit/606e9d672824fa7ad9ee92ab9ada689c789c2356))
+* align generated run scorecards with schema ([6c2a9a0](https://github.com/CyanAutomation/kaseki-agent/commit/6c2a9a081697e72ef01e2f257f9ef35e4f655683))
+* align generated run scorecards with the published schema ([#1172](https://github.com/CyanAutomation/kaseki-agent/issues/1172)) ([25315af](https://github.com/CyanAutomation/kaseki-agent/commit/25315af2b204ebf67466f119f3006a6731244edf))
+* **api:** validate scorecard list responses ([f9b0034](https://github.com/CyanAutomation/kaseki-agent/commit/f9b0034b0d789c0ff8fd6e7eeedeb173d41d5f0d))
+* clarify scorecard token completeness penalties ([fa742d3](https://github.com/CyanAutomation/kaseki-agent/commit/fa742d3323ac7266975ac691aafcf50507dfaa44))
+* clarify token completeness and confidence penalty logic in run scorecard ([#1174](https://github.com/CyanAutomation/kaseki-agent/issues/1174)) ([ce89a89](https://github.com/CyanAutomation/kaseki-agent/commit/ce89a894f8d467c62f923b3ea3f79d9f8a1002a3))
+* harden scorecard calibration errors ([a43cdc5](https://github.com/CyanAutomation/kaseki-agent/commit/a43cdc5dfacac4fa894a9f1f1862970c45da965d))
+* **run-scorecard:** respect unavailable timing/token metadata, add CLI arg validation, and fix packaging ([#1178](https://github.com/CyanAutomation/kaseki-agent/issues/1178)) ([8f113e1](https://github.com/CyanAutomation/kaseki-agent/commit/8f113e1fa6beed8f0910fe171dacccd8689186c6))
+
+
+### Features
+
+* add reusable run scorecard markdown formatter ([19776b3](https://github.com/CyanAutomation/kaseki-agent/commit/19776b3904770bd9fe0df2d536538bdd45473df3))
+* add reusable run scorecard Markdown formatter and PR integration ([#1176](https://github.com/CyanAutomation/kaseki-agent/issues/1176)) ([c945ff4](https://github.com/CyanAutomation/kaseki-agent/commit/c945ff43fb0394f0b6448fab50ebf7172eef5a18))
+* add run scorecard generator ([5286c84](https://github.com/CyanAutomation/kaseki-agent/commit/5286c84dfe3e91dbdc06a86893d16fbd8a7f3039))
+* add run scorecard generator and integrate into finalization ([#1170](https://github.com/CyanAutomation/kaseki-agent/issues/1170)) ([b917249](https://github.com/CyanAutomation/kaseki-agent/commit/b91724943234f90a8767b0fde809ad44dd12cdcd))
+* add RunScorecard schema and design doc ([#1167](https://github.com/CyanAutomation/kaseki-agent/issues/1167)) ([9818fda](https://github.com/CyanAutomation/kaseki-agent/commit/9818fdad343e7842c9c9e83615b7c1234b30cc5b))
+* **api:** expose run scorecards ([56b2b3a](https://github.com/CyanAutomation/kaseki-agent/commit/56b2b3afea2cf5d964bf45f2a9ce7bd1b23cc154))
+* define run scorecard contract ([acb74c7](https://github.com/CyanAutomation/kaseki-agent/commit/acb74c7df05e05676eed6b473929a756b6c9a121))
+* extend phase scorecard evidence ([e701eb0](https://github.com/CyanAutomation/kaseki-agent/commit/e701eb06f7acbcfc9274f07f42b4de3ea1e8e128))
+* extend phase scorecard evidence collection and enforce evaluator caps ([#1175](https://github.com/CyanAutomation/kaseki-agent/issues/1175)) ([07f68df](https://github.com/CyanAutomation/kaseki-agent/commit/07f68dfd50b617614748b047ceb09a815c57b46f))
+
 ## [1.123.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.123.2...v1.123.3) (2026-08-06)
 
 
