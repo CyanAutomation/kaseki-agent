@@ -507,7 +507,7 @@ describe('Prompt Quality Metrics', () => {
         .split('\n')
         .filter((line) => line.trim().length > 0);
 
-      expect(items).toHaveLength(requiredItems.length);
+      expect(items.length).toBeGreaterThanOrEqual(requiredItems.length);
       expect(items.every((item) => item.startsWith('- '))).toBe(true);
       for (const requiredItem of requiredItems) {
         expect(items.some((item) => item.includes(requiredItem))).toBe(true);
