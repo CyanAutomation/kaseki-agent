@@ -9441,6 +9441,16 @@ run_secret_scan
 
 run_run_evaluation
 
+# Evaluation and phase timing evidence is now available. Generate before PR
+# rendering/publication so consumers see the same immutable run evidence.
+consolidate_timings_to_json "${KASEKI_RESULTS_DIR}/timings-manifest.json" "$VALIDATION_TIMINGS_FILE" "$PRE_VALIDATION_TIMINGS_FILE" "${KASEKI_RESULTS_DIR}/stage-timings.tsv"
+if command -v kaseki-run-scorecard >/dev/null 2>&1; then
+  kaseki-run-scorecard >/dev/null ||
+    printf '%s\n' '{"level":"warning","code":"scorecard_generation_failed","stage":"post_evaluation","non_destructive":true}' >&2
+else
+  printf '%s\n' '{"level":"warning","code":"scorecard_generator_missing","stage":"post_evaluation","non_destructive":true}' >&2
+fi
+
 build_github_skip_reasons() {
   GITHUB_SKIP_REASONS=()
   if [ "$GITHUB_APP_ENABLED" != "1" ]; then

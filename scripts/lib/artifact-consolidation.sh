@@ -123,5 +123,11 @@ finalize_artifacts_and_publish_status() {
   reconcile_gateway_summary "$results_dir/gateway-summary.json" "$results_dir/provider-attempts.jsonl" || {
     echo "Warning: Failed to reconcile gateway summary" >&2
   }
+  # Terminal failures and cancellations also receive a partial scorecard. This
+  # is intentionally best-effort and can never replace the original status.
+  if command -v kaseki-run-scorecard >/dev/null 2>&1; then
+    KASEKI_RESULTS_DIR="$results_dir" kaseki-run-scorecard >/dev/null ||
+      printf '%s\n' '{"level":"warning","code":"scorecard_generation_failed","stage":"artifact_finalization"}' >&2
+  fi
   "$status_writer" "$status"
 }
