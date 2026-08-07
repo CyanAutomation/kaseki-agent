@@ -7,6 +7,7 @@ import {
   buildRunResponseSchema,
   buildErrorResponseSchema,
   buildAllSchemas,
+  buildRunScorecardSchema,
 } from './schemas';
 
 type JsonSchemaObject = {
@@ -136,6 +137,7 @@ describe('OpenAPI Schema Builders', () => {
         'RequestTracing',
         'RunRequest',
         'RunResponse',
+        'RunScorecard',
         'StatusResponse',
         'WebhookConfig',
       ]);
@@ -494,6 +496,13 @@ describe('OpenAPI Schema Builders', () => {
   });
 
   describe('Example Values', () => {
+    it('documents the canonical scorecard identity, score, and grade contract', () => {
+      const schema = buildRunScorecardSchema() as JsonSchemaObject;
+      expect(schema.required).toEqual(expect.arrayContaining(['run_id', 'overall_score', 'grade', 'dimensions']));
+      expect(schema.properties?.run_id.example).toBe('kaseki-42');
+      expect(schema.properties?.overall_score).toMatchObject({ minimum: 0, maximum: 100 });
+      expect(buildAllSchemas()).toHaveProperty('RunScorecard');
+    });
     it('id should have example value kaseki-42', () => {
       const schema = buildRunResponseSchema() as JsonSchemaObject;
       const id = schema.properties?.id as JsonSchemaObject;

@@ -499,6 +499,24 @@ export function buildErrorResponseSchema(): Record<string, unknown> {
   };
 }
 
+export function buildRunScorecardSchema(): Record<string, unknown> {
+  return {
+    type: 'object', required: ['schema_version','rubric_version','run_id','started_at','scored_at','lifecycle_status','overall_score','grade','completeness','confidence','dimensions','phases','token_totals','timing_totals','scoring_config','warnings'],
+    properties: {
+      schema_version: { type: 'string', example: '1.0' }, rubric_version: { type: 'string', example: '1.0' },
+      run_id: { type: 'string', example: 'kaseki-42' }, started_at: { type: 'string', format: 'date-time' },
+      ended_at: { type: ['string','null'], format: 'date-time' }, scored_at: { type: 'string', format: 'date-time' },
+      lifecycle_status: { type: 'string', enum: ['queued','running','completed','failed','cancelled','timed_out'] },
+      overall_score: { type: 'number', minimum: 0, maximum: 100, example: 86 }, grade: { type: 'string', enum: ['A','B','C','D','F'], example: 'B' },
+      evidence_coverage: { type: 'object', additionalProperties: true }, completeness: { type: 'string', enum: ['complete','provisional','not_applicable','unavailable'] },
+      confidence: { type: 'object', required: ['score','rationale'], properties: { score: { type: 'number' }, rationale: { type: 'string' } } },
+      dimensions: { type: 'array', items: { type: 'object', additionalProperties: true } }, phases: { type: 'object', additionalProperties: true },
+      token_totals: { type: 'object', additionalProperties: true }, timing_totals: { type: 'object', additionalProperties: true },
+      scoring_config: { type: 'object', additionalProperties: true }, warnings: { type: 'array', items: { type: 'string' } }
+    }
+  };
+}
+
 /**
  * Build all schemas as a single object.
  * This aggregates all individual schema builders for use in the components section.
@@ -511,5 +529,6 @@ export function buildAllSchemas(): Record<string, Record<string, unknown>> {
     ErrorResponse: buildErrorResponseSchema(),
     WebhookConfig: buildWebhookConfigSchema(),
     RequestTracing: buildRequestTracingSchema(),
+    RunScorecard: buildRunScorecardSchema(),
   };
 }

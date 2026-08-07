@@ -1,5 +1,23 @@
 # Kaseki Agent REST API Reference
 
+## Run scorecards
+
+`GET /api/runs/:id/scorecard` returns the validated canonical scorecard. Add
+`?format=markdown` for the same reviewer-safe formatter used by PR generation. It returns `404` for
+an unknown run or a terminal run without a scorecard, `409` when an active run has no provisional
+score, and `422` for a malformed artifact.
+
+`GET /api/scorecards` returns compact summaries from the scheduler's bounded retained index; it
+does not enumerate the results directory or include dimension evidence. `limit` defaults to 25 and
+is capped at 100; use `offset` for pagination. Exact-match filters are `lifecycleStatus`, `grade`,
+`rubricVersion`, `model`, and `repository`; `startedAfter` and `startedBefore` accept ISO-8601 times.
+
+```bash
+curl -H "Authorization: Bearer sk-your-api-key" http://localhost:8080/api/runs/kaseki-42/scorecard
+curl -H "Authorization: Bearer sk-your-api-key" \
+  'http://localhost:8080/api/scorecards?grade=A&limit=25&startedAfter=2026-08-01T00:00:00Z'
+```
+
 ## Overview
 
 The Kaseki API Service provides HTTP endpoints for remotely triggering, monitoring, and retrieving results from kaseki-agent runs. This allows external tools like OpenClaw to control kaseki without SSH/sshpass.
