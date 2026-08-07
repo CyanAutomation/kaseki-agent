@@ -262,6 +262,7 @@ describe('Provider Diagnostics Logger', () => {
       singletonTempDirs.push(firstDir, secondDir);
 
       const firstLogger = initializeProviderDiagnosticsLogger(firstDir);
+      firstLogger.flush();
       const secondLogger = initializeProviderDiagnosticsLogger(secondDir);
 
       expect(secondLogger).not.toBe(firstLogger);
