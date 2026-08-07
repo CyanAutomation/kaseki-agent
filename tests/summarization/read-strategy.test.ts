@@ -139,9 +139,11 @@ describe('ReadStrategy', () => {
         config,
       };
       const strategy = getReadStrategy(context);
-      if (strategy.strategy === 'summary') {
-        expect(strategy.estimatedTokens).toBeGreaterThan(0);
-      }
+      expect(strategy.strategy).toBe('summary');
+      expect(strategy.estimatedTokens).toBe(8572);
+
+      const estimatedFullTokens = Math.ceil(context.sizeBytes / 3.5);
+      expect(estimatedFullTokens - strategy.estimatedTokens!).toBe(20000);
     });
   });
 });
