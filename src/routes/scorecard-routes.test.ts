@@ -61,16 +61,19 @@ describe('scorecard routes', () => {
       .mockImplementationOnce(() => undefined);
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    removeTemporaryDirectories();
+    try {
+      removeTemporaryDirectories();
 
-    expect(removeSpy).toHaveBeenCalledTimes(2);
-    expect(errorSpy).toHaveBeenCalledWith(
-      'Failed to remove temporary directory /tmp/scorecard-cleanup-first:',
-      removalError,
-    );
-    expect(temporaryDirectories).toHaveProperty('size', 0);
-    removeSpy.mockRestore();
-    errorSpy.mockRestore();
+      expect(removeSpy).toHaveBeenCalledTimes(2);
+      expect(errorSpy).toHaveBeenCalledWith(
+        'Failed to remove temporary directory /tmp/scorecard-cleanup-first:',
+        removalError,
+      );
+      expect(temporaryDirectories).toHaveProperty('size', 0);
+    } finally {
+      removeSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
   });
 
   test('returns canonical JSON and PR-format Markdown', async () => {
