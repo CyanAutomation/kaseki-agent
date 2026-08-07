@@ -16,7 +16,11 @@ function createTemporaryDirectory(prefix: string): string {
 
 afterEach(() => {
   for (const directory of temporaryDirectories) {
-    fs.rmSync(directory, { recursive: true, force: true });
+    try {
+      fs.rmSync(directory, { recursive: true, force: true });
+    } catch (error) {
+      console.error(`Failed to remove temporary directory ${directory}:`, error);
+    }
   }
   temporaryDirectories.clear();
 });
