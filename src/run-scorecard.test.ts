@@ -18,6 +18,7 @@ describe('run scorecard', () => {
     });
     expect(evidence.tokens).toBe(125);
     expect(evidence.unknownTokenRequests).toBe(1);
+    expect(evidence.tokenUsage.completeness).toBe('provisional');
     expect(evidence.validation).toBe('passed');
     expect(evidence.quality).toBe('passed');
     expect(evidence.status).toBe('completed');
@@ -44,5 +45,20 @@ describe('run scorecard', () => {
     expect(evidence.tokens).toBe(50);
     expect(evidence.unknownTokenRequests).toBe(0);
     expect(evidence.tokenUsage).toMatchObject({ input_tokens: 40, output_tokens: 5, cache_read_tokens: 3, cache_write_tokens: 2 });
+    expect(evidence.tokenUsage.completeness).toBe('complete');
+  });
+
+  test('reduces confidence only when token requests are unknown', () => {
+    const snapshot = {
+      json: { 'metadata.json': { exit_code: 0 } },
+      text: {},
+      summaries: [{ phase: 'coding', request_id: 'known', usage: { input: 10, output: 2 } }],
+    };
+    const known = collectEvidence(snapshot);
+    const unknown = collectEvidence({ ...snapshot, summaries: [...snapshot.summaries, { phase: 'coding', request_id: 'unknown' }] });
+    const config = normalizeConfig({});
+
+    expect(buildScorecard(known, config).confidence.score).toBe(25);
+    expect(buildScorecard(unknown, config).confidence.score).toBe(23);
   });
 });
