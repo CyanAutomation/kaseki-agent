@@ -87,7 +87,7 @@ export function createScorecardRoutes(scheduler: JobScheduler, cache: ResultCach
       if (filters.startedAfter && item.startedAt < filters.startedAfter) continue;
       if (filters.startedBefore && item.startedAt > filters.startedBefore) continue;
       matches.push(item);
-      if (matches.length > offset + limit) break;
+      if (matches.length >= offset + limit + 1) break;
     }
     const scorecards = matches.slice(offset, offset + limit);
     const response: ScorecardsListResponse = { scorecards, pagination: { limit, offset, returned: scorecards.length,
