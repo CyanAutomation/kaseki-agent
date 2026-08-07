@@ -530,6 +530,15 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'run-scorecard.json': {
+    name: 'run-scorecard.json',
+    contentType: 'application/json',
+    description: 'Versioned objective run score, grade, dimension evidence, token accounting, and coverage/confidence',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 2,
+    sizeHint: 'small',
+  },
+
   'phase-errors.jsonl': {
     name: 'phase-errors.jsonl',
     contentType: 'application/jsonl',
