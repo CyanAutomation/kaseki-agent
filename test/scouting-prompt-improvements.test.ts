@@ -293,15 +293,21 @@ describe('Integration: Scouting Artifact JSON Structure', () => {
   const validateWithScoutingWorkflow = (artifact: unknown) => {
     const fixtureDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'scouting-prompt-example-'));
     const fixturePath = path.join(fixtureDirectory, 'scouting-candidate.json');
+    const validatorPath = path.join(__dirname, '..', 'scripts', 'scouting-allowlist.ts');
 
     try {
       fs.writeFileSync(fixturePath, JSON.stringify(artifact));
       const validation = spawnSync(
         process.execPath,
-        [path.join(__dirname, '..', 'dist', 'scouting-allowlist.js'), 'validate', fixturePath],
+        ['--import', 'tsx', validatorPath, 'validate', fixturePath],
         { encoding: 'utf8' },
       );
 
+      if (validation.error) {
+        throw new Error(
+          `Failed to launch scouting validator: ${validation.error.message}\n${validation.stderr}`,
+        );
+      }
       expect([0, 1]).toContain(validation.status);
       expect(validation.stderr).toBe('');
       try {
