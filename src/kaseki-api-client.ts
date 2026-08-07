@@ -188,7 +188,13 @@ export class KasekiApiClient {
     const params = new URLSearchParams(Object.entries(query).map(([key, value]) => [key, String(value)]));
     const res = await fetch(`${this.baseUrl}/api/scorecards${params.size ? `?${params}` : ''}`, { headers: this.baseHeaders });
     if (!res.ok) { await res.text().catch(() => {}); throw new Error(`Failed to list scorecards: ${res.status}`); }
-    return await res.json() as ScorecardsListResponse;
+    const data = await res.json();
+    const schema = z.object({
+      scorecards: z.array(z.any()),
+      pagination: z.object({ limit: z.number(), offset: z.number(), returned: z.number(), hasMore: z.boolean() }),
+      filters: z.object({}).passthrough()
+    });
+    return schema.parse(data);
   }
 
 }
