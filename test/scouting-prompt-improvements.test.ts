@@ -457,10 +457,62 @@ describe('Prompt Quality Metrics', () => {
     expect(operationalSection).toContain('Output rules for the JSON artifact:');
   });
 
-  test('should use consistent formatting for lists', () => {
-    // All guidelines should use consistent bullet format
-    const bulletCount = (promptContent.match(/^- /gm) || []).length;
-    expect(bulletCount).toBeGreaterThan(10);
+  test('uses hyphen bullets for documented guideline and example lists', () => {
+    const documentedLists = [
+      {
+        start: '**Valid tasks** (proceed with scouting):',
+        end: '**Ambiguous/Invalid tasks** (ask clarifying questions):',
+        requiredItems: ['Fix null-safety', 'Add TypeScript type annotations', 'Implement JWT authentication', 'Rename parseConfig'],
+      },
+      {
+        start: '**Ambiguous/Invalid tasks** (ask clarifying questions):',
+        end: '**Success Criteria for Scouting**:',
+        requiredItems: ['Make the code better', 'Fix bugs', 'Refactor everything'],
+      },
+      {
+        start: '**When to Include test_impact**:',
+        end: '**When test_impact Can Be Empty**:',
+        requiredItems: ['ALWAYS include test_impact', 'concrete implementation details', 'constants, enum values'],
+      },
+      {
+        start: '**When test_impact Can Be Empty**:',
+        end: '**test_examples Field Structure**:',
+        requiredItems: ['Pure documentation updates', 'Build configuration changes', 'Dependency upgrades', 'File reorganization', 'Infrastructure changes', 'In all other cases'],
+      },
+      {
+        start: '**test_examples Field Structure**:',
+        end: '**Examples of Strong test_impact Entries**:',
+        requiredItems: ['**type**', '**before**', '**after**', '**pattern**', '**description**', 'Max 5 test_examples'],
+      },
+      {
+        start: 'Guidelines for critical_change_expectations:',
+        end: 'Guidelines for suggested_allowlist:',
+        requiredItems: ['Include critical_change_expectations', 'required_files', 'required_search_strings', 'forbidden_empty_diff', 'Omit uncertain expectations'],
+      },
+      {
+        start: 'Guidelines for suggested_allowlist:',
+        end: '## [EXECUTION CONTEXT - Optimize for Efficiency]',
+        requiredItems: ['agent_patterns', 'validation_patterns', 'Both arrays can be empty', 'Prefer accurate scope'],
+      },
+    ];
+
+    for (const { start, end, requiredItems } of documentedLists) {
+      const startOffset = promptContent.indexOf(start);
+      const endOffset = promptContent.indexOf(end, startOffset + start.length);
+      expect(startOffset).toBeGreaterThanOrEqual(0);
+      expect(endOffset).toBeGreaterThan(startOffset);
+
+      const items = promptContent
+        .slice(startOffset + start.length, endOffset)
+        .split('\n')
+        .filter((line) => line.trim().length > 0);
+
+      expect(items.length).toBeGreaterThanOrEqual(requiredItems.length);
+      expect(items.every((item) => item.startsWith('- '))).toBe(true);
+      for (const requiredItem of requiredItems) {
+        expect(items.some((item) => item.includes(requiredItem))).toBe(true);
+      }
+    }
   });
 
   test('should have no redundant text', () => {
