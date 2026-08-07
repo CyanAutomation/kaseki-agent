@@ -25,6 +25,10 @@ function readScoutingPromptTemplates(): string {
     .join('\n');
 }
 
+function countOccurrences(content: string, instruction: string): number {
+  return content.split(instruction).length - 1;
+}
+
 function buildRuntimeScoutingPrompt(): string {
   const agentScript = path.join(__dirname, '..', 'kaseki-agent.sh');
   const runtime = spawnSync('bash', ['-c', `
@@ -64,6 +68,10 @@ describe('Scouting prompt contracts', () => {
     expect(promptContent).toMatch(/Do not edit source files/i);
     expect(promptContent).toMatch(/Do not run git add/i);
     expect(promptContent).toMatch(/repository(?: tree)? at \/workspace\/repo is read-only during scouting/i);
+    expect(countOccurrences(
+      promptContent,
+      'The repository tree at /workspace/repo is read-only during scouting.',
+    )).toBe(1);
   });
 
   test('defines the artifact schema [SCOUTING_PROMPT_DESIGN § Output Schema]', () => {
@@ -105,6 +113,10 @@ describe('Scouting prompt contracts', () => {
       /exactly one JSON object (?:at|to) \/results\/scouting-candidate\.json/i,
     );
     expect(promptContent).toMatch(/only accepted handoff location/i);
+    expect(countOccurrences(
+      promptContent,
+      'Create exactly one JSON object at /results/scouting-candidate.json.',
+    )).toBe(1);
   });
 
   test('keeps goal-setting retry counters local to each invocation', () => {
@@ -211,12 +223,17 @@ describe('Phase 3: Provider & Error Context', () => {
 
     // SCOUTING_PROMPT_DESIGN.md §5 specifies 50 KB to keep scouting output bounded.
     expect(Number(artifactSizeLimitInKB)).toBe(50);
+    expect(countOccurrences(promptContent, 'Maximum JSON size: 50 KB.')).toBe(1);
   });
 
   test('should note timeout expectations', () => {
     // Phase 3 requirement: Scouting <2 min guidance
     expect(promptContent).toContain('Timeouts');
     expect(promptContent).toMatch(/2 ?minutes?/i);
+    expect(countOccurrences(
+      promptContent,
+      'Scouting should complete within 2 minutes total.',
+    )).toBe(1);
   });
 });
 
@@ -521,21 +538,4 @@ describe('Prompt Quality Metrics', () => {
     }
   });
 
-  test('should have no redundant text', () => {
-    // Check for repeated phrases (sign of poor organization)
-    // Phase 4 additions include more examples, so allow more redundancy
-    const lines = promptContent.split('\n');
-    const seen = new Set<string>();
-    let redundantCount = 0;
-
-    lines.forEach(line => {
-      if (seen.has(line.trim()) && line.trim().length > 20) {
-        redundantCount++;
-      }
-      seen.add(line.trim());
-    });
-
-    // Allow some repetition in examples and explanations
-    expect(redundantCount).toBeLessThan(10);
-  });
 });
