@@ -49,8 +49,9 @@ export interface ReadMetrics {
 }
 
 export interface ReadResult {
-  content: string;
+  content: string | null;
   metrics?: ReadMetrics;
+  error?: string;
 }
 
 let cache: SummaryCache | null = null;
@@ -289,7 +290,20 @@ async function readFileWithSummaryInternal(filePath: string, options: ReadOption
     const fileValidation = await validateFileExists(filePath);
     if (fileValidation === null) {
       if (options.returnMetrics) {
-        return JSON.stringify({ error: 'File not found', content: null });
+        return JSON.stringify({
+          error: 'File not found',
+          content: null,
+          metrics: createMetrics(
+            'full',
+            'File not found',
+            detectLanguage(filePath),
+            0,
+            0,
+            performance.now() - startTime,
+            false,
+            'error'
+          ),
+        });
       }
       return null;
     }
