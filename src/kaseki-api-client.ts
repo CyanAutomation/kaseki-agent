@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { RunRequest, StatusResponse, ValidationResponse, type ScorecardResponse, type ScorecardsListResponse } from './kaseki-api-types';
-import { RunScorecardSchema } from './types/run-scorecard';
+import {
+  RunScorecardCompletenessSchema,
+  RunScorecardLifecycleStatusSchema,
+  RunScorecardSchema,
+} from './types/run-scorecard';
 
 /**
  * Zod schemas for response validation.
@@ -77,6 +81,38 @@ const StatusResponseSchema = z.object({
   ]).optional(),
 });
 const ScorecardResponseSchema = RunScorecardSchema;
+const ScorecardSummarySchema = z.object({
+  runId: z.string(),
+  lifecycleStatus: RunScorecardLifecycleStatusSchema,
+  overallScore: z.number().min(0).max(100),
+  grade: z.enum(['A', 'B', 'C', 'D', 'F']),
+  rubricVersion: z.string(),
+  completeness: RunScorecardCompletenessSchema,
+  confidence: z.number().min(0).max(100),
+  startedAt: z.string().datetime(),
+  endedAt: z.string().datetime().nullable(),
+  scoredAt: z.string().datetime(),
+  model: z.string().optional(),
+  repository: z.string().optional(),
+});
+const ScorecardsListResponseSchema = z.object({
+  scorecards: z.array(ScorecardSummarySchema),
+  pagination: z.object({
+    limit: z.number().int().positive(),
+    offset: z.number().int().nonnegative(),
+    returned: z.number().int().nonnegative(),
+    hasMore: z.boolean(),
+  }),
+  filters: z.object({
+    lifecycleStatus: z.string().optional(),
+    grade: z.string().optional(),
+    rubricVersion: z.string().optional(),
+    model: z.string().optional(),
+    repository: z.string().optional(),
+    startedAfter: z.string().optional(),
+    startedBefore: z.string().optional(),
+  }),
+});
 
 /**
  * Kaseki API client for TypeScript/Node.js applications.
@@ -188,13 +224,7 @@ export class KasekiApiClient {
     const params = new URLSearchParams(Object.entries(query).map(([key, value]) => [key, String(value)]));
     const res = await fetch(`${this.baseUrl}/api/scorecards${params.size ? `?${params}` : ''}`, { headers: this.baseHeaders });
     if (!res.ok) { await res.text().catch(() => {}); throw new Error(`Failed to list scorecards: ${res.status}`); }
-    const data = await res.json();
-    const schema = z.object({
-      scorecards: z.array(z.any()),
-      pagination: z.object({ limit: z.number(), offset: z.number(), returned: z.number(), hasMore: z.boolean() }),
-      filters: z.object({}).passthrough()
-    });
-    return schema.parse(data);
+    return ScorecardsListResponseSchema.parse(await res.json());
   }
 
 }
