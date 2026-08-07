@@ -134,6 +134,7 @@ Progress log tail (last 80 lines):
 $progress_tail
 
 Return exactly one JSON object matching the schema below as your final assistant message. Do not write files, use markdown/code fences, or add prose; Kaseki validates and persists the verdict itself.
+Required structured evidence fields: "evidence_sources_inspected": string[], "contradictions": {"sources":string[],"description":string}[], and "confidence_calibration": {"outcome":string,"justification":string}.
 EOF
   else
     # Verbose version (caveman level 0-1)
@@ -193,7 +194,10 @@ Return exactly one JSON object as the final assistant message. Do not write a fi
   "evidence": ["specific, verifiable evidence item 1 with file/line references", "..."],
   "missing": ["unmet requirement 1 (empty if met=true)", "..."],
   "retry_prompt": "actionable repair instructions; empty if met=true",
-  "validation_notes": ["validation command 1: outcome", "..."]
+  "validation_notes": ["validation command 1: outcome", "..."],
+  "evidence_sources_inspected": ["goal-setting.json", "scouting.json", "changed-files.txt", "git.diff", "validation.log"],
+  "contradictions": [{"sources": ["goal-check verdict", "git.diff"], "description": "description of conflict"}],
+  "confidence_calibration": {"outcome": "met", "justification": "why the confidence matches the objective evidence"}
 }
 
 ## Context
@@ -263,6 +267,8 @@ $(head -n 200 "$GOAL_SETTING_ARTIFACT" 2>/dev/null)
     # Compressed version (caveman level 2+)
     cat <<EOF
 $compressed_instructions
+
+In addition to stage_value reasons, return evidence_sources_inspected, contradictions, confidence_calibration, and phase_scorecard using the structured contract in the verbose prompt. Record actually inspected sources and prefer machine-readable counts and ratios.
 
 ## Context
 $goal_setting_context
@@ -360,12 +366,23 @@ Before assigning reviewer_confidence or task_completion_score, compare all avail
 - Cross-check required files from goal-setting and scouting (success criteria, relevant_files, plan, test_impact, and validation expectations) against changed-files.txt and git.diff.
 - Cross-check validation command outcomes: note which commands were attempted, passed, failed, skipped, or produced empty logs.
 - Treat contradictory evidence as a warning and explain the contradiction in warnings and summary/reasoning fields.
+- Record only evidence sources you actually opened in evidence_sources_inspected. Do not infer inspection from availability.
+- List every conflict among verdict, diff, changed files, and validation in contradictions; use an empty array only after checking all four.
 
 Explicit contradiction-handling scoring rules:
 
 - If goal-check.met=true but git.diff is empty in patch mode, task_completion_score must be 1 and warnings must mention contradictory evidence between the passing goal-check verdict and the empty diff.
 - If required files from goal-setting/scouting are absent from changed-files.txt, task_completion_score cannot exceed 2, even when goal-check.met=true.
 - If validation logs are empty and no commands were attempted, reviewer_confidence should be low unless task mode is inspect or dry-run.
+- High reviewer confidence without validation evidence is capped at medium. A passing verdict with an empty patch-mode diff is capped at task_completion_score=1; missing required files caps it at 2.
+
+### 2a. Phase Scorecard Evidence
+
+Populate structured phase_scorecard alongside the human-readable stage_value reasons. Prefer counts, file intersections, timings, retries, and token usage from artifacts over evaluator impressions.
+
+- goal-setting: compare the original task to goal-setting.json; record quality uplift, measurable success-criteria completeness, and scope precision.
+- scouting: record schema validity; relevant-file precision/recall against changed-files.txt; whether risks, edge cases, and validation expectations were addressed in git.diff or validation; retry count, elapsed time, token usage; and unique information beyond goal-setting.
+- goal-check and run-evaluation: record required/actually inspected sources, contradictions, schema validity, retry count, confidence calibration against the final objective outcome, evaluator elapsed time, and token usage.
 
 ### 3. Task Completion Score (1-5)
 
@@ -467,6 +484,15 @@ Summarize the actual changes and their impact, NOT the original task.
     {"stage": "goal-setting", "value": "high", "reason": "upgraded vague prompt to specific SMART criteria"},
     {"stage": "scouting", "value": "medium", "reason": "confirmed expected requirements; no surprises"}
   ],
+  "evidence_sources_inspected": ["goal-check.json", "changed-files.txt", "git.diff", "validation.log", "validation-timings.tsv"],
+  "contradictions": [{"sources": ["goal-check.json", "git.diff"], "description": "passing verdict conflicts with empty patch"}],
+  "confidence_calibration": {"objective_outcome": "met", "calibrated": true, "reason": "confidence is supported by diff and validation"},
+  "phase_scorecard": {
+    "goal-setting": {"quality_uplift": 0.25, "success_criteria_completeness": 1.0, "scope_precision": 0.9},
+    "scouting": {"schema_valid": true, "relevant_file_precision": 1.0, "relevant_file_recall": 0.75, "identified_items": 4, "addressed_items": 3, "retry_count": 0, "elapsed_seconds": 12, "token_usage": 1400, "unique_beyond_goal_setting": true},
+    "goal-check": {"required_sources": ["goal-setting.json", "scouting.json", "changed-files.txt", "git.diff"], "inspected_sources": ["goal-setting.json", "scouting.json", "changed-files.txt", "git.diff"], "schema_valid": true, "retry_count": 0, "elapsed_seconds": 8, "token_usage": 900},
+    "run-evaluation": {"required_sources": ["goal-check.json", "changed-files.txt", "git.diff", "validation.log"], "inspected_sources": ["goal-check.json", "changed-files.txt", "git.diff", "validation.log"], "schema_valid": true, "retry_count": 0, "elapsed_seconds": 6, "token_usage": 700}
+  },
   "efficiency_findings": ["observation 1", "observation 2"],
   "kaseki_improvement_opportunities": [
     {"category": "goal_setting", "priority": "high", "suggestion": "..."}
