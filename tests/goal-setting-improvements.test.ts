@@ -825,6 +825,7 @@ validate_goal_setting_artifact "$1" "$2" "$3"
               KASEKI_GOAL_SETTING: '1',
               KASEKI_SCOUTING: '1',
               KASEKI_GOAL_CHECK: '1',
+              KASEKI_GOAL_CHECK_MAX_RETRIES: '0',
               KASEKI_GIT_CACHE_MODE: 'off',
               KASEKI_DEPENDENCY_CACHE_DIR: join(tempDir, 'dependency-cache'),
               KASEKI_IMAGE_DEPENDENCY_CACHE_DIR: join(tempDir, 'image-cache'),
@@ -840,6 +841,18 @@ validate_goal_setting_artifact "$1" "$2" "$3"
           console.error('exit code:', err.status);
           console.error('stdout:', err.stdout?.toString());
           console.error('stderr:', err.stderr?.toString());
+          for (const artifact of [
+            'metadata.json',
+            'goal-check.json',
+            'goal-check-validation-errors.jsonl',
+            'progress.jsonl',
+            'last-command.log',
+          ]) {
+            const artifactPath = join(resultsDir, artifact);
+            if (existsSync(artifactPath)) {
+              console.error(`${artifact}:`, readFileSync(artifactPath, 'utf8'));
+            }
+          }
           throw err;
         }
 
@@ -850,11 +863,14 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         );
         const scoutingCallIndex = piCallOrder.indexOf('scouting');
         const firstCodingCallIndex = piCallOrder.indexOf('coding');
+        const codingCalls = piCallOrder.filter((stage) => stage === 'coding');
         const goalCheckCalls = piCallOrder.filter((stage) => stage === 'goal-check');
 
         expect(goalSettingCallIndexes).toHaveLength(2);
         expect(goalSettingCallIndexes[1]).toBeLessThan(scoutingCallIndex);
         expect(scoutingCallIndex).toBeLessThan(firstCodingCallIndex);
+        // A passing pre-validation verdict must proceed to validation, not repair coding.
+        expect(codingCalls).toHaveLength(1);
         // Both pre-validation and post-validation goal checks are identified by KASEKI_INFERENCE_PHASE.
         expect(goalCheckCalls).toHaveLength(2);
         // Compare the complete sequence so a newly introduced orchestration stage
