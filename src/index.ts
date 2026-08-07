@@ -39,6 +39,18 @@ export type {
   WebhookPayload,
   WebhookEventType,
 } from './kaseki-api-types';
+export {
+  RunScorecardSchema,
+  RunScorecardScoringConfigSchema,
+  ScorecardDimensionSchema,
+  ScorecardPhaseMeasurementSchema,
+  ScorecardTokenUsageSchema,
+  ScorecardTimingTotalsSchema,
+  type RunScorecard,
+  type RunScorecardScoringConfig,
+  type ScorecardDimension,
+  type ScorecardPhaseMeasurement,
+} from './types/run-scorecard';
 
 // Client
 export { KasekiApiClient } from './kaseki-api-client';
