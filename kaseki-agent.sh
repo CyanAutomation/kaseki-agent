@@ -1548,6 +1548,15 @@ if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
       addError(key, "array of strings", "array with non-strings", "warning", `All elements in ${key} must be strings`);
     }
   }
+  if (!Array.isArray(artifact.evidence_sources_inspected) || !artifact.evidence_sources_inspected.every((value) => typeof value === "string")) {
+    addError("evidence_sources_inspected", "array of strings", actualType(artifact.evidence_sources_inspected), "critical", "Record the evidence sources actually inspected");
+  }
+  if (!Array.isArray(artifact.contradictions) || !artifact.contradictions.every((item) => item && Array.isArray(item.sources) && item.sources.every((value) => typeof value === "string") && typeof item.description === "string")) {
+    addError("contradictions", "array of {sources:string[],description:string}", actualType(artifact.contradictions), "critical", "Record cross-source contradictions, or an empty array after checking");
+  }
+  if (!artifact.confidence_calibration || typeof artifact.confidence_calibration !== "object" || typeof artifact.confidence_calibration.outcome !== "string" || typeof artifact.confidence_calibration.justification !== "string") {
+    addError("confidence_calibration", "{outcome:string,justification:string}", actualType(artifact.confidence_calibration), "critical", "Calibrate confidence against the objective evidence");
+  }
 }
 
 if (errors.length) {
@@ -6590,6 +6599,10 @@ const artifact = {
   }],
   pr_summary: 'Run evaluation was unavailable; please rely on the summary, validation results, and changed files.',
   warnings: [warning],
+  evidence_sources_inspected: [],
+  contradictions: [],
+  confidence_calibration: { objective_outcome: 'unknown', calibrated: false, reason: warning },
+  phase_scorecard: {},
   timestamp: new Date().toISOString(),
   model,
   actual_model: actualModel || 'unknown'
@@ -6620,8 +6633,59 @@ for (const key of ["human_review_focus", "efficiency_findings", "warnings"]) {
   if (!Array.isArray(artifact[key]) || !artifact[key].every((v) => typeof v === "string")) invalid.push(key);
 }
 if (!Array.isArray(artifact.stage_value) || !artifact.stage_value.every((item) => item && typeof item.stage === "string" && stageValueValues.has(item.value) && typeof item.reason === "string")) invalid.push("stage_value");
+if (!Array.isArray(artifact.evidence_sources_inspected) || !artifact.evidence_sources_inspected.every((v) => typeof v === "string")) invalid.push("evidence_sources_inspected");
+if (!Array.isArray(artifact.contradictions) || !artifact.contradictions.every((item) => item && Array.isArray(item.sources) && item.sources.every((v) => typeof v === "string") && typeof item.description === "string")) invalid.push("contradictions");
+if (!artifact.confidence_calibration || typeof artifact.confidence_calibration !== "object" || typeof artifact.confidence_calibration.objective_outcome !== "string" || typeof artifact.confidence_calibration.calibrated !== "boolean" || typeof artifact.confidence_calibration.reason !== "string") invalid.push("confidence_calibration");
+if (!artifact.phase_scorecard || Array.isArray(artifact.phase_scorecard) || typeof artifact.phase_scorecard !== "object") invalid.push("phase_scorecard");
 if (!Array.isArray(artifact.kaseki_improvement_opportunities) || !artifact.kaseki_improvement_opportunities.every((item) => item && typeof item.category === "string" && priorityValues.has(item.priority) && typeof item.suggestion === "string")) invalid.push("kaseki_improvement_opportunities");
 if (invalid.length) throw new Error("invalid run-evaluation fields: " + invalid.join(", "));
+// Replace evaluator estimates with reproducible measurements wherever artifacts permit.
+const dir = process.env.KASEKI_RESULTS_DIR || "/results";
+const read = (name) => { try { return fs.readFileSync(`${dir}/${name}`, "utf8"); } catch { return ""; } };
+const json = (name) => { try { return JSON.parse(read(name)); } catch { return null; } };
+const usage = (name) => { const value = json(name)?.token_usage; return Number(value?.total_tokens ?? value?.total ?? 0); };
+const attempts = (name) => read(name).split(/\r?\n/).filter(Boolean).length;
+const changed = new Set(read("changed-files.txt").split(/\r?\n/).map(v => v.trim()).filter(Boolean));
+const diff = read("git.diff");
+const validation = read("validation.log");
+const scouting = json("scouting.json");
+const goal = json("goal-setting.json");
+const scoutingFiles = Array.isArray(scouting?.relevant_files) ? scouting.relevant_files.map(v => typeof v === "string" ? v : v?.path).filter(Boolean) : [];
+const intersection = scoutingFiles.filter(file => changed.has(file)).length;
+const criteria = Array.isArray(goal?.success_criteria) ? goal.success_criteria : [];
+const measurable = criteria.filter(item => /test|valid|pass|file|command|\d/i.test(typeof item === "string" ? item : JSON.stringify(item))).length;
+const originalWords = String(process.env.TASK_PROMPT || "").trim().split(/\s+/).filter(Boolean).length;
+const goalWords = JSON.stringify(goal || {}).split(/\s+/).filter(Boolean).length;
+const timings = read("stage-timings.tsv");
+const elapsed = (label) => { const row = timings.split(/\r?\n/).reverse().find(line => line.toLowerCase().includes(label)); const nums = row?.split("\t") || []; return Number(nums.find((v, i) => i > 0 && /^\d+(\.\d+)?$/.test(v)) || 0); };
+artifact.phase_scorecard = {
+  ...artifact.phase_scorecard,
+  "goal-setting": { ...(artifact.phase_scorecard["goal-setting"] || {}), schema_valid: Boolean(goal), original_task_words: originalWords, goal_artifact_words: goalWords, quality_uplift: originalWords ? Number(((goalWords - originalWords) / originalWords).toFixed(3)) : 0, success_criteria_total: criteria.length, measurable_success_criteria: measurable, success_criteria_completeness: criteria.length ? Number((measurable / criteria.length).toFixed(3)) : 0 },
+  scouting: { ...(artifact.phase_scorecard.scouting || {}), schema_valid: Boolean(scouting), relevant_files_identified: scoutingFiles.length, changed_files_total: changed.size, relevant_file_precision: scoutingFiles.length ? Number((intersection / scoutingFiles.length).toFixed(3)) : 0, relevant_file_recall: changed.size ? Number((intersection / changed.size).toFixed(3)) : 0, retry_count: Math.max(0, Number(process.env.KASEKI_SCOUTING_ATTEMPTS || 1) - 1), elapsed_seconds: Number(process.env.SCOUTING_DURATION_SECONDS || elapsed("scouting")), token_usage: usage("scouting-summary.json") },
+  "goal-check": { ...(artifact.phase_scorecard["goal-check"] || {}), schema_valid: Boolean(json("goal-check.json")), retry_count: Math.max(0, attempts("goal-check-attempts.jsonl") - 1), elapsed_seconds: elapsed("goal check"), token_usage: usage("goal-check-summary.json") },
+  "run-evaluation": { ...(artifact.phase_scorecard["run-evaluation"] || {}), schema_valid: true, retry_count: Number(process.env.RUN_EVALUATION_SCHEMA_RETRY_COUNT || 0), elapsed_seconds: Number(process.env.RUN_EVALUATION_DURATION_SECONDS || elapsed("run evaluation")), token_usage: usage("run-evaluation-summary.json") }
+};
+// Deterministic caps prevent a fluent evaluator from overruling contradictory run evidence.
+const patchMode = String(process.env.KASEKI_TASK_MODE || "patch") === "patch";
+const verdictPassed = json("goal-check.json")?.met === true;
+if (patchMode && verdictPassed && diff.trim() === "") {
+  artifact.task_completion_score = 1;
+  artifact.reviewer_confidence = "low";
+  artifact.warnings.push("Score cap applied: passing goal-check contradicts an empty patch-mode git.diff.");
+  artifact.contradictions.push({ sources: ["goal-check.json", "git.diff"], description: "Passing verdict with an empty patch-mode diff." });
+}
+const requiredFiles = Array.isArray(json("critical-change-expectations.json")?.required_files)
+  ? json("critical-change-expectations.json").required_files.filter(file => typeof file === "string")
+  : [];
+const missingRequired = requiredFiles.filter(file => !changed.has(file));
+if (missingRequired.length) {
+  artifact.task_completion_score = Math.min(artifact.task_completion_score, 2);
+  artifact.warnings.push(`Score cap applied: required scouting files were not changed: ${missingRequired.join(", ")}`);
+}
+if (artifact.reviewer_confidence === "high" && !validation.trim()) {
+  artifact.reviewer_confidence = "medium";
+  artifact.warnings.push("Confidence cap applied: no validation evidence was recorded.");
+}
 artifact.timestamp = new Date().toISOString();
 artifact.model = model;
 artifact.actual_model = actualModel;
