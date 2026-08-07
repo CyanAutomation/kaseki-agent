@@ -63,14 +63,20 @@ elif [ "$stage" = "goal-check" ]; then
       printf '%s' '{"met":true,"confidence":"high"' > "${resultsDir}/goal-check-candidate.json"
       ;;
     *)
-      printf '%s\\n' '{"met":true,"confidence":"high","summary":"Goal met by orchestration stub.","retry_prompt":"","evidence":["diff inspected"],"missing":[],"validation_notes":["validation was available"]}' > "${resultsDir}/goal-check-candidate.json"
+      printf '%s\\n' '{"met":true,"confidence":"high","summary":"Goal met by orchestration stub.","retry_prompt":"","evidence":["diff inspected"],"missing":[],"validation_notes":["validation was available"],"evidence_sources_inspected":["scouting.json","git.diff","validation.log"],"contradictions":[],"confidence_calibration":{"outcome":"high","justification":"The requested fixture change is present and validation succeeded."}}' > "${resultsDir}/goal-check-candidate.json"
       ;;
   esac
 else
   printf 'coding\\n' >> "${piCalls}"
   printf '%s' "$prompt" > "${resultsDir}/coding-prompt.txt"
+  coding_attempt_file="${resultsDir}/coding-attempt"
+  coding_attempt=1
+  if [ -f "$coding_attempt_file" ]; then
+    coding_attempt=$(( $(cat "$coding_attempt_file") + 1 ))
+  fi
+  printf '%s\\n' "$coding_attempt" > "$coding_attempt_file"
   mkdir -p "$KASEKI_WORKSPACE_DIR/repo/src/lib"
-  printf '%s\\n' 'export const goalCheckFixture = true;' > "$KASEKI_WORKSPACE_DIR/repo/src/lib/parser.ts"
+  printf 'export const goalCheckFixtureAttempt = %s;\\n' "$coding_attempt" > "$KASEKI_WORKSPACE_DIR/repo/src/lib/parser.ts"
 fi`
     : '# pi stub (no logging)'
 }
@@ -204,7 +210,7 @@ elif [ "$stage" = "goal-check" ]; then
   elif [ "${scenario}" = "malformed-artifact" ]; then
     printf '%s' '{"met":true,"confidence":"high"' > "$KASEKI_RESULTS_DIR/goal-check-candidate.json"
   else
-    printf '%s\\n' '{"met":true,"confidence":"high","summary":"Goal met by orchestration stub.","retry_prompt":"","evidence":["diff inspected"],"missing":[],"validation_notes":["validation was available"]}' > "$KASEKI_RESULTS_DIR/goal-check-candidate.json"
+    printf '%s\\n' '{"met":true,"confidence":"high","summary":"Goal met by orchestration stub.","retry_prompt":"","evidence":["diff inspected"],"missing":[],"validation_notes":["validation was available"],"evidence_sources_inspected":["scouting.json","git.diff","validation.log"],"contradictions":[],"confidence_calibration":{"outcome":"high","justification":"The requested fixture change is present and validation succeeded."}}' > "$KASEKI_RESULTS_DIR/goal-check-candidate.json"
   fi
 else
   append_event coding
