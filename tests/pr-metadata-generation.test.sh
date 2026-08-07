@@ -29,6 +29,7 @@ extract_function() {
 
 RESULTS_DIR="$TMP_DIR/results"
 mkdir -p "$RESULTS_DIR"
+KASEKI_RESULTS_DIR="$RESULTS_DIR"
 
 # Load only the helpers needed for PR metadata and the existing JSON encoding path.
 eval "$(extract_function sanitize_pr_metadata_text)"
@@ -42,6 +43,7 @@ eval "$(extract_function format_pr_json_list)"
 eval "$(extract_function build_pr_agent_review)"
 eval "$(extract_function build_pr_agent_evaluation)"
 eval "$(extract_function build_pr_improvements_summary)"
+eval "$(extract_function format_pr_run_scorecard)"
 eval "$(extract_function build_pr_body)"
 eval "$(extract_function run_node_subprocess)"
 
@@ -153,6 +155,7 @@ JSON
 
 # Mock kaseki-agent.sh global variables that normally point to /results
 KASEKI_RESULTS_DIR="$RESULTS_DIR"
+KASEKI_APP_ROOT="$ROOT_DIR"
 
 pr_body="$(build_pr_body)"
 
@@ -687,3 +690,63 @@ if (!payload.body.includes('## Summary')) process.exit(3);
 NODE
   pass "PR payload body is never empty in ${publish_mode} mode"
 done
+
+# Scorecard fixtures exercise the same compiled formatter invoked by PR creation.
+if [ ! -f "$ROOT_DIR/dist/run-scorecard.js" ] || [ ! -f "$ROOT_DIR/dist/run-scorecard-markdown.js" ]; then
+  fail "Scorecard formatter build artifacts are missing; run npm run build before this test"
+fi
+cat > "$RESULTS_DIR/metadata.json" <<'JSON'
+{"instance":"fixture","started_at":"2026-08-07T00:00:00Z","ended_at":"2026-08-07T00:01:00Z","exit_code":0,"quality_exit_code":0,"duration_seconds":60}
+JSON
+cat > "$RESULTS_DIR/timings-manifest.json" <<'JSON'
+{"validation_timings":[{"exit_code":0,"elapsed_seconds":3}],"stage_timings":[{"elapsed_seconds":60}]}
+JSON
+cat > "$RESULTS_DIR/coding-summary.json" <<'JSON'
+{"phase":"coding","request_id":"fixture-request","usage":{"input":120,"output":30,"cacheRead":10}}
+JSON
+node "$ROOT_DIR/dist/run-scorecard.js" "$RESULTS_DIR"
+SCORECARD="$RESULTS_DIR/run-scorecard.json"
+SCORECARD="$SCORECARD" node <<'NODE'
+const fs = require('fs');
+const card = JSON.parse(fs.readFileSync(process.env.SCORECARD, 'utf8'));
+card.completeness = 'complete';
+card.evidence_coverage = { required: 8, available: 8, ratio: 1, missing_critical: [] };
+card.token_totals.unavailable = false;
+card.token_totals.completeness = 'complete';
+card.phases.scouting.measurements = {
+  z_sensitive_raw_response: 'raw model response secret=do-not-publish ' + 'x'.repeat(5000),
+  a_table_value: 'left|right',
+  m_files: 4
+};
+card.warnings = ['bounded warning ' + 'w'.repeat(5000), 'token=fixture-secret', 'third warning', 'not rendered'];
+fs.writeFileSync(process.env.SCORECARD, JSON.stringify(card));
+NODE
+complete_scorecard_body="$(build_pr_body)"
+grep -Fq '## Kaseki run scorecard' <<<"$complete_scorecard_body" || fail "Complete scorecard section is missing"
+grep -Fq 'left\|right' <<<"$complete_scorecard_body" || fail "Scorecard table cells do not escape Markdown pipes"
+grep -Fq '| Goal quality |' <<<"$complete_scorecard_body" || fail "Scorecard dimensions are not in stable rubric order"
+if grep -Eq 'fixture-secret|raw model response|xxxxx{200}|wwwww{200}|not rendered' <<<"$complete_scorecard_body"; then
+  fail "Scorecard exposed sensitive, raw, unbounded, or excess evaluator evidence"
+fi
+pass "Complete scorecard is ordered, escaped, bounded, and sanitized"
+
+SCORECARD="$SCORECARD" node <<'NODE'
+const fs = require('fs');
+const card = JSON.parse(fs.readFileSync(process.env.SCORECARD, 'utf8'));
+card.completeness = 'provisional';
+card.evidence_coverage = { required: 8, available: 4, ratio: 0.5, missing_critical: ['validation_result'] };
+card.token_totals.unavailable = true;
+card.token_totals.completeness = 'unavailable';
+fs.writeFileSync(process.env.SCORECARD, JSON.stringify(card));
+NODE
+partial_scorecard_body="$(build_pr_body)"
+grep -Fq '**Provisional score:** some evidence is unavailable' <<<"$partial_scorecard_body" || fail "Partial scorecard lacks provisional evidence note"
+pass "Partial scorecard identifies unavailable evidence"
+
+printf '{malformed' > "$SCORECARD"
+malformed_scorecard_body="$(build_pr_body)"
+grep -Fq '**Scorecard unavailable:**' <<<"$malformed_scorecard_body" || fail "Malformed scorecard did not degrade safely"
+rm -f "$SCORECARD"
+absent_scorecard_body="$(build_pr_body)"
+grep -Fq '**Scorecard unavailable:**' <<<"$absent_scorecard_body" || fail "Absent scorecard did not degrade safely"
+pass "Malformed and absent scorecards do not abort PR rendering"
