@@ -304,11 +304,10 @@ describe('ReadWrapper', () => {
       fs.writeFileSync(filePath, 'export class A {}');
 
       const result = await readFileWithSummaryAndMetrics(filePath);
-      if (result?.metrics) {
-        expect(['cache_hit', 'tree_sitter', 'full_read', 'error']).toContain(
-          result.metrics.decisionPath,
-        );
-      }
+      expect(result).not.toBeNull();
+      expect(result?.metrics).toBeDefined();
+      expect(result?.metrics?.strategy).toBe('full');
+      expect(result?.metrics?.decisionPath).toBe('full_read');
     });
 
     it('should return null for missing files with metrics', async () => {
