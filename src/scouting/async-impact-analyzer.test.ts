@@ -73,15 +73,21 @@ describe('async-impact-analyzer', () => {
       expect(analysis.asyncKeywords.length).toBe(0);
     });
 
-    it('should ignore false positives like "asynchronous" without "async"', () => {
-      // Note: "asynchronous" contains "async", so this may match
+    // Requirement: ../../docs/ASYNC_AWARENESS.md#async-keywords-detected
+    it('should not detect async when it appears only within "asynchronous"', () => {
       const prompt = 'Do not make any asynchronous changes';
       const analysis = analyzeAsyncImpact(prompt, tempDir);
 
-      // This will detect "async" as a substring; that's acceptable behavior
-      // The analyzer uses word boundaries (\b) so "async" in "asynchronous" is tricky
-      // Let's verify the behavior is reasonable
-      expect(analysis).toBeDefined();
+      expect(analysis.hasAsyncChanges).toBe(false);
+      expect(analysis.asyncKeywords).toEqual([]);
+    });
+
+    it('should detect the standalone word "async"', () => {
+      const prompt = 'Use async functions';
+      const analysis = analyzeAsyncImpact(prompt, tempDir);
+
+      expect(analysis.hasAsyncChanges).toBe(true);
+      expect(analysis.asyncKeywords).toEqual(['async']);
     });
   });
 
