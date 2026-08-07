@@ -130,11 +130,25 @@ describe('Scouting prompt contracts', () => {
     expect(retryFunctionPreamble).not.toMatch(/^\s*(?:attempt|max_attempts)=/m);
   });
 
-  test('test_impact guidelines should be comprehensive', () => {
-    // Should have examples of strong test_impact entries
-    expect(promptContent).toContain('✓ Parser change');
-    expect(promptContent).toContain('✓ Event change');
-    expect(promptContent).toContain('test_examples');
+  test('defines comprehensive test impact guidance [SCOUTING_PROMPT_DESIGN § Guidelines: test_impact]', () => {
+    const runtimePrompt = buildRuntimeScoutingPrompt();
+    const testImpactSection = runtimePrompt.match(
+      /Guidelines for test_impact:\n([\s\S]*?)\nGuidelines for critical_change_expectations:/,
+    )?.[1];
+
+    expect(testImpactSection).toBeDefined();
+    expect(testImpactSection).toMatch(
+      /files with test cases that assert on concrete implementation details \(field names, value types, timing\)/i,
+    );
+    expect(testImpactSection).toMatch(
+      /before[^\n]*Current or expected-to-fail assertion[\s\S]*after[^\n]*Corrected\/new assertion/i,
+    );
+    expect(testImpactSection).toMatch(
+      /Parser change:[\s\S]*"path": "tests\/parser\.test\.ts"[\s\S]*"before": "expect\(parseRole\(null\)\)\.toThrow[\s\S]*"after": "expect\(parseRole\(null\)\)\.toEqual/,
+    );
+    expect(testImpactSection).toMatch(
+      /Event change:[\s\S]*"path": "tests\/event-handler\.test\.ts"[\s\S]*"before": "await eventPromise;[\s\S]*"after": "await eventPromise;/,
+    );
   });
 
   test.each([
