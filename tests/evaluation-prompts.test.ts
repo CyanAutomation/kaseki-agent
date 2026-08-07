@@ -78,13 +78,13 @@ describe('rendered prompt contracts', () => {
       name: 'goal-check' as const,
       heading: '## Required JSON artifact',
       nextHeading: '## Context',
-      fields: ['met', 'confidence', 'summary', 'evidence', 'missing', 'retry_prompt', 'validation_notes'],
+      fields: ['met', 'confidence', 'summary', 'evidence', 'missing', 'retry_prompt', 'validation_notes', 'evidence_sources_inspected', 'contradictions', 'confidence_calibration'],
     },
     {
       name: 'run-evaluation' as const,
       heading: '## Required JSON Output',
       nextHeading: '## Rules',
-      fields: ['overall_assessment', 'reviewer_confidence', 'task_completion_score', 'summary', 'human_review_focus', 'stage_value', 'efficiency_findings', 'kaseki_improvement_opportunities', 'pr_summary', 'warnings'],
+      fields: ['overall_assessment', 'reviewer_confidence', 'task_completion_score', 'summary', 'human_review_focus', 'stage_value', 'evidence_sources_inspected', 'contradictions', 'confidence_calibration', 'phase_scorecard', 'efficiency_findings', 'kaseki_improvement_opportunities', 'pr_summary', 'warnings'],
     },
   ])('$name exposes the required artifact schema', ({ name, heading, nextHeading, fields }) => {
     expect(requiredJsonFields(renderPrompt(name), heading, nextHeading)).toEqual(fields);
