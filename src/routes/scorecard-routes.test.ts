@@ -29,7 +29,11 @@ function removeTemporaryDirectories(): void {
 }
 
 afterEach(() => {
-  removeTemporaryDirectories();
+  try {
+    jest.restoreAllMocks();
+  } finally {
+    removeTemporaryDirectories();
+  }
 });
 
 async function get(app: express.Express, url: string): Promise<{status:number;body:any;text:string}> {
