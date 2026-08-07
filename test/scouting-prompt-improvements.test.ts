@@ -432,12 +432,29 @@ describe('Prompt Quality Metrics', () => {
     promptContent = readScoutingPromptTemplates();
   });
 
-  test('prompt should be human-readable', () => {
-    const lines = promptContent.split('\n');
-    const avgLineLength = lines.reduce((sum, line) => sum + line.length, 0) / lines.length;
+  test('follows the documented prompt structure and handoff contract', () => {
+    const requiredSections = [
+      '## [ROLE]',
+      '## [OPERATIONAL CONSTRAINTS - Read-Only Phase]',
+      '## [TASK VALIDATION - Ensure Task is Valid Before Scouting]',
+      '## [EXECUTION CONTEXT - Optimize for Efficiency]',
+    ];
+    const sectionOffsets = requiredSections.map((section) => promptContent.indexOf(section));
 
-    // Lines should average <100 chars for readability
-    expect(avgLineLength).toBeLessThan(100);
+    expect(sectionOffsets).not.toContain(-1);
+    expect(sectionOffsets).toEqual([...sectionOffsets].sort((left, right) => left - right));
+
+    const operationalSection = promptContent.slice(sectionOffsets[1], sectionOffsets[2]);
+    expect(operationalSection).toContain('Do not edit source files');
+    expect(operationalSection).toContain('Do not run git add');
+    expect(operationalSection).toContain(
+      'Create exactly one JSON object at /results/scouting-candidate.json.',
+    );
+    expect(operationalSection).toContain('This is the only accepted handoff location.');
+    expect(operationalSection).toContain(
+      'Do not rely on final assistant text for the artifact.',
+    );
+    expect(operationalSection).toContain('Output rules for the JSON artifact:');
   });
 
   test('should use consistent formatting for lists', () => {
