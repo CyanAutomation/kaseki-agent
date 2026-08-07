@@ -87,7 +87,8 @@ COPY package.json package-lock.json tsconfig.json tsconfig.scripts.json ./
 COPY src ./src
 COPY scripts ./scripts
 RUN npm ci --no-audit --prefer-offline --ignore-scripts && npm run build
-RUN test -f /app/dist/kaseki-api-service.js
+RUN test -f /app/dist/kaseki-api-service.js \
+    && test -f /app/dist/run-scorecard.js
 
 # Copy all application files (after build, so layer invalidation is minimal)
 COPY Dockerfile .dockerignore README.md CLAUDE.md CONTRIBUTING.md ./
@@ -142,6 +143,7 @@ RUN chmod +x \
     && cp dist/hashline-validator.js /app/lib/hashline-validator.js \
     && cp dist/progress-stream-utils.js /app/lib/progress-stream-utils.js \
     && cp dist/kaseki-report.js /app/lib/kaseki-report.js \
+    && cp dist/run-scorecard.js /app/lib/run-scorecard.js \
     && cp dist/analyze-test-failures.js /app/lib/analyze-test-failures.js \
     && cp dist/instance-state-derivation.js /app/lib/instance-state-derivation.js \
     && cp dist/instance-status-derivation.js /app/lib/instance-status-derivation.js \
@@ -190,6 +192,7 @@ RUN chmod +x \
     && install -m 0755 /app/lib/provider-error-classifier.js /usr/local/bin/provider-error-classifier.js \
     && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \
     && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
+    && install -m 0755 /app/lib/run-scorecard.js /usr/local/bin/kaseki-run-scorecard \
     && install -m 0755 /app/lib/analyze-test-failures.js /usr/local/bin/analyze-test-failures \
     && install -m 0755 /app/lib/lib/validation-causality-analysis.js /usr/local/bin/validation-causality-analysis \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \
@@ -226,6 +229,7 @@ RUN empty_events="$(mktemp)" \
     && /usr/local/bin/kaseki-pi-event-filter "$empty_events" "$filtered_events" "$event_summary" \
     && test -s "$event_summary" \
     && rm -f "$empty_events" "$filtered_events" "$event_summary"
+RUN test -x /usr/local/bin/kaseki-run-scorecard
 
 # Pre-configure git safe.directory for /agents checkout directory
 # This is a system-wide configuration visible to all users (including UID 10000 containers)
@@ -334,6 +338,7 @@ RUN mkdir -p /scripts \
     && install -m 0755 /app/lib/provider-error-classifier.js /usr/local/bin/provider-error-classifier.js \
     && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \
     && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
+    && install -m 0755 /app/lib/run-scorecard.js /usr/local/bin/kaseki-run-scorecard \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \
     && install -m 0755 /app/lib/github-app-token-runtime.js /usr/local/bin/github-app-token-runtime.js \
     && ln -sf github-app-token /usr/local/bin/github-app-token.js \
