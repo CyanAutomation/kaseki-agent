@@ -86,6 +86,14 @@ build_allowlist_regex() {
     );
   });
 
+  test('image packages run-scorecard type dependencies beside its executable', () => {
+    const dockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf-8');
+
+    expect(dockerfile).toContain('cp -r dist/types /app/lib/types');
+    expect(dockerfile).toContain('cp -r /app/lib/types /usr/local/bin/types');
+    expect(dockerfile).toContain('test -f /usr/local/bin/types/run-scorecard.js');
+  });
+
   test('root-level Dockerfile COPY sources are included by the dockerignore allowlist', () => {
     const dockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf-8');
     const dockerignore = fs.readFileSync(path.join(repoRoot, '.dockerignore'), 'utf-8');

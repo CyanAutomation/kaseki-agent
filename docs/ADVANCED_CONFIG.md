@@ -859,7 +859,7 @@ Variables for dependency caching and performance optimization.
 
 ### Dependency Cache Pruning
 
-- `KASEKI_DEPENDENCY_CACHE_MAX_BYTES` defaults to `5368709120` (5 GiB). Set `0` to disable size pruning.
+- `KASEKI_DEPENDENCY_CACHE_MAX_BYTES` defaults to `10737418240` (10 GiB). Set `0` to disable size pruning.
 - `KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS` defaults to `30`. Set `0` to disable age pruning.
 - `KASEKI_DEPENDENCY_CACHE_PRUNE` defaults to `1`; set `0` to disable worker pruning.
 - The worker writes `${KASEKI_DEPENDENCY_CACHE_DIR}/.kaseki-cache-metrics`, which the API exposes as Prometheus dependency-cache gauges.

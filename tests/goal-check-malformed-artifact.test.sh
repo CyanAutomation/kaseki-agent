@@ -95,7 +95,7 @@ env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspe
 run_exit=$?
 
 [ "$run_exit" -eq 8 ] || fail "expected goal-check failure exit 8, got $run_exit"
-[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check' ] || fail "Pi calls did not reach the malformed goal-check artifact"
+[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' ] || fail "missing evaluator-only retry after malformed goal-check artifact"
 [ -s "$RESULTS_DIR/goal-check-validation-errors.jsonl" ] || fail "missing goal-check-validation-errors.jsonl"
 [ "$(cat "$RESULTS_DIR/goal-check-validation-reason.txt")" = "malformed_json" ] || fail "expected malformed_json reason"
 grep -q 'goal-check validation error' "$RESULTS_DIR/goal-check-validation-summary.txt" || fail "missing goal-check validation summary"

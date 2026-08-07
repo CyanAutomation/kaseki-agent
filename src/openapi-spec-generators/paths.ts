@@ -833,6 +833,13 @@ function buildArtifactPaths(errorResponseSchema: Record<string, unknown>): Recor
             required: true,
             schema: { type: 'string', pattern: '^kaseki-\\d+$' },
             description: 'Kaseki instance ID'
+          },
+          {
+            name: 'manifest',
+            in: 'query',
+            required: false,
+            schema: { type: 'boolean', default: false },
+            description: 'Include unavailable registry entries as a complete artifact manifest. Defaults to available artifacts only.'
           }
         ],
         security: [{ BearerAuth: [] }],

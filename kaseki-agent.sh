@@ -518,7 +518,7 @@ EXPECTATION_MISMATCH_WARNINGS_ARTIFACT="${KASEKI_RESULTS_DIR}/expectation-mismat
 CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT="${KASEKI_RESULTS_DIR}/critical-change-expectations.json"
 KASEKI_DEPENDENCY_CACHE_DIR="${KASEKI_DEPENDENCY_CACHE_DIR:-${KASEKI_WORKSPACE_DIR}/.kaseki-cache}"
 KASEKI_DEPENDENCY_RESTORE_MODE="${KASEKI_DEPENDENCY_RESTORE_MODE:-auto}"
-KASEKI_DEPENDENCY_CACHE_MAX_BYTES="${KASEKI_DEPENDENCY_CACHE_MAX_BYTES:-5368709120}"
+KASEKI_DEPENDENCY_CACHE_MAX_BYTES="${KASEKI_DEPENDENCY_CACHE_MAX_BYTES:-10737418240}"
 KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS="${KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS:-30}"
 KASEKI_DEPENDENCY_CACHE_PRUNE="${KASEKI_DEPENDENCY_CACHE_PRUNE:-1}"
 KASEKI_DEPENDENCY_CACHE_METRICS_FILE="${KASEKI_DEPENDENCY_CACHE_METRICS_FILE:-${KASEKI_DEPENDENCY_CACHE_DIR}/.kaseki-cache-metrics}"
@@ -6466,6 +6466,31 @@ function schemaErrors(artifact) {
   return errors;
 }
 
+// Gateway models occasionally follow an older evaluator vocabulary despite the
+// current prompt. Normalize only unambiguous aliases before applying the
+// strict contract, preserving the raw events as the audit record.
+function normalizeArtifact(value) {
+  if (!value || Array.isArray(value) || typeof value !== "object") return value;
+  const artifact = { ...value };
+  if (artifact.met === undefined && typeof artifact.verdict === "string") {
+    const verdict = artifact.verdict.toLowerCase();
+    if (["goal_met", "met", "pass", "passed"].includes(verdict)) artifact.met = true;
+    if (["goal_unmet", "not_met", "unmet", "fail", "failed"].includes(verdict)) artifact.met = false;
+  }
+  if (typeof artifact.summary !== "string" && typeof artifact.reasoning === "string") artifact.summary = artifact.reasoning;
+  if (!Array.isArray(artifact.evidence) && artifact.smart_evaluation && typeof artifact.smart_evaluation === "object") {
+    artifact.evidence = Object.values(artifact.smart_evaluation)
+      .flatMap((item) => Array.isArray(item && item.evidence) ? item.evidence : [])
+      .filter((item) => typeof item === "string");
+  }
+  if (!Array.isArray(artifact.missing)) artifact.missing = [];
+  if (!Array.isArray(artifact.validation_notes)) artifact.validation_notes = [];
+  if (typeof artifact.retry_prompt !== "string") artifact.retry_prompt = artifact.met === false
+    ? "Re-read the objective, diff, and validation evidence, then address the unmet requirement."
+    : "";
+  return artifact;
+}
+
 function collectBalancedJsonObjects(text) {
   const snippets = [];
   let start = -1;
@@ -6510,12 +6535,12 @@ for (const path of [rawPath, filteredPath]) {
   const snippets = collectBalancedJsonObjects(text);
   for (const snippet of snippets) {
     try {
-      const parsed = JSON.parse(snippet);
+      const parsed = normalizeArtifact(JSON.parse(snippet));
       if (schemaErrors(parsed).length === 0) valid.set(stableStringify(parsed), parsed);
       for (const innerText of collectStrings(parsed)) {
         for (const innerSnippet of collectBalancedJsonObjects(innerText)) {
           try {
-            const inner = JSON.parse(innerSnippet);
+            const inner = normalizeArtifact(JSON.parse(innerSnippet));
             if (schemaErrors(inner).length === 0) valid.set(stableStringify(inner), inner);
           } catch {}
         }
@@ -9360,10 +9385,24 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
   fi
 
   run_goal_check "$coding_attempt"
-  # A malformed/missing evaluator verdict is deterministic contract failure.
-  # Do not spend a second full-context evaluator call against the unchanged diff.
+  # A malformed/missing evaluator verdict is an evaluator contract failure,
+  # not evidence that the repository needs another coding pass. Retry the
+  # evaluator once against the same evidence, then stop instead of spending a
+  # full coding attempt on an unchanged diff.
+  if [ "$GOAL_CHECK_EXIT" -eq 86 ]; then
+    emit_progress "goal check" "retrying evaluator after artifact-contract failure (coding attempt $coding_attempt)"
+    run_goal_check "$coding_attempt"
+  fi
   collect_goal_check_feedback "$INSTANCE_NAME"
   snapshot_attempt_artifacts "$coding_attempt"
+
+  if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ "$GOAL_CHECK_EXIT" -ne 0 ]; then
+    STATUS=8
+    FAILED_COMMAND="goal check"
+    [ -z "$GOAL_CHECK_FAILURE_REASON" ] && GOAL_CHECK_FAILURE_REASON="goal_check_failed_exit_$GOAL_CHECK_EXIT"
+    emit_error_event "goal_check_evaluator_contract_failed" "Goal-check evaluator failed after evaluator-only retry: $GOAL_CHECK_FAILURE_REASON" "exit"
+    break
+  fi
 
   if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ] && [ "$GOAL_CHECK_MET" != "true" ]; then
     if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
@@ -9495,7 +9534,19 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && [
   printf 'Validation completed successfully; re-running goal check against final validation evidence and artifacts.\n' | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
   emit_progress "goal check" "re-running after successful validation (attempt $coding_attempt)"
   run_goal_check "$coding_attempt"
+  if [ "$GOAL_CHECK_EXIT" -eq 86 ]; then
+    emit_progress "goal check" "retrying evaluator after artifact-contract failure (post-validation coding attempt $coding_attempt)"
+    run_goal_check "$coding_attempt"
+  fi
   collect_goal_check_feedback "$INSTANCE_NAME"
+
+  if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ "$GOAL_CHECK_EXIT" -ne 0 ]; then
+    STATUS=8
+    FAILED_COMMAND="goal check"
+    [ -z "$GOAL_CHECK_FAILURE_REASON" ] && GOAL_CHECK_FAILURE_REASON="goal_check_failed_exit_$GOAL_CHECK_EXIT"
+    emit_error_event "goal_check_evaluator_contract_failed" "Goal-check evaluator failed after evaluator-only retry: $GOAL_CHECK_FAILURE_REASON" "exit"
+    break
+  fi
 
   if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ] && [ "$GOAL_CHECK_MET" != "true" ]; then
     snapshot_attempt_artifacts "$coding_attempt"

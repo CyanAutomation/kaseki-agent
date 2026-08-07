@@ -218,7 +218,7 @@ export function loadConfig(): KasekiApiConfig {
     process.env.KASEKI_DEPENDENCY_CACHE_METRICS_FILE || `${dependencyCacheDir}/.kaseki-cache-metrics`;
   const dependencyCacheMaxBytes = validatePositiveInt(
     'KASEKI_DEPENDENCY_CACHE_MAX_BYTES',
-    5 * 1024 * 1024 * 1024,
+    10 * 1024 * 1024 * 1024,
     0,
     'KASEKI_DEPENDENCY_CACHE_MAX_BYTES'
   );

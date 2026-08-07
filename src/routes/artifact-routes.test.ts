@@ -175,6 +175,24 @@ describe('artifact-routes', () => {
       return job;
     }
 
+    it('lists only available artifacts by default and exposes the full registry on demand', async () => {
+      const job = mockCompletedJob();
+      mockFileStats({ 'stdout.log': { content: 'worker output\n' } });
+      const { server, url } = await listen(createMountedArtifactApp());
+
+      try {
+        const available = await (await fetch(`${url}/api/runs/${job.id}/artifacts`)).json();
+        const manifest = await (await fetch(`${url}/api/runs/${job.id}/artifacts?manifest=true`)).json();
+
+        expect(available.artifacts).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'stdout.log', available: true })]));
+        expect(available.artifacts.every((artifact: { available: boolean }) => artifact.available)).toBe(true);
+        expect(manifest.artifacts.length).toBeGreaterThan(available.artifacts.length);
+        expect(manifest.artifacts.some((artifact: { available: boolean }) => !artifact.available)).toBe(true);
+      } finally {
+        await close(server);
+      }
+    });
+
     it('serves a registered artifact for a known job', async () => {
       const job = mockCompletedJob();
       const content = '{"id":"kaseki-1","status":"completed"}';
