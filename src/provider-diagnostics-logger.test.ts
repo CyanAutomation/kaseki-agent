@@ -7,7 +7,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { ProviderDiagnosticsLogger, initializeProviderDiagnosticsLogger } from './provider-diagnostics-logger';
+import {
+  getProviderDiagnosticsLogger,
+  initializeProviderDiagnosticsLogger,
+  ProviderDiagnosticsLogger,
+  resetProviderDiagnosticsLoggerForTests,
+} from './provider-diagnostics-logger';
 
 describe('Provider Diagnostics Logger', () => {
   let tempDir: string;
@@ -242,9 +247,32 @@ describe('Provider Diagnostics Logger', () => {
   });
 
   describe('Singleton Instance', () => {
-    it('should initialize and return global logger', () => {
-      const logger1 = initializeProviderDiagnosticsLogger(tempDir);
-      expect(logger1).toBeDefined();
+    const singletonTempDirs: string[] = [];
+
+    afterEach(() => {
+      resetProviderDiagnosticsLoggerForTests();
+      for (const directory of singletonTempDirs.splice(0)) {
+        fs.rmSync(directory, { recursive: true, force: true });
+      }
+    });
+
+    it('should replace the global logger when reinitialized', () => {
+      const firstDir = fs.mkdtempSync(path.join(os.tmpdir(), 'provider-diagnostics-first-'));
+      const secondDir = fs.mkdtempSync(path.join(os.tmpdir(), 'provider-diagnostics-second-'));
+      singletonTempDirs.push(firstDir, secondDir);
+
+      const firstLogger = initializeProviderDiagnosticsLogger(firstDir);
+      firstLogger.flush();
+      const secondLogger = initializeProviderDiagnosticsLogger(secondDir);
+
+      expect(secondLogger).not.toBe(firstLogger);
+      expect(getProviderDiagnosticsLogger()).toBe(secondLogger);
+
+      secondLogger.logProviderError('coding', 'gateway', 'openai-responses', 'auto', 'timeout', 'Timed out');
+      secondLogger.flush();
+
+      expect(fs.existsSync(path.join(firstDir, 'provider-diagnostics.jsonl'))).toBe(false);
+      expect(fs.existsSync(path.join(secondDir, 'provider-diagnostics.jsonl'))).toBe(true);
     });
   });
 });
