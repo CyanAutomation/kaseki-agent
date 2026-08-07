@@ -51,6 +51,7 @@ export {
   type ScorecardDimension,
   type ScorecardPhaseMeasurement,
 } from './types/run-scorecard';
+export { formatRunScorecardFile, formatRunScorecardMarkdown, sanitizeScorecardText } from './run-scorecard-markdown';
 
 // Client
 export { KasekiApiClient } from './kaseki-api-client';
