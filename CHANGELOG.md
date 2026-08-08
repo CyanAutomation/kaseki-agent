@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.126.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.125.0...v1.126.0) (2026-08-08)
+
+
+### Features
+
+* update run-scorecard entrypoint logic and add corresponding test script ([92c9fb9](https://github.com/CyanAutomation/kaseki-agent/commit/92c9fb97e5e097a14dd546e9878b979ad26c51d6))
+
 # [1.125.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.124.1...v1.125.0) (2026-08-08)
 
 
