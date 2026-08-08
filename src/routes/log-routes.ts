@@ -3,152 +3,16 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { JobScheduler } from '../job-scheduler';
 import { KasekiApiConfig } from '../kaseki-api-config';
-import { DiagnosticEntryPoint, LogResponse, AnalysisResponse, type Job } from '../kaseki-api-types';
+import { LogResponse, AnalysisResponse, type Job } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
 import { isNonEmptyFile } from '../utils/file-helpers';
-import { decodeUtf8TailSafely, tailLogByLines, readTailBytes } from '../utils/utf8-helpers';
+import { readLogContent, readCombinedLogs, collectDiagnostics, isPathInsideDirectory, logFileForType, VALID_LOG_TYPES } from './log-file-reader';
 import { getJobOrRespond } from '../utils/route-helpers';
 import { normalizeProgressEvent } from '../utils/progress-normalizer';
 import { progressEventsFromDockerLogTail } from '../utils/docker-log-progress-events';
 import { CachedArtifactReader } from '../utils/cached-artifact-reader';
 import { AnalysisArtifactHelper } from '../utils/analysis-artifact-helper';
 import type { ResultCache } from '../result-cache';
-
-const VALID_LOG_TYPES = [
-  'stdout',
-  'stderr',
-  'validation',
-  'progress',
-  'quality',
-  'secret-scan',
-  'combined',
-  'goal-setting-stderr',
-  'scouting-stderr',
-  'goal-check-stderr',
-  'run-evaluation-stderr',
-] as const;
-const COMBINED_LOG_TYPES = ['stdout', 'stderr', 'validation', 'progress', 'quality', 'secret-scan'] as const;
-const DIAGNOSTIC_FILE_CANDIDATES: DiagnosticEntryPoint[] = [
-  'goal-setting-validation-errors.jsonl',
-  'goal-setting-stderr.log',
-  'scouting-validation-errors.jsonl',
-  'scouting-contract-diagnostics.jsonl',
-  'scouting-retry-diagnostics.jsonl',
-  'scouting-stderr.log',
-  'goal-check-validation-errors.jsonl',
-  'goal-check-stderr.log',
-  'failure.json',
-  'analysis.md',
-  'result-summary.md',
-  'stderr.log',
-  'stdout.log',
-];
-const DIAGNOSTIC_INLINE_LIMIT_BYTES = 65536;
-
-function logFileForType(runDir: string, logType: string): string {
-  if (logType.endsWith('-stderr')) {
-    return path.join(runDir, `${logType}.log`);
-  }
-  return path.join(runDir, logType === 'stdout' ? 'stdout.log' : `${logType}.log`);
-}
-
-function isPathInsideDirectory(filePath: string, directory: string): boolean {
-  const resolvedFile = path.resolve(filePath);
-  const resolvedDirectory = path.resolve(directory);
-  const relative = path.relative(resolvedDirectory, resolvedFile);
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-}
-
-function readLogContent(logFile: string, req: Request): { content: string; size: number } {
-  const stat = fs.statSync(logFile);
-  const size = stat.size;
-  const maxSize = 1024 * 100; // 100 KB
-
-  if (size <= maxSize) {
-    return { content: fs.readFileSync(logFile, 'utf-8'), size };
-  }
-
-  const truncated = readTailBytes(logFile, size, maxSize);
-  let tailContent = decodeUtf8TailSafely(truncated);
-  if (req.query.tail === 'lines') {
-    const lineCount = Number(req.query.lines ?? 200);
-    const maxLines = Number.isFinite(lineCount) ? Math.max(1, Math.floor(lineCount)) : 200;
-    tailContent = tailLogByLines(tailContent, maxLines);
-  }
-
-  return {
-    content: `[... truncated, showing last ${maxSize} bytes ...]\n${tailContent}`,
-    size,
-  };
-}
-
-function readCombinedLogs(runDir: string, req: Request): LogResponse | undefined {
-  const parts: string[] = [];
-  const sources: NonNullable<LogResponse['sources']> = [];
-
-  for (const logType of COMBINED_LOG_TYPES) {
-    const logFile = logFileForType(runDir, logType);
-    if (!fs.existsSync(logFile)) {
-      continue;
-    }
-    const { content, size } = readLogContent(logFile, req);
-    sources.push({ logType, file: path.basename(logFile), size });
-    parts.push(`===== ${logType} (${path.basename(logFile)}) =====\n${content}`);
-  }
-
-  if (parts.length === 0) {
-    return undefined;
-  }
-
-  const content = parts.join('\n\n');
-  return {
-    logType: 'combined',
-    content,
-    size: Buffer.byteLength(content, 'utf-8'),
-    sources,
-  };
-}
-
-function readJsonlRecords(filePath: string): Array<Record<string, unknown>> | undefined {
-  if (!fs.existsSync(filePath)) {
-    return undefined;
-  }
-  const stat = fs.statSync(filePath);
-  if (stat.size <= 0 || stat.size > DIAGNOSTIC_INLINE_LIMIT_BYTES) {
-    return undefined;
-  }
-  try {
-    const records = fs
-      .readFileSync(filePath, 'utf-8')
-      .split('\n')
-      .filter((line) => line.trim().length > 0)
-      .map((line) => JSON.parse(line) as unknown);
-    return records.every((record) => record && typeof record === 'object' && !Array.isArray(record))
-      ? records as Array<Record<string, unknown>>
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function collectDiagnostics(runDir: string): AnalysisResponse['diagnostics'] | undefined {
-  const files = DIAGNOSTIC_FILE_CANDIDATES.filter((fileName) => {
-    const filePath = path.join(runDir, fileName);
-    return fs.existsSync(filePath) && fs.statSync(filePath).size > 0;
-  });
-  if (files.length === 0) {
-    return undefined;
-  }
-  const entryPoint = files[0];
-  const details = files
-    .filter((fileName) => fileName.endsWith('-validation-errors.jsonl'))
-    .flatMap((fileName) => readJsonlRecords(path.join(runDir, fileName)) ?? []);
-  return {
-    entryPoint,
-    files,
-    ...(details.length > 0 ? { details } : {}),
-  };
-}
 
 function readStructuredEventSnapshot(
   scheduler: JobScheduler,

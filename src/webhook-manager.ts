@@ -4,6 +4,7 @@ import * as path from 'path';
 import { EventEmitter } from 'events';
 import { WebhookPayload, WebhookConfig } from './kaseki-api-types';
 import { createEventLogger, EventLogger } from './logger';
+import { getRetryDecision } from './webhook-retry-policy';
 
 /**
  * Webhook delivery attempt record.
@@ -242,34 +243,24 @@ export class WebhookManager extends EventEmitter {
         this.finishClaimedDelivery(entry, true);
       } else {
         // Transient error, schedule retry
-        const retryPolicy = config.retryPolicy || {
-          maxAttempts: 5,
-          initialDelayMs: 1000,
-          maxDelayMs: 30000,
-        };
-
-        const backoffMs = Math.min(
-          retryPolicy.initialDelayMs * Math.pow(2, entry.deliveryAttempts - 1),
-          retryPolicy.maxDelayMs
-        );
-        const hasRemainingAttempts = entry.deliveryAttempts < retryPolicy.maxAttempts;
+        const retryDecision = getRetryDecision(entry.deliveryAttempts, config);
 
         entry.attempts.push({
           timestamp: this.nowIso(),
-          status: hasRemainingAttempts ? 'retry' : 'failed',
+          status: retryDecision.hasRemainingAttempts ? 'retry' : 'failed',
           statusCode: response.status,
           durationMs,
           error: `HTTP ${response.status}`,
         });
 
-        if (hasRemainingAttempts) {
-          entry.nextRetryTime = this.now() + backoffMs;
+        if (retryDecision.hasRemainingAttempts) {
+          entry.nextRetryTime = this.now() + retryDecision.backoffMs;
 
           this.logger.event('webhook_retry_scheduled', {
             jobId,
             eventType: payload.eventType,
             statusCode: response.status,
-            nextRetryMs: backoffMs,
+            nextRetryMs: retryDecision.backoffMs,
             attemptNumber: entry.deliveryAttempts,
           });
         } else {
