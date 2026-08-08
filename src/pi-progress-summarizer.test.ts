@@ -86,6 +86,7 @@ describe('pi-progress-summarizer', () => {
       expect(extractDecision('I will create a new file')).toContain('create');
       expect(extractDecision('Let me fix this bug')).toContain('fix');
       expect(extractDecision('I need to modify the handler')).toContain('modify');
+      expect(extractDecision('Now I will implement the parser')).toContain('implement');
     });
 
     it('returns null for content without keywords', () => {
@@ -99,11 +100,22 @@ describe('pi-progress-summarizer', () => {
     });
 
     it('extracts context around keyword', () => {
-      const result = extractDecision('Now I will implement the parser with error handling');
-      expect(result).toBeTruthy();
-      if (result) {
-        expect(result).toContain('implement');
-      }
+      const result = extractDecision(
+        'distant-leading-marker 12345 nearby-before implement nearby-after-one nearby-after-two marker distant-trailing-marker',
+      );
+
+      expect(result).toBe(
+        '12345 nearby-before implement nearby-after-one nearby-after-two marker',
+      );
+      expect(result).toHaveLength(70);
+      expect(result).not.toContain('distant-leading-marker');
+      expect(result).not.toContain('distant-trailing-marker');
+    });
+
+    it('extracts context when the keyword is at the start boundary', () => {
+      expect(extractDecision('implement final-tail near the start')).toBe(
+        'implement final-tail near the start',
+      );
     });
 
     it('handles case-insensitive matching', () => {
