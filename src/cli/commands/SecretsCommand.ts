@@ -29,15 +29,15 @@ export class SecretsCommand extends BaseCommand {
       const secretValue = positional[2];
       const secretsManager = new SecretsManager();
       switch (subcommand) {
-        case 'init': return this.initializeSecrets();
-        case 'set': return this.setSecret(secretsManager, secretKey, secretValue);
-        case 'get': return this.getSecret(secretsManager, secretKey, flags.has('show'));
-        case 'delete': return this.deleteSecret(secretsManager, secretKey);
-        case 'list': return this.listSecrets(secretsManager);
-        case 'doctor': return this.runPermissionsDoctor(false);
-        case 'fix-permissions': return this.runPermissionsDoctor(true);
-        case 'help': return this.printHelp();
-        default: return this.unknownSubcommand(subcommand);
+      case 'init': return this.initializeSecrets();
+      case 'set': return this.setSecret(secretsManager, secretKey, secretValue);
+      case 'get': return this.getSecret(secretsManager, secretKey, flags.has('show'));
+      case 'delete': return this.deleteSecret(secretsManager, secretKey);
+      case 'list': return this.listSecrets(secretsManager);
+      case 'doctor': return this.runPermissionsDoctor(false);
+      case 'fix-permissions': return this.runPermissionsDoctor(true);
+      case 'help': return this.printHelp();
+      default: return this.unknownSubcommand(subcommand);
       }
     } catch (error) {
       logger.error(`Secrets command failed: ${error}`);
