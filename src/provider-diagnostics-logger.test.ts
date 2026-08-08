@@ -26,7 +26,7 @@ describe('Provider Diagnostics Logger', () => {
 
   afterEach(() => {
     // Clean up
-    logger.flush();
+    logger.shutdown();
     if (fs.existsSync(tempDir)) {
       const files = fs.readdirSync(tempDir);
       for (const file of files) {
@@ -34,6 +34,14 @@ describe('Provider Diagnostics Logger', () => {
       }
       fs.rmdirSync(tempDir);
     }
+  });
+
+  it('shutdown cancels a pending delayed flush and persists buffered diagnostics', () => {
+    logger.logProviderError('scouting', 'gateway', 'responses', 'auto', 'timeout', 'timed out');
+
+    logger.shutdown();
+
+    expect(fs.existsSync(path.join(tempDir, 'provider-diagnostics.jsonl'))).toBe(true);
   });
 
   describe('logEmptyAssistantTurn()', () => {

@@ -162,108 +162,6 @@ afterEach(() => {
 });
 
 /**
- * Helper function: Destroy all requests (pending and queued) in a given agent
- * @param agent - HTTP or HTTPS agent with requests property
- */
-function destroyAgentRequests(agent: any): void {
-  if (!agent) return;
-  try {
-    const requests = Object.values(agent.requests || {});
-    for (const requestList of requests) {
-      if (Array.isArray(requestList)) {
-        while (requestList.length > 0) {
-          const req = requestList.pop();
-          if (req) {
-            req.abort?.();
-            req.destroy?.();
-          }
-        }
-      }
-    }
-  } catch {
-    // If requests don't exist or we can't access them, continue
-  }
-}
-
-/**
- * Helper function: Aggressively cleanup global HTTP and HTTPS agents (slow version for afterAll)
- * Destroys all sockets AND requests in the global agents.
- * This is more thorough than afterEach cleanup.
- */
-function cleanupHttpAgentsAggressive(): void {
-  try {
-    // @ts-ignore - Accessing Node's internal HTTP agents
-    const http = require('http');
-    const https = require('https');
-
-    cleanupAgentAggressive(http.globalAgent);
-    cleanupAgentAggressive(https.globalAgent);
-  } catch {
-    // If agents don't exist or we can't access them, continue
-  }
-}
-
-function cleanupAgentAggressive(agent: any): void {
-  if (!agent) return;
-  destroyAgentSockets(agent);
-  destroyAgentRequests(agent);
-}
-
-/**
- * Helper function: Cleanup undici connection pool (used by Node's fetch)
- */
-async function cleanupUndiciDispatcher(): Promise<void> {
-  try {
-    const { getGlobalDispatcher } = require('undici');
-    const dispatcher = getGlobalDispatcher();
-    if (dispatcher && typeof dispatcher.destroy === 'function') {
-      await dispatcher.destroy();
-    }
-  } catch {
-    // undici might not be explicitly installed or accessible
-  }
-}
-
-/**
- * Helper function: Kill any lingering child processes
- */
-function cleanupChildProcesses(): void {
-  try {
-    // @ts-ignore - Access to private Node API
-    const activeRequests = process._getActiveRequests?.() || [];
-    for (const req of activeRequests) {
-      if (req && typeof req.kill === 'function') {
-        try {
-          req.kill();
-        } catch {
-          // Already dead
-        }
-      }
-    }
-  } catch {
-    // Child process module may not be available or private API not accessible
-  }
-}
-
-/**
- * Helper function: Remove all process event listeners that might keep the process alive
- */
-function cleanupProcessListeners(): void {
-  try {
-    process.removeAllListeners('uncaughtException');
-    process.removeAllListeners('unhandledRejection');
-    
-    // Remove all other process listeners that might keep it alive
-    const allListeners = process.eventNames();
-    for (const listener of allListeners) {
-      process.removeAllListeners(listener as string);
-    }
-  } catch {
-    // If we can't remove listeners, continue
-  }
-}
-
-/**
  * Helper function: Log open handles for debugging (debug mode only)
  */
 function debugLogOpenHandles(): void {
@@ -312,26 +210,14 @@ afterAll(async () => {
   (global as any).__kasekiCapturedLogs = [];
   delete (global as any).__kasekiCapturedLogs;
 
-  // Cleanup process listeners
-  cleanupProcessListeners();
-
-  // Kill any lingering child processes
-  cleanupChildProcesses();
-
-  // Aggressively clean up HTTP/HTTPS global agents
-  cleanupHttpAgentsAggressive();
-
-  // Cleanup undici dispatcher
-  await cleanupUndiciDispatcher();
-
   // Give Node a moment to complete any pending operations
   await new Promise(resolve => setImmediate(resolve));
 
   // Log open handles for debugging (if enabled)
   debugLogOpenHandles();
 
-  // Signal successful exit code; Jest's forceExit (jest.config.ts) handles
-  // forcibly terminating any lingering open handles after all tests complete.
+  // Preserve the natural Jest exit path. Open handles should remain visible to
+  // Jest instead of being hidden by global process cleanup or force-exit.
   process.exitCode = 0;
 });
 
