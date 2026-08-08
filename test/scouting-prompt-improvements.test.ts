@@ -119,15 +119,66 @@ describe('Scouting prompt contracts', () => {
     )).toBe(1);
   });
 
-  test('keeps goal-setting retry counters local to each invocation', () => {
-    const agentScript = fs.readFileSync(path.join(__dirname, '..', 'kaseki-agent.sh'), 'utf-8');
-    const retryFunctionPreamble = agentScript.match(
-      /run_goal_setting_agent_with_retry\(\) \{([\s\S]*?)goal_setting_last_exit=0/,
-    )?.[1];
+  test('keeps goal-setting retry counters local to each invocation [retry-state regression]', () => {
+    const agentScript = path.join(__dirname, '..', 'kaseki-agent.sh');
+    const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-retry-state-'));
 
-    expect(retryFunctionPreamble).toBeDefined();
-    expect(retryFunctionPreamble).toMatch(/^\s*# Keep retry state[\s\S]*?^\s*local attempt=1 max_attempts=2$/m);
-    expect(retryFunctionPreamble).not.toMatch(/^\s*(?:attempt|max_attempts)=/m);
+    try {
+      const runtime = spawnSync('bash', ['-c', `
+        set -u
+        eval "$(sed -n '/^run_goal_setting_agent_with_retry() {/,/^}$/p' "$1")"
+
+        STATUS=0
+        FAILED_COMMAND=''
+        GOAL_SETTING_FALLBACK_USED=0
+        GOAL_SETTING_ARTIFACT="$2/goal-setting.json"
+        GOAL_SETTING_CANDIDATE_ARTIFACT="$2/goal-setting-candidate.json"
+        GOAL_SETTING_RAW_EVENTS="$2/goal-setting-events.jsonl"
+        KASEKI_RESULTS_DIR="$2"
+        KASEKI_GOAL_SETTING_TIMEOUT_SECONDS=1
+        GOAL_SETTING_ACTUAL_MODEL=test-model
+        agent_results=(75 75 75 75)
+        agent_call=0
+
+        run_goal_setting_agent() {
+          result="\${agent_results[$agent_call]}"
+          agent_call=$((agent_call + 1))
+          printf 'agent-call\n' >> "$KASEKI_RESULTS_DIR/agent-calls.log"
+          printf 'timeout from deterministic stub\n' >&2
+          return "$result"
+        }
+        is_transient_goal_setting_failure() { return 0; }
+        capture_validation_error_classification() { return 1; }
+        capture_provider_error_from_log() { return 0; }
+        clear_provider_error() { return 0; }
+        write_goal_setting_metrics() { return 0; }
+
+        printf '%s\n' '--- invocation 1 ---'
+        run_goal_setting_agent_with_retry
+        printf '%s\n' '--- invocation 2 ---'
+        run_goal_setting_agent_with_retry
+      `, 'retry-state-test', agentScript, temporaryDirectory], { encoding: 'utf8' });
+
+      expect(runtime.status).toBe(0);
+      const invocations = runtime.stdout.split(/--- invocation \d ---\n/).slice(1);
+      expect(invocations).toHaveLength(2);
+
+      const attemptsByInvocation = invocations.map((output) =>
+        [...output.matchAll(/\[Goal-Setting Phase] Attempt (\d+)\/(\d+)/g)]
+          .map(([, attemptNumber, maximum]) => ({
+            attemptNumber: Number(attemptNumber),
+            maximum: Number(maximum),
+          })),
+      );
+      expect(attemptsByInvocation).toEqual([
+        [{ attemptNumber: 1, maximum: 2 }, { attemptNumber: 2, maximum: 2 }],
+        [{ attemptNumber: 1, maximum: 2 }, { attemptNumber: 2, maximum: 2 }],
+      ]);
+      expect(fs.readFileSync(path.join(temporaryDirectory, 'agent-calls.log'), 'utf8')
+        .trim().split('\n')).toHaveLength(4);
+    } finally {
+      fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
   });
 
   test('defines comprehensive test impact guidance [SCOUTING_PROMPT_DESIGN § Guidelines: test_impact]', () => {
