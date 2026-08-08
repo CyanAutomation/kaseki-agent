@@ -501,40 +501,66 @@ test('writes gateway summary and recommends compaction when token budget is exce
   }
 });
 
+const TOKEN_LEDGER_ENV_KEYS = [
+  'KASEKI_INFERENCE_PHASE',
+  'KASEKI_INFERENCE_ATTEMPT',
+  'KASEKI_INFERENCE_REQUEST_ID',
+  'KASEKI_LLM_INPUT_USD_PER_MTOKEN',
+  'KASEKI_LLM_CACHE_READ_USD_PER_MTOKEN',
+  'KASEKI_LLM_CACHE_WRITE_USD_PER_MTOKEN',
+  'KASEKI_LLM_OUTPUT_USD_PER_MTOKEN',
+] as const;
+
+function captureTokenLedgerEnvironment(): Record<string, string | undefined> {
+  return Object.fromEntries(TOKEN_LEDGER_ENV_KEYS.map(key => [key, process.env[key]]));
+}
+
+function configureTokenLedgerEnvironment(): void {
+  Object.assign(process.env, {
+    KASEKI_INFERENCE_PHASE: 'goal-check',
+    KASEKI_INFERENCE_ATTEMPT: 'primary-1',
+    KASEKI_INFERENCE_REQUEST_ID: 'req-1',
+    KASEKI_LLM_INPUT_USD_PER_MTOKEN: '2',
+    KASEKI_LLM_CACHE_READ_USD_PER_MTOKEN: '0.5',
+    KASEKI_LLM_CACHE_WRITE_USD_PER_MTOKEN: '3',
+    KASEKI_LLM_OUTPUT_USD_PER_MTOKEN: '8',
+  });
+}
+
+function restoreTokenLedgerEnvironment(previous: Record<string, string | undefined>): void {
+  for (const [key, value] of Object.entries(previous)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
+
+function writeTokenLedgerFixture(inputPath: string): void {
+  fs.writeFileSync(inputPath, [
+    { type: 'message_update', message: { response_id: 'resp-1', model: 'routed-model', usage: { prompt_tokens: 100, completion_tokens: 10 } } },
+    { type: 'message_end', message: { response_id: 'resp-1', model: 'routed-model', usage: { prompt_tokens: 120, completion_tokens: 20 } } },
+  ].map(JSON.stringify).join('\n') + '\n');
+}
+
+function readTokenLedger(tmpDir: string): Array<Record<string, unknown>> {
+  return fs.readFileSync(path.join(tmpDir, 'token-ledger.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+}
+
 test('writes a deduplicated token ledger with phase/request lineage and configured pricing', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-token-ledger-'));
   const inputPath = path.join(tmpDir, 'in.jsonl');
   const outputPath = path.join(tmpDir, 'out.jsonl');
   const summaryPath = path.join(tmpDir, 'pi-summary.json');
-  const previous = {
-    phase: process.env.KASEKI_INFERENCE_PHASE,
-    attempt: process.env.KASEKI_INFERENCE_ATTEMPT,
-    request: process.env.KASEKI_INFERENCE_REQUEST_ID,
-    input: process.env.KASEKI_LLM_INPUT_USD_PER_MTOKEN,
-    cache: process.env.KASEKI_LLM_CACHE_READ_USD_PER_MTOKEN,
-    write: process.env.KASEKI_LLM_CACHE_WRITE_USD_PER_MTOKEN,
-    output: process.env.KASEKI_LLM_OUTPUT_USD_PER_MTOKEN,
-  };
-  Object.assign(process.env, {
-    KASEKI_INFERENCE_PHASE: 'goal-check', KASEKI_INFERENCE_ATTEMPT: 'primary-1', KASEKI_INFERENCE_REQUEST_ID: 'req-1',
-    KASEKI_LLM_INPUT_USD_PER_MTOKEN: '2', KASEKI_LLM_CACHE_READ_USD_PER_MTOKEN: '0.5',
-    KASEKI_LLM_CACHE_WRITE_USD_PER_MTOKEN: '3', KASEKI_LLM_OUTPUT_USD_PER_MTOKEN: '8',
-  });
+  const previous = captureTokenLedgerEnvironment();
+  configureTokenLedgerEnvironment();
   try {
-    fs.writeFileSync(inputPath, [
-      { type: 'message_update', message: { response_id: 'resp-1', model: 'routed-model', usage: { prompt_tokens: 100, completion_tokens: 10 } } },
-      { type: 'message_end', message: { response_id: 'resp-1', model: 'routed-model', usage: { prompt_tokens: 120, completion_tokens: 20 } } },
-    ].map(JSON.stringify).join('\n') + '\n');
+    writeTokenLedgerFixture(inputPath);
     await runPiEventFilter(inputPath, outputPath, summaryPath);
     await runPiEventFilter(inputPath, outputPath, summaryPath);
-    const ledger = fs.readFileSync(path.join(tmpDir, 'token-ledger.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    const ledger = readTokenLedger(tmpDir);
     expect(ledger).toHaveLength(1);
     expect(ledger[0]).toMatchObject({ phase: 'goal-check', attempt_id: 'primary-1', request_id: 'req-1', response_id: 'resp-1', context_tokens: 120, estimated_cost_usd: 0.0004 });
   } finally {
-    for (const [key, value] of Object.entries(previous)) {
-      if (value === undefined) delete process.env[key === 'phase' ? 'KASEKI_INFERENCE_PHASE' : key === 'attempt' ? 'KASEKI_INFERENCE_ATTEMPT' : key === 'request' ? 'KASEKI_INFERENCE_REQUEST_ID' : key === 'input' ? 'KASEKI_LLM_INPUT_USD_PER_MTOKEN' : key === 'cache' ? 'KASEKI_LLM_CACHE_READ_USD_PER_MTOKEN' : key === 'write' ? 'KASEKI_LLM_CACHE_WRITE_USD_PER_MTOKEN' : 'KASEKI_LLM_OUTPUT_USD_PER_MTOKEN'];
-      else process.env[key === 'phase' ? 'KASEKI_INFERENCE_PHASE' : key === 'attempt' ? 'KASEKI_INFERENCE_ATTEMPT' : key === 'request' ? 'KASEKI_INFERENCE_REQUEST_ID' : key === 'input' ? 'KASEKI_LLM_INPUT_USD_PER_MTOKEN' : key === 'cache' ? 'KASEKI_LLM_CACHE_READ_USD_PER_MTOKEN' : key === 'write' ? 'KASEKI_LLM_CACHE_WRITE_USD_PER_MTOKEN' : 'KASEKI_LLM_OUTPUT_USD_PER_MTOKEN'] = value;
-    }
+    restoreTokenLedgerEnvironment(previous);
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
