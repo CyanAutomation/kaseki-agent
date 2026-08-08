@@ -2550,7 +2550,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     const { server, port } = await listenTestApp(app);
 
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/artifacts`, {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/artifacts?manifest=true`, {
         headers: { Authorization: 'Bearer test-key' }
       });
       expect(response.status).toBe(200);
@@ -2654,7 +2654,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     const { server, port } = await listenTestApp(app);
 
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/artifacts`, {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/artifacts?manifest=true`, {
         headers: { Authorization: 'Bearer test-key' }
       });
       expect(response.status).toBe(200);
@@ -2725,7 +2725,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     const { server, port } = await listenTestApp(app);
 
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/artifacts`, {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/artifacts?manifest=true`, {
         headers: { Authorization: 'Bearer test-key' }
       });
       expect(response.status).toBe(200);
@@ -3309,7 +3309,7 @@ describe('kaseki-api-routes controller replay and events', () => {
     const { server, port } = await listenTestApp(app);
 
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/artifacts`, {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/artifacts?manifest=true`, {
         headers: { Authorization: 'Bearer test-key' }
       });
       expect(response.status).toBe(200);
