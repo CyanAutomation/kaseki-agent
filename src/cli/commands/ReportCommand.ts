@@ -228,48 +228,9 @@ export class ReportCommand extends ApiBackedCommand<ReportApiClient> {
       const content = await fs.readFile(metadataPath, 'utf-8');
       const metadata = JSON.parse(content) as DiskRunMetadata;
 
-      console.log('Instance Information');
-      console.log('-------------------');
-      console.log(`ID:        ${metadata.id ?? instanceId}`);
-      console.log(`Status:    ${metadata.status ?? 'unknown'}`);
-
-      if (metadata.createdAt) {
-        console.log(`Created:   ${new Date(metadata.createdAt).toLocaleString()}`);
-      }
-      if (metadata.completedAt) {
-        console.log(`Completed: ${new Date(metadata.completedAt).toLocaleString()}`);
-      }
-      if (metadata.repoUrl) {
-        console.log(`Repo:      ${metadata.repoUrl}`);
-      }
-      if (metadata.gitRef) {
-        console.log(`Ref:       ${metadata.gitRef}`);
-      }
-      if (metadata.model) {
-        console.log(`Model:     ${metadata.model}`);
-      }
-
-      if (metadata.stages && Object.keys(metadata.stages).length > 0) {
-        console.log('\nStages');
-        console.log('------');
-        for (const [stage, info] of Object.entries(metadata.stages)) {
-          console.log(`${stage}:`);
-          if (info.duration) {
-            console.log(`  Duration: ${info.duration.toFixed(1)}s`);
-          }
-          if (info.exitCode !== undefined) {
-            console.log(`  Exit Code: ${info.exitCode}`);
-          }
-        }
-      }
-
-      if (metadata.status === 'completed' && metadata.exitCode === 0) {
-        console.log('\n✅ Instance completed successfully');
-      } else if (metadata.status === 'completed') {
-        console.log(`\n❌ Instance failed with exit code ${metadata.exitCode}`);
-      } else {
-        console.log(`\n⏳ Instance status: ${metadata.status ?? 'unknown'}`);
-      }
+      this.printDiskMetadata(metadata, instanceId);
+      this.printDiskStages(metadata.stages);
+      this.printDiskOutcome(metadata);
 
       await this.printDiskSummary(fs, path.join(resultsDir, 'result-summary.md'));
       return metadata.exitCode === 0 ? 0 : (metadata.exitCode === undefined ? 0 : 1);
@@ -288,6 +249,39 @@ export class ReportCommand extends ApiBackedCommand<ReportApiClient> {
       console.log(summary);
     } catch {
       // Summary file not found, that's okay.
+    }
+  }
+
+  private printDiskMetadata(metadata: DiskRunMetadata, instanceId: string): void {
+    console.log('Instance Information');
+    console.log('-------------------');
+    console.log(`ID:        ${metadata.id ?? instanceId}`);
+    console.log(`Status:    ${metadata.status ?? 'unknown'}`);
+    if (metadata.createdAt) console.log(`Created:   ${new Date(metadata.createdAt).toLocaleString()}`);
+    if (metadata.completedAt) console.log(`Completed: ${new Date(metadata.completedAt).toLocaleString()}`);
+    if (metadata.repoUrl) console.log(`Repo:      ${metadata.repoUrl}`);
+    if (metadata.gitRef) console.log(`Ref:       ${metadata.gitRef}`);
+    if (metadata.model) console.log(`Model:     ${metadata.model}`);
+  }
+
+  private printDiskStages(stages?: DiskRunMetadata['stages']): void {
+    if (!stages || Object.keys(stages).length === 0) return;
+    console.log('\nStages');
+    console.log('------');
+    for (const [stage, info] of Object.entries(stages)) {
+      console.log(`${stage}:`);
+      if (info.duration) console.log(`  Duration: ${info.duration.toFixed(1)}s`);
+      if (info.exitCode !== undefined) console.log(`  Exit Code: ${info.exitCode}`);
+    }
+  }
+
+  private printDiskOutcome(metadata: DiskRunMetadata): void {
+    if (metadata.status === 'completed' && metadata.exitCode === 0) {
+      console.log('\n✅ Instance completed successfully');
+    } else if (metadata.status === 'completed') {
+      console.log(`\n❌ Instance failed with exit code ${metadata.exitCode}`);
+    } else {
+      console.log(`\n⏳ Instance status: ${metadata.status ?? 'unknown'}`);
     }
   }
 }

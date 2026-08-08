@@ -282,56 +282,32 @@ function generateRecommendations(
   return recs;
 }
 
-function main(): void {
-  const args = process.argv.slice(2);
-  const feedbackFile = args[0] || '/results/goal-feedback.jsonl';
-
-  console.log('\n📊 Kaseki Goal-Setting Feedback Analysis');
-  console.log('=====================================\n');
-  console.log(`Reading: ${feedbackFile}\n`);
-
-  const entries = readFeedbackFile(feedbackFile);
-  const analysis = analyzeGoalFeedback(entries);
-
-  if (analysis.total_runs === 0) {
-    console.log('⚠️  ' + (analysis.message || ''));
-    console.log('\nNo analysis available yet. Run kaseki instances to generate feedback.\n');
-    process.exit(0);
-  }
-
-  // Print quality bucket stats
-  console.log(`📈 Goal Quality vs Success Rate (${analysis.total_runs} runs)\n`);
-
+function printQualityBuckets(analysis: Analysis): void {
   const bucketLabels: Record<string, string> = {
     high: 'High (≥85)',
     medium: 'Medium (60-84)',
     low: 'Low (<60)',
   };
-  const bucketOrder = ['high', 'medium', 'low'];
-
-  for (const bucket of bucketOrder) {
-    if (analysis.quality_buckets && analysis.quality_buckets[bucket]) {
-      const stats = analysis.quality_buckets[bucket];
-      console.log(`  ${bucketLabels[bucket]}`);
-      console.log(`    Count: ${stats.count}`);
-      console.log(`    Success rate: ${stats.success_rate}%`);
-      console.log(`    Verdict met rate: ${stats.verdict_met_rate}%`);
-      console.log(`    Avg quality score: ${stats.avg_quality_score}/100`);
-      console.log(`    Avg coding attempts: ${stats.avg_completion_attempts}`);
-      console.log();
-    }
+  for (const bucket of ['high', 'medium', 'low']) {
+    const stats = analysis.quality_buckets?.[bucket];
+    if (!stats) continue;
+    console.log(`  ${bucketLabels[bucket]}`);
+    console.log(`    Count: ${stats.count}`);
+    console.log(`    Success rate: ${stats.success_rate}%`);
+    console.log(`    Verdict met rate: ${stats.verdict_met_rate}%`);
+    console.log(`    Avg quality score: ${stats.avg_quality_score}/100`);
+    console.log(`    Avg coding attempts: ${stats.avg_completion_attempts}`);
+    console.log();
   }
+}
 
-  // Correlation insights
+function printInsights(analysis: Analysis): void {
   if (analysis.correlation_insights && analysis.correlation_insights.length > 0) {
     console.log('🔗 Correlation Insights\n');
-    for (const insight of analysis.correlation_insights) {
-      console.log(`  • ${insight}`);
-    }
+    for (const insight of analysis.correlation_insights) console.log(`  • ${insight}`);
     console.log();
   }
 
-  // SMART analysis
   if (analysis.smart_analysis && analysis.smart_analysis.total_criteria > 0) {
     console.log('✨ SMART Criteria Analysis\n');
     console.log(`  Total criteria: ${analysis.smart_analysis.total_criteria}`);
@@ -342,31 +318,43 @@ function main(): void {
     console.log(`  Insight: ${analysis.smart_analysis.insight}`);
     console.log();
   }
+}
 
-  // Recommendations
-  if (analysis.recommendations && analysis.recommendations.length > 0) {
-    console.log('💡 Recommendations\n');
-    const highRecs = analysis.recommendations.filter((r) => r.priority === 'high');
-    const mediumRecs = analysis.recommendations.filter((r) => r.priority === 'medium');
-
-    if (highRecs.length > 0) {
-      console.log('  ⚡ High Priority:');
-      for (const rec of highRecs) {
-        console.log(`    • [${rec.area}] ${rec.recommendation}`);
-      }
-      console.log();
+function printRecommendations(analysis: Analysis): void {
+  if (!analysis.recommendations || analysis.recommendations.length === 0) return;
+  console.log('💡 Recommendations\n');
+  for (const [priority, label] of [['high', '⚡ High Priority:'], ['medium', '→ Medium Priority:']] as const) {
+    const recommendations = analysis.recommendations.filter((item) => item.priority === priority);
+    if (recommendations.length === 0) continue;
+    console.log(`  ${label}`);
+    for (const recommendation of recommendations) {
+      console.log(`    • [${recommendation.area}] ${recommendation.recommendation}`);
     }
+    console.log();
+  }
+}
 
-    if (mediumRecs.length > 0) {
-      console.log('  → Medium Priority:');
-      for (const rec of mediumRecs) {
-        console.log(`    • [${rec.area}] ${rec.recommendation}`);
-      }
-      console.log();
-    }
+function printAnalysis(analysis: Analysis, feedbackFile: string): void {
+  console.log('\n📊 Kaseki Goal-Setting Feedback Analysis');
+  console.log('=====================================\n');
+  console.log(`Reading: ${feedbackFile}\n`);
+
+  if (analysis.total_runs === 0) {
+    console.log('⚠️  ' + (analysis.message || ''));
+    console.log('\nNo analysis available yet. Run kaseki instances to generate feedback.\n');
+    process.exit(0);
   }
 
+  console.log(`📈 Goal Quality vs Success Rate (${analysis.total_runs} runs)\n`);
+  printQualityBuckets(analysis);
+  printInsights(analysis);
+  printRecommendations(analysis);
   console.log('✅ Analysis complete\n');
+}
+
+function main(): void {
+  const feedbackFile = process.argv[2] || '/results/goal-feedback.jsonl';
+  printAnalysis(analyzeGoalFeedback(readFeedbackFile(feedbackFile)), feedbackFile);
 }
 
 // Automatic execution when run directly (CommonJS-safe approach)
