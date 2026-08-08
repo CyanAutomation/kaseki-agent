@@ -49,7 +49,7 @@ async function get(app: express.Express, url: string): Promise<{status:number;bo
 function fixture(status: 'running'|'completed' = 'completed') {
   const dir = createTemporaryDirectory('scorecard-route-');
   const card = buildScorecard(collectEvidence({ json: { 'metadata.json': { instance:'kaseki-1', status, started_at:'2026-08-07T00:00:00.000Z', ended_at: status === 'completed' ? '2026-08-07T00:01:00.000Z' : undefined } }, text:{}, summaries:[] }), normalizeConfig({}), new Date('2026-08-07T00:02:00.000Z'));
-  const job = { id:'kaseki-1', status, request:{repoUrl:'https://github.com/acme/repo',ref:'main'}, createdAt:new Date(), resultDir:dir, finalized:status === 'completed' };
+  const job = { id:'kaseki-1', status, request:{repoUrl:'https://github.com/acme/repo',ref:'main',model:'gpt-5'}, createdAt:new Date(), resultDir:dir, finalized:status === 'completed' };
   const scheduler = { getJob:(id:string)=>id === job.id ? job : undefined, listJobs:()=>[job] };
   const app=express(); app.use(createScorecardRoutes(scheduler as any,new ResultCache()));
   return { app,dir,card };
@@ -86,6 +86,17 @@ describe('scorecard routes', () => {
     const markdown=await get(app,'/runs/kaseki-1/scorecard?format=markdown');
     expect(markdown.status).toBe(200); expect(markdown.text).toContain('**Overall:**');
   });
+  test('rejects an unsupported format without changing the canonical response', async () => {
+    const {app,dir,card}=fixture(); fs.writeFileSync(path.join(dir,'run-scorecard.json'),JSON.stringify(card));
+
+    const response = await get(app, '/runs/kaseki-1/scorecard?format=json');
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      title: 'Invalid format',
+      detail: 'format must be markdown when provided',
+    });
+  });
   test('distinguishes unknown, pending, unavailable, and malformed artifacts', async () => {
     const completed=fixture(); expect((await get(completed.app,'/runs/missing/scorecard')).status).toBe(404);
     expect((await get(completed.app,'/runs/kaseki-1/scorecard')).status).toBe(404);
@@ -98,6 +109,35 @@ describe('scorecard routes', () => {
     const response=await get(app,`/scorecards?grade=${card.grade}&limit=500`);
     expect(response.status).toBe(200); expect(response.body.pagination.limit).toBe(100);
     expect(response.body.scorecards[0]).not.toHaveProperty('dimensions');
+  });
+  test('applies all supported summary filters, including model and date bounds', async () => {
+    const {app,dir,card}=fixture(); fs.writeFileSync(path.join(dir,'run-scorecard.json'),JSON.stringify(card));
+
+    const matching = await get(app, [
+      '/scorecards',
+      `?lifecycleStatus=${encodeURIComponent(card.lifecycle_status)}`,
+      `&grade=${encodeURIComponent(card.grade)}`,
+      `&rubricVersion=${encodeURIComponent(card.rubric_version)}`,
+      '&model=gpt-5',
+      '&repository=https%3A%2F%2Fgithub.com%2Facme%2Frepo',
+      `&startedAfter=${encodeURIComponent(card.started_at)}`,
+      `&startedBefore=${encodeURIComponent(card.started_at)}`,
+    ].join(''));
+    expect(matching.status).toBe(200);
+    expect(matching.body.scorecards).toHaveLength(1);
+    expect(matching.body.scorecards[0]).toMatchObject({ model: 'gpt-5' });
+
+    const excluded = await get(app, '/scorecards?model=another-model');
+    expect(excluded.status).toBe(200);
+    expect(excluded.body.scorecards).toEqual([]);
+  });
+  test('uses safe pagination defaults for invalid and negative query values', async () => {
+    const {app,dir,card}=fixture(); fs.writeFileSync(path.join(dir,'run-scorecard.json'),JSON.stringify(card));
+
+    const response = await get(app, '/scorecards?limit=not-a-number&offset=-4');
+
+    expect(response.status).toBe(200);
+    expect(response.body.pagination).toMatchObject({ limit: 25, offset: 0 });
   });
   test('reports another page only when an additional match exists', async () => {
     const first=fixture(); fs.writeFileSync(path.join(first.dir,'run-scorecard.json'),JSON.stringify(first.card));
