@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { runPiEventFilter } from './pi-event-filter';
-import { runFilter } from '../tests/helpers/pi-event-filter-test-helpers';
+import { runFilter, runFilterContract } from '../tests/helpers/pi-event-filter-test-helpers';
 
 jest.setTimeout(20000);
 
@@ -38,57 +38,44 @@ test('returns an empty filtered event collection when no events are retained', a
 });
 
 test('runPiEventFilter public contract redacts thinking content and summarizes selected model/api', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-event-filter-contract-'));
-  const inputPath = path.join(tmpDir, 'events.raw.jsonl');
-  const filteredPath = path.join(tmpDir, 'events.jsonl');
-  const summaryPath = path.join(tmpDir, 'summary.json');
-
-  try {
-    fs.writeFileSync(inputPath, [
-      JSON.stringify({
-        type: 'tool_execution_start',
-        timestamp: '2026-01-01T00:00:00.000Z',
-        message: { model: 'contract-model', api: 'contract-api' },
-        assistantMessageEvent: { type: 'thinking_delta' },
-      }),
-      JSON.stringify({
-        type: 'tool_execution_end',
-        timestamp: '2026-01-01T00:00:01.000Z',
-        message: {
-          model: 'contract-model',
-          api: 'contract-api',
-          content: [
-            { type: 'thinking', text: 'hidden' },
-            { type: 'output_text', text: 'visible' },
-          ],
-        },
-        assistantMessageEvent: {
-          type: 'output_delta',
-          partial: { content: [{ type: 'thinking', text: 'hidden' }, { type: 'output_text', text: 'kept' }] },
-        },
-      }),
-    ].join('\n') + '\n');
-
-    await runPiEventFilter(inputPath, filteredPath, summaryPath);
-
-    const kept = JSON.parse(fs.readFileSync(filteredPath, 'utf8').trim());
-    const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
-    expect(kept.message.content).toEqual([{ type: 'output_text', text: 'visible' }]);
-    expect(kept.assistantMessageEvent.partial.content).toEqual([{ type: 'output_text', text: 'kept' }]);
-    expect(summary).toMatchObject({
-      selected_model: 'contract-model',
-      selected_api: 'contract-api',
-      tool_start_count: 1,
-      tool_end_count: 1,
-      artifact_retention: {
-        output_budget_exhausted: false,
-        dropped_oversized_events: 0,
-        dropped_budget_events: 0,
+  const result = await runFilterContract([
+    JSON.stringify({
+      type: 'tool_execution_start',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message: { model: 'contract-model', api: 'contract-api' },
+      assistantMessageEvent: { type: 'thinking_delta' },
+    }),
+    JSON.stringify({
+      type: 'tool_execution_end',
+      timestamp: '2026-01-01T00:00:01.000Z',
+      message: {
+        model: 'contract-model',
+        api: 'contract-api',
+        content: [
+          { type: 'thinking', text: 'hidden' },
+          { type: 'output_text', text: 'visible' },
+        ],
       },
-    });
-  } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  }
+      assistantMessageEvent: {
+        type: 'output_delta',
+        partial: { content: [{ type: 'thinking', text: 'hidden' }, { type: 'output_text', text: 'kept' }] },
+      },
+    }),
+  ]);
+
+  expect(result.kept.message.content).toEqual([{ type: 'output_text', text: 'visible' }]);
+  expect(result.kept.assistantMessageEvent.partial.content).toEqual([{ type: 'output_text', text: 'kept' }]);
+  expect(result.summary).toMatchObject({
+    selected_model: 'contract-model',
+    selected_api: 'contract-api',
+    tool_start_count: 1,
+    tool_end_count: 1,
+    artifact_retention: {
+      output_budget_exhausted: false,
+      dropped_oversized_events: 0,
+      dropped_budget_events: 0,
+    },
+  });
 });
 
 // Spec: Pi event filter removes thinking blocks and emits clean JSON
@@ -641,257 +628,247 @@ test('should provide per-model token statistics', async () => {
 // ====================================================================
 // Provider Error Retryability Classification Tests (Phase 1)
 // ====================================================================
-describe('provider error retryability classification', () => {
-  test('should classify 404 model_unavailable as non-retryable', async () => {
-    // Spec: 404 errors indicate permanent model unavailability
-    // Expected: retryable = false (do not retry)
-    const fixture = [
-      JSON.stringify({
-        type: 'message_end',
-        timestamp: '2026-01-01T00:00:00.000Z',
-        message: {
-          provider: 'openrouter',
-          api: 'responses',
-          model: 'z-ai/glm-4.5-air:free',
-          stopReason: 'error',
-          errorMessage: '404 This model is unavailable for free.',
+test('should classify 404 model_unavailable as non-retryable', async () => {
+  // Spec: 404 errors indicate permanent model unavailability
+  // Expected: retryable = false (do not retry)
+  const fixture = [
+    JSON.stringify({
+      type: 'message_end',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message: {
+        provider: 'openrouter',
+        api: 'responses',
+        model: 'z-ai/glm-4.5-air:free',
+        stopReason: 'error',
+        errorMessage: '404 This model is unavailable for free.',
+      },
+    }),
+  ];
+
+  const result = await runFilter(fixture);
+  expect(result.exitCode).toBe(0);
+  expect(result.summary.primary_provider_error).toBeDefined();
+  expect(result.summary.primary_provider_error?.type).toBe('model_unavailable');
+  expect(result.summary.primary_provider_error?.retryable).toBe(false);
+  expect(result.summary.primary_provider_error?.message).toContain('404');
+});
+
+test('should classify 503 provider_error as retryable', async () => {
+  // Spec: 503 Service Unavailable indicates transient provider issue
+  // Expected: retryable = true (retry should help)
+  const fixture = [
+    JSON.stringify({
+      type: 'message_end',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message: {
+        provider: 'openrouter',
+        api: 'responses',
+        model: 'openai/gpt-4',
+        stopReason: 'error',
+        errorMessage: '503 Service Unavailable',
+      },
+    }),
+  ];
+
+  const result = await runFilter(fixture);
+  expect(result.exitCode).toBe(0);
+  expect(result.summary.primary_provider_error).toBeDefined();
+  expect(result.summary.primary_provider_error?.retryable).toBe(true);
+});
+
+test('should classify 429 rate limit as retryable', async () => {
+  // Spec: 429 Too Many Requests indicates quota exhaustion (transient)
+  // Expected: retryable = true (retry after backoff should help)
+  const fixture = [
+    JSON.stringify({
+      type: 'message_end',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message: {
+        provider: 'openrouter',
+        api: 'responses',
+        model: 'anthropic/claude-opus',
+        stopReason: 'error',
+        errorMessage: '429 Rate Limited',
+      },
+    }),
+  ];
+
+  const result = await runFilter(fixture);
+  expect(result.exitCode).toBe(0);
+  expect(result.summary.primary_provider_error).toBeDefined();
+  expect(result.summary.primary_provider_error?.retryable).toBe(true);
+});
+
+test('should classify connection errors as retryable', async () => {
+  // Spec: Connection errors (ECONNRESET, timeout, etc.) indicate transient network issue
+  // Expected: retryable = true (retry should help as connection may recover)
+  const fixture = [
+    JSON.stringify({
+      type: 'message_end',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message: {
+        provider: 'openrouter',
+        api: 'responses',
+        model: 'openai/gpt-4',
+        stopReason: 'error',
+        errorMessage: 'ECONNRESET',
+      },
+    }),
+  ];
+
+  const result = await runFilter(fixture);
+  expect(result.exitCode).toBe(0);
+  expect(result.summary.primary_provider_error).toBeDefined();
+  expect(result.summary.primary_provider_error?.retryable).toBe(true);
+});
+
+test('should classify model_unavailable text pattern as retryable', async () => {
+  // Spec: "model is unavailable" pattern from provider indicates potential transience
+  // Expected: retryable = true (model might become available shortly)
+  const fixture = [
+    JSON.stringify({
+      type: 'message_end',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message: {
+        provider: 'openrouter',
+        api: 'responses',
+        model: 'mistral/mistral-medium',
+        stopReason: 'error',
+        errorMessage: 'The model is unavailable',
+      },
+    }),
+  ];
+
+  const result = await runFilter(fixture);
+  expect(result.exitCode).toBe(0);
+  expect(result.summary.primary_provider_error).toBeDefined();
+  expect(result.summary.primary_provider_error?.type).toBe('model_unavailable');
+  expect(result.summary.primary_provider_error?.retryable).toBe(true);
+});
+
+test('should classify deprecated model (404) as non-retryable even with model_unavailable text', async () => {
+  // Spec: When 404 appears with "deprecated", it's permanent unavailability
+  // Expected: retryable = false (no point in retrying)
+  const fixture = [
+    JSON.stringify({
+      type: 'message_end',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message: {
+        provider: 'openrouter',
+        api: 'responses',
+        model: 'openai/gpt-3.5-turbo',
+        stopReason: 'error',
+        errorMessage: '404 Model has been deprecated and is unavailable.',
+      },
+    }),
+  ];
+
+  const result = await runFilter(fixture);
+  expect(result.exitCode).toBe(0);
+  expect(result.summary.primary_provider_error).toBeDefined();
+  expect(result.summary.primary_provider_error?.retryable).toBe(false);
+});
+
+test('should classify timeout errors as retryable', async () => {
+  // Spec: Timeouts indicate transient issues with provider responsiveness
+  // Expected: retryable = true (retry might succeed if provider recovers)
+  const fixture = [
+    JSON.stringify({
+      type: 'message_end',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message: {
+        provider: 'openrouter',
+        api: 'responses',
+        model: 'openai/gpt-4',
+        stopReason: 'error',
+        errorMessage: 'timeout connecting to provider',
+      },
+    }),
+  ];
+
+  const result = await runFilter(fixture);
+  expect(result.exitCode).toBe(0);
+  expect(result.summary.primary_provider_error).toBeDefined();
+  expect(result.summary.primary_provider_error?.retryable).toBe(true);
+});
+
+test('should NOT flag streaming response as empty when content is in fallback sources (message.text)', async () => {
+  // Spec: Streaming responses may have deltas accumulated in message.text instead of message.content[]
+  // Scenario: openai-responses handler receives SSE deltas but populates message.text instead of building message.content[]
+  // Expected: Should NOT detect as provider_empty_assistant_turn since message.text has content
+  // Regression: GH#STREAMING-001 — Empty assistant turn incorrectly detected for streaming responses
+  const fixture = [
+    JSON.stringify({
+      type: 'message_end',
+      timestamp: '2026-06-23T10:32:20.000Z',
+      message: {
+        role: 'assistant',
+        content: [],  // Empty content array (delta accumulation incomplete)
+        text: '{"response": "streaming response accumulated here"}',  // Fallback: content in text field
+        api: 'openai-responses',
+        provider: 'gateway',
+        model: 'auto',
+        usage: {
+          input: 1000,
+          output: 128,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 1128,
         },
-      }),
-    ];
+        stopReason: 'stop',
+        responseId: 'resp_test123',
+      },
+    }),
+  ];
 
-    const result = await runFilter(fixture);
-    expect(result.exitCode).toBe(0);
-    expect(result.summary.primary_provider_error).toBeDefined();
-    expect(result.summary.primary_provider_error?.type).toBe('model_unavailable');
-    expect(result.summary.primary_provider_error?.retryable).toBe(false);
-    expect(result.summary.primary_provider_error?.message).toContain('404');
-  });
+  const result = await runFilter(fixture);
+  expect(result.exitCode).toBe(0);
+  // Should NOT have a provider_empty_assistant_turn error
+  expect(result.summary.primary_provider_error?.type).not.toBe('provider_empty_assistant_turn');
+});
 
-  test('should classify 503 provider_error as retryable', async () => {
-    // Spec: 503 Service Unavailable indicates transient provider issue
-    // Expected: retryable = true (retry should help)
-    const fixture = [
-      JSON.stringify({
-        type: 'message_end',
-        timestamp: '2026-01-01T00:00:00.000Z',
-        message: {
-          provider: 'openrouter',
-          api: 'responses',
-          model: 'openai/gpt-4',
-          stopReason: 'error',
-          errorMessage: '503 Service Unavailable',
+test('should NOT flag streaming response as empty when content is in fallback sources (message.output_text)', async () => {
+  // Spec: Alternative fallback for streaming responses
+  // Scenario: message.output_text contains accumulated content instead of message.content[]
+  // Expected: Should NOT detect as provider_empty_assistant_turn
+  const fixture = [
+    JSON.stringify({
+      type: 'message_end',
+      timestamp: '2026-06-23T10:32:21.000Z',
+      message: {
+        role: 'assistant',
+        content: [],  // Empty (delta accumulation incomplete)
+        output_text: 'Assistant response content accumulated via streaming deltas',  // Fallback source
+        api: 'openai-responses',
+        provider: 'gateway',
+        model: 'auto',
+        usage: {
+          input: 1500,
+          output: 256,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 1756,
         },
-      }),
-    ];
+        stopReason: 'stop',
+        responseId: 'resp_test456',
+      },
+    }),
+  ];
 
-    const result = await runFilter(fixture);
-    expect(result.exitCode).toBe(0);
-    expect(result.summary.primary_provider_error).toBeDefined();
-    expect(result.summary.primary_provider_error?.retryable).toBe(true);
-  });
+  const result = await runFilter(fixture);
+  expect(result.exitCode).toBe(0);
+  // Should NOT have a provider_empty_assistant_turn error
+  expect(result.summary.primary_provider_error?.type).not.toBe('provider_empty_assistant_turn');
+});
 
-  test('should classify 429 rate limit as retryable', async () => {
-    // Spec: 429 Too Many Requests indicates quota exhaustion (transient)
-    // Expected: retryable = true (retry after backoff should help)
-    const fixture = [
-      JSON.stringify({
-        type: 'message_end',
-        timestamp: '2026-01-01T00:00:00.000Z',
-        message: {
-          provider: 'openrouter',
-          api: 'responses',
-          model: 'anthropic/claude-opus',
-          stopReason: 'error',
-          errorMessage: '429 Rate Limited',
-        },
-      }),
-    ];
-
-    const result = await runFilter(fixture);
-    expect(result.exitCode).toBe(0);
-    expect(result.summary.primary_provider_error).toBeDefined();
-    expect(result.summary.primary_provider_error?.retryable).toBe(true);
-  });
-
-  test('should classify connection errors as retryable', async () => {
-    // Spec: Connection errors (ECONNRESET, timeout, etc.) indicate transient network issue
-    // Expected: retryable = true (retry should help as connection may recover)
-    const fixture = [
-      JSON.stringify({
-        type: 'message_end',
-        timestamp: '2026-01-01T00:00:00.000Z',
-        message: {
-          provider: 'openrouter',
-          api: 'responses',
-          model: 'openai/gpt-4',
-          stopReason: 'error',
-          errorMessage: 'ECONNRESET',
-        },
-      }),
-    ];
-
-    const result = await runFilter(fixture);
-    expect(result.exitCode).toBe(0);
-    expect(result.summary.primary_provider_error).toBeDefined();
-    expect(result.summary.primary_provider_error?.retryable).toBe(true);
-  });
-
-  test('should classify model_unavailable text pattern as retryable', async () => {
-    // Spec: "model is unavailable" pattern from provider indicates potential transience
-    // Expected: retryable = true (model might become available shortly)
-    const fixture = [
-      JSON.stringify({
-        type: 'message_end',
-        timestamp: '2026-01-01T00:00:00.000Z',
-        message: {
-          provider: 'openrouter',
-          api: 'responses',
-          model: 'mistral/mistral-medium',
-          stopReason: 'error',
-          errorMessage: 'The model is unavailable',
-        },
-      }),
-    ];
-
-    const result = await runFilter(fixture);
-    expect(result.exitCode).toBe(0);
-    expect(result.summary.primary_provider_error).toBeDefined();
-    expect(result.summary.primary_provider_error?.type).toBe('model_unavailable');
-    expect(result.summary.primary_provider_error?.retryable).toBe(true);
-  });
-
-  test('should classify deprecated model (404) as non-retryable even with model_unavailable text', async () => {
-    // Spec: When 404 appears with "deprecated", it's permanent unavailability
-    // Expected: retryable = false (no point in retrying)
-    const fixture = [
-      JSON.stringify({
-        type: 'message_end',
-        timestamp: '2026-01-01T00:00:00.000Z',
-        message: {
-          provider: 'openrouter',
-          api: 'responses',
-          model: 'openai/gpt-3.5-turbo',
-          stopReason: 'error',
-          errorMessage: '404 Model has been deprecated and is unavailable.',
-        },
-      }),
-    ];
-
-    const result = await runFilter(fixture);
-    expect(result.exitCode).toBe(0);
-    expect(result.summary.primary_provider_error).toBeDefined();
-    expect(result.summary.primary_provider_error?.retryable).toBe(false);
-  });
-
-  test('should classify timeout errors as retryable', async () => {
-    // Spec: Timeouts indicate transient issues with provider responsiveness
-    // Expected: retryable = true (retry might succeed if provider recovers)
-    const fixture = [
-      JSON.stringify({
-        type: 'message_end',
-        timestamp: '2026-01-01T00:00:00.000Z',
-        message: {
-          provider: 'openrouter',
-          api: 'responses',
-          model: 'openai/gpt-4',
-          stopReason: 'error',
-          errorMessage: 'timeout connecting to provider',
-        },
-      }),
-    ];
-
-    const result = await runFilter(fixture);
-    expect(result.exitCode).toBe(0);
-    expect(result.summary.primary_provider_error).toBeDefined();
-    expect(result.summary.primary_provider_error?.retryable).toBe(true);
-  });
-
-  test('should NOT flag streaming response as empty when content is in fallback sources (message.text)', async () => {
-    // Spec: Streaming responses may have deltas accumulated in message.text instead of message.content[]
-    // Scenario: openai-responses handler receives SSE deltas but populates message.text instead of building message.content[]
-    // Expected: Should NOT detect as provider_empty_assistant_turn since message.text has content
-    // Regression: GH#STREAMING-001 — Empty assistant turn incorrectly detected for streaming responses
-    const fixture = [
-      JSON.stringify({
-        type: 'message_end',
-        timestamp: '2026-06-23T10:32:20.000Z',
-        message: {
-          role: 'assistant',
-          content: [],  // Empty content array (delta accumulation incomplete)
-          text: '{"response": "streaming response accumulated here"}',  // Fallback: content in text field
-          api: 'openai-responses',
-          provider: 'gateway',
-          model: 'auto',
-          usage: {
-            input: 1000,
-            output: 128,
-            cacheRead: 0,
-            cacheWrite: 0,
-            totalTokens: 1128,
-          },
-          stopReason: 'stop',
-          responseId: 'resp_test123',
-        },
-      }),
-    ];
-
-    const result = await runFilter(fixture);
-    expect(result.exitCode).toBe(0);
-    // Should NOT have a provider_empty_assistant_turn error
-    expect(result.summary.primary_provider_error?.type).not.toBe('provider_empty_assistant_turn');
-  });
-
-  test('should NOT flag streaming response as empty when content is in fallback sources (message.output_text)', async () => {
-    // Spec: Alternative fallback for streaming responses
-    // Scenario: message.output_text contains accumulated content instead of message.content[]
-    // Expected: Should NOT detect as provider_empty_assistant_turn
-    const fixture = [
-      JSON.stringify({
-        type: 'message_end',
-        timestamp: '2026-06-23T10:32:21.000Z',
-        message: {
-          role: 'assistant',
-          content: [],  // Empty (delta accumulation incomplete)
-          output_text: 'Assistant response content accumulated via streaming deltas',  // Fallback source
-          api: 'openai-responses',
-          provider: 'gateway',
-          model: 'auto',
-          usage: {
-            input: 1500,
-            output: 256,
-            cacheRead: 0,
-            cacheWrite: 0,
-            totalTokens: 1756,
-          },
-          stopReason: 'stop',
-          responseId: 'resp_test456',
-        },
-      }),
-    ];
-
-    const result = await runFilter(fixture);
-    expect(result.exitCode).toBe(0);
-    // Should NOT have a provider_empty_assistant_turn error
-    expect(result.summary.primary_provider_error?.type).not.toBe('provider_empty_assistant_turn');
-  });
-
-  test('should NOT flag streaming response as empty when prior message_update carries text for same response', async () => {
-    const fixture = [
-      JSON.stringify({
-        type: 'message_update',
-        timestamp: '2026-06-23T10:32:21.100Z',
-        assistantMessageEvent: {
-          type: 'text_delta',
-          partial: {
-            role: 'assistant',
-            content: [{ type: 'text', text: 'Visible text from response.output_text.delta' }],
-            api: 'openai-responses',
-            provider: 'gateway',
-            model: 'auto',
-            responseId: 'resp_stream_state',
-          },
-        },
-        message: {
+test('should NOT flag streaming response as empty when prior message_update carries text for same response', async () => {
+  const fixture = [
+    JSON.stringify({
+      type: 'message_update',
+      timestamp: '2026-06-23T10:32:21.100Z',
+      assistantMessageEvent: {
+        type: 'text_delta',
+        partial: {
           role: 'assistant',
           content: [{ type: 'text', text: 'Visible text from response.output_text.delta' }],
           api: 'openai-responses',
@@ -899,173 +876,181 @@ describe('provider error retryability classification', () => {
           model: 'auto',
           responseId: 'resp_stream_state',
         },
-      }),
-      JSON.stringify({
-        type: 'message_end',
-        timestamp: '2026-06-23T10:32:22.000Z',
-        message: {
-          role: 'assistant',
-          content: [],
-          api: 'openai-responses',
-          provider: 'gateway',
-          model: 'auto',
-          usage: {
-            input: 2000,
-            output: 128,
-            cacheRead: 0,
-            cacheWrite: 0,
-            totalTokens: 2128,
-          },
-          stopReason: 'stop',
-          responseId: 'resp_stream_state',
-        },
-      }),
-    ];
-
-    const result = await runFilter(fixture);
-    expect(result.exitCode).toBe(0);
-    expect(result.summary.primary_provider_error?.type).not.toBe('provider_empty_assistant_turn');
-  });
-
-  test('should still flag streaming response as empty when prior message_update is whitespace only', async () => {
-    const fixture = [
-      JSON.stringify({
-        type: 'message_update',
-        timestamp: '2026-06-23T10:32:21.100Z',
-        assistantMessageEvent: {
-          type: 'text_delta',
-          partial: {
-            role: 'assistant',
-            content: [{ type: 'text', text: '\n\n' }],
-            api: 'openai-responses',
-            provider: 'gateway',
-            model: 'auto',
-            responseId: 'resp_whitespace_state',
-          },
-        },
-        message: {
-          role: 'assistant',
-          content: [{ type: 'text', text: '\n\n' }],
-          api: 'openai-responses',
-          provider: 'gateway',
-          model: 'auto',
-          responseId: 'resp_whitespace_state',
-        },
-      }),
-      JSON.stringify({
-        type: 'message_end',
-        timestamp: '2026-06-23T10:32:22.000Z',
-        message: {
-          role: 'assistant',
-          content: [{ type: 'text', text: '\n\n' }],
-          api: 'openai-responses',
-          provider: 'gateway',
-          model: 'auto',
-          usage: {
-            input: 2000,
-            output: 128,
-            cacheRead: 0,
-            cacheWrite: 0,
-            totalTokens: 2128,
-          },
-          stopReason: 'stop',
-          responseId: 'resp_whitespace_state',
-        },
-      }),
-    ];
-
-    const result = await runFilter(fixture);
-    expect(result.exitCode).toBe(0);
-    expect(result.summary.primary_provider_error?.type).toBe('provider_empty_assistant_turn');
-  });
-
-  test('should STILL flag empty response when ALL sources are empty (true empty turn)', async () => {
-    // Spec: Verify that legitimate empty responses are still caught
-    // Scenario: message.content empty AND message.text empty AND message.output_text missing → true empty
-    // Expected: SHOULD detect as provider_empty_assistant_turn (all fallbacks exhausted)
-    // Regression: Ensure defensive fix doesn't mask real empty responses
-    const fixture = [
-      JSON.stringify({
-        type: 'message_end',
-        timestamp: '2026-06-23T10:32:22.000Z',
-        message: {
-          role: 'assistant',
-          content: [],  // Empty
-          text: '',      // Empty
-          // output_text is missing entirely
-          api: 'openai-responses',
-          provider: 'gateway',
-          model: 'auto',
-          usage: {
-            input: 2000,
-            output: 128,  // Tokens produced but no content
-            cacheRead: 0,
-            cacheWrite: 0,
-            totalTokens: 2128,
-          },
-          stopReason: 'stop',
-          responseId: 'resp_empty123',
-        },
-      }),
-    ];
-
-    const result = await runFilter(fixture);
-    expect(result.exitCode).toBe(0);
-    // SHOULD have provider_empty_assistant_turn error (legitimate empty response)
-    expect(result.summary.primary_provider_error?.type).toBe('provider_empty_assistant_turn');
-  });
-
-  test('records one provider usage ledger entry per response and tool-output pressure', async () => {
-    const fixture = [
-      JSON.stringify({
-        type: 'tool_execution_end',
-        tool_name: 'read',
-        result: 'x'.repeat(40),
-        message: { model: 'gateway-model', api: 'openai-completions' },
-      }),
-      JSON.stringify({
-        type: 'message_end',
-        message: {
-          role: 'assistant', model: 'gateway-model', responseId: 'resp-usage',
-          usage: { input: 120, output: 30, cacheRead: 40, cacheWrite: 10 },
-        },
-      }),
-      // Streaming implementations can repeat cumulative usage on a final event.
-      JSON.stringify({
-        type: 'message_end',
-        message: {
-          role: 'assistant', model: 'gateway-model', responseId: 'resp-usage',
-          usage: { input: 120, output: 30, cacheRead: 40, cacheWrite: 10 },
-        },
-      }),
-    ];
-
-    const result = await runFilter(fixture);
-    expect(result.summary.completion_usage).toEqual([expect.objectContaining({
-      response_id: 'resp-usage', input_tokens: 120, output_tokens: 30,
-      cache_read_tokens: 40, cache_creation_tokens: 10, total_tokens: 200,
-    })]);
-    expect(result.summary.tool_output_usage).toEqual(expect.objectContaining({
-      total_results: 1, total_bytes: 40, estimated_tokens: 10,
-      by_tool: { read: { results: 1, bytes: 40, estimated_tokens: 10 } },
-    }));
-  });
-
-  test('accepts camelCase and snake_case response IDs, preferring the first string value', async () => {
-    const fixture = [
-      { responseId: 'camel-id', response_id: 'snake-id' },
-      { response_id: 'snake-only-id' },
-      { responseId: 42, response_id: 'snake-fallback-id' },
-    ].map((message) => JSON.stringify({
+      },
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Visible text from response.output_text.delta' }],
+        api: 'openai-responses',
+        provider: 'gateway',
+        model: 'auto',
+        responseId: 'resp_stream_state',
+      },
+    }),
+    JSON.stringify({
       type: 'message_end',
-      message: { role: 'assistant', model: 'gateway-model', usage: { input: 1, output: 1 }, ...message },
-    }));
+      timestamp: '2026-06-23T10:32:22.000Z',
+      message: {
+        role: 'assistant',
+        content: [],
+        api: 'openai-responses',
+        provider: 'gateway',
+        model: 'auto',
+        usage: {
+          input: 2000,
+          output: 128,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 2128,
+        },
+        stopReason: 'stop',
+        responseId: 'resp_stream_state',
+      },
+    }),
+  ];
 
-    const result = await runFilter(fixture);
-    expect(result.summary.completion_usage.map((usage: { response_id: string }) => usage.response_id)).toEqual([
-      'camel-id',
-      'snake-only-id',
-      'snake-fallback-id',
-    ]);
-  });
+  const result = await runFilter(fixture);
+  expect(result.exitCode).toBe(0);
+  expect(result.summary.primary_provider_error?.type).not.toBe('provider_empty_assistant_turn');
+});
+
+test('should still flag streaming response as empty when prior message_update is whitespace only', async () => {
+  const fixture = [
+    JSON.stringify({
+      type: 'message_update',
+      timestamp: '2026-06-23T10:32:21.100Z',
+      assistantMessageEvent: {
+        type: 'text_delta',
+        partial: {
+          role: 'assistant',
+          content: [{ type: 'text', text: '\n\n' }],
+          api: 'openai-responses',
+          provider: 'gateway',
+          model: 'auto',
+          responseId: 'resp_whitespace_state',
+        },
+      },
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: '\n\n' }],
+        api: 'openai-responses',
+        provider: 'gateway',
+        model: 'auto',
+        responseId: 'resp_whitespace_state',
+      },
+    }),
+    JSON.stringify({
+      type: 'message_end',
+      timestamp: '2026-06-23T10:32:22.000Z',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: '\n\n' }],
+        api: 'openai-responses',
+        provider: 'gateway',
+        model: 'auto',
+        usage: {
+          input: 2000,
+          output: 128,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 2128,
+        },
+        stopReason: 'stop',
+        responseId: 'resp_whitespace_state',
+      },
+    }),
+  ];
+
+  const result = await runFilter(fixture);
+  expect(result.exitCode).toBe(0);
+  expect(result.summary.primary_provider_error?.type).toBe('provider_empty_assistant_turn');
+});
+
+test('should STILL flag empty response when ALL sources are empty (true empty turn)', async () => {
+  // Spec: Verify that legitimate empty responses are still caught
+  // Scenario: message.content empty AND message.text empty AND message.output_text missing → true empty
+  // Expected: SHOULD detect as provider_empty_assistant_turn (all fallbacks exhausted)
+  // Regression: Ensure defensive fix doesn't mask real empty responses
+  const fixture = [
+    JSON.stringify({
+      type: 'message_end',
+      timestamp: '2026-06-23T10:32:22.000Z',
+      message: {
+        role: 'assistant',
+        content: [],  // Empty
+        text: '',      // Empty
+        // output_text is missing entirely
+        api: 'openai-responses',
+        provider: 'gateway',
+        model: 'auto',
+        usage: {
+          input: 2000,
+          output: 128,  // Tokens produced but no content
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 2128,
+        },
+        stopReason: 'stop',
+        responseId: 'resp_empty123',
+      },
+    }),
+  ];
+
+  const result = await runFilter(fixture);
+  expect(result.exitCode).toBe(0);
+  // SHOULD have provider_empty_assistant_turn error (legitimate empty response)
+  expect(result.summary.primary_provider_error?.type).toBe('provider_empty_assistant_turn');
+});
+
+test('records one provider usage ledger entry per response and tool-output pressure', async () => {
+  const fixture = [
+    JSON.stringify({
+      type: 'tool_execution_end',
+      tool_name: 'read',
+      result: 'x'.repeat(40),
+      message: { model: 'gateway-model', api: 'openai-completions' },
+    }),
+    JSON.stringify({
+      type: 'message_end',
+      message: {
+        role: 'assistant', model: 'gateway-model', responseId: 'resp-usage',
+        usage: { input: 120, output: 30, cacheRead: 40, cacheWrite: 10 },
+      },
+    }),
+    // Streaming implementations can repeat cumulative usage on a final event.
+    JSON.stringify({
+      type: 'message_end',
+      message: {
+        role: 'assistant', model: 'gateway-model', responseId: 'resp-usage',
+        usage: { input: 120, output: 30, cacheRead: 40, cacheWrite: 10 },
+      },
+    }),
+  ];
+
+  const result = await runFilter(fixture);
+  expect(result.summary.completion_usage).toEqual([expect.objectContaining({
+    response_id: 'resp-usage', input_tokens: 120, output_tokens: 30,
+    cache_read_tokens: 40, cache_creation_tokens: 10, total_tokens: 200,
+  })]);
+  expect(result.summary.tool_output_usage).toEqual(expect.objectContaining({
+    total_results: 1, total_bytes: 40, estimated_tokens: 10,
+    by_tool: { read: { results: 1, bytes: 40, estimated_tokens: 10 } },
+  }));
+});
+
+test('accepts camelCase and snake_case response IDs, preferring the first string value', async () => {
+  const fixture = [
+    { responseId: 'camel-id', response_id: 'snake-id' },
+    { response_id: 'snake-only-id' },
+    { responseId: 42, response_id: 'snake-fallback-id' },
+  ].map((message) => JSON.stringify({
+    type: 'message_end',
+    message: { role: 'assistant', model: 'gateway-model', usage: { input: 1, output: 1 }, ...message },
+  }));
+
+  const result = await runFilter(fixture);
+  expect(result.summary.completion_usage.map((usage: { response_id: string }) => usage.response_id)).toEqual([
+    'camel-id',
+    'snake-only-id',
+    'snake-fallback-id',
+  ]);
 });

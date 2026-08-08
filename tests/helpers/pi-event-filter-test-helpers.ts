@@ -9,6 +9,33 @@ export interface RunResult {
   summary: any;
 }
 
+export interface ContractResult {
+  kept: any;
+  summary: any;
+}
+
+export async function runFilterContract(inputLines: string[]): Promise<ContractResult> {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-event-filter-contract-'));
+  const inputPath = path.join(tmpDir, 'events.raw.jsonl');
+  const filteredPath = path.join(tmpDir, 'events.jsonl');
+  const summaryPath = path.join(tmpDir, 'summary.json');
+  try {
+    fs.writeFileSync(inputPath, `${inputLines.join('\n')}\n`, 'utf8');
+    const tsxBin = path.join(process.cwd(), 'node_modules', '.bin', 'tsx');
+    const child = spawn(tsxBin, [path.join(process.cwd(), 'src', 'pi-event-filter.ts'), inputPath, filteredPath, summaryPath]);
+    await new Promise<void>((resolve, reject) => {
+      child.once('error', reject);
+      child.once('close', code => code === 0 ? resolve() : reject(new Error(`pi-event-filter exited with ${code}`)));
+    });
+    return {
+      kept: JSON.parse(fs.readFileSync(filteredPath, 'utf8').trim()),
+      summary: JSON.parse(fs.readFileSync(summaryPath, 'utf8')),
+    };
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
 export async function runFilter(inputLines: string[]): Promise<RunResult> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-event-filter-fast-'));
   const inputPath = path.join(tmpDir, 'in.jsonl');

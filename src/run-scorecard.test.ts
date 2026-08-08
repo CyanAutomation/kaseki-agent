@@ -1,5 +1,7 @@
 import { assignGrade, buildScorecard, calculateCoverage, collectEvidence, normalizeConfig } from './run-scorecard';
 import { RunScorecardSchema } from './types/run-scorecard';
+import { lifecycle, statusFrom } from './run-scorecard-evidence-parsing';
+import { aggregateTokenUsage, countRetries } from './run-scorecard-evidence-tokens';
 
 describe('run scorecard', () => {
   test('deduplicates request usage and reports unknown requests', () => {
@@ -60,5 +62,55 @@ describe('run scorecard', () => {
 
     expect(buildScorecard(known, config).confidence.score).toBe(25);
     expect(buildScorecard(unknown, config).confidence.score).toBe(23);
+  });
+
+  test('handles disabled phases and evaluator contradiction penalties', () => {
+    const evidence = collectEvidence({
+      json: {
+        'metadata.json': { instance: 'disabled-run', exit_code: 0, disabled_phases: ['scouting'] },
+        'goal-check.json': { met: true },
+        'run-evaluation.json': { score: 95, contradictions: ['one', 'two'] },
+      },
+      text: { 'git.diff': '+change\n' },
+      summaries: [],
+    });
+    const card = buildScorecard(evidence, normalizeConfig({}), new Date('2026-01-01T00:00:00Z'));
+    expect(card.phases.scouting).toMatchObject({ enabled: false, outcome: 'skipped', completeness: 'not_applicable' });
+    expect(card.dimensions.find(d => d.id === 'scouting_quality')).toMatchObject({ effective_weight: 0, status: 'not_applicable' });
+    expect(card.dimensions.find(d => d.id === 'evaluation_quality')?.normalized_score).toBe(65);
+  });
+
+  test('marks active runs as not started and unknown evidence as provisional', () => {
+    const evidence = collectEvidence({ json: { 'metadata.json': { lifecycle_status: 'running' } }, text: {}, summaries: [] });
+    const card = buildScorecard(evidence, normalizeConfig({}), new Date('2026-01-01T00:00:00Z'));
+    expect(card.ended_at).toBeNull();
+    expect(Object.values(card.phases).every(phase => phase.outcome === 'not_started')).toBe(true);
+    expect(card.completeness).toBe('provisional');
+  });
+
+  test('normalizes lifecycle and status variants used by artifact producers', () => {
+    expect(lifecycle({ lifecycle_status: 'queued' })).toBe('queued');
+    expect(lifecycle({ terminal_state: 'timed out' })).toBe('timed_out');
+    expect(lifecycle({ terminal_state: 'cancelled' })).toBe('cancelled');
+    expect(lifecycle({ exit_code: 1 })).toBe('failed');
+    expect(statusFrom({ validation_status: 'success' }, ['validation_status'])).toBe('passed');
+    expect(statusFrom({ validation_exit: false }, ['validation_exit'])).toBe('failed');
+    expect(statusFrom({}, ['validation_exit'])).toBe('unknown');
+  });
+
+  test('aggregates token phases and counts retry evidence independently', () => {
+    const snapshot = {
+      json: { 'retry-diagnostics.json': {}, 'metadata.json': {} },
+      text: { 'provider-attempts.jsonl': 'attempt\nretry\n' },
+    };
+    const aggregate = aggregateTokenUsage([
+      { phase: 'goal-check', request_id: 'known', usage: { input: 10, output: 2 } },
+      { phase: 'goal-check', request_id: 'known', usage: { input: 10, output: 2 } },
+      { phase: 'validation', request_id: 'unknown' },
+    ]);
+    expect(aggregate.tokens).toBe(12);
+    expect(aggregate.phaseTokens['goal_check'].output_tokens).toBe(2);
+    expect(aggregate.unknownTokenRequests).toBe(1);
+    expect(countRetries(snapshot)).toBe(2);
   });
 });
