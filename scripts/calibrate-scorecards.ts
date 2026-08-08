@@ -23,6 +23,34 @@ interface Row {
   dimensions: Record<string, number>;
 }
 
+function readRow(file: string): Row {
+  const card = JSON.parse(fs.readFileSync(file, 'utf8')) as Card;
+  if (typeof card.overall_score !== 'number') throw new Error('missing score');
+  let metadata: Record<string, unknown> = {};
+  try { metadata = JSON.parse(fs.readFileSync(path.join(path.dirname(file), 'metadata.json'), 'utf8')) as Record<string, unknown>; } catch { /* optional */ }
+  const usage = card.token_totals ?? {};
+  return {
+    band: card.scoring_config?.task_size ?? 'unknown',
+    model: card.model ?? String(metadata.actual_model ?? metadata.model ?? metadata.selected_model ?? 'unknown'),
+    rubric: card.rubric_version ?? 'unknown',
+    score: card.overall_score,
+    duration: card.timing_totals?.wall_clock_ms ?? 0,
+    tokens: ['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens'].reduce((total, key) => total + (usage[key] ?? 0), 0),
+    dimensions: Object.fromEntries((card.dimensions ?? []).map(dimension => [dimension.id ?? 'unknown', dimension.normalized_score ?? 0])),
+  };
+}
+
+function dimensionDiscrimination(rows: Row[]) {
+  const ids = [...new Set(rows.flatMap(row => Object.keys(row.dimensions)))].sort();
+  return Object.fromEntries(ids.map(id => {
+    const values = rows.map(row => row.dimensions[id]).filter((value): value is number => typeof value === 'number');
+    const mean = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+    const variance = values.length > 1 ? values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (values.length - 1) : 0;
+    const range = values.length ? Math.max(...values) - Math.min(...values) : 0;
+    return [id, { range, standard_deviation: Number(Math.sqrt(variance).toFixed(2)), low_discrimination: values.length > 1 && range < 10 }];
+  }));
+}
+
 const percentile = (values: number[], p: number): number => {
   if (!values.length) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -68,46 +96,8 @@ export function calibrate(root: string) {
   const invalid: string[] = [];
   const rows: Row[] = [];
   for (const file of find(root)) {
-    try {
-      const card = JSON.parse(fs.readFileSync(file, 'utf8')) as Card;
-      if (typeof card.overall_score !== 'number') throw new Error('missing score');
-      const usage = card.token_totals ?? {};
-      let metadata: Record<string, unknown> = {};
-      try {
-        metadata = JSON.parse(fs.readFileSync(path.join(path.dirname(file), 'metadata.json'), 'utf8')) as Record<string, unknown>;
-      } catch {
-        // The metadata sibling is optional.
-      }
-      rows.push({
-        band: card.scoring_config?.task_size ?? 'unknown',
-        model: card.model ?? String(metadata.actual_model ?? metadata.model ?? metadata.selected_model ?? 'unknown'),
-        rubric: card.rubric_version ?? 'unknown',
-        score: card.overall_score,
-        duration: card.timing_totals?.wall_clock_ms ?? 0,
-        tokens: ['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens']
-          .reduce((total, key) => total + (usage[key] ?? 0), 0),
-        dimensions: Object.fromEntries((card.dimensions ?? [])
-          .map(dimension => [dimension.id ?? 'unknown', dimension.normalized_score ?? 0])),
-      });
-    } catch {
-      invalid.push(file);
-    }
+    try { rows.push(readRow(file)); } catch { invalid.push(file); }
   }
-
-  const ids = [...new Set(rows.flatMap(row => Object.keys(row.dimensions)))].sort();
-  const discrimination = Object.fromEntries(ids.map(id => {
-    const values = rows.map(row => row.dimensions[id]).filter((value): value is number => typeof value === 'number');
-    const mean = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
-    const variance = values.length > 1
-      ? values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (values.length - 1)
-      : 0;
-    const range = values.length ? Math.max(...values) - Math.min(...values) : 0;
-    return [id, {
-      range,
-      standard_deviation: Number(Math.sqrt(variance).toFixed(2)),
-      low_discrimination: values.length > 1 && range < 10,
-    }];
-  }));
 
   return {
     source: path.resolve(root),
@@ -119,7 +109,7 @@ export function calibrate(root: string) {
       model: group(rows, row => row.model),
       rubric_version: group(rows, row => row.rubric),
     },
-    dimension_discrimination: discrimination,
+    dimension_discrimination: dimensionDiscrimination(rows),
   };
 }
 

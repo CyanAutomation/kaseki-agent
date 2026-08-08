@@ -6,10 +6,9 @@ import { RunScorecardSchema, type RunScorecard } from '../types/run-scorecard';
 import { formatRunScorecardMarkdown } from '../run-scorecard-markdown';
 import type { Job, ScorecardSummary, ScorecardsListResponse } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
+import { matchesFilters, parseFilters, parsePagination } from './scorecard-route-utils';
 
 const FILE = 'run-scorecard.json';
-const DEFAULT_LIMIT = 25;
-const MAX_LIMIT = 100;
 const terminalCacheInvalidated = new WeakSet<Job>();
 
 function readScorecard(job: Job, cache: ResultCache): { card?: RunScorecard; malformed?: boolean } {
@@ -59,33 +58,15 @@ export function createScorecardRoutes(scheduler: JobScheduler, cache: ResultCach
   });
 
   router.get('/scorecards', (req: Request, res: Response) => {
-    const numeric = (value: unknown, fallback: number, maximum: number) => {
-      const parsed = Number(value); return Number.isInteger(parsed) && parsed >= 0 ? Math.min(parsed, maximum) : fallback;
-    };
-    const limit = Math.max(1, numeric(req.query.limit, DEFAULT_LIMIT, MAX_LIMIT));
-    const offset = numeric(req.query.offset, 0, 100_000);
-    const filters = {
-      lifecycleStatus: typeof req.query.lifecycleStatus === 'string' ? req.query.lifecycleStatus : undefined,
-      grade: typeof req.query.grade === 'string' ? req.query.grade : undefined,
-      rubricVersion: typeof req.query.rubricVersion === 'string' ? req.query.rubricVersion : undefined,
-      model: typeof req.query.model === 'string' ? req.query.model : undefined,
-      repository: typeof req.query.repository === 'string' ? req.query.repository : undefined,
-      startedAfter: typeof req.query.startedAfter === 'string' ? req.query.startedAfter : undefined,
-      startedBefore: typeof req.query.startedBefore === 'string' ? req.query.startedBefore : undefined,
-    };
+    const { limit, offset } = parsePagination(req.query as Record<string, unknown>);
+    const filters = parseFilters(req.query as Record<string, unknown>);
     const matches: ScorecardSummary[] = [];
     // listJobs is the scheduler's bounded retained index; never enumerate resultsDir.
     for (const job of scheduler.listJobs()) {
       const card = readScorecard(job, cache).card;
       if (!card) continue;
       const item = summary(card, job);
-      if (filters.lifecycleStatus && item.lifecycleStatus !== filters.lifecycleStatus) continue;
-      if (filters.grade && item.grade !== filters.grade) continue;
-      if (filters.rubricVersion && item.rubricVersion !== filters.rubricVersion) continue;
-      if (filters.model && item.model !== filters.model) continue;
-      if (filters.repository && item.repository !== filters.repository) continue;
-      if (filters.startedAfter && item.startedAt < filters.startedAfter) continue;
-      if (filters.startedBefore && item.startedAt > filters.startedBefore) continue;
+      if (!matchesFilters(item, filters)) continue;
       matches.push(item);
       if (matches.length >= offset + limit + 1) break;
     }
