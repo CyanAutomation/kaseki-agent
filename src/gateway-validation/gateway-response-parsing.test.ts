@@ -388,4 +388,13 @@ describe('extractOutputTokens', () => {
   it('should handle non-object value', () => {
     expect(extractOutputTokens('not an object')).toBeUndefined();
   });
+
+  it('should skip invalid earlier candidates and use the next valid numeric candidate', () => {
+    expect(extractOutputTokens({ usage: { output_tokens: '42', output: 18, completion_tokens: 9 } })).toBe(18);
+  });
+
+  it('should ignore array usage values and null usage', () => {
+    expect(extractOutputTokens({ usage: [] })).toBeUndefined();
+    expect(extractOutputTokens({ usage: null })).toBeUndefined();
+  });
 });
