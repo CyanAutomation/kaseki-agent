@@ -26,7 +26,11 @@ fi
 
 mkdir -p "$FAKE_REPO/deps/fake-dep" "$FAKE_BIN" "$RESULTS_DIR" "$WORKSPACE_REPO" "$APP_LIB" "$TMP_DIR/scripts" "$TMP_DIR/scripts/lib" || fail "failed to create test directories"
 cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$TMP_DIR/scripts/allowlist-helper.sh" || fail "failed to copy allowlist helper"
-cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$TMP_DIR/scripts/scouting-allowlist.js" || fail "failed to copy scouting allowlist"
+if [ -f "$REPO_ROOT/scripts/scouting-allowlist.js" ]; then
+  cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$TMP_DIR/scripts/scouting-allowlist.js"
+else
+  cp "$REPO_ROOT/dist/scouting-allowlist.js" "$TMP_DIR/scripts/scouting-allowlist.js" || fail "failed to copy scouting allowlist"
+fi
 cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
 cp "$REPO_ROOT/scripts/lib/json-events.sh" "$TMP_DIR/scripts/lib/json-events.sh"
 cp "$REPO_ROOT/scripts/lib/artifact-consolidation.sh" "$TMP_DIR/scripts/lib/artifact-consolidation.sh"
@@ -60,7 +64,9 @@ elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "$PI_CALLS"
   # Intentionally print the verdict in the event stream without creating goal-check-candidate.json.
-  printf '%s\n' '{"type":"assistant_message","text":"{\\"met\\":true,\\"confidence\\":\\"high\\",\\"summary\\":\\"All requested checks passed.\\",\\"evidence\\":[\\"validation command passed\\",\\"diff inspected\\",\\"goal requirements satisfied\\"],\\"missing\\":[],\\"retry_prompt\\":\\"\\",\\"validation_notes\\":[\\"npm run check: passed\\"]}"}'
+  # The single-object contradictions form is a legacy shape that recovery can
+  # normalize without losing information before applying the strict contract.
+  printf '%s\n' '{"type":"assistant_message","text":"{\\"met\\":true,\\"confidence\\":\\"high\\",\\"summary\\":\\"All requested checks passed.\\",\\"evidence\\":[\\"validation command passed\\",\\"diff inspected\\",\\"goal requirements satisfied\\"],\\"missing\\":[],\\"retry_prompt\\":\\"\\",\\"validation_notes\\":[\\"npm run check: passed\\"],\\"evidence_sources_inspected\\":[\\"scouting.json\\",\\"git.diff\\",\\"validation.log\\"],\\"contradictions\\":{\\"sources\\":[\\"git.diff\\",\\"validation.log\\"],\\"description\\":\\"No material contradiction found.\\"},\\"confidence_calibration\\":{\\"outcome\\":\\"high\\",\\"justification\\":\\"The diff and validation evidence agree.\\"}}"}'
 else
   printf 'coding\n' >> "$PI_CALLS"
   printf '%s' "\$prompt" > "$RESULTS_DIR/coding-prompt.txt"
@@ -87,7 +93,7 @@ cat
 EOF_VALIDATION_FILTER
 chmod +x "$FAKE_BIN"/* || fail "failed to make fake executables runnable"
 
-env KASEKI_WORKSPACE_DIR="$TMP_DIR" PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspect then code" \
+env KASEKI_WORKSPACE_DIR="$TMP_DIR" PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspect then code" KASEKI_PROVIDER=openrouter \
   OPENROUTER_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off KASEKI_GOAL_CHECK_MAX_RETRIES=0 \
   KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
   KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" KASEKI_VALIDATION_COMMANDS=":" KASEKI_ALLOW_EMPTY_DIFF=1 \
@@ -107,6 +113,8 @@ const verdict = require(process.argv[2]);
 if (verdict.met !== true) throw new Error(`expected met=true, got ${verdict.met}`);
 if (verdict.confidence !== 'high') throw new Error(`expected high confidence, got ${verdict.confidence}`);
 if (!Array.isArray(verdict.evidence) || verdict.evidence.length < 3) throw new Error('expected recovered evidence array');
+if (!Array.isArray(verdict.contradictions) || verdict.contradictions.length !== 1) throw new Error('expected normalized contradictions array');
+if (verdict.contradictions[0].description !== 'No material contradiction found.') throw new Error('expected preserved contradiction description');
 if (verdict.attempt !== 1) throw new Error(`expected enriched attempt=1, got ${verdict.attempt}`);
 NODE
 [ ! -e "$RESULTS_DIR/goal-check-candidate.json" ] || fail "goal-check candidate artifact should be consumed after recovery validation"
