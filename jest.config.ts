@@ -41,7 +41,7 @@ const config: Config = {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   testTimeout: 10000,
-  // Detect and report open handles when debugging test teardown.
+  // Opt-in diagnostic mode; normal test runs must exit naturally.
   detectOpenHandles: process.env.JEST_DETECT_HANDLES === '1',
 };
 

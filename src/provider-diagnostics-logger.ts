@@ -210,6 +210,14 @@ export class ProviderDiagnosticsLogger {
   }
 
   /**
+   * Stop delayed work and synchronously flush any buffered diagnostics.
+   * Call this when the owning service or test scope is being disposed.
+   */
+  shutdown(): void {
+    this.flush();
+  }
+
+  /**
    * Get all diagnostics that have been logged
    */
   getAll(): ProviderDiagnostic[] {
@@ -261,6 +269,6 @@ export function getProviderDiagnosticsLogger(): ProviderDiagnosticsLogger {
  * Reset the application-wide logger between tests.
  */
 export function resetProviderDiagnosticsLoggerForTests(): void {
-  globalLogger?.flush();
+  globalLogger?.shutdown();
   globalLogger = null;
 }
