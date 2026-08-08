@@ -11,7 +11,7 @@ import { z } from 'zod';
  * SMART criterion with quality score
  * Specific, Measurable, Achievable, Relevant, Time-bound
  */
-export const SmartCriterionSchema = z.object({
+const SmartCriterionSchema = z.object({
   criterion: z.string().trim().min(1),
   smart_score: z.enum(['high', 'medium', 'low']),
   reasoning: z.string().optional(),
@@ -26,14 +26,14 @@ export interface SmartCriterion {
 /**
  * Success criteria - can be string (legacy) or SmartCriterion (recommended)
  */
-export const SuccessCriterionSchema = z.union([z.string(), SmartCriterionSchema]);
+const SuccessCriterionSchema = z.union([z.string(), SmartCriterionSchema]);
 
 export type SuccessCriterion = string | SmartCriterion;
 
 /**
  * Anti-patterns and hard boundaries
  */
-export const AntiPatternsSchema = z.object({
+const AntiPatternsSchema = z.object({
   do_not_modify: z.array(z.string()).optional(),
   do_not_break: z.array(z.string()).optional(),
   must_preserve: z.array(z.string()).optional(),
@@ -53,7 +53,7 @@ export interface AntiPatterns {
 /**
  * Categorized constraints
  */
-export const CategorizedConstraintsSchema = z.object({
+const CategorizedConstraintsSchema = z.object({
   operational: z.array(z.string()).optional(),
   architectural: z.array(z.string()).optional(),
   technical: z.array(z.string()).optional(),
@@ -70,7 +70,7 @@ export interface CategorizedConstraints {
 /**
  * Example-driven goals for clarity
  */
-export const GoalExamplesSchema = z.object({
+const GoalExamplesSchema = z.object({
   before: z.string().optional(),
   after: z.string().optional(),
 });
@@ -85,7 +85,7 @@ export interface GoalExamples {
  */
 const QualityLevelSchema = z.enum(['high', 'medium', 'low']);
 
-export const QualityMetricsSchema = z.object({
+const QualityMetricsSchema = z.object({
   clarity: QualityLevelSchema,
   measurability: QualityLevelSchema,
   specificity: QualityLevelSchema,
@@ -105,21 +105,21 @@ export interface QualityMetrics {
  * Preservation constraints for structural safety
  * Prevents kaseki-241-style failures where agents remove protected content
  */
-export const ProtectedLineRangeSchema = z.object({
+const ProtectedLineRangeSchema = z.object({
   start: z.number().int().positive(),
   end: z.number().int().positive(),
   pattern: z.string().optional(),
   description: z.string().optional(),
 });
 
-export const StructuralRequirementsSchema = z.object({
+const StructuralRequirementsSchema = z.object({
   preserve_headings: z.boolean().optional(),
   preserve_code_blocks: z.boolean().optional(),
   preserve_tables: z.boolean().optional(),
   preserve_links: z.boolean().optional(),
 });
 
-export const PreservationConstraintsSchema = z.object({
+const PreservationConstraintsSchema = z.object({
   protected_sections: z.array(z.string()).optional(),
   protected_line_ranges: z.array(ProtectedLineRangeSchema).optional(),
   max_line_reduction: z.number().int().nonnegative().optional(),
