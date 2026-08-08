@@ -55,7 +55,7 @@ docker run --rm --entrypoint /bin/sh \
   '
 
 # Packaging requirement: the final runtime image must provide an executable
-# shellcheck CLI because repository lint workflows invoke it at runtime.
+# shell analysis tool (shellcheck) because repository lint workflows invoke it at runtime.
 printf 'Checking the final runtime image can execute shellcheck --version...\n'
 docker run --rm --entrypoint shellcheck "$IMAGE_TAG" --version
 
