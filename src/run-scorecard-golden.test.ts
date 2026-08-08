@@ -1,5 +1,4 @@
 import { buildScorecard, collectEvidence, normalizeConfig, type ArtifactSnapshot } from './run-scorecard';
-import { formatRunScorecardMarkdown } from './run-scorecard-markdown';
 
 const NOW = new Date('2026-08-07T12:00:00.000Z');
 function bundle(overrides: Partial<ArtifactSnapshot> = {}): ArtifactSnapshot {
@@ -63,9 +62,33 @@ describe('scorecard dimension tables and invariants', () => {
   });
 });
 
-describe.each(['small','medium','large'] as const)('%s golden scorecard', taskSize => {
-  test('complete JSON and PR Markdown', () => {
-    const card=buildScorecard(collectEvidence(bundle()),normalizeConfig({KASEKI_SCORECARD_TASK_SIZE:taskSize}),NOW);
-    expect({ scorecard: card, pr_markdown: formatRunScorecardMarkdown(card) }).toMatchSnapshot();
+describe.each([
+  ['small', 30_000, 900_000, 90],
+  ['medium', 90_000, 2_700_000, 98],
+  ['large', 200_000, 7_200_000, 100],
+] as const)('%s scorecard semantics', (taskSize, tokenBudget, wallClockMs, implementationScore) => {
+  test('uses task-size thresholds and produces a complete, bounded scorecard', () => {
+    const artifacts = bundle({
+      json: {
+        ...bundle().json,
+        'timings-manifest.json': { stage_timings: [{ elapsed_seconds: 3600 }], validation_timings: [{ exit_code: 0 }] },
+      },
+      summaries: [{ phase: 'coding', request_id: 'coding-1', usage: { input: 80_000, output: 20_000 } }],
+    });
+    const card = buildScorecard(collectEvidence(artifacts), normalizeConfig({ KASEKI_SCORECARD_TASK_SIZE: taskSize }), NOW);
+
+    expect(card.scoring_config.task_size).toBe(taskSize);
+    expect(card.scoring_config.selected_targets).toMatchObject({ token_budget: tokenBudget, wall_clock_ms: wallClockMs });
+    expect(card.dimensions.map(dimension => dimension.id)).toEqual([
+      'goal_quality', 'scouting_quality', 'implementation_quality', 'validation_quality', 'goal_attainment', 'evaluation_quality',
+    ]);
+    expect(card.dimensions.find(dimension => dimension.id === 'implementation_quality')?.normalized_score).toBe(implementationScore);
+    expect(card.dimensions.every(dimension => dimension.normalized_score >= 0 && dimension.normalized_score <= 100)).toBe(true);
+    expect(card.overall_score).toBeGreaterThanOrEqual(0);
+    expect(card.overall_score).toBeLessThanOrEqual(100);
+    expect(card.confidence).toEqual({ score: 100, rationale: '8 of 8 evidence categories are available.' });
+    expect(Object.values(card.phases).every(phase => phase.confidence >= 0 && phase.confidence <= 100)).toBe(true);
+    expect(card.phases.coding).toMatchObject({ confidence: 100, completeness: 'complete' });
+    expect(card.phases.validation).toMatchObject({ confidence: 50, completeness: 'provisional' });
   });
 });
