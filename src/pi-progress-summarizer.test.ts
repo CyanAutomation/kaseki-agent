@@ -24,15 +24,27 @@ describe('pi-progress-summarizer', () => {
       expect(result).toMatch(/handlers/);
     });
 
-    it('shortens absolute paths', () => {
-      const result = extractFilePath('write_file', 'write /workspaces/kaseki-agent/src/index.ts');
-      expect(result).toMatch(/src\/index/);
-      expect(result).not.toMatch(/workspaces/);
-    });
-
-    it('handles relative paths when content is provided', () => {
-      const result = extractFilePath('read_file', './lib/utils.ts');
-      expect(result).toBe('lib/utils.ts');
+    it.each([
+      {
+        description: 'an absolute workspace path',
+        toolName: 'write_file',
+        content: 'write /workspaces/kaseki-agent/src/index.ts',
+        expected: 'src/index.ts',
+      },
+      {
+        description: 'a dot-relative path',
+        toolName: 'read_file',
+        content: './lib/utils.ts',
+        expected: 'lib/utils.ts',
+      },
+      {
+        description: 'a path at the 40-character shortening threshold',
+        toolName: 'read_file',
+        content: `${'a'.repeat(28)}/dir/file.ts`,
+        expected: `${'a'.repeat(28)}/dir/file.ts`,
+      },
+    ])('normalizes $description', ({ toolName, content, expected }) => {
+      expect(extractFilePath(toolName, content)).toBe(expected);
     });
 
     it('maps tool names to operations when no path in content', () => {
@@ -45,16 +57,27 @@ describe('pi-progress-summarizer', () => {
       expect(extractFilePath('unknown_tool')).toBeNull();
     });
 
-    it('shortens long file paths without including unnecessary prefix', () => {
-      const longPath = '/workspaces/kaseki-agent/src/deeply/nested/folder/structure/index.ts';
-      const result = extractFilePath('read_file', longPath);
-      expect(result).toBeTruthy();
-      if (result) {
-        // Should not include 'workspaces' prefix in path
-        expect(result).not.toContain('workspaces');
-        // Should include the significant filename component
-        expect(result).toContain('index.ts');
-      }
+    it.each([
+      {
+        description: 'without including unnecessary prefix',
+        path: '/workspaces/kaseki-agent/src/deeply/nested/folder/structure/index.ts',
+        expected: '…/structure/index.ts',
+        retainedSegments: ['structure', 'index.ts'],
+      },
+      {
+        description: 'one character above the 40-character shortening threshold',
+        path: `${'a'.repeat(29)}/dir/file.ts`,
+        expected: '…/dir/file.ts',
+        retainedSegments: ['dir', 'file.ts'],
+      },
+    ])('shortens long file paths $description', ({ path, expected, retainedSegments }) => {
+      const result = extractFilePath('read_file', path);
+
+      expect(result).toBe(expected);
+      expect(result?.split('/')).toEqual(['…', ...retainedSegments]);
+      expect(result).toMatch(/^…\/[^/]+\/[^/]+$/);
+      expect(result?.length).toBeLessThanOrEqual(40);
+      expect(result?.startsWith('…/')).toBe(true);
     });
   });
 
