@@ -1,6 +1,6 @@
 import { TokenUsageAggregator, type UsageObject } from './pi-event-aggregation/token-usage-aggregator';
 import type { Evidence } from './run-scorecard-evidence-types';
-import { number, object } from './run-scorecard-evidence-parsing';
+import { number, object } from './run-scorecard-evidence-values';
 
 const phases = ['goal_setting', 'scouting', 'coding', 'validation', 'goal_check', 'run_evaluation'] as const;
 function canonicalPhase(value: string): typeof phases[number] {
