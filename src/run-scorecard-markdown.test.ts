@@ -11,6 +11,22 @@ const card = () => buildScorecard(collectEvidence({
 }), normalizeConfig({}), new Date('2026-08-07T00:01:00Z'));
 
 describe('run scorecard Markdown formatter', () => {
+  test('renders required summary and per-phase table rows', () => {
+    const markdown = formatRunScorecardMarkdown(card());
+
+    expect(markdown).toContain('- **Overall:**');
+    expect(markdown).toContain('- **Evidence coverage:**');
+    expect(markdown).toContain('| Dimension | Weight | Score | Weighted points | Status |');
+    for (const label of ['Goal quality', 'Scouting quality', 'Implementation quality', 'Validation quality', 'Goal attainment', 'Evaluation quality']) {
+      expect(markdown).toContain(`| ${label} |`);
+    }
+    expect(markdown).toContain('<details><summary>Per-phase breakdown</summary>');
+    expect(markdown).toContain('| Phase | Outcome | Elapsed | Tokens | Metrics | Completeness | Confidence |');
+    for (const label of ['Scouting', 'Analysis / goal setting', 'Coding', 'Validation', 'Goal check', 'Run evaluation']) {
+      expect(markdown).toContain(`| ${label} |`);
+    }
+  });
+
   test('renders stable, escaped, bounded reviewer content without raw evidence', () => {
     const fixture = card();
     fixture.phases.scouting.measurements = { z_raw_response: 'do not show', a_value: 'left|right', b_count: 2 };
