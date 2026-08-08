@@ -122,6 +122,16 @@ docker run --rm --entrypoint node "$IMAGE_TAG" --input-type=module -e '
   for (const entry of entries) await import(`file://${entry}`);
 '
 
+printf 'Checking the scorecard runner resolves its complete module graph...\n'
+docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c '
+  set -eu
+  scorecard_results="$(mktemp -d)"
+  trap "rm -rf \"$scorecard_results\"" EXIT
+  printf "{}" > "$scorecard_results/metadata.json"
+  KASEKI_RESULTS_DIR="$scorecard_results" /usr/local/bin/kaseki-run-scorecard
+  test -s "$scorecard_results/run-scorecard.json"
+'
+
 printf 'Checking installed entrypoint and default command configuration...\n'
 test "$(docker image inspect --format '{{json .Config.Entrypoint}}' "$IMAGE_TAG")" = '["/usr/bin/tini","--","/usr/local/bin/kaseki-entrypoint"]'
 test "$(docker image inspect --format '{{json .Config.Cmd}}' "$IMAGE_TAG")" = '["agent"]'
