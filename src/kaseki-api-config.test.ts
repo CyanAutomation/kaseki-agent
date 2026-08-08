@@ -43,6 +43,11 @@ describe('kaseki-api-config load configuration', () => {
     process.env.KASEKI_ARTIFACT_CACHE_MAX_ENTRIES = '7';
     process.env.KASEKI_ARTIFACT_CACHE_TTL_MS = '12345';
     process.env.KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES = '4096';
+    delete process.env.KASEKI_CACHE_DIR;
+    delete process.env.KASEKI_DEPENDENCY_CACHE_DIR;
+    delete process.env.KASEKI_DEPENDENCY_CACHE_METRICS_FILE;
+    delete process.env.KASEKI_DEPENDENCY_CACHE_MAX_BYTES;
+    delete process.env.KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS;
 
     const config = loadConfig();
 
@@ -58,7 +63,7 @@ describe('kaseki-api-config load configuration', () => {
     expect(config.artifactCacheMaxEntries).toBe(7);
     expect(config.artifactCacheTtlMs).toBe(12345);
     expect(config.artifactCacheMaxFileBytes).toBe(4096);
-    expect(config.dependencyCacheMaxBytes).toBe(5 * 1024 * 1024 * 1024);
+    expect(config.dependencyCacheMaxBytes).toBe(10 * 1024 * 1024 * 1024);
     expect(config.dependencyCacheMaxAgeDays).toBe(30);
   });
 
@@ -75,6 +80,11 @@ describe('kaseki-api-config load configuration', () => {
     delete process.env.KASEKI_ARTIFACT_CACHE_MAX_ENTRIES;
     delete process.env.KASEKI_ARTIFACT_CACHE_TTL_MS;
     delete process.env.KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES;
+    delete process.env.KASEKI_CACHE_DIR;
+    delete process.env.KASEKI_DEPENDENCY_CACHE_DIR;
+    delete process.env.KASEKI_DEPENDENCY_CACHE_METRICS_FILE;
+    delete process.env.KASEKI_DEPENDENCY_CACHE_MAX_BYTES;
+    delete process.env.KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS;
 
     const config = loadConfig();
 
@@ -92,7 +102,7 @@ describe('kaseki-api-config load configuration', () => {
     expect(config.cacheDir).toBe('/cache'); // default
     expect(config.dependencyCacheDir).toBe('/cache/dependencies'); // default
     expect(config.dependencyCacheMetricsFile).toBe('/cache/dependencies/.kaseki-cache-metrics'); // default
-    expect(config.dependencyCacheMaxBytes).toBe(5 * 1024 * 1024 * 1024); // default
+    expect(config.dependencyCacheMaxBytes).toBe(10 * 1024 * 1024 * 1024); // default
     expect(config.dependencyCacheMaxAgeDays).toBe(30); // default
   });
 
@@ -216,6 +226,16 @@ describe('kaseki-api-config load configuration', () => {
     delete process.env.KASEKI_DEPENDENCY_CACHE_MAX_BYTES;
     process.env.KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS = '-1';
     expect(() => loadConfig()).toThrow('KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS must be >= 0');
+  });
+
+  test('loadConfig uses an explicit dependency cache size limit', () => {
+    process.env.KASEKI_API_KEYS = 'test-key';
+    process.env.KASEKI_RESULTS_DIR = testDir;
+    process.env.KASEKI_DEPENDENCY_CACHE_MAX_BYTES = '2147483648';
+
+    const config = loadConfig();
+
+    expect(config.dependencyCacheMaxBytes).toBe(2 * 1024 * 1024 * 1024);
   });
 
   test('loadConfig throws when KASEKI_TASK_MODE is invalid', () => {
