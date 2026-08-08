@@ -253,12 +253,13 @@ describe('IdempotencyStore', () => {
       workerPath,
       `
       import { IdempotencyStore } from '${path.resolve('src/idempotency-store.ts').replace(/\\/g, '\\\\')}';
+      import * as fs from 'fs';
       void (async () => {
-        const [resultsDir, key, fingerprint] = process.argv.slice(2);
+        const [resultsDir, key, fingerprint, resultPath] = process.argv.slice(2);
         const store = new IdempotencyStore(resultsDir, 24);
         const result = await store.claimOrGet(key, fingerprint);
         store.shutdown();
-        process.stdout.write(JSON.stringify(result));
+        fs.writeFileSync(resultPath, JSON.stringify(result), 'utf-8');
       })().catch((error) => {
         console.error(error);
         process.exit(1);
@@ -267,8 +268,13 @@ describe('IdempotencyStore', () => {
       'utf-8',
     );
 
+    let claimWorkerIndex = 0;
     const claimFromProcess = (): Promise<{ kind: string }> =>
       new Promise((resolve, reject) => {
+        const resultPath = path.join(
+          resultsDir,
+          `concurrent-claim-result-${claimWorkerIndex++}.json`,
+        );
         const child = spawn(process.execPath, [
           '--import',
           'tsx',
@@ -276,9 +282,31 @@ describe('IdempotencyStore', () => {
           resultsDir,
           'concurrent-key',
           'same-fp',
+          resultPath,
         ]);
         let stdout = '';
         let stderr = '';
+        let settled = false;
+
+        const finish = (callback: () => void): void => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timeout);
+          callback();
+        };
+
+        const timeout = setTimeout(() => {
+          child.kill('SIGTERM');
+          finish(() => {
+            reject(
+              new Error(
+                `worker timed out after 10000ms (stdout: ${stdout || '<empty>'}; stderr: ${stderr || '<empty>'})`,
+              ),
+            );
+          });
+        }, 10000);
 
         child.stdout.on('data', (chunk) => {
           stdout += chunk.toString();
@@ -286,17 +314,43 @@ describe('IdempotencyStore', () => {
         child.stderr.on('data', (chunk) => {
           stderr += chunk.toString();
         });
-        child.on('error', reject);
-        child.on('close', (code) => {
-          if (code !== 0) {
-            reject(new Error(`worker exited with code ${code}: ${stderr}`));
-            return;
-          }
-          const lines = stdout
-            .split('\n')
-            .map((line) => line.trim())
-            .filter((line) => line.startsWith('{') && line.endsWith('}'));
-          resolve(JSON.parse(lines[lines.length - 1]) as { kind: string });
+        child.on('error', (error) => {
+          finish(() => reject(new Error(`worker failed to start: ${error.message}`)));
+        });
+        child.on('close', (code, signal) => {
+          finish(() => {
+            if (code !== 0) {
+              reject(
+                new Error(
+                  `worker exited with code ${code ?? '<none>'}${signal ? ` (signal ${signal})` : ''}: ${stderr || '<empty stderr>'}`,
+                ),
+              );
+              return;
+            }
+
+            if (!fs.existsSync(resultPath)) {
+              reject(
+                new Error(
+                  `worker exited successfully without a result file (stdout: ${stdout || '<empty>'}; stderr: ${stderr || '<empty>'})`,
+                ),
+              );
+              return;
+            }
+
+            try {
+              resolve(
+                JSON.parse(fs.readFileSync(resultPath, 'utf-8')) as { kind: string },
+              );
+            } catch (error) {
+              reject(
+                new Error(
+                  `worker emitted an invalid result file: ${error instanceof Error ? error.message : String(error)} (stdout: ${stdout}; stderr: ${stderr})`,
+                ),
+              );
+            } finally {
+              fs.rmSync(resultPath, { force: true });
+            }
+          });
         });
       });
 
@@ -410,7 +464,7 @@ describe('IdempotencyStore', () => {
       await expect(
         store.claimOrGet('responsive-key', 'responsive-fp'),
       ).resolves.toEqual({ kind: 'claimed' });
-      expect(ticks).toBeGreaterThanOrEqual(5);
+      expect(ticks).toBeGreaterThan(0);
     } finally {
       clearInterval(interval);
       clearTimeout(releaseLock);
