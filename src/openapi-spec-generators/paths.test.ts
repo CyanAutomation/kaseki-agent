@@ -619,10 +619,39 @@ describe('OpenAPI Path Builders', () => {
       );
     });
 
-    it('should handle empty response schema', () => {
-      const paths = buildAllPaths(errorSchema, requestSchema, {});
-      expect(paths).toBeDefined();
-      expect(Object.keys(paths).length).toBeGreaterThan(0);
+    it('should preserve an empty response schema as the OpenAPI any-type schema required for OpenAPI generation', () => {
+      const emptyResponseSchema = {};
+      const paths = buildAllPaths(errorSchema, requestSchema, emptyResponseSchema);
+      const runsPath = paths['/api/runs'] as Record<string, any>;
+
+      expect(Object.keys(runsPath.post.responses).sort()).toEqual(['200', '202', '400', '401']);
+      ['200', '202'].forEach((status) => {
+        expect(runsPath.post.responses[status].content).toEqual({
+          'application/json': {
+            schema: emptyResponseSchema
+          }
+        });
+      });
+
+      expect(Object.keys(runsPath.get.responses).sort()).toEqual(['200', '401']);
+      expect(runsPath.get.responses['200'].content).toEqual({
+        'application/json': {
+          schema: {
+            type: 'object',
+            required: ['runs', 'total'],
+            properties: {
+              runs: {
+                type: 'array',
+                items: emptyResponseSchema
+              },
+              total: {
+                type: 'integer',
+                description: 'Total number of runs available'
+              }
+            }
+          }
+        }
+      });
     });
   });
 
