@@ -27,130 +27,123 @@ export class SecretsCommand extends BaseCommand {
       const subcommand = positional[0];
       const secretKey = positional[1];
       const secretValue = positional[2];
-
       const secretsManager = new SecretsManager();
-
       switch (subcommand) {
-      case 'init': {
-        console.log('🔐 Initializing secrets directories...\n');
-        // Create the fallback secrets directory (~/.kaseki/secrets)
-        try {
-          const secretsDir = path.join(process.env.HOME || os.homedir(), '.kaseki', 'secrets');
-          if (!fs.existsSync(secretsDir)) {
-            fs.mkdirSync(secretsDir, { recursive: true, mode: 0o700 });
-            console.log(`✓ Created ${secretsDir}`);
-          } else {
-            console.log(`✓ Directory exists: ${secretsDir}`);
-          }
-        } catch (error) {
-          console.error(`✗ Failed to initialize secrets: ${error}`);
-          return 1;
-        }
-
-        console.log('\nNext: Add your secrets with: kaseki-agent secrets set KEY VALUE');
-        console.log('Example: kaseki-agent secrets set openrouter_api_key sk-or-...');
-        return 0;
-      }
-
-      case 'set': {
-        if (!secretKey || !secretValue) {
-          console.error('Usage: kaseki-agent secrets set <KEY> <VALUE>');
-          console.error('Example: kaseki-agent secrets set openrouter-api-key sk-or-...');
-          return 1;
-        }
-
-        await secretsManager.store(secretKey, secretValue);
-        console.log(`✓ Stored secret: ${secretKey}`);
-        return 0;
-      }
-
-      case 'get': {
-        if (!secretKey) {
-          console.error('Usage: kaseki-agent secrets get <KEY>');
-          return 1;
-        }
-
-        const value = await secretsManager.retrieve(secretKey);
-        if (value) {
-          // Only show if explicitly requested with --show
-          if (flags.has('show')) {
-            console.log(value);
-          } else {
-            console.log(`✓ Secret exists: ${secretKey}`);
-            console.log('(Use --show to display the value)');
-          }
-        } else {
-          console.log(`Secret not found: ${secretKey}`);
-          return 1;
-        }
-        return 0;
-      }
-
-      case 'delete': {
-        if (!secretKey) {
-          console.error('Usage: kaseki-agent secrets delete <KEY>');
-          return 1;
-        }
-
-        await secretsManager.delete(secretKey);
-        console.log(`✓ Deleted secret: ${secretKey}`);
-        return 0;
-      }
-
-      case 'list': {
-        const secrets = await secretsManager.list();
-        if (secrets.size === 0) {
-          console.log('No secrets stored');
-          return 0;
-        }
-
-        console.log('📋 Stored Secrets\n');
-        for (const key of secrets.keys()) {
-          console.log(`  • ${key}`);
-        }
-        console.log(`\nTotal: ${secrets.size} secret(s)`);
-        return 0;
-      }
-
-      case 'doctor':
-        return this.runPermissionsDoctor(false);
-
-      case 'fix-permissions':
-        return this.runPermissionsDoctor(true);
-
-      case 'help': {
-        console.log('🔐 Secrets Management\n');
-        console.log('Usage:');
-        console.log('  kaseki-agent secrets init                    Initialize local secrets directory');
-        console.log('  kaseki-agent secrets set <KEY> <VALUE>       Store a secret');
-        console.log('  kaseki-agent secrets get <KEY> [--show]      Retrieve a secret');
-        console.log('  kaseki-agent secrets delete <KEY>            Delete a secret');
-        console.log('  kaseki-agent secrets list                    List all secret keys');
-        console.log('  kaseki-agent secrets doctor                  Check host secret file permissions');
-        console.log('  kaseki-agent secrets fix-permissions         Normalize host secret file permissions');
-        console.log('\nCommon Keys:');
-        console.log('  openrouter-api-key    OpenRouter API key');
-        console.log('  github-app-id         GitHub App ID');
-        console.log('  github-app-client-id  GitHub App Client ID');
-        console.log('  github-app-private-key GitHub App Private Key\n');
-        console.log('Storage:');
-        console.log('  - Uses filesystem secret files only');
-        console.log('  - Docker hosts use KASEKI_HOST_SECRETS_DIR, usually /home/pi/secrets');
-        console.log('  - Docker host permissions: directory 0750, files 0640, group id KASEKI_CONTAINER_GID');
-        console.log('  - Local runs use ~/.kaseki/secrets/ with 0600 file permissions');
-        console.log('  - Keys are never exposed via environment variables');
-        return 0;
-      }
-
-      default:
-        console.error('Unknown subcommand: ' + subcommand);
-        console.error('\nRun: kaseki-agent secrets help');
-        return 1;
+        case 'init': return this.initializeSecrets();
+        case 'set': return this.setSecret(secretsManager, secretKey, secretValue);
+        case 'get': return this.getSecret(secretsManager, secretKey, flags.has('show'));
+        case 'delete': return this.deleteSecret(secretsManager, secretKey);
+        case 'list': return this.listSecrets(secretsManager);
+        case 'doctor': return this.runPermissionsDoctor(false);
+        case 'fix-permissions': return this.runPermissionsDoctor(true);
+        case 'help': return this.printHelp();
+        default: return this.unknownSubcommand(subcommand);
       }
     } catch (error) {
       logger.error(`Secrets command failed: ${error}`);
       return 1;
     }
+  }
+
+  private initializeSecrets(): number {
+    console.log('🔐 Initializing secrets directories...\n');
+    try {
+      const secretsDir = path.join(process.env.HOME || os.homedir(), '.kaseki', 'secrets');
+      if (!fs.existsSync(secretsDir)) {
+        fs.mkdirSync(secretsDir, { recursive: true, mode: 0o700 });
+        console.log(`✓ Created ${secretsDir}`);
+      } else {
+        console.log(`✓ Directory exists: ${secretsDir}`);
+      }
+    } catch (error) {
+      console.error(`✗ Failed to initialize secrets: ${error}`);
+      return 1;
+    }
+
+    console.log('\nNext: Add your secrets with: kaseki-agent secrets set KEY VALUE');
+    console.log('Example: kaseki-agent secrets set openrouter_api_key sk-or-...');
+    return 0;
+  }
+
+  private async setSecret(manager: SecretsManager, key?: string, value?: string): Promise<number> {
+    if (!key || !value) {
+      console.error('Usage: kaseki-agent secrets set <KEY> <VALUE>');
+      console.error('Example: kaseki-agent secrets set openrouter-api-key sk-or-...');
+      return 1;
+    }
+    await manager.store(key, value);
+    console.log(`✓ Stored secret: ${key}`);
+    return 0;
+  }
+
+  private async getSecret(manager: SecretsManager, key?: string, show = false): Promise<number> {
+    if (!key) {
+      console.error('Usage: kaseki-agent secrets get <KEY>');
+      return 1;
+    }
+    const value = await manager.retrieve(key);
+    if (!value) {
+      console.log(`Secret not found: ${key}`);
+      return 1;
+    }
+    if (show) console.log(value);
+    else {
+      console.log(`✓ Secret exists: ${key}`);
+      console.log('(Use --show to display the value)');
+    }
+    return 0;
+  }
+
+  private async deleteSecret(manager: SecretsManager, key?: string): Promise<number> {
+    if (!key) {
+      console.error('Usage: kaseki-agent secrets delete <KEY>');
+      return 1;
+    }
+    await manager.delete(key);
+    console.log(`✓ Deleted secret: ${key}`);
+    return 0;
+  }
+
+  private async listSecrets(manager: SecretsManager): Promise<number> {
+    const secrets = await manager.list();
+    if (secrets.size === 0) {
+      console.log('No secrets stored');
+      return 0;
+    }
+    console.log('📋 Stored Secrets\n');
+    for (const key of secrets.keys()) console.log(`  • ${key}`);
+    console.log(`\nTotal: ${secrets.size} secret(s)`);
+    return 0;
+  }
+
+  private printHelp(): number {
+    console.log('🔐 Secrets Management\n');
+    console.log('Usage:');
+    console.log('  kaseki-agent secrets init                    Initialize local secrets directory');
+    console.log('  kaseki-agent secrets set <KEY> <VALUE>       Store a secret');
+    console.log('  kaseki-agent secrets get <KEY> [--show]      Retrieve a secret');
+    console.log('  kaseki-agent secrets delete <KEY>            Delete a secret');
+    console.log('  kaseki-agent secrets list                    List all secret keys');
+    console.log('  kaseki-agent secrets doctor                  Check host secret file permissions');
+    console.log('  kaseki-agent secrets fix-permissions         Normalize host secret file permissions');
+    console.log('\nCommon Keys:');
+    console.log('  openrouter-api-key    OpenRouter API key');
+    console.log('  github-app-id         GitHub App ID');
+    console.log('  github-app-client-id  GitHub App Client ID');
+    console.log('  github-app-private-key GitHub App Private Key\n');
+    console.log('Storage:');
+    console.log('  - Uses filesystem secret files only');
+    console.log('  - Docker hosts use KASEKI_HOST_SECRETS_DIR, usually /home/pi/secrets');
+    console.log('  - Docker host permissions: directory 0750, files 0640, group id KASEKI_CONTAINER_GID');
+    console.log('  - Local runs use ~/.kaseki/secrets/ with 0600 file permissions');
+    console.log('  - Keys are never exposed via environment variables');
+    return 0;
+  }
+
+  private unknownSubcommand(subcommand?: string): number {
+    console.error('Unknown subcommand: ' + subcommand);
+    console.error('\nRun: kaseki-agent secrets help');
+    return 1;
   }
 
   private runPermissionsDoctor(fix: boolean): number {

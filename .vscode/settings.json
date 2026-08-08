@@ -8,5 +8,8 @@
   "typescript.tsserver.plugins": [],
   "javascript.preferences.quotePreference": "single",
   "typescript.preferences.quotePreference": "single",
-  "github.copilot.chat.workspace.codeSearchExternalIngest.enabled": true
+  "github.copilot.chat.workspace.codeSearchExternalIngest.enabled": true,
+  "chat.tools.terminal.autoApprove": {
+    "env": true
+  }
 }

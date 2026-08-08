@@ -11,9 +11,13 @@ import { ExecutionTimeAggregator, type ExecutionTimeSummary, type ExecutionStats
 import { TokenUsageAggregator, type TokenUsageSummary, type ModelTokenStats, type PhaseTokenStats } from './pi-event-aggregation/token-usage-aggregator.js';
 import {
   type ProviderErrorSummary,
-  extractMessageTextLength,
   extractProviderError,
 } from './pi-event-filter-helpers.js';
+import {
+  extractEmptyAssistantTurn,
+  recordAssistantTurnState,
+  type AssistantTurnState,
+} from './pi-event-filter-helpers/empty-assistant-turn.js';
 
 export { extractProviderError };
 
@@ -153,11 +157,6 @@ function buildModelReliability(
       observed_success: errors.length === 0,
     }];
   }));
-}
-
-interface AssistantTurnState {
-  textLength: number;
-  toolResultCount: number;
 }
 
 type PiEventFilterState = {
@@ -358,78 +357,6 @@ function extractResponseIdFromEvent(event: PiEvent): string | undefined {
     extractResponseIdFromMessage((event as any).assistantMessageEvent?.message) ??
     extractResponseIdFromMessage((event as any).assistantMessageEvent?.partial)
   );
-}
-
-function extractToolResultCount(event: PiEvent): number {
-  const toolResults = (event as any).toolResults;
-  if (Array.isArray(toolResults)) return toolResults.length;
-  const messageToolCalls = (event as any).message?.toolCalls ?? (event as any).message?.tool_calls;
-  if (Array.isArray(messageToolCalls)) return messageToolCalls.length;
-  return 0;
-}
-
-function recordAssistantTurnState(event: PiEvent, states: Map<string, AssistantTurnState>): void {
-  const responseId = extractResponseIdFromEvent(event);
-  if (!responseId) return;
-
-  const current = states.get(responseId) ?? { textLength: 0, toolResultCount: 0 };
-  current.textLength += extractMessageTextLength((event as any).message);
-  current.textLength += extractMessageTextLength((event as any).assistantMessageEvent?.message);
-  current.textLength += extractMessageTextLength((event as any).assistantMessageEvent?.partial);
-  current.toolResultCount += extractToolResultCount(event);
-  states.set(responseId, current);
-}
-
-function extractEmptyAssistantTurn(event: PiEvent, states: Map<string, AssistantTurnState>): ProviderErrorSummary | null {
-  const message = (event as any).message;
-  if (!message || typeof message !== 'object' || message.role !== 'assistant') return null;
-
-  const stopReason = typeof message.stopReason === 'string' ? message.stopReason.trim() : '';
-  if (stopReason !== 'stop') return null;
-
-  const usage = extractUsage(event);
-  const outputTokens = numericUsageValue(usage, ['output', 'output_tokens', 'completion_tokens']);
-  if (!outputTokens || outputTokens <= 0) return null;
-
-  const responseId = extractResponseIdFromMessage(message);
-  const priorState = responseId ? states.get(responseId) : undefined;
-  if (
-    extractMessageTextLength(message) > 0 ||
-    extractToolResultCount(event) > 0 ||
-    (priorState?.textLength ?? 0) > 0 ||
-    (priorState?.toolResultCount ?? 0) > 0
-  ) return null;
-
-  const inputTokens = numericUsageValue(usage, ['input', 'input_tokens', 'prompt_tokens']);
-  const totalTokens = numericUsageValue(usage, ['totalTokens', 'total_tokens', 'total']);
-  const provider = typeof message.provider === 'string' ? message.provider : undefined;
-  const api = typeof message.api === 'string' ? message.api : undefined;
-  const model = typeof message.model === 'string' ? message.model : undefined;
-
-  // Token-based classification: High token count with no output suggests provider infrastructure issue,
-  // while low token count suggests possible config/auth/model problem
-  const details = [
-    provider ? `provider=${provider}` : '',
-    api ? `api=${api}` : '',
-    model ? `model=${model}` : '',
-    responseId ? `response_id=${responseId}` : '',
-    inputTokens !== undefined ? `input_tokens=${inputTokens}` : '',
-    `output_tokens=${outputTokens}`,
-    totalTokens !== undefined ? `total_tokens=${totalTokens}` : '',
-  ].filter(Boolean).join(' ');
-
-  return {
-    type: 'provider_empty_assistant_turn',
-    provider,
-    api,
-    model,
-    stop_reason: stopReason,
-    response_id: responseId,
-    input_tokens: inputTokens,
-    output_tokens: outputTokens,
-    total_tokens: totalTokens,
-    message: `Provider returned a successful stop response with output tokens but no assistant text or tool calls. ${details}`.trim(),
-  };
 }
 
 /**
