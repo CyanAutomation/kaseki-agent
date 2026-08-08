@@ -125,39 +125,53 @@ describe('pi-progress-summarizer', () => {
   });
 
   describe('detectError', () => {
-    it('detects error patterns in content', () => {
-      const result = detectError('Error: Cannot read property');
-      expect(result.hasError).toBe(true);
-      expect(result.snippet).toContain('Error');
+    it.each([
+      ['an error pattern', 'Error: Cannot read property', true],
+      ['a failure pattern', 'Test FAILED: assertion failed', true],
+      ['an exit code error', 'Process exited with code 1', true],
+      ['successful content', 'Successfully created file index.ts', false],
+      ['empty content', '', false],
+      ['undefined content', undefined, false],
+    ])('detects $description', (_description, content, hasError) => {
+      expect(detectError(content).hasError).toBe(hasError);
     });
 
-    it('detects failure patterns', () => {
-      const result = detectError('Test FAILED: assertion failed');
-      expect(result.hasError).toBe(true);
-    });
+    const errorMarker = 'Error: uniquely-marked';
+    const retainedPrefix = 'near-prefix-123456789012345678';
+    const retainedSuffix = 'near-suffix-01234567890123456789012345';
+    const distantPrefix = `DISTANT_PREFIX|${'prefix-content|'.repeat(12)}`;
+    const distantSuffix = `DISTANT_SUFFIX|${'suffix-content|'.repeat(12)}`;
 
-    it('detects exit code errors', () => {
-      const result = detectError('Process exited with code 1');
-      expect(result.hasError).toBe(true);
-    });
+    it.each([
+      {
+        boundary: 'in the middle',
+        content: `${distantPrefix}${retainedPrefix}${errorMarker}${retainedSuffix}${distantSuffix}`,
+        expectedSnippet: `${retainedPrefix}${errorMarker}${retainedSuffix}`,
+        expectedLength: 90,
+      },
+      {
+        boundary: 'at the beginning',
+        content: `${errorMarker}${retainedSuffix}${distantSuffix}`,
+        expectedSnippet: `${errorMarker}${retainedSuffix}`,
+        expectedLength: 60,
+      },
+      {
+        boundary: 'at the end',
+        content: `${distantPrefix}${retainedPrefix}${errorMarker}`,
+        expectedSnippet: `${retainedPrefix}${errorMarker}`,
+        expectedLength: 52,
+      },
+    ])(
+      'extracts the documented context snippet when the error is $boundary',
+      ({ content, expectedSnippet, expectedLength }) => {
+        const result = detectError(content);
 
-    it('returns false for successful content', () => {
-      const result = detectError('Successfully created file index.ts');
-      expect(result.hasError).toBe(false);
-    });
-
-    it('returns false for empty content', () => {
-      expect(detectError('').hasError).toBe(false);
-      expect(detectError(undefined).hasError).toBe(false);
-    });
-
-    it('extracts context snippet around error', () => {
-      const result = detectError('Some output before the actual Error: something bad happened here');
-      expect(result.snippet).toBeTruthy();
-      if (result.snippet) {
-        expect(result.snippet).toContain('Error');
-      }
-    });
+        expect(result).toEqual({ hasError: true, snippet: expectedSnippet });
+        expect(result.snippet).toHaveLength(expectedLength);
+        expect(result.snippet).not.toContain('DISTANT_PREFIX');
+        expect(result.snippet).not.toContain('DISTANT_SUFFIX');
+      },
+    );
   });
 
   describe('formatElapsed', () => {
