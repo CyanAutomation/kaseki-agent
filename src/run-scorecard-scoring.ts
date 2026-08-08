@@ -1,6 +1,7 @@
 import { RunScorecardSchema, type RunScorecard } from './types/run-scorecard';
 import type { Evidence } from './run-scorecard-evidence';
 import type { ScorecardConfig } from './run-scorecard-config';
+import { buildDimensions, buildPhases, DIMENSIONS, WEIGHTS } from './run-scorecard-scoring-parts';
 
 const clamp = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
 
@@ -10,133 +11,35 @@ export function assignGrade(score: number): RunScorecard['grade'] {
 
 export function calculateCoverage(evidence: Evidence) {
   const fields: Array<[string, boolean]> = [
-    ['metadata', evidence.present.includes('metadata.json')],
-    ['timings', evidence.elapsedSeconds !== undefined],
-    ['tokens', evidence.tokens !== undefined],
-    ['validation', evidence.validation !== 'unknown'],
-    ['quality gates', evidence.quality !== 'unknown'],
-    ['goal check', evidence.goalMet !== undefined],
+    ['metadata', evidence.present.includes('metadata.json')], ['timings', evidence.elapsedSeconds !== undefined],
+    ['tokens', evidence.tokens !== undefined], ['validation', evidence.validation !== 'unknown'],
+    ['quality gates', evidence.quality !== 'unknown'], ['goal check', evidence.goalMet !== undefined],
     ['changes', evidence.present.includes('changed-files.txt') || evidence.present.includes('git.diff')],
     ['evaluation', !!evidence.evaluation],
   ];
   const missing = fields.filter(([, present]) => !present).map(([key]) => key);
-  return {
-    ratio: Number(((fields.length - missing.length) / fields.length).toFixed(3)),
-    observed: fields.length - missing.length,
-    possible: fields.length,
-    missing,
-  };
-}
-
-function efficiency(actual: number | undefined, target: number) {
-  return actual === undefined ? 50 : clamp(100 * Math.min(1, target / Math.max(1, actual)));
+  return { ratio: Number(((fields.length - missing.length) / fields.length).toFixed(3)), observed: fields.length - missing.length, possible: fields.length, missing };
 }
 
 export function buildScorecard(evidence: Evidence, config: ScorecardConfig, now = new Date()): RunScorecard {
   const coverage = calculateCoverage(evidence);
   const started = typeof evidence.metadata.started_at === 'string' ? evidence.metadata.started_at : now.toISOString();
-  const ended = typeof evidence.metadata.ended_at === 'string'
-    ? evidence.metadata.ended_at
-    : ['completed', 'failed', 'cancelled', 'timed_out'].includes(evidence.status)
-      ? now.toISOString()
-      : null;
-  const dimensions = ['goal_quality', 'scouting_quality', 'implementation_quality', 'validation_quality', 'goal_attainment', 'evaluation_quality'] as const;
-  const phaseNames = ['goal_setting', 'scouting', 'coding', 'validation', 'goal_check', 'run_evaluation'] as const;
-  const weights = [.15, .1, .3, .25, .15, .05];
-  const disabled = new Set(
-    Array.isArray(evidence.metadata.disabled_phases)
-      ? evidence.metadata.disabled_phases.map(value => String(value).toLowerCase().replace(/[- ]/g, '_'))
-      : [],
-  );
-  const legacyValidation = evidence.validation === 'passed' ? 100 : evidence.validation === 'failed' ? 0 : 50;
-  const completion = evidence.goalMet === undefined ? 60 : evidence.goalMet ? 100 : 20;
-  const scores = [
-    completion,
-    evidence.present.includes('scouting.json') ? 85 : 50,
-    evidence.diffBytes === 0
-      ? 0
-      : clamp(80 + .2 * (
-        (efficiency(evidence.elapsedSeconds, config.targets.elapsedSeconds)
-          + efficiency(evidence.tokens, config.targets.tokens)
-          + efficiency(evidence.retries, config.targets.retries)) / 3)),
-    legacyValidation,
-    completion,
-    clamp(
-      (typeof evidence.evaluation?.task_completion_score === 'number'
-        ? evidence.evaluation.task_completion_score
-        : typeof evidence.evaluation?.score === 'number'
-          ? evidence.evaluation.score
-          : evidence.evaluation ? 80 : 40)
-      - (Array.isArray(evidence.evaluation?.contradictions) ? evidence.evaluation.contradictions.length * 15 : 0),
-    ),
-  ];
-  const eligible = weights.reduce((total, weight, index) => total + (disabled.has(phaseNames[index]) ? 0 : weight), 0);
-  const scorecardDimensions = dimensions.map((id, index) => {
-    const applicable = !disabled.has(phaseNames[index]);
-    const effective = applicable ? weights[index] / eligible : 0;
-    return {
-      id,
-      weight: weights[index],
-      effective_weight: effective,
-      raw_measurements: { source_score: scores[index], retries: evidence.retries, tokens: evidence.tokens ?? null },
-      normalized_score: scores[index],
-      weighted_points: Number((scores[index] * effective).toFixed(2)),
-      status: !applicable ? 'not_applicable' : id === 'implementation_quality' && evidence.diffBytes === 0 ? 'unavailable' : 'complete',
-      rationale: `Score derived from available ${id.replace(/_/g, ' ')} evidence.`,
-      evidence: [],
-      warnings: [],
-    };
-  });
-  const score = Number(scorecardDimensions.reduce((total, dimension) => total + dimension.weighted_points, 0).toFixed(2));
-  const phases = Object.fromEntries(phaseNames.map(phase => {
-    const usage = evidence.phaseTokens[phase] ?? {
-      input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0,
-      unknown_tokens: 0, unavailable: true, completeness: 'unavailable' as const,
-    };
-    return [phase, {
-      phase,
-      enabled: !disabled.has(phase),
-      outcome: disabled.has(phase)
-        ? 'skipped'
-        : evidence.status === 'cancelled' || evidence.status === 'running'
-          ? 'not_started'
-          : phase === 'validation' && evidence.validation === 'failed' ? 'failed' : 'succeeded',
-      started_at: null,
-      ended_at: null,
-      duration_ms: null,
-      token_usage: usage,
-      measurements: { retries: evidence.retries },
-      completeness: disabled.has(phase) ? 'not_applicable' : usage.unavailable ? 'provisional' : 'complete',
-      confidence: disabled.has(phase) ? 100 : usage.unavailable ? 50 : 100,
-      evidence: [],
-      warnings: [],
-    }];
-  })) as unknown as RunScorecard['phases'];
-
+  const ended = typeof evidence.metadata.ended_at === 'string' ? evidence.metadata.ended_at
+    : ['completed', 'failed', 'cancelled', 'timed_out'].includes(evidence.status) ? now.toISOString() : null;
+  const dimensions = buildDimensions(evidence, config);
+  const score = Number(dimensions.reduce((total, dimension) => total + dimension.weighted_points, 0).toFixed(2));
   return RunScorecardSchema.parse({
-    schema_version: '1.0',
-    rubric_version: config.rubricVersion,
+    schema_version: '1.0', rubric_version: config.rubricVersion,
     run_id: typeof evidence.metadata.instance === 'string' ? evidence.metadata.instance : 'unknown-run',
-    started_at: started,
-    ended_at: ended,
-    scored_at: now.toISOString(),
-    lifecycle_status: evidence.status,
-    overall_score: score,
-    grade: assignGrade(score),
+    started_at: started, ended_at: ended, scored_at: now.toISOString(), lifecycle_status: evidence.status,
+    overall_score: score, grade: assignGrade(score),
     evidence_coverage: {
-      required: coverage.possible,
-      available: Math.min(coverage.observed, coverage.possible),
-      ratio: Math.min(1, coverage.ratio),
+      required: coverage.possible, available: Math.min(coverage.observed, coverage.possible), ratio: Math.min(1, coverage.ratio),
       missing_critical: [...(evidence.diffBytes === 0 ? ['diff'] : []), ...(evidence.validation === 'unknown' ? ['validation_result'] : [])],
     },
     completeness: coverage.ratio === 1 ? 'complete' : 'provisional',
-    confidence: {
-      score: clamp(coverage.ratio * 100 * (evidence.unknownTokenRequests > 0 ? .9 : 1)),
-      rationale: `${coverage.observed} of ${coverage.possible} evidence categories are available.`,
-    },
-    dimensions: scorecardDimensions,
-    phases,
-    token_totals: evidence.tokenUsage,
+    confidence: { score: clamp(coverage.ratio * 100 * (evidence.unknownTokenRequests > 0 ? .9 : 1)), rationale: `${coverage.observed} of ${coverage.possible} evidence categories are available.` },
+    dimensions, phases: buildPhases(evidence), token_totals: evidence.tokenUsage,
     timing_totals: {
       wall_clock_ms: (evidence.elapsedSeconds ?? 0) * 1000,
       phase_duration_ms: { goal_setting: null, scouting: null, coding: null, validation: null, goal_check: null, run_evaluation: null },
@@ -144,20 +47,13 @@ export function buildScorecard(evidence: Evidence, config: ScorecardConfig, now 
     },
     scoring_config: {
       rubric_version: config.rubricVersion,
-      dimension_weights: Object.fromEntries(dimensions.map((id, index) => [id, weights[index]])),
+      dimension_weights: Object.fromEntries(DIMENSIONS.map((id, index) => [id, WEIGHTS[index]])),
       grade_bands: [['A', 90, 100], ['B', 80, 89], ['C', 70, 79], ['D', 60, 69], ['F', 0, 59]].map(([grade, minimum_score, maximum_score]) => ({ grade, minimum_score, maximum_score })),
-      normalization_rules: {
-        efficiency: {
-          function: 'inverse_target_ratio',
-          expression: 'min(100, target / actual * 100)',
-          parameters: { token_target: config.targets.tokens, time_target_seconds: config.targets.elapsedSeconds, retry_target: config.targets.retries },
-        },
-      },
+      normalization_rules: { efficiency: { function: 'inverse_target_ratio', expression: 'min(100, target / actual * 100)', parameters: { token_target: config.targets.tokens, time_target_seconds: config.targets.elapsedSeconds, retry_target: config.targets.retries } } },
       task_size: config.taskSize,
       selected_targets: { token_budget: Math.round(config.targets.tokens), wall_clock_ms: config.targets.elapsedSeconds * 1000, changed_lines: null, rationale: 'Configured before scoring; preserved with this artifact.' },
       caps: { missing_diff: 69, missing_validation: 59, missing_diff_and_validation: 49 },
-      enabled_phase_reliability_penalty_points: 0,
-      disabled_phase_policy: 'reweight_eligible_dimensions',
+      enabled_phase_reliability_penalty_points: 0, disabled_phase_policy: 'reweight_eligible_dimensions',
     },
     warnings: coverage.missing.map(value => `Missing evidence: ${value}`),
   });
