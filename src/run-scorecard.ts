@@ -10,7 +10,9 @@ export { assignGrade, buildScorecard, calculateCoverage } from './run-scorecard-
 export { readArtifactSnapshot, writeAtomic } from './run-scorecard-io';
 export { main } from './run-scorecard-cli';
 
-if (process.argv[1] && /^run-scorecard\.(?:js|ts)$/.test(path.basename(process.argv[1]))) {
+const entrypoint = process.argv[1] ? path.basename(process.argv[1]) : '';
+
+if (['run-scorecard.js', 'run-scorecard.ts', 'kaseki-run-scorecard', 'kaseki-run-scorecard.js'].includes(entrypoint)) {
   try {
     main();
   } catch (error) {
