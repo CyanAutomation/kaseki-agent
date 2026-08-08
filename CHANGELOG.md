@@ -4,6 +4,18 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.125.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.124.1...v1.125.0) (2026-08-08)
+
+
+### Features
+
+* add fallow dependency to package.json and package-lock.json ([df34802](https://github.com/CyanAutomation/kaseki-agent/commit/df348024fbfdafa92d7452ccf87fce0754ea3bb4))
+* add tests for goal-setting quality helpers and log file reader functionality ([42c9c36](https://github.com/CyanAutomation/kaseki-agent/commit/42c9c36951dfb422cfe6c874f01f9d2935f66bbb))
+* enhance SecretsCommand with structured methods for managing secrets and improve error handling ([48cfaa0](https://github.com/CyanAutomation/kaseki-agent/commit/48cfaa0a7f52cac50494f243612868974624524f))
+* **idempotency-store:** enhance concurrent claiming with result file handling and timeout management ([7b2728f](https://github.com/CyanAutomation/kaseki-agent/commit/7b2728fbe0b0df6ec27e46cdc2332665f656293f))
+* implement shutdown method for ProviderDiagnosticsLogger to handle delayed flush and cleanup ([4d19874](https://github.com/CyanAutomation/kaseki-agent/commit/4d19874f33752f2fc44de46420c9591dbda77f7d))
+* refactor and modularize goal-setting types and quality functions; add log file reader utilities ([7f15b35](https://github.com/CyanAutomation/kaseki-agent/commit/7f15b3541847f9e55ba75cb1fbdd727c7aae487e))
+
 ## [1.124.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.124.0...v1.124.1) (2026-08-07)
 
 
