@@ -1,6 +1,7 @@
 import { assignGrade, buildScorecard, calculateCoverage, collectEvidence, normalizeConfig } from './run-scorecard';
 import { RunScorecardSchema } from './types/run-scorecard';
-import { lifecycle, statusFrom } from './run-scorecard-evidence-parsing';
+import { lifecycle, statusFrom } from './run-scorecard-evidence-status';
+import { bool, number, object } from './run-scorecard-evidence-values';
 import { aggregateTokenUsage, countRetries } from './run-scorecard-evidence-tokens';
 
 describe('run scorecard', () => {
@@ -96,6 +97,17 @@ describe('run scorecard', () => {
     expect(statusFrom({ validation_status: 'success' }, ['validation_status'])).toBe('passed');
     expect(statusFrom({ validation_exit: false }, ['validation_exit'])).toBe('failed');
     expect(statusFrom({}, ['validation_exit'])).toBe('unknown');
+  });
+
+  test('coerces only supported evidence value types', () => {
+    expect(object({ value: 1 })).toEqual({ value: 1 });
+    expect(object(null)).toBeUndefined();
+    expect(object([])).toBeUndefined();
+    expect(number(12.5)).toBe(12.5);
+    expect(number(Number.NaN)).toBeUndefined();
+    expect(number('12.5')).toBeUndefined();
+    expect(bool(true)).toBe(true);
+    expect(bool('true')).toBeUndefined();
   });
 
   test('aggregates token phases and counts retry evidence independently', () => {

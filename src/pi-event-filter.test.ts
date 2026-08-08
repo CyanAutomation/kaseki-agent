@@ -6,6 +6,13 @@ import { runFilter, runFilterContract } from '../tests/helpers/pi-event-filter-t
 
 jest.setTimeout(20000);
 
+function messageEndEvent(overrides: Record<string, unknown>): string {
+  return JSON.stringify({
+    type: 'message_end',
+    message: { role: 'assistant', model: 'gateway-model', usage: { input: 1, output: 1 }, ...overrides },
+  });
+}
+
 /**
  * pi-event-filter Tests (382 lines)
  *
@@ -1042,10 +1049,7 @@ test('accepts camelCase and snake_case response IDs, preferring the first string
     { responseId: 'camel-id', response_id: 'snake-id' },
     { response_id: 'snake-only-id' },
     { responseId: 42, response_id: 'snake-fallback-id' },
-  ].map((message) => JSON.stringify({
-    type: 'message_end',
-    message: { role: 'assistant', model: 'gateway-model', usage: { input: 1, output: 1 }, ...message },
-  }));
+  ].map(messageEndEvent);
 
   const result = await runFilter(fixture);
   expect(result.summary.completion_usage.map((usage: { response_id: string }) => usage.response_id)).toEqual([
