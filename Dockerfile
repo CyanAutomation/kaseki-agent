@@ -195,7 +195,7 @@ RUN chmod +x \
     && install -m 0755 /app/lib/provider-error-classifier.js /usr/local/bin/provider-error-classifier.js \
     && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \
     && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
-    && install -m 0755 /app/lib/run-scorecard.js /usr/local/bin/kaseki-run-scorecard \
+    && ln -sf /app/dist/run-scorecard.js /usr/local/bin/kaseki-run-scorecard \
     && cp -r /app/lib/types /usr/local/bin/types \
     && ln -sf /app/dist/run-scorecard-markdown.js /usr/local/bin/kaseki-run-scorecard-markdown \
     && install -m 0755 /app/lib/analyze-test-failures.js /usr/local/bin/analyze-test-failures \
@@ -237,6 +237,11 @@ RUN empty_events="$(mktemp)" \
 RUN test -x /usr/local/bin/kaseki-run-scorecard \
     && test -x /usr/local/bin/kaseki-run-scorecard-markdown \
     && test -f /usr/local/bin/types/run-scorecard.js
+RUN scorecard_results="$(mktemp -d)" \
+    && printf '{}' > "$scorecard_results/metadata.json" \
+    && KASEKI_RESULTS_DIR="$scorecard_results" /usr/local/bin/kaseki-run-scorecard \
+    && test -s "$scorecard_results/run-scorecard.json" \
+    && rm -rf "$scorecard_results"
 
 # Pre-configure git safe.directory for /agents checkout directory
 # This is a system-wide configuration visible to all users (including UID 10000 containers)
@@ -345,7 +350,7 @@ RUN mkdir -p /scripts \
     && install -m 0755 /app/lib/provider-error-classifier.js /usr/local/bin/provider-error-classifier.js \
     && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \
     && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
-    && install -m 0755 /app/lib/run-scorecard.js /usr/local/bin/kaseki-run-scorecard \
+    && ln -sf /app/dist/run-scorecard.js /usr/local/bin/kaseki-run-scorecard \
     && cp -r /app/lib/types /usr/local/bin/types \
     && ln -sf /app/dist/run-scorecard-markdown.js /usr/local/bin/kaseki-run-scorecard-markdown \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \

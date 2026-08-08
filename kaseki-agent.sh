@@ -1576,6 +1576,31 @@ try {
 ' "$candidate_artifact" "$final_artifact" "$attempt" "$validation_error_file" 2>/dev/null
 }
 
+normalize_goal_check_candidate_artifact() {
+  local candidate_artifact="$1"
+  [ -f "$candidate_artifact" ] || return 0
+
+  # Gateway models occasionally emit one contradiction object instead of the
+  # current array shape. This conversion is lossless and applies to both
+  # agent-written and assistant-text-recovered candidates before validation.
+  node -e '
+const fs = require("node:fs");
+const file = process.argv[1];
+try {
+  const artifact = JSON.parse(fs.readFileSync(file, "utf8"));
+  const contradiction = artifact && artifact.contradictions;
+  if (!Array.isArray(contradiction) && contradiction && typeof contradiction === "object" &&
+      Array.isArray(contradiction.sources) && contradiction.sources.every((value) => typeof value === "string") &&
+      typeof contradiction.description === "string") {
+    artifact.contradictions = [contradiction];
+    fs.writeFileSync(file, JSON.stringify(artifact, null, 2) + "\n");
+  }
+} catch {
+  // The validator records malformed JSON with structured diagnostics.
+}
+' "$candidate_artifact" 2>/dev/null || true
+}
+
 validate_goal_check_artifact() {
   local candidate_artifact="$1"
   local final_artifact="$2"
@@ -6463,6 +6488,15 @@ function schemaErrors(artifact) {
   for (const key of ["evidence", "missing", "validation_notes"]) {
     if (!Array.isArray(artifact[key]) || !artifact[key].every((v) => typeof v === "string")) errors.push(key + " must be an array of strings");
   }
+  if (!Array.isArray(artifact.evidence_sources_inspected) || !artifact.evidence_sources_inspected.every((v) => typeof v === "string")) {
+    errors.push("evidence_sources_inspected must be an array of strings");
+  }
+  if (!Array.isArray(artifact.contradictions) || !artifact.contradictions.every((item) => item && Array.isArray(item.sources) && item.sources.every((v) => typeof v === "string") && typeof item.description === "string")) {
+    errors.push("contradictions must be an array of {sources:string[],description:string}");
+  }
+  if (!artifact.confidence_calibration || typeof artifact.confidence_calibration !== "object" || typeof artifact.confidence_calibration.outcome !== "string" || typeof artifact.confidence_calibration.justification !== "string") {
+    errors.push("confidence_calibration must be {outcome:string,justification:string}");
+  }
   return errors;
 }
 
@@ -6485,6 +6519,11 @@ function normalizeArtifact(value) {
   }
   if (!Array.isArray(artifact.missing)) artifact.missing = [];
   if (!Array.isArray(artifact.validation_notes)) artifact.validation_notes = [];
+  if (!Array.isArray(artifact.contradictions) && artifact.contradictions && typeof artifact.contradictions === "object" &&
+      Array.isArray(artifact.contradictions.sources) && artifact.contradictions.sources.every((v) => typeof v === "string") &&
+      typeof artifact.contradictions.description === "string") {
+    artifact.contradictions = [artifact.contradictions];
+  }
   if (typeof artifact.retry_prompt !== "string") artifact.retry_prompt = artifact.met === false
     ? "Re-read the objective, diff, and validation evidence, then address the unmet requirement."
     : "";
@@ -6554,6 +6593,10 @@ if (valid.size === 1) {
   fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
 }
 ' "$GOAL_CHECK_CANDIDATE_ARTIFACT" "$GOAL_CHECK_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-check-events.jsonl "$attempt" 2>/dev/null || true
+  fi
+
+  if [ "$GOAL_CHECK_EXIT" -eq 0 ]; then
+    normalize_goal_check_candidate_artifact "$GOAL_CHECK_CANDIDATE_ARTIFACT"
   fi
 
   if [ "$GOAL_CHECK_EXIT" -eq 0 ] && ! validate_goal_check_artifact "$GOAL_CHECK_CANDIDATE_ARTIFACT" "${KASEKI_RESULTS_DIR}"/goal-check.json "$attempt" "${KASEKI_RESULTS_DIR}"/goal-check-validation-reason.txt; then
