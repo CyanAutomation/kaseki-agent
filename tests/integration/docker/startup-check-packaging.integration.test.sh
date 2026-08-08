@@ -25,6 +25,35 @@ fi
 printf 'Building Docker image for startup-check packaging verification...\n'
 docker build -t "$IMAGE_TAG" .
 
+printf 'Checking the worker resolves installed helpers from the final image...\n'
+HELPER_RESOLUTION_OUTPUT="$({
+  docker run --rm \
+    -e KASEKI_SKIP_STARTUP_CHECKS=1 \
+    -e KASEKI_AGENT_HELPER_RESOLUTION_CHECK=1 \
+    "$IMAGE_TAG"
+} 2>&1)"
+ALLOWLIST_HELPER="$(printf '%s\n' "$HELPER_RESOLUTION_OUTPUT" | sed -n 's/^allowlist_helper=//p')"
+test -n "$ALLOWLIST_HELPER"
+HELPER_DIR="$(dirname "$ALLOWLIST_HELPER")"
+
+docker run --rm --entrypoint /bin/sh \
+  -e KASEKI_RESOLVED_HELPER_DIR="$HELPER_DIR" \
+  "$IMAGE_TAG" -c '
+    set -eu
+    for helper in \
+      agent-prompt.sh \
+      allowlist-helper.sh \
+      inspect-mode-defaults.sh \
+      dependency-cache-helpers.sh
+    do
+      test -x "$KASEKI_RESOLVED_HELPER_DIR/$helper"
+    done
+
+    json_helper="$KASEKI_RESOLVED_HELPER_DIR/lib/json.sh"
+    test -r "$json_helper"
+    . "$json_helper"
+  '
+
 # Packaging requirement: the final runtime image must provide an executable
 # shellcheck CLI because repository lint workflows invoke it at runtime.
 printf 'Checking the final runtime image can execute shellcheck --version...\n'
@@ -111,15 +140,5 @@ if printf '%s\n' "$ENTRYPOINT_OUTPUT" | grep -Fq 'Startup checks failed: blockin
   printf 'Entrypoint reported a blocking startup-check failure unexpectedly.\n' >&2
   exit 1
 fi
-
-printf 'Checking the built image starts with its default agent contract...\n'
-DEFAULT_START_OUTPUT="$({
-  docker run --rm \
-    -e KASEKI_SKIP_STARTUP_CHECKS=1 \
-    -e KASEKI_AGENT_HELPER_RESOLUTION_CHECK=1 \
-    "$IMAGE_TAG"
-} 2>&1)"
-printf '%s\n' "$DEFAULT_START_OUTPUT" | grep -Fq \
-  'allowlist_helper=/usr/local/bin/scripts/allowlist-helper.sh'
 
 printf '✓ Startup-check Docker packaging integration assertions passed.\n'

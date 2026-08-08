@@ -67,25 +67,6 @@ build_allowlist_regex() {
     }
   });
 
-  test('image installs shared shell helpers beside the packaged agent command', () => {
-    const dockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf-8');
-
-    expect(dockerfile).toContain('/usr/local/bin/scripts');
-    for (const helper of [
-      'agent-prompt.sh',
-      'allowlist-helper.sh',
-      'inspect-mode-defaults.sh',
-      'dependency-cache-helpers.sh',
-    ]) {
-      expect(dockerfile).toContain(
-        `install -m 0755 /app/scripts/${helper} /usr/local/bin/scripts/${helper}`,
-      );
-    }
-    expect(dockerfile).toContain(
-      'install -m 0644 /app/scripts/lib/json.sh /usr/local/bin/scripts/lib/json.sh',
-    );
-  });
-
   test('image packages run-scorecard type dependencies beside its executable', () => {
     const dockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf-8');
 
