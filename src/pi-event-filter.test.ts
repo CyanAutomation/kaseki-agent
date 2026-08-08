@@ -3,15 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { runPiEventFilter } from './pi-event-filter';
 import { runFilter, runFilterContract } from '../tests/helpers/pi-event-filter-test-helpers';
+import { responseIdFixture } from './pi-event-filter-test-fixtures';
 
 jest.setTimeout(20000);
-
-function messageEndEvent(overrides: Record<string, unknown>): string {
-  return JSON.stringify({
-    type: 'message_end',
-    message: { role: 'assistant', model: 'gateway-model', usage: { input: 1, output: 1 }, ...overrides },
-  });
-}
 
 /**
  * pi-event-filter Tests (382 lines)
@@ -1045,13 +1039,7 @@ test('records one provider usage ledger entry per response and tool-output press
 });
 
 test('accepts camelCase and snake_case response IDs, preferring the first string value', async () => {
-  const fixture = [
-    { responseId: 'camel-id', response_id: 'snake-id' },
-    { response_id: 'snake-only-id' },
-    { responseId: 42, response_id: 'snake-fallback-id' },
-  ].map(messageEndEvent);
-
-  const result = await runFilter(fixture);
+  const result = await runFilter(responseIdFixture());
   expect(result.summary.completion_usage.map((usage: { response_id: string }) => usage.response_id)).toEqual([
     'camel-id',
     'snake-only-id',
