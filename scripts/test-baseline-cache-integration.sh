@@ -120,7 +120,7 @@ JSON
 
   run_public_workflow cache-miss "npm test" || log_fail "Initial baseline-validation run failed"
   assert_run cache-miss completed
-  cache_entry="$(find "$CACHE_ROOT/baseline-validation" -mindepth 1 -maxdepth 1 -type d -printf '%p\n' | head -1)"
+  cache_entry="$(find "$CACHE_ROOT/baseline-validation" -mindepth 1 -maxdepth 1 -type d | head -1)"
   [ -n "$cache_entry" ] || log_fail "Public workflow did not create a cache entry"
   original_artifact_hashes="$(sha256sum "$results_root/cache-miss/validation-baseline.log" "$results_root/cache-miss/validation-baseline-raw.log" "$results_root/cache-miss/validation-baseline-timings.tsv" | awk '{print $1}')"
 
