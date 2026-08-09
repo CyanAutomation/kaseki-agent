@@ -26,6 +26,12 @@ run_pi_json_capture() {
       ;;
     goal-check|run-evaluation)
       pi_tools="read,search"
+      if [ "${KASEKI_GOAL_CHECK_CONTRACT_REPAIR:-0}" = "1" ]; then
+        # The first evaluator pass has already gathered evidence. Restrict the
+        # repair pass to a read-only, non-searching surface so it serializes a
+        # verdict instead of starting another exploration loop.
+        pi_tools="read"
+      fi
       ;;
     *)
       pi_tools="bash,read,write,search"

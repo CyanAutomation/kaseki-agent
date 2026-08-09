@@ -712,6 +712,40 @@ describe('StatusArtifactHelper', () => {
       expect(response.artifacts?.diagnosticFiles).toContain('goal-check-validation-errors.jsonl');
     });
 
+    it.each([
+      'goal_check_artifact_missing',
+      'goal_check_artifact_malformed',
+      'goal_check_turn_budget_exhausted',
+    ])('should include goal-check diagnostics for %s', (goalCheckFailureReason) => {
+      const response = makeResponse();
+      response.goalCheckFailureReason = goalCheckFailureReason;
+      const runDir = path.join(resultsDir, `job-${goalCheckFailureReason}`);
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), JSON.stringify({ failed_command: 'goal check' }));
+      fs.writeFileSync(path.join(runDir, 'goal-check-validation-errors.jsonl'), '{"error":"missing"}');
+      fs.writeFileSync(path.join(runDir, 'goal-check-contract-diagnostics.json'), '{}');
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'goal-check-validation-errors.jsonl': { exists: true, size: 50 },
+        'goal-check-contract-diagnostics.json': { exists: true, size: 50 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'failure.json': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      expect(response.artifacts?.diagnosticFiles).toEqual(expect.arrayContaining([
+        'goal-check-validation-errors.jsonl',
+        'goal-check-contract-diagnostics.json',
+      ]));
+    });
+
     it('should NOT include diagnostics for successful completed jobs', () => {
       const response = makeResponse();
       const runDir = path.join(resultsDir, 'job-success');
