@@ -45,22 +45,66 @@ setup_test_env() {
   log_test "Test environment setup at $TEMP_TEST_DIR"
 }
 
-# Test 1: Verify TypeScript cache utilities compile and pass tests
-test_typescript_cache_utils() {
-  log_test "Testing TypeScript cache utilities compilation and tests"
-  
-  cd "$REPO_ROOT"
-  
-  # Verify the file exists
-  if [ ! -f "src/lib/baseline-validation-cache.ts" ]; then
-    log_fail "baseline-validation-cache.ts not found"
+# Test 1: Exercise the public baseline-validation workflow across two runs
+test_public_baseline_validation_cache_workflow() {
+  local fixture_worktree="$TEMP_TEST_DIR/fixture-worktree"
+  local fixture_repo="$CACHE_ROOT/baseline-cache-fixture.git"
+  local runtime_root="$TEMP_TEST_DIR/runtime"
+  local first_metadata="$runtime_root/kaseki-results/kaseki-1/metadata.json"
+  local second_metadata="$runtime_root/kaseki-results/kaseki-2/metadata.json"
+
+  log_test "Testing public baseline-validation workflow cache miss followed by hit"
+
+  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+    printf "%b[SKIP]%b Docker is unavailable; skipping public workflow integration scenario\n" "$YELLOW" "$NC"
+    return 0
   fi
-  
-  if [ ! -f "src/lib/baseline-validation-cache.test.ts" ]; then
-    log_fail "baseline-validation-cache.test.ts not found"
-  fi
-  
-  log_pass "TypeScript cache utility files exist"
+
+  mkdir -p "$fixture_worktree" "$runtime_root"
+  git -C "$fixture_worktree" init -q -b main
+  git -C "$fixture_worktree" config user.name "Kaseki Integration Test"
+  git -C "$fixture_worktree" config user.email "kaseki-integration@example.invalid"
+  cat > "$fixture_worktree/package.json" <<'JSON'
+{"name":"baseline-cache-fixture","version":"1.0.0","scripts":{"test":"node -e \"console.log('fixture validation passed')\""}}
+JSON
+  git -C "$fixture_worktree" add package.json
+  git -C "$fixture_worktree" commit -q -m "Create baseline cache fixture"
+  git clone -q --bare "$fixture_worktree" "$fixture_repo"
+
+  run_public_workflow() {
+    local instance="$1"
+    (
+      cd "$REPO_ROOT"
+      KASEKI_ROOT="$runtime_root" \
+      KASEKI_CACHE_DIR="$CACHE_ROOT" \
+      OPENROUTER_API_KEY="baseline-cache-integration-placeholder" \
+      REPO_URL="/cache/baseline-cache-fixture.git" \
+      GIT_REF="main" \
+      INSTANCE="$instance" \
+      KASEKI_VALIDATION_COMMANDS="npm test" \
+      KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm test" \
+      KASEKI_STARTUP_CHECK_MODE="baseline-validation" \
+      "$REPO_ROOT/run-kaseki.sh" --dry-run
+    ) >"$TEMP_TEST_DIR/$instance.stdout.log" 2>"$TEMP_TEST_DIR/$instance.stderr.log"
+  }
+
+  run_public_workflow kaseki-1 || log_fail "First baseline-validation workflow run failed"
+  run_public_workflow kaseki-2 || log_fail "Second baseline-validation workflow run failed"
+
+  node -e '
+    const fs = require("fs");
+    const [firstPath, secondPath] = process.argv.slice(1);
+    const first = JSON.parse(fs.readFileSync(firstPath, "utf8"));
+    const second = JSON.parse(fs.readFileSync(secondPath, "utf8"));
+    if (first.baseline_cache_status !== "completed") {
+      throw new Error(`expected first run cache miss/completion, got ${first.baseline_cache_status}`);
+    }
+    if (second.baseline_cache_status !== "cache_hit") {
+      throw new Error(`expected second run cache hit, got ${second.baseline_cache_status}`);
+    }
+  ' "$first_metadata" "$second_metadata" || log_fail "Workflow artifacts did not report a miss followed by a hit"
+
+  log_pass "Public workflow metadata reports a cache miss followed by a cache hit"
 }
 
 # Test 2: Verify cache functions in kaseki-agent.sh
@@ -168,7 +212,7 @@ main() {
   log_test "Baseline validation cache integration tests"
   setup_test_env
   
-  test_typescript_cache_utils
+  test_public_baseline_validation_cache_workflow
   test_shell_cache_functions
   test_environment_variables
   test_cache_integration_in_flow
