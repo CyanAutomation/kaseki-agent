@@ -113,148 +113,136 @@ else
 fi
 
 ##############################################################################
-# Integration tests (invoke the real wrapper through a small shell entry point)
+# Main-flow tests (launch the supported worker entry point)
 ##############################################################################
 
 TMP_DIR="$(mktemp -d)"
-RETRY_ENTRY_POINT="$TMP_DIR/run-scouting-retry"
-
-# Loading the complete agent would also run repository setup and every later
-# phase.  This entry point instead loads the production classifier and wrapper,
-# supplies the wrapper's collaborators, and exposes one command: run the retry
-# wrapper and serialize the values passed on to metadata generation.
-cat > "$RETRY_ENTRY_POINT" <<'EOF_ENTRY'
-#!/usr/bin/env bash
-set -uo pipefail
-
-emit_progress() { :; }
-capture_validation_error_classification() { return 1; }
-capture_provider_error_from_log() { return 1; }
-clear_provider_error() { :; }
-
-run_scouting_agent() {
-  local attempt=0
-  [ ! -f "$FAKE_AGENT_STATE" ] || attempt="$(cat "$FAKE_AGENT_STATE")"
-  attempt=$((attempt + 1))
-  printf '%d\n' "$attempt" > "$FAKE_AGENT_STATE"
-  node - "$attempt" <<'NODE' >> "$FAKE_AGENT_OBSERVATIONS"
-const attempt = Number(process.argv[2]);
-process.stdout.write(`${JSON.stringify({ attempt })}\n`);
-NODE
-  : > "$SCOUTING_RAW_EVENTS"
-  printf '%s\n' '{}' > "$KASEKI_RESULTS_DIR/scouting-summary.json"
-  if [ "$FAKE_SCOUTING_MODE" = "always-fail" ] ||
-    { [ "$FAKE_SCOUTING_MODE" = "fail-once" ] && [ "$attempt" -eq 1 ]; }; then
-    SCOUTING_EXIT=124
-    printf '%s\n' 'transient scouting timeout' >&2
-    return 124
-  fi
-  SCOUTING_EXIT=0
-  : > "$SCOUTING_ARTIFACT"
-  return 0
-}
-
-write_retry_metadata() {
-  node - "$KASEKI_SCOUTING_ATTEMPTS" "${KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT:-}" <<'NODE' > "$KASEKI_RESULTS_DIR/metadata.json"
-const [attempts, succeeded] = process.argv.slice(2);
-process.stdout.write(`${JSON.stringify({
-  scouting_attempts: Number(attempts),
-  scouting_succeeded_on_attempt: succeeded === '' ? null : Number(succeeded),
-}, null, 2)}\n`);
-NODE
-}
-EOF_ENTRY
-
-extract_shell_function() {
-  local function_name="$1"
-  local source_file="$2"
-
-  awk -v function_name="$function_name" '
-    $0 ~ "^" function_name "\\(\\)[[:space:]]*\\{" { found = 1; printing = 1 }
-    printing && found && $0 !~ "^" function_name "\\(\\)[[:space:]]*\\{" &&
-      $0 ~ "^[[:alpha:]_][[:alnum:]_]*\\(\\)[[:space:]]*\\{" { exit }
-    printing { print }
-    END { if (!found) exit 1 }
-  ' "$source_file"
-}
-
-if ! extract_shell_function is_transient_scouting_failure ./kaseki-agent.sh >> "$RETRY_ENTRY_POINT"; then
-  printf 'Unable to extract is_transient_scouting_failure from kaseki-agent.sh\n' >&2
-  exit 1
-fi
-if ! extract_shell_function run_scouting_agent_with_retry ./kaseki-agent.sh >> "$RETRY_ENTRY_POINT"; then
-  printf 'Unable to extract run_scouting_agent_with_retry from kaseki-agent.sh\n' >&2
-  exit 1
-fi
-cat >> "$RETRY_ENTRY_POINT" <<'EOF_ENTRY'
-
-run_scouting_agent_with_retry
-retry_exit=$?
-write_retry_metadata
-exit "$retry_exit"
-EOF_ENTRY
-chmod +x "$RETRY_ENTRY_POINT"
+FAKE_REPO="$TMP_DIR/fake-repo"
+mkdir -p "$FAKE_REPO/deps/fake-dep"
+printf '%s\n' '{"name":"scouting-retry-fixture","version":"1.0.0","private":true,"dependencies":{"fake-dep":"file:deps/fake-dep"}}' > "$FAKE_REPO/package.json"
+printf '%s\n' '{"name":"fake-dep","version":"1.0.0","private":true}' > "$FAKE_REPO/deps/fake-dep/package.json"
+printf '%s\n' '{"name":"scouting-retry-fixture","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"scouting-retry-fixture","version":"1.0.0","dependencies":{"fake-dep":"file:deps/fake-dep"}},"deps/fake-dep":{"version":"1.0.0"},"node_modules/fake-dep":{"resolved":"deps/fake-dep","link":true}}}' > "$FAKE_REPO/package-lock.json"
+printf '%s\n' '# scouting retry fixture' > "$FAKE_REPO/README.md"
+printf '%s\n' 'node_modules/' > "$FAKE_REPO/.gitignore"
+git -C "$FAKE_REPO" init -q -b main
+git -C "$FAKE_REPO" add .
+git -C "$FAKE_REPO" -c user.email=kaseki-test@example.invalid -c user.name='Kaseki Test' commit -q -m initial
 
 run_scouting_case() {
   local case_name="$1"
   local mode="$2"
-  local expected_exit="$3"
-  local expected_attempts="$4"
-  local expected_success_json="$5"
+  local expected_attempts="$3"
+  local expected_success_json="$4"
+  local expected_overall="$5"
+  local expected_exit="$6"
   local case_root="$TMP_DIR/$case_name"
+  local fake_bin="$case_root/bin"
   local results_dir="$case_root/results"
-  local state_file="$case_root/scouting-calls"
-  local observations_file="$case_root/scouting-observations.jsonl"
+  local calls_file="$case_root/scouting-calls"
+  local run_log="$case_root/run.log"
   local run_exit
 
-  mkdir -p "$results_dir"
+  mkdir -p "$fake_bin" "$results_dir" "$case_root/app/lib"
+  touch "$case_root/app/lib/event-aggregator.js" "$case_root/app/lib/timestamp-tracker.js" \
+    "$case_root/app/lib/progress-stream-utils.js"
+  : > "$calls_file"
+
+  cat > "$fake_bin/pi" <<'EOF_PI'
+#!/usr/bin/env bash
+if [ "${1:-}" = "--version" ]; then
+  printf '%s\n' 'pi 0.0.0-test'
+  exit 0
+fi
+prompt="${*: -1}"
+if [[ "$prompt" == *"read-only scouting Pi agent"* ]]; then
+  attempt=$(($(wc -l < "$FAKE_SCOUTING_CALLS") + 1))
+  printf '%d\n' "$attempt" >> "$FAKE_SCOUTING_CALLS"
+  if [ "$FAKE_SCOUTING_MODE" = "transient" ] && [ "$attempt" -eq 1 ]; then
+    printf '%s\n' 'transient provider timeout' >&2
+    exit 124
+  fi
+  if [ "$FAKE_SCOUTING_MODE" = "deterministic" ]; then
+    printf '%s\n' 'invalid JSON schema' >&2
+    exit 86
+  fi
+  cat > "$KASEKI_RESULTS_DIR/scouting-candidate.json" <<'EOF_ARTIFACT'
+{"task":"inspect retry behavior","requirements":["preserve retry contract"],"relevant_files":[{"path":"README.md","reason":"fixture file"}],"observations":["fixture repository is available"],"plan":["inspect fixture"],"validation":["main flow completes"],"risks":[],"test_impact":[],"critical_change_expectations":{"required_files":[],"forbidden_empty_diff":false},"suggested_allowlist":{"agent_patterns":["README.md"],"validation_patterns":[]}}
+EOF_ARTIFACT
+fi
+printf '%s\n' '{"type":"message","model":"test-model","message":{"content":"ok"}}'
+EOF_PI
+
+  cat > "$fake_bin/kaseki-pi-progress-stream" <<'EOF_PROGRESS'
+#!/usr/bin/env bash
+cat
+EOF_PROGRESS
+  cat > "$fake_bin/kaseki-pi-event-filter" <<'EOF_FILTER'
+#!/usr/bin/env bash
+cat "$1" > "$2"
+printf '%s\n' '{"selected_model":"test-model"}' > "$3"
+EOF_FILTER
+  cat > "$fake_bin/validation-output-filter" <<'EOF_VALIDATION_FILTER'
+#!/usr/bin/env bash
+cat
+EOF_VALIDATION_FILTER
+  chmod +x "$fake_bin"/*
+
   set +e
-  env KASEKI_RESULTS_DIR="$results_dir" KASEKI_SCOUTING_MAX_ATTEMPTS=2 KASEKI_TASK_MODE=inspect \
-    SCOUTING_ARTIFACT="$results_dir/scouting.json" SCOUTING_CANDIDATE_ARTIFACT="$results_dir/scouting-candidate.json" \
-    SCOUTING_RAW_EVENTS="$results_dir/scouting-events.raw.jsonl" STATUS=0 FAILED_COMMAND='' \
-    FAKE_AGENT_STATE="$state_file" FAKE_AGENT_OBSERVATIONS="$observations_file" FAKE_SCOUTING_MODE="$mode" \
-    bash "$RETRY_ENTRY_POINT" > "$case_root/run.log" 2>&1
+  env PATH="$fake_bin:$PATH" KASEKI_RESULTS_DIR="$results_dir" KASEKI_WORKSPACE_DIR="$case_root/workspace" \
+    KASEKI_APP_LIB_DIR="$case_root/app/lib" REPO_URL="$FAKE_REPO" GIT_REF=main \
+    TASK_PROMPT='inspect retry behavior' OPENROUTER_API_KEY=test KASEKI_PROVIDER=openrouter \
+    FAKE_SCOUTING_CALLS="$calls_file" FAKE_SCOUTING_MODE="$mode" GITHUB_APP_ENABLED=0 \
+    KASEKI_TASK_MODE=inspect KASEKI_SCOUTING=1 KASEKI_GOAL_SETTING=0 KASEKI_GOAL_CHECK=0 \
+    KASEKI_GIT_CACHE_MODE=off KASEKI_BASELINE_VALIDATION_ENABLED=0 \
+    KASEKI_PRE_AGENT_VALIDATION=0 KASEKI_TS_PRE_CHECK=0 KASEKI_VALIDATION_COMMANDS=: \
+    KASEKI_RUN_EVALUATION=0 KASEKI_REPO_MEMORY_MODE=off KASEKI_STREAM_PROGRESS=0 \
+    bash ./kaseki-agent.sh > "$run_log" 2>&1
   run_exit=$?
   set -e
 
   if [ "$run_exit" -ne "$expected_exit" ]; then
-    test_fail "$case_name exited $run_exit instead of $expected_exit"
-    cat "$case_root/run.log" >&2 || true
+    test_fail "$case_name entry point exited $run_exit instead of $expected_exit"
+    tail -100 "$run_log" >&2 || true
     return
   fi
 
-  if node - "$results_dir/metadata.json" "$observations_file" "$expected_attempts" "$expected_success_json" <<'NODE'
+  if node - "$results_dir/metadata.json" "$calls_file" "$expected_attempts" "$expected_success_json" "$expected_overall" <<'NODE'
 const fs = require('node:fs');
-const [metadataPath, observationsPath, expectedAttemptsText, expectedSuccessText] = process.argv.slice(2);
+const [metadataPath, callsPath, expectedAttemptsText, expectedSuccessText, expectedOverallText] = process.argv.slice(2);
 const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-const observations = fs.readFileSync(observationsPath, 'utf8').trim().split(/\r?\n/).filter(line => line.trim()).map(JSON.parse);
-const expectedAttempts = JSON.parse(expectedAttemptsText);
+const calls = fs.readFileSync(callsPath, 'utf8').trim().split(/\r?\n/).filter(Boolean).map(Number);
+const expectedAttempts = Number(expectedAttemptsText);
 const expectedSuccess = JSON.parse(expectedSuccessText);
-if (observations.length !== expectedAttempts) {
-  throw new Error(`fake scouting command: expected ${expectedAttempts} calls, got ${observations.length}`);
+const expectedOverall = Number(expectedOverallText);
+if (calls.length !== expectedAttempts) {
+  throw new Error(`fake scouting provider: expected ${expectedAttempts} calls, got ${calls.length}`);
 }
-if (observations.some(({ attempt }, index) => attempt !== index + 1)) {
-  throw new Error(`fake scouting command recorded unexpected attempts: ${JSON.stringify(observations)}`);
+if (calls.some((attempt, index) => attempt !== index + 1)) {
+  throw new Error(`fake scouting provider recorded unexpected calls: ${JSON.stringify(calls)}`);
 }
 if (metadata.scouting_attempts !== expectedAttempts) {
-  throw new Error(`scouting_attempts: expected ${JSON.stringify(expectedAttempts)}, got ${JSON.stringify(metadata.scouting_attempts)}`);
+  throw new Error(`scouting_attempts: expected ${expectedAttempts}, got ${metadata.scouting_attempts}`);
 }
 if (metadata.scouting_succeeded_on_attempt !== expectedSuccess) {
   throw new Error(`scouting_succeeded_on_attempt: expected ${JSON.stringify(expectedSuccess)}, got ${JSON.stringify(metadata.scouting_succeeded_on_attempt)}`);
 }
+if (metadata.exit_code !== expectedOverall) {
+  throw new Error(`exit_code: expected ${expectedOverall}, got ${metadata.exit_code}`);
+}
 NODE
   then
-    test_pass "$case_name metadata records exact retry semantics"
+    test_pass "$case_name preserves the user-visible scouting retry contract"
   else
-    test_fail "$case_name metadata retry fields were incorrect"
+    test_fail "$case_name invocation count, outcome, or retry metadata was incorrect"
+    tail -100 "$run_log" >&2 || true
   fi
 }
 
-test_header "Controlled scouting retries once after a transient failure"
-run_scouting_case transient-success fail-once 0 2 2
+test_header "Main flow retries a transient scouting provider failure"
+run_scouting_case transient-success transient 2 2 0 0
 
-test_header "Controlled scouting records terminal failure after attempts are exhausted"
-run_scouting_case terminal-failure always-fail 124 2 null
+test_header "Main flow does not retry a deterministic scouting provider failure"
+run_scouting_case deterministic-failure deterministic 1 null 86 86
 
 ##############################################################################
 # Summary
