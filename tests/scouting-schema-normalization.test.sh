@@ -6,6 +6,23 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Load the production normalization entry point without executing the agent.
+eval "$(awk '/^normalize_scouting_schema\(\) \{/{copy=1} copy{print} copy && /^}$/{exit}' "$SCRIPT_DIR/../kaseki-agent.sh")"
+
+assert_relevant_files() {
+  local actual_file="$1"
+  local expected_file="$2"
+
+  jq -e '.relevant_files | all(
+    type == "object" and
+    (.path | type == "string") and
+    (.reason | type == "string")
+  )' "$actual_file" >/dev/null &&
+    diff -u \
+      <(jq -S '.relevant_files' "$expected_file") \
+      <(jq -S '.relevant_files' "$actual_file")
+}
+
 test_normalize_relevant_files_strings_to_objects() {
   local results_dir
   results_dir=$(mktemp -d)
@@ -25,30 +42,22 @@ test_normalize_relevant_files_strings_to_objects() {
 }
 EOF
 
-  # This is the BROKEN schema
-  local count
-  count=$(jq '.relevant_files | map(type) | map(select(. == "string")) | length' "$results_dir/scouting-candidate.json" 2>/dev/null || echo 0)
-  
-  if [ "$count" -gt 0 ]; then
-    echo "✅ CONFIRMED: Scouting artifact has $count string entries in relevant_files (needs normalization)"
-    rm -rf "$results_dir"
-    return 0
-  else
-    echo "❌ Test setup failed: no strings found in relevant_files"
+  cat > "$results_dir/expected.json" <<'EOF'
+{
+  "relevant_files": [
+    {"path": "src/lib/parser.ts", "reason": "scope: src/lib/parser.ts"},
+    {"path": "tests/parser.test.ts", "reason": "scope: tests/parser.test.ts"},
+    {"path": "src/types.ts", "reason": "scope: src/types.ts"}
+  ]
+}
+EOF
+
+  if ! KASEKI_RESULTS_DIR="$results_dir" normalize_scouting_schema "$results_dir/scouting-candidate.json" ||
+    ! assert_relevant_files "$results_dir/scouting-candidate.json" "$results_dir/expected.json"; then
     rm -rf "$results_dir"
     return 1
   fi
-}
-
-test_normalize_function_exists() {
-  # Check if normalization function exists in kaseki-agent.sh
-  if grep -q "normalize_scouting_relevant_files\|scouting_schema_normalize\|normalize.*relevant.*files" "$SCRIPT_DIR/../kaseki-agent.sh" 2>/dev/null; then
-    echo "✅ PASS: Normalization function found in kaseki-agent.sh"
-    return 0
-  else
-    echo "⚠️ INFO: Normalization function not yet implemented (expected for Phase 2)"
-    return 0
-  fi
+  rm -rf "$results_dir"
 }
 
 test_normalization_output_schema() {
@@ -88,10 +97,12 @@ EOF
 }
 EOF
 
-  echo "✅ TEST STRUCTURE: Normalization should convert strings → {path, reason} objects"
-  
+  if ! KASEKI_RESULTS_DIR="$results_dir" normalize_scouting_schema "$results_dir/broken.json" ||
+    ! assert_relevant_files "$results_dir/broken.json" "$results_dir/expected.json"; then
+    rm -rf "$results_dir"
+    return 1
+  fi
   rm -rf "$results_dir"
-  return 0
 }
 
 # Run tests
@@ -101,7 +112,7 @@ echo ""
 test_count=0
 pass_count=0
 
-for test_func in test_normalize_relevant_files_strings_to_objects test_normalize_function_exists test_normalization_output_schema; do
+for test_func in test_normalize_relevant_files_strings_to_objects test_normalization_output_schema; do
   test_count=$((test_count + 1))
   echo "Running: $test_func"
   if "$test_func"; then
@@ -111,4 +122,4 @@ for test_func in test_normalize_relevant_files_strings_to_objects test_normalize
 done
 
 echo "Results: $pass_count/$test_count tests passed"
-exit 0
+test "$pass_count" -eq "$test_count"
