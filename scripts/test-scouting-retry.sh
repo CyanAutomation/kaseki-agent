@@ -168,7 +168,7 @@ if [[ "$prompt" == *"read-only scouting Pi agent"* ]]; then
   cat > "$KASEKI_RESULTS_DIR/scouting-candidate.json" <<'EOF_ARTIFACT'
 {"task":"inspect retry behavior","requirements":["preserve retry contract"],"relevant_files":[{"path":"README.md","reason":"fixture file"}],"observations":["fixture repository is available"],"plan":["inspect fixture"],"validation":["main flow completes"],"risks":[],"test_impact":[],"critical_change_expectations":{"required_files":[],"forbidden_empty_diff":false},"suggested_allowlist":{"agent_patterns":["README.md"],"validation_patterns":[]}}
 EOF_ARTIFACT
-fi
+  exit 0
 printf '%s\n' '{"type":"message","model":"test-model","message":{"content":"ok"}}'
 EOF_PI
 
