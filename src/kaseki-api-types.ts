@@ -76,7 +76,6 @@ const RequestTracingSchema = z.object({
   requestId: z.string().uuid().optional().describe('Unique request ID'),
 });
 
-
 /**
  * Request to trigger a new kaseki run.
  */
