@@ -73,7 +73,9 @@ export function buildPhases(evidence: Evidence): RunScorecard['phases'] {
         ? 'skipped'
         : evidence.status === 'cancelled' || evidence.status === 'running'
           ? 'not_started'
-          : phase === 'validation' && evidence.validation === 'failed' ? 'failed' : 'succeeded',
+          : phase === 'validation' && evidence.validation === 'failed' ? 'failed'
+            : phase === 'goal_check' && evidence.goalCheckFailed ? 'failed'
+              : 'succeeded',
       started_at: null, ended_at: null, duration_ms: null, token_usage: usage,
       measurements: { retries: evidence.retries },
       completeness: disabled.has(phase) ? 'not_applicable' : usage.unavailable ? 'provisional' : 'complete',

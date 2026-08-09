@@ -18,6 +18,7 @@ export interface Evidence {
   validation: 'passed' | 'failed' | 'unknown';
   quality: 'passed' | 'failed' | 'unknown';
   goalMet?: boolean;
+  goalCheckFailed: boolean;
   changedFiles: number;
   diffBytes: number;
   evaluation?: Record<string, unknown>;
