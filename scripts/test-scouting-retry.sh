@@ -131,7 +131,7 @@ git -C "$FAKE_REPO" -c user.email=kaseki-test@example.invalid -c user.name='Kase
 run_scouting_case() {
   local case_name="$1"
   local mode="$2"
-  local expected_attempts="$3"
+  local expected_invocations="$3"
   local expected_success_json="$4"
   local expected_overall="$5"
   local expected_exit="$6"
@@ -208,22 +208,22 @@ EOF_VALIDATION_FILTER
     return
   fi
 
-  if node - "$results_dir/metadata.json" "$calls_file" "$expected_attempts" "$expected_success_json" "$expected_overall" <<'NODE'
+  if node - "$results_dir/metadata.json" "$calls_file" "$expected_invocations" "$expected_success_json" "$expected_overall" <<'NODE'
 const fs = require('node:fs');
-const [metadataPath, callsPath, expectedAttemptsText, expectedSuccessText, expectedOverallText] = process.argv.slice(2);
+const [metadataPath, callsPath, expectedInvocationsText, expectedSuccessText, expectedOverallText] = process.argv.slice(2);
 const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
 const calls = fs.readFileSync(callsPath, 'utf8').trim().split(/\r?\n/).filter(Boolean).map(Number);
-const expectedAttempts = Number(expectedAttemptsText);
+const expectedInvocations = Number(expectedInvocationsText);
 const expectedSuccess = JSON.parse(expectedSuccessText);
 const expectedOverall = Number(expectedOverallText);
-if (calls.length !== expectedAttempts) {
-  throw new Error(`fake scouting provider: expected ${expectedAttempts} calls, got ${calls.length}`);
+if (calls.length !== expectedInvocations) {
+  throw new Error(`run_scouting_agent: expected exactly ${expectedInvocations} invocations, got ${calls.length}`);
 }
 if (calls.some((attempt, index) => attempt !== index + 1)) {
   throw new Error(`fake scouting provider recorded unexpected calls: ${JSON.stringify(calls)}`);
 }
-if (metadata.scouting_attempts !== expectedAttempts) {
-  throw new Error(`scouting_attempts: expected ${expectedAttempts}, got ${metadata.scouting_attempts}`);
+if (metadata.scouting_attempts !== expectedInvocations) {
+  throw new Error(`scouting_attempts: expected ${expectedInvocations}, got ${metadata.scouting_attempts}`);
 }
 if (metadata.scouting_succeeded_on_attempt !== expectedSuccess) {
   throw new Error(`scouting_succeeded_on_attempt: expected ${JSON.stringify(expectedSuccess)}, got ${JSON.stringify(metadata.scouting_succeeded_on_attempt)}`);
