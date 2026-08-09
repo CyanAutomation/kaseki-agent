@@ -9,9 +9,8 @@ export const RunScorecardCompletenessSchema = z.enum([
   'not_applicable',
   'unavailable',
 ]);
-export type RunScorecardCompleteness = z.infer<typeof RunScorecardCompletenessSchema>;
 
-export const RunScorecardPhaseIdSchema = z.enum([
+const RunScorecardPhaseIdSchema = z.enum([
   'goal_setting',
   'scouting',
   'coding',
@@ -19,7 +18,6 @@ export const RunScorecardPhaseIdSchema = z.enum([
   'goal_check',
   'run_evaluation',
 ]);
-export type RunScorecardPhaseId = z.infer<typeof RunScorecardPhaseIdSchema>;
 
 export const RunScorecardLifecycleStatusSchema = z.enum([
   'queued',
@@ -30,7 +28,7 @@ export const RunScorecardLifecycleStatusSchema = z.enum([
   'timed_out',
 ]);
 
-export const ScorecardEvidenceReferenceSchema = z.object({
+const ScorecardEvidenceReferenceSchema = z.object({
   id: z.string().min(1),
   artifact: z.string().min(1),
   locator: z.string().min(1).optional(),

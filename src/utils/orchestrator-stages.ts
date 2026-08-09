@@ -37,7 +37,7 @@ interface OrchestratorFeatureFlags {
 
 // Patch runs publish a reviewable, non-draft pull request unless a caller
 // deliberately selects another publish mode.
-export const DEFAULT_PATCH_PUBLISH_MODE = 'pr';
+const DEFAULT_PATCH_PUBLISH_MODE = 'pr';
 
 /**
  * Derive feature flags based on job request and config.

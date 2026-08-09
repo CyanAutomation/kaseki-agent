@@ -17,7 +17,7 @@ import { sendErrorResponse } from '../utils/response-helpers';
 import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
 import { artifactContentType, renderRunEvaluationPayload } from './artifact-content-helpers';
 
-export const ALL_ARTIFACT_NAMES = Object.keys(ARTIFACT_METADATA_REGISTRY);
+const ALL_ARTIFACT_NAMES = Object.keys(ARTIFACT_METADATA_REGISTRY);
 
 type ArtifactDownloadRequest = {
   fileName: string;

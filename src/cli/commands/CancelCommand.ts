@@ -11,7 +11,7 @@ import type { StatusResponse } from '../../kaseki-api-types';
 
 const logger = createLogger('cancel-cmd');
 
-export interface CancelApiClient {
+interface CancelApiClient {
   readonly baseUrl: string;
   cancelRun(runId: string): Promise<StatusResponse>;
 }

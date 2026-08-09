@@ -35,7 +35,7 @@ export interface ServiceBootstrapFactories {
   ) => JobScheduler;
 }
 
-export const defaultServiceBootstrapFactories: ServiceBootstrapFactories = {
+const defaultServiceBootstrapFactories: ServiceBootstrapFactories = {
   createResultCache: (config) =>
     new ResultCache({
       maxEntries: config.artifactCacheMaxEntries,

@@ -162,6 +162,21 @@ describe('run scorecard', () => {
     expect(countRetries(snapshot)).toBe(2);
   });
 
+  test('ignores malformed and non-object provider-attempt records', () => {
+    const snapshot = {
+      json: {},
+      text: { 'provider-attempts.jsonl': [
+        '{malformed',
+        'null',
+        '[]',
+        '{"phase":"coding","attempt":"primary-1"}',
+        '{"phase":"coding","attempt":"primary-2"}',
+      ].join('\n') },
+    };
+
+    expect(providerRetryCounts(snapshot)).toEqual({ coding: 1 });
+  });
+
   test('uses every canonical ledger response instead of collapsing a request to one turn', () => {
     const aggregate = aggregateTokenUsage([
       { phase: 'coding', request_id: 'request-1', turn: 1, response_id: 'response-1', input_tokens: 10, output_tokens: 2, cache_read_tokens: 100, cache_creation_tokens: 0 },

@@ -7,7 +7,6 @@ import {
   shouldRunGatewayResponseSmoke,
   shouldRunPiProviderSmoke,
   resolveGatewayModel,
-  isCloudflareGateway,
   buildStage1ProbeRequest,
   isResponsesEndpoint,
   isInvalidGatewayPathError,
@@ -118,20 +117,6 @@ export interface PiProviderSmokeTestResult {
     sampleEventStructure?: any;
     debugOutputPath?: string;
     rawAssistantPreview?: string;
-  };
-}
-
-/**
- * Orchestrated full test result (stage 1 + stage 2)
- * Combines both stages with metadata about why stage 2 was skipped/run
- */
-export interface FullGatewayTestResult {
-  stage1: ConnectivityTestResult;
-  stage2?: ResponseSmokeTestResult; // Only present if stage 2 ran
-  orchestrationMetadata: {
-    skippedStage2Reason?: string; // e.g., "Development environment", "Token consumption not desired"
-    stage2Requested?: boolean; // Was stage 2 explicitly requested via options or query param?
-    environmentDetected: string; // e.g., "production", "development", "test"
   };
 }
 
@@ -437,40 +422,6 @@ export function createPiProviderSmokeWorkspace(): string {
     name: 'kaseki-pi-provider-smoke', private: true, version: '0.0.0',
   }) + '\n', { mode: 0o600 });
   return workspace;
-}
-
-/**
- * Verify Pi provider is registered and configured correctly
- */
-export function verifyPiProviderRegistration(): {
-  registered: boolean;
-  apiType?: string;
-  model?: string;
-  baseUrl?: string;
-  issues?: string[];
-  } {
-  const result: any = {
-    registered: false,
-    issues: [],
-  };
-
-  const gatewayUrl = process.env.LLM_GATEWAY_URL;
-  const model = resolveGatewayModel();
-
-  if (!gatewayUrl) {
-    result.issues.push('LLM_GATEWAY_URL not configured');
-  }
-
-  if (!process.env.LLM_GATEWAY_API_KEY && !process.env.LLM_GATEWAY_API_KEY_FILE) {
-    result.issues.push('LLM_GATEWAY_API_KEY or LLM_GATEWAY_API_KEY_FILE not configured');
-  }
-
-  result.registered = result.issues.length === 0;
-  result.apiType = isCloudflareGateway(gatewayUrl ?? '') ? 'openai-completions' : 'openai-responses';
-  result.model = model;
-  result.baseUrl = gatewayUrl;
-
-  return result;
 }
 
 function normalizePiProviderSmokeOptions(

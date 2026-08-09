@@ -6,7 +6,7 @@
  * distinctive names in the Kaseki Task Console.
  */
 
-export const PHASE_DISPLAY_NAMES: Record<string, string> = {
+const PHASE_DISPLAY_NAMES: Record<string, string> = {
   'cold-cache setup': 'Cold-cache setup — Dependencies',
   // Goal-setting is a pre-scouting planning step. Keeping its display name
   // distinct from the post-scouting weaving outcome prevents the console from

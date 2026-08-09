@@ -8,6 +8,10 @@
 import { parseResponsesSse, extractOutputTokens } from './gateway-response-parsing';
 
 describe('parseResponsesSse', () => {
+  it('ignores non-object response payloads', () => {
+    expect(parseResponsesSse('data: null\ndata: 42\ndata: "text"\n')).toEqual({ text: '' });
+  });
+
   it('should parse normal SSE with multiple delta events', () => {
     const sseResponse = [
       'event: response.created',

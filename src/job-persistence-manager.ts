@@ -64,7 +64,7 @@ export class JobIndexUnavailableError extends Error {
   }
 }
 
-export function createJobPersistenceProcessLivenessChecker(
+function createJobPersistenceProcessLivenessChecker(
   kill: (pid: number, signal: 0) => unknown = process.kill,
   platform: NodeJS.Platform = process.platform,
 ): JobPersistenceProcessLivenessChecker {
