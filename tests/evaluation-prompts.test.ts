@@ -58,7 +58,7 @@ describe('rendered prompt contracts', () => {
   it.each([
     {
       name: 'goal-check' as const,
-      sections: ['## Your Task', '## Inputs to Inspect', '## Evaluation: SMART Criteria Check', '## Confidence Mapping', '## Retry Guidance', '## Required JSON artifact', '## Context'],
+      sections: ['## Your Task', '## Inputs to Inspect', '## Bounded evidence collection', '## Evaluation: SMART Criteria Check', '## Confidence Mapping', '## Retry Guidance', '## Required JSON artifact', '## Context'],
     },
     {
       name: 'run-evaluation' as const,
@@ -71,6 +71,13 @@ describe('rendered prompt contracts', () => {
   ])('$name includes its required sections', ({ name, sections }) => {
     const prompt = renderPrompt(name);
     for (const section of sections) expect(prompt).toContain(section);
+  });
+
+  it('instructs goal-check to preserve output for the required verdict', () => {
+    const prompt = renderPrompt('goal-check');
+    expect(prompt).toContain('output target is advisory, not a completion limit');
+    expect(prompt).toContain('Do not read the full git diff');
+    expect(prompt).toMatch(/never spend your final\s+turn on another tool call/);
   });
 
   it.each([

@@ -574,6 +574,11 @@ export KASEKI_GOAL_CHECK_CONTRACT_REPAIR_TIMEOUT_SECONDS=60
 export KASEKI_GOAL_CHECK_CONTRACT_REPAIR_MAX_OUTPUT_TOKENS=768
 ```
 
+The output-token values are soft targets for observability and prompt design.
+They are not forwarded as per-phase provider limits and cannot by themselves
+fail a run. Set `LLM_GATEWAY_MAX_OUTPUT_TOKENS` only when an operator intends
+to impose a provider-wide technical ceiling.
+
 If the evidence pass completes without a schema-valid verdict, Kaseki performs
 one constrained contract-repair pass using the evidence already gathered. Its
 diagnostics are written to `goal-check-contract-diagnostics.json`; it records

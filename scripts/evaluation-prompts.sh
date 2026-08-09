@@ -156,6 +156,15 @@ Determine if the agent successfully met the requirements specified in the goal-s
 - Agent summary: "${KASEKI_RESULTS_DIR}"/pi-summary.json
 - Optional validation evidence: "${KASEKI_RESULTS_DIR}"/validation.log
 
+## Bounded evidence collection
+
+The output target is advisory, not a completion limit. Preserve room for the
+verdict: inspect the goal-setting and scouting artifacts first, then
+changed-files and validation summary. Do not read the full git diff or lengthy
+logs; if needed, read a bounded diff slice (at most 120 lines). Return the
+required JSON as soon as you have enough evidence and never spend your final
+turn on another tool call.
+
 ## Evaluation: SMART Criteria Check
 
 For each requirement from goal-setting, verify:

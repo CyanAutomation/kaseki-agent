@@ -24,6 +24,8 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
     metadata, status: lifecycle(metadata), elapsedSeconds: elapsed, ...tokenEvidence,
     retries: countRetries(snapshot), validation, quality,
     goalMet: bool(goal.met) ?? bool(metadata.goal_check_met),
+    goalCheckFailed: String(metadata.failed_command ?? '').toLowerCase() === 'goal check'
+      || String(metadata.goal_check_failure_reason ?? '').trim().length > 0,
     changedFiles: (snapshot.text['changed-files.txt'] ?? '').split(/\r?\n/).filter(Boolean).length,
     diffBytes: Buffer.byteLength(snapshot.text['git.diff'] ?? ''), evaluation,
     present: [...Object.keys(snapshot.json), ...Object.keys(snapshot.text)],

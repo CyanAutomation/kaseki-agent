@@ -176,6 +176,15 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'goal-check-contract-diagnostics.json': {
+    name: 'goal-check-contract-diagnostics.json',
+    contentType: 'application/json',
+    description: 'Goal-check contract diagnostics: observed evaluator events, phase budget telemetry, and candidate-artifact status',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 2,
+    sizeHint: 'small',
+  },
+
   'scouting.json': {
     name: 'scouting.json',
     contentType: 'application/json',

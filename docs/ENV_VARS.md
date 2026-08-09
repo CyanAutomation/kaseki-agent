@@ -20,9 +20,9 @@ Complete reference for all environment variables used by kaseki-agent.
 | `KASEKI_GOAL_CHECK_MAX_RETRIES` | `1` | integer | Number of coding-agent retries after goal-check misses |
 | `KASEKI_GOAL_CHECK_MODEL` | `KASEKI_SCOUTING_MODEL` | string | Pi model identifier for the goal-check evaluator |
 | `KASEKI_GOAL_CHECK_TIMEOUT_SECONDS` | `KASEKI_SCOUTING_TIMEOUT_SECONDS` | integer | Goal-check evaluator timeout in seconds |
-| `KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS` | `1536` | integer | Per-request output ceiling for the evidence-gathering goal-check pass |
+| `KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS` | `1536` | integer | Advisory output target for the evidence-gathering goal-check pass; it does not cap or fail the run |
 | `KASEKI_GOAL_CHECK_CONTRACT_REPAIR_TIMEOUT_SECONDS` | `60` | integer | Timeout for the constrained evaluator retry used only when the first pass does not yield a schema-valid verdict |
-| `KASEKI_GOAL_CHECK_CONTRACT_REPAIR_MAX_OUTPUT_TOKENS` | `768` | integer | Per-request output ceiling for the constrained evaluator contract-repair retry |
+| `KASEKI_GOAL_CHECK_CONTRACT_REPAIR_MAX_OUTPUT_TOKENS` | `768` | integer | Advisory output target for the constrained evaluator contract-repair retry; it does not cap or fail the run |
 
 ### Provider Selection
 
