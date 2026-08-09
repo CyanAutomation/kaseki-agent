@@ -78,7 +78,7 @@ JSON
       KASEKI_ROOT="$runtime_root" \
       KASEKI_CACHE_DIR="$CACHE_ROOT" \
       OPENROUTER_API_KEY="baseline-cache-integration-placeholder" \
-      REPO_URL="/cache/baseline-cache-fixture.git" \
+      REPO_URL="$fixture_repo" \
       GIT_REF="main" \
       INSTANCE="$instance" \
       KASEKI_VALIDATION_COMMANDS="npm test" \
