@@ -165,9 +165,27 @@ NODE
 }
 EOF_ENTRY
 
-sed -n '/^is_transient_scouting_failure()/,/^}/p' ./kaseki-agent.sh >> "$RETRY_ENTRY_POINT"
-sed -n '/^run_scouting_agent_with_retry()/,/^snapshot_attempt_artifacts()/p' ./kaseki-agent.sh |
-  sed '$d' >> "$RETRY_ENTRY_POINT"
+extract_shell_function() {
+  local function_name="$1"
+  local source_file="$2"
+
+  awk -v function_name="$function_name" '
+    $0 ~ "^" function_name "\\(\\)[[:space:]]*\\{" { found = 1; printing = 1 }
+    printing && found && $0 !~ "^" function_name "\\(\\)[[:space:]]*\\{" &&
+      $0 ~ "^[[:alpha:]_][[:alnum:]_]*\\(\\)[[:space:]]*\\{" { exit }
+    printing { print }
+    END { if (!found) exit 1 }
+  ' "$source_file"
+}
+
+if ! extract_shell_function is_transient_scouting_failure ./kaseki-agent.sh >> "$RETRY_ENTRY_POINT"; then
+  printf 'Unable to extract is_transient_scouting_failure from kaseki-agent.sh\n' >&2
+  exit 1
+fi
+if ! extract_shell_function run_scouting_agent_with_retry ./kaseki-agent.sh >> "$RETRY_ENTRY_POINT"; then
+  printf 'Unable to extract run_scouting_agent_with_retry from kaseki-agent.sh\n' >&2
+  exit 1
+fi
 cat >> "$RETRY_ENTRY_POINT" <<'EOF_ENTRY'
 
 run_scouting_agent_with_retry
