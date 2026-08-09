@@ -4,6 +4,21 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.129.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.128.0...v1.129.0) (2026-08-09)
+
+
+### Bug Fixes
+
+* add shellcheck directives for cleanup function in test scripts ([7259e77](https://github.com/CyanAutomation/kaseki-agent/commit/7259e770a68bf54d0e59f63728808d6723b7c4ae))
+* remove unnecessary blank line in kaseki-api-types.ts ([f0154ca](https://github.com/CyanAutomation/kaseki-agent/commit/f0154ca4e691c53e4c3ea3db907c68102f942218))
+
+
+### Features
+
+* enhance CLI command interfaces, improve test coverage, and refactor utility functions ([4e702a0](https://github.com/CyanAutomation/kaseki-agent/commit/4e702a0b32a9cd275bcb93f8e4f7e22f69480244))
+* implement assistant turn state management and related tests ([1a36db2](https://github.com/CyanAutomation/kaseki-agent/commit/1a36db25cefd7c92bcd0fb8e579c7025f258bb58))
+* refactor failure classification and enhance artifact availability checks ([5f026b3](https://github.com/CyanAutomation/kaseki-agent/commit/5f026b31883eb04d8eb6d9b0eb390ace5f1e3f45))
+
 # [1.128.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.127.1...v1.128.0) (2026-08-09)
 
 
