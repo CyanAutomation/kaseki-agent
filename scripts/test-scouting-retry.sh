@@ -28,6 +28,7 @@ fail_count=0
 # The extracted classifier consults this path for validation diagnostics.
 UNIT_RESULTS_DIR="$(mktemp -d)"
 export KASEKI_RESULTS_DIR="$UNIT_RESULTS_DIR"
+trap 'rm -rf "$UNIT_RESULTS_DIR"' EXIT
 
 # Test utilities
 test_header() {
