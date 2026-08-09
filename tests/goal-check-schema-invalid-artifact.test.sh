@@ -20,8 +20,8 @@ fail() {
   exit 1
 }
 
-if [[ ! -x "$REPO_ROOT/kaseki-agent.sh" ]]; then
-  fail "kaseki-agent.sh not found or not executable"
+if [[ ! -r "$REPO_ROOT/kaseki-agent.sh" ]]; then
+  fail "kaseki-agent.sh not found or not readable"
 fi
 
 mkdir -p "$FAKE_REPO/deps/fake-dep" "$FAKE_BIN" "$RESULTS_DIR" "$WORKSPACE_REPO" "$APP_LIB" "$TMP_DIR/scripts" "$TMP_DIR/scripts/lib" || fail "failed to create test directories"
