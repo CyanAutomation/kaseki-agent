@@ -99,6 +99,19 @@ function buildServiceInfoPaths(
   runRequestSchema: Record<string, unknown>
 ): Record<string, unknown> {
   return {
+    '/api/capabilities': {
+      get: {
+        operationId: 'getCapabilities',
+        summary: 'Get API capabilities and limits',
+        description: 'Returns the running API version, supported task and publish modes, controller limits, and the canonical event-stream reconnect contract.',
+        tags: ['Service Info'],
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': { description: 'Capabilities', content: { 'application/json': { schema: { type: 'object', required: ['apiVersion', 'taskModes', 'publishModes', 'limits', 'eventProtocol'] } } } },
+          '401': { description: 'Unauthorized', content: { 'application/json': { schema: errorResponseSchema } } },
+        },
+      },
+    },
     '/api/metrics': {
       get: {
         operationId: 'getMetrics',
@@ -579,6 +592,26 @@ function buildRunManagementPaths(
       }
     },
 
+    '/api/runs/{id}/retry': {
+      post: {
+        operationId: 'retryRun',
+        summary: 'Retry a terminal run',
+        description: 'Creates one new run from the original request only when the source run is completed or failed. A UUID idempotencyKey is required; repeating it replays the same retry instead of enqueueing another run.',
+        tags: ['Run Management'],
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^kaseki-\\d+$' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['idempotencyKey'], properties: { idempotencyKey: { type: 'string', format: 'uuid' } } } } } },
+        responses: {
+          '202': { description: 'Retry accepted', content: { 'application/json': { schema: runResponseSchema } } },
+          '200': { description: 'Idempotency replay of a prior retry', content: { 'application/json': { schema: runResponseSchema } } },
+          '400': { description: 'Missing or invalid idempotency key', content: { 'application/json': { schema: errorResponseSchema } } },
+          '401': { description: 'Unauthorized', content: { 'application/json': { schema: errorResponseSchema } } },
+          '404': { description: 'Run not found', content: { 'application/json': { schema: errorResponseSchema } } },
+          '409': { description: 'Source run is not terminal or retry key is pending', content: { 'application/json': { schema: errorResponseSchema } } },
+        },
+      },
+    },
+
     '/api/runs/{id}/cancel': {
       post: {
         operationId: 'cancelRun',
@@ -658,8 +691,9 @@ function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): R
     properties: {
       id: { type: 'string' },
       status: { type: 'string' },
-      events: { type: 'array', items: { type: 'object', additionalProperties: true } },
+      events: { type: 'array', items: { type: 'object', additionalProperties: true }, description: 'Normalized events with a stable numeric id.' },
       total: { type: 'integer', description: 'Total number of parseable events before tail filtering' },
+      nextCursor: { type: 'string', description: 'Cursor to use when opening the SSE stream after this snapshot.' },
       sources: { type: 'array', items: { type: 'string', enum: ['progress.jsonl', 'docker-logs'] } }
     }
   };
@@ -698,11 +732,15 @@ function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): R
         summary: 'Stream run events',
         description: 'Streams run progress updates as Server-Sent Events (SSE).',
         tags: ['Run Logs & Progress'],
-        parameters: [idParameter],
+        parameters: [
+          idParameter,
+          { name: 'cursor', in: 'query', required: false, schema: { type: 'string' }, description: 'Zero-based index of the next event to deliver, as returned by an event snapshot.' },
+          { name: 'Last-Event-ID', in: 'header', required: false, schema: { type: 'string' }, description: 'Standard SSE reconnect cursor; takes precedence over cursor.' },
+        ],
         security: [{ BearerAuth: [] }],
         responses: {
           '200': {
-            description: 'Server-Sent Events stream of progress updates',
+            description: 'Server-Sent Events stream of progress updates. Events have stable numeric IDs and heartbeat events every 15 seconds.',
             content: {
               'text/event-stream': {
                 schema: { type: 'string', description: 'Server-Sent Events formatted progress updates' }
@@ -711,40 +749,6 @@ function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): R
           },
           '404': snapshotResponses['404'],
           '401': snapshotResponses['401']
-        }
-      }
-    },
-
-    '/api/runs/{id}/progress': {
-      get: {
-        operationId: 'getRunProgress',
-        summary: 'Get legacy progress event snapshot',
-        description:
-          'Deprecated legacy alias for GET /api/runs/{id}/events. Non-streaming responses return the same structured event snapshot schema. Legacy clients may still request SSE with ?stream=sse, but new clients should use GET /api/runs/{id}/events/stream.',
-        deprecated: true,
-        tags: ['Run Logs & Progress'],
-        parameters: [
-          idParameter,
-          tailParameter,
-          {
-            name: 'stream',
-            in: 'query',
-            schema: { type: 'string', enum: ['sse'] },
-            description: 'Deprecated. Use GET /api/runs/{id}/events/stream for Server-Sent Events.'
-          }
-        ],
-        security: [{ BearerAuth: [] }],
-        responses: {
-          ...snapshotResponses,
-          '200': {
-            description: 'Structured run event snapshot, or SSE when using deprecated stream=sse',
-            content: {
-              'application/json': { schema: eventSnapshotSchema },
-              'text/event-stream': {
-                schema: { type: 'string', description: 'Deprecated Server-Sent Events format when stream=sse' }
-              }
-            }
-          }
         }
       }
     },
@@ -770,7 +774,7 @@ function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): R
             required: true,
             schema: {
               type: 'string',
-              enum: ['stdout', 'stderr', 'validation', 'progress', 'quality', 'secret-scan', 'combined']
+              enum: ['stdout', 'stderr', 'validation', 'progress', 'quality', 'secret-scan', 'combined', 'goal-setting-stderr', 'scouting-stderr', 'goal-check-stderr', 'run-evaluation-stderr']
             },
             description: 'Log type to retrieve'
           },

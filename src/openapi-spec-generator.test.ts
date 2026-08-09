@@ -44,11 +44,28 @@ type PropertyConstraint = {
 const httpMethods = ['get', 'post', 'put', 'delete', 'patch', 'head', 'options'] as const;
 const expectedEndpoints: EndpointContract[] = [
   {
+    path: '/api/capabilities',
+    method: 'get',
+    operationId: 'getCapabilities',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['401'],
+  },
+  {
     path: '/health',
     method: 'get',
     operationId: 'getHealth',
     auth: 'public',
     successCodes: ['200'],
+  },
+  {
+    path: '/api/runs/{id}/retry',
+    method: 'post',
+    operationId: 'retryRun',
+    auth: 'protected',
+    successCodes: ['202', '200'],
+    errorCodes: ['400', '404', '409', '401'],
+    pathParams: ['id'],
   },
   {
     path: '/ready',
@@ -142,15 +159,6 @@ const expectedEndpoints: EndpointContract[] = [
     path: '/api/runs/{id}/cancel',
     method: 'post',
     operationId: 'cancelRun',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['404', '401'],
-    pathParams: ['id'],
-  },
-  {
-    path: '/api/runs/{id}/progress',
-    method: 'get',
-    operationId: 'getRunProgress',
     auth: 'protected',
     successCodes: ['200'],
     errorCodes: ['404', '401'],

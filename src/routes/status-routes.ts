@@ -30,7 +30,11 @@ export function createStatusRoutes(
     const limit = Number.isFinite(limitParam)
       ? Math.min(500, Math.max(1, Math.floor(limitParam)))
       : 50;
-    const jobs = allJobs.slice(0, limit);
+    const offsetParam = Number(req.query.offset ?? 0);
+    const offset = Number.isFinite(offsetParam)
+      ? Math.max(0, Math.floor(offsetParam))
+      : 0;
+    const jobs = allJobs.slice(offset, offset + limit);
 
     const response: RunsListResponse = {
       runs: jobs.map((job) => {
