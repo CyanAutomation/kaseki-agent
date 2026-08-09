@@ -45,15 +45,16 @@ setup_test_env() {
   log_test "Test environment setup at $TEMP_TEST_DIR"
 }
 
-# Test 1: Exercise the public baseline-validation workflow across two runs
-test_public_baseline_validation_cache_workflow() {
+# Test 1: Exercise the cache exclusively through the public baseline-validation workflow
+test_shell_cache_functions() {
   local fixture_worktree="$TEMP_TEST_DIR/fixture-worktree"
   local fixture_repo="$CACHE_ROOT/baseline-cache-fixture.git"
   local runtime_root="$TEMP_TEST_DIR/runtime"
-  local first_metadata="$runtime_root/kaseki-results/kaseki-1/metadata.json"
-  local second_metadata="$runtime_root/kaseki-results/kaseki-2/metadata.json"
+  local results_root="$runtime_root/kaseki-results"
+  local original_artifact_hashes
+  local cache_entry
 
-  log_test "Testing public baseline-validation workflow cache miss followed by hit"
+  log_test "Testing baseline cache through the public baseline-validation workflow"
 
   if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
     printf "%b[SKIP]%b Docker is unavailable; skipping public workflow integration scenario\n" "$YELLOW" "$NC"
@@ -73,6 +74,8 @@ JSON
 
   run_public_workflow() {
     local instance="$1"
+    local validation_commands="$2"
+    local max_age_hours="${3:-24}"
     (
       cd "$REPO_ROOT"
       KASEKI_ROOT="$runtime_root" \
@@ -81,68 +84,71 @@ JSON
       REPO_URL="$fixture_repo" \
       GIT_REF="main" \
       INSTANCE="$instance" \
-      KASEKI_VALIDATION_COMMANDS="npm test" \
-      KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm test" \
+      KASEKI_BASELINE_CACHE_ROOT="$CACHE_ROOT/baseline-validation" \
+      KASEKI_BASELINE_CACHE_MAX_AGE_HOURS="$max_age_hours" \
+      KASEKI_VALIDATION_COMMANDS="$validation_commands" \
+      KASEKI_PRE_AGENT_VALIDATION_COMMANDS="$validation_commands" \
       KASEKI_STARTUP_CHECK_MODE="baseline-validation" \
       "$REPO_ROOT/run-kaseki.sh" --dry-run
     ) >"$TEMP_TEST_DIR/$instance.stdout.log" 2>"$TEMP_TEST_DIR/$instance.stderr.log"
   }
 
-  run_public_workflow kaseki-1 || log_fail "First baseline-validation workflow run failed"
-  run_public_workflow kaseki-2 || log_fail "Second baseline-validation workflow run failed"
+  assert_run() {
+    local instance="$1"
+    local expected_status="$2"
+    local metadata="$results_root/$instance/metadata.json"
+    shift 2
 
-  [ -f "$first_metadata" ] || log_fail "First run did not produce metadata.json at $first_metadata"
-  [ -f "$second_metadata" ] || log_fail "Second run did not produce metadata.json at $second_metadata"
+    [ -f "$metadata" ] || log_fail "$instance did not produce metadata.json"
+    node -e '
+      const fs = require("fs");
+      const [metadataPath, expectedStatus, ...artifacts] = process.argv.slice(1);
+      const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
+      if (metadata.baseline_cache_status !== expectedStatus) {
+        throw new Error(`expected ${expectedStatus}, got ${metadata.baseline_cache_status}`);
+      }
+      if (metadata.baseline_validation_exit_code !== 0) {
+        throw new Error(`expected successful baseline status, got exit code ${metadata.baseline_validation_exit_code}`);
+      }
+      for (const artifact of artifacts) {
+        if (!fs.existsSync(artifact) || !fs.statSync(artifact).isFile() || fs.statSync(artifact).size === 0) {
+          throw new Error(`missing or empty restored artifact: ${artifact}`);
+        }
+      }
+    ' "$metadata" "$expected_status" "$@" || log_fail "$instance did not preserve the expected status and artifacts"
+  }
 
-  node -e '
-    const fs = require("fs");
-    const [firstPath, secondPath] = process.argv.slice(1);
-    const first = JSON.parse(fs.readFileSync(firstPath, "utf8"));
-    const second = JSON.parse(fs.readFileSync(secondPath, "utf8"));
-    if (first.baseline_cache_status !== "completed") {
-      throw new Error(`expected first run cache miss/completion, got ${first.baseline_cache_status}`);
-    }
-    if (second.baseline_cache_status !== "cache_hit") {
-      throw new Error(`expected second run cache hit, got ${second.baseline_cache_status}`);
-    }
-  ' "$first_metadata" "$second_metadata" || log_fail "Workflow artifacts did not report a miss followed by a hit"
+  run_public_workflow cache-miss "npm test" || log_fail "Initial baseline-validation run failed"
+  assert_run cache-miss completed
+  cache_entry="$(find "$CACHE_ROOT/baseline-validation" -mindepth 1 -maxdepth 1 -type d | head -1)"
+  [ -n "$cache_entry" ] || log_fail "Public workflow did not create a cache entry"
+  original_artifact_hashes="$(sha256sum "$results_root/cache-miss/validation-baseline.log" "$results_root/cache-miss/validation-baseline-raw.log" "$results_root/cache-miss/validation-baseline-timings.tsv" | awk '{print $1}')"
 
-  log_pass "Public workflow metadata reports a cache miss followed by a cache hit"
+  run_public_workflow cache-hit "npm test" || log_fail "Repeated baseline-validation run failed"
+  assert_run cache-hit cache_hit \
+    "$results_root/cache-hit/validation-baseline.log" \
+    "$results_root/cache-hit/validation-baseline-raw.log" \
+    "$results_root/cache-hit/validation-baseline-timings.tsv"
+  [ "$original_artifact_hashes" = "$(sha256sum "$results_root/cache-hit/validation-baseline.log" "$results_root/cache-hit/validation-baseline-raw.log" "$results_root/cache-hit/validation-baseline-timings.tsv" | awk '{print $1}')" ] || \
+    log_fail "Cache hit did not restore the original validation artifacts"
+  log_pass "Identical inputs hit the cache and restore successful validation artifacts"
+
+  run_public_workflow changed-input "npm test --silent" || log_fail "Changed-input baseline-validation run failed"
+  assert_run changed-input completed
+  log_pass "Changed validation inputs miss the cache"
+
+  touch -t "$(date -u -v-2H +%Y%m%d%H%M.%S 2>/dev/null || date -u -d '2 hours ago' +%Y%m%d%H%M.%S)" "$cache_entry/validation.log"
+  run_public_workflow expired-entry "npm test" 1 || log_fail "Expired-entry baseline-validation run failed"
+  assert_run expired-entry completed
+  log_pass "Expired cache entries are rejected"
+
+  rm -f "$cache_entry/validation-timings.tsv"
+  run_public_workflow malformed-entry "npm test" || log_fail "Malformed-entry baseline-validation run failed"
+  assert_run malformed-entry completed
+  log_pass "Malformed cache entries are rejected"
 }
 
-# Test 2: Verify cache functions in kaseki-agent.sh
-test_shell_cache_functions() {
-  log_test "Testing shell cache functions in kaseki-agent.sh"
-  
-  cd "$REPO_ROOT"
-  
-  # Check that cache functions are defined
-  if grep -q "baseline_validation_cache_key()" kaseki-agent.sh; then
-    log_pass "baseline_validation_cache_key() function defined"
-  else
-    log_fail "baseline_validation_cache_key() function not found"
-  fi
-  
-  if grep -q "baseline_validation_cache_is_valid()" kaseki-agent.sh; then
-    log_pass "baseline_validation_cache_is_valid() function defined"
-  else
-    log_fail "baseline_validation_cache_is_valid() function not found"
-  fi
-  
-  if grep -q "restore_baseline_validation_from_cache()" kaseki-agent.sh; then
-    log_pass "restore_baseline_validation_from_cache() function defined"
-  else
-    log_fail "restore_baseline_validation_from_cache() function not found"
-  fi
-  
-  if grep -q "save_baseline_validation_to_cache()" kaseki-agent.sh; then
-    log_pass "save_baseline_validation_to_cache() function defined"
-  else
-    log_fail "save_baseline_validation_to_cache() function not found"
-  fi
-}
-
-# Test 3: Verify environment variables
+# Test 2: Verify environment variables
 test_environment_variables() {
   log_test "Testing environment variables"
   
@@ -168,28 +174,7 @@ test_environment_variables() {
   fi
 }
 
-# Test 4: Verify cache logic integration in main flow
-test_cache_integration_in_flow() {
-  log_test "Testing cache integration in main validation flow"
-  
-  cd "$REPO_ROOT"
-  
-  # Check that cache is checked before baseline checkout
-  if grep -q "restore_baseline_validation_from_cache" kaseki-agent.sh; then
-    log_pass "Cache restore is called in baseline flow"
-  else
-    log_fail "Cache restore not called in flow"
-  fi
-  
-  # Check that cache is saved after validation
-  if grep -q "save_baseline_validation_to_cache" kaseki-agent.sh; then
-    log_pass "Cache save is called in baseline flow"
-  else
-    log_fail "Cache save not called in flow"
-  fi
-}
-
-# Test 5: Verify documentation
+# Test 3: Verify documentation
 test_documentation() {
   log_test "Testing documentation"
   
@@ -215,10 +200,8 @@ main() {
   log_test "Baseline validation cache integration tests"
   setup_test_env
   
-  test_public_baseline_validation_cache_workflow
   test_shell_cache_functions
   test_environment_variables
-  test_cache_integration_in_flow
   test_documentation
   
   log_pass "All integration tests passed!"
