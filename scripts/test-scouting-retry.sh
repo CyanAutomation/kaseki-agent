@@ -169,6 +169,7 @@ if [[ "$prompt" == *"read-only scouting Pi agent"* ]]; then
 {"task":"inspect retry behavior","requirements":["preserve retry contract"],"relevant_files":[{"path":"README.md","reason":"fixture file"}],"observations":["fixture repository is available"],"plan":["inspect fixture"],"validation":["main flow completes"],"risks":[],"test_impact":[],"critical_change_expectations":{"required_files":[],"forbidden_empty_diff":false},"suggested_allowlist":{"agent_patterns":["README.md"],"validation_patterns":[]}}
 EOF_ARTIFACT
   exit 0
+fi
 printf '%s\n' '{"type":"message","model":"test-model","message":{"content":"ok"}}'
 EOF_PI
 
