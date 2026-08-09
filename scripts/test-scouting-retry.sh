@@ -44,12 +44,10 @@ test_fail() {
   printf '%s✗ FAIL: %s%s\n' "$RED" "$msg" "$NC"
 }
 
-# Load the is_transient_scouting_failure function
+# Load the sourceable scouting retry entry point.
 source_kaseki_functions() {
-  # Extract the is_transient_scouting_failure function from kaseki-agent.sh
-  local func_def
-  func_def="$(sed -n '/^is_transient_scouting_failure()/,/^}/p' ./kaseki-agent.sh)"
-  eval "$func_def"
+  # shellcheck source=lib/scouting-retry.sh
+  . ./scripts/lib/scouting-retry.sh
 }
 
 ##############################################################################
@@ -117,23 +115,69 @@ else
   test_fail "metadata.json missing scouting_succeeded_on_attempt field"
 fi
 
-test_header "Verify wrapper function exports env vars"
-# Check that the wrapper function sets the environment variables
-if grep -q 'KASEKI_SCOUTING_ATTEMPTS=' ./kaseki-agent.sh; then
-  test_pass "Wrapper sets KASEKI_SCOUTING_ATTEMPTS env var"
-else
-  test_fail "Wrapper should set KASEKI_SCOUTING_ATTEMPTS"
-fi
+test_header "Transient scouting failure retries once and reports success metadata"
+retry_fixture_dir="$(mktemp -d)"
+(
+  set -euo pipefail
+  export KASEKI_RESULTS_DIR="$retry_fixture_dir/results"
+  mkdir -p "$KASEKI_RESULTS_DIR"
+  export KASEKI_SCOUTING_MAX_ATTEMPTS=2
+  export KASEKI_TASK_MODE=inspect
+  export SCOUTING_CANDIDATE_ARTIFACT="$KASEKI_RESULTS_DIR/scouting-candidate.json"
+  export SCOUTING_ARTIFACT="$KASEKI_RESULTS_DIR/scouting.json"
+  export SCOUTING_RAW_EVENTS="$KASEKI_RESULTS_DIR/scouting-raw-events.jsonl"
+  STATUS=0
+  FAILED_COMMAND=""
 
-if grep -q 'KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=' ./kaseki-agent.sh; then
-  test_pass "Wrapper sets KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT env var"
+  # Dependencies outside the retry boundary are deliberately inert. The fake
+  # scouting command is the only attempt implementation exercised here.
+  emit_progress() { :; }
+  capture_validation_error_classification() { return 1; }
+  capture_provider_error_from_log() { return 1; }
+  capture_provider_error_from_summary() { return 1; }
+  clear_provider_error() { :; }
+  run_scouting_agent() {
+    local attempt
+    attempt=$(($(wc -l < "$retry_fixture_dir/invocations" 2>/dev/null || printf '0') + 1))
+    printf '%s\n' "$attempt" >> "$retry_fixture_dir/invocations"
+    if [ "$attempt" -eq 1 ]; then
+      SCOUTING_EXIT=124
+      STATUS=124
+      FAILED_COMMAND="pi scouting agent"
+      printf 'temporary API connection error\n' >&2
+      return 124
+    fi
+    SCOUTING_EXIT=0
+    printf '{}\n' > "$SCOUTING_ARTIFACT"
+    return 0
+  }
+
+  source_kaseki_functions
+  run_scouting_agent_with_retry
+
+  # Model the downstream metadata writer's public JSON output rather than
+  # coupling the assertion to the wrapper's internal variable assignments.
+  node - "$retry_fixture_dir/metadata.json" <<'NODE'
+const fs = require('node:fs');
+fs.writeFileSync(process.argv[2], JSON.stringify({
+  scouting_attempts: Number(process.env.KASEKI_SCOUTING_ATTEMPTS),
+  scouting_succeeded_on_attempt: Number(process.env.KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT),
+}) + '\n');
+NODE
+)
+fixture_status=$?
+if [ "$fixture_status" -eq 0 ] &&
+   [ "$(wc -l < "$retry_fixture_dir/invocations")" -eq 2 ] &&
+   node -e 'const m=require(process.argv[1]); process.exit(m.scouting_attempts === 2 && m.scouting_succeeded_on_attempt === 2 ? 0 : 1)' "$retry_fixture_dir/metadata.json"; then
+  test_pass "Metadata reports exactly 2 attempts and success on attempt 2"
 else
-  test_fail "Wrapper should set KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT"
+  test_fail "Expected exactly 2 attempts and success on attempt 2"
 fi
+rm -rf "$retry_fixture_dir"
 
 test_header "Verify main execution loop calls wrapper"
 # Check that the main loop calls run_scouting_agent_with_retry instead of run_scouting_agent
-if grep -q 'run_scouting_agent_with_retry' ./kaseki-agent.sh; then
+if grep -q 'scripts/lib/scouting-retry.sh' ./kaseki-agent.sh; then
   test_pass "Main loop calls run_scouting_agent_with_retry()"
 else
   test_fail "Main loop should call run_scouting_agent_with_retry()"
