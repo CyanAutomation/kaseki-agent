@@ -91,6 +91,9 @@ JSON
   run_public_workflow kaseki-1 || log_fail "First baseline-validation workflow run failed"
   run_public_workflow kaseki-2 || log_fail "Second baseline-validation workflow run failed"
 
+  [ -f "$first_metadata" ] || log_fail "First run did not produce metadata.json at $first_metadata"
+  [ -f "$second_metadata" ] || log_fail "Second run did not produce metadata.json at $second_metadata"
+
   node -e '
     const fs = require("fs");
     const [firstPath, secondPath] = process.argv.slice(1);
