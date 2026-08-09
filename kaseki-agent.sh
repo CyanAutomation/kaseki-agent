@@ -301,6 +301,14 @@ KASEKI_BASELINE_VALIDATION_ENABLED="${KASEKI_BASELINE_VALIDATION_ENABLED:-1}"
 KASEKI_BASELINE_CACHE_ROOT="${KASEKI_BASELINE_CACHE_ROOT:-${KASEKI_CACHE_DIR}/kaseki-baseline}"
 KASEKI_BASELINE_CACHE_MAX_AGE_HOURS="${KASEKI_BASELINE_CACHE_MAX_AGE_HOURS:-24}"
 KASEKI_BASELINE_CACHE_DISABLED="${KASEKI_BASELINE_CACHE_DISABLED:-0}"
+if ! [[ "$KASEKI_BASELINE_CACHE_MAX_AGE_HOURS" =~ ^[0-9]+$ ]]; then
+  printf 'Warning: invalid KASEKI_BASELINE_CACHE_MAX_AGE_HOURS=%q; using 24\n' "$KASEKI_BASELINE_CACHE_MAX_AGE_HOURS" >&2
+  KASEKI_BASELINE_CACHE_MAX_AGE_HOURS=24
+fi
+if [[ "$KASEKI_BASELINE_CACHE_DISABLED" != "0" && "$KASEKI_BASELINE_CACHE_DISABLED" != "1" ]]; then
+  printf 'Warning: invalid KASEKI_BASELINE_CACHE_DISABLED=%q; using 0\n' "$KASEKI_BASELINE_CACHE_DISABLED" >&2
+  KASEKI_BASELINE_CACHE_DISABLED=0
+fi
 KASEKI_TS_PRE_CHECK="${KASEKI_TS_PRE_CHECK:-1}"
 KASEKI_TS_CHECK_COMMAND="${KASEKI_TS_CHECK_COMMAND:-npm run build}"
 export KASEKI_SCOUTING_EXPLICIT="${KASEKI_SCOUTING+x}"
@@ -4184,6 +4192,9 @@ baseline_validation_cache_is_valid() {
   [ -d "$cache_dir" ] || return 1
   [ -f "$cache_dir/validation.log" ] || return 1
   [ -f "$cache_dir/validation-timings.tsv" ] || return 1
+
+  # A zero TTL explicitly disables age-based invalidation.
+  [ "$max_age_hours" -eq 0 ] && return 0
   
   # Check age: if older than max_age_hours, invalidate
   local cache_mtime now_seconds age_hours
@@ -4321,6 +4332,7 @@ checkout_baseline_repo() {
 run_baseline_validation() {
   local baseline_dir="${KASEKI_WORKSPACE_BASELINE_DIR}"
   local baseline_log="${KASEKI_RESULTS_DIR}/validation-baseline.log"
+  local baseline_raw_log="${KASEKI_RESULTS_DIR}/validation-baseline-raw.log"
   local baseline_timings="${KASEKI_RESULTS_DIR}/validation-baseline-timings.tsv"
   local baseline_exit_var="BASELINE_VALIDATION_EXIT"
   local baseline_detail_var="BASELINE_VALIDATION_FAILED_COMMAND_DETAIL"
@@ -4334,13 +4346,15 @@ run_baseline_validation() {
   local saved_pwd="$PWD"
   # Change to baseline directory temporarily
   cd "$baseline_dir" || return 1
+  : > "$baseline_raw_log"
+  : > "$baseline_timings"
   
   # Run validation commands in baseline
   run_validation_commands \
     "baseline validation" \
     "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
     "$baseline_log" \
-    "/dev/null" \
+    "$baseline_raw_log" \
     "$baseline_timings" \
     "${KASEKI_RESULTS_DIR}/validation-baseline-env.log" \
     "baseline_validation_failed" \
@@ -8753,7 +8767,9 @@ if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ "$KASEKI_PRE_AGENT_VALID
         emit_progress "baseline validation" "completed with failures (will compare against working results)"
       }
       # Save results to cache for future runs
-      if save_baseline_validation_to_cache "$baseline_cache_dir"; then
+      if [ "$KASEKI_BASELINE_CACHE_DISABLED" = "1" ]; then
+        emit_progress "baseline validation cache" "bypassed via KASEKI_BASELINE_CACHE_DISABLED=1"
+      elif save_baseline_validation_to_cache "$baseline_cache_dir"; then
         emit_progress "baseline validation cache" "saved for future runs (will be valid for ${KASEKI_BASELINE_CACHE_MAX_AGE_HOURS}h)"
       else
         emit_progress "baseline validation cache" "failed to save (non-blocking)"
