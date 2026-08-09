@@ -111,7 +111,7 @@ JSON
         throw new Error(`expected successful baseline status, got exit code ${metadata.baseline_validation_exit_code}`);
       }
       for (const artifact of artifacts) {
-        if (!fs.statSync(artifact).isFile() || fs.statSync(artifact).size === 0) {
+        if (!fs.existsSync(artifact) || !fs.statSync(artifact).isFile() || fs.statSync(artifact).size === 0) {
           throw new Error(`missing or empty restored artifact: ${artifact}`);
         }
       }
