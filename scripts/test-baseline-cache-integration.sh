@@ -111,7 +111,8 @@ JSON
         throw new Error(`expected successful baseline status, got exit code ${metadata.baseline_validation_exit_code}`);
       }
       for (const artifact of artifacts) {
-        if (!fs.existsSync(artifact) || !fs.statSync(artifact).isFile() || fs.statSync(artifact).size === 0) {
+        const artifactStat = fs.existsSync(artifact) ? fs.statSync(artifact) : null;
+        if (!artifactStat?.isFile() || artifactStat.size === 0) {
           throw new Error(`missing or empty restored artifact: ${artifact}`);
         }
       }
@@ -137,7 +138,11 @@ JSON
   assert_run changed-input completed
   log_pass "Changed validation inputs miss the cache"
 
-  touch -t "$(date -u -v-2H +%Y%m%d%H%M.%S 2>/dev/null || date -u -d '2 hours ago' +%Y%m%d%H%M.%S)" "$cache_entry/validation.log"
+  node -e '
+    const fs = require("fs");
+    const twoHoursAgo = new Date(Date.now() - (2 * 60 * 60 * 1000));
+    fs.utimesSync(process.argv[1], twoHoursAgo, twoHoursAgo);
+  ' "$cache_entry/validation.log"
   run_public_workflow expired-entry "npm test" 1 || log_fail "Expired-entry baseline-validation run failed"
   assert_run expired-entry completed
   log_pass "Expired cache entries are rejected"
