@@ -753,6 +753,40 @@ function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): R
       }
     },
 
+    '/api/runs/{id}/progress': {
+      get: {
+        operationId: 'getRunProgress',
+        summary: 'Get legacy progress event snapshot',
+        description:
+          'Deprecated legacy alias for GET /api/runs/{id}/events. Non-streaming responses return the same structured event snapshot schema. Legacy clients may still request SSE with ?stream=sse, but new clients should use GET /api/runs/{id}/events/stream.',
+        deprecated: true,
+        tags: ['Run Logs & Progress'],
+        parameters: [
+          idParameter,
+          tailParameter,
+          {
+            name: 'stream',
+            in: 'query',
+            schema: { type: 'string', enum: ['sse'] },
+            description: 'Deprecated. Use GET /api/runs/{id}/events/stream for Server-Sent Events.'
+          }
+        ],
+        security: [{ BearerAuth: [] }],
+        responses: {
+          ...snapshotResponses,
+          '200': {
+            description: 'Structured run event snapshot, or SSE when using deprecated stream=sse',
+            content: {
+              'application/json': { schema: eventSnapshotSchema },
+              'text/event-stream': {
+                schema: { type: 'string', description: 'Deprecated Server-Sent Events format when stream=sse' }
+              }
+            }
+          }
+        }
+      }
+    },
+
     '/api/runs/{id}/logs/{logtype}': {
       get: {
         operationId: 'getRunLog',
