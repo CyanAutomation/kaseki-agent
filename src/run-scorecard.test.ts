@@ -2,7 +2,7 @@ import { assignGrade, buildScorecard, calculateCoverage, collectEvidence, normal
 import { RunScorecardSchema } from './types/run-scorecard';
 import { lifecycle, statusFrom } from './run-scorecard-evidence-status';
 import { bool, number, object } from './run-scorecard-evidence-values';
-import { aggregateTokenUsage, countRetries } from './run-scorecard-evidence-tokens';
+import { aggregateTokenUsage, countRetries, providerRetryCounts } from './run-scorecard-evidence-tokens';
 
 describe('run scorecard', () => {
   test('deduplicates request usage and reports unknown requests', () => {
@@ -127,10 +127,14 @@ describe('run scorecard', () => {
     expect(bool('true')).toBeUndefined();
   });
 
-  test('aggregates token phases and counts retry evidence independently', () => {
+  test('aggregates token phases and counts only structured provider retries', () => {
     const snapshot = {
       json: { 'retry-diagnostics.json': {}, 'metadata.json': {} },
-      text: { 'provider-attempts.jsonl': 'attempt\nretry\n' },
+      text: { 'provider-attempts.jsonl': [
+        '{"phase":"coding","attempt":"primary-1"}',
+        '{"phase":"coding","attempt":"primary-2"}',
+        '{"phase":"goal-check","attempt":"primary-1"}',
+      ].join('\n') },
     };
     const aggregate = aggregateTokenUsage([
       { phase: 'goal-check', request_id: 'known', usage: { input: 10, output: 2 } },
@@ -140,6 +144,29 @@ describe('run scorecard', () => {
     expect(aggregate.tokens).toBe(12);
     expect(aggregate.phaseTokens['goal_check'].output_tokens).toBe(2);
     expect(aggregate.unknownTokenRequests).toBe(1);
+    expect(countRetries(snapshot)).toBe(1);
+    expect(providerRetryCounts(snapshot)).toEqual({ coding: 1 });
+  });
+
+  test('counts a provider retry for each structured retry invocation in a phase', () => {
+    const snapshot = {
+      json: {},
+      text: { 'provider-attempts.jsonl': [
+        '{"phase":"goal-check","attempt":"primary-1"}',
+        '{"phase":"goal-check","attempt":"primary-2"}',
+        '{"phase":"goal-check","attempt":"primary-1"}',
+        '{"phase":"goal-check","attempt":"primary-2"}',
+      ].join('\n') },
+    };
+    expect(providerRetryCounts(snapshot)).toEqual({ goal_check: 2 });
     expect(countRetries(snapshot)).toBe(2);
+  });
+
+  test('uses every canonical ledger response instead of collapsing a request to one turn', () => {
+    const aggregate = aggregateTokenUsage([
+      { phase: 'coding', request_id: 'request-1', turn: 1, response_id: 'response-1', input_tokens: 10, output_tokens: 2, cache_read_tokens: 100, cache_creation_tokens: 0 },
+      { phase: 'coding', request_id: 'request-1', turn: 2, response_id: 'response-2', input_tokens: 20, output_tokens: 3, cache_read_tokens: 200, cache_creation_tokens: 0 },
+    ]);
+    expect(aggregate.tokenUsage).toMatchObject({ input_tokens: 30, output_tokens: 5, cache_read_tokens: 300 });
   });
 });
