@@ -41,6 +41,7 @@ import { buildPreflightResponse as buildPreflightResponseImpl } from './kaseki-a
 import { createGatewayTestRoutes } from './routes/gateway-test-routes';
 import { createScorecardRoutes } from './routes/scorecard-routes';
 import { testPiGatewayProviderSmoke } from './kaseki-api-gateway-smoke';
+import { getPackageVersion } from './openapi-spec-generators/components';
 
 function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
   if (!remoteAddress) {
@@ -207,6 +208,28 @@ export function createApiRouter(
    * Mount gateway test routes (/gateway-test, /gateway-test/stage1)
    */
   router.use(createGatewayTestRoutes());
+
+  router.get('/capabilities', (_req: Request, res: Response) => {
+    res.json({
+      apiVersion: getPackageVersion(),
+      taskModes: ['patch', 'inspect'],
+      publishModes: ['auto', 'none', 'branch', 'pr', 'draft_pr'],
+      limits: {
+        maxConcurrentRuns: config.maxConcurrentRuns,
+        maxDiffBytes: config.maxDiffBytes,
+        timeoutSeconds: config.agentTimeoutSeconds,
+        terminalRunIndexMaxEntries: config.jobIndexMaxEntries,
+      },
+      eventProtocol: {
+        snapshot: '/api/runs/{id}/events',
+        stream: '/api/runs/{id}/events/stream',
+        cursorQueryParameter: 'cursor',
+        reconnectHeader: 'Last-Event-ID',
+        eventIds: true,
+        heartbeatSeconds: 15,
+      },
+    });
+  });
 
   /**
    * GET /api/preflight - Controller-oriented readiness diagnostics.
@@ -607,6 +630,46 @@ export function createApiRouter(
       });
       return sendErrorResponse(res, 400, 'Bad Request', (err as Error).message);
     }
+  });
+
+  /**
+   * Retry only a terminal run. The caller must supply a fresh UUID key; a
+   * replay of that key returns the same newly-created run without enqueueing twice.
+   */
+  router.post('/runs/:id/retry', async (req: Request, res: Response) => {
+    const source = scheduler.getJob(req.params.id);
+    if (!source) {
+      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
+    }
+    if (source.status !== 'completed' && source.status !== 'failed') {
+      return sendErrorResponse(res, 409, 'Conflict', 'Only completed or failed runs can be retried');
+    }
+    const idempotencyKey = req.body?.idempotencyKey;
+    if (
+      typeof idempotencyKey !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)
+    ) {
+      return sendErrorResponse(res, 400, 'Bad Request', 'A UUID idempotencyKey is required for retries');
+    }
+    const retryRequest: RunRequest = { ...source.request, idempotencyKey };
+    const fingerprint = buildRequestFingerprint({ retryOf: source.id, ...retryRequest } as Record<string, unknown>);
+    const result = await idempotencyStore.runWithIdempotencyLock(async () => {
+      const existing = await handleIdempotency(idempotencyKey, fingerprint);
+      if (existing.state !== 'fresh') return existing;
+      const job = await scheduler.submitJob(retryRequest);
+      job.idempotencyKey = idempotencyKey;
+      const response = buildRunResponse(job);
+      await idempotencyStore.storeResponse(idempotencyKey, response, fingerprint);
+      return { state: 'submitted' as const, response };
+    });
+    if (result.state === 'pending') {
+      return sendErrorResponse(res, 409, 'Conflict', 'Retry with this idempotency key is already being processed');
+    }
+    return res.status(result.state === 'fulfilled' ? 200 : 202).json({
+      ...result.response,
+      retryOf: source.id,
+      retryPolicy: 'Terminal runs only; submit the same idempotencyKey to replay this retry safely.',
+    });
   });
 
   /**
