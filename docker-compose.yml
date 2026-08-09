@@ -53,6 +53,10 @@ services:
       # Example CloudFlare: https://gateway.ai.cloudflare.com/v1/{account_id}/{namespace}/compat
       LLM_GATEWAY_URL: "${LLM_GATEWAY_URL:-}"
       LLM_GATEWAY_API_KEY_FILE: "${LLM_GATEWAY_API_KEY_FILE:-/run/secrets/kaseki/llm_gateway_api_key}"
+      # Per-model billing rates in USD per million tokens. Unknown models are
+      # deliberately left unpriced instead of receiving another model's rate.
+      # The default catalog covers the current DeepSeek V4 Flash deployment.
+      KASEKI_LLM_PRICING_JSON: '${KASEKI_LLM_PRICING_JSON:-{"deepseek/deepseek-v4-flash":{"input_usd_per_mtoken":0.14,"cache_read_usd_per_mtoken":0.0028,"cache_write_usd_per_mtoken":0,"output_usd_per_mtoken":0.28},"qwen/qwen3.7-flash":{"input_usd_per_mtoken":0.03,"cache_read_usd_per_mtoken":0.006,"cache_write_usd_per_mtoken":0.038,"output_usd_per_mtoken":0.13,"tiers":[{"min_context_tokens":32000,"input_usd_per_mtoken":0.1,"cache_read_usd_per_mtoken":0.02,"cache_write_usd_per_mtoken":0.125,"output_usd_per_mtoken":0.4},{"min_context_tokens":256000,"input_usd_per_mtoken":0.2,"cache_read_usd_per_mtoken":0.04,"cache_write_usd_per_mtoken":0.25,"output_usd_per_mtoken":0.8}]}}}'
       GITHUB_APP_ID_FILE: "${GITHUB_APP_ID_FILE:-/run/secrets/kaseki/github_app_id}"
       GITHUB_APP_CLIENT_ID_FILE: "${GITHUB_APP_CLIENT_ID_FILE:-/run/secrets/kaseki/github_app_client_id}"
       GITHUB_APP_PRIVATE_KEY_FILE: "${GITHUB_APP_PRIVATE_KEY_FILE:-/run/secrets/kaseki/github_app_private_key}"

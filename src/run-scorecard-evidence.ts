@@ -1,4 +1,4 @@
-import { aggregateTokenUsage, countRetries } from './run-scorecard-evidence-tokens';
+import { aggregateTokenUsage, countRetries, providerRetryCounts } from './run-scorecard-evidence-tokens';
 import { number, object, bool } from './run-scorecard-evidence-values';
 import { lifecycle, statusFrom } from './run-scorecard-evidence-status';
 import type { ArtifactSnapshot, Evidence } from './run-scorecard-evidence-types';
@@ -20,9 +20,10 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
     : statusFrom(metadata, ['validation_exit_code', 'validation_exit', 'validation_status']);
   const quality = statusFrom(metadata, ['quality_exit_code', 'quality_exit', 'quality_status'], object(metadata.phases)?.quality_gates);
   const tokenEvidence = aggregateTokenUsage(snapshot.summaries);
+  const phaseRetries = providerRetryCounts(snapshot);
   return {
     metadata, status: lifecycle(metadata), elapsedSeconds: elapsed, ...tokenEvidence,
-    retries: countRetries(snapshot), validation, quality,
+    retries: countRetries(snapshot), phaseRetries, validation, quality,
     goalMet: bool(goal.met) ?? bool(metadata.goal_check_met),
     goalCheckFailed: String(metadata.failed_command ?? '').toLowerCase() === 'goal check'
       || String(metadata.goal_check_failure_reason ?? '').trim().length > 0,
