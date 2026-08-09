@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2317 # cleanup is invoked indirectly by the EXIT trap.
 # Integration test for baseline validation caching
 # This test verifies cache hit/miss behavior, expiration, and disabling
 
@@ -102,6 +103,8 @@ JSON
     shift 2
 
     [ -f "$metadata" ] || log_fail "$instance did not produce metadata.json"
+    # The JavaScript uses template literals; its ${...} expressions are not shell expansions.
+    # shellcheck disable=SC2016
     node -e '
       const fs = require("fs");
       const [metadataPath, expectedStatus, ...artifacts] = process.argv.slice(1);
@@ -183,6 +186,8 @@ test_environment_variables() {
 
   assert_status() {
     local case_name="$1" expected="$2"
+    # The JavaScript uses template literals; its ${...} expressions are not shell expansions.
+    # shellcheck disable=SC2016
     node -e '
       const fs = require("fs");
       const [path, expected] = process.argv.slice(1);
