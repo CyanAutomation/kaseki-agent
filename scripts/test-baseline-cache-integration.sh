@@ -38,7 +38,9 @@ log_fail() {
 
 # Setup test environment
 setup_test_env() {
-  TEMP_TEST_DIR="$(mktemp -d)"
+  # Keep a space in the root so every cache assertion exercises path quoting.
+  # This prevents regressions where cache paths are accidentally word-split.
+  TEMP_TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kaseki baseline cache.XXXXXX")"
   CACHE_ROOT="$TEMP_TEST_DIR/cache"
   mkdir -p "$CACHE_ROOT"
   
@@ -209,7 +211,7 @@ test_environment_variables() {
   grep -q 'restored from cache' "$TEMP_TEST_DIR/env-default-root/results/progress.jsonl" || log_fail "Default-root hit diagnostic was not emitted"
   log_pass "Unset cache root uses the default directory and produces a cache hit"
 
-  local explicit_root="$TEMP_TEST_DIR/explicit-baseline-cache"
+  local explicit_root="$TEMP_TEST_DIR/explicit baseline cache [review]"
   run_case explicit-root KASEKI_BASELINE_CACHE_ROOT="$explicit_root"
   assert_status explicit-root completed
   assert_cache_artifacts "$explicit_root"
