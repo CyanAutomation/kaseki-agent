@@ -570,7 +570,14 @@ export KASEKI_GOAL_CHECK=1
 export KASEKI_GOAL_CHECK_MAX_RETRIES=1
 export KASEKI_GOAL_CHECK_MODEL="$KASEKI_SCOUTING_MODEL"
 export KASEKI_GOAL_CHECK_TIMEOUT_SECONDS="$KASEKI_SCOUTING_TIMEOUT_SECONDS"
+export KASEKI_GOAL_CHECK_CONTRACT_REPAIR_TIMEOUT_SECONDS=60
+export KASEKI_GOAL_CHECK_CONTRACT_REPAIR_MAX_OUTPUT_TOKENS=768
 ```
+
+If the evidence pass completes without a schema-valid verdict, Kaseki performs
+one constrained contract-repair pass using the evidence already gathered. Its
+diagnostics are written to `goal-check-contract-diagnostics.json`; it records
+event hashes and budget metadata but not raw response text.
 
 Or via API:
 

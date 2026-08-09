@@ -102,6 +102,7 @@ run_exit=$?
 [ "$run_exit" -eq 8 ] || fail "expected goal-check failure exit 8, got $run_exit"
 [ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' ] || fail "missing evaluator-only retry after goal-check artifact failure"
 [ -s "$RESULTS_DIR/goal-check-validation-errors.jsonl" ] || fail "missing goal-check-validation-errors.jsonl"
+[ -s "$RESULTS_DIR/goal-check-contract-diagnostics.json" ] || fail "missing goal-check contract diagnostics"
 [ "$(cat "$RESULTS_DIR/goal-check-validation-reason.txt")" = "missing_file" ] || fail "expected missing_file reason"
 grep -q 'goal-check-candidate.json' "$RESULTS_DIR/goal-check-validation-summary.txt" || fail "missing goal-check validation summary"
 grep -q '^goal check[[:space:]]86[[:space:]]' "$RESULTS_DIR/stage-timings.tsv" || fail "goal-check validation did not preserve exit 86"
@@ -115,6 +116,13 @@ if (entry.expected !== `file at ${process.argv[3]}/goal-check-candidate.json`) t
 if (!String(entry.actual).includes('missing: ')) throw new Error(`actual did not describe missing file: ${entry.actual}`);
 if (entry.severity !== 'critical') throw new Error(`expected critical severity, got ${entry.severity}`);
 if (!/goal-check Pi writes exactly one valid JSON object/.test(String(entry.suggestion))) throw new Error(`suggestion was not targeted: ${entry.suggestion}`);
+NODE
+
+node - "$RESULTS_DIR/goal-check-contract-diagnostics.json" <<'NODE' || fail "goal-check contract diagnostics were invalid"
+const artifact = require(process.argv[2]);
+if (artifact.reason !== 'goal_check_artifact_missing') throw new Error(`unexpected reason: ${artifact.reason}`);
+if (!artifact.raw_events || typeof artifact.raw_events.sha256 !== 'string') throw new Error('missing raw event digest');
+if (!Number.isInteger(artifact.observed_turns)) throw new Error('missing observed turn count');
 NODE
 
 grep -q 'goal_check_artifact_missing' "$RESULTS_DIR/progress.jsonl" || fail "missing goal-check artifact error event"

@@ -16,6 +16,7 @@ const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', '
 const PRE_VALIDATION_DIAGNOSTIC_FILES = ['pre-validation.log', 'test-baseline-comparison.json'] as const;
 const GOAL_CHECK_DIAGNOSTIC_FILES = [
   'goal-check-validation-errors.jsonl',
+  'goal-check-contract-diagnostics.json',
   'goal-check-stderr.log',
   'goal-check.json',
   'goal-check-attempts.jsonl',
@@ -44,6 +45,12 @@ const SCOUTING_DIAGNOSTIC_FILES = [
 
 const INLINE_ARTIFACT_LIMIT_BYTES = 65536;
 const GOAL_CHECK_ARTIFACT_INVALID_REASON = 'goal_check_artifact_invalid';
+const GOAL_CHECK_ARTIFACT_FAILURE_REASONS = new Set([
+  'goal_check_artifact_missing',
+  'goal_check_artifact_malformed',
+  GOAL_CHECK_ARTIFACT_INVALID_REASON,
+  'goal_check_turn_budget_exhausted',
+]);
 
 export class StatusArtifactHelper {
   constructor(
@@ -137,7 +144,10 @@ export class StatusArtifactHelper {
       includeScouting:
         job.status === 'failed' &&
         this.shouldIncludePhaseDiagnostics(metadata, 'scouting', SCOUTING_DIAGNOSTIC_FILES, runDir),
-      includeGoalCheck: job.status === 'failed' && response.goalCheckFailureReason === GOAL_CHECK_ARTIFACT_INVALID_REASON,
+      includeGoalCheck:
+        job.status === 'failed' &&
+        typeof response.goalCheckFailureReason === 'string' &&
+        GOAL_CHECK_ARTIFACT_FAILURE_REASONS.has(response.goalCheckFailureReason),
       prioritizeScouting: job.status === 'failed' && this.shouldPrioritizeScoutingDiagnostics(metadata, runDir),
     };
   }

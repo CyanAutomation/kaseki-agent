@@ -345,6 +345,10 @@ KASEKI_GOAL_CHECK_TIMEOUT_SECONDS="${KASEKI_GOAL_CHECK_TIMEOUT_SECONDS:-$KASEKI_
 KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS:-1536}"
 KASEKI_GOAL_CHECK_MAX_CONTEXT_TOKENS="${KASEKI_GOAL_CHECK_MAX_CONTEXT_TOKENS:-12000}"
 KASEKI_GOAL_CHECK_MAX_TURNS="${KASEKI_GOAL_CHECK_MAX_TURNS:-4}"
+# A contract repair is intentionally smaller than the evidence-gathering pass:
+# it must only serialize the verdict from the already gathered context.
+KASEKI_GOAL_CHECK_CONTRACT_REPAIR_TIMEOUT_SECONDS="${KASEKI_GOAL_CHECK_CONTRACT_REPAIR_TIMEOUT_SECONDS:-60}"
+KASEKI_GOAL_CHECK_CONTRACT_REPAIR_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_CHECK_CONTRACT_REPAIR_MAX_OUTPUT_TOKENS:-768}"
 kaseki_apply_inspect_mode_agent_defaults
 KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-pr}"
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-1}"
@@ -422,6 +426,7 @@ ORIGINAL_TASK_PROMPT="$TASK_PROMPT"
 GOAL_CHECK_EXIT=0
 GOAL_CHECK_DURATION_SECONDS=0
 GOAL_CHECK_ATTEMPTS=0
+GOAL_CHECK_EVALUATOR_ATTEMPTS=0
 GOAL_CHECK_MET=false
 GOAL_CHECK_FAILURE_REASON=""
 GOAL_CHECK_RETRY_PROMPT=""
@@ -6417,10 +6422,46 @@ collect_run_evaluation_feedback() {
 }
 
 
+write_goal_check_contract_diagnostics() {
+  local attempt="$1"
+  local reason="$2"
+  node - "$GOAL_CHECK_RAW_EVENTS" "${KASEKI_RESULTS_DIR}/goal-check-events.jsonl" "${KASEKI_RESULTS_DIR}/goal-check-summary.json" "${KASEKI_RESULTS_DIR}/goal-check-contract-diagnostics.json" "$attempt" "$reason" <<'NODE' 2>/dev/null || true
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const [rawPath, filteredPath, summaryPath, outputPath, attempt, reason] = process.argv.slice(2);
+const describe = (file) => {
+  try {
+    const data = fs.readFileSync(file);
+    return { present: true, bytes: data.length, sha256: crypto.createHash('sha256').update(data).digest('hex') };
+  } catch {
+    return { present: false, bytes: 0 };
+  }
+};
+let summary = {};
+try { summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8')); } catch {}
+const completionUsage = Array.isArray(summary.completion_usage) ? summary.completion_usage : [];
+fs.writeFileSync(outputPath, `${JSON.stringify({
+  timestamp: new Date().toISOString(),
+  attempt: Number(attempt),
+  reason,
+  recovery: 'controller_extracts exactly one schema-valid verdict; raw response text is represented here only by hashes',
+  raw_events: describe(rawPath),
+  filtered_events: describe(filteredPath),
+  observed_turns: completionUsage.length,
+  phase_budget: summary.phase_budget || null,
+  candidate_present: false,
+}, null, 2)}\n`);
+NODE
+}
+
 run_goal_check() {
-  local attempt goal_prompt goal_start verdict_met retry_prompt verdict_summary confidence goal_check_validation_reason goal_check_validation_summary
-  attempt="$1"
+  local attempt="${1:?goal-check attempt is required}"
+  local mode="${2:-evidence}"
+  local evaluator_attempt goal_prompt goal_start verdict_met retry_prompt verdict_summary confidence goal_check_validation_reason goal_check_validation_summary goal_check_timeout goal_check_max_output
+  unset KASEKI_GOAL_CHECK_CONTRACT_REPAIR
   GOAL_CHECK_ATTEMPTS="$attempt"
+  GOAL_CHECK_EVALUATOR_ATTEMPTS=$((GOAL_CHECK_EVALUATOR_ATTEMPTS + 1))
+  evaluator_attempt="$GOAL_CHECK_EVALUATOR_ATTEMPTS"
   GOAL_CHECK_EXIT=0
   GOAL_CHECK_MET=false
   GOAL_CHECK_FAILURE_REASON=""
@@ -6439,15 +6480,28 @@ run_goal_check() {
   fi
 
   goal_prompt="$(build_goal_check_prompt)"
-  record_prompt_diagnostics "goal-check" "$goal_prompt" "$KASEKI_GOAL_CHECK_MODEL" "${KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS:-}"
+  goal_check_timeout="$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS"
+  goal_check_max_output="$KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS"
+  if [ "$mode" = "contract-repair" ]; then
+    goal_check_timeout="$KASEKI_GOAL_CHECK_CONTRACT_REPAIR_TIMEOUT_SECONDS"
+    goal_check_max_output="$KASEKI_GOAL_CHECK_CONTRACT_REPAIR_MAX_OUTPUT_TOKENS"
+    goal_prompt="$goal_prompt
+
+## Contract repair
+
+The evidence pass has completed. Do not perform more investigation or tool calls. Return the required JSON verdict now, using the supplied context only."
+    KASEKI_GOAL_CHECK_CONTRACT_REPAIR=1
+    export KASEKI_GOAL_CHECK_CONTRACT_REPAIR
+  fi
+  record_prompt_diagnostics "goal-check" "$goal_prompt" "$KASEKI_GOAL_CHECK_MODEL" "$goal_check_max_output"
   configure_phase_budget "goal-check"
   goal_start="$(date +%s)"
   set +e
-  LLM_GATEWAY_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS:-}"
+  LLM_GATEWAY_MAX_OUTPUT_TOKENS="$goal_check_max_output"
   export LLM_GATEWAY_MAX_OUTPUT_TOKENS
-  run_pi_with_retry "$GOAL_CHECK_RAW_EVENTS" "$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS" "$KASEKI_GOAL_CHECK_MODEL" "$goal_prompt" "goal-check-summary" "" "goal-check"
+  run_pi_with_retry "$GOAL_CHECK_RAW_EVENTS" "$goal_check_timeout" "$KASEKI_GOAL_CHECK_MODEL" "$goal_prompt" "goal-check-summary" "" "goal-check"
   GOAL_CHECK_EXIT="$?"
-  unset goal_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL LLM_GATEWAY_MAX_OUTPUT_TOKENS
+  unset goal_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL LLM_GATEWAY_MAX_OUTPUT_TOKENS KASEKI_GOAL_CHECK_CONTRACT_REPAIR
   GOAL_CHECK_DURATION_SECONDS=$((GOAL_CHECK_DURATION_SECONDS + $(date +%s) - goal_start))
   set +e
 
@@ -6599,22 +6653,25 @@ if (valid.size === 1) {
     normalize_goal_check_candidate_artifact "$GOAL_CHECK_CANDIDATE_ARTIFACT"
   fi
 
-  if [ "$GOAL_CHECK_EXIT" -eq 0 ] && ! validate_goal_check_artifact "$GOAL_CHECK_CANDIDATE_ARTIFACT" "${KASEKI_RESULTS_DIR}"/goal-check.json "$attempt" "${KASEKI_RESULTS_DIR}"/goal-check-validation-reason.txt; then
+  if [ "$GOAL_CHECK_EXIT" -eq 0 ] && ! validate_goal_check_artifact "$GOAL_CHECK_CANDIDATE_ARTIFACT" "${KASEKI_RESULTS_DIR}"/goal-check.json "$evaluator_attempt" "${KASEKI_RESULTS_DIR}"/goal-check-validation-reason.txt; then
     GOAL_CHECK_EXIT=86
     goal_check_validation_reason="$(cat "${KASEKI_RESULTS_DIR}"/goal-check-validation-reason.txt 2>/dev/null || printf 'schema_mismatch')"
     goal_check_validation_summary="$(cat "${KASEKI_RESULTS_DIR}"/goal-check-validation-summary.txt 2>/dev/null || printf 'goal-check artifact validation failed')"
     case "$goal_check_validation_reason" in
       missing_file)
         GOAL_CHECK_FAILURE_REASON="goal_check_artifact_missing"
-        emit_error_event "goal_check_artifact_missing" "Goal-check response did not contain one schema-valid JSON verdict ($goal_check_validation_summary; full details: ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl)" "exit"
+        write_goal_check_contract_diagnostics "$evaluator_attempt" "$GOAL_CHECK_FAILURE_REASON"
+        emit_error_event "goal_check_artifact_missing" "Goal-check response did not contain one schema-valid JSON verdict ($goal_check_validation_summary; full details: ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl; contract diagnostics: ${KASEKI_RESULTS_DIR}/goal-check-contract-diagnostics.json)" "exit"
         ;;
       malformed_json)
         GOAL_CHECK_FAILURE_REASON="goal_check_artifact_malformed"
-        emit_error_event "goal_check_artifact_malformed" "Goal-check response contained malformed JSON: $goal_check_validation_summary (full details: ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl)" "exit"
+        write_goal_check_contract_diagnostics "$evaluator_attempt" "$GOAL_CHECK_FAILURE_REASON"
+        emit_error_event "goal_check_artifact_malformed" "Goal-check response contained malformed JSON: $goal_check_validation_summary (full details: ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl; contract diagnostics: ${KASEKI_RESULTS_DIR}/goal-check-contract-diagnostics.json)" "exit"
         ;;
       *)
         GOAL_CHECK_FAILURE_REASON="goal_check_artifact_invalid"
-        emit_error_event "goal_check_artifact_invalid" "Goal-check response did not contain a schema-valid JSON verdict: $goal_check_validation_summary (full details: ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl)" "exit"
+        write_goal_check_contract_diagnostics "$evaluator_attempt" "$GOAL_CHECK_FAILURE_REASON"
+        emit_error_event "goal_check_artifact_invalid" "Goal-check response did not contain a schema-valid JSON verdict: $goal_check_validation_summary (full details: ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl; contract diagnostics: ${KASEKI_RESULTS_DIR}/goal-check-contract-diagnostics.json)" "exit"
         ;;
     esac
   fi
@@ -6642,7 +6699,7 @@ if (valid.size === 1) {
     [ -z "$GOAL_CHECK_FAILURE_REASON" ] && GOAL_CHECK_FAILURE_REASON="goal_check_failed_exit_$GOAL_CHECK_EXIT"
     GOAL_CHECK_RETRY_PROMPT="The goal-check evaluator failed to produce a valid passing verdict. Re-read $SCOUTING_ARTIFACT, inspect the current diff and validation logs, and repair any missing requirement before finishing."
   fi
-  record_stage_timing "goal check" "$GOAL_CHECK_EXIT" "$(($(date +%s) - goal_start))" "attempt=$attempt met=$GOAL_CHECK_MET timeout_seconds=$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS"
+  record_stage_timing "goal check" "$GOAL_CHECK_EXIT" "$(($(date +%s) - goal_start))" "coding_attempt=$attempt evaluator_attempt=$evaluator_attempt mode=$mode met=$GOAL_CHECK_MET timeout_seconds=$goal_check_timeout"
   return 0
 }
 
@@ -9434,7 +9491,7 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
   # full coding attempt on an unchanged diff.
   if [ "$GOAL_CHECK_EXIT" -eq 86 ]; then
     emit_progress "goal check" "retrying evaluator after artifact-contract failure (coding attempt $coding_attempt)"
-    run_goal_check "$coding_attempt"
+    run_goal_check "$coding_attempt" "contract-repair"
   fi
   collect_goal_check_feedback "$INSTANCE_NAME"
   snapshot_attempt_artifacts "$coding_attempt"
