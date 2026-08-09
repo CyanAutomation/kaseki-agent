@@ -133,4 +133,14 @@ describe('worker storage layout contract', () => {
       mode: 'rw',
     });
   });
+
+  it('translates cache-hosted repository paths for the worker cache mount', () => {
+    const { env } = parseDockerEnvAndVolumes(launcherScript);
+
+    expect(launcherScript).toContain('case "$REPO_URL" in\n  "$CACHE"/*)');
+    expect(launcherScript).toContain(
+      'WORKER_REPO_URL="/cache/${REPO_URL#"$CACHE"/}"',
+    );
+    expect(env.get('REPO_URL')).toBe('$WORKER_REPO_URL');
+  });
 });

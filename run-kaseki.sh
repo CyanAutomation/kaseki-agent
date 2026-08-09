@@ -1133,6 +1133,15 @@ prepare_worker_paths() {
 
 prepare_worker_paths
 
+# The host preflight needs the host-visible repository path, while repositories
+# stored inside the cache mount are visible to the worker below /cache.
+WORKER_REPO_URL="$REPO_URL"
+case "$REPO_URL" in
+  "$CACHE"/*)
+    WORKER_REPO_URL="/cache/${REPO_URL#"$CACHE"/}"
+    ;;
+esac
+
 docker_args=(
   run --rm
   --name "$INSTANCE"
@@ -1142,7 +1151,7 @@ docker_args=(
   --cap-drop ALL
   -u "$KASEKI_CONTAINER_USER"
   -e KASEKI_INSTANCE="$INSTANCE"
-  -e REPO_URL="$REPO_URL"
+  -e REPO_URL="$WORKER_REPO_URL"
   -e GIT_REF="$GIT_REF"
   -e KASEKI_PROVIDER="$KASEKI_PROVIDER"
   -e KASEKI_MODEL="$KASEKI_MODEL"
