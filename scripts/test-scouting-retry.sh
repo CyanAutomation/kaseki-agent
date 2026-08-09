@@ -209,7 +209,7 @@ run_scouting_case() {
 const fs = require('node:fs');
 const [metadataPath, observationsPath, expectedAttemptsText, expectedSuccessText] = process.argv.slice(2);
 const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-const observations = fs.readFileSync(observationsPath, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
+const observations = fs.readFileSync(observationsPath, 'utf8').trim().split(/\r?\n/).filter(line => line.trim()).map(JSON.parse);
 const expectedAttempts = JSON.parse(expectedAttemptsText);
 const expectedSuccess = JSON.parse(expectedSuccessText);
 if (observations.length !== expectedAttempts) {
