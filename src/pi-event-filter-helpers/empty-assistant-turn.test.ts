@@ -1,8 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
-import {
-  extractEmptyAssistantTurn,
-  recordAssistantTurnState,
-} from './empty-assistant-turn.js';
+import { extractEmptyAssistantTurn } from './empty-assistant-turn.js';
+import { recordAssistantTurnState } from './assistant-turn-state.js';
 
 function event(overrides: Record<string, unknown> = {}): any {
   return {

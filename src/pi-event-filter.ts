@@ -15,9 +15,11 @@ import {
 } from './pi-event-filter-helpers.js';
 import {
   extractEmptyAssistantTurn,
+} from './pi-event-filter-helpers/empty-assistant-turn.js';
+import {
   recordAssistantTurnState,
   type AssistantTurnState,
-} from './pi-event-filter-helpers/empty-assistant-turn.js';
+} from './pi-event-filter-helpers/assistant-turn-state.js';
 
 export { extractProviderError };
 
