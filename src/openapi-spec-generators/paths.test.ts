@@ -37,6 +37,14 @@ describe('OpenAPI Path Builders', () => {
       tags: ['Health & Status']
     },
     {
+      path: '/api/capabilities',
+      method: 'get',
+      operationId: 'getCapabilities',
+      requiresAuth: true,
+      statuses: ['200', '401'],
+      tags: ['Service Info']
+    },
+    {
       path: '/api/metrics',
       method: 'get',
       operationId: 'getMetrics',
@@ -120,6 +128,22 @@ describe('OpenAPI Path Builders', () => {
       requiredResponseSchemas: ({ errorSchema }) => [
         { status: '200', mediaType: 'application/json', schema: { $ref: '#/components/schemas/StatusResponse' } },
         { status: '404', mediaType: 'application/json', schema: errorSchema }
+      ]
+    },
+    {
+      path: '/api/runs/{id}/retry',
+      method: 'post',
+      operationId: 'retryRun',
+      requiresAuth: true,
+      statuses: ['200', '202', '400', '401', '404', '409'],
+      tags: ['Run Management'],
+      requiredResponseSchemas: ({ errorSchema, responseSchema }) => [
+        { status: '200', mediaType: 'application/json', schema: responseSchema },
+        { status: '202', mediaType: 'application/json', schema: responseSchema },
+        { status: '400', mediaType: 'application/json', schema: errorSchema },
+        { status: '401', mediaType: 'application/json', schema: errorSchema },
+        { status: '404', mediaType: 'application/json', schema: errorSchema },
+        { status: '409', mediaType: 'application/json', schema: errorSchema }
       ]
     },
     {
@@ -266,6 +290,7 @@ describe('OpenAPI Path Builders', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
       const validatePath = paths['/api/validate'] as Record<string, any>;
       const runsPath = paths['/api/runs'] as Record<string, any>;
+      const retryPath = paths['/api/runs/{id}/retry'] as Record<string, any>;
       const webhookTestPath = paths['/api/webhooks/test'] as Record<string, any>;
       const expectedRunRequestBody = {
         required: true,
@@ -280,6 +305,21 @@ describe('OpenAPI Path Builders', () => {
       expect(validatePath.post.requestBody).toEqual(expectedRunRequestBody);
       expect(runsPath.post.operationId).toBe('triggerRun');
       expect(runsPath.post.requestBody).toEqual(expectedRunRequestBody);
+      expect(retryPath.post.operationId).toBe('retryRun');
+      expect(retryPath.post.requestBody).toEqual({
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['idempotencyKey'],
+              properties: {
+                idempotencyKey: { type: 'string', format: 'uuid' }
+              }
+            }
+          }
+        }
+      });
       expect(webhookTestPath.post.operationId).toBe('testWebhook');
       expect(webhookTestPath.post.requestBody).toEqual({
         required: true,
@@ -410,6 +450,7 @@ describe('OpenAPI Path Builders', () => {
       const expectedSummaryTermsByOperationId: Record<string, string[]> = {
         cancelRun: ['cancel', 'run'],
         downloadArtifact: ['download', 'artifact'],
+        getCapabilities: ['api', 'capabilities', 'limits'],
         getHealth: ['health', 'check'],
         getMetrics: ['prometheus', 'metrics'],
         getPreFlight: ['pre-flight', 'validation'],
@@ -427,6 +468,7 @@ describe('OpenAPI Path Builders', () => {
         listGitHubIssues: ['repository', 'issues', 'task'],
         listRuns: ['list', 'runs'],
         listScorecards: ['list', 'scorecards'],
+        retryRun: ['retry', 'terminal', 'run'],
         testGateway: ['gateway', 'inference', 'adapter'],
         testWebhook: ['test', 'webhook'],
         triggerRun: ['trigger', 'run'],
@@ -452,6 +494,10 @@ describe('OpenAPI Path Builders', () => {
         {
           operationId: 'triggerRun',
           terms: ['queue', '202 accepted', 'id', 'poll status']
+        },
+        {
+          operationId: 'retryRun',
+          terms: ['completed or failed', 'uuid idempotencykey', 'replays', 'instead of enqueueing']
         },
         {
           operationId: 'getRunStatus',
@@ -542,6 +588,8 @@ describe('OpenAPI Path Builders', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
 
       expect(Object.keys(paths['/api/runs'] as Record<string, unknown>).sort()).toEqual(['get', 'post']);
+      expect(Object.keys(paths['/api/capabilities'] as Record<string, unknown>).sort()).toEqual(['get']);
+      expect(Object.keys(paths['/api/runs/{id}/retry'] as Record<string, unknown>).sort()).toEqual(['post']);
       expect(Object.keys(paths['/api/runs/{id}/status'] as Record<string, unknown>).sort()).toEqual(['get']);
       expect(Object.keys(paths['/api/webhooks/test'] as Record<string, unknown>).sort()).toEqual(['post']);
     });
@@ -552,11 +600,13 @@ describe('OpenAPI Path Builders', () => {
       const emptyErrorSchema = {};
       const paths = buildAllPaths(emptyErrorSchema, requestSchema, responseSchema);
       const expectedErrorResponsesByOperation: Record<string, Record<string, string[]>> = {
+        '/api/capabilities': { get: ['401'] },
         '/api/metrics': { get: ['401'] },
         '/api/preflight': { get: ['401'] },
         '/api/validate': { post: ['400', '401'] },
         '/api/runs': { get: ['401'], post: ['400', '401'] },
         '/api/runs/{id}/status': { get: ['401', '404'] },
+        '/api/runs/{id}/retry': { post: ['400', '401', '404', '409'] },
         '/api/runs/{id}/cancel': { post: ['401', '404'] },
         '/api/runs/{id}/progress': { get: ['401', '404'] },
         '/api/runs/{id}/logs/{logtype}': { get: ['401', '404'] },
@@ -960,6 +1010,7 @@ describe('OpenAPI Path Builders', () => {
       const pathsWithIdParam = [
         '/api/runs/{id}/status',
         '/api/runs/{id}/cancel',
+        '/api/runs/{id}/retry',
         '/api/runs/{id}/progress',
         '/api/runs/{id}/logs/{logtype}',
         '/api/runs/{id}/artifacts',
@@ -1007,6 +1058,7 @@ describe('OpenAPI Path Builders', () => {
 
     it('each GET operation should document its expected success status', () => {
       const expectedGetSuccessStatusByRoute: Record<string, string> = {
+        '/api/capabilities': '200',
         '/api/gateway-test': '200',
         '/api/improvements': '200',
         '/api/metrics': '200',
