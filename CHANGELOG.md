@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.127.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.127.0...v1.127.1) (2026-08-09)
+
+
+### Bug Fixes
+
+* restore legacy GET /api/runs/{id}/progress OpenAPI path ([#1219](https://github.com/CyanAutomation/kaseki-agent/issues/1219)) ([58cac6e](https://github.com/CyanAutomation/kaseki-agent/commit/58cac6e147298ef86f52ccbe508b295753be3949))
+* restore legacy run progress OpenAPI path ([c718b5b](https://github.com/CyanAutomation/kaseki-agent/commit/c718b5bfea3fc319f19b9c8dca74e009ca5907dc))
+
 # [1.127.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.126.0...v1.127.0) (2026-08-09)
 
 
