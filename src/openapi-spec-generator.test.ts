@@ -183,6 +183,15 @@ const expectedEndpoints: EndpointContract[] = [
     pathParams: ['id'],
   },
   {
+    path: '/api/runs/{id}/progress',
+    method: 'get',
+    operationId: 'getRunProgress',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['404', '401'],
+    pathParams: ['id'],
+  },
+  {
     path: '/api/runs/{id}/logs/{logtype}',
     method: 'get',
     operationId: 'getRunLog',
