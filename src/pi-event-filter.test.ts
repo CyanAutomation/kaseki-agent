@@ -509,6 +509,7 @@ const TOKEN_LEDGER_ENV_KEYS = [
   'KASEKI_LLM_CACHE_READ_USD_PER_MTOKEN',
   'KASEKI_LLM_CACHE_WRITE_USD_PER_MTOKEN',
   'KASEKI_LLM_OUTPUT_USD_PER_MTOKEN',
+  'KASEKI_LLM_PRICING_JSON',
 ] as const;
 
 function captureTokenLedgerEnvironment(): Record<string, string | undefined> {
@@ -558,7 +559,73 @@ test('writes a deduplicated token ledger with phase/request lineage and configur
     await runPiEventFilter(inputPath, outputPath, summaryPath);
     const ledger = readTokenLedger(tmpDir);
     expect(ledger).toHaveLength(1);
-    expect(ledger[0]).toMatchObject({ phase: 'goal-check', attempt_id: 'primary-1', request_id: 'req-1', response_id: 'resp-1', context_tokens: 120, estimated_cost_usd: 0.0004 });
+    expect(ledger[0]).toMatchObject({
+      phase: 'goal-check', attempt_id: 'primary-1', request_id: 'req-1', response_id: 'resp-1',
+      context_tokens: 120, billed_input_tokens: 120, cached_input_tokens: 0,
+      estimated_input_cost_usd: 0.00024, estimated_output_cost_usd: 0.00016, estimated_cost_usd: 0.0004,
+    });
+  } finally {
+    restoreTokenLedgerEnvironment(previous);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('uses only the rate configured for each emitted model', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-model-pricing-'));
+  const inputPath = path.join(tmpDir, 'in.jsonl');
+  const outputPath = path.join(tmpDir, 'out.jsonl');
+  const summaryPath = path.join(tmpDir, 'pi-summary.json');
+  const previous = captureTokenLedgerEnvironment();
+  delete process.env.KASEKI_LLM_INPUT_USD_PER_MTOKEN;
+  delete process.env.KASEKI_LLM_CACHE_READ_USD_PER_MTOKEN;
+  delete process.env.KASEKI_LLM_CACHE_WRITE_USD_PER_MTOKEN;
+  delete process.env.KASEKI_LLM_OUTPUT_USD_PER_MTOKEN;
+  process.env.KASEKI_LLM_PRICING_JSON = JSON.stringify({
+    'priced-model': { input_usd_per_mtoken: 2, cache_read_usd_per_mtoken: .5, cache_write_usd_per_mtoken: 3, output_usd_per_mtoken: 8 },
+  });
+  try {
+    writeTokenLedgerFixture(inputPath);
+    await runPiEventFilter(inputPath, outputPath, summaryPath);
+    const unpriced = readTokenLedger(tmpDir)[0];
+    expect(unpriced).toMatchObject({ pricing_source: 'unpriced', pricing_model: null, estimated_cost_usd: null });
+
+    fs.rmSync(path.join(tmpDir, 'token-ledger.jsonl'));
+    fs.writeFileSync(inputPath, JSON.stringify({
+      type: 'message_end', message: { response_id: 'resp-priced', model: 'priced-model', usage: { prompt_tokens: 120, completion_tokens: 20 } },
+    }) + '\n');
+    await runPiEventFilter(inputPath, outputPath, summaryPath);
+    expect(readTokenLedger(tmpDir)[0]).toMatchObject({ pricing_source: 'configured', pricing_model: 'priced-model', estimated_cost_usd: .0004 });
+  } finally {
+    restoreTokenLedgerEnvironment(previous);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('applies the matching model pricing tier using the full provider context', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-tiered-pricing-'));
+  const inputPath = path.join(tmpDir, 'in.jsonl');
+  const outputPath = path.join(tmpDir, 'out.jsonl');
+  const summaryPath = path.join(tmpDir, 'pi-summary.json');
+  const previous = captureTokenLedgerEnvironment();
+  process.env.KASEKI_LLM_PRICING_JSON = JSON.stringify({
+    'qwen/qwen3.7-flash': {
+      input_usd_per_mtoken: .03, cache_read_usd_per_mtoken: .006, cache_write_usd_per_mtoken: .038, output_usd_per_mtoken: .13,
+      tiers: [{ min_context_tokens: 32_000, input_usd_per_mtoken: .1, cache_read_usd_per_mtoken: .02, cache_write_usd_per_mtoken: .125, output_usd_per_mtoken: .4 }],
+    },
+  });
+  try {
+    fs.writeFileSync(inputPath, JSON.stringify({
+      type: 'message_end', message: { response_id: 'resp-tiered', model: 'qwen/qwen3.7-flash', usage: {
+        prompt_tokens: 1_000, completion_tokens: 100, prompt_tokens_details: { cache_read_input_tokens: 31_500 },
+      } },
+    }) + '\n');
+    await runPiEventFilter(inputPath, outputPath, summaryPath);
+    const entry = readTokenLedger(tmpDir)[0];
+    expect(entry).toMatchObject({ context_tokens: 32_500, pricing_model: 'qwen/qwen3.7-flash' });
+    expect(entry.estimated_input_cost_usd).toBeCloseTo(.0001);
+    expect(entry.estimated_cache_read_cost_usd).toBeCloseTo(.00063);
+    expect(entry.estimated_output_cost_usd).toBeCloseTo(.00004);
+    expect(entry.estimated_cost_usd).toBeCloseTo(.00077);
   } finally {
     restoreTokenLedgerEnvironment(previous);
     fs.rmSync(tmpDir, { recursive: true, force: true });

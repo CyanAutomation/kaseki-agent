@@ -15,6 +15,7 @@ export interface Evidence {
   phaseTokens: Record<string, RunScorecard['token_totals']>;
   unknownTokenRequests: number;
   retries: number;
+  phaseRetries: Record<string, number>;
   validation: 'passed' | 'failed' | 'unknown';
   quality: 'passed' | 'failed' | 'unknown';
   goalMet?: boolean;

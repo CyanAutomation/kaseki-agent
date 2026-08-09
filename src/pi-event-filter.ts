@@ -78,8 +78,17 @@ interface ProviderCompletionUsage {
 
 interface TokenLedgerEntry extends ProviderCompletionUsage {
   context_tokens: number;
+  /** Input tokens billed at the standard (cache-miss) input rate. */
+  billed_input_tokens: number;
+  /** Input tokens served from the provider cache and billed at the cache-read rate. */
+  cached_input_tokens: number;
+  estimated_input_cost_usd: number | null;
+  estimated_cache_read_cost_usd: number | null;
+  estimated_cache_write_cost_usd: number | null;
+  estimated_output_cost_usd: number | null;
   estimated_cost_usd: number | null;
   pricing_source: 'configured' | 'unpriced';
+  pricing_model: string | null;
 }
 
 interface ToolOutputUsageSummary {
@@ -130,6 +139,73 @@ function positiveIntEnv(name: string, fallback: number): number {
 function nonNegativeNumberEnv(name: string): number | null {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+interface TokenPricing {
+  input: number;
+  cacheRead: number;
+  cacheWrite: number;
+  output: number;
+}
+
+interface TokenPricingSchedule {
+  base: TokenPricing;
+  tiers: Array<{ minContextTokens: number; pricing: TokenPricing }>;
+}
+
+function tokenPricingFromValue(value: unknown): TokenPricing | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const entry = value as Record<string, unknown>;
+  const input = typeof entry.input_usd_per_mtoken === 'number' ? entry.input_usd_per_mtoken : null;
+  const cacheRead = typeof entry.cache_read_usd_per_mtoken === 'number' ? entry.cache_read_usd_per_mtoken : null;
+  const cacheWrite = typeof entry.cache_write_usd_per_mtoken === 'number' ? entry.cache_write_usd_per_mtoken : null;
+  const output = typeof entry.output_usd_per_mtoken === 'number' ? entry.output_usd_per_mtoken : null;
+  return [input, cacheRead, cacheWrite, output].every((rate) => rate !== null && Number.isFinite(rate) && rate >= 0)
+    ? { input: input!, cacheRead: cacheRead!, cacheWrite: cacheWrite!, output: output! }
+    : null;
+}
+
+function tokenPricingScheduleFromValue(value: unknown): TokenPricingSchedule | null {
+  const base = tokenPricingFromValue(value);
+  if (!base || !value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const rawTiers: unknown[] = Array.isArray((value as Record<string, unknown>).tiers)
+    ? (value as Record<string, unknown>).tiers as unknown[]
+    : [];
+  const tiers = rawTiers.flatMap((tier) => {
+    if (!tier || typeof tier !== 'object' || Array.isArray(tier)) return [];
+    const minContextTokens = (tier as Record<string, unknown>).min_context_tokens;
+    const pricing = tokenPricingFromValue(tier);
+    return typeof minContextTokens === 'number' && Number.isInteger(minContextTokens) && minContextTokens > 0 && pricing
+      ? [{ minContextTokens, pricing }]
+      : [];
+  }).sort((left, right) => left.minContextTokens - right.minContextTokens);
+  return { base, tiers };
+}
+
+function configuredTokenPricing(model: string, contextTokens: number): { pricing: TokenPricing; model: string } | null {
+  try {
+    const configured = JSON.parse(process.env.KASEKI_LLM_PRICING_JSON ?? '') as Record<string, unknown>;
+    const normalizedModel = model.trim().toLowerCase();
+    const matchedModel = Object.keys(configured).find((key) => key.trim().toLowerCase() === normalizedModel)
+      ?? Object.keys(configured).find((key) => key === '*');
+    if (matchedModel) {
+      const schedule = tokenPricingScheduleFromValue(configured[matchedModel]);
+      if (schedule) {
+        const matchingTier = schedule.tiers.filter((tier) => contextTokens >= tier.minContextTokens).at(-1);
+        return { pricing: matchingTier?.pricing ?? schedule.base, model: matchedModel };
+      }
+    }
+  } catch { /* invalid optional catalog leaves the response explicitly unpriced */ }
+
+  // Backwards-compatible single-rate fallback. It is intentionally opt-in:
+  // docker-compose does not set it, so changing models cannot silently reuse it.
+  const input = nonNegativeNumberEnv('KASEKI_LLM_INPUT_USD_PER_MTOKEN');
+  const cacheRead = nonNegativeNumberEnv('KASEKI_LLM_CACHE_READ_USD_PER_MTOKEN');
+  const cacheWrite = nonNegativeNumberEnv('KASEKI_LLM_CACHE_WRITE_USD_PER_MTOKEN');
+  const output = nonNegativeNumberEnv('KASEKI_LLM_OUTPUT_USD_PER_MTOKEN');
+  return [input, cacheRead, cacheWrite, output].every((rate) => rate !== null)
+    ? { pricing: { input: input!, cacheRead: cacheRead!, cacheWrite: cacheWrite!, output: output! }, model: '*' }
+    : null;
 }
 
 const MAX_FILTERED_EVENT_BYTES = positiveIntEnv('KASEKI_PI_EVENT_MAX_BYTES', 256 * 1024);
@@ -448,18 +524,30 @@ function recordCompletionUsage(event: PiEvent, usage: any, state: PiEventFilterS
 }
 
 function buildTokenLedger(completions: Iterable<ProviderCompletionUsage>): TokenLedgerEntry[] {
-  const inputPrice = nonNegativeNumberEnv('KASEKI_LLM_INPUT_USD_PER_MTOKEN');
-  const cacheReadPrice = nonNegativeNumberEnv('KASEKI_LLM_CACHE_READ_USD_PER_MTOKEN');
-  const cacheWritePrice = nonNegativeNumberEnv('KASEKI_LLM_CACHE_WRITE_USD_PER_MTOKEN');
-  const outputPrice = nonNegativeNumberEnv('KASEKI_LLM_OUTPUT_USD_PER_MTOKEN');
-  const priced = [inputPrice, cacheReadPrice, cacheWritePrice, outputPrice].every((value) => value !== null);
   return Array.from(completions, (completion) => {
     const context_tokens = completion.input_tokens + completion.cache_creation_tokens + completion.cache_read_tokens;
-    const estimated_cost_usd = priced
-      ? ((completion.input_tokens * inputPrice! + completion.cache_read_tokens * cacheReadPrice!
-        + completion.cache_creation_tokens * cacheWritePrice! + completion.output_tokens * outputPrice!) / 1_000_000)
+    const configuredPricing = configuredTokenPricing(completion.model, context_tokens);
+    const pricing = configuredPricing?.pricing;
+    const estimated_input_cost_usd = pricing ? completion.input_tokens * pricing.input / 1_000_000 : null;
+    const estimated_cache_read_cost_usd = pricing ? completion.cache_read_tokens * pricing.cacheRead / 1_000_000 : null;
+    const estimated_cache_write_cost_usd = pricing ? completion.cache_creation_tokens * pricing.cacheWrite / 1_000_000 : null;
+    const estimated_output_cost_usd = pricing ? completion.output_tokens * pricing.output / 1_000_000 : null;
+    const estimated_cost_usd = pricing
+      ? estimated_input_cost_usd! + estimated_cache_read_cost_usd! + estimated_cache_write_cost_usd! + estimated_output_cost_usd!
       : null;
-    return { ...completion, context_tokens, estimated_cost_usd, pricing_source: priced ? 'configured' : 'unpriced' };
+    return {
+      ...completion,
+      context_tokens,
+      billed_input_tokens: completion.input_tokens,
+      cached_input_tokens: completion.cache_read_tokens,
+      estimated_input_cost_usd,
+      estimated_cache_read_cost_usd,
+      estimated_cache_write_cost_usd,
+      estimated_output_cost_usd,
+      estimated_cost_usd,
+      pricing_source: pricing ? 'configured' : 'unpriced',
+      pricing_model: configuredPricing?.model ?? null,
+    };
   });
 }
 
@@ -705,6 +793,9 @@ function writeSummaryFiles(summaryPath: string, summary: Summary): void {
       artifact: 'token-ledger.jsonl',
       response_count: ledger.length,
       priced_response_count: ledger.filter((entry) => entry.estimated_cost_usd !== null).length,
+      billed_input_tokens: ledger.reduce((total, entry) => total + entry.billed_input_tokens, 0),
+      cached_input_tokens: ledger.reduce((total, entry) => total + entry.cached_input_tokens, 0),
+      output_tokens: ledger.reduce((total, entry) => total + entry.output_tokens, 0),
       estimated_cost_usd: ledger.every((entry) => entry.estimated_cost_usd !== null)
         ? ledger.reduce((total, entry) => total + entry.estimated_cost_usd!, 0)
         : null,
