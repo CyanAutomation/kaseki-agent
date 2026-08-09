@@ -171,6 +171,7 @@ EOF_ARTIFACT
   exit 0
 fi
 printf '%s\n' '{"type":"message","model":"test-model","message":{"content":"ok"}}'
+exit 0
 EOF_PI
 
   cat > "$fake_bin/kaseki-pi-progress-stream" <<'EOF_PROGRESS'
