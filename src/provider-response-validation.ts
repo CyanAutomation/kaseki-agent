@@ -82,16 +82,12 @@ export function validateProviderResponse(response: unknown): ValidationResult {
 
   // Extract usage metrics
   const usage = typedResponse.usage || {};
-  const outputTokens = usage.output_tokens ?? usage.completion_tokens ?? 0;
-  const inputTokens = usage.input_tokens ?? usage.prompt_tokens ?? 0;
+  const outputTokens = usageValue(usage, ['output_tokens', 'completion_tokens']);
+  const inputTokens = usageValue(usage, ['input_tokens', 'prompt_tokens']);
 
   // Check for the kaseki-170 bug: output tokens claimed but no content
-  if (outputTokens > 0 && message.role === 'assistant') {
-    const hasTextContent =
-      message.content && typeof message.content === 'string' && message.content.trim().length > 0;
-    const hasToolCalls = Array.isArray(message.tool_calls) && message.tool_calls.length > 0;
-
-    if (!hasTextContent && !hasToolCalls) {
+  if (hasClaimedOutput(outputTokens) && message.role === 'assistant') {
+    if (isEmptyAssistantMessage(message, outputTokens)) {
       const responseId = typedResponse.response_id ?? message.response_id ?? 'unknown';
       const details = [
         `input_tokens=${inputTokens}`,
@@ -107,7 +103,7 @@ export function validateProviderResponse(response: unknown): ValidationResult {
   }
 
   // Warning for zero output tokens with assistant role
-  if (outputTokens === 0 && message.role === 'assistant') {
+  if (!hasClaimedOutput(outputTokens) && message.role === 'assistant') {
     warnings.push('Assistant message has zero output tokens; may indicate a provider issue');
   }
 
@@ -194,4 +190,16 @@ function hasRecentSecretWarning(): boolean {
 }
 function recordSecretWarning(): void {
   lastSecretWarningTime = Date.now();
+}
+
+function usageValue(usage: ProviderUsage, keys: Array<keyof ProviderUsage>): number {
+  for (const key of keys) {
+    const value = usage[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return 0;
+}
+
+function hasClaimedOutput(outputTokens: number): boolean {
+  return outputTokens > 0;
 }

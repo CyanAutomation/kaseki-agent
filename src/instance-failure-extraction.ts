@@ -34,23 +34,27 @@ export function classifyFailure(
   if (normalizedExitCode === 0) return 'none';
   if (workerErrorType) return workerErrorType;
   if (providerFailure) return providerFailure;
-  if (normalizedExitCode === 124) return 'timeout';
-  if (normalizedExitCode === 8 || failedCommand === 'goal check') return 'goal-unmet';
-  if (failedCommand === 'empty git diff' || normalizedExitCode === 3) return 'empty-diff';
-  if (failedCommand === 'validation') return 'validation';
-  if (failedCommand === 'quality checks') return 'quality';
-  if (failedCommand === 'secret scan') return 'secret-scan';
-  if (failedCommand.startsWith('github')) return 'github';
-  const lowerFailedCommand = failedCommand.toLowerCase();
-  if (
-    lowerFailedCommand.includes('llm_gateway') ||
-    lowerFailedCommand.includes('gateway') ||
-    lowerFailedCommand.includes('openrouter') ||
-    lowerFailedCommand.includes('api_key')
-  ) {
-    return 'credentials';
-  }
+
+  const exactRules: Array<[string, boolean]> = [
+    ['timeout', normalizedExitCode === 124],
+    ['goal-unmet', normalizedExitCode === 8 || failedCommand === 'goal check'],
+    ['empty-diff', normalizedExitCode === 3 || failedCommand === 'empty git diff'],
+    ['validation', failedCommand === 'validation'],
+    ['quality', failedCommand === 'quality checks'],
+    ['secret-scan', failedCommand === 'secret scan'],
+    ['github', failedCommand.startsWith('github')],
+  ];
+  const exactMatch = exactRules.find(([, matches]) => matches);
+  if (exactMatch) return exactMatch[0];
+
+  if (isCredentialFailure(failedCommand)) return 'credentials';
   if (failedCommand) return failedCommand.replace(/\s+/g, '-');
   if (Number.isInteger(normalizedExitCode)) return 'nonzero-exit';
   return 'unknown';
+}
+
+function isCredentialFailure(command: string): boolean {
+  const normalized = command.toLowerCase();
+  return ['llm_gateway', 'gateway', 'openrouter', 'api_key']
+    .some((signal) => normalized.includes(signal));
 }

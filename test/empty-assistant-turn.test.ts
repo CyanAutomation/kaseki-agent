@@ -11,6 +11,8 @@
  */
 
 import { describe, it, expect } from '@jest/globals';
+import { validateProviderResponse as validateProductionProviderResponse } from '../src/provider-response-validation';
+import { extractEmptyAssistantTurn } from '../src/pi-event-filter-helpers/empty-assistant-turn';
 
 // ============================================================================
 // TEST DATA BUILDERS
@@ -144,7 +146,7 @@ function buildToolCallEvent(overrides?: Partial<any>): any {
 }
 
 // ============================================================================
-// DETECTION FUNCTION (Implementation to be added)
+// Production adapters
 // ============================================================================
 
 /**
@@ -163,41 +165,18 @@ function detectEmptyAssistantTurn(event: any): {
   totalTokens?: number;
   reason?: string;
 } {
-  const message = event?.message;
-  if (!message || typeof message !== 'object' || message.role !== 'assistant') {
-    return { detected: false };
-  }
-
-  const stopReason = typeof message.stopReason === 'string' ? message.stopReason.trim() : '';
-  if (stopReason !== 'stop') {
-    return { detected: false };
-  }
-
-  // Check if there are output tokens claimed
-  const outputTokens = message.usage?.output_tokens ?? message.usage?.completion_tokens;
-  if (!outputTokens || outputTokens <= 0) {
-    return { detected: false };
-  }
-
-  // Check if content is empty or missing
-  const hasContent = message.content && typeof message.content === 'string' && message.content.trim().length > 0;
-  const hasToolCalls = Array.isArray(message.tool_calls) && message.tool_calls.length > 0;
-
-  if (hasContent || hasToolCalls) {
-    return { detected: false };  // Has actual content, not empty
-  }
-
-  // This is an empty assistant turn with output tokens claimed!
+  const result = extractEmptyAssistantTurn(event, new Map());
+  if (!result) return { detected: false };
   return {
     detected: true,
-    provider: message.provider,
-    api: message.api,
-    model: message.model,
-    responseId: message.response_id,
-    inputTokens: message.usage?.input_tokens ?? message.usage?.prompt_tokens,
-    outputTokens,
-    totalTokens: message.usage?.total_tokens,
-    reason: `Provider returned stop response with ${outputTokens} output tokens but no assistant text or tool calls`,
+    provider: result.provider,
+    api: result.api,
+    model: result.model,
+    responseId: result.response_id,
+    inputTokens: result.input_tokens,
+    outputTokens: result.output_tokens,
+    totalTokens: result.total_tokens,
+    reason: result.message,
   };
 }
 
@@ -213,40 +192,8 @@ function validateProviderResponse(response: any): {
   valid: boolean;
   errors: string[];
 } {
-  const errors: string[] = [];
-
-  if (!response || typeof response !== 'object') {
-    errors.push('Response is not an object');
-    return { valid: false, errors };
-  }
-
-  const message = response.message;
-  if (!message || typeof message !== 'object') {
-    errors.push('Response does not contain message object');
-    return { valid: false, errors };
-  }
-
-  // Check usage fields
-  const usage = response.usage || {};
-  const outputTokens = usage.output_tokens ?? usage.completion_tokens;
-
-  // CRITICAL: If output tokens claimed, content must exist
-  if (outputTokens && outputTokens > 0 && message.role === 'assistant') {
-    const hasContent = message.content && typeof message.content === 'string' && message.content.trim().length > 0;
-    const hasToolCalls = Array.isArray(message.tool_calls) && message.tool_calls.length > 0;
-
-    if (!hasContent && !hasToolCalls) {
-      errors.push(
-        `Output tokens (${outputTokens}) claimed but no assistant content or tool calls present. ` +
-        `This indicates a provider/adapter bug. Response ID: ${response.response_id}`
-      );
-    }
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
+  const result = validateProductionProviderResponse(response);
+  return { valid: result.valid, errors: result.errors };
 }
 
 // ============================================================================
@@ -271,7 +218,7 @@ describe('Empty Assistant Turn Detection', () => {
       expect(result.provider).toBe('gateway');
       expect(result.api).toBe('openai-responses');
       expect(result.responseId).toBe('resp_4e859d2bfb3a457cb34d1e485d0b2958');
-      expect(result.reason).toContain('146 output tokens');
+      expect(result.reason).toContain('output_tokens=146');
     });
 
     it('should detect empty assistant turn with empty string content', () => {
@@ -526,7 +473,11 @@ describe('Provider Response Integration', () => {
       };
 
       const detection = detectEmptyAssistantTurn(kaseki170Event);
-      const validation = validateProviderResponse(kaseki170Event.message);
+      const validation = validateProviderResponse({
+        message: kaseki170Event.message,
+        usage: kaseki170Event.message.usage,
+        response_id: kaseki170Event.message.response_id,
+      });
 
       expect(detection.detected).toBe(true);
       expect(validation.valid).toBe(false);

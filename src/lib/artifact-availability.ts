@@ -48,8 +48,7 @@ export function getArtifactStatus(
 
   // For non-terminal jobs, check if artifact is restricted to specific job states
   if (!isTerminalJobStatus(jobStatus)) {
-    // If artifact requires a specific terminal state, it's not available yet
-    if (metadata.availability === ArtifactAvailability.ON_FAILURE || metadata.availability === ArtifactAvailability.ON_SUCCESS) {
+    if (isTerminalOnlyArtifact(metadata.availability)) {
       return 'not-available-yet';
     }
     // Diagnostics are useful while an agent is still retrying.  Expose any
@@ -60,35 +59,44 @@ export function getArtifactStatus(
 
   // File must exist and have content for any availability
   if (!fileExists || fileSize === 0) {
-    // Check if it should have content based on availability rules
-    switch (metadata.availability) {
-    case ArtifactAvailability.ON_FAILURE:
-      return jobStatus === 'failed' ? 'not-found' : 'not-available-yet';
-    case ArtifactAvailability.ON_SUCCESS:
-      return jobStatus === 'completed' ? 'not-found' : 'not-available-yet';
-    case ArtifactAvailability.ALWAYS:
-      return 'not-found';
-    case ArtifactAvailability.CONDITIONAL:
-      return 'not-found';
-    default:
-      return 'not-found';
-    }
+    return missingArtifactStatus(metadata.availability, jobStatus);
   }
 
-  // File exists and has content; check availability rules
-  switch (metadata.availability) {
-  case ArtifactAvailability.ALWAYS:
-    return 'available';
-  case ArtifactAvailability.ON_FAILURE:
-    return jobStatus === 'failed' ? 'available' : 'not-available-yet';
-  case ArtifactAvailability.ON_SUCCESS:
-    return jobStatus === 'completed' ? 'available' : 'not-available-yet';
-  case ArtifactAvailability.CONDITIONAL:
-    // For conditional artifacts, file existence determines availability
-    return 'available';
-  default:
-    return 'not-available-yet';
+  return materializedArtifactStatus(metadata.availability, jobStatus);
+}
+
+function isTerminalOnlyArtifact(availability: ArtifactAvailability): boolean {
+  return availability === ArtifactAvailability.ON_FAILURE ||
+    availability === ArtifactAvailability.ON_SUCCESS;
+}
+
+function missingArtifactStatus(
+  availability: ArtifactAvailability,
+  jobStatus: 'queued' | 'running' | 'completed' | 'failed',
+): ArtifactStatus {
+  if (availability === ArtifactAvailability.ON_FAILURE) {
+    return jobStatus === 'failed' ? 'not-found' : 'not-available-yet';
   }
+  if (availability === ArtifactAvailability.ON_SUCCESS) {
+    return jobStatus === 'completed' ? 'not-found' : 'not-available-yet';
+  }
+  return 'not-found';
+}
+
+function materializedArtifactStatus(
+  availability: ArtifactAvailability,
+  jobStatus: 'queued' | 'running' | 'completed' | 'failed',
+): ArtifactStatus {
+  if (availability === ArtifactAvailability.ON_FAILURE) {
+    return jobStatus === 'failed' ? 'available' : 'not-available-yet';
+  }
+  if (availability === ArtifactAvailability.ON_SUCCESS) {
+    return jobStatus === 'completed' ? 'available' : 'not-available-yet';
+  }
+  return availability === ArtifactAvailability.ALWAYS ||
+    availability === ArtifactAvailability.CONDITIONAL
+    ? 'available'
+    : 'not-available-yet';
 }
 
 /**

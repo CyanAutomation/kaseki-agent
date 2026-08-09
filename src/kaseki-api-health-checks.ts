@@ -44,14 +44,7 @@ import {
 
 export {
   TEMPLATE_REMEDIATION,
-  DEFAULT_TEMPLATE_DOCTOR_TIMEOUT_MS,
-  DEFAULT_TEMPLATE_HEALTH_CACHE_TTL_MS,
-  TEMPLATE_DOCTOR_STDERR_TAIL_LINES,
-  TEMPLATE_DOCTOR_STDOUT_TAIL_LINES,
-  REQUIRED_TEMPLATE_FILES,
   TemplateHealthStatus,
-  FreshnessStatus,
-  TemplatePublishModeCompatibility,
 } from './kaseki-api-health-types';
 
 // =============================================================================
