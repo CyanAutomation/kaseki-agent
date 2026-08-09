@@ -159,4 +159,21 @@ describe('scorecard routes', () => {
     const lastPage=await get(app,'/scorecards?limit=2&offset=2');
     expect(lastPage.body.pagination).toMatchObject({ returned:1,hasMore:false });
   });
+
+  test('skips jobs without scorecards while listing', async () => {
+    const complete = fixture();
+    fs.writeFileSync(path.join(complete.dir, 'run-scorecard.json'), JSON.stringify(complete.card));
+    const missing = { id: 'missing-card', status: 'completed', request: {}, createdAt: new Date() };
+    const scheduler = { getJob: () => undefined, listJobs: () => [missing, {
+      id: 'kaseki-1', status: 'completed', request: {}, createdAt: new Date(),
+      resultDir: complete.dir, finalized: true,
+    }] };
+    const app = express();
+    app.use(createScorecardRoutes(scheduler as any, new ResultCache()));
+
+    const response = await get(app, '/scorecards');
+
+    expect(response.status).toBe(200);
+    expect(response.body.scorecards).toHaveLength(1);
+  });
 });

@@ -96,6 +96,18 @@ describe('StatusLifecycleHelper', () => {
     });
   });
 
+  it('marks persisted failed retry results as exhausted for active jobs', () => {
+    const response = makeResponse();
+
+    new StatusLifecycleHelper(makeConfig(resultsDir)).addLifecycleInfo(response, makeJob(), {
+      provider_error_retry_attempt_count: 2,
+      provider_error_retry_result: 'failed',
+      provider_error_message: 'retry failed',
+    });
+
+    expect(response.attempt?.state).toBe('exhausted');
+  });
+
   it('does not let live progress retry text override persisted retry metadata', () => {
     const response = makeResponse({
       progress: {

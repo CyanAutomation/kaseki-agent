@@ -10,7 +10,7 @@ import { captureCLIError } from './cli-error-handler';
 
 const logger = createLogger('kaseki-cli');
 
-export interface CLICommand {
+interface CLICommand {
   name: string;
   description: string;
   execute(args: string[]): Promise<number>;
