@@ -23,6 +23,7 @@ import { getSecretFilePath } from './secrets/host-secrets-reader';
 import type { ResultCache } from './result-cache';
 import { JobPersistenceManager } from './job-persistence-manager';
 import { EXIT_CODE_SPAWN_FAILED } from './exit-codes';
+import { configureScoutingAndGoalCheckEnv } from './job-environment';
 
 function isLowRiskTaskPrompt(prompt?: string): boolean {
   if (!prompt) {
@@ -385,7 +386,7 @@ export class JobScheduler {
     this.setupValidationCommands(job, env);
     this.setupAutoLintCleanup(job, env);
     this.setupChangedFilesAllowlist(job, env);
-    this.setupScoutingAndGoalCheckEnv(job, env);
+    configureScoutingAndGoalCheckEnv(env, job.request, this.config);
     this.setupTaskPrompt(job, env);
 
     return env;
@@ -478,68 +479,6 @@ export class JobScheduler {
       env.KASEKI_CHANGED_FILES_ALLOWLIST = changedFilesAllowlist.join(' ');
     } else if (isLowRiskTaskPrompt(job.request.taskPrompt)) {
       env.KASEKI_CHANGED_FILES_ALLOWLIST = 'README.md docs/**/*.md *.md';
-    }
-  }
-
-  /**
-   * Configure scouting, goal-setting, and goal-check environment variables.
-   * Scouting is always enabled by default.
-   */
-  private setupScoutingAndGoalCheckEnv(job: Job, env: NodeJS.ProcessEnv): void {
-    // Scouting is enabled by default for patch mode runs, but controllers may
-    // opt out or select a dedicated model/timeout for constrained tasks.
-    env.KASEKI_SCOUTING = job.request.scouting?.enabled === false ? '0' : '1';
-    if (job.request.scouting?.model) {
-      env.KASEKI_SCOUTING_MODEL = job.request.scouting.model;
-    }
-    if (job.request.scouting?.timeoutSeconds) {
-      env.KASEKI_SCOUTING_TIMEOUT_SECONDS = String(
-        job.request.scouting.timeoutSeconds,
-      );
-    }
-    // Goal-setting is enabled by default unless explicitly disabled
-    if (job.request.goalSetting?.enabled !== undefined) {
-      env.KASEKI_GOAL_SETTING = job.request.goalSetting.enabled ? '1' : '0';
-    }
-    if (job.request.goalSetting?.model) {
-      env.KASEKI_GOAL_SETTING_MODEL = job.request.goalSetting.model;
-    }
-    if (job.request.goalSetting?.timeoutSeconds) {
-      env.KASEKI_GOAL_SETTING_TIMEOUT_SECONDS = String(
-        job.request.goalSetting.timeoutSeconds,
-      );
-    }
-    if (job.request.goalCheck?.enabled !== undefined) {
-      env.KASEKI_GOAL_CHECK = job.request.goalCheck.enabled ? '1' : '0';
-    }
-    if (job.request.goalCheck?.maxRetries !== undefined) {
-      env.KASEKI_GOAL_CHECK_MAX_RETRIES = String(
-        job.request.goalCheck.maxRetries,
-      );
-    }
-    if (job.request.goalCheck?.model) {
-      env.KASEKI_GOAL_CHECK_MODEL = job.request.goalCheck.model;
-    }
-    if (job.request.goalCheck?.timeoutSeconds) {
-      env.KASEKI_GOAL_CHECK_TIMEOUT_SECONDS = String(
-        job.request.goalCheck.timeoutSeconds,
-      );
-    }
-    const taskMode = job.request.taskMode || this.config.defaultTaskMode;
-    const publishMode = job.request.publishMode || 'pr';
-    const defaultRunEvaluation =
-      publishMode === 'pr' || publishMode === 'draft_pr'
-        ? taskMode !== 'inspect' && !job.request.startupCheck
-        : false;
-    env.KASEKI_RUN_EVALUATION =
-      (job.request.runEvaluation?.enabled ?? defaultRunEvaluation) ? '1' : '0';
-    if (job.request.runEvaluation?.model) {
-      env.KASEKI_RUN_EVALUATION_MODEL = job.request.runEvaluation.model;
-    }
-    if (job.request.runEvaluation?.timeoutSeconds) {
-      env.KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS = String(
-        job.request.runEvaluation.timeoutSeconds,
-      );
     }
   }
 
