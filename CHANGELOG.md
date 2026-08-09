@@ -4,6 +4,21 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.128.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.127.1...v1.128.0) (2026-08-09)
+
+
+### Bug Fixes
+
+* make evaluator output budgets advisory ([239161d](https://github.com/CyanAutomation/kaseki-agent/commit/239161d103b7a04d0f3c458ff2979d1251f1f3fd))
+* make evaluator output budgets advisory ([#1224](https://github.com/CyanAutomation/kaseki-agent/issues/1224)) ([28fdf87](https://github.com/CyanAutomation/kaseki-agent/commit/28fdf87b50d438864c9d073e6d528cc8659713dd))
+* update kaskeki-agent.sh checks from executable to readable ([66192b1](https://github.com/CyanAutomation/kaseki-agent/commit/66192b1f9d3bd46569eacf994c2eb0519995a789))
+
+
+### Features
+
+* add model-aware LLM cost accounting ([667cc5c](https://github.com/CyanAutomation/kaseki-agent/commit/667cc5c5273de399f94330d0dff0563ad1f4845f))
+* add model-aware LLM cost accounting ([#1225](https://github.com/CyanAutomation/kaseki-agent/issues/1225)) ([da79a3e](https://github.com/CyanAutomation/kaseki-agent/commit/da79a3ee8bf4bbf8ed065cc78475cb52317449a8))
+
 ## [1.127.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.127.0...v1.127.1) (2026-08-09)
 
 
