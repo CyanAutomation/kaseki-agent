@@ -1,11 +1,10 @@
 import type { PiEvent } from '../lib/event-timestamp-helpers.js';
 import { extractMessageTextLength } from '../pi-event-filter-helpers.js';
+import {
+  assistantToolResultCount,
+  type AssistantTurnState,
+} from './assistant-turn-state.js';
 import type { ProviderErrorSummary } from './types.js';
-
-export interface AssistantTurnState {
-  textLength: number;
-  toolResultCount: number;
-}
 
 type Usage = Record<string, unknown> | null | undefined;
 
@@ -32,17 +31,9 @@ function responseId(message: any): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-function toolResultCount(event: PiEvent): number {
-  const direct = (event as any).toolResults;
-  if (Array.isArray(direct)) return direct.length;
-
-  const calls = (event as any).message?.toolCalls ?? (event as any).message?.tool_calls;
-  return Array.isArray(calls) ? calls.length : 0;
-}
-
 function hasAssistantOutput(event: PiEvent, priorState?: AssistantTurnState): boolean {
   return extractMessageTextLength((event as any).message) > 0
-    || toolResultCount(event) > 0
+    || assistantToolResultCount(event) > 0
     || (priorState?.textLength ?? 0) > 0
     || (priorState?.toolResultCount ?? 0) > 0;
 }
@@ -63,20 +54,6 @@ function diagnosticDetails(
     `output_tokens=${outputTokens}`,
     totalTokens !== undefined ? `total_tokens=${totalTokens}` : '',
   ].filter(Boolean).join(' ');
-}
-
-export function recordAssistantTurnState(event: PiEvent, states: Map<string, AssistantTurnState>): void {
-  const id = responseId((event as any).message)
-    ?? responseId((event as any).assistantMessageEvent?.message)
-    ?? responseId((event as any).assistantMessageEvent?.partial);
-  if (!id) return;
-
-  const current = states.get(id) ?? { textLength: 0, toolResultCount: 0 };
-  current.textLength += extractMessageTextLength((event as any).message);
-  current.textLength += extractMessageTextLength((event as any).assistantMessageEvent?.message);
-  current.textLength += extractMessageTextLength((event as any).assistantMessageEvent?.partial);
-  current.toolResultCount += toolResultCount(event);
-  states.set(id, current);
 }
 
 export function extractEmptyAssistantTurn(
