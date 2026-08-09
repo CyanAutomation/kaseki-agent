@@ -19,7 +19,7 @@ function readStructuredEventSnapshot(
   config: KasekiApiConfig,
   job: { id: string; status: string; startedAt?: Date },
   tail: number
-): { id: string; status: string; events: Array<Record<string, unknown>>; total: number; sources: string[] } {
+): { id: string; status: string; events: Array<Record<string, unknown>>; total: number; nextCursor: string; sources: string[] } {
   const progressFile = path.join(config.resultsDir, job.id, 'progress.jsonl');
   const events: Array<Record<string, unknown>> = [];
   const sources = new Set<string>();
@@ -70,11 +70,16 @@ function readStructuredEventSnapshot(
   }
 
   const selectedEvents = tail > 0 ? events.slice(-tail) : [];
+  const selectedEventsWithIds = selectedEvents.map((event, index) => ({
+    ...event,
+    id: String(Math.max(0, events.length - selectedEvents.length + index)),
+  }));
   return {
     id: job.id,
     status: job.status,
-    events: selectedEvents,
+    events: selectedEventsWithIds,
     total: events.length,
+    nextCursor: String(events.length),
     sources: Array.from(sources)
   };
 }
@@ -90,7 +95,11 @@ function streamProgressEvents(
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
-  let lastEventCount = 0;
+  const lastEventId = req.get('Last-Event-ID');
+  const requestedCursor = Number(lastEventId ?? req.query.cursor ?? 0);
+  let lastEventCount = Number.isFinite(requestedCursor)
+    ? Math.max(0, Math.floor(requestedCursor) + (lastEventId ? 1 : 0))
+    : 0;
   let noChangeCount = 0;
   const maxNoChangeAttempts = 10;
 
@@ -119,10 +128,11 @@ function streamProgressEvents(
 
         if (lines.length > lastEventCount) {
           const newLines = lines.slice(lastEventCount);
-          for (const line of newLines) {
+          for (const [index, line] of newLines.entries()) {
             try {
               const event = normalizeProgressEvent(JSON.parse(line));
-              res.write(`data: ${JSON.stringify(event)}\n\n`);
+              const eventId = lastEventCount + index;
+              res.write(`id: ${eventId}\nevent: progress\ndata: ${JSON.stringify({ ...event, id: String(eventId) })}\n\n`);
             } catch {
               // Skip invalid JSON lines.
             }
@@ -146,9 +156,17 @@ function streamProgressEvents(
 
   res.write(`data: ${JSON.stringify({ type: 'start', jobId: job.id, status: job.status })}\n\n`);
 
+  const heartbeat = setInterval(() => {
+    if (!res.destroyed) {
+      res.write(`event: heartbeat\ndata: ${JSON.stringify({ type: 'heartbeat', jobId: job.id, cursor: String(lastEventCount), timestamp: new Date().toISOString() })}\n\n`);
+    }
+  }, 15000);
+  heartbeat.unref?.();
+
   const interval = setInterval(() => {
     if (res.destroyed) {
       clearInterval(interval);
+      clearInterval(heartbeat);
       return;
     }
     sendProgressUpdate();
@@ -157,6 +175,7 @@ function streamProgressEvents(
 
   req.on('close', () => {
     clearInterval(interval);
+    clearInterval(heartbeat);
   });
 }
 

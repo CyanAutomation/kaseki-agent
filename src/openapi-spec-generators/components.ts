@@ -87,7 +87,7 @@ function readPackageJson(packageJsonPath: string): { version?: unknown } {
  * Build API info metadata.
  * Includes title, version, description, contact info, and license.
  */
-function getPackageVersion(packageJsonReader: PackageJsonReader = readPackageJson): string {
+export function getPackageVersion(packageJsonReader: PackageJsonReader = readPackageJson): string {
   const executableDir = path.dirname(process.argv[1] || process.cwd());
   const candidates = [
     path.join(process.cwd(), 'package.json'),
