@@ -8,7 +8,7 @@ export const VALID_LOG_TYPES = [
   'stdout', 'stderr', 'validation', 'progress', 'quality', 'secret-scan', 'combined',
   'goal-setting-stderr', 'scouting-stderr', 'goal-check-stderr', 'run-evaluation-stderr',
 ] as const;
-export const COMBINED_LOG_TYPES = ['stdout', 'stderr', 'validation', 'progress', 'quality', 'secret-scan'] as const;
+const COMBINED_LOG_TYPES = ['stdout', 'stderr', 'validation', 'progress', 'quality', 'secret-scan'] as const;
 const DIAGNOSTIC_FILE_CANDIDATES: DiagnosticEntryPoint[] = [
   'goal-setting-validation-errors.jsonl', 'goal-setting-stderr.log',
   'scouting-validation-errors.jsonl', 'scouting-contract-diagnostics.jsonl',

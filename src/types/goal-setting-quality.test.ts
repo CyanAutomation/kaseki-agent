@@ -33,6 +33,17 @@ describe('goal-setting quality helpers', () => {
     expect(calculateGoalQualityScore(baseGoal)).toBe(50);
   });
 
+  it('scores every quality level at its configured boundary', () => {
+    expect(calculateGoalQualityScore({
+      clarity: 'low', measurability: 'low', specificity: 'low',
+      scope_clarity: 'low', constraint_strength: 'low',
+    })).toBe(0);
+    expect(calculateGoalQualityScore({
+      clarity: 'high', measurability: 'high', specificity: 'high',
+      scope_clarity: 'high', constraint_strength: 'high',
+    })).toBe(125);
+  });
+
   it('reports every missing quality safeguard', () => {
     const warnings = hasQualityWarnings({
       ...baseGoal,
@@ -73,6 +84,16 @@ describe('goal-setting quality helpers', () => {
         scope_clarity: 'high',
         constraint_strength: 'high',
       },
+    })).toEqual([]);
+  });
+
+  it('accepts partial safeguards and only reports the missing categories', () => {
+    expect(hasQualityWarnings({
+      ...baseGoal,
+      anti_patterns: { must_preserve: ['public API'] },
+      examples: { before: 'old' },
+      constraints: { business: ['preserve behavior'] },
+      success_criteria: ['tests pass'],
     })).toEqual([]);
   });
 

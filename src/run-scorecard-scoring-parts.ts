@@ -3,7 +3,7 @@ import type { ScorecardConfig } from './run-scorecard-config';
 import type { RunScorecard } from './types/run-scorecard';
 
 export const DIMENSIONS = ['goal_quality', 'scouting_quality', 'implementation_quality', 'validation_quality', 'goal_attainment', 'evaluation_quality'] as const;
-export const PHASES = ['goal_setting', 'scouting', 'coding', 'validation', 'goal_check', 'run_evaluation'] as const;
+const PHASES = ['goal_setting', 'scouting', 'coding', 'validation', 'goal_check', 'run_evaluation'] as const;
 export const WEIGHTS = [.15, .1, .3, .25, .15, .05];
 
 const clamp = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
@@ -31,7 +31,7 @@ function sourceScores(evidence: Evidence, config: ScorecardConfig): number[] {
   ];
 }
 
-export function disabledPhases(evidence: Evidence): Set<string> {
+function disabledPhases(evidence: Evidence): Set<string> {
   return new Set(Array.isArray(evidence.metadata.disabled_phases)
     ? evidence.metadata.disabled_phases.map(value => String(value).toLowerCase().replace(/[- ]/g, '_'))
     : []);

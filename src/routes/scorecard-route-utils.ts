@@ -1,7 +1,7 @@
 import type { ScorecardSummary } from '../kaseki-api-types';
 
-export const DEFAULT_LIMIT = 25;
-export const MAX_LIMIT = 100;
+const DEFAULT_LIMIT = 25;
+const MAX_LIMIT = 100;
 
 export interface ScorecardFilters {
   lifecycleStatus?: string;
