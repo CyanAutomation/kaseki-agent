@@ -228,7 +228,8 @@ describe('artifact-routes', () => {
       ['hashline-events.jsonl', 'application/x-jsonl', '{"status":"rejected"}\n'],
       ['hashline-summary.json', 'application/json', '{"errors":1}\n'],
       ['hashline-validation.log', 'text/plain', 'Fatal error: invalid hashline\n'],
-    ])('serves registered hashline artifact %s', async (fileName, contentType, content) => {
+      ['goal-check-contract-diagnostics.json', 'application/json', '{"reason":"goal_check_artifact_missing"}\n'],
+    ])('serves registered diagnostic artifact %s', async (fileName, contentType, content) => {
       const job = mockCompletedJob();
       (fs.statSync as jest.Mock).mockReturnValue({
         isFile: () => true,
