@@ -137,7 +137,7 @@ JSON
   assert_run changed-input completed
   log_pass "Changed validation inputs miss the cache"
 
-  touch -d '2 hours ago' "$cache_entry/validation.log"
+  touch -t "$(date -u -v-2H +%Y%m%d%H%M.%S 2>/dev/null || date -u -d '2 hours ago' +%Y%m%d%H%M.%S)" "$cache_entry/validation.log"
   run_public_workflow expired-entry "npm test" 1 || log_fail "Expired-entry baseline-validation run failed"
   assert_run expired-entry completed
   log_pass "Expired cache entries are rejected"
