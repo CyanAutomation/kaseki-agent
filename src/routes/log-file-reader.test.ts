@@ -29,6 +29,8 @@ describe('log-file-reader', () => {
     const runDir = '/tmp/run';
     expect(logFileForType(runDir, 'stdout')).toBe('/tmp/run/stdout.log');
     expect(logFileForType(runDir, 'goal-check-stderr')).toBe('/tmp/run/goal-check-stderr.log');
+    expect(logFileForType(runDir, 'validation')).toBe('/tmp/run/validation.log');
+    expect(isPathInsideDirectory(runDir, runDir)).toBe(true);
     expect(isPathInsideDirectory('/tmp/run/stdout.log', runDir)).toBe(true);
     expect(isPathInsideDirectory('/tmp/other/stdout.log', runDir)).toBe(false);
   });
@@ -53,6 +55,18 @@ describe('log-file-reader', () => {
     expect(result.size).toBe(fs.statSync(file).size);
     expect(result.content.startsWith('[... truncated, showing last 102400 bytes ...]\n')).toBe(true);
     expect(result.content.endsWith('keep-one\nkeep-two\n')).toBe(true);
+  });
+
+  it('uses the default line tail for invalid line counts and preserves byte tails otherwise', () => {
+    const directory = makeTempDir();
+    const file = path.join(directory, 'stdout.log');
+    fs.writeFileSync(file, `${'x'.repeat(100 * 1024)}\nfirst\nsecond\n`);
+
+    const invalid = readLogContent(file, requests({ tail: 'lines', lines: 'not-a-number' }));
+    expect(invalid.content).toContain('first\nsecond\n');
+
+    const bytes = readLogContent(file, requests({ tail: 'bytes' }));
+    expect(bytes.content).toContain('second\n');
   });
 
   it('combines existing logs in stable order and returns undefined when empty', () => {
@@ -93,6 +107,18 @@ describe('log-file-reader', () => {
     expect(collectDiagnostics(directory)).toEqual({
       entryPoint: 'goal-setting-validation-errors.jsonl',
       files: ['goal-setting-validation-errors.jsonl', 'scouting-stderr.log'],
+    });
+  });
+
+  it('returns no diagnostics when no candidate has content and rejects JSON arrays', () => {
+    const empty = makeTempDir();
+    expect(collectDiagnostics(empty)).toBeUndefined();
+
+    const directory = makeTempDir();
+    fs.writeFileSync(path.join(directory, 'goal-setting-validation-errors.jsonl'), '[1, 2]\n');
+    expect(collectDiagnostics(directory)).toEqual({
+      entryPoint: 'goal-setting-validation-errors.jsonl',
+      files: ['goal-setting-validation-errors.jsonl'],
     });
   });
 });

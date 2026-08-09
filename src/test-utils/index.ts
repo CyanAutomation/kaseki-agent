@@ -9,6 +9,5 @@
 
 export * from './fake-binaries';
 export * from './fake-git-repo';
-export * from './temp-dir-manager';
 
 // Note: bash-script-cache and orchestration-stub removed (dead code)
