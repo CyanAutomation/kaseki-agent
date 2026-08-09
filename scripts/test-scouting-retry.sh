@@ -28,7 +28,15 @@ fail_count=0
 # The extracted classifier consults this path for validation diagnostics.
 UNIT_RESULTS_DIR="$(mktemp -d)"
 export KASEKI_RESULTS_DIR="$UNIT_RESULTS_DIR"
-trap 'rm -rf "$UNIT_RESULTS_DIR"' EXIT
+TMP_DIR=""
+
+cleanup() {
+  rm -rf "$UNIT_RESULTS_DIR"
+  if [ -n "$TMP_DIR" ]; then
+    rm -rf "$TMP_DIR"
+  fi
+}
+trap cleanup EXIT
 
 # Test utilities
 test_header() {
@@ -114,11 +122,6 @@ FAKE_BIN="$TMP_DIR/bin"
 APP_LIB="$TMP_DIR/app/lib"
 RUN_LOG="$TMP_DIR/kaseki-run.log"
 AGENT_SCRIPT="$TMP_DIR/kaseki-agent.sh"
-
-cleanup() {
-  rm -rf "$TMP_DIR" "$UNIT_RESULTS_DIR"
-}
-trap cleanup EXIT
 
 mkdir -p "$FAKE_REPO/deps/fake-dep" "$FAKE_BIN" "$APP_LIB"
 touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/progress-stream-utils.js"
