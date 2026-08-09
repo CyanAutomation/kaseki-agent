@@ -89,6 +89,23 @@ describe('run scorecard', () => {
     expect(card.completeness).toBe('provisional');
   });
 
+  test('marks the goal-check phase failed when a terminal run failed there', () => {
+    const evidence = collectEvidence({
+      json: {
+        'metadata.json': {
+          lifecycle_status: 'failed',
+          failed_command: 'goal check',
+          goal_check_failure_reason: 'goal_check_artifact_missing',
+        },
+      },
+      text: { 'git.diff': '+change\n' },
+      summaries: [],
+    });
+
+    const card = buildScorecard(evidence, normalizeConfig({}), new Date('2026-01-01T00:00:00Z'));
+    expect(card.phases.goal_check.outcome).toBe('failed');
+  });
+
   test('normalizes lifecycle and status variants used by artifact producers', () => {
     expect(lifecycle({ lifecycle_status: 'queued' })).toBe('queued');
     expect(lifecycle({ terminal_state: 'timed out' })).toBe('timed_out');

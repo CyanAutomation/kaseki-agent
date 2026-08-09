@@ -332,9 +332,9 @@ fi
 KASEKI_SCOUTING="${KASEKI_SCOUTING:-1}"
 KASEKI_SCOUTING_MODEL="${KASEKI_SCOUTING_MODEL:-$KASEKI_MODEL}"
 KASEKI_SCOUTING_TIMEOUT_SECONDS="${KASEKI_SCOUTING_TIMEOUT_SECONDS:-$KASEKI_AGENT_TIMEOUT_SECONDS}"
-# These phases produce compact hand-off artifacts, not user-facing prose. Keep
-# their default ceilings small so a malformed or overly-chatty evaluator does
-# not consume a coding-sized output budget.
+# These phases produce compact hand-off artifacts, not user-facing prose. The
+# values below are advisory output targets: they are recorded for observability
+# and prompt compaction, but never forwarded as per-phase gateway ceilings.
 KASEKI_SCOUTING_MAX_OUTPUT_TOKENS="${KASEKI_SCOUTING_MAX_OUTPUT_TOKENS:-2048}"
 KASEKI_SCOUTING_MAX_CONTEXT_TOKENS="${KASEKI_SCOUTING_MAX_CONTEXT_TOKENS:-16000}"
 KASEKI_SCOUTING_MAX_TURNS="${KASEKI_SCOUTING_MAX_TURNS:-8}"
@@ -353,8 +353,8 @@ KASEKI_GOAL_CHECK_TIMEOUT_SECONDS="${KASEKI_GOAL_CHECK_TIMEOUT_SECONDS:-$KASEKI_
 KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS:-1536}"
 KASEKI_GOAL_CHECK_MAX_CONTEXT_TOKENS="${KASEKI_GOAL_CHECK_MAX_CONTEXT_TOKENS:-12000}"
 KASEKI_GOAL_CHECK_MAX_TURNS="${KASEKI_GOAL_CHECK_MAX_TURNS:-4}"
-# A contract repair is intentionally smaller than the evidence-gathering pass:
-# it must only serialize the verdict from the already gathered context.
+# A contract repair should normally fit well below the evidence-gathering
+# target. It is still an advisory target, never a reason to fail a run.
 KASEKI_GOAL_CHECK_CONTRACT_REPAIR_TIMEOUT_SECONDS="${KASEKI_GOAL_CHECK_CONTRACT_REPAIR_TIMEOUT_SECONDS:-60}"
 KASEKI_GOAL_CHECK_CONTRACT_REPAIR_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_CHECK_CONTRACT_REPAIR_MAX_OUTPUT_TOKENS:-768}"
 kaseki_apply_inspect_mode_agent_defaults
@@ -5424,12 +5424,12 @@ run_goal_setting_agent() {
   goal_setting_start="$(date +%s)"
   
   set +e
-  LLM_GATEWAY_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_SETTING_MAX_OUTPUT_TOKENS:-}"
-  export LLM_GATEWAY_MAX_OUTPUT_TOKENS
+  KASEKI_PHASE_OUTPUT_TOKEN_TARGET="${KASEKI_GOAL_SETTING_MAX_OUTPUT_TOKENS:-}"
+  export KASEKI_PHASE_OUTPUT_TOKEN_TARGET
   run_pi_with_retry "$GOAL_SETTING_RAW_EVENTS" "$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS" "$KASEKI_GOAL_SETTING_MODEL" "$goal_setting_prompt" "goal-setting-summary" "" "goal-setting"
   GOAL_SETTING_EXIT="$?"
   GOAL_SETTING_DURATION_SECONDS=$(($(date +%s) - goal_setting_start))
-  unset goal_setting_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL LLM_GATEWAY_MAX_OUTPUT_TOKENS
+  unset goal_setting_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL KASEKI_PHASE_OUTPUT_TOKEN_TARGET
   set +e
 
   # Recover a candidate whenever the provider emitted usable JSON, even when Pi
@@ -6094,12 +6094,12 @@ run_scouting_agent() {
   scout_dirty_before="$(git status --porcelain 2>/dev/null || true)"
   chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
-  LLM_GATEWAY_MAX_OUTPUT_TOKENS="${KASEKI_SCOUTING_MAX_OUTPUT_TOKENS:-}"
-  export LLM_GATEWAY_MAX_OUTPUT_TOKENS
+  KASEKI_PHASE_OUTPUT_TOKEN_TARGET="${KASEKI_SCOUTING_MAX_OUTPUT_TOKENS:-}"
+  export KASEKI_PHASE_OUTPUT_TOKEN_TARGET
   run_pi_with_retry "$SCOUTING_RAW_EVENTS" "$KASEKI_SCOUTING_TIMEOUT_SECONDS" "$KASEKI_SCOUTING_MODEL" "$scouting_prompt" "scouting-summary" "" "scouting"
   SCOUTING_EXIT="$?"
   SCOUTING_DURATION_SECONDS=$(($(date +%s) - scouting_start))
-  unset scouting_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL LLM_GATEWAY_MAX_OUTPUT_TOKENS
+  unset scouting_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL KASEKI_PHASE_OUTPUT_TOKEN_TARGET
   set +e
   chmod -R u+w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
 
@@ -6511,11 +6511,11 @@ The evidence pass has completed. Do not perform more investigation or tool calls
   configure_phase_budget "goal-check"
   goal_start="$(date +%s)"
   set +e
-  LLM_GATEWAY_MAX_OUTPUT_TOKENS="$goal_check_max_output"
-  export LLM_GATEWAY_MAX_OUTPUT_TOKENS
+  KASEKI_PHASE_OUTPUT_TOKEN_TARGET="$goal_check_max_output"
+  export KASEKI_PHASE_OUTPUT_TOKEN_TARGET
   run_pi_with_retry "$GOAL_CHECK_RAW_EVENTS" "$goal_check_timeout" "$KASEKI_GOAL_CHECK_MODEL" "$goal_prompt" "goal-check-summary" "" "goal-check"
   GOAL_CHECK_EXIT="$?"
-  unset goal_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL LLM_GATEWAY_MAX_OUTPUT_TOKENS KASEKI_GOAL_CHECK_CONTRACT_REPAIR
+  unset goal_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL KASEKI_PHASE_OUTPUT_TOKEN_TARGET KASEKI_GOAL_CHECK_CONTRACT_REPAIR
   GOAL_CHECK_DURATION_SECONDS=$((GOAL_CHECK_DURATION_SECONDS + $(date +%s) - goal_start))
   set +e
 
@@ -6875,11 +6875,11 @@ run_run_evaluation() {
   eval_dirty_before="$(git status --porcelain 2>/dev/null || true)"
   chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
-  LLM_GATEWAY_MAX_OUTPUT_TOKENS="${KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS:-}"
-  export LLM_GATEWAY_MAX_OUTPUT_TOKENS
+  KASEKI_PHASE_OUTPUT_TOKEN_TARGET="${KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS:-}"
+  export KASEKI_PHASE_OUTPUT_TOKEN_TARGET
   run_pi_with_retry "$RUN_EVALUATION_RAW_EVENTS" "$KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS" "$KASEKI_RUN_EVALUATION_MODEL" "$evaluation_prompt" "run-evaluation-summary" "" "run-evaluation"
   RUN_EVALUATION_EXIT="$?"
-  unset LLM_GATEWAY_API_KEY LLM_GATEWAY_URL LLM_GATEWAY_MAX_OUTPUT_TOKENS
+  unset LLM_GATEWAY_API_KEY LLM_GATEWAY_URL KASEKI_PHASE_OUTPUT_TOKEN_TARGET
   RUN_EVALUATION_DURATION_SECONDS=$((RUN_EVALUATION_DURATION_SECONDS + $(date +%s) - evaluation_start))
   chmod -R u+w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
