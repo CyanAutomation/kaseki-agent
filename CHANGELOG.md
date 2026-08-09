@@ -4,6 +4,20 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.127.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.126.0...v1.127.0) (2026-08-09)
+
+
+### Bug Fixes
+
+* map cached fixture paths into worker ([a16af20](https://github.com/CyanAutomation/kaseki-agent/commit/a16af209e914ce7300418622d9744e22450aa5e9))
+* map cached fixture paths into worker ([#1211](https://github.com/CyanAutomation/kaseki-agent/issues/1211)) ([7ca3ac0](https://github.com/CyanAutomation/kaseki-agent/commit/7ca3ac0e654dab72b7eee465002c6b9d01c0d89f))
+
+
+### Features
+
+* improve API run lifecycle contract ([7627932](https://github.com/CyanAutomation/kaseki-agent/commit/7627932600eea281e5426bf8db66debc386ff1ac))
+* improve API run lifecycle contract ([#1206](https://github.com/CyanAutomation/kaseki-agent/issues/1206)) ([16b3303](https://github.com/CyanAutomation/kaseki-agent/commit/16b3303fc09f2b1dfc10820395e181151f9fa824))
+
 # [1.126.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.125.0...v1.126.0) (2026-08-08)
 
 
