@@ -77,7 +77,7 @@ export function buildPhases(evidence: Evidence): RunScorecard['phases'] {
             : phase === 'goal_check' && evidence.goalCheckFailed ? 'failed'
               : 'succeeded',
       started_at: null, ended_at: null, duration_ms: null, token_usage: usage,
-      measurements: { retries: evidence.retries },
+      measurements: { retries: evidence.phaseRetries[phase] ?? 0 },
       completeness: disabled.has(phase) ? 'not_applicable' : usage.unavailable ? 'provisional' : 'complete',
       confidence: disabled.has(phase) ? 100 : usage.unavailable ? 50 : 100,
       evidence: [], warnings: [],

@@ -9,7 +9,7 @@ const JSON_ARTIFACTS = [
 ];
 const TEXT_ARTIFACTS = [
   'stage-timings.tsv', 'validation-timings.tsv', 'pre-validation-timings.tsv', 'quality-gate-timings.tsv',
-  'changed-files.txt', 'git.diff', 'provider-attempts.jsonl', 'restoration.jsonl',
+  'changed-files.txt', 'git.diff', 'provider-attempts.jsonl', 'restoration.jsonl', 'token-ledger.jsonl',
 ];
 
 export function readArtifactSnapshot(dir: string): ArtifactSnapshot {
@@ -21,8 +21,11 @@ export function readArtifactSnapshot(dir: string): ArtifactSnapshot {
   for (const name of TEXT_ARTIFACTS) {
     try { text[name] = fs.readFileSync(path.join(dir, name), 'utf8'); } catch { /* optional */ }
   }
+  const ledger = (text['token-ledger.jsonl'] ?? '').split(/\r?\n/).filter(Boolean).flatMap((line) => {
+    try { return [JSON.parse(line) as unknown]; } catch { return []; }
+  });
   const consolidated = json['all-phase-summaries.json'] as { phases?: unknown[] } | undefined;
-  const summaries = Array.isArray(consolidated?.phases) ? [...consolidated.phases] : [];
+  const summaries = ledger.length > 0 ? ledger : Array.isArray(consolidated?.phases) ? [...consolidated.phases] : [];
   if (!summaries.length) {
     for (const name of fs.readdirSync(dir).filter(file => file.endsWith('-summary.json'))) {
       try { summaries.push(JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'))); } catch { /* optional */ }

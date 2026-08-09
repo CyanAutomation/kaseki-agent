@@ -19,7 +19,7 @@ describe('scorecard dimension tables and invariants', () => {
   test.each([
     ['missing data', bundle({ json: { 'metadata.json': { exit_code: 0 } }, text: {}, summaries: [] })],
     ['disabled optional phase', bundle({ json: { ...bundle().json, 'metadata.json': { ...(bundle().json['metadata.json'] as object), disabled_phases: ['scouting'] } } })],
-    ['retries', bundle({ text: { ...bundle().text, 'provider-attempts.jsonl': 'attempt retry\nattempt retry\n' } })],
+    ['retries', bundle({ text: { ...bundle().text, 'provider-attempts.jsonl': '{"phase":"coding","attempt":"primary-1"}\n{"phase":"coding","attempt":"primary-2"}\n' } })],
     ['cached tokens', bundle({ summaries: [{ phase: 'coding', request_id: 'cached', usage: { input: 20, output: 5, cacheRead: 5000, cacheWrite: 100 } }] })],
     ['malformed summaries', bundle({ summaries: [null, 'bad', { phase: 'coding', request_id: 'bad' }] })],
     ['zero-change inspect run', bundle({ text: { 'changed-files.txt': '', 'git.diff': '' } })],
@@ -44,7 +44,7 @@ describe('scorecard dimension tables and invariants', () => {
 
   test('more retries or tokens cannot improve efficiency with other inputs equal', () => {
     const base = collectEvidence(bundle());
-    const costly = collectEvidence(bundle({ text: { ...bundle().text, 'provider-attempts.jsonl': 'retry retry retry' }, summaries: [{ phase:'coding', request_id:'large', usage:{ input:80000, output:20000 } }] }));
+    const costly = collectEvidence(bundle({ text: { ...bundle().text, 'provider-attempts.jsonl': '{"phase":"coding","attempt":"primary-1"}\n{"phase":"coding","attempt":"primary-2"}\n' }, summaries: [{ phase:'coding', request_id:'large', usage:{ input:80000, output:20000 } }] }));
     const config = normalizeConfig({ KASEKI_SCORECARD_TASK_SIZE:'small' });
     expect(buildScorecard(costly, config, NOW).dimensions[2].normalized_score).toBeLessThanOrEqual(buildScorecard(base, config, NOW).dimensions[2].normalized_score);
   });

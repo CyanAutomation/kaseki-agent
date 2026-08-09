@@ -2538,12 +2538,14 @@ const controllerPage = String.raw`<!doctype html>
           if (!entries.length) { tokenTimeline.hidden = true; return; }
           tokenTimelineOutput.textContent = entries.map((entry) => {
             const context = Number(entry.context_tokens || 0).toLocaleString();
-            const uncached = Number(entry.input_tokens || 0).toLocaleString();
-            const cached = Number(entry.cache_read_tokens || 0).toLocaleString();
+            const billed = Number((entry.billed_input_tokens ?? entry.input_tokens) || 0).toLocaleString();
+            const cached = Number((entry.cached_input_tokens ?? entry.cache_read_tokens) || 0).toLocaleString();
             const output = Number(entry.output_tokens || 0).toLocaleString();
-            const cost = typeof entry.estimated_cost_usd === 'number' ? ' | $' + entry.estimated_cost_usd.toFixed(4) : '';
+            const cost = typeof entry.estimated_cost_usd === 'number'
+              ? ' | est. $' + entry.estimated_cost_usd.toFixed(6)
+              : ' | pricing unavailable';
             return [entry.phase || 'unknown', entry.attempt_id || 'attempt', entry.response_id || 'response'].join(' · ')
-              + '\\n  context ' + context + ' | uncached ' + uncached + ' | cache ' + cached + ' | output ' + output + cost;
+              + '\\n  context ' + context + ' | billed input ' + billed + ' | cached input ' + cached + ' | output ' + output + cost;
           }).join('\\n');
           tokenTimeline.hidden = false;
         } catch {
