@@ -21,16 +21,21 @@ const unique = (values, limit, chars) => {
   }
   return output;
 };
-const strings = (value, hint = '', out = []) => {
-  if (typeof value === 'string' && /(objective|require|constraint|criteria|acceptance|must|success|retry|missing)/i.test(hint)) out.push(value);
-  else if (Array.isArray(value)) value.forEach(v => strings(v, hint, out));
-  else if (value && typeof value === 'object') Object.entries(value).forEach(([k, v]) => strings(v, k, out));
+const strings = (value, matches, hint = '', inherited = false, out = []) => {
+  const selected = inherited || matches(hint);
+  if (typeof value === 'string' && selected) out.push(value);
+  else if (Array.isArray(value)) value.forEach(v => strings(v, matches, hint, selected, out));
+  else if (value && typeof value === 'object') Object.entries(value).forEach(([k, v]) => strings(v, matches, k, selected, out));
   return out;
 };
+const requirementField = name => /^(objective|requirements?|constraints?|criteria|success_criteria|acceptance(?:_criteria)?|must|retry|missing|anti_patterns?)$/i.test(name);
+const constraintField = name => /^(constraints?|anti_patterns?|boundaries|do_not_modify|out_of_scope)$/i.test(name);
+const unresolvedField = name => /^(unresolved(?:_questions?)?|open_questions?|unknowns?)$/i.test(name);
 const task = process.env.TASK_PROMPT_VALUE || '';
 const goal = json('goal-setting.json'); const scout = json('scouting.json'); const prior = json('context-handoff.json');
-const requirementCandidates = [...task.split(/\n+|;\s+/), ...strings(goal), ...strings(scout), ...(process.env.RETRY_FEEDBACK_VALUE || '').split(/\n+|;\s+/)];
+const requirementCandidates = [...task.split(/\n+|;\s+/), ...strings(goal, requirementField), ...strings(scout, requirementField), ...(process.env.RETRY_FEEDBACK_VALUE || '').split(/\n+|;\s+/)];
 const requirements = unique(requirementCandidates, 20, 6000);
+const constraintCandidates = [...strings(goal, constraintField), ...strings(scout, constraintField), ...requirementCandidates.filter(x => /\b(must|only|never|do not|constraint|budget|bounded)\b/i.test(String(x)))];
 const relevant = Array.isArray(scout?.relevant_files) ? scout.relevant_files : [];
 const inspected = relevant.map(item => typeof item === 'string' ? { path: item, facts: [] } : ({
   path: normalize(item?.path), facts: unique([item?.reason, ...(item?.facts || [])], 4, 800),
@@ -39,14 +44,14 @@ const changed = unique(read('changed-files.txt').split(/\r?\n/), 100, 5000).sort
 const validation = unique(read('validation-timings.tsv').split(/\r?\n/).slice(1).map(line => {
   const [command, duration, exitCode] = line.split('\t'); return command ? `${command}: exit ${exitCode || 'unknown'} (${duration || '?'}s)` : '';
 }), 30, 4000);
-const unresolved = unique([...(prior?.unresolved_questions || []), ...strings(scout, 'unresolved'), ...(process.env.UNRESOLVED_VALUE || '').split('\n')], 12, 2400);
-const artifacts = ['goal-setting.json','scouting.json','changed-files.txt','git.diff','validation.log','validation-timings.tsv','pi-summary.json']
+const unresolved = unique([...(prior?.unresolved_questions || []), ...strings(scout, unresolvedField), ...(process.env.UNRESOLVED_VALUE || '').split('\n')], 12, 2400);
+const artifacts = ['goal-setting.json','scouting.json','goal-check.json','changed-files.txt','git.diff','validation.log','pre-validation-timings.tsv','validation-timings.tsv','stage-timings.tsv','progress.jsonl','dependency-cache.log','metadata.json','pi-summary.json']
   .filter(name => fs.existsSync(path.join(resultsDir, name))).sort().map(name => path.join(resultsDir, name));
 const handoff = {
   schema_version: 1,
   phase_completed: phase,
   requirements,
-  constraints: unique(requirementCandidates.filter(x => /\b(must|only|never|do not|constraint|budget|bounded)\b/i.test(String(x))), 12, 3000),
+  constraints: unique(constraintCandidates, 12, 3000),
   inspected_files: inspected,
   changed_files: changed,
   validation_outcomes: validation,
