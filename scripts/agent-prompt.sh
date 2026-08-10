@@ -7,8 +7,6 @@ build_completion_checklist() {
 
   TASK_PROMPT_VALUE="$TASK_PROMPT" \
   ALLOWLIST_VALUE="${KASEKI_CHANGED_FILES_ALLOWLIST:-}" \
-  TASK_PROMPT_VALUE="$TASK_PROMPT" \
-  ALLOWLIST_VALUE="${KASEKI_CHANGED_FILES_ALLOWLIST:-}" \
   node - "$goal_artifact" "${SCOUTING_ARTIFACT:-/dev/null}" "$critical_artifact" <<'NODE'
 const fs = require('fs');
 const sources = [
@@ -93,7 +91,7 @@ Write allowlist: ${KASEKI_CHANGED_FILES_ALLOWLIST}
 - Change only matching repo-relative paths. Before creating a file, verify it matches.
 - Need another path? Do not create it; explain why it is required in the final terse summary."
   fi
-  if [ -s "$SCOUTING_ARTIFACT" ]; then
+  if [ -s "${SCOUTING_ARTIFACT:-}" ]; then
     scouting_section="
 Scouting artifact:
 - A preceding read-only Pi scouting run researched this task and wrote its JSON findings to $SCOUTING_ARTIFACT.
