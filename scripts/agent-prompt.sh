@@ -1,8 +1,64 @@
 #!/usr/bin/env bash
 # Shared prompt rendering helpers for kaseki-agent.sh and tests.
 
+build_completion_checklist() {
+  local goal_artifact="${GOAL_SETTING_ARTIFACT:-${KASEKI_RESULTS_DIR}/goal-setting.json}"
+  local critical_artifact="${KASEKI_RESULTS_DIR}/critical-change-expectations.json"
+
+  TASK_PROMPT_VALUE="$TASK_PROMPT" \
+  ALLOWLIST_VALUE="${KASEKI_CHANGED_FILES_ALLOWLIST:-}" \
+  TASK_PROMPT_VALUE="$TASK_PROMPT" \
+  ALLOWLIST_VALUE="${KASEKI_CHANGED_FILES_ALLOWLIST:-}" \
+  node - "$goal_artifact" "${SCOUTING_ARTIFACT:-/dev/null}" "$critical_artifact" <<'NODE'
+const fs = require('fs');
+const sources = [
+  ['task', process.env.TASK_PROMPT_VALUE || ''],
+  ['goal-setting', process.argv[2]],
+  ['scouting', process.argv[3]],
+  ['critical-change-expectations', process.argv[4]],
+  ['allowlist', process.env.ALLOWLIST_VALUE || ''],
+];
+const usefulKey = /(objective|requirement|success|acceptance|critical|expectation|required|must|test|check|allowlist|file)/i;
+const candidates = [];
+function collect(value, source, key = '') {
+  if (typeof value === 'string' && value.trim() && (source === 'task' || source === 'allowlist' || usefulKey.test(key))) {
+    candidates.push({ source, requirement: value.replace(/\s+/g, ' ').trim().slice(0, 240) });
+  } else if (Array.isArray(value) && usefulKey.test(key)) {
+    value.forEach(item => collect(item, source, key));
+  } else if (value && typeof value === 'object') {
+    Object.entries(value).forEach(([childKey, child]) => collect(child, source, childKey));
+  }
+}
+for (const [source, input] of sources) {
+  if (!input) continue;
+  if (source === 'task') {
+    input.split(/\n+|;\s+/).map(line => line.replace(/^\s*[-*\d.)]+\s*/, '')).filter(Boolean)
+      .forEach(line => collect(line, source));
+  }
+  else if (source === 'allowlist') collect(`Only change allowlisted paths: ${input}`, source);
+  else if (fs.existsSync(input)) {
+    try { collect(JSON.parse(fs.readFileSync(input, 'utf8')), source); } catch { /* malformed artifacts are handled elsewhere */ }
+  }
+}
+const seen = new Set();
+const items = [];
+for (const candidate of candidates) {
+  const normalized = candidate.requirement.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const overlaps = [...seen].some(previous => previous === normalized || (
+    Math.min(previous.length, normalized.length) >= 20 &&
+    (previous.includes(normalized) || normalized.includes(previous))
+  ));
+  if (!normalized || overlaps) continue;
+  seen.add(normalized);
+  items.push({ id: `C${items.length + 1}`, ...candidate });
+  if (items.length === 12) break;
+}
+process.stdout.write(JSON.stringify({ version: 1, items }));
+NODE
+}
+
 build_agent_prompt() {
-  local memory_section scouting_section retry_section hashline_edits_section summarization_section allowlist_section handoff_section caveman_instruction
+  local memory_section scouting_section retry_section hashline_edits_section summarization_section allowlist_section handoff_section caveman_instruction completion_checklist completion_contract
   
   # Get caveman instruction if enabled
   caveman_instruction="$(get_caveman_instruction)"
@@ -14,6 +70,17 @@ build_agent_prompt() {
   summarization_section=""
   allowlist_section=""
   handoff_section=""
+  completion_checklist="$(build_completion_checklist)"
+  completion_contract="Completion contract (apply before any other instructions):
+1. Identify the minimum required change; inspect only enough evidence to locate it.
+2. Implement it, then run only the focused checks assigned to the coding phase.
+3. Stop immediately when the required diff and checks satisfy the checklist.
+4. Do not restate established conclusions or explore optional improvements.
+
+Completion checklist (machine-readable; deduplicated):
+$completion_checklist
+
+Completion marker: when every item is satisfied, output one line as KASEKI_COMPLETE={\"C1\":\"<diff/check evidence>\"}. Include every checklist id with terse evidence. After this marker, the controller rejects exploratory read/search commands; provide only the final terse summary."
   if [ -s "${KASEKI_RESULTS_DIR}/context-handoff.json" ]; then
     handoff_section="
 Context checkpoint:
@@ -52,39 +119,15 @@ $GOAL_CHECK_RETRY_PROMPT"
   if [ "$KASEKI_HASHLINE_EDITS" != "0" ]; then
     hashline_edits_section="
 File editing with content-based anchors (hashline_edit):
-- Use the hashline_edit tool to make precise file edits using content-based anchors instead of line numbers.
-- This tool reduces retry friction when files change between coding attempts.
-
-Hashline_edit syntax:
-  file_path: Relative path to the file (e.g., 'src/parser.ts')
-  anchor:
-    start_hash: First 8 characters of SHA-256 hash of the first line to replace
-    end_hash: First 8 characters of SHA-256 hash of the last line to replace
-    context_lines: Number of surrounding lines to include for disambiguation (default: 3)
-  replacement: New content (can span multiple lines)
-
-Example: Replace lines 15-17 in src/parser.ts
-  {
-    \"file_path\": \"src/parser.ts\",
-    \"anchor\": {
-      \"start_hash\": \"7d8a4b32\",  // SHA-256 hash of line 15
-      \"end_hash\": \"9c3e1f7a\",    // SHA-256 hash of line 17
-      \"context_lines\": 3
-    },
-    \"replacement\": \"  // Updated implementation\\n  return result;\"
-  }
-
-When to use hashline_edit:
-- Prefer hashline_edit for precise edits to specific code sections
-- Use it to avoid stale line-number references between retries
-- Multiple edits are processed sequentially; anchor failures don't block subsequent edits
-
-Fallback behavior:
-- If hashline_edit is not available or anchor matches are stale, edit operations are rejected (non-fatal)
-- You can always use bash commands (write, sed, etc.) as a fallback
-- The system prefers hashline_edit but gracefully degrades to bash-based editing"
+- Prefer hashline_edit for precise anchored edits; rely on its tool schema for syntax and use a normal write only if an anchor fails."
+    if [ "${KASEKI_HASHLINE_DEBUG:-0}" = "1" ] || grep -Eq '"(failed|failure_count)"[[:space:]]*:[[:space:]]*[1-9]' "${KASEKI_RESULTS_DIR}/hashline-summary.json" 2>/dev/null; then
+      hashline_edits_section="$hashline_edits_section
+- Debugging: start_hash and end_hash are the first 8 SHA-256 characters of the boundary lines; context_lines disambiguates matches, replacement is the complete new content, and edits run sequentially."
+    fi
   fi
   
+  printf '%s\n\n' "$completion_contract"
+
   # Prepend caveman instruction if enabled
   if [ -n "$caveman_instruction" ]; then
     printf '%s\n\n' "$caveman_instruction"
