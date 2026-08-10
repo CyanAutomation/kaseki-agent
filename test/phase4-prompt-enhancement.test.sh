@@ -152,12 +152,75 @@ test_hashline_edit_contract_enabled() {
   if [ "$result" -eq 0 ]; then
     assert_contains "$prompt" "File editing with content-based anchors (hashline_edit):" || result=1
     assert_contains "$prompt" "hashline_edit" || result=1
-    assert_contains "$prompt" "start_hash" || result=1
-    assert_contains "$prompt" "end_hash" || result=1
-    assert_contains "$prompt" "context_lines" || result=1
+    assert_contains "$prompt" "rely on its tool schema for syntax" || result=1
+    assert_not_contains "$prompt" "start_hash" || result=1
+    assert_not_contains "$prompt" "context_lines" || result=1
   fi
 
   test_result "hashline edit contract appears when KASEKI_HASHLINE_EDITS=1" "$result"
+  return "$result"
+}
+
+test_hashline_debug_contract_is_detailed_only_on_request() {
+  local result=0
+  local prompt
+  prompt="$(KASEKI_HASHLINE_EDITS=1 KASEKI_HASHLINE_DEBUG=1 render_prompt)" || result=1
+
+  if [ "$result" -eq 0 ]; then
+    assert_contains "$prompt" "start_hash and end_hash" || result=1
+    assert_contains "$prompt" "context_lines disambiguates matches" || result=1
+  fi
+
+  test_result "hashline details require explicit debugging mode" "$result"
+  return "$result"
+}
+
+test_hashline_failure_enables_debug_contract() {
+  local result=0 prompt results_dir
+  results_dir="$(mktemp -d)"
+  printf '%s\n' '{"failure_count":1}' > "$results_dir/hashline-summary.json"
+  prompt="$(KASEKI_RESULTS_DIR="$results_dir" KASEKI_HASHLINE_EDITS=1 render_prompt)" || result=1
+  rm -rf "$results_dir"
+
+  if [ "$result" -eq 0 ]; then
+    assert_contains "$prompt" "start_hash and end_hash" || result=1
+  fi
+
+  test_result "hashline failure enables detailed recovery guidance" "$result"
+  return "$result"
+}
+
+test_completion_contract_order_and_deduplicated_checklist() {
+  local result=0 prompt first_line
+  local results_dir scouting_artifact
+  results_dir="$(mktemp -d)"
+  scouting_artifact="$results_dir/scouting.json"
+  printf '%s\n' '{"requirements":["Update parser behavior","Run parser test"]}' > "$scouting_artifact"
+  printf '%s\n' '{"success_criteria":["Update parser behavior"]}' > "$results_dir/goal-setting.json"
+  printf '%s\n' '{"critical_changes":["Update parser behavior"]}' > "$results_dir/critical-change-expectations.json"
+
+  prompt="$(
+    TASK_PROMPT='Update parser behavior' \
+    SCOUTING_ARTIFACT="$scouting_artifact" \
+    KASEKI_RESULTS_DIR="$results_dir" \
+    KASEKI_CHANGED_FILES_ALLOWLIST='src/parser.ts' \
+    render_prompt
+  )" || result=1
+  rm -rf "$results_dir"
+
+  if [ "$result" -eq 0 ]; then
+    first_line="${prompt%%$'\n'*}"
+    [ "$first_line" = "Completion contract (apply before any other instructions):" ] || result=1
+    assert_contains "$prompt" '"version":1,"items":[' || result=1
+    assert_contains "$prompt" '"source":"allowlist","requirement":"Only change allowlisted paths: src/parser.ts"' || result=1
+    assert_contains "$prompt" 'KASEKI_COMPLETE={"C1":"<diff/check evidence>"}' || result=1
+    [ "$(printf '%s' "$prompt" | grep -o '"requirement":"Update parser behavior"' | wc -l)" -eq 1 ] || result=1
+    assert_contains "$prompt" "Stop immediately when the required diff and checks satisfy the checklist." || result=1
+    assert_contains "$prompt" "Do not restate established conclusions or explore optional improvements." || result=1
+    assert_contains "$prompt" "controller rejects exploratory read/search commands" || result=1
+  fi
+
+  test_result "completion contract leads and checklist is compact and deduplicated" "$result"
   return "$result"
 }
 
@@ -274,7 +337,10 @@ main() {
   test_guardrail_contract_enabled
   test_guardrail_contract_disabled
   test_hashline_edit_contract_enabled
+  test_hashline_debug_contract_is_detailed_only_on_request
+  test_hashline_failure_enables_debug_contract
   test_hashline_edit_contract_disabled
+  test_completion_contract_order_and_deduplicated_checklist
   test_retry_prompt_contract_included_when_present
   test_retry_prompt_contract_omitted_when_empty
   test_mode_specific_contracts_render_supported_sections
