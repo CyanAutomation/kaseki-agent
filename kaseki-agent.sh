@@ -2200,6 +2200,13 @@ SUMMARY
       fi
     fi
   fi
+
+  # The deterministic analyzer emits this section before finalization. Keep the
+  # API JSON as the source of truth and expose the same selection to operators.
+  if [ -s "${KASEKI_RESULTS_DIR}/efficiency-policy.md" ]; then
+    printf '\n' >> "$summary_file"
+    cat "${KASEKI_RESULTS_DIR}/efficiency-policy.md" >> "$summary_file"
+  fi
 }
 
 write_validation_infrastructure_diagnostics() {
