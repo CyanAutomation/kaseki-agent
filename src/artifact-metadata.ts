@@ -31,6 +31,24 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'efficiency-policy.json': {
+    name: 'efficiency-policy.json',
+    contentType: 'application/json',
+    description: 'Deterministic phase policy, efficiency measurements, and counterfactual cost estimates',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 20,
+    sizeHint: 'small',
+  },
+
+  'efficiency-policy.md': {
+    name: 'efficiency-policy.md',
+    contentType: 'text/markdown',
+    description: 'Human-readable selected efficiency policy and estimated savings',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 21,
+    sizeHint: 'small',
+  },
+
   'inspect-report.md': {
     name: 'inspect-report.md',
     contentType: 'text/markdown',
