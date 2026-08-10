@@ -20,6 +20,7 @@ import { StatusArtifactHelper } from './status-response-artifact-helper';
 import { StatusLifecycleHelper } from './status-lifecycle-helper';
 import { StatusPhaseOutcomeHelper } from './status-phase-outcome-helper';
 import { StatusProgressHelper } from './status-progress-helper';
+import type { EfficiencyPolicy } from '../efficiency-policy/index';
 
 /**
  * Builds StatusResponse objects with timing, progress, and artifact information.
@@ -102,12 +103,23 @@ export class StatusResponseBuilder {
     this.addArtifactInfo(response, job);
     this.addDiagnosticSummary(response, job);
     this.addRunEvaluationInfo(response, metadata);
+    this.addEfficiencyPolicy(response, runDir);
 
     if (job.status === 'failed' && !response.error && response.diagnosticSummary?.primaryReason) {
       response.error = response.diagnosticSummary.primaryReason;
     }
 
     return response;
+  }
+
+  private addEfficiencyPolicy(response: StatusResponse, runDir: string): void {
+    const content = this.readSmallTerminalArtifact(path.join(runDir, 'efficiency-policy.json'));
+    if (!content || content.length > 64 * 1024) return;
+    try {
+      response.efficiencyPolicy = JSON.parse(content) as EfficiencyPolicy;
+    } catch {
+      // A malformed optional artifact must not break status polling.
+    }
   }
 
   private addTimingInfo(response: StatusResponse, job: Job): void {
