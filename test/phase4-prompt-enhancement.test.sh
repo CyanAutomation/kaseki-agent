@@ -109,6 +109,41 @@ test_task_contract_renders_task_prompt() {
   return "$result"
 }
 
+# Optional scouting must not prevent checklist or prompt rendering.
+test_prompt_renders_without_scouting_artifact() {
+  local result=0
+  local prompt
+  local results_dir
+  results_dir="$(mktemp -d)"
+
+  prompt="$(
+    env -u SCOUTING_ARTIFACT \
+      TASK_PROMPT="Implement the requested change." \
+      KASEKI_RESULTS_DIR="$results_dir" \
+      GOAL_CHECK_RETRY_PROMPT="" \
+      KASEKI_HASHLINE_EDITS=0 \
+      KASEKI_AGENT_GUARDRAILS=1 \
+      PROMPT_HELPER="$PROMPT_HELPER" \
+      bash -c '
+        set -euo pipefail
+        read_repo_memory_section() { printf ""; }
+        get_caveman_instruction() { printf ""; }
+        . "$PROMPT_HELPER"
+        build_agent_prompt
+      '
+  )" || result=1
+  rm -rf "$results_dir"
+
+  if [ "$result" -eq 0 ]; then
+    assert_contains "$prompt" 'Completion checklist (machine-readable; deduplicated):' || result=1
+    assert_contains "$prompt" '"source":"task"' || result=1
+    assert_not_contains "$prompt" 'Scouting artifact:' || result=1
+  fi
+
+  test_result "prompt renders when scouting artifact is unset" "$result"
+  return "$result"
+}
+
 # Guardrails enabled/disabled
 test_guardrail_contract_enabled() {
   local result=0
@@ -334,6 +369,7 @@ main() {
   printf 'Asserting generated build_agent_prompt output for stable prompt contracts\n\n'
 
   test_task_contract_renders_task_prompt
+  test_prompt_renders_without_scouting_artifact
   test_guardrail_contract_enabled
   test_guardrail_contract_disabled
   test_hashline_edit_contract_enabled
