@@ -2,8 +2,11 @@
 # Shared evaluation prompt rendering helpers for kaseki-agent.sh and tests.
 
 build_goal_check_prompt() {
-  local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context validation_summary caveman_instruction
+  local progress_summary goal_setting_context validation_context test_impact_context causality_context validation_summary caveman_instruction
   
+  if declare -F construct_context_handoff >/dev/null; then
+    construct_context_handoff "coding" "Return a schema-valid goal-check verdict supported by changed files and validation outcomes."
+  fi
   # Get caveman instruction if enabled
   caveman_instruction="$(get_caveman_instruction)"
   
@@ -36,7 +39,17 @@ Full logs available in ${KASEKI_RESULTS_DIR}/validation.log (optional for detail
     validation_context="Validation log: not yet available. Rely on goal-setting output, scouting output, changed files, and git diff to determine requirement completion."
   fi
   
-  progress_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/progress.jsonl 2>/dev/null || true)"
+  progress_summary="$(node - "${KASEKI_RESULTS_DIR}/progress.jsonl" <<'NODE' 2>/dev/null || true
+const fs=require('fs'); const file=process.argv[2]; let rows=[];
+try { rows=fs.readFileSync(file,'utf8').trim().split(/\r?\n/).map(x=>JSON.parse(x)); } catch {}
+const text=x=>String(x.message||x.detail||x.status||x.event||'').replace(/\s+/g,' ').trim();
+const unique=a=>[...new Set(a.filter(Boolean))].sort();
+const actions=unique(rows.map(x=>`${x.stage||x.phase||'unknown'}: ${text(x)}`));
+const failures=actions.filter(x=>/fail|error|exit [1-9]/i.test(x));
+const evidence=actions.filter(x=>/pass|complete|finished|wrote|met/i.test(x));
+console.log(JSON.stringify({unique_tool_actions:actions.slice(0,40),failures:failures.slice(0,20),completion_evidence:evidence.slice(0,20)}));
+NODE
+)"
   if [ -s "$TEST_IMPACT_WARNINGS_ARTIFACT" ]; then
     test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT):
 $(cat "$TEST_IMPACT_WARNINGS_ARTIFACT" 2>/dev/null)
@@ -125,13 +138,12 @@ $compressed_instructions
 $goal_setting_context
 $causality_context
 $test_impact_context
-Original task prompt:
-$TASK_PROMPT
+Canonical input contract: ${KASEKI_RESULTS_DIR}/context-handoff.json (read first). Read a raw artifact only to answer a named unresolved_questions item.
 
 $validation_context
 
-Progress log tail (last 80 lines):
-$progress_tail
+Deterministic progress summary:
+$progress_summary
 
 Return exactly one JSON object matching the schema below as your final assistant message. Do not write files, use markdown/code fences, or add prose; Kaseki validates and persists the verdict itself.
 Required structured evidence fields: "evidence_sources_inspected": string[], "contradictions": {"sources":string[],"description":string}[], and "confidence_calibration": {"outcome":string,"justification":string}.
@@ -213,13 +225,12 @@ Return exactly one JSON object as the final assistant message. Do not write a fi
 $goal_setting_context
 $causality_context
 $test_impact_context
-Original task prompt (for reference):
-$TASK_PROMPT
+Canonical input contract: ${KASEKI_RESULTS_DIR}/context-handoff.json (read first). Read a raw artifact only to answer a named unresolved_questions item.
 
 $validation_context
 
-Progress log tail (last 80 lines):
-$progress_tail
+Deterministic progress summary:
+$progress_summary
 EOF
   fi
 }
@@ -227,39 +238,23 @@ EOF
 build_run_evaluation_prompt() {
   local validation_tail progress_tail stage_timings dependency_cache restoration_report draft_pr_body metadata_text goal_setting_context test_impact_context caveman_instruction
   
+  if declare -F construct_context_handoff >/dev/null; then
+    construct_context_handoff "validation" "Return the schema-valid run evaluation and process-quality scorecard."
+  fi
+  # Canonical handoff replaces copied raw tails. Raw artifacts may only be read
+  # for a question explicitly named in unresolved_questions.
+  validation_tail=""
+  progress_tail=""
+  stage_timings=""
+  dependency_cache=""
+  restoration_report=""
+  metadata_text=""
+  draft_pr_body=""
+  goal_setting_context="Canonical input contract: ${KASEKI_RESULTS_DIR}/context-handoff.json (read first). Access artifact_paths only for a named unresolved question."
+  test_impact_context=""
   # Get caveman instruction if enabled
   caveman_instruction="$(get_caveman_instruction)"
   
-  validation_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/validation.log 2>/dev/null || true)"
-  progress_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/progress.jsonl 2>/dev/null || true)"
-  stage_timings="$(tail -80 "${KASEKI_RESULTS_DIR}"/stage-timings.tsv 2>/dev/null || true)"
-  dependency_cache="$(tail -80 "${KASEKI_RESULTS_DIR}"/dependency-cache.log 2>/dev/null || true)"
-  restoration_report="$(tail -80 "${KASEKI_RESULTS_DIR}"/restoration.jsonl 2>/dev/null || true)"
-  metadata_text="$(cat "${KASEKI_RESULTS_DIR}"/metadata.json 2>/dev/null || true)"
-  draft_pr_body="$(build_pr_body)"
-  if [ -s "$TEST_IMPACT_WARNINGS_ARTIFACT" ]; then
-    test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT):
-$(cat "$TEST_IMPACT_WARNINGS_ARTIFACT" 2>/dev/null)
-
----
-"
-  else
-    test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT): no warnings emitted.
-
----
-"
-  fi
-  
-  # Include goal-setting output for quality context (influences reviewer_confidence)
-  if [ -f "$GOAL_SETTING_ARTIFACT" ]; then
-    goal_setting_context="GOAL-SETTING OUTPUT (use to calibrate reviewer_confidence):
-$(head -n 200 "$GOAL_SETTING_ARTIFACT" 2>/dev/null)
-
----
-"
-  else
-    goal_setting_context=""
-  fi
 
   # Prepend caveman instruction if enabled
   if [ -n "$caveman_instruction" ]; then

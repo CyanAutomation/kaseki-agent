@@ -5,6 +5,15 @@ build_completion_checklist() {
   local goal_artifact="${GOAL_SETTING_ARTIFACT:-${KASEKI_RESULTS_DIR}/goal-setting.json}"
   local critical_artifact="${KASEKI_RESULTS_DIR}/critical-change-expectations.json"
 
+  if [ -s "${KASEKI_RESULTS_DIR}/context-handoff.json" ]; then
+    node - "${KASEKI_RESULTS_DIR}/context-handoff.json" <<'NODE'
+const fs=require('fs'); const handoff=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+const items=(handoff.requirements||[]).slice(0,12).map((requirement,index)=>({id:`C${index+1}`,source:'context-handoff',requirement}));
+process.stdout.write(JSON.stringify({version:1,items}));
+NODE
+    return
+  fi
+
   TASK_PROMPT_VALUE="$TASK_PROMPT" \
   ALLOWLIST_VALUE="${KASEKI_CHANGED_FILES_ALLOWLIST:-}" \
   node - "$goal_artifact" "${SCOUTING_ARTIFACT:-/dev/null}" "$critical_artifact" <<'NODE'
@@ -58,6 +67,9 @@ NODE
 build_agent_prompt() {
   local memory_section scouting_section retry_section hashline_edits_section summarization_section allowlist_section handoff_section caveman_instruction completion_checklist completion_contract
   
+  if declare -F construct_context_handoff >/dev/null; then
+    construct_context_handoff "scouting" "Implement every normalized requirement, produce the required repository diff, and complete the focused coding checks."
+  fi
   # Get caveman instruction if enabled
   caveman_instruction="$(get_caveman_instruction)"
   
@@ -81,9 +93,11 @@ $completion_checklist
 Completion marker: when every item is satisfied, output one line as KASEKI_COMPLETE={\"C1\":\"<diff/check evidence>\"}. Include every checklist id with terse evidence. After this marker, the controller rejects exploratory read/search commands; provide only the final terse summary."
   if [ -s "${KASEKI_RESULTS_DIR}/context-handoff.json" ]; then
     handoff_section="
-Context checkpoint:
-- A previous phase produced a compact handoff at ${KASEKI_RESULTS_DIR}/context-handoff.json.
-- Read it first. Treat it as the compact replacement for prior conversation history; inspect raw artifacts only when its evidence is insufficient."
+Canonical context contract: ${KASEKI_RESULTS_DIR}/context-handoff.json
+- Read this handoff first; its stable, bounded fields supersede repeated task, goal-setting, scouting, and retry text.
+- Access a raw artifact from artifact_paths only when answering a named item in unresolved_questions."
+    scouting_section=""
+    retry_section=""
   fi
   if [ -n "${KASEKI_CHANGED_FILES_ALLOWLIST:-}" ]; then
     allowlist_section="
@@ -91,7 +105,7 @@ Write allowlist: ${KASEKI_CHANGED_FILES_ALLOWLIST}
 - Change only matching repo-relative paths. Before creating a file, verify it matches.
 - Need another path? Do not create it; explain why it is required in the final terse summary."
   fi
-  if [ -s "${SCOUTING_ARTIFACT:-}" ]; then
+  if [ -s "${SCOUTING_ARTIFACT:-}" ] && [ ! -s "${KASEKI_RESULTS_DIR}/context-handoff.json" ]; then
     scouting_section="
 Scouting artifact:
 - A preceding read-only Pi scouting run researched this task and wrote its JSON findings to $SCOUTING_ARTIFACT.
@@ -106,7 +120,7 @@ Scouting artifact:
 Summarization Analysis:
 $(cat "${KASEKI_RESULTS_DIR}"/summarization-annotation.txt)"
   fi
-  if [ -n "$GOAL_CHECK_RETRY_PROMPT" ]; then
+  if [ -n "$GOAL_CHECK_RETRY_PROMPT" ] && [ ! -s "${KASEKI_RESULTS_DIR}/context-handoff.json" ]; then
     retry_section="
 Goal-check retry guidance:
 - A post-validation goal-check Pi evaluator found the previous coding attempt did not fully realize the scouting objective.
@@ -132,7 +146,7 @@ File editing with content-based anchors (hashline_edit):
   fi
   
   if [ "$KASEKI_AGENT_GUARDRAILS" != "1" ]; then
-    printf '%s' "$TASK_PROMPT"
+    printf '%s' 'Read context-handoff.json first and satisfy its next_phase_completion_condition.'
     printf '%s' "$memory_section"
     printf '%s' "$scouting_section"
     printf '%s' "$retry_section"
@@ -154,8 +168,7 @@ File editing with content-based anchors (hashline_edit):
     cat <<EOF
 $compressed_guardrails
 
-Task:
-$TASK_PROMPT
+Task: satisfy next_phase_completion_condition in the canonical handoff.
 $memory_section
 $scouting_section
 $retry_section
@@ -181,8 +194,7 @@ Operational guardrails:
 - Avoid repeatedly reading or returning unchanged large files. Reuse prior findings and summarize long tool output to limit context growth.
 - Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
 
-Task:
-$TASK_PROMPT
+Task: satisfy next_phase_completion_condition in the canonical handoff.
 $memory_section
 $scouting_section
 $retry_section
