@@ -241,8 +241,8 @@ build_run_evaluation_prompt() {
   if declare -F construct_context_handoff >/dev/null; then
     construct_context_handoff "validation" "Return the schema-valid run evaluation and process-quality scorecard."
   fi
-  # Canonical handoff replaces copied raw tails. Raw artifacts may only be read
-  # for a question explicitly named in unresolved_questions.
+  # Canonical handoff replaces copied raw tails. The evaluator may inspect the
+  # bounded set of evidence named by artifact_paths for its required cross-checks.
   validation_tail=""
   progress_tail=""
   stage_timings=""
@@ -250,7 +250,7 @@ build_run_evaluation_prompt() {
   restoration_report=""
   metadata_text=""
   draft_pr_body=""
-  goal_setting_context="Canonical input contract: ${KASEKI_RESULTS_DIR}/context-handoff.json (read first). Access artifact_paths only for a named unresolved question."
+  goal_setting_context="Canonical input contract: ${KASEKI_RESULTS_DIR}/context-handoff.json (read first). For the required process-evidence cross-checks, inspect only files listed in artifact_paths; inspect any other raw artifact only for a named unresolved question."
   test_impact_context=""
   # Get caveman instruction if enabled
   caveman_instruction="$(get_caveman_instruction)"
