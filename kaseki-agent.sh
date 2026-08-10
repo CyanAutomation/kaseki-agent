@@ -527,6 +527,7 @@ RUN_EVALUATION_ARTIFACT="${KASEKI_RESULTS_DIR}/run-evaluation.json"
 RUN_EVALUATION_CANDIDATE_ARTIFACT="${KASEKI_RESULTS_DIR}/run-evaluation-candidate.json"
 RUN_EVALUATION_RAW_EVENTS="${KASEKI_RESULTS_DIR}/run-evaluation-events.raw.jsonl"
 TEST_IMPACT_WARNINGS_ARTIFACT="${KASEKI_RESULTS_DIR}/test-impact-warnings.log"
+CONTEXT_HANDOFF_ARTIFACT="${KASEKI_RESULTS_DIR}/context-handoff.json"
 EXPECTATION_MISMATCH_WARNINGS_ARTIFACT="${KASEKI_RESULTS_DIR}/expectation-mismatch-warnings.jsonl"
 CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT="${KASEKI_RESULTS_DIR}/critical-change-expectations.json"
 KASEKI_DEPENDENCY_CACHE_DIR="${KASEKI_DEPENDENCY_CACHE_DIR:-${KASEKI_WORKSPACE_DIR}/.kaseki-cache}"
@@ -5934,6 +5935,12 @@ const entry = {
 fs.appendFileSync(file, JSON.stringify(entry) + '\n');
 NODE
   rm -f "$prompt_file" 2>/dev/null || true
+}
+
+construct_context_handoff() {
+  local phase="$1" completion_condition="$2"
+  TASK_PROMPT_VALUE="$TASK_PROMPT" RETRY_FEEDBACK_VALUE="${GOAL_CHECK_RETRY_PROMPT:-}" \
+    node "${KASEKI_SCRIPT_DIR}/scripts/context-handoff.js" "$KASEKI_RESULTS_DIR" "$phase" "$completion_condition"
 }
 
 # Pi reports observed usage against advisory targets. These values are for
