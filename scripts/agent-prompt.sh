@@ -7,7 +7,9 @@ build_completion_checklist() {
 
   TASK_PROMPT_VALUE="$TASK_PROMPT" \
   ALLOWLIST_VALUE="${KASEKI_CHANGED_FILES_ALLOWLIST:-}" \
-  node - "$goal_artifact" "$SCOUTING_ARTIFACT" "$critical_artifact" <<'NODE'
+  TASK_PROMPT_VALUE="$TASK_PROMPT" \
+  ALLOWLIST_VALUE="${KASEKI_CHANGED_FILES_ALLOWLIST:-}" \
+  node - "$goal_artifact" "${SCOUTING_ARTIFACT:-/dev/null}" "$critical_artifact" <<'NODE'
 const fs = require('fs');
 const sources = [
   ['task', process.env.TASK_PROMPT_VALUE || ''],
