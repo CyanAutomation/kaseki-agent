@@ -1,4 +1,7 @@
-import { analyzeEfficiency, emptyAggregate, renderEfficiencyMarkdown, updateAggregate, type RunEfficiencyEvidence } from './index';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { analyzeEfficiency, EfficiencyPolicyStore, emptyAggregate, renderEfficiencyMarkdown, updateAggregate, type RunEfficiencyEvidence } from './index';
 
 const fixture = (repair: boolean): RunEfficiencyEvidence => ({
   taskClass: 'typescript-fix', model: 'large-model', outcome: 'success',
@@ -31,4 +34,20 @@ test('explicit operator phase configuration always wins', () => {
   for (let index = 0; index < 100; index += 1) aggregate = updateAggregate(aggregate, fixture(false));
   const policy = analyzeEfficiency(fixture(false), aggregate, { explicit: { 'goal-setting': { enabled: true, model: 'operator-model', tokenCeiling: 9000 } } });
   expect(policy.selected['goal-setting']).toEqual({ enabled: true, model: 'operator-model', tokenCeiling: 9000 });
+});
+
+test.each(['null', '[]'])('replaces a non-object aggregate store without crashing (%s)', stored => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'efficiency-policy-'));
+  const storePath = path.join(directory, 'aggregate.json');
+  fs.writeFileSync(storePath, stored);
+
+  try {
+    const aggregate = new EfficiencyPolicyStore(storePath).record(fixture(false));
+    expect(aggregate.samples).toBe(1);
+    expect(JSON.parse(fs.readFileSync(storePath, 'utf8'))).toEqual({
+      'typescript-fix:large-model': aggregate,
+    });
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });

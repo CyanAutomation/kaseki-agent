@@ -182,7 +182,14 @@ export class EfficiencyPolicyStore {
   constructor(private readonly filePath: string) {}
   record(run: RunEfficiencyEvidence): AggregateBucket {
     let all: Record<string, AggregateBucket> = {};
-    try { all = JSON.parse(fs.readFileSync(this.filePath, 'utf8')) as Record<string, AggregateBucket>; } catch { /* first sample or corrupt cache */ }
+    try {
+      const stored: unknown = JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
+      // JSON primitives and arrays are valid JSON, but not valid policy stores.
+      // Treat them like a corrupt cache instead of dereferencing a null value below.
+      if (stored !== null && typeof stored === 'object' && !Array.isArray(stored)) {
+        all = stored as Record<string, AggregateBucket>;
+      }
+    } catch { /* first sample or corrupt cache */ }
     const key = `${run.taskClass}:${run.model}`;
     const updated = updateAggregate(all[key] ?? emptyAggregate(run.taskClass, run.model), run);
     all[key] = updated;
