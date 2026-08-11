@@ -353,40 +353,22 @@ describe('pi-progress-summarizer', () => {
   });
 
   describe('extractTopic', () => {
-    it('extracts topic from formatting indicator', () => {
-      const result = extractTopic('Let me find and format the GitHub App Integration section');
-      expect(result).toBeTruthy();
-      if (result) {
-        expect(result).toContain('[thinking]');
-        expect(result.toLowerCase()).toContain('format');
-      }
-    });
-
-    it('detects implementing topic', () => {
-      const result = extractTopic('Now I will implement the error handler for async operations');
-      expect(result).toBeTruthy();
-      if (result) {
-        expect(result).toContain('[thinking]');
-        expect(result.toLowerCase()).toContain('implement');
-      }
-    });
-
-    it('detects checking topic', () => {
-      const result = extractTopic('Let me check if there are any invalid imports in the codebase');
-      expect(result).toBeTruthy();
-      if (result) {
-        expect(result).toContain('[thinking]');
-        expect(result.toLowerCase()).toContain('check');
-      }
-    });
-
-    it('detects analyzing topic', () => {
-      const result = extractTopic('I should analyze the test failures to understand the root cause');
-      expect(result).toBeTruthy();
-      if (result) {
-        expect(result).toContain('[thinking]');
-        expect(result.toLowerCase()).toContain('analyz');
-      }
+    // Progress-summary grammar: extractTopic's topicPatterns in pi-progress-summarizer.ts.
+    it.each([
+      ['format', 'Let me format the GitHub App Integration section', '[thinking] Format the GitHub App Integration section'],
+      ['implement', 'Now I will implement the async error handler', '[thinking] Implement the async error handler'],
+      ['check', 'Let me check the imports', '[thinking] Check the imports'],
+      ['find', 'Let me find the root cause', '[thinking] Find the root cause'],
+      ['analyze', 'I should analyze the test failures', '[thinking] Analyze the test failures'],
+      ['review', 'I will review the proposed changes', '[thinking] Review the proposed changes'],
+      ['fix', 'I will fix the parser regression', '[thinking] Fix the parser regression'],
+      ['add', 'I am adding retry coverage', '[thinking] Adding retry coverage'],
+      ['update', 'I am updating the API contract', '[thinking] Updating the API contract'],
+      ['organize', 'I am organizing the imports', '[thinking] Organizing the imports'],
+      ['validate', 'I will validate the generated schema', '[thinking] Validate the generated schema'],
+      ['test', 'I am testing the fallback behavior', '[thinking] Testing the fallback behavior'],
+    ])('normalizes the %s indicator', (_indicator, input, expected) => {
+      expect(extractTopic(input)).toBe(expected);
     });
 
     it('returns null for content without topic indicators', () => {
@@ -418,50 +400,22 @@ describe('pi-progress-summarizer', () => {
       expect(result).toMatch(/^\[thinking\] [A-Z]/);
     });
 
-    it('handles multiple indicator keywords - picks first', () => {
-      const result = extractTopic('I will analyze and format the configuration properly');
-      expect(result).toBeTruthy();
-      if (result) {
-        expect(result.toLowerCase()).toMatch(/analyz|format/);
-      }
-    });
-
-    it('extracts context after indicator', () => {
-      const result = extractTopic('I am checking if the environment variables are properly set');
-      expect(result).toBeTruthy();
-      if (result) {
-        expect(result.toLowerCase()).toContain('check');
-      }
+    it('uses the first supported grammar rule when multiple indicators are present', () => {
+      expect(extractTopic('I will analyze and format the configuration properly')).toBe(
+        '[thinking] Format the configuration properly',
+      );
     });
 
     it('handles case-insensitive matching', () => {
-      const result = extractTopic('I will FORMAT the CONFIG file');
-      expect(result).toBeTruthy();
-      if (result) {
-        expect(result).toContain('[thinking]');
-        expect(result.toLowerCase()).toContain('format');
-      }
-    });
-
-    it('extracts finding topic', () => {
-      const result = extractTopic('Let me find the root cause of the issue');
-      expect(result).toBeTruthy();
-      if (result) {
-        expect(result.toLowerCase()).toContain('find');
-      }
-    });
-
-    it('extracts meaningful topic snippet from long sentences', () => {
-      const result = extractTopic(
-        'Now I will format all the configuration files across the entire application ' +
-          'to ensure consistency and compliance with the new standards'
+      expect(extractTopic('I will FORMAT the CONFIG file')).toBe(
+        '[thinking] FORMAT the CONFIG file',
       );
-      expect(result).toBeTruthy();
-      if (result) {
-        // Should contain the thinking indicator and the core topic keyword
-        expect(result).toContain('[thinking]');
-        expect(result.toLowerCase()).toContain('format');
-      }
+    });
+
+    it('truncates the topic at the maximum extraction length', () => {
+      expect(extractTopic(`I will format ${'a'.repeat(100)}`)).toBe(
+        `[thinking] Format ${'a'.repeat(69)}`,
+      );
     });
   });
 });
