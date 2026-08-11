@@ -125,7 +125,7 @@ fi
 # coupling the health behavior test to kaseki-agent.sh implementation text.
 # When the worker-specific URL is absent, the provider health entry point must
 # resolve the configured LLM gateway URL and derive its health endpoint.
-mkdir -p "$TMP_DIR/fake-bin"
+mkdir -p "$TMP_DIR/fake-bin" "$TMP_DIR/results"
 cat > "$TMP_DIR/fake-bin/curl" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "${*: -1}" >> "$FAKE_CURL_REQUESTS"
