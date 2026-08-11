@@ -33,3 +33,16 @@ render_npm_install_flags() {
   done
   printf '%s' "$rendered"
 }
+
+# Validation command-not-found failures can be dependency-cache damage.  The
+# caller gets exactly one dependency repair attempt when a lockfile is present.
+validation_dependency_recovery_action() {
+  local validation_exit="$1"
+  local lockfile_present="$2"
+  local retry_count="${3:-0}"
+  if [ "$validation_exit" -eq 127 ] && [ "$lockfile_present" -eq 1 ] && [ "$retry_count" -lt 1 ]; then
+    printf 'reinstall_and_retry\n'
+  else
+    printf 'finish\n'
+  fi
+}

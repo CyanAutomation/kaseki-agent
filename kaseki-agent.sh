@@ -8581,7 +8581,7 @@ prepare_dependencies() {
     # damaged cache cannot reach validation or the agent.
     restore_validation_reason=""
     DEPENDENCY_CACHE_BIN_REPAIRED=0
-    if [ ! -f "$validation_marker" ]; then
+    if ! dependency_cache_schema_valid "$validation_marker" "$KASEKI_DEPENDENCY_CACHE_SCHEMA_VERSION"; then
       restore_validation_reason="missing_or_stale_schema_marker"
     elif ! npm ls --depth=0 >/dev/null 2>&1; then
       restore_validation_reason="npm_ls_failed_after_restore"
@@ -9620,7 +9620,12 @@ else
   # Exit 127 commonly means a restored dependency tree lost package-manager
   # executable links. Repair dependencies once and retry the full validation
   # sequence; ordinary test/type failures remain fail-fast and are not retried.
-  if [ "$VALIDATION_EXIT" -eq 127 ] && [ -f package-lock.json ]; then
+  validation_dependency_retry_count=0
+  lockfile_present=0
+  [ -f package-lock.json ] && lockfile_present=1
+  validation_dependency_action="$(validation_dependency_recovery_action "$VALIDATION_EXIT" "$lockfile_present" "$validation_dependency_retry_count")"
+  if [ "$validation_dependency_action" = "reinstall_and_retry" ]; then
+    validation_dependency_retry_count=$((validation_dependency_retry_count + 1))
     printf 'Validation command was not found (exit 127); repairing dependencies and retrying once.\n' | tee -a "${KASEKI_RESULTS_DIR}"/validation.log
     emit_event "validation_dependency_recovery" "reason=command_not_found" "action=reinstall_and_retry"
     rm -rf node_modules

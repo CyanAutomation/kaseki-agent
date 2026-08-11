@@ -16,3 +16,22 @@ dependency_cache_key() {
   local flags_hash="$3"
   printf 'npm/%s/node-%s/flags-%s' "$lock_hash" "$node_major" "$flags_hash"
 }
+
+# Return the recovery selected after validating a restored cache.  Keeping this
+# decision pure makes the cache contract testable without running an agent.
+dependency_cache_recovery_action() {
+  local schema_valid="$1"
+  local executables_valid="$2"
+  local dependency_graph_valid="${3:-0}"
+  if [ "$schema_valid" -eq 0 ] && [ "$executables_valid" -eq 0 ] && [ "$dependency_graph_valid" -eq 0 ]; then
+    printf 'reuse\n'
+  else
+    printf 'reinstall\n'
+  fi
+}
+
+dependency_cache_schema_valid() {
+  local marker="$1"
+  local expected_version="$2"
+  [ -r "$marker" ] && [ "$(cat "$marker")" = "$expected_version" ]
+}
