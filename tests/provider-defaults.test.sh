@@ -64,6 +64,7 @@ run_startup_check() {
 unset_output="$TMP_DIR/unset-provider.out"
 openrouter_output="$TMP_DIR/openrouter-provider.out"
 missing_gateway_output="$TMP_DIR/missing-gateway-config.out"
+gateway_url_requests="$TMP_DIR/gateway-url.requests"
 
 run_startup_check "__unset__" "$unset_output"
 run_startup_check "openrouter" "$openrouter_output"
@@ -118,6 +119,36 @@ fi
 
 if grep -Fq 'Checking fallback LLM provider' "$openrouter_output"; then
   fail 'startup checks still attempted a fallback provider' "$openrouter_output"
+fi
+
+# Keep environment resolution coverage with provider configuration rather than
+# coupling the health behavior test to kaseki-agent.sh implementation text.
+# When the worker-specific URL is absent, the provider health entry point must
+# resolve the configured LLM gateway URL and derive its health endpoint.
+mkdir -p "$TMP_DIR/fake-bin"
+cat > "$TMP_DIR/fake-bin/curl" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "${*: -1}" >> "$FAKE_CURL_REQUESTS"
+printf '{"ready":true}\n'
+SH
+chmod +x "$TMP_DIR/fake-bin/curl"
+: > "$gateway_url_requests"
+set +e
+env -u KASEKI_GATEWAY_URL \
+  PATH="$TMP_DIR/fake-bin:$PATH" \
+  FAKE_CURL_REQUESTS="$gateway_url_requests" \
+  KASEKI_RESULTS_DIR="$TMP_DIR/results" \
+  LLM_GATEWAY_URL=https://configured.example/gateway/ \
+  bash -c '. "$1"; pre_check_gateway_health gateway' \
+    _ "$PROJECT_ROOT/scripts/lib/provider-retry.sh" > /dev/null 2> "$TMP_DIR/gateway-url.stderr"
+gateway_url_status=$?
+set -e
+
+if [ "$gateway_url_status" -ne 0 ]; then
+  fail "LLM gateway URL health probe exited $gateway_url_status instead of 0" "$TMP_DIR/gateway-url.stderr"
+fi
+if [ "$(cat "$gateway_url_requests")" != 'https://configured.example/gateway/health' ]; then
+  fail 'provider health did not resolve its endpoint from LLM_GATEWAY_URL' "$gateway_url_requests"
 fi
 
 printf '✓ gateway-only provider validation passed\n'
