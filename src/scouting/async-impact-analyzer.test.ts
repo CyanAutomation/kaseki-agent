@@ -187,6 +187,7 @@ describe('async-impact-analyzer', () => {
   });
 
   describe('integration', () => {
+    // Requirement: ../../docs/ASYNC_AWARENESS.md#scouting-discoveries
     it('should detect comprehensive async impact', () => {
       // Set up a realistic structure
       const mockDir = path.join(tempDir, '__mocks__');
@@ -207,12 +208,14 @@ describe('async-impact-analyzer', () => {
       const analysis = analyzeAsyncImpact(prompt, tempDir);
 
       expect(analysis.hasAsyncChanges).toBe(true);
-      expect(analysis.asyncKeywords.length).toBeGreaterThan(0);
-      expect(analysis.mockFiles.length).toBeGreaterThan(0);
-      expect(analysis.testFiles.length).toBeGreaterThan(0);
-      expect(analysis.interfaceFiles.length).toBeGreaterThan(0);
-      expect(analysis.summary).toBeTruthy();
-      expect(analysis.summary).toContain('mock');
+      expect(analysis.mockFiles).toContain(path.join('__mocks__', 'api.ts'));
+      expect(analysis.testFiles).toContain('api.test.ts');
+      expect(analysis.interfaceFiles).toContain('api.interface.ts');
+      expect(analysis.summary).toBe(
+        'Detected async keywords: async, await, callback, convert.*async, async/await, callback.*async; ' +
+          '3 mock files may need updates; 3 test files may need updates; ' +
+          '3 interface/type files affected',
+      );
     });
 
     it('should return empty arrays when no async changes detected', () => {
@@ -228,22 +231,6 @@ describe('async-impact-analyzer', () => {
       // The current impl still finds them, but hasAsyncChanges = false is key
     });
 
-    it('should produce valid summary format', () => {
-      fs.writeFileSync(path.join(tempDir, 'service.mock.ts'), 'export const mockService = {};');
-      fs.writeFileSync(path.join(tempDir, 'service.test.ts'), 'describe("service", () => {});');
-
-      const prompt = 'Convert to async/await';
-      const analysis = analyzeAsyncImpact(prompt, tempDir);
-
-      if (analysis.hasAsyncChanges) {
-        expect(analysis.summary).toBeTruthy();
-        expect(typeof analysis.summary).toBe('string');
-        // Summary should mention affected files if any
-        if (analysis.mockFiles.length > 0 || analysis.testFiles.length > 0) {
-          expect(analysis.summary.length).toBeGreaterThan(0);
-        }
-      }
-    });
   });
 
   describe('deduplication', () => {
