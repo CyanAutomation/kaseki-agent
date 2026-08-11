@@ -357,7 +357,7 @@ describe('pi-progress-summarizer', () => {
     it.each([
       ['format', 'Let me format the GitHub App Integration section', '[thinking] Format the GitHub App Integration section'],
       ['implement', 'Now I will implement the async error handler', '[thinking] Implement the async error handler'],
-      ['check', 'Let me check the imports', '[thinking] Check the imports'],
+      ['check', 'I should check the imports', '[thinking] Check the imports'],
       ['find', 'Let me find the root cause', '[thinking] Find the root cause'],
       ['analyze', 'I should analyze the test failures', '[thinking] Analyze the test failures'],
       ['review', 'I will review the proposed changes', '[thinking] Review the proposed changes'],
@@ -383,15 +383,7 @@ describe('pi-progress-summarizer', () => {
 
     it('extracts topic sentence without overflowing into subsequent sentences', () => {
       const result = extractTopic('Now I will format the config file. Then I need to test it.');
-      expect(result).toBeTruthy();
-      if (result) {
-        // Should include the thinking indicator
-        expect(result).toContain('[thinking]');
-        // Should not include content from the second sentence (boundary test)
-        const lowerResult = result.toLowerCase();
-        expect(lowerResult).not.toContain('then');
-        expect(lowerResult).not.toContain('test it');
-      }
+      expect(result).toBe('[thinking] Format the config file');
     });
 
     it('capitalizes first letter of extracted topic', () => {
