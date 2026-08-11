@@ -49,8 +49,8 @@ if [ "\${1:-}" = "--version" ]; then
   exit 0
 fi
 printf '%s\n' "\$*" >> "$PROVIDER_LOG"
-if printf '%s' "\$*" | grep -qi 'run evaluation'; then
-  printf '%s\n' "\$*" >> "$EVALUATION_LOG"
+if printf '%s' "$*" | grep -qi 'run evaluation'; then
+  exit 88
 fi
 exit 88
 EOF_PI
