@@ -4,6 +4,8 @@
 set -euo pipefail
 
 TEST_NAME="missing OpenRouter key finalizes before Pi agents"
+# SUMMARY-CONTRACT-STATUS-001: terminal summary coverage belongs with the
+# behavioral finalization test, not a source-text predicate in cache tests.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT_UNDER_TEST="$REPO_ROOT/kaseki-agent.sh"
 TMP_DIR="$(mktemp -d)"
