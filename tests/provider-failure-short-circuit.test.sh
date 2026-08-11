@@ -49,9 +49,6 @@ if [ "\${1:-}" = "--version" ]; then
   exit 0
 fi
 printf '%s\n' "\$*" >> "$PROVIDER_LOG"
-if printf '%s' "$*" | grep -qi 'run evaluation'; then
-  exit 88
-fi
 exit 88
 EOF_PI
 
@@ -141,6 +138,8 @@ if (metadata.exit_code !== 88) throw new Error(`metadata exit_code was ${metadat
 if (failure.exit_code !== 88) throw new Error(`failure exit_code was ${failure.exit_code}`);
 if (failure.failed_command !== 'pi coding agent') {
   throw new Error(`failure failed_command was ${failure.failed_command}`);
+}
+NODE
 
 assert_empty "$VALIDATION_LOG" validation
 assert_empty "$EVALUATION_LOG" evaluation
