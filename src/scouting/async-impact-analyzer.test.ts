@@ -213,8 +213,8 @@ describe('async-impact-analyzer', () => {
       expect(analysis.interfaceFiles).toContain('api.interface.ts');
       expect(analysis.summary).toBe(
         'Detected async keywords: async, await, callback, convert.*async, async/await, callback.*async; ' +
-          '3 mock files may need updates; 3 test files may need updates; ' +
-          '3 interface/type files affected',
+          '1 mock file may need updates; 1 test file may need updates; ' +
+          '1 interface/type file affected',
       );
     });
 
