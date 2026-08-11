@@ -75,7 +75,7 @@ EOF_VALIDATION_FILTER
 
 # These shims delegate repository-local Git work, but record network-facing
 # GitHub operations if the terminal short circuit ever permits them.
-REAL_GIT="$(command -v git)"
+REAL_GIT="$(command -v git)" || fail 'git command not found in PATH'
 cat > "$FAKE_BIN/git" <<EOF_GIT
 #!/usr/bin/env bash
 if [ "\${1:-}" = push ]; then
