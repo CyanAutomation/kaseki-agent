@@ -221,6 +221,18 @@ describe('async-impact-analyzer', () => {
       );
     });
 
+    it('uses path-aware glob matching when git has no tracked files', () => {
+      fs.writeFileSync(path.join(tempDir, 'ordinary.ts'), 'export const ordinary = true;');
+      fs.writeFileSync(path.join(tempDir, 'service.mock.ts'), 'export const mockService = {};');
+      fs.writeFileSync(path.join(tempDir, 'service.test.ts'), 'describe("service", () => {});');
+
+      const analysis = analyzeAsyncImpact('Convert the service to async', tempDir);
+
+      expect(analysis.mockFiles).toEqual(['service.mock.ts']);
+      expect(analysis.testFiles).toEqual(['service.test.ts']);
+      expect(analysis.interfaceFiles).toEqual([]);
+    });
+
     it('should return empty arrays when no async changes detected', () => {
       fs.writeFileSync(path.join(tempDir, 'ui.component.ts'), 'export const Component = () => {};');
       fs.writeFileSync(path.join(tempDir, 'ui.test.ts'), 'describe("ui", () => {});');

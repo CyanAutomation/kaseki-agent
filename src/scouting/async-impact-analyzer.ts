@@ -8,6 +8,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execSync } from 'node:child_process';
+import { minimatch } from 'minimatch';
 
 export interface AsyncImpactAnalysis {
   hasAsyncChanges: boolean;
@@ -224,7 +225,7 @@ function findFilesByPatternsSync(workspaceRoot: string, patterns: string[]): str
 function matchPattern(filePath: string, pattern: string): boolean {
   const normalizedPath = filePath.replace(/\\/g, '/');
   const normalizedPattern = pattern.replace(/\\/g, '/');
-  return path.matchesGlob(normalizedPath, normalizedPattern);
+  return minimatch(normalizedPath, normalizedPattern);
 }
 
 /**
