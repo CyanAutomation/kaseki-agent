@@ -17,8 +17,11 @@ dependency_cache_key() {
   printf 'npm/%s/node-%s/flags-%s' "$lock_hash" "$node_major" "$flags_hash"
 }
 
-# Return the recovery selected after validating a restored cache.  Keeping this
-# decision pure makes the cache contract testable without running an agent.
+# Print the recovery selected after validating a restored cache. The return
+# status only reports whether this helper itself ran successfully; callers must
+# use the printed action ("reuse" or "reinstall") to distinguish outcomes.
+# Keeping this decision pure makes the cache contract testable without running
+# an agent and avoids overloading non-zero statuses with recovery state.
 dependency_cache_recovery_action() {
   local schema_valid="$1"
   local executables_valid="$2"

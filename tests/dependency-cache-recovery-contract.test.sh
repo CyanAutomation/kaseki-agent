@@ -27,6 +27,12 @@ fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
 pass() { printf '✓ %s\n' "$1"; }
 assert_eq() { [ "$1" = "$2" ] || fail "expected '$2', got '$1': $3"; }
 
+recovery_action() {
+  local status=0
+  action="$(dependency_cache_recovery_action "$@")" || status=$?
+  assert_eq "$status" 0 "recovery helper status"
+}
+
 make_typescript_fixture() {
   local root="$1"
   mkdir -p "$root/node_modules/.bin"
@@ -42,7 +48,7 @@ chmod +x "$valid/node_modules/.bin/tsc"
 printf '2\n' > "$valid/validated-v2"
 schema_rc=0; dependency_cache_schema_valid "$valid/validated-v2" 2 || schema_rc=$?
 bins_rc=0; dependency_cache_required_bins_valid "$valid/package.json" "$valid/node_modules" || bins_rc=$?
-action="$(dependency_cache_recovery_action "$schema_rc" "$bins_rc" 0)"
+recovery_action "$schema_rc" "$bins_rc" 0
 assert_eq "$action" reuse "valid cache recovery action"
 retry_count=0
 assert_eq "$retry_count" 0 "valid cache retry count"
@@ -53,10 +59,11 @@ pass "CACHE-CONTRACT-VALID-001 valid cache is reused with zero retries"
 invalid="$TMP_DIR/invalid-cache"
 make_typescript_fixture "$invalid"
 printf 'not executable\n' > "$invalid/node_modules/.bin/tsc"
+chmod 0644 "$invalid/node_modules/.bin/tsc"
 printf '1\n' > "$invalid/validated-v1"
 schema_rc=0; dependency_cache_schema_valid "$invalid/validated-v1" 2 || schema_rc=$?
 bins_rc=0; dependency_cache_required_bins_valid "$invalid/package.json" "$invalid/node_modules" 2>/dev/null || bins_rc=$?
-action="$(dependency_cache_recovery_action "$schema_rc" "$bins_rc" 0)"
+recovery_action "$schema_rc" "$bins_rc" 0
 assert_eq "$action" reinstall "invalid cache recovery action"
 pass "CACHE-CONTRACT-INVALID-002 invalid executable/schema cache selects reinstall"
 
