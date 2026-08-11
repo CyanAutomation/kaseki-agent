@@ -222,39 +222,9 @@ function findFilesByPatternsSync(workspaceRoot: string, patterns: string[]): str
  * Supports basic patterns like **\/*.test.ts, src/**\/*.ts, etc.
  */
 function matchPattern(filePath: string, pattern: string): boolean {
-  // Normalize separators
   const normalizedPath = filePath.replace(/\\/g, '/');
   const normalizedPattern = pattern.replace(/\\/g, '/');
-
-  // Handle ** pattern
-  if (normalizedPattern.includes('**/')) {
-    // Pattern like **\/*.test.ts
-    // Extract the part after **/
-    const afterGlob = normalizedPattern.split('**/').pop() || '';
-    if (!afterGlob) return false;
-
-    // Check if any segment of the path matches
-    // For **\/*.test.ts, we want to match any /file.test.ts
-    if (afterGlob.startsWith('*')) {
-      // Pattern like **\/*.test.ts
-      const suffix = afterGlob.substring(1); // Remove leading *
-      return normalizedPath.includes('/') ? normalizedPath.endsWith(suffix) : normalizedPath.endsWith(suffix);
-    }
-
-    // For **\/{somedir}/**\/*.ts, recursively search
-    return normalizedPath.includes(afterGlob) || normalizedPath.endsWith(afterGlob);
-  }
-
-  // Handle single * pattern in filename
-  if (normalizedPattern.includes('*')) {
-    const regex = new RegExp(
-      `^${normalizedPattern.replace(/\./g, '\\.').replace(/\*/g, '[^/]*')}$`,
-    );
-    return regex.test(normalizedPath);
-  }
-
-  // Exact match
-  return normalizedPath === normalizedPattern;
+  return path.matchesGlob(normalizedPath, normalizedPattern);
 }
 
 /**
@@ -326,19 +296,19 @@ function buildSummary(
   }
 
   if (mocks.length > 0) {
-    parts.push(`${mocks.length} mock files may need updates`);
+    parts.push(`${mocks.length} mock file${mocks.length === 1 ? '' : 's'} may need updates`);
   }
 
   if (tests.length > 0) {
-    parts.push(`${tests.length} test files may need updates`);
+    parts.push(`${tests.length} test file${tests.length === 1 ? '' : 's'} may need updates`);
   }
 
   if (interfaces.length > 0) {
-    parts.push(`${interfaces.length} interface/type files affected`);
+    parts.push(`${interfaces.length} interface/type file${interfaces.length === 1 ? '' : 's'} affected`);
   }
 
   if (consumers.length > 0) {
-    parts.push(`${consumers.length} consumer files may need updates`);
+    parts.push(`${consumers.length} consumer file${consumers.length === 1 ? '' : 's'} may need updates`);
   }
 
   return parts.join('; ');
