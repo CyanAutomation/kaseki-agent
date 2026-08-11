@@ -208,8 +208,11 @@ describe('async-impact-analyzer', () => {
       const analysis = analyzeAsyncImpact(prompt, tempDir);
 
       expect(analysis.hasAsyncChanges).toBe(true);
+      expect(analysis.mockFiles).toHaveLength(1);
       expect(analysis.mockFiles).toContain(path.join('__mocks__', 'api.ts'));
+      expect(analysis.testFiles).toHaveLength(1);
       expect(analysis.testFiles).toContain('api.test.ts');
+      expect(analysis.interfaceFiles).toHaveLength(1);
       expect(analysis.interfaceFiles).toContain('api.interface.ts');
       expect(analysis.summary).toBe(
         'Detected async keywords: async, await, callback, convert.*async, async/await, callback.*async; ' +
