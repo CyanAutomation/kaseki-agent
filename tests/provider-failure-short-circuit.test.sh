@@ -130,6 +130,8 @@ set -e
 grep -Fq 'skipping downstream validation, evaluation, and GitHub operations' "$RESULTS_DIR/progress.jsonl" || \
   fail 'missing user-facing downstream short-circuit diagnostic in progress.jsonl'
 
+[ -f "$RESULTS_DIR/metadata.json" ] || fail 'metadata.json was not created'
+[ -f "$RESULTS_DIR/failure.json" ] || fail 'failure.json was not created'
 node - "$RESULTS_DIR/metadata.json" "$RESULTS_DIR/failure.json" <<'NODE' || fail 'terminal artifacts did not preserve provider failure status'
 const fs = require('node:fs');
 const [metadataPath, failurePath] = process.argv.slice(2);
@@ -139,8 +141,6 @@ if (metadata.exit_code !== 88) throw new Error(`metadata exit_code was ${metadat
 if (failure.exit_code !== 88) throw new Error(`failure exit_code was ${failure.exit_code}`);
 if (failure.failed_command !== 'pi coding agent') {
   throw new Error(`failure failed_command was ${failure.failed_command}`);
-}
-NODE
 
 assert_empty "$VALIDATION_LOG" validation
 assert_empty "$EVALUATION_LOG" evaluation
