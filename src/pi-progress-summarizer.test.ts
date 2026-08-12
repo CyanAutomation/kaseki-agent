@@ -360,6 +360,7 @@ describe('pi-progress-summarizer', () => {
       ['check', 'I should check the imports', '[thinking] Check the imports'],
       ['find', 'Let me find the root cause', '[thinking] Find the root cause'],
       ['analyze', 'I should analyze the test failures', '[thinking] Analyze the test failures'],
+      ['analyzing', 'I am analyzing the test failures to understand the root cause', '[thinking] Analyzing the test failures to understand the root cause'],
       ['review', 'I will review the proposed changes', '[thinking] Review the proposed changes'],
       ['fix', 'I will fix the parser regression', '[thinking] Fix the parser regression'],
       ['add', 'I am adding retry coverage', '[thinking] Adding retry coverage'],
