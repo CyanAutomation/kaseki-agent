@@ -9,6 +9,7 @@
     "src/**/*.test.ts",
     "src/**/*.spec.ts",
     "src/**/*.type-test.ts",
+    "scripts/context-handoff.js",
     "test/**/*.test.ts",
     "tests/**/*.test.ts",
     "scripts/**/*.ts",
