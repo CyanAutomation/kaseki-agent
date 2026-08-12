@@ -133,6 +133,10 @@ export async function bootstrapServices(
     const schedulerStartTime = performance.now();
     logger.info('Initializing JobScheduler');
     const scheduler = factories.createJobScheduler(config, webhookManager, artifactCache);
+    cleanupTasks.push({
+      name: 'JobScheduler',
+      run: () => scheduler.shutdown(),
+    });
     await scheduler.ready();
     const schedulerDuration = performance.now() - schedulerStartTime;
     componentTimings.push({ name: 'JobScheduler', durationMs: schedulerDuration });
@@ -237,7 +241,7 @@ export async function gracefulShutdown(deps: ShutdownDeps): Promise<void> {
     });
 
     // 2. Shutdown scheduler
-    scheduler.shutdown();
+    await scheduler.shutdown();
     logger.info('Job scheduler shutdown');
 
     // 3. Shutdown webhook manager

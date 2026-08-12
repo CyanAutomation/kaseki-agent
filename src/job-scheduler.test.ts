@@ -1,12 +1,14 @@
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
+import type { Server } from 'http';
 import { JobScheduler } from './job-scheduler';
 import { WebhookManager } from './webhook-manager';
 import { secretValueCache } from './secret-value-cache';
 import * as hostSecretsReader from './secrets/host-secrets-reader';
 import { EXIT_CODE_SPAWN_FAILED } from './exit-codes';
 import { JobPersistenceManager } from './job-persistence-manager';
+import { gracefulShutdown } from './kaseki-api/service-bootstrapper';
 
 // Mock the host-secrets-reader module
 jest.mock('./secrets/host-secrets-reader', () => ({
@@ -2409,6 +2411,66 @@ describe('JobScheduler shutdown lifecycle', () => {
       }),
       job.webhookConfig,
     );
+  });
+
+  test('graceful shutdown does not exit until the terminal job index is persisted', async () => {
+    const resultsDir = createResultsDir();
+    const config = {
+      port: 8080,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 0,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 400000,
+      agentTimeoutSeconds: 30,
+      logLevel: 'info' as const,
+    };
+    const persistenceManager = new JobPersistenceManager(config);
+    const scheduler = new JobScheduler(
+      config,
+      createMockWebhookManager(),
+      undefined,
+      persistenceManager,
+    );
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+    let releasePersistence!: () => void;
+    const persistenceGate = new Promise<void>((resolve) => {
+      releasePersistence = resolve;
+    });
+    let committedStatuses: string[] = [];
+    jest.spyOn(persistenceManager, 'persistJobs').mockImplementation(async (jobs) => {
+      await persistenceGate;
+      committedStatuses = jobs.map(({ id, status }) => `${id}:${status}`);
+    });
+    const exit = jest.fn() as unknown as (code: number) => never;
+    const server = {
+      close: jest.fn((callback: (error?: Error) => void) => {
+        callback();
+        return server as unknown as Server;
+      }),
+    };
+
+    const shutdownPromise = gracefulShutdown({
+      server: server as unknown as Server,
+      scheduler,
+      webhookManager: { shutdown: jest.fn().mockResolvedValue(undefined) },
+      idempotencyStore: { shutdown: jest.fn() },
+      exit,
+    });
+    await Promise.resolve();
+
+    expect(job.status).toBe('failed');
+    expect(committedStatuses).toEqual([]);
+    expect(exit).not.toHaveBeenCalled();
+
+    releasePersistence();
+    await shutdownPromise;
+
+    expect(committedStatuses).toContain(`${job.id}:failed`);
+    expect(exit).toHaveBeenCalledWith(0);
   });
 });
 

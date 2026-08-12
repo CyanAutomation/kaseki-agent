@@ -1489,7 +1489,7 @@ export class JobScheduler {
   /**
    * Shutdown the scheduler, aborting running jobs.
    */
-  shutdown(): void {
+  async shutdown(): Promise<void> {
     this.isShuttingDown = true;
 
     // Detach pending work before finalizing running jobs. A running job may
@@ -1559,6 +1559,6 @@ export class JobScheduler {
     }
     this.timeoutKillTimers.clear();
 
-    void this.persistJobs();
+    await this.persistJobs();
   }
 }
