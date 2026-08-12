@@ -290,6 +290,31 @@ describe('JobPersistenceManager', () => {
   });
 
   describe('persistJobs', () => {
+    test('persists submitted ownership so another live manager cannot claim it', async () => {
+      const first = new JobPersistenceManager(config, {
+        pid: 101, now: () => 1_000,
+        processLivenessChecker: () => true, lockTokenGenerator: () => 'first',
+      });
+      const second = new JobPersistenceManager(config, {
+        pid: 202, now: () => 2_000,
+        processLivenessChecker: () => true, lockTokenGenerator: () => 'second',
+      });
+      const job: Job = {
+        id: 'kaseki-submitted', status: 'queued',
+        request: { repoUrl: 'https://github.com/test/repo', ref: 'main' },
+        createdAt: new Date(1_000), resultDir: first.getResultDir('kaseki-submitted'),
+        correlationId: 'corr', requestId: 'request',
+      };
+      await first.persistQueuedJob(job);
+      await first.persistJobs([job]);
+
+      expect((await second.loadPersistedJobs()).queuedJobs).toHaveLength(0);
+      const stored = JSON.parse(fs.readFileSync(
+        path.join(tempDir, '.kaseki-api-jobs.json'), 'utf-8',
+      )) as { jobs: PersistedJob[] };
+      expect(stored.jobs[0].restartClaim?.pid).toBe(101);
+    });
+
     test('should persist jobs to index file', async () => {
       const job: Job = {
         id: 'kaseki-1',

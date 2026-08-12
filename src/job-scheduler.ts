@@ -141,13 +141,15 @@ export class JobScheduler {
     config: KasekiApiConfig,
     webhookManager: WebhookManager,
     artifactCache?: Pick<ResultCache, 'clearForJob'>,
+    persistenceManager?: JobPersistenceManager,
   ) {
     this.config = config;
     this.logger = createEventLogger('job-scheduler');
     this.webhookManager = webhookManager;
     this.failureArtifactWriter = new FailureArtifactWriter(config.resultsDir);
     this.artifactCache = artifactCache;
-    this.persistenceManager = new JobPersistenceManager(config);
+    this.persistenceManager =
+      persistenceManager ?? new JobPersistenceManager(config);
     this.initializationPromise = this.initializeFromPersistence();
   }
 
@@ -177,7 +179,13 @@ export class JobScheduler {
 
     this.jobs.set(instanceId, job);
     this.queue.push(job);
-    await this.persistJobs();
+    try {
+      await this.persistenceManager.persistQueuedJob(job);
+    } catch (error) {
+      this.jobs.delete(instanceId);
+      this.queue = this.queue.filter((queued) => queued.id !== instanceId);
+      throw error;
+    }
 
     // Emit webhook event for job submission
     if (job.webhookConfig) {
@@ -648,6 +656,8 @@ export class JobScheduler {
   private executeJob(job: Job): void {
     const effectiveTimeoutSeconds =
       job.request.timeoutSeconds ?? this.config.agentTimeoutSeconds;
+
+    this.persistenceManager.releaseQueuedJobOwnership(job);
 
     // Initialize job state
     this.clearLiveProgressCache(job.id);

@@ -6,6 +6,7 @@ import { WebhookManager } from './webhook-manager';
 import { secretValueCache } from './secret-value-cache';
 import * as hostSecretsReader from './secrets/host-secrets-reader';
 import { EXIT_CODE_SPAWN_FAILED } from './exit-codes';
+import { JobPersistenceManager } from './job-persistence-manager';
 
 // Mock the host-secrets-reader module
 jest.mock('./secrets/host-secrets-reader', () => ({
@@ -127,6 +128,29 @@ describe('JobScheduler queue behavior', () => {
     } finally {
       await scheduler.shutdown();
     }
+  });
+
+  test.each([
+    ['live owner', 2_000, true, 0],
+    ['expired lease', 62_000, true, 1],
+    ['dead owner', 2_000, false, 1],
+  ])('enforces submitted ownership for a %s', async (_case, now, alive, pending) => {
+    const resultsDir = createResultsDir();
+    const config = { port: 3000, apiKeys: [], resultsDir, maxConcurrentRuns: 0 };
+    const first = new JobScheduler(config, createMockWebhookManager(), undefined,
+      new JobPersistenceManager(config, {
+        pid: 101, now: () => 1_000, restartClaimLeaseMs: 60_000,
+        processLivenessChecker: () => true, lockTokenGenerator: () => 'first',
+      }));
+    await first.submitJob({ repoUrl: 'https://github.com/example/repo', ref: 'main' });
+    const second = new JobScheduler(config, createMockWebhookManager(), undefined,
+      new JobPersistenceManager(config, {
+        pid: 202, now: () => now, restartClaimLeaseMs: 60_000,
+        processLivenessChecker: () => alive, lockTokenGenerator: () => 'second',
+      }));
+
+    await second.ready();
+    expect(second.getQueueStatus().pending).toBe(pending);
   });
 });
 
@@ -2465,10 +2489,12 @@ describe('JobScheduler persistence merge safety', () => {
     const before = fs.readFileSync(indexPath, 'utf-8');
 
     fs.mkdirSync(`${resultsDir}/.kaseki-api-jobs.lock`, { mode: 0o700 });
-    await scheduler.submitJob({
-      repoUrl: 'https://github.com/org/repo',
-      ref: 'feature/locked',
-    });
+    await expect(
+      scheduler.submitJob({
+        repoUrl: 'https://github.com/org/repo',
+        ref: 'feature/locked',
+      }),
+    ).rejects.toThrow('Failed to acquire Kaseki jobs index lock');
     await (
       scheduler as unknown as { persistJobs: () => Promise<void> }
     ).persistJobs();
