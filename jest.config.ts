@@ -16,6 +16,7 @@ const config: Config = {
   collectCoverageFrom: [
     'src/**/*.ts',
     'scripts/**/*.ts',
+    'scripts/**/*.js',
     '!src/**/*.test.ts',
     '!scripts/**/*.test.ts',
     '!src/**/index.ts',
@@ -24,9 +25,10 @@ const config: Config = {
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   extensionsToTreatAsEsm: ['.ts'],
   transform: {
-    '^.+\\.ts$': ['ts-jest', {
+    '^.+\\.[tj]s$': ['ts-jest', {
       useESM: true,
       tsconfig: {
+        allowJs: true,
         isolatedModules: true,
         esModuleInterop: true,
         module: 'esnext',
