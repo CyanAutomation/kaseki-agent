@@ -48,7 +48,7 @@ describe('ServiceBootstrapper', () => {
       });
       const scheduler = {
         ready: jest.fn().mockReturnValue(schedulerReady),
-        shutdown: jest.fn(),
+        shutdown: jest.fn().mockResolvedValue(undefined),
       };
 
       const factories: ServiceBootstrapFactories = {
@@ -103,7 +103,7 @@ describe('ServiceBootstrapper', () => {
         }),
         createPreFlightValidator: jest.fn(() => asService({ validate: jest.fn() })),
         createJobScheduler: jest.fn(() =>
-          asService({ ready: jest.fn(), shutdown: jest.fn() }),
+          asService({ ready: jest.fn(), shutdown: jest.fn().mockResolvedValue(undefined) }),
         ),
       };
 
@@ -145,7 +145,9 @@ describe('ServiceBootstrapper', () => {
       };
       const mockServices = {
         scheduler: {
-          shutdown: jest.fn(() => shutdownOrder.push('scheduler')),
+          shutdown: jest.fn(async () => {
+            shutdownOrder.push('scheduler');
+          }),
         },
         webhookManager: {
           shutdown: jest.fn(async () => {
@@ -183,7 +185,7 @@ describe('ServiceBootstrapper', () => {
       const mockExit = jest.fn() as unknown as (code: number) => never;
 
       const mockServices = {
-        scheduler: { shutdown: jest.fn() },
+        scheduler: { shutdown: jest.fn().mockResolvedValue(undefined) },
         webhookManager: { shutdown: jest.fn().mockResolvedValue(undefined) },
         idempotencyStore: { shutdown: jest.fn() },
       };
@@ -206,7 +208,7 @@ describe('ServiceBootstrapper', () => {
       const forceExitAfterMs = 50;
       const hungWebhookShutdown = new Promise<void>(() => {});
       const mockServices = {
-        scheduler: { shutdown: jest.fn() },
+        scheduler: { shutdown: jest.fn().mockResolvedValue(undefined) },
         webhookManager: { shutdown: () => hungWebhookShutdown },
         idempotencyStore: { shutdown: jest.fn() },
       };
@@ -238,7 +240,7 @@ describe('ServiceBootstrapper', () => {
       });
 
       const mockServices = {
-        scheduler: { shutdown: jest.fn() },
+        scheduler: { shutdown: jest.fn().mockResolvedValue(undefined) },
         webhookManager: { shutdown: jest.fn().mockResolvedValue(undefined) },
         idempotencyStore: { shutdown: jest.fn() },
       };

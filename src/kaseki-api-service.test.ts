@@ -455,7 +455,7 @@ describe('Kaseki API graceful shutdown', () => {
     } as unknown as Server;
 
     const scheduler = {
-      shutdown: jest.fn(() => {
+      shutdown: jest.fn(async () => {
         callOrder.push('scheduler.shutdown');
       }),
     };
