@@ -9,7 +9,7 @@ const shutdownDepsContract: Assert<
     ShutdownDeps,
     {
       server: Server;
-      scheduler: { shutdown: () => void };
+      scheduler: { shutdown: () => Promise<void> };
       webhookManager: { shutdown: () => Promise<void> };
       idempotencyStore: { shutdown: () => void };
       forceExitAfterMs?: number;
@@ -62,7 +62,7 @@ describe('KasekiApiService Integration', () => {
         expect(stats.hits).toBe(1);
       } finally {
         if (services) {
-          services.scheduler.shutdown();
+          await services.scheduler.shutdown();
           await services.webhookManager.shutdown();
           services.idempotencyStore.shutdown();
         }
@@ -106,7 +106,7 @@ describe('KasekiApiService Integration', () => {
         expect(stats.entries).toBe(0);
       } finally {
         if (services) {
-          services.scheduler.shutdown();
+          await services.scheduler.shutdown();
           await services.webhookManager.shutdown();
           services.idempotencyStore.shutdown();
         }
