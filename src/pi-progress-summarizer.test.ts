@@ -353,11 +353,12 @@ describe('pi-progress-summarizer', () => {
   });
 
   describe('extractTopic', () => {
-    // Progress-summary grammar: extractTopic's topicPatterns in pi-progress-summarizer.ts.
+    // Progress-summary contract: extractTopic's topicPatterns and stopPoints grammar in
+    // pi-progress-summarizer.ts retains the matched topic while removing leading scaffolding.
     it.each([
       ['format', 'Let me format the GitHub App Integration section', '[thinking] Format the GitHub App Integration section'],
       ['implement', 'Now I will implement the async error handler', '[thinking] Implement the async error handler'],
-      ['check', 'I should check the imports', '[thinking] Check the imports'],
+      ['check', 'I am checking if the environment variables are properly set', '[thinking] Checking if the environment variables are properly set'],
       ['find', 'Let me find the root cause', '[thinking] Find the root cause'],
       ['analyze', 'I should analyze the test failures', '[thinking] Analyze the test failures'],
       ['analyzing', 'I am analyzing the test failures to understand the root cause', '[thinking] Analyzing the test failures to understand the root cause'],
