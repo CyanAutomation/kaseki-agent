@@ -102,13 +102,13 @@ describe('rendered prompt contracts', () => {
       name: 'goal-check' as const,
       files: { 'goal-setting.json': '{}', 'test-impact-warnings.json': 'SUPPLIED_WARNING_CONTEXT' },
       env: { TASK_PROMPT: 'SUPPLIED_TASK_CONTEXT' },
-      included: ['SUPPLIED_WARNING_CONTEXT', 'SUPPLIED_TASK_CONTEXT'],
+      included: ['SUPPLIED_WARNING_CONTEXT', 'GOAL-SETTING ARTIFACT:', 'context-handoff.json'],
     },
     {
       name: 'run-evaluation' as const,
       files: { 'goal-setting.json': '{"quality_score":91}', 'progress.jsonl': 'SUPPLIED_PROGRESS_CONTEXT' },
       env: { DRAFT_PR_BODY: 'SUPPLIED_PR_CONTEXT' },
-      included: ['"quality_score":91', 'SUPPLIED_PROGRESS_CONTEXT', 'SUPPLIED_PR_CONTEXT'],
+      included: ['Canonical input contract:', 'goal-setting.json'],
     },
     {
       name: 'agent' as const,
@@ -130,24 +130,26 @@ describe('rendered prompt contracts', () => {
     for (const value of omitted) expect(prompt).not.toContain(value);
   });
 
-  it.each(['goal-check', 'run-evaluation', 'agent'] as const)(
-    '%s preserves hostile fixture text without executing it',
-    name => {
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hostile-prompt-fixture-'));
-      const touched = path.join(tmpDir, 'executed');
-      const hostile = `HOSTILE_$(touch ${touched})_\`touch ${touched}\`_EOF`;
-      try {
-        const prompt = renderPrompt(name, {
-          files: name === 'agent' ? { 'scouting.json': '{}' } : { 'goal-setting.json': hostile },
-          env: { TASK_PROMPT: hostile },
-        });
-        expect(prompt).toContain(hostile);
-        expect(fs.existsSync(touched)).toBe(false);
-      } finally {
-        fs.rmSync(tmpDir, { recursive: true, force: true });
-      }
-    },
-  );
+  it.each([
+    { name: 'goal-check' as const, inline: false },
+    { name: 'run-evaluation' as const, inline: true },
+    { name: 'agent' as const, inline: true },
+  ])('%s handles hostile fixture text without executing it', ({ name, inline }) => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hostile-prompt-fixture-'));
+    const touched = path.join(tmpDir, 'executed');
+    const hostile = `HOSTILE_$(touch ${touched})_\`touch ${touched}\`_EOF`;
+    try {
+      const prompt = renderPrompt(name, {
+        files: name === 'agent' ? { 'scouting.json': '{}' } : { 'goal-setting.json': hostile },
+        env: { TASK_PROMPT: hostile },
+      });
+      if (inline) expect(prompt).toContain(hostile);
+      else expect(prompt).not.toContain(hostile);
+      expect(fs.existsSync(touched)).toBe(false);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 
   it('reads artifact paths containing spaces without interpreting their contents', () => {
     const relativePath = 'artifact fixtures/goal setting.json';
@@ -161,7 +163,8 @@ describe('rendered prompt contracts', () => {
         goalSettingArtifact: relativePath,
       });
 
-      expect(prompt).toContain(hostile);
+      expect(prompt).toContain('artifact fixtures/goal setting.json');
+      expect(prompt).not.toContain(hostile);
       expect(fs.existsSync(touched)).toBe(false);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
