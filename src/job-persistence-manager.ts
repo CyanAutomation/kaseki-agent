@@ -34,6 +34,8 @@ export interface RestartClaim {
   leasedAt: string;
 }
 
+type JobWithRestartClaim = Job & { restartClaim?: RestartClaim };
+
 type LoadPersistedJobsStatus = 'loaded' | 'lock_contention' | 'read_error';
 
 interface LockOwnerMetadata {
@@ -207,6 +209,8 @@ export class JobPersistenceManager {
             }
             if (job.status === 'queued') {
               if (this.claimRestartableJob(persisted)) {
+                (job as JobWithRestartClaim).restartClaim =
+                  persisted.restartClaim;
                 queuedJobs.push(job);
                 indexChanged = true;
               }
@@ -281,6 +285,24 @@ export class JobPersistenceManager {
     }
   }
 
+  /** Atomically persist a submitted queued job and this manager's ownership. */
+  async persistQueuedJob(job: Job): Promise<void> {
+    await this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
+      fs.mkdirSync(this.config.resultsDir, { recursive: true });
+      const persisted = this.serializeJob(job);
+      this.claimRestartableJob(persisted);
+      (job as JobWithRestartClaim).restartClaim = persisted.restartClaim;
+      const current = this.readPersistedJobsIndex();
+      const merged = this.mergePersistedJobs(current.jobs || [], [persisted]);
+      this.writePersistedJobsIndex(merged);
+    });
+  }
+
+  /** Stop carrying a queued-job claim after execution has started. */
+  releaseQueuedJobOwnership(job: Job): void {
+    delete (job as JobWithRestartClaim).restartClaim;
+  }
+
   /**
    * Generate a unique, durable instance ID.
    * Format: `kaseki-N`, matching run-kaseki.sh and result directory names.
@@ -317,11 +339,9 @@ export class JobPersistenceManager {
    * Serialize a job for persistence (dates → ISO strings, remove non-persistent fields).
    */
   private serializeJob(job: Job): PersistedJob {
-    const serializableJob = { ...job } as Job & {
-      restartClaim?: RestartClaim;
-    };
+    const serializableJob = { ...job } as JobWithRestartClaim;
     delete serializableJob.timeout;
-    delete serializableJob.restartClaim;
+    if (job.status !== 'queued') delete serializableJob.restartClaim;
     return {
       ...serializableJob,
       createdAt: job.createdAt.toISOString(),
@@ -334,7 +354,7 @@ export class JobPersistenceManager {
    * Deserialize a persisted job (ISO strings → dates).
    */
   private deserializeJob(job: PersistedJob): Job {
-    const { restartClaim: _restartClaim, ...persistedJob } = job;
+    const { ...persistedJob } = job;
     return {
       ...persistedJob,
       createdAt: new Date(job.createdAt),
