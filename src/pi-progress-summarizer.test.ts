@@ -393,6 +393,8 @@ describe('pi-progress-summarizer', () => {
       expect(result).toMatch(/^\[thinking\] [A-Z]/);
     });
 
+    // Fixed keyword priority is the required precedence, not indicator order in the input:
+    // https://github.com/CyanAutomation/kaseki-agent/issues/1244
     it('uses the first supported grammar rule when multiple indicators are present', () => {
       expect(extractTopic('I will analyze and format the configuration properly')).toBe(
         '[thinking] Format the configuration properly',
