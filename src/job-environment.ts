@@ -11,30 +11,36 @@ export function configureScoutingAndGoalCheckEnv(
   request: RunRequest,
   config: KasekiApiConfig,
 ): void {
+  applyScoutingEnv(env, request);
+  applyGoalSettingEnv(env, request);
+  applyGoalCheckEnv(env, request);
+  applyEvaluationEnv(env, request, config);
+}
+
+function applyScoutingEnv(env: NodeJS.ProcessEnv, request: RunRequest): void {
   env.KASEKI_SCOUTING = request.scouting?.enabled === false ? '0' : '1';
-  if (request.scouting?.model) env.KASEKI_SCOUTING_MODEL = request.scouting.model;
-  if (request.scouting?.timeoutSeconds) {
-    env.KASEKI_SCOUTING_TIMEOUT_SECONDS = String(request.scouting.timeoutSeconds);
-  }
+  applyOptionalValue(env, 'KASEKI_SCOUTING_MODEL', request.scouting?.model);
+  applyOptionalNumber(env, 'KASEKI_SCOUTING_TIMEOUT_SECONDS', request.scouting?.timeoutSeconds);
+}
 
-  if (request.goalSetting?.enabled !== undefined) {
-    env.KASEKI_GOAL_SETTING = request.goalSetting.enabled ? '1' : '0';
-  }
-  if (request.goalSetting?.model) env.KASEKI_GOAL_SETTING_MODEL = request.goalSetting.model;
-  if (request.goalSetting?.timeoutSeconds) {
-    env.KASEKI_GOAL_SETTING_TIMEOUT_SECONDS = String(request.goalSetting.timeoutSeconds);
-  }
+function applyGoalSettingEnv(env: NodeJS.ProcessEnv, request: RunRequest): void {
+  applyOptionalBoolean(env, 'KASEKI_GOAL_SETTING', request.goalSetting?.enabled);
+  applyOptionalValue(env, 'KASEKI_GOAL_SETTING_MODEL', request.goalSetting?.model);
+  applyOptionalNumber(env, 'KASEKI_GOAL_SETTING_TIMEOUT_SECONDS', request.goalSetting?.timeoutSeconds);
+}
 
-  if (request.goalCheck?.enabled !== undefined) {
-    env.KASEKI_GOAL_CHECK = request.goalCheck.enabled ? '1' : '0';
-  }
-  if (request.goalCheck?.maxRetries !== undefined) {
-    env.KASEKI_GOAL_CHECK_MAX_RETRIES = String(request.goalCheck.maxRetries);
-  }
-  if (request.goalCheck?.model) env.KASEKI_GOAL_CHECK_MODEL = request.goalCheck.model;
-  if (request.goalCheck?.timeoutSeconds) {
-    env.KASEKI_GOAL_CHECK_TIMEOUT_SECONDS = String(request.goalCheck.timeoutSeconds);
-  }
+function applyGoalCheckEnv(env: NodeJS.ProcessEnv, request: RunRequest): void {
+  applyOptionalBoolean(env, 'KASEKI_GOAL_CHECK', request.goalCheck?.enabled);
+  applyOptionalNumber(env, 'KASEKI_GOAL_CHECK_MAX_RETRIES', request.goalCheck?.maxRetries);
+  applyOptionalValue(env, 'KASEKI_GOAL_CHECK_MODEL', request.goalCheck?.model);
+  applyOptionalNumber(env, 'KASEKI_GOAL_CHECK_TIMEOUT_SECONDS', request.goalCheck?.timeoutSeconds);
+}
+
+function applyEvaluationEnv(
+  env: NodeJS.ProcessEnv,
+  request: RunRequest,
+  config: KasekiApiConfig,
+): void {
 
   const taskMode = request.taskMode || config.defaultTaskMode;
   const publishMode = request.publishMode || 'pr';
@@ -44,8 +50,18 @@ export function configureScoutingAndGoalCheckEnv(
     !request.startupCheck;
   env.KASEKI_RUN_EVALUATION =
     (request.runEvaluation?.enabled ?? defaultRunEvaluation) ? '1' : '0';
-  if (request.runEvaluation?.model) env.KASEKI_RUN_EVALUATION_MODEL = request.runEvaluation.model;
-  if (request.runEvaluation?.timeoutSeconds) {
-    env.KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS = String(request.runEvaluation.timeoutSeconds);
-  }
+  applyOptionalValue(env, 'KASEKI_RUN_EVALUATION_MODEL', request.runEvaluation?.model);
+  applyOptionalNumber(env, 'KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS', request.runEvaluation?.timeoutSeconds);
+}
+
+function applyOptionalValue(env: NodeJS.ProcessEnv, key: string, value: string | undefined): void {
+  if (value) env[key] = value;
+}
+
+function applyOptionalNumber(env: NodeJS.ProcessEnv, key: string, value: number | undefined): void {
+  if (value !== undefined) env[key] = String(value);
+}
+
+function applyOptionalBoolean(env: NodeJS.ProcessEnv, key: string, value: boolean | undefined): void {
+  if (value !== undefined) env[key] = value ? '1' : '0';
 }
