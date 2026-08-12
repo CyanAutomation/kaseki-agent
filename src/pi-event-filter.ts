@@ -700,33 +700,8 @@ function buildSummary(state: PiEventFilterState): Summary {
       (usage) => usage.input_tokens + usage.cache_creation_tokens + usage.cache_read_tokens,
     ),
   );
-  const malformedToolCallCount = state.providerErrors.filter((error) => error.type === 'malformed_tool_call').length;
-  const inferenceHealth: InferenceHealthSummary = {
-    transport_success: state.invalidJsonLines === 0,
-    stream_success: state.providerErrors.length === 0,
-    tool_call_valid: malformedToolCallCount === 0,
-    agent_turn_success: state.providerErrors.length === 0,
-    provider_error_count: state.providerErrors.length,
-    malformed_tool_call_count: malformedToolCallCount,
-    prompt_token_budget: promptTokenBudget,
-    largest_context_tokens: largestContextTokens,
-    prompt_token_budget_exceeded: largestContextTokens > promptTokenBudget,
-    context_compaction_recommended: largestContextTokens > promptTokenBudget,
-  };
-  const phaseBudget: PhaseBudgetSummary = {
-    enforcement: 'soft_target',
-    max_context_tokens: positiveIntEnv('KASEKI_PHASE_MAX_CONTEXT_TOKENS', promptTokenBudget),
-    max_turns: positiveIntEnv('KASEKI_PHASE_MAX_TURNS', 24),
-    max_tool_output_tokens: positiveIntEnv('KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS', 12_000),
-    context_exceeded: false,
-    turns_exceeded: false,
-    tool_output_exceeded: false,
-    exceeded: false,
-  };
-  phaseBudget.context_exceeded = largestContextTokens > phaseBudget.max_context_tokens;
-  phaseBudget.turns_exceeded = state.completionUsage.size > phaseBudget.max_turns;
-  phaseBudget.tool_output_exceeded = state.toolOutputUsage.estimated_tokens > phaseBudget.max_tool_output_tokens;
-  phaseBudget.exceeded = phaseBudget.context_exceeded || phaseBudget.turns_exceeded || phaseBudget.tool_output_exceeded;
+  const inferenceHealth = buildInferenceHealth(state, promptTokenBudget, largestContextTokens);
+  const phaseBudget = buildPhaseBudget(state, promptTokenBudget, largestContextTokens);
   return {
     ...state.aggregator.summary(),
     invalid_json_lines: state.invalidJsonLines,
@@ -755,6 +730,45 @@ function buildSummary(state: PiEventFilterState): Summary {
     model_reliability: buildModelReliability(modelStats, state.providerErrors),
     ...(state.providerErrors.length > 0 ? { provider_errors: state.providerErrors, primary_provider_error: state.providerErrors[0] } : {}),
   };
+}
+
+function buildInferenceHealth(
+  state: PiEventFilterState,
+  promptTokenBudget: number,
+  largestContextTokens: number,
+): InferenceHealthSummary {
+  const malformedToolCallCount = state.providerErrors.filter((error) => error.type === 'malformed_tool_call').length;
+  return {
+    transport_success: state.invalidJsonLines === 0,
+    stream_success: state.providerErrors.length === 0,
+    tool_call_valid: malformedToolCallCount === 0,
+    agent_turn_success: state.providerErrors.length === 0,
+    provider_error_count: state.providerErrors.length,
+    malformed_tool_call_count: malformedToolCallCount,
+    prompt_token_budget: promptTokenBudget,
+    largest_context_tokens: largestContextTokens,
+    prompt_token_budget_exceeded: largestContextTokens > promptTokenBudget,
+    context_compaction_recommended: largestContextTokens > promptTokenBudget,
+  };
+}
+
+function buildPhaseBudget(
+  state: PiEventFilterState,
+  promptTokenBudget: number,
+  largestContextTokens: number,
+): PhaseBudgetSummary {
+  const phaseBudget: PhaseBudgetSummary = {
+    enforcement: 'soft_target',
+    max_context_tokens: positiveIntEnv('KASEKI_PHASE_MAX_CONTEXT_TOKENS', promptTokenBudget),
+    max_turns: positiveIntEnv('KASEKI_PHASE_MAX_TURNS', 24),
+    max_tool_output_tokens: positiveIntEnv('KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS', 12_000),
+    context_exceeded: largestContextTokens > positiveIntEnv('KASEKI_PHASE_MAX_CONTEXT_TOKENS', promptTokenBudget),
+    turns_exceeded: state.completionUsage.size > positiveIntEnv('KASEKI_PHASE_MAX_TURNS', 24),
+    tool_output_exceeded: state.toolOutputUsage.estimated_tokens > positiveIntEnv('KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS', 12_000),
+    exceeded: false,
+  };
+  phaseBudget.exceeded = phaseBudget.context_exceeded || phaseBudget.turns_exceeded || phaseBudget.tool_output_exceeded;
+  return phaseBudget;
 }
 
 function writeSummaryFiles(summaryPath: string, summary: Summary): void {

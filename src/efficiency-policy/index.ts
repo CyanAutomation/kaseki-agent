@@ -205,18 +205,3 @@ export function renderEfficiencyMarkdown(policy: EfficiencyPolicy): string {
   const selected = Object.entries(policy.selected).sort(([a], [b]) => a.localeCompare(b)).map(([phase, value]) => `| ${phase} | ${value.enabled ? 'enabled' : 'skipped'} | ${value.model ?? 'unchanged'} |`).join('\n');
   return `## Efficiency policy\n\nAggregate key: \`${policy.key}\` (${policy.sampleSize} samples). Explicit operator settings take precedence.\n\n| Phase | Selection | Model |\n|---|---:|---|\n${selected}\n\nCounterfactual per run: ${policy.counterfactual.callsAvoided} calls, ${policy.counterfactual.tokensAvoided} tokens, ${policy.counterfactual.latencyMsAvoided} ms latency, and $${policy.counterfactual.estimatedCostUsdAvoided} estimated cost avoided.\n`;
 }
-
-/** Analyze one completed run, update its anonymous aggregate, and emit report artifacts. */
-export function recordAndWriteEfficiencyPolicy(
-  run: RunEfficiencyEvidence,
-  aggregateFile: string,
-  resultDirectory: string,
-  options: PolicyOptions = {}
-): EfficiencyPolicy {
-  const aggregate = new EfficiencyPolicyStore(aggregateFile).record(run);
-  const policy = analyzeEfficiency(run, aggregate, options);
-  fs.mkdirSync(resultDirectory, { recursive: true });
-  fs.writeFileSync(path.join(resultDirectory, 'efficiency-policy.json'), `${JSON.stringify(policy, null, 2)}\n`);
-  fs.writeFileSync(path.join(resultDirectory, 'efficiency-policy.md'), renderEfficiencyMarkdown(policy));
-  return policy;
-}

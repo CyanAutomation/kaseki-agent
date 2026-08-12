@@ -59,126 +59,11 @@ export function buildPreflightResponse(config: KasekiApiConfig): PreflightRespon
   const checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
   const templateRef = getTemplateCheckoutRef(checkoutDir);
   const checks: PreflightCheck[] = [];
-
-  // Phase 1: Basic environment checks
-  checks.push(
-    checkDeletedBindMounts([
-      config.resultsDir,
-      templateDir,
-      checkoutDir,
-      secretsDir,
-    ]),
-  );
-
-  checks.push(
-    checkWritableDirectory(
-      'results-dir',
-      config.resultsDir,
-      'Create the results directory and make it writable by the API container user. If /api/preflight reports a deleted bind mount, recreate the API container.',
-    ),
-  );
-
-  // Phase 2: LLM and GitHub credentials
-  checks.push(checkLLMGatewayKey());
-  checks.push(checkGatewayTestSecretConsistency());
-  checks.push(checkWorkerGatewayConfig());
-  checks.push(checkGitHubAppCredentials());
-
-  // Phase 3: Docker daemon and image checks
-  const dockerVersion = execDockerCommand([
-    'version',
-    '--format',
-    '{{.Client.Version}} -> {{.Server.Version}}',
-  ]);
-  if (dockerVersion.ok) {
-    checks.push({
-      name: 'docker-daemon',
-      ok: true,
-      detail: dockerVersion.stdout,
-    });
-  } else {
-    const classified = dockerVersion.classification || {
-      detail: 'Docker command failed',
-      remediation: 'Check Docker daemon',
-    };
-    checks.push({ name: 'docker-daemon', ok: false, ...classified });
-  }
-
-  const imageInspect = execDockerCommand(['image', 'inspect', image]);
-  let imageReady = false;
-  if (imageInspect.ok) {
-    imageReady = true;
-    checks.push({
-      name: 'docker-image',
-      ok: true,
-      detail: `Image is present: ${image}`,
-    });
-  } else {
-    const classified = imageInspect.classification || {
-      detail: 'Docker command failed',
-      remediation: 'Check Docker daemon',
-    };
-    const daemonFailed = checks.some(
-      (check) => check.name === 'docker-daemon' && !check.ok,
-    );
-    checks.push({
-      name: 'docker-image',
-      ok: false,
-      detail: daemonFailed
-        ? classified.detail
-        : `Docker image is not present locally: ${image}`,
-      remediation: daemonFailed
-        ? classified.remediation
-        : `Pull ${image} or set KASEKI_IMAGE to an available image.`,
-    });
-  }
-
-  // Phase 4: Worker smoke test (conditional on Docker checks)
-  const canRunWorkerSmoke =
-    imageReady &&
-    checks.some((check) => check.name === 'docker-daemon' && check.ok);
-  if (canRunWorkerSmoke) {
-    checks.push(checkWorkerSmokeTest(config, image));
-  } else {
-    checks.push({
-      name: 'worker-smoke',
-      ok: false,
-      detail:
-        'Worker smoke test skipped because Docker daemon or image checks failed.',
-      remediation: 'Fix docker-daemon and docker-image preflight checks first.',
-    });
-  }
-
-  // Phase 5: Template health and freshness
-  const templateHealth = buildTemplateHealthStatus(templateDir);
-  const freshness = resolveCheckoutFreshness(
-    checkoutDir,
-    process.env.KASEKI_REF || 'main',
-    templateDir,
-  );
-  checks.push({
-    name: 'template',
-    ok: templateHealth.ok,
-    detail: templateHealth.detail,
-    remediation: templateHealth.remediation,
-    templatePath: templateHealth.templateDir,
-    checkoutRef: templateHealth.checkoutRef,
-    doctorCommand: templateHealth.doctorCommand,
-    doctorStderrTail: templateHealth.doctorStderrTail,
-    doctorStdoutTail: templateHealth.doctorStdoutTail,
-  });
-  checks.push(checkTemplateActivatorParity(templateDir, checkoutDir));
-  checks.push({
-    name: 'checkout-freshness',
-    ok: freshness.ok,
-    detail: freshness.detail,
-    remediation: freshness.remediation,
-    templatePath: templateDir,
-    checkoutRef: freshness.localRef?.substring(0, 12),
-    localRef: freshness.localRef,
-    remoteRef: freshness.remoteRef,
-    remoteUrl: freshness.remoteUrl,
-  });
+  collectEnvironmentChecks(checks, config, templateDir, checkoutDir, secretsDir);
+  collectCredentialChecks(checks);
+  const docker = collectDockerChecks(checks, image);
+  collectWorkerSmokeCheck(checks, config, image, docker);
+  const templateLocalRef = collectTemplateChecks(checks, templateDir, checkoutDir);
 
   // Determine overall status based on check results
   const status = checks.every((check) => check.ok)
@@ -199,7 +84,7 @@ export function buildPreflightResponse(config: KasekiApiConfig): PreflightRespon
     templateImage: image,
     templateImageDigest,
     templateDir,
-    templateRef: freshness.localRef || templateRef,
+    templateRef: templateLocalRef || templateRef,
     resultsDir: config.resultsDir,
     runtime: {
       nodeVersion: process.version,
@@ -207,12 +92,63 @@ export function buildPreflightResponse(config: KasekiApiConfig): PreflightRespon
       gid: process.getgid?.(),
       groups: process.getgroups?.(),
     },
-    docker: {
-      version: dockerVersion.stdout,
-      clientVersion: dockerVersion.stdout?.split(' -> ')[0],
-      serverVersion: dockerVersion.stdout?.split(' -> ')[1],
-    },
+    docker: docker.info,
   };
+}
+
+function collectEnvironmentChecks(
+  checks: PreflightCheck[], config: KasekiApiConfig, templateDir: string, checkoutDir: string, secretsDir: string,
+): void {
+  checks.push(checkDeletedBindMounts([config.resultsDir, templateDir, checkoutDir, secretsDir]));
+  checks.push(checkWritableDirectory('results-dir', config.resultsDir,
+    'Create the results directory and make it writable by the API container user. If /api/preflight reports a deleted bind mount, recreate the API container.'));
+}
+
+function collectCredentialChecks(checks: PreflightCheck[]): void {
+  checks.push(checkLLMGatewayKey(), checkGatewayTestSecretConsistency(), checkWorkerGatewayConfig(), checkGitHubAppCredentials());
+}
+
+function collectDockerChecks(checks: PreflightCheck[], image: string): {
+  ready: boolean;
+  daemonOk: boolean;
+  info: { version?: string; clientVersion?: string; serverVersion?: string };
+} {
+  const dockerVersion = execDockerCommand(['version', '--format', '{{.Client.Version}} -> {{.Server.Version}}']);
+  const daemonOk = dockerVersion.ok;
+  checks.push(daemonOk
+    ? { name: 'docker-daemon', ok: true, detail: dockerVersion.stdout }
+    : { name: 'docker-daemon', ok: false, ...(dockerVersion.classification || { detail: 'Docker command failed', remediation: 'Check Docker daemon' }) });
+  const imageInspect = execDockerCommand(['image', 'inspect', image]);
+  const ready = imageInspect.ok;
+  if (ready) {
+    checks.push({ name: 'docker-image', ok: true, detail: `Image is present: ${image}` });
+  } else {
+    const classified = imageInspect.classification || { detail: 'Docker command failed', remediation: 'Check Docker daemon' };
+    checks.push({ name: 'docker-image', ok: false, detail: daemonOk ? `Docker image is not present locally: ${image}` : classified.detail,
+      remediation: daemonOk ? `Pull ${image} or set KASEKI_IMAGE to an available image.` : classified.remediation });
+  }
+  return { ready, daemonOk, info: { version: dockerVersion.stdout, clientVersion: dockerVersion.stdout?.split(' -> ')[0], serverVersion: dockerVersion.stdout?.split(' -> ')[1] } };
+}
+
+function collectWorkerSmokeCheck(checks: PreflightCheck[], config: KasekiApiConfig, image: string, docker: { ready: boolean; daemonOk: boolean }): void {
+  if (docker.ready && docker.daemonOk) {
+    checks.push(checkWorkerSmokeTest(config, image));
+    return;
+  }
+  checks.push({ name: 'worker-smoke', ok: false, detail: 'Worker smoke test skipped because Docker daemon or image checks failed.', remediation: 'Fix docker-daemon and docker-image preflight checks first.' });
+}
+
+function collectTemplateChecks(checks: PreflightCheck[], templateDir: string, checkoutDir: string): string | undefined {
+  const templateHealth = buildTemplateHealthStatus(templateDir);
+  const freshness = resolveCheckoutFreshness(checkoutDir, process.env.KASEKI_REF || 'main', templateDir);
+  checks.push({ name: 'template', ok: templateHealth.ok, detail: templateHealth.detail, remediation: templateHealth.remediation,
+    templatePath: templateHealth.templateDir, checkoutRef: templateHealth.checkoutRef, doctorCommand: templateHealth.doctorCommand,
+    doctorStderrTail: templateHealth.doctorStderrTail, doctorStdoutTail: templateHealth.doctorStdoutTail });
+  checks.push(checkTemplateActivatorParity(templateDir, checkoutDir));
+  checks.push({ name: 'checkout-freshness', ok: freshness.ok, detail: freshness.detail, remediation: freshness.remediation,
+    templatePath: templateDir, checkoutRef: freshness.localRef?.substring(0, 12), localRef: freshness.localRef,
+    remoteRef: freshness.remoteRef, remoteUrl: freshness.remoteUrl });
+  return freshness.localRef;
 }
 
 /**

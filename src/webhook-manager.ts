@@ -222,107 +222,58 @@ export class WebhookManager extends EventEmitter {
 
       // Drain the response body to release the HTTP connection
       await response.text().catch(() => {});
-
-      if (response.ok) {
-        // Success
-        entry.attempts.push({
-          timestamp: this.nowIso(),
-          status: 'success',
-          statusCode: response.status,
-          durationMs,
-        });
-
-        this.logger.event('webhook_delivered', {
-          jobId,
-          eventType: payload.eventType,
-          statusCode: response.status,
-          durationMs,
-          attempts: entry.deliveryAttempts,
-        });
-
-        this.finishClaimedDelivery(entry, true);
-      } else {
-        // Transient error, schedule retry
-        const retryDecision = getRetryDecision(entry.deliveryAttempts, config);
-
-        entry.attempts.push({
-          timestamp: this.nowIso(),
-          status: retryDecision.hasRemainingAttempts ? 'retry' : 'failed',
-          statusCode: response.status,
-          durationMs,
-          error: `HTTP ${response.status}`,
-        });
-
-        if (retryDecision.hasRemainingAttempts) {
-          entry.nextRetryTime = this.now() + retryDecision.backoffMs;
-
-          this.logger.event('webhook_retry_scheduled', {
-            jobId,
-            eventType: payload.eventType,
-            statusCode: response.status,
-            nextRetryMs: retryDecision.backoffMs,
-            attemptNumber: entry.deliveryAttempts,
-          });
-        } else {
-          this.logger.event('webhook_delivery_failed', {
-            jobId,
-            eventType: payload.eventType,
-            statusCode: response.status,
-            attempts: entry.deliveryAttempts,
-          });
-
-          // Remove from queue after max attempts
-          this.finishClaimedDelivery(entry, true);
-          return;
-        }
-        this.finishClaimedDelivery(entry, false);
-      }
+      this.handleWebhookResponse(entry, response, durationMs);
     } catch (error) {
-      const durationMs = this.now() - startTime;
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      const retryPolicy = config.retryPolicy || {
-        maxAttempts: 5,
-        initialDelayMs: 1000,
-        maxDelayMs: 30000,
-      };
-
-      const backoffMs = Math.min(
-        retryPolicy.initialDelayMs * Math.pow(2, entry.deliveryAttempts - 1),
-        retryPolicy.maxDelayMs
-      );
-      const hasRemainingAttempts = entry.deliveryAttempts < retryPolicy.maxAttempts;
-
-      entry.attempts.push({
-        timestamp: this.nowIso(),
-        status: hasRemainingAttempts ? 'retry' : 'failed',
-        error: errorMsg,
-        durationMs,
-      });
-
-      if (hasRemainingAttempts) {
-        entry.nextRetryTime = this.now() + backoffMs;
-
-        this.logger.event('webhook_delivery_error', {
-          jobId,
-          eventType: payload.eventType,
-          error: errorMsg,
-          nextRetryMs: backoffMs,
-          attemptNumber: entry.deliveryAttempts,
-        });
-      } else {
-        this.logger.event('webhook_delivery_failed', {
-          jobId,
-          eventType: payload.eventType,
-          error: errorMsg,
-          attempts: entry.deliveryAttempts,
-        });
-
-        // Remove from queue after max attempts
-        this.finishClaimedDelivery(entry, true);
-        return;
-      }
-      this.finishClaimedDelivery(entry, false);
+      this.handleWebhookError(entry, error, this.now() - startTime);
     }
+  }
+
+  private handleWebhookResponse(
+    entry: WebhookQueueEntry,
+    response: Response,
+    durationMs: number,
+  ): void {
+    const { config, payload, jobId } = entry;
+    if (response.ok) {
+      entry.attempts.push({ timestamp: this.nowIso(), status: 'success', statusCode: response.status, durationMs });
+      this.logger.event('webhook_delivered', { jobId, eventType: payload.eventType, statusCode: response.status, durationMs, attempts: entry.deliveryAttempts });
+      this.finishClaimedDelivery(entry, true);
+      return;
+    }
+
+    const retryDecision = getRetryDecision(entry.deliveryAttempts, config);
+    entry.attempts.push({
+      timestamp: this.nowIso(),
+      status: retryDecision.hasRemainingAttempts ? 'retry' : 'failed',
+      statusCode: response.status,
+      durationMs,
+      error: `HTTP ${response.status}`,
+    });
+    if (retryDecision.hasRemainingAttempts) {
+      entry.nextRetryTime = this.now() + retryDecision.backoffMs;
+      this.logger.event('webhook_retry_scheduled', { jobId, eventType: payload.eventType, statusCode: response.status, nextRetryMs: retryDecision.backoffMs, attemptNumber: entry.deliveryAttempts });
+      this.finishClaimedDelivery(entry, false);
+      return;
+    }
+    this.logger.event('webhook_delivery_failed', { jobId, eventType: payload.eventType, statusCode: response.status, attempts: entry.deliveryAttempts });
+    this.finishClaimedDelivery(entry, true);
+  }
+
+  private handleWebhookError(entry: WebhookQueueEntry, error: unknown, durationMs: number): void {
+    const { config, payload, jobId } = entry;
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    const retryPolicy = config.retryPolicy || { maxAttempts: 5, initialDelayMs: 1000, maxDelayMs: 30000 };
+    const backoffMs = Math.min(retryPolicy.initialDelayMs * Math.pow(2, entry.deliveryAttempts - 1), retryPolicy.maxDelayMs);
+    const hasRemainingAttempts = entry.deliveryAttempts < retryPolicy.maxAttempts;
+    entry.attempts.push({ timestamp: this.nowIso(), status: hasRemainingAttempts ? 'retry' : 'failed', error: errorMsg, durationMs });
+    if (hasRemainingAttempts) {
+      entry.nextRetryTime = this.now() + backoffMs;
+      this.logger.event('webhook_delivery_error', { jobId, eventType: payload.eventType, error: errorMsg, nextRetryMs: backoffMs, attemptNumber: entry.deliveryAttempts });
+      this.finishClaimedDelivery(entry, false);
+      return;
+    }
+    this.logger.event('webhook_delivery_failed', { jobId, eventType: payload.eventType, error: errorMsg, attempts: entry.deliveryAttempts });
+    this.finishClaimedDelivery(entry, true);
   }
 
   /**

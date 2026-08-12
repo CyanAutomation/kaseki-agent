@@ -36,4 +36,20 @@ describe('configureScoutingAndGoalCheckEnv', () => {
     expect(env.KASEKI_GOAL_CHECK_MAX_RETRIES).toBe('2');
     expect(env.KASEKI_RUN_EVALUATION_MODEL).toBe('evaluator');
   });
+
+  it('writes explicit zero values without overwriting omitted settings', () => {
+    const env: NodeJS.ProcessEnv = {
+      KASEKI_GOAL_CHECK_MAX_RETRIES: '9',
+      KASEKI_SCOUTING_TIMEOUT_SECONDS: '30',
+    };
+    configureScoutingAndGoalCheckEnv(env, {
+      goalCheck: { maxRetries: 0, timeoutSeconds: 0 },
+      scouting: { timeoutSeconds: 0 },
+    } as any, config);
+
+    expect(env.KASEKI_GOAL_CHECK_MAX_RETRIES).toBe('0');
+    expect(env.KASEKI_GOAL_CHECK_TIMEOUT_SECONDS).toBe('0');
+    expect(env.KASEKI_SCOUTING_TIMEOUT_SECONDS).toBe('0');
+    expect(env.KASEKI_GOAL_SETTING_MODEL).toBeUndefined();
+  });
 });
