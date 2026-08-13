@@ -248,17 +248,6 @@ describe('ReadWrapper', () => {
       }
     });
 
-    it('should report parse time in metrics', async () => {
-      const filePath = path.join(testDir, 'test.ts');
-      const content = 'export interface Config { debug: boolean; }';
-      fs.writeFileSync(filePath, content);
-
-      const result = await readFileWithSummaryAndMetrics(filePath);
-      if (result?.metrics) {
-        expect(result.metrics.parseTimeMs).toBeGreaterThanOrEqual(0);
-      }
-    });
-
     it('should report size, compression, token, and decision metrics for full reads', async () => {
       const filePath = path.join(testDir, 'test.ts');
       const content =
@@ -272,11 +261,18 @@ describe('ReadWrapper', () => {
       expect(content).not.toContain('\\n');
 
       const result = await readFileWithSummaryAndMetrics(filePath);
+      if (!result) {
+        throw new Error('Expected a full-read result');
+      }
+      if (!result.metrics) {
+        throw new Error('Expected full-read metrics');
+      }
 
-      expect(result).not.toBeNull();
-      expect(result?.content).toBe(content);
-      expect(result?.metrics?.strategy).toBe('full');
-      expectMetricsDerivedFromActualResult(result!, filePath, 'full_read');
+      expect(result.content).toBe(content);
+      expect(result.metrics.strategy).toBe('full');
+      expect(Number.isFinite(result.metrics.parseTimeMs)).toBe(true);
+      expect(result.metrics.parseTimeMs).toBeGreaterThanOrEqual(0);
+      expectMetricsDerivedFromActualResult(result, filePath, 'full_read');
     });
 
     it('should report size, compression, token, and decision metrics for tree-sitter summaries and cache hits', async () => {
