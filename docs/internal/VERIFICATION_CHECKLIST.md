@@ -215,10 +215,10 @@ pkill -f "kaseki-api-service"
 
 ### Issue: `npm install` fails
 
-**Solution**: Ensure Node.js 22.22.2+ is installed
+**Solution**: Ensure Node.js 24 or newer is installed, as required by `package.json`
 
 ```bash
-node --version  # Should be v22.22.2 or higher
+node --version  # Should be v24 or higher
 ```
 
 ### Issue: Port 8080 already in use

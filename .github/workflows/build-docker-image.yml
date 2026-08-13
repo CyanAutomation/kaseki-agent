@@ -18,6 +18,7 @@ on:
 
 env:
   DOCKER_IMAGE: cyanautomation/kaseki-agent
+  NODE_VERSION: "24"
 
 permissions:
   contents: read
@@ -33,7 +34,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v6
         with:
-          node-version: '22.22.2'
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Install dependencies
@@ -52,7 +53,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v6
         with:
-          node-version: '22.22.2'
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Install dependencies
@@ -90,7 +91,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v6
         with:
-          node-version: '22.22.2'
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Install ShellCheck
@@ -101,6 +102,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Verify CI Node versions satisfy package engine
+        run: npm run check:ci-node-versions
 
       - name: Build TypeScript
         run: npm run build
