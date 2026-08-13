@@ -67,7 +67,7 @@ export function extractFilePath(toolName: string, content?: string): string | nu
     /semantic_search[:\s]+([^\s,\]]+)/i,
     /find.*path[:\s]+([^\s,\]]+)/i,
     /path[:\s]+([^\s,\]]+)/i,
-    /(?:^|\s)([./a-zA-Z0-9_\-/]+\.[a-zA-Z0-9]+)(?:\s|$)/, // Generic file with extension
+    /(?:^|[\s"'])([./a-zA-Z0-9_\-/]+\.[a-zA-Z0-9]+)(?=[\s"',}\]]|$)/, // Generic file with extension
   ];
 
   if (content) {
@@ -234,7 +234,8 @@ export function summarizeEvent(
   // Extract tool action
   const filePath = extractFilePath(toolName, JSON.stringify(event).substring(0, 200));
   if (filePath) {
-    summary.action = filePath;
+    const operation = extractFilePath(toolName);
+    summary.action = operation && operation !== filePath ? `${operation} ${filePath}` : filePath;
   }
 
   // Check for errors in output
