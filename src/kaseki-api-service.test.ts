@@ -13,7 +13,7 @@ jest.mock('./secrets/host-secrets-reader', () => ({
 import * as fs from 'fs';
 import type { Server } from 'http';
 import * as hostSecretsReader from './secrets/host-secrets-reader';
-import { assertSupportedNodeVersion, createGracefulShutdown, ensureResultsDir, setupLlmProviderEnvironment } from './kaseki-api-service';
+import { assertSupportedNodeVersion, ensureResultsDir, setupLlmProviderEnvironment, shutdownService } from './kaseki-api-service';
 import { loadConfig } from './kaseki-api-config';
 import { JobScheduler } from './job-scheduler';
 import { WebhookManager } from './webhook-manager';
@@ -444,7 +444,7 @@ describe('Job Scheduler', () => {
 });
 
 describe('Kaseki API graceful shutdown', () => {
-  test('waits for server close before scheduler shutdown and exit', async () => {
+  test('flushes telemetry after cleanup and before exit', async () => {
     const callOrder: string[] = [];
     let closeCallback: ((err?: Error) => void) | undefined;
 
@@ -472,17 +472,19 @@ describe('Kaseki API graceful shutdown', () => {
       callOrder.push(`exit:${code}`);
       return undefined as never;
     }) as unknown as (code: number) => never;
+    const flushTelemetry = jest.fn(async (timeoutMs: number) => {
+      callOrder.push(`flush:${timeoutMs}`);
+      return true;
+    });
 
-    const gracefulShutdown = createGracefulShutdown({
+    const shutdownPromise = shutdownService({
       server,
       scheduler,
       webhookManager,
       idempotencyStore,
       forceExitAfterMs: 1000,
       exit,
-    });
-
-    const shutdownPromise = gracefulShutdown();
+    }, flushTelemetry);
 
     expect(server.close).toHaveBeenCalledTimes(1);
     expect(scheduler.shutdown).not.toHaveBeenCalled();
@@ -492,7 +494,35 @@ describe('Kaseki API graceful shutdown', () => {
 
     await shutdownPromise;
 
-    expect(callOrder).toEqual(['scheduler.shutdown', 'exit:0']);
+    expect(callOrder).toEqual(['scheduler.shutdown', 'flush:2000', 'exit:0']);
+    expect(flushTelemetry).toHaveBeenCalledWith(2000);
+  });
+
+  test('flushes telemetry before exiting with a failed cleanup status', async () => {
+    const callOrder: string[] = [];
+    const exit = jest.fn((code: number) => {
+      callOrder.push(`exit:${code}`);
+      return undefined as never;
+    }) as unknown as (code: number) => never;
+    const flushTelemetry = jest.fn(async () => {
+      callOrder.push('flush');
+      return true;
+    });
+
+    await shutdownService({
+      server: {
+        close: (callback: (err?: Error) => void) => {
+          callback(new Error('close failed'));
+          return undefined as never;
+        },
+      } as unknown as Server,
+      scheduler: { shutdown: jest.fn() },
+      webhookManager: { shutdown: jest.fn() },
+      idempotencyStore: { shutdown: jest.fn() },
+      exit,
+    }, flushTelemetry);
+
+    expect(callOrder).toEqual(['flush', 'exit:1']);
   });
 });
 

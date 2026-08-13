@@ -49,6 +49,20 @@ export function createGracefulShutdown(deps: ShutdownDeps) {
   return () => gracefulShutdown(deps);
 }
 
+/** Clean up service resources, flush telemetry, and only then terminate. */
+export async function shutdownService(
+  deps: ShutdownDeps,
+  flushTelemetry: (timeoutMs: number) => Promise<boolean> = flushSentry,
+): Promise<void> {
+  const succeeded = await gracefulShutdown(deps);
+  try {
+    await flushTelemetry(2000);
+  } finally {
+    const exit = deps.exit ?? process.exit;
+    exit(succeeded ? 0 : 1);
+  }
+}
+
 export function ensureResultsDir(resultsDir: string): void {
   fs.mkdirSync(resultsDir, { recursive: true });
   fs.accessSync(resultsDir, fs.constants.R_OK | fs.constants.W_OK);
@@ -265,9 +279,7 @@ async function main(): Promise<void> {
 
   // Graceful shutdown
   const shutdown = async () => {
-    await gracefulShutdown({ server, scheduler, webhookManager, idempotencyStore });
-    // Flush any pending Sentry events before process exit
-    await flushSentry(2000);
+    await shutdownService({ server, scheduler, webhookManager, idempotencyStore });
   };
 
   process.on('SIGTERM', () => void shutdown());
