@@ -100,13 +100,13 @@ describe('event-timestamp-helpers', () => {
     });
 
     it.each([
-      { label: 'null', input: null, expected: undefined },
-      { label: 'undefined', input: undefined, expected: undefined },
-      { label: 'empty string', input: '', expected: undefined },
-      { label: 'NaN', input: NaN, expected: undefined },
-      { label: 'Infinity', input: Infinity, expected: undefined },
-    ])('should reject absent or non-finite timestamps: $label', ({ input, expected }) => {
-      expect(normalizeTimestamp(input)).toBe(expected);
+      { label: 'null', input: null },
+      { label: 'undefined', input: undefined },
+      { label: 'empty string', input: '' },
+      { label: 'NaN', input: NaN },
+      { label: 'Infinity', input: Infinity },
+    ])('should reject absent or non-finite timestamps: $label', ({ input }) => {
+      expect(normalizeTimestamp(input)).toBeUndefined();
     });
 
     it('should handle zero timestamp', () => {
