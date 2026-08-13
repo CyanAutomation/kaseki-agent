@@ -2470,7 +2470,7 @@ describe('JobScheduler shutdown lifecycle', () => {
     await shutdownPromise;
 
     expect(committedStatuses).toContain(`${job.id}:failed`);
-    expect(exit).toHaveBeenCalledWith(0);
+    expect(exit).not.toHaveBeenCalled();
   });
 });
 

@@ -153,8 +153,8 @@ describe('KasekiApiService Integration', () => {
         }) as (code: number) => never,
       };
 
-      await expect(gracefulShutdown(successDeps)).resolves.toBeUndefined();
-      expect(exitCodes).toEqual([0]);
+      await expect(gracefulShutdown(successDeps)).resolves.toBe(true);
+      expect(exitCodes).toEqual([]);
       expect(callOrder).toEqual([
         'success.server.close',
         'success.scheduler.shutdown',
@@ -188,8 +188,8 @@ describe('KasekiApiService Integration', () => {
         }) as (code: number) => never,
       };
 
-      await expect(gracefulShutdown(errorDeps)).resolves.toBeUndefined();
-      expect(exitCodes).toEqual([0, 1]);
+      await expect(gracefulShutdown(errorDeps)).resolves.toBe(false);
+      expect(exitCodes).toEqual([]);
       expect(callOrder).toEqual([
         'success.server.close',
         'success.scheduler.shutdown',
@@ -232,8 +232,8 @@ describe('KasekiApiService Integration', () => {
         }) as (code: number) => never,
       };
 
-      await expect(gracefulShutdown(serverErrorDeps)).resolves.toBeUndefined();
-      expect(serverErrorExitCodes).toEqual([1]);
+      await expect(gracefulShutdown(serverErrorDeps)).resolves.toBe(false);
+      expect(serverErrorExitCodes).toEqual([]);
       expect(serverErrorCallOrder).toEqual(['server.close']);
     });
   });
@@ -271,8 +271,8 @@ describe('KasekiApiService Integration', () => {
       };
 
       const shutdown = apiService.createGracefulShutdown(deps);
-      await expect(shutdown()).resolves.toBeUndefined();
-      expect(exitCodes).toEqual([0]);
+      await expect(shutdown()).resolves.toBe(true);
+      expect(exitCodes).toEqual([]);
       expect(callOrder).toEqual([
         'server.close',
         'scheduler.shutdown',

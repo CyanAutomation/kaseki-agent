@@ -132,9 +132,7 @@ describe('ServiceBootstrapper', () => {
 
     it('should call shutdown on all services in sequence', async () => {
       const shutdownOrder: string[] = [];
-      const mockExit = jest.fn(() => {
-        shutdownOrder.push('exit');
-      }) as unknown as (code: number) => never;
+      const mockExit = jest.fn() as unknown as (code: number) => never;
 
       const sequencedServer = {
         close: jest.fn((callback?: (err?: Error) => void) => {
@@ -159,7 +157,7 @@ describe('ServiceBootstrapper', () => {
         },
       };
 
-      await gracefulShutdown({
+      const succeeded = await gracefulShutdown({
         server: sequencedServer as unknown as Server,
         scheduler: mockServices.scheduler,
         webhookManager: mockServices.webhookManager,
@@ -176,12 +174,12 @@ describe('ServiceBootstrapper', () => {
         'scheduler',
         'webhookManager',
         'idempotencyStore',
-        'exit',
       ]);
-      expect(mockExit).toHaveBeenCalledWith(0);
+      expect(succeeded).toBe(true);
+      expect(mockExit).not.toHaveBeenCalled();
     });
 
-    it('should exit with code 0 on successful shutdown', async () => {
+    it('should return true without exiting on successful shutdown', async () => {
       const mockExit = jest.fn() as unknown as (code: number) => never;
 
       const mockServices = {
@@ -190,7 +188,7 @@ describe('ServiceBootstrapper', () => {
         idempotencyStore: { shutdown: jest.fn() },
       };
 
-      await gracefulShutdown({
+      const succeeded = await gracefulShutdown({
         server: mockServer as Server,
         scheduler: mockServices.scheduler,
         webhookManager: mockServices.webhookManager,
@@ -199,7 +197,8 @@ describe('ServiceBootstrapper', () => {
         forceExitAfterMs: 100,
       });
 
-      expect(mockExit).toHaveBeenCalledWith(0);
+      expect(succeeded).toBe(true);
+      expect(mockExit).not.toHaveBeenCalled();
     });
 
     it('should enforce hard timeout on graceful shutdown', () => {
@@ -245,7 +244,7 @@ describe('ServiceBootstrapper', () => {
         idempotencyStore: { shutdown: jest.fn() },
       };
 
-      await gracefulShutdown({
+      const succeeded = await gracefulShutdown({
         server: { close: failingServerClose } as unknown as Server,
         scheduler: mockServices.scheduler,
         webhookManager: mockServices.webhookManager,
@@ -253,7 +252,8 @@ describe('ServiceBootstrapper', () => {
         exit: mockExit,
       });
 
-      expect(mockExit).toHaveBeenCalledWith(1);
+      expect(succeeded).toBe(false);
+      expect(mockExit).not.toHaveBeenCalled();
     });
   });
 });
