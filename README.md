@@ -104,6 +104,8 @@ Each task execution produces isolated workspace and results for reproducible AI 
 - Install dependencies: `npm ci`
 - Run validation: `npm run check`
 
+The optional tree-sitter CLI environment probe is not part of the normal dependency install. Install the pinned executable separately with `npm install --global tree-sitter-cli@0.25.10`, then run `npm run test:tree-sitter:environment-probe`. The in-process `tree-sitter-go` and `tree-sitter-typescript` parser grammars remain regular development dependencies.
+
 ---
 
 ## Installation
