@@ -312,10 +312,9 @@ describe('pi-progress-summarizer', () => {
         message: { content: [{ text: '/src/parser.ts' }] },
       };
       const summary = summarizeEvent(event, 'read_file', Date.now() - 5000);
-      expect(summary).toBeTruthy();
-      if (summary && summary.action) {
-        expect(summary.action).toMatch(/read|parser/);
-      }
+      expect(summary).not.toBeNull();
+      expect(summary!.action).toMatch(/^read\b/);
+      expect(summary!.action).toContain('/src/parser.ts');
     });
 
     it('includes elapsed time', () => {
