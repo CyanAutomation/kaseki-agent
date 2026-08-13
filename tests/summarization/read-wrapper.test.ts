@@ -236,18 +236,6 @@ describe('ReadWrapper', () => {
   });
 
   describe('readFileWithSummaryAndMetrics', () => {
-    it('should return metrics for TypeScript files', async () => {
-      const filePath = path.join(testDir, 'test.ts');
-      const content = 'export class MyClass { method() { } }';
-      fs.writeFileSync(filePath, content);
-
-      const result = await readFileWithSummaryAndMetrics(filePath);
-      expect(result).toBeDefined();
-      if (result?.metrics) {
-        expect(result.metrics.strategy).toMatch(/full|summary/);
-      }
-    });
-
     it('should report size, compression, token, and decision metrics for full reads', async () => {
       const filePath = path.join(testDir, 'test.ts');
       const content =
@@ -270,6 +258,7 @@ describe('ReadWrapper', () => {
 
       expect(result.content).toBe(content);
       expect(result.metrics.strategy).toBe('full');
+      expect(result.metrics.language).toBe('typescript');
       expect(Number.isFinite(result.metrics.parseTimeMs)).toBe(true);
       expect(result.metrics.parseTimeMs).toBeGreaterThanOrEqual(0);
       expectMetricsDerivedFromActualResult(result, filePath, 'full_read');
