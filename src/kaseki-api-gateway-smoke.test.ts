@@ -718,44 +718,34 @@ describe('LLM Gateway Test', () => {
 
   describe('Two-Stage Gateway Test', () => {
     describe('detectGatewayTestEnvironment', () => {
-      it('should return "test" when JEST_WORKER_ID is set', () => {
-        process.env.JEST_WORKER_ID = '1';
-        delete process.env.NODE_ENV;
-        delete process.env.KASEKI_ENV;
-
-        expect(detectGatewayTestEnvironment()).toBe('test');
-      });
-
-      it('should return "test" when NODE_ENV=test', () => {
-        delete process.env.JEST_WORKER_ID;
-        process.env.NODE_ENV = 'test';
-        delete process.env.KASEKI_ENV;
-
-        expect(detectGatewayTestEnvironment()).toBe('test');
-      });
-
-      it('should return "development" when NODE_ENV=development', () => {
-        delete process.env.JEST_WORKER_ID;
-        process.env.NODE_ENV = 'development';
-        delete process.env.KASEKI_ENV;
-
-        expect(detectGatewayTestEnvironment()).toBe('development');
-      });
-
-      it('should return "development" when KASEKI_ENV=development', () => {
-        delete process.env.JEST_WORKER_ID;
-        delete process.env.NODE_ENV;
-        process.env.KASEKI_ENV = 'development';
-
-        expect(detectGatewayTestEnvironment()).toBe('development');
-      });
-
-      it('should return "production" as default', () => {
-        delete process.env.JEST_WORKER_ID;
-        delete process.env.NODE_ENV;
-        delete process.env.KASEKI_ENV;
-
-        expect(detectGatewayTestEnvironment()).toBe('production');
+      it.each([
+        {
+          name: 'NODE_ENV=test takes precedence over KASEKI_ENV=development',
+          environment: { NODE_ENV: 'test', KASEKI_ENV: 'development' },
+          expected: 'test',
+        },
+        {
+          name: 'NODE_ENV=development selects development',
+          environment: { NODE_ENV: 'development' },
+          expected: 'development',
+        },
+        {
+          name: 'KASEKI_ENV=development is the fallback development signal',
+          environment: { NODE_ENV: 'production', KASEKI_ENV: 'development' },
+          expected: 'development',
+        },
+        {
+          name: 'unsupported values select the production default',
+          environment: { NODE_ENV: 'staging', KASEKI_ENV: 'staging' },
+          expected: 'production',
+        },
+        {
+          name: 'an empty environment selects the production default',
+          environment: {},
+          expected: 'production',
+        },
+      ])('$name', ({ environment, expected }) => {
+        expect(detectGatewayTestEnvironment({ ...environment })).toBe(expected);
       });
     });
 
