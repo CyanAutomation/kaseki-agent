@@ -227,16 +227,20 @@ export async function gracefulShutdown(deps: ShutdownDeps): Promise<boolean> {
 
   try {
     // 1. Close HTTP server
-    await new Promise<void>((resolve, reject) => {
-      server.close((err?: Error) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        logger.info('HTTP server closed');
-        resolve();
+    if (server.listening === false) {
+      logger.info('HTTP server already closed');
+    } else {
+      await new Promise<void>((resolve, reject) => {
+        server.close((err?: Error) => {
+          if (err && (err as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING') {
+            reject(err);
+            return;
+          }
+          logger.info(err ? 'HTTP server already closed' : 'HTTP server closed');
+          resolve();
+        });
       });
-    });
+    }
 
     // 2. Shutdown scheduler
     await scheduler.shutdown();

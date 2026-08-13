@@ -201,6 +201,31 @@ describe('ServiceBootstrapper', () => {
       expect(mockExit).not.toHaveBeenCalled();
     });
 
+    it('should continue shutting down services when the HTTP server is already closed', async () => {
+      const alreadyClosedServer = {
+        listening: false,
+        close: jest.fn(),
+      };
+      const mockServices = {
+        scheduler: { shutdown: jest.fn().mockResolvedValue(undefined) },
+        webhookManager: { shutdown: jest.fn().mockResolvedValue(undefined) },
+        idempotencyStore: { shutdown: jest.fn() },
+      };
+
+      await expect(gracefulShutdown({
+        server: alreadyClosedServer as unknown as Server,
+        scheduler: mockServices.scheduler,
+        webhookManager: mockServices.webhookManager,
+        idempotencyStore: mockServices.idempotencyStore,
+        forceExitAfterMs: 100,
+      })).resolves.toBe(true);
+
+      expect(alreadyClosedServer.close).not.toHaveBeenCalled();
+      expect(mockServices.scheduler.shutdown).toHaveBeenCalledTimes(1);
+      expect(mockServices.webhookManager.shutdown).toHaveBeenCalledTimes(1);
+      expect(mockServices.idempotencyStore.shutdown).toHaveBeenCalledTimes(1);
+    });
+
     it('should enforce hard timeout on graceful shutdown', () => {
       jest.useFakeTimers();
       const mockExit = jest.fn() as unknown as (code: number) => never;
