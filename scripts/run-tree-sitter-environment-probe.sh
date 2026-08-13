@@ -13,5 +13,5 @@ EOF
 fi
 
 printf 'Using %s\n' "$tree_sitter_version"
-RUN_TREE_SITTER_CLI_INTEGRATION=1 jest --runInBand \
+RUN_TREE_SITTER_CLI_INTEGRATION=1 npx jest --runInBand \
   tests/summarization/optional-tree-sitter-cli-environment-probe.test.ts
