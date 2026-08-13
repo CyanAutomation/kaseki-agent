@@ -33,7 +33,23 @@ RUN npm ci --no-audit --prefer-offline --ignore-scripts \
 RUN npm install -g --no-audit @earendil-works/pi-coding-agent@0.82.1 undici
 
 # Phase 3b: Install tree-sitter-cli for Go code summarization (no native compilation)
-RUN npm install -g --no-audit tree-sitter-cli
+RUN set -eu; \
+    max_attempts=3; \
+    attempt=1; \
+    while [ "$attempt" -le "$max_attempts" ]; do \
+      rm -rf "$(npm root -g)/tree-sitter-cli" "$(npm prefix -g)/bin/tree-sitter"; \
+      if npm install -g --no-audit tree-sitter-cli@0.25.10 \
+        && tree-sitter --version; then \
+        break; \
+      fi; \
+      rm -rf "$(npm root -g)/tree-sitter-cli" "$(npm prefix -g)/bin/tree-sitter"; \
+      if [ "$attempt" -eq "$max_attempts" ]; then \
+        echo "tree-sitter-cli installation failed after ${max_attempts} attempts" >&2; \
+        exit 1; \
+      fi; \
+      sleep "$attempt"; \
+      attempt=$((attempt + 1)); \
+    done
 
 # Phase 3c: Copy Pi CLI Custom Extensions (LLM Gateway provider)
 # Extensions are loaded from ~/.pi/extensions/ and must be compiled TypeScript
