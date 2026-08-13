@@ -13,7 +13,13 @@ jest.mock('./secrets/host-secrets-reader', () => ({
 import * as fs from 'fs';
 import type { Server } from 'http';
 import * as hostSecretsReader from './secrets/host-secrets-reader';
-import { assertSupportedNodeVersion, ensureResultsDir, setupLlmProviderEnvironment, shutdownService } from './kaseki-api-service';
+import {
+  assertSupportedNodeVersion,
+  ensureResultsDir,
+  registerShutdownSignalHandlers,
+  setupLlmProviderEnvironment,
+  shutdownService,
+} from './kaseki-api-service';
 import { loadConfig } from './kaseki-api-config';
 import { JobScheduler } from './job-scheduler';
 import { WebhookManager } from './webhook-manager';
@@ -166,6 +172,63 @@ describe('Kaseki API startup filesystem checks', () => {
     } finally {
       fs.rmSync(parent, { recursive: true, force: true });
     }
+  });
+});
+
+describe('Kaseki API service shutdown signals', () => {
+  test('runs dependency shutdown and the exit path once for back-to-back signals', async () => {
+    const signalCallbacks = new Map<string, () => void>();
+    const signalSource = {
+      on: jest.fn((signal: string, callback: () => void) => {
+        signalCallbacks.set(signal, callback);
+        return signalSource;
+      }),
+    };
+    const server = {
+      listening: true,
+      close: jest.fn((callback: (err?: Error) => void) => {
+        callback();
+        return server;
+      }),
+    };
+    const scheduler = { shutdown: jest.fn().mockResolvedValue(undefined) };
+    const webhookManager = { shutdown: jest.fn().mockResolvedValue(undefined) };
+    const idempotencyStore = { shutdown: jest.fn() };
+    const flushTelemetry = jest.fn().mockResolvedValue(true);
+    let resolveExit!: () => void;
+    const exited = new Promise<void>((resolve) => {
+      resolveExit = resolve;
+    });
+    const exit = jest.fn(() => {
+      resolveExit();
+      return undefined as never;
+    }) as unknown as (code: number) => never;
+    const deps = {
+      server: server as unknown as Server,
+      scheduler,
+      webhookManager,
+      idempotencyStore,
+      forceExitAfterMs: 100,
+      exit,
+    };
+
+    registerShutdownSignalHandlers(
+      deps,
+      signalSource as unknown as Pick<NodeJS.Process, 'on'>,
+      (shutdownDeps) => shutdownService(shutdownDeps, flushTelemetry),
+    );
+
+    signalCallbacks.get('SIGTERM')?.();
+    signalCallbacks.get('SIGINT')?.();
+    await exited;
+
+    expect(server.close).toHaveBeenCalledTimes(1);
+    expect(scheduler.shutdown).toHaveBeenCalledTimes(1);
+    expect(webhookManager.shutdown).toHaveBeenCalledTimes(1);
+    expect(idempotencyStore.shutdown).toHaveBeenCalledTimes(1);
+    expect(flushTelemetry).toHaveBeenCalledTimes(1);
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(exit).toHaveBeenCalledWith(0);
   });
 });
 
