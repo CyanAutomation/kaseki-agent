@@ -201,14 +201,12 @@ export async function bootstrapServices(
  * 2. Shutdown scheduler (cancel running jobs)
  * 3. Shutdown webhook manager (flush pending webhooks)
  * 4. Shutdown idempotency store (finalize persistence)
- * 5. Exit process
- *
  * Hard timeout (8000ms default) ensures process exits even if services hang
  *
  * @param deps - ShutdownDeps with server and all service instances
- * @throws Error if shutdown sequence fails (but still attempts exit)
+ * @returns Whether every shutdown step completed successfully
  */
-export async function gracefulShutdown(deps: ShutdownDeps): Promise<void> {
+export async function gracefulShutdown(deps: ShutdownDeps): Promise<boolean> {
   const {
     server,
     scheduler,
@@ -253,10 +251,10 @@ export async function gracefulShutdown(deps: ShutdownDeps): Promise<void> {
     logger.info('Idempotency store shutdown');
 
     logger.info('Graceful shutdown complete');
-    exit(0);
+    return true;
   } catch (err) {
     logger.error('Error during graceful shutdown', { error: String(err) });
-    exit(1);
+    return false;
   } finally {
     clearTimeout(hardTimeout);
   }
