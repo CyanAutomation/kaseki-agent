@@ -264,6 +264,7 @@ describe('LLM Gateway Test', () => {
       expect(result.status).toBe('ok');
       expect(result.responseTime).toBeGreaterThanOrEqual(0);
       expect(result.authenticationValidated).toBe(true);
+      expect(result.detail).toContain('Gateway is responsive');
       // Verify it converts /v1 to /v1/models for the test probe
       expect(mockFetch).toHaveBeenCalled();
       const callArgs = mockFetch.mock.calls[0];
@@ -307,6 +308,8 @@ describe('LLM Gateway Test', () => {
 
       expect(result.status).toBe('error');
       expect(result.detail).toContain('401');
+      expect(result.detail).toContain('Unauthorized');
+      expect(result.detail).not.toContain('invalid-key');
       expect(result.authenticationValidated).toBe(false);
       expect(result.remediation).toBeDefined();
       expect(result.remediation).toContain('LLM_GATEWAY_API_KEY');
@@ -435,22 +438,6 @@ describe('LLM Gateway Test', () => {
 
       expect(result.remediation).toBeDefined();
       expect(result.remediation).toContain('environment');
-    });
-
-    it('should have a detail field describing the test result', async () => {
-      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
-      process.env.LLM_GATEWAY_API_KEY = 'test-key';
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        text: async () => '{}',
-      });
-
-      const result = await testGatewayConnectivity();
-
-      expect(result.detail).toBeDefined();
-      expect(typeof result.detail).toBe('string');
     });
 
     it('should accept full response path format (e.g., /v1/responses)', async () => {
