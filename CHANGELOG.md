@@ -4,6 +4,32 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.130.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.129.0...v1.130.0) (2026-08-13)
+
+
+### Bug Fixes
+
+* assign durable ownership on job submission ([6f1a51c](https://github.com/CyanAutomation/kaseki-agent/commit/6f1a51c56f7611f0837cc7d05cea063cc95c021e))
+* await scheduler persistence during shutdown ([db691ff](https://github.com/CyanAutomation/kaseki-agent/commit/db691ffe0f7263910927e87abe73842c37c848b2))
+* guard invalid efficiency policy stores ([65dd90c](https://github.com/CyanAutomation/kaseki-agent/commit/65dd90c4017adcd3db058cbae8ee1db4c1dd8d90))
+* guard invalid efficiency policy stores ([#1231](https://github.com/CyanAutomation/kaseki-agent/issues/1231)) ([795d1df](https://github.com/CyanAutomation/kaseki-agent/commit/795d1df39fff0c3dd680080f3822c52596ee4508))
+* harden tree-sitter CLI installation ([b845668](https://github.com/CyanAutomation/kaseki-agent/commit/b845668ccea260f249b06f5b12a2df1b28f29328))
+* preserve canonical handoff evidence ([d455704](https://github.com/CyanAutomation/kaseki-agent/commit/d455704a9a48a509c60906efb971afbd029b1ea0))
+* remove unused context handoff artifact variable ([5f4effc](https://github.com/CyanAutomation/kaseki-agent/commit/5f4effc19680067f302e9f03965f3e77a07f2d3e))
+* report accurate async impact counts ([32c2639](https://github.com/CyanAutomation/kaseki-agent/commit/32c2639574886711c9df36c4f119a65e62ebf732))
+* report accurate async impact counts ([#1240](https://github.com/CyanAutomation/kaseki-agent/issues/1240)) ([a060772](https://github.com/CyanAutomation/kaseki-agent/commit/a0607723dfb3288328041120fffaedcab215e206))
+* use minimatch for async impact fallback ([63e5a37](https://github.com/CyanAutomation/kaseki-agent/commit/63e5a3744c523a9af0f49468a2bdefcbe128fc9c))
+* use supported glob matching in async impact fallback ([#1241](https://github.com/CyanAutomation/kaseki-agent/issues/1241)) ([687ec68](https://github.com/CyanAutomation/kaseki-agent/commit/687ec68fe7223ffb63117fdd7ce410c7d3fc6353))
+
+
+### Features
+
+* add deterministic efficiency policy analyzer ([c121859](https://github.com/CyanAutomation/kaseki-agent/commit/c121859374f7d10fbce6a3717150f4eb23e1049a))
+* add deterministic efficiency policy analyzer ([#1230](https://github.com/CyanAutomation/kaseki-agent/issues/1230)) ([ec471b5](https://github.com/CyanAutomation/kaseki-agent/commit/ec471b5b18f8dbb05198338ba9c181eda6543387))
+* canonicalize phase context handoffs ([04e4156](https://github.com/CyanAutomation/kaseki-agent/commit/04e4156ed1779fe0718cbfed79b7ee344c541f2e))
+* implement context handoff functionality with diagnostics and tests ([a492e96](https://github.com/CyanAutomation/kaseki-agent/commit/a492e9663b817674fea011716cc7a48bdc6a3f2d))
+* implement efficiency policy management with aggregate and analysis functions ([8bc80ef](https://github.com/CyanAutomation/kaseki-agent/commit/8bc80ef7f7970f807726e70582b4a836feb67737))
+
 # [1.129.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.128.0...v1.129.0) (2026-08-09)
 
 
