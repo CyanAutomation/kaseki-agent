@@ -33,19 +33,16 @@ describe('file-helpers', () => {
       expect(isNonEmptyFile(filePath)).toBe(true);
     });
 
-    it('should keep empty-file coverage in the owning helper suite', () => {
-      const filePath = path.join(tempDir, 'empty.txt');
-      fs.writeFileSync(filePath, '');
+    it.each([
+      ['the file exists but contains no bytes', 'empty.txt', true],
+      ['the path does not exist', 'nonexistent.txt', false],
+    ])('returns false for unusable files when %s', (_description, filename, createFile) => {
+      const filePath = path.join(tempDir, filename);
+      if (createFile) {
+        fs.writeFileSync(filePath, '');
+      }
 
       expect(isNonEmptyFile(filePath)).toBe(false);
-    });
-
-    it('should return false for a missing file in the temporary test directory', () => {
-      const missingPath = path.join(tempDir, 'nonexistent.txt');
-
-      expect(fs.existsSync(tempDir)).toBe(true);
-      expect(fs.existsSync(missingPath)).toBe(false);
-      expect(isNonEmptyFile(missingPath)).toBe(false);
     });
   });
 
