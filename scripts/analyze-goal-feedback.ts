@@ -195,10 +195,10 @@ function analyzeCorrelations(entries: FeedbackEntry[]): string[] {
   // Evidence correlation
   const avgEvidenceCount =
     entries.reduce((sum, e) => sum + ((e.goal_check_verdict as Record<string, unknown>)?.evidenceCount as number || 0), 0) /
-    entries.length;
+    Math.max(1, entries.length);
   const avgMissingCount =
     entries.reduce((sum, e) => sum + ((e.goal_check_verdict as Record<string, unknown>)?.missingCount as number || 0), 0) /
-    entries.length;
+    Math.max(1, entries.length);
   notes.push(
     `Evaluator effort: avg ${avgEvidenceCount.toFixed(1)} evidence items, ${avgMissingCount.toFixed(1)} missing items per verdict`,
   );

@@ -242,11 +242,10 @@ invalid json line
       expect(effortNote).toMatch(/\d+\.\d missing items/);
     });
 
-    test('should return notes array for empty entries', () => {
+    test('should report zero evaluator effort when no feedback entries exist', () => {
       const entries: GoalCheckEntry[] = [];
       const result = analyzeCorrelations(entries);
-      expect(Array.isArray(result)).toBe(true);
-      expect(result.length).toBeGreaterThan(0); // Should have effort note with zeros
+      expect(result).toContain('Evaluator effort: avg 0.0 evidence items, 0.0 missing items per verdict');
     });
   });
 
