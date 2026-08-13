@@ -242,21 +242,17 @@ describe('artifact-recovery helper functions (direct unit tests)', () => {
       expect(isRecord({ key: 'value' })).toBe(true);
     });
 
-    test('returns false for arrays', () => {
-      expect(isRecord([])).toBe(false);
-      expect(isRecord([1, 2, 3])).toBe(false);
-    });
-
-    test('returns false for primitives', () => {
-      expect(isRecord('string')).toBe(false);
-      expect(isRecord(123)).toBe(false);
-      expect(isRecord(true)).toBe(false);
-      expect(isRecord(null)).toBe(false);
-      expect(isRecord(undefined)).toBe(false);
-    });
-
-    test('returns false for functions', () => {
-      expect(isRecord(() => {})).toBe(false);
+    test.each([
+      ['empty array', []],
+      ['populated array', [1, 2, 3]],
+      ['string', 'string'],
+      ['number', 123],
+      ['boolean', true],
+      ['null', null],
+      ['undefined', undefined],
+      ['function', () => {}],
+    ])('returns false for invalid input: %s', (_description, value) => {
+      expect(isRecord(value)).toBe(false);
     });
 
     test('returns true for nested objects', () => {
