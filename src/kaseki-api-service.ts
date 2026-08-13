@@ -63,6 +63,28 @@ export async function shutdownService(
   }
 }
 
+type ShutdownSignalSource = Pick<NodeJS.Process, 'on'>;
+type ShutdownRunner = (deps: ShutdownDeps) => Promise<void>;
+
+// Retain the first shutdown operation for the lifetime of this module. Signals
+// can arrive back-to-back, but the service resources and exit path must only be
+// driven once.
+let shutdownPromise: Promise<void> | undefined;
+
+export function registerShutdownSignalHandlers(
+  deps: ShutdownDeps,
+  signalSource: ShutdownSignalSource = process,
+  runShutdown: ShutdownRunner = shutdownService,
+): void {
+  const shutdown = () => {
+    shutdownPromise ??= runShutdown(deps);
+    return shutdownPromise;
+  };
+
+  signalSource.on('SIGTERM', () => void shutdown());
+  signalSource.on('SIGINT', () => void shutdown());
+}
+
 export function ensureResultsDir(resultsDir: string): void {
   fs.mkdirSync(resultsDir, { recursive: true });
   fs.accessSync(resultsDir, fs.constants.R_OK | fs.constants.W_OK);
@@ -278,12 +300,7 @@ async function main(): Promise<void> {
     : app.listen(config.port, onListening);
 
   // Graceful shutdown
-  const shutdown = async () => {
-    await shutdownService({ server, scheduler, webhookManager, idempotencyStore });
-  };
-
-  process.on('SIGTERM', () => void shutdown());
-  process.on('SIGINT', () => void shutdown());
+  registerShutdownSignalHandlers({ server, scheduler, webhookManager, idempotencyStore });
 
   // Catch unhandled errors
   process.on('uncaughtException', (err) => {
