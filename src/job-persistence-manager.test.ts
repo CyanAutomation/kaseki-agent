@@ -290,6 +290,43 @@ describe('JobPersistenceManager', () => {
   });
 
   describe('persistJobs', () => {
+    test('leaves a malformed index untouched without attempting replacement', async () => {
+      const indexPath = path.join(tempDir, '.kaseki-api-jobs.json');
+      const malformedIndex = '{"jobs": [not valid json]';
+      fs.writeFileSync(indexPath, malformedIndex, 'utf-8');
+      const indexFileRenamer = jest.fn();
+      manager = new JobPersistenceManager(config, { indexFileRenamer });
+
+      await manager.persistJobs([]);
+
+      expect(fs.readFileSync(indexPath, 'utf-8')).toBe(malformedIndex);
+      expect(indexFileRenamer).not.toHaveBeenCalled();
+    });
+
+    test('leaves the index untouched when reading it fails', async () => {
+      const indexPath = path.join(tempDir, '.kaseki-api-jobs.json');
+      const originalIndex = JSON.stringify({ version: 1, jobs: [] });
+      fs.writeFileSync(indexPath, originalIndex, 'utf-8');
+      const readError = new Error(
+        'injected index read failure',
+      ) as NodeJS.ErrnoException;
+      readError.code = 'EIO';
+      const indexFileReader = jest.fn(() => {
+        throw readError;
+      });
+      const indexFileRenamer = jest.fn();
+      manager = new JobPersistenceManager(config, {
+        indexFileReader,
+        indexFileRenamer,
+      });
+
+      await manager.persistJobs([]);
+
+      expect(fs.readFileSync(indexPath, 'utf-8')).toBe(originalIndex);
+      expect(indexFileReader).toHaveBeenCalledWith(indexPath);
+      expect(indexFileRenamer).not.toHaveBeenCalled();
+    });
+
     test('persists submitted ownership so another live manager cannot claim it', async () => {
       const first = new JobPersistenceManager(config, {
         pid: 101, now: () => 1_000,

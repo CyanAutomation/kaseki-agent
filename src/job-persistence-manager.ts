@@ -52,6 +52,8 @@ export interface JobPersistenceManagerDependencies {
   lockTokenGenerator?: () => string;
   pid?: number;
   restartClaimLeaseMs?: number;
+  indexFileReader?: (indexPath: string) => string;
+  indexFileRenamer?: (temporaryPath: string, indexPath: string) => void;
   staleLockQuarantineObserver?: (
     lockPath: string,
     quarantinePath: string,
@@ -110,6 +112,8 @@ export class JobPersistenceManager {
   private pid: number;
   private restartClaimLeaseMs: number;
   private restartOwnerToken: string;
+  private indexFileReader: (indexPath: string) => string;
+  private indexFileRenamer: (temporaryPath: string, indexPath: string) => void;
   private staleLockQuarantineObserver?: (
     lockPath: string,
     quarantinePath: string,
@@ -134,6 +138,10 @@ export class JobPersistenceManager {
     this.pid = dependencies.pid ?? process.pid;
     this.restartClaimLeaseMs =
       dependencies.restartClaimLeaseMs ?? 5 * 60 * 1000;
+    this.indexFileReader =
+      dependencies.indexFileReader ??
+      ((indexPath) => fs.readFileSync(indexPath, 'utf-8'));
+    this.indexFileRenamer = dependencies.indexFileRenamer ?? fs.renameSync;
     this.restartOwnerToken = `${this.pid}-${this.now()}-${this.lockTokenGenerator()}`;
     this.staleLockQuarantineObserver = dependencies.staleLockQuarantineObserver;
   }
@@ -261,7 +269,7 @@ export class JobPersistenceManager {
           ? JSON.stringify(payload)
           : JSON.stringify(payload, null, 2);
         fs.writeFileSync(tmpPath, `${json}\n`, { mode: 0o600 });
-        fs.renameSync(tmpPath, this.indexPath);
+        this.indexFileRenamer(tmpPath, this.indexPath);
       });
     } catch (error) {
       // Keep scheduler progress alive even if persistence is unavailable, but
@@ -400,22 +408,35 @@ export class JobPersistenceManager {
       ? JSON.stringify(payload)
       : JSON.stringify(payload, null, 2);
     fs.writeFileSync(tmpPath, `${json}\n`, { mode: 0o600 });
-    fs.renameSync(tmpPath, this.indexPath);
+    this.indexFileRenamer(tmpPath, this.indexPath);
   }
 
   /**
    * Read the current job index from disk.
    */
   private readPersistedJobsIndex(): { jobs?: PersistedJob[] } {
-    if (!fs.existsSync(this.indexPath)) {
-      return {};
-    }
+    let contents: string;
     try {
-      return JSON.parse(fs.readFileSync(this.indexPath, 'utf-8')) as {
-        jobs?: PersistedJob[];
-      };
-    } catch {
-      return {};
+      contents = this.indexFileReader(this.indexPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return {};
+      }
+      throw new JobIndexUnavailableError(this.indexPath, error);
+    }
+
+    try {
+      const parsed = JSON.parse(contents) as { jobs?: unknown };
+      if (
+        parsed === null ||
+        typeof parsed !== 'object' ||
+        (parsed.jobs !== undefined && !Array.isArray(parsed.jobs))
+      ) {
+        throw new Error('jobs index must contain a jobs array');
+      }
+      return parsed as { jobs?: PersistedJob[] };
+    } catch (error) {
+      throw new JobIndexUnavailableError(this.indexPath, error);
     }
   }
 
