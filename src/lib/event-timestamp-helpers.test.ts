@@ -99,21 +99,14 @@ describe('event-timestamp-helpers', () => {
       expect(normalizeTimestamp(date)).toBe(date.toISOString());
     });
 
-    it('should return undefined for null', () => {
-      expect(normalizeTimestamp(null)).toBeUndefined();
-    });
-
-    it('should return undefined for undefined', () => {
-      expect(normalizeTimestamp(undefined)).toBeUndefined();
-    });
-
-    it('should return undefined for empty string', () => {
-      expect(normalizeTimestamp('')).toBeUndefined();
-    });
-
-    it('should ignore invalid numbers', () => {
-      expect(normalizeTimestamp(NaN)).toBeUndefined();
-      expect(normalizeTimestamp(Infinity)).toBeUndefined();
+    it.each([
+      { label: 'null', input: null, expected: undefined },
+      { label: 'undefined', input: undefined, expected: undefined },
+      { label: 'empty string', input: '', expected: undefined },
+      { label: 'NaN', input: NaN, expected: undefined },
+      { label: 'Infinity', input: Infinity, expected: undefined },
+    ])('should reject absent or non-finite timestamps: $label', ({ input, expected }) => {
+      expect(normalizeTimestamp(input)).toBe(expected);
     });
 
     it('should handle zero timestamp', () => {
