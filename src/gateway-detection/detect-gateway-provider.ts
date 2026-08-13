@@ -54,18 +54,23 @@ function parseBooleanOverride(value: unknown): boolean | undefined {
 
 /**
  * Detect current environment for stage 2 token consumption decisions
+ *
+ * Precedence is NODE_ENV=test, NODE_ENV=development, then
+ * KASEKI_ENV=development. Runner-specific variables are deliberately ignored:
+ * callers must describe the environment explicitly rather than inheriting the
+ * test runner that happens to execute them.
+ *
  * Returns 'production' | 'development' | 'test'
  */
-export function detectGatewayTestEnvironment(): 'production' | 'development' | 'test' {
-  // Test environment: Jest runner
-  if (process.env.JEST_WORKER_ID) return 'test';
-
+export function detectGatewayTestEnvironment(
+  environment: Readonly<Record<string, string | undefined>>,
+): 'production' | 'development' | 'test' {
   // Test/development environment: NODE_ENV
-  if (process.env.NODE_ENV === 'test') return 'test';
-  if (process.env.NODE_ENV === 'development') return 'development';
+  if (environment.NODE_ENV === 'test') return 'test';
+  if (environment.NODE_ENV === 'development') return 'development';
 
   // Development environment: KASEKI_ENV
-  if (process.env.KASEKI_ENV === 'development') return 'development';
+  if (environment.KASEKI_ENV === 'development') return 'development';
 
   // Default to production for safety
   return 'production';
