@@ -4,6 +4,16 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.130.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.130.0...v1.130.1) (2026-08-14)
+
+
+### Bug Fixes
+
+* flush telemetry before service exit ([4b08a0d](https://github.com/CyanAutomation/kaseki-agent/commit/4b08a0dbf150060a18a5030ae757563795f4b078))
+* isolate gateway environment detection ([b83f879](https://github.com/CyanAutomation/kaseki-agent/commit/b83f879f57ff47d446b0871480aae19777e6de21))
+* make service shutdown idempotent ([ba53614](https://github.com/CyanAutomation/kaseki-agent/commit/ba53614d04573db3044ac15ea3cb598995d8e638))
+* preserve unavailable job indexes ([07c417f](https://github.com/CyanAutomation/kaseki-agent/commit/07c417f614aba6464342ef4ea1f8339faa2afd88))
+
 # [1.130.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.129.0...v1.130.0) (2026-08-13)
 
 
