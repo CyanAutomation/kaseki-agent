@@ -35,6 +35,9 @@ interface ProgressPayload {
   message: string;
   percentComplete?: number;
   summary?: string;
+  /** Canonical Pi phase supplied by the runner (coding, scouting, goal-check, …). */
+  phase?: string;
+  heartbeat?: boolean;
   [key: string]: any;
 }
 
@@ -42,6 +45,22 @@ const progressJsonlPath = process.argv[2] || '/results/progress.jsonl';
 const progressLogPath = process.argv[3] || '/results/progress.log';
 const streamToStdout = process.env.KASEKI_STREAM_PROGRESS !== '0';
 const enableSummarization = process.env.KASEKI_PROGRESS_SUMMARIZATION !== '0';
+const inferencePhase = process.env.KASEKI_INFERENCE_PHASE || 'coding';
+
+function phaseStage(phase: string): string {
+  const stages: Record<string, string> = {
+    'goal-setting': 'pi goal-setting agent',
+    scouting: 'pi scouting agent',
+    coding: 'pi coding agent',
+    'goal-check': 'goal check',
+        cb(normalizer.getNormalizedProgress());
+      })
+      .on('end', () => {
+        cb(normalizer.getNormalizedProgress());
+      });
+  };
+  return stages[phase] || 'pi coding agent';
+}
 
 // Diagnostics log: sits alongside progress.jsonl for crash/EPIPE diagnosis
 const diagnosticsLogPath = progressJsonlPath.replace(/\/progress\.jsonl$/, '/progress-stream-diagnostics.log');
@@ -187,8 +206,9 @@ function emit(stage: string, message: string, extra: Record<string, any> = {}): 
   const payload: ProgressPayload = {
     timestamp: now,
     updatedAt: now,
-    stage,
+    stage: stage === 'pi agent' ? phaseStage(inferencePhase) : stage,
     message,
+    phase: inferencePhase,
     ...extra,
   };
 
@@ -216,6 +236,11 @@ function maybeHeartbeat(force: boolean = false): void {
     return;
   }
   lastHeartbeat = now;
+
+  // A Pi turn can legitimately spend a while waiting on a gateway response.
+  // Emit a timestamped, structured event so the API can distinguish an alive
+  // phase from a stale Docker log observation.
+  emit('pi agent', 'phase heartbeat', { type: 'heartbeat', heartbeat: true });
 
   // Flush any pending tool batches
   toolBatchAggregator.flushIfReady();
