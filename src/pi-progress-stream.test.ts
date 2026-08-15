@@ -112,11 +112,12 @@ describe('pi-progress-stream executable', () => {
     const { events, log } = await runProgressStream([]);
 
     expect(events[0]).toMatchObject({
-      stage: 'pi agent',
+      stage: 'pi coding agent',
       message: 'started',
+      phase: 'coding',
     });
     expect(events.at(-1)).toMatchObject({
-      stage: 'pi agent',
+      stage: 'pi coding agent',
       counts: {},
       toolStartCount: 0,
       toolEndCount: 0,
@@ -189,7 +190,7 @@ describe('pi-progress-stream executable', () => {
     expect(log).toContain('[progress] pi agent: agent finished');
 
     const messageSummary = events.find(
-      (event) => event.stage === 'pi agent' && event.type === 'message_update'
+      (event) => event.stage === 'pi coding agent' && event.type === 'message_update'
     );
     expect(messageSummary?.message).toContain('Validation step 15');
 
@@ -210,6 +211,21 @@ describe('pi-progress-stream executable', () => {
       toolEndCount: 1,
       messageUpdateCount: 15,
     });
+  });
+
+  it('flushes a buffered tool batch when the input stream closes', async () => {
+    const { events } = await runProgressStream([
+      JSON.stringify({ type: 'tool_execution_start', tool_name: 'read_file' }),
+    ]);
+
+    const batchEventIndex = events.findIndex((event) => event.stage === 'pi tool batch');
+    expect(batchEventIndex).toBeGreaterThan(0);
+    expect(events[batchEventIndex]).toMatchObject({
+      message: '[tools] read_file (1x) (0s)',
+      toolBatchSummary: { read_file: 1 },
+    });
+    expect(batchEventIndex).toBeLessThan(events.length - 1);
+    expect(events.at(-1)?.message).toContain('event stream ended');
   });
 
   it('suppresses tool batch summaries when progress summarization is disabled', async () => {
@@ -240,7 +256,7 @@ describe('pi-progress-stream executable', () => {
 
     expect(events).toContainEqual(
       expect.objectContaining({
-        stage: 'pi agent',
+        stage: 'pi coding agent',
         message: 'agent started',
         type: 'agent_start',
       })
