@@ -53,11 +53,7 @@ function phaseStage(phase: string): string {
     scouting: 'pi scouting agent',
     coding: 'pi coding agent',
     'goal-check': 'goal check',
-        cb(normalizer.getNormalizedProgress());
-      })
-      .on('end', () => {
-        cb(normalizer.getNormalizedProgress());
-      });
+    'run-evaluation': 'run evaluation',
   };
   return stages[phase] || 'pi coding agent';
 }
