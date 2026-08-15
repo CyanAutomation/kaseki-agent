@@ -43,6 +43,7 @@ docker run --rm --entrypoint /bin/sh \
     for helper in \
       agent-prompt.sh \
       allowlist-helper.sh \
+      context-handoff.js \
       inspect-mode-defaults.sh \
       dependency-cache-helpers.sh
     do
@@ -84,6 +85,7 @@ docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c '
     /usr/local/bin/instance-failure-extraction.js|755
     /usr/local/bin/provider-error-classifier.js|755
     /usr/local/bin/scripts/scouting-allowlist.js|755
+    /usr/local/bin/scripts/context-handoff.js|755
     /usr/local/bin/scripts/lib/provider-retry.sh|644
     /usr/local/bin/scripts/restore-disallowed-changes.sh|755
     /usr/local/bin/scripts/evaluation-prompts.sh|755
@@ -108,6 +110,19 @@ docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c '
   test "$(readlink /scripts/kaseki-init-container.sh)" = "/app/scripts/startup-checks.sh"
   test "$(readlink -f /scripts/startup-checks.sh)" = "/app/scripts/startup-checks.sh"
   test "$(readlink -f /scripts/kaseki-init-container.sh)" = "/app/scripts/startup-checks.sh"
+'
+
+printf 'Checking the packaged goal-check context handoff can execute...\n'
+docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c '
+  set -eu
+  results_dir="$(mktemp -d)"
+  trap "rm -rf \"$results_dir\"" EXIT
+  TASK_PROMPT_VALUE="Verify the packaged goal-check handoff." \
+    node /usr/local/bin/scripts/context-handoff.js "$results_dir" goal-check "Emit a valid final verdict."
+  test -s "$results_dir/context-handoff.json"
+  node -e "JSON.parse(require(\"node:fs\").readFileSync(process.argv[1], \"utf8\"))" "$results_dir/context-handoff.json"
+  grep -Fq phase_completed "$results_dir/context-handoff.json"
+  grep -Fq goal-check "$results_dir/context-handoff.json"
 '
 
 printf 'Checking installed JavaScript entry points are importable...\n'

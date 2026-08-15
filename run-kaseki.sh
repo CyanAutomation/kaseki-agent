@@ -606,7 +606,7 @@ doctor() {
       printf 'Docker image template payload: missing /app/run-kaseki.sh; deploy will need a local rebuild or a newer image.\n' >&2
       status=1
     fi
-    pairs='kaseki-agent.sh:/usr/local/bin/kaseki-agent lib/pi-event-filter.js:/usr/local/bin/kaseki-pi-event-filter lib/pi-progress-stream.js:/usr/local/bin/kaseki-pi-progress-stream lib/kaseki-report.js:/usr/local/bin/kaseki-report lib/github-app-token.js:/usr/local/bin/github-app-token'
+    pairs='kaseki-agent.sh:/usr/local/bin/kaseki-agent lib/pi-event-filter.js:/usr/local/bin/kaseki-pi-event-filter lib/pi-progress-stream.js:/usr/local/bin/kaseki-pi-progress-stream lib/kaseki-report.js:/usr/local/bin/kaseki-report lib/github-app-token.js:/usr/local/bin/github-app-token scripts/context-handoff.js:/usr/local/bin/scripts/context-handoff.js'
     for pair in $pairs; do
       local host_file="${pair%%:*}"
       local image_file="${pair#*:}"
