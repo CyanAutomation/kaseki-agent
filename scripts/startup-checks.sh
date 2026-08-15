@@ -763,6 +763,7 @@ check_packaged_agent_helpers() {
     "agent-prompt.sh"
     "evaluation-prompts.sh"
     "allowlist-helper.sh"
+    "context-handoff.js"
     "restore-disallowed-changes.sh"
     "inspect-mode-defaults.sh"
     "dependency-cache-helpers.sh"
