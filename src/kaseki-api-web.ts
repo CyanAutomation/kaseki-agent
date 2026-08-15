@@ -1471,6 +1471,9 @@ const controllerPage = String.raw`<!doctype html>
             <div class="form-field">
               <label for="task-prompt">Task details</label>
               <textarea id="task-prompt" name="taskPrompt" required minlength="10" placeholder="Describe the task for the ephemeral agent."></textarea>
+              <div id="issue-prompt-preview" class="field-helper" hidden></div>
+              <label for="issue-scope" id="issue-scope-label" hidden>Editable issue scope</label>
+              <input id="issue-scope" type="text" placeholder="Optional: narrow the issue scope before validation" hidden />
               <p class="field-error" data-error-for="taskPrompt" aria-live="polite"></p>
             </div>
           </fieldset>
@@ -2699,6 +2702,7 @@ const controllerPage = String.raw`<!doctype html>
           if (path.includes('stage=2')) {
             // Stage 2 (LLM inference test)
             const outputTokens = payload.outputTokens || 0;
+            const timing = payload.modelTest || {};
             const streamOk = payload.streamSmokeValidated === true;
             const largeOk = payload.largePromptSmokeValidated === true;
             const coverage = [
@@ -2708,7 +2712,11 @@ const controllerPage = String.raw`<!doctype html>
             const llmSummary = payload.partialSuccess
               ? 'Gateway passed; Pi adapter failed'
               : payload.status === 'ok'
-              ? responseTime + 'ms' + (outputTokens ? ' ' + outputTokens + ' tokens' : '') + (coverage ? ' ' + coverage : '')
+              ? 'gateway ' + (timing.gatewayInferenceMs || responseTime) + 'ms'
+                + (timing.piAdapterMs != null ? ' · Pi ' + timing.piAdapterMs + 'ms' : '')
+                + (timing.endToEndMs ? ' · total ' + timing.endToEndMs + 'ms' : '')
+                + (outputTokens ? ' · ' + outputTokens + ' tokens' : ' · tokens unavailable')
+                + (coverage ? ' ' + coverage : '')
               : 'Failed';
             setSummary('llm-test', llmSummary, payload.partialSuccess ? 'warning' : payload.status === 'ok' ? 'ok' : 'bad');
             piAdapterValidationState = payload.piProviderSmoke?.status === 'ok'
@@ -3891,6 +3899,9 @@ const controllerPage = String.raw`<!doctype html>
       const issuesList = document.querySelector('#issues-list');
       const issuesError = document.querySelector('#issues-error');
       const taskPrompt = document.querySelector('#task-prompt');
+      const issuePromptPreview = document.querySelector('#issue-prompt-preview');
+      const issueScopeInput = document.querySelector('#issue-scope');
+      const issueScopeLabel = document.querySelector('#issue-scope-label');
       const submitTab = document.querySelector('[data-tab="submit"]');
 
       loadIssuesBtn.addEventListener('click', async (event) => {
@@ -3997,15 +4008,34 @@ const controllerPage = String.raw`<!doctype html>
             
             item.append(numberEl, titleEl, metaEl);
             item.addEventListener('click', () => {
-              const body = issue.body || '(No description)';
               const submitRepoUrl = normalizeRepoUrlForSubmit(repoUrl);
               const issueUrl = issue.html_url || (submitRepoUrl + '/issues/' + issue.number);
+              const maxIssueBodyChars = 12000;
+              const originalBody = issue.body || '(No description)';
+              const body = originalBody.length > maxIssueBodyChars
+                ? originalBody.slice(0, maxIssueBodyChars) + '\n\n[Issue body truncated; refine the scope below before validation.]'
+                : originalBody;
               taskPrompt.value = [
                 'GitHub issue #' + issue.number + ': ' + issue.title,
                 issueUrl,
                 '',
                 body,
               ].join('\n');
+              issueScopeInput.value = '';
+              issueScopeInput.hidden = false;
+              issueScopeLabel.hidden = false;
+              issuePromptPreview.hidden = false;
+              issuePromptPreview.textContent = 'Issue preview: ' + originalBody.length.toLocaleString() + ' characters (~' + Math.ceil(originalBody.length / 4).toLocaleString() + ' tokens)' + (originalBody.length > maxIssueBodyChars ? '; body truncated to 12,000 characters.' : '.');
+              issueScopeInput.oninput = () => {
+                const scope = issueScopeInput.value.trim();
+                taskPrompt.value = [
+                  'GitHub issue #' + issue.number + ': ' + issue.title,
+                  issueUrl,
+                  scope ? 'Requested scope: ' + scope : '',
+                  '',
+                  body,
+                ].filter(Boolean).join('\n');
+              };
               repoUrlInput.value = submitRepoUrl;
               repoUrlInput.dispatchEvent(new Event('input', { bubbles: true }));
               addRepoToRecent(submitRepoUrl);

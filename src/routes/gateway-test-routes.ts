@@ -154,6 +154,18 @@ function buildStage2Response(stage2Result: any, piProviderResult: any): any {
     result.codingShapeValidated = piProviderResult.codingShapeValidated === true;
     result.multiTurnValidated = piProviderResult.multiTurnValidated === true;
   }
+  const gatewayInferenceMs = Number(stage2Result?.responseTime) || 0;
+  const piAdapterMs = Number(piProviderResult?.responseTime) || 0;
+  result.modelTest = {
+    gatewayInferenceMs,
+    piAdapterMs: piProviderResult ? piAdapterMs : null,
+    endToEndMs: gatewayInferenceMs + (piProviderResult ? piAdapterMs : 0),
+    tokens: {
+      output: typeof stage2Result?.outputTokens === 'number' ? stage2Result.outputTokens : null,
+      estimatedCostUsd: null,
+      availability: typeof stage2Result?.outputTokens === 'number' ? 'gateway-reported' : 'unavailable',
+    },
+  };
 
   return result;
 }
