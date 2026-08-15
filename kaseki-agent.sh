@@ -1579,7 +1579,11 @@ if (errors.length) {
 
 artifact.attempt = attempt;
 artifact.timestamp = new Date().toISOString();
-fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
+// Never leave a partially written verdict for the next phase to consume.
+// Validation is complete above; publish this artifact atomically only now.
+const temporaryOutput = `${output}.tmp-${process.pid}-${Date.now()}`;
+fs.writeFileSync(temporaryOutput, JSON.stringify(artifact, null, 2) + "\n", { mode: 0o600 });
+fs.renameSync(temporaryOutput, output);
 try {
   fs.mkdirSync(path.dirname(attemptsLog), { recursive: true });
   fs.appendFileSync(attemptsLog, JSON.stringify(artifact) + "\n");
@@ -9660,6 +9664,13 @@ if [ "$VALIDATION_EXIT" -eq 0 ]; then
   collect_git_artifacts
   if ! check_validation_allowlist; then
     : # Exit code already set in check_validation_allowlist
+  fi
+  # Validation commands can generate or modify files. Re-run the authoritative
+  # diff/allowlist gate against that final state before any further evaluator
+  # inference or publishing work is allowed to consume time or credentials.
+  if [ "$QUALITY_EXIT" -eq 0 ]; then
+    emit_progress "quality checks" "re-checking final diff after validation before evaluation and publishing"
+    run_quality_checks
   fi
 fi
 

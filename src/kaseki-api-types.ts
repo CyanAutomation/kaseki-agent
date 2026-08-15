@@ -258,6 +258,7 @@ export interface StructuredProgress {
   updatedAt?: string; // Optional: ISO 8601 timestamp
   source?: 'progress.jsonl' | 'docker-logs'; // Where the event originated
   timestampEstimated?: boolean; // True when the timestamp came from a log-tail observation
+  phase?: string; // Canonical Pi phase when emitted by the worker progress stream
 }
 
 /**
