@@ -435,8 +435,38 @@ describe('kaseki API web console behavior', () => {
 
     click(document.querySelector('[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]'));
     await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Gateway and Pi provider adapter passed.'));
-    expect(document.querySelector('[data-summary="llm-test"]')?.textContent).toContain('480ms 7 tokens stream ok, large ok');
+    expectText(document, '[data-summary="llm-test"]', 'gateway 480ms · 7 tokens stream ok, large ok');
     expect(document.querySelector('#response-summary')?.textContent).not.toContain('OpenRouter');
+  });
+
+  test('summarizes labeled gateway, Pi adapter, and end-to-end telemetry', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true': createJsonResponse({
+          status: 'ok',
+          responseTime: 600,
+          outputTokens: 11,
+          modelTest: {
+            gatewayInferenceMs: 420,
+            piAdapterMs: 35,
+            endToEndMs: 475,
+          },
+          streamSmokeValidated: true,
+          largePromptSmokeValidated: true,
+          piProviderSmoke: { status: 'ok' },
+        }),
+        '/api/runs': createJsonResponse({ runs: [] }),
+      }, createJsonResponse({ status: 'ok' })),
+    });
+
+    clickSelector(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]');
+
+    await waitFor(() => expectText(
+      document,
+      '[data-summary="llm-test"]',
+      'gateway 420ms · Pi 35ms · total 475ms · 11 tokens stream ok, large ok',
+    ));
   });
 
   test('keeps Pi provider gateway smoke diagnostics for adapter failures', async () => {
