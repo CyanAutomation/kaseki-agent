@@ -27,10 +27,11 @@ run_pi_json_capture() {
     goal-check|run-evaluation)
       pi_tools="read,search"
       if [ "${KASEKI_GOAL_CHECK_CONTRACT_REPAIR:-0}" = "1" ]; then
-        # The first evaluator pass has already gathered evidence. Restrict the
-        # repair pass to a read-only, non-searching surface so it serializes a
-        # verdict instead of starting another exploration loop.
-        pi_tools="read"
+        # The controller owns the mandatory artifact.  A repair pass is a
+        # one-shot serialization request, not another agent turn: giving it
+        # no tools prevents a final exploration loop from consuming the
+        # response budget without ever returning the verdict.
+        pi_tools=""
       fi
       ;;
     *)
