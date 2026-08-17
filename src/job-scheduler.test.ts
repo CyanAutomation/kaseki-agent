@@ -9,6 +9,8 @@ import * as hostSecretsReader from './secrets/host-secrets-reader';
 import { EXIT_CODE_SPAWN_FAILED } from './exit-codes';
 import { JobPersistenceManager } from './job-persistence-manager';
 import { gracefulShutdown } from './kaseki-api/service-bootstrapper';
+import type { Job } from './kaseki-api-types';
+import { metricsRegistry } from './metrics';
 
 // Mock the host-secrets-reader module
 jest.mock('./secrets/host-secrets-reader', () => ({
@@ -153,6 +155,87 @@ describe('JobScheduler queue behavior', () => {
 
     await second.ready();
     expect(second.getQueueStatus().pending).toBe(pending);
+  });
+});
+
+describe('JobScheduler evaluator metrics', () => {
+  afterEach(async () => {
+    jest.restoreAllMocks();
+    await cleanupWebhookManagers();
+    cleanupResultsDirs();
+  });
+
+  function createTerminalJob(id: string): Job {
+    return {
+      id,
+      status: 'completed',
+      request: {
+        repoUrl: 'https://github.com/example/repo',
+        ref: 'main',
+      },
+      createdAt: new Date(),
+      completedAt: new Date(),
+    };
+  }
+
+  test('collects evaluator metrics from the derived result directory when resultDir is absent', async () => {
+    const resultsDir = createResultsDir();
+    const scheduler = new JobScheduler(
+      {
+        port: 3000,
+        workspaceDir: '/tmp/workspace',
+        resultsDir,
+        maxConcurrentRuns: 0,
+        apiKeys: [],
+      },
+      createMockWebhookManager(),
+    );
+    const job = createTerminalJob('kaseki-42');
+    const derivedResultDir = path.join(resultsDir, job.id);
+    fs.mkdirSync(derivedResultDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(derivedResultDir, 'metadata.json'),
+      JSON.stringify({ run_evaluation_enabled: true }),
+    );
+    const observeEvaluatorArtifact = jest.spyOn(
+      metricsRegistry,
+      'observeEvaluatorArtifact',
+    );
+
+    try {
+      await scheduler.ready();
+      scheduler['completeJob'](job);
+
+      expect(observeEvaluatorArtifact).toHaveBeenCalledWith(true);
+      expect(job.finalized).toBe(true);
+    } finally {
+      await scheduler.shutdown();
+    }
+  });
+
+  test('missing metadata in the derived result directory does not prevent finalization', async () => {
+    const resultsDir = createResultsDir();
+    const scheduler = new JobScheduler(
+      {
+        port: 3000,
+        workspaceDir: '/tmp/workspace',
+        resultsDir,
+        maxConcurrentRuns: 0,
+        apiKeys: [],
+      },
+      createMockWebhookManager(),
+    );
+    const job = createTerminalJob('kaseki-43');
+
+    try {
+      await scheduler.ready();
+
+      expect(() => scheduler['completeJob'](job)).not.toThrow();
+      expect(job.finalized).toBe(true);
+      expect(job.resultDir).toBeUndefined();
+    } finally {
+      await scheduler.shutdown();
+    }
   });
 });
 
