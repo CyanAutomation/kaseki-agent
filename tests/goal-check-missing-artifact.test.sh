@@ -62,9 +62,16 @@ elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf 'scouting\n' >> "$PI_CALLS"
   printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[]}' > "$RESULTS_DIR/scouting-candidate.json"
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
+  goal_check_count="$(grep -c '^goal-check$' "$PI_CALLS" 2>/dev/null || true)"
   printf 'goal-check\n' >> "$PI_CALLS"
-  # Intentionally print non-JSON assistant text and exit successfully without creating goal-check-candidate.json.
-  printf '%s\n' 'goal-check verdict: looks good, but no JSON artifact was written'
+  if [ "\$goal_check_count" = "0" ]; then
+    # Two otherwise valid verdicts are ambiguous and must not be persisted.
+    printf '%s\n' '{"type":"assistant_message","text":"{\\"met\\":true,\\"confidence\\":\\"low\\",\\"summary\\":\\"one\\",\\"evidence\\":[],\\"missing\\":[],\\"retry_prompt\\":\\"\\",\\"validation_notes\\":[],\\"evidence_sources_inspected\\":[],\\"contradictions\\":[],\\"confidence_calibration\\":{\\"outcome\\":\\"low\\",\\"justification\\":\\"one\\"}} {\\"met\\":true,\\"confidence\\":\\"low\\",\\"summary\\":\\"two\\",\\"evidence\\":[],\\"missing\\":[],\\"retry_prompt\\":\\"\\",\\"validation_notes\\":[],\\"evidence_sources_inspected\\":[],\\"contradictions\\":[],\\"confidence_calibration\\":{\\"outcome\\":\\"low\\",\\"justification\\":\\"two\\"}}"}'
+  else
+    # The no-tools repair also omits JSON, proving evaluator telemetry cannot
+    # turn a successful coding/validation run into a false failure.
+    printf '%s\n' 'goal-check repair produced no JSON'
+  fi
 else
   printf 'coding\n' >> "$PI_CALLS"
   printf '%s' "\$prompt" > "$RESULTS_DIR/coding-prompt.txt"
@@ -102,13 +109,13 @@ env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspe
   bash "$MODIFIED_SCRIPT" > "$RUN_LOG" 2>&1
 run_exit=$?
 
-[ "$run_exit" -eq 8 ] || fail "expected goal-check failure exit 8, got $run_exit"
+[ "$run_exit" -eq 0 ] || fail "expected evaluator failure to preserve successful code outcome, got $run_exit"
 [ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' ] || fail "missing evaluator-only retry after goal-check artifact failure"
 [ -s "$RESULTS_DIR/goal-check-validation-errors.jsonl" ] || fail "missing goal-check-validation-errors.jsonl"
 [ -s "$RESULTS_DIR/goal-check-contract-diagnostics.json" ] || fail "missing goal-check contract diagnostics"
 [ "$(cat "$RESULTS_DIR/goal-check-validation-reason.txt")" = "missing_file" ] || fail "expected missing_file reason"
 grep -q 'goal-check-candidate.json' "$RESULTS_DIR/goal-check-validation-summary.txt" || fail "missing goal-check validation summary"
-grep -q '^goal check[[:space:]]86[[:space:]]' "$RESULTS_DIR/stage-timings.tsv" || fail "goal-check validation did not preserve exit 86"
+grep -q '^goal check[[:space:]]+0[[:space:]]' "$RESULTS_DIR/stage-timings.tsv" || fail "goal-check fallback did not preserve a non-blocking exit"
 node - "$RESULTS_DIR/goal-check-validation-errors.jsonl" "$RESULTS_DIR" <<'NODE' || fail "goal-check validation error log did not capture missing artifact"
 const fs = require('node:fs');
 const lines = fs.readFileSync(process.argv[2], 'utf8').trim().split(/\n+/).filter(Boolean);
@@ -129,6 +136,11 @@ if (!Number.isInteger(artifact.observed_turns)) throw new Error('missing observe
 NODE
 
 grep -q 'goal_check_artifact_missing' "$RESULTS_DIR/progress.jsonl" || fail "missing goal-check artifact error event"
+grep -q 'goal_check_evaluator_unavailable' "$RESULTS_DIR/progress.jsonl" || fail "missing evaluator-unavailable warning event"
+node - "$RESULTS_DIR/goal-check.json" <<'NODE' || fail "missing reviewer-safe evaluator fallback"
+const verdict = require(process.argv[2]);
+if (verdict.evaluation_unavailable !== true || verdict.confidence !== 'low') throw new Error('fallback must retain an explicit low-confidence evaluator warning');
+NODE
 grep -q "$RESULTS_DIR/goal-check-validation-errors.jsonl" "$RESULTS_DIR/progress.jsonl" || fail "error event did not point to validation error log"
 if [ -f "$RESULTS_DIR/goal-check-stderr.log" ]; then
   ! grep -Eq 'ENOENT|Error: goal-check artifact unreadable|node:internal|at .*readFileSync' "$RESULTS_DIR/goal-check-stderr.log" || fail "goal-check stderr contained raw Node missing-file stack"

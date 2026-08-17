@@ -8,6 +8,8 @@ class MetricsRegistry {
   private durationBucketCounts: number[] = this.durationBuckets.map(() => 0);
   private durationSum = 0;
   private durationCount = 0;
+  private evaluatorArtifacts = { available: 0, unavailable: 0 };
+  private goalCheckFailures = new Map<string, number>();
 
   setQueuePending(count: number): void { this.queuePending = Math.max(0, count); }
   setRunningJobs(count: number): void { this.runningJobs = Math.max(0, count); }
@@ -17,6 +19,11 @@ class MetricsRegistry {
   incAdmissionRejection(reason: string): void {
     const normalized = reason.replace(/[^a-zA-Z0-9_-]/g, '_') || 'unknown';
     this.admissionRejections.set(normalized, (this.admissionRejections.get(normalized) || 0) + 1);
+  }
+  observeEvaluatorArtifact(available: boolean): void { this.evaluatorArtifacts[available ? 'available' : 'unavailable'] += 1; }
+  incGoalCheckFailure(reason: string): void {
+    const normalized = reason.replace(/[^a-zA-Z0-9_-]/g, '_') || 'unknown';
+    this.goalCheckFailures.set(normalized, (this.goalCheckFailures.get(normalized) || 0) + 1);
   }
 
   observeRunDuration(seconds: number): void {
@@ -63,6 +70,19 @@ class MetricsRegistry {
     lines.push('# TYPE kaseki_timeout_rate gauge');
     const totalRuns = this.runsTotal.success + this.runsTotal.failure;
     lines.push(`kaseki_timeout_rate ${totalRuns > 0 ? this.timeoutsTotal / totalRuns : 0}`);
+
+    lines.push('# HELP kaseki_evaluator_artifacts_total Terminal runs partitioned by final evaluator artifact availability.');
+    lines.push('# TYPE kaseki_evaluator_artifacts_total counter');
+    lines.push(`kaseki_evaluator_artifacts_total{result="available"} ${this.evaluatorArtifacts.available}`);
+    lines.push(`kaseki_evaluator_artifacts_total{result="unavailable"} ${this.evaluatorArtifacts.unavailable}`);
+    const evaluatorTotal = this.evaluatorArtifacts.available + this.evaluatorArtifacts.unavailable;
+    lines.push('# HELP kaseki_evaluator_artifact_completion_rate Ratio of terminal runs with a final evaluator artifact.');
+    lines.push('# TYPE kaseki_evaluator_artifact_completion_rate gauge');
+    lines.push(`kaseki_evaluator_artifact_completion_rate ${evaluatorTotal > 0 ? this.evaluatorArtifacts.available / evaluatorTotal : 1}`);
+    lines.push('# HELP kaseki_goal_check_failures_total Goal-check evaluator failures partitioned by normalized reason.');
+    lines.push('# TYPE kaseki_goal_check_failures_total counter');
+    if (this.goalCheckFailures.size === 0) lines.push('kaseki_goal_check_failures_total{reason="none"} 0');
+    else Array.from(this.goalCheckFailures.entries()).sort(([a], [b]) => a.localeCompare(b)).forEach(([reason, count]) => lines.push(`kaseki_goal_check_failures_total{reason="${reason}"} ${count}`));
 
     lines.push('# HELP kaseki_admission_rejections_total Total number of run submissions rejected before scheduler admission.');
     lines.push('# TYPE kaseki_admission_rejections_total counter');

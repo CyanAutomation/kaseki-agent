@@ -67,6 +67,9 @@ async function runProgressStream(inputLines: string[], env: NodeJS.ProcessEnv = 
           env: {
             ...process.env,
             KASEKI_STREAM_PROGRESS: '0',
+            // Test the default explicitly; Jest workers can inherit a phase
+            // from tests that spawn Kaseki helpers in the same process tree.
+            KASEKI_INFERENCE_PHASE: 'coding',
             ...env,
           },
           stdio: ['pipe', 'pipe', 'pipe'],
