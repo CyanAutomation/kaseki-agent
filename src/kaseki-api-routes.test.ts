@@ -604,6 +604,8 @@ describe('kaseki-api-routes readiness and metrics endpoints', () => {
       expect(body).toContain('kaseki_queue_pending');
       expect(body).toContain('kaseki_runs_total');
       expect(body).toContain('kaseki_run_duration_seconds');
+      expect(body).toContain('kaseki_evaluator_artifact_completion_rate');
+      expect(body).toContain('kaseki_goal_check_failures_total');
       expect(body).toContain('kaseki_dependency_cache_bytes 4096');
       expect(body).toContain('kaseki_dependency_cache_entries 2');
       expect(body).toContain('kaseki_dependency_cache_config_max_bytes 8192');
