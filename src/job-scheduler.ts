@@ -1218,7 +1218,8 @@ export class JobScheduler {
 
   private observeEvaluatorMetrics(job: Job): void {
     try {
-      const metadata = JSON.parse(fs.readFileSync(path.join(job.resultDir, 'metadata.json'), 'utf8')) as Record<string, unknown>;
+      const resultDir = job.resultDir ?? this.getResultDir(job.id);
+      const metadata = JSON.parse(fs.readFileSync(path.join(resultDir, 'metadata.json'), 'utf8')) as Record<string, unknown>;
       const warning = String(metadata.run_evaluation_warning || '');
       if (metadata.run_evaluation_enabled === true) metricsRegistry.observeEvaluatorArtifact(warning.length === 0);
       const reason = String(metadata.goal_check_failure_reason || metadata.goal_check_evaluation_warning || '');
