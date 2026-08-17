@@ -1193,6 +1193,7 @@ export class JobScheduler {
     } else if (job.status === 'failed') {
       metricsRegistry.incRunFailure();
     }
+    this.observeEvaluatorMetrics(job);
     this.running.delete(job.id);
     metricsRegistry.setRunningJobs(this.running.size);
     // A shutdown can finalize the job before its child has actually exited.
@@ -1213,6 +1214,18 @@ export class JobScheduler {
       this.processQueue();
     }
     metricsRegistry.setQueuePending(this.queue.length);
+  }
+
+  private observeEvaluatorMetrics(job: Job): void {
+    try {
+      const metadata = JSON.parse(fs.readFileSync(path.join(job.resultDir, 'metadata.json'), 'utf8')) as Record<string, unknown>;
+      const warning = String(metadata.run_evaluation_warning || '');
+      if (metadata.run_evaluation_enabled === true) metricsRegistry.observeEvaluatorArtifact(warning.length === 0);
+      const reason = String(metadata.goal_check_failure_reason || metadata.goal_check_evaluation_warning || '');
+      if (/goal_check_(artifact_missing|failed_exit_124|evaluator_unavailable)/.test(reason)) metricsRegistry.incGoalCheckFailure(reason);
+    } catch {
+      // Metrics must never interfere with finalization or artifact retention.
+    }
   }
 
   private cleanupExitedProcess(jobId: string): void {

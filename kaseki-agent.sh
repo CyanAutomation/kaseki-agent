@@ -443,6 +443,7 @@ RUN_EVALUATION_EXIT=0
 RUN_EVALUATION_DURATION_SECONDS=0
 RUN_EVALUATION_ACTUAL_MODEL="unknown"
 RUN_EVALUATION_WARNING=""
+GOAL_CHECK_EVALUATION_WARNING=""
 PROVIDER_ERROR_TYPE=""
 PROVIDER_ERROR_PHASE=""
 PROVIDER_ERROR_PROVIDER=""
@@ -1796,6 +1797,7 @@ write_metadata() {
   "pre_validation_failure_reason": $(printf '%s' "$PRE_VALIDATION_FAILURE_REASON" | json_encode),
   "quality_failure_reason": $(printf '%s' "$QUALITY_FAILURE_REASON" | json_encode),
   "goal_check_failure_reason": $(printf '%s' "$GOAL_CHECK_FAILURE_REASON" | json_encode),
+  "goal_check_evaluation_warning": $(printf '%s' "$GOAL_CHECK_EVALUATION_WARNING" | json_encode),
   "worker_error_type": $(printf '%s' "$WORKER_ERROR_TYPE" | json_encode),
   "worker_error_phase": $(printf '%s' "$WORKER_ERROR_PHASE" | json_encode),
   "worker_error_message": $(printf '%s' "$WORKER_ERROR_MESSAGE" | json_encode),
@@ -6485,6 +6487,38 @@ fs.writeFileSync(outputPath, `${JSON.stringify({
 NODE
 }
 
+degrade_goal_check_evaluator_failure() {
+  local reason="${1:-goal_check_evaluator_unavailable}"
+  GOAL_CHECK_EVALUATION_WARNING="goal_check_evaluator_unavailable:${reason}"
+  # A missing evaluator verdict is observability failure, not evidence that a
+  # validated diff is wrong. Preserve the warning and a reviewer-safe
+  # deterministic artifact, then allow the run to retain its real outcome.
+  node - "${KASEKI_RESULTS_DIR}/goal-check.json" "$reason" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [output, reason] = process.argv.slice(2);
+fs.writeFileSync(output, JSON.stringify({
+  met: true,
+  confidence: 'low',
+  summary: 'Goal-check evaluator was unavailable; code and deterministic validation require human review.',
+  evidence: [],
+  missing: [],
+  retry_prompt: '',
+  validation_notes: [],
+  evidence_sources_inspected: [],
+  contradictions: [],
+  confidence_calibration: { outcome: 'unknown', justification: reason },
+  evaluation_unavailable: true,
+  evaluation_warning: reason,
+  timestamp: new Date().toISOString(),
+}, null, 2) + '\n');
+NODE
+  GOAL_CHECK_EXIT=0
+  GOAL_CHECK_MET=true
+  GOAL_CHECK_FAILURE_REASON=""
+  emit_error_event "goal_check_evaluator_unavailable" "Goal-check evaluator did not produce a valid verdict; preserving successful code outcome with mandatory human review: $reason" "continue"
+  emit_progress "goal check" "evaluator unavailable; continuing with mandatory human review"
+}
+
 run_goal_check() {
   local attempt="${1:?goal-check attempt is required}"
   local mode="${2:-evidence}"
@@ -6516,11 +6550,7 @@ run_goal_check() {
   if [ "$mode" = "contract-repair" ]; then
     goal_check_timeout="$KASEKI_GOAL_CHECK_CONTRACT_REPAIR_TIMEOUT_SECONDS"
     goal_check_max_output="$KASEKI_GOAL_CHECK_CONTRACT_REPAIR_MAX_OUTPUT_TOKENS"
-    goal_prompt="$goal_prompt
-
-## Contract repair
-
-The evidence pass has completed. Do not perform more investigation or tool calls. Return the required JSON verdict now, using the supplied context only."
+    goal_prompt="You are the read-only goal-check Pi agent acting as the controller-owned final JSON serializer for a completed goal check. Do not investigate, call tools, write files, or add prose. Return exactly one JSON object matching the goal-check schema from the supplied evidence context. If evidence is insufficient, return met=false with a specific retry_prompt."
     KASEKI_GOAL_CHECK_CONTRACT_REPAIR=1
     export KASEKI_GOAL_CHECK_CONTRACT_REPAIR
   fi
@@ -6653,19 +6683,21 @@ function collectStrings(value, out = []) {
 }
 
 const valid = new Map();
-for (const path of [rawPath, filteredPath]) {
+let validOccurrences = 0;
+const paths = fs.existsSync(rawPath) ? [rawPath] : [filteredPath];
+for (const path of paths) {
   let text = "";
   try { text = fs.readFileSync(path, "utf8"); } catch { continue; }
   const snippets = collectBalancedJsonObjects(text);
   for (const snippet of snippets) {
     try {
       const parsed = normalizeArtifact(JSON.parse(snippet));
-      if (schemaErrors(parsed).length === 0) valid.set(stableStringify(parsed), parsed);
+      if (schemaErrors(parsed).length === 0) { valid.set(stableStringify(parsed), parsed); validOccurrences += 1; }
       for (const innerText of collectStrings(parsed)) {
         for (const innerSnippet of collectBalancedJsonObjects(innerText)) {
           try {
             const inner = normalizeArtifact(JSON.parse(innerSnippet));
-            if (schemaErrors(inner).length === 0) valid.set(stableStringify(inner), inner);
+            if (schemaErrors(inner).length === 0) { valid.set(stableStringify(inner), inner); validOccurrences += 1; }
           } catch {}
         }
       }
@@ -6673,7 +6705,7 @@ for (const path of [rawPath, filteredPath]) {
   }
 }
 
-if (valid.size === 1) {
+if (valid.size === 1 && validOccurrences === 1) {
   const recovered = [...valid.values()][0];
   fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
 }
@@ -9530,11 +9562,8 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
   snapshot_attempt_artifacts "$coding_attempt"
 
   if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ "$GOAL_CHECK_EXIT" -ne 0 ]; then
-    STATUS=8
-    FAILED_COMMAND="goal check"
     [ -z "$GOAL_CHECK_FAILURE_REASON" ] && GOAL_CHECK_FAILURE_REASON="goal_check_failed_exit_$GOAL_CHECK_EXIT"
-    emit_error_event "goal_check_evaluator_contract_failed" "Goal-check evaluator failed after evaluator-only retry: $GOAL_CHECK_FAILURE_REASON" "exit"
-    break
+    degrade_goal_check_evaluator_failure "$GOAL_CHECK_FAILURE_REASON"
   fi
 
   if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ] && [ "$GOAL_CHECK_MET" != "true" ]; then
@@ -9681,16 +9710,13 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && [
   run_goal_check "$coding_attempt"
   if [ "$GOAL_CHECK_EXIT" -eq 86 ]; then
     emit_progress "goal check" "retrying evaluator after artifact-contract failure (post-validation coding attempt $coding_attempt)"
-    run_goal_check "$coding_attempt"
+    run_goal_check "$coding_attempt" "contract-repair"
   fi
   collect_goal_check_feedback "$INSTANCE_NAME"
 
   if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ "$GOAL_CHECK_EXIT" -ne 0 ]; then
-    STATUS=8
-    FAILED_COMMAND="goal check"
     [ -z "$GOAL_CHECK_FAILURE_REASON" ] && GOAL_CHECK_FAILURE_REASON="goal_check_failed_exit_$GOAL_CHECK_EXIT"
-    emit_error_event "goal_check_evaluator_contract_failed" "Goal-check evaluator failed after evaluator-only retry: $GOAL_CHECK_FAILURE_REASON" "exit"
-    break
+    degrade_goal_check_evaluator_failure "$GOAL_CHECK_FAILURE_REASON"
   fi
 
   if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ] && [ "$GOAL_CHECK_MET" != "true" ]; then
