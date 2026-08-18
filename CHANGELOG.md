@@ -4,6 +4,15 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.130.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.130.1...v1.130.2) (2026-08-18)
+
+
+### Bug Fixes
+
+* mark context handoff helper executable ([b4ba7b9](https://github.com/CyanAutomation/kaseki-agent/commit/b4ba7b969618a4b607c5346d70fa6419f58eac08))
+* **scheduler:** derive evaluator metrics result directory ([65a6be5](https://github.com/CyanAutomation/kaseki-agent/commit/65a6be5d4da56b75a69b61277ba17419090c24ab))
+* **scheduler:** derive evaluator metrics result directory ([#1269](https://github.com/CyanAutomation/kaseki-agent/issues/1269)) ([6f2942c](https://github.com/CyanAutomation/kaseki-agent/commit/6f2942cbc69d18d55fc83eb165d7b125a389bb85))
+
 ## [1.130.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.130.0...v1.130.1) (2026-08-14)
 
 
