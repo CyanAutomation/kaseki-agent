@@ -19,8 +19,8 @@ export interface BaselineValidationCacheOptions {
 }
 
 export interface CacheMetadata {
-  createdAt: number;
-  expiresAt: number;
+  createdAt: number; // Unix timestamp in milliseconds
+  expiresAt: number; // Unix timestamp in milliseconds
   isValid: boolean;
   ageHours: number;
 }
@@ -80,8 +80,9 @@ export function isBaselineValidationCacheValid(
     const ageMs = now - stats.mtimeMs;
     const ageHours = ageMs / (1000 * 60 * 60);
 
-    metadata.createdAt = stats.mtimeMs;
-    metadata.expiresAt = stats.mtimeMs + maxAgeHours * 60 * 60 * 1000;
+    const createdAt = stats.mtimeMs;
+    metadata.createdAt = createdAt;
+    metadata.expiresAt = createdAt + maxAgeHours * 60 * 60 * 1000;
     metadata.ageHours = ageHours;
     metadata.isValid = ageHours < maxAgeHours;
   } catch {
