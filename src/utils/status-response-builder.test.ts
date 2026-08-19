@@ -126,6 +126,23 @@ describe('StatusResponseBuilder', () => {
       });
     });
 
+    it('surfaces a non-blocking goal-check evaluator warning on a completed run', () => {
+      const metadata = {
+        goal_check_exit_code: 0,
+        goal_check_evaluation_warning: 'goal_check_artifact_missing',
+      };
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => filePath.endsWith('metadata.json'));
+      (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify(metadata));
+
+      const response = builder.buildStatus({ id: 'job-goal-check-warning', status: 'completed' } as Job);
+
+      expect(response.goalCheck).toEqual({
+        status: 'warning',
+        warning: 'goal_check_artifact_missing',
+        exitCode: 0,
+      });
+    });
+
     it('derives monotonic phase outcomes and heartbeat age from lifecycle events', () => {
       const now = new Date('2026-01-01T00:05:00Z');
       jest.useFakeTimers();
