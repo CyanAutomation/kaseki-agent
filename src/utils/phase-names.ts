@@ -1,26 +1,24 @@
 /**
  * Phase Display Names
  *
- * Maps internal stage identifiers to human-readable character names for the Web UI.
- * These 5 phases are the primary workflow checkpoints and are displayed with
- * distinctive names in the Kaseki Task Console.
+ * Maps internal stage identifiers to short, descriptive names for the Web UI.
  */
 
 const PHASE_DISPLAY_NAMES: Record<string, string> = {
-  'cold-cache setup': 'Cold-cache setup — Dependencies',
+  'cold-cache setup': 'Preparing dependencies',
   // Goal-setting is a pre-scouting planning step. Keeping its display name
   // distinct from the post-scouting weaving outcome prevents the console from
   // implying that coding has begun before scouting has completed.
-  'pi goal-setting agent': 'Yuzuriha — Goal-setting',
-  'pi scouting agent': 'Suika — Scouting',
-  'pi coding agent': 'Kaseki — Crafting',
-  'goal check': 'Senku — Testing',
-  'run evaluation': 'Xeno — Evaluating',
+  'pi goal-setting agent': 'Goal setting',
+  'pi scouting agent': 'Scouting',
+  'pi coding agent': 'Weaving',
+  'goal check': 'Testing',
+  'run evaluation': 'Final review',
 };
 
 /**
  * Get the display name for a stage identifier.
- * Returns the character name if the stage is one of the 5 named phases,
+ * Returns the display name if the stage is one of the named phases,
  * otherwise returns undefined.
  */
 export function getPhaseDisplayName(stage: string): string | undefined {
