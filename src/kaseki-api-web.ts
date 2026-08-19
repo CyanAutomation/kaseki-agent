@@ -1906,6 +1906,19 @@ const controllerPage = String.raw`<!doctype html>
         responseSummary.appendChild(item);
       }
 
+      function simplePhaseOutcome(value) {
+        const labels = {
+          completed: 'Complete',
+          completed_with_fallback: 'Complete (fallback)',
+          failed: 'Failed',
+          skipped: 'Skipped',
+          running: 'In progress',
+          not_reached: 'Not started',
+          unknown: 'Unknown',
+        };
+        return labels[String(value || 'unknown')] || String(value || 'Unknown');
+      }
+
       function setResponseSummary(payload) {
         if (!responseSummary) return;
         responseSummary.replaceChildren();
@@ -1942,47 +1955,22 @@ const controllerPage = String.raw`<!doctype html>
             const goalSetting = String(outcome.goalSetting || 'unknown');
             const scouting = String(outcome.scouting || 'unknown');
             const weaving = String(outcome.weaving || 'unknown');
-            const scoutingLabel = scouting === 'completed_with_fallback'
-              ? 'completed (fallback)'
-              : (outcome.scoutingFallback === true ? scouting + ' (fallback)' : scouting);
-            // Simplified phase outcomes display - keep character names, reduce verbosity
-            const phaseDisplay = 'Yuzuriha: ' + goalSetting + ', Suika: ' + scoutingLabel + ', Kaseki: ' + weaving;
-            items.push(['Phases', phaseDisplay, {
-              warning: outcome.goalSettingFallback === true || outcome.scoutingFallback === true || goalSetting === 'failed' || scouting === 'failed' || weaving === 'failed' || scouting === 'not_reached' || weaving === 'not_reached',
+            const scoutingOutcome = outcome.scoutingFallback === true && scouting === 'completed'
+              ? 'completed_with_fallback'
+              : scouting;
+            const phaseDisplay = 'Goal setting: ' + simplePhaseOutcome(goalSetting)
+              + ' · Scouting: ' + simplePhaseOutcome(scoutingOutcome)
+              + ' · Weaving: ' + simplePhaseOutcome(weaving);
+            items.push(['Workflow', phaseDisplay, {
+              warning: outcome.goalSettingFallback === true || outcome.scoutingFallback === true || goalSetting === 'failed' || scouting === 'failed' || weaving === 'failed',
               fullWidth: true,
             }]);
-            if (outcome.goalSettingFallback === true) {
-              items.push(['Goal-setting fallback', 'Used — ' + stripControlSequences(String(outcome.goalSettingFallbackReason || 'the original task prompt')), {
-                warning: true,
-                fullWidth: true,
-              }]);
-            }
-            if (outcome.scoutingFallback === true) {
-              const fallbackReason = typeof outcome.scoutingFallbackReason === 'string'
-                ? outcome.scoutingFallbackReason
-                : 'controller-generated validated handoff';
-              items.push(['Scouting fallback', 'Used — ' + stripControlSequences(fallbackReason), {
-                warning: true,
-                fullWidth: true,
-              }]);
-            }
-            if (typeof outcome.explanation === 'string') {
-              items.push(['Phase explanation', stripControlSequences(outcome.explanation).slice(0, 280), { warning: true, fullWidth: true }]);
-            }
-            const phaseTimes = [
-              ['Scouting started', outcome.scoutingStartedAt],
-              ['Scouting completed', outcome.scoutingCompletedAt],
-              ['Weaving started', outcome.weavingStartedAt],
-              ['Weaving completed', outcome.weavingCompletedAt],
-            ];
-            phaseTimes.forEach(([label, value]) => {
-              if (typeof value === 'string') items.push([label, new Date(value).toLocaleTimeString()]);
-            });
           }
           if (payload.phaseHealth && typeof payload.phaseHealth === 'object') {
             const health = payload.phaseHealth;
-            const details = [health.stage, typeof health.heartbeatAgeSeconds === 'number' ? health.heartbeatAgeSeconds + 's since heartbeat' : '', typeof health.timeoutSeconds === 'number' ? health.timeoutSeconds + 's phase timeout' : ''].filter(Boolean).join(' · ');
-            items.push(['Phase health', health.state === 'stalled' ? 'STALLED — ' + (health.message || details) : 'Healthy' + (details ? ' — ' + details : ''), { warning: health.state === 'stalled', critical: health.state === 'stalled', fullWidth: true }]);
+            if (health.state === 'stalled') {
+              items.push(['Needs attention', stripControlSequences(String(health.message || 'Progress has stalled.')), { warning: true, critical: true, fullWidth: true }]);
+            }
           }
           // Removed: Correlation ID and Diagnostic entry point (too technical)
           // Removed: Provider attempt (too technical)
@@ -2097,15 +2085,6 @@ const controllerPage = String.raw`<!doctype html>
                 .join(' | ');
               if (phaseText) {
                 items.push(['Phase diagnostics', stripControlSequences(phaseText).slice(0, 240), { warning: true, fullWidth: true }]);
-              }
-            }
-            if (summary.dependencyCache && summary.dependencyCache.reinstallTriggered && Array.isArray(summary.dependencyCache.messages)) {
-              const cacheText = summary.dependencyCache.messages
-                .filter((message) => /failed npm ls validation|restored cache failed|cache miss|running install|workspace_cache_integrity_failed/.test(String(message)))
-                .slice(0, 2)
-                .join(' | ');
-              if (cacheText) {
-                items.push(['Dependency cache warning', stripControlSequences(cacheText).slice(0, 220), { warning: true, fullWidth: true }]);
               }
             }
             if (summary.testFailure && typeof summary.testFailure === 'object') {
@@ -2539,17 +2518,14 @@ const controllerPage = String.raw`<!doctype html>
             try { return [JSON.parse(line)]; } catch { return []; }
           });
           if (!entries.length) { tokenTimeline.hidden = true; return; }
-          tokenTimelineOutput.textContent = entries.map((entry) => {
-            const context = Number(entry.context_tokens || 0).toLocaleString();
-            const billed = Number((entry.billed_input_tokens ?? entry.input_tokens) || 0).toLocaleString();
-            const cached = Number((entry.cached_input_tokens ?? entry.cache_read_tokens) || 0).toLocaleString();
-            const output = Number(entry.output_tokens || 0).toLocaleString();
-            const cost = typeof entry.estimated_cost_usd === 'number'
-              ? ' | est. $' + entry.estimated_cost_usd.toFixed(6)
-              : ' | pricing unavailable';
-            return [entry.phase || 'unknown', entry.attempt_id || 'attempt', entry.response_id || 'response'].join(' · ')
-              + '\\n  context ' + context + ' | billed input ' + billed + ' | cached input ' + cached + ' | output ' + output + cost;
-          }).join('\\n');
+          const totals = entries.reduce((summary, entry) => ({
+            input: summary.input + Number((entry.billed_input_tokens ?? entry.input_tokens) || 0),
+            output: summary.output + Number(entry.output_tokens || 0),
+          }), { input: 0, output: 0 });
+          const phases = new Set(entries.map((entry) => String(entry.phase || 'Other')));
+          tokenTimelineOutput.textContent = phases.size + ' stages · '
+            + totals.input.toLocaleString() + ' input tokens · '
+            + totals.output.toLocaleString() + ' output tokens';
           tokenTimeline.hidden = false;
         } catch {
           tokenTimeline.hidden = true;
