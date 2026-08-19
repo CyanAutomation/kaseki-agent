@@ -1532,7 +1532,9 @@ const controllerPage = String.raw`<!doctype html>
           <strong class="panel-section-label">Run follow-through</strong>
           <div class="link-grid">
             <button class="secondary toolbar-button-no-wrap" id="full-results-btn" type="button">Full Results</button>
+            <button class="secondary toolbar-button-no-wrap" id="evaluation-diagnostics-btn" type="button">Evaluation diagnostics</button>
             <button class="secondary toolbar-button-no-wrap" id="copy-diagnostic-bundle-btn" type="button">Copy Debug Summary</button>
+            <button class="secondary toolbar-button-no-wrap" id="retry-run-btn" type="button" disabled title="Select a completed or failed run to retry">Retry run</button>
           </div>
           <div class="recommended-artifacts" id="recommended-artifacts" hidden>
             <span class="summary-label">Key Diagnostics</span>
@@ -1596,6 +1598,8 @@ const controllerPage = String.raw`<!doctype html>
       const tokenTimelineOutput = document.querySelector('#token-timeline-output');
       const recommendedArtifactLinks = document.querySelector('#recommended-artifact-links');
       const copyDiagnosticBundleBtn = document.querySelector('#copy-diagnostic-bundle-btn');
+      const evaluationDiagnosticsBtn = document.querySelector('#evaluation-diagnostics-btn');
+      const retryRunBtn = document.querySelector('#retry-run-btn');
       const headerStatus = document.querySelector('#header-status');
       const runsList = document.querySelector('#runs-list');
       
@@ -1940,6 +1944,16 @@ const controllerPage = String.raw`<!doctype html>
           if (typeof payload.status === 'string') {
             items.push(['Status', stripControlSequences(payload.status)]);
           }
+          const evaluatorWarnings = [];
+          if (payload.goalCheck && typeof payload.goalCheck === 'object' && payload.goalCheck.status === 'warning') {
+            const warning = typeof payload.goalCheck.warning === 'string'
+              ? stripControlSequences(payload.goalCheck.warning)
+              : 'The goal-check evaluator did not produce a usable report.';
+            const exitCode = typeof payload.goalCheck.exitCode === 'number'
+              ? ' (exit ' + String(payload.goalCheck.exitCode) + ')'
+              : '';
+            evaluatorWarnings.push('Goal check' + exitCode + ': ' + warning);
+          }
           if (payload.runEvaluation && typeof payload.runEvaluation === 'object' && payload.runEvaluation.status === 'warning') {
             const warning = typeof payload.runEvaluation.warning === 'string'
               ? stripControlSequences(payload.runEvaluation.warning)
@@ -1947,7 +1961,14 @@ const controllerPage = String.raw`<!doctype html>
             const exitCode = typeof payload.runEvaluation.exitCode === 'number'
               ? ' (exit ' + String(payload.runEvaluation.exitCode) + ')'
               : '';
-            items.push(['Run evaluation warning', 'The task completed, but the final evaluator report is unavailable' + exitCode + ': ' + warning + '. Review the diff, validation results, and run-evaluation artifacts before relying on automated review.', { warning: true, critical: true, fullWidth: true }]);
+            evaluatorWarnings.push('Final review' + exitCode + ': ' + warning);
+          }
+          if (evaluatorWarnings.length > 0) {
+            items.push([
+              isTerminalStatus(payload.status) ? 'Completed with evaluation warnings' : 'Evaluation warnings',
+              evaluatorWarnings.join(' · ') + '. Review Evaluation diagnostics and the diff before relying on automated review; retry the run if the evaluation evidence is required.',
+              { warning: true, critical: true, fullWidth: true },
+            ]);
           }
           // Removed: Lifecycle field (too technical for non-technical users)
           if (payload.phaseOutcome && typeof payload.phaseOutcome === 'object') {
@@ -2762,6 +2783,7 @@ const controllerPage = String.raw`<!doctype html>
         setSummary('run', payload.status, payload.status === 'failed' ? 'bad' : 'ok');
         setRunDetails(payload);
         updateCancelRunButtonState(payload);
+        updateRetryRunButtonState(payload);
         // Keep the structured summary visible while polling. Previously this
         // was replaced by correlation metadata, which hid phase diagnostics
         // such as a recovered scouting or goal-setting artifact failure.
@@ -2958,9 +2980,21 @@ const controllerPage = String.raw`<!doctype html>
             const preserveOutput = (options && options.preserveFirstOutput && firstPoll) || activeRunView !== 'status';
             firstPoll = false;
             const result = await apiRequest(runUrl(runId, '/status'), { auth: true, preserveOutput });
-            summarizeRun(result.payload);
+            let payload = result.payload;
+            // Status may be backed by a timestamp-less Docker tail while the
+            // worker's durable progress stream is available. Prefer the most
+            // recent progress.jsonl event for the user-facing phase and timer.
+            if (payload && payload.progress && payload.progress.timestampEstimated === true) {
+              const eventsResult = await apiRequest(runUrl(runId, '/events?tail=50'), { auth: true, preserveOutput: true });
+              const events = eventsResult.payload && Array.isArray(eventsResult.payload.events)
+                ? eventsResult.payload.events
+                : [];
+              const structured = events.filter((event) => event && event.source === 'progress.jsonl' && event.timestampEstimated !== true && typeof event.updatedAt === 'string').pop();
+              if (structured) payload = { ...payload, progress: structured };
+            }
+            summarizeRun(payload);
             retryCount = 0;
-            if (result.response.ok && result.payload && result.payload.status && !isTerminalStatus(result.payload.status)) {
+            if (result.response.ok && payload && payload.status && !isTerminalStatus(payload.status)) {
               if (pageDisposed) return;
               pollTimer = window.setTimeout(poll, 5000);
               loadRunsList({ preserveOutput: true });
@@ -3123,12 +3157,23 @@ const controllerPage = String.raw`<!doctype html>
         }
       }
 
+      function updateRetryRunButtonState(run) {
+        const runId = runIdInput.value.trim();
+        const canRetry = Boolean(runId && run && isTerminalStatus(run.status));
+        retryRunBtn.disabled = !canRetry;
+        retryRunBtn.setAttribute('title', canRetry
+          ? 'Submit the same task again with a new idempotency key'
+          : 'Select a completed or failed run to retry');
+        retryRunBtn.setAttribute('aria-disabled', canRetry ? 'false' : 'true');
+      }
+
       // Restore validation state on page load
       getValidationState();
       updateSubmitButtonState();
       updateValidationBadge();
       attachFormChangeListeners();
       updateCancelRunButtonState();
+      updateRetryRunButtonState();
 
       document.querySelector('#validate').addEventListener('click', (event) => {
         if (!form.reportValidity()) return;
@@ -3699,6 +3744,22 @@ const controllerPage = String.raw`<!doctype html>
 
       fullResultsBtn.addEventListener('click', () => {
         openModal();
+      });
+
+      evaluationDiagnosticsBtn.addEventListener('click', () => {
+        openModal();
+        setModalActiveTab('artifacts');
+        loadModalTab('artifacts');
+      });
+
+      retryRunBtn.addEventListener('click', (event) => {
+        const runId = runIdInput.value.trim();
+        if (!runId) return;
+        run(event.currentTarget, runUrl(runId, '/retry'), {
+          method: 'POST', auth: true, body: { idempotencyKey: createRequestId() },
+        }).then(({ payload, response }) => {
+          if (response.ok && payload && typeof payload.id === 'string') activateSubmittedRun(payload, response.status, false);
+        });
       });
 
       copyDiagnosticBundleBtn.addEventListener('click', async () => {
