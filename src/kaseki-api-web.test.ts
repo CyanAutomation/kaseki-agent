@@ -307,9 +307,8 @@ describe('kaseki API web console behavior', () => {
     });
 
     await refreshAndSelectFirstRun(document);
-    // Simplified phase display: "Yuzuriha: unknown, Suika: completed (fallback), Kaseki: running"
-    await waitFor(() => expectTextContains(document, '#response-summary', 'Suika: completed (fallback)'));
-    expectTextContains(document, '#response-summary', 'Kaseki: running');
+    await waitFor(() => expectTextContains(document, '#response-summary', 'Scouting: Complete (fallback)'));
+    expectTextContains(document, '#response-summary', 'Weaving: In progress');
   });
 
   test('loads the recent run list into selectable run buttons', async () => {

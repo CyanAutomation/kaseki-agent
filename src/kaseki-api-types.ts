@@ -252,7 +252,7 @@ export type DiagnosticEntryPoint =
 
 export interface StructuredProgress {
   stage: string; // Required: current stage name
-  displayName?: string; // Optional: human-readable phase name (e.g., "Suika — Scouting")
+  displayName?: string; // Optional: human-readable phase name (e.g., "Scouting")
   percentComplete?: number; // Optional: 0-100
   message?: string; // Optional: detailed message
   updatedAt?: string; // Optional: ISO 8601 timestamp
