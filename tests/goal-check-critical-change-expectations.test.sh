@@ -38,7 +38,11 @@ setup_case() {
 
   mkdir -p "$FAKE_REPO/deps/fake-dep" "$FAKE_BIN" "$RESULTS_DIR" "$WORKSPACE_REPO" "$APP_LIB" "$CASE_DIR/scripts" "$CASE_DIR/scripts/lib" || fail "failed to create directories for $CASE_NAME"
   cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$CASE_DIR/scripts/allowlist-helper.sh" || fail "failed to copy allowlist helper"
-  cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$CASE_DIR/scripts/scouting-allowlist.js" || fail "failed to copy scouting allowlist"
+  if [ -f "$REPO_ROOT/scripts/scouting-allowlist.js" ]; then
+    cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$CASE_DIR/scripts/scouting-allowlist.js" || fail "failed to copy scouting allowlist"
+  else
+    cp "$REPO_ROOT/dist/scouting-allowlist.js" "$CASE_DIR/scripts/scouting-allowlist.js" || fail "failed to copy built scouting allowlist"
+  fi
   cp "$REPO_ROOT/scripts/lib/json.sh" "$CASE_DIR/scripts/lib/json.sh" || fail "failed to copy json helper"
   cp "$REPO_ROOT/scripts/lib/json-events.sh" "$CASE_DIR/scripts/lib/json-events.sh" || fail "failed to copy json events helper"
   cp "$REPO_ROOT/scripts/lib/artifact-consolidation.sh" "$CASE_DIR/scripts/lib/artifact-consolidation.sh" || fail "failed to copy artifact consolidation helper"
@@ -107,7 +111,7 @@ EOF_VALIDATION_FILTER
 
   set +e
   env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspect then code" \
-    OPENROUTER_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off KASEKI_GOAL_CHECK_MAX_RETRIES=1 KASEKI_HASHLINE_EDITS=0 KASEKI_BASELINE_VALIDATION_ENABLED=0 \
+    KASEKI_PROVIDER=openrouter OPENROUTER_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off KASEKI_GOAL_CHECK_MAX_RETRIES=1 KASEKI_HASHLINE_EDITS=0 KASEKI_BASELINE_VALIDATION_ENABLED=0 \
     KASEKI_WORKSPACE_DIR="$CASE_DIR" \
     KASEKI_DEPENDENCY_CACHE_DIR="$CASE_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$CASE_DIR/image-cache" \
     KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" KASEKI_VALIDATION_COMMANDS=":" KASEKI_ALLOW_EMPTY_DIFF="$KASEKI_ALLOW_EMPTY_DIFF_CASE" \
