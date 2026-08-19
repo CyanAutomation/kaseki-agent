@@ -289,6 +289,13 @@ KASEKI_WORKSPACE_DIR="${KASEKI_WORKSPACE_DIR:-$KASEKI_DEFAULT_WORKSPACE_DIR}"
 export KASEKI_WORKSPACE_DIR
 KASEKI_WORKSPACE_BASELINE_DIR="${KASEKI_WORKSPACE_BASELINE_DIR:-${KASEKI_WORKSPACE_DIR}/baseline}"
 export KASEKI_WORKSPACE_BASELINE_DIR
+# A worker normally clones only once, before it starts any agent process. Keep
+# this marker outside the checkout so a re-entrant clone cannot delete a
+# repository that is another process's current working directory.
+KASEKI_REPO_DIR="${KASEKI_WORKSPACE_DIR}/repo"
+KASEKI_REPO_SESSION_MARKER="${KASEKI_WORKSPACE_DIR}/.kaseki-repo-session"
+KASEKI_REPO_STAGING_DIR=""
+KASEKI_REPO_SESSION_ACTIVE=0
 KASEKI_APP_LIB_DIR="${KASEKI_APP_LIB_DIR:-$KASEKI_DEFAULT_APP_LIB_DIR}"
 export KASEKI_APP_LIB_DIR
 KASEKI_CACHE_DIR="${KASEKI_CACHE_DIR:-$KASEKI_DEFAULT_CACHE_DIR}"
@@ -1733,7 +1740,9 @@ write_metadata() {
     stages_json="[\"unknown\"]"
   fi
   
-  cat > "${KASEKI_RESULTS_DIR}"/metadata.json <<META
+  local metadata_tmp
+  metadata_tmp="${KASEKI_RESULTS_DIR}/metadata.json.tmp.$$"
+  cat > "$metadata_tmp" <<META
 {
   "schema_version": "2.0",
   "instance": $(printf '%s' "$INSTANCE_NAME" | json_encode),
@@ -1912,6 +1921,16 @@ write_metadata() {
   }
 }
 META
+  # Do not let a broken cwd turn an otherwise useful failure report into
+  # malformed JSON that the API cannot classify.
+  if jq -e . "$metadata_tmp" >/dev/null 2>&1; then
+    mv "$metadata_tmp" "${KASEKI_RESULTS_DIR}/metadata.json"
+  else
+    rm -f "$metadata_tmp"
+    printf '{"schema_version":"2.0","instance":%s,"exit_code":%s,"failed_command":%s,"worker_error_type":"metadata_write_invalid","worker_error_message":"metadata serialization failed; inspect failure.json and stderr.log"}\n' \
+      "$(printf '%s' "$INSTANCE_NAME" | json_encode)" "$exit_code" "$(printf '%s' "$FAILED_COMMAND" | json_encode)" \
+      > "${KASEKI_RESULTS_DIR}/metadata.json"
+  fi
   printf '%s\n' "$exit_code" > "${KASEKI_RESULTS_DIR}"/exit_code
 }
 
@@ -3359,6 +3378,9 @@ EOF
   maybe_call_finish_helper write_repo_memory_summary
   finalize_artifacts_and_publish_status "${KASEKI_RESULTS_DIR}" write_metadata "$STATUS" "${VALIDATION_TIMINGS_FILE}" "${PRE_VALIDATION_TIMINGS_FILE}"
   maybe_call_finish_helper remove_low_value_artifacts
+  if [ "$KASEKI_REPO_SESSION_ACTIVE" = "1" ] && [ "$(cat "$KASEKI_REPO_SESSION_MARKER" 2>/dev/null || true)" = "${BASHPID:-$$}" ]; then
+    rm -f "$KASEKI_REPO_SESSION_MARKER"
+  fi
   exit "$STATUS"
 }
 trap finish EXIT
@@ -3435,20 +3457,74 @@ is_valid_git_mirror() {
 }
 
 run_direct_clone() {
-  rm -rf "${KASEKI_WORKSPACE_DIR}"/repo
   GIT_CLONE_STRATEGY="direct_shallow"
-  git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" "${KASEKI_WORKSPACE_DIR}"/repo
+  git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" "$KASEKI_REPO_STAGING_DIR"
+}
+
+repo_replacement_is_safe() {
+  if [ "$KASEKI_REPO_SESSION_ACTIVE" = "1" ]; then
+    emit_error_event "workspace_replacement_blocked" "Refusing to replace $KASEKI_REPO_DIR after the repository session has started" "abort_clone"
+    return 1
+  fi
+
+  if [ -f "$KASEKI_REPO_SESSION_MARKER" ]; then
+    local marker_pid
+    marker_pid="$(cat "$KASEKI_REPO_SESSION_MARKER" 2>/dev/null || true)"
+    if [[ "$marker_pid" =~ ^[0-9]+$ ]] && kill -0 "$marker_pid" 2>/dev/null; then
+      emit_error_event "workspace_replacement_blocked" "Refusing to replace active repository $KASEKI_REPO_DIR (owner pid=$marker_pid)" "abort_clone"
+      return 1
+    fi
+    rm -f "$KASEKI_REPO_SESSION_MARKER"
+  fi
+  return 0
+}
+
+prepare_repo_staging() {
+  repo_replacement_is_safe || return 1
+  KASEKI_REPO_STAGING_DIR="${KASEKI_REPO_DIR}.staging.${INSTANCE_NAME:-worker}.$$"
+  rm -rf "$KASEKI_REPO_STAGING_DIR"
+}
+
+reset_repo_staging() {
+  rm -rf "$KASEKI_REPO_STAGING_DIR"
+}
+
+promote_staged_repository() {
+  repo_replacement_is_safe || return 1
+  if [ ! -d "$KASEKI_REPO_STAGING_DIR/.git" ]; then
+    emit_error_event "workspace_staging_invalid" "Staged repository is missing .git: $KASEKI_REPO_STAGING_DIR" "abort_clone"
+    return 1
+  fi
+
+  local previous_dir=""
+  if [ -e "$KASEKI_REPO_DIR" ]; then
+    previous_dir="${KASEKI_REPO_DIR}.previous.${INSTANCE_NAME:-worker}.$$"
+    mv "$KASEKI_REPO_DIR" "$previous_dir" || return 1
+  fi
+  if ! mv "$KASEKI_REPO_STAGING_DIR" "$KASEKI_REPO_DIR"; then
+    [ -n "$previous_dir" ] && mv "$previous_dir" "$KASEKI_REPO_DIR" 2>/dev/null || true
+    return 1
+  fi
+  [ -n "$previous_dir" ] && rm -rf "$previous_dir"
+  KASEKI_REPO_STAGING_DIR=""
+}
+
+begin_repo_session() {
+  KASEKI_REPO_SESSION_ACTIVE=1
+  printf '%s\n' "${BASHPID:-$$}" > "$KASEKI_REPO_SESSION_MARKER"
 }
 
 clone_with_git_cache() {
   local cache_root="$KASEKI_GIT_CACHE_ROOT"
   local mirror lock_file tmp_mirror lock_rc fetch_rc mirror_rc clone_rc
 
+  prepare_repo_staging || return 1
+
   if [ "$KASEKI_GIT_CACHE_MODE" != "mirror" ]; then
     GIT_CACHE_STATUS="disabled"
     GIT_CACHE_HIT="false"
     emit_progress "clone repository" "git cache disabled mode=$KASEKI_GIT_CACHE_MODE"
-    run_direct_clone
+    run_direct_clone && promote_staged_repository
     return $?
   fi
 
@@ -3461,7 +3537,7 @@ clone_with_git_cache() {
     GIT_CACHE_STATUS="unavailable"
     GIT_CACHE_HIT="false"
     emit_error_event "git_cache_unavailable" "Cannot create git cache directory $cache_root; using direct clone" "fallback_direct_clone"
-    run_direct_clone
+    run_direct_clone && promote_staged_repository
     return $?
   fi
 
@@ -3472,7 +3548,7 @@ clone_with_git_cache() {
     GIT_CACHE_STATUS="lock_failed"
     GIT_CACHE_HIT="false"
     emit_error_event "git_cache_lock_failed" "Cannot lock $lock_file; using direct clone" "fallback_direct_clone"
-    run_direct_clone
+    run_direct_clone && promote_staged_repository
     return $?
   fi
 
@@ -3488,7 +3564,7 @@ clone_with_git_cache() {
       GIT_CACHE_STATUS="fetch_failed"
       GIT_CACHE_HIT="true"
       emit_error_event "git_cache_fetch_failed" "Mirror fetch failed or timed out for key=$GIT_CACHE_KEY exit=$fetch_rc; using direct clone" "fallback_direct_clone"
-      run_direct_clone
+      run_direct_clone && promote_staged_repository
       return $?
     fi
   else
@@ -3512,34 +3588,35 @@ clone_with_git_cache() {
       flock -u 9 || true
       GIT_CACHE_STATUS="populate_failed"
       emit_error_event "git_cache_populate_failed" "Mirror populate failed or timed out for key=$GIT_CACHE_KEY exit=$mirror_rc; using direct clone" "fallback_direct_clone"
-      run_direct_clone
+      run_direct_clone && promote_staged_repository
       return $?
     fi
   fi
   flock -u 9 || true
 
-  rm -rf "${KASEKI_WORKSPACE_DIR}"/repo
   GIT_CLONE_STRATEGY="reference_shallow"
-  git clone --reference-if-able "$mirror" --depth 1 --branch "$GIT_REF" "$REPO_URL" "${KASEKI_WORKSPACE_DIR}"/repo
+  git clone --reference-if-able "$mirror" --depth 1 --branch "$GIT_REF" "$REPO_URL" "$KASEKI_REPO_STAGING_DIR"
   clone_rc=$?
   if [ "$clone_rc" -eq 0 ]; then
-    return 0
+    promote_staged_repository
+    return $?
   fi
 
-  rm -rf "${KASEKI_WORKSPACE_DIR}"/repo
+  reset_repo_staging
   GIT_CLONE_STRATEGY="mirror_local"
   emit_error_event "git_cache_reference_clone_failed" "Reference clone failed for key=$GIT_CACHE_KEY exit=$clone_rc; trying local mirror clone" "try_mirror_clone"
-  git clone --branch "$GIT_REF" "$mirror" "${KASEKI_WORKSPACE_DIR}"/repo
+  git clone --branch "$GIT_REF" "$mirror" "$KASEKI_REPO_STAGING_DIR"
   clone_rc=$?
-  if [ "$clone_rc" -eq 0 ] && git -C "${KASEKI_WORKSPACE_DIR}"/repo rev-parse --verify HEAD >/dev/null 2>&1; then
-    git -C "${KASEKI_WORKSPACE_DIR}"/repo remote set-url origin "$REPO_URL" >/dev/null 2>&1 || true
-    return 0
+  if [ "$clone_rc" -eq 0 ] && git -C "$KASEKI_REPO_STAGING_DIR" rev-parse --verify HEAD >/dev/null 2>&1; then
+    git -C "$KASEKI_REPO_STAGING_DIR" remote set-url origin "$REPO_URL" >/dev/null 2>&1 || true
+    promote_staged_repository
+    return $?
   fi
 
-  rm -rf "${KASEKI_WORKSPACE_DIR}"/repo
+  reset_repo_staging
   GIT_CACHE_STATUS="mirror_clone_failed"
   emit_error_event "git_cache_mirror_clone_failed" "Mirror clone failed for key=$GIT_CACHE_KEY exit=$clone_rc; using direct clone" "fallback_direct_clone"
-  run_direct_clone
+  run_direct_clone && promote_staged_repository
 }
 
 run_clone_repository() {
@@ -8484,6 +8561,7 @@ if ! run_clone_repository; then
   exit 0
 fi
 cd "${KASEKI_WORKSPACE_DIR}"/repo || { STATUS=1; FAILED_COMMAND="enter repository"; exit "$STATUS"; }
+begin_repo_session
 apply_default_validation_commands
 
 prepare_dependencies() {
@@ -9255,6 +9333,13 @@ NODE
   unset agent_prompt
   PI_DURATION_SECONDS=$(($(date +%s) - PI_START_EPOCH))
   unset LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
+  if [ ! -d "$KASEKI_REPO_DIR/.git" ]; then
+    WORKER_ERROR_TYPE="workspace_deleted_during_execution"
+    WORKER_ERROR_PHASE="pi_coding"
+    WORKER_ERROR_MESSAGE="Repository $KASEKI_REPO_DIR disappeared while the coding agent was running. A concurrent clone or cleanup must not replace an active workspace."
+    printf 'ERROR: %s\n' "$WORKER_ERROR_MESSAGE" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+    emit_error_event "$WORKER_ERROR_TYPE" "$WORKER_ERROR_MESSAGE" "abort_run"
+  fi
   set +e
   record_stage_timing "pi coding agent" "$PI_EXIT" "$PI_DURATION_SECONDS" "timeout_seconds=$KASEKI_AGENT_TIMEOUT_SECONDS"
 
