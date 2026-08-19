@@ -90,6 +90,9 @@ describe('baseline-validation-cache', () => {
       const metadata = isBaselineValidationCacheValid(testCacheDir, { maxAgeHours: 24 });
       expect(metadata.isValid).toBe(true);
       expect(metadata.ageHours).toBeLessThan(1);
+      expect(typeof metadata.createdAt).toBe('number');
+      expect(metadata.createdAt).toBe(fs.statSync(path.join(testCacheDir, 'validation.log')).mtimeMs);
+      expect(metadata.expiresAt).toBe(metadata.createdAt + 24 * 60 * 60 * 1000);
     });
 
     it('should return invalid if cache is too old', () => {
