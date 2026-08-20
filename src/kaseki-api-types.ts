@@ -304,6 +304,12 @@ export interface StatusResponse {
     warning?: string;
     exitCode?: number;
   };
+  /** A non-blocking problem in the post-validation goal-check evaluator. */
+  goalCheck?: {
+    status: 'passed' | 'warning';
+    warning?: string;
+    exitCode?: number;
+  };
   /** Deterministic efficiency selection and counterfactual estimates, when emitted by the worker. */
   efficiencyPolicy?: import('./efficiency-policy/index').EfficiencyPolicy;
   validationCommands?: Array<{

@@ -311,6 +311,51 @@ describe('kaseki API web console behavior', () => {
     expectTextContains(document, '#response-summary', 'Weaving: In progress');
   });
 
+  test('flags degraded terminal evaluations and enables retry with diagnostics', async () => {
+    const { document, calls } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/runs': createJsonResponse({ runs: [{ id: 'kaseki-261', status: 'completed' }] }),
+        '/api/runs/kaseki-261/status': createJsonResponse({
+          id: 'kaseki-261', status: 'completed',
+          goalCheck: { status: 'warning', warning: 'goal_check_artifact_missing', exitCode: 0 },
+          runEvaluation: { status: 'warning', warning: 'run_evaluation_failed_exit_86', exitCode: 86 },
+        }),
+        '/api/runs/kaseki-261/retry': createJsonResponse({ id: 'kaseki-262', status: 'queued' }, 202),
+      }, createJsonResponse({ status: 'ok' })),
+    });
+
+    await refreshAndSelectFirstRun(document);
+    await waitFor(() => expectTextContains(document, '#response-summary', 'Completed with evaluation warnings'));
+    expectTextContains(document, '#response-summary', 'goal_check_artifact_missing');
+    expectTextContains(document, '#response-summary', 'run_evaluation_failed_exit_86');
+    expect(getElement<HTMLButtonElement>(document, '#retry-run-btn').disabled).toBe(false);
+
+    clickSelector(document, '#retry-run-btn');
+    await waitFor(() => expect(calls.some((call) => call.path === '/api/runs/kaseki-261/retry')).toBe(true));
+  });
+
+  test('prefers durable structured progress events over an inferred Docker-tail status', async () => {
+    const { document, calls } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/runs': createJsonResponse({ runs: [{ id: 'kaseki-263', status: 'running' }] }),
+        '/api/runs/kaseki-263/status': createJsonResponse({
+          id: 'kaseki-263', status: 'running',
+          progress: { stage: 'npm run lint:fix', updatedAt: '2026-08-19T21:47:28Z', source: 'docker-logs', timestampEstimated: true },
+        }),
+        '/api/runs/kaseki-263/events?tail=50': createJsonResponse({
+          events: [{ stage: 'validation', displayName: 'Validation', updatedAt: '2026-08-19T21:47:30Z', source: 'progress.jsonl' }],
+        }),
+      }, createJsonResponse({ status: 'ok' })),
+    });
+
+    await refreshAndSelectFirstRun(document);
+    await waitFor(() => expect(calls.some((call) => call.path === '/api/runs/kaseki-263/events?tail=50')).toBe(true));
+    expectTextContains(document, '#response-summary', 'Validation');
+    expectTextContains(document, '#response-summary', 'Confirmed controller progress event');
+  });
+
   test('loads the recent run list into selectable run buttons', async () => {
     const { document, calls } = await renderConsole({
       storedToken: 'token12345',

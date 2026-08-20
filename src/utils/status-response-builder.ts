@@ -102,6 +102,7 @@ export class StatusResponseBuilder {
     this.addTaskProgressInfo(response, job);
     this.addArtifactInfo(response, job);
     this.addDiagnosticSummary(response, job);
+    this.addGoalCheckInfo(response, metadata);
     this.addRunEvaluationInfo(response, metadata);
     this.addEfficiencyPolicy(response, runDir);
 
@@ -179,6 +180,19 @@ export class StatusResponseBuilder {
     response.runEvaluation = {
       status: 'warning',
       ...(warning ? { warning } : { warning: `run_evaluation_failed_exit_${exitCode}` }),
+      ...(Number.isFinite(exitCode) ? { exitCode } : {}),
+    };
+  }
+
+  private addGoalCheckInfo(response: StatusResponse, metadata: Record<string, unknown>): void {
+    const warning = this.metadataHelper.stringField(metadata, 'goal_check_evaluation_warning');
+    const exitCode = Number(metadata.goal_check_exit_code);
+    const evaluatorFailed = Number.isFinite(exitCode) && exitCode !== 0;
+    if (!warning && !evaluatorFailed) return;
+
+    response.goalCheck = {
+      status: 'warning',
+      ...(warning ? { warning } : { warning: `goal_check_failed_exit_${exitCode}` }),
       ...(Number.isFinite(exitCode) ? { exitCode } : {}),
     };
   }
