@@ -108,6 +108,41 @@ The optional tree-sitter CLI environment probe is not part of the normal depende
 
 ---
 
+## Troubleshooting
+
+### Node.js 24+ Runtime Required
+
+Kaseki requires Node.js version 24 or later. Earlier versions will fail during module resolution or syntax parsing. Verify your Node.js version before running:
+
+```bash
+node -v
+```
+
+Upgrade using your system package manager or nvm if the version is below 24.
+
+### GET /health Endpoint Usage
+
+The API service exposes an unauthenticated health check endpoint for monitoring:
+
+```bash
+# Basic health check (no authentication required)
+curl http://localhost:8080/health
+```
+
+A 200 OK response confirms the Kaseki API service is running. Non-200 responses indicate the service is unavailable or not yet started.
+
+### GET /api/preflight Endpoint with Authentication
+
+The preflight endpoint validates controller configuration (Docker, image, GitHub App) and requires Bearer token authentication:
+
+```bash
+# Preflight with Bearer token
+curl -H "Authorization: Bearer sk-kaseki-secret-key" \
+  http://localhost:8080/api/preflight
+```
+
+The endpoint returns diagnostic information about container state, image availability, and provider readiness. Requests require a valid API key configured in `KASEKI_API_KEYS`. Without valid credentials, the endpoint returns 401 Unauthorized.
+
 ## Installation
 
 ### Global NPM (Recommended)
