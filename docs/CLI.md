@@ -1,452 +1,528 @@
-# Kaseki CLI - Live Agent Monitoring
+# Kaseki Agent CLI Reference
 
-The **Kaseki CLI** is a command-line tool that allows external AI agents to query running and completed kaseki instances in real-time. It provides structured JSON output for easy integration into monitoring scripts and agent workflows.
-
-## Overview
-
-- **Query running instances**: Get current stage, elapsed time, timeout risk
-- **Detect errors**: Identify failures in stderr, validation, quality gates, and secret scans
-- **Anomaly detection**: Flag timeout risk as the Pi agent approaches timeout
-- **Log streaming**: Follow logs in real-time as they're written
-- **Progress streaming**: Read sanitized stage and Pi tool progress without model text
-- **Post-run analysis**: Comprehensive summary of changes, validation results, and Pi metrics
+The **Kaseki Agent CLI** (`kaseki-agent`) is a unified command-line interface for managing task runs, inspecting results, configuring the system, and maintaining health. It is distributed as a single compiled binary (`dist/cli.js`) installed via `npm install -g @cyanautomation/kaseki-agent`.
 
 ## Installation
 
-The CLI is implemented as Node.js scripts and included in the kaseki-agent repository:
+```bash
+npm install -g @cyanautomation/kaseki-agent
+```
+
+This provides the `kaseki-agent` command on your PATH. Run `kaseki-agent --help` to verify installation.
+
+## Architecture
+
+The CLI is a single binary built from TypeScript sources. All commands are dispatched through a central router (`src/cli/KasekiCLI.ts`) with lazy-loaded handlers per subcommand. There is no dual-file split; everything ships in one `dist/cli.js`.
+
+---
+
+## Command Index
+
+| Command | Description | API Required |
+|---------|-------------|:---:|
+| `quickstart` | One-command production setup | No |
+| `init` | Unified setup wizard (recommended) | No |
+| `setup` | DEPRECATED — delegates to `init` | No |
+| `run` | Submit a task run | Yes |
+| `doctor` | Health checks and diagnostics | No |
+| `serve` | Start local REST API service | N/A |
+| `config` | Manage configuration files | No |
+| `list` | List task runs | Yes |
+| `report` | Generate a run report | Yes / Disk |
+| `status` | Poll task status | Yes |
+| `cancel` | Cancel a queued or running task | Yes |
+| `stop` | Alias for `cancel` | Yes |
+| `secrets` | Manage stored secrets | No |
+| `host` | Prepare Docker Compose API hosts | No |
+| `cleanup` | Retention management for run artifacts | No |
+
+---
+
+## Commands
+
+### `quickstart`
+
+One-command setup for the production API mode. Runs seven steps: environment detection, secret discovery, config writing, `/agents` bootstrapping, container launch, readiness wait, and auth smoke test.
 
 ```bash
-# Make scripts executable
-chmod +x kaseki-cli.js kaseki-cli-lib.js
+USAGE
+  kaseki-agent quickstart [--dry-run]
 
-# Add to PATH (optional)
-export PATH="/workspaces/kaseki-agent:$PATH"
+OPTIONS
+  --dry-run    Detect and plan without making any changes
+
+WHAT IT DOES
+  1. Detects Docker, Node.js, sudo access
+  2. Discovers secrets at ~/.kaseki/secrets/, ~/secrets/, or $ENV_VAR
+  3. Writes ~/.kaseki/config.json with resolved secret paths
+  4. Creates /agents/{kaseki-results,kaseki-runs,kaseki-cache} owned by UID 10000
+  5. Starts the kaseki-api container via docker run
+  6. Waits for http://localhost:8080/ready body to confirm ready status
+  7. Smoke-tests authenticated access to /api/runs
+
+EXAMPLES
+  kaseki-agent quickstart                          # Full setup
+  kaseki-agent quickstart --dry-run                # Validate without changes
 ```
 
-On Pi hosts that do not have Node.js installed, use the `kaseki` wrapper
-deployed with the template. It runs the CLI inside the configured Kaseki Docker
-image. Prefer this wrapper in Pi runbooks:
+---
+
+### `init`
+
+Unified setup wizard for all execution paths (single-run, local API, production). Recommended over `setup`.
 
 ```bash
-/agents/kaseki-template/kaseki list
-/agents/kaseki-template/kaseki status kaseki-1
-/agents/kaseki-template/kaseki analysis kaseki-1
+USAGE
+  kaseki-agent init [OPTIONS]
+
+OPTIONS
+  --dry-run              Validate setup without saving configuration
+  --import-legacy        Migrate configuration from old setup paths
+  --skip-secrets-setup   Skip automatic secrets directory setup
+  --force                Skip permission validation (advanced users only)
+  --help, -h             Show this help message
+
+EXAMPLES
+  kaseki-agent init                                    # Interactive wizard
+  kaseki-agent init --dry-run                          # Dry-run validation
+  kaseki-agent init --import-legacy                    # Migrate from legacy setup
 ```
 
-## Core Library (`kaseki-cli-lib.js`)
+---
 
-The library provides direct programmatic access. Use this for custom integration:
+### `setup` (DEPRECATED)
 
-```javascript
-const kasekiCli = require('./kaseki-cli-lib.js');
+Interactive first-time configuration wizard. Deprecated in favor of `init`; prints a deprecation notice then delegates to the same SetupWizard.
 
-// List all instances
-const instances = kasekiCli.listInstances();
+```bash
+USAGE
+  kaseki-agent setup
 
-// Get status of a running instance
-const status = kasekiCli.getInstanceStatus('kaseki-1');
-
-// Detect errors
-const errors = kasekiCli.detectErrors('kaseki-1');
-
-// Get anomalies (timeout risk, etc.)
-const anomalies = kasekiCli.detectAnomalies('kaseki-1');
-
-// Post-run analysis
-const analysis = kasekiCli.getAnalysis('kaseki-1');
+NOTE
+  This command is deprecated. Use "kaseki-agent init" instead.
 ```
 
-## CLI Commands
+---
+
+### `run`
+
+Submit a task run through the configured Kaseki API. Requires a local API service (`http://localhost:8080/api`) or `KASEKI_API_URL`. Set `KASEKI_API_KEY` when the API requires bearer-token authentication.
+
+```bash
+USAGE
+  kaseki-agent run <REPO_URL> [GIT_REF] [TASK_PROMPT] [--dry-run]
+
+REQUIRES
+  A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.
+  Set KASEKI_API_KEY when the API requires bearer-token authentication.
+
+OPTIONS
+  --dry-run                  Submit a startup-check run without Pi agent work.
+  --baseline-validation      With --dry-run, clone and run baseline validation before exiting.
+
+EXAMPLES
+  kaseki-agent run https://github.com/org/repo main "Fix lint errors"
+  kaseki-agent run https://github.com/org/repo feature/branch --dry-run
+```
+
+---
+
+### `doctor`
+
+Health checks and dependency validation. Checks Docker, Node.js version, npm, git, authentication files, Docker image availability, and disk space. Returns exit code 0 if all checks pass.
+
+```bash
+USAGE
+  kaseki-agent doctor [--json] [--fix] [--verbose]
+
+OPTIONS
+  --json       Emit machine-readable check results
+  --fix        Attempt safe auto-remediation for fixable checks
+  --verbose    Include more diagnostic context where available
+
+EXAMPLES
+  kaseki-agent doctor                                     # Human-readable output
+  kaseki-agent doctor --json                              # Machine-readable JSON
+  kaseki-agent doctor --fix                               # Auto-fix issues then re-check
+```
+
+---
+
+### `serve`
+
+Start the local REST API service for async task execution. Binds to port 8080 by default. Reads `KASEKI_API_KEYS` from environment or config. Runs until interrupted (SIGINT/SIGTERM).
+
+```bash
+USAGE
+  kaseki-agent serve [--port PORT]
+
+OPTIONS
+  --port PORT    Port to bind (default: 8080)
+
+EXAMPLES
+  kaseki-agent serve                                    # Default port 8080
+  kaseki-agent serve --port 9090                        # Custom port
+```
+
+---
+
+### `config`
+
+Manage Kaseki configuration stored in `~/.kaseki/config.json` (global) or `kaseki-agent.json` (project-local). Supports dot-notation keys and nested values.
+
+```bash
+USAGE
+  kaseki-agent config get <KEY> [--global]
+  kaseki-agent config set <KEY> <VALUE> [--global]
+  kaseki-agent config show [--global]
+  kaseki-agent config locations
+
+OPTIONS
+  --global   Use global config (~/.kaseki/config.json) instead of project-local
+
+CONFIGURATION PRECEDENCE
+  1. CLI flags (--key=value)
+  2. kaseki-agent.json (project-local)
+  3. ~/.kaseki/config.json (user-global)
+  4. Environment variables (KASEKI_*, OPENROUTER_*)
+  5. Built-in defaults
+
+EXAMPLES
+  kaseki-agent config get agent.timeout_seconds
+  kaseki-agent config set agent.timeout_seconds 1800 --global
+  kaseki-agent config show
+  kaseki-agent config locations
+```
+
+---
 
 ### `list`
 
-List all kaseki instances (running and completed).
+List task runs through the configured Kaseki API. Shows ID, status, creation time, and duration in table format. Can filter by status.
 
 ```bash
-./kaseki-cli.js list
+USAGE
+  kaseki-agent list [--status queued|running|completed|failed]
+
+REQUIRES
+  A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.
+
+EXAMPLES
+  kaseki-agent list                                              # All instances
+  kaseki-agent list --status running                             # Running only
+  kaseki-agent list --status completed                           # Completed only
 ```
 
-**Output**:
+---
 
-```
-Instance  Status      Stage                  Elapsed (s)  Exit Code  Model
-kaseki-2  running     Running Pi agent       1050         —          openrouter/claude-...
-kaseki-1  completed   Collecting artifacts   300          0          openrouter/claude-...
-```
+### `report`
 
-### `status <instance>`
-
-Get detailed status of a specific instance (JSON format).
+Generate a detailed run report showing instance info, changes, validation results, artifact availability, and summary text. Defaults to API mode; use `--from-disk` to read local result files directly.
 
 ```bash
-./kaseki-cli.js status kaseki-1
+USAGE
+  kaseki-agent report <RUN_ID> [--from-disk]
+
+REQUIRES
+  API mode requires a local API service or KASEKI_API_URL. Use --from-disk to inspect local result files without API access.
+
+EXAMPLES
+  kaseki-agent report kaseki-1                              # Via API
+  kaseki-agent report kaseki-1 --from-disk                  # From disk
 ```
 
-**Output**:
+---
 
-```json
-{
-  "instance": "kaseki-1",
-  "running": false,
-  "stage": "Collecting artifacts",
-  "elapsedSeconds": 300,
-  "totalDurationSeconds": 300,
-  "agentElapsedSeconds": 120,
-  "timeoutSeconds": 1200,
-  "timeoutRiskPercent": 10.0,
-  "timeoutImminent": false,
-  "timedOut": false,
-  "exitCode": 0,
-  "failureClass": "none",
-  "repo": "CyanAutomation/crudmapper",
-  "ref": "main",
-  "model": "openrouter/claude-3.5-sonnet"
-}
-```
+### `status`
 
-`repo` prefers `host-start.json.repo_url` (fallback: `repo`), and `ref` prefers `host-start.json.git_ref` (fallback: `ref`).
-`failureClass` is `none` for successful runs and a stable controller-facing
-category such as `validation`, `timeout`, `empty-diff`, `quality`,
-`secret-scan`, `github`, or `credentials` for failures.
-
-**Inspect mode**: For read-only analysis tasks, use `KASEKI_TASK_MODE=inspect`.
-Inspect mode automatically skips pre-agent validation for speed and accepts empty diffs
-as success. Successful inspect runs generate `inspect-report.md` with findings, statistics, and recommendations.
-
-### `logs <instance> [options]`
-
-Display recent log lines (tail).
+Poll task status through the configured Kaseki API. Returns human-readable output by default; use `--json` for structured output.
 
 ```bash
-# Show last 50 lines of stdout
-./kaseki-cli.js logs kaseki-1
+USAGE
+  kaseki-agent status <RUN_ID> [--json]
 
-# Show last 100 lines
-./kaseki-cli.js logs kaseki-1 --tail=100
+REQUIRES
+  A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.
 
-# Show last 20 lines of validation.log
-./kaseki-cli.js logs kaseki-1 --file=validation.log --tail=20
+STATUS OUTPUT
+  State:     current status (queued, running, completed, failed)
+  Progress:  stage name with percentage and optional message
+  Elapsed:   seconds since run start
+  Timeout:   risk percentage (based on elapsed vs timeoutSeconds)
+  Exit Code: final exit code after completion
+  Failure:   failure class category (validation, timeout, empty-diff, quality, etc.)
+
+FLAGS
+  --json    Emit JSON output matching StatusResponse schema
+
+EXAMPLES
+  kaseki-agent status kaseki-1                     # Human-readable
+  kaseki-agent status kaseki-1 --json              # Structured JSON
 ```
 
-### `progress <instance> [options]`
+---
 
-Display sanitized progress events from `progress.jsonl`.
+### `cancel`
+
+Cancel a queued or running task through the configured Kaseki API. Sends cancellation request and returns updated status.
 
 ```bash
-./kaseki-cli.js progress kaseki-1
-./kaseki-cli.js progress kaseki-1 --tail=25
+USAGE
+  kaseki-agent cancel <RUN_ID> [--json]
+
+REQUIRES
+  A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.
+
+FLAGS
+  --json    Emit cancellation response as JSON
+
+EXAMPLES
+  kaseki-agent cancel kaseki-1                         # Cancel with text output
+  kaseki-agent cancel kaseki-1 --json                  # Cancel with JSON output
 ```
 
-Progress events include stage starts/finishes, Pi event counts, and tool
-start/end counts. They intentionally do not include assistant text, thinking
-content, environment values, or secrets.
+---
 
-### `errors <instance>`
+### `stop`
 
-Detect and list errors (JSON format).
+Alias for `cancel`. Same behavior, different command name.
 
 ```bash
-./kaseki-cli.js errors kaseki-1
+USAGE
+  kaseki-agent stop <RUN_ID>
+
+REQUIRES
+  A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.
+
+EXAMPLES
+  kaseki-agent stop kaseki-1
 ```
 
-**Output**:
+---
 
-```json
-{
-  "instance": "kaseki-1",
-  "errorCount": 2,
-  "errors": [
-    {
-      "severity": "error",
-      "source": "stderr",
-      "message": "Error: Build failed",
-      "line": 42
-    },
-    {
-      "severity": "critical",
-      "source": "quality-gate",
-      "message": "Diff exceeds maximum size"
-    }
-  ]
-}
-```
+### `secrets`
 
-**Error sources**:
-
-- `stderr` — errors from stderr.log
-- `validation` — validation command failures
-- `quality-gate` — quality gate violations (diff size, allowlist, format)
-- `secret-scan` — credential leaks detected
-- `timeout` — agent timeout (exit code 124)
-
-### `analysis <instance>`
-
-Get comprehensive post-run analysis (JSON format).
+Manage stored secrets (API keys, credentials) using filesystem secret files. Keys are never exposed via environment variables. Supports initialization, CRUD operations, permissions auditing, and automated fixes.
 
 ```bash
-./kaseki-cli.js analysis kaseki-1
+USAGE
+  kaseki-agent secrets init
+  kaseki-agent secrets set <NAME> <VALUE>
+  kaseki-agent secrets get <NAME> [--show]
+  kaseki-agent secrets list
+  kaseki-agent secrets delete <NAME>
+  kaseki-agent secrets doctor
+  kaseki-agent secrets fix-permissions
+  kaseki-agent secrets help
+
+OPTIONS
+  --show    Display the secret value alongside existence confirmation
+
+STORAGE LOCATIONS
+  - Local runs:          ~/.kaseki/secrets/ (files 0600)
+  - Docker hosts:        KASEKI_HOST_SECRETS_DIR, usually /home/pi/secrets
+  - Host contract:       dir 0750, files 0640, group id KASEKI_CONTAINER_GID
+
+REQUIRED HOST SECRETS
+  openrouter_api_key      OpenRouter LLM gateway API key
+  github_app_id           GitHub App numeric ID
+  github_app_client_id    GitHub App client identifier
+  github_app_private_key  GitHub App PEM private key
+  kaseki_api_keys         Bearer tokens for the API service
+
+EXAMPLES
+  kaseki-agent secrets init                                          # Create directories
+  kaseki-agent secrets set openrouter_api_key sk-or-...             # Store a key
+  kaseki-agent secrets get openrouter_api_key                       # Check existence
+  kaseki-agent secrets get openrouter_api_key --show                # Display value
+  kaseki-agent secrets list                                         # All stored keys
+  kaseki-agent secrets delete my_secret                             # Remove a key
+  kaseki-agent secrets doctor                                       # Audit permissions
+  kaseki-agent secrets fix-permissions                              # Repair permissions
 ```
 
-**Output**:
+---
 
-```json
-{
-  "instance": "kaseki-1",
-  "duration": 300,
-  "exitCode": 0,
-  "model": "openrouter/claude-3.5-sonnet",
-  "repo": "CyanAutomation/crudmapper",
-  "ref": "main",
-  "changedFiles": [
-    "src/lib/parser.ts",
-    "tests/parser.test.ts"
-  ],
-  "changedFileCount": 2,
-  "diffSizeBytes": 2150,
-  "diffSizeKb": 2,
-  "validationCommands": [
-    {
-      "command": "npm run check",
-      "exitCode": 0,
-      "durationSeconds": 10,
-      "passed": true
-    }
-  ],
-  "stageTimings": [
-    {
-      "stage": "prepare node dependencies",
-      "exitCode": 0,
-      "durationSeconds": 47,
-      "detail": "workspace-cache-hit"
-    }
-  ],
-  "piMetrics": {
-    "toolStartCount": 8,
-    "toolEndCount": 8,
-    "eventCount": 65
-  },
-  "errors": [],
-  "errorCount": 0,
-  "criticalErrors": 0
-}
-```
+### `host`
 
-`repo` prefers `host-start.json.repo_url` (fallback: `repo`), and `ref` prefers `host-start.json.git_ref` (fallback: `ref`).
-
-### `watch <instance> [options]`
-
-Live monitor an instance with periodic status updates and anomaly alerts.
+Prepare or recover a Docker Compose API host. Provides two subcommands: `setup` runs a shell script to bootstrap `/agents`, normalize secrets, and start the container; `preflight` validates connectivity to an existing API.
 
 ```bash
-# Poll every 5 seconds (default)
-./kaseki-cli.js watch kaseki-1
+USAGE
+  kaseki-agent host setup [--fix] [--recreate-api] [--wait-ready]
+  kaseki-agent host preflight [--url URL]
 
-# Poll every 2 seconds
-./kaseki-cli.js watch kaseki-1 --interval=2
+OPTIONS (setup)
+  --fix            Create/fix /agents, normalize secrets, and bootstrap the template
+  --recreate-api   Recreate the kaseki-api container after host paths are fixed
+  --wait-ready     Wait for http://127.0.0.1:8080/ready before returning
+
+OPTIONS (preflight)
+  --url URL        Preflight endpoint URL (default: http://127.0.0.1:8080/api/preflight)
+
+EXAMPLES
+  kaseki-agent host setup                                        # Standard setup
+  sudo kaseki-agent host setup --fix --recreate-api --wait-ready # Full recovery
+  sudo kaseki-agent host preflight                               # Verify API
+  sudo KASEKI_HOST_SECRETS_DIR=/home/pi/secrets kaseki-agent host setup --fix
 ```
 
-**Output** (updates every interval):
+---
 
-```
-Watching kaseki-1 (updating every 5s, Ctrl+C to stop)...
+### `cleanup`
 
-[2026-04-25T14:23:45.123Z] Stage: Running Pi agent
-             Elapsed: 1050s / 1200s
-             Timeout: 87.5%
-             Status: RUNNING
-             ⚠ [WARNING] Timeout approaching: 1050s / 1200s (87.5%)
-
-[2026-04-25T14:23:50.456Z] Stage: Running validation
-             Elapsed: 1055s / 1200s
-             Status: RUNNING
-```
-
-### `follow <instance> [options]`
-
-Stream logs in real-time as they're written.
+Manage retention of kaseki run artifacts. Keeps the most recent N runs and deletes older ones. Supports dry-run mode for safety verification. Consults a scheduler-owned durable job index to avoid deleting active jobs.
 
 ```bash
-# Follow stdout.log
-./kaseki-cli.js follow kaseki-1
+USAGE
+  kaseki-agent cleanup [--dry-run] [--force] [--count N]
 
-# Follow validation.log
-./kaseki-cli.js follow kaseki-1 --tail=validation.log
+OPTIONS
+  --dry-run     Show what would be deleted without actually deleting
+  --force       Skip confirmation prompt (for automation)
+  --count N     Override KASEKI_RETENTION_RUNS (e.g., --count 5)
+
+ENVIRONMENT VARIABLES
+  KASEKI_RETENTION_RUNS  Number of recent runs to keep (default: 5)
+  KASEKI_RESULTS_DIR     Path to results directory (default: /agents/kaseki-results)
+  KASEKI_CACHE_DIR       Path to cache directory (default: /agents/kaseki-cache)
+
+EXAMPLES
+  kaseki-agent cleanup --dry-run          # Preview what would be deleted
+  kaseki-agent cleanup --force --count 3  # Keep only 3 recent runs
+  kaseki-agent cleanup --force            # Delete according to KASEKI_RETENTION_RUNS
 ```
 
 ---
 
 ## External AI Agent Integration
 
+All examples below use shell-based subprocess calls to `kaseki-agent`. No library imports are needed; the CLI emits structured output (JSON or plain text) that external agents can parse.
+
 ### Pattern 1: Polling Status
 
-An external agent can poll kaseki status at regular intervals:
+Poll an instance at regular intervals until completion. Watch for timeout risk exceeding 85% and log the outcome.
 
 ```bash
 #!/bin/bash
-# monitor-kaseki.sh - Monitor kaseki instance from external agent
+# Monitor a kaseki run from an external agent
 
 INSTANCE=$1
-POLL_INTERVAL=${2:-5}  # Default 5 seconds
-MAX_ATTEMPTS=${3:-240}  # Default 2 hours (240 * 5s)
+POLL_INTERVAL=${2:-5}
+MAX_ATTEMPTS=${3:-240}
 
 ATTEMPT=0
 while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-  STATUS=$(./kaseki-cli.js status $INSTANCE)
-  
-  # Parse JSON
-  RUNNING=$(echo $STATUS | jq -r '.running')
-  STAGE=$(echo $STATUS | jq -r '.stage')
-  TIMEOUT_RISK=$(echo $STATUS | jq -r '.timeoutRiskPercent')
-  EXIT_CODE=$(echo $STATUS | jq -r '.exitCode')
-  FAILURE_CLASS=$(echo $STATUS | jq -r '.failureClass')
-  
-  echo "[$INSTANCE] Stage: $STAGE | Timeout Risk: ${TIMEOUT_RISK}% | Failure: $FAILURE_CLASS"
-  
-  # Detect timeout imminent
-  if (( $(echo "$TIMEOUT_RISK >= 85" | bc -l) )); then
-    echo "⚠ ALERT: Timeout approaching ($TIMEOUT_RISK%)"
-    # Take action: notify, scale resources, etc.
+  STATUS=$(kaseki-agent status "$INSTANCE")
+
+  TIMEOUT_RISK=$(echo "$STATUS" | grep 'Timeout:' | awk '{print $2}' | tr -d '%')
+
+  # Alert on timeout risk
+  if [ -n "$TIMEOUT_RISK" ] && (( $(echo "$TIMEOUT_RISK >= 85" | bc -l 2>/dev/null || echo 0) )); then
+    echo "WARNING: Timeout approaching: ${TIMEOUT_RISK}%"
   fi
-  
+
   # Check if completed
-  if [ "$RUNNING" = "false" ]; then
-    echo "✓ Instance completed with exit code: $EXIT_CODE"
+  if echo "$STATUS" | grep -q 'State:     completed'; then
+    EXIT_CODE=$(echo "$STATUS" | grep 'Exit Code:' | awk '{print $3}')
+    echo "Completed: exit code $EXIT_CODE"
     break
   fi
-  
+
   sleep $POLL_INTERVAL
-  ((ATTEMPT++))
+  ATTEMPT=$((ATTEMPT + 1))
 done
 
-# Post-run analysis
-ANALYSIS=$(./kaseki-cli.js analysis $INSTANCE)
-ERRORS=$(echo $ANALYSIS | jq -r '.errorCount')
-echo "Final analysis: $ERRORS errors detected"
+# Final report
+kaseki-agent report "$INSTANCE"
 ```
 
-### Pattern 2: Error Detection and Reaction
+### Pattern 2: Error Detection
 
-React to detected errors:
+Check an instance for errors and escalate critical failures.
 
 ```bash
 #!/bin/bash
-# react-to-errors.sh
+# Detect and react to errors on a kaseki instance
 
 INSTANCE=$1
 
-ERRORS=$(./kaseki-cli.js errors $INSTANCE)
-ERROR_COUNT=$(echo $ERRORS | jq -r '.errorCount')
+# Check overall status
+STATUS=$(kaseki-agent status "$INSTANCE" --json)
+FAILURE_CLASS=$(echo "$STATUS" | jq -r '.failureClass // "none"')
+ERROR_MSG=$(echo "$STATUS" | jq -r '.error // ""')
 
-if [ "$ERROR_COUNT" -gt 0 ]; then
-  CRITICAL=$(echo $ERRORS | jq '[.errors[] | select(.severity == "critical")] | length')
-  
-  if [ "$CRITICAL" -gt 0 ]; then
-    echo "❌ Critical errors detected: $CRITICAL"
-    # Escalate, rollback, notify team, etc.
-  else
-    echo "⚠ Non-critical errors detected: $(($ERROR_COUNT - $CRITICAL))"
-  fi
+if [ "$FAILURE_CLASS" != "none" ] && [ "$FAILURE_CLASS" != "null" ]; then
+  echo "CRITICAL: Instance $INSTANCE failed with failure class: $FAILURE_CLASS"
+  [ "$ERROR_MSG" != "null" ] && echo "Detail: $ERROR_MSG"
 fi
+
+# Run a full report for analysis
+kaseki-agent report "$INSTANCE"
+
+# Alternatively, check with a non-JSON status call
+kaseki-agent status "$INSTANCE"
 ```
 
-### Pattern 3: Library Import in Node.js Agent
+### Pattern 3: Post-Run Analysis
 
-Use the library directly in a Node.js agent:
+After a run completes, gather comprehensive analysis using `report` and `list`.
 
-```javascript
-const kasekiCli = require('./kaseki-cli-lib.js');
+```bash
+#!/bin/bash
+# Gather post-run analysis for a batch of completed runs
 
-async function monitorKaseki(instanceName) {
-  const pollInterval = 5000; // 5 seconds
-  
-  while (true) {
-    const status = kasekiCli.getInstanceStatus(instanceName);
-    
-    if (status.error) {
-      console.error(`Error: ${status.error}`);
-      break;
-    }
-    
-    console.log(`[${instanceName}] Stage: ${status.stage} | Timeout: ${status.timeoutRiskPercent.toFixed(1)}%`);
-    
-    // Check for timeout risk
-    if (status.timeoutImminent) {
-      console.warn(`⚠ ALERT: Timeout imminent (${status.elapsedSeconds}s / ${status.timeoutSeconds}s)`);
-      // Handle timeout risk
-    }
-    
-    // Check for errors
-    const errors = kasekiCli.detectErrors(instanceName);
-    if (errors.length > 0) {
-      console.warn(`✗ ${errors.length} error(s) detected`);
-      errors.forEach((e) => console.warn(`  - [${e.severity}] ${e.source}: ${e.message}`));
-    }
-    
-    // Exit when complete
-    if (!status.running) {
-      const analysis = kasekiCli.getAnalysis(instanceName);
-      console.log(`✓ Completed: ${analysis.changedFileCount} files changed, ${analysis.errorCount} errors`);
-      break;
-    }
-    
-    await new Promise((resolve) => setTimeout(resolve, pollInterval));
-  }
-}
+for INSTANCE in $(kaseki-agent list --status completed | tail -n +3 | awk '{print $1}'); do
+  echo "=== Analyzing $INSTANCE ==="
+  kaseki-agent report "$INSTANCE"
+  echo ""
+done
+```
 
-monitorKaseki('kaseki-1');
+### Pattern 4: Combined Status + Report
+
+Fetch both status and a detailed report together for complete visibilityand context about a run's health.
+
+```bash
+#!/bin/bash
+# Combined status and report for quick diagnostics
+
+INSTANCE=$1
+
+echo "=== Status ==="
+kaseki-agent status "$INSTANCE"
+
+echo ""
+echo "=== Report ==="
+kaseki-agent report "$INSTANCE"
 ```
 
 ---
 
 ## Output Formats
 
-### Status Object
+### Status Response (JSON)
+
+When using `--json`, `status` returns an object matching the StatusResponse schema:
 
 ```json
 {
-  "instance": "kaseki-1",
-  "running": boolean,
-  "stage": "string",
-  "elapsedSeconds": number,
-  "totalDurationSeconds": number,
-  "agentElapsedSeconds": number | null,
-  "timeoutSeconds": number,
-  "timeoutRiskPercent": number (0-100),
-  "timeoutImminent": boolean,
-  "timedOut": boolean,
-  "exitCode": number | null,
-  "repo": "string",
-  "ref": "string",
-  "model": "string"
+  "id": "kaseki-42",
+  "status": "completed",
+  "progress": { "stage": "Collecting artifacts", "percentComplete": 100 },
+  "elapsedSeconds": 360,
+  "timeoutRiskPercent": 8.9,
+  "exitCode": 0,
+  "failureClass": null,
+  "error": null
 }
 ```
 
-Field source note: `repo` is read from `host-start.json.repo_url` with fallback to `host-start.json.repo`; `ref` is read from `host-start.json.git_ref` with fallback to `host-start.json.ref`.
+Field source note: `repo` is read from `host-start.json.repo_url` with fallback to `host-start.json.repo`; `ref` is read from `host-start.json.git_ref` with fallback to `host-start.json.ref`. The `failureClass` field uses stable categories such as `validation`, `timeout`, `empty-diff`, `quality`, `secret-scan`, `github`, or `credentials`.
 
-### Error Object
+### Report Response
 
-```json
-{
-  "severity": "critical" | "error" | "warning",
-  "source": "stderr" | "validation" | "quality-gate" | "secret-scan" | "timeout",
-  "message": "string",
-  "line": number | null
-}
-```
-
-### Anomaly Object
-
-```json
-{
-  "type": "timeout-risk" | "timeout",
-  "severity": "warning" | "critical",
-  "message": "string"
-}
-```
-
-Timeout anomalies use Pi agent elapsed time rather than total run time. When a
-completed run timed out after slow setup or artifact collection, the message also
-includes total run duration separately.
+The `report` command prints structured sections: instance information, changes, validation results, artifact availability, and a detailed summary. Use `--from-disk` to read directly from result files without API access.
 
 ---
 
@@ -454,116 +530,101 @@ includes total run duration separately.
 
 ### Directory Structure
 
-The CLI looks for instances in:
+Run results are stored under:
 
 - Results: `/agents/kaseki-results/kaseki-N/`
 - Workspace: `/agents/kaseki-runs/kaseki-N/` (optional, for running instances)
 
-### Testing Mode
+Paths can be overridden via environment variables:
 
-To test with custom directories:
-
-```javascript
-const kasekiCli = require('./kaseki-cli-lib.js');
-
-// Override config for testing
-kasekiCli.config.KASEKI_RESULTS_DIR = '/custom/path/kaseki-results';
+```bash
+KASEKI_RESULTS_DIR=/custom/path/results kaseki-agent list
+KASEKI_CACHE_DIR=/custom/path/cache kaseki-agent cleanup --dry-run
 ```
 
 ---
 
 ## Examples
 
-### Example 1: Monitor and Alert
+### Example 1: Alert on Timeout Risk
+
+Monitor all active runs and alert when timeout risk exceeds a threshold.
 
 ```bash
 #!/bin/bash
 while true; do
-  STATUS=$(./kaseki-cli.js status kaseki-1 | jq -r '.timeoutRiskPercent')
-  if (( $(echo "$STATUS > 85" | bc -l) )); then
-    echo "🚨 Timeout risk: $STATUS%" | mail -s "Kaseki Alert" ops@team.com
-  fi
+  for INSTANCE in $(kaseki-agent list --status running | tail -n +3 | awk '{print $1}'); do
+    STATUS=$(kaseki-agent status "$INSTANCE")
+    TIMEOUT=$(echo "$STATUS" | grep 'Timeout:' | awk '{print $2}' | tr -d '%')
+    if [ -n "$TIMEOUT" ] && (( $(echo "$TIMEOUT > 85" | bc -l 2>/dev/null || echo 0) )); then
+      echo "ALERT: $INSTANCE timeout risk ${TIMEOUT}%" | mail -s "Kaseki Alert" ops@team.com
+    fi
+  done
   sleep 10
 done
 ```
 
 ### Example 2: Parse Changes from Completed Run
 
+Extract changed files and diff size from a completed run's report.
+
 ```bash
-ANALYSIS=$(./kaseki-cli.js analysis kaseki-1)
-echo "Changed files:"
-echo $ANALYSIS | jq -r '.changedFiles[]'
-echo "Diff size: $(echo $ANALYSIS | jq '.diffSizeKb') KB"
+REPORT=$(kaseki-agent report kaseki-1)
+DIFF_SIZE=$(echo "$REPORT" | grep 'Diff Size:' | awk '{print $NF}')
+echo "Diff size: ${DIFF_SIZE} bytes"
 ```
 
-### Example 3: Combine Status + Errors
+### Example 3: Verify Setup Before Running Tasks
+
+Run doctor and host preflight before submitting work.
 
 ```bash
-./kaseki-cli.js status kaseki-1 > /tmp/status.json
-./kaseki-cli.js errors kaseki-1 > /tmp/errors.json
-./kaseki-cli.js analysis kaseki-1 > /tmp/analysis.json
-
-# Process combined data
-jq -s '. as $data | {status: $data[0], errors: $data[1], analysis: $data[2]}' \
-  /tmp/status.json /tmp/errors.json /tmp/analysis.json
+kaseki-agent doctor
+kaseki-agent host preflight
+kaseki-agent serve &
+kaseki-agent run https://github.com/org/repo main "Task description"
 ```
 
 ---
 
 ## Troubleshooting
 
-### "Instance not found"
+### "Command not found"
 
-- Verify instance name matches format `kaseki-N` where N is digits
-- Check that `/agents/kaseki-results/kaseki-N/` directory exists
+- Ensure `npm install -g @cyanautomation/kaseki-agent` completed successfully
+- Check PATH: `which kaseki-agent`
+- If installed inside Docker, use `docker exec kaseki-api kaseki-agent ...` instead
 
-### Empty results for running instances
+### "Unknown command"
 
-- Stage extraction requires `==>` markers in stdout.log
-- Elapsed time estimation requires `metadata.json` with `start_time`
+Verify the subcommand exists. All 15 active commands plus `setup` (deprecated) are registered in `src/cli/KasekiCLI.ts`. Run `kaseki-agent --help` to see available top-level flags. For command-specific help, run `kaseki-agent <command> --help`.
 
-### Docker ps errors
+### "Unable to list runs from local Kaseki API"
 
-- Docker may not be available (safe to ignore in test environments)
-- Running check falls back to checking workspace directory existence
+The `list`, `report`, `status`, `cancel`, and `stop` commands require a running API service. Start it with `kaseki-agent serve` or `docker-compose up -d kaseki-api`, or use `--from-disk` with the `report` command to inspect local files directly.
 
----
+### "Instance not found on disk"
 
-## Architecture
+When using `--from-disk`, verify the instance directory exists:
 
-The CLI is split into two parts:
+```bash
+ls -la /agents/kaseki-results/kaseki-N/
+```
 
-1. **`kaseki-cli-lib.js`** — Core query library
-   - 600+ lines of reusable functions
-   - No side effects, all I/O is read-only
-   - Suitable for programmatic use and testing
-
-2. **`kaseki-cli.js`** — CLI executable
-   - Command-line interface using library
-   - Formats output (JSON, tables, streaming)
-   - Handles user options and arguments
+Check that the instance name matches the format `kaseki-N` where N is digits.
 
 ---
 
 ## Performance Notes
 
-- **listInstances()**: Scans `/agents/kaseki-results/` directory; O(n) where n = number of instances
-- **readLiveLog()**: Tail only; avoids re-reading entire logs
-- **getInstanceStatus()**: Lightweight; reads small JSON files and parses stage from logs
-- **detectErrors()**: Scans stderr and error files; proportional to log size
-- **getAnalysis()**: Collects data from multiple artifacts; good for post-run analysis
+- **list**: Queries the API for the full runs list; O(n) where n = number of tracked runs
+- **status**: Lightweight; reads small JSON files and parses stage from logs
+- **report (API)**: Collects data from multiple endpoints; good for post-run analysis
+- **report (disk)**: Reads metadata.json and result-summary.md directly; fastest option for local inspection
+- **doctor**: Runs shell probes sequentially; ~1-2 seconds for a healthy system
 
 Suitable for:
 
-- Polling every 5-10 seconds during runs
-- Real-time log streaming
-- Post-run batch analysis
-
----
-
-## Future Enhancements
-
-- **Baseline timing data**: Store per-stage historical medians for anomaly detection
-- **Webhook integration**: Callback external services on status changes
-- **Metrics export**: Prometheus-compatible metrics for monitoring stacks
-- **Sub-task progress**: Real-time visibility into Pi agent tool invocations (requires enhanced logging)
+- Polling every 5-10 seconds during active runs
+- On-demand health checks
+- Post-run batch analysis of multiple instances
