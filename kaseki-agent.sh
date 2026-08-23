@@ -3502,7 +3502,9 @@ promote_staged_repository() {
     mv "$KASEKI_REPO_DIR" "$previous_dir" || return 1
   fi
   if ! mv "$KASEKI_REPO_STAGING_DIR" "$KASEKI_REPO_DIR"; then
-    [ -n "$previous_dir" ] && mv "$previous_dir" "$KASEKI_REPO_DIR" 2>/dev/null || true
+    if [ -n "$previous_dir" ]; then
+      mv "$previous_dir" "$KASEKI_REPO_DIR" 2>/dev/null || true
+    fi
     return 1
   fi
   [ -n "$previous_dir" ] && rm -rf "$previous_dir"
