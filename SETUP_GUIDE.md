@@ -18,7 +18,7 @@ This guide provides an overview of running kaseki-agent and migrating from previ
 
 ## Deprecated Commands
 
-The following commands are no longer supported. Users migrating from prior versions should consult [docs/MIGRATION.md](docs/MIGRATION.md):
+The following commands are no longer supported. Users migrating from prior versions should consult [docs/QUICK_START.md](docs/QUICK_START.md) for the current setup workflow:
 
 - `kaseki-agent quickstart` -- replaced by `kaseki-agent init`
 - `scripts/kaseki-setup.sh` -- removed; use `kaseki-agent init`
