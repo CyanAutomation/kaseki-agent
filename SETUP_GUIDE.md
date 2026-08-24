@@ -34,8 +34,8 @@ Kaseki uses an LLM Gateway as primary provider:
 # LLM Gateway (primary)
 export LLM_GATEWAY_URL=https://your-gateway/v1
 export LLM_GATEWAY_API_KEY_FILE=~/.kaseki/secrets.json
-# OpenRouter fallback: KASEKI_PROVIDER=openrouter
-export KASEKI_PROVIDER=openrouter
+# To use OpenRouter as fallback instead of primary:
+# export KASEKI_PROVIDER=openrouter
 export OPENROUTER_API_KEY=sk-or-...
 ```
 
