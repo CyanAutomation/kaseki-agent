@@ -37,6 +37,7 @@ export function classifyFailure(
 
   const exactRules: Array<[string, boolean]> = [
     ['timeout', normalizedExitCode === 124],
+    ['critical_change_expectations', normalizedExitCode === 8 && failedCommand === 'critical change verification'],
     ['goal-unmet', normalizedExitCode === 8 || failedCommand === 'goal check'],
     ['empty-diff', normalizedExitCode === 3 || failedCommand === 'empty git diff'],
     ['validation', failedCommand === 'validation'],

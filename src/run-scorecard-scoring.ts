@@ -27,7 +27,10 @@ export function buildScorecard(evidence: Evidence, config: ScorecardConfig, now 
   const ended = typeof evidence.metadata.ended_at === 'string' ? evidence.metadata.ended_at
     : ['completed', 'failed', 'cancelled', 'timed_out'].includes(evidence.status) ? now.toISOString() : null;
   const dimensions = buildDimensions(evidence, config);
-  const score = Number(dimensions.reduce((total, dimension) => total + dimension.weighted_points, 0).toFixed(2));
+  const uncappedScore = Number(dimensions.reduce((total, dimension) => total + dimension.weighted_points, 0).toFixed(2));
+  // A successful patch can still be useful, but it must not look fully
+  // evaluated when the evaluator artifact is a fallback or unavailable.
+  const score = evidence.evaluatorAvailable ? uncappedScore : Math.min(uncappedScore, 79);
   return RunScorecardSchema.parse({
     schema_version: '1.0', rubric_version: config.rubricVersion,
     run_id: typeof evidence.metadata.instance === 'string' ? evidence.metadata.instance : 'unknown-run',
@@ -55,6 +58,7 @@ export function buildScorecard(evidence: Evidence, config: ScorecardConfig, now 
       caps: { missing_diff: 69, missing_validation: 59, missing_diff_and_validation: 49 },
       enabled_phase_reliability_penalty_points: 0, disabled_phase_policy: 'reweight_eligible_dimensions',
     },
-    warnings: coverage.missing.map(value => `Missing evidence: ${value}`),
+    warnings: [...coverage.missing.map(value => `Missing evidence: ${value}`),
+      ...(!evidence.evaluatorAvailable ? ['Evaluator unavailable: patch and validation evidence are reported separately; score capped below A.'] : [])],
   });
 }

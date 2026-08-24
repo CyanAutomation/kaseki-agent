@@ -17,7 +17,7 @@ function sourceScores(evidence: Evidence, config: ScorecardConfig): number[] {
     ? evidence.evaluation.task_completion_score
     : typeof evidence.evaluation?.score === 'number'
       ? evidence.evaluation.score
-      : evidence.evaluation ? 80 : 40;
+      : evidence.evaluatorAvailable ? 80 : 0;
   return [
     completion,
     evidence.present.includes('scouting.json') ? 85 : 50,
@@ -75,6 +75,7 @@ export function buildPhases(evidence: Evidence): RunScorecard['phases'] {
           ? 'not_started'
           : phase === 'validation' && evidence.validation === 'failed' ? 'failed'
             : phase === 'goal_check' && evidence.goalCheckFailed ? 'failed'
+              : phase === 'run_evaluation' && !evidence.evaluatorAvailable ? 'failed'
               : 'succeeded',
       started_at: null, ended_at: null, duration_ms: null, token_usage: usage,
       measurements: { retries: evidence.phaseRetries[phase] ?? 0 },

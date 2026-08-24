@@ -47,6 +47,8 @@ export function createStatusRoutes(
           resultDir: job.resultDir,
           exitCode: status.exitCode ?? resolveJobExitCode(job, config),
           failureClass: status.failureClass,
+          failedCommand: status.failedCommand,
+          criticalChangeContract: status.criticalChangeContract,
           error: status.error,
           lifecyclePhase: status.lifecyclePhase,
           elapsedSeconds: status.elapsedSeconds,
