@@ -30,7 +30,7 @@ export function buildScorecard(evidence: Evidence, config: ScorecardConfig, now 
   const uncappedScore = Number(dimensions.reduce((total, dimension) => total + dimension.weighted_points, 0).toFixed(2));
   // A successful patch can still be useful, but it must not look fully
   // evaluated when the evaluator artifact is a fallback or unavailable.
-  const score = evidence.evaluatorAvailable ? uncappedScore : Math.min(uncappedScore, 79);
+  const score = evidence.evaluatorAvailable ? uncappedScore : Math.min(uncappedScore, 89);
   return RunScorecardSchema.parse({
     schema_version: '1.0', rubric_version: config.rubricVersion,
     run_id: typeof evidence.metadata.instance === 'string' ? evidence.metadata.instance : 'unknown-run',

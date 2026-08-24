@@ -80,12 +80,13 @@ export class StatusResponseBuilder {
     const validationAllowlistReason = extractValidationAllowlistFailureReason(metadata);
     const qualityReason = extractQualityFailureReason(metadata);
     const goalCheckReason = extractGoalCheckFailureReason(metadata);
+    const derivedFailureClass = job.status === 'failed' ? classifyFailure(metadata, exitCode ?? null) : undefined;
     const response: StatusResponse = {
       id: job.id,
       status: job.status,
       completedAt: this.metadataHelper.resolveCompletedAt(job, metadata),
       exitCode: exitCode ?? undefined,
-      failureClass: job.failureClass || classifyFailure(metadata, exitCode ?? null),
+      failureClass: job.failureClass || (derivedFailureClass === 'unknown' ? undefined : derivedFailureClass),
       failedCommand: this.metadataHelper.stringField(metadata, 'failed_command') || undefined,
       validationFailureReason: validationReason ?? undefined,
       validationAllowlistFailureReason: validationAllowlistReason ?? undefined,

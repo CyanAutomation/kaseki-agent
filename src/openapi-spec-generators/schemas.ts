@@ -270,10 +270,29 @@ export function buildRunResponseSchema(): Record<string, unknown> {
         type: 'string',
         description: 'Classification of failure (e.g., validation_failed, timeout)',
       },
+      failedCommand: {
+        type: 'string',
+        description: 'Command or phase that caused the run to fail',
+      },
+      criticalChangeContract: buildCriticalChangeContractSchema(),
       error: {
         type: 'string',
         description: 'Error message if the job failed',
       },
+    },
+  };
+}
+
+function buildCriticalChangeContractSchema(): Record<string, unknown> {
+  return {
+    type: 'object',
+    required: ['expectedFiles', 'downgradedFiles', 'retryCount'],
+    properties: {
+      source: { description: 'Source artifacts used to construct the contract' },
+      expectedFiles: { type: 'array', items: { type: 'string' } },
+      downgradedFiles: { type: 'array', items: { type: 'string' } },
+      changedFiles: { type: 'array', items: { type: 'string' } },
+      retryCount: { type: 'integer', minimum: 0 },
     },
   };
 }
@@ -407,6 +426,11 @@ function buildStatusResponseSchema(): Record<string, unknown> {
         type: 'string',
         description: 'Failure classification (only if failed)',
       },
+      failedCommand: {
+        type: 'string',
+        description: 'Command or phase that caused the run to fail',
+      },
+      criticalChangeContract: buildCriticalChangeContractSchema(),
       validationFailureReason: {
         type: 'string',
         description: 'Validation-related failure reason, including validation allowlist gates when present',

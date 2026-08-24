@@ -5,6 +5,14 @@ import { RunScorecardSchema } from '../../types/run-scorecard';
 
 const DEFAULT_LOCAL_API_BASE_URL = 'http://localhost:8080/api';
 
+const CriticalChangeContractSchema = z.object({
+  source: z.unknown().optional(),
+  expectedFiles: z.array(z.string()),
+  downgradedFiles: z.array(z.string()),
+  changedFiles: z.array(z.string()).optional(),
+  retryCount: z.number(),
+});
+
 const StatusResponseSchema = z.object({
   id: z.string(),
   status: z.enum(['queued', 'running', 'completed', 'failed']),
@@ -19,6 +27,8 @@ const StatusResponseSchema = z.object({
   taskProgressPercent: z.number().optional(),
   exitCode: z.number().optional(),
   failureClass: z.string().optional(),
+  failedCommand: z.string().optional(),
+  criticalChangeContract: CriticalChangeContractSchema.optional(),
   validationFailureReason: z.string().optional(),
   validationAllowlistFailureReason: z.string().optional(),
   qualityFailureReason: z.string().optional(),
@@ -68,6 +78,8 @@ const RunsListResponseSchema = z.object({
     resultDir: z.string().optional(),
     exitCode: z.number().optional(),
     failureClass: z.string().optional(),
+    failedCommand: z.string().optional(),
+    criticalChangeContract: CriticalChangeContractSchema.optional(),
     error: z.string().optional(),
   })),
   total: z.number(),
@@ -149,6 +161,8 @@ const RunResponseSchema = z.object({
   completedAt: z.string().optional(),
   exitCode: z.number().optional(),
   failureClass: z.string().optional(),
+  failedCommand: z.string().optional(),
+  criticalChangeContract: CriticalChangeContractSchema.optional(),
   error: z.string().optional(),
 });
 const ScorecardResponseSchema = RunScorecardSchema;
