@@ -1343,7 +1343,18 @@ function extractPromptFiles(prompt) {
   }
   return [...matches].slice(0, 10);
 }
-const promptFiles = extractPromptFiles(taskPrompt);
+const repoRoot = process.env.KASEKI_WORKSPACE_DIR ? require('node:path').join(process.env.KASEKI_WORKSPACE_DIR, 'repo') : '';
+function isTrackedRegularFile(candidate) {
+  // Fallback expectations are a safety net, not a parser for arbitrary prose.
+  // Require a sane repo-relative filename that exists in the checked-out tree.
+  if (!repoRoot || !candidate || candidate.includes('$') || /(?:^|\/)\.(?:\/|$)/.test(candidate)) return false;
+  if (!/^[A-Za-z0-9_@.+,-]+(?:\/[A-Za-z0-9_@.+,-]+)*$/.test(candidate)) return false;
+  try {
+    const resolved = require('node:path').resolve(repoRoot, candidate);
+    return resolved.startsWith(`${require('node:path').resolve(repoRoot)}${require('node:path').sep}`) && require('node:fs').statSync(resolved).isFile();
+  } catch { return false; }
+}
+const promptFiles = extractPromptFiles(taskPrompt).filter(isTrackedRegularFile);
 const fallback = {
   task: isInspect
     ? 'Read-only inspect task; scouting agent did not produce a candidate artifact.'
@@ -2542,7 +2553,17 @@ function firstContract(...artifacts) {
 const goal = readJson(goalPath);
 const scouting = readJson(scoutingPath);
 const explicit = firstContract(scouting, goal);
-const requiredFiles = removePlaceholders([...new Set(strings(explicit.required_files || explicit.requiredFiles))]);
+const repoRoot = process.env.KASEKI_WORKSPACE_DIR ? path.resolve(process.env.KASEKI_WORKSPACE_DIR, 'repo') : '';
+function verifiedRepoFile(file) {
+  if (!repoRoot || !/^[A-Za-z0-9_@.+,-]+(?:\/[A-Za-z0-9_@.+,-]+)*$/.test(file)) return false;
+  try {
+    const resolved = path.resolve(repoRoot, file);
+    return resolved.startsWith(`${repoRoot}${path.sep}`) && fs.statSync(resolved).isFile();
+  } catch { return false; }
+}
+const requestedFiles = removePlaceholders([...new Set(strings(explicit.required_files || explicit.requiredFiles))]);
+const requiredFiles = requestedFiles.filter(verifiedRepoFile);
+const downgradedFiles = requestedFiles.filter(file => !verifiedRepoFile(file));
 const requiredSearchStrings = removePlaceholders([...new Set(strings(explicit.required_search_strings || explicit.requiredSearchStrings || explicit.required_diff_markers || explicit.requiredDiffMarkers))]);
 const explicitForbidden = normalizeBool(explicit.forbidden_empty_diff ?? explicit.forbiddenEmptyDiff);
 const forbiddenEmptyDiff = explicitForbidden === undefined ? allowEmptyDiff !== '1' : explicitForbidden;
@@ -2556,6 +2577,9 @@ const artifact = {
   },
   ...(scoutingFallback ? { fallback_reason: String(scouting.fallback_reason || 'scouting_fallback') } : {}),
   required_files: requiredFiles,
+  // Retain non-enforceable scout suggestions for operators without turning a
+  // harmless path mismatch into a terminal false negative.
+  ...(downgradedFiles.length ? { downgraded_required_files: downgradedFiles, contract_warnings: ['unverified_required_files_downgraded'] } : {}),
   required_search_strings: requiredSearchStrings,
   forbidden_empty_diff: forbiddenEmptyDiff,
 };

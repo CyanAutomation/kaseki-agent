@@ -1,3 +1,6 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 class MetricsRegistry {
   private queuePending = 0;
   private runningJobs = 0;
@@ -10,17 +13,48 @@ class MetricsRegistry {
   private durationCount = 0;
   private evaluatorArtifacts = { available: 0, unavailable: 0 };
   private goalCheckFailures = new Map<string, number>();
+  private criticalChangeFalseNegatives = 0;
+  private scoutingFallbacks = 0;
+  private persistenceFile?: string;
+
+  configurePersistence(file: string): void {
+    if (this.persistenceFile === file) return;
+    this.persistenceFile = file;
+    try {
+      const saved = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+      const runs = saved.runsTotal as Record<string, unknown> | undefined;
+      this.runsTotal.success = Number(runs?.success) || 0; this.runsTotal.failure = Number(runs?.failure) || 0;
+      this.timeoutsTotal = Number(saved.timeoutsTotal) || 0;
+      this.criticalChangeFalseNegatives = Number(saved.criticalChangeFalseNegatives) || 0;
+      this.scoutingFallbacks = Number(saved.scoutingFallbacks) || 0;
+      this.durationSum = Number(saved.durationSum) || 0;
+      this.durationCount = Number(saved.durationCount) || 0;
+      const buckets = Array.isArray(saved.durationBucketCounts) ? saved.durationBucketCounts : [];
+      this.durationBucketCounts = this.durationBuckets.map((_, index) => Number(buckets[index]) || 0);
+      const evaluator = saved.evaluatorArtifacts as Record<string, unknown> | undefined;
+      this.evaluatorArtifacts.available = Number(evaluator?.available) || 0; this.evaluatorArtifacts.unavailable = Number(evaluator?.unavailable) || 0;
+    } catch { /* First boot and corrupt snapshots both start at zero. */ }
+  }
+  private persist(): void {
+    if (!this.persistenceFile) return;
+    try {
+      fs.mkdirSync(path.dirname(this.persistenceFile), { recursive: true });
+      fs.writeFileSync(this.persistenceFile, JSON.stringify({ version: 1, runsTotal: this.runsTotal, timeoutsTotal: this.timeoutsTotal, evaluatorArtifacts: this.evaluatorArtifacts, criticalChangeFalseNegatives: this.criticalChangeFalseNegatives, scoutingFallbacks: this.scoutingFallbacks, durationSum: this.durationSum, durationCount: this.durationCount, durationBucketCounts: this.durationBucketCounts }) + '\n');
+    } catch { /* Metrics must never affect job execution. */ }
+  }
 
   setQueuePending(count: number): void { this.queuePending = Math.max(0, count); }
   setRunningJobs(count: number): void { this.runningJobs = Math.max(0, count); }
-  incRunSuccess(): void { this.runsTotal.success += 1; }
-  incRunFailure(): void { this.runsTotal.failure += 1; }
-  incTimeout(): void { this.timeoutsTotal += 1; }
+  incRunSuccess(): void { this.runsTotal.success += 1; this.persist(); }
+  incRunFailure(): void { this.runsTotal.failure += 1; this.persist(); }
+  incTimeout(): void { this.timeoutsTotal += 1; this.persist(); }
   incAdmissionRejection(reason: string): void {
     const normalized = reason.replace(/[^a-zA-Z0-9_-]/g, '_') || 'unknown';
     this.admissionRejections.set(normalized, (this.admissionRejections.get(normalized) || 0) + 1);
   }
-  observeEvaluatorArtifact(available: boolean): void { this.evaluatorArtifacts[available ? 'available' : 'unavailable'] += 1; }
+  observeEvaluatorArtifact(available: boolean): void { this.evaluatorArtifacts[available ? 'available' : 'unavailable'] += 1; this.persist(); }
+  incCriticalChangeFalseNegative(): void { this.criticalChangeFalseNegatives += 1; this.persist(); }
+  incScoutingFallback(): void { this.scoutingFallbacks += 1; this.persist(); }
   incGoalCheckFailure(reason: string): void {
     const normalized = reason.replace(/[^a-zA-Z0-9_-]/g, '_') || 'unknown';
     this.goalCheckFailures.set(normalized, (this.goalCheckFailures.get(normalized) || 0) + 1);
@@ -38,6 +72,7 @@ class MetricsRegistry {
         break;
       }
     }
+    this.persist();
   }
 
   renderPrometheus(): string {
@@ -83,6 +118,12 @@ class MetricsRegistry {
     lines.push('# TYPE kaseki_goal_check_failures_total counter');
     if (this.goalCheckFailures.size === 0) lines.push('kaseki_goal_check_failures_total{reason="none"} 0');
     else Array.from(this.goalCheckFailures.entries()).sort(([a], [b]) => a.localeCompare(b)).forEach(([reason, count]) => lines.push(`kaseki_goal_check_failures_total{reason="${reason}"} ${count}`));
+    lines.push('# HELP kaseki_critical_change_false_negatives_total Terminal critical-change failures that still produced a non-empty diff.');
+    lines.push('# TYPE kaseki_critical_change_false_negatives_total counter');
+    lines.push(`kaseki_critical_change_false_negatives_total ${this.criticalChangeFalseNegatives}`);
+    lines.push('# HELP kaseki_scouting_fallbacks_total Runs that used a controller-generated scouting fallback.');
+    lines.push('# TYPE kaseki_scouting_fallbacks_total counter');
+    lines.push(`kaseki_scouting_fallbacks_total ${this.scoutingFallbacks}`);
 
     lines.push('# HELP kaseki_admission_rejections_total Total number of run submissions rejected before scheduler admission.');
     lines.push('# TYPE kaseki_admission_rejections_total counter');

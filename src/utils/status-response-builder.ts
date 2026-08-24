@@ -10,6 +10,7 @@ import {
   extractQualityFailureReason,
   extractGoalCheckFailureReason,
 } from '../instance-state-derivation';
+import { classifyFailure } from '../instance-failure-extraction';
 import type { ResultCache } from '../result-cache';
 import { CachedArtifactReader } from './cached-artifact-reader';
 import { TaskProgressCalculator } from './task-progress-calculator';
@@ -84,7 +85,8 @@ export class StatusResponseBuilder {
       status: job.status,
       completedAt: this.metadataHelper.resolveCompletedAt(job, metadata),
       exitCode: exitCode ?? undefined,
-      failureClass: job.failureClass,
+      failureClass: job.failureClass || classifyFailure(metadata, exitCode ?? null),
+      failedCommand: this.metadataHelper.stringField(metadata, 'failed_command') || undefined,
       validationFailureReason: validationReason ?? undefined,
       validationAllowlistFailureReason: validationAllowlistReason ?? undefined,
       qualityFailureReason: qualityReason ?? undefined,
@@ -104,6 +106,7 @@ export class StatusResponseBuilder {
     this.addDiagnosticSummary(response, job);
     this.addGoalCheckInfo(response, metadata);
     this.addRunEvaluationInfo(response, metadata);
+    this.addContractTelemetry(response, metadata);
     this.addEfficiencyPolicy(response, runDir);
 
     if (job.status === 'failed' && !response.error && response.diagnosticSummary?.primaryReason) {
@@ -111,6 +114,20 @@ export class StatusResponseBuilder {
     }
 
     return response;
+  }
+
+  private addContractTelemetry(response: StatusResponse, metadata: Record<string, unknown>): void {
+    const runDir = response.resultDir || path.join(this.config.resultsDir, response.id);
+    try {
+      const contract = JSON.parse(fs.readFileSync(path.join(runDir, 'critical-change-expectations.json'), 'utf8')) as Record<string, unknown>;
+      response.criticalChangeContract = {
+        source: contract.source_artifacts,
+        expectedFiles: Array.isArray(contract.required_files) ? contract.required_files.filter((v): v is string => typeof v === 'string') : [],
+        downgradedFiles: Array.isArray(contract.downgraded_required_files) ? contract.downgraded_required_files.filter((v): v is string => typeof v === 'string') : [],
+        retryCount: Number(metadata.coding_attempts ?? metadata.goal_check_attempts ?? 0),
+      };
+      response.criticalChangeContract.changedFiles = fs.readFileSync(path.join(runDir, 'changed-files.txt'), 'utf8').split(/\r?\n/).filter(Boolean);
+    } catch { /* Optional telemetry is absent for older runs. */ }
   }
 
   private addEfficiencyPolicy(response: StatusResponse, runDir: string): void {

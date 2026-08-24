@@ -25,6 +25,7 @@ setup_case() {
   EXPECTED_GOAL_CHECK_ATTEMPTS="$7"
   EXPECTED_FAILED_COMMAND="$8"
   KASEKI_ALLOW_EMPTY_DIFF_CASE="$9"
+  TASK_PROMPT_CASE="${10:-inspect then code}"
 
   CASE_DIR="$TMP_ROOT/$CASE_NAME"
   FAKE_REPO="$CASE_DIR/fake-repo"
@@ -36,7 +37,7 @@ setup_case() {
   RUN_LOG="$CASE_DIR/kaseki-run.log"
   CODING_ACTION="${CODING_ACTION//__WORKSPACE_REPO__/$WORKSPACE_REPO}"
 
-  mkdir -p "$FAKE_REPO/deps/fake-dep" "$FAKE_BIN" "$RESULTS_DIR" "$WORKSPACE_REPO" "$APP_LIB" "$CASE_DIR/scripts" "$CASE_DIR/scripts/lib" || fail "failed to create directories for $CASE_NAME"
+  mkdir -p "$FAKE_REPO/deps/fake-dep" "$FAKE_REPO/docs" "$FAKE_BIN" "$RESULTS_DIR" "$WORKSPACE_REPO" "$APP_LIB" "$CASE_DIR/scripts" "$CASE_DIR/scripts/lib" || fail "failed to create directories for $CASE_NAME"
   cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$CASE_DIR/scripts/allowlist-helper.sh" || fail "failed to copy allowlist helper"
   if [ -f "$REPO_ROOT/scripts/scouting-allowlist.js" ]; then
     cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$CASE_DIR/scripts/scouting-allowlist.js" || fail "failed to copy scouting allowlist"
@@ -63,8 +64,10 @@ JSON
   printf 'initial other\n' > "$FAKE_REPO/other.txt" || fail "failed other"
   mkdir -p "$FAKE_REPO/tests" || fail "failed tests dir"
   printf 'initial test\n' > "$FAKE_REPO/tests/target.test.js" || fail "failed test file"
+  printf 'getting started\n' > "$FAKE_REPO/docs/GETTING_STARTED.md" || fail "failed docs fixture"
+  printf 'troubleshooting\n' > "$FAKE_REPO/docs/TROUBLESHOOTING_DEPLOYMENT.md" || fail "failed docs fixture"
   git -C "$FAKE_REPO" init -q -b main || fail "git init failed"
-  git -C "$FAKE_REPO" add package.json package-lock.json deps/fake-dep/package.json target.txt other.txt tests/target.test.js || fail "git add failed"
+  git -C "$FAKE_REPO" add package.json package-lock.json deps/fake-dep/package.json target.txt other.txt tests/target.test.js docs || fail "git add failed"
   git -C "$FAKE_REPO" -c user.email=kaseki-test@example.invalid -c user.name="Kaseki Test" commit -q -m initial || fail "git commit failed"
 
   cat > "$FAKE_BIN/pi" <<EOF_PI || fail "failed fake pi"
@@ -110,7 +113,7 @@ EOF_VALIDATION_FILTER
   chmod +x "$FAKE_BIN"/* || fail "failed chmod fake bin"
 
   set +e
-  env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspect then code" \
+  env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="$TASK_PROMPT_CASE" \
     KASEKI_PROVIDER=openrouter OPENROUTER_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off KASEKI_GOAL_CHECK_MAX_RETRIES=1 KASEKI_HASHLINE_EDITS=0 KASEKI_BASELINE_VALIDATION_ENABLED=0 \
     KASEKI_WORKSPACE_DIR="$CASE_DIR" \
     KASEKI_DEPENDENCY_CACHE_DIR="$CASE_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$CASE_DIR/image-cache" \
@@ -185,5 +188,26 @@ present_expectation='{"task":"inspect","requirements":[],"relevant_files":[],"ob
 setup_case "present" "$present_expectation" "printf 'MAGIC_EXPECTED_STRING\n' > '__WORKSPACE_REPO__/target.txt'" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0
 grep -q 'verification passed' "$RESULTS_DIR/critical-change-verification.log" || fail "present case did not pass verification"
 grep -q '^goal-check$' "$PI_CALLS" || fail "present case did not invoke goal-check"
+
+# Recent production regressions: a scout may name a non-existent root file
+# while the real documentation lives under docs/.  Those suggestions must be
+# preserved as warnings, never terminal exact-path requirements.
+run264_expectation='{"critical_change_expectations":{"required_files":["GETTING_STARTED.md"],"forbidden_empty_diff":true}}'
+setup_case "run-264-path-alias" "$run264_expectation" "printf 'updated\n' > '__WORKSPACE_REPO__/docs/GETTING_STARTED.md" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0
+node - "$RESULTS_DIR/critical-change-expectations.json" <<'NODE' || fail "run-264 did not downgrade unverified root path"
+const x = JSON.parse(require('node:fs').readFileSync(process.argv[2], 'utf8'));
+if (x.required_files.includes('GETTING_STARTED.md') || !x.downgraded_required_files.includes('GETTING_STARTED.md')) throw new Error(JSON.stringify(x));
+NODE
+
+run267_expectation='{"critical_change_expectations":{"required_files":["docs/DEPLOYMENT_TROUBLESHOOTING.md"],"forbidden_empty_diff":true}}'
+setup_case "run-267-renamed-doc" "$run267_expectation" "printf 'updated\n' > '__WORKSPACE_REPO__/docs/TROUBLESHOOTING_DEPLOYMENT.md" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0
+
+# The fallback must not convert environment-variable prose or directory terms
+# from the original prompt into required files (production run 265).
+setup_case "run-265-fallback-prose" "__NO_SCOUTING_ARTIFACT__" "printf 'changed\n' > '__WORKSPACE_REPO__/target.txt" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0 "Configure LLM_GATEWAY_URL/LLM_GATEWAY_API_KEY_FILE and files/scripts."
+node - "$RESULTS_DIR/critical-change-expectations.json" <<'NODE' || fail "run-265 fallback retained prose as paths"
+const x = JSON.parse(require('node:fs').readFileSync(process.argv[2], 'utf8'));
+if (x.required_files.length || x.downgraded_required_files?.length) throw new Error(JSON.stringify(x));
+NODE
 
 echo "PASS: $TEST_NAME"

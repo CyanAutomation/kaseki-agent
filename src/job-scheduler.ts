@@ -144,6 +144,7 @@ export class JobScheduler {
     persistenceManager?: JobPersistenceManager,
   ) {
     this.config = config;
+    metricsRegistry.configurePersistence(path.join(config.resultsDir, '.kaseki-api-metrics.json'));
     this.logger = createEventLogger('job-scheduler');
     this.webhookManager = webhookManager;
     this.failureArtifactWriter = new FailureArtifactWriter(config.resultsDir);
@@ -1224,6 +1225,9 @@ export class JobScheduler {
       if (metadata.run_evaluation_enabled === true) metricsRegistry.observeEvaluatorArtifact(warning.length === 0);
       const reason = String(metadata.goal_check_failure_reason || metadata.goal_check_evaluation_warning || '');
       if (/goal_check_(artifact_missing|failed_exit_124|evaluator_unavailable)/.test(reason)) metricsRegistry.incGoalCheckFailure(reason);
+      if (metadata.failed_command === 'critical change verification' && fs.existsSync(path.join(resultDir, 'git.diff')) && fs.statSync(path.join(resultDir, 'git.diff')).size > 0) metricsRegistry.incCriticalChangeFalseNegative();
+      const contract = JSON.parse(fs.readFileSync(path.join(resultDir, 'critical-change-expectations.json'), 'utf8')) as { source_artifacts?: { scouting_fallback?: boolean } };
+      if (contract.source_artifacts?.scouting_fallback) metricsRegistry.incScoutingFallback();
     } catch {
       // Metrics must never interfere with finalization or artifact retention.
     }
