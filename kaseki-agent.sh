@@ -2554,16 +2554,14 @@ const goal = readJson(goalPath);
 const scouting = readJson(scoutingPath);
 const explicit = firstContract(scouting, goal);
 const repoRoot = process.env.KASEKI_WORKSPACE_DIR ? path.resolve(process.env.KASEKI_WORKSPACE_DIR, 'repo') : '';
-function verifiedRepoFile(file) {
+function validRepoFilePath(file) {
   if (!repoRoot || !/^[A-Za-z0-9_@.+,-]+(?:\/[A-Za-z0-9_@.+,-]+)*$/.test(file)) return false;
-  try {
-    const resolved = path.resolve(repoRoot, file);
-    return resolved.startsWith(`${repoRoot}${path.sep}`) && fs.statSync(resolved).isFile();
-  } catch { return false; }
+  const resolved = path.resolve(repoRoot, file);
+  return resolved.startsWith(`${repoRoot}${path.sep}`);
 }
 const requestedFiles = removePlaceholders([...new Set(strings(explicit.required_files || explicit.requiredFiles))]);
-const requiredFiles = requestedFiles.filter(verifiedRepoFile);
-const downgradedFiles = requestedFiles.filter(file => !verifiedRepoFile(file));
+const requiredFiles = requestedFiles.filter(validRepoFilePath);
+const downgradedFiles = requestedFiles.filter(file => !validRepoFilePath(file));
 const requiredSearchStrings = removePlaceholders([...new Set(strings(explicit.required_search_strings || explicit.requiredSearchStrings || explicit.required_diff_markers || explicit.requiredDiffMarkers))]);
 const explicitForbidden = normalizeBool(explicit.forbidden_empty_diff ?? explicit.forbiddenEmptyDiff);
 const forbiddenEmptyDiff = explicitForbidden === undefined ? allowEmptyDiff !== '1' : explicitForbidden;
@@ -2577,8 +2575,8 @@ const artifact = {
   },
   ...(scoutingFallback ? { fallback_reason: String(scouting.fallback_reason || 'scouting_fallback') } : {}),
   required_files: requiredFiles,
-  // Retain non-enforceable scout suggestions for operators without turning a
-  // harmless path mismatch into a terminal false negative.
+  // Retain syntactically unsafe scout suggestions for operators. Valid paths
+  // remain enforceable even when the coding phase is expected to create them.
   ...(downgradedFiles.length ? { downgraded_required_files: downgradedFiles, contract_warnings: ['unverified_required_files_downgraded'] } : {}),
   required_search_strings: requiredSearchStrings,
   forbidden_empty_diff: forbiddenEmptyDiff,
