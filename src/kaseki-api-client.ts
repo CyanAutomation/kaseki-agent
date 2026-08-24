@@ -27,10 +27,20 @@ const StructuredProgressSchema = z.object({
   timestampEstimated: z.boolean().optional(),
 });
 
+const CriticalChangeContractSchema = z.object({
+  source: z.unknown().optional(),
+  expectedFiles: z.array(z.string()),
+  downgradedFiles: z.array(z.string()),
+  changedFiles: z.array(z.string()).optional(),
+  retryCount: z.number(),
+});
+
 const StatusResponseSchema = z.object({
   id: z.string(),
   status: z.enum(['queued', 'running', 'completed', 'failed']),
   failureClass: z.string().optional(),
+  failedCommand: z.string().optional(),
+  criticalChangeContract: CriticalChangeContractSchema.optional(),
   validationFailureReason: z.string().optional(),
   validationAllowlistFailureReason: z.string().optional(),
   qualityFailureReason: z.string().optional(),

@@ -22,8 +22,9 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
   const tokenEvidence = aggregateTokenUsage(snapshot.summaries);
   const phaseRetries = providerRetryCounts(snapshot);
   const evaluationExit = number(metadata.run_evaluation_exit_code);
+  const evaluationWarning = String(metadata.run_evaluation_warning ?? '').trim();
   const evaluatorAvailable = Boolean(evaluation) && !(Number.isFinite(evaluationExit) && evaluationExit !== 0)
-    && !String(metadata.run_evaluation_warning ?? '').trim();
+    && (!evaluationWarning || evaluationWarning === 'run_evaluation_recovered_invalid_artifact');
   return {
     metadata, status: lifecycle(metadata), elapsedSeconds: elapsed, ...tokenEvidence,
     retries: countRetries(snapshot), phaseRetries, validation, quality,

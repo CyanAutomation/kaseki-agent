@@ -189,18 +189,20 @@ setup_case "present" "$present_expectation" "printf 'MAGIC_EXPECTED_STRING\n' > 
 grep -q 'verification passed' "$RESULTS_DIR/critical-change-verification.log" || fail "present case did not pass verification"
 grep -q '^goal-check$' "$PI_CALLS" || fail "present case did not invoke goal-check"
 
-# Recent production regressions: a scout may name a non-existent root file
-# while the real documentation lives under docs/.  Those suggestions must be
-# preserved as warnings, never terminal exact-path requirements.
-run264_expectation='{"critical_change_expectations":{"required_files":["GETTING_STARTED.md"],"forbidden_empty_diff":true}}'
-setup_case "run-264-path-alias" "$run264_expectation" "printf 'updated\n' > '__WORKSPACE_REPO__/docs/GETTING_STARTED.md" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0
-node - "$RESULTS_DIR/critical-change-expectations.json" <<'NODE' || fail "run-264 did not downgrade unverified root path"
+# A valid required path remains enforceable when the task must create it.
+new_file_expectation='{"critical_change_expectations":{"required_files":["docs/new-guide.md"],"forbidden_empty_diff":true}}'
+setup_case "required-new-file" "$new_file_expectation" "printf 'updated\n' > '__WORKSPACE_REPO__/other.txt" 8 $'goal-setting\nscouting\ncoding\ncoding' false 0 "critical change verification" 1
+node - "$RESULTS_DIR/critical-change-expectations.json" <<'NODE' || fail "required-new-file did not retain the create-file expectation"
 const x = JSON.parse(require('node:fs').readFileSync(process.argv[2], 'utf8'));
-if (x.required_files.includes('GETTING_STARTED.md') || !x.downgraded_required_files.includes('GETTING_STARTED.md')) throw new Error(JSON.stringify(x));
+if (!x.required_files.includes('docs/new-guide.md') || x.downgraded_required_files?.includes('docs/new-guide.md')) throw new Error(JSON.stringify(x));
 NODE
 
-run267_expectation='{"critical_change_expectations":{"required_files":["docs/DEPLOYMENT_TROUBLESHOOTING.md"],"forbidden_empty_diff":true}}'
-setup_case "run-267-renamed-doc" "$run267_expectation" "printf 'updated\n' > '__WORKSPACE_REPO__/docs/TROUBLESHOOTING_DEPLOYMENT.md" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0
+unsafe_path_expectation='{"critical_change_expectations":{"required_files":["../outside.md"],"forbidden_empty_diff":true}}'
+setup_case "unsafe-required-path" "$unsafe_path_expectation" "printf 'updated\n' > '__WORKSPACE_REPO__/target.txt" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0
+node - "$RESULTS_DIR/critical-change-expectations.json" <<'NODE' || fail "unsafe-required-path was not downgraded"
+const x = JSON.parse(require('node:fs').readFileSync(process.argv[2], 'utf8'));
+if (x.required_files.includes('../outside.md') || !x.downgraded_required_files.includes('../outside.md')) throw new Error(JSON.stringify(x));
+NODE
 
 # The fallback must not convert environment-variable prose or directory terms
 # from the original prompt into required files (production run 265).
