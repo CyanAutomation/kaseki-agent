@@ -40,6 +40,36 @@ describe('run scorecard', () => {
     expect(RunScorecardSchema.safeParse(card).success).toBe(true);
   });
 
+  test('treats a recovered evaluator retry as available', () => {
+    const evidence = collectEvidence({
+      json: {
+        'metadata.json': { run_evaluation_exit_code: 0, run_evaluation_warning: 'run_evaluation_recovered_invalid_artifact' },
+        'run-evaluation.json': { score: 95 },
+      },
+      text: {}, summaries: [],
+    });
+
+    expect(evidence.evaluatorAvailable).toBe(true);
+  });
+
+  test('caps an unavailable evaluator below A while preserving a B score', () => {
+    const evidence = collectEvidence({
+      json: {
+        'metadata.json': { instance: 'unavailable-evaluator', exit_code: 0, quality_exit_code: 0, run_evaluation_warning: 'run_evaluation_unavailable' },
+        'goal-check.json': { met: true },
+        'run-evaluation.json': { score: 100, contradictions: [] },
+        'timings-manifest.json': { validation_timings: [{ exit_code: 0, elapsed_seconds: 1 }], stage_timings: [{ elapsed_seconds: 1 }] },
+      },
+      text: { 'changed-files.txt': 'src/a.ts\n', 'git.diff': '+change\n' },
+      summaries: [{ phase: 'coding', request_id: 'one', usage: { input: 1, output: 1 } }],
+    });
+    const card = buildScorecard(evidence, normalizeConfig({}), new Date('2026-01-01T00:00:00Z'));
+
+    expect(card.overall_score).toBeGreaterThanOrEqual(80);
+    expect(card.overall_score).toBeLessThanOrEqual(89);
+    expect(card.grade).not.toBe('A');
+  });
+
   test('reads aggregate phase-summary token fields', () => {
     const evidence = collectEvidence({
       json: { 'metadata.json': { exit_code: 0, quality_exit_code: 0 } }, text: {},
