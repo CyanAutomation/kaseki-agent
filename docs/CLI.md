@@ -481,7 +481,7 @@ done
 
 ### Pattern 4: Combined Status + Report
 
-Fetch both status and a detailed report together for complete visibilityand context about a run's health.
+Fetch both status and a detailed report together for complete visibility and context about a run's health.
 
 ```bash
 #!/bin/bash
