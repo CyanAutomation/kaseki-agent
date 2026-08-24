@@ -4,6 +4,16 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.130.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.130.3...v1.130.4) (2026-08-24)
+
+
+### Bug Fixes
+
+* address run contract review feedback ([7ced637](https://github.com/CyanAutomation/kaseki-agent/commit/7ced63700cf44bda957c2e08df1de05025588a88))
+* harden run contract and telemetry ([bcd9e3a](https://github.com/CyanAutomation/kaseki-agent/commit/bcd9e3a45b196728562cb1bbc40121904c3ab600))
+* harden run contract and telemetry ([#1283](https://github.com/CyanAutomation/kaseki-agent/issues/1283)) ([b81798f](https://github.com/CyanAutomation/kaseki-agent/commit/b81798f0c6e54c76342c7ee1f77e326e61375a51))
+* preserve create-file expectations, treat recovered evaluator as available, and expose contract telemetry ([#1284](https://github.com/CyanAutomation/kaseki-agent/issues/1284)) ([6d8f291](https://github.com/CyanAutomation/kaseki-agent/commit/6d8f291c046b9e0b62172b70ab31ea28d1d861be))
+
 ## [1.130.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.130.2...v1.130.3) (2026-08-23)
 
 
