@@ -21,6 +21,9 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
   const quality = statusFrom(metadata, ['quality_exit_code', 'quality_exit', 'quality_status'], object(metadata.phases)?.quality_gates);
   const tokenEvidence = aggregateTokenUsage(snapshot.summaries);
   const phaseRetries = providerRetryCounts(snapshot);
+  const evaluationExit = number(metadata.run_evaluation_exit_code);
+  const evaluatorAvailable = Boolean(evaluation) && !(Number.isFinite(evaluationExit) && evaluationExit !== 0)
+    && !String(metadata.run_evaluation_warning ?? '').trim();
   return {
     metadata, status: lifecycle(metadata), elapsedSeconds: elapsed, ...tokenEvidence,
     retries: countRetries(snapshot), phaseRetries, validation, quality,
@@ -28,7 +31,7 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
     goalCheckFailed: String(metadata.failed_command ?? '').toLowerCase() === 'goal check'
       || String(metadata.goal_check_failure_reason ?? '').trim().length > 0,
     changedFiles: (snapshot.text['changed-files.txt'] ?? '').split(/\r?\n/).filter(Boolean).length,
-    diffBytes: Buffer.byteLength(snapshot.text['git.diff'] ?? ''), evaluation,
+    diffBytes: Buffer.byteLength(snapshot.text['git.diff'] ?? ''), evaluation, evaluatorAvailable,
     present: [...Object.keys(snapshot.json), ...Object.keys(snapshot.text)],
   };
 }

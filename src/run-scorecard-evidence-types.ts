@@ -23,5 +23,6 @@ export interface Evidence {
   changedFiles: number;
   diffBytes: number;
   evaluation?: Record<string, unknown>;
+  evaluatorAvailable: boolean;
   present: string[];
 }
