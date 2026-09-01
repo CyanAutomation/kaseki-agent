@@ -3196,6 +3196,7 @@ const controllerPage = String.raw`<!doctype html>
               setOutputBody(JSON.stringify({
                 status: 'Validation successful',
                 checks: payload.checks,
+                selectedValidationCommands: payload.selectedValidationCommands || [],
                 estimatedDurationSeconds: payload.estimatedDurationSeconds,
               }, null, 2));
             } else if (response.ok && payload && payload.isValid === false) {

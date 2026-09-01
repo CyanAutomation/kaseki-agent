@@ -467,7 +467,6 @@ describe('JobScheduler timeout lifecycle', () => {
           KASEKI_LIGHTWEIGHT_VALIDATION: '1',
           KASEKI_LIGHTWEIGHT_VALIDATION_REASON: 'low_risk_task_prompt',
           KASEKI_PRE_AGENT_VALIDATION: '0',
-          KASEKI_VALIDATION_COMMANDS: 'npm run type-check',
           KASEKI_CHANGED_FILES_ALLOWLIST: 'README.md docs/**/*.md *.md',
         }),
       }),

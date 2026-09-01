@@ -292,6 +292,20 @@ clear_provider_error() {
   PROVIDER_ERROR_RECOVERY_JSON=""
 }
 
+# A retry can recover a transient provider failure. Preserve the retry count
+# and primary-error JSON for audit/telemetry, but clear the active error
+# fields so later terminal metadata cannot report a recovered request as the
+# reason the whole run failed.
+clear_active_provider_error_after_recovery() {
+  PROVIDER_ERROR_TYPE=""
+  PROVIDER_ERROR_PHASE=""
+  PROVIDER_ERROR_PROVIDER=""
+  PROVIDER_ERROR_API=""
+  PROVIDER_ERROR_MODEL=""
+  PROVIDER_ERROR_MESSAGE=""
+  PROVIDER_ERROR_RETRYABLE=""
+}
+
 # Record provider health history for trend tracking
 record_provider_health() {
   local provider="$1"
@@ -836,6 +850,7 @@ Retry request identity: $KASEKI_INFERENCE_REQUEST_ID. Treat this as a fresh infe
       
       if [ "$pi_exit" -eq 0 ]; then
         PROVIDER_ERROR_RETRY_RESULT="success"
+        clear_active_provider_error_after_recovery
         provider_retry_emit_progress "$phase_name" "provider retry succeeded (attempt 2/2)"
         printf '[RETRY SUCCESS] Provider error resolved on retry in %s phase (correlation_id: %s)\n' \
           "$phase_name" "$KASEKI_INFERENCE_REQUEST_ID" >&2
