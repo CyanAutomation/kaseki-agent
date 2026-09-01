@@ -447,6 +447,8 @@ export interface ValidationResponse {
   checks: ValidationCheck[];
   warnings: string[];
   errors: string[];
+  /** Commands resolved from the target repository's package.json. */
+  selectedValidationCommands?: string[];
   estimatedDurationSeconds?: number;
 }
 

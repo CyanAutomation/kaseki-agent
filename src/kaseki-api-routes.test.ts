@@ -3692,6 +3692,32 @@ describe('kaseki-api-routes status artifact hints', () => {
     }
   });
 
+  test('analysis uses terminal failure validation status over earlier successful timings', async () => {
+    const jobId = 'kaseki-analysis-terminal-validation-failure';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'validation-timings.tsv'), 'command\texit\telapsed\nnpm run build\t0\t3\n');
+    fs.writeFileSync(path.join(jobDir, 'failure.json'), JSON.stringify({ validation_exit_code: 1 }));
+
+    const scheduler = createMockScheduler({
+      [jobId]: { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir } as any,
+    });
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, createTestConfig(resultsDir));
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/analysis`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      expect(response.status).toBe(200);
+      expect((await response.json() as any).validation).toEqual({
+        passed: false,
+        commandResults: [{ command: 'npm run build', exitCode: 0, elapsed: 3 }],
+      });
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
   test('runs list includes terminal exit code from result metadata when scheduler job lacks it', async () => {
     const jobId = 'kaseki-list-exit-code';
     const jobDir = path.join(resultsDir, jobId);

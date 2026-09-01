@@ -255,6 +255,29 @@ function validateSuggestedAllowlist(suggestedAllowlist: unknown, errors: Validat
   }
 }
 
+/**
+ * Suggested allowlists are advisory. Models commonly include explanatory prose
+ * next to otherwise-valid findings; dropping only unusable patterns preserves
+ * the structured scouting handoff instead of forcing a full fallback.
+ */
+function normalizeSuggestedAllowlistArtifact(artifact: unknown): unknown {
+  if (!artifact || Array.isArray(artifact) || typeof artifact !== 'object') return artifact;
+  const result = { ...(artifact as Record<string, unknown>) };
+  const suggested = result.suggested_allowlist;
+  if (!suggested || Array.isArray(suggested) || typeof suggested !== 'object') return result;
+  const normalizePatterns = (value: unknown): string[] => Array.isArray(value)
+    ? value.filter((pattern): pattern is string =>
+      isRepoRelativePattern(pattern) && !/^[A-Z][A-Z0-9_]{2,}$/.test(pattern)
+    )
+    : [];
+  result.suggested_allowlist = {
+    ...(suggested as Record<string, unknown>),
+    agent_patterns: normalizePatterns((suggested as Record<string, unknown>).agent_patterns),
+    validation_patterns: normalizePatterns((suggested as Record<string, unknown>).validation_patterns),
+  };
+  return result;
+}
+
 function validateScoutingArtifactObject(artifact: unknown): ValidationResult {
   const errors: ValidationError[] = [];
   const arrayKeys = ['requirements', 'relevant_files', 'observations', 'plan', 'validation', 'risks', 'test_impact'];
@@ -387,6 +410,7 @@ function validateScoutingArtifact(
     return result;
   }
 
+  artifact = normalizeSuggestedAllowlistArtifact(artifact);
   const result = validateScoutingArtifactObject(artifact);
   if (result.status === 'ok' && outputPath) {
     fs.writeFileSync(outputPath, JSON.stringify(artifact, null, 2) + '\n');
@@ -428,7 +452,7 @@ function deriveAllowlistFromScoutingArtifact(artifact: unknown): AllowlistResult
 }
 
 function deriveAllowlistFromScouting(inputPath: string): AllowlistResult {
-  return deriveAllowlistFromScoutingArtifact(readArtifact(inputPath));
+  return deriveAllowlistFromScoutingArtifact(normalizeSuggestedAllowlistArtifact(readArtifact(inputPath)));
 }
 
 function mergeAllowlists(scoutingPatterns = '', userPatterns = ''): string {
