@@ -262,13 +262,34 @@ function addAnalysisValidation(
   analysisWarnings: string[],
   analysisHelper: AnalysisArtifactHelper
 ): void {
+  // failure.json is produced from the terminal worker state. It can report a
+  // failed validation phase after an earlier metadata/timing snapshot recorded
+  // successful commands, so it must win for the summary outcome.
+  const failure = analysisHelper.safelyReadArtifact('failure.json', analysisWarnings, () =>
+    analysisHelper.readFailure(runDir)
+  );
+  const failureValidationExit = typeof failure?.validation_exit_code === 'number'
+    ? failure.validation_exit_code
+    : typeof failure?.validation_exit_code === 'string'
+      ? Number(failure.validation_exit_code)
+      : undefined;
   const validationTimingsContent = analysisHelper.readValidationTimings(runDir);
-  if (!validationTimingsContent) return;
+  if (!validationTimingsContent) {
+    if (Number.isFinite(failureValidationExit) && failureValidationExit !== 0) {
+      response.validation = { passed: false, commandResults: [] };
+    }
+    return;
+  }
 
   const validation = analysisHelper.safelyReadArtifact('validation-timings.tsv', analysisWarnings, () =>
     readValidationTimingSummary(validationTimingsContent, analysisWarnings)
   );
-  if (validation) response.validation = validation;
+  if (!validation) return;
+
+  response.validation = {
+    ...validation,
+    passed: Number.isFinite(failureValidationExit) && failureValidationExit !== 0 ? false : validation.passed,
+  };
 }
 
 function readValidationTimingSummary(

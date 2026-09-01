@@ -32,7 +32,11 @@ function buildHealthCheckPaths(): Record<string, unknown> {
                 schema: {
                   type: 'object',
                   properties: {
-                    status: { type: 'string', enum: ['ok'] }
+                    status: { type: 'string', enum: ['healthy', 'degraded'] },
+                    timestamp: { type: 'string', format: 'date-time' },
+                    queue: { type: 'object' },
+                    dependencyCache: { type: 'object' },
+                    errors: { type: 'array', items: { type: 'string' } },
                   }
                 }
               }
@@ -166,9 +170,12 @@ function buildServiceInfoPaths(
               'application/json': {
                 schema: {
                   type: 'object',
-                  required: ['isValid', 'checks'],
+                  required: ['status', 'checkCount', 'failedChecks', 'checks', 'timestamp'],
                   properties: {
-                    isValid: { type: 'boolean' },
+                    status: { type: 'string', enum: ['ok', 'degraded', 'error'] },
+                    timestamp: { type: 'string', format: 'date-time' },
+                    checkCount: { type: 'integer', minimum: 0 },
+                    failedChecks: { type: 'array', items: { type: 'object' } },
                     checks: {
                       type: 'array',
                       items: {

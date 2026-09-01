@@ -52,6 +52,22 @@ describe('run scorecard', () => {
     expect(evidence.evaluatorAvailable).toBe(true);
   });
 
+  test('gives terminal failure artifacts precedence over optimistic metadata', () => {
+    const evidence = collectEvidence({
+      json: {
+        'metadata.json': { lifecycle_status: 'failed', validation_exit_code: 0, run_evaluation_exit_code: 0 },
+        'failure.json': { validation_exit_code: 1, provider_error_phase: 'run-evaluation' },
+        'run-evaluation.json': { score: 100 },
+      },
+      text: { 'git.diff': '+change\n' }, summaries: [],
+    });
+    const card = buildScorecard(evidence, normalizeConfig({}));
+    expect(evidence.validation).toBe('failed');
+    expect(evidence.evaluatorAvailable).toBe(false);
+    expect(card.phases.validation.outcome).toBe('failed');
+    expect(card.phases.run_evaluation.outcome).toBe('failed');
+  });
+
   test('caps an unavailable evaluator below A while preserving a B score', () => {
     const evidence = collectEvidence({
       json: {
