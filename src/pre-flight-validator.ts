@@ -93,6 +93,18 @@ export function validateAllowlistPatternMatching(
   return { isValid: warnings.length === 0, warnings, testResults };
 }
 
+/** Pick commands that actually exist in a repository package manifest. */
+export function selectPackageValidationCommands(packageJson: unknown): string[] {
+  const scripts = packageJson && typeof packageJson === 'object' && !Array.isArray(packageJson)
+    ? (packageJson as { scripts?: unknown }).scripts
+    : undefined;
+  if (!scripts || typeof scripts !== 'object' || Array.isArray(scripts)) return [];
+  const available = scripts as Record<string, unknown>;
+  return ['build', 'type-check', 'check', 'test']
+    .filter((script) => typeof available[script] === 'string' && available[script].trim())
+    .map((script) => `npm run ${script}`);
+}
+
 /**
  * Pre-flight validator performs checks on job requests before submission.
  * Helps catch configuration errors early and provides better diagnostics.
@@ -176,6 +188,9 @@ export class PreFlightValidator {
     const errors: string[] = [];
     const ref = request.ref || 'main';
     const gitResult = await this.lsRemoteHeadsAndTags(request.repoUrl);
+    const selectedValidationCommands = request.validationCommands?.length
+      ? request.validationCommands
+      : await this.resolveRepositoryValidationCommands(request.repoUrl, ref);
 
     // Check 1: Git repository reachability
     const reachableCheck = this.checkGitReachability(request.repoUrl, gitResult);
@@ -202,9 +217,10 @@ export class PreFlightValidator {
       warnings.push(sizeCheck.message);
     }
 
-    // Check 4: Validation commands syntax
-    if (request.validationCommands && request.validationCommands.length > 0) {
-      const cmdCheck = this.validateCommandsSyntax(request.validationCommands);
+    // Check 4: Validate concrete commands discovered from package.json when
+    // the caller did not supply an explicit command list.
+    if (selectedValidationCommands.length > 0) {
+      const cmdCheck = this.validateCommandsSyntax(selectedValidationCommands);
       checks.push(cmdCheck);
       if (cmdCheck.status === 'fail') {
         errors.push(cmdCheck.message);
@@ -242,8 +258,25 @@ export class PreFlightValidator {
       checks,
       warnings,
       errors,
+      ...(selectedValidationCommands.length > 0 ? { selectedValidationCommands } : {}),
       estimatedDurationSeconds: isValid ? this.estimateDuration(request) : undefined,
     };
+  }
+
+  private async resolveRepositoryValidationCommands(repoUrl: string, ref: string): Promise<string[]> {
+    const match = /^https:\/\/github\.com\/([^/]+)\/([^/#]+?)(?:\.git)?\/?$/.exec(repoUrl.trim());
+    if (!match) return [];
+    const [, owner, repository] = match;
+    try {
+      const response = await fetch(
+        `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/${encodeURIComponent(ref)}/package.json`,
+        { signal: AbortSignal.timeout(this.gitCheckTimeoutMs) },
+      );
+      if (!response.ok) return [];
+      return selectPackageValidationCommands(await response.json());
+    } catch {
+      return [];
+    }
   }
 
   private getCacheKey(request: RunRequest): string {
@@ -301,6 +334,9 @@ export class PreFlightValidator {
       checks: response.checks.map((check) => ({ ...check })),
       warnings: [...response.warnings],
       errors: [...response.errors],
+      ...(response.selectedValidationCommands
+        ? { selectedValidationCommands: [...response.selectedValidationCommands] }
+        : {}),
     };
   }
 

@@ -456,7 +456,8 @@ export class JobScheduler {
     if (validationCommands) {
       env.KASEKI_VALIDATION_COMMANDS = validationCommands.join(';');
     } else if (isLowRiskTaskPrompt(job.request.taskPrompt)) {
-      env.KASEKI_VALIDATION_COMMANDS = 'npm run type-check';
+      // Select commands after the worker has cloned package.json. Hard-coding
+      // type-check breaks repositories that expose only build/check scripts.
       env.KASEKI_PRE_AGENT_VALIDATION = '0';
       env.KASEKI_LIGHTWEIGHT_VALIDATION = '1';
       env.KASEKI_LIGHTWEIGHT_VALIDATION_REASON = 'low_risk_task_prompt';
@@ -1265,6 +1266,7 @@ export class JobScheduler {
     }
     const result = execSubprocess('docker', [
       'logs',
+      '--timestamps',
       '--tail',
       String(lines),
       id,

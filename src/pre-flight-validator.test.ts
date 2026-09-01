@@ -1,4 +1,4 @@
-import { PreFlightValidator, globToRegex, testPathAgainstPatterns, validateAllowlistPatternMatching } from './pre-flight-validator';
+import { PreFlightValidator, globToRegex, selectPackageValidationCommands, testPathAgainstPatterns, validateAllowlistPatternMatching } from './pre-flight-validator';
 import type { RunRequest } from './kaseki-api-types';
 
 const successfulGitResult = {
@@ -15,6 +15,13 @@ describe('PreFlightValidator validation logic', () => {
     delete process.env.KASEKI_PREFLIGHT_CACHE_TTL_SECONDS;
     delete process.env.KASEKI_PREFLIGHT_CACHE_MAX_ENTRIES;
     validator = new PreFlightValidator();
+    jest.spyOn(validator as any, 'resolveRepositoryValidationCommands').mockResolvedValue([]);
+  });
+
+  test('selects only repository scripts that actually exist', () => {
+    expect(selectPackageValidationCommands({ scripts: { build: 'vite build', test: 'vitest' } }))
+      .toEqual(['npm run build', 'npm run test']);
+    expect(selectPackageValidationCommands({ scripts: { lint: 'eslint .' } })).toEqual([]);
   });
 
   describe('validateCommandsSyntax', () => {

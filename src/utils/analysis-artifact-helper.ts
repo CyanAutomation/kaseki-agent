@@ -37,6 +37,27 @@ export class AnalysisArtifactHelper {
   }
 
   /**
+   * Read the terminal failure artifact when present. Its phase exits take
+   * precedence over metadata that may have been written before finalization.
+   */
+  readFailure(runDir: string): Record<string, unknown> | undefined {
+    const failurePath = path.join(runDir, 'failure.json');
+    if (!fs.existsSync(failurePath)) {
+      return undefined;
+    }
+
+    if (this.reader) {
+      const failure = this.reader.readJsonArtifact<Record<string, unknown>>(failurePath);
+      if (failure === null) {
+        throw new Error('Failed to parse failure.json');
+      }
+      return failure;
+    }
+
+    return JSON.parse(fs.readFileSync(failurePath, 'utf-8')) as Record<string, unknown>;
+  }
+
+  /**
    * Read changed-files.txt with optional caching.
    */
   readChangedFiles(runDir: string): string[] | undefined {

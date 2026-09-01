@@ -49,7 +49,7 @@ describe('Scouting allowlist derivation from scouting.json contract', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('rejects numeric suggested_allowlist.validation_patterns entries with a semantic scouting.json contract error', () => {
+  it('drops numeric suggested_allowlist.validation_patterns entries without discarding the handoff', () => {
     const fixturePath = path.resolve('test/fixtures/scouting-invalid-numeric-pattern.json');
     const inPath = path.join(tmpDir, 'scouting.json');
 
@@ -57,20 +57,11 @@ describe('Scouting allowlist derivation from scouting.json contract', () => {
 
     const result = runProductionScoutingAllowlistOrchestration(inPath);
 
-    expect(result.validation.status).toBe('rejected');
-    expect(result.validation.reason_code).toBe('schema_mismatch');
-    expect(result.validation.errors).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        field: 'suggested_allowlist.validation_patterns',
-        expected: 'array of strings',
-        actual: 'array with non-strings',
-        severity: 'warning',
-        suggestion: 'All validation_patterns entries must be strings',
-      }),
-    ]));
+    expect(result.validation.status).toBe('ok');
+    expect(result.source).toBe('default_after_absent_suggestion');
   });
 
-  it('rejects numeric suggested_allowlist.agent_patterns entries with a string-type contract error', () => {
+  it('keeps valid suggested patterns while dropping invalid entries', () => {
     const inPath = path.join(tmpDir, 'scouting-numeric-agent-pattern.json');
     fs.writeFileSync(inPath, JSON.stringify({
       task: 'Update parser',
@@ -85,20 +76,11 @@ describe('Scouting allowlist derivation from scouting.json contract', () => {
 
     const result = runProductionScoutingAllowlistOrchestration(inPath);
 
-    expect(result.validation.status).toBe('rejected');
-    expect(result.validation.reason_code).toBe('schema_mismatch');
-    expect(result.validation.errors).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        field: 'suggested_allowlist.agent_patterns',
-        expected: 'array of strings',
-        actual: 'array with non-strings',
-        severity: 'warning',
-        suggestion: 'All agent_patterns entries must be strings',
-      }),
-    ]));
+    expect(result.validation.status).toBe('ok');
+    expect(result.agentAllowlist).toContain('src/**');
   });
 
-  it('retains the repo-relative-glob diagnostic for invalid validation pattern strings', () => {
+  it('drops prose validation patterns while retaining the structured handoff', () => {
     const inPath = path.join(tmpDir, 'scouting-invalid-validation-glob.json');
     fs.writeFileSync(inPath, JSON.stringify({
       task: 'Update parser',
@@ -113,19 +95,11 @@ describe('Scouting allowlist derivation from scouting.json contract', () => {
 
     const result = runProductionScoutingAllowlistOrchestration(inPath);
 
-    expect(result.validation.status).toBe('rejected');
-    expect(result.validation.reason_code).toBe('schema_mismatch');
-    expect(result.validation.errors).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        field: 'suggested_allowlist.validation_patterns',
-        expected: 'array of repo-relative glob strings',
-        actual: 'array with invalid glob patterns',
-        severity: 'warning',
-      }),
-    ]));
+    expect(result.validation.status).toBe('ok');
+    expect(result.validationAllowlist).toBe(DEFAULT_VALIDATION_ALLOWLIST);
   });
 
-  it('rejects prose allowlist entries before they can restrict the coding agent', () => {
+  it('drops prose allowlist entries before they can restrict the coding agent', () => {
     const inPath = path.join(tmpDir, 'scouting-prose-allowlist.json');
     fs.writeFileSync(inPath, JSON.stringify({
       task: 'Update development documentation',
@@ -140,14 +114,9 @@ describe('Scouting allowlist derivation from scouting.json contract', () => {
 
     const result = runProductionScoutingAllowlistOrchestration(inPath);
 
-    expect(result.validation.status).toBe('rejected');
-    expect(result.validation.errors).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        field: 'suggested_allowlist.agent_patterns',
-        expected: 'array of repo-relative glob strings',
-      }),
-    ]));
-    expect(result.source).toBe('default_after_rejection');
+    expect(result.validation.status).toBe('ok');
+    expect(result.agentAllowlist).toBe(DEFAULT_CHANGED_FILES_ALLOWLIST);
+    expect(result.validationAllowlist).toBe('docs/**');
   });
 
   it('rejects prose appended to a relevant file path', () => {
@@ -170,7 +139,7 @@ describe('Scouting allowlist derivation from scouting.json contract', () => {
   // are merged with KASEKI_CHANGED_FILES_ALLOWLIST/KASEKI_VALIDATION_ALLOWLIST, whose
   // production script defaults are src/lib/parser.ts tests/parser.validation.ts and empty.
   it.each([
-    ['rejected suggested allowlist', () => path.resolve('test/fixtures/scouting-invalid-numeric-pattern.json'), 'default_after_rejection', 'rejected', 'schema_mismatch'],
+    ['sanitized suggested allowlist', () => path.resolve('test/fixtures/scouting-invalid-numeric-pattern.json'), 'default_after_absent_suggestion', 'ok', 'valid'],
     ['absent suggested allowlist', () => {
       const inPath = path.join(tmpDir, 'scouting-without-suggested-allowlist.json');
       fs.writeFileSync(inPath, JSON.stringify({
