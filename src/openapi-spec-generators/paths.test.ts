@@ -719,12 +719,12 @@ describe('OpenAPI Path Builders', () => {
       expect(healthPath.tags).toEqual(['Health & Status']);
     });
 
-    it('GET /health response should return ok status', () => {
+    it('GET /health response should return live health status values', () => {
       const healthPath = (paths['/health'] as Record<string, any>).get;
       const responseSchema = (healthPath.responses['200'].content['application/json'].schema as Record<string, any>)
         .properties.status;
       expect(responseSchema.type).toBe('string');
-      expect(responseSchema.enum).toEqual(['ok']);
+      expect(responseSchema.enum).toEqual(['healthy', 'degraded']);
     });
 
     it('GET /ready should have readiness probe logic and 503 error response', () => {
@@ -776,7 +776,10 @@ describe('OpenAPI Path Builders', () => {
       }));
       const responseProps = (preflightPath.responses['200'].content['application/json'].schema as Record<string, any>)
         .properties;
-      expect(responseProps.isValid.type).toBe('boolean');
+      expect(responseProps.status).toEqual({ type: 'string', enum: ['ok', 'degraded', 'error'] });
+      expect(responseProps.timestamp).toEqual({ type: 'string', format: 'date-time' });
+      expect(responseProps.checkCount).toEqual({ type: 'integer', minimum: 0 });
+      expect(responseProps.failedChecks.type).toBe('array');
       expect(responseProps.checks.type).toBe('array');
       expect(responseProps.containerStartup.description).toContain('boot history');
       expect(responseProps.containerStartup.properties.scope.enum).toEqual(['startup']);
