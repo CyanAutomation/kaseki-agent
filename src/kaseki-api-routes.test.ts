@@ -665,7 +665,7 @@ describe('kaseki-api-routes request aliases', () => {
     }
   });
 
-  test('POST /api/runs accepts snake_case payload aliases', async () => {
+  test('POST /api/runs accepts snake_case payload aliases when the submitted job omits request', async () => {
     const scheduler = createMockScheduler();
     scheduler.submitJob.mockResolvedValue({
       id: 'kaseki-alias',
@@ -692,6 +692,7 @@ describe('kaseki-api-routes request aliases', () => {
       if (res.status !== 202) {
         throw new Error(`Expected 202, got ${res.status}: ${JSON.stringify(body)}`);
       }
+      expect(body).not.toHaveProperty('projectName');
       expect(scheduler.submitJob).toHaveBeenCalledWith(
         expect.objectContaining({
           repoUrl: 'https://github.com/org/repo',
@@ -700,6 +701,47 @@ describe('kaseki-api-routes request aliases', () => {
           publishMode: 'none'
         })
       );
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('POST /api/runs includes projectName from a full submitted job', async () => {
+    const scheduler = createMockScheduler();
+    scheduler.submitJob.mockResolvedValue({
+      id: 'kaseki-project-name',
+      status: 'queued',
+      createdAt: new Date('2026-05-15T00:00:00.000Z'),
+      resultDir: path.join(resultsDir, 'kaseki-project-name'),
+      request: {
+        repoUrl: 'https://github.com/org/repo',
+        ref: 'main',
+        taskPrompt: 'Run a project identity smoke test',
+        publishMode: 'none',
+        projectName: 'restored-project'
+      }
+    });
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repoUrl: 'https://github.com/org/repo',
+          ref: 'main',
+          taskPrompt: 'Run a project identity smoke test',
+          publishMode: 'none',
+          projectName: 'restored-project'
+        })
+      });
+
+      expect(res.status).toBe(202);
+      expect(await res.json()).toEqual(expect.objectContaining({
+        id: 'kaseki-project-name',
+        projectName: 'restored-project'
+      }));
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }
