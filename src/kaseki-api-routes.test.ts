@@ -645,6 +645,7 @@ describe('kaseki-api-routes request aliases', () => {
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
         body: JSON.stringify({
           repo_url: 'https://github.com/org/repo',
+          project_name: 'aliased-project',
           git_ref: 'main',
           task_prompt: 'Run a first-time setup validation smoke test'
         })
@@ -656,6 +657,7 @@ describe('kaseki-api-routes request aliases', () => {
       expect(preFlightValidator.validate).toHaveBeenCalledWith(
         expect.objectContaining({
           repoUrl: 'https://github.com/org/repo',
+          projectName: 'aliased-project',
           ref: 'main',
           taskPrompt: 'Run a first-time setup validation smoke test'
         })
@@ -665,14 +667,15 @@ describe('kaseki-api-routes request aliases', () => {
     }
   });
 
-  test('POST /api/runs accepts snake_case payload aliases when the submitted job omits request', async () => {
+  test('POST /api/runs accepts snake_case payload aliases', async () => {
     const scheduler = createMockScheduler();
-    scheduler.submitJob.mockResolvedValue({
+    scheduler.submitJob.mockImplementation(async request => ({
       id: 'kaseki-alias',
       status: 'queued',
       createdAt: new Date('2026-05-15T00:00:00.000Z'),
-      resultDir: path.join(resultsDir, 'kaseki-alias')
-    });
+      resultDir: path.join(resultsDir, 'kaseki-alias'),
+      request
+    }));
     const config = createTestConfig(resultsDir);
     const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
 
@@ -682,6 +685,7 @@ describe('kaseki-api-routes request aliases', () => {
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
         body: JSON.stringify({
           repo_url: 'https://github.com/org/repo',
+          project_name: 'aliased-project',
           git_ref: 'main',
           task_prompt: 'Run a first-time setup task smoke test',
           publish_mode: 'none'
@@ -692,10 +696,14 @@ describe('kaseki-api-routes request aliases', () => {
       if (res.status !== 202) {
         throw new Error(`Expected 202, got ${res.status}: ${JSON.stringify(body)}`);
       }
-      expect(body).not.toHaveProperty('projectName');
+      expect(body).toEqual(expect.objectContaining({
+        id: 'kaseki-alias',
+        projectName: 'aliased-project'
+      }));
       expect(scheduler.submitJob).toHaveBeenCalledWith(
         expect.objectContaining({
           repoUrl: 'https://github.com/org/repo',
+          projectName: 'aliased-project',
           ref: 'main',
           taskPrompt: 'Run a first-time setup task smoke test',
           publishMode: 'none'
