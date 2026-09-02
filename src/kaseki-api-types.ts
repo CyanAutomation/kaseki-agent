@@ -81,6 +81,7 @@ const RequestTracingSchema = z.object({
  */
 const RunRequestShape = z.object({
   repoUrl: z.string().url('Repository URL must be valid').describe('Git repository URL'),
+  projectName: z.string().min(1).optional().describe('Project name used to identify the run'),
   ref: z.string().min(1).default('main').describe('Git branch/tag/commit'),
   taskPrompt: z.string().min(10).optional().describe('Task prompt for Pi agent'),
   changedFilesAllowlist: z.array(z.string()).optional().describe('Space-separated file patterns'),
@@ -214,6 +215,7 @@ export interface RunResponse {
   createdAt: string; // ISO 8601
   correlationId?: string; // Request correlation ID
   requestId?: string; // Unique request ID
+  projectName?: string; // Caller-provided project identity
   cached?: boolean; // True when returned from an idempotency replay
   completedAt?: string; // ISO 8601 when replaying a terminal run
   exitCode?: number;
@@ -275,6 +277,7 @@ export interface StructuredProgress {
 export interface StatusResponse {
   id: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
+  projectName?: string;
   lifecyclePhase?: 'queued' | 'executing' | 'finalizing' | 'terminal';
   cancellable?: boolean;
   attempt?: {
@@ -603,6 +606,9 @@ export interface RunsListResponse {
     progress?: StructuredProgress;
     phaseOutcome?: StatusResponse['phaseOutcome'];
     diagnosticEntryPoint?: string;
+    correlationId?: string;
+    requestId?: string;
+    projectName?: string;
   }>;
   total: number;
   retention?: {

@@ -94,6 +94,7 @@ describe('kaseki API fast route/service integration', () => {
       },
       body: JSON.stringify({
         repoUrl: 'https://github.com/example/repo',
+        projectName: 'route-contract',
         publishMode: 'none',
         idempotencyKey: '11111111-1111-4111-8111-111111111111',
       }),
@@ -107,9 +108,11 @@ describe('kaseki API fast route/service integration', () => {
       createdAt: '2026-06-18T02:00:00.000Z',
       correlationId: 'corr-route-contract',
       requestId: 'req-route-contract',
+      projectName: 'route-contract',
     });
     expect(scheduler.submitJob).toHaveBeenCalledWith(expect.objectContaining({
       repoUrl: 'https://github.com/example/repo',
+      projectName: 'route-contract',
       publishMode: 'none',
     }));
     expect(scheduler.submitJob).toHaveBeenCalledTimes(1);
@@ -166,7 +169,14 @@ describe('kaseki API fast route/service integration', () => {
 
   test('lists jobs without starting a process-level service', async () => {
     const jobs: MockJob[] = [
-      { id: 'kaseki-queued', status: 'queued' as any, createdAt: new Date('2026-06-18T01:00:00Z') },
+      {
+        id: 'kaseki-queued',
+        status: 'queued' as any,
+        createdAt: new Date('2026-06-18T01:00:00Z'),
+        correlationId: 'corr-list',
+        requestId: 'req-list',
+        request: { repoUrl: 'https://github.com/example/repo', projectName: 'listed-project' } as any,
+      },
       { id: 'kaseki-done', status: 'completed', createdAt: new Date('2026-06-18T00:00:00Z'), exitCode: 0 },
     ];
     const scheduler = createMockScheduler();
@@ -181,7 +191,14 @@ describe('kaseki API fast route/service integration', () => {
     expect(response.status).toBe(200);
     expect(payload.total).toBe(2);
     expect(payload.runs).toEqual([
-      expect.objectContaining({ id: 'kaseki-queued', status: 'queued' as any, createdAt: '2026-06-18T01:00:00.000Z' }),
+      expect.objectContaining({
+        id: 'kaseki-queued',
+        status: 'queued' as any,
+        createdAt: '2026-06-18T01:00:00.000Z',
+        correlationId: 'corr-list',
+        requestId: 'req-list',
+        projectName: 'listed-project',
+      }),
     ]);
   });
 
