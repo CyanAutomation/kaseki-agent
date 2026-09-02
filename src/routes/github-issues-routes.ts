@@ -2,7 +2,7 @@
  * GitHub Issues Routes
  *
  * Provides endpoints for fetching and filtering GitHub issues:
- * - GET /api/github-issues - Fetch filtered issues from a repository
+ * - POST /api/github-issues - Fetch filtered issues from a repository
  */
 
 import { Router, Request, Response } from 'express';
@@ -22,6 +22,12 @@ interface GitHubIssueResponse {
   body: string | null;
   url: string;
   created_at: string;
+}
+
+interface GitHubIssuesResponse {
+  repoUrl: string;
+  issueCount: number;
+  issues: GitHubIssueResponse[];
 }
 
 interface FetchIssuesRequest {
@@ -47,15 +53,19 @@ interface FetchIssuesRequest {
  * }
  *
  * Response:
- * [
- *   {
+ * {
+ *   "repoUrl": "https://github.com/owner/repo",
+ *   "issueCount": 1,
+ *   "issues": [
+ *     {
  *     "number": 123,
  *     "title": "Issue title",
  *     "body": "Issue body",
  *     "url": "https://github.com/owner/repo/issues/123",
  *     "created_at": "2026-05-30T..."
- *   }
- * ]
+ *     }
+ *   ]
+ * }
  */
 export function createGitHubIssuesRoutes(): Router {
   const router = Router();
@@ -126,13 +136,17 @@ export function createGitHubIssuesRoutes(): Router {
       logger.info(`Found ${issues.length} issues matching criteria`);
 
       // Transform response - only include relevant fields
-      const response: GitHubIssueResponse[] = issues.map((issue) => ({
-        number: issue.number,
-        title: issue.title,
-        body: issue.body,
-        url: issue.url,
-        created_at: issue.created_at,
-      }));
+      const response: GitHubIssuesResponse = {
+        repoUrl: `https://github.com/${owner}/${repo}`,
+        issueCount: issues.length,
+        issues: issues.map((issue) => ({
+          number: issue.number,
+          title: issue.title,
+          body: issue.body,
+          url: issue.url,
+          created_at: issue.created_at,
+        })),
+      };
 
       res.status(200).json(response);
     } catch (error) {

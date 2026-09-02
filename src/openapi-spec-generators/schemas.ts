@@ -430,6 +430,11 @@ function buildStatusResponseSchema(): Record<string, unknown> {
         type: 'string',
         description: 'Command or phase that caused the run to fail',
       },
+      prUrl: {
+        type: 'string',
+        format: 'uri',
+        description: 'Published GitHub pull-request URL, when a patch run created one',
+      },
       criticalChangeContract: buildCriticalChangeContractSchema(),
       validationFailureReason: {
         type: 'string',

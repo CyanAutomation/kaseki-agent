@@ -107,6 +107,7 @@ export class StatusResponseBuilder {
     this.addDiagnosticSummary(response, job);
     this.addGoalCheckInfo(response, metadata);
     this.addRunEvaluationInfo(response, metadata);
+    this.addPullRequestInfo(response, metadata);
     this.addContractTelemetry(response, metadata);
     this.addEfficiencyPolicy(response, runDir);
 
@@ -200,6 +201,12 @@ export class StatusResponseBuilder {
       ...(warning ? { warning } : { warning: `run_evaluation_failed_exit_${exitCode}` }),
       ...(Number.isFinite(exitCode) ? { exitCode } : {}),
     };
+  }
+
+  private addPullRequestInfo(response: StatusResponse, metadata: Record<string, unknown>): void {
+    const prUrl = this.metadataHelper.stringField(metadata, 'github_pr_url')
+      || this.metadataHelper.stringField(metadata, 'pr_url');
+    if (prUrl) response.prUrl = prUrl;
   }
 
   private addGoalCheckInfo(response: StatusResponse, metadata: Record<string, unknown>): void {

@@ -126,6 +126,17 @@ describe('StatusResponseBuilder', () => {
       });
     });
 
+    it('surfaces the published pull request URL from terminal metadata', () => {
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => filePath.endsWith('metadata.json'));
+      (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify({
+        github_pr_url: 'https://github.com/CyanAutomation/tako-bako/pull/29',
+      }));
+
+      const response = builder.buildStatus({ id: 'job-pr', status: 'completed' } as Job);
+
+      expect(response.prUrl).toBe('https://github.com/CyanAutomation/tako-bako/pull/29');
+    });
+
     it('surfaces a non-blocking goal-check evaluator warning on a completed run', () => {
       const metadata = {
         goal_check_exit_code: 0,

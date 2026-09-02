@@ -238,6 +238,22 @@ describe('OpenAPI Path Builders', () => {
       ]
     }
   ];
+
+  it('documents the GitHub issues envelope returned by the console route', () => {
+    const paths = buildAllPaths(buildErrorResponseSchema(), buildRunRequestSchema(), buildRunResponseSchema());
+    const schema = (paths['/api/github-issues'] as Record<string, any>).post.responses['200']
+      .content['application/json'].schema;
+
+    expect(schema).toMatchObject({
+      type: 'object',
+      required: ['repoUrl', 'issueCount', 'issues'],
+      properties: {
+        repoUrl: { type: 'string', format: 'uri' },
+        issueCount: { type: 'integer', minimum: 0 },
+        issues: { type: 'array' },
+      },
+    });
+  });
   let errorSchema: Record<string, unknown>;
   let requestSchema: Record<string, unknown>;
   let responseSchema: Record<string, unknown>;
