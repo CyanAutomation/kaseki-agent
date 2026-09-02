@@ -95,7 +95,7 @@ function buildRunResponse(job: Job, cached = false): RunResponse {
     createdAt: job.createdAt.toISOString(),
     correlationId: job.correlationId,
     requestId: job.requestId,
-    projectName: job.request.projectName,
+    projectName: job.request?.projectName,
     cached: cached || undefined,
     completedAt: job.completedAt?.toISOString(),
     exitCode: job.exitCode,
