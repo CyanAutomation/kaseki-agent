@@ -92,7 +92,7 @@ export class StatusResponseBuilder {
       status: job.status,
       completedAt: this.metadataHelper.resolveCompletedAt(job, metadata),
       exitCode: exitCode ?? undefined,
-      failureClass: canonicalFailureClass || (derivedFailureClass === 'unknown' ? undefined : derivedFailureClass),
+      failureClass: canonicalFailureClass,
       failedCommand: this.metadataHelper.stringField(metadata, 'failed_command') || undefined,
       validationFailureReason: validationReason ?? undefined,
       validationAllowlistFailureReason: validationAllowlistReason ?? undefined,
@@ -100,6 +100,7 @@ export class StatusResponseBuilder {
       goalCheckFailureReason: goalCheckReason ?? undefined,
       correlationId: job.correlationId,
       requestId: job.requestId,
+      projectName: job.request?.projectName,
       error: job.error,
       resultDir: job.resultDir,
     };

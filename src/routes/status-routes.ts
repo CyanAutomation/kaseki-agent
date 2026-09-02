@@ -56,6 +56,9 @@ export function createStatusRoutes(
           progress: status.progress,
           phaseOutcome: status.phaseOutcome,
           diagnosticEntryPoint: status.diagnosticEntryPoint,
+          correlationId: status.correlationId,
+          requestId: status.requestId,
+          projectName: status.projectName,
         };
       }),
       total: allJobs.length,
