@@ -303,8 +303,17 @@ const controllerPage = String.raw`<!doctype html>
       .header-token-input::placeholder { color: var(--color-text-muted); }
       @media (max-width: 767px) {
         .header-token-input {
-          min-width: 160px;
-          max-width: 100%;
+          min-width: 0;
+          width: min(100%, 220px);
+          flex: 1 1 160px;
+        }
+        .header-bar {
+          align-items: flex-start;
+          flex-wrap: wrap;
+        }
+        .header-bar-title {
+          min-width: 0;
+          flex: 1 1 170px;
         }
       }
       /* ===== STATUS INDICATOR ===== */
@@ -1196,6 +1205,15 @@ const controllerPage = String.raw`<!doctype html>
         gap: var(--space-2);
         grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
       }
+      .artifact-actions {
+        align-items: center;
+        display: flex;
+        gap: var(--space-1);
+      }
+      .artifact-copy-btn {
+        min-width: 32px;
+        padding: var(--space-1);
+      }
       .artifact-item {
         padding: var(--space-2);
         background: var(--color-surface-low);
@@ -1562,23 +1580,23 @@ const controllerPage = String.raw`<!doctype html>
           <button class="modal-close" id="modal-close-btn" type="button" aria-label="Close">✕</button>
         </div>
         <div class="modal-body">
-          <div class="tabs-nav">
-            <button class="tab-btn active" data-tab="status" type="button">Status</button>
-            <button class="tab-btn" data-tab="events" type="button">Progress Timeline</button>
-            <button class="tab-btn" data-tab="stdout" type="button">Output Log</button>
-            <button class="tab-btn" data-tab="artifacts" type="button">Artifacts</button>
+          <div class="tabs-nav" role="tablist" aria-label="Run results">
+            <button class="tab-btn active" id="modal-tab-status" data-tab="status" type="button" role="tab" aria-selected="true" aria-controls="tab-status">Status</button>
+            <button class="tab-btn" id="modal-tab-events" data-tab="events" type="button" role="tab" aria-selected="false" aria-controls="tab-events">Progress Timeline</button>
+            <button class="tab-btn" id="modal-tab-stdout" data-tab="stdout" type="button" role="tab" aria-selected="false" aria-controls="tab-stdout">Output Log</button>
+            <button class="tab-btn" id="modal-tab-artifacts" data-tab="artifacts" type="button" role="tab" aria-selected="false" aria-controls="tab-artifacts">Artifacts</button>
           </div>
           <div class="modal-tabs-container">
-            <div class="tab-content active" id="tab-status" data-tab="status">
+            <div class="tab-content active" id="tab-status" data-tab="status" role="tabpanel" aria-labelledby="modal-tab-status">
               <pre class="modal-output" id="status-output"></pre>
             </div>
-            <div class="tab-content" id="tab-events" data-tab="events" hidden aria-hidden="true">
+            <div class="tab-content" id="tab-events" data-tab="events" role="tabpanel" aria-labelledby="modal-tab-events" hidden aria-hidden="true">
               <pre class="modal-output" id="events-output"></pre>
             </div>
-            <div class="tab-content" id="tab-stdout" data-tab="stdout" hidden aria-hidden="true">
+            <div class="tab-content" id="tab-stdout" data-tab="stdout" role="tabpanel" aria-labelledby="modal-tab-stdout" hidden aria-hidden="true">
               <pre class="modal-output" id="stdout-output"></pre>
             </div>
-            <div class="tab-content" id="tab-artifacts" data-tab="artifacts" hidden aria-hidden="true">
+            <div class="tab-content" id="tab-artifacts" data-tab="artifacts" role="tabpanel" aria-labelledby="modal-tab-artifacts" hidden aria-hidden="true">
               <div class="artifacts-content" id="artifacts-output"></div>
             </div>
           </div>
@@ -1875,6 +1893,13 @@ const controllerPage = String.raw`<!doctype html>
         if (run.diagnosticSummary && typeof run.diagnosticSummary.primaryReason === 'string') {
           return stripControlSequences(run.diagnosticSummary.primaryReason).slice(0, 180);
         }
+        const error = typeof run.error === 'string' ? run.error : '';
+        // Older persisted scheduler records can retain a generic failureClass after
+        // terminal artifacts have identified the specific cause. Prefer the specific
+        // reason so the run list never sends an operator down the wrong path.
+        if (/critical_change_expectations(?:_failed)?/i.test(error)) return 'critical_change_expectations';
+        if (/provider_empty_assistant_turn/i.test(error)) return 'provider_empty_assistant_turn';
+        if (/goal[_ -]?(?:check|unmet)/i.test(error)) return 'goal-unmet';
         const parts = [
           run.failureClass,
           run.validationFailureReason,
@@ -1939,9 +1964,13 @@ const controllerPage = String.raw`<!doctype html>
         if (payload && typeof payload === 'object') {
           const providerEmptyTurn = isProviderEmptyAssistantTurn(payload);
           if (providerEmptyTurn) {
+            const phase = providerEmptyAssistantTurnPhase(payload);
+            const evaluatorPhase = phase === 'run-evaluation' || phase === 'goal-check';
             items.push([
-              'Provider returned empty coding response',
-              'The coding agent produced no assistant text, no tool calls, and no repository diff. Retry the run or switch model/provider before treating this as a task failure.',
+              evaluatorPhase ? 'Provider returned empty evaluator response' : 'Provider returned empty coding response',
+              evaluatorPhase
+                ? 'The ' + (phase === 'goal-check' ? 'goal-check evaluator' : 'final evaluator') + ' produced no assistant text or tool calls. Review the diff and validation evidence; retry only the review step if that evidence is required.'
+                : 'The coding agent produced no assistant text or tool calls. Retry the run or switch model/provider before treating this as a task failure.',
               { warning: true, critical: true, fullWidth: true },
             ]);
           }
@@ -1969,8 +1998,8 @@ const controllerPage = String.raw`<!doctype html>
           }
           if (evaluatorWarnings.length > 0) {
             items.push([
-              isTerminalStatus(payload.status) ? 'Completed with evaluation warnings' : 'Evaluation warnings',
-              evaluatorWarnings.join(' · ') + '. Review Evaluation diagnostics and the diff before relying on automated review; retry the run if the evaluation evidence is required.',
+              payload.status === 'completed' ? 'Completed — review incomplete' : 'Evaluation warnings',
+              evaluatorWarnings.join(' · ') + '. Automated review evidence is incomplete. Review Evaluation diagnostics and the diff before relying on this run; retry if that evidence is required.',
               { warning: true, critical: true, fullWidth: true },
             ]);
           }
@@ -2176,6 +2205,18 @@ const controllerPage = String.raw`<!doctype html>
           failureJson.provider_error_message,
         ];
         return fields.some((value) => typeof value === 'string' && value.includes('provider_empty_assistant_turn'));
+      }
+
+      function providerEmptyAssistantTurnPhase(payload) {
+        if (!payload || typeof payload !== 'object') return '';
+        const failureJson = payload.failureJsonContent && typeof payload.failureJsonContent === 'object'
+          ? payload.failureJsonContent
+          : {};
+        const directPhase = failureJson.provider_error_phase || payload.providerErrorPhase;
+        if (typeof directPhase === 'string' && directPhase.trim()) return directPhase.trim();
+        const error = typeof payload.error === 'string' ? payload.error : '';
+        const match = error.match(/phase:\s*([a-z-]+)/i);
+        return match ? match[1].toLowerCase() : '';
       }
 
       function responseStatusLabel(response, payload) {
@@ -2443,9 +2484,7 @@ const controllerPage = String.raw`<!doctype html>
           
           // Create wrapper container for button and copy button
           const wrapper = document.createElement('div');
-          wrapper.style.display = 'flex';
-          wrapper.style.gap = 'var(--space-1)';
-          wrapper.style.alignItems = 'center';
+          wrapper.className = 'artifact-actions';
 
           // Main artifact button
           const button = document.createElement('button');
@@ -2472,8 +2511,6 @@ const controllerPage = String.raw`<!doctype html>
           copyBtn.type = 'button';
           copyBtn.setAttribute('aria-label', 'Copy ' + fileName);
           copyBtn.innerHTML = '📋';
-          copyBtn.style.minWidth = '32px';
-          copyBtn.style.padding = 'var(--space-1)';
           
           copyBtn.addEventListener('click', async (event) => {
             event.stopPropagation(); // Prevent opening modal

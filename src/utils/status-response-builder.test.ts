@@ -393,6 +393,23 @@ describe('StatusResponseBuilder', () => {
       expect(response.error).toBe('Validation failed');
     });
 
+    it('prefers a terminal artifact classification over a stale scheduler failure class', () => {
+      const job: Partial<Job> = {
+        id: 'job-canonical-failure',
+        status: 'failed',
+        exitCode: 8,
+        failureClass: 'metadata_write_invalid',
+      };
+      (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify({
+        exit_code: 8,
+        failed_command: 'critical change verification',
+      }));
+
+      const response = builder.buildStatus(job as Job);
+
+      expect(response.failureClass).toBe('critical_change_expectations');
+    });
+
     it('should expose actionable terminal diagnostics and dependency cache notes', () => {
       // This test validates that diagnostic extraction works end-to-end with mocked file I/O.
       const job: Partial<Job> = {
