@@ -404,6 +404,8 @@ export interface StatusResponse {
   };
   error?: string;
   resultDir?: string;
+  /** Canonical GitHub pull-request URL, when a patch run successfully published one. */
+  prUrl?: string;
   correlationId?: string; // Request correlation ID
   requestId?: string; // Unique request ID
   // Inline diagnostic content (always available for terminal jobs)

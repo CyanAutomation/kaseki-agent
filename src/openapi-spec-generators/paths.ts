@@ -413,15 +413,24 @@ function buildInteractiveConsolePaths(errorResponseSchema: Record<string, unknow
             content: {
               'application/json': {
                 schema: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      number: { type: 'integer' },
-                      title: { type: 'string' },
-                      body: { type: ['string', 'null'] },
-                      url: { type: 'string', format: 'uri' },
-                      created_at: { type: 'string', format: 'date-time' },
+                  type: 'object',
+                  required: ['repoUrl', 'issueCount', 'issues'],
+                  properties: {
+                    repoUrl: { type: 'string', format: 'uri' },
+                    issueCount: { type: 'integer', minimum: 0 },
+                    issues: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        required: ['number', 'title', 'body', 'url', 'created_at'],
+                        properties: {
+                          number: { type: 'integer' },
+                          title: { type: 'string' },
+                          body: { type: ['string', 'null'] },
+                          url: { type: 'string', format: 'uri' },
+                          created_at: { type: 'string', format: 'date-time' },
+                        },
+                      },
                     },
                   },
                 },

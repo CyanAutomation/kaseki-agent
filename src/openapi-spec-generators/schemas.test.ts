@@ -237,6 +237,7 @@ describe('OpenAPI Schema Builders', () => {
         description: 'Overall orchestrator phase progress percentage, 0-100',
       });
       expect(properties.failedCommand).toMatchObject({ type: 'string' });
+      expect(properties.prUrl).toMatchObject({ type: 'string', format: 'uri' });
       expect(properties.criticalChangeContract).toMatchObject({
         type: 'object',
         required: ['expectedFiles', 'downgradedFiles', 'retryCount'],
