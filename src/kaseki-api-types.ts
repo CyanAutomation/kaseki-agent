@@ -167,6 +167,7 @@ function normalizeRunRequestAliases(input: unknown): unknown {
   const request = { ...(input as Record<string, unknown>) };
   const aliases: Array<[string, string]> = [
     ['repo_url', 'repoUrl'],
+    ['project_name', 'projectName'],
     ['git_ref', 'ref'],
     ['task_prompt', 'taskPrompt'],
     ['changed_files_allowlist', 'changedFilesAllowlist'],
