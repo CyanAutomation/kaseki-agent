@@ -81,12 +81,18 @@ export class StatusResponseBuilder {
     const qualityReason = extractQualityFailureReason(metadata);
     const goalCheckReason = extractGoalCheckFailureReason(metadata);
     const derivedFailureClass = job.status === 'failed' ? classifyFailure(metadata, exitCode ?? null) : undefined;
+    // Scheduler state can survive a restart with a generic failure class. For
+    // terminal jobs, a specific classification derived from persisted metadata
+    // is the canonical operator-facing reason.
+    const canonicalFailureClass = derivedFailureClass && !['unknown', 'nonzero-exit'].includes(derivedFailureClass)
+      ? derivedFailureClass
+      : job.failureClass;
     const response: StatusResponse = {
       id: job.id,
       status: job.status,
       completedAt: this.metadataHelper.resolveCompletedAt(job, metadata),
       exitCode: exitCode ?? undefined,
-      failureClass: job.failureClass || (derivedFailureClass === 'unknown' ? undefined : derivedFailureClass),
+      failureClass: canonicalFailureClass || (derivedFailureClass === 'unknown' ? undefined : derivedFailureClass),
       failedCommand: this.metadataHelper.stringField(metadata, 'failed_command') || undefined,
       validationFailureReason: validationReason ?? undefined,
       validationAllowlistFailureReason: validationAllowlistReason ?? undefined,

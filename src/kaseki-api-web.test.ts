@@ -326,7 +326,7 @@ describe('kaseki API web console behavior', () => {
     });
 
     await refreshAndSelectFirstRun(document);
-    await waitFor(() => expectTextContains(document, '#response-summary', 'Completed with evaluation warnings'));
+    await waitFor(() => expectTextContains(document, '#response-summary', 'Completed — review incomplete'));
     expectTextContains(document, '#response-summary', 'goal_check_artifact_missing');
     expectTextContains(document, '#response-summary', 'run_evaluation_failed_exit_86');
     expect(getElement<HTMLButtonElement>(document, '#retry-run-btn').disabled).toBe(false);
@@ -605,6 +605,63 @@ describe('kaseki API web console behavior', () => {
     expect(document.querySelector('#runs-list button')?.getAttribute('title')).toContain('validation_failed');
   });
 
+  test('prefers a specific terminal failure reason over a stale persisted failure class', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/runs': createJsonResponse({ runs: [{
+          id: 'kaseki-905', status: 'failed', createdAt: '2026-06-09T12:00:00Z',
+          failureClass: 'metadata_write_invalid',
+          error: 'critical_change_expectations_failed: required file missing from changed-files.txt: docs/DEPLOYMENT_TROUBLESHOOTING.md',
+        }] }),
+      }),
+    });
+
+    clickSelector(document, '#refresh-runs');
+    await waitFor(() => expect(document.querySelectorAll('#runs-list button')).toHaveLength(1));
+
+    const runButton = getElement(document, '#runs-list button');
+    expect(runButton.textContent).toContain('critical_change_expectations');
+    expect(runButton.textContent).not.toContain('metadata_write_invalid');
+  });
+
+  test('describes empty assistant turns in the evaluator phase without claiming the coding run has no diff', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/runs/kaseki-906/status': createJsonResponse({
+          id: 'kaseki-906', status: 'failed',
+          error: 'provider_empty_assistant_turn: Provider returned output tokens but no assistant text (phase: run-evaluation)',
+          failureJsonContent: { provider_error_type: 'provider_empty_assistant_turn', provider_error_phase: 'run-evaluation' },
+        }),
+        '/api/runs': createJsonResponse({ runs: [] }),
+      }),
+    });
+
+    setRunId(document, 'kaseki-906');
+    clickSelector(document, '#full-results-btn');
+    await waitFor(() => expectTextContains(document, '#response-summary', 'Provider returned empty evaluator response'));
+    expectTextContains(document, '#response-summary', 'final evaluator produced no assistant text or tool calls');
+    expectTextNotContains(document, '#response-summary', 'no repository diff');
+  });
+
+  test('marks terminal evaluator warnings as review incomplete rather than an ordinary completion', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/runs/kaseki-907/status': createJsonResponse({
+          id: 'kaseki-907', status: 'completed',
+          runEvaluation: { status: 'warning', exitCode: 86, warning: 'run_evaluation_failed_exit_86' },
+        }),
+        '/api/runs': createJsonResponse({ runs: [] }),
+      }),
+    });
+
+    setRunId(document, 'kaseki-907');
+    clickSelector(document, '#full-results-btn');
+    await waitFor(() => expectTextContains(document, '#response-summary', 'Completed — review incomplete'));
+  });
+
   test('loads artifact lists in the full-results modal with DOM controls for text artifacts only', async () => {
     const { document, calls } = await renderConsole({
       storedToken: 'token12345',
@@ -635,6 +692,11 @@ describe('kaseki API web console behavior', () => {
 
     expectHidden(document, '#full-results-modal', false);
     expectText(document, '#modal-title-heading', 'Full Results — kaseki-301');
+    expectAttribute(document, '.modal-body [role="tablist"]', 'aria-label', 'Run results');
+    expectAttribute(document, '#modal-tab-artifacts', 'role', 'tab');
+    expectAttribute(document, '#modal-tab-artifacts', 'aria-controls', 'tab-artifacts');
+    expectAttribute(document, '#tab-artifacts', 'role', 'tabpanel');
+    expectAttribute(document, '#tab-artifacts', 'aria-labelledby', 'modal-tab-artifacts');
     expectHidden(document, '#tab-artifacts', false);
     expectAttribute(document, '#tab-artifacts', 'aria-hidden', 'false');
     expectHidden(document, '#tab-status', true);
