@@ -7576,6 +7576,9 @@ derive_pr_title() {
   fi
 
   candidate="$(printf '%s' "$candidate" | sed -E 's/^[[:space:]]*([0-9]+[.)]|[-*])[[:space:]]+//' | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/(^|[[:space:]])[0-9]+[.)][[:space:]]+/\1/g; s/(^|[[:space:]])[-*][[:space:]]+/\1/g; s/userfacing/user-facing/Ig; s/customerfacing/customer-facing/Ig; s/front[ -]?end/frontend/Ig; s/back[ -]?end/backend/Ig; s/full[ -]?stack/full-stack/Ig; s/^[[:space:]]+//; s/[[:space:]]+$//')"
+  # Prompts often contain a detailed implementation brief. A title should name
+  # the planned change, not truncate that brief mid-sentence.
+  candidate="$(printf '%s' "$candidate" | sed -E 's/[[:space:]]+only:.*$//I; s/[.;][[:space:]].*$//; s/[[:space:]]+$//')"
 
   stripped="$(printf '%s' "$candidate" | sed -E 's/^(task|request|please|implement|update|fix|add)[[:space:]:-]+//I')"
   if [ -n "$stripped" ] && [ "$stripped" != "$candidate" ]; then
@@ -7749,6 +7752,18 @@ build_pr_agent_review() {
   local goal_summary evidence missing validation_notes risks
 
   goal_summary=""
+  # A missing or malformed evaluator artifact is not evidence that the goal was
+  # met. Omit this optional section instead of manufacturing a verdict.
+  if [ ! -s "$goal_file" ] || ! node - "$goal_file" <<'NODE' >/dev/null 2>&1
+const fs = require('fs');
+try {
+  const value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  process.exit(value && typeof value === 'object' && typeof value.met === 'boolean' ? 0 : 1);
+} catch { process.exit(1); }
+NODE
+  then
+    return 0
+  fi
   if [ -s "$goal_file" ]; then
     goal_summary="$(node - "$goal_file" <<'NODE' 2>/dev/null || true
 const fs = require('fs');
@@ -7806,6 +7821,9 @@ let data;
 try {
   data = JSON.parse(fs.readFileSync(file, 'utf8'));
 } catch {
+  process.exit(0);
+}
+if (!data || typeof data !== 'object' || typeof data.overall_assessment !== 'string' || typeof data.reviewer_confidence !== 'string') {
   process.exit(0);
 }
 const text = (value, max = 220) => {
@@ -8042,16 +8060,29 @@ format_pr_run_scorecard() {
     rendered="$(node "${KASEKI_APP_ROOT:-/app}/dist/run-scorecard-markdown.js" "$scorecard_file" 2>/dev/null || true)"
   fi
   rendered="$(printf '%s' "$rendered" | sanitize_pr_body_text)"
-  if [ -z "$rendered" ]; then
-    rendered='> **Scorecard unavailable:** `run-scorecard.json` is missing or malformed.'
+  case "$rendered" in *'Scorecard unavailable:'*) rendered="" ;; esac
+  # PR publication is the final deterministic opportunity to regenerate a
+  # missing or malformed scorecard after terminal artifacts are consolidated.
+  if [ -z "$rendered" ] && command -v kaseki-run-scorecard >/dev/null 2>&1; then
+    KASEKI_RESULTS_DIR="$KASEKI_RESULTS_DIR" kaseki-run-scorecard >/dev/null 2>&1 || true
+    if [ -s "$scorecard_file" ] && command -v "$formatter" >/dev/null 2>&1; then
+      rendered="$("$formatter" "$scorecard_file" 2>/dev/null || true)"
+    elif [ -s "$scorecard_file" ] && [ -f "${KASEKI_APP_ROOT:-/app}/dist/run-scorecard-markdown.js" ]; then
+      rendered="$(node "${KASEKI_APP_ROOT:-/app}/dist/run-scorecard-markdown.js" "$scorecard_file" 2>/dev/null || true)"
+    fi
+    rendered="$(printf '%s' "$rendered" | sanitize_pr_body_text)"
+    case "$rendered" in *'Scorecard unavailable:'*) rendered="" ;; esac
   fi
+  # Invalid evidence is deliberately omitted. build_pr_body supplies a
+  # deterministic fallback summary without implying a score exists.
+  [ -n "$rendered" ] || return 0
   # The formatter is bounded internally; cap its entire output as defense in depth.
   printf '%.*s' 12000 "$rendered"
 }
 
 build_pr_body() {
   local duration_seconds pre_validation_status validation_status quality_status secret_scan_status task_summary model_summary generated_at changed_files_summary
-  local pre_validation_commands pre_validation_full_commands post_validation_commands post_validation_full_commands validation_command_sections all_validation_statuses_pass scorecard_markdown
+  local pre_validation_commands pre_validation_full_commands post_validation_commands post_validation_full_commands validation_command_sections all_validation_statuses_pass scorecard_markdown agent_review agent_evaluation scorecard_section scorecard_fallback model_requested model_actual
   duration_seconds="$(($(date +%s) - START_EPOCH))"
   pre_validation_status="$([ "${PRE_VALIDATION_EXIT:-0}" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$PRE_VALIDATION_EXIT")"
   validation_status="$([ "$VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$VALIDATION_EXIT")"
@@ -8059,7 +8090,14 @@ build_pr_body() {
   secret_scan_status="$([ "$SECRET_SCAN_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$SECRET_SCAN_EXIT")"
   task_summary="$(printf '%s' "${TASK_PROMPT:-Not provided}" | sanitize_pr_body_text)"
   task_summary="$(truncate_pr_metadata_text 1000 "$task_summary")"
-  model_summary="requested $(printf '%s' "$KASEKI_MODEL" | sanitize_pr_metadata_text); actual $(printf '%s' "${ACTUAL_MODEL:-unknown}" | sanitize_pr_metadata_text)"
+  model_requested="$(printf '%s' "${KASEKI_MODEL:-not configured}" | sanitize_pr_metadata_text)"
+  model_actual="$(printf '%s' "${ACTUAL_MODEL:-}" | sanitize_pr_metadata_text)"
+  model_summary="Requested model: $model_requested"
+  if [ -n "$model_actual" ] && [ "$model_actual" != "unknown" ]; then
+    model_summary="$model_summary; actual model: $model_actual"
+  else
+    model_summary="$model_summary; actual model: not reported by provider"
+  fi
   generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   changed_files_summary="$(format_pr_changed_files)"
   scorecard_markdown="$(format_pr_run_scorecard)"
@@ -8071,16 +8109,12 @@ build_pr_body() {
   fi
 
   if [ "$all_validation_statuses_pass" -eq 1 ]; then
-    validation_command_sections="<details><summary>Pre-agent validation commands</summary>
+    validation_command_sections="<details><summary>Validation command evidence (pre-agent and post-agent)</summary>
 
-### Pre-agent validation commands
+Pre-agent artifact: \`pre-validation-timings.tsv\`
 $(format_pr_command_results "$PRE_VALIDATION_TIMINGS_FILE")
 
-</details>
-
-<details><summary>Post-agent validation commands</summary>
-
-### Post-agent validation commands
+Post-agent artifact: \`validation-timings.tsv\`
 $(format_pr_command_results "$VALIDATION_TIMINGS_FILE")
 
 </details>"
@@ -8114,21 +8148,29 @@ $pre_validation_commands
 $post_validation_commands"
   fi
 
+  agent_review="$(build_pr_agent_review "$all_validation_statuses_pass")"
+  agent_evaluation="$(build_pr_agent_evaluation)"
+  if [ -n "$scorecard_markdown" ]; then
+    scorecard_section="## Kaseki run scorecard
+$scorecard_markdown
+
+"
+  else
+    scorecard_section=""
+    scorecard_fallback="- Deterministic review evidence is shown below from validation status and changed-file metadata; evaluator or scorecard artifacts were unavailable."
+  fi
+
   cat <<EOF
 ## Summary
 $(build_pr_improvements_summary)
+$scorecard_fallback
 
-## Agent review
-$(build_pr_agent_review "$all_validation_statuses_pass")
-
-$(if [ -s "${KASEKI_RESULTS_DIR}"/run-evaluation.json ]; then printf '## Agent evaluation\n%s\n\n' "$(build_pr_agent_evaluation)"; fi)
-## Kaseki run scorecard
-$scorecard_markdown
+$(if [ -n "$agent_review" ]; then printf '## Agent review\n%s\n\n' "$agent_review"; fi)$(if [ -n "$agent_evaluation" ]; then printf '## Agent evaluation\n%s\n\n' "$agent_evaluation"; fi)$scorecard_section
 
 ## Validation
 ### Validation statuses
-- Pre-agent validation: $pre_validation_status
-- Post-agent validation: $validation_status
+- Pre-agent validation: $pre_validation_status (artifact: \`pre-validation-timings.tsv\`)
+- Post-agent validation: $validation_status (artifact: \`validation-timings.tsv\`)
 - Quality gate: $quality_status
 - Secret scan: $secret_scan_status
 

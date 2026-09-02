@@ -244,7 +244,7 @@ curl http://localhost:8080/health
 curl -H "Authorization: Bearer sk-kaseki-..." http://localhost:8080/api/preflight
 
 # Submit a task run via the API
-curl -X POST http://localhost:8080/api/run \
+curl -X POST http://localhost:8080/api/runs \
   -H "Authorization: Bearer sk-kaseki-..." \
   -H "Content-Type: application/json" \
   -d '{

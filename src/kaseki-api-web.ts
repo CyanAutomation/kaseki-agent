@@ -1532,6 +1532,7 @@ const controllerPage = String.raw`<!doctype html>
           <strong class="panel-section-label">Run follow-through</strong>
           <div class="link-grid">
             <button class="secondary toolbar-button-no-wrap" id="full-results-btn" type="button">Full Results</button>
+            <a class="secondary toolbar-button-no-wrap" id="pull-request-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Open Pull Request</a>
             <button class="secondary toolbar-button-no-wrap" id="evaluation-diagnostics-btn" type="button">Evaluation diagnostics</button>
             <button class="secondary toolbar-button-no-wrap" id="copy-diagnostic-bundle-btn" type="button">Copy Debug Summary</button>
             <button class="secondary toolbar-button-no-wrap" id="retry-run-btn" type="button" disabled title="Select a completed or failed run to retry">Retry run</button>
@@ -1605,6 +1606,7 @@ const controllerPage = String.raw`<!doctype html>
       
       // Modal elements
       const fullResultsBtn = document.querySelector('#full-results-btn');
+      const pullRequestLink = document.querySelector('#pull-request-link');
       const modalBackdrop = document.querySelector('#modal-backdrop');
       const fullResultsModal = document.querySelector('#full-results-modal');
       const modalCloseBtn = document.querySelector('#modal-close-btn');
@@ -1624,6 +1626,8 @@ const controllerPage = String.raw`<!doctype html>
       let activeRunView = 'status';
       let runProgressHighWater = {};
       let pageDisposed = false;
+      let diagnosticTail = Promise.resolve();
+      let pendingDiagnostics = 0;
       const activeRequestControllers = new Set();
       const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
       const LONG_REQUEST_TIMEOUT_MS = 90000;
@@ -2784,6 +2788,11 @@ const controllerPage = String.raw`<!doctype html>
         setRunDetails(payload);
         updateCancelRunButtonState(payload);
         updateRetryRunButtonState(payload);
+        if (pullRequestLink) {
+          const prUrl = typeof payload.prUrl === 'string' ? payload.prUrl : '';
+          pullRequestLink.hidden = !prUrl;
+          if (prUrl) pullRequestLink.href = prUrl;
+        }
         // Keep the structured summary visible while polling. Previously this
         // was replaced by correlation metadata, which hid phase diagnostics
         // such as a recovered scouting or goal-setting artifact failure.
@@ -2922,15 +2931,22 @@ const controllerPage = String.raw`<!doctype html>
         const isDiagnostic = button.classList.contains('health-check-button');
         const diagnosticButtons = isDiagnostic ? [button] : [];
         const diagnosticState = document.querySelector('#diagnostic-queue-state');
-        // Keep the active control disabled, but allow independent read-only
-        // health and status probes while a long diagnostic is in flight.
         diagnosticButtons.forEach((probeButton) => { probeButton.disabled = true; });
-        if (diagnosticState) diagnosticState.textContent = isDiagnostic
-          ? 'Diagnostic running: ' + (button.textContent ? button.textContent.trim() : 'controller check') + '. Other read-only diagnostics remain available.'
-          : diagnosticState.textContent;
+        const actionLabel = button.textContent ? button.textContent.trim() : 'request';
+        let releaseDiagnostic = null;
+        if (isDiagnostic) {
+          const previousDiagnostic = diagnosticTail;
+          const diagnosticAlreadyQueued = pendingDiagnostics > 0;
+          pendingDiagnostics += 1;
+          diagnosticTail = new Promise((resolve) => { releaseDiagnostic = resolve; });
+          if (diagnosticAlreadyQueued && diagnosticState) {
+            diagnosticState.textContent = 'Diagnostic queued: ' + actionLabel + '. ' + String(pendingDiagnostics - 1) + ' diagnostic running or waiting.';
+          }
+          if (diagnosticAlreadyQueued) await previousDiagnostic;
+          if (diagnosticState) diagnosticState.textContent = 'Diagnostic running: ' + actionLabel + '. ' + String(pendingDiagnostics - 1) + ' queued.';
+        }
         if (!isDiagnostic) button.disabled = true;
         setOutputMetadata('running', String(runIdInput.value || '').trim() || undefined);
-        const actionLabel = button.textContent ? button.textContent.trim() : 'request';
         const startedAt = Date.now();
         setResponseSummary(null);
         setOutputBody(isDiagnostic
@@ -2961,7 +2977,11 @@ const controllerPage = String.raw`<!doctype html>
           if (elapsedTimer) window.clearInterval(elapsedTimer);
           if (isDiagnostic) {
             diagnosticButtons.forEach((probeButton) => { probeButton.disabled = false; });
-            if (diagnosticState) diagnosticState.textContent = 'Diagnostics are ready.';
+            pendingDiagnostics -= 1;
+            if (typeof releaseDiagnostic === 'function') releaseDiagnostic();
+            if (diagnosticState) diagnosticState.textContent = pendingDiagnostics > 0
+              ? 'Diagnostic queue: ' + String(pendingDiagnostics) + ' waiting.'
+              : 'Diagnostics are ready.';
           } else {
             button.disabled = false;
           }
@@ -3987,7 +4007,8 @@ const controllerPage = String.raw`<!doctype html>
             return;
           }
 
-          const issues = payload;
+          const issuesResponse = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
+          const issues = issuesResponse && Array.isArray(issuesResponse.issues) ? issuesResponse.issues : [];
           if (!Array.isArray(issues) || issues.length === 0) {
             issuesList.innerHTML = '<div class="issues-list-empty">No issues found with label "kaseki-agent"</div>';
             setOutputMetadata('ok');

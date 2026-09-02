@@ -425,13 +425,17 @@ describe('kaseki API web console behavior', () => {
     expect(checkStatusButton).toBeUndefined();
   });
 
-  test('keeps other diagnostics available while one is running', async () => {
-    let rejectRequest: ((error: Error) => void) | undefined;
+  test('serializes diagnostics and reports the queued state', async () => {
+    let rejectGateway: ((error: Error) => void) | undefined;
+    let rejectInference: ((error: Error) => void) | undefined;
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
         '/api/gateway-test?stage=1': () => {
-          return new Promise((_resolve, reject) => { rejectRequest = reject; });
+          return new Promise((_resolve, reject) => { rejectGateway = reject; });
+        },
+        '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true': () => {
+          return new Promise((_resolve, reject) => { rejectInference = reject; });
         },
         '/api/runs': createJsonResponse({ runs: [] }),
       }, createJsonResponse({ status: 'ok' })),
@@ -442,13 +446,37 @@ describe('kaseki API web console behavior', () => {
     click(gateway);
     await waitFor(() => expect(gateway.disabled).toBe(true));
     expect(inference.disabled).toBe(false);
+    click(inference);
+    await waitFor(() => expect(inference.disabled).toBe(true));
     expect(repo.disabled).toBe(false);
-    expectTextContains(document, '#diagnostic-queue-state', 'Other read-only diagnostics remain available');
-    rejectRequest?.(new Error('gateway unavailable'));
+    expectTextContains(document, '#diagnostic-queue-state', 'Diagnostic queued: AI Model Test');
+    rejectGateway?.(new Error('gateway unavailable'));
     await waitFor(() => expect(gateway.disabled).toBe(false));
-    expect(inference.disabled).toBe(false);
+    expect(inference.disabled).toBe(true);
+    await waitFor(() => expectTextContains(document, '#diagnostic-queue-state', 'Diagnostic running: AI Model Test'));
+    rejectInference?.(new Error('inference unavailable'));
+    await waitFor(() => expect(inference.disabled).toBe(false));
     expect(repo.disabled).toBe(false);
     expectText(document, '#diagnostic-queue-state', 'Diagnostics are ready.');
+  });
+
+  test('shows a published pull request prominently for a terminal run', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/runs/kaseki-304/status': createJsonResponse({
+          id: 'kaseki-304',
+          status: 'completed',
+          prUrl: 'https://github.com/CyanAutomation/tako-bako/pull/29',
+        }),
+        '/api/runs/kaseki-304/artifacts': createJsonResponse({ artifacts: [] }),
+      }),
+    });
+
+    setRunId(document, 'kaseki-304');
+    clickSelector(document, '#full-results-btn');
+    await waitFor(() => expect(getElement<HTMLElement>(document, '#pull-request-link').hidden).toBe(false));
+    expectAttribute(document, '#pull-request-link', 'href', 'https://github.com/CyanAutomation/tako-bako/pull/29');
   });
 
   test('summarizes gateway smoke results without OpenRouter recovery status', async () => {
@@ -660,14 +688,16 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/github-issues': createJsonResponse([
-          {
+        '/api/github-issues': createJsonResponse({
+          repoUrl: 'https://github.com/CyanAutomation/kaseki-agent',
+          issueCount: 1,
+          issues: [{
             number: 517,
             title: 'Stage names drift',
             body: 'Align the setup stage name.',
             created_at: new Date().toISOString(),
-          },
-        ]),
+          }],
+        }),
       }),
     });
 
@@ -698,14 +728,16 @@ describe('kaseki API web console behavior', () => {
       storedToken: 'token12345',
       fetchHandler: (path) => {
         if (path === '/api/github-issues') {
-          return createJsonResponse([
-            {
+          return createJsonResponse({
+            repoUrl: 'https://github.com/CyanAutomation/kaseki-agent',
+            issueCount: 1,
+            issues: [{
               number: 516,
               title: 'Progress fallback issue',
               body: 'Use better progress fallback.',
               created_at: new Date().toISOString(),
-            },
-          ]);
+            }],
+          });
         }
         return createJsonResponse({ runs: [] });
       },

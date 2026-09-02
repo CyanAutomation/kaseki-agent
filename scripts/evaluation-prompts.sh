@@ -236,7 +236,7 @@ EOF
 }
 
 build_run_evaluation_prompt() {
-  local validation_tail progress_tail stage_timings dependency_cache restoration_report draft_pr_body metadata_text goal_setting_context test_impact_context caveman_instruction
+  local validation_tail progress_tail stage_timings dependency_cache restoration_report draft_pr_body metadata_text goal_setting_context test_impact_context caveman_instruction repository_default_branch repository_facts
   
   if declare -F construct_context_handoff >/dev/null; then
     construct_context_handoff "validation" "Return the schema-valid run evaluation and process-quality scorecard."
@@ -252,6 +252,9 @@ build_run_evaluation_prompt() {
   draft_pr_body=""
   goal_setting_context="Canonical input contract: ${KASEKI_RESULTS_DIR}/context-handoff.json (read first). For the required process-evidence cross-checks, inspect only files listed in artifact_paths; inspect any other raw artifact only for a named unresolved question."
   test_impact_context=""
+  repository_default_branch="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' || true)"
+  repository_default_branch="${repository_default_branch:-${GIT_REF:-main}}"
+  repository_facts="Repository facts detected from this checkout: requested ref=${GIT_REF:-main}; default branch=${repository_default_branch}. Do not flag the configured default branch as uncertain unless this evidence conflicts with an inspected repository artifact."
   # Get caveman instruction if enabled
   caveman_instruction="$(get_caveman_instruction)"
   
@@ -277,6 +280,7 @@ In addition to stage_value reasons, return evidence_sources_inspected, contradic
 ## Context
 $goal_setting_context
 $test_impact_context
+$repository_facts
 Original task prompt:
 $TASK_PROMPT
 
@@ -332,6 +336,9 @@ This is NOT another goal-check. The goal-check evaluator already determined if t
 - Stage timings: "${KASEKI_RESULTS_DIR}"/stage-timings.tsv
 - Progress events: "${KASEKI_RESULTS_DIR}"/progress.jsonl
 - Metadata: "${KASEKI_RESULTS_DIR}"/metadata.json
+
+**Repository facts**
+$repository_facts
 
 ## Evaluation Framework
 
