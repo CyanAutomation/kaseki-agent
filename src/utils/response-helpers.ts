@@ -34,6 +34,7 @@ export function buildStatusResponse(jobData: {
   failureClass?: string | null;
   correlationId?: string;
   requestId?: string;
+  projectName?: string;
   error?: string | null;
   resultDir?: string;
 }): StatusResponse {
@@ -42,6 +43,7 @@ export function buildStatusResponse(jobData: {
     status: jobData.status,
     correlationId: jobData.correlationId,
     requestId: jobData.requestId,
+    projectName: jobData.projectName,
     resultDir: jobData.resultDir,
   };
 
