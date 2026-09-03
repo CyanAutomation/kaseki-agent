@@ -18,6 +18,18 @@ const DIAGNOSTIC_FILE_CANDIDATES: DiagnosticEntryPoint[] = [
 ];
 const DIAGNOSTIC_INLINE_LIMIT_BYTES = 65536;
 
+/**
+ * Logs are operator-facing API responses, not a secret store. Keep enough
+ * context to diagnose a failure while removing credential-bearing paths and
+ * values that occasionally appear in Docker/provider diagnostics.
+ */
+export function redactLogContent(content: string): string {
+  return content
+    .replace(/\/run\/secrets\/[^\s'"`]+/g, '[redacted secret path]')
+    .replace(/\b(sha256_fingerprint\s*[=:]\s*)[a-f0-9]{32,}\b/gi, '$1[redacted]')
+    .replace(/-----BEGIN [^-\n]*(?:PRIVATE KEY|OPENSSH PRIVATE KEY)-----[\s\S]*?-----END [^-\n]*(?:PRIVATE KEY|OPENSSH PRIVATE KEY)-----/g, '[redacted private key]');
+}
+
 export function logFileForType(runDir: string, logType: string): string {
   return logType.endsWith('-stderr')
     ? path.join(runDir, `${logType}.log`)
@@ -32,14 +44,14 @@ export function isPathInsideDirectory(filePath: string, directory: string): bool
 export function readLogContent(logFile: string, req: Request): { content: string; size: number } {
   const size = fs.statSync(logFile).size;
   const maxSize = 1024 * 100;
-  if (size <= maxSize) return { content: fs.readFileSync(logFile, 'utf-8'), size };
+  if (size <= maxSize) return { content: redactLogContent(fs.readFileSync(logFile, 'utf-8')), size };
   const truncated = readTailBytes(logFile, size, maxSize);
   let content = decodeUtf8TailSafely(truncated);
   if (req.query.tail === 'lines') {
     const lineCount = Number(req.query.lines ?? 200);
     content = tailLogByLines(content, Number.isFinite(lineCount) ? Math.max(1, Math.floor(lineCount)) : 200);
   }
-  return { content: `[... truncated, showing last ${maxSize} bytes ...]\n${content}`, size };
+  return { content: redactLogContent(`[... truncated, showing last ${maxSize} bytes ...]\n${content}`), size };
 }
 
 export function readCombinedLogs(runDir: string, req: Request): LogResponse | undefined {

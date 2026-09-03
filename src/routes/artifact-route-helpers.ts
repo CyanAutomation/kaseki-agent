@@ -16,6 +16,7 @@ import type { ResultCache } from '../result-cache';
 import { sendErrorResponse } from '../utils/response-helpers';
 import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
 import { artifactContentType, renderRunEvaluationPayload } from './artifact-content-helpers';
+import { redactLogContent } from './log-file-reader';
 
 const ALL_ARTIFACT_NAMES = Object.keys(ARTIFACT_METADATA_REGISTRY);
 
@@ -110,7 +111,8 @@ export function sendArtifactDownloadResponse(
       return;
     }
 
-    const response = buildArtifactResponse(request, contentType, content, fileStats.size);
+    const safeContent = isLogArtifact(request.fileName) ? redactLogContent(content) : content;
+    const response = buildArtifactResponse(request, contentType, safeContent, fileStats.size);
     res.setHeader('Content-Type', contentType);
     res.json(response);
   } catch (err) {
@@ -177,15 +179,20 @@ function sendLiveStdoutFallback(
   }
 
   const contentType = artifactContentType(fileName);
+  const safeContent = isLogArtifact(fileName) ? redactLogContent(liveContent) : liveContent;
   const response: ArtifactResponse = {
     file: fileName,
     contentType,
     size: Buffer.byteLength(liveContent, 'utf-8'),
-    content: liveContent,
+    content: safeContent,
   };
   res.setHeader('Content-Type', contentType);
   res.json(response);
   return true;
+}
+
+function isLogArtifact(fileName: string): boolean {
+  return fileName.endsWith('.log');
 }
 
 function getLiveStdoutContent(

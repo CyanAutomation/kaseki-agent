@@ -67,4 +67,28 @@ describe('github-issues-routes', () => {
       }],
     });
   });
+
+  it('forwards an explicitly selected label instead of silently using the default', async () => {
+    (githubUtils.parseGitHubUrl as jest.Mock).mockReturnValue({ isValid: true, owner: 'CyanAutomation', repo: 'tako-bako' });
+    (githubUtils.generateGitHubAppToken as jest.Mock).mockResolvedValue({ token: 'installation-token' });
+    (githubUtils.fetchGitHubIssues as jest.Mock).mockResolvedValue([]);
+
+    const app = express();
+    app.use(express.json());
+    app.use(createGitHubIssuesRoutes());
+    const started = await listen(app);
+    server = started.server;
+
+    const response = await fetch(`${started.url}/github-issues`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repoUrl: 'CyanAutomation/tako-bako', label: 'documentation' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(githubUtils.fetchGitHubIssues).toHaveBeenCalledWith(
+      'CyanAutomation', 'tako-bako', 'installation-token',
+      expect.objectContaining({ labels: ['documentation'] }),
+    );
+  });
 });
