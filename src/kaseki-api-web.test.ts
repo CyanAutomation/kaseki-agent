@@ -802,6 +802,28 @@ describe('kaseki API web console behavior', () => {
     ].join('\n'));
   });
 
+  test('shows an empty issue state when the repository has no matching issues', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/github-issues': createJsonResponse({
+          repoUrl: 'https://github.com/CyanAutomation/tako-bako',
+          issueCount: 0,
+          issues: [],
+        }),
+      }),
+    });
+
+    clickSelector(document, '[data-tab="issues"]');
+    inputSelector(document, '#issues-repo-url', 'CyanAutomation/tako-bako');
+    inputSelector(document, '#issues-label', 'documentation');
+    clickSelector(document, '#load-issues-btn');
+
+    await waitFor(() => expectTextContains(document, '#issues-list', 'No issues found with label "documentation"'));
+    expectText(document, '#state', 'No matching issues found.');
+    expectText(document, '#output-meta', 'Status: ok');
+  });
+
   test('normalizes recent repository entries across submit and issues flows', async () => {
     const { dom, document } = await renderConsole({
       storedToken: 'token12345',
@@ -899,6 +921,32 @@ describe('kaseki API web console behavior', () => {
     click(document.querySelector('.tab-btn[data-tab="stdout"]'));
     await waitFor(() => expect(document.querySelector('#stdout-output')?.textContent).toBe('line one\nline two\n'));
     expect(document.querySelector('#stdout-output')?.textContent).not.toBe('[object Object]');
+  });
+
+  test('renders progress events as a readable timeline rather than raw JSON', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/runs/kaseki-305/status') return createJsonResponse({ id: 'kaseki-305', status: 'running' });
+        if (path === '/api/runs/kaseki-305/events?tail=50') return createJsonResponse({
+          events: [{
+            stage: 'goal check', status: 'started', message: 'started', timestamp: '2026-09-03T17:20:52.604Z',
+          }, {
+            stage: 'validation', status: 'finished', message: 'passed', timestamp: '2026-09-03T17:21:38.458Z',
+          }],
+        });
+        return createJsonResponse({});
+      },
+    });
+
+    const runIdInput = getElement<HTMLInputElement>(document, '#run-id');
+    runIdInput.value = 'kaseki-305';
+    clickSelector(document, '#full-results-btn');
+    await waitFor(() => expect(document.querySelector('#full-results-modal')?.hasAttribute('hidden')).toBe(false));
+    clickSelector(document, '.tab-btn[data-tab="events"]');
+    await waitFor(() => expectTextContains(document, '#events-output', 'Goal Check — started'));
+    expectTextContains(document, '#events-output', 'Validation — passed');
+    expectTextNotContains(document, '#events-output', '"events"');
   });
 
   test('serializes structured stdout content instead of rendering [object Object]', async () => {
