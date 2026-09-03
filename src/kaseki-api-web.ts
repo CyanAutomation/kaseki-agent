@@ -630,22 +630,22 @@ const controllerPage = String.raw`<!doctype html>
         border-color: var(--color-focus);
         color: var(--color-focus-text);
       }
-      button.secondary {
+      button.secondary, button.button-secondary {
         background: transparent;
         color: var(--color-text);
         border-color: var(--color-border);
       }
-      button.secondary:hover:not(:disabled) {
+      button.secondary:hover:not(:disabled), button.button-secondary:hover:not(:disabled) {
         border-color: var(--color-focus);
         color: var(--color-focus-text);
       }
-      button.run {
+      button.run, button.button-primary {
         background: var(--color-focus-bright);
         border-color: var(--color-focus-bright);
         color: #00363d;
         font-weight: var(--font-weight-bold);
       }
-      button.run:hover:not(:disabled) {
+      button.run:hover:not(:disabled), button.button-primary:hover:not(:disabled) {
         background: var(--color-focus-text);
         border-color: var(--color-focus-text);
         color: #001f24;
@@ -653,6 +653,15 @@ const controllerPage = String.raw`<!doctype html>
       button:disabled { cursor: not-allowed; opacity: var(--opacity-disabled); }
       #submit:disabled { background-color: #666; border-color: #666; color: #aaa; }
       #submit:enabled { cursor: pointer; }
+      button.button-danger {
+        border-color: var(--color-bad);
+        color: var(--color-bad);
+      }
+      button.button-danger:hover:not(:disabled) {
+        background: var(--color-bad-bg);
+        border-color: var(--color-bad);
+        color: var(--color-bad);
+      }
       #cancel-run:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
       #cancel-run:enabled { cursor: pointer; }
       .validation-badge {
@@ -745,6 +754,15 @@ const controllerPage = String.raw`<!doctype html>
         word-break: break-word;
       }
       .response-log.empty { color: var(--color-text-muted); }
+      #raw-response > summary {
+        color: var(--color-focus-text);
+        cursor: pointer;
+        font-family: var(--font-mono);
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-bold);
+        letter-spacing: var(--letter-spacing-wide);
+        text-transform: uppercase;
+      }
       #state {
         color: var(--color-text-muted);
         font-family: var(--font-mono);
@@ -1052,7 +1070,7 @@ const controllerPage = String.raw`<!doctype html>
         .health-check-button { min-height: var(--touch-target-min); }
         
         /* Stack actions vertically on mobile */
-        .action-row.run-actions > .run { order: 1; }
+        .action-row.run-actions > .run, .action-row.run-actions > .button-primary { order: 1; }
         
         /* Responsive panel heights */
         .response-panel { min-height: var(--mobile-viewport-height); }
@@ -1425,7 +1443,7 @@ const controllerPage = String.raw`<!doctype html>
             <button class="health-check-button" data-probe="/health" type="button" title="Check basic controller health status"><span class="hc-label">System Status</span><span class="health-check-status" data-status="health"></span></button>
             <button class="health-check-button" data-probe="/ready" type="button" title="Verify the controller is ready to accept tasks"><span class="hc-label">Readiness</span><span class="health-check-status" data-status="readiness"></span></button>
             <button class="health-check-button" data-probe="/api/gateway-test?stage=1" data-auth="true" type="button" title="Validate API gateway connection and authentication"><span class="hc-label">API Connection</span><span class="health-check-status" data-status="gateway"></span></button>
-            <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true" data-auth="true" type="button" title="Test AI model inference and compatibility (uses tokens)"><span class="hc-label">AI Model Test</span><span class="health-check-status" data-status="llm-test"></span></button>
+            <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true" data-auth="true" data-cost-warning="true" type="button" title="Test AI model inference and compatibility (uses tokens)"><span class="hc-label">AI Model Test</span><span class="health-check-status" data-status="llm-test"></span></button>
             <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button" title="Run complete live controller diagnostics"><span class="hc-label">Live preflight</span><span class="health-check-status" data-status="preflight"></span></button>
           </div>
           <p id="diagnostic-queue-state" class="field-helper" role="status" aria-live="polite">Diagnostics are ready.</p>
@@ -1481,9 +1499,8 @@ const controllerPage = String.raw`<!doctype html>
           <div>
             <h2 id="submit-heading">Submit Repository Task</h2>
             <p>Configure and submit a task for the ephemeral agent to execute.</p>
-            <!-- Simplified UI: Git ref and timeout use defaults (main, 3h). Patch runs explicitly
-                 create a normal (non-draft) pull request after validation. Use the CLI or API for
-                 branch-only, draft, or no-publish workflows. -->
+            <!-- Patch runs default to a normal pull request after validation. Advanced controls
+                 expose the same publishing choices as the API without changing that default. -->
           </div>
         <form id="run-form">
           <fieldset class="form-fields">
@@ -1530,9 +1547,9 @@ const controllerPage = String.raw`<!doctype html>
           <fieldset>
             <legend>Run actions</legend>
             <div class="action-row run-actions">
-            <button class="secondary" id="validate" type="button" title="Check repository and configuration before starting">Validate task <span id="validation-badge" class="validation-badge" style="display: none;">✓</span></button>
-            <button class="run" id="submit" type="submit" disabled title="Please validate task first">Start run</button>
-            <button class="secondary" id="cancel-run" type="button" title="Stop the currently running task">Cancel run</button>
+            <button class="button-secondary" id="validate" type="button" title="Check repository and configuration before starting">Validate task <span id="validation-badge" class="validation-badge" style="display: none;">✓</span></button>
+            <button class="button-primary" id="submit" type="submit" disabled title="Please validate task first">Start run</button>
+            <button class="button-danger" id="cancel-run" type="button" title="Stop the currently running task">Cancel run</button>
             </div>
           </fieldset>
         </form>
@@ -1553,6 +1570,11 @@ const controllerPage = String.raw`<!doctype html>
                 <div id="issues-recent-repos-dropdown" class="recent-repos-dropdown hidden" role="listbox"></div>
               </div>
               <p class="field-error" id="issues-error" aria-live="polite" hidden></p>
+            </div>
+            <div class="form-field">
+              <label for="issues-label">Issue label</label>
+              <input id="issues-label" type="text" value="kaseki-agent" placeholder="kaseki-agent" />
+              <p class="field-helper">Leave the default to show Kaseki-labelled work, or enter a repository label to browse its issues.</p>
             </div>
           </form>
           <div id="issues-container">
@@ -1587,7 +1609,10 @@ const controllerPage = String.raw`<!doctype html>
         <div class="response-panel">
           <p class="response-meta" id="output-meta" aria-live="polite">Status: idle</p>
           <div class="response-summary" id="response-summary" hidden aria-live="polite"></div>
-          <pre class="response-log empty" id="output" aria-live="polite">No output yet. Run a health check or submit a task to see responses.</pre>
+          <details id="raw-response">
+            <summary>Raw controller response</summary>
+            <pre class="response-log empty" id="output" aria-live="polite">No output yet. Run a health check or submit a task to see responses.</pre>
+          </details>
         </div>
       </section>
     </main>
@@ -3129,6 +3154,7 @@ const controllerPage = String.raw`<!doctype html>
       // Health check button handlers
       document.querySelectorAll('[data-probe]').forEach((button) => {
         button.addEventListener('click', () => {
+          if (button.dataset.costWarning === 'true' && !window.confirm('AI Model Test sends a live inference request and consumes provider tokens. Continue?')) return;
           const statusEl = button.querySelector('.health-check-status');
           if (statusEl) {
             statusEl.className = 'health-check-status spinner';
@@ -4024,6 +4050,7 @@ const controllerPage = String.raw`<!doctype html>
       const loadIssuesBtn = document.querySelector('#load-issues-btn');
       const issuesList = document.querySelector('#issues-list');
       const issuesError = document.querySelector('#issues-error');
+      const issuesLabelInput = document.querySelector('#issues-label');
       const taskPrompt = document.querySelector('#task-prompt');
       const issuePromptPreview = document.querySelector('#issue-prompt-preview');
       const issueScopeInput = document.querySelector('#issue-scope');
@@ -4033,6 +4060,7 @@ const controllerPage = String.raw`<!doctype html>
       loadIssuesBtn.addEventListener('click', async (event) => {
         event.preventDefault();
         const repoUrl = issuesRepoUrlInput.value.trim();
+        const label = issuesLabelInput.value.trim() || 'kaseki-agent';
         
         if (!repoUrl) {
           showIssuesError('Please enter a repository URL');
@@ -4047,7 +4075,7 @@ const controllerPage = String.raw`<!doctype html>
           const result = await apiRequest('/api/github-issues', {
             method: 'POST',
             auth: true,
-            body: { repoUrl },
+            body: { repoUrl, label },
             timeoutMs: ISSUE_REQUEST_TIMEOUT_MS,
             preserveOutput: true,
           });
@@ -4078,7 +4106,7 @@ const controllerPage = String.raw`<!doctype html>
           const issuesResponse = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
           const issues = issuesResponse && Array.isArray(issuesResponse.issues) ? issuesResponse.issues : [];
           if (!Array.isArray(issues) || issues.length === 0) {
-            issuesList.innerHTML = '<div class="issues-list-empty">No issues found with label "kaseki-agent"</div>';
+            issuesList.innerHTML = '<div class="issues-list-empty">No issues found with label "' + escapeHtml(label) + '"</div>';
             setOutputMetadata('ok');
             setResponseSummary({ status: 'ok' });
             setOutputBody(JSON.stringify({
