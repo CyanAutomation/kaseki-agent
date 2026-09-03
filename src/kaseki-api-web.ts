@@ -1911,12 +1911,25 @@ const controllerPage = String.raw`<!doctype html>
           : [];
         if (events.length === 0) return 'No progress events recorded yet.';
         return events.map((event) => {
-          const stage = cleanProgressText(event && event.stage || 'Unknown phase')
+          const stageValue = event && (event.stage || event.event_type || event.error_type) || 'Unknown phase';
+          const stage = cleanProgressText(stageValue)
             .replace(/[-_]+/g, ' ')
             .replace(/\b\w/g, (character) => character.toUpperCase());
-          const message = cleanProgressText(event && (event.message || event.status) || 'observed');
-          const timestamp = typeof (event && event.timestamp) === 'string'
-            ? event.timestamp.replace('T', ' ').replace(/\.\d+Z$/, 'Z')
+          const detail = event && event.detail;
+          const detailText = typeof detail === 'string'
+            ? detail
+            : detail !== undefined
+              ? sanitizeOutput(detail).replace(/\s+/g, ' ')
+              : '';
+          const diagnostic = event && event.error_type && event.error_type !== stageValue
+            ? event.error_type + (detailText ? ': ' + detailText : '')
+            : detailText;
+          const message = cleanProgressText(event && (event.message || event.status) || diagnostic || 'observed');
+          const eventTimestamp = event && (typeof event.updatedAt === 'string'
+            ? event.updatedAt
+            : typeof event.timestamp === 'string' ? event.timestamp : null);
+          const timestamp = typeof eventTimestamp === 'string'
+            ? eventTimestamp.replace('T', ' ').replace(/\.\d+Z$/, 'Z')
             : 'time unavailable';
           return timestamp + '  ' + stage + ' — ' + message;
         }).join('\n');
