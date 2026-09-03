@@ -3742,6 +3742,34 @@ describe('kaseki-api-routes status artifact hints', () => {
     }
   });
 
+  test('analysis recovers a successful validation command from the validation log when timings are unavailable', async () => {
+    const jobId = 'kaseki-analysis-validation-log-fallback';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'validation.log'), [
+      '[validation pipeline] command=npm run check',
+      '[validation pipeline] statuses: command=0 tee=0 filter=0',
+    ].join('\n'));
+
+    const scheduler = createMockScheduler({
+      [jobId]: { id: jobId, status: 'completed', createdAt: new Date(), resultDir: jobDir } as any,
+    });
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, createTestConfig(resultsDir));
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/analysis`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      expect(response.status).toBe(200);
+      expect((await response.json() as any).validation).toEqual({
+        passed: true,
+        commandResults: [{ command: 'npm run check', exitCode: 0, elapsed: 0 }],
+      });
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
   test('analysis uses terminal failure validation status over earlier successful timings', async () => {
     const jobId = 'kaseki-analysis-terminal-validation-failure';
     const jobDir = path.join(resultsDir, jobId);

@@ -223,6 +223,14 @@ describe('kaseki API web console routes', () => {
     expectAttribute(document, '[data-probe="/api/gateway-test?stage=1"]', 'data-auth', 'true');
     expectTextContains(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]', 'AI Model Test');
     expectAttribute(document, '#task-mode', 'name', 'taskMode');
+    expectText(document, '.advanced-options summary', 'Advanced run controls');
+    expectAttribute(document, '#task-ref', 'name', 'ref');
+    expectAttribute(document, '#publish-mode', 'name', 'publishMode');
+    expectAttribute(document, '#timeout-seconds', 'name', 'timeoutSeconds');
+    expectAttribute(document, '#changed-files-allowlist', 'name', 'changedFilesAllowlist');
+    expectAttribute(document, '#validation-commands', 'name', 'validationCommands');
+    expectTextContains(document, '[data-probe="/ready"]', 'Readiness');
+    expectTextContains(document, '[data-probe="/api/preflight"]', 'Live preflight');
     getElement(document, '#runs-list');
     expectTextContains(document, '#refresh-runs', 'Refresh runs');
     expectTextContains(document, '#cancel-run', 'Cancel run');
