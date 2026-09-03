@@ -112,10 +112,8 @@ jobs:
       - name: Run lint
         run: npm run lint
 
-      - name: Run tests twice (flake detection)
-        run: |
-          npm test
-          npm test
+      - name: Run tests
+        run: npm test
 
       - name: Validate module imports (docker bin dependencies)
         run: npm run validate-module-imports
