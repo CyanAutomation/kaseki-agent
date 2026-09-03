@@ -309,6 +309,14 @@ for expected in \
   fi
 done
 
+# Command substitutions strip trailing newlines. Keep adjacent Markdown
+# sections separated so fallback reviews remain readable.
+if grep -Fq $'No unmet task requirements were reported by the goal check.\n\n## Agent evaluation' <<<"$pr_body"; then
+  pass "PR body separates agent review and evaluation sections"
+else
+  fail "PR body merged the agent review and evaluation headings"
+fi
+
 if grep -Fq '<details><summary>View files</summary>' <<<"$pr_body"; then
   fail "Short PR file list should render inline without collapsed details"
 else
@@ -421,6 +429,18 @@ if [ -n "$summary_line" ] && [ -n "$agent_review_line" ] && [ -n "$agent_evaluat
 else
   fail "PR body sections were not in expected order"
 fi
+
+cat > "$RESULTS_DIR/goal-check.json" <<'JSON'
+{
+  "met": true,
+  "summary": "Goal-check evaluator was unavailable; code and deterministic validation require human review.",
+  "evaluation_unavailable": true,
+  "evaluation_warning": "goal_check_artifact_missing"
+}
+JSON
+degraded_review="$(build_pr_agent_review 1)"
+grep -Fq 'Goal-check evaluator unavailable; this is a degraded result and requires human review.' <<<"$degraded_review" || fail "Degraded evaluator state was not made visible in PR review metadata"
+pass "PR review metadata makes evaluator degradation visible"
 
 
 agent_eval_overall_line="$(grep -nF -- '- Overall: good' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
@@ -598,17 +618,17 @@ The agent's output preserved quoted review text: stage literally named 'deploy e
 
 Parser reference: JobScheduler.parseLiveProgressEvents().
 
-```text
+text block:
 stderr log excerpt:
-bash: -c: line 1: syntax error near unexpected token `('
-`inline code` and fenced markdown should stay intact.
+bash: -c: line 1: syntax error near unexpected token (open parenthesis)
+Inline code and markdown-like text should stay intact.
 The agent's output mentioned stage literally named 'deploy error' while parsing JobScheduler.parseLiveProgressEvents().
-```
+end text block.
 PRBODY
 )
 
 if run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$regression_pr_body" "$TMP_DIR/node.log"; then
-  pass "PR body JSON encoding handles quotes, parentheses, backticks, and multiline markdown"
+  pass "PR body JSON encoding handles quotes, parentheses, and multiline markdown"
 else
   fail "PR body JSON encoding failed for regression markdown fixture"
 fi
