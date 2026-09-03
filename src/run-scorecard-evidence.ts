@@ -16,6 +16,23 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
   const evaluation = object(snapshot.json['run-evaluation.json']);
   const stageRows = Array.isArray(timing.stage_timings) ? timing.stage_timings : [];
   const stageElapsed = stageRows.reduce((total, row) => total + (number(object(row)?.elapsed_seconds) ?? 0), 0);
+  const phaseDurationsMs: Record<string, number> = {};
+  const stagePhase = (value: unknown): string | undefined => {
+    const stage = String(value ?? '').toLowerCase();
+    if (/goal.setting/.test(stage)) return 'goal_setting';
+    if (/scouting/.test(stage)) return 'scouting';
+    if (/coding/.test(stage)) return 'coding';
+    if (/goal.check/.test(stage)) return 'goal_check';
+    if (/run.evaluation/.test(stage)) return 'run_evaluation';
+    if (/validation/.test(stage)) return 'validation';
+    return undefined;
+  };
+  for (const row of stageRows) {
+    const entry = object(row);
+    const phase = stagePhase(entry?.stage);
+    const seconds = number(entry?.elapsed_seconds);
+    if (phase && seconds !== undefined) phaseDurationsMs[phase] = (phaseDurationsMs[phase] ?? 0) + seconds * 1000;
+  }
   const elapsed = number(perf.elapsed_seconds) ?? number(metadata.total_duration_seconds) ?? number(metadata.duration_seconds) ?? (stageElapsed || undefined);
   const validationRows = [...(Array.isArray(timing.validation_timings) ? timing.validation_timings : []), ...(Array.isArray(timing.pre_validation_timings) ? timing.pre_validation_timings : [])];
   const failureValidationExit = number(failure.validation_exit_code);
@@ -35,7 +52,7 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
     && (!evaluationWarning || evaluationWarning === 'run_evaluation_recovered_invalid_artifact');
   return {
     metadata, status: lifecycle(metadata), elapsedSeconds: elapsed, ...tokenEvidence,
-    retries: countRetries(snapshot), phaseRetries, validation, quality,
+    retries: countRetries(snapshot), phaseRetries, phaseDurationsMs, validation, quality,
     goalMet: bool(goal.met) ?? bool(metadata.goal_check_met),
     goalCheckFailed: String(metadata.failed_command ?? '').toLowerCase() === 'goal check'
       || String(metadata.goal_check_failure_reason ?? '').trim().length > 0,

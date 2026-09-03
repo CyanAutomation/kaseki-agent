@@ -1905,6 +1905,23 @@ const controllerPage = String.raw`<!doctype html>
           .trim();
       }
 
+      function formatProgressTimeline(payload) {
+        const events = payload && typeof payload === 'object' && Array.isArray(payload.events)
+          ? payload.events
+          : [];
+        if (events.length === 0) return 'No progress events recorded yet.';
+        return events.map((event) => {
+          const stage = cleanProgressText(event && event.stage || 'Unknown phase')
+            .replace(/[-_]+/g, ' ')
+            .replace(/\b\w/g, (character) => character.toUpperCase());
+          const message = cleanProgressText(event && (event.message || event.status) || 'observed');
+          const timestamp = typeof (event && event.timestamp) === 'string'
+            ? event.timestamp.replace('T', ' ').replace(/\.\d+Z$/, 'Z')
+            : 'time unavailable';
+          return timestamp + '  ' + stage + ' — ' + message;
+        }).join('\n');
+      }
+
       function isLikelyBearerToken(token) {
         return /^[A-Za-z0-9._~+\/-]{8,512}$/.test(token);
       }
@@ -3436,7 +3453,9 @@ const controllerPage = String.raw`<!doctype html>
                 ? result.payload.content
                 : result.payload)
               : result.payload;
-            const content = typeof rawContent === 'string'
+            const content = tabName === 'events'
+              ? formatProgressTimeline(rawContent)
+              : typeof rawContent === 'string'
               ? rawContent
               : JSON.stringify(rawContent, null, 2);
             modalTabCache[tabName] = tabName === 'status'
@@ -4106,7 +4125,15 @@ const controllerPage = String.raw`<!doctype html>
           const issuesResponse = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
           const issues = issuesResponse && Array.isArray(issuesResponse.issues) ? issuesResponse.issues : [];
           if (!Array.isArray(issues) || issues.length === 0) {
-            issuesList.innerHTML = '<div class="issues-list-empty">No issues found with label "' + escapeHtml(label) + '"</div>';
+            // Keep the empty state on the same safe DOM-rendering path as issue
+            // cards. Besides avoiding an HTML injection sink, this prevents a
+            // missing string-escape helper from turning a successful empty
+            // response into an apparent controller failure.
+            issuesList.replaceChildren();
+            const emptyState = document.createElement('div');
+            emptyState.className = 'issues-list-empty';
+            emptyState.textContent = 'No issues found with label "' + label + '"';
+            issuesList.appendChild(emptyState);
             setOutputMetadata('ok');
             setResponseSummary({ status: 'ok' });
             setOutputBody(JSON.stringify({

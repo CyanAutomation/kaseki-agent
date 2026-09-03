@@ -45,7 +45,10 @@ export function buildScorecard(evidence: Evidence, config: ScorecardConfig, now 
     dimensions, phases: buildPhases(evidence), token_totals: evidence.tokenUsage,
     timing_totals: {
       wall_clock_ms: (evidence.elapsedSeconds ?? 0) * 1000,
-      phase_duration_ms: { goal_setting: null, scouting: null, coding: null, validation: null, goal_check: null, run_evaluation: null },
+      phase_duration_ms: Object.fromEntries(DIMENSIONS.map((_, index) => {
+        const phase = ['goal_setting', 'scouting', 'coding', 'validation', 'goal_check', 'run_evaluation'][index];
+        return [phase, evidence.phaseDurationsMs[phase] ?? null];
+      })),
       completeness: evidence.elapsedSeconds === undefined ? 'unavailable' : 'complete',
     },
     scoring_config: {
@@ -59,6 +62,7 @@ export function buildScorecard(evidence: Evidence, config: ScorecardConfig, now 
       enabled_phase_reliability_penalty_points: 0, disabled_phase_policy: 'reweight_eligible_dimensions',
     },
     warnings: [...coverage.missing.map(value => `Missing evidence: ${value}`),
+      ...(evidence.tokens !== undefined && evidence.tokens > config.targets.tokens ? [`Token budget exceeded: ${evidence.tokens} used versus ${config.targets.tokens} target.`] : []),
       ...(!evidence.evaluatorAvailable ? ['Evaluator unavailable: patch and validation evidence are reported separately; score capped below A.'] : [])],
   });
 }
