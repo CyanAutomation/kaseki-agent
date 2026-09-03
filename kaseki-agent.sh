@@ -9931,7 +9931,9 @@ prune_raw_event_artifacts() {
   local raw_file filtered_file
   while IFS=':' read -r raw_file filtered_file; do
     [ -n "$raw_file" ] || continue
-    [ -s "${KASEKI_RESULTS_DIR}/$raw_file" ] && [ -s "${KASEKI_RESULTS_DIR}/$filtered_file" ] || continue
+    if [ ! -s "${KASEKI_RESULTS_DIR}/$raw_file" ] || [ ! -s "${KASEKI_RESULTS_DIR}/$filtered_file" ]; then
+      continue
+    fi
     rm -f "${KASEKI_RESULTS_DIR}/$raw_file"
   done <<'EOF'
 pi-events.raw.jsonl:pi-events.jsonl
