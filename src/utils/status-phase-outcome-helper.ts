@@ -109,7 +109,9 @@ export class StatusPhaseOutcomeHelper {
       : undefined;
     const requestedTimeout = stage && /goal check/i.test(stage)
       ? Number(job.request?.goalCheck?.timeoutSeconds)
-      : Number(job.request?.timeoutSeconds);
+      : stage && /run evaluation/i.test(stage)
+        ? Number(job.request?.runEvaluation?.timeoutSeconds)
+        : Number(job.request?.timeoutSeconds);
     const timeoutSeconds = Number.isFinite(requestedTimeout) && requestedTimeout > 0
       ? requestedTimeout
       : this.config.agentTimeoutSeconds ?? 3600;
