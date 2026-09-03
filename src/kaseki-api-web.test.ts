@@ -930,9 +930,14 @@ describe('kaseki API web console behavior', () => {
         if (path === '/api/runs/kaseki-305/status') return createJsonResponse({ id: 'kaseki-305', status: 'running' });
         if (path === '/api/runs/kaseki-305/events?tail=50') return createJsonResponse({
           events: [{
-            stage: 'goal check', status: 'started', message: 'started', timestamp: '2026-09-03T17:20:52.604Z',
+            stage: 'goal check', status: 'started', message: 'started',
+            updatedAt: '2026-09-03T17:20:52.604Z', timestamp: '2000-01-01T00:00:00Z',
           }, {
             stage: 'validation', status: 'finished', message: 'passed', timestamp: '2026-09-03T17:21:38.458Z',
+          }, {
+            event_type: 'coding_attempt', detail: { attempt: 2, provider: 'gateway' }, updatedAt: '2026-09-03T17:22:00Z',
+          }, {
+            event_type: 'error', error_type: 'provider_failure', detail: 'gateway unavailable', updatedAt: '2026-09-03T17:22:10Z',
           }],
         });
         return createJsonResponse({});
@@ -945,7 +950,11 @@ describe('kaseki API web console behavior', () => {
     await waitFor(() => expect(document.querySelector('#full-results-modal')?.hasAttribute('hidden')).toBe(false));
     clickSelector(document, '.tab-btn[data-tab="events"]');
     await waitFor(() => expectTextContains(document, '#events-output', 'Goal Check — started'));
+    expectTextContains(document, '#events-output', '2026-09-03 17:20:52Z');
+    expectTextNotContains(document, '#events-output', '2000-01-01');
     expectTextContains(document, '#events-output', 'Validation — passed');
+    expectTextContains(document, '#events-output', 'Coding Attempt — { "attempt": 2, "provider": "gateway" }');
+    expectTextContains(document, '#events-output', 'Error — provider_failure: gateway unavailable');
     expectTextNotContains(document, '#events-output', '"events"');
   });
 
