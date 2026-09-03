@@ -7812,6 +7812,8 @@ NODE
   risks="$(format_pr_json_list "$scouting_file" "risks" 2 180 | sanitize_pr_metadata_text)"
   if [ -n "$missing" ]; then
     printf '%s\n' "$missing"
+  elif [ "$evaluator_unavailable" -eq 1 ]; then
+    printf -- '- Goal-check requirements could not be assessed automatically; review the requested scope, diff, and validation evidence manually.\n'
   elif [ "$validation_pass_flag" -eq 1 ]; then
     printf -- '- No unmet task requirements were reported by the goal check.\n'
   fi

@@ -16,6 +16,7 @@ export interface Evidence {
   unknownTokenRequests: number;
   retries: number;
   phaseRetries: Record<string, number>;
+  phaseDurationsMs: Record<string, number>;
   validation: 'passed' | 'failed' | 'unknown';
   quality: 'passed' | 'failed' | 'unknown';
   goalMet?: boolean;

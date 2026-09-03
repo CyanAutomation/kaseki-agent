@@ -28,6 +28,28 @@ describe('run scorecard', () => {
     expect(calculateCoverage(evidence).ratio).toBeGreaterThan(.7);
   });
 
+  test('records per-phase durations and warns when the token budget is exceeded', () => {
+    const evidence = collectEvidence({
+      json: {
+        'metadata.json': { instance: 'run-timing', exit_code: 0, total_duration_seconds: 90, quality_exit_code: 0 },
+        'timings-manifest.json': { stage_timings: [
+          { stage: 'pi goal-setting agent', elapsed_seconds: 10 },
+          { stage: 'pi coding agent', elapsed_seconds: 20 },
+          { stage: 'run evaluation', elapsed_seconds: 30 },
+        ] },
+        'goal-check.json': { met: true },
+        'run-evaluation.json': { score: 100 },
+      },
+      text: { 'changed-files.txt': 'README.md\n', 'git.diff': '+docs\n' },
+      summaries: [{ phase: 'coding', request_id: 'one', usage: { input: 250000, output: 10 } }],
+    });
+    const card = buildScorecard(evidence, normalizeConfig({ KASEKI_SCORECARD_TARGET_TOKENS: '200000' }));
+    expect(card.phases.goal_setting.duration_ms).toBe(10000);
+    expect(card.phases.coding.duration_ms).toBe(20000);
+    expect(card.timing_totals.phase_duration_ms.run_evaluation).toBe(30000);
+    expect(card.warnings).toContain('Token budget exceeded: 250010 used versus 200000 target.');
+  });
+
   test('uses safe config defaults and stable grades', () => {
     const config = normalizeConfig({ KASEKI_SCORECARD_TARGET_SECONDS: '-1', KASEKI_SCORECARD_RUBRIC_VERSION: 'v2' });
     expect(config.targets.elapsedSeconds).toBe(1800);
