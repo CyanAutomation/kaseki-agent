@@ -783,6 +783,18 @@ describe('StatusPhaseOutcomeHelper', () => {
       expect(response.phaseHealth?.heartbeatAgeSeconds).toBeGreaterThanOrEqual(120);
     });
 
+    it('uses the run-evaluation timeout for final-review health', () => {
+      const helper = new StatusPhaseOutcomeHelper(makeScheduler([]), makeConfig(resultsDir));
+      const response = makeResponse('run evaluation');
+      response.progress = { stage: 'run evaluation', updatedAt: new Date().toISOString() } as any;
+      const job = makeJob();
+      job.request = { runEvaluation: { enabled: true, timeoutSeconds: 900 } } as any;
+
+      helper.addPhaseOutcome(response, job, {});
+
+      expect(response.phaseHealth).toMatchObject({ timeoutSeconds: 900, state: 'healthy' });
+    });
+
     it('recognizes goal-setting stage with various separators', () => {
       const patterns = ['pi goal-setting agent', 'pi goal_setting agent', 'pi goalsetting agent'];
 

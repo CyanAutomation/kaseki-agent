@@ -277,6 +277,14 @@ function addAnalysisValidation(
   if (!validationTimingsContent) {
     if (Number.isFinite(failureValidationExit) && failureValidationExit !== 0) {
       response.validation = { passed: false, commandResults: [] };
+      return;
+    }
+    const validationLogPath = path.join(runDir, 'validation.log');
+    if (fs.existsSync(validationLogPath)) {
+      const validation = analysisHelper.safelyReadArtifact('validation.log', analysisWarnings, () =>
+        readValidationLogSummary(fs.readFileSync(validationLogPath, 'utf-8'))
+      );
+      if (validation) response.validation = validation;
     }
     return;
   }
@@ -289,6 +297,20 @@ function addAnalysisValidation(
   response.validation = {
     ...validation,
     passed: Number.isFinite(failureValidationExit) && failureValidationExit !== 0 ? false : validation.passed,
+  };
+}
+
+function readValidationLogSummary(
+  content: string,
+): NonNullable<AnalysisResponse['validation']> | undefined {
+  const command = content.match(/^\[validation pipeline\] command=(.+)$/m)?.[1]?.trim();
+  const status = content.match(/^\[validation pipeline\] statuses: command=(\d+)\b/m)?.[1];
+  if (!command || status === undefined) return undefined;
+  const exitCode = Number.parseInt(status, 10);
+  if (!Number.isFinite(exitCode)) return undefined;
+  return {
+    passed: exitCode === 0,
+    commandResults: [{ command, exitCode, elapsed: 0 }],
   };
 }
 

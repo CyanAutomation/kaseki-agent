@@ -11,6 +11,13 @@ export type DockerLogProgressEvent = {
 const ORCHESTRATOR_STAGE_PATTERN = /^==>\s+(.+?)\s*$/;
 const STRUCTURED_PROGRESS_PATTERN = /^\[progress\]\s+([^:]+):\s*(.+)$/;
 const DEPENDENCY_CACHE_MISS_PATTERN = /^Dependency cache status:\s*.*\bcache miss\b.*$/i;
+const TRAILING_TIMESTAMP_PATTERN = /^(.*?)(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)$/;
+
+function splitTrailingTimestamp(value: string): { text: string; timestamp?: string } {
+  const match = value.match(TRAILING_TIMESTAMP_PATTERN);
+  if (!match || !match[1].trim()) return { text: value };
+  return { text: match[1].trim(), timestamp: match[2] };
+}
 
 export function progressEventsFromDockerLogTail(
   content: string | undefined,
@@ -35,17 +42,19 @@ export function progressEventsFromDockerLogTail(
     const line = (timestampMatch?.[2] || rawLine).replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '');
     const stageMatch = line.match(ORCHESTRATOR_STAGE_PATTERN);
     if (stageMatch) {
-      const isEstimated = !timestampMatch;
+      const heading = splitTrailingTimestamp(stageMatch[1].trim());
+      const recoveredTimestamp = timestampMatch?.[1] || heading.timestamp;
+      const isEstimated = !recoveredTimestamp;
       append({
         source: 'docker-logs',
-        stage: stageMatch[1].trim(),
+        stage: heading.text,
         // A Docker tail without timestamps is an observation, not durable
         // lifecycle evidence.  Calling it "started" caused future headings
         // from buffered logs to appear as active stages in the API timeline.
         message: isEstimated ? 'observed in log tail' : 'started',
         ...(isEstimated ? {} : { status: 'started' }),
-        timestamp: eventTimestamp,
-        updatedAt: eventTimestamp,
+        timestamp: recoveredTimestamp || eventTimestamp,
+        updatedAt: recoveredTimestamp || eventTimestamp,
         ...(isEstimated ? { timestampEstimated: true } : {}),
       });
       continue;

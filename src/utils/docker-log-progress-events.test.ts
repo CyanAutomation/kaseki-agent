@@ -38,6 +38,19 @@ describe('progressEventsFromDockerLogTail', () => {
     expect(events[0].timestampEstimated).toBeUndefined();
   });
 
+  it('removes a timestamp glued to an orchestrator heading', () => {
+    const events = progressEventsFromDockerLogTail(
+      '==> run evaluation2026-09-03T08:13:20.590571055Z\n',
+      '2026-09-03T08:18:42.456442363Z',
+    );
+
+    expect(events[0]).toEqual(expect.objectContaining({
+      stage: 'run evaluation',
+      timestamp: '2026-09-03T08:13:20.590571055Z',
+      updatedAt: '2026-09-03T08:13:20.590571055Z',
+    }));
+  });
+
   it('uses a stable epoch fallback instead of changing timestamps on every read', () => {
     const first = progressEventsFromDockerLogTail('==> clone repository\n');
     const second = progressEventsFromDockerLogTail('==> clone repository\n');

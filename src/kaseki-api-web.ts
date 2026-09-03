@@ -442,6 +442,16 @@ const controllerPage = String.raw`<!doctype html>
         min-height: 1em;
       }
       .field-error[hidden] { display: none; }
+      .advanced-options {
+        border-top: 1px solid var(--color-border);
+        padding-top: var(--space-2);
+      }
+      .advanced-options summary {
+        color: var(--color-focus-text);
+        cursor: pointer;
+        font-weight: var(--font-weight-semibold);
+      }
+      .advanced-options .form-fields { margin-top: var(--space-3); }
       input, textarea, select, button {
         box-sizing: border-box;
         color: inherit;
@@ -1413,10 +1423,10 @@ const controllerPage = String.raw`<!doctype html>
           </div>
           <div class="health-checks-grid">
             <button class="health-check-button" data-probe="/health" type="button" title="Check basic controller health status"><span class="hc-label">System Status</span><span class="health-check-status" data-status="health"></span></button>
-            <button class="health-check-button" data-probe="/ready" type="button" title="Verify controller is ready to accept tasks"><span class="hc-label">Startup Checks</span><span class="health-check-status" data-status="readiness"></span></button>
+            <button class="health-check-button" data-probe="/ready" type="button" title="Verify the controller is ready to accept tasks"><span class="hc-label">Readiness</span><span class="health-check-status" data-status="readiness"></span></button>
             <button class="health-check-button" data-probe="/api/gateway-test?stage=1" data-auth="true" type="button" title="Validate API gateway connection and authentication"><span class="hc-label">API Connection</span><span class="health-check-status" data-status="gateway"></span></button>
             <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true" data-auth="true" type="button" title="Test AI model inference and compatibility (uses tokens)"><span class="hc-label">AI Model Test</span><span class="health-check-status" data-status="llm-test"></span></button>
-            <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button" title="Run complete controller readiness diagnostics"><span class="hc-label">Current Health</span><span class="health-check-status" data-status="preflight"></span></button>
+            <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button" title="Run complete live controller diagnostics"><span class="hc-label">Live preflight</span><span class="health-check-status" data-status="preflight"></span></button>
           </div>
           <p id="diagnostic-queue-state" class="field-helper" role="status" aria-live="polite">Diagnostics are ready.</p>
           <div class="summary-grid" id="health-summary" aria-live="polite">
@@ -1504,8 +1514,18 @@ const controllerPage = String.raw`<!doctype html>
                 <option value="inspect">Inspect</option>
               </select>
               <p class="field-helper">Patch mode makes code changes. Inspect mode is read-only analysis (faster, skips validation).</p>
-              <p class="field-helper">Patch runs publish a normal pull request after successful validation.</p>
+              <p class="field-helper">Validation is required before a run can start. Publishing and execution controls are available below.</p>
             </div>
+            <details class="advanced-options">
+              <summary>Advanced run controls</summary>
+              <div class="form-fields">
+                <div class="form-field"><label for="task-ref">Git ref</label><input id="task-ref" name="ref" value="main" placeholder="main"></div>
+                <div class="form-field"><label for="publish-mode">Publish result</label><select id="publish-mode" name="publishMode"><option value="pr">Pull request</option><option value="draft_pr">Draft pull request</option><option value="branch">Branch only</option><option value="none">Do not publish</option></select></div>
+                <div class="form-field"><label for="timeout-seconds">Run timeout (seconds)</label><input id="timeout-seconds" name="timeoutSeconds" type="number" min="60" max="10800" value="3600"></div>
+                <div class="form-field"><label for="changed-files-allowlist">Changed-file allowlist</label><input id="changed-files-allowlist" name="changedFilesAllowlist" placeholder="README.md, docs/**/*.md"><p class="field-helper">Comma-separated patterns. Leave empty to use controller defaults.</p></div>
+                <div class="form-field"><label for="validation-commands">Validation commands</label><input id="validation-commands" name="validationCommands" placeholder="npm test, npm run check"><p class="field-helper">Comma-separated commands. Leave empty to use controller defaults.</p></div>
+              </div>
+            </details>
           </fieldset>
           <fieldset>
             <legend>Run actions</legend>
@@ -1733,7 +1753,8 @@ const controllerPage = String.raw`<!doctype html>
         const repos = loadRecentRepos();
         dropdown.replaceChildren();
         if (repos.length === 0) {
-          dropdown.classList.add('empty');
+          dropdown.classList.remove('empty');
+          dropdown.classList.add('hidden');
           return;
         }
         dropdown.classList.remove('empty');
@@ -1783,7 +1804,7 @@ const controllerPage = String.raw`<!doctype html>
       }
 
       function showRecentReposDropdown(dropdown) {
-        dropdown.classList.remove('hidden');
+        if (dropdown.querySelector('.recent-repo-item')) dropdown.classList.remove('hidden');
       }
 
       function hideRecentReposDropdown(dropdown) {
@@ -2866,13 +2887,20 @@ const controllerPage = String.raw`<!doctype html>
 
       function requestBody(idempotencyKey) {
         const data = new FormData(form);
+        const csv = (name) => String(data.get(name) || '').split(',').map((value) => value.trim()).filter(Boolean);
         const body = {
           repoUrl: String(data.get('repoUrl') || '').trim(),
           taskPrompt: String(data.get('taskPrompt') || '').trim(),
           taskMode: String(data.get('taskMode') || 'patch'),
-          // The web console deliberately creates normal PRs for patch tasks.
-          publishMode: 'pr',
+          ref: String(data.get('ref') || 'main').trim(),
+          publishMode: String(data.get('publishMode') || 'pr'),
         };
+        const timeoutSeconds = Number(data.get('timeoutSeconds'));
+        const changedFilesAllowlist = csv('changedFilesAllowlist');
+        const validationCommands = csv('validationCommands');
+        if (Number.isFinite(timeoutSeconds) && timeoutSeconds > 0) body.timeoutSeconds = timeoutSeconds;
+        if (changedFilesAllowlist.length) body.changedFilesAllowlist = changedFilesAllowlist;
+        if (validationCommands.length) body.validationCommands = validationCommands;
         if (idempotencyKey) {
           body.idempotencyKey = idempotencyKey;
         }
@@ -3184,9 +3212,12 @@ const controllerPage = String.raw`<!doctype html>
         const repoUrlInput = document.querySelector('#repo-url');
         const taskPromptInput = document.querySelector('#task-prompt');
         const changedFilesAllowlist = document.querySelector('[name="changedFilesAllowlist"]');
-        const validationAllowlist = document.querySelector('[name="validationAllowlist"]');
+        const validationCommands = document.querySelector('[name="validationCommands"]');
+        const ref = document.querySelector('[name="ref"]');
+        const publishMode = document.querySelector('[name="publishMode"]');
+        const timeoutSeconds = document.querySelector('[name="timeoutSeconds"]');
 
-        const formFields = [repoUrlInput, taskPromptInput, changedFilesAllowlist, validationAllowlist].filter(Boolean);
+        const formFields = [repoUrlInput, taskPromptInput, changedFilesAllowlist, validationCommands, ref, publishMode, timeoutSeconds].filter(Boolean);
         formFields.forEach((field) => {
           field.addEventListener('input', () => {
             submittedRunId = '';
