@@ -4,6 +4,16 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.131.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.131.4...v1.131.5) (2026-09-03)
+
+
+### Bug Fixes
+
+* improve console audit reporting ([b12005a](https://github.com/CyanAutomation/kaseki-agent/commit/b12005a220f4129f8e2405b2c84a413e66b1b708))
+* improve console audit reporting ([#1297](https://github.com/CyanAutomation/kaseki-agent/issues/1297)) ([f42727c](https://github.com/CyanAutomation/kaseki-agent/commit/f42727c1e9a3c7be5c536d887aadc47d2bde4aab))
+* preserve structured event diagnostics ([195c78b](https://github.com/CyanAutomation/kaseki-agent/commit/195c78b343a7948a5cabd647d97c2e9f6b42d894))
+* preserve structured event diagnostics in console timeline ([#1298](https://github.com/CyanAutomation/kaseki-agent/issues/1298)) ([ce43294](https://github.com/CyanAutomation/kaseki-agent/commit/ce43294278631b73a8f21b1a9873ce9e8249ad5f))
+
 ## [1.131.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.131.3...v1.131.4) (2026-09-03)
 
 
