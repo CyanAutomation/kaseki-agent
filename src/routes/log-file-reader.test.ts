@@ -46,6 +46,26 @@ describe('log-file-reader', () => {
     });
   });
 
+  it('redacts secret mount paths, fingerprints, and private-key blocks before serving logs', () => {
+    const directory = makeTempDir();
+    const file = path.join(directory, 'stdout.log');
+    fs.writeFileSync(file, [
+      'mounted /run/secrets/kaseki/github-token',
+      'sha256_fingerprint=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      '-----BEGIN PRIVATE KEY-----',
+      'super-secret-key-material',
+      '-----END PRIVATE KEY-----',
+    ].join('\n'));
+
+    const result = readLogContent(file, requests());
+    expect(result.content).toContain('[redacted secret path]');
+    expect(result.content).toContain('sha256_fingerprint=[redacted]');
+    expect(result.content).toContain('[redacted private key]');
+    expect(result.content).not.toContain('github-token');
+    expect(result.content).not.toContain('0123456789abcdef');
+    expect(result.content).not.toContain('super-secret-key-material');
+  });
+
   it('reads the final 100 KiB of large logs and applies line tails', () => {
     const directory = makeTempDir();
     const file = path.join(directory, 'stdout.log');

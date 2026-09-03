@@ -7749,9 +7749,10 @@ build_pr_agent_review() {
   esac
   local goal_file="${KASEKI_RESULTS_DIR}/goal-check.json"
   local scouting_file="${KASEKI_RESULTS_DIR}/scouting.json"
-  local goal_summary evidence missing validation_notes risks
+  local goal_summary evidence missing validation_notes risks evaluator_unavailable
 
   goal_summary=""
+  evaluator_unavailable=0
   # A missing or malformed evaluator artifact is not evidence that the goal was
   # met. Omit this optional section instead of manufacturing a verdict.
   if [ ! -s "$goal_file" ] || ! node - "$goal_file" <<'NODE' >/dev/null 2>&1
@@ -7776,11 +7777,24 @@ NODE
 )"
     goal_summary="$(printf '%s' "$goal_summary" | sanitize_pr_metadata_text)"
     goal_summary="$(truncate_pr_metadata_text 220 "$goal_summary")"
+    if node - "$goal_file" <<'NODE' >/dev/null 2>&1
+const fs = require('fs');
+try {
+  const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  process.exit(data?.evaluation_unavailable === true ? 0 : 1);
+} catch { process.exit(1); }
+NODE
+    then
+      evaluator_unavailable=1
+    fi
   fi
 
   printf '### What went well\n'
   if [ -n "$goal_summary" ]; then
     printf -- '- %s\n' "$goal_summary"
+  fi
+  if [ "$evaluator_unavailable" -eq 1 ]; then
+    printf -- '- Goal-check evaluator unavailable; this is a degraded result and requires human review.\n'
   fi
   evidence="$(format_pr_json_list "$goal_file" "evidence" 3 180 | sanitize_pr_metadata_text)"
   validation_notes="$(format_pr_json_list "$goal_file" "validation_notes" 2 180 | sanitize_pr_metadata_text)"
@@ -8058,6 +8072,8 @@ format_pr_run_scorecard() {
     rendered="$("$formatter" "$scorecard_file" 2>/dev/null || true)"
   elif [ -s "$scorecard_file" ] && [ -f "${KASEKI_APP_ROOT:-/app}/dist/run-scorecard-markdown.js" ]; then
     rendered="$(node "${KASEKI_APP_ROOT:-/app}/dist/run-scorecard-markdown.js" "$scorecard_file" 2>/dev/null || true)"
+  elif [ -s "$scorecard_file" ] && [ -f "${KASEKI_APP_ROOT:-/app}/lib/run-scorecard-markdown.js" ]; then
+    rendered="$(node "${KASEKI_APP_ROOT:-/app}/lib/run-scorecard-markdown.js" "$scorecard_file" 2>/dev/null || true)"
   fi
   rendered="$(printf '%s' "$rendered" | sanitize_pr_body_text)"
   case "$rendered" in *'Scorecard unavailable:'*) rendered="" ;; esac
@@ -8069,6 +8085,8 @@ format_pr_run_scorecard() {
       rendered="$("$formatter" "$scorecard_file" 2>/dev/null || true)"
     elif [ -s "$scorecard_file" ] && [ -f "${KASEKI_APP_ROOT:-/app}/dist/run-scorecard-markdown.js" ]; then
       rendered="$(node "${KASEKI_APP_ROOT:-/app}/dist/run-scorecard-markdown.js" "$scorecard_file" 2>/dev/null || true)"
+    elif [ -s "$scorecard_file" ] && [ -f "${KASEKI_APP_ROOT:-/app}/lib/run-scorecard-markdown.js" ]; then
+      rendered="$(node "${KASEKI_APP_ROOT:-/app}/lib/run-scorecard-markdown.js" "$scorecard_file" 2>/dev/null || true)"
     fi
     rendered="$(printf '%s' "$rendered" | sanitize_pr_body_text)"
     case "$rendered" in *'Scorecard unavailable:'*) rendered="" ;; esac
@@ -8157,7 +8175,7 @@ $scorecard_markdown
 "
   else
     scorecard_section=""
-    scorecard_fallback="- Deterministic review evidence is shown below from validation status and changed-file metadata; evaluator or scorecard artifacts were unavailable."
+    scorecard_fallback="- Deterministic review evidence is shown below from validation status and changed-file metadata. The scorecard could not be rendered at publication time; inspect the completed run artifacts for evaluator evidence."
   fi
 
   cat <<EOF
@@ -8165,7 +8183,11 @@ $scorecard_markdown
 $(build_pr_improvements_summary)
 $scorecard_fallback
 
-$(if [ -n "$agent_review" ]; then printf '## Agent review\n%s\n\n' "$agent_review"; fi)$(if [ -n "$agent_evaluation" ]; then printf '## Agent evaluation\n%s\n\n' "$agent_evaluation"; fi)$scorecard_section
+$(if [ -n "$agent_review" ]; then printf '## Agent review\n%s\n\n' "$agent_review"; fi)
+
+$(if [ -n "$agent_evaluation" ]; then printf '## Agent evaluation\n%s\n\n' "$agent_evaluation"; fi)
+
+$scorecard_section
 
 ## Validation
 ### Validation statuses
@@ -9899,6 +9921,32 @@ done
 run_secret_scan
 
 run_run_evaluation
+
+# Filtered event streams are the supported reviewer artifact. Raw provider
+# streams are substantially larger and can contain transport-level context, so
+# retain them for failures/degraded evaluations but discard duplicate raw copies
+# after a fully healthy run. Operators can opt out for an investigation.
+prune_raw_event_artifacts() {
+  [ "${KASEKI_RETAIN_RAW_EVENTS:-0}" = "1" ] && return 0
+  local raw_file filtered_file
+  while IFS=':' read -r raw_file filtered_file; do
+    [ -n "$raw_file" ] || continue
+    [ -s "${KASEKI_RESULTS_DIR}/$raw_file" ] && [ -s "${KASEKI_RESULTS_DIR}/$filtered_file" ] || continue
+    rm -f "${KASEKI_RESULTS_DIR}/$raw_file"
+  done <<'EOF'
+pi-events.raw.jsonl:pi-events.jsonl
+scouting-events.raw.jsonl:scouting-events.jsonl
+goal-setting-events.raw.jsonl:goal-setting-events.jsonl
+goal-check-events.raw.jsonl:goal-check-events.jsonl
+run-evaluation-events.raw.jsonl:run-evaluation-events.jsonl
+EOF
+}
+
+if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && [ "$VALIDATION_EXIT" -eq 0 ] && \
+  [ "$SECRET_SCAN_EXIT" -eq 0 ] && [ "$GOAL_CHECK_EXIT" -eq 0 ] && [ "$RUN_EVALUATION_EXIT" -eq 0 ] && \
+  [ -z "${GOAL_CHECK_EVALUATION_WARNING:-}" ] && [ -z "${RUN_EVALUATION_WARNING:-}" ]; then
+  prune_raw_event_artifacts
+fi
 
 # Evaluation and phase timing evidence is now available. Generate before PR
 # rendering/publication so consumers see the same immutable run evidence.

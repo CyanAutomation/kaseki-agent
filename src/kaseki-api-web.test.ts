@@ -75,6 +75,7 @@ async function renderConsole(options: {
         window.sessionStorage.setItem('kasekiApiToken', options.storedToken);
       }
       window.fetch = fetchMock as unknown as typeof window.fetch;
+      window.confirm = () => true;
     },
   });
   openDoms.push(dom);
@@ -217,11 +218,14 @@ describe('kaseki API web console routes', () => {
     expectAttribute(document, '#header-api-token', 'aria-label', 'API bearer token');
     expectText(document, 'label[for="repo-url"]', 'Task repository URL');
     expectText(document, 'label[for="issues-repo-url"]', 'Issues repository URL');
+    expectText(document, 'label[for="issues-label"]', 'Issue label');
     getElement(document, '[data-testid="task-repo-url"]');
     getElement(document, '[data-testid="issues-repo-url"]');
+    expectAttribute(document, '#issues-label', 'value', 'kaseki-agent');
     getElement(document, '[data-probe="/api/preflight"]');
     expectAttribute(document, '[data-probe="/api/gateway-test?stage=1"]', 'data-auth', 'true');
     expectTextContains(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]', 'AI Model Test');
+    expectAttribute(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]', 'data-cost-warning', 'true');
     expectAttribute(document, '#task-mode', 'name', 'taskMode');
     expectText(document, '.advanced-options summary', 'Advanced run controls');
     expectAttribute(document, '#task-ref', 'name', 'ref');
@@ -237,6 +241,7 @@ describe('kaseki API web console routes', () => {
     expectTextContains(document, '[data-tab="artifacts"]', 'Artifacts');
     expectTextContains(document, '#recommended-artifacts', 'Key Diagnostics');
     expectTextContains(document, '#copy-diagnostic-bundle-btn', 'Copy Debug Summary');
+    expectText(document, '#raw-response summary', 'Raw controller response');
     expectHidden(document, '#response-summary', true);
     expect(body).toContain("['failed', 'cancelled', 'canceled', 'timed_out']");
     expect(body).toContain("loadModalTab('events', { background: true })");
@@ -755,7 +760,7 @@ describe('kaseki API web console behavior', () => {
   });
 
   test('selecting a GitHub issue carries its repository into the submit form', async () => {
-    const { document } = await renderConsole({
+    const { document, calls } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
         '/api/github-issues': createJsonResponse({
@@ -773,8 +778,12 @@ describe('kaseki API web console behavior', () => {
 
     clickSelector(document, '[data-tab="issues"]');
     inputSelector(document, '#issues-repo-url', 'CyanAutomation/kaseki-agent');
+    inputSelector(document, '#issues-label', 'documentation');
     clickSelector(document, '#load-issues-btn');
     await waitFor(() => expectTextContains(document, '#issues-list', 'Stage names drift'));
+    expect(calls.find((call) => call.path === '/api/github-issues')?.init?.body).toBe(JSON.stringify({
+      repoUrl: 'CyanAutomation/kaseki-agent', label: 'documentation',
+    }));
     expect(getElement(document, '.issues-list-item').tagName).toBe('BUTTON');
     expectText(document, '#state', 'Issues loaded.');
     expectText(document, '#output-meta', 'Status: ok');

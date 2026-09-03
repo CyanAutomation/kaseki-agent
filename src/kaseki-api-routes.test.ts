@@ -2421,6 +2421,31 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
     }
   });
 
+  test('redacts sensitive values from downloaded log artifacts', async () => {
+    const jobId = 'kaseki-log-redaction';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'stdout.log'), 'secret=/run/secrets/kaseki/api-token\nsha256_fingerprint=0123456789abcdef0123456789abcdef');
+
+    const scheduler = createMockScheduler({
+      [jobId]: { id: jobId, status: 'completed', createdAt: new Date(), resultDir: jobDir }
+    });
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, createTestConfig(resultsDir));
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/stdout.log`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      expect(response.status).toBe(200);
+      const body = await response.json() as any;
+      expect(body.content).toContain('[redacted secret path]');
+      expect(body.content).toContain('sha256_fingerprint=[redacted]');
+      expect(body.content).not.toContain('api-token');
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
   test('non-failed run is blocked from retrieving failure diagnostics artifacts', async () => {
     const jobId = 'kaseki-running-1';
     const jobDir = path.join(resultsDir, jobId);
@@ -3736,6 +3761,31 @@ describe('kaseki-api-routes status artifact hints', () => {
       expect(body.analysisWarnings).toEqual(expect.arrayContaining([
         expect.stringContaining('metadata.json'),
         expect.stringContaining('Skipped malformed validation-timings.tsv record')
+      ]));
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('completed-run analysis does not warn about an absent failure artifact', async () => {
+    const jobId = 'kaseki-analysis-completed-without-failure';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'validation-timings.tsv'), 'command\texit\telapsed\nvalid\t0\t3\n');
+
+    const scheduler = createMockScheduler({
+      [jobId]: { id: jobId, status: 'completed', createdAt: new Date(), resultDir: jobDir } as any,
+    });
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, createTestConfig(resultsDir));
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/analysis`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      expect(response.status).toBe(200);
+      const body = await response.json() as any;
+      expect(body.analysisWarnings ?? []).not.toEqual(expect.arrayContaining([
+        expect.stringContaining('failure.json')
       ]));
     } finally {
       await cleanupTestApp(server, idempotencyStore);
