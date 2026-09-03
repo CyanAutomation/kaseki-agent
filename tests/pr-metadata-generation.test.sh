@@ -440,6 +440,10 @@ cat > "$RESULTS_DIR/goal-check.json" <<'JSON'
 JSON
 degraded_review="$(build_pr_agent_review 1)"
 grep -Fq 'Goal-check evaluator unavailable; this is a degraded result and requires human review.' <<<"$degraded_review" || fail "Degraded evaluator state was not made visible in PR review metadata"
+if grep -Fq 'No unmet task requirements were reported by the goal check.' <<<"$degraded_review"; then
+  fail "Degraded evaluator state must not claim that the goal check found no unmet requirements"
+fi
+pass "Degraded evaluator state does not manufacture a goal-check verdict"
 pass "PR review metadata makes evaluator degradation visible"
 
 
