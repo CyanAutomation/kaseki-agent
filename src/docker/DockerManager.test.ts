@@ -3,6 +3,20 @@ import { execFileSync, execSync, spawn } from 'child_process';
 import { EventEmitter } from 'events';
 import fs from 'fs';
 
+type ChildProcessDouble = EventEmitter & {
+  stdout: EventEmitter | null;
+  stderr: EventEmitter | null;
+  kill: jest.Mock;
+};
+
+function createChildProcessDouble(options: { withOutput?: boolean } = {}): ChildProcessDouble {
+  const child = new EventEmitter() as ChildProcessDouble;
+  child.stdout = options.withOutput ? new EventEmitter() : null;
+  child.stderr = options.withOutput ? new EventEmitter() : null;
+  child.kill = jest.fn();
+  return child;
+}
+
 // Mock child_process
 jest.mock('child_process');
 jest.mock('fs', () => ({
@@ -316,19 +330,7 @@ describe('DockerManager', () => {
 
   describe('runContainer', () => {
     it('should enhance error message for Docker init failures with exit code 127', async () => {
-      const mockChild = {
-        stdout: null,
-        stderr: null,
-        on: jest.fn((event, callback) => {
-          if (event === 'exit') {
-            // Simulate exit with code 127 and stderr containing the error
-            setTimeout(() => {
-              callback(127);
-            }, 10);
-          }
-        }),
-        kill: jest.fn(),
-      };
+      const mockChild = createChildProcessDouble({ withOutput: true });
 
       (spawn as jest.Mock).mockReturnValue(mockChild);
 
@@ -342,25 +344,39 @@ describe('DockerManager', () => {
         command: ['agent'],
       };
 
-      // Mock execSync for directory creation
       (execSync as jest.Mock).mockReturnValue(Buffer.from(''));
 
-      // We can't directly test the stderr enhancement without mocking more,
-      // but we've verified the logic exists in the source code
-      const result = await DockerManager.runContainer(config);
-      expect(result.exitCode).toBe(127);
+      const resultPromise = DockerManager.runContainer(config);
+
+      mockChild.stderr?.emit(
+        'data',
+        Buffer.from('exec /usr/local/bin/kaseki-entrypoint: no such file or directory')
+      );
+      mockChild.emit('exit', 127);
+
+      await expect(resultPromise).resolves.toEqual({
+        exitCode: 127,
+        stdout: '',
+        stderr:
+          'exec /usr/local/bin/kaseki-entrypoint: no such file or directory' +
+          '\n\n❌ DOCKER INITIALIZATION FAILED\n' +
+          'This usually means the Docker image is missing critical scripts or is corrupted.\n\n' +
+          'Troubleshooting steps:\n' +
+          '1. Pull the latest image:\n' +
+          '   docker pull docker.io/cyanautomation/kaseki-agent:latest\n' +
+          '2. Verify the image is healthy:\n' +
+          '   kaseki-agent doctor\n' +
+          '3. Try running again:\n' +
+          '   kaseki-agent run <repo> <ref> <task>\n\n' +
+          'If the problem persists, the image may need to be rebuilt locally:\n' +
+          '   docker build -t kaseki-template:latest .',
+      });
+      expect(mockChild.kill).not.toHaveBeenCalled();
     });
 
     it('should report exit code 124 when a timed-out container exits during the grace window', async () => {
       jest.useFakeTimers();
-      const mockChild = new EventEmitter() as EventEmitter & {
-        stdout: null;
-        stderr: null;
-        kill: jest.Mock;
-      };
-      mockChild.stdout = null;
-      mockChild.stderr = null;
-      mockChild.kill = jest.fn();
+      const mockChild = createChildProcessDouble();
 
       (spawn as jest.Mock).mockReturnValue(mockChild);
 
@@ -393,14 +409,7 @@ describe('DockerManager', () => {
 
     it('should force kill and settle timed-out containers that do not exit during the grace window', async () => {
       jest.useFakeTimers();
-      const mockChild = new EventEmitter() as EventEmitter & {
-        stdout: null;
-        stderr: null;
-        kill: jest.Mock;
-      };
-      mockChild.stdout = null;
-      mockChild.stderr = null;
-      mockChild.kill = jest.fn();
+      const mockChild = createChildProcessDouble();
 
       (spawn as jest.Mock).mockReturnValue(mockChild);
       (execSync as jest.Mock).mockReturnValue(Buffer.from(''));
@@ -437,14 +446,7 @@ describe('DockerManager', () => {
 
     it('should ignore late exit and error events after a successful result has settled', async () => {
       jest.useFakeTimers();
-      const mockChild = new EventEmitter() as EventEmitter & {
-        stdout: null;
-        stderr: null;
-        kill: jest.Mock;
-      };
-      mockChild.stdout = null;
-      mockChild.stderr = null;
-      mockChild.kill = jest.fn();
+      const mockChild = createChildProcessDouble();
 
       (spawn as jest.Mock).mockReturnValue(mockChild);
 
@@ -471,14 +473,7 @@ describe('DockerManager', () => {
 
     it('should ignore errors during timeout termination and retain timeout reporting', async () => {
       jest.useFakeTimers();
-      const mockChild = new EventEmitter() as EventEmitter & {
-        stdout: null;
-        stderr: null;
-        kill: jest.Mock;
-      };
-      mockChild.stdout = null;
-      mockChild.stderr = null;
-      mockChild.kill = jest.fn();
+      const mockChild = createChildProcessDouble();
 
       (spawn as jest.Mock).mockReturnValue(mockChild);
 
