@@ -4,6 +4,19 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.132.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.131.8...v1.132.0) (2026-09-05)
+
+
+### Bug Fixes
+
+* update fallow package version to 3.22.0 in package.json and package-lock.json ([59e8101](https://github.com/CyanAutomation/kaseki-agent/commit/59e810190d8ab70f81bfbaccab44317fb12c57ec))
+
+
+### Features
+
+* add computePhaseDurations and stagePhase functions, and implement related tests for scoring parts ([b1fcc51](https://github.com/CyanAutomation/kaseki-agent/commit/b1fcc51c39f12243d13a6638e9832a1a1c2e7a41))
+* implement buildScorecardWarnings function and add related tests ([a791067](https://github.com/CyanAutomation/kaseki-agent/commit/a791067cdb0d99d8da892a551ee772ba598d70fc))
+
 ## [1.131.8](https://github.com/CyanAutomation/kaseki-agent/compare/v1.131.7...v1.131.8) (2026-09-05)
 
 
