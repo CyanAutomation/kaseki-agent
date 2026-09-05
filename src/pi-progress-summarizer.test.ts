@@ -203,10 +203,18 @@ describe('pi-progress-summarizer', () => {
     it('abbreviates text exceeding limit without losing essential meaning', () => {
       const text = 'This is a very long text that exceeds the limit and should be truncated';
       const result = truncate(text, 20);
-      // Result should be abbreviated (shorter than input)
-      expect(result.length).toBeLessThan(text.length);
-      // Result should still be readable with indication of abbreviation (e.g., ellipsis)
-      expect(result).toBeTruthy();
+
+      expect(result).toBe('This is a very long…');
+      expect(result.slice(0, -1)).toBe('This is a very long');
+      expect(result.endsWith('…')).toBe(true);
+      expect(result.length).toBeLessThanOrEqual(20);
+    });
+
+    it('counts the ellipsis within a one-character limit', () => {
+      const result = truncate('too long', 1);
+
+      expect(result).toBe('…');
+      expect(result).toHaveLength(1);
     });
 
     it('handles undefined input', () => {
