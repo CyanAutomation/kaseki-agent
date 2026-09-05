@@ -6624,10 +6624,28 @@ NODE
   emit_progress "goal check" "evaluator unavailable; continuing with mandatory human review"
 }
 
+read_goal_check_json() {
+  local goal_id="${1:-unknown}"
+  local goal_check_file="${KASEKI_RESULTS_DIR}/goal-check.json"
+  local run_evaluation_file="${KASEKI_RESULTS_DIR}/run-evaluation.json"
+
+  if [ -s "$goal_check_file" ]; then
+    cat "$goal_check_file"
+  elif [ -s "$run_evaluation_file" ]; then
+    # Retain compatibility with restored/legacy result bundles that only
+    # persisted the evaluator's combined run artifact.
+    cat "$run_evaluation_file"
+  else
+    log "ERROR" "No goal-check JSON found for goal_id=${goal_id}"
+    printf '{}\n'
+    return 1
+  fi
+}
+
 run_goal_check() {
   local attempt="${1:?goal-check attempt is required}"
   local mode="${2:-evidence}"
-  local evaluator_attempt goal_prompt goal_start verdict_met retry_prompt verdict_summary confidence goal_check_validation_reason goal_check_validation_summary goal_check_timeout goal_check_max_output
+  local evaluator_attempt goal_prompt goal_start verdict_met retry_prompt verdict_summary confidence goal_check_json goal_check_validation_reason goal_check_validation_summary goal_check_timeout goal_check_max_output
   unset KASEKI_GOAL_CHECK_CONTRACT_REPAIR
   GOAL_CHECK_ATTEMPTS="$attempt"
   GOAL_CHECK_EVALUATOR_ATTEMPTS=$((GOAL_CHECK_EVALUATOR_ATTEMPTS + 1))
@@ -6849,10 +6867,18 @@ if (valid.size === 1 && validOccurrences === 1) {
   GOAL_CHECK_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/goal-check-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
 
   if [ "$GOAL_CHECK_EXIT" -eq 0 ]; then
-    verdict_met="$(node -e 'try { const v=require(process.argv[1]); console.log(v.met ? "true" : "false"); } catch { console.log("false"); }' "${KASEKI_RESULTS_DIR}/goal-check.json" 2>/dev/null || printf 'false')"
-    retry_prompt="$(node -e 'try { const v=require(process.argv[1]); console.log(v.retry_prompt || ""); } catch { console.log(""); }' "${KASEKI_RESULTS_DIR}/goal-check.json" 2>/dev/null || true)"
-    verdict_summary="$(node -e 'try { const v=require(process.argv[1]); console.log(v.summary || ""); } catch { console.log(""); }' "${KASEKI_RESULTS_DIR}/goal-check.json" 2>/dev/null || true)"
-    confidence="$(node -e 'try { const v=require(process.argv[1]); console.log(v.confidence || "unknown"); } catch { console.log("unknown"); }' "${KASEKI_RESULTS_DIR}/goal-check.json" 2>/dev/null || true)"
+    if ! goal_check_json="$(read_goal_check_json "$attempt")"; then
+      GOAL_CHECK_EXIT=86
+      GOAL_CHECK_MET=false
+      GOAL_CHECK_FAILURE_REASON="goal_check_artifact_missing"
+      GOAL_CHECK_RETRY_PROMPT="The goal-check result could not be read. Re-run the evaluator after checking its persisted artifacts."
+      emit_error_event "goal_check_artifact_missing" "No persisted goal-check JSON was available for attempt $attempt." "exit"
+      return "$GOAL_CHECK_EXIT"
+    fi
+    verdict_met="$(jq -r 'if .met == true then "true" else "false" end' <<<"$goal_check_json")"
+    retry_prompt="$(jq -r '.retry_prompt // ""' <<<"$goal_check_json")"
+    verdict_summary="$(jq -r '.summary // ""' <<<"$goal_check_json")"
+    confidence="$(jq -r '.confidence // "unknown"' <<<"$goal_check_json")"
     if [ "$verdict_met" = "true" ]; then
       GOAL_CHECK_MET=true
       GOAL_CHECK_RETRY_PROMPT=""
