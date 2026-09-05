@@ -4909,6 +4909,7 @@ run_validation_commands() {
       if [ "$validation_attempted_ref" -eq 0 ] && grep -q $'\tskipped=missing_npm_script\t' "$timings_file" 2>/dev/null; then
         validation_exit_ref=86
         validation_detail_ref="no validation command executed; every requested npm script was unavailable"
+        # shellcheck disable=SC2034 # Reference variable assigned for external use via nameref
         validation_reason_ref="validation_commands_unavailable: all requested npm scripts were missing"
         printf 'Validation is unverified: %s\n' "$validation_detail_ref" | tee -a "$log_file"
       fi
