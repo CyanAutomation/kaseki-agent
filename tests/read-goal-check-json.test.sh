@@ -20,16 +20,25 @@ printf '%s\n' '{"met":true}' > "$KASEKI_RESULTS_DIR/goal-check.json"
 [ "$(read_goal_check_json goal-1)" = '{"met":true}' ]
 
 rm "$KASEKI_RESULTS_DIR/goal-check.json"
-printf '%s\n' '{"overall_assessment":"fallback"}' > "$KASEKI_RESULTS_DIR/run-evaluation.json"
-[ "$(read_goal_check_json goal-2)" = '{"overall_assessment":"fallback"}' ]
+printf '%s\n' '{"met":false,"retry_prompt":"legacy fallback"}' > "$KASEKI_RESULTS_DIR/run-evaluation.json"
+[ "$(read_goal_check_json goal-2)" = '{"met":false,"retry_prompt":"legacy fallback"}' ]
+
+printf '%s\n' '{"overall_assessment":"good","task_completion_score":95}' > "$KASEKI_RESULTS_DIR/run-evaluation.json"
+set +e
+schema_mismatch_output="$(read_goal_check_json goal-3)"
+schema_mismatch_status=$?
+set -e
+[ "$schema_mismatch_status" -ne 0 ]
+[ "$schema_mismatch_output" = '{}' ]
+grep -Fxq 'ERROR: Legacy run-evaluation JSON lacks a goal-check verdict for goal_id=goal-3' "$LOG_FILE"
 
 rm "$KASEKI_RESULTS_DIR/run-evaluation.json"
 set +e
-missing_output="$(read_goal_check_json goal-3)"
+missing_output="$(read_goal_check_json goal-4)"
 missing_status=$?
 set -e
 [ "$missing_status" -ne 0 ]
 [ "$missing_output" = '{}' ]
-grep -Fxq 'ERROR: No goal-check JSON found for goal_id=goal-3' "$LOG_FILE"
+grep -Fxq 'ERROR: No goal-check JSON found for goal_id=goal-4' "$LOG_FILE"
 
 echo "PASS: guarded goal-check JSON reader"
