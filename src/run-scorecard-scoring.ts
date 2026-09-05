@@ -1,7 +1,7 @@
 import { RunScorecardSchema, type RunScorecard } from './types/run-scorecard';
 import type { Evidence } from './run-scorecard-evidence';
 import type { ScorecardConfig } from './run-scorecard-config';
-import { buildDimensions, buildPhases, DIMENSIONS, WEIGHTS } from './run-scorecard-scoring-parts';
+import { buildDimensions, buildPhases, DIMENSIONS, WEIGHTS, PHASES } from './run-scorecard-scoring-parts';
 
 const clamp = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
 
@@ -46,10 +46,7 @@ export function buildScorecard(evidence: Evidence, config: ScorecardConfig, now 
     dimensions, phases: buildPhases(evidence), token_totals: evidence.tokenUsage,
     timing_totals: {
       wall_clock_ms: (evidence.elapsedSeconds ?? 0) * 1000,
-      phase_duration_ms: Object.fromEntries(DIMENSIONS.map((_, index) => {
-        const phase = ['goal_setting', 'scouting', 'coding', 'validation', 'goal_check', 'run_evaluation'][index];
-        return [phase, evidence.phaseDurationsMs[phase] ?? null];
-      })),
+      phase_duration_ms: Object.fromEntries(PHASES.map(phase => [phase, evidence.phaseDurationsMs[phase] ?? null])),
       completeness: evidence.elapsedSeconds === undefined ? 'unavailable' : 'complete',
     },
     scoring_config: {
