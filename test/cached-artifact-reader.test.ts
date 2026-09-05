@@ -318,26 +318,29 @@ describe('CachedArtifactReader', () => {
   });
 
   describe('TTL behavior', () => {
-    it('should respect TTL and expire old entries', async () => {
-      const shortTtlReader = new CachedArtifactReader({ ttlMs: 50 });
-      const filePath = join(tempDir, 'ttl-test.txt');
-      writeFileSync(filePath, 'content');
+    it('should expire entries exactly at the TTL boundary', () => {
+      const ttlMs = 50;
+      let currentTime = 1_000;
+      const shortTtlReader = new CachedArtifactReader({ ttlMs, now: () => currentTime });
+      const beforePath = join(tempDir, 'before-ttl.txt');
+      const boundaryPath = join(tempDir, 'at-ttl.txt');
+      const afterPath = join(tempDir, 'after-ttl.txt');
+      for (const filePath of [beforePath, boundaryPath, afterPath]) {
+        writeFileSync(filePath, 'content');
+        shortTtlReader.readTextArtifact(filePath);
+      }
 
-      // First read - cache miss
-      shortTtlReader.readTextArtifact(filePath);
+      currentTime = 1_000 + ttlMs - 1;
+      shortTtlReader.readTextArtifact(beforePath);
+      expect(shortTtlReader.getStats()).toMatchObject({ hits: 1, misses: 3 });
 
-      // Second read within TTL - cache hit
-      shortTtlReader.readTextArtifact(filePath);
-      const stats1 = shortTtlReader.getStats();
-      expect(stats1.hits).toBe(1);
+      currentTime = 1_000 + ttlMs;
+      shortTtlReader.readTextArtifact(boundaryPath);
+      expect(shortTtlReader.getStats()).toMatchObject({ hits: 1, misses: 4 });
 
-      // Wait for TTL to expire
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Third read after TTL - cache miss
-      shortTtlReader.readTextArtifact(filePath);
-      const stats2 = shortTtlReader.getStats();
-      expect(stats2.misses).toBe(2);
+      currentTime = 1_000 + ttlMs + 1;
+      shortTtlReader.readTextArtifact(afterPath);
+      expect(shortTtlReader.getStats()).toMatchObject({ hits: 1, misses: 5 });
     });
   });
 
