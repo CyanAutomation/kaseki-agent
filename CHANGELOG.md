@@ -4,6 +4,18 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.131.6](https://github.com/CyanAutomation/kaseki-agent/compare/v1.131.5...v1.131.6) (2026-09-05)
+
+
+### Bug Fixes
+
+* guard missing goal-check evidence ([6199897](https://github.com/CyanAutomation/kaseki-agent/commit/619989783d50235395273bc85c247e294cc527de))
+* guard missing goal-check evidence ([#1306](https://github.com/CyanAutomation/kaseki-agent/issues/1306)) ([77e727d](https://github.com/CyanAutomation/kaseki-agent/commit/77e727d4c86bc29a5bf15733259fde1ba489e673))
+* make evaluator JSON contracts controller-owned ([5e59c6e](https://github.com/CyanAutomation/kaseki-agent/commit/5e59c6e1fd3f8ea0edc99c7914b43e1b3fa73516))
+* make evaluator JSON contracts controller-owned ([#1305](https://github.com/CyanAutomation/kaseki-agent/issues/1305)) ([fda6964](https://github.com/CyanAutomation/kaseki-agent/commit/fda696450c3f01b73fb90fd3563df097834c2c15))
+* reject run-evaluation artifacts without goal verdicts ([#1307](https://github.com/CyanAutomation/kaseki-agent/issues/1307)) ([4153411](https://github.com/CyanAutomation/kaseki-agent/commit/4153411b2d8ad569c90fdb3abee98bf4e4ded961))
+* validate legacy goal-check fallback ([d287a9f](https://github.com/CyanAutomation/kaseki-agent/commit/d287a9f29a8105cc8f59caf5873745bc52c189be))
+
 ## [1.131.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.131.4...v1.131.5) (2026-09-03)
 
 
