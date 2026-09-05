@@ -1,10 +1,8 @@
 import type { Evidence } from './run-scorecard-evidence';
 import type { ScorecardConfig } from './run-scorecard-config';
 import type { RunScorecard } from './types/run-scorecard';
-
-export const DIMENSIONS = ['goal_quality', 'scouting_quality', 'implementation_quality', 'validation_quality', 'goal_attainment', 'evaluation_quality'] as const;
-const PHASES = ['goal_setting', 'scouting', 'coding', 'validation', 'goal_check', 'run_evaluation'] as const;
-export const WEIGHTS = [.15, .1, .3, .25, .15, .05];
+import { PHASES, DIMENSIONS, WEIGHTS } from './run-scorecard-phases';
+export { PHASES, DIMENSIONS, WEIGHTS };
 
 const clamp = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
 function efficiency(actual: number | undefined, target: number): number {
