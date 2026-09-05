@@ -166,20 +166,35 @@ write_validation_command_environment() {
   } | tee -a "$env_log"
 }
 
-start_validation_heartbeat() {
-  local stage_label="$1"
-  local command="$2"
+validation_heartbeat_interval_seconds() {
   local interval_seconds="${KASEKI_VALIDATION_HEARTBEAT_SECONDS:-30}"
 
   if ! [[ "$interval_seconds" =~ ^[0-9]+$ ]] || [ "$interval_seconds" -lt 5 ]; then
     interval_seconds=30
   fi
 
-  (
-    while sleep "$interval_seconds"; do
-      emit_progress "$stage_label" "running validation command: $command"
-    done
-  ) >/dev/null 2>&1 &
+  printf '%s' "$interval_seconds"
+}
+
+run_validation_heartbeat_scheduler() {
+  local interval_seconds="$1"
+  local stage_label="$2"
+  local command="$3"
+
+  while sleep "$interval_seconds"; do
+    emit_progress "$stage_label" "running validation command: $command"
+  done
+}
+
+start_validation_heartbeat() {
+  local stage_label="$1"
+  local command="$2"
+  # The optional interval parameter is an injection point for scheduler tests.
+  # Runtime callers omit it and retain the guarded production configuration.
+  local interval_seconds="${3:-$(validation_heartbeat_interval_seconds)}"
+
+  run_validation_heartbeat_scheduler "$interval_seconds" "$stage_label" "$command" \
+    >/dev/null 2>&1 &
   printf '%s' "$!"
 }
 
