@@ -5653,26 +5653,56 @@ describe('progress SSE terminal behavior', () => {
     jobs[jobId] = { ...jobs[jobId], status };
   };
 
-  const readStreamAfterStart = async (response: Response, onStart: () => void): Promise<string> => {
+  const readStreamAfterStart = async (
+    response: Response,
+    expectedTerminalStatus: 'completed' | 'failed',
+    onStart: () => void,
+    timeoutMs = 5000
+  ): Promise<{ text: string; closed: boolean }> => {
     const reader = response.body!.getReader();
     const decoder = new TextDecoder();
     let text = '';
     let startReceived = false;
+    let terminalReceived = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) {
-        break;
+    const timedOut = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => {
+        const missingEvent = terminalReceived
+          ? 'stream closure after the terminal status event'
+          : `terminal status event "${expectedTerminalStatus}"`;
+        reject(new Error(
+          `Timed out after ${timeoutMs}ms waiting for ${missingEvent}. SSE received so far: ${JSON.stringify(text)}`
+        ));
+      }, timeoutMs);
+    });
+
+    try {
+      while (true) {
+        const { value, done } = await Promise.race([reader.read(), timedOut]);
+        if (done) {
+          if (!terminalReceived) {
+            throw new Error(
+              `SSE stream closed before terminal status event "${expectedTerminalStatus}". ` +
+              `SSE received: ${JSON.stringify(text)}`
+            );
+          }
+          text += decoder.decode();
+          return { text, closed: true };
+        }
+        text += decoder.decode(value, { stream: true });
+        if (!startReceived && text.includes('"type":"start"')) {
+          startReceived = true;
+          onStart();
+        }
+        terminalReceived = text.includes(`"type":"status","status":"${expectedTerminalStatus}"`);
       }
-      text += decoder.decode(value, { stream: true });
-      if (!startReceived && text.includes('"type":"start"')) {
-        startReceived = true;
-        onStart();
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout);
       }
+      await reader.cancel().catch(() => undefined);
     }
-    text += decoder.decode();
-
-    return text;
   };
 
   test.each([
@@ -5697,9 +5727,14 @@ describe('progress SSE terminal behavior', () => {
     expect(response.status).toBe(200);
     expect(response.body).toBeTruthy();
 
-    const text = await readStreamAfterStart(response, () => transitionJobTo(jobId, terminalStatus));
+    const stream = await readStreamAfterStart(
+      response,
+      terminalStatus,
+      () => transitionJobTo(jobId, terminalStatus)
+    );
 
-    expect(text).toContain(`"type":"start","jobId":"${jobId}","status":"running"`);
-    expect(text).toContain(`"type":"status","status":"${terminalStatus}"`);
+    expect(stream.text).toContain(`"type":"start","jobId":"${jobId}","status":"running"`);
+    expect(stream.text).toContain(`"type":"status","status":"${terminalStatus}"`);
+    expect(stream.closed).toBe(true);
   }, 15000);
 });
