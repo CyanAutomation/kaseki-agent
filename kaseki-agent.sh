@@ -444,6 +444,7 @@ GOAL_CHECK_ATTEMPTS=0
 GOAL_CHECK_EVALUATOR_ATTEMPTS=0
 GOAL_CHECK_MET=false
 GOAL_CHECK_FAILURE_REASON=""
+GOAL_CHECK_EVALUATOR_UNAVAILABLE=false
 GOAL_CHECK_RETRY_PROMPT=""
 GOAL_CHECK_ACTUAL_MODEL="unknown"
 RUN_EVALUATION_EXIT=0
@@ -1652,7 +1653,7 @@ validate_goal_check_artifact() {
     reason_code="missing_file"
     reason_details="1 critical goal-check validation error: goal-check-candidate.json"
     # shellcheck disable=SC2016
-    node -e 'const fs=require("node:fs"); const path=require("node:path"); const candidate=process.argv[1]; const attempt=Number(process.argv[2]); const resultsDir=process.env.KASEKI_RESULTS_DIR || "/results"; const error={timestamp:new Date().toISOString(),attempt,field:"goal-check-candidate.json",expected:`file at ${path.join(resultsDir, "goal-check-candidate.json")}`,actual:`missing: ${candidate}`,severity:"critical",suggestion:`ensure the goal-check Pi writes exactly one valid JSON object to ${path.join(resultsDir, "goal-check-candidate.json")} before exiting successfully`}; fs.appendFileSync(path.join(resultsDir, "goal-check-validation-errors.jsonl"), JSON.stringify(error)+"\n");' "$candidate_artifact" "$attempt" 2>/dev/null || true
+    node -e 'const fs=require("node:fs"); const path=require("node:path"); const candidate=process.argv[1]; const attempt=Number(process.argv[2]); const resultsDir=process.env.KASEKI_RESULTS_DIR || "/results"; const error={timestamp:new Date().toISOString(),attempt,field:"goal-check-candidate.json",expected:`file at ${path.join(resultsDir, "goal-check-candidate.json")}`,actual:`missing: ${candidate}`,severity:"critical",suggestion:"ensure the controller must extract exactly one schema-valid JSON verdict from the final assistant response before validation"}; fs.appendFileSync(path.join(resultsDir, "goal-check-validation-errors.jsonl"), JSON.stringify(error)+"\n");' "$candidate_artifact" "$attempt" 2>/dev/null || true
   elif ! validate_goal_check_artifact_with_node "$candidate_artifact" "$final_artifact" "$attempt" "$validation_error_file"; then
     reason_code="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); const hint=String(v.reason_hint||""); process.stdout.write(hint === "malformed_json" ? "malformed_json" : "schema_mismatch");}catch{process.stdout.write("schema_mismatch");}' "$validation_error_file" 2>/dev/null || printf 'schema_mismatch')"
     reason_details="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.details||"goal-check artifact validation failed"));}catch{process.stdout.write("goal-check artifact validation failed");}' "$validation_error_file" 2>/dev/null || printf 'goal-check artifact validation failed')"
@@ -1818,6 +1819,7 @@ write_metadata() {
   "quality_failure_reason": $(printf '%s' "$QUALITY_FAILURE_REASON" | json_encode),
   "goal_check_failure_reason": $(printf '%s' "$GOAL_CHECK_FAILURE_REASON" | json_encode),
   "goal_check_evaluation_warning": $(printf '%s' "$GOAL_CHECK_EVALUATION_WARNING" | json_encode),
+  "goal_check_evaluator_unavailable": $([[ "$GOAL_CHECK_EVALUATOR_UNAVAILABLE" == "true" ]] && printf 'true' || printf 'false'),
   "worker_error_type": $(printf '%s' "$WORKER_ERROR_TYPE" | json_encode),
   "worker_error_phase": $(printf '%s' "$WORKER_ERROR_PHASE" | json_encode),
   "worker_error_message": $(printf '%s' "$WORKER_ERROR_MESSAGE" | json_encode),
@@ -6591,6 +6593,7 @@ NODE
 degrade_goal_check_evaluator_failure() {
   local reason="${1:-goal_check_evaluator_unavailable}"
   GOAL_CHECK_EVALUATION_WARNING="goal_check_evaluator_unavailable:${reason}"
+  GOAL_CHECK_EVALUATOR_UNAVAILABLE=true
   # A missing evaluator verdict is observability failure, not evidence that a
   # validated diff is wrong. Preserve the warning and a reviewer-safe
   # deterministic artifact, then allow the run to retain its real outcome.
@@ -6598,12 +6601,12 @@ degrade_goal_check_evaluator_failure() {
 const fs = require('node:fs');
 const [output, reason] = process.argv.slice(2);
 fs.writeFileSync(output, JSON.stringify({
-  met: true,
+  met: false,
   confidence: 'low',
   summary: 'Goal-check evaluator was unavailable; code and deterministic validation require human review.',
   evidence: [],
-  missing: [],
-  retry_prompt: '',
+  missing: ['Automatic goal-check verdict is unavailable; human review is required.'],
+  retry_prompt: 'Review the objective, changed files, diff, and validation evidence manually before treating the goal as met.',
   validation_notes: [],
   evidence_sources_inspected: [],
   contradictions: [],
@@ -6616,6 +6619,7 @@ NODE
   GOAL_CHECK_EXIT=0
   GOAL_CHECK_MET=true
   GOAL_CHECK_FAILURE_REASON=""
+  record_stage_timing "goal check" 0 0 "evaluator_unavailable reason=$reason mandatory_human_review=true"
   emit_error_event "goal_check_evaluator_unavailable" "Goal-check evaluator did not produce a valid verdict; preserving successful code outcome with mandatory human review: $reason" "continue"
   emit_progress "goal check" "evaluator unavailable; continuing with mandatory human review"
 }
@@ -6651,7 +6655,9 @@ run_goal_check() {
   if [ "$mode" = "contract-repair" ]; then
     goal_check_timeout="$KASEKI_GOAL_CHECK_CONTRACT_REPAIR_TIMEOUT_SECONDS"
     goal_check_max_output="$KASEKI_GOAL_CHECK_CONTRACT_REPAIR_MAX_OUTPUT_TOKENS"
-    goal_prompt="You are the read-only goal-check Pi agent acting as the controller-owned final JSON serializer for a completed goal check. Do not investigate, call tools, write files, or add prose. Return exactly one JSON object matching the goal-check schema from the supplied evidence context. If evidence is insufficient, return met=false with a specific retry_prompt."
+    goal_prompt="$goal_prompt
+
+Recovery attempt: the previous response did not satisfy the goal-check schema. Preserve the supplied evidence context. Do not investigate, call tools, write files, use markdown/code fences, or add prose. Return exactly one JSON object matching the goal-check schema. If evidence is insufficient, return met=false with a specific retry_prompt. Kaseki validates and persists the response."
     KASEKI_GOAL_CHECK_CONTRACT_REPAIR=1
     export KASEKI_GOAL_CHECK_CONTRACT_REPAIR
   fi
@@ -6982,6 +6988,55 @@ fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\\n");
 ' "$RUN_EVALUATION_CANDIDATE_ARTIFACT" "$RUN_EVALUATION_ARTIFACT" "$KASEKI_RUN_EVALUATION_MODEL" "$RUN_EVALUATION_ACTUAL_MODEL" 2>/dev/null
 }
 
+recover_run_evaluation_candidate_from_events() {
+  local candidate_path="$1"
+  local raw_path="$2"
+  local filtered_path="$3"
+  # The evaluator is intentionally read-only. Persist only one unambiguous
+  # JSON response in the controller, then let the existing strict validator
+  # apply the full run-evaluation schema and deterministic enrichments.
+  node - "$candidate_path" "$raw_path" "$filtered_path" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [candidatePath, rawPath, filteredPath] = process.argv.slice(2);
+function objects(text) {
+  const values = []; let start = -1; let depth = 0; let quoted = false; let escaped = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (quoted) { if (escaped) escaped = false; else if (ch === '\\') escaped = true; else if (ch === '"') quoted = false; continue; }
+    if (ch === '"') quoted = true;
+    else if (ch === '{') { if (depth === 0) start = i; depth += 1; }
+    else if (ch === '}' && depth > 0 && --depth === 0) { values.push(text.slice(start, i + 1)); start = -1; }
+  }
+  return values;
+}
+function strings(value, output = []) {
+  if (typeof value === 'string') output.push(value);
+  else if (Array.isArray(value)) value.forEach(item => strings(item, output));
+  else if (value && typeof value === 'object') Object.values(value).forEach(item => strings(item, output));
+  return output;
+}
+const candidates = new Map();
+for (const file of [rawPath, filteredPath]) {
+  let text = ''; try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
+  for (const snippet of objects(text)) {
+    try {
+      const value = JSON.parse(snippet);
+      const inspect = [value, ...strings(value).flatMap(inner => objects(inner).flatMap(item => { try { return [JSON.parse(item)]; } catch { return []; } }))];
+      for (const candidate of inspect) {
+        if (candidate && !Array.isArray(candidate) && typeof candidate === 'object'
+          && typeof candidate.overall_assessment === 'string'
+          && typeof candidate.reviewer_confidence === 'string'
+          && Number.isInteger(candidate.task_completion_score)) {
+          candidates.set(JSON.stringify(candidate), candidate);
+        }
+      }
+    } catch {}
+  }
+}
+if (candidates.size === 1) fs.writeFileSync(candidatePath, JSON.stringify([...candidates.values()][0], null, 2) + '\n');
+NODE
+}
+
 run_run_evaluation() {
   local evaluation_prompt evaluation_retry_prompt evaluation_start evaluation_retry_start eval_dirty_before eval_dirty_after
   RUN_EVALUATION_EXIT=0
@@ -7034,16 +7089,23 @@ run_run_evaluation() {
   chmod -R u+w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
 
+  if [ "$RUN_EVALUATION_EXIT" -eq 0 ] && [ ! -f "$RUN_EVALUATION_CANDIDATE_ARTIFACT" ]; then
+    recover_run_evaluation_candidate_from_events "$RUN_EVALUATION_CANDIDATE_ARTIFACT" "$RUN_EVALUATION_RAW_EVENTS" "${KASEKI_RESULTS_DIR}/run-evaluation-events.jsonl"
+  fi
+
   if [ "$RUN_EVALUATION_EXIT" -eq 0 ] && ! validate_run_evaluation_candidate; then
-    emit_error_event "run_evaluation_artifact_invalid" "Run-evaluation Pi did not write a schema-valid JSON artifact; retrying once with the artifact contract." "continue"
+    emit_error_event "run_evaluation_artifact_invalid" "Run-evaluation response did not contain one schema-valid JSON object; retrying once with the response contract." "continue"
     rm -f "$RUN_EVALUATION_CANDIDATE_ARTIFACT"
     evaluation_retry_prompt="$evaluation_prompt
 
-Recovery attempt: the previous response did not satisfy the run-evaluation artifact schema. Before finishing, write exactly one valid JSON object to $RUN_EVALUATION_CANDIDATE_ARTIFACT with every required field and read it back. Do not return prose instead of the artifact."
+Recovery attempt: the previous response did not satisfy the run-evaluation schema. Preserve the supplied evidence context. Before finishing, return exactly one valid JSON object with every required field. Do not write files, use markdown/code fences, or return prose. Kaseki validates and persists the response."
     evaluation_retry_start="$(date +%s)"
     run_pi_with_retry "$RUN_EVALUATION_RAW_EVENTS" "$KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS" "$KASEKI_RUN_EVALUATION_MODEL" "$evaluation_retry_prompt" "run-evaluation-summary" "" "run-evaluation"
     RUN_EVALUATION_EXIT="$?"
     RUN_EVALUATION_DURATION_SECONDS=$((RUN_EVALUATION_DURATION_SECONDS + $(date +%s) - evaluation_retry_start))
+    if [ "$RUN_EVALUATION_EXIT" -eq 0 ] && [ ! -f "$RUN_EVALUATION_CANDIDATE_ARTIFACT" ]; then
+      recover_run_evaluation_candidate_from_events "$RUN_EVALUATION_CANDIDATE_ARTIFACT" "$RUN_EVALUATION_RAW_EVENTS" "${KASEKI_RESULTS_DIR}/run-evaluation-events.jsonl"
+    fi
     if [ "$RUN_EVALUATION_EXIT" -eq 0 ] && validate_run_evaluation_candidate; then
       RUN_EVALUATION_WARNING="run_evaluation_recovered_invalid_artifact"
       emit_progress "run evaluation" "recovered after invalid artifact retry"
@@ -9879,7 +9941,7 @@ if [ "$VALIDATION_EXIT" -eq 0 ]; then
 fi
 
 if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && [ "$VALIDATION_EXIT" -eq 0 ] && \
-  [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ]; then
+  [ "$KASEKI_GOAL_CHECK" = "1" ] && [ "$GOAL_CHECK_EVALUATOR_UNAVAILABLE" != "true" ] && [ -s "$SCOUTING_ARTIFACT" ]; then
   printf 'Validation completed successfully; re-running goal check against final validation evidence and artifacts.\n' | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
   emit_progress "goal check" "re-running after successful validation (attempt $coding_attempt)"
   run_goal_check "$coding_attempt"
