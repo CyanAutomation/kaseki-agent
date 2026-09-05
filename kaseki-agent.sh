@@ -6633,8 +6633,16 @@ read_goal_check_json() {
     cat "$goal_check_file"
   elif [ -s "$run_evaluation_file" ]; then
     # Retain compatibility with restored/legacy result bundles that only
-    # persisted the evaluator's combined run artifact.
-    cat "$run_evaluation_file"
+    # persisted a goal-check verdict in the combined run artifact. A current
+    # run-evaluation artifact has a different schema and must not be mistaken
+    # for an unmet goal merely because its top-level `met` field is absent.
+    if jq -e 'type == "object" and (.met | type == "boolean")' "$run_evaluation_file" >/dev/null 2>&1; then
+      cat "$run_evaluation_file"
+    else
+      log "ERROR" "Legacy run-evaluation JSON lacks a goal-check verdict for goal_id=${goal_id}"
+      printf '{}\n'
+      return 1
+    fi
   else
     log "ERROR" "No goal-check JSON found for goal_id=${goal_id}"
     printf '{}\n'
