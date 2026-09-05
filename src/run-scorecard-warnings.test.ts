@@ -1,0 +1,27 @@
+import { buildScorecard } from './run-scorecard-scoring';
+import { normalizeConfig } from './run-scorecard-config';
+import type { Evidence } from './run-scorecard-evidence-types';
+
+describe('buildScorecard warnings', () => {
+  test('includes missing evidence and token budget warning', () => {
+    const evidence: Evidence = {
+      metadata: { instance: 'kaseki-1', started_at: '2026-01-01T00:00:00.000Z', ended_at: '2026-01-01T00:01:00.000Z' },
+      status: 'completed', elapsedSeconds: 60,
+      tokens: 5000,
+      // tokenUsage must match RunScorecard token_totals schema
+      tokenUsage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, unknown_tokens: 0, unavailable: false, completeness: 'complete' },
+      phaseTokens: {}, unknownTokenRequests: 0,
+      retries: 0, phaseRetries: {}, phaseDurationsMs: {},
+      validation: 'unknown', quality: 'unknown', goalMet: undefined,
+      goalCheckAvailable: true, goalCheckFailed: false, changedFiles: 0,
+      diffBytes: 0, evaluation: undefined, evaluatorAvailable: true, present: ['metadata.json'],
+    } as unknown as Evidence;
+    const config = normalizeConfig({ KASEKI_SCORECARD_TARGET_TOKENS: '1000' });
+    const card = buildScorecard(evidence, config);
+    expect(Array.isArray(card.warnings)).toBe(true);
+    const hasMissing = card.warnings.some(w => /Missing evidence: validation/.test(w));
+    const hasToken = card.warnings.some(w => /Token budget exceeded/.test(w));
+    expect(hasMissing).toBe(true);
+    expect(hasToken).toBe(true);
+  });
+});
