@@ -6,8 +6,11 @@ import * as path from 'path';
  */
 export interface ResultCacheOptions {
   maxEntries?: number;
+  /** Entries expire when their age is greater than or equal to this duration. */
   ttlMs?: number;
   maxFileBytes?: number;
+  /** Time source used for TTL checks. Defaults to Date.now. */
+  now?: () => number;
 }
 
 export interface ResultCacheStats {
@@ -38,6 +41,7 @@ export class ResultCache {
   private readonly maxEntries: number;
   private readonly ttlMs: number;
   private readonly maxFileBytes: number;
+  private readonly now: () => number;
   private hits = 0;
   private misses = 0;
   private evictions = 0;
@@ -53,10 +57,12 @@ export class ResultCache {
       this.maxEntries = maxEntriesOrOptions.maxEntries ?? 20;
       this.ttlMs = maxEntriesOrOptions.ttlMs ?? 5 * 60 * 1000;
       this.maxFileBytes = maxEntriesOrOptions.maxFileBytes ?? 10 * 1024 * 1024;
+      this.now = maxEntriesOrOptions.now ?? Date.now;
     } else {
       this.maxEntries = maxEntriesOrOptions;
       this.ttlMs = ttlMs;
       this.maxFileBytes = maxFileBytes;
+      this.now = Date.now;
     }
   }
 
@@ -69,7 +75,7 @@ export class ResultCache {
     // Check cache
     const cached = this.cache.get(filePath);
     if (cached) {
-      const age = Date.now() - cached.timestamp;
+      const age = this.now() - cached.timestamp;
       if (age < this.ttlMs) {
         try {
           fileStat = fs.statSync(filePath);
@@ -139,7 +145,7 @@ export class ResultCache {
 
     this.cache.set(filePath, {
       content,
-      timestamp: Date.now(),
+      timestamp: this.now(),
       size,
       mtimeMs,
       inode,
