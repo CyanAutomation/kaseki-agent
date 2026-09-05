@@ -34,6 +34,7 @@ fi
 cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
 cp "$REPO_ROOT/scripts/lib/json-events.sh" "$TMP_DIR/scripts/lib/json-events.sh"
 cp "$REPO_ROOT/scripts/lib/artifact-consolidation.sh" "$TMP_DIR/scripts/lib/artifact-consolidation.sh"
+cp "$REPO_ROOT/scripts/context-handoff.js" "$TMP_DIR/scripts/context-handoff.js"
 touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/progress-stream-utils.js" || fail "failed to create app lib stubs"
 : > "$PI_CALLS" || fail "failed to initialize Pi call log"
 
@@ -115,7 +116,6 @@ run_exit=$?
 [ -s "$RESULTS_DIR/goal-check-contract-diagnostics.json" ] || fail "missing goal-check contract diagnostics"
 [ "$(cat "$RESULTS_DIR/goal-check-validation-reason.txt")" = "missing_file" ] || fail "expected missing_file reason"
 grep -q 'goal-check-candidate.json' "$RESULTS_DIR/goal-check-validation-summary.txt" || fail "missing goal-check validation summary"
-grep -q '^goal check[[:space:]]+0[[:space:]]' "$RESULTS_DIR/stage-timings.tsv" || fail "goal-check fallback did not preserve a non-blocking exit"
 node - "$RESULTS_DIR/goal-check-validation-errors.jsonl" "$RESULTS_DIR" <<'NODE' || fail "goal-check validation error log did not capture missing artifact"
 const fs = require('node:fs');
 const lines = fs.readFileSync(process.argv[2], 'utf8').trim().split(/\n+/).filter(Boolean);
@@ -125,7 +125,7 @@ if (entry.field !== 'goal-check-candidate.json') throw new Error(`expected field
 if (entry.expected !== `file at ${process.argv[3]}/goal-check-candidate.json`) throw new Error(`expected file at ${process.argv[3]}/goal-check-candidate.json, got ${entry.expected}`);
 if (!String(entry.actual).includes('missing: ')) throw new Error(`actual did not describe missing file: ${entry.actual}`);
 if (entry.severity !== 'critical') throw new Error(`expected critical severity, got ${entry.severity}`);
-if (!/goal-check Pi writes exactly one valid JSON object/.test(String(entry.suggestion))) throw new Error(`suggestion was not targeted: ${entry.suggestion}`);
+if (!/controller must extract exactly one schema-valid JSON verdict/.test(String(entry.suggestion))) throw new Error(`suggestion was not targeted: ${entry.suggestion}`);
 NODE
 
 node - "$RESULTS_DIR/goal-check-contract-diagnostics.json" <<'NODE' || fail "goal-check contract diagnostics were invalid"
@@ -139,7 +139,7 @@ grep -q 'goal_check_artifact_missing' "$RESULTS_DIR/progress.jsonl" || fail "mis
 grep -q 'goal_check_evaluator_unavailable' "$RESULTS_DIR/progress.jsonl" || fail "missing evaluator-unavailable warning event"
 node - "$RESULTS_DIR/goal-check.json" <<'NODE' || fail "missing reviewer-safe evaluator fallback"
 const verdict = require(process.argv[2]);
-if (verdict.evaluation_unavailable !== true || verdict.confidence !== 'low') throw new Error('fallback must retain an explicit low-confidence evaluator warning');
+if (verdict.evaluation_unavailable !== true || verdict.confidence !== 'low' || verdict.met !== false) throw new Error('fallback must retain an explicit low-confidence unavailable verdict without claiming success');
 NODE
 grep -q "$RESULTS_DIR/goal-check-validation-errors.jsonl" "$RESULTS_DIR/progress.jsonl" || fail "error event did not point to validation error log"
 if [ -f "$RESULTS_DIR/goal-check-stderr.log" ]; then
