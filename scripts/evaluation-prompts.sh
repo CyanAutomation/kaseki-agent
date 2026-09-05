@@ -514,11 +514,10 @@ Summarize the actual changes and their impact, NOT the original task.
 
 ## Rules
 
-- Do not edit repository files, git state, dependencies, generated artifacts other than $RUN_EVALUATION_CANDIDATE_ARTIFACT, or secrets.
+- Do not edit repository files, git state, dependencies, generated artifacts, or secrets.
 - Do not run git add, git commit, git push, gh, hub, package installation, or commands that modify files.
 - Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
-- Write exactly one JSON object to $RUN_EVALUATION_CANDIDATE_ARTIFACT.
-- Your final action must write and then read back $RUN_EVALUATION_CANDIDATE_ARTIFACT; assistant text alone does not satisfy the artifact contract.
+- Return exactly one JSON object as your final assistant message. Do not write files, use markdown/code fences, or add prose; Kaseki validates and persists the response.
 - Treat this evaluation as annotate-only. Do not recommend blocking the PR.
 - Use goal-setting quality metrics to ground your confidence. Low-quality goals = lower reviewer_confidence even if goal-check passed.
 

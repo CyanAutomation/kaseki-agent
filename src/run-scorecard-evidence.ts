@@ -46,6 +46,8 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
   const phaseRetries = providerRetryCounts(snapshot);
   const evaluationExit = number(metadata.run_evaluation_exit_code);
   const evaluationWarning = String(metadata.run_evaluation_warning ?? '').trim();
+  const goalCheckWarning = String(metadata.goal_check_evaluation_warning ?? '').trim();
+  const goalCheckAvailable = Boolean(goal) && goal.evaluation_unavailable !== true && !goalCheckWarning;
   const evaluatorFailed = String(failure.provider_error_phase ?? '').trim() === 'run-evaluation'
     || String(failure.failed_command ?? '').trim() === 'run evaluation';
   const evaluatorAvailable = Boolean(evaluation) && !evaluatorFailed && !(Number.isFinite(evaluationExit) && evaluationExit !== 0)
@@ -53,8 +55,9 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
   return {
     metadata, status: lifecycle(metadata), elapsedSeconds: elapsed, ...tokenEvidence,
     retries: countRetries(snapshot), phaseRetries, phaseDurationsMs, validation, quality,
-    goalMet: bool(goal.met) ?? bool(metadata.goal_check_met),
-    goalCheckFailed: String(metadata.failed_command ?? '').toLowerCase() === 'goal check'
+    goalMet: goalCheckAvailable ? (bool(goal.met) ?? bool(metadata.goal_check_met)) : undefined,
+    goalCheckAvailable,
+    goalCheckFailed: !goalCheckAvailable || String(metadata.failed_command ?? '').toLowerCase() === 'goal check'
       || String(metadata.goal_check_failure_reason ?? '').trim().length > 0,
     changedFiles: (snapshot.text['changed-files.txt'] ?? '').split(/\r?\n/).filter(Boolean).length,
     diffBytes: Buffer.byteLength(snapshot.text['git.diff'] ?? ''), evaluation, evaluatorAvailable,

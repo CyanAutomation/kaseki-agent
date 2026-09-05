@@ -139,7 +139,7 @@ export const RunScorecardSchema = z.object({
     required: z.number().int().nonnegative(),
     available: z.number().int().nonnegative(),
     ratio: z.number().min(0).max(1),
-    missing_critical: z.array(z.enum(['diff', 'validation_result'])),
+    missing_critical: z.array(z.enum(['diff', 'validation_result', 'goal_check', 'run_evaluation'])),
   }),
   completeness: RunScorecardCompletenessSchema,
   confidence: z.object({
