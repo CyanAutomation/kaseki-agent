@@ -1,5 +1,6 @@
 import { aggregateTokenUsage, countRetries, providerRetryCounts } from './run-scorecard-evidence-tokens';
 import { number, object, bool } from './run-scorecard-evidence-values';
+import { computePhaseDurations } from './run-scorecard-evidence-helpers';
 import { lifecycle, statusFrom } from './run-scorecard-evidence-status';
 import type { ArtifactSnapshot, Evidence } from './run-scorecard-evidence-types';
 
@@ -15,24 +16,7 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
   const goal = object(snapshot.json['goal-check.json']) ?? {};
   const evaluation = object(snapshot.json['run-evaluation.json']);
   const stageRows = Array.isArray(timing.stage_timings) ? timing.stage_timings : [];
-  const stageElapsed = stageRows.reduce((total, row) => total + (number(object(row)?.elapsed_seconds) ?? 0), 0);
-  const phaseDurationsMs: Record<string, number> = {};
-  const stagePhase = (value: unknown): string | undefined => {
-    const stage = String(value ?? '').toLowerCase();
-    if (/goal.setting/.test(stage)) return 'goal_setting';
-    if (/scouting/.test(stage)) return 'scouting';
-    if (/coding/.test(stage)) return 'coding';
-    if (/goal.check/.test(stage)) return 'goal_check';
-    if (/run.evaluation/.test(stage)) return 'run_evaluation';
-    if (/validation/.test(stage)) return 'validation';
-    return undefined;
-  };
-  for (const row of stageRows) {
-    const entry = object(row);
-    const phase = stagePhase(entry?.stage);
-    const seconds = number(entry?.elapsed_seconds);
-    if (phase && seconds !== undefined) phaseDurationsMs[phase] = (phaseDurationsMs[phase] ?? 0) + seconds * 1000;
-  }
+  const { phaseDurationsMs, stageElapsed } = computePhaseDurations(stageRows);
   const elapsed = number(perf.elapsed_seconds) ?? number(metadata.total_duration_seconds) ?? number(metadata.duration_seconds) ?? (stageElapsed || undefined);
   const validationRows = [...(Array.isArray(timing.validation_timings) ? timing.validation_timings : []), ...(Array.isArray(timing.pre_validation_timings) ? timing.pre_validation_timings : [])];
   const failureValidationExit = number(failure.validation_exit_code);
