@@ -1321,6 +1321,7 @@ const taskPrompt = process.env.TASK_PROMPT || '';
 const taskMode = process.env.KASEKI_TASK_MODE || 'patch';
 const isInspect = taskMode === 'inspect';
 const allowEmptyDiff = process.env.KASEKI_ALLOW_EMPTY_DIFF === '1';
+const taskExplicitlyAllowsNoop = /\b(?:if|when)\b[\s\S]{0,120}\b(?:no changes?|leave (?:the )?(?:tree|repository|working tree) (?:untouched|unchanged)|do not (?:make|modify)|unchanged)\b/i.test(taskPrompt);
 function extractPromptFiles(prompt) {
   const matches = new Set();
   const pattern = /(?:^|[\s`'":(])((?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+)(?=$|[\s`'",:).;!?])/g;
@@ -1406,7 +1407,7 @@ const fallback = {
   critical_change_expectations: {
     required_files: !isInspect ? promptFiles : [],
     required_search_strings: [],
-    forbidden_empty_diff: !isInspect && !allowEmptyDiff,
+    forbidden_empty_diff: !isInspect && !allowEmptyDiff && !taskExplicitlyAllowsNoop,
   },
   suggested_allowlist: {
     agent_patterns: !isInspect ? promptFiles : [],
@@ -2508,6 +2509,7 @@ run_static_test_impact_check() {
 derive_critical_change_expectations() {
   local output_file="${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT:-${KASEKI_RESULTS_DIR}/critical-change-expectations.json}"
   node - "$GOAL_SETTING_ARTIFACT" "$SCOUTING_ARTIFACT" "$output_file" "$KASEKI_ALLOW_EMPTY_DIFF" <<'NODE' 2>> "${KASEKI_RESULTS_DIR}/critical-change-expectations.log" || {
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const [goalPath, scoutingPath, outputPath, allowEmptyDiff] = process.argv.slice(2);
@@ -2562,14 +2564,15 @@ function validRepoFilePath(file) {
   return resolved.startsWith(`${repoRoot}${path.sep}`);
 }
 const requestedFiles = removePlaceholders([...new Set(strings(explicit.required_files || explicit.requiredFiles))]);
-const requiredFiles = requestedFiles.filter(validRepoFilePath);
-const downgradedFiles = requestedFiles.filter(file => !validRepoFilePath(file));
+const noChangeFiles = removePlaceholders([...new Set(strings(explicit.no_change_files || explicit.noChangeFiles))]);
+const noChangeSet = new Set(noChangeFiles);
+const requiredFiles = requestedFiles.filter(file => validRepoFilePath(file) && !noChangeSet.has(file));
+const downgradedFiles = requestedFiles.filter(file => !validRepoFilePath(file) || noChangeSet.has(file));
 const requiredSearchStrings = removePlaceholders([...new Set(strings(explicit.required_search_strings || explicit.requiredSearchStrings || explicit.required_diff_markers || explicit.requiredDiffMarkers))]);
 const explicitForbidden = normalizeBool(explicit.forbidden_empty_diff ?? explicit.forbiddenEmptyDiff);
 const forbiddenEmptyDiff = explicitForbidden === undefined ? allowEmptyDiff !== '1' : explicitForbidden;
 const scoutingFallback = Boolean(scouting && typeof scouting === 'object' && (scouting.fallback === true || scouting.fallback_reason));
-const artifact = {
-  version: 1,
+const contract = {
   source_artifacts: {
     goal_setting: goal && fs.existsSync(goalPath) ? path.basename(goalPath) : null,
     scouting: scouting && fs.existsSync(scoutingPath) ? path.basename(scoutingPath) : null,
@@ -2583,10 +2586,24 @@ const artifact = {
   required_search_strings: requiredSearchStrings,
   forbidden_empty_diff: forbiddenEmptyDiff,
 };
+const contractSha256 = crypto.createHash('sha256').update(JSON.stringify(contract)).digest('hex');
+const artifact = { version: 2, ...contract, contract_sha256: contractSha256 };
 fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 fs.writeFileSync(outputPath, JSON.stringify(artifact, null, 2) + '\n');
 NODE
-    printf '{"version":1,"source_artifacts":{"goal_setting":null,"scouting":null},"required_files":[],"required_search_strings":[],"forbidden_empty_diff":%s}\n' "$([ "$KASEKI_ALLOW_EMPTY_DIFF" = "1" ] && printf false || printf true)" > "$output_file"
+    node - "$output_file" "$KASEKI_ALLOW_EMPTY_DIFF" <<'NODE'
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const [outputPath, allowEmptyDiff] = process.argv.slice(2);
+const contract = {
+  source_artifacts: { goal_setting: null, scouting: null },
+  required_files: [],
+  required_search_strings: [],
+  forbidden_empty_diff: allowEmptyDiff !== '1',
+};
+const contract_sha256 = crypto.createHash('sha256').update(JSON.stringify(contract)).digest('hex');
+fs.writeFileSync(outputPath, JSON.stringify({ version: 2, ...contract, contract_sha256 }) + '\n');
+NODE
   }
 }
 
@@ -2603,6 +2620,7 @@ verify_critical_change_expectations() {
   fi
 
   node - "$expectation_file" "$changed_files_file" "$diff_file" "$report_file" <<'NODE'
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const [expectationPath, changedFilesPath, diffPath, reportPath] = process.argv.slice(2);
 function read(file) {
@@ -2625,6 +2643,11 @@ const notes = [];
 if (expectations.__invalid) {
   failures.push(`expectation artifact is not valid JSON: ${expectations.__invalid}`);
 } else {
+  if (typeof expectations.contract_sha256 === 'string') {
+    const { version, contract_sha256, ...contract } = expectations;
+    const actualHash = crypto.createHash('sha256').update(JSON.stringify(contract)).digest('hex');
+    if (contract_sha256 !== actualHash) failures.push('critical-change contract digest mismatch');
+  }
   const diff = read(diffPath);
   const listedFiles = read(changedFilesPath).split(/\r?\n/).map((line) => line.trim().replace(/^\.\//, '')).filter(Boolean);
   const diffFiles = [...diff.matchAll(/^diff --git a\/(.+?) b\/(.+)$/gm)].map((match) => match[2].trim());
@@ -2656,8 +2679,23 @@ if (failures.length) {
   process.stdout.write(failures.join('\n'));
   process.exit(1);
 }
+
 lines.push('[critical-change] verification passed');
 fs.writeFileSync(reportPath, lines.join('\n') + '\n');
+NODE
+}
+
+critical_change_contract_allows_noop() {
+  local expectation_file="${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT:-${KASEKI_RESULTS_DIR}/critical-change-expectations.json}"
+  node - "$expectation_file" <<'NODE' 2>/dev/null
+const fs = require('node:fs');
+try {
+  const contract = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  const values = (value) => Array.isArray(value) ? value.filter((item) => typeof item === 'string' && item.trim()) : [];
+  process.exit(contract.forbidden_empty_diff === false && values(contract.required_files).length === 0 && values(contract.required_search_strings).length === 0 ? 0 : 1);
+} catch {
+  process.exit(1);
+}
 NODE
 }
 
@@ -4868,6 +4906,12 @@ run_validation_commands() {
           fi
         fi
       done
+      if [ "$validation_attempted_ref" -eq 0 ] && grep -q $'\tskipped=missing_npm_script\t' "$timings_file" 2>/dev/null; then
+        validation_exit_ref=86
+        validation_detail_ref="no validation command executed; every requested npm script was unavailable"
+        validation_reason_ref="validation_commands_unavailable: all requested npm scripts were missing"
+        printf 'Validation is unverified: %s\n' "$validation_detail_ref" | tee -a "$log_file"
+      fi
       if [ -n "$validation_detail_ref" ]; then
         printf 'Validation failed: %s\n' "$validation_detail_ref" | tee -a "$log_file"
       fi
@@ -6910,6 +6954,7 @@ if (valid.size === 1 && validOccurrences === 1) {
 write_run_evaluation_fallback() {
   local warning="$1"
   RUN_EVALUATION_WARNING="$warning"
+  printf 'Run evaluation unavailable: %s\n' "$warning" > "${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log"
   node - "$RUN_EVALUATION_ARTIFACT" "$warning" "$KASEKI_RUN_EVALUATION_MODEL" "$RUN_EVALUATION_ACTUAL_MODEL" <<'NODE' 2>/dev/null || true
 const fs = require('fs');
 const [output, warning, model, actualModel] = process.argv.slice(2);
@@ -9619,7 +9664,7 @@ NODE
     fi
     emit_error_event "provider_empty_assistant_turn" "$PROVIDER_ERROR_MESSAGE" "exit"
   fi
-  if [ "$PI_EXIT" -eq 0 ] && [ "$KASEKI_TASK_MODE" = "patch" ] && detect_actionless_patch_coding_turn "${KASEKI_RESULTS_DIR}/pi-events.jsonl" "${KASEKI_RESULTS_DIR}/pi-agent-diagnostics.jsonl"; then
+  if [ "$PI_EXIT" -eq 0 ] && [ "$KASEKI_TASK_MODE" = "patch" ] && ! critical_change_contract_allows_noop && detect_actionless_patch_coding_turn "${KASEKI_RESULTS_DIR}/pi-events.jsonl" "${KASEKI_RESULTS_DIR}/pi-agent-diagnostics.jsonl"; then
     GOAL_CHECK_MET=false
     GOAL_CHECK_FAILURE_REASON="actionless_patch_coding_turn: Coding returned reasoning but made no tool call and produced no repository diff."
     GOAL_CHECK_RETRY_PROMPT="The previous patch-mode coding attempt only reasoned; it did not call a tool or change the repository. Use an available edit mechanism now, modify the required files from ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}, then run git diff -- <required file> and do not finish until the diff is non-empty."
