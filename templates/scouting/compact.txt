@@ -14,7 +14,7 @@ JSON fields:
 - validation: 1-5 focused checks
 - risks: known risks or empty array
 - test_impact: empty for pure documentation-only changes, otherwise affected tests
-- critical_change_expectations: include required_files and forbidden_empty_diff when concrete
+- critical_change_expectations: include required_files and forbidden_empty_diff when concrete. required_files must contain only files that need an edit; list inspected-but-accurate files in no_change_files instead. These arrays must never overlap. Set forbidden_empty_diff to false when a verified no-op is an acceptable outcome.
 - suggested_allowlist: agent_patterns and validation_patterns arrays
 
 For code behavior changes, include impacted tests in test_impact. For renames, parser/output changes, events, schemas, or API fields, include concrete test files and expected assertion patterns. For documentation-only changes, test_impact may be [].
