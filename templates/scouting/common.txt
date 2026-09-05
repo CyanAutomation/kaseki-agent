@@ -15,6 +15,7 @@
 Guidelines for critical_change_expectations:
 - Include critical_change_expectations when scouting can identify concrete files or literal diff evidence that must change for the goal to be real.
 - required_files must be repo-relative paths and should only list files that must appear in changed-files.txt, not files that are merely relevant for reading.
+- no_change_files must list inspected files verified as accurate; it is mutually exclusive with required_files and prevents an audit target from becoming an artificial edit requirement.
 - required_search_strings must be literal strings expected to appear in git.diff, such as a new function name, config key, assertion text, or diff hunk marker.
 - Set forbidden_empty_diff to true when the task is a patch/change request rather than read-only inspection.
 - Omit uncertain expectations rather than guessing; this contract is enforced before the LLM goal-check evaluator runs.
@@ -41,4 +42,3 @@ Guidelines for suggested_allowlist:
 - If repository inspection fails (unreadable files, malformed code), report the error in observations and proceed with limited scope.
 - Example: "Unable to parse src/config.json due to syntax error; focusing on src/lib instead."
 - Do not fail the entire scouting phase due to isolated file read errors; adapt and continue.
-
