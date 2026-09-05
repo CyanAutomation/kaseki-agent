@@ -2,6 +2,7 @@ import { RunScorecardSchema, type RunScorecard } from './types/run-scorecard';
 import type { Evidence } from './run-scorecard-evidence';
 import type { ScorecardConfig } from './run-scorecard-config';
 import { buildDimensions, buildPhases, DIMENSIONS, WEIGHTS, PHASES } from './run-scorecard-scoring-parts';
+import { buildScorecardWarnings } from './run-scorecard-warnings';
 
 const clamp = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
 
@@ -59,9 +60,6 @@ export function buildScorecard(evidence: Evidence, config: ScorecardConfig, now 
       caps: { missing_diff: 69, missing_validation: 59, missing_diff_and_validation: 49 },
       enabled_phase_reliability_penalty_points: evaluatorReliabilityAvailable ? 0 : 10, disabled_phase_policy: 'reweight_eligible_dimensions',
     },
-    warnings: [...coverage.missing.map(value => `Missing evidence: ${value}`),
-      ...(evidence.tokens !== undefined && evidence.tokens > config.targets.tokens ? [`Token budget exceeded: ${evidence.tokens} used versus ${config.targets.tokens} target.`] : []),
-      ...(!evidence.goalCheckAvailable ? ['Goal-check evaluator unavailable: objective attainment requires human review.'] : []),
-      ...(!evidence.evaluatorAvailable ? ['Run evaluator unavailable: patch and validation evidence are reported separately; score capped below A.'] : [])],
+    warnings: buildScorecardWarnings(evidence, coverage, config),
   });
 }
