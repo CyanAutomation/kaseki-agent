@@ -108,6 +108,29 @@ describe('run scorecard', () => {
     expect(card.grade).not.toBe('A');
   });
 
+  test('treats an unavailable goal-check as missing critical evaluation evidence', () => {
+    const evidence = collectEvidence({
+      json: {
+        'metadata.json': {
+          instance: 'degraded-goal-check', exit_code: 0, quality_exit_code: 0,
+          goal_check_evaluation_warning: 'goal_check_evaluator_unavailable:goal_check_artifact_missing',
+        },
+        'goal-check.json': { met: false, evaluation_unavailable: true },
+        'run-evaluation.json': { score: 100 },
+        'timings-manifest.json': { validation_timings: [{ exit_code: 0, elapsed_seconds: 1 }] },
+      },
+      text: { 'changed-files.txt': 'README.md\n', 'git.diff': '+docs\n' },
+      summaries: [{ phase: 'coding', request_id: 'one', usage: { input: 1, output: 1 } }],
+    });
+
+    const card = buildScorecard(evidence, normalizeConfig({}), new Date('2026-01-01T00:00:00Z'));
+    expect(evidence.goalCheckAvailable).toBe(false);
+    expect(card.completeness).toBe('provisional');
+    expect(card.evidence_coverage.missing_critical).toContain('goal_check');
+    expect(card.phases.goal_check.outcome).toBe('failed');
+    expect(card.confidence.score).toBeLessThan(100);
+  });
+
   test('reads aggregate phase-summary token fields', () => {
     const evidence = collectEvidence({
       json: { 'metadata.json': { exit_code: 0, quality_exit_code: 0 } }, text: {},
@@ -129,8 +152,8 @@ describe('run scorecard', () => {
     const unknown = collectEvidence({ ...snapshot, summaries: [...snapshot.summaries, { phase: 'coding', request_id: 'unknown' }] });
     const config = normalizeConfig({});
 
-    expect(buildScorecard(known, config).confidence.score).toBe(25);
-    expect(buildScorecard(unknown, config).confidence.score).toBe(23);
+    expect(buildScorecard(known, config).confidence.score).toBe(26);
+    expect(buildScorecard(unknown, config).confidence.score).toBe(24);
   });
 
   test('handles disabled phases and evaluator contradiction penalties', () => {
