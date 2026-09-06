@@ -53,6 +53,7 @@ describe('run scorecard', () => {
   test('uses safe config defaults and stable grades', () => {
     const config = normalizeConfig({ KASEKI_SCORECARD_TARGET_SECONDS: '-1', KASEKI_SCORECARD_RUBRIC_VERSION: 'v2' });
     expect(config.targets.elapsedSeconds).toBe(1800);
+    expect(config.targets.tokens).toBe(750000);
     expect(config.rubricVersion).toBe('v2');
     expect(assignGrade(90)).toBe('A');
     const evidence = collectEvidence({ json: { 'metadata.json': { instance: 'run-2', started_at: '2025-12-31T23:00:00Z', ended_at: '2026-01-01T00:00:00Z', exit_code: 1 } }, text: {}, summaries: [] });
@@ -166,6 +167,23 @@ describe('run scorecard', () => {
     expect(card.dimensions.find(dimension => dimension.id === 'goal_attainment'))
       .toMatchObject({ normalized_score: 0 });
     expect(card.confidence.score).toBeLessThan(100);
+  });
+
+  test('does not erase goal-setting quality when the downstream evaluator is unavailable', () => {
+    const evidence = collectEvidence({
+      json: {
+        'metadata.json': { instance: 'goal-quality', exit_code: 0, quality_exit_code: 0, goal_check_evaluation_warning: 'goal_check_evaluator_unavailable' },
+        'goal-setting.json': { upgraded_goal: 'Make the requested documentation correction.' },
+        'goal-check.json': { met: false, evaluation_unavailable: true },
+        'run-evaluation.json': { task_completion_score: 3 },
+      },
+      text: { 'git.diff': '+docs\n' }, summaries: [],
+    });
+    const card = buildScorecard(evidence, normalizeConfig({}));
+
+    expect(card.dimensions.find(dimension => dimension.id === 'goal_quality')).toMatchObject({ normalized_score: 85 });
+    expect(card.dimensions.find(dimension => dimension.id === 'evaluation_quality')).toMatchObject({ normalized_score: 60 });
+    expect(card.dimensions.find(dimension => dimension.id === 'goal_attainment')).toMatchObject({ normalized_score: 0 });
   });
 
   test('reads aggregate phase-summary token fields', () => {
