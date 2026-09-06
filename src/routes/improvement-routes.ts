@@ -244,7 +244,13 @@ function readJson(file: string): unknown {
   try {
     const text = fs.readFileSync(file, 'utf8');
     if (!text.trim()) return null;
-    return JSON.parse(text);
+    try {
+      return JSON.parse(text);
+    } catch {
+      // v1.132.1 wrote a literal \\n after some evaluator objects. Recover
+      // that terminal-only serialization defect for historical aggregation.
+      return JSON.parse(text.replace(/\\n\s*$/, ''));
+    }
   } catch {
     return null;
   }

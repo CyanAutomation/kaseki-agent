@@ -4139,6 +4139,28 @@ construct_default_validation_commands() {
   printf '%s' "npm run build;npm run type-check;npm run test"
 }
 
+all_requested_validation_scripts_are_missing() {
+  local commands="$1" command trimmed missing=0 total=0
+  local -a command_array
+  IFS=';' read -r -a command_array <<< "$commands"
+  for command in "${command_array[@]}"; do
+    trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
+    [ -z "$trimmed" ] && continue
+    total=$((total + 1))
+    missing_npm_script_for_validation_command "$trimmed" >/dev/null 2>&1 || return 1
+    missing=$((missing + 1))
+  done
+  [ "$total" -gt 0 ] && [ "$missing" -eq "$total" ]
+}
+
+maybe_replace_missing_validation_commands() {
+  local commands="$1" fallback
+  all_requested_validation_scripts_are_missing "$commands" || { printf '%s' "$commands"; return 0; }
+  fallback="$(construct_default_validation_commands)"
+  [ "$fallback" = "$commands" ] && { printf '%s' "$commands"; return 0; }
+  printf '%s' "$fallback"
+}
+
 apply_default_validation_commands() {
   local detected_commands
 
@@ -4754,6 +4776,13 @@ run_validation_commands() {
       record_stage_timing "$stage_label" "$validation_exit_ref" "$(($(date +%s) - stage_start))" "directory_missing"
     else
       set +e
+      local fallback_commands
+      fallback_commands="$(maybe_replace_missing_validation_commands "$commands")"
+      if [ "$fallback_commands" != "$commands" ]; then
+        printf 'Configured validation scripts were unavailable; using discovered alternatives: %s\n' "$fallback_commands" | tee -a "$log_file"
+        emit_event "validation_commands_fallback" "stage=$stage_label" "reason=all_requested_npm_scripts_missing" "commands=$fallback_commands"
+        commands="$fallback_commands"
+      fi
       IFS=';' read -r -a validation_commands <<< "$commands"
       for command in "${validation_commands[@]}"; do
         trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
@@ -7074,7 +7103,7 @@ if (artifact.reviewer_confidence === "high" && !validation.trim()) {
 artifact.timestamp = new Date().toISOString();
 artifact.model = model;
 artifact.actual_model = actualModel;
-fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\\n");
+fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
 ' "$RUN_EVALUATION_CANDIDATE_ARTIFACT" "$RUN_EVALUATION_ARTIFACT" "$KASEKI_RUN_EVALUATION_MODEL" "$RUN_EVALUATION_ACTUAL_MODEL" 2>/dev/null
 }
 

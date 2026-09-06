@@ -313,6 +313,11 @@ describe('kaseki-api-routes improvements aggregation', () => {
     );
     fs.writeFileSync(path.join(jobB.resultDir, 'run-evaluation.json'), '{not-json');
     fs.writeFileSync(path.join(jobC.resultDir, 'run-evaluation-events.jsonl'), '{"type":"message"}\n');
+    fs.writeFileSync(path.join(jobC.resultDir, 'run-evaluation.json'), JSON.stringify({
+      overall_assessment: 'mixed',
+      reviewer_confidence: 'low',
+      task_completion_score: 2,
+    }) + '\\n');
 
     const scheduler = createMockScheduler({
       [jobA.id]: jobA as any,
@@ -331,10 +336,10 @@ describe('kaseki-api-routes improvements aggregation', () => {
 
       expect(response.status).toBe(200);
       expect(body.evaluator).toEqual({
-        available: 1,
-        missing: 1,
+        available: 2,
+        missing: 0,
         invalid: 1,
-        diagnostics: { missing_artifact: 1, missing_artifact_after_events: 1 },
+        diagnostics: { missing_artifact: 1 },
       });
       expect(body.counts.byAssessment.good).toBe(1);
       expect(body.counts.byConfidence.high).toBe(1);
