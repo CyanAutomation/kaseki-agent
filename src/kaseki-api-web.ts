@@ -1981,6 +1981,7 @@ const controllerPage = String.raw`<!doctype html>
           run.validationFailureReason,
           run.validationAllowlistFailureReason,
           run.qualityFailureReason,
+          run.criticalChangeFailureReason,
           run.goalCheckFailureReason,
           run.error,
         ].filter((value) => typeof value === 'string' && value.trim());
@@ -2271,12 +2272,14 @@ const controllerPage = String.raw`<!doctype html>
           ? payload.failureJsonContent
           : {};
         const fields = [
+          payload.criticalChangeFailureReason,
           payload.goalCheckFailureReason,
           payload.error,
           payload.diagnosticEntryPoint,
           payload.diagnosticSummary && payload.diagnosticSummary.primaryReason,
           failureJson.provider_error_type,
           failureJson.failed_command,
+          failureJson.critical_change_failure_reason,
           failureJson.goal_check_failure_reason,
           failureJson.provider_error_message,
         ];

@@ -22,6 +22,7 @@ export interface Evidence {
   goalMet?: boolean;
   goalCheckAvailable: boolean;
   goalCheckFailed: boolean;
+  noChangeAccepted: boolean;
   changedFiles: number;
   diffBytes: number;
   evaluation?: Record<string, unknown>;

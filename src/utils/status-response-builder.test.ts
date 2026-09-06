@@ -403,11 +403,15 @@ describe('StatusResponseBuilder', () => {
       (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify({
         exit_code: 8,
         failed_command: 'critical change verification',
+        critical_change_failure_reason: 'critical_change_expectations_failed: git.diff is empty but forbidden_empty_diff is true',
+        goal_check_failure_reason: '',
       }));
 
       const response = builder.buildStatus(job as Job);
 
       expect(response.failureClass).toBe('critical_change_expectations');
+      expect(response.criticalChangeFailureReason).toContain('critical_change_expectations_failed');
+      expect(response.goalCheckFailureReason).toBeUndefined();
     });
 
     it('should expose actionable terminal diagnostics and dependency cache notes', () => {
