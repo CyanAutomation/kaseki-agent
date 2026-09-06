@@ -49,6 +49,15 @@ export function extractQualityFailureReason(metadata: Metadata = {}): string | n
 }
 
 /**
+ * Extract critical-change contract failure reason from metadata.
+ * This is intentionally separate from the goal-check evaluator: the contract
+ * gate can fail before the evaluator is invoked.
+ */
+export function extractCriticalChangeFailureReason(metadata: Metadata = {}): string | null {
+  return extractTypedReason(metadata, 'critical_change_failure_reason');
+}
+
+/**
  * Extract goal check failure reason from metadata.
  * Returns the reason if goal check failed, otherwise null.
  */

@@ -44,6 +44,7 @@ const StatusResponseSchema = z.object({
   validationFailureReason: z.string().optional(),
   validationAllowlistFailureReason: z.string().optional(),
   qualityFailureReason: z.string().optional(),
+  criticalChangeFailureReason: z.string().optional(),
   goalCheckFailureReason: z.string().optional(),
   error: z.string().optional(),
   exitCode: z.number().optional(),
