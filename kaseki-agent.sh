@@ -389,9 +389,10 @@ KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS="${KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS:-
 KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS="${KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS:-1024}"
 KASEKI_RUN_EVALUATION_MAX_CONTEXT_TOKENS="${KASEKI_RUN_EVALUATION_MAX_CONTEXT_TOKENS:-12000}"
 KASEKI_RUN_EVALUATION_MAX_TURNS="${KASEKI_RUN_EVALUATION_MAX_TURNS:-3}"
-# A failed run already has a deterministic failure artifact. Do not spend an
-# additional long evaluator turn unless an operator explicitly opts in.
-KASEKI_RUN_EVALUATION_ON_FAILURE="${KASEKI_RUN_EVALUATION_ON_FAILURE:-0}"
+# Run evaluation is useful failure evidence for all non-deterministic failures.
+# Deterministic allowlist failures remain short-circuited in run_run_evaluation.
+# Operators can opt out for cost-sensitive workflows.
+KASEKI_RUN_EVALUATION_ON_FAILURE="${KASEKI_RUN_EVALUATION_ON_FAILURE:-1}"
 INSTANCE_NAME="${KASEKI_INSTANCE:-kaseki}"
 kaseki_apply_task_mode_diff_defaults
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
@@ -444,6 +445,7 @@ GOAL_CHECK_ATTEMPTS=0
 GOAL_CHECK_EVALUATOR_ATTEMPTS=0
 GOAL_CHECK_MET=false
 GOAL_CHECK_FAILURE_REASON=""
+CRITICAL_CHANGE_FAILURE_REASON=""
 GOAL_CHECK_EVALUATOR_UNAVAILABLE=false
 GOAL_CHECK_RETRY_PROMPT=""
 GOAL_CHECK_ACTUAL_MODEL="unknown"
@@ -451,6 +453,7 @@ RUN_EVALUATION_EXIT=0
 RUN_EVALUATION_DURATION_SECONDS=0
 RUN_EVALUATION_ACTUAL_MODEL="unknown"
 RUN_EVALUATION_WARNING=""
+NO_CHANGE_ACCEPTED=false
 GOAL_CHECK_EVALUATION_WARNING=""
 PROVIDER_ERROR_TYPE=""
 PROVIDER_ERROR_PHASE=""
@@ -1795,6 +1798,7 @@ write_metadata() {
   "run_evaluation_model": $(printf '%s' "$KASEKI_RUN_EVALUATION_MODEL" | json_encode),
   "task_mode": $(printf '%s' "$KASEKI_TASK_MODE" | json_encode),
   "allow_empty_diff": $(printf '%s' "$KASEKI_ALLOW_EMPTY_DIFF" | json_encode),
+  "no_change_accepted": $([[ "$NO_CHANGE_ACCEPTED" == "true" ]] && printf 'true' || printf 'false'),
   "started_at": $(printf '%s' "$START_ISO" | json_encode),
   "current_stage": $(printf '%s' "$CURRENT_STAGE" | json_encode),
   "ended_at": $(printf '%s' "$end_iso" | json_encode),
@@ -1818,6 +1822,7 @@ write_metadata() {
   "pre_validation_failed_command": $(printf '%s' "$PRE_VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
   "pre_validation_failure_reason": $(printf '%s' "$PRE_VALIDATION_FAILURE_REASON" | json_encode),
   "quality_failure_reason": $(printf '%s' "$QUALITY_FAILURE_REASON" | json_encode),
+  "critical_change_failure_reason": $(printf '%s' "$CRITICAL_CHANGE_FAILURE_REASON" | json_encode),
   "goal_check_failure_reason": $(printf '%s' "$GOAL_CHECK_FAILURE_REASON" | json_encode),
   "goal_check_evaluation_warning": $(printf '%s' "$GOAL_CHECK_EVALUATION_WARNING" | json_encode),
   "goal_check_evaluator_unavailable": $([[ "$GOAL_CHECK_EVALUATOR_UNAVAILABLE" == "true" ]] && printf 'true' || printf 'false'),
@@ -2015,6 +2020,10 @@ extract_failure_diagnostic_reason() {
   fi
   if [ -n "$PROVIDER_ERROR_MESSAGE" ]; then
     printf '%s: %s%s' "$PROVIDER_ERROR_TYPE" "$PROVIDER_ERROR_MESSAGE" "$([ -n "$PROVIDER_ERROR_PHASE" ] && printf ' (phase: %s)' "$PROVIDER_ERROR_PHASE")"
+    return 0
+  fi
+  if [ -n "$CRITICAL_CHANGE_FAILURE_REASON" ]; then
+    printf '%s' "$CRITICAL_CHANGE_FAILURE_REASON"
     return 0
   fi
   if [ -n "$GOAL_CHECK_FAILURE_REASON" ]; then
@@ -2376,6 +2385,7 @@ write_failure_json() {
   "pre_validation_failed_command": $(printf '%s' "$PRE_VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
   "pre_validation_failure_reason": $(printf '%s' "$PRE_VALIDATION_FAILURE_REASON" | json_encode),
   "quality_failure_reason": $(printf '%s' "$QUALITY_FAILURE_REASON" | json_encode),
+  "critical_change_failure_reason": $(printf '%s' "$CRITICAL_CHANGE_FAILURE_REASON" | json_encode),
   "goal_check_failure_reason": $(printf '%s' "$GOAL_CHECK_FAILURE_REASON" | json_encode),
   "worker_error_type": $(printf '%s' "$WORKER_ERROR_TYPE" | json_encode),
   "worker_error_phase": $(printf '%s' "$WORKER_ERROR_PHASE" | json_encode),
@@ -7137,7 +7147,7 @@ run_run_evaluation() {
   if [ "$KASEKI_RUN_EVALUATION_ON_FAILURE" != "1" ] && [ "${STATUS:-0}" -ne 0 ]; then
     RUN_EVALUATION_WARNING="skipped_failed_run"
     write_run_evaluation_fallback "$RUN_EVALUATION_WARNING"
-    emit_progress "run evaluation" "skipped after failed run (set KASEKI_RUN_EVALUATION_ON_FAILURE=1 to override)"
+    emit_progress "run evaluation" "skipped after failed run (set KASEKI_RUN_EVALUATION_ON_FAILURE=1 to enable)"
     record_stage_timing "run evaluation" 0 0 "$RUN_EVALUATION_WARNING"
     return 0
   fi
@@ -9715,9 +9725,9 @@ NODE
     record_stage_timing "hashline validation" "$HASHLINE_EXIT" "0" "status=processing_hashline_edit_events"
   fi
 
-  ACTUAL_MODEL_HELPER="$SCRIPT_DIR/scripts/resolve-actual-model.js"
-  if [ ! -r "$ACTUAL_MODEL_HELPER" ] && [ -r /app/scripts/resolve-actual-model.js ]; then
-    ACTUAL_MODEL_HELPER="/app/scripts/resolve-actual-model.js"
+  ACTUAL_MODEL_HELPER="$SCRIPT_DIR/dist/resolve-actual-model.js"
+  if [ ! -r "$ACTUAL_MODEL_HELPER" ] && [ -r /app/dist/resolve-actual-model.js ]; then
+    ACTUAL_MODEL_HELPER="/app/dist/resolve-actual-model.js"
   fi
   ACTUAL_MODEL="$(node "$ACTUAL_MODEL_HELPER" "${KASEKI_RESULTS_DIR}/pi-summary.json" "$RAW_EVENTS" 2>/dev/null || printf 'unknown\n')"
   if [ "$ACTUAL_MODEL" = "unknown" ]; then
@@ -9768,16 +9778,21 @@ emit_progress "collect agent diff" "finished"
 
 # A patch-mode run with no diff cannot benefit from quality checks or evaluator
 # calls. Retry the coding agent immediately with focused repair guidance.
-if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$KASEKI_TASK_MODE" = "patch" ] && [ "${KASEKI_ALLOW_EMPTY_DIFF:-0}" != "1" ] && [ ! -s "${KASEKI_RESULTS_DIR}/git.diff" ]; then
+if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$KASEKI_TASK_MODE" = "patch" ] && [ ! -s "${KASEKI_RESULTS_DIR}/git.diff" ] && critical_change_contract_allows_noop; then
+  NO_CHANGE_ACCEPTED=true
+  emit_progress "critical change verification" "accepted no-op: resolved contract permits an empty diff"
+fi
+
+if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$KASEKI_TASK_MODE" = "patch" ] && [ "${KASEKI_ALLOW_EMPTY_DIFF:-0}" != "1" ] && [ ! -s "${KASEKI_RESULTS_DIR}/git.diff" ] && ! critical_change_contract_allows_noop; then
   critical_change_failure_output="$(verify_critical_change_expectations 2>&1 || true)"
   critical_change_failure_summary="$(printf '%s\n' "$critical_change_failure_output" | awk 'NF { if (seen) printf "; "; printf "%s", $0; seen=1 }')"
   [ -n "$critical_change_failure_summary" ] || critical_change_failure_summary="git.diff is empty but forbidden_empty_diff is true"
   GOAL_CHECK_MET=false
   if critical_change_expectations_from_scouting_fallback; then
-    GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed_empty_diff_after_scouting_fallback: $(format_fallback_empty_diff_critical_change_failure "Pre-quality" "$critical_change_failure_summary")"
+    CRITICAL_CHANGE_FAILURE_REASON="critical_change_expectations_failed_empty_diff_after_scouting_fallback: $(format_fallback_empty_diff_critical_change_failure "Pre-quality" "$critical_change_failure_summary")"
     GOAL_CHECK_RETRY_PROMPT="$(format_fallback_empty_diff_repair_prompt "Pre-quality" "$critical_change_failure_summary")"
   else
-    GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed: $critical_change_failure_summary"
+    CRITICAL_CHANGE_FAILURE_REASON="critical_change_expectations_failed: $critical_change_failure_summary"
     GOAL_CHECK_RETRY_PROMPT="Pre-quality verification found no repository diff. Re-read ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}, inspect ${KASEKI_RESULTS_DIR}/changed-files.txt and ${KASEKI_RESULTS_DIR}/git.diff, then make the required repository change before finishing. Failures: $critical_change_failure_summary"
   fi
   printf '%s\n' "$GOAL_CHECK_RETRY_PROMPT" | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
@@ -9791,7 +9806,7 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$KASEKI_TASK_MODE" = "patch
   fi
   STATUS=8
   FAILED_COMMAND="critical change verification"
-  emit_error_event "critical_change_expectations_failed" "Pre-quality verification failed after $coding_attempt attempt(s): $GOAL_CHECK_FAILURE_REASON" "exit"
+  emit_error_event "critical_change_expectations_failed" "Pre-quality verification failed after $coding_attempt attempt(s): $CRITICAL_CHANGE_FAILURE_REASON" "exit"
   break
 fi
 
@@ -9812,10 +9827,10 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
     skip_auto_lint_cleanup_before_core_change_verified "critical_change_verification_failed" "$critical_change_failure_summary"
     GOAL_CHECK_MET=false
     if critical_change_expectations_from_scouting_fallback && printf '%s' "$critical_change_failure_summary" | grep -q 'git.diff is empty but forbidden_empty_diff is true'; then
-      GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed_empty_diff_after_scouting_fallback: $(format_fallback_empty_diff_critical_change_failure "Pre-goal-check" "$critical_change_failure_summary")"
+      CRITICAL_CHANGE_FAILURE_REASON="critical_change_expectations_failed_empty_diff_after_scouting_fallback: $(format_fallback_empty_diff_critical_change_failure "Pre-goal-check" "$critical_change_failure_summary")"
       GOAL_CHECK_RETRY_PROMPT="$(format_fallback_empty_diff_repair_prompt "Pre-goal-check" "$critical_change_failure_summary")"
     else
-      GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed: $critical_change_failure_summary"
+      CRITICAL_CHANGE_FAILURE_REASON="critical_change_expectations_failed: $critical_change_failure_summary"
       GOAL_CHECK_RETRY_PROMPT="Pre-goal-check verification failed before invoking the LLM evaluator. Re-read ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}, inspect ${KASEKI_RESULTS_DIR}/changed-files.txt and ${KASEKI_RESULTS_DIR}/git.diff, then make the required repository changes before finishing. Failures: $critical_change_failure_summary"
     fi
     printf '%s\n' "$GOAL_CHECK_RETRY_PROMPT" | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
@@ -9828,7 +9843,7 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
     fi
     STATUS=8
     FAILED_COMMAND="critical change verification"
-    emit_error_event "critical_change_expectations_failed" "Pre-goal-check verification failed after $coding_attempt attempt(s): $GOAL_CHECK_FAILURE_REASON" "exit"
+    emit_error_event "critical_change_expectations_failed" "Pre-goal-check verification failed after $coding_attempt attempt(s): $CRITICAL_CHANGE_FAILURE_REASON" "exit"
     break
   fi
   if [ "$KASEKI_TASK_MODE" != "inspect" ]; then
@@ -9844,10 +9859,10 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
       critical_change_failure_summary="$(printf '%s\n' "$critical_change_failure_output" | awk 'NF { if (seen) printf "; "; printf "%s", $0; seen=1 }')"
       GOAL_CHECK_MET=false
       if critical_change_expectations_from_scouting_fallback && printf '%s' "$critical_change_failure_summary" | grep -q 'git.diff is empty but forbidden_empty_diff is true'; then
-        GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed_after_cleanup_empty_diff_after_scouting_fallback: $(format_fallback_empty_diff_critical_change_failure "Post-cleanup" "$critical_change_failure_summary")"
+        CRITICAL_CHANGE_FAILURE_REASON="critical_change_expectations_failed_after_cleanup_empty_diff_after_scouting_fallback: $(format_fallback_empty_diff_critical_change_failure "Post-cleanup" "$critical_change_failure_summary")"
         GOAL_CHECK_RETRY_PROMPT="$(format_fallback_empty_diff_repair_prompt "Post-cleanup" "$critical_change_failure_summary")"
       else
-        GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed_after_cleanup: $critical_change_failure_summary"
+        CRITICAL_CHANGE_FAILURE_REASON="critical_change_expectations_failed_after_cleanup: $critical_change_failure_summary"
         GOAL_CHECK_RETRY_PROMPT="Post-cleanup critical-change verification failed before invoking the LLM evaluator. Re-read ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}, inspect ${KASEKI_RESULTS_DIR}/changed-files.txt and ${KASEKI_RESULTS_DIR}/git.diff, then restore or implement the required repository changes before secondary work. Failures: $critical_change_failure_summary"
       fi
       printf '%s\n' "$GOAL_CHECK_RETRY_PROMPT" | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
@@ -9860,7 +9875,7 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
       fi
       STATUS=8
       FAILED_COMMAND="critical change verification"
-      emit_error_event "critical_change_expectations_failed" "Post-cleanup critical-change verification failed after $coding_attempt attempt(s): $GOAL_CHECK_FAILURE_REASON" "exit"
+      emit_error_event "critical_change_expectations_failed" "Post-cleanup critical-change verification failed after $coding_attempt attempt(s): $CRITICAL_CHANGE_FAILURE_REASON" "exit"
       break
     fi
     emit_progress "critical change verification" "passed after cleanup on attempt $coding_attempt"

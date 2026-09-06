@@ -36,6 +36,9 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
     || String(failure.failed_command ?? '').trim() === 'run evaluation';
   const evaluatorAvailable = Boolean(evaluation) && !evaluatorFailed && !(Number.isFinite(evaluationExit) && evaluationExit !== 0)
     && (!evaluationWarning || evaluationWarning === 'run_evaluation_recovered_invalid_artifact');
+  const noChangeAccepted = lifecycle(metadata) === 'completed'
+    && (metadata.no_change_accepted === true || metadata.allow_empty_diff === '1' || metadata.allow_empty_diff === true)
+    && (snapshot.text['git.diff'] ?? '').trim().length === 0;
   return {
     metadata, status: lifecycle(metadata), elapsedSeconds: elapsed, ...tokenEvidence,
     retries: countRetries(snapshot), phaseRetries, phaseDurationsMs, validation, quality,
@@ -43,6 +46,7 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
     goalCheckAvailable,
     goalCheckFailed: !goalCheckAvailable || String(metadata.failed_command ?? '').toLowerCase() === 'goal check'
       || String(metadata.goal_check_failure_reason ?? '').trim().length > 0,
+    noChangeAccepted,
     changedFiles: (snapshot.text['changed-files.txt'] ?? '').split(/\r?\n/).filter(Boolean).length,
     diffBytes: Buffer.byteLength(snapshot.text['git.diff'] ?? ''), evaluation, evaluatorAvailable,
     present: [...Object.keys(snapshot.json), ...Object.keys(snapshot.text)],

@@ -8,6 +8,7 @@ import {
   extractValidationFailureReason,
   extractValidationAllowlistFailureReason,
   extractQualityFailureReason,
+  extractCriticalChangeFailureReason,
   extractGoalCheckFailureReason,
 } from '../instance-state-derivation';
 import { classifyFailure } from '../instance-failure-extraction';
@@ -79,6 +80,7 @@ export class StatusResponseBuilder {
     const validationReason = extractValidationFailureReason(metadata);
     const validationAllowlistReason = extractValidationAllowlistFailureReason(metadata);
     const qualityReason = extractQualityFailureReason(metadata);
+    const criticalChangeReason = extractCriticalChangeFailureReason(metadata);
     const goalCheckReason = extractGoalCheckFailureReason(metadata);
     const derivedFailureClass = job.status === 'failed' ? classifyFailure(metadata, exitCode ?? null) : undefined;
     // Scheduler state can survive a restart with a generic failure class. For
@@ -97,6 +99,7 @@ export class StatusResponseBuilder {
       validationFailureReason: validationReason ?? undefined,
       validationAllowlistFailureReason: validationAllowlistReason ?? undefined,
       qualityFailureReason: qualityReason ?? undefined,
+      criticalChangeFailureReason: criticalChangeReason ?? undefined,
       goalCheckFailureReason: goalCheckReason ?? undefined,
       correlationId: job.correlationId,
       requestId: job.requestId,

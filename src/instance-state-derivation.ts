@@ -23,7 +23,7 @@ export {
   extractValidationFailureReason,
   extractValidationAllowlistFailureReason,
   extractQualityFailureReason,
+  extractCriticalChangeFailureReason,
   extractGoalCheckFailureReason,
   classifyFailure,
 } from './instance-failure-extraction';
-
