@@ -1852,7 +1852,7 @@ write_metadata() {
   "goal_check_exit_code": $GOAL_CHECK_EXIT,
   "run_evaluation_exit_code": $RUN_EVALUATION_EXIT,
   "goal_check_attempts": $GOAL_CHECK_ATTEMPTS,
-  "goal_check_met": $GOAL_CHECK_MET,
+  "goal_check_met": $([[ "$GOAL_CHECK_EVALUATOR_UNAVAILABLE" == "true" ]] && printf 'null' || printf '%s' "$GOAL_CHECK_MET"),
   "pre_validation_exit_code": $PRE_VALIDATION_EXIT,
   "validation_exit_code": $VALIDATION_EXIT,
   "validation_fail_fast_mode": $([[ "$KASEKI_VALIDATION_FAIL_FAST" == "1" ]] && printf 'true' || printf 'false'),
@@ -2406,7 +2406,7 @@ write_failure_json() {
   "provider_error_recovery": ${PROVIDER_ERROR_RECOVERY_JSON:-null},
   "provider_failure_chain": {"primary": ${PROVIDER_ERROR_PRIMARY_JSON:-null}, "retry_attempt_count": $PROVIDER_ERROR_RETRY_ATTEMPT_COUNT, "retry_result": $(printf '%s' "$PROVIDER_ERROR_RETRY_RESULT" | json_encode), "recovery": ${PROVIDER_ERROR_RECOVERY_JSON:-null}, "recovery_result": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_RESULT" | json_encode)},
   "goal_check_attempts": $GOAL_CHECK_ATTEMPTS,
-  "goal_check_met": $GOAL_CHECK_MET,
+  "goal_check_met": $([[ "$GOAL_CHECK_EVALUATOR_UNAVAILABLE" == "true" ]] && printf 'null' || printf '%s' "$GOAL_CHECK_MET"),
   "stage": $(printf '%s' "$CURRENT_STAGE" | json_encode),
   "diagnostic_reason": $(printf '%s' "$diagnostic_reason" | json_encode),
   "stderr_tail": $(printf '%s' "$stderr_tail" | json_encode),
@@ -5084,6 +5084,7 @@ Well-formed goals have:
 - **Codebase context**: Tech stack, folder patterns, naming conventions
 - **Examples**: Input/output before/after if inferrable
 - **Reasoning**: Explain why constraints exist
+- **Evidence discipline**: Only name a file, version, or behavior after verifying it in the repository. If evidence is ambiguous, record it as an open question rather than turning it into a success criterion. Never describe an existing file as stale or nonexistent without a direct repository observation.
 
 === INPUT ANALYSIS ===
 
@@ -6708,6 +6709,34 @@ NODE
   emit_progress "goal check" "evaluator unavailable; continuing with mandatory human review"
 }
 
+capture_pre_validation_workspace_state() {
+  local repo="${KASEKI_WORKSPACE_DIR}/repo"
+  [ -d "$repo/.git" ] || return 0
+  git -C "$repo" diff --binary HEAD > "${KASEKI_RESULTS_DIR}/pre-validation-worktree.patch" 2>/dev/null || return 0
+  git -C "$repo" ls-files --others --exclude-standard > "${KASEKI_RESULTS_DIR}/pre-validation-untracked.txt" 2>/dev/null || true
+}
+
+restore_pre_validation_workspace_state() {
+  local repo="${KASEKI_WORKSPACE_DIR}/repo"
+  local patch="${KASEKI_RESULTS_DIR}/pre-validation-worktree.patch"
+  local untracked="${KASEKI_RESULTS_DIR}/pre-validation-untracked.txt"
+  [ -d "$repo/.git" ] || return 0
+
+  # Pre-agent validation must not leak formatter/framework edits into the
+  # coding workspace. Restore the exact tracked baseline and remove only
+  # untracked files which did not exist before validation.
+  git -C "$repo" restore --source=HEAD --staged --worktree -- . 2>/dev/null || return 0
+  if [ -s "$patch" ]; then
+    git -C "$repo" apply --index "$patch" 2>/dev/null || git -C "$repo" apply "$patch" 2>/dev/null || return 0
+  fi
+  while IFS= read -r path || [ -n "$path" ]; do
+    [ -z "$path" ] && continue
+    git -C "$repo" clean -f -- "$path" 2>/dev/null || true
+  done < <(comm -13 <(LC_ALL=C sort "$untracked" 2>/dev/null) <(git -C "$repo" ls-files --others --exclude-standard | LC_ALL=C sort))
+  printf '%s\n' '{"event":"pre_validation_workspace_restored","reason":"validation_isolation"}' >> "${KASEKI_RESULTS_DIR}/restoration.jsonl"
+  emit_event "pre_validation_workspace_restored" "reason=validation_isolation"
+}
+
 read_goal_check_json() {
   local goal_id="${1:-unknown}"
   local goal_check_file="${KASEKI_RESULTS_DIR}/goal-check.json"
@@ -6922,7 +6951,10 @@ for (const path of paths) {
   }
 }
 
-if (valid.size === 1 && validOccurrences === 1) {
+// A streamed response can repeat the same final object in a message delta and
+// completion event.  Deduplicate by canonical content; reject only competing
+// distinct verdicts, not harmless transport duplication.
+if (valid.size === 1) {
   const recovered = [...valid.values()][0];
   fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
 }
@@ -9193,6 +9225,7 @@ if [ "$KASEKI_PRE_AGENT_VALIDATION" = "0" ]; then
   printf 'Pre-agent validation skipped because KASEKI_PRE_AGENT_VALIDATION=0.\n' >/dev/null
   record_stage_timing "pre-agent validation" 0 0 "skipped_by_config"
 else
+  capture_pre_validation_workspace_state
   run_validation_commands \
     "pre-agent validation" \
     "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
@@ -9206,6 +9239,7 @@ else
     PRE_VALIDATION_FAILURE_REASON \
     PRE_VALIDATION_STOPPED_EARLY \
     PRE_VALIDATION_COMMANDS_ATTEMPTED
+  restore_pre_validation_workspace_state
   if [ "$PRE_VALIDATION_EXIT" -ne 0 ]; then
     STATUS="$PRE_VALIDATION_EXIT"
     FAILED_COMMAND="pre-agent validation"

@@ -17,6 +17,8 @@ JSON fields:
 - critical_change_expectations: include required_files and forbidden_empty_diff when concrete. required_files must contain only files that need an edit; list inspected-but-accurate files in no_change_files instead. These arrays must never overlap. Set forbidden_empty_diff to false when a verified no-op is an acceptable outcome.
 - suggested_allowlist: agent_patterns and validation_patterns arrays
 
+Reconcile the goal-setting artifact against repository facts before endorsing its requirements. If it calls a path missing or stale, record the contradiction and use the verified fact; do not carry an unsupported claim into required_files or the coding plan.
+
 For code behavior changes, include impacted tests in test_impact. For renames, parser/output changes, events, schemas, or API fields, include concrete test files and expected assertion patterns. For documentation-only changes, test_impact may be [].
 
 Keep JSON under 20 KB. Prefer accuracy over exhaustiveness.
