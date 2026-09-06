@@ -90,6 +90,23 @@ describe('run scorecard', () => {
     expect(card.phases.run_evaluation.outcome).toBe('failed');
   });
 
+  test('does not treat a run with only skipped validation commands as validated', () => {
+    const evidence = collectEvidence({
+      json: {
+        'metadata.json': { instance: 'skipped-validation', exit_code: 0, validation_exit_code: 0 },
+        'timings-manifest.json': {
+          validation_timings: [{ exit_code: 127, details: 'skipped=missing_npm_script' }],
+        },
+      },
+      text: { 'git.diff': '+docs\n' }, summaries: [],
+    });
+
+    expect(evidence.validation).toBe('unknown');
+    const card = buildScorecard(evidence, normalizeConfig({}));
+    expect(card.dimensions.find(dimension => dimension.id === 'validation_quality'))
+      .toMatchObject({ normalized_score: 50 });
+  });
+
   test('caps an unavailable evaluator below A while preserving a B score', () => {
     const evidence = collectEvidence({
       json: {
@@ -146,6 +163,8 @@ describe('run scorecard', () => {
     expect(card.completeness).toBe('provisional');
     expect(card.evidence_coverage.missing_critical).toContain('goal_check');
     expect(card.phases.goal_check.outcome).toBe('failed');
+    expect(card.dimensions.find(dimension => dimension.id === 'goal_attainment'))
+      .toMatchObject({ normalized_score: 0 });
     expect(card.confidence.score).toBeLessThan(100);
   });
 
