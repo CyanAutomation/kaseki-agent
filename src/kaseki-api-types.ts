@@ -333,6 +333,7 @@ export interface StatusResponse {
     durationSeconds?: number;
   }>;
   taskProgressPercent?: number;
+  criticalChangeFailureReason?: string;
   goalCheckFailureReason?: string;
   exitCode?: number;
   failureClass?: string;

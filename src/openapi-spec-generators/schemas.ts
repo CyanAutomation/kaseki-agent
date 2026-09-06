@@ -448,6 +448,10 @@ function buildStatusResponseSchema(): Record<string, unknown> {
         type: 'string',
         description: 'Quality gate failure reason (retained for compatibility)',
       },
+      criticalChangeFailureReason: {
+        type: 'string',
+        description: 'Critical-change contract failure reason when verification fails before goal check runs',
+      },
       goalCheckFailureReason: {
         type: 'string',
         description: 'Goal-check failure reason when the goal-check evaluator fails or rejects the run',

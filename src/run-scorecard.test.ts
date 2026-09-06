@@ -108,6 +108,24 @@ describe('run scorecard', () => {
     expect(card.grade).not.toBe('A');
   });
 
+  test('scores an accepted no-op as successful work rather than an empty implementation failure', () => {
+    const evidence = collectEvidence({
+      json: {
+        'metadata.json': { instance: 'accepted-noop', exit_code: 0, no_change_accepted: true, quality_exit_code: 0 },
+        'goal-check.json': { met: true },
+        'run-evaluation.json': { task_completion_score: 100, contradictions: [] },
+        'timings-manifest.json': { validation_timings: [{ exit_code: 0, elapsed_seconds: 1 }], stage_timings: [{ elapsed_seconds: 1 }] },
+      },
+      text: { 'changed-files.txt': '', 'git.diff': '' },
+      summaries: [{ phase: 'coding', request_id: 'noop', usage: { input: 1, output: 1 } }],
+    });
+    const card = buildScorecard(evidence, normalizeConfig({}), new Date('2026-01-01T00:00:00Z'));
+
+    expect(evidence.noChangeAccepted).toBe(true);
+    expect(card.dimensions.find(dimension => dimension.id === 'implementation_quality')).toMatchObject({ normalized_score: 100, status: 'complete' });
+    expect(card.grade).not.toBe('F');
+  });
+
   test('treats an unavailable goal-check as missing critical evaluation evidence', () => {
     const evidence = collectEvidence({
       json: {

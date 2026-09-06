@@ -19,7 +19,7 @@ function sourceScores(evidence: Evidence, config: ScorecardConfig): number[] {
   return [
     completion,
     evidence.present.includes('scouting.json') ? 85 : 50,
-    evidence.diffBytes === 0 ? 0 : clamp(80 + .2 * (
+    evidence.noChangeAccepted ? 100 : evidence.diffBytes === 0 ? 0 : clamp(80 + .2 * (
       (efficiency(evidence.elapsedSeconds, config.targets.elapsedSeconds)
         + efficiency(evidence.tokens, config.targets.tokens)
         + efficiency(evidence.retries, config.targets.retries)) / 3)),
@@ -49,7 +49,7 @@ export function buildDimensions(evidence: Evidence, config: ScorecardConfig) {
       raw_measurements: { source_score: scores[index], retries: evidence.retries, tokens: evidence.tokens ?? null },
       normalized_score: scores[index],
       weighted_points: Number((scores[index] * effective).toFixed(2)),
-      status: !applicable ? 'not_applicable' : id === 'implementation_quality' && evidence.diffBytes === 0 ? 'unavailable' : 'complete',
+      status: !applicable ? 'not_applicable' : id === 'implementation_quality' && evidence.diffBytes === 0 && !evidence.noChangeAccepted ? 'unavailable' : 'complete',
       rationale: `Score derived from available ${id.replace(/_/g, ' ')} evidence.`,
       evidence: [],
       warnings: [],

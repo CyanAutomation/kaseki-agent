@@ -135,10 +135,12 @@ export function resolvePrimaryDiagnosticReason(
   const candidates = [
     formatStructuredProviderError(failureJson.provider_error_primary),
     formatProviderError(failureJson),
+    response.criticalChangeFailureReason,
     response.goalCheckFailureReason,
     response.validationAllowlistFailureReason,
     response.validationFailureReason,
     response.qualityFailureReason,
+    typeof failureJson.critical_change_failure_reason === 'string' ? failureJson.critical_change_failure_reason : undefined,
     typeof failureJson.goal_check_failure_reason === 'string' ? failureJson.goal_check_failure_reason : undefined,
     extractTerminalRuntimeError(failureJson),
     typeof failureJson.diagnostic_reason === 'string' ? failureJson.diagnostic_reason : undefined,

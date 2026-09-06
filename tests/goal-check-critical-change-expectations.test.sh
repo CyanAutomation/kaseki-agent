@@ -37,7 +37,8 @@ setup_case() {
   RUN_LOG="$CASE_DIR/kaseki-run.log"
   CODING_ACTION="${CODING_ACTION//__WORKSPACE_REPO__/$WORKSPACE_REPO}"
 
-  mkdir -p "$FAKE_REPO/deps/fake-dep" "$FAKE_REPO/docs" "$FAKE_BIN" "$RESULTS_DIR" "$WORKSPACE_REPO" "$APP_LIB" "$CASE_DIR/scripts" "$CASE_DIR/scripts/lib" || fail "failed to create directories for $CASE_NAME"
+  mkdir -p "$FAKE_REPO/deps/fake-dep" "$FAKE_REPO/docs" "$FAKE_BIN" "$RESULTS_DIR" "$WORKSPACE_REPO" "$APP_LIB" "$CASE_DIR/scripts" "$CASE_DIR/scripts/lib" "$CASE_DIR/dist" || fail "failed to create directories for $CASE_NAME"
+  cp "$REPO_ROOT/dist/resolve-actual-model.js" "$CASE_DIR/dist/resolve-actual-model.js" || fail "failed to copy built model resolver"
   cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$CASE_DIR/scripts/allowlist-helper.sh" || fail "failed to copy allowlist helper"
   if [ -f "$REPO_ROOT/scripts/scouting-allowlist.js" ]; then
     cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$CASE_DIR/scripts/scouting-allowlist.js" || fail "failed to copy scouting allowlist"
@@ -103,7 +104,8 @@ printf '{"selected_model":"test-model"}\n' > "$3"
 EOF_FILTER
   cat > "$FAKE_BIN/timeout" <<'EOF_TIMEOUT' || fail "failed timeout"
 #!/usr/bin/env bash
-shift 2
+while [[ "${1:-}" == -* ]]; do shift; done
+shift
 "$@"
 EOF_TIMEOUT
   cat > "$FAKE_BIN/validation-output-filter" <<'EOF_VALIDATION_FILTER' || fail "failed validation filter"
@@ -141,13 +143,33 @@ if (metadata.goal_check_attempts !== expectedAttempts) {
 if ((metadata.failed_command || '') !== expectedFailedCommand) {
   throw new Error(`expected failed_command=${JSON.stringify(expectedFailedCommand)}, got ${JSON.stringify(metadata.failed_command || '')}`);
 }
+if (metadata.actual_model !== 'test-model') {
+  throw new Error(`expected actual_model=test-model, got ${JSON.stringify(metadata.actual_model)}`);
+}
 NODE
+  ! grep -q 'warning_type=model_attribution_missing' "$RESULTS_DIR/progress.jsonl" || fail "$CASE_NAME emitted a false missing-model warning"
 }
 
 empty_expectation='{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":["**"]},"critical_change_expectations":{"required_files":[],"required_search_strings":[],"forbidden_empty_diff":true}}'
 setup_case "empty-diff" "$empty_expectation" ":" 8 $'goal-setting\nscouting\ncoding\ncoding' false 0 "critical change verification" 0
 grep -q 'git.diff is empty but forbidden_empty_diff is true' "$RESULTS_DIR/critical-change-verification.log" || fail "empty-diff did not fail on empty diff"
 ! grep -q '^goal-check$' "$PI_CALLS" || fail "empty-diff invoked goal-check"
+node - "$RESULTS_DIR/metadata.json" "$RESULTS_DIR/failure.json" <<'NODE' || fail "empty-diff misattributed critical-change failure to goal check"
+const fs = require('node:fs');
+const metadata = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const failure = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+if (!String(metadata.critical_change_failure_reason).includes('critical_change_expectations_failed')) throw new Error(JSON.stringify(metadata));
+if (metadata.goal_check_failure_reason !== '') throw new Error(`goal-check reason should be empty: ${metadata.goal_check_failure_reason}`);
+if (!String(failure.critical_change_failure_reason).includes('critical_change_expectations_failed')) throw new Error(JSON.stringify(failure));
+NODE
+
+# A scouting contract is authoritative. A task that explicitly permits a no-op
+# must not be retried or failed merely because the controller default disallows
+# empty diffs.
+allowed_noop_expectation='{"task":"documentation audit","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["README.md"],"validation_patterns":[]},"critical_change_expectations":{"required_files":[],"required_search_strings":[],"forbidden_empty_diff":false}}'
+setup_case "allowed-noop-contract" "$allowed_noop_expectation" ":" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0
+grep -q 'verification passed' "$RESULTS_DIR/critical-change-verification.log" || fail "allowed no-op contract did not pass verification"
+! grep -q 'retrying coding agent' "$RUN_LOG" || fail "allowed no-op contract retried coding"
 
 setup_case "fallback-empty-diff" "__NO_SCOUTING_ARTIFACT__" ":" 8 $'goal-setting\nscouting\ncoding\ncoding' false 0 "critical change verification" 0
 node - "$RESULTS_DIR/critical-change-expectations.json" <<'NODE' || fail "fallback-empty-diff expectation artifact missing fallback marker"

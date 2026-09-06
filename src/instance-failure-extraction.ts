@@ -14,6 +14,7 @@ export {
   extractValidationFailureReason,
   extractValidationAllowlistFailureReason,
   extractQualityFailureReason,
+  extractCriticalChangeFailureReason,
   extractGoalCheckFailureReason,
 } from './utils/failure-reason-extractors';
 
