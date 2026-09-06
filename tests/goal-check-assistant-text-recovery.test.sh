@@ -67,6 +67,9 @@ elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
   # The single-object contradictions form is a legacy shape that recovery can
   # normalize without losing information before applying the strict contract.
   printf '%s\n' '{"type":"assistant_message","text":"{\\"met\\":true,\\"confidence\\":\\"high\\",\\"summary\\":\\"All requested checks passed.\\",\\"evidence\\":[\\"validation command passed\\",\\"diff inspected\\",\\"goal requirements satisfied\\"],\\"missing\\":[],\\"retry_prompt\\":\\"\\",\\"validation_notes\\":[\\"npm run check: passed\\"],\\"evidence_sources_inspected\\":[\\"scouting.json\\",\\"git.diff\\",\\"validation.log\\"],\\"contradictions\\":{\\"sources\\":[\\"git.diff\\",\\"validation.log\\"],\\"description\\":\\"No material contradiction found.\\"},\\"confidence_calibration\\":{\\"outcome\\":\\"high\\",\\"justification\\":\\"The diff and validation evidence agree.\\"}}"}'
+  # Gateways can repeat the same final payload in more than one stream event.
+  # This must remain recoverable because it is one distinct verdict.
+  printf '%s\n' '{"type":"assistant_message_delta","text":"{\\"met\\":true,\\"confidence\\":\\"high\\",\\"summary\\":\\"All requested checks passed.\\",\\"evidence\\":[\\"validation command passed\\",\\"diff inspected\\",\\"goal requirements satisfied\\"],\\"missing\\":[],\\"retry_prompt\\":\\"\\",\\"validation_notes\\":[\\"npm run check: passed\\"],\\"evidence_sources_inspected\\":[\\"scouting.json\\",\\"git.diff\\",\\"validation.log\\"],\\"contradictions\\":{\\"sources\\":[\\"git.diff\\",\\"validation.log\\"],\\"description\\":\\"No material contradiction found.\\"},\\"confidence_calibration\\":{\\"outcome\\":\\"high\\",\\"justification\\":\\"The diff and validation evidence agree.\\"}}"}'
 else
   printf 'coding\n' >> "$PI_CALLS"
   printf '%s' "\$prompt" > "$RESULTS_DIR/coding-prompt.txt"
