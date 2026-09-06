@@ -20,10 +20,17 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
   const elapsed = number(perf.elapsed_seconds) ?? number(metadata.total_duration_seconds) ?? number(metadata.duration_seconds) ?? (stageElapsed || undefined);
   const validationRows = [...(Array.isArray(timing.validation_timings) ? timing.validation_timings : []), ...(Array.isArray(timing.pre_validation_timings) ? timing.pre_validation_timings : [])];
   const failureValidationExit = number(failure.validation_exit_code);
+  const executedValidationRows = validationRows.filter((row) => {
+    const item = object(row);
+    return !String(item?.details ?? item?.detail ?? item?.status ?? '').includes('skipped=missing_npm_script')
+      && String(item?.status ?? '') !== 'skipped';
+  });
   const validation = failureValidationExit !== undefined && failureValidationExit !== 0
     ? 'failed'
-    : validationRows.length
-      ? validationRows.every(row => (number(object(row)?.exit_code) ?? 0) === 0) ? 'passed' : 'failed'
+    : executedValidationRows.length
+      ? executedValidationRows.every(row => (number(object(row)?.exit_code) ?? 0) === 0) ? 'passed' : 'failed'
+      : validationRows.length
+        ? 'unknown'
       : statusFrom(metadata, ['validation_exit_code', 'validation_exit', 'validation_status']);
   const quality = statusFrom(metadata, ['quality_exit_code', 'quality_exit', 'quality_status'], object(metadata.phases)?.quality_gates);
   const tokenEvidence = aggregateTokenUsage(snapshot.summaries);

@@ -10,7 +10,9 @@ function efficiency(actual: number | undefined, target: number): number {
 }
 
 function sourceScores(evidence: Evidence, config: ScorecardConfig): number[] {
-  const completion = evidence.goalMet === undefined ? 60 : evidence.goalMet ? 100 : 20;
+  // A missing goal-check is not neutral evidence. Keep the score provisional
+  // and prevent a completed process from looking like verified goal attainment.
+  const completion = !evidence.goalCheckAvailable ? 0 : evidence.goalMet === undefined ? 60 : evidence.goalMet ? 100 : 20;
   const evaluationScore = typeof evidence.evaluation?.task_completion_score === 'number'
     ? evidence.evaluation.task_completion_score
     : typeof evidence.evaluation?.score === 'number'
