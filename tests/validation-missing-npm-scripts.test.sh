@@ -127,6 +127,21 @@ JSON
   assert_equals "keeps non-empty validation fallback when common scripts are missing" "npm run build;npm run type-check;npm run test" "$(construct_default_validation_commands)"
 }
 
+case_missing_explicit_commands_fall_back_to_available_scripts() {
+  write_package_json <<'JSON'
+{
+  "scripts": {
+    "build": "node -e 'process.exit(0)'",
+    "test": "node -e 'process.exit(0)'"
+  }
+}
+JSON
+  assert_equals "missing explicit script uses discovered alternatives" \
+    "npm run build;npm run test" "$(maybe_replace_missing_validation_commands "npm run check")"
+  assert_equals "available explicit script remains authoritative" \
+    "npm run test" "$(maybe_replace_missing_validation_commands "npm run test")"
+}
+
 case_apply_default_validation_commands_contract() {
   # Contract: explicit validation-command env vars are authoritative; otherwise
   # detected defaults are applied to agent and pre-agent validation together.
@@ -185,6 +200,7 @@ case_record_skipped_validation_command_contract() {
 run_case "npm_run_script_name follows validation-command parsing contract" case_npm_run_script_name_contract
 run_case "missing_npm_script_for_validation_command follows skip contract" case_missing_npm_script_for_validation_command_contract
 run_case "construct_default_validation_commands follows default-command contract" case_construct_default_validation_commands_contract
+run_case "missing explicit commands fall back to available package scripts" case_missing_explicit_commands_fall_back_to_available_scripts
 run_case "apply_default_validation_commands follows env precedence contract" case_apply_default_validation_commands_contract
 run_case "record_skipped_validation_command writes validation artifacts contract" case_record_skipped_validation_command_contract
 
