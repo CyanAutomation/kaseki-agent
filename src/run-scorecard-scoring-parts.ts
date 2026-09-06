@@ -13,13 +13,18 @@ function sourceScores(evidence: Evidence, config: ScorecardConfig): number[] {
   // A missing goal-check is not neutral evidence. Keep the score provisional
   // and prevent a completed process from looking like verified goal attainment.
   const completion = !evidence.goalCheckAvailable ? 0 : evidence.goalMet === undefined ? 60 : evidence.goalMet ? 100 : 20;
-  const evaluationScore = typeof evidence.evaluation?.task_completion_score === 'number'
+  const rawEvaluationScore = typeof evidence.evaluation?.task_completion_score === 'number'
     ? evidence.evaluation.task_completion_score
     : typeof evidence.evaluation?.score === 'number'
       ? evidence.evaluation.score
       : evidence.evaluatorAvailable ? 80 : 0;
+  // Run evaluations use either a 0–100 score or a 1–5 completion scale.
+  // Normalise the latter before it reaches the common scorecard scale.
+  const evaluationScore = rawEvaluationScore > 0 && rawEvaluationScore <= 5
+    ? rawEvaluationScore * 20
+    : rawEvaluationScore;
   return [
-    completion,
+    evidence.present.includes('goal-setting.json') ? 85 : 50,
     evidence.present.includes('scouting.json') ? 85 : 50,
     evidence.noChangeAccepted ? 100 : evidence.diffBytes === 0 ? 0 : clamp(80 + .2 * (
       (efficiency(evidence.elapsedSeconds, config.targets.elapsedSeconds)
