@@ -63,6 +63,17 @@ describe('run scorecard', () => {
     expect(RunScorecardSchema.safeParse(card).success).toBe(true);
   });
 
+  test.each([
+    ['small', 100_000, 900],
+    ['medium', 300_000, 2_700],
+    ['large', 1_200_000, 7_200],
+  ] as const)('uses the %s task-size target defaults', (taskSize, tokens, elapsedSeconds) => {
+    const config = normalizeConfig({ KASEKI_SCORECARD_TASK_SIZE: taskSize });
+
+    expect(config.targets.tokens).toBe(tokens);
+    expect(config.targets.elapsedSeconds).toBe(elapsedSeconds);
+  });
+
   test('treats a recovered evaluator retry as available', () => {
     const evidence = collectEvidence({
       json: {
