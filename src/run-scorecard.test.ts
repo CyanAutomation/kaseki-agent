@@ -186,6 +186,21 @@ describe('run scorecard', () => {
     expect(card.dimensions.find(dimension => dimension.id === 'goal_attainment')).toMatchObject({ normalized_score: 0 });
   });
 
+  test('scales a fractional evaluator score below the minimum scale value', () => {
+    const evidence = collectEvidence({
+      json: {
+        'metadata.json': { instance: 'fractional-evaluation', exit_code: 0, quality_exit_code: 0 },
+        'goal-check.json': { met: true },
+        'run-evaluation.json': { task_completion_score: 0.25 },
+      },
+      text: { 'git.diff': '+docs\n' }, summaries: [],
+    });
+    const card = buildScorecard(evidence, normalizeConfig({}));
+
+    expect(card.dimensions.find(dimension => dimension.id === 'evaluation_quality'))
+      .toMatchObject({ normalized_score: 5 });
+  });
+
   test('reads aggregate phase-summary token fields', () => {
     const evidence = collectEvidence({
       json: { 'metadata.json': { exit_code: 0, quality_exit_code: 0 } }, text: {},
