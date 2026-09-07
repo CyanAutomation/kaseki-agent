@@ -63,9 +63,9 @@ describe('scorecard dimension tables and invariants', () => {
 });
 
 describe.each([
-  ['small', 30_000, 900_000, 90],
-  ['medium', 90_000, 2_700_000, 98],
-  ['large', 200_000, 7_200_000, 100],
+  ['small', 100_000, 900_000, 95],
+  ['medium', 300_000, 2_700_000, 98],
+  ['large', 1_200_000, 7_200_000, 100],
 ] as const)('%s scorecard semantics', (taskSize, tokenBudget, wallClockMs, implementationScore) => {
   test('uses task-size thresholds and produces a complete, bounded scorecard', () => {
     const artifacts = bundle({
