@@ -10,6 +10,7 @@ function efficiency(actual: number | undefined, target: number): number {
 }
 
 function sourceScores(evidence: Evidence, config: ScorecardConfig): number[] {
+  const modelTokens = evidence.tokenUsage.input_tokens + evidence.tokenUsage.output_tokens;
   // A missing goal-check is not neutral evidence. Keep the score provisional
   // and prevent a completed process from looking like verified goal attainment.
   const completion = !evidence.goalCheckAvailable ? 0 : evidence.goalMet === undefined ? 60 : evidence.goalMet ? 100 : 20;
@@ -28,7 +29,7 @@ function sourceScores(evidence: Evidence, config: ScorecardConfig): number[] {
     evidence.present.includes('scouting.json') ? 85 : 50,
     evidence.noChangeAccepted ? 100 : evidence.diffBytes === 0 ? 0 : clamp(80 + .2 * (
       (efficiency(evidence.elapsedSeconds, config.targets.elapsedSeconds)
-        + efficiency(evidence.tokens, config.targets.tokens)
+        + efficiency(modelTokens || undefined, config.targets.tokens)
         + efficiency(evidence.retries, config.targets.retries)) / 3)),
     evidence.validation === 'passed' ? 100 : evidence.validation === 'failed' ? 0 : 50,
     completion,
@@ -53,7 +54,7 @@ export function buildDimensions(evidence: Evidence, config: ScorecardConfig) {
       id,
       weight: WEIGHTS[index],
       effective_weight: effective,
-      raw_measurements: { source_score: scores[index], retries: evidence.retries, tokens: evidence.tokens ?? null },
+      raw_measurements: { source_score: scores[index], retries: evidence.retries, model_tokens: (evidence.tokenUsage.input_tokens + evidence.tokenUsage.output_tokens) || null, cache_read_tokens: evidence.tokenUsage.cache_read_tokens },
       normalized_score: scores[index],
       weighted_points: Number((scores[index] * effective).toFixed(2)),
       status: !applicable ? 'not_applicable' : id === 'implementation_quality' && evidence.diffBytes === 0 && !evidence.noChangeAccepted ? 'unavailable' : 'complete',

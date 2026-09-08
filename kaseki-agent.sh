@@ -447,6 +447,7 @@ GOAL_CHECK_MET=false
 GOAL_CHECK_FAILURE_REASON=""
 CRITICAL_CHANGE_FAILURE_REASON=""
 GOAL_CHECK_EVALUATOR_UNAVAILABLE=false
+GOAL_CHECK_FALLBACK_USED=false
 GOAL_CHECK_RETRY_PROMPT=""
 GOAL_CHECK_ACTUAL_MODEL="unknown"
 RUN_EVALUATION_EXIT=0
@@ -1826,6 +1827,7 @@ write_metadata() {
   "goal_check_failure_reason": $(printf '%s' "$GOAL_CHECK_FAILURE_REASON" | json_encode),
   "goal_check_evaluation_warning": $(printf '%s' "$GOAL_CHECK_EVALUATION_WARNING" | json_encode),
   "goal_check_evaluator_unavailable": $([[ "$GOAL_CHECK_EVALUATOR_UNAVAILABLE" == "true" ]] && printf 'true' || printf 'false'),
+  "goal_check_fallback_used": $([[ "$GOAL_CHECK_FALLBACK_USED" == "true" ]] && printf 'true' || printf 'false'),
   "worker_error_type": $(printf '%s' "$WORKER_ERROR_TYPE" | json_encode),
   "worker_error_phase": $(printf '%s' "$WORKER_ERROR_PHASE" | json_encode),
   "worker_error_message": $(printf '%s' "$WORKER_ERROR_MESSAGE" | json_encode),
@@ -3055,6 +3057,27 @@ if [ "$source_status" -ne 0 ]; then
   exit 1
 fi
 
+is_framework_validation_mutation_allowed() {
+  local changed_file="$1"
+  [ "${KASEKI_ALLOW_FRAMEWORK_VALIDATION_MUTATIONS:-1}" = "1" ] || return 1
+  case "$changed_file" in
+    tsconfig.json|tsconfig.*.json|.next/**) ;;
+    *) return 1 ;;
+  esac
+  # Next.js deliberately writes JSX and generated-type settings into tsconfig
+  # during `next build`.  It is a validation side effect, not agent scope
+  # creep. Keep it visible in validation-changed-files.txt but do not fail the
+  # run merely because the scout did not predict this framework behavior.
+  node - "${KASEKI_WORKSPACE_DIR}/repo/package.json" <<'NODE' 2>/dev/null
+const fs = require('node:fs');
+try {
+  const pkg = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}), ...(pkg.peerDependencies || {}) };
+  process.exit(typeof deps.next === 'string' ? 0 : 1);
+} catch { process.exit(1); }
+NODE
+}
+
 check_validation_allowlist() {
   if [ -z "$KASEKI_VALIDATION_ALLOWLIST" ]; then
     return 0
@@ -3091,12 +3114,12 @@ check_validation_allowlist() {
 
   while IFS= read -r changed_file || [ -n "$changed_file" ]; do
     [ -z "$changed_file" ] && continue
-    if ! printf '%s\n' "$changed_file" | grep -Eq "^(${allowlist_regex})$"; then
+    if is_framework_validation_mutation_allowed "$changed_file"; then
+      emit_event "quality_gate_rule_evaluated" "rule=validation_allowlist" "passed=true" "file=$changed_file" "reason=framework_owned_nextjs_mutation"
+    elif ! printf '%s\n' "$changed_file" | grep -Eq "^(${allowlist_regex})$"; then
       emit_event "quality_gate_violation" "rule=validation_allowlist" "file=$changed_file"
       validation_violation_count=$((validation_violation_count + 1))
       emit_event "quality_gate_rule_evaluated" "rule=validation_allowlist" "passed=false" "file=$changed_file"
-      # Phase 2C: Emit quality violation to JSON
-      append_quality_violation "${KASEKI_RESULTS_DIR}"/quality-gates.json "validation_phase_file_outside_allowlist" "File $changed_file changed during validation outside KASEKI_VALIDATION_ALLOWLIST" "error"
       # Phase 2C: Emit quality violation to JSON
       append_quality_violation "${KASEKI_RESULTS_DIR}"/quality-gates.json "validation_phase_file_outside_allowlist" "File $changed_file changed during validation outside KASEKI_VALIDATION_ALLOWLIST" "error"
     else
@@ -6677,36 +6700,47 @@ NODE
 
 degrade_goal_check_evaluator_failure() {
   local reason="${1:-goal_check_evaluator_unavailable}"
-  GOAL_CHECK_EVALUATION_WARNING="goal_check_evaluator_unavailable:${reason}"
-  GOAL_CHECK_EVALUATOR_UNAVAILABLE=true
-  # A missing evaluator verdict is observability failure, not evidence that a
-  # validated diff is wrong. Preserve the warning and a reviewer-safe
-  # deterministic artifact, then allow the run to retain its real outcome.
-  node - "${KASEKI_RESULTS_DIR}/goal-check.json" "$reason" <<'NODE' 2>/dev/null || true
+  # A missing evaluator verdict is an observability failure, not proof that a
+  # validated patch is wrong.  Produce a conservative, deterministic verdict
+  # from the diff and critical-file contract rather than publishing conflicting
+  # `met=false` and metadata `goal_check_met=true` values.
+  node - "${KASEKI_RESULTS_DIR}/goal-check.json" "$reason" "${KASEKI_RESULTS_DIR}/git.diff" "${KASEKI_RESULTS_DIR}/changed-files.txt" "$CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT" "${KASEKI_ALLOW_EMPTY_DIFF:-0}" <<'NODE' 2>/dev/null || true
 const fs = require('node:fs');
-const [output, reason] = process.argv.slice(2);
+const [output, reason, diffPath, changedPath, expectationsPath, allowEmptyDiff] = process.argv.slice(2);
+const read = (path) => { try { return fs.readFileSync(path, 'utf8'); } catch { return ''; } };
+const changed = new Set(read(changedPath).split(/\r?\n/).filter(Boolean));
+let required = [];
+try { required = JSON.parse(read(expectationsPath)).required_files ?? []; } catch { /* unavailable contract remains reviewer-visible */ }
+required = required.filter((file) => typeof file === 'string' && file.length > 0);
+const missingFiles = required.filter((file) => !changed.has(file));
+const hasDiff = read(diffPath).trim().length > 0;
+const acceptedNoop = allowEmptyDiff === '1';
+const met = acceptedNoop || (hasDiff && missingFiles.length === 0);
 fs.writeFileSync(output, JSON.stringify({
-  met: false,
-  confidence: 'low',
-  summary: 'Goal-check evaluator was unavailable; code and deterministic validation require human review.',
-  evidence: [],
-  missing: ['Automatic goal-check verdict is unavailable; human review is required.'],
-  retry_prompt: 'Review the objective, changed files, diff, and validation evidence manually before treating the goal as met.',
-  validation_notes: [],
-  evidence_sources_inspected: [],
+  met,
+  confidence: 'medium',
+  summary: met ? 'Deterministic fallback confirmed a non-empty diff satisfies the critical changed-file contract; human review remains required for semantic requirements.' : 'Deterministic fallback could not confirm the critical changed-file contract.',
+  evidence: [`git.diff non-empty: ${hasDiff}`, `required files: ${required.join(', ') || 'none'}`, `changed files: ${[...changed].join(', ') || 'none'}`],
+  missing: missingFiles.length ? missingFiles.map((file) => `Required file not changed: ${file}`) : ['LLM goal-check verdict unavailable; semantic requirements require human review.'],
+  retry_prompt: met ? '' : 'Modify every required file and verify git diff is non-empty before retrying.',
+  validation_notes: ['This is a deterministic controller fallback, not an LLM evaluator verdict.'],
+  evidence_sources_inspected: ['critical-change-expectations.json', 'changed-files.txt', 'git.diff'],
   contradictions: [],
-  confidence_calibration: { outcome: 'unknown', justification: reason },
-  evaluation_unavailable: true,
+  confidence_calibration: { outcome: met ? 'contract_met' : 'contract_unmet', justification: reason },
+  evaluation_fallback: 'deterministic_critical_change_contract',
   evaluation_warning: reason,
   timestamp: new Date().toISOString(),
 }, null, 2) + '\n');
 NODE
   GOAL_CHECK_EXIT=0
-  GOAL_CHECK_MET=true
+  GOAL_CHECK_FALLBACK_USED=true
+  GOAL_CHECK_EVALUATION_WARNING="goal_check_deterministic_fallback:${reason}"
+  GOAL_CHECK_EVALUATOR_UNAVAILABLE=false
+  GOAL_CHECK_MET="$(node -e 'try { process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).met ? "true" : "false"); } catch { process.stdout.write("false"); }' "${KASEKI_RESULTS_DIR}/goal-check.json")"
   GOAL_CHECK_FAILURE_REASON=""
-  record_stage_timing "goal check" 0 0 "evaluator_unavailable reason=$reason mandatory_human_review=true"
-  emit_error_event "goal_check_evaluator_unavailable" "Goal-check evaluator did not produce a valid verdict; preserving successful code outcome with mandatory human review: $reason" "continue"
-  emit_progress "goal check" "evaluator unavailable; continuing with mandatory human review"
+  record_stage_timing "goal check" 0 0 "deterministic_fallback reason=$reason met=$GOAL_CHECK_MET mandatory_human_review=true"
+  emit_error_event "goal_check_deterministic_fallback" "Goal-check evaluator did not produce a valid verdict; controller evaluated the critical diff contract: $reason" "continue"
+  emit_progress "goal check" "deterministic fallback completed; human review remains required"
 }
 
 capture_pre_validation_workspace_state() {

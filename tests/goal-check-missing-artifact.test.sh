@@ -136,10 +136,10 @@ if (!Number.isInteger(artifact.observed_turns)) throw new Error('missing observe
 NODE
 
 grep -q 'goal_check_artifact_missing' "$RESULTS_DIR/progress.jsonl" || fail "missing goal-check artifact error event"
-grep -q 'goal_check_evaluator_unavailable' "$RESULTS_DIR/progress.jsonl" || fail "missing evaluator-unavailable warning event"
-node - "$RESULTS_DIR/goal-check.json" <<'NODE' || fail "missing reviewer-safe evaluator fallback"
+grep -q 'goal_check_deterministic_fallback' "$RESULTS_DIR/progress.jsonl" || fail "missing deterministic fallback event"
+node - "$RESULTS_DIR/goal-check.json" <<'NODE' || fail "missing deterministic evaluator fallback"
 const verdict = require(process.argv[2]);
-if (verdict.evaluation_unavailable !== true || verdict.confidence !== 'low' || verdict.met !== false) throw new Error('fallback must retain an explicit low-confidence unavailable verdict without claiming success');
+if (verdict.evaluation_fallback !== 'deterministic_critical_change_contract' || verdict.confidence !== 'medium' || verdict.met !== true) throw new Error('fallback must produce the deterministic contract verdict for an accepted no-op');
 NODE
 grep -q "$RESULTS_DIR/goal-check-validation-errors.jsonl" "$RESULTS_DIR/progress.jsonl" || fail "error event did not point to validation error log"
 if [ -f "$RESULTS_DIR/goal-check-stderr.log" ]; then
