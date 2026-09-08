@@ -34,13 +34,18 @@ append_quality_violation() { :; }
 # Load only the helpers under test, while redirecting their container-only
 # absolute paths into this test's temporary workspace.
 eval "$(awk '
-  /^check_validation_allowlist\(\)/ { emit_check=1 }
+  /^is_framework_validation_mutation_allowed\(\)/ { emit_check=1 }
   /^check_secret_scan_allowlist\(\)/ { emit_check=0 }
   emit_check { print }
   /^collect_changed_file_set\(\)/ { emit_collect=1 }
   /^restore_cleanup_disallowed_changes\(\)/ { emit_collect=0 }
   emit_collect { print }
 ' "$ROOT_DIR/kaseki-agent.sh" | sed "s#/workspace/repo#$TMP_DIR/repo#g; s#/results#$TMP_DIR/results#g")"
+
+# State snapshots live in the shared cleanup helper rather than the worker
+# entrypoint. It only declares functions when sourced.
+# shellcheck source=../scripts/auto-lint-cleanup-classification.sh
+source "$ROOT_DIR/scripts/auto-lint-cleanup-classification.sh"
 
 reset_quality_state() {
   QUALITY_EXIT=0
@@ -116,5 +121,25 @@ fi
 [ "$QUALITY_EXIT" -eq 7 ] || fail "expected QUALITY_EXIT=7 for validation mutation, got $QUALITY_EXIT"
 printf '%s' "$VALIDATION_ALLOWLIST_FAILURE_REASON" | grep -Fq 'validation_allowlist_check: 1 file(s)' || fail 'expected dedicated validation allowlist failure reason for validation mutation'
 grep -Fxq 'tracked.txt' "$TMP_DIR/results/validation-changed-files.txt" || fail 'validation-mutated tracked file should be recorded as validation-changed'
+
+# Next.js deterministically updates tsconfig.json during build validation.  That
+# framework-owned mutation must not turn a docs-only change into a quality-gate
+# failure, while arbitrary validation writes remain protected above.
+reset_quality_state
+printf '%s\n' '{"dependencies":{"next":"16.0.0"}}' > package.json
+git add package.json
+git commit -q -m 'add next fixture'
+KASEKI_VALIDATION_ALLOWLIST='README.md'
+collect_changed_file_state "$TMP_DIR/results/validation-before-state.txt"
+printf '%s\n' '{"compilerOptions":{"jsx":"react-jsx"}}' > tsconfig.json
+collect_changed_file_state "$TMP_DIR/results/validation-after-state.txt"
+
+if check_validation_allowlist; then
+  pass 'validation allowlist permits the framework-owned Next.js tsconfig mutation'
+else
+  fail 'Next.js tsconfig mutation should be permitted during validation'
+fi
+[ "$QUALITY_EXIT" -eq 0 ] || fail "expected QUALITY_EXIT=0 for Next.js tsconfig mutation, got $QUALITY_EXIT"
+grep -Fxq 'tsconfig.json' "$TMP_DIR/results/validation-changed-files.txt" || fail 'Next.js mutation should remain observable'
 
 printf '\n✅ validation allowlist state snapshot tests passed\n'
