@@ -18,8 +18,12 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
   const stageRows = Array.isArray(timing.stage_timings) ? timing.stage_timings : [];
   const { phaseDurationsMs, stageElapsed } = computePhaseDurations(stageRows);
   const elapsed = number(perf.elapsed_seconds) ?? number(metadata.total_duration_seconds) ?? number(metadata.duration_seconds) ?? (stageElapsed || undefined);
-  const validationRows = [...(Array.isArray(timing.validation_timings) ? timing.validation_timings : []), ...(Array.isArray(timing.pre_validation_timings) ? timing.pre_validation_timings : [])];
+  // Only post-change validation can support the validation score. Baseline
+  // checks are useful diagnostics, but mixing them in can claim a successful
+  // validation stage even when the run stopped before it executed one.
+  const validationRows = Array.isArray(timing.validation_timings) ? timing.validation_timings : [];
   const failureValidationExit = number(failure.validation_exit_code);
+  const validationCommandsAttempted = number(metadata.validation_commands_attempted);
   const executedValidationRows = validationRows.filter((row) => {
     const item = object(row);
     return !String(item?.details ?? item?.detail ?? item?.status ?? '').includes('skipped=missing_npm_script')
@@ -31,14 +35,17 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
       ? executedValidationRows.every(row => (number(object(row)?.exit_code) ?? 0) === 0) ? 'passed' : 'failed'
       : validationRows.length
         ? 'unknown'
-      : statusFrom(metadata, ['validation_exit_code', 'validation_exit', 'validation_status']);
+        : validationCommandsAttempted === 0
+          ? 'unknown'
+          : statusFrom(metadata, ['validation_exit_code', 'validation_exit', 'validation_status']);
   const quality = statusFrom(metadata, ['quality_exit_code', 'quality_exit', 'quality_status'], object(metadata.phases)?.quality_gates);
   const tokenEvidence = aggregateTokenUsage(snapshot.summaries);
   const phaseRetries = providerRetryCounts(snapshot);
   const evaluationExit = number(metadata.run_evaluation_exit_code);
   const evaluationWarning = String(metadata.run_evaluation_warning ?? '').trim();
   const goalCheckWarning = String(metadata.goal_check_evaluation_warning ?? '').trim();
-  const goalCheckAvailable = Boolean(goal) && goal.evaluation_unavailable !== true && !goalCheckWarning;
+  const goalCheckAvailable = Boolean(goal) && goal.evaluation_unavailable !== true
+    && (!goalCheckWarning || goalCheckWarning.startsWith('goal_check_deterministic_fallback:'));
   const evaluatorFailed = String(failure.provider_error_phase ?? '').trim() === 'run-evaluation'
     || String(failure.failed_command ?? '').trim() === 'run evaluation';
   const evaluatorAvailable = Boolean(evaluation) && !evaluatorFailed && !(Number.isFinite(evaluationExit) && evaluationExit !== 0)

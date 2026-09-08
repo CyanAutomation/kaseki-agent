@@ -47,7 +47,23 @@ describe('run scorecard', () => {
     expect(card.phases.goal_setting.duration_ms).toBe(10000);
     expect(card.phases.coding.duration_ms).toBe(20000);
     expect(card.timing_totals.phase_duration_ms.run_evaluation).toBe(30000);
-    expect(card.warnings).toContain('Token budget exceeded: 250010 used versus 200000 target.');
+    expect(card.warnings).toContain('Token budget exceeded: 250010 model tokens used versus 200000 target.');
+  });
+
+  test('does not charge cache reads against the model token budget', () => {
+    const evidence = collectEvidence({
+      json: {
+        'metadata.json': { instance: 'cache-budget', exit_code: 0, quality_exit_code: 0 },
+        'goal-check.json': { met: true },
+      },
+      text: { 'changed-files.txt': 'README.md\n', 'git.diff': '+docs\n' },
+      summaries: [{ phase: 'coding', request_id: 'one', usage: { input: 100_000, output: 10_000, cacheRead: 900_000 } }],
+    });
+    const card = buildScorecard(evidence, normalizeConfig({ KASEKI_SCORECARD_TARGET_TOKENS: '200000' }));
+
+    expect(card.token_totals.cache_read_tokens).toBe(900_000);
+    expect(card.warnings).not.toContain('Token budget exceeded: 1010000 used versus 200000 target.');
+    expect(card.warnings).toContain('Cache reads observed: 900000 tokens (reported separately from the model token budget).');
   });
 
   test('uses safe config defaults and stable grades', () => {
@@ -117,6 +133,18 @@ describe('run scorecard', () => {
     const card = buildScorecard(evidence, normalizeConfig({}));
     expect(card.dimensions.find(dimension => dimension.id === 'validation_quality'))
       .toMatchObject({ normalized_score: 50 });
+  });
+
+  test('does not present pre-agent baseline commands as post-change validation', () => {
+    const evidence = collectEvidence({
+      json: {
+        'metadata.json': { instance: 'baseline-only', exit_code: 0, validation_exit_code: 0, validation_commands_attempted: 0 },
+        'timings-manifest.json': { pre_validation_timings: [{ exit_code: 0, elapsed_seconds: 10 }] },
+      },
+      text: { 'git.diff': '+docs\n' }, summaries: [],
+    });
+
+    expect(evidence.validation).toBe('unknown');
   });
 
   test('caps an unavailable evaluator below A while preserving a B score', () => {
