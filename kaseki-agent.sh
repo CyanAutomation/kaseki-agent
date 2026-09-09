@@ -2667,9 +2667,14 @@ if (expectations.__invalid) {
   const diff = read(diffPath);
   const listedFiles = read(changedFilesPath).split(/\r?\n/).map((line) => line.trim().replace(/^\.\//, '')).filter(Boolean);
   const diffFiles = [...diff.matchAll(/^diff --git a\/(.+?) b\/(.+)$/gm)].map((match) => match[2].trim());
-  const changedFiles = new Set([...listedFiles, ...diffFiles]);
-  if (diffFiles.some((file) => !listedFiles.includes(file))) {
-    notes.push(`recovered_changed_files_from_diff=${diffFiles.filter((file) => !listedFiles.includes(file)).join(',')}`);
+  // A name-only diff and the b/ path above contain only the destination of a
+  // detected rename. Preserve both rename paths so removing a protected file
+  // cannot evade the scope contract.
+  const renameFiles = [...diff.matchAll(/^rename (?:from|to) (.+)$/gm)].map((match) => match[1].trim());
+  const recoveredFiles = [...new Set([...diffFiles, ...renameFiles])].filter((file) => !listedFiles.includes(file));
+  const changedFiles = new Set([...listedFiles, ...diffFiles, ...renameFiles]);
+  if (recoveredFiles.length) {
+    notes.push(`recovered_changed_files_from_diff=${recoveredFiles.join(',')}`);
     fs.writeFileSync(changedFilesPath, [...changedFiles].sort().join('\n') + '\n');
   }
   if (asBoolean(expectations.forbidden_empty_diff) && diff.trim().length === 0) {
