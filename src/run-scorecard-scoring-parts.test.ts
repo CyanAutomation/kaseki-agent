@@ -1,16 +1,28 @@
 import { buildDimensions, buildPhases } from './run-scorecard-scoring-parts';
 import { normalizeConfig } from './run-scorecard-config';
+import type { Evidence } from './run-scorecard-evidence-types';
 
 describe('run-scorecard-scoring-parts', () => {
   test('disabled phases produce not_applicable dimensions and zero weight', () => {
-    const evidence = {
+    const evidence: Evidence = {
       metadata: { disabled_phases: ['scouting'] },
       present: [],
       tokens: 100,
+      tokenUsage: {
+        input_tokens: 100,
+        output_tokens: 0,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        unknown_tokens: 0,
+        unavailable: false,
+        completeness: 'complete',
+      },
+      unknownTokenRequests: 0,
       retries: 0,
       elapsedSeconds: 100,
       diffBytes: 10,
       validation: 'passed',
+      quality: 'passed',
       evaluation: { score: 80 },
       evaluatorAvailable: true,
       phaseTokens: {},
@@ -18,11 +30,15 @@ describe('run-scorecard-scoring-parts', () => {
       phaseRetries: {},
       status: 'completed',
       goalMet: true,
-    } as unknown as any;
+      goalCheckAvailable: true,
+      goalCheckFailed: false,
+      noChangeAccepted: false,
+      changedFiles: 1,
+    };
 
     const config = normalizeConfig({} as NodeJS.ProcessEnv);
     const dims = buildDimensions(evidence, config);
-    const scouting = dims.find((d: any) => d.id === 'scouting_quality');
+    const scouting = dims.find(d => d.id === 'scouting_quality');
     expect(scouting).toBeDefined();
     expect(scouting.effective_weight).toBe(0);
     expect(scouting.status).toBe('not_applicable');
