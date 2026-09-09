@@ -65,7 +65,7 @@ NODE
 }
 
 build_agent_prompt() {
-  local memory_section scouting_section retry_section hashline_edits_section summarization_section allowlist_section handoff_section caveman_instruction completion_checklist completion_contract
+  local memory_section scouting_section retry_section hashline_edits_section summarization_section allowlist_section handoff_section implementation_brief_section caveman_instruction completion_checklist completion_contract
   
   if declare -F construct_context_handoff >/dev/null; then
     construct_context_handoff "scouting" "Implement every normalized requirement, produce the required repository diff, and complete the focused coding checks."
@@ -80,6 +80,7 @@ build_agent_prompt() {
   summarization_section=""
   allowlist_section=""
   handoff_section=""
+  implementation_brief_section=""
   completion_checklist="$(build_completion_checklist)"
   completion_contract="Completion contract (apply before any other instructions):
 1. Identify the minimum required change; inspect only enough evidence to locate it.
@@ -96,8 +97,18 @@ Completion marker: when every item is satisfied, output one line as KASEKI_COMPL
 Canonical context contract: ${KASEKI_RESULTS_DIR}/context-handoff.json
 - Read this handoff first; its stable, bounded fields supersede repeated task, goal-setting, scouting, and retry text.
 - Access a raw artifact from artifact_paths only when answering a named item in unresolved_questions."
+    implementation_brief_section="$(node - "${KASEKI_RESULTS_DIR}/context-handoff.json" <<'NODE'
+const fs=require('fs');
+try {
+  const handoff=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+  const brief=handoff.implementation_brief;
+  if (brief && typeof brief === 'object') {
+    process.stdout.write(`\nImplementation brief from scouting:\n${JSON.stringify(brief)}\n- Treat protected_files as out of scope. Do not make unrelated implementation changes to satisfy a documentation or configuration task.\n`);
+  }
+} catch {}
+NODE
+)"
     scouting_section=""
-    retry_section=""
   fi
   if [ -n "${KASEKI_CHANGED_FILES_ALLOWLIST:-}" ]; then
     allowlist_section="
@@ -120,7 +131,7 @@ Scouting artifact:
 Summarization Analysis:
 $(cat "${KASEKI_RESULTS_DIR}"/summarization-annotation.txt)"
   fi
-  if [ -n "$GOAL_CHECK_RETRY_PROMPT" ] && [ ! -s "${KASEKI_RESULTS_DIR}/context-handoff.json" ]; then
+  if [ -n "$GOAL_CHECK_RETRY_PROMPT" ]; then
     retry_section="
 Goal-check retry guidance:
 - A post-validation goal-check Pi evaluator found the previous coding attempt did not fully realize the scouting objective.
@@ -176,6 +187,7 @@ $hashline_edits_section
 $summarization_section
 $allowlist_section
 $handoff_section
+$implementation_brief_section
 EOF
   else
     # Verbose version (caveman level 0-1)
@@ -188,7 +200,7 @@ Operational guardrails:
 - Critical change first: identify the primary required code change from the task prompt, scouting artifact, and goal-setting artifact before editing.
 - Apply that primary required code change before adding tests, refactoring, cleanup, formatting-only edits, or other secondary work.
 - Do not report success or finish until the required repository diff is present and contains the primary code change, not just tests or scaffolding.
-- Keep edits limited to the requested source and test files. If a tool or command changes unrelated files, restore those unrelated files before finishing.
+- Keep edits limited to work that directly satisfies the requested intent. Do not make unrelated implementation changes to satisfy a documentation, configuration, or other narrowly-scoped task. Treat explicit protected files from the handoff as out of scope.
 - Before finishing, fix minor formatting issues in files you edited, such as trailing whitespace and obvious lint/format inconsistencies, without broad unrelated rewrites.
 - Keep tool calls small and atomic. Prefer several focused edits over one large edit, and ensure every tool argument is complete, valid JSON before invoking it.
 - Avoid repeatedly reading or returning unchanged large files. Reuse prior findings and summarize long tool output to limit context growth.
@@ -202,6 +214,7 @@ $hashline_edits_section
 $summarization_section
 $allowlist_section
 $handoff_section
+$implementation_brief_section
 EOF
   fi
 }

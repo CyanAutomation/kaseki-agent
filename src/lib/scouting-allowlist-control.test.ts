@@ -22,7 +22,7 @@ type ScoutingAllowlistOrchestrationResult = {
   source: string;
 };
 
-const DEFAULT_CHANGED_FILES_ALLOWLIST = 'src/lib/parser.ts tests/parser.validation.ts';
+const DEFAULT_CHANGED_FILES_ALLOWLIST = '**';
 const DEFAULT_VALIDATION_ALLOWLIST = '';
 const scoutingAllowlistEntryPoint = path.resolve('dist/scouting-allowlist.js');
 
@@ -135,9 +135,10 @@ describe('Scouting allowlist derivation from scouting.json contract', () => {
     ]));
   });
 
-  // Contract reference: docs/ADVANCED_CONFIG.md documents that scouting suggested allowlists
-  // are merged with KASEKI_CHANGED_FILES_ALLOWLIST/KASEKI_VALIDATION_ALLOWLIST, whose
-  // production script defaults are src/lib/parser.ts tests/parser.validation.ts and empty.
+  // Contract reference: scouting suggestions are merged with optional
+  // KASEKI_CHANGED_FILES_ALLOWLIST/KASEKI_VALIDATION_ALLOWLIST restrictions.
+  // The production default is unrestricted so task intent, not file type,
+  // determines the normal scope.
   it.each([
     ['sanitized suggested allowlist', () => path.resolve('test/fixtures/scouting-invalid-numeric-pattern.json'), 'default_after_absent_suggestion', 'ok', 'valid'],
     ['absent suggested allowlist', () => {
