@@ -152,7 +152,7 @@ NODE
 }
 
 empty_expectation='{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":["**"]},"critical_change_expectations":{"required_files":[],"required_search_strings":[],"forbidden_empty_diff":true}}'
-setup_case "empty-diff" "$empty_expectation" ":" 8 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 1 "critical change verification" 0
+setup_case "empty-diff" "$empty_expectation" ":" 8 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 2 "critical change verification" 0
 grep -q 'git.diff is empty but forbidden_empty_diff is true' "$RESULTS_DIR/critical-change-verification.log" || fail "empty-diff did not fail on empty diff"
 grep -q '^goal-check$' "$PI_CALLS" || fail "empty-diff did not produce independent goal-check evidence"
 node - "$RESULTS_DIR/metadata.json" "$RESULTS_DIR/failure.json" <<'NODE' || fail "empty-diff misattributed critical-change failure to goal check"
@@ -197,12 +197,12 @@ grep -q 'no-op is not acceptable' "$RESULTS_DIR/coding-prompt.txt" || fail "fall
 ! grep -q '^goal-check$' "$PI_CALLS" || fail "fallback-empty-diff invoked goal-check"
 
 missing_file_expectation='{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":["**"]},"critical_change_expectations":{"required_files":["target.txt"],"required_search_strings":[],"forbidden_empty_diff":false}}'
-setup_case "missing-file" "$missing_file_expectation" "printf 'changed other\n' > '__WORKSPACE_REPO__/other.txt'" 8 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 1 "critical change verification" 1
+setup_case "missing-file" "$missing_file_expectation" "printf 'changed other\n' > '__WORKSPACE_REPO__/other.txt'" 8 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 2 "critical change verification" 1
 grep -q 'required file missing from changed-files.txt: target.txt' "$RESULTS_DIR/critical-change-verification.log" || fail "missing-file did not fail on required file"
 grep -q '^goal-check$' "$PI_CALLS" || fail "missing-file did not produce independent goal-check evidence"
 
 tests_only_expectation='{"task":"implement target behavior","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":["**"]},"critical_change_expectations":{"required_files":["target.txt"],"required_search_strings":["MAGIC_EXPECTED_STRING"],"forbidden_empty_diff":true}}'
-setup_case "tests-only-missing-core-change" "$tests_only_expectation" "printf 'MAGIC_EXPECTED_STRING test only\n' > '__WORKSPACE_REPO__/tests/target.test.js'" 8 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 1 "critical change verification" 0
+setup_case "tests-only-missing-core-change" "$tests_only_expectation" "printf 'MAGIC_EXPECTED_STRING test only\n' > '__WORKSPACE_REPO__/tests/target.test.js'" 8 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 2 "critical change verification" 0
 grep -q 'required file missing from changed-files.txt: target.txt' "$RESULTS_DIR/critical-change-verification.log" || fail "tests-only case did not fail on missing core file"
 grep -q 'required search string' "$RESULTS_DIR/critical-change-verification.log" && fail "tests-only case should fail on missing core file, not diff marker copied into tests"
 grep -q '^goal-check$' "$PI_CALLS" || fail "tests-only case did not produce independent goal-check evidence"
@@ -216,13 +216,13 @@ grep -q '^goal-check$' "$PI_CALLS" || fail "present case did not invoke goal-che
 # rule. A scout can forbid an unrelated implementation file while leaving all
 # other repository paths available to the coding agent.
 protected_file_expectation='{"task":"update documentation","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":[]},"critical_change_expectations":{"required_files":[],"no_change_files":["target.txt"],"forbidden_empty_diff":false}}'
-setup_case "protected-file" "$protected_file_expectation" "printf 'implementation change\n' > '__WORKSPACE_REPO__/target.txt'" 8 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 1 "critical change verification" 0
+setup_case "protected-file" "$protected_file_expectation" "printf 'implementation change\n' > '__WORKSPACE_REPO__/target.txt'" 8 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 2 "critical change verification" 0
 grep -q 'protected file was changed outside task scope: target.txt' "$RESULTS_DIR/critical-change-verification.log" || fail "protected-file did not reject the task-derived protected path"
 
 # Rename detection must protect both sides of a rename. `git diff --name-only`
 # reports only the destination, but removing a protected source is still an
 # out-of-scope change.
-setup_case "protected-file-rename" "$protected_file_expectation" "git -C '__WORKSPACE_REPO__' mv target.txt renamed.txt" 8 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 1 "critical change verification" 0
+setup_case "protected-file-rename" "$protected_file_expectation" "git -C '__WORKSPACE_REPO__' mv target.txt renamed.txt" 8 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 2 "critical change verification" 0
 grep -q 'protected file was changed outside task scope: target.txt' "$RESULTS_DIR/critical-change-verification.log" || fail "protected-file-rename did not reject the protected rename source"
 grep -q '^target.txt$' "$RESULTS_DIR/changed-files.txt" || fail "protected-file-rename did not recover the rename source"
 
