@@ -302,7 +302,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for comprehensive deployment guidan
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | 10800 | Pi invocation timeout (3 hours) |
 | `TASK_PROMPT` | *(code fix task)* | Agent instruction |
 | `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test;npm run build` | Semicolon-separated; missing npm scripts are skipped (non-fatal) |
-| `KASEKI_CHANGED_FILES_ALLOWLIST` | `src/lib/parser.ts tests/parser.validation.ts` | Space-separated patterns (agent phase) |
+| `KASEKI_CHANGED_FILES_ALLOWLIST` | `**` | Optional space-separated path restrictions; task scope is enforced semantically from scouting |
 | `KASEKI_VALIDATION_ALLOWLIST` | — | Space-separated patterns (validation phase; optional) |
 | `KASEKI_MAX_DIFF_BYTES` | 400000 | Max diff size (400 KB) |
 | `KASEKI_DEBUG_RAW_EVENTS` | 0 | Keep raw Pi JSONL |

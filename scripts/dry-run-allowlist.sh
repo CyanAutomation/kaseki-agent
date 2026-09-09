@@ -6,7 +6,7 @@
 set -e
 
 CHANGED_FILES=""
-ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
+ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-**}"
 RESULT_DIR=""
 
 # Parse arguments
