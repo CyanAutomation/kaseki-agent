@@ -30,6 +30,7 @@ export const strings = (value, matches, hint = '', inherited = false, out = []) 
 const requirementField = name => /^(objective|requirements?|constraints?|criteria|success_criteria|acceptance(?:_criteria)?|must|retry|missing|anti_patterns?)$/i.test(name);
 const constraintField = name => /^(constraints?|anti_patterns?|boundaries|do_not_modify|out_of_scope)$/i.test(name);
 const unresolvedField = name => /^(unresolved(?:_questions?)?|open_questions?|unknowns?)$/i.test(name);
+const arrayStrings = value => Array.isArray(value) ? value.filter(item => typeof item === 'string') : [];
 
 export const buildContextHandoff = (resultsDir, phase, completionCondition, environment = process.env) => {
   if (!resultsDir || !phase || !completionCondition) throw new Error('usage: context-handoff.js RESULTS PHASE COMPLETION_CONDITION');
@@ -49,14 +50,24 @@ export const buildContextHandoff = (resultsDir, phase, completionCondition, envi
     const [command, duration, exitCode] = line.split('\t'); return command ? `${command}: exit ${exitCode || 'unknown'} (${duration || '?'}s)` : '';
   }), 30, 4000);
   const unresolved = unique([...(prior?.unresolved_questions || []), ...strings(scout, unresolvedField), ...(environment.UNRESOLVED_VALUE || '').split('\n')], 12, 2400);
+  const critical = scout?.critical_change_expectations || scout?.criticalChangeExpectations || {};
+  // Preserve the evidence needed to act without asking the coding agent to
+  // reread large scouting artefacts. This is deliberately semantic rather
+  // than file-type based: the scout decides the task's relevant paths.
+  const implementationBrief = {
+    observations: unique(arrayStrings(scout?.observations), 6, 1600),
+    plan: unique(arrayStrings(scout?.plan), 6, 1800),
+    required_files: unique(arrayStrings(critical.required_files || critical.requiredFiles), 12, 1200),
+    protected_files: unique(arrayStrings(critical.no_change_files || critical.noChangeFiles), 20, 1800),
+  };
   const artifacts = ['goal-setting.json','scouting.json','goal-check.json','changed-files.txt','git.diff','validation.log','pre-validation-timings.tsv','validation-timings.tsv','stage-timings.tsv','progress.jsonl','dependency-cache.log','metadata.json','pi-summary.json']
     .filter(name => fs.existsSync(path.join(resultsDir, name))).sort().map(name => path.join(resultsDir, name));
   const handoff = {
     schema_version: 1, phase_completed: phase, requirements,
-    constraints: unique(constraintCandidates, 12, 3000), inspected_files: inspected,
+    constraints: unique(constraintCandidates, 12, 3000), implementation_brief: implementationBrief, inspected_files: inspected,
     changed_files: changed, validation_outcomes: validation, unresolved_questions: unresolved,
     next_phase_completion_condition: normalize(completionCondition).slice(0, 1200), artifact_paths: artifacts,
-    section_budgets_chars: { requirements: 6000, constraints: 3000, inspected_files: 12000, changed_files: 5000, validation_outcomes: 4000, unresolved_questions: 2400, next_phase_completion_condition: 1200 },
+    section_budgets_chars: { requirements: 6000, constraints: 3000, implementation_brief: 6400, inspected_files: 12000, changed_files: 5000, validation_outcomes: 4000, unresolved_questions: 2400, next_phase_completion_condition: 1200 },
   };
   fs.writeFileSync(path.join(resultsDir, 'context-handoff.json'), `${JSON.stringify(handoff, null, 2)}\n`);
   const originalCount = requirementCandidates.filter(normalize).length;
