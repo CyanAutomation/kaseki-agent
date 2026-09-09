@@ -9,7 +9,7 @@ describe('buildScorecard warnings', () => {
       status: 'completed', elapsedSeconds: 60,
       tokens: 5000,
       // tokenUsage must match RunScorecard token_totals schema
-      tokenUsage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, unknown_tokens: 0, unavailable: false, completeness: 'complete' },
+      tokenUsage: { input_tokens: 5000, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, unknown_tokens: 0, unavailable: false, completeness: 'complete' },
       phaseTokens: {}, unknownTokenRequests: 0,
       retries: 0, phaseRetries: {}, phaseDurationsMs: {},
       validation: 'unknown', quality: 'unknown', goalMet: undefined,
@@ -20,7 +20,7 @@ describe('buildScorecard warnings', () => {
     const card = buildScorecard(evidence, config);
     expect(Array.isArray(card.warnings)).toBe(true);
     const hasMissing = card.warnings.some(w => /Missing evidence: validation/.test(w));
-    const hasToken = card.warnings.some(w => /Token budget exceeded/.test(w));
+    const hasToken = card.warnings.includes('Token budget exceeded: 5000 model tokens used versus 1000 target.');
     expect(hasMissing).toBe(true);
     expect(hasToken).toBe(true);
   });
