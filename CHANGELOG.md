@@ -4,6 +4,17 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.132.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.132.4...v1.132.5) (2026-09-09)
+
+
+### Bug Fixes
+
+* enforce protected paths across renames ([bc53f3a](https://github.com/CyanAutomation/kaseki-agent/commit/bc53f3a81b298c2371d068fe4a9be2b88ef1fd61))
+* enforce protected paths across renames ([#1318](https://github.com/CyanAutomation/kaseki-agent/issues/1318)) ([b00a2b7](https://github.com/CyanAutomation/kaseki-agent/commit/b00a2b7fdb4337b7f9e85eec8cdc7f7ccd529b5b))
+* make task scope intent-driven ([67122d6](https://github.com/CyanAutomation/kaseki-agent/commit/67122d6b2e216c053c54a7e45fa999a90c428688))
+* make task scope intent-driven ([#1317](https://github.com/CyanAutomation/kaseki-agent/issues/1317)) ([cf992c5](https://github.com/CyanAutomation/kaseki-agent/commit/cf992c52ff19a9ce5298b953a8ee53c49ce1e4b5))
+* recover rename source paths and align critical-change test expectations ([#1319](https://github.com/CyanAutomation/kaseki-agent/issues/1319)) ([eb47b5c](https://github.com/CyanAutomation/kaseki-agent/commit/eb47b5ce8c38cf71372bc6afe585b5e8cbc3a32c))
+
 ## [1.132.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.132.3...v1.132.4) (2026-09-08)
 
 
