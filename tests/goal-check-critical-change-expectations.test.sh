@@ -40,6 +40,7 @@ setup_case() {
   mkdir -p "$FAKE_REPO/deps/fake-dep" "$FAKE_REPO/docs" "$FAKE_BIN" "$RESULTS_DIR" "$WORKSPACE_REPO" "$APP_LIB" "$CASE_DIR/scripts" "$CASE_DIR/scripts/lib" "$CASE_DIR/dist" || fail "failed to create directories for $CASE_NAME"
   cp "$REPO_ROOT/dist/resolve-actual-model.js" "$CASE_DIR/dist/resolve-actual-model.js" || fail "failed to copy built model resolver"
   cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$CASE_DIR/scripts/allowlist-helper.sh" || fail "failed to copy allowlist helper"
+  cp "$REPO_ROOT/scripts/context-handoff.js" "$CASE_DIR/scripts/context-handoff.js" || fail "failed to copy context handoff helper"
   if [ -f "$REPO_ROOT/scripts/scouting-allowlist.js" ]; then
     cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$CASE_DIR/scripts/scouting-allowlist.js" || fail "failed to copy scouting allowlist"
   else
@@ -85,7 +86,7 @@ elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   fi
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "$PI_CALLS"
-  printf '%s\n' '{"met":true,"confidence":"high","summary":"done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[]}' > "$RESULTS_DIR/goal-check-candidate.json"
+  printf '%s\n' '{"met":true,"confidence":"high","summary":"done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[],"evidence_sources_inspected":["critical-change-expectations.json","changed-files.txt","git.diff"],"contradictions":[],"confidence_calibration":{"outcome":"met","justification":"The critical-change evidence satisfies the task contract.","objective_outcome":"met","calibrated":true,"reason":"The critical-change evidence satisfies the task contract."}}' > "$RESULTS_DIR/goal-check-candidate.json"
 else
   printf 'coding\n' >> "$PI_CALLS"
   printf '%s' "\$prompt" > "$RESULTS_DIR/coding-prompt.txt"
@@ -217,6 +218,13 @@ grep -q '^goal-check$' "$PI_CALLS" || fail "present case did not invoke goal-che
 protected_file_expectation='{"task":"update documentation","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":[]},"critical_change_expectations":{"required_files":[],"no_change_files":["target.txt"],"forbidden_empty_diff":false}}'
 setup_case "protected-file" "$protected_file_expectation" "printf 'implementation change\n' > '__WORKSPACE_REPO__/target.txt'" 8 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 1 "critical change verification" 0
 grep -q 'protected file was changed outside task scope: target.txt' "$RESULTS_DIR/critical-change-verification.log" || fail "protected-file did not reject the task-derived protected path"
+
+# Rename detection must protect both sides of a rename. `git diff --name-only`
+# reports only the destination, but removing a protected source is still an
+# out-of-scope change.
+setup_case "protected-file-rename" "$protected_file_expectation" "git -C '__WORKSPACE_REPO__' mv target.txt renamed.txt" 8 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 1 "critical change verification" 0
+grep -q 'protected file was changed outside task scope: target.txt' "$RESULTS_DIR/critical-change-verification.log" || fail "protected-file-rename did not reject the protected rename source"
+grep -q '^target.txt$' "$RESULTS_DIR/changed-files.txt" || fail "protected-file-rename did not recover the rename source"
 
 # A valid required path remains enforceable when the task must create it.
 new_file_expectation='{"critical_change_expectations":{"required_files":["docs/new-guide.md"],"forbidden_empty_diff":true}}'
