@@ -4,12 +4,12 @@ This document explains kaseki's **allowlist** quality gate, how to configure it,
 
 ## What is the Allowlist?
 
-The allowlist is a **quality gate** that controls which files the kaseki agent is permitted to modify. When the agent completes, kaseki compares the modified files against the allowlist patterns:
+The allowlist is an **optional operator guardrail** for deployments that need explicit path restrictions. By default it is `**`, so Kaseki does not assume that particular file extensions or directories are inherently in or out of scope. Instead, scouting records the task's semantic scope and may explicitly protect named files from unrelated changes.
 
 - **Files matching the allowlist** → kept (validated and tested)
 - **Files outside the allowlist** → automatically restored (reverted) before validation
 
-This prevents **scope creep** — where an agent makes unintended changes to files outside the task scope.
+This can prevent **scope creep** where an operator already knows the exact files that may change. It is not the normal mechanism for deciding whether a YAML, Markdown, source, or configuration file is relevant.
 
 ## Why Use an Allowlist?
 
@@ -30,7 +30,7 @@ Without an allowlist, these unintended changes would fail validation or create n
 KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts tests/parser.validation.ts"
 ```
 
-Only files matching this pattern are validated. Everything else is automatically reverted.
+Only files matching this operator-supplied pattern are retained. Everything else is automatically reverted. Without an explicit override, the default `**` retains all paths and the semantic scope contract remains authoritative.
 
 ## Configuration
 

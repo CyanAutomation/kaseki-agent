@@ -3,7 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const DEFAULT_CHANGED_FILES_ALLOWLIST = 'src/lib/parser.ts tests/parser.validation.ts';
+// The default is intentionally unrestricted. Scouting suggestions and an
+// operator-supplied allowlist remain available as optional guardrails, but the
+// task's semantic scope—not an assumed file type—decides what may change.
+const DEFAULT_CHANGED_FILES_ALLOWLIST = '**';
 const DEFAULT_VALIDATION_ALLOWLIST = '';
 
 interface ValidationError {

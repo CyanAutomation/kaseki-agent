@@ -259,6 +259,32 @@ test_completion_contract_order_and_deduplicated_checklist() {
   return "$result"
 }
 
+test_handoff_keeps_actionable_scouting_brief_and_retry_guidance() {
+  local result=0 prompt results_dir scouting_artifact
+  results_dir="$(mktemp -d)"
+  scouting_artifact="$results_dir/scouting.json"
+  printf '%s\n' '{"requirements":["Update readiness docs"],"observations":["Readiness exposes three additional providers"],"plan":["Update public/openapi/v1.yaml"],"critical_change_expectations":{"required_files":["public/openapi/v1.yaml"]}}' > "$scouting_artifact"
+  printf '%s\n' '{"schema_version":1,"requirements":["Update readiness docs"],"constraints":[],"inspected_files":[],"changed_files":[],"validation_outcomes":[],"unresolved_questions":[],"implementation_brief":{"observations":["Readiness exposes three additional providers"],"plan":["Update public/openapi/v1.yaml"],"required_files":["public/openapi/v1.yaml"]},"next_phase_completion_condition":"Make the focused change","artifact_paths":[]}' > "$results_dir/context-handoff.json"
+
+  prompt="$(
+    TASK_PROMPT='Update readiness docs' \
+    SCOUTING_ARTIFACT="$scouting_artifact" \
+    KASEKI_RESULTS_DIR="$results_dir" \
+    GOAL_CHECK_RETRY_PROMPT='Retry by editing public/openapi/v1.yaml.' \
+    render_prompt
+  )" || result=1
+  rm -rf "$results_dir"
+
+  if [ "$result" -eq 0 ]; then
+    assert_contains "$prompt" 'Implementation brief from scouting:' || result=1
+    assert_contains "$prompt" 'Update public/openapi/v1.yaml' || result=1
+    assert_contains "$prompt" 'Retry by editing public/openapi/v1.yaml.' || result=1
+  fi
+
+  test_result "handoff retains actionable scouting evidence and retry guidance" "$result"
+  return "$result"
+}
+
 test_hashline_edit_contract_disabled() {
   local result=0
   local prompt
@@ -377,6 +403,7 @@ main() {
   test_hashline_failure_enables_debug_contract
   test_hashline_edit_contract_disabled
   test_completion_contract_order_and_deduplicated_checklist
+  test_handoff_keeps_actionable_scouting_brief_and_retry_guidance
   test_retry_prompt_contract_included_when_present
   test_retry_prompt_contract_omitted_when_empty
   test_mode_specific_contracts_render_supported_sections

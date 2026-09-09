@@ -14,7 +14,7 @@ JSON fields:
 - validation: 1-5 focused checks
 - risks: known risks or empty array
 - test_impact: empty for pure documentation-only changes, otherwise affected tests
-- critical_change_expectations: include required_files and forbidden_empty_diff when concrete. required_files must contain only files that need an edit; list inspected-but-accurate files in no_change_files instead. These arrays must never overlap. Set forbidden_empty_diff to false when a verified no-op is an acceptable outcome.
+- critical_change_expectations: include required_files and forbidden_empty_diff when concrete. required_files must contain only files that need an edit; list files that are explicitly out of task scope in no_change_files instead. For a documentation-only task, protect the implementation files you inspected so an unrelated function change is rejected. These arrays must never overlap. Set forbidden_empty_diff to false when a verified no-op is an acceptable outcome.
 - suggested_allowlist: agent_patterns and validation_patterns arrays
 
 Reconcile the goal-setting artifact against repository facts before endorsing its requirements. If it calls a path missing or stale, record the contradiction and use the verified fact; do not carry an unsupported claim into required_files or the coding plan.

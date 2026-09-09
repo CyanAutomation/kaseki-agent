@@ -395,7 +395,9 @@ KASEKI_RUN_EVALUATION_MAX_TURNS="${KASEKI_RUN_EVALUATION_MAX_TURNS:-3}"
 KASEKI_RUN_EVALUATION_ON_FAILURE="${KASEKI_RUN_EVALUATION_ON_FAILURE:-1}"
 INSTANCE_NAME="${KASEKI_INSTANCE:-kaseki}"
 kaseki_apply_task_mode_diff_defaults
-KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
+# Path restrictions are opt-in. Scope is enforced from the task/scouting
+# contract, not from a built-in list of file types or example paths.
+KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-**}"
 KASEKI_VALIDATION_ALLOWLIST="${KASEKI_VALIDATION_ALLOWLIST:-}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-400000}"
 KASEKI_REPO_MEMORY_MODE="${KASEKI_REPO_MEMORY_MODE:-off}"
@@ -2580,6 +2582,7 @@ const noChangeFiles = removePlaceholders([...new Set(strings(explicit.no_change_
 const noChangeSet = new Set(noChangeFiles);
 const requiredFiles = requestedFiles.filter(file => validRepoFilePath(file) && !noChangeSet.has(file));
 const downgradedFiles = requestedFiles.filter(file => !validRepoFilePath(file) || noChangeSet.has(file));
+const protectedFiles = noChangeFiles.filter(file => validRepoFilePath(file));
 const requiredSearchStrings = removePlaceholders([...new Set(strings(explicit.required_search_strings || explicit.requiredSearchStrings || explicit.required_diff_markers || explicit.requiredDiffMarkers))]);
 const explicitForbidden = normalizeBool(explicit.forbidden_empty_diff ?? explicit.forbiddenEmptyDiff);
 const forbiddenEmptyDiff = explicitForbidden === undefined ? allowEmptyDiff !== '1' : explicitForbidden;
@@ -2592,6 +2595,7 @@ const contract = {
   },
   ...(scoutingFallback ? { fallback_reason: String(scouting.fallback_reason || 'scouting_fallback') } : {}),
   required_files: requiredFiles,
+  protected_files: protectedFiles,
   // Retain syntactically unsafe scout suggestions for operators. Valid paths
   // remain enforceable even when the coding phase is expected to create them.
   ...(downgradedFiles.length ? { downgraded_required_files: downgradedFiles, contract_warnings: ['unverified_required_files_downgraded'] } : {}),
@@ -2674,11 +2678,15 @@ if (expectations.__invalid) {
   for (const file of asStrings(expectations.required_files)) {
     if (!changedFiles.has(file)) failures.push(`required file missing from changed-files.txt: ${file}`);
   }
+  for (const file of asStrings(expectations.protected_files)) {
+    if (changedFiles.has(file)) failures.push(`protected file was changed outside task scope: ${file}`);
+  }
   for (const needle of asStrings(expectations.required_search_strings)) {
     if (!diff.includes(needle)) failures.push(`required search string missing from git.diff: ${needle}`);
   }
   notes.push(`required_files=${asStrings(expectations.required_files).length}`);
   notes.push(`required_search_strings=${asStrings(expectations.required_search_strings).length}`);
+  notes.push(`protected_files=${asStrings(expectations.protected_files).length}`);
   notes.push(`forbidden_empty_diff=${asBoolean(expectations.forbidden_empty_diff)}`);
 }
 const lines = [];
@@ -2724,6 +2732,20 @@ try {
   }
 } catch {}
 process.exit(1);
+NODE
+}
+
+coding_context_budget_exceeded() {
+  local summary_file="${KASEKI_RESULTS_DIR}/pi-summary.json"
+  [ -s "$summary_file" ] || return 1
+  node - "$summary_file" <<'NODE' 2>/dev/null
+const fs = require('node:fs');
+try {
+  const summary = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  const budget = summary.phase_budget || {};
+  const health = summary.inference_health || {};
+  process.exit(budget.context_exceeded === true || health.prompt_token_budget_exceeded === true ? 0 : 1);
+} catch { process.exit(1); }
 NODE
 }
 
@@ -9786,6 +9808,24 @@ NODE
     fi
   fi
 
+  # Do not repeat an exploratory attempt that exhausted its context before
+  # changing the repository. The retry receives the bounded handoff brief and
+  # the required-file contract rather than being told to reread large files.
+  if [ "$PI_EXIT" -eq 0 ] && [ "$KASEKI_TASK_MODE" = "patch" ] && ! critical_change_contract_allows_noop && \
+    coding_context_budget_exceeded && [ -z "$(git -C "${KASEKI_WORKSPACE_DIR}/repo" status --porcelain)" ]; then
+    GOAL_CHECK_MET=false
+    GOAL_CHECK_FAILURE_REASON="coding_context_budget_exceeded_before_change"
+    GOAL_CHECK_RETRY_PROMPT="The previous coding attempt exceeded its context budget before producing a diff. Do not reread broad files or raw scouting artifacts. Use the implementation brief in context-handoff.json and ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}; inspect only the smallest exact range needed, then make the required change."
+    printf '%s\n' "$GOAL_CHECK_RETRY_PROMPT" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+    emit_error_event "coding_context_budget_exceeded_before_change" "Coding context budget was exceeded before producing a diff; retrying with the bounded handoff brief" "retry"
+    snapshot_attempt_artifacts "$coding_attempt"
+    if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
+      emit_progress "pi coding agent" "retrying after context budget exceeded before change (attempt $coding_attempt of $max_coding_attempts)"
+      coding_attempt=$((coding_attempt + 1))
+      continue
+    fi
+  fi
+
   # Process hashline_edit events (non-fatal phase; failures don't block pipeline)
   if [ "$PI_EXIT" -eq 0 ] && [ "$KASEKI_HASHLINE_EDITS" != "0" ] && [ -s "${KASEKI_RESULTS_DIR}"/pi-events.jsonl ]; then
     emit_progress "hashline validation" "started"
@@ -10173,6 +10213,22 @@ fi
 
 break
 done
+
+# A terminal critical-change failure still benefits from an independent,
+# read-only verdict. It cannot make the run successful, but it distinguishes a
+# genuine unmet requirement from a bad scout contract and leaves reviewers
+# with complete evidence instead of a skipped evaluator phase.
+if [ "$STATUS" -eq 8 ] && [ "$FAILED_COMMAND" = "critical change verification" ] && \
+  [ "$KASEKI_GOAL_CHECK" = "1" ] && [ "$GOAL_CHECK_EVALUATOR_UNAVAILABLE" != "true" ] && [ -s "$SCOUTING_ARTIFACT" ]; then
+  printf 'Critical-change verification failed; running goal check in read-only diagnostic mode.\n' | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+  emit_progress "goal check" "running after critical-change failure for independent diagnostic evidence"
+  run_goal_check "$coding_attempt"
+  if [ "$GOAL_CHECK_EXIT" -eq 86 ]; then
+    emit_progress "goal check" "retrying evaluator after artifact-contract failure (critical-change diagnostic)"
+    run_goal_check "$coding_attempt" "contract-repair"
+  fi
+  collect_goal_check_feedback "$INSTANCE_NAME"
+fi
 
 run_secret_scan
 
