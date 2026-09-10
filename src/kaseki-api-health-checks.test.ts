@@ -362,6 +362,13 @@ describe('buildTemplateHealthStatus', () => {
 
     expect(buildTemplateHealthStatus().detail).toContain('timed out after 1234ms');
   });
+
+  it('uses a timeout with headroom for a normal controller doctor run', () => {
+    spyFs('existsSync').mockReturnValue(true);
+    mockSpawnSync.mockReturnValue({ status: null, stdout: '', stderr: '', signal: 'SIGTERM', pid: 1234 } as any);
+
+    expect(buildTemplateHealthStatus().detail).toContain('timed out after 30000ms');
+  });
 });
 
 describe('resolveCheckoutFreshness', () => {
