@@ -824,6 +824,25 @@ describe('kaseki API web console behavior', () => {
     expectText(document, '#output-meta', 'Status: ok');
   });
 
+  test('uses the explicit all-labels mode when the issue label is cleared', async () => {
+    const { document, calls } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/github-issues': createJsonResponse({ repoUrl: 'https://github.com/CyanAutomation/tako-bako', issueCount: 0, issues: [] }),
+      }),
+    });
+
+    clickSelector(document, '[data-tab="issues"]');
+    inputSelector(document, '#issues-repo-url', 'CyanAutomation/tako-bako');
+    inputSelector(document, '#issues-label', '');
+    clickSelector(document, '#load-issues-btn');
+
+    await waitFor(() => expectTextContains(document, '#issues-list', 'No issues found'));
+    expect(calls.find((call) => call.path === '/api/github-issues')?.init?.body).toBe(JSON.stringify({
+      repoUrl: 'CyanAutomation/tako-bako', allLabels: true,
+    }));
+  });
+
   test('normalizes recent repository entries across submit and issues flows', async () => {
     const { dom, document } = await renderConsole({
       storedToken: 'token12345',
