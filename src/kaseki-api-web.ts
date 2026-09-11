@@ -1574,7 +1574,7 @@ const controllerPage = String.raw`<!doctype html>
             <div class="form-field">
               <label for="issues-label">Issue label</label>
               <input id="issues-label" type="text" value="kaseki-agent" placeholder="kaseki-agent" />
-              <p class="field-helper">Leave the default to show Kaseki-labelled work, or enter a repository label to browse its issues.</p>
+              <p class="field-helper">Leave the default to show Kaseki-labelled work, enter a label to filter, or clear the field to browse all issues.</p>
             </div>
           </form>
           <div id="issues-container">
@@ -4095,7 +4095,8 @@ const controllerPage = String.raw`<!doctype html>
       loadIssuesBtn.addEventListener('click', async (event) => {
         event.preventDefault();
         const repoUrl = issuesRepoUrlInput.value.trim();
-        const label = issuesLabelInput.value.trim() || 'kaseki-agent';
+        const enteredLabel = issuesLabelInput.value.trim();
+        const label = enteredLabel || 'all labels';
         
         if (!repoUrl) {
           showIssuesError('Please enter a repository URL');
@@ -4110,7 +4111,7 @@ const controllerPage = String.raw`<!doctype html>
           const result = await apiRequest('/api/github-issues', {
             method: 'POST',
             auth: true,
-            body: { repoUrl, label },
+            body: enteredLabel ? { repoUrl, label: enteredLabel } : { repoUrl, allLabels: true },
             timeoutMs: ISSUE_REQUEST_TIMEOUT_MS,
             preserveOutput: true,
           });

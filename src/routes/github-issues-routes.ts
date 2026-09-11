@@ -35,6 +35,8 @@ interface FetchIssuesRequest {
   repo?: string;
   label?: string;
   labels?: string[];
+  /** Request issues regardless of label instead of applying the default label. */
+  allLabels?: boolean;
   limit?: number;
   state?: 'open' | 'closed' | 'all';
 }
@@ -102,7 +104,7 @@ export function createGitHubIssuesRoutes(): Router {
       if (labels.length === 0 && body.label) {
         labels = [body.label];
       }
-      if (labels.length === 0) {
+      if (labels.length === 0 && !body.allLabels) {
         labels = ['kaseki-agent'];
       }
 
