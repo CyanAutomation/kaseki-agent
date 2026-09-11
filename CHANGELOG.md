@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.132.6](https://github.com/CyanAutomation/kaseki-agent/compare/v1.132.5...v1.132.6) (2026-09-11)
+
+
+### Bug Fixes
+
+* improve controller diagnostics and issue browsing ([88f21f2](https://github.com/CyanAutomation/kaseki-agent/commit/88f21f2fa74cfe4da16e43b15da2f1e1e758c199))
+* improve controller diagnostics and issue browsing ([#1321](https://github.com/CyanAutomation/kaseki-agent/issues/1321)) ([0da74e6](https://github.com/CyanAutomation/kaseki-agent/commit/0da74e6e030711ec3fb0c93d52677a2c47c19540))
+
 ## [1.132.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.132.4...v1.132.5) (2026-09-09)
 
 
