@@ -1,6 +1,9 @@
 export const TEMPLATE_REMEDIATION =
   'Run scripts/kaseki-activate.sh --controller bootstrap.';
-export const DEFAULT_TEMPLATE_DOCTOR_TIMEOUT_MS = 15000;
+// A controller doctor run includes a nested runner startup. On constrained hosts
+// it routinely approaches 15 seconds, so the old value converted healthy runs
+// into false timeout failures at the deadline.
+export const DEFAULT_TEMPLATE_DOCTOR_TIMEOUT_MS = 30000;
 export const DEFAULT_TEMPLATE_HEALTH_CACHE_TTL_MS = 60_000;
 export const TEMPLATE_DOCTOR_STDERR_TAIL_LINES = 25;
 export const TEMPLATE_DOCTOR_STDOUT_TAIL_LINES = 25;
