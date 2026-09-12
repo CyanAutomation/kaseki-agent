@@ -66,6 +66,7 @@ function createTestResultMatcher(patterns: TestResultPattern[]) {
 const TEST_RESULT_PATTERNS: TestResultPattern[] = [
   { regex: /^\s*✓\s+(.+?)(?:\s+\(\d+ms\))?$/, status: 'passed', nameGroup: 1 },
   { regex: /^\s*✗\s+(.+?)(?:\s+\(\d+ms\))?$/, status: 'failed', nameGroup: 1 },
+  { regex: /^\s*✖\s+(.+?)(?:\s+\(\d+(?:\.\d+)?ms\))?$/, status: 'failed', nameGroup: 1 },
   { regex: /^\s*PASS\s+(.+?)(?:\s+\(\d+ms\))?$/, status: 'passed', nameGroup: 1 },
   { regex: /^\s*FAIL\s+(.+?)(?:\s+\(\d+ms\))?$/, status: 'failed', nameGroup: 1 },
   { regex: /^\s*\[PASS\]\s+(.+?)$/, status: 'passed', nameGroup: 1 },
@@ -112,7 +113,7 @@ export function parseTestResults(logContent: string, exitCode: number): Record<s
 
   for (const line of lines) {
     // Skip empty lines and header lines
-    if (!line.trim() || /^(Test|PASS|FAIL|Tests|Files):/.test(line.trim())) {
+    if (!line.trim() || /^(Test|PASS|FAIL|Tests|Files|✖\s*failing tests):/i.test(line.trim())) {
       continue;
     }
 
@@ -225,9 +226,10 @@ export function generateSummary(classification: Record<string, TestClassificatio
  * Extract exit codes from validation logs (if present)
  */
 export function extractExitCode(logContent: string): number {
-  const exitMatch = logContent.match(/exit[_-]?code[=:]\s*(\d+)/i);
-  if (exitMatch) {
-    return parseInt(exitMatch[1], 10);
+  const exitMatches = [...logContent.matchAll(/exit[_-]?code[=:]\s*(\d+)/gi)];
+  const finalExitMatch = exitMatches.at(-1);
+  if (finalExitMatch) {
+    return parseInt(finalExitMatch[1], 10);
   }
   // Check for "FAIL" in summary
   if (logContent.includes('FAIL') || logContent.includes('failed')) {

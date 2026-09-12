@@ -57,7 +57,7 @@ export function buildDimensions(evidence: Evidence, config: ScorecardConfig) {
       raw_measurements: { source_score: scores[index], retries: evidence.retries, model_tokens: (evidence.tokenUsage.input_tokens + evidence.tokenUsage.output_tokens) || null, cache_read_tokens: evidence.tokenUsage.cache_read_tokens },
       normalized_score: scores[index],
       weighted_points: Number((scores[index] * effective).toFixed(2)),
-      status: !applicable ? 'not_applicable' : id === 'implementation_quality' && evidence.diffBytes === 0 && !evidence.noChangeAccepted ? 'unavailable' : 'complete',
+      status: !applicable ? 'not_applicable' : !evidence.phaseReached[PHASES[index]] || id === 'implementation_quality' && evidence.diffBytes === 0 && !evidence.noChangeAccepted ? 'unavailable' : 'complete',
       rationale: `Score derived from available ${id.replace(/_/g, ' ')} evidence.`,
       evidence: [],
       warnings: [],
@@ -77,12 +77,14 @@ export function buildPhases(evidence: Evidence): RunScorecard['phases'] {
       enabled: !disabled.has(phase),
       outcome: disabled.has(phase)
         ? 'skipped'
-        : evidence.status === 'cancelled' || evidence.status === 'running'
+        : !evidence.phaseReached[phase]
           ? 'not_started'
-          : phase === 'validation' && evidence.validation === 'failed' ? 'failed'
-            : phase === 'goal_check' && evidence.goalCheckFailed ? 'failed'
-              : phase === 'run_evaluation' && !evidence.evaluatorAvailable ? 'failed'
-                : 'succeeded',
+          : evidence.status === 'cancelled' || evidence.status === 'running'
+            ? 'not_started'
+            : phase === 'validation' && evidence.validation === 'failed' ? 'failed'
+              : phase === 'goal_check' && evidence.goalCheckFailed ? 'failed'
+                : phase === 'run_evaluation' && !evidence.evaluatorAvailable ? 'failed'
+                  : 'succeeded',
       started_at: null, ended_at: null, duration_ms: evidence.phaseDurationsMs[phase] ?? null, token_usage: usage,
       measurements: { retries: evidence.phaseRetries[phase] ?? 0 },
       completeness: disabled.has(phase) ? 'not_applicable' : usage.unavailable ? 'provisional' : 'complete',
