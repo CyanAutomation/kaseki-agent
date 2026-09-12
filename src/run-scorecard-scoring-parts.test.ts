@@ -1,12 +1,11 @@
 import { buildDimensions, buildPhases } from './run-scorecard-scoring-parts';
 import { normalizeConfig } from './run-scorecard-config';
-import type { Evidence } from './run-scorecard-evidence-types';
+import { buildEvidence } from './run-scorecard-test-fixtures';
 
 describe('run-scorecard-scoring-parts', () => {
   test('disabled phases produce not_applicable dimensions and zero weight', () => {
-    const evidence: Evidence = {
+    const evidence = buildEvidence({
       metadata: { disabled_phases: ['scouting'] },
-      present: [],
       tokens: 100,
       tokenUsage: {
         input_tokens: 100,
@@ -17,24 +16,22 @@ describe('run-scorecard-scoring-parts', () => {
         unavailable: false,
         completeness: 'complete',
       },
-      unknownTokenRequests: 0,
-      retries: 0,
       elapsedSeconds: 100,
       diffBytes: 10,
       validation: 'passed',
       quality: 'passed',
       evaluation: { score: 80 },
-      evaluatorAvailable: true,
-      phaseTokens: {},
-      phaseDurationsMs: {},
-      phaseRetries: {},
-      status: 'completed',
       goalMet: true,
-      goalCheckAvailable: true,
-      goalCheckFailed: false,
-      noChangeAccepted: false,
       changedFiles: 1,
-    };
+      phaseReached: {
+        goal_setting: true,
+        scouting: true,
+        coding: true,
+        validation: true,
+        goal_check: true,
+        run_evaluation: true,
+      },
+    });
 
     const config = normalizeConfig({} as NodeJS.ProcessEnv);
     const dims = buildDimensions(evidence, config);
@@ -45,18 +42,22 @@ describe('run-scorecard-scoring-parts', () => {
   });
 
   test('buildPhases marks validation failed and respects phase tokens availability', () => {
-    const evidence = {
-      metadata: {},
-      status: 'completed',
+    const evidence = buildEvidence({
       validation: 'failed',
-      goalCheckFailed: false,
       evaluatorAvailable: false,
       phaseTokens: {
         validation: { input_tokens: 1, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, unknown_tokens: 0, unavailable: false, completeness: 'complete' },
       },
       phaseDurationsMs: { validation: 1500 },
-      phaseRetries: {},
-    } as unknown as any;
+      phaseReached: {
+        goal_setting: false,
+        scouting: false,
+        coding: false,
+        validation: true,
+        goal_check: false,
+        run_evaluation: true,
+      },
+    });
 
     const phases = buildPhases(evidence);
     expect(phases.validation.outcome).toBe('failed');
@@ -65,7 +66,7 @@ describe('run-scorecard-scoring-parts', () => {
     // run_evaluation should be failed because evaluatorAvailable is false
     expect(phases.run_evaluation.outcome).toBe('failed');
     // a disabled phase should be marked not applicable if present
-    const disabledEvidence = { ...evidence, metadata: { disabled_phases: ['scouting'] } } as unknown as any;
+    const disabledEvidence = buildEvidence({ ...evidence, metadata: { disabled_phases: ['scouting'] } });
     const phases2 = buildPhases(disabledEvidence);
     expect(phases2.scouting.enabled).toBe(false);
     expect(phases2.scouting.outcome).toBe('skipped');
