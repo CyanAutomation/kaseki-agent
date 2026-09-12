@@ -53,9 +53,18 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
   const noChangeAccepted = lifecycle(metadata) === 'completed'
     && (metadata.no_change_accepted === true || metadata.allow_empty_diff === '1' || metadata.allow_empty_diff === true)
     && (snapshot.text['git.diff'] ?? '').trim().length === 0;
+  const hasStage = (pattern: RegExp) => stageRows.some(row => pattern.test(String(object(row)?.stage ?? '')));
+  const phaseReached = {
+    goal_setting: Boolean(snapshot.json['goal-setting.json']) || hasStage(/goal.setting/i) || (number(metadata.goal_setting_duration_seconds) ?? 0) > 0,
+    scouting: Boolean(snapshot.json['scouting.json']) || hasStage(/scouting/i) || (number(metadata.scouting_duration_seconds) ?? 0) > 0,
+    coding: Boolean(snapshot.json['pi-summary.json']) || Boolean(snapshot.text['pi-events.jsonl']) || hasStage(/pi coding agent/i) || (snapshot.text['git.diff'] ?? '').trim().length > 0 || noChangeAccepted,
+    validation: executedValidationRows.length > 0 || (number(metadata.validation_commands_attempted) ?? 0) > 0 || (failureValidationExit !== undefined && failureValidationExit !== 0),
+    goal_check: Boolean(snapshot.json['goal-check.json']) || hasStage(/goal check/i) || (number(metadata.goal_check_duration_seconds) ?? 0) > 0 || String(failure.failed_command ?? '').toLowerCase() === 'goal check' || String(metadata.goal_check_failure_reason ?? '').trim().length > 0,
+    run_evaluation: Boolean(evaluation) || hasStage(/run evaluation/i) || (number(metadata.run_evaluation_duration_seconds) ?? 0) > 0 || evaluatorFailed,
+  };
   return {
     metadata, status: lifecycle(metadata), elapsedSeconds: elapsed, ...tokenEvidence,
-    retries: countRetries(snapshot), phaseRetries, phaseDurationsMs, validation, quality,
+    retries: countRetries(snapshot), phaseRetries, phaseDurationsMs, phaseReached, validation, quality,
     goalMet: goalCheckAvailable ? (bool(goal.met) ?? bool(metadata.goal_check_met)) : undefined,
     goalCheckAvailable,
     goalCheckFailed: !goalCheckAvailable || String(metadata.failed_command ?? '').toLowerCase() === 'goal check'

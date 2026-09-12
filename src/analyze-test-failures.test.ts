@@ -25,6 +25,13 @@ describe('analyze-test-failures', () => {
       expect(result['test 3']).toEqual({ status: 'passed' });
     });
 
+    it('parses Node test-runner failure markers', () => {
+      const result = parseTestResults('✖ OpenAPI contract is valid (33.2ms)\n✖ failing tests:', 1);
+
+      expect(result['OpenAPI contract is valid']).toEqual({ status: 'failed' });
+      expect(result['failing tests:']).toBeUndefined();
+    });
+
     it('should parse PASS/FAIL format', () => {
       const log = `
         PASS test 1
@@ -347,6 +354,12 @@ describe('analyze-test-failures', () => {
       const exitCode = extractExitCode(log);
 
       expect(exitCode).toBe(0);
+    });
+
+    it('uses the final command exit code when a validation log contains several commands', () => {
+      const log = '==> npm run build\nexit_code=0\n==> npm run test\nexit_code=1';
+
+      expect(extractExitCode(log)).toBe(1);
     });
   });
 
