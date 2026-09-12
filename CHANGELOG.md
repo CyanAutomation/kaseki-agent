@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.132.8](https://github.com/CyanAutomation/kaseki-agent/compare/v1.132.7...v1.132.8) (2026-09-12)
+
+
+### Bug Fixes
+
+* **deps:** update brace-expansion to 5.0.9 ([8181a9c](https://github.com/CyanAutomation/kaseki-agent/commit/8181a9c3388e7acc6f0a4495e64423e087f80685))
+* **deps:** update brace-expansion to 5.0.9 ([#1324](https://github.com/CyanAutomation/kaseki-agent/issues/1324)) ([e08e7ad](https://github.com/CyanAutomation/kaseki-agent/commit/e08e7adceaebad452d9543a136f9bc45eb8efe3e))
+
 ## [1.132.7](https://github.com/CyanAutomation/kaseki-agent/compare/v1.132.6...v1.132.7) (2026-09-12)
 
 
