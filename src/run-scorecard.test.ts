@@ -132,7 +132,7 @@ describe('run scorecard', () => {
     expect(evidence.validation).toBe('unknown');
     const card = buildScorecard(evidence, normalizeConfig({}));
     expect(card.dimensions.find(dimension => dimension.id === 'validation_quality'))
-      .toMatchObject({ normalized_score: 50 });
+      .toMatchObject({ normalized_score: 50, status: 'unavailable' });
   });
 
   test('does not present pre-agent baseline commands as post-change validation', () => {
@@ -145,6 +145,29 @@ describe('run scorecard', () => {
     });
 
     expect(evidence.validation).toBe('unknown');
+  });
+
+  test('does not mark unreached agent phases as succeeded after a pre-agent failure', () => {
+    const evidence = collectEvidence({
+      json: {
+        'metadata.json': {
+          instance: 'pre-agent-failure',
+          exit_code: 1,
+          current_stage: 'pre-agent validation',
+          goal_setting_attempts: 1,
+          scouting_attempts: 1,
+          validation_commands_attempted: 0,
+        },
+        'failure.json': { failed_command: 'pre-agent validation', pre_validation_exit_code: 1, validation_exit_code: 0 },
+      },
+      text: {}, summaries: [],
+    });
+
+    const card = buildScorecard(evidence, normalizeConfig({}));
+    expect(card.phases.goal_setting.outcome).toBe('not_started');
+    expect(card.phases.scouting.outcome).toBe('not_started');
+    expect(card.phases.coding.outcome).toBe('not_started');
+    expect(card.phases.validation.outcome).toBe('not_started');
   });
 
   test('caps an unavailable evaluator below A while preserving a B score', () => {
