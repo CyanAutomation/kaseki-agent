@@ -17,6 +17,7 @@ export interface Evidence {
   retries: number;
   phaseRetries: Record<string, number>;
   phaseDurationsMs: Record<string, number>;
+  phaseReached: Record<string, boolean>;
   validation: 'passed' | 'failed' | 'unknown';
   quality: 'passed' | 'failed' | 'unknown';
   goalMet?: boolean;

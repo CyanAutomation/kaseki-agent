@@ -409,6 +409,10 @@ KASEKI_AGENT_GUARDRAILS="${KASEKI_AGENT_GUARDRAILS:-1}"
 KASEKI_RESTORE_DISALLOWED_CHANGES="${KASEKI_RESTORE_DISALLOWED_CHANGES:-1}"
 KASEKI_VALIDATION_FAIL_FAST="${KASEKI_VALIDATION_FAIL_FAST:-1}"
 KASEKI_VALIDATION_TIMEOUT_SECONDS="${KASEKI_VALIDATION_TIMEOUT_SECONDS:-300}"
+# Production builds regularly perform compilation and type checking after the
+# bundler reports success. Give explicit build commands a longer budget while
+# retaining the short default for fast checks and tests.
+KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS="${KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS:-900}"
 KASEKI_VALIDATION_RUN_ALL_COMMANDS="${KASEKI_VALIDATION_RUN_ALL_COMMANDS:-0}"
 # If KASEKI_VALIDATION_RUN_ALL_COMMANDS=1, override fail-fast to ensure all commands run
 if [ "${KASEKI_VALIDATION_RUN_ALL_COMMANDS:-0}" -eq 1 ]; then
@@ -426,6 +430,7 @@ PI_DURATION_SECONDS=0
 PI_VERSION=""
 STATUS=0
 FAILED_COMMAND=""
+DEPENDENCY_FAILURE_DETAIL=""
 PI_EXIT=0
 SCOUTING_EXIT=0
 SCOUTING_DURATION_SECONDS=0
@@ -1819,6 +1824,7 @@ write_metadata() {
   "run_evaluation_duration_seconds": $RUN_EVALUATION_DURATION_SECONDS,
   "exit_code": $exit_code,
   "failed_command": $(printf '%s' "$FAILED_COMMAND" | json_encode),
+  "dependency_failure_detail": $(printf '%s' "$DEPENDENCY_FAILURE_DETAIL" | json_encode),
   "validation_failed_command": $(printf '%s' "$VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
   "validation_failure_reason": $(printf '%s' "$VALIDATION_FAILURE_REASON" | json_encode),
   "validation_allowlist_failure_reason": $(printf '%s' "$VALIDATION_ALLOWLIST_FAILURE_REASON" | json_encode),
@@ -2381,6 +2387,7 @@ write_failure_json() {
   "instance": $(printf '%s' "$INSTANCE_NAME" | json_encode),
   "exit_code": $exit_code,
   "failed_command": $(printf '%s' "$FAILED_COMMAND" | json_encode),
+  "dependency_failure_detail": $(printf '%s' "$DEPENDENCY_FAILURE_DETAIL" | json_encode),
   "pre_validation_exit_code": $PRE_VALIDATION_EXIT,
   "validation_exit_code": $VALIDATION_EXIT,
   "validation_failed_command": $(printf '%s' "$VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
@@ -3702,7 +3709,9 @@ clone_with_git_cache() {
     rm -rf "$tmp_mirror"
     git init --bare "$tmp_mirror" >/dev/null 2>&1
     git -C "$tmp_mirror" remote add origin "$REPO_URL"
-    timeout "$KASEKI_GIT_CACHE_FETCH_TIMEOUT_SECONDS" git -C "$tmp_mirror" fetch --no-tags --depth 1 origin \
+    # A reference repository must not be shallow: Git refuses shallow alternates,
+    # turning nominal cache hits into noisy full clones.
+    timeout "$KASEKI_GIT_CACHE_FETCH_TIMEOUT_SECONDS" git -C "$tmp_mirror" fetch --no-tags origin \
       "+refs/heads/$GIT_REF:refs/heads/$GIT_REF"
     mirror_rc=$?
     if [ "$mirror_rc" -eq 0 ] && is_valid_git_mirror "$tmp_mirror"; then
@@ -4762,6 +4771,18 @@ write_validation_command_environment() {
   } | tee -a "$env_log"
 }
 
+validation_timeout_for_command() {
+  local command="$1"
+  case "$command" in
+    *" run build"*|*" build "*|build|*"next build"*)
+      printf '%s\n' "$KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS"
+      ;;
+    *)
+      printf '%s\n' "$KASEKI_VALIDATION_TIMEOUT_SECONDS"
+      ;;
+  esac
+}
+
 run_validation_commands() {
   local stage_label="$1"
   local commands="$2"
@@ -4782,7 +4803,7 @@ run_validation_commands() {
   local -n validation_reason_ref="$reason_var"
   local -n validation_stopped_ref="$stopped_var"
   local -n validation_attempted_ref="$attempted_var"
-  local stage_start validation_start validation_end duration command trimmed missing_npm_script
+  local stage_start validation_start validation_end duration command trimmed missing_npm_script command_timeout_seconds
   local command_exit tee_exit filter_exit pipe_statuses execute_during_dry_run pipefail_was_enabled
   local -a validation_commands
   local validation_workspace="${13:-$PWD}"
@@ -4846,7 +4867,8 @@ run_validation_commands() {
           continue
         fi
         ((validation_attempted_ref++))
-        emit_progress "$stage_label" "running command=$trimmed timeout_seconds=$KASEKI_VALIDATION_TIMEOUT_SECONDS"
+        command_timeout_seconds="$(validation_timeout_for_command "$trimmed")"
+        emit_progress "$stage_label" "running command=$trimmed timeout_seconds=$command_timeout_seconds"
         emit_event "validation_command_started" "stage=$stage_label" "command=$trimmed"
         # Log command environment state before execution.
         write_validation_command_environment "$stage_label" "$trimmed" "$env_log"
@@ -4866,10 +4888,10 @@ run_validation_commands() {
           # Use non-login shell (bash -c) to avoid initialization issues in --read-only containers.
           # Login shell (bash -l) sources /etc/profile and ~/.bashrc, which can fail with getcwd()
           # errors when running in constrained filesystem environments (read-only root, etc.).
-          timeout --signal=TERM --kill-after=10s "$KASEKI_VALIDATION_TIMEOUT_SECONDS" bash -c "$trimmed"
+          timeout --signal=TERM --kill-after=10s "$command_timeout_seconds" bash -c "$trimmed"
           command_exit=$?
           if [ "$command_exit" -eq 124 ]; then
-            printf 'validation command timed out after %ss\n' "$KASEKI_VALIDATION_TIMEOUT_SECONDS"
+            printf 'validation command timed out after %ss\n' "$command_timeout_seconds"
           fi
           printf 'exit_code=%s\n' "$command_exit"
           exit "$command_exit"
@@ -4975,9 +4997,9 @@ run_validation_commands() {
             } | tee -a "$log_file" "${KASEKI_RESULTS_DIR}/validation-command-diagnostics.log"
             validation_detail_ref="first failing command was \"$trimmed\" with exit 127 (command or executable not found; see validation-command-diagnostics.log)"
           elif [ "$command_exit" -eq 124 ]; then
-            validation_detail_ref="first failing command was \"$trimmed\" (timed out after ${KASEKI_VALIDATION_TIMEOUT_SECONDS}s; see validation-command-diagnostics.log)"
-            printf 'command=%s\ntimeout_seconds=%s\n' "$trimmed" "$KASEKI_VALIDATION_TIMEOUT_SECONDS" >> "${KASEKI_RESULTS_DIR}/validation-command-diagnostics.log"
-            emit_event "validation_command_timeout" "stage=$stage_label" "command=$trimmed" "timeout_seconds=$KASEKI_VALIDATION_TIMEOUT_SECONDS"
+            validation_detail_ref="first failing command was \"$trimmed\" (timed out after ${command_timeout_seconds}s; see validation-command-diagnostics.log)"
+            printf 'command=%s\ntimeout_seconds=%s\n' "$trimmed" "$command_timeout_seconds" >> "${KASEKI_RESULTS_DIR}/validation-command-diagnostics.log"
+            emit_event "validation_command_timeout" "stage=$stage_label" "command=$trimmed" "timeout_seconds=$command_timeout_seconds"
           fi
           # shellcheck disable=SC2034 # Reference variable assigned for external use via nameref
           validation_reason_ref="$failure_reason_prefix: $trimmed (exit $command_exit)"
@@ -8948,7 +8970,7 @@ prepare_dependencies() {
 
   local repo_ref_key lock_hash flags_hash cache_key workspace_cache_root workspace_cache_dir image_cache_dir stamp_file metadata_file
   local cache_lock_file cache_lock_fd tmp_cache_dir old_cache_dir install_start install_elapsed install_flags_display cache_detail
-  local node_major cache_reused cache_source install_mode restore_mode restore_method cache_repaired restore_validation_reason
+  local node_major cache_reused cache_source install_mode restore_mode restore_method cache_repaired restore_validation_reason existing_graph_error install_exit
   local -a install_flags
   repo_ref_key="$(printf '%s@%s' "$REPO_URL" "$GIT_REF" | sha256sum | awk '{print $1}')"
   lock_hash="$(sha256sum "$lock_source" | awk '{print $1}')"
@@ -9000,8 +9022,17 @@ prepare_dependencies() {
 
   if [ -d node_modules ] && [ -f "$stamp_file" ]; then
     if grep -qx "$lock_hash" "$stamp_file"; then
-      if ! dependency_cache_required_bins_valid package.json; then
-        printf 'Dependency cache status: existing node_modules failed executable validation; reinstalling.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
+      existing_graph_error=""
+      if ! existing_graph_error="$(npm ls --depth=0 2>&1)" || ! dependency_cache_required_bins_valid package.json; then
+        DEPENDENCY_FAILURE_DETAIL="existing node_modules cache failed integrity validation; npm graph or required executable links are invalid"
+        printf 'Dependency cache status: existing node_modules failed graph/executable validation; invalidating and reinstalling.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
+        {
+          printf 'cache_source=existing_repo_node_modules\n'
+          printf 'reason=existing_node_modules_integrity_failed\n'
+          printf 'lock_hash=%s\n' "$lock_hash"
+          printf 'npm_ls_output_tail:\n%s\n' "$(printf '%s' "$existing_graph_error" | tail -20)"
+        } >> "${KASEKI_RESULTS_DIR}/dependency-cache-diagnostics.log"
+        emit_error_event "dependency_cache_integrity_failed" "Existing dependency tree failed npm graph or executable validation; invalidating and reinstalling (lock_hash=$lock_hash)" "fallback_fresh_install"
         rm -rf node_modules
         invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
         rm -f "$workspace_cache_root"/validated "$workspace_cache_root"/validated-v*
@@ -9141,16 +9172,22 @@ prepare_dependencies() {
     append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "fresh_install" "true" "none" "0" "$install_reason"
     emit_progress "dependency install" "started cache_hit=false restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
     install_start="$(date +%s)"
-    if ! npm ci --prefer-offline "${install_flags[@]}"; then
+    if npm ci --prefer-offline "${install_flags[@]}"; then
+      :
+    else
+      install_exit=$?
+      DEPENDENCY_FAILURE_DETAIL="npm ci failed with exit $install_exit (lock_hash=$lock_hash; cache_reason=$install_reason)"
+      printf 'cache_source=none\nreason=npm_ci_failed\nexit_code=%s\nlock_hash=%s\n' "$install_exit" "$lock_hash" >> "${KASEKI_RESULTS_DIR}/dependency-cache-diagnostics.log"
       exec {cache_lock_fd}>&-
       # Report to Sentry if available
-      sentry_error "npm ci failed with exit code $?" "npm-ci" "1" "$(($(date +%s) - install_start))" 2>/dev/null || true
-      return 1
+      sentry_error "npm ci failed with exit code $install_exit" "npm-ci" "$install_exit" "$(($(date +%s) - install_start))" 2>/dev/null || true
+      return "$install_exit"
     fi
     if ! validate_or_repair_required_dependency_bins package.json node_modules; then
       npm_version="$(npm --version 2>/dev/null || printf 'unknown')"
       node_version="$(node --version 2>/dev/null || printf 'unknown')"
       emit_error_event "dependency_integrity_failure" "npm ci completed but required package executables are unavailable (node=$node_version npm=$npm_version omit_dev=${KASEKI_NPM_OMIT_DEV:-0})" "exit"
+      DEPENDENCY_FAILURE_DETAIL="npm ci completed but required package executables are unavailable (node=$node_version npm=$npm_version omit_dev=${KASEKI_NPM_OMIT_DEV:-0})"
       printf 'Dependency cache error: npm ci completed but required executables are unavailable (node=%s npm=%s omit_dev=%s). Check package sections and npm install flags.\n' "$node_version" "$npm_version" "${KASEKI_NPM_OMIT_DEV:-0}" >&2
       exec {cache_lock_fd}>&-
       return 1

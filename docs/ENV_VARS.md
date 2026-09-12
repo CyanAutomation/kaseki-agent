@@ -140,6 +140,7 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 | `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` | same as `KASEKI_VALIDATION_COMMANDS` | string | Semicolon-separated validation commands for the pre-agent baseline phase |
 | `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test` | string | Semicolon-separated validation commands for the post-agent final-diff phase |
 | `KASEKI_VALIDATION_TIMEOUT_SECONDS` | `300` | integer | Maximum time allowed for each validation command; timed-out commands emit structured diagnostics and stop the phase when fail-fast is enabled |
+| `KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS` | `900` | integer | Timeout for explicit build commands such as `npm run build`; prevents production builds from being terminated by the shorter general validation timeout |
 
 **Behavior:**
 
@@ -147,6 +148,7 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 - **Baseline caching**: Pre-agent validation results are cached per `GIT_REF` + `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` combination with a 24-hour default TTL. On subsequent runs with the same repo/commands, cached results restore instantly, avoiding redundant checkout + validation. Disable with `KASEKI_BASELINE_CACHE_DISABLED=1` for testing or cost-sensitive deployments.
 - Post-agent commands run after Pi, allowlist restoration, and quality gates. A failure means the final agent output failed validation; inspect `validation.log`, `validation-raw.log`, `validation-env.log`, and `validation-timings.tsv`.
 - Commands are executed sequentially within each phase.
+- Explicit build commands use `KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS`; all other commands use `KASEKI_VALIDATION_TIMEOUT_SECONDS`.
 - Missing npm scripts are skipped (non-fatal).
 - First failure stops that validation phase and exits with code 7.
 - Empty or `none` post-agent commands (`KASEKI_VALIDATION_COMMANDS=""` or `KASEKI_VALIDATION_COMMANDS=none`) skip post-agent validation.
