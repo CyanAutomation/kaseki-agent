@@ -19,7 +19,10 @@ export function normalizeConfig(env: NodeJS.ProcessEnv): ScorecardConfig {
   const defaults = taskSize === 'small' ? { elapsedSeconds: 900, tokens: 100_000 }
     : taskSize === 'medium' ? { elapsedSeconds: 2700, tokens: 300_000 }
       : taskSize === 'large' ? { elapsedSeconds: 7200, tokens: 1_200_000 }
-        : { elapsedSeconds: 1800, tokens: 750_000 };
+        // The custom default is an advisory estimate, calibrated from the
+        // three completed multi-phase runs (median 2.36m model tokens,
+        // rounded to 2.5m). It is used only for scorecard comparison.
+        : { elapsedSeconds: 1800, tokens: 2_500_000 };
   return {
     rubricVersion: env.KASEKI_SCORECARD_RUBRIC_VERSION?.trim() || DEFAULT_RUBRIC_VERSION,
     taskSize,

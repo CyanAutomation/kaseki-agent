@@ -69,7 +69,9 @@ describe('run scorecard', () => {
   test('uses safe config defaults and stable grades', () => {
     const config = normalizeConfig({ KASEKI_SCORECARD_TARGET_SECONDS: '-1', KASEKI_SCORECARD_RUBRIC_VERSION: 'v2' });
     expect(config.targets.elapsedSeconds).toBe(1800);
-    expect(config.targets.tokens).toBe(750000);
+    // This is an advisory scoring estimate, calibrated from completed
+    // multi-phase runs; it must never act as an execution limit.
+    expect(config.targets.tokens).toBe(2500000);
     expect(config.rubricVersion).toBe('v2');
     expect(assignGrade(90)).toBe('A');
     const evidence = collectEvidence({ json: { 'metadata.json': { instance: 'run-2', started_at: '2025-12-31T23:00:00Z', ended_at: '2026-01-01T00:00:00Z', exit_code: 1 } }, text: {}, summaries: [] });
@@ -115,6 +117,27 @@ describe('run scorecard', () => {
     expect(evidence.validation).toBe('failed');
     expect(evidence.evaluatorAvailable).toBe(false);
     expect(card.phases.validation.outcome).toBe('failed');
+    expect(card.phases.run_evaluation.outcome).toBe('failed');
+  });
+
+  test('does not mark a phase successful when its authoritative exit code failed', () => {
+    const evidence = collectEvidence({
+      json: {
+        'metadata.json': {
+          exit_code: 0,
+          goal_setting_exit_code: 124,
+          run_evaluation_exit_code: 86,
+          goal_setting_duration_seconds: 301,
+          run_evaluation_duration_seconds: 503,
+        },
+        'goal-setting.json': { upgraded_goal: 'stale artifact from an earlier attempt' },
+        'run-evaluation.json': { task_completion_score: 5 },
+      },
+      text: { 'git.diff': '+change\n' }, summaries: [],
+    });
+
+    const card = buildScorecard(evidence, normalizeConfig({}));
+    expect(card.phases.goal_setting.outcome).toBe('failed');
     expect(card.phases.run_evaluation.outcome).toBe('failed');
   });
 
