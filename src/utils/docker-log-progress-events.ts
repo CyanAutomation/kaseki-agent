@@ -13,6 +13,7 @@ const STRUCTURED_PROGRESS_PATTERN = /^\[progress\]\s+([^:]+):\s*(.+)$/;
 const DEPENDENCY_CACHE_MISS_PATTERN = /^Dependency cache status:\s*.*\bcache miss\b.*$/i;
 const TRAILING_TIMESTAMP_PATTERN = /^(.*?)(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)$/;
 const DOCKER_LOG_TIMESTAMP_PATTERN = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s+(.*)$/;
+// eslint-disable-next-line no-control-regex
 const ANSI_CONTROL_CODE_PATTERN = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 
 function splitTrailingTimestamp(value: string): { text: string; timestamp?: string } {
@@ -34,7 +35,6 @@ export function extractDockerLogTimestamp(rawLine: string): { timestamp?: string
  * Strips ANSI control codes (colors, formatting) from a line.
  */
 export function stripAnsiCodes(line: string): string {
-  // eslint-disable-next-line no-control-regex
   return line.replace(ANSI_CONTROL_CODE_PATTERN, '');
 }
 
