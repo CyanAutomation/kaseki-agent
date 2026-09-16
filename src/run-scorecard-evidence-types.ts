@@ -18,6 +18,8 @@ export interface Evidence {
   phaseRetries: Record<string, number>;
   phaseDurationsMs: Record<string, number>;
   phaseReached: Record<string, boolean>;
+  /** Terminal phase failures from metadata/failure artifacts. */
+  phaseFailures: Record<string, boolean>;
   validation: 'passed' | 'failed' | 'unknown';
   quality: 'passed' | 'failed' | 'unknown';
   goalMet?: boolean;

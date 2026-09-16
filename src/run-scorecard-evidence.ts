@@ -62,9 +62,20 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
     goal_check: Boolean(snapshot.json['goal-check.json']) || hasStage(/goal check/i) || (number(metadata.goal_check_duration_seconds) ?? 0) > 0 || String(failure.failed_command ?? '').toLowerCase() === 'goal check' || String(metadata.goal_check_failure_reason ?? '').trim().length > 0,
     run_evaluation: Boolean(evaluation) || hasStage(/run evaluation/i) || (number(metadata.run_evaluation_duration_seconds) ?? 0) > 0 || evaluatorFailed,
   };
+  // Metadata is written from terminal worker state, so it is authoritative
+  // over an artifact left behind by a timed-out or failed attempt. A phase can
+  // be reached and still fail; never turn that into a successful scorecard row.
+  const phaseFailures = {
+    goal_setting: (number(failure.goal_setting_exit_code) ?? number(metadata.goal_setting_exit_code) ?? 0) !== 0,
+    scouting: (number(failure.scouting_exit_code) ?? number(metadata.scouting_exit_code) ?? 0) !== 0,
+    coding: (number(failure.pi_exit_code) ?? number(metadata.pi_exit_code) ?? 0) !== 0,
+    validation: (number(failure.validation_exit_code) ?? number(metadata.validation_exit_code) ?? 0) !== 0,
+    goal_check: (number(failure.goal_check_exit_code) ?? number(metadata.goal_check_exit_code) ?? 0) !== 0,
+    run_evaluation: (number(failure.run_evaluation_exit_code) ?? number(metadata.run_evaluation_exit_code) ?? 0) !== 0 || evaluatorFailed,
+  };
   return {
     metadata, status: lifecycle(metadata), elapsedSeconds: elapsed, ...tokenEvidence,
-    retries: countRetries(snapshot), phaseRetries, phaseDurationsMs, phaseReached, validation, quality,
+    retries: countRetries(snapshot), phaseRetries, phaseDurationsMs, phaseReached, phaseFailures, validation, quality,
     goalMet: goalCheckAvailable ? (bool(goal.met) ?? bool(metadata.goal_check_met)) : undefined,
     goalCheckAvailable,
     goalCheckFailed: !goalCheckAvailable || String(metadata.failed_command ?? '').toLowerCase() === 'goal check'

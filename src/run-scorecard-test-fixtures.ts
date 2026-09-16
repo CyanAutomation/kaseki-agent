@@ -37,6 +37,7 @@ export function buildEvidence(overrides: EvidenceOverrides = {}): Evidence {
     phaseRetries: {},
     phaseDurationsMs: {},
     phaseReached: { ...defaultPhaseReached, ...phaseReached },
+    phaseFailures: {},
     validation: 'unknown',
     quality: 'unknown',
     goalMet: undefined,

@@ -175,6 +175,10 @@ else
   pass "PR metadata redacts secret-like values"
 fi
 
+# Keep title-source cases isolated: the evaluator artifact is intentionally
+# tested below and would otherwise override their prompt/summary fixtures.
+rm -f "$RESULTS_DIR/run-evaluation.json"
+
 INSTANCE_NAME="kaseki-title-cases"
 : > "$RESULTS_DIR/changed-files.txt"
 TASK_PROMPT=$(cat <<'PROMPT'
@@ -233,6 +237,17 @@ else
   fail "Long PR title did not preserve suffix within length: $long_pr_title (${#long_pr_title})"
 fi
 
+cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
+{"overall_assessment":"good","reviewer_confidence":"high","pr_summary":"Clarify the deployment health-check contract."}
+JSON
+TASK_PROMPT="Perform a very detailed review of every deployment and health-check implementation detail in the repository before making a focused documentation change."
+evaluation_pr_title="$(derive_pr_title)"
+case "$evaluation_pr_title" in
+  "docs: Clarify the deployment health-check contract"*) pass "PR title prefers the concise evaluator summary" ;;
+  *) fail "PR title did not prefer evaluator summary: $evaluation_pr_title" ;;
+esac
+rm -f "$RESULTS_DIR/run-evaluation.json"
+
 TASK_PROMPT=''
 rm -f "$RESULTS_DIR/result-summary.md"
 fallback_pr_title="$(derive_pr_title)"
@@ -284,8 +299,6 @@ for expected in \
   '- Reviewer confidence: high' \
   '### Review focus' \
   'Confirm OAuth provider behavior with quoted redirect-state values.' \
-  '### Process notes' \
-  'Post-validation repeated the same test command and may benefit from delta-aware validation.' \
   '## Validation' \
   '### Validation statuses' \
   'Pre-agent validation: passed' \
@@ -451,11 +464,16 @@ agent_eval_overall_line="$(grep -nF -- '- Overall: good' <<<"$pr_body" | head -n
 agent_eval_confidence_line="$(grep -nF -- '- Reviewer confidence: high' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
 agent_eval_summary_heading_line="$(grep -nF '### Summary' <<<"$pr_body" | tail -n 1 | cut -d: -f1)"
 agent_eval_review_focus_heading_line="$(grep -nF '### Review focus' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-agent_eval_process_notes_heading_line="$(grep -nF '### Process notes' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-if [ -n "$agent_evaluation_line" ] && [ -n "$agent_eval_overall_line" ] && [ -n "$agent_eval_confidence_line" ]   && [ -n "$agent_eval_summary_heading_line" ] && [ -n "$agent_eval_review_focus_heading_line" ] && [ -n "$agent_eval_process_notes_heading_line" ]   && [ "$agent_evaluation_line" -lt "$agent_eval_overall_line" ]   && [ "$agent_eval_overall_line" -lt "$agent_eval_confidence_line" ]   && [ "$agent_eval_confidence_line" -lt "$agent_eval_summary_heading_line" ]   && [ "$agent_eval_summary_heading_line" -lt "$agent_eval_review_focus_heading_line" ]   && [ "$agent_eval_review_focus_heading_line" -lt "$agent_eval_process_notes_heading_line" ]; then
-  pass "Agent evaluation renders key-value lines before optional subsections in order"
+if [ -n "$agent_evaluation_line" ] && [ -n "$agent_eval_overall_line" ] && [ -n "$agent_eval_confidence_line" ]   && [ -n "$agent_eval_summary_heading_line" ] && [ -n "$agent_eval_review_focus_heading_line" ]   && [ "$agent_evaluation_line" -lt "$agent_eval_overall_line" ]   && [ "$agent_eval_overall_line" -lt "$agent_eval_confidence_line" ]   && [ "$agent_eval_confidence_line" -lt "$agent_eval_summary_heading_line" ]   && [ "$agent_eval_summary_heading_line" -lt "$agent_eval_review_focus_heading_line" ]; then
+  pass "Agent evaluation renders reviewer-facing sections in order"
 else
   fail "Agent evaluation markdown order did not match expected multiline format"
+fi
+
+if grep -Fq '### Process notes' <<<"$pr_body"; then
+  fail "PR body must not expose internal process notes"
+else
+  pass "PR body keeps internal process notes in run artifacts"
 fi
 
 if [ "$summary_line" -lt "$original_prompt_line" ]; then
@@ -771,11 +789,11 @@ malformed_scorecard_body="$(build_pr_body)"
 if grep -Fq '## Kaseki run scorecard' <<<"$malformed_scorecard_body"; then
   fail "Malformed scorecard should be omitted rather than rendered as an unavailable score"
 fi
-grep -Fq 'Deterministic review evidence is shown below' <<<"$malformed_scorecard_body" || fail "Malformed scorecard lacked deterministic fallback summary"
+grep -Fq 'Scorecard unavailable at publication' <<<"$malformed_scorecard_body" || fail "Malformed scorecard lacked an accurate fallback summary"
 rm -f "$SCORECARD"
 absent_scorecard_body="$(build_pr_body)"
 if grep -Fq '## Kaseki run scorecard' <<<"$absent_scorecard_body"; then
   fail "Absent scorecard should be omitted rather than rendered as an unavailable score"
 fi
-grep -Fq 'Deterministic review evidence is shown below' <<<"$absent_scorecard_body" || fail "Absent scorecard lacked deterministic fallback summary"
+grep -Fq 'Scorecard unavailable at publication' <<<"$absent_scorecard_body" || fail "Absent scorecard lacked an accurate fallback summary"
 pass "Malformed and absent scorecards use deterministic fallback summaries"
