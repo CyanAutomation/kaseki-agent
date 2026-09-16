@@ -5,6 +5,7 @@ This guide provides an overview of the Kaseki Agent architecture for developers 
 ## Architecture Overview
 
 Kaseki Agent is an ephemeral coding-agent runner that:
+
 1. Spins up a disposable Docker container
 2. Clones a target Git repository inside it
 3. Invokes the Pi CLI coding agent via OpenRouter
@@ -35,6 +36,7 @@ Kaseki Agent is an ephemeral coding-agent runner that:
 ## Core Components
 
 ### 1. CLI Interface (`src/cli/`)
+
 **Entry point for all user interactions**
 
 - **`kaseki-agent init`** - Interactive setup wizard
@@ -44,6 +46,7 @@ Kaseki Agent is an ephemeral coding-agent runner that:
 - **`kaseki-agent doctor`** - Health checks
 
 ### 2. API Service (`src/kaseki-api-*.ts`)
+
 **HTTP REST API for remote control**
 
 - **Endpoints**: `/api/runs`, `/api/runs/:id/status`, `/api/runs/:id/analysis`
@@ -53,6 +56,7 @@ Kaseki Agent is an ephemeral coding-agent runner that:
 - **Type Safety**: Zod validation + TypeScript interfaces
 
 ### 3. Agent Runner (`kaseki-agent.sh`)
+
 **Containerized execution engine**
 
 - **Environment Setup**: Node.js v24, Docker, dependencies
@@ -66,6 +70,7 @@ Kaseki Agent is an ephemeral coding-agent runner that:
 Kaseki performs a read-only repository analysis before agent execution, writing findings exclusively to `/results/scouting.json` without modifying source files. The scouting run explores codebase patterns and requirements, generating planning data for subsequent transformation. Weaving processes scouting JSON outputs into agent execution instructions, translating research findings into actionable task prompts and structured guidance for the Pi CLI coding agent.
 
 ### 4. Setup System (`src/setup/`)
+
 **Configuration and initialization**
 
 - **Environment Detection**: Auto-detect Docker, Node.js, permissions
@@ -74,6 +79,7 @@ Kaseki performs a read-only repository analysis before agent execution, writing 
 - **Template System**: Auto-initialize workspace templates
 
 ### 5. Quality Gates (`src/quality/`)
+
 **Automated validation and filtering**
 
 - **Diff Size Limits**: Configurable maximum change size
@@ -83,6 +89,7 @@ Kaseki performs a read-only repository analysis before agent execution, writing 
 - **Exit Codes**: Structured error reporting
 
 ### 6. Utilities (`src/utils/`, `scripts/`)
+
 **Supporting tools and scripts**
 
 - **Progress Streaming**: Real-time Pi event filtering
@@ -137,12 +144,14 @@ npm run test:smoke
 ### Adding New Features
 
 #### 1. New CLI Command
+
 1. Add command class in `src/cli/commands/`
 2. Register in `src/cli/KasekiCLI.ts`
 3. Add tests and documentation
 4. Update help text
 
 #### 2. New API Endpoint
+
 1. Define types in `src/kaseki-api-types.ts`
 2. Add validation schema (if needed)
 3. Implement handler in `src/kaseki-api-routes.ts`
@@ -151,6 +160,7 @@ npm run test:smoke
 6. Update API documentation
 
 #### 3. New Quality Gate
+
 1. Implement logic in `src/quality/`
 2. Add configuration option
 3. Update exit code handling
@@ -158,6 +168,7 @@ npm run test:smoke
 5. Document in QUALITY_GATES.md
 
 #### 4. New Utility Module
+
 1. Add TypeScript file in `src/utils/`
 2. Build project: `npm run build`
 3. Validate dependencies: `npm run validate-module-imports`
@@ -167,18 +178,21 @@ npm run test:smoke
 ### Testing Strategy
 
 #### Unit Tests
+
 - **Component Tests**: Isolated testing of individual modules
 - **Configuration Tests**: Environment variable parsing and validation
 - **Queue Tests**: Job scheduling and timeout handling
 - **Cache Tests**: Result caching and eviction logic
 
 #### Integration Tests
+
 - **API Tests**: HTTP endpoint validation
 - **CLI Tests**: Command-line interface testing
 - **Docker Tests**: Container lifecycle and execution
 - **End-to-End Tests**: Full workflow validation
 
 #### Test Commands
+
 ```bash
 # Run all tests
 npm test
@@ -202,6 +216,7 @@ The system uses environment variables with sensible defaults:
 - **Docker**: Build args and runtime env vars
 
 Key configuration files:
+
 - `.env.template` - Essential 8 variables
 - `.env.advanced.template` - Complete variable reference
 - `src/kaseki-api-config.ts` - Configuration loading and validation
@@ -209,18 +224,21 @@ Key configuration files:
 ### Code Style and Quality
 
 #### TypeScript
+
 - Strict mode enabled
 - Interface-heavy design
 - Type guards for runtime validation
 - Generic types for reusable components
 
 #### JavaScript
+
 - ES2024 features with Node.js v24 target
 - Async/await throughout
 - Error handling with try/catch
 - Logging with structured JSON
 
 #### Testing
+
 - Jest for unit tests
 - Mock external dependencies
 - Test environment isolation
@@ -229,6 +247,7 @@ Key configuration files:
 ### Debugging
 
 #### Development Logging
+
 ```bash
 # Enable debug logging
 KASEKI_API_LOG_LEVEL=debug npm run kaseki-api
@@ -243,6 +262,7 @@ docker logs kaseki-1
 #### Common Debug Scenarios
 
 **Job Queue Issues**
+
 ```bash
 # Check job state via API
 curl -H "Authorization: Bearer sk-key" \
@@ -253,6 +273,7 @@ ps aux | grep kaseki-agent
 ```
 
 **Module Import Problems**
+
 ```bash
 # Validate Docker dependencies
 npm run validate-module-imports
@@ -262,6 +283,7 @@ ls -la dist/
 ```
 
 **Configuration Issues**
+
 ```bash
 # Test configuration loading
 node -e "console.log(require('./src/kaseki-api-config').loadConfig())"
@@ -291,17 +313,20 @@ npm run release
 ## Deployment Architecture
 
 ### Development
+
 - Direct Node.js execution
 - Hot reload with `npm run dev`
 - Local Docker testing
 
 ### Production
+
 - **Recommended**: Docker Compose with API service
 - **Alternative**: Systemd service with Node.js
 - **Scaling**: Multiple instances with load balancing
 - **Monitoring**: Health checks and metrics endpoints
 
 ### Infrastructure
+
 - **Docker**: Multi-stage builds, security scanning
 - **CI/CD**: GitHub Actions with caching
 - **Security**: Trivy scanning, SBOM generation
@@ -310,6 +335,7 @@ npm run release
 ## Contributing
 
 ### Development Guidelines
+
 1. Follow TypeScript strict mode
 2. Write comprehensive tests
 3. Use conventional commits
@@ -318,6 +344,7 @@ npm run release
 6. Validate Docker dependencies
 
 ### Quality Standards
+
 - **Code Coverage**: Minimum 80% test coverage
 - **Type Safety**: No `any` types, strict null checks
 - **Error Handling**: Proper error propagation and logging
@@ -325,6 +352,7 @@ npm run release
 - **Performance**: Monitor memory usage and execution time
 
 ### Common Issues to Avoid
+
 - Missing Docker dependency validation
 - Inadequate error handling in async operations
 - Hardcoded paths or environment assumptions
@@ -334,12 +362,14 @@ npm run release
 ## Useful Resources
 
 ### Documentation
+
 - **[API.md](./API.md)** - Complete API reference
 - **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Production deployment guide
 - **[QUALITY_GATES.md](./QUALITY_GATES.md)** - Quality validation system
 - **[CLI.md](./CLI.md)** - Command-line interface documentation
 
 ### External Links
+
 - **Express.js**: <https://expressjs.com/>
 - **Zod**: <https://zod.dev/>
 - **TypeScript**: <https://www.typescriptlang.org/>
@@ -347,6 +377,80 @@ npm run release
 - **GitHub Actions**: <https://docs.github.com/actions>
 
 ### Community
+
 - **Issues**: GitHub Issues for bug reports and feature requests
 - **Discussions**: GitHub Discussions for questions and ideas
 - **Contributing**: See CONTRIBUTING.md for guidelines
+
+## Run-Scorecard Architecture
+
+The run-scorecard system transforms kaseki agent execution artifacts into scored `RunScorecard` objects, providing post-execution quality assessment through 6 phases (goal_setting → scouting → coding → validation → goal_check → run_evaluation) and 6 weighted quality dimensions.
+
+### Evidence Extraction (`src/run-scorecard-evidence-*.ts`)
+
+Evidence extraction is organized by phase type, with each phase having a dedicated collector function:
+
+- **goal-setting evidence**: `collectGoalSettingEvidence()` - Detects phase initiation signals
+- **scouting evidence**: `collectScoutingEvidence()` - Analyzes repository context capture
+- **coding evidence**: `collectCodingEvidence()` - Evaluates agent code changes (tokens, diff size)
+- **validation evidence**: `collectValidationEvidence()` - Tracks validation command results
+- **goal-check evidence**: `collectGoalCheckEvidence()` - Verifies goal achievement
+- **run-evaluation evidence**: `collectEvaluationEvidence()` - Assesses completion quality
+
+**Utilities** (`src/run-scorecard-evidence-utils.ts`):
+
+- `object()`, `number()`, `bool()` - Type-safe data extraction
+- `stagePhase()` - Maps stage names to canonical phase types
+- `computePhaseDurations()` - Aggregates phase timing from stage rows
+
+**Phase Detection** (`src/run-scorecard-evidence-phases.ts`):
+
+- `detectPhaseReached()` - Determines if a phase was entered during execution (uses artifact presence, timing, metadata signals)
+- `detectPhaseFailures()` - Identifies terminal phase failures from exit codes
+
+**Main Aggregator** (`src/run-scorecard-evidence.ts`):
+
+- `collectEvidence()` - Orchestrates all phase collectors and consolidates into unified Evidence object
+
+### Scoring System (`src/run-scorecard-scoring-*.ts`)
+
+Scoring maps evidence to weighted dimensions:
+
+- **Dimensions**: goal_quality, scouting_quality, implementation_quality, validation_quality, goal_check_quality, quality_measurement
+- **Weights**: Configurable per dimension (default: goal 15%, implementation 30%, etc.)
+- **Disabled Phases**: Exclude phases from scoring when not applicable
+- **Status Tracking**: Each dimension reports availability, confidence, and raw measurements
+
+**Scoring Helpers** (`src/run-scorecard-scoring-helpers.ts`):
+
+- `determinePhaseOutcome()` - Maps evidence to phase status (succeeded/failed/not_started/skipped)
+- `determineDimensionStatus()` - Evaluates dimension availability (complete/unavailable/not_applicable)
+- `calculateEffectiveWeight()` - Redistributes weights among enabled dimensions
+- `calculateWeightedPoints()` - Computes weighted score contribution
+
+**Phase Builders** (`src/run-scorecard-scoring-parts.ts`):
+
+- `buildDimensions()` - Constructs RunScorecard.dimensions from evidence using scoring helpers
+- `buildPhases()` - Constructs RunScorecard.phases with outcome determination
+- `normalizeEvaluationScore()` - Handles 1-5 completion scale → 0-100 normalization
+
+### Recent Refactoring (2026-09-16)
+
+**Phase 1: Consolidation & Testing**
+
+- Merged evidence-values + evidence-helpers → evidence-utils (reduced micro-utilities from 2 files to 1)
+- Added comprehensive unit tests for evidence-validation (13 tests, previously untested)
+- Extracted phase detection logic from evidence.ts → evidence-phases.ts (improved testability)
+
+**Phase 2: Complexity Reduction**
+
+- Extracted scoring conditionals into named helpers (determinePhaseOutcome, determineDimensionStatus)
+- Reduced buildPhases cognitive complexity from 7-level chain to single function call
+- Added scoring-helpers.test.ts with 21 tests for new functions
+
+**Result**:
+
+- 61 new tests covering previously untested code
+- ~40% reduction in cyclomatic complexity in scoring-parts.ts
+- Clean separation: phase detection logic, evidence extraction, scoring functions
+- All 3737 tests passing
