@@ -30,7 +30,7 @@ RUN npm ci --no-audit --prefer-offline --ignore-scripts \
 
 # Phase 3: Global Pi CLI installation (Layer 3 fallback for image seed cache)
 # Install pi-coding-agent globally with undici explicitly to resolve module dependencies
-RUN npm install -g --no-audit @earendil-works/pi-coding-agent@0.82.1 undici
+RUN npm install -g --no-audit @earendil-works/pi-coding-agent@0.84.4 undici
 
 # Phase 3b: Install tree-sitter-cli for Go code summarization (no native compilation)
 RUN set -eu; \
