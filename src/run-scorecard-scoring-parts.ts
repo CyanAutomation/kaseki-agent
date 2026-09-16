@@ -9,11 +9,12 @@ function efficiency(actual: number | undefined, target: number): number {
   return actual === undefined ? 50 : clamp(100 * Math.min(1, target / Math.max(1, actual)));
 }
 
-function sourceScores(evidence: Evidence, config: ScorecardConfig): number[] {
-  const modelTokens = evidence.tokenUsage.input_tokens + evidence.tokenUsage.output_tokens;
-  // A missing goal-check is not neutral evidence. Keep the score provisional
-  // and prevent a completed process from looking like verified goal attainment.
-  const completion = !evidence.goalCheckAvailable ? 0 : evidence.goalMet === undefined ? 60 : evidence.goalMet ? 100 : 20;
+/**
+ * Extracts and normalizes the evaluation score from evidence.
+ * Handles two scales: 0–100 (direct) and 1–5 (completion scale).
+ * Applies penalty for contradictions.
+ */
+export function normalizeEvaluationScore(evidence: Evidence): number {
   const rawEvaluationScore = typeof evidence.evaluation?.task_completion_score === 'number'
     ? evidence.evaluation.task_completion_score
     : typeof evidence.evaluation?.score === 'number'
@@ -24,16 +25,40 @@ function sourceScores(evidence: Evidence, config: ScorecardConfig): number[] {
   const evaluationScore = rawEvaluationScore > 0 && rawEvaluationScore <= 5
     ? rawEvaluationScore * 20
     : rawEvaluationScore;
+  const contradictionPenalty = Array.isArray(evidence.evaluation?.contradictions) ? evidence.evaluation.contradictions.length * 15 : 0;
+  return clamp(evaluationScore - contradictionPenalty);
+}
+
+/**
+ * Computes implementation quality score based on efficiency metrics.
+ * Combines elapsed time, model tokens, and retry efficiency with a baseline score.
+ */
+export function computeImplementationQualityScore(evidence: Evidence, config: ScorecardConfig): number {
+  if (evidence.noChangeAccepted) return 100;
+  if (evidence.diffBytes === 0) return 0;
+
+  const modelTokens = evidence.tokenUsage.input_tokens + evidence.tokenUsage.output_tokens;
+  const avgEfficiency = (
+    efficiency(evidence.elapsedSeconds, config.targets.elapsedSeconds)
+    + efficiency(modelTokens || undefined, config.targets.tokens)
+    + efficiency(evidence.retries, config.targets.retries)
+  ) / 3;
+
+  return clamp(80 + 0.2 * avgEfficiency);
+}
+
+function sourceScores(evidence: Evidence, config: ScorecardConfig): number[] {
+  // A missing goal-check is not neutral evidence. Keep the score provisional
+  // and prevent a completed process from looking like verified goal attainment.
+  const completion = !evidence.goalCheckAvailable ? 0 : evidence.goalMet === undefined ? 60 : evidence.goalMet ? 100 : 20;
+
   return [
     evidence.present.includes('goal-setting.json') ? 85 : 50,
     evidence.present.includes('scouting.json') ? 85 : 50,
-    evidence.noChangeAccepted ? 100 : evidence.diffBytes === 0 ? 0 : clamp(80 + .2 * (
-      (efficiency(evidence.elapsedSeconds, config.targets.elapsedSeconds)
-        + efficiency(modelTokens || undefined, config.targets.tokens)
-        + efficiency(evidence.retries, config.targets.retries)) / 3)),
+    computeImplementationQualityScore(evidence, config),
     evidence.validation === 'passed' ? 100 : evidence.validation === 'failed' ? 0 : 50,
     completion,
-    clamp(evaluationScore - (Array.isArray(evidence.evaluation?.contradictions) ? evidence.evaluation.contradictions.length * 15 : 0)),
+    normalizeEvaluationScore(evidence),
   ];
 }
 

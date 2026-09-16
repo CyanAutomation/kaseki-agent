@@ -1,4 +1,4 @@
-import { buildDimensions, buildPhases } from './run-scorecard-scoring-parts';
+import { buildDimensions, buildPhases, normalizeEvaluationScore, computeImplementationQualityScore } from './run-scorecard-scoring-parts';
 import { normalizeConfig } from './run-scorecard-config';
 import { buildEvidence } from './run-scorecard-test-fixtures';
 
@@ -80,5 +80,91 @@ describe('run-scorecard-scoring-parts', () => {
     });
 
     expect(buildPhases(evidence).goal_setting.outcome).toBe('failed');
+  });
+
+  describe('normalizeEvaluationScore', () => {
+    it('uses 0–100 score directly', () => {
+      const evidence = buildEvidence({ evaluation: { score: 75 } });
+      expect(normalizeEvaluationScore(evidence)).toBe(75);
+    });
+
+    it('converts 1–5 completion scale to 0–100', () => {
+      const evidence = buildEvidence({ evaluation: { task_completion_score: 3 } });
+      expect(normalizeEvaluationScore(evidence)).toBe(60); // 3 * 20
+    });
+
+    it('prioritizes task_completion_score over score', () => {
+      const evidence = buildEvidence({ evaluation: { task_completion_score: 4, score: 50 } });
+      expect(normalizeEvaluationScore(evidence)).toBe(80); // 4 * 20
+    });
+
+    it('applies contradiction penalty (15 points each)', () => {
+      const evidence = buildEvidence({ evaluation: { score: 90, contradictions: ['foo', 'bar'] } });
+      expect(normalizeEvaluationScore(evidence)).toBe(60); // 90 - 15 - 15
+    });
+
+    it('uses 80 as default if evaluator is available but no score provided', () => {
+      const evidence = buildEvidence({ evaluation: undefined, evaluatorAvailable: true });
+      expect(normalizeEvaluationScore(evidence)).toBe(80);
+    });
+
+    it('uses 0 as default if evaluator is unavailable', () => {
+      const evidence = buildEvidence({ evaluation: undefined, evaluatorAvailable: false });
+      expect(normalizeEvaluationScore(evidence)).toBe(0);
+    });
+
+    it('clamps result to 0–100 range', () => {
+      const evidence1 = buildEvidence({ evaluation: { score: 120 } });
+      expect(normalizeEvaluationScore(evidence1)).toBe(100);
+
+      const evidence2 = buildEvidence({ evaluation: { score: 10, contradictions: new Array(10).fill('x') } });
+      expect(normalizeEvaluationScore(evidence2)).toBe(0); // Clamped to 0
+    });
+  });
+
+  describe('computeImplementationQualityScore', () => {
+    it('returns 100 if noChangeAccepted is true', () => {
+      const evidence = buildEvidence({ noChangeAccepted: true });
+      const config = normalizeConfig({} as NodeJS.ProcessEnv);
+      expect(computeImplementationQualityScore(evidence, config)).toBe(100);
+    });
+
+    it('returns 0 if diffBytes is 0 and noChangeAccepted is false', () => {
+      const evidence = buildEvidence({ diffBytes: 0, noChangeAccepted: false });
+      const config = normalizeConfig({} as NodeJS.ProcessEnv);
+      expect(computeImplementationQualityScore(evidence, config)).toBe(0);
+    });
+
+    it('calculates score based on efficiency metrics (time, tokens, retries)', () => {
+      const evidence = buildEvidence({
+        diffBytes: 100,
+        elapsedSeconds: 100,
+        retries: 0,
+        tokenUsage: { input_tokens: 1000, output_tokens: 1000 },
+      });
+      const config = normalizeConfig({} as NodeJS.ProcessEnv);
+      const score = computeImplementationQualityScore(evidence, config);
+      expect(score).toBeGreaterThan(0);
+      expect(score).toBeLessThanOrEqual(100);
+    });
+
+    it('returns higher score for efficient runs (low time, low tokens)', () => {
+      const efficientEvidence = buildEvidence({
+        diffBytes: 100,
+        elapsedSeconds: 10,
+        retries: 0,
+        tokenUsage: { input_tokens: 100, output_tokens: 100 },
+      });
+      const inefficientEvidence = buildEvidence({
+        diffBytes: 100,
+        elapsedSeconds: 1000,
+        retries: 5,
+        tokenUsage: { input_tokens: 10000, output_tokens: 10000 },
+      });
+      const config = normalizeConfig({} as NodeJS.ProcessEnv);
+      const efficientScore = computeImplementationQualityScore(efficientEvidence, config);
+      const inefficientScore = computeImplementationQualityScore(inefficientEvidence, config);
+      expect(efficientScore).toBeGreaterThan(inefficientScore);
+    });
   });
 });
