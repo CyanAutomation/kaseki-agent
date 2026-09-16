@@ -72,4 +72,13 @@ describe('run-scorecard-scoring-parts', () => {
     expect(phases2.scouting.outcome).toBe('skipped');
     expect(phases2.scouting.completeness).toBe('not_applicable');
   });
+
+  test('buildPhases preserves an authoritative failed phase even when an artifact exists', () => {
+    const evidence = buildEvidence({
+      phaseFailures: { goal_setting: true },
+      phaseReached: { goal_setting: true },
+    });
+
+    expect(buildPhases(evidence).goal_setting.outcome).toBe('failed');
+  });
 });

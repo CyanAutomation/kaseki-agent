@@ -7839,7 +7839,7 @@ truncate_pr_metadata_text() {
 }
 
 derive_pr_title() {
-  local candidate summary_candidate stripped fallback prefix title suffix safe_instance max_title_length=72
+  local candidate summary_candidate evaluation_candidate stripped fallback prefix title suffix safe_instance max_title_length=72
   local available_summary_length changed_files prompt_for_prefix
 
   safe_instance="$(printf '%s' "${INSTANCE_NAME:-kaseki}" | sanitize_pr_metadata_text)"
@@ -7848,9 +7848,24 @@ derive_pr_title() {
   fi
   suffix=" ($safe_instance)"
   summary_candidate=""
+  evaluation_candidate=""
 
   candidate="$(printf '%s' "${TASK_PROMPT:-}" | sanitize_pr_metadata_text)"
   prompt_for_prefix="$candidate"
+  # The final evaluator's PR summary is generated after the diff and
+  # validation evidence are available, so it is usually a better title source
+  # than a long original task prompt. It is optional and never trusted raw.
+  if [ -s "${KASEKI_RESULTS_DIR}"/run-evaluation.json ]; then
+    evaluation_candidate="$(node - "${KASEKI_RESULTS_DIR}"/run-evaluation.json <<'NODE' 2>/dev/null || true
+const fs = require('fs');
+try {
+  const value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  if (value && typeof value.pr_summary === 'string') process.stdout.write(value.pr_summary);
+} catch {}
+NODE
+    )"
+    evaluation_candidate="$(printf '%s' "$evaluation_candidate" | sanitize_pr_metadata_text)"
+  fi
   if [ -s "${KASEKI_RESULTS_DIR}"/result-summary.md ]; then
     summary_candidate="$(
       awk '
@@ -7865,7 +7880,9 @@ derive_pr_title() {
       ' "${KASEKI_RESULTS_DIR}"/result-summary.md 2>/dev/null | sanitize_pr_metadata_text
     )"
   fi
-  if [ -n "$summary_candidate" ]; then
+  if [ -n "$evaluation_candidate" ]; then
+    candidate="$evaluation_candidate"
+  elif [ -n "$summary_candidate" ]; then
     candidate="$summary_candidate"
   elif [ -z "$candidate" ] && [ -s "${KASEKI_RESULTS_DIR}"/result-summary.md ]; then
     candidate="$(sed -n '/^- Status:/p; /^- Changed files:/p; /^- Validation:/p' "${KASEKI_RESULTS_DIR}"/result-summary.md 2>/dev/null | head -n 3 | sanitize_pr_metadata_text)"
@@ -8205,19 +8222,9 @@ if (focus.length > 0) {
   }
 }
 
-// Process notes subsection
-let processNote = '';
-if (Array.isArray(data.efficiency_findings) && data.efficiency_findings.length > 0) {
-  processNote = text(data.efficiency_findings[0], 320);
-} else if (Array.isArray(data.kaseki_improvement_opportunities) && data.kaseki_improvement_opportunities.length > 0) {
-  const item = data.kaseki_improvement_opportunities[0] || {};
-  processNote = text(item.suggestion || '', 320);
-}
-if (processNote) {
-  console.log('');
-  console.log('### Process notes');
-  console.log(`- ${processNote}`);
-}
+// Efficiency findings and improvement opportunities are operational telemetry,
+// not reviewer-facing change evidence. They remain in run artifacts and the
+// improvements endpoint instead of adding noise to every pull request.
 NODE
 }
 
@@ -8473,7 +8480,7 @@ $scorecard_markdown
 "
   else
     scorecard_section=""
-    scorecard_fallback="- Deterministic review evidence is shown below from validation status and changed-file metadata. The scorecard could not be rendered at publication time; inspect the completed run artifacts for evaluator evidence."
+    scorecard_fallback="- Scorecard unavailable at publication. Validation status and changed-file metadata are included below; inspect the run artifacts for evaluator evidence."
   fi
 
   cat <<EOF
