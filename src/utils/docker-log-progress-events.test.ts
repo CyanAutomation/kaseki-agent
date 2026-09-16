@@ -1,4 +1,4 @@
-import { progressEventsFromDockerLogTail } from './docker-log-progress-events';
+import { progressEventsFromDockerLogTail, extractDockerLogTimestamp, stripAnsiCodes } from './docker-log-progress-events';
 
 describe('progressEventsFromDockerLogTail', () => {
   it('deduplicates stage headings that differ only by case', () => {
@@ -73,5 +73,44 @@ describe('progressEventsFromDockerLogTail', () => {
       message: 'Dependency cache miss; installing packages',
       timestampEstimated: true,
     })]);
+  });
+
+  describe('extractDockerLogTimestamp', () => {
+    it('extracts RFC3339 timestamp from line prefix', () => {
+      const result = extractDockerLogTimestamp('2026-06-28T21:24:10.671Z rest of line');
+      expect(result.timestamp).toBe('2026-06-28T21:24:10.671Z');
+      expect(result.line).toBe('rest of line');
+    });
+
+    it('returns undefined timestamp if no timestamp prefix', () => {
+      const result = extractDockerLogTimestamp('no timestamp here');
+      expect(result.timestamp).toBeUndefined();
+      expect(result.line).toBe('no timestamp here');
+    });
+
+    it('handles timestamps with microseconds', () => {
+      const result = extractDockerLogTimestamp('2026-06-28T21:24:10.671123Z line content');
+      expect(result.timestamp).toBe('2026-06-28T21:24:10.671123Z');
+      expect(result.line).toBe('line content');
+    });
+  });
+
+  describe('stripAnsiCodes', () => {
+    it('removes ANSI color codes', () => {
+      expect(stripAnsiCodes('hello\u001b[0;31mworld\u001b[0m')).toBe('helloworld');
+    });
+
+    it('removes ANSI formatting codes', () => {
+      expect(stripAnsiCodes('\u001b[1;32mbold green\u001b[0m')).toBe('bold green');
+    });
+
+    it('leaves plain text unchanged', () => {
+      expect(stripAnsiCodes('plain text')).toBe('plain text');
+    });
+
+    it('handles multiple ANSI sequences', () => {
+      const text = '\u001b[0;34mblue\u001b[0m \u001b[1;32mgreen\u001b[0m';
+      expect(stripAnsiCodes(text)).toBe('blue green');
+    });
   });
 });
