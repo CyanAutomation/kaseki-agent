@@ -4,6 +4,19 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.133.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.132.10...v1.133.0) (2026-09-16)
+
+
+### Bug Fixes
+
+* remove unnecessary eslint-disable comment for ANSI control codes ([e98da7c](https://github.com/CyanAutomation/kaseki-agent/commit/e98da7cfe473ec36f029d3cf144e4644b9bbf3d8))
+* reorder conditions in buildPhases for clarity ([323dd12](https://github.com/CyanAutomation/kaseki-agent/commit/323dd122998f016559ea300d07acdfa1583f0fd3))
+
+
+### Features
+
+* add normalization and scoring functions for evaluation metrics ([75bf25e](https://github.com/CyanAutomation/kaseki-agent/commit/75bf25e5d25f2826177dc2eef14a6ff3069ed81b))
+
 ## [1.132.10](https://github.com/CyanAutomation/kaseki-agent/compare/v1.132.9...v1.132.10) (2026-09-16)
 
 
