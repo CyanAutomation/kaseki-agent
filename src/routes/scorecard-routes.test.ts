@@ -5,6 +5,7 @@ import express from 'express';
 import { createScorecardRoutes } from './scorecard-routes';
 import { ResultCache } from '../result-cache';
 import { buildScorecard, collectEvidence, normalizeConfig } from '../run-scorecard';
+import { ScorecardContext } from '../run-scorecard-context';
 
 const temporaryDirectories = new Set<string>();
 
@@ -32,6 +33,7 @@ afterEach(() => {
   try {
     jest.restoreAllMocks();
   } finally {
+    ScorecardContext.reset();
     removeTemporaryDirectories();
   }
 });
@@ -48,7 +50,9 @@ async function get(app: express.Express, url: string): Promise<{status:number;bo
 
 function fixture(status: 'running'|'completed' = 'completed') {
   const dir = createTemporaryDirectory('scorecard-route-');
-  const card = buildScorecard(collectEvidence({ json: { 'metadata.json': { instance:'kaseki-1', status, started_at:'2026-08-07T00:00:00.000Z', ended_at: status === 'completed' ? '2026-08-07T00:01:00.000Z' : undefined } }, text:{}, summaries:[] }), normalizeConfig({}), new Date('2026-08-07T00:02:00.000Z'));
+  ScorecardContext.reset();
+  ScorecardContext.initialize(normalizeConfig({}));
+  const card = buildScorecard(collectEvidence({ json: { 'metadata.json': { instance:'kaseki-1', status, started_at:'2026-08-07T00:00:00.000Z', ended_at: status === 'completed' ? '2026-08-07T00:01:00.000Z' : undefined } }, text:{}, summaries:[] }), new Date('2026-08-07T00:02:00.000Z'));
   const job = { id:'kaseki-1', status, request:{repoUrl:'https://github.com/acme/repo',ref:'main',model:'gpt-5'}, createdAt:new Date(), resultDir:dir, finalized:status === 'completed' };
   const scheduler = { getJob:(id:string)=>id === job.id ? job : undefined, listJobs:()=>[job] };
   const app=express(); app.use(createScorecardRoutes(scheduler as any,new ResultCache()));

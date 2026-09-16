@@ -1,6 +1,6 @@
 import { RunScorecardSchema, type RunScorecard } from './types/run-scorecard';
 import type { Evidence } from './run-scorecard-evidence';
-import type { ScorecardConfig } from './run-scorecard-config';
+import { ScorecardContext } from './run-scorecard-context';
 import { buildDimensions, buildPhases, DIMENSIONS, WEIGHTS, PHASES } from './run-scorecard-scoring-parts';
 import { buildScorecardWarnings } from './run-scorecard-warnings';
 
@@ -22,12 +22,13 @@ export function calculateCoverage(evidence: Evidence) {
   return { ratio: Number(((fields.length - missing.length) / fields.length).toFixed(3)), observed: fields.length - missing.length, possible: fields.length, missing };
 }
 
-export function buildScorecard(evidence: Evidence, config: ScorecardConfig, now = new Date()): RunScorecard {
+export function buildScorecard(evidence: Evidence, now = new Date()): RunScorecard {
+  const config = ScorecardContext.getConfig();
   const coverage = calculateCoverage(evidence);
   const started = typeof evidence.metadata.started_at === 'string' ? evidence.metadata.started_at : now.toISOString();
   const ended = typeof evidence.metadata.ended_at === 'string' ? evidence.metadata.ended_at
     : ['completed', 'failed', 'cancelled', 'timed_out'].includes(evidence.status) ? now.toISOString() : null;
-  const dimensions = buildDimensions(evidence, config);
+  const dimensions = buildDimensions(evidence);
   const uncappedScore = Number(dimensions.reduce((total, dimension) => total + dimension.weighted_points, 0).toFixed(2));
   // A successful patch can still be useful, but it must not look fully
   // evaluated when the evaluator artifact is a fallback or unavailable.
@@ -60,6 +61,6 @@ export function buildScorecard(evidence: Evidence, config: ScorecardConfig, now 
       caps: { missing_diff: 69, missing_validation: 59, missing_diff_and_validation: 49 },
       enabled_phase_reliability_penalty_points: evaluatorReliabilityAvailable ? 0 : 10, disabled_phase_policy: 'reweight_eligible_dimensions',
     },
-    warnings: buildScorecardWarnings(evidence, coverage, config),
+    warnings: buildScorecardWarnings(evidence, coverage),
   });
 }

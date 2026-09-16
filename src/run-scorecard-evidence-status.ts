@@ -1,6 +1,8 @@
 import type { RunScorecard } from './types/run-scorecard';
 import { number, object } from './run-scorecard-evidence-values';
 
+export type StatusValue = 'passed' | 'failed' | 'unknown';
+
 export function lifecycle(metadata: Record<string, unknown>): RunScorecard['lifecycle_status'] {
   const explicit = metadata.lifecycle_status ?? metadata.status ?? metadata.run_status;
   if (['queued', 'running', 'completed', 'failed', 'cancelled', 'timed_out'].includes(String(explicit))) {

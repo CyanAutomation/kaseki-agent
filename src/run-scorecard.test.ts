@@ -1,10 +1,14 @@
 import { assignGrade, buildScorecard, calculateCoverage, collectEvidence, normalizeConfig } from './run-scorecard';
+import { ScorecardContext } from './run-scorecard-context';
 import { RunScorecardSchema } from './types/run-scorecard';
 import { lifecycle, statusFrom } from './run-scorecard-evidence-status';
 import { bool, number, object } from './run-scorecard-evidence-values';
 import { aggregateTokenUsage, countRetries, providerRetryCounts } from './run-scorecard-evidence-tokens';
 
 describe('run scorecard', () => {
+  afterEach(() => {
+    ScorecardContext.reset();
+  });
   test('deduplicates request usage and reports unknown requests', () => {
     const evidence = collectEvidence({
       json: {
@@ -29,6 +33,8 @@ describe('run scorecard', () => {
   });
 
   test('records per-phase durations and warns when the token budget is exceeded', () => {
+    const config = normalizeConfig({ KASEKI_SCORECARD_TARGET_TOKENS: '200000' });
+    ScorecardContext.initialize(config);
     const evidence = collectEvidence({
       json: {
         'metadata.json': { instance: 'run-timing', exit_code: 0, total_duration_seconds: 90, quality_exit_code: 0 },
@@ -43,7 +49,7 @@ describe('run scorecard', () => {
       text: { 'changed-files.txt': 'README.md\n', 'git.diff': '+docs\n' },
       summaries: [{ phase: 'coding', request_id: 'one', usage: { input: 250000, output: 10 } }],
     });
-    const card = buildScorecard(evidence, normalizeConfig({ KASEKI_SCORECARD_TARGET_TOKENS: '200000' }));
+    const card = buildScorecard(evidence);
     expect(card.phases.goal_setting.duration_ms).toBe(10000);
     expect(card.phases.coding.duration_ms).toBe(20000);
     expect(card.timing_totals.phase_duration_ms.run_evaluation).toBe(30000);
@@ -51,6 +57,8 @@ describe('run scorecard', () => {
   });
 
   test('does not charge cache reads against the model token budget', () => {
+    const config = normalizeConfig({ KASEKI_SCORECARD_TARGET_TOKENS: '200000' });
+    ScorecardContext.initialize(config);
     const evidence = collectEvidence({
       json: {
         'metadata.json': { instance: 'cache-budget', exit_code: 0, quality_exit_code: 0 },
@@ -59,7 +67,7 @@ describe('run scorecard', () => {
       text: { 'changed-files.txt': 'README.md\n', 'git.diff': '+docs\n' },
       summaries: [{ phase: 'coding', request_id: 'one', usage: { input: 100_000, output: 10_000, cacheRead: 900_000 } }],
     });
-    const card = buildScorecard(evidence, normalizeConfig({ KASEKI_SCORECARD_TARGET_TOKENS: '200000' }));
+    const card = buildScorecard(evidence);
 
     expect(card.token_totals.cache_read_tokens).toBe(900_000);
     expect(card.warnings).not.toContain('Token budget exceeded: 1010000 used versus 200000 target.');
@@ -75,7 +83,8 @@ describe('run scorecard', () => {
     expect(config.rubricVersion).toBe('v2');
     expect(assignGrade(90)).toBe('A');
     const evidence = collectEvidence({ json: { 'metadata.json': { instance: 'run-2', started_at: '2025-12-31T23:00:00Z', ended_at: '2026-01-01T00:00:00Z', exit_code: 1 } }, text: {}, summaries: [] });
-    const card = buildScorecard(evidence, config, new Date('2026-01-01T00:00:00Z'));
+    ScorecardContext.initialize(config);
+    const card = buildScorecard(evidence, new Date('2026-01-01T00:00:00Z'));
     expect(card.lifecycle_status).toBe('failed');
     expect(card.token_totals.unavailable).toBe(true);
     expect(RunScorecardSchema.safeParse(card).success).toBe(true);
@@ -113,7 +122,8 @@ describe('run scorecard', () => {
       },
       text: { 'git.diff': '+change\n' }, summaries: [],
     });
-    const card = buildScorecard(evidence, normalizeConfig({}));
+    ScorecardContext.initialize(normalizeConfig({}));
+    const card = buildScorecard(evidence);
     expect(evidence.validation).toBe('failed');
     expect(evidence.evaluatorAvailable).toBe(false);
     expect(card.phases.validation.outcome).toBe('failed');
@@ -136,7 +146,8 @@ describe('run scorecard', () => {
       text: { 'git.diff': '+change\n' }, summaries: [],
     });
 
-    const card = buildScorecard(evidence, normalizeConfig({}));
+    ScorecardContext.initialize(normalizeConfig({}));
+    const card = buildScorecard(evidence);
     expect(card.phases.goal_setting.outcome).toBe('failed');
     expect(card.phases.run_evaluation.outcome).toBe('failed');
   });
@@ -153,7 +164,8 @@ describe('run scorecard', () => {
     });
 
     expect(evidence.validation).toBe('unknown');
-    const card = buildScorecard(evidence, normalizeConfig({}));
+    ScorecardContext.initialize(normalizeConfig({}));
+    const card = buildScorecard(evidence);
     expect(card.dimensions.find(dimension => dimension.id === 'validation_quality'))
       .toMatchObject({ normalized_score: 50, status: 'unavailable' });
   });
@@ -186,7 +198,8 @@ describe('run scorecard', () => {
       text: {}, summaries: [],
     });
 
-    const card = buildScorecard(evidence, normalizeConfig({}));
+    ScorecardContext.initialize(normalizeConfig({}));
+    const card = buildScorecard(evidence);
     expect(card.phases.goal_setting.outcome).toBe('not_started');
     expect(card.phases.scouting.outcome).toBe('not_started');
     expect(card.phases.coding.outcome).toBe('not_started');
@@ -204,7 +217,8 @@ describe('run scorecard', () => {
       text: { 'changed-files.txt': 'src/a.ts\n', 'git.diff': '+change\n' },
       summaries: [{ phase: 'coding', request_id: 'one', usage: { input: 1, output: 1 } }],
     });
-    const card = buildScorecard(evidence, normalizeConfig({}), new Date('2026-01-01T00:00:00Z'));
+    ScorecardContext.initialize(normalizeConfig({}));
+    const card = buildScorecard(evidence, new Date('2026-01-01T00:00:00Z'));
 
     expect(card.overall_score).toBeGreaterThanOrEqual(80);
     expect(card.overall_score).toBeLessThanOrEqual(89);
@@ -222,7 +236,8 @@ describe('run scorecard', () => {
       text: { 'changed-files.txt': '', 'git.diff': '' },
       summaries: [{ phase: 'coding', request_id: 'noop', usage: { input: 1, output: 1 } }],
     });
-    const card = buildScorecard(evidence, normalizeConfig({}), new Date('2026-01-01T00:00:00Z'));
+    ScorecardContext.initialize(normalizeConfig({}));
+    const card = buildScorecard(evidence, new Date('2026-01-01T00:00:00Z'));
 
     expect(evidence.noChangeAccepted).toBe(true);
     expect(card.dimensions.find(dimension => dimension.id === 'implementation_quality')).toMatchObject({ normalized_score: 100, status: 'complete' });
@@ -244,7 +259,8 @@ describe('run scorecard', () => {
       summaries: [{ phase: 'coding', request_id: 'one', usage: { input: 1, output: 1 } }],
     });
 
-    const card = buildScorecard(evidence, normalizeConfig({}), new Date('2026-01-01T00:00:00Z'));
+    ScorecardContext.initialize(normalizeConfig({}));
+    const card = buildScorecard(evidence, new Date('2026-01-01T00:00:00Z'));
     expect(evidence.goalCheckAvailable).toBe(false);
     expect(card.completeness).toBe('provisional');
     expect(card.evidence_coverage.missing_critical).toContain('goal_check');
@@ -264,7 +280,8 @@ describe('run scorecard', () => {
       },
       text: { 'git.diff': '+docs\n' }, summaries: [],
     });
-    const card = buildScorecard(evidence, normalizeConfig({}));
+    ScorecardContext.initialize(normalizeConfig({}));
+    const card = buildScorecard(evidence);
 
     expect(card.dimensions.find(dimension => dimension.id === 'goal_quality')).toMatchObject({ normalized_score: 85 });
     expect(card.dimensions.find(dimension => dimension.id === 'evaluation_quality')).toMatchObject({ normalized_score: 60 });
@@ -280,7 +297,8 @@ describe('run scorecard', () => {
       },
       text: { 'git.diff': '+docs\n' }, summaries: [],
     });
-    const card = buildScorecard(evidence, normalizeConfig({}));
+    ScorecardContext.initialize(normalizeConfig({}));
+    const card = buildScorecard(evidence);
 
     expect(card.dimensions.find(dimension => dimension.id === 'evaluation_quality'))
       .toMatchObject({ normalized_score: 5 });
@@ -306,9 +324,10 @@ describe('run scorecard', () => {
     const known = collectEvidence(snapshot);
     const unknown = collectEvidence({ ...snapshot, summaries: [...snapshot.summaries, { phase: 'coding', request_id: 'unknown' }] });
     const config = normalizeConfig({});
+    ScorecardContext.initialize(config);
 
-    expect(buildScorecard(known, config).confidence.score).toBe(26);
-    expect(buildScorecard(unknown, config).confidence.score).toBe(24);
+    expect(buildScorecard(known).confidence.score).toBe(26);
+    expect(buildScorecard(unknown).confidence.score).toBe(24);
   });
 
   test('handles disabled phases and evaluator contradiction penalties', () => {
@@ -321,7 +340,8 @@ describe('run scorecard', () => {
       text: { 'git.diff': '+change\n' },
       summaries: [],
     });
-    const card = buildScorecard(evidence, normalizeConfig({}), new Date('2026-01-01T00:00:00Z'));
+    ScorecardContext.initialize(normalizeConfig({}));
+    const card = buildScorecard(evidence, new Date('2026-01-01T00:00:00Z'));
     expect(card.phases.scouting).toMatchObject({ enabled: false, outcome: 'skipped', completeness: 'not_applicable' });
     expect(card.dimensions.find(d => d.id === 'scouting_quality')).toMatchObject({ effective_weight: 0, status: 'not_applicable' });
     expect(card.dimensions.find(d => d.id === 'evaluation_quality')?.normalized_score).toBe(65);
@@ -329,7 +349,8 @@ describe('run scorecard', () => {
 
   test('marks active runs as not started and unknown evidence as provisional', () => {
     const evidence = collectEvidence({ json: { 'metadata.json': { lifecycle_status: 'running' } }, text: {}, summaries: [] });
-    const card = buildScorecard(evidence, normalizeConfig({}), new Date('2026-01-01T00:00:00Z'));
+    ScorecardContext.initialize(normalizeConfig({}));
+    const card = buildScorecard(evidence, new Date('2026-01-01T00:00:00Z'));
     expect(card.ended_at).toBeNull();
     expect(Object.values(card.phases).every(phase => phase.outcome === 'not_started')).toBe(true);
     expect(card.completeness).toBe('provisional');
@@ -348,7 +369,8 @@ describe('run scorecard', () => {
       summaries: [],
     });
 
-    const card = buildScorecard(evidence, normalizeConfig({}), new Date('2026-01-01T00:00:00Z'));
+    ScorecardContext.initialize(normalizeConfig({}));
+    const card = buildScorecard(evidence, new Date('2026-01-01T00:00:00Z'));
     expect(card.phases.goal_check.outcome).toBe('failed');
   });
 

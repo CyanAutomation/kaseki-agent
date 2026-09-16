@@ -1,7 +1,8 @@
 import type { Evidence } from './run-scorecard-evidence-types';
-import type { ScorecardConfig } from './run-scorecard-config';
+import { ScorecardContext } from './run-scorecard-context';
 
-export function buildScorecardWarnings(evidence: Evidence, coverage: { missing: string[] }, config: ScorecardConfig) {
+export function buildScorecardWarnings(evidence: Evidence, coverage: { missing: string[] }) {
+  const config = ScorecardContext.getConfig();
   const modelTokens = evidence.tokenUsage.input_tokens + evidence.tokenUsage.output_tokens;
   return [
     ...coverage.missing.map(value => `Missing evidence: ${value}`),
