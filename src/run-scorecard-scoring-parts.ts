@@ -2,6 +2,7 @@ import type { Evidence } from './run-scorecard-evidence';
 import type { RunScorecard } from './types/run-scorecard';
 import { PHASES, DIMENSIONS, WEIGHTS } from './run-scorecard-phases';
 import { computeImplementationQualityScore } from './run-scorecard-scoring-efficiency';
+import { determinePhaseOutcome, determineDimensionStatus, calculateEffectiveWeight, calculateWeightedPoints } from './run-scorecard-scoring-helpers';
 
 export { PHASES, DIMENSIONS, WEIGHTS, computeImplementationQualityScore };
 
@@ -54,15 +55,17 @@ export function buildDimensions(evidence: Evidence) {
   const eligible = WEIGHTS.reduce((total, weight, index) => total + (disabled.has(PHASES[index]) ? 0 : weight), 0);
   return DIMENSIONS.map((id, index) => {
     const applicable = !disabled.has(PHASES[index]);
-    const effective = applicable ? WEIGHTS[index] / eligible : 0;
+    const effective = calculateEffectiveWeight(WEIGHTS[index], applicable, eligible);
+    const status = determineDimensionStatus(id, applicable, evidence.phaseReached[PHASES[index]], evidence.diffBytes, evidence.noChangeAccepted);
+    const normalizedScore = scores[index];
     return {
       id,
       weight: WEIGHTS[index],
       effective_weight: effective,
       raw_measurements: { source_score: scores[index], retries: evidence.retries, model_tokens: (evidence.tokenUsage.input_tokens + evidence.tokenUsage.output_tokens) || null, cache_read_tokens: evidence.tokenUsage.cache_read_tokens },
-      normalized_score: scores[index],
-      weighted_points: Number((scores[index] * effective).toFixed(2)),
-      status: !applicable ? 'not_applicable' : !evidence.phaseReached[PHASES[index]] || id === 'implementation_quality' && evidence.diffBytes === 0 && !evidence.noChangeAccepted ? 'unavailable' : 'complete',
+      normalized_score: normalizedScore,
+      weighted_points: calculateWeightedPoints(normalizedScore, effective),
+      status,
       rationale: `Score derived from available ${id.replace(/_/g, ' ')} evidence.`,
       evidence: [],
       warnings: [],
@@ -77,24 +80,16 @@ export function buildPhases(evidence: Evidence): RunScorecard['phases'] {
       input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0,
       unknown_tokens: 0, unavailable: true, completeness: 'unavailable' as const,
     };
+    const isDisabled = disabled.has(phase);
+    const outcome = determinePhaseOutcome(phase, evidence, isDisabled);
     return [phase, {
       phase,
-      enabled: !disabled.has(phase),
-      outcome: disabled.has(phase)
-        ? 'skipped'
-        : !evidence.phaseReached[phase]
-          ? 'not_started'
-          : evidence.status === 'cancelled' || evidence.status === 'running'
-            ? 'not_started'
-            : evidence.phaseFailures[phase] ? 'failed'
-              : phase === 'validation' && evidence.validation === 'failed' ? 'failed'
-                : phase === 'goal_check' && evidence.goalCheckFailed ? 'failed'
-                  : phase === 'run_evaluation' && !evidence.evaluatorAvailable ? 'failed'
-                    : 'succeeded',
+      enabled: !isDisabled,
+      outcome,
       started_at: null, ended_at: null, duration_ms: evidence.phaseDurationsMs[phase] ?? null, token_usage: usage,
       measurements: { retries: evidence.phaseRetries[phase] ?? 0 },
-      completeness: disabled.has(phase) ? 'not_applicable' : usage.unavailable ? 'provisional' : 'complete',
-      confidence: disabled.has(phase) ? 100 : usage.unavailable ? 50 : 100,
+      completeness: isDisabled ? 'not_applicable' : usage.unavailable ? 'provisional' : 'complete',
+      confidence: isDisabled ? 100 : usage.unavailable ? 50 : 100,
       evidence: [], warnings: [],
     }];
   })) as unknown as RunScorecard['phases'];

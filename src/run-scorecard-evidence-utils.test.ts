@@ -1,6 +1,69 @@
-import { stagePhase, computePhaseDurations } from './run-scorecard-evidence-utils';
+import { object, number, bool, stagePhase, computePhaseDurations } from './run-scorecard-evidence-utils';
 
-describe('run-scorecard-evidence-helpers', () => {
+describe('run-scorecard-evidence-utils', () => {
+  describe('object', () => {
+    it('returns object for valid objects', () => {
+      expect(object({})).toEqual({});
+      expect(object({ key: 'value' })).toEqual({ key: 'value' });
+    });
+
+    it('returns undefined for arrays', () => {
+      expect(object([])).toBeUndefined();
+      expect(object([1, 2, 3])).toBeUndefined();
+    });
+
+    it('returns undefined for null', () => {
+      expect(object(null)).toBeUndefined();
+    });
+
+    it('returns undefined for primitives', () => {
+      expect(object('string')).toBeUndefined();
+      expect(object(123)).toBeUndefined();
+      expect(object(true)).toBeUndefined();
+    });
+
+    it('returns undefined for undefined', () => {
+      expect(object(undefined)).toBeUndefined();
+    });
+  });
+
+  describe('number', () => {
+    it('returns number for valid finite numbers', () => {
+      expect(number(0)).toBe(0);
+      expect(number(123)).toBe(123);
+      expect(number(-456)).toBe(-456);
+      expect(number(3.14)).toBe(3.14);
+    });
+
+    it('returns undefined for non-finite numbers', () => {
+      expect(number(Infinity)).toBeUndefined();
+      expect(number(-Infinity)).toBeUndefined();
+      expect(number(NaN)).toBeUndefined();
+    });
+
+    it('returns undefined for non-numbers', () => {
+      expect(number('123')).toBeUndefined();
+      expect(number(true)).toBeUndefined();
+      expect(number(null)).toBeUndefined();
+      expect(number(undefined)).toBeUndefined();
+    });
+  });
+
+  describe('bool', () => {
+    it('returns boolean for true/false', () => {
+      expect(bool(true)).toBe(true);
+      expect(bool(false)).toBe(false);
+    });
+
+    it('returns undefined for non-booleans', () => {
+      expect(bool(1)).toBeUndefined();
+      expect(bool(0)).toBeUndefined();
+      expect(bool('true')).toBeUndefined();
+      expect(bool(null)).toBeUndefined();
+      expect(bool(undefined)).toBeUndefined();
+    });
+  });
+
   describe('stagePhase', () => {
     it('detects goal_setting phase from stage name', () => {
       expect(stagePhase('goal.setting')).toBe('goal_setting');
@@ -98,7 +161,7 @@ describe('run-scorecard-evidence-helpers', () => {
         goal_setting: 2000,
         scouting: 3000,
       });
-      expect(result.stageElapsed).toBe(10); // 2 + 5 + 3 = 10 (all elapsed_seconds added)
+      expect(result.stageElapsed).toBe(10);
     });
 
     it('skips entries with missing elapsed_seconds', () => {
@@ -113,7 +176,7 @@ describe('run-scorecard-evidence-helpers', () => {
       expect(result.phaseDurationsMs).toEqual({
         scouting: 5000,
       });
-      expect(result.stageElapsed).toBe(8); // 5 (scouting) + 3 (unrecognized phase) = 8
+      expect(result.stageElapsed).toBe(8);
     });
 
     it('handles non-numeric elapsed_seconds gracefully', () => {

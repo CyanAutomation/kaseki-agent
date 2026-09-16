@@ -1,5 +1,5 @@
 import type { RunScorecard } from './types/run-scorecard';
-import { number, object } from './run-scorecard-evidence-values';
+import { number, object } from './run-scorecard-evidence-utils';
 
 export type StatusValue = 'passed' | 'failed' | 'unknown';
 
