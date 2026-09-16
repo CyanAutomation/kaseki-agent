@@ -412,6 +412,8 @@ function buildStatusResponseSchema(): Record<string, unknown> {
           updatedAt: { type: 'string', format: 'date-time' },
           ageSeconds: { type: 'integer', minimum: 0 },
           stale: { type: 'boolean' },
+          livenessUpdatedAt: { type: 'string', format: 'date-time', description: 'Most recent Pi worker liveness signal; this does not imply substantive work.' },
+          livenessAgeSeconds: { type: 'integer', minimum: 0 },
         },
       },
       taskProgressPercent: {

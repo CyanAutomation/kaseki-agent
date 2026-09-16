@@ -31,7 +31,7 @@ function isValidationHeartbeat(event: ProgressCandidate): boolean {
 }
 
 function isSubstantive(event: ProgressCandidate): boolean {
-  return event.timestampEstimated !== true && !isValidationHeartbeat(event);
+  return event.timestampEstimated !== true && !isValidationHeartbeat(event) && event.heartbeat !== true;
 }
 
 function readRecentProgressRecords(progressFile: string): ProgressRecord[] {
@@ -161,6 +161,7 @@ export class StatusProgressHelper {
       response.progress = latestProgress(actualCandidates.length > 0 ? actualCandidates : candidates);
 
       const substantiveProgress = latestProgress(candidates.filter(isSubstantive));
+      const livenessProgress = latestProgress(candidates.filter((event) => event.heartbeat === true && event.timestampEstimated !== true));
       if (substantiveProgress?.updatedAt) {
         const updatedAtMs = timestampMs(substantiveProgress);
         if (updatedAtMs > 0) {
@@ -170,6 +171,10 @@ export class StatusProgressHelper {
             ageSeconds,
             stale: ageSeconds >= 120,
             source: substantiveProgress.source,
+            ...(livenessProgress?.updatedAt ? {
+              livenessUpdatedAt: livenessProgress.updatedAt,
+              livenessAgeSeconds: Math.max(0, Math.floor((Date.now() - timestampMs(livenessProgress)) / 1000)),
+            } : {}),
           };
         }
       }

@@ -111,7 +111,7 @@ export function sendArtifactDownloadResponse(
       return;
     }
 
-    const safeContent = isLogArtifact(request.fileName) ? redactLogContent(content) : content;
+    const safeContent = isSensitiveTextArtifact(request.fileName) ? redactLogContent(content) : content;
     const response = buildArtifactResponse(request, contentType, safeContent, fileStats.size);
     res.setHeader('Content-Type', contentType);
     res.json(response);
@@ -179,7 +179,7 @@ function sendLiveStdoutFallback(
   }
 
   const contentType = artifactContentType(fileName);
-  const safeContent = isLogArtifact(fileName) ? redactLogContent(liveContent) : liveContent;
+  const safeContent = isSensitiveTextArtifact(fileName) ? redactLogContent(liveContent) : liveContent;
   const response: ArtifactResponse = {
     file: fileName,
     contentType,
@@ -191,8 +191,11 @@ function sendLiveStdoutFallback(
   return true;
 }
 
-function isLogArtifact(fileName: string): boolean {
-  return fileName.endsWith('.log');
+function isSensitiveTextArtifact(fileName: string): boolean {
+  // failure.json often embeds stderr_tail for triage. Treat it exactly like a
+  // log so secret-mount paths and accidental credential material cannot bypass
+  // the redactor through the artifacts endpoint.
+  return fileName.endsWith('.log') || fileName === 'failure.json';
 }
 
 function getLiveStdoutContent(

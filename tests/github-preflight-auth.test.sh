@@ -71,42 +71,21 @@ if ! grep -q 'GitHub App token generation failed for owner/repo: HTTP 404: insta
   exit 1
 fi
 
-if ! grep -q 'GitHub App private key metadata:' "$HEALTH_LOG"; then
-  printf '✗ health check log did not include private key metadata\n'
+if ! grep -q 'GitHub App private key structure check passed' "$HEALTH_LOG"; then
+  printf '✗ health check log did not include the safe private key structure result\n'
   cat "$HEALTH_LOG"
   exit 1
 fi
 
 node -e '
 const fs = require("node:fs");
-const crypto = require("node:crypto");
 const metadata = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 const key = fs.readFileSync(process.argv[2]);
-const expectedHash = crypto.createHash("sha256").update(key).digest("hex");
 if (metadata.byte_count !== key.length) throw new Error("byte_count mismatch");
 if (metadata.first_pem_header_line !== "-----BEGIN RSA PRIVATE KEY-----") throw new Error(`header mismatch: ${metadata.first_pem_header_line}`);
 if (metadata.pem_footer_present !== true) throw new Error("footer flag mismatch");
-if (metadata.sha256_fingerprint !== expectedHash) throw new Error("fingerprint mismatch");
+if (Object.prototype.hasOwnProperty.call(metadata, "sha256_fingerprint")) throw new Error("metadata must not retain a private-key fingerprint");
 ' "$TMP_DIR/github-app-private-key-metadata.json" "$SECRETS_DIR/github_app_private_key"
-
-mkdir -p "$TMP_DIR/failing-bin"
-cat > "$TMP_DIR/failing-bin/sha256sum" <<'EOF_SHA256SUM'
-#!/usr/bin/env bash
-exit 127
-EOF_SHA256SUM
-chmod +x "$TMP_DIR/failing-bin/sha256sum"
-if ! PATH="$TMP_DIR/failing-bin:$PATH" github_private_key_metadata_json \
-  "$SECRETS_DIR/github_app_private_key" > "$TMP_DIR/github-app-private-key-metadata-no-sha256.json"; then
-  printf '✗ private key metadata generation failed when sha256sum was unavailable\n'
-  exit 1
-fi
-node -e '
-const fs = require("node:fs");
-const metadata = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-if (metadata.sha256_fingerprint !== "unavailable") {
-  throw new Error(`unexpected fallback fingerprint: ${metadata.sha256_fingerprint}`);
-}
-' "$TMP_DIR/github-app-private-key-metadata-no-sha256.json"
 
 if grep -q 'SUPER-SECRET-PRIVATE-KEY-BODY' "$HEALTH_LOG" "$TMP_DIR/github-app-private-key-metadata.json"; then
   printf '✗ health check metadata leaked private key body content\n'

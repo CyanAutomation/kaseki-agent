@@ -270,6 +270,7 @@ export interface StructuredProgress {
   source?: 'progress.jsonl' | 'docker-logs'; // Where the event originated
   timestampEstimated?: boolean; // True when the timestamp came from a log-tail observation
   phase?: string; // Canonical Pi phase when emitted by the worker progress stream
+  heartbeat?: boolean; // Worker liveness signal; does not imply substantive work
 }
 
 /**
@@ -309,6 +310,8 @@ export interface StatusResponse {
     ageSeconds: number;
     stale: boolean;
     source?: 'progress.jsonl' | 'docker-logs';
+    livenessUpdatedAt?: string;
+    livenessAgeSeconds?: number;
   };
   /** A non-blocking problem in the final evaluator for an otherwise terminal run. */
   runEvaluation?: {
