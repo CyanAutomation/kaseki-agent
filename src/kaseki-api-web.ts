@@ -1901,6 +1901,9 @@ const controllerPage = String.raw`<!doctype html>
       function cleanProgressText(value) {
         return stripControlSequences(value)
           .replace(/\s*ℹ?\s*Kaseki startup checks \(mode:[^)]+\)[\s\S]*$/, '')
+          // Worker output can concatenate a startup timestamp immediately
+          // after a phase label. Preserve readable phase text in summaries.
+          .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, ' ')
           .replace(/\s+/g, ' ')
           .trim();
       }
@@ -2188,6 +2191,9 @@ const controllerPage = String.raw`<!doctype html>
               : formatElapsedSeconds(heartbeat.ageSeconds) + ' ago', { warning: heartbeat.stale, fullWidth: true }]);
             if (heartbeat.stale && payload.status === 'running') {
               items.push(['Progress attention', 'The worker may still be alive, but it has not emitted a substantive stage or command update. Open Events or Stdout to inspect the active operation.', { warning: true, fullWidth: true }]);
+            }
+            if (typeof heartbeat.livenessAgeSeconds === 'number') {
+              items.push(['Agent liveness', formatElapsedSeconds(heartbeat.livenessAgeSeconds) + ' ago', { fullWidth: true }]);
             }
           }
           if (payload.failureClass || payload.error) {
@@ -2905,9 +2911,11 @@ const controllerPage = String.raw`<!doctype html>
         updateCancelRunButtonState(payload);
         updateRetryRunButtonState(payload);
         if (pullRequestLink) {
-          const prUrl = typeof payload.prUrl === 'string' ? payload.prUrl : '';
+          const candidate = typeof payload.prUrl === 'string' ? payload.prUrl.trim() : '';
+          const prUrl = /^https?:\/\//i.test(candidate) ? candidate : '';
           pullRequestLink.hidden = !prUrl;
           if (prUrl) pullRequestLink.href = prUrl;
+          else pullRequestLink.removeAttribute('href');
         }
         // Keep the structured summary visible while polling. Previously this
         // was replaced by correlation metadata, which hid phase diagnostics

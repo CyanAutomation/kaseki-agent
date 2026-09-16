@@ -82,8 +82,39 @@ try {
 NODE
 }
 
+has_go_project() {
+  [ -f go.mod ]
+}
+
+makefile_has_target() {
+  local target="$1"
+  local makefile
+  for makefile in Makefile makefile GNUmakefile; do
+    [ -f "$makefile" ] || continue
+    # Accept ordinary, non-pattern make targets. This is deliberately a
+    # lightweight detector: the command itself remains the source of truth.
+    grep -Eq "^${target}[[:space:]]*:" "$makefile" && return 0
+  done
+  return 1
+}
+
 construct_default_validation_commands() {
   local commands=""
+
+  # Go API projects can legitimately include package.json for a parser or UI.
+  # Prefer their native validation contract rather than treating that auxiliary
+  # manifest as the primary project signal.
+  if has_go_project; then
+    if makefile_has_target "vet"; then
+      commands="$(append_default_validation_command "$commands" "make vet")"
+    fi
+    if makefile_has_target "test-contract"; then
+      commands="$(append_default_validation_command "$commands" "make test-contract")"
+    fi
+    commands="$(append_default_validation_command "$commands" "go test ./...")"
+    printf '%s' "$commands"
+    return 0
+  fi
 
   if package_json_has_npm_script "build"; then
     commands="$(append_default_validation_command "$commands" "npm run build")"
