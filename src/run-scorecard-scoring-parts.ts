@@ -1,13 +1,11 @@
 import type { Evidence } from './run-scorecard-evidence';
-import type { ScorecardConfig } from './run-scorecard-config';
 import type { RunScorecard } from './types/run-scorecard';
 import { PHASES, DIMENSIONS, WEIGHTS } from './run-scorecard-phases';
-export { PHASES, DIMENSIONS, WEIGHTS };
+import { computeImplementationQualityScore } from './run-scorecard-scoring-efficiency';
+
+export { PHASES, DIMENSIONS, WEIGHTS, computeImplementationQualityScore };
 
 const clamp = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
-function efficiency(actual: number | undefined, target: number): number {
-  return actual === undefined ? 50 : clamp(100 * Math.min(1, target / Math.max(1, actual)));
-}
 
 /**
  * Extracts and normalizes the evaluation score from evidence.
@@ -29,25 +27,7 @@ export function normalizeEvaluationScore(evidence: Evidence): number {
   return clamp(evaluationScore - contradictionPenalty);
 }
 
-/**
- * Computes implementation quality score based on efficiency metrics.
- * Combines elapsed time, model tokens, and retry efficiency with a baseline score.
- */
-export function computeImplementationQualityScore(evidence: Evidence, config: ScorecardConfig): number {
-  if (evidence.noChangeAccepted) return 100;
-  if (evidence.diffBytes === 0) return 0;
-
-  const modelTokens = evidence.tokenUsage.input_tokens + evidence.tokenUsage.output_tokens;
-  const avgEfficiency = (
-    efficiency(evidence.elapsedSeconds, config.targets.elapsedSeconds)
-    + efficiency(modelTokens || undefined, config.targets.tokens)
-    + efficiency(evidence.retries, config.targets.retries)
-  ) / 3;
-
-  return clamp(80 + 0.2 * avgEfficiency);
-}
-
-function sourceScores(evidence: Evidence, config: ScorecardConfig): number[] {
+function sourceScores(evidence: Evidence): number[] {
   // A missing goal-check is not neutral evidence. Keep the score provisional
   // and prevent a completed process from looking like verified goal attainment.
   const completion = !evidence.goalCheckAvailable ? 0 : evidence.goalMet === undefined ? 60 : evidence.goalMet ? 100 : 20;
@@ -55,7 +35,7 @@ function sourceScores(evidence: Evidence, config: ScorecardConfig): number[] {
   return [
     evidence.present.includes('goal-setting.json') ? 85 : 50,
     evidence.present.includes('scouting.json') ? 85 : 50,
-    computeImplementationQualityScore(evidence, config),
+    computeImplementationQualityScore(evidence),
     evidence.validation === 'passed' ? 100 : evidence.validation === 'failed' ? 0 : 50,
     completion,
     normalizeEvaluationScore(evidence),
@@ -68,9 +48,9 @@ function disabledPhases(evidence: Evidence): Set<string> {
     : []);
 }
 
-export function buildDimensions(evidence: Evidence, config: ScorecardConfig) {
+export function buildDimensions(evidence: Evidence) {
   const disabled = disabledPhases(evidence);
-  const scores = sourceScores(evidence, config);
+  const scores = sourceScores(evidence);
   const eligible = WEIGHTS.reduce((total, weight, index) => total + (disabled.has(PHASES[index]) ? 0 : weight), 0);
   return DIMENSIONS.map((id, index) => {
     const applicable = !disabled.has(PHASES[index]);

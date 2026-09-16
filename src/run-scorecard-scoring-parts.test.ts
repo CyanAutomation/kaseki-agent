@@ -1,8 +1,12 @@
 import { buildDimensions, buildPhases, normalizeEvaluationScore, computeImplementationQualityScore } from './run-scorecard-scoring-parts';
 import { normalizeConfig } from './run-scorecard-config';
+import { ScorecardContext } from './run-scorecard-context';
 import { buildEvidence } from './run-scorecard-test-fixtures';
 
 describe('run-scorecard-scoring-parts', () => {
+  afterEach(() => {
+    ScorecardContext.reset();
+  });
   test('disabled phases produce not_applicable dimensions and zero weight', () => {
     const evidence = buildEvidence({
       metadata: { disabled_phases: ['scouting'] },
@@ -34,7 +38,8 @@ describe('run-scorecard-scoring-parts', () => {
     });
 
     const config = normalizeConfig({} as NodeJS.ProcessEnv);
-    const dims = buildDimensions(evidence, config);
+    ScorecardContext.initialize(config);
+    const dims = buildDimensions(evidence);
     const scouting = dims.find(d => d.id === 'scouting_quality');
     expect(scouting).toBeDefined();
     expect(scouting.effective_weight).toBe(0);
@@ -42,6 +47,8 @@ describe('run-scorecard-scoring-parts', () => {
   });
 
   test('buildPhases marks validation failed and respects phase tokens availability', () => {
+    const config = normalizeConfig({} as NodeJS.ProcessEnv);
+    ScorecardContext.initialize(config);
     const evidence = buildEvidence({
       validation: 'failed',
       evaluatorAvailable: false,
@@ -126,13 +133,15 @@ describe('run-scorecard-scoring-parts', () => {
     it('returns 100 if noChangeAccepted is true', () => {
       const evidence = buildEvidence({ noChangeAccepted: true });
       const config = normalizeConfig({} as NodeJS.ProcessEnv);
-      expect(computeImplementationQualityScore(evidence, config)).toBe(100);
+      ScorecardContext.initialize(config);
+      expect(computeImplementationQualityScore(evidence)).toBe(100);
     });
 
     it('returns 0 if diffBytes is 0 and noChangeAccepted is false', () => {
       const evidence = buildEvidence({ diffBytes: 0, noChangeAccepted: false });
       const config = normalizeConfig({} as NodeJS.ProcessEnv);
-      expect(computeImplementationQualityScore(evidence, config)).toBe(0);
+      ScorecardContext.initialize(config);
+      expect(computeImplementationQualityScore(evidence)).toBe(0);
     });
 
     it('calculates score based on efficiency metrics (time, tokens, retries)', () => {
@@ -143,7 +152,8 @@ describe('run-scorecard-scoring-parts', () => {
         tokenUsage: { input_tokens: 1000, output_tokens: 1000 },
       });
       const config = normalizeConfig({} as NodeJS.ProcessEnv);
-      const score = computeImplementationQualityScore(evidence, config);
+      ScorecardContext.initialize(config);
+      const score = computeImplementationQualityScore(evidence);
       expect(score).toBeGreaterThan(0);
       expect(score).toBeLessThanOrEqual(100);
     });
@@ -162,8 +172,9 @@ describe('run-scorecard-scoring-parts', () => {
         tokenUsage: { input_tokens: 10000, output_tokens: 10000 },
       });
       const config = normalizeConfig({} as NodeJS.ProcessEnv);
-      const efficientScore = computeImplementationQualityScore(efficientEvidence, config);
-      const inefficientScore = computeImplementationQualityScore(inefficientEvidence, config);
+      ScorecardContext.initialize(config);
+      const efficientScore = computeImplementationQualityScore(efficientEvidence);
+      const inefficientScore = computeImplementationQualityScore(inefficientEvidence);
       expect(efficientScore).toBeGreaterThan(inefficientScore);
     });
   });

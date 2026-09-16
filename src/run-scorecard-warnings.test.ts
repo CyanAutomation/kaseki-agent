@@ -1,8 +1,13 @@
 import { buildScorecard } from './run-scorecard-scoring';
 import { normalizeConfig } from './run-scorecard-config';
+import { ScorecardContext } from './run-scorecard-context';
 import { buildEvidence } from './run-scorecard-test-fixtures';
 
 describe('buildScorecard warnings', () => {
+  afterEach(() => {
+    ScorecardContext.reset();
+  });
+
   test('includes missing evidence and token budget warning', () => {
     const evidence = buildEvidence({
       metadata: { instance: 'kaseki-1', started_at: '2026-01-01T00:00:00.000Z', ended_at: '2026-01-01T00:01:00.000Z' },
@@ -22,7 +27,8 @@ describe('buildScorecard warnings', () => {
       },
     });
     const config = normalizeConfig({ KASEKI_SCORECARD_TARGET_TOKENS: '1000' });
-    const card = buildScorecard(evidence, config);
+    ScorecardContext.initialize(config);
+    const card = buildScorecard(evidence);
     expect(Array.isArray(card.warnings)).toBe(true);
     const hasMissing = card.warnings.some(w => /Missing evidence: validation/.test(w));
     const hasToken = card.warnings.includes('Token budget exceeded: 5000 model tokens used versus 1000 target.');
