@@ -15,6 +15,8 @@ import { createLogger } from './logger';
 
 const logger = createLogger('github-utils');
 const GITHUB_API_TIMEOUT_MS = 15000;
+const DEFAULT_GITHUB_API_RETRY_ATTEMPTS = 3;
+const DEFAULT_GITHUB_API_RETRY_DELAY_MS = 250;
 
 interface JWTHeader {
   alg: string;
@@ -59,6 +61,41 @@ interface ParsedGitHubUrl {
   repo: string;
   isValid: boolean;
   error?: string;
+}
+
+function isTransientGitHubError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /timed out|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|socket hang up|\b429\b|\b5\d\d\b/i.test(message);
+}
+
+function waitFor(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Retry only transport and GitHub-service failures. Authentication, malformed
+ * requests, and authorization failures must fail immediately so retries cannot
+ * hide a configuration problem.
+ */
+export async function retryTransientGitHubRequest<T>(
+  operation: () => Promise<T>,
+  options: { attempts?: number; delayMs?: number } = {},
+): Promise<T> {
+  const attempts = Math.max(1, Math.floor(options.attempts ?? (Number(process.env.KASEKI_GITHUB_API_RETRY_ATTEMPTS) || DEFAULT_GITHUB_API_RETRY_ATTEMPTS)));
+  const delayMs = Math.max(0, Math.floor(options.delayMs ?? (Number(process.env.KASEKI_GITHUB_API_RETRY_DELAY_MS) || DEFAULT_GITHUB_API_RETRY_DELAY_MS)));
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientGitHubError(error) || attempt === attempts) break;
+      logger.warn(`GitHub API request failed transiently (attempt ${attempt}/${attempts}); retrying.`);
+      await waitFor(delayMs * attempt);
+    }
+  }
+  throw lastError;
 }
 
 /**
@@ -349,10 +386,14 @@ export async function generateGitHubAppToken(
     const jwt = await generateJWT(appId, privateKey);
 
     // Get installation ID
-    const installationId = await getInstallationId(jwt, owner, repo);
+    const installationId = await retryTransientGitHubRequest(
+      () => getInstallationId(jwt, owner, repo),
+    );
 
     // Get access token
-    const tokenData = await getAccessToken(jwt, installationId);
+    const tokenData = await retryTransientGitHubRequest(
+      () => getAccessToken(jwt, installationId),
+    );
 
     return tokenData;
   } catch (error) {
