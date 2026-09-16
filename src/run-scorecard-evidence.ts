@@ -60,7 +60,7 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
     coding: Boolean(snapshot.json['pi-summary.json']) || Boolean(snapshot.text['pi-events.jsonl']) || hasStage(/pi coding agent/i) || (snapshot.text['git.diff'] ?? '').trim().length > 0 || noChangeAccepted,
     validation: executedValidationRows.length > 0 || (number(metadata.validation_commands_attempted) ?? 0) > 0 || (failureValidationExit !== undefined && failureValidationExit !== 0),
     goal_check: Boolean(snapshot.json['goal-check.json']) || hasStage(/goal check/i) || (number(metadata.goal_check_duration_seconds) ?? 0) > 0 || String(failure.failed_command ?? '').toLowerCase() === 'goal check' || String(metadata.goal_check_failure_reason ?? '').trim().length > 0,
-  const branchName = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8' }).trim().replace(/[^a-zA-Z0-9_\-]/g, '_');
+    run_evaluation: Boolean(evaluation) || hasStage(/run evaluation/i) || (number(metadata.run_evaluation_duration_seconds) ?? 0) > 0 || evaluatorFailed,
   };
   // Metadata is written from terminal worker state, so it is authoritative
   // over an artifact left behind by a timed-out or failed attempt. A phase can
