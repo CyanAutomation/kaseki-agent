@@ -4,6 +4,16 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.132.10](https://github.com/CyanAutomation/kaseki-agent/compare/v1.132.9...v1.132.10) (2026-09-16)
+
+
+### Bug Fixes
+
+* harden run scorecard reporting ([6cb7d16](https://github.com/CyanAutomation/kaseki-agent/commit/6cb7d160a487d6be120e963ccbf708ab8223f10c))
+* harden run scorecard reporting ([#1326](https://github.com/CyanAutomation/kaseki-agent/issues/1326)) ([c22b534](https://github.com/CyanAutomation/kaseki-agent/commit/c22b534857d37437a10545197344156730f01a34))
+* restore run evaluation evidence collection ([4221738](https://github.com/CyanAutomation/kaseki-agent/commit/4221738b02601b3c8663cea5e2c7a89d80f0f84e))
+* restore run_evaluation evidence and remove unsafe git exec ([#1327](https://github.com/CyanAutomation/kaseki-agent/issues/1327)) ([202b912](https://github.com/CyanAutomation/kaseki-agent/commit/202b9128afecd622c47cd4d3a00edafdd056fcde))
+
 ## [1.132.9](https://github.com/CyanAutomation/kaseki-agent/compare/v1.132.8...v1.132.9) (2026-09-16)
 
 
