@@ -2451,6 +2451,32 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
     }
   });
 
+  test('redacts embedded stderr from downloaded failure artifacts', async () => {
+    const jobId = 'kaseki-failure-redaction';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'failure.json'), JSON.stringify({
+      failed_command: 'github token generation',
+      stderr_tail: 'secret=/run/secrets/kaseki/github_app_private_key',
+    }));
+
+    const scheduler = createMockScheduler({
+      [jobId]: { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir }
+    });
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, createTestConfig(resultsDir));
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/failure.json`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      const body = await response.json() as any;
+      expect(body.content).toContain('[redacted secret path]');
+      expect(body.content).not.toContain('github_app_private_key');
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
   test('non-failed run is blocked from retrieving failure diagnostics artifacts', async () => {
     const jobId = 'kaseki-running-1';
     const jobDir = path.join(resultsDir, jobId);

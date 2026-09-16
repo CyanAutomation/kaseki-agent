@@ -492,6 +492,30 @@ describe('kaseki API web console behavior', () => {
     expectAttribute(document, '#pull-request-link', 'href', 'https://github.com/CyanAutomation/tako-bako/pull/29');
   });
 
+  test('keeps the pull-request link hidden until the API returns an absolute HTTP URL', async () => {
+    const { document, calls } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/runs/kaseki-304/status': createJsonResponse({
+          id: 'kaseki-304', status: 'running', prUrl: '#',
+          progress: {
+            stage: 'pi coding agent2026-09-16T08:19:21.399658807Z',
+            updatedAt: '2026-09-16T08:19:21.399658807Z',
+          },
+        }),
+        '/api/runs/kaseki-304/artifacts': createJsonResponse({ artifacts: [] }),
+      }),
+    });
+
+    setRunId(document, 'kaseki-304');
+    clickSelector(document, '#full-results-btn');
+    await waitFor(() => expect(calls.some((call) => call.path === '/api/runs/kaseki-304/status')).toBe(true));
+    await waitFor(() => expectTextContains(document, '#response-summary', 'pi coding agent'));
+    expectHidden(document, '#pull-request-link', true);
+    expect(getElement(document, '#pull-request-link').hasAttribute('href')).toBe(false);
+    expectTextNotContains(document, '#response-summary', '2026-09-16T08:19:21');
+  });
+
   test('summarizes gateway smoke results without OpenRouter recovery status', async () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',

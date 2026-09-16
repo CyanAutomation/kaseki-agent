@@ -75,6 +75,27 @@ describe('StatusProgressHelper', () => {
     expect(response.progressHeartbeat).toMatchObject({ updatedAt: '2026-01-01T00:00:00Z', ageSeconds: 300, stale: true });
   });
 
+  it('reports a recent Pi liveness heartbeat without treating it as substantive work', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-01-01T00:05:00Z'));
+    const id = 'kaseki-liveness';
+    const jobDir = path.join(resultsDir, id);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'progress.jsonl'), [
+      { stage: 'pi coding agent', message: 'started', timestamp: '2026-01-01T00:00:00Z' },
+      { stage: 'pi coding agent', message: 'phase heartbeat', heartbeat: true, timestamp: '2026-01-01T00:04:55Z' },
+    ].map((event) => JSON.stringify(event)).join('\n'));
+
+    const helper = new StatusProgressHelper({ getLiveProgressEvents: jest.fn(() => []) } as unknown as JobScheduler, { resultsDir } as KasekiApiConfig);
+    const response = { id, status: 'running' } as StatusResponse;
+    helper.addProgressInfo(response, makeJob(id));
+
+    expect(response.progressHeartbeat).toMatchObject({
+      updatedAt: '2026-01-01T00:00:00Z', ageSeconds: 300, stale: true,
+      livenessUpdatedAt: '2026-01-01T00:04:55Z', livenessAgeSeconds: 5,
+    });
+  });
+
   it('uses the newest stage when Docker tail observations share a timestamp', () => {
     const id = 'kaseki-3';
     const scheduler = {

@@ -125,6 +125,20 @@ JSON
 }
 JSON
   assert_equals "keeps non-empty validation fallback when common scripts are missing" "npm run build;npm run type-check;npm run test" "$(construct_default_validation_commands)"
+
+  # A Go service can still carry package.json for a frontend/parser. Its
+  # canonical validation must follow the Go project, not the incidental Node
+  # dependency manifest.
+  printf 'module example.com/service\n\ngo 1.24\n' > go.mod
+  cat > Makefile <<'MAKE'
+vet:
+\t@true
+test-contract:
+\t@true
+MAKE
+  assert_equals "prefers Go validation for Go projects with package.json" \
+    "make vet;make test-contract;go test ./..." "$(construct_default_validation_commands)"
+  rm -f go.mod Makefile
 }
 
 case_missing_explicit_commands_fall_back_to_available_scripts() {

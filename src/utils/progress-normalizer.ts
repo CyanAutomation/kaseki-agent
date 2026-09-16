@@ -75,5 +75,6 @@ export function toStructuredProgress(
     ...(event.source === 'progress.jsonl' || event.source === 'docker-logs' ? { source: event.source } : {}),
     ...(event.timestampEstimated === true ? { timestampEstimated: true } : {}),
     ...(typeof event.phase === 'string' ? { phase: event.phase } : {}),
+    ...(event.heartbeat === true ? { heartbeat: true } : {}),
   };
 }
