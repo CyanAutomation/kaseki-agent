@@ -44,6 +44,8 @@
   },
   "homepage": "https://github.com/CyanAutomation/kaseki-agent#readme",
   "scripts": {
+    "generate:environment-docs": "node scripts/generate-environment-configuration.mjs",
+    "check:environment-docs": "node scripts/generate-environment-configuration.mjs --check",
     "generate:openapi": "node dist/generate-openapi-spec.js",
     "build": "tsc && tsc -p tsconfig.scripts.json && node dist/add-js-extensions.js && npm run generate:openapi && npm run check:dist-dynamic-imports && chmod 0755 dist/*.js",
     "prepublishOnly": "npm run build",
