@@ -87,7 +87,7 @@ printf '{"selected_model":"test-model"}\n' > "$3"
 EOF_FILTER
 cat > "$FAKE_BIN/timeout" <<'EOF_TIMEOUT' || fail "failed to write fake timeout executable"
 #!/usr/bin/env bash
-shift 2
+shift 3
 "$@"
 EOF_TIMEOUT
 cat > "$FAKE_BIN/validation-output-filter" <<'EOF_VALIDATION_FILTER' || fail "failed to write fake validation output filter executable"

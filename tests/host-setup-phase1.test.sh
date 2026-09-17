@@ -128,7 +128,7 @@ assert_json_has_keys() {
 
 capture_command() {
   local __output_var="$1" __status_var="$2"
-  shift 2
+  shift 3
   local captured_output captured_status
   if captured_output=$("$@" 2>&1); then
     captured_status=0
