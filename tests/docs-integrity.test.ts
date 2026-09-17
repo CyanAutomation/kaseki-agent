@@ -10,8 +10,8 @@ import {
 /**
  * Tests for documentation integrity.
  *
- * The general check validates that evaluation markdown docs do not contain
- * broken internal links or anchors. Evaluation-guide content checks are intentionally
+ * The general check validates that maintained markdown docs do not contain
+ * broken internal links or anchors. Content checks are intentionally
  * limited to documented navigation contracts: stable cross-document links and a
  * small set of anchors that other docs or readers can reasonably depend on.
  */
@@ -19,13 +19,13 @@ describe('Documentation integrity', () => {
   const projectRoot = process.cwd();
   const docsDir = path.join(projectRoot, 'docs');
 
-  type EvaluationDocContract = {
+  type DocumentationContract = {
     fileName: string;
     requiredLinks?: string[];
     stableAnchors?: string[];
   };
 
-  const evaluationDocContracts: EvaluationDocContract[] = [
+  const documentationContracts: DocumentationContract[] = [
     {
       fileName: 'GOAL_SETTING_GUIDE.md',
       requiredLinks: ['./EVALUATION_BEST_PRACTICES.md', './FEEDBACK_LOOP_INTEGRATION.md'],
@@ -59,10 +59,28 @@ describe('Documentation integrity', () => {
         'data-schema',
       ],
     },
+    {
+      fileName: 'SCOUTING_PROMPT_DESIGN.md',
+      requiredLinks: [
+        '../kaseki-agent.sh',
+        '../test/scouting-prompt-improvements.test.ts',
+        'QUICK_START.md',
+        'TASK_PROMPT_TEMPLATES.md',
+        'QUALITY_GATES.md',
+      ],
+      stableAnchors: [
+        'scouting-prompt-design--architecture',
+        'prompt-structure-phases-1-4-complete',
+        'field-constraints-phase-4--complete',
+        'related-files',
+        'testing-the-prompt',
+        'contributing',
+      ],
+    },
   ];
 
-  it('resolves internal markdown links and anchors in evaluation docs', () => {
-    evaluationDocContracts.forEach(({ fileName }) => {
+  it('resolves internal markdown links and anchors in maintained docs', () => {
+    documentationContracts.forEach(({ fileName }) => {
       const sourcePath = path.join(docsDir, fileName);
       const sourceContent = fs.readFileSync(sourcePath, 'utf8');
       const sourceDir = path.dirname(sourcePath);
@@ -91,8 +109,8 @@ describe('Documentation integrity', () => {
     });
   });
 
-  it('preserves documented evaluation-guide navigation contracts', () => {
-    evaluationDocContracts.forEach(({ fileName, requiredLinks, stableAnchors }) => {
+  it('preserves documented navigation contracts', () => {
+    documentationContracts.forEach(({ fileName, requiredLinks, stableAnchors }) => {
       const sourcePath = path.join(docsDir, fileName);
 
       expect(fs.existsSync(sourcePath)).toBe(true);
