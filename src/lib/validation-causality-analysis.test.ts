@@ -307,6 +307,7 @@ diff --git a/src/order-service.ts b/src/order-service.ts
 
   describe('generateCausalityAnalysisArtifact', () => {
     it('should write valid JSON to file', () => {
+      const artifactCreationTime = new Date('2026-09-16T12:34:56.789Z');
       const assessment = {
         failureType: 'change_related' as const,
         confidence: 0.85,
@@ -314,36 +315,16 @@ diff --git a/src/order-service.ts b/src/order-service.ts
         signals: {},
       };
       const outputPath = path.join(tempDir, 'causality.json');
-      const result = generateCausalityAnalysisArtifact(assessment, outputPath);
+      const result = generateCausalityAnalysisArtifact(assessment, outputPath, {
+        now: () => artifactCreationTime,
+      });
       expect(result).toBe(true);
       expect(fs.existsSync(outputPath)).toBe(true);
 
       const content = JSON.parse(fs.readFileSync(outputPath, 'utf-8'));
       expect(content.assessment.failureType).toBe('change_related');
       expect(content.assessment.confidence).toBe(0.85);
-    });
-
-    it('should include timestamp in artifact', () => {
-      const assessment = {
-        failureType: 'pre_existing' as const,
-        confidence: 0.9,
-        rationale: 'Pre-existing failure',
-        signals: {},
-      };
-      const outputPath = path.join(tempDir, 'causality.json');
-      const beforeGenerate = Date.now();
-      generateCausalityAnalysisArtifact(assessment, outputPath);
-      const afterGenerate = Date.now();
-
-      const content = JSON.parse(fs.readFileSync(outputPath, 'utf-8'));
-      expect(content.timestamp).toBeDefined();
-      expect(typeof content.timestamp).toBe('string');
-      expect(content.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
-
-      const parsedTimestamp = Date.parse(content.timestamp);
-      expect(Number.isNaN(parsedTimestamp)).toBe(false);
-      expect(parsedTimestamp).toBeGreaterThanOrEqual(beforeGenerate);
-      expect(parsedTimestamp).toBeLessThanOrEqual(afterGenerate);
+      expect(content.timestamp).toBe('2026-09-16T12:34:56.789Z');
     });
 
     it('should handle write errors gracefully', () => {
