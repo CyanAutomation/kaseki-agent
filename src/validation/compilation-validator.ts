@@ -14,12 +14,15 @@ export interface CompilationResult {
   exitCode: number;
   command: string;
   language: string;
-  duration: number; // milliseconds
+  // Timing metadata is required by saveCompilationLog and createCompilationReport.
+  duration: number; // elapsed milliseconds
   stdout: string;
   stderr: string;
   output: string; // Combined stdout + stderr
-  timestamp: number;
+  timestamp: number; // completion time in Unix epoch milliseconds
 }
+
+export type CompilationClock = () => number;
 
 /**
  * Run a build command and capture results
@@ -28,6 +31,7 @@ export interface CompilationResult {
  * @param buildCommand - Build command to execute (e.g., "npm run build", "go build")
  * @param language - Language identifier for logging
  * @param timeout - Timeout in milliseconds (default: 60000)
+ * @param clock - Clock returning Unix epoch milliseconds (default: Date.now)
  * @returns CompilationResult with success status and captured output
  */
 export function runCompilation(
@@ -35,8 +39,9 @@ export function runCompilation(
   buildCommand: string,
   language: string,
   timeout: number = 60000,
+  clock: CompilationClock = Date.now,
 ): CompilationResult {
-  const start = Date.now();
+  const start = clock();
 
   try {
     const output = execSync(buildCommand, {
@@ -47,16 +52,18 @@ export function runCompilation(
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
+    const end = clock();
+
     return {
       success: true,
       exitCode: 0,
       command: buildCommand,
       language,
-      duration: Date.now() - start,
+      duration: end - start,
       stdout: output,
       stderr: '',
       output,
-      timestamp: Date.now(),
+      timestamp: end,
     };
   } catch (error: any) {
     const stdout = error.stdout ? error.stdout.toString() : '';
@@ -65,16 +72,18 @@ export function runCompilation(
     const stderr = error.stderr ? error.stderr.toString() : fallbackStderr;
     const output = stdout + (stderr ? '\n' + stderr : '');
 
+    const end = clock();
+
     return {
       success: false,
       exitCode: isTimeout ? 124 : (error.status ?? 1),
       command: buildCommand,
       language,
-      duration: Date.now() - start,
+      duration: end - start,
       stdout,
       stderr,
       output,
-      timestamp: Date.now(),
+      timestamp: end,
     };
   }
 }
