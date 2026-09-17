@@ -29,7 +29,7 @@ assert_file_empty() {
 assert_file_contains() {
   local file="$1" expected="$2" contract_message="$3"
   [ -f "$file" ] || fail "$contract_message: expected public artifact to exist at $file"
-  rg --fixed-strings --quiet "$expected" "$file" || fail "$contract_message: expected public artifact to contain '$expected' at $file"
+  grep -qF "$expected" "$file" || fail "$contract_message: expected public artifact to contain '$expected' at $file"
 }
 
 run_test() {
@@ -38,7 +38,6 @@ run_test() {
   pass "$description"
 }
 
-command -v rg >/dev/null 2>&1 || fail "ripgrep is required for file content assertions"
 command -v node >/dev/null 2>&1 || fail "Node.js is required for JSON assertions"
 [ -x "$HELPERS" ] || fail "Expected executable helper: $HELPERS"
 [ -r "$VALIDATION_HELPERS" ] || fail "Expected readable helper: $VALIDATION_HELPERS"
