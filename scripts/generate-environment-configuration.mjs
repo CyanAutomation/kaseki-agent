@@ -26,8 +26,13 @@ export function renderPublicEnvironmentVariables(metadata) {
   ].join('\n');
 }
 
-const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-const skill = fs.readFileSync(skillPath, 'utf8');
+try {
+  const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+  const skill = fs.readFileSync(skillPath, 'utf8');
+} catch (error) {
+  console.error(`Failed to read required files: ${error.message}`);
+  process.exit(1);
+}
 const generated = renderPublicEnvironmentVariables(metadata);
 const markerPattern = new RegExp(`${startMarker}[\\s\\S]*?${endMarker}`);
 
