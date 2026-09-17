@@ -55,6 +55,7 @@ git -C "$FAKE_REPO" -c user.email=kaseki-test@example.invalid -c user.name="Kase
 
 cat > "$FAKE_BIN/pi" <<EOF_PI
 #!/usr/bin/env bash
+printf '[fake-pi] args: %s\n' "\$*" >> "$TMP_DIR/debug.log"
 if [ "\${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
 if [ "\${1:-}" = "--list-models" ]; then echo "gateway/dynamic/kaseki-agent"; exit 0; fi
 prompt="\${*: -1}"
@@ -74,7 +75,7 @@ elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\t%s\n' "\$args" >> "$PI_ARGS"
   printf 'goal-check\n' >> "$PI_CALLS"
-  printf '%s\n' '{"met":true,"confidence":"high","summary":"done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[]}' > "$RESULTS_DIR/goal-check-candidate.json"
+  printf '%s\n' '{"met":true,"confidence":"high","summary":"done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[],"evidence_sources_inspected":[],"contradictions":[],"confidence_calibration":{"outcome":"pass","justification":"test"}}' > "$RESULTS_DIR/goal-check-candidate.json"
 else
   printf 'coding\t%s\n' "\$args" >> "$PI_ARGS"
   printf 'coding\n' >> "$PI_CALLS"
@@ -88,13 +89,21 @@ cat
 EOF_PROGRESS
 cat > "$FAKE_BIN/kaseki-pi-event-filter" <<'EOF_FILTER'
 #!/usr/bin/env bash
+printf '[kaseki-pi-event-filter] args: %s\n' "$*" >> "${KASEKI_DEBUG_LOG:-/dev/null}"
 cat "$1" > "$2"
 printf '{"selected_model":"test-model"}\n' > "$3"
 EOF_FILTER
-cat > "$FAKE_BIN/timeout" <<'EOF_TIMEOUT'
+cat > "$FAKE_BIN/timeout" <<EOF_TIMEOUT
 #!/usr/bin/env bash
-shift 3
-"$@"
+printf '[fake-timeout] received args (%d): %s\n' "\$#" "\$*" >> "$TMP_DIR/debug.log"
+# Skip all leading flag args (--signal=..., --kill-after=..., -s, etc.), then skip the duration
+while [[ "\${1:-}" == -* ]]; do shift; done
+shift
+printf '[fake-timeout] running command: %s\n' "\$*" >> "$TMP_DIR/debug.log"
+"\$@"
+exit_code=\$?
+printf '[fake-timeout] exit code: %d\n' "\$exit_code" >> "$TMP_DIR/debug.log"
+exit "\$exit_code"
 EOF_TIMEOUT
 cat > "$FAKE_BIN/validation-output-filter" <<'EOF_VALIDATION_FILTER'
 #!/usr/bin/env bash
@@ -133,12 +142,16 @@ env \
   KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" \
   KASEKI_VALIDATION_COMMANDS=":" \
   KASEKI_ALLOW_EMPTY_DIFF=1 \
-  bash "$MODIFIED_SCRIPT" > "$RUN_LOG" 2>&1
+  KASEKI_DEBUG_LOG="$TMP_DIR/debug.log" bash "$MODIFIED_SCRIPT" > "$RUN_LOG" 2>&1
 run_exit=$?
 set -e
 
-[ "$run_exit" -eq 0 ] || fail "expected zero exit, got $run_exit"
-[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check' ] || fail "Pi calls were not goal-setting then scouting then coding then goal-check"
+if [ "$run_exit" -ne 0 ]; then
+  printf '\n=== DEBUG LOG ===\n' >&2
+  cat "$TMP_DIR/debug.log" >&2 2>/dev/null || true
+  fail "expected zero exit, got $run_exit"
+fi
+[ "$(head -4 "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check' ] || fail "Pi calls were not goal-setting then scouting then coding then goal-check"
 grep -Eq '^scouting[[:space:]].*--model dynamic/kaseki-agent( |$)' "$PI_ARGS" || fail "scouting Pi was not invoked with default gateway model dynamic/kaseki-agent"
 grep -Eq '^coding[[:space:]].*--model dynamic/kaseki-agent( |$)' "$PI_ARGS" || fail "coding Pi was not invoked with default gateway model dynamic/kaseki-agent"
 [ -s "$RESULTS_DIR/goal-setting.json" ] || fail "goal-setting.json was not copied into results"

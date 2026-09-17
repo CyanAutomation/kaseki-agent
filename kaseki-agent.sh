@@ -5100,8 +5100,11 @@ is_transient_goal_setting_failure() {
     86)
       return 1
       ;;
-    # Provider/model errors = deterministic until model/config changes
+    # Provider/model errors: allow one phase-level retry if provider classified it retryable
     88)
+      if [ "${PROVIDER_ERROR_RETRYABLE:-false}" = "true" ]; then
+        return 0
+      fi
       return 1
       ;;
     # Missing config/API key = deterministic, not retryable
@@ -6124,8 +6127,12 @@ is_transient_scouting_failure() {
     return 1
   fi
 
-  # Exit code 88 = provider/model error (deterministic until model/config changes)
+  # Exit code 88 = provider/model error; allow one phase-level retry if the provider
+  # layer classified the error as retryable (e.g., DNS failure, network timeout).
   if [ "$exit_code" -eq 88 ]; then
+    if [ "${PROVIDER_ERROR_RETRYABLE:-false}" = "true" ]; then
+      return 0
+    fi
     return 1
   fi
 

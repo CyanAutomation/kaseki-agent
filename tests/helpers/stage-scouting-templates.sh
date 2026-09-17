@@ -18,4 +18,6 @@ cp "$repo_root"/templates/scouting/* "$scouting_templates_dir/"
 # helpers cannot make an otherwise focused test fail before reaching its case.
 mkdir -p "$relocated_root/scripts/lib"
 cp "$repo_root"/scripts/*.sh "$relocated_root/scripts/"
+# JS helpers (e.g. context-handoff.js) are invoked directly by kaseki-agent.sh
+[ -n "$(ls "$repo_root"/scripts/*.js 2>/dev/null)" ] && cp "$repo_root"/scripts/*.js "$relocated_root/scripts/" || true
 cp "$repo_root"/scripts/lib/*.sh "$relocated_root/scripts/lib/"

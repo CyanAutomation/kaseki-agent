@@ -115,6 +115,10 @@ const ERROR_PATTERN_REGISTRY: Array<{
   { regex: /tool\s+call.*?(json|parse|malformed|unterminated)|malformed.*?tool\s+call/i,
     retryable: true, category: 'malformed_request', confidence: 'high' },
 
+  // DNS resolution failure (transient — resolver or network briefly unavailable)
+  { regex: /ENOTFOUND|EAI_AGAIN|getaddrinfo|dns.*fail|name.*not.*resolv/i,
+    retryable: true, category: 'transient_network', confidence: 'high' },
+
   // Generic network transience
   { regex: /offline|connection\s+refused|try\s+again/i,
     retryable: true, category: 'transient_network', confidence: 'medium' },
