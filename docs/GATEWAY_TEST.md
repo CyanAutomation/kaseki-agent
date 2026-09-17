@@ -53,6 +53,14 @@ After the run finishes, inspect these artifacts and logs:
 
 ## Test Stages
 
+### Gateway Health Response Contract
+
+`responseTime` is part of the public gateway-health response contract for both
+stages. Consumers may require it to be a finite, non-negative number of
+milliseconds. It is operational telemetry rather than a precise elapsed-time
+guarantee; tests that require exact elapsed-time behavior must inject or mock
+the clock instead of comparing wall-clock measurements.
+
 ### Stage 1: Gateway Connectivity
 
 **What it tests:**

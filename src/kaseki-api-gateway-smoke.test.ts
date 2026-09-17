@@ -262,6 +262,8 @@ describe('LLM Gateway Test', () => {
       const result = await testGatewayConnectivity();
 
       expect(result.status).toBe('ok');
+      // Public response contract: docs/GATEWAY_TEST.md, "Gateway Health Response Contract".
+      expect(Number.isFinite(result.responseTime)).toBe(true);
       expect(result.responseTime).toBeGreaterThanOrEqual(0);
       expect(result.authenticationValidated).toBe(true);
       expect(result.detail).toContain('Gateway is responsive');
@@ -366,22 +368,6 @@ describe('LLM Gateway Test', () => {
       expect(typeof result.timestamp).toBe('string');
       // Verify it's a valid ISO string
       expect(new Date(result.timestamp)).toBeInstanceOf(Date);
-    });
-
-    it('should measure and return response time', async () => {
-      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
-      process.env.LLM_GATEWAY_API_KEY = 'test-key';
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        text: async () => '{}',
-      });
-
-      const result = await testGatewayConnectivity();
-
-      expect(result.responseTime).toBeDefined();
-      expect(typeof result.responseTime).toBe('number');
     });
 
     it('should include gateway URL in response', async () => {
