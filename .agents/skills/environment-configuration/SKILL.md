@@ -37,13 +37,15 @@ This skill provides comprehensive reference for all kaseki-agent environment var
 
 ### Optional Agent Variables
 
-| Variable | Default | Purpose | Values |
+<!-- BEGIN GENERATED PUBLIC ENVIRONMENT VARIABLES -->
+| Variable | Default | Description | Accepted values |
 |---|---|---|---|
-| `GIT_REF` | `main` | Git branch/tag/commit | Branch name, tag, or commit SHA |
-| `TASK_PROMPT` | (code fix) | Agent instruction | Natural language prompt |
-| `KASEKI_MODEL` | `openrouter/free` | LLM model to use | Model identifier or `openrouter/free` |
-| `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | Agent execution timeout | Seconds (typical: 10800–14400) |
-| `KASEKI_CAVEMAN` | `1` | Enable terse communication mode (Caveman skill) | `0` (disable) or `1` (enable, default) |
+| `GIT_REF` | `main` | Git branch, tag, or commit to check out | Branch name, tag, or commit SHA |
+| `TASK_PROMPT` | `A code-fix task` | Instruction passed to the coding agent | Natural-language task prompt |
+| `KASEKI_MODEL` | `auto` | LLM model used for agent execution | Provider-supported model identifier, or `auto` |
+| `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | Maximum agent execution time in seconds | Non-negative integer, up to 86400 |
+| `KASEKI_CAVEMAN` | `1` | Legacy switch for terse communication guidance | `0` (disable) or `1` (enable) |
+<!-- END GENERATED PUBLIC ENVIRONMENT VARIABLES -->
 
 ---
 
