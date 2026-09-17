@@ -14,6 +14,15 @@ type RecoveryCandidates = {
   partial: Map<string, Record<string, unknown>>;
 };
 
+/** Schema for each record in scouting-recovery-diagnostics.jsonl. */
+export type ScoutingRecoveryDiagnostic = {
+  timestamp: string;
+  event: 'artifact_recovery';
+  message: string;
+  recovery_attempted: true;
+  recovery_success: boolean;
+};
+
 export function stableStringify(obj: unknown): string {
   return JSON.stringify(obj, Object.keys(obj as Record<string, unknown>).sort());
 }
@@ -82,9 +91,14 @@ export function scoutingSchemaErrors(artifact: unknown, strict = true): string[]
   return errors;
 }
 
-export function logScoutingRecoveryDiagnostic(resultsDir: string, message: string, recovered: boolean): void {
-  const entry = {
-    timestamp: new Date().toISOString(),
+export function logScoutingRecoveryDiagnostic(
+  resultsDir: string,
+  message: string,
+  recovered: boolean,
+  now: () => Date = () => new Date(),
+): void {
+  const entry: ScoutingRecoveryDiagnostic = {
+    timestamp: now().toISOString(),
     event: 'artifact_recovery',
     message,
     recovery_attempted: true,
