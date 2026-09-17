@@ -1,4 +1,5 @@
-import { stagePhase, computePhaseDurations } from './run-scorecard-evidence-utils';
+import { stagePhase } from './run-scorecard-guards';
+import { computePhaseDurations } from './run-scorecard-evidence-utils';
 
 describe('run-scorecard-evidence-helpers', () => {
   describe('stagePhase', () => {

@@ -2,7 +2,7 @@ import { assignGrade, buildScorecard, calculateCoverage, collectEvidence, normal
 import { ScorecardContext } from './run-scorecard-context';
 import { RunScorecardSchema } from './types/run-scorecard';
 import { lifecycle, statusFrom } from './run-scorecard-evidence-status';
-import { bool, number, object } from './run-scorecard-evidence-utils';
+import { bool, number, object } from './run-scorecard-guards';
 import { aggregateTokenUsage, countRetries, providerRetryCounts } from './run-scorecard-evidence-tokens';
 
 describe('run scorecard', () => {

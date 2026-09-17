@@ -1,4 +1,5 @@
-import { object, number, bool, stagePhase, computePhaseDurations } from './run-scorecard-evidence-utils';
+import { object, number, bool, stagePhase } from './run-scorecard-guards';
+import { computePhaseDurations } from './run-scorecard-evidence-utils';
 
 describe('run-scorecard-evidence-utils', () => {
   describe('object', () => {

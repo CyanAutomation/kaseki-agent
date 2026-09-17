@@ -3,7 +3,7 @@
  * Separates phase detection concerns from the main evidence aggregation
  */
 
-import { number, object } from './run-scorecard-evidence-utils';
+import { number, object } from './run-scorecard-guards';
 import type { ArtifactSnapshot } from './run-scorecard-evidence-types';
 
 /**
@@ -12,7 +12,7 @@ import type { ArtifactSnapshot } from './run-scorecard-evidence-types';
  */
 export function detectPhaseReached(
   snapshot: ArtifactSnapshot,
-  metadata: Record<string, unknown>,
+  metadata: Record<string, unknown> | undefined,
   stageRows: unknown[],
   execution: {
     evaluation?: Record<string, unknown>;
@@ -22,27 +22,28 @@ export function detectPhaseReached(
     validationExitCode?: number;
   },
 ): Record<string, boolean> {
+  const meta = metadata ?? {};
   const hasStage = (pattern: RegExp) => stageRows.some(row => pattern.test(String(object(row)?.stage ?? '')));
 
   return {
-    goal_setting: Boolean(snapshot.json['goal-setting.json']) || hasStage(/goal.setting/i) || (number(metadata.goal_setting_duration_seconds) ?? 0) > 0,
-    scouting: Boolean(snapshot.json['scouting.json']) || hasStage(/scouting/i) || (number(metadata.scouting_duration_seconds) ?? 0) > 0,
+    goal_setting: Boolean(snapshot.json['goal-setting.json']) || hasStage(/goal.setting/i) || (number(meta.goal_setting_duration_seconds) ?? 0) > 0,
+    scouting: Boolean(snapshot.json['scouting.json']) || hasStage(/scouting/i) || (number(meta.scouting_duration_seconds) ?? 0) > 0,
     coding: Boolean(snapshot.json['pi-summary.json'])
       || Boolean(snapshot.text['pi-events.jsonl'])
       || hasStage(/pi coding agent/i)
       || (snapshot.text['git.diff'] ?? '').trim().length > 0
       || execution.noChangeAccepted,
     validation: execution.executedValidationRowsCount > 0
-      || (number(metadata.validation_commands_attempted) ?? 0) > 0
+      || (number(meta.validation_commands_attempted) ?? 0) > 0
       || (execution.validationExitCode !== undefined && execution.validationExitCode !== 0),
     goal_check: Boolean(snapshot.json['goal-check.json'])
       || hasStage(/goal check/i)
-      || (number(metadata.goal_check_duration_seconds) ?? 0) > 0
-      || String(metadata.failed_command ?? '').toLowerCase() === 'goal check'
-      || String(metadata.goal_check_failure_reason ?? '').trim().length > 0,
+      || (number(meta.goal_check_duration_seconds) ?? 0) > 0
+      || String(meta.failed_command ?? '').toLowerCase() === 'goal check'
+      || String(meta.goal_check_failure_reason ?? '').trim().length > 0,
     run_evaluation: Boolean(execution.evaluation)
       || hasStage(/run evaluation/i)
-      || (number(metadata.run_evaluation_duration_seconds) ?? 0) > 0
+      || (number(meta.run_evaluation_duration_seconds) ?? 0) > 0
       || execution.evaluatorFailed,
   };
 }
