@@ -4805,6 +4805,18 @@ exit 0
     const config = createTestConfig(resultsDir);
     const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
     try {
+      const preflight = await fetch(`http://127.0.0.1:${port}/api/preflight`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      const preflightBody = (await preflight.json()) as any;
+      const freshnessCheck = preflightBody.checks.find(
+        (check: any) => check.name === 'checkout-freshness',
+      );
+      expect(freshnessCheck.ok).toBe(false);
+      expect(freshnessCheck.detail).toContain(
+        'Failed to resolve controller checkout revision',
+      );
+
       const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
