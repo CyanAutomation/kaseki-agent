@@ -31,21 +31,18 @@ emit_event() {
 
 append_quality_violation() { :; }
 
-# Load only the helpers under test, while redirecting their container-only
-# absolute paths into this test's temporary workspace.
-eval "$(awk '
-  /^is_framework_validation_mutation_allowed\(\)/ { emit_check=1 }
-  /^check_secret_scan_allowlist\(\)/ { emit_check=0 }
-  emit_check { print }
-  /^collect_changed_file_set\(\)/ { emit_collect=1 }
-  /^restore_cleanup_disallowed_changes\(\)/ { emit_collect=0 }
-  emit_collect { print }
-' "$ROOT_DIR/kaseki-agent.sh" | sed "s#/workspace/repo#$TMP_DIR/repo#g; s#/results#$TMP_DIR/results#g")"
-
 # State snapshots live in the shared cleanup helper rather than the worker
 # entrypoint. It only declares functions when sourced.
 # shellcheck source=../scripts/auto-lint-cleanup-classification.sh
 source "$ROOT_DIR/scripts/auto-lint-cleanup-classification.sh"
+
+# Extract validation allowlist helper functions from kaseki-agent.sh
+eval "$(awk '
+  /^is_framework_validation_mutation_allowed\(\)/ { mode="framework"; print; next }
+  /^check_validation_allowlist\(\)/ { mode="validation"; print; next }
+  /^check_secret_scan_allowlist\(\)/ { if (mode != "") mode=""; next }
+  mode != "" { print }
+' "$ROOT_DIR/kaseki-agent.sh" | sed "s#/workspace/repo#$TMP_DIR/repo#g; s#/results#$TMP_DIR/results#g")"
 
 reset_quality_state() {
   QUALITY_EXIT=0

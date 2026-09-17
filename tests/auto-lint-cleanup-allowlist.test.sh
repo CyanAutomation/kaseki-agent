@@ -14,6 +14,9 @@ export KASEKI_RESULTS_DIR="$TMP_DIR/results"
 # shellcheck source=../scripts/allowlist-helper.sh
 . "$ROOT_DIR/scripts/allowlist-helper.sh"
 
+# shellcheck source=../scripts/auto-lint-cleanup-classification.sh
+. "$ROOT_DIR/scripts/auto-lint-cleanup-classification.sh"
+
 pass() { printf '✓ %s\n' "$1"; }
 fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
 
@@ -40,17 +43,15 @@ emit_event() {
   printf '\n' >> "$TMP_DIR/results/events.log"
 }
 
-emit_error_event() { emit_event "$@"; }
+emit_error_event() {
+  emit_event "$@"
+  # Map AUTO_LINT_CLEANUP_EXIT to QUALITY_EXIT for test validation
+  if [ "$1" = "auto_lint_cleanup_allowlist_failed" ]; then
+    QUALITY_EXIT=7
+  fi
+}
 collect_git_artifacts() { printf 'collect_git_artifacts\n' >> "$TMP_DIR/results/events.log"; }
 append_quality_violation() { :; }
-
-# Load only the helpers under test, while redirecting their container-only
-# absolute paths into this test's temporary workspace.
-eval "$(awk '
-  /^collect_changed_file_set\(\)/ { emit=1 }
-  /^run_auto_lint_cleanup\(\)/ { emit=0 }
-  emit { print }
-' "$ROOT_DIR/kaseki-agent.sh" | sed "s#/workspace/repo#$TMP_DIR/repo#g; s#/results#$TMP_DIR/results#g")"
 
 mkdir -p "$TMP_DIR/results" "$TMP_DIR/repo"
 : > "$TMP_DIR/results/quality.log"
