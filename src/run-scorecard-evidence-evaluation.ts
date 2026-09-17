@@ -1,4 +1,4 @@
-import { number, object } from './run-scorecard-evidence-utils';
+import { number, object } from './run-scorecard-guards';
 import type { StatusValue } from './run-scorecard-evidence-status';
 import { statusFrom } from './run-scorecard-evidence-status';
 

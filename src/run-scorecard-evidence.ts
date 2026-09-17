@@ -1,5 +1,6 @@
 import { aggregateTokenUsage, countRetries, providerRetryCounts } from './run-scorecard-evidence-tokens';
-import { number, object, computePhaseDurations } from './run-scorecard-evidence-utils';
+import { computePhaseDurations } from './run-scorecard-evidence-utils';
+import { number, object } from './run-scorecard-guards';
 import { lifecycle } from './run-scorecard-evidence-status';
 import { collectGoalCheckEvidence } from './run-scorecard-evidence-goal-check';
 import { collectValidationEvidence } from './run-scorecard-evidence-validation';

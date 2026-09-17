@@ -1,4 +1,4 @@
-import { bool, object } from './run-scorecard-evidence-utils';
+import { bool, object } from './run-scorecard-guards';
 
 export interface GoalCheckEvidence {
   goalCheckAvailable: boolean;
