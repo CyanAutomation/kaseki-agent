@@ -330,12 +330,80 @@ kill -TERM "$$"
     );
   });
 
-  test('entrypoint startup-check configuration points at the packaged script path', () => {
-    const entrypoint = fs.readFileSync(path.join(repoRoot, 'scripts/docker-entrypoint.sh'), 'utf-8');
+  test('entrypoint invokes the packaged startup check before command dispatch', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-entrypoint-startup-check-'));
 
-    expect(entrypoint).toContain('KASEKI_SKIP_STARTUP_CHECKS:-0');
-    expect(entrypoint).toContain('kaseki_run_startup_checks');
-    expect(entrypoint).toContain('Startup checks failed: blocking startup issue detected');
+    try {
+      const startupCheckStub = path.join(tempRoot, 'packaged', 'scripts', 'startup-checks.sh');
+      const startupCheckCapture = path.join(tempRoot, 'startup-check.args');
+      const commandStub = path.join(tempRoot, 'dispatched-command');
+      const commandCapture = path.join(tempRoot, 'command.args');
+
+      fs.mkdirSync(path.dirname(startupCheckStub), { recursive: true });
+      fs.writeFileSync(
+        startupCheckStub,
+        `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$0" "$@" > "$KASEKI_STARTUP_CHECK_CAPTURE"
+exit "${'${KASEKI_STARTUP_CHECK_STUB_EXIT:-0}'}"
+`,
+      );
+      fs.chmodSync(startupCheckStub, 0o755);
+
+      fs.writeFileSync(
+        commandStub,
+        `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$0" "$@" > "$KASEKI_COMMAND_CAPTURE"
+`,
+      );
+      fs.chmodSync(commandStub, 0o755);
+
+      const run = (env: NodeJS.ProcessEnv = {}) =>
+        spawnSync('bash', [path.join(repoRoot, 'scripts/docker-entrypoint.sh'), commandStub, 'command-argument'], {
+          encoding: 'utf-8',
+          env: {
+            ...process.env,
+            KASEKI_STARTUP_CHECK_PACKAGING_CONFIG: path.join(repoRoot, 'scripts/startup-check-packaging.sh'),
+            KASEKI_STARTUP_CHECK_PRIMARY_PATH: startupCheckStub,
+            KASEKI_STARTUP_CHECK_MODE: 'packaging-contract',
+            KASEKI_STARTUP_CHECK_CAPTURE: startupCheckCapture,
+            KASEKI_COMMAND_CAPTURE: commandCapture,
+            KASEKI_SKIP_PERMISSION_VALIDATION: '1',
+            KASEKI_SKIP_STARTUP_CHECKS: '0',
+            ...env,
+          },
+        });
+
+      const success = run();
+
+      expect(success.status).toBe(0);
+      expect(fs.readFileSync(startupCheckCapture, 'utf-8').split('\n').filter(Boolean)).toEqual([
+        startupCheckStub,
+        'packaging-contract',
+      ]);
+      expect(fs.readFileSync(commandCapture, 'utf-8').split('\n').filter(Boolean)).toEqual([
+        commandStub,
+        'command-argument',
+      ]);
+
+      fs.rmSync(startupCheckCapture);
+      fs.rmSync(commandCapture);
+      const skipped = run({ KASEKI_SKIP_STARTUP_CHECKS: '1' });
+
+      expect(skipped.status).toBe(0);
+      expect(fs.existsSync(startupCheckCapture)).toBe(false);
+      expect(fs.existsSync(commandCapture)).toBe(true);
+
+      fs.rmSync(commandCapture);
+      const blocked = run({ KASEKI_STARTUP_CHECK_STUB_EXIT: '2' });
+
+      expect(blocked.status).toBe(2);
+      expect(fs.existsSync(commandCapture)).toBe(false);
+      expect(blocked.stderr).toBe('Startup checks failed: blocking startup issue detected (exit 2)\n');
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 
   test('worker startup checks validate packaged agent helper files', () => {
