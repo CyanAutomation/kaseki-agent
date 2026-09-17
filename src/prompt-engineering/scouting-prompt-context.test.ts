@@ -329,7 +329,11 @@ describe('scouting-prompt-context', () => {
     it('should cap async file lists to the documented maximum per section', () => {
       const asyncImpact: AsyncImpactAnalysis = {
         ...mockAsyncImpact,
-        mockFiles: Array.from({ length: 8 }, (_, i) => `src/mock-${i}.ts`),
+        mockFiles: [
+          'src/__mocks__/my-api.mock.ts',
+          'src/[test]-fixture.ts',
+          ...Array.from({ length: 6 }, (_, i) => `src/mock-${i}.ts`),
+        ],
         testFiles: Array.from({ length: 8 }, (_, i) => `src/test-${i}.ts`),
         interfaceFiles: Array.from({ length: 6 }, (_, i) => `src/interface-${i}.ts`),
         consumerFiles: Array.from({ length: 6 }, (_, i) => `src/consumer-${i}.ts`),
@@ -337,8 +341,10 @@ describe('scouting-prompt-context', () => {
 
       const context = buildAsyncContext(asyncImpact);
 
-      expect(context).toContain('`src/mock-4.ts`');
-      expect(context).not.toContain('`src/mock-5.ts`');
+      expect(context).toContain('`src/__mocks__/my-api.mock.ts`');
+      expect(context).toContain('`src/[test]-fixture.ts`');
+      expect(context).toContain('`src/mock-2.ts`');
+      expect(context).not.toContain('`src/mock-3.ts`');
       expect(context).toContain('(and 3 more)');
 
       expect(context).toContain('`src/test-4.ts`');
@@ -425,18 +431,6 @@ const value = '**not context markup**';
 
       // Should still return empty
       expect(context).toBe('');
-    });
-
-    it('should handle special characters in file names', () => {
-      const specialFiles: AsyncImpactAnalysis = {
-        ...mockAsyncImpact,
-        mockFiles: ['src/__mocks__/my-api.mock.ts', 'src/[test]-fixture.ts'],
-      };
-
-      const context = buildAsyncContext(specialFiles);
-
-      expect(context).toContain('__mocks__');
-      expect(context).toContain('-');
     });
   });
 });
