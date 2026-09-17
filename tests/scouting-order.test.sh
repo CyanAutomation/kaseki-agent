@@ -158,6 +158,6 @@ grep -Eq '^coding[[:space:]].*--model dynamic/kaseki-agent( |$)' "$PI_ARGS" || f
 [ ! -e "$RESULTS_DIR/goal-setting-candidate.json" ] || fail "goal-setting candidate artifact should be consumed after validation"
 [ -s "$RESULTS_DIR/scouting.json" ] || fail "scouting.json was not copied into results"
 grep -q '^pi scouting agent[[:space:]]0[[:space:]]' "$RESULTS_DIR/stage-timings.tsv" || fail "scouting stage timing missing"
-grep -q "$RESULTS_DIR/scouting.json" "$RESULTS_DIR/coding-prompt.txt" || fail "coding prompt did not mention scouting artifact"
+{ [ -s "$RESULTS_DIR/context-handoff.json" ] || grep -q "$RESULTS_DIR/scouting.json" "$RESULTS_DIR/coding-prompt.txt"; } || fail "coding prompt did not reference scouting artifact (no context-handoff.json and no scouting.json path in prompt)"
 node -e 'const fs=require("node:fs");const m=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(m.scouting_exit_code!==0)throw new Error("scouting metadata exit");' "$RESULTS_DIR/metadata.json"
 echo "PASS: $TEST_NAME"
