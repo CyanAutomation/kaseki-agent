@@ -250,6 +250,7 @@ describe('LLM Gateway Test', () => {
     });
 
     it('should accept base URL format (e.g., /v1) and succeed when reachable', async () => {
+      const testStartedAt = new Date('2026-09-17T12:34:56.789Z');
       process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
       process.env.LLM_GATEWAY_API_KEY = 'test-key';
 
@@ -259,12 +260,14 @@ describe('LLM Gateway Test', () => {
         text: async () => '{"models": []}',
       });
 
-      const result = await testGatewayConnectivity();
+      const result = await testGatewayConnectivity({ now: () => testStartedAt });
 
       expect(result.status).toBe('ok');
       // Public response contract: docs/GATEWAY_TEST.md, "Gateway Health Response Contract".
       expect(Number.isFinite(result.responseTime)).toBe(true);
       expect(result.responseTime).toBeGreaterThanOrEqual(0);
+      expect(Number.isFinite(Date.parse(result.timestamp))).toBe(true);
+      expect(result.timestamp).toBe('2026-09-17T12:34:56.789Z');
       expect(result.authenticationValidated).toBe(true);
       expect(result.detail).toContain('Gateway is responsive');
       // Verify it converts /v1 to /v1/models for the test probe
@@ -350,24 +353,6 @@ describe('LLM Gateway Test', () => {
       expect(result.retryDelayMs).toBe(250);
       expect(mockFetch).toHaveBeenCalledTimes(2);
       expect(result.responseTime).toBeGreaterThanOrEqual(0);
-    });
-
-    it('should include timestamp in response', async () => {
-      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
-      process.env.LLM_GATEWAY_API_KEY = 'test-key';
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        text: async () => '{}',
-      });
-
-      const result = await testGatewayConnectivity();
-
-      expect(result.timestamp).toBeDefined();
-      expect(typeof result.timestamp).toBe('string');
-      // Verify it's a valid ISO string
-      expect(new Date(result.timestamp)).toBeInstanceOf(Date);
     });
 
     it('should include gateway URL in response', async () => {
