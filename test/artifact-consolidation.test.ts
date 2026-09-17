@@ -7,6 +7,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
+import { ARTIFACT_METADATA_REGISTRY } from '../src/artifact-metadata';
+import { ArtifactAvailability, type ArtifactMetadataDefinition } from '../src/kaseki-api-types';
 
 describe('Artifact Consolidation', () => {
   const KASEKI_RESULTS_DIR = process.env.TEST_RESULTS_DIR || '/tmp/kaseki-test-consolidation';
@@ -403,10 +405,9 @@ describe('Artifact Consolidation', () => {
   });
 
   describe('Registry Alignment', () => {
-    it('all consolidation targets are defined in artifact registry', async () => {
-      const registryPath = path.join(__dirname, '..', 'src', 'artifact-metadata.ts');
-      const registryContent = fs.readFileSync(registryPath, 'utf-8');
-
+    it('all consolidation targets satisfy the runtime artifact manifest schema', () => {
+      // This registry is the production artifact manifest, and
+      // ArtifactMetadataDefinition is the schema consumed by artifact discovery.
       const consolidationTargets = [
         'all-phase-summaries.json',
         'timings-manifest.json',
@@ -415,7 +416,17 @@ describe('Artifact Consolidation', () => {
       ];
 
       consolidationTargets.forEach(target => {
-        expect(registryContent).toContain(`'${target}'`);
+        const metadata: ArtifactMetadataDefinition | undefined = ARTIFACT_METADATA_REGISTRY[target];
+
+        expect(metadata).toBeDefined();
+        if (!metadata) {
+          throw new Error(`Missing runtime artifact metadata for ${target}`);
+        }
+        // The registry key is the public identifier; name is the artifact path.
+        expect(target).not.toHaveLength(0);
+        expect(metadata.name).toBe(target);
+        expect(metadata.description.trim()).not.toHaveLength(0);
+        expect(Object.values(ArtifactAvailability)).toContain(metadata.availability);
       });
     });
 
