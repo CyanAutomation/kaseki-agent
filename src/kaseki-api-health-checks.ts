@@ -316,18 +316,6 @@ export function resolveCheckoutFreshness(
   };
 }
 
-export function shouldBlockForFreshness(publishMode: string): boolean {
-  if (process.env.KASEKI_ENFORCE_FRESHNESS === '0') {
-    return false;
-  }
-  return (
-    publishMode === 'pr' ||
-    publishMode === 'draft_pr' ||
-    publishMode === 'branch' ||
-    publishMode === 'auto'
-  );
-}
-
 // =============================================================================
 // Template Health Status Checks
 // =============================================================================

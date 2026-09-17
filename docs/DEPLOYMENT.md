@@ -44,10 +44,9 @@ docker-compose logs -f kaseki-api
 ### Verify deployed revisions
 
 After each deployment, confirm that the controller checkout, worker template
-checkout, and worker image are all built from the intended current
-`origin/main` revision. Run the authenticated current preflight first; its
-`checkout-freshness`, `template-doctor`, and `image` checks are the source of
-truth for the running service:
+checkout, and worker image are built from the revisions you intend to run.
+Run the authenticated current preflight first; its `checkout-freshness`,
+`template-doctor`, and `image` checks show the deployed state:
 
 ```bash
 curl -sS -H "Authorization: Bearer $KASEKI_API_KEY" \
@@ -55,8 +54,9 @@ curl -sS -H "Authorization: Bearer $KASEKI_API_KEY" \
 ```
 
 On the controller host, compare the checked-out commit with the remote before
-building or restarting. The resulting SHA should match the preflight's
-`checkout-freshness` data and the template checkout reported by `template-doctor`:
+building or restarting when you want to update it. The API reports checkout
+drift in preflight but does not reject runs for a non-current controller
+checkout, allowing development work without interrupting active projects:
 
 ```bash
 git fetch origin main
