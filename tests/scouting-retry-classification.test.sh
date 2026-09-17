@@ -89,7 +89,8 @@ printf '{"selected_model":"test-model"}\n' > "$3"
 EOF_FILTER
   cat > "$fake_bin/timeout" <<'EOF_TIMEOUT'
 #!/usr/bin/env bash
-shift 3
+while [[ "${1:-}" == -* ]]; do shift; done
+shift
 "$@"
 EOF_TIMEOUT
   cat > "$fake_bin/validation-output-filter" <<'EOF_VALIDATION_FILTER'
