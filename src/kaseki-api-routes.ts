@@ -501,10 +501,10 @@ export function createApiRouter(
           .json(templateValidation.response);
       }
 
-      // 4. Normalize task mode
+      // 3. Normalize task mode
       normalizeTaskMode(runRequest);
 
-      // 5. Handle idempotency
+      // 4. Handle idempotency
       const idempotencyKey = runRequest.idempotencyKey || randomUUID();
       const requestFingerprint = buildRequestFingerprint(
         runRequest as Record<string, unknown>,
