@@ -61,6 +61,9 @@ milliseconds. It is operational telemetry rather than a precise elapsed-time
 guarantee; tests that require exact elapsed-time behavior must inject or mock
 the clock instead of comparing wall-clock measurements.
 
+`timestamp` is also a public response field for both stages. It records the
+test start time as a valid ISO-8601 string.
+
 ### Stage 1: Gateway Connectivity
 
 **What it tests:**
@@ -71,6 +74,7 @@ the clock instead of comparing wall-clock measurements.
 **Response fields:**
 - `status` — 'ok' or 'bad'
 - `responseTime` — Milliseconds to first response
+- `timestamp` — ISO-8601 test start time
 - `authenticationValidated` — Boolean
 - `detail` — Status message
 

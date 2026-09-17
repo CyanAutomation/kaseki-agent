@@ -47,7 +47,7 @@ export interface ConnectivityTestResult {
   detail: string; // e.g., "Gateway is responsive (1234ms)"
   gatewayUrl: string;
   responseTime: number; // milliseconds for /models request
-  timestamp: string; // ISO 8601
+  timestamp: string; // Public response field: test start time in ISO 8601 format
   authenticationValidated: boolean; // API key accepted by /models endpoint
   remediation?: string; // Error recovery steps
   httpStatus?: number; // HTTP status from /models endpoint
@@ -174,6 +174,12 @@ export { resolveGatewayApiKey, detectGatewayTestEnvironment, shouldRunGatewayRes
 export interface PiProviderSmokeTestOptions {
   requested?: boolean;
   debug?: boolean; // Log full response and diagnostics
+}
+
+/** Options for the combined gateway connectivity test. */
+export interface GatewayConnectivityTestOptions extends GatewayTestOptions {
+  /** Clock override used to make callers such as tests deterministic. */
+  now?: () => Date;
 }
 
 type PiProviderSmokeConfig =
@@ -889,9 +895,9 @@ export async function testGatewayConnectivity_Stage1(): Promise<ConnectivityTest
  *
  * @returns Gateway test result with status and diagnostics
  */
-export async function testGatewayConnectivity(options: GatewayTestOptions = {}): Promise<GatewayTestResult> {
+export async function testGatewayConnectivity(options: GatewayConnectivityTestOptions = {}): Promise<GatewayTestResult> {
   const startTime = performance.now();
-  const timestamp = new Date().toISOString();
+  const timestamp = (options.now ?? (() => new Date()))().toISOString();
   const config = validateGatewayConnectivityConfig(timestamp);
 
   if (!config.ok) {
