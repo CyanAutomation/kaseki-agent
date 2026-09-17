@@ -100,14 +100,39 @@ cat > "$FAKE_BIN/validation-output-filter" <<'EOF_VALIDATION_FILTER'
 #!/usr/bin/env bash
 cat
 EOF_VALIDATION_FILTER
+cat > "$FAKE_BIN/tsc" <<'EOF_TSC'
+#!/usr/bin/env bash
+exit 0
+EOF_TSC
+cat > "$FAKE_BIN/eslint" <<'EOF_ESLINT'
+#!/usr/bin/env bash
+exit 0
+EOF_ESLINT
 chmod +x "$FAKE_BIN"/*
 
+# Create node_modules/.bin directory with links to fake tsc and eslint
+mkdir -p "$FAKE_REPO/node_modules/.bin"
+ln -sf "$FAKE_BIN/tsc" "$FAKE_REPO/node_modules/.bin/tsc"
+ln -sf "$FAKE_BIN/eslint" "$FAKE_REPO/node_modules/.bin/eslint"
+
 set +e
-env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspect then code" \
-  OPENROUTER_API_KEY=test LLM_GATEWAY_URL=https://example.invalid/v1 LLM_GATEWAY_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off \
+env \
+  PATH="$FAKE_BIN:$PATH" \
+  REPO_URL="$FAKE_REPO" \
+  GIT_REF=main \
+  TASK_PROMPT="inspect then code" \
+  OPENROUTER_API_KEY=test \
+  LLM_GATEWAY_URL=https://example.invalid/v1 \
+  LLM_GATEWAY_API_KEY=test \
+  GITHUB_APP_ENABLED=0 \
+  KASEKI_GIT_CACHE_MODE=off \
+  KASEKI_SKIP_GATEWAY_HEALTH_CHECK=1 \
   KASEKI_WORKSPACE_DIR="$TMP_DIR" \
-  KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
-  KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" KASEKI_VALIDATION_COMMANDS=":" KASEKI_ALLOW_EMPTY_DIFF=1 \
+  KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" \
+  KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
+  KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" \
+  KASEKI_VALIDATION_COMMANDS=":" \
+  KASEKI_ALLOW_EMPTY_DIFF=1 \
   bash "$MODIFIED_SCRIPT" > "$RUN_LOG" 2>&1
 run_exit=$?
 set -e
