@@ -4742,35 +4742,50 @@ exit 0
     }
   });
 
-  test('rejects publishable run submission when controller checkout is behind origin', async () => {
+  test('admits publishable run submission when controller checkout is behind origin', async () => {
     const stale = createStaleCheckout();
     writeTemplateMetadata(['auto', 'none', 'branch', 'pr', 'draft_pr'], stale.localSha);
     writeRunKasekiDoctor(0, 'doctor ok');
     const scheduler = createMockScheduler();
+    scheduler.submitJob.mockImplementation((runRequest: any) => ({
+      id: 'job-stale-checkout',
+      status: 'queued',
+      createdAt: new Date(),
+      resultDir: path.join(resultsDir, 'job-stale-checkout'),
+      requestId: runRequest.requestId,
+      correlationId: runRequest.correlationId,
+      request: runRequest,
+    }));
     const config = createTestConfig(resultsDir);
     const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
 
     try {
+      const preflight = await fetch(`http://127.0.0.1:${port}/api/preflight`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      const preflightBody = (await preflight.json()) as any;
+      const freshnessCheck = preflightBody.checks.find(
+        (check: any) => check.name === 'checkout-freshness',
+      );
+      expect(freshnessCheck.ok).toBe(false);
+      expect(freshnessCheck.detail).toContain('Controller checkout is different from origin/main');
+
       const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
         body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'pr' })
       });
 
-      expect(response.status).toBe(409);
-      const body = (await response.json()) as any;
-      expect(body.detail).toContain('Controller checkout is different from origin/main');
-      expect(body.localRef).toBe(stale.localSha);
-      expect(body.remoteRef).toBe(stale.remoteSha);
-      expect(body.remediation).toBe('Run scripts/kaseki-activate.sh --controller bootstrap.');
-      expect(scheduler.submitJob).not.toHaveBeenCalled();
+      expect(response.status).toBe(202);
+      await drainResponseBody(response);
+      expect(scheduler.submitJob).toHaveBeenCalled();
     } finally {
       fs.rmSync(stale.remoteDir, { recursive: true, force: true });
       await cleanupTestApp(server, idempotencyStore);
     }
   });
 
-  test('returns specific checkout diagnostics for git rev-parse permission failures when enforcement applies', async () => {
+  test('admits publishable runs when controller git metadata is unreadable', async () => {
     writeTemplateMetadata(['auto', 'none', 'branch', 'pr', 'draft_pr']);
     writeRunKasekiDoctor(0, 'doctor ok');
     // Create intentionally invalid git metadata so rev-parse fails consistently,
@@ -4778,6 +4793,15 @@ exit 0
     fs.mkdirSync(path.join(checkoutDir, '.git'), { recursive: true });
 
     const scheduler = createMockScheduler();
+    scheduler.submitJob.mockImplementation((runRequest: any) => ({
+      id: 'job-unreadable-checkout',
+      status: 'queued',
+      createdAt: new Date(),
+      resultDir: path.join(resultsDir, 'job-unreadable-checkout'),
+      requestId: runRequest.requestId,
+      correlationId: runRequest.correlationId,
+      request: runRequest,
+    }));
     const config = createTestConfig(resultsDir);
     const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
     try {
@@ -4786,12 +4810,9 @@ exit 0
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
         body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'pr' })
       });
-      expect(response.status).toBe(409);
-      const body = (await response.json()) as any;
-      expect(body.detail).toContain('git rev-parse HEAD');
-      // When .git/HEAD is unreadable, git returns "not a git repository" rather than "permission denied"
-      expect(body.detail).toMatch(/permission denied|not a git repository/);
-      expect(body.detail).toContain('stderr tail');
+      expect(response.status).toBe(202);
+      await drainResponseBody(response);
+      expect(scheduler.submitJob).toHaveBeenCalled();
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }
