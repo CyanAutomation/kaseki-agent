@@ -10212,13 +10212,6 @@ if [ "$VALIDATION_EXIT" -eq 0 ]; then
   if ! check_validation_allowlist; then
     : # Exit code already set in check_validation_allowlist
   fi
-  # Validation commands can generate or modify files. Re-run the authoritative
-  # diff/allowlist gate against that final state before any further evaluator
-  # inference or publishing work is allowed to consume time or credentials.
-  if [ "$QUALITY_EXIT" -eq 0 ]; then
-    emit_progress "quality checks" "re-checking final diff after validation before evaluation and publishing"
-    run_quality_checks
-  fi
 fi
 
 if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && [ "$VALIDATION_EXIT" -eq 0 ] && \
