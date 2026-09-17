@@ -1,5 +1,17 @@
 version: 2
 updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    labels:
+      - "infrastructure"
+      - "dependencies"
+    commit-message:
+      prefix: "chore(actions)"
+
   # npm dependency updates
   - package-ecosystem: "npm"
     directory: "/"

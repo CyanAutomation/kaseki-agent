@@ -1499,25 +1499,22 @@ The package is published to npm registry via GitHub Actions:
 
 **Automated Flow (Recommended)**
 
-1. Run the **Release** workflow (`.github/workflows/release.yml`) manually or via push
+1. Run the **Release** workflow (`.github/workflows/release.yml`) manually from `main`
    - Creates semantic version tags via `semantic-release`
    - Generates GitHub release notes
-2. **Publish NPM** workflow (`.github/workflows/publish-npm.yml`) runs automatically
-   - Triggered when Release completes successfully
-   - Builds package, publishes to npm, verifies on registry
+   - Runs the complete release validation suite before publishing
+2. Successful releases call the reusable **Publish NPM** and **Publish Docker Image** workflows
+   - Both use the immutable release commit and exact release version
+   - Docker first publishes a candidate digest, scans and smoke-tests it, then promotes that digest to the version and `latest` tags
+   - NPM builds, publishes, and verifies the exact synchronized package version
 
 **Manual Publishing (Recovery Scenario)**
 
-If the automatic publish fails (e.g., transient network issue) but Release succeeded:
+If a publish job fails (for example, because of a transient registry error) after Release succeeded:
 
-1. Open GitHub Actions → "Publish NPM" workflow
-2. Click "Run workflow" button
-3. **Tags input** (optional):
-   - Leave empty to auto-detect from latest git tag (default)
-   - Provide comma-separated tags to override (e.g., `1.2.3,latest`)
-4. Click "Run workflow"
-5. Monitor the run in the Actions tab
-6. Verify on npm registry: `npm view @cyanautomation/kaseki-agent@<version>`
+1. Open the original **Release** workflow run in GitHub Actions.
+2. Re-run the failed publish job so it retains the original immutable release inputs.
+3. Verify on npm registry: `npm view @cyanautomation/kaseki-agent@<version>`
 
 **Troubleshooting: 404 Not Found on npm publish**
 
@@ -1537,7 +1534,7 @@ This means your npm account/organization **isn't configured for OIDC trusted pub
 **After setup, retry:**
 
 ```bash
-# GitHub Actions → Publish NPM → Run workflow (leave tags empty or provide explicit version)
+# GitHub Actions → Release → re-run the failed Publish NPM job
 ```
 
 If OIDC still doesn't work, see [npm OIDC docs](https://docs.npmjs.com/cli/using-npm/configure-npm/configuring-your-npm-client-with-github-actions) or contact npm support.
@@ -1547,15 +1544,15 @@ If OIDC still doesn't work, see [npm OIDC docs](https://docs.npmjs.com/cli/using
 **Option A: Retry with new prerelease version** (recommended for testing)
 
 1. Create a new git tag: `git tag v1.4.2-retry.1 && git push origin v1.4.2-retry.1`
-2. Run Publish NPM workflow
-3. Leave tags input empty (will auto-detect new version)
+2. Run the Release workflow for the new release commit
+3. Re-run the resulting publish job only if it failed transiently
 4. Or explicitly provide: `1.4.2-retry.1`
 
 **Option B: Manual version override** (for recovery with explicit version)
 
 1. Run Publish NPM workflow manually
-2. In the tags input, provide the **exact new version**: `1.4.2`
-3. Workflow will update package.json and publish the new version
+2. Release the **exact existing synchronized version**: `1.4.2`
+3. The reusable workflow verifies package.json and the lockfile before publishing
 
 **Manual Publishing with Custom Version (Testing)**
 
@@ -1563,7 +1560,7 @@ For one-off test publishes (alpha/beta/rc tags):
 
 1. Create a git tag: `git tag v1.2.3-alpha.1 && git push origin v1.2.3-alpha.1`
 2. Run Publish NPM workflow manually
-3. Provide custom tags: `1.2.3-alpha.1` (or leave empty to auto-detect)
+3. Run the Release workflow from the corresponding release commit
 
 **Checking Published Versions**
 
