@@ -64,6 +64,10 @@ export interface CausalityAssessment {
   };
 }
 
+export interface CausalityAnalysisClock {
+  now(): Date;
+}
+
 /**
  * Signal 1: Parse validation logs and extract test failures
  */
@@ -368,15 +372,19 @@ export function assessCausality(
 }
 
 /**
- * Generate validation-causality-analysis.json artifact
+ * Generate validation-causality-analysis.json artifact.
+ *
+ * The artifact timestamp records when the artifact is created, as defined by
+ * docs/ARTIFACT_SCHEMAS.md#validation-causality-analysisjson.
  */
 export function generateCausalityAnalysisArtifact(
   assessment: CausalityAssessment,
-  outputPath: string
+  outputPath: string,
+  clock: CausalityAnalysisClock = { now: () => new Date() }
 ): boolean {
   try {
     const artifact = {
-      timestamp: new Date().toISOString(),
+      timestamp: clock.now().toISOString(),
       assessment,
       version: '1.0',
     };
