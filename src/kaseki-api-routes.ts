@@ -30,11 +30,9 @@ import { getCachedStartupHealthReport } from './kaseki-api/startup-summary-artif
 import { healthReportToMarkdown } from './kaseki-api/startup-health-reporter';
 import {
   checkGitHubAppCredentials,
-  resolveCheckoutFreshness,
   getSubmissionTemplateHealthStatus,
   checkTemplatePublishModeCompatibility,
   TEMPLATE_REMEDIATION,
-  shouldBlockForFreshness,
   isTemplateDoctorTimeout,
 } from './kaseki-api-health-checks';
 import { buildPreflightResponse as buildPreflightResponseImpl } from './kaseki-api-routes-preflight';
@@ -352,41 +350,6 @@ export function createApiRouter(
   }
 
   /**
-   * Extract: Validate checkout freshness for publishable runs.
-   */
-  async function validateCheckoutFreshness(
-    publishMode: string,
-  ): Promise<{ ok: boolean; response?: Record<string, unknown> }> {
-    const templateDir =
-      process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
-    const checkoutDir =
-      process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
-    const freshness = resolveCheckoutFreshness(
-      checkoutDir,
-      process.env.KASEKI_REF || 'main',
-      templateDir,
-    );
-
-    if (shouldBlockForFreshness(publishMode) && freshness.stale) {
-      return {
-        ok: false,
-        response: {
-          type: 'https://api.kaseki.local/errors#checkout-stale',
-          title: 'Conflict',
-          status: 409,
-          detail: freshness.detail,
-          checkoutDir: freshness.checkoutDir,
-          localRef: freshness.localRef,
-          remoteRef: freshness.remoteRef,
-          remoteUrl: freshness.remoteUrl,
-          remediation: freshness.remediation || TEMPLATE_REMEDIATION,
-        },
-      };
-    }
-    return { ok: true };
-  }
-
-  /**
    * Extract: Validate template readiness and compatibility.
    */
   async function validateTemplateReadiness(publishMode: string): Promise<{
@@ -528,14 +491,8 @@ export function createApiRouter(
         );
       }
 
-      // 2. Validate checkout freshness
-      const freshnessValidation =
-        await validateCheckoutFreshness(effectivePublishMode);
-      if (!freshnessValidation.ok) {
-        return res.status(409).json(freshnessValidation.response);
-      }
-
-      // 3. Validate template readiness
+      // 2. Validate template readiness. Checkout freshness remains advisory in
+      // /api/preflight so development checkouts cannot interrupt active runs.
       const templateValidation =
         await validateTemplateReadiness(effectivePublishMode);
       if (!templateValidation.ok) {

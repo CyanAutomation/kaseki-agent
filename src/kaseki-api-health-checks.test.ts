@@ -23,7 +23,6 @@ import {
   checkTemplateActivatorParity,
   getSubmissionTemplateHealthStatus,
   checkTemplatePublishModeCompatibility,
-  shouldBlockForFreshness,
   isTemplateDoctorTimeout,
   TEMPLATE_REMEDIATION,
   TemplateHealthStatus,
@@ -449,22 +448,6 @@ describe('checkTemplatePublishModeCompatibility', () => {
     spyFs('readFileSync').mockReturnValue('invalid json');
 
     expect(() => checkTemplatePublishModeCompatibility('pr')).toThrow();
-  });
-});
-
-describe('shouldBlockForFreshness', () => {
-  it.each(['pr', 'draft_pr', 'branch', 'auto'])('blocks publish mode %s', (mode) => {
-    expect(shouldBlockForFreshness(mode)).toBe(true);
-  });
-
-  it.each(['scouting', 'local'])('does not block non-publish mode %s', (mode) => {
-    expect(shouldBlockForFreshness(mode)).toBe(false);
-  });
-
-  it('honors KASEKI_ENFORCE_FRESHNESS=0', () => {
-    setEnv({ KASEKI_ENFORCE_FRESHNESS: '0' });
-
-    expect(shouldBlockForFreshness('pr')).toBe(false);
   });
 });
 
