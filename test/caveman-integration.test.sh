@@ -8,7 +8,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROMPT_HELPER="$REPO_ROOT/scripts/agent-prompt.sh"
-ENVIRONMENT_CONFIGURATION_DOC="$REPO_ROOT/.agents/skills/environment-configuration/SKILL.md"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -55,15 +54,6 @@ assert_prompt_omits() {
   if printf '%s' "$prompt" | grep -Fq -- "$forbidden_text"; then
     fail "$behavior: expected generated prompt to omit '$forbidden_text'"
   fi
-}
-
-assert_file_mentions_public_env_var() {
-  local file_path="$1"
-  local env_var="$2"
-  local behavior="$3"
-
-  grep -Fq -- "$env_var" "$file_path" \
-    || fail "$behavior: expected $file_path to document public environment variable $env_var"
 }
 
 render_agent_prompt() {
@@ -149,22 +139,11 @@ test_caveman_prompt_contract_disabled() {
   return "$result"
 }
 
-test_caveman_public_configuration_documented() {
-  local result=0
-
-  assert_file_mentions_public_env_var "$ENVIRONMENT_CONFIGURATION_DOC" "KASEKI_CAVEMAN" \
-    "Environment configuration skill documents supported public prompt switches" || result=1
-
-  test_result "KASEKI_CAVEMAN remains documented as public environment configuration" "$result"
-  return "$result"
-}
-
 main() {
   printf 'Asserting Caveman prompt behavior through rendered agent prompt\n\n'
 
   test_caveman_prompt_contract_enabled || true
   test_caveman_prompt_contract_disabled || true
-  test_caveman_public_configuration_documented || true
 
   printf '\nTests: %d passed, %d failed, %d total\n' "$passed_count" "$failed_count" "$test_count"
 

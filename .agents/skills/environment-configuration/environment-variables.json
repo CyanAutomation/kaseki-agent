@@ -1,0 +1,32 @@
+[
+  {
+    "name": "GIT_REF",
+    "description": "Git branch, tag, or commit to check out",
+    "default": "main",
+    "acceptedValues": "Branch name, tag, or commit SHA"
+  },
+  {
+    "name": "TASK_PROMPT",
+    "description": "Instruction passed to the coding agent",
+    "default": "A code-fix task",
+    "acceptedValues": "Natural-language task prompt"
+  },
+  {
+    "name": "KASEKI_MODEL",
+    "description": "LLM model used for agent execution",
+    "default": "auto",
+    "acceptedValues": "Provider-supported model identifier, or `auto`"
+  },
+  {
+    "name": "KASEKI_AGENT_TIMEOUT_SECONDS",
+    "description": "Maximum agent execution time in seconds",
+    "default": "10800",
+    "acceptedValues": "Non-negative integer, up to 86400"
+  },
+  {
+    "name": "KASEKI_CAVEMAN",
+    "description": "Legacy switch for terse communication guidance",
+    "default": "1",
+    "acceptedValues": "`0` (disable) or `1` (enable)"
+  }
+]
