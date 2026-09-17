@@ -192,6 +192,9 @@ fi
 
 **Output Location**: `/results/validation-causality-analysis.json`
 
+The top-level `timestamp` records artifact creation time, not validation start or completion time.
+See the canonical [artifact schema](ARTIFACT_SCHEMAS.md#validation-causality-analysisjson).
+
 **Artifact Structure**:
 
 ```json
