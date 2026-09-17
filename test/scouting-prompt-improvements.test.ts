@@ -29,7 +29,9 @@ function countOccurrences(content: string, instruction: string): number {
   return content.split(instruction).length - 1;
 }
 
-function buildRuntimeScoutingPrompt(): string {
+function buildRuntimeScoutingPrompt(
+  taskPrompt = 'Update parser behavior and its tests.',
+): string {
   const agentScript = path.join(__dirname, '..', 'kaseki-agent.sh');
   const runtime = spawnSync('bash', ['-c', `
     set -euo pipefail
@@ -42,7 +44,7 @@ function buildRuntimeScoutingPrompt(): string {
     env: {
       ...process.env,
       SCRIPT_DIR: path.dirname(agentScript),
-      TASK_PROMPT: 'Update parser behavior and its tests.',
+      TASK_PROMPT: taskPrompt,
       KASEKI_SCOUTING_PROMPT_DETAIL: 'verbose',
       KASEKI_SCOUTING_CONTRACT_RETRY: '0',
       GOAL_SETTING_ARTIFACT: '/results/goal-setting.json',
@@ -275,9 +277,17 @@ describe('Phase 3: Provider & Error Context', () => {
     expect(promptContent.toLowerCase()).toContain('execution context');
   });
 
-  test('should include error handling guidance', () => {
-    // Phase 3 requirement: What to do on failures
-    expect(promptContent).toContain('Error Handling');
+  test('renders failure recovery guidance [SCOUTING_PROMPT_DESIGN §3 Provider-Agnostic Execution Context]', () => {
+    const failureScenario = [
+      'Scout a parser update after discovering that src/config.json is malformed',
+      'and src/generated/ cannot be read.',
+    ].join(' ');
+    const runtimePrompt = buildRuntimeScoutingPrompt(failureScenario);
+
+    expect(runtimePrompt).toContain(failureScenario);
+    expect(runtimePrompt).toMatch(/report the error in observations/i);
+    expect(runtimePrompt).toMatch(/proceed with limited scope/i);
+    expect(runtimePrompt).toMatch(/do not fail the entire scouting phase[^\n]*adapt and continue/i);
   });
 
   test('should enforce the artifact size limit from SCOUTING_PROMPT_DESIGN.md §5', () => {
