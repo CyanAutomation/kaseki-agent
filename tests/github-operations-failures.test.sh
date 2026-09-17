@@ -120,7 +120,7 @@ write_common_fake_bin() {
 set -uo pipefail
 if [ "${1:-}" = "-C" ]; then
   git_dir="$2"
-  shift 2
+  shift 3
   cd "$git_dir"
 fi
 if [ "${1:-}" = "clone" ]; then

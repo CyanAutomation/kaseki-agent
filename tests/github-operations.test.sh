@@ -142,7 +142,7 @@ prepare_agent_copy() {
 
 run_agent_case() {
   local case_name="$1" expected_exit="$2"
-  shift 2
+  shift 3
   local case_dir="$TMP_DIR/$case_name"
   local source_repo="$case_dir/source-repo"
   local results_dir="$case_dir/results"

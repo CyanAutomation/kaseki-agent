@@ -112,34 +112,33 @@ fi
   );
 
   // Create fake 'timeout' command
-  fs.writeFileSync(
-    path.join(binDir, 'timeout'),
-    `#!/usr/bin/env bash
-set -euo pipefail
-
-while [ "$#" -gt 0 ] && [[ "\${1}" == -* ]]; do
-  case "\${1}" in
-    --signal=*|--kill-after=*)
-      shift
-      ;;
-    --signal|--kill-after)
-      shift
-      if [ "$#" -gt 0 ]; then shift; fi
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-
-if [ "$#" -gt 0 ]; then
-  shift
-fi
-
-exec "$@"
-`,
-    { mode: 0o700 }
-  );
+  // Using explicit string construction to avoid template literal escaping issues
+  const timeoutScript = [
+    '#!/usr/bin/env bash',
+    'set -euo pipefail',
+    '',
+    'while [ "$#" -gt 0 ] && [[ "${1}" == -* ]]; do',
+    '  case "${1}" in',
+    '    --signal=*|--kill-after=*)',
+    '      shift',
+    '      ;;',
+    '    --signal|--kill-after)',
+    '      shift',
+    '      if [ "$#" -gt 0 ]; then shift; fi',
+    '      ;;',
+    '    *)',
+    '      shift',
+    '      ;;',
+    '  esac',
+    'done',
+    '',
+    'if [ "$#" -gt 0 ]; then',
+    '  shift',
+    'fi',
+    '',
+    'exec "$@"',
+  ].join('\n');
+  fs.writeFileSync(path.join(binDir, 'timeout'), timeoutScript, { mode: 0o700 });
 
   // Create fake 'kaseki-pi-progress-stream' command
   fs.writeFileSync(
