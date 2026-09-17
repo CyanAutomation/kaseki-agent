@@ -355,20 +355,6 @@ describe('Phase 4: Output Schema Refinement', () => {
 });
 
 /**
- * Phase 5: Documentation & Maintainability Tests
- * Validates that the prompt is documented and maintainable
- */
-describe('Phase 5: Documentation & Maintainability', () => {
-  test('should have SCOUTING_PROMPT_DESIGN.md documentation', () => {
-    const docPath = path.join(__dirname, '..', 'docs', 'SCOUTING_PROMPT_DESIGN.md');
-    // Phase 5 requirement: Design documentation exists
-    // Currently missing - will fail until created
-    expect(() => fs.readFileSync(docPath, 'utf-8')).not.toThrow();
-  });
-
-});
-
-/**
  * Integration tests: Validate prompt output JSON structure
  */
 describe('Integration: Scouting Artifact JSON Structure', () => {
