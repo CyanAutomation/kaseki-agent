@@ -249,30 +249,85 @@ kill -TERM "$$"
       });
     });
 
-    test('KASEKI_SKIP_PERMISSION_VALIDATION=1 skips API dispatch permission checks (test isolation)', () => {
-      // This test documents that the skip flag allows unit tests to exercise API dispatch
-      // without requiring writable /agents directories to exist on the test system.
-      // In production, permission validation always runs (when the flag is unset or 0).
-      withTempRoot('kaseki-entrypoint-skip-perms-', (tempRoot) => {
-        const capturePath = path.join(tempRoot, 'api-perms-skip.args');
-        writeCaptureStub(path.join(tempRoot, 'bin', 'node'));
+    const permissionValidationCases = [
+      { args: ['api'], mode: 'api', validatesByDefault: true },
+      { args: ['kaseki-api'], mode: 'kaseki-api', validatesByDefault: true },
+      { args: ['agent'], mode: 'agent', validatesByDefault: false },
+      { args: ['explicit-command'], mode: 'explicit-command', validatesByDefault: false },
+    ];
 
-        // API dispatch WITH skip flag succeeds (even if /agents dirs don't exist or aren't writable)
-        const resultWithSkip = runEntrypoint(['api', '--port', '9000'], tempRoot, {
-          KASEKI_TEST_CAPTURE_PATH: capturePath,
-          KASEKI_SKIP_PERMISSION_VALIDATION: '1',
+    test.each(permissionValidationCases)(
+      'permission validation is enabled only for $mode mode by default',
+      ({ args, mode, validatesByDefault }) => {
+        withTempRoot(`kaseki-entrypoint-${mode}-permissions-`, (tempRoot) => {
+          const capturePath = path.join(tempRoot, `${mode}.args`);
+          const permissionRoot = path.join(tempRoot, 'missing-permission-root');
+          const env: NodeJS.ProcessEnv = {
+            KASEKI_ROOT: permissionRoot,
+            KASEKI_TEST_CAPTURE_PATH: capturePath,
+          };
+
+          if (mode === 'api' || mode === 'kaseki-api') {
+            writeCaptureStub(path.join(tempRoot, 'bin', 'node'));
+          } else if (mode === 'agent') {
+            const agentPath = path.join(tempRoot, 'bin', 'kaseki-agent');
+            writeCaptureStub(agentPath);
+            env.KASEKI_AGENT_BIN = agentPath;
+          } else {
+            writeCaptureStub(path.join(tempRoot, 'bin', 'explicit-command'));
+          }
+
+          const result = runEntrypoint(args, tempRoot, env);
+          const validationWasInvoked = result.stderr.includes(
+            `warning: required directory does not exist: ${permissionRoot}`,
+          );
+
+          expect(result.status).toBe(0);
+          expect(result.signal).toBeNull();
+          expect(validationWasInvoked).toBe(validatesByDefault);
+          expect(readCapturedArgs(capturePath)[0]).toBe(
+            mode === 'api' || mode === 'kaseki-api'
+              ? path.join(tempRoot, 'bin', 'node')
+              : path.join(tempRoot, 'bin', mode === 'agent' ? 'kaseki-agent' : 'explicit-command'),
+          );
         });
+      },
+    );
 
-        expect(resultWithSkip.status).toBe(0);
-        expect(resultWithSkip.signal).toBeNull();
-        expect(readCapturedArgs(capturePath)).toEqual([
-          path.join(tempRoot, 'bin', 'node'),
-          '/app/dist/kaseki-api-service.js',
-          '--port',
-          '9000',
-        ]);
-      });
-    });
+    test.each(permissionValidationCases)(
+      'KASEKI_SKIP_PERMISSION_VALIDATION=1 suppresses validation for $mode mode',
+      ({ args, mode }) => {
+        withTempRoot(`kaseki-entrypoint-${mode}-skip-permissions-`, (tempRoot) => {
+          const capturePath = path.join(tempRoot, `${mode}.args`);
+          const permissionRoot = path.join(tempRoot, 'missing-permission-root');
+          const env: NodeJS.ProcessEnv = {
+            KASEKI_ROOT: permissionRoot,
+            KASEKI_SKIP_PERMISSION_VALIDATION: '1',
+            KASEKI_TEST_CAPTURE_PATH: capturePath,
+          };
+
+          if (mode === 'api' || mode === 'kaseki-api') {
+            writeCaptureStub(path.join(tempRoot, 'bin', 'node'));
+          } else if (mode === 'agent') {
+            const agentPath = path.join(tempRoot, 'bin', 'kaseki-agent');
+            writeCaptureStub(agentPath);
+            env.KASEKI_AGENT_BIN = agentPath;
+          } else {
+            writeCaptureStub(path.join(tempRoot, 'bin', 'explicit-command'));
+          }
+
+          const result = runEntrypoint(args, tempRoot, env);
+          const validationWasInvoked = result.stderr.includes(
+            `warning: required directory does not exist: ${permissionRoot}`,
+          );
+
+          expect(result.status).toBe(0);
+          expect(result.signal).toBeNull();
+          expect(validationWasInvoked).toBe(false);
+          expect(fs.existsSync(capturePath)).toBe(true);
+        });
+      },
+    );
   });
 
   test('entrypoint startup-check configuration points at the packaged script path', () => {
@@ -291,16 +346,6 @@ kill -TERM "$$"
     expect(startupChecks).toContain('allowlist-helper.sh');
     expect(startupChecks).toContain('dependency-cache-helpers.sh');
     expect(startupChecks).toContain('lib/json.sh');
-  });
-
-  test('entrypoint permission-validation configuration can be skipped for testing', () => {
-    const entrypoint = fs.readFileSync(path.join(repoRoot, 'scripts/docker-entrypoint.sh'), 'utf-8');
-
-    // Verify the skip flag mechanism exists in the entrypoint
-    expect(entrypoint).toContain('KASEKI_SKIP_PERMISSION_VALIDATION:-0');
-    // Verify it only runs for API mode
-    expect(entrypoint).toContain('api');
-    expect(entrypoint).toContain('kaseki-api');
   });
 
   test('entrypoint exports shared path defaults before command dispatch', () => {
