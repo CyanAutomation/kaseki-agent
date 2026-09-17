@@ -22,7 +22,7 @@ jobs:
           node-version: "24"
           cache: npm
       - name: Install ShellCheck
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck ripgrep
       - run: npm ci
       - run: npm run check:ci-node-versions
       - run: npm run lint
