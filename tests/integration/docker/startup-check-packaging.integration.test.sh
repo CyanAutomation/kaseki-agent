@@ -137,9 +137,16 @@ docker run --rm --entrypoint node "$IMAGE_TAG" --input-type=module -e '
   for (const entry of entries) await import(`file://${entry}`);
 '
 
-printf 'Checking the scorecard runner resolves its complete module graph...\n'
+printf 'Checking the scorecard runner loads its packaged type dependency...\n'
 docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c '
   set -eu
+  type_dependency=/usr/local/bin/types/run-scorecard.js
+  test -r "$type_dependency"
+  node --input-type=module -e "
+    const { RunScorecardSchema } = await import(\"file:///usr/local/bin/types/run-scorecard.js\");
+    if (typeof RunScorecardSchema?.safeParse !== \"function\") process.exit(1);
+  "
+
   scorecard_results="$(mktemp -d)"
   trap "rm -rf \"$scorecard_results\"" EXIT
   printf "{}" > "$scorecard_results/metadata.json"
