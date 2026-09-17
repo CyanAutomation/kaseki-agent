@@ -379,6 +379,31 @@ Each line is a progress event:
 
 ---
 
+## validation-causality-analysis.json
+
+**Purpose**: Records the causality assessment produced after a validation failure.
+
+### Structure
+
+```json
+{
+  "timestamp": "2026-09-16T12:34:56.789Z",
+  "assessment": {
+    "failureType": "change_related",
+    "confidence": 0.85,
+    "rationale": "Test failure introduced by change",
+    "signals": {}
+  },
+  "version": "1.0"
+}
+```
+
+The top-level `timestamp` is the artifact creation time: the instant
+`generateCausalityAnalysisArtifact` constructs the artifact before writing it. It is serialized as
+an ISO 8601 UTC timestamp and does not represent the validation run's start or end time.
+
+---
+
 ## Deprecated Artifacts (Consolidated into metadata.json)
 
 The following artifacts are **no longer generated** as of schema version 2.0:
