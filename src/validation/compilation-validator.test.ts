@@ -27,14 +27,19 @@ describe('compilation-validator', () => {
 
   describe('runCompilation', () => {
     it('should successfully run a successful build command', () => {
+      const startTimeMs = 1_700_000_000_000;
+      const endTimeMs = startTimeMs + 250;
+      const clock = jest.fn().mockReturnValueOnce(startTimeMs).mockReturnValueOnce(endTimeMs);
+
       // Create a simple echo script that exits 0
-      const result = runCompilation(tempDir, 'echo "Build successful"', 'test');
+      const result = runCompilation(tempDir, 'echo "Build successful"', 'test', 60_000, clock);
 
       expect(result.success).toBe(true);
       expect(result.exitCode).toBe(0);
       expect(result.output).toContain('Build successful');
-      expect(result.duration).toBeGreaterThanOrEqual(0);
-      expect(result.timestamp).toBeLessThanOrEqual(Date.now());
+      expect(result.duration).toBe(250); // elapsed milliseconds
+      expect(result.timestamp).toBe(endTimeMs); // completion time in Unix epoch milliseconds
+      expect(clock).toHaveBeenCalledTimes(2);
     });
 
     it('should capture failed build command', () => {
@@ -50,13 +55,6 @@ describe('compilation-validator', () => {
 
       expect(result.command).toBe('true');
       expect(result.language).toBe('typescript');
-    });
-
-    it('should include duration and timestamp', () => {
-      const result = runCompilation(tempDir, 'true', 'test');
-
-      expect(result.duration).toBeGreaterThanOrEqual(0);
-      expect(result.timestamp).toBeGreaterThan(0);
     });
 
     it('should capture both stdout and stderr', () => {
