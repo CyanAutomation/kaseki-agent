@@ -17,24 +17,27 @@ on:
           - "true"
           - "false"
 
-permissions:
-  contents: write
-  packages: write
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       released: ${{ steps.release.outputs.released }}
       version: ${{ steps.release.outputs.version }}
+      sha: ${{ steps.release.outputs.sha }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0  # Full history for semantic-release
 
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "24"
           cache: npm
@@ -42,14 +45,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build distribution
-        run: npm run build
+      - name: Run release validation suite
+        run: npm run test:ci
 
       - name: Publish smoke test
         run: npm run test:publish-smoke
 
       - name: Fallow - Codebase Intelligence
-        uses: fallow-rs/fallow@v2.95.0
+        uses: fallow-rs/fallow@7efec6de07a5aff41d8e047cab2734d69580d2fc # v2.95.0
         with:
           version: "2.95.0"
           command: health
@@ -76,6 +79,7 @@ jobs:
               # Extract version from git describe
               VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
               echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+              echo "sha=$(git rev-list -n 1 "v${VERSION}")" >> "$GITHUB_OUTPUT"
             else
               echo "released=false" >> "$GITHUB_OUTPUT"
             fi
@@ -83,8 +87,33 @@ jobs:
 
       - name: Upload release log
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-output
           path: release-output.log
           retention-days: 30
+
+  publish_npm:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/publish-npm.yml
+    with:
+      ref: ${{ needs.release.outputs.sha }}
+      version: ${{ needs.release.outputs.version }}
+    secrets: inherit
+
+  publish_docker:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    uses: ./.github/workflows/build-docker-image.yml
+    with:
+      ref: ${{ needs.release.outputs.sha }}
+      version: ${{ needs.release.outputs.version }}
+    secrets: inherit

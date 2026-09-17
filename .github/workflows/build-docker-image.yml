@@ -1,510 +1,267 @@
-name: Build Docker Image
+name: Publish Docker Image
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      tags:
-        description: "Comma-separated Docker tags to publish (auto-detects from git ref if empty)"
-        required: false
-        default: ""
+      ref: { description: Immutable release commit to build, required: true, type: string }
+      version: { description: Release version without a leading v, required: true, type: string }
   schedule:
-    # Weekly build every Sunday at 00:00 UTC, publishes 'latest' tag to both registries
     - cron: '0 0 * * 0'
-  workflow_run:
-    workflows:
-      - Release
-    types:
-      - completed
 
 env:
   DOCKER_IMAGE: cyanautomation/kaseki-agent
   NODE_VERSION: "24"
 
+concurrency:
+  group: docker-publish-${{ github.repository }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
-  packages: write
 
 jobs:
-  type_check_changed:
+  prepare:
     runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.metadata.outputs.sha }}
+      cache_scope: ${{ steps.metadata.outputs.cache_scope }}
+      candidate_hub_tags: ${{ steps.metadata.outputs.candidate_hub_tags }}
+      candidate_ghcr_tags: ${{ steps.metadata.outputs.candidate_ghcr_tags }}
+      promotion_hub_tags: ${{ steps.metadata.outputs.promotion_hub_tags }}
+      promotion_ghcr_tags: ${{ steps.metadata.outputs.promotion_ghcr_tags }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Node
-        uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Type check changed-code scope (blocking)
-        run: npm run type-check:changed
-
-  type_check_full:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Full type check (non-blocking baseline)
-        id: full_type_check
+          ref: ${{ inputs.ref || github.sha }}
+      - id: metadata
         shell: bash
-        run: |
-          set +e
-          npm run type-check:full > type-check-full.log 2>&1
-          exit_code=$?
-          cat type-check-full.log
-          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
-          exit 0
-
-      - name: Upload full type-check report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: type-check-full-report
-          path: |
-            type-check-full.log
-          if-no-files-found: warn
-
-  checks:
-    needs: type_check_changed
-    runs-on: ubuntu-latest
-    # Runs in parallel with type_check_full (both independent after type_check_changed blocks all)
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-
-      - name: Install ShellCheck
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends shellcheck
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Verify CI Node versions satisfy package engine
-        run: npm run check:ci-node-versions
-
-      - name: Build TypeScript
-        run: npm run build
-
-      - name: Run lint
-        run: npm run lint
-
-      - name: Run tests
-        run: npm test
-
-      - name: Validate module imports (docker bin dependencies)
-        run: npm run validate-module-imports
-
-      - name: Verify API service build artifact
-        shell: bash
-        run: |
-          test -f dist/kaseki-api-service.js
-          ls -l dist/kaseki-api-service.js
-
-
-  startup_check_docker_integration:
-    needs: checks
-    runs-on: ubuntu-latest
-    env:
-      RUN_DOCKER_INTEGRATION_TESTS: ${{ vars.RUN_DOCKER_INTEGRATION_TESTS || '0' }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Check Docker startup-check integration prerequisites
-        id: prereq
-        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          if [ "${RUN_DOCKER_INTEGRATION_TESTS}" != "1" ]; then
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "reason=Set RUN_DOCKER_INTEGRATION_TESTS=1 as a repository variable to run this opt-in Docker integration suite." >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "reason=Docker is not available on this runner." >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "run=true" >> "$GITHUB_OUTPUT"
-
-      - name: Skip Docker startup-check integration
-        if: steps.prereq.outputs.run != 'true'
-        shell: bash
-        run: |
+          sha="$(git rev-parse HEAD)"; short_sha="${sha::12}"
+          if [[ "$EVENT_NAME" == workflow_call ]]; then tags="$RELEASE_VERSION,latest"
+          else tags="latest,main-$short_sha"; fi
+          hub_promotion=""; ghcr_promotion=""
+          IFS=',' read -r -a tag_entries <<< "$tags"
+          for raw_tag in "${tag_entries[@]}"; do
+            tag="$(echo "$raw_tag" | xargs)"; [[ -n "$tag" ]] || continue
+            [[ "$tag" =~ ^[a-z0-9][a-z0-9._-]{0,127}$ ]] || { echo "Invalid Docker tag: $tag" >&2; exit 1; }
+            hub_promotion+="${DOCKER_IMAGE}:${tag}"$'\n'; ghcr_promotion+="ghcr.io/${DOCKER_IMAGE}:${tag}"$'\n'
+          done
+          [[ -n "$hub_promotion" ]] || { echo "At least one Docker tag is required" >&2; exit 1; }
+          candidate="candidate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           {
-            echo "### Docker startup-check packaging integration skipped"
-            echo "${{ steps.prereq.outputs.reason }}"
-          } >> "$GITHUB_STEP_SUMMARY"
-          echo "::notice title=Docker startup-check integration skipped::${{ steps.prereq.outputs.reason }}"
+            echo "sha=$sha"; echo "cache_scope=release-$short_sha"
+            echo "candidate_hub_tags<<EOF"; echo "${DOCKER_IMAGE}:$candidate"; echo EOF
+            echo "candidate_ghcr_tags<<EOF"; echo "ghcr.io/${DOCKER_IMAGE}:$candidate"; echo EOF
+            echo "promotion_hub_tags<<EOF"; printf '%s' "$hub_promotion"; echo EOF
+            echo "promotion_ghcr_tags<<EOF"; printf '%s' "$ghcr_promotion"; echo EOF
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Run Docker startup-check packaging integration
-        if: steps.prereq.outputs.run == 'true'
-        shell: bash
-        run: bash tests/integration/docker/startup-check-packaging.integration.test.sh
-
-  build:
-    needs: [checks, type_check_full, startup_check_docker_integration]
+  type_check_changed:
+    needs: prepare
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run type-check:changed
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+  type_check_full:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run type-check:full
+
+  checks:
+    needs: [prepare, type_check_changed]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
+      - run: npm ci
+      - run: npm run check:ci-node-versions
+      - run: npm run build
+      - run: npm run lint
+      - run: npm test
+      - run: npm run validate-module-imports
+      - run: test -f dist/kaseki-api-service.js
+
+  docker_integration:
+    needs: [prepare, checks]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - run: npm ci
+      - run: npm run test:integration:docker
+
+  build_candidate:
+    needs: [prepare, checks, type_check_full, docker_integration]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
         with:
           platforms: arm64
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Determine tags
-        id: meta
-        shell: bash
-        run: |
-          # Tag determination logic for different trigger types:
-          # 1. workflow_dispatch with custom tags input: use those tags
-          # 2. workflow_dispatch without input OR workflow_run: auto-detect from git ref
-          # 3. schedule (Sunday 00:00 UTC): use 'latest'
-          
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.tags }}" ]]; then
-            # Manual dispatch with explicit tags provided
-            TAGS="${{ github.event.inputs.tags }}"
-          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            # On a git tag (from release workflow via workflow_run, or manual push)
-            VERSION="${GITHUB_REF#refs/tags/}"
-            VERSION="${VERSION#v}"
-            TAGS="$VERSION,latest"
-          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            # On main branch (scheduled builds only now)
-            SHORT_SHA="${GITHUB_SHA::12}"
-            TAGS="latest,main-$SHORT_SHA"
-          else
-            # Default to 'latest' for other triggers
-            TAGS="latest"
-          fi
-
-          DOCKER_HUB_TAGS=""
-          GHCR_TAGS=""
-          FIRST_TAG=""
-          for raw_tag in ${TAGS//,/ }; do
-            tag="$(echo "$raw_tag" | xargs)"
-            [[ -z "$tag" ]] && continue
-            [[ -z "$FIRST_TAG" ]] && FIRST_TAG="$tag"
-            DOCKER_HUB_TAGS="${DOCKER_HUB_TAGS}${DOCKER_IMAGE}:$tag"$'\n'
-            DOCKER_HUB_TAGS="${DOCKER_HUB_TAGS}${DOCKER_IMAGE}:$tag-arm64"$'\n'
-            GHCR_TAGS="${GHCR_TAGS}ghcr.io/${DOCKER_IMAGE}:$tag"$'\n'
-            GHCR_TAGS="${GHCR_TAGS}ghcr.io/${DOCKER_IMAGE}:$tag-arm64"$'\n'
-          done
-
-          if [[ -z "$DOCKER_HUB_TAGS" ]]; then
-            echo "No Docker tags were provided" >&2
-            exit 1
-          fi
-
-          DOCKER_HUB_TAGS="${DOCKER_HUB_TAGS%$'\n'}"
-          GHCR_TAGS="${GHCR_TAGS%$'\n'}"
-          ALL_TAGS="${DOCKER_HUB_TAGS}"$'\n'"${GHCR_TAGS}"
-          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$ALL_TAGS" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-          echo "primary_tag=${FIRST_TAG:-latest}" >> "$GITHUB_OUTPUT"
-          echo "Building tags:"
-          echo "$ALL_TAGS"
-
-      - name: Build and push
-        id: build
-        uses: docker/build-push-action@v6
+      - id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha,scope=${{ github.ref_name }}
-          cache-to: type=gha,scope=${{ github.ref_name }},mode=max
+          tags: |
+            ${{ needs.prepare.outputs.candidate_hub_tags }}
+            ${{ needs.prepare.outputs.candidate_ghcr_tags }}
+          cache-from: type=gha,scope=${{ needs.prepare.outputs.cache_scope }}
+          cache-to: type=gha,scope=${{ needs.prepare.outputs.cache_scope }},mode=max
           provenance: true
           sbom: true
 
-      - name: Log build cache statistics
-        shell: bash
-        run: |
-          echo "Build completed successfully"
-          echo "Build digest: ${{ steps.build.outputs.digest }}"
-          echo "Image size (metadata): ${{ steps.build.outputs.imageid }}"
-          echo ""
-          echo "Cache strategy: GitHub Actions cache with scope=${{ github.ref_name }}"
-          echo "Expected cache hit rate on subsequent builds: 80-90%"
-          echo "See .github/skills/docker-image-management/SKILL.md for cache optimization details"
-
   scan:
-    needs: build
+    needs: build_candidate
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write
-      # artifact uploads for SBOM
       packages: read
-
+      security-events: write
     steps:
-      # Vulnerability scanning strategy:
-      # 1. HIGH/CRITICAL: Blocking scan uploaded to GitHub Security tab (fails if found)
-      # 2. All severities: Informational JSON report for visibility into MEDIUM/LOW
-      # 3. SBOM: Generated in SPDX format for supply chain security
-      #
-      # We scan docker.io registry since that's the primary distribution point.
-      # GHCR images have parity via multi-registry build, so scanning one is sufficient.
-      # Both amd64 and arm64 variants use the same base image and have identical vulnerabilities.
-
-      - name: Run Trivy vulnerability scanner (HIGH/CRITICAL only)
-        uses: aquasecurity/trivy-action@v0.36.0
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: 'docker.io/cyanautomation/kaseki-agent:latest'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'HIGH,CRITICAL'
-
-      - name: Run Trivy vulnerability scanner (all severities - informational)
-        uses: aquasecurity/trivy-action@v0.36.0
+          image-ref: docker.io/${{ env.DOCKER_IMAGE }}@${{ needs.build_candidate.outputs.digest }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+      - if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: 'docker.io/cyanautomation/kaseki-agent:latest'
-          format: 'json'
-          output: 'trivy-results-all.json'
-
-      - name: Generate SBOM (SPDX format)
-        uses: aquasecurity/trivy-action@v0.36.0
+          image-ref: docker.io/${{ env.DOCKER_IMAGE }}@${{ needs.build_candidate.outputs.digest }}
+          format: json
+          output: trivy-results-all.json
+          ignore-unfixed: true
+      - if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: 'docker.io/cyanautomation/kaseki-agent:latest'
-          format: 'spdx-json'
-          output: 'sbom-spdx.json'
-
-      - name: Upload Trivy results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v4
-        if: always()
+          image-ref: docker.io/${{ env.DOCKER_IMAGE }}@${{ needs.build_candidate.outputs.digest }}
+          format: spdx-json
+          output: sbom-spdx.json
+      - if: always()
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
         with:
-          sarif_file: 'trivy-results.sarif'
-
-      - name: Upload SBOM and detailed scan results
-        uses: actions/upload-artifact@v7
-        if: always()
+          sarif_file: trivy-results.sarif
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: vulnerability-scan-results
-          path: |
+          path: |-
             trivy-results.sarif
             trivy-results-all.json
             sbom-spdx.json
           retention-days: 30
 
-      - name: Summarize scan results
-        if: always()
-        shell: bash
-        run: |
-          echo "=== Vulnerability Scan Complete ==="
-          echo ""
-          echo "Scanned Image: docker.io/cyanautomation/kaseki-agent:latest"
-          echo "Scanner: Trivy v0.36.0"
-          echo ""
-          echo "Results:"
-          echo "  - HIGH/CRITICAL findings → trivy-results.sarif (uploaded to GitHub Security tab)"
-          echo "  - All severities → trivy-results-all.json (informational, includes MEDIUM/LOW)"
-          echo "  - SBOM (SPDX) → sbom-spdx.json (software composition)"
-          echo ""
-          echo "Artifacts retained for 30 days"
-          echo ""
-          if grep -q '"severity":"HIGH"' trivy-results-all.json 2>/dev/null || grep -q '"severity":"CRITICAL"' trivy-results-all.json 2>/dev/null; then
-            echo "⚠️  HIGH or CRITICAL vulnerabilities detected - review trivy-results.sarif"
-          else
-            echo "✓ No HIGH or CRITICAL vulnerabilities found"
-          fi
-
   verify:
-    needs: build
+    needs: build_candidate
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
+      packages: read
     steps:
-      - name: Login to Docker Hub
-        uses: docker/login-action@v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Determine verification tag
-        id: meta
-        shell: bash
+      - name: Verify Docker Hub candidate
+        env:
+          DOCKER_HUB_CANDIDATE_IMAGE: docker.io/${{ env.DOCKER_IMAGE }}@${{ needs.build_candidate.outputs.digest }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            TAGS="${{ github.event.inputs.tags }}"
-            TAG="$(echo "${TAGS%%,*}" | xargs)"
-            echo "tag=${TAG:-latest}" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            TAG="${GITHUB_REF#refs/tags/}"
-            TAG="${TAG#v}"
-            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=latest" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Verify multi-arch manifest
-        shell: bash
+          set -euo pipefail
+          docker manifest inspect "$DOCKER_HUB_CANDIDATE_IMAGE" | jq -e '[.manifests[].platform | "\(.os)/\(.architecture)"] | index("linux/amd64") and index("linux/arm64")'
+          docker run --rm --entrypoint pi "$DOCKER_HUB_CANDIDATE_IMAGE" --version
+          workspace="$(mktemp -d)"; results="$(mktemp -d)"; trap 'rm -rf "$workspace" "$results"' EXIT; chmod 0777 "$workspace" "$results"
+          docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev,size=256m --tmpfs /agents:rw,nosuid,nodev,size=512m --security-opt no-new-privileges:true --cap-drop ALL -e KASEKI_INSTANCE=kaseki-smoke -e KASEKI_STARTUP_CHECK_MODE=baseline-validation -v "$workspace:/workspace:rw" -v "$results:/results:rw" -w /workspace "$DOCKER_HUB_CANDIDATE_IMAGE" bash -lc 'set -euo pipefail; test -d /agents/kaseki-template; test -d /agents/kaseki-runs; test -d /results; test -x /scripts/startup-checks.sh; test -x /usr/local/bin/kaseki-entrypoint; test -x /usr/local/bin/kaseki-agent; test -x /usr/local/bin/kaseki-report; node --version; git --version; pi --version'
+          test ! -d "$workspace/repo"; docker run --rm --entrypoint kaseki-report -v "$results:/results:ro" "$DOCKER_HUB_CANDIDATE_IMAGE" /results
+      - name: Verify GHCR candidate
+        env:
+          GHCR_CANDIDATE_IMAGE: ghcr.io/${{ env.DOCKER_IMAGE }}@${{ needs.build_candidate.outputs.digest }}
         run: |
-          IMAGE="${DOCKER_IMAGE}:${{ steps.meta.outputs.tag }}"
-          echo "Verifying manifest for: $IMAGE"
-          docker manifest inspect "$IMAGE" | jq -e '
-            [.manifests[].platform | "\(.os)/\(.architecture)"] as $platforms |
-            ($platforms | index("linux/amd64")) and ($platforms | index("linux/arm64"))
-          '
-          docker manifest inspect "$IMAGE" | jq -r '.manifests[] | "\(.platform.os)/\(.platform.architecture)"'
-          echo "Multi-arch image verified successfully"
+          set -euo pipefail
+          docker manifest inspect "$GHCR_CANDIDATE_IMAGE" | jq -e '[.manifests[].platform | "\(.os)/\(.architecture)"] | index("linux/amd64") and index("linux/arm64")'
+          docker run --rm --entrypoint pi "$GHCR_CANDIDATE_IMAGE" --version
 
-      - name: Verify Pi CLI entrypoint
-        shell: bash
+  promote:
+    needs: [prepare, build_candidate, scan, verify]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Promote verified immutable digest
+        env:
+          DIGEST: ${{ needs.build_candidate.outputs.digest }}
+          HUB_TAGS: ${{ needs.prepare.outputs.promotion_hub_tags }}
+          GHCR_TAGS: ${{ needs.prepare.outputs.promotion_ghcr_tags }}
         run: |
-          IMAGE="${DOCKER_IMAGE}:${{ steps.meta.outputs.tag }}"
-          docker run --rm --entrypoint pi "$IMAGE" --version
-
-      - name: Smoke test runtime artifacts
-        shell: bash
-        run: |
-          IMAGE="${DOCKER_IMAGE}:${{ steps.meta.outputs.tag }}"
-          WORKSPACE="$(mktemp -d)"
-          RESULTS="$(mktemp -d)"
-          chmod 0777 "$WORKSPACE" "$RESULTS"
-
-          docker run --rm \
-            --read-only \
-            --tmpfs /tmp:rw,nosuid,nodev,size=256m \
-            --tmpfs /agents:rw,nosuid,nodev,size=512m \
-            --security-opt no-new-privileges:true \
-            --cap-drop ALL \
-            -e KASEKI_INSTANCE=kaseki-smoke \
-            -e KASEKI_STARTUP_CHECK_MODE=baseline-validation \
-            -v "$WORKSPACE:/workspace:rw" \
-            -v "$RESULTS:/results:rw" \
-            -w /workspace \
-            "$IMAGE" \
-            bash -lc '
-              set -euo pipefail
-              test -d /agents/kaseki-template
-              test -d /agents/kaseki-runs
-              test -d /results
-              test -x /scripts/startup-checks.sh
-              test -x /usr/local/bin/kaseki-entrypoint
-              test -x /usr/local/bin/kaseki-agent
-              test -x /usr/local/bin/kaseki-report
-              node --version
-              git --version
-              pi --version
-            '
-
-          test ! -d "$WORKSPACE/repo"
-
-          docker run --rm \
-            --entrypoint kaseki-report \
-            -v "$RESULTS:/results:ro" \
-            "$IMAGE" \
-            /results
-
-      - name: Verify multi-arch manifest (GHCR)
-        shell: bash
-        run: |
-          IMAGE="ghcr.io/${DOCKER_IMAGE}:${{ steps.meta.outputs.tag }}"
-          echo "Verifying manifest for: $IMAGE"
-          docker manifest inspect "$IMAGE" | jq -e '
-            [.manifests[].platform | "\(.os)/\(.architecture)"] as $platforms |
-            ($platforms | index("linux/amd64")) and ($platforms | index("linux/arm64"))
-          '
-          docker manifest inspect "$IMAGE" | jq -r '.manifests[] | "\(.platform.os)/\(.platform.architecture)"'
-          echo "Multi-arch image verified successfully (GHCR)"
-
-      - name: Verify Pi CLI entrypoint (GHCR)
-        shell: bash
-        run: |
-          IMAGE="ghcr.io/${DOCKER_IMAGE}:${{ steps.meta.outputs.tag }}"
-          docker run --rm --entrypoint pi "$IMAGE" --version
-
-      - name: Smoke test runtime artifacts (GHCR)
-        shell: bash
-        run: |
-          IMAGE="ghcr.io/${DOCKER_IMAGE}:${{ steps.meta.outputs.tag }}"
-          WORKSPACE="$(mktemp -d)"
-          RESULTS="$(mktemp -d)"
-          chmod 0777 "$WORKSPACE" "$RESULTS"
-
-          docker run --rm \
-            --read-only \
-            --tmpfs /tmp:rw,nosuid,nodev,size=256m \
-            --tmpfs /agents:rw,nosuid,nodev,size=512m \
-            --security-opt no-new-privileges:true \
-            --cap-drop ALL \
-            -e KASEKI_INSTANCE=kaseki-smoke-ghcr \
-            -e KASEKI_STARTUP_CHECK_MODE=baseline-validation \
-            -v "$WORKSPACE:/workspace:rw" \
-            -v "$RESULTS:/results:rw" \
-            -w /workspace \
-            "$IMAGE" \
-            bash -lc '
-              set -euo pipefail
-              test -d /agents/kaseki-template
-              test -d /agents/kaseki-runs
-              test -d /results
-              test -x /scripts/startup-checks.sh
-              test -x /usr/local/bin/kaseki-entrypoint
-              test -x /usr/local/bin/kaseki-agent
-              test -x /usr/local/bin/kaseki-report
-              node --version
-              git --version
-              pi --version
-            '
-
-          test ! -d "$WORKSPACE/repo"
-
-          docker run --rm \
-            --entrypoint kaseki-report \
-            -v "$RESULTS:/results:ro" \
-            "$IMAGE" \
-            /results
+          set -euo pipefail
+          for tags in "$HUB_TAGS" "$GHCR_TAGS"; do
+            while IFS= read -r tag; do
+              [[ -n "$tag" ]] || continue
+              docker buildx imagetools create --tag "$tag" "${tag%:*}@${DIGEST}"
+            done <<< "$tags"
+          done

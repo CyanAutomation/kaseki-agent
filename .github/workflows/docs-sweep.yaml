@@ -27,7 +27,7 @@ on:
         type: string
 
 run-name: >-
-  Docs sweep · ${{ github.repository }}@${{ inputs.ref }}
+  Docs sweep · ${{ github.repository }}@${{ inputs.ref || 'main' }}
 
 permissions:
   contents: read
@@ -37,24 +37,104 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  system_status:
+    name: SYSTEM STATUS
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      KASEKI_BASE_URL: ${{ vars.KASEKI_BASE_URL }}
+    steps:
+      - name: Verify controller health
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${KASEKI_BASE_URL:?KASEKI_BASE_URL must be configured as a repository or organization Actions variable}"
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+
+          curl --fail-with-body --silent --show-error --retry 3 --retry-all-errors \
+            --connect-timeout 10 --max-time 20 \
+            --output "$response_file" \
+            "$KASEKI_BASE_URL/health"
+          jq -e '.status == "healthy"' "$response_file" >/dev/null
+          jq . "$response_file"
+
+  readiness:
+    name: READINESS
+    needs: system_status
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      KASEKI_BASE_URL: ${{ vars.KASEKI_BASE_URL }}
+    steps:
+      - name: Verify controller readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${KASEKI_BASE_URL:?KASEKI_BASE_URL must be configured as a repository or organization Actions variable}"
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+
+          curl --fail-with-body --silent --show-error --retry 3 --retry-all-errors \
+            --connect-timeout 10 --max-time 20 \
+            --output "$response_file" \
+            "$KASEKI_BASE_URL/ready"
+          jq -e '.status == "ready"' "$response_file" >/dev/null
+          jq . "$response_file"
+
+  api_connection:
+    name: API CONNECTION
+    needs: readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    environment: kaseki-docs-sweep
+    env:
+      KASEKI_BASE_URL: ${{ vars.KASEKI_BASE_URL }}
+      KASEKI_API_TOKEN: ${{ secrets.KASEKI_API_TOKEN }}
+    steps:
+      - name: Verify gateway connectivity and authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${KASEKI_BASE_URL:?KASEKI_BASE_URL must be configured as a repository or organization Actions variable}"
+          : "${KASEKI_API_TOKEN:?KASEKI_API_TOKEN is not configured}"
+
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+
+          curl --fail-with-body --silent --show-error --retry 3 --retry-all-errors \
+            --connect-timeout 10 --max-time 60 \
+            --output "$response_file" \
+            --header "Authorization: Bearer $KASEKI_API_TOKEN" \
+            "$KASEKI_BASE_URL/api/gateway-test?stage=1"
+          jq -e '.status == "ok"' "$response_file" >/dev/null
+          jq . "$response_file"
+
   dispatch:
     name: Submit Kaseki documentation sweep
+    needs: api_connection
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: kaseki-docs-sweep
     env:
-      # Create this as a repository or organization Actions variable.
-      KASEKI_BASE_URL: ${{ vars.KASEKI_BASE_URL || 'https://kaseki-tunnel.scheimann.xyz' }}
+      # Set this as a repository or organization Actions variable. Do not provide
+      # a public fallback because this job sends the Kaseki API token to this host.
+      KASEKI_BASE_URL: ${{ vars.KASEKI_BASE_URL }}
 
       # Automatically targets the repository containing this workflow.
       REPO_URL: ${{ github.server_url }}/${{ github.repository }}
-      REF: ${{ inputs.ref }}
-      TASK_DESCRIPTION: ${{ inputs.task_description }}
-      ALLOWLIST: ${{ inputs.allowlist }}
-      VALIDATION_COMMAND: ${{ inputs.validation_command }}
+      # Schedule events do not populate workflow_dispatch inputs.
+      REF: ${{ inputs.ref || 'main' }}
+      TASK_DESCRIPTION: ${{ inputs.task_description || 'Keep README.md and docs/ accurate against the current implementation.' }}
+      ALLOWLIST: ${{ inputs.allowlist || 'README.md,docs/**/*.md' }}
+      VALIDATION_COMMAND: ${{ inputs.validation_command || 'npm run check' }}
 
     steps:
       - name: Check Kaseki availability
+        shell: bash
         run: |
+          set -euo pipefail
+          : "${KASEKI_BASE_URL:?KASEKI_BASE_URL must be configured as a repository or organization Actions variable}"
           curl --fail --silent --show-error --max-time 20 \
             "$KASEKI_BASE_URL/ready"
 
@@ -65,6 +145,25 @@ jobs:
         run: |
           set -euo pipefail
           : "${KASEKI_API_TOKEN:?KASEKI_API_TOKEN is not configured}"
+          : "${KASEKI_BASE_URL:?KASEKI_BASE_URL must be configured as a repository or organization Actions variable}"
+
+          # This workflow is a documentation-only automation. A missing or broad
+          # allowlist must fail closed instead of becoming an unrestricted patch task.
+          IFS=',' read -r -a allowlist_entries <<< "$ALLOWLIST"
+          if (( ${#allowlist_entries[@]} == 0 )); then
+            echo "Documentation allowlist must not be empty" >&2
+            exit 1
+          fi
+          for allowlist_entry in "${allowlist_entries[@]}"; do
+            allowlist_entry="$(echo "$allowlist_entry" | xargs)"
+            case "$allowlist_entry" in
+              README.md|docs/*.md|docs/**/*.md) ;;
+              *)
+                echo "Disallowed documentation sweep path: $allowlist_entry" >&2
+                exit 1
+                ;;
+            esac
+          done
 
           payload="$(
             jq -n \
