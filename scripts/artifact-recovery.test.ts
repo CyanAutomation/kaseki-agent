@@ -465,30 +465,26 @@ describe('artifact-recovery helper functions (direct unit tests)', () => {
       }
     });
 
-    test('writes diagnostic entry to JSONL file', () => {
+    // Schema: ScoutingRecoveryDiagnostic in ./artifact-recovery.ts.
+    test.each([
+      { message: 'Success case', recovered: true },
+      { message: 'Failure case', recovered: false },
+    ])('writes the complete diagnostic-entry contract for recovery_success=$recovered', ({ message, recovered }) => {
       const diagnosticPath = path.join(tmpDir, 'scouting-recovery-diagnostics.jsonl');
-      logScoutingRecoveryDiagnostic(tmpDir, 'Test message', true);
+      const fixedNow = new Date('2026-02-03T04:05:06.789Z');
+      const expectedEntry = {
+        timestamp: '2026-02-03T04:05:06.789Z',
+        event: 'artifact_recovery',
+        message,
+        recovery_attempted: true,
+        recovery_success: recovered,
+      };
 
-      expect(fs.existsSync(diagnosticPath)).toBe(true);
-      const content = fs.readFileSync(diagnosticPath, 'utf8');
-      expect(content).toContain('Test message');
-      expect(content).toContain('artifact_recovery');
-    });
+      logScoutingRecoveryDiagnostic(tmpDir, message, recovered, () => fixedNow);
 
-    test('logs recovery success correctly', () => {
-      const diagnosticPath = path.join(tmpDir, 'scouting-recovery-diagnostics.jsonl');
-      logScoutingRecoveryDiagnostic(tmpDir, 'Success case', true);
-
-      const entry = JSON.parse(fs.readFileSync(diagnosticPath, 'utf8'));
-      expect(entry.recovery_success).toBe(true);
-    });
-
-    test('logs recovery failure correctly', () => {
-      const diagnosticPath = path.join(tmpDir, 'scouting-recovery-diagnostics.jsonl');
-      logScoutingRecoveryDiagnostic(tmpDir, 'Failure case', false);
-
-      const entry = JSON.parse(fs.readFileSync(diagnosticPath, 'utf8'));
-      expect(entry.recovery_success).toBe(false);
+      const serializedEntry = fs.readFileSync(diagnosticPath, 'utf8');
+      expect(serializedEntry).toBe(`${JSON.stringify(expectedEntry)}\n`);
+      expect(JSON.parse(serializedEntry)).toEqual(expectedEntry);
     });
 
     test('appends to existing diagnostic file', () => {
@@ -507,23 +503,6 @@ describe('artifact-recovery helper functions (direct unit tests)', () => {
       }).not.toThrow();
     });
 
-    test('includes timestamp in diagnostic entry', () => {
-      const diagnosticPath = path.join(tmpDir, 'scouting-recovery-diagnostics.jsonl');
-      logScoutingRecoveryDiagnostic(tmpDir, 'message', true);
-
-      const entry = JSON.parse(fs.readFileSync(diagnosticPath, 'utf8'));
-      expect(entry.timestamp).toBeDefined();
-      // Validate ISO format timestamp
-      expect(new Date(entry.timestamp).getTime()).toBeGreaterThan(0);
-    });
-
-    test('includes recovery_attempted flag', () => {
-      const diagnosticPath = path.join(tmpDir, 'scouting-recovery-diagnostics.jsonl');
-      logScoutingRecoveryDiagnostic(tmpDir, 'message', true);
-
-      const entry = JSON.parse(fs.readFileSync(diagnosticPath, 'utf8'));
-      expect(entry.recovery_attempted).toBe(true);
-    });
   });
 
   describe('recoverArtifactFromEventStream direct recovery paths', () => {
