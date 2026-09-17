@@ -99,7 +99,8 @@ fi
 EOF_FILTER
 cat > "$FAKE_BIN/timeout" <<'EOF_TIMEOUT'
 #!/usr/bin/env bash
-shift 3
+while [[ "${1:-}" == -* ]]; do shift; done
+shift
 "$@"
 EOF_TIMEOUT
 cat > "$FAKE_BIN/validation-output-filter" <<'EOF_VALIDATION_FILTER'
