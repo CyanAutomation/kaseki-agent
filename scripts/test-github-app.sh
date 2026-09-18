@@ -147,6 +147,8 @@ https.request = (options, cb) => {
   };
   req.on = (...args) => EventEmitter.prototype.on.apply(req, args);
   req.write = () => {};
+  req.setTimeout = () => req;
+  req.destroy = () => {};
   return req;
 };
 
