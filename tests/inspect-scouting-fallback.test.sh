@@ -46,20 +46,20 @@ git -C "$FAKE_REPO" init -q -b main
 git -C "$FAKE_REPO" add package.json package-lock.json deps/fake-dep/package.json
 git -C "$FAKE_REPO" -c user.email=kaseki-test@example.invalid -c user.name="Kaseki Test" commit -q -m initial
 
-cat > "$FAKE_BIN/pi" <<EOF_PI
+cat > "$FAKE_BIN/pi" << 'EOF_PI'
 #!/usr/bin/env bash
-if [ "\${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
-if [ "\${1:-}" = "--list-models" ]; then echo "gateway"; exit 0; fi
-prompt="\${*: -1}"
-if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
+if [ "${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
+if [ "${1:-}" = "--list-models" ]; then echo "gateway"; exit 0; fi
+prompt="${*: -1}"
+if printf '%s' "$prompt" | grep -q 'goal-setting Pi agent'; then
   printf 'goal-setting\n' >> "$PI_CALLS"
   printf '%s\n' '{"original_prompt":"inspect only","upgraded_goal":"Inspect only","reasoning":"test","key_requirements":[],"success_criteria":[]}' > "$RESULTS_DIR/goal-setting-candidate.json"
   printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"goal-setting response"}],"stopReason":"stop","responseId":"resp_goal_1"},"toolResults":[]}'
-elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
+elif printf '%s' "$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf 'scouting\n' >> "$PI_CALLS"
   # Simulate a model/tool path that exits 0 but forgets to write scouting-candidate.json.
   printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"stop","responseId":"resp_scout_empty"},"toolResults":[]}'
-elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
+elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "$PI_CALLS"
   printf '%s\n' '{"met":true,"confidence":"high","summary":"inspect done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[],"evidence_sources_inspected":[],"contradictions":[],"confidence_calibration":{"outcome":"confident","justification":"test"}}' > "$RESULTS_DIR/goal-check-candidate.json"
   printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"goal-check response"}],"stopReason":"stop","responseId":"resp_check_1"},"toolResults":[]}'
@@ -78,8 +78,45 @@ raw="$1"
 events="$2"
 summary="$3"
 cat "$raw" > "$events"
+
 # Generate a proper summary JSON with required fields
-cat > "$summary" <<'JSON'
+# Support phase-specific summaries based on the summary file path
+if [[ "$summary" == *"goal-check-summary"* ]]; then
+  cat > "$summary" <<'JSON'
+{
+  "selected_model": "test-model",
+  "selected_api": "gateway",
+  "event_counts": {"message_end": 1},
+  "assistant_event_counts": {"message_end": 1},
+  "tool_start_count": 0,
+  "tool_end_count": 0,
+  "invalid_json_lines": 0,
+  "first_event_at": "2026-09-18T00:00:00Z",
+  "last_event_at": "2026-09-18T00:00:01Z",
+  "completion_usage": [],
+  "provider_errors": [],
+  "raw_goal_check_response": "{\"met\":true,\"confidence\":\"high\",\"summary\":\"inspect done\",\"evidence\":[],\"missing\":[],\"retry_prompt\":\"\",\"validation_notes\":[],\"evidence_sources_inspected\":[],\"contradictions\":[],\"confidence_calibration\":{\"outcome\":\"confident\",\"justification\":\"test\"}}"
+}
+JSON
+elif [[ "$summary" == *"scouting-summary"* ]]; then
+  cat > "$summary" <<'JSON'
+{
+  "selected_model": "test-model",
+  "selected_api": "gateway",
+  "event_counts": {"message_end": 1},
+  "assistant_event_counts": {"message_end": 1},
+  "tool_start_count": 0,
+  "tool_end_count": 0,
+  "invalid_json_lines": 0,
+  "first_event_at": "2026-09-18T00:00:00Z",
+  "last_event_at": "2026-09-18T00:00:01Z",
+  "completion_usage": [],
+  "provider_errors": [],
+  "provider_empty_assistant_turn": false
+}
+JSON
+else
+  cat > "$summary" <<'JSON'
 {
   "selected_model": "test-model",
   "selected_api": "gateway",
@@ -94,6 +131,7 @@ cat > "$summary" <<'JSON'
   "provider_errors": []
 }
 JSON
+fi
 EOF_FILTER
 cat > "$FAKE_BIN/timeout" <<'EOF_TIMEOUT'
 #!/usr/bin/env bash
