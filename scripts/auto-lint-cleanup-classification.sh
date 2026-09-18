@@ -2,20 +2,45 @@
 # Sourceable auto-lint cleanup classification and execution helpers.
 # Depends on the caller providing the surrounding kaseki-agent runtime helpers.
 
+# Helper to check if a shell command is available in PATH or as a builtin
+is_shell_command_available() {
+  local cmd="$1"
+  # Special internal commands are always considered "available" (will be handled specially)
+  if [[ "$cmd" =~ ^__.*__$ ]]; then
+    return 0
+  fi
+  # Use command -v to check if it exists (works for builtins, functions, and PATH commands)
+  command -v "$cmd" >/dev/null 2>&1
+}
+
 filter_cleanup_commands_to_available() {
   local commands="$1"
   local repo_dir="${2:-${KASEKI_WORKSPACE_DIR}/repo}"
   local package_json="$repo_dir/package.json"
   local -a command_array filtered_commands
-  local command script_name trimmed
+  local command script_name trimmed first_word
   
   if [ -z "$commands" ]; then
     return 0
   fi
   
   if [ ! -f "$package_json" ]; then
-    # No package.json; return original commands as-is (non-npm commands will still work)
-    printf '%s' "$commands"
+    # No package.json; still validate shell commands for availability
+    IFS=';' read -r -a command_array <<< "$commands"
+    for command in "${command_array[@]}"; do
+      trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
+      [ -z "$trimmed" ] && continue
+      
+      # Extract first word to check if command exists
+      first_word="$(printf '%s' "$trimmed" | awk '{print $1}')"
+      if is_shell_command_available "$first_word"; then
+        filtered_commands+=("$trimmed")
+      fi
+    done
+    
+    if [ "${#filtered_commands[@]}" -gt 0 ]; then
+      (IFS=';' ; printf '%s' "${filtered_commands[*]}")
+    fi
     return 0
   fi
   
@@ -39,8 +64,11 @@ filter_cleanup_commands_to_available() {
         filtered_commands+=("$trimmed")
       fi
     else
-      # Not an npm run command (e.g., __kaseki_trailing_whitespace_cleanup__) — always include
-      filtered_commands+=("$trimmed")
+      # Not an npm run command — check if the shell command is available
+      first_word="$(printf '%s' "$trimmed" | awk '{print $1}')"
+      if is_shell_command_available "$first_word"; then
+        filtered_commands+=("$trimmed")
+      fi
     fi
   done
   
