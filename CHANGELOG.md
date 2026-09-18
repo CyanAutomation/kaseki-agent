@@ -4,6 +4,19 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.133.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.133.0...v1.133.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* add req.setTimeout and req.destroy methods to mock HTTP request ([6500c3b](https://github.com/CyanAutomation/kaseki-agent/commit/6500c3ba19ae727dac30203c5b17875be89bce3c))
+* add ripgrep installation to CI workflow ([68078b2](https://github.com/CyanAutomation/kaseki-agent/commit/68078b2f2dbdd302c7b0664a10d85811be8d15d9))
+* handle environment metadata read failures ([86aa878](https://github.com/CyanAutomation/kaseki-agent/commit/86aa878f6088dc349a5e6050bd282c8b28441e04))
+* harden release workflows ([15fa285](https://github.com/CyanAutomation/kaseki-agent/commit/15fa28586e0a943f73e6ad7a49e67203d8d2f4af))
+* harden release workflows ([#1343](https://github.com/CyanAutomation/kaseki-agent/issues/1343)) ([75b6e09](https://github.com/CyanAutomation/kaseki-agent/commit/75b6e099d15f4a1705522dc6abc37a47c2d3b5bf))
+* make checkout freshness advisory ([54ecb3b](https://github.com/CyanAutomation/kaseki-agent/commit/54ecb3b133ee261139725417392a27f1e46d94d2))
+* remove redundant quality check re-validation step ([3ffaf89](https://github.com/CyanAutomation/kaseki-agent/commit/3ffaf896d2af1709cf6c3ecbfd6e858bbaf846b0))
+
 # [1.133.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.132.10...v1.133.0) (2026-09-16)
 
 
