@@ -19,12 +19,14 @@ async function main() {
     // Check input file exists
     if (!fs.existsSync(inputJsonl)) {
       console.error(`Error: Input JSONL not found: ${inputJsonl}`);
+      // Infrastructure failure (missing input file) - fatal
       process.exit(1);
     }
 
     // Check workspace directory exists
     if (!fs.existsSync(workspaceDir)) {
       console.error(`Error: Workspace directory not found: ${workspaceDir}`);
+      // Infrastructure failure (missing workspace) - fatal
       process.exit(1);
     }
 
@@ -41,15 +43,22 @@ async function main() {
     console.log(`Wrote hashline summary to ${outputSummary}`);
 
     // Exit with appropriate code
-    // Non-fatal: record rejections but don't fail overall pipeline
+    // Non-fatal: Hashline validation failures (rejected edits) are recorded but do not fail the pipeline.
+    // Record rejections as validation data, not pipeline failures.
     if (summary.errors > 0) {
-      console.warn(`Warning: ${summary.errors} hashline processing errors`);
+      console.warn(`Warning: ${summary.errors} hashline processing errors (non-fatal; validation failures recorded)`);
+    }
+    if (summary.rejected > 0) {
+      console.warn(`Note: ${summary.rejected} hashline edits were rejected due to validation failures (see hashline-events.jsonl)`);
     }
 
+    // Always exit 0 for non-fatal validation phase
+    // Failures are recorded in output artifacts for inspection, not pipeline status
     process.exit(0);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Fatal error: ${message}`);
+    // Fatal error (e.g., I/O failure) - return non-zero exit code
     process.exit(1);
   }
 }

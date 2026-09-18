@@ -9923,6 +9923,14 @@ NODE
       emit_progress "hashline validation" "completed"
     fi
 
+    # Propagate infrastructure errors from hashline processing to final status
+    # (validation failures like rejected edits are non-fatal and recorded in output artifacts)
+    if [ "$HASHLINE_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
+      STATUS="$HASHLINE_EXIT"
+      FAILED_COMMAND="hashline validation"
+      emit_error_event "hashline_validation_failed" "Hashline event processing failed with exit code $HASHLINE_EXIT (infrastructure/I/O error)" "exit"
+    fi
+
     # Record timing for hashline validation
     record_stage_timing "hashline validation" "$HASHLINE_EXIT" "0" "status=processing_hashline_edit_events"
   fi

@@ -62,6 +62,7 @@ fi
 # Phase 2b: Validate directory permissions for container user (UID 10000)
 # This is a critical check before the API starts—if directories aren't writable,
 # the API will fail to store results. Container runs as UID 10000:10000 per docker-compose.yml
+# Also validates /cache and /results for agent runs (ephemeral worker containers)
 validate_directory_permissions() {
   local uid="${KASEKI_CONTAINER_UID:-10000}"
   local gid="${KASEKI_CONTAINER_GID:-10000}"
@@ -73,6 +74,13 @@ validate_directory_permissions() {
     "${KASEKI_ROOT:-/agents}/kaseki-runs"
     "${KASEKI_ROOT:-/agents}/kaseki-cache"
   )
+  
+  # Additional mounts for agent mode (worker container)
+  # Only add worker mounts if explicitly running agent mode
+  if [ "${1:-agent}" = "agent" ]; then
+    # Agent mode needs /cache and /results to be writable
+    required_dirs+=("${KASEKI_CACHE_DIR:-/cache}" "${KASEKI_RESULTS_DIR:-/results}")
+  fi
   
   for dir in "${required_dirs[@]}"; do
     if [ ! -d "$dir" ]; then
@@ -93,13 +101,23 @@ validate_directory_permissions() {
   return 0
 }
 
-# Only validate permissions for API mode (not for agent or one-off runs)
+# Validate permissions for API and agent modes (unless skipped)
+# Other modes (setup, doctor, run-mode, etc.) are not validated by default
 # Can be skipped via KASEKI_SKIP_PERMISSION_VALIDATION=1 (useful for test isolation)
-if [ "${KASEKI_SKIP_PERMISSION_VALIDATION:-0}" != "1" ] && { [ "${1:-agent}" = "api" ] || [ "${1:-agent}" = "kaseki-api" ]; }; then
-  validate_directory_permissions || {
-    echo "error: directory permissions validation failed; cannot start API" >&2
-    exit 1
-  }
+if [ "${KASEKI_SKIP_PERMISSION_VALIDATION:-0}" != "1" ]; then
+  case "${1:-agent}" in
+    api|kaseki-api|agent)
+      validate_directory_permissions "${1:-agent}" || {
+        if [ "${1:-agent}" = "api" ] || [ "${1:-agent}" = "kaseki-api" ]; then
+          echo "error: directory permissions validation failed; cannot start API" >&2
+          exit 1
+        else
+          echo "error: directory permissions validation failed; cannot run agent" >&2
+          exit 1
+        fi
+      }
+      ;;
+  esac
 fi
 
 # Phase 1: Dispatch to appropriate command handler

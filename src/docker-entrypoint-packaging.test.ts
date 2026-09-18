@@ -244,7 +244,7 @@ kill -TERM "$$"
     const permissionValidationCases = [
       { args: ['api'], mode: 'api', validatesByDefault: true },
       { args: ['kaseki-api'], mode: 'kaseki-api', validatesByDefault: true },
-      { args: ['agent'], mode: 'agent', validatesByDefault: false },
+      { args: ['agent'], mode: 'agent', validatesByDefault: true },  // Now validates /cache and /results
       { args: ['explicit-command'], mode: 'explicit-command', validatesByDefault: false },
     ];
 
