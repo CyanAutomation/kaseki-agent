@@ -236,7 +236,7 @@ jobs:
           docker run --rm --entrypoint pi "$GHCR_CANDIDATE_IMAGE" --version
 
   promote:
-    needs: [prepare, build_candidate, scan, verify]
+    needs: [prepare, build_candidate, verify]
     runs-on: ubuntu-latest
     environment: release
     permissions:
