@@ -25,7 +25,7 @@ Completed all 4 phases of kaseki-agent artifact cleanup and consolidation:
 ### Removed Artifacts
 
 | Artifact | Reason | Impact |
-|----------|--------|--------|
+| ---------- | -------- | -------- |
 | stdout.log | Redundant with progress.log | -500 B - 5 KB/run |
 | stderr.log | Redundant with individual phase logs | -500 B - 5 KB/run |
 | pi-events.raw.jsonl | Removed by KASEKI_DEBUG_RAW_EVENTS flag deletion | -10 KB avg |
@@ -38,12 +38,14 @@ Completed all 4 phases of kaseki-agent artifact cleanup and consolidation:
 ### Changes Made
 
 **kaseki-agent.sh**:
+
 - Removed 25+ `exec` piping operations (tee to .log files)
 - Removed `KASEKI_DEBUG_RAW_EVENTS` flag and raw event collection
 - Updated `consolidate_phase_errors()` call signature
 - Removed feature-specific stderr append operations
 
 **Tests & Docs**:
+
 - Updated integration tests to not expect removed artifacts
 - No changes to .github/workflows tests (already removed)
 
@@ -63,6 +65,7 @@ Completed all 4 phases of kaseki-agent artifact cleanup and consolidation:
 ### Changes Made
 
 **kaseki-agent.sh**:
+
 - Removed `quality.log` tee operations (kept for diagnostics only)
 - Removed `secret-scan.log` initialization
 - Converted secret-scan processing to inline JSON emission
@@ -70,9 +73,11 @@ Completed all 4 phases of kaseki-agent artifact cleanup and consolidation:
 - Updated `append_secret_scan_result()` to write JSONL
 
 **Artifact Registry**:
+
 - Removed `secret-scan.json` from artifact-metadata.ts (no longer generated separately)
 
-**Result**: 
+**Result**:
+
 - Fewer duplicate artifacts (single source of truth in metadata.json)
 - Better structured data (JSON arrays vs. plain text logs)
 - ~5-10 KB size reduction per run
@@ -115,6 +120,7 @@ Completed all 4 phases of kaseki-agent artifact cleanup and consolidation:
 ### Changes Made
 
 **kaseki-agent.sh**:
+
 - Created `consolidate_phase_file()` function (lines 924-930)
 - Updated `append_validation_result()` to write temporary JSONL (lines 379-395)
 - Updated `append_quality_violation()` to write temporary JSONL (lines 396-415)
@@ -124,11 +130,13 @@ Completed all 4 phases of kaseki-agent artifact cleanup and consolidation:
 - Updated metadata.json template to embed consolidated arrays (lines 1061-1080)
 
 **Consolidation Process**:
+
 1. During run: append functions write to `.validation-results-temp.jsonl`, etc.
 2. At finalization: `consolidate_phase_file()` reads JSONL and converts to JSON array
 3. Arrays embedded directly in metadata.json (single atomic write)
 
 **Result**:
+
 - Single source of truth for all phase data
 - Reduced artifact count (3 JSON files → 0 separate files)
 - Better structure for API consumers
@@ -141,6 +149,7 @@ Completed all 4 phases of kaseki-agent artifact cleanup and consolidation:
 ### Version 2.0
 
 **Breaking Changes**:
+
 - metadata.json now includes `schema_version: "2.0"` field
 - Phase data consolidated into metadata.json.phases structure
 - Separate validation-results.json, quality-gates.json, secret-scan.json removed
@@ -149,11 +158,13 @@ Completed all 4 phases of kaseki-agent artifact cleanup and consolidation:
 ### Changes Made
 
 **kaseki-agent.sh** (line 950):
+
 ```bash
 "schema_version": "2.0",
 ```
 
 **Artifact Registry** (src/artifact-metadata.ts):
+
 - Removed entries:
   - validation-results.json
   - quality-gates.json
@@ -162,13 +173,16 @@ Completed all 4 phases of kaseki-agent artifact cleanup and consolidation:
 - Updated metadata.json description to mention phases consolidation
 
 **Documentation** (CLAUDE.md):
+
 - Added note on Phase 3-4 consolidations
 - Mentioned v2.0 schema migration path
 
 **Test Updates** (run-kaseki-json.test.sh):
+
 - Removed `secret-scan.log` from artifact requirements
 
 **Existing Documentation** (docs/ARTIFACT_SCHEMAS.md):
+
 - Already updated with v2.0 schema structure
 - Comprehensive field definitions for all phases
 - Migration guide from v1.x → v2.0
@@ -198,6 +212,7 @@ Completed all 4 phases of kaseki-agent artifact cleanup and consolidation:
 ### Key Functions
 
 **consolidate_phase_file()**:
+
 ```bash
 consolidate_phase_file() {
   local phase_file="$1"
@@ -210,6 +225,7 @@ consolidate_phase_file() {
 ```
 
 **Updated Append Functions**:
+
 ```bash
 append_validation_result() {
   # Now writes to .validation-results-temp.jsonl
@@ -240,6 +256,7 @@ append_secret_scan_result() {
 - API routes return consolidated metadata without modification
 
 **Web UI Automatically Handles**:
+
 - Artifact discovery from updated registry
 - Conditional artifact display based on availability
 - JSON content rendering for metadata.json.phases.*
@@ -250,15 +267,19 @@ append_secret_scan_result() {
 ## Testing & Validation
 
 ### Syntax Validation
+
 ✅ bash -n kaseki-agent.sh: **PASSED**
 
 ### Artifact Cleanup
+
 ✅ grep -c "validation-results\|quality-gates": **0 matches** (successfully removed)
 
 ### Schema Versioning
+
 ✅ grep "schema_version" kaseki-agent.sh: **Found**
 
 ### Consolidation Function
+
 ✅ grep -c "consolidate_phase_file" kaseki-agent.sh: **4 matches** (definition + calls)
 
 ---
@@ -268,6 +289,7 @@ append_secret_scan_result() {
 ### For API Consumers
 
 **Old Path** (v1.x):
+
 ```bash
 curl /api/results/{id}/validation-results.json
 curl /api/results/{id}/quality-gates.json
@@ -275,6 +297,7 @@ curl /api/results/{id}/secret-scan.json
 ```
 
 **New Path** (v2.0):
+
 ```bash
 curl /api/results/{id}/metadata.json | jq '.phases.validation.results'
 curl /api/results/{id}/metadata.json | jq '.phases.quality_gates.violations'
@@ -284,6 +307,7 @@ curl /api/results/{id}/metadata.json | jq '.phases.secret_scan.matches'
 ### For Data Analysis
 
 **Old Script**:
+
 ```bash
 jq '.[]' validation-results.json | grep "failed"
 jq '.[]' quality-gates.json | grep "error"
@@ -291,6 +315,7 @@ jq '.[]' secret-scan.json | grep "real_leak"
 ```
 
 **New Script**:
+
 ```bash
 jq '.phases.validation.results[] | select(.status == "failed")' metadata.json
 jq '.phases.quality_gates.violations[] | select(.severity == "error")' metadata.json
@@ -316,7 +341,7 @@ esac
 ### Size Impact (Estimated)
 
 | Metric | Before | After | Change |
-|--------|--------|-------|--------|
+| -------- | -------- | ------- | -------- |
 | Avg artifact count | 35-40 | 25-30 | -15% |
 | Avg metadata.json size | 2-3 KB | 3-5 KB | +1 KB (phases overhead) |
 | Total artifact size (no diff) | ~25-30 KB | ~20-25 KB | -15% |
@@ -325,6 +350,7 @@ esac
 ### Speed Impact
 
 ✅ **No negative impact**:
+
 - Consolidation happens at finalization (single atomic write)
 - No overhead during run execution
 - consolidate_phase_file() is O(n) where n = number of phase events
@@ -379,15 +405,19 @@ esac
 ## Questions & Support
 
 ### "Where is validation-results.json?"
+>
 > It's now in `metadata.json.phases.validation.results`. Use: `jq '.phases.validation.results' metadata.json`
 
 ### "How do I get all phase violations?"
+>
 > Use: `jq '.phases.quality_gates.violations[]' metadata.json`
 
 ### "Why was schema_version added?"
+>
 > Enables forward/backward compatibility for future breaking changes. Check version before parsing format.
 
 ### "Do I need to update my tools?"
+>
 > Only if you parse validation-results.json, quality-gates.json, or secret-scan.json directly. If you use the API, it's transparent.
 
 ---

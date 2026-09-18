@@ -81,7 +81,7 @@ Remove (≤4): 55+ artifacts (53%)
 ## ✅ Bottom 10 Lowest-Value Artifacts
 
 | # | Artifact | Score | Action | Reasoning |
-|---|----------|-------|--------|-----------|
+| --- | ---------- | ------- | -------- | ----------- |
 | 1 | stdout.log | 0 | **REMOVE** | Raw stream; all info in progress.jsonl |
 | 2 | progress.log | 0 | **REMOVE** | Exact duplicate of progress.jsonl |
 | 3 | validation-raw.log | 0 | **REMOVE** | Exact duplicate of validation.log |
@@ -211,7 +211,7 @@ For all KEEP artifacts (score ≥8):
 ## 📊 Final Artifact Count
 
 | Phase | Artifacts Removed | New Total | Per-Run Savings |
-|-------|---|---|---|
+| ------- | --- | --- | --- |
 | Before | 0 | 105+ | Baseline |
 | After Phase 1 | 30+ | 70 | 60–300 MB |
 | After Phase 2 | 4–5 | 65 | 40 KB more |
