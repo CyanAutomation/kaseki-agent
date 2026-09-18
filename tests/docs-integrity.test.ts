@@ -30,11 +30,9 @@ describe('Documentation integrity', () => {
       fileName: 'GOAL_SETTING_GUIDE.md',
       requiredLinks: ['./EVALUATION_BEST_PRACTICES.md', './FEEDBACK_LOOP_INTEGRATION.md'],
       stableAnchors: [
-        'goal-setting-agent-guide',
+        'goal-setting-agent-comprehensive-guide',
         'configuration',
-        'test-updates-in-goals',
-        'troubleshooting',
-        'see-also',
+        'exit-codes--troubleshooting',
       ],
     },
     {
