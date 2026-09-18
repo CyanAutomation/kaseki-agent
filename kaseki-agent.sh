@@ -256,6 +256,15 @@ if [ "$source_status" -ne 0 ]; then
   printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_PROVIDER_VALIDATION_HELPER" "$source_status" >&2
   exit 1
 fi
+# Source npm script detection helper (optional; used for filtering cleanup commands)
+KASEKI_DETECT_AVAILABLE_NPM_SCRIPTS_HELPER="${KASEKI_DETECT_AVAILABLE_NPM_SCRIPTS_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/detect-available-npm-scripts.sh}"
+if [ ! -r "$KASEKI_DETECT_AVAILABLE_NPM_SCRIPTS_HELPER" ] && [ -r /app/scripts/detect-available-npm-scripts.sh ]; then
+  KASEKI_DETECT_AVAILABLE_NPM_SCRIPTS_HELPER="/app/scripts/detect-available-npm-scripts.sh"
+fi
+if [ -r "$KASEKI_DETECT_AVAILABLE_NPM_SCRIPTS_HELPER" ]; then
+  # shellcheck source=/dev/null
+  . "$KASEKI_DETECT_AVAILABLE_NPM_SCRIPTS_HELPER" 2>/dev/null || true
+fi
 KASEKI_DRY_RUN="${KASEKI_DRY_RUN:-0}"
 KASEKI_STARTUP_CHECK_MODE="${KASEKI_STARTUP_CHECK_MODE:-boot}"
 KASEKI_BASELINE_VALIDATION_DRY_RUN="${KASEKI_BASELINE_VALIDATION_DRY_RUN:-0}"

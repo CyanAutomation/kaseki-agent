@@ -2,6 +2,54 @@
 # Sourceable auto-lint cleanup classification and execution helpers.
 # Depends on the caller providing the surrounding kaseki-agent runtime helpers.
 
+filter_cleanup_commands_to_available() {
+  local commands="$1"
+  local repo_dir="${2:-${KASEKI_WORKSPACE_DIR}/repo}"
+  local package_json="$repo_dir/package.json"
+  local -a command_array filtered_commands
+  local command script_name trimmed
+  
+  if [ -z "$commands" ]; then
+    return 0
+  fi
+  
+  if [ ! -f "$package_json" ]; then
+    # No package.json; return original commands as-is (non-npm commands will still work)
+    printf '%s' "$commands"
+    return 0
+  fi
+  
+  # If detection helper is available, use it to filter
+  if declare -f filter_npm_commands_to_available >/dev/null 2>&1; then
+    filter_npm_commands_to_available "$commands" "$package_json"
+    return $?
+  fi
+  
+  # Fallback: simple filtering without external helper
+  IFS=';' read -r -a command_array <<< "$commands"
+  for command in "${command_array[@]}"; do
+    trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
+    [ -z "$trimmed" ] && continue
+    
+    # Check if this is an npm run command and if the script exists
+    if [[ "$trimmed" =~ ^npm[[:space:]]+run[[:space:]]+([^[:space:]-][^[:space:]-]*)($|[[:space:]]) ]]; then
+      local script_name="${BASH_REMATCH[1]}"
+      # Try to check if script exists (simple check)
+      if grep -q "\"$script_name\"" "$package_json" 2>/dev/null; then
+        filtered_commands+=("$trimmed")
+      fi
+    else
+      # Not an npm run command (e.g., __kaseki_trailing_whitespace_cleanup__) — always include
+      filtered_commands+=("$trimmed")
+    fi
+  done
+  
+  # Output filtered commands as semicolon-separated string
+  if [ "${#filtered_commands[@]}" -gt 0 ]; then
+    (IFS=';' ; printf '%s' "${filtered_commands[*]}")
+  fi
+}
+
 record_skipped_npm_script_command() {
   local command="$1"
   local script_name="$2"
@@ -320,6 +368,17 @@ run_auto_lint_cleanup() {
   cleanup_before_file="${KASEKI_RESULTS_DIR}/auto-lint-cleanup-before-files.txt"
   cleanup_after_file="${KASEKI_RESULTS_DIR}/auto-lint-cleanup-after-files.txt"
   collect_changed_file_set "$cleanup_before_file"
+
+  # Filter cleanup commands to only those that are available in the target repo
+  if [ -z "${KASEKI_AUTO_LINT_CLEANUP_FILTER_DISABLED:-}" ]; then
+    local filtered_commands
+    filtered_commands="$(filter_cleanup_commands_to_available "${KASEKI_AUTO_LINT_CLEANUP_COMMANDS}" "${KASEKI_WORKSPACE_DIR}/repo")" || true
+    if [ -n "$filtered_commands" ] && [ "$filtered_commands" != "${KASEKI_AUTO_LINT_CLEANUP_COMMANDS}" ]; then
+      printf 'Filtered cleanup commands: %s -> %s\n' "${KASEKI_AUTO_LINT_CLEANUP_COMMANDS}" "$filtered_commands" | tee -a "$AUTO_LINT_CLEANUP_LOG"
+      emit_event "auto_lint_cleanup_commands_filtered" "original=${KASEKI_AUTO_LINT_CLEANUP_COMMANDS}" "filtered=$filtered_commands"
+      KASEKI_AUTO_LINT_CLEANUP_COMMANDS="$filtered_commands"
+    fi
+  fi
 
   set +e
   IFS=';' read -r -a cleanup_commands <<< "$KASEKI_AUTO_LINT_CLEANUP_COMMANDS"

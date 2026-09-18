@@ -96,6 +96,8 @@ reset_workspace() {
   KASEKI_DRY_RUN=0
   KASEKI_TASK_MODE=implement
   KASEKI_SKIP_MISSING_NPM_SCRIPTS=1
+  # Disable filtering in classification tests to test the old detection path
+  KASEKI_AUTO_LINT_CLEANUP_FILTER_DISABLED=1
 }
 
 case_skipped_cleanup() {
