@@ -46,20 +46,20 @@ git -C "$FAKE_REPO" init -q -b main
 git -C "$FAKE_REPO" add package.json package-lock.json deps/fake-dep/package.json
 git -C "$FAKE_REPO" -c user.email=kaseki-test@example.invalid -c user.name="Kaseki Test" commit -q -m initial
 
-cat > "$FAKE_BIN/pi" << 'EOF_PI'
+cat > "$FAKE_BIN/pi" <<EOF_PI
 #!/usr/bin/env bash
-if [ "${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
-if [ "${1:-}" = "--list-models" ]; then echo "gateway"; exit 0; fi
-prompt="${*: -1}"
-if printf '%s' "$prompt" | grep -q 'goal-setting Pi agent'; then
+if [ "\${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
+if [ "\${1:-}" = "--list-models" ]; then echo "gateway"; exit 0; fi
+prompt="\${*: -1}"
+if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
   printf 'goal-setting\n' >> "$PI_CALLS"
   printf '%s\n' '{"original_prompt":"inspect only","upgraded_goal":"Inspect only","reasoning":"test","key_requirements":[],"success_criteria":[]}' > "$RESULTS_DIR/goal-setting-candidate.json"
   printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"goal-setting response"}],"stopReason":"stop","responseId":"resp_goal_1"},"toolResults":[]}'
-elif printf '%s' "$prompt" | grep -q 'read-only scouting Pi agent'; then
+elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf 'scouting\n' >> "$PI_CALLS"
   # Simulate a model/tool path that exits 0 but forgets to write scouting-candidate.json.
   printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"stop","responseId":"resp_scout_empty"},"toolResults":[]}'
-elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
+elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "$PI_CALLS"
   printf '%s\n' '{"met":true,"confidence":"high","summary":"inspect done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[],"evidence_sources_inspected":[],"contradictions":[],"confidence_calibration":{"outcome":"confident","justification":"test"}}' > "$RESULTS_DIR/goal-check-candidate.json"
   printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"goal-check response"}],"stopReason":"stop","responseId":"resp_check_1"},"toolResults":[]}'
@@ -158,7 +158,7 @@ run_exit=$?
 set -e
 
 [ "$run_exit" -eq 0 ] || fail "expected zero exit, got $run_exit"
-expected_calls=$'goal-setting\nscouting\ncoding\ngoal-check'
+expected_calls=$'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check'
 actual_calls="$(cat "$PI_CALLS" 2>/dev/null || true)"
 [ "$actual_calls" = "$expected_calls" ] || fail "expected fallback to continue through inspect agent, got: $(tr '\n' ',' < "$PI_CALLS")"
 [ -s "$RESULTS_DIR/scouting.json" ] || fail "fallback scouting.json was not produced"
