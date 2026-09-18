@@ -49,21 +49,24 @@ git -C "$FAKE_REPO" -c user.email=kaseki-test@example.invalid -c user.name="Kase
 cat > "$FAKE_BIN/pi" <<EOF_PI
 #!/usr/bin/env bash
 if [ "\${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
+if [ "\${1:-}" = "--list-models" ]; then echo "gateway"; exit 0; fi
 prompt="\${*: -1}"
 if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
   printf 'goal-setting\n' >> "$PI_CALLS"
   printf '%s\n' '{"original_prompt":"inspect only","upgraded_goal":"Inspect only","reasoning":"test","key_requirements":[],"success_criteria":[]}' > "$RESULTS_DIR/goal-setting-candidate.json"
+  printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"goal-setting response"}],"stopReason":"stop"}}'
 elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf 'scouting\n' >> "$PI_CALLS"
   # Simulate a model/tool path that exits 0 but forgets to write scouting-candidate.json.
+  printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"stop"}}'
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "$PI_CALLS"
   printf '%s\n' '{"met":true,"confidence":"high","summary":"inspect done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[]}' > "$RESULTS_DIR/goal-check-candidate.json"
+  printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"goal-check response"}],"stopReason":"stop"}}'
 else
   printf 'coding\n' >> "$PI_CALLS"
-  printf '%s\n' 'read-only inspect output'
+  printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"read-only inspect output"}],"stopReason":"stop"}}'
 fi
-printf '{"type":"message","model":"test-model"}\n'
 EOF_PI
 cat > "$FAKE_BIN/kaseki-pi-progress-stream" <<'EOF_PROGRESS'
 #!/usr/bin/env bash
