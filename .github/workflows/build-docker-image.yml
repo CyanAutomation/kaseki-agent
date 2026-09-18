@@ -1,7 +1,7 @@
 name: Publish Docker Image
 
 on:
-  workflow_dispatch
+  workflow_dispatch:
   workflow_call:
     inputs:
       ref: { description: Immutable release commit to build, required: true, type: string }
