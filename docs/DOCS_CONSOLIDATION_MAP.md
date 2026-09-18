@@ -19,6 +19,7 @@
 ### Goal-Setting Documentation
 
 **Old Files** (5 docs → 1 master):
+
 - ❌ ~~GOAL_SETTING_IMPROVEMENTS.md~~ → ✅ [GOAL_SETTING_GUIDE.md](./GOAL_SETTING_GUIDE.md)
 - ❌ ~~GOAL_SETTING_PRACTICAL_GUIDE.md~~ → ✅ [GOAL_SETTING_GUIDE.md](./GOAL_SETTING_GUIDE.md)
 - ❌ ~~GOAL_SETTING_EXIT_CODES.md~~ → ✅ [GOAL_SETTING_GUIDE.md](./GOAL_SETTING_GUIDE.md#exit-codes--troubleshooting)
@@ -28,6 +29,7 @@
 **Master Reference**: [GOAL_SETTING_GUIDE.md](./GOAL_SETTING_GUIDE.md)
 
 **What's Included**:
+
 - Complete overview (Why, what makes a good goal)
 - All 10 improvements explained
 - Configuration & API reference
@@ -42,6 +44,7 @@
 ### Artifact Documentation
 
 **Old Files** (7 docs → 2 masters):
+
 - ❌ ~~ARTIFACT_CONSOLIDATION_IMPLEMENTATION.md~~ → ✅ [ARTIFACT_SCHEMAS.md](./ARTIFACT_SCHEMAS.md)
 - ❌ ~~ARTIFACT_CONSUMPTION_RESEARCH.md~~ → ✅ [ARTIFACT_SCHEMAS.md](./ARTIFACT_SCHEMAS.md)
 - ❌ ~~ARTIFACT_EVALUATION_ACTION_PLAN.md~~ → ✅ [ARTIFACT_SCHEMAS.md](./ARTIFACT_SCHEMAS.md)
@@ -51,6 +54,7 @@
 - ❌ ~~ARTIFACT_SCORING_REFERENCE.md~~ → ✅ [ARTIFACT_SCHEMAS.md](./ARTIFACT_SCHEMAS.md)
 
 **Master References**:
+
 - [ARTIFACT_SCHEMAS.md](./ARTIFACT_SCHEMAS.md) — Complete artifact schema definitions
 - [ARTIFACT_SCORING_QUICK_REFERENCE.md](./ARTIFACT_SCORING_QUICK_REFERENCE.md) — Quick lookup guide
 
@@ -59,12 +63,14 @@
 ### Host Setup Documentation
 
 **Old Files** (3 docs → 1 master):
+
 - ❌ ~~HOST_SETUP_STAGES.md~~ → ✅ [HOST_SETUP_API_REFERENCE.md](./HOST_SETUP_API_REFERENCE.md)
 - ❌ ~~HOST_SETUP_TROUBLESHOOTING.md~~ → ✅ [HOST_SETUP_API_REFERENCE.md](./HOST_SETUP_API_REFERENCE.md)
 
 **Master Reference**: [HOST_SETUP_API_REFERENCE.md](./HOST_SETUP_API_REFERENCE.md)
 
 **What's Included**:
+
 - Complete API reference
 - Setup stages & initialization flow
 - Troubleshooting common issues
@@ -74,11 +80,13 @@
 ### Evaluation Documentation
 
 **Old Files** (2 docs → 1 master):
+
 - ❌ ~~EVALUATION_IMPROVEMENTS_ROLLOUT.md~~ → ✅ [EVALUATION_BEST_PRACTICES.md](./EVALUATION_BEST_PRACTICES.md)
 
 **Master Reference**: [EVALUATION_BEST_PRACTICES.md](./EVALUATION_BEST_PRACTICES.md)
 
 **What's Included**:
+
 - Best practices for goal-check and run-evaluation phases
 - Quality assessment methodologies
 - Rollout timeline & enhancements
@@ -88,12 +96,14 @@
 ### Test Documentation
 
 **Old Files** (3 docs → 1 master):
+
 - ❌ ~~QUICK_REF_TEST_ISOLATION.md~~ → ✅ [TEST_ISOLATION_BEST_PRACTICES.md](./TEST_ISOLATION_BEST_PRACTICES.md)
 - ❌ ~~TEST_ENVIRONMENT_POLLUTION_POSTMORTEM.md~~ → ✅ [TEST_ISOLATION_BEST_PRACTICES.md](./TEST_ISOLATION_BEST_PRACTICES.md)
 
 **Master Reference**: [TEST_ISOLATION_BEST_PRACTICES.md](./TEST_ISOLATION_BEST_PRACTICES.md)
 
 **What's Included**:
+
 - Complete isolation best practices
 - Quick reference guide
 - Environment pollution postmortem & lessons learned
@@ -103,26 +113,31 @@
 ### Historical/Completed Documentation (Now Archived)
 
 **Feature 3 Documentation** (6 files → archive/):
+
 - All Feature 3 implementation, status, and integration docs
 - Location: `archive/FEATURE3_*.md`
 - Why archived: Feature is complete and integrated into main codebase
 
 **Phase Completion Summaries** (3 files → archive/):
+
 - Phase 2, 3, and 4-5 completion snapshots
 - Location: `archive/PHASE*_COMPLETION*.md`
 - Why archived: Historical snapshots; current status is in CLAUDE.md
 
 **Caveman Documentation** (3 files → archive/):
+
 - Caveman baseline, phase 2, and documentation update summaries
 - Location: `archive/CAVEMAN_*.md`
 - Why archived: Historical project phases; refer to CLAUDE.md for current status
 
 **Issue Investigation Reports** (5 files → archive/):
+
 - KASEKI-156, KASEKI-170, KASEKI-198, KASEKI-201 investigation reports
 - Location: `archive/KASEKI-*-*.md`
 - Why archived: Investigations are complete; refer to codebase history for context
 
 **Implementation Summaries** (2 files → archive/):
+
 - Generic implementation summary files
 - Location: `archive/IMPLEMENTATION_SUMMARY*.md`
 - Why archived: Content merged into DEVELOPMENT.md and other docs
@@ -224,7 +239,7 @@ docs/
 
 ## Migration Guide: Finding Content
 
-### If you were reading...
+### If you were reading
 
 **GOAL_SETTING_IMPROVEMENTS.md**
 → Go to: [GOAL_SETTING_GUIDE.md § The 10 Improvements](./GOAL_SETTING_GUIDE.md#the-10-improvements-may-2026)
@@ -328,7 +343,7 @@ cat docs/archive/FEATURE3_README.md
 ## Consolidation Metrics
 
 | Metric | Value |
-|--------|-------|
+| -------- | ------- |
 | **Before** | 70+ markdown files |
 | **After** | 50 core + 36 archived = 86 total |
 | **Main Docs Reduction** | 28% fewer active files |

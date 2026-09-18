@@ -19,7 +19,7 @@ Everything else in this index is for deeper reading after you have a working set
 ### 🚀 Getting Started
 
 | Document | Purpose |
-|---------|---------|
+| --------- | --------- |
 | [GETTING_STARTED.md](GETTING_STARTED.md) | **Single canonical entry point** — install, quickstart, first task |
 | [AUTH_SETUP.md](AUTH_SETUP.md) | Detailed GitHub App credential setup |
 | [SETUP_GUIDE.md](SETUP_GUIDE.md) | Legacy path selector (npm / Docker / script) |
@@ -29,7 +29,7 @@ Everything else in this index is for deeper reading after you have a working set
 Understand how kaseki-agent works.
 
 | Document | Purpose |
-|---------|---------|
+| --------- | --------- |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Architecture, API service components |
 | [EXIT_CODES.md](EXIT_CODES.md) | Understand exit codes and what they mean |
 | [QUALITY_GATES.md](QUALITY_GATES.md) | Quality validation, allowlists, diff size limits |
@@ -41,7 +41,7 @@ Understand how kaseki-agent works.
 Run and manage kaseki-agent in production.
 
 | Document | Purpose |
-|---------|---------|
+| --------- | --------- |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Deploy API service (Docker, Node.js, systemd) |
 | [DISTRIBUTED_SETUP.md](DISTRIBUTED_SETUP.md) | Multi-host and Kubernetes deployments |
 | [CI_CD_INTEGRATION.md](CI_CD_INTEGRATION.md) | Integrate with GitHub Actions, GitLab CI, Jenkins |
@@ -60,7 +60,7 @@ Monitor and debug kaseki-agent in production.
 Learn by example.
 
 | Document | Purpose |
-|---------|---------|
+| --------- | --------- |
 | [EXAMPLES.md](EXAMPLES.md) | 10+ real-world scenarios (bug fixes, features, tests) |
 | [INTEGRATION_EXAMPLE.md](INTEGRATION_EXAMPLE.md) | TypeScript/OpenClaw integration pattern |
 | [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) | Template prompts for common tasks |
@@ -70,7 +70,7 @@ Learn by example.
 Tune for speed and cost.
 
 | Document | Purpose |
-|---------|---------|
+| --------- | --------- |
 | [PERFORMANCE_TUNING.md](PERFORMANCE_TUNING.md) | Timeout, cache, allowlist optimization |
 | [COST_ESTIMATION.md](COST_ESTIMATION.md) | Understand and manage costs |
 | [ENV_VARS.md](ENV_VARS.md) | Complete environment variable reference |
@@ -80,7 +80,7 @@ Tune for speed and cost.
 Diagnose and fix issues.
 
 | Document | Purpose |
-|---------|---------|
+| --------- | --------- |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Decision trees for common failures |
 | [EXIT_CODES.md](EXIT_CODES.md) | Exit code meanings and fixes |
 
@@ -93,7 +93,7 @@ Diagnose and fix issues.
 **Getting started:**
 
 | Document | Purpose |
-|---------|---------|
+| --------- | --------- |
 | [NPM_SETUP.md](NPM_SETUP.md) | Install via npm |
 | [EXAMPLES.md](EXAMPLES.md) | Real-world use cases |
 | [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) | Write better prompts |
@@ -101,14 +101,14 @@ Diagnose and fix issues.
 **Troubleshooting:**
 
 | Document | Purpose |
-|---------|---------|
+| --------- | --------- |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common issues and fixes |
 | [EXIT_CODES.md](EXIT_CODES.md) | Understand failures |
 
 **Advanced:**
 
 | Document | Purpose |
-|---------|---------|
+| --------- | --------- |
 | [INTEGRATION_EXAMPLE.md](INTEGRATION_EXAMPLE.md) | Programmatic integration |
 | [CI_CD_INTEGRATION.md](CI_CD_INTEGRATION.md) | Automate in CI/CD pipelines |
 
@@ -117,7 +117,7 @@ Diagnose and fix issues.
 **Setup & deployment:**
 
 | Document | Purpose |
-|---------|---------|
+| --------- | --------- |
 | [DOCKER_SETUP.md](DOCKER_SETUP.md) | Container deployment |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Production API service setup |
 | [DISTRIBUTED_SETUP.md](DISTRIBUTED_SETUP.md) | Multi-host & Kubernetes |
@@ -131,7 +131,7 @@ Diagnose and fix issues.
 **Optimization:**
 
 | Document | Purpose |
-|---------|---------|
+| --------- | --------- |
 | [PERFORMANCE_TUNING.md](PERFORMANCE_TUNING.md) | Scaling and optimization |
 | [COST_ESTIMATION.md](COST_ESTIMATION.md) | Budget planning |
 
@@ -140,7 +140,7 @@ Diagnose and fix issues.
 **Understanding scope:**
 
 | Document | Purpose |
-|---------|---------|
+| --------- | --------- |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Architecture overview |
 | [repo-maturity.md](internal/repo-maturity.md) | Production readiness assessment |
 | [QUALITY_GATES.md](QUALITY_GATES.md) | Quality & governance model |
@@ -148,14 +148,14 @@ Diagnose and fix issues.
 **Decision-making:**
 
 | Document | Purpose |
-|---------|---------|
+| --------- | --------- |
 | [COST_ESTIMATION.md](COST_ESTIMATION.md) | Cost analysis and budgeting |
 | [DISTRIBUTED_SETUP.md](DISTRIBUTED_SETUP.md) | Deployment architecture options |
 
 **Governance:**
 
 | Document | Purpose |
-|---------|---------|
+| --------- | --------- |
 | [AUTH_SETUP.md](AUTH_SETUP.md) | Security & credential management |
 | [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) | Prompt guidelines |
 
@@ -202,7 +202,7 @@ Diagnose and fix issues.
 
 1. [DISTRIBUTED_SETUP.md](DISTRIBUTED_SETUP.md) — Multi-host and Kubernetes patterns
 2. [DEPLOYMENT.md](DEPLOYMENT.md) — Deploy API service on multiple hosts
-4. [PERFORMANCE_TUNING.md](PERFORMANCE_TUNING.md) — Load balancing and concurrency
+3. [PERFORMANCE_TUNING.md](PERFORMANCE_TUNING.md) — Load balancing and concurrency
 
 ---
 
@@ -211,7 +211,7 @@ Diagnose and fix issues.
 ### Setup & Installation
 
 | Document | Purpose |
-|----------|---------|
+| ---------- | --------- |
 | [SETUP_GUIDE.md](SETUP_GUIDE.md) | Entry point router for getting started |
 | [NPM_SETUP.md](NPM_SETUP.md) | Install via npm package |
 | [DOCKER_SETUP.md](DOCKER_SETUP.md) | Docker and Docker Compose setup |
@@ -220,7 +220,7 @@ Diagnose and fix issues.
 ### Core Concepts & Reference
 
 | Document | Purpose |
-|----------|---------|
+| ---------- | --------- |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Architecture and development guide |
 | [EXIT_CODES.md](EXIT_CODES.md) | Exit code meanings and troubleshooting |
 | [QUALITY_GATES.md](QUALITY_GATES.md) | Allowlists, diff limits, pattern syntax |
@@ -230,7 +230,7 @@ Diagnose and fix issues.
 ### Deployment & Operations
 
 | Document | Purpose |
-|----------|---------|
+| ---------- | --------- |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | API service deployment (Docker, Node.js, systemd) |
 | [DISTRIBUTED_SETUP.md](DISTRIBUTED_SETUP.md) | Multi-host, regional, Kubernetes deployments |
 | [CI_CD_INTEGRATION.md](CI_CD_INTEGRATION.md) | GitHub Actions, GitLab CI, Jenkins integration |
@@ -326,7 +326,7 @@ Diagnose and fix issues.
 ## Documentation Statistics
 
 | Metric | Value |
-|--------|-------|
+| -------- | ------- |
 | **Total documents** | 22 |
 | **Setup guides** | 4 |
 | **Concepts & reference** | 5 |
@@ -362,7 +362,7 @@ May 2026
 ## See Also
 
 | Document | Purpose |
-|---------|---------|
+| --------- | --------- |
 | [README.md](../README.md) | Project overview |
 | [CLAUDE.md](../CLAUDE.md) | AI coding agent guidance |
 | [CHANGELOG.md](../CHANGELOG.md) | Release notes & archived docs |
@@ -374,7 +374,7 @@ May 2026
 These documents are for contributors and maintainers. They are not needed for using kaseki-agent.
 
 | Document | Purpose |
-|---------|---------|
+| --------- | --------- |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Architecture, coding conventions |
 | [internal/BUILD_STRATEGY.md](internal/BUILD_STRATEGY.md) | Build pipeline and CI/CD |
 | [internal/BACKLOG.md](internal/BACKLOG.md) | Planned improvements |
