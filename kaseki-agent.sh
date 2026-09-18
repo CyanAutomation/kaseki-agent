@@ -10186,12 +10186,11 @@ elif [ "$QUALITY_EXIT" -ne 0 ]; then
   set_current_stage "validation"
   emit_progress "validation" "started"
   printf 'Validation skipped because quality gates failed with exit %s.\n' "$QUALITY_EXIT" | tee -a "${KASEKI_RESULTS_DIR}"/validation.log
-  VALIDATION_EXIT="$QUALITY_EXIT"
   if [ -z "$VALIDATION_FAILURE_REASON" ]; then
     VALIDATION_FAILURE_REASON="quality_gate_failed: $QUALITY_FAILURE_REASON"
   fi
-  record_stage_timing "validation" "$QUALITY_EXIT" 0 "skipped_after_quality_failure"
-  emit_progress "validation" "finished with exit $VALIDATION_EXIT"
+  record_stage_timing "validation" "0" 0 "skipped_after_quality_failure"
+  emit_progress "validation" "finished (skipped due to quality failure)"
 elif [ "$PI_EXIT" -ne 0 ] && [ "$KASEKI_VALIDATE_AFTER_AGENT_FAILURE" != "1" ]; then
   printf '\n==> validation\n'
   set_current_stage "validation"
