@@ -409,6 +409,6 @@ Before submitting your evaluation JSON, verify:
 ## References
 
 - [OpenAI Codex Guidance: Using Goals](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex)
-- [GOAL_SETTING_IMPROVEMENTS.md](GOAL_SETTING_IMPROVEMENTS.md) — Goal-setting best practices (10 improvements)
+- [GOAL_SETTING_GUIDE.md](GOAL_SETTING_GUIDE.md) — Goal-setting best practices (10 improvements)
 - [GOAL_SETTING_GUIDE.md](GOAL_SETTING_GUIDE.md) — How goal-setting works in Kaseki
 - [FEEDBACK_LOOP_INTEGRATION.md](FEEDBACK_LOOP_INTEGRATION.md) — How evaluations feed back into the system
