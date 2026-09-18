@@ -112,7 +112,7 @@ jobs:
       contents: read
       packages: write
       security-events: write
-    uses: ./.github/workflows/build-docker-image.yaml
+    uses: ./.github/workflows/build-docker-image.yml
     with:
       ref: ${{ needs.release.outputs.sha }}
       version: ${{ needs.release.outputs.version }}
