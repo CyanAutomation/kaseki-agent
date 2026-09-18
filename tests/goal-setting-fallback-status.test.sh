@@ -51,6 +51,7 @@ git -C "$FAKE_REPO" -c user.email=kaseki-test@example.invalid -c user.name="Kase
 cat > "$FAKE_BIN/pi" <<EOF_PI
 #!/usr/bin/env bash
 if [ "\${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
+if [ "\${1:-}" = "--list-models" ]; then echo "gateway"; exit 0; fi
 prompt="\${*: -1}"
 if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
   printf 'goal-setting\n' >> "$PI_CALLS"
@@ -60,7 +61,7 @@ elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[]}' > "$RESULTS_DIR/scouting-candidate.json"
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "$PI_CALLS"
-  printf '%s\n' '{"met":true,"confidence":"high","summary":"done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[]}' > "$RESULTS_DIR/goal-check-candidate.json"
+  printf '%s\n' '{"met":true,"confidence":"high","summary":"done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[],"evidence_sources_inspected":[],"contradictions":[],"confidence_calibration":{"outcome":"confident","justification":"test"}}' > "$RESULTS_DIR/goal-check-candidate.json"
 else
   printf 'coding\n' >> "$PI_CALLS"
   printf '%s' "\$prompt" > "$RESULTS_DIR/coding-prompt.txt"
@@ -90,28 +91,30 @@ chmod +x "$FAKE_BIN"/*
 
 set +e
 env KASEKI_WORKSPACE_DIR="$TMP_DIR" PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspect then code" \
-  OPENROUTER_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off \
+  LLM_GATEWAY_URL=https://example.invalid/v1 LLM_GATEWAY_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off \
   KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
   KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" KASEKI_VALIDATION_COMMANDS=":" KASEKI_ALLOW_EMPTY_DIFF=1 \
+  KASEKI_SKIP_GATEWAY_HEALTH_CHECK=1 \
   bash "$MODIFIED_SCRIPT" > "$RUN_LOG" 2>&1
 run_exit=$?
 set -e
 
 [ "$run_exit" -eq 0 ] || fail "expected zero exit, got $run_exit"
-[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check' ] || fail "Pi calls did not continue through scouting/coding/goal-check"
+[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' ] || fail "Pi calls did not continue through scouting/coding/goal-check"
 [ -s "$RESULTS_DIR/goal-setting-validation-errors.jsonl" ] || fail "missing goal-setting validation errors"
 [ -s "$RESULTS_DIR/goal-setting-validation-summary.txt" ] || fail "missing goal-setting validation summary"
-grep -q '^pi goal-setting agent[[:space:]]86[[:space:]]' "$RESULTS_DIR/stage-timings.tsv" || fail "goal-setting failure timing missing"
+grep -q '^pi goal-setting agent[[:space:]]0[[:space:]].*degraded=1' "$RESULTS_DIR/stage-timings.tsv" || fail "goal-setting degraded-fallback timing missing"
 grep -q 'inspect then code' "$RESULTS_DIR/coding-prompt.txt" || fail "coding prompt did not preserve original prompt"
 ! grep -q 'INVALID UPGRADED GOAL SHOULD NOT BE USED' "$RESULTS_DIR/coding-prompt.txt" || fail "coding prompt used invalid upgraded goal"
 node - "$RESULTS_DIR/metadata.json" <<'NODE' || fail "metadata did not preserve successful final status with observable goal-setting failure"
 const fs = require('node:fs');
 const metadata = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 if (metadata.exit_code !== 0) throw new Error(`expected exit_code 0, got ${metadata.exit_code}`);
-if (metadata.goal_setting_exit_code !== 86) throw new Error(`expected goal_setting_exit_code 86, got ${metadata.goal_setting_exit_code}`);
+if (metadata.goal_setting_exit_code !== 0) throw new Error(`expected goal_setting_exit_code 0, got ${metadata.goal_setting_exit_code}`);
 if (metadata.failed_command !== '') throw new Error(`expected empty failed_command, got ${metadata.failed_command}`);
 if (metadata.goal_setting_attempts !== 1) throw new Error(`expected one deterministic goal-setting attempt, got ${metadata.goal_setting_attempts}`);
-if (metadata.goal_setting_succeeded_on_attempt !== null) throw new Error('goal_setting_succeeded_on_attempt should be null');
+if (metadata.goal_setting_fallback_used !== true) throw new Error('goal_setting_fallback_used should be true');
+if (metadata.goal_setting_fallback_mode !== 'invalid_candidate_artifact') throw new Error(`expected fallback_mode invalid_candidate_artifact, got ${metadata.goal_setting_fallback_mode}`);
 NODE
 node - "$RESULTS_DIR/progress.jsonl" <<'NODE' || fail "goal-setting error event did not advertise continue recovery"
 const fs = require('node:fs');
