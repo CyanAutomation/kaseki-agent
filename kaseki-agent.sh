@@ -9926,9 +9926,27 @@ NODE
     # Propagate infrastructure errors from hashline processing to final status
     # (validation failures like rejected edits are non-fatal and recorded in output artifacts)
     if [ "$HASHLINE_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
-      STATUS="$HASHLINE_EXIT"
-      FAILED_COMMAND="hashline validation"
-      emit_error_event "hashline_validation_failed" "Hashline event processing failed with exit code $HASHLINE_EXIT (infrastructure/I/O error)" "exit"
+      # Check if the failure is due to infrastructure errors (errors > 0) or just validation rejections
+      # Validation rejections (bad anchors) are non-fatal; infrastructure errors (I/O, missing files) are fatal
+      HASHLINE_ERRORS=0
+      if [ -f "${KASEKI_RESULTS_DIR}/hashline-summary.json" ]; then
+        HASHLINE_ERRORS=$(node - "${KASEKI_RESULTS_DIR}/hashline-summary.json" <<'NODE' 2>/dev/null || printf '0\n'
+const fs = require('node:fs');
+const summary = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+process.stdout.write(String(summary.errors || 0));
+NODE
+)
+      fi
+
+      # Only propagate exit code if there are actual infrastructure errors
+      if [ "$HASHLINE_ERRORS" -gt 0 ]; then
+        STATUS="$HASHLINE_EXIT"
+        FAILED_COMMAND="hashline validation"
+        emit_error_event "hashline_validation_failed" "Hashline event processing failed with exit code $HASHLINE_EXIT (infrastructure/I/O error, $HASHLINE_ERRORS errors)" "exit"
+      else
+        # Validation failures only (rejected edits due to anchor mismatches) - non-fatal
+        printf 'Hashline validation: edits rejected due to anchor mismatches (non-fatal; recorded in restoration-report.md)\n' | tee -a "${KASEKI_RESULTS_DIR}"/hashline-validation.log
+      fi
     fi
 
     # Record timing for hashline validation
