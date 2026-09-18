@@ -715,9 +715,12 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         mkdirSync(scriptsDir, { recursive: true });
         mkdirSync(scoutingTemplatesDir, { recursive: true });
         writeFileSync(piCalls, '');
-        writeFileSync(join(appLib, 'event-aggregator.js'), '');
-        writeFileSync(join(appLib, 'timestamp-tracker.js'), '');
-        writeFileSync(join(appLib, 'progress-stream-utils.js'), '');
+        copyFileSync(join(repoRoot, 'dist', 'event-aggregator.js'), join(appLib, 'event-aggregator.js'));
+        copyFileSync(join(repoRoot, 'dist', 'timestamp-tracker.js'), join(appLib, 'timestamp-tracker.js'));
+        copyFileSync(join(repoRoot, 'dist', 'progress-stream-utils.js'), join(appLib, 'progress-stream-utils.js'));
+        copyFileSync(join(repoRoot, 'dist', 'hashline-event-handler-cli.js'), join(appLib, 'hashline-event-handler-cli.js'));
+        copyFileSync(join(repoRoot, 'dist', 'hashline-event-handler.js'), join(appLib, 'hashline-event-handler.js'));
+        copyFileSync(join(repoRoot, 'dist', 'hashline-validator.js'), join(appLib, 'hashline-validator.js'));
         copyFileSync(join(repoRoot, 'scripts', 'allowlist-helper.sh'), join(scriptsDir, 'allowlist-helper.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'github-preflight-auth.sh'), join(scriptsDir, 'github-preflight-auth.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'github-preflight-health.sh'), join(scriptsDir, 'github-preflight-health.sh'));
@@ -733,6 +736,7 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         copyFileSync(join(repoRoot, 'scripts', 'npm-install-helpers.sh'), join(scriptsDir, 'npm-install-helpers.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'agent-prompt.sh'), join(scriptsDir, 'agent-prompt.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'evaluation-prompts.sh'), join(scriptsDir, 'evaluation-prompts.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'context-handoff.js'), join(scriptsDir, 'context-handoff.js'));
         copyFileSync(join(repoRoot, 'scripts', 'inspect-mode-defaults.sh'), join(scriptsDir, 'inspect-mode-defaults.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'restore-disallowed-changes.sh'), join(scriptsDir, 'restore-disallowed-changes.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'auto-lint-cleanup-classification.sh'), join(scriptsDir, 'auto-lint-cleanup-classification.sh'));
