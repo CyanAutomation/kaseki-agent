@@ -37,11 +37,18 @@ The run completed successfully. All validation checks passed, and changes were c
 
 A general error occurred. This is used for unexpected failures that don't fit other categories.
 
+**Note: Hashline Validation is Non-Fatal**
+
+When the agent uses hashline edits (content-based file modifications with SHA-256 anchors), validation failures are **not fatal** and do not cause exit code 1. Instead, rejected edits are recorded in the `restoration-report.md` artifact. This allows the run to complete even if some edits fail to apply due to anchor mismatches or content changes.
+
+Exit code 1 from hashline processing only occurs on **infrastructure failures** (I/O errors, permission denied, missing files), not validation failures.
+
 **Troubleshooting:**
 
 1. Check the run logs: `kaseki-agent report <instance-id>`
 2. Check the standard output/error: `cat /agents/kaseki-results/<instance-id>/stdout.log`
 3. Enable verbose logging: Set `DEBUG=1` before running the command
+4. If hashline edits were rejected, review: `cat /agents/kaseki-results/<instance-id>/restoration-report.md`
 
 ---
 
@@ -692,6 +699,51 @@ To get more detailed error information:
    docker ps -a                  # Running containers
    docker logs <container-id>    # Container logs (if stuck)
    ```
+
+---
+
+## Non-Fatal Phases: Hashline Validation
+
+Certain phases are marked as **non-fatal**, meaning failures in those phases do not cause the run to exit with a non-zero code. Instead, they are recorded in artifacts for monitoring and debugging.
+
+### Hashline Validation Phase
+
+When the agent makes edits using **hashline syntax** (content-based edits with SHA-256 anchors), the validation phase processes these edits and attempts to apply them to files. This phase is non-fatal.
+
+**What happens if hashline validation fails:**
+
+1. Invalid anchors, missing files, or content mismatches cause edits to be rejected
+2. Rejected edits are recorded in `restoration-report.md` and `restoration.jsonl`
+3. The run **does not fail** — exit code remains 0
+4. Validation failures are documented but do not propagate to container exit status
+
+**When hashline validation DOES cause exit code 1:**
+
+- **Infrastructure failures only** (I/O errors, permission denied, file system errors)
+- Not validation failures (anchor mismatches, content changes)
+
+**Example scenario:**
+
+```bash
+# Hashline validation attempts to apply edits
+# Some edits fail (anchor not found) — recorded as "rejected"
+# Infrastructure is fine — exit code 0
+#
+# Later, if there's a disk I/O error — exit code 1 (infrastructure failure)
+```
+
+**Inspecting hashline validation results:**
+
+```bash
+# View human-readable restoration report
+cat /agents/kaseki-results/<instance-id>/restoration-report.md
+
+# View machine-readable restoration events (JSONL)
+cat /agents/kaseki-results/<instance-id>/restoration.jsonl
+
+# Extract from metadata
+jq '.phases.restoration' /agents/kaseki-results/<instance-id>/metadata.json
+```
 
 ---
 
