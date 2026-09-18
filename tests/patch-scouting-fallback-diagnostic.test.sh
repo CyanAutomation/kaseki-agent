@@ -104,16 +104,16 @@ run_exit=$?
 set -e
 
 [ "$run_exit" -eq 8 ] || fail "expected exit 8, got $run_exit"
-expected_calls=$'goal-setting\nscouting\ncoding'
+expected_calls=$'goal-setting\nscouting\nscouting\ncoding\ngoal-check'
 actual_calls="$(cat "$PI_CALLS" 2>/dev/null || true)"
-[ "$actual_calls" = "$expected_calls" ] || fail "expected fallback to continue through coding and stop before goal-check, got: $(tr '\n' ',' < "$PI_CALLS")"
+[ "$actual_calls" = "$expected_calls" ] || fail "expected fallback to continue through coding and into the read-only critical-change diagnostic goal-check, got: $(tr '\n' ',' < "$PI_CALLS")"
 [ -s "$RESULTS_DIR/scouting.json" ] || fail "fallback scouting.json was not produced"
 grep -q 'missing_scouting_candidate_for_patch_mode' "$RESULTS_DIR/scouting.json" || fail "fallback reason missing"
 grep -q '"reason_code":"patch_fallback"' "$RESULTS_DIR/scouting-validation-errors.jsonl" || fail "fallback warning missing"
-grep -q '"reason_code":"patch_fallback_recovered"' "$RESULTS_DIR/scouting-validation-errors.jsonl" || fail "fallback recovery marker missing"
+grep -q '"reason_code":"patch_retry_exhausted_fallback_recovered"' "$RESULTS_DIR/scouting-validation-errors.jsonl" || fail "fallback recovery marker missing"
 grep -q '"reason_code":"missing_file"' "$RESULTS_DIR/scouting-validation-errors.jsonl" || fail "missing_file validation record missing"
 grep -q 'set KASEKI_MODEL or LLM_GATEWAY_MODEL to dynamic/kaseki-agent or another supported gateway model' "$RESULTS_DIR/scouting-validation-errors.jsonl" || fail "gateway auto diagnostic missing from scouting validation record"
-grep -q '^pi scouting agent[[:space:]]0[[:space:]]' "$RESULTS_DIR/stage-timings.tsv" || fail "scouting stage should remain successful"
+[ "$(grep -c '^pi scouting agent[[:space:]]86[[:space:]]' "$RESULTS_DIR/stage-timings.tsv")" -eq 2 ] || fail "expected both scouting attempts to record the artifact-contract exit before the conservative fallback recovered"
 node -e 'const fs=require("node:fs");const f=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(!String(f.diagnostic_reason).includes("critical_change_expectations_failed")) throw new Error(f.diagnostic_reason);if(String(f.diagnostic_reason).includes("missing_file")) throw new Error("stale missing_file diagnostic: "+f.diagnostic_reason);' "$RESULTS_DIR/failure.json" || fail "failure diagnostic reason did not prioritize terminal critical-change failure"
 grep -q 'Failure Detail: critical_change_expectations_failed' "$RESULTS_DIR/result-summary.md" || fail "summary did not report critical-change failure"
 grep -q 'empty diff\|diff is empty\|no patch diff' "$RESULTS_DIR/result-summary.md" || fail "summary did not mention empty diff"

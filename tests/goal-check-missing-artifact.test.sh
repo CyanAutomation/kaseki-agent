@@ -63,7 +63,7 @@ elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf 'scouting\n' >> "$PI_CALLS"
   printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[]}' > "$RESULTS_DIR/scouting-candidate.json"
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
-  goal_check_count="$(grep -c '^goal-check$' "$PI_CALLS" 2>/dev/null || true)"
+  goal_check_count="\$(grep -c '^goal-check$' "$PI_CALLS" 2>/dev/null || true)"
   printf 'goal-check\n' >> "$PI_CALLS"
   if [ "\$goal_check_count" = "0" ]; then
     # Two otherwise valid verdicts are ambiguous and must not be persisted.
@@ -111,7 +111,7 @@ env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspe
 run_exit=$?
 
 [ "$run_exit" -eq 0 ] || fail "expected evaluator failure to preserve successful code outcome, got $run_exit"
-[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' ] || fail "missing evaluator-only retry after goal-check artifact failure"
+[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check\ngoal-check\ngoal-check' ] || fail "missing evaluator-only retry after goal-check artifact failure"
 [ -s "$RESULTS_DIR/goal-check-validation-errors.jsonl" ] || fail "missing goal-check-validation-errors.jsonl"
 [ -s "$RESULTS_DIR/goal-check-contract-diagnostics.json" ] || fail "missing goal-check contract diagnostics"
 [ "$(cat "$RESULTS_DIR/goal-check-validation-reason.txt")" = "missing_file" ] || fail "expected missing_file reason"
@@ -119,7 +119,7 @@ grep -q 'goal-check-candidate.json' "$RESULTS_DIR/goal-check-validation-summary.
 node - "$RESULTS_DIR/goal-check-validation-errors.jsonl" "$RESULTS_DIR" <<'NODE' || fail "goal-check validation error log did not capture missing artifact"
 const fs = require('node:fs');
 const lines = fs.readFileSync(process.argv[2], 'utf8').trim().split(/\n+/).filter(Boolean);
-if (lines.length !== 2) throw new Error(`expected exactly two JSONL entries (one per evaluator attempt), got ${lines.length}`);
+if (lines.length !== 4) throw new Error(`expected exactly four JSONL entries (one per evaluator attempt across the pre- and post-validation goal-check invocations), got ${lines.length}`);
 const entry = JSON.parse(lines[0]);
 if (entry.field !== 'goal-check-candidate.json') throw new Error(`expected field goal-check-candidate.json, got ${entry.field}`);
 if (entry.expected !== `file at ${process.argv[3]}/goal-check-candidate.json`) throw new Error(`expected file at ${process.argv[3]}/goal-check-candidate.json, got ${entry.expected}`);
