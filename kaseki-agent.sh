@@ -3450,7 +3450,8 @@ EOF
   # schema/provider failure plus an empty result into a green terminal state.
   if [ "$STATUS" -eq 0 ] && [ "$KASEKI_TASK_MODE" != "inspect" ] &&
     [ ! -s "${KASEKI_RESULTS_DIR}/git.diff" ] && [ ! -s "${KASEKI_RESULTS_DIR}/changed-files.txt" ] &&
-    [ "$KASEKI_ALLOW_EMPTY_DIFF" != "1" ]; then
+    [ "$KASEKI_ALLOW_EMPTY_DIFF" != "1" ] &&
+    ! critical_change_contract_allows_noop; then
     STATUS=3
     FAILED_COMMAND="empty durable patch"
     emit_error_event "empty_durable_patch" "Run completed without a durable repository change" "exit"
@@ -10475,7 +10476,8 @@ fi
 if [ "$DIFF_NONEMPTY" != "true" ] &&
   [ "$STATUS" -eq 0 ] &&
   [ "$KASEKI_ALLOW_EMPTY_DIFF" != "1" ] &&
-  [ "$KASEKI_TASK_MODE" != "inspect" ]; then
+  [ "$KASEKI_TASK_MODE" != "inspect" ] &&
+  ! critical_change_contract_allows_noop; then
   EMPTY_DIFF_REASON="agent_no_change"
   if [ -s "${KASEKI_RESULTS_DIR}/hashline-failure.json" ]; then
     EMPTY_DIFF_REASON="hashline_validation_failure"

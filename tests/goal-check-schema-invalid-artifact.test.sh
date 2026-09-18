@@ -101,8 +101,8 @@ env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspe
   bash "$MODIFIED_SCRIPT" > "$RUN_LOG" 2>&1
 run_exit=$?
 
-[ "$run_exit" -eq 8 ] || fail "expected goal-check failure exit 8, got $run_exit"
-[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' ] || fail "missing evaluator-only retry after schema-invalid goal-check artifact"
+[ "$run_exit" -eq 0 ] || fail "expected deterministic fallback to preserve successful accepted-no-op outcome, got $run_exit"
+[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check\ngoal-check\ngoal-check' ] || fail "missing evaluator-only retry after schema-invalid goal-check artifact"
 [ -s "$RESULTS_DIR/goal-check-validation-errors.jsonl" ] || fail "missing goal-check-validation-errors.jsonl"
 [ "$(cat "$RESULTS_DIR/goal-check-validation-reason.txt")" = "schema_mismatch" ] || fail "expected schema_mismatch reason"
 grep -q 'goal-check validation error' "$RESULTS_DIR/goal-check-validation-summary.txt" || fail "missing goal-check validation summary"

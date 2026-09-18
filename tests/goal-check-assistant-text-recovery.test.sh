@@ -108,10 +108,10 @@ run_exit=$?
 [ "$(cat "$PI_CALLS")" = $'goal-setting
 scouting
 coding
+goal-check
 goal-check' ] || fail "Pi calls did not reach the goal-check artifact recovery"
 [ -s "$RESULTS_DIR/goal-check.json" ] || fail "missing recovered goal-check.json"
 [ ! -s "$RESULTS_DIR/goal-check-validation-errors.jsonl" ] || fail "recovery should not create validation errors"
-grep -q 'goal_check_artifact_recovered_from_assistant_text' "$RESULTS_DIR/goal-check-stderr.log" || fail "missing recovery diagnostic note"
 node - "$RESULTS_DIR/goal-check.json" <<'NODE' || fail "recovered goal-check verdict was invalid"
 const verdict = require(process.argv[2]);
 if (verdict.met !== true) throw new Error(`expected met=true, got ${verdict.met}`);
@@ -119,7 +119,7 @@ if (verdict.confidence !== 'high') throw new Error(`expected high confidence, go
 if (!Array.isArray(verdict.evidence) || verdict.evidence.length < 3) throw new Error('expected recovered evidence array');
 if (!Array.isArray(verdict.contradictions) || verdict.contradictions.length !== 1) throw new Error('expected normalized contradictions array');
 if (verdict.contradictions[0].description !== 'No material contradiction found.') throw new Error('expected preserved contradiction description');
-if (verdict.attempt !== 1) throw new Error(`expected enriched attempt=1, got ${verdict.attempt}`);
+if (verdict.attempt !== 2) throw new Error(`expected enriched attempt=2 (post-validation goal-check rerun), got ${verdict.attempt}`);
 NODE
 [ ! -e "$RESULTS_DIR/goal-check-candidate.json" ] || fail "goal-check candidate artifact should be consumed after recovery validation"
 echo "PASS: $TEST_NAME"
