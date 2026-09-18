@@ -341,6 +341,7 @@ RUN mkdir -p /scripts \
     && ln -sf /app/scripts/kaseki-container-setup-remote.sh /scripts/kaseki-container-setup-remote.sh \
     && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \
     && /app/scripts/startup-check-packaging.sh install \
+    && ln -sf /app/node_modules /usr/local/bin/node_modules \
     && github_app_helper_dependencies="github-app-private-key.js github-utils.js logger.js secrets/host-secrets-reader.js" \
     && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets /usr/local/bin/utils /usr/local/bin/scripts /usr/local/bin/pi-event-aggregation /usr/local/bin/pi-event-filter-helpers /usr/local/bin/templates \
     && cp -r /app/templates/scouting /usr/local/bin/templates/scouting \

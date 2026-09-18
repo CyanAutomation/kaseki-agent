@@ -97,6 +97,7 @@ docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c '
   echo "$manifest" | while IFS="|" read -r path mode; do
     [ -n "$path" ] || continue
     path="$(printf "%s" "$path" | sed "s/^[[:space:]]*//")"
+    [ -n "$path" ] || continue
     test -e "$path"
     actual_mode="$(file_mode "$path")"
     test "$actual_mode" = "$mode"
