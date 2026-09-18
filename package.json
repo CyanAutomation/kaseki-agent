@@ -47,7 +47,7 @@
     "generate:environment-docs": "node scripts/generate-environment-configuration.mjs",
     "check:environment-docs": "node scripts/generate-environment-configuration.mjs --check",
     "generate:openapi": "node dist/generate-openapi-spec.js",
-    "build": "tsc && tsc -p tsconfig.scripts.json && node dist/add-js-extensions.js && npm run generate:openapi && npm run check:dist-dynamic-imports && chmod 0755 dist/*.js",
+    "build": "tsc && tsc -p tsconfig.scripts.json && node -e \"if(!require('fs').existsSync('dist/scouting-allowlist.js')) { console.error('ERROR: Build failed - dist/scouting-allowlist.js was not created by TypeScript compilation'); process.exit(1); }\" && node dist/add-js-extensions.js && npm run generate:openapi && npm run check:dist-dynamic-imports && chmod 0755 dist/*.js",
     "prepublishOnly": "npm run build",
     "type-check": "tsc --noEmit -p tsconfig.json",
     "check": "npm run type-check && npm run lint",
