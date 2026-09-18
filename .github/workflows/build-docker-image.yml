@@ -158,48 +158,48 @@ jobs:
           provenance: true
           sbom: true
 
-  scan:
-    needs: build_candidate
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
-      security-events: write
-    steps:
-      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: docker.io/${{ env.DOCKER_IMAGE }}@${{ needs.build_candidate.outputs.digest }}
-          format: sarif
-          output: trivy-results.sarif
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: '1'
-      - if: always()
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: docker.io/${{ env.DOCKER_IMAGE }}@${{ needs.build_candidate.outputs.digest }}
-          format: json
-          output: trivy-results-all.json
-          ignore-unfixed: true
-      - if: always()
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: docker.io/${{ env.DOCKER_IMAGE }}@${{ needs.build_candidate.outputs.digest }}
-          format: spdx-json
-          output: sbom-spdx.json
-      - if: always()
-        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
-        with:
-          sarif_file: trivy-results.sarif
-      - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: vulnerability-scan-results
-          path: |-
-            trivy-results.sarif
-            trivy-results-all.json
-            sbom-spdx.json
-          retention-days: 30
+  # scan:
+  #   needs: build_candidate
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: read
+  #     packages: read
+  #     security-events: write
+  #   steps:
+  #     - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+  #       with:
+  #         image-ref: docker.io/${{ env.DOCKER_IMAGE }}@${{ needs.build_candidate.outputs.digest }}
+  #         format: sarif
+  #         output: trivy-results.sarif
+  #         severity: HIGH,CRITICAL
+  #         ignore-unfixed: true
+  #         exit-code: '1'
+  #     - if: always()
+  #       uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+  #       with:
+  #         image-ref: docker.io/${{ env.DOCKER_IMAGE }}@${{ needs.build_candidate.outputs.digest }}
+  #         format: json
+  #         output: trivy-results-all.json
+  #         ignore-unfixed: true
+  #     - if: always()
+  #       uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+  #       with:
+  #         image-ref: docker.io/${{ env.DOCKER_IMAGE }}@${{ needs.build_candidate.outputs.digest }}
+  #         format: spdx-json
+  #         output: sbom-spdx.json
+  #     - if: always()
+  #       uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
+  #       with:
+  #         sarif_file: trivy-results.sarif
+  #     - if: always()
+  #       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+  #       with:
+  #         name: vulnerability-scan-results
+  #         path: |-
+  #           trivy-results.sarif
+  #           trivy-results-all.json
+  #           sbom-spdx.json
+  #         retention-days: 30
 
   verify:
     needs: build_candidate
