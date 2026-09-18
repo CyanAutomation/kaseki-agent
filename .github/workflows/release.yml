@@ -93,17 +93,17 @@ jobs:
           path: release-output.log
           retention-days: 30
 
-  publish_npm:
-    needs: release
-    if: needs.release.outputs.released == 'true'
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/publish-npm.yml
-    with:
-      ref: ${{ needs.release.outputs.sha }}
-      version: ${{ needs.release.outputs.version }}
-    secrets: inherit
+  # publish_npm:
+  #   needs: release
+  #   if: needs.release.outputs.released == 'true'
+  #   permissions:
+  #     contents: read
+  #     id-token: write
+  #   uses: ./.github/workflows/publish-npm.yml
+  #   with:
+  #     ref: ${{ needs.release.outputs.sha }}
+  #     version: ${{ needs.release.outputs.version }}
+  #   secrets: inherit
 
   publish_docker:
     needs: release
