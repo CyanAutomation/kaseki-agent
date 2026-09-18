@@ -273,7 +273,7 @@ docker run \
 ### Required Mounts
 
 | Mount | Purpose | Example |
-|-------|---------|---------|
+| ------- | --------- | --------- |
 | **Docker Socket** | Allows container to launch child containers | `-v /var/run/docker.sock:/var/run/docker.sock` |
 | **Secrets** | API key storage | `-v ~/.kaseki/secrets:/secrets` |
 | **Results** | Output artifacts (optional) | `-v ./results:/results` |
@@ -347,7 +347,7 @@ ln -s /path/to/kaseki-agent/kaseki ~/bin/kaseki
 ### Execution Control
 
 | Variable | Default | Purpose |
-|----------|---------|---------|
+| ---------- | --------- | --------- |
 | `KASEKI_IMAGE` | `docker.io/cyanautomation/kaseki-agent:latest` | Docker image to use |
 | `KASEKI_INSTANCE` | `kaseki-run` | Instance name (for run-mode) |
 | `KASEKI_RESULTS_DIR` | `/results` | Results directory |
@@ -363,7 +363,7 @@ ln -s /path/to/kaseki-agent/kaseki ~/bin/kaseki
 ### Agent Configuration
 
 | Variable | Purpose |
-|----------|---------|
+| ---------- | --------- |
 | `TASK_PROMPT` | Custom task description |
 | `KASEKI_MODEL` | Model to use (default: openrouter/free) |
 | `KASEKI_VALIDATION_COMMANDS` | Validation steps (semicolon-separated) |
@@ -512,7 +512,7 @@ Results will be in `./results/` after the run completes.
 ## Comparison: Container vs. Host Setup
 
 | Aspect | Container-Based | Host-Based (`run-kaseki.sh`) |
-|--------|-----------------|------------------------------|
+| -------- | ----------------- | ------------------------------ |
 | **Setup** | `docker run ... setup` | Clone repo, run `./scripts/kaseki-setup.sh` |
 | **Execution** | `docker run ... agent` | `./run-kaseki.sh` |
 | **API key** | File (`/secrets/`) or env var | File (`~/.kaseki/secrets/`) |

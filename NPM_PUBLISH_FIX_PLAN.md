@@ -7,12 +7,13 @@
 ## Problem Analysis
 
 ### Root Cause
+
 The npm account (`@cyanautomation` organization) is **not configured for OIDC trusted publishing**. When the GitHub Actions Release workflow attempts to publish the package, it fails because:
 
-1. **OIDC Token Exchange Fails**: 
+1. **OIDC Token Exchange Fails**:
    - Error: "OIDC token exchange error - package not found"
    - The npm registry cannot accept the GitHub Actions OIDC token from the workflow
-   
+
 2. **Package PUT Fails with 404**:
    - npm publish tries to PUT to: `https://registry.npmjs.org/@cyanautomation%2fkaseki-agent`
    - Returns 404 Not Found because the package doesn't exist AND OIDC credentials aren't valid
@@ -23,6 +24,7 @@ The npm account (`@cyanautomation` organization) is **not configured for OIDC tr
    - The workflow config in `publish-npm.yml` already has the correct setup (registry-url, provenance, etc.), but npm is not accepting the tokens
 
 ### Evidence from Logs
+
 ```
 npm notice npm tokens that bypass 2FA are being restricted...
 npm http fetch POST 404 https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/@cyanautomation%2fkaseki-agent
@@ -54,7 +56,7 @@ Configure OIDC trusted publishing on the npm account to allow GitHub Actions to 
 **Time**: ~5 minutes  
 **Prerequisites**: npm account login, GitHub account linked to repository
 
-#### Steps:
+#### Steps
 
 1. **Log in to npm**:
    - Go to [npmjs.com](https://npmjs.com)
@@ -104,7 +106,7 @@ steps:
 **Owner**: Anyone with GitHub Actions re-run permissions  
 **Time**: ~10 minutes (including indexing delay)
 
-#### Steps:
+#### Steps
 
 1. **Find the failed workflow run**:
    - GitHub repository → Actions → "Release" workflow
@@ -123,9 +125,11 @@ steps:
 
 4. **Verify publication**:
    - Once workflow succeeds, check npm registry:
+
      ```bash
      npm view @cyanautomation/kaseki-agent@1.133.1
      ```
+
    - Should return package information (not 404)
    - Registry indexing may take 30-60 seconds; script will retry automatically
 
@@ -134,7 +138,7 @@ steps:
 **Owner**: Release/docs maintainer  
 **Time**: ~15 minutes
 
-#### Updates Needed:
+#### Updates Needed
 
 1. **Update DEPLOYMENT.md**:
    - ✅ Already has OIDC troubleshooting section
@@ -144,6 +148,7 @@ steps:
    - Document that no npm tokens are needed in GitHub Secrets
    - OIDC handles authentication automatically
    - Verify "release" environment has correct permissions:
+
      ```yaml
      permissions:
        contents: write
@@ -152,6 +157,7 @@ steps:
 
 3. **Create Release Checklist**:
    - Add to CONTRIBUTING.md or docs/RELEASE.md:
+
      ```
      - [ ] OIDC trusted publishing configured on npm
      - [ ] GitHub Actions repo secret not needed (use OIDC instead)
@@ -178,11 +184,13 @@ steps:
 ## Risk Assessment
 
 ### Low Risk Areas
+
 - OIDC configuration on npm (standard npm feature, no breaking changes)
 - Workflow retry (idempotent, version already prepared)
 - No code changes needed
 
 ### Mitigation
+
 - OIDC is one-time setup; once enabled, all future publishes work automatically
 - Workflow has safety checks to prevent double-publishing same version
 - Provenance verification ensures artifact integrity
@@ -192,7 +200,7 @@ steps:
 ## Timeline
 
 | Phase | Task | Duration | Owner |
-|-------|------|----------|-------|
+| ------- | ------ | ---------- | ------- |
 | 1 | Configure OIDC on npm | 5 min | Account admin |
 | 2 | Verify workflow config | 2 min | DevOps |
 | 3 | Retry publish job | 10 min | Release manager |
@@ -226,9 +234,9 @@ If the retry still fails after OIDC setup:
 
 ## References
 
-- **npm OIDC Docs**: https://docs.npmjs.com/cli/using-npm/configure-npm/configuring-your-npm-client-with-github-actions
-- **GitHub Actions OIDC**: https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect
-- **Provenance Verification**: https://docs.npmjs.com/generating-provenance-statements
+- **npm OIDC Docs**: <https://docs.npmjs.com/cli/using-npm/configure-npm/configuring-your-npm-client-with-github-actions>
+- **GitHub Actions OIDC**: <https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect>
+- **Provenance Verification**: <https://docs.npmjs.com/generating-provenance-statements>
 - **Current Workflow**: [.github/workflows/publish-npm.yml](.github/workflows/publish-npm.yml)
 - **Current Troubleshooting**: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#troubleshooting-404-not-found-on-npm-publish)
 

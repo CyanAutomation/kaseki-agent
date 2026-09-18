@@ -109,6 +109,7 @@ console.log(`Reason: ${strategy.reason}`);
 ```
 
 **Decision Rules** (in order):
+
 1. Draft mode → full read
 2. Parse error → full read
 3. File < 2KB → full read
@@ -165,6 +166,7 @@ console.log('Supported languages:', config.supportedLanguages);
 ```
 
 **Environment Variables**:
+
 ```bash
 KASEKI_SUMMARY_MIN_BYTES=2048
 KASEKI_SUMMARY_MAX_BYTES=1048576
@@ -188,6 +190,7 @@ node dist/kaseki-summarizer.js \
 ```
 
 **Output files**:
+
 - `summarization-metadata.json` - Full statistics
 - `summarization-annotation.txt` - TASK_PROMPT annotation
 - `summarization-cache-stats.json` - Cache performance
@@ -307,6 +310,7 @@ node dist/kaseki-summarizer.js \
 ### Issue: "Cannot find module 'tree-sitter'"
 
 **Solution**: Install dependencies
+
 ```bash
 npm install
 ```
@@ -314,6 +318,7 @@ npm install
 ### Issue: Summarization always returns full read
 
 **Diagnosis**: Check file size vs thresholds
+
 ```bash
 export KASEKI_SUMMARY_MIN_BYTES=512  # Lower threshold
 export KASEKI_SUMMARY_MAX_BYTES=5000000  # Raise limit
@@ -322,6 +327,7 @@ export KASEKI_SUMMARY_MAX_BYTES=5000000  # Raise limit
 ### Issue: Parse timeout occurring frequently
 
 **Solution**: Increase timeout
+
 ```bash
 export KASEKI_SUMMARY_PARSE_TIMEOUT=500  # 500ms
 ```
@@ -329,6 +335,7 @@ export KASEKI_SUMMARY_PARSE_TIMEOUT=500  # 500ms
 ### Issue: Cache not working
 
 **Solution**: Verify cache directory
+
 ```bash
 export KASEKI_SUMMARY_CACHE_DIR=./my-cache
 export KASEKI_SUMMARY_CACHE=true
@@ -376,6 +383,7 @@ async function readFileWithSummary(
 ```
 
 **Parameters**:
+
 - `filePath` - Path to file to read
 - `options?.full` - Force full read (boolean)
 - `options?.isDraft` - In editing phase (boolean)
@@ -395,6 +403,7 @@ async function readFileWithSummaryAndMetrics(
 **Returns**: Object with `content: string` and `metrics: ReadMetrics`
 
 **Metrics fields**:
+
 - `strategy` - 'full' or 'summary'
 - `strategyReason` - Why this strategy was chosen
 - `language` - Detected language
@@ -413,6 +422,7 @@ Feature 3 is part of kaseki-agent and follows the same license.
 ## Support
 
 For issues or questions, refer to:
+
 - [Feature 3 Integration Guide](docs/FEATURE3_INTEGRATION_GUIDE.md)
 - [Feature 3 Completion Summary](docs/FEATURE3_COMPLETION_SUMMARY.md)
 - [Test Examples](tests/summarization/)
