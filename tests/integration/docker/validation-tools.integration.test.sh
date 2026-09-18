@@ -1,15 +1,22 @@
 #!/usr/bin/env bash
-# Opt-in Docker packaging/integration test for validation tooling in a published image.
+# Docker packaging/integration test for validation tooling in a published image.
 #
-# This test intentionally requires KASEKI_IMAGE to be set to an immutable image
-# digest (for example: docker.io/cyanautomation/kaseki-agent@sha256:<digest>) so
-# normal fast test paths do not pull or execute a moving :latest image.
+# This test verifies that npm validation tools (tsc, eslint, jest) and npm run check
+# are properly packaged in the Docker image.
+#
+# Execution modes:
+#   1. KASEKI_IMAGE set to immutable digest (docker.io/org/image@sha256:...): uses published image
+#   2. KASEKI_IMAGE set to tag (docker.io/org/image:tag or local-tag:version): uses specified image
+#   3. KASEKI_IMAGE not set: builds a local test image from current Dockerfile
 #
 # Background: kaseki-32 failed with exit code 141 because npm prune --production
 # removed typescript, eslint, and other devDependencies from the final image,
 # causing npm run check to fail when run inside the container.
 
 set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+cd "$ROOT_DIR"
 
 TEST_NAME="Docker validation tools packaging integration"
 
@@ -23,16 +30,6 @@ if [ "${RUN_DOCKER_INTEGRATION_TESTS:-0}" != "1" ]; then
   exit 78
 fi
 
-if [ -z "${KASEKI_IMAGE:-}" ]; then
-  printf 'SKIP: KASEKI_IMAGE must be set to an immutable image digest, for example docker.io/cyanautomation/kaseki-agent@sha256:<digest>.\n'
-  exit 78
-fi
-
-if [[ "$KASEKI_IMAGE" != *@sha256:* ]]; then
-  printf 'FAIL: KASEKI_IMAGE must be an immutable @sha256 digest, got: %s\n' "$KASEKI_IMAGE" >&2
-  exit 1
-fi
-
 if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
   printf 'SKIP: Docker validation tools integration test requires an available Docker daemon.\n'
   if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
@@ -41,10 +38,22 @@ if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
   exit 78
 fi
 
-printf 'Image: %s\n\n' "$KASEKI_IMAGE"
+# Determine the image to test
+if [ -n "${KASEKI_IMAGE:-}" ]; then
+  # Use provided image (can be published digest, tag, or local tag)
+  VALIDATION_TEST_IMAGE="$KASEKI_IMAGE"
+  printf 'Using provided KASEKI_IMAGE: %s\n' "$VALIDATION_TEST_IMAGE"
+else
+  # No image provided: build a local test image (like startup-check does)
+  VALIDATION_TEST_IMAGE="${KASEKI_VALIDATION_TEST_IMAGE_TAG:-kaseki-validation-tools-packaging:test}"
+  printf 'Building local Docker image for validation tools packaging verification...\n'
+  docker build -t "$VALIDATION_TEST_IMAGE" .
+fi
+
+printf 'Image: %s\n\n' "$VALIDATION_TEST_IMAGE"
 printf 'Checking validation tools and npm run check in a single container invocation...\n'
 
-docker run --rm --workdir /app --entrypoint /bin/bash "$KASEKI_IMAGE" -s <<'CONTAINER_SCRIPT'
+docker run --rm --workdir /app --entrypoint /bin/bash "$VALIDATION_TEST_IMAGE" -s <<'CONTAINER_SCRIPT'
 set -euo pipefail
 
 for tool in tsc eslint jest; do
