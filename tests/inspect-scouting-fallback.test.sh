@@ -54,18 +54,18 @@ prompt="\${*: -1}"
 if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
   printf 'goal-setting\n' >> "$PI_CALLS"
   printf '%s\n' '{"original_prompt":"inspect only","upgraded_goal":"Inspect only","reasoning":"test","key_requirements":[],"success_criteria":[]}' > "$RESULTS_DIR/goal-setting-candidate.json"
-  printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"goal-setting response"}],"stopReason":"stop"}}'
+  printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"goal-setting response"}],"stopReason":"stop","responseId":"resp_goal_1"},"toolResults":[]}'
 elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf 'scouting\n' >> "$PI_CALLS"
   # Simulate a model/tool path that exits 0 but forgets to write scouting-candidate.json.
-  printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"stop"}}'
+  printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"stop","responseId":"resp_scout_empty"},"toolResults":[]}'
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "$PI_CALLS"
   printf '%s\n' '{"met":true,"confidence":"high","summary":"inspect done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[]}' > "$RESULTS_DIR/goal-check-candidate.json"
-  printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"goal-check response"}],"stopReason":"stop"}}'
+  printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"goal-check response"}],"stopReason":"stop","responseId":"resp_check_1"},"toolResults":[]}'
 else
   printf 'coding\n' >> "$PI_CALLS"
-  printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"read-only inspect output"}],"stopReason":"stop"}}'
+  printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"read-only inspect output"}],"stopReason":"stop","responseId":"resp_coding_1"},"toolResults":[]}'
 fi
 EOF_PI
 cat > "$FAKE_BIN/kaseki-pi-progress-stream" <<'EOF_PROGRESS'
@@ -74,8 +74,26 @@ cat
 EOF_PROGRESS
 cat > "$FAKE_BIN/kaseki-pi-event-filter" <<'EOF_FILTER'
 #!/usr/bin/env bash
-cat "$1" > "$2"
-printf '{"selected_model":"test-model"}\n' > "$3"
+raw="$1"
+events="$2"
+summary="$3"
+cat "$raw" > "$events"
+# Generate a proper summary JSON with required fields
+cat > "$summary" <<'JSON'
+{
+  "selected_model": "test-model",
+  "selected_api": "gateway",
+  "event_counts": {"message_end": 1},
+  "assistant_event_counts": {"message_end": 1},
+  "tool_start_count": 0,
+  "tool_end_count": 0,
+  "invalid_json_lines": 0,
+  "first_event_at": "2026-09-18T00:00:00Z",
+  "last_event_at": "2026-09-18T00:00:01Z",
+  "completion_usage": [],
+  "provider_errors": []
+}
+JSON
 EOF_FILTER
 cat > "$FAKE_BIN/timeout" <<'EOF_TIMEOUT'
 #!/usr/bin/env bash
@@ -96,6 +114,7 @@ env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspe
   KASEKI_WORKSPACE_DIR="$TMP_DIR" \
   KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
   KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" KASEKI_VALIDATION_COMMANDS=":" \
+  KASEKI_SKIP_GATEWAY_HEALTH_CHECK=1 \
   bash "$MODIFIED_SCRIPT" > "$RUN_LOG" 2>&1
 run_exit=$?
 set -e
