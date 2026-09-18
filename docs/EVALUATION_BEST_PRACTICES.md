@@ -151,7 +151,7 @@ Goal-check should account for which validation commands passed/failed.
 ### Common Goal-Check Anti-Patterns
 
 | Anti-Pattern | Why It's Bad | How to Fix |
-|---|---|---|
+| --- | --- | --- |
 | "Tests pass so goal is met" (no evidence of what was fixed) | Doesn't verify requirements were addressed, just that code runs | Cite specific changed functions, test cases, or diff sections |
 | `confidence: "medium"` without explanation | Signals to retry even on success | Use "medium" only when some SMART dimensions are unclear; explain why |
 | Retry prompt that repeats the original goal | Doesn't guide the next attempt | Reference specific unmet requirements and suggest concrete fix |
@@ -312,7 +312,7 @@ Be explicit about what you did and didn't evaluate.
 ### Common Run-Evaluation Anti-Patterns
 
 | Anti-Pattern | Why It's Bad | How to Fix |
-|---|---|---|
+| --- | --- | --- |
 | High confidence regardless of goal quality | Ignores root cause (bad goal = hard outcome to assess) | Reference goal quality metrics in confidence reasoning |
 | "Everything looks good" with zero improvement suggestions | Misses optimization opportunities | Analyze what could be better (goal specificity, scouting depth, validation rigor) |
 | `human_review_focus` lists 10+ items | Dilutes importance of critical items | Prioritize to 2-4 highest-impact items |
@@ -350,7 +350,7 @@ Evaluations feed back into two systems:
 After goal-check, compare its verdict against goal-setting quality metrics:
 
 | Scenario | Feedback |
-|---|---|
+| --- | --- |
 | Goal was `measurability=high`, but goal-check found `met=false` with specific unmet tests | Suggests goal was well-formed but scouting/coding missed requirements. Tune agent models/timeouts, not goal quality. |
 | Goal was `measurability=low`, and goal-check struggled to assess completion | Suggests goal quality was true root cause. Future goals should emphasize measurable criteria. |
 | Goal was `specificity=medium`, and goal-check report is vague | Suggests agent needs clearer scope boundaries. Next goals should increase specificity dimension. |
@@ -374,7 +374,7 @@ Use this to ground your confidence scores:
 ### Goal-Check Confidence Grounding
 
 | Confidence | Criteria |
-|---|---|
+| --- | --- |
 | **High** | ≥3 specific evidence items from artifacts + ≥4 SMART dimensions met (or ≥2 clear unmet + actionable fix) + Validation passed (or failures are pre-existing) |
 | **Medium** | 2-3 evidence items + 3-4 SMART dimensions + Validation mostly passed + Some uncertainty remains |
 | **Low** | <2 evidence items OR <3 SMART dimensions OR Validation failures + Evaluator unsure of fix |
@@ -382,7 +382,7 @@ Use this to ground your confidence scores:
 ### Run-Evaluation Confidence Grounding
 
 | Confidence | Criteria |
-|---|---|
+| --- | --- |
 | **High** | Goal quality ≥80 + Goal-check high + Validation passed + Diff <200 lines + Changed files ≤3 |
 | **Medium** | Goal quality 60-79 OR Goal-check medium OR Validation mostly passed OR Diff 200-500 lines |
 | **Low** | Goal quality <60 OR Goal-check low/unmet OR Validation failed OR Diff >500 lines OR Changed files >5 |

@@ -20,16 +20,19 @@ The scouting phase addresses two core problems:
 The scouting prompt has been restructured into clearly-marked sections for maintainability and clarity:
 
 ### `## [ROLE]`
+
 - **2-3 sentences** defining the agent's job
 - Sets expectations: analyze → understand → produce JSON
 - Emphasizes that scouting output is *planning input*, not the final artifact
 
 ### `## [OPERATIONAL CONSTRAINTS - Read-Only Phase]`
+
 - Lists concrete do-nots (no git operations, no package installation, no file modification)
 - Explains the output contract: exactly one JSON object to `/results/scouting-candidate.json`
 - Keeps the agent's scope bounded and predictable
 
 ### `## [TASK VALIDATION - Ensure Task is Valid Before Scouting]`
+
 - **NEW in Phase 2**: Guidance on validating task scope before deep analysis
 - Examples of valid tasks (concrete, file-specific, testable)
 - Examples of invalid/ambiguous tasks (too vague, unbounded, unclear scope)
@@ -45,12 +48,14 @@ The scouting prompt has been restructured into clearly-marked sections for maint
   - Avoids wasted analysis on undefined scope
 
 ### `## [OUTPUT SCHEMA]`
+
 - **Detailed field descriptions** with constraints (e.g., "task: string (max 200 chars)")
 - Type information (string, array, object) with item count guidance
 - Output rules: concreteness, no copying guidelines, size limits
 - Includes 50 KB maximum size constraint
 
 ### `## [GUIDELINES: test_impact - Critical for Test Coverage Alignment]`
+
 - **Enhanced** with concrete test_examples showing before/after assertions
 - Organized by change type:
   1. **Parser & Regex Changes** (edge cases, null safety, type validation)
@@ -61,6 +66,7 @@ The scouting prompt has been restructured into clearly-marked sections for maint
 - Notes when test_impact can be empty (rare; requires explicit reasoning)
 
 ### `## [GUIDELINES: critical_change_expectations]`
+
 - When to include: concrete files or literal diff evidence
 - required_files: repo-relative paths for changed-files.txt validation
 - required_search_strings: exact strings expected in git.diff (function names, config keys, etc.)
@@ -68,44 +74,52 @@ The scouting prompt has been restructured into clearly-marked sections for maint
 - Guidance on avoiding guessing; contract enforced before goal-check
 
 ### `## [GUIDELINES: suggested_allowlist]`
+
 - agent_patterns: glob patterns for files the coding agent can modify
 - validation_patterns: glob patterns for files validation commands may modify
 - Rationale for pattern choice (specific vs. broad trade-offs)
 
 ### `## [EXECUTION CONTEXT - Optimize for Efficiency]`
+
 - **NEW in Phase 3**: Provider-agnostic execution guidance
 - **Timeouts**: 2-minute target (no deep recursion, use fast commands like find/grep)
 - **Artifact Size**: 50 KB max, with truncation strategy for large repos
 - **Error Handling**: Fail gracefully on unreadable files; adapt scope rather than fail
 
 ### `## [RAW TASK PROMPT]`
+
 - The actual task prompt (e.g., "Fix null-safety in parseRole()")
 - Inserted as `$TASK_PROMPT` environment variable by kaseki-agent.sh
 
 ## Key Design Decisions
 
 ### 1. Structure Over Prose
+
 - Uses `## [SECTION]` markers instead of prose paragraphs
 - Easier for LLMs to parse, easier to maintain, easier to extend
 - Each section has a clear boundary and purpose
 
 ### 2. Task Validation (Phase 2)
+
 - Scouting should **validate** before analyzing, not assume scope
 - Reduces wasted analysis on ambiguous tasks
 - Provides a clear template for escalation ("needs clarification")
 
 ### 3. Provider-Agnostic Execution Context (Phase 3)
-- No mention of "LLM Gateway" or "OpenRouter" 
+
+- No mention of "LLM Gateway" or "OpenRouter"
 - Gateway abstraction handles provider routing; scouting doesn't need to know
 - Focuses on universal constraints: timeouts, size limits, error handling
 - Works with any provider that runs via Kaseki
 
 ### 4. Concrete Test_impact Examples
+
 - Before/after assertions show exactly what needs updating
 - Organized by change type so agent can pattern-match
 - Reduces likelihood of missed tests
 
 ### 5. Size Constraints (50 KB)
+
 - Prevents runaway analysis on large repos
 - Forces prioritization of relevant files
 - Keeps artifact within token/rate limits for downstream agents
@@ -115,7 +129,7 @@ The scouting prompt has been restructured into clearly-marked sections for maint
 The output schema now includes comprehensive field-level constraints that the scouting agent must follow:
 
 | Field | Min | Max | Notes |
-|-------|-----|-----|-------|
+| ------- | ----- | ----- | ------- |
 | `task` | 20 chars | 200 chars | Concrete verb + file/scope; restate original request |
 | `requirements` | 3 items | 8 items | Atomic, testable items; min 3 suggests incomplete analysis |
 | `relevant_files` | 5 items | 20 items | Path + reason pairs; prioritize source → tests → config |
@@ -126,6 +140,7 @@ The output schema now includes comprehensive field-level constraints that the sc
 | **JSON size** | — | **50 KB** | Truncate observations if needed; 2-minute timeout |
 
 **Phase 4 Enhancements**:
+
 - Added max character constraint to task field (200 chars)
 - Added min/max item counts for each array field
 - Documented when empty arrays are acceptable (documentation changes, pure refactoring)
@@ -136,6 +151,7 @@ The output schema now includes comprehensive field-level constraints that the sc
 ## How to Extend the Prompt
 
 ### Adding a New Change Type to test_impact
+
 1. Identify the keyword pattern (e.g., "config", "middleware", "plugin")
 2. List typical test files affected
 3. Provide 2-3 concrete before/after assertion examples
@@ -143,6 +159,7 @@ The output schema now includes comprehensive field-level constraints that the sc
 5. Add to `Enhanced Guidelines by Change Type` section
 
 ### Adding a New Constraint or Section
+
 1. Identify the gap (e.g., "agent doesn't know about X")
 2. Add a new `## [SECTION]` if it's cross-cutting, or extend existing section
 3. Provide concrete examples or rationale
@@ -150,6 +167,7 @@ The output schema now includes comprehensive field-level constraints that the sc
 5. Run tests to verify
 
 ### Deprecating Old Guidance
+
 1. Mark as ⚠️ DEPRECATED at the top of the section
 2. Link to replacement guidance
 3. Keep for 2 releases for transition
@@ -168,6 +186,7 @@ The output schema now includes comprehensive field-level constraints that the sc
 The scouting prompt is validated by automated tests that check:
 
 **Phase 1-3 Tests** (implemented):
+
 - ✓ All required sections present and well-formed
 - ✓ Role statement and operational constraints clear
 - ✓ Task validation guidance with examples
@@ -176,11 +195,13 @@ The scouting prompt is validated by automated tests that check:
 - ✓ Execution context guidance present
 
 **Phase 4 Tests** (TODO):
+
 - [ ] Field constraints enforced (task <200 chars, 3-8 requirements, etc.)
 - [ ] test_impact examples are executable patterns
 - [ ] critical_change_expectations guidance is clear
 
 **Phase 5 Tests** (TODO):
+
 - [ ] SCOUTING_PROMPT_DESIGN.md exists and is up-to-date
 - [ ] Inline comments in kaseki-agent.sh explain each section
 - [ ] Usage examples with sample scouting artifacts
@@ -188,9 +209,11 @@ The scouting prompt is validated by automated tests that check:
 ## Common Patterns
 
 ### Pattern 1: Parser/Validation Change
+
 **Task**: Fix null-safety in parseRole()
 **test_impact**: Tests for edge cases (null, empty, undefined)
 **test_examples**:
+
 ```javascript
 // Before
 expect(() => parseRole(null)).toThrow();
@@ -199,9 +222,11 @@ expect(parseRole(null)).toEqual({ name: 'Unnamed' });
 ```
 
 ### Pattern 2: Event Field Changes
+
 **Task**: Add async timing to event listeners
 **test_impact**: Event listener tests, timing assertions
 **test_examples**:
+
 ```javascript
 // Before
 await eventPromise; // within 10ms
@@ -210,9 +235,11 @@ await eventPromise; // within 50ms (now async)
 ```
 
 ### Pattern 3: Naming/Constant Changes
+
 **Task**: Rename `parseConfig` to `loadConfigFromFile`
 **test_impact**: All string literal assertions referencing old name
 **test_examples**:
+
 ```javascript
 // Before
 expect(typeof Config.parseConfig).toBe('function');
@@ -233,6 +260,7 @@ A well-designed scouting prompt produces artifacts that:
 ## Version History
 
 ### v2.1 (June 2026) - Output Schema Refinement (Phase 4 Complete) ✅
+
 - Added field-level size/count constraints (task: 200 chars, requirements: 3-8 items, etc.)
 - Expanded test_impact guidelines to 5 organized change type categories (Parser, Events, Serialization, Naming, Config)
 - Provided 30+ concrete before/after pattern examples across all change types
@@ -241,6 +269,7 @@ A well-designed scouting prompt produces artifacts that:
 - Updated 28 tests to validate new constraints and patterns
 
 ### v2.0 (June 2026) - Structural Improvements (Phases 1-3)
+
 - Added `## [SECTION]` markers for clarity and maintainability
 - Introduced Phase 2: Task Validation with examples and escalation template
 - Introduced Phase 3: Provider-agnostic Execution Context guidance
@@ -248,6 +277,7 @@ A well-designed scouting prompt produces artifacts that:
 - Added field constraints documentation (Phase 4 preview)
 
 ### v1.0 (Pre-May 2026) - Original Release
+
 - Flat prompt structure
 - Basic output schema and test_impact guidelines
 - No task validation or execution context

@@ -78,7 +78,7 @@ After goal-check completes, collect a feedback entry:
 Over time, patterns emerge:
 
 | Goal Quality | Success Rate (Target: 80%+) | Insights |
-|---|---|---|
+| --- | --- | --- |
 | ≥85 ("high") | 87% | Well-formed goals succeed most of the time |
 | 70-84 ("medium") | 62% | Medium-quality goals need refinement or retries |
 | <70 ("low") | 31% | Low-quality goals are unreliable; users should invest in goal-setting |
@@ -125,7 +125,7 @@ Run-evaluation produces specific suggestions in `kaseki_improvement_opportunitie
 Improvements are categorized by which stage they affect:
 
 | Category | Affects | Examples |
-|---|---|---|
+| --- | --- | --- |
 | `goal_setting` | Goal-setting agent & prompt | "Goals need clearer scope boundaries" |
 | `scouting` | Scouting agent & codebase context | "Scouting should list test file locations explicitly" |
 | `coding` | Coding agent performance | "Agent timed out; consider longer timeout or split goal" |
@@ -145,7 +145,7 @@ Each suggestion includes `priority: high|medium|low`:
 ### Actions on Feedback
 
 | Improvement | Who Acts | How | Frequency |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | "Goal-setting should emphasize scope clarity" | Prompt writer | Update goal-setting prompt template | Per-release |
 | "Scouting misses dependency graph" | Maintainer | Enhance scouting context generation | Per-release |
 | "Validation command npm run typecheck catches 40% of errors" | Admin | Add to default `KASEKI_VALIDATION_COMMANDS` | Per-environment |
