@@ -59,6 +59,14 @@ if [ "${KASEKI_SKIP_STARTUP_CHECKS:-0}" != "1" ]; then
   }
 fi
 
+# Phase 2a: Ensure required agent directories exist with correct permissions
+# This defensive step creates /cache and /results if they don't exist,
+# preventing permission errors when kaseki-agent tries to initialize these paths.
+# Container runs as UID 10000:10000; if these directories are missing,
+# mkdir -p will fail, which is caught by permission validation in Phase 2b.
+mkdir -p "${KASEKI_CACHE_DIR:-/cache}" 2>/dev/null || true
+mkdir -p "${KASEKI_RESULTS_DIR:-/results}" 2>/dev/null || true
+
 # Phase 2b: Validate directory permissions for container user (UID 10000)
 # This is a critical check before the API starts—if directories aren't writable,
 # the API will fail to store results. Container runs as UID 10000:10000 per docker-compose.yml

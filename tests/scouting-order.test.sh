@@ -37,6 +37,19 @@ cp "$REPO_ROOT/scripts/npm-install-helpers.sh" "$TMP_DIR/scripts/npm-install-hel
 cp "$REPO_ROOT/scripts/agent-prompt.sh" "$TMP_DIR/scripts/agent-prompt.sh"
 cp "$REPO_ROOT/scripts/evaluation-prompts.sh" "$TMP_DIR/scripts/evaluation-prompts.sh"
 touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/progress-stream-utils.js"
+cat > "$APP_LIB/hashline-event-handler-cli.js" <<'EOF_HASHLINE'
+#!/usr/bin/env node
+// Fake hashline-event-handler-cli.js for testing
+const fs = require('fs');
+const [, , eventsFile, workspaceDir, outputEventsFile, outputSummaryFile] = process.argv;
+try {
+  fs.writeFileSync(outputEventsFile, '');
+  fs.writeFileSync(outputSummaryFile, JSON.stringify({processed: 0, successful: 0, failed: 0}));
+  process.exit(0);
+} catch (e) {
+  process.exit(1);
+}
+EOF_HASHLINE
 MODIFIED_SCRIPT="$TMP_DIR/kaseki-agent-modified.sh"
 sed "s#\"\${KASEKI_WORKSPACE_DIR}\"/repo#$WORKSPACE_REPO#g; s#\${KASEKI_WORKSPACE_DIR}/repo#$WORKSPACE_REPO#g; s#/workspace/repo#$WORKSPACE_REPO#g; s#/results#$RESULTS_DIR#g; s#/app/lib#$APP_LIB#g" "$REPO_ROOT/kaseki-agent.sh" > "$MODIFIED_SCRIPT"
 chmod +x "$MODIFIED_SCRIPT"
@@ -137,6 +150,9 @@ env \
   KASEKI_GIT_CACHE_MODE=off \
   KASEKI_SKIP_GATEWAY_HEALTH_CHECK=1 \
   KASEKI_WORKSPACE_DIR="$TMP_DIR" \
+  KASEKI_RESULTS_DIR="$RESULTS_DIR" \
+  KASEKI_APP_LIB_DIR="$APP_LIB" \
+  KASEKI_CACHE_DIR="$TMP_DIR/cache" \
   KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" \
   KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
   KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" \
