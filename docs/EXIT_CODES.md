@@ -7,7 +7,7 @@ This document describes the exit codes returned by kaseki-agent commands and wha
 ## Summary
 
 | Code | Category | Name | Meaning |
-|------|----------|------|---------|
+| ------ | ---------- | ------ | --------- |
 | **0** | Success | N/A | Run completed successfully |
 | **1** | General Error | Generic Error | Generic error (check logs for details) |
 | **2** | Configuration | Configuration Error | Configuration error (missing or invalid settings) |
@@ -41,14 +41,31 @@ A general error occurred. This is used for unexpected failures that don't fit ot
 
 When the agent uses hashline edits (content-based file modifications with SHA-256 anchors), validation failures are **not fatal** and do not cause exit code 1. Instead, rejected edits are recorded in the `restoration-report.md` artifact. This allows the run to complete even if some edits fail to apply due to anchor mismatches or content changes.
 
-Exit code 1 from hashline processing only occurs on **infrastructure failures** (I/O errors, permission denied, missing files), not validation failures.
+**Distinction between validation failures and infrastructure errors:**
+
+| Scenario | Behavior | Exit Code |
+| ---------- | ---------- | ----------- |
+| Agent creates hashline edits; some anchors don't match (content changed) | Edits rejected & recorded in restoration report | **0** (success) |
+| Agent creates hashline edits; all anchors match | Edits applied successfully | **0** (success) |
+| Hashline processor cannot read input file (missing or permission denied) | Infrastructure failure reported | **1** (error) |
+| Hashline processor cannot write output artifacts (I/O error) | Infrastructure failure reported | **1** (error) |
+
+Exit code 1 from hashline processing only occurs on **infrastructure failures** (I/O errors, permission denied, missing files), not on validation failures (anchor mismatches).
 
 **Troubleshooting:**
+
+**For validation failures (exit code 0 with rejected edits):**
+
+1. Review the rejected edits: `cat /agents/kaseki-results/<instance-id>/restoration-report.md`
+2. Understand why anchors didn't match: Did the target file change? Was the reference stale?
+3. This is normal and expected when editing volatile files.
+
+**For infrastructure failures (exit code 1):**
 
 1. Check the run logs: `kaseki-agent report <instance-id>`
 2. Check the standard output/error: `cat /agents/kaseki-results/<instance-id>/stdout.log`
 3. Enable verbose logging: Set `DEBUG=1` before running the command
-4. If hashline edits were rejected, review: `cat /agents/kaseki-results/<instance-id>/restoration-report.md`
+4. Verify file permissions and disk space
 
 ---
 
@@ -434,7 +451,7 @@ The error occurred but was not retryable, OR the automatic retry also failed. Ex
 
 - The error was retried automatically. If it failed again, this indicates the provider is experiencing prolonged issues.
 - **Wait a few minutes** and retry the run.
-- Check OpenRouter status: https://status.openrouter.io or contact their support.
+- Check OpenRouter status: <https://status.openrouter.io> or contact their support.
 
 **If the error is permanent (404, deprecated, auth failure):**
 
@@ -454,7 +471,7 @@ The error occurred but was not retryable, OR the automatic retry also failed. Ex
 3. **For authentication error:**
 
    - Verify your OpenRouter API key is valid and has not expired
-   - Check your account credits/quota at https://openrouter.ai
+   - Check your account credits/quota at <https://openrouter.ai>
    - Refresh your credentials: `kaseki-agent setup` (interactive wizard)
 
 4. **For invalid configuration:**
