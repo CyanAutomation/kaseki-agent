@@ -45,7 +45,7 @@
 ### 1. metadata.json
 
 | Dimension | Score | Rationale |
-|-----------|-------|-----------|
+| ----------- | ------- | ----------- |
 | Agent Decision Value | 2 | Primary artifact; all external agents read this first (metadata.json→status→decisions) |
 | Structured Readability | 2 | Valid JSON with stable schema: timestamps, stage exit codes, duration, model, version |
 | Uniqueness | 2 | Contains instance metadata not available in other artifacts |
@@ -61,7 +61,7 @@
 ### 2. result-summary.md
 
 | Dimension | Score | Rationale |
-|-----------|-------|-----------|
+| ----------- | ------- | ----------- |
 | Agent Decision Value | 2 | Summarizes run status, failures, and key facts; agents read for quick context |
 | Structured Readability | 1 | Markdown; semi-structured (no stable schema); requires parsing |
 | Uniqueness | 1 | Overlaps 70% with metadata.json + validation.log |
@@ -78,7 +78,7 @@
 ### 3. exit_code
 
 | Dimension | Score | Rationale |
-|-----------|-------|-----------|
+| ----------- | ------- | ----------- |
 | Agent Decision Value | 2 | Critical decision point; determines success/failure |
 | Structured Readability | 2 | Single integer, unambiguous |
 | Uniqueness | 1 | Duplicated in metadata.json.final_exit_code |
@@ -94,7 +94,7 @@
 ### 4. stdout.log
 
 | Dimension | Score | Rationale |
-|-----------|-------|-----------|
+| ----------- | ------- | ----------- |
 | Agent Decision Value | 0 | Raw container output; duplicates progress.jsonl + pi-events.jsonl |
 | Structured Readability | 0 | Free-text, unstructured stream |
 | Uniqueness | 0 | All useful info extracted into structured artifacts |
@@ -111,7 +111,7 @@
 ### 5. stderr.log
 
 | Dimension | Score | Rationale |
-|-----------|-------|-----------|
+| ----------- | ------- | ----------- |
 | Agent Decision Value | 1 | Some signal for errors, but signal/noise ratio poor |
 | Structured Readability | 0 | Free-text; requires parsing |
 | Uniqueness | 0 | Critical errors surfaced in quality.log + validation.log |
@@ -128,7 +128,7 @@
 ### 6. progress.jsonl
 
 | Dimension | Score | Rationale |
-|-----------|-------|-----------|
+| ----------- | ------- | ----------- |
 | Agent Decision Value | 2 | Enables live monitoring and timeout detection |
 | Structured Readability | 2 | Valid JSONL, stable schema: {timestamp, stage, status, details} |
 | Uniqueness | 2 | Distinct from pi-events.jsonl (stage-level vs agent-level) |
@@ -144,7 +144,7 @@
 ### 7. pi-events.jsonl
 
 | Dimension | Score | Rationale |
-|-----------|-------|-----------|
+| ----------- | ------- | ----------- |
 | Agent Decision Value | 2 | Detailed agent activity; enables error analysis and token accounting |
 | Structured Readability | 2 | Valid JSONL, stable schema (filtered by pi-event-filter.ts) |
 | Uniqueness | 2 | Distinct from progress.jsonl (agent-level details) |
@@ -160,7 +160,7 @@
 ### 8. pi-summary.json
 
 | Dimension | Score | Rationale |
-|-----------|-------|-----------|
+| ----------- | ------- | ----------- |
 | Agent Decision Value | 2 | Provides token counts, model info, message stats; informs cost/retry decisions |
 | Structured Readability | 2 | Valid JSON with stable schema: tokens_used, model, message_count, duration |
 | Uniqueness | 2 | Aggregated stats not available elsewhere |
@@ -176,7 +176,7 @@
 ### 9. git.diff
 
 | Dimension | Score | Rationale |
-|-----------|-------|-----------|
+| ----------- | ------- | ----------- |
 | Agent Decision Value | 2 | Critical for understanding what changed; informs quality gates and diff review |
 | Structured Readability | 1 | Unified diff format; parseable but semi-structured |
 | Uniqueness | 2 | Changed-files.txt only lists names; git.diff shows actual changes |
@@ -192,7 +192,7 @@
 ### 10. changed-files.txt
 
 | Dimension | Score | Rationale |
-|-----------|-------|-----------|
+| ----------- | ------- | ----------- |
 | Agent Decision Value | 2 | Quick list of changed files; informs scope decisions |
 | Structured Readability | 2 | Simple text format, one file per line |
 | Uniqueness | 1 | File list available in git.diff header, but less accessible |
@@ -208,7 +208,7 @@
 ### 11. secret-scan.log
 
 | Dimension | Score | Rationale |
-|-----------|-------|-----------|
+| ----------- | ------- | ----------- |
 | Agent Decision Value | 2 | Reports credential detection; critical for security gates |
 | Structured Readability | 1 | Free-text log; parsing required |
 | Uniqueness | 1 | Overlaps with secret-scan.json (same data) |
@@ -225,7 +225,7 @@
 ### 12. secret-scan.json
 
 | Dimension | Score | Rationale |
-|-----------|-------|-----------|
+| ----------- | ------- | ----------- |
 | Agent Decision Value | 2 | Structured credential detections; critical for security gates |
 | Structured Readability | 2 | Valid JSON with stable schema: {file, pattern, status, timestamp} |
 | Uniqueness | 2 | Distinct structured version of secret-scan.log |
@@ -241,7 +241,7 @@
 ### 13. quality.log
 
 | Dimension | Score | Rationale |
-|-----------|-------|-----------|
+| ----------- | ------- | ----------- |
 | Agent Decision Value | 2 | Reports quality gate violations; critical for diff size, allowlist, scope decisions |
 | Structured Readability | 1 | Free-text log with consistent prefixes; semi-structured |
 | Uniqueness | 1 | Overlaps with quality-gates.json |
@@ -258,7 +258,7 @@
 ### 14. validation.log
 
 | Dimension | Score | Rationale |
-|-----------|-------|-----------|
+| ----------- | ------- | ----------- |
 | Agent Decision Value | 2 | Reports validation command failures; critical for understanding why run failed |
 | Structured Readability | 1 | Free-text log; requires parsing to extract command, exit code, output |
 | Uniqueness | 1 | Partially overlaps with validation-timings.tsv + validation-results.json |
@@ -274,7 +274,7 @@
 ### 15. validation-timings.tsv
 
 | Dimension | Score | Rationale |
-|-----------|-------|-----------|
+| ----------- | ------- | ----------- |
 | Agent Decision Value | 1 | Provides per-command timing; useful for performance analysis but not critical for decisions |
 | Structured Readability | 2 | Valid TSV with stable columns: command, elapsed_ms, exit_code |
 | Uniqueness | 1 | Timing data also in stage-timings.tsv (combined) |
@@ -294,7 +294,7 @@
 **scouting.json, scouting-candidate.json, scouting-summary.json, scouting-events.jsonl, scouting-report.md**
 
 | Artifact | Decision | Uniqueness | Readability | Recovery | Cost | Total | Action |
-|----------|----------|-----------|-------------|----------|------|-------|--------|
+| ---------- | ---------- | ----------- | ------------- | ---------- | ------ | ------- | -------- |
 | scouting.json | 2 | 2 | 2 | 2 | 2 | **10** | KEEP_FOR_AGENT_CONTEXT* |
 | scouting-candidate.json | 1 | 0 | 2 | 1 | 1 | **5** | REMOVE (intermediate) |
 | scouting-summary.json | 1 | 2 | 2 | 1 | 2 | **8** | KEEP_FOR_AGENT_CONTEXT* |
@@ -316,7 +316,7 @@
 **goal-setting.json, goal-setting-candidate.json, goal-setting-summary.json, goal-setting-events.jsonl, goal-setting-stderr.log**
 
 | Artifact | Decision | Uniqueness | Readability | Recovery | Cost | Total | Action |
-|----------|----------|-----------|-------------|----------|------|-------|--------|
+| ---------- | ---------- | ----------- | ------------- | ---------- | ------ | ------- | -------- |
 | goal-setting.json | 2 | 2 | 2 | 2 | 2 | **10** | KEEP_FOR_AGENT_CONTEXT* |
 | goal-setting-candidate.json | 1 | 0 | 2 | 1 | 1 | **5** | REMOVE (intermediate) |
 | goal-setting-summary.json | 2 | 2 | 2 | 1 | 2 | **9** | KEEP_FOR_AGENT_CONTEXT* |
@@ -338,7 +338,7 @@
 **goal-check.json, goal-check-candidate.json, goal-check-summary.json, goal-check-events.jsonl, goal-check-attempts.jsonl, goal-check-validation-errors.jsonl, goal-check-stderr.log**
 
 | Artifact | Decision | Uniqueness | Readability | Recovery | Cost | Total | Action |
-|----------|----------|-----------|-------------|----------|------|-------|--------|
+| ---------- | ---------- | ----------- | ------------- | ---------- | ------ | ------- | -------- |
 | goal-check.json | 2 | 2 | 2 | 2 | 2 | **10** | KEEP_FOR_AGENT_CONTEXT* |
 | goal-check-candidate.json | 1 | 0 | 2 | 1 | 1 | **5** | REMOVE (intermediate) |
 | goal-check-summary.json | 2 | 2 | 2 | 2 | 2 | **10** | KEEP_FOR_AGENT_CONTEXT* |
@@ -362,7 +362,7 @@
 **run-evaluation.json, run-evaluation-candidate.json, run-evaluation-summary.json, run-evaluation-events.jsonl, run-evaluation-stderr.log**
 
 | Artifact | Decision | Uniqueness | Readability | Recovery | Cost | Total | Action |
-|----------|----------|-----------|-------------|----------|------|-------|--------|
+| ---------- | ---------- | ----------- | ------------- | ---------- | ------ | ------- | -------- |
 | run-evaluation.json | 1 | 2 | 2 | 1 | 2 | **8** | KEEP_FOR_AGENT_CONTEXT* |
 | run-evaluation-candidate.json | 1 | 0 | 2 | 1 | 1 | **5** | REMOVE (intermediate) |
 | run-evaluation-summary.json | 1 | 2 | 2 | 1 | 2 | **8** | KEEP_FOR_AGENT_CONTEXT* |
@@ -385,7 +385,7 @@
 **auto-lint-cleanup.log, auto-lint-cleanup-timings.tsv**
 
 | Artifact | Decision | Uniqueness | Readability | Recovery | Cost | Total | Action |
-|----------|----------|-----------|-------------|----------|------|-------|--------|
+| ---------- | ---------- | ----------- | ------------- | ---------- | ------ | ------- | -------- |
 | auto-lint-cleanup.log | 1 | 1 | 1 | 1 | 2 | **6** | MERGE_INTO_METRICS |
 | auto-lint-cleanup-timings.tsv | 1 | 1 | 2 | 1 | 2 | **7** | KEEP_FOR_AGENT_CONTEXT* |
 
@@ -404,7 +404,7 @@
 **pre-validation.log, pre-validation-raw.log, pre-validation-timings.tsv**
 
 | Artifact | Decision | Uniqueness | Readability | Recovery | Cost | Total | Action |
-|----------|----------|-----------|-------------|----------|------|-------|--------|
+| ---------- | ---------- | ----------- | ------------- | ---------- | ------ | ------- | -------- |
 | pre-validation.log | 1 | 2 | 1 | 1 | 1 | **6** | KEEP_FOR_AGENT_CONTEXT* |
 | pre-validation-raw.log | 0 | 0 | 0 | 0 | 0 | **0** | REMOVE (duplicate) |
 | pre-validation-timings.tsv | 1 | 1 | 2 | 1 | 2 | **7** | KEEP_FOR_AGENT_CONTEXT* |
@@ -424,7 +424,7 @@
 **test-baseline-comparison.json**
 
 | Dimension | Score | Rationale |
-|-----------|-------|-----------|
+| ----------- | ------- | ----------- |
 | Agent Decision Value | 2 | Identifies new vs. pre-existing test failures; critical for failure classification |
 | Structured Readability | 2 | Valid JSON with stable schema |
 | Uniqueness | 2 | Distinct analysis not available elsewhere |
@@ -446,7 +446,7 @@
 ### 72–79. Phase 2+ Consolidation Artifacts (8 artifacts)
 
 | Artifact | Decision | Uniqueness | Readability | Recovery | Cost | Total | Action |
-|----------|----------|-----------|-------------|----------|------|-------|--------|
+| ---------- | ---------- | ----------- | ------------- | ---------- | ------ | ------- | -------- |
 | validation-results.json | 1 | 0 | 2 | 1 | 2 | **6** | MERGE_INTO_RUN_SUMMARY |
 | quality-gates.json | 1 | 0 | 2 | 1 | 2 | **6** | MERGE_INTO_RUN_SUMMARY |
 | cache-metrics.json | 1 | 2 | 2 | 1 | 2 | **8** | KEEP_FOR_AGENT_CONTEXT |
@@ -472,7 +472,7 @@
 ### 80–94. Debug Artifacts (15 artifacts)
 
 | Artifact | Decision | Uniqueness | Readability | Recovery | Cost | Total | Action |
-|----------|----------|-----------|-------------|----------|------|-------|--------|
+| ---------- | ---------- | ----------- | ------------- | ---------- | ------ | ------- | -------- |
 | pi-events.raw.jsonl | 0 | 0 | 2 | 0 | 0 | **2** | REMOVE |
 | scouting-events.raw.jsonl | 0 | 0 | 2 | 0 | 0 | **2** | REMOVE |
 | goal-setting-events.raw.jsonl | 0 | 0 | 2 | 0 | 0 | **2** | REMOVE |
@@ -505,7 +505,7 @@
 ### 95–104. Specialization Artifacts (10 artifacts)
 
 | Artifact | Decision | Uniqueness | Readability | Recovery | Cost | Total | Action |
-|----------|----------|-----------|-------------|----------|------|-------|--------|
+| ---------- | ---------- | ----------- | ------------- | ---------- | ------ | ------- | -------- |
 | critical-change-expectations.json | 2 | 2 | 2 | 2 | 2 | **10** | KEEP_FOR_AGENT_CONTEXT* |
 | critical-change-verification.log | 1 | 2 | 1 | 2 | 2 | **8** | KEEP_FOR_AGENT_CONTEXT* |
 | test-impact-warnings.log | 2 | 1 | 1 | 2 | 2 | **8** | KEEP_FOR_AGENT_CONTEXT* |
@@ -531,7 +531,7 @@
 ## SCORING SUMMARY TABLE
 
 | Artifact | Format | Score | Segment | Action |
-|----------|--------|-------|---------|--------|
+| ---------- | -------- | ------- | --------- | -------- |
 | **metadata.json** | JSON | 10 | Keep | KEEP_CORE |
 | **pi-summary.json** | JSON | 10 | Keep | KEEP_CORE |
 | **secret-scan.json** | JSON | 10 | Keep | KEEP_CORE |
@@ -662,7 +662,7 @@
 ### 🟡 MERGE / REFACTOR (Score 5–7) — 20 artifacts
 
 | Artifact | Score | Merge Target | Action |
-|----------|-------|--------------|--------|
+| ---------- | ------- | -------------- | -------- |
 | result-summary.md | 7 | metadata.json.summary | Convert to structured JSON field |
 | secret-scan.log | 8 | secret-scan.json | Make optional; log is secondary |
 | quality.log | 8 | quality-gates.json | Make optional; consolidate into events |
@@ -689,7 +689,7 @@
 ### 🔴 REMOVE (Score ≤ 4) — 50+ artifacts
 
 | Artifact | Score | Reason | Action |
-|----------|-------|--------|--------|
+| ---------- | ------- | -------- | -------- |
 | **stdout.log** | 0 | Raw event stream; duplicates progress.jsonl + pi-events.jsonl | KEEP_ON_FAILURE (7 days), REMOVE_ON_SUCCESS |
 | **stderr.log** | 2 | Unstructured errors; surface critical ones in phase-errors.jsonl | KEEP_ON_FAILURE (7 days), REMOVE_ON_SUCCESS |
 | **progress.log** | 0 | Duplicate of progress.jsonl | REMOVE |
@@ -719,7 +719,7 @@
 ### Tier 0: Absolute Zeros (Score 0–1)
 
 | Rank | Artifact | Score | Size Range | Rationale | Action |
-|------|----------|-------|-----------|-----------|--------|
+| ------ | ---------- | ------- | ----------- | ----------- | -------- |
 | **1** | **stdout.log** | 0 | 10–100 MB | Raw container output; duplicates progress.jsonl + pi-events.jsonl; no agent parsing | KEEP_ON_FAILURE (7 days), DELETE_ON_SUCCESS |
 | **2** | **progress.log** | 0 | <5 KB | Duplicate of progress.jsonl (1-to-1 correspondence) | REMOVE |
 | **3** | **validation-raw.log** | 0 | 5–20 KB | Duplicate of validation.log | REMOVE |
@@ -806,7 +806,7 @@
 ## SUMMARY STATISTICS
 
 | Metric | Value |
-|--------|-------|
+| -------- | ------- |
 | **Total artifacts evaluated** | 105 |
 | **Score ≥ 8 (KEEP)** | 30 artifacts |
 | **Score 5–7 (MERGE/REFACTOR)** | 20 artifacts |
