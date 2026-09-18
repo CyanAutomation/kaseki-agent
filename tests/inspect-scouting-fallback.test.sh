@@ -61,7 +61,7 @@ elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"stop","responseId":"resp_scout_empty"},"toolResults":[]}'
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "$PI_CALLS"
-  printf '%s\n' '{"met":true,"confidence":"high","summary":"inspect done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[]}' > "$RESULTS_DIR/goal-check-candidate.json"
+  printf '%s\n' '{"met":true,"confidence":"high","summary":"inspect done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[],"evidence_sources_inspected":[],"contradictions":[],"confidence_calibration":{"outcome":"confident","justification":"test"}}' > "$RESULTS_DIR/goal-check-candidate.json"
   printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"goal-check response"}],"stopReason":"stop","responseId":"resp_check_1"},"toolResults":[]}'
 else
   printf 'coding\n' >> "$PI_CALLS"

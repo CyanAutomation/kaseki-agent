@@ -63,7 +63,7 @@ elif printf '%s' "\$prompt" | grep -q 'scouting Pi agent'; then
   # Simulate a model/tool path that exits 0 but forgets to write scouting-candidate.json.
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "$PI_CALLS"
-  printf '%s\n' '{"met":true,"confidence":"high","summary":"inspect done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[]}' > "$RESULTS_DIR/goal-check-candidate.json"
+  printf '%s\n' '{"met":true,"confidence":"high","summary":"inspect done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[],"evidence_sources_inspected":[],"contradictions":[],"confidence_calibration":{"outcome":"confident","justification":"test"}}' > "$RESULTS_DIR/goal-check-candidate.json"
 else
   printf 'coding\n' >> "$PI_CALLS"
   printf '%s\n' 'coding made no changes'
