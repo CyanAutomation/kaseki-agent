@@ -152,7 +152,7 @@ You MUST respond with EXACTLY ONE JSON object. NOTHING else. NO prose, NO explan
 **Forbidden patterns:**
 - ❌ Any text before the JSON
 - ❌ Any text after the JSON
-- ❌ ```json ... ``` (markdown code fences)
+- ❌ \`\`\`json ... \`\`\` (markdown code fences)
 - ❌ Multiple JSON objects
 - ❌ Comments or explanations
 
