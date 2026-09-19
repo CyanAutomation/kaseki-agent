@@ -101,6 +101,17 @@ describe('gateway-test-routes', () => {
       value: 'test-api-key',
     });
 
+    (kasekiGatewaySmoke.testClassificationSmoke as jest.Mock).mockResolvedValue({
+      status: 'ok',
+      detail: 'Classification smoke test passed',
+      responseTime: 300,
+      timestamp: '2026-07-05T12:00:02Z',
+      modelUsed: 'typesafe/jev',
+      classificationValidated: true,
+    });
+
+    (kasekiGatewaySmoke.shouldRunClassificationSmoke as jest.Mock).mockReturnValue(false);
+
     await setupServer();
   });
 

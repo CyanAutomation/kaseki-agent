@@ -2,11 +2,12 @@
  * Gateway connectivity test routes
  *
  * Provides comprehensive LLM gateway diagnostics:
- * - GET /api/gateway-test - Full test (Stage 1 + Stage 2)
+ * - GET /api/gateway-test - Full test (Stage 1 + Stage 2 + Classification smoke)
  * - GET /api/gateway-test/stage1 - Connectivity only (lightweight)
  *
  * Stage 1: Authentication and connectivity check (no token consumption)
  * Stage 2: LLM inference test (with token consumption in production)
+ * Classification: Classifier model smoke test (opt-in via ?classification=true)
  */
 
 import { Router, Request, Response } from 'express';
@@ -17,6 +18,8 @@ import {
   resolveGatewayApiKey,
   shouldRunGatewayResponseSmoke,
   testPiGatewayProviderSmoke,
+  testClassificationSmoke,
+  shouldRunClassificationSmoke,
 } from '../kaseki-api-gateway-smoke';
 
 const logger = createEventLogger('gateway-test-routes');
@@ -27,6 +30,7 @@ type GatewayTestRequest = {
   requestedStage: GatewayRequestedStage;
   responseSmoke?: boolean;
   piProviderRequested: boolean;
+  classificationRequested: boolean;
   debugMode: boolean;
 };
 
@@ -34,6 +38,7 @@ type GatewayStageResults = {
   stage1Result: any;
   stage2Result: any;
   piProviderResult: any;
+  classificationResult: any;
 };
 
 type GatewayHttpResponse = {
@@ -71,22 +76,27 @@ function parseGatewayTestRequest(req: Request): GatewayTestRequest {
     requestedStage: parseQueryStage(req.query.stage),
     responseSmoke: parseQueryBoolean(req.query.responseSmoke),
     piProviderRequested: parseQueryBoolean(req.query.piProvider) ?? false,
+    classificationRequested: parseQueryBoolean(req.query.classification) ?? false,
     debugMode: parseQueryBoolean(req.query.debug) ?? false,
   };
 }
 
 /**
- * Build dual-stage response (Stage 1 + Stage 2)
+ * Build dual-stage response (Stage 1 + Stage 2 + Classification)
  */
 function buildDualStageResponse(
   stage1Result: any,
   stage2Result: any,
-  piProviderResult: any
+  piProviderResult: any,
+  classificationResult: any,
 ): any {
   const piAdapterFailed = piProviderResult?.status === 'error';
+  const classifierFailed = classificationResult?.status === 'error';
   const partialSuccess = stage2Result?.status === 'error' && piProviderResult?.status === 'ok';
   const result: any = {
-    status: stage1Result.status === 'ok' && !piAdapterFailed ? (partialSuccess ? 'partial' : 'ok') : 'error',
+    status: stage1Result.status === 'ok' && !piAdapterFailed && !classifierFailed
+      ? (partialSuccess ? 'partial' : 'ok')
+      : 'error',
     detail: stage1Result.detail,
     responseTime: stage1Result.responseTime,
     timestamp: new Date().toISOString(),
@@ -110,18 +120,47 @@ function buildDualStageResponse(
     result.codingShapeValidated = piProviderResult.codingShapeValidated === true;
     result.multiTurnValidated = piProviderResult.multiTurnValidated === true;
   }
+  if (classificationResult) {
+    result.classificationSmoke = classificationResult;
+    result.classificationValidated = classificationResult.status === 'ok';
+  }
 
   return result;
 }
 
 /**
- * Build Stage 2-only response
+ * Build Stage 2-only response (with optional classification)
  */
-function buildStage2Response(stage2Result: any, piProviderResult: any): any {
+function buildStage2Response(stage2Result: any, piProviderResult: any, classificationResult: any): any {
   const piAdapterFailed = piProviderResult?.status === 'error';
-  const partialSuccess = stage2Result?.status === 'error' && piProviderResult?.status === 'ok';
+  const classifierFailed = classificationResult?.status === 'error';
+  const stage2Healthy = stage2Result?.status === 'ok';
+  const piProviderHealthy = piProviderResult?.status === 'ok';
+  const piProviderRequested = !!piProviderResult;
+  
+  // Determine status and partialSuccess:
+  // - 'ok': stage2 healthy AND (pi not tested OR pi healthy) AND classifier healthy
+  // - 'partial': (stage2 fails but pi succeeds) OR (stage2 succeeds but pi fails and was tested)
+  // - 'error': stage2 fails AND (pi not healthy OR pi not tested) OR classifier fails
+  let status = 'error';
+  let partialSuccess = false;
+  
+  if (stage2Healthy && !piAdapterFailed && !classifierFailed) {
+    // Stage2 is healthy, Pi is either not tested or is healthy, classifier is not failed
+    status = 'ok';
+    partialSuccess = false;
+  } else if (stage2Healthy && piAdapterFailed && piProviderRequested && !classifierFailed) {
+    // Stage2 works but Pi provider fails (and was requested) - we have partial capability
+    status = 'error';
+    partialSuccess = true;
+  } else if (!stage2Healthy && piProviderHealthy && piProviderRequested && !classifierFailed) {
+    // Stage2 fails but Pi provider works (and was requested) - we have partial capability
+    status = 'partial';
+    partialSuccess = true;
+  }
+  
   const result: any = {
-    status: stage2Result?.status === 'ok' && !piAdapterFailed ? 'ok' : partialSuccess ? 'partial' : 'error',
+    status,
     detail: stage2Result?.detail || 'LLM inference test failed',
     responseTime: stage2Result?.responseTime || 0,
     timestamp: new Date().toISOString(),
@@ -150,16 +189,22 @@ function buildStage2Response(stage2Result: any, piProviderResult: any): any {
     result.piProviderSmoke = piProviderResult;
     result.gatewayInferenceValidated = stage2Result?.status === 'ok';
     result.piAdapterValidated = piProviderResult.status === 'ok';
-    result.partialSuccess = partialSuccess || (stage2Result?.status === 'ok' && piProviderResult.status === 'error');
+    result.partialSuccess = partialSuccess;
     result.codingShapeValidated = piProviderResult.codingShapeValidated === true;
     result.multiTurnValidated = piProviderResult.multiTurnValidated === true;
   }
+  if (classificationResult) {
+    result.classificationSmoke = classificationResult;
+    result.classificationValidated = classificationResult.status === 'ok';
+  }
   const gatewayInferenceMs = Number(stage2Result?.responseTime) || 0;
   const piAdapterMs = Number(piProviderResult?.responseTime) || 0;
+  const classificationMs = Number(classificationResult?.responseTime) || 0;
   result.modelTest = {
     gatewayInferenceMs,
     piAdapterMs: piProviderResult ? piAdapterMs : null,
-    endToEndMs: gatewayInferenceMs + (piProviderResult ? piAdapterMs : 0),
+    classificationMs: classificationResult && classificationResult.status !== 'skipped' ? classificationMs : null,
+    endToEndMs: gatewayInferenceMs + (piProviderResult ? piAdapterMs : 0) + (classificationResult && classificationResult.status !== 'skipped' ? classificationMs : 0),
     tokens: {
       output: typeof stage2Result?.outputTokens === 'number' ? stage2Result.outputTokens : null,
       estimatedCostUsd: null,
@@ -176,13 +221,16 @@ function buildStage2Response(stage2Result: any, piProviderResult: any): any {
 function getResponseStatus(
   stage1Result: any,
   stage2Result: any,
-  piProviderResult: any
+  piProviderResult: any,
+  classificationResult: any,
 ): number {
   const piProvesCodingPath = piProviderResult?.status === 'ok' && stage2Result?.status === 'error';
+  const classifierFailed = classificationResult?.status === 'error';
   return (
     stage1Result.status === 'ok' &&
     (!stage2Result || stage2Result.status === 'ok' || piProvesCodingPath) &&
-    (!piProviderResult || piProviderResult.status !== 'error')
+    (!piProviderResult || piProviderResult.status !== 'error') &&
+    !classifierFailed
   ) ? 200 : 503;
 }
 
@@ -200,6 +248,10 @@ function shouldRunStage2(
 
 function shouldRunPiProvider(request: GatewayTestRequest): boolean {
   return request.piProviderRequested && (request.requestedStage === 0 || request.requestedStage === 2);
+}
+
+function shouldRunClassification(request: GatewayTestRequest): boolean {
+  return request.classificationRequested && (request.requestedStage === 0 || request.requestedStage === 2);
 }
 
 async function runGatewayStage2(request: GatewayTestRequest): Promise<any> {
@@ -220,6 +272,16 @@ async function runGatewayStage2(request: GatewayTestRequest): Promise<any> {
   return testGatewayResponseSmoke_Stage2(gatewayUrl, apiKey, timestamp, startTime);
 }
 
+async function runClassificationSmokeTest(request: GatewayTestRequest): Promise<any> {
+  const runClassification = shouldRunClassificationSmoke(request.classificationRequested);
+
+  if (!runClassification) {
+    return null;
+  }
+
+  return testClassificationSmoke(request.classificationRequested);
+}
+
 async function runGatewayStages(request: GatewayTestRequest): Promise<GatewayStageResults> {
   const stage1Result = shouldRunStage1(request)
     ? await testGatewayConnectivity_Stage1()
@@ -233,13 +295,19 @@ async function runGatewayStages(request: GatewayTestRequest): Promise<GatewaySta
     ? await testPiGatewayProviderSmoke({ requested: true, debug: request.debugMode })
     : null;
 
-  return { stage1Result, stage2Result, piProviderResult };
+  const classificationResult = shouldRunClassification(request)
+    ? await runClassificationSmokeTest(request)
+    : null;
+
+  return { stage1Result, stage2Result, piProviderResult, classificationResult };
 }
 
-function getStage2OnlyStatus(stage2Result: any, piProviderResult: any): number {
+function getStage2OnlyStatus(stage2Result: any, piProviderResult: any, classificationResult: any): number {
+  const classifierFailed = classificationResult?.status === 'error';
   return (
     (stage2Result?.status === 'ok' || (stage2Result?.status === 'error' && piProviderResult?.status === 'ok')) &&
-    (!piProviderResult || piProviderResult.status !== 'error')
+    (!piProviderResult || piProviderResult.status !== 'error') &&
+    !classifierFailed
   ) ? 200 : 503;
 }
 
@@ -247,7 +315,7 @@ function shapeGatewayTestResponse(
   request: GatewayTestRequest,
   results: GatewayStageResults,
 ): GatewayHttpResponse {
-  const { stage1Result, stage2Result, piProviderResult } = results;
+  const { stage1Result, stage2Result, piProviderResult, classificationResult } = results;
 
   if (request.requestedStage === 1) {
     return {
@@ -261,14 +329,14 @@ function shapeGatewayTestResponse(
 
   if (request.requestedStage === 2) {
     return {
-      body: buildStage2Response(stage2Result, piProviderResult),
-      status: getStage2OnlyStatus(stage2Result, piProviderResult),
+      body: buildStage2Response(stage2Result, piProviderResult, classificationResult),
+      status: getStage2OnlyStatus(stage2Result, piProviderResult, classificationResult),
     };
   }
 
   return {
-    body: buildDualStageResponse(stage1Result, stage2Result, piProviderResult),
-    status: getResponseStatus(stage1Result, stage2Result, piProviderResult),
+    body: buildDualStageResponse(stage1Result, stage2Result, piProviderResult, classificationResult),
+    status: getResponseStatus(stage1Result, stage2Result, piProviderResult, classificationResult),
   };
 }
 
@@ -279,13 +347,17 @@ export function createGatewayTestRoutes(): Router {
   const router = Router();
 
   /**
-   * GET /api/gateway-test - Orchestrated full test (Stage 1 + Stage 2)
+   * GET /api/gateway-test - Orchestrated full test (Stage 1 + Stage 2 + Classification)
    * Runs connectivity by default and response validation only when explicitly requested
    * Stage 2 consumes tokens and requires ?stage=2 or ?responseSmoke=true
+   * Classification is opt-in via ?classification=true
    * Query params:
-   *   ?stage=1          - Run Stage 1 only (connectivity check)
-   *   ?stage=2          - Run Stage 2 only (inference test)
+   *   ?stage=1              - Run Stage 1 only (connectivity check)
+   *   ?stage=2              - Run Stage 2 only (inference test)
    *   ?responseSmoke=true/false - Override stage 2 decision
+   *   ?classification=true  - Run classification smoke (opt-in)
+   *   ?piProvider=true      - Run Pi provider adapter smoke
+   *   ?debug=true           - Enable debug logging
    */
   router.get('/gateway-test', async (req: Request, res: Response) => {
     try {
