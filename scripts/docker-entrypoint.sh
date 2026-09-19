@@ -76,14 +76,20 @@ validate_directory_permissions() {
   local gid="${KASEKI_CONTAINER_GID:-10000}"
   
   # Directories that must be writable by the container user
-  local required_dirs=(
-    "${KASEKI_ROOT:-/agents}"
-    "${KASEKI_ROOT:-/agents}/kaseki-results"
-    "${KASEKI_ROOT:-/agents}/kaseki-runs"
-    "${KASEKI_ROOT:-/agents}/kaseki-cache"
-  )
+  local required_dirs=()
   
-  # Additional mounts for agent mode (worker container)
+  # API mode: check /agents directories (mounted by docker-compose)
+  # Do NOT check these in agent/worker mode, which doesn't have /agents mounted
+  if [ "${1:-agent}" = "api" ] || [ "${1:-agent}" = "kaseki-api" ]; then
+    required_dirs=(
+      "${KASEKI_ROOT:-/agents}"
+      "${KASEKI_ROOT:-/agents}/kaseki-results"
+      "${KASEKI_ROOT:-/agents}/kaseki-runs"
+      "${KASEKI_ROOT:-/agents}/kaseki-cache"
+    )
+  fi
+  
+  # Agent/worker mode: check /cache and /results (mounted by DockerManager)
   # Only add worker mounts if explicitly running agent mode
   if [ "${1:-agent}" = "agent" ]; then
     # Agent mode needs /cache and /results to be writable
