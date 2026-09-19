@@ -539,4 +539,117 @@ describe('PreFlightValidator validation logic', () => {
       });
     });
   });
+
+  describe('commit SHA validation', () => {
+    test('rejects full commit SHA (40 hex chars)', async () => {
+      jest.spyOn(validator as any, 'lsRemoteHeadsAndTags').mockResolvedValue(successfulGitResult);
+      const request: RunRequest = {
+        repoUrl: 'https://github.com/example/repo',
+        ref: 'a182ab9e620ca2851bf3c2a90101a2d27001bc15',
+      };
+
+      const response = await validator.validate(request);
+
+      const refCheck = response.checks.find((c) => c.name === 'ref-format');
+      expect(refCheck?.status).toBe('fail');
+      expect(refCheck?.message).toContain('Commit SHAs are not supported');
+      expect(refCheck?.message).toContain('Use a branch or tag');
+      expect(response.isValid).toBe(false);
+      expect(response.errors.some((e) => e.includes('Commit SHAs are not supported'))).toBe(true);
+    });
+
+    test('rejects short commit SHA (7+ hex chars)', async () => {
+      jest.spyOn(validator as any, 'lsRemoteHeadsAndTags').mockResolvedValue(successfulGitResult);
+      const request: RunRequest = {
+        repoUrl: 'https://github.com/example/repo',
+        ref: 'a182ab9',
+      };
+
+      const response = await validator.validate(request);
+
+      const refCheck = response.checks.find((c) => c.name === 'ref-format');
+      expect(refCheck?.status).toBe('fail');
+      expect(refCheck?.message).toContain('Commit SHAs are not supported');
+    });
+
+    test('accepts branch names (alphanumeric with hyphens and slashes)', async () => {
+      jest.spyOn(validator as any, 'lsRemoteHeadsAndTags').mockResolvedValue(successfulGitResult);
+      const request: RunRequest = {
+        repoUrl: 'https://github.com/example/repo',
+        ref: 'main',
+      };
+
+      const response = await validator.validate(request);
+
+      const refCheck = response.checks.find((c) => c.name === 'ref-format');
+      expect(refCheck?.status).toBe('pass');
+      expect(response.isValid).toBe(true);
+    });
+
+    test('accepts tag names with versions', async () => {
+      jest.spyOn(validator as any, 'lsRemoteHeadsAndTags').mockResolvedValue({
+        code: 0,
+        durationMs: 12,
+        output: 'abc123\trefs/tags/v1.2.3\n',
+        timedOut: false,
+      });
+      const request: RunRequest = {
+        repoUrl: 'https://github.com/example/repo',
+        ref: 'v1.2.3',
+      };
+
+      const response = await validator.validate(request);
+
+      const refCheck = response.checks.find((c) => c.name === 'ref-format');
+      expect(refCheck?.status).toBe('pass');
+      expect(response.isValid).toBe(true);
+    });
+
+    test('accepts branch names with slashes', async () => {
+      jest.spyOn(validator as any, 'lsRemoteHeadsAndTags').mockResolvedValue({
+        code: 0,
+        durationMs: 12,
+        output: 'abc123\trefs/heads/feature/my-branch\n',
+        timedOut: false,
+      });
+      const request: RunRequest = {
+        repoUrl: 'https://github.com/example/repo',
+        ref: 'feature/my-branch',
+      };
+
+      const response = await validator.validate(request);
+
+      const refCheck = response.checks.find((c) => c.name === 'ref-format');
+      expect(refCheck?.status).toBe('pass');
+      expect(response.isValid).toBe(true);
+    });
+
+    test('accepts fully qualified ref names (refs/heads/main)', async () => {
+      jest.spyOn(validator as any, 'lsRemoteHeadsAndTags').mockResolvedValue(successfulGitResult);
+      const request: RunRequest = {
+        repoUrl: 'https://github.com/example/repo',
+        ref: 'refs/heads/main',
+      };
+
+      const response = await validator.validate(request);
+
+      const refCheck = response.checks.find((c) => c.name === 'ref-format');
+      expect(refCheck?.status).toBe('pass');
+      expect(response.isValid).toBe(true);
+    });
+
+    test('includes helpful detail in failure message for commit SHAs', async () => {
+      jest.spyOn(validator as any, 'lsRemoteHeadsAndTags').mockResolvedValue(successfulGitResult);
+      const request: RunRequest = {
+        repoUrl: 'https://github.com/example/repo',
+        ref: 'deadbeef123456',
+      };
+
+      const response = await validator.validate(request);
+
+      const refCheck = response.checks.find((c) => c.name === 'ref-format');
+      expect(refCheck?.detail).toBeDefined();
+      expect(refCheck?.detail).toContain('documentation');
+    });
+  });
 });

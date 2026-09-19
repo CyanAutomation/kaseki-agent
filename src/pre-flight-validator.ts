@@ -123,6 +123,16 @@ type GitLsRemoteResult = {
   error?: Error;
 };
 
+/**
+ * Detect if a git reference looks like a commit SHA.
+ * Matches full SHAs (40 hex chars) and short SHAs (7-12 hex chars).
+ * Commit SHAs are not supported; users must use branches or tags.
+ */
+function isCommitSha(ref: string): boolean {
+  // Match 40-char (full SHA) or 7-40 char (short SHA) hex strings
+  return /^[a-f0-9]{7,40}$/.test(ref);
+}
+
 export class PreFlightValidator {
   private logger: EventLogger;
   private gitCheckTimeoutMs = 5000;
@@ -187,6 +197,15 @@ export class PreFlightValidator {
     const warnings: string[] = [];
     const errors: string[] = [];
     const ref = request.ref || 'main';
+
+    // Check 0: Git ref format (reject commit SHAs early)
+    const refFormatCheck = this.checkRefFormat(ref);
+    checks.push(refFormatCheck);
+    if (refFormatCheck.status === 'fail') {
+      errors.push(refFormatCheck.message);
+    }
+
+    // Continue with git operations only if ref format is valid
     const gitResult = await this.lsRemoteHeadsAndTags(request.repoUrl);
     const selectedValidationCommands = request.validationCommands?.length
       ? request.validationCommands
@@ -199,8 +218,8 @@ export class PreFlightValidator {
       errors.push(reachableCheck.message);
     }
 
-    // Check 2: Git ref exists (only if repo is reachable)
-    if (reachableCheck.status !== 'fail') {
+    // Check 2: Git ref exists (only if repo is reachable and ref format is valid)
+    if (reachableCheck.status !== 'fail' && refFormatCheck.status !== 'fail') {
       const refCheck = this.checkGitRef(request.repoUrl, ref, gitResult);
       checks.push(refCheck);
       if (refCheck.status === 'fail') {
@@ -395,6 +414,26 @@ export class PreFlightValidator {
         });
       });
     });
+  }
+
+  /**
+   * Check git ref format - reject commit SHAs before attempting git operations.
+   */
+  private checkRefFormat(ref: string): ValidationCheck {
+    if (isCommitSha(ref)) {
+      return {
+        name: 'ref-format',
+        status: 'fail',
+        message: 'Commit SHAs are not supported. Use a branch or tag name instead (e.g., "main", "v1.0.0", "feature/my-branch")',
+        detail: `Ref: ${ref}. See documentation for supported reference types.`,
+      };
+    }
+
+    return {
+      name: 'ref-format',
+      status: 'pass',
+      message: `Git ref '${ref}' has valid format (not a commit SHA)`,
+    };
   }
 
   /**

@@ -1040,6 +1040,22 @@ fi
 
 if command -v git >/dev/null 2>&1; then
   preflight_start="$(date +%s)"
+  
+  # Check if GIT_REF looks like a commit SHA (7-40 hex chars)
+  if [[ "$GIT_REF" =~ ^[a-f0-9]{7,40}$ ]]; then
+    message="Git ref looks like a commit SHA (${GIT_REF}). Commit SHAs are not supported. Use a branch or tag name instead (e.g., 'main', 'v1.0.0', 'feature/my-branch')."
+    {
+      printf '%s\n' "$message"
+      printf 'Note: Kaseki-agent is designed to work with stable branches and tags, not ephemeral commit SHAs.\n'
+    } > "$RESULT_DIR/stderr.log"
+    write_host_metadata_failure 128 "preflight git ref" "$message"
+    record_host_stage_timing "preflight git ref" 128 "$(($(date +%s) - preflight_start))" "$message"
+    write_cleanup_log
+    promote_staging_dirs
+    cat "$RESULT_DIR/stderr.log" >&2
+    exit 128
+  fi
+  
   if ! git ls-remote --exit-code "$REPO_URL" "$GIT_REF" >"$RESULT_DIR/preflight-git.log" 2>&1; then
     message="Git ref preflight failed for $REPO_URL at $GIT_REF. The repository or ref may not exist, may be private, or may be unreachable. See preflight-git.log."
     {
