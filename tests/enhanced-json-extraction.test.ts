@@ -61,7 +61,7 @@ End of response`;
       // Current implementation should fail on this
       // After Tier 2 fix, it should extract the JSON
       const result = collectBalancedJsonObjects(text);
-      
+
       if (result.length === 0) {
         // EXPECTED BEHAVIOR BEFORE FIX
         // After implementing markdown stripper, this test will pass
@@ -80,7 +80,7 @@ End of response`;
 \`\`\``;
       // After Tier 2 fix, markdown stripper should handle language-agnostic fences
       const result = collectBalancedJsonObjects(text);
-      
+
       if (result.length === 0) {
         console.log('INFO: Language-agnostic markdown fence not yet extracted');
       } else {
@@ -113,7 +113,7 @@ End of response`;
 {"met": true, "confidence": "high", "summary": "Success", "evidence": []}`;
       // After Tier 2 fix, confidence anchor strategy should kick in
       const result = collectBalancedJsonObjects(text);
-      
+
       if (result.length === 0) {
         console.log('INFO: Confidence anchor strategy not yet implemented');
       } else {
@@ -224,11 +224,11 @@ End of response`;
 {"type":"text_delta","text":"think..."}
 {"type":"text_delta","text":"\n{\\"met\\":true,\\"confidence\\":\\"high\\"}"}
 {"type":"message_end"}`;
-      
+
       // Current implementation may not handle escaped quotes in streaming
       // Tier 2 fix should improve this
       const result = collectBalancedJsonObjects(text);
-      
+
       if (result.length === 0) {
         console.log('INFO: Streaming response with embedded JSON not yet fully handled');
       } else {
@@ -253,7 +253,7 @@ End of response`;
         '{"met":true,"confidence":"high","summary":"OK"}',
         '{"met":true,"confidence":"high","summary":"OK"}', // Exact duplicate
       ];
-      
+
       const unique = new Set(results);
       expect(unique.size).toBe(1);
     });
