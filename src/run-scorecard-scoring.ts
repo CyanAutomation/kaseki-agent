@@ -3,12 +3,11 @@ import type { Evidence } from './run-scorecard-evidence';
 import { ScorecardContext } from './run-scorecard-context';
 import { buildDimensions, buildPhases, DIMENSIONS, WEIGHTS, PHASES } from './run-scorecard-scoring-parts';
 import { buildScorecardWarnings } from './run-scorecard-warnings';
+import { assignGrade } from './run-scorecard-scoring-grades';
 
 const clamp = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
 
-export function assignGrade(score: number): RunScorecard['grade'] {
-  return score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F';
-}
+export { assignGrade } from './run-scorecard-scoring-grades';
 
 export function calculateCoverage(evidence: Evidence) {
   const fields: Array<[string, boolean]> = [

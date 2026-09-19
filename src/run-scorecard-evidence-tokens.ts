@@ -1,6 +1,7 @@
 import { TokenUsageAggregator, type UsageObject } from './pi-event-aggregation/token-usage-aggregator';
 import type { Evidence } from './run-scorecard-evidence-types';
 import { number, object } from './run-scorecard-guards';
+export { providerRetryCounts, countRetries } from './run-scorecard-evidence-retries';
 
 const phases = ['goal_setting', 'scouting', 'coding', 'validation', 'goal_check', 'run_evaluation'] as const;
 function canonicalPhase(value: string): typeof phases[number] {
@@ -64,27 +65,4 @@ export function aggregateTokenUsage(summaries: unknown[]): Pick<Evidence, 'token
     },
     phaseTokens, unknownTokenRequests: unknown,
   };
-}
-
-export function providerRetryCounts(snapshot: { json: Record<string, unknown>; text: Record<string, string> }): Record<string, number> {
-  const attempts = snapshot.text['provider-attempts.jsonl'] ?? '';
-  const retriesByPhase = new Map<string, number>();
-  for (const line of attempts.split(/\r?\n/)) {
-    try {
-      const entry = object(JSON.parse(line));
-      if (!entry) continue;
-      const match = String(entry.attempt ?? '').match(/(?:^|[-_])(\d+)$/);
-      if (!match || Number(match[1]) <= 1) continue;
-      const phase = canonicalPhase(String(entry.phase ?? 'coding'));
-      // provider-attempts.jsonl records each provider invocation. Every
-      // primary-N row after primary-1 is one extra billed inference attempt;
-      // count rows, not words or artifact filenames.
-      retriesByPhase.set(phase, (retriesByPhase.get(phase) ?? 0) + 1);
-    } catch { /* a partially written JSONL line is not retry evidence */ }
-  }
-  return Object.fromEntries(retriesByPhase);
-}
-
-export function countRetries(snapshot: { json: Record<string, unknown>; text: Record<string, string> }): number {
-  return Object.values(providerRetryCounts(snapshot)).reduce((total, retries) => total + retries, 0);
 }
