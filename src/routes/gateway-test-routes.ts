@@ -137,14 +137,14 @@ function buildStage2Response(stage2Result: any, piProviderResult: any, classific
   const stage2Healthy = stage2Result?.status === 'ok';
   const piProviderHealthy = piProviderResult?.status === 'ok';
   const piProviderRequested = !!piProviderResult;
-  
+
   // Determine status and partialSuccess:
   // - 'ok': stage2 healthy AND (pi not tested OR pi healthy) AND classifier healthy
   // - 'partial': (stage2 fails but pi succeeds) OR (stage2 succeeds but pi fails and was tested)
   // - 'error': stage2 fails AND (pi not healthy OR pi not tested) OR classifier fails
   let status = 'error';
   let partialSuccess = false;
-  
+
   if (stage2Healthy && !piAdapterFailed && !classifierFailed) {
     // Stage2 is healthy, Pi is either not tested or is healthy, classifier is not failed
     status = 'ok';
@@ -158,7 +158,7 @@ function buildStage2Response(stage2Result: any, piProviderResult: any, classific
     status = 'partial';
     partialSuccess = true;
   }
-  
+
   const result: any = {
     status,
     detail: stage2Result?.detail || 'LLM inference test failed',
