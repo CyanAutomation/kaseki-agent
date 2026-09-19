@@ -35,16 +35,16 @@ export function buildScorecard(evidence: Evidence, now = new Date()): RunScoreca
   const ended = typeof evidence.metadata.ended_at === 'string' ? evidence.metadata.ended_at
     : ['completed', 'failed', 'cancelled', 'timed_out'].includes(evidence.status) ? now.toISOString() : null;
   const dimensions = buildDimensions(evidence);
-  
+
   // Calculate and cap the score
   const uncappedScore = calculateUncappedScore(dimensions.map(d => d.weighted_points));
   const evaluatorReliable = hasEvaluatorReliability(evidence.goalCheckAvailable, evidence.evaluatorAvailable);
   const score = applyScoringCap(uncappedScore, evaluatorReliable);
-  
+
   // Calculate confidence metrics
   const confidenceValue = calculateConfidenceScore(coverage.ratio, evidence.unknownTokenRequests > 0, evaluatorReliable);
   const confidenceRationale = getConfidenceRationale(coverage.observed, coverage.possible, evaluatorReliable);
-  
+
   return RunScorecardSchema.parse({
     schema_version: '1.0', rubric_version: config.rubricVersion,
     run_id: typeof evidence.metadata.instance === 'string' ? evidence.metadata.instance : 'unknown-run',

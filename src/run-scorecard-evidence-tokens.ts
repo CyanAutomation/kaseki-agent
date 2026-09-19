@@ -16,35 +16,35 @@ export function aggregateTokenUsage(summaries: unknown[]): Pick<Evidence, 'token
   const aggregator = new TokenUsageAggregator();
   const identities = new Set<string>();
   let unknown = 0;
-  
+
   summaries.forEach((raw, index) => {
     const summary = object(raw);
     if (!summary) return;
-    
+
     // Extract phase and identity
     const phase = canonicalPhase(String(summary.phase ?? summary.stage ?? 'coding'));
     const responseId = summary.response_id ?? summary.id;
     const requestId = summary.request_id;
     const turn = number(summary.turn);
     const identity = generateIdentity(phase, responseId, requestId, turn, index);
-    
+
     // Skip duplicates
     if (identities.has(identity)) return;
     identities.add(identity);
-    
+
     // Extract and validate usage
     const usage = extractUsageFromSummary(summary as Record<string, unknown>);
     if (!hasUsage(usage)) {
       unknown += 1;
       return;
     }
-    
+
     // Record with aggregator
     const model = extractModelName(summary as Record<string, unknown>);
     aggregator.setCurrentPhase(phase);
     aggregator.recordUsage(model, usage);
   });
-  
+
   // Aggregate results
   const totals = aggregator.getSummary();
   const phaseTokens: Evidence['phaseTokens'] = {};
@@ -59,7 +59,7 @@ export function aggregateTokenUsage(summaries: unknown[]): Pick<Evidence, 'token
       completeness: 'complete',
     };
   }
-  
+
   return {
     tokens: totals.total_tokens || undefined,
     tokenUsage: {
