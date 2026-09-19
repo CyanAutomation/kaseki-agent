@@ -4,8 +4,15 @@ import { ScorecardContext } from './run-scorecard-context';
 import { buildDimensions, buildPhases, DIMENSIONS, WEIGHTS, PHASES } from './run-scorecard-scoring-parts';
 import { buildScorecardWarnings } from './run-scorecard-warnings';
 import { assignGrade } from './run-scorecard-scoring-grades';
-
-const clamp = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
+import {
+  calculateUncappedScore,
+  applyScoringCap,
+  calculateConfidenceScore,
+  getConfidenceRationale,
+  determineCompleteness,
+  hasEvaluatorReliability,
+  calculateMissingCritical,
+} from './run-scorecard-scoring-calculation';
 
 export { assignGrade } from './run-scorecard-scoring-grades';
 
@@ -28,11 +35,16 @@ export function buildScorecard(evidence: Evidence, now = new Date()): RunScoreca
   const ended = typeof evidence.metadata.ended_at === 'string' ? evidence.metadata.ended_at
     : ['completed', 'failed', 'cancelled', 'timed_out'].includes(evidence.status) ? now.toISOString() : null;
   const dimensions = buildDimensions(evidence);
-  const uncappedScore = Number(dimensions.reduce((total, dimension) => total + dimension.weighted_points, 0).toFixed(2));
-  // A successful patch can still be useful, but it must not look fully
-  // evaluated when the evaluator artifact is a fallback or unavailable.
-  const evaluatorReliabilityAvailable = evidence.goalCheckAvailable && evidence.evaluatorAvailable;
-  const score = evaluatorReliabilityAvailable ? uncappedScore : Math.min(uncappedScore, 89);
+  
+  // Calculate and cap the score
+  const uncappedScore = calculateUncappedScore(dimensions.map(d => d.weighted_points));
+  const evaluatorReliable = hasEvaluatorReliability(evidence.goalCheckAvailable, evidence.evaluatorAvailable);
+  const score = applyScoringCap(uncappedScore, evaluatorReliable);
+  
+  // Calculate confidence metrics
+  const confidenceValue = calculateConfidenceScore(coverage.ratio, evidence.unknownTokenRequests > 0, evaluatorReliable);
+  const confidenceRationale = getConfidenceRationale(coverage.observed, coverage.possible, evaluatorReliable);
+  
   return RunScorecardSchema.parse({
     schema_version: '1.0', rubric_version: config.rubricVersion,
     run_id: typeof evidence.metadata.instance === 'string' ? evidence.metadata.instance : 'unknown-run',
@@ -40,10 +52,10 @@ export function buildScorecard(evidence: Evidence, now = new Date()): RunScoreca
     overall_score: score, grade: assignGrade(score),
     evidence_coverage: {
       required: coverage.possible, available: Math.min(coverage.observed, coverage.possible), ratio: Math.min(1, coverage.ratio),
-      missing_critical: [...(evidence.diffBytes === 0 ? ['diff'] : []), ...(evidence.validation === 'unknown' ? ['validation_result'] : []), ...(!evidence.goalCheckAvailable ? ['goal_check'] : []), ...(!evidence.evaluatorAvailable ? ['run_evaluation'] : [])],
+      missing_critical: calculateMissingCritical(evidence.diffBytes, evidence.validation, evidence.goalCheckAvailable, evidence.evaluatorAvailable),
     },
-    completeness: coverage.ratio === 1 ? 'complete' : 'provisional',
-    confidence: { score: clamp(coverage.ratio * 100 * (evidence.unknownTokenRequests > 0 ? .9 : 1) * (evaluatorReliabilityAvailable ? 1 : .7)), rationale: `${coverage.observed} of ${coverage.possible} evidence categories are available${evaluatorReliabilityAvailable ? '.' : '; one or more evaluator phases are unavailable.'}` },
+    completeness: determineCompleteness(coverage.ratio),
+    confidence: { score: confidenceValue, rationale: confidenceRationale },
     dimensions, phases: buildPhases(evidence), token_totals: evidence.tokenUsage,
     timing_totals: {
       wall_clock_ms: (evidence.elapsedSeconds ?? 0) * 1000,
@@ -58,7 +70,7 @@ export function buildScorecard(evidence: Evidence, now = new Date()): RunScoreca
       task_size: config.taskSize,
       selected_targets: { token_budget: Math.round(config.targets.tokens), wall_clock_ms: config.targets.elapsedSeconds * 1000, changed_lines: null, rationale: 'Configured before scoring; preserved with this artifact.' },
       caps: { missing_diff: 69, missing_validation: 59, missing_diff_and_validation: 49 },
-      enabled_phase_reliability_penalty_points: evaluatorReliabilityAvailable ? 0 : 10, disabled_phase_policy: 'reweight_eligible_dimensions',
+      enabled_phase_reliability_penalty_points: evaluatorReliable ? 0 : 10, disabled_phase_policy: 'reweight_eligible_dimensions',
     },
     warnings: buildScorecardWarnings(evidence, coverage),
   });
