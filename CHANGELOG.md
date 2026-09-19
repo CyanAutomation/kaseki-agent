@@ -4,6 +4,22 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.137.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.136.0...v1.137.0) (2026-09-19)
+
+
+### Bug Fixes
+
+* improve error handling for goal-check artifact recovery and log stderr output ([49a924e](https://github.com/CyanAutomation/kaseki-agent/commit/49a924eaf7e2d3d470311333e444193c79f91368))
+
+
+### Features
+
+* add classification parameter handling and update response messages in web console ([58e3612](https://github.com/CyanAutomation/kaseki-agent/commit/58e3612b9ba09f967e151a11ba26308a803caace))
+* add classification smoke test and integrate into gateway test routes ([2a09339](https://github.com/CyanAutomation/kaseki-agent/commit/2a093395e732e12f81fa70ee9721d9ed8e68f015))
+* add validation for git references to reject commit SHAs and ensure proper branch/tag usage ([ecaea91](https://github.com/CyanAutomation/kaseki-agent/commit/ecaea917fa4dc8d90f7a37bf0c695a7af7d1b69f))
+* enhance scoring calculations and add comprehensive tests for guards and token usage ([fcd2c85](https://github.com/CyanAutomation/kaseki-agent/commit/fcd2c85b1139887cf22ff238746f3b61728f2c4e))
+* update AI model test button to include classification parameter in gateway test routes ([aef2973](https://github.com/CyanAutomation/kaseki-agent/commit/aef29730012d022f7805f3645fd7a3b3a36cb845))
+
 # [1.136.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.135.0...v1.136.0) (2026-09-19)
 
 
