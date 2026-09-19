@@ -6,18 +6,19 @@
     "src/kaseki-api-service.ts",
     "src/get-caveman-prompt.ts",
     "src/kaseki-api/index.ts",
-    "src/**/*.test.ts",
-    "src/**/*.spec.ts",
-    "src/**/*.type-test.ts",
     "scripts/context-handoff.js",
-    "test/**/*.test.ts",
-    "tests/**/*.test.ts",
-    "scripts/**/*.ts",
-    "scripts/**/*.test.ts"
+    "scripts/**/*.ts"
   ],
   "ignorePatterns": [
     "**/*.test.d.ts",
     "**/*.test.d.ts.map",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "**/*.type-test.ts",
+    "test/**",
+    "tests/**",
+    "src/__test-utils/**",
+    "src/**/*.test.js.map",
     "scripts/score-tests.ts",
     ".github/**"
   ],
