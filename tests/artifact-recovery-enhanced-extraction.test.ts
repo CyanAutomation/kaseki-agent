@@ -227,10 +227,10 @@ The result looks good.`;
       // Simulates a real streaming response pattern
       const streamingText = `{"type":"text_delta","text":"Analyzing..."}
 {"type":"text_delta","text":"\\n\\n\`\`\`json\\n"}
-{"type":"text_delta","text":"{\\\"met\\\":true,\\\"confidence\\\":\\\"high\\\",\\\"summary\\\":\\\"Complete\\\","}
-{"type":"text_delta","text":"\\\"evidence\\\":[\\\"test1\\\"],\\\"missing\\\":[],\\\"retry_prompt\\\":\\\"\\\","}
-{"type":"text_delta","text":"\\\"validation_notes\\\":[],\\\"evidence_sources_inspected\\\":[],\\\"contradictions\\\":[],"}
-{"type":"text_delta","text":"\\\"confidence_calibration\\\":{\\\"outcome\\\":\\\"met\\\",\\\"justification\\\":\\\"OK\\\"}}\\n\`\`\`"}`;
+{"type":"text_delta","text":"{\\"met\\":true,\\"confidence\\":\\"high\\",\\"summary\\":\\"Complete\\","}
+{"type":"text_delta","text":"\\"evidence\\":[\\"test1\\"],\\"missing\\":[],\\"retry_prompt\\":\\"\\","}
+{"type":"text_delta","text":"\\"validation_notes\\":[],\\"evidence_sources_inspected\\":[],\\"contradictions\\":[],"}
+{"type":"text_delta","text":"\\"confidence_calibration\\":{\\"outcome\\":\\"met\\",\\"justification\\":\\"OK\\"}}\\n\`\`\`"}`;
 
       const result = collectJsonWithFallback(streamingText);
       // May not extract from streaming (escaped quotes), but shouldn't break
