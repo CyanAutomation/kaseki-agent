@@ -4,6 +4,18 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.136.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.135.0...v1.136.0) (2026-09-19)
+
+
+### Bug Fixes
+
+* add suggested_allowlist to scouting candidate JSON output for improved clarity ([d7d6cc4](https://github.com/CyanAutomation/kaseki-agent/commit/d7d6cc40e78ad6f54393c051050d0b4c00936d98))
+
+
+### Features
+
+* enhance test coverage and add edge case handling for scoring and evidence validation ([b6537d8](https://github.com/CyanAutomation/kaseki-agent/commit/b6537d826049130505b633cef5d237987fd9c8b1))
+
 # [1.135.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.134.0...v1.135.0) (2026-09-18)
 
 
