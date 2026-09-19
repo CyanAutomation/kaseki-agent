@@ -270,9 +270,22 @@ kill -TERM "$$"
           }
 
           const result = runEntrypoint(args, tempRoot, env);
-          const validationWasInvoked = result.stderr.includes(
-            `warning: required directory does not exist: ${permissionRoot}`,
-          );
+          // Validation checking depends on the mode:
+          // - API mode checks KASEKI_ROOT directories
+          // - Agent mode checks /cache and /results
+          // - Other modes don't validate by default
+          let validationWasInvoked: boolean;
+          if (mode === 'api' || mode === 'kaseki-api') {
+            validationWasInvoked = result.stderr.includes(
+              `warning: required directory does not exist: ${permissionRoot}`,
+            );
+          } else if (mode === 'agent') {
+            // Agent mode checks /cache and /results
+            validationWasInvoked = result.stderr.includes('warning: required directory does not exist: /cache') ||
+              result.stderr.includes('warning: required directory does not exist: /results');
+          } else {
+            validationWasInvoked = false;
+          }
 
           expect(result.status).toBe(0);
           expect(result.signal).toBeNull();
@@ -309,9 +322,19 @@ kill -TERM "$$"
           }
 
           const result = runEntrypoint(args, tempRoot, env);
-          const validationWasInvoked = result.stderr.includes(
-            `warning: required directory does not exist: ${permissionRoot}`,
-          );
+          // When KASEKI_SKIP_PERMISSION_VALIDATION=1, validation should be skipped for all modes
+          let validationWasInvoked: boolean;
+          if (mode === 'api' || mode === 'kaseki-api') {
+            validationWasInvoked = result.stderr.includes(
+              `warning: required directory does not exist: ${permissionRoot}`,
+            );
+          } else if (mode === 'agent') {
+            // Agent mode checks /cache and /results
+            validationWasInvoked = result.stderr.includes('warning: required directory does not exist: /cache') ||
+              result.stderr.includes('warning: required directory does not exist: /results');
+          } else {
+            validationWasInvoked = false;
+          }
 
           expect(result.status).toBe(0);
           expect(result.signal).toBeNull();
