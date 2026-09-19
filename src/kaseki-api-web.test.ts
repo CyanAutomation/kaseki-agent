@@ -224,8 +224,8 @@ describe('kaseki API web console routes', () => {
     expectAttribute(document, '#issues-label', 'value', 'kaseki-agent');
     getElement(document, '[data-probe="/api/preflight"]');
     expectAttribute(document, '[data-probe="/api/gateway-test?stage=1"]', 'data-auth', 'true');
-    expectTextContains(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]', 'AI Model Test');
-    expectAttribute(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]', 'data-cost-warning', 'true');
+    expectTextContains(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&classification=true"]', 'AI Model Test');
+    expectAttribute(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&classification=true"]', 'data-cost-warning', 'true');
     expectAttribute(document, '#task-mode', 'name', 'taskMode');
     expectText(document, '.advanced-options summary', 'Advanced run controls');
     expectAttribute(document, '#task-ref', 'name', 'ref');
@@ -431,7 +431,7 @@ describe('kaseki API web console behavior', () => {
 
     expect(healthCheckButton(document, 'API Connection').getAttribute('data-probe')).toBe('/api/gateway-test?stage=1');
     expect(healthCheckButton(document, 'AI Model Test').getAttribute('data-probe'))
-      .toBe('/api/gateway-test?stage=2&responseSmoke=true&piProvider=true');
+      .toBe('/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&classification=true');
 
     const checkStatusButton = [...document.querySelectorAll('.health-check-button')]
       .find(btn => (btn.textContent || '').includes('Check Status'));
@@ -447,14 +447,14 @@ describe('kaseki API web console behavior', () => {
         '/api/gateway-test?stage=1': () => {
           return new Promise((_resolve, reject) => { rejectGateway = reject; });
         },
-        '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true': () => {
+        '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&classification=true': () => {
           return new Promise((_resolve, reject) => { rejectInference = reject; });
         },
         '/api/runs': createJsonResponse({ runs: [] }),
       }, createJsonResponse({ status: 'ok' })),
     });
     const gateway = getElement<HTMLButtonElement>(document, '[data-probe="/api/gateway-test?stage=1"]');
-    const inference = getElement<HTMLButtonElement>(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]');
+    const inference = getElement<HTMLButtonElement>(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&classification=true"]');
     const repo = getElement<HTMLInputElement>(document, '[name="repoUrl"]');
     click(gateway);
     await waitFor(() => expect(gateway.disabled).toBe(true));
@@ -523,7 +523,7 @@ describe('kaseki API web console behavior', () => {
         if (path === '/api/gateway-test?stage=1') {
           return createJsonResponse({ status: 'error', responseTime: 125 });
         }
-        if (path === '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true') {
+        if (path === '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&classification=true') {
           return createJsonResponse({
             status: 'ok',
             responseTime: 480,
@@ -542,7 +542,7 @@ describe('kaseki API web console behavior', () => {
     await waitFor(() => expect(document.querySelector('[data-summary="gateway"]')?.textContent).toBe('Failed'));
     expect(document.querySelector('[data-summary="gateway"]')?.className).toContain('bad');
 
-    click(document.querySelector('[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]'));
+    click(document.querySelector('[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&classification=true"]'));
     await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Gateway and Pi provider adapter passed.'));
     expectText(document, '[data-summary="llm-test"]', 'gateway 480ms · 7 tokens stream ok, large ok');
     expect(document.querySelector('#response-summary')?.textContent).not.toContain('OpenRouter');
@@ -552,7 +552,7 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true': createJsonResponse({
+        '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&classification=true': createJsonResponse({
           status: 'ok',
           responseTime: 600,
           outputTokens: 11,
@@ -569,7 +569,7 @@ describe('kaseki API web console behavior', () => {
       }, createJsonResponse({ status: 'ok' })),
     });
 
-    clickSelector(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]');
+    clickSelector(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&classification=true"]');
 
     await waitFor(() => expectText(
       document,
@@ -582,7 +582,7 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true': createJsonResponse({
+        '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&classification=true': createJsonResponse({
           status: 'ok',
           responseTime: 510,
           partialSuccess: true,
@@ -601,7 +601,7 @@ describe('kaseki API web console behavior', () => {
       }, createJsonResponse({ status: 'ok' })),
     });
 
-    clickSelector(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"]');
+    clickSelector(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&classification=true"]');
 
     await waitFor(() => expectTextContains(document, '#response-summary', 'Gateway inference passed; Pi provider adapter contract failed. Diagnostics:'));
     expectTextContains(document, '#response-summary', 'Fields found: message.output_text');

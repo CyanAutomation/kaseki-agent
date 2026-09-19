@@ -2828,6 +2828,7 @@ const controllerPage = String.raw`<!doctype html>
             const timing = payload.modelTest || {};
             const streamOk = payload.streamSmokeValidated === true;
             const largeOk = payload.largePromptSmokeValidated === true;
+            const classifyMs = timing.classificationMs;
             const coverage = [
               streamOk ? 'stream ok' : '',
               largeOk ? 'large ok' : '',
@@ -2837,6 +2838,7 @@ const controllerPage = String.raw`<!doctype html>
               : payload.status === 'ok'
               ? 'gateway ' + (timing.gatewayInferenceMs || responseTime) + 'ms'
                 + (timing.piAdapterMs != null ? ' · Pi ' + timing.piAdapterMs + 'ms' : '')
+                + (classifyMs != null ? ' · classify ' + classifyMs + 'ms' : '')
                 + (timing.endToEndMs ? ' · total ' + timing.endToEndMs + 'ms' : '')
                 + (outputTokens ? ' · ' + outputTokens + ' tokens' : ' · tokens unavailable')
                 + (coverage ? ' ' + coverage : '')
@@ -2851,7 +2853,15 @@ const controllerPage = String.raw`<!doctype html>
             } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'skipped') {
               setResponseSummary('Gateway passed. Pi provider adapter smoke was skipped; run production check with piProvider=true.');
             } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'ok') {
-              setResponseSummary('Gateway and Pi provider adapter passed.');
+              let msg = 'Gateway and Pi provider adapter passed.';
+              if (payload.classificationSmoke) {
+                if (payload.classificationSmoke.status === 'ok') {
+                  msg += ' Classification smoke passed.';
+                } else if (payload.classificationSmoke.status === 'error') {
+                  msg += ' Classification smoke failed: ' + (payload.classificationSmoke.detail || 'Unknown error');
+                }
+              }
+              setResponseSummary(msg);
             } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'error') {
               const diag = payload.piProviderSmoke.diagnostics || {};
               const fieldsFound = diag.fieldsFound || [];
@@ -2879,6 +2889,13 @@ const controllerPage = String.raw`<!doctype html>
               }
               
               diagnosticMsg += '  Remediation: ' + (payload.piProviderSmoke.remediation || 'Check gateway configuration and Pi provider registration');
+              
+              if (payload.classificationSmoke) {
+                diagnosticMsg += '\n\n  Classification smoke: ' + (payload.classificationSmoke.status || 'unknown');
+                if (payload.classificationSmoke.detail) {
+                  diagnosticMsg += ' - ' + payload.classificationSmoke.detail;
+                }
+              }
               
               setResponseSummary(diagnosticMsg);
             }
