@@ -6920,7 +6920,7 @@ Recovery attempt: the previous response did not satisfy the goal-check schema. P
     # Goal-check is read-only: the controller owns persistence. Recover the
     # single schema-valid JSON verdict from the final assistant response and
     # write the temporary candidate itself before validation/finalization.
-    # shellcheck disable=SC2016,SC1078,SC1079,SC1083,SC1012,SC2026
+    # shellcheck disable=SC2016
     node -e '
 const fs = require("node:fs");
 const candidatePath = process.argv[1];
@@ -7108,7 +7108,13 @@ if (valid.size === 1) {
   const recovered = [...valid.values()][0];
   fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
 }
-' "$GOAL_CHECK_CANDIDATE_ARTIFACT" "$GOAL_CHECK_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-check-events.jsonl "$attempt" 2>/dev/null || true
+' "$GOAL_CHECK_CANDIDATE_ARTIFACT" "$GOAL_CHECK_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-check-events.jsonl "$attempt" 2>"${KASEKI_RESULTS_DIR}/goal-check-recovery-stderr.log"
+    if [ -s "${KASEKI_RESULTS_DIR}/goal-check-recovery-stderr.log" ]; then
+      echo "[goal-check] assistant-text artifact recovery failed; see goal-check-recovery-stderr.log" >&2
+      cat "${KASEKI_RESULTS_DIR}/goal-check-recovery-stderr.log" >&2
+    else
+      rm -f "${KASEKI_RESULTS_DIR}/goal-check-recovery-stderr.log"
+    fi
   fi
 
   if [ "$GOAL_CHECK_EXIT" -eq 0 ]; then
