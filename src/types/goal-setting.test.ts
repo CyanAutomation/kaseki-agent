@@ -5,7 +5,6 @@ import {
   isSmartCriterion,
   type GoalSettingOutput,
   type SmartCriterion,
-  type AntiPatterns,
   type PreservationConstraints,
 } from './goal-setting';
 
