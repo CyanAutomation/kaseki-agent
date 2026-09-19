@@ -6991,6 +6991,16 @@ function normalizeArtifact(value) {
   return artifact;
 }
 
+// Strip markdown code fences from text to expose embedded JSON
+function stripMarkdownFences(text) {
+  // Remove ``` json ... ``` and ``` ... ``` patterns
+  return text
+    .replace(/```(?:json)?\s*\n?/g, '')
+    .replace(/```\s*$/gm, '')
+    .replace(/`{3,}(?:json)?\s*\n?/g, '');
+}
+
+// Core JSON extraction via balanced brace depth
 function collectBalancedJsonObjects(text) {
   const snippets = [];
   let start = -1;
@@ -7021,6 +7031,45 @@ function collectBalancedJsonObjects(text) {
   return snippets;
 }
 
+// Multi-strategy extraction: tries multiple approaches to find valid JSON
+function collectJsonWithFallback(text) {
+  // Strategy 1: Direct extraction from original text
+  let results = collectBalancedJsonObjects(text);
+  if (results.length > 0) return results;
+  
+  // Strategy 2: Strip markdown code fences and extract
+  const stripped = stripMarkdownFences(text);
+  if (stripped !== text) {
+    results = collectBalancedJsonObjects(stripped);
+    if (results.length > 0) return results;
+  }
+  
+  // Strategy 3: Look for confidence enum as anchor point
+  // Sometimes prose appears before JSON; use "confidence": pattern as hint
+  if (text.includes('"confidence":')) {
+    const confidenceIdx = text.indexOf('"confidence":');
+    if (confidenceIdx > 0) {
+      // Search backwards from confidence for opening brace
+      const backtrackText = text.substring(Math.max(0, confidenceIdx - 100));
+      results = collectBalancedJsonObjects(backtrackText);
+      if (results.length > 0) return results;
+    }
+  }
+  
+  // Strategy 4: Try JSONLines pattern (per-line extraction)
+  const lines = text.split('\n');
+  for (const line of lines) {
+    if (line.trim().startsWith('{')) {
+      try {
+        JSON.parse(line);
+        return [line]; // Valid JSON line found
+      } catch {}
+    }
+  }
+  
+  return [];
+}
+
 function collectStrings(value, out = []) {
   if (typeof value === "string") out.push(value);
   else if (Array.isArray(value)) value.forEach((item) => collectStrings(item, out));
@@ -7034,13 +7083,14 @@ const paths = fs.existsSync(rawPath) ? [rawPath] : [filteredPath];
 for (const path of paths) {
   let text = "";
   try { text = fs.readFileSync(path, "utf8"); } catch { continue; }
-  const snippets = collectBalancedJsonObjects(text);
+  // Use enhanced extraction with fallback strategies
+  const snippets = collectJsonWithFallback(text);
   for (const snippet of snippets) {
     try {
       const parsed = normalizeArtifact(JSON.parse(snippet));
       if (schemaErrors(parsed).length === 0) { valid.set(stableStringify(parsed), parsed); validOccurrences += 1; }
       for (const innerText of collectStrings(parsed)) {
-        for (const innerSnippet of collectBalancedJsonObjects(innerText)) {
+        for (const innerSnippet of collectJsonWithFallback(innerText)) {
           try {
             const inner = normalizeArtifact(JSON.parse(innerSnippet));
             if (schemaErrors(inner).length === 0) { valid.set(stableStringify(inner), inner); validOccurrences += 1; }

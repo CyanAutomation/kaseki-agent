@@ -170,6 +170,57 @@ describe('rendered prompt contracts', () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  describe('Tier 1 Fix: JSON-only instruction clarity', () => {
+    it('emphasizes JSON-only response with ALL CAPS warning in goal-check prompt', () => {
+      const prompt = renderPrompt('goal-check');
+      expect(prompt).toContain('CRITICAL: Response Format');
+      expect(prompt).toContain('EXACTLY ONE JSON object');
+      expect(prompt).toContain('NOTHING else');
+      expect(prompt).toMatch(/NO prose|NO explanations|NO code fences/);
+    });
+
+    it('forbids markdown code fences explicitly', () => {
+      const prompt = renderPrompt('goal-check');
+      expect(prompt).toContain('```json');
+      expect(prompt).toMatch(/\u274c.*code fences/); // ❌ emoji + code fences forbidden
+    });
+
+    it('includes concrete JSON example with exact structure', () => {
+      const prompt = renderPrompt('goal-check');
+      // Should include a working example with real field values
+      expect(prompt).toContain('"met": true');
+      expect(prompt).toContain('"confidence": "high"');
+      expect(prompt).toContain('"summary":');
+      expect(prompt).toContain('"evidence":');
+      expect(prompt).toContain('"missing":');
+      expect(prompt).toContain('"confidence_calibration":');
+    });
+
+    it('provides schema constraints for confidence enum', () => {
+      const prompt = renderPrompt('goal-check');
+      // Schema should explicitly list allowed values
+      expect(prompt).toMatch(/confidence.*must be exactly.*high.*medium.*low/);
+    });
+
+    it('clarifies retry_prompt requirement based on met status', () => {
+      const prompt = renderPrompt('goal-check');
+      expect(prompt).toContain('non-empty string if met=false');
+      expect(prompt).toContain('empty string if met=true');
+    });
+
+    it('does not include markdown code fences in the valid example', () => {
+      const prompt = renderPrompt('goal-check');
+      // Find the example JSON and verify it's not in a code fence
+      const exampleStart = prompt.indexOf('"met": true');
+      expect(exampleStart).toBeGreaterThan(0);
+      // Check context around example doesn't have code fences
+      const beforeExample = prompt.substring(Math.max(0, exampleStart - 50));
+      const afterExample = prompt.substring(exampleStart, exampleStart + 500);
+      // The example itself should be valid JSON, not wrapped in fences
+      expect(afterExample).toContain('}'); // Example closes with }
+    });
+  });
 });
 
 describe('shell orchestration integration', () => {

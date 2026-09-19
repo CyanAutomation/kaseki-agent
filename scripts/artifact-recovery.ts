@@ -27,6 +27,15 @@ export function stableStringify(obj: unknown): string {
   return JSON.stringify(obj, Object.keys(obj as Record<string, unknown>).sort());
 }
 
+/** Strip markdown code fences from text to expose embedded JSON */
+function stripMarkdownFences(text: string): string {
+  // Remove ``` json ... ``` and ``` ... ``` patterns
+  return text
+    .replace(/```(?:json)?\s*\n?/g, '')
+    .replace(/```\s*$/gm, '')
+    .replace(/`{3,}(?:json)?\s*\n?/g, '');
+}
+
 export function collectBalancedJsonObjects(text: string): string[] {
   const snippets: string[] = [];
   let start = -1;
@@ -56,6 +65,45 @@ export function collectBalancedJsonObjects(text: string): string[] {
     }
   }
   return snippets;
+}
+
+/** Multi-strategy extraction: tries multiple approaches to find valid JSON */
+export function collectJsonWithFallback(text: string): string[] {
+  // Strategy 1: Direct extraction from original text
+  let results = collectBalancedJsonObjects(text);
+  if (results.length > 0) return results;
+
+  // Strategy 2: Strip markdown code fences and extract
+  const stripped = stripMarkdownFences(text);
+  if (stripped !== text) {
+    results = collectBalancedJsonObjects(stripped);
+    if (results.length > 0) return results;
+  }
+
+  // Strategy 3: Look for confidence enum as anchor point
+  // Sometimes prose appears before JSON; use "confidence": pattern as hint
+  if (text.includes('"confidence":')) {
+    const confidenceIdx = text.indexOf('"confidence":');
+    if (confidenceIdx > 0) {
+      // Search backwards from confidence for opening brace
+      const backtrackText = text.substring(Math.max(0, confidenceIdx - 100));
+      results = collectBalancedJsonObjects(backtrackText);
+      if (results.length > 0) return results;
+    }
+  }
+
+  // Strategy 4: Try JSONLines pattern (per-line extraction)
+  const lines = text.split('\n');
+  for (const line of lines) {
+    if (line.trim().startsWith('{')) {
+      try {
+        JSON.parse(line);
+        return [line]; // Valid JSON line found
+      } catch {}
+    }
+  }
+
+  return [];
 }
 
 export function collectStrings(value: unknown, out: string[] = []): string[] {
@@ -128,12 +176,13 @@ function collectRecoveryCandidates(text: string, phase: Phase): RecoveryCandidat
     partial: new Map<string, Record<string, unknown>>(),
   };
 
-  for (const snippet of collectBalancedJsonObjects(text)) {
+  // Use enhanced extraction with fallback strategies
+  for (const snippet of collectJsonWithFallback(text)) {
     try {
       const parsed = JSON.parse(snippet) as unknown;
       inspectCandidate(parsed, phase, candidates);
       for (const innerText of collectStrings(parsed)) {
-        for (const innerSnippet of collectBalancedJsonObjects(innerText)) {
+        for (const innerSnippet of collectJsonWithFallback(innerText)) {
           try {
             inspectCandidate(JSON.parse(innerSnippet) as unknown, phase, candidates);
           } catch {

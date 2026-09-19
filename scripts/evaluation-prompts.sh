@@ -145,7 +145,20 @@ $validation_context
 Deterministic progress summary:
 $progress_summary
 
-Return exactly one JSON object matching the schema below as your final assistant message. Do not write files, use markdown/code fences, or add prose; Kaseki validates and persists the verdict itself.
+## ⚠️ CRITICAL: Response Format (READ CAREFULLY)
+
+You MUST respond with EXACTLY ONE JSON object. NOTHING else. NO prose, NO explanations, NO code fences.
+
+**Forbidden patterns:**
+- ❌ Any text before the JSON
+- ❌ Any text after the JSON
+- ❌ ```json ... ``` (markdown code fences)
+- ❌ Multiple JSON objects
+- ❌ Comments or explanations
+
+**Valid response format:**
+{"met":true,"confidence":"high",...}
+
 Required structured evidence fields: "evidence_sources_inspected": string[], "contradictions": {"sources":string[],"description":string}[], and "confidence_calibration": {"outcome":string,"justification":string}.
 EOF
   else
@@ -206,20 +219,42 @@ If goal not met, your retry_prompt must:
 
 ## Required JSON artifact
 
-Return exactly one JSON object as the final assistant message. Do not write a file, use markdown/code fences, or include prose before/after the JSON. Kaseki validates and persists this response.
+⚠️ **RESPOND WITH ONLY JSON, NO OTHER TEXT**
+
+Return this exact structure (adapt field values, keep structure identical):
 
 {
-  "met": true or false,
-  "confidence": "high", "medium", or "low",
-  "summary": "1-2 sentence verdict with key finding",
-  "evidence": ["specific, verifiable evidence item 1 with file/line references", "..."],
-  "missing": ["unmet requirement 1 (empty if met=true)", "..."],
-  "retry_prompt": "actionable repair instructions; empty if met=true",
-  "validation_notes": ["validation command 1: outcome", "..."],
-  "evidence_sources_inspected": ["goal-setting.json", "scouting.json", "changed-files.txt", "git.diff", "validation.log"],
-  "contradictions": [{"sources": ["goal-check verdict", "git.diff"], "description": "description of conflict"}],
-  "confidence_calibration": {"outcome": "met", "justification": "why the confidence matches the objective evidence"}
+  "met": true,
+  "confidence": "high",
+  "summary": "Agent met all SMART criteria; implementation is complete.",
+  "evidence": [
+    "File requirement: README.md changed (git diff confirms)",
+    "Test evidence: npm run check passed",
+    "Validation: validation-timings.tsv shows 0 failures"
+  ],
+  "missing": [],
+  "retry_prompt": "",
+  "validation_notes": ["npm run check: passed"],
+  "evidence_sources_inspected": ["goal-setting.json", "changed-files.txt", "git.diff"],
+  "contradictions": [],
+  "confidence_calibration": {
+    "outcome": "met",
+    "justification": "3+ evidence items + 5/5 SMART criteria satisfied"
+  }
 }
+
+If goal NOT met, use met=false with retry_prompt containing unmet dimensions.
+
+SCHEMA CONSTRAINTS:
+- met: boolean only (true or false)
+- confidence: must be exactly "high", "medium", or "low"
+- summary: non-empty string
+- evidence: array of strings with specific file/line references
+- missing: array of strings (can be empty)
+- retry_prompt: non-empty string if met=false, empty string if met=true
+- validation_notes, evidence_sources_inspected: arrays of strings
+- contradictions: array of {sources: string[], description: string} objects
+- confidence_calibration: {outcome: string, justification: string}
 
 ## Context
 $goal_setting_context
