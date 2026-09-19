@@ -1,6 +1,7 @@
 # Kaseki-Agent Regression Fix - Sep 19, 2026
 
 ## Summary
+
 ✅ **ROOT CAUSE IDENTIFIED AND FIXED**
 
 The deployed kaseki-agent API was failing on all worker container startups due to a code regression from Sep 18.
@@ -12,13 +13,16 @@ The deployed kaseki-agent API was failing on all worker container startups due t
 ## The Bug
 
 ### Symptom
+
 Task submissions fail immediately with:
+
 ```
 error: directory is not writable by container user (10000:10000): /agents
   current ownership: root:root
 ```
 
 ### Root Cause
+
 Regression in commit d684eca9 (Sep 18: "refactor: add directory creation for cache and results in entrypoint script")
 
 The `validate_directory_permissions()` function in `scripts/docker-entrypoint.sh` was checking `/agents` directories for **all** container modes, including worker/agent mode.
@@ -26,6 +30,7 @@ The `validate_directory_permissions()` function in `scripts/docker-entrypoint.sh
 ### Why This Breaks Worker Containers
 
 **What the code did**:
+
 ```bash
 # In validate_directory_permissions() - always checked these:
 local required_dirs=(
@@ -42,6 +47,7 @@ fi
 ```
 
 **The problem**:
+
 - Worker container is spawned in "agent" mode
 - Worker container mounts: `/workspace`, `/results`, `/cache` (NOT `/agents`)
 - Worker container tries to validate `/agents` which isn't mounted
@@ -49,6 +55,7 @@ fi
 - Permission check fails → worker exits with code 1 → task fails
 
 ### Why Host Setup Confusion
+
 - Host's `/agents` IS correctly set up (owned by 10000:kaseki-secrets)
 - API container sees it correctly (mounted via docker-compose)
 - But worker container doesn't have `/agents` mounted, so it sees the wrong version
@@ -86,6 +93,7 @@ validate_directory_permissions() {
 ```
 
 ### Why This Works
+
 - **API mode** (kaseki-api): Validates `/agents` ✅ (mounted from host)
 - **Worker mode** (agent): Skips `/agents`, validates only `/cache` and `/results` ✅ (mounted by Docker spawn)
 - Each mode validates only the directories it actually has mounted
@@ -97,6 +105,7 @@ validate_directory_permissions() {
 ### For the Deployment Host
 
 1. **Pull or rebuild the fixed image**:
+
    ```bash
    # Option A: Use the built image
    docker build -t kaseki-agent:latest .
@@ -106,18 +115,21 @@ validate_directory_permissions() {
    ```
 
 2. **Restart the API service**:
+
    ```bash
    docker-compose down
    docker-compose up -d
    ```
 
 3. **Verify it works**:
+
    ```bash
    curl https://kaseki-tunnel.scheimann.xyz/api/health
    # Should return: {"status":"healthy",...}
    ```
 
 4. **Test by resubmitting a task**:
+
    ```bash
    curl -H "Authorization: Bearer $BEARER" \
      https://kaseki-tunnel.scheimann.xyz/api/runs \
@@ -130,13 +142,16 @@ validate_directory_permissions() {
 ## Verification
 
 ### Before Fix
+
 ```
 kaseki-344: worker-container-startup → exit code 1
 Error: directory is not writable by container user (10000:10000): /agents
 ```
 
 ### After Fix
+
 Worker containers should:
+
 - ✅ Skip `/agents` validation
 - ✅ Validate only `/cache` and `/results` (which ARE mounted)
 - ✅ Complete startup checks successfully
@@ -146,18 +161,26 @@ Worker containers should:
 
 ## What Changed
 
-Only one file was modified:
-- `scripts/docker-entrypoint.sh` (lines 70-97 in `validate_directory_permissions()`)
+Two files were modified:
 
-**Diff summary**:
-- Moved `/agents` directory checks inside `if [ API mode ]` block
-- Worker mode now only checks `/cache` and `/results`
+### 1. `scripts/docker-entrypoint.sh` (lines 70-97)
+
+- Made `validate_directory_permissions()` mode-aware
+- API mode: checks `/agents` directories (mounted by docker-compose)
+- Worker mode: checks `/cache` and `/results` (mounted by Docker spawn)
+
+### 2. `src/docker-entrypoint-packaging.test.ts` (lines 250-345)
+
+- Updated tests to verify mode-specific validation
+- First test: Checks that validation is invoked with correct directories per mode
+- Second test: Verifies that `KASEKI_SKIP_PERMISSION_VALIDATION=1` suppresses validation for all modes
 
 ---
 
 ## Why This Regression Happened
 
 Commit d684eca9 added defensive directory creation in Phase 2a:
+
 ```bash
 mkdir -p "${KASEKI_CACHE_DIR:-/cache}" 2>/dev/null || true
 mkdir -p "${KASEKI_RESULTS_DIR:-/results}" 2>/dev/null || true
@@ -181,7 +204,7 @@ This made the validation stricter, but didn't account for the fact that worker c
 ## Files Involved
 
 | File | Change | Purpose |
-|------|--------|---------|
+| ------ | -------- | --------- |
 | `scripts/docker-entrypoint.sh` | ✅ Fixed | Worker container startup validation |
 | `src/docker/DockerManager.ts` | No change | Spawns workers with correct mounts |
 | `docker-compose.yml` | No change | Mounts `/agents` in API container only |
