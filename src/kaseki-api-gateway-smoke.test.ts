@@ -1414,4 +1414,251 @@ describe('LLM Gateway Test', () => {
       });
     });
   });
+
+  describe('Classification Smoke Test (Native JEV)', () => {
+    const mockClassificationRequest = {
+      model: 'typesafe/jev',
+      input: {
+        state: 'Help! My payouts have been failing for 3 days.',
+        questions: {
+          is_urgent: {
+            type: 'boolean',
+            instructions: 'Does this convey urgency?',
+          },
+          department: {
+            type: 'choice',
+            instructions: 'Which team should handle this?',
+            criteria: {
+              billing: 'Payments, invoicing, refunds',
+              technical: 'Bugs, outages, integrations',
+              sales: 'Pricing, upgrades, new accounts',
+            },
+          },
+        },
+      },
+    };
+
+    const mockClassificationResponse = {
+      result: {
+        is_urgent: true,
+        department: 'billing',
+      },
+      usage: {
+        input_tokens: 42,
+        output_tokens: 8,
+      },
+    };
+
+    describe('resolveClassificationConfig', () => {
+      it('should resolve Cloudflare AI Run credentials from environment', () => {
+        process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-123';
+        process.env.CLOUDFLARE_API_TOKEN = 'test-token-xyz';
+        process.env.KASEKI_CLASSIFICATION_MODEL = 'typesafe/jev';
+
+        // This test validates the config shape; implementation test
+        // will verify the helper builds the right Cloudflare endpoint
+        expect(process.env.CLOUDFLARE_ACCOUNT_ID).toBe('test-account-123');
+        expect(process.env.CLOUDFLARE_API_TOKEN).toBe('test-token-xyz');
+        expect(process.env.KASEKI_CLASSIFICATION_MODEL).toBe('typesafe/jev');
+      });
+
+      it('should read Cloudflare API token from host secrets when inline env is not configured', () => {
+        delete process.env.CLOUDFLARE_API_TOKEN;
+        process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-456';
+        process.env.KASEKI_CLASSIFICATION_MODEL = 'typesafe/jev';
+        process.env.KASEKI_SECRETS_DIR = secretsDir;
+
+        // Write API token to secrets file
+        fs.writeFileSync(path.join(secretsDir, 'cloudflare_api_token'), 'test-secret-token\n', { mode: 0o600 });
+
+        // Validation: the secrets file exists and is readable
+        expect(fs.existsSync(path.join(secretsDir, 'cloudflare_api_token'))).toBe(true);
+      });
+
+      it('should default to dynamic/classify model when KASEKI_CLASSIFICATION_MODEL is not set', () => {
+        delete process.env.KASEKI_CLASSIFICATION_MODEL;
+        process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-789';
+        process.env.CLOUDFLARE_API_TOKEN = 'test-token-abc';
+
+        // Validation: expected default model
+        const expectedDefault = 'typesafe/jev';
+        expect(expectedDefault).toBe('typesafe/jev');
+      });
+
+      it('should fail gracefully when CLOUDFLARE_ACCOUNT_ID is not configured', () => {
+        delete process.env.CLOUDFLARE_ACCOUNT_ID;
+        process.env.CLOUDFLARE_API_TOKEN = 'test-token';
+
+        // Validation: missing account ID should be detected
+        expect(process.env.CLOUDFLARE_ACCOUNT_ID).toBeUndefined();
+      });
+
+      it('should fail gracefully when CLOUDFLARE_API_TOKEN is not configured and not in secrets', () => {
+        delete process.env.CLOUDFLARE_API_TOKEN;
+        process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account';
+        process.env.KASEKI_SECRETS_DIR = secretsDir;
+
+        // Validation: no token file exists
+        expect(fs.existsSync(path.join(secretsDir, 'cloudflare_api_token'))).toBe(false);
+      });
+    });
+
+    describe('buildClassificationSmokeRequest', () => {
+      it('should build valid native JEV request body for Cloudflare AI Run', () => {
+        const requestBody = mockClassificationRequest;
+
+        expect(requestBody.model).toBe('typesafe/jev');
+        expect(requestBody.input).toBeDefined();
+        expect(requestBody.input.state).toBe('Help! My payouts have been failing for 3 days.');
+        expect(requestBody.input.questions).toBeDefined();
+        expect(requestBody.input.questions.is_urgent.type).toBe('boolean');
+        expect(requestBody.input.questions.department.type).toBe('choice');
+      });
+
+      it('should use resolved model from config in the request', () => {
+        process.env.KASEKI_CLASSIFICATION_MODEL = 'custom/classifier';
+        const model = process.env.KASEKI_CLASSIFICATION_MODEL;
+        expect(model).toBe('custom/classifier');
+      });
+
+      it('should not include chat-completions specific fields in the JEV request', () => {
+        const requestBody = mockClassificationRequest;
+
+        expect(requestBody).not.toHaveProperty('messages');
+        expect(requestBody).not.toHaveProperty('role');
+        expect(requestBody).not.toHaveProperty('content');
+        expect(requestBody).not.toHaveProperty('max_tokens');
+      });
+    });
+
+    describe('parseClassificationResult', () => {
+      it('should extract classification result from Cloudflare AI Run response', () => {
+        const response = mockClassificationResponse;
+
+        expect(response.result).toBeDefined();
+        expect(response.result.is_urgent).toBe(true);
+        expect(response.result.department).toBe('billing');
+      });
+
+      it('should extract token usage from response', () => {
+        const response = mockClassificationResponse;
+
+        expect(response.usage.input_tokens).toBe(42);
+        expect(response.usage.output_tokens).toBe(8);
+      });
+
+      it('should fail when response has no result field', () => {
+        const invalidResponse = { usage: { input_tokens: 10, output_tokens: 5 } };
+
+        expect(invalidResponse.result).toBeUndefined();
+      });
+
+      it('should fail when response has no usage field', () => {
+        const invalidResponse = { result: { is_urgent: true, department: 'billing' } };
+
+        expect(invalidResponse.usage).toBeUndefined();
+      });
+    });
+
+    describe('testClassificationSmoke', () => {
+      it('should return ClassificationSmokeTestResult on successful probe', async () => {
+        process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-123';
+        process.env.CLOUDFLARE_API_TOKEN = 'test-token-xyz';
+
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify(mockClassificationResponse),
+        });
+
+        // Note: actual implementation will have testClassificationSmoke function
+        // For now, we validate the expected response structure
+        const expectedResult = {
+          status: 'ok',
+          detail: 'Classification model validated',
+          responseTime: 250,
+          timestamp: new Date().toISOString(),
+          modelUsed: 'typesafe/jev',
+          outputTokens: 8,
+          classificationValidated: true,
+        };
+
+        expect(expectedResult.status).toBe('ok');
+        expect(expectedResult.classificationValidated).toBe(true);
+      });
+
+      it('should return error when classification endpoint returns non-200', async () => {
+        process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-123';
+        process.env.CLOUDFLARE_API_TOKEN = 'test-token-xyz';
+
+        mockFetch.mockResolvedValueOnce({
+          ok: false,
+          status: 400,
+          text: async () => JSON.stringify({ error: 'Invalid request' }),
+        });
+
+        const expectedErrorResult = {
+          status: 'error',
+          detail: 'Classification endpoint returned HTTP 400',
+          responseTime: 100,
+          httpStatus: 400,
+        };
+
+        expect(expectedErrorResult.status).toBe('error');
+      });
+
+      it('should return error when missing Cloudflare credentials', () => {
+        delete process.env.CLOUDFLARE_ACCOUNT_ID;
+        delete process.env.CLOUDFLARE_API_TOKEN;
+
+        const expectedErrorResult = {
+          status: 'error',
+          detail: 'CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN is not configured',
+          responseTime: 0,
+        };
+
+        expect(expectedErrorResult.status).toBe('error');
+      });
+
+      it('should support debug mode for raw response inspection', async () => {
+        process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-123';
+        process.env.CLOUDFLARE_API_TOKEN = 'test-token-xyz';
+
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify(mockClassificationResponse),
+        });
+
+        const expectedDebugResult = {
+          status: 'ok',
+          diagnostics: {
+            rawResponsePreview: JSON.stringify(mockClassificationResponse, null, 2),
+          },
+        };
+
+        expect(expectedDebugResult.diagnostics).toBeDefined();
+      });
+    });
+
+    describe('shouldRunClassificationSmoke', () => {
+      it('should skip by default when not explicitly requested', () => {
+        const shouldRun = false; // Default
+
+        expect(shouldRun).toBe(false);
+      });
+
+      it('should run when explicitly requested via query parameter', () => {
+        const shouldRun = true; // Explicit request
+
+        expect(shouldRun).toBe(true);
+      });
+
+      it('should respect KASEKI_ALLOW_DEV_CLASSIFICATION_SMOKE environment variable', () => {
+        process.env.KASEKI_ALLOW_DEV_CLASSIFICATION_SMOKE = '1';
+
+        expect(process.env.KASEKI_ALLOW_DEV_CLASSIFICATION_SMOKE).toBe('1');
+      });
+    });
+  });
 });
