@@ -130,6 +130,22 @@ jobs:
       VALIDATION_COMMAND: ${{ inputs.validation_command || 'npm run check' }}
 
     steps:
+      - name: Validate git reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          
+          # Warn if REF looks like a commit SHA (7-40 hex characters)
+          if [[ "$REF" =~ ^[a-f0-9]{7,40}$ ]]; then
+            echo "⚠️  WARNING: The provided ref ('$REF') looks like a commit SHA."
+            echo "Kaseki-agent does not support commit SHAs. Use a branch name (e.g., 'main', 'develop')"
+            echo "or tag name (e.g., 'v1.0.0') instead."
+            echo "This run will fail at the Kaseki API pre-flight validation step."
+            exit 1
+          fi
+          
+          echo "✓ Git ref is valid (not a commit SHA): $REF"
+
       - name: Check Kaseki availability
         shell: bash
         run: |
