@@ -209,5 +209,86 @@ describe('run-scorecard-evidence-validation', () => {
       // failure.validation_exit_code takes precedence
       expect(evidence.validation).toBe('failed');
     });
+
+    it('returns unknown with empty validation_timings array and validation_commands_attempted: 1', () => {
+      const evidence = collectValidationEvidence({
+        json: {
+          'metadata.json': { validation_commands_attempted: 1 },
+          'failure.json': {},
+          'timings-manifest.json': { validation_timings: [] },
+        },
+        text: {},
+        summaries: [],
+      });
+      expect(evidence.validation).toBe('unknown');
+    });
+
+    it('counts only non-skipped validation rows', () => {
+      const evidence = collectValidationEvidence({
+        json: {
+          'metadata.json': {},
+          'failure.json': {},
+          'timings-manifest.json': {
+            validation_timings: [
+              { command: 'npm test', exit_code: 0, status: 'passed' },
+              { command: 'npm lint', status: 'skipped' },
+              { command: 'npm build', exit_code: 0, status: 'passed' },
+              { command: 'npm typecheck', details: 'skipped=missing_npm_script' },
+            ],
+          },
+        },
+        text: {},
+        summaries: [],
+      });
+      expect(evidence.executedValidationRows).toHaveLength(2);
+      expect(evidence.executedValidationRows.map((r: any) => r.command)).toEqual([
+        'npm test',
+        'npm build',
+      ]);
+    });
+
+    it('handles validation_exit_code: null as falsy (unknown)', () => {
+      const evidence = collectValidationEvidence({
+        json: {
+          'metadata.json': {},
+          'failure.json': { validation_exit_code: null },
+          'timings-manifest.json': { validation_timings: [] },
+        },
+        text: {},
+        summaries: [],
+      });
+      expect(evidence.validation).toBe('unknown');
+    });
+
+    it('handles validation_exit_code: undefined as falsy (unknown)', () => {
+      const evidence = collectValidationEvidence({
+        json: {
+          'metadata.json': {},
+          'failure.json': { validation_exit_code: undefined },
+          'timings-manifest.json': { validation_timings: [] },
+        },
+        text: {},
+        summaries: [],
+      });
+      expect(evidence.validation).toBe('unknown');
+    });
+
+    it('handles single validation row failure correctly', () => {
+      const evidence = collectValidationEvidence({
+        json: {
+          'metadata.json': { validation_commands_attempted: 1 },
+          'failure.json': {},
+          'timings-manifest.json': {
+            validation_timings: [
+              { command: 'single-command', exit_code: 127, status: 'failed' },
+            ],
+          },
+        },
+        text: {},
+        summaries: [],
+      });
+      expect(evidence.validation).toBe('failed');
+      expect(evidence.executedValidationRows).toHaveLength(1);
+    });
   });
 });
