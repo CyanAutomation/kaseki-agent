@@ -172,18 +172,15 @@ describe('rendered prompt contracts', () => {
   });
 
   describe('Tier 1 Fix: JSON-only instruction clarity', () => {
-    it('emphasizes JSON-only response with ALL CAPS warning in goal-check prompt', () => {
+    it('emphasizes JSON-only response with explicit warning in goal-check prompt', () => {
       const prompt = renderPrompt('goal-check');
-      expect(prompt).toContain('CRITICAL: Response Format');
-      expect(prompt).toContain('EXACTLY ONE JSON object');
-      expect(prompt).toContain('NOTHING else');
-      expect(prompt).toMatch(/NO prose|NO explanations|NO code fences/);
+      expect(prompt).toContain('RESPOND WITH ONLY JSON, NO OTHER TEXT');
     });
 
-    it('forbids markdown code fences explicitly', () => {
+    it('provides concrete response format and structure', () => {
       const prompt = renderPrompt('goal-check');
-      expect(prompt).toContain('```json');
-      expect(prompt).toMatch(/\u274c.*code fences/); // ❌ emoji + code fences forbidden
+      expect(prompt).toContain('Return this exact structure');
+      expect(prompt).toContain('(adapt field values, keep structure identical)');
     });
 
     it('includes concrete JSON example with exact structure', () => {
@@ -191,9 +188,9 @@ describe('rendered prompt contracts', () => {
       // Should include a working example with real field values
       expect(prompt).toContain('"met": true');
       expect(prompt).toContain('"confidence": "high"');
-      expect(prompt).toContain('"summary":');
-      expect(prompt).toContain('"evidence":');
-      expect(prompt).toContain('"missing":');
+      expect(prompt).toContain('"summary": "Agent met all SMART criteria');
+      expect(prompt).toContain('"evidence": [');
+      expect(prompt).toContain('"missing": []');
       expect(prompt).toContain('"confidence_calibration":');
     });
 
@@ -209,16 +206,28 @@ describe('rendered prompt contracts', () => {
       expect(prompt).toContain('empty string if met=true');
     });
 
-    it('does not include markdown code fences in the valid example', () => {
+    it('includes SCHEMA CONSTRAINTS section with all required fields', () => {
       const prompt = renderPrompt('goal-check');
-      // Find the example JSON and verify it's not in a code fence
-      const exampleStart = prompt.indexOf('"met": true');
-      expect(exampleStart).toBeGreaterThan(0);
-      // Check context around example doesn't have code fences
-      const beforeExample = prompt.substring(Math.max(0, exampleStart - 50));
-      const afterExample = prompt.substring(exampleStart, exampleStart + 500);
-      // The example itself should be valid JSON, not wrapped in fences
-      expect(afterExample).toContain('}'); // Example closes with }
+      // Verify prompt has constraints for key fields
+      expect(prompt).toContain('SCHEMA CONSTRAINTS');
+      expect(prompt).toContain('met: boolean only');
+      expect(prompt).toContain('array of strings');
+      expect(prompt).toContain('array of {sources');
+      expect(prompt).toContain('confidence_calibration:');
+    });
+
+    it('specifies validation notes and evidence sources', () => {
+      const prompt = renderPrompt('goal-check');
+      expect(prompt).toContain('validation_notes');
+      expect(prompt).toContain('evidence_sources_inspected');
+      expect(prompt).toContain('contradictions');
+    });
+
+    it('includes if-then guidance for retry prompts', () => {
+      const prompt = renderPrompt('goal-check');
+      expect(prompt).toContain('If goal NOT met');
+      expect(prompt).toContain('met=false');
+      expect(prompt).toContain('retry_prompt containing');
     });
   });
 });
