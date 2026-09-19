@@ -6995,9 +6995,9 @@ function normalizeArtifact(value) {
 function stripMarkdownFences(text) {
   // Remove ``` json ... ``` and ``` ... ``` patterns
   return text
-    .replace(/```(?:json)?\s*\n?/g, '')
-    .replace(/```\s*$/gm, '')
-    .replace(/`{3,}(?:json)?\s*\n?/g, '');
+    .replace(/```(?:json)?\s*\n?/g, "")
+    .replace(/```\s*$/gm, "")
+    .replace(/`{3,}(?:json)?\s*\n?/g, "");
 }
 
 // Core JSON extraction via balanced brace depth
@@ -7046,8 +7046,8 @@ function collectJsonWithFallback(text) {
   
   // Strategy 3: Look for confidence enum as anchor point
   // Sometimes prose appears before JSON; use "confidence": pattern as hint
-  if (text.includes('"confidence":')) {
-    const confidenceIdx = text.indexOf('"confidence":');
+  if (text.includes("\"confidence\":")) {
+    const confidenceIdx = text.indexOf("\"confidence\":");
     if (confidenceIdx > 0) {
       // Search backwards from confidence for opening brace
       const backtrackText = text.substring(Math.max(0, confidenceIdx - 100));
@@ -7057,9 +7057,9 @@ function collectJsonWithFallback(text) {
   }
   
   // Strategy 4: Try JSONLines pattern (per-line extraction)
-  const lines = text.split('\n');
+  const lines = text.split("\n");
   for (const line of lines) {
-    if (line.trim().startsWith('{')) {
+    if (line.trim().startsWith("{")) {
       try {
         JSON.parse(line);
         return [line]; // Valid JSON line found
