@@ -2,58 +2,30 @@
 
 **1. Parser & Validation Changes**
 - Detection: parse, validate, input, null safety, type checking, regex, sanitize, decode
-- Test files: tests/parser.test.ts, tests/validation.test.ts, tests/sanitization.test.ts
-- Key patterns:
-  • Null/undefined: expect().toThrow() → expect().toEqual(defaults())
-  • Type coercion: number-to-string, boolean conversions; test edge cases
-  • Regex changes: cases that should match/not match; boundary values
-  • Error messages: expect(error.message).toContain("old") → .toContain("new")
-  • Whitespace: test "", "   ", "\n\t" handling
-- Example: {"type":"modified_assertion","before":"expect(parse(null)).toThrow()","after":"expect(parse(null)).toEqual(defaults())","pattern":"Null-safe fallback","description":"Null now valid with sensible defaults"}
+- Tests: parser, validation, or sanitization tests
+- Check null/undefined, coercion, regex boundaries, error messages, and whitespace.
+- Example: `expect(parse(null)).toThrow()` → `expect(parse(null)).toEqual(defaults())`.
 
 **2. Event Handling & Progress Changes**
 - Detection: event, emit, listener, signal, progress, stage, timing, field names
-- Test files: tests/event-handler.test.ts, tests/progress.test.ts, tests/listeners.test.ts
-- Key patterns:
-  • Event structure: new/removed/renamed fields in emitted objects
-  • Timing: synchronous → async or vice versa; timeout threshold changes
-  • Field presence: listener receives expected properties
-  • Event ordering: sequence of emissions, promises/callbacks
-  • Error events: now emitted for recoverable failures
-- Example: {"type":"modified_assertion","before":"await done; // 50ms","after":"await done; // 500ms","pattern":"Async emission delay","description":"Event batching adds latency; increase timeout"}
+- Tests: event-handler, progress, or listener tests
+- Check event shape, ordering, timing, field presence, and recoverable errors.
+- Example: `await eventPromise; // 50ms` → `await eventPromise; // 500ms`.
 
 **3. Response & Serialization Changes**
 - Detection: serialize, format, response, construct, transform, output, payload, toJSON
-- Test files: tests/response.test.ts, tests/serialization.test.ts, tests/format.test.ts
-- Key patterns:
-  • Field names: response.old_field → response.newField (camelCase migration)
-  • Field types: string → object, number → string, array → map
-  • Nested structure: flat → nested responses or vice versa
-  • Omit/include behavior: fields now optional/required
-  • Round-trip: serialize/deserialize preserves values
-- Example: {"type":"modified_assertion","before":"expect(response.status_code).toBe(200)","after":"expect(response.statusCode).toBe(200)","pattern":"camelCase migration","description":"All fields now use camelCase"}
+- Tests: response, serialization, or format tests
+- Check field names/types, nested shape, optional fields, and round-trip preservation.
+- Example: `response.status_code` → `response.statusCode`.
 
 **4. Naming & Constants Changes**
 - Detection: rename, constant, enum, identifier, symbol, property, method, export
-- Test files: tests/**/*.test.ts (grep old constant/name)
-- Key patterns:
-  • Constant values: OLD_VALUE = "x" → NEW_VALUE = "y"
-  • Enum migrations: Color.RED → Color.PRIMARY_RED
-  • Method renames: .oldMethod() → .newMethod()
-  • Export names: MyClass → MyClassV2
-  • Config keys: config.old_key → config.newKey
-  • String literals: .toContain('oldName') → .toContain('newName')
-- Example: {"type":"modified_assertion","before":"expect(TIMEOUT_MS).toBe(5000)","after":"expect(SCOUTING_TIMEOUT_MS).toBe(120000)","pattern":"Constant renaming & value","description":"Timeout renamed and updated"}
+- Tests: all tests asserting old names or values
+- Check constants, enums, methods, exports, config keys, and string literals.
 
 **5. Configuration & Integration Changes**
 - Detection: config, multi-file, cross-module, integration, environment, allowlist
-- Test files: tests/integration.test.ts, tests/config.test.ts, tests/e2e.test.ts
-- Key patterns:
-  • Config schema: new required fields, deprecated fields, defaults
-  • Multi-file coordination: one change requires updates in 3+ test files
-  • Integration mocking: mock strategy affects multiple files
-  • Allowlist/blocklist: file patterns affect discovery
-  • Build-time vs runtime: constants vs environment variables
-- Example: {"type":"added_assertion","before":"config = loadConfig(); expect(config.timeout).toBeDefined()","after":"config = loadConfig(); expect(config.timeout).toBeGreaterThan(0); expect(config.retries).toBeDefined()","pattern":"Config schema expansion","description":"New required fields must be validated"}
+- Tests: config, integration, or end-to-end tests
+- Check schema/defaults, cross-file coordination, mocks, allowlists, and build-time versus runtime behavior.
 
-**Max 5 test_examples per file**; focus on key patterns rather than exhaustive coverage.
+For each affected test file, use at most 5 test_examples with type, before, after, pattern, and description.
