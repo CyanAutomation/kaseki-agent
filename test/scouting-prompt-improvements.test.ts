@@ -25,6 +25,10 @@ function readScoutingPromptTemplates(): string {
     .join('\n');
 }
 
+function readScoutingBaseTemplate(): string {
+  return fs.readFileSync(path.join(scoutingTemplateDirectory, 'base.txt'), 'utf-8');
+}
+
 function countOccurrences(content: string, instruction: string): number {
   return content.split(instruction).length - 1;
 }
@@ -77,13 +81,13 @@ describe('Scouting prompt contracts', () => {
   });
 
   test('defines the artifact schema [SCOUTING_PROMPT_DESIGN § Output Schema]', () => {
-    const schemaText = promptContent.match(
-      /schema-style shape[^\n]*:\n([\s\S]*?)\nOutput rules for the JSON artifact:/,
+    const schemaText = readScoutingBaseTemplate().match(
+      /The artifact follows this schema-style shape:\n([\s\S]*?)\n## \[TASK VALIDATION/,
     )?.[1];
     expect(schemaText).toBeDefined();
 
     const fields = new Map(
-      [...schemaText!.matchAll(/^- ([a-z_]+): (string|array|object|optional object)\b/gm)]
+      [...schemaText!.matchAll(/^\*\*([a-z_]+)\*\* \((string|array|object or omitted|optional object|object)\b[^)]*\)/gm)]
         .map(([, name, type]) => [name, type]),
     );
     expect(Object.fromEntries(fields)).toEqual({
@@ -95,11 +99,11 @@ describe('Scouting prompt contracts', () => {
       validation: 'array',
       risks: 'array',
       test_impact: 'array',
-      critical_change_expectations: 'optional object',
+      critical_change_expectations: 'object or omitted',
       suggested_allowlist: 'object',
     });
     expect(schemaText).toMatch(
-      /relevant_files:[^\n]*objects with path and reason strings[\s\S]*separate non-empty path and reason strings/i,
+      /relevant_files[^\n]*objects with path and reason fields[\s\S]*separate path and reason fields/i,
     );
   });
 

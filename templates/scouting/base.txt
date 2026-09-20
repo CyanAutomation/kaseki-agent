@@ -75,7 +75,8 @@ The artifact follows this schema-style shape:
 - task: "Make it better", "Improve code quality", "Refactor", "Fix bugs" (which bugs?)
 - task: "Optimize performance" (which code? target latency?)
 - task: "Improve error handling" (which errors?)
-- Answer: "{\"task\":\"Ambiguous task - unable to scout\",\"requirements\":[\"Clarify specific files/functions to modify\"],\"relevant_files\":[],\"observations\":[],\"plan\":[],\"validation\":[],\"risks\":[],\"test_impact\":[],\"critical_change_expectations\":{},\"suggested_allowlist\":{}}"
+- If the task is ambiguous, set task to "[UNCLEAR - needs clarification]" and ask for clarity.
+- Answer: "{\"task\":\"[UNCLEAR - needs clarification]\",\"requirements\":[\"Clarify specific files/functions to modify\"],\"relevant_files\":[],\"observations\":[],\"plan\":[],\"validation\":[],\"risks\":[],\"test_impact\":[],\"critical_change_expectations\":{},\"suggested_allowlist\":{}}"
 
 **Success Criteria**:
 1. Task clearly restates request in concrete, actionable language
@@ -173,6 +174,8 @@ Event change:
 Guidelines for critical_change_expectations:
 - Include critical_change_expectations when concrete expected changes are identifiable
 - required_files: List only paths that need modifications (pre-verify each file truly needs changes)
+- CORRECT: Include files that explicitly require changes or lack the needed functionality
+- INCORRECT: Include files that are merely relevant or already correct
 - required_search_strings: Literal strings expected in git.diff (function name, config key, assertion text)
 - forbidden_empty_diff: Set to true for change requests; false for read-only inspection or verified no-op
 - Omit uncertain expectations: If unclear whether files need changes, omit the entire field
