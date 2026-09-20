@@ -35,7 +35,7 @@ describe('testClassificationSmoke (mocked)', () => {
      * relevant Kaseki content when the LLM returns a confident decision set.
      */
     const mockResponse = {
-      model: 'typesafe/jev-1.13',
+      model: '~typesafe/jev-latest',
       answers: {
         code_quality_issue: {
           type: 'noul',
@@ -99,7 +99,7 @@ describe('testClassificationSmoke (mocked)', () => {
      * it can incorrectly route or skip important review tasks.
      */
     const mockResponse = {
-      model: 'typesafe/jev-1.13',
+      model: '~typesafe/jev-latest',
       answers: {
         code_quality_issue: {
           type: 'noul',
@@ -175,7 +175,7 @@ describe('testClassificationSmoke (mocked)', () => {
       status: 200,
       json: async () => ({
         id: 'gen-125',
-        model: 'typesafe/jev-1.13',
+        model: '~typesafe/jev-latest',
         // Missing 'answers' field
       }),
       text: async () => '{}',
