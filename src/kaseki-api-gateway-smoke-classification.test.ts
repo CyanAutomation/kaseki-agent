@@ -16,20 +16,20 @@ describe('testClassificationSmoke (mocked)', () => {
     delete process.env.OPENROUTER_API_KEY;
   });
 
-  it('should return skipped when OPENROUTER_API_KEY not configured', () => {
+  it('should return skipped when OPENROUTER_API_KEY not configured', async () => {
     /**
      * In Kaseki Agent, the gateway should short-circuit before hitting OpenRouter when
      * no API key is available so CI/CD jobs can report a skipped smoke test instead of a noise failure.
      */
     delete process.env.OPENROUTER_API_KEY;
 
-    const result = classificationModule.testClassificationSmoke(true);
+    const result = await classificationModule.testClassificationSmoke(true);
 
     expect(result.status).toBe('skipped');
     expect(result.detail).toMatch(/not configured/i);
   });
 
-  it('should successfully classify code review scenario (mocked)', () => {
+  it('should successfully classify code review scenario (mocked)', async () => {
     /**
      * In Kaseki Agent, code review and triage scenarios are expected to be recognized as
      * relevant Kaseki content when the LLM returns a confident decision set.
@@ -83,7 +83,7 @@ describe('testClassificationSmoke (mocked)', () => {
       text: async () => JSON.stringify(mockResponse),
     } as Response);
 
-    const result = classificationModule.testClassificationSmoke(true);
+    const result = await classificationModule.testClassificationSmoke(true);
 
     expect(result.status).toBe('ok');
     expect(result.classificationValidated).toBe(true);
@@ -93,7 +93,7 @@ describe('testClassificationSmoke (mocked)', () => {
     expect(result.detail).toBeTruthy();
   });
 
-  it('should handle low-confidence classifications (mocked)', () => {
+  it('should handle low-confidence classifications (mocked)', async () => {
     /**
      * In Kaseki Agent, a low-confidence decision should not be treated as validated because
      * it can incorrectly route or skip important review tasks.
@@ -142,7 +142,7 @@ describe('testClassificationSmoke (mocked)', () => {
       formData: async () => new FormData(),
     } as Response);
 
-    const result = classificationModule.testClassificationSmoke(true);
+    const result = await classificationModule.testClassificationSmoke(true);
 
     expect(result.status).toBe('ok');
     expect(result.classificationValidated).toBe(false);
@@ -151,21 +151,21 @@ describe('testClassificationSmoke (mocked)', () => {
     expect(result.confidenceDetails?.failedQuestions).toContain('requires_human_review');
   });
 
-  it('should handle network errors gracefully', () => {
+  it('should handle network errors gracefully', async () => {
     /**
      * In Kaseki Agent, network failures should surface a useful remediation message instead
      * of failing the smoke test without context.
      */
     mockFetch.mockRejectedValue(new Error('fetch failed: network timeout'));
 
-    const result = classificationModule.testClassificationSmoke(true);
+    const result = await classificationModule.testClassificationSmoke(true);
 
     expect(result.status).toBe('error');
     expect(result.detail.toLowerCase()).toContain('error');
     expect(result.remediation).toBeTruthy();
   });
 
-  it('should handle invalid response structure', () => {
+  it('should handle invalid response structure', async () => {
     /**
      * In Kaseki Agent, malformed OpenRouter payloads should be caught early so the gateway
      * can fail with a clear message instead of silently misclassifying work.
@@ -192,13 +192,13 @@ describe('testClassificationSmoke (mocked)', () => {
       formData: async () => new FormData(),
     } as Response);
 
-    const result = classificationModule.testClassificationSmoke(true);
+    const result = await classificationModule.testClassificationSmoke(true);
 
     expect(result.status).toBe('error');
     expect(result.detail.toLowerCase()).toMatch(/answers|invalid|response|missing/);
   });
 
-  it('should handle API provider errors (non-200 response)', () => {
+  it('should handle API provider errors (non-200 response)', async () => {
     /**
      * In Kaseki Agent, provider rate limits and upstream failures should remain visible to
      * operators during smoke validation without obscuring the root cause.
@@ -225,7 +225,7 @@ describe('testClassificationSmoke (mocked)', () => {
       formData: async () => new FormData(),
     } as Response);
 
-    const result = classificationModule.testClassificationSmoke(true);
+    const result = await classificationModule.testClassificationSmoke(true);
 
     expect(result.status).toBe('error');
     expect(result.detail.toLowerCase()).toMatch(/429|rate|limit|provider|error/);
@@ -240,13 +240,13 @@ describe.skip('testClassificationSmoke (real API)', () => {
    * Command: npm test -- --testNamePattern="real API" --runInBand
    */
 
-  it('should classify kaseki-relevant code scenario (real)', () => {
+  it('should classify kaseki-relevant code scenario (real)', async () => {
     if (!process.env.OPENROUTER_API_KEY) {
       console.log('Skipping real API test: OPENROUTER_API_KEY not set');
       return;
     }
 
-    const result = classificationModule.testClassificationSmoke(true);
+    const result = await classificationModule.testClassificationSmoke(true);
 
     expect(result.status).toMatch(/ok|error/); // Allow both for real test
     expect(result).toHaveProperty('classificationValidated');
@@ -256,14 +256,14 @@ describe.skip('testClassificationSmoke (real API)', () => {
     expect(result).toHaveProperty('responseTime');
   });
 
-  it('should have proper token tracking (real)', () => {
+  it('should have proper token tracking (real)', async () => {
     if (!process.env.OPENROUTER_API_KEY) {
       console.log('Skipping real API test: OPENROUTER_API_KEY not set');
       return;
     }
 
     const started = Date.now();
-    const result = classificationModule.testClassificationSmoke(true);
+    const result = await classificationModule.testClassificationSmoke(true);
     const elapsedMs = Date.now() - started;
 
     expect(result.status).toMatch(/ok|error/);

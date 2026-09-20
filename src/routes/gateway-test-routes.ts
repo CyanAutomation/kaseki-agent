@@ -279,7 +279,7 @@ async function runClassificationSmokeTest(request: GatewayTestRequest): Promise<
     return null;
   }
 
-  return testClassificationSmoke(request.classificationRequested);
+  return await testClassificationSmoke(request.classificationRequested);
 }
 
 async function runGatewayStages(request: GatewayTestRequest): Promise<GatewayStageResults> {
