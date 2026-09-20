@@ -4,6 +4,17 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.138.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.137.0...v1.138.0) (2026-09-20)
+
+
+### Features
+
+* add complete scouting template token optimization report with 44% reduction ([5aeda28](https://github.com/CyanAutomation/kaseki-agent/commit/5aeda28eee58a51b6faaeebf073ef03ba5b7d8f2))
+* add function to load all scouting templates for optimization tests ([1847c5a](https://github.com/CyanAutomation/kaseki-agent/commit/1847c5a35bf73c4c6b6c63a61054883db0b6386f))
+* enhance scouting guidance and implement goal-check override logic ([46d5144](https://github.com/CyanAutomation/kaseki-agent/commit/46d514496846008a1b18870050d022f9745cb283))
+* implement OpenRouter API key resolution and classification smoke tests ([74c4765](https://github.com/CyanAutomation/kaseki-agent/commit/74c47659e6cb77588593d22e93f885231b43abc9))
+* update fallow package version to 3.27.0 in package.json and package-lock.json ([df7f92d](https://github.com/CyanAutomation/kaseki-agent/commit/df7f92d4a4f84665c213db06484535c11cd4f7ae))
+
 # [1.137.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.136.0...v1.137.0) (2026-09-19)
 
 
