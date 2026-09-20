@@ -71,7 +71,9 @@ export class RunCommand extends ApiBackedCommand<RunApiClient> {
     } catch (error) {
       logger.error(`Run failed: ${error}`);
       console.error(`❌ Run failed: ${error instanceof Error ? error.message : String(error)}`);
-      return 1;
+      return typeof error === 'object' && error !== null && 'exitCode' in error && typeof error.exitCode === 'number'
+        ? error.exitCode
+        : 1;
     }
   }
 

@@ -15,6 +15,7 @@ const ValidationResponseSchema = z.object({
   checks: z.array(z.any()),
   warnings: z.array(z.any()),
   errors: z.array(z.any()),
+  admission: z.any().optional(),
 });
 
 const StructuredProgressSchema = z.object({

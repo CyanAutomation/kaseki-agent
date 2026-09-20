@@ -333,7 +333,18 @@ function buildServiceInfoPaths(
                     checks: { type: 'array', items: { type: 'object' } },
                     warnings: { type: 'array', items: { type: 'string' } },
                     errors: { type: 'array', items: { type: 'string' } },
-                    estimatedDurationSeconds: { type: 'integer' }
+                    estimatedDurationSeconds: { type: 'integer' },
+                    admission: {
+                      type: 'object',
+                      description: 'Task safety admission result; degraded results are fail-open warnings.',
+                      properties: {
+                        allowed: { type: 'boolean' },
+                        status: { type: 'string', enum: ['allowed', 'rejected', 'degraded'] },
+                        reason: { type: 'string' },
+                        riskScore: { type: 'integer', minimum: 0, maximum: 2 },
+                        responseTime: { type: 'integer' },
+                      },
+                    },
                   }
                 }
               }
@@ -502,6 +513,25 @@ function buildRunManagementPaths(
             content: {
               'application/json': {
                 schema: errorResponseSchema
+              }
+            }
+          },
+          '422': {
+            description: 'Task rejected by the safety admission gate',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    errorResponseSchema,
+                    {
+                      type: 'object',
+                      properties: {
+                        exitCode: { type: 'integer', example: 9 },
+                        admission: { type: 'object' },
+                      },
+                    },
+                  ],
+                },
               }
             }
           }

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { TASK_ADMISSION_EXIT_CODE } from '../../task-admission';
 import type { ConfigManager } from '../../config/ConfigManager';
 import { ArtifactAvailability, type AnalysisResponse, type ArtifactResponse, type LogResponse, type RunArtifactsResponse, type RunRequest, type RunResponse, type RunsListResponse, type ScorecardResponse, type ScorecardsListResponse, type StatusResponse } from '../../kaseki-api-types';
 import { RunScorecardSchema } from '../../types/run-scorecard';
@@ -166,6 +167,17 @@ const RunResponseSchema = z.object({
   criticalChangeContract: CriticalChangeContractSchema.optional(),
   error: z.string().optional(),
 });
+
+export class TaskAdmissionRejectedError extends Error {
+  readonly exitCode = TASK_ADMISSION_EXIT_CODE;
+  readonly admission: unknown;
+
+  constructor(detail: string, admission?: unknown) {
+    super(detail);
+    this.name = 'TaskAdmissionRejectedError';
+    this.admission = admission;
+  }
+}
 const ScorecardResponseSchema = RunScorecardSchema;
 
 export interface LocalKasekiApiClientOptions {
@@ -212,6 +224,13 @@ export class LocalKasekiApiClient {
     });
 
     if (!response.ok) {
+      if (response.status === 422) {
+        const payload = await response.json().catch(() => ({}));
+        throw new TaskAdmissionRejectedError(
+          typeof payload.detail === 'string' ? payload.detail : 'Task rejected by safety admission gate',
+          payload.admission,
+        );
+      }
       const detail = await this.readErrorDetail(response);
       const fallbackDetail = response.statusText || String(response.status);
       throw new Error(`Failed to submit run to local Kaseki API: ${detail ?? fallbackDetail}`);
