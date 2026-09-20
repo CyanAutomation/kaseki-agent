@@ -3515,6 +3515,19 @@ EOF
   # Phase 3B, 3C, 3D: Consolidate artifacts before finalizing
   maybe_call_finish_helper write_failure_json "$STATUS"
   maybe_call_finish_helper write_repo_memory_summary
+  
+  # Goal-check override: if critical change expectations failed but goal-check passed,
+  # override the failure since the goal-check evaluator has semantically validated the task
+  if [ "$STATUS" -eq 8 ] && [ "$GOAL_CHECK_MET" = "true" ] && [[ "$CRITICAL_CHANGE_FAILURE_REASON" == *"required file missing"* ]]; then
+    emit_progress "critical change verification" "overridden by goal-check semantic validation"
+    emit_event "critical_change_override" "Override reason: goal-check evaluator validated task completion despite file-list mismatch" "notice"
+    printf '[goal-check-override] Overriding critical_change_expectations_failed (exit 8) with exit 0\n' >&2
+    printf '[goal-check-override] Failure was: %s\n' "$CRITICAL_CHANGE_FAILURE_REASON" >&2
+    printf '[goal-check-override] Goal-check evaluation confirmed task completion\n' >&2
+    STATUS=0
+    FAILED_COMMAND=""
+  fi
+  
   finalize_artifacts_and_publish_status "${KASEKI_RESULTS_DIR}" write_metadata "$STATUS" "${VALIDATION_TIMINGS_FILE}" "${PRE_VALIDATION_TIMINGS_FILE}"
   maybe_call_finish_helper remove_low_value_artifacts
   if [ "$KASEKI_REPO_SESSION_ACTIVE" = "1" ] && [ "$(cat "$KASEKI_REPO_SESSION_MARKER" 2>/dev/null || true)" = "${BASHPID:-$$}" ]; then

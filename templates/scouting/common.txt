@@ -14,7 +14,16 @@
 
 Guidelines for critical_change_expectations:
 - Include critical_change_expectations when scouting can identify concrete files or literal diff evidence that must change for the goal to be real.
-- required_files must be repo-relative paths and should only list files that must appear in changed-files.txt, not files that are merely relevant for reading.
+- required_files must be repo-relative paths and should ONLY list files that MUST be modified (will appear in changed-files.txt).
+  - ⚠️ IMPORTANT: Pre-verify before adding to required_files. Inspect the file and confirm it truly needs changes.
+  - ✓ Include file if: it lacks required functionality, needs restructuring, or must be created/deleted
+  - ✗ Exclude file if: it already has correct code and no changes are needed (even if related to the task)
+  - Example: "Move weights array to constants"
+    - If constants.ts already exports weights with correct values → NO file change needed
+    - If constants.ts exists but doesn't export weights → MUST change (add export)
+    - If constants.ts doesn't exist → MUST create it
+  - Incorrect pattern: Listing files that are "relevant" but already correct
+  - Impact: coding agent will fail verification if scouting lists file but agent correctly determines no edit needed
 - no_change_files must list inspected files verified as accurate; it is mutually exclusive with required_files and prevents an audit target from becoming an artificial edit requirement.
 - required_search_strings must be literal strings expected to appear in git.diff, such as a new function name, config key, assertion text, or diff hunk marker.
 - Set forbidden_empty_diff to true when the task is a patch/change request rather than read-only inspection.

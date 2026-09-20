@@ -55,9 +55,17 @@ The JSON object must be concise and useful to the coding agent. Use this schema-
   - See detailed guidelines below for comprehensive patterns by change type
 - critical_change_expectations: optional object with required_files, required_search_strings, forbidden_empty_diff.
   - Only include if concrete expected changes can be identified
-  - required_files: array of repo-relative paths that MUST appear in git diff
+  - required_files: array of repo-relative paths that MUST be modified (appear in changed-files.txt)
+    - ⚠️ CRITICAL: Pre-verify each file BEFORE adding to required_files
+    - ✓ CORRECT: Add file if task explicitly requires modifying or creating it
+    - ✓ CORRECT: Add file if you verified it lacks required functionality and must be changed
+    - ✗ INCORRECT: Add file if it already contains correct code and needs no edits
+    - ✗ INCORRECT: Add file if it's merely relevant to the task but doesn't need changes
+    - Example: "Consolidate weights const to ui/constants.ts"
+      - If ui/constants.ts already exports weights → only required_files: ["src/game/orchestrator.ts"] (remove duplication)
+      - If ui/constants.ts doesn't export weights → required_files: ["src/ui/constants.ts", "src/game/orchestrator.ts"] (add both)
   - required_search_strings: array of literal strings expected in git diff (e.g., function name, config key)
-  - forbidden_empty_diff: boolean; true if task is a change request, false if read-only inspection
+  - forbidden_empty_diff: boolean; true if task is a change request, false if read-only inspection or verified no-op
   - Constraint: Omit if uncertain; this is enforced before goal-check evaluation
 - suggested_allowlist: object with agent_patterns and validation_patterns arrays.
   - agent_patterns: glob patterns narrowing which files coding agent can modify (e.g., "src/**/*.ts")
