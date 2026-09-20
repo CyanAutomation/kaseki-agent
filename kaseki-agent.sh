@@ -10423,12 +10423,7 @@ fi
 # Evaluation and phase timing evidence is now available. Generate before PR
 # rendering/publication so consumers see the same immutable run evidence.
 consolidate_timings_to_json "${KASEKI_RESULTS_DIR}/timings-manifest.json" "$VALIDATION_TIMINGS_FILE" "$PRE_VALIDATION_TIMINGS_FILE" "${KASEKI_RESULTS_DIR}/stage-timings.tsv"
-if command -v kaseki-run-scorecard >/dev/null 2>&1; then
-  kaseki-run-scorecard >/dev/null ||
-    printf '%s\n' '{"level":"warning","code":"scorecard_generation_failed","stage":"post_evaluation","non_destructive":true}' >&2
-else
-  printf '%s\n' '{"level":"warning","code":"scorecard_generator_missing","stage":"post_evaluation","non_destructive":true}' >&2
-fi
+run_scorecard_best_effort "$KASEKI_RESULTS_DIR" "post_evaluation"
 
 build_github_skip_reasons() {
   GITHUB_SKIP_REASONS=()
@@ -10572,5 +10567,10 @@ NODE
   FAILED_COMMAND="empty git diff: ${EMPTY_DIFF_REASON}"
   emit_error_event "empty_diff" "Agent produced no changes to the repository (reason=${EMPTY_DIFF_REASON}); see empty-diff.json" "exit"
 fi
+
+printf '[terminal-status] status=%s failed_command=%s pi=%s validation=%s quality=%s secret_scan=%s goal_check=%s run_evaluation=%s github_push=%s github_pr=%s diff_nonempty=%s\n' \
+  "$STATUS" "$FAILED_COMMAND" "$PI_EXIT" "$VALIDATION_EXIT" "$QUALITY_EXIT" "$SECRET_SCAN_EXIT" \
+  "$GOAL_CHECK_EXIT" "$RUN_EVALUATION_EXIT" "$GITHUB_PUSH_EXIT" "$GITHUB_PR_EXIT" "$DIFF_NONEMPTY" \
+  | tee -a "${KASEKI_RESULTS_DIR}/progress.log" >&2
 
 set_current_stage "complete"
