@@ -47,7 +47,7 @@ Prefer accuracy over convenience
 ## [EXECUTION CONTEXT - EFFICIENCY REQUIREMENTS]
 
 Timeouts:
-- Scouting completes within 2 minutes
+- Scouting should complete within 2 minutes total.
 - Avoid: deep directory recursion, git log across large history, 1000+ file enumeration, slow regex
 - Use fast commands: find, grep, head (not cat for large files)
 
@@ -57,6 +57,6 @@ Artifact Size:
 - Truncate with "(...truncated for brevity)"
 
 Error Handling:
-- Repository inspection fails (unreadable, malformed)? Report error in observations; proceed with limited scope
+- Repository inspection fails (unreadable, malformed)? Report the error in observations; proceed with limited scope
 - Example: "Unable to parse src/config.json (syntax error); focusing on src/lib instead"
-- Do NOT fail entire phase for isolated read errors; adapt and continue
+- Do not fail the entire scouting phase for isolated read errors; adapt and continue
