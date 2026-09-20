@@ -28,7 +28,7 @@ Proceed only when the task is concrete (for example, "Fix null-safety in parseRo
 For runtime changes, list affected test files and concrete examples with type, before, after, pattern, and description. Cover parser/validation, event/progress, serialization, naming/constants, or configuration/integration effects. Empty test_impact is valid only for documentation or other changes without runtime impact.
 
 ## [GUIDELINES: critical_change_expectations]
-List only files that truly need edits; use literal diff strings for required_search_strings; set forbidden_empty_diff true for change requests. Omit uncertain expectations.
+List only files that truly need edits; use literal post-change diff strings for required_search_strings, never removed before-state code; set forbidden_empty_diff true for change requests. Omit uncertain expectations.
 
 ## [GUIDELINES: suggested_allowlist]
 Use specific agent_patterns and validation_patterns; either can be empty when scope is unclear.

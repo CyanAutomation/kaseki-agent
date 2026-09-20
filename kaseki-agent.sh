@@ -2599,7 +2599,34 @@ const noChangeSet = new Set(noChangeFiles);
 const requiredFiles = requestedFiles.filter(file => validRepoFilePath(file) && !noChangeSet.has(file));
 const downgradedFiles = requestedFiles.filter(file => !validRepoFilePath(file) || noChangeSet.has(file));
 const protectedFiles = noChangeFiles.filter(file => validRepoFilePath(file));
-const requiredSearchStrings = removePlaceholders([...new Set(strings(explicit.required_search_strings || explicit.requiredSearchStrings || explicit.required_diff_markers || explicit.requiredDiffMarkers))]);
+const requestedSearchStrings = removePlaceholders([...new Set(strings(explicit.required_search_strings || explicit.requiredSearchStrings || explicit.required_diff_markers || explicit.requiredDiffMarkers))]);
+
+// Search strings are post-change evidence.  A model can nevertheless copy a
+// "before" example into critical_change_expectations, which would make a
+// refactor fail because the expected marker is intentionally removed.  Treat
+// markers that already exist in the baseline as advisory and record why they
+// were dropped.  This also avoids brittle exact matching when the baseline
+// uses normal source formatting (quotes/spaces) rather than model shorthand.
+function normalizedSource(value) {
+  return String(value).replace(/["'`]/g, '').replace(/\s+/g, '');
+}
+function baselineContainsMarker(marker) {
+  if (!repoRoot || !marker) return false;
+  const normalizedMarker = normalizedSource(marker);
+  if (!normalizedMarker) return false;
+  const files = new Set([...requiredFiles, ...protectedFiles]);
+  let candidates = [...files];
+  try {
+    const tracked = require('node:child_process').execFileSync('git', ['-C', repoRoot, 'ls-files'], { encoding: 'utf8' })
+      .split(/\r?\n/).filter(Boolean);
+    candidates = [...new Set([...candidates, ...tracked])];
+  } catch {}
+  return candidates.some((file) => {
+    try { return normalizedSource(fs.readFileSync(path.join(repoRoot, file), 'utf8')).includes(normalizedMarker); } catch { return false; }
+  });
+}
+const ignoredBaselineSearchStrings = requestedSearchStrings.filter(baselineContainsMarker);
+const requiredSearchStrings = requestedSearchStrings.filter((marker) => !ignoredBaselineSearchStrings.includes(marker));
 const explicitForbidden = normalizeBool(explicit.forbidden_empty_diff ?? explicit.forbiddenEmptyDiff);
 const forbiddenEmptyDiff = explicitForbidden === undefined ? allowEmptyDiff !== '1' : explicitForbidden;
 const scoutingFallback = Boolean(scouting && typeof scouting === 'object' && (scouting.fallback === true || scouting.fallback_reason));
@@ -2614,9 +2641,16 @@ const contract = {
   protected_files: protectedFiles,
   // Retain syntactically unsafe scout suggestions for operators. Valid paths
   // remain enforceable even when the coding phase is expected to create them.
-  ...(downgradedFiles.length ? { downgraded_required_files: downgradedFiles, contract_warnings: ['unverified_required_files_downgraded'] } : {}),
+  ...(downgradedFiles.length ? { downgraded_required_files: downgradedFiles } : {}),
   required_search_strings: requiredSearchStrings,
   forbidden_empty_diff: forbiddenEmptyDiff,
+  ...((downgradedFiles.length || ignoredBaselineSearchStrings.length) ? {
+    contract_warnings: [
+      ...(downgradedFiles.length ? ['unverified_required_files_downgraded'] : []),
+      ...(ignoredBaselineSearchStrings.length ? ['baseline_search_strings_downgraded'] : []),
+    ],
+    ...(ignoredBaselineSearchStrings.length ? { ignored_baseline_search_strings: ignoredBaselineSearchStrings } : {}),
+  } : {}),
 };
 const contractSha256 = crypto.createHash('sha256').update(JSON.stringify(contract)).digest('hex');
 const artifact = { version: 2, ...contract, contract_sha256: contractSha256 };
@@ -7088,43 +7122,72 @@ function collectJsonWithFallback(text) {
   return [];
 }
 
-function collectStrings(value, out = []) {
-  if (typeof value === "string") out.push(value);
-  else if (Array.isArray(value)) value.forEach((item) => collectStrings(item, out));
-  else if (value && typeof value === "object") Object.values(value).forEach((item) => collectStrings(item, out));
-  return out;
+function collectAssistantText(message) {
+  if (!message || message.role !== "assistant") return [];
+  const values = [];
+  const add = (value) => { if (typeof value === "string" && value.trim()) values.push(value); };
+  add(message.text);
+  add(message.output_text);
+  add(message.assistantMessage);
+  add(message.content);
+  if (Array.isArray(message.content)) {
+    for (const part of message.content) {
+      if (typeof part === "string") add(part);
+      else if (part && typeof part === "object") {
+        add(part.text);
+        add(part.output_text);
+        add(part.content);
+      }
+    }
+  }
+  if (Array.isArray(message.choices)) {
+    for (const choice of message.choices) {
+      add(choice?.message?.content);
+      add(choice?.delta?.content);
+    }
+  }
+  add(message.response?.content);
+  return [...new Set(values)];
 }
 
 const valid = new Map();
-let validOccurrences = 0;
+let lastValid;
 const paths = fs.existsSync(rawPath) ? [rawPath] : [filteredPath];
 for (const path of paths) {
-  let text = "";
-  try { text = fs.readFileSync(path, "utf8"); } catch { continue; }
-  // Use enhanced extraction with fallback strategies
-  const snippets = collectJsonWithFallback(text);
-  for (const snippet of snippets) {
-    try {
-      const parsed = normalizeArtifact(JSON.parse(snippet));
-      if (schemaErrors(parsed).length === 0) { valid.set(stableStringify(parsed), parsed); validOccurrences += 1; }
-      for (const innerText of collectStrings(parsed)) {
-        for (const innerSnippet of collectJsonWithFallback(innerText)) {
-          try {
-            const inner = normalizeArtifact(JSON.parse(innerSnippet));
-            if (schemaErrors(inner).length === 0) { valid.set(stableStringify(inner), inner); validOccurrences += 1; }
-          } catch {}
-        }
+  let lines = [];
+  try { lines = fs.readFileSync(path, "utf8").split(/\r?\n/).filter(Boolean); } catch { continue; }
+  // Inspect assistant content only. The user prompt contains a valid schema
+  // example, and recursively scanning every event can mistake that example
+  // for a competing evaluator verdict.
+  for (const line of lines) {
+    let event;
+    try { event = JSON.parse(line); } catch { continue; }
+    const assistantTexts = collectAssistantText(event?.message);
+    const eventType = String(event?.type || event?.event || "");
+    if (/assistant/i.test(eventType)) {
+      if (typeof event?.text === "string") assistantTexts.push(event.text);
+      if (typeof event?.content === "string") assistantTexts.push(event.content);
+    }
+    for (const assistantText of [...new Set(assistantTexts)]) {
+      for (const snippet of collectJsonWithFallback(assistantText)) {
+        try {
+          const parsed = normalizeArtifact(JSON.parse(snippet));
+          if (schemaErrors(parsed).length === 0) {
+            valid.set(stableStringify(parsed), parsed);
+            lastValid = parsed;
+          }
+        } catch {}
       }
-    } catch {}
+    }
   }
 }
 
 // A streamed response can repeat the same final object in a message delta and
-// completion event.  Deduplicate by canonical content; reject only competing
-// distinct verdicts, not harmless transport duplication.
-if (valid.size === 1) {
-  const recovered = [...valid.values()][0];
-  fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
+// completion event. Use the last valid assistant verdict, preserving the
+// evaluator final decision when an earlier assistant turn contained an
+// example or an intermediate verdict.
+if (valid.size > 0 && lastValid) {
+  fs.writeFileSync(candidatePath, JSON.stringify(lastValid, null, 2) + "\n");
 }
 ' "$GOAL_CHECK_CANDIDATE_ARTIFACT" "$GOAL_CHECK_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-check-events.jsonl "$attempt" 2>"${KASEKI_RESULTS_DIR}/goal-check-recovery-stderr.log"
     if [ -s "${KASEKI_RESULTS_DIR}/goal-check-recovery-stderr.log" ]; then

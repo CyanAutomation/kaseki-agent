@@ -7,7 +7,7 @@ Use compact, concrete before/after examples only when they match the task. Each 
 
 ## [CRITICAL_CHANGE_EXPECTATIONS GUIDANCE]
 - required_files: only files that need edits; pre-verify them. Relevant-but-correct files do not belong here.
-- required_search_strings: literal function names, config keys, or assertion text expected in the diff.
+- required_search_strings: literal post-change function names, config keys, or assertion text expected in the diff; do not include code that should be removed or moved.
 - forbidden_empty_diff: true for change requests; false for read-only/no-op tasks.
 - Omit uncertain expectations.
 
