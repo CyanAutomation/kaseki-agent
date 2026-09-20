@@ -28,6 +28,16 @@ function loadTemplate(filename: string): string {
   return fs.readFileSync(filepath, 'utf-8');
 }
 
+function loadAllTemplates(): Record<string, string> {
+  return {
+    'base.txt': loadTemplate('base.txt'),
+    'common.txt': loadTemplate('common.txt'),
+    'compact.txt': loadTemplate('compact.txt'),
+    'detailed-test-impact.txt': loadTemplate('detailed-test-impact.txt'),
+    'minimal-test-impact.txt': loadTemplate('minimal-test-impact.txt'),
+  };
+}
+
 // ============================================================================
 // TEST SUITE 1: JSON Schema Field Definitions
 // These tests verify all JSON output fields are documented with constraints
