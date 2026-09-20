@@ -40,6 +40,7 @@ import { createGatewayTestRoutes } from './routes/gateway-test-routes';
 import { createScorecardRoutes } from './routes/scorecard-routes';
 import { testPiGatewayProviderSmoke } from './kaseki-api-gateway-smoke';
 import { getPackageVersion } from './openapi-spec-generators/components';
+import { evaluateTaskAdmission, TASK_ADMISSION_EXIT_CODE, type TaskAdmissionEvaluator } from './task-admission';
 
 function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
   if (!remoteAddress) {
@@ -115,6 +116,7 @@ export function createApiRouter(
     ttlMs: config.artifactCacheTtlMs,
     maxFileBytes: config.artifactCacheMaxFileBytes,
   }),
+  taskAdmissionEvaluator: TaskAdmissionEvaluator = evaluateTaskAdmission,
 ): Router {
   const router = Router();
   const logger = createEventLogger('api');
@@ -462,6 +464,22 @@ export function createApiRouter(
     }
   }
 
+  async function admitTask(runRequest: RunRequest): Promise<ReturnType<TaskAdmissionEvaluator>> {
+    const result = await taskAdmissionEvaluator(runRequest as unknown as Record<string, unknown>);
+    if (result.status === 'rejected') {
+      metricsRegistry.incAdmissionRejection('task-safety');
+      logger.event('task_admission_rejected', {
+        reason: result.reason,
+        riskScore: result.riskScore,
+        modelUsed: result.modelUsed,
+        responseTime: result.responseTime,
+      });
+    } else if (result.degraded) {
+      logger.event('task_admission_degraded', { reason: result.reason, warnings: result.warnings });
+    }
+    return result;
+  }
+
   /**
    * POST /api/runs - Trigger a new kaseki run.
    */
@@ -504,7 +522,20 @@ export function createApiRouter(
       // 3. Normalize task mode
       normalizeTaskMode(runRequest);
 
-      // 4. Handle idempotency
+      // 4. Safety admission must happen before idempotency claim and scheduler submission.
+      const admission = await admitTask(runRequest);
+      if (!admission.allowed) {
+        return res.status(422).json({
+          type: 'https://api.kaseki.local/errors#task-admission-rejected',
+          title: 'Task rejected by safety admission gate',
+          status: 422,
+          detail: admission.reason,
+          exitCode: TASK_ADMISSION_EXIT_CODE,
+          admission,
+        });
+      }
+
+      // 5. Handle idempotency
       const idempotencyKey = runRequest.idempotencyKey || randomUUID();
       const requestFingerprint = buildRequestFingerprint(
         runRequest as Record<string, unknown>,
@@ -610,6 +641,17 @@ export function createApiRouter(
       return sendErrorResponse(res, 400, 'Bad Request', 'A UUID idempotencyKey is required for retries');
     }
     const retryRequest: RunRequest = { ...source.request, idempotencyKey };
+    const admission = await admitTask(retryRequest);
+    if (!admission.allowed) {
+      return res.status(422).json({
+        type: 'https://api.kaseki.local/errors#task-admission-rejected',
+        title: 'Task rejected by safety admission gate',
+        status: 422,
+        detail: admission.reason,
+        exitCode: TASK_ADMISSION_EXIT_CODE,
+        admission,
+      });
+    }
     const fingerprint = buildRequestFingerprint({ retryOf: source.id, ...retryRequest } as Record<string, unknown>);
     const result = await idempotencyStore.runWithIdempotencyLock(async () => {
       const existing = await handleIdempotency(idempotencyKey, fingerprint);
@@ -741,7 +783,8 @@ export function createApiRouter(
       // Run pre-flight validation
       const validationResult = await preFlightValidator.validate(runRequest);
 
-      const response: ValidationResponse = validationResult;
+      const admission = await admitTask(runRequest);
+      const response: ValidationResponse = { ...validationResult, admission };
 
       res.json(response);
     } catch (err: unknown) {

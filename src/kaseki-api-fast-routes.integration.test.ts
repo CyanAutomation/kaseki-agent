@@ -4,6 +4,7 @@ import * as path from 'path';
 import express from 'express';
 import type { AddressInfo, Server } from 'net';
 import { createApiRouter } from './kaseki-api-routes';
+import type { TaskAdmissionEvaluator } from './task-admission';
 import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
 import { createMockScheduler, createTestConfig, type MockJob, type TestScheduler } from './test-utils';
@@ -23,7 +24,7 @@ async function close(server: Server, idempotencyStore: IdempotencyStore): Promis
   await idempotencyStore.shutdown();
 }
 
-async function createFastRouteHarness(scheduler: TestScheduler = createMockScheduler()): Promise<{
+async function createFastRouteHarness(scheduler: TestScheduler = createMockScheduler(), taskAdmissionEvaluator?: TaskAdmissionEvaluator): Promise<{
   baseUrl: string;
   server: Server;
   idempotencyStore: IdempotencyStore;
@@ -35,7 +36,7 @@ async function createFastRouteHarness(scheduler: TestScheduler = createMockSched
   const idempotencyStore = new IdempotencyStore(config.resultsDir, 24);
   const app = express();
   app.use(express.json());
-  app.use('/api', createApiRouter(scheduler as any, config, idempotencyStore, new PreFlightValidator()));
+  app.use('/api', createApiRouter(scheduler as any, config, idempotencyStore, new PreFlightValidator(), undefined, taskAdmissionEvaluator));
   const { server, baseUrl } = await listen(app);
   return { baseUrl, server, idempotencyStore, resultsDir, scheduler };
 }
@@ -68,6 +69,36 @@ describe('kaseki API fast route/service integration', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual(expect.objectContaining({ status: 400, title: 'Bad Request' }));
     expect(harness.scheduler.submitJob).not.toHaveBeenCalled();
+  });
+
+  test('rejects unsafe task admission before scheduler submission', async () => {
+    process.env.KASEKI_SKIP_BOOTSTRAP_CHECK = '1';
+    const scheduler = createMockScheduler();
+    const taskAdmissionEvaluator: TaskAdmissionEvaluator = async () => ({
+      allowed: false,
+      status: 'rejected',
+      reason: 'Task admission rejected: changes_permissions.',
+      responseTime: 10,
+      riskScore: 2,
+    });
+    const harness = await createFastRouteHarness(scheduler, taskAdmissionEvaluator);
+    cleanup.push(() => close(harness.server, harness.idempotencyStore));
+    cleanup.push(() => fs.rmSync(harness.resultsDir, { recursive: true, force: true }));
+
+    const response = await fetch(`${harness.baseUrl}/runs`, {
+      method: 'POST',
+      headers: { ...auth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        repoUrl: 'https://github.com/example/repo',
+        taskPrompt: 'Change deployment permissions',
+        publishMode: 'none',
+      }),
+    });
+    const payload = await response.json();
+    expect(response.status).toBe(422);
+    expect(payload.exitCode).toBe(9);
+    expect(payload.admission.status).toBe('rejected');
+    expect(scheduler.submitJob).not.toHaveBeenCalled();
   });
 
   test('returns the run submission contract and persists fulfilled idempotency state', async () => {

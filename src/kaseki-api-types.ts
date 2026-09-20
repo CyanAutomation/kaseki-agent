@@ -460,6 +460,7 @@ export interface ValidationResponse {
   /** Commands resolved from the target repository's package.json. */
   selectedValidationCommands?: string[];
   estimatedDurationSeconds?: number;
+  admission?: import('./task-admission').TaskAdmissionResult;
 }
 
 /**

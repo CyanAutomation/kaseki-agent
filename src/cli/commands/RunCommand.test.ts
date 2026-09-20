@@ -1,6 +1,7 @@
 import { RunCommand, type RunApiClient } from './RunCommand';
 import { ConfigManager } from '../../config/ConfigManager';
 import type { RunRequest, RunResponse } from '../../kaseki-api-types';
+import { TaskAdmissionRejectedError } from '../api/LocalKasekiApiClient';
 import {
   clearEnv,
   INLINE_SECRET_ENV_VARS,
@@ -122,6 +123,27 @@ describe('RunCommand', () => {
     expect(exitCode).toBe(1);
     expect(createRun).not.toHaveBeenCalled();
     expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('--local-direct is no longer supported'));
+  });
+
+  test('should return the task admission exit code when the API rejects a task', async () => {
+    const createRun = jest.fn<Promise<RunResponse>, [RunRequest]>().mockRejectedValue(
+      new TaskAdmissionRejectedError('Task admission rejected: changes_permissions.'),
+    );
+    const apiClient: RunApiClient = {
+      baseUrl: 'http://localhost:8080/api',
+      createRun,
+      getRunStatusUrl: (runId) => `http://localhost:8080/api/runs/${runId}/status`,
+    };
+    const command = new RunCommand(configManager, () => apiClient);
+
+    const exitCode = await command.execute([
+      'https://github.com/org/repo',
+      'main',
+      'Change deployment permissions',
+    ]);
+
+    expect(exitCode).toBe(9);
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('changes_permissions'));
   });
 
   test('should map KASEKI_DRY_RUN=1 to startup check request with boot mode', async () => {

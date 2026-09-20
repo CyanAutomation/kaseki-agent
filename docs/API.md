@@ -40,7 +40,7 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 ### Environment Variables
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| ---------- | --------- | ------------- |
 | `KASEKI_API_PORT` | 8080 | HTTP port for API server |
 | `KASEKI_API_HOST` | loopback when unauthenticated; Node default when authenticated | Optional API bind host. Empty-key unauthenticated mode is rejected unless this is `localhost`, `127.0.0.1`, or `::1`. |
 | `KASEKI_API_KEYS` | *(empty/local unauthenticated)* | Comma-separated API keys for auth; leave empty only for trusted local development |
@@ -185,7 +185,6 @@ Client ID, and private key are readable and structurally valid. A partial GitHub
 configuration returns `503` so controllers can fail early before starting a run
 that cannot publish its patch.
 
-
 If container boot diagnostics were captured during service startup, the response
 also includes a `containerStartup` object. This object is cached boot history only
 and is intentionally excluded from the current readiness status:
@@ -297,6 +296,12 @@ Requires authentication. Returns Prometheus text exposition (`text/plain; versio
 **POST `/api/runs`**
 
 Submit a new kaseki job to the queue. Returns immediately (async).
+
+Before queue admission, Kaseki runs the task safety classifier. High-confidence
+requests involving credentials, permission changes, or security-boundary changes
+are rejected with HTTP `422` and exit code `9`; the response includes an
+`admission` object. Classifier outages are reported as degraded warnings and
+follow the configured fail-open policy.
 
 **Request:**
 
@@ -823,7 +828,7 @@ curl -s -H "Authorization: Bearer sk-your-api-key" \
 **All Available Artifact Types (25+):**
 
 | Name | Availability | Type | Purpose |
-|------|--------------|------|---------|
+| ------ | -------------- | ------ | --------- |
 | `failure.json` | on-failure | JSON | Structured failure details |
 | `result-summary.md` | always | Markdown | Human-readable status |
 | `analysis.md` | always | Markdown | Comprehensive analysis |
@@ -927,7 +932,7 @@ Errors follow [RFC 7807 Problem Details](https://tools.ietf.org/html/rfc7807):
 Common error codes:
 
 | Status | Reason |
-|--------|--------|
+| -------- | -------- |
 | 400 | Invalid request (validation failed) |
 | 401 | Missing/invalid API key |
 | 404 | Run not found |

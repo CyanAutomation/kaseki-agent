@@ -9,7 +9,7 @@ Complete reference for all environment variables used by kaseki-agent.
 ### Core Configuration
 
 | Variable | Default | Type | Purpose |
-|----------|---------|------|---------|
+| ---------- | --------- | ------ | --------- |
 | `REPO_URL` | `CyanAutomation/crudmapper` | string | Target repository URL ([https://github.com/owner/repo](https://github.com/owner/repo)) |
 | `GIT_REF` | `main` | string | Branch, tag, or commit hash |
 | `TASK_PROMPT` | (code fix task) | string | Agent instruction/task description |
@@ -65,13 +65,16 @@ For the gateway path, worker preflight checks verify gateway URL/key configurati
 ### API Keys & Credentials
 
 | Variable | Default / Alternative | Type | Purpose |
-|----------|---|---|---|
+| ---------- | --- | --- | --- |
 | `OPENROUTER_API_KEY` | `OPENROUTER_API_KEY_FILE` | string | OpenRouter API key used when `KASEKI_PROVIDER=openrouter` selects OpenRouter as the primary provider. Not used as a gateway fallback. |
 | `LLM_GATEWAY_URL` | — | string | OpenAI-compatible gateway endpoint (CloudFlare AI Workers, Azure OpenAI, Ollama, etc.). Required for the default `KASEKI_PROVIDER=gateway` path. Example: `https://gateway.ai.cloudflare.com/v1/{account_id}/{namespace}/compat` or `https://api.openai.com/v1`. |
 | `LLM_GATEWAY_API_KEY` | `LLM_GATEWAY_API_KEY_FILE` | string | LLM Gateway API key. Required for the default `KASEKI_PROVIDER=gateway` path. |
 | `KASEKI_GATEWAY_RESPONSE_SMOKE` | production: `true`, test/dev: `false` | boolean | Controls whether `/api/gateway-test` performs a real OpenAI Responses API smoke request with the configured gateway model (default `dynamic/kaseki-agent`). Set `0`, `false`, `off`, or `no` to disable in production; set `1`, `true`, `on`, or `yes` to force-enable in test/dev. |
 | `KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE` | `false` | boolean | Enables Pi provider smoke in non-production environments. In production, Pi provider smoke runs automatically with `/api/gateway-test?stage=2&responseSmoke=true` (no query parameter needed). In development/test, set to `1`, `true`, `on`, or `yes` to enable for controlled testing. Consuming LLM gateway tokens; only enable if you need to test the Pi provider adapter in development. |
 | `KASEKI_PI_PROVIDER_SMOKE_TIMEOUT_MS` | `60000` | integer | Timeout for the opt-in Pi gateway provider smoke test. |
+| `KASEKI_CLASSIFICATION_MODEL` | `~typesafe/jev-latest` | string | JEV/OpenRouter model used by classification smoke tests and task admission. |
+| `KASEKI_TASK_ADMISSION_TIMEOUT_MS` | `5000` | integer | Maximum time allowed for the task admission classifier request. Operational failures fail open. |
+| `KASEKI_TASK_ADMISSION_CONFIDENCE` | `0.8` | number | Minimum classifier confidence required before an unsafe answer can reject a task. |
 | `KASEKI_API_URL` | `http://localhost:8080/api` | string | Client-side base URL used by npm API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
 | `KASEKI_API_KEY` | — | string | Client-side bearer token for authenticated Kaseki API services |
 | `KASEKI_API_KEYS` | `/agents/secrets/kaseki_api_keys`, `~/secrets/kaseki_api_keys` | string | Newline-separated API keys accepted by the Kaseki service |
@@ -90,7 +93,7 @@ For the gateway path, worker preflight checks verify gateway URL/key configurati
 ### GitHub App Configuration
 
 | Variable | Default | Type | Purpose |
-|----------|---------|------|---------|
+| ---------- | --------- | ------ | --------- |
 | `GITHUB_APP_ENABLED` | `1` (if credentials available) | boolean | Enable/disable GitHub operations (PR creation, branch push) |
 | `KASEKI_PUBLISH_MODE` | `pr` | string | GitHub operations mode: `pr` (creates normal PR, default), `draft_pr` (creates draft PR), `branch` (push without PR), `auto` (creates PR if credentials found, legacy), `none` (always skip). All modes require GitHub App credentials to function. |
 | `KASEKI_GITHUB_PR_RETRIES` | `3` | integer | Retry attempts for GitHub PR creation (exponential backoff: 2s, 4s, 8s) |
@@ -100,7 +103,7 @@ For the gateway path, worker preflight checks verify gateway URL/key configurati
 When `GITHUB_APP_ENABLED=1` and credentials are not explicitly provided, kaseki-agent automatically searches for credentials in:
 
 | Priority | Source | Details |
-|----------|--------|---------|
+| ---------- | -------- | --------- |
 | 1 | **Environment variables** | `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_PRIVATE_KEY` |
 | 2 | **Secret files** | `/agents/secrets/github_app_*`, `~/secrets/github_app_*` |
 | 3 | **Auto-detected paths** | `~/.ssh/github-app-private-key`, `$PWD/.github-app-secrets/private-key`, `/etc/kaseki-secrets/github_app_private_key` (private key only) |
@@ -125,7 +128,7 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 ### Quality Gates
 
 | Variable | Default | Type | Purpose |
-|----------|---------|------|---------|
+| ---------- | --------- | ------ | --------- |
 | `KASEKI_MAX_DIFF_BYTES` | `200000` | integer | Maximum diff size in bytes (gates exit code 4) |
 | `KASEKI_CHANGED_FILES_ALLOWLIST` | `` (none) | string | Space-separated glob patterns for allowed file changes (gates exit code 5) |
 | `KASEKI_VALIDATION_ALLOWLIST` | `` (none) | string | Space-separated glob patterns for validation-phase file restrictions (gates exit code 7) |
@@ -135,7 +138,7 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 ### Validation Commands
 
 | Variable | Default | Type | Purpose |
-|----------|---------|------|---------|
+| ---------- | --------- | ------ | --------- |
 | `KASEKI_PRE_AGENT_VALIDATION` | `1` | boolean | Run validation before Pi so existing baseline failures are caught before agent work starts |
 | `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` | same as `KASEKI_VALIDATION_COMMANDS` | string | Semicolon-separated validation commands for the pre-agent baseline phase |
 | `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test` | string | Semicolon-separated validation commands for the post-agent final-diff phase |
@@ -163,7 +166,7 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 ### Caching
 
 | Variable | Default | Type | Purpose |
-|----------|---------|------|---------|
+| ---------- | --------- | ------ | --------- |
 | `KASEKI_CACHE_ENABLED` | `0` | boolean | Enable dependency caching for npm install |
 | `KASEKI_CACHE_DIR` | `/cache` | string | Root cache directory (container mount point) |
 | `KASEKI_DEPENDENCY_CACHE_DIR` | `${KASEKI_CACHE_DIR}/dependencies` | string | npm packages cache |
@@ -202,7 +205,7 @@ If dependency restore logs show EXDEV/cross-device hardlink failures:
 ### Directories & Paths
 
 | Variable | Default | Type | Purpose |
-|----------|---------|------|---------|
+| ---------- | --------- | ------ | --------- |
 | `KASEKI_RUNS_DIR` | `/agents/kaseki-runs` | string | Per-run workspace root (cloned repo, node_modules) |
 | `KASEKI_RESULTS_DIR` | `/agents/kaseki-results` | string | Persistent run artifacts directory |
 | `KASEKI_CACHE_DIR` | `/cache` | string | Optional dependency cache directory |
@@ -210,7 +213,7 @@ If dependency restore logs show EXDEV/cross-device hardlink failures:
 ### Debug & Logging
 
 | Variable | Default | Type | Purpose |
-|----------|---------|------|---------|
+| ---------- | --------- | ------ | --------- |
 | `KASEKI_DEBUG_RAW_EVENTS` | `0` | boolean | Keep raw Pi agent JSONL output (unfiltered) |
 | `KASEKI_KEEP_WORKSPACE` | `0` | boolean | Keep per-run workspace after completion (for debugging) |
 | `KASEKI_STREAM_PROGRESS` | `1` | boolean | Stream sanitized progress events to stdout |
@@ -222,7 +225,7 @@ If dependency restore logs show EXDEV/cross-device hardlink failures:
 ### Server Settings
 
 | Variable | Default | Type | Purpose |
-|----------|---------|------|---------|
+| ---------- | --------- | ------ | --------- |
 | `KASEKI_API_PORT` | `8080` | integer | HTTP listen port |
 | `KASEKI_API_HOST` | loopback when unauthenticated | string | Optional bind host; unauthenticated empty-key mode is restricted to `localhost`, `127.0.0.1`, or `::1` |
 | `KASEKI_API_LOG_LEVEL` | `info` | string | Log verbosity (debug/info/warn/error) |
@@ -231,7 +234,7 @@ If dependency restore logs show EXDEV/cross-device hardlink failures:
 ### Concurrency & Performance
 
 | Variable | Default | Type | Purpose |
-|----------|---------|------|---------|
+| ---------- | --------- | ------ | --------- |
 | `KASEKI_API_MAX_CONCURRENT_RUNS` | `3` | integer | Max parallel kaseki-agent jobs |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `1200` | integer | Timeout for agent execution (same as CLI) |
 | `KASEKI_MAX_DIFF_BYTES` | `200000` | integer | Quality gate limit (same as CLI) |
@@ -239,7 +242,7 @@ If dependency restore logs show EXDEV/cross-device hardlink failures:
 ### Docker Integration
 
 | Variable | Default | Type | Purpose |
-|----------|---------|------|---------|
+| ---------- | --------- | ------ | --------- |
 | `KASEKI_API_IMAGE` | `kaseki-agent:node24-local` | string | Container image to invoke for worker runs |
 | `DOCKER_HOST` | (system default) | string | Docker daemon socket/URL (usually /var/run/docker.sock) |
 | `KASEKI_CONTAINER_USER` | `10000:10000` | string | UID:GID for worker containers |
@@ -296,7 +299,7 @@ If dependency restore logs show EXDEV/cross-device hardlink failures:
 ### API Authentication
 
 | Variable | Default | Type | Purpose |
-|----------|---------|------|---------|
+| ---------- | --------- | ------ | --------- |
 | `LLM_GATEWAY_API_KEY` | — | string | Gateway API key (required if using inline auth) |
 | `LLM_GATEWAY_API_KEY_FILE` | `$HOME/.kaseki/secrets.json` | string | Path to file containing API key (preferred) |
 | `LLM_GATEWAY_MODEL` | `$KASEKI_MODEL` (default `dynamic/kaseki-agent`) | string | Optional gateway-specific model override. If omitted, gateway checks and Pi provider smoke use `KASEKI_MODEL`, whose compiled default is `dynamic/kaseki-agent`. |
@@ -304,7 +307,7 @@ If dependency restore logs show EXDEV/cross-device hardlink failures:
 ### Model Selection
 
 | Variable | Default | Type | Purpose |
-|----------|---------|------|---------|
+| ---------- | --------- | ------ | --------- |
 | `KASEKI_MODEL` | `dynamic/kaseki-agent` | string | Model identifier. Gateway production deployments should use the default `dynamic/kaseki-agent` unless a specific gateway model is intentionally configured. |
 | `KASEKI_PROVIDER_FALLBACK` | deprecated | string | Deprecated. Gateway runs no longer switch providers after gateway retries are exhausted; provider failures are reported against the gateway. Use `KASEKI_PROVIDER=openrouter` to run OpenRouter as the primary provider. |
 | `KASEKI_PROVIDER_FALLBACK_MODEL` | deprecated | string | Deprecated. OpenRouter is not selected as runtime recovery for gateway failures. Configure `KASEKI_MODEL` with `KASEKI_PROVIDER=openrouter` for OpenRouter primary runs. |
@@ -320,7 +323,7 @@ If dependency restore logs show EXDEV/cross-device hardlink failures:
 ### Multi-Phase Model Overrides
 
 | Variable | Default | Type | Purpose |
-|----------|---------|------|---------|
+| ---------- | --------- | ------ | --------- |
 | `KASEKI_SCOUTING_MODEL` | `$KASEKI_MODEL` | string | Model override for scouting phase |
 | `KASEKI_GOAL_SETTING_MODEL` | `$KASEKI_SCOUTING_MODEL` | string | Model override for goal-setting phase |
 | `KASEKI_GOAL_CHECK_MODEL` | `$KASEKI_SCOUTING_MODEL` | string | Model override for goal-check phase |
@@ -342,7 +345,7 @@ Fallback:  ~/secrets/{secret-name}
 **Secret Files:**
 
 | Secret Name | File Path | Content | Required |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `llm_gateway_api_key` | `/agents/secrets/llm_gateway_api_key` | API key for your LLM gateway | ✓ |
 | `kaseki_api_keys` | `/agents/secrets/kaseki_api_keys` | Newline-separated keys | ✓ (for API service) |
 | `github_app_id` | `/agents/secrets/github_app_id` | Numeric ID | — |
@@ -480,7 +483,7 @@ The following query parameters are supported on gateway testing endpoints:
 ### `/api/gateway-test` Query Parameters
 
 | Parameter | Values | Purpose | Example |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `stage` | `1`, `2`, `0` | Test stage: 1=connectivity only, 2=full test, 0=auto-detect | `?stage=2` |
 | `piProvider` | `true`, `false` | Enable Pi provider adapter smoke test | `?piProvider=true` |
 | `responseSmoke` | `true`, `false` | Enable response parsing smoke test (included in stage 2) | `?responseSmoke=true` |

@@ -109,7 +109,7 @@ describe('OpenAPI Path Builders', () => {
       method: 'post',
       operationId: 'triggerRun',
       requiresAuth: true,
-      statuses: ['200', '202', '400', '401'],
+      statuses: ['200', '202', '400', '401', '422'],
       tags: ['Run Management'],
       requiredResponseSchemas: ({ errorSchema, responseSchema }) => [
         { status: '200', mediaType: 'application/json', schema: responseSchema },
@@ -690,7 +690,7 @@ describe('OpenAPI Path Builders', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, emptyResponseSchema);
       const runsPath = paths['/api/runs'] as Record<string, any>;
 
-      expect(Object.keys(runsPath.post.responses).sort()).toEqual(['200', '202', '400', '401']);
+      expect(Object.keys(runsPath.post.responses).sort()).toEqual(['200', '202', '400', '401', '422']);
       ['200', '202'].forEach((status) => {
         expect(runsPath.post.responses[status].content).toEqual({
           'application/json': {
