@@ -212,6 +212,18 @@ setup_case "present" "$present_expectation" "printf 'MAGIC_EXPECTED_STRING\n' > 
 grep -q 'verification passed' "$RESULTS_DIR/critical-change-verification.log" || fail "present case did not pass verification"
 grep -q '^goal-check$' "$PI_CALLS" || fail "present case did not invoke goal-check"
 
+# A marker copied from baseline source is commonly a "before" refactor value.
+# It must not remain a required post-change diff marker.
+baseline_marker_expectation='{"task":"refactor target","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":[]},"critical_change_expectations":{"required_files":["target.txt"],"required_search_strings":["initial target"],"forbidden_empty_diff":true}}'
+setup_case "baseline-marker-downgraded" "$baseline_marker_expectation" "printf 'updated target\n' > '__WORKSPACE_REPO__/target.txt'" 0 $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' true 1 "" 0
+node - "$RESULTS_DIR/critical-change-expectations.json" <<'NODE' || fail "baseline marker was still enforced"
+const fs = require('node:fs');
+const artifact = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+if (artifact.required_search_strings.length !== 0) throw new Error(JSON.stringify(artifact));
+if (!artifact.ignored_baseline_search_strings?.includes('initial target')) throw new Error(JSON.stringify(artifact));
+if (!artifact.contract_warnings?.includes('baseline_search_strings_downgraded')) throw new Error(JSON.stringify(artifact));
+NODE
+
 # Scope protection is task-derived, not a hard-coded extension or directory
 # rule. A scout can forbid an unrelated implementation file while leaving all
 # other repository paths available to the coding agent.

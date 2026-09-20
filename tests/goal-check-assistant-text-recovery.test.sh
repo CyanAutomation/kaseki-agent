@@ -63,6 +63,9 @@ elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":[],"validation_patterns":[]}}' > "$RESULTS_DIR/scouting-candidate.json"
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "$PI_CALLS"
+  # The evaluator prompt contains a valid schema example. Recovery must ignore
+  # user-role content and inspect assistant output only.
+  printf '%s\n' '{"type":"message_start","message":{"role":"user","content":"Example: {\\"met\\":true,\\"confidence\\":\\"high\\",\\"summary\\":\\"example\\"}"}}'
   # Intentionally print the verdict in the event stream without creating goal-check-candidate.json.
   # The single-object contradictions form is a legacy shape that recovery can
   # normalize without losing information before applying the strict contract.

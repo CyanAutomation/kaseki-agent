@@ -417,9 +417,46 @@ function validateScoutingArtifact(
   const result = validateScoutingArtifactObject(artifact);
   if (result.status === 'ok' && outputPath) {
     fs.writeFileSync(outputPath, JSON.stringify(artifact, null, 2) + '\n');
+    markRecoveredValidationErrors(options.jsonlLog as string | undefined);
   }
   writeValidationArtifacts(result, options);
   return result;
+}
+
+/**
+ * A later scouting attempt can repair an earlier malformed candidate. Keep the
+ * rejected attempt in the JSONL audit trail, but mark it recovered so terminal
+ * diagnostics and provider classification do not report it as active failure.
+ */
+function markRecoveredValidationErrors(jsonlLog: string | undefined): void {
+  if (!jsonlLog || !fs.existsSync(jsonlLog)) return;
+  let changed = false;
+  const lines = fs.readFileSync(jsonlLog, 'utf8').split(/\r?\n/).filter(Boolean).map((line) => {
+    try {
+      const entry = JSON.parse(line) as Record<string, unknown>;
+      if (entry.severity === 'critical' && entry.recovered !== true) {
+        changed = true;
+        return JSON.stringify({ ...entry, recovered: true, recovery_reason_code: 'scouting_retry_recovered' });
+      }
+    } catch {
+      // Preserve malformed historical lines for forensics.
+    }
+    return line;
+  });
+  if (changed) {
+    lines.push(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      reason_code: 'scouting_retry_recovered',
+      field: 'scouting-candidate.json',
+      expected: 'valid scouting artifact on a later attempt',
+      actual: 'later scouting attempt validated successfully',
+      severity: 'info',
+      recovered: true,
+      recovery_reason_code: 'scouting_retry_recovered',
+      suggestion: 'historical validation failure superseded by a valid scouting handoff',
+    }));
+    fs.writeFileSync(jsonlLog, lines.join('\n') + '\n');
+  }
 }
 
 function writeValidationArtifacts(result: ValidationResult, options: Record<string, unknown>): void {

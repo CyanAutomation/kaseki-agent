@@ -97,7 +97,7 @@ Guidelines for critical_change_expectations:
 - Include critical_change_expectations only when concrete.
 - required_files lists only files that truly need modification; do not list merely relevant files.
 - CORRECT: list files explicitly needing changes. INCORRECT: list files that are merely relevant or already correct.
-- required_search_strings contains literal strings expected in the diff.
+- required_search_strings contains literal post-change strings expected in the diff; never copy a before-state declaration that the task removes or relocates, and omit the field when exact formatting is uncertain.
 - forbidden_empty_diff is true for change requests and false for read-only/no-op tasks.
 - Omit the object when expectations are uncertain.
 

@@ -197,7 +197,7 @@ const entries = fs.readFileSync(process.argv[2], 'utf8').split(/\r?\n/)
   .filter(Boolean)
   .map((line) => { try { return JSON.parse(line); } catch { return null; } })
   .filter(Boolean);
-const failure = entries.find((entry) => entry.severity !== 'info');
+const failure = entries.find((entry) => entry.severity !== 'info' && entry.recovered !== true);
 if (failure?.reason_code) process.stdout.write(String(failure.reason_code));
 NODE
 )"
@@ -217,7 +217,7 @@ const errors = lines.map(l => {
 
 if (errors.length === 0) process.exit(0);
 
-const failureEntries = errors.filter((entry) => entry.severity !== 'info');
+const failureEntries = errors.filter((entry) => entry.severity !== 'info' && entry.recovered !== true);
 if (failureEntries.length === 0) process.exit(0);
 
 const summary = failureEntries.map(e => {

@@ -93,6 +93,38 @@ describe('scouting-allowlist.js CLI', () => {
     expect(result.reason_code).toBe('valid');
   });
 
+  test('should mark earlier critical validation errors recovered after a valid retry', () => {
+    const artifact = {
+      task: 'refactor parser',
+      requirements: [],
+      relevant_files: [],
+      observations: [],
+      plan: [],
+      validation: [],
+      risks: [],
+      test_impact: [],
+    };
+    const artifactPath = path.join(tmpDir, 'scouting-retry.json');
+    const outputPath = path.join(tmpDir, 'scouting-retry-output.json');
+    const errorLog = path.join(tmpDir, 'scouting-retry-error.json');
+    const jsonlLog = path.join(tmpDir, 'scouting-retry-errors.jsonl');
+    fs.writeFileSync(artifactPath, JSON.stringify(artifact));
+    fs.writeFileSync(jsonlLog, JSON.stringify({
+      reason_code: 'schema_mismatch',
+      field: 'test_impact[0]',
+      severity: 'critical',
+    }) + '\n');
+
+    const output = execSync(
+      `node dist/scouting-allowlist.js validate ${artifactPath} ${outputPath} ${errorLog} ${jsonlLog}`,
+      { encoding: 'utf-8', cwd: process.cwd() },
+    );
+    expect(JSON.parse(output.trim()).status).toBe('ok');
+    const entries = fs.readFileSync(jsonlLog, 'utf8').trim().split(/\n+/).map((line) => JSON.parse(line));
+    expect(entries[0]).toMatchObject({ recovered: true, recovery_reason_code: 'scouting_retry_recovered' });
+    expect(entries.at(-1)).toMatchObject({ reason_code: 'scouting_retry_recovered', severity: 'info' });
+  });
+
   test('should reject a relevant file entry without a machine-actionable path and reason', () => {
     const artifact = {
       task: 'refactor parser',
