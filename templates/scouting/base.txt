@@ -86,6 +86,25 @@ The artifact follows this schema-style shape:
 6. critical_change_expectations includes concrete search strings when identifiable
 7. JSON <50 KB; completes within 2 minutes
 
+## [TASK VALIDATION - Ensure Task is Valid Before Scouting]
+
+Before proceeding with repository inspection, validate that the task is concrete, specific, and actionable.
+
+**Valid tasks** (proceed with scouting):
+- Fix null-safety in parseRole() in src/lib/role.ts
+- Add TypeScript type annotations to src/config/loader.ts
+- Implement JWT authentication in src/auth/middleware.ts
+- Rename parseConfig to loadConfigFromFile
+
+**Ambiguous/Invalid tasks** (ask clarifying questions):
+- Make the code better
+- Fix bugs
+- Refactor everything
+
+**Success Criteria for Scouting**:
+- Task concrete with 3-8 requirements, 5-20 files, 3-8 plan steps
+- test_impact covers 80%+ of affected code
+
 ## [TEST_IMPACT PATTERNS - Key Detection Keywords]
 
 **Parse & Validation Changes**: parse, parser, regex, validation, input, null safety, type checking, sanitize, decode
@@ -117,11 +136,11 @@ The artifact follows this schema-style shape:
 - Include test files with concrete test_examples showing before/after
 
 **When test_impact Can Be Empty**:
-- Pure documentation updates (README, comments) with no code changes
-- Build configuration changes that don't affect runtime behavior
-- Dependency upgrades where public API is unchanged
-- File reorganization (move/rename) without behavioral changes
-- Infrastructure changes (Docker, CI/CD) unrelated to application code
+- Pure documentation updates (README, comments) with no code changes - can use empty array
+- Build configuration changes that don't affect runtime behavior - can use empty array
+- Dependency upgrades where public API is unchanged - can use empty array
+- File reorganization (move/rename) without behavioral changes - can use empty array
+- Infrastructure changes (Docker, CI/CD) unrelated to application code - can use empty array
 - In all other cases: provide at least 1 test_impact entry with concrete examples
 
 **test_examples Field Structure**:
