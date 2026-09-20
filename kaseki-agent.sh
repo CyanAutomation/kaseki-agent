@@ -6652,6 +6652,7 @@ NODE
       # filename left schema failures unrecoverable even though a conservative
       # patch fallback is valid for them.
       local has_scouting_contract_failure=0
+      local missing_scouting_artifact=0
       if node - "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" <<'NODE' >/dev/null 2>&1
 const fs = require('node:fs');
 const file = process.argv[2];
@@ -6673,12 +6674,16 @@ NODE
       then
         has_scouting_contract_failure=1
       fi
-      # Patch mode can continue safely with the deterministic fallback after
-      # the first invalid artifact. Retrying the same malformed handoff adds
-      # another scouting invocation without changing the fallback outcome.
-      if [ "$KASEKI_TASK_MODE" != "patch" ] &&
-        [ "$attempt" -lt "$max_attempts" ] &&
-        [ "$has_scouting_contract_failure" -eq 1 ]; then
+      if [ "$(cat "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt" 2>/dev/null || true)" = "missing_file" ]; then
+        missing_scouting_artifact=1
+      fi
+      # A missing handoff may be a transient failure to write the required
+      # artifact, so give patch mode the same bounded contract retry as the
+      # read-only phases. Malformed or schema-invalid handoffs remain
+      # deterministic and continue directly to the conservative fallback.
+      if [ "$attempt" -lt "$max_attempts" ] &&
+        [ "$has_scouting_contract_failure" -eq 1 ] &&
+        { [ "$KASEKI_TASK_MODE" != "patch" ] || [ "$missing_scouting_artifact" -eq 1 ]; }; then
         printf '[Scouting Phase] Artifact contract failure (exit 86), retrying with explicit write instructions\n'
         attempt=$((attempt + 1))
         rm -f "$SCOUTING_ARTIFACT" "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt" 2>/dev/null || true

@@ -125,7 +125,7 @@ const lines = fs.readFileSync(logPath, 'utf8').trim().split(/\n+/).filter(Boolea
 if (!lines.length) throw new Error('expected at least one validation error line');
 const entries = lines.map((line) => JSON.parse(line));
 for (const entry of entries) {
-  if (entry.reason_code === 'patch_fallback' || entry.reason_code === 'patch_fallback_recovered') continue;
+  if (entry.reason_code === 'patch_fallback' || entry.reason_code === 'patch_fallback_recovered' || entry.reason_code === 'scouting_retry_recovered') continue;
   for (const key of ['timestamp', 'reason_code', 'field', 'expected', 'actual', 'severity', 'suggestion']) {
     if (!(key in entry)) throw new Error(`missing key ${key}`);
   }
