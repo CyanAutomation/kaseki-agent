@@ -1077,7 +1077,11 @@ function parseClassificationResult(response: unknown): {
   if (!response || typeof response !== 'object') return null;
 
   const obj = response as Record<string, unknown>;
-  const answers = (obj.answers || {}) as Record<string, unknown>;
+
+  // Check if answers field exists and is an object
+  if (!obj.answers || typeof obj.answers !== 'object') return null;
+
+  const answers = obj.answers as Record<string, unknown>;
   const usage = (obj.usage && typeof obj.usage === 'object' ? obj.usage : {}) as Record<string, unknown>;
   const outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
 
@@ -1097,7 +1101,7 @@ export function shouldRunClassificationSmoke(requested: boolean): boolean {
  * @param requested Whether classification smoke was explicitly requested
  * @returns ClassificationSmokeTestResult with classifier validation details
  */
-export function testClassificationSmoke(requested: boolean = false): ClassificationSmokeTestResult {
+export async function testClassificationSmoke(requested: boolean = false): Promise<ClassificationSmokeTestResult> {
   const timestamp = new Date().toISOString();
   const startTime = performance.now();
 
@@ -1119,7 +1123,7 @@ export function testClassificationSmoke(requested: boolean = false): Classificat
   const requestBody = buildClassificationSmokeRequest();
 
   try {
-    const response = fetchWithTimeout(
+    const response = await fetchWithTimeout(
       'https://openrouter.ai/api/alpha/decisions',
       {
         method: 'POST',
@@ -1132,27 +1136,12 @@ export function testClassificationSmoke(requested: boolean = false): Classificat
       15000,
     );
 
-    // Handle async response
-    if (response && typeof response === 'object' && 'then' in response) {
-      // This is a Promise, need to handle it synchronously - for now return error
-      const responseTime = Math.round(performance.now() - startTime);
-      return {
-        status: 'error',
-        detail: 'Classification smoke test encountered an async operation that cannot be handled synchronously',
-        responseTime,
-        timestamp,
-        remediation: 'This function needs to be converted to async to support OpenRouter API calls.',
-      };
-    }
-
-    // Synchronous response handling (should not reach here for real API calls)
-    const responseObj = response as Record<string, unknown>;
-
     // Check if response indicates an error
-    if (responseObj && typeof responseObj === 'object') {
-      const error = responseObj.error as Record<string, unknown> | undefined;
+    if (!response.ok) {
+      const responseTime = Math.round(performance.now() - startTime);
+      const errorData = await response.json().catch(() => ({ error: { message: response.statusText } }));
+      const error = errorData.error as Record<string, unknown> | undefined;
       if (error && error.message) {
-        const responseTime = Math.round(performance.now() - startTime);
         return {
           status: 'error',
           detail: `OpenRouter classification error: ${error.message}`,
@@ -1162,9 +1151,18 @@ export function testClassificationSmoke(requested: boolean = false): Classificat
           remediation: 'Check OpenRouter API key, model availability, and quota before retrying.',
         };
       }
+      return {
+        status: 'error',
+        detail: `API returned status ${response.status}: ${response.statusText}`,
+        responseTime,
+        timestamp,
+        modelUsed: config.model,
+        remediation: 'Check OpenRouter API status and retry.',
+      };
     }
 
     // Parse the response
+    const responseObj = await response.json();
     const parsed = parseClassificationResult(responseObj);
 
     if (!parsed) {
