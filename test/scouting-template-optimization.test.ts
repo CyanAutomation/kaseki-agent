@@ -28,7 +28,7 @@ function loadTemplate(filename: string): string {
   return fs.readFileSync(filepath, 'utf-8');
 }
 
-function loadAllTemplates(): Record<string, string> {
+function _loadAllTemplates(): Record<string, string> {
   return {
     'base.txt': loadTemplate('base.txt'),
     'common.txt': loadTemplate('common.txt'),

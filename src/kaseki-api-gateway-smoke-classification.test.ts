@@ -69,7 +69,6 @@ describe('testClassificationSmoke (mocked)', () => {
       ok: true,
       status: 200,
       json: async () => mockResponse,
-      text: async () => JSON.stringify(mockResponse),
       headers: new Headers(),
       redirected: false,
       statusText: 'OK',
