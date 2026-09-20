@@ -74,6 +74,53 @@ reconcile_gateway_summary() {
   fi
 }
 
+# Run scorecard generation when the packaged alias is available, falling back
+# to the built entrypoint for source/local workers. Reporting is best-effort:
+# scorecard availability must never replace the run's authoritative status.
+run_scorecard_best_effort() {
+  local results_dir="${1:?missing results directory}"
+  local stage="${2:-artifact_finalization}"
+  local generator=""
+  local generator_kind="missing"
+  local generator_exit=0
+
+  if [ -n "${KASEKI_SCORECARD_GENERATOR:-}" ] && [ -f "$KASEKI_SCORECARD_GENERATOR" ]; then
+    generator="$KASEKI_SCORECARD_GENERATOR"
+    generator_kind="node"
+  elif command -v kaseki-run-scorecard >/dev/null 2>&1; then
+    generator="$(command -v kaseki-run-scorecard)"
+    generator_kind="command"
+  else
+    local candidate
+    for candidate in \
+      "${KASEKI_APP_ROOT:-/app}/lib/run-scorecard.js" \
+      "${KASEKI_APP_ROOT:-/app}/dist/run-scorecard.js" \
+      "${KASEKI_SCRIPT_DIR:-}/dist/run-scorecard.js"; do
+      if [ -f "$candidate" ]; then
+        generator="$candidate"
+        generator_kind="node"
+        break
+      fi
+    done
+  fi
+
+  if [ "$generator_kind" = "missing" ]; then
+    printf '%s\n' "{\"level\":\"warning\",\"code\":\"scorecard_generator_missing\",\"stage\":\"$stage\",\"non_destructive\":true}" >&2
+    return 0
+  fi
+
+  if [ "$generator_kind" = "command" ]; then
+    KASEKI_RESULTS_DIR="$results_dir" "$generator" >/dev/null 2>&1 || generator_exit=$?
+  else
+    KASEKI_RESULTS_DIR="$results_dir" node "$generator" >/dev/null 2>&1 || generator_exit=$?
+  fi
+
+  if [ "$generator_exit" -ne 0 ]; then
+    printf '%s\n' "{\"level\":\"warning\",\"code\":\"scorecard_generation_failed\",\"stage\":\"$stage\",\"exit_code\":$generator_exit,\"non_destructive\":true}" >&2
+  fi
+  return 0
+}
+
 consolidate_phase_errors() {
   local output_file="$1"
   shift
@@ -127,8 +174,5 @@ finalize_artifacts_and_publish_status() {
   # authoritative. Scorecard generation remains best-effort and cannot replace
   # the original run status.
   "$status_writer" "$status"
-  if command -v kaseki-run-scorecard >/dev/null 2>&1; then
-    KASEKI_RESULTS_DIR="$results_dir" kaseki-run-scorecard >/dev/null ||
-      printf '%s\n' '{"level":"warning","code":"scorecard_generation_failed","stage":"artifact_finalization"}' >&2
-  fi
+  run_scorecard_best_effort "$results_dir" "artifact_finalization"
 }

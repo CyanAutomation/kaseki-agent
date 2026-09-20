@@ -58,4 +58,24 @@ assert(typeof scorecard.scoring_config === 'object' && scorecard.scoring_config 
 assert(Array.isArray(scorecard.warnings), 'warnings must be an array');
 NODE
 
+# The worker can also run from a source checkout where the packaged alias is
+# not installed. The shared resolver must use the built entrypoint and remain
+# non-fatal when no generator is available.
+source "$ROOT_DIR/scripts/lib/artifact-consolidation.sh"
+fallback_dir="$TMP_DIR/fallback"
+mkdir -p "$fallback_dir"
+cp "$TMP_DIR/metadata.json" "$fallback_dir/metadata.json"
+PATH="$(dirname "$(command -v node)"):/usr/bin:/bin" \
+  KASEKI_APP_ROOT="$TMP_DIR/missing-app" \
+  KASEKI_SCRIPT_DIR="$ROOT_DIR" \
+  run_scorecard_best_effort "$fallback_dir" "source_fallback"
+test -s "$fallback_dir/run-scorecard.json"
+
+missing_dir="$TMP_DIR/missing"
+mkdir -p "$missing_dir"
+PATH="$(dirname "$(command -v node)"):/usr/bin:/bin" \
+  KASEKI_APP_ROOT="$TMP_DIR/missing-app" \
+  KASEKI_SCRIPT_DIR="$TMP_DIR/missing-source" \
+  run_scorecard_best_effort "$missing_dir" "missing_generator"
+
 printf '✓ Packaged scorecard entrypoint alias generated and validated an artifact.\n'
