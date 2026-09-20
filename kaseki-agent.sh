@@ -6661,6 +6661,11 @@ try {
   const contractFailure = entries.some((entry) => [
     'missing_file', 'malformed_json', 'schema_mismatch', 'schema_validation_failed',
     'schema_type_mismatch', 'invalid_candidate', 'readonly_filesystem',
+    // An empty assistant turn is a provider-level contract failure when
+    // scouting produced neither a handoff artifact nor usable content.
+    // Patch mode can safely continue with the validated conservative
+    // fallback after the bounded scouting retry.
+    'provider_empty_assistant_turn',
     // A normalized candidate that still exits 86 must be retried or use the
     // patch fallback.  The original validator detail is ephemeral, while this
     // durable record is the only evidence available to the retry loop.
