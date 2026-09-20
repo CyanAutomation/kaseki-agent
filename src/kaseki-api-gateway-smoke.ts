@@ -1014,7 +1014,7 @@ export function resolveCloudflareApiToken(): string {
 }
 
 function resolveClassificationModel(): string {
-  return process.env.KASEKI_CLASSIFICATION_MODEL || 'typesafe/jev-1.13';
+  return process.env.KASEKI_CLASSIFICATION_MODEL || '~typesafe/jev-latest';
 }
 
 function resolveClassificationConfig(timestamp: string): ClassificationConfig {
@@ -1044,7 +1044,7 @@ function resolveClassificationConfig(timestamp: string): ClassificationConfig {
 
 function buildClassificationSmokeRequest(): Record<string, unknown> {
   return {
-    model: 'typesafe/jev-1.13',
+    model: '~typesafe/jev-latest',
     state: "Recent code changes broke 3 existing tests. The async function wasn't waiting for database cleanup.",
     questions: {
       code_quality_issue: {
