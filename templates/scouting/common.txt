@@ -16,10 +16,6 @@ Config change:
 
 required_files:
 - Pre-verify each file: it MUST need modification to appear in changed-files.txt
-- ✓ Add if task explicitly requires creating/modifying it
-- ✓ Add if verified it lacks required functionality
-- ✗ Skip if file already has correct code
-- ✗ Skip if merely relevant but needs no edits
 - Example: "Move weights to constants.ts"
   - Already exports weights? → required_files: ["src/orchestrator.ts"] (remove duplicate)
   - Doesn't export weights? → required_files: ["src/constants.ts","src/orchestrator.ts"] (add both)
@@ -52,7 +48,7 @@ Timeouts:
 - Use fast commands: find, grep, head (not cat for large files)
 
 Artifact Size:
-- Maximum JSON: 50 KB
+- Maximum JSON size: 50 KB.
 - If observations/relevant_files grow large, prioritize most important
 - Truncate with "(...truncated for brevity)"
 
