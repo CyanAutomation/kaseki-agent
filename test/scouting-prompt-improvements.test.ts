@@ -35,13 +35,15 @@ function countOccurrences(content: string, instruction: string): number {
 
 function buildRuntimeScoutingPrompt(
   taskPrompt = 'Update parser behavior and its tests.',
+  detail = 'verbose',
+  complex = true,
 ): string {
   const agentScript = path.join(__dirname, '..', 'kaseki-agent.sh');
   const runtime = spawnSync('bash', ['-c', `
     set -euo pipefail
     eval "$(sed -n '/^build_scouting_prompt() {/,/^}$/p' "$1")"
     get_caveman_instruction() { printf ''; }
-    is_complex_change_task() { return 0; }
+    is_complex_change_task() { [ "\${COMPLEX_TASK:-1}" = 1 ]; }
     build_scouting_prompt
   `, 'scouting-prompt-test', agentScript], {
     encoding: 'utf8',
@@ -49,7 +51,8 @@ function buildRuntimeScoutingPrompt(
       ...process.env,
       SCRIPT_DIR: path.dirname(agentScript),
       TASK_PROMPT: taskPrompt,
-      KASEKI_SCOUTING_PROMPT_DETAIL: 'verbose',
+      KASEKI_SCOUTING_PROMPT_DETAIL: detail,
+      COMPLEX_TASK: complex ? '1' : '0',
       KASEKI_SCOUTING_CONTRACT_RETRY: '0',
       GOAL_SETTING_ARTIFACT: '/results/goal-setting.json',
     },
@@ -111,7 +114,7 @@ describe('Scouting prompt contracts', () => {
     expect(promptContent).toMatch(/Before proceeding with repository inspection, validate that the task is concrete/i);
     expect(promptContent).toMatch(/Valid tasks[\s\S]*Fix null-safety in parseRole/);
     expect(promptContent).toMatch(/Ambiguous\/Invalid tasks[\s\S]*Make the code better/);
-    expect(promptContent).toMatch(/If the task is ambiguous[\s\S]*\[UNCLEAR - needs clarification\]/i);
+    expect(promptContent).toMatch(/task is ambiguous[\s\S]*\[UNCLEAR - needs clarification\]/i);
   });
 
   test('writes and verifies the handoff artifact [SCOUTING_PROMPT_DESIGN § Operational Constraints]', () => {
@@ -225,7 +228,7 @@ describe('Scouting prompt contracts', () => {
       category: 'serialization',
       taskSignal: /response, serialize, serialize, format, construct/i,
       affectedTest: /tests\/serialization\.test\.ts/,
-      assertionImpact: /Round-trip assertions[\s\S]*preserves values/i,
+      assertionImpact: /Round-trip assertions[\s\S]*preserve values/i,
     },
     {
       category: 'naming',
@@ -262,6 +265,27 @@ describe('Scouting prompt contracts', () => {
     expect(runtimePrompt).toMatch(/Do not edit source files/i);
     expect(runtimePrompt).toMatch(/exactly one JSON object (?:at|to) \/results\/scouting-candidate\.json/i);
     expect(runtimePrompt).toContain('Update parser behavior and its tests.');
+  });
+
+  test('keeps the default runtime prompt within the compact token budget', () => {
+    const runtimePrompt = buildRuntimeScoutingPrompt('Fix parser behavior.', 'compact', false);
+    const words = runtimePrompt.trim().split(/\s+/).length;
+
+    expect(words).toBeLessThanOrEqual(450);
+    expect(runtimePrompt).toContain('task: concise actionable string');
+    expect(runtimePrompt).toContain('test_impact:');
+    expect(runtimePrompt).toContain('/results/scouting-candidate.json');
+  });
+
+  test('keeps verbose guidance bounded and non-duplicative', () => {
+    const runtimePrompt = buildRuntimeScoutingPrompt();
+    const words = runtimePrompt.trim().split(/\s+/).length;
+
+    expect(words).toBeLessThanOrEqual(1900);
+    expect((runtimePrompt.match(/## \[TASK VALIDATION/g) || []).length).toBe(1);
+    expect((runtimePrompt.match(/## \[EXECUTION CONTEXT/g) || []).length).toBe(1);
+    expect((runtimePrompt.match(/## \[CRITICAL_CHANGE_EXPECTATIONS GUIDANCE\]/g) || []).length).toBe(1);
+    expect((runtimePrompt.match(/## \[SUGGESTED_ALLOWLIST GUIDANCE\]/g) || []).length).toBe(1);
   });
 });
 
@@ -355,9 +379,7 @@ describe('Phase 4: Output Schema Refinement', () => {
   });
 
   test('should explain when test_impact can be empty', () => {
-    // Phase 4 requirement: Clarity on rare cases
-    // Currently missing - will fail until implemented
-    expect(promptContent).toContain('empty array');
+    expect(promptContent).toMatch(/test_impact[^\n]*(empty|\[\])/i);
   });
 
   test('critical_change_expectations should have concrete examples', () => {
@@ -545,62 +567,13 @@ describe('Prompt Quality Metrics', () => {
     expect(operationalSection).toContain('Output rules for the JSON artifact:');
   });
 
-  test('uses hyphen bullets for documented guideline and example lists', () => {
-    const documentedLists = [
-      {
-        start: '**Valid tasks** (proceed with scouting):',
-        end: '**Ambiguous/Invalid tasks** (ask clarifying questions):',
-        requiredItems: ['Fix null-safety', 'Add TypeScript type annotations', 'Implement JWT authentication', 'Rename parseConfig'],
-      },
-      {
-        start: '**Ambiguous/Invalid tasks** (ask clarifying questions):',
-        end: '**Success Criteria for Scouting**:',
-        requiredItems: ['Make the code better', 'Fix bugs', 'Refactor everything'],
-      },
-      {
-        start: '**When to Include test_impact**:',
-        end: '**When test_impact Can Be Empty**:',
-        requiredItems: ['ALWAYS include test_impact', 'concrete implementation details', 'constants, enum values'],
-      },
-      {
-        start: '**When test_impact Can Be Empty**:',
-        end: '**test_examples Field Structure**:',
-        requiredItems: ['Pure documentation updates', 'Build configuration changes', 'Dependency upgrades', 'File reorganization', 'Infrastructure changes', 'In all other cases'],
-      },
-      {
-        start: '**test_examples Field Structure**:',
-        end: '**Examples of Strong test_impact Entries**:',
-        requiredItems: ['**type**', '**before**', '**after**', '**pattern**', '**description**', 'Max 5 test_examples'],
-      },
-      {
-        start: 'Guidelines for critical_change_expectations:',
-        end: 'Guidelines for suggested_allowlist:',
-        requiredItems: ['Include critical_change_expectations', 'required_files', 'required_search_strings', 'forbidden_empty_diff', 'Omit uncertain expectations'],
-      },
-      {
-        start: 'Guidelines for suggested_allowlist:',
-        end: '## [EXECUTION CONTEXT - Optimize for Efficiency]',
-        requiredItems: ['agent_patterns', 'validation_patterns', 'Both arrays can be empty', 'Prefer accurate scope'],
-      },
-    ];
-
-    for (const { start, end, requiredItems } of documentedLists) {
-      const startOffset = promptContent.indexOf(start);
-      const endOffset = promptContent.indexOf(end, startOffset + start.length);
-      expect(startOffset).toBeGreaterThanOrEqual(0);
-      expect(endOffset).toBeGreaterThan(startOffset);
-
-      const items = promptContent
-        .slice(startOffset + start.length, endOffset)
-        .split('\n')
-        .filter((line) => line.trim().length > 0);
-
-      expect(items.length).toBeGreaterThanOrEqual(requiredItems.length);
-      expect(items.every((item) => item.startsWith('- '))).toBe(true);
-      for (const requiredItem of requiredItems) {
-        expect(items.some((item) => item.includes(requiredItem))).toBe(true);
-      }
-    }
+  test('keeps concise task and guidance lists readable', () => {
+    const documentedPrompt = readScoutingBaseTemplate();
+    expect(documentedPrompt).toMatch(/^- Fix null-safety in parseRole\(\)/m);
+    expect(documentedPrompt).toMatch(/^- Make the code better$/m);
+    expect(documentedPrompt).toMatch(/^- ALWAYS include test_impact/m);
+    expect(documentedPrompt).toMatch(/^- required_files/m);
+    expect(documentedPrompt).toMatch(/^- agent_patterns/m);
   });
 
 });

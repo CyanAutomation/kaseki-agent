@@ -1,58 +1,22 @@
 ## [STRONG TEST_IMPACT EXAMPLES]
 
-Parser change:
-  {"path":"tests/parser.test.ts","reason":"parseRole() now handles null with fallback","test_examples":[{"type":"added_assertion","pattern":"Null-coalescing","before":"expect(parseRole(null)).toThrow(NullReferenceError)","after":"expect(parseRole(null)).toEqual({name:'Unnamed',level:0})","description":"Null now treated as valid input with defaults"}]}
-
-Event change:
-  {"path":"tests/event-handler.test.ts","reason":"Event emission now async with new timing","test_examples":[{"type":"modified_assertion","pattern":"Async timing","before":"await eventPromise; // resolves within 10ms","after":"await eventPromise; // resolves within 100ms (now batched)","description":"Async batching adds latency; increase timeout"}]}
-
-Serialization change:
-  {"path":"tests/response.test.ts","reason":"Response fields now camelCase","test_examples":[{"type":"modified_assertion","pattern":"camelCase fields","before":"expect(response.status_code).toBe(200)","after":"expect(response.statusCode).toBe(200)","description":"Field names migrated to camelCase"}]}
-
-Config change:
-  {"path":"tests/config.test.ts","reason":"New required config fields","test_examples":[{"type":"added_assertion","pattern":"Schema validation","before":"expect(config).toHaveProperty('timeout')","after":"expect(config).toHaveProperty('timeout'); expect(config).toHaveProperty('maxRetries'); expect(config).toHaveProperty('backoffMs')","description":"Three new retry fields required"}]}
+Use compact, concrete before/after examples only when they match the task. Each example has type, before, after, pattern, and description; use at most 5 test_examples per file.
+- Parser change: {"path":"tests/parser.test.ts","reason":"parseRole() now handles null with fallback","test_examples":[{"type":"added_assertion","pattern":"Null-coalescing","before":"expect(parseRole(null)).toThrow(NullReferenceError)","after":"expect(parseRole(null)).toEqual({name:'Unnamed',level:0})","description":"Null now valid with defaults"}]}
+- Event change: {"path":"tests/event-handler.test.ts","reason":"Event emission now async with new timing","test_examples":[{"type":"modified_assertion","pattern":"Async timing","before":"await eventPromise; // resolves within 10ms","after":"await eventPromise; // resolves within 100ms","description":"Batching adds latency"}]}
+- Serialization change: {"path":"tests/response.test.ts","reason":"Response fields now camelCase","test_examples":[{"type":"modified_assertion","pattern":"camelCase fields","before":"expect(response.status_code).toBe(200)","after":"expect(response.statusCode).toBe(200)","description":"Field names migrated"}]}
 
 ## [CRITICAL_CHANGE_EXPECTATIONS GUIDANCE]
-
-required_files:
-- Pre-verify each file: it MUST need modification to appear in changed-files.txt
-- Example: "Move weights to constants.ts"
-  - Already exports weights? → required_files: ["src/orchestrator.ts"] (remove duplicate)
-  - Doesn't export weights? → required_files: ["src/constants.ts","src/orchestrator.ts"] (add both)
-- Impact: Agent fails verification if scouting lists file but agent correctly finds no edits needed
-- Use no_change_files instead to protect inspected files as out-of-scope
-
-required_search_strings: Literal strings expected in git.diff (function name, config key, assertion text)
-
-forbidden_empty_diff: true if change request; false if read-only inspection or verified no-op
-
-Omit if uncertain (enforced before goal-check evaluation)
+- required_files: only files that need edits; pre-verify them. Relevant-but-correct files do not belong here.
+- required_search_strings: literal function names, config keys, or assertion text expected in the diff.
+- forbidden_empty_diff: true for change requests; false for read-only/no-op tasks.
+- Omit uncertain expectations.
 
 ## [SUGGESTED_ALLOWLIST GUIDANCE]
+- agent_patterns: globs for files the coding agent may modify.
+- validation_patterns: globs for files validation may modify.
+- Be specific; both arrays can be empty if scope is unclear.
 
-agent_patterns: Glob patterns for files coding agent can modify
-  Examples: "src/parser.ts", "src/**", "tests/**", "src/**.ts" for many related files
-  Be specific: too-broad defeats purpose; too-narrow requires restoration
-
-validation_patterns: Glob patterns for files validation commands may modify
-  Often same as agent_patterns; may differ (e.g., ".coverage" or "node_modules/" if generated)
-  
-Both can be empty if task scope unclear; agent will work without constraints
-Prefer accuracy over convenience
-
-## [EXECUTION CONTEXT - EFFICIENCY REQUIREMENTS]
-
-Timeouts:
-- Scouting should complete within 2 minutes total.
-- Avoid: deep directory recursion, git log across large history, 1000+ file enumeration, slow regex
-- Use fast commands: find, grep, head (not cat for large files)
-
-Artifact Size:
-- Maximum JSON size: 50 KB.
-- If observations/relevant_files grow large, prioritize most important
-- Truncate with "(...truncated for brevity)"
-
-Error Handling:
-- Repository inspection fails (unreadable, malformed)? Report the error in observations; proceed with limited scope
-- Example: "Unable to parse src/config.json (syntax error); focusing on src/lib instead"
-- Do not fail the entire scouting phase for isolated read errors; adapt and continue
+Execution context and efficiency requirements:
+- Timeouts: Scouting should complete within 2 minutes total. Avoid deep recursion, large git history, 1000+ file enumeration, and slow regex.
+- Artifact size: Maximum JSON size: 50 KB. Prioritize important observations and truncate with "(...truncated for brevity)".
+- Error handling: report unreadable or malformed files in observations, proceed with limited scope, and do not fail the entire scouting phase; adapt and continue.
