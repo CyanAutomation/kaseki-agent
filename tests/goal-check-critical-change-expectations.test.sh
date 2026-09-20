@@ -168,7 +168,7 @@ NODE
 # must not be retried or failed merely because the controller default disallows
 # empty diffs.
 allowed_noop_expectation='{"task":"documentation audit","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["README.md"],"validation_patterns":[]},"critical_change_expectations":{"required_files":[],"required_search_strings":[],"forbidden_empty_diff":false}}'
-setup_case "allowed-noop-contract" "$allowed_noop_expectation" ":" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0
+setup_case "allowed-noop-contract" "$allowed_noop_expectation" ":" 0 $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' true 1 "" 0
 grep -q 'verification passed' "$RESULTS_DIR/critical-change-verification.log" || fail "allowed no-op contract did not pass verification"
 ! grep -q 'retrying coding agent' "$RUN_LOG" || fail "allowed no-op contract retried coding"
 
@@ -197,18 +197,20 @@ grep -q 'no-op is not acceptable' "$RESULTS_DIR/coding-prompt.txt" || fail "fall
 ! grep -q '^goal-check$' "$PI_CALLS" || fail "fallback-empty-diff invoked goal-check"
 
 missing_file_expectation='{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":["**"]},"critical_change_expectations":{"required_files":["target.txt"],"required_search_strings":[],"forbidden_empty_diff":false}}'
-setup_case "missing-file" "$missing_file_expectation" "printf 'changed other\n' > '__WORKSPACE_REPO__/other.txt'" 8 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 2 "critical change verification" 1
+setup_case "missing-file" "$missing_file_expectation" "printf 'changed other\n' > '__WORKSPACE_REPO__/other.txt'" 0 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 2 "" 1
 grep -q 'required file missing from changed-files.txt: target.txt' "$RESULTS_DIR/critical-change-verification.log" || fail "missing-file did not fail on required file"
 grep -q '^goal-check$' "$PI_CALLS" || fail "missing-file did not produce independent goal-check evidence"
+grep -q 'Overriding critical_change_expectations_failed (exit 8) with exit 0' "$RUN_LOG" || fail "missing-file did not apply the goal-check override"
 
 tests_only_expectation='{"task":"implement target behavior","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":["**"]},"critical_change_expectations":{"required_files":["target.txt"],"required_search_strings":["MAGIC_EXPECTED_STRING"],"forbidden_empty_diff":true}}'
-setup_case "tests-only-missing-core-change" "$tests_only_expectation" "printf 'MAGIC_EXPECTED_STRING test only\n' > '__WORKSPACE_REPO__/tests/target.test.js'" 8 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 2 "critical change verification" 0
+setup_case "tests-only-missing-core-change" "$tests_only_expectation" "printf 'MAGIC_EXPECTED_STRING test only\n' > '__WORKSPACE_REPO__/tests/target.test.js'" 0 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 2 "" 1
 grep -q 'required file missing from changed-files.txt: target.txt' "$RESULTS_DIR/critical-change-verification.log" || fail "tests-only case did not fail on missing core file"
 grep -q 'required search string' "$RESULTS_DIR/critical-change-verification.log" && fail "tests-only case should fail on missing core file, not diff marker copied into tests"
 grep -q '^goal-check$' "$PI_CALLS" || fail "tests-only case did not produce independent goal-check evidence"
+grep -q 'Overriding critical_change_expectations_failed (exit 8) with exit 0' "$RUN_LOG" || fail "tests-only case did not apply the goal-check override"
 
 present_expectation='{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":["**"]},"critical_change_expectations":{"required_files":["target.txt"],"required_search_strings":["MAGIC_EXPECTED_STRING"],"forbidden_empty_diff":true}}'
-setup_case "present" "$present_expectation" "printf 'MAGIC_EXPECTED_STRING\n' > '__WORKSPACE_REPO__/target.txt'" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0
+setup_case "present" "$present_expectation" "printf 'MAGIC_EXPECTED_STRING\n' > '__WORKSPACE_REPO__/target.txt'" 0 $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' true 1 "" 0
 grep -q 'verification passed' "$RESULTS_DIR/critical-change-verification.log" || fail "present case did not pass verification"
 grep -q '^goal-check$' "$PI_CALLS" || fail "present case did not invoke goal-check"
 
@@ -247,7 +249,7 @@ if (!x.required_files.includes('docs/new-guide.md') || x.downgraded_required_fil
 NODE
 
 unsafe_path_expectation='{"critical_change_expectations":{"required_files":["../outside.md"],"forbidden_empty_diff":true}}'
-setup_case "unsafe-required-path" "$unsafe_path_expectation" "printf 'updated\n' > '__WORKSPACE_REPO__/target.txt" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0
+setup_case "unsafe-required-path" "$unsafe_path_expectation" "printf 'updated\n' > '__WORKSPACE_REPO__/target.txt" 0 $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' true 1 "" 0
 node - "$RESULTS_DIR/critical-change-expectations.json" <<'NODE' || fail "unsafe-required-path was not downgraded"
 const x = JSON.parse(require('node:fs').readFileSync(process.argv[2], 'utf8'));
 if (x.required_files.includes('../outside.md') || !x.downgraded_required_files.includes('../outside.md')) throw new Error(JSON.stringify(x));
@@ -255,7 +257,7 @@ NODE
 
 # The fallback must not convert environment-variable prose or directory terms
 # from the original prompt into required files (production run 265).
-setup_case "run-265-fallback-prose" "__NO_SCOUTING_ARTIFACT__" "printf 'changed\n' > '__WORKSPACE_REPO__/target.txt" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0 "Configure LLM_GATEWAY_URL/LLM_GATEWAY_API_KEY_FILE and files/scripts."
+setup_case "run-265-fallback-prose" "__NO_SCOUTING_ARTIFACT__" "printf 'changed\n' > '__WORKSPACE_REPO__/target.txt" 0 $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' true 1 "" 0 "Configure LLM_GATEWAY_URL/LLM_GATEWAY_API_KEY_FILE and files/scripts."
 node - "$RESULTS_DIR/critical-change-expectations.json" <<'NODE' || fail "run-265 fallback retained prose as paths"
 const x = JSON.parse(require('node:fs').readFileSync(process.argv[2], 'utf8'));
 if (x.required_files.length || x.downgraded_required_files?.length) throw new Error(JSON.stringify(x));
