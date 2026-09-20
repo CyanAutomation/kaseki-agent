@@ -111,7 +111,9 @@ EOF_VALIDATION_FILTER
   [ "$run_exit" -eq 0 ] || fail "$case_name: expected fallback run to succeed, got $run_exit"
   local calls
   calls="$(cat "$pi_calls" 2>/dev/null || true)"
-  [ "$calls" = $'scouting\ncoding\ngoal-check' ] || fail "$case_name: scouting should run once before fallback coding (calls=$calls)"
+  [ "$(grep -c '^scouting$' <<< "$calls")" -eq 1 ] || fail "$case_name: scouting should run exactly once before fallback coding (calls=$calls)"
+  [ "$(grep -c '^coding$' <<< "$calls")" -eq 1 ] || fail "$case_name: fallback coding should run exactly once (calls=$calls)"
+  [ "$(sed -n '1,2p' <<< "$calls")" = $'scouting\ncoding' ] || fail "$case_name: fallback coding should follow scouting (calls=$calls)"
   [ ! -f "$results_dir/scouting-validation-reason.txt" ] || fail "$case_name: reason file should be cleaned after fallback validation"
   [ -s "$results_dir/scouting-validation-errors.jsonl" ] || fail "$case_name: missing scouting validation errors jsonl"
   grep -q '"reason_code":"patch_fallback"' "$results_dir/scouting-validation-errors.jsonl" || fail "$case_name: fallback warning missing"

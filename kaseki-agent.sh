@@ -6639,26 +6639,31 @@ NODE
       then
         has_scouting_contract_failure=1
       fi
-      if [ "$attempt" -lt "$max_attempts" ] && [ "$has_scouting_contract_failure" -eq 1 ]; then
+      # Patch mode can continue safely with the deterministic fallback after
+      # the first invalid artifact. Retrying the same malformed handoff adds
+      # another scouting invocation without changing the fallback outcome.
+      if [ "$KASEKI_TASK_MODE" != "patch" ] &&
+        [ "$attempt" -lt "$max_attempts" ] &&
+        [ "$has_scouting_contract_failure" -eq 1 ]; then
         printf '[Scouting Phase] Artifact contract failure (exit 86), retrying with explicit write instructions\n'
         attempt=$((attempt + 1))
         rm -f "$SCOUTING_ARTIFACT" "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt" 2>/dev/null || true
         continue
       fi
-      # Both attempts have received the explicit artifact-write contract.  For
-      # patch runs, retain the failure evidence but use the conservative,
+      # For patch runs, retain the failure evidence but use the conservative,
       # validated fallback rather than failing before coding can start.
       if [ "$KASEKI_TASK_MODE" = "patch" ] && [ "$has_scouting_contract_failure" -eq 1 ]; then
         rm -f "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" 2>/dev/null || true
         write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
         if validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
-          mark_scouting_fallback_recovered "patch_retry_exhausted_fallback_recovered"
-          printf '[Scouting Phase] Artifact contract exhausted; validated conservative patch fallback and continuing\n'
+          mark_scouting_fallback_recovered "patch_fallback_recovered"
+          printf '[Scouting Phase] Artifact contract failed; validated conservative patch fallback and continuing\n'
           export KASEKI_SCOUTING_ATTEMPTS=$attempt
           export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT="fallback"
           STATUS=0
           SCOUTING_EXIT=0
           clear_provider_error
+          rm -f "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt" 2>/dev/null || true
           return 0
         fi
       fi
