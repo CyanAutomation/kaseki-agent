@@ -92,24 +92,24 @@ Output rules for the JSON artifact:
 Before proceeding with repository inspection, validate that the task is concrete:
 
 **Valid tasks** (proceed with scouting):
-- Fix null-safety in parseRole() in src/lib/role.ts
-- Add TypeScript type annotations to src/config/loader.ts
-- Implement JWT authentication in src/auth/middleware.ts
-- Rename parseConfig to loadConfigFromFile across src/lib and tests
+- "Fix null-safety in parseRole() in src/lib/role.ts"
+- "Add TypeScript type annotations to src/config/loader.ts"
+- "Implement JWT authentication in src/auth/middleware.ts"
+- "Rename parseConfig to loadConfigFromFile across src/lib and tests"
 
 **Ambiguous/Invalid tasks** (ask clarifying questions):
-- Make the code better
-- Fix bugs
-- Refactor everything
+- "Make the code better" -> Which files? What improvement?
+- "Fix bugs" -> Which bugs? Which files?
+- "Refactor everything" -> Which components? Success metrics?
 
 **Success Criteria for Scouting**:
-1. Task clearly restates request in concrete, actionable language
-2. Requirements list 3-8 specific, testable items
-3. relevant_files includes 5-20 files with clear rationales
-4. plan has 5-15 distinct coding steps (no "finish")
-5. test_impact identifies 80%+ of affected files
-6. critical_change_expectations includes concrete search strings when present
-7. JSON <50 KB; completes within 2 minutes
+- Task clearly restates request in concrete, actionable language
+- Requirements list 3-8 specific, testable items
+- relevant_files includes 5-20 files with clear rationales
+- plan has 5-15 distinct coding steps (no "finish")
+- test_impact identifies 80%+ of affected files
+- critical_change_expectations includes concrete search strings when present
+- JSON <50 KB; completes within 2 minutes
 
 **If the task is ambiguous**, return minimal artifact with clarification guidance:
 - task: "[UNCLEAR - needs clarification]"
@@ -122,10 +122,16 @@ Before proceeding with repository inspection, validate that the task is concrete
 - test_impact: []
 - suggested_allowlist: {agent_patterns:[], validation_patterns:[]}
 
-## [STRUCTURED SCHEMA DOCUMENTATION]
+**Success Criteria**:
+1. Task clearly restates request in concrete, actionable language
+2. Requirements list 3-8 specific, testable items
+3. relevant_files includes 5-20 files with clear rationales
+4. plan has 5-15 distinct coding steps (no "finish")
+5. test_impact identifies 80%+ of affected files
+6. critical_change_expectations includes concrete search strings when present
+7. JSON <50 KB; completes within 2 minutes
 
-Guidelines for test_impact:
-Test impact identifies files with test cases that assert on concrete implementation details (field names, value types, timing).
+## [TEST_IMPACT PATTERNS BY CHANGE TYPE]
 
 **1. Parser & Validation Changes**
 - Detection: parse, parser, regex, validation, input, null safety, type checking, sanitize, decode
@@ -158,32 +164,63 @@ Test impact identifies files with test cases that assert on concrete implementat
 - Multi-file coordination: one change requires updates in 3+ test files
 - Example: {"type":"added_assertion","pattern":"Config schema expansion","before":"config = loadConfig(); expect(config.timeout).toBeDefined()","after":"config = loadConfig(); expect(config.timeout).toBeGreaterThan(0); expect(config.maxRetries).toBeDefined()","description":"New required fields must be validated"}
 
+## [STRUCTURED SCHEMA DOCUMENTATION]
+
+**When to Include test_impact**:
+- ALWAYS include test_impact for code affecting parsing, validation, formatting, naming, events, serialization
+- Include concrete implementation details (field names, value types, timing)
+- Include constants, enum values affected by changes
+- Include required_search_strings for test file changes
+- Document exact assertion patterns expected to change
+- Include test files with concrete test_examples showing before/after
+
+**When test_impact Can Be Empty**:
+- Pure documentation updates (README, comments) with no code changes
+- Build configuration changes that don't affect runtime behavior
+- Dependency upgrades where public API is unchanged
+- File reorganization (move/rename) without behavioral changes
+- Infrastructure changes (Docker, CI/CD) unrelated to application code
+- In all other cases: provide at least 1 test_impact entry with concrete examples
+
+**test_examples Field Structure**:
+- **type**: "added_assertion", "modified_assertion", "added_test_case", or "added_pattern"
+- **before**: Current or expected-to-fail assertion code (1-2 lines max)
+- **after**: Corrected/new assertion code (1-2 lines max)
+- **pattern**: Short name (e.g., "Null-coalescing", "Event field presence")
+- **description**: 1-2 sentences explaining why change matters
+- Max 5 test_examples per file (focus on key patterns)
+
+**Examples of Strong test_impact Entries**:
+- Parser change: "null safety: expects().toThrow() → expects().toEqual(defaults())"
+- Event timing: "async delays: 10ms → 100ms timeout"
+- Serialization: "camelCase: status_code → statusCode"
+- Config fields: "new fields: add maxRetries and backoffMs"
+
+Guidelines for test_impact:
+Files with test cases that assert on concrete implementation details (field names, value types, timing).
+
 **before/after Field Structure**:
 - before: Current or expected-to-fail assertion code (1-2 lines max)
 - after: Corrected/new assertion code (1-2 lines max)
-- pattern: Short name describing the change
-- description: 1-2 sentences explaining impact
-
-## [STRONG TEST_IMPACT EXAMPLES]
 
 Parser change:
-  {"path":"tests/parser.test.ts","reason":"parseRole() now handles null with fallback","test_examples":[{"type":"added_assertion","pattern":"Null-coalescing","before":"expect(parseRole(null)).toThrow(NullReferenceError)","after":"expect(parseRole(null)).toEqual({name:'Unnamed',level:0})","description":"Null now treated as valid input with defaults"}]}
+  {"path": "tests/parser.test.ts", "reason": "parseRole() now handles null with fallback", "test_examples": [{"type": "added_assertion", "pattern": "Null-coalescing", "before": "expect(parseRole(null)).toThrow(NullReferenceError)", "after": "expect(parseRole(null)).toEqual({name:'Unnamed',level:0})", "description": "Null now treated as valid input with defaults"}]}
 
 Event change:
-  {"path":"tests/event-handler.test.ts","reason":"Event emission now async with new timing","test_examples":[{"type":"modified_assertion","pattern":"Async timing","before":"await eventPromise; // resolves within 10ms","after":"await eventPromise; // resolves within 100ms (now batched)","description":"Async batching adds latency; increase timeout"}]}
+  {"path": "tests/event-handler.test.ts", "reason": "Event emission now async with new timing", "test_examples": [{"type": "modified_assertion", "pattern": "Async timing", "before": "await eventPromise; // resolves within 10ms", "after": "await eventPromise; // resolves within 100ms (now batched)", "description": description": "Async batching adds latency; increase timeout"}]}
 
 Guidelines for critical_change_expectations:
-- Include critical_change_expectations if changes are concrete
-- required_files: ONLY list files needing edits; pre-verify each exists
-- required_search_strings: Use literal strings from git.diff
-- forbidden_empty_diff: true for changes, false for read-only/no-op tasks
-- Omit uncertain expectations; be conservative
+- Include critical_change_expectations when concrete expected changes are identifiable
+- required_files: List only paths that need modifications (pre-verify each file truly needs changes)
+- required_search_strings: Literal strings expected in git.diff (function name, config key, assertion text)
+- forbidden_empty_diff: Set to true for change requests; false for read-only inspection or verified no-op
+- Omit uncertain expectations: If unclear whether files need changes, omit the entire field
 
 Guidelines for suggested_allowlist:
-- agent_patterns: Files the agent will modify; can be empty if unclear
-- validation_patterns: Files validation commands will touch; can be empty
-- Both arrays can be empty if scope is uncertain
-- Prefer accurate scope over exhaustive coverage
+- agent_patterns: Glob patterns for files coding agent can modify (e.g., "src/**/*.ts", "tests/**")
+- validation_patterns: Glob patterns for files validation commands may modify (often same as agent_patterns)
+- Both arrays can be empty if task scope unclear; agent will work without constraints
+- Prefer accurate scope: Too-broad defeats purpose; too-narrow requires restoration
 
 ## [EXECUTION CONTEXT - Optimize for Efficiency]
 - Complete scouting within 2 minutes
