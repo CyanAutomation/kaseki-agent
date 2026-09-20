@@ -7162,6 +7162,18 @@ function collectAssistantText(message) {
 
 const valid = new Map();
 let lastValid;
+const streamedAssistantTexts = [];
+const considerAssistantText = (assistantText) => {
+  for (const snippet of collectJsonWithFallback(assistantText)) {
+    try {
+      const parsed = normalizeArtifact(JSON.parse(snippet));
+      if (schemaErrors(parsed).length === 0) {
+        valid.set(stableStringify(parsed), parsed);
+        lastValid = parsed;
+      }
+    } catch {}
+  }
+};
 const paths = fs.existsSync(rawPath) ? [rawPath] : [filteredPath];
 for (const path of paths) {
   let lines = [];
@@ -7178,25 +7190,28 @@ for (const path of paths) {
       if (typeof event?.text === "string") assistantTexts.push(event.text);
       if (typeof event?.content === "string") assistantTexts.push(event.content);
     }
+    // Some Pi transports expose the assistant response as text-delta events
+    // rather than a completed assistant message. Reassemble those deltas so
+    // markdown-wrapped JSON can use the same strict recovery path.
+    if (/text_delta|content_block_delta/i.test(eventType)) {
+      const deltaText = event?.text ?? event?.content ?? event?.delta?.text ?? event?.delta?.content;
+      if (typeof deltaText === "string") streamedAssistantTexts.push(deltaText);
+    }
     for (const assistantText of [...new Set(assistantTexts)]) {
-      for (const snippet of collectJsonWithFallback(assistantText)) {
-        try {
-          const parsed = normalizeArtifact(JSON.parse(snippet));
-          if (schemaErrors(parsed).length === 0) {
-            valid.set(stableStringify(parsed), parsed);
-            lastValid = parsed;
-          }
-        } catch {}
-      }
+      considerAssistantText(assistantText);
     }
   }
 }
+if (streamedAssistantTexts.length > 0) {
+  considerAssistantText(streamedAssistantTexts.join(""));
+}
 
 // A streamed response can repeat the same final object in a message delta and
-// completion event. Use the last valid assistant verdict, preserving the
-// evaluator final decision when an earlier assistant turn contained an
-// example or an intermediate verdict.
-if (valid.size > 0 && lastValid) {
+// completion event, but distinct valid verdicts are ambiguous. Only persist a
+// verdict when recovery found exactly one normalized object; otherwise the
+// contract-repair path must ask the evaluator for a single authoritative
+// response instead of silently choosing one.
+if (valid.size === 1 && lastValid) {
   fs.writeFileSync(candidatePath, JSON.stringify(lastValid, null, 2) + "\n");
 }
 ' "$GOAL_CHECK_CANDIDATE_ARTIFACT" "$GOAL_CHECK_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-check-events.jsonl "$attempt" 2>"${KASEKI_RESULTS_DIR}/goal-check-recovery-stderr.log"
