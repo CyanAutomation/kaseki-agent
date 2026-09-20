@@ -22,3 +22,70 @@ Reconcile the goal-setting artifact against repository facts before endorsing it
 For code behavior changes, include impacted tests in test_impact. For renames, parser/output changes, events, schemas, or API fields, include concrete test files and expected assertion patterns. For documentation-only changes, test_impact may be [].
 
 Keep JSON under 20 KB. Prefer accuracy over exhaustiveness.
+
+**Valid tasks** (proceed with scouting):
+- Fix null-safety in parseRole() function in src/lib/role.ts
+- Add TypeScript type annotations to src/config/loader.ts
+- Implement JWT authentication in src/auth/middleware.ts
+- Rename parseConfig to loadConfigFromFile across src/lib and tests
+
+**Ambiguous/Invalid tasks** (ask clarifying questions):
+- Make the code better → Too vague. Ask: Which file(s)? What specific improvement?
+- Fix bugs → No scope. Ask: Which bugs? Which files contain them?
+- Refactor everything → Scope unclear. Ask: Which components? Success metrics?
+
+**Success Criteria for Scouting**:
+- Task restates request in concrete actionable language
+- Requirements are specific and testable
+- Files clearly identified with rationales
+- Plan has 3-8 distinct coding steps
+- Risks documented if any
+
+**When to Include test_impact**:
+- ALWAYS include test_impact for code behavior changes
+- Include concrete implementation details (field names, value types, constants, enum values)
+- Include required_search_strings for test file changes
+- Document exact assertion patterns expected to change
+
+**When test_impact Can Be Empty**:
+- Pure documentation updates (README, comments) with no code changes
+- Build configuration changes that don't affect runtime behavior
+- Dependency upgrades where public API is unchanged
+- File reorganization (move/rename) without behavioral changes
+- Infrastructure changes (Docker, CI/CD) unrelated to application code
+- In all other cases: provide at least 1 test_impact entry with concrete examples
+
+**test_examples Field Structure**:
+- **type**: "added_assertion", "modified_assertion", "added_test_case", or "added_pattern"
+- **before**: Current/expected-to-fail assertion code (1-2 lines max)
+- **after**: Corrected/new assertion code (1-2 lines max)
+- **pattern**: Short name (e.g., "Null-coalescing", "Event field presence")
+- **description**: 1-2 sentences on why change matters
+- Max 5 test_examples per file (focus on key patterns)
+
+**Examples of Strong test_impact Entries**:
+- Parser change: "parseRole() now handles null with fallback; update assertions expecting NullReferenceError"
+- Event change: "Event emission now async; increase timeout from 10ms to 100ms for batched delivery"
+- Serialization change: "Response fields now camelCase; update field references from status_code"
+- Config change: "New required fields; add assertions for maxRetries and backoffMs alongside timeout"
+
+Guidelines for critical_change_expectations:
+- Include critical_change_expectations when concrete expected changes are identifiable
+- required_files: List only paths that need modifications (pre-verify each file truly needs changes)
+- required_search_strings: Literal strings expected in git.diff (function name, config key, assertion text)
+- forbidden_empty_diff: Set to true for change requests; false for read-only inspection or verified no-op
+- Omit uncertain expectations: If unclear whether files need changes, omit the entire field
+
+Guidelines for suggested_allowlist:
+- agent_patterns: Glob patterns for files coding agent can modify (e.g., "src/**/*.ts", "tests/**")
+- validation_patterns: Glob patterns for files validation commands may modify (often same as agent_patterns)
+- Both arrays can be empty if task scope unclear; agent will work without constraints
+- Prefer accurate scope: Too-broad defeats purpose; too-narrow requires restoration
+
+## [EXECUTION CONTEXT - Optimize for Efficiency]
+- Complete scouting within 2 minutes
+- Avoid deep recursion: no git log across large history, 1000+ file enumeration, slow regex
+- Use fast commands: find, grep, head (not cat for large files)
+- JSON size limit: 50 KB; prioritize important observations/files
+- Errors in inspection: Report in observations; proceed with limited scope
+- Do NOT fail entire phase for isolated file read errors; adapt and continue
