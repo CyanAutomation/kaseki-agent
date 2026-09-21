@@ -382,29 +382,38 @@ describe('Gateway Adapter Request Format', () => {
      * Test 5: Verify global.fetch requests are also normalized
      * Ensure backward compatibility with code using fetch
      */
-    it('should normalize multi-message array through global.fetch', () => {
-      const fetchUrl = 'https://gateway.example.com/v1/responses';
-      const fetchOptions = {
+    it('should normalize multi-message array through the fetch transport entry point', () => {
+      const messages = [
+        { role: 'system', content: 'You are helpful' },
+        { role: 'user', content: 'Hi' },
+      ];
+      const fetchRequest = {
+        url: 'https://gateway.example.com/v1/responses',
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           model: 'auto',
-          input: [
-            { role: 'system', content: 'You are helpful' },
-            { role: 'user', content: 'Hi' },
-          ],
+          input: messages,
+          max_output_tokens: 256,
+          metadata: { phase: 'validation' },
         }),
       };
 
-      // Should be normalized
-      const isResponsesEndpoint = fetchUrl.includes('/responses');
-      expect(isResponsesEndpoint).toBe(true);
+      const normalized = normalizeGatewayTransportRequest(fetchRequest);
+      const body = JSON.parse(normalized.body as string);
 
-      const parsed = JSON.parse(fetchOptions.body);
-      const isMultiMessage = Array.isArray(parsed.input) &&
-        parsed.input.every((item: any) => 'role' in item && 'content' in item);
-
-      expect(isMultiMessage).toBe(true);
+      expect(normalized).toMatchObject({
+        url: fetchRequest.url,
+        method: fetchRequest.method,
+        headers: fetchRequest.headers,
+      });
+      expect(body).toEqual({
+        model: 'auto',
+        messages,
+        max_output_tokens: 256,
+        metadata: { phase: 'validation' },
+      });
+      expect(body).not.toHaveProperty('input');
     });
 
     /**
