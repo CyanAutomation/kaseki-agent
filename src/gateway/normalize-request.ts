@@ -42,10 +42,17 @@ export function normalizeGatewayTransportRequest<T extends GatewayTransportReque
 ): GatewayTransportRequest {
   if (!/\/responses(?:[/?#]|$)/.test(request.url)) return request;
 
-  if (typeof request.body === 'string') {
+  if (typeof request.body === 'string' || Buffer.isBuffer(request.body)) {
     try {
-      const body = JSON.parse(request.body) as GatewayRequest;
-      return { ...request, body: JSON.stringify(normalizeGatewayRequest(body)) };
+      const body = JSON.parse(request.body.toString()) as GatewayRequest;
+      const normalizedBody = JSON.stringify(normalizeGatewayRequest(body));
+
+      return {
+        ...request,
+        body: Buffer.isBuffer(request.body)
+          ? Buffer.from(normalizedBody, 'utf8')
+          : normalizedBody,
+      };
     } catch {
       return request;
     }
