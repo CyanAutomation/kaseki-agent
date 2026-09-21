@@ -6,7 +6,7 @@ max_attempts="${TREE_SITTER_CLI_INSTALL_MAX_ATTEMPTS:-3}"
 attempt=1
 
 cleanup_install() {
-  rm -rf "$(npm root -g)/tree-sitter-cli" "$(npm prefix -g)/bin/tree-sitter"
+  rm -rf "$(npm root -g 2>/dev/null || true)/tree-sitter-cli" "$(npm prefix -g 2>/dev/null || true)/bin/tree-sitter" || true
 }
 
 while [ "$attempt" -le "$max_attempts" ]; do
