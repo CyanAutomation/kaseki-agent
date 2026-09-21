@@ -12,7 +12,13 @@ validation_timeout_or_default() {
   fi
 }
 
-validation_timeout_for_command() {
+TIMEOUT_SECONDS="${1:-60}"
+
+# Validate TIMEOUT_SECONDS is a positive integer
+if ! [[ "$TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || [[ "$TIMEOUT_SECONDS" -le 0 ]]; then
+    echo "ERROR: TIMEOUT_SECONDS must be a positive integer, got: $TIMEOUT_SECONDS"
+    exit 1
+fi
   local command="$1"
   local timeout_value
   local default_value
