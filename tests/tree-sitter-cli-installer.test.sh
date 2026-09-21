@@ -9,8 +9,14 @@ mkdir -p "$TMP_DIR/bin" "$TMP_DIR/npm-root" "$TMP_DIR/npm-prefix/bin"
 cat >"$TMP_DIR/bin/npm" <<'FAKE_NPM'
 #!/bin/sh
 case "$1 $2" in
-  "root -g") printf '%s\n' "$FAKE_NPM_ROOT" ;;
-  "prefix -g") printf '%s\n' "$FAKE_NPM_PREFIX" ;;
+  "root -g")
+    [ "${FAKE_NPM_LOOKUP_FAIL:-0}" = 0 ] || exit 1
+    printf '%s\n' "$FAKE_NPM_ROOT"
+    ;;
+  "prefix -g")
+    [ "${FAKE_NPM_LOOKUP_FAIL:-0}" = 0 ] || exit 1
+    printf '%s\n' "$FAKE_NPM_PREFIX"
+    ;;
   "install -g")
     attempt="$(cat "$FAKE_NPM_ATTEMPTS" 2>/dev/null || printf 0)"
     attempt=$((attempt + 1))
@@ -38,6 +44,14 @@ export FAKE_NPM_SUCCEED_ON=2
 test "$(cat "$FAKE_NPM_ATTEMPTS")" = 2
 test "$(wc -l < "$FAKE_NPM_LOG")" = 2
 grep -Fxq 'install -g --no-audit tree-sitter-cli@0.25.10' "$FAKE_NPM_LOG"
+
+printf '0\n' >"$FAKE_NPM_ATTEMPTS"
+: >"$FAKE_NPM_LOG"
+export FAKE_NPM_LOOKUP_FAIL=1
+export FAKE_NPM_SUCCEED_ON=1
+"$ROOT_DIR/docker/install-tree-sitter-cli.sh" 0.25.10
+test "$(cat "$FAKE_NPM_ATTEMPTS")" = 1
+unset FAKE_NPM_LOOKUP_FAIL
 
 printf '0\n' >"$FAKE_NPM_ATTEMPTS"
 : >"$FAKE_NPM_LOG"
