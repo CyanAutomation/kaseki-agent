@@ -5,6 +5,11 @@ validation_timeout_or_default() {
   local value="$1"
   local default_value="$2"
 
+  if ! [[ "$default_value" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'ERROR: validation timeout default must be a positive integer, got: %s\n' "$default_value" >&2
+    return 2
+  fi
+
   if [[ "$value" =~ ^[1-9][0-9]*$ ]]; then
     printf '%s\n' "$value"
   else
@@ -12,13 +17,7 @@ validation_timeout_or_default() {
   fi
 }
 
-TIMEOUT_SECONDS="${1:-60}"
-
-# Validate TIMEOUT_SECONDS is a positive integer
-if ! [[ "$TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || [[ "$TIMEOUT_SECONDS" -le 0 ]]; then
-    echo "ERROR: TIMEOUT_SECONDS must be a positive integer, got: $TIMEOUT_SECONDS"
-    exit 1
-fi
+validation_timeout_for_command() {
   local command="$1"
   local timeout_value
   local default_value
