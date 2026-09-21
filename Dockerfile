@@ -300,9 +300,9 @@ COPY --from=runtime /usr/local/bin/tree-sitter /usr/local/bin/tree-sitter
 COPY --from=runtime /opt/kaseki/pi-extensions /opt/kaseki/pi-extensions
 COPY --from=runtime /opt/kaseki/workspace-cache/default/node_modules /opt/kaseki/workspace-cache/default/node_modules
 
-# Verify the packaged CLI is present in the image actually built by default.
-RUN test -x /usr/local/bin/tree-sitter \
-    && tree-sitter --version
+# Verify the packaged CLI is present and executable without running an
+# architecture-specific binary while Buildx is emulating another platform.
+RUN test -x /usr/local/bin/tree-sitter
 
 # Copy application files (excluding build artifacts)
 WORKDIR /app
