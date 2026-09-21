@@ -4,6 +4,15 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.140.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.140.4...v1.140.5) (2026-09-21)
+
+
+### Bug Fixes
+
+* allow ESLint config in Docker context ([b076426](https://github.com/CyanAutomation/kaseki-agent/commit/b0764265035486cd1f4588166c63f45360808b18))
+* copy ESLint config into Docker runtime ([66cb438](https://github.com/CyanAutomation/kaseki-agent/commit/66cb438977c718ad0dc9c9015258162e271cc80a))
+* copy ESLint config into Docker runtime ([#1361](https://github.com/CyanAutomation/kaseki-agent/issues/1361)) ([46fc993](https://github.com/CyanAutomation/kaseki-agent/commit/46fc993cd18d8d1855133922d9d8ff5a9ee00fe8))
+
 ## [1.140.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.140.3...v1.140.4) (2026-09-21)
 
 
