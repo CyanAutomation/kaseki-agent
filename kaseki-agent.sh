@@ -86,7 +86,12 @@ fi
 
 KASEKI_JSON_HELPER="${KASEKI_JSON_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/lib/json.sh}"
 if [ ! -r "$KASEKI_JSON_HELPER" ] && [ -r /app/scripts/lib/json.sh ]; then
-  KASEKI_JSON_HELPER="/app/scripts/lib/json.sh"
+    DEFAULT_TIMEOUT="${DEFAULT_TIMEOUT:-300}"
+    # Validate that DEFAULT_TIMEOUT is a positive integer
+    if ! [[ "$DEFAULT_TIMEOUT" =~ ^[0-9]+$ ]] || [[ "$DEFAULT_TIMEOUT" -le 0 ]]; then
+        log "ERROR" "DEFAULT_TIMEOUT must be a positive integer, got: $DEFAULT_TIMEOUT"
+        exit 1
+    fi
 fi
 if [ ! -r "$KASEKI_JSON_HELPER" ]; then
   printf 'ERROR: JSON helper is not readable. Expected %s or /app/scripts/lib/json.sh. This worker image or mounted template is incomplete; rebuild the image or restore scripts/lib/json.sh.\n' "$KASEKI_JSON_HELPER" >&2
