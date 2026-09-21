@@ -75,6 +75,10 @@ For the gateway path, worker preflight checks verify gateway URL/key configurati
 | `KASEKI_CLASSIFICATION_MODEL` | `~typesafe/jev-latest` | string | JEV/OpenRouter model used by classification smoke tests and task admission. |
 | `KASEKI_TASK_ADMISSION_TIMEOUT_MS` | `5000` | integer | Maximum time allowed for the task admission classifier request. Operational failures fail open. |
 | `KASEKI_TASK_ADMISSION_CONFIDENCE` | `0.8` | number | Minimum classifier confidence required before an unsafe answer can reject a task. |
+| `KASEKI_JEV_WORKFLOW` | `1` | boolean | Use the JEV classifier for structured goal-check and run-evaluation decisions. Set to `0` to retain the Pi/LLM evaluators. |
+| `KASEKI_JEV_CONFIDENCE` | `0.8` | number | Minimum JEV confidence used when accepting workflow classifications. The model remains `~typesafe/jev-latest` by default. |
+| `KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS` | `5000` | integer | Timeout for the JEV goal-check classification request. |
+| `KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS` | `5000` | integer | Timeout for the JEV run-evaluation classification request. |
 | `KASEKI_API_URL` | `http://localhost:8080/api` | string | Client-side base URL used by npm API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
 | `KASEKI_API_KEY` | — | string | Client-side bearer token for authenticated Kaseki API services |
 | `KASEKI_API_KEYS` | `/agents/secrets/kaseki_api_keys`, `~/secrets/kaseki_api_keys` | string | Newline-separated API keys accepted by the Kaseki service |
