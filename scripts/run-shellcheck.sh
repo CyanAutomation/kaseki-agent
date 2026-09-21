@@ -10,7 +10,6 @@ if ! command -v shellcheck >/dev/null 2>&1; then
 fi
 
 production_files=(
-  kaseki-agent.sh
   run-kaseki.sh
   test-artifact-recovery.sh
   scripts/*.sh
@@ -21,6 +20,12 @@ test_files=()
 while IFS= read -r -d '' file; do
   test_files+=("$file")
 done < <(find test tests -type f \( -name '*.sh' -o -name '*.bash' -o -name '*.bats' \) -print0 | sort -z)
+
+# kaseki-agent.sh is a 10k-line orchestration entrypoint. ShellCheck's whole-file
+# analysis grows superlinearly for this script and can consume gigabytes of RAM
+# before being terminated by CI. Keep a syntax check for it here while the
+# independently maintained helpers receive the full ShellCheck pass below.
+bash -n kaseki-agent.sh
 
 shellcheck -x -P . -P scripts -P scripts/lib "${production_files[@]}"
 
