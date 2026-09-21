@@ -38,6 +38,14 @@ grep -Fq 'KASEKI_IMAGE' "$VALIDATION_SUITE" \
 grep -Fq 'KASEKI_IMAGE' "$TREE_SITTER_SUITE" \
   || fail 'Tree-sitter suite must support a provided KASEKI_IMAGE'
 
+# Long-running validation must continue emitting output so a CI inactivity
+# watchdog does not terminate the surrounding integration job.
+grep -Fq 'npm run check 2>&1 | tee "$CHECK_OUTPUT_FILE"' "$VALIDATION_SUITE" \
+  || fail 'Validation suite must stream npm run check output to the CI log'
+if grep -Fq 'CHECK_OUTPUT="$(npm run check 2>&1)"' "$VALIDATION_SUITE"; then
+  fail 'Validation suite must not suppress npm run check output in a command substitution'
+fi
+
 node - "$PACKAGE_JSON" <<'NODE'
 const fs = require('node:fs');
 const packageJson = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
