@@ -296,8 +296,13 @@ ENV HOME=/tmp/kaseki-home \
 # Copy runtime essentials from runtime stage (skip test/, docs/, src/)
 COPY --from=runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=runtime /usr/local/bin/pi /usr/local/bin/pi
+COPY --from=runtime /usr/local/bin/tree-sitter /usr/local/bin/tree-sitter
 COPY --from=runtime /opt/kaseki/pi-extensions /opt/kaseki/pi-extensions
 COPY --from=runtime /opt/kaseki/workspace-cache/default/node_modules /opt/kaseki/workspace-cache/default/node_modules
+
+# Verify the packaged CLI is present in the image actually built by default.
+RUN test -x /usr/local/bin/tree-sitter \
+    && tree-sitter --version
 
 # Copy application files (excluding build artifacts)
 WORKDIR /app
