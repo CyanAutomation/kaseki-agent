@@ -45,6 +45,9 @@ grep -Fq 'npm run check 2>&1 | tee "$CHECK_OUTPUT_FILE"' "$VALIDATION_SUITE" \
 if grep -Fq 'CHECK_OUTPUT="$(npm run check 2>&1)"' "$VALIDATION_SUITE"; then
   fail 'Validation suite must not suppress npm run check output in a command substitution'
 fi
+# The validation program is a heredoc, so Docker must keep stdin open for Bash.
+grep -Fq 'docker run --rm -i --workdir /app --entrypoint /bin/bash "$VALIDATION_TEST_IMAGE" -s' "$VALIDATION_SUITE" \
+  || fail 'Validation suite must attach stdin when executing its heredoc'
 
 node - "$PACKAGE_JSON" <<'NODE'
 const fs = require('node:fs');
