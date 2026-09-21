@@ -58,18 +58,19 @@ cat > "$FAKE_BIN/pi" <<'EOF_PI' || fail "failed to write fake pi executable"
 set -e
 if [ "${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
 prompt="${*: -1}"
-if printf '%s' "$prompt" | grep -q 'goal-setting Pi agent'; then
+if printf '%s' "$prompt" | grep -Fq 'You are a goal-setting Pi agent'; then
   printf 'goal-setting\n' >> "$PI_CALLS"
   printf '%s\n' '{"original_prompt":"inspect then code","upgraded_goal":"Upgraded: inspect then code","reasoning":"test","key_requirements":[],"success_criteria":[]}' > "$RESULTS_DIR/goal-setting-candidate.json"
-elif printf '%s' "$prompt" | grep -q 'read-only scouting Pi agent'; then
+elif printf '%s' "$prompt" | grep -Fq 'You are a read-only scouting Pi agent'; then
   printf 'scouting\n' >> "$PI_CALLS"
   printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[]}' > "$RESULTS_DIR/scouting-candidate.json"
-elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
+elif printf '%s' "$prompt" | grep -Fq 'You are a read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "$PI_CALLS"
   # MARKDOWN WRAPPED JSON: Simulates model wrapping JSON in code fences
   # This is the key test case: extraction must handle this pattern
-  mkdir -p "$(dirname "$RESULTS_DIR/goal-check-events.jsonl")"
-  cat <<'EOF_VERDICT' > "$RESULTS_DIR/goal-check-events.jsonl"
+  # Emit the provider event stream on stdout; this is what run_pi_json_capture
+  # persists and what the controller's recovery logic parses.
+  cat <<'EOF_VERDICT'
 {"type":"message_start","role":"assistant"}
 {"type":"text_delta","text":"Let me analyze this carefully:"}
 {"type":"text_delta","text":"\n\n\`\`\`json"}
@@ -77,6 +78,8 @@ elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
 {"type":"text_delta","text":"\n\`\`\`"}
 EOF_VERDICT
 else
+  # The fixture also handles the normal coding phase. The phase-order
+  # assertion below ensures goal-setting and scouting are not misclassified.
   printf 'coding\n' >> "$PI_CALLS"
   printf '%s' "$prompt" > "$RESULTS_DIR/coding-prompt.txt"
 fi
@@ -113,7 +116,7 @@ cat
 EOF_VALIDATION_FILTER
 chmod +x "$FAKE_BIN/validation-output-filter"
 
-env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspect then code" KASEKI_PROVIDER=openrouter \
+env PATH="$FAKE_BIN:$PATH" PI_CALLS="$PI_CALLS" RESULTS_DIR="$RESULTS_DIR" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspect then code" KASEKI_PROVIDER=openrouter \
   OPENROUTER_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off KASEKI_GOAL_CHECK_MAX_RETRIES=0 \
   KASEKI_JEV_WORKFLOW=0 \
   KASEKI_WORKSPACE_DIR="$TMP_DIR" \
@@ -124,24 +127,20 @@ run_exit=$?
 
 [ "$run_exit" -eq 0 ] || fail "expected success with markdown-wrapped JSON, got exit $run_exit"
 
-# Verify goal-check-candidate.json was created (JSON extraction succeeded)
-[ -f "$RESULTS_DIR/goal-check-candidate.json" ] || fail "goal-check-candidate.json not found (JSON extraction failed)"
+# Verify the fake provider recognized the current pre-goal-check prompts rather
+# than falling through before the markdown extraction path was exercised.
+expected_phases=$'goal-setting\nscouting\ncoding\ngoal-check'
+actual_phases="$(head -4 "$PI_CALLS" 2>/dev/null || true)"
+[ "$actual_phases" = "$expected_phases" ] || fail "unexpected fake Pi phase order: $(printf '%q' "$actual_phases")"
 
-# Verify the extracted JSON has correct structure
-node - "$RESULTS_DIR/goal-check-candidate.json" <<'NODE' || fail "extracted JSON has incorrect structure"
-const verdict = require(process.argv[2]);
-if (verdict.met !== true) throw new Error('met should be true, got ' + verdict.met);
-if (verdict.confidence !== 'high') throw new Error('confidence should be high, got ' + verdict.confidence);
-if (!Array.isArray(verdict.evidence)) throw new Error('evidence must be array');
-if (!Array.isArray(verdict.missing)) throw new Error('missing must be array');
-NODE
-
-# Verify the final goal-check.json was created with correct verdict
+# Verify the extracted JSON was validated and persisted as the durable artifact.
 [ -f "$RESULTS_DIR/goal-check.json" ] || fail "goal-check.json not found"
 node - "$RESULTS_DIR/goal-check.json" <<'NODE' || fail "final goal-check verdict is invalid"
 const verdict = require(process.argv[2]);
 if (verdict.met !== true) throw new Error('final verdict met should be true');
 if (verdict.confidence !== 'high') throw new Error('final verdict confidence should be high');
+if (!Array.isArray(verdict.evidence)) throw new Error('evidence must be array');
+if (!Array.isArray(verdict.missing)) throw new Error('missing must be array');
 NODE
 
 echo "PASS: $TEST_NAME"
