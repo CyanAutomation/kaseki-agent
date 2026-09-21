@@ -71,12 +71,16 @@ done
 
 tsc --version
 
+# Stream the check output to the CI log. Capturing it in a command substitution
+# leaves long-running type-check or lint runs silent, which lets CI inactivity
+# watchdogs cancel the enclosing Docker integration job.
+CHECK_OUTPUT_FILE="$(mktemp)"
+trap 'rm -f "$CHECK_OUTPUT_FILE"' EXIT
 set +e
-CHECK_OUTPUT="$(npm run check 2>&1)"
-CHECK_EXIT=$?
+npm run check 2>&1 | tee "$CHECK_OUTPUT_FILE"
+CHECK_EXIT="${PIPESTATUS[0]}"
 set -e
 
-printf '%s\n' "$CHECK_OUTPUT"
 printf 'npm run check exit code: %s\n' "$CHECK_EXIT"
 
 case "$CHECK_EXIT" in
@@ -88,11 +92,11 @@ case "$CHECK_EXIT" in
     # validation findings. These are acceptable only when npm output proves the
     # validation commands actually launched; silent warnings, missing binaries,
     # or SIGPIPE-style truncation are not acceptable.
-    if ! printf '%s\n' "$CHECK_OUTPUT" | grep -Eq '(tsc --noEmit|eslint[[:space:]].*src/)'; then
+    if ! grep -Eq '(tsc --noEmit|eslint[[:space:]].*src/)' "$CHECK_OUTPUT_FILE"; then
       printf 'FAIL: npm run check exited %s without evidence that tsc or eslint launched.\n' "$CHECK_EXIT" >&2
       exit 1
     fi
-    if printf '%s\n' "$CHECK_OUTPUT" | grep -Eqi '(not found|command not found|missing script)'; then
+    if grep -Eqi '(not found|command not found|missing script)' "$CHECK_OUTPUT_FILE"; then
       printf 'FAIL: npm run check exited %s because validation tooling did not launch cleanly.\n' "$CHECK_EXIT" >&2
       exit 1
     fi
