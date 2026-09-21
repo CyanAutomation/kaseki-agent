@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.139.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.139.0...v1.139.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* update Dockerfile and tests to ensure tree-sitter CLI validation without execution during multi-architecture emulation ([f91dff7](https://github.com/CyanAutomation/kaseki-agent/commit/f91dff732888056e36237c15fc6bb31e0a0f30ee))
+
 # [1.139.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.138.0...v1.139.0) (2026-09-21)
 
 
