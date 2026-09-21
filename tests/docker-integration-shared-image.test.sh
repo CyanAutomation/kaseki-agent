@@ -48,6 +48,8 @@ fi
 # The validation program is a heredoc, so Docker must keep stdin open for Bash.
 grep -Fq 'docker run --rm -i --workdir /app --entrypoint /bin/bash "$VALIDATION_TEST_IMAGE" -s' "$VALIDATION_SUITE" \
   || fail 'Validation suite must attach stdin when executing its heredoc'
+grep -Fq '/app/node_modules/.bin/tsc --version' "$VALIDATION_SUITE" \
+  || fail 'Validation suite must invoke the packaged TypeScript executable by path'
 
 node - "$PACKAGE_JSON" <<'NODE'
 const fs = require('node:fs');
