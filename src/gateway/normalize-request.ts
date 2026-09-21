@@ -2,6 +2,12 @@ export type GatewayRequest = Record<string, unknown> & {
   input?: unknown;
 };
 
+export type GatewayTransportRequest = Record<string, unknown> & {
+  url: string;
+  body?: unknown;
+  headers?: unknown;
+};
+
 /**
  * Normalize the semantic request body before a gateway transport serializes it.
  * Conversation-shaped input is sent as `messages`; every other input format is
@@ -24,4 +30,30 @@ export function normalizeGatewayRequest<T extends GatewayRequest>(request: T): G
   }
 
   return { ...rest, input };
+}
+
+/**
+ * Apply request-body normalization at the transport boundary. Requests for
+ * other gateway endpoints must pass through without changing their transport
+ * arguments, even when their body happens to resemble a Responses payload.
+ */
+export function normalizeGatewayTransportRequest<T extends GatewayTransportRequest>(
+  request: T
+): GatewayTransportRequest {
+  if (!/\/responses(?:[/?#]|$)/.test(request.url)) return request;
+
+  if (typeof request.body === 'string') {
+    try {
+      const body = JSON.parse(request.body) as GatewayRequest;
+      return { ...request, body: JSON.stringify(normalizeGatewayRequest(body)) };
+    } catch {
+      return request;
+    }
+  }
+
+  if (request.body && typeof request.body === 'object') {
+    return { ...request, body: normalizeGatewayRequest(request.body as GatewayRequest) };
+  }
+
+  return request;
 }
