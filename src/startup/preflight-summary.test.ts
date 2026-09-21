@@ -42,15 +42,41 @@ describe('Preflight Summary', () => {
       expect(summary.issues.length).toBe(1);
     });
 
-    it('should include timing in summary', () => {
+    it('should preserve the response-shape contract', () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-01-02T03:04:05.678Z'));
+
       const checks: PreflightCheck[] = [
-        { name: 'check1', ok: true, detail: 'Pass', elapsedMs: 25 },
+        {
+          name: 'git-safe-directory',
+          ok: false,
+          detail: 'Not configured',
+          remediation: 'Configure safe.directory',
+        },
       ];
 
-      const summary = generatePreflightSummary(checks);
-
-      expect(summary.timestamp).toBeDefined();
-      expect(summary).toHaveProperty('checks');
+      try {
+        expect(generatePreflightSummary(checks)).toEqual({
+          timestamp: '2026-01-02T03:04:05.678Z',
+          status: 'degraded',
+          checks: {
+            passed: 0,
+            warnings: 1,
+          },
+          issues: [
+            {
+              severity: 'warning',
+              component: 'git-safe-directory',
+              detail: 'Not configured',
+              remediation: 'Configure safe.directory',
+              autoFixable: true,
+              timestamp: '2026-01-02T03:04:05.678Z',
+            },
+          ],
+        });
+      } finally {
+        jest.useRealTimers();
+      }
     });
   });
 
