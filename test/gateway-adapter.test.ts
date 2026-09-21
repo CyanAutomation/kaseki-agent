@@ -1,4 +1,7 @@
-import { normalizeGatewayRequest } from '../src/gateway/normalize-request';
+import {
+  normalizeGatewayRequest,
+  normalizeGatewayTransportRequest,
+} from '../src/gateway/normalize-request';
 
 /**
  * Gateway Adapter Request Format Tests (TDD)
@@ -408,8 +411,23 @@ describe('Gateway Adapter Request Format', () => {
      * Test 6: Verify fetch to non-/responses endpoints skip normalization
      */
     it('should skip fetch normalization for non-/responses URLs', () => {
-      const healthCheckUrl = 'https://gateway.example.com/v1/health';
-      expect(healthCheckUrl.includes('/responses')).toBe(false);
+      const request = {
+        url: 'https://gateway.example.com/v1/health',
+        headers: { 'content-type': 'application/json', 'x-request-id': 'health-check' },
+        body: JSON.stringify({
+          model: 'auto',
+          input: [
+            { role: 'system', content: 'You are helpful' },
+            { role: 'user', content: 'Hi' },
+          ],
+        }),
+      };
+
+      const normalized = normalizeGatewayTransportRequest(request);
+
+      expect(normalized.url).toBe(request.url);
+      expect(normalized.body).toBe(request.body);
+      expect(normalized.headers).toBe(request.headers);
     });
 
     /**
