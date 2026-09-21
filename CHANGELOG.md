@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.140.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.139.1...v1.140.0) (2026-09-21)
+
+
+### Features
+
+* enhance Docker integration testing with shared image support and diagnostics ([93e9392](https://github.com/CyanAutomation/kaseki-agent/commit/93e93924094a62df5ed9a71c5cd422e71ecf32a2))
+
 ## [1.139.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.139.0...v1.139.1) (2026-09-21)
 
 
