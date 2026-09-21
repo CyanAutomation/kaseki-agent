@@ -120,7 +120,27 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.sha }}
       - run: npm ci
+      - run: bash tests/docker-integration-shared-image.test.sh
       - run: npm run test:integration:docker
+      - name: Diagnose Docker integration failure
+        if: failure()
+        run: |
+          set +e
+          echo '--- runner memory ---'
+          free -h
+          echo '--- runner disk ---'
+          df -h
+          echo '--- Docker disk usage ---'
+          docker system df
+          echo '--- Docker containers ---'
+          docker ps -a
+          echo '--- cgroup memory ---'
+          for file in /sys/fs/cgroup/memory.events /sys/fs/cgroup/memory.current /sys/fs/cgroup/memory.max; do
+            if [ -r "$file" ]; then
+              echo "[$file]"
+              cat "$file"
+            fi
+          done
 
   build_candidate:
     needs: [prepare, checks, type_check_full, docker_integration]

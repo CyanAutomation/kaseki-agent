@@ -86,7 +86,7 @@
     "test:pack-artifact": "bash scripts/check-packed-artifact.sh",
     "type-check:type-tests": "tsc -p tsconfig.type-tests.json",
     "test:tree-sitter:environment-probe": "bash scripts/run-tree-sitter-environment-probe.sh",
-    "test:integration:docker": "RUN_DOCKER_INTEGRATION_TESTS=1 bash tests/integration/docker/startup-check-packaging.integration.test.sh && RUN_DOCKER_INTEGRATION_TESTS=1 bash tests/integration/docker/validation-tools.integration.test.sh && RUN_DOCKER_INTEGRATION_TESTS=1 bash tests/integration/docker/tree-sitter-cli-packaging.integration.test.sh",
+    "test:integration:docker": "RUN_DOCKER_INTEGRATION_TESTS=1 bash tests/integration/docker/run-all.integration.test.sh",
     "test:packaging-verification": "npm run build && bash tests/dockerfile-tree-sitter-cli-contract.test.sh && bash tests/tree-sitter-cli-installer.test.sh && bash tests/startup-check-packaging.test.sh && bash tests/packaging-layout.test.sh && bash tests/dist-import-smoke.test.sh && npm run test:pack-artifact && npm pack --dry-run && node dist/cli.js --version && node dist/cli.js --help && node dist/cli.js doctor --help && node dist/cli.js run --help && node dist/cli.js list --help && node dist/cli.js report --help && node dist/cli.js status --help && node dist/cli.js cancel --help && npm run check:dist-dynamic-imports",
     "test:integration:cloudflare-gateway": "CLOUDFLARE_GATEWAY_TEST=1 node scripts/cloudflare-gateway-live-probe.mjs",
     "test:stress:validation-output": "npm run build && RUN_VALIDATION_OUTPUT_STRESS_TESTS=1 bash tests/stress/validation-large-output-stress.test.sh",

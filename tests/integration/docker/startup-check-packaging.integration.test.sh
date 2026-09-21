@@ -22,8 +22,13 @@ if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
   exit 78
 fi
 
-printf 'Building Docker image for startup-check packaging verification...\n'
-docker build -t "$IMAGE_TAG" .
+if [ -n "${KASEKI_IMAGE:-}" ]; then
+  IMAGE_TAG="$KASEKI_IMAGE"
+  printf 'Using provided KASEKI_IMAGE: %s\n' "$IMAGE_TAG"
+else
+  printf 'Building Docker image for startup-check packaging verification...\n'
+  docker build -t "$IMAGE_TAG" .
+fi
 
 printf 'Checking the worker resolves installed helpers from the final image...\n'
 HELPER_RESOLUTION_OUTPUT="$({
