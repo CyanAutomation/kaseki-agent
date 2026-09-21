@@ -48,4 +48,13 @@ negative build timeout uses default|next build|45|-1|900
 fractional general timeout uses default|npm run test|2.5|1200|300
 CASES
 
+if invalid_default_output="$(validation_timeout_or_default 45 invalid 2>&1)"; then
+  echo 'FAIL: invalid fallback timeout was accepted' >&2
+  exit 1
+fi
+[ "$invalid_default_output" = 'ERROR: validation timeout default must be a positive integer, got: invalid' ] || {
+  printf 'FAIL: unexpected invalid fallback diagnostic: %s\n' "$invalid_default_output" >&2
+  exit 1
+}
+
 echo '✓ validation timeout policy covers build and ordinary commands, defaults, and invalid values'
