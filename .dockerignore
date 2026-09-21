@@ -11,6 +11,7 @@
 !package-lock.json
 !tsconfig.json
 !tsconfig.scripts.json
+!eslint.config.js
 !jest.config.js
 !src/
 !src/**

@@ -54,6 +54,8 @@ grep -Fq 'for required_file in /app/tsconfig.json /app/eslint.config.js; do' "$V
   || fail 'Validation suite must require its TypeScript and ESLint inputs'
 grep -Fq 'COPY --from=runtime /app/package.json /app/package-lock.json /app/tsconfig.json /app/eslint.config.js /app/' "$ROOT_DIR/Dockerfile" \
   || fail 'Final image must package TypeScript and ESLint configuration'
+grep -Fq 'COPY package.json package-lock.json tsconfig.json tsconfig.scripts.json eslint.config.js ./' "$ROOT_DIR/Dockerfile" \
+  || fail 'Runtime image must receive ESLint configuration before the final stage copies it'
 grep -Fq 'COPY --from=runtime /app/src ./src' "$ROOT_DIR/Dockerfile" \
   || fail 'Final image must package TypeScript source files for validation'
 
