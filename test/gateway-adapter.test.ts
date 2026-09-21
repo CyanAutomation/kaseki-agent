@@ -253,82 +253,34 @@ describe('Gateway Adapter Request Format', () => {
      * 2. Call with nested structure {input: [{role, content}]}
      * 3. Verify normalization happens before undici sees it
      */
-    it('should normalize multi-message array through undici.request', () => {
-      // Simulating what Pi CLI sends to undici
-      const undiciBrowserRequest = {
+    it.each([
+      ['string', (payload: object) => JSON.stringify(payload)],
+      ['Buffer', (payload: object) => Buffer.from(JSON.stringify(payload), 'utf8')],
+    ])('should normalize multi-message array from an undici %s body', (_representation, createBody) => {
+      const messages = [
+        { role: 'system', content: 'You are a helpful assistant' },
+        { role: 'user', content: 'Hello' },
+      ];
+      const body = createBody({
+        model: 'auto',
+        input: messages,
+      });
+      const undiciRequest = {
+        url: 'https://gateway.example.com/v1/responses',
         path: '/v1/responses',
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model: 'auto',
-          input: [
-            { role: 'system', content: 'You are a helpful assistant' },
-            { role: 'user', content: 'Hello' },
-          ],
-        }),
+        body,
       };
 
-      // Parse body to simulate what normalization wrapper sees
-      const parsedBody = JSON.parse(undiciBrowserRequest.body);
+      const normalized = normalizeGatewayTransportRequest(undiciRequest);
+      const normalizedPayload = JSON.parse(normalized.body!.toString());
 
-      // Check if it's multi-message (this should be detected)
-      const isMultiMessage = Array.isArray(parsedBody.input) &&
-        parsedBody.input.length > 0 &&
-        parsedBody.input.every((item: any) =>
-          typeof item === 'object' &&
-          'role' in item &&
-          'content' in item
-        );
-
-      expect(isMultiMessage).toBe(true);
-
-      // After normalization, body should have messages field instead
-      const normalizedBody = isMultiMessage
-        ? {
-          model: 'auto',
-          messages: parsedBody.input,
-        }
-        : parsedBody;
-
-      expect(normalizedBody.messages).toBeDefined();
-      expect(normalizedBody.messages).toHaveLength(2);
-      expect(normalizedBody.input).toBeUndefined();
-    });
-
-    /**
-     * Test 2: Verify undici request body normalization with Buffer
-     * Undici can pass body as Buffer, not just string
-     */
-    it('should handle undici request body as Buffer', () => {
-      const multiMessagePayload = {
+      expect(normalizedPayload).toEqual({
         model: 'auto',
-        input: [
-          { role: 'system', content: 'You are helpful' },
-          { role: 'user', content: 'Test message' },
-        ],
-      };
-
-      // Simulate undici receiving body as Buffer (common case)
-      const bodyBuffer = Buffer.from(JSON.stringify(multiMessagePayload), 'utf8');
-      const bodyStr = bodyBuffer.toString('utf8');
-      const parsed = JSON.parse(bodyStr);
-
-      const isMultiMessage = Array.isArray(parsed.input) &&
-        parsed.input.length > 0 &&
-        parsed.input.every((item: any) =>
-          typeof item === 'object' &&
-          'role' in item &&
-          'content' in item
-        );
-
-      expect(isMultiMessage).toBe(true);
-
-      const normalized = isMultiMessage
-        ? { model: 'auto', messages: parsed.input }
-        : parsed;
-
-      expect(normalized.messages).toBeDefined();
-      expect(normalized.input).toBeUndefined();
+        messages,
+      });
+      expect(normalizedPayload).not.toHaveProperty('input');
     });
 
     /**
