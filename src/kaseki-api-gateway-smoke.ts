@@ -26,6 +26,7 @@ import {
 } from './gateway-validation/gateway-response-smoke-checks';
 import { resolveOpenRouterApiKey } from './gateway-detection/resolve-openrouter-api-key';
 import { validateClassificationConfidence } from './utils/classification-validation';
+import { classifyWithJev } from './jev-classifier';
 
 /**
  * LLM Gateway Responsiveness Test
@@ -1044,7 +1045,7 @@ function resolveClassificationConfig(timestamp: string): ClassificationConfig {
 
 function buildClassificationSmokeRequest(): Record<string, unknown> {
   return {
-    model: '~typesafe/jev-latest',
+    model: resolveClassificationModel(),
     state: "Recent code changes broke 3 existing tests. The async function wasn't waiting for database cleanup.",
     questions: {
       code_quality_issue: {
@@ -1067,27 +1068,6 @@ function buildClassificationSmokeRequest(): Record<string, unknown> {
       },
     },
   };
-}
-
-function parseClassificationResult(response: unknown): {
-  answers: Record<string, unknown>;
-  outputTokens: number;
-  validationResult: any;
-} | null {
-  if (!response || typeof response !== 'object') return null;
-
-  const obj = response as Record<string, unknown>;
-
-  // Check if answers field exists and is an object
-  if (!obj.answers || typeof obj.answers !== 'object') return null;
-
-  const answers = obj.answers as Record<string, unknown>;
-  const usage = (obj.usage && typeof obj.usage === 'object' ? obj.usage : {}) as Record<string, unknown>;
-  const outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
-
-  const validationResult = validateClassificationConfidence(answers as Record<string, any>);
-
-  return { answers, outputTokens, validationResult };
 }
 
 export function shouldRunClassificationSmoke(requested: boolean): boolean {
@@ -1123,63 +1103,14 @@ export async function testClassificationSmoke(requested: boolean = false): Promi
   const requestBody = buildClassificationSmokeRequest();
 
   try {
-    const response = await fetchWithTimeout(
-      'https://openrouter.ai/api/alpha/decisions',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.apiToken}`,
-        },
-        body: JSON.stringify(requestBody),
-      },
-      15000,
+    const parsed = await classifyWithJev(
+      requestBody.state as string,
+      requestBody.questions as Record<string, { type: 'noul' | 'choice' | 'score'; instructions?: string; criteria?: Record<string, string> | string[] }>,
+      { model: config.model, timeoutMs: 15000 },
     );
-
-    // Check if response indicates an error
-    if (!response.ok) {
-      const responseTime = Math.round(performance.now() - startTime);
-      const errorData = await response.json().catch(() => ({ error: { message: response.statusText } }));
-      const error = errorData.error as Record<string, unknown> | undefined;
-      if (error && error.message) {
-        return {
-          status: 'error',
-          detail: `OpenRouter classification error: ${error.message}`,
-          responseTime,
-          timestamp,
-          modelUsed: config.model,
-          remediation: 'Check OpenRouter API key, model availability, and quota before retrying.',
-        };
-      }
-      return {
-        status: 'error',
-        detail: `API returned status ${response.status}: ${response.statusText}`,
-        responseTime,
-        timestamp,
-        modelUsed: config.model,
-        remediation: 'Check OpenRouter API status and retry.',
-      };
-    }
-
-    // Parse the response
-    const responseObj = await response.json();
-    const parsed = parseClassificationResult(responseObj);
-
-    if (!parsed) {
-      const responseTime = Math.round(performance.now() - startTime);
-      return {
-        status: 'error',
-        detail: 'Classification response did not contain the expected answers payload',
-        responseTime,
-        timestamp,
-        modelUsed: config.model,
-        remediation: 'Inspect the OpenRouter response and confirm the model is returning a valid decision object.',
-      };
-    }
-
-    const validationResult = (parsed as any).validationResult;
-    const answers = (parsed as any).answers;
-    const outputTokens = (parsed as any).outputTokens;
+    const answers = parsed.answers;
+    const outputTokens = typeof parsed.usage.output_tokens === 'number' ? parsed.usage.output_tokens : 0;
+    const validationResult = validateClassificationConfidence(answers as Record<string, any>);
     const responseTime = Math.round(performance.now() - startTime);
 
     // Determine confidence level based on validation results
@@ -1197,7 +1128,7 @@ export async function testClassificationSmoke(requested: boolean = false): Promi
       detail: `Classification smoke test completed. Answers: ${Object.keys(answers).join(', ')}`,
       responseTime,
       timestamp,
-      modelUsed: config.model,
+      modelUsed: parsed.model || config.model,
       outputTokens: outputTokens,
       classificationValidated: validationResult.isValid,
       confidenceLevel,

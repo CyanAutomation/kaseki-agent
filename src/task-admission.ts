@@ -1,4 +1,5 @@
 import { resolveOpenRouterApiKey } from './gateway-detection/resolve-openrouter-api-key';
+import { answerConfidence, classifyWithJev } from './jev-classifier';
 
 export const TASK_ADMISSION_EXIT_CODE = 9;
 
@@ -84,18 +85,6 @@ function answerIsUnsafe(answer: TaskAdmissionAnswer | undefined): boolean {
     confidence >= confidenceThreshold();
 }
 
-function parseAdmissionResponse(value: unknown): { answers: Record<string, TaskAdmissionAnswer>; outputTokens?: number; model?: string } | null {
-  if (!value || typeof value !== 'object') return null;
-  const body = value as Record<string, unknown>;
-  if (!body.answers || typeof body.answers !== 'object' || Array.isArray(body.answers)) return null;
-  const usage = body.usage && typeof body.usage === 'object' ? body.usage as Record<string, unknown> : {};
-  return {
-    answers: body.answers as Record<string, TaskAdmissionAnswer>,
-    outputTokens: typeof usage.output_tokens === 'number' ? usage.output_tokens : undefined,
-    model: typeof body.model === 'string' ? body.model : undefined,
-  };
-}
-
 export function buildTaskAdmissionRequest(request: Record<string, unknown>): Record<string, unknown> {
   return {
     model: process.env.KASEKI_CLASSIFICATION_MODEL || DEFAULT_MODEL,
@@ -149,20 +138,14 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
   }
 
   const model = process.env.KASEKI_CLASSIFICATION_MODEL || DEFAULT_MODEL;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), positiveIntegerEnv('KASEKI_TASK_ADMISSION_TIMEOUT_MS', DEFAULT_TIMEOUT_MS));
   try {
-    const response = await fetch('https://openrouter.ai/api/alpha/decisions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key.value}` },
-      body: JSON.stringify(buildTaskAdmissionRequest(request)),
-      signal: controller.signal,
-    });
-    if (!response.ok) throw new Error(`classifier returned HTTP ${response.status}`);
-    const parsed = parseAdmissionResponse(await response.json());
-    if (!parsed) throw new Error('classifier response did not contain answers');
-
-    const answers = parsed.answers;
+    const requestBody = buildTaskAdmissionRequest(request);
+    const parsed = await classifyWithJev(
+      requestBody.state as string,
+      requestBody.questions as Record<string, { type: 'noul' | 'choice' | 'score'; instructions?: string; legend?: Record<string, string> }>,
+      { model, timeoutMs: positiveIntegerEnv('KASEKI_TASK_ADMISSION_TIMEOUT_MS', DEFAULT_TIMEOUT_MS) },
+    );
+    const answers = parsed.answers as Record<string, TaskAdmissionAnswer>;
     const riskAnswer = answers.risk_score;
     const riskScore = typeof riskAnswer?.answer === 'number' ? riskAnswer.answer : undefined;
     const unsafeQuestion = ['contains_credentials', 'changes_permissions', 'crosses_security_boundary']
@@ -171,7 +154,7 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
       (typeof riskAnswer?.confidence !== 'number' || riskAnswer.confidence >= confidenceThreshold());
     const rejected = Boolean(unsafeQuestion || highRisk);
     const uncertainQuestions = Object.entries(answers)
-      .filter(([, answer]) => typeof answer.confidence !== 'number' || answer.confidence < confidenceThreshold())
+      .filter(([, answer]) => answerConfidence(answer) < confidenceThreshold())
       .map(([name]) => name);
     return {
       allowed: !rejected,
@@ -180,7 +163,7 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
       riskScore,
       modelUsed: parsed.model || model,
       responseTime: Math.round(performance.now() - started),
-      outputTokens: parsed.outputTokens,
+      outputTokens: typeof parsed.usage.output_tokens === 'number' ? parsed.usage.output_tokens : undefined,
       answers,
       warnings: uncertainQuestions.length > 0
         ? [`Classifier confidence is below ${confidenceThreshold()} for: ${uncertainQuestions.join(', ')}.`]
@@ -196,7 +179,5 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
       modelUsed: model,
       warnings: [error instanceof Error ? error.message : String(error)],
     };
-  } finally {
-    clearTimeout(timeout);
   }
 }

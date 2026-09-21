@@ -389,6 +389,18 @@ KASEKI_GOAL_CHECK_MAX_TURNS="${KASEKI_GOAL_CHECK_MAX_TURNS:-4}"
 # target. It is still an advisory target, never a reason to fail a run.
 KASEKI_GOAL_CHECK_CONTRACT_REPAIR_TIMEOUT_SECONDS="${KASEKI_GOAL_CHECK_CONTRACT_REPAIR_TIMEOUT_SECONDS:-60}"
 KASEKI_GOAL_CHECK_CONTRACT_REPAIR_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_CHECK_CONTRACT_REPAIR_MAX_OUTPUT_TOKENS:-768}"
+if [ -z "${KASEKI_JEV_WORKFLOW+x}" ]; then
+  # Existing hermetic orchestration tests use fake Pi binaries and do not
+  # provide a classifier endpoint. Production defaults to the JEV path.
+  KASEKI_JEV_WORKFLOW="$([ "${KASEKI_TEST_MODE:-0}" = "1" ] && printf '0' || printf '1')"
+fi
+KASEKI_JEV_CONFIDENCE="${KASEKI_JEV_CONFIDENCE:-0.8}"
+KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS="${KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS:-5000}"
+KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS="${KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS:-5000}"
+KASEKI_JEV_WORKFLOW_EVALUATOR="${KASEKI_JEV_WORKFLOW_EVALUATOR:-$KASEKI_SCRIPT_DIR/dist/jev-workflow-evaluator.js}"
+if [ ! -r "$KASEKI_JEV_WORKFLOW_EVALUATOR" ] && [ -r /app/dist/jev-workflow-evaluator.js ]; then
+  KASEKI_JEV_WORKFLOW_EVALUATOR="/app/dist/jev-workflow-evaluator.js"
+fi
 kaseki_apply_inspect_mode_agent_defaults
 KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-pr}"
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-1}"
@@ -1802,6 +1814,9 @@ write_metadata() {
   "scouting_model": $(printf '%s' "$KASEKI_SCOUTING_MODEL" | json_encode),
   "goal_check_enabled": $([[ "$KASEKI_GOAL_CHECK" == "1" ]] && printf 'true' || printf 'false'),
   "goal_check_model": $(printf '%s' "$KASEKI_GOAL_CHECK_MODEL" | json_encode),
+  "jev_workflow_enabled": $([[ "$KASEKI_JEV_WORKFLOW" == "1" ]] && printf 'true' || printf 'false'),
+  "jev_classifier_model": $(printf '%s' "${KASEKI_CLASSIFICATION_MODEL:-~typesafe/jev-latest}" | json_encode),
+  "jev_confidence_threshold": $KASEKI_JEV_CONFIDENCE,
   "goal_check_max_retries": $KASEKI_GOAL_CHECK_MAX_RETRIES,
   "scouting_validation": {
     "validation_errors_log": "scouting-validation-errors.jsonl",
@@ -6954,6 +6969,25 @@ run_goal_check() {
     return 0
   fi
 
+  if [ "$KASEKI_JEV_WORKFLOW" = "1" ]; then
+    goal_start="$(date +%s)"
+    printf 'Using JEV classifier for goal check (model=%s, threshold=%s).\n' "${KASEKI_CLASSIFICATION_MODEL:-~typesafe/jev-latest}" "$KASEKI_JEV_CONFIDENCE"
+    if [ -r "$KASEKI_JEV_WORKFLOW_EVALUATOR" ] && KASEKI_JEV_CONFIDENCE="$KASEKI_JEV_CONFIDENCE" KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS="$KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS" node "$KASEKI_JEV_WORKFLOW_EVALUATOR" goal-check "$KASEKI_RESULTS_DIR" "$attempt"; then
+      GOAL_CHECK_EXIT=0
+      GOAL_CHECK_MET="$(jq -r 'if .met == true then "true" else "false" end' "$KASEKI_RESULTS_DIR/goal-check.json")"
+      GOAL_CHECK_FAILURE_REASON="$(jq -r '.summary // ""' "$KASEKI_RESULTS_DIR/goal-check.json")"
+      GOAL_CHECK_RETRY_PROMPT="$(jq -r '.retry_prompt // ""' "$KASEKI_RESULTS_DIR/goal-check.json")"
+      GOAL_CHECK_ACTUAL_MODEL="$(jq -r '.classifier.model // "~typesafe/jev-latest"' "$KASEKI_RESULTS_DIR/goal-check.json")"
+      GOAL_CHECK_DURATION_SECONDS=$((GOAL_CHECK_DURATION_SECONDS + $(date +%s) - goal_start))
+      record_stage_timing "goal check" 0 "$(($(date +%s) - goal_start))" "jev=true attempt=$attempt met=$GOAL_CHECK_MET"
+      emit_progress "goal check" "JEV classification completed (met=$GOAL_CHECK_MET)"
+      return 0
+    fi
+    printf 'JEV goal-check classification failed; using deterministic fallback.\n' >&2
+    degrade_goal_check_evaluator_failure "jev_classifier_unavailable"
+    return 0
+  fi
+
   goal_prompt="$(build_goal_check_prompt)"
   goal_check_timeout="$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS"
   goal_check_max_output="$KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS"
@@ -7485,6 +7519,27 @@ run_run_evaluation() {
     write_run_evaluation_fallback "$RUN_EVALUATION_WARNING"
     emit_progress "run evaluation" "skipped after deterministic allowlist failure"
     record_stage_timing "run evaluation" 0 0 "$RUN_EVALUATION_WARNING"
+    return 0
+  fi
+
+  if [ "$KASEKI_JEV_WORKFLOW" = "1" ]; then
+    evaluation_start="$(date +%s)"
+    emit_progress "run evaluation" "started with JEV classifier"
+    if [ -r "$KASEKI_JEV_WORKFLOW_EVALUATOR" ] && KASEKI_JEV_CONFIDENCE="$KASEKI_JEV_CONFIDENCE" KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS="$KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS" node "$KASEKI_JEV_WORKFLOW_EVALUATOR" run-evaluation "$KASEKI_RESULTS_DIR"; then
+      RUN_EVALUATION_EXIT=0
+      RUN_EVALUATION_ACTUAL_MODEL="$(jq -r '.classifier.model // "~typesafe/jev-latest"' "$RUN_EVALUATION_ARTIFACT")"
+      RUN_EVALUATION_DURATION_SECONDS=$((RUN_EVALUATION_DURATION_SECONDS + $(date +%s) - evaluation_start))
+      record_stage_timing "run evaluation" 0 "$(($(date +%s) - evaluation_start))" "jev=true"
+      emit_progress "run evaluation" "JEV classification completed"
+      collect_run_evaluation_feedback "$INSTANCE_NAME"
+      return 0
+    fi
+    RUN_EVALUATION_EXIT=88
+    RUN_EVALUATION_WARNING="jev_classifier_unavailable"
+    write_run_evaluation_fallback "$RUN_EVALUATION_WARNING"
+    record_stage_timing "run evaluation" "$RUN_EVALUATION_EXIT" "$(($(date +%s) - evaluation_start))" "jev=true warning=$RUN_EVALUATION_WARNING"
+    emit_progress "run evaluation" "JEV classification unavailable; wrote fallback artifact"
+    collect_run_evaluation_feedback "$INSTANCE_NAME"
     return 0
   fi
 
