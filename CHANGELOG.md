@@ -4,6 +4,21 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.139.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.138.0...v1.139.0) (2026-09-21)
+
+
+### Bug Fixes
+
+* disable KASEKI_JEV_WORKFLOW in various test scripts ([2526351](https://github.com/CyanAutomation/kaseki-agent/commit/252635149fb9e4d78072a99baebaca9b76238834))
+* normalize buffered gateway request bodies ([11e792b](https://github.com/CyanAutomation/kaseki-agent/commit/11e792b7da4608cc31d10f867a2d672484955583))
+* update prompt checks in goal-check test for improved JSON extraction validation ([7441d3f](https://github.com/CyanAutomation/kaseki-agent/commit/7441d3f7e76479ba791b621d601c9e0e7c63ba84))
+* validate shared timeout policy defaults ([112a20f](https://github.com/CyanAutomation/kaseki-agent/commit/112a20f0382f789dcd3fee34cf9cf76719ed4639))
+
+
+### Features
+
+* implement JEV classifier integration and workflow evaluation ([2d8e558](https://github.com/CyanAutomation/kaseki-agent/commit/2d8e558a67b5311706fa66575822871269c47442))
+
 # [1.138.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.137.0...v1.138.0) (2026-09-20)
 
 
