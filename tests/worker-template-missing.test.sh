@@ -115,7 +115,7 @@ if (metadata.scouting_succeeded_on_attempt !== null) {
 }
 NODE
 
-provider_phase_calls="$(awk '$0 != "--version" && $0 != "--list-models" { count += 1 } END { print count + 0 }' "$PROVIDER_CALLS")"
+provider_phase_calls="$(awk '$0 != "--version" && $0 != "--list-models" { count += 1 } END { print (count ? count : 0) }' "$PROVIDER_CALLS")"
 [ "$provider_phase_calls" -eq 0 ] \
   || fail "provider received $provider_phase_calls phase invocation(s): $(cat "$PROVIDER_CALLS")"
 
