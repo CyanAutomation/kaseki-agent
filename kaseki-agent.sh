@@ -68,9 +68,30 @@ fi
 
 
 KASEKI_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER="${KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/validation-timeout-policy.sh}"
+if [ ! -r "$KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER" ] && [ -r /app/scripts/validation-timeout-policy.sh ]; then
+  KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER="/app/scripts/validation-timeout-policy.sh"
+fi
+if [ ! -r "$KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER" ]; then
+  printf 'ERROR: Validation timeout policy helper is not readable. Expected %s or /app/scripts/validation-timeout-policy.sh. This worker image or mounted template is incomplete; rebuild the image or restore scripts/validation-timeout-policy.sh.\n' "$KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER" >&2
+  exit 66
+fi
+# shellcheck source=/dev/null
+. "$KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER"
+source_status=$?
+if [ "$source_status" -ne 0 ]; then
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER" "$source_status" >&2
+  exit 1
+fi
+
 KASEKI_JSON_HELPER="${KASEKI_JSON_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/lib/json.sh}"
 if [ ! -r "$KASEKI_JSON_HELPER" ] && [ -r /app/scripts/lib/json.sh ]; then
-  KASEKI_JSON_HELPER="/app/scripts/lib/json.sh"
+    DEFAULT_TIMEOUT="${DEFAULT_TIMEOUT:-300}"
+    # Validate that DEFAULT_TIMEOUT is a positive integer
+    if ! [[ "$DEFAULT_TIMEOUT" =~ ^[0-9]+$ ]] || [[ "$DEFAULT_TIMEOUT" -le 0 ]]; then
+        log "ERROR" "DEFAULT_TIMEOUT must be a positive integer, got: $DEFAULT_TIMEOUT"
+        exit 1
+    fi
 fi
 if [ ! -r "$KASEKI_JSON_HELPER" ]; then
   printf 'ERROR: JSON helper is not readable. Expected %s or /app/scripts/lib/json.sh. This worker image or mounted template is incomplete; rebuild the image or restore scripts/lib/json.sh.\n' "$KASEKI_JSON_HELPER" >&2
@@ -4826,18 +4847,6 @@ write_validation_command_environment() {
     printf '[validation command] npm_version=%s\n' "$(npm --version 2>&1 || echo '<npm not found>')"
     printf '[validation command] disk_available=%s\n' "$(df -h "${KASEKI_RESULTS_DIR}" 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
   } | tee -a "$env_log"
-}
-
-validation_timeout_for_command() {
-  local command="$1"
-  case "$command" in
-    *" run build"*|*" build "*|build|*"next build"*)
-      printf '%s\n' "$KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS"
-      ;;
-    *)
-      printf '%s\n' "$KASEKI_VALIDATION_TIMEOUT_SECONDS"
-      ;;
-  esac
 }
 
 run_validation_commands() {
