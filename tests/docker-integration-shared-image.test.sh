@@ -50,6 +50,12 @@ grep -Fq 'docker run --rm -i --workdir /app --entrypoint /bin/bash "$VALIDATION_
   || fail 'Validation suite must attach stdin when executing its heredoc'
 grep -Fq '/app/node_modules/.bin/tsc --version' "$VALIDATION_SUITE" \
   || fail 'Validation suite must invoke the packaged TypeScript executable by path'
+grep -Fq 'for required_file in /app/tsconfig.json /app/eslint.config.js; do' "$VALIDATION_SUITE" \
+  || fail 'Validation suite must require its TypeScript and ESLint inputs'
+grep -Fq 'COPY --from=runtime /app/package.json /app/package-lock.json /app/tsconfig.json /app/eslint.config.js /app/' "$ROOT_DIR/Dockerfile" \
+  || fail 'Final image must package TypeScript and ESLint configuration'
+grep -Fq 'COPY --from=runtime /app/src ./src' "$ROOT_DIR/Dockerfile" \
+  || fail 'Final image must package TypeScript source files for validation'
 
 node - "$PACKAGE_JSON" <<'NODE'
 const fs = require('node:fs');
