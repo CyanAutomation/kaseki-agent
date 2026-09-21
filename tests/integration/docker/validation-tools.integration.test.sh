@@ -53,7 +53,9 @@ fi
 printf 'Image: %s\n\n' "$VALIDATION_TEST_IMAGE"
 printf 'Checking validation tools and npm run check in a single container invocation...\n'
 
-docker run --rm --workdir /app --entrypoint /bin/bash "$VALIDATION_TEST_IMAGE" -s <<'CONTAINER_SCRIPT'
+# Keep stdin attached: Bash reads the validation program from the heredoc below.
+# Without -i Docker closes stdin and Bash exits successfully without testing it.
+docker run --rm -i --workdir /app --entrypoint /bin/bash "$VALIDATION_TEST_IMAGE" -s <<'CONTAINER_SCRIPT'
 set -euo pipefail
 
 for tool in tsc eslint jest; do
