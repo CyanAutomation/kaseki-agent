@@ -71,7 +71,9 @@ for tool in tsc eslint jest; do
   printf '✓ %s available at %s\n' "$tool" "$tool_path"
 done
 
-tsc --version
+# `npm run` adds node_modules/.bin to PATH, but this direct image check does
+# not. Exercise the packaged TypeScript executable by its verified path.
+/app/node_modules/.bin/tsc --version
 
 # Stream the check output to the CI log. Capturing it in a command substitution
 # leaves long-running type-check or lint runs silent, which lets CI inactivity
