@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.140.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.140.1...v1.140.2) (2026-09-21)
+
+
+### Bug Fixes
+
+* execute Docker validation heredoc ([66964b7](https://github.com/CyanAutomation/kaseki-agent/commit/66964b7ff429a63c72f2032f7b9c6bc3604a8115))
+* execute Docker validation heredoc ([#1358](https://github.com/CyanAutomation/kaseki-agent/issues/1358)) ([adaf486](https://github.com/CyanAutomation/kaseki-agent/commit/adaf48605176f1508d2338fb1ba483d1a2eafbe1))
+
 ## [1.140.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.140.0...v1.140.1) (2026-09-21)
 
 
