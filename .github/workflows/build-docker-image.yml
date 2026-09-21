@@ -25,6 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.metadata.outputs.sha }}
+      tree_sitter_version: ${{ steps.metadata.outputs.tree_sitter_version }}
       cache_scope: ${{ steps.metadata.outputs.cache_scope }}
       candidate_hub_tags: ${{ steps.metadata.outputs.candidate_hub_tags }}
       candidate_ghcr_tags: ${{ steps.metadata.outputs.candidate_ghcr_tags }}
@@ -42,6 +43,8 @@ jobs:
         run: |
           set -euo pipefail
           sha="$(git rev-parse HEAD)"; short_sha="${sha::12}"
+          tree_sitter_version="$(sed -n 's/^ARG TREE_SITTER_CLI_VERSION=//p' Dockerfile)"
+          [[ "$tree_sitter_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid tree-sitter CLI version: $tree_sitter_version" >&2; exit 1; }
           if [[ "$EVENT_NAME" == workflow_call ]]; then tags="$RELEASE_VERSION,latest"
           else tags="latest,main-$short_sha"; fi
           hub_promotion=""; ghcr_promotion=""
@@ -54,7 +57,7 @@ jobs:
           [[ -n "$hub_promotion" ]] || { echo "At least one Docker tag is required" >&2; exit 1; }
           candidate="candidate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           {
-            echo "sha=$sha"; echo "cache_scope=release-$short_sha"
+            echo "sha=$sha"; echo "tree_sitter_version=$tree_sitter_version"; echo "cache_scope=release-$short_sha"
             echo "candidate_hub_tags<<EOF"; echo "${DOCKER_IMAGE}:$candidate"; echo EOF
             echo "candidate_ghcr_tags<<EOF"; echo "ghcr.io/${DOCKER_IMAGE}:$candidate"; echo EOF
             echo "promotion_hub_tags<<EOF"; printf '%s' "$hub_promotion"; echo EOF
@@ -203,12 +206,15 @@ jobs:
   #         retention-days: 30
 
   verify:
-    needs: build_candidate
+    needs: [prepare, build_candidate]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: read
     steps:
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
+        with:
+          platforms: arm64
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
@@ -221,9 +227,15 @@ jobs:
       - name: Verify Docker Hub candidate
         env:
           DOCKER_HUB_CANDIDATE_IMAGE: docker.io/${{ env.DOCKER_IMAGE }}@${{ needs.build_candidate.outputs.digest }}
+          EXPECTED_TREE_SITTER_VERSION: ${{ needs.prepare.outputs.tree_sitter_version }}
         run: |
           set -euo pipefail
           docker manifest inspect "$DOCKER_HUB_CANDIDATE_IMAGE" | jq -e '[.manifests[].platform | "\(.os)/\(.architecture)"] | index("linux/amd64") and index("linux/arm64")'
+          for platform in linux/amd64 linux/arm64; do
+            version_output="$(docker run --rm --platform "$platform" --entrypoint tree-sitter "$DOCKER_HUB_CANDIDATE_IMAGE" --version)"
+            printf '%s: %s\n' "$platform" "$version_output"
+            printf '%s\n' "$version_output" | grep -Eq "^tree-sitter ${EXPECTED_TREE_SITTER_VERSION}([[:space:]]|$)"
+          done
           docker run --rm --entrypoint pi "$DOCKER_HUB_CANDIDATE_IMAGE" --version
           workspace="$(mktemp -d)"; results="$(mktemp -d)"; trap 'rm -rf "$workspace" "$results"' EXIT; chmod 0777 "$workspace" "$results"
           docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev,size=256m --tmpfs /agents:rw,nosuid,nodev,size=512m --security-opt no-new-privileges:true --cap-drop ALL -e KASEKI_INSTANCE=kaseki-smoke -e KASEKI_STARTUP_CHECK_MODE=baseline-validation -v "$workspace:/workspace:rw" -v "$results:/results:rw" -w /workspace "$DOCKER_HUB_CANDIDATE_IMAGE" bash -lc 'set -euo pipefail; test -d /agents/kaseki-template; test -d /agents/kaseki-runs; test -d /results; test -x /scripts/startup-checks.sh; test -x /usr/local/bin/kaseki-entrypoint; test -x /usr/local/bin/kaseki-agent; test -x /usr/local/bin/kaseki-report; node --version; git --version; pi --version'
@@ -231,9 +243,15 @@ jobs:
       - name: Verify GHCR candidate
         env:
           GHCR_CANDIDATE_IMAGE: ghcr.io/${{ env.DOCKER_IMAGE }}@${{ needs.build_candidate.outputs.digest }}
+          EXPECTED_TREE_SITTER_VERSION: ${{ needs.prepare.outputs.tree_sitter_version }}
         run: |
           set -euo pipefail
           docker manifest inspect "$GHCR_CANDIDATE_IMAGE" | jq -e '[.manifests[].platform | "\(.os)/\(.architecture)"] | index("linux/amd64") and index("linux/arm64")'
+          for platform in linux/amd64 linux/arm64; do
+            version_output="$(docker run --rm --platform "$platform" --entrypoint tree-sitter "$GHCR_CANDIDATE_IMAGE" --version)"
+            printf '%s: %s\n' "$platform" "$version_output"
+            printf '%s\n' "$version_output" | grep -Eq "^tree-sitter ${EXPECTED_TREE_SITTER_VERSION}([[:space:]]|$)"
+          done
           docker run --rm --entrypoint pi "$GHCR_CANDIDATE_IMAGE" --version
 
   promote:

@@ -17,5 +17,8 @@ declared_version="$(sed -n 's/^ARG TREE_SITTER_CLI_VERSION=//p' "$DOCKERFILE")"
 
 grep -Fq 'COPY --from=runtime /usr/local/bin/tree-sitter /usr/local/bin/tree-sitter' "$DOCKERFILE" || fail 'The final image must copy the tree-sitter executable from the runtime stage'
 grep -Fq 'test -x /usr/local/bin/tree-sitter' "$DOCKERFILE" || fail 'The final image must validate that tree-sitter is executable during build'
+if grep -Fq 'tree-sitter --version' "$DOCKERFILE"; then
+  fail 'The Docker build must not execute tree-sitter under multi-architecture emulation'
+fi
 
 printf '✓ Dockerfile tree-sitter-cli version policy assertion passed.\n'
