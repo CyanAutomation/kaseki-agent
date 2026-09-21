@@ -20,17 +20,7 @@ validation_timeout_or_default() {
 validation_timeout_for_command() {
   local command="$1"
   local timeout_value
-# Get the directory where this script is located
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Source kaseki-agent.sh to access required functions
-# shellcheck source=/dev/null
-source "$SCRIPT_DIR/../kaseki-agent.sh" || {
-    echo "ERROR: Failed to source kaseki-agent.sh"
-    exit 1
-}
-
-elapsed_time=$(get_process_elapsed_time "$pid")
+  local default_value
 
   case "$command" in
     *" run build"*|*" build "*|build|*"next build"*)

@@ -6,6 +6,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=../scripts/validation-timeout-policy.sh
 source "$ROOT_DIR/scripts/validation-timeout-policy.sh"
 
+# Timeout selection is a standalone policy and must not depend on unrelated
+# worker process state being initialized by kaseki-agent.sh.
+unset PROCESS_TIMEOUT pid
+
 assert_timeout() {
   local description="$1"
   local command="$2"
