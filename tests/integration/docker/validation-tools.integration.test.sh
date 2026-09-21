@@ -58,6 +58,13 @@ printf 'Checking validation tools and npm run check in a single container invoca
 docker run --rm -i --workdir /app --entrypoint /bin/bash "$VALIDATION_TEST_IMAGE" -s <<'CONTAINER_SCRIPT'
 set -euo pipefail
 
+for required_file in /app/tsconfig.json /app/eslint.config.js; do
+  if [ ! -r "$required_file" ]; then
+    printf 'FAIL: required validation input is missing: %s\n' "$required_file" >&2
+    exit 1
+  fi
+done
+
 for tool in tsc eslint jest; do
   tool_path="/app/node_modules/.bin/${tool}"
   if [ ! -f "$tool_path" ]; then
@@ -98,6 +105,10 @@ case "$CHECK_EXIT" in
     # or SIGPIPE-style truncation are not acceptable.
     if ! grep -Eq '(tsc --noEmit|eslint[[:space:]].*src/)' "$CHECK_OUTPUT_FILE"; then
       printf 'FAIL: npm run check exited %s without evidence that tsc or eslint launched.\n' "$CHECK_EXIT" >&2
+      exit 1
+    fi
+    if grep -Eq 'TS5058:|specified path does not exist' "$CHECK_OUTPUT_FILE"; then
+      printf 'FAIL: npm run check exited %s because a required TypeScript config is missing.\n' "$CHECK_EXIT" >&2
       exit 1
     fi
     if grep -Eqi '(not found|command not found|missing script)' "$CHECK_OUTPUT_FILE"; then
