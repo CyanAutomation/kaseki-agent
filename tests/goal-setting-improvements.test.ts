@@ -724,6 +724,7 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         copyFileSync(join(repoRoot, 'scripts', 'allowlist-helper.sh'), join(scriptsDir, 'allowlist-helper.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'github-preflight-auth.sh'), join(scriptsDir, 'github-preflight-auth.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'github-preflight-health.sh'), join(scriptsDir, 'github-preflight-health.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'validation-timeout-policy.sh'), join(scriptsDir, 'validation-timeout-policy.sh'));
         copyFileSync(join(repoRoot, 'dist', 'scouting-allowlist.js'), join(scriptsDir, 'scouting-allowlist.js'));
         mkdirSync(join(scriptsDir, 'lib'), { recursive: true });
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'json.sh'), join(scriptsDir, 'lib', 'json.sh'));
