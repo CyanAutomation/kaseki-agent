@@ -37,78 +37,43 @@ describe('Gateway Adapter Request Format', () => {
       expect(requestPayload).not.toHaveProperty('messages');
     });
 
-    /**
-     * Test 2: Multi-message array should be detected and converted
-     * Expected: When input is an array of message objects, convert to messages field
-     * This is what FAILS currently - the gateway receives {input: [{role, content}]} and doesn't know how to handle it
-     */
-    it('should detect multi-message array format and convert to messages field', () => {
-      const multiMessageInput = [
-        {
-          role: 'system',
-          content: 'You are a helpful assistant.',
-        },
-        {
-          role: 'user',
-          content: 'Hello, what is 2+2?',
-        },
-      ];
-
-      // Mock the conversion logic that should happen in gateway adapter
-      const isMultiMessage = Array.isArray(multiMessageInput) &&
-        multiMessageInput.length > 0 &&
-        typeof multiMessageInput[0] === 'object' &&
-        'role' in multiMessageInput[0] &&
-        'content' in multiMessageInput[0];
-
-      expect(isMultiMessage).toBe(true);
-
-      // After conversion, request should use messages field instead of input
-      const convertedPayload = isMultiMessage
-        ? {
-          model: 'auto',
-          messages: multiMessageInput,
-          max_output_tokens: 256,
-        }
-        : {
-          model: 'auto',
-          input: multiMessageInput,
-          max_output_tokens: 256,
-        };
-
-      expect(convertedPayload.messages).toBeDefined();
-      expect(convertedPayload.messages).toEqual(multiMessageInput);
-      expect(convertedPayload.input).toBeUndefined();
-    });
-
-    /**
-     * Test 3: Array with only user messages should also be converted
-     * Expected: Even if no system role, convert array of messages to messages field
-     */
-    it('should convert user-only message array to messages field', () => {
-      const userOnlyMessages = [
-        {
-          role: 'user',
-          content: 'What is 2+2?',
-        },
-        {
-          role: 'user',
-          content: 'And what is 3+3?',
-        },
-      ];
-
-      const isMultiMessage = Array.isArray(userOnlyMessages) &&
-        userOnlyMessages.length > 0 &&
-        typeof userOnlyMessages[0] === 'object' &&
-        'role' in userOnlyMessages[0];
-
-      expect(isMultiMessage).toBe(true);
-
-      const convertedPayload = isMultiMessage
-        ? { model: 'auto', messages: userOnlyMessages, max_output_tokens: 256 }
-        : { model: 'auto', input: userOnlyMessages, max_output_tokens: 256 };
-
-      expect(convertedPayload.messages).toEqual(userOnlyMessages);
+    it.each([
+      {
+        name: 'system-plus-user input',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a helpful assistant.',
+          },
+          {
+            role: 'user',
+            content: 'Hello, what is 2+2?',
+          },
+        ],
+      },
+      {
+        name: 'user-only input',
+        messages: [
+          {
+            role: 'user',
+            content: 'What is 2+2?',
+          },
+          {
+            role: 'user',
+            content: 'And what is 3+3?',
+          },
+        ],
+      },
+    ])('should convert $name to the externally emitted messages shape', ({ messages }) => {
+      expect(normalizeGatewayRequest({
+        model: 'auto',
+        input: messages,
+        max_output_tokens: 256,
+      })).toEqual({
+        model: 'auto',
+        messages,
+        max_output_tokens: 256,
+      });
     });
 
     /**
