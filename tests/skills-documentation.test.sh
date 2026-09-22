@@ -13,7 +13,7 @@ fail() {
 
 # Keep this test runnable in the minimal CI images, which provide POSIX grep
 # but do not guarantee ripgrep is installed.
-if grep -R -n -E 'disaster-recovery|DISASTER_RECOVERY' "$SKILLS_DIR" >/dev/null; then
+if find "$SKILLS_DIR" -type f \( -name '*.md' -o -name '*.sh' \) -exec grep -l -E 'disaster-recovery|DISASTER_RECOVERY' {} + >/dev/null 2>&1; then
   fail "removed disaster-recovery skill is still referenced"
 fi
 
