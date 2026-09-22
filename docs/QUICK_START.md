@@ -393,7 +393,7 @@ After a run, inspect:
 
 - `/results/scouting.json` — Full research artifact with recommended patterns
 - `/results/scouting-report.md` — Coverage metrics and warnings
-- `/results/metadata.jsonl` — Log of allowlist merge decisions
+- `/results/restoration.jsonl` — Log of allowlist merge decisions
 
 Example `scouting.json`:
 
