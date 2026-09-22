@@ -92,6 +92,7 @@
     "test:stress:validation-output": "npm run build && RUN_VALIDATION_OUTPUT_STRESS_TESTS=1 bash tests/stress/validation-large-output-stress.test.sh",
     "test:nightly": "npm run test:stress:validation-output",
     "test:dry-run": "bash test/dry-run.test.sh",
+    "test:workflows": "bash tests/github-workflows-contract.test.sh",
     "test:smoke:dry-run": "KASEKI_RUN_DRY_RUN_INTEGRATION=1 bash test/dry-run.integration.test.sh",
     "test:github-app-token-install-layout": "npm run build && bash tests/github-app-token-install-layout.test.sh"
   },

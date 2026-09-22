@@ -420,24 +420,32 @@ Kaseki-agent container images are scanned for vulnerabilities using industry-sta
 
 ### Automated Scanning (CI/CD)
 
-GitHub Actions automatically scans images on every build using **Trivy**:
+GitHub Actions scans each candidate image before it can be promoted. The scan
+checks only vulnerabilities (not repository secrets), ignores findings with no
+available fix, uploads SARIF and JSON evidence, and blocks promotion on an
+unfixed high- or critical-severity finding. A human-readable summary is printed
+in the job log before the gate fails.
 
 ```yaml
-- name: Run Trivy vulnerability scanner
-  uses: aquasecurity/trivy-action@v0.36.0
+- name: Generate Trivy vulnerability report
+  uses: aquasecurity/trivy-action@<pinned-commit> # v0.36.0
   with:
-    image-ref: 'docker.io/cyanautomation/kaseki-agent:latest'
-    format: 'sarif'
-    output: 'trivy-results.sarif'
-    severity: 'HIGH,CRITICAL'
+    image-ref: docker.io/cyanautomation/kaseki-agent@<immutable-digest>
+    format: sarif
+    output: trivy-results.sarif
+    scanners: vuln
+    severity: HIGH,CRITICAL
+    ignore-unfixed: true
+    exit-code: '0'
 
 - name: Upload to GitHub Security tab
-  uses: github/codeql-action/upload-sarif@v4
+  uses: github/codeql-action/upload-sarif@<pinned-commit> # v4
   with:
     sarif_file: 'trivy-results.sarif'
 ```
 
-Results are published to GitHub's **Security** → **Dependabot alerts** tab.
+Results are published to GitHub's **Security** → **Code scanning alerts** tab.
+The JSON report is retained as a workflow artifact for 30 days.
 
 ### Manual Scanning
 
@@ -454,7 +462,7 @@ curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/inst
 trivy image docker.io/cyanautomation/kaseki-agent:latest
 
 # Scan with severity filter
-trivy image --severity HIGH,CRITICAL docker.io/cyanautomation/kaseki-agent:latest
+trivy image --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL docker.io/cyanautomation/kaseki-agent:latest
 
 # Generate JSON report
 trivy image --format json --output report.json docker.io/cyanautomation/kaseki-agent:latest
