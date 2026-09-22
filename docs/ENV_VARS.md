@@ -72,11 +72,11 @@ For the gateway path, worker preflight checks verify gateway URL/key configurati
 | `KASEKI_GATEWAY_RESPONSE_SMOKE` | production: `true`, test/dev: `false` | boolean | Controls whether `/api/gateway-test` performs a real OpenAI Responses API smoke request with the configured gateway model (default `dynamic/kaseki-agent`). Set `0`, `false`, `off`, or `no` to disable in production; set `1`, `true`, `on`, or `yes` to force-enable in test/dev. |
 | `KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE` | `false` | boolean | Enables Pi provider smoke in non-production environments. In production, Pi provider smoke runs automatically with `/api/gateway-test?stage=2&responseSmoke=true` (no query parameter needed). In development/test, set to `1`, `true`, `on`, or `yes` to enable for controlled testing. Consuming LLM gateway tokens; only enable if you need to test the Pi provider adapter in development. |
 | `KASEKI_PI_PROVIDER_SMOKE_TIMEOUT_MS` | `60000` | integer | Timeout for the opt-in Pi gateway provider smoke test. |
-| `KASEKI_CLASSIFICATION_MODEL` | `~typesafe/jev-latest` | string | JEV/OpenRouter model used by classification smoke tests and task admission. |
-| `KASEKI_TASK_ADMISSION_TIMEOUT_MS` | `5000` | integer | Maximum time allowed for the task admission classifier request. Operational failures fail open. |
-| `KASEKI_TASK_ADMISSION_CONFIDENCE` | `0.8` | number | Minimum classifier confidence required before an unsafe answer can reject a task. |
-| `KASEKI_JEV_WORKFLOW` | `1` | boolean | Use the JEV classifier for structured goal-check and run-evaluation decisions. Set to `0` to retain the Pi/LLM evaluators. |
-| `KASEKI_JEV_CONFIDENCE` | `0.8` | number | Minimum JEV confidence used when accepting workflow classifications. The model remains `~typesafe/jev-latest` by default. |
+| `KASEKI_CLASSIFICATION_MODEL` | `~typesafe/jev-latest` | string | JEV/OpenRouter model used by classification smoke tests, admission routing, goal checks, and run evaluation. Pin a supported model version after calibrating thresholds. |
+| `KASEKI_TASK_ADMISSION_TIMEOUT_MS` | `5000` | integer | Maximum time allowed for the task admission classifier request. Operational failures are reported as degraded; deterministic credential and policy checks remain authoritative. |
+| `KASEKI_TASK_ADMISSION_CONFIDENCE` | `0.8` | number | Noul probability required to reject a task for a sensitive condition, and Choice confidence required to reject a high-risk task. |
+| `KASEKI_JEV_WORKFLOW` | `1` | boolean | Use JEV's typed decisions for structured goal-check and run-evaluation routing. Set to `0` to retain the Pi/LLM evaluators. |
+| `KASEKI_JEV_CONFIDENCE` | `0.8` | number | Noul probability threshold for accepting a goal criterion. Choice and Score answers use their returned confidence. |
 | `KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS` | `5000` | integer | Timeout for the JEV goal-check classification request. |
 | `KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS` | `5000` | integer | Timeout for the JEV run-evaluation classification request. |
 | `KASEKI_API_URL` | `http://localhost:8080/api` | string | Client-side base URL used by npm API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
@@ -99,7 +99,7 @@ For the gateway path, worker preflight checks verify gateway URL/key configurati
 | Variable | Default | Type | Purpose |
 | ---------- | --------- | ------ | --------- |
 | `GITHUB_APP_ENABLED` | `1` (if credentials available) | boolean | Enable/disable GitHub operations (PR creation, branch push) |
-| `KASEKI_PUBLISH_MODE` | `pr` | string | GitHub operations mode: `pr` (creates normal PR, default), `draft_pr` (creates draft PR), `branch` (push without PR), `auto` (creates PR if credentials found, legacy), `none` (always skip). All modes require GitHub App credentials to function. |
+| `KASEKI_PUBLISH_MODE` | `pr` | string | GitHub operations mode: `pr` (creates normal PR, default), `branch` (push without PR), `auto` (creates PR if credentials are found, legacy), `none` (always skip). A legacy `draft_pr` request is normalized to a normal PR so successful runs always enter human review. All publishing modes require GitHub App credentials. |
 | `KASEKI_GITHUB_PR_RETRIES` | `3` | integer | Retry attempts for GitHub PR creation (exponential backoff: 2s, 4s, 8s) |
 
 **GitHub App Credential Auto-Detection:**

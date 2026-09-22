@@ -1,15 +1,11 @@
 import { resolveOpenRouterApiKey } from './gateway-detection/resolve-openrouter-api-key';
 import { parsePositiveInt } from './lib/env-var-helpers.js';
-import { answerConfidence, classifyWithJev } from './jev-classifier';
+import { answerConfidence, answerIsTrue, classifyWithJev } from './jev-classifier';
+import type { ClassificationAnswer, QuestionDefinition } from './types/openrouter-decisions';
 
 export const TASK_ADMISSION_EXIT_CODE = 9;
 
-export interface TaskAdmissionAnswer {
-  type?: 'noul' | 'choice' | 'score';
-  answer?: string | number | boolean | null;
-  confidence?: number;
-  probabilities?: Record<string, number>;
-}
+export type TaskAdmissionAnswer = ClassificationAnswer;
 
 export interface TaskAdmissionResult {
   allowed: boolean;
@@ -74,12 +70,7 @@ function localCredentialSignal(request: Record<string, unknown>): boolean {
     /(?:password|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*\S+/i.test(text);
 }
 
-function answerIsUnsafe(answer: TaskAdmissionAnswer | undefined): boolean {
-  if (!answer) return false;
-  const confidence = typeof answer.confidence === 'number' ? answer.confidence : 0;
-  return (answer.answer === true || answer.answer === 'yes' || (typeof answer.answer === 'number' && answer.answer >= 2)) &&
-    confidence >= confidenceThreshold();
-}
+function answerIsUnsafe(answer: TaskAdmissionAnswer | undefined): boolean { return answerIsTrue(answer, confidenceThreshold()); }
 
 export function buildTaskAdmissionRequest(request: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -98,12 +89,14 @@ export function buildTaskAdmissionRequest(request: Record<string, unknown>): Rec
         type: 'noul',
         instructions: 'Will this task weaken, bypass, or cross a security boundary or isolation boundary?',
       },
-      risk_score: {
-        type: 'score',
-        min: 0,
-        max: 2,
+      risk_level: {
+        type: 'choice',
         instructions: 'How risky is this task to run automatically?',
-        legend: { '0': 'Low risk and reversible', '1': 'Moderate risk or needs review', '2': 'High risk, destructive, secret-related, or security-sensitive' },
+        criteria: {
+          low: 'Low risk and reversible.',
+          review: 'Potentially consequential and needs normal human review.',
+          high: 'Destructive, secret-related, or security-sensitive.',
+        },
       },
     },
   };
@@ -138,19 +131,18 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
     const requestBody = buildTaskAdmissionRequest(request);
     const parsed = await classifyWithJev(
       requestBody.state as string,
-      requestBody.questions as Record<string, { type: 'noul' | 'choice' | 'score'; instructions?: string; legend?: Record<string, string> }>,
+      requestBody.questions as Record<string, QuestionDefinition>,
       { model, timeoutMs: parsePositiveInt('KASEKI_TASK_ADMISSION_TIMEOUT_MS', DEFAULT_TIMEOUT_MS) },
     );
     const answers = parsed.answers as Record<string, TaskAdmissionAnswer>;
-    const riskAnswer = answers.risk_score;
-    const riskScore = typeof riskAnswer?.answer === 'number' ? riskAnswer.answer : undefined;
+    const riskAnswer = answers.risk_level;
+    const riskScore = riskAnswer?.type === 'choice' ? ({ low: 0, review: 1, high: 2 }[riskAnswer.choice] ?? undefined) : undefined;
     const unsafeQuestion = ['contains_credentials', 'changes_permissions', 'crosses_security_boundary']
       .find((name) => answerIsUnsafe(answers[name]));
-    const highRisk = riskScore !== undefined && riskScore >= 2 &&
-      (typeof riskAnswer?.confidence !== 'number' || riskAnswer.confidence >= confidenceThreshold());
+    const highRisk = riskAnswer?.type === 'choice' && riskAnswer.choice === 'high' && answerConfidence(riskAnswer) >= confidenceThreshold();
     const rejected = Boolean(unsafeQuestion || highRisk);
     const uncertainQuestions = Object.entries(answers)
-      .filter(([, answer]) => answerConfidence(answer) < confidenceThreshold())
+      .filter(([, answer]) => answer.type === 'noul' ? answer.noul > 1 - confidenceThreshold() && answer.noul < confidenceThreshold() : answerConfidence(answer) < confidenceThreshold())
       .map(([name]) => name);
     return {
       allowed: !rejected,

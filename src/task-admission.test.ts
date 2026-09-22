@@ -22,7 +22,7 @@ describe('task admission classifier', () => {
       contains_credentials: expect.objectContaining({ type: 'noul' }),
       changes_permissions: expect.objectContaining({ type: 'noul' }),
       crosses_security_boundary: expect.objectContaining({ type: 'noul' }),
-      risk_score: expect.objectContaining({ type: 'score', min: 0, max: 2 }),
+      risk_level: expect.objectContaining({ type: 'choice', criteria: expect.objectContaining({ high: expect.any(String) }) }),
     }));
     expect(String(request.state)).not.toContain('sk-test-secret-value');
     expect(String(request.state)).toContain('[REDACTED_SECRET]');
@@ -49,10 +49,10 @@ describe('task admission classifier', () => {
       json: async () => ({
         model: '~typesafe/jev-latest',
         answers: {
-          contains_credentials: { type: 'noul', answer: false, confidence: 0.99 },
-          changes_permissions: { type: 'noul', answer: true, confidence: 0.95 },
-          crosses_security_boundary: { type: 'noul', answer: false, confidence: 0.9 },
-          risk_score: { type: 'score', answer: 1, confidence: 0.9 },
+          contains_credentials: { type: 'noul', noul: 0.01 },
+          changes_permissions: { type: 'noul', noul: 0.95 },
+          crosses_security_boundary: { type: 'noul', noul: 0.1 },
+          risk_level: { type: 'choice', choice: 'review', probabilities: { low: 0.05, review: 0.9, high: 0.05 }, confidence: 0.9 },
         },
         usage: { output_tokens: 12 },
       }),
@@ -88,10 +88,10 @@ describe('task admission classifier', () => {
       ok: true,
       json: async () => ({
         answers: {
-          contains_credentials: { type: 'noul', answer: true, confidence: 0.4 },
-          changes_permissions: { type: 'noul', answer: false, confidence: 0.95 },
-          crosses_security_boundary: { type: 'noul', answer: false, confidence: 0.95 },
-          risk_score: { type: 'score', answer: 1, confidence: 0.4 },
+          contains_credentials: { type: 'noul', noul: 0.5 },
+          changes_permissions: { type: 'noul', noul: 0.1 },
+          crosses_security_boundary: { type: 'noul', noul: 0.1 },
+          risk_level: { type: 'choice', choice: 'review', probabilities: { low: 0.3, review: 0.4, high: 0.3 }, confidence: 0.4 },
         },
       }),
     } as Response);

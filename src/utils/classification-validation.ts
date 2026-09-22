@@ -36,7 +36,9 @@ export function validateClassificationConfidence(
   const messages: string[] = [];
 
   for (const [question, answer] of Object.entries(answers)) {
-    const confidence = answer?.confidence;
+    const confidence = answer?.type === 'noul'
+      ? Math.max(answer.noul, 1 - answer.noul)
+      : answer?.confidence;
 
     const isValidConfidence =
       typeof confidence === 'number' &&
