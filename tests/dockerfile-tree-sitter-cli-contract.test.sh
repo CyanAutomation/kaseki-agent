@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DOCKERFILE="$ROOT_DIR/Dockerfile"
+PUBLISH_WORKFLOW="$ROOT_DIR/.github/workflows/build-docker-image.yml"
 EXPECTED_VERSION="0.25.10"
 
 fail() {
@@ -20,5 +21,14 @@ grep -Fq 'test -x /usr/local/bin/tree-sitter' "$DOCKERFILE" || fail 'The final i
 if grep -Fq 'tree-sitter --version' "$DOCKERFILE"; then
   fail 'The Docker build must not execute tree-sitter under multi-architecture emulation'
 fi
+
+if grep -Fq -- '--entrypoint tree-sitter' "$PUBLISH_WORKFLOW"; then
+  fail 'The publish workflow must not execute the architecture-specific tree-sitter CLI'
+fi
+
+tree_sitter_packaging_check="-c 'test -x /usr/local/bin/tree-sitter'"
+workflow_packaging_checks="$(grep -Fc -- "$tree_sitter_packaging_check" "$PUBLISH_WORKFLOW")"
+test "$workflow_packaging_checks" = 2 \
+  || fail 'The publish workflow must verify tree-sitter packaging for both candidate registries'
 
 printf '✓ Dockerfile tree-sitter-cli version policy assertion passed.\n'
