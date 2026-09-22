@@ -1,11 +1,6 @@
 name: Release
 
 on:
-  # push:
-  #   branches:
-  #     - main
-    # Only trigger for commits that semantic-release will act on
-    # (feat:, fix:, breaking changes, or release commits)
   workflow_dispatch:
     inputs:
       dry_run:
@@ -24,6 +19,7 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
     outputs:
@@ -48,6 +44,9 @@ jobs:
       - name: Run release validation suite
         run: npm run test:ci
 
+      - name: Validate workflow contracts
+        run: npm run test:workflows
+
       - name: Publish smoke test
         run: npm run test:publish-smoke
 
@@ -67,19 +66,28 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
+          before_tags="$(mktemp)"
+          after_tags="$(mktemp)"
+          trap 'rm -f "$before_tags" "$after_tags"' EXIT
+          git tag --list 'v[0-9]*' | sort -V > "$before_tags"
           if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
             npm run release:dry 2>&1 | tee release-output.log
             echo "released=false" >> "$GITHUB_OUTPUT"
             echo "dry_run=true" >> "$GITHUB_OUTPUT"
           else
             npm run release 2>&1 | tee release-output.log
-            # Check if release was created (look for "published" in output)
-            if grep -q "Published release" release-output.log; then
+            git tag --list 'v[0-9]*' | sort -V > "$after_tags"
+            new_tag="$(comm -13 "$before_tags" "$after_tags" | tail -n 1)"
+            if [[ -n "$new_tag" ]]; then
+              release_sha="$(git rev-list -n 1 "$new_tag")"
+              [[ "$release_sha" == "$(git rev-parse HEAD)" ]] || {
+                echo "New release tag $new_tag does not point at HEAD" >&2
+                exit 1
+              }
               echo "released=true" >> "$GITHUB_OUTPUT"
-              # Extract version from git describe
-              VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
-              echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-              echo "sha=$(git rev-list -n 1 "v${VERSION}")" >> "$GITHUB_OUTPUT"
+              echo "version=${new_tag#v}" >> "$GITHUB_OUTPUT"
+              echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
             else
               echo "released=false" >> "$GITHUB_OUTPUT"
             fi

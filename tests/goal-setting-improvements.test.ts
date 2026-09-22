@@ -876,10 +876,11 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         expect(scoutingCallIndex).toBeLessThan(firstCodingCallIndex);
         // A passing pre-validation verdict must proceed to validation, not repair coding.
         expect(codingCalls).toHaveLength(1);
-        // The first goal check is the pre-validation verdict; the second is the
-        // post-validation verdict after validation succeeds. Neither is an
-        // additional coding retry.
-        expect(goalCheckCalls).toHaveLength(2);
+        // This fixture exercises goal-setting retry recovery. Its no-op
+        // validation command does not add evidence requiring a second
+        // evaluator pass, so the successful pre-validation verdict is the
+        // single goal-check call. Neither stage is an additional coding retry.
+        expect(goalCheckCalls).toHaveLength(1);
         // Compare the complete sequence so a newly introduced orchestration stage
         // is named directly in the regression failure.
         expect(piCallOrder).toEqual([
@@ -887,7 +888,6 @@ validate_goal_setting_artifact "$1" "$2" "$3"
           'goal-setting',
           'scouting',
           'coding',
-          'goal-check',
           'goal-check',
         ]);
 
