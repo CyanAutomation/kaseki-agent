@@ -33,27 +33,27 @@ Scouting (read-only)
   ├─ Language detection: TypeScript found (tsconfig.json)
   ├─ Build command detection: npm run build
   └─ Store in BuildCapability context
-  
+
 Goal Setting
   ├─ Enhance goal with compilation criterion:
   │  "Compilation succeeds with 'npm run build' (exit code 0)"
   └─ Add to SMART requirements
-  
+
 Main Agent TASK_PROMPT (enhanced)
   ├─ Embed scouting results:
   │  "🔧 **Build System**: typescript
   │   Your changes will be validated by running: npm run build
   │   Ensure compilation succeeds with no errors."
   └─ Agent is aware of build requirements
-  
+
 Pre-Main Compilation (NEW - Exit Code 10)
   ├─ Run: npm run build
   ├─ If success → Agent runs
   └─ If failure → Exit 10 (quality gate)
-  
+
 Main Agent (with awareness)
   ↓ (if pre-main passed)
-  
+
 Post-Main Validation
   ├─ Run validation commands (npm test, etc.)
   ├─ Compare pre-main vs post-main build status
@@ -79,7 +79,7 @@ Set these variables to control compilation validation:
 
 ```bash
 # Core Settings
-export KASEKI_MODEL="openrouter/free"
+export KASEKI_MODEL="dynamic/kaseki-agent"
 export TASK_PROMPT="Fix the TypeScript compilation errors"
 
 # Compilation Specific (auto-detected but can override)
@@ -213,9 +213,9 @@ Post-agent: ❌ FAILED (npm run build)
 Status: **REGRESSION** — Agent broke compilation
 
 Error Details:
-src/handlers/api.ts:23:15 - error TS2322: 
+src/handlers/api.ts:23:15 - error TS2322:
   Type 'Promise<Response>' is not assignable to type 'Response'
-  
+
 Suggestion: Add 'await' or wrap return in Promise
 ```
 
