@@ -1,7 +1,7 @@
 # Bump the pinned Node base image monthly with a security review.
 # Node v24 base image: Updated May 2026 for improved performance and security.
 # Using ARG for DRY principle - base image used in both stages
-ARG NODE_IMAGE=node:24-bookworm-slim
+ARG NODE_IMAGE=node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6
 
 FROM ${NODE_IMAGE} AS deps
 

@@ -1,5 +1,17 @@
 version: 2
 updates:
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    labels:
+      - "infrastructure"
+      - "dependencies"
+    commit-message:
+      prefix: "chore(docker)"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
