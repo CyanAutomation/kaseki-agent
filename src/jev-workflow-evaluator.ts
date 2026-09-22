@@ -73,8 +73,9 @@ async function runGoalCheck(resultsDir: string, attempt: number): Promise<JsonOb
   const evidence: string[] = ['goal-setting.json', 'scouting.json', 'changed-files.txt', 'git.diff', 'validation.log'];
   let allMet = true;
   for (const [id, answer] of Object.entries(result.answers)) {
-    const index = Number(id.replace('criterion_', '')) - 1;
-    const criterion = effectiveCriteria[index] || id;
+    const match = id.match(/^criterion_(\d+)$/);
+    const index = match ? Number(match[1]) - 1 : -1;
+    const criterion = index >= 0 && index < effectiveCriteria.length ? effectiveCriteria[index] : id;
     if (!answerIsTrue(answer, threshold)) {
       allMet = false;
       missing.push(`${criterion} (noul=${answer?.type === 'noul' ? answer.noul.toFixed(2) : 'invalid'}, threshold=${threshold.toFixed(2)})`);
