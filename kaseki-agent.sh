@@ -6866,6 +6866,10 @@ const met = acceptedNoop || (hasDiff && missingFiles.length === 0);
 fs.writeFileSync(output, JSON.stringify({
   met,
   confidence: 'medium',
+  // The contract fallback is deliberately not a semantic evaluator verdict.
+  // Consumers must show a human-review requirement instead of inferring task
+  // completion from the `met` field.
+  evaluation_unavailable: true,
   summary: met ? 'Deterministic fallback confirmed a non-empty diff satisfies the critical changed-file contract; human review remains required for semantic requirements.' : 'Deterministic fallback could not confirm the critical changed-file contract.',
   evidence: [`git.diff non-empty: ${hasDiff}`, `required files: ${required.join(', ') || 'none'}`, `changed files: ${[...changed].join(', ') || 'none'}`],
   missing: missingFiles.length ? missingFiles.map((file) => `Required file not changed: ${file}`) : ['LLM goal-check verdict unavailable; semantic requirements require human review.'],
@@ -6882,6 +6886,10 @@ NODE
   GOAL_CHECK_EXIT=0
   GOAL_CHECK_FALLBACK_USED=true
   GOAL_CHECK_EVALUATION_WARNING="goal_check_deterministic_fallback:${reason}"
+  # This flag controls retry orchestration; keep it false so a transient
+  # evaluator-artifact failure still receives its evaluator-only repair pass.
+  # The persisted artifact's evaluation_unavailable marker carries the
+  # reviewer-facing semantic state.
   GOAL_CHECK_EVALUATOR_UNAVAILABLE=false
   GOAL_CHECK_MET="$(node -e 'try { process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).met ? "true" : "false"); } catch { process.stdout.write("false"); }' "${KASEKI_RESULTS_DIR}/goal-check.json")"
   GOAL_CHECK_FAILURE_REASON=""
@@ -8098,7 +8106,10 @@ derive_pr_title() {
 const fs = require('fs');
 try {
   const value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-  if (value && typeof value.pr_summary === 'string') process.stdout.write(value.pr_summary);
+  const unavailable = value?.evaluation_unavailable === true ||
+    (Array.isArray(value?.warnings) && value.warnings.includes('jev_classifier_unavailable')) ||
+    value?.overall_assessment === 'unknown';
+  if (!unavailable && value && typeof value.pr_summary === 'string') process.stdout.write(value.pr_summary);
 } catch {}
 NODE
     )"
@@ -8304,6 +8315,25 @@ build_pr_agent_review() {
 
   goal_summary=""
   evaluator_unavailable=0
+  # An evaluator fallback verifies only deterministic controller properties
+  # (for example, a non-empty diff). It must never be presented as semantic
+  # task completion in a PR body.
+  if [ -s "$goal_file" ] && node - "$goal_file" <<'NODE' >/dev/null 2>&1
+const fs = require('fs');
+try {
+  const value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  process.exit(value?.evaluation_unavailable === true ||
+    typeof value?.evaluation_fallback === 'string' ||
+    typeof value?.evaluation_warning === 'string' ? 0 : 1);
+} catch { process.exit(1); }
+NODE
+  then
+    printf '### Needs attention\n'
+    printf -- '- Goal-check evaluator unavailable; this is a degraded result and requires human review.\n'
+    printf -- '- Review the requested scope, diff, and validation evidence manually; the fallback did not assess semantic completion.\n'
+    return 0
+  fi
+
   # A missing or malformed evaluator artifact is not evidence that the goal was
   # met. Omit this optional section instead of manufacturing a verdict.
   if [ ! -s "$goal_file" ] || ! node - "$goal_file" <<'NODE' >/dev/null 2>&1

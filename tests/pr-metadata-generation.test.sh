@@ -246,6 +246,15 @@ case "$evaluation_pr_title" in
   "docs: Clarify the deployment health-check contract"*) pass "PR title prefers the concise evaluator summary" ;;
   *) fail "PR title did not prefer evaluator summary: $evaluation_pr_title" ;;
 esac
+cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
+{"overall_assessment":"unknown","reviewer_confidence":"low","pr_summary":"Run evaluation was unavailable; please rely on the summary, validation results, and changed files.","warnings":["jev_classifier_unavailable"]}
+JSON
+TASK_PROMPT="Fix the deployment health-check contract."
+unavailable_evaluation_title="$(derive_pr_title)"
+case "$unavailable_evaluation_title" in
+  "fix: the deployment health-check contract"*) pass "PR title ignores unavailable evaluator fallback text" ;;
+  *) fail "PR title used unavailable evaluator text: $unavailable_evaluation_title" ;;
+esac
 rm -f "$RESULTS_DIR/run-evaluation.json"
 
 TASK_PROMPT=''
@@ -458,6 +467,22 @@ if grep -Fq 'No unmet task requirements were reported by the goal check.' <<<"$d
 fi
 pass "Degraded evaluator state does not manufacture a goal-check verdict"
 pass "PR review metadata makes evaluator degradation visible"
+
+cat > "$RESULTS_DIR/goal-check.json" <<'JSON'
+{
+  "met": true,
+  "confidence": "medium",
+  "summary": "Deterministic fallback confirmed only the changed-file contract.",
+  "evaluation_fallback": "deterministic_critical_change_contract",
+  "evaluation_warning": "jev_classifier_unavailable"
+}
+JSON
+fallback_review="$(build_pr_agent_review 1)"
+grep -Fq 'Goal-check evaluator unavailable; this is a degraded result and requires human review.' <<<"$fallback_review" || fail "Deterministic fallback was presented as semantic goal-check evidence"
+if grep -Fq 'Deterministic fallback confirmed only the changed-file contract.' <<<"$fallback_review"; then
+  fail "PR review must not present a deterministic contract fallback as semantic success"
+fi
+pass "Deterministic goal-check fallback requires human review"
 
 
 agent_eval_overall_line="$(grep -nF -- '- Overall: good' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
