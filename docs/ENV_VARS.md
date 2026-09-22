@@ -15,7 +15,7 @@ Complete reference for all environment variables used by kaseki-agent.
 | `TASK_PROMPT` | (code fix task) | string | Agent instruction/task description |
 | `KASEKI_MODEL` | `dynamic/kaseki-agent` | string | LLM model identifier (for gateway production deployments, use `dynamic/kaseki-agent`; other providers may use their native model IDs) |
 | `KASEKI_PROVIDER` | `gateway` | string | Primary LLM provider. Options: `gateway` (default, uses LLM Gateway), `openrouter` (uses OpenRouter directly as the primary provider). Gateway failures are retried on the gateway and reported as provider failures; they do not switch to OpenRouter. |
-| `KASEKI_AGENT_TIMEOUT_SECONDS` | `1200` | integer | Agent reasoning timeout in seconds (max 86400) |
+| `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | integer | Agent reasoning timeout in seconds (max 86400) |
 | `KASEKI_GOAL_CHECK` | `KASEKI_SCOUTING` | boolean | Enable the post-validation goal-check Pi evaluator when scouting artifacts are available |
 | `KASEKI_GOAL_CHECK_MAX_RETRIES` | `1` | integer | Number of coding-agent retries after goal-check misses |
 | `KASEKI_GOAL_CHECK_MODEL` | `KASEKI_SCOUTING_MODEL` | string | Pi model identifier for the goal-check evaluator |
@@ -133,7 +133,7 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 
 | Variable | Default | Type | Purpose |
 | ---------- | --------- | ------ | --------- |
-| `KASEKI_MAX_DIFF_BYTES` | `200000` | integer | Maximum diff size in bytes (gates exit code 4) |
+| `KASEKI_MAX_DIFF_BYTES` | `400000` | integer | Maximum diff size in bytes (gates exit code 4) |
 | `KASEKI_CHANGED_FILES_ALLOWLIST` | `` (none) | string | Space-separated glob patterns for allowed file changes (gates exit code 5) |
 | `KASEKI_VALIDATION_ALLOWLIST` | `` (none) | string | Space-separated glob patterns for validation-phase file restrictions (gates exit code 7) |
 | `KASEKI_STARTUP_CHECK_MODE` | `boot` | enum | Dry-run startup check depth: `boot` or `baseline-validation` |
@@ -240,8 +240,8 @@ If dependency restore logs show EXDEV/cross-device hardlink failures:
 | Variable | Default | Type | Purpose |
 | ---------- | --------- | ------ | --------- |
 | `KASEKI_API_MAX_CONCURRENT_RUNS` | `3` | integer | Max parallel kaseki-agent jobs |
-| `KASEKI_AGENT_TIMEOUT_SECONDS` | `1200` | integer | Timeout for agent execution (same as CLI) |
-| `KASEKI_MAX_DIFF_BYTES` | `200000` | integer | Quality gate limit (same as CLI) |
+| `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | integer | Timeout for agent execution (same as CLI) |
+| `KASEKI_MAX_DIFF_BYTES` | `400000` | integer | Quality gate limit (same as CLI) |
 
 ### Docker Integration
 

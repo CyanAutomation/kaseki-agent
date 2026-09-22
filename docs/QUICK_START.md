@@ -136,7 +136,7 @@ The setup wizard created:
 
 ```bash
 # Check if host is ready for Kaseki (no changes)
-kaseki-agent host setup --check-only
+kaseki-agent host preflight
 ```
 
 This runs through 8 validation stages and outputs structured JSON:
@@ -164,13 +164,13 @@ If validation reports failures:
 sudo kaseki-agent host setup --fix
 
 # Verify fixes took effect
-kaseki-agent host setup --check-only
+kaseki-agent host preflight
 ```
 
 ### Understanding Validation Stages (Phase 4-5)
 
 - **Stage 1**: Host prerequisites (git, utilities)
-- **Stage 2**: Create/fix /agents directories  
+- **Stage 2**: Create/fix /agents directories
 - **Stage 3-4**: Configure secrets & checkout (run in parallel - Phase 4)
 - **Stage 5**: Bootstrap checkout (conditional on Stage 6)
 - **Stage 6**: Checkout freshness probe (parallel privilege tools - Phase 4)
@@ -185,8 +185,8 @@ kaseki-agent host setup --check-only
 
 **Phase 5 Documentation**:
 
-- [HOST_SETUP_STAGES.md](HOST_SETUP_STAGES.md) — Detailed stage information & execution flow
-- [HOST_SETUP_TROUBLESHOOTING.md](HOST_SETUP_TROUBLESHOOTING.md) — 11+ failure scenarios with diagnosis & fixes
+- [HOST_SETUP_STAGES.md](docs/archive/HOST_SETUP_STAGES.md) — Detailed stage information & execution flow
+- [HOST_SETUP_TROUBLESHOOTING.md](docs/archive/HOST_SETUP_TROUBLESHOOTING.md) — 11+ failure scenarios with diagnosis & fixes
 - [HOST_SETUP_API_REFERENCE.md](HOST_SETUP_API_REFERENCE.md) — JSON schemas, function reference & integration examples
 
 ---
@@ -213,7 +213,7 @@ docker exec kaseki-api ls -la /run/secrets/kaseki/  # Container mount
 ls -la ~/.kaseki/secrets/                   # Local
 
 # Or diagnose with host setup
-kaseki-agent host setup --check-only | grep -A2 "Stage 3"
+# Verify secrets are accessible via Docker or local paths
 ```
 
 ### API Key Not Working?
@@ -236,13 +236,13 @@ docker-compose up kaseki-api
 
 ### Host Setup or Permission Issues?
 
-See [HOST_SETUP_TROUBLESHOOTING.md](HOST_SETUP_TROUBLESHOOTING.md) for detailed diagnosis of 11+ common failure scenarios.
+See [HOST_SETUP_TROUBLESHOOTING.md](docs/archive/HOST_SETUP_TROUBLESHOOTING.md) for detailed diagnosis of 11+ common failure scenarios.
 
 ---
 
 ## Single-Run Execution
 
-**Best for**: One-off tasks, CI/CD scripts, experiments  
+**Best for**: One-off tasks, CI/CD scripts, experiments
 
 ```bash
 export LLM_GATEWAY_URL=https://llmgateway.local.xyz/v1
@@ -322,7 +322,7 @@ Example output:
 }
 ```
 
-For detailed guidance, see [GOAL_SETTING_GUIDE.md](GOAL_SETTING_GUIDE.md).
+For detailed guidance, see [GOAL_SETTING_GUIDE.md](../docs/GOAL_SETTING_GUIDE.md).
 
 ---
 
@@ -419,17 +419,17 @@ Example `scouting.json`:
 
 For more options (timeouts, validation commands, quality gates, etc.), see:
 
-- [docs/ADVANCED_CONFIG.md](ADVANCED_CONFIG.md) — 60+ environment variables
-- [docs/DEPLOYMENT.md](DEPLOYMENT.md) — Production deployment guide
-- [docs/TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues
+- [docs/ADVANCED_CONFIG.md](../docs/ADVANCED_CONFIG.md) — 60+ environment variables
+- [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md) — Production deployment guide
+- [docs/TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md) — Common issues
 
 ---
 
 ## Questions?
 
-- **Setup issues?** Check [docs/TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+- **Setup issues?** Check [docs/TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)
 - **Need help?** Open an issue: [github.com/CyanAutomation/kaseki-agent/issues](https://github.com/CyanAutomation/kaseki-agent/issues)
-- **More features?** See [docs/ADVANCED_CONFIG.md](ADVANCED_CONFIG.md)
+- **More features?** See [docs/ADVANCED_CONFIG.md](../docs/ADVANCED_CONFIG.md)
 
 - [ ] API accessible from CI/CD: correct base URL and firewall rules
 - [ ] Logging configured: `KASEKI_LOG_DIR` points to persistent storage
@@ -437,7 +437,7 @@ For more options (timeouts, validation commands, quality gates, etc.), see:
 
 ### Common Issues
 
-**Permission denied writing to `/agents`**  
+**Permission denied writing to `/agents`**
 
 ```bash
 sudo mkdir -p /agents
@@ -458,7 +458,7 @@ sudo kaseki-agent host setup --fix --recreate-api --wait-ready
 sudo kaseki-agent host preflight
 ```
 
-**Docker socket not accessible**  
+**Docker socket not accessible**
 
 ```bash
 # Verify socket exists and is readable
@@ -468,7 +468,7 @@ ls -la /var/run/docker.sock
 # See: https://docs.docker.com/engine/security/rootless/
 ```
 
-**API service won't start**  
+**API service won't start**
 
 ```bash
 # Check logs
@@ -478,7 +478,7 @@ docker-compose logs kaseki-api
 docker pull docker.io/cyanautomation/kaseki-agent:latest
 ```
 
-**Host log mirror warning at startup**  
+**Host log mirror warning at startup**
 
 If `KASEKI_LOG_DIR` is not writable, startup prints a warning and continues by default.
 
@@ -643,7 +643,7 @@ Variables are organized by zone:
 
 ### For Understanding
 
-- [Architecture Overview](../docs/IMPLEMENTATION_SUMMARY.md) — How kaseki-agent works
+- [Architecture Overview](docs/internal/IMPLEMENTATION_SUMMARY.md) — How kaseki-agent works
 - [Advanced Configuration](../docs/ADVANCED_CONFIG.md) — All 60+ variables explained
 - [Troubleshooting](../docs/TROUBLESHOOTING.md) — Error decision tree
 
@@ -656,24 +656,24 @@ Variables are organized by zone:
 ### For Operations
 
 - [Deployment Guide](../docs/DEPLOYMENT.md) — Production hardening, monitoring
-- [Disaster Recovery](../docs/DISASTER_RECOVERY.md) — Backups, incident response
+- [Disaster Recovery](#) — Not yet documented
 - [Cost Estimation](../docs/COST_ESTIMATION.md) — Gateway pricing, cost optimization
 
 ---
 
 ## Getting Help
 
-**First time?**  
+**First time?**
 → Re-read the [Decision Tree](#decision-tree) section above
 
-**Configuration issue?**  
-→ Run: `kaseki-agent doctor --verbose`  
+**Configuration issue?**
+→ Run: `kaseki-agent doctor --verbose`
 → Check: [docs/TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)
 
-**Found a bug?**  
+**Found a bug?**
 → Open an issue: <https://github.com/CyanAutomation/kaseki-agent/issues>
 
-**Want to contribute?**  
+**Want to contribute?**
 → See: [CONTRIBUTING.md](../CONTRIBUTING.md)
 
 ---
