@@ -68,7 +68,7 @@ A major simplification initiative has been completed to reduce setup friction. *
 
 **Phase 6: Formal Deprecation** ✅
 
-- `docs/MIGRATION.md` — Guide for users transitioning from old setup paths
+- `kaseki-agent init --import-legacy` — migrate legacy setup (see docs/CLI.md)
 - Old commands/scripts no longer functional (breaking changes)
 - Clear error messages direct users to new setup process
 
@@ -83,7 +83,6 @@ A major simplification initiative has been completed to reduce setup friction. *
 - `scripts/startup-checks.sh` — Permission validation and startup diagnostics
 - `docs/QUICK_START.md` — Unified quick-start guide (decision tree)
 - `docs/ADVANCED_CONFIG.md` — Complete configuration reference
-- `docs/MIGRATION.md` — Migration guide for existing users
 
 **Modified Files (5)**:
 
@@ -258,7 +257,7 @@ kaseki-agent setup
 # The API service auto-initializes now; just run: docker-compose up -d
 ```
 
-**Migration**: See [docs/MIGRATION.md](docs/MIGRATION.md) for users transitioning from old setup paths.
+See `kaseki-agent init --import-legacy` for legacy migration guidance (see [docs/CLI.md](docs/CLI.md)).
 
 ## Deploying the Kaseki API Service
 
@@ -298,7 +297,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for comprehensive deployment guidan
 | `OPENROUTER_API_KEY_FILE` | `~/.kaseki/secrets.json` | Preferred; set by setup wizard |
 | `REPO_URL` | CyanAutomation/crudmapper | Target repo |
 | `GIT_REF` | main | Branch/tag/commit |
-| `KASEKI_MODEL` | openrouter/free | Pi model string |
+| `KASEKI_MODEL` | dynamic/kaseki-agent | Pi model string |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | 10800 | Pi invocation timeout (3 hours) |
 | `TASK_PROMPT` | *(code fix task)* | Agent instruction |
 | `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test;npm run build` | Semicolon-separated; missing npm scripts are skipped (non-fatal) |
@@ -563,12 +562,12 @@ while true; do
   STATUS=$(./kaseki-cli.js status kaseki-1)
   RUNNING=$(echo $STATUS | jq -r '.running')
   TIMEOUT_RISK=$(echo $STATUS | jq -r '.timeoutRiskPercent')
-  
+
   # Alert on timeout risk
   if (( $(echo "$TIMEOUT_RISK >= 85" | bc -l) )); then
     echo "⚠ Timeout imminent: ${TIMEOUT_RISK}%"
   fi
-  
+
   # Exit when complete
   [ "$RUNNING" = "false" ] && break
   sleep 5
