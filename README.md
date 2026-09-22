@@ -204,6 +204,13 @@ KASEKI_API_URL=http://localhost:8080/api \
 kaseki-agent status kaseki-1 --follow
 ```
 
+> **Docker volume mounts:** Direct `docker run` invocations must mount `/results` read-write. A missing or `:ro` mount fails scouting/validation with exit code 86.
+
+```bash
+# Correct: /results mounted read-write
+docker run -v /path/to/results:/results:rw docker.io/cyanautomation/kaseki-agent:latest
+```
+
 ---
 
 ## Configuration
@@ -217,6 +224,38 @@ kaseki-agent status kaseki-1 --follow
 ### Environment Variables
 
 See [docs/ENV_VARS.md](docs/ENV_VARS.md) for complete configuration reference.
+
+#### Key Environment Variables
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `LLM_GATEWAY_URL` | `https://llmgateway.local.xyz/v1` | Required; Pi CLI appends endpoint path |
+| `LLM_GATEWAY_API_KEY_FILE` | `~/.kaseki/secrets.json` | Required; secret file (mode 0600) |
+| `KASEKI_MODEL` | `dynamic/kaseki-agent` | Pi model string |
+| `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test;npm run build` | Semicolon-separated |
+| `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | Agent timeout (3 hours) |
+| `KASEKI_MAX_DIFF_BYTES` | `400000` | Max diff size (400 KB) |
+| `KASEKI_RETENTION_RUNS` | `5` | Runs kept between executions |
+| `REPO_URL` | https://github.com/CyanAutomation/crudmapper | Target repo (single-run) |
+| `GIT_REF` | `main` | Branch/tag/commit (single-run) |
+| `TASK_PROMPT` | *(code fix task)* | Agent instruction (single-run) |
+
+See [docs/ENV_VARS.md](docs/ENV_VARS.md) for the complete reference.
+
+#### Quality Gates and Exit Codes
+
+Quality gates run after the agent completes, before reporting success:
+
+| Gate | Exit Code | Variable |
+| --- | --- | --- |
+| Missing API key / config | 2 | — |
+| Empty git diff | 3 | — |
+| Diff exceeds max bytes | 4 | `KASEKI_MAX_DIFF_BYTES` |
+| Changed file outside allowlist | 5 | `KASEKI_CHANGED_FILES_ALLOWLIST` |
+| Secret scan hit (sk-or-* leak NOT in allowlist) | 6 | `.kaseki-secret-allowlist` |
+| Validation phase files outside allowlist | 7 | `KASEKI_VALIDATION_ALLOWLIST` |
+| Provider/model error (non-retryable after retry) | 88 | — |
+| Pi agent timeout | 124 | `KASEKI_AGENT_TIMEOUT_SECONDS` |
 
 ### Deployment Options
 

@@ -172,7 +172,7 @@ docker run -it \
 **Environment variables (optional):**
 
 - `KASEKI_AGENT_TIMEOUT_SECONDS` — Timeout in seconds (default: 1200 / 20 min)
-- `KASEKI_MODEL` — Pi model to use (default: openrouter/free)
+- `KASEKI_MODEL` — Pi model to use (default: dynamic/kaseki-agent)
 - `KASEKI_VALIDATION_COMMANDS` — Validation steps (default: npm run check; npm run test; npm run build)
 - `KASEKI_CHANGED_FILES_ALLOWLIST` — Restrict which files can change
 - `KASEKI_MAX_DIFF_BYTES` — Maximum diff size (default: 200000 bytes)
@@ -365,7 +365,7 @@ ln -s /path/to/kaseki-agent/kaseki ~/bin/kaseki
 | Variable | Purpose |
 | ---------- | --------- |
 | `TASK_PROMPT` | Custom task description |
-| `KASEKI_MODEL` | Model to use (default: openrouter/free) |
+| `KASEKI_MODEL` | Model to use (default: dynamic/kaseki-agent) |
 | `KASEKI_VALIDATION_COMMANDS` | Validation steps (semicolon-separated) |
 | `KASEKI_CHANGED_FILES_ALLOWLIST` | Restrict file changes |
 | `KASEKI_MAX_DIFF_BYTES` | Maximum diff size (bytes) |

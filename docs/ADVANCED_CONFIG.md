@@ -441,7 +441,7 @@ The goal-setting agent runs **before scouting** to upgrade your task prompt into
   ```bash
   export KASEKI_GOAL_SETTING_MODEL=openrouter/anthropic/claude-3-opus
   export KASEKI_SCOUTING_MODEL=openrouter/free
-  export KASEKI_MODEL=openrouter/free
+  export KASEKI_MODEL=dynamic/kaseki-agent
   ```
 
 #### `KASEKI_GOAL_SETTING_TIMEOUT_SECONDS`
@@ -560,7 +560,7 @@ Or via API:
 
 - `/results/scouting.json` → Full research + suggested_allowlist + coverage metrics
 - `/results/scouting-report.md` → Human-readable coverage summary
-- `/results/metadata.jsonl` → Log entry for allowlist merge decision
+- `/results/restoration.jsonl → Log entry for allowlist merge decision
 
 ### Goal Check Agent Loop
 
