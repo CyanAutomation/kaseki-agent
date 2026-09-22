@@ -77,7 +77,7 @@ async function runGoalCheck(resultsDir: string, attempt: number): Promise<JsonOb
     const criterion = effectiveCriteria[index] || id;
     if (!answerIsTrue(answer, threshold)) {
       allMet = false;
-      missing.push(`${criterion} (noul=${answer.type === 'noul' ? answer.noul.toFixed(2) : 'invalid'}, threshold=${threshold.toFixed(2)})`);
+      missing.push(`${criterion} (noul=${answer?.type === 'noul' ? answer.noul.toFixed(2) : 'invalid'}, threshold=${threshold.toFixed(2)})`);
     }
   }
   if (process.env.KASEKI_TASK_MODE === 'patch' && !String(state.diff).trim()) {
