@@ -34,7 +34,6 @@ This directory contains specialized domain knowledge skills for kaseki-agent ope
 | --- | --- | --- |
 | **[docker-image-management](docker-image-management/SKILL.md)** | Managing base images, Pi CLI versions, and multi-arch builds | Docker image, Node.js version, Pi CLI upgrade, multi-arch builds |
 | **[distributed-deployment](distributed-deployment/SKILL.md)** | Deploying kaseki-agent across multiple hosts, regions, and cloud platforms | Kubernetes, multi-region, distributed deployment, load balancing |
-| **[disaster-recovery](disaster-recovery/SKILL.md)** | Backup, recovery, and incident response for production deployments | backup, restore, incident response, failover |
 
 ### 📊 Performance & Cost
 
@@ -49,7 +48,7 @@ This directory contains specialized domain knowledge skills for kaseki-agent ope
 | Skill | Description | Trigger Keywords |
 | --- | --- | --- |
 | **[ci-cd-integration](ci-cd-integration/SKILL.md)** | Integrating kaseki-agent into CI/CD platforms for automated code changes | GitHub Actions, GitLab CI, Jenkins, pipeline integration |
-| **[test-automation](test-automation/SKILL.md)** | Testing kaseki-agent behavior changes and adding new test coverage | unit tests, integration tests, vitest, test patterns |
+| **[test-automation](test-automation/SKILL.md)** | Testing kaseki-agent behavior changes and adding new test coverage | unit tests, integration tests, Jest, test patterns |
 
 ### 🛠️ Code Analysis & Design
 
@@ -84,7 +83,7 @@ My kaseki runs are too expensive
     └─> Need to optimize model selection? → environment-configuration
 
 My deployment/infrastructure has issues
-└─> Start with: distributed-deployment or disaster-recovery
+└─> Start with: distributed-deployment
     └─> Docker image issues? → docker-image-management
     └─> CI/CD pipeline issues? → ci-cd-integration
 ```
@@ -102,7 +101,7 @@ Integrating into CI/CD pipeline
 
 Deploying to production
 └─> Start with: distributed-deployment
-    └─> Also review: disaster-recovery, docker-image-management
+    └─> Also review: docker-image-management
 
 Writing a new task prompt
 └─> Start with: prompt-engineering
@@ -153,12 +152,12 @@ The skills form a knowledge graph with cross-references. Central "hub" skills th
 **workflow-diagnosis** (connects to 10 skills)
 
 - Primary troubleshooting entry point
-- References: prompt-engineering, quality-gate-config, test-automation, docker-image-management, dependency-cache-optimization, result-report-analysis, ci-cd-integration, distributed-deployment, disaster-recovery, environment-configuration
+- References: prompt-engineering, quality-gate-config, test-automation, docker-image-management, dependency-cache-optimization, result-report-analysis, ci-cd-integration, distributed-deployment, environment-configuration
 
 **environment-configuration** (connects to 7 skills)
 
 - Central configuration reference
-- References: cost-optimization, performance-tuning, docker-image-management, distributed-deployment, ci-cd-integration, quality-gate-config, disaster-recovery
+- References: cost-optimization, performance-tuning, docker-image-management, distributed-deployment, ci-cd-integration, quality-gate-config
 
 ### Skill Clusters
 
@@ -177,7 +176,6 @@ The skills form a knowledge graph with cross-references. Central "hub" skills th
 
 **Deployment Cluster**:
 
-- distributed-deployment ↔ disaster-recovery
 - distributed-deployment ↔ docker-image-management
 - distributed-deployment ↔ environment-configuration
 
@@ -208,17 +206,21 @@ relatedSkills: [skill1, skill2]    # Cross-references to other skills
 | `kaseki` | All internal skills | Core kaseki-agent functionality |
 | `troubleshooting` | workflow-diagnosis | Diagnostic and debugging |
 | `configuration` | environment-configuration, quality-gate-config | Setup and config |
-| `deployment` | docker-image-management, distributed-deployment, disaster-recovery | Operations and deployment |
+| `deployment` | docker-image-management, distributed-deployment | Operations and deployment |
 | `optimization` | performance-tuning, cost-optimization, dependency-cache-optimization | Performance and cost |
 | `testing` | test-automation | Quality assurance |
 | `ci-cd` | ci-cd-integration, docker-image-management | Continuous integration |
 
 ### External Skills
 
-Two skills have extended metadata indicating external origin:
+Two skills are maintained as external or independently sourced integrations:
 
 - **fallow**: MIT-licensed tool by Bart Waardenburg (v1.0.0)
 - **frontend-design**: Huashu-Design system for HTML prototyping
+
+External skills are opt-in and should be loaded only when a user explicitly requests that
+domain. They are not part of the default Kaseki operations, troubleshooting, or deployment
+workflow.
 
 These skills include additional frontmatter fields:
 

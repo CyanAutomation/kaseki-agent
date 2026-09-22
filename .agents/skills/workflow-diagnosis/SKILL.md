@@ -2,14 +2,14 @@
 name: workflow-diagnosis
 description: Diagnosing kaseki run failures and interpreting artifacts
 tags: [kaseki, troubleshooting, diagnostics, debugging]
-relatedSkills: [prompt-engineering, quality-gate-config, test-automation, docker-image-management, dependency-cache-optimization, result-report-analysis, ci-cd-integration, distributed-deployment, disaster-recovery, environment-configuration]
+relatedSkills: [prompt-engineering, quality-gate-config, test-automation, docker-image-management, dependency-cache-optimization, result-report-analysis, ci-cd-integration, distributed-deployment, environment-configuration]
 ---
 
 # Workflow Diagnosis for Kaseki Agent
 
 This skill guides you through diagnosing failures in kaseki runs, interpreting artifacts, and identifying root causes.
 
-**📖 Key Reference**: For comprehensive troubleshooting decision trees, see [TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md) — the authoritative guide for all kaseki failure patterns.
+**📖 Key Reference**: For comprehensive troubleshooting decision trees, see [TROUBLESHOOTING.md](../../../docs/TROUBLESHOOTING.md) — the authoritative guide for all kaseki failure patterns.
 
 ## Overview
 
@@ -98,14 +98,14 @@ Use the **Exit Code Mapping** table below to jump to the right artifact.
 |---|---|---|---|
 | 0 | Success | `pi-summary.json` | N/A (success) |
 | 2 | Missing API key / config | `stdout.log`, `stderr.log` | N/A (configuration) |
-| 3 | Empty git diff | `git.diff`, `pi-events.jsonl` | [Prompt Engineering](prompt-engineering.md) |
-| 4 | Diff exceeds max bytes | `git.diff`, `changed-files.txt` | [Quality Gate Configuration](quality-gate-config.md) |
-| 5 | Changed file outside allowlist | `changed-files.txt`, `quality.log` | [Quality Gate Configuration](quality-gate-config.md) |
-| 6 | Secret scan hit (sk-or-* leak) | `secret-scan.log` | [Prompt Engineering](prompt-engineering.md) |
-| 7 | Validation phase files outside allowlist | `quality.log`, `changed-files.txt` | [Quality Gate Configuration](quality-gate-config.md) |
-| 88 | Provider/Model error (non-retryable) | `metadata.json`, `quality.log`, `pi-events.jsonl` | [Environment Configuration](environment-configuration.md) |
-| 124 | Pi agent timeout | `pi-summary.json`, `stdout.log` | [Prompt Engineering](prompt-engineering.md) or [Docker Image Management](docker-image-management.md) |
-| Other | Validation command failure | `validation.log`, exit code in metadata | [Test Automation](test-automation.md) |
+| 3 | Empty git diff | `git.diff`, `pi-events.jsonl` | [Prompt Engineering](../prompt-engineering/SKILL.md) |
+| 4 | Diff exceeds max bytes | `git.diff`, `changed-files.txt` | [Quality Gate Configuration](../quality-gate-config/SKILL.md) |
+| 5 | Changed file outside allowlist | `changed-files.txt`, `quality.log` | [Quality Gate Configuration](../quality-gate-config/SKILL.md) |
+| 6 | Secret scan hit (sk-or-* leak) | `secret-scan.log` | [Prompt Engineering](../prompt-engineering/SKILL.md) |
+| 7 | Validation phase files outside allowlist | `quality.log`, `changed-files.txt` | [Quality Gate Configuration](../quality-gate-config/SKILL.md) |
+| 88 | Provider/Model error (non-retryable) | `metadata.json`, `quality.log`, `pi-events.jsonl` | [Environment Configuration](../environment-configuration/SKILL.md) |
+| 124 | Pi agent timeout | `pi-summary.json`, `stdout.log` | [Prompt Engineering](../prompt-engineering/SKILL.md) or [Docker Image Management](../docker-image-management/SKILL.md) |
+| Other | Validation command failure | `validation.log`, exit code in metadata | [Test Automation](../test-automation/SKILL.md) |
 
 ---
 
@@ -126,11 +126,11 @@ cat /agents/kaseki-results/kaseki-N/pi-summary.json | jq '.status'
 
 **Root Causes**:
 1. **Prompt was too vague** → Agent didn't understand what to do
-   - Remediation: See [Prompt Engineering](prompt-engineering.md) — be more specific
+   - Remediation: See [Prompt Engineering](../prompt-engineering/SKILL.md) — be more specific
 2. **Code was already correct** → Bug doesn't exist or is fixed
    - Remediation: Verify the issue manually in the repo
 3. **Validation commands fail on any change** → Too strict constraints
-   - Remediation: See [Quality Gate Configuration](quality-gate-config.md) — loosen constraints
+   - Remediation: See [Quality Gate Configuration](../quality-gate-config/SKILL.md) — loosen constraints
 
 **Diagnosis Steps**:
 ```bash
@@ -162,7 +162,7 @@ cat /agents/kaseki-results/kaseki-N/pi-summary.json | jq '.status'
 1. **Task too complex** → Agent exploring too many options
    - Remediation: Simplify task scope; provide more constraints
 2. **Validation commands are slow** → npm ci, build takes 10+ minutes
-   - Remediation: See [Dependency Cache Optimization](dependency-cache-optimization.md)
+   - Remediation: See [Dependency Cache Optimization](../dependency-cache-optimization/SKILL.md)
 3. **Pi CLI performance issue** → Upstream problem with LLM
    - Remediation: Retry with a different model or shorter timeout
 
@@ -195,9 +195,9 @@ cat /agents/kaseki-results/kaseki-N/quality.log
 
 **Root Causes**:
 1. **Allowlist too narrow** → Legitimate files excluded
-   - Remediation: See [Quality Gate Configuration](quality-gate-config.md) — expand allowlist
+   - Remediation: See [Quality Gate Configuration](../quality-gate-config/SKILL.md) — expand allowlist
 2. **Prompt scope unclear** → Agent made assumption and changed extra files
-   - Remediation: See [Prompt Engineering](prompt-engineering.md) — be explicit about constraints
+   - Remediation: See [Prompt Engineering](../prompt-engineering/SKILL.md) — be explicit about constraints
 
 **Diagnosis Steps**:
 ```bash
@@ -217,7 +217,7 @@ cat /agents/kaseki-results/kaseki-N/git.diff | grep '^diff --git' | head -10
 **Quick Diagnosis**:
 ```bash
 wc -c < /agents/kaseki-results/kaseki-N/git.diff
-# Output: 250000 (exceeds default 200000 = 200 KB)
+# Output: 450000 (exceeds default 400000 = 400 KB)
 
 cat /agents/kaseki-results/kaseki-N/quality.log
 # Output: Diff size 250000 bytes exceeds KASEKI_MAX_DIFF_BYTES (400000)
@@ -225,9 +225,9 @@ cat /agents/kaseki-results/kaseki-N/quality.log
 
 **Root Causes**:
 1. **Task too broad** → Agent changed too much
-   - Remediation: See [Prompt Engineering](prompt-engineering.md) — narrow task scope
+   - Remediation: See [Prompt Engineering](../prompt-engineering/SKILL.md) — narrow task scope
 2. **Max diff too conservative** → Limit is unreasonable for this task
-   - Remediation: See [Quality Gate Configuration](quality-gate-config.md) — increase limit
+   - Remediation: See [Quality Gate Configuration](../quality-gate-config/SKILL.md) — increase limit
 
 **Diagnosis Steps**:
 ```bash
@@ -283,7 +283,7 @@ cat /agents/kaseki-results/kaseki-N/secret-scan.log
 
 **Root Causes**:
 1. **Prompt included API key example** → Security issue in prompt design
-   - Remediation: See [Prompt Engineering](prompt-engineering.md) — security checklist
+   - Remediation: See [Prompt Engineering](../prompt-engineering/SKILL.md) — security checklist
 2. **Agent exposed environment variable** → Unexpected behavior
    - Remediation: Check pi-events.jsonl to see what agent was thinking
 
@@ -345,7 +345,7 @@ Exit code 88 means the error was non-retryable OR the retry also failed.
 3. **Authentication error** → Invalid or expired API key
    - Remediation: Verify `OPENROUTER_API_KEY` is correct
    - Check account is active and has available credits
-   - See [Environment Configuration](environment-configuration.md) for API key setup
+   - See [Environment Configuration](../environment-configuration/SKILL.md) for API key setup
 
 4. **Invalid configuration** → Malformed request parameters
    - Remediation: Review model-specific parameters
@@ -399,7 +399,7 @@ Exit Code 88 Detected
    └─ NO → Review full error message in metadata.json
 ```
 
-**See Also**: [docs/EXIT_CODES.md](../../docs/EXIT_CODES.md#88--providermodel-error-non-retryable) for comprehensive troubleshooting guidance.
+**See Also**: [docs/EXIT_CODES.md](../../../docs/EXIT_CODES.md#88--providermodel-error-non-retryable) for comprehensive troubleshooting guidance.
 
 ---
 
@@ -420,7 +420,7 @@ cat /agents/kaseki-results/kaseki-N/metadata.json | jq '{start: .start_time, end
 
 **If Slower Than Expected**:
 1. Check validation timings (see below)
-2. See [Dependency Cache Optimization](dependency-cache-optimization.md) if npm is slow
+2. See [Dependency Cache Optimization](../dependency-cache-optimization/SKILL.md) if npm is slow
 3. See [Workflow Diagnosis](#pattern-2-agent-timeout-exit-code-124) for timeout pattern
 
 ### Check Validation Command Timings
@@ -436,7 +436,7 @@ cat /agents/kaseki-results/kaseki-N/validation-timings.tsv
 ```
 
 **Optimization**:
-- `npm ci` > 2m? → Cache issue, see [Dependency Cache Optimization](dependency-cache-optimization.md)
+- `npm ci` > 2m? → Cache issue, see [Dependency Cache Optimization](../dependency-cache-optimization/SKILL.md)
 - `npm test` > 5m? → Consider running only relevant tests
 - Any command > 10m? → Consider increasing `KASEKI_AGENT_TIMEOUT_SECONDS`
 
@@ -568,10 +568,10 @@ jq -r '.type + ": " + (.content // .message // "")' \
 
 ## Related Skills & Docs
 
-- [Prompt Engineering](prompt-engineering.md) — Design better tasks to avoid failures
-- [Quality Gate Configuration](quality-gate-config.md) — Set appropriate constraints
-- [Test Automation](test-automation.md) — Ensure validation tests are robust
-- [Docker Image Management](docker-image-management.md) — Image-related issues
-- [Dependency Cache Optimization](dependency-cache-optimization.md) — Performance tuning
-- [Result Report Analysis](result-report-analysis.md) — Metrics and baselines
-- [CLAUDE.md](../../CLAUDE.md) — Complete architecture and exit codes reference
+- [Prompt Engineering](../prompt-engineering/SKILL.md) — Design better tasks to avoid failures
+- [Quality Gate Configuration](../quality-gate-config/SKILL.md) — Set appropriate constraints
+- [Test Automation](../test-automation/SKILL.md) — Ensure validation tests are robust
+- [Docker Image Management](../docker-image-management/SKILL.md) — Image-related issues
+- [Dependency Cache Optimization](../dependency-cache-optimization/SKILL.md) — Performance tuning
+- [Result Report Analysis](../result-report-analysis/SKILL.md) — Metrics and baselines
+- [CLAUDE.md](../../../CLAUDE.md) — Complete architecture and exit codes reference

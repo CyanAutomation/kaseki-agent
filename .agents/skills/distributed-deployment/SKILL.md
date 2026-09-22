@@ -2,7 +2,7 @@
 name: distributed-deployment
 description: Deploying kaseki-agent across multiple hosts, regions, and cloud platforms
 tags: [kaseki, kubernetes, deployment, ha, load-balancing, scaling, multi-host, multi-region]
-relatedSkills: [disaster-recovery, environment-configuration, docker-image-management, workflow-diagnosis]
+relatedSkills: [environment-configuration, docker-image-management, workflow-diagnosis]
 ---
 
 # Distributed Deployment for Kaseki Agent
@@ -385,7 +385,6 @@ done
 
 ## See Also
 
-- [DISTRIBUTED_SETUP.md](../../docs/DISTRIBUTED_SETUP.md) — Comprehensive distributed deployment guide
-- [disaster-recovery](disaster-recovery.md) — Failover and incident response
-- [DEPLOYMENT.md](../../docs/DEPLOYMENT.md) — Basic deployment and API service setup
-- [environment-configuration](environment-configuration.md) — Multi-host configuration
+- [DISTRIBUTED_SETUP.md](../../../docs/DISTRIBUTED_SETUP.md) — Comprehensive distributed deployment guide
+- [DEPLOYMENT.md](../../../docs/DEPLOYMENT.md) — Basic deployment and API service setup
+- [environment-configuration](../environment-configuration/SKILL.md) — Multi-host configuration

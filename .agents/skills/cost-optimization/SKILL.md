@@ -31,6 +31,9 @@ This skill guides cost analysis, budgeting, and optimization for kaseki-agent de
 
 ### Primary Cost: OpenRouter API
 
+Model identifiers, routing, and pricing change over time. Treat the table below as an
+illustrative calculation template and verify current provider pricing before budgeting.
+
 **Cost Structure**:
 ```
 Cost = (Input Tokens × Input Price + Output Tokens × Output Price) / 1M
@@ -46,7 +49,9 @@ Cost = (Input Tokens × Input Price + Output Tokens × Output Price) / 1M
 | gpt-4-turbo | $10 | $30 | $0.20–0.40 |
 | claude-3-opus | $15 | $75 | $0.30–0.60 |
 
-**Default**: `openrouter/free` (uses whatever is cheapest/available)
+**Runner default**: `auto` (the configured gateway resolves the model). Set
+`openrouter/free` explicitly only when that route is available and its quality/latency is
+acceptable for the task.
 
 ### Secondary Costs: Infrastructure
 
@@ -96,7 +101,7 @@ echo "Estimated cost (Claude Sonnet): \$$COST"
 **Scenario**: Team of 5 engineers, 10 kaseki runs per day (50/day company-wide)
 
 **Using Free Model**:
-- Cost: **$0** (free tier always available via openrouter/free)
+- Cost: **$0 in the illustrative free-tier case**; free routes are not guaranteed to be available.
 - Monthly: **$0**
 
 **Using Claude Sonnet** (if free tier unavailable):
@@ -117,7 +122,8 @@ echo "Estimated cost (Claude Sonnet): \$$COST"
 
 ### Strategy 1: Use Free Model (30–50% savings if forced to paid)
 
-Kaseki defaults to `openrouter/free`, which routes to the cheapest available model (usually Claude Haiku or similar free-tier option).
+The runner defaults to `auto`; select a free route explicitly only after verifying that the
+configured gateway supports it and that it meets the task's quality and latency needs.
 
 **When**: For routine tasks, always use free model
 **Impact**: $0 (free), vs. $0.20–0.30 per run for paid models
@@ -166,8 +172,8 @@ Longer timeout allows agent to think through problem more thoroughly, reducing t
 **ROI**: Small config change → saves $0.10+ per run
 
 ```bash
-# Default timeout (too short for complex tasks)
-KASEKI_AGENT_TIMEOUT_SECONDS=1200  # 20 min
+# The runner default is 10800 seconds (3 hours); use a lower value only when the task has a known bound.
+KASEKI_AGENT_TIMEOUT_SECONDS=10800
 
 # Extended timeout (better for complex changes)
 KASEKI_AGENT_TIMEOUT_SECONDS=2400  # 40 min
@@ -266,7 +272,7 @@ echo "Total estimated: \$$TOTAL_COST"
 
 ### Production Cost Dashboard
 
-For full cost tracking, monitoring, and alerting, see [COST_ESTIMATION.md](../../docs/COST_ESTIMATION.md).
+For full cost tracking, monitoring, and alerting, see [COST_ESTIMATION.md](../../../docs/COST_ESTIMATION.md).
 
 ---
 
@@ -341,7 +347,7 @@ echo "Time saved: $TEAM_SIZE engineers × 0.5 hours × $DAYS_PER_MONTH × 12 mon
 
 ## See Also
 
-- [COST_ESTIMATION.md](../../docs/COST_ESTIMATION.md) — Authoritative cost reference and detailed analysis
-- [PERFORMANCE_TUNING.md](../../docs/PERFORMANCE_TUNING.md) — Tuning strategies with cost impact
-- [quality-gate-config](quality-gate-config.md) — Allowlist design for cost control
-- [environment-configuration](environment-configuration.md) — Model selection and API configuration
+- [COST_ESTIMATION.md](../../../docs/COST_ESTIMATION.md) — Authoritative cost reference and detailed analysis
+- [PERFORMANCE_TUNING.md](../../../docs/PERFORMANCE_TUNING.md) — Tuning strategies with cost impact
+- [quality-gate-config](../quality-gate-config/SKILL.md) — Allowlist design for cost control
+- [environment-configuration](../environment-configuration/SKILL.md) — Model selection and API configuration

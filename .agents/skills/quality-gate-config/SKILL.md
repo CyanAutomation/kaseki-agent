@@ -132,7 +132,7 @@ cat /agents/kaseki-results/kaseki-N/quality.log
 
 **Environment Variable**:
 ```bash
-KASEKI_MAX_DIFF_BYTES=400000  # 200 KB default
+KASEKI_MAX_DIFF_BYTES=400000  # 400 KB default
 ```
 
 **Format**: Bytes (integer)
@@ -147,7 +147,7 @@ KASEKI_MAX_DIFF_BYTES=400000  # 200 KB default
 | Large refactor | 50–500 KB | 500000 (500 KB) |
 
 **Heuristic**:
-- Start with 200 KB (default) for typical tasks
+- Start with 400 KB (default) for typical tasks
 - Increase if legitimate changes exceed limit
 - Decrease if you want strict scope enforcement
 
@@ -251,7 +251,7 @@ KASEKI_VALIDATION_COMMANDS="npm run test -- tests/role.test.ts"
 
 #### Timeout Tuning
 
-Commands run with the `KASEKI_AGENT_TIMEOUT_SECONDS` (default 1200s = 20 min).
+Commands run with the `KASEKI_AGENT_TIMEOUT_SECONDS` (default 10800s = 3 hours).
 
 If validation is slow:
 
@@ -269,7 +269,7 @@ cat /agents/kaseki-results/kaseki-N/validation-timings.tsv
 **Optimize**:
 1. **Reduce test scope** — run only relevant tests
 2. **Increase timeout** — if all commands are slow due to slow repo
-3. **Improve caching** — see [Dependency Cache Optimization](dependency-cache-optimization.md)
+3. **Improve caching** — see [Dependency Cache Optimization](../dependency-cache-optimization/SKILL.md)
 
 ```bash
 # Run only tests for changed files
@@ -342,7 +342,7 @@ export KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts tests/parser.test.ts"
 
 #### For Detailed Cost Analysis
 
-See [COST_ESTIMATION.md](../../docs/COST_ESTIMATION.md) for:
+See [COST_ESTIMATION.md](../../../docs/COST_ESTIMATION.md) for:
 - Cost per run calculation
 - Budget planning and monitoring
 - Cost optimization strategies beyond allowlists
@@ -379,7 +379,7 @@ cat /agents/kaseki-results/kaseki-N/secret-scan.log
 - ✓ Never include API keys in examples
 - ✓ Describe credentials without showing them ("API key" not "sk-or-123")
 - ✓ Ensure task prompts don't leak env vars
-- See [Prompt Engineering](prompt-engineering.md) for security checklist
+- See [Prompt Engineering](../prompt-engineering/SKILL.md) for security checklist
 
 ---
 
@@ -655,6 +655,6 @@ cat /agents/kaseki-results/kaseki-N/validation.log | tail -50
 
 ## Related Skills & Docs
 
-- [Prompt Engineering](prompt-engineering.md) — Design prompts to work with quality gates
-- [Workflow Diagnosis](workflow-diagnosis.md) — Troubleshoot gate violations
-- [CLAUDE.md](../../CLAUDE.md) — Architecture and environment variables reference
+- [Prompt Engineering](../prompt-engineering/SKILL.md) — Design prompts to work with quality gates
+- [Workflow Diagnosis](../workflow-diagnosis/SKILL.md) — Troubleshoot gate violations
+- [CLAUDE.md](../../../CLAUDE.md) — Architecture and environment variables reference

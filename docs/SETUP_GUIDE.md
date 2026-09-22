@@ -433,7 +433,7 @@ sudo pacman -S --needed docker git
 
 ### Agent runs take too long
 
-The default timeout is 20 minutes. To adjust:
+The default timeout is 3 hours. To adjust:
 
 ```bash
 KASEKI_AGENT_TIMEOUT_SECONDS=3600 ./run-kaseki.sh ...

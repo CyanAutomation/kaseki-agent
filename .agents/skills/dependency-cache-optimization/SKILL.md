@@ -50,18 +50,18 @@ Kaseki Instance Run
 
 **Purpose**: Quick validation that node_modules is already correct
 
-**Stamp File Location**: `/workspace/.kaseki-cache/<repo-hash>.<lock-hash>.stamp`
+**Workspace cache location**: `${KASEKI_DEPENDENCY_CACHE_DIR:-${KASEKI_WORKSPACE_DIR}/.kaseki-cache}/<cache-key>/`
 
-**Format**:
-```
-repo:<repo-hash> lock:<lock-hash> timestamp:<unix-time>
-```
+The host runner passes the per-run workspace to the container. The image seed cache is
+`/opt/kaseki/workspace-cache/<cache-key>/`.
 
-**Computation**:
-- `<repo-hash>`: SHA-1 of repo directory name (or GitHub owner/repo)
-- `<lock-hash>`: SHA-1 of package-lock.json content
+**Cache key inputs**:
+- `lock_hash`: SHA-256 of `package-lock.json` (or `npm-shrinkwrap.json`)
+- Node.js major version
+- npm install flags
+- Repository/ref metadata is recorded alongside the cache entry
 
-**Speed**: Microseconds (file comparison)
+**Speed**: Fast file and marker checks
 
 **When Stamp Matches**:
 ```bash
@@ -81,7 +81,7 @@ repo:<repo-hash> lock:<lock-hash> timestamp:<unix-time>
 
 **Purpose**: Reuse cached node_modules from a previous kaseki run
 
-**Cache Location**: `/workspace/.kaseki-cache/<repo-hash>/<lock-hash>/node_modules/`
+**Cache Location**: `${KASEKI_DEPENDENCY_CACHE_DIR:-${KASEKI_WORKSPACE_DIR}/.kaseki-cache}/<cache-key>/node_modules/`
 
 **Speed**: Seconds (copy operation)
 
@@ -179,8 +179,10 @@ git diff package-lock.json
 ### Manual Cache Busting
 
 ```bash
-# Clear workspace cache (Layers 1–2)
-rm -rf /workspace/.kaseki-cache
+# Clear workspace cache (Layers 1–2) only after checking the resolved directory.
+cache_dir="${KASEKI_DEPENDENCY_CACHE_DIR:-${KASEKI_WORKSPACE_DIR}/.kaseki-cache}"
+printf 'About to remove %s\n' "$cache_dir"
+rm -rf -- "$cache_dir"
 
 # Clear image seed cache (rebuild Docker image)
 docker build --no-cache -t kaseki-template:latest .
@@ -190,60 +192,12 @@ docker build --no-cache -t kaseki-template:latest .
 
 ---
 
-## Stamp File Details
+## Cache Marker Details
 
-### Stamp File Naming
-
-```
-.kaseki-cache/<repo-hash>.<lock-hash>.stamp
-```
-
-**Components**:
-- `<repo-hash>`: 40-char SHA-1 hex digest of repo identifier
-- `<lock-hash>`: 40-char SHA-1 hex digest of package-lock.json
-
-**Example**:
-```
-.kaseki-cache/abc1234567890def1234567890abcdef12345678.fed0987654321abc0987654321fedcba98765432.stamp
-```
-
-### Stamp File Content
-
-```
-repo:abc1234567890def1234567890abcdef12345678 lock:fed0987654321abc0987654321fedcba98765432 timestamp:1703520600
-```
-
-### Computing Hash Examples
-
-**Repo Hash** (from repo name):
-```bash
-echo -n "cyanautomation/crudmapper" | sha1sum
-# Output: abc1234567890def1234567890abcdef12345678
-
-# Or from directory name:
-echo -n "kaseki-runs/kaseki-1/crudmapper" | sha1sum
-```
-
-**Lock Hash** (from package-lock.json):
-```bash
-sha1sum package-lock.json | awk '{print $1}'
-# Output: fed0987654321abc0987654321fedcba98765432
-```
-
-### Stamp Check Script
-
-In `kaseki-agent.sh`, the stamp check looks like:
-
-```bash
-REPO_HASH=$(echo -n "$REPO_URL" | sha1sum | cut -d' ' -f1)
-LOCK_HASH=$(sha1sum package-lock.json | cut -d' ' -f1)
-STAMP_FILE="/workspace/.kaseki-cache/${REPO_HASH}.${LOCK_HASH}.stamp"
-
-if [[ -f "$STAMP_FILE" ]]; then
-  echo "Stamp check passed: cache is valid"
-  exit 0  # Skip npm install
-fi
-```
+Each cache entry contains `stamp.txt` with the lock hash and a
+`validated-v<N>` marker. A marker is written only after `npm ls --depth=0` and required
+executable-link checks pass. Entries are protected by a per-key lock and published
+atomically; an invalid restore falls back to `npm ci --prefer-offline`.
 
 ---
 
@@ -254,20 +208,13 @@ fi
 ```
 /workspace/
 ├── .kaseki-cache/
-│   ├── repo-hash-1.lock-hash-1.stamp
-│   ├── repo-hash-1/
-│   │   ├── lock-hash-1/
-│   │   │   ├── node_modules/
-│   │   │   │   ├── package1/
-│   │   │   │   ├── package2/
-│   │   │   └── ...
-│   │   └── lock-hash-2/
-│   │       └── node_modules/
-│   └── repo-hash-2/
-│       └── ...
+│   ├── <cache-key>/
+│   │   ├── stamp.txt
+│   │   ├── validated-v2
+│   │   └── node_modules/
 ```
 
-**Purpose**: Multiple locks per repo, multiple repos per workspace
+**Purpose**: Cache keys isolate lockfiles, Node major versions, and install flags.
 
 **Retention**: Deleted after kaseki instance completes (unless `KASEKI_KEEP_WORKSPACE=1`)
 
@@ -275,12 +222,8 @@ fi
 
 ```
 /opt/kaseki/workspace-cache/
-├── package.json
-├── package-lock.json
-└── node_modules/
-    ├── package1/
-    ├── package2/
-    └── ... (common packages)
+└── <cache-key>/
+    └── node_modules/
 ```
 
 **Populated During Image Build**:
@@ -430,7 +373,7 @@ By default, kaseki containers are ephemeral:
 
 ```bash
 # Workspace is deleted after run
-/workspace/.kaseki-cache/
+${KASEKI_DEPENDENCY_CACHE_DIR:-${KASEKI_WORKSPACE_DIR}/.kaseki-cache}/
 ```
 
 **Keep Workspace for Debugging**:
@@ -520,7 +463,7 @@ done | awk '{sum+=$1; count++} END {print "Average: " sum/count "s"}'
 
 ## Monitoring Cache Performance
 
-For **operational tuning** of cache effectiveness and run-time optimization, see [PERFORMANCE_TUNING.md](../../docs/PERFORMANCE_TUNING.md). This guide covers:
+For **operational tuning** of cache effectiveness and run-time optimization, see [PERFORMANCE_TUNING.md](../../../docs/PERFORMANCE_TUNING.md). This guide covers:
 
 - **Cache hit rate analysis** — tracking effectiveness over time
 - **Cost impact** — how caching affects token usage and API costs
@@ -544,8 +487,8 @@ done
 
 ## Related Skills & Docs
 
-- [Docker Image Management](docker-image-management.md) — Image seed cache updates
-- [Workflow Diagnosis](workflow-diagnosis.md) — Analyzing timings and performance
-- [Performance Tuning](performance-tuning.md) — Operational optimization and cost impact
-- [kaseki-agent.sh](../../kaseki-agent.sh) — Cache implementation details
-- [CLAUDE.md](../../CLAUDE.md) — Architecture and environment variables
+- [Docker Image Management](../docker-image-management/SKILL.md) — Image seed cache updates
+- [Workflow Diagnosis](../workflow-diagnosis/SKILL.md) — Analyzing timings and performance
+- [Performance Tuning](../performance-tuning/SKILL.md) — Operational optimization and cost impact
+- [kaseki-agent.sh](../../../kaseki-agent.sh) — Cache implementation details
+- [CLAUDE.md](../../../CLAUDE.md) — Architecture and environment variables

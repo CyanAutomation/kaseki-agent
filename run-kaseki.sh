@@ -305,7 +305,7 @@ ENVIRONMENT VARIABLES (override defaults, CLI args take precedence):
   LLM_GATEWAY_API_KEY               LLM Gateway API key (or use LLM_GATEWAY_API_KEY_FILE)
   LLM_GATEWAY_API_KEY_FILE          Path to file containing API key
   KASEKI_MODEL                      AI model (default: auto)
-  KASEKI_AGENT_TIMEOUT_SECONDS      Timeout in seconds (default: 1200)
+  KASEKI_AGENT_TIMEOUT_SECONDS      Timeout in seconds (default: 10800)
   KASEKI_PRE_AGENT_VALIDATION       Run baseline validation before Pi (default: 1)
   KASEKI_PRE_AGENT_VALIDATION_COMMANDS
                                     Semicolon-separated pre-agent validation cmds
@@ -324,7 +324,7 @@ ENVIRONMENT VARIABLES (override defaults, CLI args take precedence):
   KASEKI_CACHE_DIR                  Persistent host cache directory (default: /agents/kaseki-cache)
   KASEKI_CHANGED_FILES_ALLOWLIST    Space-separated file patterns (agent phase)
   KASEKI_VALIDATION_ALLOWLIST       Space-separated file patterns (validation phase; optional)
-  KASEKI_MAX_DIFF_BYTES             Max diff size in bytes (default: 200000)
+  KASEKI_MAX_DIFF_BYTES             Max diff size in bytes (default: 400000)
   KASEKI_NPM_OMIT_DEV              Set to 1 to omit dev dependencies during npm ci (default: 0)
   GITHUB_APP_ID                     GitHub App ID (optional, for PR creation)
   GITHUB_APP_ID_FILE                Path to file containing GitHub App ID

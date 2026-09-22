@@ -233,7 +233,7 @@ Layer 1: Stamp Check (< 1 sec)
   └─ Best case: reuse exact same node_modules
 
 Layer 2: Workspace Cache (5–30 sec)
-  └─ Copy from /workspace/.kaseki-cache/
+  └─ Copy from ${KASEKI_DEPENDENCY_CACHE_DIR:-${KASEKI_WORKSPACE_DIR}/.kaseki-cache}/
   └─ Used when lock file matches previous run
 
 Layer 3: Image Seed Cache (30–60 sec)
@@ -423,8 +423,8 @@ KASEKI_VALIDATION_COMMANDS="npm run test -- tests/parser.test.ts"  # Focused
 
 ## See Also
 
-- [PERFORMANCE_TUNING.md](../../docs/PERFORMANCE_TUNING.md) — Comprehensive performance reference
-- [COST_ESTIMATION.md](../../docs/COST_ESTIMATION.md) — Cost analysis and ROI
-- [dependency-cache-optimization](dependency-cache-optimization.md) — Caching deep-dive
-- [quality-gate-config](quality-gate-config.md) — Allowlist design
-- [environment-configuration](environment-configuration.md) — Tuning configuration
+- [PERFORMANCE_TUNING.md](../../../docs/PERFORMANCE_TUNING.md) — Comprehensive performance reference
+- [COST_ESTIMATION.md](../../../docs/COST_ESTIMATION.md) — Cost analysis and ROI
+- [dependency-cache-optimization](../dependency-cache-optimization/SKILL.md) — Caching deep-dive
+- [quality-gate-config](../quality-gate-config/SKILL.md) — Allowlist design
+- [environment-configuration](../environment-configuration/SKILL.md) — Tuning configuration

@@ -365,8 +365,8 @@ if (result.status === 'completed') {
 | `KASEKI_API_KEYS` | — | **Required**: comma-separated API keys |
 | Host secret files | `/agents/secrets/kaseki_api_keys`, `~/secrets/kaseki_api_keys` | Alternative to `KASEKI_API_KEYS`; one key per line |
 | `KASEKI_API_MAX_CONCURRENT_RUNS` | 3 | Max parallel jobs |
-| `KASEKI_AGENT_TIMEOUT_SECONDS` | 1200 | 20-minute timeout |
-| `KASEKI_MAX_DIFF_BYTES` | 200000 | 200 KB max diff |
+| `KASEKI_AGENT_TIMEOUT_SECONDS` | 10800 | 3-hour timeout |
+| `KASEKI_MAX_DIFF_BYTES` | 400000 | 400 KB max diff |
 | `KASEKI_RESULTS_DIR` | /agents/kaseki-results | Results directory |
 | `KASEKI_API_LOG_DIR` | /var/log/kaseki-api | Log directory |
 | `KASEKI_API_LOG_LEVEL` | info | debug/info/warn/error |
