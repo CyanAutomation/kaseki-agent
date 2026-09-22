@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.140.8](https://github.com/CyanAutomation/kaseki-agent/compare/v1.140.7...v1.140.8) (2026-09-22)
+
+
+### Bug Fixes
+
+* bound tree-sitter Docker probe ([8a49d2b](https://github.com/CyanAutomation/kaseki-agent/commit/8a49d2b4ebe0ef1b742336af7dfc292fbfcf1b00))
+* bound tree-sitter Docker probe ([#1364](https://github.com/CyanAutomation/kaseki-agent/issues/1364)) ([048c69d](https://github.com/CyanAutomation/kaseki-agent/commit/048c69d4fe255bbf9df09f70f22d13ab3a7f6dff))
+
 ## [1.140.7](https://github.com/CyanAutomation/kaseki-agent/compare/v1.140.6...v1.140.7) (2026-09-22)
 
 
