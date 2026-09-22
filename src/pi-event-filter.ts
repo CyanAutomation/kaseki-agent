@@ -5,6 +5,7 @@ import readline from 'node:readline';
 import path from 'node:path';
 import { TimestampTracker } from './timestamp-tracker.js';
 import { extractEventTimestamp, PiEvent } from './lib/event-timestamp-helpers.js';
+import { parsePositiveInt } from './lib/env-var-helpers.js';
 import { EventCounterAggregator, type EventCountMap } from './pi-event-aggregation/event-counter-aggregator.js';
 import { ToolReliabilityAggregator, type ToolReliabilitySummary, type ToolStats } from './pi-event-aggregation/tool-reliability-aggregator.js';
 import { ExecutionTimeAggregator, type ExecutionTimeSummary, type ExecutionStats } from './pi-event-aggregation/execution-time-aggregator.js';
@@ -133,11 +134,6 @@ interface ModelReliabilitySummary {
   observed_success: boolean;
 }
 
-function positiveIntEnv(name: string, fallback: number): number {
-  const value = Number.parseInt(process.env[name] || '', 10);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
 function nonNegativeNumberEnv(name: string): number | null {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value >= 0 ? value : null;
@@ -210,8 +206,8 @@ function configuredTokenPricing(model: string, contextTokens: number): { pricing
     : null;
 }
 
-const MAX_FILTERED_EVENT_BYTES = positiveIntEnv('KASEKI_PI_EVENT_MAX_BYTES', 256 * 1024);
-const MAX_FILTERED_OUTPUT_BYTES = positiveIntEnv('KASEKI_PI_EVENTS_MAX_BYTES', 16 * 1024 * 1024);
+const MAX_FILTERED_EVENT_BYTES = parsePositiveInt('KASEKI_PI_EVENT_MAX_BYTES', 256 * 1024);
+const MAX_FILTERED_OUTPUT_BYTES = parsePositiveInt('KASEKI_PI_EVENTS_MAX_BYTES', 16 * 1024 * 1024);
 const CRITICAL_EVENT_RESERVE_BYTES = Math.min(1024 * 1024, Math.floor(MAX_FILTERED_OUTPUT_BYTES / 4));
 
 function isCriticalRetentionEvent(event: PiEvent): boolean {
@@ -689,7 +685,7 @@ async function writeRetainedEvent(
 
 function buildSummary(state: PiEventFilterState): Summary {
   const { tokenUsage: tokenSummary, modelStats, phaseStats } = summarizeCompletedResponses(state.completionUsage.values());
-  const promptTokenBudget = positiveIntEnv('KASEKI_PROMPT_TOKEN_WARN_THRESHOLD', 20_000);
+  const promptTokenBudget = parsePositiveInt('KASEKI_PROMPT_TOKEN_WARN_THRESHOLD', 20_000);
   // Compaction is a per-request decision. A run with many short turns should
   // not be flagged merely because its aggregate usage is high, while a single
   // uncached 45k-token request must be flagged immediately.
@@ -759,12 +755,12 @@ function buildPhaseBudget(
 ): PhaseBudgetSummary {
   const phaseBudget: PhaseBudgetSummary = {
     enforcement: 'soft_target',
-    max_context_tokens: positiveIntEnv('KASEKI_PHASE_MAX_CONTEXT_TOKENS', promptTokenBudget),
-    max_turns: positiveIntEnv('KASEKI_PHASE_MAX_TURNS', 24),
-    max_tool_output_tokens: positiveIntEnv('KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS', 12_000),
-    context_exceeded: largestContextTokens > positiveIntEnv('KASEKI_PHASE_MAX_CONTEXT_TOKENS', promptTokenBudget),
-    turns_exceeded: state.completionUsage.size > positiveIntEnv('KASEKI_PHASE_MAX_TURNS', 24),
-    tool_output_exceeded: state.toolOutputUsage.estimated_tokens > positiveIntEnv('KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS', 12_000),
+    max_context_tokens: parsePositiveInt('KASEKI_PHASE_MAX_CONTEXT_TOKENS', promptTokenBudget),
+    max_turns: parsePositiveInt('KASEKI_PHASE_MAX_TURNS', 24),
+    max_tool_output_tokens: parsePositiveInt('KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS', 12_000),
+    context_exceeded: largestContextTokens > parsePositiveInt('KASEKI_PHASE_MAX_CONTEXT_TOKENS', promptTokenBudget),
+    turns_exceeded: state.completionUsage.size > parsePositiveInt('KASEKI_PHASE_MAX_TURNS', 24),
+    tool_output_exceeded: state.toolOutputUsage.estimated_tokens > parsePositiveInt('KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS', 12_000),
     exceeded: false,
   };
   phaseBudget.exceeded = phaseBudget.context_exceeded || phaseBudget.turns_exceeded || phaseBudget.tool_output_exceeded;
