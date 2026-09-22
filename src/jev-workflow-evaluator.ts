@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { answerConfidence, answerIsTrue, classifyWithJev, DEFAULT_JEV_MODEL } from './jev-classifier';
+import { answerIsTrue, classifyWithJev, DEFAULT_JEV_MODEL } from './jev-classifier';
 
 type JsonObject = Record<string, unknown>;
 
@@ -15,15 +15,31 @@ function readJson(file: string): JsonObject {
   } catch { return {}; }
 }
 
+function redact(value: unknown): unknown {
+  if (typeof value === 'string') return value
+    .replace(/-----BEGIN [^-]+ PRIVATE KEY-----[\s\S]*?-----END [^-]+ PRIVATE KEY-----/g, '[REDACTED_PRIVATE_KEY]')
+    .replace(/\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|xox[baprs]-[A-Za-z0-9-]{12,})\b/g, '[REDACTED_CREDENTIAL]')
+    .replace(/(password|passwd|secret|token|api[_-]?key)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED_SECRET]');
+  if (Array.isArray(value)) return value.map(redact);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value as JsonObject).map(([key, item]) => [key, /secret|token|password|credential|api.?key/i.test(key) ? '[REDACTED_SECRET]' : redact(item)]));
+  return value;
+}
+
+function bounded(value: unknown, maxChars: number): unknown {
+  const serialized = JSON.stringify(value);
+  if (serialized.length <= maxChars) return value;
+  return { truncated: true, preview: serialized.slice(0, maxChars) };
+}
+
 function evidenceState(resultsDir: string): JsonObject {
   const goal = readJson(path.join(resultsDir, 'goal-setting.json'));
   const scouting = readJson(path.join(resultsDir, 'scouting.json'));
   return {
-    goal_setting: goal,
-    scouting,
-    changed_files: readText(path.join(resultsDir, 'changed-files.txt')).slice(0, 12000),
-    diff: readText(path.join(resultsDir, 'git.diff')).slice(0, 24000),
-    validation: readText(path.join(resultsDir, 'validation.log')).slice(-12000),
+    goal_setting: bounded(redact(goal), 8000),
+    scouting: bounded(redact(scouting), 8000),
+    changed_files: redact(readText(path.join(resultsDir, 'changed-files.txt')).slice(0, 12000)),
+    diff: redact(readText(path.join(resultsDir, 'git.diff')).slice(0, 24000)),
+    validation: redact(readText(path.join(resultsDir, 'validation.log')).slice(-12000)),
     task_mode: process.env.KASEKI_TASK_MODE || 'patch',
   };
 }
@@ -59,9 +75,9 @@ async function runGoalCheck(resultsDir: string, attempt: number): Promise<JsonOb
   for (const [id, answer] of Object.entries(result.answers)) {
     const index = Number(id.replace('criterion_', '')) - 1;
     const criterion = effectiveCriteria[index] || id;
-    if (!answerIsTrue(answer) || answerConfidence(answer) < threshold) {
+    if (!answerIsTrue(answer, threshold)) {
       allMet = false;
-      missing.push(`${criterion} (answer=${String(answer.answer)}, confidence=${answerConfidence(answer).toFixed(2)})`);
+      missing.push(`${criterion} (noul=${answer.type === 'noul' ? answer.noul.toFixed(2) : 'invalid'}, threshold=${threshold.toFixed(2)})`);
     }
   }
   if (process.env.KASEKI_TASK_MODE === 'patch' && !String(state.diff).trim()) {
@@ -93,9 +109,12 @@ async function runEvaluation(resultsDir: string): Promise<JsonObject> {
   const result = await classifyWithJev(stateForJev, {
     overall_assessment: { type: 'choice', instructions: 'What is the overall quality of this completed coding run?', criteria: { excellent: 'Strong evidence and low review risk', good: 'Acceptable evidence with limited review risk', mixed: 'Material uncertainty or mixed signals', poor: 'Major evidence or process problems' } },
     reviewer_confidence: { type: 'choice', instructions: 'How much can a reviewer trust this run without exhaustive manual review?', criteria: { high: 'Validation and evidence strongly support the result', medium: 'Some manual review is advisable', low: 'Manual review is required' } },
-    task_completion_score: { type: 'score', min: 1, max: 5, instructions: 'How completely did the run satisfy its objective?', legend: { '1': 'Largely unrealized', '2': 'Major requirements unmet', '3': 'Partially complete', '4': 'Nearly complete', '5': 'All requirements verified' } },
+    task_completion_score: { type: 'score', instructions: 'How completely did the run satisfy its objective?', criteria: ['Largely unrealized', 'Major requirements unmet', 'Partially complete', 'Nearly complete', 'All requirements verified'] },
   }, { model: process.env.KASEKI_CLASSIFICATION_MODEL || DEFAULT_JEV_MODEL, timeoutMs: Number.parseInt(process.env.KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS || '5000', 10) });
-  const answer = (name: string): string | number => result.answers[name]?.answer ?? 'unknown';
+  const answer = (name: string): string | number => {
+    const value = result.answers[name];
+    return value?.type === 'choice' ? value.choice : value?.type === 'score' ? value.score : value?.type === 'noul' ? value.noul : 'unknown';
+  };
   return {
     overall_assessment: answer('overall_assessment'),
     reviewer_confidence: answer('reviewer_confidence'),
