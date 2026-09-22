@@ -38,18 +38,19 @@ grep -Fq 'KASEKI_IMAGE' "$VALIDATION_SUITE" \
 grep -Fq 'KASEKI_IMAGE' "$TREE_SITTER_SUITE" \
   || fail 'Tree-sitter suite must support a provided KASEKI_IMAGE'
 
-# Long-running validation must continue emitting output so a CI inactivity
-# watchdog does not terminate the surrounding integration job.
-grep -Fq 'npm run check 2>&1 | tee "$CHECK_OUTPUT_FILE"' "$VALIDATION_SUITE" \
-  || fail 'Validation suite must stream npm run check output to the CI log'
-if grep -Fq 'CHECK_OUTPUT="$(npm run check 2>&1)"' "$VALIDATION_SUITE"; then
-  fail 'Validation suite must not suppress npm run check output in a command substitution'
-fi
+# Runtime images omit repository-only test fixtures, so validation must use
+# only the packaged source, configuration, and executable tools.
+grep -Fq '/app/node_modules/.bin/tsc --noEmit -p /app/tsconfig.json' "$VALIDATION_SUITE" \
+  || fail 'Validation suite must type-check packaged source with its config'
+grep -Fq '/app/node_modules/.bin/eslint /app/src --config /app/eslint.config.js --ignore-pattern dist/' "$VALIDATION_SUITE" \
+  || fail 'Validation suite must lint packaged source with its config'
+grep -Fq '/app/node_modules/.bin/jest --version' "$VALIDATION_SUITE" \
+  || fail 'Validation suite must execute the packaged Jest CLI'
+grep -Fq 'shellcheck --version' "$VALIDATION_SUITE" \
+  || fail 'Validation suite must execute ShellCheck from the final image'
 # The validation program is a heredoc, so Docker must keep stdin open for Bash.
 grep -Fq 'docker run --rm -i --workdir /app --entrypoint /bin/bash "$VALIDATION_TEST_IMAGE" -s' "$VALIDATION_SUITE" \
   || fail 'Validation suite must attach stdin when executing its heredoc'
-grep -Fq '/app/node_modules/.bin/tsc --version' "$VALIDATION_SUITE" \
-  || fail 'Validation suite must invoke the packaged TypeScript executable by path'
 grep -Fq 'for required_file in /app/tsconfig.json /app/eslint.config.js; do' "$VALIDATION_SUITE" \
   || fail 'Validation suite must require its TypeScript and ESLint inputs'
 grep -Fq 'COPY --from=runtime /app/package.json /app/package-lock.json /app/tsconfig.json /app/eslint.config.js /app/' "$ROOT_DIR/Dockerfile" \

@@ -51,7 +51,7 @@ else
 fi
 
 printf 'Image: %s\n\n' "$VALIDATION_TEST_IMAGE"
-printf 'Checking validation tools and npm run check in a single container invocation...\n'
+printf 'Checking packaged validation tools against runtime inputs...\n'
 
 # Keep stdin attached: Bash reads the validation program from the heredoc below.
 # Without -i Docker closes stdin and Bash exits successfully without testing it.
@@ -78,54 +78,13 @@ for tool in tsc eslint jest; do
   printf '✓ %s available at %s\n' "$tool" "$tool_path"
 done
 
-# `npm run` adds node_modules/.bin to PATH, but this direct image check does
-# not. Exercise the packaged TypeScript executable by its verified path.
-/app/node_modules/.bin/tsc --version
-
-# Stream the check output to the CI log. Capturing it in a command substitution
-# leaves long-running type-check or lint runs silent, which lets CI inactivity
-# watchdogs cancel the enclosing Docker integration job.
-CHECK_OUTPUT_FILE="$(mktemp)"
-trap 'rm -f "$CHECK_OUTPUT_FILE"' EXIT
-set +e
-npm run check 2>&1 | tee "$CHECK_OUTPUT_FILE"
-CHECK_EXIT="${PIPESTATUS[0]}"
-set -e
-
-printf 'npm run check exit code: %s\n' "$CHECK_EXIT"
-
-case "$CHECK_EXIT" in
-  0)
-    printf '✓ npm run check completed successfully.\n'
-    ;;
-  1|2)
-    # Documented acceptable non-zero outcomes: TypeScript or ESLint reported
-    # validation findings. These are acceptable only when npm output proves the
-    # validation commands actually launched; silent warnings, missing binaries,
-    # or SIGPIPE-style truncation are not acceptable.
-    if ! grep -Eq '(tsc --noEmit|eslint[[:space:]].*src/)' "$CHECK_OUTPUT_FILE"; then
-      printf 'FAIL: npm run check exited %s without evidence that tsc or eslint launched.\n' "$CHECK_EXIT" >&2
-      exit 1
-    fi
-    if grep -Eq 'TS5058:|specified path does not exist' "$CHECK_OUTPUT_FILE"; then
-      printf 'FAIL: npm run check exited %s because a required TypeScript config is missing.\n' "$CHECK_EXIT" >&2
-      exit 1
-    fi
-    if grep -Eqi '(not found|command not found|missing script)' "$CHECK_OUTPUT_FILE"; then
-      printf 'FAIL: npm run check exited %s because validation tooling did not launch cleanly.\n' "$CHECK_EXIT" >&2
-      exit 1
-    fi
-    printf '✓ npm run check produced acceptable validation findings after launching tools.\n'
-    ;;
-  13|141)
-    printf 'FAIL: npm run check exited with SIGPIPE-style code %s.\n' "$CHECK_EXIT" >&2
-    exit 1
-    ;;
-  *)
-    printf 'FAIL: npm run check exited with undocumented code %s.\n' "$CHECK_EXIT" >&2
-    exit 1
-    ;;
-esac
+# A production image intentionally excludes repository-only test fixtures.
+# Validate the packaged tools using the runtime source/configuration rather than
+# `npm run check`, whose shellcheck stage scans those omitted fixture trees.
+/app/node_modules/.bin/tsc --noEmit -p /app/tsconfig.json
+/app/node_modules/.bin/eslint /app/src --config /app/eslint.config.js --ignore-pattern dist/
+/app/node_modules/.bin/jest --version
+shellcheck --version
 CONTAINER_SCRIPT
 
 printf '\n✓ All validation tools are available in the Docker image.\n'
