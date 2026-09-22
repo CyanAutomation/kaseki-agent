@@ -23,7 +23,9 @@ if grep -n -E 'vitest|Vitest' "$SKILLS_DIR/test-automation/SKILL.md" >/dev/null;
   fail "test-automation still documents Vitest"
 fi
 
-if grep -R -n -E --include='*.md' --include='*.sh' 'echo \$OPENROUTER_API_KEY|echo "\$OPENROUTER_API_KEY"' "$SKILLS_DIR" >/dev/null; then
+if find "$SKILLS_DIR" -type f \( -name '*.md' -o -name '*.sh' \) \
+  -exec grep -l -E 'echo \$OPENROUTER_API_KEY|echo "\$OPENROUTER_API_KEY"' {} + \
+  >/dev/null 2>&1; then
   fail "a skill prints the API key"
 fi
 
