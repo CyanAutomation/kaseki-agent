@@ -170,13 +170,25 @@ docker run -it docker.io/cyanautomation/kaseki-agent:latest init
 
 ### CLI Commands
 
-- `kaseki-agent init` - Interactive setup wizard
-- `kaseki-agent doctor` - Health check and diagnostics
-- `kaseki-agent run [repo] [ref] [prompt]` - Execute coding task
-- `kaseki-agent list` - List all instances
-- `kaseki-agent report [instance]` - Detailed results
-- `kaseki-agent status [instance]` - Live status monitoring
-- `kaseki-agent serve` - Start local API service
+All 15 commands registered by `src/cli/KasekiCLI.ts`:
+
+- `kaseki-agent quickstart` - One-command setup: detect, bootstrap /agents, start API, smoke-test
+- `kaseki-agent init` - Unified setup wizard (single-run, local API, or production)
+- `kaseki-agent setup` - (DEPRECATED: use `init` instead) Interactive setup wizard
+- `kaseki-agent run [repo] [ref] [prompt]` - Submit a task run through the local Kaseki API
+- `kaseki-agent doctor` - Health checks and dependency validation
+- `kaseki-agent serve` - Start the local REST API service for async task execution
+- `kaseki-agent config` - Manage configuration
+- `kaseki-agent list` - List task runs through the local Kaseki API
+- `kaseki-agent report [instance]` - Generate a task report through the local Kaseki API
+- `kaseki-agent status [instance]` - Poll task status through the local Kaseki API
+- `kaseki-agent cancel [run-id]` - Cancel a queued or running task through the local Kaseki API
+- `kaseki-agent stop [run-id]` - Alias for `cancel`; stops a task through the local Kaseki API
+- `kaseki-agent secrets` - Manage stored secrets (keyring/file)
+- `kaseki-agent host` - Prepare or recover a Docker Compose API host
+- `kaseki-agent cleanup` - Manage retention of kaseki run artifacts (keep last N runs)
+
+See [docs/CLI.md](docs/CLI.md) for command usage details and the live monitoring CLI.
 
 ### Task Execution
 
