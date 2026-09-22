@@ -27,7 +27,26 @@ else
 fi
 
 printf 'Checking tree-sitter executable and version in the final image...\n'
-VERSION_OUTPUT="$(docker run --rm --entrypoint tree-sitter "$IMAGE_TAG" --version)"
+if ! command -v timeout >/dev/null 2>&1; then
+  printf 'FAIL: tree-sitter CLI integration test requires the timeout command.\n' >&2
+  exit 1
+fi
+
+TREE_SITTER_TIMEOUT_SECONDS="${TREE_SITTER_CLI_PROBE_TIMEOUT_SECONDS:-60}"
+set +e
+VERSION_OUTPUT="$(timeout --foreground "${TREE_SITTER_TIMEOUT_SECONDS}s" docker run --rm --entrypoint tree-sitter "$IMAGE_TAG" --version)"
+TREE_SITTER_EXIT=$?
+set -e
+
+if [ "$TREE_SITTER_EXIT" -eq 124 ]; then
+  printf 'FAIL: tree-sitter --version did not complete within %ss.\n' "$TREE_SITTER_TIMEOUT_SECONDS" >&2
+  exit 1
+fi
+if [ "$TREE_SITTER_EXIT" -ne 0 ]; then
+  printf 'FAIL: tree-sitter --version exited with %s.\n' "$TREE_SITTER_EXIT" >&2
+  exit "$TREE_SITTER_EXIT"
+fi
+
 printf '%s\n' "$VERSION_OUTPUT"
 printf '%s\n' "$VERSION_OUTPUT" | grep -Eq "^tree-sitter ${EXPECTED_VERSION}([[:space:]]|$)"
 
