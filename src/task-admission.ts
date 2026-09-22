@@ -1,4 +1,5 @@
 import { resolveOpenRouterApiKey } from './gateway-detection/resolve-openrouter-api-key';
+import { parsePositiveInt } from './lib/env-var-helpers.js';
 import { answerConfidence, classifyWithJev } from './jev-classifier';
 
 export const TASK_ADMISSION_EXIT_CODE = 9;
@@ -28,11 +29,6 @@ export type TaskAdmissionEvaluator = (request: Record<string, unknown>) => Promi
 const DEFAULT_MODEL = '~typesafe/jev-latest';
 const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_CONFIDENCE_THRESHOLD = 0.8;
-
-function positiveIntegerEnv(name: string, fallback: number): number {
-  const value = Number.parseInt(process.env[name] || '', 10);
-  return Number.isInteger(value) && value > 0 ? value : fallback;
-}
 
 function confidenceThreshold(): number {
   const value = Number.parseFloat(process.env.KASEKI_TASK_ADMISSION_CONFIDENCE || '');
@@ -143,7 +139,7 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
     const parsed = await classifyWithJev(
       requestBody.state as string,
       requestBody.questions as Record<string, { type: 'noul' | 'choice' | 'score'; instructions?: string; legend?: Record<string, string> }>,
-      { model, timeoutMs: positiveIntegerEnv('KASEKI_TASK_ADMISSION_TIMEOUT_MS', DEFAULT_TIMEOUT_MS) },
+      { model, timeoutMs: parsePositiveInt('KASEKI_TASK_ADMISSION_TIMEOUT_MS', DEFAULT_TIMEOUT_MS) },
     );
     const answers = parsed.answers as Record<string, TaskAdmissionAnswer>;
     const riskAnswer = answers.risk_score;
