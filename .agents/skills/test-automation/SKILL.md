@@ -1,7 +1,7 @@
 ---
 name: test-automation
 description: Testing kaseki-agent behavior changes and adding new test coverage
-tags: [kaseki, testing, qa, automation, vitest]
+tags: [kaseki, testing, qa, automation, jest]
 relatedSkills: [workflow-diagnosis, docker-image-management]
 ---
 
@@ -32,7 +32,7 @@ Kaseki-agent uses a two-tier testing strategy:
 
 ### 1. **Unit Tests** (JavaScript/Node.js)
 Location: `tests/` directory (or integrated in repo root)  
-Tools: Vitest, Node.js assertions  
+Tools: Jest, Node.js assertions
 Scope: Pure logic (not Docker-dependent)
 
 **Examples**:
@@ -74,7 +74,7 @@ docker run --rm kaseki-template:latest --doctor  # Sanity check
 ### Basic Test Structure
 
 ```javascript
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from '@jest/globals';
 import { piEventFilter } from '../pi-event-filter.js';
 
 describe('pi-event-filter', () => {
@@ -587,7 +587,7 @@ npm test -- --watch
 
 ## Related Skills & Docs
 
-- [Workflow Diagnosis](workflow-diagnosis.md) — Validate test results and troubleshoot failures
-- [Docker Image Management](docker-image-management.md) — Integration test patterns
-- [CONTRIBUTING.md](../../CONTRIBUTING.md) — Contribution guidelines and validation expectations
-- [Dockerfile](../../Dockerfile) — Image structure for integration tests
+- [Workflow Diagnosis](../workflow-diagnosis/SKILL.md) — Validate test results and troubleshoot failures
+- [Docker Image Management](../docker-image-management/SKILL.md) — Integration test patterns
+- [CONTRIBUTING.md](../../../CONTRIBUTING.md) — Contribution guidelines and validation expectations
+- [Dockerfile](../../../Dockerfile) — Image structure for integration tests

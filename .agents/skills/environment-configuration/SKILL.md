@@ -2,7 +2,7 @@
 name: environment-configuration
 description: Complete reference for configuring kaseki-agent via environment variables
 tags: [kaseki, configuration, environment-variables, settings, secrets, tuning]
-relatedSkills: [cost-optimization, performance-tuning, docker-image-management, distributed-deployment, ci-cd-integration, quality-gate-config, disaster-recovery]
+relatedSkills: [cost-optimization, performance-tuning, docker-image-management, distributed-deployment, ci-cd-integration, quality-gate-config]
 ---
 
 # Environment Configuration for Kaseki Agent
@@ -193,13 +193,13 @@ KASEKI_API_QUEUE_SIZE=200
 | Variable | Default | Purpose | Example |
 |---|---|---|---|
 | `OPENROUTER_API_KEY` | (required) | API authentication | `sk-or-abc123...` |
-| `KASEKI_MODEL` | `openrouter/free` | Model selection | `claude-3.5-sonnet`, `gpt-4` |
+| `KASEKI_MODEL` | `auto` | Model selection; resolved by the configured gateway | Provider-supported model identifier |
 | `KASEKI_API_BASE` | (OpenRouter default) | Alternative API endpoint | `https://api.custom.com` |
 
 **Model Examples**:
 ```bash
-# Free tier (default, cheapest available)
-KASEKI_MODEL=openrouter/free
+# Let the configured gateway resolve the model (default)
+KASEKI_MODEL=auto
 
 # Specific model
 KASEKI_MODEL=anthropic/claude-3.5-sonnet
@@ -290,7 +290,7 @@ KASEKI_LOG_LEVEL=info
 ```bash
 # Focus on reducing token usage
 
-KASEKI_MODEL=openrouter/free  # Always free tier
+KASEKI_MODEL=auto  # Let the configured gateway resolve the model
 KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts tests/parser.test.ts"  # Tight scope
 KASEKI_AGENT_TIMEOUT_SECONDS=2400  # Longer timeout = less thrashing
 KASEKI_CACHE_ENABLED=1  # Faster validation
@@ -348,7 +348,7 @@ Order of precedence (highest to lowest):
 
 5. **Defaults** (hardcoded in scripts)
    ```bash
-   # Default: GIT_REF=main, KASEKI_AGENT_TIMEOUT_SECONDS=1200
+   # Default: GIT_REF=main, KASEKI_AGENT_TIMEOUT_SECONDS=10800
    ```
 
 ---
@@ -395,7 +395,7 @@ echo "✅ Configuration check complete"
 
 ## See Also
 
-- [ENV_VARS.md](../../docs/ENV_VARS.md) — Authoritative environment variable reference
-- [PERFORMANCE_TUNING.md](../../docs/PERFORMANCE_TUNING.md) — Configuration tuning for performance
-- [COST_ESTIMATION.md](../../docs/COST_ESTIMATION.md) — Cost-aware configuration
-- [DEPLOYMENT.md](../../docs/DEPLOYMENT.md) — Deployment-specific configuration
+- [ENV_VARS.md](../../../docs/ENV_VARS.md) — Authoritative environment variable reference
+- [PERFORMANCE_TUNING.md](../../../docs/PERFORMANCE_TUNING.md) — Configuration tuning for performance
+- [COST_ESTIMATION.md](../../../docs/COST_ESTIMATION.md) — Cost-aware configuration
+- [DEPLOYMENT.md](../../../docs/DEPLOYMENT.md) — Deployment-specific configuration

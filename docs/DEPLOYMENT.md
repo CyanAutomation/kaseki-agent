@@ -818,8 +818,8 @@ KASEKI_TEMPLATE_DOCTOR_TIMEOUT_MS=15000    # Pi-safe template doctor timeout
 
 # Performance
 KASEKI_API_MAX_CONCURRENT_RUNS=3           # Max concurrent jobs (default: 3)
-KASEKI_AGENT_TIMEOUT_SECONDS=1200          # Agent timeout in seconds (default: 20 min)
-KASEKI_MAX_DIFF_BYTES=200000               # Max diff size (default: 200 KB)
+KASEKI_AGENT_TIMEOUT_SECONDS=10800         # Agent timeout in seconds (default: 3 hours)
+KASEKI_MAX_DIFF_BYTES=400000               # Max diff size (default: 400 KB)
 
 # Paths (usually inherited from docker-compose)
 KASEKI_RESULTS_DIR=/agents/kaseki-results

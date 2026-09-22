@@ -13,7 +13,7 @@ This guide helps you optimize kaseki-agent for your specific use case: managing 
 |----------|-------|---|---|
 | Agent finishes quickly (1-2 min) | Timeout too conservative | Decrease `KASEKI_AGENT_TIMEOUT_SECONDS` | Monitor cost/API quota |
 | Agent frequently times out | Task too complex | Increase `KASEKI_AGENT_TIMEOUT_SECONDS` | Simplify task prompt |
-| Large changes (>200 KB diff) | Scope too broad | Use `KASEKI_CHANGED_FILES_ALLOWLIST` | Or increase `KASEKI_MAX_DIFF_BYTES` |
+| Large changes (>400 KB diff) | Scope too broad | Use `KASEKI_CHANGED_FILES_ALLOWLIST` | Or increase `KASEKI_MAX_DIFF_BYTES` |
 | Validation is slow | Tests/build slow | Nothing (inherent) | Optimize repository's test suite |
 | Too many files modified | Agent scope creep | Tighten allowlist | Clarify task prompt |
 | API queue backing up | Not enough workers | Increase `KASEKI_API_MAX_CONCURRENT_RUNS` | Monitor Docker resource usage |
@@ -37,7 +37,7 @@ KASEKI_AGENT_TIMEOUT_SECONDS = time limit for agent reasoning +
 
 ### Default Behavior
 
-- **Default timeout**: 1200 seconds (20 minutes)
+- **Default timeout**: 10800 seconds (3 hours)
 - **Max allowed**: 86400 seconds (24 hours)
 - **Exit code on timeout**: 124
 
@@ -70,8 +70,8 @@ export KASEKI_AGENT_TIMEOUT_SECONDS=3600  # 1 hour for complex tasks
 cat /agents/kaseki-results/kaseki-N/pi-summary.json |
   jq '.elapsed_seconds'
 
-# Example: if agent used 150s but timeout was 1200s, reduce to 300s
-# if agent used 1180s but timeout was 1200s, increase to 1800s
+# Example: if agent used 150s but timeout was 10800s, reduce to 300s
+# if agent used 10000s but timeout was 10800s, increase the task scope or split it
 ```
 
 ### Cost-Effective Tuning
