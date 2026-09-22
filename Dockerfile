@@ -2,8 +2,15 @@
 # Node v24 base image: Updated May 2026 for improved performance and security.
 # Using ARG for DRY principle - base image used in both stages
 ARG NODE_IMAGE=node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6
+ARG NPM_VERSION=11.19.1
 
-FROM ${NODE_IMAGE} AS deps
+# The Node image bundles npm, whose dependency tree is part of every image
+# stage. Keep it on the patched npm release until the Node base publishes it.
+FROM ${NODE_IMAGE} AS base
+ARG NPM_VERSION
+RUN npm install -g --no-audit "npm@${NPM_VERSION}"
+
+FROM base AS deps
 
 ARG TREE_SITTER_CLI_VERSION=0.25.10
 
@@ -44,7 +51,7 @@ RUN /usr/local/bin/install-tree-sitter-cli "$TREE_SITTER_CLI_VERSION"
 RUN mkdir -p /opt/kaseki/pi-extensions
 
 
-FROM ${NODE_IMAGE} AS runtime
+FROM base AS runtime
 
 # System dependencies + user setup (consolidated)
 RUN apt-get update \
@@ -89,7 +96,10 @@ WORKDIR /app
 COPY package.json package-lock.json tsconfig.json tsconfig.scripts.json eslint.config.js ./
 COPY src ./src
 COPY scripts ./scripts
-RUN npm ci --no-audit --prefer-offline --ignore-scripts && npm run build
+# `fallow`'s optional type-aware analyzer pulls a second TypeScript compiler
+# binary that Kaseki does not use at runtime. Omit optional packages so that
+# build-only analyzer is not carried into the production image.
+RUN npm ci --omit=optional --no-audit --prefer-offline --ignore-scripts && npm run build
 RUN test -f /app/dist/kaseki-api-service.js \
     && test -f /app/dist/run-scorecard.js \
     && test -f /app/dist/run-scorecard-markdown.js
@@ -273,7 +283,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 #   - Build time: negligible (final stage only copies needed files)
 #   - Runtime: unaffected (all runtime binaries, scripts, and dependencies included)
 #
-FROM ${NODE_IMAGE} AS final
+FROM base AS final
 
 # Minimal setup: only runtime requirements (no build tools or package managers beyond npm for app startup check)
 RUN apt-get update \
