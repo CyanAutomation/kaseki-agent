@@ -20,6 +20,27 @@ done < <(find "$SKILLS_DIR" -name "SKILL.md" -type f -print0)
 echo "Found ${#ALL_SKILLS[@]} skills: ${ALL_SKILLS[*]}"
 echo ""
 
+# Validate relative Markdown links as well as frontmatter references. This catches
+# stale links after skills are moved into folders.
+echo "🔗 Validating relative Markdown links..."
+while IFS= read -r -d '' markdown_file; do
+    while IFS= read -r link_target; do
+        [ -z "$link_target" ] && continue
+        case "$link_target" in
+            \#*|http://*|https://*|mailto:*|/*) continue ;;
+        esac
+
+        link_target="${link_target%%#*}"
+        [ -z "$link_target" ] && continue
+        link_path="$(dirname "$markdown_file")/$link_target"
+        if [ ! -e "$link_path" ]; then
+            echo "❌ Broken Markdown link: $markdown_file -> $link_target"
+            EXIT_CODE=1
+        fi
+    done < <(perl -ne 'while(/\]\(([^ )]+)(?:\s+[^)]*)?\)/g){print "$1\n"}' "$markdown_file")
+done < <(find "$SKILLS_DIR" -name '*.md' -type f -print0)
+echo ""
+
 # Helper function to extract YAML frontmatter field
 extract_yaml_field() {
     local file="$1"

@@ -84,7 +84,7 @@ COMMAND TIMINGS
 QUALITY GATES
 ┌──────────────────────────────────────────────────────────────┐
 │ ✓ Allowlist Check: 3 files, all in scope                    │
-│ ✓ Diff Size Check: 2.4 KB < 200 KB limit                    │
+│ ✓ Diff Size Check: 2.4 KB < 400 KB limit                    │
 │ ✓ Secret Scan: No credentials detected                      │
 │ ✓ Git Status: No untracked files                            │
 └──────────────────────────────────────────────────────────────┘
@@ -317,21 +317,21 @@ cat /agents/kaseki-results/kaseki-1/validation-timings.tsv
 wc -c < /agents/kaseki-results/kaseki-1/git.diff
 # Output: 0 (or very small)
 ```
-→ Agent didn't make changes. See [Workflow Diagnosis](workflow-diagnosis.md) — Pattern 1.
+→ Agent didn't make changes. See [Workflow Diagnosis](../workflow-diagnosis/SKILL.md) — Pattern 1.
 
 **❌ Oversized Diff**
 ```bash
 wc -c < /agents/kaseki-results/kaseki-1/git.diff
-# Output: 250000 (exceeds 200 KB default)
+# Output: 450000 (exceeds 400 KB default)
 ```
-→ Check if legitimate. See [Workflow Diagnosis](workflow-diagnosis.md) — Pattern 4.
+→ Check if legitimate. See [Workflow Diagnosis](../workflow-diagnosis/SKILL.md) — Pattern 4.
 
 **❌ Many Off-Scope Files**
 ```bash
 cat /agents/kaseki-results/kaseki-1/changed-files.txt | wc -l
 # Output: 15 files (expected 3)
 ```
-→ Agent refactored more than intended. See [Quality Gate Configuration](quality-gate-config.md).
+→ Agent refactored more than intended. See [Quality Gate Configuration](../quality-gate-config/SKILL.md).
 
 **❌ High Thinking Ratio**
 ```bash
@@ -345,14 +345,14 @@ jq '.statistics.thinking_ratio' /agents/kaseki-results/kaseki-1/pi-summary.json
 grep -i "fail\|error" /agents/kaseki-results/kaseki-1/result-summary.md
 # Output: ✗ Tests failed (2 failures)
 ```
-→ Agent made breaking changes. See [Workflow Diagnosis](workflow-diagnosis.md) — Pattern 5.
+→ Agent made breaking changes. See [Workflow Diagnosis](../workflow-diagnosis/SKILL.md) — Pattern 5.
 
 **❌ Secret Detected**
 ```bash
 cat /agents/kaseki-results/kaseki-1/secret-scan.log
 # Output: Found sk-or-abc123 in pi-events.jsonl
 ```
-→ Credential leaked. See [Workflow Diagnosis](workflow-diagnosis.md) — Pattern 6.
+→ Credential leaked. See [Workflow Diagnosis](../workflow-diagnosis/SKILL.md) — Pattern 6.
 
 ### Green Flags
 
@@ -478,7 +478,7 @@ done
 ```
 
 4. **Solution**:
-- See [Dependency Cache Optimization](dependency-cache-optimization.md) for cache seeding strategy
+- See [Dependency Cache Optimization](../dependency-cache-optimization/SKILL.md) for cache seeding strategy
 - Or update image seed cache with current lock file
 
 ### Example 2: Unexpected Large Diff
@@ -571,6 +571,6 @@ echo "Cache Hit Rate: ${CACHE_HIT_RATE}%"
 
 ## Related Skills & Docs
 
-- [Workflow Diagnosis](workflow-diagnosis.md) — Investigate anomalies and failures
-- [kaseki-report.js](../../kaseki-report.js) — Report generation logic
-- [CLAUDE.md](../../CLAUDE.md) — Architecture and artifact structure
+- [Workflow Diagnosis](../workflow-diagnosis/SKILL.md) — Investigate anomalies and failures
+- [kaseki-report.ts](../../../src/kaseki-report.ts) — Report generation logic
+- [CLAUDE.md](../../../CLAUDE.md) — Architecture and artifact structure

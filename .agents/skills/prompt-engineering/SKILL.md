@@ -157,7 +157,7 @@ and performance. Update all 50+ test files."
 
 ## Real-World Prompt Examples
 
-For **10+ executable examples** covering bug fixes, feature additions, refactors, and integration patterns, see [EXAMPLES.md](../../docs/EXAMPLES.md).
+For **10+ executable examples** covering bug fixes, feature additions, refactors, and integration patterns, see [EXAMPLES.md](../../../docs/EXAMPLES.md).
 
 **Quick Reference**:
 
@@ -323,7 +323,7 @@ wc -c < git.diff
 - ✓ No secret leaks in `secret-scan.log`
 
 **If Something's Wrong**:
-- See [Workflow Diagnosis](workflow-diagnosis.md) for root-cause analysis
+- See [Workflow Diagnosis](../workflow-diagnosis/SKILL.md) for root-cause analysis
 - Refine prompt and retry with a new kaseki instance (e.g., kaseki-test-2)
 
 ---
@@ -380,8 +380,8 @@ Before sharing a prompt or running it against a sensitive repo:
 
 ## Related Skills & Docs
 
-- [Quality Gate Configuration](quality-gate-config.md) — Set allowlists and diff limits for your task
-- [Workflow Diagnosis](workflow-diagnosis.md) — Analyze task results and troubleshoot failures
-- [Test Automation](test-automation.md) — Ensure validation tests are robust
-- [CLAUDE.md](../../CLAUDE.md) — Architecture and defaults (background reading)
-- [CONTRIBUTING.md](../../CONTRIBUTING.md) — Contribution guidelines and validation rules
+- [Quality Gate Configuration](../quality-gate-config/SKILL.md) — Set allowlists and diff limits for your task
+- [Workflow Diagnosis](../workflow-diagnosis/SKILL.md) — Analyze task results and troubleshoot failures
+- [Test Automation](../test-automation/SKILL.md) — Ensure validation tests are robust
+- [CLAUDE.md](../../../CLAUDE.md) — Architecture and defaults (background reading)
+- [CONTRIBUTING.md](../../../CONTRIBUTING.md) — Contribution guidelines and validation rules

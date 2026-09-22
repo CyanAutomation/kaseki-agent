@@ -438,7 +438,7 @@ See [HOST_SETUP_TROUBLESHOOTING.md](HOST_SETUP_TROUBLESHOOTING.md) for additiona
 
 ### Exit Code 4: Diff Exceeds Maximum Size
 
-**Problem:** Agent changes exceed `KASEKI_MAX_DIFF_BYTES` (default 200000 bytes / ~200 KB).
+**Problem:** Agent changes exceed `KASEKI_MAX_DIFF_BYTES` (default 400000 bytes / ~400 KB).
 
 **Diagnosis:**
 

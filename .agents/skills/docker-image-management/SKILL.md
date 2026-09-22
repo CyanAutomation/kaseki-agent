@@ -478,7 +478,7 @@ cd ../..
 docker build -t kaseki-template:latest .
 ```
 
-See [Dependency Cache Optimization](dependency-cache-optimization.md) for detailed strategy.
+See [Dependency Cache Optimization](../dependency-cache-optimization/SKILL.md) for detailed strategy.
 
 ---
 
@@ -526,7 +526,7 @@ docker history kaseki-template:latest
 
 ## Related Skills & Docs
 
-- [Test Automation](test-automation.md) — Integration tests for image validation
-- [Dependency Cache Optimization](dependency-cache-optimization.md) — Image seed cache strategy
-- [Dockerfile](../../Dockerfile) — Current Dockerfile source
-- [CLAUDE.md](../../CLAUDE.md) — Architecture and version reference
+- [Test Automation](../test-automation/SKILL.md) — Integration tests for image validation
+- [Dependency Cache Optimization](../dependency-cache-optimization/SKILL.md) — Image seed cache strategy
+- [Dockerfile](../../../Dockerfile) — Current Dockerfile source
+- [CLAUDE.md](../../../CLAUDE.md) — Architecture and version reference

@@ -171,11 +171,11 @@ docker run -it \
 
 **Environment variables (optional):**
 
-- `KASEKI_AGENT_TIMEOUT_SECONDS` — Timeout in seconds (default: 1200 / 20 min)
+- `KASEKI_AGENT_TIMEOUT_SECONDS` — Timeout in seconds (default: 10800 / 3 hours)
 - `KASEKI_MODEL` — Pi model to use (default: dynamic/kaseki-agent)
 - `KASEKI_VALIDATION_COMMANDS` — Validation steps (default: npm run check; npm run test; npm run build)
 - `KASEKI_CHANGED_FILES_ALLOWLIST` — Restrict which files can change
-- `KASEKI_MAX_DIFF_BYTES` — Maximum diff size (default: 200000 bytes)
+- `KASEKI_MAX_DIFF_BYTES` — Maximum diff size (default: 400000 bytes)
 
 **Result location:**
 
@@ -351,7 +351,7 @@ ln -s /path/to/kaseki-agent/kaseki ~/bin/kaseki
 | `KASEKI_IMAGE` | `docker.io/cyanautomation/kaseki-agent:latest` | Docker image to use |
 | `KASEKI_INSTANCE` | `kaseki-run` | Instance name (for run-mode) |
 | `KASEKI_RESULTS_DIR` | `/results` | Results directory |
-| `KASEKI_AGENT_TIMEOUT_SECONDS` | `1200` | Agent timeout (20 min) |
+| `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | Agent timeout (3 hours) |
 
 ### Credentials
 
