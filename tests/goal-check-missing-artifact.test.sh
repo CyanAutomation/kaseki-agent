@@ -140,7 +140,7 @@ grep -q 'goal_check_artifact_missing' "$RESULTS_DIR/progress.jsonl" || fail "mis
 grep -q 'goal_check_deterministic_fallback' "$RESULTS_DIR/progress.jsonl" || fail "missing deterministic fallback event"
 node - "$RESULTS_DIR/goal-check.json" <<'NODE' || fail "missing deterministic evaluator fallback"
 const verdict = require(process.argv[2]);
-if (verdict.evaluation_fallback !== 'deterministic_critical_change_contract' || verdict.confidence !== 'medium' || verdict.met !== true) throw new Error('fallback must produce the deterministic contract verdict for an accepted no-op');
+if (verdict.evaluation_fallback !== 'deterministic_critical_change_contract' || verdict.confidence !== 'medium' || verdict.met !== true || verdict.evaluation_unavailable !== true) throw new Error('fallback must be explicitly marked as an unavailable semantic evaluation');
 NODE
 grep -q "$RESULTS_DIR/goal-check-validation-errors.jsonl" "$RESULTS_DIR/progress.jsonl" || fail "error event did not point to validation error log"
 if [ -f "$RESULTS_DIR/goal-check-stderr.log" ]; then
