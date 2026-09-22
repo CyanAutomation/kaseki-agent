@@ -39,18 +39,17 @@ describe('testClassificationSmoke (mocked)', () => {
       answers: {
         code_quality_issue: {
           type: 'noul',
-          answer: true,
-          confidence: 0.96,
+          noul: 0.96,
         } as ClassificationAnswer,
         requires_human_review: {
           type: 'choice',
-          answer: 'yes',
+          choice: 'yes',
           confidence: 0.94,
           probabilities: { yes: 0.94, no: 0.04, maybe: 0.02 },
         } as ClassificationAnswer,
         fix_risk_level: {
           type: 'score',
-          answer: 1,
+          score: 1,
           confidence: 0.92,
           probabilities: { '0': 0.03, '1': 0.92, '2': 0.05 },
           legend: { '0': 'Low risk', '1': 'Medium risk', '2': 'High risk' },
@@ -103,18 +102,18 @@ describe('testClassificationSmoke (mocked)', () => {
       answers: {
         code_quality_issue: {
           type: 'noul',
-          answer: true,
-          confidence: 0.96,
+          noul: 0.96,
         } as ClassificationAnswer,
         requires_human_review: {
           type: 'choice',
-          answer: 'yes',
+          choice: 'yes',
           confidence: 0.70, // Below threshold
           probabilities: { yes: 0.70, no: 0.20, maybe: 0.10 },
         } as ClassificationAnswer,
         fix_risk_level: {
           type: 'score',
-          answer: 1,
+          score: 1,
+          legend: { '0': 'Low risk', '1': 'Medium risk', '2': 'High risk' },
           confidence: 0.91,
           probabilities: { '0': 0.03, '1': 0.91, '2': 0.06 },
         } as ClassificationAnswer,

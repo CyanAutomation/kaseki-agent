@@ -27,6 +27,7 @@ import {
 import { resolveOpenRouterApiKey } from './gateway-detection/resolve-openrouter-api-key';
 import { validateClassificationConfidence } from './utils/classification-validation';
 import { classifyWithJev } from './jev-classifier';
+import type { QuestionDefinition } from './types/openrouter-decisions';
 
 /**
  * LLM Gateway Responsiveness Test
@@ -1105,7 +1106,7 @@ export async function testClassificationSmoke(requested: boolean = false): Promi
   try {
     const parsed = await classifyWithJev(
       requestBody.state as string,
-      requestBody.questions as Record<string, { type: 'noul' | 'choice' | 'score'; instructions?: string; criteria?: Record<string, string> | string[] }>,
+      requestBody.questions as Record<string, QuestionDefinition>,
       { model: config.model, timeoutMs: 15000 },
     );
     const answers = parsed.answers;

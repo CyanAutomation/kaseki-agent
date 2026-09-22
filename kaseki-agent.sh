@@ -403,6 +403,12 @@ if [ ! -r "$KASEKI_JEV_WORKFLOW_EVALUATOR" ] && [ -r /app/dist/jev-workflow-eval
 fi
 kaseki_apply_inspect_mode_agent_defaults
 KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-pr}"
+# Human review is part of every successful Kaseki delivery. Keep legacy
+# callers that request a draft from silently weakening that review contract.
+if [ "$KASEKI_PUBLISH_MODE" = "draft_pr" ]; then
+  printf 'Publish mode draft_pr was requested; creating a normal PR for human review.\n' >&2
+  KASEKI_PUBLISH_MODE="pr"
+fi
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-1}"
 # Auto-disable when no GitHub App credentials are mounted to avoid redundant preflight noise.
 # startup-checks.sh already warned about missing credentials; this prevents a second round of errors.
