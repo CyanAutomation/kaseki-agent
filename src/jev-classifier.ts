@@ -24,9 +24,10 @@ function parseResponse(value: unknown, questions: Record<string, QuestionDefinit
   if (!value || typeof value !== 'object') return null;
   const body = value as Partial<DecisionsApiResponse>;
   if (!body.answers || typeof body.answers !== 'object' || Array.isArray(body.answers)) return null;
+  const answers = body.answers;
   const ids = Object.keys(questions);
-  if (Object.keys(body.answers).length !== ids.length || !ids.every((id) => body.answers![id] && validAnswer(questions[id], body.answers![id]))) return null;
-  return { model: typeof body.model === 'string' ? body.model : DEFAULT_JEV_MODEL, answers: body.answers, usage: body.usage && typeof body.usage === 'object' ? body.usage as Record<string, unknown> : {}, responseTime: 0 };
+  if (Object.keys(answers).length !== ids.length || !ids.every((id) => validAnswer(questions[id], answers[id]))) return null;
+  return { model: typeof body.model === 'string' ? body.model : DEFAULT_JEV_MODEL, answers, usage: body.usage && typeof body.usage === 'object' ? body.usage as Record<string, unknown> : {}, responseTime: 0 };
 }
 function retryable(status: number | undefined): boolean { return status === 429 || status === 503 || status === 529; }
 function wait(ms: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, ms)); }
