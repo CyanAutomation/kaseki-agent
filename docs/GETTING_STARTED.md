@@ -171,4 +171,3 @@ timeout 20 kaseki-agent host preflight
 | Quality gates & allowlists | [QUALITY_GATES.md](QUALITY_GATES.md) |
 | Troubleshooting | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 | CLI monitoring tool | [CLI.md](CLI.md) |
-| Migration from old setup paths | [MIGRATION.md](MIGRATION.md) |

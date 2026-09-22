@@ -2,7 +2,7 @@
 
 Complete documentation of all 60+ kaseki-agent configuration variables.
 
-> **New to kaseki-agent?** Start with [docs/QUICK_START.md](QUICK_START.md) instead.  
+> **New to kaseki-agent?** Start with [docs/QUICK_START.md](QUICK_START.md) instead.
 > **Looking for a quick reference?** See [.env.template](../.env.template) for Essential 8 variables.
 
 ---
@@ -28,42 +28,45 @@ Complete documentation of all 60+ kaseki-agent configuration variables.
 
 These are the minimum variables needed for any setup path. All other variables have intelligent defaults.
 
-### `OPENROUTER_API_KEY_FILE`
+### `LLM_GATEWAY_API_KEY_FILE`
 
 - **Type**: `string` (file path)
 - **Default**: `~/.kaseki/secrets.json`
 - **Required**: Yes
 - **Paths**: Single-run, Local API, Production API
-- **Description**: Path to file containing OpenRouter API key
+- **Description**: Path to file containing the LLM Gateway API key
 - **Security**: File must have mode `0600` (owner read/write only)
 - **Example**:
 
   ```bash
-  OPENROUTER_API_KEY_FILE=$HOME/.kaseki/secrets.json
+  LLM_GATEWAY_API_KEY_FILE=$HOME/.kaseki/secrets.json
   ```
 
 ### `KASEKI_MODEL`
 
 - **Type**: `string`
-- **Default**: `openrouter/free`
+- **Default**: `dynamic/kaseki-agent`
 - **Required**: Yes
 - **Paths**: Single-run, Local API, Production API
 - **Description**: AI model to use for code generation
 - **Options**:
-  - `openrouter/free` — Free tier (limited, but good for testing)
-  - `openrouter/openai/gpt-4-turbo` — Higher quality, costs more
-  - `openrouter/anthropic/claude-3-opus` — Excellent quality, most expensive
-  - See [OpenRouter docs](https://openrouter.ai/docs/models) for full list
+  - `dynamic/kaseki-agent` — Default; the gateway resolves the model dynamically
+  - Provider-specific model IDs (e.g., `openrouter/openai/gpt-4-turbo` for OpenRouter)
+  - See your gateway or provider docs for the full model list
 - **Example**:
 
   ```bash
+  # Default (gateway resolves the model)
+  KASEKI_MODEL=dynamic/kaseki-agent
+
+  # Explicit provider model
   KASEKI_MODEL=openrouter/openai/gpt-4-turbo
   ```
 
 ### `KASEKI_VALIDATION_COMMANDS`
 
 - **Type**: `string` (semicolon-separated command list)
-- **Default**: `npm run check;npm run test`
+- **Default**: `npm run check;npm run test;npm run build`
 - **Required**: Yes
 - **Paths**: Single-run, Local API, Production API
 - **Description**: Commands to run after agent completes to validate changes
@@ -74,8 +77,8 @@ These are the minimum variables needed for any setup path. All other variables h
 - **Examples**:
 
   ```bash
-  # Node.js/npm projects
-  KASEKI_VALIDATION_COMMANDS=npm run check;npm run test
+  # Node.js/npm projects (default)
+  KASEKI_VALIDATION_COMMANDS=npm run check;npm run test;npm run build
 
   # Python projects
   KASEKI_VALIDATION_COMMANDS=pytest;mypy .
@@ -751,7 +754,7 @@ Kaseki can run TypeScript compilation before invoking the agent to catch export 
   ```bash
   # Disable TS pre-check entirely (not recommended)
   KASEKI_TS_PRE_CHECK=0
-  
+
   # Keep enabled (default) - auto-detection handles non-TS projects safely
   KASEKI_TS_PRE_CHECK=1
   ```
@@ -956,7 +959,7 @@ Variables for dependency caching and performance optimization.
 
 - **Legacy compatibility**: `KASEKI_CAVEMAN=0` maps to level 0, `KASEKI_CAVEMAN=1` maps to level 1
 - **Measurement**: Use `scripts/measure-caveman-impact.sh` to compare token usage at different levels
-- **Documentation**: See [docs/CAVEMAN_PHASE2_COMPLETE.md](CAVEMAN_PHASE2_COMPLETE.md) for implementation details
+- **Documentation**: See [docs/CAVEMAN_PHASE2_COMPLETE.md](archive/CAVEMAN_PHASE2_COMPLETE.md) for implementation details
 
 ---
 
@@ -1068,7 +1071,7 @@ Variables for error tracking and monitoring with Sentry.
   ```bash
   # Explicitly set (overrides auto-detection)
   SENTRY_RELEASE=1.53.4
-  
+
   # Or set from GitHub Actions release workflow
   SENTRY_RELEASE=${{ github.event.release.tag_name }}
   ```
@@ -1439,5 +1442,5 @@ set +a
 ## See Also
 
 - [QUICK_START.md](QUICK_START.md) — Get started in 5 minutes
-- [TROUBLESHOOTING_FLOW.md](TROUBLESHOOTING_FLOW.md) — Error diagnosis
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Error diagnosis
 - [docs/](.) — Full documentation index
