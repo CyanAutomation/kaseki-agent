@@ -249,7 +249,7 @@ The scouting phase was never invoked because the filesystem prerequisites failed
      ```yaml
      volumes:
        kaseki-results:
-     
+
      services:
        kaseki:
          volumes:
@@ -460,20 +460,20 @@ The error occurred but was not retryable, OR the automatic retry also failed. Ex
 
    - The specified model is no longer available
    - Check the model name in your config: `kaseki-agent config get model`
-   - List available models: `kaseki-agent models list` or check [OpenRouter](https://openrouter.ai)
-   - Update the model: `kaseki-agent config set model openrouter/free` (or another available model)
+   - List available models in your gateway documentation or at [OpenRouter](https://openrouter.ai)
+   - Update the model: `kaseki-agent config set model dynamic/kaseki-agent` (or another available model)
 
 2. **For deprecated model:**
 
    - The model was discontinued by the provider
-   - Switch to a current model: `kaseki-agent config set model openrouter/free`
+   - Switch to a current model: `kaseki-agent config set model dynamic/kaseki-agent`
    - Refer to the provider's migration guide if available
 
 3. **For authentication error:**
 
    - Verify your OpenRouter API key is valid and has not expired
    - Check your account credits/quota at <https://openrouter.ai>
-   - Refresh your credentials: `kaseki-agent setup` (interactive wizard)
+   - Refresh your credentials: `kaseki-agent init` (interactive wizard)
 
 4. **For invalid configuration:**
 
@@ -483,7 +483,7 @@ The error occurred but was not retryable, OR the automatic retry also failed. Ex
 
 **Prevention:**
 
-- Use a reliable, up-to-date model: `KASEKI_MODEL=openrouter/free` (default, recommended)
+- Use a reliable, up-to-date model: `KASEKI_MODEL=dynamic/kaseki-agent` (default, recommended)
 - Monitor provider status before running tasks
 - Set up budget alerts in your provider account to catch quota issues early
 - Consider increasing timeout for slow/rate-limited providers: `KASEKI_AGENT_TIMEOUT_SECONDS=1800`
@@ -492,9 +492,7 @@ The error occurred but was not retryable, OR the automatic retry also failed. Ex
 
 ### 124 — Agent Timeout
 
-The Pi agent invocation exceeded the configured timeout
-(`KASEKI_AGENT_TIMEOUT_SECONDS`, default: 1200 seconds / 20
-minutes).
+The Pi agent invocation exceeded the configured timeout (`KASEKI_AGENT_TIMEOUT_SECONDS`, default: 10800 seconds / 3 hours).
 
 **Common causes:**
 

@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.140.10](https://github.com/CyanAutomation/kaseki-agent/compare/v1.140.9...v1.140.10) (2026-09-22)
+
+
+### Bug Fixes
+
+* avoid tree-sitter QEMU probe in publish workflow ([c65e503](https://github.com/CyanAutomation/kaseki-agent/commit/c65e503a0b9ebb6afe73e8751a18fc1035f92296))
+* avoid tree-sitter QEMU probe in publish workflow ([#1366](https://github.com/CyanAutomation/kaseki-agent/issues/1366)) ([7e0d24a](https://github.com/CyanAutomation/kaseki-agent/commit/7e0d24ab61980515e7dcbcb7de9f27d573386040))
+
 ## [1.140.9](https://github.com/CyanAutomation/kaseki-agent/compare/v1.140.8...v1.140.9) (2026-09-22)
 
 

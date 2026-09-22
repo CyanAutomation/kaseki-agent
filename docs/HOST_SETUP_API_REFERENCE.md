@@ -1,7 +1,7 @@
 # Kaseki Host Setup: API Reference
 
-**Version**: 2.0 (Phase 4-5)  
-**Updated**: 2026-06-04  
+**Version**: 2.0 (Phase 4-5)
+**Updated**: 2026-06-04
 **Audience**: Tool developers, API consumers, external integrations
 
 This document provides complete JSON schemas, function signatures, and API reference for consuming Kaseki host setup output programmatically.
@@ -14,14 +14,14 @@ This document provides complete JSON schemas, function signatures, and API refer
 
 ```bash
 # Run setup and capture JSON
-kaseki-agent host setup --check-only
+kaseki-agent host setup host preflight
 
 # Parse results
 cat ~/.kaseki/setup-results.json | jq '.checks.checkout_freshness_probe'
 # Output: "ok"
 
 # Check exit code
-kaseki-agent host setup --check-only
+kaseki-agent host setup host preflight
 echo $?  # 0=success, 1=error, 2=permission, 3=warning
 ```
 
@@ -29,7 +29,7 @@ echo $?  # 0=success, 1=error, 2=permission, 3=warning
 
 ```bash
 #!/bin/bash
-if kaseki-agent host setup --check-only; then
+if kaseki-agent host setup host preflight; then
   echo "Host is ready for Kaseki"
   # Proceed with API deployment
 else
@@ -58,9 +58,9 @@ if (setupResults.checks.checkout_freshness_probe === 'ok') {
 
 ### setup-results.json (v2 - Current)
 
-**Location**: `~/.kaseki/setup-results.json`  
-**Version**: 2  
-**Updated after**: Each `kaseki-agent host setup` run  
+**Location**: `~/.kaseki/setup-results.json`
+**Version**: 2
+**Updated after**: Each `kaseki-agent host setup` run
 **Format**: JSON (UTF-8)
 
 **Full Schema**:
@@ -68,7 +68,7 @@ if (setupResults.checks.checkout_freshness_probe === 'ok') {
 ```json
 {
   "timestamp": "2026-06-04T21:09:13Z",
-  "mode": "check-only|setup",
+  "mode": "preflight|setup",
   "status": "ok|failed",
   "message": "Setup complete",
   "exit_code": 0,
@@ -89,7 +89,7 @@ if (setupResults.checks.checkout_freshness_probe === 'ok') {
 | Field | Type | Description |
 |-------|------|-------------|
 | `timestamp` | ISO 8601 | UTC timestamp of setup completion |
-| `mode` | string | "check-only" (no changes) or "setup" (with --fix) |
+| `mode` | string | "preflight" (no changes) or "setup" (with --fix) |
 | `status` | string | "ok" (all passed) or "failed" (some checks failed) |
 | `message` | string | Human-readable status message |
 | `exit_code` | integer | Process exit code (0=success, 1=fatal, 2=permission, 3=warning) |
@@ -106,7 +106,7 @@ if (setupResults.checks.checkout_freshness_probe === 'ok') {
 ```json
 {
   "timestamp": "2026-06-04T21:09:13Z",
-  "mode": "check-only",
+  "mode": "preflight",
   "status": "ok",
   "message": "Setup complete",
   "exit_code": 0,
@@ -127,7 +127,7 @@ if (setupResults.checks.checkout_freshness_probe === 'ok') {
 ```json
 {
   "timestamp": "2026-06-04T21:10:45Z",
-  "mode": "check-only",
+  "mode": "preflight",
   "status": "failed",
   "message": "Setup complete",
   "exit_code": 1,
@@ -145,8 +145,8 @@ if (setupResults.checks.checkout_freshness_probe === 'ok') {
 
 ### setup-results.json (v1 - Legacy)
 
-**Format**: JSON (UTF-8)  
-**Version**: 1  
+**Format**: JSON (UTF-8)
+**Version**: 1
 **Deprecated**: Use v2 instead
 
 **Schema**:
@@ -154,7 +154,7 @@ if (setupResults.checks.checkout_freshness_probe === 'ok') {
 ```json
 {
   "timestamp": "2026-06-04T21:09:13Z",
-  "mode": "check-only|setup",
+  "mode": "preflight|setup",
   "status": "ok|failed",
   "message": "Setup complete",
   "exit_code": 0,
@@ -164,9 +164,9 @@ if (setupResults.checks.checkout_freshness_probe === 'ok') {
 
 ### host-state.json (v2)
 
-**Location**: `~/.kaseki/host-state.json`  
-**Purpose**: Internal state tracking; primarily for diagnostics  
-**Updated after**: Stages 2, 6, 7  
+**Location**: `~/.kaseki/host-state.json`
+**Purpose**: Internal state tracking; primarily for diagnostics
+**Updated after**: Stages 2, 6, 7
 **Format**: JSON (UTF-8)
 
 **Schema**:
@@ -638,12 +638,12 @@ cat ~/.kaseki/setup-results.json | jq .
 ```yaml
 - name: Validate Kaseki Host Setup
   run: |
-    kaseki-agent host setup --check-only
-    
+    kaseki-agent host setup host preflight
+
     # Parse results
     SETUP_STATUS=$(cat ~/.kaseki/setup-results.json | jq -r '.status')
     EXIT_CODE=$(cat ~/.kaseki/setup-results.json | jq -r '.exit_code')
-    
+
     if [ "$SETUP_STATUS" != "ok" ]; then
       echo "::error::Host setup failed: $EXIT_CODE"
       cat ~/.kaseki/setup-results.json | jq .
@@ -661,7 +661,7 @@ async function getSetupStatus() {
   try {
     const response = await fetch('/.kaseki/setup-results.json');
     const data = await response.json();
-    
+
     return {
       healthy: data.status === 'ok',
       probeStatus: data.checks.checkout_freshness_probe,
@@ -684,12 +684,12 @@ async function getSetupStatus() {
 set -e
 
 echo "Checking Kaseki host setup..."
-if ! kaseki-agent host setup --check-only; then
+if ! kaseki-agent host setup host preflight; then
   echo "Setup needs fixes, attempting auto-fix..."
   sudo kaseki-agent host setup --fix
-  
+
   # Verify fix succeeded
-  if kaseki-agent host setup --check-only; then
+  if kaseki-agent host setup host preflight; then
     echo "✓ Auto-fix successful"
   else
     echo "✗ Auto-fix failed, manual intervention required"
@@ -762,9 +762,9 @@ echo "Validation result: $?"
 **Note**: No rate limiting or throttling is implemented. Kaseki setup can be run multiple times without delay.
 
 ```bash
-# Safe to run frequently (no side effects in check-only mode)
+# Safe to run frequently (no side effects in host preflight mode)
 for i in {1..10}; do
-  kaseki-agent host setup --check-only
+  kaseki-agent host setup host preflight
 done
 ```
 
