@@ -64,13 +64,13 @@ describe('Gateway Adapter Request Format', () => {
           },
         ],
       },
-    ])('should convert $name to the externally emitted messages shape', ({ messages }) => {
+    ])('should move $name from input to the externally emitted messages field', ({ messages }) => {
       const normalized = normalizeGatewayRequest({
         model: 'auto',
         input: messages,
         max_output_tokens: 256,
       });
-      
+
       expect(normalized).toEqual({
         model: 'auto',
         messages,
