@@ -280,8 +280,8 @@ curl -H "Authorization: Bearer sk-your-secret-key-here" \
 | `KASEKI_API_LOG_LEVEL` | `info` | Log level: debug, info, warn, error |
 | `KASEKI_API_IMAGE` | `docker.io/cyanautomation/kaseki-agent:latest` | Docker image to use |
 | `KASEKI_API_MAX_CONCURRENT_RUNS` | `3` | Max parallel instances |
-| `KASEKI_AGENT_TIMEOUT_SECONDS` | `1200` | Per-run timeout (20 min) |
-| `KASEKI_MAX_DIFF_BYTES` | `200000` | Max diff size (200 KB) |
+| `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | Per-run timeout (3 hours) |
+| `KASEKI_MAX_DIFF_BYTES` | `400000` | Max diff size (400 KB) |
 | `OPENROUTER_API_KEY_FILE` | — | Required: path to OpenRouter key file |
 | `KASEKI_RESULTS_DIR` | `/agents/kaseki-results` | Output directory |
 

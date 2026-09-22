@@ -30,53 +30,53 @@ This skill guides integration of kaseki-agent into CI/CD platforms (GitHub Actio
 
 ### Trigger: Issue Comment
 
+This workflow accepts untrusted issue text. Restrict who may invoke it, pass event data
+through environment variables (never shell interpolation), and grant only the permissions
+needed to read code and write the result comment.
+
 ```yaml
 name: Kaseki on Issue Command
 on:
   issue_comment:
     types: [created]
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   kaseki-fix:
     runs-on: ubuntu-latest
-    if: contains(github.event.comment.body, '@kaseki fix')
+    if: >-
+      contains(github.event.comment.body, '@kaseki fix') &&
+      (github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'COLLABORATOR')
     steps:
-      - name: Extract Issue Details
-        id: issue
-        run: |
-          ISSUE_TITLE="${{ github.event.issue.title }}"
-          ISSUE_BODY="${{ github.event.issue.body }}"
-          echo "title=$ISSUE_TITLE" >> $GITHUB_OUTPUT
-          echo "body=$ISSUE_BODY" >> $GITHUB_OUTPUT
-
-      - name: Create Task Prompt from Issue
-        id: prompt
-        run: |
-          PROMPT="
-          PROBLEM: ${{ steps.issue.outputs.title }}
-          
-          DETAILS:
-          ${{ steps.issue.outputs.body }}
-          
-          SCOPE: Make minimal changes to fix the issue.
-          VALIDATION: All tests must pass.
-          "
-          echo "prompt=$PROMPT" >> $GITHUB_OUTPUT
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Run Kaseki
         id: kaseki
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          REPO_URL: ${{ github.repository }}
+          REPO_URL: https://github.com/${{ github.repository }}
           GIT_REF: main
-          TASK_PROMPT: ${{ steps.prompt.outputs.prompt }}
+          # GitHub supplies these as environment values; do not interpolate them in run:.
+          TASK_PROMPT: |
+            PROBLEM: ${{ github.event.issue.title }}
+
+            DETAILS:
+            ${{ github.event.issue.body }}
+
+            SCOPE: Make minimal changes to fix the issue.
+            VALIDATION: All tests must pass.
           KASEKI_CHANGED_FILES_ALLOWLIST: "src/** tests/**"
         run: |
           ./run-kaseki.sh kaseki-issue-${{ github.event.issue.number }}
 
       - name: Post Result Comment
         if: always()
-        uses: actions/github-script@v7
+            uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
         with:
           script: |
             const fs = require('fs');
@@ -99,7 +99,7 @@ jobs:
   validate-with-kaseki:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Run Kaseki Tests
         env:
@@ -121,7 +121,7 @@ jobs:
 
       - name: Upload Artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: kaseki-results-pr-${{ github.run_id }}
           path: /agents/kaseki-results/kaseki-pr-${{ github.run_id }}/
@@ -152,7 +152,7 @@ jobs:
 
       - name: Notify on Failure
         if: failure()
-        uses: slackapi/slack-github-action@v1.24
+        uses: slackapi/slack-github-action@e28cf165c92ffef168d23c5c9000cffc8a25e117
         with:
           payload: |
             {
@@ -448,7 +448,7 @@ curl -X POST "https://api.datadoghq.com/api/v1/events" \
 
 ## See Also
 
-- [CI_CD_INTEGRATION.md](../../docs/CI_CD_INTEGRATION.md) — Comprehensive platform-specific examples
-- [EXAMPLES.md](../../docs/EXAMPLES.md) — Real-world example #8 (multi-repo batch) and #10 (webhook)
-- [DEPLOYMENT.md](../../docs/DEPLOYMENT.md) — API service for remote CI/CD invocation
-- [workflow-diagnosis](workflow-diagnosis.md) — Troubleshooting CI/CD failures
+- [CI_CD_INTEGRATION.md](../../../docs/CI_CD_INTEGRATION.md) — Comprehensive platform-specific examples
+- [EXAMPLES.md](../../../docs/EXAMPLES.md) — Real-world example #8 (multi-repo batch) and #10 (webhook)
+- [DEPLOYMENT.md](../../../docs/DEPLOYMENT.md) — API service for remote CI/CD invocation
+- [workflow-diagnosis](../workflow-diagnosis/SKILL.md) — Troubleshooting CI/CD failures

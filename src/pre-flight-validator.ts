@@ -645,7 +645,7 @@ export class PreFlightValidator {
       return {
         name: 'max-diff-bytes',
         status: 'pass',
-        message: 'Using default max diff bytes (200 KB)',
+        message: 'Using default max diff bytes (400 KB)',
       };
     }
 
