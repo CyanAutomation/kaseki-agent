@@ -66,6 +66,17 @@ describe('JEV classifier client', () => {
     await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, { fetchImpl })).rejects.toMatchObject({ code: 'invalid_response' });
   });
 
+  it('rejects a same-sized answer map that omits a requested question', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({
+      answers: { unexpected: { type: 'noul', noul: 0.93 } },
+      usage: {},
+    }), { status: 200 }));
+
+    await expect(classifyWithJev('state', {
+      safe: { type: 'noul', instructions: 'Is this safe?' },
+    }, { fetchImpl })).rejects.toMatchObject({ code: 'invalid_response' });
+  });
+
   it('exposes conservative answer helpers', () => {
     expect(answerConfidence({ type: 'choice', choice: 'yes', probabilities: { yes: 0.8, no: 0.2 }, confidence: 0.8 })).toBe(0.8);
     expect(answerConfidence({ type: 'noul', noul: 0.9 })).toBe(0);
