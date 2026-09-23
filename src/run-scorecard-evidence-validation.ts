@@ -12,8 +12,9 @@ export function collectValidationEvidence(snapshot: any): ValidationEvidence {
   const failure = object(snapshot.json['failure.json']) ?? {};
   const timing = object(snapshot.json['timings-manifest.json']) ?? {};
   const validationRows = Array.isArray(timing.validation_timings) ? timing.validation_timings : [];
+  const stageRows = Array.isArray(timing.stage_timings) ? timing.stage_timings : [];
   const failureValidationExit = number(failure.validation_exit_code);
-  const validationCommandsAttempted = number(metadata.validation_commands_attempted);
+  const validationCommandsAttempted = number(metadata.validation_commands_attempted) ?? 0;
   const executedValidationRows = validationRows.filter((row) => {
     const item = object(row);
     return !String(item?.details ?? item?.detail ?? item?.status ?? '').includes('skipped=missing_npm_script')
@@ -26,7 +27,10 @@ export function collectValidationEvidence(snapshot: any): ValidationEvidence {
       : validationRows.length
         ? 'unknown'
         : validationCommandsAttempted === 0
-          ? 'unknown'
+          ? stageRows.some((row) => String(object(row)?.stage ?? '').trim().toLowerCase() === 'validation'
+            && number(object(row)?.exit_code) === 0)
+            ? 'passed'
+            : 'unknown'
           : statusFrom(metadata, ['validation_exit_code', 'validation_exit', 'validation_status']);
   return { validation, executedValidationRows };
 }

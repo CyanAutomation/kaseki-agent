@@ -35,6 +35,7 @@ export function detectPhaseReached(
       || execution.noChangeAccepted,
     validation: execution.executedValidationRowsCount > 0
       || (number(meta.validation_commands_attempted) ?? 0) > 0
+      || hasStage(/^validation$/i)
       || (execution.validationExitCode !== undefined && execution.validationExitCode !== 0),
     goal_check: Boolean(snapshot.json['goal-check.json'])
       || hasStage(/goal check/i)

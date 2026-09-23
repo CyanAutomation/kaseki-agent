@@ -3,7 +3,8 @@
 
 kaseki_validate_early_provider_configuration() {
   if [ "${KASEKI_PROVIDER:-gateway}" != "gateway" ]; then
-    return 0
+    printf 'Unsupported KASEKI_PROVIDER=%s. Kaseki is gateway-only; the OpenRouter credential is reserved for JEV Decisions evaluation.\n' "${KASEKI_PROVIDER:-}" >&2
+    return 2
   fi
 
   if [ -z "${LLM_GATEWAY_URL:-}" ]; then
@@ -13,7 +14,6 @@ kaseki_validate_early_provider_configuration() {
     printf '    - Azure OpenAI: https://{resource}.openai.azure.com/\n' >&2
     printf '    - Ollama: http://localhost:11434/v1\n' >&2
     printf '    - Other: {your-endpoint}\n' >&2
-    printf '  Or set KASEKI_PROVIDER=openrouter and provide OPENROUTER_API_KEY to use OpenRouter instead.\n' >&2
     return 2
   fi
 
