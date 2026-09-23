@@ -532,29 +532,47 @@ describe('Gateway Custom Stream Handler', () => {
       expect(transport).toHaveBeenCalledTimes(1);
     });
 
-    it('logs gateway HTTP errors with response details', () => {
-      /**
-       * Test: HTTP error responses are captured with details for debugging
-       */
+    it('logs gateway HTTP errors with bounded, privacy-preserving response details', async () => {
+      const diagnosticsSink = jest.fn();
+      const credential = 'gateway-secret-value';
+      const privateHeader = 'private-trace-value';
+      const body = `upstream unavailable: ${'x'.repeat(300)}`;
+      const response = new Response(body, {
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: {
+          'content-type': 'application/problem+json',
+          authorization: `Bearer ${credential}`,
+          'set-cookie': `session=${credential}`,
+          'x-private-trace': privateHeader,
+        },
+      });
+      const transport = jest.fn().mockResolvedValue(response);
+      const streamHandler = createNormalizedGatewayTransport(transport, diagnosticsSink);
 
-      const expectedErrorDiagnostic = {
+      await streamHandler({
+        url: 'https://llm-gateway.local.xyz/v1/responses',
+        method: 'POST',
+        headers: { authorization: `Bearer ${credential}` },
+        body: JSON.stringify({ model: 'dynamic/kaseki-agent', input: 'hello' }),
+      });
+
+      const diagnostic = diagnosticsSink.mock.calls
+        .map(([record]) => record)
+        .find(record => record.event === 'gateway_http_error');
+      expect(diagnostic).toEqual({
         event: 'gateway_http_error',
-        fields: [
-          'status',
-          'statusText',
-          'contentType',
-          'errorBodyPreview',
-          'errorBodyLength',
-        ],
-      };
-
-      console.log('✓ HTTP errors logged with:');
-      for (const field of expectedErrorDiagnostic.fields) {
-        console.log(`  • ${field}`);
-      }
-
-      expect(expectedErrorDiagnostic.fields).toContain('status');
-      expect(expectedErrorDiagnostic.fields).toContain('errorBodyPreview');
+        status: 503,
+        statusText: 'Service Unavailable',
+        contentType: 'application/problem+json',
+        errorBodyPreview: body.slice(0, 256),
+        errorBodyLength: body.length,
+      });
+      expect(diagnostic.errorBodyPreview).toHaveLength(256);
+      expect(diagnostic).not.toHaveProperty('headers');
+      expect(JSON.stringify(diagnostic)).not.toContain(credential);
+      expect(JSON.stringify(diagnostic)).not.toContain(privateHeader);
+      expect(transport).toHaveBeenCalledTimes(1);
     });
 
     it('captures error type and stack trace for debugging', () => {
