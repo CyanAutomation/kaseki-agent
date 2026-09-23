@@ -40,7 +40,7 @@ describe('Gateway Adapter Request Format', () => {
     it.each([
       {
         name: 'system-plus-user input',
-        messages: [
+        input: [
           {
             role: 'system',
             content: 'You are a helpful assistant.',
@@ -50,10 +50,11 @@ describe('Gateway Adapter Request Format', () => {
             content: 'Hello, what is 2+2?',
           },
         ],
+        expectedField: 'messages',
       },
       {
         name: 'user-only input',
-        messages: [
+        input: [
           {
             role: 'user',
             content: 'What is 2+2?',
@@ -63,66 +64,46 @@ describe('Gateway Adapter Request Format', () => {
             content: 'And what is 3+3?',
           },
         ],
+        expectedField: 'messages',
       },
-    ])('should move $name from input to the externally emitted messages field', ({ messages }) => {
-      const normalized = normalizeGatewayRequest({
+      {
+        name: 'empty-array input',
+        input: [],
+        expectedField: 'input',
+      },
+      {
+        name: 'malformed-array input',
+        input: [
+          { text: 'Not a message object' },
+          { content: 'Missing role field' },
+        ],
+        expectedField: 'input',
+      },
+    ])('should build the complete outbound body for $name', ({ input, expectedField }) => {
+      const request = {
+        url: 'https://gateway.example.com/v1/responses',
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'auto',
+          input,
+          max_output_tokens: 256,
+          metadata: { phase: 'validation' },
+        }),
+      };
+
+      const normalized = normalizeGatewayTransportRequest(request);
+      const outboundBody = JSON.parse(normalized.body as string);
+
+      expect(outboundBody).toEqual({
         model: 'auto',
-        input: messages,
+        [expectedField]: input,
         max_output_tokens: 256,
+        metadata: { phase: 'validation' },
       });
-
-      expect(normalized).toEqual({
-        model: 'auto',
-        messages,
-        max_output_tokens: 256,
-      });
-      expect(normalized).not.toHaveProperty('input');
-    });
-
-    /**
-     * Test 4: Empty array should be handled gracefully
-     * Expected: Empty arrays treated as invalid input, fallback to input field (gateway error handling)
-     */
-    it('should handle empty message array gracefully', () => {
-      const emptyArray = [];
-
-      const isMultiMessage = Array.isArray(emptyArray) && emptyArray.length > 0;
-
-      expect(isMultiMessage).toBe(false);
-
-      // Empty array doesn't meet multi-message criteria, so it fails gracefully
-      const requestPayload = isMultiMessage
-        ? { model: 'auto', messages: emptyArray, max_output_tokens: 256 }
-        : { model: 'auto', input: emptyArray, max_output_tokens: 256 };
-
-      expect(requestPayload.input).toEqual(emptyArray);
-    });
-
-    /**
-     * Test 5: Mixed content (array with non-message objects) should be treated as input
-     * Expected: If array doesn't have proper message structure, keep as input field
-     */
-    it('should keep malformed arrays in input field (gateway will reject)', () => {
-      const malformedArray = [
-        { text: 'Not a message object' },
-        { content: 'Missing role field' },
-      ];
-
-      const isMultiMessage = Array.isArray(malformedArray) &&
-        malformedArray.length > 0 &&
-        malformedArray.every(item =>
-          typeof item === 'object' &&
-          'role' in item &&
-          'content' in item
-        );
-
-      expect(isMultiMessage).toBe(false);
-
-      const requestPayload = isMultiMessage
-        ? { model: 'auto', messages: malformedArray, max_output_tokens: 256 }
-        : { model: 'auto', input: malformedArray, max_output_tokens: 256 };
-
-      expect(requestPayload.input).toEqual(malformedArray);
+      if (expectedField === 'messages') {
+        expect(outboundBody).not.toHaveProperty('input');
+      }
     });
   });
 
