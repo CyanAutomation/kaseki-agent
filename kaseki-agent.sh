@@ -1772,8 +1772,30 @@ for (const file of files) {
     safe_values: safe,
   };
 }
+
 process.stdout.write(JSON.stringify(out));
 NODE
+}
+
+# Provider diagnostics are assembled from external responses. Validate JSON
+# fragments before embedding them in the large metadata document so one bad
+# optional field cannot discard the complete run metadata.
+metadata_json_fragment_or_null() {
+  local value="${1:-}"
+  if [ -n "$value" ] && jq -e . >/dev/null 2>&1 <<<"$value"; then
+    printf '%s' "$value"
+  else
+    printf 'null'
+  fi
+}
+
+metadata_number_or_zero() {
+  local value="${1:-0}"
+  if [[ "$value" =~ ^[0-9]+$ ]]; then
+    printf '%s' "$value"
+  else
+    printf '0'
+  fi
 }
 
 remove_low_value_artifacts() {
@@ -1790,6 +1812,18 @@ remove_low_value_artifacts() {
       rm -f "${KASEKI_RESULTS_DIR}/$artifact" 2>/dev/null || true
     fi
   done
+}
+
+ensure_validation_evidence_artifacts() {
+  local validation_log="${KASEKI_RESULTS_DIR}/validation.log"
+  local timings_file="${KASEKI_RESULTS_DIR}/validation-timings.tsv"
+  if [ ! -e "$validation_log" ]; then
+    printf 'Validation phase did not produce a post-agent log.\n' > "$validation_log"
+    printf 'validation_artifact_status=missing_at_phase_boundary\n' >> "$validation_log"
+  fi
+  if [ ! -e "$timings_file" ]; then
+    : > "$timings_file"
+  fi
 }
 
 write_metadata() {
@@ -1897,9 +1931,9 @@ write_metadata() {
   "provider_error_fallback_provider": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_PROVIDER" | json_encode),
   "provider_error_fallback_model": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_MODEL" | json_encode),
   "provider_error_fallback_result": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_RESULT" | json_encode),
-  "provider_error_primary": ${PROVIDER_ERROR_PRIMARY_JSON:-null},
-  "provider_error_recovery": ${PROVIDER_ERROR_RECOVERY_JSON:-null},
-  "provider_failure_chain": {"primary": ${PROVIDER_ERROR_PRIMARY_JSON:-null}, "retry_attempt_count": $PROVIDER_ERROR_RETRY_ATTEMPT_COUNT, "retry_result": $(printf '%s' "$PROVIDER_ERROR_RETRY_RESULT" | json_encode), "recovery": ${PROVIDER_ERROR_RECOVERY_JSON:-null}, "recovery_result": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_RESULT" | json_encode)},
+  "provider_error_primary": $(metadata_json_fragment_or_null "${PROVIDER_ERROR_PRIMARY_JSON:-}"),
+  "provider_error_recovery": $(metadata_json_fragment_or_null "${PROVIDER_ERROR_RECOVERY_JSON:-}"),
+  "provider_failure_chain": {"primary": $(metadata_json_fragment_or_null "${PROVIDER_ERROR_PRIMARY_JSON:-}"), "retry_attempt_count": $PROVIDER_ERROR_RETRY_ATTEMPT_COUNT, "retry_result": $(printf '%s' "$PROVIDER_ERROR_RETRY_RESULT" | json_encode), "recovery": $(metadata_json_fragment_or_null "${PROVIDER_ERROR_RECOVERY_JSON:-}"), "recovery_result": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_RESULT" | json_encode)},
   "pi_exit_code": $PI_EXIT,
   "scouting_exit_code": $SCOUTING_EXIT,
   "goal_setting_exit_code": $GOAL_SETTING_EXIT,
@@ -2002,8 +2036,24 @@ META
     mv "$metadata_tmp" "${KASEKI_RESULTS_DIR}/metadata.json"
   else
     rm -f "$metadata_tmp"
-    printf '{"schema_version":"2.0","instance":%s,"exit_code":%s,"failed_command":%s,"worker_error_type":"metadata_write_invalid","worker_error_message":"metadata serialization failed; inspect failure.json and stderr.log"}\n' \
-      "$(printf '%s' "$INSTANCE_NAME" | json_encode)" "$exit_code" "$(printf '%s' "$FAILED_COMMAND" | json_encode)" \
+    # Preserve the fields needed for lifecycle diagnosis even when an
+    # optional metadata fragment was malformed. This fallback must remain a
+    # useful run record, not merely a syntactically valid error stub.
+    printf '{"schema_version":"2.0","instance":%s,"task_mode":%s,"status":%s,"exit_code":%s,"failed_command":%s,"goal_setting_exit_code":%s,"goal_setting_attempts":%s,"goal_setting_succeeded_on_attempt":%s,"scouting_exit_code":%s,"pi_exit_code":%s,"validation_exit_code":%s,"quality_exit_code":%s,"goal_check_exit_code":%s,"run_evaluation_exit_code":%s,"worker_error_type":"metadata_write_invalid","worker_error_message":"metadata serialization failed; optional fields were discarded; inspect stderr.log"}\n' \
+      "$(printf '%s' "$INSTANCE_NAME" | json_encode)" \
+      "$(printf '%s' "$KASEKI_TASK_MODE" | json_encode)" \
+      "$(printf '%s' "$STATUS" | json_encode)" \
+      "$(metadata_number_or_zero "$exit_code")" \
+      "$(printf '%s' "$FAILED_COMMAND" | json_encode)" \
+      "$(metadata_number_or_zero "$GOAL_SETTING_EXIT")" \
+      "$(metadata_number_or_zero "${KASEKI_GOAL_SETTING_ATTEMPTS:-0}")" \
+      "$(if [ -n "${KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT:-}" ]; then metadata_number_or_zero "$KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT"; else printf 'null'; fi)" \
+      "$(metadata_number_or_zero "$SCOUTING_EXIT")" \
+      "$(metadata_number_or_zero "$PI_EXIT")" \
+      "$(metadata_number_or_zero "$VALIDATION_EXIT")" \
+      "$(metadata_number_or_zero "$QUALITY_EXIT")" \
+      "$(metadata_number_or_zero "$GOAL_CHECK_EXIT")" \
+      "$(metadata_number_or_zero "$RUN_EVALUATION_EXIT")" \
       > "${KASEKI_RESULTS_DIR}/metadata.json"
   fi
   printf '%s\n' "$exit_code" > "${KASEKI_RESULTS_DIR}"/exit_code
@@ -3599,6 +3649,9 @@ EOF
     FAILED_COMMAND=""
   fi
   
+  # Evaluators and API diagnostics require these artifacts even when a phase
+  # was skipped or the worker exited before validation started.
+  ensure_validation_evidence_artifacts
   finalize_artifacts_and_publish_status "${KASEKI_RESULTS_DIR}" write_metadata "$STATUS" "${VALIDATION_TIMINGS_FILE}" "${PRE_VALIDATION_TIMINGS_FILE}"
   maybe_call_finish_helper remove_low_value_artifacts
   if [ "$KASEKI_REPO_SESSION_ACTIVE" = "1" ] && [ "$(cat "$KASEKI_REPO_SESSION_MARKER" 2>/dev/null || true)" = "${BASHPID:-$$}" ]; then
@@ -4267,6 +4320,16 @@ ensure_build_before_test_validation() {
 
 construct_default_validation_commands() {
   local commands=""
+
+  # Keep the default contract aligned with the success criteria emitted by
+  # goal-setting for TypeScript projects. In particular, `npm test` is often
+  # only an alias and does not make unit-test evidence explicit.
+  if package_json_has_npm_script "type-check" &&
+    package_json_has_npm_script "lint" &&
+    package_json_has_npm_script "test:unit"; then
+    printf '%s' "npm run type-check;npm run lint;npm run test:unit"
+    return 0
+  fi
 
   if package_json_has_npm_script "build"; then
     commands="$(append_default_validation_command "$commands" "npm run build")"

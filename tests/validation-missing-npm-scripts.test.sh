@@ -100,6 +100,19 @@ case_construct_default_validation_commands_contract() {
   write_package_json <<'JSON'
 {
   "scripts": {
+    "type-check": "node -e 'process.exit(0)'",
+    "lint": "node -e 'process.exit(0)'",
+    "test:unit": "node -e 'process.exit(0)'",
+    "build": "node -e 'process.exit(0)'"
+  }
+}
+JSON
+  assert_equals "uses explicit type-check, lint, and unit-test contract" \
+    "npm run type-check;npm run lint;npm run test:unit" "$(construct_default_validation_commands)"
+
+  write_package_json <<'JSON'
+{
+  "scripts": {
     "test": "node -e 'process.exit(0)'",
     "build": "node -e 'process.exit(0)'"
   }

@@ -101,6 +101,16 @@ makefile_has_target() {
 construct_default_validation_commands() {
   local commands=""
 
+  # Keep the default contract aligned with the success criteria emitted by
+  # goal-setting for TypeScript projects. In particular, `npm test` is often
+  # only an alias and does not make unit-test evidence explicit.
+  if package_json_has_npm_script "type-check" &&
+    package_json_has_npm_script "lint" &&
+    package_json_has_npm_script "test:unit"; then
+    printf '%s' "npm run type-check;npm run lint;npm run test:unit"
+    return 0
+  fi
+
   # Go API projects can legitimately include package.json for a parser or UI.
   # Prefer their native validation contract rather than treating that auxiliary
   # manifest as the primary project signal.

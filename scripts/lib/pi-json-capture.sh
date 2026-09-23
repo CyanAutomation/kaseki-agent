@@ -8,7 +8,7 @@ run_pi_json_capture() {
   local model="$3"
   local prompt="$4"
   local stderr_target="${5:-}"
-  local pi_exit progress_exit progress_stderr progress_fifo progress_pid splitter_exit pi_tools bounded_prompt phase_tool_output_cap
+  local pi_exit progress_exit progress_stderr progress_fifo progress_pid splitter_exit pi_tools bounded_prompt phase_tool_output_cap context_checkpoint_interval
   local pi_llm_gateway_api_key="${llm_gateway_api_key:-${LLM_GATEWAY_API_KEY:-}}"
   local pi_llm_gateway_url="${llm_gateway_url:-${LLM_GATEWAY_URL:-}}"
   local -a pipeline_statuses
@@ -41,6 +41,11 @@ run_pi_json_capture() {
       ;;
   esac
 
+  context_checkpoint_interval="${KASEKI_CONTEXT_CHECKPOINT_INTERVAL:-6}"
+  if ! [[ "$context_checkpoint_interval" =~ ^[1-9][0-9]*$ ]]; then
+    context_checkpoint_interval=6
+  fi
+
   case "${KASEKI_INFERENCE_PHASE:-coding}" in
     goal-setting|scouting) phase_tool_output_cap="${KASEKI_PRECODING_TOOL_OUTPUT_MAX_CHARS:-4000}" ;;
     goal-check|run-evaluation) phase_tool_output_cap="${KASEKI_EVALUATOR_TOOL_OUTPUT_MAX_CHARS:-2000}" ;;
@@ -53,7 +58,7 @@ run_pi_json_capture() {
   # targeted follow-up read.
   bounded_prompt="${prompt}
 
-Tool-output target: aim for each result <=${phase_tool_output_cap} chars. Read/search exact ranges. Large output -> /results; return only path, bytes, hash, failures, and a <=400-character relevant excerpt. Do not repeat unchanged output. At a context checkpoint, finish with a compact handoff: task status, accepted plan, changed files, validation status, and next action. Speak terse. Keep paths, commands, JSON, code, and errors exact."
+Tool-output target: aim for each result <=${phase_tool_output_cap} chars. Read/search exact ranges. Large output -> /results; return only path, bytes, hash, failures, and a <=400-character relevant excerpt. Do not repeat unchanged output. Every ${context_checkpoint_interval} tool calls, stop exploring and emit a compact handoff: task status, accepted plan, changed files, validation status, and next action. Speak terse. Keep paths, commands, JSON, code, and errors exact."
 
   wait_for_progress_stream() {
     local pid="$1"

@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { answerIsTrue, classifyWithJev, DEFAULT_JEV_MODEL } from './jev-classifier';
+import { collectValidationEvidence } from './validation-evidence';
 
 type JsonObject = Record<string, unknown>;
 
@@ -34,12 +35,14 @@ function bounded(value: unknown, maxChars: number): unknown {
 function evidenceState(resultsDir: string): JsonObject {
   const goal = readJson(path.join(resultsDir, 'goal-setting.json'));
   const scouting = readJson(path.join(resultsDir, 'scouting.json'));
+  const validation = collectValidationEvidence(resultsDir);
   return {
     goal_setting: bounded(redact(goal), 8000),
     scouting: bounded(redact(scouting), 8000),
     changed_files: redact(readText(path.join(resultsDir, 'changed-files.txt')).slice(0, 12000)),
     diff: redact(readText(path.join(resultsDir, 'git.diff')).slice(0, 24000)),
-    validation: redact(readText(path.join(resultsDir, 'validation.log')).slice(-12000)),
+    validation: redact(validation.text),
+    validation_sources: validation.sources,
     task_mode: process.env.KASEKI_TASK_MODE || 'patch',
   };
 }
@@ -70,7 +73,8 @@ async function runGoalCheck(resultsDir: string, attempt: number): Promise<JsonOb
   });
   const threshold = confidenceThreshold();
   const missing: string[] = [];
-  const evidence: string[] = ['goal-setting.json', 'scouting.json', 'changed-files.txt', 'git.diff', 'validation.log'];
+  const validationSources = Array.isArray(state.validation_sources) ? state.validation_sources as string[] : [];
+  const evidence: string[] = ['goal-setting.json', 'scouting.json', 'changed-files.txt', 'git.diff', ...validationSources];
   let allMet = true;
   for (const [id, answer] of Object.entries(result.answers)) {
     const match = id.match(/^criterion_(\d+)$/);
@@ -93,7 +97,7 @@ async function runGoalCheck(resultsDir: string, attempt: number): Promise<JsonOb
     evidence,
     missing,
     retry_prompt: allMet ? '' : `Address the unmet criteria and produce evidence for: ${missing.join('; ')}`,
-    validation_notes: [String(state.validation).trim() ? 'validation.log contained final validation evidence' : 'validation evidence was unavailable'],
+    validation_notes: [String(state.validation).trim() ? `validation evidence available from: ${validationSources.join(', ')}` : 'validation evidence was unavailable'],
     evidence_sources_inspected: evidence,
     contradictions: [],
     confidence_calibration: { outcome: allMet ? 'met' : 'unmet', justification: `JEV confidence threshold=${threshold}; ${missing.length} criteria require attention.` },
@@ -123,7 +127,7 @@ async function runEvaluation(resultsDir: string): Promise<JsonObject> {
     summary: 'Structured run evaluation was produced by JEV from persisted run evidence.',
     human_review_focus: answer('reviewer_confidence') === 'low' ? ['Review the diff, validation evidence, and goal-check criteria manually.'] : [],
     stage_value: [],
-    evidence_sources_inspected: ['goal-check.json', 'changed-files.txt', 'git.diff', 'validation.log'],
+    evidence_sources_inspected: ['goal-check.json', 'changed-files.txt', 'git.diff', ...(Array.isArray(state.validation_sources) ? state.validation_sources as string[] : [])],
     contradictions: [],
     confidence_calibration: { objective_outcome: goalCheck.met === true ? 'met' : 'unmet', calibrated: true, reason: 'JEV classified structured evidence; deterministic scorecard caps remain authoritative.' },
     phase_scorecard: {},
