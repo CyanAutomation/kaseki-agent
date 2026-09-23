@@ -604,27 +604,39 @@ describe('Gateway Custom Stream Handler', () => {
       expect(response.text).toHaveBeenCalledTimes(1);
     });
 
-    it('captures error type and stack trace for debugging', () => {
-      /**
-       * Test: Errors include type information and stack trace preview
-       * Helps identify what went wrong and where
-       */
-
-      const expectedErrorContext = {
-        reason: 'error',
-        message: 'error message',
-        errorType: 'TypeError', // or whatever error type
-        stackPreview: 'first few lines of stack trace',
-        timestamp: '2026-06-24T...',
+    it('records normalized diagnostics when the gateway handler throws a TypeError', () => {
+      const diagnosticsSink = jest.fn();
+      const knownGatewayHandlerCallSite = () => {
+        throw new TypeError('known gateway handler failure');
       };
+      const streamHandler = createNormalizedGatewayTransport(
+        knownGatewayHandlerCallSite,
+        diagnosticsSink
+      );
 
-      console.log('✓ Error context captured:');
-      console.log(`  • Error type: ${expectedErrorContext.errorType}`);
-      console.log(`  • Stack preview: ${expectedErrorContext.stackPreview}`);
-      console.log(`  • Timestamp: ${expectedErrorContext.timestamp}`);
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-01-02T03:04:05.678Z'));
+      try {
+        expect(() => streamHandler({
+          url: 'https://llm-gateway.local.xyz/v1/responses',
+          body: JSON.stringify({ input: 'hello' }),
+        })).toThrow(new TypeError('known gateway handler failure'));
+      } finally {
+        jest.useRealTimers();
+      }
 
-      expect(expectedErrorContext).toHaveProperty('errorType');
-      expect(expectedErrorContext).toHaveProperty('stackPreview');
+      const diagnostic = diagnosticsSink.mock.calls
+        .map(([record]) => record)
+        .find(record => record.event === 'gateway_handler_error');
+      expect(diagnostic).toEqual(expect.objectContaining({
+        event: 'gateway_handler_error',
+        reason: 'error',
+        errorType: 'TypeError',
+        message: 'known gateway handler failure',
+        timestamp: '2026-01-02T03:04:05.678Z',
+        stackPreview: expect.stringContaining('knownGatewayHandlerCallSite'),
+      }));
+      expect(diagnostic.stackPreview.length).toBeLessThanOrEqual(1024);
     });
   });
 
