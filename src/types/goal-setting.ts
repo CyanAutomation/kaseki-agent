@@ -110,7 +110,13 @@ const ProtectedLineRangeSchema = z.object({
   end: z.number().int().positive(),
   pattern: z.string().optional(),
   description: z.string().optional(),
-});
+}).refine(
+  ({ start, end }) => end >= start,
+  {
+    message: 'end must be greater than or equal to start',
+    path: ['end'],
+  },
+);
 
 const StructuralRequirementsSchema = z.object({
   preserve_headings: z.boolean().optional(),
