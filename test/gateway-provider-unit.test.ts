@@ -8,6 +8,7 @@ import {
   validateGatewayStreamContext,
 } from '../src/.extensions';
 import { createNormalizedGatewayTransport } from '../src/gateway/normalize-request';
+import { convertGatewaySseToPiEvents } from '../src/gateway/convert-response-stream';
 
 const executeGatewayProviderRegistration = (env: NodeJS.ProcessEnv): string => {
   try {
@@ -771,73 +772,46 @@ data: [DONE]
     console.log(`  Tokens: input=${parsedUsage.input_tokens}, output=${parsedUsage.output_tokens}`);
   });
 
-  it('generates Pi-compatible stream events', () => {
-    /**
-     * Test: Stream handler produces correct event sequence for Pi.
-     * Sequence: start → text_start → text_delta → text_end → done
-     */
+  it('converts a gateway SSE response into ordered Pi events', () => {
+    const sseResponse = `event: response.created
+data: {"type":"response.created","response":{"id":"resp_123","output":[]}}
 
-    // Mock stream object
-    const mockStream = {
-      push: jest.fn(),
-      end: jest.fn(),
-    };
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_123","output":[{"type":"text","text":"Hello from gateway"}],"usage":{"input_tokens":100,"output_tokens":50}}}
 
-    // Simulated stream event generation
-    const output = {
+data: [DONE]
+`;
+    const timestamp = Date.parse('2026-01-02T03:04:05.678Z');
+
+    const events = convertGatewaySseToPiEvents(sseResponse, {
+      api: 'openai-completions',
+      provider: 'gateway',
+      model: 'dynamic/kaseki-agent',
+      now: () => timestamp,
+    });
+    const message = {
       role: 'assistant',
-      content: [],
-      api: 'custom-gateway',
+      content: [{ type: 'text', text: 'Hello from gateway' }],
+      api: 'openai-completions',
       provider: 'gateway',
       model: 'dynamic/kaseki-agent',
       usage: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, totalTokens: 150 },
       stopReason: 'stop',
-      timestamp: Date.now(),
+      timestamp,
     };
 
-    // Expected event sequence
-    const expectedEvents = [
-      { type: 'start', partial: output },
-      {
-        type: 'text_start',
-        contentIndex: 0,
-        partial: expect.objectContaining({ content: [] }),
-      },
+    expect(events).toEqual([
+      { type: 'start', partial: { ...message, content: [] } },
+      { type: 'text_start', contentIndex: 0, partial: { ...message, content: [] } },
       {
         type: 'text_delta',
         contentIndex: 0,
         delta: 'Hello from gateway',
-        partial: expect.any(Object),
+        partial: message,
       },
       { type: 'text_end', contentIndex: 0, content: 'Hello from gateway' },
-      { type: 'done', reason: 'stop', message: expect.any(Object) },
-    ];
-
-    // Push events (simulating handler behavior)
-    mockStream.push(expectedEvents[0]);
-    mockStream.push(expectedEvents[1]);
-    mockStream.push(expectedEvents[2]);
-    mockStream.push(expectedEvents[3]);
-    mockStream.push(expectedEvents[4]);
-    mockStream.end();
-
-    // Verify event sequence
-    expect(mockStream.push).toHaveBeenCalledTimes(5);
-    expect(mockStream.end).toHaveBeenCalledTimes(1);
-
-    const calls = mockStream.push.mock.calls;
-    expect(calls[0][0].type).toBe('start');
-    expect(calls[1][0].type).toBe('text_start');
-    expect(calls[2][0].type).toBe('text_delta');
-    expect(calls[3][0].type).toBe('text_end');
-    expect(calls[4][0].type).toBe('done');
-
-    console.log('✓ Stream event sequence:');
-    console.log('  1. start - Stream initialization');
-    console.log('  2. text_start - Text block started');
-    console.log('  3. text_delta - Text content chunk');
-    console.log('  4. text_end - Text block complete');
-    console.log('  5. done - Stream finished');
+      { type: 'done', reason: 'stop', message },
+    ]);
   });
 
   it('handles network errors gracefully', () => {
