@@ -8,8 +8,19 @@ import piExtension from './.extensions';
 describe('.extensions - CloudFlare Gateway Configuration', () => {
   describe('resolveGatewayApiKey', () => {
     const originalEnv = { ...process.env };
+    const tempDirs: string[] = [];
+
+    const createTempDir = () => {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gateway-test-'));
+      tempDirs.push(tempDir);
+      return tempDir;
+    };
 
     afterEach(() => {
+      for (const tempDir of tempDirs.splice(0)) {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+
       // Restore original environment
       process.env = { ...originalEnv };
       delete process.env.LLM_GATEWAY_API_KEY;
@@ -29,31 +40,25 @@ describe('.extensions - CloudFlare Gateway Configuration', () => {
     });
 
     it('reads API key from file when env var not set', () => {
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gateway-test-'));
+      const tempDir = createTempDir();
       const keyFile = path.join(tempDir, 'api-key.txt');
       fs.writeFileSync(keyFile, 'file-key-67890\n');
 
       process.env.LLM_GATEWAY_API_KEY_FILE = keyFile;
       expect(resolveGatewayApiKey()).toBe('file-key-67890');
-
-      // Cleanup
-      fs.rmSync(tempDir, { recursive: true });
     });
 
     it('trims whitespace from file content', () => {
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gateway-test-'));
+      const tempDir = createTempDir();
       const keyFile = path.join(tempDir, 'api-key.txt');
       fs.writeFileSync(keyFile, '  trimmed-key  \n\n');
 
       process.env.LLM_GATEWAY_API_KEY_FILE = keyFile;
       expect(resolveGatewayApiKey()).toBe('trimmed-key');
-
-      // Cleanup
-      fs.rmSync(tempDir, { recursive: true });
     });
 
     it('expands ~ to HOME directory in file path', () => {
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gateway-test-'));
+      const tempDir = createTempDir();
       const keyFile = path.join(tempDir, 'api-key.txt');
       fs.writeFileSync(keyFile, 'home-expanded-key');
 
@@ -61,9 +66,6 @@ describe('.extensions - CloudFlare Gateway Configuration', () => {
       process.env.LLM_GATEWAY_API_KEY_FILE = `${tempDir}/api-key.txt`;
 
       expect(resolveGatewayApiKey()).toBe('home-expanded-key');
-
-      // Cleanup
-      fs.rmSync(tempDir, { recursive: true });
     });
 
     it('returns empty string when file does not exist', () => {
@@ -78,15 +80,12 @@ describe('.extensions - CloudFlare Gateway Configuration', () => {
     });
 
     it('returns empty string when file contains only whitespace', () => {
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gateway-test-'));
+      const tempDir = createTempDir();
       const keyFile = path.join(tempDir, 'api-key.txt');
       fs.writeFileSync(keyFile, '   \n\n   ');
 
       process.env.LLM_GATEWAY_API_KEY_FILE = keyFile;
       expect(resolveGatewayApiKey()).toBe('');
-
-      // Cleanup
-      fs.rmSync(tempDir, { recursive: true });
     });
 
     it('handles file read errors gracefully', () => {
@@ -96,26 +95,17 @@ describe('.extensions - CloudFlare Gateway Configuration', () => {
       expect(resolveGatewayApiKey()).toBe('');
     });
 
-    it('uses default file path when not explicitly set', () => {
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gateway-test-'));
+    it('reads a plain-text API key from the default ~/.kaseki/secrets.json path', () => {
+      const tempDir = createTempDir();
       delete process.env.LLM_GATEWAY_API_KEY;
       delete process.env.LLM_GATEWAY_API_KEY_FILE;
       process.env.HOME = tempDir;
 
-      // Create default file
-      const kasekiDir = path.join(tempDir, '.kaseki');
-      fs.mkdirSync(kasekiDir, { recursive: true });
-      const defaultFile = path.join(kasekiDir, 'secrets.json');
-      fs.writeFileSync(defaultFile, 'default-key-from-secrets');
+      const defaultFile = path.join(tempDir, '.kaseki', 'secrets.json');
+      fs.mkdirSync(path.dirname(defaultFile), { recursive: true });
+      fs.writeFileSync(defaultFile, 'distinctive-default-gateway-key\n');
 
-      // Note: Default path logic depends on implementation
-      // If implementation uses ~/.kaseki/secrets.json as default, this will work
-      // For now, we test that it handles missing default gracefully
-      const result = resolveGatewayApiKey();
-      expect(typeof result).toBe('string');
-
-      // Cleanup
-      fs.rmSync(tempDir, { recursive: true });
+      expect(resolveGatewayApiKey()).toBe('distinctive-default-gateway-key');
     });
 
     it('handles empty LLM_GATEWAY_API_KEY_FILE as falsy', () => {
