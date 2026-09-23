@@ -466,7 +466,7 @@ describe('Gateway Custom Stream Handler', () => {
       const send = createNormalizedGatewayTransport(transport, diagnosticsSink);
       const secret = 'gateway-secret-value';
       const oversizedTail = 'oversized-private-tail';
-      const input = `Summarize this request. api_key=${secret} ${'x'.repeat(400)}${oversizedTail}`;
+      const input = `Summarize this request. api_key=${secret}\n${'x'.repeat(400)}${oversizedTail}`;
       const body = JSON.stringify({
         model: 'dynamic/kaseki-agent',
         input,
@@ -495,6 +495,40 @@ describe('Gateway Custom Stream Handler', () => {
       expect(diagnostic.inputPreview).not.toContain(oversizedTail);
       expect(diagnostic.inputPreview.length).toBeLessThanOrEqual(256);
       expect(callOrder).toEqual(['diagnostic', 'transport']);
+      expect(transport).toHaveBeenCalledTimes(1);
+    });
+
+    it('redacts quoted JSON secrets and multiline assignment values', () => {
+      const diagnosticsSink = jest.fn();
+      const send = createNormalizedGatewayTransport(jest.fn(), diagnosticsSink);
+      const input = [
+        'Credentials: {"api_key":"json-secret","next":"visible"}',
+        'token=multi word secret',
+      ].join('\n');
+
+      send({
+        url: 'https://llm-gateway.local.xyz/v1/responses',
+        body: JSON.stringify({ input }),
+      });
+
+      const diagnostic = diagnosticsSink.mock.calls[0][0];
+      expect(diagnostic.inputPreview).toContain('"api_key":"[REDACTED]","next":"visible"');
+      expect(diagnostic.inputPreview).toContain('token=[REDACTED]');
+      expect(diagnostic.inputPreview).not.toContain('json-secret');
+      expect(diagnostic.inputPreview).not.toContain('multi word secret');
+    });
+
+    it('diagnoses requests without a body without throwing', () => {
+      const diagnosticsSink = jest.fn();
+      const transport = jest.fn();
+      const send = createNormalizedGatewayTransport(transport, diagnosticsSink);
+
+      expect(() => send({ url: 'https://llm-gateway.local.xyz/v1/responses' })).not.toThrow();
+      expect(diagnosticsSink).toHaveBeenCalledWith(expect.objectContaining({
+        inputLength: 0,
+        requestBodySize: 0,
+        validJsonFormat: false,
+      }));
       expect(transport).toHaveBeenCalledTimes(1);
     });
 
