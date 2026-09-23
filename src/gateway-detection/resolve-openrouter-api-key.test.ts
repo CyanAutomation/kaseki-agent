@@ -21,6 +21,7 @@ describe('resolveOpenRouterApiKey', () => {
     process.env = { ...originalEnv };
     delete process.env.OPENROUTER_API_KEY;
     delete process.env.OPENROUTER_API_KEY_FILE;
+    delete process.env.KASEKI_JEV_API_KEY_FILE;
   });
 
   afterAll(() => {
@@ -37,6 +38,19 @@ describe('resolveOpenRouterApiKey', () => {
       configured: true,
       source: 'env_var',
     });
+  });
+
+  it('prefers a dedicated mounted JEV key over the general OpenRouter key', () => {
+    process.env.OPENROUTER_API_KEY = 'general-openrouter-key';
+    process.env.KASEKI_JEV_API_KEY_FILE = '/tmp/jev-api-key';
+    mockReadFileSync.mockReturnValue('dedicated-jev-key\n' as any);
+
+    expect(resolveOpenRouterApiKey()).toEqual({
+      value: 'dedicated-jev-key',
+      configured: true,
+      source: 'file',
+    });
+    expect(mockReadFileSync).toHaveBeenCalledWith('/tmp/jev-api-key', 'utf8');
   });
 
   it('should prefer OPENROUTER_API_KEY_FILE over env var', () => {

@@ -25,9 +25,10 @@ run_phase_tool_manifest_test() {
   trap cleanup_tmp_dir EXIT
   fake_bin="$tmp_dir/bin"
   mkdir -p "$fake_bin" "$tmp_dir/results"
-  cat > "$fake_bin/pi" <<'BASH'
+cat > "$fake_bin/pi" <<'BASH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$KASEKI_RESULTS_DIR/pi-args.log"
+printf '%s\n' "${OPENROUTER_API_KEY:-unset}" >> "$KASEKI_RESULTS_DIR/pi-openrouter-key.log"
 printf '{"type":"agent_end"}\n'
 BASH
   chmod +x "$fake_bin/pi"
@@ -38,12 +39,13 @@ BASH
   chmod +x "$fake_bin/kaseki-pi-progress-stream"
   make_timeout_passthrough "$fake_bin/timeout"
 
-  PATH="$fake_bin:$PATH" KASEKI_RESULTS_DIR="$tmp_dir/results" KASEKI_PROVIDER=gateway KASEKI_INFERENCE_PHASE=goal-check bash -c ". scripts/lib/pi-json-capture.sh; emit_error_event() { :; }; run_pi_json_capture '$tmp_dir/raw.jsonl' 60 auto 'test prompt'"
+  PATH="$fake_bin:$PATH" KASEKI_RESULTS_DIR="$tmp_dir/results" KASEKI_PROVIDER=gateway KASEKI_INFERENCE_PHASE=goal-check OPENROUTER_API_KEY=must-not-reach-pi bash -c ". scripts/lib/pi-json-capture.sh; emit_error_event() { :; }; run_pi_json_capture '$tmp_dir/raw.jsonl' 60 auto 'test prompt'"
   grep -q -- '--tools read,search' "$tmp_dir/results/pi-args.log" || fail "Pi phase tools" "goal-check did not use read-only tools"
   if grep -Eq -- '--tools .*\b(write|bash)\b' "$tmp_dir/results/pi-args.log"; then
     fail "Pi phase tools" "goal-check received a mutation or shell tool"
   fi
   grep -q 'Tool-output target:' "$tmp_dir/results/pi-args.log" || fail "Pi output budget" "bounded-output instruction was not supplied"
+  grep -Fxq 'unset' "$tmp_dir/results/pi-openrouter-key.log" || fail "Pi credential isolation" "OpenRouter JEV credential reached Pi"
   : > "$tmp_dir/results/pi-args.log"
   PATH="$fake_bin:$PATH" KASEKI_RESULTS_DIR="$tmp_dir/results" KASEKI_PROVIDER=gateway KASEKI_INFERENCE_PHASE=run-evaluation bash -c ". scripts/lib/pi-json-capture.sh; emit_error_event() { :; }; run_pi_json_capture '$tmp_dir/raw.jsonl' 60 auto 'test prompt'"
   grep -q -- '--tools read,search' "$tmp_dir/results/pi-args.log" || fail "Pi phase tools" "run-evaluation did not use the controller-persisted read-only manifest"

@@ -47,7 +47,9 @@ KASEKI_VALIDATION_ALLOWLIST="${KASEKI_VALIDATION_ALLOWLIST:-}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-400000}"
 KASEKI_NPM_OMIT_DEV="${KASEKI_NPM_OMIT_DEV:-0}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
-HOST_SECRET_FILE="${LLM_GATEWAY_API_KEY_FILE:-${HOME}/.kaseki/secrets.json}"
+# The OpenRouter credential is reserved for JEV Decisions evaluation. Coding
+# inference uses only the configured LLM gateway credential.
+HOST_SECRET_FILE="${OPENROUTER_API_KEY_FILE:-${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/openrouter_api_key}"
 resolve_gateway_host_secret_file() {
   if [ -n "${LLM_GATEWAY_API_KEY_FILE:-}" ]; then
     printf '%s' "$LLM_GATEWAY_API_KEY_FILE"
@@ -69,6 +71,7 @@ resolve_gateway_host_secret_file() {
 }
 GATEWAY_HOST_SECRET_FILE="$(resolve_gateway_host_secret_file)"
 GATEWAY_WORKER_SECRET_PATH="/run/secrets/kaseki/llm_gateway_api_key"
+JEV_WORKER_SECRET_PATH="/run/secrets/kaseki/jev_api_key"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
 KASEKI_APPEND_METRICS_JSONL="${KASEKI_APPEND_METRICS_JSONL:-1}"
@@ -997,10 +1000,10 @@ else
 fi
 
 if [ -z "$key_value" ]; then
-  fail_before_container "$FAILURE_EXIT_CODE_VALUE" "empty OpenRouter API key from ${key_source}" "OpenRouter API key source \"$key_source\" resolved to an empty value."
+  fail_before_container "$FAILURE_EXIT_CODE_VALUE" "empty JEV API key from ${key_source}" "JEV API key source \"$key_source\" resolved to an empty value."
 fi
 
-printf 'OpenRouter API key source: %s\n' "$key_source"
+printf 'JEV OpenRouter API key source: %s\n' "$key_source"
 printf '%s' "$key_value" > "$SECRET_FILE"
 chmod 0600 "$SECRET_FILE"
 unset key_value key_source
@@ -1201,11 +1204,9 @@ docker_args=(
   -e NPM_CONFIG_CACHE="/cache/npm-cache"
   -e npm_config_cache="/cache/npm-cache"
   -e PI_CODING_AGENT_DIR="/cache/pi-agent"
-  -e OPENROUTER_API_KEY_FILE="/agents/secrets/openrouter_api_key"
   -v "$WORKSPACE:/workspace:rw"
   -v "$CACHE:/cache:rw"
   -v "$RESULT_DIR:/results:rw"
-  -v "$SECRET_FILE:/agents/secrets/openrouter_api_key:ro"
 )
 if [ "$KASEKI_PROVIDER" = "gateway" ]; then
   if [ -n "${LLM_GATEWAY_URL:-}" ]; then
@@ -1220,6 +1221,10 @@ if [ "$KASEKI_PROVIDER" = "gateway" ]; then
     )
   fi
 fi
+docker_args+=(
+  -e KASEKI_JEV_API_KEY_FILE="$JEV_WORKER_SECRET_PATH"
+  -v "$SECRET_FILE:$JEV_WORKER_SECRET_PATH:ro"
+)
 if [ "$GITHUB_APP_ENABLED" = "1" ]; then
   docker_args+=(
     -e GITHUB_APP_ID_FILE="/run/secrets/kaseki/github_app_id"

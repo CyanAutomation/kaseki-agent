@@ -134,6 +134,22 @@ describe('run-scorecard-evidence-validation', () => {
       expect(evidence.validation).toBe('unknown');
     });
 
+    it('uses a successful terminal validation stage when detailed metadata was not persisted', () => {
+      const evidence = collectValidationEvidence({
+        json: {
+          'metadata.json': {},
+          'failure.json': {},
+          'timings-manifest.json': {
+            validation_timings: [],
+            stage_timings: [{ stage: 'validation', exit_code: 0, elapsed_seconds: 46 }],
+          },
+        },
+        text: {},
+        summaries: [],
+      });
+      expect(evidence.validation).toBe('passed');
+    });
+
     it('handles missing metadata.json gracefully', () => {
       const evidence = collectValidationEvidence({
         json: {
