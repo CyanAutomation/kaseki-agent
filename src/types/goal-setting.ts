@@ -153,7 +153,7 @@ export interface PreservationConstraints {
  */
 export const GoalSettingOutputSchema = z.object({
   original_prompt: z.string(),
-  upgraded_goal: z.string(),
+  upgraded_goal: z.string().trim().min(1),
   key_requirements: z.array(z.string()),
   success_criteria: z.array(SuccessCriterionSchema).min(1).refine(
     (criteria) => criteria.some((criterion) => typeof criterion === 'string' || criterion.smart_score !== 'low'),
