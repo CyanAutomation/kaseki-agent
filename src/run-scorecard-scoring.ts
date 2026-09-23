@@ -31,10 +31,17 @@ export function calculateCoverage(evidence: Evidence) {
 export function buildScorecard(evidence: Evidence, now = new Date()): RunScorecard {
   const config = ScorecardContext.getConfig();
   const coverage = calculateCoverage(evidence);
-  const started = typeof evidence.metadata.started_at === 'string' ? evidence.metadata.started_at : now.toISOString();
-  const ended = typeof evidence.metadata.ended_at === 'string' ? evidence.metadata.ended_at
-    : ['completed', 'failed', 'cancelled', 'timed_out'].includes(evidence.status) ? now.toISOString() : null;
+  const timestamp = (value: unknown): string | null => {
+    if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) return null;
+    return RunScorecardSchema.shape.started_at.unwrap().safeParse(value).success ? value : null;
+  };
+  const started = timestamp(evidence.metadata.started_at);
+  const ended = timestamp(evidence.metadata.ended_at);
   const dimensions = buildDimensions(evidence);
+  const wallClockMs = (evidence.elapsedSeconds ?? 0) * 1000;
+  const measuredStageMs = evidence.stageElapsedSeconds === undefined ? null : evidence.stageElapsedSeconds * 1000;
+  const categorizedStageMs = Object.values(evidence.phaseDurationsMs).reduce((total, duration) => total + duration, 0)
+    + (evidence.preAgentValidationMs ?? 0);
 
   // Calculate and cap the score
   const uncappedScore = calculateUncappedScore(dimensions.map(d => d.weighted_points));
@@ -58,7 +65,11 @@ export function buildScorecard(evidence: Evidence, now = new Date()): RunScoreca
     confidence: { score: confidenceValue, rationale: confidenceRationale },
     dimensions, phases: buildPhases(evidence), token_totals: evidence.tokenUsage,
     timing_totals: {
-      wall_clock_ms: (evidence.elapsedSeconds ?? 0) * 1000,
+      wall_clock_ms: wallClockMs,
+      pre_agent_validation_ms: evidence.stageElapsedSeconds === undefined ? null : (evidence.preAgentValidationMs ?? 0),
+      measured_stage_ms: measuredStageMs,
+      unclassified_stage_ms: measuredStageMs === null ? null : Math.max(0, measuredStageMs - categorizedStageMs),
+      unaccounted_wall_clock_ms: measuredStageMs === null ? null : Math.max(0, wallClockMs - measuredStageMs),
       phase_duration_ms: Object.fromEntries(PHASES.map(phase => [phase, evidence.phaseDurationsMs[phase] ?? null])),
       completeness: evidence.elapsedSeconds === undefined ? 'unavailable' : 'complete',
     },

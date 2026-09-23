@@ -63,6 +63,12 @@ export const ScorecardPhaseMeasurementSchema = z.object({
 
 export const ScorecardTimingTotalsSchema = z.object({
   wall_clock_ms: NonNegativeNumberSchema,
+  // These fields were added after scorecards began persisting. Defaults keep
+  // older durable scorecards readable while making unavailable timing explicit.
+  pre_agent_validation_ms: NonNegativeNumberSchema.nullable().default(null),
+  measured_stage_ms: NonNegativeNumberSchema.nullable().default(null),
+  unclassified_stage_ms: NonNegativeNumberSchema.nullable().default(null),
+  unaccounted_wall_clock_ms: NonNegativeNumberSchema.nullable().default(null),
   phase_duration_ms: z.object({
     goal_setting: NonNegativeNumberSchema.nullable(),
     scouting: NonNegativeNumberSchema.nullable(),
@@ -129,7 +135,7 @@ export const RunScorecardSchema = z.object({
   schema_version: z.string().min(1),
   rubric_version: z.string().min(1),
   run_id: z.string().min(1),
-  started_at: z.string().datetime(),
+  started_at: z.string().datetime().nullable(),
   ended_at: z.string().datetime().nullable(),
   scored_at: z.string().datetime(),
   lifecycle_status: RunScorecardLifecycleStatusSchema,

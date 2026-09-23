@@ -534,6 +534,7 @@ PRE_VALIDATION_STOPPED_EARLY=false
 PRE_VALIDATION_COMMANDS_ATTEMPTED=0
 BASELINE_VALIDATION_EXIT=0
 BASELINE_VALIDATION_FAILED_COMMAND_DETAIL=""
+BASELINE_SETUP_FAILURE_REASON=""
 export BASELINE_VALIDATION_FAILURE_REASON=""
 export BASELINE_VALIDATION_STOPPED_EARLY=false
 export BASELINE_VALIDATION_COMMANDS_ATTEMPTED=0
@@ -1827,7 +1828,7 @@ ensure_validation_evidence_artifacts() {
 }
 
 write_metadata() {
-  local end_epoch end_iso duration exit_code stages_json
+  local end_epoch end_iso duration exit_code stages_json fallback_metadata_json
   end_epoch="$(date +%s)"
   end_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   duration=$((end_epoch - START_EPOCH))
@@ -1999,6 +2000,7 @@ write_metadata() {
   },
   "baseline_validation_enabled": $([[ "$KASEKI_BASELINE_VALIDATION_ENABLED" == "1" ]] && printf 'true' || printf 'false'),
   "baseline_cache_status": $(printf '%s' "$BASELINE_CACHE_STATUS" | json_encode),
+  "baseline_setup_failure_reason": $(printf '%s' "$BASELINE_SETUP_FAILURE_REASON" | json_encode),
   "baseline_validation_exit_code": $BASELINE_VALIDATION_EXIT,
   "baseline_validation_failed_command": $(printf '%s' "$BASELINE_VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
   "test_failure_classification_status": $(printf '%s' "$TEST_FAILURE_CLASSIFICATION_STATUS" | json_encode),
@@ -2030,31 +2032,44 @@ write_metadata() {
   }
 }
 META
-  # Do not let a broken cwd turn an otherwise useful failure report into
-  # malformed JSON that the API cannot classify.
-  if jq -e . "$metadata_tmp" >/dev/null 2>&1; then
-    mv "$metadata_tmp" "${KASEKI_RESULTS_DIR}/metadata.json"
-  else
-    rm -f "$metadata_tmp"
-    # Preserve the fields needed for lifecycle diagnosis even when an
-    # optional metadata fragment was malformed. This fallback must remain a
-    # useful run record, not merely a syntactically valid error stub.
-    printf '{"schema_version":"2.0","instance":%s,"task_mode":%s,"status":%s,"exit_code":%s,"failed_command":%s,"goal_setting_exit_code":%s,"goal_setting_attempts":%s,"goal_setting_succeeded_on_attempt":%s,"scouting_exit_code":%s,"pi_exit_code":%s,"validation_exit_code":%s,"quality_exit_code":%s,"goal_check_exit_code":%s,"run_evaluation_exit_code":%s,"worker_error_type":"metadata_write_invalid","worker_error_message":"metadata serialization failed; optional fields were discarded; inspect stderr.log"}\n' \
-      "$(printf '%s' "$INSTANCE_NAME" | json_encode)" \
-      "$(printf '%s' "$KASEKI_TASK_MODE" | json_encode)" \
-      "$(printf '%s' "$STATUS" | json_encode)" \
-      "$(metadata_number_or_zero "$exit_code")" \
-      "$(printf '%s' "$FAILED_COMMAND" | json_encode)" \
-      "$(metadata_number_or_zero "$GOAL_SETTING_EXIT")" \
-      "$(metadata_number_or_zero "${KASEKI_GOAL_SETTING_ATTEMPTS:-0}")" \
-      "$(if [ -n "${KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT:-}" ]; then metadata_number_or_zero "$KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT"; else printf 'null'; fi)" \
-      "$(metadata_number_or_zero "$SCOUTING_EXIT")" \
-      "$(metadata_number_or_zero "$PI_EXIT")" \
-      "$(metadata_number_or_zero "$VALIDATION_EXIT")" \
-      "$(metadata_number_or_zero "$QUALITY_EXIT")" \
-      "$(metadata_number_or_zero "$GOAL_CHECK_EXIT")" \
-      "$(metadata_number_or_zero "$RUN_EVALUATION_EXIT")" \
-      > "${KASEKI_RESULTS_DIR}/metadata.json"
+  fallback_metadata_json="$(node - "$INSTANCE_NAME" "$KASEKI_TASK_MODE" "$STATUS" "$exit_code" "$FAILED_COMMAND" "$START_ISO" "$end_iso" "$duration" \
+    "$WORKER_ERROR_TYPE" "$WORKER_ERROR_PHASE" "$WORKER_ERROR_MESSAGE" "$GOAL_SETTING_EXIT" "${KASEKI_GOAL_SETTING_ATTEMPTS:-0}" \
+    "${KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT:-}" "$SCOUTING_EXIT" "$PI_EXIT" "$PRE_VALIDATION_EXIT" "$VALIDATION_EXIT" \
+    "$PRE_VALIDATION_COMMANDS_ATTEMPTED" "$VALIDATION_COMMANDS_ATTEMPTED" "$QUALITY_EXIT" "$GOAL_CHECK_EXIT" "$RUN_EVALUATION_EXIT" \
+    "$GOAL_CHECK_ATTEMPTS" "$GOAL_CHECK_MET" "$GOAL_CHECK_FAILURE_REASON" "$CRITICAL_CHANGE_FAILURE_REASON" \
+    "$GOAL_CHECK_EVALUATOR_UNAVAILABLE" "$ACTUAL_MODEL" "$BASELINE_SETUP_FAILURE_REASON" <<'NODE'
+const [instance, taskMode, status, exitCode, failedCommand, startedAt, endedAt, duration,
+  workerErrorType, workerErrorPhase, workerErrorMessage, goalSettingExit, goalSettingAttempts,
+  goalSettingSucceededOnAttempt, scoutingExit, piExit, preValidationExit, validationExit,
+  preValidationCommandsAttempted, validationCommandsAttempted, qualityExit, goalCheckExit,
+  runEvaluationExit, goalCheckAttempts, goalCheckMet, goalCheckFailureReason,
+  criticalChangeFailureReason, goalCheckEvaluatorUnavailable, actualModel,
+  baselineSetupFailureReason] = process.argv.slice(2);
+const integer = value => /^\d+$/.test(value || '') ? Number(value) : 0;
+const booleanOrNull = value => value === 'true' ? true : value === 'false' ? false : null;
+process.stdout.write(JSON.stringify({
+  schema_version: '2.0', instance, task_mode: taskMode, status,
+  exit_code: integer(exitCode), failed_command: failedCommand,
+  started_at: startedAt, ended_at: endedAt, duration_seconds: integer(duration), total_duration_seconds: integer(duration),
+  worker_error_type: workerErrorType, worker_error_phase: workerErrorPhase, worker_error_message: workerErrorMessage,
+  goal_setting_exit_code: integer(goalSettingExit), goal_setting_attempts: integer(goalSettingAttempts),
+  goal_setting_succeeded_on_attempt: goalSettingSucceededOnAttempt ? integer(goalSettingSucceededOnAttempt) : null,
+  scouting_exit_code: integer(scoutingExit), pi_exit_code: integer(piExit),
+  pre_validation_exit_code: integer(preValidationExit), validation_exit_code: integer(validationExit),
+  pre_validation_commands_attempted: integer(preValidationCommandsAttempted),
+  validation_commands_attempted: integer(validationCommandsAttempted), quality_exit_code: integer(qualityExit),
+  goal_check_exit_code: integer(goalCheckExit), goal_check_attempts: integer(goalCheckAttempts),
+  goal_check_met: goalCheckEvaluatorUnavailable === 'true' ? null : booleanOrNull(goalCheckMet),
+  goal_check_failure_reason: goalCheckFailureReason, critical_change_failure_reason: criticalChangeFailureReason,
+  actual_model: actualModel,
+  baseline_setup_failure_reason: baselineSetupFailureReason,
+  run_evaluation_exit_code: integer(runEvaluationExit),
+}));
+NODE
+  )"
+  if ! node "${KASEKI_SCRIPT_DIR}/scripts/write-run-metadata.mjs" "$metadata_tmp" \
+    "${KASEKI_RESULTS_DIR}/metadata.json" "${KASEKI_RESULTS_DIR}/metadata-write-error.json" "$fallback_metadata_json"; then
+    printf 'Run metadata could not be persisted; inspect %s and preserve the primary run status.\n' "$metadata_tmp" >> "${KASEKI_RESULTS_DIR}/stderr.log"
   fi
   printf '%s\n' "$exit_code" > "${KASEKI_RESULTS_DIR}"/exit_code
 }
@@ -2471,16 +2486,19 @@ write_validation_infrastructure_diagnostics() {
 
 write_failure_json() {
   local exit_code="$1"
-  local stderr_tail diagnostic_reason
+  local stderr_tail diagnostic_reason ended_at
   stderr_tail="$(tail -20 "${KASEKI_RESULTS_DIR}"/stderr.log 2>/dev/null || true)"
   diagnostic_reason="$(extract_failure_diagnostic_reason)"
   if [ "$exit_code" -eq 0 ]; then
     : > "${KASEKI_RESULTS_DIR}"/failure.json
     return 0
   fi
+  ended_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   cat > "${KASEKI_RESULTS_DIR}"/failure.json <<FAILURE
 {
   "instance": $(printf '%s' "$INSTANCE_NAME" | json_encode),
+  "started_at": $(printf '%s' "$START_ISO" | json_encode),
+  "ended_at": $(printf '%s' "$ended_at" | json_encode),
   "exit_code": $exit_code,
   "failed_command": $(printf '%s' "$FAILED_COMMAND" | json_encode),
   "dependency_failure_detail": $(printf '%s' "$DEPENDENCY_FAILURE_DETAIL" | json_encode),
@@ -2542,7 +2560,9 @@ collect_git_artifacts() {
     # plain `git diff` then reports an empty or incomplete changed-file list.
     git -C "${KASEKI_WORKSPACE_DIR}"/repo diff HEAD -- . > "$collected_diff" 2>/dev/null || true
     {
-      git -C "${KASEKI_WORKSPACE_DIR}"/repo diff --name-only HEAD -- . 2>/dev/null || true
+      # Keep both sides of renames in the changed-file artifact. Reviewers and
+      # allowlist checks need to see the removed source as well as destination.
+      git -C "${KASEKI_WORKSPACE_DIR}"/repo diff --name-only --no-renames HEAD -- . 2>/dev/null || true
       git -C "${KASEKI_WORKSPACE_DIR}"/repo ls-files --others --exclude-standard 2>/dev/null || true
     } | sed 's#^\./##' | awk 'NF && !seen[$0]++' | LC_ALL=C sort > "$collected_files"
     # Publishing commits the working tree. Preserve the pre-publish evidence
@@ -4109,7 +4129,9 @@ validate_or_repair_required_dependency_bins() {
 
 dependency_cache_entry_roots() {
   local cache_dir="$1"
-  find "$cache_dir" -mindepth 4 -maxdepth 4 -type d -name 'flags-*' 2>/dev/null || true
+  # Include the old four-level layout during migration and the current layout
+  # whose platform/architecture/ABI components add three directory levels.
+  find "$cache_dir" -maxdepth 7 -type d -name 'flags-*' 2>/dev/null || true
 }
 
 dependency_cache_size_bytes() {
@@ -4694,7 +4716,10 @@ choose_baseline_log_dir() {
 checkout_baseline_repo() {
   local baseline_dir="${KASEKI_WORKSPACE_BASELINE_DIR}"
   local baseline_log_dir
+  local -a baseline_install_flags
+  BASELINE_SETUP_FAILURE_REASON=""
   if ! baseline_log_dir="$(choose_baseline_log_dir)"; then
+    BASELINE_SETUP_FAILURE_REASON="log_directory_failed"
     emit_error_event "baseline_log_dir_failed" "Failed to create writable baseline log directory from KASEKI_LOG_DIR, KASEKI_RESULTS_DIR, or a secure temporary directory" "continue"
     return 1
   fi
@@ -4709,6 +4734,7 @@ checkout_baseline_repo() {
   
   # Clone main branch into baseline directory
   if ! git clone --depth 1 --branch main "$REPO_URL" "$baseline_dir" 2>>"$baseline_checkout_log"; then
+    BASELINE_SETUP_FAILURE_REASON="checkout_failed"
     emit_error_event "baseline_checkout_failed" "Failed to checkout main branch for baseline comparison" "continue"
     return 1
   fi
@@ -4720,7 +4746,9 @@ checkout_baseline_repo() {
     # previous `! cd ... && npm ci` only negated `cd`, so a successful cd
     # short-circuited the install and baseline validation ran without its
     # dependencies (typically as an opaque exit 127).
-    if ! (cd "$baseline_dir" && npm ci --prefer-offline 2>>"$baseline_npm_ci_log"); then
+    append_npm_install_flags baseline_install_flags
+    if ! (cd "$baseline_dir" && npm ci --prefer-offline "${baseline_install_flags[@]}" 2>>"$baseline_npm_ci_log"); then
+      BASELINE_SETUP_FAILURE_REASON="dependency_install_failed"
       emit_error_event "baseline_deps_failed" "Failed to install baseline dependencies" "continue"
       cd "${KASEKI_WORKSPACE_DIR}"/repo
       return 1
@@ -6476,6 +6504,7 @@ The repository is read-only; do not write to /workspace/repo, .agents, or /tmp. 
 Every relevant_files item must be {"path":"repo/relative/path","reason":"why it matters"}. If the previous artifact had scalar observations, plan, or validation fields, emit arrays. Do not emit markdown, a JSON string, or a partial object.
 Previous validator feedback (fix these exact failures):
 ${retry_feedback:-'- candidate artifact was missing or invalid'}
+Every non-empty test_impact entry must be an object with a repo-relative test path and a non-empty reason. Use [] when no affected test file is known; never emit a partial object or invent a path.
 EOF
   fi
 }
@@ -6806,6 +6835,12 @@ NODE
           export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT="fallback"
           STATUS=0
           SCOUTING_EXIT=0
+          # The conservative fallback is now the authoritative scouting
+          # outcome. Do not leave the rejected scout attempt as the run's
+          # terminal failed command after successful recovery.
+          if [ "${FAILED_COMMAND:-}" = "pi scouting agent" ]; then
+            FAILED_COMMAND=""
+          fi
           clear_provider_error
           rm -f "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt" 2>/dev/null || true
           return 0
@@ -9329,13 +9364,16 @@ prepare_dependencies() {
 
   local repo_ref_key lock_hash flags_hash cache_key workspace_cache_root workspace_cache_dir image_cache_dir stamp_file metadata_file
   local cache_lock_file cache_lock_fd tmp_cache_dir old_cache_dir install_start install_elapsed install_flags_display cache_detail
-  local node_major cache_reused cache_source install_mode restore_mode restore_method cache_repaired restore_validation_reason existing_graph_error install_exit
+  local node_major node_platform node_arch node_abi cache_reused cache_source install_mode restore_mode restore_method cache_repaired restore_validation_reason existing_graph_error existing_graph_exit restore_npm_output restore_npm_exit install_exit
   local -a install_flags
   repo_ref_key="$(printf '%s@%s' "$REPO_URL" "$GIT_REF" | sha256sum | awk '{print $1}')"
   lock_hash="$(sha256sum "$lock_source" | awk '{print $1}')"
   node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo "unknown")"
+  node_platform="$(node -p 'process.platform' 2>/dev/null || uname -s)"
+  node_arch="$(node -p 'process.arch' 2>/dev/null || uname -m)"
+  node_abi="$(node -p 'process.versions.modules || "none"' 2>/dev/null || printf 'unknown')"
   flags_hash="$(dependency_cache_flags_hash)"
-  cache_key="$(dependency_cache_key "$lock_hash" "$node_major" "$flags_hash")"
+  cache_key="$(dependency_cache_key "$lock_hash" "$node_major" "$flags_hash" "$node_platform" "$node_arch" "$node_abi")"
   workspace_cache_root="${KASEKI_DEPENDENCY_CACHE_DIR}/${cache_key}"
   workspace_cache_dir="${workspace_cache_root}/node_modules"
   image_cache_dir="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR}/${cache_key}/node_modules"
@@ -9361,7 +9399,7 @@ prepare_dependencies() {
   esac
   append_npm_install_flags install_flags
   install_flags_display="$(render_npm_install_flags "${install_flags[@]}")"
-  cache_detail="lock_hash=$lock_hash cache_key=$cache_key repo_ref_key=$repo_ref_key repo_url=$REPO_URL git_ref=$GIT_REF lockfile=$lock_source node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display restore_mode=$restore_mode"
+  cache_detail="lock_hash=$lock_hash cache_key=$cache_key repo_ref_key=$repo_ref_key repo_url=$REPO_URL git_ref=$GIT_REF lockfile=$lock_source node_major=$node_major node_platform=$node_platform node_arch=$node_arch node_abi=$node_abi flags_hash=$flags_hash flags=$install_flags_display restore_mode=$restore_mode"
 
   if ! mkdir -p "$(dirname "$workspace_cache_root")"; then
     return 1
@@ -9382,15 +9420,15 @@ prepare_dependencies() {
   if [ -d node_modules ] && [ -f "$stamp_file" ]; then
     if grep -qx "$lock_hash" "$stamp_file"; then
       existing_graph_error=""
-      if ! existing_graph_error="$(npm ls --depth=0 2>&1)" || ! dependency_cache_required_bins_valid package.json; then
+      existing_graph_exit=0
+      existing_graph_error="$(npm ls --depth=0 2>&1)" || existing_graph_exit=$?
+      if [ "$existing_graph_exit" -ne 0 ] || ! dependency_cache_required_bins_valid package.json; then
         DEPENDENCY_FAILURE_DETAIL="existing node_modules cache failed integrity validation; npm graph or required executable links are invalid"
         printf 'Dependency cache status: existing node_modules failed graph/executable validation; invalidating and reinstalling.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
-        {
-          printf 'cache_source=existing_repo_node_modules\n'
-          printf 'reason=existing_node_modules_integrity_failed\n'
-          printf 'lock_hash=%s\n' "$lock_hash"
-          printf 'npm_ls_output_tail:\n%s\n' "$(printf '%s' "$existing_graph_error" | tail -20)"
-        } >> "${KASEKI_RESULTS_DIR}/dependency-cache-diagnostics.log"
+        dependency_cache_write_restore_diagnostic \
+          "${KASEKI_RESULTS_DIR}/dependency-cache-diagnostics.log" \
+          existing_repo_node_modules existing_node_modules_integrity_failed none \
+          "$existing_graph_exit" "$existing_graph_error"
         emit_error_event "dependency_cache_integrity_failed" "Existing dependency tree failed npm graph or executable validation; invalidating and reinstalling (lock_hash=$lock_hash)" "fallback_fresh_install"
         rm -rf node_modules
         invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
@@ -9447,14 +9485,20 @@ prepare_dependencies() {
     # shallow npm graph check and executable check after every restore so a
     # damaged cache cannot reach validation or the agent.
     restore_validation_reason=""
+    restore_npm_output=""
+    restore_npm_exit=0
     DEPENDENCY_CACHE_BIN_REPAIRED=0
     if ! dependency_cache_schema_valid "$validation_marker" "$KASEKI_DEPENDENCY_CACHE_SCHEMA_VERSION"; then
       restore_validation_reason="missing_or_stale_schema_marker"
-    elif ! npm ls --depth=0 >/dev/null 2>&1; then
-      restore_validation_reason="npm_ls_failed_after_restore"
-    elif ! validate_or_repair_required_dependency_bins package.json; then
+    else
+      restore_npm_output="$(npm ls --depth=0 2>&1)" || restore_npm_exit=$?
+      if [ "$restore_npm_exit" -ne 0 ]; then
+        restore_validation_reason="npm_ls_failed_after_restore"
+      fi
+    fi
+    if [ -z "$restore_validation_reason" ] && ! validate_or_repair_required_dependency_bins package.json; then
       restore_validation_reason="required_executable_missing_after_repair"
-    elif [ "${DEPENDENCY_CACHE_BIN_REPAIRED:-0}" -eq 1 ]; then
+    elif [ -z "$restore_validation_reason" ] && [ "${DEPENDENCY_CACHE_BIN_REPAIRED:-0}" -eq 1 ]; then
       cache_repaired="true"
       printf 'Dependency cache status: restored cache had missing executable links; repaired links and will republish the workspace cache.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
       emit_event "dependency_cache_decision" "strategy=repair_workspace_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=required_executable_links_repaired" "location=$workspace_cache_dir"
@@ -9463,7 +9507,9 @@ prepare_dependencies() {
     if [ -n "$restore_validation_reason" ]; then
       printf 'Dependency cache status: restored cache failed executable/schema validation; reinstalling (reason=%s).\n' "$restore_validation_reason" | tee -a "$DEPENDENCY_CACHE_LOG"
       emit_error_event "dependency_cache_integrity_failed" "Restored dependency cache failed validation (reason=$restore_validation_reason; lock_hash=$lock_hash, restore_method=$restore_method); invalidating and reinstalling" "fallback_fresh_install"
-      printf 'cache_source=workspace\nreason=%s\nlock_hash=%s\nrestore_method=%s\n' "$restore_validation_reason" "$lock_hash" "$restore_method" >> "${KASEKI_RESULTS_DIR}/dependency-cache-diagnostics.log"
+      dependency_cache_write_restore_diagnostic \
+        "${KASEKI_RESULTS_DIR}/dependency-cache-diagnostics.log" \
+        workspace "$restore_validation_reason" "$restore_method" "$restore_npm_exit" "$restore_npm_output"
       emit_event "dependency_cache_decision" "strategy=invalidate_workspace_cache" "reason=$restore_validation_reason" "location=$workspace_cache_dir"
       append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_invalid" "true" "workspace" "0" "$restore_validation_reason"
       rm -rf node_modules
@@ -9494,8 +9540,11 @@ prepare_dependencies() {
     cache_reused="true"
     cache_source="image"
     restore_validation_reason=""
+    restore_npm_output=""
+    restore_npm_exit=0
     DEPENDENCY_CACHE_BIN_REPAIRED=0
-    if ! npm ls --depth=0 >/dev/null 2>&1; then
+    restore_npm_output="$(npm ls --depth=0 2>&1)" || restore_npm_exit=$?
+    if [ "$restore_npm_exit" -ne 0 ]; then
       restore_validation_reason="npm_ls_failed_after_restore"
     elif ! validate_or_repair_required_dependency_bins package.json; then
       restore_validation_reason="required_executable_missing_after_repair"
@@ -9507,7 +9556,9 @@ prepare_dependencies() {
     if [ -n "$restore_validation_reason" ]; then
       printf 'Dependency cache status: image cache failed validation (reason=%s); reinstalling.\n' "$restore_validation_reason"
       emit_error_event "dependency_cache_integrity_failed" "Image dependency cache failed validation (reason=$restore_validation_reason; lock_hash=$lock_hash); invalidating and reinstalling" "fallback_fresh_install"
-      printf 'cache_source=image\nreason=%s\nlock_hash=%s\nrestore_method=%s\n' "$restore_validation_reason" "$lock_hash" "$restore_method" >> "${KASEKI_RESULTS_DIR}/dependency-cache-diagnostics.log"
+      dependency_cache_write_restore_diagnostic \
+        "${KASEKI_RESULTS_DIR}/dependency-cache-diagnostics.log" \
+        image "$restore_validation_reason" "$restore_method" "$restore_npm_exit" "$restore_npm_output"
       set_dependency_cache_status "image-cache-invalid" "$cache_detail restore_method=$restore_method reason=$restore_validation_reason"
       emit_event "dependency_cache_decision" "strategy=invalidate_image_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=$restore_validation_reason" "location=$image_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
       # Phase 2D: Emit cache metric to JSON (validation failure)
@@ -9664,8 +9715,8 @@ if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ "$KASEKI_PRE_AGENT_VALID
       # Cleanup baseline workspace to save space
       rm -rf "${KASEKI_WORKSPACE_BASELINE_DIR}" 2>/dev/null || true
     else
-      BASELINE_CACHE_STATUS="checkout_failed"
-      emit_error_event "baseline_checkout_failed" "Failed to setup baseline for test failure comparison; continuing without baseline" "continue"
+      BASELINE_CACHE_STATUS="setup_failed"
+      emit_error_event "baseline_setup_failed" "Baseline comparison unavailable (reason=${BASELINE_SETUP_FAILURE_REASON:-unknown}); continuing without baseline" "continue"
     fi
   fi
 else
@@ -10445,36 +10496,6 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
     emit_progress "critical change verification" "passed after cleanup on attempt $coding_attempt"
   fi
 
-  run_goal_check "$coding_attempt"
-  # A malformed/missing evaluator verdict is an evaluator contract failure,
-  # not evidence that the repository needs another coding pass. Retry the
-  # evaluator once against the same evidence, then stop instead of spending a
-  # full coding attempt on an unchanged diff.
-  if [ "$GOAL_CHECK_EXIT" -eq 86 ]; then
-    emit_progress "goal check" "retrying evaluator after artifact-contract failure (coding attempt $coding_attempt)"
-    run_goal_check "$coding_attempt" "contract-repair"
-  fi
-  collect_goal_check_feedback "$INSTANCE_NAME"
-  snapshot_attempt_artifacts "$coding_attempt"
-
-  if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ "$GOAL_CHECK_EXIT" -ne 0 ]; then
-    [ -z "$GOAL_CHECK_FAILURE_REASON" ] && GOAL_CHECK_FAILURE_REASON="goal_check_failed_exit_$GOAL_CHECK_EXIT"
-    degrade_goal_check_evaluator_failure "$GOAL_CHECK_FAILURE_REASON"
-  fi
-
-  if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ] && [ "$GOAL_CHECK_MET" != "true" ]; then
-    if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
-      emit_progress "goal check" "retrying coding agent after pre-validation unmet verdict (attempt $coding_attempt of $max_coding_attempts; reason=${GOAL_CHECK_FAILURE_REASON:-unmet})"
-      coding_attempt=$((coding_attempt + 1))
-      continue
-    fi
-
-    STATUS=8
-    FAILED_COMMAND="goal check"
-    [ -z "$GOAL_CHECK_FAILURE_REASON" ] && GOAL_CHECK_FAILURE_REASON="goal_unmet_after_retries"
-    emit_error_event "goal_unmet" "Goal check did not pass after $GOAL_CHECK_ATTEMPTS attempt(s): $GOAL_CHECK_FAILURE_REASON" "exit"
-    break
-  fi
 fi
 
 # A terminal coding-provider failure cannot produce a trustworthy diff. Preserve
@@ -10591,10 +10612,10 @@ if [ "$VALIDATION_EXIT" -eq 0 ]; then
   fi
 fi
 
-if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && [ "$VALIDATION_EXIT" -eq 0 ] && \
+if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && \
   [ "$KASEKI_GOAL_CHECK" = "1" ] && [ "$GOAL_CHECK_EVALUATOR_UNAVAILABLE" != "true" ] && [ -s "$SCOUTING_ARTIFACT" ]; then
-  printf 'Validation completed successfully; re-running goal check against final validation evidence and artifacts.\n' | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
-  emit_progress "goal check" "re-running after successful validation (attempt $coding_attempt)"
+  printf 'Post-change validation completed with exit %s; running goal check against final validation evidence and artifacts.\n' "$VALIDATION_EXIT" | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+  emit_progress "goal check" "running after post-change validation exit=$VALIDATION_EXIT (attempt $coding_attempt)"
   run_goal_check "$coding_attempt"
   if [ "$GOAL_CHECK_EXIT" -eq 86 ]; then
     emit_progress "goal check" "retrying evaluator after artifact-contract failure (post-validation coding attempt $coding_attempt)"
@@ -10617,10 +10638,32 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && [
     fi
 
     STATUS=8
-    FAILED_COMMAND="goal check"
     [ -z "$GOAL_CHECK_FAILURE_REASON" ] && GOAL_CHECK_FAILURE_REASON="goal_unmet_after_retries"
-    emit_error_event "goal_unmet" "Goal check did not pass after post-validation diff changed on attempt $GOAL_CHECK_ATTEMPTS: $GOAL_CHECK_FAILURE_REASON" "exit"
+    if [ "$VALIDATION_EXIT" -eq 0 ]; then
+      FAILED_COMMAND="goal check"
+      emit_error_event "goal_unmet" "Goal check did not pass after post-validation diff changed on attempt $GOAL_CHECK_ATTEMPTS: $GOAL_CHECK_FAILURE_REASON" "exit"
+    else
+      # Keep the concrete validation failure as the root classification when
+      # the evaluator also observes that the failed checks leave the goal unmet.
+      STATUS=0
+      emit_error_event "goal_unmet_after_validation_failure" "Goal check remained unmet after validation failed (exit $VALIDATION_EXIT): $GOAL_CHECK_FAILURE_REASON" "continue"
+    fi
     break
+  fi
+fi
+
+# Validation failures are actionable implementation feedback. Persist the
+# attempt's validation artifacts before asking the coding agent to repair them;
+# the next goal-check verdict will then evaluate the new, formally validated
+# state rather than ending the run before evidence exists.
+if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && [ "$VALIDATION_EXIT" -ne 0 ]; then
+  snapshot_attempt_artifacts "$coding_attempt"
+  if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
+    GOAL_CHECK_RETRY_PROMPT="Post-change validation failed with exit $VALIDATION_EXIT (${VALIDATION_FAILURE_REASON:-${VALIDATION_FAILED_COMMAND_DETAIL:-validation command failed}}). Read validation.log and validation-timings.tsv from this attempt, fix the failing command without weakening its checks, then rerun the relevant focused tests."
+    admit_goal_check_retry_files "$GOAL_CHECK_RETRY_PROMPT"
+    emit_progress "validation" "retrying coding agent after persisted validation failure (attempt $coding_attempt of $max_coding_attempts)"
+    coding_attempt=$((coding_attempt + 1))
+    continue
   fi
 fi
 

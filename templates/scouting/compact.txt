@@ -16,7 +16,7 @@ Inspect only what is needed to scope the task and write one accurate JSON handof
 - plan: 5-15 ordered coding steps
 - validation: 2-10 focused repository checks
 - risks: concrete unknowns, or []
-- test_impact: affected tests, or [] only for non-behavioral changes
+- test_impact: affected tests, or [] only for non-behavioral changes; every non-empty entry must be an object with a repo-relative test path and a non-empty reason
 - critical_change_expectations: required_files, required_search_strings, forbidden_empty_diff, when concrete
 - suggested_allowlist: agent_patterns and validation_patterns
 Keep JSON under 50 KB and prioritize accuracy over exhaustiveness.
@@ -26,6 +26,7 @@ Proceed only when the task is concrete (for example, "Fix null-safety in parseRo
 
 ## [GUIDELINES: test_impact]
 For runtime changes, list affected test files and concrete examples with type, before, after, pattern, and description. Cover parser/validation, event/progress, serialization, naming/constants, or configuration/integration effects. Empty test_impact is valid only for documentation or other changes without runtime impact.
+If no specific test file is affected or discoverable, use an empty array; do not emit partial objects or invent test paths.
 
 ## [GUIDELINES: critical_change_expectations]
 List only files that truly need edits; use literal post-change diff strings for required_search_strings, never removed before-state code; set forbidden_empty_diff true for change requests. Omit uncertain expectations.

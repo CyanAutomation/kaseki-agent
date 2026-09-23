@@ -40,6 +40,7 @@ cp "$REPO_ROOT/scripts/restore-disallowed-changes.sh" "$TMP_DIR/scripts/restore-
 cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
 cp "$REPO_ROOT/scripts/lib/json-events.sh" "$TMP_DIR/scripts/lib/json-events.sh"
 cp "$REPO_ROOT/scripts/lib/artifact-consolidation.sh" "$TMP_DIR/scripts/lib/artifact-consolidation.sh"
+cp "$REPO_ROOT/scripts/write-run-metadata.mjs" "$TMP_DIR/scripts/write-run-metadata.mjs"
 cp "$REPO_ROOT/scripts/lib/model-resolution.sh" "$TMP_DIR/scripts/lib/model-resolution.sh"
 cp "$REPO_ROOT/scripts/lib/provider-retry.sh" "$TMP_DIR/scripts/lib/provider-retry.sh"
 touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/progress-stream-utils.js"
@@ -123,9 +124,9 @@ run_exit=$?
 set -e
 
 [ "$run_exit" -eq 0 ] || fail "expected exit 0 after retry, got $run_exit"
-expected_calls=$'goal-setting\nscouting\nscouting\ncoding\ncoding\ngoal-check\ngoal-check'
+expected_calls=$'goal-setting\nscouting\nscouting\ncoding\ncoding\ngoal-check'
 actual_calls="$(cat "$PI_CALLS" 2>/dev/null || true)"
-[ "$actual_calls" = "$expected_calls" ] || fail "expected empty turn retry (with scouting artifact retry) then goal-check (pre and post validation), got: $(tr '\n' ',' < "$PI_CALLS")"
+[ "$actual_calls" = "$expected_calls" ] || fail "expected empty turn retry (with scouting artifact retry) then the single post-validation goal-check, got: $(tr '\n' ',' < "$PI_CALLS")"
 [ -s "$RESULTS_DIR/provider-error.json" ] || fail "missing provider-summary empty-turn diagnostics"
 grep -q 'provider_empty_assistant_turn' "$RESULTS_DIR/provider-error.json" || fail "provider summary did not classify empty assistant turn"
 # Note: retry guidance message check disabled pending investigation of error message preservation across retries

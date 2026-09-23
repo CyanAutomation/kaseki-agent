@@ -551,7 +551,7 @@ export function buildRunScorecardSchema(): Record<string, unknown> {
     type: 'object', required: ['schema_version','rubric_version','run_id','started_at','scored_at','lifecycle_status','overall_score','grade','completeness','confidence','dimensions','phases','token_totals','timing_totals','scoring_config','warnings'],
     properties: {
       schema_version: { type: 'string', example: '1.0' }, rubric_version: { type: 'string', example: '1.0' },
-      run_id: { type: 'string', example: 'kaseki-42' }, started_at: { type: 'string', format: 'date-time' },
+      run_id: { type: 'string', example: 'kaseki-42' }, started_at: { type: ['string','null'], format: 'date-time' },
       ended_at: { type: ['string','null'], format: 'date-time' }, scored_at: { type: 'string', format: 'date-time' },
       lifecycle_status: { type: 'string', enum: ['queued','running','completed','failed','cancelled','timed_out'] },
       overall_score: { type: 'number', minimum: 0, maximum: 100, example: 86 }, grade: { type: 'string', enum: ['A','B','C','D','F'], example: 'B' },

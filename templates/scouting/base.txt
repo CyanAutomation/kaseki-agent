@@ -23,6 +23,7 @@ Write valid JSON with these fields and constraints:
 **validation** (array, 2-10 strings): Focused commands or checks that exist in the repository (for example, `npm run test:unit`); avoid generic commands when a focused one is known.
 **risks** (array, 0-10 strings or empty): Concrete unknowns, boundary conditions, or assumptions with suggested remediation.
 **test_impact** (array of objects or empty): Affected tests with path, reason, and test_examples. Include it for behavior changes; empty is valid for pure documentation, non-behavioral build/dependency changes, reorganization, or unrelated infrastructure.
+Each non-empty test_impact item must be an object with a repo-relative test path and a non-empty reason. Use [] when no affected test file is known; do not emit partial objects or invent paths.
 **critical_change_expectations** (object or omitted): Use only when concrete; it may contain required_files, required_search_strings, and forbidden_empty_diff.
 **suggested_allowlist** (object): Contains agent_patterns and validation_patterns; either may be empty if scope is unclear.
 
