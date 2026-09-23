@@ -2,6 +2,11 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {
+  GATEWAY_CONTEXT_INVALID_DIAGNOSTIC,
+  GATEWAY_CONTEXT_VALID_DIAGNOSTIC,
+  validateGatewayStreamContext,
+} from '../src/.extensions';
 
 const executeGatewayProviderRegistration = (env: NodeJS.ProcessEnv): string => {
   try {
@@ -401,55 +406,53 @@ describe('Gateway Custom Stream Handler', () => {
       expect(expectedEntryEvent.event).toBe('entry');
     });
 
-    it('validates context object shape before access', () => {
-      /**
-       * Test: Context validation catches malformed/missing context
-       * Prevents immediate failures from accessing null/undefined context
-       */
-
-      // Test cases for context validation
-      const testCases = [
-        {
-          name: 'null context',
-          context: null,
-          shouldFail: true,
-          expectedDiagnostic: 'context_validation_failed',
+    it.each([
+      {
+        name: 'null context',
+        context: null,
+        expected: {
+          valid: false,
+          diagnosticCode: GATEWAY_CONTEXT_INVALID_DIAGNOSTIC,
+          error: 'Gateway stream context must be an object',
         },
-        {
-          name: 'missing messages array',
-          context: { someKey: 'value' },
-          shouldFail: true,
-          expectedDiagnostic: 'context_validation_failed',
+      },
+      {
+        name: 'missing messages',
+        context: { someKey: 'value' },
+        expected: {
+          valid: false,
+          diagnosticCode: GATEWAY_CONTEXT_INVALID_DIAGNOSTIC,
+          error: 'Gateway stream context messages must be an array',
         },
-        {
-          name: 'messages not an array',
-          context: { messages: 'not-an-array' },
-          shouldFail: true,
-          expectedDiagnostic: 'context_validation_failed',
+      },
+      {
+        name: 'non-array messages',
+        context: { messages: 'not-an-array' },
+        expected: {
+          valid: false,
+          diagnosticCode: GATEWAY_CONTEXT_INVALID_DIAGNOSTIC,
+          error: 'Gateway stream context messages must be an array',
         },
-        {
-          name: 'empty messages array',
-          context: { messages: [] },
-          shouldFail: true,
-          expectedDiagnostic: 'context_validation_failed',
+      },
+      {
+        name: 'empty messages',
+        context: { messages: [] },
+        expected: {
+          valid: false,
+          diagnosticCode: GATEWAY_CONTEXT_INVALID_DIAGNOSTIC,
+          error: 'Gateway stream context messages must not be empty',
         },
-        {
-          name: 'valid context',
-          context: { messages: [{ role: 'user', content: 'hello' }] },
-          shouldFail: false,
-          expectedDiagnostic: 'context_validation_passed',
+      },
+      {
+        name: 'valid user message',
+        context: { messages: [{ role: 'user', content: 'hello' }] },
+        expected: {
+          valid: true,
+          diagnosticCode: GATEWAY_CONTEXT_VALID_DIAGNOSTIC,
         },
-      ];
-
-      for (const testCase of testCases) {
-        console.log(`  ✓ ${testCase.name}:`);
-        console.log(`    - Should fail: ${testCase.shouldFail}`);
-        console.log(`    - Logs: ${testCase.expectedDiagnostic}`);
-
-        expect(testCase.expectedDiagnostic).toMatch(
-          /context_validation_(passed|failed)/
-        );
-      }
+      },
+    ])('validates gateway stream context: $name', ({ context, expected }) => {
+      expect(validateGatewayStreamContext(context)).toEqual(expected);
     });
 
     it('logs request payload before sending to gateway', () => {
