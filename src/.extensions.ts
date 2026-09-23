@@ -16,6 +16,53 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import fs from 'node:fs';
 
+export const GATEWAY_CONTEXT_INVALID_DIAGNOSTIC = 'context_validation_failed';
+export const GATEWAY_CONTEXT_VALID_DIAGNOSTIC = 'context_validation_passed';
+
+export type GatewayContextValidationResult =
+  | {
+    valid: true;
+    diagnosticCode: typeof GATEWAY_CONTEXT_VALID_DIAGNOSTIC;
+  }
+  | {
+    valid: false;
+    diagnosticCode: typeof GATEWAY_CONTEXT_INVALID_DIAGNOSTIC;
+    error: string;
+  };
+
+/** Validate the minimum context shape required by a gateway stream handler. */
+export function validateGatewayStreamContext(context: unknown): GatewayContextValidationResult {
+  if (typeof context !== 'object' || context === null) {
+    return {
+      valid: false,
+      diagnosticCode: GATEWAY_CONTEXT_INVALID_DIAGNOSTIC,
+      error: 'Gateway stream context must be an object',
+    };
+  }
+
+  const messages = (context as { messages?: unknown }).messages;
+  if (!Array.isArray(messages)) {
+    return {
+      valid: false,
+      diagnosticCode: GATEWAY_CONTEXT_INVALID_DIAGNOSTIC,
+      error: 'Gateway stream context messages must be an array',
+    };
+  }
+
+  if (messages.length === 0) {
+    return {
+      valid: false,
+      diagnosticCode: GATEWAY_CONTEXT_INVALID_DIAGNOSTIC,
+      error: 'Gateway stream context messages must not be empty',
+    };
+  }
+
+  return {
+    valid: true,
+    diagnosticCode: GATEWAY_CONTEXT_VALID_DIAGNOSTIC,
+  };
+}
+
 /**
  * Resolve CloudFlare API key from environment or file
  * Prefers environment variable, falls back to file
