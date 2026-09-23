@@ -27,10 +27,16 @@ describe('goal-setting types', () => {
       expect(result.success).toBe(true);
     });
 
-    it('requires upgraded_goal', () => {
+    it('requires a non-empty upgraded_goal', () => {
       const invalid = { ...validOutput, upgraded_goal: '' };
       const result = GoalSettingOutputSchema.safeParse(invalid);
-      expect(result.success).toBe(true); // Empty string is still valid (not min length)
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues).toContainEqual(expect.objectContaining({
+          code: 'too_small',
+          path: ['upgraded_goal'],
+        }));
+      }
     });
 
     it('requires at least one success criterion', () => {
