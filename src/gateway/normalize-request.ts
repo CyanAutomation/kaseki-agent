@@ -64,3 +64,10 @@ export function normalizeGatewayTransportRequest<T extends GatewayTransportReque
 
   return request;
 }
+
+/** Wrap an Undici dispatch/fetch-style transport with gateway normalization. */
+export function createNormalizedGatewayTransport<TResult>(
+  transport: (request: GatewayTransportRequest) => TResult
+): (request: GatewayTransportRequest) => TResult {
+  return request => transport(normalizeGatewayTransportRequest(request));
+}
