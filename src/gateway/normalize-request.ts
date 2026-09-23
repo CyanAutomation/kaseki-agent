@@ -150,18 +150,18 @@ export async function handleGatewayTransportResponse(
   });
 }
 
-function extractLatestUserInput(input: unknown[]): string | undefined {
-  const userMessage = [...input].reverse().find(item =>
+function extractLatestUserInput(input: unknown[]): string {
+  const userMessage = [...input].reverse().find((item): item is { role: 'user'; content: unknown } =>
     typeof item === 'object' &&
     item !== null &&
     'role' in item &&
     item.role === 'user' &&
     'content' in item
   );
-  if (!userMessage || !('content' in userMessage)) return undefined;
+  if (!userMessage) return '';
 
   if (typeof userMessage.content === 'string') return userMessage.content;
-  if (!Array.isArray(userMessage.content)) return undefined;
+  if (!Array.isArray(userMessage.content)) return '';
 
   return userMessage.content
     .filter(block =>
@@ -185,8 +185,7 @@ export function normalizeGatewayRequest<T extends GatewayRequest>(request: T): G
   const { input, ...rest } = request;
 
   if (Array.isArray(input)) {
-    const normalizedInput = extractLatestUserInput(input);
-    if (normalizedInput !== undefined) return { ...rest, input: normalizedInput };
+    return { ...rest, input: extractLatestUserInput(input) };
   }
 
   return { ...rest, input };
