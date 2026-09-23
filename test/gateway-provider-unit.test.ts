@@ -575,6 +575,35 @@ describe('Gateway Custom Stream Handler', () => {
       expect(transport).toHaveBeenCalledTimes(1);
     });
 
+    it('reports gateway HTTP errors when reading the response body fails', async () => {
+      const diagnosticsSink = jest.fn();
+      const response = {
+        status: 502,
+        statusText: 'Bad Gateway',
+        headers: { get: jest.fn().mockReturnValue('text/plain') },
+        text: jest.fn().mockRejectedValue(new Error('response stream failed')),
+      };
+      const send = createNormalizedGatewayTransport(
+        jest.fn().mockResolvedValue(response),
+        diagnosticsSink
+      );
+
+      await expect(send({
+        url: 'https://llm-gateway.local.xyz/v1/responses',
+        body: JSON.stringify({ input: 'hello' }),
+      })).resolves.toBe(response);
+
+      expect(diagnosticsSink).toHaveBeenCalledWith({
+        event: 'gateway_http_error',
+        status: 502,
+        statusText: 'Bad Gateway',
+        contentType: 'text/plain',
+        errorBodyPreview: '[Failed to read response body]',
+        errorBodyLength: 30,
+      });
+      expect(response.text).toHaveBeenCalledTimes(1);
+    });
+
     it('captures error type and stack trace for debugging', () => {
       /**
        * Test: Errors include type information and stack trace preview
