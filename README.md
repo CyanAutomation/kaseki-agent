@@ -1,5 +1,11 @@
 # Kaseki Agent
 
+[![CI](https://github.com/CyanAutomation/kaseki-agent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/CyanAutomation/kaseki-agent/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/CyanAutomation/kaseki-agent/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/CyanAutomation/kaseki-agent/actions/workflows/codeql.yml)
+[![Create A Release](https://github.com/CyanAutomation/kaseki-agent/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/CyanAutomation/kaseki-agent/actions/workflows/release.yml)
+[![Publish Docker Image](https://github.com/CyanAutomation/kaseki-agent/actions/workflows/build-docker-image.yml/badge.svg?branch=main)](https://github.com/CyanAutomation/kaseki-agent/actions/workflows/build-docker-image.yml)
+
+
 Kaseki is a proof-of-concept ephemeral coding-agent runner. Each run creates a numbered, disposable container instance (kaseki-1, kaseki-2, etc.) that orchestrates the Pi coding-agent via a generic LLM gateway (Manifest, OpenAI, Ollama, etc.).
 
 ## Quick Start
