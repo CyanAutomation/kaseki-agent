@@ -9,8 +9,8 @@ import {
  *
  * Test the gateway provider adapter's ability to handle:
  * 1. Simple string input (should work as-is)
- * 2. Multi-message array input (should be converted to messages field)
- * 3. Mixed system + user messages (should be preserved)
+ * 2. Pi conversation input (should be reduced to the latest user text)
+ * 3. Empty or malformed arrays (should become an empty string)
  */
 
 describe('Gateway Adapter Request Format', () => {
@@ -51,7 +51,7 @@ describe('Gateway Adapter Request Format', () => {
             content: 'Hello, what is 2+2?',
           },
         ],
-        expectedField: 'messages',
+        expectedInput: 'Hello, what is 2+2?',
       },
       {
         name: 'user-only input',
@@ -65,12 +65,12 @@ describe('Gateway Adapter Request Format', () => {
             content: 'And what is 3+3?',
           },
         ],
-        expectedField: 'messages',
+        expectedInput: 'And what is 3+3?',
       },
       {
         name: 'empty-array input',
         input: [],
-        expectedField: 'input',
+        expectedInput: '',
       },
       {
         name: 'malformed-array input',
@@ -78,9 +78,9 @@ describe('Gateway Adapter Request Format', () => {
           { text: 'Not a message object' },
           { content: 'Missing role field' },
         ],
-        expectedField: 'input',
+        expectedInput: '',
       },
-    ])('should build the complete outbound body for $name', ({ input, expectedField }) => {
+    ])('should build the complete outbound body for $name', ({ input, expectedInput }) => {
       const request = {
         url: 'https://gateway.example.com/v1/responses',
         method: 'POST',
@@ -98,45 +98,15 @@ describe('Gateway Adapter Request Format', () => {
 
       expect(outboundBody).toEqual({
         model: 'auto',
-        [expectedField]: input,
+        input: expectedInput,
         max_output_tokens: 256,
         metadata: { phase: 'validation' },
       });
-      if (expectedField === 'messages') {
-        expect(outboundBody).not.toHaveProperty('input');
-      }
+      expect(outboundBody).not.toHaveProperty('messages');
     });
   });
 
   describe('Request normalization function', () => {
-    /**
-     * Helper function to normalize request payload
-     * This should be added to the gateway adapter
-     */
-    function normalizeGatewayRequest(request: any): any {
-      const { input, ...rest } = request;
-
-      // Check if input is a multi-message array
-      if (
-        Array.isArray(input) &&
-        input.length > 0 &&
-        input.every(item =>
-          typeof item === 'object' &&
-          'role' in item &&
-          'content' in item
-        )
-      ) {
-        // Convert multi-message array to messages field
-        return {
-          ...rest,
-          messages: input,
-        };
-      }
-
-      // Keep input field as-is (string or invalid format)
-      return { input, ...rest };
-    }
-
     it('should normalize simple string request unchanged', () => {
       const request = {
         model: 'auto',
@@ -153,7 +123,7 @@ describe('Gateway Adapter Request Format', () => {
       });
     });
 
-    it('should normalize multi-message array to messages field', () => {
+    it('should normalize a conversation array to the latest user input', () => {
       const request = {
         model: 'auto',
         input: [
@@ -167,29 +137,28 @@ describe('Gateway Adapter Request Format', () => {
 
       expect(normalized).toEqual({
         model: 'auto',
-        messages: [
-          { role: 'system', content: 'You are helpful' },
-          { role: 'user', content: 'Hi' },
-        ],
+        input: 'Hi',
         max_output_tokens: 256,
       });
-      expect(normalized.input).toBeUndefined();
+      expect(normalized).not.toHaveProperty('messages');
     });
 
-    it('should keep malformed array in input field', () => {
-      const request = {
+    it.each([
+      ['empty', []],
+      ['malformed', [{ text: 'not a message' }]],
+    ])('should normalize an %s array to an empty input string', (_name, input) => {
+      const normalized = normalizeGatewayRequest({
         model: 'auto',
-        input: [{ text: 'not a message' }],
+        input,
         max_output_tokens: 256,
-      };
-
-      const normalized = normalizeGatewayRequest(request);
+      });
 
       expect(normalized).toEqual({
         model: 'auto',
-        input: [{ text: 'not a message' }],
+        input: '',
         max_output_tokens: 256,
       });
+      expect(normalized).not.toHaveProperty('messages');
     });
   });
 
@@ -235,12 +204,9 @@ describe('Gateway Adapter Request Format', () => {
 
       expect(dispatchedPayload).toEqual({
         model: 'auto',
-        messages: [
-          { role: 'system', content: 'You are a helpful assistant' },
-          { role: 'user', content: 'Hello' },
-        ],
+        input: 'Hello',
       });
-      expect(dispatchedPayload).not.toHaveProperty('input');
+      expect(dispatchedPayload).not.toHaveProperty('messages');
     });
 
     /**
@@ -321,11 +287,11 @@ describe('Gateway Adapter Request Format', () => {
       });
       expect(body).toEqual({
         model: 'auto',
-        messages,
+        input: 'Hi',
         max_output_tokens: 256,
         metadata: { phase: 'validation' },
       });
-      expect(body).not.toHaveProperty('input');
+      expect(body).not.toHaveProperty('messages');
     });
 
     /**
@@ -372,17 +338,15 @@ describe('Gateway Adapter Request Format', () => {
   describe('Gateway Responses API contract validation', () => {
     /**
      * Test that after normalization, request conforms to OpenAI Responses API spec
-     * Either: {model, input: string, ...}
-     * Or: {model, messages: array, ...}
-     * But NOT: {model, input: array, ...} ← This is the bug
+     * The gateway contract requires {model, input: string, ...} and forbids
+     * both array-valued input and a messages field.
      */
     it('should produce valid OpenAI Responses API request after normalization', () => {
-      const testCases = [
+      const testCases: Array<{ name: string; input: unknown; expectedInput: string }> = [
         {
           name: 'simple string input',
           input: { model: 'auto', input: 'Hello', max_output_tokens: 256 },
-          valid: true,
-          reason: 'input is string',
+          expectedInput: 'Hello',
         },
         {
           name: 'multi-message array',
@@ -394,33 +358,24 @@ describe('Gateway Adapter Request Format', () => {
             ],
             max_output_tokens: 256,
           },
-          valid: false,
-          reason: 'input is array (should be messages field)',
+          expectedInput: 'Hi',
         },
         {
-          name: 'properly formatted messages field',
+          name: 'malformed array',
           input: {
             model: 'auto',
-            messages: [
-              { role: 'system', content: 'You are helpful' },
-              { role: 'user', content: 'Hi' },
-            ],
+            input: [{ content: 'missing role' }],
             max_output_tokens: 256,
           },
-          valid: true,
-          reason: 'using messages field',
+          expectedInput: '',
         },
       ];
 
       testCases.forEach(testCase => {
-        const hasStringInput = typeof testCase.input.input === 'string';
-        const hasMessages = Array.isArray(testCase.input.messages);
-        const isValidContract = (hasStringInput && !hasMessages) || (hasMessages && !testCase.input.input);
+        const normalized = normalizeGatewayRequest(testCase.input as Record<string, unknown>);
 
-        expect(isValidContract).toBe(
-          testCase.valid,
-          `${testCase.name}: ${testCase.reason}`,
-        );
+        expect(normalized.input).toBe(testCase.expectedInput);
+        expect(normalized).not.toHaveProperty('messages');
       });
     });
   });
@@ -444,25 +399,16 @@ Your job is to analyze the repository, understand the task scope, and produce a 
         },
       ];
 
-      // Before fix: this would fail because gateway receives {input: [array]}
-      // After fix: should convert to {messages: [array]}
-      const isMultiMessage = Array.isArray(scoutingPhaseInput) &&
-        scoutingPhaseInput.every(item =>
-          typeof item === 'object' &&
-          'role' in item &&
-          'content' in item
-        );
-
-      expect(isMultiMessage).toBe(true);
-
-      const normalizedRequest = {
+      const normalizedRequest = normalizeGatewayRequest({
         model: 'auto',
-        messages: scoutingPhaseInput,
+        input: scoutingPhaseInput,
         max_output_tokens: 4096,
-      };
+      });
 
-      expect(normalizedRequest.messages).toBeDefined();
-      expect(normalizedRequest.input).toBeUndefined();
+      expect(normalizedRequest.input).toBe(
+        'Investigate GitHub issue #814: Improve content, structure and formatting of docs/INDEX.md'
+      );
+      expect(normalizedRequest).not.toHaveProperty('messages');
     });
   });
 });
