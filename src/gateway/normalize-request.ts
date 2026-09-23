@@ -27,6 +27,15 @@ function redactDiagnosticText(value: string): string {
   return value
     .replace(/\b(Bearer\s+)[^\s"']+/gi, '$1[REDACTED]')
     .replace(
+      /((?:["']?)(?:api[_-]?key|authorization|password|secret|token)(?:["']?)\s*:\s*)("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/gi,
+      (_match, prefix: string, quotedValue: string) =>
+        `${prefix}${quotedValue[0]}[REDACTED]${quotedValue[0]}`
+    )
+    .replace(
+      /\b(api[_-]?key|authorization|password|secret|token)\b(\s*=\s*)[^\r\n;]+/gi,
+      '$1$2[REDACTED]'
+    )
+    .replace(
       /\b(api[_-]?key|authorization|password|secret|token)\b(\s*[:=]\s*)([^\s,;"']+)/gi,
       '$1$2[REDACTED]'
     );
