@@ -4,6 +4,17 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.140.13](https://github.com/CyanAutomation/kaseki-agent/compare/v1.140.12...v1.140.13) (2026-09-23)
+
+
+### Bug Fixes
+
+* harden gateway diagnostic redaction ([cfc8847](https://github.com/CyanAutomation/kaseki-agent/commit/cfc88474948bf0cf63f410f1532c08f59bc8a869))
+* require a non-empty upgraded goal ([0549567](https://github.com/CyanAutomation/kaseki-agent/commit/05495674f4aa4d4313f6e05fb0d6e1c0c30bf74d))
+* reserve OpenRouter credentials for JEV ([4351272](https://github.com/CyanAutomation/kaseki-agent/commit/4351272eb426869da2e2ffc3e78b5dce7f98dc28))
+* reserve OpenRouter credentials for JEV ([#1379](https://github.com/CyanAutomation/kaseki-agent/issues/1379)) ([50d2d4b](https://github.com/CyanAutomation/kaseki-agent/commit/50d2d4b608e81a40c7cf6a1416881d1019a56a0b))
+* validate protected line range ordering ([3bc4f74](https://github.com/CyanAutomation/kaseki-agent/commit/3bc4f7465a6ed77c2f8dfc5dac9cc06b0f5332a8))
+
 ## [1.140.12](https://github.com/CyanAutomation/kaseki-agent/compare/v1.140.11...v1.140.12) (2026-09-22)
 
 
