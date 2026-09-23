@@ -680,29 +680,40 @@ describe('Gateway Custom Stream Handler', () => {
     console.log(`\n✓ Extracted input from context: "${expectedInput}"`);
   });
 
-  it('formats request with correct gateway contract', () => {
-    /**
-     * Test: Request body matches gateway's expected format.
-     * Gateway expects: {model: "dynamic/kaseki-agent", input: "string", store: false}
-     * Pi default sends: {model: "dynamic/kaseki-agent", messages: [...], ...}
-     */
+  it('formats a Pi conversation with the exact gateway contract', async () => {
+    let gatewayRequestBody: unknown;
+    const send = createNormalizedGatewayTransport(request => {
+      gatewayRequestBody = JSON.parse(request.body as string);
+      return Promise.resolve({ statusCode: 200 });
+    });
 
-    // Expected request format for gateway
-    const expectedRequestBody = {
+    await send({
+      url: 'https://llm-gateway.local.xyz/v1/responses',
+      method: 'POST',
+      body: JSON.stringify({
+        model: 'dynamic/kaseki-agent',
+        input: [
+          { role: 'system', content: 'You are helpful' },
+          { role: 'user', content: 'First question' },
+          { role: 'assistant', content: 'First answer' },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Second' },
+              { type: 'text', text: ' question' },
+            ],
+          },
+        ],
+        store: false,
+      }),
+    });
+
+    expect(gatewayRequestBody).toEqual({
       model: 'dynamic/kaseki-agent',
-      input: 'Hello, what can you do?',
+      input: 'Second question',
       store: false,
-    };
-
-    // Verify structure matches gateway contract
-    expect(expectedRequestBody).toHaveProperty('model', 'dynamic/kaseki-agent');
-    expect(expectedRequestBody).toHaveProperty('input');
-    expect(typeof expectedRequestBody.input).toBe('string');
-    expect(expectedRequestBody).toHaveProperty('store', false);
-    expect(expectedRequestBody).not.toHaveProperty('messages'); // NOT the Pi format
-
-    console.log('✓ Request format matches gateway contract:');
-    console.log(`  {model: '${expectedRequestBody.model}', input: '...', store: ${expectedRequestBody.store}}`);
+    });
+    expect(gatewayRequestBody).not.toHaveProperty('messages');
   });
 
   it('parses SSE response and extracts content', () => {

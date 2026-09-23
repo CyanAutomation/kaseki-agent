@@ -150,25 +150,42 @@ export async function handleGatewayTransportResponse(
   });
 }
 
+function extractLatestUserInput(input: unknown[]): string {
+  const userMessage = [...input].reverse().find((item): item is { role: 'user'; content: unknown } =>
+    typeof item === 'object' &&
+    item !== null &&
+    'role' in item &&
+    item.role === 'user' &&
+    'content' in item
+  );
+  if (!userMessage) return '';
+
+  if (typeof userMessage.content === 'string') return userMessage.content;
+  if (!Array.isArray(userMessage.content)) return '';
+
+  return userMessage.content
+    .filter(block =>
+      typeof block === 'object' &&
+      block !== null &&
+      'type' in block &&
+      block.type === 'text' &&
+      'text' in block &&
+      typeof block.text === 'string'
+    )
+    .map(block => (block as { text: string }).text)
+    .join('');
+}
+
 /**
  * Normalize the semantic request body before a gateway transport serializes it.
- * Conversation-shaped input is sent as `messages`; every other input format is
- * preserved exactly as supplied by the caller.
+ * Pi conversations are reduced to the latest user text expected by the gateway;
+ * every other input format is preserved exactly as supplied by the caller.
  */
 export function normalizeGatewayRequest<T extends GatewayRequest>(request: T): GatewayRequest {
   const { input, ...rest } = request;
 
-  if (
-    Array.isArray(input) &&
-    input.length > 0 &&
-    input.every(item =>
-      typeof item === 'object' &&
-      item !== null &&
-      'role' in item &&
-      'content' in item
-    )
-  ) {
-    return { ...rest, messages: input };
+  if (Array.isArray(input)) {
+    return { ...rest, input: extractLatestUserInput(input) };
   }
 
   return { ...rest, input };
