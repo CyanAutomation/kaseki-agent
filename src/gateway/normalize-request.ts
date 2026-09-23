@@ -8,6 +8,65 @@ export type GatewayTransportRequest = Record<string, unknown> & {
   headers?: unknown;
 };
 
+export interface GatewayRequestDiagnostic {
+  event: 'request_payload';
+  model: unknown;
+  inputLength: number;
+  inputPreview: string;
+  inputPreviewTruncated: boolean;
+  store: unknown;
+  requestBodySize: number;
+  validJsonFormat: boolean;
+}
+
+export type GatewayDiagnosticsSink = (diagnostic: GatewayRequestDiagnostic) => void;
+
+const INPUT_PREVIEW_LIMIT = 256;
+
+function redactDiagnosticText(value: string): string {
+  return value
+    .replace(/\b(Bearer\s+)[^\s"']+/gi, '$1[REDACTED]')
+    .replace(
+      /\b(api[_-]?key|authorization|password|secret|token)\b(\s*[:=]\s*)([^\s,;"']+)/gi,
+      '$1$2[REDACTED]'
+    );
+}
+
+function requestDiagnostic(request: GatewayTransportRequest): GatewayRequestDiagnostic {
+  let body: GatewayRequest | undefined;
+  let validJsonFormat = false;
+
+  if (typeof request.body === 'string' || Buffer.isBuffer(request.body)) {
+    try {
+      body = JSON.parse(request.body.toString()) as GatewayRequest;
+      validJsonFormat = true;
+    } catch {
+      body = undefined;
+    }
+  } else if (request.body && typeof request.body === 'object') {
+    body = request.body as GatewayRequest;
+    validJsonFormat = true;
+  }
+
+  const input = body?.input ?? body?.messages;
+  const inputText = typeof input === 'string' ? input : input === undefined ? '' : JSON.stringify(input);
+  const redactedInput = redactDiagnosticText(inputText);
+  const serializedBody = typeof request.body === 'string' || Buffer.isBuffer(request.body)
+    ? request.body
+    : request.body !== undefined ? JSON.stringify(request.body) : '';
+
+  return {
+    event: 'request_payload',
+    model: body?.model,
+    inputLength: inputText.length,
+    inputPreview: redactedInput.slice(0, INPUT_PREVIEW_LIMIT),
+    inputPreviewTruncated: redactedInput.length > INPUT_PREVIEW_LIMIT,
+    store: body?.store,
+    requestBodySize: Buffer.byteLength(serializedBody),
+    validJsonFormat,
+  };
+}
+
 /**
  * Normalize the semantic request body before a gateway transport serializes it.
  * Conversation-shaped input is sent as `messages`; every other input format is
@@ -67,7 +126,12 @@ export function normalizeGatewayTransportRequest<T extends GatewayTransportReque
 
 /** Wrap an Undici dispatch/fetch-style transport with gateway normalization. */
 export function createNormalizedGatewayTransport<TResult>(
-  transport: (request: GatewayTransportRequest) => TResult
+  transport: (request: GatewayTransportRequest) => TResult,
+  diagnosticsSink?: GatewayDiagnosticsSink
 ): (request: GatewayTransportRequest) => TResult {
-  return request => transport(normalizeGatewayTransportRequest(request));
+  return request => {
+    const normalizedRequest = normalizeGatewayTransportRequest(request);
+    diagnosticsSink?.(requestDiagnostic(normalizedRequest));
+    return transport(normalizedRequest);
+  };
 }
