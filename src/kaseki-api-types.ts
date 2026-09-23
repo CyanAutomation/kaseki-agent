@@ -516,7 +516,7 @@ export interface ScorecardSummary {
   rubricVersion: string;
   completeness: RunScorecard['completeness'];
   confidence: number;
-  startedAt: string;
+  startedAt: string | null;
   endedAt: string | null;
   scoredAt: string;
   model?: string;

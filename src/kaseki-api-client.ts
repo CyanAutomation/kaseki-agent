@@ -101,7 +101,7 @@ const ScorecardSummarySchema = z.object({
   rubricVersion: z.string(),
   completeness: RunScorecardCompletenessSchema,
   confidence: z.number().min(0).max(100),
-  startedAt: z.string().datetime(),
+  startedAt: z.string().datetime().nullable(),
   endedAt: z.string().datetime().nullable(),
   scoredAt: z.string().datetime(),
   model: z.string().optional(),

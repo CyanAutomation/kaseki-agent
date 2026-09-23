@@ -33,6 +33,7 @@ fi
 cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
 cp "$REPO_ROOT/scripts/lib/json-events.sh" "$TMP_DIR/scripts/lib/json-events.sh"
 cp "$REPO_ROOT/scripts/lib/artifact-consolidation.sh" "$TMP_DIR/scripts/lib/artifact-consolidation.sh"
+cp "$REPO_ROOT/scripts/write-run-metadata.mjs" "$TMP_DIR/scripts/write-run-metadata.mjs"
 touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/progress-stream-utils.js"
 : > "$PI_CALLS"
 MODIFIED_SCRIPT="$TMP_DIR/kaseki-agent-modified.sh"
@@ -61,8 +62,12 @@ elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf 'scouting\n' >> "$PI_CALLS"
   printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[]}' > "$RESULTS_DIR/scouting-candidate.json"
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
-  printf 'goal-check\n' >> "$PI_CALLS"
-  printf '%s\n' '{"met":true,"confidence":"high","summary":"done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[],"evidence_sources_inspected":[],"contradictions":[],"confidence_calibration":{"outcome":"confident","justification":"test"}}' > "$RESULTS_DIR/goal-check-candidate.json"
+  if grep -q 'VALIDATION_MARKER' "$RESULTS_DIR/validation.log" 2>/dev/null; then
+    printf 'goal-check-after-validation\n' >> "$PI_CALLS"
+  else
+    printf 'goal-check-before-validation\n' >> "$PI_CALLS"
+  fi
+  printf '%s\n' '{"met":false,"confidence":"high","summary":"unmet after inspecting final validation evidence","evidence":[],"missing":["fixture criterion"],"retry_prompt":"repair fixture criterion","validation_notes":[],"evidence_sources_inspected":[],"contradictions":[],"confidence_calibration":{"outcome":"confident","justification":"test"}}' > "$RESULTS_DIR/goal-check-candidate.json"
 else
   printf 'coding\n' >> "$PI_CALLS"
   printf '%s' "\$prompt" > "$RESULTS_DIR/coding-prompt.txt"
@@ -94,29 +99,38 @@ set +e
 env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspect then code" \
   LLM_GATEWAY_URL=https://example.invalid/v1 LLM_GATEWAY_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off \
   KASEKI_JEV_WORKFLOW=0 \
+  KASEKI_GOAL_CHECK_MAX_RETRIES=0 \
   KASEKI_WORKSPACE_DIR="$TMP_DIR" \
   KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
-  KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" KASEKI_VALIDATION_COMMANDS="printf validation-generated > generated.txt || exit 1" \
+  KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" KASEKI_VALIDATION_COMMANDS="printf 'VALIDATION_MARKER\\n'; printf validation-generated > generated.txt || exit 1" \
   KASEKI_VALIDATION_ALLOWLIST="generated.txt" KASEKI_ALLOW_EMPTY_DIFF=1 \
   KASEKI_SKIP_GATEWAY_HEALTH_CHECK=1 \
   bash "$MODIFIED_SCRIPT" > "$RUN_LOG" 2>&1
 run_exit=$?
 set -e
 
-[ "$run_exit" -eq 0 ] || fail "expected zero exit, got $run_exit"
-[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' ] || fail "expected exactly two goal-check calls after coding"
-grep -q 'Validation completed successfully; re-running goal check' "$RESULTS_DIR/goal-check-stderr.log" || fail "missing post-validation goal-check rerun log"
+[ "$run_exit" -eq 8 ] || fail "expected terminal goal-unmet exit 8 after post-change validation, got $run_exit"
+[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check-after-validation' ] || fail "expected the first and only terminal goal check after post-change validation"
+grep -q 'Post-change validation completed with exit 0; running goal check' "$RESULTS_DIR/goal-check-stderr.log" || fail "missing post-validation goal-check log"
+grep -q 'VALIDATION_MARKER' "$RESULTS_DIR/validation.log" || fail "post-change validation did not run before the unmet goal verdict"
 grep -q '^generated.txt$' "$RESULTS_DIR/changed-files.txt" || fail "validation-generated file was not present in final changed files"
+node - "$RESULTS_DIR/metadata.json" <<'NODE' || fail "terminal goal-check metadata did not preserve the unmet result"
+const fs = require('node:fs');
+const metadata = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+if (metadata.exit_code !== 8 || metadata.failed_command !== 'goal check') {
+  throw new Error(`expected terminal goal-check failure after validation, got exit=${metadata.exit_code} failed_command=${metadata.failed_command}`);
+}
+if (metadata.validation_exit_code !== 0 || metadata.validation_commands_attempted < 1) {
+  throw new Error(`expected successful post-change validation evidence, got ${JSON.stringify({ exit: metadata.validation_exit_code, attempts: metadata.validation_commands_attempted })}`);
+}
+NODE
 
 goal_check_count="$(grep -c '^goal check[[:space:]]0[[:space:]]' "$RESULTS_DIR/stage-timings.tsv")"
-[ "$goal_check_count" -eq 2 ] || fail "expected two successful goal-check timing entries, got $goal_check_count"
-pre_validation_goal_check_line="$(awk 'BEGIN { validation_line=0 } /^validation[[:space:]]/ { validation_line=NR } /^goal check[[:space:]]0[[:space:]]/ && validation_line == 0 { print NR; exit }' "$RESULTS_DIR/stage-timings.tsv")"
+[ "$goal_check_count" -eq 1 ] || fail "expected one goal-check timing entry, got $goal_check_count"
 validation_line="$(awk '/^validation[[:space:]]/ { print NR; exit }' "$RESULTS_DIR/stage-timings.tsv")"
 post_validation_goal_check_line="$(awk 'BEGIN { validation_line=0 } /^validation[[:space:]]/ { validation_line=NR } /^goal check[[:space:]]0[[:space:]]/ && validation_line > 0 { print NR; exit }' "$RESULTS_DIR/stage-timings.tsv")"
-[ -n "$pre_validation_goal_check_line" ] || fail "missing pre-validation goal-check timing entry"
 [ -n "$validation_line" ] || fail "missing validation timing entry"
 [ -n "$post_validation_goal_check_line" ] || fail "missing post-validation goal-check timing entry"
-[ "$pre_validation_goal_check_line" -lt "$validation_line" ] || fail "expected first goal-check before validation"
 [ "$validation_line" -lt "$post_validation_goal_check_line" ] || fail "expected second goal-check after validation"
 
 echo "PASS: $TEST_NAME"

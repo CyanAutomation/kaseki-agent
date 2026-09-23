@@ -10,6 +10,8 @@ export interface Evidence {
   metadata: Record<string, unknown>;
   status: RunScorecard['lifecycle_status'];
   elapsedSeconds?: number;
+  stageElapsedSeconds?: number;
+  preAgentValidationMs?: number;
   tokens?: number;
   tokenUsage: RunScorecard['token_totals'];
   phaseTokens: Record<string, RunScorecard['token_totals']>;

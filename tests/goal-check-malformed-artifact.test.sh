@@ -34,6 +34,7 @@ fi
 cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
 cp "$REPO_ROOT/scripts/lib/json-events.sh" "$TMP_DIR/scripts/lib/json-events.sh"
 cp "$REPO_ROOT/scripts/lib/artifact-consolidation.sh" "$TMP_DIR/scripts/lib/artifact-consolidation.sh"
+cp "$REPO_ROOT/scripts/write-run-metadata.mjs" "$TMP_DIR/scripts/write-run-metadata.mjs"
 touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/progress-stream-utils.js" || fail "failed to create app lib stubs"
 : > "$PI_CALLS" || fail "failed to initialize Pi call log"
 
@@ -103,7 +104,7 @@ env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspe
 run_exit=$?
 
 [ "$run_exit" -eq 0 ] || fail "expected deterministic fallback to preserve successful accepted-no-op outcome, got $run_exit"
-[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check\ngoal-check\ngoal-check' ] || fail "missing evaluator-only retry after malformed goal-check artifact"
+[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' ] || fail "missing evaluator-only retry after malformed goal-check artifact"
 [ -s "$RESULTS_DIR/goal-check-validation-errors.jsonl" ] || fail "missing goal-check-validation-errors.jsonl"
 [ "$(cat "$RESULTS_DIR/goal-check-validation-reason.txt")" = "malformed_json" ] || fail "expected malformed_json reason"
 grep -q 'goal-check validation error' "$RESULTS_DIR/goal-check-validation-summary.txt" || fail "missing goal-check validation summary"
@@ -111,7 +112,7 @@ grep -q '^goal check[[:space:]]86[[:space:]]' "$RESULTS_DIR/stage-timings.tsv" |
 node - "$RESULTS_DIR/goal-check-validation-errors.jsonl" <<'NODE' || fail "goal-check validation error log did not capture parse failure"
 const fs = require('node:fs');
 const lines = fs.readFileSync(process.argv[2], 'utf8').trim().split(/\n+/).filter(Boolean);
-if (lines.length !== 4) throw new Error(`expected exactly four JSONL entries (one per evaluator attempt across the pre- and post-validation goal-check invocations), got ${lines.length}`);
+if (lines.length !== 2) throw new Error(`expected exactly two JSONL entries (one per evaluator attempt after validation), got ${lines.length}`);
 const entry = JSON.parse(lines[0]);
 if (entry.field !== 'root') throw new Error(`expected field root, got ${entry.field}`);
 if (entry.expected !== 'valid JSON object') throw new Error(`expected valid JSON object, got ${entry.expected}`);

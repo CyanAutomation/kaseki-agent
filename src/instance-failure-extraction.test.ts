@@ -189,6 +189,11 @@ describe('instance-failure-extraction', () => {
       expect(classifyFailure({}, 8)).toBe('goal-unmet');
     });
 
+    test('does not let legacy metadata serialization errors hide the root run failure', () => {
+      expect(classifyFailure({ worker_error_type: 'metadata_write_invalid', failed_command: 'goal check' }, 8)).toBe('goal-unmet');
+      expect(classifyFailure({ worker_error_type: 'metadata_write_invalid', failed_command: 'validation' }, 1)).toBe('validation');
+    });
+
     test('should classify "goal check" command as goal-unmet', () => {
       expect(classifyFailure({ failed_command: 'goal check' }, null)).toBe('goal-unmet');
     });

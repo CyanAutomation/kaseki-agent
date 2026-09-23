@@ -90,6 +90,24 @@ describe('scorecard routes', () => {
     const markdown=await get(app,'/runs/kaseki-1/scorecard?format=markdown');
     expect(markdown.status).toBe(200); expect(markdown.text).toContain('**Overall:**');
   });
+  test('reads scorecards written before timing reconciliation fields were added', async () => {
+    const {app,dir,card}=fixture();
+    const legacy = JSON.parse(JSON.stringify(card));
+    delete legacy.timing_totals.pre_agent_validation_ms;
+    delete legacy.timing_totals.measured_stage_ms;
+    delete legacy.timing_totals.unclassified_stage_ms;
+    delete legacy.timing_totals.unaccounted_wall_clock_ms;
+    fs.writeFileSync(path.join(dir,'run-scorecard.json'),JSON.stringify(legacy));
+
+    const response = await get(app, '/runs/kaseki-1/scorecard');
+    expect(response.status).toBe(200);
+    expect(response.body.timing_totals).toMatchObject({
+      pre_agent_validation_ms: null,
+      measured_stage_ms: null,
+      unclassified_stage_ms: null,
+      unaccounted_wall_clock_ms: null,
+    });
+  });
   test('rejects an unsupported format without changing the canonical response', async () => {
     const {app,dir,card}=fixture(); fs.writeFileSync(path.join(dir,'run-scorecard.json'),JSON.stringify(card));
 
@@ -114,6 +132,18 @@ describe('scorecard routes', () => {
     expect(response.status).toBe(200); expect(response.body.pagination.limit).toBe(100);
     expect(response.body.scorecards[0]).not.toHaveProperty('dimensions');
   });
+  test('preserves unavailable start timestamps and excludes them from date-filtered listings', async () => {
+    const {app,dir,card}=fixture();
+    card.started_at = null;
+    fs.writeFileSync(path.join(dir,'run-scorecard.json'),JSON.stringify(card));
+
+    const unfiltered = await get(app, '/scorecards');
+    expect(unfiltered.status).toBe(200);
+    expect(unfiltered.body.scorecards[0].startedAt).toBeNull();
+
+    const filtered = await get(app, '/scorecards?startedAfter=2026-08-01T00:00:00.000Z');
+    expect(filtered.body.scorecards).toEqual([]);
+  });
   test('applies all supported summary filters, including model and date bounds', async () => {
     const {app,dir,card}=fixture(); fs.writeFileSync(path.join(dir,'run-scorecard.json'),JSON.stringify(card));
 
@@ -124,8 +154,8 @@ describe('scorecard routes', () => {
       `&rubricVersion=${encodeURIComponent(card.rubric_version)}`,
       '&model=gpt-5',
       '&repository=https%3A%2F%2Fgithub.com%2Facme%2Frepo',
-      `&startedAfter=${encodeURIComponent(card.started_at)}`,
-      `&startedBefore=${encodeURIComponent(card.started_at)}`,
+      `&startedAfter=${encodeURIComponent(card.started_at!)}`,
+      `&startedBefore=${encodeURIComponent(card.started_at!)}`,
     ].join(''));
     expect(matching.status).toBe(200);
     expect(matching.body.scorecards).toHaveLength(1);

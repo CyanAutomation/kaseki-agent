@@ -56,6 +56,46 @@ describe('run scorecard', () => {
     expect(card.warnings).toContain('Token budget exceeded: 250010 model tokens used versus 200000 target.');
   });
 
+  test('keeps pre-agent validation out of final validation and trusts durable timestamps', () => {
+    ScorecardContext.initialize(normalizeConfig({}));
+    const evidence = collectEvidence({
+      json: {
+        'metadata.json': { instance: 'kaseki-374', exit_code: 8, failed_command: 'goal check', total_duration_seconds: 3620, validation_commands_attempted: 0 },
+        'failure.json': {
+          exit_code: 8,
+          failed_command: 'goal check',
+          validation_exit_code: 0,
+          started_at: '2026-09-23T19:20:54.000Z',
+          ended_at: '2026-09-23T20:21:14.000Z',
+        },
+        'timings-manifest.json': {
+          stage_timings: [{ stage: 'pre-agent validation', elapsed_seconds: 150 }],
+          validation_timings: [],
+        },
+      },
+      text: {},
+      summaries: [],
+    });
+    const card = buildScorecard(evidence, new Date('2026-09-24T00:00:00.000Z'));
+
+    expect(evidence.validation).toBe('unknown');
+    expect(evidence.phaseReached.validation).toBe(false);
+    expect(card.phases.validation.outcome).toBe('not_started');
+    expect(card.phases.validation.duration_ms).toBeNull();
+    expect(card.started_at).toBe('2026-09-23T19:20:54.000Z');
+    expect(card.ended_at).toBe('2026-09-23T20:21:14.000Z');
+    expect(card.timing_totals.pre_agent_validation_ms).toBe(150_000);
+  });
+
+  test('leaves missing run timestamps unavailable instead of substituting score time', () => {
+    ScorecardContext.initialize(normalizeConfig({}));
+    const evidence = collectEvidence({ json: { 'metadata.json': { instance: 'timestampless', exit_code: 8 } }, text: {}, summaries: [] });
+    const card = buildScorecard(evidence, new Date('2026-09-24T00:00:00.000Z'));
+
+    expect(card.started_at).toBeNull();
+    expect(card.ended_at).toBeNull();
+  });
+
   test('does not charge cache reads against the model token budget', () => {
     const config = normalizeConfig({ KASEKI_SCORECARD_TARGET_TOKENS: '200000' });
     ScorecardContext.initialize(config);

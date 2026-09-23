@@ -52,6 +52,7 @@ package_manifest=(
   'scripts/lib/provider-retry.sh|644'
   'scripts/lib/repo-memory.sh|644'
   'scripts/context-handoff.js|755'
+  'scripts/write-run-metadata.mjs|644'
   'scripts/restore-disallowed-changes.sh|755'
   'scripts/evaluation-prompts.sh|755'
   'scripts/auto-lint-cleanup-classification.sh|755'
@@ -96,5 +97,8 @@ NODE
 printf '\n## Unobservable build-context constraints\n'
 grep -Eq '^!tsconfig\.scripts\.json$' .dockerignore ||
   fail '.dockerignore does not allow tsconfig.scripts.json into the Docker build context'
+metadata_writer_installs="$(grep -Fc 'install -m 0644 /app/scripts/write-run-metadata.mjs /usr/local/bin/scripts/write-run-metadata.mjs' Dockerfile)"
+[[ "$metadata_writer_installs" -eq 2 ]] ||
+  fail "Dockerfile must install the metadata writer beside the worker in both runtime stages (found $metadata_writer_installs)"
 
 printf '\n✓ Produced npm package layout and import contracts passed.\n'
