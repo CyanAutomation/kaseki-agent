@@ -1,4 +1,5 @@
 import {
+  createNormalizedGatewayTransport,
   normalizeGatewayRequest,
   normalizeGatewayTransportRequest,
 } from '../src/gateway/normalize-request';
@@ -205,7 +206,7 @@ describe('Gateway Adapter Request Format', () => {
     it.each([
       ['string', (payload: object) => JSON.stringify(payload)],
       ['Buffer', (payload: object) => Buffer.from(JSON.stringify(payload), 'utf8')],
-    ])('should normalize multi-message array from an undici %s body', (_representation, createBody) => {
+    ])('should normalize multi-message array from an undici %s body', async (_representation, createBody) => {
       const messages = [
         { role: 'system', content: 'You are a helpful assistant' },
         { role: 'user', content: 'Hello' },
@@ -221,15 +222,25 @@ describe('Gateway Adapter Request Format', () => {
         headers: { 'content-type': 'application/json' },
         body,
       };
+      let dispatchedRequest: typeof undiciRequest | undefined;
+      const fakeTransport = async (request: typeof undiciRequest) => {
+        dispatchedRequest = request;
+        return { statusCode: 200 };
+      };
+      const dispatch = createNormalizedGatewayTransport(fakeTransport);
 
-      const normalized = normalizeGatewayTransportRequest(undiciRequest);
-      const normalizedPayload = JSON.parse(normalized.body!.toString());
+      await dispatch(undiciRequest);
+      expect(dispatchedRequest).toBeDefined();
+      const dispatchedPayload = JSON.parse(dispatchedRequest!.body.toString());
 
-      expect(normalizedPayload).toEqual({
+      expect(dispatchedPayload).toEqual({
         model: 'auto',
-        messages,
+        messages: [
+          { role: 'system', content: 'You are a helpful assistant' },
+          { role: 'user', content: 'Hello' },
+        ],
       });
-      expect(normalizedPayload).not.toHaveProperty('input');
+      expect(dispatchedPayload).not.toHaveProperty('input');
     });
 
     /**
