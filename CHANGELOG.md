@@ -4,6 +4,16 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.140.14](https://github.com/CyanAutomation/kaseki-agent/compare/v1.140.13...v1.140.14) (2026-09-23)
+
+
+### Bug Fixes
+
+* avoid undefined RequestInit lint global ([13f27bc](https://github.com/CyanAutomation/kaseki-agent/commit/13f27bcc7aae276fb1af6f3c19b182e93b086972))
+* enforce gateway request semantic contract ([6ca64b3](https://github.com/CyanAutomation/kaseki-agent/commit/6ca64b3d8bc15604f254b19b26c55f2eff336ffc))
+* increase default timeout values and normalize goal-setting constraints ([87fe24e](https://github.com/CyanAutomation/kaseki-agent/commit/87fe24e10f05ca9a0f56561b8313b28bb9a05870))
+* normalize invalid gateway input arrays ([ff9a057](https://github.com/CyanAutomation/kaseki-agent/commit/ff9a0577201bd52672a08e8dc96d9090580ccff1))
+
 ## [1.140.13](https://github.com/CyanAutomation/kaseki-agent/compare/v1.140.12...v1.140.13) (2026-09-23)
 
 
