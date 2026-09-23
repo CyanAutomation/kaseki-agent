@@ -106,7 +106,12 @@ export async function handleGatewayTransportResponse(
   if (gatewayResponse.status >= 200 && gatewayResponse.status < 300) return;
 
   const readableResponse = gatewayResponse.clone?.() ?? gatewayResponse;
-  const body = typeof readableResponse.text === 'function' ? await readableResponse.text() : '';
+  let body = '';
+  try {
+    body = typeof readableResponse.text === 'function' ? await readableResponse.text() : '';
+  } catch {
+    body = '[Failed to read response body]';
+  }
   const redactedBody = redactDiagnosticText(body);
 
   diagnosticsSink?.({
