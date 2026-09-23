@@ -9,8 +9,8 @@ import {
  *
  * Test the gateway provider adapter's ability to handle:
  * 1. Simple string input (should work as-is)
- * 2. Multi-message array input (should be converted to messages field)
- * 3. Mixed system + user messages (should be preserved)
+ * 2. Pi conversation input (should be reduced to the latest user text)
+ * 3. Non-conversation arrays (should be preserved)
  */
 
 describe('Gateway Adapter Request Format', () => {
@@ -51,7 +51,7 @@ describe('Gateway Adapter Request Format', () => {
             content: 'Hello, what is 2+2?',
           },
         ],
-        expectedField: 'messages',
+        expectedInput: 'Hello, what is 2+2?',
       },
       {
         name: 'user-only input',
@@ -65,12 +65,12 @@ describe('Gateway Adapter Request Format', () => {
             content: 'And what is 3+3?',
           },
         ],
-        expectedField: 'messages',
+        expectedInput: 'And what is 3+3?',
       },
       {
         name: 'empty-array input',
         input: [],
-        expectedField: 'input',
+        expectedInput: [],
       },
       {
         name: 'malformed-array input',
@@ -78,9 +78,12 @@ describe('Gateway Adapter Request Format', () => {
           { text: 'Not a message object' },
           { content: 'Missing role field' },
         ],
-        expectedField: 'input',
+        expectedInput: [
+          { text: 'Not a message object' },
+          { content: 'Missing role field' },
+        ],
       },
-    ])('should build the complete outbound body for $name', ({ input, expectedField }) => {
+    ])('should build the complete outbound body for $name', ({ input, expectedInput }) => {
       const request = {
         url: 'https://gateway.example.com/v1/responses',
         method: 'POST',
@@ -98,13 +101,11 @@ describe('Gateway Adapter Request Format', () => {
 
       expect(outboundBody).toEqual({
         model: 'auto',
-        [expectedField]: input,
+        input: expectedInput,
         max_output_tokens: 256,
         metadata: { phase: 'validation' },
       });
-      if (expectedField === 'messages') {
-        expect(outboundBody).not.toHaveProperty('input');
-      }
+      expect(outboundBody).not.toHaveProperty('messages');
     });
   });
 
@@ -235,12 +236,9 @@ describe('Gateway Adapter Request Format', () => {
 
       expect(dispatchedPayload).toEqual({
         model: 'auto',
-        messages: [
-          { role: 'system', content: 'You are a helpful assistant' },
-          { role: 'user', content: 'Hello' },
-        ],
+        input: 'Hello',
       });
-      expect(dispatchedPayload).not.toHaveProperty('input');
+      expect(dispatchedPayload).not.toHaveProperty('messages');
     });
 
     /**
@@ -321,11 +319,11 @@ describe('Gateway Adapter Request Format', () => {
       });
       expect(body).toEqual({
         model: 'auto',
-        messages,
+        input: 'Hi',
         max_output_tokens: 256,
         metadata: { phase: 'validation' },
       });
-      expect(body).not.toHaveProperty('input');
+      expect(body).not.toHaveProperty('messages');
     });
 
     /**
