@@ -63,7 +63,7 @@ describe('JEV classifier client', () => {
 
   it('retries a classifier timeout before failing', async () => {
     const fetchImpl = jest.fn()
-      .mockImplementationOnce((_url: string, options: RequestInit) => new Promise((_resolve, reject) => {
+      .mockImplementationOnce((_url: string, options: NonNullable<Parameters<typeof fetch>[1]>) => new Promise((_resolve, reject) => {
         const signal = options.signal as AbortSignal;
         signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
       }))
