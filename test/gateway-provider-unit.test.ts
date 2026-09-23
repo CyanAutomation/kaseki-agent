@@ -8,7 +8,10 @@ import {
   validateGatewayStreamContext,
 } from '../src/.extensions';
 import { createNormalizedGatewayTransport } from '../src/gateway/normalize-request';
-import { convertGatewaySseToPiEvents } from '../src/gateway/convert-response-stream';
+import {
+  convertGatewaySseToPiEvents,
+  createGatewayStreamHandler,
+} from '../src/gateway/convert-response-stream';
 
 const executeGatewayProviderRegistration = (env: NodeJS.ProcessEnv): string => {
   try {
@@ -814,45 +817,47 @@ data: [DONE]
     ]);
   });
 
-  it('handles network errors gracefully', () => {
-    /**
-     * Test: Stream handler catches fetch errors and returns error event.
-     */
-
-    // Mock fetch to reject
-    mockFetch.mockRejectedValueOnce(new Error('Network timeout'));
-
-    // Mock stream
-    const mockStream = {
+  it('handles network errors gracefully', async () => {
+    const diagnosticsSink = jest.fn();
+    const transport = jest.fn().mockRejectedValueOnce(new Error('Network timeout'));
+    const stream = {
       push: jest.fn(),
       end: jest.fn(),
     };
+    const handler = createGatewayStreamHandler(transport, diagnosticsSink);
 
-    // Simulated error handling in handler
-    try {
-      throw new Error('Network timeout');
-    } catch (error) {
-      const errorOutput = {
+    await handler(
+      {
+        url: 'https://llm-gateway.local.xyz/v1/responses',
+        body: JSON.stringify({ model: 'dynamic/kaseki-agent', input: 'hello' }),
+      },
+      stream,
+      {
+        api: 'openai-completions',
+        provider: 'gateway',
+        model: 'dynamic/kaseki-agent',
+        now: () => Date.parse('2026-01-02T03:04:05.678Z'),
+      }
+    );
+
+    expect(stream.push).toHaveBeenCalledTimes(1);
+    expect(stream.push).toHaveBeenCalledWith({
+      type: 'error',
+      reason: 'error',
+      error: expect.objectContaining({
         role: 'assistant',
         content: [],
         stopReason: 'error',
-        errorMessage: error instanceof Error ? error.message : 'Unknown error',
-      };
-
-      mockStream.push({ type: 'error', reason: 'error', error: errorOutput });
-      mockStream.end();
-    }
-
-    // Verify error event
-    expect(mockStream.push).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'error', reason: 'error' })
-    );
-    expect(mockStream.end).toHaveBeenCalled();
-
-    console.log('✓ Error handling:');
-    console.log('  ✓ Caught network error');
-    console.log('  ✓ Generated error event');
-    console.log('  ✓ Ended stream gracefully');
+        errorMessage: 'Network timeout',
+      }),
+    });
+    expect(stream.end).toHaveBeenCalledTimes(1);
+    expect(diagnosticsSink).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'gateway_handler_error',
+      reason: 'error',
+      errorType: 'Error',
+      message: 'Network timeout',
+    }));
   });
 
   it('logs diagnostic events during stream handling', () => {

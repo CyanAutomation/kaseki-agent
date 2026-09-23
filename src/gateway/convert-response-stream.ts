@@ -1,3 +1,9 @@
+import {
+  createNormalizedGatewayTransport,
+  type GatewayDiagnosticsSink,
+  type GatewayTransportRequest,
+} from './normalize-request';
+
 export interface GatewayStreamIdentity {
   api: string;
   provider: string;
@@ -26,6 +32,25 @@ export type GatewayPiEvent =
   | { type: 'text_delta'; contentIndex: 0; delta: string; partial: GatewayAssistantMessage }
   | { type: 'text_end'; contentIndex: 0; content: string }
   | { type: 'done'; reason: 'stop'; message: GatewayAssistantMessage };
+
+export interface GatewayErrorMessage extends GatewayStreamIdentity {
+  role: 'assistant';
+  content: [];
+  stopReason: 'error';
+  errorMessage: string;
+  timestamp: number;
+}
+
+export type GatewayErrorEvent = {
+  type: 'error';
+  reason: 'error';
+  error: GatewayErrorMessage;
+};
+
+export interface GatewayEventSink {
+  push(event: GatewayPiEvent | GatewayErrorEvent): void;
+  end(): void;
+}
 
 export interface GatewayStreamOptions extends GatewayStreamIdentity {
   now?: () => number;
@@ -100,4 +125,51 @@ export function convertGatewaySseToPiEvents(
     { type: 'text_end', contentIndex: 0, content: text },
     { type: 'done', reason: 'stop', message },
   ];
+}
+
+type GatewayStreamResponse = { text(): Promise<string> };
+type GatewayStreamTransport = (
+  request: GatewayTransportRequest
+) => GatewayStreamResponse | Promise<GatewayStreamResponse>;
+
+/**
+ * Run the gateway transport and own the complete Pi event-stream lifecycle.
+ * Transport failures become terminal Pi error events rather than rejected
+ * handler promises, while transport diagnostics are retained by the wrapper.
+ */
+export function createGatewayStreamHandler(
+  transport: GatewayStreamTransport,
+  diagnosticsSink?: GatewayDiagnosticsSink
+): (
+  request: GatewayTransportRequest,
+  stream: GatewayEventSink,
+  options: GatewayStreamOptions
+) => Promise<void> {
+  const send = createNormalizedGatewayTransport(transport, diagnosticsSink);
+
+  return async (request, stream, options) => {
+    try {
+      const response = await send(request);
+      const events = convertGatewaySseToPiEvents(await response.text(), options);
+      for (const event of events) stream.push(event);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown gateway error';
+      stream.push({
+        type: 'error',
+        reason: 'error',
+        error: {
+          role: 'assistant',
+          content: [],
+          api: options.api,
+          provider: options.provider,
+          model: options.model,
+          stopReason: 'error',
+          errorMessage,
+          timestamp: (options.now ?? Date.now)(),
+        },
+      });
+    } finally {
+      stream.end();
+    }
+  };
 }
