@@ -142,8 +142,14 @@ describe('goal-setting types', () => {
         },
       };
       const result = GoalSettingOutputSchema.safeParse(invalid);
-      // Zod doesn't validate end > start by default, but we can still parse
-      expect(result.success).toBe(true); // Parsing succeeds; validation is at runtime
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues).toContainEqual(expect.objectContaining({
+          code: 'custom',
+          message: 'end must be greater than or equal to start',
+          path: ['preservation_constraints', 'protected_line_ranges', 0, 'end'],
+        }));
+      }
     });
 
     it('validates categorized constraints', () => {
