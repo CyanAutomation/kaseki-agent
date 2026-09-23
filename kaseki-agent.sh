@@ -395,8 +395,8 @@ if [ -z "${KASEKI_JEV_WORKFLOW+x}" ]; then
   KASEKI_JEV_WORKFLOW="$([ "${KASEKI_TEST_MODE:-0}" = "1" ] && printf '0' || printf '1')"
 fi
 KASEKI_JEV_CONFIDENCE="${KASEKI_JEV_CONFIDENCE:-0.8}"
-KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS="${KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS:-5000}"
-KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS="${KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS:-5000}"
+KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS="${KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS:-15000}"
+KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS="${KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS:-15000}"
 KASEKI_JEV_WORKFLOW_EVALUATOR="${KASEKI_JEV_WORKFLOW_EVALUATOR:-$KASEKI_SCRIPT_DIR/dist/jev-workflow-evaluator.js}"
 if [ ! -r "$KASEKI_JEV_WORKFLOW_EVALUATOR" ] && [ -r /app/dist/jev-workflow-evaluator.js ]; then
   KASEKI_JEV_WORKFLOW_EVALUATOR="/app/dist/jev-workflow-evaluator.js"
@@ -5605,10 +5605,22 @@ validate_goal_setting_artifact_with_node() {
             if (!valid_categories.includes(cat)) {
               warnings.push(\`unexpected_constraint_category: \${cat}\`);
             }
-            if (!Array.isArray(artifact.constraints[cat])) {
+            const value = artifact.constraints[cat];
+            // Providers occasionally emit a single constraint as a string.
+            // Normalize that unambiguous representation before validation so
+            // downstream phases always receive the documented array shape.
+            if (valid_categories.includes(cat) && typeof value === 'string' && value.trim()) {
+              artifact.constraints[cat] = [value];
+              warnings.push(\`normalized_constraint_category: constraints.\${cat} string converted to array\`);
+            } else if (!Array.isArray(artifact.constraints[cat])) {
               errors.push(\`invalid: constraints.\${cat} must be array\`);
+            } else if (artifact.constraints[cat].some(item => typeof item !== 'string')) {
+              errors.push(\`invalid: constraints.\${cat} entries must be strings\`);
             }
           });
+          if (errors.length === 0 && warnings.some(w => w.startsWith('normalized_constraint_category:'))) {
+            require('node:fs').writeFileSync('$candidate_artifact', JSON.stringify(artifact, null, 2) + '\\n');
+          }
         }
       } else {
         warnings.push('missing_constraints: recommended to categorize constraints');

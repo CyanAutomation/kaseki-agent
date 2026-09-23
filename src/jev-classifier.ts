@@ -10,7 +10,7 @@ export class JevClassificationError extends Error {
   constructor(code: JevClassificationError['code'], message: string, status?: number) { super(message); this.name = 'JevClassificationError'; this.code = code; this.status = status; }
 }
 
-function timeoutMs(value: number | undefined): number { return Number.isInteger(value) && value && value > 0 ? value : 5000; }
+function timeoutMs(value: number | undefined): number { return Number.isInteger(value) && value && value > 0 ? value : 15000; }
 function isProbability(value: unknown): value is number { return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1; }
 function isDistribution(value: unknown): value is Record<string, number> { return Boolean(value) && typeof value === 'object' && !Array.isArray(value) && Object.values(value as Record<string, unknown>).every(isProbability); }
 function validAnswer(question: QuestionDefinition, answer: unknown): answer is ClassificationAnswer {
@@ -29,7 +29,9 @@ function parseResponse(value: unknown, questions: Record<string, QuestionDefinit
   if (Object.keys(answers).length !== ids.length || !ids.every((id) => validAnswer(questions[id], answers[id]))) return null;
   return { model: typeof body.model === 'string' ? body.model : DEFAULT_JEV_MODEL, answers, usage: body.usage && typeof body.usage === 'object' ? body.usage as Record<string, unknown> : {}, responseTime: 0 };
 }
-function retryable(status: number | undefined): boolean { return status === 429 || status === 503 || status === 529; }
+function retryable(error: JevClassificationError): boolean {
+  return error.code === 'timeout' || error.code === 'network' || error.status === 429 || error.status === 503 || error.status === 529;
+}
 function wait(ms: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
 export async function classifyWithJev(state: string | Record<string, unknown>, questions: Record<string, QuestionDefinition>, options: JevClassificationOptions = {}): Promise<JevClassificationResult> {
@@ -49,7 +51,7 @@ export async function classifyWithJev(state: string | Record<string, unknown>, q
       parsed.responseTime = Math.round(performance.now() - started); return parsed;
     } catch (error) {
       lastError = error instanceof JevClassificationError ? error : error && typeof error === 'object' && 'name' in error && error.name === 'AbortError' ? new JevClassificationError('timeout', `classifier timed out after ${timeoutMs(options.timeoutMs)}ms`) : new JevClassificationError('network', error instanceof Error ? error.message : String(error));
-      if (attempt === retries || !retryable(lastError.status)) throw lastError;
+      if (attempt === retries || !retryable(lastError)) throw lastError;
       await wait(100 * 2 ** attempt);
     } finally { clearTimeout(timer); }
   }

@@ -61,6 +61,26 @@ describe('JEV classifier client', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it('retries a classifier timeout before failing', async () => {
+    const fetchImpl = jest.fn()
+      .mockImplementationOnce((_url: string, options: RequestInit) => new Promise((_resolve, reject) => {
+        const signal = options.signal as AbortSignal;
+        signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        model: DEFAULT_JEV_MODEL,
+        answers: { safe: { type: 'noul', noul: 0.95 } },
+        usage: {},
+      }), { status: 200 }));
+
+    await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, {
+      fetchImpl,
+      timeoutMs: 5,
+      maxRetries: 1,
+    })).resolves.toMatchObject({ answers: { safe: { noul: 0.95 } } });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it('rejects an empty answer map rather than silently approving it', async () => {
     const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({ answers: {}, usage: {} }), { status: 200 }));
     await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, { fetchImpl })).rejects.toMatchObject({ code: 'invalid_response' });
