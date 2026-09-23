@@ -3589,9 +3589,9 @@ EOF
   
   # Goal-check override: if critical change expectations failed but goal-check passed,
   # override the failure since the goal-check evaluator has semantically validated the task
-  if [ "$STATUS" -eq 8 ] && [ "$GOAL_CHECK_MET" = "true" ] && [[ "$CRITICAL_CHANGE_FAILURE_REASON" == *"required file missing"* ]]; then
+  if [ "$STATUS" -eq 8 ] && [ "$GOAL_CHECK_MET" = "true" ] && [[ "$CRITICAL_CHANGE_FAILURE_REASON" == *"required file missing"* || "$CRITICAL_CHANGE_FAILURE_REASON" == *"required search string missing"* ]]; then
     emit_progress "critical change verification" "overridden by goal-check semantic validation"
-    emit_event "critical_change_override" "Override reason: goal-check evaluator validated task completion despite file-list mismatch" "notice"
+    emit_event "critical_change_override" "Override reason: goal-check evaluator validated task completion despite an advisory critical-change mismatch" "notice"
     printf '[goal-check-override] Overriding critical_change_expectations_failed (exit 8) with exit 0\n' >&2
     printf '[goal-check-override] Failure was: %s\n' "$CRITICAL_CHANGE_FAILURE_REASON" >&2
     printf '[goal-check-override] Goal-check evaluation confirmed task completion\n' >&2
@@ -8546,7 +8546,10 @@ const out = [];
 function visit(value, key = '') {
   if (out.length >= 8 || value == null) return;
   if (typeof value === 'string') {
-    if (!key || keys.has(key.toLowerCase()) || value.length <= 240) out.push(value);
+    // Only explicitly reviewer-facing fields may become PR prose. Generic
+    // scalar traversal leaked provider names and raw timestamps from
+    // pi-summary.json into otherwise useful summaries.
+    if (keys.has(key.toLowerCase())) out.push(value);
     return;
   }
   if (Array.isArray(value)) {

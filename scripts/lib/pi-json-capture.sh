@@ -9,7 +9,6 @@ run_pi_json_capture() {
   local prompt="$4"
   local stderr_target="${5:-}"
   local pi_exit progress_exit progress_stderr progress_fifo progress_pid splitter_exit pi_tools bounded_prompt phase_tool_output_cap
-  local pi_openrouter_api_key="${openrouter_api_key:-${OPENROUTER_API_KEY:-}}"
   local pi_llm_gateway_api_key="${llm_gateway_api_key:-${LLM_GATEWAY_API_KEY:-}}"
   local pi_llm_gateway_url="${llm_gateway_url:-${LLM_GATEWAY_URL:-}}"
   local -a pipeline_statuses
@@ -91,7 +90,7 @@ Tool-output target: aim for each result <=${phase_tool_output_cap} chars. Read/s
     progress_pid=$!
 
     if [ -n "$stderr_target" ]; then
-      OPENROUTER_API_KEY="$pi_openrouter_api_key" \
+      env -u OPENROUTER_API_KEY -u OPENROUTER_API_KEY_FILE \
         LLM_GATEWAY_API_KEY="$pi_llm_gateway_api_key" \
         LLM_GATEWAY_URL="$pi_llm_gateway_url" \
         timeout --signal=SIGTERM "$timeout_seconds" \
@@ -130,7 +129,7 @@ process.stdin.on("end", () => {
 });
 ' "$raw_events_file" "$progress_fifo"
     else
-      OPENROUTER_API_KEY="$pi_openrouter_api_key" \
+      env -u OPENROUTER_API_KEY -u OPENROUTER_API_KEY_FILE \
         LLM_GATEWAY_API_KEY="$pi_llm_gateway_api_key" \
         LLM_GATEWAY_URL="$pi_llm_gateway_url" \
         timeout --signal=SIGTERM "$timeout_seconds" \
@@ -184,7 +183,7 @@ process.stdin.on("end", () => {
     fi
   else
     if [ -n "$stderr_target" ]; then
-      OPENROUTER_API_KEY="$pi_openrouter_api_key" \
+      env -u OPENROUTER_API_KEY -u OPENROUTER_API_KEY_FILE \
         LLM_GATEWAY_API_KEY="$pi_llm_gateway_api_key" \
         LLM_GATEWAY_URL="$pi_llm_gateway_url" \
         timeout --signal=SIGTERM "$timeout_seconds" \
@@ -192,7 +191,7 @@ process.stdin.on("end", () => {
         > "$raw_events_file" \
         2> >(tee -a "$stderr_target" >&2)
     else
-      OPENROUTER_API_KEY="$pi_openrouter_api_key" \
+      env -u OPENROUTER_API_KEY -u OPENROUTER_API_KEY_FILE \
         LLM_GATEWAY_API_KEY="$pi_llm_gateway_api_key" \
         LLM_GATEWAY_URL="$pi_llm_gateway_url" \
         timeout --signal=SIGTERM "$timeout_seconds" \
