@@ -19,9 +19,20 @@ export interface GatewayRequestDiagnostic {
   validJsonFormat: boolean;
 }
 
-export type GatewayDiagnosticsSink = (diagnostic: GatewayRequestDiagnostic) => void;
+export interface GatewayHttpErrorDiagnostic {
+  event: 'gateway_http_error';
+  status: number;
+  statusText: string;
+  contentType: string | null;
+  errorBodyPreview: string;
+  errorBodyLength: number;
+}
+
+export type GatewayDiagnostic = GatewayRequestDiagnostic | GatewayHttpErrorDiagnostic;
+export type GatewayDiagnosticsSink = (diagnostic: GatewayDiagnostic) => void;
 
 const INPUT_PREVIEW_LIMIT = 256;
+const ERROR_BODY_PREVIEW_LIMIT = 256;
 
 function redactDiagnosticText(value: string): string {
   return value
@@ -74,6 +85,43 @@ function requestDiagnostic(request: GatewayTransportRequest): GatewayRequestDiag
     requestBodySize: Buffer.byteLength(serializedBody),
     validJsonFormat,
   };
+}
+
+type GatewayTransportResponse = {
+  status: number;
+  statusText?: string;
+  headers?: { get(name: string): string | null };
+  clone?: () => { text(): Promise<string> };
+  text?: () => Promise<string>;
+};
+
+/** Record a bounded, redacted diagnostic for unsuccessful gateway responses. */
+export async function handleGatewayTransportResponse(
+  response: unknown,
+  diagnosticsSink?: GatewayDiagnosticsSink
+): Promise<void> {
+  if (!response || typeof response !== 'object' || !('status' in response)) return;
+
+  const gatewayResponse = response as GatewayTransportResponse;
+  if (gatewayResponse.status >= 200 && gatewayResponse.status < 300) return;
+
+  const readableResponse = gatewayResponse.clone?.() ?? gatewayResponse;
+  let body = '';
+  try {
+    body = typeof readableResponse.text === 'function' ? await readableResponse.text() : '';
+  } catch {
+    body = '[Failed to read response body]';
+  }
+  const redactedBody = redactDiagnosticText(body);
+
+  diagnosticsSink?.({
+    event: 'gateway_http_error',
+    status: gatewayResponse.status,
+    statusText: gatewayResponse.statusText ?? '',
+    contentType: gatewayResponse.headers?.get('content-type') ?? null,
+    errorBodyPreview: redactedBody.slice(0, ERROR_BODY_PREVIEW_LIMIT),
+    errorBodyLength: body.length,
+  });
 }
 
 /**
@@ -141,6 +189,14 @@ export function createNormalizedGatewayTransport<TResult>(
   return request => {
     const normalizedRequest = normalizeGatewayTransportRequest(request);
     diagnosticsSink?.(requestDiagnostic(normalizedRequest));
-    return transport(normalizedRequest);
+    const result = transport(normalizedRequest);
+    if (result && typeof (result as unknown as PromiseLike<unknown>).then === 'function') {
+      return Promise.resolve(result).then(async response => {
+        await handleGatewayTransportResponse(response, diagnosticsSink);
+        return response;
+      }) as TResult;
+    }
+    void handleGatewayTransportResponse(result, diagnosticsSink);
+    return result;
   };
 }
