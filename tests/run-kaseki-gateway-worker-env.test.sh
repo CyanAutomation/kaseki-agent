@@ -41,13 +41,16 @@ KASEKI_ROOT="$TMP_DIR/kaseki"
 OUTPUT_LOG="$TMP_DIR/run-output.log"
 DOCKER_ARGS_CAPTURE="$TMP_DIR/docker-args.txt"
 GATEWAY_KEY_FILE="$TMP_DIR/llm_gateway_api_key"
+OPENROUTER_KEY_FILE="$TMP_DIR/openrouter_api_key"
 printf '%s' 'test-gateway-key' > "$GATEWAY_KEY_FILE"
+printf '%s' 'test-jev-key' > "$OPENROUTER_KEY_FILE"
 chmod 0600 "$GATEWAY_KEY_FILE"
+chmod 0600 "$OPENROUTER_KEY_FILE"
 
 PATH="$FAKE_BIN:$PATH" \
 DOCKER_ARGS_CAPTURE="$DOCKER_ARGS_CAPTURE" \
 KASEKI_ROOT="$KASEKI_ROOT" \
-OPENROUTER_API_KEY="test-openrouter-key" \
+OPENROUTER_API_KEY_FILE="$OPENROUTER_KEY_FILE" \
 KASEKI_PROVIDER="gateway" \
 LLM_GATEWAY_URL="https://gateway.example.invalid/v1/responses" \
 LLM_GATEWAY_API_KEY_FILE="$GATEWAY_KEY_FILE" \
@@ -79,12 +82,21 @@ assert_arg_present() {
 assert_arg_present 'KASEKI_PROVIDER=gateway' 'gateway provider'
 assert_arg_present 'LLM_GATEWAY_URL=https://gateway.example.invalid/v1/responses' 'gateway URL worker env'
 assert_arg_present 'LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api_key' 'gateway key worker file env'
+assert_arg_present 'KASEKI_JEV_API_KEY_FILE=/run/secrets/kaseki/jev_api_key' 'JEV key worker file env'
+if grep -Fxq 'OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key' "$DOCKER_ARGS_CAPTURE"; then
+  printf '✗ OpenRouter key must not be routed to the coding worker\n'
+  exit 1
+fi
 if ! grep -Eq '.+/llm_gateway_api_key:/run/secrets/kaseki/llm_gateway_api_key:ro$' "$DOCKER_ARGS_CAPTURE"; then
   printf '✗ missing docker volume mount for gateway key worker secret path\n'
   printf '%s\n' '--- captured docker args ---'
   cat "$DOCKER_ARGS_CAPTURE"
   printf '%s\n' '--- run-kaseki output ---'
   cat "$OUTPUT_LOG"
+  exit 1
+fi
+if ! grep -Eq '.+/openrouter_api_key:/run/secrets/kaseki/jev_api_key:ro$' "$DOCKER_ARGS_CAPTURE"; then
+  printf '✗ missing docker volume mount for JEV key worker secret path\n'
   exit 1
 fi
 

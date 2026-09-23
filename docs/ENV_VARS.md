@@ -14,7 +14,7 @@ Complete reference for all environment variables used by kaseki-agent.
 | `GIT_REF` | `main` | string | Branch, tag, or commit hash |
 | `TASK_PROMPT` | (code fix task) | string | Agent instruction/task description |
 | `KASEKI_MODEL` | `dynamic/kaseki-agent` | string | LLM model identifier (for gateway production deployments, use `dynamic/kaseki-agent`; other providers may use their native model IDs) |
-| `KASEKI_PROVIDER` | `gateway` | string | Primary LLM provider. Options: `gateway` (default, uses LLM Gateway), `openrouter` (uses OpenRouter directly as the primary provider). Gateway failures are retried on the gateway and reported as provider failures; they do not switch to OpenRouter. |
+| `KASEKI_PROVIDER` | `gateway` | string | Primary LLM provider. `gateway` is the only supported coding-inference provider. |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | integer | Agent reasoning timeout in seconds (max 86400) |
 | `KASEKI_GOAL_CHECK` | `KASEKI_SCOUTING` | boolean | Enable the post-validation goal-check Pi evaluator when scouting artifacts are available |
 | `KASEKI_GOAL_CHECK_MAX_RETRIES` | `1` | integer | Number of coding-agent retries after goal-check misses |
@@ -28,17 +28,15 @@ Complete reference for all environment variables used by kaseki-agent.
 
 **Kaseki uses one active LLM provider per run:**
 
-- **Primary Provider** (selected via `KASEKI_PROVIDER`):
-  - `gateway` (default): Uses LLM Gateway for all agent runs
-  - `openrouter`: Uses OpenRouter directly for all agent runs
+- **Primary Provider**: `gateway` is used for all agent runs.
 
-OpenRouter remains supported as an explicit primary provider, but it is not a gateway recovery path. When `KASEKI_PROVIDER=gateway`, retryable gateway failures are retried against the gateway. If those retries are exhausted, kaseki-agent reports a provider failure for the gateway instead of switching to OpenRouter.
+OpenRouter is reserved exclusively for JEV Decisions evaluation. Coding-agent inference never receives the OpenRouter credential. Retryable gateway failures are retried against the gateway and reported as gateway failures when exhausted.
 
 **Startup Behavior:**
 
 - On startup, kaseki-agent logs the active LLM provider (e.g., "Active LLM provider: gateway")
 - Checks are organized by category: active provider, GitHub integration, and platform infrastructure
-- If you have unused provider secrets mounted (e.g., OpenRouter key configured but gateway is primary), a warning may appear during startup
+- The OpenRouter secret is mounted only for JEV evaluation
 
 **Configuration Guide:**
 
@@ -48,25 +46,17 @@ OpenRouter remains supported as an explicit primary provider, but it is not a ga
    export KASEKI_PROVIDER=gateway
    export LLM_GATEWAY_URL=https://gateway.example.com/v1
    export LLM_GATEWAY_API_KEY_FILE=/path/to/key
-   # OpenRouter is not used as a gateway fallback. Configure it only when
-   # running OpenRouter directly as the primary provider.
+   # OPENROUTER_API_KEY_FILE is reserved for JEV evaluation.
    ```
 
-2. **Using OpenRouter:**
-
-   ```bash
-   export KASEKI_PROVIDER=openrouter
-   export OPENROUTER_API_KEY_FILE=/path/to/key
-   # Gateway settings are not used while OpenRouter is the primary provider.
-   ```
-
-For the gateway path, worker preflight checks verify gateway URL/key configuration, worker secret mounting, and Pi provider registration before agent phases start. For OpenRouter, the API key availability is confirmed.
+For the gateway path, worker preflight checks verify gateway URL/key configuration, worker secret mounting, and Pi provider registration before agent phases start. Set `OPENROUTER_API_KEY_FILE` separately to enable JEV evaluation.
 
 ### API Keys & Credentials
 
 | Variable | Default / Alternative | Type | Purpose |
 | ---------- | --- | --- | --- |
-| `OPENROUTER_API_KEY` | `OPENROUTER_API_KEY_FILE` | string | OpenRouter API key used when `KASEKI_PROVIDER=openrouter` selects OpenRouter as the primary provider. Not used as a gateway fallback. |
+| `OPENROUTER_API_KEY` | `OPENROUTER_API_KEY_FILE` | string | OpenRouter API key used exclusively for JEV Decisions evaluation. It is never routed to coding-agent inference. Prefer the file-based setting. |
+| `KASEKI_JEV_API_KEY_FILE` | worker-internal mount of `OPENROUTER_API_KEY_FILE` | path | Internal worker path for the same JEV credential; do not configure a second key. |
 | `LLM_GATEWAY_URL` | — | string | OpenAI-compatible gateway endpoint (CloudFlare AI Workers, Azure OpenAI, Ollama, etc.). Required for the default `KASEKI_PROVIDER=gateway` path. Example: `https://gateway.ai.cloudflare.com/v1/{account_id}/{namespace}/compat` or `https://api.openai.com/v1`. |
 | `LLM_GATEWAY_API_KEY` | `LLM_GATEWAY_API_KEY_FILE` | string | LLM Gateway API key. Required for the default `KASEKI_PROVIDER=gateway` path. |
 | `KASEKI_GATEWAY_RESPONSE_SMOKE` | production: `true`, test/dev: `false` | boolean | Controls whether `/api/gateway-test` performs a real OpenAI Responses API smoke request with the configured gateway model (default `dynamic/kaseki-agent`). Set `0`, `false`, `off`, or `no` to disable in production; set `1`, `true`, `on`, or `yes` to force-enable in test/dev. |
@@ -313,8 +303,8 @@ If dependency restore logs show EXDEV/cross-device hardlink failures:
 | Variable | Default | Type | Purpose |
 | ---------- | --------- | ------ | --------- |
 | `KASEKI_MODEL` | `dynamic/kaseki-agent` | string | Model identifier. Gateway production deployments should use the default `dynamic/kaseki-agent` unless a specific gateway model is intentionally configured. |
-| `KASEKI_PROVIDER_FALLBACK` | deprecated | string | Deprecated. Gateway runs no longer switch providers after gateway retries are exhausted; provider failures are reported against the gateway. Use `KASEKI_PROVIDER=openrouter` to run OpenRouter as the primary provider. |
-| `KASEKI_PROVIDER_FALLBACK_MODEL` | deprecated | string | Deprecated. OpenRouter is not selected as runtime recovery for gateway failures. Configure `KASEKI_MODEL` with `KASEKI_PROVIDER=openrouter` for OpenRouter primary runs. |
+| `KASEKI_PROVIDER_FALLBACK` | deprecated | string | Deprecated. Gateway runs never switch providers after gateway retries are exhausted. |
+| `KASEKI_PROVIDER_FALLBACK_MODEL` | deprecated | string | Deprecated. OpenRouter is not a coding-inference provider. |
 
 **Common Model Values:**
 
