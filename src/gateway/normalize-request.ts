@@ -53,7 +53,7 @@ function requestDiagnostic(request: GatewayTransportRequest): GatewayRequestDiag
   const redactedInput = redactDiagnosticText(inputText);
   const serializedBody = typeof request.body === 'string' || Buffer.isBuffer(request.body)
     ? request.body
-    : JSON.stringify(request.body ?? '');
+    : request.body !== undefined ? JSON.stringify(request.body) : '';
 
   return {
     event: 'request_payload',
