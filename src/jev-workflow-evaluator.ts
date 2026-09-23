@@ -66,7 +66,7 @@ async function runGoalCheck(resultsDir: string, attempt: number): Promise<JsonOb
   }]));
   const result = await classifyWithJev(state, questions, {
     model: process.env.KASEKI_CLASSIFICATION_MODEL || DEFAULT_JEV_MODEL,
-    timeoutMs: Number.parseInt(process.env.KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS || '5000', 10),
+    timeoutMs: Number.parseInt(process.env.KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS || '15000', 10),
   });
   const threshold = confidenceThreshold();
   const missing: string[] = [];
@@ -111,7 +111,7 @@ async function runEvaluation(resultsDir: string): Promise<JsonObject> {
     overall_assessment: { type: 'choice', instructions: 'What is the overall quality of this completed coding run?', criteria: { excellent: 'Strong evidence and low review risk', good: 'Acceptable evidence with limited review risk', mixed: 'Material uncertainty or mixed signals', poor: 'Major evidence or process problems' } },
     reviewer_confidence: { type: 'choice', instructions: 'How much can a reviewer trust this run without exhaustive manual review?', criteria: { high: 'Validation and evidence strongly support the result', medium: 'Some manual review is advisable', low: 'Manual review is required' } },
     task_completion_score: { type: 'score', instructions: 'How completely did the run satisfy its objective?', criteria: ['Largely unrealized', 'Major requirements unmet', 'Partially complete', 'Nearly complete', 'All requirements verified'] },
-  }, { model: process.env.KASEKI_CLASSIFICATION_MODEL || DEFAULT_JEV_MODEL, timeoutMs: Number.parseInt(process.env.KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS || '5000', 10) });
+  }, { model: process.env.KASEKI_CLASSIFICATION_MODEL || DEFAULT_JEV_MODEL, timeoutMs: Number.parseInt(process.env.KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS || '15000', 10) });
   const answer = (name: string): string | number => {
     const value = result.answers[name];
     return value?.type === 'choice' ? value.choice : value?.type === 'score' ? value.score : value?.type === 'noul' ? value.noul : 'unknown';
