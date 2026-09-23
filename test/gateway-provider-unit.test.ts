@@ -7,6 +7,7 @@ import {
   GATEWAY_CONTEXT_VALID_DIAGNOSTIC,
   validateGatewayStreamContext,
 } from '../src/.extensions';
+import { createNormalizedGatewayTransport } from '../src/gateway/normalize-request';
 
 const executeGatewayProviderRegistration = (env: NodeJS.ProcessEnv): string => {
   try {
@@ -455,32 +456,46 @@ describe('Gateway Custom Stream Handler', () => {
       expect(validateGatewayStreamContext(context)).toEqual(expected);
     });
 
-    it('logs request payload before sending to gateway', () => {
-      /**
-       * Test: Request payload is logged with structure and preview
-       * Helps debug format issues and protocol mismatches
-       */
+    it('logs request payload before sending to gateway', async () => {
+      const callOrder: string[] = [];
+      const diagnosticsSink = jest.fn(() => callOrder.push('diagnostic'));
+      const transport = jest.fn(() => {
+        callOrder.push('transport');
+        return Promise.resolve({ statusCode: 200 });
+      });
+      const send = createNormalizedGatewayTransport(transport, diagnosticsSink);
+      const secret = 'gateway-secret-value';
+      const oversizedTail = 'oversized-private-tail';
+      const input = `Summarize this request. api_key=${secret} ${'x'.repeat(400)}${oversizedTail}`;
+      const body = JSON.stringify({
+        model: 'dynamic/kaseki-agent',
+        input,
+        store: false,
+      });
 
-      const expectedPayloadLogging = {
+      await send({
+        url: 'https://llm-gateway.local.xyz/v1/responses',
+        method: 'POST',
+        headers: { authorization: `Bearer ${secret}` },
+        body,
+      });
+
+      expect(diagnosticsSink).toHaveBeenCalledWith(expect.objectContaining({
         event: 'request_payload',
-        fields: [
-          'model',
-          'inputLength',
-          'inputPreview',
-          'store',
-          'requestBodySize',
-          'validJsonFormat',
-        ],
-      };
-
-      console.log('✓ Request payload logged with:');
-      for (const field of expectedPayloadLogging.fields) {
-        console.log(`  • ${field}`);
-      }
-
-      expect(expectedPayloadLogging.fields).toContain('inputPreview');
-      expect(expectedPayloadLogging.fields).toContain('model');
-      expect(expectedPayloadLogging.fields).toContain('store');
+        model: 'dynamic/kaseki-agent',
+        inputLength: input.length,
+        inputPreview: expect.stringContaining('api_key=[REDACTED]'),
+        inputPreviewTruncated: true,
+        store: false,
+        requestBodySize: Buffer.byteLength(body),
+        validJsonFormat: true,
+      }));
+      const diagnostic = diagnosticsSink.mock.calls[0][0];
+      expect(diagnostic.inputPreview).not.toContain(secret);
+      expect(diagnostic.inputPreview).not.toContain(oversizedTail);
+      expect(diagnostic.inputPreview.length).toBeLessThanOrEqual(256);
+      expect(callOrder).toEqual(['diagnostic', 'transport']);
+      expect(transport).toHaveBeenCalledTimes(1);
     });
 
     it('logs gateway HTTP errors with response details', () => {
