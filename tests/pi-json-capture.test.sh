@@ -45,6 +45,7 @@ BASH
     fail "Pi phase tools" "goal-check received a mutation or shell tool"
   fi
   grep -q 'Tool-output target:' "$tmp_dir/results/pi-args.log" || fail "Pi output budget" "bounded-output instruction was not supplied"
+  grep -q 'Every 6 tool calls' "$tmp_dir/results/pi-args.log" || fail "Pi context checkpoint" "periodic compaction instruction was not supplied"
   grep -Fxq 'unset' "$tmp_dir/results/pi-openrouter-key.log" || fail "Pi credential isolation" "OpenRouter JEV credential reached Pi"
   : > "$tmp_dir/results/pi-args.log"
   PATH="$fake_bin:$PATH" KASEKI_RESULTS_DIR="$tmp_dir/results" KASEKI_PROVIDER=gateway KASEKI_INFERENCE_PHASE=run-evaluation bash -c ". scripts/lib/pi-json-capture.sh; emit_error_event() { :; }; run_pi_json_capture '$tmp_dir/raw.jsonl' 60 auto 'test prompt'"
