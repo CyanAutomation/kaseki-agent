@@ -28,11 +28,37 @@ export interface GatewayHttpErrorDiagnostic {
   errorBodyLength: number;
 }
 
-export type GatewayDiagnostic = GatewayRequestDiagnostic | GatewayHttpErrorDiagnostic;
+export interface GatewayHandlerErrorDiagnostic {
+  event: 'gateway_handler_error';
+  reason: 'error';
+  errorType: string;
+  message: string;
+  timestamp: string;
+  stackPreview: string;
+}
+
+export type GatewayDiagnostic =
+  | GatewayRequestDiagnostic
+  | GatewayHttpErrorDiagnostic
+  | GatewayHandlerErrorDiagnostic;
 export type GatewayDiagnosticsSink = (diagnostic: GatewayDiagnostic) => void;
 
 const INPUT_PREVIEW_LIMIT = 256;
 const ERROR_BODY_PREVIEW_LIMIT = 256;
+const ERROR_STACK_PREVIEW_LIMIT = 1024;
+
+function handlerErrorDiagnostic(error: unknown): GatewayHandlerErrorDiagnostic {
+  const normalizedError = error instanceof Error ? error : new Error(String(error));
+
+  return {
+    event: 'gateway_handler_error',
+    reason: 'error',
+    errorType: normalizedError.name || 'Error',
+    message: normalizedError.message,
+    timestamp: new Date().toISOString(),
+    stackPreview: (normalizedError.stack ?? '').slice(0, ERROR_STACK_PREVIEW_LIMIT),
+  };
+}
 
 function redactDiagnosticText(value: string): string {
   return value
@@ -189,12 +215,23 @@ export function createNormalizedGatewayTransport<TResult>(
   return request => {
     const normalizedRequest = normalizeGatewayTransportRequest(request);
     diagnosticsSink?.(requestDiagnostic(normalizedRequest));
-    const result = transport(normalizedRequest);
+    let result: TResult;
+    try {
+      result = transport(normalizedRequest);
+    } catch (error) {
+      diagnosticsSink?.(handlerErrorDiagnostic(error));
+      throw error;
+    }
     if (result && typeof (result as unknown as PromiseLike<unknown>).then === 'function') {
-      return Promise.resolve(result).then(async response => {
-        await handleGatewayTransportResponse(response, diagnosticsSink);
-        return response;
-      }) as TResult;
+      return Promise.resolve(result)
+        .then(async response => {
+          await handleGatewayTransportResponse(response, diagnosticsSink);
+          return response;
+        })
+        .catch(error => {
+          diagnosticsSink?.(handlerErrorDiagnostic(error));
+          throw error;
+        }) as TResult;
     }
     void handleGatewayTransportResponse(result, diagnosticsSink);
     return result;
