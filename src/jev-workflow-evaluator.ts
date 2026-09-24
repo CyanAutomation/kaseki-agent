@@ -134,6 +134,7 @@ async function runEvaluation(resultsDir: string): Promise<JsonObject> {
     efficiency_findings: [],
     kaseki_improvement_opportunities: [],
     pr_summary: 'JEV evaluated task completion and reviewer confidence from the persisted run artifacts.',
+    pr_changes: [],
     warnings: [],
     classifier: { provider: 'openrouter-decisions', model: result.model, response_time_ms: result.responseTime, usage: result.usage },
   };
