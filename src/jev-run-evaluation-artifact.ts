@@ -43,6 +43,7 @@ export interface RunEvaluationArtifact extends JsonObject {
   efficiency_findings: string[];
   kaseki_improvement_opportunities: Array<{ category: string; priority: string; suggestion: string }>;
   pr_summary: string;
+  pr_changes: string[];
   warnings: string[];
   classifier: RunEvaluationClassifierMetadata;
 }
@@ -253,6 +254,7 @@ export function buildRunEvaluationArtifact(
     efficiency_findings: efficiencyFindings,
     kaseki_improvement_opportunities: opportunities,
     pr_summary: prSummary,
+    pr_changes: [],
     warnings,
     classifier,
   };

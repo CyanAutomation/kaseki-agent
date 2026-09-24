@@ -80,6 +80,13 @@ describe('rendered prompt contracts', () => {
     expect(prompt).toMatch(/never spend your final\s+turn on another tool call/);
   });
 
+  it('instructs run-evaluation to produce reviewer-facing change summaries', () => {
+    const prompt = renderPrompt('run-evaluation');
+    expect(prompt).toContain('describe the implemented behavior and concrete changes');
+    expect(prompt).toContain('not task completion, evaluator confidence, file counts, or validation telemetry');
+    expect(prompt).toContain('use an empty array when no specific change can be established');
+  });
+
   it.each([
     {
       name: 'goal-check' as const,
