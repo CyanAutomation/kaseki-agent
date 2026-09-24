@@ -44,6 +44,46 @@ describe('JEV run evaluation artifact', () => {
     expect(result.pr_changes).toEqual([]);
     expect(result.human_review_focus).toEqual([]);
     expect(result.kaseki_improvement_opportunities).toEqual([]);
+    expect(result.confidence_calibration).toMatchObject({ status: 'unassessed', calibrated: false });
+  });
+
+  test('preserves typed JEV answer confidence and probabilities in the artifact', () => {
+    const result = buildRunEvaluationArtifact(completeFacts, {
+      overallAssessment: 'good', reviewerConfidence: 'high', taskCompletionScore: 5,
+    }, {
+      ...classifier,
+      answers: {
+        reviewer_confidence: { type: 'choice', choice: 'high', probabilities: { high: 0.9, medium: 0.1 }, confidence: 0.9 },
+      },
+    });
+
+    expect(result.classifier.answers?.reviewer_confidence).toMatchObject({ confidence: 0.9, probabilities: { high: 0.9 } });
+    expect(result.confidence_calibration.reason).toMatch(/labeled outcome data/i);
+  });
+
+  test('records failure triage as advisory diagnostics', () => {
+    const result = buildRunEvaluationArtifact({
+      ...completeFacts,
+      metadata: { exit_code: 1, validation_commands_attempted: 1, validation_exit_code: 1, task_mode: 'patch' },
+      validation: 'npm test: failed',
+    }, {
+      overallAssessment: 'poor', reviewerConfidence: 'low', taskCompletionScore: 2,
+      failureDiagnosis: {
+        cause: 'timeout_or_flaky',
+        recommendedAction: 'retry_validation_once',
+        confidence: 0.91,
+        causeProbabilities: { timeout_or_flaky: 0.91, test_failure: 0.09 },
+        actionProbabilities: { retry_validation_once: 0.93, inspect_diagnostics: 0.07 },
+      },
+    }, classifier);
+
+    expect(result.failure_diagnosis).toEqual({
+      cause: 'timeout_or_flaky',
+      recommended_action: 'retry_validation_once',
+      confidence: 0.91,
+      cause_probabilities: { timeout_or_flaky: 0.91, test_failure: 0.09 },
+      action_probabilities: { retry_validation_once: 0.93, inspect_diagnostics: 0.07 },
+    });
   });
 
   test('surfaces fallbacks, missing validation, failed lifecycle, and contradictory evidence', () => {
