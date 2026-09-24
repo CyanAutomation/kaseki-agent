@@ -3,8 +3,10 @@ import * as path from 'node:path';
 import { classifyWithJev, DEFAULT_JEV_MODEL } from './jev-classifier';
 import { collectValidationEvidence } from './validation-evidence';
 import { buildRunEvaluationArtifact, buildRunEvaluationEvidenceSources } from './jev-run-evaluation-artifact';
-import { buildGoalCriterionAssessments, buildRunEvaluationQuestions, failureDiagnosisFromAnswers, mapJevScoreToCompletion } from './jev-workflow-helpers';
+import { buildGoalCheckQuestions, buildGoalCriterionAssessments, buildRunEvaluationQuestions, failureDiagnosisFromAnswers, mapJevScoreToCompletion } from './jev-workflow-helpers';
 import { redactJevEvidence } from './jev-evidence-redaction';
+import { normalizeSuccessCriteria, validateGoalContract } from '../scripts/lib/goal-contract.cjs';
+import { aggregateStageDurations } from './stage-timings';
 
 type JsonObject = Record<string, unknown>;
 
@@ -36,11 +38,12 @@ function evidenceState(resultsDir: string): JsonObject {
   const presentSources = [
     'metadata.json', 'failure.json', 'goal-setting.json', 'scouting.json', 'goal-check.json',
     'changed-files.txt', 'git.diff', 'validation.log', 'validation-timings.tsv',
-    'pre-validation.log', 'pre-validation-timings.tsv', 'stage-timings.tsv',
+    'pre-validation.log', 'pre-validation-timings.tsv', 'validation-results.json', 'timings-manifest.json', 'stage-timings.tsv',
   ].filter((name) => {
     try { return fs.statSync(path.join(resultsDir, name)).isFile(); } catch { return false; }
   });
   const cacheMetrics = readJsonValue(path.join(resultsDir, 'cache-metrics.json'));
+  const timingsManifest = readJson(path.join(resultsDir, 'timings-manifest.json'));
   return {
     goal_setting: bounded(redactJevEvidence(goal), 8000),
     scouting: bounded(redactJevEvidence(scouting), 8000),
@@ -50,32 +53,12 @@ function evidenceState(resultsDir: string): JsonObject {
     diff: redactJevEvidence(readText(path.join(resultsDir, 'git.diff')).slice(0, 24000)),
     validation: redactJevEvidence(validation.text),
     validation_sources: validation.sources,
+    timings_manifest: timingsManifest,
     present_sources: presentSources,
-    stage_durations: stageDurations(resultsDir),
+    stage_durations: aggregateStageDurations(readText(path.join(resultsDir, 'stage-timings.tsv'))),
     cache_metrics: Array.isArray(cacheMetrics) ? cacheMetrics : [],
     task_mode: process.env.KASEKI_TASK_MODE || 'patch',
   };
-}
-
-function stageDurations(resultsDir: string): Record<string, number> {
-  const result: Record<string, number> = {};
-  const aliases: Array<[RegExp, string]> = [
-    [/goal.setting/i, 'goal-setting'], [/scouting/i, 'scouting'], [/pi coding agent|coding/i, 'coding'],
-    [/^validation$/i, 'validation'], [/goal check/i, 'goal-check'], [/run evaluation/i, 'run-evaluation'],
-  ];
-  for (const row of readText(path.join(resultsDir, 'stage-timings.tsv')).split(/\r?\n/)) {
-    const [stage, , elapsed] = row.split('\t');
-    const seconds = Number(elapsed);
-    if (!stage || !Number.isFinite(seconds) || seconds < 0) continue;
-    const alias = aliases.find(([pattern]) => pattern.test(stage.trim()));
-    if (alias) result[alias[1]] = seconds;
-  }
-  return result;
-}
-
-function criteriaFrom(goal: JsonObject): string[] {
-  const criteria = Array.isArray(goal.success_criteria) ? goal.success_criteria : [];
-  return criteria.map((criterion) => typeof criterion === 'string' ? criterion : JSON.stringify(criterion));
 }
 
 function confidenceThreshold(): number {
@@ -87,35 +70,64 @@ function questionId(index: number): string { return `criterion_${index + 1}`; }
 
 async function runGoalCheck(resultsDir: string, attempt: number): Promise<JsonObject> {
   const state = evidenceState(resultsDir);
-  const criteria = criteriaFrom(state.goal_setting as JsonObject);
-  const effectiveCriteria = criteria.length > 0 ? criteria : ['Does the available evidence show that the requested task was completed?'];
-  const questions = Object.fromEntries(effectiveCriteria.map((criterion, index) => [questionId(index), {
-    type: 'noul' as const,
-    instructions: `Is this success criterion satisfied by the supplied repository and validation evidence? Criterion: ${criterion}`,
-  }]));
+  const goal = state.goal_setting as JsonObject;
+  const contract = Object.keys(goal).length > 0
+    ? validateGoalContract(goal)
+    : { valid: true, outcomePolicy: undefined, criteria: [], errors: [], warnings: ['goal-setting artifact is unavailable'] };
+  const criteria = normalizeSuccessCriteria(goal.success_criteria);
+  const effectiveCriteria = criteria.length > 0
+    ? criteria
+    : [{ id: questionId(0), criterion: 'Does the available evidence show that the requested task was completed?' }];
+  const validationSources = Array.isArray(state.validation_sources) ? state.validation_sources as string[] : [];
+  const presentSources = Array.isArray(state.present_sources) ? state.present_sources as string[] : [];
+  const evidence = buildRunEvaluationEvidenceSources({ presentSources, validationSources });
+  if (!contract.valid) {
+    const contradictions = contract.errors.map((description) => ({ sources: ['goal-setting.json'], description }));
+    return {
+      met: false,
+      retryable: false,
+      confidence: 'low',
+      summary: 'Goal-setting produced an invalid or contradictory goal contract; coding retry was suppressed.',
+      evidence,
+      missing: contract.errors,
+      criteria_assessment: [],
+      retry_prompt: '',
+      validation_notes: ['Goal contract validation failed before semantic classification.'],
+      evidence_sources_inspected: evidence,
+      contradictions,
+      contract_validation: { valid: false, outcome_policy: contract.outcomePolicy ?? null, errors: contract.errors },
+      confidence_calibration: { outcome: 'unmet', justification: 'The goal contract must be corrected before its criteria can be assessed.' },
+      classifier: { provider: 'deterministic-contract-check', model: 'local', response_time_ms: 0, usage: {}, attempt },
+    };
+  }
+  const questions = buildGoalCheckQuestions(effectiveCriteria);
   const result = await classifyWithJev(state, questions, {
     model: process.env.KASEKI_CLASSIFICATION_MODEL || DEFAULT_JEV_MODEL,
     timeoutMs: Number.parseInt(process.env.KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS || '15000', 10),
   });
   const threshold = confidenceThreshold();
   const missing: string[] = [];
-  const validationSources = Array.isArray(state.validation_sources) ? state.validation_sources as string[] : [];
-  const presentSources = Array.isArray(state.present_sources) ? state.present_sources as string[] : [];
-  const evidence = buildRunEvaluationEvidenceSources({ presentSources, validationSources });
   const assessments = buildGoalCriterionAssessments(effectiveCriteria, result.answers, threshold);
   let allMet = assessments.every((assessment) => assessment.met);
   for (const assessment of assessments) {
-    if (!assessment.met) {
-      missing.push(`${assessment.criterion} (noul=${assessment.probability === null ? 'invalid' : assessment.probability.toFixed(2)}, threshold=${threshold.toFixed(2)})`);
+    if (assessment.status === 'unmet' || assessment.status === 'unknown') {
+      const reason = assessment.status === 'unknown'
+        ? assessment.applicability === 'unknown' ? `applicability of "${assessment.applies_when}" is unknown` : 'evidence was insufficient'
+        : `noul=${assessment.probability?.toFixed(2)}, threshold=${threshold.toFixed(2)}`;
+      missing.push(`${assessment.criterion} (${reason})`);
     }
   }
-  if (process.env.KASEKI_TASK_MODE === 'patch' && !String(state.diff).trim()) {
+  const outcomePolicy = contract.outcomePolicy ?? (process.env.KASEKI_TASK_MODE === 'inspect' ? 'change_or_noop' : 'change_required');
+  const contradictions: Array<{ sources: string[]; description: string }> = [];
+  if (process.env.KASEKI_TASK_MODE !== 'inspect' && outcomePolicy === 'change_required' && !String(state.diff).trim()) {
     allMet = false;
     missing.push('patch-mode task produced no git diff');
+    contradictions.push({ sources: ['goal-setting.json', 'git.diff'], description: 'The goal contract requires a code change but the durable diff is empty.' });
   }
-  const summary = allMet ? 'JEV classified all success criteria as satisfied with sufficient confidence.' : 'JEV found one or more unmet or low-confidence success criteria.';
+  const summary = allMet ? 'JEV classified all applicable success criteria as satisfied with sufficient confidence.' : 'JEV found one or more unmet, unknown, or low-confidence success criteria.';
   return {
     met: allMet,
+    retryable: true,
     confidence: missing.length === 0 ? 'high' : 'medium',
     summary,
     evidence,
@@ -124,7 +136,8 @@ async function runGoalCheck(resultsDir: string, attempt: number): Promise<JsonOb
     retry_prompt: allMet ? '' : `Address the unmet criteria and produce evidence for: ${missing.join('; ')}`,
     validation_notes: [String(state.validation).trim() ? `validation evidence available from: ${validationSources.join(', ')}` : 'validation evidence was unavailable'],
     evidence_sources_inspected: evidence,
-    contradictions: [],
+    contradictions,
+    contract_validation: { valid: true, outcome_policy: outcomePolicy, warnings: contract.warnings },
     confidence_calibration: { outcome: allMet ? 'met' : 'unmet', justification: `JEV confidence threshold=${threshold}; ${missing.length} criteria require attention.` },
     classifier: { provider: 'openrouter-decisions', model: result.model, response_time_ms: result.responseTime, usage: result.usage, attempt },
   };
@@ -162,6 +175,7 @@ async function runEvaluation(resultsDir: string): Promise<JsonObject> {
     taskMode: String(state.task_mode ?? 'patch'),
     presentSources: Array.isArray(state.present_sources) ? state.present_sources as string[] : [],
     stageDurations: (state.stage_durations && typeof state.stage_durations === 'object' ? state.stage_durations : {}) as Record<string, number>,
+    timingManifest: (state.timings_manifest && typeof state.timings_manifest === 'object' ? state.timings_manifest : {}) as JsonObject,
     cacheMetrics: Array.isArray(state.cache_metrics) ? state.cache_metrics : [],
   };
   const assessment = answer('overall_assessment');

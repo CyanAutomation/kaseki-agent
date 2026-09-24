@@ -568,6 +568,7 @@ describe('Goal-Setting Agent Improvements', () => {
           `#!/usr/bin/env bash
 set -euo pipefail
 export KASEKI_RESULTS_DIR=${JSON.stringify(resultsDir)}
+export KASEKI_SCRIPT_DIR=${JSON.stringify(repoRoot)}
 ${validationFunctions}
 validate_goal_setting_artifact "$1" "$2" "$3"
 `,
@@ -583,6 +584,7 @@ validate_goal_setting_artifact "$1" "$2" "$3"
           original_prompt: 'Fix bug',
           upgraded_goal:
             'Fix parseRole() null handling by returning the documented guest role for null input, with focused regression tests and no generated-file edits.',
+          outcome_policy: 'change_required',
           key_requirements: [
             'Update parseRole() behavior only for null or missing role input',
             'Add a regression test that exercises the null-input path',
@@ -730,6 +732,7 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         mkdirSync(join(scriptsDir, 'lib'), { recursive: true });
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'json.sh'), join(scriptsDir, 'lib', 'json.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'json-events.sh'), join(scriptsDir, 'lib', 'json-events.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'lib', 'goal-contract.cjs'), join(scriptsDir, 'lib', 'goal-contract.cjs'));
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'repo-memory.sh'), join(scriptsDir, 'lib', 'repo-memory.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'provider-retry.sh'), join(scriptsDir, 'lib', 'provider-retry.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'model-resolution.sh'), join(scriptsDir, 'lib', 'model-resolution.sh'));

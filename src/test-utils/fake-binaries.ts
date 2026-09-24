@@ -46,7 +46,7 @@ ${
     exit 124
   fi
   cat > "${resultsDir}/goal-setting-candidate.json" <<'JSON'
-{"original_prompt":"retry original prompt","upgraded_goal":"retry-upgraded prompt from attempt two","reasoning":"second attempt succeeded after a transient failure","key_requirements":["persist retry metadata"],"success_criteria":[{"criterion":"metadata records the successful retry attempt","smart_score":"high","reasoning":"numeric metadata can be asserted"}],"anti_patterns":{"do_not_modify":[],"do_not_break":["retry metadata"],"must_preserve":["original prompt fallback"]},"constraints":{"operational":["retry once after transient goal-setting failure"],"architectural":[],"technical":[],"business":[]},"quality_metrics":{"clarity":"high","measurability":"high","specificity":"high","scope_clarity":"high","constraint_strength":"high"},"confidence":"high"}
+{"original_prompt":"retry original prompt","upgraded_goal":"retry-upgraded prompt from attempt two","outcome_policy":"change_required","reasoning":"second attempt succeeded after a transient failure","key_requirements":["persist retry metadata"],"success_criteria":[{"criterion":"metadata records the successful retry attempt","smart_score":"high","reasoning":"numeric metadata can be asserted"}],"anti_patterns":{"do_not_modify":[],"do_not_break":["retry metadata"],"must_preserve":["original prompt fallback"]},"constraints":{"operational":["retry once after transient goal-setting failure"],"architectural":[],"technical":[],"business":[]},"quality_metrics":{"clarity":"high","measurability":"high","specificity":"high","scope_clarity":"high","constraint_strength":"high"},"confidence":"high"}
 JSON
 elif [ "$stage" = "scouting" ]; then
   printf 'scouting\\n' >> "${piCalls}"
@@ -197,7 +197,7 @@ NODE
 
 if [ "$stage" = "goal-setting" ]; then
   append_event goal-setting
-  printf '%s\\n' '{"original_prompt":"inspect then code","upgraded_goal":"Upgraded: inspect then code","reasoning":"test","key_requirements":[],"success_criteria":["goal-check should run"]}' > "$KASEKI_RESULTS_DIR/goal-setting-candidate.json"
+  printf '%s\\n' '{"original_prompt":"inspect then code","upgraded_goal":"Upgraded: inspect then code","outcome_policy":"change_required","reasoning":"test","key_requirements":[],"success_criteria":["goal-check should run"]}' > "$KASEKI_RESULTS_DIR/goal-setting-candidate.json"
 elif [ "$stage" = "scouting" ]; then
   append_event scouting
   printf '%s\\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[]}' > "$KASEKI_RESULTS_DIR/scouting-candidate.json"
