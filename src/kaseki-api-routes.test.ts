@@ -46,6 +46,7 @@ import type { StartupHealthReport } from './kaseki-api-types';
 import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
 import { createMockScheduler, createTestConfig, type TestScheduler } from './test-utils';
+import type { TaskAdmissionEvaluator } from './task-admission';
 import * as gatewaySmoke from './kaseki-api-gateway-smoke';
 import { applyHttpHardening } from './kaseki-api-service';
 
@@ -103,7 +104,8 @@ beforeEach(() => {
  */
 async function createTestApp(
   scheduler: TestScheduler,
-  config: ReturnType<typeof createTestConfig>
+  config: ReturnType<typeof createTestConfig>,
+  taskAdmissionEvaluator?: TaskAdmissionEvaluator,
 ): Promise<{
   app: Express;
   server: Server;
@@ -117,7 +119,7 @@ async function createTestApp(
   const app = express();
   applyHttpHardening(app);
   app.use(express.json());
-  app.use('/api', createApiRouter(scheduler as any, config, idempotencyStore, preFlightValidator));
+  app.use('/api', createApiRouter(scheduler as any, config, idempotencyStore, preFlightValidator, undefined, taskAdmissionEvaluator));
 
   const { server, port } = await listenTestApp(app);
 
@@ -745,6 +747,47 @@ describe('kaseki-api-routes request aliases', () => {
           publishMode: 'none'
         })
       );
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('forwards JEV admission hints as advisory job metadata without requesting review', async () => {
+    const scheduler = createMockScheduler();
+    scheduler.submitJob.mockImplementation(async request => ({
+      id: 'kaseki-jev-routing',
+      status: 'queued',
+      createdAt: new Date('2026-05-15T00:00:00.000Z'),
+      resultDir: path.join(resultsDir, 'kaseki-jev-routing'),
+      request,
+    }));
+    const hints = { taskType: 'documentation' as const, validationFocus: 'docs_checks' as const };
+    const taskAdmissionEvaluator: TaskAdmissionEvaluator = async () => ({
+      allowed: true,
+      status: 'allowed',
+      reason: 'safe',
+      responseTime: 1,
+      routingHints: hints,
+    });
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config, taskAdmissionEvaluator);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repoUrl: 'https://github.com/org/repo',
+          taskPrompt: 'Update the documentation for setup.',
+          validationCommands: ['npm run docs:check'],
+          publishMode: 'none',
+        }),
+      });
+
+      expect(response.status).toBe(202);
+      expect(scheduler.submitJob).toHaveBeenCalledWith(expect.objectContaining({
+        validationCommands: ['npm run docs:check'],
+      }), hints);
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }

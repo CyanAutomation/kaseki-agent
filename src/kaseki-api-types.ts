@@ -702,6 +702,8 @@ export interface Job {
   id: string; // kaseki-N instance ID
   status: 'queued' | 'running' | 'completed' | 'failed';
   request: RunRequest;
+  /** JEV-generated routing hints; advisory only and excluded from the public run request. */
+  advisoryRoutingHints?: import('./task-admission').TaskAdmissionRoutingHints;
   createdAt: Date;
   startedAt?: Date;
   completedAt?: Date;

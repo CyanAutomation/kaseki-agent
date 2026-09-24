@@ -7,6 +7,10 @@ export const TASK_ADMISSION_EXIT_CODE = 9;
 
 export type TaskAdmissionAnswer = ClassificationAnswer;
 
+export type TaskTypeHint = 'feature' | 'bug_fix' | 'refactor' | 'documentation' | 'investigation' | 'test_only' | 'infrastructure';
+export type ValidationFocusHint = 'unit_tests' | 'integration_tests' | 'type_and_lint' | 'docs_checks' | 'repo_defined_checks';
+export interface TaskAdmissionRoutingHints { taskType: TaskTypeHint; validationFocus: ValidationFocusHint; }
+
 export interface TaskAdmissionResult {
   allowed: boolean;
   status: 'allowed' | 'rejected' | 'degraded';
@@ -17,6 +21,8 @@ export interface TaskAdmissionResult {
   outputTokens?: number;
   degraded?: boolean;
   answers?: Record<string, TaskAdmissionAnswer>;
+  /** Low-risk advisory only; user commands and deterministic workflow policy remain authoritative. */
+  routingHints?: TaskAdmissionRoutingHints;
   warnings?: string[];
 }
 
@@ -94,8 +100,32 @@ export function buildTaskAdmissionRequest(request: Record<string, unknown>): Rec
         instructions: 'How risky is this task to run automatically?',
         criteria: {
           low: 'Low risk and reversible.',
-          review: 'Potentially consequential and needs normal human review.',
+          review: 'Potentially consequential; record increased PR-stage review risk.',
           high: 'Destructive, secret-related, or security-sensitive.',
+        },
+      },
+      task_type: {
+        type: 'choice',
+        instructions: 'What kind of repository task is requested? Classify the user objective, not incidental wording.',
+        criteria: {
+          feature: 'Add or extend user-facing behavior or capability.',
+          bug_fix: 'Correct behavior that currently fails or is incorrect.',
+          refactor: 'Restructure implementation while preserving behavior.',
+          documentation: 'Change documentation, examples, or explanatory text.',
+          investigation: 'Inspect or diagnose without necessarily changing code.',
+          test_only: 'Add or update automated tests without changing production behavior.',
+          infrastructure: 'Change build, deployment, CI, dependency, or runtime configuration.',
+        },
+      },
+      validation_focus: {
+        type: 'choice',
+        instructions: 'Which validation category is most relevant to this task? This is advisory and must not replace explicit commands.',
+        criteria: {
+          unit_tests: 'Focused unit tests are the clearest signal.',
+          integration_tests: 'Integration or end-to-end checks are the clearest signal.',
+          type_and_lint: 'Type checking or linting is the clearest signal.',
+          docs_checks: 'Documentation links, generation, formatting, or examples checks are the clearest signal.',
+          repo_defined_checks: 'Use the repository’s declared general check or validation target.',
         },
       },
     },
@@ -140,6 +170,13 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
     const unsafeQuestion = ['contains_credentials', 'changes_permissions', 'crosses_security_boundary']
       .find((name) => answerIsUnsafe(answers[name]));
     const highRisk = riskAnswer?.type === 'choice' && riskAnswer.choice === 'high' && answerConfidence(riskAnswer) >= confidenceThreshold();
+    const taskTypeAnswer = answers.task_type;
+    const validationFocusAnswer = answers.validation_focus;
+    const routingHints = taskTypeAnswer?.type === 'choice' && validationFocusAnswer?.type === 'choice'
+      && answerConfidence(taskTypeAnswer) >= confidenceThreshold()
+      && answerConfidence(validationFocusAnswer) >= confidenceThreshold()
+      ? { taskType: taskTypeAnswer.choice as TaskTypeHint, validationFocus: validationFocusAnswer.choice as ValidationFocusHint }
+      : undefined;
     const rejected = Boolean(unsafeQuestion || highRisk);
     const uncertainQuestions = Object.entries(answers)
       .filter(([, answer]) => answer.type === 'noul' ? answer.noul > 1 - confidenceThreshold() && answer.noul < confidenceThreshold() : answerConfidence(answer) < confidenceThreshold())
@@ -153,6 +190,7 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
       responseTime: Math.round(performance.now() - started),
       outputTokens: typeof parsed.usage.output_tokens === 'number' ? parsed.usage.output_tokens : undefined,
       answers,
+      routingHints,
       warnings: uncertainQuestions.length > 0
         ? [`Classifier confidence is below ${confidenceThreshold()} for: ${uncertainQuestions.join(', ')}.`]
         : undefined,

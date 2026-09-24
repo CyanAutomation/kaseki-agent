@@ -134,6 +134,38 @@ describe('JobScheduler queue behavior', () => {
     }
   });
 
+  test('persists advisory JEV routing hints and forwards them only as worker guidance', async () => {
+    const resultsDir = createResultsDir();
+    const scheduler = new JobScheduler({
+      port: 3000,
+      workspaceDir: '/tmp/workspace',
+      resultsDir,
+      maxConcurrentRuns: 0,
+      runTimeoutMs: 300000,
+      apiKeys: [],
+    }, createMockWebhookManager());
+
+    try {
+      const job = await scheduler.submitJob({
+        repoUrl: 'https://github.com/example/repo',
+        ref: 'main',
+        taskPrompt: 'Update the docs for the new setup flow',
+        validationCommands: ['npm run docs:check'],
+      }, { taskType: 'documentation', validationFocus: 'docs_checks' });
+
+      expect(job.advisoryRoutingHints).toEqual({ taskType: 'documentation', validationFocus: 'docs_checks' });
+      const buildEnvironment = (scheduler as unknown as {
+        buildProcessEnvironment: (job: Job, timeoutSeconds: number) => NodeJS.ProcessEnv;
+      }).buildProcessEnvironment;
+      const env = buildEnvironment.call(scheduler, job, 300);
+      expect(env.KASEKI_JEV_TASK_TYPE).toBe('documentation');
+      expect(env.KASEKI_JEV_VALIDATION_FOCUS).toBe('docs_checks');
+      expect(env.KASEKI_VALIDATION_COMMANDS).toBe('npm run docs:check');
+    } finally {
+      await scheduler.shutdown();
+    }
+  });
+
   test.each([
     ['live owner', 2_000, true, 0],
     ['expired lease', 62_000, true, 1],

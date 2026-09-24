@@ -561,7 +561,9 @@ export function createApiRouter(
           });
 
           try {
-            const job = await scheduler.submitJob(runRequest);
+            const job = admission.routingHints
+              ? await scheduler.submitJob(runRequest, admission.routingHints)
+              : await scheduler.submitJob(runRequest);
             job.idempotencyKey = idempotencyKey;
             const response = buildRunResponse(job);
             await idempotencyStore.storeResponse(
@@ -656,7 +658,9 @@ export function createApiRouter(
     const result = await idempotencyStore.runWithIdempotencyLock(async () => {
       const existing = await handleIdempotency(idempotencyKey, fingerprint);
       if (existing.state !== 'fresh') return existing;
-      const job = await scheduler.submitJob(retryRequest);
+      const job = admission.routingHints
+        ? await scheduler.submitJob(retryRequest, admission.routingHints)
+        : await scheduler.submitJob(retryRequest);
       job.idempotencyKey = idempotencyKey;
       const response = buildRunResponse(job);
       await idempotencyStore.storeResponse(idempotencyKey, response, fingerprint);

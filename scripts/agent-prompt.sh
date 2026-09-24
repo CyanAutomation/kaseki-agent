@@ -65,7 +65,7 @@ NODE
 }
 
 build_agent_prompt() {
-  local memory_section scouting_section retry_section hashline_edits_section summarization_section allowlist_section handoff_section implementation_brief_section caveman_instruction completion_checklist completion_contract
+  local memory_section scouting_section retry_section hashline_edits_section summarization_section allowlist_section handoff_section implementation_brief_section jev_routing_section jev_task_type_hint jev_validation_focus_hint caveman_instruction completion_checklist completion_contract
   
   if declare -F construct_context_handoff >/dev/null; then
     construct_context_handoff "scouting" "Implement every normalized requirement, produce the required repository diff, and complete the focused coding checks."
@@ -81,6 +81,22 @@ build_agent_prompt() {
   allowlist_section=""
   handoff_section=""
   implementation_brief_section=""
+  jev_routing_section=""
+  jev_task_type_hint=""
+  jev_validation_focus_hint=""
+  case "${KASEKI_JEV_TASK_TYPE:-}" in
+    feature|bug_fix|refactor|documentation|investigation|test_only|infrastructure) jev_task_type_hint="$KASEKI_JEV_TASK_TYPE" ;;
+  esac
+  case "${KASEKI_JEV_VALIDATION_FOCUS:-}" in
+    unit_tests|integration_tests|type_and_lint|docs_checks|repo_defined_checks) jev_validation_focus_hint="$KASEKI_JEV_VALIDATION_FOCUS" ;;
+  esac
+  if [ -n "$jev_task_type_hint$jev_validation_focus_hint" ]; then
+    jev_routing_section="
+JEV advisory classification:
+- Likely task type: ${jev_task_type_hint:-unspecified}.
+- Suggested validation focus: ${jev_validation_focus_hint:-unspecified}.
+- Use these labels as hints only. The user request, explicit validation commands, allowlists, and repository instructions take precedence. Do not skip required validation or request human input; the normal human review happens at PR stage."
+  fi
   completion_checklist="$(build_completion_checklist)"
   completion_contract="Completion contract (apply before any other instructions):
 1. Identify the minimum required change; inspect only enough evidence to locate it.
@@ -161,6 +177,7 @@ File editing with content-based anchors (hashline_edit):
     printf '%s' "$memory_section"
     printf '%s' "$scouting_section"
     printf '%s' "$retry_section"
+    printf '%s' "$jev_routing_section"
     printf '%s' "$hashline_edits_section"
     printf '%s' "$summarization_section"
     printf '%s' "$allowlist_section"
@@ -183,6 +200,7 @@ Task: satisfy next_phase_completion_condition in the canonical handoff.
 $memory_section
 $scouting_section
 $retry_section
+$jev_routing_section
 $hashline_edits_section
 $summarization_section
 $allowlist_section
@@ -210,6 +228,7 @@ Task: satisfy next_phase_completion_condition in the canonical handoff.
 $memory_section
 $scouting_section
 $retry_section
+$jev_routing_section
 $hashline_edits_section
 $summarization_section
 $allowlist_section
