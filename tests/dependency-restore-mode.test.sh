@@ -52,6 +52,29 @@ if printf '%s\n' "$key_a" | grep -Fq "feature-"; then
   fail "Dependency cache key must not embed branch/ref names such as feature-*: $key_a"
 fi
 
+arm64_key="$(dependency_cache_key "$lock_hash" "$node_major" "$flags_hash" linux arm64 131)"
+amd64_key="$(dependency_cache_key "$lock_hash" "$node_major" "$flags_hash" linux x64 131)"
+different_abi_key="$(dependency_cache_key "$lock_hash" "$node_major" "$flags_hash" linux arm64 127)"
+[ "$arm64_key" != "$amd64_key" ] || fail "Dependency cache keys must isolate native packages by OS/architecture"
+[ "$arm64_key" != "$different_abi_key" ] || fail "Dependency cache keys must isolate native packages by Node module ABI"
+case "$arm64_key" in
+  *"platform-linux/arch-arm64/abi-131"*) ;;
+  *) fail "Dependency cache key does not expose its native environment identity: $arm64_key" ;;
+esac
+pass "dependency cache keys isolate OS, architecture, and Node module ABI"
+
+cache_diagnostics="$TMP_DIR/cache-diagnostics.log"
+npm_ls_failure=$'npm ERR! ELSPROBLEMS\nnpm ls https://user:secret@example.invalid/pkg failed'
+dependency_cache_write_restore_diagnostic \
+  "$cache_diagnostics" workspace npm_ls_failed_after_restore hardlink_fallback_copy 1 "$npm_ls_failure"
+grep -q '^reason=npm_ls_failed_after_restore$' "$cache_diagnostics" || fail "cache restore diagnostics omitted npm ls failure reason"
+grep -q '^restore_method=hardlink_fallback_copy$' "$cache_diagnostics" || fail "cache restore diagnostics omitted actual restore method"
+grep -q '^node_arch=' "$cache_diagnostics" || fail "cache restore diagnostics omitted runtime architecture"
+grep -q '^node_abi=' "$cache_diagnostics" || fail "cache restore diagnostics omitted Node module ABI"
+grep -q 'npm ls https://\[REDACTED\]@example.invalid/pkg failed' "$cache_diagnostics" || fail "cache restore diagnostics omitted sanitized npm output"
+if grep -q 'user:secret' "$cache_diagnostics"; then fail "cache restore diagnostics leaked URL credentials"; fi
+pass "cache restore diagnostics retain npm ls context without URL credentials"
+
 KASEKI_NPM_OMIT_DEV=1
 omit_dev_flags_hash="$(dependency_cache_flags_hash)"
 omit_dev_key="$(dependency_cache_key "$lock_hash" "$node_major" "$omit_dev_flags_hash")"
@@ -127,16 +150,16 @@ pass "cache publication materializes a real directory from symlinked node_module
 
 rm -rf "$TMP_DIR/prune-cache"
 mkdir -p \
-  "$TMP_DIR/prune-cache/npm/lock-old/node-24/flags-a/node_modules/pkg" \
-  "$TMP_DIR/prune-cache/npm/lock-new/node-24/flags-b/node_modules/pkg"
-printf '%2048s\n' x > "$TMP_DIR/prune-cache/npm/lock-old/node-24/flags-a/node_modules/pkg/blob.txt"
-printf '%2048s\n' y > "$TMP_DIR/prune-cache/npm/lock-new/node-24/flags-b/node_modules/pkg/blob.txt"
-printf '4096\n' > "$TMP_DIR/prune-cache/npm/lock-old/node-24/flags-a/.entry-size-bytes"
-printf '4096\n' > "$TMP_DIR/prune-cache/npm/lock-new/node-24/flags-b/.entry-size-bytes"
-touch -t 202501010000 "$TMP_DIR/prune-cache/npm/lock-old/node-24/flags-a"
+  "$TMP_DIR/prune-cache/npm/lock-old/node-24/platform-linux/arch-x64/abi-131/flags-a/node_modules/pkg" \
+  "$TMP_DIR/prune-cache/npm/lock-new/node-24/platform-linux/arch-arm64/abi-131/flags-b/node_modules/pkg"
+printf '%2048s\n' x > "$TMP_DIR/prune-cache/npm/lock-old/node-24/platform-linux/arch-x64/abi-131/flags-a/node_modules/pkg/blob.txt"
+printf '%2048s\n' y > "$TMP_DIR/prune-cache/npm/lock-new/node-24/platform-linux/arch-arm64/abi-131/flags-b/node_modules/pkg/blob.txt"
+printf '4096\n' > "$TMP_DIR/prune-cache/npm/lock-old/node-24/platform-linux/arch-x64/abi-131/flags-a/.entry-size-bytes"
+printf '4096\n' > "$TMP_DIR/prune-cache/npm/lock-new/node-24/platform-linux/arch-arm64/abi-131/flags-b/.entry-size-bytes"
+touch -t 202501010000 "$TMP_DIR/prune-cache/npm/lock-old/node-24/platform-linux/arch-x64/abi-131/flags-a"
 metrics_file="$TMP_DIR/prune-cache/.kaseki-cache-metrics"
 prune_dependency_cache "$TMP_DIR/prune-cache" 5000 0 "$metrics_file"
-[ ! -d "$TMP_DIR/prune-cache/npm/lock-old/node-24/flags-a" ] || fail "Oldest dependency cache entry was not pruned"
+[ ! -d "$TMP_DIR/prune-cache/npm/lock-old/node-24/platform-linux/arch-x64/abi-131/flags-a" ] || fail "Oldest dependency cache entry was not pruned"
 [ -f "$metrics_file" ] || fail "Dependency cache metrics file was not written"
 grep -q '^size_bytes=' "$metrics_file" || fail "Dependency cache metrics missing size_bytes"
 grep -q '^entry_count=1$' "$metrics_file" || fail "Dependency cache metrics missing pruned entry_count"

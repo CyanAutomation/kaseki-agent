@@ -49,6 +49,7 @@ setup_case() {
   cp "$REPO_ROOT/scripts/lib/json.sh" "$CASE_DIR/scripts/lib/json.sh" || fail "failed to copy json helper"
   cp "$REPO_ROOT/scripts/lib/json-events.sh" "$CASE_DIR/scripts/lib/json-events.sh" || fail "failed to copy json events helper"
   cp "$REPO_ROOT/scripts/lib/artifact-consolidation.sh" "$CASE_DIR/scripts/lib/artifact-consolidation.sh" || fail "failed to copy artifact consolidation helper"
+  cp "$REPO_ROOT/scripts/write-run-metadata.mjs" "$CASE_DIR/scripts/write-run-metadata.mjs" || fail "failed to copy metadata writer"
   touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/progress-stream-utils.js" || fail "failed to create app stubs"
   : > "$PI_CALLS" || fail "failed to initialize Pi calls"
 
@@ -117,7 +118,7 @@ EOF_VALIDATION_FILTER
 
   set +e
   env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="$TASK_PROMPT_CASE" \
-    KASEKI_PROVIDER=openrouter OPENROUTER_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off KASEKI_GOAL_CHECK_MAX_RETRIES=1 KASEKI_HASHLINE_EDITS=0 KASEKI_BASELINE_VALIDATION_ENABLED=0 \
+    KASEKI_PROVIDER=openrouter OPENROUTER_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off KASEKI_GOAL_CHECK_MAX_RETRIES=1 KASEKI_HASHLINE_EDITS=0 KASEKI_BASELINE_VALIDATION_ENABLED=0 KASEKI_JEV_WORKFLOW=0 \
     KASEKI_WORKSPACE_DIR="$CASE_DIR" \
     KASEKI_DEPENDENCY_CACHE_DIR="$CASE_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$CASE_DIR/image-cache" \
     KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" KASEKI_VALIDATION_COMMANDS=":" KASEKI_ALLOW_EMPTY_DIFF="$KASEKI_ALLOW_EMPTY_DIFF_CASE" \
@@ -174,7 +175,7 @@ NODE
 # must not be retried or failed merely because the controller default disallows
 # empty diffs.
 allowed_noop_expectation='{"task":"documentation audit","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["README.md"],"validation_patterns":[]},"critical_change_expectations":{"required_files":[],"required_search_strings":[],"forbidden_empty_diff":false}}'
-setup_case "allowed-noop-contract" "$allowed_noop_expectation" ":" 0 $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' true 1 "" 0
+setup_case "allowed-noop-contract" "$allowed_noop_expectation" ":" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0
 grep -q 'verification passed' "$RESULTS_DIR/critical-change-verification.log" || fail "allowed no-op contract did not pass verification"
 ! grep -q 'retrying coding agent' "$RUN_LOG" || fail "allowed no-op contract retried coding"
 
@@ -213,14 +214,14 @@ grep -q '^goal-check$' "$PI_CALLS" || fail "tests-only case did not produce inde
 grep -q 'Overriding critical_change_expectations_failed (exit 8) with exit 0' "$RUN_LOG" || fail "tests-only case did not apply the goal-check override"
 
 present_expectation='{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":["**"]},"critical_change_expectations":{"required_files":["target.txt"],"required_search_strings":["MAGIC_EXPECTED_STRING"],"forbidden_empty_diff":true}}'
-setup_case "present" "$present_expectation" "printf 'MAGIC_EXPECTED_STRING\n' > '__WORKSPACE_REPO__/target.txt'" 0 $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' true 1 "" 0
+setup_case "present" "$present_expectation" "printf 'MAGIC_EXPECTED_STRING\n' > '__WORKSPACE_REPO__/target.txt'" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0
 grep -q 'verification passed' "$RESULTS_DIR/critical-change-verification.log" || fail "present case did not pass verification"
 grep -q '^goal-check$' "$PI_CALLS" || fail "present case did not invoke goal-check"
 
 # A marker copied from baseline source is commonly a "before" refactor value.
 # It must not remain a required post-change diff marker.
 baseline_marker_expectation='{"task":"refactor target","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":[]},"critical_change_expectations":{"required_files":["target.txt"],"required_search_strings":["initial target"],"forbidden_empty_diff":true}}'
-setup_case "baseline-marker-downgraded" "$baseline_marker_expectation" "printf 'updated target\n' > '__WORKSPACE_REPO__/target.txt'" 0 $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' true 1 "" 0
+setup_case "baseline-marker-downgraded" "$baseline_marker_expectation" "printf 'updated target\n' > '__WORKSPACE_REPO__/target.txt'" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0
 node - "$RESULTS_DIR/critical-change-expectations.json" <<'NODE' || fail "baseline marker was still enforced"
 const fs = require('node:fs');
 const artifact = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
@@ -239,13 +240,13 @@ grep -q 'protected file was changed outside task scope: target.txt' "$RESULTS_DI
 # Rename detection must protect both sides of a rename. `git diff --name-only`
 # reports only the destination, but removing a protected source is still an
 # out-of-scope change.
-setup_case "protected-file-rename" "$protected_file_expectation" "git -C '__WORKSPACE_REPO__' mv target.txt renamed.txt" 8 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 2 "critical change verification" 0
+setup_case "protected-file-rename" "$protected_file_expectation" "git -C '__WORKSPACE_REPO__' mv target.txt renamed.txt 2>/dev/null || [ -f '__WORKSPACE_REPO__/renamed.txt' ]" 8 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 2 "critical change verification" 0
 grep -q 'protected file was changed outside task scope: target.txt' "$RESULTS_DIR/critical-change-verification.log" || fail "protected-file-rename did not reject the protected rename source"
 grep -q '^target.txt$' "$RESULTS_DIR/changed-files.txt" || fail "protected-file-rename did not recover the rename source"
 
 # A valid required path remains enforceable when the task must create it.
-new_file_expectation='{"critical_change_expectations":{"required_files":["docs/new-guide.md"],"forbidden_empty_diff":true}}'
-setup_case "required-new-file" "$new_file_expectation" "printf 'updated\n' > '__WORKSPACE_REPO__/other.txt" 0 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' false 1 "" 1
+new_file_expectation='{"task":"create a new deployment guide","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":[]},"critical_change_expectations":{"required_files":["docs/new-guide.md"],"forbidden_empty_diff":true}}'
+setup_case "required-new-file" "$new_file_expectation" "printf 'updated\n' > '__WORKSPACE_REPO__/other.txt'" 0 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 2 "" 1
 grep -q 'required file missing from changed-files.txt: docs/new-guide.md' "$RESULTS_DIR/critical-change-verification.log" || fail "required-new-file did not fail on missing required file"
 grep -q 'Overriding critical_change_expectations_failed (exit 8) with exit 0' "$RUN_LOG" || fail "required-new-file did not apply the goal-check override"
 node - "$RESULTS_DIR/critical-change-expectations.json" <<'NODE' || fail "required-new-file did not retain the create-file expectation"
@@ -253,8 +254,8 @@ const x = JSON.parse(require('node:fs').readFileSync(process.argv[2], 'utf8'));
 if (!x.required_files.includes('docs/new-guide.md') || x.downgraded_required_files?.includes('docs/new-guide.md')) throw new Error(JSON.stringify(x));
 NODE
 
-unsafe_path_expectation='{"critical_change_expectations":{"required_files":["../outside.md"],"forbidden_empty_diff":true}}'
-setup_case "unsafe-required-path" "$unsafe_path_expectation" "printf 'updated\n' > '__WORKSPACE_REPO__/target.txt" 0 $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' true 1 "" 0
+unsafe_path_expectation='{"task":"update a repository file","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":[]},"critical_change_expectations":{"required_files":["../outside.md"],"forbidden_empty_diff":true}}'
+setup_case "unsafe-required-path" "$unsafe_path_expectation" "printf 'updated\n' > '__WORKSPACE_REPO__/target.txt'" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0
 node - "$RESULTS_DIR/critical-change-expectations.json" <<'NODE' || fail "unsafe-required-path was not downgraded"
 const x = JSON.parse(require('node:fs').readFileSync(process.argv[2], 'utf8'));
 if (x.required_files.includes('../outside.md') || !x.downgraded_required_files.includes('../outside.md')) throw new Error(JSON.stringify(x));
@@ -262,7 +263,7 @@ NODE
 
 # The fallback must not convert environment-variable prose or directory terms
 # from the original prompt into required files (production run 265).
-setup_case "run-265-fallback-prose" "__NO_SCOUTING_ARTIFACT__" "printf 'changed\n' > '__WORKSPACE_REPO__/target.txt" 0 $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' true 1 "" 0 "Configure LLM_GATEWAY_URL/LLM_GATEWAY_API_KEY_FILE and files/scripts."
+setup_case "run-265-fallback-prose" "__NO_SCOUTING_ARTIFACT__" "printf 'changed\n' > '__WORKSPACE_REPO__/target.txt'" 0 $'goal-setting\nscouting\nscouting\ncoding\ngoal-check' true 1 "" 0 "Configure LLM_GATEWAY_URL/LLM_GATEWAY_API_KEY_FILE and files/scripts."
 node - "$RESULTS_DIR/critical-change-expectations.json" <<'NODE' || fail "run-265 fallback retained prose as paths"
 const x = JSON.parse(require('node:fs').readFileSync(process.argv[2], 'utf8'));
 if (x.required_files.length || x.downgraded_required_files?.length) throw new Error(JSON.stringify(x));

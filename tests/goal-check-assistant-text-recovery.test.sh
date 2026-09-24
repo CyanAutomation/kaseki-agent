@@ -34,6 +34,7 @@ fi
 cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
 cp "$REPO_ROOT/scripts/lib/json-events.sh" "$TMP_DIR/scripts/lib/json-events.sh"
 cp "$REPO_ROOT/scripts/lib/artifact-consolidation.sh" "$TMP_DIR/scripts/lib/artifact-consolidation.sh"
+cp "$REPO_ROOT/scripts/write-run-metadata.mjs" "$TMP_DIR/scripts/write-run-metadata.mjs"
 touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/progress-stream-utils.js" || fail "failed to create app lib stubs"
 : > "$PI_CALLS" || fail "failed to initialize Pi call log"
 
@@ -112,8 +113,7 @@ run_exit=$?
 [ "$(cat "$PI_CALLS")" = $'goal-setting
 scouting
 coding
-goal-check
-goal-check' ] || fail "Pi calls did not reach the goal-check artifact recovery"
+goal-check' ] || fail "Pi calls did not reach the post-validation goal-check artifact recovery"
 [ -s "$RESULTS_DIR/goal-check.json" ] || fail "missing recovered goal-check.json"
 [ ! -s "$RESULTS_DIR/goal-check-validation-errors.jsonl" ] || fail "recovery should not create validation errors"
 node - "$RESULTS_DIR/goal-check.json" <<'NODE' || fail "recovered goal-check verdict was invalid"
@@ -123,7 +123,7 @@ if (verdict.confidence !== 'high') throw new Error(`expected high confidence, go
 if (!Array.isArray(verdict.evidence) || verdict.evidence.length < 3) throw new Error('expected recovered evidence array');
 if (!Array.isArray(verdict.contradictions) || verdict.contradictions.length !== 1) throw new Error('expected normalized contradictions array');
 if (verdict.contradictions[0].description !== 'No material contradiction found.') throw new Error('expected preserved contradiction description');
-if (verdict.attempt !== 2) throw new Error(`expected enriched attempt=2 (post-validation goal-check rerun), got ${verdict.attempt}`);
+if (verdict.attempt !== 1) throw new Error(`expected enriched attempt=1 for the single post-validation goal check, got ${verdict.attempt}`);
 NODE
 [ ! -e "$RESULTS_DIR/goal-check-candidate.json" ] || fail "goal-check candidate artifact should be consumed after recovery validation"
 echo "PASS: $TEST_NAME"

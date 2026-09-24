@@ -722,6 +722,7 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         copyFileSync(join(repoRoot, 'dist', 'hashline-event-handler.js'), join(appLib, 'hashline-event-handler.js'));
         copyFileSync(join(repoRoot, 'dist', 'hashline-validator.js'), join(appLib, 'hashline-validator.js'));
         copyFileSync(join(repoRoot, 'scripts', 'allowlist-helper.sh'), join(scriptsDir, 'allowlist-helper.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'write-run-metadata.mjs'), join(scriptsDir, 'write-run-metadata.mjs'));
         copyFileSync(join(repoRoot, 'scripts', 'github-preflight-auth.sh'), join(scriptsDir, 'github-preflight-auth.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'github-preflight-health.sh'), join(scriptsDir, 'github-preflight-health.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'validation-timeout-policy.sh'), join(scriptsDir, 'validation-timeout-policy.sh'));

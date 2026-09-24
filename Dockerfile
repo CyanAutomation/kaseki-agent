@@ -223,6 +223,7 @@ RUN chmod +x \
     && install -m 0755 /app/scripts/restore-disallowed-changes.sh /usr/local/bin/scripts/restore-disallowed-changes.sh \
     && install -m 0755 /app/scripts/inspect-mode-defaults.sh /usr/local/bin/scripts/inspect-mode-defaults.sh \
     && install -m 0755 /app/scripts/dependency-cache-helpers.sh /usr/local/bin/scripts/dependency-cache-helpers.sh \
+    && install -m 0644 /app/scripts/write-run-metadata.mjs /usr/local/bin/scripts/write-run-metadata.mjs \
     && install -m 0755 /app/scripts/auto-lint-cleanup-classification.sh /usr/local/bin/scripts/auto-lint-cleanup-classification.sh \
     && install -m 0755 /app/scripts/cleanup-trailing-whitespace.sh /usr/local/bin/scripts/cleanup-trailing-whitespace.sh \
     && install -m 0755 /app/dist/scouting-allowlist.js /usr/local/bin/scripts/scouting-allowlist.js \
@@ -386,6 +387,7 @@ RUN mkdir -p /scripts \
     && install -m 0755 /app/scripts/restore-disallowed-changes.sh /usr/local/bin/scripts/restore-disallowed-changes.sh \
     && install -m 0755 /app/scripts/inspect-mode-defaults.sh /usr/local/bin/scripts/inspect-mode-defaults.sh \
     && install -m 0755 /app/scripts/dependency-cache-helpers.sh /usr/local/bin/scripts/dependency-cache-helpers.sh \
+    && install -m 0644 /app/scripts/write-run-metadata.mjs /usr/local/bin/scripts/write-run-metadata.mjs \
     && install -m 0755 /app/scripts/auto-lint-cleanup-classification.sh /usr/local/bin/scripts/auto-lint-cleanup-classification.sh \
     && install -m 0755 /app/scripts/cleanup-trailing-whitespace.sh /usr/local/bin/scripts/cleanup-trailing-whitespace.sh \
     && install -m 0755 /app/dist/scouting-allowlist.js /usr/local/bin/scripts/scouting-allowlist.js \

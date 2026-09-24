@@ -13,6 +13,7 @@ export const bool = (value: unknown): boolean | undefined => typeof value === 'b
 
 export function stagePhase(value: unknown): string | undefined {
   const stage = String(value ?? '').toLowerCase();
+  if (/pre[- ]agent validation/.test(stage)) return undefined;
   if (/goal.setting/.test(stage)) return 'goal_setting';
   if (/scouting/.test(stage)) return 'scouting';
   if (/coding/.test(stage)) return 'coding';
