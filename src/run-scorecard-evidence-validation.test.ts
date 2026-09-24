@@ -134,7 +134,7 @@ describe('run-scorecard-evidence-validation', () => {
       expect(evidence.validation).toBe('unknown');
     });
 
-    it('uses a successful terminal validation stage when detailed metadata was not persisted', () => {
+    it('does not infer passed validation from a zero-exit stage when no command count was recorded', () => {
       const evidence = collectValidationEvidence({
         json: {
           'metadata.json': {},
@@ -147,7 +147,20 @@ describe('run-scorecard-evidence-validation', () => {
         text: {},
         summaries: [],
       });
-      expect(evidence.validation).toBe('passed');
+      expect(evidence.validation).toBe('unknown');
+    });
+
+    it('keeps a zero-command inspect run from being marked validation passed', () => {
+      const evidence = collectValidationEvidence({
+        json: {
+          'metadata.json': { task_mode: 'inspect', lifecycle_status: 'completed', exit_code: 0, validation_commands_attempted: 0 },
+          'failure.json': { validation_exit_code: 0 },
+          'timings-manifest.json': { validation_timings: [], stage_timings: [{ stage: 'validation', exit_code: 0 }] },
+        },
+        text: { 'git.diff': '' },
+        summaries: [],
+      });
+      expect(evidence.validation).toBe('unknown');
     });
 
     it('handles missing metadata.json gracefully', () => {

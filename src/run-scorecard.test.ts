@@ -250,6 +250,8 @@ describe('run scorecard', () => {
     const evidence = collectEvidence({
       json: {
         'metadata.json': { instance: 'unavailable-evaluator', exit_code: 0, quality_exit_code: 0, run_evaluation_warning: 'run_evaluation_unavailable' },
+        'goal-setting.json': { confidence: 'high', success_criteria: ['Tests pass'] },
+        'scouting.json': { relevant_files: [{ path: 'src/a.ts' }] },
         'goal-check.json': { met: true },
         'run-evaluation.json': { score: 100, contradictions: [] },
         'timings-manifest.json': { validation_timings: [{ exit_code: 0, elapsed_seconds: 1 }], stage_timings: [{ elapsed_seconds: 1 }] },
@@ -282,6 +284,22 @@ describe('run scorecard', () => {
     expect(evidence.noChangeAccepted).toBe(true);
     expect(card.dimensions.find(dimension => dimension.id === 'implementation_quality')).toMatchObject({ normalized_score: 100, status: 'complete' });
     expect(card.grade).not.toBe('F');
+  });
+
+  test('treats a completed inspect run as an accepted no-change outcome', () => {
+    const evidence = collectEvidence({
+      json: { 'metadata.json': { instance: 'inspect-noop', exit_code: 0, status: 'completed', task_mode: 'inspect', validation_commands_attempted: 0 } },
+      text: { 'changed-files.txt': '', 'git.diff': '' },
+      summaries: [],
+    });
+    ScorecardContext.initialize(normalizeConfig({}));
+    const card = buildScorecard(evidence, new Date('2026-01-01T00:00:00Z'));
+    expect(evidence.noChangeAccepted).toBe(true);
+    expect(card.evidence_coverage.missing_critical).not.toContain('diff');
+    expect(card.dimensions.find(dimension => dimension.id === 'implementation_quality')).toMatchObject({
+      normalized_score: 100,
+      status: 'complete',
+    });
   });
 
   test('treats an unavailable goal-check as missing critical evaluation evidence', () => {

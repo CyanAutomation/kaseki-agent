@@ -48,6 +48,8 @@ export function buildEvidence(overrides: EvidenceOverrides = {}): Evidence {
     diffBytes: 0,
     evaluation: undefined,
     evaluatorAvailable: true,
+    goalSettingFallback: false,
+    scoutingFallback: false,
     present: [],
     ...evidenceOverrides,
   };

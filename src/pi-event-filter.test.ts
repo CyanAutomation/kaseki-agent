@@ -483,7 +483,12 @@ test('writes gateway summary and recommends compaction when token budget is exce
     await runPiEventFilter(inputPath, outputPath, summaryPath);
     const gatewaySummary = JSON.parse(fs.readFileSync(path.join(tmpDir, 'gateway-summary.json'), 'utf8'));
     expect(gatewaySummary).toMatchObject({
-      schema_version: 1,
+      scope: { phase: 'pi-agent', includesOtherPhases: false },
+      token_ledger_summary_scope: 'pi-agent',
+      token_ledger_artifact_scope: 'all_run_phases',
+    });
+    expect(gatewaySummary).toMatchObject({
+      schema_version: 2,
       logical_agent_turns: 1,
       routing_steps: null,
       input_tokens: 150,

@@ -1286,7 +1286,7 @@ function buildImprovementPaths(errorResponseSchema: Record<string, unknown>): Re
         operationId: 'getRunImprovements',
         summary: 'Aggregate run improvement findings',
         description:
-          'Aggregates recent terminal run-evaluation artifacts, stage timings, and compact run entries for continual improvement dashboards.',
+          'Aggregates recent terminal run-evaluation artifacts, stage timings, and compact run entries for continual improvement dashboards. Kaseki retains artifacts for the five most recent runs; older runs without artifact directories are counted as expired rather than evaluator failures.',
         tags: ['Run Details'],
         security: [{ BearerAuth: [] }],
         parameters: [
@@ -1309,7 +1309,16 @@ function buildImprovementPaths(errorResponseSchema: Record<string, unknown>): Re
                     limit: { type: 'integer' },
                     totalRuns: { type: 'integer' },
                     counts: { type: 'object' },
-                    evaluator: { type: 'object' },
+                    evaluator: {
+                      type: 'object',
+                      properties: {
+                        available: { type: 'integer' },
+                        missing: { type: 'integer', description: 'Artifacts expected to be retained but missing.' },
+                        invalid: { type: 'integer' },
+                        expired: { type: 'integer', description: 'Older runs whose artifacts were removed by five-run retention.' },
+                        diagnostics: { type: 'object', additionalProperties: { type: 'integer' } },
+                      },
+                    },
                     topImprovementOpportunities: { type: 'array', items: { type: 'object' } },
                     slowestStages: { type: 'array', items: { type: 'object' } },
                     runs: { type: 'array', items: { type: 'object' } }

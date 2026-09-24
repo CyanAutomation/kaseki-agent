@@ -32,5 +32,7 @@ export interface Evidence {
   diffBytes: number;
   evaluation?: Record<string, unknown>;
   evaluatorAvailable: boolean;
+  goalSettingFallback: boolean;
+  scoutingFallback: boolean;
   present: string[];
 }

@@ -46,7 +46,13 @@ export function buildScorecard(evidence: Evidence, now = new Date()): RunScoreca
   // Calculate and cap the score
   const uncappedScore = calculateUncappedScore(dimensions.map(d => d.weighted_points));
   const evaluatorReliable = hasEvaluatorReliability(evidence.goalCheckAvailable, evidence.evaluatorAvailable);
-  const score = applyScoringCap(uncappedScore, evaluatorReliable);
+  const score = applyScoringCap(uncappedScore, {
+    evaluatorReliabilityAvailable: evaluatorReliable,
+    diffBytes: evidence.diffBytes,
+    noChangeAccepted: evidence.noChangeAccepted,
+    validation: evidence.validation,
+    lifecycleStatus: evidence.status,
+  });
 
   // Calculate confidence metrics
   const confidenceValue = calculateConfidenceScore(coverage.ratio, evidence.unknownTokenRequests > 0, evaluatorReliable);
@@ -59,7 +65,7 @@ export function buildScorecard(evidence: Evidence, now = new Date()): RunScoreca
     overall_score: score, grade: assignGrade(score),
     evidence_coverage: {
       required: coverage.possible, available: Math.min(coverage.observed, coverage.possible), ratio: Math.min(1, coverage.ratio),
-      missing_critical: calculateMissingCritical(evidence.diffBytes, evidence.validation, evidence.goalCheckAvailable, evidence.evaluatorAvailable),
+      missing_critical: calculateMissingCritical(evidence.diffBytes, evidence.validation, evidence.goalCheckAvailable, evidence.evaluatorAvailable, evidence.noChangeAccepted),
     },
     completeness: determineCompleteness(coverage.ratio),
     confidence: { score: confidenceValue, rationale: confidenceRationale },
@@ -80,7 +86,7 @@ export function buildScorecard(evidence: Evidence, now = new Date()): RunScoreca
       normalization_rules: { efficiency: { function: 'inverse_target_ratio', expression: 'min(100, target / actual * 100)', parameters: { token_target: config.targets.tokens, time_target_seconds: config.targets.elapsedSeconds, retry_target: config.targets.retries } } },
       task_size: config.taskSize,
       selected_targets: { token_budget: Math.round(config.targets.tokens), wall_clock_ms: config.targets.elapsedSeconds * 1000, changed_lines: null, rationale: 'Configured before scoring; preserved with this artifact.' },
-      caps: { missing_diff: 69, missing_validation: 59, missing_diff_and_validation: 49 },
+      caps: { missing_diff: 69, missing_validation: 59, missing_diff_and_validation: 49, max_failed_run: 59 },
       enabled_phase_reliability_penalty_points: evaluatorReliable ? 0 : 10, disabled_phase_policy: 'reweight_eligible_dimensions',
     },
     warnings: buildScorecardWarnings(evidence, coverage),
