@@ -24,6 +24,7 @@ import type { ResultCache } from './result-cache';
 import { JobPersistenceManager } from './job-persistence-manager';
 import { EXIT_CODE_SPAWN_FAILED } from './exit-codes';
 import { configureScoutingAndGoalCheckEnv } from './job-environment';
+import type { TaskAdmissionRoutingHints } from './task-admission';
 
 function isLowRiskTaskPrompt(prompt?: string): boolean {
   if (!prompt) {
@@ -157,7 +158,7 @@ export class JobScheduler {
   /**
    * Submit a new job to the queue.
    */
-  async submitJob(request: RunRequest): Promise<Job> {
+  async submitJob(request: RunRequest, advisoryRoutingHints?: TaskAdmissionRoutingHints): Promise<Job> {
     await this.ready();
     const instanceId = await this.persistenceManager.generateInstanceId(
       Array.from(this.jobs.keys()),
@@ -171,6 +172,7 @@ export class JobScheduler {
       id: instanceId,
       status: 'queued',
       request,
+      advisoryRoutingHints,
       createdAt: new Date(),
       resultDir: this.persistenceManager.getResultDir(instanceId),
       webhookConfig: request.webhookConfig,
@@ -380,6 +382,15 @@ export class JobScheduler {
       KASEKI_AGENT_TIMEOUT_SECONDS: String(effectiveTimeoutSeconds),
       KASEKI_HOST_CACHE_DIR: process.env.KASEKI_HOST_CACHE_DIR || '/agents/kaseki-cache',
     };
+
+    delete env.KASEKI_JEV_TASK_TYPE;
+    delete env.KASEKI_JEV_VALIDATION_FOCUS;
+    if (job.advisoryRoutingHints) {
+      const taskTypeHints = ['feature', 'bug_fix', 'refactor', 'documentation', 'investigation', 'test_only', 'infrastructure'];
+      const validationFocusHints = ['unit_tests', 'integration_tests', 'type_and_lint', 'docs_checks', 'repo_defined_checks'];
+      if (taskTypeHints.includes(job.advisoryRoutingHints.taskType)) env.KASEKI_JEV_TASK_TYPE = job.advisoryRoutingHints.taskType;
+      if (validationFocusHints.includes(job.advisoryRoutingHints.validationFocus)) env.KASEKI_JEV_VALIDATION_FOCUS = job.advisoryRoutingHints.validationFocus;
+    }
 
     // Inspect mode always skips pre-agent validation for speed (fast by default)
     if ((job.request.taskMode || this.config.defaultTaskMode) === 'inspect') {

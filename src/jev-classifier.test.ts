@@ -33,6 +33,23 @@ describe('JEV classifier client', () => {
     expect(result.responseTime).toBeGreaterThanOrEqual(0);
   });
 
+  it('accepts a normalized Choice distribution and a fractional zero-based Score answer', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({
+      model: 'typesafe/jev-1.13-20260917',
+      answers: {
+        department: { type: 'choice', choice: 'billing', probabilities: { billing: 0.85, technical: 0.15, sales: 0 }, confidence: 0.78 },
+        frustration: { type: 'score', score: 1.05, legend: { 0: 'Calm', 1: 'Frustrated', 2: 'Very angry' }, probabilities: { 0: 0, 1: 0.95, 2: 0.05 }, confidence: 0.93 },
+      },
+    }), { status: 200 }));
+
+    const result = await classifyWithJev('payouts have failed', {
+      department: { type: 'choice', instructions: 'Choose a team', criteria: { billing: 'Payments', technical: 'Bugs', sales: 'Pricing' } },
+      frustration: { type: 'score', instructions: 'Score the frustration', criteria: ['Calm', 'Frustrated', 'Very angry'] },
+    }, { fetchImpl });
+
+    expect(result.answers.frustration).toMatchObject({ score: 1.05, confidence: 0.93 });
+  });
+
   it('reports missing credentials without making a request', async () => {
     delete process.env.OPENROUTER_API_KEY;
     const fetchImpl = jest.fn();
@@ -95,6 +112,32 @@ describe('JEV classifier client', () => {
     await expect(classifyWithJev('state', {
       safe: { type: 'noul', instructions: 'Is this safe?' },
     }, { fetchImpl })).rejects.toMatchObject({ code: 'invalid_response' });
+  });
+
+  it.each([
+    ['choice probabilities omit a requested label', {
+      type: 'choice', choice: 'billing', probabilities: { billing: 1 }, confidence: 1,
+    }],
+    ['choice probabilities are not normalized', {
+      type: 'choice', choice: 'billing', probabilities: { billing: 0.4, technical: 0.2, sales: 0.2 }, confidence: 0.8,
+    }],
+    ['score exceeds the requested scale', {
+      type: 'score', score: 3, legend: { 0: 'Low', 1: 'Medium', 2: 'High' }, probabilities: { 0: 0, 1: 0.4, 2: 0.6 }, confidence: 0.6,
+    }],
+    ['score legend labels do not match requested levels', {
+      type: 'score', score: 1, legend: { 0: 'Low', 1: 'High' }, probabilities: { 0: 0.4, 1: 0.6 }, confidence: 0.6,
+    }],
+  ])('rejects malformed typed answer: %s', async (_description, answer) => {
+    const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({
+      answers: { result: answer },
+      usage: {},
+    }), { status: 200 }));
+    const question = answer.type === 'choice'
+      ? { type: 'choice' as const, instructions: 'Choose a team', criteria: { billing: 'Payment', technical: 'Bugs', sales: 'Sales' } }
+      : { type: 'score' as const, instructions: 'Score quality', criteria: ['Low', 'Medium', 'High'] };
+
+    await expect(classifyWithJev('state', { result: question }, { fetchImpl, maxRetries: 0 }))
+      .rejects.toMatchObject({ code: 'invalid_response' });
   });
 
   it('exposes conservative answer helpers', () => {

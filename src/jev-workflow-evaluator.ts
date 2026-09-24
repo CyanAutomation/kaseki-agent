@@ -1,8 +1,10 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { answerIsTrue, classifyWithJev, DEFAULT_JEV_MODEL } from './jev-classifier';
+import { classifyWithJev, DEFAULT_JEV_MODEL } from './jev-classifier';
 import { collectValidationEvidence } from './validation-evidence';
 import { buildRunEvaluationArtifact, buildRunEvaluationEvidenceSources } from './jev-run-evaluation-artifact';
+import { buildGoalCriterionAssessments, buildRunEvaluationQuestions, failureDiagnosisFromAnswers, mapJevScoreToCompletion } from './jev-workflow-helpers';
+import { redactJevEvidence } from './jev-evidence-redaction';
 
 type JsonObject = Record<string, unknown>;
 
@@ -19,16 +21,6 @@ function readJson(file: string): JsonObject {
 
 function readJsonValue(file: string): unknown {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return undefined; }
-}
-
-function redact(value: unknown): unknown {
-  if (typeof value === 'string') return value
-    .replace(/-----BEGIN [^-]+ PRIVATE KEY-----[\s\S]*?-----END [^-]+ PRIVATE KEY-----/g, '[REDACTED_PRIVATE_KEY]')
-    .replace(/\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|xox[baprs]-[A-Za-z0-9-]{12,})\b/g, '[REDACTED_CREDENTIAL]')
-    .replace(/(password|passwd|secret|token|api[_-]?key)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED_SECRET]');
-  if (Array.isArray(value)) return value.map(redact);
-  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value as JsonObject).map(([key, item]) => [key, /secret|token|password|credential|api.?key/i.test(key) ? '[REDACTED_SECRET]' : redact(item)]));
-  return value;
 }
 
 function bounded(value: unknown, maxChars: number): unknown {
@@ -50,13 +42,13 @@ function evidenceState(resultsDir: string): JsonObject {
   });
   const cacheMetrics = readJsonValue(path.join(resultsDir, 'cache-metrics.json'));
   return {
-    goal_setting: bounded(redact(goal), 8000),
-    scouting: bounded(redact(scouting), 8000),
-    metadata: redact(readJson(path.join(resultsDir, 'metadata.json'))),
-    failure: redact(readJson(path.join(resultsDir, 'failure.json'))),
-    changed_files: redact(readText(path.join(resultsDir, 'changed-files.txt')).slice(0, 12000)),
-    diff: redact(readText(path.join(resultsDir, 'git.diff')).slice(0, 24000)),
-    validation: redact(validation.text),
+    goal_setting: bounded(redactJevEvidence(goal), 8000),
+    scouting: bounded(redactJevEvidence(scouting), 8000),
+    metadata: redactJevEvidence(readJson(path.join(resultsDir, 'metadata.json'))),
+    failure: redactJevEvidence(readJson(path.join(resultsDir, 'failure.json'))),
+    changed_files: redactJevEvidence(readText(path.join(resultsDir, 'changed-files.txt')).slice(0, 12000)),
+    diff: redactJevEvidence(readText(path.join(resultsDir, 'git.diff')).slice(0, 24000)),
+    validation: redactJevEvidence(validation.text),
     validation_sources: validation.sources,
     present_sources: presentSources,
     stage_durations: stageDurations(resultsDir),
@@ -110,14 +102,11 @@ async function runGoalCheck(resultsDir: string, attempt: number): Promise<JsonOb
   const validationSources = Array.isArray(state.validation_sources) ? state.validation_sources as string[] : [];
   const presentSources = Array.isArray(state.present_sources) ? state.present_sources as string[] : [];
   const evidence = buildRunEvaluationEvidenceSources({ presentSources, validationSources });
-  let allMet = true;
-  for (const [id, answer] of Object.entries(result.answers)) {
-    const match = id.match(/^criterion_(\d+)$/);
-    const index = match ? Number(match[1]) - 1 : -1;
-    const criterion = index >= 0 && index < effectiveCriteria.length ? effectiveCriteria[index] : id;
-    if (!answerIsTrue(answer, threshold)) {
-      allMet = false;
-      missing.push(`${criterion} (noul=${answer?.type === 'noul' ? answer.noul.toFixed(2) : 'invalid'}, threshold=${threshold.toFixed(2)})`);
+  const assessments = buildGoalCriterionAssessments(effectiveCriteria, result.answers, threshold);
+  let allMet = assessments.every((assessment) => assessment.met);
+  for (const assessment of assessments) {
+    if (!assessment.met) {
+      missing.push(`${assessment.criterion} (noul=${assessment.probability === null ? 'invalid' : assessment.probability.toFixed(2)}, threshold=${threshold.toFixed(2)})`);
     }
   }
   if (process.env.KASEKI_TASK_MODE === 'patch' && !String(state.diff).trim()) {
@@ -131,6 +120,7 @@ async function runGoalCheck(resultsDir: string, attempt: number): Promise<JsonOb
     summary,
     evidence,
     missing,
+    criteria_assessment: assessments,
     retry_prompt: allMet ? '' : `Address the unmet criteria and produce evidence for: ${missing.join('; ')}`,
     validation_notes: [String(state.validation).trim() ? `validation evidence available from: ${validationSources.join(', ')}` : 'validation evidence was unavailable'],
     evidence_sources_inspected: evidence,
@@ -146,17 +136,19 @@ async function runEvaluation(resultsDir: string): Promise<JsonObject> {
   const validation = String(state.validation).trim();
   const diff = String(state.diff).trim();
   const stateForJev = { ...state, goal_check: goalCheck, validation_present: Boolean(validation), diff_present: Boolean(diff) };
-  const result = await classifyWithJev(stateForJev, {
-    overall_assessment: { type: 'choice', instructions: 'What is the overall quality of this completed coding run?', criteria: { excellent: 'Strong evidence and low review risk', good: 'Acceptable evidence with limited review risk', mixed: 'Material uncertainty or mixed signals', poor: 'Major evidence or process problems' } },
-    reviewer_confidence: { type: 'choice', instructions: 'How much can a reviewer trust this run without exhaustive manual review?', criteria: { high: 'Validation and evidence strongly support the result', medium: 'Some manual review is advisable', low: 'Manual review is required' } },
-    task_completion_score: { type: 'score', instructions: 'How completely did the run satisfy its objective?', criteria: ['Largely unrealized', 'Major requirements unmet', 'Partially complete', 'Nearly complete', 'All requirements verified'] },
-  }, { model: process.env.KASEKI_CLASSIFICATION_MODEL || DEFAULT_JEV_MODEL, timeoutMs: Number.parseInt(process.env.KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS || '15000', 10) });
+  const metadata = state.metadata && typeof state.metadata === 'object' ? state.metadata as JsonObject : {};
+  const failure = state.failure && typeof state.failure === 'object' ? state.failure as JsonObject : {};
+  const runExit = Number(metadata.exit_code ?? failure.exit_code ?? failure.exitCode);
+  const validationExit = Number(metadata.validation_exit_code ?? failure.validation_exit_code);
+  const hasFailureEvidence = (Number.isFinite(runExit) && runExit !== 0)
+    || (Number.isFinite(validationExit) && validationExit !== 0)
+    || /(?:^|\s)(?:failed|error|exit code [1-9]\d*)/im.test(validation);
+  const result = await classifyWithJev(stateForJev, buildRunEvaluationQuestions(hasFailureEvidence), { model: process.env.KASEKI_CLASSIFICATION_MODEL || DEFAULT_JEV_MODEL, timeoutMs: Number.parseInt(process.env.KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS || '15000', 10) });
   const answer = (name: string): string | number => {
     const value = result.answers[name];
     return value?.type === 'choice' ? value.choice : value?.type === 'score' ? value.score : value?.type === 'noul' ? value.noul : 'unknown';
   };
-  const metadata = (state.metadata && typeof state.metadata === 'object' ? state.metadata : {}) as JsonObject;
-  const failure = (state.failure && typeof state.failure === 'object' ? state.failure : {}) as JsonObject;
+  const failureDiagnosis = failureDiagnosisFromAnswers(result.answers);
   const fact = {
     metadata,
     failure,
@@ -178,8 +170,9 @@ async function runEvaluation(resultsDir: string): Promise<JsonObject> {
   return buildRunEvaluationArtifact(fact, {
     overallAssessment: typeof assessment === 'string' ? assessment : 'unknown',
     reviewerConfidence: typeof confidence === 'string' ? confidence : 'low',
-    taskCompletionScore: typeof completion === 'number' ? Math.max(1, Math.min(5, Math.round(completion))) : 1,
-  }, { provider: 'openrouter-decisions', model: result.model, responseTime: result.responseTime, usage: result.usage });
+    taskCompletionScore: typeof completion === 'number' ? mapJevScoreToCompletion(completion) : 1,
+    failureDiagnosis,
+  }, { provider: 'openrouter-decisions', model: result.model, responseTime: result.responseTime, usage: result.usage, answers: result.answers });
 }
 
 async function main(): Promise<void> {

@@ -12,13 +12,27 @@ export class JevClassificationError extends Error {
 
 function timeoutMs(value: number | undefined): number { return Number.isInteger(value) && value && value > 0 ? value : 15000; }
 function isProbability(value: unknown): value is number { return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1; }
-function isDistribution(value: unknown): value is Record<string, number> { return Boolean(value) && typeof value === 'object' && !Array.isArray(value) && Object.values(value as Record<string, unknown>).every(isProbability); }
+function isDistribution(value: unknown, expectedKeys: string[]): value is Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const distribution = value as Record<string, unknown>;
+  const keys = Object.keys(distribution);
+  if (keys.length !== expectedKeys.length || !expectedKeys.every((key) => Object.hasOwn(distribution, key)) || !Object.values(distribution).every(isProbability)) return false;
+  const total = Object.values(distribution).reduce<number>((sum, probability) => sum + Number(probability), 0);
+  return Math.abs(total - 1) <= 0.03;
+}
 function validAnswer(question: QuestionDefinition, answer: unknown): answer is ClassificationAnswer {
   if (!answer || typeof answer !== 'object') return false;
   const value = answer as Record<string, unknown>;
   if (question.type === 'noul') return value.type === 'noul' && isProbability(value.noul);
-  if (question.type === 'choice') return value.type === 'choice' && typeof value.choice === 'string' && Object.hasOwn(question.criteria, value.choice) && isDistribution(value.probabilities) && isProbability(value.confidence);
-  return value.type === 'score' && typeof value.score === 'number' && Number.isFinite(value.score) && isDistribution(value.probabilities) && isProbability(value.confidence) && value.legend !== null && typeof value.legend === 'object';
+  if (question.type === 'choice') {
+    const keys = Object.keys(question.criteria);
+    return value.type === 'choice' && typeof value.choice === 'string' && keys.includes(value.choice) && isDistribution(value.probabilities, keys) && isProbability(value.confidence);
+  }
+  const scoreKeys = question.criteria.map((_, index) => String(index));
+  if (value.type !== 'score' || typeof value.score !== 'number' || !Number.isFinite(value.score) || value.score < 0 || value.score > question.criteria.length - 1 || !isDistribution(value.probabilities, scoreKeys) || !isProbability(value.confidence)) return false;
+  if (!value.legend || typeof value.legend !== 'object' || Array.isArray(value.legend)) return false;
+  const legend = value.legend as Record<string, unknown>;
+  return Object.keys(legend).length === scoreKeys.length && scoreKeys.every((key) => typeof legend[key] === 'string');
 }
 function parseResponse(value: unknown, questions: Record<string, QuestionDefinition>): JevClassificationResult | null {
   if (!value || typeof value !== 'object') return null;
