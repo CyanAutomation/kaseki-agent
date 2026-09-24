@@ -51,6 +51,7 @@ package_manifest=(
   'scripts/docker-entrypoint.sh|755'
   'scripts/lib/provider-retry.sh|644'
   'scripts/lib/repo-memory.sh|644'
+  'scripts/lib/goal-contract.cjs|644'
   'scripts/context-handoff.js|755'
   'scripts/write-run-metadata.mjs|644'
   'scripts/restore-disallowed-changes.sh|755'
@@ -70,6 +71,9 @@ for item in "${package_manifest[@]}"; do
     [[ "$actual_mode" == "$mode" ]] || fail "installed npm package $path has mode $actual_mode, expected $mode"
   fi
 done
+
+docker_helper_installs="$(grep -Fc 'install -m 0644 /app/scripts/lib/goal-contract.cjs /usr/local/bin/scripts/lib/goal-contract.cjs' "$ROOT_DIR/Dockerfile")"
+[[ "$docker_helper_installs" -eq 2 ]] || fail "Docker runtime must install the goal-contract helper in both image stages (found $docker_helper_installs)"
 
 printf '\n## Importable package entry points\n'
 PACKAGE_DIR="$PACKAGE_DIR" node --input-type=module <<'NODE'

@@ -6,6 +6,8 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 KASEKI_RESULTS_DIR="$TMP_DIR/results"
+KASEKI_SCRIPT_DIR="$ROOT_DIR"
+export KASEKI_SCRIPT_DIR
 mkdir -p "$KASEKI_RESULTS_DIR"
 
 # Extract only the production validator so this regression test exercises the
@@ -21,6 +23,7 @@ cat > "$candidate" <<'JSON'
 {
   "original_prompt": "Fix the parser",
   "upgraded_goal": "Fix the parser and preserve behavior",
+  "outcome_policy": "change_required",
   "key_requirements": ["Keep behavior stable"],
   "success_criteria": [{"criterion":"Parser tests pass","smart_score":"high"}],
   "anti_patterns": {"do_not_break":["Existing API contracts"]},

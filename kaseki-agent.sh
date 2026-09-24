@@ -68,6 +68,7 @@ fi
 
 
 KASEKI_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export KASEKI_SCRIPT_DIR
 KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER="${KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/validation-timeout-policy.sh}"
 if [ ! -r "$KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER" ] && [ -r /app/scripts/validation-timeout-policy.sh ]; then
   KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER="/app/scripts/validation-timeout-policy.sh"
@@ -527,6 +528,10 @@ VALIDATION_FAILURE_REASON=""
 VALIDATION_ALLOWLIST_FAILURE_REASON=""
 VALIDATION_STOPPED_EARLY=false
 VALIDATION_COMMANDS_ATTEMPTED=0
+VALIDATION_INVOCATION_COUNTER=0
+VALIDATION_REUSED=false
+VALIDATION_REUSE_COUNT=0
+LAST_SUCCESSFUL_VALIDATION_FINGERPRINT=""
 PRE_VALIDATION_EXIT=0
 PRE_VALIDATION_FAILED_COMMAND_DETAIL=""
 PRE_VALIDATION_FAILURE_REASON=""
@@ -865,11 +870,17 @@ append_validation_result() {
   local exit_code="$3"
   local duration_seconds="$4"
   local status="${5:-unknown}"  # passed, failed, skipped
+  local stage="${CURRENT_STAGE:-validation}"
+  local attempt="${coding_attempt:-0}"
+  local invocation="${VALIDATION_INVOCATION_COUNTER:-0}"
   
   # Write to temporary phase file for consolidation at finalization
   local temp_validation_file="${KASEKI_RESULTS_DIR}/.validation-results-temp.jsonl"
-  printf '{"command": %s, "exit_code": %d, "duration_seconds": %d, "status": %s}\n' \
+  printf '{"command": %s, "stage": %s, "attempt": %d, "invocation": %d, "exit_code": %d, "duration_seconds": %d, "status": %s}\n' \
     "$(printf '%s' "$command" | jq -Rs .)" \
+    "$(printf '%s' "$stage" | jq -Rs .)" \
+    "$attempt" \
+    "$invocation" \
     "$exit_code" \
     "$duration_seconds" \
     "$(printf '%s' "$status" | jq -Rs .)" >> "$temp_validation_file"
@@ -1978,6 +1989,8 @@ write_metadata() {
   "validation_stopped_early": $([[ "$VALIDATION_STOPPED_EARLY" == "true" ]] && printf 'true' || printf 'false'),
   "pre_validation_commands_attempted": $PRE_VALIDATION_COMMANDS_ATTEMPTED,
   "validation_commands_attempted": $VALIDATION_COMMANDS_ATTEMPTED,
+  "validation_reused": $([[ "$VALIDATION_REUSED" == "true" ]] && printf 'true' || printf 'false'),
+  "validation_reuse_count": $VALIDATION_REUSE_COUNT,
   "auto_lint_cleanup_exit_code": $AUTO_LINT_CLEANUP_EXIT,
   "auto_lint_cleanup_result": $(printf '%s' "$AUTO_LINT_CLEANUP_RESULT" | json_encode),
   "auto_lint_cleanup_classification": $(printf '%s' "$AUTO_LINT_CLEANUP_CLASSIFICATION" | json_encode),
@@ -2061,13 +2074,15 @@ META
   fallback_metadata_json="$(node - "$INSTANCE_NAME" "$KASEKI_TASK_MODE" "$STATUS" "$exit_code" "$FAILED_COMMAND" "$START_ISO" "$end_iso" "$duration" \
     "$WORKER_ERROR_TYPE" "$WORKER_ERROR_PHASE" "$WORKER_ERROR_MESSAGE" "$GOAL_SETTING_EXIT" "${KASEKI_GOAL_SETTING_ATTEMPTS:-0}" \
     "${KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT:-}" "$SCOUTING_EXIT" "$PI_EXIT" "$PRE_VALIDATION_EXIT" "$VALIDATION_EXIT" \
-    "$PRE_VALIDATION_COMMANDS_ATTEMPTED" "$VALIDATION_COMMANDS_ATTEMPTED" "$QUALITY_EXIT" "$GOAL_CHECK_EXIT" "$RUN_EVALUATION_EXIT" \
+    "$PRE_VALIDATION_COMMANDS_ATTEMPTED" "$VALIDATION_COMMANDS_ATTEMPTED" "$VALIDATION_REUSED" "$VALIDATION_REUSE_COUNT" \
+    "$QUALITY_EXIT" "$GOAL_CHECK_EXIT" "$RUN_EVALUATION_EXIT" \
     "$GOAL_CHECK_ATTEMPTS" "$GOAL_CHECK_MET" "$GOAL_CHECK_FAILURE_REASON" "$CRITICAL_CHANGE_FAILURE_REASON" \
     "$GOAL_CHECK_EVALUATOR_UNAVAILABLE" "$ACTUAL_MODEL" "$BASELINE_SETUP_FAILURE_REASON" <<'NODE'
 const [instance, taskMode, status, exitCode, failedCommand, startedAt, endedAt, duration,
   workerErrorType, workerErrorPhase, workerErrorMessage, goalSettingExit, goalSettingAttempts,
   goalSettingSucceededOnAttempt, scoutingExit, piExit, preValidationExit, validationExit,
-  preValidationCommandsAttempted, validationCommandsAttempted, qualityExit, goalCheckExit,
+  preValidationCommandsAttempted, validationCommandsAttempted, validationReused, validationReuseCount,
+  qualityExit, goalCheckExit,
   runEvaluationExit, goalCheckAttempts, goalCheckMet, goalCheckFailureReason,
   criticalChangeFailureReason, goalCheckEvaluatorUnavailable, actualModel,
   baselineSetupFailureReason] = process.argv.slice(2);
@@ -2083,7 +2098,9 @@ process.stdout.write(JSON.stringify({
   scouting_exit_code: integer(scoutingExit), pi_exit_code: integer(piExit),
   pre_validation_exit_code: integer(preValidationExit), validation_exit_code: integer(validationExit),
   pre_validation_commands_attempted: integer(preValidationCommandsAttempted),
-  validation_commands_attempted: integer(validationCommandsAttempted), quality_exit_code: integer(qualityExit),
+  validation_commands_attempted: integer(validationCommandsAttempted),
+  validation_reused: validationReused === 'true', validation_reuse_count: integer(validationReuseCount),
+  quality_exit_code: integer(qualityExit),
   goal_check_exit_code: integer(goalCheckExit), goal_check_attempts: integer(goalCheckAttempts),
   goal_check_met: goalCheckEvaluatorUnavailable === 'true' ? null : booleanOrNull(goalCheckMet),
   goal_check_failure_reason: goalCheckFailureReason, critical_change_failure_reason: criticalChangeFailureReason,
@@ -2385,7 +2402,8 @@ SUMMARY
   if [ -f "$failure_file" ]; then
     local validation_exit validation_attempts
     validation_exit="$(jq -r '.validation_exit_code // empty' "$failure_file" 2>/dev/null || true)"
-    validation_attempts="$(jq -r '.validation_commands_attempted // .phases.validation.commands_attempted // empty' "$metadata_file" 2>/dev/null || true)"
+    validation_attempts="$(jq -r '([.validation_commands_attempted, .phases.validation.commands_attempted, ((.phases.validation.results // []) | map(select(.status != "skipped" and ((.stage // "validation") | startswith("validation")))) | length)] | map(select(type == "number")) | max) // 0' "$metadata_file" 2>/dev/null || true)"
+    [ -n "$validation_exit" ] || validation_exit="$(jq -r '.validation_exit_code // empty' "$metadata_file" 2>/dev/null || true)"
     [ -n "$validation_exit" ] || validation_exit="-1"
     [ -n "$validation_attempts" ] || validation_attempts=0
     if [ "$validation_attempts" -gt 0 ] && [ "$validation_exit" -ge 0 ]; then
@@ -2401,7 +2419,10 @@ SUMMARY
 
   if [ -s "${KASEKI_RESULTS_DIR}/goal-setting.json" ]; then
     local goal_setting_fallback
-    goal_setting_fallback="$(jq -r 'if .fallback == true or (.reasoning // "" | test("fallback"; "i")) then "true" else "false" end' "${KASEKI_RESULTS_DIR}/goal-setting.json" 2>/dev/null || printf 'false')"
+    goal_setting_fallback="$(jq -r 'if .fallback == true then "true" else "false" end' "${KASEKI_RESULTS_DIR}/goal-setting.json" 2>/dev/null || printf 'false')"
+    if [ -f "$metadata_file" ] && [ "$(jq -r '.goal_setting_fallback_used == true' "$metadata_file" 2>/dev/null || printf 'false')" = "true" ]; then
+      goal_setting_fallback="true"
+    fi
     printf -- "- Goal Setting: %s\n" "$([ "$goal_setting_fallback" = "true" ] && printf 'Fallback used' || printf 'Artifact available')" >> "$summary_file"
   fi
   if [ -s "${KASEKI_RESULTS_DIR}/scouting.json" ]; then
@@ -3712,7 +3733,6 @@ EOF
     /app/scripts/kaseki-performance-metrics.sh "${KASEKI_RESULTS_DIR}"/stage-timings.tsv "${KASEKI_RESULTS_DIR}"/performance-metrics.json 2>/dev/null || true
   fi
   
-  maybe_call_finish_helper write_result_summary
   # Phase 3: Generate infrastructure diagnostics report if validation had SIGPIPE failure
   maybe_call_finish_helper write_validation_infrastructure_diagnostics
   
@@ -3743,6 +3763,7 @@ EOF
   # was skipped or the worker exited before validation started.
   ensure_validation_evidence_artifacts
   finalize_artifacts_and_publish_status "${KASEKI_RESULTS_DIR}" write_metadata "$STATUS" "${VALIDATION_TIMINGS_FILE}" "${PRE_VALIDATION_TIMINGS_FILE}"
+  maybe_call_finish_helper write_result_summary
   maybe_call_finish_helper remove_low_value_artifacts
   if [ "$KASEKI_REPO_SESSION_ACTIVE" = "1" ] && [ "$(cat "$KASEKI_REPO_SESSION_MARKER" 2>/dev/null || true)" = "${BASHPID:-$$}" ]; then
     rm -f "$KASEKI_REPO_SESSION_MARKER"
@@ -5026,6 +5047,47 @@ write_validation_command_environment() {
   } | tee -a "$env_log"
 }
 
+run_validation_user_command() {
+  local command="$1"
+  local command_timeout_seconds="$2"
+  timeout --signal=TERM --kill-after=10s "$command_timeout_seconds" bash -e -o pipefail -c "$command"
+}
+
+validation_fingerprint() {
+  local results_dir="$1"
+  local commands="$2"
+  {
+    printf 'commands=%s\0' "$commands"
+    printf 'diff\0'
+    cat "${results_dir}/git.diff" 2>/dev/null || true
+    printf '\0changed-files\0'
+    cat "${results_dir}/changed-files.txt" 2>/dev/null || true
+    git status --porcelain=v1 --untracked-files=all 2>/dev/null || true
+    git diff HEAD --binary -- 2>/dev/null || true
+    git ls-files --others --exclude-standard -z 2>/dev/null | while IFS= read -r -d '' untracked_file; do
+      printf 'untracked=%s\0' "$untracked_file"
+      if [ -f "$untracked_file" ]; then sha256sum -- "$untracked_file" 2>/dev/null || true; fi
+    done
+  } | sha256sum | awk '{print $1}'
+}
+
+remember_successful_validation() {
+  local results_dir="$1"
+  local commands="$2"
+  local attempted="$3"
+  [ "$VALIDATION_EXIT" -eq 0 ] && [ "$attempted" -gt 0 ] || return 0
+  LAST_SUCCESSFUL_VALIDATION_FINGERPRINT="$(validation_fingerprint "$results_dir" "$commands")"
+}
+
+reuse_validation_if_unchanged() {
+  local results_dir="$1"
+  local commands="$2"
+  [ -n "${LAST_SUCCESSFUL_VALIDATION_FINGERPRINT:-}" ] || return 1
+  local current_fingerprint
+  current_fingerprint="$(validation_fingerprint "$results_dir" "$commands")"
+  [ "$current_fingerprint" = "$LAST_SUCCESSFUL_VALIDATION_FINGERPRINT" ]
+}
+
 run_validation_commands() {
   local stage_label="$1"
   local commands="$2"
@@ -5050,6 +5112,9 @@ run_validation_commands() {
   local command_exit tee_exit filter_exit pipe_statuses execute_during_dry_run pipefail_was_enabled
   local -a validation_commands
   local validation_workspace="${13:-$PWD}"
+  VALIDATION_INVOCATION_COUNTER=$((VALIDATION_INVOCATION_COUNTER + 1))
+  local validation_invocation="$VALIDATION_INVOCATION_COUNTER"
+  local validation_attempt="${coding_attempt:-0}"
 
   execute_during_dry_run=false
   if [ "$KASEKI_BASELINE_VALIDATION_DRY_RUN" = "1" ] && [ "$stage_label" = "pre-agent validation" ]; then
@@ -5131,7 +5196,7 @@ run_validation_commands() {
           # Use non-login shell (bash -c) to avoid initialization issues in --read-only containers.
           # Login shell (bash -l) sources /etc/profile and ~/.bashrc, which can fail with getcwd()
           # errors when running in constrained filesystem environments (read-only root, etc.).
-          timeout --signal=TERM --kill-after=10s "$command_timeout_seconds" bash -c "$trimmed"
+          run_validation_user_command "$trimmed" "$command_timeout_seconds"
           command_exit=$?
           if [ "$command_exit" -eq 124 ]; then
             printf 'validation command timed out after %ss\n' "$command_timeout_seconds"
@@ -5158,7 +5223,7 @@ run_validation_commands() {
         filter_exit="${pipe_statuses[2]:-1}"
         validation_end="$(date +%s)"
         duration=$((validation_end - validation_start))
-        printf '%s\t%s\t%s\ttee_exit=%s\tfilter_exit=%s\n' "$trimmed" "$command_exit" "$duration" "$tee_exit" "$filter_exit" >> "$timings_file"
+        printf '%s\t%s\t%s\ttee_exit=%s\tfilter_exit=%s;stage=%s;attempt=%s;invocation=%s\n' "$trimmed" "$command_exit" "$duration" "$tee_exit" "$filter_exit" "$stage_label" "$validation_attempt" "$validation_invocation" >> "$timings_file"
         emit_event "validation_command_finished" "stage=$stage_label" "command=$trimmed" "exit_code=$command_exit" "tee_exit_code=$tee_exit" "filter_exit_code=$filter_exit" "duration_seconds=$duration"
         emit_progress "$stage_label" "command=$trimmed finished exit=$command_exit duration_seconds=$duration"
         
@@ -5382,8 +5447,12 @@ is_transient_goal_setting_failure() {
 }
 
 build_goal_setting_prompt() {
-  local caveman_instruction
+  local caveman_instruction goal_outcome_policy
   caveman_instruction="$(get_caveman_instruction)"
+  goal_outcome_policy="change_required"
+  if [ "$KASEKI_TASK_MODE" = "inspect" ] || critical_change_contract_allows_noop; then
+    goal_outcome_policy="change_or_noop"
+  fi
   
   cat <<EOF
 ${caveman_instruction:+$caveman_instruction
@@ -5402,6 +5471,9 @@ Well-formed goals have:
 - **Codebase context**: Tech stack, folder patterns, naming conventions
 - **Examples**: Input/output before/after if inferrable
 - **Reasoning**: Explain why constraints exist
+- **Outcome policy**: Use "change_or_noop" for inspect tasks or when the critical-change contract permits a no-op; otherwise use "change_required"
+- **Conditional criteria**: Give every conditional criterion an explicit "applies_when" condition; do not encode mutually exclusive branches in free-text criteria
+- **Contract consistency**: Do not require an implementation and zero code changes in the same applicable outcome
 - **Evidence discipline**: Only name a file, version, or behavior after verifying it in the repository. If evidence is ambiguous, record it as an open question rather than turning it into a success criterion. Never describe an existing file as stale or nonexistent without a direct repository observation.
 
 === INPUT ANALYSIS ===
@@ -5418,10 +5490,12 @@ Write exactly one JSON object to $GOAL_SETTING_CANDIDATE_ARTIFACT (no markdown, 
 {
   "original_prompt": "<the user's original task prompt, verbatim>",
   "upgraded_goal": "<concise goal (1-3 sentences), actionable for a coding agent>",
+  "outcome_policy": "$goal_outcome_policy",
   "key_requirements": ["<requirement 1>", "<requirement 2>"],
   "success_criteria": [
     {
       "criterion": "<specific, measurable criterion>",
+      "applies_when": "<optional condition that determines whether this criterion applies>",
       "smart_score": "high",
       "reasoning": "<brief reason why this is SMART (Specific, Measurable, Achievable, Relevant, Time-bound)>"
     }
@@ -5459,6 +5533,7 @@ For a task like "Fix the parser's null-handling in parseRole()", a valid output 
 {
   "original_prompt": "Fix null-safety in parseRole() function. Currently crashes on null input; should return undefined instead.",
   "upgraded_goal": "Add null-safety checks to parseRole() to handle null/undefined inputs gracefully, with test coverage",
+  "outcome_policy": "change_required",
   "key_requirements": [
     "Must pass TypeScript type checking",
     "Must not break existing callers",
@@ -5698,6 +5773,14 @@ validate_goal_setting_artifact_with_node() {
         errors.push('missing_or_invalid: reasoning (must be non-empty string)');
       }
 
+      const goalContractPath = process.env.KASEKI_SCRIPT_DIR
+        ? process.env.KASEKI_SCRIPT_DIR + '/scripts/lib/goal-contract.cjs'
+        : require('node:path').join(process.cwd(), 'scripts/lib/goal-contract.cjs');
+      const { validateGoalContract } = require(goalContractPath);
+      const goalContract = validateGoalContract(artifact, { requireOutcomePolicy: true });
+      errors.push(...goalContract.errors);
+      warnings.push(...goalContract.warnings);
+
       // === REQUIRED ARRAYS ===
       if (!Array.isArray(artifact.key_requirements)) {
         errors.push('missing_or_invalid: key_requirements (must be array)');
@@ -5879,18 +5962,25 @@ create_fallback_goal_setting_artifact() {
   local task_prompt="$1"
   local output_path="$2"
   local results_dir="${KASEKI_RESULTS_DIR:-/results}"
+  local fallback_outcome_policy="change_required"
+  if [ "$KASEKI_TASK_MODE" = "inspect" ] || critical_change_contract_allows_noop; then
+    fallback_outcome_policy="change_or_noop"
+  fi
   
   # Generate fallback using Node.js utility function
-  node - "$task_prompt" "$output_path" <<'NODE_FALLBACK'
+  node - "$task_prompt" "$output_path" "$fallback_outcome_policy" <<'NODE_FALLBACK'
 const fs = require('fs');
 const path = require('path');
 
 const taskPrompt = process.argv[2];
 const outputPath = process.argv[3];
+const outcomePolicy = process.argv[4];
 
 // Use full task prompt as upgraded_goal (no truncation)
 // This preserves rich context for downstream phases
 const fallbackGoal = {
+  fallback: true,
+  outcome_policy: outcomePolicy,
   original_prompt: taskPrompt,
   upgraded_goal: taskPrompt,
   key_requirements: [
@@ -7599,7 +7689,17 @@ const measurable = criteria.filter(item => /test|valid|pass|file|command|\d/i.te
 const originalWords = String(process.env.TASK_PROMPT || "").trim().split(/\s+/).filter(Boolean).length;
 const goalWords = JSON.stringify(goal || {}).split(/\s+/).filter(Boolean).length;
 const timings = read("stage-timings.tsv");
-const elapsed = (label) => { const row = timings.split(/\r?\n/).reverse().find(line => line.toLowerCase().includes(label)); const nums = row?.split("\t") || []; return Number(nums.find((v, i) => i > 0 && /^\d+(\.\d+)?$/.test(v)) || 0); };
+const elapsed = (label) => timings.split(/\r?\n/).reduce((total, row) => {
+  const columns = row.split("\t");
+  const stage = (columns[0] || "").trim().toLowerCase();
+  const matches = label === "validation"
+    ? /^validation(?:\s|$)/.test(stage)
+    : label === "goal check" ? stage === "goal check"
+      : label === "run evaluation" ? stage === "run evaluation"
+        : stage.includes(label);
+  const seconds = Number(columns.length >= 3 ? columns[2] : columns[1]);
+  return matches && Number.isFinite(seconds) && seconds >= 0 ? total + seconds : total;
+}, 0);
 artifact.phase_scorecard = {
   ...artifact.phase_scorecard,
   "goal-setting": { ...(artifact.phase_scorecard["goal-setting"] || {}), schema_valid: Boolean(goal), original_task_words: originalWords, goal_artifact_words: goalWords, quality_uplift: originalWords ? Number(((goalWords - originalWords) / originalWords).toFixed(3)) : 0, success_criteria_total: criteria.length, measurable_success_criteria: measurable, success_criteria_completeness: criteria.length ? Number((measurable / criteria.length).toFixed(3)) : 0 },
@@ -10249,7 +10349,7 @@ VALIDATION_FAILED_COMMAND_DETAIL=""
 VALIDATION_FAILURE_REASON=""
 VALIDATION_ALLOWLIST_FAILURE_REASON=""
 VALIDATION_STOPPED_EARLY=false
-VALIDATION_COMMANDS_ATTEMPTED=0
+VALIDATION_REUSED=false
 QUALITY_EXIT=0
 QUALITY_FAILURE_REASON=""
 FILTER_STDERR_TAIL=""
@@ -10721,14 +10821,23 @@ elif [ "$PI_EXIT" -ne 0 ] && [ "$KASEKI_VALIDATE_AFTER_AGENT_FAILURE" != "1" ]; 
   record_stage_timing "validation" "$PI_EXIT" 0 "skipped_after_agent_failure"
   emit_progress "validation" "finished with exit $VALIDATION_EXIT"
 else
-  run_validation_commands \
-    "validation" \
-    "$KASEKI_VALIDATION_COMMANDS" \
-    "${KASEKI_RESULTS_DIR}"/validation.log \
-    "/dev/null" \
-    "$VALIDATION_TIMINGS_FILE" \
-    "${KASEKI_RESULTS_DIR}/validation-env.log" \
-    "validation_command_failed"
+  if reuse_validation_if_unchanged "$KASEKI_RESULTS_DIR" "$KASEKI_VALIDATION_COMMANDS"; then
+    VALIDATION_EXIT=0
+    VALIDATION_REUSED=true
+    VALIDATION_REUSE_COUNT=$((VALIDATION_REUSE_COUNT + 1))
+    printf 'Validation reused: the repository diff and validation command set match the last successful validation.\n' | tee -a "${KASEKI_RESULTS_DIR}"/validation.log
+    emit_event "validation_reused" "reason=unchanged_diff_and_commands" "coding_attempt=$coding_attempt"
+    emit_progress "validation" "reused successful result for unchanged diff"
+    record_stage_timing "validation" 0 0 "reused=true attempt=$coding_attempt"
+  else
+    run_validation_commands \
+      "validation" \
+      "$KASEKI_VALIDATION_COMMANDS" \
+      "${KASEKI_RESULTS_DIR}"/validation.log \
+      "/dev/null" \
+      "$VALIDATION_TIMINGS_FILE" \
+      "${KASEKI_RESULTS_DIR}/validation-env.log" \
+      "validation_command_failed"
 
   # Exit 127 commonly means a restored dependency tree lost package-manager
   # executable links. Repair dependencies once and retry the full validation
@@ -10737,16 +10846,16 @@ else
   lockfile_present=0
   [ -f package-lock.json ] && lockfile_present=1
   validation_dependency_action="$(validation_dependency_recovery_action "$VALIDATION_EXIT" "$lockfile_present" "$validation_dependency_retry_count")"
-  if [ "$validation_dependency_action" = "reinstall_and_retry" ]; then
+    if [ "$validation_dependency_action" = "reinstall_and_retry" ]; then
     validation_dependency_retry_count=$((validation_dependency_retry_count + 1))
     printf 'Validation command was not found (exit 127); repairing dependencies and retrying once.\n' | tee -a "${KASEKI_RESULTS_DIR}"/validation.log
     emit_event "validation_dependency_recovery" "reason=command_not_found" "action=reinstall_and_retry"
     rm -rf node_modules
     find "$KASEKI_DEPENDENCY_CACHE_DIR" -type f -name 'validated*' -delete 2>/dev/null || true
-    if prepare_dependencies; then
+      if prepare_dependencies; then
       VALIDATION_EXIT=0
       VALIDATION_FAILURE_REASON=""
-      run_validation_commands \
+        run_validation_commands \
         "validation retry after dependency repair" \
         "$KASEKI_VALIDATION_COMMANDS" \
         "${KASEKI_RESULTS_DIR}"/validation.log \
@@ -10754,6 +10863,7 @@ else
         "$VALIDATION_TIMINGS_FILE" \
         "${KASEKI_RESULTS_DIR}/validation-env.log" \
         "validation_command_failed"
+      fi
     fi
   fi
   
@@ -10775,6 +10885,9 @@ if [ "$VALIDATION_EXIT" -eq 0 ]; then
   if ! check_validation_allowlist; then
     : # Exit code already set in check_validation_allowlist
   fi
+  if [ "$STATUS" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; then
+    remember_successful_validation "$KASEKI_RESULTS_DIR" "$KASEKI_VALIDATION_COMMANDS" "$VALIDATION_COMMANDS_ATTEMPTED"
+  fi
 fi
 
 if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && \
@@ -10787,6 +10900,14 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && \
     run_goal_check "$coding_attempt" "contract-repair"
   fi
   collect_goal_check_feedback "$INSTANCE_NAME"
+
+  if jq -e '.retryable == false' "${KASEKI_RESULTS_DIR}/goal-check.json" >/dev/null 2>&1; then
+    STATUS=8
+    FAILED_COMMAND="goal contract validation"
+    GOAL_CHECK_FAILURE_REASON="goal_contract_invalid"
+    emit_error_event "goal_contract_invalid" "Goal-check suppressed coding retries because the goal contract is contradictory or ambiguous." "exit"
+    break
+  fi
 
   if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ "$GOAL_CHECK_EXIT" -ne 0 ]; then
     [ -z "$GOAL_CHECK_FAILURE_REASON" ] && GOAL_CHECK_FAILURE_REASON="goal_check_failed_exit_$GOAL_CHECK_EXIT"
@@ -10859,6 +10980,11 @@ fi
 
 run_secret_scan
 
+# Publish the complete validation and timing snapshot before JEV reads its
+# evidence. The final consolidation below adds the evaluator and publication
+# phases after they have run.
+consolidate_timings_to_json "${KASEKI_RESULTS_DIR}/timings-manifest.json" "$VALIDATION_TIMINGS_FILE" "$PRE_VALIDATION_TIMINGS_FILE" "${KASEKI_RESULTS_DIR}/stage-timings.tsv"
+write_metadata "$STATUS"
 run_run_evaluation
 
 # Filtered event streams are the supported reviewer artifact. Raw provider

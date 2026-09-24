@@ -40,6 +40,9 @@ printf '+change\n' > "$KASEKI_RESULTS_DIR/git.diff"
 cat > "$KASEKI_RESULTS_DIR/goal-check.json" <<'JSON'
 {"met":true,"confidence":"high"}
 JSON
+cat > "$KASEKI_RESULTS_DIR/goal-setting.json" <<'JSON'
+{"fallback":false,"confidence":"high","reasoning":"A fallback option was considered and rejected.","success_criteria":["Refactor the helper"]}
+JSON
 cat > "$KASEKI_RESULTS_DIR/run-evaluation.json" <<'JSON'
 {"overall_assessment":"poor","reviewer_confidence":"low","task_completion_score":1,"summary":"Run assessed poor; validation was not run; 1 changed file; run failed with exit code 8."}
 JSON
@@ -55,5 +58,13 @@ grep -q -- '- Goal Check: Met (confidence: high)' "$summary"
 grep -q -- '- Run Evaluation: poor; confidence low; task completion 1/5' "$summary"
 grep -q -- '- Scorecard: 49/100 (F); lifecycle failed' "$summary"
 grep -q -- '- Worker Error: metadata_write_invalid (phase: finalize)' "$summary"
+grep -q -- '- Goal Setting: Artifact available' "$summary"
+if grep -q -- '- Goal Setting: Fallback used' "$summary"; then
+  fail "goal-setting reasoning text was mistaken for a fallback flag"
+fi
+
+printf '%s\n' '{"instance":"run-123","exit_code":8,"validation_commands_attempted":0,"validation_exit_code":0,"phases":{"validation":{"commands_attempted":2,"results":[{"status":"passed"},{"status":"passed"}]}}}' > "$KASEKI_RESULTS_DIR/metadata.json"
+write_result_summary
+grep -q -- '- Validation: Passed (2 commands attempted)' "$summary"
 
 printf 'result-summary.test.sh PASS\n'

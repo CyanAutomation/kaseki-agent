@@ -1,4 +1,6 @@
 import type { ClassificationAnswer, QuestionDefinition } from './types/openrouter-decisions';
+import { normalizeSuccessCriteria } from '../scripts/lib/goal-contract.cjs';
+import type { GoalCriterion } from '../scripts/lib/goal-contract.cjs';
 
 export interface RunEvaluationFailureDiagnosis {
   cause: string;
@@ -11,8 +13,11 @@ export interface RunEvaluationFailureDiagnosis {
 export interface GoalCriterionAssessment {
   id: string;
   criterion: string;
+  applies_when?: string;
   probability: number | null;
   threshold: number;
+  applicability: 'applicable' | 'not_applicable' | 'unknown';
+  status: 'met' | 'unmet' | 'not_applicable' | 'unknown';
   met: boolean;
 }
 
@@ -22,16 +27,53 @@ export function mapJevScoreToCompletion(score: number, levelCount = 5): number {
 }
 
 export function buildGoalCriterionAssessments(
-  criteria: string[],
+  criteriaInput: Array<string | GoalCriterion>,
   answers: Record<string, ClassificationAnswer>,
   threshold: number,
 ): GoalCriterionAssessment[] {
-  return criteria.map((criterion, index) => {
-    const id = `criterion_${index + 1}`;
+  const criteria = normalizeSuccessCriteria(criteriaInput);
+  return criteria.map(({ id, criterion, appliesWhen }) => {
+    const applicabilityAnswer = answers[`${id}_applicability`];
+    const applicability = !appliesWhen
+      ? 'applicable'
+      : applicabilityAnswer?.type === 'choice' && ['applicable', 'not_applicable', 'unknown'].includes(applicabilityAnswer.choice)
+        ? applicabilityAnswer.choice as GoalCriterionAssessment['applicability']
+        : 'unknown';
+    if (applicability === 'not_applicable') {
+      return {
+        id, criterion, ...(appliesWhen ? { applies_when: appliesWhen } : {}), probability: null, threshold,
+        applicability, status: 'not_applicable', met: true,
+      };
+    }
     const answer = answers[id];
     const probability = answer?.type === 'noul' ? answer.noul : null;
-    return { id, criterion, probability, threshold, met: probability !== null && probability >= threshold };
+    const status = applicability === 'unknown'
+      ? 'unknown'
+      : probability === null ? 'unknown' : probability >= threshold ? 'met' : 'unmet';
+    return {
+      id, criterion, ...(appliesWhen ? { applies_when: appliesWhen } : {}), probability, threshold,
+      applicability, status, met: status === 'met',
+    };
   });
+}
+
+export function buildGoalCheckQuestions(criteriaInput: Array<string | GoalCriterion>): Record<string, QuestionDefinition> {
+  const criteria = normalizeSuccessCriteria(criteriaInput);
+  return Object.fromEntries(criteria.flatMap(({ id, criterion, appliesWhen }) => [
+    ...(appliesWhen ? [[`${id}_applicability`, {
+      type: 'choice' as const,
+      instructions: `Does this condition apply based on the supplied repository and run evidence? Condition: ${appliesWhen}`,
+      criteria: {
+        applicable: 'The condition applies, so assess the criterion.',
+        not_applicable: 'The condition does not apply; do not require this criterion.',
+        unknown: 'The evidence cannot establish whether the condition applies.',
+      },
+    } as QuestionDefinition]] : []),
+    [id, {
+      type: 'noul' as const,
+      instructions: `Is this success criterion satisfied by the supplied repository and validation evidence? Criterion: ${criterion}${appliesWhen ? ` Applies when: ${appliesWhen}` : ''}`,
+    } as QuestionDefinition],
+  ]));
 }
 
 export function buildRunEvaluationQuestions(includeFailureDiagnosis: boolean): Record<string, QuestionDefinition> {

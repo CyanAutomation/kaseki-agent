@@ -40,8 +40,7 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
   const goalSetting = object(snapshot.json['goal-setting.json']) ?? {};
   const scouting = object(snapshot.json['scouting.json']) ?? {};
   const goalSettingFallback = metadata.goal_setting_fallback_used === true
-    || goalSetting.fallback === true
-    || (goalSetting.confidence === 'low' && /fallback/i.test(String(goalSetting.reasoning ?? '')));
+    || goalSetting.fallback === true;
   const scoutingFallback = metadata.scouting_fallback_used === true
     || scouting.fallback === true
     || (typeof scouting.fallback_reason === 'string' && scouting.fallback_reason.trim().length > 0);
