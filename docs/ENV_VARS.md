@@ -24,6 +24,25 @@ Complete reference for all environment variables used by kaseki-agent.
 | `KASEKI_GOAL_CHECK_CONTRACT_REPAIR_TIMEOUT_SECONDS` | `60` | integer | Timeout for the constrained evaluator retry used only when the first pass does not yield a schema-valid verdict |
 | `KASEKI_GOAL_CHECK_CONTRACT_REPAIR_MAX_OUTPUT_TOKENS` | `768` | integer | Advisory output target for the constrained evaluator contract-repair retry; it does not cap or fail the run |
 
+### Advisory phase targets
+
+Phase targets guide prompt compaction and artifact review. They are reported as soft targets; exceeding a target never caps a provider request, stops an agent, or causes a retry by itself. Defaults leave room for the coding context observed in production runs (44k tokens) and count explicit Pi `turn_start` events rather than provider responses.
+
+| Variable | Default | Type | Purpose |
+| ---------- | --------- | ------ | --------- |
+| `KASEKI_PROMPT_TOKEN_WARN_THRESHOLD` | `48000` | integer | Context size at which the event summary recommends compaction |
+| `KASEKI_SCOUTING_MAX_CONTEXT_TOKENS` | `32000` | integer | Advisory scouting context target |
+| `KASEKI_SCOUTING_MAX_TURNS` | `8` | integer | Advisory scouting logical-turn target |
+| `KASEKI_GOAL_SETTING_MAX_CONTEXT_TOKENS` | `32000` | integer | Advisory goal-setting context target |
+| `KASEKI_GOAL_SETTING_MAX_TURNS` | `12` | integer | Advisory goal-setting logical-turn target |
+| `KASEKI_GOAL_CHECK_MAX_CONTEXT_TOKENS` | `48000` | integer | Advisory goal-check context target |
+| `KASEKI_GOAL_CHECK_MAX_TURNS` | `12` | integer | Advisory goal-check logical-turn target |
+| `KASEKI_RUN_EVALUATION_MAX_CONTEXT_TOKENS` | `48000` | integer | Advisory run-evaluation context target |
+| `KASEKI_RUN_EVALUATION_MAX_TURNS` | `12` | integer | Advisory run-evaluation logical-turn target |
+| `KASEKI_CODING_MAX_CONTEXT_TOKENS` | `64000` | integer | Advisory coding context target |
+| `KASEKI_CODING_MAX_TURNS` | `64` | integer | Advisory coding logical-turn target |
+| `KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS` | `32000` | integer | Advisory tool-output target for the active phase |
+
 ### Provider Selection
 
 **Kaseki uses one active LLM provider per run:**

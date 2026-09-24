@@ -104,8 +104,17 @@ export class DockerManager {
     // Ensure directories exist
     this.ensureDirectories(config.workspaceDir, config.resultsDir, config.cacheDir);
 
-    // Build Docker run command
-    const dockerArgs = this.buildDockerArgs(config);
+    // Carry the configured image and Docker's immutable image ID into the run
+    // metadata so artifacts identify the exact worker binary that produced them.
+    const imageId = this.getImageId(config.image);
+    const dockerArgs = this.buildDockerArgs({
+      ...config,
+      environment: {
+        ...config.environment,
+        KASEKI_RUNNER_IMAGE_REFERENCE: config.image,
+        KASEKI_RUNNER_IMAGE_ID: imageId ?? '',
+      },
+    });
 
     logger.debug(`Docker command: docker run ${dockerArgs.join(' ')}`);
 
