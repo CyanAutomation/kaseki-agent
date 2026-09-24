@@ -476,10 +476,10 @@ test('writes gateway summary and recommends compaction when token budget is exce
   const previousThreshold = process.env.KASEKI_PROMPT_TOKEN_WARN_THRESHOLD;
   process.env.KASEKI_PROMPT_TOKEN_WARN_THRESHOLD = '100';
   try {
-    fs.writeFileSync(inputPath, JSON.stringify({
-      type: 'message_end',
-      message: { model: 'coding-model', api: 'gateway', usage: { prompt_tokens: 150, completion_tokens: 25 } },
-    }) + '\n');
+    fs.writeFileSync(inputPath, [
+      { type: 'turn_start' },
+      { type: 'message_end', message: { model: 'coding-model', api: 'gateway', usage: { prompt_tokens: 150, completion_tokens: 25 } } },
+    ].map(JSON.stringify).join('\n') + '\n');
     await runPiEventFilter(inputPath, outputPath, summaryPath);
     const gatewaySummary = JSON.parse(fs.readFileSync(path.join(tmpDir, 'gateway-summary.json'), 'utf8'));
     expect(gatewaySummary).toMatchObject({
@@ -510,6 +510,7 @@ const TOKEN_LEDGER_ENV_KEYS = [
   'KASEKI_INFERENCE_PHASE',
   'KASEKI_INFERENCE_ATTEMPT',
   'KASEKI_INFERENCE_REQUEST_ID',
+  'KASEKI_RESOLVED_MODEL',
   'KASEKI_LLM_INPUT_USD_PER_MTOKEN',
   'KASEKI_LLM_CACHE_READ_USD_PER_MTOKEN',
   'KASEKI_LLM_CACHE_WRITE_USD_PER_MTOKEN',
@@ -681,6 +682,102 @@ test('uses final per-response usage instead of summing repeated stream events', 
     total_tokens: 140,
   });
   expect(result.summary.completion_usage).toHaveLength(1);
+});
+
+test('measures phase turns from turn_start events, not provider responses', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-phase-turn-budget-'));
+  const inputPath = path.join(tmpDir, 'events.jsonl');
+  const outputPath = path.join(tmpDir, 'filtered.jsonl');
+  const summaryPath = path.join(tmpDir, 'summary.json');
+  const previousTurns = process.env.KASEKI_PHASE_MAX_TURNS;
+  const previousContext = process.env.KASEKI_PHASE_MAX_CONTEXT_TOKENS;
+  const previousToolOutput = process.env.KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS;
+  process.env.KASEKI_PHASE_MAX_TURNS = '2';
+  process.env.KASEKI_PHASE_MAX_CONTEXT_TOKENS = '100000';
+  process.env.KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS = '100000';
+  try {
+    const fixture = [
+      { type: 'turn_start' },
+      ...Array.from({ length: 5 }, (_, index) => ({
+        type: 'message_end',
+        message: { response_id: `response-${index}`, model: 'coding-model', usage: { input: 10, output: 2 } },
+      })),
+    ];
+    fs.writeFileSync(inputPath, `${fixture.map(JSON.stringify).join('\n')}\n`);
+    await runPiEventFilter(inputPath, outputPath, summaryPath);
+    const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+
+    expect(summary.completion_usage).toHaveLength(5);
+    expect(summary.event_counts.turn_start).toBe(1);
+    expect(summary.phase_budget).toMatchObject({ max_turns: 2, turns_exceeded: false, exceeded: false });
+  } finally {
+    if (previousTurns === undefined) delete process.env.KASEKI_PHASE_MAX_TURNS;
+    else process.env.KASEKI_PHASE_MAX_TURNS = previousTurns;
+    if (previousContext === undefined) delete process.env.KASEKI_PHASE_MAX_CONTEXT_TOKENS;
+    else process.env.KASEKI_PHASE_MAX_CONTEXT_TOKENS = previousContext;
+    if (previousToolOutput === undefined) delete process.env.KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS;
+    else process.env.KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS = previousToolOutput;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('uses realistic defaults for advisory phase targets', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-phase-budget-defaults-'));
+  const inputPath = path.join(tmpDir, 'events.jsonl');
+  const outputPath = path.join(tmpDir, 'filtered.jsonl');
+  const summaryPath = path.join(tmpDir, 'summary.json');
+  const names = ['KASEKI_PHASE_MAX_CONTEXT_TOKENS', 'KASEKI_PHASE_MAX_TURNS', 'KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS'];
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  for (const name of names) delete process.env[name];
+  try {
+    fs.writeFileSync(inputPath, `${JSON.stringify({ type: 'turn_start' })}\n`);
+    await runPiEventFilter(inputPath, outputPath, summaryPath);
+    const budget = JSON.parse(fs.readFileSync(summaryPath, 'utf8')).phase_budget;
+
+    expect(budget).toMatchObject({
+      enforcement: 'soft_target',
+      max_context_tokens: 64000,
+      max_turns: 64,
+      max_tool_output_tokens: 32000,
+    });
+  } finally {
+    for (const name of names) {
+      if (previous[name] === undefined) delete process.env[name];
+      else process.env[name] = previous[name];
+    }
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('uses the resolved deployment model for token attribution when the provider omits its model', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-resolved-model-'));
+  const inputPath = path.join(tmpDir, 'events.jsonl');
+  const outputPath = path.join(tmpDir, 'filtered.jsonl');
+  const summaryPath = path.join(tmpDir, 'pi-summary.json');
+  const previous = captureTokenLedgerEnvironment();
+  process.env.KASEKI_RESOLVED_MODEL = 'dynamic/kaseki-agent';
+  process.env.KASEKI_LLM_PRICING_JSON = JSON.stringify({
+    'dynamic/kaseki-agent': { input_usd_per_mtoken: 1, cache_read_usd_per_mtoken: .5, cache_write_usd_per_mtoken: 1, output_usd_per_mtoken: 2 },
+  });
+  try {
+    fs.writeFileSync(inputPath, `${JSON.stringify({ type: 'message_end', message: { response_id: 'unknown-model-response', usage: { prompt_tokens: 120, completion_tokens: 20 } } })}\n`);
+    await runPiEventFilter(inputPath, outputPath, summaryPath);
+    const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+    const ledger = readTokenLedger(tmpDir)[0];
+
+    expect(summary.model_token_stats['dynamic/kaseki-agent']?.total_tokens).toBe(140);
+    expect(summary.selected_model).toBe('dynamic/kaseki-agent');
+    expect(ledger).toMatchObject({
+      model: 'unknown',
+      resolved_model: 'dynamic/kaseki-agent',
+      pricing_source: 'configured',
+      pricing_model: 'dynamic/kaseki-agent',
+    });
+    expect(ledger.estimated_cost_usd).not.toBeNull();
+  } finally {
+    restoreTokenLedgerEnvironment(previous);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });
 
 test('should provide per-model token statistics', async () => {

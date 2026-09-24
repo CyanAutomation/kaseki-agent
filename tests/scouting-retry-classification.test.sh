@@ -24,6 +24,7 @@ run_case() {
   local fake_repo="$case_dir/fake-repo" fake_bin="$case_dir/bin" results_dir="$case_dir/results"
   local workspace_repo="$case_dir/repo" app_lib="$case_dir/app/lib"
   local run_log="$case_dir/run.log" pi_calls="$case_dir/pi-calls.log"
+  local recovered_payload="$case_dir/recovered.json"
 
   mkdir -p "$fake_repo/deps/fake-dep" "$fake_bin" "$results_dir" "$workspace_repo" "$app_lib" "$case_dir/scripts" "$case_dir/scripts/lib"
   : > "$pi_calls"
@@ -55,6 +56,7 @@ run_case() {
   printf '%s\n' '# fake scouting repo' > "$fake_repo/README.md"
   printf '%s\n' '{"name":"fake-dep","version":"1.0.0","private":true}' > "$fake_repo/deps/fake-dep/package.json"
   printf '%s\n' '{"name":"fake-scouting-repo","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"fake-scouting-repo","version":"1.0.0","dependencies":{"fake-dep":"file:deps/fake-dep"}},"deps/fake-dep":{"version":"1.0.0"},"node_modules/fake-dep":{"resolved":"deps/fake-dep","link":true}}}' > "$fake_repo/package-lock.json"
+  printf '%s\n' '{"task":"inspect relevant code","requirements":["Preserve behavior"],"relevant_files":[{"path":"README.md","reason":"Task context"}],"observations":["Existing implementation is present."],"plan":["Inspect the code."],"validation":["Run the focused check."],"risks":[],"test_impact":[]}' > "$recovered_payload"
   git -C "$fake_repo" init -q -b main
   git -C "$fake_repo" add README.md package.json package-lock.json deps/fake-dep/package.json
   git -C "$fake_repo" -c user.email=kaseki-test@example.invalid -c user.name="Kaseki Test" commit -q -m initial
@@ -65,7 +67,11 @@ if [ "${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
 prompt="${*: -1}"
 if printf '%s' "$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf 'scouting\n' >> "__PI_CALLS__"
-  cat "__PAYLOAD_FILE__" > "__RESULTS_DIR__/scouting-candidate.json"
+  if [ "$(grep -c '^scouting$' "__PI_CALLS__")" -eq 1 ]; then
+    cat "__PAYLOAD_FILE__" > "__RESULTS_DIR__/scouting-candidate.json"
+  else
+    cat "__RECOVERED_PAYLOAD__" > "__RESULTS_DIR__/scouting-candidate.json"
+  fi
 elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "__PI_CALLS__"
   printf '%s\n' '{"met":true,"confidence":"high","summary":"fallback patch completed","evidence":["README changed"],"missing":[],"retry_prompt":"","validation_notes":[]}' > "__RESULTS_DIR__/goal-check-candidate.json"
@@ -75,8 +81,8 @@ else
 fi
 printf '{"type":"message","model":"test-model"}\n'
 EOF_PI
-  PI_CALLS_PATH="$pi_calls" PAYLOAD_FILE_PATH="$payload_file" RESULTS_DIR_PATH="$results_dir" WORKSPACE_REPO_PATH="$workspace_repo" \
-    perl -0pi -e 's#__PI_CALLS__#$ENV{PI_CALLS_PATH}#g; s#__PAYLOAD_FILE__#$ENV{PAYLOAD_FILE_PATH}#g; s#__RESULTS_DIR__#$ENV{RESULTS_DIR_PATH}#g; s#__WORKSPACE_REPO__#$ENV{WORKSPACE_REPO_PATH}#g' "$fake_bin/pi"
+  PI_CALLS_PATH="$pi_calls" PAYLOAD_FILE_PATH="$payload_file" RECOVERED_PAYLOAD_PATH="$recovered_payload" RESULTS_DIR_PATH="$results_dir" WORKSPACE_REPO_PATH="$workspace_repo" \
+    perl -0pi -e 's#__PI_CALLS__#$ENV{PI_CALLS_PATH}#g; s#__PAYLOAD_FILE__#$ENV{PAYLOAD_FILE_PATH}#g; s#__RECOVERED_PAYLOAD__#$ENV{RECOVERED_PAYLOAD_PATH}#g; s#__RESULTS_DIR__#$ENV{RESULTS_DIR_PATH}#g; s#__WORKSPACE_REPO__#$ENV{WORKSPACE_REPO_PATH}#g' "$fake_bin/pi"
 
   cat > "$fake_bin/kaseki-pi-progress-stream" <<'EOF_PROGRESS'
 #!/usr/bin/env bash
@@ -108,15 +114,36 @@ EOF_VALIDATION_FILTER
   local run_exit=$?
   set -e
 
-  [ "$run_exit" -eq 0 ] || fail "$case_name: expected fallback run to succeed, got $run_exit"
+  [ "$run_exit" -eq 0 ] || fail "$case_name: expected retry run to succeed, got $run_exit"
+  node - "$results_dir/metadata.json" <<'NODE' || fail "$case_name: worker identity metadata was not serialized"
+const fs = require('node:fs');
+const metadata = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+if (typeof metadata.runner_version !== 'string' || !metadata.runner_version) throw new Error('missing runner version');
+for (const field of ['runner_image_reference', 'runner_image_id', 'failure_stage']) {
+  if (!Object.prototype.hasOwnProperty.call(metadata, field)) throw new Error(`missing metadata field ${field}`);
+}
+NODE
   local calls
   calls="$(cat "$pi_calls" 2>/dev/null || true)"
-  [ "$(grep -c '^scouting$' <<< "$calls")" -eq 1 ] || fail "$case_name: scouting should run exactly once before fallback coding (calls=$calls)"
-  [ "$(grep -c '^coding$' <<< "$calls")" -eq 1 ] || fail "$case_name: fallback coding should run exactly once (calls=$calls)"
-  [ "$(sed -n '1,2p' <<< "$calls")" = $'scouting\ncoding' ] || fail "$case_name: fallback coding should follow scouting (calls=$calls)"
-  [ ! -f "$results_dir/scouting-validation-reason.txt" ] || fail "$case_name: reason file should be cleaned after fallback validation"
+  [ "$(grep -c '^scouting$' <<< "$calls")" -eq 2 ] || fail "$case_name: scouting should retry once before coding (calls=$calls)"
+  [ "$(grep -c '^coding$' <<< "$calls")" -eq 1 ] || fail "$case_name: coding should run exactly once (calls=$calls)"
+  [ "$(sed -n '1,3p' <<< "$calls")" = $'scouting\nscouting\ncoding' ] || fail "$case_name: coding should follow the recovered scouting attempt (calls=$calls)"
+  [ ! -f "$results_dir/scouting-validation-reason.txt" ] || fail "$case_name: reason file should be cleaned after retry validation"
+  [ -s "$results_dir/scouting-attempt-1-events.jsonl" ] || fail "$case_name: first attempt event evidence should be preserved"
+  node - "$results_dir/scouting.json" "$results_dir/scouting-attempt-1-candidate.json" "$expected_reason" <<'NODE' || fail "$case_name: recovered or rejected scouting evidence was not retained"
+const fs = require('node:fs');
+const artifact = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+if (artifact.task !== 'inspect relevant code') throw new Error(`unexpected scouting task: ${artifact.task}`);
+if (process.argv[4] === 'schema_mismatch') {
+  if (!fs.existsSync(process.argv[3])) throw new Error('rejected candidate findings were not preserved');
+  const rejected = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+  if (!Array.isArray(rejected.risks) || !Array.isArray(rejected.requirements) || rejected.requirements[0] !== 'not-array') {
+    throw new Error('rejected candidate did not preserve useful findings and scalar normalization');
+  }
+}
+NODE
   [ -s "$results_dir/scouting-validation-errors.jsonl" ] || fail "$case_name: missing scouting validation errors jsonl"
-  grep -q '"reason_code":"patch_fallback"' "$results_dir/scouting-validation-errors.jsonl" || fail "$case_name: fallback warning missing"
+  if grep -q '"reason_code":"patch_fallback"' "$results_dir/scouting-validation-errors.jsonl"; then fail "$case_name: fallback should not replace a recovered scout artifact"; fi
   node - "$results_dir/scouting-validation-errors.jsonl" "$expected_reason" <<'NODE' || fail "$case_name: invalid scouting validation errors jsonl"
 const fs = require('node:fs');
 const logPath = process.argv[2];
@@ -125,7 +152,7 @@ const lines = fs.readFileSync(logPath, 'utf8').trim().split(/\n+/).filter(Boolea
 if (!lines.length) throw new Error('expected at least one validation error line');
 const entries = lines.map((line) => JSON.parse(line));
 for (const entry of entries) {
-  if (entry.reason_code === 'patch_fallback' || entry.reason_code === 'patch_fallback_recovered' || entry.reason_code === 'scouting_retry_recovered') continue;
+  if (entry.reason_code === 'patch_fallback' || entry.reason_code === 'patch_fallback_recovered' || entry.reason_code === 'scouting_retry_recovered' || entry.reason_code === 'schema_normalized') continue;
   for (const key of ['timestamp', 'reason_code', 'field', 'expected', 'actual', 'severity', 'suggestion']) {
     if (!(key in entry)) throw new Error(`missing key ${key}`);
   }
@@ -146,7 +173,7 @@ NODE
 MALFORMED_PAYLOAD="$TMP_DIR/malformed.json"
 SCHEMA_PAYLOAD="$TMP_DIR/schema.json"
 printf '%s' '{"task":' > "$MALFORMED_PAYLOAD"
-printf '%s\n' '{"task":"inspect","requirements":"not-array","relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[]}' > "$SCHEMA_PAYLOAD"
+printf '%s\n' '{"task":"inspect","requirements":"not-array","relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":"Potential API compatibility risk"}' > "$SCHEMA_PAYLOAD"
 
 run_case malformed_json "$MALFORMED_PAYLOAD" malformed_json
 run_case schema_mismatch "$SCHEMA_PAYLOAD" schema_mismatch
