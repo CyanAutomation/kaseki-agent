@@ -135,6 +135,31 @@ describe('DockerManager', () => {
   });
 
   describe('buildDockerArgs', () => {
+    it('passes the selected image reference and immutable image ID into worker metadata', async () => {
+      const mockChild = {
+        stdout: null,
+        stderr: null,
+        on: jest.fn((event, callback) => {
+          if (event === 'exit') callback(0);
+        }),
+        kill: jest.fn(),
+      };
+      (spawn as jest.Mock).mockReturnValue(mockChild);
+      (execFileSync as jest.Mock).mockReturnValue('sha256:worker-image-id\n');
+
+      await DockerManager.runContainer({
+        image: 'registry.example/kaseki-agent:latest',
+        name: 'test-container',
+        workspaceDir: '/workspace',
+        resultsDir: '/results',
+        environment: {},
+      });
+
+      const [, args] = (spawn as jest.Mock).mock.calls[0];
+      expect(args).toContain('KASEKI_RUNNER_IMAGE_REFERENCE=registry.example/kaseki-agent:latest');
+      expect(args).toContain('KASEKI_RUNNER_IMAGE_ID=sha256:worker-image-id');
+    });
+
     it('creates paths containing spaces and metacharacters without invoking a shell', async () => {
       const mockChild = {
         stdout: null,

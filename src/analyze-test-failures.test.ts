@@ -32,6 +32,15 @@ describe('analyze-test-failures', () => {
       expect(result['failing tests:']).toBeUndefined();
     });
 
+    it('parses Node test-runner success markers and counts the individual cases', () => {
+      const result = parseTestResults('✔ helper returns a stable path (0.8ms)\n✔ helper handles an empty list (1.1ms)\nℹ tests 2', 0);
+
+      expect(result).toEqual({
+        'helper returns a stable path': { status: 'passed' },
+        'helper handles an empty list': { status: 'passed' },
+      });
+    });
+
     it('should parse PASS/FAIL format', () => {
       const log = `
         PASS test 1
