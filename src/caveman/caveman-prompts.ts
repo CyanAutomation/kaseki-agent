@@ -100,7 +100,8 @@ Inputs:
 - Dependency cache log (optional)
 - Restoration report (if present)
 
-Output: Assessment with evidence (file paths, line numbers, metrics). Verdict: success, partial, or failed. Recommendations for next run.`;
+Output: Assessment with evidence (file paths, line numbers, metrics). Verdict: success, partial, or failed. Recommendations for next run.
+Reviewer-facing PR output: pr_summary describes implemented behavior and impact, not task completion, evaluator confidence, file counts, or validation telemetry. pr_changes contains concise bullets grounded in diff and persisted artifacts; use empty array if no specific change is established.`;
 }
 
 /**
