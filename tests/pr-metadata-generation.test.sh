@@ -38,12 +38,15 @@ eval "$(extract_function truncate_pr_metadata_text)"
 eval "$(extract_function derive_pr_title)"
 eval "$(extract_function is_pr_draft_mode)"
 eval "$(extract_function format_pr_command_results)"
+eval "$(extract_function format_pr_command_results_bounded)"
 eval "$(extract_function format_pr_changed_files)"
 eval "$(extract_function format_pr_json_list)"
 eval "$(extract_function build_pr_agent_review)"
+eval "$(extract_function build_pr_summary)"
+eval "$(extract_function build_pr_changes)"
+eval "$(extract_function build_pr_human_review_focus)"
 eval "$(extract_function build_pr_agent_evaluation)"
 eval "$(extract_function build_pr_improvements_summary)"
-eval "$(extract_function build_pr_changes)"
 eval "$(extract_function format_pr_run_scorecard)"
 eval "$(extract_function build_pr_body)"
 eval "$(extract_function run_node_subprocess)"
@@ -150,10 +153,10 @@ cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
   "kaseki_improvement_opportunities": [
     { "category": "validation", "priority": "medium", "suggestion": "Consider reusing pre-validation results when commands are identical." }
   ],
-  "pr_summary": "Kaseki appears to have completed the requested OAuth fix with high reviewer confidence.",
+  "pr_summary": "Fixed OAuth redirect-state handling and added regression coverage for quoted values.",
   "pr_changes": [
-    "Preserved the OAuth redirect-state handoff for quoted state values.",
-    "Added regression coverage for secret-safe redirect handling."
+    "Preserved redirect-state values across the OAuth fallback path.",
+    "Added regression cases for quoted redirect-state values."
   ],
   "warnings": []
 }
@@ -251,6 +254,15 @@ evaluation_pr_title="$(derive_pr_title)"
 case "$evaluation_pr_title" in
   "docs: Clarify the deployment health-check contract"*) pass "PR title prefers the concise evaluator summary" ;;
   *) fail "PR title did not prefer evaluator summary: $evaluation_pr_title" ;;
+esac
+cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
+{"overall_assessment":"good","reviewer_confidence":"medium","pr_summary":"JEV evaluated task completion and reviewer confidence from the persisted run artifacts."}
+JSON
+TASK_PROMPT="Fix the deployment health-check fallback path."
+generic_evaluation_title="$(derive_pr_title)"
+case "$generic_evaluation_title" in
+  "fix: the deployment health-check fallback path"*) pass "PR title ignores generic evaluator boilerplate" ;;
+  *) fail "PR title used generic evaluator boilerplate: $generic_evaluation_title" ;;
 esac
 cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
 {"overall_assessment":"unknown","reviewer_confidence":"low","pr_summary":"Run evaluation was unavailable; please rely on the summary, validation results, and changed files.","warnings":["jev_classifier_unavailable"]}
@@ -354,46 +366,35 @@ for expected in \
   'tests/pr-metadata-generation.test.sh' \
   'docs/usage-[redacted]' \
   '## Summary' \
-  'Updated publish mode documentation to describe normal PR creation as the default.' \
-  'Regenerated API metadata so publishMode includes pr and [redacted]' \
-  '### Change metadata' \
-  'Changed files: 3 total.' \
-  'Source files updated: 1.' \
-  'Tests updated: 1.' \
-  'Documentation updated: 1.' \
-  'Diff stats: +2/-1 lines' \
-  '## Agent review' \
-  '### What went well' \
-  'Implemented the OAuth redirect-state fix and verified the requested reviewer-facing behavior.' \
-  'Added regression coverage for quoted redirect-state values.' \
-  'npm run test passed for the OAuth route tests.' \
+  'Fixed OAuth redirect-state handling and added regression coverage for quoted values.' \
+  '## Changes' \
+  'Preserved redirect-state values across the OAuth fallback path.' \
+  'Added regression cases for quoted redirect-state values.' \
+  '## Review notes' \
   '### Needs attention' \
-  'No unmet task requirements were reported by the goal check.' \
   'OAuth provider behavior can vary for unusual redirect-state encodings.' \
-  '## Agent evaluation' \
-  '- Overall: good' \
-  'Kaseki appears to have completed the requested OAuth fix with high reviewer confidence.' \
-  'Preserved the OAuth redirect-state handoff for quoted state values.' \
-  'Added regression coverage for secret-safe redirect handling.' \
-  '- Reviewer confidence: high' \
-  '### Review focus' \
+  '### Human review focus' \
   'Confirm OAuth provider behavior with quoted redirect-state values.' \
+  'Check reviewer-facing copy for product terminology.' \
   '## Validation' \
   '### Validation statuses' \
   'Pre-agent validation: passed' \
   'Post-agent validation: passed' \
-  '<details><summary>Validation command evidence (pre-agent and post-agent)</summary>' \
-  'Pre-agent artifact: `pre-validation-timings.tsv`' \
-  'Post-agent artifact: `validation-timings.tsv`' \
+  '### Post-agent checks' \
+  '<details><summary>Pre-agent baseline checks</summary>' \
   'npm run check — exit 0, 3s' \
   'npm run test -- --[redacted] — exit 0, 12s' \
+  '<details><summary>Kaseki run details</summary>' \
+  '### Evaluator assessment' \
+  '- Overall: good' \
+  '- Reviewer confidence: high' \
+  '### Run metadata' \
+  'Model: Requested model: openrouter/test-model; actual model: openrouter/actual-model' \
+  'Generated by: Kaseki agent' \
   '<details><summary>Original task prompt</summary>' \
   '</details>' \
   'Quality gate: passed' \
-  'Secret scan: passed' \
-  '## Run metadata' \
-  'Model: Requested model: openrouter/test-model; actual model: openrouter/actual-model' \
-  'Generated by: Kaseki agent'; do
+  'Secret scan: passed'; do
   if grep -Fq -- "$expected" <<<"$pr_body"; then
     pass "PR body contains: $expected"
   else
@@ -401,32 +402,85 @@ for expected in \
   fi
 done
 
-# Command substitutions strip trailing newlines. Keep adjacent Markdown
-# sections separated so fallback reviews remain readable.
-if grep -Fq $'No unmet task requirements were reported by the goal check.\n\n## Agent evaluation' <<<"$pr_body"; then
-  pass "PR body separates agent review and evaluation sections"
+if [ "$(grep -Fc 'Fixed OAuth redirect-state handling and added regression coverage for quoted values.' <<<"$pr_body")" -eq 1 ] \
+  && ! grep -Fq '## Agent review' <<<"$pr_body" \
+  && ! grep -Fq '## Agent evaluation' <<<"$pr_body" \
+  && ! grep -Fq 'No unmet task requirements were reported by the goal check.' <<<"$pr_body"; then
+  pass "PR body keeps evaluator summary singular and omits positive boilerplate"
 else
-  fail "PR body merged the agent review and evaluation headings"
+  fail "PR body duplicated evaluator prose or included positive boilerplate"
+fi
+
+cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
+{"overall_assessment":"good","reviewer_confidence":"medium","pr_summary":"JEV evaluated task completion and reviewer confidence from the persisted run artifacts."}
+JSON
+if [ -z "$(build_pr_summary)" ]; then
+  pass "PR body summary omits generic evaluator boilerplate"
+else
+  fail "PR body used generic evaluator boilerplate as its summary"
+fi
+cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
+{"overall_assessment":"unknown","reviewer_confidence":"low","pr_summary":"Run evaluation was unavailable; please rely on the summary, validation results, and changed files.","warnings":["jev_classifier_unavailable"]}
+JSON
+if [ -z "$(build_pr_summary)" ]; then
+  pass "PR body summary omits unavailable-evaluator boilerplate"
+else
+  fail "PR body used unavailable-evaluator boilerplate as its summary"
+fi
+cat > "$RESULTS_DIR/result-summary.md" <<'SUMMARY'
+# Kaseki result
+
+## Summary
+- The artifact fallback describes the implemented documentation update.
+
+## Validation
+- Validation evidence is recorded separately.
+SUMMARY
+fallback_body="$(build_pr_body)"
+if grep -Fq 'The artifact fallback describes the implemented documentation update.' <<<"$fallback_body" \
+  && ! grep -Fq 'Run evaluation was unavailable; please rely on the summary, validation results, and changed files.' <<<"$fallback_body"; then
+  pass "PR body falls back to result-summary prose when evaluator output is generic"
+else
+  fail "PR body did not use the reviewer-facing artifact summary fallback"
+fi
+rm -f "$RESULTS_DIR/run-evaluation.json" "$RESULTS_DIR/result-summary.md"
+
+if awk '
+  /### Post-agent checks/ { saw_post_heading=1; next }
+  saw_post_heading && /npm run test -- --\[redacted\] — exit 0, 12s/ { saw_post_command=1; next }
+  /<details><summary>Pre-agent baseline checks<\/summary>/ { in_details=1; saw_details=1; next }
+  in_details && /npm run check — exit 0, 3s/ { saw_pre_command=1; next }
+  in_details && /<\/details>/ { exit(saw_details && saw_pre_command && saw_post_command ? 0 : 1) }
+  END { if (!saw_details) exit 1 }
+' <<<"$pr_body"; then
+  pass "Passing post-agent validation is visible and pre-agent baseline is collapsed"
+else
+  fail "Validation visibility did not distinguish post-agent checks from the baseline"
+fi
+
+printf 'npm run lint\t0\t1\ttee_exit=0 filter_exit=0\nnpm run typecheck\t0\t2\ttee_exit=0 filter_exit=0\nnpm run test:unit\t0\t3\ttee_exit=0 filter_exit=0\nnpm run test:integration\t0\t4\ttee_exit=0 filter_exit=0\nnpm run build\t0\t5\ttee_exit=0 filter_exit=0\nnpm run test:e2e\t0\t6\ttee_exit=0 filter_exit=0\nnpm run check:docs\t0\t7\ttee_exit=0 filter_exit=0\n' > "$VALIDATION_TIMINGS_FILE"
+bounded_validation="$(format_pr_command_results_bounded "$VALIDATION_TIMINGS_FILE")"
+if grep -Fq 'npm run lint — exit 0, 1s' <<<"$bounded_validation" \
+  && grep -Fq 'npm run build — exit 0, 5s' <<<"$bounded_validation" \
+  && grep -Fq '<details><summary>2 additional validation commands</summary>' <<<"$bounded_validation" \
+  && grep -Fq 'npm run check:docs — exit 0, 7s' <<<"$bounded_validation"; then
+  pass "Long passing validation lists keep five commands visible and collapse the remainder"
+else
+  fail "Long passing validation list was not bounded as expected"
+fi
+
+pr_template="$(cat "$ROOT_DIR/.github/PULL_REQUEST_TEMPLATE/default.md")"
+if grep -Fq '<!-- Keep the published PR body concise and reviewer-focused.' <<<"$pr_template" \
+  && ! grep -Eq 'Closes #123|--some-flag|npm test|CLAUDE\.md|^- \[ \]|^## ' <<<"$pr_template"; then
+  pass "Default PR template contains only hidden guidance, without visible placeholders"
+else
+  fail "Default PR template still exposes boilerplate or sample placeholders"
 fi
 
 if grep -Fq '<details><summary>View files</summary>' <<<"$pr_body"; then
   fail "Short PR file list should render inline without collapsed details"
 else
   pass "Short PR file list renders inline without collapsed details"
-fi
-
-if awk '
-  /<details><summary>Validation command evidence \(pre-agent and post-agent\)<\/summary>/ { in_details=1; saw_details=1; next }
-  in_details && /Pre-agent artifact: `pre-validation-timings.tsv`/ { saw_pre_artifact=1; next }
-  in_details && /Post-agent artifact: `validation-timings.tsv`/ { saw_post_artifact=1; next }
-  in_details && /npm run check — exit 0, 3s/ { saw_pre_command=1; next }
-  in_details && /npm run test -- --\[redacted\] — exit 0, 12s/ { saw_post_command=1; next }
-  in_details && /<\/details>/ { exit(saw_details && saw_pre_artifact && saw_post_artifact && saw_pre_command && saw_post_command ? 0 : 1) }
-  END { if (!saw_details) exit 1 }
-' <<<"$pr_body"; then
-  pass "Passing validation evidence is compact and links both timing artifacts"
-else
-  fail "Passing validation evidence did not include compact artifact-backed command details"
 fi
 
 cat > "$VALIDATION_TIMINGS_FILE" <<'TSV'
@@ -503,21 +557,22 @@ else
 fi
 
 summary_line="$(grep -nF '## Summary' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
+changes_line="$(grep -nF '## Changes' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
+review_notes_line="$(grep -nF '## Review notes' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
 validation_line="$(grep -nF '## Validation' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
 files_changed_line="$(grep -nF '## Files changed' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-agent_review_line="$(grep -nF '## Agent review' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-agent_evaluation_line="$(grep -nF '## Agent evaluation' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
+run_details_line="$(grep -nF '<details><summary>Kaseki run details</summary>' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
 original_prompt_line="$(grep -nF '## Original task prompt' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-run_metadata_line="$(grep -nF '## Run metadata' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-if [ -n "$summary_line" ] && [ -n "$agent_review_line" ] && [ -n "$agent_evaluation_line" ] && [ -n "$validation_line" ] && [ -n "$files_changed_line" ] && [ -n "$original_prompt_line" ] && [ -n "$run_metadata_line" ] \
-  && [ "$summary_line" -lt "$validation_line" ] \
-  && [ "$summary_line" -lt "$agent_review_line" ] \
-  && [ "$agent_review_line" -lt "$agent_evaluation_line" ] \
-  && [ "$agent_evaluation_line" -lt "$validation_line" ] \
+run_metadata_line="$(grep -nF '### Run metadata' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
+if [ -n "$summary_line" ] && [ -n "$changes_line" ] && [ -n "$review_notes_line" ] && [ -n "$validation_line" ] && [ -n "$files_changed_line" ] && [ -n "$run_details_line" ] && [ -n "$original_prompt_line" ] && [ -n "$run_metadata_line" ] \
+  && [ "$summary_line" -lt "$changes_line" ] \
+  && [ "$changes_line" -lt "$review_notes_line" ] \
+  && [ "$review_notes_line" -lt "$validation_line" ] \
   && [ "$validation_line" -lt "$files_changed_line" ] \
-  && [ "$files_changed_line" -lt "$original_prompt_line" ] \
-  && [ "$original_prompt_line" -lt "$run_metadata_line" ]; then
-  pass "PR body orders Summary, Agent review, Agent evaluation, Validation, Files changed, Original task prompt, and Run metadata sections"
+  && [ "$files_changed_line" -lt "$run_details_line" ] \
+  && [ "$run_details_line" -lt "$run_metadata_line" ] \
+  && [ "$run_metadata_line" -lt "$original_prompt_line" ]; then
+  pass "PR body orders Summary, Changes, Review notes, Validation, Files changed, run details, and original prompt"
 else
   fail "PR body sections were not in expected order"
 fi
@@ -557,12 +612,15 @@ pass "Deterministic goal-check fallback requires human review"
 
 agent_eval_overall_line="$(grep -nF -- '- Overall: good' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
 agent_eval_confidence_line="$(grep -nF -- '- Reviewer confidence: high' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-agent_eval_summary_heading_line="$(grep -nF '### Summary' <<<"$pr_body" | tail -n 1 | cut -d: -f1)"
-agent_eval_review_focus_heading_line="$(grep -nF '### Review focus' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-if [ -n "$agent_evaluation_line" ] && [ -n "$agent_eval_overall_line" ] && [ -n "$agent_eval_confidence_line" ]   && [ -n "$agent_eval_summary_heading_line" ] && [ -n "$agent_eval_review_focus_heading_line" ]   && [ "$agent_evaluation_line" -lt "$agent_eval_overall_line" ]   && [ "$agent_eval_overall_line" -lt "$agent_eval_confidence_line" ]   && [ "$agent_eval_confidence_line" -lt "$agent_eval_summary_heading_line" ]   && [ "$agent_eval_summary_heading_line" -lt "$agent_eval_review_focus_heading_line" ]; then
-  pass "Agent evaluation renders reviewer-facing sections in order"
+agent_eval_review_focus_line="$(grep -nF '### Human review focus' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
+if [ -n "$run_details_line" ] && [ -n "$agent_eval_overall_line" ] && [ -n "$agent_eval_confidence_line" ] \
+  && [ -n "$agent_eval_review_focus_line" ] \
+  && [ "$review_notes_line" -lt "$agent_eval_review_focus_line" ] \
+  && [ "$run_details_line" -lt "$agent_eval_overall_line" ] \
+  && [ "$agent_eval_overall_line" -lt "$agent_eval_confidence_line" ]; then
+  pass "Human review focus is visible while evaluator confidence stays in collapsed run details"
 else
-  fail "Agent evaluation markdown order did not match expected multiline format"
+  fail "Evaluator detail placement or human review focus visibility was incorrect"
 fi
 
 if grep -Fq '### Process notes' <<<"$pr_body"; then
@@ -593,7 +651,7 @@ fi
 if awk '
   /Fix OAuth flow for quoted "input" using \[redacted\] and \[redacted\]\./ { in_prompt=1 }
   in_prompt && /^$/ { blanks++; if (blanks > 1) exit 1; next }
-  in_prompt && /^## Run metadata$/ { exit 0 }
+  in_prompt && /^<\/details>$/ { exit 0 }
   in_prompt { blanks=0 }
 ' <<<"$pr_body"; then
   pass "PR body normalizes excessive blank lines in the task prompt"
@@ -697,7 +755,11 @@ cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
   "kaseki_improvement_opportunities": [
     { "category": "validation", "priority": "medium", "suggestion": "Consider reusing pre-validation results when commands are identical." }
   ],
-  "pr_summary": "Kaseki appears to have completed the requested OAuth fix with high reviewer confidence.",
+  "pr_summary": "Fixed OAuth redirect-state handling and added regression coverage for quoted values.",
+  "pr_changes": [
+    "Preserved redirect-state values across the OAuth fallback path.",
+    "Added regression cases for quoted redirect-state values."
+  ],
   "warnings": []
 }
 JSON

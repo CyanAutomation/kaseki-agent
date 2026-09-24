@@ -34,13 +34,45 @@ function sourceScores(evidence: Evidence): number[] {
   const completion = !evidence.goalCheckAvailable ? 0 : evidence.goalMet === undefined ? 60 : evidence.goalMet ? 100 : 20;
 
   return [
-    evidence.present.includes('goal-setting.json') ? 85 : 50,
-    evidence.present.includes('scouting.json') ? 85 : 50,
+    !evidence.present.includes('goal-setting.json') ? 0 : evidence.goalSettingFallback ? 35 : 85,
+    !evidence.present.includes('scouting.json') ? 0 : evidence.scoutingFallback ? 35 : 85,
     computeImplementationQualityScore(evidence),
     evidence.validation === 'passed' ? 100 : evidence.validation === 'failed' ? 0 : 50,
     completion,
     normalizeEvaluationScore(evidence),
   ];
+}
+
+function artifactsForDimension(id: string): string[] {
+  const artifacts: Record<string, string[]> = {
+    goal_quality: ['goal-setting.json'],
+    scouting_quality: ['scouting.json'],
+    implementation_quality: ['git.diff', 'changed-files.txt', 'pi-summary.json'],
+    validation_quality: ['validation.log', 'validation-timings.tsv', 'timings-manifest.json', 'failure.json'],
+    goal_attainment: ['goal-check.json'],
+    evaluation_quality: ['run-evaluation.json'],
+  };
+  return artifacts[id] ?? [];
+}
+
+function artifactsForPhase(phase: string): string[] {
+  const artifacts: Record<string, string[]> = {
+    goal_setting: ['goal-setting.json', 'goal-setting-summary.json'],
+    scouting: ['scouting.json', 'scouting-summary.json', 'scouting-validation-errors.jsonl'],
+    coding: ['pi-summary.json', 'pi-events.jsonl', 'git.diff', 'changed-files.txt'],
+    validation: ['validation.log', 'validation-timings.tsv', 'timings-manifest.json', 'failure.json'],
+    goal_check: ['goal-check.json', 'goal-check-attempts.jsonl'],
+    run_evaluation: ['run-evaluation.json', 'run-evaluation-summary.json'],
+  };
+  return artifacts[phase] ?? [];
+}
+
+function evidenceReferences(evidence: Evidence, artifacts: string[], provisional = false) {
+  return artifacts.filter(artifact => evidence.present.includes(artifact)).map(artifact => ({
+    id: artifact,
+    artifact,
+    completeness: provisional ? 'provisional' as const : 'complete' as const,
+  }));
 }
 
 function disabledPhases(evidence: Evidence): Set<string> {
@@ -66,9 +98,19 @@ export function buildDimensions(evidence: Evidence) {
       normalized_score: normalizedScore,
       weighted_points: calculateWeightedPoints(normalizedScore, effective),
       status,
-      rationale: `Score derived from available ${id.replace(/_/g, ' ')} evidence.`,
-      evidence: [],
-      warnings: [],
+      rationale: evidence.goalSettingFallback && id === 'goal_quality'
+        ? 'Goal-setting used a fallback artifact; task-specific goal quality is weakly evidenced.'
+        : evidence.scoutingFallback && id === 'scouting_quality'
+          ? 'Scouting used a conservative fallback; relevance and coverage are not agent-verified.'
+          : evidenceReferences(evidence, artifactsForDimension(id)).length
+            ? `Score derived from ${evidenceReferences(evidence, artifactsForDimension(id)).map(item => item.artifact).join(', ')}.`
+            : `No durable ${id.replace(/_/g, ' ')} evidence was found.`,
+      evidence: evidenceReferences(evidence, artifactsForDimension(id),
+        (id === 'goal_quality' && evidence.goalSettingFallback) || (id === 'scouting_quality' && evidence.scoutingFallback)),
+      warnings: [
+        ...(id === 'goal_quality' && evidence.goalSettingFallback ? ['Fallback goal-setting artifact; manual review advised.'] : []),
+        ...(id === 'scouting_quality' && evidence.scoutingFallback ? ['Fallback scouting handoff; manual review advised.'] : []),
+      ],
     };
   });
 }
@@ -90,7 +132,12 @@ export function buildPhases(evidence: Evidence): RunScorecard['phases'] {
       measurements: { retries: evidence.phaseRetries[phase] ?? 0 },
       completeness: isDisabled ? 'not_applicable' : usage.unavailable ? 'provisional' : 'complete',
       confidence: isDisabled ? 100 : usage.unavailable ? 50 : 100,
-      evidence: [], warnings: [],
+      evidence: evidenceReferences(evidence, artifactsForPhase(phase),
+        (phase === 'goal_setting' && evidence.goalSettingFallback) || (phase === 'scouting' && evidence.scoutingFallback)),
+      warnings: [
+        ...(phase === 'goal_setting' && evidence.goalSettingFallback ? ['Goal-setting used a fallback artifact.'] : []),
+        ...(phase === 'scouting' && evidence.scoutingFallback ? ['Scouting used a fallback handoff.'] : []),
+      ],
     }];
   })) as unknown as RunScorecard['phases'];
 }

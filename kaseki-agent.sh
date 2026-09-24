@@ -897,7 +897,7 @@ append_cache_metric() {
   local metric_name="$2"
   local value="$3"
   local unit="${4:-bytes}"
-  local elapsed_seconds="${5:-0}"
+  local elapsed_seconds="${5:-}"
   local reason="${6:-}"
   
   jq \
@@ -910,11 +910,37 @@ append_cache_metric() {
       "name": $name,
       "value": (if $val == "true" then 1 elif $val == "false" then 0 else ($val | tonumber) end),
       "unit": $unit,
-      "elapsed_seconds": (if $elapsed == "" then 0 else ($elapsed | tonumber) end),
+      "elapsed_seconds": (try ($elapsed | tonumber) catch null),
       "reason": $reason,
       "timestamp": (now | todate)
     }]' \
     "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
+}
+
+cache_metric_now() {
+  local timestamp
+  timestamp="$(date +%s%N 2>/dev/null || true)"
+  if [[ "$timestamp" =~ ^[0-9]{11,}$ ]]; then
+    printf '%s' "$timestamp"
+    return 0
+  fi
+
+  timestamp="$(date +%s 2>/dev/null || true)"
+  if [[ "$timestamp" =~ ^[0-9]+$ ]]; then
+    printf '%s' "$timestamp"
+  fi
+}
+
+cache_metric_elapsed_seconds() {
+  local start_ns="$1"
+  local end_ns="${2:-$(cache_metric_now)}"
+  if [[ "$start_ns" =~ ^[0-9]+$ ]] && [[ "$end_ns" =~ ^[0-9]+$ ]] && [ "${#start_ns}" -gt 10 ] && [ "${#end_ns}" -gt 10 ]; then
+    awk -v start="$start_ns" -v end="$end_ns" 'BEGIN { value = (end - start) / 1000000000; if (value < 0) value = 0; printf "%.3f", value }'
+  elif [[ "$start_ns" =~ ^[0-9]+$ ]] && [[ "$end_ns" =~ ^[0-9]+$ ]]; then
+    awk -v start="$start_ns" -v end="$end_ns" 'BEGIN { value = end - start; if (value < 0) value = 0; printf "%.3f", value }'
+  else
+    printf ''
+  fi
 }
 
 # Append a secret scan result to secret-scan.json (merged into metadata.json.phases at finalization)
@@ -2357,15 +2383,59 @@ SUMMARY
   
   # Add validation status if available
   if [ -f "$failure_file" ]; then
-    local validation_exit
+    local validation_exit validation_attempts
     validation_exit="$(jq -r '.validation_exit_code // empty' "$failure_file" 2>/dev/null || true)"
+    validation_attempts="$(jq -r '.validation_commands_attempted // .phases.validation.commands_attempted // empty' "$metadata_file" 2>/dev/null || true)"
     [ -n "$validation_exit" ] || validation_exit="-1"
-    if [ "$validation_exit" -ge 0 ]; then
+    [ -n "$validation_attempts" ] || validation_attempts=0
+    if [ "$validation_attempts" -gt 0 ] && [ "$validation_exit" -ge 0 ]; then
       if [ "$validation_exit" -eq 0 ]; then
-        printf -- "- Validation: Passed\n" >> "$summary_file"
+        printf -- "- Validation: Passed (%s commands attempted)\n" "$validation_attempts" >> "$summary_file"
       else
-        printf -- "- Validation: Failed (exit code %s)\n" "$validation_exit" >> "$summary_file"
+        printf -- "- Validation: Failed (exit code %s; %s commands attempted)\n" "$validation_exit" "$validation_attempts" >> "$summary_file"
       fi
+    elif [ "$validation_attempts" -eq 0 ]; then
+      printf -- "- Validation: Not run (0 commands attempted; exit code %s is not a pass)\n" "$validation_exit" >> "$summary_file"
+    fi
+  fi
+
+  if [ -s "${KASEKI_RESULTS_DIR}/goal-setting.json" ]; then
+    local goal_setting_fallback
+    goal_setting_fallback="$(jq -r 'if .fallback == true or (.reasoning // "" | test("fallback"; "i")) then "true" else "false" end' "${KASEKI_RESULTS_DIR}/goal-setting.json" 2>/dev/null || printf 'false')"
+    printf -- "- Goal Setting: %s\n" "$([ "$goal_setting_fallback" = "true" ] && printf 'Fallback used' || printf 'Artifact available')" >> "$summary_file"
+  fi
+  if [ -s "${KASEKI_RESULTS_DIR}/scouting.json" ]; then
+    local scouting_fallback
+    scouting_fallback="$(jq -r 'if .fallback == true or (.fallback_reason // "") != "" then "true" else "false" end' "${KASEKI_RESULTS_DIR}/scouting.json" 2>/dev/null || printf 'false')"
+    printf -- "- Scouting: %s\n" "$([ "$scouting_fallback" = "true" ] && printf 'Completed with fallback' || printf 'Artifact available')" >> "$summary_file"
+  fi
+  if [ -s "${KASEKI_RESULTS_DIR}/goal-check.json" ]; then
+    local goal_check_met goal_check_confidence
+    goal_check_met="$(jq -r '.met // "unknown"' "${KASEKI_RESULTS_DIR}/goal-check.json" 2>/dev/null || printf 'unknown')"
+    goal_check_confidence="$(jq -r '.confidence // "unknown"' "${KASEKI_RESULTS_DIR}/goal-check.json" 2>/dev/null || printf 'unknown')"
+    case "$goal_check_met" in true) goal_check_met="Met" ;; false) goal_check_met="Not met" ;; *) goal_check_met="Unknown" ;; esac
+    printf -- "- Goal Check: %s (confidence: %s)\n" "$goal_check_met" "$goal_check_confidence" >> "$summary_file"
+  fi
+  if [ -s "${KASEKI_RESULTS_DIR}/run-evaluation.json" ]; then
+    local eval_assessment eval_confidence eval_completion
+    eval_assessment="$(jq -r '.overall_assessment // "unknown"' "${KASEKI_RESULTS_DIR}/run-evaluation.json" 2>/dev/null || printf 'unknown')"
+    eval_confidence="$(jq -r '.reviewer_confidence // "unknown"' "${KASEKI_RESULTS_DIR}/run-evaluation.json" 2>/dev/null || printf 'unknown')"
+    eval_completion="$(jq -r '.task_completion_score // "unknown"' "${KASEKI_RESULTS_DIR}/run-evaluation.json" 2>/dev/null || printf 'unknown')"
+    printf -- "- Run Evaluation: %s; confidence %s; task completion %s/5\n" "$eval_assessment" "$eval_confidence" "$eval_completion" >> "$summary_file"
+  fi
+  if [ -s "${KASEKI_RESULTS_DIR}/run-scorecard.json" ]; then
+    local scorecard_score scorecard_grade scorecard_lifecycle
+    scorecard_score="$(jq -r '.overall_score // "unknown"' "${KASEKI_RESULTS_DIR}/run-scorecard.json" 2>/dev/null || printf 'unknown')"
+    scorecard_grade="$(jq -r '.grade // "unknown"' "${KASEKI_RESULTS_DIR}/run-scorecard.json" 2>/dev/null || printf 'unknown')"
+    scorecard_lifecycle="$(jq -r '.lifecycle_status // "unknown"' "${KASEKI_RESULTS_DIR}/run-scorecard.json" 2>/dev/null || printf 'unknown')"
+    printf -- "- Scorecard: %s/100 (%s); lifecycle %s\n" "$scorecard_score" "$scorecard_grade" "$scorecard_lifecycle" >> "$summary_file"
+  fi
+  if [ -s "$failure_file" ]; then
+    local worker_error_type worker_error_phase
+    worker_error_type="$(jq -r '.worker_error_type // .workerErrorType // empty' "$failure_file" 2>/dev/null || true)"
+    worker_error_phase="$(jq -r '.worker_error_phase // .workerErrorPhase // empty' "$failure_file" 2>/dev/null || true)"
+    if [ -n "$worker_error_type" ]; then
+      printf -- "- Worker Error: %s%s\n" "$worker_error_type" "$([ -n "$worker_error_phase" ] && printf ' (phase: %s)' "$worker_error_phase")" >> "$summary_file"
     fi
   fi
 
@@ -3580,7 +3650,7 @@ finish() {
   fi
   if [ "${KASEKI_LLM_PROVIDER:-}" = "gateway" ] && [ ! -s "${KASEKI_RESULTS_DIR}/gateway-summary.json" ]; then
     cat > "${KASEKI_RESULTS_DIR}/gateway-summary.json" <<EOF
-{"provider":"gateway","registered":true,"requestAttempted":false,"inferenceAttempted":false,"reason":"run ended before an inference request was attempted","stage":"${CURRENT_STAGE}","status":"not_attempted"}
+{"schema_version":2,"provider":"gateway","registered":true,"requestAttempted":false,"inferenceAttempted":false,"reason":"run ended before an inference request was attempted","stage":"${CURRENT_STAGE}","status":"not_attempted","scope":{"phase":"not_attempted","includesOtherPhases":false},"token_ledger_summary_scope":"not_attempted","token_ledger_artifact_scope":"all_run_phases"}
 EOF
   fi
   # Authoritative call site: this runs at EXIT so artifacts reflect final repo state.
@@ -8428,6 +8498,44 @@ for (const item of values.slice(0, maxRows)) {
 NODE
 }
 
+format_pr_command_results_bounded() {
+  local timings_file="$1"
+  local max_visible="${2:-5}"
+  local results row_count
+  results="$(format_pr_command_results "$timings_file")"
+  row_count="$(printf '%s\n' "$results" | awk 'NF { count++ } END { print count + 0 }')"
+  if [ "$row_count" -le "$max_visible" ]; then
+    printf '%s\n' "$results"
+    return 0
+  fi
+  printf '%s\n' "$results" | sed -n "1,${max_visible}p"
+  printf '\n<details><summary>%s additional validation commands</summary>\n\n' "$((row_count - max_visible))"
+  printf '%s\n' "$results" | awk -v max="$max_visible" 'NR > max { print }'
+  printf '\n</details>\n'
+}
+
+build_pr_summary() {
+  local evaluation_file="${KASEKI_RESULTS_DIR}/run-evaluation.json"
+  [ -s "$evaluation_file" ] || return 0
+  node - "$evaluation_file" <<'NODE' 2>/dev/null | sanitize_pr_body_text || true
+const fs = require('fs');
+try {
+  const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  const unavailable = data?.evaluation_unavailable === true || data?.overall_assessment === 'unknown' ||
+    (Array.isArray(data?.warnings) && data.warnings.includes('jev_classifier_unavailable'));
+  const genericSummaries = new Set([
+    'jev evaluated task completion and reviewer confidence from the persisted run artifacts.',
+    'run evaluation was unavailable; please rely on the summary, validation results, and changed files.',
+  ]);
+  const summaryText = typeof data?.pr_summary === 'string' ? data.pr_summary.trim() : '';
+  const generatedEvidenceSummary = /^\d+ changed files? with (?:a persisted diff|no persisted diff); (?:validation was not run|\d+ validation commands (?:passed|failed)); goal check [a-z ]+\.$/i.test(summaryText);
+  if (unavailable || !summaryText || genericSummaries.has(summaryText.toLowerCase()) || generatedEvidenceSummary) process.exit(0);
+  const summary = summaryText.replace(/\s+/g, ' ');
+  if (summary) process.stdout.write(summary.slice(0, 600));
+} catch {}
+NODE
+}
+
 build_pr_changes() {
   local evaluation_file="${KASEKI_RESULTS_DIR}/run-evaluation.json"
   local pi_summary_file="${KASEKI_RESULTS_DIR}/pi-summary.json"
@@ -8450,6 +8558,26 @@ build_pr_changes() {
   fi
 }
 
+build_pr_human_review_focus() {
+  local evaluation_file="${KASEKI_RESULTS_DIR}/run-evaluation.json"
+  [ -s "$evaluation_file" ] || return 0
+  local focus confidence
+  focus="$(format_pr_json_list "$evaluation_file" "human_review_focus" 3 220 | sanitize_pr_body_text)"
+  confidence="$(node - "$evaluation_file" <<'NODE' 2>/dev/null || true
+const fs = require('fs');
+try {
+  const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  process.stdout.write(String(data.reviewer_confidence || 'unknown'));
+} catch {}
+NODE
+)"
+  if [ -n "$focus" ]; then
+    printf '### Human review focus\n%s\n' "$focus"
+  elif [ "$confidence" = "low" ] || [ "$confidence" = "medium" ]; then
+    printf '### Human review focus\n- Reviewer confidence is %s; inspect the diff and validation evidence manually.\n' "$confidence"
+  fi
+}
+
 build_pr_agent_review() {
   local validation_pass_flag="${1:-0}"
   case "$validation_pass_flag" in
@@ -8457,13 +8585,9 @@ build_pr_agent_review() {
   esac
   local goal_file="${KASEKI_RESULTS_DIR}/goal-check.json"
   local scouting_file="${KASEKI_RESULTS_DIR}/scouting.json"
-  local goal_summary evidence missing validation_notes risks evaluator_unavailable
+  local missing risks goal_met
 
-  goal_summary=""
-  evaluator_unavailable=0
-  # An evaluator fallback verifies only deterministic controller properties
-  # (for example, a non-empty diff). It must never be presented as semantic
-  # task completion in a PR body.
+  # A deterministic fallback cannot establish semantic task completion.
   if [ -s "$goal_file" ] && node - "$goal_file" <<'NODE' >/dev/null 2>&1
 const fs = require('fs');
 try {
@@ -8476,12 +8600,10 @@ NODE
   then
     printf '### Needs attention\n'
     printf -- '- Goal-check evaluator unavailable; this is a degraded result and requires human review.\n'
-    printf -- '- Review the requested scope, diff, and validation evidence manually; the fallback did not assess semantic completion.\n'
     return 0
   fi
 
-  # A missing or malformed evaluator artifact is not evidence that the goal was
-  # met. Omit this optional section instead of manufacturing a verdict.
+  # A missing or malformed artifact is not evidence that the goal was met.
   if [ ! -s "$goal_file" ] || ! node - "$goal_file" <<'NODE' >/dev/null 2>&1
 const fs = require('fs');
 try {
@@ -8492,61 +8614,28 @@ NODE
   then
     return 0
   fi
-  if [ -s "$goal_file" ]; then
-    goal_summary="$(node - "$goal_file" <<'NODE' 2>/dev/null || true
+
+  missing="$(format_pr_json_list "$goal_file" "missing" 3 180 | sanitize_pr_metadata_text)"
+  risks="$(format_pr_json_list "$scouting_file" "risks" 2 180 | sanitize_pr_metadata_text)"
+  goal_met="$(node - "$goal_file" <<'NODE' 2>/dev/null || true
 const fs = require('fs');
 try {
-  const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-  const summary = String(data.summary || '').replace(/\r/g, '').replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
-  if (summary) console.log(summary);
+  const value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  process.stdout.write(value.met === true ? 'true' : 'false');
 } catch {}
 NODE
 )"
-    goal_summary="$(printf '%s' "$goal_summary" | sanitize_pr_metadata_text)"
-    goal_summary="$(truncate_pr_metadata_text 220 "$goal_summary")"
-    if node - "$goal_file" <<'NODE' >/dev/null 2>&1
-const fs = require('fs');
-try {
-  const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-  process.exit(data?.evaluation_unavailable === true ? 0 : 1);
-} catch { process.exit(1); }
-NODE
-    then
-      evaluator_unavailable=1
-    fi
+  if [ -z "$missing" ] && [ -z "$risks" ] && [ "$goal_met" != "false" ] && [ "$validation_pass_flag" -eq 1 ]; then
+    return 0
   fi
 
-  printf '### What went well\n'
-  if [ -n "$goal_summary" ]; then
-    printf -- '- %s\n' "$goal_summary"
+  printf '### Needs attention\n'
+  if [ -n "$missing" ]; then printf '%s\n' "$missing"; fi
+  if [ -n "$risks" ]; then printf '%s\n' "$risks"; fi
+  if [ "$goal_met" = "false" ] && [ -z "$missing" ]; then
+    printf -- '- The goal check did not confirm completion; compare the requested scope with the diff.\n'
   fi
-  if [ "$evaluator_unavailable" -eq 1 ]; then
-    printf -- '- Goal-check evaluator unavailable; this is a degraded result and requires human review.\n'
-  fi
-  evidence="$(format_pr_json_list "$goal_file" "evidence" 3 180 | sanitize_pr_metadata_text)"
-  validation_notes="$(format_pr_json_list "$goal_file" "validation_notes" 2 180 | sanitize_pr_metadata_text)"
-  if [ -n "$evidence" ]; then
-    printf '%s\n' "$evidence"
-  elif [ "$validation_pass_flag" -eq 1 ]; then
-    printf -- '- All configured validation, quality, and secret-scan gates passed.\n'
-  fi
-  if [ -n "$validation_notes" ]; then
-    printf '%s\n' "$validation_notes"
-  fi
-
-  printf '\n### Needs attention\n'
-  missing="$(format_pr_json_list "$goal_file" "missing" 3 180 | sanitize_pr_metadata_text)"
-  risks="$(format_pr_json_list "$scouting_file" "risks" 2 180 | sanitize_pr_metadata_text)"
-  if [ -n "$missing" ]; then
-    printf '%s\n' "$missing"
-  elif [ "$evaluator_unavailable" -eq 1 ]; then
-    printf -- '- Goal-check requirements could not be assessed automatically; review the requested scope, diff, and validation evidence manually.\n'
-  elif [ "$validation_pass_flag" -eq 1 ]; then
-    printf -- '- No unmet task requirements were reported by the goal check.\n'
-  fi
-  if [ -n "$risks" ]; then
-    printf '%s\n' "$risks"
-  elif [ "$validation_pass_flag" -ne 1 ]; then
+  if [ "$validation_pass_flag" -ne 1 ]; then
     printf -- '- Review the failed validation or quality gate output before merging.\n'
   fi
 }
@@ -8616,32 +8705,7 @@ console.log(`- Overall: ${assessment}`);
 console.log(`- Reviewer confidence: ${confidence}`);
 console.log(`- Duration: ${formatDuration(durationMs)}`);
 
-// A review summary should describe the implementation. Omit deterministic
-// evidence telemetry and evaluator boilerplate; the main summary uses persisted
-// implementation artifacts as a fallback.
-const prSummary = text(data.pr_summary || data.summary || '', 320);
-const genericSummaries = new Set([
-  'jev evaluated task completion and reviewer confidence from the persisted run artifacts.',
-  'run evaluation was unavailable; please rely on the summary, validation results, and changed files.',
-]);
-const generatedEvidenceSummary = /^\d+ changed files? with (?:a persisted diff|no persisted diff); (?:validation was not run|\d+ validation commands (?:passed|failed)); goal check [a-z ]+\.$/i.test(prSummary);
-if (prSummary && !genericSummaries.has(prSummary.toLowerCase()) && !generatedEvidenceSummary) {
-  console.log('');
-  console.log('### Summary');
-  console.log(`- ${prSummary}`);
-}
-
-// Review focus subsection
-const focus = Array.isArray(data.human_review_focus)
-  ? data.human_review_focus.map((value) => text(value, 320)).filter(Boolean).slice(0, 3)
-  : [];
-if (focus.length > 0) {
-  console.log('');
-  console.log('### Review focus');
-  for (const item of focus) {
-    console.log(`- ${item}`);
-  }
-}
+// Summary and human review focus are rendered in dedicated sections above.
 
 // Efficiency findings and improvement opportunities are operational telemetry,
 // not reviewer-facing change evidence. They remain in run artifacts and the
@@ -8857,7 +8921,7 @@ format_pr_run_scorecard() {
 
 build_pr_body() {
   local duration_seconds pre_validation_status validation_status quality_status secret_scan_status task_summary model_summary generated_at changed_files_summary
-  local pre_validation_commands pre_validation_full_commands post_validation_commands post_validation_full_commands validation_command_sections all_validation_statuses_pass scorecard_markdown agent_review agent_evaluation scorecard_section scorecard_fallback model_requested model_actual
+  local pre_validation_commands pre_validation_full_commands post_validation_commands post_validation_full_commands validation_command_sections all_validation_statuses_pass scorecard_markdown agent_review agent_evaluation review_focus review_notes scorecard_section scorecard_fallback model_requested model_actual pr_summary pr_changes summary_content
   duration_seconds="$(($(date +%s) - START_EPOCH))"
   pre_validation_status="$([ "${PRE_VALIDATION_EXIT:-0}" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$PRE_VALIDATION_EXIT")"
   validation_status="$([ "$VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$VALIDATION_EXIT")"
@@ -8876,6 +8940,14 @@ build_pr_body() {
   generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   changed_files_summary="$(format_pr_changed_files)"
   scorecard_markdown="$(format_pr_run_scorecard)"
+  pr_summary="$(build_pr_summary)"
+  pr_changes=""
+  if [ -n "$pr_summary" ]; then
+    pr_changes="$(build_pr_changes)"
+    summary_content="$pr_summary"
+  else
+    summary_content="$(build_pr_improvements_summary)"
+  fi
 
   if [ "${PRE_VALIDATION_EXIT:-0}" -eq 0 ] && [ "$VALIDATION_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && [ "$SECRET_SCAN_EXIT" -eq 0 ]; then
     all_validation_statuses_pass=1
@@ -8884,13 +8956,13 @@ build_pr_body() {
   fi
 
   if [ "$all_validation_statuses_pass" -eq 1 ]; then
-    validation_command_sections="<details><summary>Validation command evidence (pre-agent and post-agent)</summary>
+    validation_command_sections="### Post-agent checks
+$(format_pr_command_results_bounded "$VALIDATION_TIMINGS_FILE")
 
-Pre-agent artifact: \`pre-validation-timings.tsv\`
+<details><summary>Pre-agent baseline checks</summary>
+
+Artifact: \`pre-validation-timings.tsv\`
 $(format_pr_command_results "$PRE_VALIDATION_TIMINGS_FILE")
-
-Post-agent artifact: \`validation-timings.tsv\`
-$(format_pr_command_results "$VALIDATION_TIMINGS_FILE")
 
 </details>"
   else
@@ -8925,11 +8997,18 @@ $post_validation_commands"
 
   agent_review="$(build_pr_agent_review "$all_validation_statuses_pass")"
   agent_evaluation="$(build_pr_agent_evaluation)"
+  review_focus="$(build_pr_human_review_focus)"
+  review_notes=""
+  if [ -n "$agent_review" ] || [ -n "$review_focus" ]; then
+    review_notes="## Review notes
+$(if [ -n "$agent_review" ]; then printf '%s\n\n' "$agent_review"; fi)$(if [ -n "$review_focus" ]; then printf '%s\n' "$review_focus"; fi)"
+  fi
   if [ -n "$scorecard_markdown" ]; then
     scorecard_section="## Kaseki run scorecard
 $scorecard_markdown
 
 "
+    scorecard_fallback=""
   else
     scorecard_section=""
     scorecard_fallback="- Scorecard unavailable at publication. Validation status and changed-file metadata are included below; inspect the run artifacts for evaluator evidence."
@@ -8937,14 +9016,11 @@ $scorecard_markdown
 
   cat <<EOF
 ## Summary
-$(build_pr_improvements_summary)
-$scorecard_fallback
+${summary_content}
 
-$(if [ -n "$agent_review" ]; then printf '## Agent review\n%s\n\n' "$agent_review"; fi)
+$(if [ -n "$pr_changes" ]; then printf '## Changes\n%s\n\n' "$pr_changes"; fi)
 
-$(if [ -n "$agent_evaluation" ]; then printf '## Agent evaluation\n%s\n\n' "$agent_evaluation"; fi)
-
-$scorecard_section
+${review_notes}
 
 ## Validation
 ### Validation statuses
@@ -8958,18 +9034,26 @@ $validation_command_sections
 ## Files changed
 $changed_files_summary
 
+<details><summary>Kaseki run details</summary>
+
+$(if [ -n "$agent_evaluation" ]; then printf '### Evaluator assessment\n%s\n\n' "$agent_evaluation"; fi)
+$scorecard_section
+$scorecard_fallback
+
+### Run metadata
+- Model: $model_summary
+- Duration: ${duration_seconds}s
+- Generated by: Kaseki agent
+- Generated at: $generated_at
+
+</details>
+
 ## Original task prompt
 <details><summary>Original task prompt</summary>
 
 $task_summary
 
 </details>
-
-## Run metadata
-- Model: $model_summary
-- Duration: ${duration_seconds}s
-- Generated by: Kaseki agent
-- Generated at: $generated_at
 EOF
 
   if is_pr_draft_mode; then
@@ -9428,7 +9512,7 @@ prepare_dependencies() {
   fi
 
   local repo_ref_key lock_hash flags_hash cache_key workspace_cache_root workspace_cache_dir image_cache_dir stamp_file metadata_file
-  local cache_lock_file cache_lock_fd tmp_cache_dir old_cache_dir install_start install_elapsed install_flags_display cache_detail
+  local cache_lock_file cache_lock_fd tmp_cache_dir old_cache_dir install_start install_start_ns install_elapsed install_flags_display cache_detail cache_metric_start_ns cache_metric_elapsed
   local node_major node_platform node_arch node_abi cache_reused cache_source install_mode restore_mode restore_method cache_repaired restore_validation_reason existing_graph_error existing_graph_exit restore_npm_output restore_npm_exit install_exit
   local -a install_flags
   repo_ref_key="$(printf '%s@%s' "$REPO_URL" "$GIT_REF" | sha256sum | awk '{print $1}')"
@@ -9486,6 +9570,7 @@ prepare_dependencies() {
     if grep -qx "$lock_hash" "$stamp_file"; then
       existing_graph_error=""
       existing_graph_exit=0
+      cache_metric_start_ns="$(cache_metric_now)"
       existing_graph_error="$(npm ls --depth=0 2>&1)" || existing_graph_exit=$?
       if [ "$existing_graph_exit" -ne 0 ] || ! dependency_cache_required_bins_valid package.json; then
         DEPENDENCY_FAILURE_DETAIL="existing node_modules cache failed integrity validation; npm graph or required executable links are invalid"
@@ -9504,9 +9589,10 @@ prepare_dependencies() {
       set_dependency_cache_status "existing-node-modules" "$cache_detail restore_method=none"
       emit_event "dependency_cache_decision" "strategy=existing_node_modules" "restore_mode=$restore_mode" "restore_method=none" "reason=lock_hash_match" "location=repo" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
       # Phase 2D: Emit cache metric to JSON
-      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "existing_node_modules" "true" "repo" "0" "lock_hash_match"
+      cache_metric_elapsed="$(cache_metric_elapsed_seconds "$cache_metric_start_ns")"
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "existing_node_modules" "true" "repo" "$cache_metric_elapsed" "lock_hash_match"
       emit_progress "dependency install" "cache hit source=repo restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
-      record_stage_timing "dependency install" "0" "0" "cache_hit=true cache_source=repo install_mode=skipped restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
+      record_stage_timing "dependency install" "0" "$cache_metric_elapsed" "cache_hit=true cache_source=repo install_mode=skipped restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
       exec {cache_lock_fd}>&-
       return 0
       fi
@@ -9534,15 +9620,19 @@ prepare_dependencies() {
     printf 'Dependency cache status: restoring node_modules from workspace cache (%s; lock_hash=%s; repo_ref_key=%s).\n' "$workspace_cache_dir" "$lock_hash" "$repo_ref_key"
     set_dependency_cache_status "workspace-cache-hit" "$cache_detail"
     emit_event "dependency_cache_decision" "strategy=workspace_cache_hit" "restore_mode=$restore_mode" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+    cache_metric_start_ns="$(cache_metric_now)"
     if ! restore_node_modules_from_cache "$workspace_cache_dir" ./node_modules "$restore_mode"; then
+      cache_metric_elapsed="$(cache_metric_elapsed_seconds "$cache_metric_start_ns")"
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_restore_failed" "true" "workspace" "$cache_metric_elapsed" "restore_failed"
       exec {cache_lock_fd}>&-
       return 1
     fi
+    cache_metric_elapsed="$(cache_metric_elapsed_seconds "$cache_metric_start_ns")"
     restore_method="$DEPENDENCY_RESTORE_METHOD"
     set_dependency_cache_status "workspace-cache-restored" "$cache_detail restore_method=$restore_method"
     emit_event "dependency_cache_decision" "strategy=workspace_cache_restored" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=restore_completed" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
     # Phase 2D: Emit cache metric to JSON
-    append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_restored" "true" "workspace" "0" "restore_completed"
+    append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_restored" "true" "workspace" "$cache_metric_elapsed" "restore_completed"
     cache_reused="true"
     cache_source="workspace"
     # A marker proves that the cache was valid when published, not that the
@@ -9567,7 +9657,7 @@ prepare_dependencies() {
       cache_repaired="true"
       printf 'Dependency cache status: restored cache had missing executable links; repaired links and will republish the workspace cache.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
       emit_event "dependency_cache_decision" "strategy=repair_workspace_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=required_executable_links_repaired" "location=$workspace_cache_dir"
-      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_repaired" "true" "workspace" "0" "required_executable_links_repaired"
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_repaired" "true" "workspace" "" "required_executable_links_repaired"
     fi
     if [ -n "$restore_validation_reason" ]; then
       printf 'Dependency cache status: restored cache failed executable/schema validation; reinstalling (reason=%s).\n' "$restore_validation_reason" | tee -a "$DEPENDENCY_CACHE_LOG"
@@ -9576,7 +9666,7 @@ prepare_dependencies() {
         "${KASEKI_RESULTS_DIR}/dependency-cache-diagnostics.log" \
         workspace "$restore_validation_reason" "$restore_method" "$restore_npm_exit" "$restore_npm_output"
       emit_event "dependency_cache_decision" "strategy=invalidate_workspace_cache" "reason=$restore_validation_reason" "location=$workspace_cache_dir"
-      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_invalid" "true" "workspace" "0" "$restore_validation_reason"
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_invalid" "true" "workspace" "" "$restore_validation_reason"
       rm -rf node_modules
       invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
       rm -f "$workspace_cache_root"/validated "$workspace_cache_root"/validated-v*
@@ -9589,19 +9679,24 @@ prepare_dependencies() {
       printf 'Dependency cache status: restored validated workspace cache; skipping redundant npm ls validation.\n'
       emit_event "dependency_cache_decision" "strategy=trust_validated_workspace_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=validated_marker_and_cache_key_match" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key"
     fi
+    cache_metric_elapsed="$(cache_metric_elapsed_seconds "$cache_metric_start_ns")"
   elif [ ! -d node_modules ] && [ -d "$image_cache_dir" ]; then
     printf 'Dependency cache status: restoring node_modules from image cache (%s; lock_hash=%s; repo_ref_key=%s).\n' "$image_cache_dir" "$lock_hash" "$repo_ref_key"
     set_dependency_cache_status "image-cache-hit" "$cache_detail"
     emit_event "dependency_cache_decision" "strategy=image_cache_hit" "restore_mode=$restore_mode" "location=$image_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+    cache_metric_start_ns="$(cache_metric_now)"
     if ! restore_node_modules_from_cache "$image_cache_dir" ./node_modules "$restore_mode"; then
+      cache_metric_elapsed="$(cache_metric_elapsed_seconds "$cache_metric_start_ns")"
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_restore_failed" "true" "image" "$cache_metric_elapsed" "restore_failed"
       exec {cache_lock_fd}>&-
       return 1
     fi
+    cache_metric_elapsed="$(cache_metric_elapsed_seconds "$cache_metric_start_ns")"
     restore_method="$DEPENDENCY_RESTORE_METHOD"
     set_dependency_cache_status "image-cache-restored" "$cache_detail restore_method=$restore_method"
     emit_event "dependency_cache_decision" "strategy=image_cache_restored" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=restore_completed" "location=$image_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
     # Phase 2D: Emit cache metric to JSON
-    append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_restored" "true" "image" "0" "restore_completed"
+    append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_restored" "true" "image" "$cache_metric_elapsed" "restore_completed"
     cache_reused="true"
     cache_source="image"
     restore_validation_reason=""
@@ -9616,7 +9711,7 @@ prepare_dependencies() {
     elif [ "${DEPENDENCY_CACHE_BIN_REPAIRED:-0}" -eq 1 ]; then
       printf 'Dependency cache status: repaired missing executable links after restoring image cache.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
       emit_event "dependency_cache_decision" "strategy=repair_image_cache_restore" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=required_executable_links_repaired" "location=$image_cache_dir"
-      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_repaired" "true" "image" "0" "required_executable_links_repaired"
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_repaired" "true" "image" "" "required_executable_links_repaired"
     fi
     if [ -n "$restore_validation_reason" ]; then
       printf 'Dependency cache status: image cache failed validation (reason=%s); reinstalling.\n' "$restore_validation_reason"
@@ -9627,12 +9722,13 @@ prepare_dependencies() {
       set_dependency_cache_status "image-cache-invalid" "$cache_detail restore_method=$restore_method reason=$restore_validation_reason"
       emit_event "dependency_cache_decision" "strategy=invalidate_image_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=$restore_validation_reason" "location=$image_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
       # Phase 2D: Emit cache metric to JSON (validation failure)
-      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_invalid" "true" "image" "0" "$restore_validation_reason"
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_invalid" "true" "image" "" "$restore_validation_reason"
       rm -rf node_modules
       cache_reused="false"
       cache_source="none"
       install_reason="image_cache_validation_failed"
     fi
+    cache_metric_elapsed="$(cache_metric_elapsed_seconds "$cache_metric_start_ns")"
   fi
 
   if [ ! -d node_modules ]; then
@@ -9644,13 +9740,15 @@ prepare_dependencies() {
     set_dependency_cache_status "cache-install-required" "$cache_detail reason=$install_reason"
     emit_event "dependency_cache_decision" "strategy=fresh_install" "restore_mode=$restore_mode" "restore_method=none" "reason=$install_reason" "location=none" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
     # Phase 2D: Emit cache metric to JSON (cache miss)
-    append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "fresh_install" "true" "none" "0" "$install_reason"
     emit_progress "dependency install" "started cache_hit=false restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
     install_start="$(date +%s)"
+    install_start_ns="$(cache_metric_now)"
     if npm ci --prefer-offline "${install_flags[@]}"; then
       :
     else
       install_exit=$?
+      cache_metric_elapsed="$(cache_metric_elapsed_seconds "$install_start_ns")"
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "fresh_install" "true" "none" "$cache_metric_elapsed" "${install_reason}_npm_ci_failed"
       DEPENDENCY_FAILURE_DETAIL="npm ci failed with exit $install_exit (lock_hash=$lock_hash; cache_reason=$install_reason)"
       printf 'cache_source=none\nreason=npm_ci_failed\nexit_code=%s\nlock_hash=%s\n' "$install_exit" "$lock_hash" >> "${KASEKI_RESULTS_DIR}/dependency-cache-diagnostics.log"
       exec {cache_lock_fd}>&-
@@ -9668,18 +9766,20 @@ prepare_dependencies() {
       return 1
     fi
     install_elapsed="$(($(date +%s) - install_start))"
+    cache_metric_elapsed="$(cache_metric_elapsed_seconds "$install_start_ns")"
+    append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "fresh_install" "true" "none" "$cache_metric_elapsed" "$install_reason"
     install_mode="npm_ci_lockfile"
     emit_progress "dependency install" "finished elapsed=${install_elapsed}s cache_hit=false restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
-    record_stage_timing "dependency install" "0" "$install_elapsed" "cache_hit=false cache_source=none install_mode=$install_mode restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
+    record_stage_timing "dependency install" "0" "$cache_metric_elapsed" "cache_hit=false cache_source=none install_mode=$install_mode restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
   else
     printf 'Dependency cache status: install skipped due to cache hit.\n'
     set_dependency_cache_status "install-skipped" "$cache_detail restore_method=$restore_method"
     emit_event "dependency_cache_decision" "strategy=skip_install" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=cache_hit" "location=local" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
     # Phase 2D: Emit cache metric to JSON (skip install)
-    append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "skip_install" "true" "$cache_source" "0" "cache_hit"
+    append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "skip_install" "true" "$cache_source" "" "cache_hit"
     if [ "$cache_reused" = "true" ]; then
       emit_progress "dependency install" "cache hit source=$cache_source restore_mode=$restore_mode restore_method=$restore_method lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
-      record_stage_timing "dependency install" "0" "0" "cache_hit=true cache_source=$cache_source install_mode=skipped restore_mode=$restore_mode restore_method=$restore_method lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
+      record_stage_timing "dependency install" "0" "$cache_metric_elapsed" "cache_hit=true cache_source=$cache_source install_mode=skipped restore_mode=$restore_mode restore_method=$restore_method lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
     fi
   fi
 

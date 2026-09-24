@@ -60,6 +60,16 @@ describe('run scorecard Markdown formatter', () => {
     expect(formatRunScorecardMarkdown(fixture)).toContain('Provisional score');
   });
 
+  test('shows lifecycle next to the score so a failed run is not mistaken for a success', () => {
+    const fixture = card();
+    fixture.lifecycle_status = 'failed';
+    fixture.overall_score = 49;
+    fixture.grade = 'F';
+    const markdown = formatRunScorecardMarkdown(fixture);
+    expect(markdown).toContain('- **Overall:** 49/100 (F)');
+    expect(markdown).toContain('- **Lifecycle:** failed');
+  });
+
   test('does not present unavailable timing and token sentinels as measured zeroes', () => {
     const fixture = card();
     fixture.timing_totals.wall_clock_ms = 0;
