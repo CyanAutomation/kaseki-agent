@@ -41,6 +41,7 @@ describe('JEV run evaluation artifact', () => {
     expect(result.evidence_sources_inspected).toEqual(completeFacts.presentSources);
     expect(result.summary).toContain('2 validation commands passed');
     expect(result.summary).toContain('1 changed file');
+    expect(result.pr_changes).toEqual([]);
     expect(result.human_review_focus).toEqual([]);
     expect(result.kaseki_improvement_opportunities).toEqual([]);
   });

@@ -7538,6 +7538,7 @@ const artifact = {
     suggestion: 'Inspect run-evaluation-stderr.log and improve evaluator reliability.'
   }],
   pr_summary: 'Run evaluation was unavailable; please rely on the summary, validation results, and changed files.',
+  pr_changes: [],
   warnings: [warning],
   evidence_sources_inspected: [],
   contradictions: [],
@@ -7569,6 +7570,7 @@ if (!assessmentValues.has(artifact.overall_assessment)) invalid.push("overall_as
 if (!confidenceValues.has(artifact.reviewer_confidence)) invalid.push("reviewer_confidence");
 if (!Number.isInteger(artifact.task_completion_score) || artifact.task_completion_score < 1 || artifact.task_completion_score > 5) invalid.push("task_completion_score");
 for (const key of ["summary", "pr_summary"]) if (typeof artifact[key] !== "string") invalid.push(key);
+if (!Array.isArray(artifact.pr_changes) || !artifact.pr_changes.every((value) => typeof value === "string")) invalid.push("pr_changes");
 for (const key of ["human_review_focus", "efficiency_findings", "warnings"]) {
   if (!Array.isArray(artifact[key]) || !artifact[key].every((v) => typeof v === "string")) invalid.push(key);
 }
@@ -8295,12 +8297,13 @@ try {
   const unavailable = value?.evaluation_unavailable === true ||
     (Array.isArray(value?.warnings) && value.warnings.includes('jev_classifier_unavailable')) ||
     value?.overall_assessment === 'unknown';
+  const summary = typeof value?.pr_summary === 'string' ? value.pr_summary.trim() : '';
   const genericSummaries = new Set([
     'jev evaluated task completion and reviewer confidence from the persisted run artifacts.',
     'run evaluation was unavailable; please rely on the summary, validation results, and changed files.',
   ]);
-  if (!unavailable && value && typeof value.pr_summary === 'string' &&
-      !genericSummaries.has(value.pr_summary.trim().toLowerCase())) process.stdout.write(value.pr_summary);
+  const generatedEvidenceSummary = /^\d+ changed files? with (?:a persisted diff|no persisted diff); (?:validation was not run|\d+ validation commands (?:passed|failed)); goal check [a-z ]+\.$/i.test(summary);
+  if (!unavailable && !genericSummaries.has(summary.toLowerCase()) && !generatedEvidenceSummary && value && typeof value.pr_summary === 'string') process.stdout.write(value.pr_summary);
 } catch {}
 NODE
     )"
@@ -8495,7 +8498,6 @@ for (const item of values.slice(0, maxRows)) {
 NODE
 }
 
-
 format_pr_command_results_bounded() {
   local timings_file="$1"
   local max_visible="${2:-5}"
@@ -8525,8 +8527,10 @@ try {
     'jev evaluated task completion and reviewer confidence from the persisted run artifacts.',
     'run evaluation was unavailable; please rely on the summary, validation results, and changed files.',
   ]);
-  if (unavailable || typeof data?.pr_summary !== 'string' || genericSummaries.has(data.pr_summary.trim().toLowerCase())) process.exit(0);
-  const summary = data.pr_summary.replace(/\s+/g, ' ').trim();
+  const summaryText = typeof data?.pr_summary === 'string' ? data.pr_summary.trim() : '';
+  const generatedEvidenceSummary = /^\d+ changed files? with (?:a persisted diff|no persisted diff); (?:validation was not run|\d+ validation commands (?:passed|failed)); goal check [a-z ]+\.$/i.test(summaryText);
+  if (unavailable || !summaryText || genericSummaries.has(summaryText.toLowerCase()) || generatedEvidenceSummary) process.exit(0);
+  const summary = summaryText.replace(/\s+/g, ' ');
   if (summary) process.stdout.write(summary.slice(0, 600));
 } catch {}
 NODE
@@ -8534,8 +8538,24 @@ NODE
 
 build_pr_changes() {
   local evaluation_file="${KASEKI_RESULTS_DIR}/run-evaluation.json"
-  [ -s "$evaluation_file" ] || return 0
-  format_pr_json_list "$evaluation_file" "pr_changes" 4 220 | sanitize_pr_body_text
+  local pi_summary_file="${KASEKI_RESULTS_DIR}/pi-summary.json"
+  local changes="" key
+  if [ -s "$evaluation_file" ]; then
+    changes="$(format_pr_json_list "$evaluation_file" "pr_changes" 4 220 | sanitize_pr_body_text)"
+  fi
+  if [ -n "$changes" ]; then
+    printf '%s\n' "$changes"
+    return 0
+  fi
+  if [ -s "$pi_summary_file" ]; then
+    for key in changes changed improvements; do
+      changes="$(format_pr_json_list "$pi_summary_file" "$key" 4 220 | sanitize_pr_body_text)"
+      if [ -n "$changes" ]; then
+        printf '%s\n' "$changes"
+        return 0
+      fi
+    done
+  fi
 }
 
 build_pr_human_review_focus() {
@@ -8698,7 +8718,7 @@ build_pr_improvements_summary() {
   local diff_file="${KASEKI_RESULTS_DIR}/git.diff"
   local total=0 source_count=0 test_count=0 docs_count=0 config_count=0 other_count=0
   local path lower additions deletions summary_rows=0 summary_source=""
-  local artifact raw_line line safe_line summary_capture=0 content json_text
+  local artifact raw_line line safe_line summary_capture=0 content json_text fallback_summary
 
   if [ -s "$changed_files_file" ]; then
     while IFS= read -r path || [ -n "$path" ]; do
@@ -8715,7 +8735,12 @@ build_pr_improvements_summary() {
     done < "$changed_files_file"
   fi
 
-  if [ -s "${KASEKI_RESULTS_DIR}"/result-summary.md ]; then
+  if [ -s "${KASEKI_RESULTS_DIR}"/result-summary.md ] && awk '
+    /^#{1,3}[[:space:]]+Summary[[:space:]]*$/ { in_summary=1; next }
+    in_summary && /^#{1,3}[[:space:]]+/ { exit }
+    in_summary && NF { found_summary=1; exit }
+    END { exit !found_summary }
+  ' "${KASEKI_RESULTS_DIR}"/result-summary.md; then
     summary_source="${KASEKI_RESULTS_DIR}/result-summary.md"
   else
     for artifact in "${KASEKI_RESULTS_DIR}"/analysis.md ${KASEKI_RESULTS_DIR}/pi-summary.json; do
@@ -8732,7 +8757,7 @@ build_pr_improvements_summary() {
 const fs = require('fs');
 const file = process.argv[2];
 const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-const keys = new Set(['summary', 'changes', 'changed', 'improvements', 'notes', 'title', 'description']);
+const keys = new Set(['summary', 'notes', 'title', 'description']);
 const out = [];
 function visit(value, key = '') {
   if (out.length >= 8 || value == null) return;
@@ -8802,6 +8827,23 @@ EOF_SUMMARY_FILE
     fi
   fi
 
+  if [ "$summary_rows" -eq 0 ] && [ -s "${KASEKI_RESULTS_DIR}/pi-summary.json" ]; then
+    fallback_summary="$(node - "${KASEKI_RESULTS_DIR}/pi-summary.json" <<'NODE' 2>/dev/null || true
+const fs = require('fs');
+try {
+  const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  if (typeof data?.summary === 'string') process.stdout.write(data.summary.replace(/\s+/g, ' ').trim());
+} catch {}
+NODE
+)"
+    fallback_summary="$(printf '%s' "$fallback_summary" | sanitize_pr_metadata_text)"
+    fallback_summary="$(truncate_pr_metadata_text 180 "$fallback_summary")"
+    if [ -n "$fallback_summary" ]; then
+      printf -- '- %s\n' "$fallback_summary"
+      summary_rows=$((summary_rows + 1))
+    fi
+  fi
+
   if [ "$summary_rows" -eq 0 ]; then
     if [ "$total" -eq 0 ]; then
       printf -- '- No file changes detected in local artifacts.\n'
@@ -8816,6 +8858,12 @@ EOF_SUMMARY_FILE
       [ -n "$categories" ] || categories="local files"
       printf -- '- Updated %s across %s changed file(s).\n' "$categories" "$total"
     fi
+  fi
+
+  local changes
+  changes="$(build_pr_changes)"
+  if [ -n "$changes" ]; then
+    printf '\n### Changes\n%s\n' "$changes"
   fi
 
   printf '\n### Change metadata\n'

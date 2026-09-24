@@ -50,6 +50,7 @@ eval "$(extract_function build_pr_improvements_summary)"
 eval "$(extract_function format_pr_run_scorecard)"
 eval "$(extract_function build_pr_body)"
 eval "$(extract_function run_node_subprocess)"
+eval "$(extract_function validate_run_evaluation_candidate)"
 
 PRE_VALIDATION_TIMINGS_FILE="$RESULTS_DIR/pre-validation-timings.tsv"
 VALIDATION_TIMINGS_FILE="$RESULTS_DIR/validation-timings.tsv"
@@ -272,6 +273,68 @@ case "$unavailable_evaluation_title" in
   "fix: the deployment health-check contract"*) pass "PR title ignores unavailable evaluator fallback text" ;;
   *) fail "PR title used unavailable evaluator text: $unavailable_evaluation_title" ;;
 esac
+cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
+{"overall_assessment":"good","reviewer_confidence":"high","pr_summary":"3 changed files with a persisted diff; 4 validation commands passed; goal check succeeded.","pr_changes":["Added a safe health-check fallback."]}
+JSON
+TASK_PROMPT="Fix the deployment health-check fallback path."
+generated_evaluation_title="$(derive_pr_title)"
+case "$generated_evaluation_title" in
+  "fix: the deployment health-check fallback path"*) pass "PR title ignores mechanical evaluator evidence summaries" ;;
+  *) fail "PR title used mechanical evaluator summary: $generated_evaluation_title" ;;
+esac
+generated_evaluation_body="$(build_pr_body)"
+if grep -Fq 'changed files with a persisted diff' <<<"$generated_evaluation_body"; then
+  fail "PR body exposed mechanical evaluator evidence as reviewer prose"
+else
+  pass "PR body omits mechanical evaluator evidence summaries"
+fi
+if grep -Fq 'Added a safe health-check fallback.' <<<"$generated_evaluation_body"; then
+  pass "PR body retains specific changes when evaluator summary is mechanical"
+else
+  fail "PR body omitted specific changes when evaluator summary is mechanical"
+fi
+cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
+{"overall_assessment":"good","reviewer_confidence":"high","pr_summary":"3 changed files with no persisted diff; validation was not run; goal check unavailable.","pr_changes":[]}
+JSON
+cat > "$RESULTS_DIR/pi-summary.json" <<'JSON'
+{"summary":"Added a safe health-check fallback for missing status data.","changes":["Preserved existing healthy-state behavior.","Added regression coverage for missing status data."]}
+JSON
+pi_fallback_body="$(build_pr_body)"
+if grep -Fq 'Added a safe health-check fallback for missing status data.' <<<"$pi_fallback_body" \
+  && grep -Fq 'Preserved existing healthy-state behavior.' <<<"$pi_fallback_body" \
+  && grep -Fq 'Added regression coverage for missing status data.' <<<"$pi_fallback_body"; then
+  pass "PR body falls back to the coding summary and changes when evaluator prose is mechanical"
+else
+  fail "PR body omitted pi-summary fallback prose"
+fi
+cat > "$RESULTS_DIR/result-summary.md" <<'SUMMARY'
+# Run result
+
+## Validation
+- npm test passed.
+SUMMARY
+summary_file_fallback_body="$(build_pr_body)"
+if grep -Fq 'Added a safe health-check fallback for missing status data.' <<<"$summary_file_fallback_body"; then
+  pass "PR body falls back to pi-summary when result-summary has no summary section"
+else
+  fail "PR body did not fall back to pi-summary when result-summary had no summary"
+fi
+cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
+{"overall_assessment":"good","reviewer_confidence":"high","pr_summary":"JEV evaluated task completion and reviewer confidence from the persisted run artifacts.","pr_changes":[]}
+JSON
+TASK_PROMPT="Fix the human-readable health-check fallback path."
+jev_evaluation_title="$(derive_pr_title)"
+case "$jev_evaluation_title" in
+  "fix: the human-readable health-check fallback path"*) pass "PR title ignores the JEV evaluation placeholder" ;;
+  *) fail "PR title used the JEV placeholder: $jev_evaluation_title" ;;
+esac
+jev_evaluation_markdown="$(build_pr_agent_evaluation)"
+if grep -Fq 'JEV evaluated task completion' <<<"$jev_evaluation_markdown"; then
+  fail "PR body exposed the JEV evaluation placeholder"
+else
+  pass "PR body omits the JEV evaluation placeholder"
+fi
+rm -f "$RESULTS_DIR/pi-summary.json"
 rm -f "$RESULTS_DIR/run-evaluation.json"
 
 TASK_PROMPT=''
@@ -891,3 +954,43 @@ if grep -Fq '## Kaseki run scorecard' <<<"$absent_scorecard_body"; then
 fi
 grep -Fq 'Scorecard unavailable at publication' <<<"$absent_scorecard_body" || fail "Absent scorecard lacked an accurate fallback summary"
 pass "Malformed and absent scorecards use deterministic fallback summaries"
+
+# The evaluator contract must preserve explicit implementation bullets in the
+# published PR body and reject older responses that omit the field.
+RUN_EVALUATION_CANDIDATE_ARTIFACT="$RESULTS_DIR/run-evaluation-candidate.json"
+RUN_EVALUATION_ARTIFACT="$RESULTS_DIR/validated-run-evaluation.json"
+KASEKI_RUN_EVALUATION_MODEL="test-model"
+RUN_EVALUATION_ACTUAL_MODEL="test-model"
+export RUN_EVALUATION_CANDIDATE_ARTIFACT RUN_EVALUATION_ARTIFACT KASEKI_RUN_EVALUATION_MODEL RUN_EVALUATION_ACTUAL_MODEL
+cat > "$RUN_EVALUATION_CANDIDATE_ARTIFACT" <<'JSON'
+{
+  "overall_assessment": "good",
+  "reviewer_confidence": "medium",
+  "task_completion_score": 4,
+  "summary": "A focused change with validation evidence.",
+  "human_review_focus": [],
+  "stage_value": [],
+  "evidence_sources_inspected": [],
+  "contradictions": [],
+  "confidence_calibration": {"objective_outcome":"met","calibrated":true,"reason":"Evidence supports the result."},
+  "phase_scorecard": {},
+  "efficiency_findings": [],
+  "kaseki_improvement_opportunities": [],
+  "pr_summary": "Fixed the deployment health-check fallback.",
+  "pr_changes": ["Preserved healthy-state behavior.", "Added regression coverage for missing health data."],
+  "warnings": []
+}
+JSON
+if validate_run_evaluation_candidate >/dev/null 2>&1 \
+  && node -e 'const value=require(process.argv[1]); if (!Array.isArray(value.pr_changes) || value.pr_changes.length !== 2) process.exit(1);' "$RUN_EVALUATION_ARTIFACT"; then
+  pass "Run-evaluation validation preserves pr_changes in the published artifact"
+else
+  fail "Run-evaluation validation did not preserve pr_changes"
+fi
+node -e 'const fs=require("fs"); const file=process.argv[1]; const value=JSON.parse(fs.readFileSync(file,"utf8")); delete value.pr_changes; fs.writeFileSync(file, JSON.stringify(value));' "$RUN_EVALUATION_CANDIDATE_ARTIFACT"
+rm -f "$RUN_EVALUATION_ARTIFACT"
+if validate_run_evaluation_candidate >/dev/null 2>&1; then
+  fail "Run-evaluation validator accepted a response without pr_changes"
+else
+  pass "Run-evaluation validator rejects candidates missing pr_changes"
+fi

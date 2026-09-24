@@ -326,7 +326,7 @@ Be explicit about what you did and didn't evaluate.
 | "Everything looks good" with zero improvement suggestions | Misses optimization opportunities | Analyze what could be better (goal specificity, scouting depth, validation rigor) |
 | `human_review_focus` lists 10+ items | Dilutes importance of critical items | Prioritize to 2-4 highest-impact items |
 | Ignoring goal-check verdict | May miss that agent failed and needs retry | Explicitly account for goal-check success/failure in your assessment |
-| PR summary that echoes the original task | Not useful to reviewer | Summarize the *actual changes* and their impact on the goal |
+| PR summary that echoes the task or reports evaluator telemetry | Not useful to reviewer | Describe the implemented behavior in `pr_summary`; use concise, evidence-backed `pr_changes` bullets instead of file counts or validation boilerplate |
 
 ---
 
@@ -410,7 +410,7 @@ Before submitting your evaluation JSON, verify:
 - [ ] **Run-Evaluation**: Are my `human_review_focus` items prioritized to top 2-4?
 - [ ] **Run-Evaluation**: Did I provide 2-3 `kaseki_improvement_opportunities` grounded in what I observed?
 - [ ] **Run-Evaluation**: Is my `pr_summary` useful to a human reviewer (not just echoing the task)?
-- [ ] **Run-Evaluation**: Are `pr_changes` grounded in `git.diff`, and are validation claims backed by recorded exit codes?
+- [ ] **Run-Evaluation**: Do `pr_changes` name concrete implementation changes grounded in `git.diff` or persisted evidence, with validation claims backed by exit codes and without repeating validation telemetry?
 - [ ] **Both**: Did I avoid overconfidence? Do my `confidence`/`reviewer_confidence` match the evidence?
 - [ ] **Both**: Did I read and reference the goal-setting output (SMART, anti-patterns, quality metrics)?
 

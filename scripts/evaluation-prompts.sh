@@ -558,7 +558,7 @@ Summarize the actual changes and their impact, NOT the original task.
     {"category": "goal_setting", "priority": "high", "suggestion": "..."}
   ],
   "pr_summary": "1-2 sentence summary of actual changes",
-  "pr_changes": ["implementation change 1", "implementation change 2"],
+  "pr_changes": ["Specific implementation change grounded in diff", "Relevant behavior or regression coverage"],
   "warnings": ["warning 1 if any"]
 }
 
@@ -569,6 +569,8 @@ Summarize the actual changes and their impact, NOT the original task.
 - Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
 - Return exactly one JSON object as your final assistant message. Do not write files, use markdown/code fences, or add prose; Kaseki validates and persists the response.
 - Treat this evaluation as annotate-only. Do not recommend blocking the PR.
+- Write pr_summary and pr_changes for a code reviewer: describe the implemented behavior and concrete changes, not task completion, evaluator confidence, file counts, or validation telemetry.
+- Keep pr_changes to concise, evidence-backed bullets from the diff and persisted artifacts; use an empty array when no specific change can be established.
 - Use goal-setting quality metrics to ground your confidence. Low-quality goals = lower reviewer_confidence even if goal-check passed.
 
 ## Context
