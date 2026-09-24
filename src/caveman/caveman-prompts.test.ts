@@ -117,6 +117,13 @@ describe('Caveman Compressed Prompts', () => {
     it('should preserve evaluation technical terms', () => {
       expect(compressed).toMatch(/artifact|metadata|phase/i);
     });
+
+    it('should request reviewer-facing PR summaries and diff-backed change bullets', () => {
+      expect(compressed).toContain('pr_summary');
+      expect(compressed).toContain('pr_changes');
+      expect(compressed).toMatch(/reviewer-facing/i);
+      expect(compressed).toMatch(/empty array/i);
+    });
   });
 
   describe('token count estimation', () => {
