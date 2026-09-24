@@ -33,7 +33,10 @@ export function classifyFailure(
   const providerFailure = classifyProviderFailure(metadata, failedCommand);
 
   if (normalizedExitCode === 0) return 'none';
-  if (workerErrorType) return workerErrorType;
+  // Older metadata fallbacks used this serialization failure as the worker's
+  // primary error, masking the actual exit code and failed command. Treat it
+  // as secondary diagnostic context and classify the root run outcome below.
+  if (workerErrorType && workerErrorType !== 'metadata_write_invalid') return workerErrorType;
   if (providerFailure) return providerFailure;
 
   const exactRules: Array<[string, boolean]> = [

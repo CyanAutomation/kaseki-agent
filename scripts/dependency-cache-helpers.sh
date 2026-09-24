@@ -14,7 +14,36 @@ dependency_cache_key() {
   local lock_hash="$1"
   local node_major="$2"
   local flags_hash="$3"
-  printf 'npm/%s/node-%s/flags-%s' "$lock_hash" "$node_major" "$flags_hash"
+  local node_platform="${4:-$(node -p 'process.platform' 2>/dev/null || uname -s)}"
+  local node_arch="${5:-$(node -p 'process.arch' 2>/dev/null || uname -m)}"
+  local node_abi="${6:-$(node -p 'process.versions.modules || "none"' 2>/dev/null || printf 'unknown')}"
+  printf 'npm/%s/node-%s/platform-%s/arch-%s/abi-%s/flags-%s' \
+    "$lock_hash" "$node_major" "$node_platform" "$node_arch" "$node_abi" "$flags_hash"
+}
+
+dependency_cache_write_restore_diagnostic() {
+  local diagnostic_file="$1"
+  local cache_source="$2"
+  local reason="$3"
+  local restore_method="$4"
+  local npm_exit_code="$5"
+  local npm_output="$6"
+  local safe_output
+  safe_output="$(printf '%s\n' "$npm_output" \
+    | sed -E 's#(https?://)[^/@[:space:]]+@#\1[REDACTED]@#g' \
+    | tail -20)"
+  {
+    printf 'timestamp=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'cache_source=%s\nreason=%s\nrestore_method=%s\nnpm_ls_exit_code=%s\n' \
+      "$cache_source" "$reason" "$restore_method" "$npm_exit_code"
+    printf 'node_version=%s\nnpm_version=%s\nnode_platform=%s\nnode_arch=%s\nnode_abi=%s\n' \
+      "$(node --version 2>/dev/null || printf unknown)" \
+      "$(npm --version 2>/dev/null || printf unknown)" \
+      "$(node -p 'process.platform' 2>/dev/null || uname -s)" \
+      "$(node -p 'process.arch' 2>/dev/null || uname -m)" \
+      "$(node -p 'process.versions.modules || "none"' 2>/dev/null || printf unknown)"
+    printf 'npm_ls_output_tail:\n%s\n---\n' "$safe_output"
+  } >> "$diagnostic_file"
 }
 
 # Print the recovery selected after validating a restored cache. The return

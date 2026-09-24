@@ -31,6 +31,7 @@ fi
 cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
 cp "$REPO_ROOT/scripts/lib/json-events.sh" "$TMP_DIR/scripts/lib/json-events.sh"
 cp "$REPO_ROOT/scripts/lib/artifact-consolidation.sh" "$TMP_DIR/scripts/lib/artifact-consolidation.sh"
+cp "$REPO_ROOT/scripts/write-run-metadata.mjs" "$TMP_DIR/scripts/write-run-metadata.mjs"
 touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/progress-stream-utils.js"
 : > "$PI_CALLS"
 
@@ -92,6 +93,7 @@ chmod +x "$FAKE_BIN"/*
 set +e
 env KASEKI_WORKSPACE_DIR="$TMP_DIR" PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspect then code" \
   LLM_GATEWAY_URL=https://example.invalid/v1 LLM_GATEWAY_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off \
+  KASEKI_JEV_WORKFLOW=0 \
   KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
   KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" KASEKI_VALIDATION_COMMANDS=":" KASEKI_ALLOW_EMPTY_DIFF=1 \
   KASEKI_SKIP_GATEWAY_HEALTH_CHECK=1 \
@@ -100,7 +102,7 @@ run_exit=$?
 set -e
 
 [ "$run_exit" -eq 0 ] || fail "expected zero exit, got $run_exit"
-[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' ] || fail "Pi calls did not continue through scouting/coding/goal-check"
+[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check' ] || fail "Pi calls did not continue through scouting/coding/final goal-check"
 [ -s "$RESULTS_DIR/goal-setting-validation-errors.jsonl" ] || fail "missing goal-setting validation errors"
 [ -s "$RESULTS_DIR/goal-setting-validation-summary.txt" ] || fail "missing goal-setting validation summary"
 grep -q '^pi goal-setting agent[[:space:]]0[[:space:]].*degraded=1' "$RESULTS_DIR/stage-timings.tsv" || fail "goal-setting degraded-fallback timing missing"

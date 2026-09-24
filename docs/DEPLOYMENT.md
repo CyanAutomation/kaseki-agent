@@ -1280,9 +1280,14 @@ Expected response:
   `auto`/`copy` and confirm recovery via dependency cache status events in
   `progress.log`/`progress.jsonl` and `dependency-cache.log`.
 - Cache key is deterministic from dependency-shaping inputs: lockfile SHA-256,
-  Node major version, and npm install flags. It intentionally excludes Git
-  branch/ref names so feature branches with identical dependency inputs can
-  share dependency cache entries.
+  Node major version and module ABI, operating system/platform, architecture,
+  and npm install flags. This isolates native modules and ABI-sensitive output
+  across worker runtimes. It intentionally excludes Git branch/ref names so
+  feature branches with identical dependency inputs and runtimes can share
+  dependency cache entries.
+- Cache restore diagnostics retain the npm graph-check output, selected restore
+  method, and Node/npm runtime identity. Embedded URL credentials are redacted
+  before diagnostic output is persisted.
 - Progress + timing artifacts include install/cache signals:
   - `progress.jsonl` / `progress.log`: dependency install stage,
     cache hit/miss, elapsed seconds.

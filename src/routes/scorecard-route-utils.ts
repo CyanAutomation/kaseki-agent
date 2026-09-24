@@ -39,6 +39,6 @@ export function matchesFilters(item: ScorecardSummary, filters: ScorecardFilters
     && (!filters.rubricVersion || item.rubricVersion === filters.rubricVersion)
     && (!filters.model || item.model === filters.model)
     && (!filters.repository || item.repository === filters.repository)
-    && (!filters.startedAfter || item.startedAt >= filters.startedAfter)
-    && (!filters.startedBefore || item.startedAt <= filters.startedBefore);
+    && (!filters.startedAfter || (item.startedAt !== null && item.startedAt >= filters.startedAfter))
+    && (!filters.startedBefore || (item.startedAt !== null && item.startedAt <= filters.startedBefore));
 }

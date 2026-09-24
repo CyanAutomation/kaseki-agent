@@ -140,6 +140,7 @@ run_scouting_case() {
   local fake_bin="$case_root/bin"
   local results_dir="$case_root/results"
   local calls_file="$case_root/scouting-calls"
+  local prompt_prefix="$case_root/scouting-prompt-"
   local run_log="$case_root/run.log"
   local run_exit
 
@@ -158,6 +159,7 @@ prompt="${*: -1}"
 if [[ "$prompt" == *"read-only scouting Pi agent"* ]]; then
   attempt=$(($(wc -l < "$FAKE_SCOUTING_CALLS") + 1))
   printf '%d\n' "$attempt" >> "$FAKE_SCOUTING_CALLS"
+  printf '%s' "$prompt" > "${FAKE_SCOUTING_PROMPT_PREFIX}${attempt}"
   if [ "$FAKE_SCOUTING_MODE" = "transient" ] && [ "$attempt" -eq 1 ]; then
     printf '%s\n' 'transient provider timeout' >&2
     exit 124
@@ -166,9 +168,19 @@ if [[ "$prompt" == *"read-only scouting Pi agent"* ]]; then
     printf '%s\n' 'invalid JSON schema' >&2
     exit 86
   fi
-  cat > "$KASEKI_RESULTS_DIR/scouting-candidate.json" <<'EOF_ARTIFACT'
+  if [ "$FAKE_SCOUTING_MODE" = "test-impact-contract" ] && [ "$attempt" -eq 1 ]; then
+    cat > "$KASEKI_RESULTS_DIR/scouting-candidate.json" <<'EOF_ARTIFACT'
+{"task":"inspect retry behavior","requirements":["preserve retry contract"],"relevant_files":[{"path":"README.md","reason":"fixture file"}],"observations":["fixture repository is available"],"plan":["inspect fixture"],"validation":["main flow completes"],"risks":[],"test_impact":[{"path":"tests/sample.test.ts"}],"critical_change_expectations":{"required_files":[],"forbidden_empty_diff":false},"suggested_allowlist":{"agent_patterns":["README.md"],"validation_patterns":[]}}
+EOF_ARTIFACT
+  elif [ "$FAKE_SCOUTING_MODE" = "test-impact-contract" ]; then
+    cat > "$KASEKI_RESULTS_DIR/scouting-candidate.json" <<'EOF_ARTIFACT'
+{"task":"inspect retry behavior","requirements":["preserve retry contract"],"relevant_files":[{"path":"README.md","reason":"fixture file"}],"observations":["fixture repository is available"],"plan":["inspect fixture"],"validation":["main flow completes"],"risks":[],"test_impact":[{"path":"tests/sample.test.ts","reason":"covers the changed behavior"}],"critical_change_expectations":{"required_files":[],"forbidden_empty_diff":false},"suggested_allowlist":{"agent_patterns":["README.md"],"validation_patterns":[]}}
+EOF_ARTIFACT
+  else
+    cat > "$KASEKI_RESULTS_DIR/scouting-candidate.json" <<'EOF_ARTIFACT'
 {"task":"inspect retry behavior","requirements":["preserve retry contract"],"relevant_files":[{"path":"README.md","reason":"fixture file"}],"observations":["fixture repository is available"],"plan":["inspect fixture"],"validation":["main flow completes"],"risks":[],"test_impact":[],"critical_change_expectations":{"required_files":[],"forbidden_empty_diff":false},"suggested_allowlist":{"agent_patterns":["README.md"],"validation_patterns":[]}}
 EOF_ARTIFACT
+  fi
   exit 0
 fi
 printf '%s\n' '{"type":"message","model":"test-model","message":{"content":"ok"}}'
@@ -194,7 +206,7 @@ EOF_VALIDATION_FILTER
   env PATH="$fake_bin:$PATH" KASEKI_RESULTS_DIR="$results_dir" KASEKI_WORKSPACE_DIR="$case_root/workspace" \
     KASEKI_APP_LIB_DIR="$case_root/app/lib" REPO_URL="$FAKE_REPO" GIT_REF=main \
     TASK_PROMPT='inspect retry behavior' OPENROUTER_API_KEY=test KASEKI_PROVIDER=openrouter \
-    FAKE_SCOUTING_CALLS="$calls_file" FAKE_SCOUTING_MODE="$mode" GITHUB_APP_ENABLED=0 \
+    FAKE_SCOUTING_CALLS="$calls_file" FAKE_SCOUTING_MODE="$mode" FAKE_SCOUTING_PROMPT_PREFIX="$prompt_prefix" GITHUB_APP_ENABLED=0 \
     KASEKI_TASK_MODE=inspect KASEKI_SCOUTING=1 KASEKI_GOAL_SETTING=0 KASEKI_GOAL_CHECK=0 \
     KASEKI_GIT_CACHE_MODE=off KASEKI_BASELINE_VALIDATION_ENABLED=0 \
     KASEKI_PRE_AGENT_VALIDATION=0 KASEKI_TS_PRE_CHECK=0 KASEKI_VALIDATION_COMMANDS=: \
@@ -239,6 +251,18 @@ NODE
     test_fail "$case_name invocation count, outcome, or retry metadata was incorrect"
     tail -100 "$run_log" >&2 || true
   fi
+
+  if [ "$mode" = "test-impact-contract" ]; then
+    if ! grep -Fq 'Every non-empty test_impact entry must be an object with a repo-relative test path and a non-empty reason' "${prompt_prefix}2"; then
+      test_fail "test-impact contract retry omitted the required path/reason instruction"
+      return
+    fi
+    if ! grep -Fq 'test_impact[0]' "${prompt_prefix}2"; then
+      test_fail "test-impact contract retry omitted exact validator feedback"
+      return
+    fi
+    test_pass "test-impact schema failure retries with actionable, exact contract guidance"
+  fi
 }
 
 test_header "Main flow retries a transient scouting provider failure"
@@ -246,6 +270,9 @@ run_scouting_case transient-success transient 2 2 0 0
 
 test_header "Main flow does not retry a deterministic scouting provider failure"
 run_scouting_case deterministic-failure deterministic 1 null 86 86
+
+test_header "Main flow repairs malformed test_impact entries on contract retry"
+run_scouting_case test-impact-contract-retry test-impact-contract 2 2 0 0
 
 ##############################################################################
 # Summary

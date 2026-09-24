@@ -16,7 +16,7 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
   const timing = object(snapshot.json['timings-manifest.json']) ?? {};
   const perf = object(snapshot.json['performance-metrics.json']) ?? {};
   const stageRows = Array.isArray(timing.stage_timings) ? timing.stage_timings : [];
-  const { phaseDurationsMs, stageElapsed } = computePhaseDurations(stageRows);
+  const { phaseDurationsMs, stageElapsed, preAgentValidationMs } = computePhaseDurations(stageRows);
   const elapsed = number(perf.elapsed_seconds) ?? number(metadata.total_duration_seconds) ?? number(metadata.duration_seconds) ?? (stageElapsed || undefined);
   const { validation, executedValidationRows } = collectValidationEvidence(snapshot);
   const { quality, evaluation, evaluatorAvailable } = collectEvaluationEvidence(snapshot);
@@ -38,7 +38,15 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
   });
   const phaseFailures = detectPhaseFailures(metadata, failure, evaluatorFailed);
   return {
-    metadata, status: lifecycle(metadata), elapsedSeconds: elapsed, ...tokenEvidence,
+    metadata: {
+      ...metadata,
+      started_at: metadata.started_at ?? failure.started_at,
+      ended_at: metadata.ended_at ?? failure.ended_at,
+    },
+    status: lifecycle(metadata), elapsedSeconds: elapsed,
+    stageElapsedSeconds: stageRows.length ? stageElapsed : undefined,
+    preAgentValidationMs,
+    ...tokenEvidence,
     retries: countRetries(snapshot), phaseRetries, phaseDurationsMs, phaseReached, phaseFailures, validation, quality,
     goalMet, goalCheckAvailable, goalCheckFailed, noChangeAccepted,
     changedFiles: (snapshot.text['changed-files.txt'] ?? '').split(/\r?\n/).filter(Boolean).length,

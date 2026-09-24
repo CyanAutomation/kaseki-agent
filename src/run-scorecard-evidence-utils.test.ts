@@ -95,6 +95,10 @@ describe('run-scorecard-evidence-utils', () => {
       expect(stagePhase('validation')).toBe('validation');
     });
 
+    it('does not classify pre-agent validation as post-change validation', () => {
+      expect(stagePhase('pre-agent validation')).toBeUndefined();
+    });
+
     it('returns undefined for unrecognized stage', () => {
       expect(stagePhase('unknown')).toBeUndefined();
       expect(stagePhase('unknown_stage')).toBeUndefined();
@@ -140,6 +144,18 @@ describe('run-scorecard-evidence-utils', () => {
         validation: 2000,
       });
       expect(result.stageElapsed).toBe(10);
+    });
+
+    it('reports pre-agent validation separately from final validation', () => {
+      const result = computePhaseDurations([
+        { stage: 'pre-agent validation', elapsed_seconds: 150 },
+        { stage: 'validation', elapsed_seconds: 20 },
+        { stage: 'goal check', elapsed_seconds: 5 },
+      ]);
+
+      expect(result.phaseDurationsMs).toEqual({ validation: 20_000, goal_check: 5_000 });
+      expect(result.preAgentValidationMs).toBe(150_000);
+      expect(result.stageElapsed).toBe(175);
     });
 
     it('returns empty result for empty array', () => {

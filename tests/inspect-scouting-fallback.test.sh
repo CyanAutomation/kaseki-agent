@@ -31,6 +31,7 @@ fi
 cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
 cp "$REPO_ROOT/scripts/lib/json-events.sh" "$TMP_DIR/scripts/lib/json-events.sh"
 cp "$REPO_ROOT/scripts/lib/artifact-consolidation.sh" "$TMP_DIR/scripts/lib/artifact-consolidation.sh"
+cp "$REPO_ROOT/scripts/write-run-metadata.mjs" "$TMP_DIR/scripts/write-run-metadata.mjs"
 touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/progress-stream-utils.js"
 MODIFIED_SCRIPT="$TMP_DIR/kaseki-agent-modified.sh"
 sed "s#\"\${KASEKI_WORKSPACE_DIR}\"/repo#$WORKSPACE_REPO#g; s#\${KASEKI_WORKSPACE_DIR}/repo#$WORKSPACE_REPO#g; s#/workspace/repo#$WORKSPACE_REPO#g; s#/results#$RESULTS_DIR#g; s#/app/lib#$APP_LIB#g" "$REPO_ROOT/kaseki-agent.sh" > "$MODIFIED_SCRIPT"
@@ -159,7 +160,7 @@ run_exit=$?
 set -e
 
 [ "$run_exit" -eq 0 ] || fail "expected zero exit, got $run_exit"
-expected_calls=$'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check'
+expected_calls=$'goal-setting\nscouting\ncoding\ngoal-check'
 actual_calls="$(cat "$PI_CALLS" 2>/dev/null || true)"
 [ "$actual_calls" = "$expected_calls" ] || fail "expected fallback to continue through inspect agent, got: $(tr '\n' ',' < "$PI_CALLS")"
 [ -s "$RESULTS_DIR/scouting.json" ] || fail "fallback scouting.json was not produced"

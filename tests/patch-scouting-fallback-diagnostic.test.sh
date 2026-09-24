@@ -35,6 +35,7 @@ cp "$REPO_ROOT/scripts/evaluation-prompts.sh" "$TMP_DIR/scripts/evaluation-promp
 cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
 cp "$REPO_ROOT/scripts/lib/json-events.sh" "$TMP_DIR/scripts/lib/json-events.sh"
 cp "$REPO_ROOT/scripts/lib/artifact-consolidation.sh" "$TMP_DIR/scripts/lib/artifact-consolidation.sh"
+cp "$REPO_ROOT/scripts/write-run-metadata.mjs" "$TMP_DIR/scripts/write-run-metadata.mjs"
 touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/progress-stream-utils.js"
 MODIFIED_SCRIPT="$TMP_DIR/kaseki-agent-modified.sh"
 sed "s#\"\${KASEKI_WORKSPACE_DIR}\"/repo#$WORKSPACE_REPO#g; s#\${KASEKI_WORKSPACE_DIR}/repo#$WORKSPACE_REPO#g; s#/workspace/repo#$WORKSPACE_REPO#g; s#/results#$RESULTS_DIR#g; s#/app/lib#$APP_LIB#g" "$REPO_ROOT/kaseki-agent.sh" > "$MODIFIED_SCRIPT"
@@ -94,6 +95,7 @@ chmod +x "$FAKE_BIN"/*
 set +e
 env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="make a required change" \
   KASEKI_PROVIDER=gateway KASEKI_SCOUTING_MODEL=auto LLM_GATEWAY_URL=http://gateway.test/v1 LLM_GATEWAY_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off KASEKI_TASK_MODE=patch \
+  KASEKI_JEV_WORKFLOW=0 \
   KASEKI_GOAL_SETTING=1 KASEKI_SCOUTING=1 KASEKI_GOAL_CHECK=1 KASEKI_GOAL_CHECK_MAX_RETRIES=0 \
   KASEKI_WORKSPACE_DIR="$TMP_DIR" \
   KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
