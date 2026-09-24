@@ -58,6 +58,8 @@ REPO_URL="https://github.com/acme/widgets" \
 GIT_REF="main" \
 GITHUB_APP_ENABLED="0" \
 KASEKI_PUBLISH_MODE="none" \
+KASEKI_JEV_TASK_TYPE="documentation" \
+KASEKI_JEV_VALIDATION_FOCUS="docs_checks" \
 "$PROJECT_ROOT/run-kaseki.sh" >"$OUTPUT_LOG" 2>&1
 
 if [ ! -s "$DOCKER_ARGS_CAPTURE" ]; then
@@ -83,6 +85,8 @@ assert_arg_present 'KASEKI_PROVIDER=gateway' 'gateway provider'
 assert_arg_present 'LLM_GATEWAY_URL=https://gateway.example.invalid/v1/responses' 'gateway URL worker env'
 assert_arg_present 'LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api_key' 'gateway key worker file env'
 assert_arg_present 'KASEKI_JEV_API_KEY_FILE=/run/secrets/kaseki/jev_api_key' 'JEV key worker file env'
+assert_arg_present 'KASEKI_JEV_TASK_TYPE=documentation' 'advisory JEV task type'
+assert_arg_present 'KASEKI_JEV_VALIDATION_FOCUS=docs_checks' 'advisory JEV validation focus'
 if grep -Fxq 'OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key' "$DOCKER_ARGS_CAPTURE"; then
   printf '✗ OpenRouter key must not be routed to the coding worker\n'
   exit 1

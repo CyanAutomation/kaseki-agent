@@ -1,3 +1,6 @@
+import type { ClassificationAnswer } from './types/openrouter-decisions';
+import type { RunEvaluationFailureDiagnosis } from './jev-workflow-helpers';
+
 type JsonObject = Record<string, unknown>;
 
 export interface RunEvaluationFacts {
@@ -20,6 +23,7 @@ export interface RunEvaluationClassification {
   overallAssessment: string;
   reviewerConfidence: string;
   taskCompletionScore: number;
+  failureDiagnosis?: RunEvaluationFailureDiagnosis;
 }
 
 export interface RunEvaluationClassifierMetadata {
@@ -27,6 +31,7 @@ export interface RunEvaluationClassifierMetadata {
   model: string;
   responseTime: number;
   usage: Record<string, unknown>;
+  answers?: Record<string, ClassificationAnswer>;
 }
 
 export interface RunEvaluationArtifact extends JsonObject {
@@ -38,7 +43,7 @@ export interface RunEvaluationArtifact extends JsonObject {
   stage_value: Array<{ stage: string; value: string; reason: string }>;
   evidence_sources_inspected: string[];
   contradictions: Array<{ sources: string[]; description: string }>;
-  confidence_calibration: { objective_outcome: string; calibrated: boolean; reason: string };
+  confidence_calibration: { objective_outcome: string; status: 'unassessed'; calibrated: false; reason: string };
   phase_scorecard: Record<string, Record<string, unknown>>;
   efficiency_findings: string[];
   kaseki_improvement_opportunities: Array<{ category: string; priority: string; suggestion: string }>;
@@ -46,6 +51,7 @@ export interface RunEvaluationArtifact extends JsonObject {
   pr_changes: string[];
   warnings: string[];
   classifier: RunEvaluationClassifierMetadata;
+  failure_diagnosis?: { cause: string; recommended_action: string; confidence: number; cause_probabilities: Record<string, number>; action_probabilities: Record<string, number> };
 }
 
 type StageName = 'goal-setting' | 'scouting' | 'coding' | 'validation' | 'goal-check' | 'run-evaluation';
@@ -247,8 +253,9 @@ export function buildRunEvaluationArtifact(
     contradictions,
     confidence_calibration: {
       objective_outcome: facts.goalCheck.met === true ? 'met' : facts.goalCheck.met === false ? 'unmet' : 'unknown',
-      calibrated: !failedRun && !incompletePatch && validation !== 'not_run',
-      reason: `Calibration uses durable lifecycle, goal-check, diff, and validation evidence; ${validationSummary}.`,
+      status: 'unassessed',
+      calibrated: false,
+      reason: `No labeled outcome data is supplied for statistical calibration. Evidence completeness is assessed separately; ${validationSummary}.`,
     },
     phase_scorecard: phaseScorecard,
     efficiency_findings: efficiencyFindings,
@@ -257,5 +264,12 @@ export function buildRunEvaluationArtifact(
     pr_changes: [],
     warnings,
     classifier,
+    ...(classification.failureDiagnosis ? { failure_diagnosis: {
+      cause: classification.failureDiagnosis.cause,
+      recommended_action: classification.failureDiagnosis.recommendedAction,
+      confidence: classification.failureDiagnosis.confidence,
+      cause_probabilities: classification.failureDiagnosis.causeProbabilities,
+      action_probabilities: classification.failureDiagnosis.actionProbabilities,
+    } } : {}),
   };
 }
