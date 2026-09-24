@@ -4,15 +4,34 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+function unlinkUnlessMissing(filePath) {
+  try {
+    fs.unlinkSync(filePath);
+    return undefined;
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      return error;
+    }
+    return undefined;
+  }
+}
+
 function writeJsonAtomic(filePath, value) {
   const tempPath = `${filePath}.tmp-${process.pid}-${crypto.randomBytes(6).toString('hex')}`;
+  let writeError;
   try {
     fs.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx' });
     fs.renameSync(tempPath, filePath);
-  } finally {
-    try { fs.unlinkSync(tempPath); } catch (error) {
-      if (error?.code !== 'ENOENT') throw error;
-    }
+  } catch (error) {
+    writeError = error;
+  }
+
+  const cleanupError = unlinkUnlessMissing(tempPath);
+  if (cleanupError) {
+    throw cleanupError;
+  }
+  if (writeError) {
+    throw writeError;
   }
 }
 
@@ -53,20 +72,29 @@ export function writeRunMetadata(candidatePath, outputPath, diagnosticPath, fall
   }
 
   let outputPersisted = false;
+  let persistError;
+  let result;
   try {
     if (diagnostic) writeJsonAtomic(diagnosticPath, diagnostic);
     writeJsonAtomic(outputPath, metadata);
     outputPersisted = true;
-    return { fallbackUsed: Boolean(diagnostic), metadata };
-  } finally {
-    // Never leave malformed serialized metadata behind if fallback persistence
-    // itself fails. Keep a valid candidate only when its durable output failed.
-    if (diagnostic || outputPersisted) {
-      try { fs.unlinkSync(candidatePath); } catch (error) {
-        if (error?.code !== 'ENOENT') throw error;
-      }
+    result = { fallbackUsed: Boolean(diagnostic), metadata };
+  } catch (error) {
+    persistError = error;
+  }
+
+  // Never leave malformed serialized metadata behind if fallback persistence
+  // itself fails. Keep a valid candidate only when its durable output failed.
+  if (diagnostic || outputPersisted) {
+    const cleanupError = unlinkUnlessMissing(candidatePath);
+    if (cleanupError) {
+      throw cleanupError;
     }
   }
+  if (persistError) {
+    throw persistError;
+  }
+  return result;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
