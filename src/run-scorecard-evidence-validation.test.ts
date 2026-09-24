@@ -51,6 +51,32 @@ describe('run-scorecard-evidence-validation', () => {
       expect(evidence.executedValidationRows).toHaveLength(2);
     });
 
+    it('uses the latest post-agent invocation and merges its manifest mirror without double counting', () => {
+      const evidence = collectValidationEvidence({
+        json: {
+          'metadata.json': {
+            validation_commands_attempted: 2,
+            phases: { validation: { commands_attempted: 2, results: [
+              { command: 'npm test', stage: 'validation', attempt: 1, invocation: 1, status: 'failed', exit_code: 1 },
+              { command: 'npm test', stage: 'validation', attempt: 2, invocation: 2, status: 'passed', exit_code: 0 },
+              { command: 'npm test', stage: 'baseline validation', attempt: 0, invocation: 0, status: 'failed', exit_code: 1 },
+            ] } },
+          },
+          'failure.json': {},
+          'timings-manifest.json': { validation_timings: [
+            { command: 'npm test', exit_code: 1, details: 'stage=validation;attempt=1;invocation=1' },
+            { command: 'npm test', exit_code: 0, details: 'stage=validation;attempt=2;invocation=2' },
+          ] },
+        },
+        text: {},
+        summaries: [],
+      });
+
+      expect(evidence.validation).toBe('passed');
+      expect(evidence.executedValidationRows).toHaveLength(1);
+      expect(evidence.executedValidationRows[0]).toMatchObject({ invocation: 2, status: 'passed' });
+    });
+
     it('returns failed when any executed validation row has non-zero exit_code', () => {
       const evidence = collectValidationEvidence({
         json: {
@@ -68,6 +94,19 @@ describe('run-scorecard-evidence-validation', () => {
       });
       expect(evidence.validation).toBe('failed');
       expect(evidence.executedValidationRows).toHaveLength(2);
+    });
+
+    it('returns unknown when validation rows have no explicit outcome or exit code', () => {
+      const evidence = collectValidationEvidence({
+        json: {
+          'metadata.json': {},
+          'failure.json': {},
+          'timings-manifest.json': { validation_timings: [{ command: 'npm test' }] },
+        },
+        text: {},
+        summaries: [],
+      });
+      expect(evidence.validation).toBe('unknown');
     });
 
     it('filters out skipped rows with skipped=missing_npm_script', () => {

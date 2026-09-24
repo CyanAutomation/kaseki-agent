@@ -22,6 +22,21 @@ describe('collectValidationEvidence', () => {
     expect(evidence.text).toContain('exit_code=0');
   });
 
+  test('includes machine-readable validation results and the finalized timings manifest', () => {
+    fs.writeFileSync(path.join(directory, 'validation-results.json'), JSON.stringify([
+      { command: 'npm test', status: 'passed', exit_code: 0 },
+    ]));
+    fs.writeFileSync(path.join(directory, 'timings-manifest.json'), JSON.stringify({
+      validation_timings: [{ command: 'npm test', exit_code: 0, elapsed_seconds: 11 }],
+    }));
+
+    const evidence = collectValidationEvidence(directory);
+
+    expect(evidence.sources).toEqual(['validation-results.json', 'timings-manifest.json']);
+    expect(evidence.text).toContain('npm test');
+    expect(evidence.text).toContain('elapsed_seconds');
+  });
+
   test('does not claim evidence for empty or missing artifacts', () => {
     fs.writeFileSync(path.join(directory, 'validation.log'), '\n');
 

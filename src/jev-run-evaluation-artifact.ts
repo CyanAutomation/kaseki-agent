@@ -1,5 +1,6 @@
 import type { ClassificationAnswer } from './types/openrouter-decisions';
 import type { RunEvaluationFailureDiagnosis } from './jev-workflow-helpers';
+import { latestValidationResults } from './validation-evidence';
 
 type JsonObject = Record<string, unknown>;
 
@@ -16,6 +17,7 @@ export interface RunEvaluationFacts {
   taskMode: string;
   presentSources: string[];
   stageDurations: Record<string, number>;
+  timingManifest?: JsonObject;
   cacheMetrics?: unknown[];
 }
 
@@ -73,8 +75,7 @@ function fileCount(value: string): number {
 
 function fallbackGoal(facts: RunEvaluationFacts): boolean {
   return facts.metadata.goal_setting_fallback_used === true
-    || /fallback goal.setting artifact/i.test(string(facts.goalSetting.reasoning))
-    || facts.goalSetting.confidence === 'low' && !Array.isArray(facts.goalSetting.success_criteria);
+    || facts.goalSetting.fallback === true;
 }
 
 function fallbackScouting(facts: RunEvaluationFacts): boolean {
@@ -83,20 +84,48 @@ function fallbackScouting(facts: RunEvaluationFacts): boolean {
     || Boolean(string(facts.scouting.fallback_reason));
 }
 
+function validationRows(facts: RunEvaluationFacts): JsonObject[] {
+  const phases = facts.metadata.phases && typeof facts.metadata.phases === 'object'
+    ? facts.metadata.phases as JsonObject : {};
+  const validation = phases.validation && typeof phases.validation === 'object'
+    ? phases.validation as JsonObject : {};
+  const phaseRows = Array.isArray(validation.results) ? validation.results : [];
+  const manifestRows = Array.isArray(facts.timingManifest?.validation_timings) ? facts.timingManifest.validation_timings : [];
+  return latestValidationResults(phaseRows, manifestRows) as JsonObject[];
+}
+
+function executedValidationRows(facts: RunEvaluationFacts): JsonObject[] {
+  return validationRows(facts).filter((row) => row.status !== 'skipped'
+    && !String(row.details ?? row.detail ?? '').includes('skipped=missing_npm_script'));
+}
+
 function commandsAttempted(facts: RunEvaluationFacts): number {
   const phases = facts.metadata.phases && typeof facts.metadata.phases === 'object'
     ? facts.metadata.phases as JsonObject : {};
   const validation = phases.validation && typeof phases.validation === 'object'
     ? phases.validation as JsonObject : {};
-  return number(facts.metadata.validation_commands_attempted ?? validation.commands_attempted) ?? 0;
+  const attemptedRows = executedValidationRows(facts).length;
+  return Math.max(
+    number(facts.metadata.validation_commands_attempted) ?? 0,
+    number(validation.commands_attempted) ?? 0,
+    attemptedRows,
+  );
 }
 
-function validationStatus(facts: RunEvaluationFacts): 'passed' | 'failed' | 'not_run' {
+function validationStatus(facts: RunEvaluationFacts): 'passed' | 'failed' | 'not_run' | 'unknown' {
   const attempted = commandsAttempted(facts);
+  const rows = executedValidationRows(facts);
+  if (rows.length > 0) {
+    if (rows.some((row) => row.status === 'failed' || (number(row.exit_code) !== undefined && number(row.exit_code) !== 0))) return 'failed';
+    if (rows.every((row) => row.status === 'passed' || number(row.exit_code) === 0)) return 'passed';
+    return 'unknown';
+  }
   if (attempted === 0) return 'not_run';
   const exitCode = number(facts.metadata.validation_exit_code ?? (facts.failure as JsonObject).validation_exit_code);
   if (exitCode !== undefined) return exitCode === 0 ? 'passed' : 'failed';
-  return /(?:^|\s)(?:failed|error|exit code [1-9]\d*)/im.test(facts.validation) ? 'failed' : 'passed';
+  if (/(?:^|\s)(?:failed|error|exit code [1-9]\d*)/im.test(facts.validation)) return 'failed';
+  if (/(?:^|\s)(?:passed|exit_code=0)(?:\s|$)/im.test(facts.validation)) return 'passed';
+  return 'unknown';
 }
 
 function isFailedRun(facts: RunEvaluationFacts): boolean {
@@ -105,7 +134,7 @@ function isFailedRun(facts: RunEvaluationFacts): boolean {
 }
 
 function stageValueFor(outcome: string, fallback = false): StageValue {
-  if (outcome === 'not_reached' || outcome === 'not_run' || outcome === 'missing') return 'unknown';
+  if (outcome === 'not_reached' || outcome === 'not_run' || outcome === 'missing' || outcome === 'unknown') return 'unknown';
   if (outcome === 'failed' || fallback) return 'low';
   return 'high';
 }
@@ -163,7 +192,7 @@ export function buildRunEvaluationArtifact(
 
   const phaseScorecard = Object.fromEntries(phases.map(phase => [phase.stage, {
     outcome: phase.stage === 'validation'
-      ? phase.outcome === 'passed' ? 'succeeded' : phase.outcome === 'failed' ? 'failed' : 'not_run'
+      ? phase.outcome === 'passed' ? 'succeeded' : phase.outcome === 'failed' ? 'failed' : phase.outcome === 'not_run' ? 'not_run' : 'unknown'
       : phase.outcome,
     score: phase.fallback ? 35 : phase.outcome === 'succeeded' ? 100 : phase.outcome === 'failed' ? 0 : 50,
     elapsed_seconds: number(facts.stageDurations[phase.stage]),
