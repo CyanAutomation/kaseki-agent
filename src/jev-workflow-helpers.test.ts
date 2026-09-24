@@ -1,6 +1,41 @@
-import { buildGoalCheckQuestions, buildGoalCriterionAssessments, buildRunEvaluationQuestions, failureDiagnosisFromAnswers, mapJevScoreToCompletion } from './jev-workflow-helpers';
+import { buildGoalCheckQuestions, buildGoalCriterionAssessments, buildRunEvaluationQuestions, compactGoalSettingForEvaluation, failureDiagnosisFromAnswers, mapJevScoreToCompletion } from './jev-workflow-helpers';
 
 describe('JEV workflow answer helpers', () => {
+  test('compacts verbose goal-setting details while preserving the complete contract', () => {
+    const goal = {
+      original_prompt: 'Original request '.repeat(500),
+      upgraded_goal: 'Consolidate duplicated positionOf helpers.',
+      reasoning: 'Verbose explanation '.repeat(700),
+      key_requirements: ['Keep behavior unchanged'],
+      outcome_policy: 'change_required',
+      success_criteria: [
+        'One shared helper is used by all relevant call sites',
+        { criterion: 'Focused tests pass', applies_when: 'The repository has a test command' },
+      ],
+    };
+
+    const compacted = compactGoalSettingForEvaluation(goal, 8000);
+
+    expect(compacted.compacted).toBe(true);
+    expect(compacted.target_exceeded).toBe(false);
+    expect(compacted.goal_setting.outcome_policy).toBe(goal.outcome_policy);
+    expect(compacted.goal_setting.success_criteria).toEqual(goal.success_criteria);
+    expect(JSON.stringify(compacted.goal_setting).length).toBeLessThanOrEqual(8000);
+    expect(compacted.omitted_fields).toContain('reasoning');
+  });
+
+  test('never truncates success criteria when their required content exceeds the soft context target', () => {
+    const goal = {
+      outcome_policy: 'change_required',
+      success_criteria: [`Criterion ${'detail '.repeat(1500)}`],
+    };
+
+    const compacted = compactGoalSettingForEvaluation(goal, 8000);
+
+    expect(compacted.goal_setting.success_criteria).toEqual(goal.success_criteria);
+    expect(compacted.target_exceeded).toBe(true);
+  });
+
   test('maps JEV Score values from zero-based levels onto scorecard scale without rounding', () => {
     expect(mapJevScoreToCompletion(0)).toBe(1);
     expect(mapJevScoreToCompletion(1.05)).toBe(2.05);

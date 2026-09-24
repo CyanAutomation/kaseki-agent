@@ -61,10 +61,11 @@ function createTestResultMatcher(patterns: TestResultPattern[]) {
 
 /**
  * Define common test result patterns
- * Support multiple output formats: ✓/✗, PASS/FAIL, [PASS]/[FAIL]
+ * Support multiple output formats: ✓/✔/✗/✖, PASS/FAIL, [PASS]/[FAIL]
  */
 const TEST_RESULT_PATTERNS: TestResultPattern[] = [
   { regex: /^\s*✓\s+(.+?)(?:\s+\(\d+ms\))?$/, status: 'passed', nameGroup: 1 },
+  { regex: /^\s*✔\s+(.+?)(?:\s+\(\d+(?:\.\d+)?ms\))?$/, status: 'passed', nameGroup: 1 },
   { regex: /^\s*✗\s+(.+?)(?:\s+\(\d+ms\))?$/, status: 'failed', nameGroup: 1 },
   { regex: /^\s*✖\s+(.+?)(?:\s+\(\d+(?:\.\d+)?ms\))?$/, status: 'failed', nameGroup: 1 },
   { regex: /^\s*PASS\s+(.+?)(?:\s+\(\d+ms\))?$/, status: 'passed', nameGroup: 1 },

@@ -80,6 +80,7 @@ interface ProviderCompletionUsage {
 }
 
 interface TokenLedgerEntry extends ProviderCompletionUsage {
+  resolved_model: string;
   context_tokens: number;
   /** Input tokens billed at the standard (cache-miss) input rate. */
   billed_input_tokens: number;
@@ -120,6 +121,8 @@ interface PhaseBudgetSummary {
   max_context_tokens: number;
   max_turns: number;
   max_tool_output_tokens: number;
+  logical_agent_turns: number | null;
+  turn_count_source: 'turn_start' | 'unavailable';
   context_exceeded: boolean;
   turns_exceeded: boolean;
   tool_output_exceeded: boolean;
@@ -204,6 +207,12 @@ function configuredTokenPricing(model: string, contextTokens: number): { pricing
   return [input, cacheRead, cacheWrite, output].every((rate) => rate !== null)
     ? { pricing: { input: input!, cacheRead: cacheRead!, cacheWrite: cacheWrite!, output: output! }, model: '*' }
     : null;
+}
+
+function resolvedModelName(reportedModel: string): string {
+  const normalized = reportedModel.trim();
+  if (normalized && !['unknown', 'undefined', 'null'].includes(normalized.toLowerCase())) return normalized;
+  return process.env.KASEKI_RESOLVED_MODEL?.trim() || normalized || 'unknown';
 }
 
 const MAX_FILTERED_EVENT_BYTES = parsePositiveInt('KASEKI_PI_EVENT_MAX_BYTES', 256 * 1024);
@@ -524,7 +533,8 @@ function recordCompletionUsage(event: PiEvent, usage: any, state: PiEventFilterS
 function buildTokenLedger(completions: Iterable<ProviderCompletionUsage>): TokenLedgerEntry[] {
   return Array.from(completions, (completion) => {
     const context_tokens = completion.input_tokens + completion.cache_creation_tokens + completion.cache_read_tokens;
-    const configuredPricing = configuredTokenPricing(completion.model, context_tokens);
+    const resolved_model = resolvedModelName(completion.model);
+    const configuredPricing = configuredTokenPricing(resolved_model, context_tokens);
     const pricing = configuredPricing?.pricing;
     const estimated_input_cost_usd = pricing ? completion.input_tokens * pricing.input / 1_000_000 : null;
     const estimated_cache_read_cost_usd = pricing ? completion.cache_read_tokens * pricing.cacheRead / 1_000_000 : null;
@@ -535,6 +545,7 @@ function buildTokenLedger(completions: Iterable<ProviderCompletionUsage>): Token
       : null;
     return {
       ...completion,
+      resolved_model,
       context_tokens,
       billed_input_tokens: completion.input_tokens,
       cached_input_tokens: completion.cache_read_tokens,
@@ -584,7 +595,8 @@ function summarizeCompletedResponses(completions: Iterable<ProviderCompletionUsa
     tokenUsage.total_cache_read_tokens += completion.cache_read_tokens;
     tokenUsage.total_tokens += completion.total_tokens;
 
-    const model = modelStats[completion.model] ??= { input_tokens: 0, output_tokens: 0, cache_creation_tokens: 0, cache_read_tokens: 0, total_tokens: 0 };
+    const resolvedModel = resolvedModelName(completion.model);
+    const model = modelStats[resolvedModel] ??= { input_tokens: 0, output_tokens: 0, cache_creation_tokens: 0, cache_read_tokens: 0, total_tokens: 0 };
     add(model);
     const phase = phaseStats[completion.phase] ??= { input_tokens: 0, output_tokens: 0, cache_creation_tokens: 0, cache_read_tokens: 0, total_tokens: 0 };
     add(phase);
@@ -685,7 +697,7 @@ async function writeRetainedEvent(
 
 function buildSummary(state: PiEventFilterState): Summary {
   const { tokenUsage: tokenSummary, modelStats, phaseStats } = summarizeCompletedResponses(state.completionUsage.values());
-  const promptTokenBudget = parsePositiveInt('KASEKI_PROMPT_TOKEN_WARN_THRESHOLD', 20_000);
+  const promptTokenBudget = parsePositiveInt('KASEKI_PROMPT_TOKEN_WARN_THRESHOLD', 48_000);
   // Compaction is a per-request decision. A run with many short turns should
   // not be flagged merely because its aggregate usage is high, while a single
   // uncached 45k-token request must be flagged immediately.
@@ -697,9 +709,11 @@ function buildSummary(state: PiEventFilterState): Summary {
     ),
   );
   const inferenceHealth = buildInferenceHealth(state, promptTokenBudget, largestContextTokens);
-  const phaseBudget = buildPhaseBudget(state, promptTokenBudget, largestContextTokens);
+  const phaseBudget = buildPhaseBudget(state, largestContextTokens);
+  const aggregated = state.aggregator.summary();
   return {
-    ...state.aggregator.summary(),
+    ...aggregated,
+    selected_model: resolvedModelName(aggregated.selected_model),
     invalid_json_lines: state.invalidJsonLines,
     artifact_retention: {
       retained_bytes: state.retainedBytes,
@@ -750,17 +764,22 @@ function buildInferenceHealth(
 
 function buildPhaseBudget(
   state: PiEventFilterState,
-  promptTokenBudget: number,
   largestContextTokens: number,
 ): PhaseBudgetSummary {
+  const maxContextTokens = parsePositiveInt('KASEKI_PHASE_MAX_CONTEXT_TOKENS', 64_000);
+  const maxTurns = parsePositiveInt('KASEKI_PHASE_MAX_TURNS', 64);
+  const maxToolOutputTokens = parsePositiveInt('KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS', 32_000);
+  const logicalAgentTurns = state.aggregator.summary().event_counts.turn_start ?? null;
   const phaseBudget: PhaseBudgetSummary = {
     enforcement: 'soft_target',
-    max_context_tokens: parsePositiveInt('KASEKI_PHASE_MAX_CONTEXT_TOKENS', promptTokenBudget),
-    max_turns: parsePositiveInt('KASEKI_PHASE_MAX_TURNS', 24),
-    max_tool_output_tokens: parsePositiveInt('KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS', 12_000),
-    context_exceeded: largestContextTokens > parsePositiveInt('KASEKI_PHASE_MAX_CONTEXT_TOKENS', promptTokenBudget),
-    turns_exceeded: state.completionUsage.size > parsePositiveInt('KASEKI_PHASE_MAX_TURNS', 24),
-    tool_output_exceeded: state.toolOutputUsage.estimated_tokens > parsePositiveInt('KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS', 12_000),
+    max_context_tokens: maxContextTokens,
+    max_turns: maxTurns,
+    max_tool_output_tokens: maxToolOutputTokens,
+    logical_agent_turns: logicalAgentTurns,
+    turn_count_source: logicalAgentTurns === null ? 'unavailable' : 'turn_start',
+    context_exceeded: largestContextTokens > maxContextTokens,
+    turns_exceeded: logicalAgentTurns !== null && logicalAgentTurns > maxTurns,
+    tool_output_exceeded: state.toolOutputUsage.estimated_tokens > maxToolOutputTokens,
     exceeded: false,
   };
   phaseBudget.exceeded = phaseBudget.context_exceeded || phaseBudget.turns_exceeded || phaseBudget.tool_output_exceeded;
@@ -782,7 +801,6 @@ function writeSummaryFiles(summaryPath: string, summary: Summary): void {
     for (const entry of ledger) entries.set(`${entry.phase}:${entry.attempt_id ?? ''}:${entry.response_id ?? entry.turn}`, {
       timestamp: new Date().toISOString(),
       ...entry,
-      resolved_model: process.env.KASEKI_RESOLVED_MODEL || entry.model,
     } as TokenLedgerEntry);
     fs.writeFileSync(ledgerPath, `${Array.from(entries.values()).map((entry) => JSON.stringify(entry)).join('\n')}\n`);
   }
@@ -795,9 +813,9 @@ function writeSummaryFiles(summaryPath: string, summary: Summary): void {
     scope: { phase: 'pi-agent', includesOtherPhases: false },
     token_ledger_summary_scope: 'pi-agent',
     token_ledger_artifact_scope: 'all_run_phases',
-    logical_agent_turns: summary.event_counts.message_end || 0,
+    logical_agent_turns: summary.phase_budget!.logical_agent_turns,
     routing_steps: null,
-    note: 'The counters in this summary are scoped to the Pi coding-agent phase. token-ledger.jsonl is the canonical per-response record across all run phases. routing_steps requires Cloudflare log enrichment.',
+    note: 'Logical agent turns count explicit turn_start events; null means the event stream did not include them. Counters in this summary are scoped to the Pi coding-agent phase. token-ledger.jsonl is the canonical per-response record across all run phases. routing_steps requires Cloudflare log enrichment.',
     input_tokens: summary.token_usage!.total_input_tokens,
     output_tokens: summary.token_usage!.total_output_tokens,
     provider_errors: providerErrors.length,
@@ -808,6 +826,8 @@ function writeSummaryFiles(summaryPath: string, summary: Summary): void {
       artifact: 'token-ledger.jsonl',
       response_count: ledger.length,
       priced_response_count: ledger.filter((entry) => entry.estimated_cost_usd !== null).length,
+      unpriced_response_count: ledger.filter((entry) => entry.estimated_cost_usd === null).length,
+      responses_with_unknown_reported_model: ledger.filter((entry) => entry.model.trim().toLowerCase() === 'unknown').length,
       billed_input_tokens: ledger.reduce((total, entry) => total + entry.billed_input_tokens, 0),
       cached_input_tokens: ledger.reduce((total, entry) => total + entry.cached_input_tokens, 0),
       output_tokens: ledger.reduce((total, entry) => total + entry.output_tokens, 0),

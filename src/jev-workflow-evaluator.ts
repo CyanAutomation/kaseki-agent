@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { classifyWithJev, DEFAULT_JEV_MODEL } from './jev-classifier';
 import { collectValidationEvidence } from './validation-evidence';
 import { buildRunEvaluationArtifact, buildRunEvaluationEvidenceSources } from './jev-run-evaluation-artifact';
-import { buildGoalCheckQuestions, buildGoalCriterionAssessments, buildRunEvaluationQuestions, failureDiagnosisFromAnswers, mapJevScoreToCompletion } from './jev-workflow-helpers';
+import { buildGoalCheckQuestions, buildGoalCriterionAssessments, buildRunEvaluationQuestions, compactGoalSettingForEvaluation, failureDiagnosisFromAnswers, mapJevScoreToCompletion } from './jev-workflow-helpers';
 import { redactJevEvidence } from './jev-evidence-redaction';
 import { normalizeSuccessCriteria, validateGoalContract } from '../scripts/lib/goal-contract.cjs';
 import { aggregateStageDurations } from './stage-timings';
@@ -44,8 +44,16 @@ function evidenceState(resultsDir: string): JsonObject {
   });
   const cacheMetrics = readJsonValue(path.join(resultsDir, 'cache-metrics.json'));
   const timingsManifest = readJson(path.join(resultsDir, 'timings-manifest.json'));
+  const compactedGoal = compactGoalSettingForEvaluation(redactJevEvidence(goal) as JsonObject, 8000);
   return {
-    goal_setting: bounded(redactJevEvidence(goal), 8000),
+    goal_setting: compactedGoal.goal_setting,
+    goal_setting_compaction: {
+      compacted: compactedGoal.compacted,
+      target_chars: compactedGoal.target_chars,
+      actual_chars: compactedGoal.actual_chars,
+      target_exceeded: compactedGoal.target_exceeded,
+      omitted_fields: compactedGoal.omitted_fields,
+    },
     scouting: bounded(redactJevEvidence(scouting), 8000),
     metadata: redactJevEvidence(readJson(path.join(resultsDir, 'metadata.json'))),
     failure: redactJevEvidence(readJson(path.join(resultsDir, 'failure.json'))),

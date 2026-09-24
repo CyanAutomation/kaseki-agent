@@ -369,7 +369,7 @@ KASEKI_SCOUTING_TIMEOUT_SECONDS="${KASEKI_SCOUTING_TIMEOUT_SECONDS:-$KASEKI_AGEN
 # values below are advisory output targets: they are recorded for observability
 # and prompt compaction, but never forwarded as per-phase gateway ceilings.
 KASEKI_SCOUTING_MAX_OUTPUT_TOKENS="${KASEKI_SCOUTING_MAX_OUTPUT_TOKENS:-2048}"
-KASEKI_SCOUTING_MAX_CONTEXT_TOKENS="${KASEKI_SCOUTING_MAX_CONTEXT_TOKENS:-16000}"
+KASEKI_SCOUTING_MAX_CONTEXT_TOKENS="${KASEKI_SCOUTING_MAX_CONTEXT_TOKENS:-32000}"
 KASEKI_SCOUTING_MAX_TURNS="${KASEKI_SCOUTING_MAX_TURNS:-8}"
 KASEKI_SCOUTING_PROMPT_DETAIL="${KASEKI_SCOUTING_PROMPT_DETAIL:-compact}"
 KASEKI_HASHLINE_EDITS="${KASEKI_HASHLINE_EDITS:-1}"
@@ -377,15 +377,15 @@ KASEKI_GOAL_SETTING="${KASEKI_GOAL_SETTING:-1}"
 KASEKI_GOAL_SETTING_MODEL="${KASEKI_GOAL_SETTING_MODEL:-$KASEKI_SCOUTING_MODEL}"
 KASEKI_GOAL_SETTING_TIMEOUT_SECONDS="${KASEKI_GOAL_SETTING_TIMEOUT_SECONDS:-300}"
 KASEKI_GOAL_SETTING_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_SETTING_MAX_OUTPUT_TOKENS:-$KASEKI_SCOUTING_MAX_OUTPUT_TOKENS}"
-KASEKI_GOAL_SETTING_MAX_CONTEXT_TOKENS="${KASEKI_GOAL_SETTING_MAX_CONTEXT_TOKENS:-12000}"
-KASEKI_GOAL_SETTING_MAX_TURNS="${KASEKI_GOAL_SETTING_MAX_TURNS:-6}"
+KASEKI_GOAL_SETTING_MAX_CONTEXT_TOKENS="${KASEKI_GOAL_SETTING_MAX_CONTEXT_TOKENS:-32000}"
+KASEKI_GOAL_SETTING_MAX_TURNS="${KASEKI_GOAL_SETTING_MAX_TURNS:-12}"
 KASEKI_GOAL_CHECK="${KASEKI_GOAL_CHECK:-$KASEKI_SCOUTING}"
 KASEKI_GOAL_CHECK_MAX_RETRIES="${KASEKI_GOAL_CHECK_MAX_RETRIES:-1}"
 KASEKI_GOAL_CHECK_MODEL="${KASEKI_GOAL_CHECK_MODEL:-$KASEKI_SCOUTING_MODEL}"
 KASEKI_GOAL_CHECK_TIMEOUT_SECONDS="${KASEKI_GOAL_CHECK_TIMEOUT_SECONDS:-$KASEKI_SCOUTING_TIMEOUT_SECONDS}"
 KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_CHECK_MAX_OUTPUT_TOKENS:-1536}"
-KASEKI_GOAL_CHECK_MAX_CONTEXT_TOKENS="${KASEKI_GOAL_CHECK_MAX_CONTEXT_TOKENS:-12000}"
-KASEKI_GOAL_CHECK_MAX_TURNS="${KASEKI_GOAL_CHECK_MAX_TURNS:-4}"
+KASEKI_GOAL_CHECK_MAX_CONTEXT_TOKENS="${KASEKI_GOAL_CHECK_MAX_CONTEXT_TOKENS:-48000}"
+KASEKI_GOAL_CHECK_MAX_TURNS="${KASEKI_GOAL_CHECK_MAX_TURNS:-12}"
 # A contract repair should normally fit well below the evidence-gathering
 # target. It is still an advisory target, never a reason to fail a run.
 KASEKI_GOAL_CHECK_CONTRACT_REPAIR_TIMEOUT_SECONDS="${KASEKI_GOAL_CHECK_CONTRACT_REPAIR_TIMEOUT_SECONDS:-60}"
@@ -431,8 +431,8 @@ fi
 KASEKI_RUN_EVALUATION_MODEL="${KASEKI_RUN_EVALUATION_MODEL:-$KASEKI_GOAL_CHECK_MODEL}"
 KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS="${KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS:-300}"
 KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS="${KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS:-1024}"
-KASEKI_RUN_EVALUATION_MAX_CONTEXT_TOKENS="${KASEKI_RUN_EVALUATION_MAX_CONTEXT_TOKENS:-12000}"
-KASEKI_RUN_EVALUATION_MAX_TURNS="${KASEKI_RUN_EVALUATION_MAX_TURNS:-3}"
+KASEKI_RUN_EVALUATION_MAX_CONTEXT_TOKENS="${KASEKI_RUN_EVALUATION_MAX_CONTEXT_TOKENS:-48000}"
+KASEKI_RUN_EVALUATION_MAX_TURNS="${KASEKI_RUN_EVALUATION_MAX_TURNS:-12}"
 # Run evaluation is useful failure evidence for all non-deterministic failures.
 # Deterministic allowlist failures remain short-circuited in run_run_evaluation.
 # Operators can opt out for cost-sensitive workflows.
@@ -469,6 +469,7 @@ KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK="${KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK:-1}"
 START_EPOCH="$(date +%s)"
 START_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 CURRENT_STAGE="initializing"
+TERMINAL_FAILURE_STAGE=""
 PI_START_EPOCH=0
 PI_DURATION_SECONDS=0
 PI_VERSION=""
@@ -1271,7 +1272,7 @@ normalize_scouting_schema() {
   # These fields are safely recoverable when a provider emits one concise
   # string instead of a one-item list. Do not coerce objects, numbers, or
   # nulls: those indicate a genuine contract violation and must be retried.
-  for field in observations plan validation; do
+  for field in requirements observations plan validation risks; do
     if jq -e --arg field "$field" '.[$field] | type == "string"' "$candidate_artifact" >/dev/null 2>&1; then
       jq --arg field "$field" '.[$field] |= [.]' "$candidate_artifact" > "${candidate_artifact}.normalized" 2>/dev/null || return 1
       mv "${candidate_artifact}.normalized" "$candidate_artifact"
@@ -1320,6 +1321,11 @@ validate_scouting_artifact() {
   else
     # PHASE 2: Normalize schema before validation
     normalize_scouting_schema "$candidate_artifact" || true
+    # Keep the rejected scout's structured findings before the strict retry
+    # path removes its candidate. This is run-local evidence, not a handoff.
+    if [ "${KASEKI_SCOUTING_CONTRACT_STRICT:-0}" = "1" ] && [ "${KASEKI_SCOUTING_FALLBACK_VALIDATION:-0}" != "1" ] && [ -n "${attempt:-}" ] && [ -s "$candidate_artifact" ]; then
+      cp "$candidate_artifact" "${KASEKI_RESULTS_DIR}/scouting-attempt-${attempt}-candidate.json" 2>/dev/null || true
+    fi
     
     if ! validate_scouting_artifact_with_node "$candidate_artifact" "$final_artifact" "$validation_error_file"; then
       reason_code="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.reason_code||"schema_mismatch"));}catch{process.stdout.write("schema_mismatch");}' "$validation_error_file" 2>/dev/null || printf 'schema_mismatch')"
@@ -1865,11 +1871,17 @@ ensure_validation_evidence_artifacts() {
 }
 
 write_metadata() {
-  local end_epoch end_iso duration exit_code stages_json fallback_metadata_json
+  local end_epoch end_iso duration exit_code stages_json fallback_metadata_json runner_version runner_package_json metadata_stage
   end_epoch="$(date +%s)"
   end_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   duration=$((end_epoch - START_EPOCH))
   exit_code="${1:-$STATUS}"
+  metadata_stage="$CURRENT_STAGE"
+  if [ "$exit_code" -ne 0 ] && [ -n "${TERMINAL_FAILURE_STAGE:-}" ]; then
+    metadata_stage="$TERMINAL_FAILURE_STAGE"
+  fi
+  runner_package_json="${KASEKI_APP_ROOT:-${KASEKI_SCRIPT_DIR:-/app}}/package.json"
+  runner_version="${KASEKI_RUNNER_VERSION:-$(node -e 'try { process.stdout.write(String(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).version || "unknown")); } catch { process.stdout.write("unknown"); }' "$runner_package_json" 2>/dev/null || printf 'unknown')}"
   
   # Convert stages array to JSON array
   local stage_array
@@ -1884,6 +1896,9 @@ write_metadata() {
   cat > "$metadata_tmp" <<META
 {
   "schema_version": "2.0",
+  "runner_version": $(printf '%s' "$runner_version" | json_encode),
+  "runner_image_reference": $(if [ -n "${KASEKI_RUNNER_IMAGE_REFERENCE:-}" ]; then printf '%s' "$KASEKI_RUNNER_IMAGE_REFERENCE" | json_encode; else printf 'null'; fi),
+  "runner_image_id": $(if [ -n "${KASEKI_RUNNER_IMAGE_ID:-}" ]; then printf '%s' "$KASEKI_RUNNER_IMAGE_ID" | json_encode; else printf 'null'; fi),
   "instance": $(printf '%s' "$INSTANCE_NAME" | json_encode),
   "repo_url": $(printf '%s' "$REPO_URL" | json_encode),
   "git_ref": $(printf '%s' "$GIT_REF" | json_encode),
@@ -1926,7 +1941,8 @@ write_metadata() {
   "allow_empty_diff": $(printf '%s' "$KASEKI_ALLOW_EMPTY_DIFF" | json_encode),
   "no_change_accepted": $([[ "$NO_CHANGE_ACCEPTED" == "true" ]] && printf 'true' || printf 'false'),
   "started_at": $(printf '%s' "$START_ISO" | json_encode),
-  "current_stage": $(printf '%s' "$CURRENT_STAGE" | json_encode),
+  "current_stage": $(printf '%s' "$metadata_stage" | json_encode),
+  "failure_stage": $(if [ "$exit_code" -ne 0 ] && [ -n "${TERMINAL_FAILURE_STAGE:-}" ]; then printf '%s' "$TERMINAL_FAILURE_STAGE" | json_encode; else printf 'null'; fi),
   "ended_at": $(printf '%s' "$end_iso" | json_encode),
   "duration_seconds": $duration,
   "total_duration_seconds": $duration,
@@ -2623,7 +2639,7 @@ write_failure_json() {
   "provider_failure_chain": {"primary": ${PROVIDER_ERROR_PRIMARY_JSON:-null}, "retry_attempt_count": $PROVIDER_ERROR_RETRY_ATTEMPT_COUNT, "retry_result": $(printf '%s' "$PROVIDER_ERROR_RETRY_RESULT" | json_encode), "recovery": ${PROVIDER_ERROR_RECOVERY_JSON:-null}, "recovery_result": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_RESULT" | json_encode)},
   "goal_check_attempts": $GOAL_CHECK_ATTEMPTS,
   "goal_check_met": $([[ "$GOAL_CHECK_EVALUATOR_UNAVAILABLE" == "true" ]] && printf 'null' || printf '%s' "$GOAL_CHECK_MET"),
-  "stage": $(printf '%s' "$CURRENT_STAGE" | json_encode),
+  "stage": $(printf '%s' "${TERMINAL_FAILURE_STAGE:-$CURRENT_STAGE}" | json_encode),
   "diagnostic_reason": $(printf '%s' "$diagnostic_reason" | json_encode),
   "stderr_tail": $(printf '%s' "$stderr_tail" | json_encode),
   "artifacts_dir": "${KASEKI_RESULTS_DIR}",
@@ -2985,20 +3001,6 @@ try {
   }
 } catch {}
 process.exit(1);
-NODE
-}
-
-coding_context_budget_exceeded() {
-  local summary_file="${KASEKI_RESULTS_DIR}/pi-summary.json"
-  [ -s "$summary_file" ] || return 1
-  node - "$summary_file" <<'NODE' 2>/dev/null
-const fs = require('node:fs');
-try {
-  const summary = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-  const budget = summary.phase_budget || {};
-  const health = summary.inference_health || {};
-  process.exit(budget.context_exceeded === true || health.prompt_token_budget_exceeded === true ? 0 : 1);
-} catch { process.exit(1); }
 NODE
 }
 
@@ -3687,6 +3689,12 @@ EOF
     STATUS=3
     FAILED_COMMAND="empty durable patch"
     emit_error_event "empty_durable_patch" "Run completed without a durable repository change" "exit"
+  fi
+
+  # Finalization changes CURRENT_STAGE for diagnostics, so preserve the actual
+  # terminal phase separately before those post-run steps begin.
+  if [ "$STATUS" -ne 0 ] && [ -z "${TERMINAL_FAILURE_STAGE:-}" ]; then
+    TERMINAL_FAILURE_STAGE="$CURRENT_STAGE"
   fi
   
   # Analyze test failures and compare baseline vs. working results
@@ -6584,10 +6592,10 @@ configure_phase_budget() {
       KASEKI_PHASE_MAX_CONTEXT_TOKENS="$KASEKI_RUN_EVALUATION_MAX_CONTEXT_TOKENS"
       KASEKI_PHASE_MAX_TURNS="$KASEKI_RUN_EVALUATION_MAX_TURNS" ;;
     *)
-      KASEKI_PHASE_MAX_CONTEXT_TOKENS="${KASEKI_CODING_MAX_CONTEXT_TOKENS:-20000}"
-      KASEKI_PHASE_MAX_TURNS="${KASEKI_CODING_MAX_TURNS:-24}" ;;
+      KASEKI_PHASE_MAX_CONTEXT_TOKENS="${KASEKI_CODING_MAX_CONTEXT_TOKENS:-64000}"
+      KASEKI_PHASE_MAX_TURNS="${KASEKI_CODING_MAX_TURNS:-64}" ;;
   esac
-  KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS="${KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS:-12000}"
+  KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS="${KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS:-32000}"
   export KASEKI_PHASE_MAX_CONTEXT_TOKENS KASEKI_PHASE_MAX_TURNS KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS
 }
 
@@ -6643,7 +6651,8 @@ EOF
     retry_feedback="$(node - "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" <<'NODE' 2>/dev/null || true
 const fs = require('node:fs');
 try {
-  const entries = fs.readFileSync(process.argv[2], 'utf8').split(/\r?\n/).filter(Boolean).map(JSON.parse).slice(-3);
+  const entries = fs.readFileSync(process.argv[2], 'utf8').split(/\r?\n/).filter(Boolean).map(JSON.parse)
+    .filter((entry) => entry.severity !== 'info' && entry.reason_code !== 'schema_normalized').slice(-3);
   process.stdout.write(entries.map((entry) => {
     const field = entry.field ? ` field=${entry.field}` : '';
     const expected = entry.expected ? ` expected=${entry.expected}` : '';
@@ -6657,11 +6666,11 @@ NODE
 
 ## [ARTIFACT CONTRACT RETRY]
 
-The previous scouting attempt exited successfully but did not create the required artifact.
+The previous scouting attempt did not produce a valid artifact. Recheck the task scope, recreate the useful repository findings, and correct the reported schema fields.
 Retry the scouting handoff now. Create exactly one valid JSON object at:
 /results/scouting-candidate.json
 The repository is read-only; do not write to /workspace/repo, .agents, or /tmp. Prefer the write tool; if it is unavailable, use the available bash tool with a quoted heredoc or printf. Before finishing, use the read tool to verify that /results/scouting-candidate.json exists, is non-empty, and is valid JSON matching the schema above. Do not finish until that verification succeeds.
-Every relevant_files item must be {"path":"repo/relative/path","reason":"why it matters"}. If the previous artifact had scalar observations, plan, or validation fields, emit arrays. Do not emit markdown, a JSON string, or a partial object.
+Every relevant_files item must be {"path":"repo/relative/path","reason":"why it matters"}. Requirements, observations, plan, validation, and risks must be arrays. Do not emit markdown, a JSON string, or a partial object.
 Previous validator feedback (fix these exact failures):
 ${retry_feedback:-'- candidate artifact was missing or invalid'}
 Every non-empty test_impact entry must be an object with a repo-relative test path and a non-empty reason. Use [] when no affected test file is known; never emit a partial object or invent a path.
@@ -6815,7 +6824,7 @@ run_scouting_agent() {
 }
 
 run_scouting_agent_with_retry() {
-  local attempt scouting_stderr_capture max_attempts scouting_last_exit scouting_last_stderr
+  local attempt scouting_stderr_capture max_attempts scouting_last_exit scouting_last_stderr scouting_candidate_snapshot
   local scouting_errexit_was_enabled=0
 
   case $- in
@@ -6926,22 +6935,23 @@ NODE
     # analysis. The primary raw stream is otherwise replaced on retry.
     if [ "$scouting_last_exit" -ne 0 ]; then
       cp "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}/scouting-attempt-${attempt}-events.jsonl" 2>/dev/null || true
-      node - "$attempt" "$scouting_last_exit" "${PROVIDER_ERROR_TYPE:-}" "${PROVIDER_ERROR_MESSAGE:-}" <<'NODE' 2>/dev/null || true
+      scouting_candidate_snapshot="${KASEKI_RESULTS_DIR}/scouting-attempt-${attempt}-candidate.json"
+      if [ -s "$SCOUTING_CANDIDATE_ARTIFACT" ]; then
+        cp "$SCOUTING_CANDIDATE_ARTIFACT" "$scouting_candidate_snapshot" 2>/dev/null || true
+      fi
+      node - "$attempt" "$scouting_last_exit" "${PROVIDER_ERROR_TYPE:-}" "${PROVIDER_ERROR_MESSAGE:-}" "$scouting_candidate_snapshot" <<'NODE' 2>/dev/null || true
 const fs = require('node:fs');
-const [attempt, exitCode, errorType, errorMessage] = process.argv.slice(2);
-const entry = { timestamp: new Date().toISOString(), phase: 'scouting', attempt: Number(attempt), exit_code: Number(exitCode), error_type: errorType || 'scouting_contract_failure', error_message: errorMessage || 'Scouting attempt failed before producing a valid handoff', raw_events: `scouting-attempt-${attempt}-events.jsonl`, validation_errors: 'scouting-validation-errors.jsonl' };
+const [attempt, exitCode, errorType, errorMessage, candidateSnapshot] = process.argv.slice(2);
+const entry = { timestamp: new Date().toISOString(), phase: 'scouting', attempt: Number(attempt), exit_code: Number(exitCode), error_type: errorType || 'scouting_contract_failure', error_message: errorMessage || 'Scouting attempt failed before producing a valid handoff', raw_events: `scouting-attempt-${attempt}-events.jsonl`, candidate_artifact: fs.existsSync(candidateSnapshot) ? `scouting-attempt-${attempt}-candidate.json` : null, validation_errors: 'scouting-validation-errors.jsonl' };
 fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + '/scouting-retry-diagnostics.jsonl', JSON.stringify(entry) + '\n');
 NODE
     fi
 
     if [ "${SCOUTING_EXIT:-0}" -eq 86 ] || [ "${STATUS:-0}" -eq 86 ]; then
-      # Contract failures can be reported either against the candidate file
-      # itself or against a field within the candidate (for example,
-      # `requirements` or `observations`).  Restricting recovery to the
-      # filename left schema failures unrecoverable even though a conservative
-      # patch fallback is valid for them.
+      # Contract failures can be reported against the candidate file itself
+      # or against field names such as requirements or observations.
       local has_scouting_contract_failure=0
-      local missing_scouting_artifact=0
+      local retryable_scouting_contract_failure=0
       if node - "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" <<'NODE' >/dev/null 2>&1
 const fs = require('node:fs');
 const file = process.argv[2];
@@ -6968,17 +6978,17 @@ NODE
       then
         has_scouting_contract_failure=1
       fi
-      if [ "$(cat "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt" 2>/dev/null || true)" = "missing_file" ]; then
-        missing_scouting_artifact=1
-      fi
-      # A missing handoff may be a transient failure to write the required
-      # artifact, so give patch mode the same bounded contract retry as the
-      # read-only phases. Malformed or schema-invalid handoffs remain
-      # deterministic and continue directly to the conservative fallback.
+      case "$(cat "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt" 2>/dev/null || true)" in
+        missing_file|malformed_json|schema_mismatch|schema_type_mismatch|schema_validation_failed|invalid_candidate)
+          retryable_scouting_contract_failure=1 ;;
+      esac
+      # Give malformed and schema-invalid handoffs one corrective attempt.
+      # Persistent failures still use the validated patch fallback; read-only
+      # filesystem failures remain deterministic and do not retry.
       if [ "$attempt" -lt "$max_attempts" ] &&
         [ "$has_scouting_contract_failure" -eq 1 ] &&
-        { [ "$KASEKI_TASK_MODE" != "patch" ] || [ "$missing_scouting_artifact" -eq 1 ]; }; then
-        printf '[Scouting Phase] Artifact contract failure (exit 86), retrying with explicit write instructions\n'
+        [ "$retryable_scouting_contract_failure" -eq 1 ]; then
+        printf '[Scouting Phase] Artifact contract failure (exit 86), retrying with targeted schema feedback\n'
         attempt=$((attempt + 1))
         rm -f "$SCOUTING_ARTIFACT" "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt" 2>/dev/null || true
         continue
@@ -6988,7 +6998,7 @@ NODE
       if [ "$KASEKI_TASK_MODE" = "patch" ] && [ "$has_scouting_contract_failure" -eq 1 ]; then
         rm -f "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" 2>/dev/null || true
         write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
-        if validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
+        if KASEKI_SCOUTING_FALLBACK_VALIDATION=1 validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
           mark_scouting_fallback_recovered "patch_fallback_recovered"
           printf '[Scouting Phase] Artifact contract failed; validated conservative patch fallback and continuing\n'
           export KASEKI_SCOUTING_ATTEMPTS=$attempt
@@ -10520,24 +10530,6 @@ NODE
     snapshot_attempt_artifacts "$coding_attempt"
     if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
       emit_progress "pi coding agent" "retrying after actionless patch attempt (attempt $coding_attempt of $max_coding_attempts)"
-      coding_attempt=$((coding_attempt + 1))
-      continue
-    fi
-  fi
-
-  # Do not repeat an exploratory attempt that exhausted its context before
-  # changing the repository. The retry receives the bounded handoff brief and
-  # the required-file contract rather than being told to reread large files.
-  if [ "$PI_EXIT" -eq 0 ] && [ "$KASEKI_TASK_MODE" = "patch" ] && ! critical_change_contract_allows_noop && \
-    coding_context_budget_exceeded && [ -z "$(git -C "${KASEKI_WORKSPACE_DIR}/repo" status --porcelain)" ]; then
-    GOAL_CHECK_MET=false
-    GOAL_CHECK_FAILURE_REASON="coding_context_budget_exceeded_before_change"
-    GOAL_CHECK_RETRY_PROMPT="The previous coding attempt exceeded its context budget before producing a diff. Do not reread broad files or raw scouting artifacts. Use the implementation brief in context-handoff.json and ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}; inspect only the smallest exact range needed, then make the required change."
-    printf '%s\n' "$GOAL_CHECK_RETRY_PROMPT" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
-    emit_error_event "coding_context_budget_exceeded_before_change" "Coding context budget was exceeded before producing a diff; retrying with the bounded handoff brief" "retry"
-    snapshot_attempt_artifacts "$coding_attempt"
-    if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
-      emit_progress "pi coding agent" "retrying after context budget exceeded before change (attempt $coding_attempt of $max_coding_attempts)"
       coding_attempt=$((coding_attempt + 1))
       continue
     fi

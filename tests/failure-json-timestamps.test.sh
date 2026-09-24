@@ -35,6 +35,8 @@ mkdir -p "$KASEKI_RESULTS_DIR"
 INSTANCE_NAME='failure timestamp fixture'
 START_ISO='2026-09-23T19:20:54Z'
 FAILED_COMMAND='goal check'
+CURRENT_STAGE='test failure analysis'
+TERMINAL_FAILURE_STAGE='goal check'
 
 write_failure_json 8
 node - "$KASEKI_RESULTS_DIR/failure.json" <<'NODE'
@@ -43,6 +45,7 @@ const failure = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 if (failure.started_at !== '2026-09-23T19:20:54Z') throw new Error('failure.json omitted original run start timestamp');
 if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(failure.ended_at)) throw new Error('failure.json omitted a durable end timestamp');
 if (failure.failed_command !== 'goal check' || failure.exit_code !== 8) throw new Error('failure.json lost the root failure classification');
+if (failure.stage !== 'goal check') throw new Error(`failure.json recorded finalization stage instead of failure stage: ${failure.stage}`);
 NODE
 
 printf '✓ failure.json preserves original run timestamps and root failure classification.\n'

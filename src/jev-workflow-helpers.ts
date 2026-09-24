@@ -21,6 +21,59 @@ export interface GoalCriterionAssessment {
   met: boolean;
 }
 
+export interface GoalSettingCompaction {
+  goal_setting: Record<string, unknown>;
+  compacted: boolean;
+  target_chars: number;
+  actual_chars: number;
+  target_exceeded: boolean;
+  omitted_fields: string[];
+}
+
+/**
+ * Keep the machine-checked goal contract intact while dropping verbose,
+ * lower-value context to meet the evaluator's advisory payload target.
+ */
+export function compactGoalSettingForEvaluation(
+  goal: Record<string, unknown>,
+  targetChars = 8000,
+): GoalSettingCompaction {
+  const compactedGoal = { ...goal };
+  const omittedFields: string[] = [];
+  const protectedFields = new Set(['outcome_policy', 'success_criteria', 'upgraded_goal']);
+  const preferredOmissionOrder = [
+    'reasoning', 'original_prompt', 'constraints', 'anti_patterns', 'confidence',
+    'key_requirements', 'assumptions', 'notes', 'context',
+  ];
+  const serializedLength = () => JSON.stringify(compactedGoal).length;
+  const omit = (field: string) => {
+    if (protectedFields.has(field) || !(field in compactedGoal)) return;
+    delete compactedGoal[field];
+    omittedFields.push(field);
+  };
+
+  for (const field of preferredOmissionOrder) {
+    if (serializedLength() <= targetChars) break;
+    omit(field);
+  }
+  if (serializedLength() > targetChars) {
+    for (const field of Object.keys(compactedGoal)) {
+      if (serializedLength() <= targetChars) break;
+      omit(field);
+    }
+  }
+
+  const actualChars = serializedLength();
+  return {
+    goal_setting: compactedGoal,
+    compacted: omittedFields.length > 0,
+    target_chars: targetChars,
+    actual_chars: actualChars,
+    target_exceeded: actualChars > targetChars,
+    omitted_fields: omittedFields,
+  };
+}
+
 export function mapJevScoreToCompletion(score: number, levelCount = 5): number {
   if (!Number.isFinite(score) || !Number.isInteger(levelCount) || levelCount < 1) return 1;
   return Math.min(levelCount, Math.max(1, score + 1));
