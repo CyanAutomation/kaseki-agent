@@ -18,15 +18,28 @@ export function calculateUncappedScore(weightedPoints: number[]): number {
 }
 
 /**
- * Apply capping logic based on evaluator availability.
- * A successful patch can still be useful, but it must not look fully evaluated
- * when the evaluator artifact is a fallback or unavailable.
+ * Apply deterministic caps when evaluator, patch, validation, or lifecycle evidence is incomplete.
  * @param uncappedScore The raw score before capping
- * @param evaluatorReliabilityAvailable Whether both goal-check and evaluator are available
- * @returns Capped score with evaluator penalty if needed
+ * @param evidence Deterministic evidence used to apply the published score caps
+ * @returns Score after the strictest applicable cap
  */
-export function applyScoringCap(uncappedScore: number, evaluatorReliabilityAvailable: boolean): number {
-  return evaluatorReliabilityAvailable ? uncappedScore : Math.min(uncappedScore, 89);
+export interface ScoringCapEvidence {
+  evaluatorReliabilityAvailable: boolean;
+  diffBytes: number;
+  noChangeAccepted: boolean;
+  validation: 'passed' | 'failed' | 'unknown';
+  lifecycleStatus: RunScorecard['lifecycle_status'];
+}
+
+export function applyScoringCap(uncappedScore: number, evidence: ScoringCapEvidence): number {
+  const caps = [
+    !evidence.evaluatorReliabilityAvailable ? 89 : 100,
+    evidence.diffBytes === 0 && !evidence.noChangeAccepted ? 69 : 100,
+    evidence.validation === 'unknown' ? 59 : 100,
+    evidence.diffBytes === 0 && !evidence.noChangeAccepted && evidence.validation === 'unknown' ? 49 : 100,
+    evidence.lifecycleStatus === 'failed' || evidence.lifecycleStatus === 'timed_out' || evidence.lifecycleStatus === 'cancelled' ? 59 : 100,
+  ];
+  return Math.min(uncappedScore, ...caps);
 }
 
 /**
@@ -95,9 +108,10 @@ export function calculateMissingCritical(
   validation: string,
   goalCheckAvailable: boolean,
   evaluatorAvailable: boolean,
+  noChangeAccepted = false,
 ): string[] {
   const missing: string[] = [];
-  if (diffBytes === 0) missing.push('diff');
+  if (diffBytes === 0 && !noChangeAccepted) missing.push('diff');
   if (validation === 'unknown') missing.push('validation_result');
   if (!goalCheckAvailable) missing.push('goal_check');
   if (!evaluatorAvailable) missing.push('run_evaluation');

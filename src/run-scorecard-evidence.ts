@@ -26,7 +26,7 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
   const evaluatorFailed = String(failure.provider_error_phase ?? '').trim() === 'run-evaluation'
     || String(failure.failed_command ?? '').trim() === 'run evaluation';
   const noChangeAccepted = lifecycle(metadata) === 'completed'
-    && (metadata.no_change_accepted === true || metadata.allow_empty_diff === '1' || metadata.allow_empty_diff === true)
+    && (metadata.task_mode === 'inspect' || metadata.no_change_accepted === true || metadata.allow_empty_diff === '1' || metadata.allow_empty_diff === true)
     && (snapshot.text['git.diff'] ?? '').trim().length === 0;
 
   const phaseReached = detectPhaseReached(snapshot, metadata, stageRows, {
@@ -37,6 +37,14 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
     validationExitCode: number(failure.validation_exit_code),
   });
   const phaseFailures = detectPhaseFailures(metadata, failure, evaluatorFailed);
+  const goalSetting = object(snapshot.json['goal-setting.json']) ?? {};
+  const scouting = object(snapshot.json['scouting.json']) ?? {};
+  const goalSettingFallback = metadata.goal_setting_fallback_used === true
+    || goalSetting.fallback === true
+    || (goalSetting.confidence === 'low' && /fallback/i.test(String(goalSetting.reasoning ?? '')));
+  const scoutingFallback = metadata.scouting_fallback_used === true
+    || scouting.fallback === true
+    || (typeof scouting.fallback_reason === 'string' && scouting.fallback_reason.trim().length > 0);
   return {
     metadata: {
       ...metadata,
@@ -51,6 +59,7 @@ export function collectEvidence(snapshot: ArtifactSnapshot): Evidence {
     goalMet, goalCheckAvailable, goalCheckFailed, noChangeAccepted,
     changedFiles: (snapshot.text['changed-files.txt'] ?? '').split(/\r?\n/).filter(Boolean).length,
     diffBytes: Buffer.byteLength(snapshot.text['git.diff'] ?? ''), evaluation, evaluatorAvailable,
+    goalSettingFallback, scoutingFallback,
     present: [...Object.keys(snapshot.json), ...Object.keys(snapshot.text)],
   };
 }

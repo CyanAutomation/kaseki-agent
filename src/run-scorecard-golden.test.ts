@@ -38,7 +38,11 @@ describe('scorecard dimension tables and invariants', () => {
     expect(card.dimensions.every(d => d.normalized_score >= 0 && d.normalized_score <= 100)).toBe(true);
     expect(card.overall_score).toBeGreaterThanOrEqual(0); expect(card.overall_score).toBeLessThanOrEqual(100);
     expect(card.evidence_coverage.ratio).toBeLessThanOrEqual(1);
-    expect(Number(card.dimensions.reduce((n,d) => n+d.weighted_points, 0).toFixed(2))).toBe(card.overall_score);
+    const dimensionTotal = Number(card.dimensions.reduce((n,d) => n+d.weighted_points, 0).toFixed(2));
+    expect(card.overall_score).toBeLessThanOrEqual(dimensionTotal);
+    if (card.lifecycle_status === 'completed' && card.evidence_coverage.missing_critical.length === 0) {
+      expect(dimensionTotal).toBe(card.overall_score);
+    }
   });
 
   test('missing critical evidence cannot increase confidence', () => {

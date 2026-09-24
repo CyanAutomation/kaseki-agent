@@ -90,7 +90,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   'gateway-summary.json': {
     name: 'gateway-summary.json',
     contentType: 'application/json',
-    description: 'Run-level inference health, token budgets, semantic success, and per-model reliability observations',
+    description: 'Coding-agent phase inference health and token totals. Embedded ledger counters are phase-scoped; token-ledger.jsonl is the canonical per-response record across all run phases.',
     availability: ArtifactAvailability.CONDITIONAL,
     triageOrder: 3,
     sizeHint: 'small',
@@ -533,7 +533,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   'cache-metrics.json': {
     name: 'cache-metrics.json',
     contentType: 'application/json',
-    description: 'Structured dependency cache metrics: array of cache statistics (hits, misses, bytes used, etc.)',
+    description: 'Structured dependency cache metrics; elapsed_seconds is null when decision/operation timing was not measured.',
     availability: ArtifactAvailability.CONDITIONAL,
     triageOrder: 24,
     sizeHint: 'small',
