@@ -15,13 +15,13 @@ eval "$(awk '
 
 ORIGINAL_TASK_PROMPT="Inspect the repository"
 GOAL_SETTING_CANDIDATE_ARTIFACT="$TMP_DIR/goal-setting-candidate.json"
-KASEKI_TASK_MODE=patch
+KASEKI_TASK_MODE="patch"
 patch_prompt="$(build_goal_setting_prompt)"
 grep -Fq '"outcome_policy": "change_required"' <<< "$patch_prompt" || {
   printf 'FAIL: patch goal-setting prompt did not require a change\n' >&2
   exit 1
 }
-KASEKI_TASK_MODE=inspect
+KASEKI_TASK_MODE="inspect"
 inspect_prompt="$(build_goal_setting_prompt)"
 grep -Fq '"outcome_policy": "change_or_noop"' <<< "$inspect_prompt" || {
   printf 'FAIL: inspect goal-setting prompt did not allow a verified no-op\n' >&2
@@ -38,7 +38,7 @@ cat > "$results_dir/goal-setting.json" <<'JSON'
   ]
 }
 JSON
-KASEKI_TASK_MODE=patch node "$ROOT_DIR/dist/jev-workflow-evaluator.js" goal-check "$results_dir"
+KASEKI_TASK_MODE="patch" node "$ROOT_DIR/dist/jev-workflow-evaluator.js" goal-check "$results_dir"
 node - "$results_dir/goal-check.json" <<'NODE'
 const fs = require('node:fs');
 const result = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
