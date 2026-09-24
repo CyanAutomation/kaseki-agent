@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { answerIsTrue, classifyWithJev, DEFAULT_JEV_MODEL } from './jev-classifier';
 import { collectValidationEvidence } from './validation-evidence';
+import { buildRunEvaluationArtifact, buildRunEvaluationEvidenceSources } from './jev-run-evaluation-artifact';
 
 type JsonObject = Record<string, unknown>;
 
@@ -14,6 +15,10 @@ function readJson(file: string): JsonObject {
     const value = JSON.parse(readText(file));
     return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
   } catch { return {}; }
+}
+
+function readJsonValue(file: string): unknown {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return undefined; }
 }
 
 function redact(value: unknown): unknown {
@@ -36,15 +41,44 @@ function evidenceState(resultsDir: string): JsonObject {
   const goal = readJson(path.join(resultsDir, 'goal-setting.json'));
   const scouting = readJson(path.join(resultsDir, 'scouting.json'));
   const validation = collectValidationEvidence(resultsDir);
+  const presentSources = [
+    'metadata.json', 'failure.json', 'goal-setting.json', 'scouting.json', 'goal-check.json',
+    'changed-files.txt', 'git.diff', 'validation.log', 'validation-timings.tsv',
+    'pre-validation.log', 'pre-validation-timings.tsv', 'stage-timings.tsv',
+  ].filter((name) => {
+    try { return fs.statSync(path.join(resultsDir, name)).isFile(); } catch { return false; }
+  });
+  const cacheMetrics = readJsonValue(path.join(resultsDir, 'cache-metrics.json'));
   return {
     goal_setting: bounded(redact(goal), 8000),
     scouting: bounded(redact(scouting), 8000),
+    metadata: redact(readJson(path.join(resultsDir, 'metadata.json'))),
+    failure: redact(readJson(path.join(resultsDir, 'failure.json'))),
     changed_files: redact(readText(path.join(resultsDir, 'changed-files.txt')).slice(0, 12000)),
     diff: redact(readText(path.join(resultsDir, 'git.diff')).slice(0, 24000)),
     validation: redact(validation.text),
     validation_sources: validation.sources,
+    present_sources: presentSources,
+    stage_durations: stageDurations(resultsDir),
+    cache_metrics: Array.isArray(cacheMetrics) ? cacheMetrics : [],
     task_mode: process.env.KASEKI_TASK_MODE || 'patch',
   };
+}
+
+function stageDurations(resultsDir: string): Record<string, number> {
+  const result: Record<string, number> = {};
+  const aliases: Array<[RegExp, string]> = [
+    [/goal.setting/i, 'goal-setting'], [/scouting/i, 'scouting'], [/pi coding agent|coding/i, 'coding'],
+    [/^validation$/i, 'validation'], [/goal check/i, 'goal-check'], [/run evaluation/i, 'run-evaluation'],
+  ];
+  for (const row of readText(path.join(resultsDir, 'stage-timings.tsv')).split(/\r?\n/)) {
+    const [stage, , elapsed] = row.split('\t');
+    const seconds = Number(elapsed);
+    if (!stage || !Number.isFinite(seconds) || seconds < 0) continue;
+    const alias = aliases.find(([pattern]) => pattern.test(stage.trim()));
+    if (alias) result[alias[1]] = seconds;
+  }
+  return result;
 }
 
 function criteriaFrom(goal: JsonObject): string[] {
@@ -74,7 +108,8 @@ async function runGoalCheck(resultsDir: string, attempt: number): Promise<JsonOb
   const threshold = confidenceThreshold();
   const missing: string[] = [];
   const validationSources = Array.isArray(state.validation_sources) ? state.validation_sources as string[] : [];
-  const evidence: string[] = ['goal-setting.json', 'scouting.json', 'changed-files.txt', 'git.diff', ...validationSources];
+  const presentSources = Array.isArray(state.present_sources) ? state.present_sources as string[] : [];
+  const evidence = buildRunEvaluationEvidenceSources({ presentSources, validationSources });
   let allMet = true;
   for (const [id, answer] of Object.entries(result.answers)) {
     const match = id.match(/^criterion_(\d+)$/);
@@ -120,24 +155,31 @@ async function runEvaluation(resultsDir: string): Promise<JsonObject> {
     const value = result.answers[name];
     return value?.type === 'choice' ? value.choice : value?.type === 'score' ? value.score : value?.type === 'noul' ? value.noul : 'unknown';
   };
-  return {
-    overall_assessment: answer('overall_assessment'),
-    reviewer_confidence: answer('reviewer_confidence'),
-    task_completion_score: answer('task_completion_score'),
-    summary: 'Structured run evaluation was produced by JEV from persisted run evidence.',
-    human_review_focus: answer('reviewer_confidence') === 'low' ? ['Review the diff, validation evidence, and goal-check criteria manually.'] : [],
-    stage_value: [],
-    evidence_sources_inspected: ['goal-check.json', 'changed-files.txt', 'git.diff', ...(Array.isArray(state.validation_sources) ? state.validation_sources as string[] : [])],
-    contradictions: [],
-    confidence_calibration: { objective_outcome: goalCheck.met === true ? 'met' : 'unmet', calibrated: true, reason: 'JEV classified structured evidence; deterministic scorecard caps remain authoritative.' },
-    phase_scorecard: {},
-    efficiency_findings: [],
-    kaseki_improvement_opportunities: [],
-    pr_summary: 'JEV evaluated task completion and reviewer confidence from the persisted run artifacts.',
-    pr_changes: [],
-    warnings: [],
-    classifier: { provider: 'openrouter-decisions', model: result.model, response_time_ms: result.responseTime, usage: result.usage },
+  const metadata = (state.metadata && typeof state.metadata === 'object' ? state.metadata : {}) as JsonObject;
+  const failure = (state.failure && typeof state.failure === 'object' ? state.failure : {}) as JsonObject;
+  const fact = {
+    metadata,
+    failure,
+    goalSetting: (state.goal_setting && typeof state.goal_setting === 'object' ? state.goal_setting : {}) as JsonObject,
+    scouting: (state.scouting && typeof state.scouting === 'object' ? state.scouting : {}) as JsonObject,
+    goalCheck,
+    validation: String(state.validation ?? ''),
+    validationSources: Array.isArray(state.validation_sources) ? state.validation_sources as string[] : [],
+    changedFiles: String(state.changed_files ?? ''),
+    diff: String(state.diff ?? ''),
+    taskMode: String(state.task_mode ?? 'patch'),
+    presentSources: Array.isArray(state.present_sources) ? state.present_sources as string[] : [],
+    stageDurations: (state.stage_durations && typeof state.stage_durations === 'object' ? state.stage_durations : {}) as Record<string, number>,
+    cacheMetrics: Array.isArray(state.cache_metrics) ? state.cache_metrics : [],
   };
+  const assessment = answer('overall_assessment');
+  const confidence = answer('reviewer_confidence');
+  const completion = answer('task_completion_score');
+  return buildRunEvaluationArtifact(fact, {
+    overallAssessment: typeof assessment === 'string' ? assessment : 'unknown',
+    reviewerConfidence: typeof confidence === 'string' ? confidence : 'low',
+    taskCompletionScore: typeof completion === 'number' ? Math.max(1, Math.min(5, Math.round(completion))) : 1,
+  }, { provider: 'openrouter-decisions', model: result.model, responseTime: result.responseTime, usage: result.usage });
 }
 
 async function main(): Promise<void> {

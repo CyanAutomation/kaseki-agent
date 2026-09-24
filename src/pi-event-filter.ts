@@ -791,10 +791,13 @@ function writeSummaryFiles(summaryPath: string, summary: Summary): void {
   const providerErrors = summary.provider_errors ?? [];
   const inferenceHealth = summary.inference_health!;
   fs.writeFileSync(path.join(path.dirname(summaryPath), 'gateway-summary.json'), `${JSON.stringify({
-    schema_version: 1,
+    schema_version: 2,
+    scope: { phase: 'pi-agent', includesOtherPhases: false },
+    token_ledger_summary_scope: 'pi-agent',
+    token_ledger_artifact_scope: 'all_run_phases',
     logical_agent_turns: summary.event_counts.message_end || 0,
     routing_steps: null,
-    note: 'See token-ledger.jsonl for canonical per-response totals. routing_steps requires Cloudflare log enrichment.',
+    note: 'The counters in this summary are scoped to the Pi coding-agent phase. token-ledger.jsonl is the canonical per-response record across all run phases. routing_steps requires Cloudflare log enrichment.',
     input_tokens: summary.token_usage!.total_input_tokens,
     output_tokens: summary.token_usage!.total_output_tokens,
     provider_errors: providerErrors.length,

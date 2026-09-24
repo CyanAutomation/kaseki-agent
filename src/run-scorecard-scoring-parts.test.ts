@@ -46,6 +46,41 @@ describe('run-scorecard-scoring-parts', () => {
     expect(scouting.status).toBe('not_applicable');
   });
 
+  test('fallback artifacts score below agent-produced artifacts and retain source references', () => {
+    const config = normalizeConfig({} as NodeJS.ProcessEnv);
+    ScorecardContext.initialize(config);
+    const evidence = buildEvidence({
+      present: ['metadata.json', 'goal-setting.json', 'scouting.json', 'goal-check.json', 'run-evaluation.json', 'git.diff', 'validation.log'],
+      goalSettingFallback: true,
+      scoutingFallback: true,
+      diffBytes: 10,
+      validation: 'passed',
+      phaseReached: { goal_setting: true, scouting: true, coding: true, validation: true, goal_check: true, run_evaluation: true },
+    });
+    const dimensions = buildDimensions(evidence);
+    expect(dimensions.find(item => item.id === 'goal_quality')).toMatchObject({
+      normalized_score: 35,
+      evidence: [expect.objectContaining({ artifact: 'goal-setting.json' })],
+    });
+    expect(dimensions.find(item => item.id === 'scouting_quality')).toMatchObject({
+      normalized_score: 35,
+      evidence: [expect.objectContaining({ artifact: 'scouting.json' })],
+    });
+    expect(buildPhases(evidence).scouting.evidence).toEqual([
+      expect.objectContaining({ artifact: 'scouting.json' }),
+    ]);
+  });
+
+  test('does not treat missing validation execution as passed validation', () => {
+    const config = normalizeConfig({} as NodeJS.ProcessEnv);
+    ScorecardContext.initialize(config);
+    const evidence = buildEvidence({ validation: 'unknown', present: ['validation.log'] });
+    expect(buildDimensions(evidence).find(item => item.id === 'validation_quality')?.normalized_score).toBe(50);
+    expect(buildDimensions(evidence).find(item => item.id === 'validation_quality')?.evidence).toEqual([
+      expect.objectContaining({ artifact: 'validation.log' }),
+    ]);
+  });
+
   test('buildPhases marks validation failed and respects phase tokens availability', () => {
     const config = normalizeConfig({} as NodeJS.ProcessEnv);
     ScorecardContext.initialize(config);

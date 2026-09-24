@@ -289,7 +289,28 @@ describe('kaseki-api-routes improvements aggregation', () => {
       resultDir: path.join(resultsDir, 'kaseki-99'),
       request: { repoUrl: 'https://github.com/org/repo-c', ref: 'main' }
     };
-    for (const job of [jobA, jobB, jobC]) fs.mkdirSync(job.resultDir, { recursive: true });
+    const jobD = {
+      id: 'kaseki-98',
+      status: 'failed' as const,
+      createdAt: new Date('2026-05-25T07:00:00.000Z'),
+      resultDir: path.join(resultsDir, 'kaseki-98'),
+      request: { repoUrl: 'https://github.com/org/repo-d', ref: 'main' }
+    };
+    const jobE = {
+      id: 'kaseki-97',
+      status: 'completed' as const,
+      createdAt: new Date('2026-05-25T06:00:00.000Z'),
+      resultDir: path.join(resultsDir, 'kaseki-97'),
+      request: { repoUrl: 'https://github.com/org/repo-e', ref: 'main' }
+    };
+    const jobF = {
+      id: 'kaseki-96',
+      status: 'failed' as const,
+      createdAt: new Date('2026-05-25T05:00:00.000Z'),
+      resultDir: path.join(resultsDir, 'kaseki-96'),
+      request: { repoUrl: 'https://github.com/org/repo-f', ref: 'main' }
+    };
+    for (const job of [jobA, jobB, jobC, jobD, jobE]) fs.mkdirSync(job.resultDir, { recursive: true });
     fs.writeFileSync(
       path.join(jobA.resultDir, 'metadata.json'),
       JSON.stringify({
@@ -318,30 +339,39 @@ describe('kaseki-api-routes improvements aggregation', () => {
       reviewer_confidence: 'low',
       task_completion_score: 2,
     }) + '\\n');
+    for (const job of [jobD, jobE]) {
+      fs.writeFileSync(path.join(job.resultDir, 'run-evaluation.json'), JSON.stringify({
+        overall_assessment: 'good', reviewer_confidence: 'medium', task_completion_score: 3,
+      }));
+    }
 
     const scheduler = createMockScheduler({
       [jobA.id]: jobA as any,
       [jobB.id]: jobB as any,
-      [jobC.id]: jobC as any
+      [jobC.id]: jobC as any,
+      [jobD.id]: jobD as any,
+      [jobE.id]: jobE as any,
+      [jobF.id]: jobF as any,
     });
-    scheduler.listJobs.mockReturnValue([jobA, jobB, jobC]);
+    scheduler.listJobs.mockReturnValue([jobA, jobB, jobC, jobD, jobE, jobF]);
     const config = createTestConfig(resultsDir);
     const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
 
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/improvements?limit=3`, {
+      const response = await fetch(`http://127.0.0.1:${port}/api/improvements?limit=6`, {
         headers: { Authorization: 'Bearer test-key' }
       });
       const body = (await response.json()) as any;
 
       expect(response.status).toBe(200);
       expect(body.evaluator).toEqual({
-        available: 2,
+        available: 4,
         missing: 0,
         invalid: 1,
-        diagnostics: { missing_artifact: 1 },
+        expired: 1,
+        diagnostics: { missing_artifact: 1, artifacts_expired: 1 },
       });
-      expect(body.counts.byAssessment.good).toBe(1);
+      expect(body.counts.byAssessment.good).toBe(3);
       expect(body.counts.byConfidence.high).toBe(1);
       expect(body.topImprovementOpportunities[0]).toMatchObject({
         category: 'validation',
@@ -358,6 +388,7 @@ describe('kaseki-api-routes improvements aggregation', () => {
         topImprovement: 'Avoid repeated validation commands.',
         prUrl: 'https://github.com/org/repo-a/pull/1'
       });
+      expect(body.runs[5]).toMatchObject({ assessment: 'unavailable', confidence: 'unavailable', evaluationDiagnostic: 'artifacts_expired' });
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }

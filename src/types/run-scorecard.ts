@@ -126,6 +126,7 @@ export const RunScorecardScoringConfigSchema = z.object({
     missing_diff: ScoreSchema,
     missing_validation: ScoreSchema,
     missing_diff_and_validation: ScoreSchema,
+    max_failed_run: ScoreSchema.default(59),
   }),
   enabled_phase_reliability_penalty_points: z.number().nonnegative(),
   disabled_phase_policy: z.literal('reweight_eligible_dimensions'),

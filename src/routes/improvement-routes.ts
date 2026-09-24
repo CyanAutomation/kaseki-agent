@@ -41,6 +41,7 @@ type ImprovementAccumulator = {
   evaluationAvailable: number;
   evaluationMissing: number;
   evaluationInvalid: number;
+  evaluationExpired: number;
 };
 
 type ImprovementRunSummary = {
@@ -61,13 +62,13 @@ export function createImprovementRoutes(scheduler: JobScheduler, config: KasekiA
 
   router.get('/improvements', (req: Request, res: Response) => {
     const limit = normalizeLimit(req.query.limit);
-    const terminalJobs = scheduler
-      .listJobs()
+    const orderedJobs = scheduler.listJobs().slice().sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+    const terminalJobs = orderedJobs
       .filter((job) => job.status === 'completed' || job.status === 'failed')
       .slice(0, limit);
 
     const accumulator = createImprovementAccumulator();
-    const runs = terminalJobs.map((job) => summarizeImprovementRun(job, config, accumulator));
+    const runs = terminalJobs.map((job, index) => summarizeImprovementRun(job, config, accumulator, index < 5));
 
     res.json({
       limit,
@@ -80,6 +81,7 @@ export function createImprovementRoutes(scheduler: JobScheduler, config: KasekiA
         available: accumulator.evaluationAvailable,
         missing: accumulator.evaluationMissing,
         invalid: accumulator.evaluationInvalid,
+        expired: accumulator.evaluationExpired,
         diagnostics: countEvaluationDiagnostics(runs),
       },
       topImprovementOpportunities: Array.from(accumulator.opportunityCounts.values())
@@ -104,6 +106,7 @@ function createImprovementAccumulator(): ImprovementAccumulator {
     evaluationAvailable: 0,
     evaluationMissing: 0,
     evaluationInvalid: 0,
+    evaluationExpired: 0,
   };
 }
 
@@ -111,15 +114,17 @@ function summarizeImprovementRun(
   job: Job,
   config: KasekiApiConfig,
   accumulator: ImprovementAccumulator,
+  artifactsExpectedToBeRetained: boolean,
 ): ImprovementRunSummary {
   const runDir = job.resultDir || path.join(config.resultsDir, job.id);
   const metadata = readJson(path.join(runDir, 'metadata.json')) as Record<string, any>;
   const evaluationPath = path.join(runDir, 'run-evaluation.json');
   const evaluation = readJson(evaluationPath) as EvaluationArtifact | null;
   const validEvaluation = isEvaluationArtifact(evaluation);
-  const evaluationDiagnostic = validEvaluation ? undefined : evaluationDiagnosticForRun(runDir);
+  const artifactsRetained = fs.existsSync(runDir);
+  const evaluationDiagnostic = validEvaluation ? undefined : evaluationDiagnosticForRun(runDir, artifactsRetained, artifactsExpectedToBeRetained);
 
-  recordEvaluationState(evaluationPath, validEvaluation, accumulator);
+  recordEvaluationState(evaluationPath, validEvaluation, artifactsRetained, artifactsExpectedToBeRetained, accumulator);
   if (validEvaluation) {
     recordEvaluationAggregates(evaluation, accumulator);
   }
@@ -132,7 +137,8 @@ function isEvaluationArtifact(value: unknown): value is EvaluationArtifact {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
-function evaluationDiagnosticForRun(runDir: string): string {
+function evaluationDiagnosticForRun(runDir: string, artifactsRetained: boolean, artifactsExpectedToBeRetained: boolean): string {
+  if (!artifactsRetained && !artifactsExpectedToBeRetained) return 'artifacts_expired';
   if (fs.existsSync(path.join(runDir, 'run-evaluation-stderr.log'))) {
     return 'invalid_artifact_with_stderr';
   }
@@ -145,10 +151,14 @@ function evaluationDiagnosticForRun(runDir: string): string {
 function recordEvaluationState(
   evaluationPath: string,
   validEvaluation: boolean,
+  artifactsRetained: boolean,
+  artifactsExpectedToBeRetained: boolean,
   accumulator: ImprovementAccumulator,
 ): void {
   if (validEvaluation) {
     accumulator.evaluationAvailable += 1;
+  } else if (!artifactsRetained && !artifactsExpectedToBeRetained) {
+    accumulator.evaluationExpired += 1;
   } else if (fs.existsSync(evaluationPath)) {
     accumulator.evaluationInvalid += 1;
   } else {
@@ -211,8 +221,8 @@ function buildRunSummary(
   return {
     id: job.id,
     repoUrl: typeof metadata?.repo_url === 'string' ? metadata.repo_url : job.request.repoUrl,
-    assessment: validEvaluation ? normalizeBucket(evaluation?.overall_assessment, 'unknown') : 'missing',
-    confidence: validEvaluation ? normalizeBucket(evaluation?.reviewer_confidence, 'unknown') : 'missing',
+    assessment: validEvaluation ? normalizeBucket(evaluation?.overall_assessment, 'unknown') : evaluationDiagnostic === 'artifacts_expired' ? 'unavailable' : 'missing',
+    confidence: validEvaluation ? normalizeBucket(evaluation?.reviewer_confidence, 'unknown') : evaluationDiagnostic === 'artifacts_expired' ? 'unavailable' : 'missing',
     taskCompletionScore: validEvaluation && Number.isFinite(evaluation?.task_completion_score)
       ? evaluation?.task_completion_score
       : undefined,
