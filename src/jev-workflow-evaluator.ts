@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { classifyWithJev, DEFAULT_JEV_MODEL } from './jev-classifier';
 import { collectValidationEvidence } from './validation-evidence';
 import { buildRunEvaluationArtifact, buildRunEvaluationEvidenceSources } from './jev-run-evaluation-artifact';
-import { buildGoalCheckQuestions, buildGoalCriterionAssessments, buildRunEvaluationQuestions, compactGoalSettingForEvaluation, failureDiagnosisFromAnswers, mapJevScoreToCompletion } from './jev-workflow-helpers';
+import { buildGoalCheckOutcome, buildGoalCheckQuestions, buildGoalCriterionAssessments, buildRunEvaluationQuestions, compactGoalSettingForEvaluation, failureDiagnosisFromAnswers, goalCheckUnmetThreshold, mapJevScoreToCompletion, selectCriterionEvidenceSources } from './jev-workflow-helpers';
 import { redactJevEvidence } from './jev-evidence-redaction';
 import { normalizeSuccessCriteria, validateGoalContract } from '../scripts/lib/goal-contract.cjs';
 import { aggregateStageDurations } from './stage-timings';
@@ -116,37 +116,50 @@ async function runGoalCheck(resultsDir: string, attempt: number): Promise<JsonOb
   const threshold = confidenceThreshold();
   const missing: string[] = [];
   const assessments = buildGoalCriterionAssessments(effectiveCriteria, result.answers, threshold);
-  let allMet = assessments.every((assessment) => assessment.met);
+  let outcome = buildGoalCheckOutcome(assessments);
   for (const assessment of assessments) {
-    if (assessment.status === 'unmet' || assessment.status === 'unknown') {
+    if (assessment.status === 'unmet' || assessment.status === 'uncertain' || assessment.status === 'unknown') {
       const reason = assessment.status === 'unknown'
-        ? assessment.applicability === 'unknown' ? `applicability of "${assessment.applies_when}" is unknown` : 'evidence was insufficient'
-        : `noul=${assessment.probability?.toFixed(2)}, threshold=${threshold.toFixed(2)}`;
+        ? assessment.applicability === 'unknown' ? `applicability of "${assessment.applies_when}" is unknown` : 'classifier did not provide enough evidence'
+        : assessment.status === 'uncertain'
+          ? `noul=${assessment.probability?.toFixed(2)} is between the unmet boundary ${goalCheckUnmetThreshold(threshold).toFixed(2)} and pass threshold ${threshold.toFixed(2)}; direct evidence is inconclusive`
+          : `noul=${assessment.probability?.toFixed(2)} is at or below the unmet boundary ${goalCheckUnmetThreshold(threshold).toFixed(2)}`;
       missing.push(`${assessment.criterion} (${reason})`);
     }
   }
   const outcomePolicy = contract.outcomePolicy ?? (process.env.KASEKI_TASK_MODE === 'inspect' ? 'change_or_noop' : 'change_required');
   const contradictions: Array<{ sources: string[]; description: string }> = [];
   if (process.env.KASEKI_TASK_MODE !== 'inspect' && outcomePolicy === 'change_required' && !String(state.diff).trim()) {
-    allMet = false;
+    outcome = 'unmet';
     missing.push('patch-mode task produced no git diff');
     contradictions.push({ sources: ['goal-setting.json', 'git.diff'], description: 'The goal contract requires a code change but the durable diff is empty.' });
   }
-  const summary = allMet ? 'JEV classified all applicable success criteria as satisfied with sufficient confidence.' : 'JEV found one or more unmet, unknown, or low-confidence success criteria.';
+  const summary = outcome === 'met'
+    ? 'JEV classified all applicable success criteria as satisfied with sufficient confidence.'
+    : outcome === 'unmet'
+      ? 'JEV found one or more success criteria that evidence indicates are unmet.'
+      : 'JEV could not establish with sufficient confidence whether all applicable success criteria are satisfied.';
   return {
-    met: allMet,
+    met: outcome === 'met',
+    outcome,
+    review_required: outcome === 'uncertain',
     retryable: true,
-    confidence: missing.length === 0 ? 'high' : 'medium',
+    confidence: outcome === 'met' ? 'high' : 'medium',
     summary,
     evidence,
     missing,
-    criteria_assessment: assessments,
-    retry_prompt: allMet ? '' : `Address the unmet criteria and produce evidence for: ${missing.join('; ')}`,
+    criteria_assessment: assessments.map((assessment) => ({
+      ...assessment,
+      evidence_sources: selectCriterionEvidenceSources(assessment.criterion, evidence),
+    })),
+    retry_prompt: outcome === 'met' ? '' : outcome === 'unmet'
+      ? `Address the criteria with concrete evidence of what remains incomplete: ${missing.join('; ')}`
+      : `Review these criteria against the final repository and validation evidence. Do not make changes solely to raise classifier confidence; identify direct evidence or document what remains unknown: ${missing.join('; ')}`,
     validation_notes: [String(state.validation).trim() ? `validation evidence available from: ${validationSources.join(', ')}` : 'validation evidence was unavailable'],
     evidence_sources_inspected: evidence,
     contradictions,
     contract_validation: { valid: true, outcome_policy: outcomePolicy, warnings: contract.warnings },
-    confidence_calibration: { outcome: allMet ? 'met' : 'unmet', justification: `JEV confidence threshold=${threshold}; ${missing.length} criteria require attention.` },
+    confidence_calibration: { outcome, justification: `JEV pass threshold=${threshold}; unmet boundary=${goalCheckUnmetThreshold(threshold).toFixed(2)}; ${missing.length} criteria require attention.` },
     classifier: { provider: 'openrouter-decisions', model: result.model, response_time_ms: result.responseTime, usage: result.usage, attempt },
   };
 }

@@ -85,7 +85,7 @@ For the gateway path, worker preflight checks verify gateway URL/key configurati
 | `KASEKI_TASK_ADMISSION_TIMEOUT_MS` | `5000` | integer | Per-attempt timeout for task admission classification. Retryable failures can be attempted up to three times; operational failures are reported as degraded, while deterministic credential and policy checks remain authoritative. |
 | `KASEKI_TASK_ADMISSION_CONFIDENCE` | `0.8` | number | Noul probability required to reject a task for a sensitive condition, and Choice confidence required to reject a high-risk task. |
 | `KASEKI_JEV_WORKFLOW` | `1` | boolean | Use JEV's typed decisions for structured goal-check and run-evaluation routing. Set to `0` to retain the Pi/LLM evaluators. |
-| `KASEKI_JEV_CONFIDENCE` | `0.8` | number | Noul probability threshold for accepting a goal criterion. Choice and Score answers use their returned confidence. |
+| `KASEKI_JEV_CONFIDENCE` | `0.8` | number | Noul probability required to mark a goal criterion met. Above `0.5`, probabilities at or below the complementary threshold are unmet and probabilities between the thresholds remain uncertain. An unresolved uncertain result is surfaced for human review after the configured coding retries. |
 | `KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS` | `15000` | integer | Per-attempt timeout for the JEV goal-check classification request. Retryable failures can be attempted up to three times, so total elapsed time can exceed this value. |
 | `KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS` | `15000` | integer | Per-attempt timeout for the JEV run-evaluation classification request. Retryable failures can be attempted up to three times, so total elapsed time can exceed this value. |
 

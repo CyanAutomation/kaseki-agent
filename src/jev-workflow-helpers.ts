@@ -17,8 +17,15 @@ export interface GoalCriterionAssessment {
   probability: number | null;
   threshold: number;
   applicability: 'applicable' | 'not_applicable' | 'unknown';
-  status: 'met' | 'unmet' | 'not_applicable' | 'unknown';
+  status: 'met' | 'unmet' | 'not_applicable' | 'uncertain' | 'unknown';
   met: boolean;
+  evidence_sources?: string[];
+}
+
+export type GoalCheckOutcome = 'met' | 'unmet' | 'uncertain';
+
+export function goalCheckUnmetThreshold(threshold: number): number {
+  return Math.min(1 - threshold, threshold);
 }
 
 export interface GoalSettingCompaction {
@@ -100,14 +107,41 @@ export function buildGoalCriterionAssessments(
     }
     const answer = answers[id];
     const probability = answer?.type === 'noul' ? answer.noul : null;
+    const unmetThreshold = goalCheckUnmetThreshold(threshold);
     const status = applicability === 'unknown'
       ? 'unknown'
-      : probability === null ? 'unknown' : probability >= threshold ? 'met' : 'unmet';
+      : probability === null ? 'unknown'
+        : probability >= threshold ? 'met'
+          : probability <= unmetThreshold || Math.abs(probability - unmetThreshold) <= Number.EPSILON * 4 ? 'unmet' : 'uncertain';
     return {
       id, criterion, ...(appliesWhen ? { applies_when: appliesWhen } : {}), probability, threshold,
       applicability, status, met: status === 'met',
     };
   });
+}
+
+export function buildGoalCheckOutcome(assessments: GoalCriterionAssessment[]): GoalCheckOutcome {
+  if (assessments.some((assessment) => assessment.status === 'unmet')) return 'unmet';
+  if (assessments.some((assessment) => assessment.status === 'uncertain' || assessment.status === 'unknown')) return 'uncertain';
+  return 'met';
+}
+
+export function selectCriterionEvidenceSources(criterion: string, availableSources: string[]): string[] {
+  const text = criterion.toLowerCase();
+  const relevant = new Set<string>();
+  if (/test|validation|validated|verify|verification|vet|lint|build|command|check/.test(text)) {
+    ['validation.log', 'validation-timings.tsv', 'pre-validation.log', 'pre-validation-timings.tsv'].forEach((source) => relevant.add(source));
+  }
+  if (/diff|file|changed|change|refactor|code|edit|documentation|docs|scope/.test(text)) {
+    ['git.diff', 'changed-files.txt'].forEach((source) => relevant.add(source));
+  }
+  if (/inventory|candidate|rank|rationale|plan|observation|requirement|success criterion/.test(text)) {
+    ['goal-setting.json', 'scouting.json'].forEach((source) => relevant.add(source));
+  }
+  if (relevant.size === 0) {
+    ['goal-setting.json', 'scouting.json', 'git.diff', 'validation.log'].forEach((source) => relevant.add(source));
+  }
+  return availableSources.filter((source) => relevant.has(source));
 }
 
 export function buildGoalCheckQuestions(criteriaInput: Array<string | GoalCriterion>): Record<string, QuestionDefinition> {
