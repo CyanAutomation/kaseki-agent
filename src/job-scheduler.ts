@@ -390,13 +390,13 @@ export class JobScheduler {
       KASEKI_HOST_CACHE_DIR: process.env.KASEKI_HOST_CACHE_DIR || '/agents/kaseki-cache',
     };
 
-    delete env.KASEKI_JEV_TASK_TYPE;
-    delete env.KASEKI_JEV_VALIDATION_FOCUS;
+    delete env.KASEKI_TASK_TYPE_HINT;
+    delete env.KASEKI_VALIDATION_FOCUS_HINT;
     if (job.advisoryRoutingHints) {
       const taskTypeHints = ['feature', 'bug_fix', 'refactor', 'documentation', 'investigation', 'test_only', 'infrastructure'];
       const validationFocusHints = ['unit_tests', 'integration_tests', 'type_and_lint', 'docs_checks', 'repo_defined_checks'];
-      if (taskTypeHints.includes(job.advisoryRoutingHints.taskType)) env.KASEKI_JEV_TASK_TYPE = job.advisoryRoutingHints.taskType;
-      if (validationFocusHints.includes(job.advisoryRoutingHints.validationFocus)) env.KASEKI_JEV_VALIDATION_FOCUS = job.advisoryRoutingHints.validationFocus;
+      if (taskTypeHints.includes(job.advisoryRoutingHints.taskType)) env.KASEKI_TASK_TYPE_HINT = job.advisoryRoutingHints.taskType;
+      if (validationFocusHints.includes(job.advisoryRoutingHints.validationFocus)) env.KASEKI_VALIDATION_FOCUS_HINT = job.advisoryRoutingHints.validationFocus;
     }
 
     // Inspect mode always skips pre-agent validation for speed (fast by default)

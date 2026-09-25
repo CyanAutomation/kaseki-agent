@@ -3,7 +3,7 @@
 
 kaseki_validate_early_provider_configuration() {
   if [ "${KASEKI_PROVIDER:-gateway}" != "gateway" ]; then
-    printf 'Unsupported KASEKI_PROVIDER=%s. Kaseki is gateway-only; the OpenRouter credential is reserved for JEV Decisions evaluation.\n' "${KASEKI_PROVIDER:-}" >&2
+    printf 'Unsupported KASEKI_PROVIDER=%s. Kaseki is gateway-only; the OpenRouter credential is reserved for evaluation stages.\n' "${KASEKI_PROVIDER:-}" >&2
     return 2
   fi
 

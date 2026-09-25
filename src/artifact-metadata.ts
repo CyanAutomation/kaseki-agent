@@ -319,7 +319,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   'goal-check.json': {
     name: 'goal-check.json',
     contentType: 'application/json',
-    description: 'Latest post-validation Pi goal-check verdict',
+    description: 'Latest post-validation goal-check verdict',
     availability: ArtifactAvailability.CONDITIONAL,
     triageOrder: 6,
     sizeHint: 'small',
@@ -365,6 +365,15 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     description: 'Final task-agnostic run evaluation: reviewer confidence, stage value, and Kaseki improvement opportunities',
     availability: ArtifactAvailability.CONDITIONAL,
     triageOrder: 5,
+    sizeHint: 'small',
+  },
+
+  'validation-recovery.json': {
+    name: 'validation-recovery.json',
+    contentType: 'application/json',
+    description: 'Validation failure assessment and the bounded recovery action recorded for the run',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 12,
     sizeHint: 'small',
   },
 

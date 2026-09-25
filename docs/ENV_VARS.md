@@ -49,13 +49,13 @@ Phase targets guide prompt compaction and artifact review. They are reported as 
 
 - **Primary Provider**: `gateway` is used for all agent runs.
 
-OpenRouter is reserved exclusively for JEV Decisions evaluation. Coding-agent inference never receives the OpenRouter credential. Retryable gateway failures are retried against the gateway and reported as gateway failures when exhausted.
+OpenRouter is reserved for evaluation stages. Coding-agent inference never receives this credential. Retryable gateway failures are retried against the gateway and reported as gateway failures when exhausted.
 
 **Startup Behavior:**
 
 - On startup, kaseki-agent logs the active LLM provider (e.g., "Active LLM provider: gateway")
 - Checks are organized by category: active provider, GitHub integration, and platform infrastructure
-- The OpenRouter secret is mounted only for JEV evaluation
+- The OpenRouter secret is mounted only for evaluation stages
 
 **Configuration Guide:**
 
@@ -65,31 +65,54 @@ OpenRouter is reserved exclusively for JEV Decisions evaluation. Coding-agent in
    export KASEKI_PROVIDER=gateway
    export LLM_GATEWAY_URL=https://gateway.example.com/v1
    export LLM_GATEWAY_API_KEY_FILE=/path/to/key
-   # OPENROUTER_API_KEY_FILE is reserved for JEV evaluation.
+   # OPENROUTER_API_KEY_FILE is reserved for evaluation stages.
    ```
 
-For the gateway path, worker preflight checks verify gateway URL/key configuration, worker secret mounting, and Pi provider registration before agent phases start. Set `OPENROUTER_API_KEY_FILE` separately to enable JEV evaluation.
+For the gateway path, worker preflight checks verify gateway URL/key configuration, worker secret mounting, and Pi provider registration before agent phases start. Set `OPENROUTER_API_KEY_FILE` separately to enable evaluation stages. Missing evaluation credentials leave the existing stage fallback behavior in place.
 
 ### API Keys & Credentials
 
 | Variable | Default / Alternative | Type | Purpose |
 | ---------- | --- | --- | --- |
-| `OPENROUTER_API_KEY` | `OPENROUTER_API_KEY_FILE` | string | OpenRouter API key used exclusively for JEV Decisions evaluation. It is never routed to coding-agent inference. Prefer the file-based setting. |
-| `KASEKI_JEV_API_KEY_FILE` | worker-internal mount of `OPENROUTER_API_KEY_FILE` | path | Internal worker path for the same JEV credential; do not configure a second key. |
+| `OPENROUTER_API_KEY` | `OPENROUTER_API_KEY_FILE` | string | OpenRouter API key used for decision evaluation. It is never routed to coding-agent inference. Prefer the file-based setting. |
+| `KASEKI_DECISION_API_KEY_FILE` | worker-internal mount of `OPENROUTER_API_KEY_FILE` | path | Internal worker path for the evaluation credential; do not configure a second key. |
 | `LLM_GATEWAY_URL` | — | string | OpenAI-compatible gateway endpoint (CloudFlare AI Workers, Azure OpenAI, Ollama, etc.). Required for the default `KASEKI_PROVIDER=gateway` path. Example: `https://gateway.ai.cloudflare.com/v1/{account_id}/{namespace}/compat` or `https://api.openai.com/v1`. |
 | `LLM_GATEWAY_API_KEY` | `LLM_GATEWAY_API_KEY_FILE` | string | LLM Gateway API key. Required for the default `KASEKI_PROVIDER=gateway` path. |
 | `KASEKI_GATEWAY_RESPONSE_SMOKE` | production: `true`, test/dev: `false` | boolean | Controls whether `/api/gateway-test` performs a real OpenAI Responses API smoke request with the configured gateway model (default `dynamic/kaseki-agent`). Set `0`, `false`, `off`, or `no` to disable in production; set `1`, `true`, `on`, or `yes` to force-enable in test/dev. |
 | `KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE` | `false` | boolean | Enables Pi provider smoke in non-production environments. In production, Pi provider smoke runs automatically with `/api/gateway-test?stage=2&responseSmoke=true` (no query parameter needed). In development/test, set to `1`, `true`, `on`, or `yes` to enable for controlled testing. Consuming LLM gateway tokens; only enable if you need to test the Pi provider adapter in development. |
 | `KASEKI_PI_PROVIDER_SMOKE_TIMEOUT_MS` | `60000` | integer | Timeout for the opt-in Pi gateway provider smoke test. |
-| `KASEKI_CLASSIFICATION_MODEL` | `~typesafe/jev-latest` | string | JEV/OpenRouter model used by classification smoke tests, task admission and advisory routing, goal checks, and run evaluation. Admission may return task-type and validation-focus hints; they never override explicit commands or block a run. Pin a supported model version after calibrating thresholds. |
+| `KASEKI_DECISION_MODEL` | `~typesafe/latest` | string | Model alias used by Task Admission, Goal Check, Run Evaluation, and validation recovery. The default follows the latest supported release and is intentionally not pinned. |
 | `KASEKI_TASK_ADMISSION_TIMEOUT_MS` | `5000` | integer | Per-attempt timeout for task admission classification. Retryable failures can be attempted up to three times; operational failures are reported as degraded, while deterministic credential and policy checks remain authoritative. |
 | `KASEKI_TASK_ADMISSION_CONFIDENCE` | `0.8` | number | Noul probability required to reject a task for a sensitive condition, and Choice confidence required to reject a high-risk task. |
-| `KASEKI_JEV_WORKFLOW` | `1` | boolean | Use JEV's typed decisions for structured goal-check and run-evaluation routing. Set to `0` to retain the Pi/LLM evaluators. |
-| `KASEKI_JEV_CONFIDENCE` | `0.8` | number | Noul probability required to mark a goal criterion met. Above `0.5`, probabilities at or below the complementary threshold are unmet and probabilities between the thresholds remain uncertain. An unresolved uncertain result is surfaced for human review after the configured coding retries. |
-| `KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS` | `15000` | integer | Per-attempt timeout for the JEV goal-check classification request. Retryable failures can be attempted up to three times, so total elapsed time can exceed this value. |
-| `KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS` | `15000` | integer | Per-attempt timeout for the JEV run-evaluation classification request. Retryable failures can be attempted up to three times, so total elapsed time can exceed this value. |
+| `KASEKI_TYPED_EVALUATION_ENABLED` | `1` in production; `0` with `KASEKI_TEST_MODE=1` | boolean | Use structured decision responses for Goal Check and Run Evaluation. Set to `0` to use the existing Pi evaluation stages. Task Admission remains independently configured. |
+| `KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD` | `0.8` | number | Noul probability required to mark a goal criterion met. Above `0.5`, probabilities at or below the complementary threshold are unmet and probabilities between the thresholds remain uncertain. An unresolved uncertain result is surfaced for human review after the configured coding retries. |
+| `KASEKI_GOAL_CHECK_DECISION_TIMEOUT_MS` | `15000` | integer | Per-attempt request timeout for Goal Check. Retryable failures can be attempted up to three times, so total elapsed time can exceed this value. |
+| `KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS` | `15000` | integer | Per-attempt request timeout for Run Evaluation. Retryable failures can be attempted up to three times, so total elapsed time can exceed this value. |
+| `KASEKI_DECISION_EVALUATOR_PATH` | bundled evaluator | path | Override the bundled evaluator executable path for Goal Check, Run Evaluation, and validation recovery. |
+| `KASEKI_TASK_TYPE_HINT` | unset | enum | Advisory Task Admission hint passed to the agent prompt. It never overrides the task request or repository instructions. |
+| `KASEKI_VALIDATION_FOCUS_HINT` | unset | enum | Advisory Task Admission hint for relevant validation. It never overrides explicit validation commands. |
+| `KASEKI_VALIDATION_RECOVERY_MODE` | `observe` | enum | `off` disables failure assessment, `observe` records a recommendation without retrying, and `auto` permits one safe retry when all local conditions pass. |
+| `KASEKI_VALIDATION_RETRY_SAFE_COMMANDS` | `[]` | JSON array | Exact validation command strings eligible for automatic retry. Commands are not eligible unless explicitly listed. |
+| `KASEKI_VALIDATION_RETRY_CONFIDENCE_THRESHOLD` | `0.9` | number | Minimum confidence required for both the transient-cause assessment and retry recommendation. |
+| `KASEKI_VALIDATION_RECOVERY_DECISION_TIMEOUT_MS` | `15000` | integer | Request timeout for validation failure assessment. |
 
-JEV data handling: task admission sends the requested task fields after local credential screening and common-pattern redaction. Goal checks and run evaluation send goal/scouting artifacts, metadata, failure details, changed paths, a bounded diff, and bounded validation output. These payloads can contain proprietary source code and task text. Redaction covers common credential formats but is not a complete secret scanner; review the applicable OpenRouter and TypeSafe data policies before enabling JEV for sensitive repositories. JEV routing hints and run-evaluation diagnostics are advisory. They do not pause a run or request human input; successful runs continue to the normal PR-stage human review. `KASEKI_JEV_WORKFLOW=0` switches goal-check and run-evaluation back to Pi, while API task admission can still use JEV when its OpenRouter credential is configured.
+Evaluation data handling: Task Admission sends requested task fields after local credential screening and common-pattern redaction. Goal Check and Run Evaluation send goal/scouting artifacts, metadata, failure details, changed paths, a bounded diff, and bounded validation output. Validation recovery sends only the failed command, exit status, and a bounded, redacted excerpt of that command's output. These payloads can include proprietary source code or task text; redaction covers common credential formats but is not a complete secret scanner. Review the applicable OpenRouter data policies before enabling these stages for sensitive repositories. Routing hints and run diagnostics are advisory. Automatic validation recovery never skips a requested check or changes quality or publishing gates; a retry failure remains a validation failure.
+
+### Retired evaluation settings
+
+Remove these names from deployment configuration and use the replacement shown. The worker does not accept runtime aliases for retired names.
+
+| Retired setting | Replacement |
+|---|---|
+| `KASEKI_CLASSIFICATION_MODEL` | `KASEKI_DECISION_MODEL` (keep `~typesafe/latest`) |
+| `KASEKI_JEV_WORKFLOW` | `KASEKI_TYPED_EVALUATION_ENABLED` |
+| `KASEKI_JEV_CONFIDENCE` | `KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD` |
+| `KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS` | `KASEKI_GOAL_CHECK_DECISION_TIMEOUT_MS` |
+| `KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS` | `KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS` |
+| `KASEKI_JEV_WORKFLOW_EVALUATOR` | `KASEKI_DECISION_EVALUATOR_PATH` |
+| `KASEKI_JEV_API_KEY_FILE` | `KASEKI_DECISION_API_KEY_FILE` |
+| `KASEKI_JEV_TASK_TYPE` | `KASEKI_TASK_TYPE_HINT` |
+| `KASEKI_JEV_VALIDATION_FOCUS` | `KASEKI_VALIDATION_FOCUS_HINT` |
 
 | `KASEKI_API_URL` | `http://localhost:8080/api` | string | Client-side base URL used by npm API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
 | `KASEKI_API_KEY` | — | string | Client-side bearer token for authenticated Kaseki API services |

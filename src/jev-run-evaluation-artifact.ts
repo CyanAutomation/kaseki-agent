@@ -28,9 +28,8 @@ export interface RunEvaluationClassification {
   failureDiagnosis?: RunEvaluationFailureDiagnosis;
 }
 
-export interface RunEvaluationClassifierMetadata {
-  provider: string;
-  model: string;
+export interface RunEvaluationMetadata {
+  stage: 'run evaluation';
   responseTime: number;
   usage: Record<string, unknown>;
   answers?: Record<string, ClassificationAnswer>;
@@ -52,7 +51,7 @@ export interface RunEvaluationArtifact extends JsonObject {
   pr_summary: string;
   pr_changes: string[];
   warnings: string[];
-  classifier: RunEvaluationClassifierMetadata;
+  evaluation: RunEvaluationMetadata;
   failure_diagnosis?: { cause: string; recommended_action: string; confidence: number; cause_probabilities: Record<string, number>; action_probabilities: Record<string, number> };
 }
 
@@ -151,7 +150,7 @@ export function buildRunEvaluationEvidenceSources(input: { presentSources: strin
 export function buildRunEvaluationArtifact(
   facts: RunEvaluationFacts,
   classification: RunEvaluationClassification,
-  classifier: RunEvaluationClassifierMetadata,
+  evaluation: RunEvaluationMetadata,
 ): RunEvaluationArtifact {
   const changed = fileCount(facts.changedFiles);
   const hasDiff = Boolean(facts.diff.trim());
@@ -187,7 +186,7 @@ export function buildRunEvaluationArtifact(
     { stage: 'coding', outcome: codingOutcome, evidence: facts.presentSources.filter(source => ['git.diff', 'changed-files.txt'].includes(source)).join(', ') },
     { stage: 'validation', outcome: validation, evidence: facts.validationSources.join(', ') },
     { stage: 'goal-check', outcome: goalCheckOutcome, evidence: facts.presentSources.includes('goal-check.json') ? 'goal-check.json' : '' },
-    { stage: 'run-evaluation', outcome: evaluationOutcome, evidence: 'JEV classifier response' },
+    { stage: 'run-evaluation', outcome: evaluationOutcome, evidence: 'run evaluation result' },
   ];
 
   const phaseScorecard = Object.fromEntries(phases.map(phase => [phase.stage, {
@@ -292,7 +291,7 @@ export function buildRunEvaluationArtifact(
     pr_summary: prSummary,
     pr_changes: [],
     warnings,
-    classifier,
+    evaluation,
     ...(classification.failureDiagnosis ? { failure_diagnosis: {
       cause: classification.failureDiagnosis.cause,
       recommended_action: classification.failureDiagnosis.recommendedAction,

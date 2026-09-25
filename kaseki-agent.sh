@@ -69,6 +69,18 @@ fi
 
 KASEKI_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export KASEKI_SCRIPT_DIR
+RETIRED_EVALUATION_SETTINGS=(
+  KASEKI_JEV_WORKFLOW KASEKI_JEV_CONFIDENCE KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS
+  KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS KASEKI_JEV_WORKFLOW_EVALUATOR
+  KASEKI_CLASSIFICATION_MODEL KASEKI_JEV_API_KEY_FILE KASEKI_JEV_TASK_TYPE
+  KASEKI_JEV_VALIDATION_FOCUS
+)
+for retired_setting in "${RETIRED_EVALUATION_SETTINGS[@]}"; do
+  if [[ -v $retired_setting ]]; then
+    printf 'ERROR: Retired evaluation settings are configured. Remove them and use the stage-based settings documented in docs/ENV_VARS.md.\n' >&2
+    exit 2
+  fi
+done
 KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER="${KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/validation-timeout-policy.sh}"
 if [ ! -r "$KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER" ] && [ -r /app/scripts/validation-timeout-policy.sh ]; then
   KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER="/app/scripts/validation-timeout-policy.sh"
@@ -390,17 +402,21 @@ KASEKI_GOAL_CHECK_MAX_TURNS="${KASEKI_GOAL_CHECK_MAX_TURNS:-12}"
 # target. It is still an advisory target, never a reason to fail a run.
 KASEKI_GOAL_CHECK_CONTRACT_REPAIR_TIMEOUT_SECONDS="${KASEKI_GOAL_CHECK_CONTRACT_REPAIR_TIMEOUT_SECONDS:-60}"
 KASEKI_GOAL_CHECK_CONTRACT_REPAIR_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_CHECK_CONTRACT_REPAIR_MAX_OUTPUT_TOKENS:-768}"
-if [ -z "${KASEKI_JEV_WORKFLOW+x}" ]; then
+if [ -z "${KASEKI_TYPED_EVALUATION_ENABLED+x}" ]; then
   # Existing hermetic orchestration tests use fake Pi binaries and do not
-  # provide a classifier endpoint. Production defaults to the JEV path.
-  KASEKI_JEV_WORKFLOW="$([ "${KASEKI_TEST_MODE:-0}" = "1" ] && printf '0' || printf '1')"
+  # provide an evaluation endpoint. Production enables structured evaluation.
+  KASEKI_TYPED_EVALUATION_ENABLED="$([ "${KASEKI_TEST_MODE:-0}" = "1" ] && printf '0' || printf '1')"
 fi
-KASEKI_JEV_CONFIDENCE="${KASEKI_JEV_CONFIDENCE:-0.8}"
-KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS="${KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS:-15000}"
-KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS="${KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS:-15000}"
-KASEKI_JEV_WORKFLOW_EVALUATOR="${KASEKI_JEV_WORKFLOW_EVALUATOR:-$KASEKI_SCRIPT_DIR/dist/jev-workflow-evaluator.js}"
-if [ ! -r "$KASEKI_JEV_WORKFLOW_EVALUATOR" ] && [ -r /app/dist/jev-workflow-evaluator.js ]; then
-  KASEKI_JEV_WORKFLOW_EVALUATOR="/app/dist/jev-workflow-evaluator.js"
+KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD="${KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD:-0.8}"
+KASEKI_GOAL_CHECK_DECISION_TIMEOUT_MS="${KASEKI_GOAL_CHECK_DECISION_TIMEOUT_MS:-15000}"
+KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS="${KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS:-15000}"
+KASEKI_VALIDATION_RECOVERY_MODE="${KASEKI_VALIDATION_RECOVERY_MODE:-observe}"
+KASEKI_VALIDATION_RETRY_SAFE_COMMANDS="${KASEKI_VALIDATION_RETRY_SAFE_COMMANDS:-[]}"
+KASEKI_VALIDATION_RETRY_CONFIDENCE_THRESHOLD="${KASEKI_VALIDATION_RETRY_CONFIDENCE_THRESHOLD:-0.9}"
+KASEKI_VALIDATION_RECOVERY_DECISION_TIMEOUT_MS="${KASEKI_VALIDATION_RECOVERY_DECISION_TIMEOUT_MS:-15000}"
+KASEKI_DECISION_EVALUATOR_PATH="${KASEKI_DECISION_EVALUATOR_PATH:-$KASEKI_SCRIPT_DIR/dist/jev-workflow-evaluator.js}"
+if [ ! -r "$KASEKI_DECISION_EVALUATOR_PATH" ] && [ -r /app/dist/jev-workflow-evaluator.js ]; then
+  KASEKI_DECISION_EVALUATOR_PATH="/app/dist/jev-workflow-evaluator.js"
 fi
 kaseki_apply_inspect_mode_agent_defaults
 KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-pr}"
@@ -1908,9 +1924,9 @@ write_metadata() {
   "scouting_model": $(printf '%s' "$KASEKI_SCOUTING_MODEL" | json_encode),
   "goal_check_enabled": $([[ "$KASEKI_GOAL_CHECK" == "1" ]] && printf 'true' || printf 'false'),
   "goal_check_model": $(printf '%s' "$KASEKI_GOAL_CHECK_MODEL" | json_encode),
-  "jev_workflow_enabled": $([[ "$KASEKI_JEV_WORKFLOW" == "1" ]] && printf 'true' || printf 'false'),
-  "jev_classifier_model": $(printf '%s' "${KASEKI_CLASSIFICATION_MODEL:-~typesafe/jev-latest}" | json_encode),
-  "jev_confidence_threshold": $KASEKI_JEV_CONFIDENCE,
+  "typed_evaluation_enabled": $([[ "$KASEKI_TYPED_EVALUATION_ENABLED" == "1" ]] && printf 'true' || printf 'false'),
+  "goal_check_confidence_threshold": $KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD,
+  "validation_recovery_mode": $(printf '%s' "$KASEKI_VALIDATION_RECOVERY_MODE" | json_encode),
   "goal_check_max_retries": $KASEKI_GOAL_CHECK_MAX_RETRIES,
   "scouting_validation": {
     "validation_errors_log": "scouting-validation-errors.jsonl",
@@ -2024,8 +2040,6 @@ write_metadata() {
   "actual_model": $(printf '%s' "$ACTUAL_MODEL" | json_encode),
   "scouting_actual_model": $(printf '%s' "$SCOUTING_ACTUAL_MODEL" | json_encode),
   "goal_setting_actual_model": $(printf '%s' "$GOAL_SETTING_ACTUAL_MODEL" | json_encode),
-  "goal_check_actual_model": $(printf '%s' "$GOAL_CHECK_ACTUAL_MODEL" | json_encode),
-  "run_evaluation_actual_model": $(printf '%s' "$RUN_EVALUATION_ACTUAL_MODEL" | json_encode),
   "run_evaluation_warning": $(printf '%s' "$RUN_EVALUATION_WARNING" | json_encode),
   "github_pr_url": $(printf '%s' "$GITHUB_PR_URL" | json_encode),
   "publish_mode": $(printf '%s' "$KASEKI_PUBLISH_MODE" | json_encode),
@@ -5131,6 +5145,7 @@ run_validation_commands() {
   local attempted_var="${12:-VALIDATION_COMMANDS_ATTEMPTED}"
   local -n validation_exit_ref="$exit_var"
   validation_exit_ref=0
+  VALIDATION_FAILED_COMMAND=""
   local -n validation_detail_ref="$detail_var"
   # shellcheck disable=SC2034 # These are reference variables assigned indirectly via function parameters
   local -n validation_reason_ref="$reason_var"
@@ -5195,6 +5210,10 @@ run_validation_commands() {
         trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
         [ -z "$trimmed" ] && continue
         validation_start="$(date +%s)"
+        if [ "$raw_log" != "/dev/null" ]; then
+          : > "$raw_log"
+          chmod 0600 "$raw_log" 2>/dev/null || true
+        fi
         if missing_npm_script="$(missing_npm_script_for_validation_command "$trimmed")"; then
           validation_end="$(date +%s)"
           duration=$((validation_end - validation_start))
@@ -5310,6 +5329,11 @@ run_validation_commands() {
 
         if [ "$validation_infra_failure" = "true" ] && [ "$validation_exit_ref" -eq 0 ]; then
           validation_exit_ref=1
+          VALIDATION_FAILED_COMMAND="$trimmed"
+          if [ "$raw_log" != "/dev/null" ]; then
+            cp -- "$raw_log" "${KASEKI_RESULTS_DIR}/validation-recovery-output.tmp"
+            chmod 0600 "${KASEKI_RESULTS_DIR}/validation-recovery-output.tmp" 2>/dev/null || true
+          fi
           validation_detail_ref="validation infrastructure failure while running \"$trimmed\": command SIGPIPE with tee exit $tee_exit and filter exit $filter_exit"
           validation_reason_ref="validation_infrastructure_failure: $trimmed (command exit $command_exit, tee exit $tee_exit, filter exit $filter_exit)"
           if [ "$KASEKI_VALIDATION_FAIL_FAST" -eq 1 ]; then
@@ -5319,6 +5343,11 @@ run_validation_commands() {
           fi
         elif [ "$command_exit" -ne 0 ] && [ "$validation_exit_ref" -eq 0 ]; then
           validation_exit_ref="$command_exit"
+          VALIDATION_FAILED_COMMAND="$trimmed"
+          if [ "$raw_log" != "/dev/null" ]; then
+            cp -- "$raw_log" "${KASEKI_RESULTS_DIR}/validation-recovery-output.tmp"
+            chmod 0600 "${KASEKI_RESULTS_DIR}/validation-recovery-output.tmp" 2>/dev/null || true
+          fi
           validation_detail_ref="first failing command was \"$trimmed\" with exit $command_exit"
           if [ "$command_exit" -eq 127 ]; then
             {
@@ -7295,24 +7324,23 @@ run_goal_check() {
     return 0
   fi
 
-  if [ "$KASEKI_JEV_WORKFLOW" = "1" ]; then
+  if [ "$KASEKI_TYPED_EVALUATION_ENABLED" = "1" ]; then
     goal_start="$(date +%s)"
-    printf 'Using JEV classifier for goal check (model=%s, threshold=%s).\n' "${KASEKI_CLASSIFICATION_MODEL:-~typesafe/jev-latest}" "$KASEKI_JEV_CONFIDENCE"
-    if [ -r "$KASEKI_JEV_WORKFLOW_EVALUATOR" ] && KASEKI_JEV_CONFIDENCE="$KASEKI_JEV_CONFIDENCE" KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS="$KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS" node "$KASEKI_JEV_WORKFLOW_EVALUATOR" goal-check "$KASEKI_RESULTS_DIR" "$attempt"; then
+    printf 'Evaluating goal criteria (confidence threshold=%s).\n' "$KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD"
+    if [ -r "$KASEKI_DECISION_EVALUATOR_PATH" ] && KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD="$KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD" KASEKI_GOAL_CHECK_DECISION_TIMEOUT_MS="$KASEKI_GOAL_CHECK_DECISION_TIMEOUT_MS" node "$KASEKI_DECISION_EVALUATOR_PATH" goal-check "$KASEKI_RESULTS_DIR" "$attempt"; then
       GOAL_CHECK_EXIT=0
       GOAL_CHECK_MET="$(jq -r 'if .met == true then "true" else "false" end' "$KASEKI_RESULTS_DIR/goal-check.json")"
       GOAL_CHECK_OUTCOME="$(jq -r '.outcome // (if .met == true then "met" else "unmet" end)' "$KASEKI_RESULTS_DIR/goal-check.json")"
       if [ "$GOAL_CHECK_MET" = "true" ]; then GOAL_CHECK_OUTCOME="met"; fi
       GOAL_CHECK_FAILURE_REASON="$(jq -r '.summary // ""' "$KASEKI_RESULTS_DIR/goal-check.json")"
       GOAL_CHECK_RETRY_PROMPT="$(jq -r '.retry_prompt // ""' "$KASEKI_RESULTS_DIR/goal-check.json")"
-      GOAL_CHECK_ACTUAL_MODEL="$(jq -r '.classifier.model // "~typesafe/jev-latest"' "$KASEKI_RESULTS_DIR/goal-check.json")"
       GOAL_CHECK_DURATION_SECONDS=$((GOAL_CHECK_DURATION_SECONDS + $(date +%s) - goal_start))
-      record_stage_timing "goal check" 0 "$(($(date +%s) - goal_start))" "jev=true attempt=$attempt outcome=$GOAL_CHECK_OUTCOME"
-      emit_progress "goal check" "JEV classification completed (outcome=$GOAL_CHECK_OUTCOME)"
+      record_stage_timing "goal check" 0 "$(($(date +%s) - goal_start))" "typed_evaluation=true attempt=$attempt outcome=$GOAL_CHECK_OUTCOME"
+      emit_progress "goal check" "Evaluation completed (outcome=$GOAL_CHECK_OUTCOME)"
       return 0
     fi
-    printf 'JEV goal-check classification failed; using deterministic fallback.\n' >&2
-    degrade_goal_check_evaluator_failure "jev_classifier_unavailable"
+    printf 'Goal-check evaluation failed; using the existing fallback.\n' >&2
+    degrade_goal_check_evaluator_failure "typed_evaluation_unavailable"
     return 0
   fi
 
@@ -7865,23 +7893,22 @@ run_run_evaluation() {
     return 0
   fi
 
-  if [ "$KASEKI_JEV_WORKFLOW" = "1" ]; then
+  if [ "$KASEKI_TYPED_EVALUATION_ENABLED" = "1" ]; then
     evaluation_start="$(date +%s)"
-    emit_progress "run evaluation" "started with JEV classifier"
-    if [ -r "$KASEKI_JEV_WORKFLOW_EVALUATOR" ] && KASEKI_JEV_CONFIDENCE="$KASEKI_JEV_CONFIDENCE" KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS="$KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS" node "$KASEKI_JEV_WORKFLOW_EVALUATOR" run-evaluation "$KASEKI_RESULTS_DIR"; then
+    emit_progress "run evaluation" "started"
+    if [ -r "$KASEKI_DECISION_EVALUATOR_PATH" ] && KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD="$KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD" KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS="$KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS" node "$KASEKI_DECISION_EVALUATOR_PATH" run-evaluation "$KASEKI_RESULTS_DIR"; then
       RUN_EVALUATION_EXIT=0
-      RUN_EVALUATION_ACTUAL_MODEL="$(jq -r '.classifier.model // "~typesafe/jev-latest"' "$RUN_EVALUATION_ARTIFACT")"
       RUN_EVALUATION_DURATION_SECONDS=$((RUN_EVALUATION_DURATION_SECONDS + $(date +%s) - evaluation_start))
-      record_stage_timing "run evaluation" 0 "$(($(date +%s) - evaluation_start))" "jev=true"
-      emit_progress "run evaluation" "JEV classification completed"
+      record_stage_timing "run evaluation" 0 "$(($(date +%s) - evaluation_start))" "typed_evaluation=true"
+      emit_progress "run evaluation" "Evaluation completed"
       collect_run_evaluation_feedback "$INSTANCE_NAME"
       return 0
     fi
     RUN_EVALUATION_EXIT=88
-    RUN_EVALUATION_WARNING="jev_classifier_unavailable"
+    RUN_EVALUATION_WARNING="typed_evaluation_unavailable"
     write_run_evaluation_fallback "$RUN_EVALUATION_WARNING"
-    record_stage_timing "run evaluation" "$RUN_EVALUATION_EXIT" "$(($(date +%s) - evaluation_start))" "jev=true warning=$RUN_EVALUATION_WARNING"
-    emit_progress "run evaluation" "JEV classification unavailable; wrote fallback artifact"
+    record_stage_timing "run evaluation" "$RUN_EVALUATION_EXIT" "$(($(date +%s) - evaluation_start))" "typed_evaluation=true warning=$RUN_EVALUATION_WARNING"
+    emit_progress "run evaluation" "Evaluation unavailable; wrote fallback artifact"
     collect_run_evaluation_feedback "$INSTANCE_NAME"
     return 0
   fi
@@ -8382,14 +8409,16 @@ is_pr_creation_mode() {
 sanitize_pr_metadata_text() {
   tr '\r\n\t' '   ' \
     | tr -cd '\11\12\15\40-\176' \
-    | sed -E 's/(gh[pousr]_[A-Za-z0-9_]+)/[redacted]/g; s/(sk-[A-Za-z0-9_-]+)/[redacted]/g; s/([A-Za-z0-9._%+-]+:x-oauth-basic)/[redacted]/Ig; s/((api|access|auth|bearer|github|openai|secret|token|password|credential)[_-]?(key|token|secret|password)?[[:space:]]*[=:][^[:space:]]+)/[redacted]/Ig' \
+    | sed -E 's/\bJEV[[:space:]-]+classifier\b/evaluation/Ig' \
+    | sed -E 's/\bJEV\b/evaluation/Ig; s/(gh[pousr]_[A-Za-z0-9_]+)/[redacted]/g; s/(sk-[A-Za-z0-9_-]+)/[redacted]/g; s/([A-Za-z0-9._%+-]+:x-oauth-basic)/[redacted]/Ig; s/((api|access|auth|bearer|github|openai|secret|token|password|credential)[_-]?(key|token|secret|password)?[[:space:]]*[=:][^[:space:]]+)/[redacted]/Ig' \
     | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//'
 }
 
 sanitize_pr_body_text() {
   tr '\r' '\n' \
     | tr -cd '\11\12\40-\176' \
-    | sed -E 's/(gh[pousr]_[A-Za-z0-9_]+)/[redacted]/g; s/(sk-[A-Za-z0-9_-]+)/[redacted]/g; s/([A-Za-z0-9._%+-]+:x-oauth-basic)/[redacted]/Ig; s/((api|access|auth|bearer|github|openai|secret|token|password|credential)[_-]?(key|token|secret|password)?[[:space:]]*[=:][^[:space:]]+)/[redacted]/Ig' \
+    | sed -E 's/\bJEV[[:space:]-]+classifier\b/evaluation/Ig' \
+    | sed -E 's/\bJEV\b/evaluation/Ig; s/(gh[pousr]_[A-Za-z0-9_]+)/[redacted]/g; s/(sk-[A-Za-z0-9_-]+)/[redacted]/g; s/([A-Za-z0-9._%+-]+:x-oauth-basic)/[redacted]/Ig; s/((api|access|auth|bearer|github|openai|secret|token|password|credential)[_-]?(key|token|secret|password)?[[:space:]]*[=:][^[:space:]]+)/[redacted]/Ig' \
     | awk '
         {
           sub(/[[:blank:]]+$/, "")
@@ -8442,15 +8471,17 @@ const fs = require('fs');
 try {
   const value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
   const unavailable = value?.evaluation_unavailable === true ||
-    (Array.isArray(value?.warnings) && value.warnings.includes('jev_classifier_unavailable')) ||
+    (Array.isArray(value?.warnings) && (value.warnings.includes('typed_evaluation_unavailable') || value.warnings.includes('jev_classifier_unavailable'))) ||
     value?.overall_assessment === 'unknown';
-  const summary = typeof value?.pr_summary === 'string' ? value.pr_summary.trim() : '';
+  const summary = typeof value?.pr_summary === 'string' ? value.pr_summary.trim()
+    .replace(/\bJEV\s+evaluated\b/gi, 'Run evaluation assessed')
+    .replace(/\bJEV\s+could not\b/gi, 'Evaluation could not') : '';
   const genericSummaries = new Set([
-    'jev evaluated task completion and reviewer confidence from the persisted run artifacts.',
+    'run evaluation assessed task completion and reviewer confidence from the persisted run artifacts.',
     'run evaluation was unavailable; please rely on the summary, validation results, and changed files.',
   ]);
   const generatedEvidenceSummary = /^\d+ changed files? with (?:a persisted diff|no persisted diff); (?:validation was not run|\d+ validation commands (?:passed|failed)); goal check [a-z ]+\.$/i.test(summary);
-  if (!unavailable && !genericSummaries.has(summary.toLowerCase()) && !generatedEvidenceSummary && value && typeof value.pr_summary === 'string') process.stdout.write(value.pr_summary);
+  if (!unavailable && !genericSummaries.has(summary.toLowerCase()) && !generatedEvidenceSummary && value && typeof value.pr_summary === 'string') process.stdout.write(summary);
 } catch {}
 NODE
     )"
@@ -8669,12 +8700,15 @@ const fs = require('fs');
 try {
   const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
   const unavailable = data?.evaluation_unavailable === true || data?.overall_assessment === 'unknown' ||
-    (Array.isArray(data?.warnings) && data.warnings.includes('jev_classifier_unavailable'));
+    (Array.isArray(data?.warnings) && (data.warnings.includes('typed_evaluation_unavailable') || data.warnings.includes('jev_classifier_unavailable')));
   const genericSummaries = new Set([
-    'jev evaluated task completion and reviewer confidence from the persisted run artifacts.',
+    'run evaluation assessed task completion and reviewer confidence from the persisted run artifacts.',
     'run evaluation was unavailable; please rely on the summary, validation results, and changed files.',
   ]);
-  const summaryText = typeof data?.pr_summary === 'string' ? data.pr_summary.trim() : '';
+  const summaryText = typeof data?.pr_summary === 'string' ? data.pr_summary.trim()
+    .replace(/\bJEV\s+evaluated\b/gi, 'Run evaluation assessed')
+    .replace(/\bJEV\s+could not\b/gi, 'Evaluation could not')
+    .replace(/\bJEV\b/gi, 'Evaluation') : '';
   const generatedEvidenceSummary = /^\d+ changed files? with (?:a persisted diff|no persisted diff); (?:validation was not run|\d+ validation commands (?:passed|failed)); goal check [a-z ]+\.$/i.test(summaryText);
   if (unavailable || !summaryText || genericSummaries.has(summaryText.toLowerCase()) || generatedEvidenceSummary) process.exit(0);
   const summary = summaryText.replace(/\s+/g, ' ');
@@ -10879,7 +10913,7 @@ else
       "validation" \
       "$KASEKI_VALIDATION_COMMANDS" \
       "${KASEKI_RESULTS_DIR}"/validation.log \
-      "/dev/null" \
+      "${KASEKI_RESULTS_DIR}/validation-command-output.tmp" \
       "$VALIDATION_TIMINGS_FILE" \
       "${KASEKI_RESULTS_DIR}/validation-env.log" \
       "validation_command_failed"
@@ -10904,7 +10938,7 @@ else
         "validation retry after dependency repair" \
         "$KASEKI_VALIDATION_COMMANDS" \
         "${KASEKI_RESULTS_DIR}"/validation.log \
-        "/dev/null" \
+        "${KASEKI_RESULTS_DIR}/validation-command-output.tmp" \
         "$VALIDATION_TIMINGS_FILE" \
         "${KASEKI_RESULTS_DIR}/validation-env.log" \
         "validation_command_failed"
@@ -10916,7 +10950,60 @@ else
   if [ "$VALIDATION_EXIT" -ne 0 ]; then
     analyze_test_failures_baseline "${KASEKI_RESULTS_DIR}/validation.log" || true
     analyze_validation_failure_causality
+    if [ "$KASEKI_TYPED_EVALUATION_ENABLED" = "1" ] && [ "$KASEKI_VALIDATION_RECOVERY_MODE" != "off" ] && [ -n "$VALIDATION_FAILED_COMMAND" ]; then
+      recovery_start="$(date +%s)"
+      rm -f "${KASEKI_RESULTS_DIR}/validation-recovery.json"
+      set_current_stage "validation recovery"
+      emit_progress "validation recovery" "assessing the failed validation command"
+      KASEKI_FAILED_VALIDATION_COMMAND="$VALIDATION_FAILED_COMMAND" \
+        KASEKI_FAILED_VALIDATION_EXIT_CODE="$VALIDATION_EXIT" \
+        KASEKI_VALIDATION_RECOVERY_MODE="$KASEKI_VALIDATION_RECOVERY_MODE" \
+        KASEKI_VALIDATION_RETRY_SAFE_COMMANDS="$KASEKI_VALIDATION_RETRY_SAFE_COMMANDS" \
+        KASEKI_VALIDATION_RETRY_CONFIDENCE_THRESHOLD="$KASEKI_VALIDATION_RETRY_CONFIDENCE_THRESHOLD" \
+        KASEKI_VALIDATION_RECOVERY_DECISION_TIMEOUT_MS="$KASEKI_VALIDATION_RECOVERY_DECISION_TIMEOUT_MS" \
+        node "$KASEKI_DECISION_EVALUATOR_PATH" validation-recovery "$KASEKI_RESULTS_DIR" || true
+      rm -f "${KASEKI_RESULTS_DIR}/validation-command-output.tmp" "${KASEKI_RESULTS_DIR}/validation-recovery-output.tmp"
+      recovery_reason="$(jq -r '.reason // .status // "unavailable"' "${KASEKI_RESULTS_DIR}/validation-recovery.json" 2>/dev/null || printf 'unavailable')"
+      record_stage_timing "validation recovery" 0 "$(($(date +%s) - recovery_start))" "mode=$KASEKI_VALIDATION_RECOVERY_MODE reason=$recovery_reason"
+
+      if jq -e '.retry_authorized == true' "${KASEKI_RESULTS_DIR}/validation-recovery.json" >/dev/null 2>&1; then
+        original_validation_exit="$VALIDATION_EXIT"
+        original_failed_command="$VALIDATION_FAILED_COMMAND"
+        original_failure_detail="$VALIDATION_FAILED_COMMAND_DETAIL"
+        original_failure_reason="$VALIDATION_FAILURE_REASON"
+        command_fingerprint="$(printf '%s' "$original_failed_command" | sha256sum | awk '{print $1}')"
+        printf '%s\n' "$command_fingerprint" >> "${KASEKI_RESULTS_DIR}/validation-recovery-attempts.txt"
+        chmod 0600 "${KASEKI_RESULTS_DIR}/validation-recovery-attempts.txt" 2>/dev/null || true
+        emit_progress "validation recovery" "retrying the allowlisted validation command once"
+        run_validation_commands \
+          "validation recovery retry" \
+          "$original_failed_command" \
+          "${KASEKI_RESULTS_DIR}/validation.log" \
+          "${KASEKI_RESULTS_DIR}/validation-command-output.tmp" \
+          "$VALIDATION_TIMINGS_FILE" \
+          "${KASEKI_RESULTS_DIR}/validation-env.log" \
+          "validation_command_failed"
+        recovery_retry_exit="$VALIDATION_EXIT"
+        node "$KASEKI_DECISION_EVALUATOR_PATH" record-validation-retry-result "$KASEKI_RESULTS_DIR" "$recovery_retry_exit" || true
+        rm -f "${KASEKI_RESULTS_DIR}/validation-command-output.tmp" "${KASEKI_RESULTS_DIR}/validation-recovery-output.tmp"
+        if [ "$recovery_retry_exit" -eq 0 ]; then
+          VALIDATION_EXIT=0
+          VALIDATION_FAILED_COMMAND=""
+          VALIDATION_FAILED_COMMAND_DETAIL=""
+          VALIDATION_FAILURE_REASON=""
+          emit_progress "validation recovery" "the repeated validation command passed"
+        else
+          VALIDATION_EXIT="$original_validation_exit"
+          VALIDATION_FAILED_COMMAND="$original_failed_command"
+          VALIDATION_FAILED_COMMAND_DETAIL="$original_failure_detail"
+          VALIDATION_FAILURE_REASON="$original_failure_reason"
+          emit_progress "validation recovery" "the repeated validation command failed; validation remains failed"
+        fi
+      fi
+    fi
+    rm -f "${KASEKI_RESULTS_DIR}/validation-command-output.tmp" "${KASEKI_RESULTS_DIR}/validation-recovery-output.tmp"
   fi
+  rm -f "${KASEKI_RESULTS_DIR}/validation-command-output.tmp" "${KASEKI_RESULTS_DIR}/validation-recovery-output.tmp"
 fi
 
 if [ "$VALIDATION_EXIT" -eq 0 ] && [ -f "${KASEKI_RESULTS_DIR}/validation-baseline.log" ] && [ -f "${KASEKI_RESULTS_DIR}/validation.log" ]; then
@@ -10972,7 +11059,7 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && \
       GOAL_CHECK_FAILURE_REASON=""
       GOAL_CHECK_RETRY_PROMPT=""
       GOAL_CHECK_EVALUATION_WARNING="goal_check_uncertain_review_required"
-      emit_error_event "goal_check_uncertain" "JEV could not classify every success criterion with sufficient confidence after $GOAL_CHECK_ATTEMPTS attempt(s); quality checks passed and validation exited $VALIDATION_EXIT, so the result is available for human review." "continue"
+      emit_error_event "goal_check_uncertain" "Goal check could not assess every success criterion with sufficient confidence after $GOAL_CHECK_ATTEMPTS attempt(s); quality checks passed and validation exited $VALIDATION_EXIT, so the result is available for human review." "continue"
       emit_progress "goal check" "uncertain after retries; human review required"
     else
       STATUS=8
@@ -11033,7 +11120,7 @@ fi
 
 run_secret_scan
 
-# Publish the complete validation and timing snapshot before JEV reads its
+# Publish the complete validation and timing snapshot before run evaluation reads its
 # evidence. The final consolidation below adds the evaluator and publication
 # phases after they have run.
 consolidate_timings_to_json "${KASEKI_RESULTS_DIR}/timings-manifest.json" "$VALIDATION_TIMINGS_FILE" "$PRE_VALIDATION_TIMINGS_FILE" "${KASEKI_RESULTS_DIR}/stage-timings.tsv"

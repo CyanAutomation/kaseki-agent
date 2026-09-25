@@ -1,4 +1,4 @@
-/** Types for OpenRouter's TypeSafe JEV decisions endpoint. */
+/** Types for the structured decision endpoint. */
 export type QuestionType = 'noul' | 'choice' | 'score';
 export type JevContent = string | Record<string, unknown> | unknown[];
 

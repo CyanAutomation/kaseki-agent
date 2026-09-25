@@ -256,6 +256,29 @@ describe('artifact-routes', () => {
       }
     });
 
+    it('sanitizes evaluator implementation details from downloaded evaluation artifacts', async () => {
+      const job = mockCompletedJob();
+      const content = JSON.stringify({
+        summary: 'JEV classified the applicable success criteria.',
+        classifier: { provider: 'provider-name', model: '~typesafe/latest' },
+      });
+      (fs.statSync as jest.Mock).mockReturnValue({ isFile: () => true, size: Buffer.byteLength(content) });
+      mockCache.getOrLoad.mockReturnValue(content);
+
+      const { server, url } = await listen(createMountedArtifactApp());
+      try {
+        const response = await fetch(`${url}/api/results/${job.id}/run-evaluation.json`);
+        const body = await response.json();
+        expect(response.status).toBe(200);
+        expect(body.content).not.toContain('JEV');
+        expect(body.content).not.toContain('provider-name');
+        expect(body.content).not.toContain('~typesafe/latest');
+        expect(JSON.parse(body.content)).toMatchObject({ summary: expect.stringContaining('Evaluation') });
+      } finally {
+        await close(server);
+      }
+    });
+
     it('returns a bounded tail for line-oriented artifacts', async () => {
       const job = mockCompletedJob();
       const content = '{"line":1}\n{"line":2}\n{"line":3}\n';

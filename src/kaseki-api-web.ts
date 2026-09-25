@@ -1443,7 +1443,7 @@ const controllerPage = String.raw`<!doctype html>
             <button class="health-check-button" data-probe="/health" type="button" title="Check basic controller health status"><span class="hc-label">System Status</span><span class="health-check-status" data-status="health"></span></button>
             <button class="health-check-button" data-probe="/ready" type="button" title="Verify the controller is ready to accept tasks"><span class="hc-label">Readiness</span><span class="health-check-status" data-status="readiness"></span></button>
             <button class="health-check-button" data-probe="/api/gateway-test?stage=1" data-auth="true" type="button" title="Validate API gateway connection and authentication"><span class="hc-label">API Connection</span><span class="health-check-status" data-status="gateway"></span></button>
-            <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&classification=true" data-auth="true" data-cost-warning="true" type="button" title="Test AI model inference and compatibility (uses tokens)"><span class="hc-label">AI Model Test</span><span class="health-check-status" data-status="llm-test"></span></button>
+            <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&evaluation=true" data-auth="true" data-cost-warning="true" type="button" title="Test AI model inference and evaluation capability (uses tokens)"><span class="hc-label">AI Model Test</span><span class="health-check-status" data-status="llm-test"></span></button>
             <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button" title="Run complete live controller diagnostics"><span class="hc-label">Live preflight</span><span class="health-check-status" data-status="preflight"></span></button>
           </div>
           <p id="diagnostic-queue-state" class="field-helper" role="status" aria-live="polite">Diagnostics are ready.</p>
@@ -2828,7 +2828,7 @@ const controllerPage = String.raw`<!doctype html>
             const timing = payload.modelTest || {};
             const streamOk = payload.streamSmokeValidated === true;
             const largeOk = payload.largePromptSmokeValidated === true;
-            const classifyMs = timing.classificationMs;
+            const evaluationMs = timing.evaluationMs;
             const coverage = [
               streamOk ? 'stream ok' : '',
               largeOk ? 'large ok' : '',
@@ -2838,7 +2838,7 @@ const controllerPage = String.raw`<!doctype html>
               : payload.status === 'ok'
               ? 'gateway ' + (timing.gatewayInferenceMs || responseTime) + 'ms'
                 + (timing.piAdapterMs != null ? ' · Pi ' + timing.piAdapterMs + 'ms' : '')
-                + (classifyMs != null ? ' · classify ' + classifyMs + 'ms' : '')
+                + (evaluationMs != null ? ' · evaluation ' + evaluationMs + 'ms' : '')
                 + (timing.endToEndMs ? ' · total ' + timing.endToEndMs + 'ms' : '')
                 + (outputTokens ? ' · ' + outputTokens + ' tokens' : ' · tokens unavailable')
                 + (coverage ? ' ' + coverage : '')
@@ -2854,11 +2854,11 @@ const controllerPage = String.raw`<!doctype html>
               setResponseSummary('Gateway passed. Pi provider adapter smoke was skipped; run production check with piProvider=true.');
             } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'ok') {
               let msg = 'Gateway and Pi provider adapter passed.';
-              if (payload.classificationSmoke) {
-                if (payload.classificationSmoke.status === 'ok') {
-                  msg += ' Classification smoke passed.';
-                } else if (payload.classificationSmoke.status === 'error') {
-                  msg += ' Classification smoke failed: ' + (payload.classificationSmoke.detail || 'Unknown error');
+              if (payload.evaluationSmoke) {
+                if (payload.evaluationSmoke.status === 'ok') {
+                  msg += ' Evaluation stage check passed.';
+                } else if (payload.evaluationSmoke.status === 'error') {
+                  msg += ' Evaluation stage check failed: ' + (payload.evaluationSmoke.detail || 'Unknown error');
                 }
               }
               setResponseSummary(msg);
@@ -2890,10 +2890,10 @@ const controllerPage = String.raw`<!doctype html>
               
               diagnosticMsg += '  Remediation: ' + (payload.piProviderSmoke.remediation || 'Check gateway configuration and Pi provider registration');
               
-              if (payload.classificationSmoke) {
-                diagnosticMsg += '\n\n  Classification smoke: ' + (payload.classificationSmoke.status || 'unknown');
-                if (payload.classificationSmoke.detail) {
-                  diagnosticMsg += ' - ' + payload.classificationSmoke.detail;
+              if (payload.evaluationSmoke) {
+                diagnosticMsg += '\n\n  Evaluation stage check: ' + (payload.evaluationSmoke.status || 'unknown');
+                if (payload.evaluationSmoke.detail) {
+                  diagnosticMsg += ' - ' + payload.evaluationSmoke.detail;
                 }
               }
               

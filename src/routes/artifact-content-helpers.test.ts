@@ -19,9 +19,49 @@ import {
   asObjectArray,
   extractOpportunities,
   buildMarkdownContent,
+  sanitizeEvaluationArtifactContent,
 } from './artifact-content-helpers';
 
 describe('artifact-content-helpers', () => {
+  describe('sanitizeEvaluationArtifactContent', () => {
+    test('removes evaluator implementation metadata and rewrites legacy stage copy for external responses', () => {
+      const content = JSON.stringify({
+        summary: 'JEV classified the applicable success criteria.',
+        pr_summary: 'JEV evaluated task completion and reviewer confidence from the persisted run artifacts.',
+        classifier: { provider: 'provider-name', model: '~typesafe/latest' },
+        warnings: ['jev_classifier_unavailable'],
+        goal_check_actual_model: '~typesafe/latest',
+      });
+
+      const sanitized = sanitizeEvaluationArtifactContent('run-evaluation.json', content);
+      expect(sanitized).not.toContain('JEV');
+      expect(sanitized).not.toContain('provider-name');
+      expect(sanitized).not.toContain('~typesafe/latest');
+      expect(sanitized).toContain('Evaluation');
+      expect(sanitized).toContain('Run evaluation assessed task completion');
+      expect(sanitized).not.toContain('Evaluation evaluated');
+      expect(sanitized).toContain('typed_evaluation_unavailable');
+    });
+
+    test('leaves unrelated artifacts untouched', () => {
+      const content = '{"message":"preserve"}';
+      expect(sanitizeEvaluationArtifactContent('validation.log', content)).toBe(content);
+    });
+
+    test('removes retired evaluation metadata from legacy run metadata responses', () => {
+      const content = JSON.stringify({
+        jev_classifier_model: '~typesafe/latest',
+        goal_check_actual_model: '~typesafe/latest',
+        provider: 'gateway',
+      });
+      const sanitized = sanitizeEvaluationArtifactContent('metadata.json', content);
+      expect(sanitized).not.toContain('jev_');
+      expect(sanitized).not.toContain('goal_check_actual_model');
+      expect(sanitized).not.toContain('~typesafe/latest');
+      expect(JSON.parse(sanitized)).toEqual({ provider: 'gateway' });
+    });
+  });
+
   // ===== artifactContentType Tests =====
   describe('artifactContentType', () => {
     test('should return content type from metadata registry', () => {
