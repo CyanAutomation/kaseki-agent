@@ -12,6 +12,18 @@ fail() {
   if [ -n "${RUN_LOG:-}" ] && [ -f "$RUN_LOG" ]; then
     tail -120 "$RUN_LOG" >&2 || true
   fi
+  for artifact in goal-check-validation-errors.jsonl goal-check-validation-reason.txt goal-check.json metadata.json; do
+    if [ -n "${RESULTS_DIR:-}" ] && [ -f "$RESULTS_DIR/$artifact" ]; then
+      printf '\n--- %s ---\n' "$artifact" >&2
+      if [[ "$artifact" == *.jsonl ]]; then
+        tail -20 "$RESULTS_DIR/$artifact" >&2 || true
+      elif [[ "$artifact" == *.txt ]]; then
+        cat "$RESULTS_DIR/$artifact" >&2 || true
+      else
+        jq '{met, outcome, evaluation_unavailable, summary, retry_prompt, goal_check_outcome, goal_check_met, goal_check_evaluation_warning}' "$RESULTS_DIR/$artifact" >&2 || true
+      fi
+    fi
+  done
   exit 1
 }
 
@@ -26,6 +38,8 @@ setup_case() {
   EXPECTED_FAILED_COMMAND="$8"
   KASEKI_ALLOW_EMPTY_DIFF_CASE="$9"
   TASK_PROMPT_CASE="${10:-inspect then code}"
+  GOAL_CHECK_VERDICT_CASE="${11:-}"
+  EXPECTED_GOAL_CHECK_OUTCOME="${12:-unset}"
 
   CASE_DIR="$TMP_ROOT/$CASE_NAME"
   FAKE_REPO="$CASE_DIR/fake-repo"
@@ -87,7 +101,11 @@ elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   fi
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "$PI_CALLS"
-  printf '%s\n' '{"met":true,"confidence":"high","summary":"done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[],"evidence_sources_inspected":["critical-change-expectations.json","changed-files.txt","git.diff"],"contradictions":[],"confidence_calibration":{"outcome":"met","justification":"The critical-change evidence satisfies the task contract.","objective_outcome":"met","calibrated":true,"reason":"The critical-change evidence satisfies the task contract."}}' > "$RESULTS_DIR/goal-check-candidate.json"
+  if [ -n "\${KASEKI_TEST_GOAL_CHECK_VERDICT:-}" ]; then
+    printf '%s\n' "\$KASEKI_TEST_GOAL_CHECK_VERDICT" > "$RESULTS_DIR/goal-check-candidate.json"
+  else
+    printf '%s\n' '{"met":true,"confidence":"high","summary":"done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[],"evidence_sources_inspected":["critical-change-expectations.json","changed-files.txt","git.diff"],"contradictions":[],"confidence_calibration":{"outcome":"met","justification":"The critical-change evidence satisfies the task contract.","objective_outcome":"met","calibrated":true,"reason":"The critical-change evidence satisfies the task contract."}}' > "$RESULTS_DIR/goal-check-candidate.json"
+  fi
 else
   printf 'coding\n' >> "$PI_CALLS"
   printf '%s' "\$prompt" > "$RESULTS_DIR/coding-prompt.txt"
@@ -118,6 +136,7 @@ EOF_VALIDATION_FILTER
 
   set +e
   env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="$TASK_PROMPT_CASE" \
+    KASEKI_TEST_GOAL_CHECK_VERDICT="$GOAL_CHECK_VERDICT_CASE" \
     KASEKI_PROVIDER=openrouter OPENROUTER_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off KASEKI_GOAL_CHECK_MAX_RETRIES=1 KASEKI_HASHLINE_EDITS=0 KASEKI_BASELINE_VALIDATION_ENABLED=0 KASEKI_JEV_WORKFLOW=0 \
     KASEKI_WORKSPACE_DIR="$CASE_DIR" \
     KASEKI_DEPENDENCY_CACHE_DIR="$CASE_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$CASE_DIR/image-cache" \
@@ -136,14 +155,17 @@ EOF_VALIDATION_FILTER
   fi
   [ -s "$RESULTS_DIR/critical-change-expectations.json" ] || fail "$CASE_NAME missing expectation artifact"
   [ -s "$RESULTS_DIR/metadata.json" ] || fail "$CASE_NAME missing metadata artifact"
-  node - "$RESULTS_DIR/metadata.json" "$EXPECTED_GOAL_CHECK_MET" "$EXPECTED_GOAL_CHECK_ATTEMPTS" "$EXPECTED_FAILED_COMMAND" <<'NODE' || fail "$CASE_NAME metadata goal-check state was incorrect"
+  node - "$RESULTS_DIR/metadata.json" "$EXPECTED_GOAL_CHECK_MET" "$EXPECTED_GOAL_CHECK_ATTEMPTS" "$EXPECTED_FAILED_COMMAND" "$EXPECTED_GOAL_CHECK_OUTCOME" <<'NODE' || fail "$CASE_NAME metadata goal-check state was incorrect"
 const fs = require('node:fs');
-const [metadataPath, expectedMetRaw, expectedAttemptsRaw, expectedFailedCommand] = process.argv.slice(2);
+const [metadataPath, expectedMetRaw, expectedAttemptsRaw, expectedFailedCommand, expectedOutcome] = process.argv.slice(2);
 const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
 const expectedMet = expectedMetRaw === 'true';
 const expectedAttempts = Number(expectedAttemptsRaw);
   if (expectedMetRaw !== 'unset' && metadata.goal_check_met !== expectedMet) {
     throw new Error(`expected goal_check_met=${expectedMet}, got ${metadata.goal_check_met}`);
+  }
+  if (expectedOutcome !== 'unset' && metadata.goal_check_outcome !== expectedOutcome) {
+    throw new Error(`expected goal_check_outcome=${JSON.stringify(expectedOutcome)}, got ${JSON.stringify(metadata.goal_check_outcome)}`);
   }
   if (expectedAttemptsRaw !== 'unset' && metadata.goal_check_attempts !== expectedAttempts) {
     throw new Error(`expected goal_check_attempts=${expectedAttempts}, got ${metadata.goal_check_attempts}`);
@@ -217,6 +239,25 @@ present_expectation='{"task":"inspect","requirements":[],"relevant_files":[],"ob
 setup_case "present" "$present_expectation" "printf 'MAGIC_EXPECTED_STRING\n' > '__WORKSPACE_REPO__/target.txt'" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0
 grep -q 'verification passed' "$RESULTS_DIR/critical-change-verification.log" || fail "present case did not pass verification"
 grep -q '^goal-check$' "$PI_CALLS" || fail "present case did not invoke goal-check"
+
+# Failed verification attempts must remain tied to their checked diff. When a
+# retry satisfies the exact marker, the earlier failure must not survive as
+# the final run's diagnostic.
+retry_search_expectation='{"task":"update target","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":["**"]},"critical_change_expectations":{"required_files":["target.txt"],"required_search_strings":["REQUIRED_MARKER"],"forbidden_empty_diff":true}}'
+retry_search_action="if ! grep -q 'attempt-one' '__WORKSPACE_REPO__/target.txt'; then printf 'attempt-one change\n' > '__WORKSPACE_REPO__/target.txt'; else printf 'final REQUIRED_MARKER\n' > '__WORKSPACE_REPO__/target.txt'; fi"
+setup_case "recovered-required-search" "$retry_search_expectation" "$retry_search_action" 0 $'goal-setting\nscouting\ncoding\ncoding\ngoal-check' true 2 "" 1
+grep -q 'required search string missing from git.diff: REQUIRED_MARKER' "$RESULTS_DIR/critical-change-verification.log" || fail "recovered-required-search did not retain the failed attempt diagnostic"
+grep -q 'verification passed' "$RESULTS_DIR/critical-change-verification.log" || fail "recovered-required-search did not record its passing attempt"
+[ "$(grep -c 'diff_sha256=' "$RESULTS_DIR/critical-change-verification.log")" -ge 2 ] || fail "recovered-required-search did not associate each check with a diff hash"
+node - "$RESULTS_DIR/metadata.json" <<'NODE' || fail "recovered-required-search retained a stale critical-change failure"
+const metadata = JSON.parse(require('node:fs').readFileSync(process.argv[2], 'utf8'));
+if (metadata.critical_change_failure_reason) throw new Error(metadata.critical_change_failure_reason);
+NODE
+
+uncertain_goal_check='{"met":false,"outcome":"uncertain","confidence":"medium","summary":"JEV could not establish whether all criteria are satisfied.","evidence":["git.diff","validation.log"],"missing":["Criterion evidence remains uncertain."],"retry_prompt":"Review the criterion against the final diff and validation output.","validation_notes":[],"evidence_sources_inspected":["goal-setting.json","git.diff","validation.log"],"contradictions":[],"confidence_calibration":{"outcome":"uncertain","justification":"No criterion is confidently unmet, but the evidence does not meet the pass threshold."}}'
+setup_case "uncertain-goal-check" "$present_expectation" "printf 'updated MAGIC_EXPECTED_STRING\n' > '__WORKSPACE_REPO__/target.txt'" 0 $'goal-setting\nscouting\ncoding\ngoal-check\ncoding\ngoal-check' false 2 "" 0 "" "$uncertain_goal_check" uncertain
+grep -q 'Goal Check: Uncertain (confidence: medium)' "$RESULTS_DIR/result-summary.md" || fail "uncertain-goal-check was not reported as uncertain"
+grep -q 'review' "$RESULTS_DIR/progress.jsonl" || fail "uncertain-goal-check did not leave a review indication"
 
 # A marker copied from baseline source is commonly a "before" refactor value.
 # It must not remain a required post-change diff marker.
