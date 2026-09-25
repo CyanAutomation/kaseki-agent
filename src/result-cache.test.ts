@@ -18,17 +18,13 @@ describe('ResultCache', () => {
     fs.rmSync(testDir, { recursive: true, force: true });
   });
 
-  test('API contract: cache miss returns null and increments miss counter', () => {
-    const statsBefore = cache.getStats();
-
-    const content = cache.getOrLoad('/non/existent/file');
-
-    expect(content).toBeNull();
-    const statsAfter = cache.getStats();
-    expect(statsAfter.misses).toBe(statsBefore.misses + 1);
+  test('returns null and records every miss for a missing file', () => {
+    expect(cache.getOrLoad('/non/existent/file')).toBeNull();
+    expect(cache.getOrLoad('/non/existent/file')).toBeNull();
+    expect(cache.getStats()).toMatchObject({ entries: 0, hits: 0, misses: 2 });
   });
 
-  test('returns cached content on cache hit', () => {
+  test('loads content on a miss and returns it from cache on a hit', () => {
     const initialContent = cache.getOrLoad(testFile);
     expect(initialContent).toBe('test content');
 
@@ -36,7 +32,7 @@ describe('ResultCache', () => {
     expect(cachedContent).toBe('test content');
 
     const stats = cache.getStats();
-    expect(stats.hits).toBe(1);
+    expect(stats).toMatchObject({ entries: 1, hits: 1, misses: 1 });
   });
 
   test('evicts oldest entry when cache is full', () => {
