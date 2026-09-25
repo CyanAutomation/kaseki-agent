@@ -1,23 +1,18 @@
 /**
- * Hybrid code summarizer dispatcher
- * Uses TypeScript Compiler API for TS/JS files (pure JavaScript, no native deps)
- * Uses tree-sitter CLI for Go files (subprocess, no Node binding issues)
- * Works with Node 24 and ARM64/Raspberry Pi
+ * Code summarizer using the TypeScript Compiler API for TypeScript and JavaScript.
  */
 import { SupportedLanguage } from './summarizer-config';
 import { TypeScriptCompilerSummarizer } from './typescript-compiler-summarizer';
-import { GoCliSummarizer } from './go-cli-summarizer';
 
 export interface CodeElement {
   name: string;
   signature: string;
-  kind: 'class' | 'function' | 'method' | 'type' | 'interface' | 'struct';
+  kind: 'class' | 'function' | 'method' | 'type' | 'interface';
   line?: number;
 }
 
 export interface CodeSummary {
   language: SupportedLanguage;
-  packageName?: string;
   imports: Array<{ module: string; items: string[] }>;
   exports: Array<{ name: string; kind: string }>;
   classes: Array<{ name: string; methods: CodeElement[] }>;
@@ -29,56 +24,22 @@ export interface CodeSummary {
   summaryTimeMs: number;
 }
 
-/**
- * Hybrid summarizer that dispatches to appropriate backend
- * - TypeScript Compiler API for TypeScript/JavaScript
- * - tree-sitter CLI for Go
- */
-export class TreeSitterSummarizer {
+export class CodeSummarizer {
   private language: SupportedLanguage;
-  private tsCompilerSummarizer: TypeScriptCompilerSummarizer | null = null;
-  private goCliSummarizer: GoCliSummarizer | null = null;
+  private tsCompilerSummarizer: TypeScriptCompilerSummarizer;
 
   constructor(language: SupportedLanguage = 'typescript') {
     this.language = language;
-
-    // Initialize appropriate backend based on language
-    if (language === 'typescript' || language === 'javascript') {
-      this.tsCompilerSummarizer = new TypeScriptCompilerSummarizer(language);
-    } else if (language === 'go') {
-      this.goCliSummarizer = new GoCliSummarizer(language);
-    }
+    this.tsCompilerSummarizer = new TypeScriptCompilerSummarizer(language);
   }
 
   /**
    * Summarize code content into code structure
-   * For TS/JS: content is the file content string
-   * For Go: content is the file content string (internally creates temp file if needed)
+   * The content is the file content string.
    */
   summarize(content: string, timeoutMs: number = 200): CodeSummary {
     try {
-      if (this.language === 'go' && this.goCliSummarizer) {
-        // For Go, pass content directly - GoCliSummarizer handles temp file creation
-        return this.goCliSummarizer.summarize(content, timeoutMs);
-      } else if ((this.language === 'typescript' || this.language === 'javascript') && this.tsCompilerSummarizer) {
-        // For TS/JS, the parameter is file content
-        return this.tsCompilerSummarizer.summarize(content, timeoutMs);
-      } else {
-        // Unsupported language
-        const originalSize = Buffer.byteLength(content, 'utf-8');
-        return {
-          language: this.language,
-          imports: [],
-          exports: [],
-          classes: [],
-          functions: [],
-          types: [],
-          interfaces: [],
-          parseError: `Unsupported language: ${this.language}`,
-          originalSizeBytes: originalSize,
-          summaryTimeMs: 0,
-        };
-      }
+      return this.tsCompilerSummarizer.summarize(content, timeoutMs);
     } catch (error) {
       const originalSize = Buffer.byteLength(content, 'utf-8');
       return {
@@ -134,7 +95,7 @@ export class TreeSitterSummarizer {
       output += '\n';
     }
 
-    // Classes/Structs
+    // Classes
     if (summary.classes.length > 0) {
       output += '## Classes\n';
       for (const cls of summary.classes) {

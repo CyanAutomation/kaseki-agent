@@ -2,14 +2,14 @@
  * Smart thresholding logic for determining when to summarize vs full read
  * Strategy: Small files → full, Large supported files → summary, Unsupported/parse-fail → full
  */
-import { SupportedLanguage, SummarizerConfig } from './summarizer-config';
+import { DetectedLanguage, SupportedLanguage, SummarizerConfig } from './summarizer-config';
 
 export type ReadStrategy = 'full' | 'summary';
 
 export interface StrategyContext {
   filePath: string;
   sizeBytes: number;
-  language: SupportedLanguage | 'unknown';
+  language: DetectedLanguage;
   config: SummarizerConfig;
   parseError?: string;
   isDraft?: boolean; // True if Pi is about to edit (should read full for correctness)
@@ -82,10 +82,10 @@ export function getReadStrategy(context: StrategyContext): StrategyResult {
 /**
  * Detect language from file extension
  */
-export function detectLanguage(filePath: string): SupportedLanguage | 'unknown' {
+export function detectLanguage(filePath: string): DetectedLanguage {
   const ext = filePath.toLowerCase().split('.').pop() || '';
 
-  const languageMap: Record<string, SupportedLanguage> = {
+  const languageMap: Record<string, DetectedLanguage> = {
     ts: 'typescript',
     tsx: 'typescript',
     js: 'javascript',
@@ -95,4 +95,3 @@ export function detectLanguage(filePath: string): SupportedLanguage | 'unknown' 
 
   return languageMap[ext] || 'unknown';
 }
-

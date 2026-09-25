@@ -1,10 +1,10 @@
 /**
  * File reading wrapper with smart summarization
- * Integrates tree-sitter summarization, caching, and smart thresholding
+ * Integrates structural summarization, caching, and smart thresholding
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { TreeSitterSummarizer } from '../summarization/tree-sitter-summarizer';
+import { CodeSummarizer } from '../summarization/code-summarizer';
 import { SummaryCache } from '../summarization/summary-cache';
 import { SummarizerConfig, getConfig } from '../summarization/summarizer-config';
 import { getReadStrategy, detectLanguage, StrategyContext, ReadStrategy } from '../summarization/read-strategy';
@@ -42,7 +42,7 @@ export interface ReadMetrics {
   compressionRatio: number;
   parseTimeMs: number;
   cacheHit: boolean;
-  decisionPath: 'cache_hit' | 'full_read' | 'tree_sitter' | 'error';
+  decisionPath: 'cache_hit' | 'full_read' | 'structural_summary' | 'error';
   estimatedTokensFull: number;
   estimatedTokensReturned: number;
   estimatedTokensSaved: number;
@@ -55,7 +55,7 @@ export interface ReadResult {
 }
 
 let cache: SummaryCache | null = null;
-let summarizer: TreeSitterSummarizer | null = null;
+let summarizer: CodeSummarizer | null = null;
 let config: SummarizerConfig | null = null;
 
 function getCache(): SummaryCache {
@@ -71,14 +71,14 @@ function getCache(): SummaryCache {
   return cache;
 }
 
-function getSummarizer(language: string): TreeSitterSummarizer | null {
+function getSummarizer(language: string): CodeSummarizer | null {
   try {
     if (!summarizer) {
       const cfg = getConfig();
       if (!cfg.supportedLanguages.includes(language as any)) {
         return null;
       }
-      summarizer = new TreeSitterSummarizer(language as any);
+      summarizer = new CodeSummarizer(language as any);
     }
     return summarizer;
   } catch {
@@ -264,8 +264,8 @@ async function attemptSummarization(
     const parseTime = performance.now() - startTime;
     return {
       content: markdown,
-      decisionPath: 'tree_sitter',
-      metrics: createMetrics(strategy, strategyReason, language, fullSizeBytes, returnedSize, parseTime, false, 'tree_sitter'),
+      decisionPath: 'structural_summary',
+      metrics: createMetrics(strategy, strategyReason, language, fullSizeBytes, returnedSize, parseTime, false, 'structural_summary'),
     };
   } catch (error) {
     // Summarization failed - fallback to full

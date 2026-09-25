@@ -104,7 +104,7 @@ describe('ReadStrategy', () => {
 
   describe('Language Support', () => {
     it('should prefer summary for supported languages', () => {
-      const languages = ['typescript', 'javascript', 'go'] as const;
+      const languages = ['typescript', 'javascript'] as const;
       for (const lang of languages) {
         const context = {
           filePath: '/test/file.ts',
@@ -127,6 +127,18 @@ describe('ReadStrategy', () => {
       const strategy = getReadStrategy(context);
       expect(strategy.strategy).toBe('full');
       expect(strategy.reason).toContain('language');
+    });
+
+    it('should prefer full read for Go files', () => {
+      const context = {
+        filePath: '/test/file.go',
+        sizeBytes: 50000,
+        language: 'go' as const,
+        config,
+      };
+      const strategy = getReadStrategy(context);
+      expect(strategy.strategy).toBe('full');
+      expect(strategy.reason).toBe('Unsupported language: go');
     });
   });
 

@@ -5,7 +5,7 @@
  */
 import * as ts from 'typescript';
 import { SupportedLanguage } from './summarizer-config';
-import type { CodeElement, CodeSummary } from './tree-sitter-summarizer';
+import type { CodeElement, CodeSummary } from './code-summarizer';
 
 export class TypeScriptCompilerSummarizer {
   private language: SupportedLanguage;

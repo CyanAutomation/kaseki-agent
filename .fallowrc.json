@@ -29,11 +29,7 @@
     "unused-dependencies": "warn"
   },
   "ignoreDependencies": [
-    "@earendil-works/pi-coding-agent",
-    "tree-sitter-cli",
-    "tree-sitter-go",
-    "tree-sitter-typescript",
-    "tree-sitter"
+    "@earendil-works/pi-coding-agent"
   ],
   "usedClassMembers": [
     "execute",
