@@ -30,6 +30,16 @@ production_files=(
 )
 production_files+=(scripts/*.sh)
 production_files+=(scripts/lib/*.sh)
+
+# Guard the expectation itself: an unmatched glob would otherwise be logged as
+# a literal argument and could accidentally mirror the same bug in the wrapper.
+for file in "${production_files[@]}"; do
+  if [ ! -f "$file" ]; then
+    printf 'expected production glob to expand to a file, got %q\n' "$file" >&2
+    exit 1
+  fi
+done
+
 test_files=()
 while IFS= read -r -d '' file; do
   test_files+=("$file")
