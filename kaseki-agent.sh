@@ -9288,18 +9288,20 @@ run_github_operations() {
   GITHUB_OPERATION_PHASE="token_generation"
   printf 'Generating GitHub App installation token...\n' | tee -a /dev/null
   local github_app_token_helper="${KASEKI_GITHUB_APP_TOKEN_HELPER:-/usr/local/bin/github-app-token}"
-  local token_stdout_tmp token_stderr_tmp token_exit_code token_stderr token_parse_result token_error token_http_status
-  token_stdout_tmp="$(mktemp /tmp/github-app-token-stdout.XXXXXX)" || { printf 'Failed to create token stdout temp file\n' >&2; return 7; }
-  token_stderr_tmp="$(mktemp /tmp/github-app-token-stderr.XXXXXX)" || {
+  local token_stderr_tmp token_exit_code token_stderr token_parse_result token_error token_http_status
+  token_stderr_tmp="$(umask 077 && mktemp /tmp/github-app-token-stderr.XXXXXX)" || {
     printf 'Failed to create token stderr temp file\n' >&2
-    rm -f "$token_stdout_tmp"
     return 7
   }
-  node "$github_app_token_helper" "$app_id" "$private_key_file" "$owner" "$repo" >"$token_stdout_tmp" 2>"$token_stderr_tmp"
+  # Keep the installation token in memory. Writing helper stdout to a temporary
+  # file leaves a reusable credential behind if the worker is killed before
+  # cleanup can run; stderr contains diagnostics only and is created mode 0600.
+  token_data="$(node "$github_app_token_helper" "$app_id" "$private_key_file" "$owner" "$repo" 2>"$token_stderr_tmp")"
   token_exit_code=$?
-  token_data="$(cat "$token_stdout_tmp" 2>/dev/null || true)"
   token_stderr="$(cat "$token_stderr_tmp" 2>/dev/null || true)"
-  rm -f "$token_stdout_tmp" "$token_stderr_tmp"
+  if [ -f "$token_stderr_tmp" ]; then
+    rm -f -- "$token_stderr_tmp"
+  fi
   if [ "$token_exit_code" -ne 0 ]; then
     token_parse_result="$(parse_github_app_token_helper_failure "$token_data" "$token_stderr" "$token_exit_code")"
     token_error="${token_parse_result%%$'\t'*}"
