@@ -2,7 +2,8 @@
  * Configuration for summarization behavior
  */
 
-export type SupportedLanguage = 'typescript' | 'javascript' | 'go';
+export type SupportedLanguage = 'typescript' | 'javascript';
+export type DetectedLanguage = SupportedLanguage | 'go' | 'unknown';
 
 export interface SummarizerConfig {
   /**
@@ -19,14 +20,14 @@ export interface SummarizerConfig {
   minSizeBytes: number;
 
   /**
-   * Maximum file size (bytes) to parse with tree-sitter
+   * Maximum file size (bytes) to parse for a structural summary
    * Larger files: parse time becomes prohibitive, fallback to full
    * Default: 1MB (1048576 bytes)
    */
   maxSizeBytes: number;
 
   /**
-   * Timeout (ms) for tree-sitter parsing
+   * Timeout (ms) for structural parsing
    * If parsing exceeds this, fallback to full read
    * Default: 500ms
    */
@@ -90,7 +91,7 @@ export interface SummarizerConfig {
  * @internal
  */
 const DEFAULT_CONFIG: SummarizerConfig = {
-  supportedLanguages: ['typescript', 'javascript', 'go'],
+  supportedLanguages: ['typescript', 'javascript'],
   minSizeBytes: 2048, // 2KB
   maxSizeBytes: 1048576, // 1MB
   parseTimeoutMs: 2000,

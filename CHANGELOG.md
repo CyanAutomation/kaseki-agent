@@ -73,33 +73,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ### Bug Fixes
 
-* avoid tree-sitter QEMU probe in publish workflow ([6bc88e0](https://github.com/CyanAutomation/kaseki-agent/commit/6bc88e0aa48846cae78b3f1fc16752042bee9354))
 * mark evaluator fallback as review-required ([aab8024](https://github.com/CyanAutomation/kaseki-agent/commit/aab8024e8558c9d30f9cd84072b75e9312a5bb6a))
 * mark evaluator fallback as review-required ([#1371](https://github.com/CyanAutomation/kaseki-agent/issues/1371)) ([784f39d](https://github.com/CyanAutomation/kaseki-agent/commit/784f39d9cfc41e9be369035e7984043a874dfb13))
 
 ## [1.140.10](https://github.com/CyanAutomation/kaseki-agent/compare/v1.140.9...v1.140.10) (2026-09-22)
 
-
-### Bug Fixes
-
-* avoid tree-sitter QEMU probe in publish workflow ([c65e503](https://github.com/CyanAutomation/kaseki-agent/commit/c65e503a0b9ebb6afe73e8751a18fc1035f92296))
-* avoid tree-sitter QEMU probe in publish workflow ([#1366](https://github.com/CyanAutomation/kaseki-agent/issues/1366)) ([7e0d24a](https://github.com/CyanAutomation/kaseki-agent/commit/7e0d24ab61980515e7dcbcb7de9f27d573386040))
-
 ## [1.140.9](https://github.com/CyanAutomation/kaseki-agent/compare/v1.140.8...v1.140.9) (2026-09-22)
 
-
-### Bug Fixes
-
-* avoid executing tree-sitter in Docker integration ([7ad4b1d](https://github.com/CyanAutomation/kaseki-agent/commit/7ad4b1d798cc4091e54b84d8e83f216b4a4a1dff))
-* avoid executing tree-sitter in Docker integration ([#1365](https://github.com/CyanAutomation/kaseki-agent/issues/1365)) ([286f51f](https://github.com/CyanAutomation/kaseki-agent/commit/286f51f8647f0bc163b23c43dd388dc77cc2fcae))
-
 ## [1.140.8](https://github.com/CyanAutomation/kaseki-agent/compare/v1.140.7...v1.140.8) (2026-09-22)
-
-
-### Bug Fixes
-
-* bound tree-sitter Docker probe ([8a49d2b](https://github.com/CyanAutomation/kaseki-agent/commit/8a49d2b4ebe0ef1b742336af7dfc292fbfcf1b00))
-* bound tree-sitter Docker probe ([#1364](https://github.com/CyanAutomation/kaseki-agent/issues/1364)) ([048c69d](https://github.com/CyanAutomation/kaseki-agent/commit/048c69d4fe255bbf9df09f70f22d13ab3a7f6dff))
 
 ## [1.140.7](https://github.com/CyanAutomation/kaseki-agent/compare/v1.140.6...v1.140.7) (2026-09-22)
 
@@ -166,11 +147,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 * enhance Docker integration testing with shared image support and diagnostics ([93e9392](https://github.com/CyanAutomation/kaseki-agent/commit/93e93924094a62df5ed9a71c5cd422e71ecf32a2))
 
 ## [1.139.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.139.0...v1.139.1) (2026-09-21)
-
-
-### Bug Fixes
-
-* update Dockerfile and tests to ensure tree-sitter CLI validation without execution during multi-architecture emulation ([f91dff7](https://github.com/CyanAutomation/kaseki-agent/commit/f91dff732888056e36237c15fc6bb31e0a0f30ee))
 
 # [1.139.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.138.0...v1.139.0) (2026-09-21)
 
@@ -500,7 +476,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 * await scheduler persistence during shutdown ([db691ff](https://github.com/CyanAutomation/kaseki-agent/commit/db691ffe0f7263910927e87abe73842c37c848b2))
 * guard invalid efficiency policy stores ([65dd90c](https://github.com/CyanAutomation/kaseki-agent/commit/65dd90c4017adcd3db058cbae8ee1db4c1dd8d90))
 * guard invalid efficiency policy stores ([#1231](https://github.com/CyanAutomation/kaseki-agent/issues/1231)) ([795d1df](https://github.com/CyanAutomation/kaseki-agent/commit/795d1df39fff0c3dd680080f3822c52596ee4508))
-* harden tree-sitter CLI installation ([b845668](https://github.com/CyanAutomation/kaseki-agent/commit/b845668ccea260f249b06f5b12a2df1b28f29328))
 * preserve canonical handoff evidence ([d455704](https://github.com/CyanAutomation/kaseki-agent/commit/d455704a9a48a509c60906efb971afbd029b1ea0))
 * remove unused context handoff artifact variable ([5f4effc](https://github.com/CyanAutomation/kaseki-agent/commit/5f4effc19680067f302e9f03965f3e77a07f2d3e))
 * report accurate async impact counts ([32c2639](https://github.com/CyanAutomation/kaseki-agent/commit/32c2639574886711c9df36c4f119a65e62ebf732))
@@ -1420,7 +1395,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 * add artifact consolidation tests for various JSON and JSONL outputs ([3f19140](https://github.com/CyanAutomation/kaseki-agent/commit/3f191404927c40e5afdc5c76740dbc5a649e992f))
 * enhance artifact routes to support deprecation handling and consolidation targets ([baec461](https://github.com/CyanAutomation/kaseki-agent/commit/baec4616e25252281c98343c5eb040eb2045fbe4))
-* enhance GoCliSummarizer error handling and improve test coverage for parsing errors ([b2ac123](https://github.com/CyanAutomation/kaseki-agent/commit/b2ac123f5167041ed2b6efa2a6757c925dd3dfd1))
 * Implement comprehensive artifact evaluation and consolidation strategy ([d69f5d6](https://github.com/CyanAutomation/kaseki-agent/commit/d69f5d69239992329028dac7d87f83462efce263))
 
 # [1.74.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.73.0...v1.74.0) (2026-06-10)
@@ -1453,17 +1427,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 ### Bug Fixes
 
 * add pre-validation log output and clean up whitespace in functional test ([d838d88](https://github.com/CyanAutomation/kaseki-agent/commit/d838d88d6592e77d987cd1056eaed028db150179))
-* ensure tree-sitter binary is copied from deps stage in Dockerfile ([3e09e8d](https://github.com/CyanAutomation/kaseki-agent/commit/3e09e8d8100153156c2113b82151abda2db41a91))
-* update default parseTimeoutMs to 2000ms and summarize timeout to 1000ms in GoCliSummarizer ([faeac11](https://github.com/CyanAutomation/kaseki-agent/commit/faeac11c7d4357820749b7f3770e7b8f049808d3))
 * update parseTimeoutMs default value to 500ms in summarizer config; adjust maxWorkers setting in jest config ([c83b030](https://github.com/CyanAutomation/kaseki-agent/commit/c83b030d37b1e290c8c8bb89284fd68fa8054284))
 * update restore_disallowed_changes test to emit correct function for workspace paths ([b1ed27a](https://github.com/CyanAutomation/kaseki-agent/commit/b1ed27ab62f62d38f201e236e1deeae09a754a00))
-* update test command for tree-sitter functional tests and clean up whitespace in Go CLI summarizer tests ([cf43db2](https://github.com/CyanAutomation/kaseki-agent/commit/cf43db232048747f86a944fb028524c052d81d5a))
 
 
 ### Features
 
 * add Go CLI summarizer and TypeScript Compiler API summarizer ([b52a28f](https://github.com/CyanAutomation/kaseki-agent/commit/b52a28f4ebeaaaa931ad6878c53711c48b4b3452))
-* enhance GoCliSummarizer to accept content strings and manage temp files; update tests for graceful degradation ([1968c1e](https://github.com/CyanAutomation/kaseki-agent/commit/1968c1e690ff24789f1ac540c358b97cc7d876ec))
 
 # [1.71.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.70.1...v1.71.0) (2026-06-09)
 
@@ -1490,7 +1460,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 * enhance language initialization handling and improve bash function extraction validation ([36de2d3](https://github.com/CyanAutomation/kaseki-agent/commit/36de2d3118ca0f526cdc6253c691cda6740cb1f9))
 * enhance orchestration environment setup for goal-check and run-evaluation phases ([d978608](https://github.com/CyanAutomation/kaseki-agent/commit/d97860817a09f11e73237ec052ee1d15d2ecd42e))
 * improve feedback collection script with enhanced error handling and payload structure ([2027e48](https://github.com/CyanAutomation/kaseki-agent/commit/2027e48e7282efa392af8519f00e73f7068cb3fc))
-* improve language binding initialization for TypeScript and Go in TreeSitterSummarizer ([2ba2793](https://github.com/CyanAutomation/kaseki-agent/commit/2ba2793e36f0d704147c805b8a0bf1be31adafa3))
 * improve orchestration environment handling for goal-check and run-evaluation phases ([d0c7b13](https://github.com/CyanAutomation/kaseki-agent/commit/d0c7b13ca37e53e069d8a7f4e31a06abeb7453bb))
 * refactor artifact metadata and update validation logging in tests ([ab38821](https://github.com/CyanAutomation/kaseki-agent/commit/ab388216e1a2a9e98634476c4c76637f247c7d48))
 * streamline feedback payload structure in run-evaluation phase ([fa79930](https://github.com/CyanAutomation/kaseki-agent/commit/fa799304aa14b519969162dd412ef6e2806db4e2))
@@ -1511,11 +1480,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [1.69.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.69.1...v1.69.2) (2026-06-08)
 
-
-### Bug Fixes
-
-* improve error handling and enhance summary extraction in TreeSitterSummarizer ([ca68784](https://github.com/CyanAutomation/kaseki-agent/commit/ca68784284f0ba6babcc19c49b7f8ba6526fb2e5))
-
 ## [1.69.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.69.0...v1.69.1) (2026-06-08)
 
 
@@ -1528,7 +1492,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ### Bug Fixes
 
-* enhance node traversal and extraction in TreeSitterSummarizer ([faac545](https://github.com/CyanAutomation/kaseki-agent/commit/faac545032b6ea94b0e054dae2c156d016fcf942))
 * enhance run counting and listing in cleanup scripts ([869e38c](https://github.com/CyanAutomation/kaseki-agent/commit/869e38c1418bb57b42480b306563aa3e0f28651b))
 * improve debug logging for cache directory scanning errors ([9edd68b](https://github.com/CyanAutomation/kaseki-agent/commit/9edd68b6f8588aa788f81cc5eed56474a5915635))
 * remove unnecessary whitespace in extractName method ([db5c13b](https://github.com/CyanAutomation/kaseki-agent/commit/db5c13beba1fbafc5ef2671832370b6193e415fd))
@@ -1557,13 +1520,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 ### Features
 
 * add debug script for testing Feature 3 summarization and metrics ([cb0806d](https://github.com/CyanAutomation/kaseki-agent/commit/cb0806d72098de4d633741b261ff78e31d4e1957))
-* add global mocks for tree-sitter to improve test reliability ([9a1b836](https://github.com/CyanAutomation/kaseki-agent/commit/9a1b836a68d1e5491d2aa812b0fce2a00f8ab582))
-* add global mocks for tree-sitter to improve test reliability ([679940c](https://github.com/CyanAutomation/kaseki-agent/commit/679940c1e95796f3f10707ceb8ac611a6536fdee))
 * add integration guide and completion summary for Feature 3 code summarization ([8d095a5](https://github.com/CyanAutomation/kaseki-agent/commit/8d095a5b31f5a9d76c704d72809ac36659a62b2a))
 * add integration tests and CLI utility for Feature 3 summarization ([5463164](https://github.com/CyanAutomation/kaseki-agent/commit/546316416fe9fc542fc0245df7e89b3da065be4b))
 * add kaseki-summarizer CLI tool for repository summarization and metadata generation ([e42b692](https://github.com/CyanAutomation/kaseki-agent/commit/e42b692a02765bc27557f30e4feafe82dcb7bf2a))
-* add tree-sitter mocks to test files for improved testing coverage ([1af9d4a](https://github.com/CyanAutomation/kaseki-agent/commit/1af9d4a035fe1cd7655877dd43ea6eefdd2eb3a5))
-* enhance tree-sitter integration with error handling and functional tests ([cac2a9d](https://github.com/CyanAutomation/kaseki-agent/commit/cac2a9d6e74f15ae60e6ba595a63a799a8257bf6))
 
 # [1.67.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.66.0...v1.67.0) (2026-06-06)
 
