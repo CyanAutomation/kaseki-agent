@@ -107,10 +107,13 @@ else
 fi
 
 test_header "is_transient_scouting_failure: malformed DSML provider error → transient only when classified retryable"
+# This variable is read by a function loaded with eval, which ShellCheck cannot follow.
+# shellcheck disable=SC2034
 PROVIDER_ERROR_RETRYABLE=false
 if is_transient_scouting_failure 88 'invalid or incomplete DSML tool-call block'; then
   test_fail "non-retryable provider error should not be retried"
 else
+  # shellcheck disable=SC2034
   PROVIDER_ERROR_RETRYABLE=true
   if is_transient_scouting_failure 88 'invalid or incomplete DSML tool-call block'; then
     test_pass "retryable malformed-tool provider error receives the bounded scouting retry"
