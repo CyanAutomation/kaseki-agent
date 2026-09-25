@@ -16,10 +16,20 @@ function normalizeSuccessCriteria(criteria) {
     const appliesWhen = typeof item.applies_when === 'string'
       ? item.applies_when.trim()
       : typeof item.appliesWhen === 'string' ? item.appliesWhen.trim() : '';
+    const sourceRequirement = typeof item.source_requirement === 'string'
+      ? item.source_requirement.trim()
+      : typeof item.sourceRequirement === 'string' ? item.sourceRequirement.trim() : '';
+    const verificationSources = Array.isArray(item.verification_sources)
+      ? item.verification_sources.filter((source) => typeof source === 'string').map((source) => source.trim()).filter(Boolean)
+      : Array.isArray(item.verificationSources)
+        ? item.verificationSources.filter((source) => typeof source === 'string').map((source) => source.trim()).filter(Boolean)
+        : [];
     return [{
       id: `criterion_${index + 1}`,
       criterion,
       ...(appliesWhen ? { appliesWhen } : {}),
+      ...(sourceRequirement ? { sourceRequirement } : {}),
+      ...(verificationSources.length ? { verificationSources } : {}),
     }];
   });
 }
