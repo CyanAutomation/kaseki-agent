@@ -172,7 +172,10 @@ maybe_replace_missing_validation_commands() {
 
 validation_commands_for_goal_prompt() {
   local commands="$1" command trimmed resolved=""
-  [ -n "$commands" ] && [ "$commands" != "none" ] || { printf 'not configured'; return 0; }
+  if [ -z "$commands" ] || [ "$commands" = "none" ]; then
+    printf 'not configured'
+    return 0
+  fi
   commands="$(maybe_replace_missing_validation_commands "$commands")"
   local -a command_array
   IFS=';' read -r -a command_array <<< "$commands"
