@@ -20,6 +20,45 @@ done < <(find "$SKILLS_DIR" -name "SKILL.md" -type f -print0)
 echo "Found ${#ALL_SKILLS[@]} skills: ${ALL_SKILLS[*]}"
 echo ""
 
+# Keep repository-wide documentation hygiene rules alongside link validation so
+# every consumer of this validator gets the same checks.
+check_forbidden_pattern() {
+    local pattern="$1"
+    local message="$2"
+    shift 2
+
+    if find "$@" -type f \( -name '*.md' -o -name '*.sh' \) \
+        ! -path "$SKILLS_DIR/validate-cross-references.sh" \
+        -exec grep -l -E "$pattern" {} + >/dev/null 2>&1; then
+        echo "❌ $message"
+        EXIT_CODE=1
+    fi
+}
+
+echo "🚫 Validating forbidden documentation strings..."
+check_forbidden_pattern \
+    'disaster-recovery|DISASTER_RECOVERY' \
+    "Removed disaster-recovery skill is still referenced" \
+    "$SKILLS_DIR"
+check_forbidden_pattern \
+    'echo \$OPENROUTER_API_KEY|echo "\$OPENROUTER_API_KEY"' \
+    "A skill example prints the OpenRouter API key" \
+    "$SKILLS_DIR"
+
+if grep -n -E 'vitest|Vitest' "$SKILLS_DIR/test-automation/SKILL.md" >/dev/null; then
+    echo "❌ test-automation documentation still references forbidden Vitest usage"
+    EXIT_CODE=1
+fi
+
+if grep -n -E 'KASEKI_MAX_DIFF_BYTES=400000.*200 KB|default 1200s|default 200000' \
+    "$SKILLS_DIR"/quality-gate-config/SKILL.md \
+    "$SKILLS_DIR"/environment-configuration/SKILL.md \
+    "$SKILLS_DIR"/workflow-diagnosis/SKILL.md >/dev/null; then
+    echo "❌ Skill documentation contains forbidden stale runtime defaults"
+    EXIT_CODE=1
+fi
+echo ""
+
 # Validate relative Markdown links as well as frontmatter references. This catches
 # stale links after skills are moved into folders.
 echo "🔗 Validating relative Markdown links..."
