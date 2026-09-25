@@ -150,7 +150,7 @@ async function runGoalCheck(resultsDir: string, attempt: number): Promise<JsonOb
     missing,
     criteria_assessment: assessments.map((assessment) => ({
       ...assessment,
-      evidence_sources: selectCriterionEvidenceSources(assessment.criterion, evidence),
+      evidence_sources: selectCriterionEvidenceSources(assessment, evidence),
     })),
     retry_prompt: outcome === 'met' ? '' : outcome === 'unmet'
       ? `Address the criteria with concrete evidence of what remains incomplete: ${missing.join('; ')}`

@@ -14,6 +14,8 @@ export interface GoalCriterionAssessment {
   id: string;
   criterion: string;
   applies_when?: string;
+  source_requirement?: string;
+  verification_sources?: string[];
   probability: number | null;
   threshold: number;
   applicability: 'applicable' | 'not_applicable' | 'unknown';
@@ -92,7 +94,7 @@ export function buildGoalCriterionAssessments(
   threshold: number,
 ): GoalCriterionAssessment[] {
   const criteria = normalizeSuccessCriteria(criteriaInput);
-  return criteria.map(({ id, criterion, appliesWhen }) => {
+  return criteria.map(({ id, criterion, appliesWhen, sourceRequirement, verificationSources }) => {
     const applicabilityAnswer = answers[`${id}_applicability`];
     const applicability = !appliesWhen
       ? 'applicable'
@@ -101,7 +103,9 @@ export function buildGoalCriterionAssessments(
         : 'unknown';
     if (applicability === 'not_applicable') {
       return {
-        id, criterion, ...(appliesWhen ? { applies_when: appliesWhen } : {}), probability: null, threshold,
+        id, criterion, ...(appliesWhen ? { applies_when: appliesWhen } : {}),
+        ...(sourceRequirement ? { source_requirement: sourceRequirement } : {}),
+        ...(verificationSources?.length ? { verification_sources: verificationSources } : {}), probability: null, threshold,
         applicability, status: 'not_applicable', met: true,
       };
     }
@@ -114,7 +118,9 @@ export function buildGoalCriterionAssessments(
         : probability >= threshold ? 'met'
           : probability <= unmetThreshold || Math.abs(probability - unmetThreshold) <= Number.EPSILON * 4 ? 'unmet' : 'uncertain';
     return {
-      id, criterion, ...(appliesWhen ? { applies_when: appliesWhen } : {}), probability, threshold,
+      id, criterion, ...(appliesWhen ? { applies_when: appliesWhen } : {}),
+      ...(sourceRequirement ? { source_requirement: sourceRequirement } : {}),
+      ...(verificationSources?.length ? { verification_sources: verificationSources } : {}), probability, threshold,
       applicability, status, met: status === 'met',
     };
   });
@@ -126,13 +132,16 @@ export function buildGoalCheckOutcome(assessments: GoalCriterionAssessment[]): G
   return 'met';
 }
 
-export function selectCriterionEvidenceSources(criterion: string, availableSources: string[]): string[] {
-  const text = criterion.toLowerCase();
+export function selectCriterionEvidenceSources(criterionInput: string | GoalCriterion, availableSources: string[]): string[] {
+  const criterion = normalizeSuccessCriteria([criterionInput])[0];
+  if (!criterion) return [];
+  const text = criterion.criterion.toLowerCase();
   const relevant = new Set<string>();
+  criterion.verificationSources?.forEach((source) => relevant.add(source));
   if (/test|validation|validated|verify|verification|vet|lint|build|command|check/.test(text)) {
     ['validation.log', 'validation-timings.tsv', 'pre-validation.log', 'pre-validation-timings.tsv'].forEach((source) => relevant.add(source));
   }
-  if (/diff|file|changed|change|refactor|code|edit|documentation|docs|scope/.test(text)) {
+  if (/diff|file|changed|change|refactor|code|edit|documentation|docs|scope|consolidat|normaliz|import|reus|implement|function|helper|deduplicat/.test(text)) {
     ['git.diff', 'changed-files.txt'].forEach((source) => relevant.add(source));
   }
   if (/inventory|candidate|rank|rationale|plan|observation|requirement|success criterion/.test(text)) {
@@ -150,7 +159,7 @@ export function selectConditionalHelper(condition1: string, condition2: string, 
 
 export function buildGoalCheckQuestions(criteriaInput: Array<string | GoalCriterion>): Record<string, QuestionDefinition> {
   const criteria = normalizeSuccessCriteria(criteriaInput);
-  return Object.fromEntries(criteria.flatMap(({ id, criterion, appliesWhen }) => [
+  return Object.fromEntries(criteria.flatMap(({ id, criterion, appliesWhen, sourceRequirement, verificationSources }) => [
     ...(appliesWhen ? [[`${id}_applicability`, {
       type: 'choice' as const,
       instructions: `Does this condition apply based on the supplied repository and run evidence? Condition: ${appliesWhen}`,
@@ -162,7 +171,7 @@ export function buildGoalCheckQuestions(criteriaInput: Array<string | GoalCriter
     } as QuestionDefinition]] : []),
     [id, {
       type: 'noul' as const,
-      instructions: `Is this success criterion satisfied by the supplied repository and validation evidence? Criterion: ${criterion}${appliesWhen ? ` Applies when: ${appliesWhen}` : ''}`,
+      instructions: `Is this success criterion satisfied by the supplied repository and validation evidence? Criterion: ${criterion}${appliesWhen ? ` Applies when: ${appliesWhen}` : ''}${sourceRequirement ? ` Source requirement: ${sourceRequirement}` : ''}${verificationSources?.length ? ` Verify with: ${verificationSources.join(', ')}` : ''}`,
     } as QuestionDefinition],
   ]));
 }

@@ -201,6 +201,25 @@ setup_case "allowed-noop-contract" "$allowed_noop_expectation" ":" 0 $'goal-sett
 grep -q 'verification passed' "$RESULTS_DIR/critical-change-verification.log" || fail "allowed no-op contract did not pass verification"
 ! grep -q 'retrying coding agent' "$RUN_LOG" || fail "allowed no-op contract retried coding"
 
+# The controller's explicit no-op policy overrides a scouting proposal that
+# requires edits. Required files and diff markers stay visible in the contract,
+# but are conditional on a non-empty diff.
+controller_noop_expectation='{"task":"conservative DRY review","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":[]},"critical_change_expectations":{"required_files":["target.txt"],"required_search_strings":["NEEDED_MARKER"],"forbidden_empty_diff":true}}'
+setup_case "controller-allowed-noop" "$controller_noop_expectation" ":" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 1 "Conservative DRY review. A no-change result is successful. If no sufficiently valuable candidate exists, make no changes."
+node - "$RESULTS_DIR/critical-change-expectations.json" "$RESULTS_DIR/metadata.json" <<'NODE' || fail "controller no-op policy did not override the scout diff requirements"
+const fs = require('node:fs');
+const [expectationsPath, metadataPath] = process.argv.slice(2);
+const expectations = JSON.parse(fs.readFileSync(expectationsPath, 'utf8'));
+const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+if (expectations.forbidden_empty_diff !== false) throw new Error('empty diff remained forbidden');
+if (!expectations.required_files.includes('target.txt')) throw new Error('required file expectation was discarded');
+if (!expectations.required_search_strings.includes('NEEDED_MARKER')) throw new Error('required marker expectation was discarded');
+if (metadata.no_change_accepted !== true) throw new Error('metadata did not record the accepted no-op');
+NODE
+grep -q 'accepted_empty_diff=true' "$RESULTS_DIR/critical-change-verification.log" || fail "controller-allowed-noop did not record empty diff acceptance"
+grep -q 'verification passed' "$RESULTS_DIR/critical-change-verification.log" || fail "controller-allowed-noop did not pass critical-change verification"
+! grep -q 'required file missing\|required search string missing' "$RESULTS_DIR/critical-change-verification.log" || fail "controller-allowed-noop enforced change-only requirements for an accepted no-op"
+
 # Legacy fallback orchestration can finish either through the terminal
 # critical-change failure path or the diagnostic goal-check path, depending on
 # which fallback artifact state survives finalization. Keep this case focused

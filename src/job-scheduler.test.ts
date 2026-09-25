@@ -533,7 +533,7 @@ describe('JobScheduler timeout lifecycle', () => {
       await scheduler.submitJob({
         repoUrl: 'https://github.com/org/repo',
         ref: 'main',
-        taskPrompt: 'Make a minimal documentation-only patch if you find a clear improvement; otherwise report no change needed.',
+        taskPrompt: 'Perform a conservative DRY review. A no-change result is successful. If no sufficiently valuable candidate exists, make no changes.',
       });
 
       expect(mockSpawn).toHaveBeenCalledWith(

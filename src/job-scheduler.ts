@@ -61,8 +61,15 @@ function allowsNoChangeTaskPrompt(prompt?: string): boolean {
   if (!prompt) {
     return false;
   }
-  const normalized = prompt.toLowerCase();
+  const normalized = prompt.toLowerCase().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
   return [
+    'no change result is successful',
+    'no changes result is successful',
+    'no change is a successful result',
+    'no changes are a successful result',
+    'no change outcome is successful',
+    'no changes outcome is successful',
+    'make no changes',
     'otherwise report no change',
     'otherwise report that no change',
     'otherwise report no changes',

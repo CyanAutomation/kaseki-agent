@@ -89,6 +89,23 @@ describe('JEV workflow answer helpers', () => {
     expect(selectCriterionEvidenceSources('Existing unit tests pass and make vet is clean', sources)).toEqual(['validation.log']);
     expect(selectCriterionEvidenceSources('The documentation diff only changes approved files', sources)).toEqual(['git.diff', 'changed-files.txt']);
     expect(selectCriterionEvidenceSources('Rank the strongest duplication candidate with rationale', sources)).toEqual(['goal-setting.json', 'scouting.json']);
+    expect(selectCriterionEvidenceSources('Consolidation reuses an existing exported abstraction and typecheck passes', sources)).toEqual([
+      'git.diff', 'changed-files.txt', 'validation.log',
+    ]);
+    expect(selectCriterionEvidenceSources({
+      id: 'criterion_1', criterion: 'A directly verifiable criterion',
+      verificationSources: ['git.diff', 'validation.log', 'missing-artifact.json'],
+    }, sources)).toEqual(['git.diff', 'validation.log']);
+  });
+
+  test('includes criterion provenance and verification sources in the classifier question', () => {
+    const questions = buildGoalCheckQuestions([{
+      id: 'criterion_1', criterion: 'The shared normalizer is reused',
+      sourceRequirement: 'Prefer reusing an existing abstraction',
+      verificationSources: ['git.diff', 'changed-files.txt'],
+    }]);
+    expect(questions.criterion_1?.instructions).toContain('Source requirement: Prefer reusing an existing abstraction');
+    expect(questions.criterion_1?.instructions).toContain('Verify with: git.diff, changed-files.txt');
   });
 
   test('selects conditional helpers in index order', () => {
