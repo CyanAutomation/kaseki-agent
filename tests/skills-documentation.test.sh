@@ -37,8 +37,10 @@ check_generated_environment_document_parity() {
 
 check_cli_default_parity() {
   local help_output
-  help_output="$("$ROOT_DIR/run-kaseki.sh" --help)" || \
-    fail "CLI default parity: run-kaseki.sh --help failed"
+local help_output
+if ! help_output="$("$ROOT_DIR/run-kaseki.sh" --help)"; then
+  fail "CLI default parity: run-kaseki.sh --help failed"
+fi
 
   printf '%s\n' "$help_output" | grep -q -E 'KASEKI_AGENT_TIMEOUT_SECONDS.*10800' || \
     fail "CLI default parity: runner help does not show timeout default 10800"
