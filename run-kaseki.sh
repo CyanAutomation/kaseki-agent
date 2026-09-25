@@ -1104,9 +1104,9 @@ fi
 # Handle GitHub App credentials (optional) - enabled by default if available
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-1}"
 case "$KASEKI_PUBLISH_MODE" in
-  auto|none|branch|pr|draft_pr) ;;
+  auto|none|branch|pr) ;;
   *)
-    fail_host 2 "invalid publish mode" "Invalid KASEKI_PUBLISH_MODE: $KASEKI_PUBLISH_MODE (expected auto, none, branch, pr, or draft_pr)"
+    fail_host 2 "invalid publish mode" "Invalid KASEKI_PUBLISH_MODE: $KASEKI_PUBLISH_MODE (expected auto, none, branch, or pr)"
     ;;
 esac
 
@@ -1157,7 +1157,7 @@ else
 fi
 unset GITHUB_APP_PRIVATE_KEY github_app_id_value github_app_client_id_value
 
-if { [ "$KASEKI_PUBLISH_MODE" = "branch" ] || [ "$KASEKI_PUBLISH_MODE" = "pr" ] || [ "$KASEKI_PUBLISH_MODE" = "draft_pr" ]; } && [ "$GITHUB_APP_ENABLED" != "1" ]; then
+if { [ "$KASEKI_PUBLISH_MODE" = "branch" ] || [ "$KASEKI_PUBLISH_MODE" = "pr" ]; } && [ "$GITHUB_APP_ENABLED" != "1" ]; then
   fail_host 7 "github app credentials" "KASEKI_PUBLISH_MODE=$KASEKI_PUBLISH_MODE requires readable GitHub App credentials."
 fi
 

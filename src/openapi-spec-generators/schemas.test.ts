@@ -59,7 +59,7 @@ describe('OpenAPI Schema Builders', () => {
       });
       expect(properties.publishMode).toMatchObject({
         type: 'string',
-        enum: ['auto', 'none', 'branch', 'pr', 'draft_pr'],
+        enum: ['auto', 'none', 'branch', 'pr'],
       });
       expect(properties.startupCheck).toMatchObject({ type: 'boolean' });
       expect(properties.startupCheckMode).toMatchObject({
@@ -148,7 +148,7 @@ describe('OpenAPI Schema Builders', () => {
 
       expect(runRequest.required).toEqual(['repoUrl']);
       expect(runRequest.properties?.taskMode?.enum).toEqual(['patch', 'inspect']);
-      expect(runRequest.properties?.publishMode?.enum).toEqual(['auto', 'none', 'branch', 'pr', 'draft_pr']);
+      expect(runRequest.properties?.publishMode?.enum).toEqual(['auto', 'none', 'branch', 'pr']);
       expect(runRequest.properties?.skipPreAgentValidation).toBeUndefined();
       expect(runRequest.properties?.goalCheck).toMatchObject({ type: 'object' });
       expect(runRequest.properties?.runEvaluation).toMatchObject({ type: 'object' });
@@ -164,12 +164,11 @@ describe('OpenAPI Schema Builders', () => {
 
       const publishModeSchema = runRequest.properties?.publishMode as JsonSchemaObject;
       expect(publishModeSchema.type).toBe('string');
-      expect(publishModeSchema.enum).toHaveLength(5);
+      expect(publishModeSchema.enum).toHaveLength(4);
       expect(publishModeSchema.enum).toContain('auto');
       expect(publishModeSchema.enum).toContain('none');
       expect(publishModeSchema.enum).toContain('branch');
       expect(publishModeSchema.enum).toContain('pr');
-      expect(publishModeSchema.enum).toContain('draft_pr');
       expect(runRequest.properties?.timeoutSeconds).toMatchObject({
         type: 'integer',
         minimum: 60,
@@ -303,8 +302,8 @@ describe('OpenAPI Schema Builders', () => {
       const schema = buildRunRequestSchema() as JsonSchemaObject;
       const publishMode = (schema.properties?.publishMode as JsonSchemaObject).enum;
 
-      expect(publishMode).toHaveLength(5);
-      const expectedValues = ['auto', 'none', 'branch', 'pr', 'draft_pr'];
+      expect(publishMode).toHaveLength(4);
+      const expectedValues = ['auto', 'none', 'branch', 'pr'];
       expectedValues.forEach((value) => {
         expect(publishMode).toContain(value);
       });

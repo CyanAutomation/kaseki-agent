@@ -21,6 +21,12 @@ Inspect only what is needed to scope the task and write one accurate JSON handof
 - suggested_allowlist: agent_patterns and validation_patterns
 Keep JSON under 50 KB and prioritize accuracy over exhaustiveness.
 
+## [SCOUTING OUTPUT BUDGET]
+- Target output handoff under 6 KB.
+- Stop exploring once evidence suffices; summarize tool output instead of copying it.
+- Prefer 5-8 files, concise observations, and short plan items; avoid repeats.
+- Watch context/turn budgets; stop tools early enough to write and verify the artifact.
+
 ## [TASK VALIDATION]
 Proceed only when the task is concrete (for example, "Fix null-safety in parseRole() in src/lib/role.ts"). For vague tasks such as "Make the code better", "Fix bugs", or "Refactor everything", set task to "[UNCLEAR - needs clarification]" and state the clarification needed.
 

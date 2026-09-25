@@ -1537,7 +1537,7 @@ const controllerPage = String.raw`<!doctype html>
               <summary>Advanced run controls</summary>
               <div class="form-fields">
                 <div class="form-field"><label for="task-ref">Git ref</label><input id="task-ref" name="ref" value="main" placeholder="main"></div>
-                <div class="form-field"><label for="publish-mode">Publish result</label><select id="publish-mode" name="publishMode"><option value="pr">Pull request</option><option value="draft_pr">Draft pull request</option><option value="branch">Branch only</option><option value="none">Do not publish</option></select></div>
+                <div class="form-field"><label for="publish-mode">Publish result</label><select id="publish-mode" name="publishMode"><option value="pr">Pull request</option><option value="branch">Branch only</option><option value="none">Do not publish</option></select></div>
                 <div class="form-field"><label for="timeout-seconds">Run timeout (seconds)</label><input id="timeout-seconds" name="timeoutSeconds" type="number" min="60" max="10800" value="3600"></div>
                 <div class="form-field"><label for="changed-files-allowlist">Changed-file allowlist</label><input id="changed-files-allowlist" name="changedFilesAllowlist" placeholder="README.md, docs/**/*.md"><p class="field-helper">Comma-separated patterns. Leave empty to use controller defaults.</p></div>
                 <div class="form-field"><label for="validation-commands">Validation commands</label><input id="validation-commands" name="validationCommands" placeholder="npm test, npm run check"><p class="field-helper">Comma-separated commands. Leave empty to use controller defaults.</p></div>

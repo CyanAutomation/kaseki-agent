@@ -49,7 +49,6 @@ describe('configureScoutingAndGoalCheckEnv', () => {
   });
 
   it.each([
-    ['draft_pr', 'patch', false, '1'],
     ['issue', 'patch', false, '0'],
     ['pr', 'inspect', false, '0'],
     ['pr', 'patch', true, '0'],

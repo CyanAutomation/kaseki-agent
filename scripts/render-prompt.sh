@@ -17,7 +17,6 @@ prompt_name="${1:-}"
 
 get_caveman_instruction() { printf '%s' "${CAVEMAN_INSTRUCTION:-}"; }
 read_repo_memory_section() { printf '%s' "${REPO_MEMORY_SECTION:-}"; }
-build_pr_body() { printf '%s' "${DRAFT_PR_BODY:-}"; }
 
 # shellcheck source=/dev/null
 . "$SCRIPT_DIR/evaluation-prompts.sh"

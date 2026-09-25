@@ -45,7 +45,7 @@ function applyEvaluationEnv(
   const taskMode = request.taskMode || config.defaultTaskMode;
   const publishMode = request.publishMode || 'pr';
   const defaultRunEvaluation =
-    (publishMode === 'pr' || publishMode === 'draft_pr') &&
+    publishMode === 'pr' &&
     taskMode !== 'inspect' &&
     !request.startupCheck;
   env.KASEKI_RUN_EVALUATION =

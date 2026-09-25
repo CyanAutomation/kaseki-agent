@@ -38,6 +38,8 @@ const GOAL_SETTING_DIAGNOSTIC_FILES = [
 ] as const;
 const SCOUTING_DIAGNOSTIC_FILES = [
   'scouting-validation-errors.jsonl',
+  'scouting-contract-diagnostics.jsonl',
+  'scouting-retry-diagnostics.jsonl',
   'scouting-stderr.log',
   'scouting.json',
   'prompt-diagnostics.jsonl',

@@ -170,11 +170,11 @@ but rather:
 
 That matches the repository's emphasis on isolated workspaces, goal setting/scouting, Pi execution, validation and quality gates, result artifacts, and GitHub publication. ([GitHub][1])
 
-One thing I would make explicit is that **publishing is conditional**. Kaseki supports modes such as normal PR, draft PR, branch-only, automatic publishing and no publishing; therefore `Verify → Publish` should really have a bypass:
+One thing I would make explicit is that **publishing is conditional**. Kaseki supports normal PR, branch-only, automatic publishing and no publishing; therefore `Verify → Publish` should really have a bypass:
 
 ```mermaid
 stateDiagram-v2
-    Verification --> Publish: publishMode = pr / draft_pr / branch / auto
+    Verification --> Publish: publishMode = pr / branch / auto
     Verification --> Finalise: publishMode = none
     Publish --> Finalise
     Finalise --> Completed
@@ -486,7 +486,7 @@ VERIFY
   secret scan
 
 PUBLISH
-  branch / PR / draft PR
+  branch / PR
   or skip when publishMode=none
 
 ASSESS

@@ -54,7 +54,7 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | 10800 | Timeout for agent (3 hours) |
 | `KASEKI_MAX_DIFF_BYTES` | 400000 | Max diff size (400 KB) |
 | `KASEKI_TASK_MODE` | patch | Default task mode: patch or inspect |
-| `KASEKI_PUBLISH_MODE` | pr | Publish behavior for workers/CLI/API: `pr` (normal PR, default) creates a normal PR, `draft_pr` creates a draft PR, `branch` pushes without PR creation, `auto` publishes only when credentials are available (legacy), and `none` skips publishing. Controller API runs with omitted `publishMode` default to `pr`. |
+| `KASEKI_PUBLISH_MODE` | pr | Publish behavior for workers/CLI/API: `pr` creates a normal PR (default), `branch` pushes without creating a PR, `auto` creates a normal PR when credentials are available and otherwise skips publishing, and `none` skips publishing. Controller API runs with omitted `publishMode` default to `pr`. |
 | `KASEKI_REPO_MEMORY_MODE` | off | Opt-in repository prompt memory: `off` or `summary` |
 | `KASEKI_REPO_MEMORY_TTL_DAYS` | 30 | Maximum age of repository memory summaries |
 | `KASEKI_REPO_MEMORY_MAX_BYTES` | 8000 | Maximum bytes read/written for repository memory summaries |
@@ -337,7 +337,7 @@ curl -X POST http://localhost:8080/api/runs \
   validationCommands?: string[];     // Commands to run after agent completes
   validation?: { commands?: string[] }; // Alias accepted for controllers
   taskMode?: "patch" | "inspect";    // "patch" (default) = require changes; "inspect" = read-only analysis, skips pre-validation
-  publishMode?: "auto" | "none" | "branch" | "pr" | "draft_pr"; // Optional; omitted API runs default to "pr"
+  publishMode?: "auto" | "none" | "branch" | "pr"; // Optional; omitted API runs default to "pr"
   startupCheck?: boolean;     // Start worker, verify boot/runtime, then exit
   scouting?: { enabled?: boolean; model?: string; timeoutSeconds?: number }; // Optional; default behavior is enabled when omitted
   runEvaluation?: { enabled?: boolean; model?: string; timeoutSeconds?: number }; // Optional final task-agnostic run evaluator
@@ -348,12 +348,12 @@ curl -X POST http://localhost:8080/api/runs \
 Omitting `publishMode` defaults controller API runs to `pr`, which pushes
 a Kaseki branch and creates a normal pull request after validation. Set
 `publishMode` when a controller needs different publish behavior:
-`pr` creates a normal pull request after validation, `draft_pr` explicitly
-creates a draft pull request, `branch` pushes a Kaseki branch after validation
-without opening a PR, `auto` lets the worker publish when credentials are
-available and gracefully skip when they are not, and `none` skips GitHub
-publishing. Requests with effective publish mode `branch`, `pr`, or `draft_pr` fail before queueing unless
-GitHub App credentials are readable; call `GET /api/preflight` first to verify that readiness.
+`pr` creates a normal pull request after validation, `branch` pushes a Kaseki
+branch without opening a PR, `auto` creates a normal PR when credentials are
+available and gracefully skips when they are not, and `none` skips GitHub
+publishing. Requests with effective publish mode `branch` or `pr` fail before
+queueing unless GitHub App credentials are readable; call `GET /api/preflight`
+first to verify that readiness.
 
 ### Automatic Owner Review Requests (Personal Repositories)
 
@@ -416,7 +416,7 @@ Dependency installation in worker runs is lockfile-enforced (`npm ci --omit=dev`
 
 ### Run Evaluation & Improvement Aggregation
 
-PR-publishing patch runs (`publishMode: "pr"` or `"draft_pr"`) run a final annotate-only Pi evaluation by default before PR creation. Override it with:
+PR-publishing patch runs (`publishMode: "pr"`) run a final annotate-only Pi evaluation by default before PR creation. Override it with:
 
 ```json
 {
