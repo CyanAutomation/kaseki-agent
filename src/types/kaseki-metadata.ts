@@ -31,6 +31,8 @@ export interface KasekiMetadata {
   validation_commands_attempted?: number;
   quality_exit_code?: number | string;
   secret_scan_exit_code?: number | string;
+  goal_check_met?: boolean | null;
+  goal_check_outcome?: 'met' | 'unmet' | 'uncertain' | 'unknown';
   pi_version?: string;
   diff_nonempty?: boolean;
 
