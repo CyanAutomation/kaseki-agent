@@ -109,6 +109,10 @@ interface InferenceHealthSummary {
   agent_turn_success: boolean;
   provider_error_count: number;
   malformed_tool_call_count: number;
+  tool_call_start_count: number;
+  tool_call_end_count: number;
+  tool_call_mismatch_count: number;
+  incomplete_tool_call_count: number;
   prompt_token_budget: number;
   largest_context_tokens: number;
   prompt_token_budget_exceeded: boolean;
@@ -748,18 +752,49 @@ function buildInferenceHealth(
   largestContextTokens: number,
 ): InferenceHealthSummary {
   const malformedToolCallCount = state.providerErrors.filter((error) => error.type === 'malformed_tool_call').length;
+  const aggregate = state.aggregator.summary();
+  const assistantLifecycle = countToolCallLifecycle(aggregate.assistant_event_counts);
+  const rawLifecycle = countToolCallLifecycle(aggregate.event_counts);
+  const lifecycle = assistantLifecycle.hasEvents ? assistantLifecycle :
+    rawLifecycle.hasEvents ? rawLifecycle : {
+      starts: aggregate.tool_start_count,
+      ends: aggregate.tool_end_count,
+      hasEvents: aggregate.tool_start_count > 0 || aggregate.tool_end_count > 0,
+    };
+  const toolCallMismatchCount = Math.abs(lifecycle.starts - lifecycle.ends);
   return {
     transport_success: state.invalidJsonLines === 0,
     stream_success: state.providerErrors.length === 0,
-    tool_call_valid: malformedToolCallCount === 0,
+    tool_call_valid: malformedToolCallCount === 0 && toolCallMismatchCount === 0,
     agent_turn_success: state.providerErrors.length === 0,
     provider_error_count: state.providerErrors.length,
     malformed_tool_call_count: malformedToolCallCount,
+    tool_call_start_count: lifecycle.starts,
+    tool_call_end_count: lifecycle.ends,
+    tool_call_mismatch_count: toolCallMismatchCount,
+    incomplete_tool_call_count: Math.max(0, lifecycle.starts - lifecycle.ends),
     prompt_token_budget: promptTokenBudget,
     largest_context_tokens: largestContextTokens,
     prompt_token_budget_exceeded: largestContextTokens > promptTokenBudget,
     context_compaction_recommended: largestContextTokens > promptTokenBudget,
   };
+}
+
+function countToolCallLifecycle(counts: EventCountMap): { starts: number; ends: number; hasEvents: boolean } {
+  let starts = 0;
+  let ends = 0;
+  let hasEvents = false;
+  for (const [eventType, count] of Object.entries(counts)) {
+    const normalizedType = eventType.toLowerCase().replace(/[^a-z]/g, '');
+    if (normalizedType === 'toolcallstart' || normalizedType === 'toolexecutionstart') {
+      starts += count;
+      hasEvents = true;
+    } else if (normalizedType === 'toolcallend' || normalizedType === 'toolexecutionend') {
+      ends += count;
+      hasEvents = true;
+    }
+  }
+  return { starts, ends, hasEvents };
 }
 
 function buildPhaseBudget(

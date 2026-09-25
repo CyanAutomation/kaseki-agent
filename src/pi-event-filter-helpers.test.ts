@@ -88,6 +88,12 @@ describe('classifyProviderError', () => {
     expect(result).toEqual({ type: 'malformed_tool_call', retryable: true });
   });
 
+  it('classifies incomplete DSML tool-call blocks as retryable malformed tool calls', () => {
+    const message = 'invalid or incomplete DSML tool-call block';
+    expect(classifyProviderError(message)).toEqual({ type: 'malformed_tool_call', retryable: true });
+    expect(isProviderErrorRetryable(message)).toBe(true);
+  });
+
   it('propagates retryable from isProviderErrorRetryable', () => {
     expect(classifyProviderError('503 unavailable').retryable).toBe(true);
     expect(classifyProviderError('404 model not found').retryable).toBe(false);
@@ -147,6 +153,14 @@ describe('extractProviderError', () => {
       cloudflare_log_id: '01KWFRREEX90G7DAQNM9A5K7ER',
       gateway_event_id: 'gateway-event-1',
     });
+    expect(result?.recovery_suggestion).toContain('valid JSON tool call');
+  });
+
+  it('classifies incomplete DSML tool-call blocks in provider events', () => {
+    const result = extractProviderError(makeErrorEvent({
+      errorMessage: 'invalid or incomplete DSML tool-call block',
+    }) as any);
+    expect(result).toMatchObject({ type: 'malformed_tool_call', retryable: true });
     expect(result?.recovery_suggestion).toContain('valid JSON tool call');
   });
 

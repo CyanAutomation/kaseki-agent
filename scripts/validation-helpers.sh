@@ -5,7 +5,7 @@
 
 npm_run_script_name() {
   local command="$1"
-  local npm_run_regex='^npm[[:space:]]+run[[:space:]]+([^[:space:]-][^[:space:]-]*)($|[[:space:]])'
+  local npm_run_regex='^npm[[:space:]]+run[[:space:]]+([^[:space:]-][^[:space:]]*)($|[[:space:]])'
   if [[ "$command" =~ $npm_run_regex ]]; then
     printf '%s' "${BASH_REMATCH[1]}"
     return 0
@@ -168,6 +168,21 @@ maybe_replace_missing_validation_commands() {
   fallback="$(construct_default_validation_commands)"
   [ "$fallback" = "$commands" ] && { printf '%s' "$commands"; return 0; }
   printf '%s' "$fallback"
+}
+
+validation_commands_for_goal_prompt() {
+  local commands="$1" command trimmed resolved=""
+  [ -n "$commands" ] && [ "$commands" != "none" ] || { printf 'not configured'; return 0; }
+  commands="$(maybe_replace_missing_validation_commands "$commands")"
+  local -a command_array
+  IFS=';' read -r -a command_array <<< "$commands"
+  for command in "${command_array[@]}"; do
+    trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
+    [ -n "$trimmed" ] || continue
+    missing_npm_script_for_validation_command "$trimmed" >/dev/null 2>&1 && continue
+    resolved="$(append_default_validation_command "$resolved" "$trimmed")"
+  done
+  printf '%s' "${resolved:-not configured}"
 }
 
 apply_default_validation_commands() {

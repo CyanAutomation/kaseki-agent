@@ -128,7 +128,6 @@ describe('rendered prompt contracts', () => {
     {
       name: 'run-evaluation' as const,
       files: { 'goal-setting.json': '{"quality_score":91}', 'progress.jsonl': 'SUPPLIED_PROGRESS_CONTEXT' },
-      env: { DRAFT_PR_BODY: 'SUPPLIED_PR_CONTEXT' },
       included: ['Canonical input contract:', 'goal-setting.json'],
     },
     {

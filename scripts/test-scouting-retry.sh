@@ -106,6 +106,20 @@ else
   test_fail "Exit 1 with schema error should NOT be transient"
 fi
 
+test_header "is_transient_scouting_failure: malformed DSML provider error → transient only when classified retryable"
+PROVIDER_ERROR_RETRYABLE=false
+if is_transient_scouting_failure 88 'invalid or incomplete DSML tool-call block'; then
+  test_fail "non-retryable provider error should not be retried"
+else
+  PROVIDER_ERROR_RETRYABLE=true
+  if is_transient_scouting_failure 88 'invalid or incomplete DSML tool-call block'; then
+    test_pass "retryable malformed-tool provider error receives the bounded scouting retry"
+  else
+    test_fail "retryable malformed-tool provider error should be transient"
+  fi
+fi
+unset PROVIDER_ERROR_RETRYABLE
+
 test_header "is_transient_scouting_failure: Exit 0 (success) → NOT transient"
 if ! is_transient_scouting_failure 0 ""; then
   test_pass "Exit 0 correctly identified as not transient"

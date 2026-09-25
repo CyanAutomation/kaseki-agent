@@ -327,7 +327,7 @@ const enumConstraints: PropertyConstraint[] = [
     label: 'RunRequest.publishMode',
     schemaName: 'RunRequest',
     propertyPath: ['publishMode'],
-    expected: { type: 'string', enum: ['auto', 'none', 'branch', 'pr', 'draft_pr'] },
+    expected: { type: 'string', enum: ['auto', 'none', 'branch', 'pr'] },
   },
   {
     label: 'RunRequest.startupCheckMode',

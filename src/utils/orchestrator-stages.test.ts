@@ -255,18 +255,6 @@ describe('orchestrator-stages', () => {
       expect(stages).toContain('run evaluation');
     });
 
-    it('should include run-evaluation for draft_pr publish mode', () => {
-      const job = createJob({
-        request: {
-          taskMode: 'fix',
-          publishMode: 'draft_pr',
-        },
-      });
-      const stages = deriveOrchestratorStages(job, mockConfig);
-
-      expect(stages).toContain('run evaluation');
-    });
-
     it('should skip run-evaluation for "none" publish mode', () => {
       const job = createJob({
         request: {
@@ -433,7 +421,7 @@ describe('orchestrator-stages', () => {
 
     it('should handle all combinations without errors', () => {
       const taskModes = ['fix', 'inspect'];
-      const publishModes = ['pr', 'draft_pr', 'none'];
+      const publishModes = ['pr', 'branch', 'none'];
       const startupChecks = [true, false];
 
       for (const taskMode of taskModes) {
@@ -769,19 +757,6 @@ describe('orchestrator-stages', () => {
       expect(flags).toHaveProperty('runEvaluationEnabled');
       expect(flags).toHaveProperty('autoLintCleanupEnabled');
       expect(flags).toHaveProperty('githubAppEnabled');
-    });
-
-    it('should enable runEvaluation for draft_pr mode in fix', () => {
-      const job = createJob({
-        request: {
-          taskMode: 'fix',
-          publishMode: 'draft_pr',
-          startupCheck: false,
-        },
-      });
-      const flags = deriveFeatureFlags(job, mockConfig);
-
-      expect(flags.runEvaluationEnabled).toBe(true);
     });
 
     it('should disable runEvaluation for branch mode in fix', () => {
@@ -1362,19 +1337,6 @@ describe('orchestrator-stages', () => {
       expect(flags.runEvaluationEnabled).toBe(false);
     });
 
-    it('should handle runEvaluation in fix mode with draft_pr and no explicit setting', () => {
-      const job = createJob({
-        request: {
-          taskMode: 'fix',
-          publishMode: 'draft_pr',
-          startupCheck: false,
-        },
-      });
-      const flags = deriveFeatureFlags(job, mockConfig);
-
-      expect(flags.runEvaluationEnabled).toBe(true);
-    });
-
     it('should handle runEvaluation in fix mode with branch and no explicit setting', () => {
       const job = createJob({
         request: {
@@ -1531,15 +1493,6 @@ describe('orchestrator-stages', () => {
       expect(flags.githubAppEnabled).toBe(true);
     });
 
-    it('should handle githubAppEnabled for draft_pr publishMode', () => {
-      const job = createJob({
-        request: { publishMode: 'draft_pr' },
-      });
-      const flags = deriveFeatureFlags(job, mockConfig);
-
-      expect(flags.githubAppEnabled).toBe(true);
-    });
-
     it('should handle githubAppEnabled for branch publishMode', () => {
       const job = createJob({
         request: { publishMode: 'branch' },
@@ -1559,7 +1512,7 @@ describe('orchestrator-stages', () => {
       });
       const flags = deriveFeatureFlags(job, mockConfig);
 
-      expect(flags.runEvaluationEnabled).toBe(false); // auto is not pr or draft_pr
+      expect(flags.runEvaluationEnabled).toBe(false); // auto is a separate legacy mode
     });
 
     it('should handle validation.autoLintCleanup fallback when autoLintCleanup is absent', () => {

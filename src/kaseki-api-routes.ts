@@ -214,7 +214,7 @@ export function createApiRouter(
     res.json({
       apiVersion: getPackageVersion(),
       taskModes: ['patch', 'inspect'],
-      publishModes: ['auto', 'none', 'branch', 'pr', 'draft_pr'],
+      publishModes: ['auto', 'none', 'branch', 'pr'],
       limits: {
         maxConcurrentRuns: config.maxConcurrentRuns,
         maxDiffBytes: config.maxDiffBytes,
@@ -338,9 +338,7 @@ export function createApiRouter(
     publishMode: string,
   ): Promise<{ ok: boolean; error?: string }> {
     if (
-      (publishMode === 'branch' ||
-        publishMode === 'pr' ||
-        publishMode === 'draft_pr') &&
+      (publishMode === 'branch' || publishMode === 'pr') &&
       !isGitHubAppReady()
     ) {
       return {
