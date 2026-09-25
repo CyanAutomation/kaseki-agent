@@ -28,7 +28,9 @@ for (const line of lines.slice(1)) {
     sections.set(currentSection, []);
     sectionOrder.push(currentSection);
   } else if (line.startsWith('- ')) {
-    sections.get(currentSection).push(line.slice(2));
+    const section = sections.get(currentSection);
+    if (!section) throw new Error(`Cannot add item to unknown section: ${currentSection}`);
+    section.push(line.slice(2));
   }
 }
 
