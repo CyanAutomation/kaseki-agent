@@ -8732,7 +8732,7 @@ build_pr_agent_review() {
   esac
   local goal_file="${KASEKI_RESULTS_DIR}/goal-check.json"
   local scouting_file="${KASEKI_RESULTS_DIR}/scouting.json"
-  local missing risks goal_met goal_outcome
+  local missing risks goal_met
 
   # An uncertain goal-check verdict requires explicit human review notice.
   if [ -s "$goal_file" ] && node - "$goal_file" <<'NODE' >/dev/null 2>&1
@@ -8783,14 +8783,6 @@ const fs = require('fs');
 try {
   const value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
   process.stdout.write(value.met === true ? 'true' : 'false');
-} catch {}
-NODE
-)"
-  goal_outcome="$(node - "$goal_file" <<'NODE' 2>/dev/null || true
-const fs = require('fs');
-try {
-  const value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-  process.stdout.write(typeof value.outcome === 'string' ? value.outcome : (value.met === true ? 'met' : 'unmet'));
 } catch {}
 NODE
 )"
