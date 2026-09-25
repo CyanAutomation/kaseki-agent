@@ -34,26 +34,14 @@ describe('getNpmVersion', () => {
     });
   });
 
-  it('should gracefully fallback to "unknown" if npm command fails', async () => {
+  it('should return "unknown" when the injected execSync throws', async () => {
     const version = await getNpmVersion({
       npmVersion: '',
       execSync: () => {
-        throw new Error('npm command failed');
+        throw new Error('execution failed');
       },
     });
 
     expect(version).toBe('unknown');
   });
-
-  it('should not throw if npm is not in PATH', async () => {
-    await expect(
-      getNpmVersion({
-        npmVersion: '',
-        execSync: () => {
-          throw new Error('npm is not in PATH');
-        },
-      })
-    ).resolves.toBe('unknown');
-  });
-
 });
