@@ -15,7 +15,7 @@ import type { ArtifactResponse, Job, RunArtifactsResponse } from '../kaseki-api-
 import type { ResultCache } from '../result-cache';
 import { sendErrorResponse } from '../utils/response-helpers';
 import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
-import { artifactContentType, renderRunEvaluationPayload } from './artifact-content-helpers';
+import { artifactContentType, renderRunEvaluationPayload, sanitizeEvaluationArtifactContent } from './artifact-content-helpers';
 import { redactLogContent } from './log-file-reader';
 
 const ALL_ARTIFACT_NAMES = Object.keys(ARTIFACT_METADATA_REGISTRY);
@@ -96,11 +96,12 @@ export function sendArtifactDownloadResponse(
     }
 
     const contentType = artifactContentType(request.fileName);
-    const content = readArtifactContent(filePath, job.status, cache);
-    if (content === null) {
+    const storedContent = readArtifactContent(filePath, job.status, cache);
+    if (storedContent === null) {
       sendErrorResponse(res, 500, 'Internal Server Error', `Failed to read artifact: ${request.fileName}`);
       return;
     }
+    const content = sanitizeEvaluationArtifactContent(request.fileName, storedContent);
 
     if (!validateTailRequest(request, contentType, res)) {
       return;

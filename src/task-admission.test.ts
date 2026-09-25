@@ -3,12 +3,15 @@ import { buildTaskAdmissionRequest, evaluateTaskAdmission } from './task-admissi
 describe('task admission classifier', () => {
   const originalFetch = global.fetch;
   const originalKey = process.env.OPENROUTER_API_KEY;
+  const originalRetiredWorkflowSetting = process.env.KASEKI_JEV_WORKFLOW;
 
   afterEach(() => {
     global.fetch = originalFetch;
     if (originalKey === undefined) delete process.env.OPENROUTER_API_KEY;
     else process.env.OPENROUTER_API_KEY = originalKey;
-    delete process.env.KASEKI_CLASSIFICATION_MODEL;
+    delete process.env.KASEKI_DECISION_MODEL;
+    if (originalRetiredWorkflowSetting === undefined) delete process.env.KASEKI_JEV_WORKFLOW;
+    else process.env.KASEKI_JEV_WORKFLOW = originalRetiredWorkflowSetting;
   });
 
   it('redacts secrets and uses independent typed safety questions', () => {
@@ -49,7 +52,7 @@ describe('task admission classifier', () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        model: '~typesafe/jev-latest',
+        model: '~typesafe/latest',
         answers: {
           contains_credentials: { type: 'noul', noul: 0.01 },
           changes_permissions: { type: 'noul', noul: 0.95 },
@@ -70,6 +73,7 @@ describe('task admission classifier', () => {
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain('changes_permissions');
     expect(result.outputTokens).toBe(12);
+    expect(result).not.toHaveProperty('modelUsed');
   });
 
   it('fails open when the classifier is unavailable', async () => {
@@ -84,6 +88,18 @@ describe('task admission classifier', () => {
     expect(result.allowed).toBe(true);
     expect(result.status).toBe('degraded');
     expect(result.degraded).toBe(true);
+  });
+
+  it('fails open with a migration notice when retired evaluation settings are present', async () => {
+    process.env.KASEKI_JEV_WORKFLOW = '0';
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as typeof fetch;
+
+    const result = await evaluateTaskAdmission({ repoUrl: 'https://github.com/example/repo', taskPrompt: 'Update the README wording' });
+
+    expect(result).toMatchObject({ allowed: true, status: 'degraded', degraded: true });
+    expect(result.reason).toContain('stage-based settings');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('allows low-confidence classifications with an explicit warning', async () => {
@@ -110,6 +126,7 @@ describe('task admission classifier', () => {
     expect(result.allowed).toBe(true);
     expect(result.status).toBe('allowed');
     expect(result.warnings?.[0]).toContain('contains_credentials');
+    expect(result.warnings?.[0]).toContain('Task Admission evaluation confidence');
     expect(result.routingHints).toBeUndefined();
   });
 

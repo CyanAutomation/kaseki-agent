@@ -1,8 +1,7 @@
 import { buildRunEvaluationArtifact, buildRunEvaluationEvidenceSources } from './jev-run-evaluation-artifact';
 
-const classifier = {
-  provider: 'openrouter-decisions',
-  model: 'test-model',
+const evaluation = {
+  stage: 'run evaluation' as const,
   responseTime: 25,
   usage: { input_tokens: 100 },
 };
@@ -26,7 +25,7 @@ describe('JEV run evaluation artifact', () => {
   test('builds evidence-backed stage scores, review focus, and run summary', () => {
     const result = buildRunEvaluationArtifact(completeFacts, {
       overallAssessment: 'good', reviewerConfidence: 'high', taskCompletionScore: 5,
-    }, classifier);
+    }, evaluation);
 
     expect(result.stage_value).toEqual(expect.arrayContaining([
       expect.objectContaining({ stage: 'scouting', value: 'high' }),
@@ -47,17 +46,17 @@ describe('JEV run evaluation artifact', () => {
     expect(result.confidence_calibration).toMatchObject({ status: 'unassessed', calibrated: false });
   });
 
-  test('preserves typed JEV answer confidence and probabilities in the artifact', () => {
+  test('preserves typed answer confidence and probabilities in the evaluation artifact', () => {
     const result = buildRunEvaluationArtifact(completeFacts, {
       overallAssessment: 'good', reviewerConfidence: 'high', taskCompletionScore: 5,
     }, {
-      ...classifier,
+      ...evaluation,
       answers: {
         reviewer_confidence: { type: 'choice', choice: 'high', probabilities: { high: 0.9, medium: 0.1 }, confidence: 0.9 },
       },
     });
 
-    expect(result.classifier.answers?.reviewer_confidence).toMatchObject({ confidence: 0.9, probabilities: { high: 0.9 } });
+    expect(result.evaluation.answers?.reviewer_confidence).toMatchObject({ confidence: 0.9, probabilities: { high: 0.9 } });
     expect(result.confidence_calibration.reason).toMatch(/labeled outcome data/i);
   });
 
@@ -75,7 +74,7 @@ describe('JEV run evaluation artifact', () => {
         causeProbabilities: { timeout_or_flaky: 0.91, test_failure: 0.09 },
         actionProbabilities: { retry_validation_once: 0.93, inspect_diagnostics: 0.07 },
       },
-    }, classifier);
+    }, evaluation);
 
     expect(result.failure_diagnosis).toEqual({
       cause: 'timeout_or_flaky',
@@ -100,7 +99,7 @@ describe('JEV run evaluation artifact', () => {
       diff: '',
       presentSources: ['goal-setting.json', 'scouting.json', 'goal-check.json'],
       stageDurations: {},
-    }, { overallAssessment: 'excellent', reviewerConfidence: 'high', taskCompletionScore: 5 }, classifier);
+    }, { overallAssessment: 'excellent', reviewerConfidence: 'high', taskCompletionScore: 5 }, evaluation);
 
     expect(result.overall_assessment).toBe('poor');
     expect(result.reviewer_confidence).toBe('low');
@@ -131,7 +130,7 @@ describe('JEV run evaluation artifact', () => {
         { name: 'fresh_install', elapsed_seconds: 185 },
         { name: 'workspace_cache_restored', elapsed_seconds: null },
       ],
-    }, { overallAssessment: 'good', reviewerConfidence: 'high', taskCompletionScore: 5 }, classifier);
+    }, { overallAssessment: 'good', reviewerConfidence: 'high', taskCompletionScore: 5 }, evaluation);
     expect(result.efficiency_findings).toContain('Cold dependency installation took 185s; improve cache hit rate or image seeding.');
     expect(result.kaseki_improvement_opportunities.map(item => item.category)).toContain('dependency_cache');
   });
@@ -156,7 +155,7 @@ describe('JEV run evaluation artifact', () => {
       validation: '',
       validationSources: [],
       presentSources: ['goal-setting.json', 'goal-check.json', 'git.diff', 'changed-files.txt'],
-    }, { overallAssessment: 'good', reviewerConfidence: 'high', taskCompletionScore: 5 }, classifier);
+    }, { overallAssessment: 'good', reviewerConfidence: 'high', taskCompletionScore: 5 }, evaluation);
 
     expect(result.phase_scorecard.validation).toMatchObject({ outcome: 'succeeded', commands_attempted: 2 });
     expect(result.phase_scorecard['goal-setting']).toMatchObject({ outcome: 'succeeded' });
@@ -181,7 +180,7 @@ describe('JEV run evaluation artifact', () => {
       ] },
       validation: '',
       validationSources: [],
-    }, { overallAssessment: 'good', reviewerConfidence: 'high', taskCompletionScore: 5 }, classifier);
+    }, { overallAssessment: 'good', reviewerConfidence: 'high', taskCompletionScore: 5 }, evaluation);
 
     expect(result.phase_scorecard.validation).toMatchObject({ outcome: 'succeeded', commands_attempted: 2 });
   });

@@ -1415,9 +1415,9 @@ describe('LLM Gateway Test', () => {
     });
   });
 
-  describe('Classification Smoke Test (Native JEV)', () => {
+  describe('Evaluation Smoke Test', () => {
     const mockClassificationRequest = {
-      model: 'typesafe/jev',
+      model: '~typesafe/latest',
       input: {
         state: 'Help! My payouts have been failing for 3 days.',
         questions: {
@@ -1453,19 +1453,19 @@ describe('LLM Gateway Test', () => {
       it('should resolve Cloudflare AI Run credentials from environment', () => {
         process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-123';
         process.env.CLOUDFLARE_API_TOKEN = 'test-token-xyz';
-        process.env.KASEKI_CLASSIFICATION_MODEL = 'typesafe/jev';
+        process.env.KASEKI_DECISION_MODEL = '~typesafe/latest';
 
         // This test validates the config shape; implementation test
         // will verify the helper builds the right Cloudflare endpoint
         expect(process.env.CLOUDFLARE_ACCOUNT_ID).toBe('test-account-123');
         expect(process.env.CLOUDFLARE_API_TOKEN).toBe('test-token-xyz');
-        expect(process.env.KASEKI_CLASSIFICATION_MODEL).toBe('typesafe/jev');
+        expect(process.env.KASEKI_DECISION_MODEL).toBe('~typesafe/latest');
       });
 
       it('should read Cloudflare API token from host secrets when inline env is not configured', () => {
         delete process.env.CLOUDFLARE_API_TOKEN;
         process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-456';
-        process.env.KASEKI_CLASSIFICATION_MODEL = 'typesafe/jev';
+        process.env.KASEKI_DECISION_MODEL = '~typesafe/latest';
         process.env.KASEKI_SECRETS_DIR = secretsDir;
 
         // Write API token to secrets file
@@ -1475,14 +1475,14 @@ describe('LLM Gateway Test', () => {
         expect(fs.existsSync(path.join(secretsDir, 'cloudflare_api_token'))).toBe(true);
       });
 
-      it('should default to dynamic/classify model when KASEKI_CLASSIFICATION_MODEL is not set', () => {
-        delete process.env.KASEKI_CLASSIFICATION_MODEL;
+      it('should default to dynamic/classify model when KASEKI_DECISION_MODEL is not set', () => {
+        delete process.env.KASEKI_DECISION_MODEL;
         process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-789';
         process.env.CLOUDFLARE_API_TOKEN = 'test-token-abc';
 
         // Validation: expected default model
-        const expectedDefault = 'typesafe/jev';
-        expect(expectedDefault).toBe('typesafe/jev');
+        const expectedDefault = '~typesafe/latest';
+        expect(expectedDefault).toBe('~typesafe/latest');
       });
 
       it('should fail gracefully when CLOUDFLARE_ACCOUNT_ID is not configured', () => {
@@ -1504,10 +1504,10 @@ describe('LLM Gateway Test', () => {
     });
 
     describe('buildClassificationSmokeRequest', () => {
-      it('should build valid native JEV request body for Cloudflare AI Run', () => {
+      it('should build a valid evaluation request body', () => {
         const requestBody = mockClassificationRequest;
 
-        expect(requestBody.model).toBe('typesafe/jev');
+        expect(requestBody.model).toBe('~typesafe/latest');
         expect(requestBody.input).toBeDefined();
         expect(requestBody.input.state).toBe('Help! My payouts have been failing for 3 days.');
         expect(requestBody.input.questions).toBeDefined();
@@ -1516,12 +1516,12 @@ describe('LLM Gateway Test', () => {
       });
 
       it('should use resolved model from config in the request', () => {
-        process.env.KASEKI_CLASSIFICATION_MODEL = 'custom/classifier';
-        const model = process.env.KASEKI_CLASSIFICATION_MODEL;
+        process.env.KASEKI_DECISION_MODEL = 'custom/classifier';
+        const model = process.env.KASEKI_DECISION_MODEL;
         expect(model).toBe('custom/classifier');
       });
 
-      it('should not include chat-completions specific fields in the JEV request', () => {
+      it('should not include chat-completions specific fields in the evaluation request', () => {
         const requestBody = mockClassificationRequest;
 
         expect(requestBody).not.toHaveProperty('messages');
@@ -1578,13 +1578,12 @@ describe('LLM Gateway Test', () => {
           detail: 'Classification model validated',
           responseTime: 250,
           timestamp: new Date().toISOString(),
-          modelUsed: 'typesafe/jev',
           outputTokens: 8,
-          classificationValidated: true,
+          evaluationValidated: true,
         };
 
         expect(expectedResult.status).toBe('ok');
-        expect(expectedResult.classificationValidated).toBe(true);
+        expect(expectedResult.evaluationValidated).toBe(true);
       });
 
       it('should return error when classification endpoint returns non-200', async () => {

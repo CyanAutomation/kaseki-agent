@@ -158,8 +158,8 @@ describe('JobScheduler queue behavior', () => {
         buildProcessEnvironment: (job: Job, timeoutSeconds: number) => NodeJS.ProcessEnv;
       }).buildProcessEnvironment;
       const env = buildEnvironment.call(scheduler, job, 300);
-      expect(env.KASEKI_JEV_TASK_TYPE).toBe('documentation');
-      expect(env.KASEKI_JEV_VALIDATION_FOCUS).toBe('docs_checks');
+      expect(env.KASEKI_TASK_TYPE_HINT).toBe('documentation');
+      expect(env.KASEKI_VALIDATION_FOCUS_HINT).toBe('docs_checks');
       expect(env.KASEKI_VALIDATION_COMMANDS).toBe('npm run docs:check');
     } finally {
       await scheduler.shutdown();

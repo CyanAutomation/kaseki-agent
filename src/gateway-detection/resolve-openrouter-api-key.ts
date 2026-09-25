@@ -11,20 +11,20 @@ export interface ApiKeyResolutionResult {
 }
 
 /**
- * Resolves the OpenRouter API key for the OpenRouter decisions API classification endpoint.
+ * Resolves the OpenRouter API key for structured evaluation endpoints.
  *
  * This follows kaseki-agent's standard API key resolution pattern:
- * 1. Check KASEKI_JEV_API_KEY_FILE (the worker-mounted OpenRouter secret)
+ * 1. Check KASEKI_DECISION_API_KEY_FILE (the worker-mounted OpenRouter secret)
  * 2. Check OPENROUTER_API_KEY_FILE for direct evaluator invocations
  * 3. Fall back to OPENROUTER_API_KEY env var
  * 4. Report not configured if neither is available
  *
- * Used by classificationSmoke smoke test to evaluate code review scenarios.
+ * Used by Task Admission, Goal Check, Run Evaluation, and evaluation capability checks.
  *
  * @returns Resolution result with value (if found), configured status, and source metadata
  */
 export function resolveOpenRouterApiKey(): ApiKeyResolutionResult {
-  const filePath = process.env.KASEKI_JEV_API_KEY_FILE || process.env.OPENROUTER_API_KEY_FILE;
+  const filePath = process.env.KASEKI_DECISION_API_KEY_FILE || process.env.OPENROUTER_API_KEY_FILE;
   const fallbackResult: ApiKeyResolutionResult = {
     configured: false,
     source: 'none',
@@ -42,7 +42,7 @@ export function resolveOpenRouterApiKey(): ApiKeyResolutionResult {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`Failed to read JEV/OpenRouter API key file (${filePath}):`, errorMessage);
+      console.error(`Failed to read evaluation API key file (${filePath}):`, errorMessage);
       fallbackResult.error = errorMessage;
     }
   }

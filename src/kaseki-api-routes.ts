@@ -471,7 +471,6 @@ export function createApiRouter(
       logger.event('task_admission_rejected', {
         reason: result.reason,
         riskScore: result.riskScore,
-        modelUsed: result.modelUsed,
         responseTime: result.responseTime,
       });
     } else if (result.degraded) {

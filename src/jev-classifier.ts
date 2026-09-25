@@ -1,12 +1,12 @@
 import type { ClassificationAnswer, DecisionsApiRequest, DecisionsApiResponse, QuestionDefinition } from './types/openrouter-decisions';
 import { resolveOpenRouterApiKey } from './gateway-detection/resolve-openrouter-api-key';
 
-export const DEFAULT_JEV_MODEL = '~typesafe/jev-latest';
+export const DEFAULT_JEV_MODEL = '~typesafe/latest';
 export const JEV_DECISIONS_URL = 'https://openrouter.ai/api/alpha/decisions';
 export interface JevClassificationOptions { model?: string; timeoutMs?: number; fetchImpl?: typeof fetch; maxRetries?: number; }
 export interface JevClassificationResult { model: string; answers: Record<string, ClassificationAnswer>; usage: Record<string, unknown>; responseTime: number; }
 export class JevClassificationError extends Error {
-  readonly code: 'credentials' | 'timeout' | 'http' | 'invalid_response' | 'network'; readonly status?: number;
+  readonly code: 'configuration' | 'credentials' | 'timeout' | 'http' | 'invalid_response' | 'network'; readonly status?: number;
   constructor(code: JevClassificationError['code'], message: string, status?: number) { super(message); this.name = 'JevClassificationError'; this.code = code; this.status = status; }
 }
 
@@ -48,10 +48,29 @@ function retryable(error: JevClassificationError): boolean {
 }
 function wait(ms: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
+const RETIRED_DECISION_SETTINGS = [
+  'KASEKI_JEV_WORKFLOW',
+  'KASEKI_JEV_CONFIDENCE',
+  'KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS',
+  'KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS',
+  'KASEKI_JEV_WORKFLOW_EVALUATOR',
+  'KASEKI_CLASSIFICATION_MODEL',
+  'KASEKI_JEV_API_KEY_FILE',
+  'KASEKI_JEV_TASK_TYPE',
+  'KASEKI_JEV_VALIDATION_FOCUS',
+] as const;
+
+export function hasRetiredDecisionSettings(): boolean {
+  return RETIRED_DECISION_SETTINGS.some((name) => process.env[name] !== undefined);
+}
+
 export async function classifyWithJev(state: string | Record<string, unknown>, questions: Record<string, QuestionDefinition>, options: JevClassificationOptions = {}): Promise<JevClassificationResult> {
+  if (hasRetiredDecisionSettings()) {
+    throw new JevClassificationError('configuration', 'Retired evaluation settings are configured. Remove them and use the stage-based settings documented in docs/ENV_VARS.md.');
+  }
   const credentials = resolveOpenRouterApiKey();
   if (!credentials.value) throw new JevClassificationError('credentials', 'OPENROUTER_API_KEY is not configured');
-  const model = options.model || process.env.KASEKI_CLASSIFICATION_MODEL || DEFAULT_JEV_MODEL;
+  const model = options.model || process.env.KASEKI_DECISION_MODEL || DEFAULT_JEV_MODEL;
   const request: DecisionsApiRequest = { model, state, questions };
   const started = performance.now(); const retries = options.maxRetries ?? 2;
   let lastError: JevClassificationError | undefined;
@@ -59,17 +78,17 @@ export async function classifyWithJev(state: string | Record<string, unknown>, q
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs(options.timeoutMs));
     try {
       const response = await (options.fetchImpl || fetch)(JEV_DECISIONS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${credentials.value}` }, body: JSON.stringify(request), signal: controller.signal });
-      if (!response.ok) throw new JevClassificationError('http', `classifier returned HTTP ${response.status}`, response.status);
+      if (!response.ok) throw new JevClassificationError('http', `evaluation request returned HTTP ${response.status}`, response.status);
       const parsed = parseResponse(await response.json(), questions);
-      if (!parsed) throw new JevClassificationError('invalid_response', 'classifier response did not match requested JEV answer types');
+      if (!parsed) throw new JevClassificationError('invalid_response', 'evaluation response did not match the requested typed answer format');
       parsed.responseTime = Math.round(performance.now() - started); return parsed;
     } catch (error) {
-      lastError = error instanceof JevClassificationError ? error : error && typeof error === 'object' && 'name' in error && error.name === 'AbortError' ? new JevClassificationError('timeout', `classifier timed out after ${timeoutMs(options.timeoutMs)}ms`) : new JevClassificationError('network', error instanceof Error ? error.message : String(error));
+      lastError = error instanceof JevClassificationError ? error : error && typeof error === 'object' && 'name' in error && error.name === 'AbortError' ? new JevClassificationError('timeout', `evaluation request timed out after ${timeoutMs(options.timeoutMs)}ms`) : new JevClassificationError('network', error instanceof Error ? error.message : String(error));
       if (attempt === retries || !retryable(lastError)) throw lastError;
       await wait(100 * 2 ** attempt);
     } finally { clearTimeout(timer); }
   }
-  throw lastError || new JevClassificationError('network', 'classifier failed');
+  throw lastError || new JevClassificationError('network', 'evaluation request failed');
 }
 
 export function answerConfidence(answer: ClassificationAnswer | undefined): number { return answer?.type === 'choice' || answer?.type === 'score' ? answer.confidence : 0; }
