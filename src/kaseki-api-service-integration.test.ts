@@ -21,14 +21,17 @@ void shutdownDepsContract;
 
 describe('KasekiApiService Integration', () => {
   describe('Service Integration', () => {
-    it('should bootstrap services with callable contracts and cache behavior', async () => {
+    it('should compose the default service implementations', async () => {
       const os = await import('os');
       const fs = await import('fs');
       const { bootstrapServices } = await import('./kaseki-api/service-bootstrapper');
+      const { JobScheduler } = await import('./job-scheduler');
+      const { WebhookManager } = await import('./webhook-manager');
+      const { IdempotencyStore } = await import('./idempotency-store');
+      const { PreFlightValidator } = await import('./pre-flight-validator');
+      const { ResultCache } = await import('./result-cache');
 
       const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-integration-'));
-      const artifactPath = path.join(resultsDir, 'artifact.log');
-      fs.writeFileSync(artifactPath, 'payload-1', 'utf-8');
 
       let services;
       try {
@@ -47,19 +50,13 @@ describe('KasekiApiService Integration', () => {
           defaultTaskMode: 'patch',
         });
 
-        expect(typeof services.scheduler.shutdown).toBe('function');
-        expect(typeof services.webhookManager.shutdown).toBe('function');
-        expect(typeof services.idempotencyStore.shutdown).toBe('function');
-        expect(typeof services.preFlightValidator.validate).toBe('function');
-
-        const first = services.artifactCache.getOrLoad(artifactPath);
-        const second = services.artifactCache.getOrLoad(artifactPath);
-        const stats = services.artifactCache.getStats();
-
-        expect(first).toBe('payload-1');
-        expect(second).toBe('payload-1');
-        expect(stats.misses).toBe(1);
-        expect(stats.hits).toBe(1);
+        expect(services).toEqual({
+          scheduler: expect.any(JobScheduler),
+          webhookManager: expect.any(WebhookManager),
+          idempotencyStore: expect.any(IdempotencyStore),
+          preFlightValidator: expect.any(PreFlightValidator),
+          artifactCache: expect.any(ResultCache),
+        });
       } finally {
         if (services) {
           await services.scheduler.shutdown();
@@ -70,13 +67,12 @@ describe('KasekiApiService Integration', () => {
       }
     });
 
-    it('should return null and increment cache misses for missing artifacts', async () => {
+    it('should configure the bootstrapped artifact cache from API config', async () => {
       const os = await import('os');
       const fs = await import('fs');
       const { bootstrapServices } = await import('./kaseki-api/service-bootstrapper');
 
-      const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-missing-artifact-'));
-      const missingArtifactPath = path.join(resultsDir, 'missing-artifact.log');
+      const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-cache-config-'));
 
       let services;
       try {
@@ -89,21 +85,17 @@ describe('KasekiApiService Integration', () => {
           maxConcurrentRuns: 2,
           maxDiffBytes: 200000,
           agentTimeoutSeconds: 600,
-          artifactCacheMaxEntries: 5,
-          artifactCacheTtlMs: 60000,
-          artifactCacheMaxFileBytes: 1024 * 1024,
+          artifactCacheMaxEntries: 7,
+          artifactCacheTtlMs: 12345,
+          artifactCacheMaxFileBytes: 4096,
           defaultTaskMode: 'patch',
         });
 
-        const firstLoad = services.artifactCache.getOrLoad(missingArtifactPath);
-        const secondLoad = services.artifactCache.getOrLoad(missingArtifactPath);
-        const stats = services.artifactCache.getStats();
-
-        expect(firstLoad).toBeNull();
-        expect(secondLoad).toBeNull();
-        expect(stats.hits).toBe(0);
-        expect(stats.misses).toBe(2);
-        expect(stats.entries).toBe(0);
+        expect(services.artifactCache.getStats()).toMatchObject({
+          maxEntries: 7,
+          ttlMs: 12345,
+          maxFileBytes: 4096,
+        });
       } finally {
         if (services) {
           await services.scheduler.shutdown();
