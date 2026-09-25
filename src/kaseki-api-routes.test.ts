@@ -4780,7 +4780,7 @@ exit 0
   }
 
   test('allows PR run submission when template metadata supports pr', async () => {
-    writeTemplateMetadata(['auto', 'none', 'branch', 'pr', 'draft_pr']);
+    writeTemplateMetadata(['auto', 'none', 'branch', 'pr']);
     writeRunKasekiDoctor(0, 'doctor ok');
     const scheduler = createMockScheduler();
     scheduler.submitJob.mockImplementation((runRequest: any) => ({
@@ -4818,7 +4818,7 @@ exit 0
 
   test('admits publishable run submission when controller checkout is behind origin', async () => {
     const stale = createStaleCheckout();
-    writeTemplateMetadata(['auto', 'none', 'branch', 'pr', 'draft_pr'], stale.localSha);
+    writeTemplateMetadata(['auto', 'none', 'branch', 'pr'], stale.localSha);
     writeRunKasekiDoctor(0, 'doctor ok');
     const scheduler = createMockScheduler();
     scheduler.submitJob.mockImplementation((runRequest: any) => ({
@@ -4860,7 +4860,7 @@ exit 0
   });
 
   test('admits publishable runs when controller git metadata is unreadable', async () => {
-    writeTemplateMetadata(['auto', 'none', 'branch', 'pr', 'draft_pr']);
+    writeTemplateMetadata(['auto', 'none', 'branch', 'pr']);
     writeRunKasekiDoctor(0, 'doctor ok');
     // Create intentionally invalid git metadata so rev-parse fails consistently,
     // including in privileged environments where chmod(000) may still be readable.
@@ -4932,7 +4932,7 @@ exit 0
   });
 
   test('uses template metadata gitRef as informational fallback when rev-parse fails', async () => {
-    writeTemplateMetadata(['auto', 'none', 'branch', 'pr', 'draft_pr'], 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    writeTemplateMetadata(['auto', 'none', 'branch', 'pr'], 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
     writeRunKasekiDoctor(0, 'doctor ok');
     // Create intentionally invalid git metadata so rev-parse fails consistently,
     // including in privileged environments where chmod(000) may still be readable.
@@ -5602,7 +5602,7 @@ describe('kaseki-api-routes publish mode validation', () => {
     }
   });
 
-  test('rejects draft PR publishing when GitHub App credentials are not configured', async () => {
+  test('rejects removed draft_pr publish mode before queueing', async () => {
     const { readHostSecret } = jest.mocked(hostSecretsReader);
     // Ensure mock returns null for all GitHub App secrets
     (readHostSecret as jest.Mock).mockReset();
@@ -5639,7 +5639,9 @@ describe('kaseki-api-routes publish mode validation', () => {
 
       expect(response.status).toBe(400);
       const body = (await response.json()) as any;
-      expect(body.detail).toContain('publishMode=draft_pr requires readable GitHub App credentials');
+      expect(body.detail).toContain('publishMode');
+      expect(body.detail).toContain('draft_pr');
+      expect(body.detail).not.toContain('requires readable GitHub App credentials');
       expect(scheduler.submitJob).not.toHaveBeenCalled();
     } finally {
       await cleanupTestApp(server, idempotencyStore);

@@ -271,7 +271,7 @@ EOF
 }
 
 build_run_evaluation_prompt() {
-  local validation_tail progress_tail stage_timings dependency_cache restoration_report draft_pr_body metadata_text goal_setting_context test_impact_context caveman_instruction repository_default_branch repository_facts
+  local validation_tail progress_tail stage_timings dependency_cache restoration_report metadata_text goal_setting_context test_impact_context caveman_instruction repository_default_branch repository_facts
   
   if declare -F construct_context_handoff >/dev/null; then
     construct_context_handoff "validation" "Return the schema-valid run evaluation and process-quality scorecard."
@@ -284,7 +284,6 @@ build_run_evaluation_prompt() {
   dependency_cache=""
   restoration_report=""
   metadata_text=""
-  draft_pr_body=""
   goal_setting_context="Canonical input contract: ${KASEKI_RESULTS_DIR}/context-handoff.json (read first). For the required process-evidence cross-checks, inspect only files listed in artifact_paths; inspect any other raw artifact only for a named unresolved question."
   test_impact_context=""
   repository_default_branch="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' || true)"
@@ -344,8 +343,6 @@ $dependency_cache
 Restoration report tail (last 80 lines):
 $restoration_report
 
-Draft PR body:
-$draft_pr_body
 EOF
   else
     # Verbose version (caveman level 0-1) - keeping existing full instructions
@@ -598,8 +595,6 @@ $dependency_cache
 Restoration report tail (last 80 lines):
 $restoration_report
 
-Draft PR body:
-$draft_pr_body
 EOF
   fi
 }

@@ -658,6 +658,32 @@ describe('StatusArtifactHelper', () => {
       expect(response.artifacts?.diagnosticFiles).toContain('scouting-validation-errors.jsonl');
     });
 
+    it('should expose contract and retry diagnostics when scouting validation errors are absent', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-scouting-stream-fail');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), JSON.stringify({ failed_command: 'pi scouting agent' }));
+      fs.writeFileSync(path.join(runDir, 'scouting-contract-diagnostics.jsonl'), '{"attempt":1}');
+      fs.writeFileSync(path.join(runDir, 'scouting-retry-diagnostics.jsonl'), '{"attempt":1}');
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'scouting-validation-errors.jsonl': { exists: false, size: 0 },
+        'scouting-contract-diagnostics.jsonl': { exists: true, size: 20 },
+        'scouting-retry-diagnostics.jsonl': { exists: true, size: 20 },
+        'failure.json': { exists: true, size: 20 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      expect(response.artifacts?.diagnosticFiles).toEqual(expect.arrayContaining([
+        'scouting-contract-diagnostics.jsonl',
+        'scouting-retry-diagnostics.jsonl',
+      ]));
+      expect(response.diagnosticEntryPoint).toBe('scouting-contract-diagnostics.jsonl');
+    });
+
     it('should include pre-validation diagnostics when pre-validation fails', () => {
       const response = makeResponse();
       const runDir = path.join(resultsDir, 'job-pre-validation-fail');

@@ -420,12 +420,6 @@ if [ ! -r "$KASEKI_DECISION_EVALUATOR_PATH" ] && [ -r /app/dist/jev-workflow-eva
 fi
 kaseki_apply_inspect_mode_agent_defaults
 KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-pr}"
-# Human review is part of every successful Kaseki delivery. Keep legacy
-# callers that request a draft from silently weakening that review contract.
-if [ "$KASEKI_PUBLISH_MODE" = "draft_pr" ]; then
-  printf 'Publish mode draft_pr was requested; creating a normal PR for human review.\n' >&2
-  KASEKI_PUBLISH_MODE="pr"
-fi
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-1}"
 # Auto-disable when no GitHub App credentials are mounted to avoid redundant preflight noise.
 # startup-checks.sh already warned about missing credentials; this prevents a second round of errors.
@@ -440,7 +434,7 @@ if [ "$GITHUB_APP_ENABLED" = "1" ]; then
 fi
 if [ -z "${KASEKI_RUN_EVALUATION+x}" ]; then
   case "$KASEKI_PUBLISH_MODE:$KASEKI_TASK_MODE:$KASEKI_DRY_RUN:$GITHUB_APP_ENABLED" in
-    pr:patch:0:1|draft_pr:patch:0:1) KASEKI_RUN_EVALUATION="1" ;;
+    pr:patch:0:1) KASEKI_RUN_EVALUATION="1" ;;
     *) KASEKI_RUN_EVALUATION="0" ;;
   esac
 fi
@@ -5506,7 +5500,7 @@ is_transient_goal_setting_failure() {
 build_goal_setting_prompt() {
   local caveman_instruction goal_outcome_policy configured_validation_commands
   caveman_instruction="$(get_caveman_instruction)"
-  configured_validation_commands="${KASEKI_VALIDATION_COMMANDS:-not configured}"
+  configured_validation_commands="$(validation_commands_for_goal_prompt "${KASEKI_VALIDATION_COMMANDS:-}")"
   goal_outcome_policy="change_required"
   if [ "$KASEKI_TASK_MODE" = "inspect" ] || [ "${KASEKI_ALLOW_EMPTY_DIFF:-0}" = "1" ] || critical_change_contract_allows_noop; then
     goal_outcome_policy="change_or_noop"
@@ -5536,6 +5530,7 @@ Well-formed goals have:
 - **Preserve task scope**: The user's original prompt is authoritative. Do not add report/inventory deliverables, extra refactorings, test counts, or other requirements unless the user asked for them or they are necessary to satisfy a stated requirement.
 - **Keep criteria traceable and atomic**: Each success criterion must map to a specific user requirement and one independently verifiable outcome. Do not combine unrelated implementation steps into one criterion. Use a quoted phrase in source_requirement and name the artifacts needed to verify it in verification_sources.
 - **Use configured validation**: Effective validation commands for this run are listed below. Do not invent or require commands that are not in this list; describe validation as the configured checks passing when the user did not request additional commands.
+- If no runnable validation commands are listed, do not invent an npm script or claim a validation command will run.
 - **Honor conditional no-op intent**: If the original prompt says no change is a successful outcome, use change_or_noop; make implementation criteria conditional on a qualifying change being selected.
 
 === INPUT ANALYSIS ===
@@ -8391,13 +8386,9 @@ is_github_pr_error_retryable() {
   return 1
 }
 
-is_pr_draft_mode() {
-  [ "${KASEKI_PUBLISH_MODE:-pr}" = "draft_pr" ]
-}
-
 is_pr_creation_mode() {
   case "${KASEKI_PUBLISH_MODE:-pr}" in
-    auto|pr|draft_pr) return 0 ;;
+    auto|pr) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -9250,10 +9241,6 @@ $task_summary
 
 </details>
 EOF
-
-  if is_pr_draft_mode; then
-    printf '\nThis PR is in draft status. Please review before merging.\n'
-  fi
 }
 
 run_github_operations() {
@@ -9402,12 +9389,11 @@ run_github_operations() {
     return 0
   fi
   
-  # Create pull request. Both pr and draft_pr push a branch and create a PR;
-  # only draft_pr marks the GitHub Pulls API request as draft.
+  # Validation has passed; create a normal pull request for human review.
   GITHUB_OPERATION_PHASE="pr_creation"
   printf 'Creating pull request...\n' | tee -a /dev/null
   emit_progress "github operations" "pr_creation_starting"
-  local pr_title pr_body pr_response pr_url pr_number pr_http_status pr_draft_json
+  local pr_title pr_body pr_response pr_url pr_number pr_http_status
   pr_title="$(derive_pr_title)"
   pr_body="$(build_pr_body)"
   local pr_body_compact
@@ -9431,12 +9417,6 @@ EOF
 )
     printf 'WARN: build_pr_body returned empty content after sanitization; using fallback PR body.\n'  >&2
   fi
-  if is_pr_draft_mode; then
-    pr_draft_json=true
-  else
-    pr_draft_json=false
-  fi
-  
   # Retry loop for transient errors
   local retry_count=0 max_retries="$KASEKI_GITHUB_PR_RETRIES" pr_created=0
   local backoff_delay=2
@@ -9457,7 +9437,7 @@ EOF
     temp_status_file="$(mktemp /tmp/kaseki-pr-status.XXXXXX)" || { printf 'Failed to create temp file for PR status\n'  >&2; GITHUB_PR_EXIT=8; return 8; }
     
     if [ $retry_count -eq 0 ] && [ "${KASEKI_DEBUG:-0}" = "1" ]; then
-      printf 'Debug: Creating PR with head=%s, base=%s, draft=%s\n' "$feature_branch" "$GIT_REF" "$pr_draft_json" | tee -a /dev/null
+      printf 'Debug: Creating normal PR with head=%s, base=%s\n' "$feature_branch" "$GIT_REF" | tee -a /dev/null
     fi
     
     # Encode PR title and body as JSON strings
@@ -9489,7 +9469,7 @@ EOF
       -H "Authorization: token $token" \
       -H "Accept: application/vnd.github.v3+json" \
       "https://api.github.com/repos/$owner/$repo/pulls" \
-      -d "{\"title\": $pr_title_json, \"body\": $pr_body_json, \"head\": \"$feature_branch\", \"base\": \"$GIT_REF\", \"draft\": $pr_draft_json}" > "$temp_status_file" 2>&1
+      -d "{\"title\": $pr_title_json, \"body\": $pr_body_json, \"head\": \"$feature_branch\", \"base\": \"$GIT_REF\", \"draft\": false}" > "$temp_status_file" 2>&1
     curl_exit=$?
     
     # Split response and status code

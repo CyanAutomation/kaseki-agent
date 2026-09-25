@@ -38,6 +38,22 @@ test('returns an empty filtered event collection when no events are retained', a
   expect(result.summary.event_counts).toMatchObject({ message_update: 1 });
 });
 
+test('marks an incomplete tool-call stream invalid and reports the mismatch', async () => {
+  const result = await runFilter([
+    JSON.stringify({ type: 'toolcall_start' }),
+    JSON.stringify({ type: 'toolcall_end' }),
+    JSON.stringify({ type: 'toolcall_start' }),
+  ]);
+
+  expect(result.summary.event_counts).toMatchObject({ toolcall_start: 2, toolcall_end: 1 });
+  expect(result.summary.inference_health).toMatchObject({
+    tool_call_valid: false,
+    tool_call_start_count: 2,
+    tool_call_end_count: 1,
+    incomplete_tool_call_count: 1,
+  });
+});
+
 test('runPiEventFilter public contract redacts thinking content and summarizes selected model/api', async () => {
   const result = await runFilterContract([
     JSON.stringify({

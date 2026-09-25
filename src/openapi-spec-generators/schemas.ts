@@ -133,9 +133,9 @@ export function buildRunRequestSchema(): Record<string, unknown> {
       },
       publishMode: {
         type: 'string',
-        enum: ['auto', 'none', 'branch', 'pr', 'draft_pr'],
+        enum: ['auto', 'none', 'branch', 'pr'],
         description:
-          'Publishing mode after validation: pr creates a normal pull request (controller default when omitted), draft_pr creates a draft pull request, branch pushes only, auto publishes when credentials are available and skips if missing, none skips publishing',
+          'Publishing mode after validation: pr creates a normal pull request (controller default when omitted), branch pushes without creating a pull request, auto creates a normal pull request when credentials are available and skips publishing otherwise, none skips publishing',
       },
       startupCheck: {
         type: 'boolean',

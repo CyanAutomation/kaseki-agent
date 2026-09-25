@@ -67,6 +67,7 @@ case_npm_run_script_name_contract() {
   # Contract: validation commands only use missing-script skip handling for
   # parseable `npm run <script>` commands, preserving the script token exactly.
   assert_equals "bare npm run script" "check" "$(npm_run_script_name 'npm run check')"
+  assert_equals "hyphenated npm run script" "type-check" "$(npm_run_script_name 'npm run type-check')"
   assert_equals "npm run script with trailing args" "test" "$(npm_run_script_name 'npm run test -- --runInBand')"
   assert_equals "npm run script with extra whitespace" "build" "$(npm_run_script_name 'npm   run   build')"
 
@@ -167,6 +168,10 @@ JSON
     "npm run build;npm run test" "$(maybe_replace_missing_validation_commands "npm run check")"
   assert_equals "available explicit script remains authoritative" \
     "npm run test" "$(maybe_replace_missing_validation_commands "npm run test")"
+  assert_equals "goal prompt sees fallback commands" \
+    "npm run build;npm run test" "$(validation_commands_for_goal_prompt "npm run check")"
+  assert_equals "goal prompt omits unavailable mixed-in npm scripts" \
+    "npm run test" "$(validation_commands_for_goal_prompt "npm run missing;npm run test")"
 }
 
 case_apply_default_validation_commands_contract() {

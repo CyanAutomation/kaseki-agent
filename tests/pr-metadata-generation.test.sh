@@ -36,7 +36,6 @@ eval "$(extract_function sanitize_pr_metadata_text)"
 eval "$(extract_function sanitize_pr_body_text)"
 eval "$(extract_function truncate_pr_metadata_text)"
 eval "$(extract_function derive_pr_title)"
-eval "$(extract_function is_pr_draft_mode)"
 eval "$(extract_function format_pr_command_results)"
 eval "$(extract_function format_pr_command_results_bounded)"
 eval "$(extract_function format_pr_changed_files)"
@@ -51,6 +50,12 @@ eval "$(extract_function format_pr_run_scorecard)"
 eval "$(extract_function build_pr_body)"
 eval "$(extract_function run_node_subprocess)"
 eval "$(extract_function validate_run_evaluation_candidate)"
+
+grep -Fq '\"draft\": false' "$ROOT_DIR/kaseki-agent.sh" || fail "PR creation must explicitly request a normal PR"
+if grep -Fq 'is_pr_draft_mode' "$ROOT_DIR/kaseki-agent.sh"; then
+  fail "Conditional PR publishing code remains in the worker"
+fi
+pass "Worker PR creation has one normal, non-draft path"
 
 PRE_VALIDATION_TIMINGS_FILE="$RESULTS_DIR/pre-validation-timings.tsv"
 VALIDATION_TIMINGS_FILE="$RESULTS_DIR/validation-timings.tsv"
@@ -790,23 +795,14 @@ cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
 }
 JSON
 
-if grep -Fq 'This PR is in draft status. Please review before merging.' <<<"$pr_body"; then
-  fail "Normal PR body should not include draft review sentence"
-else
-  pass "Normal PR body omits draft review sentence"
-fi
-
-if is_pr_draft_mode; then
-  pr_draft_json=true
-else
-  pr_draft_json=false
-fi
+grep -Fq '## Summary' <<<"$pr_body" || fail "Normal PR body is missing its summary"
+pass "Normal PR body contains reviewer-facing summary"
 
 # Preserve the existing safe JSON encoding path used by the GitHub PR API payload.
 run_node_subprocess pr_title_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_title" "$TMP_DIR/node.log"
 run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_body" "$TMP_DIR/node.log"
 # shellcheck disable=SC2154 # Variables set by run_node_subprocess function
-payload="{\"title\": $pr_title_json, \"body\": $pr_body_json, \"head\": \"$feature_branch\", \"base\": \"$GIT_REF\", \"draft\": $pr_draft_json}"
+payload="{\"title\": $pr_title_json, \"body\": $pr_body_json, \"head\": \"$feature_branch\", \"base\": \"$GIT_REF\", \"draft\": false}"
 
 PAYLOAD="$payload" node <<'NODE'
 const payload = JSON.parse(process.env.PAYLOAD);
@@ -851,28 +847,11 @@ else
   pass "Node subprocess log omits shell syntax error output for regression fixture"
 fi
 
-KASEKI_PUBLISH_MODE='draft_pr'
-draft_pr_body="$(build_pr_body)"
-if grep -Fq 'This PR is in draft status. Please review before merging.' <<<"$draft_pr_body"; then
-  pass "Draft PR body includes draft review sentence"
-else
-  fail "Draft PR body missing draft review sentence"
-fi
-
-if is_pr_draft_mode; then
-  pr_draft_json=true
-else
-  pr_draft_json=false
-fi
-run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$draft_pr_body" "$TMP_DIR/node.log"
-payload="{\"title\": $pr_title_json, \"body\": $pr_body_json, \"head\": \"$feature_branch\", \"base\": \"$GIT_REF\", \"draft\": $pr_draft_json}"
-
 PAYLOAD="$payload" node <<'NODE'
 const payload = JSON.parse(process.env.PAYLOAD);
-if (!payload.body.includes('This PR is in draft status. Please review before merging.')) process.exit(1);
-if (payload.draft !== true) process.exit(2);
+if (payload.draft !== false) process.exit(1);
 NODE
-pass "Draft GitHub PR API payload marks the PR as draft"
+pass "GitHub PR API payload always requests a normal PR"
 
 build_pr_body_for_payload() {
   local candidate_body="$1"
@@ -901,7 +880,7 @@ build_pr_body_for_payload() {
 EOF
 }
 
-for publish_mode in pr draft_pr; do
+for publish_mode in pr auto; do
   KASEKI_PUBLISH_MODE="$publish_mode"
   ensured_body="$(build_pr_body_for_payload $'   \n\t  ')"
   run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$ensured_body" "$TMP_DIR/node.log"
