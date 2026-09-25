@@ -2,12 +2,12 @@
  * Gateway connectivity test routes
  *
  * Provides comprehensive LLM gateway diagnostics:
- * - GET /api/gateway-test - Full test (Stage 1 + Stage 2 + Classification smoke)
+ * - GET /api/gateway-test - Full test (connectivity, inference, and optional evaluation check)
  * - GET /api/gateway-test/stage1 - Connectivity only (lightweight)
  *
  * Stage 1: Authentication and connectivity check (no token consumption)
  * Stage 2: LLM inference test (with token consumption in production)
- * Classification: Classifier model smoke test (opt-in via ?classification=true)
+ * Evaluation: structured decision endpoint check (opt-in via ?evaluation=true)
  */
 
 import { Router, Request, Response } from 'express';
@@ -76,7 +76,9 @@ function parseGatewayTestRequest(req: Request): GatewayTestRequest {
     requestedStage: parseQueryStage(req.query.stage),
     responseSmoke: parseQueryBoolean(req.query.responseSmoke),
     piProviderRequested: parseQueryBoolean(req.query.piProvider) ?? false,
-    classificationRequested: parseQueryBoolean(req.query.classification) ?? false,
+    classificationRequested: parseQueryBoolean(req.query.evaluation)
+      ?? parseQueryBoolean(req.query.classification)
+      ?? false,
     debugMode: parseQueryBoolean(req.query.debug) ?? false,
   };
 }
@@ -121,8 +123,8 @@ function buildDualStageResponse(
     result.multiTurnValidated = piProviderResult.multiTurnValidated === true;
   }
   if (classificationResult) {
-    result.classificationSmoke = classificationResult;
-    result.classificationValidated = classificationResult.status === 'ok';
+    result.evaluationSmoke = classificationResult;
+    result.evaluationValidated = classificationResult.status === 'ok';
   }
 
   return result;
@@ -194,17 +196,17 @@ function buildStage2Response(stage2Result: any, piProviderResult: any, classific
     result.multiTurnValidated = piProviderResult.multiTurnValidated === true;
   }
   if (classificationResult) {
-    result.classificationSmoke = classificationResult;
-    result.classificationValidated = classificationResult.status === 'ok';
+    result.evaluationSmoke = classificationResult;
+    result.evaluationValidated = classificationResult.status === 'ok';
   }
   const gatewayInferenceMs = Number(stage2Result?.responseTime) || 0;
   const piAdapterMs = Number(piProviderResult?.responseTime) || 0;
-  const classificationMs = Number(classificationResult?.responseTime) || 0;
+  const evaluationMs = Number(classificationResult?.responseTime) || 0;
   result.modelTest = {
     gatewayInferenceMs,
     piAdapterMs: piProviderResult ? piAdapterMs : null,
-    classificationMs: classificationResult && classificationResult.status !== 'skipped' ? classificationMs : null,
-    endToEndMs: gatewayInferenceMs + (piProviderResult ? piAdapterMs : 0) + (classificationResult && classificationResult.status !== 'skipped' ? classificationMs : 0),
+    evaluationMs: classificationResult && classificationResult.status !== 'skipped' ? evaluationMs : null,
+    endToEndMs: gatewayInferenceMs + (piProviderResult ? piAdapterMs : 0) + (classificationResult && classificationResult.status !== 'skipped' ? evaluationMs : 0),
     tokens: {
       output: typeof stage2Result?.outputTokens === 'number' ? stage2Result.outputTokens : null,
       estimatedCostUsd: null,
@@ -350,12 +352,12 @@ export function createGatewayTestRoutes(): Router {
    * GET /api/gateway-test - Orchestrated full test (Stage 1 + Stage 2 + Classification)
    * Runs connectivity by default and response validation only when explicitly requested
    * Stage 2 consumes tokens and requires ?stage=2 or ?responseSmoke=true
-   * Classification is opt-in via ?classification=true
+   * Evaluation is opt-in via ?evaluation=true
    * Query params:
    *   ?stage=1              - Run Stage 1 only (connectivity check)
    *   ?stage=2              - Run Stage 2 only (inference test)
    *   ?responseSmoke=true/false - Override stage 2 decision
-   *   ?classification=true  - Run classification smoke (opt-in)
+   *   ?evaluation=true     - Run the evaluation endpoint check (opt-in)
    *   ?piProvider=true      - Run Pi provider adapter smoke
    *   ?debug=true           - Enable debug logging
    */

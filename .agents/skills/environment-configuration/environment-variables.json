@@ -28,5 +28,41 @@
     "description": "Legacy switch for terse communication guidance",
     "default": "1",
     "acceptedValues": "`0` (disable) or `1` (enable)"
+  },
+  {
+    "name": "KASEKI_DECISION_MODEL",
+    "description": "Model alias used by Task Admission, Goal Check, Run Evaluation, and validation recovery",
+    "default": "~typesafe/latest",
+    "acceptedValues": "A supported model alias"
+  },
+  {
+    "name": "KASEKI_TYPED_EVALUATION_ENABLED",
+    "description": "Enable structured decision evaluation for Goal Check and Run Evaluation",
+    "default": "1",
+    "acceptedValues": "`0` (disable) or `1` (enable)"
+  },
+  {
+    "name": "KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD",
+    "description": "Confidence threshold for Goal Check criteria",
+    "default": "0.8",
+    "acceptedValues": "Number from 0 to 1"
+  },
+  {
+    "name": "KASEKI_VALIDATION_RECOVERY_MODE",
+    "description": "Validation failure assessment and retry policy",
+    "default": "observe",
+    "acceptedValues": "`off`, `observe`, or `auto`"
+  },
+  {
+    "name": "KASEKI_VALIDATION_RETRY_SAFE_COMMANDS",
+    "description": "Exact validation commands eligible for a bounded automatic retry",
+    "default": "[]",
+    "acceptedValues": "JSON array of command strings"
+  },
+  {
+    "name": "KASEKI_VALIDATION_RETRY_CONFIDENCE_THRESHOLD",
+    "description": "Minimum confidence for a validation recovery retry",
+    "default": "0.9",
+    "acceptedValues": "Number from 0 to 1"
   }
 ]

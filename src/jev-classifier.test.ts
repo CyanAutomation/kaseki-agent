@@ -2,6 +2,7 @@ import { classifyWithJev, answerConfidence, answerIsTrue, DEFAULT_JEV_MODEL, JEV
 
 describe('JEV classifier client', () => {
   const originalKey = process.env.OPENROUTER_API_KEY;
+  const originalRetiredWorkflowSetting = process.env.KASEKI_JEV_WORKFLOW;
 
   beforeEach(() => {
     process.env.OPENROUTER_API_KEY = 'sk-test-key';
@@ -10,6 +11,22 @@ describe('JEV classifier client', () => {
   afterEach(() => {
     if (originalKey === undefined) delete process.env.OPENROUTER_API_KEY;
     else process.env.OPENROUTER_API_KEY = originalKey;
+    if (originalRetiredWorkflowSetting === undefined) delete process.env.KASEKI_JEV_WORKFLOW;
+    else process.env.KASEKI_JEV_WORKFLOW = originalRetiredWorkflowSetting;
+  });
+
+  it('keeps the configured rolling model alias at the latest release', () => {
+    expect(DEFAULT_JEV_MODEL).toBe('~typesafe/latest');
+  });
+
+  it('rejects retired evaluation configuration without using it as an alias', async () => {
+    process.env.KASEKI_JEV_WORKFLOW = '0';
+    const fetchImpl = jest.fn();
+    await expect(classifyWithJev('state', {}, { fetchImpl })).rejects.toMatchObject({
+      code: 'configuration',
+      message: expect.stringContaining('stage-based settings'),
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('posts a typed decision request and preserves answers and usage', async () => {
@@ -35,7 +52,7 @@ describe('JEV classifier client', () => {
 
   it('accepts a normalized Choice distribution and a fractional zero-based Score answer', async () => {
     const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({
-      model: 'typesafe/jev-1.13-20260917',
+      model: '~typesafe/latest',
       answers: {
         department: { type: 'choice', choice: 'billing', probabilities: { billing: 0.85, technical: 0.15, sales: 0 }, confidence: 0.78 },
         frustration: { type: 'score', score: 1.05, legend: { 0: 'Calm', 1: 'Frustrated', 2: 'Very angry' }, probabilities: { 0: 0, 1: 0.95, 2: 0.05 }, confidence: 0.93 },

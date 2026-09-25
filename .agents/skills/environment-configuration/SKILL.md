@@ -45,6 +45,12 @@ This skill provides comprehensive reference for all kaseki-agent environment var
 | `KASEKI_MODEL` | `auto` | LLM model used for agent execution | Provider-supported model identifier, or `auto` |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | Maximum agent execution time in seconds | Non-negative integer, up to 86400 |
 | `KASEKI_CAVEMAN` | `1` | Legacy switch for terse communication guidance | `0` (disable) or `1` (enable) |
+| `KASEKI_DECISION_MODEL` | `~typesafe/latest` | Model alias used by Task Admission, Goal Check, Run Evaluation, and validation recovery | A supported model alias |
+| `KASEKI_TYPED_EVALUATION_ENABLED` | `1` | Enable structured decision evaluation for Goal Check and Run Evaluation | `0` (disable) or `1` (enable) |
+| `KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD` | `0.8` | Confidence threshold for Goal Check criteria | Number from 0 to 1 |
+| `KASEKI_VALIDATION_RECOVERY_MODE` | `observe` | Validation failure assessment and retry policy | `off`, `observe`, or `auto` |
+| `KASEKI_VALIDATION_RETRY_SAFE_COMMANDS` | `[]` | Exact validation commands eligible for a bounded automatic retry | JSON array of command strings |
+| `KASEKI_VALIDATION_RETRY_CONFIDENCE_THRESHOLD` | `0.9` | Minimum confidence for a validation recovery retry | Number from 0 to 1 |
 <!-- END GENERATED PUBLIC ENVIRONMENT VARIABLES -->
 
 ---
