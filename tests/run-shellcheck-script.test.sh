@@ -27,9 +27,9 @@ cd "$ROOT_DIR"
 production_files=(
   run-kaseki.sh
   test-artifact-recovery.sh
-  scripts/*.sh
-  scripts/lib/*.sh
 )
+production_files+=(scripts/*.sh)
+production_files+=(scripts/lib/*.sh)
 test_files=()
 while IFS= read -r -d '' file; do
   test_files+=("$file")
