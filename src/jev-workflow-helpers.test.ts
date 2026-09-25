@@ -1,4 +1,4 @@
-import { buildGoalCheckQuestions, buildGoalCriterionAssessments, buildGoalCheckOutcome, buildRunEvaluationQuestions, compactGoalSettingForEvaluation, failureDiagnosisFromAnswers, mapJevScoreToCompletion, selectCriterionEvidenceSources } from './jev-workflow-helpers';
+import { buildGoalCheckQuestions, buildGoalCriterionAssessments, buildGoalCheckOutcome, buildRunEvaluationQuestions, compactGoalSettingForEvaluation, failureDiagnosisFromAnswers, mapJevScoreToCompletion, selectConditionalHelper, selectCriterionEvidenceSources } from './jev-workflow-helpers';
 
 describe('JEV workflow answer helpers', () => {
   test('compacts verbose goal-setting details while preserving the complete contract', () => {
@@ -89,6 +89,11 @@ describe('JEV workflow answer helpers', () => {
     expect(selectCriterionEvidenceSources('Existing unit tests pass and make vet is clean', sources)).toEqual(['validation.log']);
     expect(selectCriterionEvidenceSources('The documentation diff only changes approved files', sources)).toEqual(['git.diff', 'changed-files.txt']);
     expect(selectCriterionEvidenceSources('Rank the strongest duplication candidate with rationale', sources)).toEqual(['goal-setting.json', 'scouting.json']);
+  });
+
+  test('selects conditional helpers in index order', () => {
+    expect(selectConditionalHelper('first', 'second', 0)).toBe('first');
+    expect(selectConditionalHelper('first', 'second', 1)).toBe('second');
   });
 
   test('marks a conditional criterion not applicable without treating it as unmet', () => {
