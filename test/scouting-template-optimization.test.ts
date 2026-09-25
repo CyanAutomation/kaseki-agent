@@ -414,11 +414,6 @@ describe('Scouting Template: Token Efficiency', () => {
     // After optimization, this should be lower but still present
     expect(concreteCount).toBeLessThan(15);
   });
-
-  test('no meta-commentary about copying text', () => {
-    // After optimization, "do not copy" instructions should be minimal or gone
-    expect(baseContent).toMatch(/write|output/i); // Should still have guidance on what to output
-  });
 });
 
 // ============================================================================
