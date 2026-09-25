@@ -40,10 +40,13 @@ describe('run-scorecard-scoring-parts', () => {
     const config = normalizeConfig({} as NodeJS.ProcessEnv);
     ScorecardContext.initialize(config);
     const dims = buildDimensions(evidence);
-    const scouting = dims.find(d => d.id === 'scouting_quality');
-    expect(scouting).toBeDefined();
-    expect(scouting.effective_weight).toBe(0);
-    expect(scouting.status).toBe('not_applicable');
+    const scoutingDimensions = dims.filter(d => d.id === 'scouting_quality');
+    expect(scoutingDimensions).toHaveLength(1);
+    expect(scoutingDimensions[0]).toEqual(expect.objectContaining({
+      id: 'scouting_quality',
+      effective_weight: 0,
+      status: 'not_applicable',
+    }));
   });
 
   test('fallback artifacts score below agent-produced artifacts and retain source references', () => {
