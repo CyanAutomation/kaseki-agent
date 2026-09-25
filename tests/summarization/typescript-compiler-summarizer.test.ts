@@ -79,8 +79,11 @@ describe('TypeScriptCompilerSummarizer', () => {
       `;
       const summary = summarizer.summarize(code);
 
-      expect(summary.imports.length).toBeGreaterThanOrEqual(1);
-      expect(summary.imports.some(i => i.module === './repo')).toBe(true);
+      expect(summary.imports).toEqual([
+        { module: './repo', items: ['Repository'] },
+        { module: '@app/logger', items: ['Logger'] },
+        { module: 'fs', items: ['fs'] },
+      ]);
     });
 
     it('should extract export statements', () => {
@@ -91,8 +94,10 @@ describe('TypeScriptCompilerSummarizer', () => {
       `;
       const summary = summarizer.summarize(code);
 
-      expect(summary.exports.length).toBeGreaterThanOrEqual(1);
-      expect(summary.exports.some(e => e.name === 'Service')).toBe(true);
+      expect(summary.exports).toEqual([
+        { name: 'Service', kind: 'class' },
+        { name: 'Config', kind: 'interface' },
+      ]);
     });
   });
 
@@ -124,8 +129,19 @@ describe('TypeScriptCompilerSummarizer', () => {
       `;
       const summary = summarizer.summarize(code);
 
-      expect(summary.exports.length).toBeGreaterThanOrEqual(3);
-      expect(summary.interfaces.length).toBeGreaterThanOrEqual(1);
+      expect(summary.exports).toEqual([
+        { name: 'UserDTO', kind: 'interface' },
+        { name: 'User', kind: 'class' },
+        { name: 'Status', kind: 'type' },
+        { name: 'getUser', kind: 'function' },
+      ]);
+      expect(summary.interfaces).toEqual([
+        {
+          name: 'UserDTO',
+          signature: 'interface UserDTO',
+          kind: 'interface',
+        },
+      ]);
     });
 
     it('should ignore const-assigned arrow functions without parse errors', () => {
