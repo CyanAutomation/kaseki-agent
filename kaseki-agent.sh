@@ -496,6 +496,7 @@ GOAL_CHECK_DURATION_SECONDS=0
 GOAL_CHECK_ATTEMPTS=0
 GOAL_CHECK_EVALUATOR_ATTEMPTS=0
 GOAL_CHECK_MET=false
+GOAL_CHECK_OUTCOME="unknown"
 GOAL_CHECK_FAILURE_REASON=""
 CRITICAL_CHANGE_FAILURE_REASON=""
 GOAL_CHECK_EVALUATOR_UNAVAILABLE=false
@@ -1997,6 +1998,7 @@ write_metadata() {
   "run_evaluation_exit_code": $RUN_EVALUATION_EXIT,
   "goal_check_attempts": $GOAL_CHECK_ATTEMPTS,
   "goal_check_met": $([[ "$GOAL_CHECK_EVALUATOR_UNAVAILABLE" == "true" ]] && printf 'null' || printf '%s' "$GOAL_CHECK_MET"),
+  "goal_check_outcome": $(printf '%s' "$GOAL_CHECK_OUTCOME" | json_encode),
   "pre_validation_exit_code": $PRE_VALIDATION_EXIT,
   "validation_exit_code": $VALIDATION_EXIT,
   "validation_fail_fast_mode": $([[ "$KASEKI_VALIDATION_FAIL_FAST" == "1" ]] && printf 'true' || printf 'false'),
@@ -2092,14 +2094,14 @@ META
     "${KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT:-}" "$SCOUTING_EXIT" "$PI_EXIT" "$PRE_VALIDATION_EXIT" "$VALIDATION_EXIT" \
     "$PRE_VALIDATION_COMMANDS_ATTEMPTED" "$VALIDATION_COMMANDS_ATTEMPTED" "$VALIDATION_REUSED" "$VALIDATION_REUSE_COUNT" \
     "$QUALITY_EXIT" "$GOAL_CHECK_EXIT" "$RUN_EVALUATION_EXIT" \
-    "$GOAL_CHECK_ATTEMPTS" "$GOAL_CHECK_MET" "$GOAL_CHECK_FAILURE_REASON" "$CRITICAL_CHANGE_FAILURE_REASON" \
+    "$GOAL_CHECK_ATTEMPTS" "$GOAL_CHECK_MET" "$GOAL_CHECK_OUTCOME" "$GOAL_CHECK_FAILURE_REASON" "$CRITICAL_CHANGE_FAILURE_REASON" \
     "$GOAL_CHECK_EVALUATOR_UNAVAILABLE" "$ACTUAL_MODEL" "$BASELINE_SETUP_FAILURE_REASON" <<'NODE'
 const [instance, taskMode, status, exitCode, failedCommand, startedAt, endedAt, duration,
   workerErrorType, workerErrorPhase, workerErrorMessage, goalSettingExit, goalSettingAttempts,
   goalSettingSucceededOnAttempt, scoutingExit, piExit, preValidationExit, validationExit,
   preValidationCommandsAttempted, validationCommandsAttempted, validationReused, validationReuseCount,
   qualityExit, goalCheckExit,
-  runEvaluationExit, goalCheckAttempts, goalCheckMet, goalCheckFailureReason,
+  runEvaluationExit, goalCheckAttempts, goalCheckMet, goalCheckOutcome, goalCheckFailureReason,
   criticalChangeFailureReason, goalCheckEvaluatorUnavailable, actualModel,
   baselineSetupFailureReason] = process.argv.slice(2);
 const integer = value => /^\d+$/.test(value || '') ? Number(value) : 0;
@@ -2119,6 +2121,7 @@ process.stdout.write(JSON.stringify({
   quality_exit_code: integer(qualityExit),
   goal_check_exit_code: integer(goalCheckExit), goal_check_attempts: integer(goalCheckAttempts),
   goal_check_met: goalCheckEvaluatorUnavailable === 'true' ? null : booleanOrNull(goalCheckMet),
+  goal_check_outcome: goalCheckOutcome,
   goal_check_failure_reason: goalCheckFailureReason, critical_change_failure_reason: criticalChangeFailureReason,
   actual_model: actualModel,
   baseline_setup_failure_reason: baselineSetupFailureReason,
@@ -2447,10 +2450,16 @@ SUMMARY
     printf -- "- Scouting: %s\n" "$([ "$scouting_fallback" = "true" ] && printf 'Completed with fallback' || printf 'Artifact available')" >> "$summary_file"
   fi
   if [ -s "${KASEKI_RESULTS_DIR}/goal-check.json" ]; then
-    local goal_check_met goal_check_confidence
+    local goal_check_met goal_check_outcome goal_check_confidence
     goal_check_met="$(jq -r '.met // "unknown"' "${KASEKI_RESULTS_DIR}/goal-check.json" 2>/dev/null || printf 'unknown')"
+    goal_check_outcome="$(jq -r '.outcome // (if .met == true then "met" else "unmet" end)' "${KASEKI_RESULTS_DIR}/goal-check.json" 2>/dev/null || printf 'unknown')"
     goal_check_confidence="$(jq -r '.confidence // "unknown"' "${KASEKI_RESULTS_DIR}/goal-check.json" 2>/dev/null || printf 'unknown')"
-    case "$goal_check_met" in true) goal_check_met="Met" ;; false) goal_check_met="Not met" ;; *) goal_check_met="Unknown" ;; esac
+    case "$goal_check_outcome" in
+      met) goal_check_met="Met" ;;
+      unmet) goal_check_met="Not met" ;;
+      uncertain) goal_check_met="Uncertain" ;;
+      *) goal_check_met="Unknown" ;;
+    esac
     printf -- "- Goal Check: %s (confidence: %s)\n" "$goal_check_met" "$goal_check_confidence" >> "$summary_file"
   fi
   if [ -s "${KASEKI_RESULTS_DIR}/run-evaluation.json" ]; then
@@ -2639,6 +2648,7 @@ write_failure_json() {
   "provider_failure_chain": {"primary": ${PROVIDER_ERROR_PRIMARY_JSON:-null}, "retry_attempt_count": $PROVIDER_ERROR_RETRY_ATTEMPT_COUNT, "retry_result": $(printf '%s' "$PROVIDER_ERROR_RETRY_RESULT" | json_encode), "recovery": ${PROVIDER_ERROR_RECOVERY_JSON:-null}, "recovery_result": $(printf '%s' "$PROVIDER_ERROR_FALLBACK_RESULT" | json_encode)},
   "goal_check_attempts": $GOAL_CHECK_ATTEMPTS,
   "goal_check_met": $([[ "$GOAL_CHECK_EVALUATOR_UNAVAILABLE" == "true" ]] && printf 'null' || printf '%s' "$GOAL_CHECK_MET"),
+  "goal_check_outcome": $(printf '%s' "$GOAL_CHECK_OUTCOME" | json_encode),
   "stage": $(printf '%s' "${TERMINAL_FAILURE_STAGE:-$CURRENT_STAGE}" | json_encode),
   "diagnostic_reason": $(printf '%s' "$diagnostic_reason" | json_encode),
   "stderr_tail": $(printf '%s' "$stderr_tail" | json_encode),
@@ -2893,7 +2903,6 @@ verify_critical_change_expectations() {
   local diff_file="${KASEKI_RESULTS_DIR}/git.diff"
   local report_file="${KASEKI_RESULTS_DIR}/critical-change-verification.log"
 
-  : > "$report_file"
   if [ ! -s "$expectation_file" ]; then
     printf '[critical-change] skipped: expectation artifact missing or empty: %s\n' "$expectation_file" >> "$report_file"
     return 0
@@ -2920,6 +2929,9 @@ function asBoolean(value) {
 const expectations = loadJson(expectationPath);
 const failures = [];
 const notes = [];
+const diff = read(diffPath);
+const diffSha256 = crypto.createHash('sha256').update(diff).digest('hex');
+const expectationsSha256 = crypto.createHash('sha256').update(read(expectationPath)).digest('hex');
 if (expectations.__invalid) {
   failures.push(`expectation artifact is not valid JSON: ${expectations.__invalid}`);
 } else {
@@ -2928,7 +2940,6 @@ if (expectations.__invalid) {
     const actualHash = crypto.createHash('sha256').update(JSON.stringify(contract)).digest('hex');
     if (contract_sha256 !== actualHash) failures.push('critical-change contract digest mismatch');
   }
-  const diff = read(diffPath);
   const listedFiles = read(changedFilesPath).split(/\r?\n/).map((line) => line.trim().replace(/^\.\//, '')).filter(Boolean);
   const diffFiles = [...diff.matchAll(/^diff --git a\/(.+?) b\/(.+)$/gm)].map((match) => match[2].trim());
   // A name-only diff and the b/ path above contain only the destination of a
@@ -2959,18 +2970,20 @@ if (expectations.__invalid) {
   notes.push(`forbidden_empty_diff=${asBoolean(expectations.forbidden_empty_diff)}`);
 }
 const lines = [];
+lines.push(`[critical-change] diff_sha256=${diffSha256}`);
+lines.push(`[critical-change] expectations_sha256=${expectationsSha256}`);
 lines.push(`[critical-change] artifact=${expectationPath}`);
 for (const note of notes) lines.push(`[critical-change] ${note}`);
 if (failures.length) {
   lines.push('[critical-change] verification failed:');
   for (const failure of failures) lines.push(`- ${failure}`);
-  fs.writeFileSync(reportPath, lines.join('\n') + '\n');
+  fs.appendFileSync(reportPath, lines.join('\n') + '\n');
   process.stdout.write(failures.join('\n'));
   process.exit(1);
 }
 
 lines.push('[critical-change] verification passed');
-fs.writeFileSync(reportPath, lines.join('\n') + '\n');
+fs.appendFileSync(reportPath, lines.join('\n') + '\n');
 NODE
 }
 
@@ -7178,6 +7191,7 @@ NODE
   # reviewer-facing semantic state.
   GOAL_CHECK_EVALUATOR_UNAVAILABLE=false
   GOAL_CHECK_MET="$(node -e 'try { process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).met ? "true" : "false"); } catch { process.stdout.write("false"); }' "${KASEKI_RESULTS_DIR}/goal-check.json")"
+  GOAL_CHECK_OUTCOME="$(node -e 'try { const x=JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(x.met ? "met" : "uncertain"); } catch { process.stdout.write("uncertain"); }' "${KASEKI_RESULTS_DIR}/goal-check.json")"
   GOAL_CHECK_FAILURE_REASON=""
   record_stage_timing "goal check" 0 0 "deterministic_fallback reason=$reason met=$GOAL_CHECK_MET mandatory_human_review=true"
   emit_error_event "goal_check_deterministic_fallback" "Goal-check evaluator did not produce a valid verdict; controller evaluated the critical diff contract: $reason" "continue"
@@ -7248,6 +7262,7 @@ run_goal_check() {
   evaluator_attempt="$GOAL_CHECK_EVALUATOR_ATTEMPTS"
   GOAL_CHECK_EXIT=0
   GOAL_CHECK_MET=false
+  GOAL_CHECK_OUTCOME="unknown"
   GOAL_CHECK_FAILURE_REASON=""
 
   printf '\n==> goal check\n'
@@ -7269,12 +7284,14 @@ run_goal_check() {
     if [ -r "$KASEKI_JEV_WORKFLOW_EVALUATOR" ] && KASEKI_JEV_CONFIDENCE="$KASEKI_JEV_CONFIDENCE" KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS="$KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS" node "$KASEKI_JEV_WORKFLOW_EVALUATOR" goal-check "$KASEKI_RESULTS_DIR" "$attempt"; then
       GOAL_CHECK_EXIT=0
       GOAL_CHECK_MET="$(jq -r 'if .met == true then "true" else "false" end' "$KASEKI_RESULTS_DIR/goal-check.json")"
+      GOAL_CHECK_OUTCOME="$(jq -r '.outcome // (if .met == true then "met" else "unmet" end)' "$KASEKI_RESULTS_DIR/goal-check.json")"
+      if [ "$GOAL_CHECK_MET" = "true" ]; then GOAL_CHECK_OUTCOME="met"; fi
       GOAL_CHECK_FAILURE_REASON="$(jq -r '.summary // ""' "$KASEKI_RESULTS_DIR/goal-check.json")"
       GOAL_CHECK_RETRY_PROMPT="$(jq -r '.retry_prompt // ""' "$KASEKI_RESULTS_DIR/goal-check.json")"
       GOAL_CHECK_ACTUAL_MODEL="$(jq -r '.classifier.model // "~typesafe/jev-latest"' "$KASEKI_RESULTS_DIR/goal-check.json")"
       GOAL_CHECK_DURATION_SECONDS=$((GOAL_CHECK_DURATION_SECONDS + $(date +%s) - goal_start))
-      record_stage_timing "goal check" 0 "$(($(date +%s) - goal_start))" "jev=true attempt=$attempt met=$GOAL_CHECK_MET"
-      emit_progress "goal check" "JEV classification completed (met=$GOAL_CHECK_MET)"
+      record_stage_timing "goal check" 0 "$(($(date +%s) - goal_start))" "jev=true attempt=$attempt outcome=$GOAL_CHECK_OUTCOME"
+      emit_progress "goal check" "JEV classification completed (outcome=$GOAL_CHECK_OUTCOME)"
       return 0
     fi
     printf 'JEV goal-check classification failed; using deterministic fallback.\n' >&2
@@ -7594,11 +7611,13 @@ if (valid.size === 1 && lastValid) {
       return "$GOAL_CHECK_EXIT"
     fi
     verdict_met="$(jq -r 'if .met == true then "true" else "false" end' <<<"$goal_check_json")"
+    GOAL_CHECK_OUTCOME="$(jq -r '.outcome // (if .met == true then "met" else "unmet" end)' <<<"$goal_check_json")"
     retry_prompt="$(jq -r '.retry_prompt // ""' <<<"$goal_check_json")"
     verdict_summary="$(jq -r '.summary // ""' <<<"$goal_check_json")"
     confidence="$(jq -r '.confidence // "unknown"' <<<"$goal_check_json")"
     if [ "$verdict_met" = "true" ]; then
       GOAL_CHECK_MET=true
+      GOAL_CHECK_OUTCOME="met"
       GOAL_CHECK_RETRY_PROMPT=""
       GOAL_CHECK_FAILURE_REASON=""
       emit_progress "goal check" "met on attempt $attempt (confidence=$confidence)"
@@ -7606,10 +7625,11 @@ if (valid.size === 1 && lastValid) {
       GOAL_CHECK_MET=false
       GOAL_CHECK_RETRY_PROMPT="$retry_prompt"
       GOAL_CHECK_FAILURE_REASON="${verdict_summary:-goal unmet}"
-      emit_progress "goal check" "unmet on attempt $attempt (confidence=$confidence)"
+      emit_progress "goal check" "$GOAL_CHECK_OUTCOME on attempt $attempt (confidence=$confidence)"
     fi
   else
     GOAL_CHECK_MET=false
+    GOAL_CHECK_OUTCOME="uncertain"
     [ -z "$GOAL_CHECK_FAILURE_REASON" ] && GOAL_CHECK_FAILURE_REASON="goal_check_failed_exit_$GOAL_CHECK_EXIT"
     GOAL_CHECK_RETRY_PROMPT="The goal-check evaluator failed to produce a valid passing verdict. Re-read $SCOUTING_ARTIFACT, inspect the current diff and validation logs, and repair any missing requirement before finishing."
   fi
@@ -10719,6 +10739,7 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
     break
   fi
   if [ "$KASEKI_TASK_MODE" != "inspect" ]; then
+    CRITICAL_CHANGE_FAILURE_REASON=""
     emit_progress "critical change verification" "passed on attempt $coding_attempt"
   fi
 
@@ -10750,6 +10771,7 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
       emit_error_event "critical_change_expectations_failed" "Post-cleanup critical-change verification failed after $coding_attempt attempt(s): $CRITICAL_CHANGE_FAILURE_REASON" "exit"
       break
     fi
+    CRITICAL_CHANGE_FAILURE_REASON=""
     emit_progress "critical change verification" "passed after cleanup on attempt $coding_attempt"
   fi
 
@@ -10906,25 +10928,33 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && \
     degrade_goal_check_evaluator_failure "$GOAL_CHECK_FAILURE_REASON"
   fi
 
-  if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ] && [ "$GOAL_CHECK_MET" != "true" ]; then
+  if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ] && [ "$GOAL_CHECK_OUTCOME" != "met" ]; then
     snapshot_attempt_artifacts "$coding_attempt"
     if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
       admit_goal_check_retry_files "${GOAL_CHECK_RETRY_PROMPT:-}"
-      emit_progress "goal check" "retrying coding agent after post-validation unmet verdict (attempt $coding_attempt of $max_coding_attempts; reason=${GOAL_CHECK_FAILURE_REASON:-unmet})"
+      emit_progress "goal check" "retrying coding agent after post-validation $GOAL_CHECK_OUTCOME verdict (attempt $coding_attempt of $max_coding_attempts; reason=${GOAL_CHECK_FAILURE_REASON:-$GOAL_CHECK_OUTCOME})"
       coding_attempt=$((coding_attempt + 1))
       continue
     fi
 
-    STATUS=8
-    [ -z "$GOAL_CHECK_FAILURE_REASON" ] && GOAL_CHECK_FAILURE_REASON="goal_unmet_after_retries"
-    if [ "$VALIDATION_EXIT" -eq 0 ]; then
-      FAILED_COMMAND="goal check"
-      emit_error_event "goal_unmet" "Goal check did not pass after post-validation diff changed on attempt $GOAL_CHECK_ATTEMPTS: $GOAL_CHECK_FAILURE_REASON" "exit"
+    if [ "$GOAL_CHECK_OUTCOME" = "uncertain" ]; then
+      GOAL_CHECK_FAILURE_REASON=""
+      GOAL_CHECK_RETRY_PROMPT=""
+      GOAL_CHECK_EVALUATION_WARNING="goal_check_uncertain_review_required"
+      emit_error_event "goal_check_uncertain" "JEV could not classify every success criterion with sufficient confidence after $GOAL_CHECK_ATTEMPTS attempt(s); quality checks passed and validation exited $VALIDATION_EXIT, so the result is available for human review." "continue"
+      emit_progress "goal check" "uncertain after retries; human review required"
     else
-      # Keep the concrete validation failure as the root classification when
-      # the evaluator also observes that the failed checks leave the goal unmet.
-      STATUS=0
-      emit_error_event "goal_unmet_after_validation_failure" "Goal check remained unmet after validation failed (exit $VALIDATION_EXIT): $GOAL_CHECK_FAILURE_REASON" "continue"
+      STATUS=8
+      [ -z "$GOAL_CHECK_FAILURE_REASON" ] && GOAL_CHECK_FAILURE_REASON="goal_unmet_after_retries"
+      if [ "$VALIDATION_EXIT" -eq 0 ]; then
+        FAILED_COMMAND="goal check"
+        emit_error_event "goal_unmet" "Goal check did not pass after post-validation diff changed on attempt $GOAL_CHECK_ATTEMPTS: $GOAL_CHECK_FAILURE_REASON" "exit"
+      else
+        # Keep the concrete validation failure as the root classification when
+        # the evaluator also observes that the failed checks leave the goal unmet.
+        STATUS=0
+        emit_error_event "goal_unmet_after_validation_failure" "Goal check remained unmet after validation failed (exit $VALIDATION_EXIT): $GOAL_CHECK_FAILURE_REASON" "continue"
+      fi
     fi
     break
   fi

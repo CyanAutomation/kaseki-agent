@@ -1,4 +1,4 @@
-import { buildGoalCheckQuestions, buildGoalCriterionAssessments, buildRunEvaluationQuestions, compactGoalSettingForEvaluation, failureDiagnosisFromAnswers, mapJevScoreToCompletion } from './jev-workflow-helpers';
+import { buildGoalCheckQuestions, buildGoalCriterionAssessments, buildGoalCheckOutcome, buildRunEvaluationQuestions, compactGoalSettingForEvaluation, failureDiagnosisFromAnswers, mapJevScoreToCompletion, selectCriterionEvidenceSources } from './jev-workflow-helpers';
 
 describe('JEV workflow answer helpers', () => {
   test('compacts verbose goal-setting details while preserving the complete contract', () => {
@@ -43,18 +43,52 @@ describe('JEV workflow answer helpers', () => {
     expect(mapJevScoreToCompletion(4.5)).toBe(5);
   });
 
-  test('preserves each success criterion probability and its threshold decision', () => {
+  test('distinguishes satisfied, uncertain, and clearly unmet success criteria', () => {
     expect(buildGoalCriterionAssessments(
-      ['Adds a parser', 'Runs checks'],
+      ['Adds a parser', 'Runs checks', 'Adds regression tests', 'Passes at the strict threshold', 'Fails at the unmet boundary'],
       {
         criterion_1: { type: 'noul', noul: 0.95 },
         criterion_2: { type: 'noul', noul: 0.62 },
+        criterion_3: { type: 'noul', noul: 0.05 },
+        criterion_4: { type: 'noul', noul: 0.8 },
+        criterion_5: { type: 'noul', noul: 0.2 },
       },
       0.8,
     )).toEqual([
       { id: 'criterion_1', criterion: 'Adds a parser', probability: 0.95, threshold: 0.8, applicability: 'applicable', status: 'met', met: true },
-      { id: 'criterion_2', criterion: 'Runs checks', probability: 0.62, threshold: 0.8, applicability: 'applicable', status: 'unmet', met: false },
+      { id: 'criterion_2', criterion: 'Runs checks', probability: 0.62, threshold: 0.8, applicability: 'applicable', status: 'uncertain', met: false },
+      { id: 'criterion_3', criterion: 'Adds regression tests', probability: 0.05, threshold: 0.8, applicability: 'applicable', status: 'unmet', met: false },
+      { id: 'criterion_4', criterion: 'Passes at the strict threshold', probability: 0.8, threshold: 0.8, applicability: 'applicable', status: 'met', met: true },
+      { id: 'criterion_5', criterion: 'Fails at the unmet boundary', probability: 0.2, threshold: 0.8, applicability: 'applicable', status: 'unmet', met: false },
     ]);
+  });
+
+  test('keeps the unmet boundary below the configured pass threshold for low custom thresholds', () => {
+    const assessment = buildGoalCriterionAssessments(['A criterion'], {
+      criterion_1: { type: 'noul', noul: 0.39 },
+    }, 0.4)[0];
+    expect(assessment.status).toBe('unmet');
+  });
+
+  test('keeps unresolved criteria separate from confirmed unmet criteria in the overall outcome', () => {
+    expect(buildGoalCheckOutcome([
+      { id: 'criterion_1', criterion: 'A', probability: 0.95, threshold: 0.8, applicability: 'applicable', status: 'met', met: true },
+      { id: 'criterion_2', criterion: 'B', probability: 0.53, threshold: 0.8, applicability: 'applicable', status: 'uncertain', met: false },
+    ])).toBe('uncertain');
+    expect(buildGoalCheckOutcome([
+      { id: 'criterion_1', criterion: 'A', probability: 0.95, threshold: 0.8, applicability: 'applicable', status: 'met', met: true },
+      { id: 'criterion_2', criterion: 'B', probability: 0.13, threshold: 0.8, applicability: 'applicable', status: 'unmet', met: false },
+    ])).toBe('unmet');
+    expect(buildGoalCheckOutcome([
+      { id: 'criterion_1', criterion: 'A', probability: null, threshold: 0.8, applicability: 'not_applicable', status: 'not_applicable', met: true },
+    ])).toBe('met');
+  });
+
+  test('attaches available artifact references relevant to each criterion', () => {
+    const sources = ['goal-setting.json', 'scouting.json', 'git.diff', 'changed-files.txt', 'validation.log', 'stderr.log'];
+    expect(selectCriterionEvidenceSources('Existing unit tests pass and make vet is clean', sources)).toEqual(['validation.log']);
+    expect(selectCriterionEvidenceSources('The documentation diff only changes approved files', sources)).toEqual(['git.diff', 'changed-files.txt']);
+    expect(selectCriterionEvidenceSources('Rank the strongest duplication candidate with rationale', sources)).toEqual(['goal-setting.json', 'scouting.json']);
   });
 
   test('marks a conditional criterion not applicable without treating it as unmet', () => {
