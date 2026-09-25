@@ -2641,33 +2641,6 @@
     "concerns": []
   },
   {
-    "id": "tests/summarization/tree-sitter-summarizer.test.ts",
-    "file": "/workspaces/kaseki-agent/tests/summarization/tree-sitter-summarizer.test.ts",
-    "testName": "TreeSitterSummarizer",
-    "language": "typescript",
-    "lineCount": 273,
-    "intentClarity": 2,
-    "behavioralRelevance": 1,
-    "assertionQuality": 2,
-    "isolationRobustness": 1.5,
-    "costCoverage": 2,
-    "total": 8.5,
-    "segment": "Keep",
-    "summary": "2 | 1 | 2 | 1.5 | 2",
-    "assertionTypes": [
-      "toBe",
-      "toEqual",
-      "toContain",
-      "toThrow"
-    ],
-    "hasSnapshots": false,
-    "hasMocking": false,
-    "hasAsyncWaits": false,
-    "concerns": [
-      "overly-long"
-    ]
-  },
-  {
     "id": "tests/summarization/typescript-compiler-summarizer.test.ts",
     "file": "/workspaces/kaseki-agent/tests/summarization/typescript-compiler-summarizer.test.ts",
     "testName": "TypeScriptCompilerSummarizer",
@@ -3087,30 +3060,6 @@
       "toBe",
       "toContain",
       "toThrow"
-    ],
-    "hasSnapshots": false,
-    "hasMocking": false,
-    "hasAsyncWaits": false,
-    "concerns": [
-      "overly-long"
-    ]
-  },
-  {
-    "id": "tests/summarization/go-cli-summarizer.test.ts",
-    "file": "/workspaces/kaseki-agent/tests/summarization/go-cli-summarizer.test.ts",
-    "testName": "GoCliSummarizer",
-    "language": "typescript",
-    "lineCount": 274,
-    "intentClarity": 2,
-    "behavioralRelevance": 1,
-    "assertionQuality": 2,
-    "isolationRobustness": 2,
-    "costCoverage": 2,
-    "total": 9,
-    "segment": "Keep",
-    "summary": "2 | 1 | 2 | 2 | 2",
-    "assertionTypes": [
-      "toBe"
     ],
     "hasSnapshots": false,
     "hasMocking": false,

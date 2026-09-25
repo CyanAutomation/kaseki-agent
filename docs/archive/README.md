@@ -47,17 +47,6 @@ This directory contains historical and completed documentation that has been con
 
 ### 🏁 Historical & Completed Docs
 
-**Feature 3 Documentation** (6 files) — Feature is now integrated into codebase
-
-- `FEATURE3_COMPLETION_SUMMARY.md`
-- `FEATURE3_IMPLEMENTATION.md`
-- `FEATURE3_INTEGRATION_GUIDE.md`
-- `FEATURE3_README.md`
-- `FEATURE3_STATUS.md`
-- `FEATURE3_SUMMARIZATION.md`
-
-See [../CLAUDE.md](../CLAUDE.md) for current infrastructure status.
-
 **Phase Completion Summaries** (3 files) — Historical project phase snapshots
 
 - `PHASE2_COMPLETION_SUMMARY.md`
@@ -100,9 +89,6 @@ Content merged into [../DEVELOPMENT.md](../DEVELOPMENT.md) and topic-specific do
 ```bash
 # List all archived files
 ls -la docs/archive/
-
-# View specific file
-cat docs/archive/FEATURE3_README.md
 
 # Search archived content
 grep -r "search-term" docs/archive/

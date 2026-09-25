@@ -105,7 +105,7 @@ describe('Summarization Integration', () => {
       strategyReason: `Large supported file in range (typescript, ${Buffer.byteLength(content, 'utf-8')} bytes)`,
       language: 'typescript',
       cacheHit: false,
-      decisionPath: 'tree_sitter',
+      decisionPath: 'structural_summary',
     });
     expect(result.metrics?.returnedSizeBytes).toBeLessThan(result.metrics?.fullSizeBytes ?? 0);
     expect(result.metrics?.estimatedTokensSaved).toBeGreaterThan(0);
@@ -123,7 +123,7 @@ describe('Summarization Integration', () => {
     expect(firstRead.metrics).toMatchObject({
       strategy: 'summary',
       cacheHit: false,
-      decisionPath: 'tree_sitter',
+      decisionPath: 'structural_summary',
     });
     expect(secondRead.content).toBe(firstRead.content);
     expect(secondRead.metrics).toMatchObject({
@@ -172,6 +172,23 @@ describe('Summarization Integration', () => {
       decisionPath: 'full_read',
       parseTimeMs: 0,
       compressionRatio: 1,
+      estimatedTokensSaved: 0,
+    });
+    expectSizeMetrics(result, content);
+  });
+
+  it('Go files keep full content because structural summaries support TypeScript and JavaScript only', async () => {
+    const { filePath, content } = copyFixture(testDir, 'handler.go');
+
+    const result = await readFileWithSummaryAndMetrics(filePath);
+
+    expectReadResult(result);
+    expect(result.content).toBe(content);
+    expect(result.metrics).toMatchObject({
+      strategy: 'full',
+      strategyReason: 'Unsupported language: go',
+      language: 'go',
+      decisionPath: 'full_read',
       estimatedTokensSaved: 0,
     });
     expectSizeMetrics(result, content);

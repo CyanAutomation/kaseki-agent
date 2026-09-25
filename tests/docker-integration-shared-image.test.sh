@@ -6,7 +6,6 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ORCHESTRATOR="$ROOT_DIR/tests/integration/docker/run-all.integration.test.sh"
 STARTUP_SUITE="$ROOT_DIR/tests/integration/docker/startup-check-packaging.integration.test.sh"
 VALIDATION_SUITE="$ROOT_DIR/tests/integration/docker/validation-tools.integration.test.sh"
-TREE_SITTER_SUITE="$ROOT_DIR/tests/integration/docker/tree-sitter-cli-packaging.integration.test.sh"
 PACKAGE_JSON="$ROOT_DIR/package.json"
 
 fail() {
@@ -35,14 +34,6 @@ grep -Fq 'KASEKI_IMAGE' "$STARTUP_SUITE" \
   || fail 'Startup-check suite must support a provided KASEKI_IMAGE'
 grep -Fq 'KASEKI_IMAGE' "$VALIDATION_SUITE" \
   || fail 'Validation-tools suite must support a provided KASEKI_IMAGE'
-grep -Fq 'KASEKI_IMAGE' "$TREE_SITTER_SUITE" \
-  || fail 'Tree-sitter suite must support a provided KASEKI_IMAGE'
-grep -Fq "'test -x /usr/local/bin/tree-sitter'" "$TREE_SITTER_SUITE" \
-  || fail 'Tree-sitter suite must verify the final image packages an executable'
-if grep -Fq -- '--entrypoint tree-sitter' "$TREE_SITTER_SUITE"; then
-  fail 'Tree-sitter suite must not execute the architecture-specific CLI'
-fi
-
 # Runtime images omit repository-only test fixtures, so validation must use
 # only the packaged source, configuration, and executable tools.
 grep -Fq '/app/node_modules/.bin/tsc --noEmit -p /app/tsconfig.json' "$VALIDATION_SUITE" \

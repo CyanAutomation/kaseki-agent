@@ -1,5 +1,5 @@
 /**
- * Tests for TreeSitterSummarizer
+ * Tests for CodeSummarizer
  *
  * Summarizer contract: preserve navigational symbols (imports, exports,
  * classes, functions, methods, types, and interfaces) while reducing content
@@ -9,9 +9,8 @@ import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { TreeSitterSummarizer } from '../../src/summarization/tree-sitter-summarizer';
-import { GoCliSummarizer } from '../../src/summarization/go-cli-summarizer';
-import type { CodeSummary } from '../../src/summarization/tree-sitter-summarizer';
+import { CodeSummarizer } from '../../src/summarization/code-summarizer';
+import type { CodeSummary } from '../../src/summarization/code-summarizer';
 import type { SupportedLanguage } from '../../src/summarization/summarizer-config';
 
 type FixtureCase = {
@@ -37,7 +36,7 @@ const EMPTY_SYMBOLS = {
   interfaces: [],
 };
 
-describe('TreeSitterSummarizer', () => {
+describe('CodeSummarizer', () => {
   let fixturesDir: string;
 
   beforeEach(() => {
@@ -51,7 +50,7 @@ describe('TreeSitterSummarizer', () => {
   const readFixture = (file: string): string => fs.readFileSync(path.join(fixturesDir, file), 'utf-8');
 
   const summarizeFixture = (file: string, language: SupportedLanguage): CodeSummary =>
-    new TreeSitterSummarizer(language).summarize(readFixture(file));
+    new CodeSummarizer(language).summarize(readFixture(file));
 
   describe('fixture symbol extraction', () => {
     const fixtureCases: FixtureCase[] = [
@@ -220,47 +219,7 @@ describe('TreeSitterSummarizer', () => {
     });
   });
 
-  describe('Go fixture contract', () => {
-    it('delegates Go content to the Go summarizer without depending on an installed CLI or grammar', () => {
-      const content = readFixture('handler.go');
-      const expected: CodeSummary = {
-        language: 'go',
-        packageName: 'handlers',
-        imports: [{ module: 'net/http', items: [] }],
-        exports: [],
-        classes: [{ name: 'UserHandler', methods: [{ name: 'CreateUser', kind: 'method' }] }],
-        functions: [{ name: 'NewUserHandler', kind: 'function' }],
-        types: [{ name: 'UserHandler', kind: 'type' }],
-        interfaces: [],
-        originalSizeBytes: Buffer.byteLength(content, 'utf-8'),
-        summaryTimeMs: 0,
-      };
-      const summarize = jest.spyOn(GoCliSummarizer.prototype, 'summarize').mockReturnValue(expected);
-
-      const summary = new TreeSitterSummarizer('go').summarize(content);
-
-      expect(summarize).toHaveBeenCalledWith(content, expect.any(Number));
-      expect(summary).toEqual(expected);
-    });
-  });
-
   describe('parse-error and empty-content behavior', () => {
-    it.each([
-      ['unsupported.py', 'python' as SupportedLanguage, 'Unsupported language: python'],
-      ['data.xml', 'xml' as SupportedLanguage, 'Unsupported language: xml'],
-    ])('%s reports an unsupported-language parse error instead of inventing symbols', (file, language, parseError) => {
-      const summary = summarizeFixture(file, language);
-      expect(summary.parseError).toBe(parseError);
-      expect({
-        imports: summary.imports,
-        exports: summary.exports,
-        classes: summary.classes,
-        functions: summary.functions,
-        types: summary.types,
-        interfaces: summary.interfaces,
-      }).toEqual(EMPTY_SYMBOLS);
-    });
-
     it('recovers navigational symbols from incomplete TypeScript while reporting no compiler parse failure', () => {
       const invalidCode = `
         class RecoveredClass {
@@ -274,7 +233,7 @@ describe('TreeSitterSummarizer', () => {
         const broken = {
       `;
 
-      const summary = new TreeSitterSummarizer('typescript').summarize(invalidCode);
+      const summary = new CodeSummarizer('typescript').summarize(invalidCode);
       expect(summary.parseError).toBeUndefined();
       expect(summary).toMatchObject({
         classes: [{ name: 'RecoveredClass', methods: [{ name: 'method', signature: 'method(): void {', kind: 'method' }] }],
@@ -298,7 +257,7 @@ describe('TreeSitterSummarizer', () => {
       `,
       ],
     ])('%s preserve the empty-symbol contract', (_name, content) => {
-      const summary = new TreeSitterSummarizer('typescript').summarize(content);
+      const summary = new CodeSummarizer('typescript').summarize(content);
       expect({
         imports: summary.imports,
         exports: summary.exports,
@@ -313,7 +272,7 @@ describe('TreeSitterSummarizer', () => {
   describe('metadata and performance contract', () => {
     it('records source size and summary timing for callers deciding whether to request full content', () => {
       const content = readFixture('large-file.ts');
-      const summary = new TreeSitterSummarizer('typescript').summarize(content);
+      const summary = new CodeSummarizer('typescript').summarize(content);
       expect(summary.originalSizeBytes).toBe(Buffer.byteLength(content, 'utf-8'));
       expect(summary.summaryTimeMs).toBeGreaterThanOrEqual(0);
       expect(summary.language).toBe('typescript');

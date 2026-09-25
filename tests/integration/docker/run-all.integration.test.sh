@@ -42,6 +42,5 @@ run_suite() {
 
 run_suite startup-check-packaging.integration.test.sh
 run_suite validation-tools.integration.test.sh
-run_suite tree-sitter-cli-packaging.integration.test.sh
 
 printf '\n✓ All Docker integration suites passed using shared image %s.\n' "$IMAGE_TAG"
