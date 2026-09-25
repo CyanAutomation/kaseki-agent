@@ -8799,9 +8799,6 @@ NODE
   fi
 
   printf '### Needs attention\n'
-  if [ "$goal_outcome" = "uncertain" ]; then
-    printf -- '- Goal check is uncertain; human review is required before merging.\n'
-  fi
   if [ -n "$missing" ]; then printf '%s\n' "$missing"; fi
   if [ -n "$risks" ]; then printf '%s\n' "$risks"; fi
   if [ "$goal_met" = "false" ] && [ -z "$missing" ]; then
