@@ -35,7 +35,7 @@ describe('testClassificationSmoke (mocked)', () => {
      * relevant Kaseki content when the LLM returns a confident decision set.
      */
     const mockResponse = {
-      model: '~typesafe/jev-latest',
+      model: '~typesafe/latest',
       answers: {
         code_quality_issue: {
           type: 'noul',
@@ -85,9 +85,9 @@ describe('testClassificationSmoke (mocked)', () => {
     const result = await classificationModule.testClassificationSmoke(true);
 
     expect(result.status).toBe('ok');
-    expect(result.classificationValidated).toBe(true);
+    expect(result.evaluationValidated).toBe(true);
     expect(result.confidenceLevel).toBe('high');
-    expect(result.modelUsed).toBeTruthy();
+    expect(result).not.toHaveProperty('modelUsed');
     expect(result.outputTokens).toBeGreaterThan(0);
     expect(result.detail).toBeTruthy();
   });
@@ -98,7 +98,7 @@ describe('testClassificationSmoke (mocked)', () => {
      * it can incorrectly route or skip important review tasks.
      */
     const mockResponse = {
-      model: '~typesafe/jev-latest',
+      model: '~typesafe/latest',
       answers: {
         code_quality_issue: {
           type: 'noul',
@@ -144,7 +144,7 @@ describe('testClassificationSmoke (mocked)', () => {
     const result = await classificationModule.testClassificationSmoke(true);
 
     expect(result.status).toBe('ok');
-    expect(result.classificationValidated).toBe(false);
+    expect(result.evaluationValidated).toBe(false);
     expect(['medium', 'low']).toContain(result.confidenceLevel);
     expect(result.confidenceDetails).toBeDefined();
     expect(result.confidenceDetails?.failedQuestions).toContain('requires_human_review');
@@ -174,7 +174,7 @@ describe('testClassificationSmoke (mocked)', () => {
       status: 200,
       json: async () => ({
         id: 'gen-125',
-        model: '~typesafe/jev-latest',
+        model: '~typesafe/latest',
         // Missing 'answers' field
       }),
       text: async () => '{}',
@@ -248,7 +248,7 @@ describe.skip('testClassificationSmoke (real API)', () => {
     const result = await classificationModule.testClassificationSmoke(true);
 
     expect(result.status).toMatch(/ok|error/); // Allow both for real test
-    expect(result).toHaveProperty('classificationValidated');
+    expect(result).toHaveProperty('evaluationValidated');
     expect(result).toHaveProperty('confidenceLevel');
     expect(result).toHaveProperty('modelUsed');
     expect(result).toHaveProperty('outputTokens');

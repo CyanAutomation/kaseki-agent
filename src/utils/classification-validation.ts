@@ -3,7 +3,7 @@ import type { ClassificationAnswer, ClassificationValidationResult } from '../ty
 /**
  * Validates confidence thresholds for kaseki-agent classification tests.
  *
- * Used by the classificationSmoke test to ensure that all classification answers
+ * Used by the evaluationSmoke test to ensure that all classification answers
  * meet a minimum confidence threshold (default 0.75). This prevents low-confidence
  * decisions from being used for code review routing or triage decisions.
  *

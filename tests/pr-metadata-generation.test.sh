@@ -265,6 +265,18 @@ case "$generic_evaluation_title" in
   *) fail "PR title used generic evaluator boilerplate: $generic_evaluation_title" ;;
 esac
 cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
+{"overall_assessment":"good","reviewer_confidence":"high","pr_summary":"The JEV classifier detected a transient validation failure.","pr_changes":["The JEV classifier identified the retry-safe command."]}
+JSON
+TASK_PROMPT="Fix the deployment validation retry."
+neutral_evaluation_title="$(derive_pr_title)"
+neutral_evaluation_body="$(build_pr_body)"
+if [[ "$neutral_evaluation_title" == "fix: The evaluation detected a transient validation failure"* ]] \
+  && ! printf '%s\n%s' "$neutral_evaluation_title" "$neutral_evaluation_body" | grep -Eiq 'JEV'; then
+  pass "PR title and body use the Evaluation stage name"
+else
+  fail "PR metadata exposed internal evaluator naming: $neutral_evaluation_title"
+fi
+cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
 {"overall_assessment":"unknown","reviewer_confidence":"low","pr_summary":"Run evaluation was unavailable; please rely on the summary, validation results, and changed files.","warnings":["jev_classifier_unavailable"]}
 JSON
 TASK_PROMPT="Fix the deployment health-check contract."

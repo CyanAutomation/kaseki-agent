@@ -103,11 +103,10 @@ describe('gateway-test-routes', () => {
 
     (kasekiGatewaySmoke.testClassificationSmoke as jest.Mock).mockResolvedValue({
       status: 'ok',
-      detail: 'Classification smoke test passed',
+      detail: 'Evaluation stage check passed',
       responseTime: 300,
       timestamp: '2026-07-05T12:00:02Z',
-      modelUsed: 'typesafe/jev',
-      classificationValidated: true,
+      evaluationValidated: true,
     });
 
     (kasekiGatewaySmoke.shouldRunClassificationSmoke as jest.Mock).mockReturnValue(false);
@@ -153,6 +152,23 @@ describe('gateway-test-routes', () => {
       expect(body.status).toBe('ok');
       expect(kasekiGatewaySmoke.testGatewayConnectivity_Stage1).not.toHaveBeenCalled();
       expect(kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2).toHaveBeenCalled();
+    });
+
+    it('uses the stage-based evaluation query parameter for the optional evaluation check', async () => {
+      (kasekiGatewaySmoke.shouldRunClassificationSmoke as jest.Mock).mockReturnValue(true);
+      const response = await fetch(`${baseUrl}/gateway-test?stage=2&evaluation=true`);
+      const body = await response.json() as any;
+      expect(response.status).toBe(200);
+      expect(kasekiGatewaySmoke.shouldRunClassificationSmoke).toHaveBeenCalledWith(true);
+      expect(body.evaluationSmoke).toMatchObject({ status: 'ok', evaluationValidated: true });
+      expect(body).not.toHaveProperty('classificationSmoke');
+      expect(body.evaluationSmoke).not.toHaveProperty('modelUsed');
+    });
+
+    it('continues to accept the previous optional evaluation query parameter', async () => {
+      const response = await fetch(`${baseUrl}/gateway-test?stage=2&classification=true`);
+      expect(response.status).toBe(200);
+      expect(kasekiGatewaySmoke.shouldRunClassificationSmoke).toHaveBeenCalledWith(true);
     });
 
     it('should return 503 when stage 1 fails', async () => {

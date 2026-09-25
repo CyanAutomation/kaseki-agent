@@ -1,6 +1,58 @@
 import { ARTIFACT_METADATA_REGISTRY } from '../artifact-metadata';
 import { RunEvaluationRenderedResponse } from '../kaseki-api-types';
 
+const EVALUATION_ARTIFACTS = new Set([
+  'run-evaluation.json',
+  'goal-check.json',
+  'goal-check-attempts.jsonl',
+  'all-phase-summaries.json',
+  'metadata.json',
+]);
+
+function sanitizeEvaluationValue(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return value
+      .replace(/\bjev_classifier_unavailable\b/gi, 'typed_evaluation_unavailable')
+      .replace(/\bJEV\s+evaluated\b/gi, 'Run evaluation assessed')
+      .replace(/\bJEV\s+classified\b/gi, 'Evaluation found')
+      .replace(/\bJEV\s+found\b/gi, 'Evaluation found')
+      .replace(/\bJEV\s+could\b/gi, 'Evaluation could')
+      .replace(/\bJEV\s+classifier\b/gi, 'Evaluation')
+      .replace(/\bJEV\s+classification\b/gi, 'Evaluation')
+      .replace(/\bJEV\b/gi, 'Evaluation');
+  }
+  if (Array.isArray(value)) return value.map(sanitizeEvaluationValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .filter(([key]) => !/^jev_/i.test(key)
+      && !['classifier', 'modelUsed', 'decision_model', 'goal_check_actual_model', 'run_evaluation_actual_model'].includes(key))
+    .map(([key, item]) => [key, sanitizeEvaluationValue(item)]));
+}
+
+/** Removes provider details and older implementation-specific labels before an evaluation artifact leaves the API. */
+export function sanitizeEvaluationArtifactContent(fileName: string, content: string): string {
+  if (!EVALUATION_ARTIFACTS.has(fileName)) return content;
+  if (fileName.endsWith('.jsonl')) {
+    return content.split(/\r?\n/).map((line) => {
+      if (!line.trim()) return line;
+      try {
+        const parsed = JSON.parse(line);
+        const sanitized = sanitizeEvaluationValue(parsed);
+        return JSON.stringify(sanitized) === JSON.stringify(parsed) ? line : JSON.stringify(sanitized);
+      } catch { return String(sanitizeEvaluationValue(line)); }
+    }).join('\n');
+  }
+  try {
+    const parsed = JSON.parse(content);
+    const sanitized = sanitizeEvaluationValue(parsed);
+    return JSON.stringify(sanitized) === JSON.stringify(parsed)
+      ? content
+      : JSON.stringify(sanitized, null, 2) + '\n';
+  } catch {
+    return String(sanitizeEvaluationValue(content));
+  }
+}
+
 /**
  * Extract value from object using field name variant priority.
  * Tries keys in order and returns the first truthy value.
@@ -123,19 +175,20 @@ export function buildMarkdownContent(sections: { summary: string[]; problem: str
  * Transform a parsed run-evaluation JSON into a rendered response with organized sections.
  */
 export function renderRunEvaluationPayload(parsed: Record<string, unknown>, includeMarkdown: boolean): RunEvaluationRenderedResponse {
+  const safeParsed = sanitizeEvaluationValue(parsed) as Record<string, unknown>;
   const sections = {
-    overall: extractOverallAssessment(parsed),
-    summary: asStringArray(parsed.summary),
-    problem: extractProblems(parsed),
-    solution: extractSolutions(parsed),
-    humanReview: extractHumanReviewRecommendations(parsed),
-    stages: asObjectArray(getFieldVariant(parsed, 'stages', 'stage_by_stage_evaluation', 'stageByStageEvaluation')),
-    efficiency: asObjectArray(getFieldVariant(parsed, 'efficiency', 'efficiency_findings', 'efficiencyFindings')),
-    validation: asObjectArray(getFieldVariant(parsed, 'validation', 'validation_outcome', 'validationOutcome')),
-    opportunities: extractOpportunities(parsed),
-    warnings: asObjectArray(parsed.warnings),
-    metadata: parsed.metadata && typeof parsed.metadata === 'object' && !Array.isArray(parsed.metadata)
-      ? parsed.metadata as Record<string, unknown>
+    overall: extractOverallAssessment(safeParsed),
+    summary: asStringArray(safeParsed.summary),
+    problem: extractProblems(safeParsed),
+    solution: extractSolutions(safeParsed),
+    humanReview: extractHumanReviewRecommendations(safeParsed),
+    stages: asObjectArray(getFieldVariant(safeParsed, 'stages', 'stage_by_stage_evaluation', 'stageByStageEvaluation')),
+    efficiency: asObjectArray(getFieldVariant(safeParsed, 'efficiency', 'efficiency_findings', 'efficiencyFindings')),
+    validation: asObjectArray(getFieldVariant(safeParsed, 'validation', 'validation_outcome', 'validationOutcome')),
+    opportunities: extractOpportunities(safeParsed),
+    warnings: asObjectArray(safeParsed.warnings),
+    metadata: safeParsed.metadata && typeof safeParsed.metadata === 'object' && !Array.isArray(safeParsed.metadata)
+      ? safeParsed.metadata as Record<string, unknown>
       : undefined,
   };
 
@@ -148,7 +201,6 @@ export function renderRunEvaluationPayload(parsed: Record<string, unknown>, incl
     file: 'run-evaluation.json',
     sections,
     markdown,
-    raw: parsed,
+    raw: safeParsed,
   };
 }
-

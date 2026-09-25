@@ -69,7 +69,9 @@ const result = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 if (result.retryable !== false) throw new Error('invalid goal contract must suppress coding retries');
 if (result.contract_validation?.valid !== false) throw new Error('invalid contract was not recorded');
 if (!result.contradictions?.length) throw new Error('contract contradiction was not retained');
-if (result.classifier?.provider !== 'deterministic-contract-check') throw new Error('invalid contract should not invoke a classifier');
+if (result.evaluation?.stage !== 'goal check' || result.evaluation?.response_time_ms !== 0) {
+  throw new Error('invalid contract should stop before the Evaluation request');
+}
 NODE
 
 printf 'goal-contract-regression.test.sh PASS\n'

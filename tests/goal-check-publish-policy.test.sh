@@ -47,7 +47,7 @@ build_github_skip_reasons
 }
 
 GOAL_CHECK_OUTCOME=uncertain
-GOAL_CHECK_EVALUATION_WARNING=goal_check_deterministic_fallback:jev_classifier_unavailable
+GOAL_CHECK_EVALUATION_WARNING=goal_check_deterministic_fallback:typed_evaluation_unavailable
 build_github_skip_reasons
 [[ " ${GITHUB_SKIP_REASONS[*]} " == *" goal_check_failed "* ]] || {
   echo "FAIL: unavailable evaluator fallback was incorrectly treated as reviewable uncertainty" >&2
