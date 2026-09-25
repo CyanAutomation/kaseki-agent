@@ -24,7 +24,7 @@ grep -Fq '"outcome_policy": "change_required"' <<< "$patch_prompt" || {
   exit 1
 }
 grep -Fq 'Do not add report/inventory deliverables, extra refactorings, test counts' <<< "$patch_prompt" || {
-  printf 'FAIL: goal-setting prompt did not preserve the user's scope\n' >&2
+  printf "%s\n" "FAIL: goal-setting prompt did not preserve the user's scope" >&2
   exit 1
 }
 grep -Fq 'Effective validation commands configured for this run:' <<< "$patch_prompt" || {
