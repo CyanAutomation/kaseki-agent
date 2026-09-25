@@ -5534,9 +5534,9 @@ Well-formed goals have:
 - **Contract consistency**: Do not require an implementation and zero code changes in the same applicable outcome
 - **Evidence discipline**: Only name a file, version, or behavior after verifying it in the repository. If evidence is ambiguous, record it as an open question rather than turning it into a success criterion. Never describe an existing file as stale or nonexistent without a direct repository observation.
 - **Preserve task scope**: The user's original prompt is authoritative. Do not add report/inventory deliverables, extra refactorings, test counts, or other requirements unless the user asked for them or they are necessary to satisfy a stated requirement.
-- **Keep criteria traceable and atomic**: Each success criterion must map to a specific user requirement and one independently verifiable outcome. Do not combine unrelated implementation steps into one criterion. Use a quoted phrase in `source_requirement` and name the artifacts needed to verify it in `verification_sources`.
+- **Keep criteria traceable and atomic**: Each success criterion must map to a specific user requirement and one independently verifiable outcome. Do not combine unrelated implementation steps into one criterion. Use a quoted phrase in source_requirement and name the artifacts needed to verify it in verification_sources.
 - **Use configured validation**: Effective validation commands for this run are listed below. Do not invent or require commands that are not in this list; describe validation as the configured checks passing when the user did not request additional commands.
-- **Honor conditional no-op intent**: If the original prompt says no change is a successful outcome, use `change_or_noop`; make implementation criteria conditional on a qualifying change being selected.
+- **Honor conditional no-op intent**: If the original prompt says no change is a successful outcome, use change_or_noop; make implementation criteria conditional on a qualifying change being selected.
 
 === INPUT ANALYSIS ===
 
