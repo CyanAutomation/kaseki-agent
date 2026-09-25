@@ -4,6 +4,20 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.144.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.143.0...v1.144.0) (2026-09-25)
+
+
+### Bug Fixes
+
+* preserve conditional helper index order ([#1417](https://github.com/CyanAutomation/kaseki-agent/issues/1417)) ([3c469db](https://github.com/CyanAutomation/kaseki-agent/commit/3c469dbeb66c4e5e4228c7a89e28f4e7358c8c30))
+* preserve conditional helper order ([e0358b4](https://github.com/CyanAutomation/kaseki-agent/commit/e0358b48ce1a12fbea43c197d862651378a7c39f))
+
+
+### Features
+
+* enhance goal check evaluation with outcome tracking ([#1416](https://github.com/CyanAutomation/kaseki-agent/issues/1416)) ([793e77f](https://github.com/CyanAutomation/kaseki-agent/commit/793e77f96b878573ecd69ea412241fc3fc603625))
+* enhance goal check evaluation with outcome tracking and detailed assessments ([abaa66b](https://github.com/CyanAutomation/kaseki-agent/commit/abaa66be3aad6e3ba84bd03561c0ccbe5c526738))
+
 # [1.143.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.142.0...v1.143.0) (2026-09-24)
 
 
