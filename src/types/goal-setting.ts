@@ -15,12 +15,16 @@ const SmartCriterionSchema = z.object({
   criterion: z.string().trim().min(1),
   smart_score: z.enum(['high', 'medium', 'low']),
   reasoning: z.string().optional(),
+  source_requirement: z.string().trim().min(1).optional(),
+  verification_sources: z.array(z.string().trim().min(1)).optional(),
 });
 
 export interface SmartCriterion {
   criterion: string;
   smart_score: 'high' | 'medium' | 'low';
   reasoning?: string;
+  source_requirement?: string;
+  verification_sources?: string[];
 }
 
 /**

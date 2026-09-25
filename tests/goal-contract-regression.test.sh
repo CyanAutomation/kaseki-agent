@@ -16,9 +16,33 @@ eval "$(awk '
 ORIGINAL_TASK_PROMPT="Inspect the repository"
 GOAL_SETTING_CANDIDATE_ARTIFACT="$TMP_DIR/goal-setting-candidate.json"
 KASEKI_TASK_MODE="patch"
+KASEKI_ALLOW_EMPTY_DIFF=0
+KASEKI_VALIDATION_COMMANDS="npm run check"
 patch_prompt="$(build_goal_setting_prompt)"
 grep -Fq '"outcome_policy": "change_required"' <<< "$patch_prompt" || {
   printf 'FAIL: patch goal-setting prompt did not require a change\n' >&2
+  exit 1
+}
+grep -Fq 'Do not add report/inventory deliverables, extra refactorings, test counts' <<< "$patch_prompt" || {
+  printf 'FAIL: goal-setting prompt did not preserve the user's scope\n' >&2
+  exit 1
+}
+grep -Fq 'Effective validation commands configured for this run:' <<< "$patch_prompt" || {
+  printf 'FAIL: goal-setting prompt omitted configured validation commands\n' >&2
+  exit 1
+}
+grep -Fq 'source_requirement' <<< "$patch_prompt" || {
+  printf 'FAIL: goal-setting prompt omitted criterion provenance fields\n' >&2
+  exit 1
+}
+grep -Fq 'npm run check' <<< "$patch_prompt" || {
+  printf 'FAIL: goal-setting prompt omitted the configured check command\n' >&2
+  exit 1
+}
+KASEKI_ALLOW_EMPTY_DIFF=1
+noop_patch_prompt="$(build_goal_setting_prompt)"
+grep -Fq '"outcome_policy": "change_or_noop"' <<< "$noop_patch_prompt" || {
+  printf 'FAIL: patch goal-setting prompt ignored controller-authorized no-op intent\n' >&2
   exit 1
 }
 KASEKI_TASK_MODE="inspect"

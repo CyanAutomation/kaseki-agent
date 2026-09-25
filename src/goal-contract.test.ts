@@ -4,10 +4,17 @@ describe('goal contract', () => {
   test('normalizes string and structured criteria without serializing SMART metadata into the criterion', () => {
     expect(normalizeSuccessCriteria([
       'The parser handles null input',
-      { criterion: 'Run focused tests', smart_score: 'high', reasoning: 'Binary result', applies_when: 'A parser change is needed' },
+      {
+        criterion: 'Run focused tests', smart_score: 'high', reasoning: 'Binary result',
+        applies_when: 'A parser change is needed', source_requirement: 'Fix the parser',
+        verification_sources: ['git.diff', 'validation-timings.tsv'],
+      },
     ])).toEqual([
       { id: 'criterion_1', criterion: 'The parser handles null input' },
-      { id: 'criterion_2', criterion: 'Run focused tests', appliesWhen: 'A parser change is needed' },
+      {
+        id: 'criterion_2', criterion: 'Run focused tests', appliesWhen: 'A parser change is needed',
+        sourceRequirement: 'Fix the parser', verificationSources: ['git.diff', 'validation-timings.tsv'],
+      },
     ]);
   });
 

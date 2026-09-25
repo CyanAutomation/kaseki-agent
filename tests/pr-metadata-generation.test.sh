@@ -609,6 +609,20 @@ if grep -Fq 'Deterministic fallback confirmed only the changed-file contract.' <
 fi
 pass "Deterministic goal-check fallback requires human review"
 
+cat > "$RESULTS_DIR/goal-check.json" <<'JSON'
+{
+  "met": false,
+  "outcome": "uncertain",
+  "confidence": "medium",
+  "summary": "JEV could not establish whether every criterion is satisfied.",
+  "missing": ["Criterion evidence remains uncertain."],
+  "evaluation_warning": "goal_check_uncertain_review_required"
+}
+JSON
+uncertain_review="$(build_pr_agent_review 1)"
+grep -Fq 'Goal check is uncertain; human review is required before merging.' <<<"$uncertain_review" || fail "Uncertain goal-check verdict was not made explicit in PR review metadata"
+pass "Uncertain goal-check PR metadata requires human review"
+
 
 agent_eval_overall_line="$(grep -nF -- '- Overall: good' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
 agent_eval_confidence_line="$(grep -nF -- '- Reviewer confidence: high' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
