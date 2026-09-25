@@ -144,6 +144,10 @@ export function selectCriterionEvidenceSources(criterion: string, availableSourc
   return availableSources.filter((source) => relevant.has(source));
 }
 
+export function selectConditionalHelper(condition1: string, condition2: string, conditionIndex: number): string {
+  return conditionIndex === 0 ? condition1 : condition2;
+}
+
 export function buildGoalCheckQuestions(criteriaInput: Array<string | GoalCriterion>): Record<string, QuestionDefinition> {
   const criteria = normalizeSuccessCriteria(criteriaInput);
   return Object.fromEntries(criteria.flatMap(({ id, criterion, appliesWhen }) => [
