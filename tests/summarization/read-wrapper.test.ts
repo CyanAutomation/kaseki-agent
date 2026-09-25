@@ -7,10 +7,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-jest.unmock('tree-sitter');
-jest.unmock('tree-sitter-typescript');
-jest.unmock('tree-sitter-go');
-
 import {
   clearSummaryCache,
   readFileWithSummary,
@@ -45,7 +41,7 @@ describe('ReadWrapper', () => {
       Awaited<ReturnType<typeof readFileWithSummaryAndMetrics>>
     >,
     filePath: string,
-    decisionPath: 'cache_hit' | 'full_read' | 'tree_sitter' | 'error',
+    decisionPath: 'cache_hit' | 'full_read' | 'structural_summary' | 'error',
   ): void {
     const fullSizeBytes = fs.statSync(filePath).size;
     const returnedSizeBytes = Buffer.byteLength(result.content, 'utf-8');
@@ -264,7 +260,7 @@ describe('ReadWrapper', () => {
       expectMetricsDerivedFromActualResult(result, filePath, 'full_read');
     });
 
-    it('should report size, compression, token, and decision metrics for tree-sitter summaries and cache hits', async () => {
+    it('should report size, compression, token, and decision metrics for structural summaries and cache hits', async () => {
       const filePath = path.join(testDir, 'large.ts');
       writeLargeTypeScriptFile(filePath);
 
@@ -275,7 +271,7 @@ describe('ReadWrapper', () => {
       expect(firstRead?.metrics?.strategy).toBe('summary');
       expect(firstRead?.metrics?.cacheHit).toBe(false);
       expect(firstRead?.content).toContain('<!-- SUMMARY: typescript');
-      expectMetricsDerivedFromActualResult(firstRead!, filePath, 'tree_sitter');
+      expectMetricsDerivedFromActualResult(firstRead!, filePath, 'structural_summary');
 
       expect(secondRead).not.toBeNull();
       expect(secondRead?.content).toBe(firstRead?.content);

@@ -112,12 +112,6 @@
 
 ### Historical/Completed Documentation (Now Archived)
 
-**Feature 3 Documentation** (6 files → archive/):
-
-- All Feature 3 implementation, status, and integration docs
-- Location: `archive/FEATURE3_*.md`
-- Why archived: Feature is complete and integrated into main codebase
-
 **Phase Completion Summaries** (3 files → archive/):
 
 - Phase 2, 3, and 4-5 completion snapshots
@@ -215,7 +209,6 @@ docs/
 │   ├── suggested_models.md
 │
 ├── 📦 Archive (Historical)
-│   ├── archive/FEATURE3_*.md (6 files)
 │   ├── archive/PHASE*_*.md (3 files)
 │   ├── archive/CAVEMAN_*.md (3 files)
 │   ├── archive/KASEKI-*-*.md (5 files)
@@ -327,8 +320,6 @@ ls -la docs/archive/
 # Search archived content
 grep -r "search-term" docs/archive/
 
-# View a specific archived doc
-cat docs/archive/FEATURE3_README.md
 ```
 
 **Why archive instead of delete?**

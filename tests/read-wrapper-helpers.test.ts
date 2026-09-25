@@ -78,7 +78,7 @@ describe('read-wrapper behavior', () => {
 
     expect(firstRead).not.toBeNull();
     expect(firstRead?.metrics?.strategy).toBe('summary');
-    expect(firstRead?.metrics?.decisionPath).toBe('tree_sitter');
+    expect(firstRead?.metrics?.decisionPath).toBe('structural_summary');
     expect(firstRead?.metrics?.cacheHit).toBe(false);
     expect(firstRead?.content).toContain('<!-- SUMMARY: typescript');
 

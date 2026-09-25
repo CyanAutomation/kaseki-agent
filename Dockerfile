@@ -12,8 +12,6 @@ RUN npm install -g --no-audit "npm@${NPM_VERSION}"
 
 FROM base AS deps
 
-ARG TREE_SITTER_CLI_VERSION=0.25.10
-
 # Phase 1: System dependencies + user setup (consolidated)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates git procps \
@@ -41,11 +39,7 @@ RUN npm ci --no-audit --prefer-offline --ignore-scripts \
 # Install pi-coding-agent globally with undici explicitly to resolve module dependencies
 RUN npm install -g --no-audit @earendil-works/pi-coding-agent@0.84.4 undici
 
-# Phase 3b: Install tree-sitter-cli for Go code summarization (no native compilation)
-COPY docker/install-tree-sitter-cli.sh /usr/local/bin/install-tree-sitter-cli
-RUN /usr/local/bin/install-tree-sitter-cli "$TREE_SITTER_CLI_VERSION"
-
-# Phase 3c: Copy Pi CLI Custom Extensions (LLM Gateway provider)
+# Phase 3b: Copy Pi CLI Custom Extensions (LLM Gateway provider)
 # Extensions are loaded from ~/.pi/extensions/ and must be compiled TypeScript
 # We'll use a simpler approach: copy extension to a known location in the image
 RUN mkdir -p /opt/kaseki/pi-extensions
@@ -74,7 +68,6 @@ ENV HOME=/tmp/kaseki-home \
 
 # Copy Pi CLI and workspace cache seed from deps stage
 COPY --from=deps /usr/local/lib/node_modules /usr/local/lib/node_modules
-COPY --from=deps /usr/local/bin/tree-sitter /usr/local/bin/tree-sitter
 COPY --from=deps /opt/kaseki/workspace-cache-seed/node_modules /opt/kaseki/workspace-cache/default/node_modules
 
 # Create a wrapper script for the Pi CLI that properly resolves node modules
@@ -308,13 +301,8 @@ ENV HOME=/tmp/kaseki-home \
 # Copy runtime essentials from runtime stage (skip test/, docs/, src/)
 COPY --from=runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=runtime /usr/local/bin/pi /usr/local/bin/pi
-COPY --from=runtime /usr/local/bin/tree-sitter /usr/local/bin/tree-sitter
 COPY --from=runtime /opt/kaseki/pi-extensions /opt/kaseki/pi-extensions
 COPY --from=runtime /opt/kaseki/workspace-cache/default/node_modules /opt/kaseki/workspace-cache/default/node_modules
-
-# Verify the packaged CLI is present and executable without running an
-# architecture-specific binary while Buildx is emulating another platform.
-RUN test -x /usr/local/bin/tree-sitter
 
 # Copy application files (excluding build artifacts)
 WORKDIR /app
