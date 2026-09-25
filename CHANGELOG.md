@@ -4,6 +4,19 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.145.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.144.0...v1.145.0) (2026-09-25)
+
+
+### Bug Fixes
+
+* escape apostrophe in goal contract regression test ([5e1f9b9](https://github.com/CyanAutomation/kaseki-agent/commit/5e1f9b948e4890153fa830430bd4b0c66f691291))
+
+
+### Features
+
+* enhance goal-setting with source requirement and verification ([#1419](https://github.com/CyanAutomation/kaseki-agent/issues/1419)) ([d80a8d7](https://github.com/CyanAutomation/kaseki-agent/commit/d80a8d759cf473687d7b9855463f392bdbc52fa8))
+* enhance goal-setting with source requirement and verification sources in criteria ([fa03d10](https://github.com/CyanAutomation/kaseki-agent/commit/fa03d10c9f41c8fefc04bed2a40f73f51a8d483e))
+
 # [1.144.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.143.0...v1.144.0) (2026-09-25)
 
 
