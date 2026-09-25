@@ -226,15 +226,9 @@ describe('OpenAPI Component Builders', () => {
       expect(info.version).toMatch(versionPattern);
     });
 
-    it('description should mention coding agent', () => {
+    it('description should satisfy the OpenAPI Info Object product contract for a coding-agent runner', () => {
       const info = buildInfo();
-      expect((info.description as string).toLowerCase()).toContain('agent');
-    });
-
-    it('description should mention Pi or OpenRouter', () => {
-      const info = buildInfo();
-      const desc = (info.description as string).toLowerCase();
-      expect(desc).toMatch(/pi|openrouter|coding|agent/i);
+      expect(info.description).toMatch(/coding-agent/i);
     });
 
     it('license should be MIT', () => {
