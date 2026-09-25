@@ -23,12 +23,13 @@ else
   docker build -t "$IMAGE_TAG" .
 fi
 
-printf 'Checking tree-sitter is packaged as an executable in the final image...\n'
-# The CLI is architecture-specific and can hang when a runner cannot execute
-# its downloaded binary. Version pinning is verified statically from the
-# Dockerfile and installer contract; this runtime assertion verifies only that
-# the final image contains the executable without invoking it.
+printf 'Checking the tree-sitter executable path and behavior in the final image...\n'
+# This integration suite runs the image for the Docker host's native platform,
+# so it can validate the installed CLI without relying on Dockerfile layout.
 docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c \
-  'test -x /usr/local/bin/tree-sitter'
+  'set -eu
+   test "$(command -v tree-sitter)" = /usr/local/bin/tree-sitter
+   test -x /usr/local/bin/tree-sitter
+   tree-sitter --version | grep -Eq "^tree-sitter 0[.]25[.]10([[:space:]].*)?$"'
 
 printf '✓ tree-sitter CLI Docker packaging integration assertions passed.\n'
