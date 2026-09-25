@@ -8734,6 +8734,20 @@ build_pr_agent_review() {
   local scouting_file="${KASEKI_RESULTS_DIR}/scouting.json"
   local missing risks goal_met goal_outcome
 
+  # An uncertain goal-check verdict requires explicit human review notice.
+  if [ -s "$goal_file" ] && node - "$goal_file" <<'NODE' >/dev/null 2>&1
+const fs = require('fs');
+try {
+  const value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  process.exit(value?.evaluation_warning === 'goal_check_uncertain_review_required' ? 0 : 1);
+} catch { process.exit(1); }
+NODE
+  then
+    printf '### Needs attention\n'
+    printf -- '- Goal check is uncertain; human review is required before merging.\n'
+    return 0
+  fi
+
   # A deterministic fallback cannot establish semantic task completion.
   if [ -s "$goal_file" ] && node - "$goal_file" <<'NODE' >/dev/null 2>&1
 const fs = require('fs');
