@@ -4,6 +4,19 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.146.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.145.0...v1.146.0) (2026-09-25)
+
+
+### Bug Fixes
+
+* harden GitHub App token temporary-file handling ([#1421](https://github.com/CyanAutomation/kaseki-agent/issues/1421)) ([56d19f8](https://github.com/CyanAutomation/kaseki-agent/commit/56d19f8dd0e454b0ec93b1e51af7f1a8264fa53d))
+* keep GitHub installation tokens off disk ([e3b753d](https://github.com/CyanAutomation/kaseki-agent/commit/e3b753d58dd1e050bb53e983ea638f118d779bbf))
+
+
+### Features
+
+* update gateway test routes and task admission logic for evaluation checks ([#1420](https://github.com/CyanAutomation/kaseki-agent/issues/1420)) ([c050690](https://github.com/CyanAutomation/kaseki-agent/commit/c05069027d2c51dc8adbc5fe60b5a1793c4c6bd6)), closes [hi#confidence](https://github.com/hi/issues/confidence)
+
 # [1.145.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.144.0...v1.145.0) (2026-09-25)
 
 
