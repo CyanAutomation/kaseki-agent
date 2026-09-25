@@ -112,7 +112,7 @@ const ERROR_PATTERN_REGISTRY: Array<{
     retryable: true, category: 'unknown', confidence: 'medium' },
 
   // Malformed tool call (transient, can be corrected)
-  { regex: /tool\s+call.*?(json|parse|malformed|unterminated)|malformed.*?tool\s+call/i,
+  { regex: /dsml.*tool[-\s]+call|tool[-\s]+call.*dsml|tool\s+call.*?(json|parse|malformed|unterminated)|malformed.*?tool[-\s]+call/i,
     retryable: true, category: 'malformed_request', confidence: 'high' },
 
   // DNS resolution failure (transient — resolver or network briefly unavailable)
@@ -189,8 +189,9 @@ export function classifyProviderError(message: string): {
   ) {
     type = 'model_unavailable';
   } else if (
-    lower.includes('tool call') &&
-    (lower.includes('json') || lower.includes('parse') || lower.includes('malformed') || lower.includes('unterminated'))
+    /tool[-\s]+call/.test(lower) &&
+    (lower.includes('json') || lower.includes('parse') || lower.includes('malformed') ||
+      lower.includes('unterminated') || lower.includes('dsml') || lower.includes('incomplete') || lower.includes('invalid'))
   ) {
     type = 'malformed_tool_call';
   }

@@ -249,6 +249,14 @@ describe('scouting-allowlist.js CLI', () => {
     }
   });
 
+  test('compact scouting instructions keep the handoff within the output budget', () => {
+    const template = fs.readFileSync(path.join(process.cwd(), 'templates/scouting/compact.txt'), 'utf8');
+
+    expect(template).toContain('Target output handoff under 6 KB');
+    expect(template).toContain('Stop exploring once evidence suffices');
+    expect(template).toContain('summarize tool output instead of copying it');
+  });
+
   test('should derive allowlist from valid artifact', () => {
     const artifact = {
       task: 'refactor parser',

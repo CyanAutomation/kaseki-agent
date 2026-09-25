@@ -289,7 +289,7 @@ write_template_metadata() {
   "gitRef": "$(json_escape "$git_ref")",
   "packageVersion": "$(json_escape "$(node -p "require('./package.json').version" 2>/dev/null || true)")",
   "generatedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "supportedPublishModes": ["auto", "none", "branch", "pr", "draft_pr"],
+  "supportedPublishModes": ["auto", "none", "branch", "pr"],
   "image": "$(json_escape "$configured_image")",
   "deployedImage": "$(json_escape "$deployed_image")",
   "imageDigest": "$(json_escape "$image_digest")"

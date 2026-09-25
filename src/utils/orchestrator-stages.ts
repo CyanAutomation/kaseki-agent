@@ -78,7 +78,7 @@ function deriveRunEvaluationEnabled(
   const isNotInspectMode = taskMode !== 'inspect';
   return isInspectMode
     ? request?.runEvaluation?.enabled === true
-    : request?.runEvaluation?.enabled ?? ((publishMode === 'pr' || publishMode === 'draft_pr') && isNotInspectMode && !startupCheck);
+    : request?.runEvaluation?.enabled ?? (publishMode === 'pr' && isNotInspectMode && !startupCheck);
 }
 
 /**

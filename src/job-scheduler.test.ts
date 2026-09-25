@@ -948,7 +948,7 @@ describe('JobScheduler timeout lifecycle', () => {
     );
   });
 
-  test('passes requested publish mode to controller runs', async () => {
+  test('passes normal pull request publish mode to controller runs', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
@@ -970,7 +970,7 @@ describe('JobScheduler timeout lifecycle', () => {
     await scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
-      publishMode: 'draft_pr',
+      publishMode: 'pr',
     });
 
     expect(mockSpawn).toHaveBeenCalledWith(
@@ -978,7 +978,7 @@ describe('JobScheduler timeout lifecycle', () => {
       expect.any(Array),
       expect.objectContaining({
         env: expect.objectContaining({
-          KASEKI_PUBLISH_MODE: 'draft_pr',
+          KASEKI_PUBLISH_MODE: 'pr',
         }),
       }),
     );
@@ -1366,7 +1366,7 @@ describe('JobScheduler timeout lifecycle', () => {
     await prScheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
-      publishMode: 'draft_pr',
+      publishMode: 'pr',
     });
 
     expect(mockSpawn).toHaveBeenCalledWith(

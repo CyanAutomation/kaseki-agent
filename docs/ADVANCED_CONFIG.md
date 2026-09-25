@@ -380,19 +380,15 @@ Variables controlling what code the agent operates on.
 - **Description**: How to publish agent results to GitHub
 - **Options**:
   - `pr` — Create a normal pull request (default)
-  - `draft_pr` — Create a draft PR for review before merge
   - `branch` — Push changes to new branch without creating a PR
   - `auto` — Create PR if credentials found, otherwise skip (legacy)
   - `none` — Don't publish, keep results local
-- **Note**: Requires GitHub App credentials in `GITHUB_APP_*` variables to function
+- **Note**: `pr` and `branch` require GitHub App credentials in `GITHUB_APP_*` variables; `auto` skips publishing without credentials, and `none` does not use them.
 - **Example**:
 
   ```bash
   # Create normal PR (default)
   KASEKI_PUBLISH_MODE=pr
-
-  # Create draft PR instead
-  KASEKI_PUBLISH_MODE=draft_pr
   ```
 
 ---
@@ -604,7 +600,7 @@ The latest verdict is written to `/results/goal-check.json`, all verdicts are ap
 
 ### Run Evaluation
 
-Kaseki can run a final task-agnostic evaluator after validation and goal-check, before PR creation. It is enabled by default for PR-publishing patch runs (`pr` and `draft_pr`) and disabled for inspect, startup-check, branch-only, and publish-none runs unless explicitly enabled.
+Kaseki can run a final task-agnostic evaluator after validation and goal-check, before PR creation. It is enabled by default for normal PR-publishing patch runs (`pr`) and disabled for inspect, startup-check, branch-only, and publish-none runs unless explicitly enabled.
 
 ```bash
 export KASEKI_RUN_EVALUATION=1
