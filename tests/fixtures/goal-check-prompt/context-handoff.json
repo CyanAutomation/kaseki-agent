@@ -1,0 +1,1 @@
+{"schema_version":1,"phase_completed":"coding","requirements":["Add stable handoff"],"constraints":[],"changed_files":["scripts/evaluation-prompts.sh"],"validation_outcomes":["unit test: exit 0 (1s)"],"unresolved_questions":[]}
