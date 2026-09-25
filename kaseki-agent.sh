@@ -2852,7 +2852,9 @@ function baselineContainsMarker(marker) {
 const ignoredBaselineSearchStrings = requestedSearchStrings.filter(baselineContainsMarker);
 const requiredSearchStrings = requestedSearchStrings.filter((marker) => !ignoredBaselineSearchStrings.includes(marker));
 const explicitForbidden = normalizeBool(explicit.forbidden_empty_diff ?? explicit.forbiddenEmptyDiff);
-const forbiddenEmptyDiff = explicitForbidden === undefined ? allowEmptyDiff !== '1' : explicitForbidden;
+// Controller policy carries the task author's intent and takes precedence over
+// a scouting proposal that would otherwise require a diff.
+const forbiddenEmptyDiff = allowEmptyDiff === '1' ? false : explicitForbidden === undefined ? true : explicitForbidden;
 const scoutingFallback = Boolean(scouting && typeof scouting === 'object' && (scouting.fallback === true || scouting.fallback_reason));
 const contract = {
   source_artifacts: {
@@ -2952,22 +2954,28 @@ if (expectations.__invalid) {
     notes.push(`recovered_changed_files_from_diff=${recoveredFiles.join(',')}`);
     fs.writeFileSync(changedFilesPath, [...changedFiles].sort().join('\n') + '\n');
   }
+  const acceptedEmptyDiff = diff.trim().length === 0 && !asBoolean(expectations.forbidden_empty_diff);
   if (asBoolean(expectations.forbidden_empty_diff) && diff.trim().length === 0) {
     failures.push('git.diff is empty but forbidden_empty_diff is true');
   }
-  for (const file of asStrings(expectations.required_files)) {
-    if (!changedFiles.has(file)) failures.push(`required file missing from changed-files.txt: ${file}`);
+  if (!acceptedEmptyDiff) {
+    for (const file of asStrings(expectations.required_files)) {
+      if (!changedFiles.has(file)) failures.push(`required file missing from changed-files.txt: ${file}`);
+    }
   }
   for (const file of asStrings(expectations.protected_files)) {
     if (changedFiles.has(file)) failures.push(`protected file was changed outside task scope: ${file}`);
   }
-  for (const needle of asStrings(expectations.required_search_strings)) {
-    if (!diff.includes(needle)) failures.push(`required search string missing from git.diff: ${needle}`);
+  if (!acceptedEmptyDiff) {
+    for (const needle of asStrings(expectations.required_search_strings)) {
+      if (!diff.includes(needle)) failures.push(`required search string missing from git.diff: ${needle}`);
+    }
   }
   notes.push(`required_files=${asStrings(expectations.required_files).length}`);
   notes.push(`required_search_strings=${asStrings(expectations.required_search_strings).length}`);
   notes.push(`protected_files=${asStrings(expectations.protected_files).length}`);
   notes.push(`forbidden_empty_diff=${asBoolean(expectations.forbidden_empty_diff)}`);
+  notes.push(`accepted_empty_diff=${acceptedEmptyDiff}`);
 }
 const lines = [];
 lines.push(`[critical-change] diff_sha256=${diffSha256}`);
@@ -2993,8 +3001,7 @@ critical_change_contract_allows_noop() {
 const fs = require('node:fs');
 try {
   const contract = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-  const values = (value) => Array.isArray(value) ? value.filter((item) => typeof item === 'string' && item.trim()) : [];
-  process.exit(contract.forbidden_empty_diff === false && values(contract.required_files).length === 0 && values(contract.required_search_strings).length === 0 ? 0 : 1);
+  process.exit(contract.forbidden_empty_diff === false ? 0 : 1);
 } catch {
   process.exit(1);
 }
@@ -5468,10 +5475,11 @@ is_transient_goal_setting_failure() {
 }
 
 build_goal_setting_prompt() {
-  local caveman_instruction goal_outcome_policy
+  local caveman_instruction goal_outcome_policy configured_validation_commands
   caveman_instruction="$(get_caveman_instruction)"
+  configured_validation_commands="${KASEKI_VALIDATION_COMMANDS:-not configured}"
   goal_outcome_policy="change_required"
-  if [ "$KASEKI_TASK_MODE" = "inspect" ] || critical_change_contract_allows_noop; then
+  if [ "$KASEKI_TASK_MODE" = "inspect" ] || [ "${KASEKI_ALLOW_EMPTY_DIFF:-0}" = "1" ] || critical_change_contract_allows_noop; then
     goal_outcome_policy="change_or_noop"
   fi
   
@@ -5496,11 +5504,18 @@ Well-formed goals have:
 - **Conditional criteria**: Give every conditional criterion an explicit "applies_when" condition; do not encode mutually exclusive branches in free-text criteria
 - **Contract consistency**: Do not require an implementation and zero code changes in the same applicable outcome
 - **Evidence discipline**: Only name a file, version, or behavior after verifying it in the repository. If evidence is ambiguous, record it as an open question rather than turning it into a success criterion. Never describe an existing file as stale or nonexistent without a direct repository observation.
+- **Preserve task scope**: The user's original prompt is authoritative. Do not add report/inventory deliverables, extra refactorings, test counts, or other requirements unless the user asked for them or they are necessary to satisfy a stated requirement.
+- **Keep criteria traceable and atomic**: Each success criterion must map to a specific user requirement and one independently verifiable outcome. Do not combine unrelated implementation steps into one criterion. Use a quoted phrase in `source_requirement` and name the artifacts needed to verify it in `verification_sources`.
+- **Use configured validation**: Effective validation commands for this run are listed below. Do not invent or require commands that are not in this list; describe validation as the configured checks passing when the user did not request additional commands.
+- **Honor conditional no-op intent**: If the original prompt says no change is a successful outcome, use `change_or_noop`; make implementation criteria conditional on a qualifying change being selected.
 
 === INPUT ANALYSIS ===
 
 User task prompt:
 $ORIGINAL_TASK_PROMPT
+
+Effective validation commands configured for this run:
+$configured_validation_commands
 
 Analyze for: success criteria, scope boundaries, anti-patterns, conventions, drivers
 
@@ -5517,6 +5532,8 @@ Write exactly one JSON object to $GOAL_SETTING_CANDIDATE_ARTIFACT (no markdown, 
     {
       "criterion": "<specific, measurable criterion>",
       "applies_when": "<optional condition that determines whether this criterion applies>",
+      "source_requirement": "<verbatim phrase from the user's prompt that requires this outcome>",
+      "verification_sources": ["<available artifact name, such as git.diff or validation-timings.tsv>"],
       "smart_score": "high",
       "reasoning": "<brief reason why this is SMART (Specific, Measurable, Achievable, Relevant, Time-bound)>"
     }
@@ -8717,6 +8734,20 @@ build_pr_agent_review() {
   local scouting_file="${KASEKI_RESULTS_DIR}/scouting.json"
   local missing risks goal_met
 
+  # An uncertain goal-check verdict requires explicit human review notice.
+  if [ -s "$goal_file" ] && node - "$goal_file" <<'NODE' >/dev/null 2>&1
+const fs = require('fs');
+try {
+  const value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  process.exit(value?.evaluation_warning === 'goal_check_uncertain_review_required' ? 0 : 1);
+} catch { process.exit(1); }
+NODE
+  then
+    printf '### Needs attention\n'
+    printf -- '- Goal check is uncertain; human review is required before merging.\n'
+    return 0
+  fi
+
   # A deterministic fallback cannot establish semantic task completion.
   if [ -s "$goal_file" ] && node - "$goal_file" <<'NODE' >/dev/null 2>&1
 const fs = require('fs');
@@ -11043,7 +11074,13 @@ consolidate_timings_to_json "${KASEKI_RESULTS_DIR}/timings-manifest.json" "$VALI
 run_scorecard_best_effort "$KASEKI_RESULTS_DIR" "post_evaluation"
 
 build_github_skip_reasons() {
+  local reviewable_goal_uncertainty=false
   GITHUB_SKIP_REASONS=()
+  if [ "$GOAL_CHECK_OUTCOME" = "uncertain" ] && \
+    [ "${GOAL_CHECK_EVALUATION_WARNING:-}" = "goal_check_uncertain_review_required" ] && \
+    [ "$GOAL_CHECK_EXIT" -eq 0 ]; then
+    reviewable_goal_uncertainty=true
+  fi
   if [ "$GITHUB_APP_ENABLED" != "1" ]; then
     GITHUB_SKIP_REASONS+=("github_app_disabled")
   fi
@@ -11059,7 +11096,7 @@ build_github_skip_reasons() {
   if [ "$SECRET_SCAN_EXIT" -ne 0 ]; then
     GITHUB_SKIP_REASONS+=("secret_scan_failed")
   fi
-  if [ "$GOAL_CHECK_EXIT" -ne 0 ] || { [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ] && [ "$GOAL_CHECK_MET" != "true" ]; }; then
+  if [ "$GOAL_CHECK_EXIT" -ne 0 ] || { [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ] && [ "$GOAL_CHECK_MET" != "true" ] && [ "$reviewable_goal_uncertainty" != "true" ]; }; then
     GITHUB_SKIP_REASONS+=("goal_check_failed")
   fi
   if [ "$STATUS" -ne 0 ]; then

@@ -2,6 +2,8 @@ export interface GoalCriterion {
   id: string;
   criterion: string;
   appliesWhen?: string;
+  sourceRequirement?: string;
+  verificationSources?: string[];
 }
 
 export interface GoalContractValidation {

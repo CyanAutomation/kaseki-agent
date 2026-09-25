@@ -69,6 +69,19 @@ describe('goal-setting types', () => {
       expect(result.success).toBe(true);
     });
 
+    it('accepts traceable SMART criteria with explicit verification artifacts', () => {
+      const result = GoalSettingOutputSchema.safeParse({
+        ...validOutput,
+        success_criteria: [{
+          criterion: 'Reuse the existing normalizer',
+          smart_score: 'high',
+          source_requirement: 'Prefer reusing an existing abstraction',
+          verification_sources: ['git.diff', 'changed-files.txt'],
+        }],
+      });
+      expect(result.success).toBe(true);
+    });
+
     it('requires confidence to be one of high/medium/low', () => {
       const invalid = { ...validOutput, confidence: 'unknown' };
       const result = GoalSettingOutputSchema.safeParse(invalid);
