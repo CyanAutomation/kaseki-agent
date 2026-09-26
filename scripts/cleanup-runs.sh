@@ -91,6 +91,8 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 set +e
 PREVIEW_OUTPUT="$(
+  # JavaScript template interpolation must remain literal to the shell.
+  # shellcheck disable=SC2016
   KASEKI_CLEANUP_SCRIPT_DIR="$SCRIPT_DIR" \
       KASEKI_CLEANUP_RESULTS_DIR="$RESULTS_DIR" \
       KASEKI_CLEANUP_LOG_DIR="$LOG_DIR" \
