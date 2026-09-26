@@ -132,13 +132,31 @@ if grep -q 'workspace cache failed npm ls validation; reinstalling' "$DEPENDENCY
 fi
 pass "hardlink EXDEV stderr uses normalized fallback logging without raw cp noise"
 
-# A cache entry that has already rejected hardlinks should select copy directly
-# in auto mode instead of repeating a costly EXDEV attempt on every run.
-: > "$TMP_DIR/cache/.kaseki-hardlink-disabled"
+# Auto mode selects the isolated path even when both directories are on the
+# same filesystem and hardlinks would technically be available.
 [ "$(resolve_dependency_restore_mode "$TMP_DIR/cache/node_modules" "$TMP_DIR/workspace/node_modules" auto)" = "copy" ] \
-  || fail "Auto restore did not honor the cached hardlink EXDEV marker"
-pass "auto restore remembers cross-device hardlink failures"
-rm -f "$TMP_DIR/cache/.kaseki-hardlink-disabled"
+  || fail "Auto restore did not select the isolated copy path"
+pass "auto restore resolves to isolated copy on the same filesystem"
+
+# The default restore must never give a job writable access to persistent
+# cache inodes, even when cache and workspace reside on the same filesystem.
+rm -rf "$TMP_DIR/workspace/node_modules"
+restore_node_modules_from_cache "$TMP_DIR/cache/node_modules" "$TMP_DIR/workspace/node_modules" auto
+[ "${DEPENDENCY_RESTORE_METHOD:-}" = "copy" ] || fail "Expected auto mode to select isolated copy, got ${DEPENDENCY_RESTORE_METHOD:-unset}"
+printf 'workspace mutation\n' > "$TMP_DIR/workspace/node_modules/pkg/index.js"
+grep -qx 'cached package' "$TMP_DIR/cache/node_modules/pkg/index.js" \
+  || fail "Workspace dependency write mutated the persistent cache entry"
+pass "auto restore isolates persistent cache files from workspace writes"
+
+# Explicit hardlink mode is experimental, but must detach its staging links
+# before returning control to the job.
+rm -rf "$TMP_DIR/workspace/node_modules"
+restore_node_modules_from_cache "$TMP_DIR/cache/node_modules" "$TMP_DIR/workspace/node_modules" hardlink
+[ "${DEPENDENCY_RESTORE_METHOD:-}" = "hardlink_isolated" ] || fail "Expected isolated hardlink method, got ${DEPENDENCY_RESTORE_METHOD:-unset}"
+printf 'hardlink workspace mutation\n' > "$TMP_DIR/workspace/node_modules/pkg/index.js"
+grep -qx 'cached package' "$TMP_DIR/cache/node_modules/pkg/index.js" \
+  || fail "Experimental hardlink restore left cache and workspace inodes linked"
+pass "hardlink restore detaches workspace files before job execution"
 
 rm -rf "$TMP_DIR/workspace/node_modules" "$TMP_DIR/published"
 ln -s "$TMP_DIR/cache/node_modules" "$TMP_DIR/workspace/node_modules"

@@ -856,17 +856,25 @@ Variables for dependency caching and performance optimization.
 - **Paths**: Single-run, Local API, Production API
 - **Description**: How to restore dependencies from cache
 - **Options**:
-  - `auto` — Hardlink when cache and workspace share a filesystem, otherwise copy
-  - `copy` — Copy from cache (disk intensive but isolated)
-  - `hardlink` — Hardlink from cache when possible, copy fallback otherwise
+  - `auto` — Recommended isolated restore: copy-on-write reflink where supported, normal copy otherwise
+  - `copy` — The same inode-isolated copy/reflink mechanism, selected explicitly
+  - `hardlink` — Experimental compatibility mode: hardlink staging followed by mandatory link breaking before agent execution; copy fallback across filesystems
   - `symlink` — Symlink `node_modules` to the cache (experimental)
 - **Example**:
 
   ```bash
-  KASEKI_DEPENDENCY_RESTORE_MODE=auto  # Recommended when cache/workspace may be separate mounts
-  # KASEKI_DEPENDENCY_RESTORE_MODE=copy  # Use for fixed cross-device layouts
-  # KASEKI_DEPENDENCY_RESTORE_MODE=hardlink  # Only when cache/workspace are same filesystem
+  KASEKI_DEPENDENCY_RESTORE_MODE=auto  # Recommended; workspace writes cannot alter cache inodes
+  # KASEKI_DEPENDENCY_RESTORE_MODE=copy  # Explicit isolated copy/reflink restore
+  # KASEKI_DEPENDENCY_RESTORE_MODE=hardlink  # Experimental; links are detached before use
   ```
+
+`auto`, `copy`, and the completed `hardlink` restore all leave the workspace
+with inodes isolated from the persistent cache. The cache is not made
+recursively read-only, because doing so would also make a hardlinked staging
+tree unusable; explicit hardlink mode instead materializes a detached tree
+before any validation or agent command runs. `symlink` remains experimental
+and intentionally couples workspace access to the cache, so do not use it for
+untrusted or cache-mutating jobs.
 
 ### Dependency Cache Pruning
 

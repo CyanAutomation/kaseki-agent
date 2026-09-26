@@ -4098,18 +4098,43 @@ resolve_dependency_restore_mode() {
     printf '%s\n' "$mode"
     return 0
   fi
-  # A bind mount can report the same device at its root yet reject hardlinks
-  # for nested cache entries. Persist the observed EXDEV outcome beside the
-  # cache entry so later runs do not pay for the same failed hardlink attempt.
-  if [ -f "$(dirname "$source_dir")/.kaseki-hardlink-disabled" ]; then
-    printf 'copy\n'
+  # Never expose the persistent cache's inodes to a job in the default mode.
+  # The copy restore uses reflinks when the filesystem and cp implementation
+  # support them, so this remains cheap on copy-on-write filesystems.
+  printf 'copy\n'
+}
+
+copy_dependency_tree_isolated() {
+  local source_dir="$1"
+  local target_dir="$2"
+  # GNU cp uses a reflink where possible and transparently copies otherwise.
+  # Other cp implementations may reject --reflink, so retry portably after
+  # removing any partial destination from the first attempt.
+  if cp -a --reflink=auto "$source_dir" "$target_dir" 2>/dev/null; then
     return 0
   fi
-  if same_filesystem "$source_dir" "$(dirname "$target_dir")"; then
-    printf 'hardlink\n'
-  else
-    printf 'copy\n'
+  rm -rf "$target_dir"
+  cp -a "$source_dir" "$target_dir"
+}
+
+isolate_hardlinked_dependency_tree() {
+  local target_dir="$1"
+  local target_parent target_name isolated_parent isolated_dir
+  target_parent="$(dirname "$target_dir")"
+  target_name="$(basename "$target_dir")"
+  isolated_parent="$(mktemp -d "${target_parent}/.kaseki-dependency-isolation.XXXXXX")" || return 1
+  isolated_dir="${isolated_parent}/${target_name}"
+  if ! copy_dependency_tree_isolated "$target_dir" "$isolated_dir"; then
+    rm -rf "$isolated_parent" "$target_dir"
+    return 1
   fi
+  rm -rf "$target_dir"
+  if ! mv "$isolated_dir" "$target_dir"; then
+    rm -rf "$isolated_parent" "$target_dir"
+    return 1
+  fi
+  rmdir "$isolated_parent" || return 1
+  return 0
 }
 
 restore_node_modules_from_cache() {
@@ -4120,16 +4145,22 @@ restore_node_modules_from_cache() {
   DEPENDENCY_RESTORE_METHOD="$mode"
   case "$mode" in
     copy)
-      cp -a "$source_dir" "$target_dir"
+      copy_dependency_tree_isolated "$source_dir" "$target_dir"
       ;;
     hardlink)
+      # Experimental compatibility mode. The hardlinked staging tree MUST be
+      # detached before returning, otherwise job writes would mutate the
+      # persistent cache entry through the shared inode.
       if same_filesystem "$source_dir" "$(dirname "$target_dir")"; then
         local hardlink_stderr_file hardlink_reason hardlink_stderr_trimmed
         hardlink_stderr_file="$(mktemp /tmp/kaseki-hardlink-stderr.XXXXXX)" || return 1
         if cp -al "$source_dir" "$target_dir" 2>"$hardlink_stderr_file"; then
           rm -f "$hardlink_stderr_file"
-          DEPENDENCY_RESTORE_METHOD="hardlink"
-          return 0
+          if isolate_hardlinked_dependency_tree "$target_dir"; then
+            DEPENDENCY_RESTORE_METHOD="hardlink_isolated"
+            return 0
+          fi
+          return 1
         fi
         if grep -q "Invalid cross-device link\|EXDEV" "$hardlink_stderr_file"; then
           hardlink_reason="hardlink_cross_device"
@@ -4147,12 +4178,12 @@ restore_node_modules_from_cache() {
           fi
         fi
         rm -f "$hardlink_stderr_file"
-        cp -a "$source_dir" "$target_dir"
+        copy_dependency_tree_isolated "$source_dir" "$target_dir"
       else
         DEPENDENCY_RESTORE_METHOD="hardlink_cross_fs_copy"
         printf 'Dependency cache status: hardlink restore skipped because cache and workspace are on different filesystems; falling back to copy.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
         emit_event "dependency_cache_decision" "strategy=hardlink_restore_fallback" "restore_mode=hardlink" "restore_method=hardlink_cross_fs_copy" "reason=hardlink_cross_fs"
-        cp -a "$source_dir" "$target_dir"
+        copy_dependency_tree_isolated "$source_dir" "$target_dir"
       fi
       ;;
     symlink)
