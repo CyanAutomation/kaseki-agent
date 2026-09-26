@@ -393,26 +393,24 @@ describe('Scouting Template: Token Efficiency', () => {
     commonContent = loadTemplate('common.txt');
   });
 
-  test('can measure token count (rough estimate: words / 0.75)', () => {
+  test('stays within the compression budget without redundant field definitions', () => {
     const baseWords = baseContent.split(/\s+/).length;
     const baseTokens = Math.ceil(baseWords / 0.75);
     const commonWords = commonContent.split(/\s+/).length;
     const commonTokens = Math.ceil(commonWords / 0.75);
+    const concreteCount = (baseContent.match(/concrete/gi) || []).length;
 
     // Keep the current optimized templates below a 2,500-token proxy budget.
     expect(baseTokens).toBeGreaterThan(1000);
     expect(commonTokens).toBeGreaterThan(200);
     expect(baseTokens + commonTokens).toBeLessThan(2500);
 
+    // Preserve the instruction while preventing excessive repetition.
+    expect(concreteCount).toBeGreaterThan(0);
+    expect(concreteCount).toBeLessThan(15);
+
     // Log for verification
     console.log(`Base tokens: ${baseTokens}, Common tokens: ${commonTokens}, Total: ${baseTokens + commonTokens}, Budget: <2500`);
-  });
-
-  test('no redundant field definition repetitions', () => {
-    // Count how many times "concrete" appears - should be 1-3 times, not 10+
-    const concreteCount = (baseContent.match(/concrete/gi) || []).length;
-    // After optimization, this should be lower but still present
-    expect(concreteCount).toBeLessThan(15);
   });
 });
 
