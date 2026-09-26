@@ -252,22 +252,18 @@ describe('OpenAPI Component Builders', () => {
       expect((local?.description as string).toLowerCase()).toContain('development');
     });
 
-    it('production server should have example URL', () => {
+    it('production server should have expected HTTPS URL', () => {
       const servers = buildServers();
-      const prod = servers.find((s) => (s.url as string).includes('example'));
-      expect(prod?.url).toContain('https://');
+      const prod = servers.find((s) => (s.description as string).toLowerCase().includes('production'));
+
+      expect(prod).toBeDefined();
+      expect(prod?.url).toBe('https://kaseki.example.com');
     });
 
     it('production server description should mention production', () => {
       const servers = buildServers();
-      const prod = servers.find((s) => (s.url as string).includes('example'));
+      const prod = servers.find((s) => (s.description as string).toLowerCase().includes('production'));
       expect((prod?.description as string).toLowerCase()).toContain('production');
-    });
-
-    it('all servers should have https:// scheme for production', () => {
-      const servers = buildServers();
-      const prod = servers.find((s) => (s.url as string).includes('example'));
-      expect((prod?.url as string).startsWith('https://')).toBe(true);
     });
   });
 
