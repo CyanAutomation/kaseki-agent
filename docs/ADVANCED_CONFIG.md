@@ -856,9 +856,9 @@ Variables for dependency caching and performance optimization.
 - **Paths**: Single-run, Local API, Production API
 - **Description**: How to restore dependencies from cache
 - **Options**:
-  - `auto` — Recommended isolated restore: copy-on-write reflink where supported, normal copy otherwise
+  - `auto` — Recommended isolated restore: capability-probed copy-on-write reflink where supported, normal copy otherwise; both outcomes are content- and inode-verified
   - `copy` — The same inode-isolated copy/reflink mechanism, selected explicitly
-  - `hardlink` — Experimental compatibility mode: hardlink staging followed by mandatory link breaking before agent execution; copy fallback across filesystems
+  - `hardlink` — Experimental compatibility mode: private, trap-cleaned hardlink staging followed by verified inode detachment and atomic publication before agent execution; copy fallback across filesystems
   - `symlink` — Symlink `node_modules` to the cache (experimental)
 - **Example**:
 

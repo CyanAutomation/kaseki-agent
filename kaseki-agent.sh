@@ -4098,44 +4098,111 @@ resolve_dependency_restore_mode() {
     printf '%s\n' "$mode"
     return 0
   fi
-  # Never expose the persistent cache's inodes to a job in the default mode.
-  # The copy restore uses reflinks when the filesystem and cp implementation
-  # support them, so this remains cheap on copy-on-write filesystems.
-  printf 'copy\n'
+  # Reflinks have independent inodes while retaining copy-on-write performance.
+  # Probe the actual source/target filesystems rather than inferring support from
+  # the cp implementation or filesystem names.
+  if dependency_reflink_supported "$source_dir" "$(dirname "$target_dir")"; then
+    printf 'reflink\n'
+  else
+    printf 'copy\n'
+  fi
+}
+
+dependency_reflink_supported() {
+  local source_dir="$1"
+  local target_parent="$2"
+  local probe_dir probe_source
+  probe_source="$(find "$source_dir" -type f -print -quit 2>/dev/null)"
+  [ -n "$probe_source" ] || return 1
+  probe_dir="$(mktemp -d "${target_parent}/.kaseki-reflink-probe.XXXXXX")" || return 1
+  if cp --reflink=always "$probe_source" "${probe_dir}/copy" >/dev/null 2>&1 \
+    && [ "$(stat -c %i "$probe_source" 2>/dev/null)" != "$(stat -c %i "${probe_dir}/copy" 2>/dev/null)" ]; then
+    rm -rf "$probe_dir"
+    return 0
+  fi
+  rm -rf "$probe_dir"
+  return 1
+}
+
+dependency_trees_match() {
+  local source_dir="$1"
+  local target_dir="$2"
+  [ -d "$target_dir" ] && diff -qr "$source_dir" "$target_dir" >/dev/null 2>&1
+}
+
+dependency_trees_have_distinct_inodes() {
+  local source_dir="$1"
+  local target_dir="$2"
+  local source_inodes target_inodes
+  source_inodes="$(mktemp /tmp/kaseki-source-inodes.XXXXXX)" || return 1
+  target_inodes="$(mktemp /tmp/kaseki-target-inodes.XXXXXX)" || { rm -f "$source_inodes"; return 1; }
+  find "$source_dir" -type f -exec stat -c '%d:%i' {} + | sort -u > "$source_inodes"
+  find "$target_dir" -type f -exec stat -c '%d:%i' {} + | sort -u > "$target_inodes"
+  if comm -12 "$source_inodes" "$target_inodes" | grep -q .; then
+    rm -f "$source_inodes" "$target_inodes"
+    return 1
+  fi
+  rm -f "$source_inodes" "$target_inodes"
 }
 
 copy_dependency_tree_isolated() {
   local source_dir="$1"
   local target_dir="$2"
+  local reflink_mode="${3:-auto}"
   # GNU cp uses a reflink where possible and transparently copies otherwise.
   # Other cp implementations may reject --reflink, so retry portably after
   # removing any partial destination from the first attempt.
-  if cp -a --reflink=auto "$source_dir" "$target_dir" 2>/dev/null; then
+  if cp -a --reflink="$reflink_mode" "$source_dir" "$target_dir" 2>/dev/null \
+    && dependency_trees_match "$source_dir" "$target_dir" \
+    && dependency_trees_have_distinct_inodes "$source_dir" "$target_dir"; then
     return 0
   fi
   rm -rf "$target_dir"
-  cp -a "$source_dir" "$target_dir"
+  if [ "$reflink_mode" = "always" ]; then
+    return 1
+  fi
+  cp -a "$source_dir" "$target_dir" \
+    && dependency_trees_match "$source_dir" "$target_dir" \
+    && dependency_trees_have_distinct_inodes "$source_dir" "$target_dir" \
+    || { rm -rf "$target_dir"; return 1; }
 }
 
 isolate_hardlinked_dependency_tree() {
-  local target_dir="$1"
+  local hardlinked_dir="$1"
+  local target_dir="$2"
   local target_parent target_name isolated_parent isolated_dir
   target_parent="$(dirname "$target_dir")"
   target_name="$(basename "$target_dir")"
   isolated_parent="$(mktemp -d "${target_parent}/.kaseki-dependency-isolation.XXXXXX")" || return 1
   isolated_dir="${isolated_parent}/${target_name}"
-  if ! copy_dependency_tree_isolated "$target_dir" "$isolated_dir"; then
-    rm -rf "$isolated_parent" "$target_dir"
+  if ! copy_dependency_tree_isolated "$hardlinked_dir" "$isolated_dir"; then
+    rm -rf "$isolated_parent"
     return 1
   fi
-  rm -rf "$target_dir"
+  if ! dependency_trees_have_distinct_inodes "$hardlinked_dir" "$isolated_dir"; then
+    rm -rf "$isolated_parent"
+    return 1
+  fi
   if ! mv "$isolated_dir" "$target_dir"; then
-    rm -rf "$isolated_parent" "$target_dir"
+    rm -rf "$isolated_parent"
     return 1
   fi
   rmdir "$isolated_parent" || return 1
   return 0
 }
+
+stage_hardlinked_dependency_tree() (
+  local source_dir="$1"
+  local target_dir="$2"
+  local stderr_file="$3"
+  local hardlink_parent hardlink_dir
+  hardlink_parent="$(mktemp -d "$(dirname "$target_dir")/.kaseki-hardlink-stage.XXXXXX")" || exit 12
+  trap 'rm -rf "$hardlink_parent"' EXIT
+  trap 'exit 130' HUP INT TERM
+  hardlink_dir="${hardlink_parent}/$(basename "$target_dir")"
+  cp -al "$source_dir" "$hardlink_dir" 2>"$stderr_file" || exit 10
+  isolate_hardlinked_dependency_tree "$hardlink_dir" "$target_dir" || exit 11
+)
 
 restore_node_modules_from_cache() {
   local source_dir="$1"
@@ -4144,22 +4211,31 @@ restore_node_modules_from_cache() {
   mode="$(resolve_dependency_restore_mode "$source_dir" "$target_dir" "$mode")"
   DEPENDENCY_RESTORE_METHOD="$mode"
   case "$mode" in
-    copy)
-      copy_dependency_tree_isolated "$source_dir" "$target_dir"
+    copy|reflink)
+      if [ "$mode" = "reflink" ]; then
+        copy_dependency_tree_isolated "$source_dir" "$target_dir" always
+      else
+        copy_dependency_tree_isolated "$source_dir" "$target_dir"
+      fi
       ;;
     hardlink)
       # Experimental compatibility mode. The hardlinked staging tree MUST be
       # detached before returning, otherwise job writes would mutate the
       # persistent cache entry through the shared inode.
       if same_filesystem "$source_dir" "$(dirname "$target_dir")"; then
-        local hardlink_stderr_file hardlink_reason hardlink_stderr_trimmed
+        local hardlink_stderr_file hardlink_reason hardlink_stderr_trimmed hardlink_status
         hardlink_stderr_file="$(mktemp /tmp/kaseki-hardlink-stderr.XXXXXX)" || return 1
-        if cp -al "$source_dir" "$target_dir" 2>"$hardlink_stderr_file"; then
+        if stage_hardlinked_dependency_tree "$source_dir" "$target_dir" "$hardlink_stderr_file"; then
           rm -f "$hardlink_stderr_file"
-          if isolate_hardlinked_dependency_tree "$target_dir"; then
-            DEPENDENCY_RESTORE_METHOD="hardlink_isolated"
-            return 0
-          fi
+          DEPENDENCY_RESTORE_METHOD="hardlink_isolated"
+          return 0
+        else
+          hardlink_status="$?"
+        fi
+        # Exit 10 means hardlink creation failed and is safe to retry as a
+        # normal copy. Any later failure means isolation could not be proven.
+        if [ "$hardlink_status" -ne 10 ]; then
+          rm -f "$hardlink_stderr_file"
           return 1
         fi
         if grep -q "Invalid cross-device link\|EXDEV" "$hardlink_stderr_file"; then

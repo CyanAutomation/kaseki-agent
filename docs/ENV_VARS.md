@@ -222,14 +222,14 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 
 - **Runtime default is `auto`**. The worker sets `KASEKI_DEPENDENCY_RESTORE_MODE="${KASEKI_DEPENDENCY_RESTORE_MODE:-auto}"`, so it is **not** force-overridden to `hardlink` by bootstrap/runtime wiring.
 - **Use `auto` for most container deployments**, especially when `/cache` and workspace paths (for example `/agents/kaseki-runs`) can be separate mounts/devices.
-  - In `auto`, restore always creates an inode-isolated workspace tree. It asks GNU `cp` for copy-on-write reflinks (`--reflink=auto`) where supported and otherwise performs a normal copy. Workspace writes therefore cannot modify persistent cache files.
+  - In `auto`, the agent probes the actual cache/workspace filesystems with `cp --reflink=always`. A successful probe selects the `reflink` restore method; otherwise it selects `copy`. Both paths verify the completed tree and confirm that no regular-file inode is shared with the cache before reporting success.
 - **Use `copy`** when your mount topology is fixed and you want deterministic behavior without any hardlink attempts.
-- **`hardlink` is experimental.** It may stage a restore with hardlinks only when cache + workspace are on the same filesystem, then detaches the entire workspace tree before the job can run. This preserves cache isolation and means it should not be treated as a zero-copy mode.
+- **`hardlink` is experimental.** It may stage a restore with hardlinks only in a private temporary directory on the same filesystem, then copies and verifies an inode-detached tree before atomically publishing it to the workspace. Signal/exit traps remove the shared-inode staging tree. This preserves cache isolation and means it should not be treated as a zero-copy mode.
   - If they are on different devices, Linux returns **EXDEV** for cross-device link attempts; the worker normalizes this by falling back to copy and logging a cross-device fallback reason.
 - **Tradeoff summary**
   - `hardlink`: experimental compatibility mode; links are broken before agent execution and cross-device attempts fall back to copy.
   - `copy`: isolated across devices; uses copy-on-write reflinks when available, with a normal-copy fallback.
-  - `auto`: safest default; always selects the isolated copy/reflink path.
+  - `auto`: safest default; capability-probes and selects the verified isolated `reflink` or `copy` path.
   - `symlink`: experimental, highest coupling between cache and active workspace.
 
 #### Operator runbook: EXDEV during dependency restore

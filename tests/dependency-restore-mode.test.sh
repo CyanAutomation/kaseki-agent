@@ -138,6 +138,27 @@ pass "hardlink EXDEV stderr uses normalized fallback logging without raw cp nois
   || fail "Auto restore did not select the isolated copy path"
 pass "auto restore resolves to isolated copy on the same filesystem"
 
+# Auto reports the optimized method only after an actual reflink capability
+# probe succeeds; this keeps telemetry aligned with the restore operation.
+(
+  dependency_reflink_supported() { return 0; }
+  [ "$(resolve_dependency_restore_mode "$TMP_DIR/cache/node_modules" "$TMP_DIR/workspace/node_modules" auto)" = "reflink" ] \
+    || fail "Auto restore did not select reflink after a successful capability probe"
+)
+pass "auto restore selects reflink only after a successful capability probe"
+
+# A successful cp exit alone is insufficient: reject and remove an incomplete
+# tree so disk-full and faulty-copy scenarios cannot be reported as restored.
+rm -rf "$TMP_DIR/workspace/incomplete-node_modules"
+if (
+  cp() { return 0; }
+  copy_dependency_tree_isolated "$TMP_DIR/cache/node_modules" "$TMP_DIR/workspace/incomplete-node_modules"
+); then
+  fail "Incomplete dependency copy was accepted"
+fi
+[ ! -e "$TMP_DIR/workspace/incomplete-node_modules" ] || fail "Incomplete dependency copy was not cleaned up"
+pass "isolated copy verifies content before reporting success"
+
 # The default restore must never give a job writable access to persistent
 # cache inodes, even when cache and workspace reside on the same filesystem.
 rm -rf "$TMP_DIR/workspace/node_modules"
@@ -153,6 +174,8 @@ pass "auto restore isolates persistent cache files from workspace writes"
 rm -rf "$TMP_DIR/workspace/node_modules"
 restore_node_modules_from_cache "$TMP_DIR/cache/node_modules" "$TMP_DIR/workspace/node_modules" hardlink
 [ "${DEPENDENCY_RESTORE_METHOD:-}" = "hardlink_isolated" ] || fail "Expected isolated hardlink method, got ${DEPENDENCY_RESTORE_METHOD:-unset}"
+[ "$(stat -c %i "$TMP_DIR/cache/node_modules/pkg/index.js")" != "$(stat -c %i "$TMP_DIR/workspace/node_modules/pkg/index.js")" ] \
+  || fail "Hardlink restore reported success while cache and workspace still shared an inode"
 printf 'hardlink workspace mutation\n' > "$TMP_DIR/workspace/node_modules/pkg/index.js"
 grep -qx 'cached package' "$TMP_DIR/cache/node_modules/pkg/index.js" \
   || fail "Experimental hardlink restore left cache and workspace inodes linked"
