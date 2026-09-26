@@ -34,7 +34,7 @@ The CLI is a single binary built from TypeScript sources. All commands are dispa
 | `stop` | Alias for `cancel` | Yes |
 | `secrets` | Manage stored secrets | No |
 | `host` | Prepare Docker Compose API hosts | No |
-| `cleanup` | Retention management for run artifacts | No |
+| `cleanup` | Retention management for run artifacts and matching host logs | No |
 
 ---
 
@@ -371,7 +371,7 @@ EXAMPLES
 
 ### `cleanup`
 
-Manage retention of kaseki run artifacts. Keeps the most recent N runs and deletes older ones. Supports dry-run mode for safety verification. Consults a scheduler-owned durable job index to avoid deleting active jobs.
+Manage retention of run artifacts and matching host logs. Keeps the most recent N runs and deletes older ones. Supports dry-run mode for safety verification. Consults scheduler state and active run workspaces to preserve logs for active jobs.
 
 ```bash
 USAGE
@@ -386,6 +386,7 @@ ENVIRONMENT VARIABLES
   KASEKI_RETENTION_RUNS  Number of recent runs to keep (default: 5)
   KASEKI_RESULTS_DIR     Path to results directory (default: /agents/kaseki-results)
   KASEKI_CACHE_DIR       Path to cache directory (default: /agents/kaseki-cache)
+  KASEKI_LOG_DIR         Path to host logs (default: /var/log/kaseki)
 
 EXAMPLES
   kaseki-agent cleanup --dry-run          # Preview what would be deleted

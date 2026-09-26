@@ -179,7 +179,7 @@ export class KasekiCLI {
 
     this.commands.set('cleanup', {
       name: 'cleanup',
-      description: 'Manage retention of kaseki run artifacts (keep last N runs)',
+      description: 'Manage retention of run artifacts and matching host logs (keep last N runs)',
       execute: async (args) => {
         const { CleanupCommand } = await import('./commands/CleanupCommand.js');
         const cmd = new CleanupCommand(this.configManager);
@@ -315,7 +315,7 @@ USAGE
 
 REQUIRES
   A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.`,
-      cleanup: `cleanup - manage retention of kaseki run artifacts
+      cleanup: `cleanup - manage retention of run artifacts and matching host logs
 
 USAGE
   kaseki-agent cleanup [--dry-run] [--force] [--count N]
@@ -329,6 +329,7 @@ ENVIRONMENT VARIABLES
   KASEKI_RETENTION_RUNS  Number of recent runs to keep (default: 5)
   KASEKI_RESULTS_DIR     Path to results directory (default: /agents/kaseki-results)
   KASEKI_CACHE_DIR       Path to cache directory (default: /agents/kaseki-cache)
+  KASEKI_LOG_DIR         Path to host logs (default: /var/log/kaseki)
 
 EXAMPLES
   kaseki-agent cleanup --dry-run          # Preview what would be deleted

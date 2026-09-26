@@ -1,9 +1,10 @@
 /**
  * Cleanup Command
- * Manage retention of kaseki run artifacts
+ * Manage retention of run artifacts and matching host logs
  */
 
 import * as fs from 'fs';
+import * as path from 'node:path';
 import * as readline from 'readline';
 import { BaseCommand } from '../BaseCommand';
 import { createLogger } from '../../logger';
@@ -48,6 +49,8 @@ export class CleanupCommand extends BaseCommand {
       const resultsDir =
         process.env.KASEKI_RESULTS_DIR || '/agents/kaseki-results';
       const cacheDir = process.env.KASEKI_CACHE_DIR || '/agents/kaseki-cache';
+      const logDir = process.env.KASEKI_LOG_DIR || '/var/log/kaseki';
+      const activeRunsDir = path.join(process.env.KASEKI_ROOT || '/agents', 'kaseki-runs');
 
       // Check if results directory exists
       if (!fs.existsSync(resultsDir)) {
@@ -59,7 +62,7 @@ export class CleanupCommand extends BaseCommand {
       // as deletable. cleanupOldRuns reads it again immediately before deletion.
       let plan: CleanupPlan;
       try {
-        plan = createCleanupPlan(resultsDir, retentionCount);
+        plan = createCleanupPlan(resultsDir, retentionCount, { logDir, activeRunsDir });
       } catch (error) {
         if (error instanceof SchedulerStateUnavailableError) {
           const prefix = dryRun ? '[DRY RUN] ' : '';
@@ -72,7 +75,7 @@ export class CleanupCommand extends BaseCommand {
       }
       const runCount = plan.allRuns.length;
 
-      if (plan.runsToDelete.length === 0) {
+      if (plan.runsToDelete.length === 0 && plan.logsToDelete.length === 0) {
         console.log(
           `✓ No cleanup needed: ${runCount} run(s) found, keeping ${retentionCount}`,
         );
@@ -87,10 +90,12 @@ export class CleanupCommand extends BaseCommand {
       console.log(`Runs found:       ${runCount}`);
       console.log(`Retention count:  ${retentionCount}`);
       console.log(`Runs to delete:   ${runsToDelete}`);
+      console.log(`Host logs to delete: ${plan.logsToDelete.length}`);
       console.log('');
 
       // List runs with markers
       this.displayRuns(plan);
+      this.displayRunLogs(plan);
       console.log('');
 
       // Handle dry-run
@@ -117,10 +122,12 @@ export class CleanupCommand extends BaseCommand {
         cacheDir,
         retentionCount,
         false,
+        { logDir, activeRunsDir },
       );
 
       console.log('✓ Cleanup complete:');
       console.log(`  Deleted runs:        ${result.deletedCount}`);
+      console.log(`  Host logs deleted:   ${result.deletedLogCount}`);
       console.log(
         `  Freed space:         ${(result.freedBytes / 1024 / 1024).toFixed(2)} MB`,
       );
@@ -151,6 +158,15 @@ export class CleanupCommand extends BaseCommand {
       }
     } catch (error) {
       logger.debug(`Error displaying runs: ${error}`);
+    }
+  }
+
+  /** Display run-specific host logs selected by the shared retention plan. */
+  private displayRunLogs(plan: CleanupPlan): void {
+    if (plan.logsToDelete.length === 0) return;
+    console.log('Host logs to delete:');
+    for (const log of plan.logsToDelete) {
+      console.log(`  [DELETE] ${log.name}`);
     }
   }
 

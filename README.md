@@ -192,7 +192,7 @@ All 15 commands registered by `src/cli/KasekiCLI.ts`:
 - `kaseki-agent stop [run-id]` - Alias for `cancel`; stops a task through the local Kaseki API
 - `kaseki-agent secrets` - Manage stored secrets (keyring/file)
 - `kaseki-agent host` - Prepare or recover a Docker Compose API host
-- `kaseki-agent cleanup` - Manage retention of kaseki run artifacts (keep last N runs)
+- `kaseki-agent cleanup` - Manage retention of run artifacts and matching host logs (keep last N runs)
 
 See [docs/CLI.md](docs/CLI.md) for command usage details and the live monitoring CLI.
 
