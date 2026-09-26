@@ -19,14 +19,17 @@ describe('cleanup-manager', () => {
   let tempDir: string;
   let resultsDir: string;
   let cacheDir: string;
+  let logDir: string;
 
   beforeEach(() => {
     // Create temporary directory structure for testing
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-test-'));
     resultsDir = path.join(tempDir, 'kaseki-results');
     cacheDir = path.join(tempDir, 'kaseki-cache');
+    logDir = path.join(tempDir, 'logs');
     fs.mkdirSync(resultsDir, { recursive: true });
     fs.mkdirSync(cacheDir, { recursive: true });
+    fs.mkdirSync(logDir, { recursive: true });
   });
 
   afterEach(() => {
@@ -117,6 +120,90 @@ describe('cleanup-manager', () => {
       expect(fs.existsSync(path.join(resultsDir, 'kaseki-3'))).toBe(true);
       expect(fs.existsSync(path.join(resultsDir, 'kaseki-2'))).toBe(false);
       expect(fs.existsSync(path.join(resultsDir, 'kaseki-1'))).toBe(false);
+    });
+
+    it('prunes every matching host log for expired runs and preserves unrelated logs', async () => {
+      const now = Date.now() / 1000;
+      for (let i = 1; i <= 5; i++) {
+        const runPath = path.join(resultsDir, `kaseki-${i}`);
+        fs.mkdirSync(runPath);
+        fs.utimesSync(runPath, now - (6 - i) * 1000, now - (6 - i) * 1000);
+      }
+
+      const logNames = [
+        'run-kaseki-kaseki-1-20260920T100000Z.log',
+        'run-kaseki-kaseki-1-20260920T110000Z.log',
+        'run-kaseki-kaseki-2-20260921T100000Z.log',
+        'run-kaseki-kaseki-3-20260922T100000Z.log',
+        'run-kaseki-kaseki-4-20260923T100000Z.log',
+        'run-kaseki-kaseki-5-20260924T100000Z.log',
+        'run-kaseki-session-20260924T110000Z.log',
+        'cleanup-kaseki-20260924T120000Z.log',
+        'run-kaseki-kaseki-99-not-a-timestamp.log',
+      ];
+      for (const name of logNames) fs.writeFileSync(path.join(logDir, name), 'log');
+
+      const result = await cleanupOldRuns(resultsDir, cacheDir, 3, false, { logDir });
+
+      expect(result.deletedCount).toBe(2);
+      expect(result.deletedLogCount).toBe(3);
+      expect(fs.existsSync(path.join(logDir, logNames[0]))).toBe(false);
+      expect(fs.existsSync(path.join(logDir, logNames[1]))).toBe(false);
+      expect(fs.existsSync(path.join(logDir, logNames[2]))).toBe(false);
+      for (const name of logNames.slice(3)) {
+        expect(fs.existsSync(path.join(logDir, name))).toBe(true);
+      }
+    });
+
+    it('cleans old logs whose result directories were already removed and keeps active or current runs', async () => {
+      const now = Date.now() / 1000;
+      for (let i = 7; i <= 9; i++) {
+        const runPath = path.join(resultsDir, `kaseki-${i}`);
+        fs.mkdirSync(runPath);
+        fs.utimesSync(runPath, now - (10 - i) * 1000, now - (10 - i) * 1000);
+      }
+      fs.writeFileSync(
+        path.join(resultsDir, '.kaseki-api-jobs.json'),
+        JSON.stringify({ jobs: [{ id: 'kaseki-2', status: 'running' }] }),
+      );
+      const activeRunsDir = path.join(tempDir, 'workspaces');
+      fs.mkdirSync(path.join(activeRunsDir, 'kaseki-3'), { recursive: true });
+
+      const staleLog = 'run-kaseki-kaseki-1-20260920T100000Z.log';
+      const activeLog = 'run-kaseki-kaseki-2-20260920T110000Z.log';
+      const workspaceActiveLog = 'run-kaseki-kaseki-3-20260922T100000Z.log';
+      const retainedLog = 'run-kaseki-kaseki-8-20260924T100000Z.log';
+      const currentLog = 'run-kaseki-kaseki-10-20260925T100000Z.log';
+      for (const name of [staleLog, activeLog, workspaceActiveLog, retainedLog, currentLog]) {
+        fs.writeFileSync(path.join(logDir, name), 'log');
+      }
+
+      const result = await cleanupOldRuns(resultsDir, cacheDir, 5, false, {
+        logDir,
+        activeRunsDir,
+        protectedRunNames: new Set(['kaseki-10']),
+      });
+
+      expect(result.deletedCount).toBe(0);
+      expect(result.deletedLogCount).toBe(1);
+      expect(fs.existsSync(path.join(logDir, staleLog))).toBe(false);
+      for (const name of [activeLog, workspaceActiveLog, retainedLog, currentLog]) {
+        expect(fs.existsSync(path.join(logDir, name))).toBe(true);
+      }
+    });
+
+    it('reports log deletions during dry-run without removing files', async () => {
+      const runPath = path.join(resultsDir, 'kaseki-2');
+      fs.mkdirSync(runPath);
+      const staleLog = 'run-kaseki-kaseki-1-20260920T100000Z.log';
+      fs.writeFileSync(path.join(logDir, staleLog), 'old host log');
+
+      const result = await cleanupOldRuns(resultsDir, cacheDir, 5, true, { logDir });
+
+      expect(result.dryRun).toBe(true);
+      expect(result.deletedLogCount).toBe(1);
+      expect(result.freedBytes).toBe(Buffer.byteLength('old host log'));
+      expect(fs.existsSync(path.join(logDir, staleLog))).toBe(true);
     });
 
     it('does nothing when run count is at or below retention limit', async () => {

@@ -53,6 +53,8 @@ describe('CleanupCommand confirmation', () => {
   let resultsDir: string;
   let originalResultsDir: string | undefined;
   let originalCacheDir: string | undefined;
+  let originalLogDir: string | undefined;
+  let originalRootDir: string | undefined;
   let originalIsTTY: PropertyDescriptor | undefined;
 
   beforeEach(() => {
@@ -65,8 +67,12 @@ describe('CleanupCommand confirmation', () => {
 
     originalResultsDir = process.env.KASEKI_RESULTS_DIR;
     originalCacheDir = process.env.KASEKI_CACHE_DIR;
+    originalLogDir = process.env.KASEKI_LOG_DIR;
+    originalRootDir = process.env.KASEKI_ROOT;
     process.env.KASEKI_RESULTS_DIR = resultsDir;
     process.env.KASEKI_CACHE_DIR = path.join(tempDir, 'cache');
+    process.env.KASEKI_LOG_DIR = path.join(tempDir, 'logs');
+    process.env.KASEKI_ROOT = tempDir;
     originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
     Object.defineProperty(process.stdin, 'isTTY', {
       configurable: true,
@@ -76,6 +82,7 @@ describe('CleanupCommand confirmation', () => {
     jest.spyOn(console, 'log').mockImplementation(() => undefined);
     cleanupOldRunsMock.mockResolvedValue({
       deletedCount: 1,
+      deletedLogCount: 2,
       freedBytes: 0,
       cachedEntriesRemoved: 0,
     });
@@ -89,6 +96,9 @@ describe('CleanupCommand confirmation', () => {
         { name: 'kaseki-1', path: path.join(resultsDir, 'kaseki-1'), mtime: 1 },
       ],
       retainedRunNames: new Set(['kaseki-2']),
+      logDir: process.env.KASEKI_LOG_DIR,
+      activeRunsDir: path.join(tempDir, 'kaseki-runs'),
+      logsToDelete: [],
     });
   });
 
@@ -103,6 +113,10 @@ describe('CleanupCommand confirmation', () => {
     else process.env.KASEKI_RESULTS_DIR = originalResultsDir;
     if (originalCacheDir === undefined) delete process.env.KASEKI_CACHE_DIR;
     else process.env.KASEKI_CACHE_DIR = originalCacheDir;
+    if (originalLogDir === undefined) delete process.env.KASEKI_LOG_DIR;
+    else process.env.KASEKI_LOG_DIR = originalLogDir;
+    if (originalRootDir === undefined) delete process.env.KASEKI_ROOT;
+    else process.env.KASEKI_ROOT = originalRootDir;
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -119,6 +133,16 @@ describe('CleanupCommand confirmation', () => {
       await expect(execute()).resolves.toBe(0);
 
       expect(cleanupOldRunsMock).toHaveBeenCalledTimes(1);
+      expect(cleanupOldRunsMock).toHaveBeenCalledWith(
+        resultsDir,
+        path.join(tempDir, 'cache'),
+        1,
+        false,
+        {
+          logDir: path.join(tempDir, 'logs'),
+          activeRunsDir: path.join(tempDir, 'kaseki-runs'),
+        },
+      );
     },
   );
 
@@ -184,6 +208,31 @@ describe('CleanupCommand confirmation', () => {
     await expect(execute(['--dry-run', '--force'])).resolves.toBe(0);
 
     expect(createInterfaceMock).not.toHaveBeenCalled();
+    expect(cleanupOldRunsMock).not.toHaveBeenCalled();
+  });
+
+  it('shows stale host logs in dry-run when no result directories need deletion', async () => {
+    createCleanupPlanMock.mockReturnValue({
+      allRuns: [
+        { name: 'kaseki-2', path: path.join(resultsDir, 'kaseki-2'), mtime: 2 },
+      ],
+      activeRunNames: new Set(),
+      runsToDelete: [],
+      retainedRunNames: new Set(['kaseki-2']),
+      logDir: process.env.KASEKI_LOG_DIR,
+      activeRunsDir: path.join(tempDir, 'kaseki-runs'),
+      logsToDelete: [{
+        name: 'run-kaseki-kaseki-1-20260920T100000Z.log',
+        path: path.join(process.env.KASEKI_LOG_DIR ?? '', 'run-kaseki-kaseki-1-20260920T100000Z.log'),
+        runName: 'kaseki-1',
+        size: 120,
+      }],
+    });
+
+    await expect(execute(['--dry-run'])).resolves.toBe(0);
+
+    expect(console.log).toHaveBeenCalledWith('Host logs to delete: 1');
+    expect(console.log).toHaveBeenCalledWith('  [DELETE] run-kaseki-kaseki-1-20260920T100000Z.log');
     expect(cleanupOldRunsMock).not.toHaveBeenCalled();
   });
 

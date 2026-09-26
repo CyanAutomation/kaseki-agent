@@ -11,6 +11,7 @@ import {
  */
 export interface CleanupResult {
   deletedCount: number;
+  deletedLogCount: number;
   freedBytes: number;
   cachedEntriesRemoved: number;
   dryRun: boolean;
@@ -29,11 +30,30 @@ export interface RunInfo {
   ino: number;
 }
 
+export interface RunLogInfo {
+  name: string;
+  path: string;
+  runName: string;
+  size: number;
+}
+
 export interface CleanupPlan {
   allRuns: RunInfo[];
   activeRunNames: Set<string>;
   runsToDelete: RunInfo[];
   retainedRunNames: Set<string>;
+  logDir?: string;
+  activeRunsDir?: string;
+  logsToDelete: RunLogInfo[];
+}
+
+export interface CleanupOptions {
+  logDir?: string;
+  /** Directory containing active direct-run workspaces (for example, kaseki-runs). */
+  activeRunsDir?: string;
+  /** Protect a run whose log is open before its result directory is created. */
+  protectedRunNames?: ReadonlySet<string>;
+  afterPlanning?: () => void | Promise<void>;
 }
 
 const JOBS_INDEX_NAME = '.kaseki-api-jobs.json';
@@ -128,10 +148,18 @@ export function getActiveRunNames(resultsDir: string): Set<string> {
 export function createCleanupPlan(
   resultsDir: string,
   retentionCount: number,
+  options: Pick<CleanupOptions, 'logDir' | 'activeRunsDir' | 'protectedRunNames'> = {},
 ): CleanupPlan {
   const allRuns = listRuns(resultsDir);
-  const activeRunNames = getActiveRunNames(resultsDir);
-  const terminalRuns = allRuns.filter((run) => !activeRunNames.has(run.name));
+  const schedulerActiveRunNames = getActiveRunNames(resultsDir);
+  const protectedRunNames = new Set(schedulerActiveRunNames);
+  for (const runName of options.protectedRunNames ?? []) {
+    if (/^kaseki-\d+$/.test(runName)) protectedRunNames.add(runName);
+  }
+  for (const runName of listActiveRunNamesFromDirectory(options.activeRunsDir)) {
+    protectedRunNames.add(runName);
+  }
+  const terminalRuns = allRuns.filter((run) => !protectedRunNames.has(run.name));
   const runsToDelete = terminalRuns.slice(retentionCount);
   const deletedRunNames = new Set(runsToDelete.map((run) => run.name));
   // Calculate this after active-run exclusion so their cache associations survive.
@@ -140,11 +168,23 @@ export function createCleanupPlan(
       .filter((run) => !deletedRunNames.has(run.name))
       .map((run) => run.name),
   );
-  for (const activeRunName of activeRunNames) {
+  for (const activeRunName of protectedRunNames) {
     retainedRunNames.add(activeRunName);
   }
 
-  return { allRuns, activeRunNames, runsToDelete, retainedRunNames };
+  const logsToDelete = options.logDir
+    ? listRunLogs(options.logDir).filter((log) => !retainedRunNames.has(log.runName))
+    : [];
+
+  return {
+    allRuns,
+    activeRunNames: protectedRunNames,
+    runsToDelete,
+    retainedRunNames,
+    logDir: options.logDir,
+    activeRunsDir: options.activeRunsDir,
+    logsToDelete,
+  };
 }
 
 /** Refresh active scheduler state and remove newly active runs from a plan. */
@@ -153,6 +193,12 @@ export function refreshCleanupPlanActiveRuns(
   plan: CleanupPlan,
 ): CleanupPlan {
   const activeRunNames = getActiveRunNames(resultsDir);
+  for (const runName of listActiveRunNamesFromDirectory(plan.activeRunsDir)) {
+    activeRunNames.add(runName);
+  }
+  for (const protectedRunName of plan.activeRunNames) {
+    activeRunNames.add(protectedRunName);
+  }
   const retainedRunNames = new Set(plan.retainedRunNames);
   for (const activeRunName of activeRunNames) {
     retainedRunNames.add(activeRunName);
@@ -165,7 +211,89 @@ export function refreshCleanupPlanActiveRuns(
       (run) => !activeRunNames.has(run.name),
     ),
     retainedRunNames,
+    logsToDelete: plan.logsToDelete.filter(
+      (log) => !activeRunNames.has(log.runName),
+    ),
   };
+}
+
+/** List only regular files that match the host runner's run-log filename. */
+export function listRunLogs(logDir: string): RunLogInfo[] {
+  if (!fs.existsSync(logDir)) return [];
+
+  const logs: RunLogInfo[] = [];
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(logDir);
+  } catch (error) {
+    console.debug(`Error scanning host log directory ${logDir}:`, error);
+    return logs;
+  }
+
+  for (const entry of entries) {
+    const match = /^run-kaseki-(kaseki-\d+)-\d{8}T\d{6}Z\.log$/.exec(entry);
+    if (!match) continue;
+
+    const fullPath = path.join(logDir, entry);
+    try {
+      const stats = fs.lstatSync(fullPath);
+      if (!stats.isFile() || stats.isSymbolicLink()) continue;
+      logs.push({ name: entry, path: fullPath, runName: match[1], size: stats.size });
+    } catch (error) {
+      console.debug(`Error inspecting run log ${fullPath}:`, error);
+    }
+  }
+  return logs;
+}
+
+/** List active direct-run workspaces, treating an unreadable directory as unsafe. */
+function listActiveRunNamesFromDirectory(runsDir?: string): Set<string> {
+  const activeRunNames = new Set<string>();
+  if (!runsDir) return activeRunNames;
+
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(runsDir, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return activeRunNames;
+    throw new Error(`Unable to establish active-run safety from ${runsDir}`, { cause: error });
+  }
+
+  for (const entry of entries) {
+    if (entry.isDirectory() && /^kaseki-\d+$/.test(entry.name)) {
+      activeRunNames.add(entry.name);
+    }
+  }
+  return activeRunNames;
+}
+
+/** Remove stale run logs without following symlinks or touching unrelated log files. */
+function cleanupRunLogs(
+  logs: RunLogInfo[],
+  logDir: string | undefined,
+  retainedRunNames: Set<string>,
+  activeRunNames: Set<string>,
+  dryRun: boolean,
+): { deletedCount: number; freedBytes: number } {
+  if (!logDir) return { deletedCount: 0, freedBytes: 0 };
+
+  let deletedCount = 0;
+  let freedBytes = 0;
+  for (const log of logs) {
+    if (retainedRunNames.has(log.runName) || activeRunNames.has(log.runName)) continue;
+    try {
+      const current = fs.lstatSync(log.path);
+      if (!current.isFile() || current.isSymbolicLink()) continue;
+      if (!dryRun) fs.unlinkSync(log.path);
+      deletedCount++;
+      freedBytes += current.size;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.debug(`Error deleting run log ${log.path}:`, error);
+      }
+    }
+  }
+  return { deletedCount, freedBytes };
 }
 
 /**
@@ -318,7 +446,7 @@ export function cleanupCacheDir(
 }
 
 /**
- * Clean up old runs, keeping only the most recent N runs.
+ * Clean up old runs and their host logs, keeping only the most recent N runs.
  * Also removes cache entries that are no longer associated with any remaining run.
  *
  * @param resultsDir - Path to /agents/kaseki-results directory
@@ -332,17 +460,18 @@ export async function cleanupOldRuns(
   cacheDir: string,
   retentionCount: number,
   dryRun: boolean = false,
-  options: { afterPlanning?: () => void | Promise<void> } = {},
+  options: CleanupOptions = {},
 ): Promise<CleanupResult> {
   const result: CleanupResult = {
     deletedCount: 0,
+    deletedLogCount: 0,
     freedBytes: 0,
     cachedEntriesRemoved: 0,
     dryRun,
   };
 
-  const plan = createCleanupPlan(resultsDir, retentionCount);
-  if (plan.runsToDelete.length === 0) return result;
+  const plan = createCleanupPlan(resultsDir, retentionCount, options);
+  if (plan.runsToDelete.length === 0 && plan.logsToDelete.length === 0) return result;
 
   const plannedDescriptors = new Map<string, number>();
   for (const run of plan.runsToDelete) {
@@ -364,6 +493,12 @@ export async function cleanupOldRuns(
     const persistence = new JobPersistenceManager({ resultsDir });
     await persistence.withLockedJobsIndex((jobs) => {
       const activeRunNames = activeNamesFromJobs(jobs);
+      for (const name of listActiveRunNamesFromDirectory(plan.activeRunsDir)) {
+        activeRunNames.add(name);
+      }
+      for (const protectedRunName of plan.activeRunNames) {
+        activeRunNames.add(protectedRunName);
+      }
       const retainedRunNames = new Set(plan.retainedRunNames);
       for (const name of activeRunNames) retainedRunNames.add(name);
 
@@ -384,6 +519,16 @@ export async function cleanupOldRuns(
           retainedRunNames.add(run.name);
         }
       }
+
+      const logCleanup = cleanupRunLogs(
+        plan.logsToDelete,
+        plan.logDir,
+        retainedRunNames,
+        activeRunNames,
+        dryRun,
+      );
+      result.deletedLogCount = logCleanup.deletedCount;
+      result.freedBytes += logCleanup.freedBytes;
 
       result.cachedEntriesRemoved = cleanupCacheDir(
         cacheDir,
