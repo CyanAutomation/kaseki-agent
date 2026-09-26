@@ -95,25 +95,23 @@ describe('Scouting Template: JSON Schema Field Definitions', () => {
   });
 
   describe('requirements field', () => {
-    test('requirements field is documented', () => {
-      expect(baseContent).toMatch(/requirements[\s:]/i);
-    });
+    test('requirements field documents a concrete, independently verifiable collection', () => {
+      const requirementsDocumentation = extractSchemaFieldDocumentation(baseContent, 'requirements');
 
-    test('requirements field type is array', () => {
-      expect(baseContent).toMatch(/array.*requirement|requirement.*array/i);
-    });
+      expect(requirementsDocumentation).not.toBeNull();
+      expect(requirementsDocumentation).toMatch(/\(array, 3-8 strings\)/i);
+      expect(requirementsDocumentation).toMatch(
+        /concrete, independently verifiable, testable requirements/i,
+      );
 
-    test('requirements min/max constraints present', () => {
-      expect(baseContent).toMatch(/\b3\b/);
-      expect(baseContent).toMatch(/\b8\b/);
-    });
-
-    test('requirements must be independently verifiable', () => {
-      expect(baseContent).toMatch(/independently|verifiable/i);
-    });
-
-    test('requirements example is concrete', () => {
-      expect(baseContent).toMatch(/null|backward|test/i);
+      const unrelatedGuidanceTemplate = `**requirements** (array, 3-8 strings)
+**observations** (array): Concrete facts with independently verifiable outcomes.`;
+      const isolatedRequirementsDocumentation = extractSchemaFieldDocumentation(
+        unrelatedGuidanceTemplate,
+        'requirements',
+      );
+      expect(isolatedRequirementsDocumentation).toBe('**requirements** (array, 3-8 strings)');
+      expect(isolatedRequirementsDocumentation).not.toMatch(/concrete|independently verifiable/i);
     });
   });
 
