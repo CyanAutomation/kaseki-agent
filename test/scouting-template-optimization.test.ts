@@ -55,6 +55,19 @@ function hasActionableTaskFieldSchema(template: string): boolean {
   );
 }
 
+function extractDocumentedExample(documentation: string): string | null {
+  return documentation.match(/\bExample:\s*["“]([^"”]+)["”]/i)?.[1] ?? null;
+}
+
+function isConcretePlanStep(step: string): boolean {
+  const identifiesOperation = /^(?:Add|Fix|Implement|Modify|Remove|Rename|Update)\b/i.test(step);
+  const identifiesTarget =
+    /\b[A-Za-z_$][\w$]*(?:\(\))|(?:^|\s)(?:[\w.-]+\/)+[\w.-]+\.[A-Za-z0-9]+\b/.test(step);
+  const identifiesBehavioralChange = /\b(?:so|such that|to ensure|to prevent)\b/i.test(step);
+
+  return identifiesOperation && identifiesTarget && identifiesBehavioralChange;
+}
+
 // ============================================================================
 // TEST SUITE 1: JSON Schema Field Definitions
 // These tests verify all JSON output fields are documented with constraints
@@ -137,20 +150,20 @@ describe('Scouting Template: JSON Schema Field Definitions', () => {
   });
 
   describe('plan field', () => {
-    test('plan field is documented', () => {
-      expect(baseContent).toMatch(/plan[\s:]/i);
-    });
-
-    test('plan min/max range is documented', () => {
-      expect(baseContent).toMatch(/5\b.*15|15\b.*5/);
-    });
-
-    test('plan steps must be concrete code changes, not finish/verify', () => {
-      expect(baseContent).toMatch(/no.*finish|no.*verify/i);
-    });
-
     test('plan example is concrete step', () => {
-      expect(baseContent).toMatch(/null check|Add|Modify/i);
+      const planDocumentation = extractSchemaFieldDocumentation(baseContent, 'plan');
+
+      expect(planDocumentation).not.toBeNull();
+      expect(planDocumentation).toMatch(/\(array, 5-15 strings\)/i);
+      expect(planDocumentation).toMatch(/no.*finish|no.*verify/i);
+
+      const planExample = extractDocumentedExample(planDocumentation ?? '');
+      expect(planExample).not.toBeNull();
+      expect(isConcretePlanStep(planExample ?? '')).toBe(true);
+
+      // Action verbs alone do not make generic prose an actionable plan step.
+      expect(isConcretePlanStep('Add better error handling')).toBe(false);
+      expect(isConcretePlanStep('Modify src/lib/role.ts')).toBe(false);
     });
   });
 
