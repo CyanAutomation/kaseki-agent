@@ -75,12 +75,12 @@ describe('OpenAPI Component Builders', () => {
       expect(info.version).toBe(packageJson.version);
     });
 
-    it('should include descriptive text', () => {
+    it('OpenAPI Info Object product contract: describes Kaseki as a coding-agent runner', () => {
       const info = buildInfo();
 
       expect(typeof info.description).toBe('string');
       expect((info.description as string).length).toBeGreaterThan(20);
-      expect(info.description).toContain('coding-agent');
+      expect(info.description).toMatch(/coding-agent/i);
     });
 
     it('should include contact information', () => {
@@ -224,11 +224,6 @@ describe('OpenAPI Component Builders', () => {
       const info = buildInfo();
       const versionPattern = /^\d+\.\d+\.\d+/;
       expect(info.version).toMatch(versionPattern);
-    });
-
-    it('description should satisfy the OpenAPI Info Object product contract for a coding-agent runner', () => {
-      const info = buildInfo();
-      expect(info.description).toMatch(/coding-agent/i);
     });
 
     it('license should be MIT', () => {
