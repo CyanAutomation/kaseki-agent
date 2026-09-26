@@ -38,6 +38,23 @@ function _loadAllTemplates(): Record<string, string> {
   };
 }
 
+function extractSchemaFieldDocumentation(template: string, field: string): string | null {
+  const escapedField = field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = template.match(
+    new RegExp(`^\\*\\*${escapedField}\\*\\*[^\\n]*(?:\\n(?!\\*\\*[^\\n]+\\*\\*)[^\\n]*)*`, 'im'),
+  );
+  return match?.[0] ?? null;
+}
+
+function hasActionableTaskFieldSchema(template: string): boolean {
+  const documentation = extractSchemaFieldDocumentation(template, 'task');
+  return (
+    documentation !== null &&
+    /\bactionable\b/i.test(documentation) &&
+    /\bconcrete\b/i.test(documentation)
+  );
+}
+
 // ============================================================================
 // TEST SUITE 1: JSON Schema Field Definitions
 // These tests verify all JSON output fields are documented with constraints
@@ -53,17 +70,21 @@ describe('Scouting Template: JSON Schema Field Definitions', () => {
   });
 
   describe('task field', () => {
-    test('task field is documented', () => {
-      expect(baseContent).toMatch(/task[\s:]/i);
+    test('task field is documented with actionable, concrete guidance', () => {
+      const taskDocumentation = extractSchemaFieldDocumentation(baseContent, 'task');
+
+      expect(taskDocumentation).not.toBeNull();
+      expect(hasActionableTaskFieldSchema(baseContent)).toBe(true);
+
+      const fieldNameOnlyTemplate = `**task**
+**requirements** (array): Testable requirements.`;
+      expect(extractSchemaFieldDocumentation(fieldNameOnlyTemplate, 'task')).toBe('**task**');
+      expect(hasActionableTaskFieldSchema(fieldNameOnlyTemplate)).toBe(false);
     });
 
     test('task field max length constraint is present', () => {
       expect(baseContent).toMatch(/task.*200|200.*task/i);
       expect(baseContent).toMatch(/character/i);
-    });
-
-    test('task field must be actionable/concrete', () => {
-      expect(baseContent).toMatch(/actionable|concrete|task/i);
     });
 
     test('task field example is concrete', () => {
