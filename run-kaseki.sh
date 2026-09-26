@@ -736,36 +736,58 @@ cleanup_old_runs() {
   
   local run_count
   run_count=$(find "$results_dir" -maxdepth 1 -type d -name 'kaseki-*' 2>/dev/null | wc -l)
-  
-  if (( run_count <= retention_count )); then
-    return 0  # No cleanup needed
-  fi
-  
-  # Log cleanup attempt
+
+  # Only add a persistent cleanup-log entry when the result directory count
+  # already exceeds retention. Orphaned host logs are checked on every run.
   local cleanup_log="$results_dir/.cleanup.log"
-  {
-    printf '[%s] Cleaning up old runs (keeping %d, found %d)\n' \
-      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$retention_count" "$run_count"
-    printf 'Details: /agents/kaseki-results/.cleanup.log\n'
-  } 2>&1 | tee -a "$cleanup_log"
+  if (( run_count > retention_count )); then
+    {
+      printf '[%s] Checking run and host-log retention (keeping %d, found %d runs)\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$retention_count" "$run_count"
+      printf 'Details: %s\n' "$cleanup_log"
+    } 2>&1 | tee -a "$cleanup_log"
+  fi
   
   # Use Node.js cleanup manager if available
   if command -v node &>/dev/null && [ -f "$SCRIPT_DIR/dist/cleanup-manager.js" ]; then
-    {
-      node -e "
-        const { cleanupOldRuns } = require('$SCRIPT_DIR/dist/cleanup-manager.js');
+    local cleanup_output
+    cleanup_output="$(
+      KASEKI_CLEANUP_SCRIPT_DIR="$SCRIPT_DIR" \
+      KASEKI_CLEANUP_RESULTS_DIR="$results_dir" \
+      KASEKI_CLEANUP_CACHE_DIR="$cache_dir" \
+      KASEKI_CLEANUP_LOG_DIR="$KASEKI_LOG_DIR" \
+      KASEKI_CLEANUP_RUNS_DIR="$RUNS" \
+      KASEKI_CLEANUP_RETENTION_COUNT="$retention_count" \
+      KASEKI_CLEANUP_CURRENT_RUN="$INSTANCE" \
+      node -e '
+        const path = require("path");
+        const { cleanupOldRuns } = require(path.join(process.env.KASEKI_CLEANUP_SCRIPT_DIR, "dist/cleanup-manager.js"));
         (async () => {
           try {
-            const result = await cleanupOldRuns('$results_dir', '$cache_dir', $retention_count, false);
-            if (result.deletedCount > 0) {
-              console.log('✓ Cleanup: deleted ' + result.deletedCount + ' old run(s), freed ' + (result.freedBytes / 1024 / 1024).toFixed(2) + ' MB');
+            const protectedRunNames = process.env.KASEKI_CLEANUP_CURRENT_RUN ? new Set([process.env.KASEKI_CLEANUP_CURRENT_RUN]) : new Set();
+            const result = await cleanupOldRuns(
+              process.env.KASEKI_CLEANUP_RESULTS_DIR,
+              process.env.KASEKI_CLEANUP_CACHE_DIR,
+              Number.parseInt(process.env.KASEKI_CLEANUP_RETENTION_COUNT, 10),
+              false,
+              {
+                logDir: process.env.KASEKI_CLEANUP_LOG_DIR,
+                activeRunsDir: process.env.KASEKI_CLEANUP_RUNS_DIR,
+                protectedRunNames,
+              },
+            );
+            if (result.deletedCount > 0 || result.deletedLogCount > 0) {
+              console.log("✓ Cleanup: deleted " + result.deletedCount + " old run(s), " + result.deletedLogCount + " host log(s), freed " + (result.freedBytes / 1024 / 1024).toFixed(2) + " MB");
             }
           } catch (error) {
-            console.error('⚠ Cleanup failed (non-blocking):', error.message);
+            console.error("⚠ Cleanup failed (non-blocking):", error.message);
           }
         })();
-      " 2>&1 | tee -a "$cleanup_log"
-    } || true  # Non-blocking; failures don't stop the run
+      ' 2>&1
+    )" || true
+    if [ -n "$cleanup_output" ]; then
+      printf '%s\n' "$cleanup_output" | tee -a "$cleanup_log" || true
+    fi
   fi
 }
 

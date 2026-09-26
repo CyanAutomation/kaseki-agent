@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# cleanup-runs.sh - Manage retention of kaseki run artifacts
+# cleanup-runs.sh - Manage retention of run artifacts and matching host logs
 #
 # Usage:
 #   ./scripts/cleanup-runs.sh [--dry-run] [--force] [--count N]
@@ -14,6 +14,7 @@
 #   KASEKI_RETENTION_RUNS  Number of recent runs to keep (default: 5)
 #   KASEKI_RESULTS_DIR     Path to /agents/kaseki-results (default: /agents/kaseki-results)
 #   KASEKI_CACHE_DIR       Path to /agents/kaseki-cache (default: /agents/kaseki-cache)
+#   KASEKI_LOG_DIR         Path to host logs (default: /var/log/kaseki)
 #
 
 set -euo pipefail
@@ -24,10 +25,11 @@ FORCE=false
 RETENTION_COUNT="${KASEKI_RETENTION_RUNS:-5}"
 RESULTS_DIR="${KASEKI_RESULTS_DIR:-/agents/kaseki-results}"
 CACHE_DIR="${KASEKI_CACHE_DIR:-/agents/kaseki-cache}"
+LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
+RUNS_DIR="${KASEKI_ROOT:-/agents}/kaseki-runs"
 
 # Color codes for output
 RED='\033[0;31m'
-GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
@@ -63,6 +65,7 @@ while [[ $# -gt 0 ]]; do
       echo "  KASEKI_RETENTION_RUNS  Number of recent runs to keep (default: 5)"
       echo "  KASEKI_RESULTS_DIR     Path to results directory"
       echo "  KASEKI_CACHE_DIR       Path to cache directory"
+      echo "  KASEKI_LOG_DIR         Path to host logs (default: /var/log/kaseki)"
       exit 0
       ;;
     *)
@@ -84,40 +87,66 @@ if [[ ! -d "$RESULTS_DIR" ]]; then
   exit 0
 fi
 
-# Count existing runs
-RUN_COUNT=$(find "$RESULTS_DIR" -maxdepth 1 -type d -name 'kaseki-*' | wc -l)
-
-if (( RUN_COUNT <= RETENTION_COUNT )); then
-  echo -e "${GREEN}✓ No cleanup needed: $RUN_COUNT run(s) found, keeping $RETENTION_COUNT${NC}"
+# Use the shared plan so manual cleanup applies the same run and host-log policy.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+set +e
+PREVIEW_OUTPUT="$(
+  # JavaScript template interpolation must remain literal to the shell.
+  # shellcheck disable=SC2016
+  KASEKI_CLEANUP_SCRIPT_DIR="$SCRIPT_DIR" \
+      KASEKI_CLEANUP_RESULTS_DIR="$RESULTS_DIR" \
+      KASEKI_CLEANUP_LOG_DIR="$LOG_DIR" \
+      KASEKI_CLEANUP_RUNS_DIR="$RUNS_DIR" \
+      KASEKI_CLEANUP_RETENTION_COUNT="$RETENTION_COUNT" \
+  node -e '
+    const path = require("node:path");
+    const { createCleanupPlan } = require(path.join(process.env.KASEKI_CLEANUP_SCRIPT_DIR, "dist/cleanup-manager.js"));
+    try {
+      const plan = createCleanupPlan(
+        process.env.KASEKI_CLEANUP_RESULTS_DIR,
+        Number.parseInt(process.env.KASEKI_CLEANUP_RETENTION_COUNT, 10),
+        {
+          logDir: process.env.KASEKI_CLEANUP_LOG_DIR,
+          activeRunsDir: process.env.KASEKI_CLEANUP_RUNS_DIR,
+        },
+      );
+      if (plan.runsToDelete.length === 0 && plan.logsToDelete.length === 0) {
+        console.log(`✓ No cleanup needed: ${plan.allRuns.length} run(s) found, keeping ${process.env.KASEKI_CLEANUP_RETENTION_COUNT}`);
+        process.exitCode = 2;
+      } else {
+        console.log("Cleanup Summary");
+        console.log("===============");
+        console.log(`Runs found:        ${plan.allRuns.length}`);
+        console.log(`Retention count:   ${process.env.KASEKI_CLEANUP_RETENTION_COUNT}`);
+        console.log(`Runs to delete:    ${plan.runsToDelete.length}`);
+        console.log(`Host logs to delete: ${plan.logsToDelete.length}`);
+        console.log("");
+        console.log("Runs (newest first):");
+        const deletable = new Set(plan.runsToDelete.map((run) => run.name));
+        for (const run of plan.allRuns) {
+          const marker = deletable.has(run.name) ? "[DELETE]" : "[KEEP]";
+          console.log(`  ${marker} ${run.name}  (${new Date(run.mtime).toISOString().slice(0, 19)})`);
+        }
+        if (plan.logsToDelete.length > 0) {
+          console.log("");
+          console.log("Host logs to delete:");
+          for (const log of plan.logsToDelete) console.log(`  [DELETE] ${log.name}`);
+        }
+      }
+    } catch (error) {
+      console.error("✗ Could not create a safe cleanup plan:", error.message);
+      process.exitCode = 1;
+    }
+  '
+)"
+PLAN_STATUS=$?
+set -e
+printf '%s\n' "$PREVIEW_OUTPUT"
+if (( PLAN_STATUS == 2 )); then
   exit 0
+elif (( PLAN_STATUS != 0 )); then
+  exit 1
 fi
-
-# Determine which runs to delete
-RUNS_TO_DELETE=$(( RUN_COUNT - RETENTION_COUNT ))
-
-echo -e "${BLUE}Cleanup Summary${NC}"
-echo "================"
-echo "Runs to analyze:  $RUN_COUNT"
-echo "Retention count:  $RETENTION_COUNT"
-echo "Runs to delete:   $RUNS_TO_DELETE"
-echo ""
-
-# List runs sorted by modification time (newest first)
-echo -e "${BLUE}Runs (newest first):${NC}"
-find "$RESULTS_DIR" -maxdepth 1 -type d -name 'kaseki-*' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n "$RUN_COUNT" | cut -d' ' -f2- | nl | while read -r LINE; do
-  RUN_PATH="$LINE"
-  RUN_NAME=$(basename "$RUN_PATH")
-  RUN_NUM="${RUN_NAME#kaseki-}"
-  MOD_TIME=$(stat -c '%y' "$RUN_PATH" 2>/dev/null | cut -d. -f1 || date -r "$RUN_PATH" '+%Y-%m-%d %H:%M:%S')
-  
-  if (( RUN_NUM <= RUNS_TO_DELETE )); then
-    echo -e "  ${RED}[DELETE]${NC} $RUN_NAME  ($MOD_TIME)"
-  else
-    echo -e "  ${GREEN}[KEEP]${NC}   $RUN_NAME  ($MOD_TIME)"
-  fi
-done
-
-echo ""
 
 if [[ "$DRY_RUN" == true ]]; then
   echo -e "${YELLOW}[DRY RUN]${NC} No changes were made"
@@ -137,28 +166,40 @@ fi
 echo ""
 echo -e "${BLUE}Executing cleanup...${NC}"
 
-# Get the directory where this script is located
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
 # Run Node.js cleanup (uses the cleanup-manager module)
-node -e "
-const path = require('path');
-const { cleanupOldRuns } = require('$SCRIPT_DIR/dist/cleanup-manager');
+KASEKI_CLEANUP_SCRIPT_DIR="$SCRIPT_DIR" \
+KASEKI_CLEANUP_RESULTS_DIR="$RESULTS_DIR" \
+KASEKI_CLEANUP_CACHE_DIR="$CACHE_DIR" \
+KASEKI_CLEANUP_LOG_DIR="$LOG_DIR" \
+KASEKI_CLEANUP_RUNS_DIR="$RUNS_DIR" \
+KASEKI_CLEANUP_RETENTION_COUNT="$RETENTION_COUNT" \
+node -e '
+const path = require("node:path");
+const { cleanupOldRuns } = require(path.join(process.env.KASEKI_CLEANUP_SCRIPT_DIR, "dist/cleanup-manager.js"));
 
 (async () => {
   try {
-    const result = await cleanupOldRuns('$RESULTS_DIR', '$CACHE_DIR', $RETENTION_COUNT, false);
-    console.log('✓ Cleanup complete:');
-    console.log('  Deleted runs:       ' + result.deletedCount);
-    console.log('  Freed space:        ' + (result.freedBytes / 1024 / 1024).toFixed(2) + ' MB');
-    console.log('  Cache entries removed: ' + result.cachedEntriesRemoved);
+    const result = await cleanupOldRuns(
+      process.env.KASEKI_CLEANUP_RESULTS_DIR,
+      process.env.KASEKI_CLEANUP_CACHE_DIR,
+      Number.parseInt(process.env.KASEKI_CLEANUP_RETENTION_COUNT, 10),
+      false,
+      {
+        logDir: process.env.KASEKI_CLEANUP_LOG_DIR,
+        activeRunsDir: process.env.KASEKI_CLEANUP_RUNS_DIR,
+      },
+    );
+    console.log("✓ Cleanup complete:");
+    console.log("  Deleted runs:       " + result.deletedCount);
+    console.log("  Host logs deleted:  " + result.deletedLogCount);
+    console.log("  Freed space:        " + (result.freedBytes / 1024 / 1024).toFixed(2) + " MB");
     process.exit(0);
   } catch (error) {
-    console.error('✗ Cleanup failed:', error.message);
+    console.error("✗ Cleanup failed:", error.message);
     process.exit(1);
   }
 })();
-" || {
+' || {
   # Fallback if compiled module not available
   echo -e "${RED}Error: cleanup-manager module not found. Make sure to run 'npm run build'${NC}" >&2
   exit 1

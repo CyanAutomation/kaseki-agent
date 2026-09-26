@@ -239,6 +239,8 @@ kaseki-agent cleanup --force --count 3
 # Cleanup is automatic: happens before each new run starts
 # Default retention: 5 runs (configurable via KASEKI_RETENTION_RUNS env var)
 # Set KASEKI_RETENTION_RUNS=0 to delete all runs between each execution
+# Matching run-kaseki-kaseki-N-*.log host logs follow the same retention policy.
+# KASEKI_LOG_DIR selects their directory (default: /var/log/kaseki).
 ```
 
 ### Deprecated Commands (No Longer Supported)
