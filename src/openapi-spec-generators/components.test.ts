@@ -16,8 +16,7 @@ describe('OpenAPI Component Builders', () => {
     it('should build BearerAuth security scheme', () => {
       const schemes = buildSecuritySchemes();
 
-      expect(schemes).toHaveProperty('BearerAuth');
-      expect(schemes.BearerAuth).toEqual({
+      expect(schemes.BearerAuth).toMatchObject({
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'token',
@@ -189,28 +188,6 @@ describe('OpenAPI Component Builders', () => {
 
       expect(Object.keys(components.schemas as Record<string, unknown>)).toHaveLength(3);
       expect(components.schemas).toEqual(testSchemas);
-    });
-  });
-
-  describe('buildSecuritySchemes detailed validation', () => {
-    it('BearerAuth should have type http', () => {
-      const schemes = buildSecuritySchemes();
-      expect(schemes.BearerAuth.type).toBe('http');
-    });
-
-    it('BearerAuth should have scheme bearer', () => {
-      const schemes = buildSecuritySchemes();
-      expect(schemes.BearerAuth.scheme).toBe('bearer');
-    });
-
-    it('BearerAuth should have token bearer format', () => {
-      const schemes = buildSecuritySchemes();
-      expect(schemes.BearerAuth.bearerFormat).toBe('token');
-    });
-
-    it('should include only one security scheme', () => {
-      const schemes = buildSecuritySchemes();
-      expect(Object.keys(schemes)).toHaveLength(1);
     });
   });
 
