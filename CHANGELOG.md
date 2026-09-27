@@ -4,6 +4,15 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.146.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.146.0...v1.146.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* align image dependency cache keys ([89ee89d](https://github.com/CyanAutomation/kaseki-agent/commit/89ee89d0a9ce9bd09b26865e8f30740515148664))
+* isolate dependency cache restores ([335f779](https://github.com/CyanAutomation/kaseki-agent/commit/335f77985532d5baa21885c3e57ff6535ffa8fe6))
+* key baseline cache by resolved commit ([5343bbe](https://github.com/CyanAutomation/kaseki-agent/commit/5343bbea5fc01d34811c85c7196a0424d37732e1))
+
 # [1.146.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.145.0...v1.146.0) (2026-09-25)
 
 
