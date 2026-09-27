@@ -617,6 +617,8 @@ KASEKI_DEPENDENCY_CACHE_MAX_BYTES="${KASEKI_DEPENDENCY_CACHE_MAX_BYTES:-10737418
 KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS="${KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS:-30}"
 KASEKI_DEPENDENCY_CACHE_PRUNE="${KASEKI_DEPENDENCY_CACHE_PRUNE:-1}"
 KASEKI_DEPENDENCY_CACHE_METRICS_FILE="${KASEKI_DEPENDENCY_CACHE_METRICS_FILE:-${KASEKI_DEPENDENCY_CACHE_DIR}/.kaseki-cache-metrics}"
+KASEKI_DEPENDENCY_CACHE_RECONCILE_INTERVAL_SECONDS="${KASEKI_DEPENDENCY_CACHE_RECONCILE_INTERVAL_SECONDS:-86400}"
+KASEKI_DEPENDENCY_CACHE_RECONCILE_THRESHOLD_PERCENT="${KASEKI_DEPENDENCY_CACHE_RECONCILE_THRESHOLD_PERCENT:-90}"
 KASEKI_DEPENDENCY_CACHE_SCHEMA_VERSION="${KASEKI_DEPENDENCY_CACHE_SCHEMA_VERSION:-$(dependency_cache_schema_version)}"
 KASEKI_INSTALL_IGNORE_SCRIPTS="${KASEKI_INSTALL_IGNORE_SCRIPTS:-1}"
 KASEKI_NPM_OMIT_DEV="${KASEKI_NPM_OMIT_DEV:-0}"
@@ -4375,7 +4377,10 @@ dependency_cache_size_bytes() {
   # cache on every worker run. Older entries without metadata are accounted
   # for when they are next published.
   dependency_cache_entry_roots "$cache_dir" | while IFS= read -r entry; do
-    [ -r "$entry/.entry-size-bytes" ] && cat "$entry/.entry-size-bytes"
+    if [ -r "$entry/.entry-size-bytes" ]; then
+      IFS= read -r entry_size < "$entry/.entry-size-bytes" || true
+      [[ "$entry_size" =~ ^[0-9]+$ ]] && printf '%s\n' "$entry_size"
+    fi
   done | awk '{ total += $1 } END { printf "%.0f\n", total + 0 }'
 }
 
@@ -4385,7 +4390,26 @@ record_dependency_cache_entry_size() {
   local size_kb
   size_kb="$(du -sk "$source_dir" 2>/dev/null | awk '{print $1}')"
   [ -n "$size_kb" ] || return 0
-  printf '%s\n' $((size_kb * 1024)) > "$entry_root/.entry-size-bytes"
+  local size_file="$entry_root/.entry-size-bytes"
+  local tmp_size_file="${size_file}.tmp.$$"
+  if printf '%s\n' $((size_kb * 1024)) > "$tmp_size_file"; then
+    mv -f -- "$tmp_size_file" "$size_file"
+  else
+    rm -f -- "$tmp_size_file"
+  fi
+}
+
+dependency_cache_disk_usage_bytes() {
+  local cache_dir="$1" size_kb
+  size_kb="$(du -sk "$cache_dir" 2>/dev/null | awk 'NR == 1 { print $1 }')"
+  [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
+  printf '%s\n' $((size_kb * 1024))
+}
+
+dependency_cache_metadata_value() {
+  local file="$1" key="$2" value=""
+  [ -r "$file" ] && value="$(awk -F= -v key="$key" '$1 == key { print substr($0, index($0, "=") + 1); exit }' "$file")"
+  [[ "$value" =~ ^[0-9]+$ ]] && printf '%s\n' "$value"
 }
 
 update_dependency_cache_access() {
@@ -4433,15 +4457,23 @@ invalidate_workspace_dependency_cache() {
 write_dependency_cache_metrics() {
   local cache_dir="$1"
   local metrics_file="$2"
-  local size_bytes entry_count now
+  local recorded_size_bytes="${3:-$(dependency_cache_size_bytes "$cache_dir")}" reconciled_size_bytes="${4:-0}"
+  local reconciliation_reason="${5:-not_due}" cleanup_count="${6:-0}" cleanup_reasons="${7:-none}"
+  local entry_count now
   mkdir -p "$(dirname "$metrics_file")" 2>/dev/null || return 0
-  size_bytes="$(dependency_cache_size_bytes "$cache_dir")"
   entry_count="$(dependency_cache_entry_roots "$cache_dir" | wc -l | tr -d ' ')"
   now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   {
     printf 'timestamp=%s\n' "$now"
     printf 'cache_dir=%s\n' "$cache_dir"
-    printf 'size_bytes=%s\n' "$size_bytes"
+    # Keep size_bytes for existing metrics consumers; recorded and reconciled
+    # values expose whether inexpensive metadata has drifted from disk usage.
+    printf 'size_bytes=%s\n' "$recorded_size_bytes"
+    printf 'recorded_size_bytes=%s\n' "$recorded_size_bytes"
+    printf 'reconciled_size_bytes=%s\n' "$reconciled_size_bytes"
+    printf 'reconciliation_reason=%s\n' "$reconciliation_reason"
+    printf 'cleanup_count=%s\n' "$cleanup_count"
+    printf 'cleanup_reasons=%s\n' "$cleanup_reasons"
     printf 'entry_count=%s\n' "$entry_count"
     printf 'max_bytes=%s\n' "$KASEKI_DEPENDENCY_CACHE_MAX_BYTES"
     printf 'max_age_days=%s\n' "$KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS"
@@ -4453,36 +4485,87 @@ prune_dependency_cache() {
   local max_bytes="$2"
   local max_age_days="$3"
   local metrics_file="$4"
-  local size_bytes oldest_entry now_epoch max_age_seconds access_epoch
+  local size_bytes oldest_entry now_epoch max_age_seconds access_epoch entry entry_size
+  local cleanup_count=0 cleanup_reasons="" reconciliation_reason="not_due" reconciled_size_bytes=0
+  local reconcile_file="$cache_dir/.kaseki-cache-reconcile" last_reconcile=0 reconcile_due=0 lock_fd orphan
+  local reconcile_interval="${KASEKI_DEPENDENCY_CACHE_RECONCILE_INTERVAL_SECONDS:-86400}"
+  local reconcile_threshold="${KASEKI_DEPENDENCY_CACHE_RECONCILE_THRESHOLD_PERCENT:-90}"
 
   [ "$KASEKI_DEPENDENCY_CACHE_PRUNE" = "1" ] || return 0
   [ -d "$cache_dir" ] || return 0
+  [[ "$reconcile_interval" =~ ^[0-9]+$ ]] || reconcile_interval=86400
+  [[ "$reconcile_threshold" =~ ^[0-9]+$ ]] || reconcile_threshold=90
+
+  # A killed publisher can leave either side of its atomic rename behind.
+  # Only remove such directories after acquiring the same per-entry lock used
+  # by publishers; a busy lock means the directory may still be in use.
+  while IFS= read -r orphan; do
+    [ -n "$orphan" ] || continue
+    entry="$(dirname "$orphan")"
+    exec {lock_fd}>"${entry}.lock" || continue
+    if flock -n "$lock_fd"; then
+      case "$(basename "$orphan")" in
+        node_modules.tmp.*) cleanup_reasons="${cleanup_reasons:+$cleanup_reasons,}abandoned_tmp" ;;
+        node_modules.old.*) cleanup_reasons="${cleanup_reasons:+$cleanup_reasons,}abandoned_old" ;;
+        *) flock -u "$lock_fd" || true; exec {lock_fd}>&-; continue ;;
+      esac
+      rm -rf -- "$orphan" && cleanup_count=$((cleanup_count + 1))
+      flock -u "$lock_fd" || true
+    fi
+    exec {lock_fd}>&-
+  done < <(find "$cache_dir" -maxdepth 8 -type d \( -name 'node_modules.tmp.*' -o -name 'node_modules.old.*' \) 2>/dev/null)
 
   if [ "$max_age_days" -gt 0 ] 2>/dev/null; then
     now_epoch="$(date +%s)"
     max_age_seconds=$((max_age_days * 86400))
-    dependency_cache_entry_roots "$cache_dir" | while IFS= read -r entry; do
+    while IFS= read -r entry; do
       [ -n "$entry" ] || continue
       access_epoch="$(dependency_cache_entry_access_epoch "$entry")"
       if [ "$access_epoch" -lt $((now_epoch - max_age_seconds)) ] 2>/dev/null; then
-        printf 'Dependency cache prune: removing aged entry %s\n' "$entry" | tee -a "$DEPENDENCY_CACHE_LOG"
-        rm -rf "$entry"
+        exec {lock_fd}>"${entry}.lock" || continue
+        if flock -n "$lock_fd"; then
+          printf 'Dependency cache prune: removing aged entry %s\n' "$entry" | tee -a "$DEPENDENCY_CACHE_LOG"
+          rm -rf -- "$entry" && { cleanup_count=$((cleanup_count + 1)); cleanup_reasons="${cleanup_reasons:+$cleanup_reasons,}max_age"; }
+          flock -u "$lock_fd" || true
+        fi
+        exec {lock_fd}>&-
       fi
-    done
+    done < <(dependency_cache_entry_roots "$cache_dir")
   fi
 
   if [ "$max_bytes" -gt 0 ] 2>/dev/null; then
     # Entries created before per-entry accounting cannot be included without a
     # blocking recursive scan. Remove them once so future enforcement remains
     # fast and exact.
-    dependency_cache_entry_roots "$cache_dir" | while IFS= read -r entry; do
+    while IFS= read -r entry; do
       [ -n "$entry" ] || continue
-      if [ ! -r "$entry/.entry-size-bytes" ]; then
-        printf 'Dependency cache prune: removing unmetered legacy entry %s\n' "$entry" | tee -a "$DEPENDENCY_CACHE_LOG"
-        rm -rf "$entry"
+      entry_size=""
+      [ -r "$entry/.entry-size-bytes" ] && IFS= read -r entry_size < "$entry/.entry-size-bytes" || true
+      if ! [[ "$entry_size" =~ ^[0-9]+$ ]]; then
+        exec {lock_fd}>"${entry}.lock" || continue
+        if flock -n "$lock_fd"; then
+          printf 'Dependency cache prune: removing entry with invalid size metadata %s\n' "$entry" | tee -a "$DEPENDENCY_CACHE_LOG"
+          rm -rf -- "$entry" && { cleanup_count=$((cleanup_count + 1)); cleanup_reasons="${cleanup_reasons:+$cleanup_reasons,}invalid_size_metadata"; }
+          flock -u "$lock_fd" || true
+        fi
+        exec {lock_fd}>&-
       fi
-    done
+    done < <(dependency_cache_entry_roots "$cache_dir")
     size_bytes="$(dependency_cache_size_bytes "$cache_dir")"
+
+    last_reconcile="$(dependency_cache_metadata_value "$reconcile_file" timestamp_epoch || printf '0')"
+    now_epoch="$(date +%s)"
+    if [ ! -r "$reconcile_file" ] || [ $((now_epoch - last_reconcile)) -ge "$reconcile_interval" ] 2>/dev/null; then
+      reconcile_due=1; reconciliation_reason="periodic"
+    elif [ "$size_bytes" -ge $((max_bytes * reconcile_threshold / 100)) ] 2>/dev/null; then
+      reconcile_due=1; reconciliation_reason="threshold"
+    fi
+    if [ "$reconcile_due" -eq 1 ]; then
+      reconciled_size_bytes="$(dependency_cache_disk_usage_bytes "$cache_dir")"
+      size_bytes="$reconciled_size_bytes"
+    else
+      reconciled_size_bytes="$(dependency_cache_metadata_value "$reconcile_file" size_bytes || printf '0')"
+    fi
     while [ "$size_bytes" -gt "$max_bytes" ]; do
       oldest_entry="$(dependency_cache_entry_roots "$cache_dir" | while IFS= read -r entry; do
         [ -n "$entry" ] || continue
@@ -4490,12 +4573,35 @@ prune_dependency_cache() {
       done | sort -n -k1,1 | awk -F '\t' 'NR==1 {sub(/^[^\t]*\t/, ""); print; exit}')"
       [ -n "$oldest_entry" ] || break
       printf 'Dependency cache prune: removing oldest entry %s (size=%s max=%s)\n' "$oldest_entry" "$size_bytes" "$max_bytes" | tee -a "$DEPENDENCY_CACHE_LOG"
-      rm -rf "$oldest_entry"
-      size_bytes="$(dependency_cache_size_bytes "$cache_dir")"
+      entry_size=""
+      [ -r "$oldest_entry/.entry-size-bytes" ] && IFS= read -r entry_size < "$oldest_entry/.entry-size-bytes" || true
+      exec {lock_fd}>"${oldest_entry}.lock" || break
+      if flock -n "$lock_fd"; then
+        rm -rf -- "$oldest_entry" && { cleanup_count=$((cleanup_count + 1)); cleanup_reasons="${cleanup_reasons:+$cleanup_reasons,}max_bytes"; }
+        flock -u "$lock_fd" || true
+      else
+        exec {lock_fd}>&-
+        break
+      fi
+      exec {lock_fd}>&-
+      if [ "$reconcile_due" -eq 1 ]; then
+        # Reconciliation is deliberately uncommon, so use the authoritative
+        # value after each eviction rather than estimating from stale metadata.
+        size_bytes="$(dependency_cache_disk_usage_bytes "$cache_dir")"
+      else
+        [[ "$entry_size" =~ ^[0-9]+$ ]] || entry_size=0
+        size_bytes=$((size_bytes > entry_size ? size_bytes - entry_size : 0))
+      fi
     done
   fi
 
-  write_dependency_cache_metrics "$cache_dir" "$metrics_file"
+  size_bytes="$(dependency_cache_size_bytes "$cache_dir")"
+  if [ "$reconcile_due" -eq 1 ]; then
+    reconciled_size_bytes="$(dependency_cache_disk_usage_bytes "$cache_dir")"
+    printf 'timestamp_epoch=%s\nsize_bytes=%s\n' "$(date +%s)" "$reconciled_size_bytes" > "$reconcile_file"
+  fi
+  [ -n "$cleanup_reasons" ] || cleanup_reasons="none"
+  write_dependency_cache_metrics "$cache_dir" "$metrics_file" "$size_bytes" "$reconciled_size_bytes" "$reconciliation_reason" "$cleanup_count" "$cleanup_reasons"
 }
 
 npm_run_script_name() {
