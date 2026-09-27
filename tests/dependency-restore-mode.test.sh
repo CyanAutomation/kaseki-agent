@@ -206,6 +206,43 @@ grep -q '^size_bytes=' "$metrics_file" || fail "Dependency cache metrics missing
 grep -q '^entry_count=1$' "$metrics_file" || fail "Dependency cache metrics missing pruned entry_count"
 pass "dependency cache pruning removes oldest entries and writes metrics"
 
+# Explicit access records, rather than atime, keep a recently used entry even
+# when its directory itself is old. A truly idle peer remains eligible for
+# maximum-age eviction.
+rm -rf "$TMP_DIR/access-age-cache"
+age_active="$TMP_DIR/access-age-cache/npm/lock-active/node-24/platform-linux/arch-x64/abi-131/flags-active"
+age_idle="$TMP_DIR/access-age-cache/npm/lock-idle/node-24/platform-linux/arch-x64/abi-131/flags-idle"
+mkdir -p "$age_active/node_modules/pkg" "$age_idle/node_modules/pkg"
+printf '1\n' > "$age_active/.entry-size-bytes"
+printf '1\n' > "$age_idle/.entry-size-bytes"
+old_epoch=$(($(date +%s) - 3 * 86400))
+printf '%s\n' "$old_epoch" > "$age_idle/.last-access"
+touch -t 202501010000 "$age_active" "$age_idle"
+update_dependency_cache_access "$age_active"
+prune_dependency_cache "$TMP_DIR/access-age-cache" 0 1 "$TMP_DIR/access-age-cache.metrics"
+[ -d "$age_active" ] || fail "Recently accessed old dependency cache entry was removed by maximum age"
+[ ! -e "$age_idle" ] || fail "Genuinely idle dependency cache entry survived maximum-age pruning"
+[ -f "$age_active/.last-access" ] || fail "Dependency cache access record was not published"
+[ ! -e "$age_active/.last-access.tmp.$$" ] || fail "Temporary dependency cache access record was not renamed atomically"
+pass "dependency cache access records protect old entries from age eviction"
+
+# Size pruning must use the same access record. Make the active entry's
+# directory older than the idle entry to prove directory mtime/atime does not
+# influence selection when an explicit record exists.
+rm -rf "$TMP_DIR/access-size-cache"
+size_active="$TMP_DIR/access-size-cache/npm/lock-active/node-24/platform-linux/arch-x64/abi-131/flags-active"
+size_idle="$TMP_DIR/access-size-cache/npm/lock-idle/node-24/platform-linux/arch-x64/abi-131/flags-idle"
+mkdir -p "$size_active/node_modules/pkg" "$size_idle/node_modules/pkg"
+printf '4096\n' > "$size_active/.entry-size-bytes"
+printf '4096\n' > "$size_idle/.entry-size-bytes"
+printf '%s\n' "$old_epoch" > "$size_idle/.last-access"
+touch -t 202501010000 "$size_active"
+update_dependency_cache_access "$size_active"
+prune_dependency_cache "$TMP_DIR/access-size-cache" 5000 0 "$TMP_DIR/access-size-cache.metrics"
+[ -d "$size_active" ] || fail "Recently accessed old dependency cache entry was selected for size eviction"
+[ ! -e "$size_idle" ] || fail "Genuinely idle dependency cache entry survived size eviction"
+pass "dependency cache access records protect old entries from size eviction"
+
 du() { fail "dependency_cache_size_bytes must not recursively scan the shared cache"; }
 [ "$(dependency_cache_size_bytes "$TMP_DIR/prune-cache")" = "4096" ] || fail "metadata-based cache size was incorrect"
 unset -f du
