@@ -99,13 +99,16 @@ describe('Scouting Template: JSON Schema Field Definitions', () => {
       const requirementsDocumentation = extractSchemaFieldDocumentation(baseContent, 'requirements');
 
       expect(requirementsDocumentation).not.toBeNull();
-      expect(requirementsDocumentation).toMatch(/\(array, 3-8 strings\)/i);
-      expect(requirementsDocumentation).toMatch(
-        /concrete, independently verifiable, testable requirements/i,
-      );
+      expect(requirementsDocumentation).toMatch(/^\*\*requirements\*\*/);
+      expect(requirementsDocumentation).toMatch(/\barray\b/i);
+      expect(requirementsDocumentation).toMatch(/\b3\s*-\s*8\b/);
+      expect(requirementsDocumentation).toMatch(/concrete/i);
+      expect(requirementsDocumentation).toMatch(/independently verifiable/i);
+      expect(requirementsDocumentation).toMatch(/testable/i);
+      expect(requirementsDocumentation).toMatch(/Example:.*parseRole\(\).*null/i);
 
       const unrelatedGuidanceTemplate = `**requirements** (array): Requirements.
-**observations** (array, 3-8 strings): Concrete, independently verifiable, testable requirements.`;
+**observations** (array, 3-8 strings): Concrete, independently verifiable, testable requirements. Example: "parseRole() returns the default role for null input".`;
       const isolatedRequirementsDocumentation = extractSchemaFieldDocumentation(
         unrelatedGuidanceTemplate,
         'requirements',
@@ -113,6 +116,7 @@ describe('Scouting Template: JSON Schema Field Definitions', () => {
       expect(isolatedRequirementsDocumentation).toBe('**requirements** (array): Requirements.');
       expect(isolatedRequirementsDocumentation).not.toMatch(/\(array, 3-8 strings\)/i);
       expect(isolatedRequirementsDocumentation).not.toMatch(/concrete|independently verifiable/i);
+      expect(isolatedRequirementsDocumentation).not.toMatch(/Example:/i);
     });
   });
 

@@ -16,7 +16,7 @@ The artifact follows this schema-style shape:
 Write valid JSON with these fields and constraints:
 
 **task** (string, max 200 characters): Concrete, actionable restatement. Example: "Fix null-safety in parseRole()". Do not use vague tasks such as "Make it better" or "Improve code quality".
-**requirements** (array, 3-8 strings): Concrete, independently verifiable, testable requirements.
+**requirements** (array, 3-8 strings): Concrete, independently verifiable, testable requirements. Example: "parseRole() returns the default role for null input".
 **relevant_files** (array, 5-20 objects with path and reason fields): Each entry is an object with separate path and reason fields; never use a string such as `path - reason`.
 **observations** (array): Concrete facts from inspection; prioritize facts that help the coding agent avoid rescanning.
 **plan** (array, 5-15 strings): Ordered, task-specific coding steps. Each step is independently reviewable; do not add "finish" or "verify" steps. Example: "Add a null guard to parseRole() in src/lib/role.ts so null input returns the default role".
