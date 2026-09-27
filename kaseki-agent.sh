@@ -4388,6 +4388,40 @@ record_dependency_cache_entry_size() {
   printf '%s\n' $((size_kb * 1024)) > "$entry_root/.entry-size-bytes"
 }
 
+update_dependency_cache_access() {
+  local entry_root="$1"
+  local access_file="$entry_root/.last-access"
+  local tmp_access_file="$entry_root/.last-access.tmp.$$"
+  local access_epoch
+  access_epoch="$(date +%s)"
+
+  # Publish the timestamp with rename(2), so concurrent pruning never observes
+  # a partially written access record. The entry lock serializes writers for a
+  # cache key, while the unique temporary name keeps the operation local to
+  # this entry and filesystem.
+  if printf '%s\n' "$access_epoch" > "$tmp_access_file" && mv -f -- "$tmp_access_file" "$access_file"; then
+    return 0
+  fi
+  rm -f -- "$tmp_access_file"
+  return 1
+}
+
+dependency_cache_entry_access_epoch() {
+  local entry_root="$1"
+  local access_epoch=""
+  if [ -r "$entry_root/.last-access" ]; then
+    IFS= read -r access_epoch < "$entry_root/.last-access" || true
+  fi
+  if [[ "$access_epoch" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$access_epoch"
+    return 0
+  fi
+
+  # Entries published before explicit access records were introduced retain
+  # their historical directory-mtime behavior until their next valid hit.
+  stat -c %Y "$entry_root" 2>/dev/null || stat -f %m "$entry_root" 2>/dev/null || printf '0\n'
+}
+
 invalidate_workspace_dependency_cache() {
   local cache_dir="$1"
   local stamp_file="$2"
@@ -4419,14 +4453,18 @@ prune_dependency_cache() {
   local max_bytes="$2"
   local max_age_days="$3"
   local metrics_file="$4"
-  local size_bytes oldest_entry
+  local size_bytes oldest_entry now_epoch max_age_seconds access_epoch
 
   [ "$KASEKI_DEPENDENCY_CACHE_PRUNE" = "1" ] || return 0
   [ -d "$cache_dir" ] || return 0
 
   if [ "$max_age_days" -gt 0 ] 2>/dev/null; then
+    now_epoch="$(date +%s)"
+    max_age_seconds=$((max_age_days * 86400))
     dependency_cache_entry_roots "$cache_dir" | while IFS= read -r entry; do
-      if [ -n "$entry" ] && [ "$(find "$entry" -maxdepth 0 -mtime +"$max_age_days" -print 2>/dev/null)" = "$entry" ]; then
+      [ -n "$entry" ] || continue
+      access_epoch="$(dependency_cache_entry_access_epoch "$entry")"
+      if [ "$access_epoch" -lt $((now_epoch - max_age_seconds)) ] 2>/dev/null; then
         printf 'Dependency cache prune: removing aged entry %s\n' "$entry" | tee -a "$DEPENDENCY_CACHE_LOG"
         rm -rf "$entry"
       fi
@@ -4448,8 +4486,8 @@ prune_dependency_cache() {
     while [ "$size_bytes" -gt "$max_bytes" ]; do
       oldest_entry="$(dependency_cache_entry_roots "$cache_dir" | while IFS= read -r entry; do
         [ -n "$entry" ] || continue
-        printf '%s\t%s\n' "$(stat -c %Y "$entry" 2>/dev/null || stat -f %m "$entry" 2>/dev/null || printf '0')" "$entry"
-      done | sort -n | awk 'NR==1 {print $2}')"
+        printf '%s\t%s\n' "$(dependency_cache_entry_access_epoch "$entry")" "$entry"
+      done | sort -n -k1,1 | awk -F '\t' 'NR==1 {sub(/^[^\t]*\t/, ""); print; exit}')"
       [ -n "$oldest_entry" ] || break
       printf 'Dependency cache prune: removing oldest entry %s (size=%s max=%s)\n' "$oldest_entry" "$size_bytes" "$max_bytes" | tee -a "$DEPENDENCY_CACHE_LOG"
       rm -rf "$oldest_entry"
@@ -10039,6 +10077,9 @@ prepare_dependencies() {
     else
       # The entry was atomically published only after npm validation and is
       # already keyed by lockfile, Node major, and install flags.
+      if ! update_dependency_cache_access "$workspace_cache_root"; then
+        printf 'Warning: could not update dependency cache access record for %s.\n' "$workspace_cache_root" >&2
+      fi
       printf 'Dependency cache status: restored validated workspace cache; skipping redundant npm ls validation.\n'
       emit_event "dependency_cache_decision" "strategy=trust_validated_workspace_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=validated_marker_and_cache_key_match" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key"
     fi
@@ -10205,6 +10246,9 @@ prepare_dependencies() {
   if npm ls --depth=0 >/dev/null 2>&1 && dependency_cache_required_bins_valid package.json; then
     rm -f "$workspace_cache_root"/validated "$workspace_cache_root"/validated-v*
     printf '%s\n' "$KASEKI_DEPENDENCY_CACHE_SCHEMA_VERSION" > "$validation_marker"
+    if ! update_dependency_cache_access "$workspace_cache_root"; then
+      printf 'Warning: could not update dependency cache access record for %s.\n' "$workspace_cache_root" >&2
+    fi
   else
     invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
     rm -f "$workspace_cache_root"/validated "$workspace_cache_root"/validated-v*
