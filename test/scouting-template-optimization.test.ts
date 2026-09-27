@@ -95,7 +95,7 @@ describe('Scouting Template: JSON Schema Field Definitions', () => {
   });
 
   describe('requirements field', () => {
-    test('requirements field documents a concrete, independently verifiable collection', () => {
+    test('requirements field satisfies its complete collection contract', () => {
       const requirementsDocumentation = extractSchemaFieldDocumentation(baseContent, 'requirements');
 
       expect(requirementsDocumentation).not.toBeNull();
@@ -104,13 +104,14 @@ describe('Scouting Template: JSON Schema Field Definitions', () => {
         /concrete, independently verifiable, testable requirements/i,
       );
 
-      const unrelatedGuidanceTemplate = `**requirements** (array, 3-8 strings)
-**observations** (array): Concrete facts with independently verifiable outcomes.`;
+      const unrelatedGuidanceTemplate = `**requirements** (array): Requirements.
+**observations** (array, 3-8 strings): Concrete, independently verifiable, testable requirements.`;
       const isolatedRequirementsDocumentation = extractSchemaFieldDocumentation(
         unrelatedGuidanceTemplate,
         'requirements',
       );
-      expect(isolatedRequirementsDocumentation).toBe('**requirements** (array, 3-8 strings)');
+      expect(isolatedRequirementsDocumentation).toBe('**requirements** (array): Requirements.');
+      expect(isolatedRequirementsDocumentation).not.toMatch(/\(array, 3-8 strings\)/i);
       expect(isolatedRequirementsDocumentation).not.toMatch(/concrete|independently verifiable/i);
     });
   });
