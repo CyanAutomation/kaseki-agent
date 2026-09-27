@@ -199,7 +199,8 @@ printf '4096\n' > "$TMP_DIR/prune-cache/npm/lock-old/node-24/platform-linux/arch
 printf '4096\n' > "$TMP_DIR/prune-cache/npm/lock-new/node-24/platform-linux/arch-arm64/abi-131/flags-b/.entry-size-bytes"
 touch -t 202501010000 "$TMP_DIR/prune-cache/npm/lock-old/node-24/platform-linux/arch-x64/abi-131/flags-a"
 metrics_file="$TMP_DIR/prune-cache/.kaseki-cache-metrics"
-prune_dependency_cache "$TMP_DIR/prune-cache" 5000 0 "$metrics_file"
+prune_limit=$(($(dependency_cache_disk_usage_bytes "$TMP_DIR/prune-cache") - 1))
+prune_dependency_cache "$TMP_DIR/prune-cache" "$prune_limit" 0 "$metrics_file"
 [ ! -d "$TMP_DIR/prune-cache/npm/lock-old/node-24/platform-linux/arch-x64/abi-131/flags-a" ] || fail "Oldest dependency cache entry was not pruned"
 [ -f "$metrics_file" ] || fail "Dependency cache metrics file was not written"
 grep -q '^size_bytes=' "$metrics_file" || fail "Dependency cache metrics missing size_bytes"
@@ -238,7 +239,8 @@ printf '4096\n' > "$size_idle/.entry-size-bytes"
 printf '%s\n' "$old_epoch" > "$size_idle/.last-access"
 touch -t 202501010000 "$size_active"
 update_dependency_cache_access "$size_active"
-prune_dependency_cache "$TMP_DIR/access-size-cache" 5000 0 "$TMP_DIR/access-size-cache.metrics"
+access_size_limit=$(($(dependency_cache_disk_usage_bytes "$TMP_DIR/access-size-cache") - 1))
+prune_dependency_cache "$TMP_DIR/access-size-cache" "$access_size_limit" 0 "$TMP_DIR/access-size-cache.metrics"
 [ -d "$size_active" ] || fail "Recently accessed old dependency cache entry was selected for size eviction"
 [ ! -e "$size_idle" ] || fail "Genuinely idle dependency cache entry survived size eviction"
 pass "dependency cache access records protect old entries from size eviction"
@@ -247,6 +249,57 @@ du() { fail "dependency_cache_size_bytes must not recursively scan the shared ca
 [ "$(dependency_cache_size_bytes "$TMP_DIR/prune-cache")" = "4096" ] || fail "metadata-based cache size was incorrect"
 unset -f du
 pass "dependency cache size accounting avoids synchronous whole-cache scans"
+
+# Interrupted atomic publications are charged to real disk usage until they can
+# be removed. Cleanup must coordinate with the entry publisher's lock.
+orphan_cache="$TMP_DIR/orphan-cache"
+orphan_entry="$orphan_cache/npm/lock-orphan/node-24/platform-linux/arch-x64/abi-131/flags-orphan"
+mkdir -p "$orphan_entry/node_modules.tmp.11/pkg" "$orphan_entry/node_modules.old.22/pkg"
+printf 'temporary\n' > "$orphan_entry/node_modules.tmp.11/pkg/file"
+printf 'old\n' > "$orphan_entry/node_modules.old.22/pkg/file"
+exec {orphan_lock_fd}>"${orphan_entry}.lock"
+flock "$orphan_lock_fd"
+prune_dependency_cache "$orphan_cache" 0 0 "$orphan_cache/metrics"
+[ -d "$orphan_entry/node_modules.tmp.11" ] || fail "Pruning removed a temporary publication while its entry lock was held"
+flock -u "$orphan_lock_fd"
+exec {orphan_lock_fd}>&-
+prune_dependency_cache "$orphan_cache" 0 0 "$orphan_cache/metrics"
+[ ! -e "$orphan_entry/node_modules.tmp.11" ] || fail "Abandoned temporary publication was not removed"
+[ ! -e "$orphan_entry/node_modules.old.22" ] || fail "Abandoned old publication was not removed"
+grep -q '^cleanup_count=2$' "$orphan_cache/metrics" || fail "Orphan cleanup count was not reported"
+grep -q '^cleanup_reasons=abandoned_tmp,abandoned_old$' "$orphan_cache/metrics" || fail "Orphan cleanup reasons were not reported"
+pass "dependency cache cleanup locks and reports abandoned publication directories"
+
+# Invalid metadata must never be interpreted by awk as a partial or negative
+# number, and bounded caches retire entries that cannot be accounted reliably.
+malformed_cache="$TMP_DIR/malformed-cache"
+valid_entry="$malformed_cache/npm/valid/node-24/platform-linux/arch-x64/abi-131/flags-valid"
+malformed_entry="$malformed_cache/npm/bad/node-24/platform-linux/arch-x64/abi-131/flags-bad"
+mkdir -p "$valid_entry/node_modules" "$malformed_entry/node_modules"
+printf '1234\n' > "$valid_entry/.entry-size-bytes"
+printf '999garbage\n' > "$malformed_entry/.entry-size-bytes"
+[ "$(dependency_cache_size_bytes "$malformed_cache")" = "1234" ] || fail "Malformed metadata distorted the recorded cache total"
+prune_dependency_cache "$malformed_cache" 999999999 0 "$malformed_cache/metrics"
+[ ! -e "$malformed_entry" ] || fail "Entry with malformed size metadata was not retired"
+grep -q 'cleanup_reasons=.*invalid_size_metadata' "$malformed_cache/metrics" || fail "Invalid metadata cleanup reason was not reported"
+pass "dependency cache accounting rejects malformed size metadata"
+
+# The first prune reconciles actual allocation. A deliberately tiny recorded
+# total must not bypass the byte limit when entry and cache-level files consume
+# substantially more space.
+drift_cache="$TMP_DIR/drift-cache"
+drift_entry="$drift_cache/npm/drift/node-24/platform-linux/arch-x64/abi-131/flags-drift"
+mkdir -p "$drift_entry/node_modules/pkg"
+printf '%16384s' x > "$drift_entry/node_modules/pkg/blob"
+printf '%8192s' y > "$drift_cache/cache-level-file"
+printf '1\n' > "$drift_entry/.entry-size-bytes"
+prune_dependency_cache "$drift_cache" 4096 0 "$drift_cache/metrics"
+[ ! -e "$drift_entry" ] || fail "Reconciled disk usage did not enforce the byte limit"
+grep -q '^recorded_size_bytes=0$' "$drift_cache/metrics" || fail "Metrics omitted the post-cleanup recorded byte count"
+grep -Eq '^reconciled_size_bytes=[1-9][0-9]*$' "$drift_cache/metrics" || fail "Metrics omitted reconciled disk usage including cache-level files"
+grep -q '^reconciliation_reason=periodic$' "$drift_cache/metrics" || fail "Metrics omitted the reconciliation reason"
+grep -q 'cleanup_reasons=.*max_bytes' "$drift_cache/metrics" || fail "Metrics omitted the threshold enforcement cleanup reason"
+pass "dependency cache reconciliation enforces actual disk usage and reports drift"
 
 invalid_root="$TMP_DIR/invalid-cache"
 mkdir -p "$invalid_root/node_modules/pkg"
