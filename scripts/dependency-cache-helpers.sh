@@ -2,6 +2,10 @@
 # Helper functions for dependency-cache key construction. This file is intended
 # to be sourced by kaseki-agent.sh and tests.
 
+dependency_cache_schema_version() {
+  printf '2\n'
+}
+
 dependency_cache_flags_identity() {
   printf 'omit_dev=%s\nignore_scripts=%s\n' "${KASEKI_NPM_OMIT_DEV:-0}" "${KASEKI_INSTALL_IGNORE_SCRIPTS:-1}"
 }
@@ -19,6 +23,28 @@ dependency_cache_key() {
   local node_abi="${6:-$(node -p 'process.versions.modules || "none"' 2>/dev/null || printf 'unknown')}"
   printf 'npm/%s/node-%s/platform-%s/arch-%s/abi-%s/flags-%s' \
     "$lock_hash" "$node_major" "$node_platform" "$node_arch" "$node_abi" "$flags_hash"
+}
+
+# Publish an image seed under the exact runtime lookup key. The caller must
+# install the seed with the flags represented by dependency_cache_flags_identity.
+dependency_cache_publish_image_seed() {
+  local lockfile="$1"
+  local node_modules_dir="$2"
+  local cache_root="$3"
+  local lock_hash node_major flags_hash cache_key destination schema_version
+
+  lock_hash="$(sha256sum "$lockfile" | awk '{print $1}')"
+  node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || printf unknown)"
+  flags_hash="$(dependency_cache_flags_hash)"
+  cache_key="$(dependency_cache_key "$lock_hash" "$node_major" "$flags_hash")"
+  destination="${cache_root}/${cache_key}"
+  schema_version="$(dependency_cache_schema_version)"
+
+  mkdir -p "$destination"
+  rm -rf "$destination/node_modules"
+  cp -a "$node_modules_dir" "$destination/node_modules"
+  printf '%s\n' "$schema_version" > "$destination/validated-v${schema_version}"
+  printf '%s\n' "$cache_key"
 }
 
 dependency_cache_write_restore_diagnostic() {

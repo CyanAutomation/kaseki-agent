@@ -32,8 +32,14 @@ ENV HOME=/tmp/kaseki-home \
 # Phase 2: Workspace cache seed for Layer 3 runtime fallback
 WORKDIR /opt/kaseki/workspace-cache-seed
 COPY docker/workspace-cache/package.json docker/workspace-cache/package-lock.json ./
+COPY scripts/dependency-cache-helpers.sh /opt/kaseki/dependency-cache-helpers.sh
 RUN npm ci --no-audit --prefer-offline --ignore-scripts \
-    && mkdir -p node_modules
+    && mkdir -p node_modules \
+    && . /opt/kaseki/dependency-cache-helpers.sh \
+    && dependency_cache_publish_image_seed \
+      /opt/kaseki/workspace-cache-seed/package-lock.json \
+      /opt/kaseki/workspace-cache-seed/node_modules \
+      /opt/kaseki/workspace-cache
 
 # Phase 3: Global Pi CLI installation (Layer 3 fallback for image seed cache)
 # Install pi-coding-agent globally with undici explicitly to resolve module dependencies
@@ -53,7 +59,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10000 kaseki \
     && useradd --system --uid 10000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
-    && mkdir -p /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki/workspace-cache/default \
+    && mkdir -p /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki/workspace-cache \
     && chown -R kaseki:kaseki /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki
 
 ENV HOME=/tmp/kaseki-home \
@@ -68,7 +74,7 @@ ENV HOME=/tmp/kaseki-home \
 
 # Copy Pi CLI and workspace cache seed from deps stage
 COPY --from=deps /usr/local/lib/node_modules /usr/local/lib/node_modules
-COPY --from=deps /opt/kaseki/workspace-cache-seed/node_modules /opt/kaseki/workspace-cache/default/node_modules
+COPY --from=deps /opt/kaseki/workspace-cache /opt/kaseki/workspace-cache
 
 # Create a wrapper script for the Pi CLI that properly resolves node modules
 # and explicitly loads Kaseki's bundled gateway provider extension. Pi 0.77
@@ -286,7 +292,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10000 kaseki \
     && useradd --system --uid 10000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
-    && mkdir -p /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki/workspace-cache/default \
+    && mkdir -p /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki/workspace-cache \
     && chown -R kaseki:kaseki /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki
 
 ENV HOME=/tmp/kaseki-home \
@@ -302,7 +308,7 @@ ENV HOME=/tmp/kaseki-home \
 COPY --from=runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=runtime /usr/local/bin/pi /usr/local/bin/pi
 COPY --from=runtime /opt/kaseki/pi-extensions /opt/kaseki/pi-extensions
-COPY --from=runtime /opt/kaseki/workspace-cache/default/node_modules /opt/kaseki/workspace-cache/default/node_modules
+COPY --from=runtime /opt/kaseki/workspace-cache /opt/kaseki/workspace-cache
 
 # Copy application files (excluding build artifacts)
 WORKDIR /app

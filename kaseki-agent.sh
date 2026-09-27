@@ -616,7 +616,7 @@ KASEKI_DEPENDENCY_CACHE_MAX_BYTES="${KASEKI_DEPENDENCY_CACHE_MAX_BYTES:-10737418
 KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS="${KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS:-30}"
 KASEKI_DEPENDENCY_CACHE_PRUNE="${KASEKI_DEPENDENCY_CACHE_PRUNE:-1}"
 KASEKI_DEPENDENCY_CACHE_METRICS_FILE="${KASEKI_DEPENDENCY_CACHE_METRICS_FILE:-${KASEKI_DEPENDENCY_CACHE_DIR}/.kaseki-cache-metrics}"
-KASEKI_DEPENDENCY_CACHE_SCHEMA_VERSION="${KASEKI_DEPENDENCY_CACHE_SCHEMA_VERSION:-2}"
+KASEKI_DEPENDENCY_CACHE_SCHEMA_VERSION="${KASEKI_DEPENDENCY_CACHE_SCHEMA_VERSION:-$(dependency_cache_schema_version)}"
 KASEKI_INSTALL_IGNORE_SCRIPTS="${KASEKI_INSTALL_IGNORE_SCRIPTS:-1}"
 KASEKI_NPM_OMIT_DEV="${KASEKI_NPM_OMIT_DEV:-0}"
 KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR:-/opt/kaseki/workspace-cache}"
@@ -9795,7 +9795,7 @@ prepare_dependencies() {
     return 1
   fi
 
-  local repo_ref_key lock_hash flags_hash cache_key workspace_cache_root workspace_cache_dir image_cache_dir stamp_file metadata_file
+  local repo_ref_key lock_hash flags_hash cache_key workspace_cache_root workspace_cache_dir image_cache_root image_cache_dir image_validation_marker stamp_file metadata_file
   local cache_lock_file cache_lock_fd tmp_cache_dir old_cache_dir install_start install_start_ns install_elapsed install_flags_display cache_detail cache_metric_start_ns cache_metric_elapsed
   local node_major node_platform node_arch node_abi cache_reused cache_source install_mode restore_mode restore_method cache_repaired restore_validation_reason existing_graph_error existing_graph_exit restore_npm_output restore_npm_exit install_exit
   local -a install_flags
@@ -9809,7 +9809,9 @@ prepare_dependencies() {
   cache_key="$(dependency_cache_key "$lock_hash" "$node_major" "$flags_hash" "$node_platform" "$node_arch" "$node_abi")"
   workspace_cache_root="${KASEKI_DEPENDENCY_CACHE_DIR}/${cache_key}"
   workspace_cache_dir="${workspace_cache_root}/node_modules"
-  image_cache_dir="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR}/${cache_key}/node_modules"
+  image_cache_root="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR}/${cache_key}"
+  image_cache_dir="${image_cache_root}/node_modules"
+  image_validation_marker="${image_cache_root}/validated-v${KASEKI_DEPENDENCY_CACHE_SCHEMA_VERSION}"
   stamp_file="${workspace_cache_root}/stamp.txt"
   metadata_file="${workspace_cache_root}/repo-ref-metadata.tsv"
   validation_marker="${workspace_cache_root}/validated-v${KASEKI_DEPENDENCY_CACHE_SCHEMA_VERSION}"
@@ -9964,7 +9966,7 @@ prepare_dependencies() {
       emit_event "dependency_cache_decision" "strategy=trust_validated_workspace_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=validated_marker_and_cache_key_match" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key"
     fi
     cache_metric_elapsed="$(cache_metric_elapsed_seconds "$cache_metric_start_ns")"
-  elif [ ! -d node_modules ] && [ -d "$image_cache_dir" ]; then
+  elif [ ! -d node_modules ] && [ -d "$image_cache_dir" ] && dependency_cache_schema_valid "$image_validation_marker" "$KASEKI_DEPENDENCY_CACHE_SCHEMA_VERSION"; then
     printf 'Dependency cache status: restoring node_modules from image cache (%s; lock_hash=%s; repo_ref_key=%s).\n' "$image_cache_dir" "$lock_hash" "$repo_ref_key"
     set_dependency_cache_status "image-cache-hit" "$cache_detail"
     emit_event "dependency_cache_decision" "strategy=image_cache_hit" "restore_mode=$restore_mode" "location=$image_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
@@ -10013,6 +10015,17 @@ prepare_dependencies() {
       install_reason="image_cache_validation_failed"
     fi
     cache_metric_elapsed="$(cache_metric_elapsed_seconds "$cache_metric_start_ns")"
+  elif [ ! -d node_modules ]; then
+    if [ ! -d "$KASEKI_IMAGE_DEPENDENCY_CACHE_DIR" ]; then
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_absent" "true" "image" "" "image_cache_root_absent"
+      emit_event "dependency_cache_decision" "strategy=image_cache_absent" "reason=image_cache_root_absent" "location=$KASEKI_IMAGE_DEPENDENCY_CACHE_DIR" "cache_key=$cache_key"
+    elif [ ! -d "$image_cache_root" ]; then
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_key_mismatch" "true" "image" "" "computed_key_not_published"
+      emit_event "dependency_cache_decision" "strategy=image_cache_key_mismatch" "reason=computed_key_not_published" "location=$image_cache_root" "cache_key=$cache_key"
+    else
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_invalid" "true" "image" "" "missing_or_stale_schema_marker"
+      emit_event "dependency_cache_decision" "strategy=image_cache_invalid" "reason=missing_or_stale_schema_marker" "location=$image_cache_root" "cache_key=$cache_key"
+    fi
   fi
 
   if [ ! -d node_modules ]; then
