@@ -880,6 +880,8 @@ untrusted or cache-mutating jobs.
 
 - `KASEKI_DEPENDENCY_CACHE_MAX_BYTES` defaults to `10737418240` (10 GiB). Set `0` to disable size pruning.
 - `KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS` defaults to `30`. Set `0` to disable age pruning.
+- `KASEKI_DEPENDENCY_CACHE_RECONCILE_INTERVAL_SECONDS` defaults to `86400` (one day). A reconciliation scans actual disk allocation, while intervening runs use inexpensive per-entry metadata.
+- `KASEKI_DEPENDENCY_CACHE_RECONCILE_THRESHOLD_PERCENT` defaults to `90`, triggering an early actual-usage reconciliation as the recorded total approaches the byte limit.
 - `KASEKI_DEPENDENCY_CACHE_PRUNE` defaults to `1`; set `0` to disable worker pruning.
 - The worker writes `${KASEKI_DEPENDENCY_CACHE_DIR}/.kaseki-cache-metrics`, which the API exposes as Prometheus dependency-cache gauges.
 

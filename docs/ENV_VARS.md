@@ -211,6 +211,8 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 | `KASEKI_DEPENDENCY_RESTORE_MODE` | `auto` | enum | Restore `node_modules` from cache with `auto`, `copy`, `hardlink`, or `symlink` |
 | `KASEKI_DEPENDENCY_CACHE_MAX_BYTES` | `10737418240` | integer | Maximum dependency cache size before worker pruning; `0` disables size pruning |
 | `KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS` | `30` | integer | Maximum dependency cache entry age before worker pruning; `0` disables age pruning |
+| `KASEKI_DEPENDENCY_CACHE_RECONCILE_INTERVAL_SECONDS` | `86400` | integer | Maximum age of actual-disk-usage accounting before the worker reconciles dependency cache metadata |
+| `KASEKI_DEPENDENCY_CACHE_RECONCILE_THRESHOLD_PERCENT` | `90` | integer | Recorded percentage of the byte limit that triggers early actual-disk-usage reconciliation |
 | `KASEKI_DEPENDENCY_CACHE_PRUNE` | `1` | boolean | Enable dependency cache pruning after dependency preparation |
 | `KASEKI_DEPENDENCY_CACHE_METRICS_FILE` | `${KASEKI_DEPENDENCY_CACHE_DIR}/.kaseki-cache-metrics` | string | Worker-written cache size/count file read by `/api/metrics` |
 | `NPM_CONFIG_CACHE` | `${KASEKI_CACHE_DIR}/npm-cache` | string | npm internal cache |
