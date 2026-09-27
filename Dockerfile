@@ -292,7 +292,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10000 kaseki \
     && useradd --system --uid 10000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
-    && mkdir -p /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki/workspace-cache/default \
+    && mkdir -p /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki/workspace-cache \
     && chown -R kaseki:kaseki /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki
 
 ENV HOME=/tmp/kaseki-home \
@@ -308,7 +308,7 @@ ENV HOME=/tmp/kaseki-home \
 COPY --from=runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=runtime /usr/local/bin/pi /usr/local/bin/pi
 COPY --from=runtime /opt/kaseki/pi-extensions /opt/kaseki/pi-extensions
-COPY --from=runtime /opt/kaseki/workspace-cache/default/node_modules /opt/kaseki/workspace-cache/default/node_modules
+COPY --from=runtime /opt/kaseki/workspace-cache /opt/kaseki/workspace-cache
 
 # Copy application files (excluding build artifacts)
 WORKDIR /app
