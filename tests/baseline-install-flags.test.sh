@@ -3,7 +3,16 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kaseki-baseline-install.XXXXXX")"
-trap 'rm -rf "$TMP_DIR"' EXIT
+cleanup() {
+  local test_status=$?
+  trap - EXIT
+  if ! rm -rf -- "$TMP_DIR"; then
+    printf '✗ failed to remove test directory: %s\n' "$TMP_DIR" >&2
+    exit 1
+  fi
+  exit "$test_status"
+}
+trap cleanup EXIT
 
 # shellcheck source=/dev/null
 . "$ROOT_DIR/scripts/npm-install-helpers.sh"
@@ -30,7 +39,7 @@ fi
 EOF_GIT
 cat > "$FAKE_BIN/npm" <<'EOF_NPM'
 #!/usr/bin/env bash
-printf '%s\n' "$*" > "$FAKE_NPM_ARGS"
+printf '%s\n' "$@" > "$FAKE_NPM_ARGS"
 exit "${FAKE_NPM_EXIT:-0}"
 EOF_NPM
 chmod +x "$FAKE_BIN/git" "$FAKE_BIN/npm"
@@ -50,8 +59,9 @@ KASEKI_NPM_OMIT_DEV=0
 KASEKI_INSTALL_IGNORE_SCRIPTS=1
 export KASEKI_NPM_OMIT_DEV KASEKI_INSTALL_IGNORE_SCRIPTS
 checkout_baseline_repo
-[ "$(cat "$FAKE_NPM_ARGS")" = 'ci --prefer-offline --ignore-scripts' ] || {
-  printf '✗ baseline npm install did not use Kaseki install flags: %s\n' "$(cat "$FAKE_NPM_ARGS")" >&2
+mapfile -t npm_args < "$FAKE_NPM_ARGS"
+[ "${npm_args[*]}" = 'ci --prefer-offline --ignore-scripts' ] || {
+  printf '✗ baseline npm install did not use Kaseki install flags: %s\n' "${npm_args[*]}" >&2
   exit 1
 }
 
@@ -59,8 +69,26 @@ KASEKI_NPM_OMIT_DEV=1
 KASEKI_INSTALL_IGNORE_SCRIPTS=0
 export KASEKI_NPM_OMIT_DEV KASEKI_INSTALL_IGNORE_SCRIPTS
 checkout_baseline_repo
-[ "$(cat "$FAKE_NPM_ARGS")" = 'ci --prefer-offline --omit=dev' ] || {
-  printf '✗ baseline npm install ignored configured dependency flags: %s\n' "$(cat "$FAKE_NPM_ARGS")" >&2
+mapfile -t npm_args < "$FAKE_NPM_ARGS"
+[ "${npm_args[*]}" = 'ci --prefer-offline --omit=dev' ] || {
+  printf '✗ baseline npm install ignored configured dependency flags: %s\n' "${npm_args[*]}" >&2
+  exit 1
+}
+
+# Install settings are strict booleans, not shell fragments. Verify hostile
+# values are rejected rather than expanded or executed by checkout_baseline_repo.
+injection_marker="$TMP_DIR/install-flags-injected"
+KASEKI_NPM_OMIT_DEV="1; touch $injection_marker"
+KASEKI_INSTALL_IGNORE_SCRIPTS="1; touch $injection_marker"
+export KASEKI_NPM_OMIT_DEV KASEKI_INSTALL_IGNORE_SCRIPTS
+checkout_baseline_repo
+mapfile -t npm_args < "$FAKE_NPM_ARGS"
+[ "${npm_args[*]}" = 'ci --prefer-offline' ] || {
+  printf '✗ invalid install settings were passed to npm: %s\n' "${npm_args[*]}" >&2
+  exit 1
+}
+[ ! -e "$injection_marker" ] || {
+  printf '✗ install setting value was executed as shell code\n' >&2
   exit 1
 }
 

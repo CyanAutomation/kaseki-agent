@@ -3,7 +3,16 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kaseki-baseline-cache.XXXXXX")"
-trap 'rm -rf "$TMP_DIR"' EXIT
+cleanup() {
+  local test_status=$?
+  trap - EXIT
+  if ! rm -rf -- "$TMP_DIR"; then
+    printf '✗ failed to remove test directory: %s\n' "$TMP_DIR" >&2
+    exit 1
+  fi
+  exit "$test_status"
+}
+trap cleanup EXIT
 . "$ROOT_DIR/scripts/npm-install-helpers.sh"
 eval "$(awk '/^baseline_validation_cache_key\(\)/ { emit=1 } /^choose_baseline_log_dir\(\)/ { if (emit) exit } emit { print }' "$ROOT_DIR/kaseki-agent.sh")"
 
