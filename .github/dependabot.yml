@@ -39,10 +39,8 @@ updates:
     pull-requests:
       # Increase if you want more concurrent PRs
       open-pull-requests-limit: 5
-    # Reviewers and assignees
+    # Request review from the maintainers team
     reviewers:
-      - "CyanAutomation/maintainers"
-    assignees:
       - "CyanAutomation/maintainers"
     # Add labels for easy filtering
     labels:
@@ -55,8 +53,8 @@ updates:
     # Group updates
     groups:
       development-dependencies:
-        dependency-types:
-          - "dev"
+        dependency-type:
+          - "development"
       production-dependencies:
-        dependency-types:
-          - "prod"
+        dependency-type:
+          - "production"
