@@ -1,8 +1,22 @@
 # NPM Publishing Fix Plan
 
 **Issue Date**: 2026-09-18  
-**Issue Type**: OIDC Trusted Publishing Configuration  
+**Issue Type**: OIDC Trusted Publishing Configuration
 **Exit Code**: 404 Not Found on npm publish
+
+## Current GitHub Actions Wiring
+
+The release workflow now calls the reusable `publish-npm.yml` workflow only
+after semantic-release creates a new release. Because npm validates the caller
+when a reusable workflow runs `npm publish`, configure the trusted publisher
+for organization `CyanAutomation`, repository `kaseki-agent`, workflow filename
+`release.yml`, and environment `release`. Allow direct `npm publish` for this
+publisher. Both the caller job and the reusable workflow need `id-token: write`.
+
+The npm trusted-publisher settings are external to this repository and must be
+configured before the next GitHub release can publish successfully. See the
+[npm trusted publishing documentation](https://docs.npmjs.com/trusted-publishers/)
+for the current setup fields and reusable-workflow behavior.
 
 ## Problem Analysis
 

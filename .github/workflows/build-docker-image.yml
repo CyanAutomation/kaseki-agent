@@ -23,6 +23,7 @@ permissions:
 jobs:
   prepare:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       sha: ${{ steps.metadata.outputs.sha }}
       cache_scope: ${{ steps.metadata.outputs.cache_scope }}
@@ -43,7 +44,7 @@ jobs:
           set -euo pipefail
           sha="$(git rev-parse HEAD)"; short_sha="${sha::12}"
           if [[ "$EVENT_NAME" == workflow_call ]]; then tags="$RELEASE_VERSION,latest"
-          else tags="latest,main-$short_sha"; fi
+          else tags="main-$short_sha"; fi
           hub_promotion=""; ghcr_promotion=""
           IFS=',' read -r -a tag_entries <<< "$tags"
           for raw_tag in "${tag_entries[@]}"; do
@@ -64,6 +65,7 @@ jobs:
   type_check_changed:
     needs: prepare
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -78,6 +80,7 @@ jobs:
   type_check_full:
     needs: prepare
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -92,6 +95,7 @@ jobs:
   checks:
     needs: [prepare, type_check_changed]
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -113,10 +117,15 @@ jobs:
   docker_integration:
     needs: [prepare, checks]
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.prepare.outputs.sha }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
       - run: npm ci
       - run: bash tests/docker-integration-shared-image.test.sh
       - run: npm run test:integration:docker
@@ -143,6 +152,7 @@ jobs:
   build_candidate:
     needs: [prepare, checks, type_check_full, docker_integration]
     runs-on: ubuntu-latest
+    timeout-minutes: 180
     environment: release
     permissions:
       contents: read
@@ -183,6 +193,7 @@ jobs:
   scan:
     needs: build_candidate
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: read
@@ -238,6 +249,7 @@ jobs:
   verify:
     needs: [prepare, build_candidate]
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: read
@@ -275,6 +287,7 @@ jobs:
   promote:
     needs: [prepare, build_candidate, verify, scan]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: release
     permissions:
       contents: read
