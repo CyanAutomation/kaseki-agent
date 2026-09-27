@@ -46,15 +46,6 @@ function extractSchemaFieldDocumentation(template: string, field: string): strin
   return match?.[0] ?? null;
 }
 
-function hasActionableTaskFieldSchema(template: string): boolean {
-  const documentation = extractSchemaFieldDocumentation(template, 'task');
-  return (
-    documentation !== null &&
-    /\bactionable\b/i.test(documentation) &&
-    /\bconcrete\b/i.test(documentation)
-  );
-}
-
 function extractDocumentedExample(documentation: string): string | null {
   return documentation.match(/\bExample:\s*["“]([^"”]+)["”]/i)?.[1] ?? null;
 }
@@ -83,27 +74,23 @@ describe('Scouting Template: JSON Schema Field Definitions', () => {
   });
 
   describe('task field', () => {
-    test('task field is documented with actionable, concrete guidance', () => {
+    test('task field definition satisfies its complete contract', () => {
       const taskDocumentation = extractSchemaFieldDocumentation(baseContent, 'task');
 
       expect(taskDocumentation).not.toBeNull();
-      expect(hasActionableTaskFieldSchema(baseContent)).toBe(true);
+      expect(taskDocumentation).toMatch(/^\*\*task\*\*/);
+      expect(taskDocumentation).toMatch(/\(string, max 200 characters\)/i);
+      expect(taskDocumentation).toMatch(/concrete, actionable restatement/i);
+      expect(taskDocumentation).toMatch(/Example: "Fix null-safety in parseRole\(\)"/i);
+      expect(taskDocumentation).toMatch(
+        /Do not use vague tasks such as "Make it better" or "Improve code quality"/i,
+      );
 
-      const fieldNameOnlyTemplate = `**task**
-**requirements** (array): Testable requirements.`;
-      expect(extractSchemaFieldDocumentation(fieldNameOnlyTemplate, 'task')).toBe('**task**');
-      expect(hasActionableTaskFieldSchema(fieldNameOnlyTemplate)).toBe(false);
-    });
-
-    test('task field max length constraint is present', () => {
-      expect(baseContent).toMatch(/task.*200|200.*task/i);
-      expect(baseContent).toMatch(/character/i);
-    });
-
-    test('task field example is concrete', () => {
-      expect(baseContent).toMatch(/Fix|Add|Implement|Rename/);
-      // Should also show examples of what NOT to do
-      expect(baseContent).toMatch(/make.*better|improve.*quality|Refactor/i);
+      const unrelatedExamplesTemplate = `**task** (string, max 200 characters): Restatement.
+**requirements** (array): Concrete, actionable. Example: "Fix null-safety in parseRole()". Do not use vague tasks such as "Make it better".`;
+      expect(extractSchemaFieldDocumentation(unrelatedExamplesTemplate, 'task')).toBe(
+        '**task** (string, max 200 characters): Restatement.',
+      );
     });
   });
 
