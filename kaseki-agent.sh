@@ -343,6 +343,7 @@ KASEKI_PRE_AGENT_VALIDATION="${KASEKI_PRE_AGENT_VALIDATION:-1}"
 KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT="${KASEKI_PRE_AGENT_VALIDATION_COMMANDS+x}"
 KASEKI_PRE_AGENT_VALIDATION_COMMANDS="${KASEKI_PRE_AGENT_VALIDATION_COMMANDS-$KASEKI_VALIDATION_COMMANDS}"
 KASEKI_BASELINE_VALIDATION_ENABLED="${KASEKI_BASELINE_VALIDATION_ENABLED:-1}"
+KASEKI_BASELINE_REF="${KASEKI_BASELINE_REF:-$GIT_REF}"
 KASEKI_BASELINE_CACHE_ROOT="${KASEKI_BASELINE_CACHE_ROOT:-${KASEKI_CACHE_DIR}/kaseki-baseline}"
 KASEKI_BASELINE_CACHE_MAX_AGE_HOURS="${KASEKI_BASELINE_CACHE_MAX_AGE_HOURS:-24}"
 KASEKI_BASELINE_CACHE_DISABLED="${KASEKI_BASELINE_CACHE_DISABLED:-0}"
@@ -4831,9 +4832,63 @@ append_validation_directory_diagnostics() {
 # === Baseline Test Failure Comparison (Pre-existing vs Newly-Introduced) ===
 
 baseline_validation_cache_key() {
-  # Cache key: repo_url + main_branch_ref + validation commands
-  # This ensures different validation command sets get different cache entries
-  printf '%s\n%s\n%s' "$REPO_URL" "main" "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" | sha256sum | awk '{print $1}'
+  baseline_validation_manifest_json | sha256sum | awk '{print $1}'
+}
+
+baseline_validation_install_flags() {
+  local -a flags=()
+  append_npm_install_flags flags
+  printf '%s\n' "${flags[*]}"
+}
+
+baseline_validation_manifest_json() {
+  local install_flags node_version npm_version
+  install_flags="$(baseline_validation_install_flags)"
+  node_version="$(node --version 2>/dev/null || printf '<unavailable>')"
+  npm_version="$(npm --version 2>/dev/null || printf '<unavailable>')"
+  BASELINE_MANIFEST_REPO_URL="$REPO_URL" \
+  BASELINE_MANIFEST_REF="${BASELINE_RESOLVED_REF:-}" \
+  BASELINE_MANIFEST_SHA="${BASELINE_COMMIT_SHA:-}" \
+  BASELINE_MANIFEST_COMMANDS="$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
+  BASELINE_MANIFEST_NODE="$node_version" \
+  BASELINE_MANIFEST_NPM="$npm_version" \
+  BASELINE_MANIFEST_INSTALL_FLAGS="$install_flags" \
+  node <<'NODE'
+const env = process.env;
+const manifest = {
+  schema_version: 1,
+  repo_url: env.BASELINE_MANIFEST_REPO_URL,
+  baseline_ref: env.BASELINE_MANIFEST_REF,
+  baseline_sha: env.BASELINE_MANIFEST_SHA,
+  validation_commands: env.BASELINE_MANIFEST_COMMANDS,
+  runtime: { node: env.BASELINE_MANIFEST_NODE, npm: env.BASELINE_MANIFEST_NPM },
+  dependency_install_flags: env.BASELINE_MANIFEST_INSTALL_FLAGS,
+  validation_environment: {
+    CI: env.CI ?? '', NODE_ENV: env.NODE_ENV ?? '', TZ: env.TZ ?? '', LANG: env.LANG ?? '',
+    NPM_CONFIG_REGISTRY: env.NPM_CONFIG_REGISTRY ?? '',
+    NPM_CONFIG_USERCONFIG: env.NPM_CONFIG_USERCONFIG ?? '',
+    KASEKI_SKIP_MISSING_NPM_SCRIPTS: env.KASEKI_SKIP_MISSING_NPM_SCRIPTS ?? '',
+    KASEKI_VALIDATION_FAIL_FAST: env.KASEKI_VALIDATION_FAIL_FAST ?? '',
+    KASEKI_VALIDATION_RUN_ALL_COMMANDS: env.KASEKI_VALIDATION_RUN_ALL_COMMANDS ?? '',
+    KASEKI_VALIDATION_TIMEOUT_SECONDS: env.KASEKI_VALIDATION_TIMEOUT_SECONDS ?? '',
+    KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS: env.KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS ?? ''
+  }
+};
+process.stdout.write(`${JSON.stringify(manifest)}\n`);
+NODE
+}
+
+resolve_baseline_ref() {
+  local requested_ref="${KASEKI_BASELINE_REF:-$GIT_REF}"
+  local resolved
+  resolved="$(git ls-remote "$REPO_URL" "$requested_ref" "refs/heads/$requested_ref" 2>/dev/null | awk 'NR == 1 { print $1; exit }')"
+  if ! [[ "$resolved" =~ ^[0-9a-fA-F]{40,64}$ ]]; then
+    BASELINE_SETUP_FAILURE_REASON="ref_resolution_failed"
+    return 1
+  fi
+  BASELINE_RESOLVED_REF="$requested_ref"
+  BASELINE_COMMIT_SHA="${resolved,,}"
+  export BASELINE_RESOLVED_REF BASELINE_COMMIT_SHA
 }
 
 baseline_validation_cache_dir() {
@@ -4848,8 +4903,22 @@ baseline_validation_cache_is_valid() {
   local max_age_hours="${KASEKI_BASELINE_CACHE_MAX_AGE_HOURS:-24}"
   
   [ -d "$cache_dir" ] || return 1
+  [ -f "$cache_dir/manifest.json" ] || return 1
   [ -f "$cache_dir/validation.log" ] || return 1
+  [ -f "$cache_dir/validation-raw.log" ] || return 1
   [ -f "$cache_dir/validation-timings.tsv" ] || return 1
+
+  # Do not trust the directory name alone: require a well-formed manifest whose
+  # complete set of result-affecting inputs still matches this process.
+  local expected_manifest
+  expected_manifest="$(baseline_validation_manifest_json)" || return 1
+  BASELINE_EXPECTED_MANIFEST="$expected_manifest" node - "$cache_dir/manifest.json" <<'NODE' || return 1
+const fs = require('fs');
+let actual;
+try { actual = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')); } catch { process.exit(1); }
+const expected = JSON.parse(process.env.BASELINE_EXPECTED_MANIFEST);
+if (actual?.schema_version !== 1 || JSON.stringify(actual) !== JSON.stringify(expected)) process.exit(1);
+NODE
 
   # A zero TTL explicitly disables age-based invalidation.
   [ "$max_age_hours" -eq 0 ] && return 0
@@ -4901,6 +4970,10 @@ save_baseline_validation_to_cache() {
   
   # Create cache directory
   mkdir -p "$cache_dir" || return 1
+
+  # Write the manifest before the logs. A partial entry is harmless because
+  # restoration requires every file and validates the manifest contents.
+  baseline_validation_manifest_json > "$cache_dir/manifest.json" || return 1
   
   # Save validation results to cache
   if [ -f "${KASEKI_RESULTS_DIR}"/validation-baseline.log ]; then
@@ -4964,12 +5037,16 @@ checkout_baseline_repo() {
   rm -rf "$baseline_dir" 2>/dev/null || true
   mkdir -p "$baseline_dir"
   
-  emit_progress "baseline preparation" "checking out main branch"
+  emit_progress "baseline preparation" "checking out ${BASELINE_RESOLVED_REF} at ${BASELINE_COMMIT_SHA}"
   
-  # Clone main branch into baseline directory
-  if ! git clone --depth 1 --branch main "$REPO_URL" "$baseline_dir" 2>>"$baseline_checkout_log"; then
+  # Fetch and detach at the SHA resolved before cache lookup. This prevents a
+  # moving branch from producing logs under a key for a different commit.
+  if ! (git init -q "$baseline_dir" &&
+        git -C "$baseline_dir" remote add origin "$REPO_URL" &&
+        git -C "$baseline_dir" fetch --depth 1 origin "$BASELINE_COMMIT_SHA" &&
+        git -C "$baseline_dir" checkout -q --detach FETCH_HEAD) 2>>"$baseline_checkout_log"; then
     BASELINE_SETUP_FAILURE_REASON="checkout_failed"
-    emit_error_event "baseline_checkout_failed" "Failed to checkout main branch for baseline comparison" "continue"
+    emit_error_event "baseline_checkout_failed" "Failed to checkout ${BASELINE_RESOLVED_REF} at ${BASELINE_COMMIT_SHA} for baseline comparison" "continue"
     return 1
   fi
   
@@ -10145,40 +10222,47 @@ if ! run_step "prepare node dependencies" prepare_dependencies; then
   exit 0
 fi
 
-# Baseline validation: checkout main branch and run validation commands for test failure comparison
+# Baseline validation: resolve and checkout the configured baseline ref, then run
+# validation commands for test failure comparison.
 if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ "$KASEKI_PRE_AGENT_VALIDATION" = "1" ]; then
   printf '\n==> baseline validation setup\n'
   set_current_stage "baseline validation setup"
   emit_progress "baseline validation setup" "started"
   
-  # Check cache first
-  baseline_cache_dir="$(baseline_validation_cache_dir)"
-  
-  if restore_baseline_validation_from_cache "$baseline_cache_dir"; then
-    BASELINE_CACHE_STATUS="cache_hit"
-    emit_progress "baseline validation" "restored from cache (age < ${KASEKI_BASELINE_CACHE_MAX_AGE_HOURS}h, validation_commands_hash=${baseline_cache_dir##*/})"
-    record_stage_timing "baseline validation" "0" "0" "cache_hit=true cache_dir=$baseline_cache_dir"
+  # Resolve the moving ref before deriving the cache key, so an immutable commit
+  # identity participates in every lookup and checkout.
+  if ! resolve_baseline_ref; then
+    BASELINE_CACHE_STATUS="setup_failed"
+    emit_error_event "baseline_ref_resolution_failed" "Failed to resolve baseline ref ${KASEKI_BASELINE_REF} for baseline comparison" "continue"
   else
-    # Cache miss: checkout and run validation
-    if checkout_baseline_repo; then
-      BASELINE_CACHE_STATUS="completed"
-      run_baseline_validation || {
-        BASELINE_CACHE_STATUS="validation_failed"
-        emit_progress "baseline validation" "completed with failures (will compare against working results)"
-      }
-      # Save results to cache for future runs
-      if [ "$KASEKI_BASELINE_CACHE_DISABLED" = "1" ]; then
-        emit_progress "baseline validation cache" "bypassed via KASEKI_BASELINE_CACHE_DISABLED=1"
-      elif save_baseline_validation_to_cache "$baseline_cache_dir"; then
-        emit_progress "baseline validation cache" "saved for future runs (will be valid for ${KASEKI_BASELINE_CACHE_MAX_AGE_HOURS}h)"
-      else
-        emit_progress "baseline validation cache" "failed to save (non-blocking)"
-      fi
-      # Cleanup baseline workspace to save space
-      rm -rf "${KASEKI_WORKSPACE_BASELINE_DIR}" 2>/dev/null || true
+    baseline_cache_dir="$(baseline_validation_cache_dir)"
+
+    if restore_baseline_validation_from_cache "$baseline_cache_dir"; then
+      BASELINE_CACHE_STATUS="cache_hit"
+      emit_progress "baseline validation" "restored from cache (age < ${KASEKI_BASELINE_CACHE_MAX_AGE_HOURS}h, cache_key=${baseline_cache_dir##*/})"
+      record_stage_timing "baseline validation" "0" "0" "cache_hit=true cache_dir=$baseline_cache_dir"
     else
-      BASELINE_CACHE_STATUS="setup_failed"
-      emit_error_event "baseline_setup_failed" "Baseline comparison unavailable (reason=${BASELINE_SETUP_FAILURE_REASON:-unknown}); continuing without baseline" "continue"
+      # Cache miss: checkout and run validation
+      if checkout_baseline_repo; then
+        BASELINE_CACHE_STATUS="completed"
+        run_baseline_validation || {
+          BASELINE_CACHE_STATUS="validation_failed"
+          emit_progress "baseline validation" "completed with failures (will compare against working results)"
+        }
+        # Save results to cache for future runs
+        if [ "$KASEKI_BASELINE_CACHE_DISABLED" = "1" ]; then
+          emit_progress "baseline validation cache" "bypassed via KASEKI_BASELINE_CACHE_DISABLED=1"
+        elif save_baseline_validation_to_cache "$baseline_cache_dir"; then
+          emit_progress "baseline validation cache" "saved for future runs (will be valid for ${KASEKI_BASELINE_CACHE_MAX_AGE_HOURS}h)"
+        else
+          emit_progress "baseline validation cache" "failed to save (non-blocking)"
+        fi
+        # Cleanup baseline workspace to save space
+        rm -rf "${KASEKI_WORKSPACE_BASELINE_DIR}" 2>/dev/null || true
+      else
+        BASELINE_CACHE_STATUS="setup_failed"
+        emit_error_event "baseline_setup_failed" "Baseline comparison unavailable (reason=${BASELINE_SETUP_FAILURE_REASON:-unknown}); continuing without baseline" "continue"
+      fi
     fi
   fi
 else
