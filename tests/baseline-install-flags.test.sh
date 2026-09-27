@@ -17,11 +17,16 @@ printf '%s\n' '{"name":"baseline-fixture","version":"1.0.0"}' > "$FAKE_BASELINE_
 
 cat > "$FAKE_BIN/git" <<'EOF_GIT'
 #!/usr/bin/env bash
-if [ "${1:-}" != "clone" ]; then exit 2; fi
-target=""
-for arg in "$@"; do target="$arg"; done
-mkdir -p "$target"
-cp -R "$FAKE_BASELINE_SOURCE/." "$target/"
+if [ "${1:-}" = "init" ]; then
+  target="${3:-}"
+  mkdir -p "$target"
+elif [ "${1:-}" = "-C" ] && [ "${3:-}" = "fetch" ]; then
+  cp -R "$FAKE_BASELINE_SOURCE/." "$2/"
+elif [ "${1:-}" = "-C" ]; then
+  :
+else
+  exit 2
+fi
 EOF_GIT
 cat > "$FAKE_BIN/npm" <<'EOF_NPM'
 #!/usr/bin/env bash
@@ -37,6 +42,8 @@ KASEKI_WORKSPACE_DIR="$TMP_DIR/workspace"
 KASEKI_RESULTS_DIR="$TMP_DIR/results"
 KASEKI_LOG_DIR="$TMP_DIR/logs"
 REPO_URL="$FAKE_BASELINE_SOURCE"
+BASELINE_RESOLVED_REF="trunk"
+BASELINE_COMMIT_SHA="0123456789012345678901234567890123456789"
 export FAKE_BASELINE_SOURCE FAKE_NPM_ARGS="$TMP_DIR/npm-args" PATH="$FAKE_BIN:$PATH"
 
 KASEKI_NPM_OMIT_DEV=0
