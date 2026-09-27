@@ -695,10 +695,13 @@ describe('StatusArtifactHelper', () => {
         pre_validation_exit_code: 1
       }));
       fs.writeFileSync(path.join(runDir, 'pre-validation.log'), 'validation failed');
+      fs.writeFileSync(path.join(runDir, '.gateway-diagnostics.jsonl'), '{}');
 
       (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
         'metadata.json': { exists: true, size: 100 },
         'pre-validation.log': { exists: true, size: 50 },
+        'test-baseline-comparison.json': { exists: true, size: 100 },
+        '.gateway-diagnostics.jsonl': { exists: true, size: 50 },
         'result-summary.md': { exists: false, size: 0 },
         'analysis.md': { exists: false, size: 0 },
         'failure.json': { exists: false, size: 0 },
@@ -709,6 +712,7 @@ describe('StatusArtifactHelper', () => {
       helper.addArtifactInfo(response, job);
 
       expect(response.artifacts?.diagnosticFiles).toContain('pre-validation.log');
+      expect(response.diagnosticEntryPoint).toBe('pre-validation.log');
     });
 
     it('should include goal-check diagnostics when goal check artifact is invalid', () => {

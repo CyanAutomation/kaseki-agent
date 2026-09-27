@@ -80,9 +80,9 @@ interface TestClassification {
   category: 'pre-existing' | 'newly-introduced' | 'fixed' | 'changed';
 }
 
-interface AnalysisResult {
-  baseline_validation_exit_code: number;
-  working_validation_exit_code: number;
+export interface AnalysisResult {
+  baseline_validation_exit_code: number | null;
+  working_validation_exit_code: number | null;
   baseline_test_results: Record<string, TestResult>;
   working_test_results: Record<string, TestResult>;
   classification: Record<string, TestClassification>;
@@ -100,8 +100,14 @@ interface AnalysisResult {
 /**
  * Parse test results from validation log using common patterns
  */
-export function parseTestResults(logContent: string, exitCode: number): Record<string, TestResult> {
+export function parseTestResults(logContent: string, exitCode: number | null): Record<string, TestResult> {
   const results: Record<string, TestResult> = {};
+
+  // Exit codes other than 0/1 are not reliable evidence of test outcomes:
+  // they commonly represent missing tools, setup failures, or runner errors.
+  if (exitCode !== 0 && exitCode !== 1) {
+    return { overall: { status: 'skipped' } };
+  }
 
   // Split into lines for processing
   const lines = logContent.split('\n');
@@ -226,7 +232,7 @@ export function generateSummary(classification: Record<string, TestClassificatio
 /**
  * Extract exit codes from validation logs (if present)
  */
-export function extractExitCode(logContent: string): number {
+export function extractExitCode(logContent: string): number | null {
   const exitMatches = [...logContent.matchAll(/exit[_-]?code[=:]\s*(\d+)/gi)];
   const finalExitMatch = exitMatches.at(-1);
   if (finalExitMatch) {
@@ -236,7 +242,53 @@ export function extractExitCode(logContent: string): number {
   if (logContent.includes('FAIL') || logContent.includes('failed')) {
     return 1;
   }
-  return 0;
+  return null;
+}
+
+/** Compare validation logs only when both runs produced interpretable results. */
+export function analyzeTestLogs(
+  baselineLog: string | undefined,
+  workingLog: string | undefined,
+): AnalysisResult {
+  const baselineHasLog = typeof baselineLog === 'string' && baselineLog.trim().length > 0;
+  const workingHasLog = typeof workingLog === 'string' && workingLog.trim().length > 0;
+  const baselineExitCode = baselineHasLog ? extractExitCode(baselineLog) : null;
+  const workingExitCode = workingHasLog ? extractExitCode(workingLog) : null;
+  const baselineStatusReliable = baselineHasLog && (baselineExitCode === 0 || baselineExitCode === 1);
+  const workingStatusReliable = workingHasLog && (workingExitCode === 0 || workingExitCode === 1);
+  const baselineComparisonReliable = baselineStatusReliable && workingStatusReliable;
+  const baselineResults = parseTestResults(baselineLog ?? '', baselineExitCode);
+  const workingResults = parseTestResults(workingLog ?? '', workingExitCode);
+  const classification = baselineComparisonReliable
+    ? classifyTests(baselineResults, workingResults)
+    : {};
+  const summary = generateSummary(classification);
+  const warningReasons: string[] = [];
+
+  if (!baselineHasLog) {
+    warningReasons.push('baseline validation log is missing or empty');
+  } else if (!baselineStatusReliable) {
+    warningReasons.push(`baseline validation exited ${baselineExitCode ?? 'unknown'}`);
+  }
+  if (!workingHasLog) {
+    warningReasons.push('working validation log is missing or empty');
+  } else if (!workingStatusReliable) {
+    warningReasons.push(`working validation exited ${workingExitCode ?? 'unknown'}`);
+  }
+
+  return {
+    baseline_validation_exit_code: baselineExitCode,
+    working_validation_exit_code: workingExitCode,
+    baseline_test_results: baselineResults,
+    working_test_results: workingResults,
+    classification,
+    summary,
+    baseline_comparison_reliable: baselineComparisonReliable,
+    ...(!baselineComparisonReliable
+      ? { baseline_comparison_warning: `Test failure classification was skipped because ${warningReasons.join('; ')}; only exit codes 0 and 1 are comparable.` }
+      : {}),
+    timestamp: new Date().toISOString(),
+  };
 }
 
 async function main() {
@@ -257,43 +309,17 @@ async function main() {
     // Read logs
     const baselineLog = fs.existsSync(baselineLogPath)
       ? fs.readFileSync(baselineLogPath, 'utf8')
-      : '';
+      : undefined;
     const workingLog = fs.existsSync(workingLogPath)
       ? fs.readFileSync(workingLogPath, 'utf8')
-      : '';
+      : undefined;
 
-    // Parse test results
-    const baselineExitCode = extractExitCode(baselineLog);
-    const workingExitCode = extractExitCode(workingLog);
-
-    const baselineResults = parseTestResults(baselineLog, baselineExitCode);
-    const workingResults = parseTestResults(workingLog, workingExitCode);
-
-    // Classify tests
-    const classification = classifyTests(baselineResults, workingResults);
-    const summary = generateSummary(classification);
-    const baselineComparisonReliable = baselineExitCode === 0 || baselineExitCode === 1;
-    const baselineComparisonWarning = baselineComparisonReliable
-      ? undefined
-      : `Baseline validation exited ${baselineExitCode}; test failure classification may be incomplete because baseline results were not produced normally.`;
-
-    // Build result object
-    const result: AnalysisResult = {
-      baseline_validation_exit_code: baselineExitCode,
-      working_validation_exit_code: workingExitCode,
-      baseline_test_results: baselineResults,
-      working_test_results: workingResults,
-      classification,
-      summary,
-      baseline_comparison_reliable: baselineComparisonReliable,
-      ...(baselineComparisonWarning ? { baseline_comparison_warning: baselineComparisonWarning } : {}),
-      timestamp: new Date().toISOString(),
-    };
+    const result = analyzeTestLogs(baselineLog, workingLog);
 
     // Write result
     fs.writeFileSync(outputFile, JSON.stringify(result, null, 2) + '\n');
     console.log(
-      `Analysis complete: ${summary.total_newly_introduced} newly-introduced, ${summary.total_pre_existing} pre-existing, ${summary.total_fixed} fixed (total ${summary.total_tests})`
+      `Analysis complete: ${result.summary.total_newly_introduced} newly-introduced, ${result.summary.total_pre_existing} pre-existing, ${result.summary.total_fixed} fixed (total ${result.summary.total_tests})`
     );
 
     process.exit(0);

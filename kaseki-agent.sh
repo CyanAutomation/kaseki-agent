@@ -97,6 +97,22 @@ if [ "$source_status" -ne 0 ]; then
   exit 1
 fi
 
+KASEKI_VALIDATION_COMMAND_PREFLIGHT_HELPER="${KASEKI_VALIDATION_COMMAND_PREFLIGHT_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/validation-command-preflight.sh}"
+if [ ! -r "$KASEKI_VALIDATION_COMMAND_PREFLIGHT_HELPER" ] && [ -r /app/scripts/validation-command-preflight.sh ]; then
+  KASEKI_VALIDATION_COMMAND_PREFLIGHT_HELPER="/app/scripts/validation-command-preflight.sh"
+fi
+if [ ! -r "$KASEKI_VALIDATION_COMMAND_PREFLIGHT_HELPER" ]; then
+  printf 'ERROR: Validation command preflight helper is not readable. Expected %s or /app/scripts/validation-command-preflight.sh. This worker image or mounted template is incomplete; rebuild the image or restore scripts/validation-command-preflight.sh.\n' "$KASEKI_VALIDATION_COMMAND_PREFLIGHT_HELPER" >&2
+  exit 66
+fi
+# shellcheck source=/dev/null
+. "$KASEKI_VALIDATION_COMMAND_PREFLIGHT_HELPER"
+source_status=$?
+if [ "$source_status" -ne 0 ]; then
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_VALIDATION_COMMAND_PREFLIGHT_HELPER" "$source_status" >&2
+  exit 1
+fi
+
 KASEKI_JSON_HELPER="${KASEKI_JSON_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/lib/json.sh}"
 if [ ! -r "$KASEKI_JSON_HELPER" ] && [ -r /app/scripts/lib/json.sh ]; then
   KASEKI_JSON_HELPER="/app/scripts/lib/json.sh"
@@ -4986,16 +5002,18 @@ baseline_validation_install_flags() {
 }
 
 baseline_validation_manifest_json() {
-  local install_flags node_version npm_version
+  local install_flags node_version npm_version validation_toolchains
   install_flags="$(baseline_validation_install_flags)"
   node_version="$(node --version 2>/dev/null || printf '<unavailable>')"
   npm_version="$(npm --version 2>/dev/null || printf '<unavailable>')"
+  validation_toolchains="$(validation_runtime_identity)"
   BASELINE_MANIFEST_REPO_URL="$REPO_URL" \
   BASELINE_MANIFEST_REF="${BASELINE_RESOLVED_REF:-}" \
   BASELINE_MANIFEST_SHA="${BASELINE_COMMIT_SHA:-}" \
   BASELINE_MANIFEST_COMMANDS="$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
   BASELINE_MANIFEST_NODE="$node_version" \
   BASELINE_MANIFEST_NPM="$npm_version" \
+  BASELINE_MANIFEST_VALIDATION_TOOLCHAINS="$validation_toolchains" \
   BASELINE_MANIFEST_INSTALL_FLAGS="$install_flags" \
   node <<'NODE'
 const env = process.env;
@@ -5005,7 +5023,11 @@ const manifest = {
   baseline_ref: env.BASELINE_MANIFEST_REF,
   baseline_sha: env.BASELINE_MANIFEST_SHA,
   validation_commands: env.BASELINE_MANIFEST_COMMANDS,
-  runtime: { node: env.BASELINE_MANIFEST_NODE, npm: env.BASELINE_MANIFEST_NPM },
+  runtime: {
+    node: env.BASELINE_MANIFEST_NODE,
+    npm: env.BASELINE_MANIFEST_NPM,
+    validation_toolchains: env.BASELINE_MANIFEST_VALIDATION_TOOLCHAINS
+  },
   dependency_install_flags: env.BASELINE_MANIFEST_INSTALL_FLAGS,
   validation_environment: {
     CI: env.CI ?? '', NODE_ENV: env.NODE_ENV ?? '', TZ: env.TZ ?? '', LANG: env.LANG ?? '',
@@ -5111,6 +5133,13 @@ save_baseline_validation_to_cache() {
   if [ "$KASEKI_BASELINE_CACHE_DISABLED" = "1" ]; then
     return 0
   fi
+
+  # Only deterministic test outcomes belong in the baseline cache. Exit codes
+  # such as 126/127 are execution-environment failures and must be retried.
+  case "${BASELINE_VALIDATION_EXIT:-0}" in
+    0|1) ;;
+    *) return 2 ;;
+  esac
   
   # Create cache directory
   mkdir -p "$cache_dir" || return 1
@@ -9998,6 +10027,33 @@ cd "${KASEKI_WORKSPACE_DIR}"/repo || { STATUS=1; FAILED_COMMAND="enter repositor
 begin_repo_session
 apply_default_validation_commands
 
+# Catch missing direct validation tools before dependency preparation or a
+# baseline checkout. This avoids repeating a command-not-found failure and
+# prevents infrastructure errors from entering the baseline cache.
+if [ "$KASEKI_PRE_AGENT_VALIDATION" = "1" ] && [ "$KASEKI_TASK_MODE" != "inspect" ]; then
+  validation_toolchain_preflight_status=0
+  validation_command_preflight \
+    "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
+    "${KASEKI_RESULTS_DIR}/pre-validation.log" || validation_toolchain_preflight_status=$?
+  if [ "$validation_toolchain_preflight_status" -ne 0 ]; then
+    missing_validation_executable="$(validation_command_missing_executable "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" || true)"
+    set_current_stage "pre-agent validation"
+    STATUS="$validation_toolchain_preflight_status"
+    FAILED_COMMAND="pre-agent validation"
+    PRE_VALIDATION_EXIT="$validation_toolchain_preflight_status"
+    PRE_VALIDATION_COMMANDS_ATTEMPTED=0
+    PRE_VALIDATION_FAILED_COMMAND_DETAIL="required executable '$missing_validation_executable' is not available in the worker image"
+    PRE_VALIDATION_FAILURE_REASON="validation_toolchain_preflight_failed: missing executable $missing_validation_executable"
+    record_stage_timing "pre-agent validation" "$validation_toolchain_preflight_status" 0 "preflight_missing_executable=$missing_validation_executable"
+    emit_progress "pre-agent validation" "blocked before validation because executable=$missing_validation_executable is missing" "error"
+    emit_event "validation_toolchain_preflight_failed" "stage=pre-agent validation" "missing_executable=$missing_validation_executable" "commands=$KASEKI_PRE_AGENT_VALIDATION_COMMANDS"
+    emit_event "phase_not_reached" "phase=scouting" "reason=pre_agent_validation_toolchain_missing" "missing_executable=$missing_validation_executable"
+    emit_event "phase_not_reached" "phase=weaving" "reason=pre_agent_validation_toolchain_missing" "missing_executable=$missing_validation_executable"
+    emit_error_event "pre_agent_validation_toolchain_missing" "Pre-agent validation was not run because the worker image lacks executable '$missing_validation_executable'. Install the toolchain or choose supported validation commands." "exit"
+    exit 0
+  fi
+fi
+
 prepare_dependencies() {
   if [ ! -f package.json ]; then
     printf 'No package.json found; skipping dependency installation.\n'
@@ -10402,6 +10458,8 @@ if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ "$KASEKI_PRE_AGENT_VALID
         # Save results to cache for future runs
         if [ "$KASEKI_BASELINE_CACHE_DISABLED" = "1" ]; then
           emit_progress "baseline validation cache" "bypassed via KASEKI_BASELINE_CACHE_DISABLED=1"
+        elif [ "${BASELINE_VALIDATION_EXIT:-0}" -ne 0 ] && [ "${BASELINE_VALIDATION_EXIT:-0}" -ne 1 ]; then
+          emit_progress "baseline validation cache" "skipped because baseline command exited ${BASELINE_VALIDATION_EXIT}; only test outcomes (exit 0 or 1) are reusable"
         elif save_baseline_validation_to_cache "$baseline_cache_dir"; then
           emit_progress "baseline validation cache" "saved for future runs (will be valid for ${KASEKI_BASELINE_CACHE_MAX_AGE_HOURS}h)"
         else
