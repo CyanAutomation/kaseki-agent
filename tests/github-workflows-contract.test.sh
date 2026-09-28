@@ -153,10 +153,12 @@ assert_contains "$PUBLISH_WORKFLOW" 'Trivy high/critical findings' \
   'Trivy findings must be summarized before the gate fails'
 assert_contains "$PUBLISH_WORKFLOW" 'needs: [prepare, build_candidate, verify, scan]' \
   'Promotion must wait for a successful vulnerability scan'
-assert_contains "$PUBLISH_WORKFLOW" 'else tags="main-$short_sha"; fi' \
-  'Non-release Docker builds must use a main-specific tag'
-assert_not_matching "$PUBLISH_WORKFLOW" 'else tags="[^"]*latest[^"]*"; fi' \
-  'Scheduled and manual main builds must not move the stable latest tag'
+assert_contains "$PUBLISH_WORKFLOW" 'tags="latest"' \
+  'Every published Docker image must be promoted to the latest tag'
+assert_contains "$PUBLISH_WORKFLOW" 'tags+=",main-$short_sha"' \
+  'Non-release Docker builds must retain a main-specific tag'
+assert_contains "$PUBLISH_WORKFLOW" 'tags+=",$RELEASE_VERSION"' \
+  'Release Docker builds must retain their version-specific tag'
 
 assert_contains "$ROOT_DIR/Dockerfile" 'node:24-bookworm-slim@sha256:' \
   'The Docker base image must be pinned by digest'
