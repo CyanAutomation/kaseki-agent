@@ -162,6 +162,8 @@ describe('testClassificationSmoke (mocked)', () => {
     expect(result.status).toBe('error');
     expect(result.detail.toLowerCase()).toContain('error');
     expect(result.remediation).toBeTruthy();
+    expect(result.remediation).toContain('separate OpenRouter decision API');
+    expect(result.remediation).toContain('does not diagnose LLM_GATEWAY_URL');
   });
 
   it('should handle invalid response structure', async () => {

@@ -61,14 +61,16 @@ Token or duration efficiency MAY be recorded in raw measurements and MAY contrib
 
 ## Task-size targets
 
-Targets are selected before scoring and copied into `scoring_config.selected_targets` with a rationale. Defaults are guidelines, not universal absolute thresholds:
+Targets are selected before scoring and copied into `scoring_config.selected_targets` with a rationale. Token targets are soft scorecard comparisons: exceeding one adds a warning and affects only the efficiency signal. It never caps provider output, stops a run, or triggers a retry. Defaults are guidelines, not universal absolute thresholds:
 
-| Band | Typical change | Token budget | Wall-clock target |
+| Band | Typical change | Soft token target | Wall-clock target |
 | --- | --- | ---: | ---: |
-| `small` | ≤2 files and ≤100 changed lines | 30,000 | 15 minutes |
-| `medium` | ≤8 files and ≤500 changed lines | 90,000 | 45 minutes |
-| `large` | broader or >500 changed lines | 200,000 | 120 minutes |
+| `small` | ≤2 files and ≤100 changed lines | 750,000 | 15 minutes |
+| `medium` | ≤8 files and ≤500 changed lines | 1,500,000 | 45 minutes |
+| `large` | broader or >500 changed lines | 2,500,000 | 120 minutes |
 | `custom` | generated work, migrations, unusual validation, etc. | explicitly supplied | explicitly supplied |
+
+The small-task target was raised from 100,000 after a completed, narrow documentation run used about 982,000 model tokens across its enabled phases. The new 750,000 target still reports that level of usage as an efficiency overrun while avoiding a target that is unreachable for ordinary multi-phase runs.
 
 Classification uses expected scope, not the final diff, to prevent a run from improving its target after overspending. A caller may override any default, but MUST use `custom` or retain the applicable band and explain the override in `rationale`.
 
@@ -107,11 +109,11 @@ Grade is assigned after caps and rounding: **A = 90–100, B = 80–89.99, C = 7
 
 ### Successful small change
 
-A two-file, 60-line change selects the small targets (30,000 tokens, 900,000 ms). All phases are enabled and valid. Dimension scores are 95, 90, 92, 96, 94, and 90. Weighted points are `14.25 + 9 + 27.6 + 24 + 14.1 + 4.5 = 93.45`. There are no penalties or caps: **93.45, grade A, complete**. Usage of 22,000 tokens and 540,000 ms supports an efficiency observation but does not replace the passing validation or diff assessment.
+A two-file, 60-line change selects the small targets (750,000 tokens, 900,000 ms). All phases are enabled and valid. Dimension scores are 95, 90, 92, 96, 94, and 90. Weighted points are `14.25 + 9 + 27.6 + 24 + 14.1 + 4.5 = 93.45`. There are no penalties or caps: **93.45, grade A, complete**. Usage of 22,000 tokens and 540,000 ms supports an efficiency observation but does not replace the passing validation or diff assessment.
 
 ### Token-heavy run
 
-A successful small run consumes 75,000 tokens against its preselected 30,000 target, so token efficiency is `100 × 30,000 / 75,000 = 40`. Suppose token efficiency is 20% of implementation's change-focus component, reducing implementation from 92 to 88; other scores remain 95, 90, 96, 94, and 90. The result is `14.25 + 9 + 26.4 + 24 + 14.1 + 4.5 = 92.25`, still **grade A**. The heavy usage is visible and affects the score, but demonstrated correctness dominates.
+A successful small run consumes 1,000,000 tokens against its preselected 750,000 soft target, so token efficiency is `100 × 750,000 / 1,000,000 = 75`. Suppose token efficiency is 20% of implementation's change-focus component, reducing implementation from 92 to 87; other scores remain 95, 90, 96, 94, and 90. The result is `14.25 + 9 + 26.1 + 24 + 14.1 + 4.5 = 91.95`, still **grade A**. The over-target use is reported and affects the efficiency signal, while demonstrated correctness remains the primary measure.
 
 ### Incomplete run
 

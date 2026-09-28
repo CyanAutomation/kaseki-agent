@@ -94,11 +94,14 @@ function buildDualStageResponse(
 ): any {
   const piAdapterFailed = piProviderResult?.status === 'error';
   const classifierFailed = classificationResult?.status === 'error';
-  const partialSuccess = stage2Result?.status === 'error' && piProviderResult?.status === 'ok';
+  const primaryPathHealthy = stage1Result.status === 'ok' &&
+    (!stage2Result || stage2Result.status === 'ok' || piProviderResult?.status === 'ok') &&
+    !piAdapterFailed;
+  const partialSuccess = (stage2Result?.status === 'error' && piProviderResult?.status === 'ok') ||
+    (stage2Result?.status === 'ok' && piAdapterFailed) ||
+    (primaryPathHealthy && classifierFailed);
   const result: any = {
-    status: stage1Result.status === 'ok' && !piAdapterFailed && !classifierFailed
-      ? (partialSuccess ? 'partial' : 'ok')
-      : 'error',
+    status: !primaryPathHealthy || piAdapterFailed ? 'error' : (partialSuccess ? 'partial' : 'ok'),
     detail: stage1Result.detail,
     responseTime: stage1Result.responseTime,
     timestamp: new Date().toISOString(),
@@ -118,13 +121,14 @@ function buildDualStageResponse(
     result.piProviderSmoke = piProviderResult;
     result.gatewayInferenceValidated = stage2Result?.status === 'ok';
     result.piAdapterValidated = piProviderResult.status === 'ok';
-    result.partialSuccess = partialSuccess || (stage2Result?.status === 'ok' && piProviderResult.status === 'error');
+    result.partialSuccess = partialSuccess;
     result.codingShapeValidated = piProviderResult.codingShapeValidated === true;
     result.multiTurnValidated = piProviderResult.multiTurnValidated === true;
   }
   if (classificationResult) {
     result.evaluationSmoke = classificationResult;
     result.evaluationValidated = classificationResult.status === 'ok';
+    if (classificationResult.status === 'error') result.partialSuccess = primaryPathHealthy;
   }
 
   return result;
@@ -139,6 +143,7 @@ function buildStage2Response(stage2Result: any, piProviderResult: any, classific
   const stage2Healthy = stage2Result?.status === 'ok';
   const piProviderHealthy = piProviderResult?.status === 'ok';
   const piProviderRequested = !!piProviderResult;
+  const primaryPathHealthy = (stage2Healthy || (!stage2Healthy && piProviderHealthy && piProviderRequested)) && !piAdapterFailed;
 
   // Determine status and partialSuccess:
   // - 'ok': stage2 healthy AND (pi not tested OR pi healthy) AND classifier healthy
@@ -147,16 +152,21 @@ function buildStage2Response(stage2Result: any, piProviderResult: any, classific
   let status = 'error';
   let partialSuccess = false;
 
-  if (stage2Healthy && !piAdapterFailed && !classifierFailed) {
+  if (stage2Healthy && !piAdapterFailed) {
     // Stage2 is healthy, Pi is either not tested or is healthy, classifier is not failed
     status = 'ok';
     partialSuccess = false;
-  } else if (stage2Healthy && piAdapterFailed && piProviderRequested && !classifierFailed) {
+  } else if (stage2Healthy && piAdapterFailed && piProviderRequested) {
     // Stage2 works but Pi provider fails (and was requested) - we have partial capability
     status = 'error';
     partialSuccess = true;
-  } else if (!stage2Healthy && piProviderHealthy && piProviderRequested && !classifierFailed) {
+  } else if (!stage2Healthy && piProviderHealthy && piProviderRequested) {
     // Stage2 fails but Pi provider works (and was requested) - we have partial capability
+    status = 'partial';
+    partialSuccess = true;
+  }
+
+  if (primaryPathHealthy && classifierFailed) {
     status = 'partial';
     partialSuccess = true;
   }
@@ -224,15 +234,12 @@ function getResponseStatus(
   stage1Result: any,
   stage2Result: any,
   piProviderResult: any,
-  classificationResult: any,
 ): number {
   const piProvesCodingPath = piProviderResult?.status === 'ok' && stage2Result?.status === 'error';
-  const classifierFailed = classificationResult?.status === 'error';
   return (
     stage1Result.status === 'ok' &&
     (!stage2Result || stage2Result.status === 'ok' || piProvesCodingPath) &&
-    (!piProviderResult || piProviderResult.status !== 'error') &&
-    !classifierFailed
+    (!piProviderResult || piProviderResult.status !== 'error')
   ) ? 200 : 503;
 }
 
@@ -304,12 +311,10 @@ async function runGatewayStages(request: GatewayTestRequest): Promise<GatewaySta
   return { stage1Result, stage2Result, piProviderResult, classificationResult };
 }
 
-function getStage2OnlyStatus(stage2Result: any, piProviderResult: any, classificationResult: any): number {
-  const classifierFailed = classificationResult?.status === 'error';
+function getStage2OnlyStatus(stage2Result: any, piProviderResult: any): number {
   return (
     (stage2Result?.status === 'ok' || (stage2Result?.status === 'error' && piProviderResult?.status === 'ok')) &&
-    (!piProviderResult || piProviderResult.status !== 'error') &&
-    !classifierFailed
+    (!piProviderResult || piProviderResult.status !== 'error')
   ) ? 200 : 503;
 }
 
@@ -332,13 +337,13 @@ function shapeGatewayTestResponse(
   if (request.requestedStage === 2) {
     return {
       body: buildStage2Response(stage2Result, piProviderResult, classificationResult),
-      status: getStage2OnlyStatus(stage2Result, piProviderResult, classificationResult),
+      status: getStage2OnlyStatus(stage2Result, piProviderResult),
     };
   }
 
   return {
     body: buildDualStageResponse(stage1Result, stage2Result, piProviderResult, classificationResult),
-    status: getResponseStatus(stage1Result, stage2Result, piProviderResult, classificationResult),
+    status: getResponseStatus(stage1Result, stage2Result, piProviderResult),
   };
 }
 

@@ -2190,7 +2190,11 @@ const controllerPage = String.raw`<!doctype html>
               ? 'Stale — no material progress for ' + formatElapsedSeconds(heartbeat.ageSeconds)
               : formatElapsedSeconds(heartbeat.ageSeconds) + ' ago', { warning: heartbeat.stale, fullWidth: true }]);
             if (heartbeat.stale && payload.status === 'running') {
-              items.push(['Progress attention', 'The worker may still be alive, but it has not emitted a substantive stage or command update. Open Events or Stdout to inspect the active operation.', { warning: true, fullWidth: true }]);
+              const livenessIsRecent = typeof heartbeat.livenessAgeSeconds === 'number' && heartbeat.livenessAgeSeconds <= 90;
+              const progressAttention = livenessIsRecent
+                ? 'Agent heartbeat ' + formatElapsedSeconds(heartbeat.livenessAgeSeconds) + ' ago; no substantive stage or command update for ' + formatElapsedSeconds(heartbeat.ageSeconds) + '. It may be waiting for model or tool output. Inspect Events or Stdout for details.'
+                : 'No substantive stage or command update for ' + formatElapsedSeconds(heartbeat.ageSeconds) + '; the latest agent heartbeat was ' + (typeof heartbeat.livenessAgeSeconds === 'number' ? formatElapsedSeconds(heartbeat.livenessAgeSeconds) + ' ago' : 'unavailable') + '. The agent may be stalled. Inspect Events or Stdout for details.';
+              items.push(['Progress attention', progressAttention, { warning: true, fullWidth: true }]);
             }
             if (typeof heartbeat.livenessAgeSeconds === 'number') {
               items.push(['Agent liveness', formatElapsedSeconds(heartbeat.livenessAgeSeconds) + ' ago', { fullWidth: true }]);

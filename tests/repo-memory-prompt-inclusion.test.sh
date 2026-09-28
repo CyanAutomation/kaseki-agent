@@ -38,8 +38,12 @@ assert_memory_omitted() {
 }
 
 # Fresh, explicitly enabled memory is enclosed by prompt section boundaries.
-REPO_MEMORY_NOW_EPOCH="$(stat -c %Y "$REPO_MEMORY_FILE")"
+REPO_MEMORY_NOW_EPOCH="$(node -e 'process.stdout.write(String(Math.floor(require("node:fs").statSync(process.argv[1]).mtimeMs / 1000)))' "$REPO_MEMORY_FILE")"
 prompt="$(build_agent_prompt)"
+grep -Fq 'Markdown structure' <<< "$prompt" \
+  || fail 'coding prompt omitted the Markdown nesting/render check'
+grep -Fq 'soft token targets' <<< "$prompt" \
+  || fail 'coding prompt omitted advisory token-budget guidance'
 
 [ "$(grep -Foc "$CACHED_CONTENT_MARKER" <<< "$prompt")" -eq 1 ] \
   || fail 'fresh repository memory was not included exactly once'
@@ -79,7 +83,7 @@ assert_memory_omitted 'disabled'
 
 # The same cached fixture must be omitted when it is stale.
 KASEKI_REPO_MEMORY_MODE=summary
-REPO_MEMORY_NOW_EPOCH="$(( $(stat -c %Y "$REPO_MEMORY_FILE") + KASEKI_REPO_MEMORY_TTL_DAYS * 86400 + 1 ))"
+REPO_MEMORY_NOW_EPOCH="$(( $(node -e 'process.stdout.write(String(Math.floor(require("node:fs").statSync(process.argv[1]).mtimeMs / 1000)))' "$REPO_MEMORY_FILE") + KASEKI_REPO_MEMORY_TTL_DAYS * 86400 + 1 ))"
 assert_memory_omitted 'stale'
 
 # The same fixture path must be omitted when its cached content is unavailable.
