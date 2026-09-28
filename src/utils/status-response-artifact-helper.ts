@@ -136,6 +136,7 @@ export class StatusArtifactHelper {
     includeScouting: boolean;
     includeGoalCheck: boolean;
     prioritizeScouting: boolean;
+    prioritizePreValidation: boolean;
   } {
     return {
       includePiAgent: job.status === 'failed' && this.shouldIncludePiAgentDiagnostics(metadata, runDir),
@@ -151,6 +152,7 @@ export class StatusArtifactHelper {
         typeof response.goalCheckFailureReason === 'string' &&
         GOAL_CHECK_ARTIFACT_FAILURE_REASONS.has(response.goalCheckFailureReason),
       prioritizeScouting: job.status === 'failed' && this.shouldPrioritizeScoutingDiagnostics(metadata, runDir),
+      prioritizePreValidation: job.status === 'failed' && this.isPreValidationFailure(metadata),
     };
   }
 
@@ -204,7 +206,7 @@ export class StatusArtifactHelper {
     response: StatusResponse,
     job: Job,
     runDir: string,
-    flags: { includePiAgent: boolean; includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean; prioritizeScouting: boolean },
+    flags: { includePiAgent: boolean; includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean; prioritizeScouting: boolean; prioritizePreValidation: boolean },
     isSmallAvailable: (fileName: string) => boolean
   ): void {
     try {
@@ -275,14 +277,17 @@ export class StatusArtifactHelper {
 
   private setDiagnosticEntryPoint(
     response: StatusResponse,
-    flags: { includePiAgent: boolean; includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean; prioritizeScouting: boolean },
+    flags: { includePiAgent: boolean; includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean; prioritizeScouting: boolean; prioritizePreValidation: boolean },
     isAvailable: (fileName: string) => boolean
   ): void {
     const phaseDiagnosticEntryPoints: DiagnosticEntryPoint[] = [
+      ...(flags.prioritizePreValidation && flags.includePreValidation
+        ? (['pre-validation.log', 'test-baseline-comparison.json'] as DiagnosticEntryPoint[])
+        : []),
       ...(flags.includePiAgent
         ? (['token-ledger.jsonl', '.gateway-diagnostics.jsonl', 'gateway-summary.json', 'pi-agent-diagnostics.jsonl', 'pi-events.jsonl', 'pi-summary.json'] as DiagnosticEntryPoint[])
         : []),
-      ...(flags.includePreValidation
+      ...(flags.includePreValidation && !flags.prioritizePreValidation
         ? (['test-baseline-comparison.json', 'pre-validation.log'] as DiagnosticEntryPoint[])
         : []),
       ...(flags.includeGoalSetting
@@ -328,6 +333,11 @@ export class StatusArtifactHelper {
       preValidationExitCode !== 0 ||
       PRE_VALIDATION_DIAGNOSTIC_FILES.some((fileName) => fs.existsSync(path.join(runDir, fileName)))
     );
+  }
+
+  private isPreValidationFailure(metadata: any): boolean {
+    const failedCommand = String(metadata?.failed_command ?? '').toLowerCase();
+    return /pre[-_ ]agent validation|pre[-_ ]validation/.test(failedCommand);
   }
 
   private shouldIncludePhaseDiagnostics(

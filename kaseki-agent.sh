@@ -97,6 +97,22 @@ if [ "$source_status" -ne 0 ]; then
   exit 1
 fi
 
+KASEKI_VALIDATION_COMMAND_PREFLIGHT_HELPER="${KASEKI_VALIDATION_COMMAND_PREFLIGHT_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/validation-command-preflight.sh}"
+if [ ! -r "$KASEKI_VALIDATION_COMMAND_PREFLIGHT_HELPER" ] && [ -r /app/scripts/validation-command-preflight.sh ]; then
+  KASEKI_VALIDATION_COMMAND_PREFLIGHT_HELPER="/app/scripts/validation-command-preflight.sh"
+fi
+if [ ! -r "$KASEKI_VALIDATION_COMMAND_PREFLIGHT_HELPER" ]; then
+  printf 'ERROR: Validation command preflight helper is not readable. Expected %s or /app/scripts/validation-command-preflight.sh. This worker image or mounted template is incomplete; rebuild the image or restore scripts/validation-command-preflight.sh.\n' "$KASEKI_VALIDATION_COMMAND_PREFLIGHT_HELPER" >&2
+  exit 66
+fi
+# shellcheck source=/dev/null
+. "$KASEKI_VALIDATION_COMMAND_PREFLIGHT_HELPER"
+source_status=$?
+if [ "$source_status" -ne 0 ]; then
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_VALIDATION_COMMAND_PREFLIGHT_HELPER" "$source_status" >&2
+  exit 1
+fi
+
 KASEKI_JSON_HELPER="${KASEKI_JSON_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/lib/json.sh}"
 if [ ! -r "$KASEKI_JSON_HELPER" ] && [ -r /app/scripts/lib/json.sh ]; then
   KASEKI_JSON_HELPER="/app/scripts/lib/json.sh"
@@ -966,6 +982,22 @@ cache_metric_elapsed_seconds() {
     awk -v start="$start_ns" -v end="$end_ns" 'BEGIN { value = end - start; if (value < 0) value = 0; printf "%.3f", value }'
   else
     printf ''
+  fi
+}
+
+record_dependency_cache_publish_timing() {
+  local start_ns="$1" exit_code="$2" reason="$3"
+  local elapsed_seconds publish_succeeded=false detail
+  elapsed_seconds="$(cache_metric_elapsed_seconds "$start_ns")"
+  [ "$exit_code" -eq 0 ] && publish_succeeded=true
+  detail="reason=$reason elapsed_seconds=$elapsed_seconds"
+  append_cache_metric "${KASEKI_RESULTS_DIR}/cache-metrics.json" "workspace_cache_publish" "$publish_succeeded" "workspace" "$elapsed_seconds" "$reason" || true
+  record_stage_timing "dependency cache publish" "$exit_code" "$elapsed_seconds" "$detail"
+  emit_event "dependency_cache_publish_timing" "exit_code=$exit_code" "elapsed_seconds=$elapsed_seconds" "reason=$reason" || true
+  if [ "$exit_code" -eq 0 ]; then
+    emit_progress "dependency cache publish" "finished elapsed=${elapsed_seconds}s" || true
+  else
+    emit_progress "dependency cache publish" "failed elapsed=${elapsed_seconds}s reason=$reason" "error" || true
   fi
 }
 
@@ -4986,16 +5018,18 @@ baseline_validation_install_flags() {
 }
 
 baseline_validation_manifest_json() {
-  local install_flags node_version npm_version
+  local install_flags node_version npm_version validation_toolchains
   install_flags="$(baseline_validation_install_flags)"
   node_version="$(node --version 2>/dev/null || printf '<unavailable>')"
   npm_version="$(npm --version 2>/dev/null || printf '<unavailable>')"
+  validation_toolchains="$(validation_runtime_identity)"
   BASELINE_MANIFEST_REPO_URL="$REPO_URL" \
   BASELINE_MANIFEST_REF="${BASELINE_RESOLVED_REF:-}" \
   BASELINE_MANIFEST_SHA="${BASELINE_COMMIT_SHA:-}" \
   BASELINE_MANIFEST_COMMANDS="$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
   BASELINE_MANIFEST_NODE="$node_version" \
   BASELINE_MANIFEST_NPM="$npm_version" \
+  BASELINE_MANIFEST_VALIDATION_TOOLCHAINS="$validation_toolchains" \
   BASELINE_MANIFEST_INSTALL_FLAGS="$install_flags" \
   node <<'NODE'
 const env = process.env;
@@ -5005,7 +5039,11 @@ const manifest = {
   baseline_ref: env.BASELINE_MANIFEST_REF,
   baseline_sha: env.BASELINE_MANIFEST_SHA,
   validation_commands: env.BASELINE_MANIFEST_COMMANDS,
-  runtime: { node: env.BASELINE_MANIFEST_NODE, npm: env.BASELINE_MANIFEST_NPM },
+  runtime: {
+    node: env.BASELINE_MANIFEST_NODE,
+    npm: env.BASELINE_MANIFEST_NPM,
+    validation_toolchains: env.BASELINE_MANIFEST_VALIDATION_TOOLCHAINS
+  },
   dependency_install_flags: env.BASELINE_MANIFEST_INSTALL_FLAGS,
   validation_environment: {
     CI: env.CI ?? '', NODE_ENV: env.NODE_ENV ?? '', TZ: env.TZ ?? '', LANG: env.LANG ?? '',
@@ -5111,6 +5149,13 @@ save_baseline_validation_to_cache() {
   if [ "$KASEKI_BASELINE_CACHE_DISABLED" = "1" ]; then
     return 0
   fi
+
+  # Only deterministic test outcomes belong in the baseline cache. Exit codes
+  # such as 126/127 are execution-environment failures and must be retried.
+  case "${BASELINE_VALIDATION_EXIT:-0}" in
+    0|1) ;;
+    *) return 2 ;;
+  esac
   
   # Create cache directory
   mkdir -p "$cache_dir" || return 1
@@ -9998,6 +10043,33 @@ cd "${KASEKI_WORKSPACE_DIR}"/repo || { STATUS=1; FAILED_COMMAND="enter repositor
 begin_repo_session
 apply_default_validation_commands
 
+# Catch missing direct validation tools before dependency preparation or a
+# baseline checkout. This avoids repeating a command-not-found failure and
+# prevents infrastructure errors from entering the baseline cache.
+if [ "$KASEKI_PRE_AGENT_VALIDATION" = "1" ] && [ "$KASEKI_TASK_MODE" != "inspect" ]; then
+  validation_toolchain_preflight_status=0
+  validation_command_preflight \
+    "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
+    "${KASEKI_RESULTS_DIR}/pre-validation.log" || validation_toolchain_preflight_status=$?
+  if [ "$validation_toolchain_preflight_status" -ne 0 ]; then
+    missing_validation_executable="$(validation_command_missing_executable "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" || true)"
+    set_current_stage "pre-agent validation"
+    STATUS="$validation_toolchain_preflight_status"
+    FAILED_COMMAND="pre-agent validation"
+    PRE_VALIDATION_EXIT="$validation_toolchain_preflight_status"
+    PRE_VALIDATION_COMMANDS_ATTEMPTED=0
+    PRE_VALIDATION_FAILED_COMMAND_DETAIL="required executable '$missing_validation_executable' is not available in the worker image"
+    PRE_VALIDATION_FAILURE_REASON="validation_toolchain_preflight_failed: missing executable $missing_validation_executable"
+    record_stage_timing "pre-agent validation" "$validation_toolchain_preflight_status" 0 "preflight_missing_executable=$missing_validation_executable"
+    emit_progress "pre-agent validation" "blocked before validation because executable=$missing_validation_executable is missing" "error"
+    emit_event "validation_toolchain_preflight_failed" "stage=pre-agent validation" "missing_executable=$missing_validation_executable" "commands=$KASEKI_PRE_AGENT_VALIDATION_COMMANDS"
+    emit_event "phase_not_reached" "phase=scouting" "reason=pre_agent_validation_toolchain_missing" "missing_executable=$missing_validation_executable"
+    emit_event "phase_not_reached" "phase=weaving" "reason=pre_agent_validation_toolchain_missing" "missing_executable=$missing_validation_executable"
+    emit_error_event "pre_agent_validation_toolchain_missing" "Pre-agent validation was not run because the worker image lacks executable '$missing_validation_executable'. Install the toolchain or choose supported validation commands." "exit"
+    exit 0
+  fi
+fi
+
 prepare_dependencies() {
   if [ ! -f package.json ]; then
     printf 'No package.json found; skipping dependency installation.\n'
@@ -10017,7 +10089,7 @@ prepare_dependencies() {
   fi
 
   local repo_ref_key lock_hash flags_hash cache_key workspace_cache_root workspace_cache_dir image_cache_root image_cache_dir image_validation_marker stamp_file metadata_file
-  local cache_lock_file cache_lock_fd tmp_cache_dir old_cache_dir install_start install_start_ns install_elapsed install_flags_display cache_detail cache_metric_start_ns cache_metric_elapsed
+  local cache_lock_file cache_lock_fd tmp_cache_dir old_cache_dir install_start install_start_ns install_elapsed install_flags_display cache_detail cache_metric_start_ns cache_metric_elapsed cache_publish_start_ns cache_publish_exit
   local node_major node_platform node_arch node_abi cache_reused cache_source install_mode restore_mode restore_method cache_repaired restore_validation_reason existing_graph_error existing_graph_exit restore_npm_output restore_npm_exit install_exit
   local -a install_flags
   repo_ref_key="$(printf '%s@%s' "$REPO_URL" "$GIT_REF" | sha256sum | awk '{print $1}')"
@@ -10313,37 +10385,48 @@ prepare_dependencies() {
     return 0
   fi
 
+  cache_publish_start_ns="$(cache_metric_now)"
+  emit_progress "dependency cache publish" "started source=workspace lock_hash=$lock_hash"
   if ! mkdir -p "$workspace_cache_root"; then
+    record_dependency_cache_publish_timing "$cache_publish_start_ns" 1 "cache_root_create_failed"
     exec {cache_lock_fd}>&-
     return 1
   fi
   tmp_cache_dir="${workspace_cache_dir}.tmp.$$"
   old_cache_dir="${workspace_cache_dir}.old.$$"
   rm -rf "$tmp_cache_dir" "$old_cache_dir"
-  if ! publish_node_modules_cache node_modules "$tmp_cache_dir"; then
+  cache_publish_exit=0
+  publish_node_modules_cache node_modules "$tmp_cache_dir" || cache_publish_exit=$?
+  if [ "$cache_publish_exit" -ne 0 ]; then
+    record_dependency_cache_publish_timing "$cache_publish_start_ns" "$cache_publish_exit" "cache_copy_failed"
     exec {cache_lock_fd}>&-
-    return 1
+    return "$cache_publish_exit"
   fi
   # Keep this publish path single-pass and atomic to avoid cache corruption.
   if [ -d "$workspace_cache_dir" ] && ! mv "$workspace_cache_dir" "$old_cache_dir"; then
+    record_dependency_cache_publish_timing "$cache_publish_start_ns" 1 "existing_cache_backup_failed"
     exec {cache_lock_fd}>&-
     return 1
   fi
   if ! mv "$tmp_cache_dir" "$workspace_cache_dir"; then
+    record_dependency_cache_publish_timing "$cache_publish_start_ns" 1 "cache_install_failed"
     exec {cache_lock_fd}>&-
     return 1
   fi
   record_dependency_cache_entry_size "$workspace_cache_root" "$workspace_cache_dir"
   if ! rm -rf "$old_cache_dir"; then
+    record_dependency_cache_publish_timing "$cache_publish_start_ns" 1 "old_cache_cleanup_failed"
     exec {cache_lock_fd}>&-
     return 1
   fi
   if ! printf '%s\n' "$lock_hash" > "$stamp_file"; then
+    record_dependency_cache_publish_timing "$cache_publish_start_ns" 1 "stamp_write_failed"
     exec {cache_lock_fd}>&-
     return 1
   fi
   if ! printf 'repo_ref_key=%s	repo_url=%s	git_ref=%s	lock_hash=%s	cache_key=%s	flags_hash=%s	restore_mode=%s	restore_method=%s\n' \
     "$repo_ref_key" "$REPO_URL" "$GIT_REF" "$lock_hash" "$cache_key" "$flags_hash" "$restore_mode" "$restore_method" > "$metadata_file"; then
+    record_dependency_cache_publish_timing "$cache_publish_start_ns" 1 "metadata_write_failed"
     exec {cache_lock_fd}>&-
     return 1
   fi
@@ -10358,11 +10441,13 @@ prepare_dependencies() {
   else
     invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
     rm -f "$workspace_cache_root"/validated "$workspace_cache_root"/validated-v*
+    record_dependency_cache_publish_timing "$cache_publish_start_ns" 1 "cache_validation_failed"
     exec {cache_lock_fd}>&-
     return 1
   fi
 
   prune_dependency_cache "$KASEKI_DEPENDENCY_CACHE_DIR" "$KASEKI_DEPENDENCY_CACHE_MAX_BYTES" "$KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS" "$KASEKI_DEPENDENCY_CACHE_METRICS_FILE"
+  record_dependency_cache_publish_timing "$cache_publish_start_ns" 0 "published_and_validated"
 
   exec {cache_lock_fd}>&-
   return 0
@@ -10402,6 +10487,8 @@ if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ "$KASEKI_PRE_AGENT_VALID
         # Save results to cache for future runs
         if [ "$KASEKI_BASELINE_CACHE_DISABLED" = "1" ]; then
           emit_progress "baseline validation cache" "bypassed via KASEKI_BASELINE_CACHE_DISABLED=1"
+        elif [ "${BASELINE_VALIDATION_EXIT:-0}" -ne 0 ] && [ "${BASELINE_VALIDATION_EXIT:-0}" -ne 1 ]; then
+          emit_progress "baseline validation cache" "skipped because baseline command exited ${BASELINE_VALIDATION_EXIT}; only test outcomes (exit 0 or 1) are reusable"
         elif save_baseline_validation_to_cache "$baseline_cache_dir"; then
           emit_progress "baseline validation cache" "saved for future runs (will be valid for ${KASEKI_BASELINE_CACHE_MAX_AGE_HOURS}h)"
         else

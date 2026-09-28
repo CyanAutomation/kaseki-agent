@@ -57,7 +57,7 @@ export class StatusPhaseOutcomeHelper {
       goalSettingEvents.length ||
       this.isGoalSettingStage(stage) ||
       Number(metadata?.goal_setting_duration_seconds ?? 0) > 0 ||
-      Number.isFinite(goalSettingExitCode) ||
+      (Number.isFinite(goalSettingExitCode) && goalSettingExitCode !== 0) ||
       (typeof metadata?.goal_setting_actual_model === 'string' && metadata.goal_setting_actual_model !== 'unknown')
     );
     const goalSettingFailed = Number.isFinite(goalSettingExitCode) && goalSettingExitCode !== 0;
