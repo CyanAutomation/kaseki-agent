@@ -65,7 +65,8 @@ if [ "\${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
 prompt="\${*: -1}"
 if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
   printf 'goal-setting\n' >> "$PI_CALLS"
-  printf '%s\n' '{"original_prompt":"Please analyse docs/INDEX.md for correct content and formatting","upgraded_goal":"Fix docs/INDEX.md content and formatting issues","reasoning":"test","key_requirements":["Correct docs/INDEX.md formatting"],"success_criteria":[]}' > "$RESULTS_DIR/goal-setting-candidate.json"
+  # Keep the fake artifact valid under the goal contract so this test covers retry behavior.
+  printf '%s\n' '{"original_prompt":"Please analyse docs/INDEX.md for correct content and formatting","upgraded_goal":"Fix docs/INDEX.md content and formatting issues","outcome_policy":"change_required","reasoning":"test","key_requirements":["Correct docs/INDEX.md formatting"],"success_criteria":[{"criterion":"Correct the content and formatting in docs/INDEX.md","source_requirement":"Please analyse docs/INDEX.md for correct content and formatting","verification_sources":["git.diff","docs/INDEX.md"],"smart_score":"high","reasoning":"The required document and resulting diff directly verify the requested update."}]}' > "$RESULTS_DIR/goal-setting-candidate.json"
   printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"goal set"}],"stopReason":"stop"}}'
 elif printf '%s' "\$prompt" | grep -q 'scouting Pi agent'; then
   printf 'scouting\n' >> "$PI_CALLS"
@@ -116,6 +117,7 @@ env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="Pleas
   OPENROUTER_API_KEY=test KASEKI_PROVIDER=openrouter GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off KASEKI_TASK_MODE=patch \
   KASEKI_GOAL_SETTING=1 KASEKI_SCOUTING=1 KASEKI_GOAL_CHECK=1 KASEKI_GOAL_CHECK_MAX_RETRIES=1 \
   KASEKI_TYPED_EVALUATION_ENABLED=0 \
+  KASEKI_CACHE_DIR="$TMP_DIR/cache" \
   KASEKI_WORKSPACE_DIR="$TMP_DIR" \
   KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
   KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" KASEKI_VALIDATION_COMMANDS=":" \

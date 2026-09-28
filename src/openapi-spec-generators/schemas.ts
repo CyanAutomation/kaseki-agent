@@ -24,7 +24,7 @@ export function buildRunRequestSchema(): Record<string, unknown> {
       ref: {
         type: 'string',
         default: 'main',
-        description: 'Git branch/tag/commit',
+        description: 'Git branch or tag; commit SHAs are not supported',
       },
       taskPrompt: {
         type: 'string',

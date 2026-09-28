@@ -44,7 +44,7 @@ function parseResponse(value: unknown, questions: Record<string, QuestionDefinit
   return { model: typeof body.model === 'string' ? body.model : DEFAULT_JEV_MODEL, answers, usage: body.usage && typeof body.usage === 'object' ? body.usage as Record<string, unknown> : {}, responseTime: 0 };
 }
 function retryable(error: JevClassificationError): boolean {
-  return error.code === 'timeout' || error.code === 'network' || error.status === 429 || error.status === 503 || error.status === 529;
+  return error.code === 'timeout' || error.code === 'network' || error.code === 'invalid_response' || error.status === 429 || error.status === 503 || error.status === 529;
 }
 function wait(ms: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, ms)); }
 

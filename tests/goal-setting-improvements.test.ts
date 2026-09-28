@@ -33,6 +33,17 @@ import { collectGoalFeedback, analyzeGoalFeedback } from '../src/lib/goal-settin
 import { createFakeBinariesDir } from '../src/test-utils/fake-binaries';
 import { createFakeGitRepoWithCommit } from '../src/test-utils/fake-git-repo';
 
+const bashSupportsNamerefs = (() => {
+  try {
+    execFileSync('bash', ['-c', 'target=value; declare -n reference=target; test "$reference" = value'], {
+      stdio: ['ignore', 'ignore', 'ignore'],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
 // Helper to escape special regex characters
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -674,7 +685,43 @@ validate_goal_setting_artifact "$1" "$2" "$3"
   describe('Improvement #9: Iterative Refinement / Retry', () => {
     jest.setTimeout(60000);
 
-    it('should persist and interpret retry attempts from an actual goal-setting retry', () => {
+    it('should include validator findings and the rejected candidate in the repair prompt', () => {
+      const tempDir = mkdtempSync(join(tmpdir(), 'kaseki-goal-setting-contract-repair-'));
+
+      try {
+        const scriptSource = readFileSync(join(process.cwd(), 'kaseki-agent.sh'), 'utf8');
+        const repairPromptBuilder = extractShellFunctionBlock(
+          scriptSource,
+          'build_goal_setting_contract_repair_prompt',
+          'validate_goal_setting_artifact',
+        );
+        writeFileSync(join(tempDir, 'goal-setting-candidate-invalid.json'), '{"upgraded_goal":"preserve this scope"}\n');
+        writeFileSync(
+          join(tempDir, 'goal-setting-validation-errors.jsonl'),
+          '{"status":"invalid_fields","errors":["success_criteria[0] is conditional and must declare applies_when"]}\n',
+        );
+
+        const prompt = execFileSync(
+          'bash',
+          ['-c', `${repairPromptBuilder}\nbuild_goal_setting_prompt() { printf '%s\\n' 'base goal prompt'; }\nbuild_goal_setting_contract_repair_prompt`],
+          {
+            encoding: 'utf8',
+            env: { ...process.env, KASEKI_RESULTS_DIR: tempDir },
+          },
+        );
+
+        expect(prompt).toContain('base goal prompt');
+        expect(prompt).toContain('success_criteria[0] is conditional and must declare applies_when');
+        expect(prompt).toContain('"upgraded_goal":"preserve this scope"');
+        expect(prompt).toContain('preserves the user\'s original scope and requirements');
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    const integrationTest = bashSupportsNamerefs ? it : it.skip;
+
+    integrationTest('should persist and interpret retry attempts from an actual goal-setting retry', () => {
       const repoRoot = process.cwd();
       const tempDir = mkdtempSync(join(tmpdir(), 'kaseki-goal-setting-retry-'));
 
@@ -935,6 +982,9 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         expect(metadata.goal_setting_succeeded_on_attempt).toBe(2);
         expect(readFileSync(join(resultsDir, 'quality.log'), 'utf8')).not.toContain('exit 141');
         expect(readFileSync(join(resultsDir, 'quality.log'), 'utf8')).not.toContain('allowlist derivation from scouting');
+        const repairPrompt = readFileSync(join(resultsDir, 'goal-setting-attempt-two-prompt.txt'), 'utf8');
+        expect(repairPrompt).toContain('invalid goal candidate');
+        expect(repairPrompt).toContain('success_criteria[0] is conditional and must declare applies_when');
 
         const codingPrompt = readFileSync(join(resultsDir, 'coding-prompt.txt'), 'utf8');
         expect(codingPrompt).toContain('retry-upgraded prompt from attempt two');

@@ -76,7 +76,7 @@ describe('JEV classifier client', () => {
 
   it('rejects malformed responses and HTTP failures', async () => {
     const malformed = jest.fn().mockResolvedValue(new Response('{}', { status: 200 }));
-    await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, { fetchImpl: malformed })).rejects.toBeInstanceOf(JevClassificationError);
+    await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, { fetchImpl: malformed, maxRetries: 0 })).rejects.toBeInstanceOf(JevClassificationError);
 
     const failed = jest.fn().mockResolvedValue(new Response('busy', { status: 503 }));
     await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, { fetchImpl: failed, maxRetries: 0 })).rejects.toMatchObject({ code: 'http', status: 503 });
@@ -92,6 +92,22 @@ describe('JEV classifier client', () => {
       }), { status: 200 }));
 
     await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, { fetchImpl, maxRetries: 1 })).resolves.toMatchObject({ answers: { safe: { noul: 0.91 } } });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a schema-invalid typed response once before returning a complete answer set', async () => {
+    const fetchImpl = jest.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ answers: {}, usage: {} }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        model: DEFAULT_JEV_MODEL,
+        answers: { safe: { type: 'noul', noul: 0.95 } },
+        usage: {},
+      }), { status: 200 }));
+
+    await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, {
+      fetchImpl,
+      maxRetries: 1,
+    })).resolves.toMatchObject({ answers: { safe: { noul: 0.95 } } });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
@@ -117,7 +133,7 @@ describe('JEV classifier client', () => {
 
   it('rejects an empty answer map rather than silently approving it', async () => {
     const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({ answers: {}, usage: {} }), { status: 200 }));
-    await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, { fetchImpl })).rejects.toMatchObject({ code: 'invalid_response' });
+    await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, { fetchImpl, maxRetries: 0 })).rejects.toMatchObject({ code: 'invalid_response' });
   });
 
   it('rejects a same-sized answer map that omits a requested question', async () => {
@@ -128,7 +144,7 @@ describe('JEV classifier client', () => {
 
     await expect(classifyWithJev('state', {
       safe: { type: 'noul', instructions: 'Is this safe?' },
-    }, { fetchImpl })).rejects.toMatchObject({ code: 'invalid_response' });
+    }, { fetchImpl, maxRetries: 0 })).rejects.toMatchObject({ code: 'invalid_response' });
   });
 
   it.each([
