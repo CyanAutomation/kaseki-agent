@@ -31,7 +31,7 @@ describe('buildScorecard warnings', () => {
     const card = buildScorecard(evidence);
     expect(Array.isArray(card.warnings)).toBe(true);
     const hasMissing = card.warnings.some(w => /Missing evidence: validation/.test(w));
-    const hasToken = card.warnings.includes('Token budget exceeded: 5000 model tokens used versus 1000 target.');
+    const hasToken = card.warnings.includes('Soft token target exceeded: 5000 model tokens used versus 1000; execution was not limited.');
     expect(hasMissing).toBe(true);
     expect(hasToken).toBe(true);
   });

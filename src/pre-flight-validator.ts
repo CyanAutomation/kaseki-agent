@@ -243,6 +243,8 @@ export class PreFlightValidator {
       checks.push(cmdCheck);
       if (cmdCheck.status === 'fail') {
         errors.push(cmdCheck.message);
+      } else if (cmdCheck.status === 'warning') {
+        warnings.push(cmdCheck.message);
       }
     }
 
@@ -587,8 +589,8 @@ export class PreFlightValidator {
     if (invalid.length === 0) {
       return {
         name: 'commands-syntax',
-        status: 'pass',
-        message: `${commands.length} validation commands syntax is valid`,
+        status: 'warning',
+        message: `${commands.length} validation commands are non-empty and contain no recognized destructive patterns. Shell syntax and executable availability are checked inside the worker before dependency setup.`,
       };
     }
 
