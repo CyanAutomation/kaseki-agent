@@ -11,7 +11,7 @@ fail() {
 }
 
 [ -x "$INSTALLER" ] || fail 'pinned Go installer is missing or not executable'
-grep -Fq '[[ ! "$GO_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]' "$INSTALLER" \
+grep -Fq 'if [[ ! "$GO_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then' "$INSTALLER" \
   || fail 'Go version is not validated before use'
 [ "$("$INSTALLER" checksum amd64)" = '63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445' ] \
   || fail 'Go amd64 archive checksum changed'
