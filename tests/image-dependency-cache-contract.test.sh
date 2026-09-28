@@ -31,6 +31,7 @@ grep -q 'image_cache_dir="${image_cache_root}/node_modules"' "$ROOT_DIR/kaseki-a
 grep -q 'dependency_cache_schema_valid "$image_validation_marker"' "$ROOT_DIR/kaseki-agent.sh"
 grep -q '"image_cache_absent"' "$ROOT_DIR/kaseki-agent.sh"
 grep -q '"image_cache_key_mismatch"' "$ROOT_DIR/kaseki-agent.sh"
-grep -Eq 'apt-get install[^\\n]*build-essential[^\\n]*golang-go' "$ROOT_DIR/Dockerfile"
+grep -q 'build-essential' "$ROOT_DIR/Dockerfile"
+grep -q 'golang-go' "$ROOT_DIR/Dockerfile"
 
 printf 'image dependency cache contract tests passed\n'

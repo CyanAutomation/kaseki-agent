@@ -16,6 +16,7 @@ trap cleanup EXIT
 . "$ROOT_DIR/scripts/npm-install-helpers.sh"
 . "$ROOT_DIR/scripts/validation-command-preflight.sh"
 eval "$(awk '/^baseline_validation_cache_key\(\)/ { emit=1 } /^choose_baseline_log_dir\(\)/ { if (emit) exit } emit { print }' "$ROOT_DIR/kaseki-agent.sh")"
+eval "$(awk '/^record_dependency_cache_publish_timing\(\)/ { emit=1 } /^# Append a secret scan result/ { if (emit) exit } emit { print }' "$ROOT_DIR/kaseki-agent.sh")"
 
 fail() { printf '✗ %s\n' "$*" >&2; exit 1; }
 REAL_NODE="$(command -v node)"
@@ -61,6 +62,19 @@ export BASELINE_VALIDATION_EXIT
 grep -q 'record_stage_timing "dependency cache publish"' "$ROOT_DIR/kaseki-agent.sh" || fail 'dependency cache publish duration is not recorded'
 grep -q 'workspace_cache_publish' "$ROOT_DIR/kaseki-agent.sh" || fail 'dependency cache publish metric is not emitted'
 
+METRIC_CAPTURE="$TMP_DIR/publish-metrics.txt"
+STAGE_CAPTURE="$TMP_DIR/publish-stages.tsv"
+cache_metric_elapsed_seconds() { printf '1.250'; }
+append_cache_metric() { printf '%s|%s|%s|%s|%s\n' "$2" "$3" "$4" "$5" "$6" >> "$METRIC_CAPTURE"; }
+record_stage_timing() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$STAGE_CAPTURE"; }
+emit_event() { :; }
+emit_progress() { :; }
+record_dependency_cache_publish_timing ignored-start 0 published_and_validated
+record_dependency_cache_publish_timing ignored-start 1 cache_copy_failed
+grep -Fqx 'workspace_cache_publish|true|workspace|1.250|published_and_validated' "$METRIC_CAPTURE" || fail 'successful cache publication metric is malformed'
+grep -Fqx 'workspace_cache_publish|false|workspace|1.250|cache_copy_failed' "$METRIC_CAPTURE" || fail 'failed cache publication metric is malformed'
+grep -Fqx $'dependency cache publish\t0\t1.250\treason=published_and_validated elapsed_seconds=1.250' "$STAGE_CAPTURE" || fail 'successful cache publication timing is missing'
+
 printf 'visible\n' > "$KASEKI_RESULTS_DIR/validation-baseline.log"
 printf 'raw\n' > "$KASEKI_RESULTS_DIR/validation-baseline-raw.log"
 printf 'timing\n' > "$KASEKI_RESULTS_DIR/validation-baseline-timings.tsv"
@@ -98,5 +112,10 @@ if save_baseline_validation_to_cache "$unreliable_cache_dir"; then
   fail 'command-not-found baseline result was cached'
 fi
 [ ! -e "$unreliable_cache_dir/manifest.json" ] || fail 'infrastructure failure left a cache manifest'
+
+BASELINE_VALIDATION_EXIT=1
+failed_test_cache_dir="$TMP_DIR/failed-test-cache"
+save_baseline_validation_to_cache "$failed_test_cache_dir" || fail 'test failure result was not cached'
+[ -f "$failed_test_cache_dir/manifest.json" ] || fail 'test failure cache did not produce a manifest'
 
 printf '✓ Baseline cache hits only for matching commit and validation inputs.\n'
