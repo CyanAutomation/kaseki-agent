@@ -76,7 +76,7 @@ RETIRED_EVALUATION_SETTINGS=(
   KASEKI_JEV_VALIDATION_FOCUS
 )
 for retired_setting in "${RETIRED_EVALUATION_SETTINGS[@]}"; do
-  if [[ -v $retired_setting ]]; then
+  if [ "${!retired_setting+x}" = "x" ]; then
     printf 'ERROR: Retired evaluation settings are configured. Remove them and use the stage-based settings documented in docs/ENV_VARS.md.\n' >&2
     exit 2
   fi
@@ -1307,7 +1307,7 @@ normalize_scouting_schema() {
         else .
       end
     )' "$candidate_artifact" > "${candidate_artifact}.normalized" 2>/dev/null || return 1
-    
+
     # Replace original with normalized version
     mv "${candidate_artifact}.normalized" "$candidate_artifact"
     
@@ -6041,6 +6041,30 @@ Include these in success_criteria as SMART criteria with smart_score: "high" (me
 EOF
 }
 
+build_goal_setting_contract_repair_prompt() {
+  local base_prompt invalid_candidate validation_errors candidate_path
+  base_prompt="$(build_goal_setting_prompt)"
+  candidate_path="${KASEKI_RESULTS_DIR}/goal-setting-candidate-invalid.json"
+  invalid_candidate="$(head -c 8000 "$candidate_path" 2>/dev/null || true)"
+  validation_errors="$(tail -n 8 "${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl" 2>/dev/null | head -c 5000 || true)"
+
+  cat <<EOF
+${base_prompt}
+
+=== REPAIR THE PREVIOUS GOAL CONTRACT ===
+
+The previous candidate failed deterministic schema or goal-contract validation. Return a corrected candidate that preserves the user's original scope and requirements. Fix every listed validation error; do not add new requirements or change the user's requested outcome.
+
+Validator findings (most recent entries):
+${validation_errors:-No detailed validator entries were retained.}
+
+Rejected candidate (may be incomplete):
+${invalid_candidate:-No candidate content was retained.}
+
+Pay special attention to conditional success criteria: if the criterion applies only under a condition, provide an explicit applies_when field. Keep unconditional criteria free of applies_when.
+EOF
+}
+
 validate_goal_setting_artifact() {
   local candidate_artifact="$1"
   local final_artifact="$2"
@@ -6474,7 +6498,11 @@ run_goal_setting_agent() {
     return 0
   fi
 
-  goal_setting_prompt="$(build_goal_setting_prompt)"
+  if [ "${KASEKI_GOAL_SETTING_CONTRACT_REPAIR:-0}" = "1" ]; then
+    goal_setting_prompt="$(build_goal_setting_contract_repair_prompt)"
+  else
+    goal_setting_prompt="$(build_goal_setting_prompt)"
+  fi
   record_prompt_diagnostics "goal-setting" "$goal_setting_prompt" "$KASEKI_GOAL_SETTING_MODEL" "${KASEKI_GOAL_SETTING_MAX_OUTPUT_TOKENS:-}"
   configure_phase_budget "goal-setting"
   goal_setting_start="$(date +%s)"
@@ -6540,21 +6568,29 @@ run_goal_setting_agent() {
   if [ "$GOAL_SETTING_EXIT" -eq 0 ] && [ "$GOAL_SETTING_FALLBACK_USED" != "1" ] && ! validate_goal_setting_artifact "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt"; then
     GOAL_SETTING_EXIT=86
     goal_setting_validation_summary="$(cat "${KASEKI_RESULTS_DIR}"/goal-setting-validation-summary.txt 2>/dev/null || printf 'goal-setting artifact validation failed')"
-    emit_error_event "pi_goal_setting_artifact_invalid" "Pi goal-setting artifact invalid: $goal_setting_validation_summary; fallback will preserve the original task (candidate=${GOAL_SETTING_CANDIDATE_ARTIFACT}, fallback=${GOAL_SETTING_ARTIFACT}, diagnostics=${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl)" "continue"
-    
-    # TIER 1 FALLBACK: Create minimal valid goal-setting artifact
-    printf '\n==> Creating fallback goal-setting artifact (degraded mode)\n'
-    if create_fallback_goal_setting_artifact "$ORIGINAL_TASK_PROMPT" "$GOAL_SETTING_ARTIFACT"; then
-      printf 'Fallback artifact created successfully. Run will proceed with confidence=low goal-setting.\n'
-      GOAL_SETTING_EXIT=0  # Mark as success since we have valid artifact
-      GOAL_SETTING_FALLBACK_USED=1
-      GOAL_SETTING_FALLBACK_MODE="invalid_candidate_artifact"
-      emit_progress "pi goal-setting agent" "degraded: invalid candidate artifact; fallback activated"
-      printf '%s\n' '{"phase":"goal-setting","severity":"warning","code":"fallback_activated","detail":"Candidate artifact validation failed; original task preserved with confidence=low"}' >> "${KASEKI_RESULTS_DIR}/stage-warnings.jsonl"
-      emit_error_event "goal_setting_fallback_activated" "Goal-setting validation failed, using fallback mode (confidence=low)" "warning"
+    emit_error_event "pi_goal_setting_artifact_invalid" "Pi goal-setting artifact invalid: $goal_setting_validation_summary; candidate=${GOAL_SETTING_CANDIDATE_ARTIFACT}, diagnostics=${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl" "continue"
+
+    if [ "${KASEKI_GOAL_SETTING_CONTRACT_STRICT:-0}" = "1" ]; then
+      cp "$GOAL_SETTING_CANDIDATE_ARTIFACT" "${KASEKI_RESULTS_DIR}/goal-setting-candidate-invalid.json" 2>/dev/null || true
+      rm -f "$GOAL_SETTING_ARTIFACT"
+      GOAL_SETTING_CONTRACT_REPAIR_REQUIRED=1
+      emit_error_event "goal_setting_contract_repair_required" "The candidate failed goal-setting contract validation; retrying once with validator findings and the rejected candidate." "retry"
     else
-      printf 'Failed to create fallback artifact. Run will fail.\n'
-      # Keep GOAL_SETTING_EXIT=86 to indicate failure
+
+      # TIER 1 FALLBACK: Create minimal valid goal-setting artifact after repair was exhausted.
+      printf '\n==> Creating fallback goal-setting artifact (degraded mode)\n'
+      if create_fallback_goal_setting_artifact "$ORIGINAL_TASK_PROMPT" "$GOAL_SETTING_ARTIFACT"; then
+        printf 'Fallback artifact created successfully. Run will proceed with confidence=low goal-setting.\n'
+        GOAL_SETTING_EXIT=0
+        GOAL_SETTING_FALLBACK_USED=1
+        GOAL_SETTING_FALLBACK_MODE="invalid_candidate_artifact"
+        emit_progress "pi goal-setting agent" "degraded: invalid candidate artifact; fallback activated"
+        printf '%s\n' '{"phase":"goal-setting","severity":"warning","code":"fallback_activated","detail":"Candidate artifact validation failed after one contract repair; original task preserved with confidence=low"}' >> "${KASEKI_RESULTS_DIR}/stage-warnings.jsonl"
+        emit_error_event "goal_setting_fallback_activated" "Goal-setting validation failed after one repair attempt, using fallback mode (confidence=low)" "warning"
+      else
+        printf 'Failed to create fallback artifact. Run will fail.\n'
+        # Keep GOAL_SETTING_EXIT=86 to indicate failure
+      fi
     fi
   fi
   
@@ -6567,7 +6603,7 @@ run_goal_setting_agent() {
   
   if [ "$GOAL_SETTING_EXIT" -ne 0 ]; then
     emit_error_event "pi_goal_setting_failed" "Goal-setting agent exited before scouting: $GOAL_SETTING_EXIT; continuing with original TASK_PROMPT" "continue"
-    return 1
+    return "$GOAL_SETTING_EXIT"
   fi
   
   emit_progress "pi goal-setting agent" "wrote goal-setting artifact"
@@ -6711,6 +6747,8 @@ run_goal_setting_agent_with_retry() {
   # Initialize goal-setting retry tracking env vars
   export KASEKI_GOAL_SETTING_ATTEMPTS=0
   export KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT=""
+  export KASEKI_GOAL_SETTING_CONTRACT_REPAIR=0
+  GOAL_SETTING_CONTRACT_REPAIR_REQUIRED=0
 
   while [ "$attempt" -le "$max_attempts" ]; do
     attempt_start_time="$(date +%s.%N)"
@@ -6759,6 +6797,18 @@ run_goal_setting_agent_with_retry() {
       [ "$attempt" -lt "$max_attempts" ]; then
       printf '[Goal-Setting Phase] Artifact contract failure, retrying with the required candidate artifact.\n'
       attempt=$((attempt + 1))
+      rm -f "$GOAL_SETTING_ARTIFACT" "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_RAW_EVENTS" 2>/dev/null || true
+      rm -f "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt 2>/dev/null || true
+      continue
+    fi
+
+    if [ "$goal_setting_last_exit" -eq 86 ] && \
+      [ "${GOAL_SETTING_CONTRACT_REPAIR_REQUIRED:-0}" = "1" ] && \
+      [ "$attempt" -lt "$max_attempts" ]; then
+      printf '[Goal-Setting Phase] Candidate failed schema validation; retrying once with a focused contract repair prompt.\n'
+      attempt=$((attempt + 1))
+      export KASEKI_GOAL_SETTING_CONTRACT_REPAIR=1
+      GOAL_SETTING_CONTRACT_REPAIR_REQUIRED=0
       rm -f "$GOAL_SETTING_ARTIFACT" "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_RAW_EVENTS" 2>/dev/null || true
       rm -f "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt 2>/dev/null || true
       continue
@@ -8773,16 +8823,16 @@ is_pr_creation_mode() {
 sanitize_pr_metadata_text() {
   tr '\r\n\t' '   ' \
     | tr -cd '\11\12\15\40-\176' \
-    | sed -E 's/\bJEV[[:space:]-]+classifier\b/evaluation/Ig' \
-    | sed -E 's/\bJEV\b/evaluation/Ig; s/(gh[pousr]_[A-Za-z0-9_]+)/[redacted]/g; s/(sk-[A-Za-z0-9_-]+)/[redacted]/g; s/([A-Za-z0-9._%+-]+:x-oauth-basic)/[redacted]/Ig; s/((api|access|auth|bearer|github|openai|secret|token|password|credential)[_-]?(key|token|secret|password)?[[:space:]]*[=:][^[:space:]]+)/[redacted]/Ig' \
+    | sed -E 's/(^|[^[:alnum:]_])JEV[[:space:]-]+classifier([^[:alnum:]_]|$)/\1evaluation\2/Ig' \
+    | sed -E 's/(^|[^[:alnum:]_])JEV([^[:alnum:]_]|$)/\1evaluation\2/Ig; s/(gh[pousr]_[A-Za-z0-9_]+)/[redacted]/g; s/(sk-[A-Za-z0-9_-]+)/[redacted]/g; s/([A-Za-z0-9._%+-]+:x-oauth-basic)/[redacted]/Ig; s/((api|access|auth|bearer|github|openai|secret|token|password|credential)[_-]?(key|token|secret|password)?[[:space:]]*[=:][^[:space:]]+)/[redacted]/Ig' \
     | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//'
 }
 
 sanitize_pr_body_text() {
   tr '\r' '\n' \
     | tr -cd '\11\12\40-\176' \
-    | sed -E 's/\bJEV[[:space:]-]+classifier\b/evaluation/Ig' \
-    | sed -E 's/\bJEV\b/evaluation/Ig; s/(gh[pousr]_[A-Za-z0-9_]+)/[redacted]/g; s/(sk-[A-Za-z0-9_-]+)/[redacted]/g; s/([A-Za-z0-9._%+-]+:x-oauth-basic)/[redacted]/Ig; s/((api|access|auth|bearer|github|openai|secret|token|password|credential)[_-]?(key|token|secret|password)?[[:space:]]*[=:][^[:space:]]+)/[redacted]/Ig' \
+    | sed -E 's/(^|[^[:alnum:]_])JEV[[:space:]-]+classifier([^[:alnum:]_]|$)/\1evaluation\2/Ig' \
+    | sed -E 's/(^|[^[:alnum:]_])JEV([^[:alnum:]_]|$)/\1evaluation\2/Ig; s/(gh[pousr]_[A-Za-z0-9_]+)/[redacted]/g; s/(sk-[A-Za-z0-9_-]+)/[redacted]/g; s/([A-Za-z0-9._%+-]+:x-oauth-basic)/[redacted]/Ig; s/((api|access|auth|bearer|github|openai|secret|token|password|credential)[_-]?(key|token|secret|password)?[[:space:]]*[=:][^[:space:]]+)/[redacted]/Ig' \
     | awk '
         {
           sub(/[[:blank:]]+$/, "")
@@ -9262,7 +9312,7 @@ const assessment = text(data.overall_assessment || 'unknown', 40);
 const confidence = text(data.reviewer_confidence || 'unknown', 40);
 console.log(`- Overall: ${assessment}`);
 console.log(`- Reviewer confidence: ${confidence}`);
-console.log(`- Duration: ${formatDuration(durationMs)}`);
+if (durationMs !== null) console.log(`- Duration: ${formatDuration(durationMs)}`);
 
 // Summary and human review focus are rendered in dedicated sections above.
 
@@ -9404,7 +9454,15 @@ NODE
   fi
 
   if [ "$summary_rows" -eq 0 ]; then
-    if [ "$total" -eq 0 ]; then
+    local requested_outcome
+    requested_outcome="$(printf '%s\n' "${TASK_PROMPT:-}" \
+      | awk 'NF && $0 !~ /^#{1,6}[[:space:]]/ { print; exit }' \
+      | sed -E 's/^[[:space:]]*([0-9]+[.)]|[-*])[[:space:]]+//')"
+    requested_outcome="$(printf '%s' "$requested_outcome" | sanitize_pr_metadata_text)"
+    requested_outcome="$(truncate_pr_metadata_text 180 "$requested_outcome")"
+    if [ -n "$requested_outcome" ]; then
+      printf -- '- Requested outcome (from the task prompt; no reviewer-ready run summary was available): %s\n' "$requested_outcome"
+    elif [ "$total" -eq 0 ]; then
       printf -- '- No file changes detected in local artifacts.\n'
     else
       local categories=""
@@ -9482,8 +9540,26 @@ build_pr_body() {
   local duration_seconds pre_validation_status validation_status quality_status secret_scan_status task_summary model_summary generated_at changed_files_summary
   local pre_validation_commands pre_validation_full_commands post_validation_commands post_validation_full_commands validation_command_sections all_validation_statuses_pass scorecard_markdown agent_review agent_evaluation review_focus review_notes scorecard_section scorecard_fallback model_requested model_actual pr_summary pr_changes summary_content
   duration_seconds="$(($(date +%s) - START_EPOCH))"
-  pre_validation_status="$([ "${PRE_VALIDATION_EXIT:-0}" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$PRE_VALIDATION_EXIT")"
-  validation_status="$([ "$VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$VALIDATION_EXIT")"
+  if [ "${PRE_VALIDATION_EXIT:-0}" -ne 0 ]; then
+    pre_validation_status="failed (exit $PRE_VALIDATION_EXIT)"
+  elif [ -s "$PRE_VALIDATION_TIMINGS_FILE" ]; then
+    pre_validation_status="passed"
+  elif [ "${KASEKI_PRE_AGENT_VALIDATION:-1}" = "0" ]; then
+    pre_validation_status="skipped (disabled)"
+  else
+    pre_validation_status="not run (no commands recorded)"
+  fi
+  if [ "$VALIDATION_EXIT" -ne 0 ]; then
+    validation_status="failed (exit $VALIDATION_EXIT)"
+  elif [ -s "$VALIDATION_TIMINGS_FILE" ]; then
+    validation_status="passed"
+  elif [ "${KASEKI_DRY_RUN:-0}" = "1" ]; then
+    validation_status="skipped (dry run)"
+  elif [ -z "${KASEKI_VALIDATION_COMMANDS:-}" ] || [ "${KASEKI_VALIDATION_COMMANDS:-}" = "none" ]; then
+    validation_status="skipped (no commands configured)"
+  else
+    validation_status="not run (no commands recorded)"
+  fi
   quality_status="$([ "$QUALITY_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$QUALITY_EXIT")"
   secret_scan_status="$([ "$SECRET_SCAN_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$SECRET_SCAN_EXIT")"
   task_summary="$(printf '%s' "${TASK_PROMPT:-Not provided}" | sanitize_pr_body_text)"
@@ -9508,7 +9584,7 @@ build_pr_body() {
     summary_content="$(build_pr_improvements_summary)"
   fi
 
-  if [ "${PRE_VALIDATION_EXIT:-0}" -eq 0 ] && [ "$VALIDATION_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && [ "$SECRET_SCAN_EXIT" -eq 0 ]; then
+  if [ "$pre_validation_status" = "passed" ] && [ "$validation_status" = "passed" ] && [ "$QUALITY_EXIT" -eq 0 ] && [ "$SECRET_SCAN_EXIT" -eq 0 ]; then
     all_validation_statuses_pass=1
   else
     all_validation_statuses_pass=0
@@ -9516,7 +9592,9 @@ build_pr_body() {
 
   if [ "$all_validation_statuses_pass" -eq 1 ]; then
     validation_command_sections="### Post-agent checks
-$(format_pr_command_results_bounded "$VALIDATION_TIMINGS_FILE")
+$(format_pr_command_results_bounded "$VALIDATION_TIMINGS_FILE")"
+    if [ -s "$PRE_VALIDATION_TIMINGS_FILE" ]; then
+      validation_command_sections="${validation_command_sections}
 
 <details><summary>Pre-agent baseline checks</summary>
 
@@ -9524,34 +9602,45 @@ Artifact: \`pre-validation-timings.tsv\`
 $(format_pr_command_results "$PRE_VALIDATION_TIMINGS_FILE")
 
 </details>"
+    fi
   else
-    pre_validation_full_commands="$(format_pr_command_results "$PRE_VALIDATION_TIMINGS_FILE")"
-    pre_validation_commands="$(format_pr_command_results "$PRE_VALIDATION_TIMINGS_FILE" 1)"
-    if [ "$pre_validation_full_commands" != "$pre_validation_commands" ]; then
-      pre_validation_commands="${pre_validation_commands}
+    validation_command_sections=""
+    if [ -s "$PRE_VALIDATION_TIMINGS_FILE" ]; then
+      pre_validation_full_commands="$(format_pr_command_results "$PRE_VALIDATION_TIMINGS_FILE")"
+      pre_validation_commands="$(format_pr_command_results "$PRE_VALIDATION_TIMINGS_FILE" 1)"
+      if [ "$pre_validation_full_commands" != "$pre_validation_commands" ]; then
+        pre_validation_commands="${pre_validation_commands}
 <details><summary>Full pre-agent validation command list</summary>
 
 $pre_validation_full_commands
 
 </details>"
+      fi
+      validation_command_sections="### Pre-agent validation commands
+$pre_validation_commands"
     fi
 
-    post_validation_full_commands="$(format_pr_command_results "$VALIDATION_TIMINGS_FILE")"
-    post_validation_commands="$(format_pr_command_results "$VALIDATION_TIMINGS_FILE" 1)"
-    if [ "$post_validation_full_commands" != "$post_validation_commands" ]; then
-      post_validation_commands="${post_validation_commands}
+    if [ -s "$VALIDATION_TIMINGS_FILE" ]; then
+      post_validation_full_commands="$(format_pr_command_results "$VALIDATION_TIMINGS_FILE")"
+      post_validation_commands="$(format_pr_command_results "$VALIDATION_TIMINGS_FILE" 1)"
+      if [ "$post_validation_full_commands" != "$post_validation_commands" ]; then
+        post_validation_commands="${post_validation_commands}
 <details><summary>Full post-agent validation command list</summary>
 
 $post_validation_full_commands
 
 </details>"
-    fi
-
-    validation_command_sections="### Pre-agent validation commands
-$pre_validation_commands
+      fi
+      if [ -n "$validation_command_sections" ]; then
+        validation_command_sections="${validation_command_sections}
 
 ### Post-agent validation commands
 $post_validation_commands"
+      else
+        validation_command_sections="### Post-agent validation commands
+$post_validation_commands"
+      fi
+    fi
   fi
 
   agent_review="$(build_pr_agent_review "$all_validation_statuses_pass")"
@@ -9559,8 +9648,17 @@ $post_validation_commands"
   review_focus="$(build_pr_human_review_focus)"
   review_notes=""
   if [ -n "$agent_review" ] || [ -n "$review_focus" ]; then
-    review_notes="## Review notes
-$(if [ -n "$agent_review" ]; then printf '%s\n\n' "$agent_review"; fi)$(if [ -n "$review_focus" ]; then printf '%s\n' "$review_focus"; fi)"
+    review_notes="## Review notes"
+    if [ -n "$agent_review" ]; then
+      review_notes="${review_notes}
+
+${agent_review}"
+    fi
+    if [ -n "$review_focus" ]; then
+      review_notes="${review_notes}
+
+${review_focus}"
+    fi
   fi
   if [ -n "$scorecard_markdown" ]; then
     scorecard_section="## Kaseki run scorecard
@@ -9607,8 +9705,7 @@ $scorecard_fallback
 
 </details>
 
-## Original task prompt
-<details><summary>Original task prompt</summary>
+<details><summary>Task prompt</summary>
 
 $task_summary
 
@@ -11456,7 +11553,8 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && \
   fi
   collect_goal_check_feedback "$INSTANCE_NAME"
 
-  if jq -e '.retryable == false' "${KASEKI_RESULTS_DIR}/goal-check.json" >/dev/null 2>&1; then
+  if [ -s "${KASEKI_RESULTS_DIR}/goal-check.json" ] && \
+    jq -e '.retryable == false' "${KASEKI_RESULTS_DIR}/goal-check.json" >/dev/null 2>&1; then
     STATUS=8
     FAILED_COMMAND="goal contract validation"
     GOAL_CHECK_FAILURE_REASON="goal_contract_invalid"

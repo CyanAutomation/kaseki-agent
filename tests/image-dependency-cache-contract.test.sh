@@ -33,5 +33,10 @@ grep -q '"image_cache_absent"' "$ROOT_DIR/kaseki-agent.sh"
 grep -q '"image_cache_key_mismatch"' "$ROOT_DIR/kaseki-agent.sh"
 grep -q 'build-essential' "$ROOT_DIR/Dockerfile"
 grep -q 'golang-go' "$ROOT_DIR/Dockerfile"
+final_stage_packages="$(awk '/^FROM base AS final$/{in_final=1} in_final && /^FROM / && $0 != "FROM base AS final"{exit} in_final{print}' "$ROOT_DIR/Dockerfile")"
+grep -Eq 'apt-get install.*(^|[[:space:]])make([[:space:]]|$)' <<<"$final_stage_packages" || {
+  printf 'Final worker image does not install make for make-based validation commands\n' >&2
+  exit 1
+}
 
 printf 'image dependency cache contract tests passed\n'

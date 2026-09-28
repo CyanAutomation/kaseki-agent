@@ -78,7 +78,10 @@ if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
   printf 'goal-setting\t%s\n' "\$args" >> "$PI_ARGS"
   printf 'goal-setting\n' >> "$PI_CALLS"
   if printf '%s' "\$prompt" | grep -Fq 'Write exactly one JSON object to $RESULTS_DIR/goal-setting-candidate.json'; then
-    printf '%s\n' '{"original_prompt":"inspect then code","upgraded_goal":"Upgraded: inspect then code","reasoning":"test","key_requirements":[],"success_criteria":[]}' > "$RESULTS_DIR/goal-setting-candidate.json"
+    # Keep the fake artifact valid under the goal contract so this test covers phase ordering.
+    cat > "$RESULTS_DIR/goal-setting-candidate.json" <<'JSON_GOAL'
+{"original_prompt":"inspect then code","upgraded_goal":"Upgraded: inspect then code","outcome_policy":"change_or_noop","reasoning":"test","key_requirements":[],"success_criteria":[{"criterion":"Complete the requested task and run configured validation","source_requirement":"inspect then code","verification_sources":["git.diff","validation-timings.tsv"],"smart_score":"high","reasoning":"The task and its configured checks provide direct completion evidence."}]}
+JSON_GOAL
   else
     printf '%s\n' '{"original_prompt":"inspect then code","upgraded_goal":"stdout only","reasoning":"test","key_requirements":[],"success_criteria":[]}'
   fi
