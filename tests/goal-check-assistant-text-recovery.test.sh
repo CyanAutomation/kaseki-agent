@@ -58,7 +58,7 @@ if [ "\${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
 prompt="\${*: -1}"
 if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
   printf 'goal-setting\n' >> "$PI_CALLS"
-  printf '%s\n' '{"original_prompt":"inspect then code","upgraded_goal":"Upgraded: inspect then code","reasoning":"test","key_requirements":[],"success_criteria":[]}' > "$RESULTS_DIR/goal-setting-candidate.json"
+  printf '%s\n' '{"original_prompt":"inspect then code","upgraded_goal":"Upgraded: inspect then code","outcome_policy":"change_or_noop","reasoning":"test","key_requirements":[],"success_criteria":[{"criterion":"Complete the requested task and run configured validation","source_requirement":"inspect then code","verification_sources":["git.diff","validation-timings.tsv"],"smart_score":"high","reasoning":"The task and configured validation provide direct completion evidence."}]}' > "$RESULTS_DIR/goal-setting-candidate.json"
 elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf 'scouting\n' >> "$PI_CALLS"
   printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":[],"validation_patterns":[]}}' > "$RESULTS_DIR/scouting-candidate.json"

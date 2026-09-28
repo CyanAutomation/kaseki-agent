@@ -11553,7 +11553,8 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && \
   fi
   collect_goal_check_feedback "$INSTANCE_NAME"
 
-  if jq -e '.retryable == false' "${KASEKI_RESULTS_DIR}/goal-check.json" >/dev/null 2>&1; then
+  if [ -s "${KASEKI_RESULTS_DIR}/goal-check.json" ] && \
+    jq -e '.retryable == false' "${KASEKI_RESULTS_DIR}/goal-check.json" >/dev/null 2>&1; then
     STATUS=8
     FAILED_COMMAND="goal contract validation"
     GOAL_CHECK_FAILURE_REASON="goal_contract_invalid"
