@@ -209,6 +209,27 @@ describe('StatusPhaseOutcomeHelper', () => {
     });
   });
 
+  it('does not treat default zero exit metadata as a started phase after pre-agent failure', () => {
+    const helper = new StatusPhaseOutcomeHelper(
+      makeScheduler([{ stage: 'phase_not_reached', message: 'phase=scouting reason=pre_agent_validation_failed' }]),
+      makeConfig(resultsDir),
+    );
+    const response = makeResponse('pre-agent validation');
+
+    helper.addPhaseOutcome(response, makeJob({ status: 'failed' }), {
+      failed_command: 'pre-agent validation',
+      goal_setting_duration_seconds: 0,
+      goal_setting_exit_code: 0,
+      goal_setting_actual_model: 'unknown',
+    });
+
+    expect(response.phaseOutcome).toMatchObject({
+      goalSetting: 'not_reached',
+      scouting: 'not_reached',
+      weaving: 'not_reached',
+    });
+  });
+
   it('treats non-zero metadata-only goal-setting exit code as failure without fallback evidence', () => {
     const helper = new StatusPhaseOutcomeHelper(makeScheduler(), makeConfig(resultsDir));
     const response = makeResponse('');

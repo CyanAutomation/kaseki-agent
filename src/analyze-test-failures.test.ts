@@ -8,7 +8,7 @@
  * - extractExitCode: exit code detection from logs
  */
 
-import { parseTestResults, classifyTests, generateSummary, extractExitCode } from './analyze-test-failures';
+import { analyzeTestLogs, parseTestResults, classifyTests, generateSummary, extractExitCode } from './analyze-test-failures';
 
 describe('analyze-test-failures', () => {
   describe('parseTestResults', () => {
@@ -351,11 +351,11 @@ describe('analyze-test-failures', () => {
       expect(exitCode).toBe(1);
     });
 
-    it('should default to 0 when no exit code found', () => {
+    it('returns unknown when no exit code or test failure marker is present', () => {
       const log = 'Everything is fine';
       const exitCode = extractExitCode(log);
 
-      expect(exitCode).toBe(0);
+      expect(exitCode).toBeNull();
     });
 
     it('should prioritize explicit exit code over FAIL keyword', () => {
@@ -409,6 +409,43 @@ describe('analyze-test-failures', () => {
       expect(summary.total_pre_existing).toBe(1);
       expect(summary.total_fixed).toBe(0);
       expect(summary.total_tests).toBe(2);
+    });
+
+    it('does not infer a pass or fixed tests when the working validation log is empty', () => {
+      const result = analyzeTestLogs('FAIL existing test\nexit_code=1\n', '');
+
+      expect(result.baseline_comparison_reliable).toBe(false);
+      expect(result.working_validation_exit_code).toBeNull();
+      expect(result.working_test_results).toEqual({ overall: { status: 'skipped' } });
+      expect(result.classification).toEqual({});
+      expect(result.summary).toEqual({
+        total_pre_existing: 0,
+        total_newly_introduced: 0,
+        total_fixed: 0,
+        total_tests: 0,
+      });
+      expect(result.baseline_comparison_warning).toMatch(/working.*missing|empty/i);
+    });
+
+    it('does not classify command-not-found exit 127 as a test failure or a fix', () => {
+      const result = analyzeTestLogs(
+        'bash: go: command not found\nexit_code=127\n',
+        'bash: go: command not found\nexit_code=127\n',
+      );
+
+      expect(result.baseline_comparison_reliable).toBe(false);
+      expect(result.baseline_test_results).toEqual({ overall: { status: 'skipped' } });
+      expect(result.working_test_results).toEqual({ overall: { status: 'skipped' } });
+      expect(result.classification).toEqual({});
+      expect(result.summary.total_fixed).toBe(0);
+      expect(result.baseline_comparison_warning).toMatch(/127/);
+    });
+
+    it('still classifies reliable baseline failures fixed by a passing working run', () => {
+      const result = analyzeTestLogs('FAIL existing test\nexit_code=1\n', 'PASS existing test\nexit_code=0\n');
+
+      expect(result.baseline_comparison_reliable).toBe(true);
+      expect(result.summary.total_fixed).toBe(1);
     });
   });
 });

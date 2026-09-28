@@ -55,7 +55,7 @@ FROM base AS runtime
 
 # System dependencies + user setup (consolidated)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io git jq procps ruby shellcheck tini \
+    && apt-get install -y --no-install-recommends bash build-essential ca-certificates curl docker.io git golang-go jq procps ruby shellcheck tini \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10000 kaseki \
     && useradd --system --uid 10000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
