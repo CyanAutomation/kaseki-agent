@@ -43,8 +43,15 @@ jobs:
         run: |
           set -euo pipefail
           sha="$(git rev-parse HEAD)"; short_sha="${sha::12}"
-          if [[ "$EVENT_NAME" == workflow_call ]]; then tags="$RELEASE_VERSION,latest"
-          else tags="main-$short_sha"; fi
+          # Every successful publish promotes the verified image to `latest`.
+          # Keep a second, immutable tag for release and non-release runs.
+          tags="latest"
+          if [[ "$EVENT_NAME" == workflow_call ]]; then
+            [[ -n "$RELEASE_VERSION" ]] || { echo "Release version is required for workflow_call" >&2; exit 1; }
+            tags+=",$RELEASE_VERSION"
+          else
+            tags+=",main-$short_sha"
+          fi
           hub_promotion=""; ghcr_promotion=""
           IFS=',' read -r -a tag_entries <<< "$tags"
           for raw_tag in "${tag_entries[@]}"; do
