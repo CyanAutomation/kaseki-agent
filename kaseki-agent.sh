@@ -7106,8 +7106,7 @@ build_scouting_prompt() {
 
   cat <<'EOF'
 
-## [SOFT TOKEN TARGETS]
-Use concise, evidence-led findings and stop exploring when the handoff is supported. Context, turn, output, and tool-output targets are advisory; continue when necessary to produce a complete and accurate handoff.
+Token targets are advisory; prioritize complete handoffs.
 EOF
 
   # Conditionally include detailed guidance for complex tasks
