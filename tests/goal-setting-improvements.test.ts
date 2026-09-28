@@ -728,6 +728,8 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         copyFileSync(join(repoRoot, 'scripts', 'github-preflight-auth.sh'), join(scriptsDir, 'github-preflight-auth.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'github-preflight-health.sh'), join(scriptsDir, 'github-preflight-health.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'validation-timeout-policy.sh'), join(scriptsDir, 'validation-timeout-policy.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'validation-command-preflight.sh'), join(scriptsDir, 'validation-command-preflight.sh'));
+        expect(existsSync(join(scriptsDir, 'validation-command-preflight.sh'))).toBe(true);
         copyFileSync(join(repoRoot, 'dist', 'scouting-allowlist.js'), join(scriptsDir, 'scouting-allowlist.js'));
         mkdirSync(join(scriptsDir, 'lib'), { recursive: true });
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'json.sh'), join(scriptsDir, 'lib', 'json.sh'));
