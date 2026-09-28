@@ -3,6 +3,13 @@ set -euo pipefail
 
 readonly GO_VERSION='1.27.1'
 
+# Keep the version safe to interpolate into URLs, paths, and expected command
+# output if its source becomes configurable in the future.
+if [[ ! "$GO_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+  printf 'Invalid Go version: %s (expected X.Y or X.Y.Z)\n' "$GO_VERSION" >&2
+  exit 2
+fi
+
 go_archive_checksum() {
   case "$1" in
     amd64) printf '%s' '63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445' ;;
