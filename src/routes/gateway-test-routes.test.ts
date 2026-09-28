@@ -165,6 +165,24 @@ describe('gateway-test-routes', () => {
       expect(body.evaluationSmoke).not.toHaveProperty('modelUsed');
     });
 
+    it('keeps a failed optional evaluation smoke from reporting healthy inference as a gateway outage', async () => {
+      (kasekiGatewaySmoke.shouldRunClassificationSmoke as jest.Mock).mockReturnValue(true);
+      (kasekiGatewaySmoke.testClassificationSmoke as jest.Mock).mockResolvedValueOnce({
+        status: 'error',
+        detail: 'Evaluation endpoint returned 400',
+        remediation: 'Check evaluator credentials',
+      });
+
+      const response = await fetch(`${baseUrl}/gateway-test?stage=2&evaluation=true`);
+      const body = await response.json() as any;
+
+      expect(response.status).toBe(200);
+      expect(body.status).toBe('partial');
+      expect(body.responseSmokeValidated).toBe(true);
+      expect(body.evaluationValidated).toBe(false);
+      expect(body.evaluationSmoke.detail).toContain('400');
+    });
+
     it('continues to accept the previous optional evaluation query parameter', async () => {
       const response = await fetch(`${baseUrl}/gateway-test?stage=2&classification=true`);
       expect(response.status).toBe(200);
@@ -234,6 +252,23 @@ describe('gateway-test-routes', () => {
       expect(body.partialSuccess).toBe(true);
       expect(body.gatewayInferenceValidated).toBe(false);
       expect(body.piAdapterValidated).toBe(true);
+    });
+
+    it('keeps optional evaluation failure separate when the inference and Pi paths pass', async () => {
+      (kasekiGatewaySmoke.shouldRunClassificationSmoke as jest.Mock).mockReturnValue(true);
+      (kasekiGatewaySmoke.testClassificationSmoke as jest.Mock).mockResolvedValueOnce({
+        status: 'error',
+        detail: 'Evaluation endpoint returned 400',
+      });
+
+      const response = await fetch(`${baseUrl}/gateway-test?piProvider=true&evaluation=true`);
+      const body = await response.json() as any;
+
+      expect(response.status).toBe(200);
+      expect(body.status).toBe('partial');
+      expect(body.responseSmokeValidated).toBe(true);
+      expect(body.piAdapterValidated).toBe(true);
+      expect(body.evaluationValidated).toBe(false);
     });
 
     it('should handle errors gracefully', async () => {

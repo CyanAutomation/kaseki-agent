@@ -16,9 +16,9 @@ export function normalizeConfig(env: NodeJS.ProcessEnv): ScorecardConfig {
   // These are advisory scoring targets, not execution limits.  Agentic runs
   // include cached context and evaluator passes, so the former values made
   // healthy runs look anomalous simply for emitting complete evidence.
-  const defaults = taskSize === 'small' ? { elapsedSeconds: 900, tokens: 100_000 }
-    : taskSize === 'medium' ? { elapsedSeconds: 2700, tokens: 300_000 }
-      : taskSize === 'large' ? { elapsedSeconds: 7200, tokens: 1_200_000 }
+  const defaults = taskSize === 'small' ? { elapsedSeconds: 900, tokens: 750_000 }
+    : taskSize === 'medium' ? { elapsedSeconds: 2700, tokens: 1_500_000 }
+      : taskSize === 'large' ? { elapsedSeconds: 7200, tokens: 2_500_000 }
         // The custom default is an advisory estimate, calibrated from the
         // three completed multi-phase runs (median 2.36m model tokens,
         // rounded to 2.5m). It is used only for scorecard comparison.

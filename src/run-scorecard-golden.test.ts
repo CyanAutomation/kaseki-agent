@@ -76,9 +76,9 @@ describe('scorecard dimension tables and invariants', () => {
 });
 
 describe.each([
-  ['small', 100_000, 900_000, 95],
-  ['medium', 300_000, 2_700_000, 98],
-  ['large', 1_200_000, 7_200_000, 100],
+  ['small', 750_000, 900_000, 95],
+  ['medium', 1_500_000, 2_700_000, 98],
+  ['large', 2_500_000, 7_200_000, 100],
 ] as const)('%s scorecard semantics', (taskSize, tokenBudget, wallClockMs, implementationScore) => {
   afterEach(() => {
     ScorecardContext.reset();

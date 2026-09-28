@@ -285,17 +285,24 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 #   - Runtime: unaffected (all runtime binaries, scripts, and dependencies included)
 #
 FROM base AS final
+ARG TARGETARCH
 
-# Minimal setup: only runtime requirements (no build tools or package managers beyond npm for app startup check)
+# Runtime plus the Node and Go toolchains used by ephemeral repository checks.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io git jq make procps shellcheck tini \
+    && apt-get install -y --no-install-recommends bash build-essential ca-certificates curl docker.io git jq make procps shellcheck tini \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10000 kaseki \
     && useradd --system --uid 10000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
     && mkdir -p /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki/workspace-cache \
     && chown -R kaseki:kaseki /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki
 
+COPY scripts/install-go-toolchain.sh /usr/local/sbin/install-go-toolchain
+RUN /usr/local/sbin/install-go-toolchain install "$TARGETARCH" \
+    && rm /usr/local/sbin/install-go-toolchain \
+    && /usr/local/go/bin/go version | grep -F 'go1.27.1'
+
 ENV HOME=/tmp/kaseki-home \
+    PATH="/usr/local/go/bin:${PATH}" \
     NPM_CONFIG_CACHE=/tmp/npm-cache \
     npm_config_cache=/tmp/npm-cache \
     PI_CODING_AGENT_DIR=/tmp/pi-agent \

@@ -53,7 +53,7 @@ describe('run scorecard', () => {
     expect(card.phases.goal_setting.duration_ms).toBe(10000);
     expect(card.phases.coding.duration_ms).toBe(20000);
     expect(card.timing_totals.phase_duration_ms.run_evaluation).toBe(30000);
-    expect(card.warnings).toContain('Token budget exceeded: 250010 model tokens used versus 200000 target.');
+    expect(card.warnings).toContain('Soft token target exceeded: 250010 model tokens used versus 200000; execution was not limited.');
   });
 
   test('keeps pre-agent validation out of final validation and trusts durable timestamps', () => {
@@ -110,7 +110,7 @@ describe('run scorecard', () => {
     const card = buildScorecard(evidence);
 
     expect(card.token_totals.cache_read_tokens).toBe(900_000);
-    expect(card.warnings).not.toContain('Token budget exceeded: 1010000 used versus 200000 target.');
+    expect(card.warnings).not.toContain('Soft token target exceeded: 1010000 model tokens used versus 200000; execution was not limited.');
     expect(card.warnings).toContain('Cache reads observed: 900000 tokens (reported separately from the model token budget).');
   });
 
@@ -130,10 +130,16 @@ describe('run scorecard', () => {
     expect(RunScorecardSchema.safeParse(card).success).toBe(true);
   });
 
+  test('sets task-size token targets as soft comparison points calibrated for multi-phase runs', () => {
+    expect(normalizeConfig({ KASEKI_SCORECARD_TASK_SIZE: 'small' }).targets.tokens).toBe(750_000);
+    expect(normalizeConfig({ KASEKI_SCORECARD_TASK_SIZE: 'medium' }).targets.tokens).toBe(1_500_000);
+    expect(normalizeConfig({ KASEKI_SCORECARD_TASK_SIZE: 'large' }).targets.tokens).toBe(2_500_000);
+  });
+
   test.each([
-    ['small', 100_000, 900],
-    ['medium', 300_000, 2_700],
-    ['large', 1_200_000, 7_200],
+    ['small', 750_000, 900],
+    ['medium', 1_500_000, 2_700],
+    ['large', 2_500_000, 7_200],
   ] as const)('uses the %s task-size target defaults', (taskSize, tokens, elapsedSeconds) => {
     const config = normalizeConfig({ KASEKI_SCORECARD_TASK_SIZE: taskSize });
 

@@ -134,6 +134,8 @@ process.stdin.on("end", () => {
     cat <<EOF
 $compressed_instructions
 
+Keep evidence and output concise. Context, turn, tool-output, and output-token targets are advisory; inspect every required source and exceed a target whenever needed for a supported verdict.
+
 ## Context
 $goal_setting_context
 $causality_context
@@ -165,6 +167,8 @@ EOF
     # Verbose version (caveman level 0-1)
     cat <<EOF
 You are a read-only goal-check Pi agent inside a Kaseki-managed ephemeral workspace.
+
+Keep evidence and output concise. Context, turn, tool-output, and output-token targets are advisory; inspect every required source and exceed a target whenever needed for a supported verdict.
 
 Evaluate whether the coding agent's current repository changes realized the objective from the goal-setting report.
 
@@ -309,6 +313,8 @@ build_run_evaluation_prompt() {
     cat <<EOF
 $compressed_instructions
 
+Keep the evaluation JSON concise and grounded in the required artifacts. Context, turn, tool-output, and output-token targets are advisory; inspect required evidence and exceed a target when needed rather than omitting a supported finding.
+
 In addition to stage_value reasons, return evidence_sources_inspected, contradictions, confidence_calibration, and phase_scorecard using the structured contract in the verbose prompt. Record actually inspected sources and prefer machine-readable counts and ratios.
 
 ## Reviewer-facing PR description
@@ -348,6 +354,8 @@ EOF
     # Verbose version (caveman level 0-1) - keeping existing full instructions
     cat <<EOF
 You are a read-only run-evaluation Pi agent inside a Kaseki-managed ephemeral workspace.
+
+Keep the evaluation JSON concise and grounded in the required artifacts. Context, turn, tool-output, and output-token targets are advisory; inspect required evidence and exceed a target when needed rather than omitting a supported finding.
 
 Evaluate Kaseki's process quality for this run. Be task-agnostic: focus on reviewer confidence, process efficiency, stage value, and opportunities for Kaseki to improve.
 

@@ -32,7 +32,7 @@ repo_memory_is_fresh() {
   size_bytes="$(wc -c < "$memory_file" 2>/dev/null | tr -d ' ' || printf '0')"
   [ "$size_bytes" -gt 0 ] || return 1
   [ "$size_bytes" -le "$max_bytes" ] || return 1
-  modified="$(stat -c %Y "$memory_file" 2>/dev/null || printf '0')"
+  modified="$(stat -c %Y "$memory_file" 2>/dev/null || stat -f %m "$memory_file" 2>/dev/null || printf '0')"
   ttl_seconds=$((ttl_days * 86400))
   age_seconds=$((now - modified))
   [ "$age_seconds" -ge 0 ] && [ "$age_seconds" -le "$ttl_seconds" ]

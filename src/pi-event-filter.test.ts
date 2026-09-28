@@ -752,10 +752,41 @@ test('uses realistic defaults for advisory phase targets', async () => {
 
     expect(budget).toMatchObject({
       enforcement: 'soft_target',
-      max_context_tokens: 64000,
-      max_turns: 64,
-      max_tool_output_tokens: 32000,
+      max_context_tokens: 48000,
+      max_turns: 48,
+      max_tool_output_tokens: 16000,
     });
+  } finally {
+    for (const name of names) {
+      if (previous[name] === undefined) delete process.env[name];
+      else process.env[name] = previous[name];
+    }
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('reports phase target overruns without truncating events or failing the filter', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-soft-phase-budget-'));
+  const inputPath = path.join(tmpDir, 'events.jsonl');
+  const outputPath = path.join(tmpDir, 'filtered.jsonl');
+  const summaryPath = path.join(tmpDir, 'summary.json');
+  const names = ['KASEKI_PHASE_MAX_CONTEXT_TOKENS', 'KASEKI_PHASE_MAX_TURNS', 'KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS'];
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  for (const name of names) delete process.env[name];
+  process.env.KASEKI_PHASE_MAX_CONTEXT_TOKENS = '10';
+  process.env.KASEKI_PHASE_MAX_TURNS = '1';
+  process.env.KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS = '10';
+  try {
+    fs.writeFileSync(inputPath, [
+      { type: 'turn_start' },
+      { type: 'message_end', message: { response_id: 'over-target', model: 'coding-model', usage: { input: 100, output: 20 } } },
+    ].map(JSON.stringify).join('\n') + '\n');
+
+    await runPiEventFilter(inputPath, outputPath, summaryPath);
+    const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+
+    expect(summary.phase_budget).toMatchObject({ enforcement: 'soft_target', context_exceeded: true, exceeded: true });
+    expect(fs.readFileSync(outputPath, 'utf8')).toContain('over-target');
   } finally {
     for (const name of names) {
       if (previous[name] === undefined) delete process.env[name];
