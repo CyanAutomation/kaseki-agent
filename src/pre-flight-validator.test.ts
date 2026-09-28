@@ -64,7 +64,10 @@ describe('PreFlightValidator validation logic', () => {
 
       const response = await validator.validate(request);
       const cmdCheck = response.checks.find((c) => c.name === 'commands-syntax');
-      expect(cmdCheck?.status).toBe('pass');
+      expect(cmdCheck?.status).toBe('warning');
+      expect(cmdCheck?.message).toContain('executable availability are checked inside the worker');
+      expect(cmdCheck?.message).not.toContain('syntax is valid');
+      expect(response.warnings).toContain(cmdCheck?.message);
     });
   });
 

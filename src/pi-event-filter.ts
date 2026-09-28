@@ -801,9 +801,9 @@ function buildPhaseBudget(
   state: PiEventFilterState,
   largestContextTokens: number,
 ): PhaseBudgetSummary {
-  const maxContextTokens = parsePositiveInt('KASEKI_PHASE_MAX_CONTEXT_TOKENS', 64_000);
-  const maxTurns = parsePositiveInt('KASEKI_PHASE_MAX_TURNS', 64);
-  const maxToolOutputTokens = parsePositiveInt('KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS', 32_000);
+  const maxContextTokens = parsePositiveInt('KASEKI_PHASE_MAX_CONTEXT_TOKENS', 48_000);
+  const maxTurns = parsePositiveInt('KASEKI_PHASE_MAX_TURNS', 48);
+  const maxToolOutputTokens = parsePositiveInt('KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS', 16_000);
   const logicalAgentTurns = state.aggregator.summary().event_counts.turn_start ?? null;
   const phaseBudget: PhaseBudgetSummary = {
     enforcement: 'soft_target',

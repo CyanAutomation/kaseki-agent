@@ -275,6 +275,7 @@ describe('Scouting prompt contracts', () => {
     expect(runtimePrompt).toContain('task: concise actionable string');
     expect(runtimePrompt).toContain('test_impact:');
     expect(runtimePrompt).toContain('/results/scouting-candidate.json');
+    expect(runtimePrompt).toContain('Token targets are advisory; prioritize complete handoffs.');
   });
 
   test('keeps verbose guidance bounded and non-duplicative', () => {

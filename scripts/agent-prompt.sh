@@ -103,6 +103,8 @@ Evaluation routing hints:
 2. Implement it, then run only the focused checks assigned to the coding phase.
 3. Stop immediately when the required diff and checks satisfy the checklist.
 4. Do not restate established conclusions or explore optional improvements.
+5. For Markdown edits, verify the Markdown structure in rendered output; indent nested list items by two spaces per level unless the repository's renderer requires another style.
+6. Treat soft token targets as efficiency guidance, not limits. Batch focused reads, avoid repeating evidence, and continue past a target when needed to satisfy the checklist and checks.
 
 Completion checklist (machine-readable; deduplicated):
 $completion_checklist

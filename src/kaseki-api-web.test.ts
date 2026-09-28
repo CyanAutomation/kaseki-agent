@@ -369,6 +369,25 @@ describe('kaseki API web console behavior', () => {
     expectTextContains(document, '#response-summary', 'Confirmed controller progress event');
   });
 
+  test('distinguishes a live agent heartbeat from stale substantive progress', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/runs': createJsonResponse({ runs: [{ id: 'kaseki-live-stale', status: 'running' }] }),
+        '/api/runs/kaseki-live-stale/status': createJsonResponse({
+          id: 'kaseki-live-stale', status: 'running',
+          progress: { stage: 'pi coding agent', updatedAt: '2026-08-19T21:40:00Z' },
+          progressHeartbeat: { ageSeconds: 420, stale: true, livenessAgeSeconds: 20 },
+        }),
+      }, createJsonResponse({ status: 'ok' })),
+    });
+
+    await refreshAndSelectFirstRun(document);
+    await waitFor(() => expectTextContains(document, '#response-summary', 'Agent heartbeat 20s ago'));
+    expectTextContains(document, '#response-summary', 'no substantive stage or command update for 7m 00s');
+    expectTextNotContains(document, '#response-summary', 'worker may still be alive');
+  });
+
   test('loads the recent run list into selectable run buttons', async () => {
     const { document, calls } = await renderConsole({
       storedToken: 'token12345',

@@ -1145,7 +1145,7 @@ export async function testClassificationSmoke(requested: boolean = false): Promi
       detail: `Evaluation endpoint error: ${error instanceof Error ? error.message : String(error)}`,
       responseTime,
       timestamp,
-      remediation: 'Check OpenRouter API key, network connectivity, and endpoint health before retrying.',
+      remediation: 'The optional evaluation smoke uses the separate OpenRouter decision API. Check OPENROUTER_API_KEY or OPENROUTER_API_KEY_FILE, network connectivity, and evaluator endpoint health; this result does not diagnose LLM_GATEWAY_URL.',
     };
   }
 }
