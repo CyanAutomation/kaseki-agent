@@ -985,6 +985,22 @@ cache_metric_elapsed_seconds() {
   fi
 }
 
+record_dependency_cache_publish_timing() {
+  local start_ns="$1" exit_code="$2" reason="$3"
+  local elapsed_seconds publish_succeeded=false detail
+  elapsed_seconds="$(cache_metric_elapsed_seconds "$start_ns")"
+  [ "$exit_code" -eq 0 ] && publish_succeeded=true
+  detail="reason=$reason elapsed_seconds=$elapsed_seconds"
+  append_cache_metric "${KASEKI_RESULTS_DIR}/cache-metrics.json" "workspace_cache_publish" "$publish_succeeded" "workspace" "$elapsed_seconds" "$reason" || true
+  record_stage_timing "dependency cache publish" "$exit_code" "$elapsed_seconds" "$detail"
+  emit_event "dependency_cache_publish_timing" "exit_code=$exit_code" "elapsed_seconds=$elapsed_seconds" "reason=$reason" || true
+  if [ "$exit_code" -eq 0 ]; then
+    emit_progress "dependency cache publish" "finished elapsed=${elapsed_seconds}s" || true
+  else
+    emit_progress "dependency cache publish" "failed elapsed=${elapsed_seconds}s reason=$reason" "error" || true
+  fi
+}
+
 # Append a secret scan result to secret-scan.json (merged into metadata.json.phases at finalization)
 append_secret_scan_result() {
   local output_file="$1"
@@ -10073,7 +10089,7 @@ prepare_dependencies() {
   fi
 
   local repo_ref_key lock_hash flags_hash cache_key workspace_cache_root workspace_cache_dir image_cache_root image_cache_dir image_validation_marker stamp_file metadata_file
-  local cache_lock_file cache_lock_fd tmp_cache_dir old_cache_dir install_start install_start_ns install_elapsed install_flags_display cache_detail cache_metric_start_ns cache_metric_elapsed
+  local cache_lock_file cache_lock_fd tmp_cache_dir old_cache_dir install_start install_start_ns install_elapsed install_flags_display cache_detail cache_metric_start_ns cache_metric_elapsed cache_publish_start_ns cache_publish_exit
   local node_major node_platform node_arch node_abi cache_reused cache_source install_mode restore_mode restore_method cache_repaired restore_validation_reason existing_graph_error existing_graph_exit restore_npm_output restore_npm_exit install_exit
   local -a install_flags
   repo_ref_key="$(printf '%s@%s' "$REPO_URL" "$GIT_REF" | sha256sum | awk '{print $1}')"
@@ -10369,37 +10385,48 @@ prepare_dependencies() {
     return 0
   fi
 
+  cache_publish_start_ns="$(cache_metric_now)"
+  emit_progress "dependency cache publish" "started source=workspace lock_hash=$lock_hash"
   if ! mkdir -p "$workspace_cache_root"; then
+    record_dependency_cache_publish_timing "$cache_publish_start_ns" 1 "cache_root_create_failed"
     exec {cache_lock_fd}>&-
     return 1
   fi
   tmp_cache_dir="${workspace_cache_dir}.tmp.$$"
   old_cache_dir="${workspace_cache_dir}.old.$$"
   rm -rf "$tmp_cache_dir" "$old_cache_dir"
-  if ! publish_node_modules_cache node_modules "$tmp_cache_dir"; then
+  cache_publish_exit=0
+  publish_node_modules_cache node_modules "$tmp_cache_dir" || cache_publish_exit=$?
+  if [ "$cache_publish_exit" -ne 0 ]; then
+    record_dependency_cache_publish_timing "$cache_publish_start_ns" "$cache_publish_exit" "cache_copy_failed"
     exec {cache_lock_fd}>&-
-    return 1
+    return "$cache_publish_exit"
   fi
   # Keep this publish path single-pass and atomic to avoid cache corruption.
   if [ -d "$workspace_cache_dir" ] && ! mv "$workspace_cache_dir" "$old_cache_dir"; then
+    record_dependency_cache_publish_timing "$cache_publish_start_ns" 1 "existing_cache_backup_failed"
     exec {cache_lock_fd}>&-
     return 1
   fi
   if ! mv "$tmp_cache_dir" "$workspace_cache_dir"; then
+    record_dependency_cache_publish_timing "$cache_publish_start_ns" 1 "cache_install_failed"
     exec {cache_lock_fd}>&-
     return 1
   fi
   record_dependency_cache_entry_size "$workspace_cache_root" "$workspace_cache_dir"
   if ! rm -rf "$old_cache_dir"; then
+    record_dependency_cache_publish_timing "$cache_publish_start_ns" 1 "old_cache_cleanup_failed"
     exec {cache_lock_fd}>&-
     return 1
   fi
   if ! printf '%s\n' "$lock_hash" > "$stamp_file"; then
+    record_dependency_cache_publish_timing "$cache_publish_start_ns" 1 "stamp_write_failed"
     exec {cache_lock_fd}>&-
     return 1
   fi
   if ! printf 'repo_ref_key=%s	repo_url=%s	git_ref=%s	lock_hash=%s	cache_key=%s	flags_hash=%s	restore_mode=%s	restore_method=%s\n' \
     "$repo_ref_key" "$REPO_URL" "$GIT_REF" "$lock_hash" "$cache_key" "$flags_hash" "$restore_mode" "$restore_method" > "$metadata_file"; then
+    record_dependency_cache_publish_timing "$cache_publish_start_ns" 1 "metadata_write_failed"
     exec {cache_lock_fd}>&-
     return 1
   fi
@@ -10414,11 +10441,13 @@ prepare_dependencies() {
   else
     invalidate_workspace_dependency_cache "$workspace_cache_dir" "$stamp_file" "$metadata_file"
     rm -f "$workspace_cache_root"/validated "$workspace_cache_root"/validated-v*
+    record_dependency_cache_publish_timing "$cache_publish_start_ns" 1 "cache_validation_failed"
     exec {cache_lock_fd}>&-
     return 1
   fi
 
   prune_dependency_cache "$KASEKI_DEPENDENCY_CACHE_DIR" "$KASEKI_DEPENDENCY_CACHE_MAX_BYTES" "$KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS" "$KASEKI_DEPENDENCY_CACHE_METRICS_FILE"
+  record_dependency_cache_publish_timing "$cache_publish_start_ns" 0 "published_and_validated"
 
   exec {cache_lock_fd}>&-
   return 0

@@ -5,8 +5,12 @@
 # are checked without executing user-provided validation text.
 
 validation_command_missing_executable() {
-  local commands="$1" command trimmed word executable
+  local commands="$1" command trimmed word executable command_text
   local -a requested_commands words
+  command_text="${commands//;/}"
+  command_text="${command_text//[[:space:]]/}"
+  [ -n "$command_text" ] || return 1
+  requested_commands=()
   IFS=';' read -r -a requested_commands <<< "$commands"
 
   for command in "${requested_commands[@]}"; do
@@ -14,6 +18,7 @@ validation_command_missing_executable() {
     trimmed="${trimmed#"${trimmed%%[![:space:]]*}"}"
     trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
     [ -n "$trimmed" ] || continue
+    [ "$trimmed" = "none" ] && continue
     read -r -a words <<< "$trimmed"
     executable=""
     local check_next=1 skip_simple_command=0

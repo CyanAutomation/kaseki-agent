@@ -46,6 +46,8 @@ assert_missing go 'go test ./...'
 assert_missing make 'npm test; make ci'
 assert_missing go 'KASEKI_MODE=ci go test ./...'
 assert_available 'npm run build'
+assert_available "npm run 'test|build'"
+assert_available 'none'
 assert_available ''
 
 printf '✓ validation command preflight identifies missing direct executables\n'

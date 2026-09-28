@@ -3651,7 +3651,7 @@ describe('kaseki-api-routes status artifact hints', () => {
         'pre-validation.log',
         'test-baseline-comparison.json'
       ]));
-      expect(body.diagnosticEntryPoint).toBe('test-baseline-comparison.json');
+      expect(body.diagnosticEntryPoint).toBe('pre-validation.log');
       expect(body.diagnosticSummary.testFailure).toMatchObject({
         failedSuite: 'src/kaseki-api-routes.test.ts',
         failedTest: 'kaseki-api-routes preflight diagnostics › reports worker gateway launch config missing',
