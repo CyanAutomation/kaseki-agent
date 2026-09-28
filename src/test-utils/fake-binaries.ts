@@ -42,12 +42,16 @@ ${
   if [ -f "${piState}" ]; then attempt=$(( $(cat "${piState}") + 1 )); fi
   printf '%s\\n' "$attempt" > "${piState}"
   if [ "$attempt" -eq 1 ]; then
-    echo 'api error: upstream timeout' >&2
-    exit 124
-  fi
-  cat > "${resultsDir}/goal-setting-candidate.json" <<'JSON'
-{"original_prompt":"retry original prompt","upgraded_goal":"retry-upgraded prompt from attempt two","outcome_policy":"change_required","reasoning":"second attempt succeeded after a transient failure","key_requirements":["persist retry metadata"],"success_criteria":[{"criterion":"metadata records the successful retry attempt","smart_score":"high","reasoning":"numeric metadata can be asserted"}],"anti_patterns":{"do_not_modify":[],"do_not_break":["retry metadata"],"must_preserve":["original prompt fallback"]},"constraints":{"operational":["retry once after transient goal-setting failure"],"architectural":[],"technical":[],"business":[]},"quality_metrics":{"clarity":"high","measurability":"high","specificity":"high","scope_clarity":"high","constraint_strength":"high"},"confidence":"high"}
+    printf '%s' "$prompt" > "${resultsDir}/goal-setting-attempt-one-prompt.txt"
+    cat > "${resultsDir}/goal-setting-candidate.json" <<'JSON'
+{"original_prompt":"retry original prompt","upgraded_goal":"invalid goal candidate","outcome_policy":"change_required","reasoning":"The first attempt omitted a required applicability condition.","key_requirements":["preserve the original request"],"success_criteria":[{"criterion":"When documentation is requested, update README.md only","smart_score":"high","reasoning":"The criterion names one file."}],"anti_patterns":{"do_not_modify":[],"do_not_break":["the original task scope"],"must_preserve":["the user's requested file limit"]},"constraints":{"operational":[],"architectural":[],"technical":[],"business":[]},"quality_metrics":{"clarity":"high","measurability":"high","specificity":"high","scope_clarity":"high","constraint_strength":"high"},"confidence":"high"}
 JSON
+  else
+    printf '%s' "$prompt" > "${resultsDir}/goal-setting-attempt-two-prompt.txt"
+  cat > "${resultsDir}/goal-setting-candidate.json" <<'JSON'
+{"original_prompt":"retry original prompt","upgraded_goal":"retry-upgraded prompt from attempt two","outcome_policy":"change_required","reasoning":"second attempt repaired the invalid conditional criterion","key_requirements":["persist retry metadata"],"success_criteria":[{"criterion":"When documentation is requested, update README.md only","applies_when":"The original request asks for documentation changes","source_requirement":"When documentation is requested","verification_sources":["git.diff"],"smart_score":"high","reasoning":"The criterion has an explicit applicability condition and file boundary."}],"anti_patterns":{"do_not_modify":[],"do_not_break":["retry metadata"],"must_preserve":["original prompt fallback"]},"constraints":{"operational":["repair the invalid goal contract once"],"architectural":[],"technical":[],"business":[]},"quality_metrics":{"clarity":"high","measurability":"high","specificity":"high","scope_clarity":"high","constraint_strength":"high"},"confidence":"high"}
+JSON
+  fi
 elif [ "$stage" = "scouting" ]; then
   printf 'scouting\\n' >> "${piCalls}"
   printf '%s\\n' '{"task":"Validate retry orchestration","requirements":["Run the retry workflow"],"relevant_files":[{"path":"src/lib/parser.ts","reason":"Fixture target for a permitted coding change"}],"observations":["The retry scenario uses a fake Pi executable."],"plan":["Exercise each orchestration phase."],"validation":["Run the focused retry test."],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["src/lib/parser.ts"],"validation_patterns":["src/lib/parser.ts"]}}' > "${resultsDir}/scouting-candidate.json"

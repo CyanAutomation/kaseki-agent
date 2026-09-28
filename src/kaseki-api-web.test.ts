@@ -438,6 +438,34 @@ describe('kaseki API web console behavior', () => {
     expect(checkStatusButton).toBeUndefined();
   });
 
+  test('reports gateway, Pi adapter, and evaluation outcomes independently', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&evaluation=true': createJsonResponse({
+          status: 'partial',
+          partialSuccess: true,
+          responseSmokeValidated: false,
+          gatewayInferenceValidated: false,
+          piAdapterValidated: true,
+          evaluationValidated: true,
+          responseTime: 19753,
+          piProviderSmoke: { status: 'ok', detail: 'Pi gateway provider produced assistant text', responseTime: 1200 },
+          evaluationSmoke: { status: 'ok', detail: 'Typed evaluation passed', responseTime: 500 },
+          modelTest: { gatewayInferenceMs: 19753, piAdapterMs: 1200, evaluationMs: 500 },
+        }),
+      }, createJsonResponse({ status: 'ok' })),
+    });
+
+    click(healthCheckButton(document, 'AI Model Test'));
+    await waitFor(() => expectTextContains(document, '[data-summary="llm-test"]', 'Gateway inference failed'));
+    expectTextContains(document, '[data-summary="llm-test"]', 'Pi adapter passed');
+    expectTextContains(document, '[data-summary="llm-test"]', 'Evaluation passed');
+    expectTextContains(document, '#response-summary', 'Gateway inference failed');
+    expectTextContains(document, '#response-summary', 'Pi adapter passed');
+    expectTextContains(document, '#response-summary', 'Evaluation passed');
+  });
+
   test('serializes diagnostics and reports the queued state', async () => {
     let rejectGateway: ((error: Error) => void) | undefined;
     let rejectInference: ((error: Error) => void) | undefined;
@@ -543,8 +571,8 @@ describe('kaseki API web console behavior', () => {
     expect(document.querySelector('[data-summary="gateway"]')?.className).toContain('bad');
 
     click(document.querySelector('[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&evaluation=true"]'));
-    await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Gateway and Pi provider adapter passed.'));
-    expectText(document, '[data-summary="llm-test"]', 'gateway 480ms · 7 tokens stream ok, large ok');
+    await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Gateway inference passed. Pi adapter passed.'));
+    expectText(document, '[data-summary="llm-test"]', 'Gateway inference passed · Pi adapter passed · gateway 480ms · 7 tokens stream ok, large ok');
     expect(document.querySelector('#response-summary')?.textContent).not.toContain('OpenRouter');
   });
 
@@ -574,7 +602,7 @@ describe('kaseki API web console behavior', () => {
     await waitFor(() => expectText(
       document,
       '[data-summary="llm-test"]',
-      'gateway 420ms · Pi 35ms · total 475ms · 11 tokens stream ok, large ok',
+      'Gateway inference passed · Pi adapter passed · gateway 420ms · Pi 35ms · total 475ms · 11 tokens stream ok, large ok',
     ));
   });
 
@@ -603,11 +631,11 @@ describe('kaseki API web console behavior', () => {
 
     clickSelector(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&evaluation=true"]');
 
-    await waitFor(() => expectTextContains(document, '#response-summary', 'Gateway inference passed; Pi provider adapter contract failed. Diagnostics:'));
+    await waitFor(() => expectTextContains(document, '#response-summary', 'Gateway inference passed. Pi adapter failed.'));
     expectTextContains(document, '#response-summary', 'Fields found: message.output_text');
     expectTextContains(document, '#response-summary', 'Event types seen: message(2)');
     expectTextContains(document, '#response-summary', 'Remediation: Check gateway configuration and Pi provider registration');
-    expectText(document, '[data-summary="llm-test"]', 'Gateway passed; Pi adapter failed');
+    expectTextContains(document, '[data-summary="llm-test"]', 'Gateway inference passed · Pi adapter failed');
     expect(getElement(document, '[data-summary="llm-test"]').className).toContain('warning');
   });
 
@@ -824,6 +852,13 @@ describe('kaseki API web console behavior', () => {
       '',
       'Align the setup stage name.',
     ].join('\n'));
+    const issuePreview = getElement<HTMLElement>(document, '#issue-prompt-preview');
+    expect(issuePreview.hidden).toBe(false);
+    expect(issuePreview.textContent).toContain('Issue preview:');
+
+    input(taskPrompt, 'A manually written prompt that replaces the selected issue.');
+    expect(issuePreview.hidden).toBe(true);
+    expect(issuePreview.textContent).toBe('');
   });
 
   test('shows an empty issue state when the repository has no matching issues', async () => {
