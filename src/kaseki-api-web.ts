@@ -2833,44 +2833,47 @@ const controllerPage = String.raw`<!doctype html>
               streamOk ? 'stream ok' : '',
               largeOk ? 'large ok' : '',
             ].filter(Boolean).join(', ');
-            const llmSummary = payload.partialSuccess
-              ? 'Gateway passed; Pi adapter failed'
-              : payload.status === 'ok'
-              ? 'gateway ' + (timing.gatewayInferenceMs || responseTime) + 'ms'
-                + (timing.piAdapterMs != null ? ' · Pi ' + timing.piAdapterMs + 'ms' : '')
-                + (evaluationMs != null ? ' · evaluation ' + evaluationMs + 'ms' : '')
-                + (timing.endToEndMs ? ' · total ' + timing.endToEndMs + 'ms' : '')
-                + (outputTokens ? ' · ' + outputTokens + ' tokens' : ' · tokens unavailable')
-                + (coverage ? ' ' + coverage : '')
-              : 'Failed';
-            setSummary('llm-test', llmSummary, payload.partialSuccess ? 'warning' : payload.status === 'ok' ? 'ok' : 'bad');
+            const gatewayPassed = typeof payload.gatewayInferenceValidated === 'boolean'
+              ? payload.gatewayInferenceValidated
+              : typeof payload.responseSmokeValidated === 'boolean'
+                ? payload.responseSmokeValidated
+                : payload.status === 'ok';
+            const piSmoke = payload.piProviderSmoke && typeof payload.piProviderSmoke === 'object'
+              ? payload.piProviderSmoke
+              : null;
+            const evaluationSmoke = payload.evaluationSmoke && typeof payload.evaluationSmoke === 'object'
+              ? payload.evaluationSmoke
+              : null;
+            const outcomes = ['Gateway inference ' + (gatewayPassed ? 'passed' : 'failed')];
+            if (piSmoke) outcomes.push('Pi adapter ' + (piSmoke.status === 'ok' ? 'passed' : piSmoke.status === 'error' ? 'failed' : 'skipped'));
+            if (evaluationSmoke) outcomes.push('Evaluation ' + (evaluationSmoke.status === 'ok' ? 'passed' : evaluationSmoke.status === 'error' ? 'failed' : 'skipped'));
+            const failedOutcome = !gatewayPassed || piSmoke?.status === 'error' || evaluationSmoke?.status === 'error';
+            const passedOutcome = gatewayPassed || piSmoke?.status === 'ok' || evaluationSmoke?.status === 'ok';
+            const timingSummary = 'gateway ' + (timing.gatewayInferenceMs || responseTime) + 'ms'
+              + (timing.piAdapterMs != null ? ' · Pi ' + timing.piAdapterMs + 'ms' : '')
+              + (evaluationMs != null ? ' · evaluation ' + evaluationMs + 'ms' : '')
+              + (timing.endToEndMs ? ' · total ' + timing.endToEndMs + 'ms' : '')
+              + (outputTokens ? ' · ' + outputTokens + ' tokens' : ' · tokens unavailable')
+              + (coverage ? ' ' + coverage : '');
+            setSummary('llm-test', outcomes.join(' · ') + ' · ' + timingSummary,
+              failedOutcome ? (passedOutcome ? 'warning' : 'bad') : 'ok');
             piAdapterValidationState = payload.piProviderSmoke?.status === 'ok'
               ? 'passed'
               : payload.piProviderSmoke?.status === 'error' ? 'failed' : 'unknown';
             updateSubmitButtonState();
-            if (!payload.piProviderSmoke) {
-              setResponseSummary('Gateway passed. Pi provider adapter smoke was not requested; add piProvider=true to run it.');
-            } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'skipped') {
-              setResponseSummary('Gateway passed. Pi provider adapter smoke was skipped; run production check with piProvider=true.');
-            } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'ok') {
-              let msg = 'Gateway and Pi provider adapter passed.';
-              if (payload.evaluationSmoke) {
-                if (payload.evaluationSmoke.status === 'ok') {
-                  msg += ' Evaluation stage check passed.';
-                } else if (payload.evaluationSmoke.status === 'error') {
-                  msg += ' Evaluation stage check failed: ' + (payload.evaluationSmoke.detail || 'Unknown error');
-                }
-              }
-              setResponseSummary(msg);
-            } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'error') {
+            let diagnosticMsg = outcomes.join('. ') + '.';
+            if (piSmoke && typeof piSmoke.detail === 'string') {
+              diagnosticMsg += ' Pi adapter detail: ' + stripControlSequences(piSmoke.detail).slice(0, 260) + '.';
+            }
+            if (evaluationSmoke && typeof evaluationSmoke.detail === 'string') {
+              diagnosticMsg += ' Evaluation detail: ' + stripControlSequences(evaluationSmoke.detail).slice(0, 260) + '.';
+            }
+            if (piSmoke?.status === 'error') {
               const diag = payload.piProviderSmoke.diagnostics || {};
               const fieldsFound = diag.fieldsFound || [];
               const suggested = diag.suggestedPatterns || [];
               const eventsByType = diag.eventsByType || {};
-              
-              let diagnosticMsg = payload.partialSuccess
-                ? 'Gateway inference passed; Pi provider adapter contract failed. Diagnostics:\n'
-                : 'Pi provider adapter test failed. Diagnostics:\n';
+              diagnosticMsg += '\n\nPi adapter diagnostics:\n';
               diagnosticMsg += '  Fields found: ' + (fieldsFound.length > 0 ? fieldsFound.join(', ') : '(none)') + '\n';
               const eventTypesList = [];
               for (const [k, v] of Object.entries(eventsByType)) {
@@ -2890,15 +2893,8 @@ const controllerPage = String.raw`<!doctype html>
               
               diagnosticMsg += '  Remediation: ' + (payload.piProviderSmoke.remediation || 'Check gateway configuration and Pi provider registration');
               
-              if (payload.evaluationSmoke) {
-                diagnosticMsg += '\n\n  Evaluation stage check: ' + (payload.evaluationSmoke.status || 'unknown');
-                if (payload.evaluationSmoke.detail) {
-                  diagnosticMsg += ' - ' + payload.evaluationSmoke.detail;
-                }
-              }
-              
-              setResponseSummary(diagnosticMsg);
             }
+            setResponseSummary(diagnosticMsg);
           } else {
             // Stage 1 or full test (gateway connectivity)
             setSummary('gateway', summary, payload.status === 'ok' ? (slow ? 'warning' : 'ok') : 'bad');
@@ -4116,6 +4112,15 @@ const controllerPage = String.raw`<!doctype html>
       const issueScopeInput = document.querySelector('#issue-scope');
       const issueScopeLabel = document.querySelector('#issue-scope-label');
       const submitTab = document.querySelector('[data-tab="submit"]');
+
+      taskPrompt.addEventListener('input', () => {
+        issuePromptPreview.hidden = true;
+        issuePromptPreview.textContent = '';
+        issueScopeInput.value = '';
+        issueScopeInput.hidden = true;
+        issueScopeLabel.hidden = true;
+        issueScopeInput.oninput = null;
+      });
 
       loadIssuesBtn.addEventListener('click', async (event) => {
         event.preventDefault();

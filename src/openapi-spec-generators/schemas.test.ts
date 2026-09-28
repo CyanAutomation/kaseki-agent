@@ -35,6 +35,8 @@ describe('OpenAPI Schema Builders', () => {
 
       expect(properties.repoUrl).toMatchObject({ type: 'string', format: 'uri' });
       expect(properties.ref).toMatchObject({ type: 'string', default: 'main' });
+      expect(properties.ref.description).toContain('branch or tag');
+      expect(properties.ref.description).toContain('commit SHAs are not supported');
       expect(properties.taskPrompt).toMatchObject({ type: 'string' });
       expect(properties.changedFilesAllowlist).toMatchObject({
         type: 'array',
