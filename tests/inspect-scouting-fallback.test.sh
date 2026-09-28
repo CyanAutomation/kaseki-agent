@@ -54,7 +54,8 @@ if [ "\${1:-}" = "--list-models" ]; then echo "gateway"; exit 0; fi
 prompt="\${*: -1}"
 if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
   printf 'goal-setting\n' >> "$PI_CALLS"
-  printf '%s\n' '{"original_prompt":"inspect only","upgraded_goal":"Inspect only","reasoning":"test","key_requirements":[],"success_criteria":[]}' > "$RESULTS_DIR/goal-setting-candidate.json"
+  # Keep the fake artifact valid under the goal contract so this test covers inspect fallback.
+  printf '%s\n' '{"original_prompt":"inspect only","upgraded_goal":"Inspect only","outcome_policy":"change_or_noop","reasoning":"test","key_requirements":[],"success_criteria":[{"criterion":"Complete the requested repository inspection","source_requirement":"inspect only","verification_sources":["goal-check-candidate.json"],"smart_score":"high","reasoning":"The goal-check artifact records whether the requested inspection completed."}]}' > "$RESULTS_DIR/goal-setting-candidate.json"
   printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"goal-setting response"}],"stopReason":"stop","responseId":"resp_goal_1"},"toolResults":[]}'
 elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf 'scouting\n' >> "$PI_CALLS"
@@ -151,6 +152,7 @@ env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspe
   OPENROUTER_API_KEY=test LLM_GATEWAY_URL=https://example.invalid/v1 LLM_GATEWAY_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off KASEKI_TASK_MODE=inspect \
   KASEKI_GOAL_SETTING=1 KASEKI_SCOUTING=1 KASEKI_GOAL_CHECK=1 \
   KASEKI_TYPED_EVALUATION_ENABLED=0 \
+  KASEKI_CACHE_DIR="$TMP_DIR/cache" \
   KASEKI_WORKSPACE_DIR="$TMP_DIR" \
   KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
   KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" KASEKI_VALIDATION_COMMANDS=":" \

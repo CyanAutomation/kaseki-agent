@@ -58,7 +58,7 @@ if [ "\${1:-}" = "--list-models" ]; then echo "gateway/auto"; exit 0; fi
 prompt="\${*: -1}"
 if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
   printf 'goal-setting\n' >> "$PI_CALLS"
-  printf '%s\n' '{"original_prompt":"make a required change","upgraded_goal":"Make a required change","reasoning":"test","key_requirements":[],"success_criteria":[]}' > "$RESULTS_DIR/goal-setting-candidate.json"
+  printf '%s\n' '{"original_prompt":"make a required change","upgraded_goal":"Make a required change","outcome_policy":"change_required","reasoning":"test","key_requirements":[],"success_criteria":[{"criterion":"Complete the requested repository change","source_requirement":"make a required change","verification_sources":["git.diff"],"smart_score":"high","reasoning":"The repository diff directly verifies the requested change."}]}' > "$RESULTS_DIR/goal-setting-candidate.json"
 elif printf '%s' "\$prompt" | grep -q 'scouting Pi agent'; then
   printf 'scouting\n' >> "$PI_CALLS"
   # Simulate a model/tool path that exits 0 but forgets to write scouting-candidate.json.
