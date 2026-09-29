@@ -83,4 +83,27 @@ printf '%s\n' '{"instance":"run-123","exit_code":8,"validation_commands_attempte
 write_result_summary
 grep -q -- '- Validation: Passed (2 commands attempted)' "$summary"
 
+# Agent-writable artifact paths must not allow the summary writer to follow
+# symlinks outside the results directory when preserving or replacing content.
+external_summary="$TMP_DIR/external-summary.md"
+external_review="$TMP_DIR/external-review.md"
+printf 'external summary sentinel\n' > "$external_summary"
+printf 'external review sentinel\n' > "$external_review"
+rm -f "$summary" "$KASEKI_RESULTS_DIR/agent-review.md"
+ln -s "$external_summary" "$summary"
+ln -s "$external_review" "$KASEKI_RESULTS_DIR/agent-review.md"
+write_result_summary
+grep -q '^external summary sentinel$' "$external_summary"
+grep -q '^external review sentinel$' "$external_review"
+test ! -L "$summary"
+test ! -L "$KASEKI_RESULTS_DIR/agent-review.md"
+test ! -e "$KASEKI_RESULTS_DIR/agent-review.md"
+
+printf '# Safe agent review\n' > "$summary"
+ln -s "$external_review" "$KASEKI_RESULTS_DIR/agent-review.md"
+write_result_summary
+grep -q '^external review sentinel$' "$external_review"
+grep -q '^# Safe agent review$' "$KASEKI_RESULTS_DIR/agent-review.md"
+test ! -L "$KASEKI_RESULTS_DIR/agent-review.md"
+
 printf 'result-summary.test.sh PASS\n'
