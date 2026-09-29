@@ -1,4 +1,4 @@
-export const PHASE_METADATA = {
+const PHASE_METADATA = {
   goal_setting: { order: 0, aliases: /goal\s*[-_. ]?setting|goalsetting|goal.setting/i },
   scouting: { order: 1, aliases: /scouting/i },
   coding: { order: 2, aliases: /coding/i },

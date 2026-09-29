@@ -137,66 +137,59 @@ function buildDualStageResponse(
 /**
  * Build Stage 2-only response (with optional classification)
  */
-function buildStage2Response(stage2Result: any, piProviderResult: any, classificationResult: any): any {
-  const piAdapterFailed = piProviderResult?.status === 'error';
-  const classifierFailed = classificationResult?.status === 'error';
-  const stage2Healthy = stage2Result?.status === 'ok';
-  const piProviderHealthy = piProviderResult?.status === 'ok';
-  const piProviderRequested = !!piProviderResult;
-  const primaryPathHealthy = (stage2Healthy || (!stage2Healthy && piProviderHealthy && piProviderRequested)) && !piAdapterFailed;
-
-  // Determine status and partialSuccess:
-  // - 'ok': stage2 healthy AND (pi not tested OR pi healthy) AND classifier healthy
-  // - 'partial': (stage2 fails but pi succeeds) OR (stage2 succeeds but pi fails and was tested)
-  // - 'error': stage2 fails AND (pi not healthy OR pi not tested) OR classifier fails
+function resolveStage2ResponseStatus(input: {
+  stage2Healthy: boolean;
+  piAdapterFailed: boolean;
+  piProviderHealthy: boolean;
+  piProviderRequested: boolean;
+  primaryPathHealthy: boolean;
+  classifierFailed: boolean;
+}): { status: string; partialSuccess: boolean } {
   let status = 'error';
   let partialSuccess = false;
 
-  if (stage2Healthy && !piAdapterFailed) {
+  if (input.stage2Healthy && !input.piAdapterFailed) {
     // Stage2 is healthy, Pi is either not tested or is healthy, classifier is not failed
     status = 'ok';
     partialSuccess = false;
-  } else if (stage2Healthy && piAdapterFailed && piProviderRequested) {
+  } else if (input.stage2Healthy && input.piAdapterFailed && input.piProviderRequested) {
     // Stage2 works but Pi provider fails (and was requested) - we have partial capability
     status = 'error';
     partialSuccess = true;
-  } else if (!stage2Healthy && piProviderHealthy && piProviderRequested) {
+  } else if (!input.stage2Healthy && input.piProviderHealthy && input.piProviderRequested) {
     // Stage2 fails but Pi provider works (and was requested) - we have partial capability
     status = 'partial';
     partialSuccess = true;
   }
 
-  if (primaryPathHealthy && classifierFailed) {
+  if (input.primaryPathHealthy && input.classifierFailed) {
     status = 'partial';
     partialSuccess = true;
   }
 
-  const result: any = {
-    status,
-    detail: stage2Result?.detail || 'LLM inference test failed',
-    responseTime: stage2Result?.responseTime || 0,
-    timestamp: new Date().toISOString(),
-    responseSmokeValidated: stage2Result?.status === 'ok',
-  };
+  return { status, partialSuccess };
+}
 
-  if (stage2Result?.responseId) {
-    result.responseId = stage2Result.responseId;
-  }
-  if (stage2Result?.outputTokens) {
-    result.outputTokens = stage2Result.outputTokens;
-  }
-  if (stage2Result?.modelUsed) {
-    result.modelUsed = stage2Result.modelUsed;
-  }
+function addStage2ResponseFields(result: any, stage2Result: any): void {
+  if (stage2Result?.responseId) result.responseId = stage2Result.responseId;
+  if (stage2Result?.outputTokens) result.outputTokens = stage2Result.outputTokens;
+  if (stage2Result?.modelUsed) result.modelUsed = stage2Result.modelUsed;
   if (typeof stage2Result?.streamSmokeValidated === 'boolean') {
     result.streamSmokeValidated = stage2Result.streamSmokeValidated;
   }
   if (typeof stage2Result?.largePromptSmokeValidated === 'boolean') {
     result.largePromptSmokeValidated = stage2Result.largePromptSmokeValidated;
   }
-  if (stage2Result?.checks) {
-    result.checks = stage2Result.checks;
-  }
+  if (stage2Result?.checks) result.checks = stage2Result.checks;
+}
+
+function addStage2ProviderFields(
+  result: any,
+  stage2Result: any,
+  piProviderResult: any,
+  classificationResult: any,
+  partialSuccess: boolean,
+): void {
   if (piProviderResult) {
     result.piProviderSmoke = piProviderResult;
     result.gatewayInferenceValidated = stage2Result?.status === 'ok';
@@ -209,21 +202,51 @@ function buildStage2Response(stage2Result: any, piProviderResult: any, classific
     result.evaluationSmoke = classificationResult;
     result.evaluationValidated = classificationResult.status === 'ok';
   }
+}
+
+function stage2ModelTest(stage2Result: any, piProviderResult: any, classificationResult: any): Record<string, unknown> {
   const gatewayInferenceMs = Number(stage2Result?.responseTime) || 0;
   const piAdapterMs = Number(piProviderResult?.responseTime) || 0;
   const evaluationMs = Number(classificationResult?.responseTime) || 0;
-  result.modelTest = {
+  const includesEvaluation = Boolean(classificationResult && classificationResult.status !== 'skipped');
+  return {
     gatewayInferenceMs,
     piAdapterMs: piProviderResult ? piAdapterMs : null,
-    evaluationMs: classificationResult && classificationResult.status !== 'skipped' ? evaluationMs : null,
-    endToEndMs: gatewayInferenceMs + (piProviderResult ? piAdapterMs : 0) + (classificationResult && classificationResult.status !== 'skipped' ? evaluationMs : 0),
+    evaluationMs: includesEvaluation ? evaluationMs : null,
+    endToEndMs: gatewayInferenceMs + (piProviderResult ? piAdapterMs : 0) + (includesEvaluation ? evaluationMs : 0),
     tokens: {
       output: typeof stage2Result?.outputTokens === 'number' ? stage2Result.outputTokens : null,
       estimatedCostUsd: null,
       availability: typeof stage2Result?.outputTokens === 'number' ? 'gateway-reported' : 'unavailable',
     },
   };
+}
 
+function buildStage2Response(stage2Result: any, piProviderResult: any, classificationResult: any): any {
+  const piAdapterFailed = piProviderResult?.status === 'error';
+  const classifierFailed = classificationResult?.status === 'error';
+  const stage2Healthy = stage2Result?.status === 'ok';
+  const piProviderHealthy = piProviderResult?.status === 'ok';
+  const piProviderRequested = !!piProviderResult;
+  const primaryPathHealthy = (stage2Healthy || (!stage2Healthy && piProviderHealthy && piProviderRequested)) && !piAdapterFailed;
+  const { status, partialSuccess } = resolveStage2ResponseStatus({
+    stage2Healthy,
+    piAdapterFailed,
+    piProviderHealthy,
+    piProviderRequested,
+    primaryPathHealthy,
+    classifierFailed,
+  });
+  const result: any = {
+    status,
+    detail: stage2Result?.detail || 'LLM inference test failed',
+    responseTime: stage2Result?.responseTime || 0,
+    timestamp: new Date().toISOString(),
+    responseSmokeValidated: stage2Result?.status === 'ok',
+  };
+  addStage2ResponseFields(result, stage2Result);
+  addStage2ProviderFields(result, stage2Result, piProviderResult, classificationResult, partialSuccess);
+  result.modelTest = stage2ModelTest(stage2Result, piProviderResult, classificationResult);
   return result;
 }
 

@@ -24,7 +24,7 @@ export function canonicalPhase(value: string): typeof phases[number] {
  * @param raw Token usage object with variant field names
  * @returns Normalized UsageObject with standard keys
  */
-export function normalizedUsage(raw: Record<string, unknown>): UsageObject {
+function normalizedUsage(raw: Record<string, unknown>): UsageObject {
   return {
     prompt_tokens: number(raw.prompt_tokens) ?? number(raw.total_input_tokens) ?? number(raw.input_tokens),
     completion_tokens: number(raw.completion_tokens) ?? number(raw.total_output_tokens) ?? number(raw.output_tokens),
