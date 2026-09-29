@@ -31,6 +31,7 @@ fi
 cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
 cp "$REPO_ROOT/scripts/lib/json-events.sh" "$TMP_DIR/scripts/lib/json-events.sh"
 cp "$REPO_ROOT/scripts/lib/artifact-consolidation.sh" "$TMP_DIR/scripts/lib/artifact-consolidation.sh"
+cp "$REPO_ROOT/scripts/validation-helpers.sh" "$TMP_DIR/scripts/validation-helpers.sh"
 cp "$REPO_ROOT/scripts/write-run-metadata.mjs" "$TMP_DIR/scripts/write-run-metadata.mjs"
 touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/progress-stream-utils.js"
 : > "$PI_CALLS"
@@ -105,9 +106,15 @@ set -e
 [ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check' ] || fail "Pi calls did not continue through scouting/coding/final goal-check"
 [ -s "$RESULTS_DIR/goal-setting-validation-errors.jsonl" ] || fail "missing goal-setting validation errors"
 [ -s "$RESULTS_DIR/goal-setting-validation-summary.txt" ] || fail "missing goal-setting validation summary"
+! grep -q 'validation_commands_for_goal_prompt: command not found' "$RUN_LOG" || fail "goal-setting prompt called an unloaded validation helper"
 grep -q '^pi goal-setting agent[[:space:]]0[[:space:]].*degraded=1' "$RESULTS_DIR/stage-timings.tsv" || fail "goal-setting degraded-fallback timing missing"
 grep -q 'inspect then code' "$RESULTS_DIR/coding-prompt.txt" || fail "coding prompt did not preserve original prompt"
 ! grep -q 'INVALID UPGRADED GOAL SHOULD NOT BE USED' "$RESULTS_DIR/coding-prompt.txt" || fail "coding prompt used invalid upgraded goal"
+node - "$RESULTS_DIR/goal-setting.json" <<'NODE' || fail "fallback goal-setting policy ignored KASEKI_ALLOW_EMPTY_DIFF"
+const fs = require('node:fs');
+const goal = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+if (goal.outcome_policy !== 'change_or_noop') throw new Error(`expected change_or_noop, got ${goal.outcome_policy}`);
+NODE
 node - "$RESULTS_DIR/metadata.json" <<'NODE' || fail "metadata did not preserve successful final status with observable goal-setting failure"
 const fs = require('node:fs');
 const metadata = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));

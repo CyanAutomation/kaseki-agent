@@ -8,6 +8,10 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 get_caveman_instruction() { :; }
 critical_change_contract_allows_noop() { return 1; }
 source "$ROOT_DIR/scripts/validation-helpers.sh"
+grep -Fq 'validation-helpers.sh' "$ROOT_DIR/kaseki-agent.sh" || {
+  printf 'FAIL: worker did not load validation helpers before building the goal prompt\n' >&2
+  exit 1
+}
 eval "$(awk '
   /^build_goal_setting_prompt\(\)/ { emit=1 }
   /^validate_goal_setting_artifact\(\)/ { emit=0 }
@@ -70,6 +74,30 @@ grep -Fq '"outcome_policy": "change_or_noop"' <<< "$inspect_prompt" || {
   printf 'FAIL: inspect goal-setting prompt did not allow a verified no-op\n' >&2
   exit 1
 }
+
+eval "$(awk '
+  /^create_fallback_goal_setting_artifact\(\)/ { capture=1; depth=0 }
+  capture {
+    print
+    for (i = 1; i <= length($0); i++) {
+      ch = substr($0, i, 1)
+      if (ch == "{") depth++
+      if (ch == "}") depth--
+    }
+    if (capture && depth == 0) exit
+  }
+' "$ROOT_DIR/kaseki-agent.sh")"
+KASEKI_TASK_MODE="patch"
+KASEKI_ALLOW_EMPTY_DIFF=1
+KASEKI_RESULTS_DIR="$TMP_DIR"
+fallback_goal="$TMP_DIR/fallback-goal-setting.json"
+critical_change_contract_allows_noop() { return 1; }
+create_fallback_goal_setting_artifact "Inspect then code" "$fallback_goal"
+node - "$fallback_goal" <<'NODE'
+const fs = require('node:fs');
+const goal = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+if (goal.outcome_policy !== 'change_or_noop') throw new Error(`fallback ignored KASEKI_ALLOW_EMPTY_DIFF: ${goal.outcome_policy}`);
+NODE
 
 results_dir="$TMP_DIR/results"
 mkdir -p "$results_dir"
