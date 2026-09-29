@@ -1,5 +1,5 @@
 import type { ClassificationAnswer, QuestionDefinition } from './types/openrouter-decisions';
-import { answerConfidence } from './jev-classifier';
+import { answerConfidence } from './decision-answers';
 import { redactJevEvidence } from './jev-evidence-redaction';
 
 export type ValidationRecoveryMode = 'off' | 'observe' | 'auto';
