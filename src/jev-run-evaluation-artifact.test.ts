@@ -135,6 +135,34 @@ describe('JEV run evaluation artifact', () => {
     expect(result.kaseki_improvement_opportunities.map(item => item.category)).toContain('dependency_cache');
   });
 
+  test('accepts an explicit no-change outcome in patch mode without downgrading the evaluation', () => {
+    const result = buildRunEvaluationArtifact({
+      ...completeFacts,
+      metadata: {
+        exit_code: 0,
+        validation_commands_attempted: 2,
+        validation_exit_code: 0,
+        task_mode: 'patch',
+        no_change_accepted: true,
+      },
+      changedFiles: '',
+      diff: '',
+      presentSources: ['goal-setting.json', 'scouting.json', 'goal-check.json', 'validation.log'],
+    }, {
+      overallAssessment: 'good',
+      reviewerConfidence: 'high',
+      taskCompletionScore: 4,
+    }, evaluation);
+
+    expect(result.overall_assessment).toBe('good');
+    expect(result.reviewer_confidence).toBe('high');
+    expect(result.task_completion_score).toBe(4);
+    expect(result.phase_scorecard.coding).toMatchObject({ outcome: 'succeeded', changed_files: 0, diff_present: false });
+    expect(result.warnings).not.toContain('Patch mode produced no durable diff and no accepted no-change outcome.');
+    expect(result.human_review_focus).not.toContain('Confirm whether a code change was required; patch mode produced no durable diff.');
+    expect(result.kaseki_improvement_opportunities.map(item => item.category)).not.toContain('implementation');
+  });
+
   test('reconciles validation counts from nested command evidence and ignores free-text fallback mentions', () => {
     const result = buildRunEvaluationArtifact({
       ...completeFacts,

@@ -218,7 +218,7 @@ export function refreshCleanupPlanActiveRuns(
 }
 
 /** List only regular files that match the host runner's run-log filename. */
-export function listRunLogs(logDir: string): RunLogInfo[] {
+function listRunLogs(logDir: string): RunLogInfo[] {
   if (!fs.existsSync(logDir)) return [];
 
   const logs: RunLogInfo[] = [];
