@@ -31,6 +31,15 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'agent-review.md': {
+    name: 'agent-review.md',
+    contentType: 'text/markdown',
+    description: 'Agent-authored result-summary.md preserved before the controller writes its canonical run summary',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 4,
+    sizeHint: 'small',
+  },
+
   'efficiency-policy.json': {
     name: 'efficiency-policy.json',
     contentType: 'application/json',
