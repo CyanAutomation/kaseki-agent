@@ -35,6 +35,7 @@ Understand how kaseki-agent works.
 | [QUALITY_GATES.md](QUALITY_GATES.md) | Quality validation, allowlists, diff size limits |
 | [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) | Writing effective task prompts |
 | [GOAL_SETTING_GUIDE.md](GOAL_SETTING_GUIDE.md) | **Comprehensive Master Doc** — Goal-setting phase, improvements, best practices, troubleshooting (consolidated from 5 docs) |
+| [DECISION_MODELS.md](DECISION_MODELS.md) | Deterministic rules, typed decision-model integrations, Pi's role, and decision telemetry |
 
 ### 🔧 Operations & Deployment
 
