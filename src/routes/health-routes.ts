@@ -111,7 +111,7 @@ export function createHealthRoutes(
   return router;
 }
 
-export function readDependencyCacheMetrics(config: KasekiApiConfig): DependencyCacheMetrics {
+function readDependencyCacheMetrics(config: KasekiApiConfig): DependencyCacheMetrics {
   const metricsFile = config.dependencyCacheMetricsFile;
   const metrics: DependencyCacheMetrics = {
     maxBytes: config.dependencyCacheMaxBytes,

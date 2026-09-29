@@ -3,10 +3,14 @@
   "entry": [
     ".pi-extensions.js",
     "src/cli.ts",
+    "src/kaseki-cli.ts",
     "src/kaseki-api-service.ts",
     "src/get-caveman-prompt.ts",
     "src/kaseki-api/index.ts",
+    "src/jev-workflow-evaluator.ts",
     "scripts/context-handoff.js",
+    "scripts/write-run-metadata.mjs",
+    "scripts/render-caveman-impact-report.mjs",
     "scripts/**/*.ts"
   ],
   "ignorePatterns": [
@@ -15,6 +19,9 @@
     "**/*.test.ts",
     "**/*.spec.ts",
     "**/*.type-test.ts",
+    "src/**/*-test-fixtures.ts",
+    "src/test-utils.ts",
+    "src/test-utils/**",
     "test/**",
     "tests/**",
     "src/__test-utils/**",

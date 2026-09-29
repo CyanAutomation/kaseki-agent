@@ -30,6 +30,24 @@ describe('collectEvidence additional cases', () => {
     expect(evidence.phaseDurationsMs.coding).toBe(10000);
   });
 
+  test('falls back to summed stage timings when metadata and performance artifacts have no duration', () => {
+    const evidence = collectEvidence({
+      json: {
+        'timings-manifest.json': { stage_timings: [
+          { stage: 'pre-agent validation', elapsed_seconds: 2 },
+          { stage: 'pi coding agent', elapsed_seconds: 3 },
+        ] },
+      },
+      text: {},
+      summaries: [],
+    });
+
+    expect(evidence.elapsedSeconds).toBe(5);
+    expect(evidence.stageElapsedSeconds).toBe(5);
+    expect(evidence.preAgentValidationMs).toBe(2000);
+    expect(evidence.status).toBe('running');
+  });
+
   test('present includes keys from json and text snapshots', () => {
     const evidence = collectEvidence({
       json: { 'metadata.json': { instance: 'present-test' }, 'run-evaluation.json': {} },

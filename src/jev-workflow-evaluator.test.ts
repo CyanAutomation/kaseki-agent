@@ -109,6 +109,31 @@ describe('decision workflow telemetry', () => {
     ]);
   });
 
+  it('adds failure diagnosis questions when persisted run evidence records a failure', async () => {
+    fs.writeFileSync(path.join(resultsDir, 'metadata.json'), JSON.stringify({ exit_code: 1 }));
+    fs.writeFileSync(path.join(resultsDir, 'validation.log'), 'npm test failed with exit code 1');
+    let capturedRequest: DecisionRequest | undefined;
+    const service = successfulService();
+    const artifact = await evaluateWorkflow('run-evaluation', resultsDir, '1', {
+      decisionService: {
+        ...service,
+        decide: async (request) => {
+          capturedRequest = request;
+          return service.decide(request);
+        },
+      },
+    });
+
+    expect(capturedRequest?.questions).toHaveProperty('validation_failure_cause');
+    expect(capturedRequest?.questions).toHaveProperty('validation_recovery_action');
+    expect(capturedRequest?.state).toMatchObject({ validation_present: true, diff_present: true });
+    expect(artifact).toMatchObject({
+      overall_assessment: 'poor',
+      reviewer_confidence: 'low',
+      task_completion_score: 2,
+    });
+  });
+
   it.each([
     ['goal-check', 'goal_check'],
     ['run-evaluation', 'run_evaluation'],
@@ -208,5 +233,99 @@ describe('decision workflow telemetry', () => {
       retry_authorized: false,
     });
     expect(appendTelemetry).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('goal-check contract enforcement', () => {
+  let resultsDir: string;
+  let originalTaskMode: string | undefined;
+
+  beforeEach(() => {
+    originalTaskMode = process.env.KASEKI_TASK_MODE;
+    delete process.env.KASEKI_TASK_MODE;
+    resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-goal-contract-'));
+    fs.writeFileSync(path.join(resultsDir, 'goal-setting.json'), JSON.stringify({
+      outcome_policy: 'change_required',
+      success_criteria: ['The requested implementation is complete'],
+    }));
+  });
+
+  afterEach(() => {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+    if (originalTaskMode === undefined) delete process.env.KASEKI_TASK_MODE;
+    else process.env.KASEKI_TASK_MODE = originalTaskMode;
+  });
+
+  it('marks an empty patch diff unmet when the contract requires a change', async () => {
+    fs.writeFileSync(path.join(resultsDir, 'git.diff'), '');
+    const decisionService = successfulService();
+
+    const artifact = await evaluateWorkflow('goal-check', resultsDir, '1', { decisionService });
+
+    expect(artifact).toMatchObject({
+      met: false,
+      outcome: 'unmet',
+      retryable: true,
+      contradictions: [
+        expect.objectContaining({
+          sources: ['goal-setting.json', 'git.diff'],
+          description: 'The goal contract requires a code change but the durable diff is empty.',
+        }),
+      ],
+    });
+    expect(artifact.missing).toContain('patch-mode task produced no git diff');
+  });
+
+  it('keeps a conditional criterion uncertain when its applicability is unknown', async () => {
+    fs.writeFileSync(path.join(resultsDir, 'goal-setting.json'), JSON.stringify({
+      outcome_policy: 'change_or_noop',
+      success_criteria: [{
+        criterion: 'Publish a release note',
+        applies_when: 'A release is requested',
+      }],
+    }));
+    const artifact = await evaluateWorkflow('goal-check', resultsDir, '1', {
+      decisionService: {
+        providerId: 'test-provider',
+        decide: async () => ({
+          provider: 'test-provider',
+          model: 'test/model',
+          answers: { criterion_1: { type: 'noul', noul: 0.99 } },
+          usage: {},
+          responseTime: 1,
+          attemptCount: 1,
+        }),
+      },
+    });
+
+    expect(artifact).toMatchObject({ met: false, outcome: 'uncertain', review_required: true });
+    expect(artifact.missing).toEqual(['Publish a release note (applicability of "A release is requested" is unknown)']);
+  });
+
+  it('rejects a conflicting contract before calling the decision service', async () => {
+    fs.writeFileSync(path.join(resultsDir, 'goal-setting.json'), JSON.stringify({
+      outcome_policy: 'change_required',
+      success_criteria: ['No code changes are required'],
+    }));
+    const decide = jest.fn(async () => {
+      throw new Error('semantic classification should not run for an invalid contract');
+    });
+
+    const artifact = await evaluateWorkflow('goal-check', resultsDir, '1', {
+      decisionService: { providerId: 'test-provider', decide },
+    });
+
+    expect(decide).not.toHaveBeenCalled();
+    expect(artifact).toMatchObject({
+      met: false,
+      retryable: false,
+      confidence: 'low',
+      contract_validation: {
+        valid: false,
+        errors: [
+          'success_criteria[0] conflicts with outcome_policy=change_required because it requires no code changes',
+        ],
+      },
+    });
   });
 });
