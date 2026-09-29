@@ -28,6 +28,7 @@ describe('Caveman Compressed Prompts', () => {
 
     it('should prohibit git commands', () => {
       expect(compressed).toMatch(/no.*git.*add|git.*add.*prohibited|don't.*git/i);
+      expect(compressed).toMatch(/gh|hub/i);
     });
 
     it('should prohibit npm install commands', () => {
@@ -54,6 +55,14 @@ describe('Caveman Compressed Prompts', () => {
 
     it('should preserve exact technical terms', () => {
       expect(compressed).toMatch(/git|npm|lockfile/i);
+    });
+
+    it('should retain secret-handling, scope, and protected-file guardrails', () => {
+      expect(compressed).toMatch(/secret|credential|api key/i);
+      expect(compressed).toMatch(/environment|env var/i);
+      expect(compressed).toMatch(/allowlist/i);
+      expect(compressed).toMatch(/protected_files/i);
+      expect(compressed).toMatch(/unrelated/i);
     });
   });
 

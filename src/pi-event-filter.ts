@@ -701,7 +701,7 @@ async function writeRetainedEvent(
 
 function buildSummary(state: PiEventFilterState): Summary {
   const { tokenUsage: tokenSummary, modelStats, phaseStats } = summarizeCompletedResponses(state.completionUsage.values());
-  const promptTokenBudget = parsePositiveInt('KASEKI_PROMPT_TOKEN_WARN_THRESHOLD', 48_000);
+  const promptTokenBudget = parsePositiveInt('KASEKI_PROMPT_TOKEN_WARN_THRESHOLD', 32_000);
   // Compaction is a per-request decision. A run with many short turns should
   // not be flagged merely because its aggregate usage is high, while a single
   // uncached 45k-token request must be flagged immediately.
@@ -801,9 +801,9 @@ function buildPhaseBudget(
   state: PiEventFilterState,
   largestContextTokens: number,
 ): PhaseBudgetSummary {
-  const maxContextTokens = parsePositiveInt('KASEKI_PHASE_MAX_CONTEXT_TOKENS', 48_000);
-  const maxTurns = parsePositiveInt('KASEKI_PHASE_MAX_TURNS', 48);
-  const maxToolOutputTokens = parsePositiveInt('KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS', 16_000);
+  const maxContextTokens = parsePositiveInt('KASEKI_PHASE_MAX_CONTEXT_TOKENS', 32_000);
+  const maxTurns = parsePositiveInt('KASEKI_PHASE_MAX_TURNS', 36);
+  const maxToolOutputTokens = parsePositiveInt('KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS', 8_000);
   const logicalAgentTurns = state.aggregator.summary().event_counts.turn_start ?? null;
   const phaseBudget: PhaseBudgetSummary = {
     enforcement: 'soft_target',

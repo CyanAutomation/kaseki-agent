@@ -752,9 +752,9 @@ test('uses realistic defaults for advisory phase targets', async () => {
 
     expect(budget).toMatchObject({
       enforcement: 'soft_target',
-      max_context_tokens: 48000,
-      max_turns: 48,
-      max_tool_output_tokens: 16000,
+      max_context_tokens: 32000,
+      max_turns: 36,
+      max_tool_output_tokens: 8000,
     });
   } finally {
     for (const name of names) {

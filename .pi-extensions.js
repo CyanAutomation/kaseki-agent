@@ -15,6 +15,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { createGatewayProviderConfig } from './dist/gateway/create-provider-config.js';
 
 const DEFAULT_GATEWAY_DIAGNOSTICS_PATH = '/results/.gateway-diagnostics.jsonl';
@@ -50,7 +51,7 @@ recordGatewayDiagnostic({
  * Register CloudFlare gateway provider with Pi CLI
  * @param {object} pi - Pi CLI extension API
  */
-export default function (pi) {
+export default async function (pi) {
   const config = createGatewayProviderConfig(process.env, fs.readFileSync);
 
   if (!config) {
@@ -76,4 +77,32 @@ export default function (pi) {
     attempt: process.env.KASEKI_INFERENCE_ATTEMPT || undefined,
     payloadLogging: process.env.KASEKI_GATEWAY_LOG_PAYLOADS === '1',
   });
+
+  const cavemanEnabled = process.env.KASEKI_CAVEMAN !== '0';
+  const cavemanLevel = Number.parseInt(process.env.KASEKI_CAVEMAN_LEVEL || '2', 10);
+  const routerMode = process.env.KASEKI_CAVEMAN_ROUTER || 'jev';
+  if (cavemanEnabled && cavemanLevel >= 2 && routerMode === 'jev') {
+    try {
+      const appRoot = process.env.KASEKI_APP_ROOT || '/app';
+      const routerUrl = pathToFileURL(path.join(appRoot, 'dist/caveman/tool-output-router.js')).href;
+      const classifierUrl = pathToFileURL(path.join(appRoot, 'dist/jev-classifier.js')).href;
+      const keyResolverUrl = pathToFileURL(path.join(appRoot, 'dist/gateway-detection/resolve-openrouter-api-key.js')).href;
+      const [router, jev, keyResolver] = await Promise.all([import(routerUrl), import(classifierUrl), import(keyResolverUrl)]);
+      if (!keyResolver.resolveOpenRouterApiKey().value) {
+        recordGatewayDiagnostic({ event: 'caveman_tool_output_router_skipped', reason: 'decision_credentials_unavailable' });
+        return;
+      }
+      const configuredTimeout = Number.parseInt(process.env.KASEKI_CAVEMAN_ROUTER_TIMEOUT_MS || '1200', 10);
+      router.installCavemanToolOutputRouter(pi, (state, questions) =>
+        jev.classifyWithJev(state, questions, {
+          timeoutMs: Number.isInteger(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 1200,
+          maxRetries: 0,
+        }),
+      );
+      recordGatewayDiagnostic({ event: 'caveman_tool_output_router_registered', mode: routerMode, level: cavemanLevel });
+    } catch {
+      // A missing router must not prevent the gateway provider or Pi from loading.
+      recordGatewayDiagnostic({ event: 'caveman_tool_output_router_unavailable' });
+    }
+  }
 }
