@@ -17,6 +17,7 @@ const config: Config = {
     'src/**/*.ts',
     'scripts/**/*.ts',
     'scripts/**/*.js',
+    'scripts/**/*.cjs',
     '!src/**/*.test.ts',
     '!scripts/**/*.test.ts',
     '!src/**/index.ts',

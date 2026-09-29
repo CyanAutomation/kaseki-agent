@@ -122,7 +122,7 @@ type GatewayTransportResponse = {
 };
 
 /** Record a bounded, redacted diagnostic for unsuccessful gateway responses. */
-export async function handleGatewayTransportResponse(
+async function handleGatewayTransportResponse(
   response: unknown,
   diagnosticsSink?: GatewayDiagnosticsSink
 ): Promise<void> {

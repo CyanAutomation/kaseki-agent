@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { DEFAULT_DECISION_MODEL, decisionFailureMetadata, decisionService } from './decision-service';
-import type { DecisionService } from './decision-service';
+import type { DecisionResult, DecisionService } from './decision-service';
 import { appendDecisionTelemetry, summarizeDecisionConfidence } from './decision-telemetry';
 import { collectValidationEvidence } from './validation-evidence';
 import { buildRunEvaluationArtifact, buildRunEvaluationEvidenceSources } from './jev-run-evaluation-artifact';
@@ -10,6 +10,7 @@ import { buildGoalCheckOutcome, buildGoalCheckQuestions, buildGoalCriterionAsses
 import { redactJevEvidence } from './jev-evidence-redaction';
 import { normalizeSuccessCriteria, validateGoalContract } from '../scripts/lib/goal-contract.cjs';
 import { aggregateStageDurations } from './stage-timings';
+import type { ClassificationAnswer } from './types/openrouter-decisions';
 import {
   buildValidationRecoveryArtifact,
   buildValidationRecoveryQuestions,
@@ -111,6 +112,69 @@ function validationRetryConfidenceThreshold(): number {
 
 function questionId(index: number): string { return `criterion_${index + 1}`; }
 
+type GoalAssessment = ReturnType<typeof buildGoalCriterionAssessments>[number];
+type GoalOutcome = ReturnType<typeof buildGoalCheckOutcome>;
+
+function missingCriterionReason(assessment: GoalAssessment, threshold: number): string | undefined {
+  if (assessment.status === 'unknown') {
+    return assessment.applicability === 'unknown'
+      ? 'applicability of "' + String(assessment.applies_when) + '" is unknown'
+      : 'Evaluation did not provide enough evidence';
+  }
+  if (assessment.status === 'uncertain') {
+    return 'noul=' + assessment.probability?.toFixed(2)
+      + ' is between the unmet boundary ' + goalCheckUnmetThreshold(threshold).toFixed(2)
+      + ' and pass threshold ' + threshold.toFixed(2)
+      + '; direct evidence is inconclusive';
+  }
+  if (assessment.status === 'unmet') {
+    return 'noul=' + assessment.probability?.toFixed(2)
+      + ' is at or below the unmet boundary ' + goalCheckUnmetThreshold(threshold).toFixed(2);
+  }
+  return undefined;
+}
+
+function collectMissingCriteria(assessments: GoalAssessment[], threshold: number): string[] {
+  const missing: string[] = [];
+  for (const assessment of assessments) {
+    const reason = missingCriterionReason(assessment, threshold);
+    if (reason) missing.push(assessment.criterion + ' (' + reason + ')');
+  }
+  return missing;
+}
+
+function goalOutcomeSummary(outcome: GoalOutcome): string {
+  if (outcome === 'met') return 'Evaluation found all applicable success criteria satisfied with sufficient confidence.';
+  if (outcome === 'unmet') return 'Evaluation found one or more success criteria that evidence indicates are unmet.';
+  return 'Evaluation could not establish with sufficient confidence whether all applicable success criteria are satisfied.';
+}
+
+function goalRetryPrompt(outcome: GoalOutcome, missing: string[]): string {
+  if (outcome === 'met') return '';
+  if (outcome === 'unmet') {
+    return 'Address the criteria with concrete evidence of what remains incomplete: ' + missing.join('; ');
+  }
+  return 'Review these criteria against the final repository and validation evidence. Do not make changes solely to raise Evaluation confidence; identify direct evidence or document what remains unknown: '
+    + missing.join('; ');
+}
+
+function applyChangeRequiredOutcome(
+  outcome: GoalOutcome,
+  outcomePolicy: string,
+  taskMode: string | undefined,
+  diff: unknown,
+  missing: string[],
+  contradictions: Array<{ sources: string[]; description: string }>,
+): GoalOutcome {
+  if (taskMode === 'inspect' || outcomePolicy !== 'change_required' || String(diff).trim()) return outcome;
+  missing.push('patch-mode task produced no git diff');
+  contradictions.push({
+    sources: ['goal-setting.json', 'git.diff'],
+    description: 'The goal contract requires a code change but the durable diff is empty.',
+  });
+  return 'unmet';
+}
+
 async function runGoalCheck(
   resultsDir: string,
   attempt: number,
@@ -155,31 +219,13 @@ async function runGoalCheck(
     timeoutMs: Number.parseInt(process.env.KASEKI_GOAL_CHECK_DECISION_TIMEOUT_MS || '15000', 10),
   });
   const threshold = confidenceThreshold();
-  const missing: string[] = [];
   const assessments = buildGoalCriterionAssessments(effectiveCriteria, result.answers, threshold);
   let outcome = buildGoalCheckOutcome(assessments);
-  for (const assessment of assessments) {
-    if (assessment.status === 'unmet' || assessment.status === 'uncertain' || assessment.status === 'unknown') {
-      const reason = assessment.status === 'unknown'
-        ? assessment.applicability === 'unknown' ? `applicability of "${assessment.applies_when}" is unknown` : 'Evaluation did not provide enough evidence'
-        : assessment.status === 'uncertain'
-          ? `noul=${assessment.probability?.toFixed(2)} is between the unmet boundary ${goalCheckUnmetThreshold(threshold).toFixed(2)} and pass threshold ${threshold.toFixed(2)}; direct evidence is inconclusive`
-          : `noul=${assessment.probability?.toFixed(2)} is at or below the unmet boundary ${goalCheckUnmetThreshold(threshold).toFixed(2)}`;
-      missing.push(`${assessment.criterion} (${reason})`);
-    }
-  }
+  const missing = collectMissingCriteria(assessments, threshold);
   const outcomePolicy = contract.outcomePolicy ?? (process.env.KASEKI_TASK_MODE === 'inspect' ? 'change_or_noop' : 'change_required');
   const contradictions: Array<{ sources: string[]; description: string }> = [];
-  if (process.env.KASEKI_TASK_MODE !== 'inspect' && outcomePolicy === 'change_required' && !String(state.diff).trim()) {
-    outcome = 'unmet';
-    missing.push('patch-mode task produced no git diff');
-    contradictions.push({ sources: ['goal-setting.json', 'git.diff'], description: 'The goal contract requires a code change but the durable diff is empty.' });
-  }
-  const summary = outcome === 'met'
-    ? 'Evaluation found all applicable success criteria satisfied with sufficient confidence.'
-    : outcome === 'unmet'
-      ? 'Evaluation found one or more success criteria that evidence indicates are unmet.'
-      : 'Evaluation could not establish with sufficient confidence whether all applicable success criteria are satisfied.';
+  outcome = applyChangeRequiredOutcome(outcome, outcomePolicy, process.env.KASEKI_TASK_MODE, state.diff, missing, contradictions);
+  const summary = goalOutcomeSummary(outcome);
   recordDecisionTelemetry(resultsDir, {
     stage: 'goal_check',
     status: 'completed',
@@ -205,9 +251,7 @@ async function runGoalCheck(
       ...assessment,
       evidence_sources: selectCriterionEvidenceSources(assessment, evidence),
     })),
-    retry_prompt: outcome === 'met' ? '' : outcome === 'unmet'
-      ? `Address the criteria with concrete evidence of what remains incomplete: ${missing.join('; ')}`
-      : `Review these criteria against the final repository and validation evidence. Do not make changes solely to raise Evaluation confidence; identify direct evidence or document what remains unknown: ${missing.join('; ')}`,
+    retry_prompt: goalRetryPrompt(outcome, missing),
     validation_notes: [String(state.validation).trim() ? `validation evidence available from: ${validationSources.join(', ')}` : 'validation evidence was unavailable'],
     evidence_sources_inspected: evidence,
     contradictions,
@@ -217,67 +261,115 @@ async function runGoalCheck(
   };
 }
 
-async function runEvaluation(resultsDir: string, dependencies: DecisionWorkflowDependencies): Promise<JsonObject> {
-  const state = evidenceState(resultsDir);
-  const goalCheck = readJson(path.join(resultsDir, 'goal-check.json'));
+type RunEvaluationFacts = Parameters<typeof buildRunEvaluationArtifact>[0];
+type RunEvaluationClassification = Parameters<typeof buildRunEvaluationArtifact>[1];
+
+function jsonObject(value: unknown): JsonObject {
+  return value && typeof value === 'object' ? value as JsonObject : {};
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value as string[] : [];
+}
+
+function numberRecord(value: unknown): Record<string, number> {
+  return value && typeof value === 'object' ? value as Record<string, number> : {};
+}
+
+function unknownArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function hasRunFailureEvidence(state: JsonObject): boolean {
   const validation = String(state.validation).trim();
-  const diff = String(state.diff).trim();
-  const stateForEvaluation = { ...state, goal_check: goalCheck, validation_present: Boolean(validation), diff_present: Boolean(diff) };
-  const metadata = state.metadata && typeof state.metadata === 'object' ? state.metadata as JsonObject : {};
-  const failure = state.failure && typeof state.failure === 'object' ? state.failure as JsonObject : {};
+  const metadata = jsonObject(state.metadata);
+  const failure = jsonObject(state.failure);
   const runExit = Number(metadata.exit_code ?? failure.exit_code ?? failure.exitCode);
   const validationExit = Number(metadata.validation_exit_code ?? failure.validation_exit_code);
-  const hasFailureEvidence = (Number.isFinite(runExit) && runExit !== 0)
+  return (Number.isFinite(runExit) && runExit !== 0)
     || (Number.isFinite(validationExit) && validationExit !== 0)
     || /(?:^|\s)(?:failed|error|exit code [1-9]\d*)/im.test(validation);
-  const result = await dependencies.decisionService.decide({
-    state: stateForEvaluation,
-    questions: buildRunEvaluationQuestions(hasFailureEvidence),
-    model: process.env.KASEKI_DECISION_MODEL || DEFAULT_DECISION_MODEL,
-    timeoutMs: Number.parseInt(process.env.KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS || '15000', 10),
-  });
-  const answer = (name: string): string | number => {
-    const value = result.answers[name];
-    return value?.type === 'choice' ? value.choice : value?.type === 'score' ? value.score : value?.type === 'noul' ? value.noul : 'unknown';
-  };
-  const failureDiagnosis = failureDiagnosisFromAnswers(result.answers);
-  const fact = {
-    metadata,
-    failure,
-    goalSetting: (state.goal_setting && typeof state.goal_setting === 'object' ? state.goal_setting : {}) as JsonObject,
-    scouting: (state.scouting && typeof state.scouting === 'object' ? state.scouting : {}) as JsonObject,
+}
+
+function stateForRunEvaluation(state: JsonObject, goalCheck: JsonObject): JsonObject {
+  const validation = String(state.validation).trim();
+  const diff = String(state.diff).trim();
+  return { ...state, goal_check: goalCheck, validation_present: Boolean(validation), diff_present: Boolean(diff) };
+}
+
+function runEvaluationFacts(state: JsonObject, goalCheck: JsonObject): RunEvaluationFacts {
+  return {
+    metadata: jsonObject(state.metadata),
+    failure: jsonObject(state.failure),
+    goalSetting: jsonObject(state.goal_setting),
+    scouting: jsonObject(state.scouting),
     goalCheck,
     validation: String(state.validation ?? ''),
-    validationSources: Array.isArray(state.validation_sources) ? state.validation_sources as string[] : [],
+    validationSources: stringArray(state.validation_sources),
     changedFiles: String(state.changed_files ?? ''),
     diff: String(state.diff ?? ''),
     taskMode: String(state.task_mode ?? 'patch'),
-    presentSources: Array.isArray(state.present_sources) ? state.present_sources as string[] : [],
-    stageDurations: (state.stage_durations && typeof state.stage_durations === 'object' ? state.stage_durations : {}) as Record<string, number>,
-    timingManifest: (state.timings_manifest && typeof state.timings_manifest === 'object' ? state.timings_manifest : {}) as JsonObject,
-    cacheMetrics: Array.isArray(state.cache_metrics) ? state.cache_metrics : [],
+    presentSources: stringArray(state.present_sources),
+    stageDurations: numberRecord(state.stage_durations),
+    timingManifest: jsonObject(state.timings_manifest),
+    cacheMetrics: unknownArray(state.cache_metrics),
   };
-  const assessment = answer('overall_assessment');
-  const confidence = answer('reviewer_confidence');
-  const completion = answer('task_completion_score');
+}
+
+function runEvaluationAnswer(answers: Record<string, ClassificationAnswer>, name: string): string | number {
+  const value = answers[name];
+  if (value?.type === 'choice') return value.choice;
+  if (value?.type === 'score') return value.score;
+  if (value?.type === 'noul') return value.noul;
+  return 'unknown';
+}
+
+function runEvaluationClassification(answers: Record<string, ClassificationAnswer>): RunEvaluationClassification {
+  const assessment = runEvaluationAnswer(answers, 'overall_assessment');
+  const confidence = runEvaluationAnswer(answers, 'reviewer_confidence');
+  const completion = runEvaluationAnswer(answers, 'task_completion_score');
+  return {
+    overallAssessment: typeof assessment === 'string' ? assessment : 'unknown',
+    reviewerConfidence: typeof confidence === 'string' ? confidence : 'low',
+    taskCompletionScore: typeof completion === 'number' ? mapJevScoreToCompletion(completion) : 1,
+    failureDiagnosis: failureDiagnosisFromAnswers(answers),
+  };
+}
+
+function recordRunEvaluationTelemetry(
+  resultsDir: string,
+  result: DecisionResult,
+  classification: RunEvaluationClassification,
+  dependencies: DecisionWorkflowDependencies,
+): void {
   recordDecisionTelemetry(resultsDir, {
     stage: 'run_evaluation',
     status: 'completed',
     provider: result.provider,
     model: result.model,
-    outcome: typeof assessment === 'string' ? assessment : 'unknown',
+    outcome: classification.overallAssessment,
     confidence: summarizeDecisionConfidence(result.answers),
     durationMs: result.responseTime,
     attemptCount: result.attemptCount,
     usage: result.usage,
     generativeCallsAvoided: 1,
   }, dependencies.appendTelemetry);
-  return buildRunEvaluationArtifact(fact, {
-    overallAssessment: typeof assessment === 'string' ? assessment : 'unknown',
-    reviewerConfidence: typeof confidence === 'string' ? confidence : 'low',
-    taskCompletionScore: typeof completion === 'number' ? mapJevScoreToCompletion(completion) : 1,
-    failureDiagnosis,
-  }, { stage: 'run evaluation', responseTime: result.responseTime, usage: result.usage, answers: result.answers });
+}
+
+async function runEvaluation(resultsDir: string, dependencies: DecisionWorkflowDependencies): Promise<JsonObject> {
+  const state = evidenceState(resultsDir);
+  const goalCheck = readJson(path.join(resultsDir, 'goal-check.json'));
+  const result = await dependencies.decisionService.decide({
+    state: stateForRunEvaluation(state, goalCheck),
+    questions: buildRunEvaluationQuestions(hasRunFailureEvidence(state)),
+    model: process.env.KASEKI_DECISION_MODEL || DEFAULT_DECISION_MODEL,
+    timeoutMs: Number.parseInt(process.env.KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS || '15000', 10),
+  });
+  const classification = runEvaluationClassification(result.answers);
+  recordRunEvaluationTelemetry(resultsDir, result, classification, dependencies);
+  return buildRunEvaluationArtifact(runEvaluationFacts(state, goalCheck), classification, {
+    stage: 'run evaluation', responseTime: result.responseTime, usage: result.usage, answers: result.answers,
+  });
 }
 
 async function runValidationRecovery(resultsDir: string, dependencies: DecisionWorkflowDependencies): Promise<JsonObject> {

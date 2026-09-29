@@ -154,6 +154,70 @@ describe('StatusResponseBuilder', () => {
       });
     });
 
+    it('derives evaluator warning details from exit codes when warning text is absent', () => {
+      const metadata = {
+        run_evaluation_exit_code: 3,
+        goal_check_exit_code: 4,
+      };
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => filePath.endsWith('metadata.json'));
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.endsWith('metadata.json')) return JSON.stringify(metadata);
+        throw new Error('optional artifact missing');
+      });
+
+      const response = builder.buildStatus({ id: 'job-evaluator-exit-codes', status: 'completed' } as Job);
+
+      expect(response.runEvaluation).toEqual({
+        status: 'warning',
+        warning: 'run_evaluation_failed_exit_3',
+        exitCode: 3,
+      });
+      expect(response.goalCheck).toEqual({
+        status: 'warning',
+        warning: 'goal_check_failed_exit_4',
+        exitCode: 4,
+      });
+    });
+
+    it('filters malformed entries from persisted critical-change telemetry', () => {
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.endsWith('critical-change-expectations.json')) {
+          return JSON.stringify({
+            source_artifacts: ['goal-setting.json'],
+            required_files: ['src/required.ts', 42, null],
+            downgraded_required_files: ['docs/README.md', false],
+          });
+        }
+        if (filePath.endsWith('changed-files.txt')) return 'src/required.ts\nsrc/extra.ts\n';
+        throw new Error('optional artifact missing');
+      });
+
+      const response = builder.buildStatus({
+        id: 'job-critical-change-contract',
+        status: 'completed',
+      } as Job);
+
+      expect(response.criticalChangeContract).toEqual({
+        source: ['goal-setting.json'],
+        expectedFiles: ['src/required.ts'],
+        downgradedFiles: ['docs/README.md'],
+        retryCount: 0,
+        changedFiles: ['src/required.ts', 'src/extra.ts'],
+      });
+    });
+
+    it('reads optional efficiency policy data through the artifact cache', () => {
+      const policy = { enabled: true, recommendations: [] };
+      mockCache.getOrLoad.mockImplementation((filePath: string) => (
+        filePath.endsWith('efficiency-policy.json') ? JSON.stringify(policy) : null
+      ));
+
+      const response = builder.buildStatus({ id: 'job-efficiency-policy', status: 'completed' } as Job);
+
+      expect(response.efficiencyPolicy).toEqual(policy);
+    });
+
     it('derives monotonic phase outcomes and heartbeat age from lifecycle events', () => {
       const now = new Date('2026-01-01T00:05:00Z');
       jest.useFakeTimers();
