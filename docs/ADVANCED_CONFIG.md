@@ -914,58 +914,22 @@ untrusted or cache-mutating jobs.
 
 ### `KASEKI_CAVEMAN_LEVEL`
 
-- **Type**: `number` (integer: 0-3)
-- **Default**: `1` (output-only compression)
-- **Paths**: Single-run, Local API, Production API
-- **Description**: Control prompt compression for token usage optimization
+- **Type**: integer, `0`–`3`
+- **Default**: `2`
+- **Purpose**: Control concise prompt guidance and JEV-selected, local reductions of large tool results.
 - **Levels**:
-  - **0** — Off (verbose mode): No compression, full prompts sent to LLM
-  - **1** — Output-only (default): LLM instructed to respond tersely (~75% output token reduction)
-  - **2** — Medium: Output compression + compressed static prompt sections (~50-60% total token reduction)
-  - **3** — Aggressive (future): Output + static + artifact compression (~60-70% total token reduction)
-- **Token savings** (estimated):
-  - Level 0: 0% savings (baseline)
-  - Level 1: ~40-50% total savings (output compression only)
-  - Level 2: ~50-60% total savings (output + static sections)
-  - Level 3: ~60-70% total savings (output + static + artifacts, not yet implemented)
-- **Impact on quality**: Minimal when technical terms and key facts are preserved
-- **Backward compatibility**: Level 1 is default (existing behavior); opt into level 2+ for additional savings
-- **Use cases**:
-  - Level 0: Debugging, when you want full verbose context
-  - Level 1: Default production use (balanced)
-  - Level 2: Cost optimization, high-volume runs
-  - Level 3: Future aggressive optimization (Phase 3, not yet available)
-- **Cost impact** (level 2 vs level 0): ~26% reduction per run at typical model pricing
-- **What gets compressed** (level 2+):
-  - Agent guardrails (400 → ~200 tokens)
-  - Goal-check SMART criteria instructions (700 → ~350 tokens)
-  - Run-evaluation instructions (600 → ~300 tokens)
-  - Total static section savings: ~700 tokens per run
-- **What is NOT compressed**: Task prompts, code diffs, error messages, validation output
-- **Compression technique**: "Caveman" communication pattern
-  - Drops articles (a/an/the), filler words (just/really/please)
-  - Uses short synonyms (utilize → use, begin → start)
-  - Preserves full sentences and exact technical terms
-  - Maintains semantic completeness
-- **Examples**:
-
-  ```bash
-  # Default (output-only compression)
-  KASEKI_CAVEMAN_LEVEL=1
-
-  # Medium compression (recommended for cost optimization)
-  KASEKI_CAVEMAN_LEVEL=2
-
-  # Verbose mode (debugging, no compression)
-  KASEKI_CAVEMAN_LEVEL=0
-
-  # Aggressive (future, not yet implemented)
-  KASEKI_CAVEMAN_LEVEL=3
-  ```
-
-- **Legacy compatibility**: `KASEKI_CAVEMAN=0` maps to level 0, `KASEKI_CAVEMAN=1` maps to level 1
-- **Measurement**: Use `scripts/measure-caveman-impact.sh` to compare token usage at different levels
-- **Documentation**: See [docs/CAVEMAN_PHASE2_COMPLETE.md](archive/CAVEMAN_PHASE2_COMPLETE.md) for implementation details
+  - **0** — Caveman output guidance, compressed prompt sections, and dynamic tool-result routing are off.
+  - **1** — Add terse response guidance. Preserve full tool output.
+  - **2** — Default. Add terse response guidance and compact static prompt sections. Ask JEV to route successful tool results at or above 6,000 characters.
+  - **3** — Same safeguards as level 2, with JEV routing decisions considered from 3,000 characters.
+- **Routing**: JEV receives only small metadata: phase, tool kind, output size, line count, consecutive-repeat ratio, and whether a read is partial. It does not receive raw tool output, code, task text, or command text. JEV chooses `preserve`, `compact_repeated`, or `structural_code`; a local transform runs only above the configured confidence threshold.
+- **Preservation**: Errors and uncertain JEV answers keep their original content. Repeated-line compression retains each exact line and adds an explicit repeat count. Structural previews apply only to full TypeScript/JavaScript reads, show omitted implementation details, and provide the workspace path for an exact follow-up read.
+- **Configuration**: `KASEKI_CAVEMAN_ROUTER=off` disables dynamic routing. `KASEKI_CAVEMAN_ROUTER_MIN_CHARS`, `KASEKI_CAVEMAN_ROUTER_TIMEOUT_MS`, and `KASEKI_CAVEMAN_ROUTER_CONFIDENCE_THRESHOLD` tune the trigger, wait, and confidence floor. See [Environment Variables](ENV_VARS.md).
+- **Fallback**: Missing credentials, JEV errors, malformed answers, timeouts, and low confidence preserve the original result. JEV is configured with no retries and a 1.2-second default timeout so it cannot add a long retry loop to a tool call.
+- **Observability**: Each attempted route records metadata and before/after character counts in `caveman-routing.jsonl`; it does not store tool payload text.
+- **Phase targets**: Context, turn, tool-output, and generated-output targets are soft guidance. They never cap provider requests, truncate evidence, or stop/retry a run. Current default targets are in [Environment Variables](ENV_VARS.md).
+- **Legacy switch**: `KASEKI_CAVEMAN=0` disables Caveman behavior. `KASEKI_CAVEMAN=1` enables it at the selected level; it does not force level 1.
+- **Measurement**: Use `scripts/measure-caveman-impact.sh` to compare all-phase token-ledger usage and configured per-response pricing. Check the validation/goal-check outcomes in both runs before treating a token reduction as a quality-preserving gain; the report does not claim causality from unequal task outcomes.
 
 ---
 

@@ -8,7 +8,8 @@ run_pi_json_capture() {
   local model="$3"
   local prompt="$4"
   local stderr_target="${5:-}"
-  local pi_exit progress_exit progress_stderr progress_fifo progress_pid splitter_exit pi_tools bounded_prompt phase_tool_output_cap context_checkpoint_interval
+  local pi_exit progress_exit progress_stderr progress_fifo progress_pid splitter_exit pi_tools bounded_prompt phase_tool_output_target context_checkpoint_interval
+  local phase_context_target phase_turn_target phase_tool_token_target phase_output_token_target
   local pi_llm_gateway_api_key="${llm_gateway_api_key:-${LLM_GATEWAY_API_KEY:-}}"
   local pi_llm_gateway_url="${llm_gateway_url:-${LLM_GATEWAY_URL:-}}"
   local -a pipeline_statuses
@@ -47,18 +48,27 @@ run_pi_json_capture() {
   fi
 
   case "${KASEKI_INFERENCE_PHASE:-coding}" in
-    goal-setting|scouting) phase_tool_output_cap="${KASEKI_PRECODING_TOOL_OUTPUT_MAX_CHARS:-4000}" ;;
-    goal-check|run-evaluation) phase_tool_output_cap="${KASEKI_EVALUATOR_TOOL_OUTPUT_MAX_CHARS:-2000}" ;;
-    *) phase_tool_output_cap="${KASEKI_TOOL_OUTPUT_MAX_CHARS:-4000}" ;;
+    goal-setting|scouting) phase_tool_output_target="${KASEKI_PRECODING_TOOL_OUTPUT_MAX_CHARS:-4000}" ;;
+    goal-check|run-evaluation) phase_tool_output_target="${KASEKI_EVALUATOR_TOOL_OUTPUT_MAX_CHARS:-2000}" ;;
+    *) phase_tool_output_target="${KASEKI_TOOL_OUTPUT_MAX_CHARS:-6000}" ;;
   esac
+  phase_context_target="${KASEKI_PHASE_MAX_CONTEXT_TOKENS:-not configured}"
+  phase_turn_target="${KASEKI_PHASE_MAX_TURNS:-not configured}"
+  phase_tool_token_target="${KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS:-not configured}"
+  phase_output_token_target="${KASEKI_PHASE_OUTPUT_TOKEN_TARGET:-not configured}"
 
-  # Tool output is fed back into Pi's next completion.  Require bounded,
-  # artifact-first output so a broad command or file read cannot dominate all
-  # subsequent context.  The full result remains available on disk for a
-  # targeted follow-up read.
+  # Tool output is fed back into later requests. Give the model explicit phase
+  # targets and a reversible, evidence-first strategy; these are not caps.
   bounded_prompt="${prompt}
 
-Tool-output target: aim for each result <=${phase_tool_output_cap} chars. Read/search exact ranges. Large output -> /results; return only path, bytes, hash, failures, and a <=400-character relevant excerpt. Do not repeat unchanged output. Every ${context_checkpoint_interval} tool calls, stop exploring and emit a compact handoff: task status, accepted plan, changed files, validation status, and next action. Speak terse. Keep paths, commands, JSON, code, and errors exact."
+Phase targets: soft targets are guidance, not limits.
+- Context target: ${phase_context_target} tokens per provider request.
+- Logical-turn target: ${phase_turn_target} turns.
+- Tool-output target: ${phase_tool_token_target} estimated tokens across this phase.
+- Output-token target: ${phase_output_token_target} generated tokens per response.
+Continue past any target when required evidence or checks need it. Never omit source, errors, diffs, or validation evidence to stay under a target.
+
+Tool-output target: aim for each result <=${phase_tool_output_target} chars. This is a soft target, not a cap. Prefer exact focused reads/searches. For large command output, save complete output to a result artifact only when useful and return its path, bytes, hash, failures, and a relevant excerpt. Do not repeat unchanged output. Reassess context after every ${context_checkpoint_interval} tool calls, and emit a compact handoff if useful: task status, accepted plan, changed files, validation status, and next action. Keep paths, commands, JSON, code, and errors exact."
 
   wait_for_progress_stream() {
     local pid="$1"
