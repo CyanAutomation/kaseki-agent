@@ -48,7 +48,11 @@ function numeric(value: unknown): number {
 }
 
 function markdownCell(value: string): string {
-  return value.replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim();
+  return value
+    .replace(/\s+/g, ' ')
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .trim();
 }
 
 function number(value: number): string {
