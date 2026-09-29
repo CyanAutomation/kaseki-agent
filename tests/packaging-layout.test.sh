@@ -23,7 +23,10 @@ file_mode() {
 
 printf '\n## Produced npm package contents\n'
 npm pack --pack-destination "$TMP_DIR" >/dev/null 2>&1
-mapfile -t archives < <(find "$TMP_DIR" -maxdepth 1 -type f -name '*.tgz' -print)
+archives=()
+while IFS= read -r archive; do
+  archives+=("$archive")
+done < <(find "$TMP_DIR" -maxdepth 1 -type f -name '*.tgz' -print)
 [[ "${#archives[@]}" -eq 1 ]] || fail "npm pack did not produce exactly one archive"
 
 PACKAGE_DIR="$TMP_DIR/staged-package"
@@ -36,6 +39,8 @@ tar -xzf "${archives[0]}" --strip-components=1 -C "$PACKAGE_DIR"
 package_manifest=(
   'dist/cli.js|755'
   'dist/pi-event-filter.js|755'
+  'dist/caveman/tool-output-router.js|'
+  'dist/caveman/impact-report.js|'
   'dist/pi-event-filter-helpers.js|755'
   'dist/pi-event-aggregation|'
   'dist/hashline-event-handler.js|755'
@@ -50,6 +55,9 @@ package_manifest=(
   'scripts/startup-check-packaging.sh|755'
   'scripts/docker-entrypoint.sh|755'
   'scripts/lib/provider-retry.sh|644'
+  'scripts/lib/phase-budget.sh|644'
+  'scripts/measure-caveman-impact.sh|755'
+  'scripts/render-caveman-impact-report.mjs|644'
   'scripts/lib/repo-memory.sh|644'
   'scripts/lib/goal-contract.cjs|644'
   'scripts/context-handoff.js|755'
@@ -81,6 +89,7 @@ import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 
 const entryPoints = [
+  'dist/caveman/impact-report.js',
   'dist/pi-event-filter-helpers.js',
   'dist/hashline-event-handler.js',
   'dist/hashline-validator.js',

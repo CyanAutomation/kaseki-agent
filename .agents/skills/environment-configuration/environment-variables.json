@@ -30,6 +30,90 @@
     "acceptedValues": "`0` (disable) or `1` (enable)"
   },
   {
+    "name": "KASEKI_CAVEMAN_LEVEL",
+    "description": "Soft prompt and tool-output reduction level",
+    "default": "2",
+    "acceptedValues": "Integer `0` through `3`"
+  },
+  {
+    "name": "KASEKI_CAVEMAN_ROUTER",
+    "description": "Enable or disable JEV routing for large tool results",
+    "default": "jev",
+    "acceptedValues": "`jev` or `off`"
+  },
+  {
+    "name": "KASEKI_CAVEMAN_ROUTER_MIN_CHARS",
+    "description": "Minimum result size for a JEV routing decision",
+    "default": "6000 at level 2; 3000 at level 3",
+    "acceptedValues": "Positive integer"
+  },
+  {
+    "name": "KASEKI_CAVEMAN_ROUTER_TIMEOUT_MS",
+    "description": "Maximum wait for one dynamic tool-output routing decision",
+    "default": "1200",
+    "acceptedValues": "Positive integer milliseconds"
+  },
+  {
+    "name": "KASEKI_CAVEMAN_ROUTER_CONFIDENCE_THRESHOLD",
+    "description": "Minimum confidence required to apply a local tool-output transformation",
+    "default": "0.86",
+    "acceptedValues": "Number from 0 to 1"
+  },
+  {
+    "name": "KASEKI_PROMPT_TOKEN_WARN_THRESHOLD",
+    "description": "Per-request context size that triggers a compaction recommendation",
+    "default": "32000",
+    "acceptedValues": "Positive integer tokens"
+  },
+  {
+    "name": "KASEKI_CODING_MAX_CONTEXT_TOKENS",
+    "description": "Advisory context target for the coding phase",
+    "default": "32000",
+    "acceptedValues": "Positive integer tokens"
+  },
+  {
+    "name": "KASEKI_CODING_MAX_TURNS",
+    "description": "Advisory logical-turn target for the coding phase",
+    "default": "36",
+    "acceptedValues": "Positive integer turns"
+  },
+  {
+    "name": "KASEKI_CODING_MAX_TOOL_OUTPUT_TOKENS",
+    "description": "Advisory aggregate tool-output target for the coding phase",
+    "default": "8000",
+    "acceptedValues": "Positive integer tokens"
+  },
+  {
+    "name": "KASEKI_CODING_OUTPUT_TOKEN_TARGET",
+    "description": "Advisory generated-output target per coding response; not sent to the provider as a cap",
+    "default": "4096",
+    "acceptedValues": "Positive integer tokens"
+  },
+  {
+    "name": "KASEKI_SCOUTING_MAX_TOOL_OUTPUT_TOKENS",
+    "description": "Advisory aggregate tool-output target for the scouting phase",
+    "default": "4000",
+    "acceptedValues": "Positive integer tokens"
+  },
+  {
+    "name": "KASEKI_GOAL_SETTING_MAX_TOOL_OUTPUT_TOKENS",
+    "description": "Advisory aggregate tool-output target for the goal-setting phase",
+    "default": "4000",
+    "acceptedValues": "Positive integer tokens"
+  },
+  {
+    "name": "KASEKI_GOAL_CHECK_MAX_TOOL_OUTPUT_TOKENS",
+    "description": "Advisory aggregate tool-output target for the goal-check phase",
+    "default": "3000",
+    "acceptedValues": "Positive integer tokens"
+  },
+  {
+    "name": "KASEKI_RUN_EVALUATION_MAX_TOOL_OUTPUT_TOKENS",
+    "description": "Advisory aggregate tool-output target for the run-evaluation phase",
+    "default": "3000",
+    "acceptedValues": "Positive integer tokens"
+  },
+  {
     "name": "KASEKI_DECISION_MODEL",
     "description": "Model alias used by Task Admission, Goal Check, Run Evaluation, and validation recovery",
     "default": "~typesafe/latest",

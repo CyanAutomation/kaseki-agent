@@ -30,21 +30,41 @@ Phase targets guide concise evidence gathering and artifact review. They are rep
 
 | Variable | Default | Type | Purpose |
 | ---------- | --------- | ------ | --------- |
-| `KASEKI_PROMPT_TOKEN_WARN_THRESHOLD` | `48000` | integer | Context size at which the event summary recommends compaction |
+| `KASEKI_PROMPT_TOKEN_WARN_THRESHOLD` | `32000` | integer | Per-request context size at which the event summary recommends compaction |
 | `KASEKI_SCOUTING_MAX_OUTPUT_TOKENS` | `2048` | integer | Advisory scouting artifact output target; keep the handoff concise but complete |
-| `KASEKI_SCOUTING_MAX_CONTEXT_TOKENS` | `24000` | integer | Advisory scouting context target |
-| `KASEKI_SCOUTING_MAX_TURNS` | `8` | integer | Advisory scouting logical-turn target |
+| `KASEKI_SCOUTING_MAX_CONTEXT_TOKENS` | `20000` | integer | Advisory scouting context target |
+| `KASEKI_SCOUTING_MAX_TURNS` | `6` | integer | Advisory scouting logical-turn target |
+| `KASEKI_SCOUTING_MAX_TOOL_OUTPUT_TOKENS` | `4000` | integer | Advisory scouting tool-output target |
 | `KASEKI_GOAL_SETTING_MAX_OUTPUT_TOKENS` | `2048` | integer | Advisory goal-setting artifact output target |
-| `KASEKI_GOAL_SETTING_MAX_CONTEXT_TOKENS` | `24000` | integer | Advisory goal-setting context target |
-| `KASEKI_GOAL_SETTING_MAX_TURNS` | `8` | integer | Advisory goal-setting logical-turn target |
-| `KASEKI_GOAL_CHECK_MAX_CONTEXT_TOKENS` | `32000` | integer | Advisory goal-check context target |
-| `KASEKI_GOAL_CHECK_MAX_TURNS` | `8` | integer | Advisory goal-check logical-turn target |
+| `KASEKI_GOAL_SETTING_MAX_CONTEXT_TOKENS` | `18000` | integer | Advisory goal-setting context target |
+| `KASEKI_GOAL_SETTING_MAX_TURNS` | `6` | integer | Advisory goal-setting logical-turn target |
+| `KASEKI_GOAL_SETTING_MAX_TOOL_OUTPUT_TOKENS` | `4000` | integer | Advisory goal-setting tool-output target |
+| `KASEKI_GOAL_CHECK_MAX_CONTEXT_TOKENS` | `24000` | integer | Advisory goal-check context target |
+| `KASEKI_GOAL_CHECK_MAX_TURNS` | `6` | integer | Advisory goal-check logical-turn target |
+| `KASEKI_GOAL_CHECK_MAX_TOOL_OUTPUT_TOKENS` | `3000` | integer | Advisory goal-check tool-output target |
 | `KASEKI_RUN_EVALUATION_MAX_OUTPUT_TOKENS` | `1536` | integer | Advisory run-evaluation output target for the structured scorecard |
-| `KASEKI_RUN_EVALUATION_MAX_CONTEXT_TOKENS` | `32000` | integer | Advisory run-evaluation context target |
-| `KASEKI_RUN_EVALUATION_MAX_TURNS` | `8` | integer | Advisory run-evaluation logical-turn target |
-| `KASEKI_CODING_MAX_CONTEXT_TOKENS` | `48000` | integer | Advisory coding context target |
-| `KASEKI_CODING_MAX_TURNS` | `48` | integer | Advisory coding logical-turn target |
-| `KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS` | `16000` | integer | Advisory tool-output target for the active phase |
+| `KASEKI_RUN_EVALUATION_MAX_CONTEXT_TOKENS` | `24000` | integer | Advisory run-evaluation context target |
+| `KASEKI_RUN_EVALUATION_MAX_TURNS` | `6` | integer | Advisory run-evaluation logical-turn target |
+| `KASEKI_RUN_EVALUATION_MAX_TOOL_OUTPUT_TOKENS` | `3000` | integer | Advisory run-evaluation tool-output target |
+| `KASEKI_CODING_MAX_CONTEXT_TOKENS` | `32000` | integer | Advisory coding context target |
+| `KASEKI_CODING_MAX_TURNS` | `36` | integer | Advisory coding logical-turn target |
+| `KASEKI_CODING_MAX_TOOL_OUTPUT_TOKENS` | `8000` | integer | Advisory coding tool-output target |
+| `KASEKI_CODING_OUTPUT_TOKEN_TARGET` | `4096` | integer | Advisory per-response generated-output target; it is not sent as a provider cap |
+| `KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS` | phase-specific | integer | Optional override for active phase tool-output target |
+
+The coding context target is set below the screenshot's roughly 39k-token request size so Kaseki can surface growth sooner. Pi receives these numbers as soft guidance; no provider request is capped, no evidence is truncated, and no run stops or retries because a target was exceeded.
+
+### Caveman and JEV tool-output routing
+
+| Variable | Default | Type | Purpose |
+| ---------- | --------- | ------ | --------- |
+| `KASEKI_CAVEMAN_LEVEL` | `2` | integer | Level 0 disables Caveman, level 1 adds terse response guidance, level 2 adds compact static prompts and metadata-routed large tool results, and level 3 asks JEV to consider results above a lower size threshold |
+| `KASEKI_CAVEMAN_ROUTER` | `jev` | string | Set to `off` to disable dynamic tool-result routing while keeping other Caveman behavior |
+| `KASEKI_CAVEMAN_ROUTER_MIN_CHARS` | `6000` (level 2); `3000` (level 3) | integer | Minimum result size that triggers a JEV routing decision |
+| `KASEKI_CAVEMAN_ROUTER_TIMEOUT_MS` | `1200` | integer | Maximum wait for one routing decision; failures preserve original tool output |
+| `KASEKI_CAVEMAN_ROUTER_CONFIDENCE_THRESHOLD` | `0.86` | number | Minimum JEV choice confidence required before applying a local transformation |
+
+JEV receives only phase, tool kind, size, line-count, repetition, and read-range metadata. It never receives raw tool output, source code, task text, or shell command text for this decision. Errors and low-confidence decisions preserve the original output. Structural previews apply only to full TypeScript/JavaScript reads and include a path for an exact follow-up read. Routing decisions and character savings are recorded in `caveman-routing.jsonl` without storing payload text.
 
 ### Provider Selection
 

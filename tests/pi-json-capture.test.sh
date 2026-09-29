@@ -39,13 +39,22 @@ BASH
   chmod +x "$fake_bin/kaseki-pi-progress-stream"
   make_timeout_passthrough "$fake_bin/timeout"
 
-  PATH="$fake_bin:$PATH" KASEKI_RESULTS_DIR="$tmp_dir/results" KASEKI_PROVIDER=gateway KASEKI_INFERENCE_PHASE=goal-check OPENROUTER_API_KEY=must-not-reach-pi bash -c ". scripts/lib/pi-json-capture.sh; emit_error_event() { :; }; run_pi_json_capture '$tmp_dir/raw.jsonl' 60 auto 'test prompt'"
+  PATH="$fake_bin:$PATH" KASEKI_RESULTS_DIR="$tmp_dir/results" KASEKI_PROVIDER=gateway KASEKI_INFERENCE_PHASE=goal-check OPENROUTER_API_KEY=must-not-reach-pi KASEKI_PHASE_MAX_CONTEXT_TOKENS=24000 KASEKI_PHASE_MAX_TURNS=6 KASEKI_PHASE_MAX_TOOL_OUTPUT_TOKENS=3000 KASEKI_PHASE_OUTPUT_TOKEN_TARGET=1536 bash -c ". scripts/lib/pi-json-capture.sh; emit_error_event() { :; }; run_pi_json_capture '$tmp_dir/raw.jsonl' 60 auto 'test prompt'"
   grep -q -- '--tools read,search' "$tmp_dir/results/pi-args.log" || fail "Pi phase tools" "goal-check did not use read-only tools"
   if grep -Eq -- '--tools .*\b(write|bash)\b' "$tmp_dir/results/pi-args.log"; then
     fail "Pi phase tools" "goal-check received a mutation or shell tool"
   fi
-  grep -q 'Tool-output target:' "$tmp_dir/results/pi-args.log" || fail "Pi output budget" "bounded-output instruction was not supplied"
-  grep -q 'Every 6 tool calls' "$tmp_dir/results/pi-args.log" || fail "Pi context checkpoint" "periodic compaction instruction was not supplied"
+  grep -q 'Tool-output target:' "$tmp_dir/results/pi-args.log" || fail "Pi output budget" "tool-output target was not supplied"
+  grep -q 'Context target: 24000 tokens' "$tmp_dir/results/pi-args.log" || fail "Pi context target" "phase context target was not supplied"
+  grep -q 'Logical-turn target: 6 turns' "$tmp_dir/results/pi-args.log" || fail "Pi turn target" "phase turn target was not supplied"
+  grep -q 'Tool-output target: 3000 estimated tokens' "$tmp_dir/results/pi-args.log" || fail "Pi tool-output token target" "phase tool-output token target was not supplied"
+  grep -q 'Output-token target: 1536 generated tokens' "$tmp_dir/results/pi-args.log" || fail "Pi output-token target" "phase output-token target was not supplied"
+  grep -q 'soft targets are guidance, not limits' "$tmp_dir/results/pi-args.log" || fail "Pi soft targets" "soft-target behavior was not made explicit"
+  grep -qi 'continue past any target when required evidence or checks need it' "$tmp_dir/results/pi-args.log" || fail "Pi soft targets" "completion was not prioritized over targets"
+  grep -q 'Reassess context after every 6 tool calls' "$tmp_dir/results/pi-args.log" || fail "Pi context checkpoint" "periodic context reassessment instruction was not supplied"
+  if grep -q 'Every 6 tool calls, stop' "$tmp_dir/results/pi-args.log"; then
+    fail "Pi context checkpoint" "periodic checkpoint still directs the agent to stop before completion"
+  fi
   grep -Fxq 'unset' "$tmp_dir/results/pi-openrouter-key.log" || fail "Pi credential isolation" "OpenRouter JEV credential reached Pi"
   : > "$tmp_dir/results/pi-args.log"
   PATH="$fake_bin:$PATH" KASEKI_RESULTS_DIR="$tmp_dir/results" KASEKI_PROVIDER=gateway KASEKI_INFERENCE_PHASE=run-evaluation bash -c ". scripts/lib/pi-json-capture.sh; emit_error_event() { :; }; run_pi_json_capture '$tmp_dir/raw.jsonl' 60 auto 'test prompt'"
@@ -54,7 +63,7 @@ BASH
     fail "Pi phase tools" "run-evaluation received a mutation or shell tool"
   fi
   rm -rf "$tmp_dir"; tmp_dir=""; trap - EXIT
-  echo "  ✓ PASS: Pi phase-specific tools and output budget are applied"
+  echo "  ✓ PASS: Pi phase-specific tools and soft token targets are applied"
   echo ""
 }
 

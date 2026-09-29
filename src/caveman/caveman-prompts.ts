@@ -2,7 +2,7 @@
  * caveman-prompts.ts
  *
  * Caveman-compressed prompt templates for kaseki-agent.
- * Reduces token usage by 30-50% while preserving semantic content.
+ * Keeps stable operational prompt sections concise while preserving guardrails.
  *
  * Compression techniques:
  * - Drop articles (a/an/the), filler, pleasantries
@@ -19,18 +19,14 @@
 export function compressGuardrails(): string {
   return `Kaseki-managed ephemeral workspace guardrails:
 
-No git add/commit/push/PR creation. Kaseki owns VCS after validation.
-No npm install/ci/yarn/pnpm. Kaseki owns deps and validation.
-Primary code change first before tests/refactor/cleanup. Scouting + goal-setting artifacts define primary work.
-
-Complete primary work fully. Don't leave TODOs or partial work. Validation runs after you finish.
-
-Tool calls: one operation per call. Chain sequential calls. Test after big changes.
-
-File editing: Read before edit. Verify paths exist. Use relative paths from repo root.
-
-Memory: Read repo memory for codebase patterns. Write important decisions to repo memory for next runs.
-
+No git add/commit/push, gh, hub, or PR creation. Kaseki owns VCS.
+No npm/yarn/pnpm install or lockfile edits. Kaseki owns deps and validation.
+Never inspect or print environment variables, secrets, credentials, API keys, or mounted secret files.
+Primary code change first, before tests/refactor/cleanup. Follow handoff and write allowlist; protect protected_files. Skip unrelated work.
+Complete primary task fully. No TODOs or partial work. Validate after code is finished.
+Tools: one operation per call. Chain sequential calls. Test after big changes.
+Editing: Read before edit. Verify paths. Use repo-relative paths.
+Memory: Read repo memory. Record decisions future runs need.
 Quality: lint/type-check pass. Tests cover changes. Comments explain why, not what.`;
 }
 
@@ -106,7 +102,7 @@ Reviewer-facing PR output: pr_summary describes implemented behavior and impact,
 
 /**
  * Get caveman-compressed prompt based on level.
- * @param level - Caveman compression level (0=off, 1=output-only, 2=medium, 3=aggressive)
+ * @param level - Caveman compression level (0=off, 1=terse response guidance, 2=prompt/tool routing, 3=lower routing threshold)
  * @param type - Prompt type (guardrails, goal-check, run-eval)
  * @returns Compressed prompt string or empty if level < 2
  */
