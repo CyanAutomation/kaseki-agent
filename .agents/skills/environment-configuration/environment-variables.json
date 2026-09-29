@@ -115,7 +115,7 @@
   },
   {
     "name": "KASEKI_DECISION_MODEL",
-    "description": "Model alias used by Task Admission, Goal Check, Run Evaluation, and validation recovery",
+    "description": "Model alias used by Task Admission, Goal Check, Run Evaluation, and validation recovery through the shared DecisionService",
     "default": "~typesafe/latest",
     "acceptedValues": "A supported model alias"
   },

@@ -242,6 +242,7 @@ describe('StatusArtifactHelper', () => {
         'metadata.json': { exists: true, size: 100 },
         'result-summary.md': { exists: true, size: 200 },
         'failure.json': { exists: true, size: 50 },
+        'decisions.jsonl': { exists: true, size: 240 },
         'analysis.md': { exists: false, size: 0 },
         'stderr.log': { exists: false, size: 0 },
         'stdout.log': { exists: false, size: 0 },
@@ -254,6 +255,13 @@ describe('StatusArtifactHelper', () => {
       expect(response.artifacts?.resultSummaryMd).toBe(true);
       expect(response.artifacts?.failureJson).toBe(true);
       expect(response.artifacts?.analysisMd).toBe(false);
+      expect(response.artifacts?.diagnosticFiles).toContain('decisions.jsonl');
+      expect(artifactMetadataCache.getRunArtifactMetadata).toHaveBeenCalledWith(
+        job.id,
+        runDir,
+        expect.arrayContaining(['decisions.jsonl']),
+        true,
+      );
     });
 
     it('should inline small artifacts when available', () => {

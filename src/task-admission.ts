@@ -1,6 +1,8 @@
 import { resolveOpenRouterApiKey } from './gateway-detection/resolve-openrouter-api-key';
 import { parsePositiveInt } from './lib/env-var-helpers.js';
-import { answerConfidence, answerIsTrue, classifyWithJev, hasRetiredDecisionSettings } from './jev-classifier';
+import { answerConfidence, answerIsTrue } from './decision-answers';
+import { DEFAULT_DECISION_MODEL, decisionService } from './decision-service';
+import { hasRetiredDecisionSettings } from './jev-classifier';
 import type { ClassificationAnswer, QuestionDefinition } from './types/openrouter-decisions';
 
 export const TASK_ADMISSION_EXIT_CODE = 9;
@@ -27,7 +29,7 @@ export interface TaskAdmissionResult {
 
 export type TaskAdmissionEvaluator = (request: Record<string, unknown>) => Promise<TaskAdmissionResult>;
 
-const DEFAULT_MODEL = '~typesafe/latest';
+const DEFAULT_MODEL = DEFAULT_DECISION_MODEL;
 const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_CONFIDENCE_THRESHOLD = 0.8;
 
@@ -169,11 +171,12 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
   const model = process.env.KASEKI_DECISION_MODEL || DEFAULT_MODEL;
   try {
     const requestBody = buildTaskAdmissionRequest(request);
-    const parsed = await classifyWithJev(
-      requestBody.state as string,
-      requestBody.questions as Record<string, QuestionDefinition>,
-      { model, timeoutMs: parsePositiveInt('KASEKI_TASK_ADMISSION_TIMEOUT_MS', DEFAULT_TIMEOUT_MS) },
-    );
+    const parsed = await decisionService.decide({
+      state: requestBody.state as string,
+      questions: requestBody.questions as Record<string, QuestionDefinition>,
+      model,
+      timeoutMs: parsePositiveInt('KASEKI_TASK_ADMISSION_TIMEOUT_MS', DEFAULT_TIMEOUT_MS),
+    });
     const answers = parsed.answers as Record<string, TaskAdmissionAnswer>;
     const riskAnswer = answers.risk_level;
     const riskScore = riskAnswer?.type === 'choice' ? ({ low: 0, review: 1, high: 2 }[riskAnswer.choice] ?? undefined) : undefined;

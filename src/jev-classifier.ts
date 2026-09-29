@@ -1,12 +1,13 @@
 import type { ClassificationAnswer, DecisionsApiRequest, DecisionsApiResponse, QuestionDefinition } from './types/openrouter-decisions';
 import { resolveOpenRouterApiKey } from './gateway-detection/resolve-openrouter-api-key';
+export { answerConfidence, answerIsFalse, answerIsTrue } from './decision-answers';
 
 export const DEFAULT_JEV_MODEL = '~typesafe/latest';
 export const JEV_DECISIONS_URL = 'https://openrouter.ai/api/alpha/decisions';
 export interface JevClassificationOptions { model?: string; timeoutMs?: number; fetchImpl?: typeof fetch; maxRetries?: number; }
-export interface JevClassificationResult { model: string; answers: Record<string, ClassificationAnswer>; usage: Record<string, unknown>; responseTime: number; }
+export interface JevClassificationResult { model: string; answers: Record<string, ClassificationAnswer>; usage: Record<string, unknown>; responseTime: number; attemptCount: number; }
 export class JevClassificationError extends Error {
-  readonly code: 'configuration' | 'credentials' | 'timeout' | 'http' | 'invalid_response' | 'network'; readonly status?: number;
+  readonly code: 'configuration' | 'credentials' | 'timeout' | 'http' | 'invalid_response' | 'network'; readonly status?: number; attemptCount?: number;
   constructor(code: JevClassificationError['code'], message: string, status?: number) { super(message); this.name = 'JevClassificationError'; this.code = code; this.status = status; }
 }
 
@@ -41,7 +42,7 @@ function parseResponse(value: unknown, questions: Record<string, QuestionDefinit
   const answers = body.answers;
   const ids = Object.keys(questions);
   if (Object.keys(answers).length !== ids.length || !ids.every((id) => validAnswer(questions[id], answers[id]))) return null;
-  return { model: typeof body.model === 'string' ? body.model : DEFAULT_JEV_MODEL, answers, usage: body.usage && typeof body.usage === 'object' ? body.usage as Record<string, unknown> : {}, responseTime: 0 };
+  return { model: typeof body.model === 'string' ? body.model : DEFAULT_JEV_MODEL, answers, usage: body.usage && typeof body.usage === 'object' ? body.usage as Record<string, unknown> : {}, responseTime: 0, attemptCount: 0 };
 }
 function retryable(error: JevClassificationError): boolean {
   return error.code === 'timeout' || error.code === 'network' || error.code === 'invalid_response' || error.status === 429 || error.status === 503 || error.status === 529;
@@ -81,16 +82,15 @@ export async function classifyWithJev(state: string | Record<string, unknown>, q
       if (!response.ok) throw new JevClassificationError('http', `evaluation request returned HTTP ${response.status}`, response.status);
       const parsed = parseResponse(await response.json(), questions);
       if (!parsed) throw new JevClassificationError('invalid_response', 'evaluation response did not match the requested typed answer format');
-      parsed.responseTime = Math.round(performance.now() - started); return parsed;
+      parsed.responseTime = Math.round(performance.now() - started);
+      parsed.attemptCount = attempt + 1;
+      return parsed;
     } catch (error) {
       lastError = error instanceof JevClassificationError ? error : error && typeof error === 'object' && 'name' in error && error.name === 'AbortError' ? new JevClassificationError('timeout', `evaluation request timed out after ${timeoutMs(options.timeoutMs)}ms`) : new JevClassificationError('network', error instanceof Error ? error.message : String(error));
+      lastError.attemptCount = attempt + 1;
       if (attempt === retries || !retryable(lastError)) throw lastError;
       await wait(100 * 2 ** attempt);
     } finally { clearTimeout(timer); }
   }
   throw lastError || new JevClassificationError('network', 'evaluation request failed');
 }
-
-export function answerConfidence(answer: ClassificationAnswer | undefined): number { return answer?.type === 'choice' || answer?.type === 'score' ? answer.confidence : 0; }
-export function answerIsTrue(answer: ClassificationAnswer | undefined, threshold = 0.8): boolean { return answer?.type === 'noul' && answer.noul >= threshold; }
-export function answerIsFalse(answer: ClassificationAnswer | undefined, threshold = 0.2): boolean { return answer?.type === 'noul' && answer.noul <= threshold; }
