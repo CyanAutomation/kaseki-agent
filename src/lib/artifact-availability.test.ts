@@ -18,6 +18,10 @@ describe('artifact availability', () => {
     expect(isArtifactAvailable('metadata.json', 'completed', true, 10)).toBe(true);
   });
 
+  it('exposes preserved agent reviews as downloadable artifacts', () => {
+    expect(getArtifactStatus('agent-review.md', 'completed', true, 42)).toBe('available');
+  });
+
   it('distinguishes empty terminal artifacts from unavailable state', () => {
     expect(getArtifactStatus('metadata.json', 'completed', false, 0)).toBe('not-found');
     expect(getArtifactUnavailableReason('not-found', 'metadata.json')).toContain('metadata.json');
