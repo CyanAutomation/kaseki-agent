@@ -48,6 +48,11 @@ describe('artifact-content-helpers', () => {
       expect(sanitizeEvaluationArtifactContent('validation.log', content)).toBe(content);
     });
 
+    test('preserves provider and model metadata in compact decision telemetry', () => {
+      const content = '{"provider":"jev","model":"~typesafe/latest","outcome":"met"}';
+      expect(sanitizeEvaluationArtifactContent('decisions.jsonl', content)).toBe(content);
+    });
+
     test('removes retired evaluation metadata from legacy run metadata responses', () => {
       const content = JSON.stringify({
         jev_classifier_model: '~typesafe/latest',
@@ -82,6 +87,10 @@ describe('artifact-content-helpers', () => {
     test('should return application/x-jsonl for .jsonl files', () => {
       const contentType = artifactContentType('events.jsonl');
       expect(contentType).toBe('application/x-jsonl');
+    });
+
+    test('should use the registered JSONL content type for decision telemetry', () => {
+      expect(artifactContentType('decisions.jsonl')).toBe('application/x-jsonl');
     });
 
     test('should return text/tab-separated-values for .tsv files', () => {

@@ -13,6 +13,7 @@ import { TaskProgressCalculator } from './task-progress-calculator';
 import { DiagnosticExtractor } from './diagnostic-extractor';
 
 const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', 'failure.json', 'stderr.log', 'stdout.log'] as const;
+const DECISION_DIAGNOSTIC_FILES = ['decisions.jsonl'] as const;
 const PRE_VALIDATION_DIAGNOSTIC_FILES = ['pre-validation.log', 'test-baseline-comparison.json'] as const;
 const GOAL_CHECK_DIAGNOSTIC_FILES = [
   'goal-check-validation-errors.jsonl',
@@ -166,6 +167,7 @@ export class StatusArtifactHelper {
   }): string[] {
     return [
       ...STATUS_KEY_FILES,
+      ...DECISION_DIAGNOSTIC_FILES,
       ...(flags.includePiAgent ? PI_AGENT_DIAGNOSTIC_FILES : []),
       ...(flags.includePreValidation ? PRE_VALIDATION_DIAGNOSTIC_FILES : []),
       ...(flags.includeGoalSetting ? GOAL_SETTING_DIAGNOSTIC_FILES : []),
@@ -281,6 +283,7 @@ export class StatusArtifactHelper {
     isAvailable: (fileName: string) => boolean
   ): void {
     const phaseDiagnosticEntryPoints: DiagnosticEntryPoint[] = [
+      'decisions.jsonl',
       ...(flags.prioritizePreValidation && flags.includePreValidation
         ? (['pre-validation.log', 'test-baseline-comparison.json'] as DiagnosticEntryPoint[])
         : []),

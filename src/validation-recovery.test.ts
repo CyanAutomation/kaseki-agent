@@ -55,6 +55,7 @@ describe('validation recovery policy', () => {
   });
 
   test.each([
+    ['recovery is disabled', { mode: 'off' as const, alreadyRetried: false }, 'disabled'],
     ['observe mode', { mode: 'observe' as const, alreadyRetried: false }, 'observe_only'],
     ['command is not allowlisted', { mode: 'auto' as const, safeCommands: ['npm run test'] }, 'command_not_allowlisted'],
     ['classifier confidence is below threshold', { mode: 'auto' as const, confidenceThreshold: 0.97 }, 'confidence_below_threshold'],

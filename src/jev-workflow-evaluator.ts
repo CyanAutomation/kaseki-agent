@@ -1,7 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
-import { classifyWithJev, DEFAULT_JEV_MODEL } from './jev-classifier';
+import { DEFAULT_DECISION_MODEL, decisionFailureMetadata, decisionService } from './decision-service';
+import { appendDecisionTelemetry, summarizeDecisionConfidence } from './decision-telemetry';
 import { collectValidationEvidence } from './validation-evidence';
 import { buildRunEvaluationArtifact, buildRunEvaluationEvidenceSources } from './jev-run-evaluation-artifact';
 import { buildGoalCheckOutcome, buildGoalCheckQuestions, buildGoalCriterionAssessments, buildRunEvaluationQuestions, compactGoalSettingForEvaluation, failureDiagnosisFromAnswers, goalCheckUnmetThreshold, mapJevScoreToCompletion, selectCriterionEvidenceSources } from './jev-workflow-helpers';
@@ -18,6 +19,14 @@ import {
 } from './validation-recovery';
 
 type JsonObject = Record<string, unknown>;
+
+function recordDecisionTelemetry(resultsDir: string, record: Parameters<typeof appendDecisionTelemetry>[1]): void {
+  try {
+    appendDecisionTelemetry(resultsDir, record);
+  } catch {
+    // Decision telemetry is best effort and must not block workflow decisions.
+  }
+}
 
 function readText(file: string): string {
   try { return fs.readFileSync(file, 'utf8'); } catch { return ''; }
@@ -123,8 +132,10 @@ async function runGoalCheck(resultsDir: string, attempt: number): Promise<JsonOb
     };
   }
   const questions = buildGoalCheckQuestions(effectiveCriteria);
-  const result = await classifyWithJev(state, questions, {
-    model: process.env.KASEKI_DECISION_MODEL || DEFAULT_JEV_MODEL,
+  const result = await decisionService.decide({
+    state,
+    questions,
+    model: process.env.KASEKI_DECISION_MODEL || DEFAULT_DECISION_MODEL,
     timeoutMs: Number.parseInt(process.env.KASEKI_GOAL_CHECK_DECISION_TIMEOUT_MS || '15000', 10),
   });
   const threshold = confidenceThreshold();
@@ -153,6 +164,18 @@ async function runGoalCheck(resultsDir: string, attempt: number): Promise<JsonOb
     : outcome === 'unmet'
       ? 'Evaluation found one or more success criteria that evidence indicates are unmet.'
       : 'Evaluation could not establish with sufficient confidence whether all applicable success criteria are satisfied.';
+  recordDecisionTelemetry(resultsDir, {
+    stage: 'goal_check',
+    status: 'completed',
+    provider: result.provider,
+    model: result.model,
+    outcome,
+    confidence: summarizeDecisionConfidence(result.answers),
+    durationMs: result.responseTime,
+    attemptCount: result.attemptCount,
+    usage: result.usage,
+    generativeCallsAvoided: 1,
+  });
   return {
     met: outcome === 'met',
     outcome,
@@ -191,7 +214,12 @@ async function runEvaluation(resultsDir: string): Promise<JsonObject> {
   const hasFailureEvidence = (Number.isFinite(runExit) && runExit !== 0)
     || (Number.isFinite(validationExit) && validationExit !== 0)
     || /(?:^|\s)(?:failed|error|exit code [1-9]\d*)/im.test(validation);
-  const result = await classifyWithJev(stateForEvaluation, buildRunEvaluationQuestions(hasFailureEvidence), { model: process.env.KASEKI_DECISION_MODEL || DEFAULT_JEV_MODEL, timeoutMs: Number.parseInt(process.env.KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS || '15000', 10) });
+  const result = await decisionService.decide({
+    state: stateForEvaluation,
+    questions: buildRunEvaluationQuestions(hasFailureEvidence),
+    model: process.env.KASEKI_DECISION_MODEL || DEFAULT_DECISION_MODEL,
+    timeoutMs: Number.parseInt(process.env.KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS || '15000', 10),
+  });
   const answer = (name: string): string | number => {
     const value = result.answers[name];
     return value?.type === 'choice' ? value.choice : value?.type === 'score' ? value.score : value?.type === 'noul' ? value.noul : 'unknown';
@@ -216,6 +244,18 @@ async function runEvaluation(resultsDir: string): Promise<JsonObject> {
   const assessment = answer('overall_assessment');
   const confidence = answer('reviewer_confidence');
   const completion = answer('task_completion_score');
+  recordDecisionTelemetry(resultsDir, {
+    stage: 'run_evaluation',
+    status: 'completed',
+    provider: result.provider,
+    model: result.model,
+    outcome: typeof assessment === 'string' ? assessment : 'unknown',
+    confidence: summarizeDecisionConfidence(result.answers),
+    durationMs: result.responseTime,
+    attemptCount: result.attemptCount,
+    usage: result.usage,
+    generativeCallsAvoided: 1,
+  });
   return buildRunEvaluationArtifact(fact, {
     overallAssessment: typeof assessment === 'string' ? assessment : 'unknown',
     reviewerConfidence: typeof confidence === 'string' ? confidence : 'low',
@@ -250,9 +290,12 @@ async function runValidationRecovery(resultsDir: string): Promise<JsonObject> {
     exitCode,
     output: readText(path.join(resultsDir, 'validation-recovery-output.tmp')),
   });
+  const decisionStarted = performance.now();
   try {
-    const result = await classifyWithJev(state, buildValidationRecoveryQuestions(), {
-      model: process.env.KASEKI_DECISION_MODEL || DEFAULT_JEV_MODEL,
+    const result = await decisionService.decide({
+      state,
+      questions: buildValidationRecoveryQuestions(),
+      model: process.env.KASEKI_DECISION_MODEL || DEFAULT_DECISION_MODEL,
       timeoutMs: Number.parseInt(process.env.KASEKI_VALIDATION_RECOVERY_DECISION_TIMEOUT_MS || '15000', 10),
     });
     const decision = decideValidationRetry({
@@ -263,8 +306,33 @@ async function runValidationRecovery(resultsDir: string): Promise<JsonObject> {
       confidenceThreshold: validationRetryConfidenceThreshold(),
       alreadyRetried: attempts.includes(fingerprint),
     });
+    recordDecisionTelemetry(resultsDir, {
+      stage: 'validation_recovery',
+      status: 'completed',
+      provider: result.provider,
+      model: result.model,
+      outcome: decision.reason,
+      confidence: decision.confidence,
+      durationMs: result.responseTime,
+      attemptCount: result.attemptCount,
+      usage: result.usage,
+      generativeCallsAvoided: 0,
+    });
     return buildValidationRecoveryArtifact({ ...base, decision }) as unknown as JsonObject;
-  } catch {
+  } catch (error) {
+    const failure = decisionFailureMetadata(error);
+    recordDecisionTelemetry(resultsDir, {
+      stage: 'validation_recovery',
+      status: 'unavailable',
+      provider: decisionService.providerId,
+      model: process.env.KASEKI_DECISION_MODEL || DEFAULT_DECISION_MODEL,
+      outcome: 'classification_unavailable',
+      confidence: 0,
+      durationMs: performance.now() - decisionStarted,
+      ...(failure.attemptCount ? { attemptCount: failure.attemptCount } : {}),
+      generativeCallsAvoided: 0,
+      errorCode: failure.code,
+    });
     return buildValidationRecoveryArtifact({
       ...base,
       decision: { shouldRetry: false, reason: 'classification_unavailable', confidence: 0 },
@@ -290,13 +358,35 @@ async function main(): Promise<void> {
     recordValidationRecoveryRetryResult(resultsDir, Number.parseInt(attemptText || '1', 10));
     return;
   }
-  const artifact = mode === 'goal-check'
-    ? await runGoalCheck(resultsDir, Number(attemptText || 1))
-    : mode === 'run-evaluation'
-      ? await runEvaluation(resultsDir)
-      : mode === 'validation-recovery'
-        ? await runValidationRecovery(resultsDir)
-        : undefined;
+  const decisionStarted = performance.now();
+  let artifact: JsonObject | undefined;
+  try {
+    artifact = mode === 'goal-check'
+      ? await runGoalCheck(resultsDir, Number(attemptText || 1))
+      : mode === 'run-evaluation'
+        ? await runEvaluation(resultsDir)
+        : mode === 'validation-recovery'
+          ? await runValidationRecovery(resultsDir)
+          : undefined;
+  } catch (error) {
+    const stage = mode === 'goal-check' ? 'goal_check' : mode === 'run-evaluation' ? 'run_evaluation' : undefined;
+    if (stage) {
+      const failure = decisionFailureMetadata(error);
+      recordDecisionTelemetry(resultsDir, {
+        stage,
+        status: 'unavailable',
+        provider: decisionService.providerId,
+        model: process.env.KASEKI_DECISION_MODEL || DEFAULT_DECISION_MODEL,
+        outcome: 'classification_unavailable',
+        confidence: 0,
+        durationMs: performance.now() - decisionStarted,
+        ...(failure.attemptCount ? { attemptCount: failure.attemptCount } : {}),
+        generativeCallsAvoided: 0,
+        errorCode: failure.code,
+      });
+    }
+    throw error;
+  }
   if (!artifact) throw new Error('unsupported evaluation stage');
   const outputName = mode === 'goal-check' ? 'goal-check.json' : mode === 'run-evaluation' ? 'run-evaluation.json' : 'validation-recovery.json';
   fs.writeFileSync(path.join(resultsDir, outputName), JSON.stringify(artifact, null, 2) + '\n', { mode: 0o600 });

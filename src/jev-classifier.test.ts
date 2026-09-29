@@ -48,6 +48,7 @@ describe('JEV classifier client', () => {
     expect(result.answers.safe).toEqual({ type: 'noul', noul: 0.93 });
     expect(result.usage.output_tokens).toBe(4);
     expect(result.responseTime).toBeGreaterThanOrEqual(0);
+    expect(result.attemptCount).toBe(1);
   });
 
   it('accepts a normalized Choice distribution and a fractional zero-based Score answer', async () => {
@@ -82,6 +83,15 @@ describe('JEV classifier client', () => {
     await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, { fetchImpl: failed, maxRetries: 0 })).rejects.toMatchObject({ code: 'http', status: 503 });
   });
 
+  it('reports the number of provider attempts when malformed responses exhaust retries', async () => {
+    const fetchImpl = jest.fn().mockImplementation(() => Promise.resolve(new Response('{}', { status: 200 })));
+    await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, {
+      fetchImpl,
+      maxRetries: 1,
+    })).rejects.toMatchObject({ code: 'invalid_response', attemptCount: 2 });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it('retries transient overload responses before returning a complete typed response', async () => {
     const fetchImpl = jest.fn()
       .mockResolvedValueOnce(new Response('busy', { status: 529 }))
@@ -91,7 +101,7 @@ describe('JEV classifier client', () => {
         usage: {},
       }), { status: 200 }));
 
-    await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, { fetchImpl, maxRetries: 1 })).resolves.toMatchObject({ answers: { safe: { noul: 0.91 } } });
+    await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, { fetchImpl, maxRetries: 1 })).resolves.toMatchObject({ answers: { safe: { noul: 0.91 } }, attemptCount: 2 });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
@@ -127,7 +137,7 @@ describe('JEV classifier client', () => {
       fetchImpl,
       timeoutMs: 5,
       maxRetries: 1,
-    })).resolves.toMatchObject({ answers: { safe: { noul: 0.95 } } });
+    })).resolves.toMatchObject({ answers: { safe: { noul: 0.95 } }, attemptCount: 2 });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 

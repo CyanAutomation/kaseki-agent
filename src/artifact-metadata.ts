@@ -343,6 +343,15 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'decisions.jsonl': {
+    name: 'decisions.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Compact decision-model outcomes, confidence, latency, request attempts, and reported usage without evaluated state',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 8,
+    sizeHint: 'small',
+  },
+
   'goal-check-events.jsonl': {
     name: 'goal-check-events.jsonl',
     contentType: 'application/x-jsonl',
