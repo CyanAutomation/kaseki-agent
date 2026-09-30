@@ -59,6 +59,39 @@ function isConcretePlanStep(step: string): boolean {
   return identifiesOperation && identifiesTarget && identifiesBehavioralChange;
 }
 
+function extractTaskValidationSection(template: string): string | null {
+  return template.match(/^##\s*\[TASK VALIDATION\b[^\n]*\][\s\S]*?(?=^##\s|(?![\s\S]))/im)?.[0] ?? null;
+}
+
+function extractValidTaskExamples(taskValidationSection: string): string[] {
+  const validTasksBlock = taskValidationSection.match(
+    /^\*\*Valid tasks?\*\*[^\n]*\n([\s\S]*?)(?=^\*\*[^\n]+\*\*|(?![\s\S]))/im,
+  )?.[1];
+
+  return validTasksBlock
+    ? [...validTasksBlock.matchAll(/^\s*-\s+(.+)$/gm)].map((match) => match[1].trim())
+    : [];
+}
+
+function isConcreteValidTaskExample(example: string): boolean {
+  const identifiesAction = /^(?:Add|Fix|Implement|Modify|Remove|Rename|Update)\b/i.test(example);
+  const identifiesCodeTarget =
+    /\b[A-Za-z_$][\w$]*\(\)|(?:^|\s)(?:[\w.-]+\/)+[\w.-]+\.[A-Za-z0-9]+\b/.test(example);
+  const identifiesExpectedBehavior =
+    /^(?:Fix\s+.+\s+in|(?:Add|Implement|Modify|Remove|Update)\s+.+\s+(?:in|to)|Rename\s+.+\s+to)\s+/i.test(
+      example,
+    );
+
+  return identifiesAction && identifiesCodeTarget && identifiesExpectedBehavior;
+}
+
+function satisfiesValidTaskExamplesContract(template: string): boolean {
+  const taskValidationSection = extractTaskValidationSection(template);
+  if (!taskValidationSection) return false;
+
+  return extractValidTaskExamples(taskValidationSection).some(isConcreteValidTaskExample);
+}
+
 // ============================================================================
 // TEST SUITE 1: JSON Schema Field Definitions
 // These tests verify all JSON output fields are documented with constraints
@@ -244,17 +277,24 @@ describe('Scouting Template: Task Validation', () => {
     expect(baseContent).toMatch(/TASK.*VALIDATION|validation.*task/i);
   });
 
-  test('valid task examples are included', () => {
-    expect(baseContent).toMatch(/valid.*task|✓/i);
+  // Task Validation requirement: valid examples must name an action, code target, and behavior.
+  test.each([
+    ['base.txt task-validation section', () => baseContent, true],
+    [
+      'unrelated prose containing validity markers',
+      () => `## [TASK VALIDATION - Ensure Task is Valid Before Scouting]
+This unrelated prose calls something a valid task and includes ✓ without documenting an example.
+
+**Ambiguous/Invalid tasks** (ask clarifying questions):
+- Make the code better`,
+      false,
+    ],
+  ])('%s satisfies the valid-task-example contract', (_name, templateFactory, expected) => {
+    expect(satisfiesValidTaskExamplesContract(templateFactory())).toBe(expected);
   });
 
   test('invalid/ambiguous task examples are included', () => {
     expect(baseContent).toMatch(/invalid|ambiguous|✗/i);
-  });
-
-  test('valid examples are concrete and scoped', () => {
-    // Should include examples like "Fix null-safety in parseRole()"
-    expect(baseContent).toMatch(/Fix|Add|Implement|Rename/);
   });
 
   test('invalid examples are vague', () => {
