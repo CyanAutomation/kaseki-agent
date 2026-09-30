@@ -50,6 +50,21 @@ function extractDocumentedExample(documentation: string): string | null {
   return documentation.match(/\bExample:\s*["“]([^"”]+)["”]/i)?.[1] ?? null;
 }
 
+function satisfiesSuggestedAllowlistSchemaContract(template: string): boolean {
+  const documentation = extractSchemaFieldDocumentation(template, 'suggested_allowlist');
+  if (!documentation) return false;
+
+  return (
+    /^\*\*suggested_allowlist\*\*\s*\(object\)/i.test(documentation) &&
+    /`?agent_patterns`?\s*\(array of (?:repo-relative )?glob strings\)[^\n]*coding agent may modify/i.test(
+      documentation,
+    ) &&
+    /`?validation_patterns`?\s*\(array of (?:repo-relative )?glob strings\)[^\n]*validation (?:commands )?may modify/i.test(
+      documentation,
+    )
+  );
+}
+
 function extractTestImpactDocumentationSection(template: string): string | null {
   return template.match(
     /^##\s*\[STRONG TEST_IMPACT EXAMPLES\]\s*$[\s\S]*?(?=^##\s|(?![\s\S]))/im,
@@ -329,16 +344,21 @@ description explains why the assertion changes; use at most 5 test_examples per 
   });
 
   describe('suggested_allowlist field', () => {
-    test('suggested_allowlist is documented', () => {
-      expect(baseContent).toMatch(/suggested_allowlist/i);
-    });
+    test('suggested_allowlist defines its complete scoped contract [SCOUTING_PROMPT_DESIGN § Output Schema / Guidelines: suggested_allowlist]', () => {
+      const allowlistDocumentation = extractSchemaFieldDocumentation(
+        baseContent,
+        'suggested_allowlist',
+      );
 
-    test('agent_patterns guidance is present', () => {
-      expect(baseContent).toMatch(/agent_patterns/i);
-    });
+      expect(allowlistDocumentation).not.toBeNull();
+      expect(satisfiesSuggestedAllowlistSchemaContract(baseContent)).toBe(true);
 
-    test('validation_patterns guidance is present', () => {
-      expect(baseContent).toMatch(/validation_patterns/i);
+      const identifiersOutsideFieldFixture = `**suggested_allowlist** (object): Suggested paths.
+**observations** (array): agent_patterns (array of glob strings) are files the coding agent may modify; validation_patterns (array of glob strings) are files validation may modify.`;
+      expect(extractSchemaFieldDocumentation(identifiersOutsideFieldFixture, 'suggested_allowlist')).toBe(
+        '**suggested_allowlist** (object): Suggested paths.',
+      );
+      expect(satisfiesSuggestedAllowlistSchemaContract(identifiersOutsideFieldFixture)).toBe(false);
     });
   });
 });
