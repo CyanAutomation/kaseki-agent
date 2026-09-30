@@ -50,6 +50,29 @@ function extractDocumentedExample(documentation: string): string | null {
   return documentation.match(/\bExample:\s*["“]([^"”]+)["”]/i)?.[1] ?? null;
 }
 
+function extractTestImpactDocumentationSection(template: string): string | null {
+  return template.match(
+    /^##\s*\[STRONG TEST_IMPACT EXAMPLES\]\s*$[\s\S]*?(?=^##\s|(?![\s\S]))/im,
+  )?.[0].trim() ?? null;
+}
+
+function satisfiesTestImpactExampleSchemaContract(template: string): boolean {
+  const section = extractTestImpactDocumentationSection(template);
+  if (!section) return false;
+
+  const schemaDefinition = section.match(/^Each `test_examples` object:[^\n]+$/im)?.[0];
+  if (!schemaDefinition) return false;
+
+  return (
+    /`type` \(assertion change kind\)/i.test(schemaDefinition) &&
+    /`before` \(current assertion\)/i.test(schemaDefinition) &&
+    /`after` \(expected assertion\)/i.test(schemaDefinition) &&
+    /`pattern` \(short behavior label\)/i.test(schemaDefinition) &&
+    /`description` \(why the assertion changes\)/i.test(schemaDefinition) &&
+    /at most 5 `test_examples` per file/i.test(schemaDefinition)
+  );
+}
+
 function isConcretePlanStep(step: string): boolean {
   const identifiesOperation = /^(?:Add|Fix|Implement|Modify|Remove|Rename|Update)\b/i.test(step);
   const identifiesTarget =
@@ -263,20 +286,27 @@ describe('Scouting Template: JSON Schema Field Definitions', () => {
       expect(baseContent).toMatch(/test_impact[\s:]/i);
     });
 
-    test('test_impact is documented in common.txt', () => {
-      expect(commonContent).toMatch(/test_impact/i);
-    });
+    test('test_impact example schema is documented as one coherent contract [SCOUTING_PROMPT_DESIGN § Guidelines: test_impact]', () => {
+      const testImpactDocumentation = extractTestImpactDocumentationSection(commonContent);
 
-    test('test_impact includes type, before, after, pattern, description', () => {
-      expect(commonContent).toMatch(/type/i);
-      expect(commonContent).toMatch(/before/i);
-      expect(commonContent).toMatch(/after/i);
-      expect(commonContent).toMatch(/pattern/i);
-      expect(commonContent).toMatch(/description/i);
-    });
+      expect(testImpactDocumentation).not.toBeNull();
+      expect(satisfiesTestImpactExampleSchemaContract(commonContent)).toBe(true);
 
-    test('test_impact has max 5 examples per file', () => {
-      expect(commonContent).toMatch(/5.*test_example|max.*5/i);
+      const distributedKeywordsFixture = `## [STRONG TEST_IMPACT EXAMPLES]
+Each test_impact entry identifies an affected test file.
+
+## [UNRELATED TYPE NOTES]
+type means assertion change kind; before is the current assertion.
+
+## [UNRELATED MIGRATION NOTES]
+after is the expected assertion; pattern is a short behavior label.
+
+## [UNRELATED LIMITS]
+description explains why the assertion changes; use at most 5 test_examples per file.`;
+      expect(extractTestImpactDocumentationSection(distributedKeywordsFixture)).toBe(
+        '## [STRONG TEST_IMPACT EXAMPLES]\nEach test_impact entry identifies an affected test file.',
+      );
+      expect(satisfiesTestImpactExampleSchemaContract(distributedKeywordsFixture)).toBe(false);
     });
   });
 
