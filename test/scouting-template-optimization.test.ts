@@ -73,6 +73,19 @@ function extractValidTaskExamples(taskValidationSection: string): string[] {
     : [];
 }
 
+function extractInvalidTaskExamples(template: string): string[] {
+  const taskValidationSection = extractTaskValidationSection(template);
+  if (!taskValidationSection) return [];
+
+  const invalidTasksBlock = taskValidationSection.match(
+    /^\*\*[^\n]*\bInvalid\b[^\n]*\*\*[^\n]*\n([\s\S]*?)(?=^\*\*[^\n]+\*\*|^##\s|(?![\s\S]))/im,
+  )?.[1];
+
+  return invalidTasksBlock
+    ? [...invalidTasksBlock.matchAll(/^\s*-\s+(.+)$/gm)].map((match) => match[1].trim())
+    : [];
+}
+
 function isConcreteValidTaskExample(example: string): boolean {
   const identifiesAction = /^(?:Add|Fix|Implement|Modify|Remove|Rename|Update)\b/i.test(example);
   const identifiesCodeTarget =
@@ -293,13 +306,20 @@ This unrelated prose calls something a valid task and includes ✓ without docum
     expect(satisfiesValidTaskExamplesContract(templateFactory())).toBe(expected);
   });
 
-  test('invalid/ambiguous task examples are included', () => {
-    expect(baseContent).toMatch(/invalid|ambiguous|✗/i);
-  });
+  test('Task Validation requirement: explicitly labeled invalid examples include a vague task', () => {
+    const invalidExamples = extractInvalidTaskExamples(baseContent);
 
-  test('invalid examples are vague', () => {
-    // Should show examples of bad scoping like "Make it better"
-    expect(baseContent).toMatch(/Make.*better|Improve.*quality|vague/i);
+    expect(invalidExamples).not.toHaveLength(0);
+    expect(invalidExamples.some((example) => /Make.*better|Improve.*quality/i.test(example))).toBe(
+      true,
+    );
+
+    const unrelatedInvalidText = `Invalid example: Improve code quality.
+
+## [TASK VALIDATION - Ensure Task is Valid Before Scouting]
+**Valid tasks** (proceed with scouting):
+- Fix null-safety in parseRole() in src/lib/role.ts`;
+    expect(extractInvalidTaskExamples(unrelatedInvalidText)).toEqual([]);
   });
 
   test('guidance says when to ask clarifying questions', () => {
