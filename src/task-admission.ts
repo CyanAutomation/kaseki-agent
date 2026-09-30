@@ -79,6 +79,74 @@ function localCredentialSignal(request: Record<string, unknown>): boolean {
 
 function answerIsUnsafe(answer: TaskAdmissionAnswer | undefined): boolean { return answerIsTrue(answer, confidenceThreshold()); }
 
+function riskScore(answer: TaskAdmissionAnswer | undefined): number | undefined {
+  if (answer?.type !== 'choice') return undefined;
+  return { low: 0, review: 1, high: 2 }[answer.choice];
+}
+
+function firstUnsafeQuestion(answers: Record<string, TaskAdmissionAnswer>): string | undefined {
+  return ['contains_credentials', 'changes_permissions', 'crosses_security_boundary']
+    .find((name) => answerIsUnsafe(answers[name]));
+}
+
+function isHighConfidenceRisk(answer: TaskAdmissionAnswer | undefined): boolean {
+  return answer?.type === 'choice'
+    && answer.choice === 'high'
+    && answerConfidence(answer) >= confidenceThreshold();
+}
+
+function routingHints(answers: Record<string, TaskAdmissionAnswer>): TaskAdmissionRoutingHints | undefined {
+  const taskType = answers.task_type;
+  const validationFocus = answers.validation_focus;
+  if (taskType?.type !== 'choice' || validationFocus?.type !== 'choice') return undefined;
+  const threshold = confidenceThreshold();
+  if (answerConfidence(taskType) < threshold || answerConfidence(validationFocus) < threshold) return undefined;
+  return {
+    taskType: taskType.choice as TaskTypeHint,
+    validationFocus: validationFocus.choice as ValidationFocusHint,
+  };
+}
+
+function isUncertainAnswer(answer: TaskAdmissionAnswer, threshold: number): boolean {
+  if (answer.type === 'noul') {
+    return answer.noul > 1 - threshold && answer.noul < threshold;
+  }
+  return answerConfidence(answer) < threshold;
+}
+
+function uncertainQuestionNames(answers: Record<string, TaskAdmissionAnswer>): string[] {
+  const threshold = confidenceThreshold();
+  return Object.entries(answers)
+    .filter(([, answer]) => isUncertainAnswer(answer, threshold))
+    .map(([name]) => name);
+}
+
+function buildClassifiedResult(
+  answers: Record<string, TaskAdmissionAnswer>,
+  usage: Record<string, unknown>,
+  started: number,
+): TaskAdmissionResult {
+  const unsafeQuestion = firstUnsafeQuestion(answers);
+  const rejected = Boolean(unsafeQuestion || isHighConfidenceRisk(answers.risk_level));
+  const uncertainQuestions = uncertainQuestionNames(answers);
+  const threshold = confidenceThreshold();
+  return {
+    allowed: !rejected,
+    status: rejected ? 'rejected' : 'allowed',
+    reason: rejected
+      ? `Task admission rejected: ${unsafeQuestion || 'evaluation risk score is high'}.`
+      : 'Task Admission evaluation found no high-confidence unsafe condition.',
+    riskScore: riskScore(answers.risk_level),
+    responseTime: Math.round(performance.now() - started),
+    outputTokens: typeof usage.output_tokens === 'number' ? usage.output_tokens : undefined,
+    answers,
+    routingHints: routingHints(answers),
+    warnings: uncertainQuestions.length > 0
+      ? [`Task Admission evaluation confidence is below ${threshold} for: ${uncertainQuestions.join(', ')}.`]
+      : undefined,
+  };
+}
+
 export function buildTaskAdmissionRequest(request: Record<string, unknown>): Record<string, unknown> {
   return {
     model: process.env.KASEKI_DECISION_MODEL || DEFAULT_MODEL,
@@ -177,36 +245,11 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
       model,
       timeoutMs: parsePositiveInt('KASEKI_TASK_ADMISSION_TIMEOUT_MS', DEFAULT_TIMEOUT_MS),
     });
-    const answers = parsed.answers as Record<string, TaskAdmissionAnswer>;
-    const riskAnswer = answers.risk_level;
-    const riskScore = riskAnswer?.type === 'choice' ? ({ low: 0, review: 1, high: 2 }[riskAnswer.choice] ?? undefined) : undefined;
-    const unsafeQuestion = ['contains_credentials', 'changes_permissions', 'crosses_security_boundary']
-      .find((name) => answerIsUnsafe(answers[name]));
-    const highRisk = riskAnswer?.type === 'choice' && riskAnswer.choice === 'high' && answerConfidence(riskAnswer) >= confidenceThreshold();
-    const taskTypeAnswer = answers.task_type;
-    const validationFocusAnswer = answers.validation_focus;
-    const routingHints = taskTypeAnswer?.type === 'choice' && validationFocusAnswer?.type === 'choice'
-      && answerConfidence(taskTypeAnswer) >= confidenceThreshold()
-      && answerConfidence(validationFocusAnswer) >= confidenceThreshold()
-      ? { taskType: taskTypeAnswer.choice as TaskTypeHint, validationFocus: validationFocusAnswer.choice as ValidationFocusHint }
-      : undefined;
-    const rejected = Boolean(unsafeQuestion || highRisk);
-    const uncertainQuestions = Object.entries(answers)
-      .filter(([, answer]) => answer.type === 'noul' ? answer.noul > 1 - confidenceThreshold() && answer.noul < confidenceThreshold() : answerConfidence(answer) < confidenceThreshold())
-      .map(([name]) => name);
-    return {
-      allowed: !rejected,
-      status: rejected ? 'rejected' : 'allowed',
-      reason: rejected ? `Task admission rejected: ${unsafeQuestion || 'evaluation risk score is high'}.` : 'Task Admission evaluation found no high-confidence unsafe condition.',
-      riskScore,
-      responseTime: Math.round(performance.now() - started),
-      outputTokens: typeof parsed.usage.output_tokens === 'number' ? parsed.usage.output_tokens : undefined,
-      answers,
-      routingHints,
-      warnings: uncertainQuestions.length > 0
-        ? [`Task Admission evaluation confidence is below ${confidenceThreshold()} for: ${uncertainQuestions.join(', ')}.`]
-        : undefined,
-    };
+    return buildClassifiedResult(
+      parsed.answers as Record<string, TaskAdmissionAnswer>,
+      parsed.usage,
+      started,
+    );
   } catch (error) {
     return {
       allowed: true,

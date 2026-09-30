@@ -301,226 +301,181 @@ function buildCriticalChangeContractSchema(): Record<string, unknown> {
  * Build the StatusResponse schema.
  * Defines the structure of status polling responses, including progress and timeout metrics.
  */
-function buildStatusResponseSchema(): Record<string, unknown> {
+function buildStatusIdentityProperties(): Record<string, unknown> {
   return {
-    type: 'object',
-    required: ['id', 'status', 'elapsedSeconds', 'timeoutRiskPercent'],
-    properties: {
-      id: {
-        type: 'string',
-        description: 'Kaseki instance ID',
+    id: { type: 'string', description: 'Kaseki instance ID' },
+    status: { type: 'string', enum: ['queued', 'running', 'completed', 'failed'] },
+    lifecyclePhase: {
+      type: 'string',
+      enum: ['queued', 'executing', 'finalizing', 'terminal'],
+      description: 'Operational lifecycle within the primary run status',
+    },
+    cancellable: { type: 'boolean', description: 'Whether the controller currently accepts cancellation for this run' },
+  };
+}
+
+function buildPhaseProperties(): Record<string, unknown> {
+  return {
+    attempt: {
+      type: 'object',
+      properties: {
+        phase: { type: 'string' },
+        current: { type: 'integer', minimum: 1 },
+        maximum: { type: 'integer', minimum: 1 },
+        state: { type: 'string', enum: ['running', 'retrying', 'succeeded', 'failed', 'exhausted'] },
+        provider: { type: 'string' },
+        lastError: { type: 'string' },
       },
-      status: {
-        type: 'string',
-        enum: ['queued', 'running', 'completed', 'failed'],
+    },
+    diagnosis: {
+      type: 'object',
+      properties: {
+        severity: { type: 'string', enum: ['info', 'warning', 'error'] },
+        phase: { type: 'string' },
+        category: { type: 'string' },
+        summary: { type: 'string' },
+        retryCount: { type: 'integer', minimum: 0 },
+        retryExhausted: { type: 'boolean' },
+        remediation: { type: 'string' },
+        artifact: { type: 'string' },
       },
-      lifecyclePhase: {
-        type: 'string',
-        enum: ['queued', 'executing', 'finalizing', 'terminal'],
-        description: 'Operational lifecycle within the primary run status',
+    },
+    phaseOutcome: {
+      type: 'object',
+      description: 'Explicit outcome for goal-setting, scouting, and weaving phases, including recovered fallbacks and phases not reached after an earlier failure',
+      properties: {
+        goalSetting: { type: 'string', enum: ['completed', 'completed_with_fallback', 'failed', 'skipped', 'not_reached', 'running'] },
+        scouting: { type: 'string', enum: ['completed', 'completed_with_fallback', 'failed', 'skipped', 'not_reached', 'running'] },
+        weaving: { type: 'string', enum: ['completed', 'failed', 'skipped', 'not_reached', 'running'] },
+        goalSettingFallback: { type: 'boolean', description: 'True when a failed goal-setting phase recovered by continuing with the original task prompt' },
+        goalSettingFallbackReason: { type: 'string', description: 'Goal-setting artifact or provider failure that triggered recovery' },
+        scoutingFallback: { type: 'boolean', description: 'True when scouting continued with a controller-generated validated fallback handoff' },
+        scoutingFallbackReason: { type: 'string', description: 'Reason the controller generated the scouting fallback handoff' },
+        scoutingStartedAt: { type: 'string', format: 'date-time' },
+        scoutingCompletedAt: { type: 'string', format: 'date-time' },
+        goalSettingStartedAt: { type: 'string', format: 'date-time' },
+        goalSettingCompletedAt: { type: 'string', format: 'date-time' },
+        weavingStartedAt: { type: 'string', format: 'date-time' },
+        weavingCompletedAt: { type: 'string', format: 'date-time' },
+        explanation: { type: 'string' },
       },
-      cancellable: {
-        type: 'boolean',
-        description: 'Whether the controller currently accepts cancellation for this run',
+    },
+    phaseHealth: {
+      type: 'object',
+      description: 'Current phase heartbeat and stall state. A stalled phase remains cancellable but has not emitted durable progress for at least two minutes.',
+      required: ['state'],
+      properties: {
+        stage: { type: 'string' },
+        heartbeatAgeSeconds: { type: 'integer', minimum: 0 },
+        timeoutSeconds: { type: 'integer', minimum: 1 },
+        state: { type: 'string', enum: ['healthy', 'stalled'] },
+        message: { type: 'string' },
       },
-      attempt: {
-        type: 'object',
-        properties: {
-          phase: { type: 'string' },
-          current: { type: 'integer', minimum: 1 },
-          maximum: { type: 'integer', minimum: 1 },
-          state: { type: 'string', enum: ['running', 'retrying', 'succeeded', 'failed', 'exhausted'] },
-          provider: { type: 'string' },
-          lastError: { type: 'string' },
-        },
+    },
+  };
+}
+
+function buildProgressProperties(): Record<string, unknown> {
+  return {
+    progress: {
+      type: 'object',
+      properties: {
+        stage: { type: 'string', description: 'Current stage name' },
+        percentComplete: { type: 'integer', minimum: 0, maximum: 100, description: 'Progress percentage (0-100)' },
+        message: { type: 'string', description: 'Detailed progress message' },
+        updatedAt: { type: 'string', format: 'date-time', description: 'ISO 8601 timestamp of last update' },
       },
-      diagnosis: {
-        type: 'object',
-        properties: {
-          severity: { type: 'string', enum: ['info', 'warning', 'error'] },
-          phase: { type: 'string' },
-          category: { type: 'string' },
-          summary: { type: 'string' },
-          retryCount: { type: 'integer', minimum: 0 },
-          retryExhausted: { type: 'boolean' },
-          remediation: { type: 'string' },
-          artifact: { type: 'string' },
-        },
+    },
+    elapsedSeconds: { type: 'number', description: 'Elapsed time since job start in seconds' },
+    timeoutRiskPercent: { type: 'number', description: 'Percentage of timeout used (0-100+); values >85 indicate imminent timeout' },
+    progressHeartbeat: {
+      type: 'object',
+      description: 'Age and staleness of the most recent progress event',
+      properties: {
+        updatedAt: { type: 'string', format: 'date-time' },
+        ageSeconds: { type: 'integer', minimum: 0 },
+        stale: { type: 'boolean' },
+        livenessUpdatedAt: { type: 'string', format: 'date-time', description: 'Most recent Pi worker liveness signal; this does not imply substantive work.' },
+        livenessAgeSeconds: { type: 'integer', minimum: 0 },
       },
-      phaseOutcome: {
-        type: 'object',
-        description: 'Explicit outcome for goal-setting, scouting, and weaving phases, including recovered fallbacks and phases not reached after an earlier failure',
-        properties: {
-          goalSetting: { type: 'string', enum: ['completed', 'completed_with_fallback', 'failed', 'skipped', 'not_reached', 'running'] },
-          scouting: { type: 'string', enum: ['completed', 'completed_with_fallback', 'failed', 'skipped', 'not_reached', 'running'] },
-          weaving: { type: 'string', enum: ['completed', 'failed', 'skipped', 'not_reached', 'running'] },
-          goalSettingFallback: { type: 'boolean', description: 'True when a failed goal-setting phase recovered by continuing with the original task prompt' },
-          goalSettingFallbackReason: { type: 'string', description: 'Goal-setting artifact or provider failure that triggered recovery' },
-          scoutingFallback: { type: 'boolean', description: 'True when scouting continued with a controller-generated validated fallback handoff' },
-          scoutingFallbackReason: { type: 'string', description: 'Reason the controller generated the scouting fallback handoff' },
-          scoutingStartedAt: { type: 'string', format: 'date-time' },
-          scoutingCompletedAt: { type: 'string', format: 'date-time' },
-          goalSettingStartedAt: { type: 'string', format: 'date-time' },
-          goalSettingCompletedAt: { type: 'string', format: 'date-time' },
-          weavingStartedAt: { type: 'string', format: 'date-time' },
-          weavingCompletedAt: { type: 'string', format: 'date-time' },
-          explanation: { type: 'string' },
-        },
-      },
-      phaseHealth: {
-        type: 'object',
-        description: 'Current phase heartbeat and stall state. A stalled phase remains cancellable but has not emitted durable progress for at least two minutes.',
-        required: ['state'],
-        properties: {
-          stage: { type: 'string' },
-          heartbeatAgeSeconds: { type: 'integer', minimum: 0 },
-          timeoutSeconds: { type: 'integer', minimum: 1 },
-          state: { type: 'string', enum: ['healthy', 'stalled'] },
-          message: { type: 'string' },
-        },
-      },
-      progress: {
-        type: 'object',
-        properties: {
-          stage: { type: 'string', description: 'Current stage name' },
-          percentComplete: {
-            type: 'integer',
-            minimum: 0,
-            maximum: 100,
-            description: 'Progress percentage (0-100)',
-          },
-          message: { type: 'string', description: 'Detailed progress message' },
-          updatedAt: {
-            type: 'string',
-            format: 'date-time',
-            description: 'ISO 8601 timestamp of last update',
-          },
-        },
-      },
-      elapsedSeconds: {
-        type: 'number',
-        description: 'Elapsed time since job start in seconds',
-      },
-      timeoutRiskPercent: {
-        type: 'number',
-        description: 'Percentage of timeout used (0-100+); values >85 indicate imminent timeout',
-      },
-      progressHeartbeat: {
-        type: 'object',
-        description: 'Age and staleness of the most recent progress event',
-        properties: {
-          updatedAt: { type: 'string', format: 'date-time' },
-          ageSeconds: { type: 'integer', minimum: 0 },
-          stale: { type: 'boolean' },
-          livenessUpdatedAt: { type: 'string', format: 'date-time', description: 'Most recent Pi worker liveness signal; this does not imply substantive work.' },
-          livenessAgeSeconds: { type: 'integer', minimum: 0 },
-        },
-      },
-      taskProgressPercent: {
-        type: 'number',
-        description: 'Overall orchestrator phase progress percentage, 0-100',
-      },
-      exitCode: {
-        type: 'integer',
-        description: 'Exit code (only if completed)',
-      },
-      failureClass: {
-        type: 'string',
-        description: 'Failure classification (only if failed)',
-      },
-      failedCommand: {
-        type: 'string',
-        description: 'Command or phase that caused the run to fail',
-      },
-      prUrl: {
-        type: 'string',
-        format: 'uri',
-        description: 'Published GitHub pull-request URL, when a patch run created one',
-      },
-      criticalChangeContract: buildCriticalChangeContractSchema(),
-      validationFailureReason: {
-        type: 'string',
-        description: 'Validation-related failure reason, including validation allowlist gates when present',
-      },
-      validationAllowlistFailureReason: {
-        type: 'string',
-        description: 'Dedicated reason when files changed during validation are outside KASEKI_VALIDATION_ALLOWLIST',
-      },
-      qualityFailureReason: {
-        type: 'string',
-        description: 'Quality gate failure reason (retained for compatibility)',
-      },
-      criticalChangeFailureReason: {
-        type: 'string',
-        description: 'Critical-change contract failure reason when verification fails before goal check runs',
-      },
-      goalCheckFailureReason: {
-        type: 'string',
-        description: 'Goal-check failure reason when the goal-check evaluator fails or rejects the run',
-      },
-      error: {
-        type: 'string',
-        description: 'Error message (only if failed)',
-      },
-      resultDir: {
-        type: 'string',
-        description: 'Path to results directory on server',
-      },
-      resultSummaryContent: {
-        type: 'string',
-        description: 'Human-readable markdown summary (truncated to 64KB)',
-      },
-      failureJsonContent: {
-        type: 'object',
-        description: 'Structured failure information (only if failed)',
-      },
-      diagnosticSummary: {
-        type: 'object',
-        properties: {
-          primaryReason: { type: 'string' },
-          recoveryFailure: { type: 'string' },
-          recommendedEntryPoint: { type: 'string' },
-          testFailure: {
-            type: 'object',
-            properties: {
-              failedSuite: { type: 'string' },
-              failedTest: { type: 'string' },
-              assertionSummary: { type: 'string' },
-              baselineComparison: {
-                type: 'object',
-                properties: {
-                  totalNewlyIntroduced: { type: 'number' },
-                  totalPreExisting: { type: 'number' },
-                  totalFixed: { type: 'number' },
-                  baselineValidationExitCode: { type: 'number' },
-                  baselineComparisonReliable: { type: 'boolean' },
-                  baselineComparisonWarning: { type: 'string' },
-                },
+    },
+    taskProgressPercent: { type: 'number', description: 'Overall orchestrator phase progress percentage, 0-100' },
+  };
+}
+
+function buildFailureProperties(): Record<string, unknown> {
+  return {
+    exitCode: { type: 'integer', description: 'Exit code (only if completed)' },
+    failureClass: { type: 'string', description: 'Failure classification (only if failed)' },
+    failedCommand: { type: 'string', description: 'Command or phase that caused the run to fail' },
+    prUrl: { type: 'string', format: 'uri', description: 'Published GitHub pull-request URL, when a patch run created one' },
+    criticalChangeContract: buildCriticalChangeContractSchema(),
+    validationFailureReason: { type: 'string', description: 'Validation-related failure reason, including validation allowlist gates when present' },
+    validationAllowlistFailureReason: { type: 'string', description: 'Dedicated reason when files changed during validation are outside KASEKI_VALIDATION_ALLOWLIST' },
+    qualityFailureReason: { type: 'string', description: 'Quality gate failure reason (retained for compatibility)' },
+    criticalChangeFailureReason: { type: 'string', description: 'Critical-change contract failure reason when verification fails before goal check runs' },
+    goalCheckFailureReason: { type: 'string', description: 'Goal-check failure reason when the goal-check evaluator fails or rejects the run' },
+    error: { type: 'string', description: 'Error message (only if failed)' },
+  };
+}
+
+function buildArtifactProperties(): Record<string, unknown> {
+  return {
+    resultDir: { type: 'string', description: 'Path to results directory on server' },
+    resultSummaryContent: { type: 'string', description: 'Human-readable markdown summary (truncated to 64KB)' },
+    failureJsonContent: { type: 'object', description: 'Structured failure information (only if failed)' },
+    diagnosticSummary: {
+      type: 'object',
+      properties: {
+        primaryReason: { type: 'string' },
+        recoveryFailure: { type: 'string' },
+        recommendedEntryPoint: { type: 'string' },
+        testFailure: {
+          type: 'object',
+          properties: {
+            failedSuite: { type: 'string' },
+            failedTest: { type: 'string' },
+            assertionSummary: { type: 'string' },
+            baselineComparison: {
+              type: 'object',
+              properties: {
+                totalNewlyIntroduced: { type: 'number' },
+                totalPreExisting: { type: 'number' },
+                totalFixed: { type: 'number' },
+                baselineValidationExitCode: { type: 'number' },
+                baselineComparisonReliable: { type: 'boolean' },
+                baselineComparisonWarning: { type: 'string' },
               },
             },
           },
         },
       },
-      artifacts: {
-        type: 'object',
-        properties: {
-          metadataJson: { type: 'boolean' },
-          analysisMd: { type: 'boolean' },
-          resultSummaryMd: { type: 'boolean' },
-          failureJson: { type: 'boolean' },
-          stderrLog: { type: 'boolean' },
-          availableFiles: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'List of available artifact files',
-          },
-          diagnosticFiles: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Additional diagnostic artifact files recommended for the current failure reason',
-          },
-        },
+    },
+    artifacts: {
+      type: 'object',
+      properties: {
+        metadataJson: { type: 'boolean' },
+        analysisMd: { type: 'boolean' },
+        resultSummaryMd: { type: 'boolean' },
+        failureJson: { type: 'boolean' },
+        stderrLog: { type: 'boolean' },
+        availableFiles: { type: 'array', items: { type: 'string' }, description: 'List of available artifact files' },
+        diagnosticFiles: { type: 'array', items: { type: 'string' }, description: 'Additional diagnostic artifact files recommended for the current failure reason' },
       },
+    },
+  };
+}
+
+function buildStatusResponseSchema(): Record<string, unknown> {
+  return {
+    type: 'object',
+    required: ['id', 'status', 'elapsedSeconds', 'timeoutRiskPercent'],
+    properties: {
+      ...buildStatusIdentityProperties(),
+      ...buildPhaseProperties(),
+      ...buildProgressProperties(),
+      ...buildFailureProperties(),
+      ...buildArtifactProperties(),
     },
   };
 }

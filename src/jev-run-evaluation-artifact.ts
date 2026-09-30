@@ -1,6 +1,6 @@
 import type { ClassificationAnswer } from './types/openrouter-decisions';
 import type { RunEvaluationFailureDiagnosis } from './jev-workflow-helpers';
-import { latestValidationResults } from './validation-evidence';
+import { latestValidationResults } from './validation-results';
 
 type JsonObject = Record<string, unknown>;
 

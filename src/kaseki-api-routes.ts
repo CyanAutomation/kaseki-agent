@@ -120,7 +120,50 @@ export function createApiRouter(
 ): Router {
   const router = Router();
   const logger = createEventLogger('api');
+  registerApiMiddleware(router, config, logger);
 
+  /**
+   * Mount health-check routes (/health, /ready, /metrics)
+   */
+  router.use(createHealthRoutes(scheduler, config, artifactCache));
+
+  /**
+   * Mount gateway test routes (/gateway-test, /gateway-test/stage1)
+   */
+  router.use(createGatewayTestRoutes());
+  registerApiInfoRoutes(router, config, logger);
+  registerRunRoutes(router, scheduler, idempotencyStore, taskAdmissionEvaluator, logger);
+  registerWebhookTestRoute(router, logger);
+  registerValidationRoute(router, preFlightValidator, taskAdmissionEvaluator, logger);
+
+  // Register domain-focused route modules
+  router.use(createStatusRoutes(scheduler, config, artifactCache));
+  router.use(createLogRoutes(scheduler, config, artifactCache));
+  router.use(createArtifactRoutes(scheduler, config, artifactCache));
+  router.use(createScorecardRoutes(scheduler, artifactCache));
+  router.use(createImprovementRoutes(scheduler, config));
+  router.use(createWebhookRoutes());
+  router.use(createGitHubIssuesRoutes());
+
+  return router;
+}
+
+async function admitTaskWithLogging(
+  taskAdmissionEvaluator: TaskAdmissionEvaluator,
+  logger: ReturnType<typeof createEventLogger>,
+  runRequest: RunRequest,
+): Promise<Awaited<ReturnType<TaskAdmissionEvaluator>>> {
+  const result = await taskAdmissionEvaluator(runRequest as unknown as Record<string, unknown>);
+  if (result.status === 'rejected') {
+    metricsRegistry.incAdmissionRejection('task-safety');
+    logger.event('task_admission_rejected', { reason: result.reason, riskScore: result.riskScore, responseTime: result.responseTime });
+  } else if (result.degraded) {
+    logger.event('task_admission_degraded', { reason: result.reason, warnings: result.warnings });
+  }
+  return result;
+}
+
+function registerApiMiddleware(router: Router, config: KasekiApiConfig, logger: ReturnType<typeof createEventLogger>): void {
   /**
    * Middleware: Request/Response logging.
    */
@@ -199,17 +242,9 @@ export function createApiRouter(
 
     next();
   });
+}
 
-  /**
-   * Mount health-check routes (/health, /ready, /metrics)
-   */
-  router.use(createHealthRoutes(scheduler, config, artifactCache));
-
-  /**
-   * Mount gateway test routes (/gateway-test, /gateway-test/stage1)
-   */
-  router.use(createGatewayTestRoutes());
-
+function registerApiInfoRoutes(router: Router, config: KasekiApiConfig, logger: ReturnType<typeof createEventLogger>): void {
   router.get('/capabilities', (_req: Request, res: Response) => {
     res.json({
       apiVersion: getPackageVersion(),
@@ -330,7 +365,15 @@ export function createApiRouter(
       });
     }
   });
+}
 
+function registerRunRoutes(
+  router: Router,
+  scheduler: JobScheduler,
+  idempotencyStore: IdempotencyStore,
+  taskAdmissionEvaluator: TaskAdmissionEvaluator,
+  logger: ReturnType<typeof createEventLogger>,
+): void {
   /**
    * Extract: Validate publish mode has proper authentication.
    */
@@ -421,11 +464,7 @@ export function createApiRouter(
   async function handleIdempotency(
     idempotencyKey: string,
     requestFingerprint: string,
-  ): Promise<
-    | { state: 'fresh' }
-    | { state: 'fulfilled'; response: RunResponse; jobId: string }
-    | { state: 'pending' }
-  > {
+  ): Promise<RunIdempotencyResult> {
     const claimResult = await idempotencyStore.claimOrGet(
       idempotencyKey,
       requestFingerprint,
@@ -462,21 +501,62 @@ export function createApiRouter(
     }
   }
 
-  async function admitTask(runRequest: RunRequest): Promise<ReturnType<TaskAdmissionEvaluator>> {
-    const result = await taskAdmissionEvaluator(runRequest as unknown as Record<string, unknown>);
-    if (result.status === 'rejected') {
-      metricsRegistry.incAdmissionRejection('task-safety');
-      logger.event('task_admission_rejected', {
-        reason: result.reason,
-        riskScore: result.riskScore,
-        responseTime: result.responseTime,
-      });
-    } else if (result.degraded) {
-      logger.event('task_admission_degraded', { reason: result.reason, warnings: result.warnings });
-    }
-    return result;
-  }
+  registerRunSubmissionRoute(router, {
+    scheduler,
+    idempotencyStore,
+    taskAdmissionEvaluator,
+    logger,
+    validatePublishModeAndAuth,
+    validateTemplateReadiness,
+    normalizeTaskMode,
+    handleIdempotency,
+  });
+  registerRunRetryRoute(router, {
+    scheduler,
+    idempotencyStore,
+    taskAdmissionEvaluator,
+    logger,
+    handleIdempotency,
+  });
+}
 
+type RunIdempotencyResult =
+  | { state: 'fresh' }
+  | { state: 'fulfilled'; response: RunResponse; jobId: string }
+  | { state: 'pending' };
+
+interface RunRouteSharedDependencies {
+  scheduler: JobScheduler;
+  idempotencyStore: IdempotencyStore;
+  taskAdmissionEvaluator: TaskAdmissionEvaluator;
+  logger: ReturnType<typeof createEventLogger>;
+}
+
+interface RunRouteHelpers {
+  validatePublishModeAndAuth(publishMode: string): Promise<{ ok: boolean; error?: string }>;
+  validateTemplateReadiness(publishMode: string): Promise<{
+    ok: boolean;
+    statusCode?: number;
+    response?: Record<string, unknown>;
+  }>;
+  normalizeTaskMode(runRequest: RunRequest): void;
+  handleIdempotency(idempotencyKey: string, requestFingerprint: string): Promise<RunIdempotencyResult>;
+}
+
+function registerRunSubmissionRoute(
+  router: Router,
+  dependencies: RunRouteSharedDependencies & RunRouteHelpers,
+): void {
+  const {
+    scheduler,
+    idempotencyStore,
+    taskAdmissionEvaluator,
+    logger,
+    validatePublishModeAndAuth,
+    validateTemplateReadiness,
+    normalizeTaskMode,
+    handleIdempotency,
+  } = dependencies;
   /**
    * POST /api/runs - Trigger a new kaseki run.
    */
@@ -520,7 +600,7 @@ export function createApiRouter(
       normalizeTaskMode(runRequest);
 
       // 4. Safety admission must happen before idempotency claim and scheduler submission.
-      const admission = await admitTask(runRequest);
+      const admission = await admitTaskWithLogging(taskAdmissionEvaluator, logger, runRequest);
       if (!admission.allowed) {
         return res.status(422).json({
           type: 'https://api.kaseki.local/errors#task-admission-rejected',
@@ -619,7 +699,13 @@ export function createApiRouter(
       return sendErrorResponse(res, 400, 'Bad Request', (err as Error).message);
     }
   });
+}
 
+function registerRunRetryRoute(
+  router: Router,
+  dependencies: RunRouteSharedDependencies & Pick<RunRouteHelpers, 'handleIdempotency'>,
+): void {
+  const { scheduler, idempotencyStore, taskAdmissionEvaluator, logger, handleIdempotency } = dependencies;
   /**
    * Retry only a terminal run. The caller must supply a fresh UUID key; a
    * replay of that key returns the same newly-created run without enqueueing twice.
@@ -640,7 +726,7 @@ export function createApiRouter(
       return sendErrorResponse(res, 400, 'Bad Request', 'A UUID idempotencyKey is required for retries');
     }
     const retryRequest: RunRequest = { ...source.request, idempotencyKey };
-    const admission = await admitTask(retryRequest);
+    const admission = await admitTaskWithLogging(taskAdmissionEvaluator, logger, retryRequest);
     if (!admission.allowed) {
       return res.status(422).json({
         type: 'https://api.kaseki.local/errors#task-admission-rejected',
@@ -672,7 +758,9 @@ export function createApiRouter(
       retryPolicy: 'Terminal runs only; submit the same idempotencyKey to replay this retry safely.',
     });
   });
+}
 
+function registerWebhookTestRoute(router: Router, logger: ReturnType<typeof createEventLogger>): void {
   /**
    * POST /api/webhooks/test - Test webhook configuration.
    */
@@ -767,7 +855,14 @@ export function createApiRouter(
       return sendErrorResponse(res, 400, 'Bad Request', (err as Error).message);
     }
   });
+}
 
+function registerValidationRoute(
+  router: Router,
+  preFlightValidator: PreFlightValidator,
+  taskAdmissionEvaluator: TaskAdmissionEvaluator,
+  logger: ReturnType<typeof createEventLogger>,
+): void {
   /**
    * POST /api/validate - Pre-flight validation of job request (dry-run).
    */
@@ -784,7 +879,7 @@ export function createApiRouter(
       // Run pre-flight validation
       const validationResult = await preFlightValidator.validate(runRequest);
 
-      const admission = await admitTask(runRequest);
+      const admission = await admitTaskWithLogging(taskAdmissionEvaluator, logger, runRequest);
       const response: ValidationResponse = { ...validationResult, admission };
 
       res.json(response);
@@ -807,17 +902,6 @@ export function createApiRouter(
       return sendErrorResponse(res, 400, 'Bad Request', (err as Error).message);
     }
   });
-
-  // Register domain-focused route modules
-  router.use(createStatusRoutes(scheduler, config, artifactCache));
-  router.use(createLogRoutes(scheduler, config, artifactCache));
-  router.use(createArtifactRoutes(scheduler, config, artifactCache));
-  router.use(createScorecardRoutes(scheduler, artifactCache));
-  router.use(createImprovementRoutes(scheduler, config));
-  router.use(createWebhookRoutes());
-  router.use(createGitHubIssuesRoutes());
-
-  return router;
 }
 
 // Re-export classifyDockerFailure for public API
