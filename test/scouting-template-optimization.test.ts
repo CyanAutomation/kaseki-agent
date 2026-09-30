@@ -106,6 +106,8 @@ function satisfiesValidTaskExamplesContract(template: string): boolean {
 }
 
 const EXECUTION_CONTEXT_HEADING = 'Execution context and efficiency requirements:';
+const ERROR_HANDLING_RULE =
+  '- Error handling: When an input is missing or unreadable, report the limitation in observations and continue with a constrained scope; do not silently succeed or abort scouting.';
 
 function extractExecutionContextSection(template: string): string | null {
   const headingStart = template
@@ -126,12 +128,11 @@ function satisfiesExecutionContextContract(template: string): boolean {
   const section = extractExecutionContextSection(template);
   if (!section) return false;
 
-  return [
-    /Timeouts?:[\s\S]*within 2 minutes/i,
-    /Artifact size:[\s\S]*Maximum JSON size:\s*50 KB/i,
-    /Error handling:[\s\S]*(?:unreadable|malformed)[\s\S]*(?:report|observations)/i,
-    /Error handling:[\s\S]*proceed with limited scope[\s\S]*adapt and continue/i,
-  ].every((requirement) => requirement.test(section));
+  return (
+    /Timeouts?:[\s\S]*within 2 minutes/i.test(section) &&
+    /Artifact size:[\s\S]*Maximum JSON size:\s*50 KB/i.test(section) &&
+    section.includes(ERROR_HANDLING_RULE)
+  );
 }
 
 // ============================================================================
@@ -413,12 +414,7 @@ describe('Scouting Template: Execution Context', () => {
     expect(executionContextSection).not.toBeNull();
     expect(executionContextSection).toMatch(/Timeouts?:[\s\S]*within 2 minutes/i);
     expect(executionContextSection).toMatch(/Artifact size:[\s\S]*Maximum JSON size:\s*50 KB/i);
-    expect(executionContextSection).toMatch(
-      /Error handling:[\s\S]*(?:unreadable|malformed)[\s\S]*(?:report|observations)/i,
-    );
-    expect(executionContextSection).toMatch(
-      /Error handling:[\s\S]*proceed with limited scope[\s\S]*adapt and continue/i,
-    );
+    expect(executionContextSection).toContain(ERROR_HANDLING_RULE);
     expect(satisfiesExecutionContextContract(commonContent)).toBe(true);
 
     const requirementsOutsideSection = `Timeouts: complete within 2 minutes.
@@ -431,6 +427,24 @@ ${EXECUTION_CONTEXT_HEADING}
       `${EXECUTION_CONTEXT_HEADING}\n- Keep scouting focused.`,
     );
     expect(satisfiesExecutionContextContract(requirementsOutsideSection)).toBe(false);
+  });
+
+  test.each([
+    [
+      'aborts after an input error',
+      '- Error handling: When an input is missing or unreadable, report the limitation in observations and abort scouting.',
+    ],
+    [
+      'continues without reporting the limitation',
+      '- Error handling: When an input is missing or unreadable, continue with a constrained scope without mentioning the limitation.',
+    ],
+  ])('rejects guidance that %s', (_description, errorHandlingRule) => {
+    const invalidTemplate = `${EXECUTION_CONTEXT_HEADING}
+- Timeouts: Scouting should complete within 2 minutes total.
+- Artifact size: Maximum JSON size: 50 KB.
+${errorHandlingRule}`;
+
+    expect(satisfiesExecutionContextContract(invalidTemplate)).toBe(false);
   });
 });
 
