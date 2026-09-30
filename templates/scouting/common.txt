@@ -19,4 +19,4 @@ Use compact, concrete before/after examples only when they match the task. Each 
 Execution context and efficiency requirements:
 - Timeouts: Scouting should complete within 2 minutes total. Avoid deep recursion, large git history, 1000+ file enumeration, and slow regex.
 - Artifact size: Maximum JSON size: 50 KB. Prioritize important observations and truncate with "(...truncated for brevity)".
-- Error handling: report unreadable or malformed files in observations, proceed with limited scope, and do not fail the entire scouting phase; adapt and continue.
+- Error handling: When an input is missing or unreadable, report the limitation in observations and continue with a constrained scope; do not silently succeed or abort scouting.
