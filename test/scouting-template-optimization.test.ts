@@ -105,6 +105,35 @@ function satisfiesValidTaskExamplesContract(template: string): boolean {
   return extractValidTaskExamples(taskValidationSection).some(isConcreteValidTaskExample);
 }
 
+const EXECUTION_CONTEXT_HEADING = 'Execution context and efficiency requirements:';
+
+function extractExecutionContextSection(template: string): string | null {
+  const headingStart = template
+    .split('\n')
+    .findIndex((line) => line === EXECUTION_CONTEXT_HEADING);
+  if (headingStart === -1) return null;
+
+  const sectionLines = template.split('\n').slice(headingStart);
+  const nextSectionOffset = sectionLines
+    .slice(1)
+    .findIndex((line) => /^##\s+\[/.test(line));
+  const sectionEnd = nextSectionOffset === -1 ? sectionLines.length : nextSectionOffset + 1;
+
+  return sectionLines.slice(0, sectionEnd).join('\n').trim();
+}
+
+function satisfiesExecutionContextContract(template: string): boolean {
+  const section = extractExecutionContextSection(template);
+  if (!section) return false;
+
+  return [
+    /Timeouts?:[\s\S]*within 2 minutes/i,
+    /Artifact size:[\s\S]*Maximum JSON size:\s*50 KB/i,
+    /Error handling:[\s\S]*(?:unreadable|malformed)[\s\S]*(?:report|observations)/i,
+    /Error handling:[\s\S]*proceed with limited scope[\s\S]*adapt and continue/i,
+  ].every((requirement) => requirement.test(section));
+}
+
 // ============================================================================
 // TEST SUITE 1: JSON Schema Field Definitions
 // These tests verify all JSON output fields are documented with constraints
@@ -378,24 +407,30 @@ describe('Scouting Template: Execution Context', () => {
     commonContent = loadTemplate('common.txt');
   });
 
-  test('execution context section exists', () => {
-    expect(commonContent).toMatch(/execution.*context|EXECUTION.*CONTEXT/i);
-  });
+  test('[templates/scouting/common.txt#execution-context-and-efficiency-requirements] section satisfies its complete contract', () => {
+    const executionContextSection = extractExecutionContextSection(commonContent);
 
-  test('timeout constraints are documented', () => {
-    expect(commonContent).toMatch(/timeout|2.*minute|second/i);
-  });
+    expect(executionContextSection).not.toBeNull();
+    expect(executionContextSection).toMatch(/Timeouts?:[\s\S]*within 2 minutes/i);
+    expect(executionContextSection).toMatch(/Artifact size:[\s\S]*Maximum JSON size:\s*50 KB/i);
+    expect(executionContextSection).toMatch(
+      /Error handling:[\s\S]*(?:unreadable|malformed)[\s\S]*(?:report|observations)/i,
+    );
+    expect(executionContextSection).toMatch(
+      /Error handling:[\s\S]*proceed with limited scope[\s\S]*adapt and continue/i,
+    );
+    expect(satisfiesExecutionContextContract(commonContent)).toBe(true);
 
-  test('artifact size constraint is documented', () => {
-    expect(commonContent).toMatch(/50.*KB|size.*50|artifact.*size/i);
-  });
+    const requirementsOutsideSection = `Timeouts: complete within 2 minutes.
+Artifact size: Maximum JSON size: 50 KB.
+Error handling: report malformed files in observations, proceed with limited scope, adapt and continue.
 
-  test('error handling guidance is present', () => {
-    expect(commonContent).toMatch(/error|fail|unreadable/i);
-  });
-
-  test('guidance says to proceed with limited scope on errors', () => {
-    expect(commonContent).toMatch(/proceed|limited.*scope|adapt/i);
+${EXECUTION_CONTEXT_HEADING}
+- Keep scouting focused.`;
+    expect(extractExecutionContextSection(requirementsOutsideSection)).toBe(
+      `${EXECUTION_CONTEXT_HEADING}\n- Keep scouting focused.`,
+    );
+    expect(satisfiesExecutionContextContract(requirementsOutsideSection)).toBe(false);
   });
 });
 
