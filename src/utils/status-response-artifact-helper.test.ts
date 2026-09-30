@@ -723,6 +723,37 @@ describe('StatusArtifactHelper', () => {
       expect(response.diagnosticEntryPoint).toBe('pre-validation.log');
     });
 
+    it('should include pre-validation diagnostics for non-lowercase command naming', () => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-pre-validation-casing');
+      fs.mkdirSync(runDir, { recursive: true });
+      const job = makeJob({ status: 'failed', resultDir: runDir });
+
+      fs.writeFileSync(path.join(runDir, 'metadata.json'), JSON.stringify({
+        failed_command: 'PRE-Agent Validation',
+        pre_validation_exit_code: 0
+      }));
+      fs.writeFileSync(path.join(runDir, 'pre-validation.log'), 'validation failed');
+      fs.writeFileSync(path.join(runDir, '.gateway-diagnostics.jsonl'), '{}');
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 100 },
+        'pre-validation.log': { exists: true, size: 50 },
+        'test-baseline-comparison.json': { exists: false, size: 0 },
+        '.gateway-diagnostics.jsonl': { exists: true, size: 50 },
+        'result-summary.md': { exists: false, size: 0 },
+        'analysis.md': { exists: false, size: 0 },
+        'failure.json': { exists: false, size: 0 },
+        'stderr.log': { exists: false, size: 0 },
+        'stdout.log': { exists: false, size: 0 },
+      });
+
+      helper.addArtifactInfo(response, job);
+
+      expect(response.artifacts?.diagnosticFiles).toContain('pre-validation.log');
+      expect(response.diagnosticEntryPoint).toBe('pre-validation.log');
+    });
+
     it('should include goal-check diagnostics when goal check artifact is invalid', () => {
       const response = makeResponse();
       response.goalCheckFailureReason = 'goal_check_artifact_invalid';

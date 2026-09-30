@@ -10,6 +10,7 @@ import { KasekiApiConfig } from '../kaseki-api-config';
 import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
 import { ArtifactContentLoader } from './artifact-content-loader';
 import { TaskProgressCalculator } from './task-progress-calculator';
+import { isPreAgentValidationFailedCommand } from './pre-validation-classification';
 import { DiagnosticExtractor } from './diagnostic-extractor';
 
 const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', 'failure.json', 'stderr.log', 'stdout.log'] as const;
@@ -329,18 +330,17 @@ export class StatusArtifactHelper {
   }
 
   private shouldIncludePreValidationDiagnostics(metadata: any, runDir: string): boolean {
-    const failedCommand = String(metadata?.failed_command ?? '');
     const preValidationExitCode = Number(metadata?.pre_validation_exit_code ?? 0);
+    const failedCommand = String(metadata?.failed_command ?? '');
     return (
-      failedCommand.includes('pre-agent validation') ||
+      isPreAgentValidationFailedCommand(failedCommand) ||
       preValidationExitCode !== 0 ||
       PRE_VALIDATION_DIAGNOSTIC_FILES.some((fileName) => fs.existsSync(path.join(runDir, fileName)))
     );
   }
 
   private isPreValidationFailure(metadata: any): boolean {
-    const failedCommand = String(metadata?.failed_command ?? '').toLowerCase();
-    return /pre[-_ ]agent validation|pre[-_ ]validation/.test(failedCommand);
+    return isPreAgentValidationFailedCommand(String(metadata?.failed_command ?? ''));
   }
 
   private shouldIncludePhaseDiagnostics(
