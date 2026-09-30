@@ -236,16 +236,25 @@ describe('Scouting Template: JSON Schema Field Definitions', () => {
   });
 
   describe('validation field', () => {
-    test('validation field is documented', () => {
-      expect(baseContent).toMatch(/validation[\s:]/i);
-    });
+    test('validation field definition satisfies its complete contract [SCOUTING_PROMPT_DESIGN § Output Schema]', () => {
+      const validationDocumentation = extractSchemaFieldDocumentation(baseContent, 'validation');
 
-    test('validation min/max range is documented', () => {
-      expect(baseContent).toMatch(/2\b.*10|10\b.*2/);
-    });
+      expect(validationDocumentation).not.toBeNull();
+      expect(validationDocumentation).toMatch(/^\*\*validation\*\*/);
+      expect(validationDocumentation).toMatch(/\barray\b/i);
+      expect(validationDocumentation).toMatch(/\b2\s*-\s*10\s+strings\b/i);
+      expect(validationDocumentation).toMatch(/(?:for example,\s*)?`npm run [^`]+`/i);
 
-    test('validation examples are concrete commands', () => {
-      expect(baseContent).toMatch(/npm run/i);
+      const unrelatedValidationGuidanceTemplate = `**validation** (array): Focused checks.
+**requirements** (array, 2-10 strings): Mention validation when relevant.
+**observations** (array): Example command: \`npm run test:unit\`.`;
+      const isolatedValidationDocumentation = extractSchemaFieldDocumentation(
+        unrelatedValidationGuidanceTemplate,
+        'validation',
+      );
+      expect(isolatedValidationDocumentation).toBe('**validation** (array): Focused checks.');
+      expect(isolatedValidationDocumentation).not.toMatch(/\b2\s*-\s*10\s+strings\b/i);
+      expect(isolatedValidationDocumentation).not.toMatch(/npm run/i);
     });
   });
 
