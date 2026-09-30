@@ -1,6 +1,7 @@
 ## [STRONG TEST_IMPACT EXAMPLES]
 
-Use compact, concrete before/after examples only when they match the task. Each example has type, before, after, pattern, and description; use at most 5 test_examples per file.
+Use compact, concrete before/after examples only when they match the task.
+Each `test_examples` object: `type` (assertion change kind), `before` (current assertion), `after` (expected assertion), `pattern` (short behavior label), and `description` (why the assertion changes); use at most 5 `test_examples` per file.
 - Parser change: {"path":"tests/parser.test.ts","reason":"parseRole() now handles null with fallback","test_examples":[{"type":"added_assertion","pattern":"Null-coalescing","before":"expect(parseRole(null)).toThrow(NullReferenceError)","after":"expect(parseRole(null)).toEqual({name:'Unnamed',level:0})","description":"Null now valid with defaults"}]}
 - Event change: {"path":"tests/event-handler.test.ts","reason":"Event emission now async with new timing","test_examples":[{"type":"modified_assertion","pattern":"Async timing","before":"await eventPromise; // resolves within 10ms","after":"await eventPromise; // resolves within 100ms","description":"Batching adds latency"}]}
 - Serialization change: {"path":"tests/response.test.ts","reason":"Response fields now camelCase","test_examples":[{"type":"modified_assertion","pattern":"camelCase fields","before":"expect(response.status_code).toBe(200)","after":"expect(response.statusCode).toBe(200)","description":"Field names migrated"}]}
