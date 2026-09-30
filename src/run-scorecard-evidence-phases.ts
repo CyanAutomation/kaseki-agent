@@ -6,6 +6,60 @@
 import { number, object } from './run-scorecard-guards';
 import type { ArtifactSnapshot } from './run-scorecard-evidence-types';
 
+type StageMatcher = (pattern: RegExp) => boolean;
+
+function goalSettingReached(snapshot: ArtifactSnapshot, metadata: Record<string, unknown>, hasStage: StageMatcher): boolean {
+  return Boolean(snapshot.json['goal-setting.json'])
+    || hasStage(/goal.setting/i)
+    || (number(metadata.goal_setting_duration_seconds) ?? 0) > 0;
+}
+
+function scoutingReached(snapshot: ArtifactSnapshot, metadata: Record<string, unknown>, hasStage: StageMatcher): boolean {
+  return Boolean(snapshot.json['scouting.json'])
+    || hasStage(/scouting/i)
+    || (number(metadata.scouting_duration_seconds) ?? 0) > 0;
+}
+
+function codingReached(snapshot: ArtifactSnapshot, noChangeAccepted: boolean, hasStage: StageMatcher): boolean {
+  return Boolean(snapshot.json['pi-summary.json'])
+    || Boolean(snapshot.text['pi-events.jsonl'])
+    || hasStage(/pi coding agent/i)
+    || (snapshot.text['git.diff'] ?? '').trim().length > 0
+    || noChangeAccepted;
+}
+
+function validationReached(
+  metadata: Record<string, unknown>,
+  executedValidationRowsCount: number,
+  validationExitCode: number | undefined,
+  hasStage: StageMatcher,
+): boolean {
+  return executedValidationRowsCount > 0
+    || (number(metadata.validation_commands_attempted) ?? 0) > 0
+    || hasStage(/^validation$/i)
+    || (validationExitCode !== undefined && validationExitCode !== 0);
+}
+
+function goalCheckReached(snapshot: ArtifactSnapshot, metadata: Record<string, unknown>, hasStage: StageMatcher): boolean {
+  return Boolean(snapshot.json['goal-check.json'])
+    || hasStage(/goal check/i)
+    || (number(metadata.goal_check_duration_seconds) ?? 0) > 0
+    || String(metadata.failed_command ?? '').toLowerCase() === 'goal check'
+    || String(metadata.goal_check_failure_reason ?? '').trim().length > 0;
+}
+
+function evaluationReached(
+  evaluation: Record<string, unknown> | undefined,
+  metadata: Record<string, unknown>,
+  evaluatorFailed: boolean,
+  hasStage: StageMatcher,
+): boolean {
+  return Boolean(evaluation)
+    || hasStage(/run evaluation/i)
+    || (number(metadata.run_evaluation_duration_seconds) ?? 0) > 0
+    || evaluatorFailed;
+}
+
 /**
  * Detects whether each phase was reached during execution.
  * Uses multiple signals: artifact presence, stage timings, metadata, and git diff.
@@ -26,26 +80,12 @@ export function detectPhaseReached(
   const hasStage = (pattern: RegExp) => stageRows.some(row => pattern.test(String(object(row)?.stage ?? '')));
 
   return {
-    goal_setting: Boolean(snapshot.json['goal-setting.json']) || hasStage(/goal.setting/i) || (number(meta.goal_setting_duration_seconds) ?? 0) > 0,
-    scouting: Boolean(snapshot.json['scouting.json']) || hasStage(/scouting/i) || (number(meta.scouting_duration_seconds) ?? 0) > 0,
-    coding: Boolean(snapshot.json['pi-summary.json'])
-      || Boolean(snapshot.text['pi-events.jsonl'])
-      || hasStage(/pi coding agent/i)
-      || (snapshot.text['git.diff'] ?? '').trim().length > 0
-      || execution.noChangeAccepted,
-    validation: execution.executedValidationRowsCount > 0
-      || (number(meta.validation_commands_attempted) ?? 0) > 0
-      || hasStage(/^validation$/i)
-      || (execution.validationExitCode !== undefined && execution.validationExitCode !== 0),
-    goal_check: Boolean(snapshot.json['goal-check.json'])
-      || hasStage(/goal check/i)
-      || (number(meta.goal_check_duration_seconds) ?? 0) > 0
-      || String(meta.failed_command ?? '').toLowerCase() === 'goal check'
-      || String(meta.goal_check_failure_reason ?? '').trim().length > 0,
-    run_evaluation: Boolean(execution.evaluation)
-      || hasStage(/run evaluation/i)
-      || (number(meta.run_evaluation_duration_seconds) ?? 0) > 0
-      || execution.evaluatorFailed,
+    goal_setting: goalSettingReached(snapshot, meta, hasStage),
+    scouting: scoutingReached(snapshot, meta, hasStage),
+    coding: codingReached(snapshot, execution.noChangeAccepted, hasStage),
+    validation: validationReached(meta, execution.executedValidationRowsCount, execution.validationExitCode, hasStage),
+    goal_check: goalCheckReached(snapshot, meta, hasStage),
+    run_evaluation: evaluationReached(execution.evaluation, meta, execution.evaluatorFailed, hasStage),
   };
 }
 

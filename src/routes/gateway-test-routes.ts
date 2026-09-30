@@ -46,6 +46,12 @@ type GatewayHttpResponse = {
   body: any;
 };
 
+type DualStageState = {
+  piAdapterFailed: boolean;
+  primaryPathHealthy: boolean;
+  partialSuccess: boolean;
+};
+
 /**
  * Parse query parameter as boolean
  * Handles: '1', 'true', 'on', 'yes' → true; '0', 'false', 'off', 'no' → false; undefined → undefined
@@ -83,6 +89,49 @@ function parseGatewayTestRequest(req: Request): GatewayTestRequest {
   };
 }
 
+function resolveDualStageState(stage1Result: any, stage2Result: any, piProviderResult: any, classificationResult: any): DualStageState {
+  const piAdapterFailed = piProviderResult?.status === 'error';
+  const classifierFailed = classificationResult?.status === 'error';
+  const primaryPathHealthy = stage1Result.status === 'ok'
+    && (!stage2Result || stage2Result.status === 'ok' || piProviderResult?.status === 'ok')
+    && !piAdapterFailed;
+  const partialSuccess = (stage2Result?.status === 'error' && piProviderResult?.status === 'ok')
+    || (stage2Result?.status === 'ok' && piAdapterFailed)
+    || (primaryPathHealthy && classifierFailed);
+  return { piAdapterFailed, primaryPathHealthy, partialSuccess };
+}
+
+function addStageTwoFields(response: any, stage2Result: any): void {
+  if (!stage2Result) return;
+  Object.assign(response, {
+    responseId: stage2Result.responseId,
+    outputTokens: stage2Result.outputTokens,
+    modelUsed: stage2Result.modelUsed,
+    streamSmokeValidated: stage2Result.streamSmokeValidated,
+    largePromptSmokeValidated: stage2Result.largePromptSmokeValidated,
+    checks: stage2Result.checks,
+  });
+}
+
+function addPiProviderFields(response: any, stage2Result: any, piProviderResult: any, state: DualStageState): void {
+  if (!piProviderResult) return;
+  Object.assign(response, {
+    piProviderSmoke: piProviderResult,
+    gatewayInferenceValidated: stage2Result?.status === 'ok',
+    piAdapterValidated: piProviderResult.status === 'ok',
+    partialSuccess: state.partialSuccess,
+    codingShapeValidated: piProviderResult.codingShapeValidated === true,
+    multiTurnValidated: piProviderResult.multiTurnValidated === true,
+  });
+}
+
+function addClassificationFields(response: any, classificationResult: any, state: DualStageState): void {
+  if (!classificationResult) return;
+  response.evaluationSmoke = classificationResult;
+  response.evaluationValidated = classificationResult.status === 'ok';
+  if (classificationResult.status === 'error') response.partialSuccess = state.primaryPathHealthy;
+}
+
 /**
  * Build dual-stage response (Stage 1 + Stage 2 + Classification)
  */
@@ -92,45 +141,18 @@ function buildDualStageResponse(
   piProviderResult: any,
   classificationResult: any,
 ): any {
-  const piAdapterFailed = piProviderResult?.status === 'error';
-  const classifierFailed = classificationResult?.status === 'error';
-  const primaryPathHealthy = stage1Result.status === 'ok' &&
-    (!stage2Result || stage2Result.status === 'ok' || piProviderResult?.status === 'ok') &&
-    !piAdapterFailed;
-  const partialSuccess = (stage2Result?.status === 'error' && piProviderResult?.status === 'ok') ||
-    (stage2Result?.status === 'ok' && piAdapterFailed) ||
-    (primaryPathHealthy && classifierFailed);
+  const state = resolveDualStageState(stage1Result, stage2Result, piProviderResult, classificationResult);
   const result: any = {
-    status: !primaryPathHealthy || piAdapterFailed ? 'error' : (partialSuccess ? 'partial' : 'ok'),
+    status: !state.primaryPathHealthy || state.piAdapterFailed ? 'error' : (state.partialSuccess ? 'partial' : 'ok'),
     detail: stage1Result.detail,
     responseTime: stage1Result.responseTime,
     timestamp: new Date().toISOString(),
     authenticationValidated: stage1Result.authenticationValidated,
     responseSmokeValidated: stage2Result?.status === 'ok',
   };
-
-  if (stage2Result) {
-    result.responseId = stage2Result.responseId;
-    result.outputTokens = stage2Result.outputTokens;
-    result.modelUsed = stage2Result.modelUsed;
-    result.streamSmokeValidated = stage2Result.streamSmokeValidated;
-    result.largePromptSmokeValidated = stage2Result.largePromptSmokeValidated;
-    result.checks = stage2Result.checks;
-  }
-  if (piProviderResult) {
-    result.piProviderSmoke = piProviderResult;
-    result.gatewayInferenceValidated = stage2Result?.status === 'ok';
-    result.piAdapterValidated = piProviderResult.status === 'ok';
-    result.partialSuccess = partialSuccess;
-    result.codingShapeValidated = piProviderResult.codingShapeValidated === true;
-    result.multiTurnValidated = piProviderResult.multiTurnValidated === true;
-  }
-  if (classificationResult) {
-    result.evaluationSmoke = classificationResult;
-    result.evaluationValidated = classificationResult.status === 'ok';
-    if (classificationResult.status === 'error') result.partialSuccess = primaryPathHealthy;
-  }
-
+  addStageTwoFields(result, stage2Result);
+  addPiProviderFields(result, stage2Result, piProviderResult, state);
+  addClassificationFields(result, classificationResult, state);
   return result;
 }
 

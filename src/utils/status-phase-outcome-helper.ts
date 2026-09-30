@@ -10,6 +10,18 @@ type ExecutionStatus = {
   outcome?: string;
 };
 
+type GoalSettingFacts = {
+  started: boolean;
+  failed: boolean;
+  startedAt?: string;
+  completedAt?: string;
+  fallbackReason?: string;
+};
+
+function omitUndefined<T extends Record<string, unknown>>(record: T): Partial<T> {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined)) as Partial<T>;
+}
+
 /**
  * Returns whether a phase/outcome pair represents active execution.
  *
@@ -36,11 +48,11 @@ export class StatusPhaseOutcomeHelper {
     // can contain headings for later stages before those stages run.
     const events = this.readPhaseEvents(job).filter((event) => event.timestampEstimated !== true);
     const stage = String(response.progress?.stage ?? job.currentStage ?? '').toLowerCase();
-    const goalSettingEvents = events.filter((event) => this.isGoalSettingStage(this.eventStage(event)));
-    const scoutingEvents = events.filter((event) => this.isScoutingStage(this.eventStage(event)));
+    const goalSettingEvents = this.eventsForGoalSetting(events);
+    const scoutingEvents = this.eventsForScouting(events);
     const failedCommand = String(metadata?.failed_command ?? stage).toLowerCase();
     const preAgentValidation = this.isPreAgentValidationFailure(failedCommand);
-    const weavingEvents = events.filter((event) => this.isWeavingEvent(event, preAgentValidation));
+    const weavingEvents = this.eventsForWeaving(events, preAgentValidation);
     const scoutingStarted = this.hasScoutingStarted(stage, job, metadata, scoutingEvents);
     const weavingStarted = this.hasWeavingStarted(stage, preAgentValidation, weavingEvents);
     const scoutingFailed = failed && this.isScoutingStage(failedCommand);
@@ -50,28 +62,13 @@ export class StatusPhaseOutcomeHelper {
     const scoutingStartedAt = this.phaseStartedAt(scoutingEvents);
     const weavingStartedAt = this.phaseStartedAt(weavingEvents);
     const scoutingFallbackReason = this.scoutingFallbackReason(job);
-    const goalSettingStartedAt = this.phaseStartedAt(goalSettingEvents);
-    const goalSettingCompletedAt = this.phaseCompletedAt(goalSettingEvents);
-    const goalSettingExitCode = Number(metadata?.goal_setting_exit_code);
-    const goalSettingStarted = Boolean(
-      goalSettingEvents.length ||
-      this.isGoalSettingStage(stage) ||
-      Number(metadata?.goal_setting_duration_seconds ?? 0) > 0 ||
-      (Number.isFinite(goalSettingExitCode) && goalSettingExitCode !== 0) ||
-      (typeof metadata?.goal_setting_actual_model === 'string' && metadata.goal_setting_actual_model !== 'unknown')
-    );
-    const goalSettingFailed = Number.isFinite(goalSettingExitCode) && goalSettingExitCode !== 0;
-    const goalSettingFallbackReason = this.goalSettingFallbackReason(job)
-      ?? (goalSettingFailed && job.status === 'running' && scoutingStarted
-        ? `GOAL_SETTING_PI_ERROR_EXIT_${goalSettingExitCode}`
-        : undefined);
-
-    const derived: NonNullable<StatusResponse['phaseOutcome']> = {
+    const goalSetting = this.goalSettingFacts(goalSettingEvents, stage, metadata, job, scoutingStarted);
+    const derived = {
       goalSetting: this.resolveGoalSettingOutcome(
-        goalSettingStarted,
-        goalSettingFailed,
-        Boolean(goalSettingFallbackReason),
-        goalSettingCompletedAt,
+        goalSetting.started,
+        goalSetting.failed,
+        Boolean(goalSetting.fallbackReason),
+        goalSetting.completedAt,
         scoutingStarted,
         job.status,
       ),
@@ -86,18 +83,68 @@ export class StatusPhaseOutcomeHelper {
         job.status,
       ),
       weaving: this.resolveWeavingOutcome(weavingFailed, weavingStarted, weavingCompletedAt, stage, job.status),
-      ...(goalSettingFallbackReason ? { goalSettingFallback: true, goalSettingFallbackReason } : {}),
-      ...(scoutingFallbackReason ? { scoutingFallback: true, scoutingFallbackReason } : {}),
       explanation: this.buildFailureExplanation(failed, metadata, response, scoutingFallbackReason),
-      ...(scoutingStartedAt ? { scoutingStartedAt } : {}),
-      ...(scoutingCompletedAt ? { scoutingCompletedAt } : {}),
-      ...(goalSettingStartedAt ? { goalSettingStartedAt } : {}),
-      ...(goalSettingCompletedAt ? { goalSettingCompletedAt } : {}),
-      ...(weavingStartedAt ? { weavingStartedAt } : {}),
-      ...(weavingCompletedAt ? { weavingCompletedAt } : {}),
-    };
+    } as NonNullable<StatusResponse['phaseOutcome']>;
+    Object.assign(derived, omitUndefined({
+      goalSettingFallback: goalSetting.fallbackReason ? true : undefined,
+      goalSettingFallbackReason: goalSetting.fallbackReason,
+      scoutingFallback: scoutingFallbackReason ? true : undefined,
+      scoutingFallbackReason,
+      scoutingStartedAt,
+      scoutingCompletedAt,
+      goalSettingStartedAt: goalSetting.startedAt,
+      goalSettingCompletedAt: goalSetting.completedAt,
+      weavingStartedAt,
+      weavingCompletedAt,
+    }));
     response.phaseOutcome = this.monotonicPhaseOutcome(job, derived);
     response.phaseHealth = this.buildPhaseHealth(response, job);
+  }
+
+  private eventsForGoalSetting(events: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+    return events.filter((event) => this.isGoalSettingStage(this.eventStage(event)));
+  }
+
+  private eventsForScouting(events: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+    return events.filter((event) => this.isScoutingStage(this.eventStage(event)));
+  }
+
+  private eventsForWeaving(events: Array<Record<string, unknown>>, preAgentValidation: boolean): Array<Record<string, unknown>> {
+    return events.filter((event) => this.isWeavingEvent(event, preAgentValidation));
+  }
+
+  private goalSettingFacts(
+    events: Array<Record<string, unknown>>,
+    stage: string,
+    metadata: any,
+    job: Job,
+    scoutingStarted: boolean,
+  ): GoalSettingFacts {
+    const exitCode = Number(metadata?.goal_setting_exit_code);
+    const failed = Number.isFinite(exitCode) && exitCode !== 0;
+    const fallbackReason = this.goalSettingFallbackReason(job)
+      ?? this.recoveredGoalSettingFallback(failed, exitCode, job, scoutingStarted);
+    const hasModelEvidence = typeof metadata?.goal_setting_actual_model === 'string'
+      && metadata.goal_setting_actual_model !== 'unknown';
+    const started = Boolean(
+      events.length
+      || this.isGoalSettingStage(stage)
+      || Number(metadata?.goal_setting_duration_seconds ?? 0) > 0
+      || failed
+      || hasModelEvidence,
+    );
+    return {
+      started,
+      failed,
+      startedAt: this.phaseStartedAt(events),
+      completedAt: this.phaseCompletedAt(events),
+      fallbackReason,
+    };
+  }
+
+  private recoveredGoalSettingFallback(failed: boolean, exitCode: number, job: Job, scoutingStarted: boolean): string | undefined {
+    if (failed && job.status === 'running' && scoutingStarted) return `GOAL_SETTING_PI_ERROR_EXIT_${exitCode}`;
+    return undefined;
   }
 
   private buildPhaseHealth(response: StatusResponse, job: Job): NonNullable<StatusResponse['phaseHealth']> {

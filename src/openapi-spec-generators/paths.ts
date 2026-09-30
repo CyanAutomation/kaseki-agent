@@ -98,10 +98,17 @@ function buildHealthCheckPaths(): Record<string, unknown> {
  * Build service info endpoints.
  * These endpoints provide service metadata, metrics, and configuration validation.
  */
-function buildServiceInfoPaths(
-  errorResponseSchema: Record<string, unknown>,
-  runRequestSchema: Record<string, unknown>
-): Record<string, unknown> {
+function buildServiceInfoPaths(errorResponseSchema: Record<string, unknown>, runRequestSchema: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...buildServiceInfoApiCapabilitiesPath(errorResponseSchema, runRequestSchema),
+    ...buildServiceInfoApiMetricsPath(errorResponseSchema, runRequestSchema),
+    ...buildServiceInfoApiPreflightPath(errorResponseSchema, runRequestSchema),
+    ...buildServiceInfoApiStartupHealthPath(errorResponseSchema, runRequestSchema),
+    ...buildServiceInfoApiValidatePath(errorResponseSchema, runRequestSchema),
+  };
+}
+
+function buildServiceInfoApiCapabilitiesPath(errorResponseSchema: Record<string, unknown>, _runRequestSchema: Record<string, unknown>): Record<string, unknown> {
   return {
     '/api/capabilities': {
       get: {
@@ -115,7 +122,12 @@ function buildServiceInfoPaths(
           '401': { description: 'Unauthorized', content: { 'application/json': { schema: errorResponseSchema } } },
         },
       },
-    },
+    }
+  };
+}
+
+function buildServiceInfoApiMetricsPath(errorResponseSchema: Record<string, unknown>, _runRequestSchema: Record<string, unknown>): Record<string, unknown> {
+  return {
     '/api/metrics': {
       get: {
         operationId: 'getMetrics',
@@ -144,14 +156,18 @@ function buildServiceInfoPaths(
           }
         }
       }
-    },
+    }
+  };
+}
 
+function buildServiceInfoApiPreflightPath(errorResponseSchema: Record<string, unknown>, _runRequestSchema: Record<string, unknown>): Record<string, unknown> {
+  return {
     '/api/preflight': {
       get: {
         operationId: 'getPreFlight',
         summary: 'Pre-flight validation',
         description:
-          'Validates that the controller (Docker, image, GitHub App) is configured correctly. Set agentCapability=true to also run the token-consuming Pi provider adapter smoke used by coding runs.',
+              'Validates that the controller (Docker, image, GitHub App) is configured correctly. Set agentCapability=true to also run the token-consuming Pi provider adapter smoke used by coding runs.',
         tags: ['Service Info'],
         security: [{ BearerAuth: [] }],
         parameters: [
@@ -191,7 +207,7 @@ function buildServiceInfoPaths(
                     containerStartup: {
                       type: 'object',
                       description:
-                        'Cached startup diagnostics retained as boot history only; excluded from current readiness.',
+                            'Cached startup diagnostics retained as boot history only; excluded from current readiness.',
                       properties: {
                         scope: { type: 'string', enum: ['startup'] },
                         readinessImpact: {
@@ -236,14 +252,18 @@ function buildServiceInfoPaths(
           }
         }
       }
-    },
+    }
+  };
+}
 
+function buildServiceInfoApiStartupHealthPath(errorResponseSchema: Record<string, unknown>, _runRequestSchema: Record<string, unknown>): Record<string, unknown> {
+  return {
     '/api/startup-health': {
       get: {
         operationId: 'getStartupHealth',
         summary: 'Cached startup health report',
         description:
-          'Returns cached boot-time diagnostics generated during API initialization. This is historical startup scope only (`scope: startup`, `current: false`); call /api/preflight for current readiness diagnostics.',
+              'Returns cached boot-time diagnostics generated during API initialization. This is historical startup scope only (`scope: startup`, `current: false`); call /api/preflight for current readiness diagnostics.',
         tags: ['Service Info'],
         security: [{ BearerAuth: [] }],
         parameters: [
@@ -303,14 +323,18 @@ function buildServiceInfoPaths(
           }
         }
       }
-    },
+    }
+  };
+}
 
+function buildServiceInfoApiValidatePath(errorResponseSchema: Record<string, unknown>, runRequestSchema: Record<string, unknown>): Record<string, unknown> {
+  return {
     '/api/validate': {
       post: {
         operationId: 'validateTask',
         summary: 'Validate task configuration',
         description:
-          'Validates the task configuration before submitting a run. Performs pre-flight checks on the task prompt and constraints.',
+              'Validates the task configuration before submitting a run. Performs pre-flight checks on the task prompt and constraints.',
         tags: ['Service Info'],
         security: [{ BearerAuth: [] }],
         requestBody: {
@@ -461,18 +485,23 @@ function buildInteractiveConsolePaths(errorResponseSchema: Record<string, unknow
  * Build run management endpoints.
  * These endpoints allow triggering, listing, and controlling kaseki runs.
  */
-function buildRunManagementPaths(
-  errorResponseSchema: Record<string, unknown>,
-  runRequestSchema: Record<string, unknown>,
-  runResponseSchema: Record<string, unknown>
-): Record<string, unknown> {
+function buildRunManagementPaths(errorResponseSchema: Record<string, unknown>, runRequestSchema: Record<string, unknown>, runResponseSchema: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...buildRunManagementApiRunsPath(errorResponseSchema, runRequestSchema, runResponseSchema),
+    ...buildRunManagementApiRunsIdStatusPath(errorResponseSchema, runRequestSchema, runResponseSchema),
+    ...buildRunManagementApiRunsIdRetryPath(errorResponseSchema, runRequestSchema, runResponseSchema),
+    ...buildRunManagementApiRunsIdCancelPath(errorResponseSchema, runRequestSchema, runResponseSchema),
+  };
+}
+
+function buildRunManagementApiRunsPath(errorResponseSchema: Record<string, unknown>, runRequestSchema: Record<string, unknown>, runResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
     '/api/runs': {
       post: {
         operationId: 'triggerRun',
         summary: 'Trigger a new kaseki run',
         description:
-          'Submits a new job to the queue. Returns 202 Accepted with job metadata. Use the ID to poll status.',
+              'Submits a new job to the queue. Returns 202 Accepted with job metadata. Use the ID to poll status.',
         tags: ['Run Management'],
         security: [{ BearerAuth: [] }],
         requestBody: {
@@ -590,14 +619,18 @@ function buildRunManagementPaths(
           }
         }
       }
-    },
+    }
+  };
+}
 
+function buildRunManagementApiRunsIdStatusPath(errorResponseSchema: Record<string, unknown>, _runRequestSchema: Record<string, unknown>, _runResponseSchema: Record<string, unknown>): Record<string, unknown> {
+  return {
     '/api/runs/{id}/status': {
       get: {
         operationId: 'getRunStatus',
         summary: 'Poll run status',
         description:
-          'Returns current status of a kaseki run, including progress, elapsed time, and timeout risk percentage.',
+              'Returns current status of a kaseki run, including progress, elapsed time, and timeout risk percentage.',
         tags: ['Run Management'],
         parameters: [
           {
@@ -636,8 +669,12 @@ function buildRunManagementPaths(
           }
         }
       }
-    },
+    }
+  };
+}
 
+function buildRunManagementApiRunsIdRetryPath(errorResponseSchema: Record<string, unknown>, _runRequestSchema: Record<string, unknown>, runResponseSchema: Record<string, unknown>): Record<string, unknown> {
+  return {
     '/api/runs/{id}/retry': {
       post: {
         operationId: 'retryRun',
@@ -656,14 +693,18 @@ function buildRunManagementPaths(
           '409': { description: 'Source run is not terminal or retry key is pending', content: { 'application/json': { schema: errorResponseSchema } } },
         },
       },
-    },
+    }
+  };
+}
 
+function buildRunManagementApiRunsIdCancelPath(errorResponseSchema: Record<string, unknown>, _runRequestSchema: Record<string, unknown>, _runResponseSchema: Record<string, unknown>): Record<string, unknown> {
+  return {
     '/api/runs/{id}/cancel': {
       post: {
         operationId: 'cancelRun',
         summary: 'Cancel a run',
         description:
-          'Cancels a queued or running kaseki job. Returns 200 if cancellation was accepted; operation may complete asynchronously.',
+              'Cancels a queued or running kaseki job. Returns 200 if cancellation was accepted; operation may complete asynchronously.',
         tags: ['Run Management'],
         parameters: [
           {
@@ -717,19 +758,26 @@ function buildRunManagementPaths(
  * Build logs and progress endpoints.
  * These endpoints provide access to run progress events and log files.
  */
-function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
+type LogProgressPathComponents = {
+  idParameter: Record<string, unknown>;
+  tailParameter: Record<string, unknown>;
+  eventSnapshotSchema: Record<string, unknown>;
+  snapshotResponses: Record<string, any>;
+};
+
+function createLogProgressPathComponents(errorResponseSchema: Record<string, unknown>): LogProgressPathComponents {
   const idParameter = {
     name: 'id',
     in: 'path',
     required: true,
     schema: { type: 'string', pattern: '^kaseki-\\d+$' },
-    description: 'Kaseki instance ID'
+    description: 'Kaseki instance ID',
   };
   const tailParameter = {
     name: 'tail',
     in: 'query',
     schema: { type: 'integer', minimum: 0, default: 50 },
-    description: 'Maximum number of recent events to return'
+    description: 'Maximum number of recent events to return',
   };
   const eventSnapshotSchema = {
     type: 'object',
@@ -740,38 +788,49 @@ function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): R
       events: { type: 'array', items: { type: 'object', additionalProperties: true }, description: 'Normalized events with a stable numeric id.' },
       total: { type: 'integer', description: 'Total number of parseable events before tail filtering' },
       nextCursor: { type: 'string', description: 'Cursor to use when opening the SSE stream after this snapshot.' },
-      sources: { type: 'array', items: { type: 'string', enum: ['progress.jsonl', 'docker-logs'] } }
-    }
+      sources: { type: 'array', items: { type: 'string', enum: ['progress.jsonl', 'docker-logs'] } },
+    },
   };
   const snapshotResponses = {
     '200': {
       description: 'Structured run event snapshot',
-      content: { 'application/json': { schema: eventSnapshotSchema } }
+      content: { 'application/json': { schema: eventSnapshotSchema } },
     },
-    '404': {
-      description: 'Run not found',
-      content: { 'application/json': { schema: errorResponseSchema } }
-    },
-    '401': {
-      description: 'Unauthorized',
-      content: { 'application/json': { schema: errorResponseSchema } }
-    }
+    '404': { description: 'Run not found', content: { 'application/json': { schema: errorResponseSchema } } },
+    '401': { description: 'Unauthorized', content: { 'application/json': { schema: errorResponseSchema } } },
   };
+  return { idParameter, tailParameter, eventSnapshotSchema, snapshotResponses };
+}
 
+function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
+  const components = createLogProgressPathComponents(errorResponseSchema);
+  return {
+    ...buildLogsProgressApiRunsIdEventsPath(errorResponseSchema, components),
+    ...buildLogsProgressApiRunsIdEventsStreamPath(errorResponseSchema, components),
+    ...buildLogsProgressApiRunsIdProgressPath(errorResponseSchema, components),
+    ...buildLogsProgressApiRunsIdLogsLogtypePath(errorResponseSchema),
+  };
+}
+
+function buildLogsProgressApiRunsIdEventsPath(_errorResponseSchema: Record<string, unknown>, components: LogProgressPathComponents): Record<string, unknown> {
   return {
     '/api/runs/{id}/events': {
       get: {
         operationId: 'getRunEvents',
         summary: 'Get structured event snapshot',
         description:
-          'Canonical structured event snapshot for a run. Returns normalized progress.jsonl events plus live Docker progress for active runs.',
+              'Canonical structured event snapshot for a run. Returns normalized progress.jsonl events plus live Docker progress for active runs.',
         tags: ['Run Logs & Progress'],
-        parameters: [idParameter, tailParameter],
+        parameters: [components.idParameter, components.tailParameter],
         security: [{ BearerAuth: [] }],
-        responses: snapshotResponses
+        responses: components.snapshotResponses
       }
-    },
+    }
+  };
+}
 
+function buildLogsProgressApiRunsIdEventsStreamPath(_errorResponseSchema: Record<string, unknown>, components: LogProgressPathComponents): Record<string, unknown> {
+  return {
     '/api/runs/{id}/events/stream': {
       get: {
         operationId: 'streamRunEvents',
@@ -779,7 +838,7 @@ function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): R
         description: 'Streams run progress updates as Server-Sent Events (SSE).',
         tags: ['Run Logs & Progress'],
         parameters: [
-          idParameter,
+          components.idParameter,
           { name: 'cursor', in: 'query', required: false, schema: { type: 'string' }, description: 'Zero-based index of the next event to deliver, as returned by an event snapshot.' },
           { name: 'Last-Event-ID', in: 'header', required: false, schema: { type: 'string' }, description: 'Standard SSE reconnect cursor; takes precedence over cursor.' },
         ],
@@ -793,23 +852,27 @@ function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): R
               }
             }
           },
-          '404': snapshotResponses['404'],
-          '401': snapshotResponses['401']
+          '404': components.snapshotResponses['404'],
+          '401': components.snapshotResponses['401']
         }
       }
-    },
+    }
+  };
+}
 
+function buildLogsProgressApiRunsIdProgressPath(_errorResponseSchema: Record<string, unknown>, components: LogProgressPathComponents): Record<string, unknown> {
+  return {
     '/api/runs/{id}/progress': {
       get: {
         operationId: 'getRunProgress',
         summary: 'Get legacy progress event snapshot',
         description:
-          'Deprecated legacy alias for GET /api/runs/{id}/events. Non-streaming responses return the same structured event snapshot schema. Legacy clients may still request SSE with ?stream=sse, but new clients should use GET /api/runs/{id}/events/stream.',
+              'Deprecated legacy alias for GET /api/runs/{id}/events. Non-streaming responses return the same structured event snapshot schema. Legacy clients may still request SSE with ?stream=sse, but new clients should use GET /api/runs/{id}/events/stream.',
         deprecated: true,
         tags: ['Run Logs & Progress'],
         parameters: [
-          idParameter,
-          tailParameter,
+          components.idParameter,
+          components.tailParameter,
           {
             name: 'stream',
             in: 'query',
@@ -819,11 +882,11 @@ function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): R
         ],
         security: [{ BearerAuth: [] }],
         responses: {
-          ...snapshotResponses,
+          ...components.snapshotResponses,
           '200': {
             description: 'Structured run event snapshot, or SSE when using deprecated stream=sse',
             content: {
-              'application/json': { schema: eventSnapshotSchema },
+              'application/json': { schema: components.eventSnapshotSchema },
               'text/event-stream': {
                 schema: { type: 'string', description: 'Deprecated Server-Sent Events format when stream=sse' }
               }
@@ -831,14 +894,18 @@ function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): R
           }
         }
       }
-    },
+    }
+  };
+}
 
+function buildLogsProgressApiRunsIdLogsLogtypePath(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
+  return {
     '/api/runs/{id}/logs/{logtype}': {
       get: {
         operationId: 'getRunLog',
         summary: 'Get specific log file',
         description:
-          'Returns a specific log file (stdout, stderr, validation, progress, quality, secret-scan, or combined). Large logs are truncated.',
+              'Returns a specific log file (stdout, stderr, validation, progress, quality, secret-scan, or combined). Large logs are truncated.',
         tags: ['Run Logs & Progress'],
         parameters: [
           {
@@ -903,12 +970,19 @@ function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): R
  */
 function buildArtifactPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
+    ...buildArtifactApiRunsIdArtifactsPath(errorResponseSchema),
+    ...buildArtifactApiResultsIdFilePath(errorResponseSchema),
+  };
+}
+
+function buildArtifactApiRunsIdArtifactsPath(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
+  return {
     '/api/runs/{id}/artifacts': {
       get: {
         operationId: 'getRunArtifacts',
         summary: 'List artifacts',
         description:
-          'Returns metadata for all available artifacts from a run (metadata.json, git.diff, validation.log, etc.)',
+              'Returns metadata for all available artifacts from a run (metadata.json, git.diff, validation.log, etc.)',
         tags: ['Artifacts'],
         parameters: [
           {
@@ -984,14 +1058,18 @@ function buildArtifactPaths(errorResponseSchema: Record<string, unknown>): Recor
           }
         }
       }
-    },
+    }
+  };
+}
 
+function buildArtifactApiResultsIdFilePath(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
+  return {
     '/api/results/{id}/{file}': {
       get: {
         operationId: 'downloadArtifact',
         summary: 'Download artifact file',
         description:
-          'Downloads a specific artifact file (e.g., git.diff, metadata.json, result-summary.md). Use `/api/runs/{id}/artifacts` to list available files.',
+              'Downloads a specific artifact file (e.g., git.diff, metadata.json, result-summary.md). Use `/api/runs/{id}/artifacts` to list available files.',
         tags: ['Artifacts'],
         parameters: [
           {
@@ -1014,7 +1092,7 @@ function buildArtifactPaths(errorResponseSchema: Record<string, unknown>): Recor
             required: false,
             schema: { type: 'string', enum: ['rendered'] },
             description:
-              'Optional response mode. `rendered` is only supported for `run-evaluation.json`; default (omitted) returns raw artifact content.'
+                  'Optional response mode. `rendered` is only supported for `run-evaluation.json`; default (omitted) returns raw artifact content.'
           },
           {
             name: 'markdown',

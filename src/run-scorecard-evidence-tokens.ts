@@ -10,8 +10,6 @@ import {
 } from './run-scorecard-evidence-tokens-accounting';
 
 export { providerRetryCounts, countRetries } from './run-scorecard-evidence-retries';
-export { canonicalPhase, extractUsageFromSummary, extractModelName } from './run-scorecard-evidence-tokens-accounting';
-
 export function aggregateTokenUsage(summaries: unknown[]): Pick<Evidence, 'tokens' | 'tokenUsage' | 'phaseTokens' | 'unknownTokenRequests'> {
   const aggregator = new TokenUsageAggregator();
   const identities = new Set<string>();
