@@ -1,7 +1,7 @@
 import { number, object } from './run-scorecard-guards';
 import type { StatusValue } from './run-scorecard-evidence-status';
 import { statusFrom } from './run-scorecard-evidence-status';
-import { latestValidationResults } from './validation-evidence';
+import { latestValidationResults } from './validation-results';
 
 export interface ValidationEvidence {
   validation: StatusValue;
