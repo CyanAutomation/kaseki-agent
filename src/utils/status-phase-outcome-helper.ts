@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import { Job } from '../kaseki-api-types';
 import type { StatusResponse } from '../kaseki-api-types';
 import { KasekiApiConfig } from '../kaseki-api-config';
+import { isPreAgentValidationFailedCommand } from './pre-validation-classification';
 import { JobScheduler } from '../job-scheduler';
 
 type ExecutionStatus = {
@@ -218,7 +219,7 @@ export class StatusPhaseOutcomeHelper {
   }
 
   private isPreAgentValidationFailure(failedCommand: string): boolean {
-    return /pre[-_ ]agent validation|pre[-_ ]validation/.test(failedCommand);
+    return isPreAgentValidationFailedCommand(failedCommand);
   }
 
   private isPreflightGithubOperations(stage: string): boolean {
