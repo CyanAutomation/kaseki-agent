@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+mkdir -p "$TMP/bin"
+
+cat >"$TMP/bin/sleep" <<'EOF'
+#!/usr/bin/env bash
+:
+EOF
+cat >"$TMP/bin/npm" <<'EOF'
+#!/usr/bin/env bash
+set -u
+stub_root="$(cd "$(dirname "$0")/.." && pwd)"
+STUB_STATE="$stub_root/state"
+STUB_MODE="$(cat "$stub_root/mode")"
+count_file="$STUB_STATE/count"
+count=0; [[ -f "$count_file" ]] && count="$(cat "$count_file")"
+count=$((count + 1)); printf '%s' "$count" >"$count_file"
+printf '%s\n' "$*" >>"${STUB_STATE}/args"
+printf '%s\n' "${NODE_AUTH_TOKEN-unset}" >>"${STUB_STATE}/tokens"
+case "$STUB_MODE" in
+  eventual) [[ $count -lt 2 ]] && { echo 'npm error E404 version not found' >&2; exit 1; }; echo '{"version":"1.2.3","dist":{"tarball":"https://registry.npmjs.org/pkg/-/pkg-1.2.3.tgz"}}' ;;
+  e404) echo 'npm error E404 version not found' >&2; exit 1 ;;
+  e401) echo 'npm error E401 invalid token npm_SUPERSECRET99' >&2; exit 1 ;;
+  e403) echo 'npm error E403 forbidden' >&2; exit 1 ;;
+  network) echo 'npm error ECONNRESET npm_SUPERSECRET99' >&2; exit 1 ;;
+  mismatch) echo '{"version":"9.9.9"}' ;;
+esac
+EOF
+chmod +x "$TMP/bin/npm" "$TMP/bin/sleep"
+
+fail() { echo "FAIL: $*" >&2; exit 1; }
+run_case() {
+  local mode="$1" attempts="$2"
+  rm -rf "$TMP/state"; mkdir "$TMP/state"
+  printf '%s' "$mode" >"$TMP/mode"
+  set +e
+  PATH="$TMP/bin:$PATH" NODE_AUTH_TOKEN='npm_SUPERSECRET99' \
+    KASEKI_NPM_VERIFY_RESPONSE_FILE="$TMP/state/response.json" \
+    "$ROOT/scripts/npm-verify-publish.sh" pkg 1.2.3 "$attempts" >"$TMP/state/out" 2>"$TMP/state/err"
+  STATUS=$?
+  set -e
+}
+
+run_case eventual 3; [[ $STATUS == 0 && $(cat "$TMP/state/count") == 2 ]] || fail 'eventual success'
+grep -q -- '--registry=https://registry.npmjs.org/' "$TMP/state/args" || fail 'explicit registry'
+[[ $(sort -u "$TMP/state/tokens") == unset ]] || fail 'NODE_AUTH_TOKEN inherited by npm'
+
+run_case e404 3; [[ $STATUS == 1 && $(cat "$TMP/state/count") == 3 ]] || fail 'persistent E404 retries'
+jq -e '.classification == "version-not-found" and .attempt == 3' "$TMP/state/response.json" >/dev/null || fail 'E404 artifact'
+
+for mode in e401 e403; do
+  run_case "$mode" 3
+  [[ $STATUS == 1 && $(cat "$TMP/state/count") == 1 ]] || fail "$mode did not fail immediately"
+done
+
+run_case network 3; [[ $STATUS == 1 && $(cat "$TMP/state/count") == 3 ]] || fail 'network retries'
+run_case mismatch 3; [[ $STATUS == 1 && $(cat "$TMP/state/count") == 1 ]] || fail 'version mismatch did not fail immediately'
+jq -e '.classification == "version-mismatch"' "$TMP/state/response.json" >/dev/null || fail 'mismatch artifact'
+
+run_case network 1
+! grep -R -q 'npm_SUPERSECRET99' "$TMP/state" || fail 'secret leaked to output or artifact'
+jq -e '.stderr | contains("[REDACTED]")' "$TMP/state/response.json" >/dev/null || fail 'redaction absent'
+
+echo 'npm publish verification tests passed'
