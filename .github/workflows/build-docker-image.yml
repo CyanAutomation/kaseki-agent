@@ -282,6 +282,18 @@ jobs:
           set -euo pipefail
           docker manifest inspect "$DOCKER_HUB_CANDIDATE_IMAGE" | jq -e '[.manifests[].platform | "\(.os)/\(.architecture)"] | index("linux/amd64") and index("linux/arm64")'
           docker run --rm --entrypoint pi "$DOCKER_HUB_CANDIDATE_IMAGE" --version
+          # Match the downstream server invocation, including the production
+          # environment, and treat surviving the bound as successful startup.
+          # A missing transitive module instead exits before timeout and fails
+          # this step with its ERR_MODULE_NOT_FOUND diagnostic intact.
+          server_status=0
+          docker run --rm --entrypoint timeout -e NODE_ENV=production "$DOCKER_HUB_CANDIDATE_IMAGE" \
+            --signal=TERM --kill-after=5s 10s node /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/experimental/server.js \
+            || server_status=$?
+          if [[ "$server_status" -ne 0 && "$server_status" -ne 124 ]]; then
+            echo "Pi experimental server failed during startup (exit $server_status)" >&2
+            exit "$server_status"
+          fi
           workspace="$(mktemp -d)"; results="$(mktemp -d)"; trap 'rm -rf "$workspace" "$results"' EXIT; chmod 0777 "$workspace" "$results"
           docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev,size=256m --tmpfs /agents:rw,nosuid,nodev,size=512m --security-opt no-new-privileges:true --cap-drop ALL -e KASEKI_INSTANCE=kaseki-smoke -e KASEKI_STARTUP_CHECK_MODE=baseline-validation -v "$workspace:/workspace:rw" -v "$results:/results:rw" -w /workspace "$DOCKER_HUB_CANDIDATE_IMAGE" bash -lc 'set -euo pipefail; test -d /agents/kaseki-template; test -d /agents/kaseki-runs; test -d /results; test -x /scripts/startup-checks.sh; test -x /usr/local/bin/kaseki-entrypoint; test -x /usr/local/bin/kaseki-agent; test -x /usr/local/bin/kaseki-report; node --version; git --version; pi --version'
           test ! -d "$workspace/repo"; docker run --rm --entrypoint kaseki-report -v "$results:/results:ro" "$DOCKER_HUB_CANDIDATE_IMAGE" /results
@@ -292,6 +304,14 @@ jobs:
           set -euo pipefail
           docker manifest inspect "$GHCR_CANDIDATE_IMAGE" | jq -e '[.manifests[].platform | "\(.os)/\(.architecture)"] | index("linux/amd64") and index("linux/arm64")'
           docker run --rm --entrypoint pi "$GHCR_CANDIDATE_IMAGE" --version
+          server_status=0
+          docker run --rm --entrypoint timeout -e NODE_ENV=production "$GHCR_CANDIDATE_IMAGE" \
+            --signal=TERM --kill-after=5s 10s node /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/experimental/server.js \
+            || server_status=$?
+          if [[ "$server_status" -ne 0 && "$server_status" -ne 124 ]]; then
+            echo "Pi experimental server failed during startup (exit $server_status)" >&2
+            exit "$server_status"
+          fi
 
   promote:
     needs: [prepare, build_candidate, verify, scan]
