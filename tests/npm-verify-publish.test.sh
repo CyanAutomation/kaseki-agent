@@ -29,6 +29,7 @@ case "$STUB_MODE" in
   e403) echo 'npm error E403 forbidden' >&2; exit 1 ;;
   network) echo 'npm error ECONNRESET npm_SUPERSECRET99' >&2; exit 1 ;;
   mismatch) echo '{"version":"9.9.9"}' ;;
+  missing_tarball) echo '{"version":"1.2.3"}' ;;
 esac
 EOF
 chmod +x "$TMP/bin/npm" "$TMP/bin/sleep"
@@ -40,7 +41,7 @@ run_case() {
   printf '%s' "$mode" >"$TMP/mode"
   set +e
   PATH="$TMP/bin:$PATH" NODE_AUTH_TOKEN='npm_SUPERSECRET99' \
-    KASEKI_NPM_VERIFY_RESPONSE_FILE="$TMP/state/response.json" \
+    KASEKI_NPM_VERIFY_METADATA_FILE="$TMP/state/diagnostics/npm-view.json" \
     "$ROOT/scripts/npm-verify-publish.sh" pkg 1.2.3 "$attempts" >"$TMP/state/out" 2>"$TMP/state/err"
   STATUS=$?
   set -e
@@ -50,10 +51,15 @@ run_case eventual 3; [[ $STATUS == 0 && $(cat "$TMP/state/count") == 2 ]] || fai
 [[ $(cat "$TMP/state/delays") == 1 ]] || fail 'first retry delay'
 grep -q -- '--registry=https://registry.npmjs.org/' "$TMP/state/args" || fail 'explicit registry'
 [[ $(sort -u "$TMP/state/tokens") == unset ]] || fail 'NODE_AUTH_TOKEN inherited by npm'
+jq -e '.version == "1.2.3" and .dist.tarball == "https://registry.npmjs.org/pkg/-/pkg-1.2.3.tgz"' \
+  "$TMP/state/diagnostics/npm-view.json" >/dev/null || fail 'success metadata did not retain dist.tarball from npm response'
+jq -e '.classification == "success" and (.stdout | fromjson | .dist.tarball == "https://registry.npmjs.org/pkg/-/pkg-1.2.3.tgz")' \
+  "$TMP/state/diagnostics/npm-verify-last-response.json" >/dev/null || fail 'success diagnostic did not use actual npm response'
 
 run_case e404 3; [[ $STATUS == 1 && $(cat "$TMP/state/count") == 3 ]] || fail 'persistent E404 retries'
 [[ $(paste -sd ' ' "$TMP/state/delays") == '1 2' ]] || fail 'retry delay sequence'
-jq -e '.classification == "version-not-found" and .attempt == 3' "$TMP/state/response.json" >/dev/null || fail 'E404 artifact'
+jq -e '.classification == "version-not-found" and .attempt == 3' "$TMP/state/diagnostics/npm-verify-last-response.json" >/dev/null || fail 'E404 artifact'
+[[ -f "$TMP/state/diagnostics/npm-view.json" && -f "$TMP/state/diagnostics/npm-verify-last-response.json" ]] || fail 'terminal failure diagnostics are not uploadable'
 
 for mode in e401 e403; do
   run_case "$mode" 3
@@ -62,10 +68,13 @@ done
 
 run_case network 3; [[ $STATUS == 1 && $(cat "$TMP/state/count") == 3 ]] || fail 'network retries'
 run_case mismatch 3; [[ $STATUS == 1 && $(cat "$TMP/state/count") == 1 ]] || fail 'version mismatch did not fail immediately'
-jq -e '.classification == "version-mismatch"' "$TMP/state/response.json" >/dev/null || fail 'mismatch artifact'
+jq -e '.classification == "version-mismatch"' "$TMP/state/diagnostics/npm-verify-last-response.json" >/dev/null || fail 'mismatch artifact'
+run_case missing_tarball 3; [[ $STATUS == 1 && $(cat "$TMP/state/count") == 1 ]] || fail 'missing tarball did not fail immediately'
+jq -e '.classification == "missing-tarball"' "$TMP/state/diagnostics/npm-verify-last-response.json" >/dev/null || fail 'missing tarball artifact'
 
 run_case network 1
 ! grep -R -q 'npm_SUPERSECRET99' "$TMP/state" || fail 'secret leaked to output or artifact'
-jq -e '.stderr | contains("[REDACTED]")' "$TMP/state/response.json" >/dev/null || fail 'redaction absent'
+jq -e '.stderr | contains("[REDACTED]")' "$TMP/state/diagnostics/npm-verify-last-response.json" >/dev/null || fail 'redaction absent'
+! find "$TMP/state/diagnostics" -name '*.npmrc' -print -quit | grep -q . || fail 'generated npmrc entered diagnostics'
 
 echo 'npm publish verification tests passed'
