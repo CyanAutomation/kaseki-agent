@@ -4,6 +4,21 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.147.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.147.0...v1.147.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* **ci:** include Trivy target and package path ([1f19ebb](https://github.com/CyanAutomation/kaseki-agent/commit/1f19ebbd6931c94801263ba5b8f8c509004589c8))
+* correct npm release pin and add registry verification for Docker publish ([#1470](https://github.com/CyanAutomation/kaseki-agent/issues/1470)) ([8eda652](https://github.com/CyanAutomation/kaseki-agent/commit/8eda652d75d69d0574673f3a943694088a7671bd))
+* **deps:** patch brace-expansion and undici CVEs ([2d334c9](https://github.com/CyanAutomation/kaseki-agent/commit/2d334c90b200d8f0f322607d7488559e33912a57))
+* **deps:** pin brace-expansion to 5.0.11 and add scoped undici overrides to remediate CVEs ([#1467](https://github.com/CyanAutomation/kaseki-agent/issues/1467)) ([1b3dde0](https://github.com/CyanAutomation/kaseki-agent/commit/1b3dde0833784b37a866036f34789515a4d145de))
+* **docker:** correct npm release pin ([8843a3a](https://github.com/CyanAutomation/kaseki-agent/commit/8843a3af2a3250e1c533ed7588a6a99b11c1dcfc))
+* **docker:** pin patched npm and Pi dependencies ([ab70e69](https://github.com/CyanAutomation/kaseki-agent/commit/ab70e69504e6b2bf27e6e5ca874a40339bdf0869))
+* **docker:** pin patched npm and Pi dependency trees ([#1468](https://github.com/CyanAutomation/kaseki-agent/issues/1468)) ([d29cff1](https://github.com/CyanAutomation/kaseki-agent/commit/d29cff110ff2c998142bd6246995216dfd56e020))
+* **docker:** pin published Pi CLI 0.85.0 and retain exact undici@8.10.2; update dependency-contract test ([#1471](https://github.com/CyanAutomation/kaseki-agent/issues/1471)) ([e7eba8e](https://github.com/CyanAutomation/kaseki-agent/commit/e7eba8ef647476908e1b5fe6b040f596168b97b4))
+* **docker:** use published Pi release ([7332da6](https://github.com/CyanAutomation/kaseki-agent/commit/7332da61d2457608aa69fe20ee752904da1f635e))
+
 # [1.147.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.146.1...v1.147.0) (2026-09-29)
 
 
