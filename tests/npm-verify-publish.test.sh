@@ -8,7 +8,8 @@ mkdir -p "$TMP/bin"
 
 cat >"$TMP/bin/sleep" <<'EOF'
 #!/usr/bin/env bash
-:
+stub_root="$(cd "$(dirname "$0")/.." && pwd)"
+printf '%s\n' "$1" >>"$stub_root/state/delays"
 EOF
 cat >"$TMP/bin/npm" <<'EOF'
 #!/usr/bin/env bash
@@ -46,10 +47,12 @@ run_case() {
 }
 
 run_case eventual 3; [[ $STATUS == 0 && $(cat "$TMP/state/count") == 2 ]] || fail 'eventual success'
+[[ $(cat "$TMP/state/delays") == 1 ]] || fail 'first retry delay'
 grep -q -- '--registry=https://registry.npmjs.org/' "$TMP/state/args" || fail 'explicit registry'
 [[ $(sort -u "$TMP/state/tokens") == unset ]] || fail 'NODE_AUTH_TOKEN inherited by npm'
 
 run_case e404 3; [[ $STATUS == 1 && $(cat "$TMP/state/count") == 3 ]] || fail 'persistent E404 retries'
+[[ $(paste -sd ' ' "$TMP/state/delays") == '1 2' ]] || fail 'retry delay sequence'
 jq -e '.classification == "version-not-found" and .attempt == 3' "$TMP/state/response.json" >/dev/null || fail 'E404 artifact'
 
 for mode in e401 e403; do
