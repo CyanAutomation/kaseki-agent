@@ -151,6 +151,10 @@ assert_contains "$PUBLISH_WORKFLOW" 'scanners: vuln' \
   'Trivy must scan vulnerabilities only; repository secrets are not image findings'
 assert_contains "$PUBLISH_WORKFLOW" 'Trivy high/critical findings' \
   'Trivy findings must be summarized before the gate fails'
+assert_contains "$PUBLISH_WORKFLOW" '($result.Target // "unknown target")' \
+  'Trivy finding summaries must identify the affected scan target'
+assert_contains "$PUBLISH_WORKFLOW" '(.PkgPath // "no package path")' \
+  'Trivy finding summaries must include package location metadata'
 assert_contains "$PUBLISH_WORKFLOW" 'needs: [prepare, build_candidate, verify, scan]' \
   'Promotion must wait for a successful vulnerability scan'
 assert_contains "$PUBLISH_WORKFLOW" 'tags="latest"' \
