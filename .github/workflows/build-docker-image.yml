@@ -237,7 +237,7 @@ jobs:
             exit 0
           fi
           echo "::error title=Trivy high/critical findings::$finding_count unfixed high/critical vulnerabilities found"
-          jq -r '.Results[]?.Vulnerabilities[]? | [ .Severity, .VulnerabilityID, .PkgName, .InstalledVersion, (.FixedVersion // "no fixed version") ] | @tsv' trivy-results.json
+          jq -r '.Results[]? as $result | $result.Vulnerabilities[]? | [ ($result.Target // "unknown target"), .Severity, .VulnerabilityID, .PkgName, (.PkgPath // "no package path"), .InstalledVersion, (.FixedVersion // "no fixed version") ] | @tsv' trivy-results.json
           exit 1
       - if: always()
         uses: github/codeql-action/upload-sarif@d8073367669608af8fbcc5f63dd0a0d52bb90cff # v4
