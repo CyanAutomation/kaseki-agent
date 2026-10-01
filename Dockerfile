@@ -43,7 +43,7 @@ RUN npm ci --no-audit --prefer-offline --ignore-scripts \
 
 # Phase 3: Global Pi CLI installation (Layer 3 fallback for image seed cache)
 # Install pi-coding-agent globally with undici explicitly to resolve module dependencies
-RUN npm install -g --no-audit @earendil-works/pi-coding-agent@0.84.5 undici@8.10.2
+RUN npm install -g --no-audit @earendil-works/pi-coding-agent@0.85.0 undici@8.10.2
 
 # Phase 3b: Copy Pi CLI Custom Extensions (LLM Gateway provider)
 # Extensions are loaded from ~/.pi/extensions/ and must be compiled TypeScript
