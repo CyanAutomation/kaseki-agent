@@ -20,22 +20,21 @@ for the current setup fields and reusable-workflow behavior.
 
 ## Problem Analysis
 
-### Root Cause
+### Root-Cause Test
 
-The npm account (`@cyanautomation` organization) is **not configured for OIDC trusted publishing**. When the GitHub Actions Release workflow attempts to publish the package, it fails because:
+Do not infer the root cause from the verifier's later `E404`. That response only
+shows that the requested version was not readable when the verifier polled. The
+complete `Publish exact verified package` log determines whether publication
+was accepted:
 
-1. **OIDC Token Exchange Fails**:
-   - Error: "OIDC token exchange error - package not found"
-   - The npm registry cannot accept the GitHub Actions OIDC token from the workflow
+1. Record the npm CLI version used by the runner.
+2. Determine whether npm attempted and completed an OIDC token exchange.
+3. Record the HTTP status of the package registry `PUT`.
+4. Record npm's final success or warning line.
 
-2. **Package PUT Fails with 404**:
-   - npm publish tries to PUT to: `https://registry.npmjs.org/@cyanautomation%2fkaseki-agent`
-   - Returns 404 Not Found because the package doesn't exist AND OIDC credentials aren't valid
-   - This is a first-publish scenario, not a permission issue on an existing package
-
-3. **Missing GitHub Actions OIDC Configuration**:
-   - npm settings at [npmjs.com/settings/cyanautomation/access](https://npmjs.com/settings/cyanautomation/access) have NOT been configured to allow GitHub Actions OIDC tokens
-   - The workflow config in `publish-npm.yml` already has the correct setup (registry-url, provenance, etc.), but npm is not accepting the tokens
+If token exchange fails or the registry does not accept the `PUT`, correct the
+trusted-publisher configuration described below. Only a successful registry
+write followed by a temporary read failure supports an indexing-delay diagnosis.
 
 ### Evidence from Logs
 
@@ -76,17 +75,20 @@ Configure OIDC trusted publishing on the npm account to allow GitHub Actions to 
    - Go to [npmjs.com](https://npmjs.com)
    - Sign in as owner of `@cyanautomation` organization
 
-2. **Navigate to GitHub Actions Settings**:
-   - Go to [npm settings → Access & Tokens](https://npmjs.com/settings/cyanautomation/access)
-   - OR: Settings → [Github Actions](https://npmjs.com/settings/cyanautomation/github-actions)
+2. **Open the package's trusted-publisher settings**:
+   - Open `@cyanautomation/kaseki-agent` on npm and select **Settings**.
+   - In **Trusted Publisher**, select GitHub Actions.
 
-3. **Configure OIDC for the Repository**:
-   - Click "Authorize GitHub Actions" or "Configure GitHub Actions"
-   - Select repository: `CyanAutomation/kaseki-agent`
-   - Grant permissions:
-     - Package publish
-     - Package management
-   - Confirm authorization
+3. **Configure the exact caller identity**:
+   - Organization or user: `CyanAutomation`
+   - Repository: `kaseki-agent`
+   - Workflow filename: `release.yml`
+   - Environment: `release`
+   - Enable direct publication for this trusted publisher.
+
+   npm validates the caller workflow, not the reusable workflow that contains
+   the `npm publish` command. Therefore the workflow filename must be
+   `release.yml`, not `publish-npm.yml`.
 
 4. **Verify Configuration**:
    - npm settings should now show GitHub Actions as a trusted publisher
@@ -127,21 +129,33 @@ steps:
    - Find the run dated 2026-09-18
    - Note the run number
 
-2. **Re-run the publish job**:
+2. **Record the failed publish evidence before retrying**:
+   - Expand the complete `Publish exact verified package` log, including the
+     lines immediately before `Verify published package` fails.
+   - Record the npm CLI version, whether the OIDC token exchange occurred, the
+     HTTP status of the registry `PUT`, and npm's final success or warning line.
+   - Do not treat a later verifier `E404` as proof of an indexing-only failure;
+     first establish whether the registry accepted the package write.
+
+3. **Re-run the publish job**:
    - Open the failed "publish_npm" job
    - Click "Re-run failed jobs" (or "Re-run all jobs" to be thorough)
+   - Preserve the original immutable `ref` and `version` inputs. Do not dispatch
+     a new release or substitute a branch ref.
    - Wait for the workflow to complete
 
-3. **Monitor the new attempt**:
+4. **Monitor the new attempt**:
    - OIDC token exchange should now succeed
-   - npm publish should complete with status 200/201
+   - The registry `PUT` must complete successfully (normally HTTP 200 or 201)
+     and npm must print its final success line before verifier polling is used
+     as evidence of publication
    - Provenance statement should be generated and published to sigstore
 
-4. **Verify publication**:
+5. **Verify publication**:
    - Once workflow succeeds, check npm registry:
 
      ```bash
-     npm view @cyanautomation/kaseki-agent@1.133.1
+     npm view @cyanautomation/kaseki-agent@<version>
      ```
 
    - Should return package information (not 404)
@@ -188,8 +202,8 @@ steps:
   - npm publish successful (HTTP 201 or 200)
   - OIDC token exchange successful
   - Provenance statement published to sigstore transparency log
-- [ ] Package `@cyanautomation/kaseki-agent@1.133.1` is available on npm registry
-- [ ] `npm view @cyanautomation/kaseki-agent@1.133.1` returns package metadata
+- [ ] The exact released `@cyanautomation/kaseki-agent@<version>` is available on npm
+- [ ] `npm view @cyanautomation/kaseki-agent@<version>` returns package metadata
 - [ ] No hardcoded npm tokens in GitHub Secrets
 - [ ] Documentation updated with OIDC troubleshooting guide
 
