@@ -81,7 +81,7 @@ printf 'Verifying %s@%s via %s (anonymous read; %s attempts)\n' "$PACKAGE_NAME" 
 
 for ((ATTEMPT=1; ATTEMPT<=MAX_ATTEMPTS; ATTEMPT++)); do
   if (( ATTEMPT > 1 )); then
-    sleep "${DELAYS[ATTEMPT-1]}"
+    sleep "${DELAYS[ATTEMPT-2]}"
   fi
   STDOUT_FILE="$WORK_DIR/stdout.$ATTEMPT"
   STDERR_FILE="$WORK_DIR/stderr.$ATTEMPT"
