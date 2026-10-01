@@ -71,7 +71,7 @@ jobs:
           KASEKI_VERIFY_DEBUG: "0"
           KASEKI_NPM_VERIFY_METADATA_FILE: /tmp/npm-publish-diagnostics/npm-view.json
           VERSION: ${{ steps.version.outputs.version }}
-        run: ./scripts/npm-verify-publish.sh "$(node -p "require('./package.json').name")" "$VERSION" 6
+        run: ./scripts/npm-verify-publish.sh "$(node -p "require('./package.json').name")" "$VERSION" 300
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
