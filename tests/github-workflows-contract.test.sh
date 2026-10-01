@@ -150,6 +150,8 @@ assert_job_contains "$WORKFLOWS_DIR/publish-npm.yml" 'publish' 'package-manager-
   'npm release publishing must not restore package-manager caches'
 assert_contains "$WORKFLOWS_DIR/publish-npm.yml" 'KASEKI_NPM_VERIFY_METADATA_FILE: /tmp/npm-publish-diagnostics/npm-view.json' \
   'npm verification must persist the actual registry response in the diagnostic directory'
+assert_contains "$WORKFLOWS_DIR/publish-npm.yml" 'npm-verify-publish.sh "$(node -p "require('"'"'./package.json'"'"').name")" "$VERSION" 300' \
+  'npm verification must allow a five-minute registry propagation deadline'
 assert_contains "$WORKFLOWS_DIR/publish-npm.yml" 'path: /tmp/npm-publish-diagnostics/' \
   'npm publishing must upload the complete diagnostic directory'
 assert_contains "$WORKFLOWS_DIR/publish-npm.yml" 'npm-pack-dry-run.json' \
