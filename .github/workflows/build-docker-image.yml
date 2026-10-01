@@ -113,7 +113,7 @@ jobs:
           cache: npm
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
       - run: npm ci
-      - name: Verify pinned Docker npm release
+      - name: Verify pinned Docker global package releases
         run: node scripts/verify-docker-npm-pin.mjs
       - run: npm run check:ci-node-versions
       - run: npm run build
