@@ -15,10 +15,10 @@ assert_exact_line() {
 # These versions were reviewed together. Keep each selector exact so a rebuild
 # cannot silently introduce a different dependency tree.
 assert_exact_line 'ARG NPM_VERSION=11.19.1'
-assert_exact_line 'RUN npm install -g --no-audit @earendil-works/pi-coding-agent@0.84.5 undici@8.10.2'
+assert_exact_line 'RUN npm install -g --no-audit @earendil-works/pi-coding-agent@0.85.0 undici@8.10.2'
 
-if grep -Eq 'npm install -g[^#]*@earendil-works/pi-coding-agent@0\.84\.4([[:space:]]|$)' "$dockerfile"; then
-  echo 'Dockerfile must not install Pi 0.84.4, which nests undici 7.29.0.' >&2
+if grep -Eq 'npm install -g[^#]*@earendil-works/pi-coding-agent@0\.84\.(4|5)([[:space:]]|$)' "$dockerfile"; then
+  echo 'Dockerfile must not install Pi 0.84.4 (vulnerable tree) or unpublished Pi 0.84.5.' >&2
   exit 1
 fi
 
