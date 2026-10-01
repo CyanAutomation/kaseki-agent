@@ -5,7 +5,12 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import semver from 'semver';
 
-const REQUIRED_PACKAGES = ['npm', '@earendil-works/pi-coding-agent', 'undici'];
+const REQUIRED_PACKAGES = [
+  'npm',
+  '@earendil-works/pi-coding-agent',
+  '@earendil-works/pi-server',
+  'undici',
+];
 const NODE_VERSION = '24.0.0';
 
 export function extractDockerPackageSelectors(dockerfile) {
