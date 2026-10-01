@@ -113,6 +113,13 @@ assert_job_contains "$WORKFLOWS_DIR/build-docker-image.yml" 'docker_integration'
   'Docker integration must select a Node version explicitly'
 assert_job_contains "$WORKFLOWS_DIR/build-docker-image.yml" 'docker_integration' 'node-version: ${{ env.NODE_VERSION }}' \
   'Docker integration must use the workflow Node version'
+test -f "$ROOT_DIR/scripts/verify-docker-npm-pin.mjs" || fail 'Docker npm registry verification script must exist'
+assert_job_contains "$PUBLISH_WORKFLOW" 'checks' 'node scripts/verify-docker-npm-pin.mjs' \
+  'Docker publishing must verify the pinned npm release against the registry'
+assert_contains "$ROOT_DIR/scripts/verify-docker-npm-pin.mjs" "['view', \`npm@\${pinnedVersion}\`, 'version', 'engines', '--json']" \
+  'Docker npm verification must query exact version and engine metadata'
+assert_contains "$ROOT_DIR/scripts/verify-docker-npm-pin.mjs" "semver.satisfies('24.0.0', metadata.engines.node)" \
+  'Docker npm verification must require Node 24 support'
 
 for job in prepare type_check_changed type_check_full checks docker_integration build_candidate scan verify promote; do
   case "$job" in
