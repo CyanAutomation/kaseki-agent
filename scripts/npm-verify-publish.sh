@@ -4,7 +4,9 @@ set -euo pipefail
 
 SCRIPT_NAME="$(basename "$0")"
 REGISTRY="https://registry.npmjs.org/"
-RESPONSE_FILE="${KASEKI_NPM_VERIFY_RESPONSE_FILE:-/tmp/npm-view.json}"
+METADATA_FILE="${KASEKI_NPM_VERIFY_METADATA_FILE:-/tmp/npm-publish-diagnostics/npm-view.json}"
+DIAGNOSTIC_DIR="$(dirname "$METADATA_FILE")"
+LAST_RESPONSE_FILE="$DIAGNOSTIC_DIR/npm-verify-last-response.json"
 DELAYS=(1 2 4 8 16 32)
 
 usage() {
@@ -33,6 +35,7 @@ fi
 
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
+mkdir -p "$DIAGNOSTIC_DIR"
 printf 'registry=%s\nalways-auth=false\n' "$REGISTRY" >"$WORK_DIR/clean.npmrc"
 : >"$WORK_DIR/clean-global.npmrc"
 START_SECONDS=$SECONDS
@@ -43,7 +46,6 @@ LAST_EXIT=0
 write_response() {
   local attempt="$1" classification="$2" exit_status="$3" stdout_file="$4" stderr_file="$5"
   local token="${NODE_AUTH_TOKEN:-}"
-  mkdir -p "$(dirname "$RESPONSE_FILE")"
   jq -n --arg registry "$REGISTRY" --arg package "$PACKAGE_NAME" --arg version "$VERSION" \
     --argjson attempt "$attempt" --argjson maxAttempts "$MAX_ATTEMPTS" \
     --argjson elapsedSeconds "$((SECONDS - START_SECONDS))" --argjson exitStatus "$exit_status" \
@@ -57,7 +59,7 @@ write_response() {
       {registry: $registry, package: $package, requestedVersion: $version,
        attempt: $attempt, maxAttempts: $maxAttempts, elapsedSeconds: $elapsedSeconds,
        exitStatus: $exitStatus, classification: $classification,
-       stdout: ($stdout | redact), stderr: ($stderr | redact)}' >"$RESPONSE_FILE"
+       stdout: ($stdout | redact), stderr: ($stderr | redact)}' >"$LAST_RESPONSE_FILE"
 }
 
 classify_failure() {
@@ -83,7 +85,9 @@ for ((ATTEMPT=1; ATTEMPT<=MAX_ATTEMPTS; ATTEMPT++)); do
   if (( ATTEMPT > 1 )); then
     sleep "${DELAYS[ATTEMPT-2]}"
   fi
-  STDOUT_FILE="$WORK_DIR/stdout.$ATTEMPT"
+  # Keep the actual npm response at one stable, configurable path. This is
+  # both the source parsed below and an uploadable CI diagnostic.
+  STDOUT_FILE="$METADATA_FILE"
   STDERR_FILE="$WORK_DIR/stderr.$ATTEMPT"
 
   set +e
@@ -101,28 +105,35 @@ for ((ATTEMPT=1; ATTEMPT<=MAX_ATTEMPTS; ATTEMPT++)); do
   set -e
 
   if (( LAST_EXIT == 0 )); then
-    PUBLISHED_VERSION="$(jq -r '.version // empty' "$STDOUT_FILE" 2>/dev/null || true)"
+    PUBLISHED_VERSION="$(jq -r '.version // empty' "$METADATA_FILE" 2>/dev/null || true)"
     if [[ "$PUBLISHED_VERSION" != "$VERSION" ]]; then
       LAST_CLASSIFICATION="version-mismatch"
-      write_response "$ATTEMPT" "$LAST_CLASSIFICATION" "$LAST_EXIT" "$STDOUT_FILE" "$STDERR_FILE"
+      write_response "$ATTEMPT" "$LAST_CLASSIFICATION" "$LAST_EXIT" "$METADATA_FILE" "$STDERR_FILE"
       printf 'Verification failed: registry returned version %q instead of %q.\n' "$PUBLISHED_VERSION" "$VERSION" >&2
       exit 1
     fi
-    TARBALL_URL="$(jq -r '.dist.tarball // empty' "$STDOUT_FILE" 2>/dev/null || true)"
-    if [[ -n "$TARBALL_URL" && "$TARBALL_URL" != https://registry.npmjs.org/* ]]; then
+    TARBALL_URL="$(jq -r '.dist.tarball // empty' "$METADATA_FILE" 2>/dev/null || true)"
+    if [[ -z "$TARBALL_URL" ]]; then
+      LAST_CLASSIFICATION="missing-tarball"
+      write_response "$ATTEMPT" "$LAST_CLASSIFICATION" "$LAST_EXIT" "$METADATA_FILE" "$STDERR_FILE"
+      printf 'Verification failed: response metadata at %s did not include dist.tarball. Sanitized response: %s\n' \
+        "$METADATA_FILE" "$LAST_RESPONSE_FILE" >&2
+      exit 1
+    fi
+    if [[ "$TARBALL_URL" != https://registry.npmjs.org/* ]]; then
       LAST_CLASSIFICATION="unexpected-registry"
-      write_response "$ATTEMPT" "$LAST_CLASSIFICATION" "$LAST_EXIT" "$STDOUT_FILE" "$STDERR_FILE"
+      write_response "$ATTEMPT" "$LAST_CLASSIFICATION" "$LAST_EXIT" "$METADATA_FILE" "$STDERR_FILE"
       printf 'Verification failed: response referenced an unexpected registry.\n' >&2
       exit 1
     fi
     LAST_CLASSIFICATION="success"
-    write_response "$ATTEMPT" "$LAST_CLASSIFICATION" "$LAST_EXIT" "$STDOUT_FILE" "$STDERR_FILE"
+    write_response "$ATTEMPT" "$LAST_CLASSIFICATION" "$LAST_EXIT" "$METADATA_FILE" "$STDERR_FILE"
     printf 'Package publicly available after %s attempt(s) in %ss.\n' "$ATTEMPT" "$((SECONDS - START_SECONDS))"
     exit 0
   fi
 
   LAST_CLASSIFICATION="$(classify_failure "$STDERR_FILE")"
-  write_response "$ATTEMPT" "$LAST_CLASSIFICATION" "$LAST_EXIT" "$STDOUT_FILE" "$STDERR_FILE"
+  write_response "$ATTEMPT" "$LAST_CLASSIFICATION" "$LAST_EXIT" "$METADATA_FILE" "$STDERR_FILE"
   case "$LAST_CLASSIFICATION" in
     version-not-found|network)
       [[ "${KASEKI_VERIFY_DEBUG:-0}" == 1 ]] && printf 'Attempt %s/%s: transient %s (npm exit %s).\n' "$ATTEMPT" "$MAX_ATTEMPTS" "$LAST_CLASSIFICATION" "$LAST_EXIT" >&2
@@ -137,4 +148,5 @@ done
 
 printf 'Verification failed: last error %s (npm exit %s; registry %s; attempts %s; elapsed %ss).\n' \
   "$LAST_CLASSIFICATION" "$LAST_EXIT" "$REGISTRY" "$MAX_ATTEMPTS" "$((SECONDS - START_SECONDS))" >&2
+printf 'Diagnostics: metadata=%s sanitized-response=%s\n' "$METADATA_FILE" "$LAST_RESPONSE_FILE" >&2
 exit 1
