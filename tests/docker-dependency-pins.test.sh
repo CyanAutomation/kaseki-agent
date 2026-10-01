@@ -12,8 +12,9 @@ assert_exact_line() {
   fi
 }
 
-# These versions were reviewed together. Keep each selector exact so a rebuild
-# cannot silently introduce a different dependency tree.
+# These selectors were reviewed together. This test owns the reproducibility
+# contract; scripts/verify-docker-npm-pin.mjs separately proves they exist and
+# support the image's Node version against registry metadata.
 assert_exact_line 'ARG NPM_VERSION=11.19.1'
 assert_exact_line 'RUN npm install -g --no-audit @earendil-works/pi-coding-agent@0.85.0 undici@8.10.2'
 
@@ -27,4 +28,4 @@ if grep -Eq 'npm install -g[^#]*[[:space:]]undici([[:space:]\\]|$)' "$dockerfile
   exit 1
 fi
 
-printf 'Docker dependency pins are exact and match the reviewed versions.\n'
+printf 'Docker dependency selectors are exact and match the reviewed versions.\n'
