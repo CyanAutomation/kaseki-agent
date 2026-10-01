@@ -60,18 +60,22 @@ jobs:
             cat /tmp/existing-version.json; echo "Target npm version already exists" >&2; exit 1
           fi
       - run: npm run test:publish-smoke
-      - run: npm pack --dry-run --json > /tmp/npm-pack-dry-run.json
+      - name: Capture package metadata
+        run: |
+          mkdir -p /tmp/npm-publish-diagnostics
+          npm pack --dry-run --json > /tmp/npm-publish-diagnostics/npm-pack-dry-run.json
       - name: Publish exact verified package
         run: npm publish --access public --provenance --loglevel verbose
       - name: Verify published package
         env:
           KASEKI_VERIFY_DEBUG: "0"
+          KASEKI_NPM_VERIFY_METADATA_FILE: /tmp/npm-publish-diagnostics/npm-view.json
           VERSION: ${{ steps.version.outputs.version }}
         run: ./scripts/npm-verify-publish.sh "$(node -p "require('./package.json').name")" "$VERSION" 6
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: npm-publish-metadata
-          path: /tmp/npm-view.json
+          path: /tmp/npm-publish-diagnostics/
           if-no-files-found: ignore
           retention-days: 30

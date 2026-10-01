@@ -146,6 +146,16 @@ assert_job_contains "$WORKFLOWS_DIR/publish-npm.yml" 'publish' 'timeout-minutes:
   'npm publishing must have a bounded runtime'
 assert_job_contains "$WORKFLOWS_DIR/publish-npm.yml" 'publish' 'package-manager-cache: false' \
   'npm release publishing must not restore package-manager caches'
+assert_contains "$WORKFLOWS_DIR/publish-npm.yml" 'KASEKI_NPM_VERIFY_METADATA_FILE: /tmp/npm-publish-diagnostics/npm-view.json' \
+  'npm verification must persist the actual registry response in the diagnostic directory'
+assert_contains "$WORKFLOWS_DIR/publish-npm.yml" 'path: /tmp/npm-publish-diagnostics/' \
+  'npm publishing must upload the complete diagnostic directory'
+assert_contains "$WORKFLOWS_DIR/publish-npm.yml" 'npm-pack-dry-run.json' \
+  'npm publish diagnostics must include package metadata'
+assert_not_contains "$WORKFLOWS_DIR/publish-npm.yml" 'path: /tmp/npm-view.json' \
+  'npm publishing must not upload the obsolete standalone metadata path'
+assert_not_matching "$WORKFLOWS_DIR/publish-npm.yml" 'path:.*\.npmrc' \
+  'npm publish artifacts must never include generated npm configuration'
 
 assert_job_contains "$KASEKI_DOCS_WORKFLOW" 'docs_sweep' "if: github.ref == 'refs/heads/main'" \
   'Documentation sweeps must be restricted to main'
