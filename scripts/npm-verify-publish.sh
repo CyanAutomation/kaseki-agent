@@ -61,7 +61,7 @@ now_seconds() {
   else
     value="$("$NOW_COMMAND")"
   fi
-  [[ "$value" =~ ^[0-9]{1,10}$ ]] || { printf 'Error: clock command returned a non-negative integer: %q\n' "$value" >&2; exit 2; }
+  [[ "$value" =~ ^[0-9]{1,10}$ ]] || { printf 'Error: clock command returned an invalid integer: %q\n' "$value" >&2; exit 2; }
   printf '%s' "$value"
 }
 
