@@ -1,14 +1,28 @@
+# syntax=docker/dockerfile:1
 # Bump the pinned Node base image monthly with a security review.
 # Node v24 base image: Updated May 2026 for improved performance and security.
 # Using ARG for DRY principle - base image used in both stages
 ARG NODE_IMAGE=node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6
-ARG NPM_VERSION=11.19.1
 
 # The Node image bundles npm, whose dependency tree is part of every image
-# stage. Keep it on the patched npm release until the Node base publishes it.
+# stage. Install reviewed tool versions from a lockfile and repair bundled
+# copies that npm does not update when applying overrides.
 FROM ${NODE_IMAGE} AS base
-ARG NPM_VERSION
-RUN npm install -g --no-audit "npm@${NPM_VERSION}"
+WORKDIR /opt/kaseki/image-toolchain
+COPY docker/image-toolchain/package.json docker/image-toolchain/package-lock.json ./
+COPY scripts/patch-image-dependency-bundles.mjs scripts/verify-image-dependency-versions.mjs /tmp/
+RUN --mount=type=secret,id=proxy_ca,required=false \
+    if [ -r /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi \
+    && npm ci --strict-ssl=true --no-audit --prefer-offline \
+    && node /tmp/patch-image-dependency-bundles.mjs node_modules node_modules \
+    && node /tmp/verify-image-dependency-versions.mjs node_modules \
+    && rm -rf /usr/local/lib/node_modules \
+    && mkdir -p /usr/local/lib/node_modules \
+    && cp -a node_modules/. /usr/local/lib/node_modules/ \
+    && node /tmp/patch-image-dependency-bundles.mjs /usr/local/lib/node_modules /usr/local/lib/node_modules \
+    && node /tmp/verify-image-dependency-versions.mjs /usr/local/lib/node_modules \
+    && rm -rf /opt/kaseki/image-toolchain /tmp/patch-image-dependency-bundles.mjs /tmp/verify-image-dependency-versions.mjs
+WORKDIR /
 
 FROM base AS deps
 
@@ -33,7 +47,9 @@ ENV HOME=/tmp/kaseki-home \
 WORKDIR /opt/kaseki/workspace-cache-seed
 COPY docker/workspace-cache/package.json docker/workspace-cache/package-lock.json ./
 COPY scripts/dependency-cache-helpers.sh /opt/kaseki/dependency-cache-helpers.sh
-RUN npm ci --no-audit --prefer-offline --ignore-scripts \
+RUN --mount=type=secret,id=proxy_ca,required=false \
+    if [ -r /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi \
+    && npm ci --strict-ssl=true --no-audit --prefer-offline --ignore-scripts \
     && mkdir -p node_modules \
     && . /opt/kaseki/dependency-cache-helpers.sh \
     && dependency_cache_publish_image_seed \
@@ -41,11 +57,7 @@ RUN npm ci --no-audit --prefer-offline --ignore-scripts \
       /opt/kaseki/workspace-cache-seed/node_modules \
       /opt/kaseki/workspace-cache
 
-# Phase 3: Global Pi CLI installation (Layer 3 fallback for image seed cache)
-# Install pi-coding-agent with its server peer and undici explicitly to resolve module dependencies
-RUN npm install -g --no-audit @earendil-works/pi-coding-agent@0.85.0 @earendil-works/pi-server@0.85.0 undici@8.10.2
-
-# Phase 3b: Copy Pi CLI Custom Extensions (LLM Gateway provider)
+# Phase 3: Prepare Pi CLI Custom Extensions (LLM Gateway provider)
 # Extensions are loaded from ~/.pi/extensions/ and must be compiled TypeScript
 # We'll use a simpler approach: copy extension to a known location in the image
 RUN mkdir -p /opt/kaseki/pi-extensions
@@ -98,7 +110,13 @@ COPY scripts ./scripts
 # `fallow`'s optional type-aware analyzer pulls a second TypeScript compiler
 # binary that Kaseki does not use at runtime. Omit optional packages so that
 # build-only analyzer is not carried into the production image.
-RUN npm ci --omit=optional --no-audit --prefer-offline --ignore-scripts && npm run build
+RUN --mount=type=secret,id=proxy_ca,required=false \
+    if [ -r /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi \
+    && npm ci --strict-ssl=true --omit=optional --no-audit --prefer-offline --ignore-scripts \
+    && node /app/scripts/patch-image-dependency-bundles.mjs /usr/local/lib/node_modules /usr/local/lib/node_modules /app/node_modules \
+    && node /app/scripts/verify-image-dependency-versions.mjs /usr/local/lib/node_modules /app/node_modules \
+    && npm run build \
+    && rm /app/scripts/patch-image-dependency-bundles.mjs /app/scripts/verify-image-dependency-versions.mjs
 RUN test -f /app/dist/kaseki-api-service.js \
     && test -f /app/dist/run-scorecard.js \
     && test -f /app/dist/run-scorecard-markdown.js
@@ -297,8 +315,11 @@ RUN apt-get update \
     && chown -R kaseki:kaseki /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki
 
 COPY scripts/install-go-toolchain.sh /usr/local/sbin/install-go-toolchain
-RUN /usr/local/sbin/install-go-toolchain install "$TARGETARCH" \
+RUN --mount=type=secret,id=proxy_ca,required=false \
+    if [ -r /run/secrets/proxy_ca ]; then cat /etc/ssl/certs/ca-certificates.crt /run/secrets/proxy_ca > /tmp/curl-ca-bundle.pem && export CURL_CA_BUNDLE=/tmp/curl-ca-bundle.pem; fi \
+    && /usr/local/sbin/install-go-toolchain install "$TARGETARCH" \
     && rm /usr/local/sbin/install-go-toolchain \
+    && rm -f /tmp/curl-ca-bundle.pem \
     && /usr/local/go/bin/go version | grep -F 'go1.27.1'
 
 ENV HOME=/tmp/kaseki-home \

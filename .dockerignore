@@ -35,11 +35,16 @@
 !docker/workspace-cache/
 !docker/workspace-cache/package.json
 !docker/workspace-cache/package-lock.json
+!docker/image-toolchain/
+!docker/image-toolchain/package.json
+!docker/image-toolchain/package-lock.json
 
 # --- Common exclusions (explicit for clarity) ---
 .git
 .gitignore
 node_modules
+**/node_modules
+**/node_modules/**
 *.log
 .env
 .env.*

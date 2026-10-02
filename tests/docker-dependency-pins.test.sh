@@ -3,34 +3,48 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 dockerfile="$repo_root/Dockerfile"
+toolchain_manifest="$repo_root/docker/image-toolchain/package.json"
 
-assert_exact_line() {
-  local expected="$1"
-  if ! grep -Fqx "$expected" "$dockerfile"; then
-    printf 'Dockerfile dependency contract missing exact line: %s\n' "$expected" >&2
-    exit 1
-  fi
-}
-
-# These selectors were reviewed together. This test owns the reproducibility
-# contract; scripts/verify-docker-npm-pin.mjs separately proves they exist and
-# support the image's Node version against registry metadata.
-assert_exact_line 'ARG NPM_VERSION=11.19.1'
-assert_exact_line 'RUN npm install -g --no-audit @earendil-works/pi-coding-agent@0.85.0 @earendil-works/pi-server@0.85.0 undici@8.10.2'
-
-if grep -Eq 'npm install -g[^#]*@earendil-works/pi-coding-agent@0\.84\.(4|5)([[:space:]]|$)' "$dockerfile"; then
-  echo 'Dockerfile must not install Pi 0.84.4 (vulnerable tree) or unpublished Pi 0.84.5.' >&2
+if ! jq -e '
+  .dependencies.npm == "11.21.0" and
+  .dependencies["@earendil-works/pi-coding-agent"] == "0.86.0" and
+  .dependencies["@earendil-works/pi-server"] == "0.86.0" and
+  .dependencies["brace-expansion"] == "5.0.11" and
+  .dependencies["brace-expansion-v1"] == "npm:brace-expansion@1.1.20" and
+  .dependencies["brace-expansion-v2"] == "npm:brace-expansion@2.1.6" and
+  .dependencies["brace-expansion-v3"] == "npm:brace-expansion@3.0.8" and
+  .dependencies.undici == "8.10.2" and
+  .dependencies["undici-v6"] == "npm:undici@6.28.1" and
+  .dependencies["undici-v7"] == "npm:undici@7.29.1" and
+  .overrides.npm["brace-expansion"] == "5.0.11" and
+  .overrides.npm.undici == "6.28.1" and
+  .overrides["@earendil-works/pi-coding-agent"]["brace-expansion"] == "5.0.11" and
+  .overrides["@earendil-works/pi-coding-agent"].undici == "8.10.2" and
+  .overrides["@earendil-works/pi-server"]["brace-expansion"] == "5.0.11" and
+  .overrides["@earendil-works/pi-server"].undici == "8.10.2"
+' "$toolchain_manifest" >/dev/null; then
+  echo 'Image toolchain dependencies must use the reviewed versions and scoped security overrides.' >&2
   exit 1
 fi
 
-if grep -Eq 'npm install -g[^#]*[[:space:]]undici([[:space:]\\]|$)' "$dockerfile"; then
-  echo 'Dockerfile must not install an unversioned top-level undici.' >&2
+if ! grep -Fq 'COPY docker/image-toolchain/package.json docker/image-toolchain/package-lock.json ./' "$dockerfile"; then
+  echo 'Dockerfile must install global tools from the lockfile-backed image toolchain.' >&2
   exit 1
 fi
 
-if grep -Eq 'npm install -g[^#]*[[:space:]]@earendil-works/pi-server([[:space:]\\]|$)' "$dockerfile"; then
-  echo 'Dockerfile must not install an unversioned @earendil-works/pi-server.' >&2
+if grep -Eq 'npm install -g' "$dockerfile"; then
+  echo 'Dockerfile must not install image tools outside the lockfile-backed dependency tree.' >&2
   exit 1
 fi
 
-printf 'Docker dependency selectors are exact and match the reviewed versions.\n'
+if [[ "$(grep -Fc 'verify-image-dependency-versions.mjs' "$dockerfile")" -lt 2 ]]; then
+  echo 'Dockerfile must verify the global and application dependency trees.' >&2
+  exit 1
+fi
+
+if [[ "$(grep -Fc 'patch-image-dependency-bundles.mjs' "$dockerfile")" -lt 2 ]]; then
+  echo 'Dockerfile must replace vulnerable bundled dependencies in both image trees.' >&2
+  exit 1
+fi
+
+printf 'Image toolchain pins and dependency-tree checks are present.\n'
