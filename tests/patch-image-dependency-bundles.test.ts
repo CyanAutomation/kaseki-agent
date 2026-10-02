@@ -44,4 +44,26 @@ describe('image bundled dependency patching', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  test('fails closed when a vulnerable brace-expansion 3.x copy has no same-major fix', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'kaseki-bundle-patch-'));
+    const sources = path.join(root, 'sources');
+    const targets = path.join(root, 'targets');
+
+    try {
+      createPackage(sources, 'brace-expansion', 'brace-expansion', '5.0.11');
+      createPackage(targets, 'legacy/node_modules/brace-expansion', 'brace-expansion', '3.0.8');
+
+      let error: NodeJS.ErrnoException & { stderr?: Buffer } | undefined;
+      try {
+        execFileSync('node', [patcher, sources, targets], { encoding: 'utf8' });
+      } catch (caught) {
+        error = caught as NodeJS.ErrnoException & { stderr?: Buffer };
+      }
+
+      expect(error?.stderr?.toString()).toContain('brace-expansion@3.0.8 has no patched 3.x source');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
