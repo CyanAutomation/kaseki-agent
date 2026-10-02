@@ -6,7 +6,7 @@
 [![Publish Docker Image](https://github.com/CyanAutomation/kaseki-agent/actions/workflows/build-docker-image.yml/badge.svg?branch=main)](https://github.com/CyanAutomation/kaseki-agent/actions/workflows/build-docker-image.yml)
 
 
-Kaseki is a proof-of-concept ephemeral coding-agent runner. Each run creates a numbered, disposable container instance (kaseki-1, kaseki-2, etc.) that orchestrates the Pi coding-agent via a generic LLM gateway (Manifest, OpenAI, Ollama, etc.).
+Kaseki is a proof-of-concept ephemeral coding-agent runner. Each run creates a numbered, disposable container instance (kaseki-1, kaseki-2, etc.) that orchestrates the Pi coding-agent via an OpenAI-compatible LLM gateway (CloudFlare AI Workers, Azure OpenAI, Ollama, etc.).
 
 ## Quick Start
 
