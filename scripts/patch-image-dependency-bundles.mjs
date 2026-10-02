@@ -8,7 +8,6 @@ const FIXED_VERSIONS = {
   'brace-expansion': {
     1: '1.1.20',
     2: '2.1.6',
-    3: '3.0.8',
     5: '5.0.11',
   },
   undici: {
@@ -18,11 +17,16 @@ const FIXED_VERSIONS = {
   },
 };
 
+// The advisory has no fixed 3.x or 4.x release. Do not hide the finding with
+// an automatic major-version replacement; require an explicit compatibility review.
+const VULNERABLE_UNPATCHED_MAJORS = {
+  'brace-expansion': new Set([3, 4]),
+};
+
 const SOURCE_DIRECTORIES = {
   'brace-expansion': {
     1: 'brace-expansion-v1',
     2: 'brace-expansion-v2',
-    3: 'brace-expansion-v3',
     5: 'brace-expansion',
   },
   undici: {
@@ -102,7 +106,12 @@ export function patchVulnerableDependencyBundles(sourcesRoot, targetRoots) {
     if (!fixedVersions) continue;
     const major = Number.parseInt(installedPackage.version?.split('.')[0], 10);
     const fixedVersion = fixedVersions[major];
-    if (!fixedVersion) continue;
+    if (!fixedVersion) {
+      if (VULNERABLE_UNPATCHED_MAJORS[installedPackage.name]?.has(major)) {
+        throw new Error(`${installedPackage.name}@${installedPackage.version} has no patched ${major}.x source.`);
+      }
+      continue;
+    }
 
     const comparison = compareVersions(installedPackage.version, fixedVersion);
     if (comparison === null) {
