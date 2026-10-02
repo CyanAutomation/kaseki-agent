@@ -62,7 +62,7 @@ export function findVulnerableDependencyVersions(roots) {
         const packageFixes = FIXED_VERSIONS[packageJson.name];
         if (!packageFixes) continue;
 
-        const installedMajor = Number.parseInt(packageJson.version.split('.')[0], 10);
+        const installedMajor = Number.parseInt(packageJson.version?.split('.')[0] ?? '', 10);
         const fixedVersion = packageFixes[installedMajor];
         if (!fixedVersion) continue;
 
