@@ -116,8 +116,12 @@ assert_job_contains "$WORKFLOWS_DIR/build-docker-image.yml" 'docker_integration'
 test -f "$ROOT_DIR/scripts/verify-docker-npm-pin.mjs" || fail 'Docker npm registry verification script must exist'
 assert_job_contains "$PUBLISH_WORKFLOW" 'checks' 'node scripts/verify-docker-npm-pin.mjs' \
   'Docker publishing must verify global package pins against the registry'
-assert_job_contains "$PUBLISH_WORKFLOW" 'verify' 'node /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/experimental/server.js' \
-  'Docker candidate verification must smoke-test the Pi experimental server entrypoint'
+assert_job_contains "$PUBLISH_WORKFLOW" 'verify' 'docker run --rm --entrypoint pi "$DOCKER_HUB_CANDIDATE_IMAGE" --version' \
+  'Docker Hub candidate verification must smoke-test the Pi CLI'
+assert_job_contains "$PUBLISH_WORKFLOW" 'verify' 'docker run --rm --entrypoint pi "$GHCR_CANDIDATE_IMAGE" --version' \
+  'GHCR candidate verification must smoke-test the Pi CLI'
+assert_not_contains "$PUBLISH_WORKFLOW" 'pi-coding-agent/dist/experimental/server.js' \
+  'Docker candidate verification must not invoke the removed Pi experimental server entrypoint'
 for package in npm @earendil-works/pi-coding-agent @earendil-works/pi-server undici brace-expansion; do
   assert_contains "$ROOT_DIR/scripts/verify-docker-npm-pin.mjs" "'$package'" \
     "Docker registry verification must include the $package pin"
