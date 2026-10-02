@@ -58,7 +58,6 @@ describe('Docker global package registry verification', () => {
       { name: 'brace-expansion', selector: 'brace-expansion@5.0.11' },
       { name: 'brace-expansion-v1', selector: 'brace-expansion@1.1.20' },
       { name: 'brace-expansion-v2', selector: 'brace-expansion@2.1.6' },
-      { name: 'brace-expansion-v3', selector: 'brace-expansion@3.0.8' },
     ]);
     expect(manifest.overrides).toEqual({
       'brace-expansion': '5.0.11',
@@ -78,7 +77,7 @@ describe('Docker global package registry verification', () => {
     expect(lock.packages['node_modules/undici-v7']?.version).toBe('7.29.1');
     expect(lock.packages['node_modules/brace-expansion-v1']?.version).toBe('1.1.20');
     expect(lock.packages['node_modules/brace-expansion-v2']?.version).toBe('2.1.6');
-    expect(lock.packages['node_modules/brace-expansion-v3']?.version).toBe('3.0.8');
+    expect(lock.packages['node_modules/brace-expansion-v3']).toBeUndefined();
   });
 
   test('accepts published metadata with an exact version and compatible engine', () => {

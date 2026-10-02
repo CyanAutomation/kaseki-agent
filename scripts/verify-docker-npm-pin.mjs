@@ -15,7 +15,6 @@ const REQUIRED_PACKAGES = [
   { name: 'brace-expansion', dependency: 'brace-expansion', registryName: 'brace-expansion' },
   { name: 'brace-expansion-v1', dependency: 'brace-expansion-v1', registryName: 'brace-expansion' },
   { name: 'brace-expansion-v2', dependency: 'brace-expansion-v2', registryName: 'brace-expansion' },
-  { name: 'brace-expansion-v3', dependency: 'brace-expansion-v3', registryName: 'brace-expansion' },
 ];
 const NODE_VERSION = '24.0.0';
 
