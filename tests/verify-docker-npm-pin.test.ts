@@ -50,8 +50,8 @@ describe('Docker global package registry verification', () => {
     expect(response.ok).toBe(true);
     expect(response.result).toEqual([
       { name: 'npm', selector: 'npm@11.21.0' },
-      { name: '@earendil-works/pi-coding-agent', selector: '@earendil-works/pi-coding-agent@0.86.0' },
-      { name: '@earendil-works/pi-server', selector: '@earendil-works/pi-server@0.86.0' },
+      { name: '@earendil-works/pi-coding-agent', selector: '@earendil-works/pi-coding-agent@0.87.1' },
+      { name: '@earendil-works/pi-server', selector: '@earendil-works/pi-server@0.87.1' },
       { name: 'undici', selector: 'undici@8.10.2' },
       { name: 'undici-v6', selector: 'undici@6.28.1' },
       { name: 'undici-v7', selector: 'undici@7.29.1' },
