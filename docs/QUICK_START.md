@@ -14,7 +14,7 @@ This will:
 
 - ✓ Auto-configure secrets directories with proper permissions
 - ✓ Ask which deployment path you want (Docker Compose or single-run)
-- ✓ Collect provider credentials (OpenRouter by default, or LLM Gateway when explicitly selected)
+- ✓ Collect provider credentials (LLM Gateway by default)
 - ✓ Save everything securely
 
 **First time?** The wizard will guide you through each step.
@@ -35,9 +35,9 @@ When prompted, provide:
    - **Other examples**: `https://api.openai.com/v1`, `http://localhost:11434/v1`, Azure OpenAI endpoints
    - Gateway preflight validates URL/key configuration, worker secret mounting, and Pi provider registration before agent phases run.
 
-2. **OpenRouter API Key** (fallback / secondary provider)
-   - Set `KASEKI_PROVIDER=openrouter` to use OpenRouter instead of the gateway.
-   - Set `OPENROUTER_API_KEY` or provide the `OPENROUTER_API_KEY_FILE` secret.
+2. **OpenRouter API Key** (evaluation stages only, optional)
+   - Coding-agent inference always uses the LLM Gateway (`KASEKI_PROVIDER=gateway`); OpenRouter is never routed to coding inference.
+   - Set `OPENROUTER_API_KEY` or `OPENROUTER_API_KEY_FILE` only to enable evaluation stages (task admission, goal check, run evaluation, validation recovery).
 
 3. **GitHub App Credentials** (optional)
    - Only needed if you want GitHub-authenticated deployments
@@ -75,7 +75,7 @@ curl http://localhost:8080/ready
 
 ## CloudFlare AI Workers Gateway Setup (Optional)
 
-If you want to use CloudFlare AI Workers instead of OpenRouter:
+If you want to use CloudFlare AI Workers as your LLM Gateway (the default provider):
 
 ### Prerequisites
 
@@ -110,7 +110,7 @@ curl http://localhost:8080/ready
 docker-compose logs -f kaseki-api | grep -i cloudflare
 ```
 
-The setup wizard will validate CloudFlare connectivity before completing setup.
+The setup wizard validates the gateway URL and API key format before completing setup.
 
 ---
 
