@@ -40,7 +40,7 @@ describe('image dependency version verification', () => {
       createPackage(root, 'npm', 'npm', '11.21.0');
       createPackage(root, 'npm/node_modules/brace-expansion', 'brace-expansion', '5.0.11');
       createPackage(root, 'npm/node_modules/undici', 'undici', '6.28.1');
-      createPackage(root, '@earendil-works/pi-coding-agent', '@earendil-works/pi-coding-agent', '0.86.0');
+      createPackage(root, '@earendil-works/pi-coding-agent', '@earendil-works/pi-coding-agent', '0.87.1');
       createPackage(root, '@earendil-works/pi-coding-agent/node_modules/brace-expansion', 'brace-expansion', '5.0.11');
       createPackage(root, '@earendil-works/pi-coding-agent/node_modules/undici', 'undici', '8.10.2');
 
