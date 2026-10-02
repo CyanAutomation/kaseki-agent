@@ -4,6 +4,24 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.147.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.147.1...v1.147.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* align npm verification retry delays ([a82e774](https://github.com/CyanAutomation/kaseki-agent/commit/a82e7744d04e82cb5aa8a8ed1efee1f74b5f2600))
+* clarify invalid npm verification clock output ([45d3d8a](https://github.com/CyanAutomation/kaseki-agent/commit/45d3d8a8b430009783bd86596d7977a4f7c1804e))
+* **docker:** pin compatible Pi server package ([#1476](https://github.com/CyanAutomation/kaseki-agent/issues/1476)) ([13f2e32](https://github.com/CyanAutomation/kaseki-agent/commit/13f2e325fe179ff5767f00832aef11dfb1ed1380))
+* **docker:** pin Pi server dependency ([9c58065](https://github.com/CyanAutomation/kaseki-agent/commit/9c5806543fe52bd7c802d5e5fe24f30b6407cd0b))
+* **docker:** update Pi package smoke checks ([f01d354](https://github.com/CyanAutomation/kaseki-agent/commit/f01d3540120d51c3361a3babc192ad5f85c4f0a4))
+* harden npm publish verification ([3b1e468](https://github.com/CyanAutomation/kaseki-agent/commit/3b1e4688923a053135d6c59d77660f95c22ae37c))
+* patch vulnerable dependencies in Node image ([7eae778](https://github.com/CyanAutomation/kaseki-agent/commit/7eae778d809ded7e6a1f21f213824b12999334fe))
+* patch vulnerable dependencies in Node image ([#1482](https://github.com/CyanAutomation/kaseki-agent/issues/1482)) ([e57b2db](https://github.com/CyanAutomation/kaseki-agent/commit/e57b2db4cc1819f8a3826e37b41ea154432b1f93))
+* preserve npm publish verification diagnostics ([2722f42](https://github.com/CyanAutomation/kaseki-agent/commit/2722f42f0be1c300550b14e2c9778d2b5d850bad))
+* remove vulnerable brace-expansion v3 helper ([595042a](https://github.com/CyanAutomation/kaseki-agent/commit/595042adab199ef15fea0e33940f52e965d58076))
+* remove vulnerable brace-expansion v3 helper ([#1484](https://github.com/CyanAutomation/kaseki-agent/issues/1484)) ([8d963c7](https://github.com/CyanAutomation/kaseki-agent/commit/8d963c7ab59fce15a055fad8de1e456b039076f5))
+* use deadline for npm publish verification ([7ba2242](https://github.com/CyanAutomation/kaseki-agent/commit/7ba2242a4c872d60fec95de681e2d4877a9fb7c7))
+
 ## [1.147.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.147.0...v1.147.1) (2026-10-01)
 
 
