@@ -118,7 +118,7 @@ assert_job_contains "$PUBLISH_WORKFLOW" 'checks' 'node scripts/verify-docker-npm
   'Docker publishing must verify global package pins against the registry'
 assert_job_contains "$PUBLISH_WORKFLOW" 'verify' 'node /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/experimental/server.js' \
   'Docker candidate verification must smoke-test the Pi experimental server entrypoint'
-for package in npm @earendil-works/pi-coding-agent undici; do
+for package in npm @earendil-works/pi-coding-agent @earendil-works/pi-server undici brace-expansion; do
   assert_contains "$ROOT_DIR/scripts/verify-docker-npm-pin.mjs" "'$package'" \
     "Docker registry verification must include the $package pin"
 done
