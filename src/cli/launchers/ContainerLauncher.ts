@@ -107,7 +107,7 @@ export class ContainerLauncher {
   }
 
   /**
-   * Run a smoke test on the authenticated /api/runs endpoint
+   * Run a smoke test on the authenticated /api/v1/runs endpoint
    */
   async smokeTest(apiKey: string): Promise<SmokeTestResult> {
     try {
@@ -115,7 +115,7 @@ export class ContainerLauncher {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 5000);
 
-      const res = await fetch('http://127.0.0.1:8080/api/runs', {
+      const res = await fetch('http://127.0.0.1:8080/api/v1/runs', {
         signal: controller.signal,
         headers: { Authorization: `Bearer ${apiKey}` },
       });

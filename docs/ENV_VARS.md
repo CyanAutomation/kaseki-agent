@@ -101,8 +101,8 @@ For the gateway path, worker preflight checks verify gateway URL/key configurati
 | `KASEKI_DECISION_API_KEY_FILE` | worker-internal mount of `OPENROUTER_API_KEY_FILE` | path | Internal worker path for the evaluation credential; do not configure a second key. |
 | `LLM_GATEWAY_URL` | — | string | OpenAI-compatible gateway endpoint (CloudFlare AI Workers, Azure OpenAI, Ollama, etc.). Required for the default `KASEKI_PROVIDER=gateway` path. Example: `https://gateway.ai.cloudflare.com/v1/{account_id}/{namespace}/compat` or `https://api.openai.com/v1`. |
 | `LLM_GATEWAY_API_KEY` | `LLM_GATEWAY_API_KEY_FILE` | string | LLM Gateway API key. Required for the default `KASEKI_PROVIDER=gateway` path. |
-| `KASEKI_GATEWAY_RESPONSE_SMOKE` | production: `true`, test/dev: `false` | boolean | Controls whether `/api/gateway-test` performs a real OpenAI Responses API smoke request with the configured gateway model (default `dynamic/kaseki-agent`). Set `0`, `false`, `off`, or `no` to disable in production; set `1`, `true`, `on`, or `yes` to force-enable in test/dev. |
-| `KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE` | `false` | boolean | Enables Pi provider smoke in non-production environments. In production, Pi provider smoke runs automatically with `/api/gateway-test?stage=2&responseSmoke=true` (no query parameter needed). In development/test, set to `1`, `true`, `on`, or `yes` to enable for controlled testing. Consuming LLM gateway tokens; only enable if you need to test the Pi provider adapter in development. |
+| `KASEKI_GATEWAY_RESPONSE_SMOKE` | production: `true`, test/dev: `false` | boolean | Controls whether `/api/v1/gateway-test` performs a real OpenAI Responses API smoke request with the configured gateway model (default `dynamic/kaseki-agent`). Set `0`, `false`, `off`, or `no` to disable in production; set `1`, `true`, `on`, or `yes` to force-enable in test/dev. |
+| `KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE` | `false` | boolean | Enables Pi provider smoke in non-production environments. Any token-consuming probe must be explicitly requested with `inference=true` on `/api/v1/gateway-test`. In development/test, set to `1`, `true`, `on`, or `yes` to enable the adapter smoke. |
 | `KASEKI_PI_PROVIDER_SMOKE_TIMEOUT_MS` | `60000` | integer | Timeout for the opt-in Pi gateway provider smoke test. |
 | `KASEKI_DECISION_MODEL` | `~typesafe/latest` | string | Model alias used by Task Admission, Goal Check, Run Evaluation, and validation recovery through the shared DecisionService. The default follows the latest supported release and is intentionally not pinned. See [DECISION_MODELS.md](DECISION_MODELS.md) for the decision hierarchy and current integrations. |
 | `KASEKI_TASK_ADMISSION_TIMEOUT_MS` | `5000` | integer | Per-attempt timeout for task admission classification. Retryable failures can be attempted up to three times; operational failures are reported as degraded, while deterministic credential and policy checks remain authoritative. |
@@ -139,9 +139,15 @@ Remove these names from deployment configuration and use the replacement shown. 
 | `KASEKI_JEV_TASK_TYPE` | `KASEKI_TASK_TYPE_HINT` |
 | `KASEKI_JEV_VALIDATION_FOCUS` | `KASEKI_VALIDATION_FOCUS_HINT` |
 
-| `KASEKI_API_URL` | `http://localhost:8080/api` | string | Client-side base URL used by npm API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
+| `KASEKI_API_URL` | `http://localhost:8080/api/v1` | string | Client-side base URL used by npm API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
 | `KASEKI_API_KEY` | — | string | Client-side bearer token for authenticated Kaseki API services |
 | `KASEKI_API_KEYS` | `/agents/secrets/kaseki_api_keys`, `~/secrets/kaseki_api_keys` | string | Newline-separated API keys accepted by the Kaseki service |
+| `KASEKI_API_KEY_SCOPES` | read-only scopes for configured keys | JSON object | Map bearer keys to allowed scope arrays; grant `runs:write` to keys that submit runs and store the mapping in the deployment secret manager |
+| `KASEKI_API_RATE_LIMIT_PER_MINUTE` | `300` | integer | Per-key fixed-window request limit |
+| `KASEKI_API_DIAGNOSTIC_LIMIT_PER_HOUR` | `10` | integer | Per-key limit for token-consuming diagnostic probes |
+| `KASEKI_API_WEBHOOK_TESTS_PER_HOUR` | `10` | integer | Per-key limit for webhook tests and delivery retries |
+| `KASEKI_API_GITHUB_ISSUES_PER_MINUTE` | `30` | integer | Per-key limit for GitHub issue lookups |
+| `KASEKI_WEBHOOK_ALLOWED_ORIGINS` | unset | comma-separated origins | Exact HTTP(S) origins trusted for webhook delivery to private or plain-HTTP receivers |
 | `GITHUB_TOKEN` | (env var only) | string | GitHub API token for PR creation |
 | `GITHUB_APP_ID` | `GITHUB_APP_ID_FILE` | string | GitHub App ID (numeric) |
 | `GITHUB_APP_CLIENT_ID` | `GITHUB_APP_CLIENT_ID_FILE` | string | GitHub OAuth Client ID |
@@ -239,7 +245,7 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 | `KASEKI_DEPENDENCY_CACHE_RECONCILE_INTERVAL_SECONDS` | `86400` | integer | Maximum age of actual-disk-usage accounting before the worker reconciles dependency cache metadata |
 | `KASEKI_DEPENDENCY_CACHE_RECONCILE_THRESHOLD_PERCENT` | `90` | integer | Recorded percentage of the byte limit that triggers early actual-disk-usage reconciliation |
 | `KASEKI_DEPENDENCY_CACHE_PRUNE` | `1` | boolean | Enable dependency cache pruning after dependency preparation |
-| `KASEKI_DEPENDENCY_CACHE_METRICS_FILE` | `${KASEKI_DEPENDENCY_CACHE_DIR}/.kaseki-cache-metrics` | string | Worker-written cache size/count file read by `/api/metrics` |
+| `KASEKI_DEPENDENCY_CACHE_METRICS_FILE` | `${KASEKI_DEPENDENCY_CACHE_DIR}/.kaseki-cache-metrics` | string | Worker-written cache size/count file read by `/api/v1/metrics` |
 | `NPM_CONFIG_CACHE` | `${KASEKI_CACHE_DIR}/npm-cache` | string | npm internal cache |
 | `KASEKI_BASELINE_CACHE_ROOT` | `/cache/kaseki-baseline` | string | Baseline validation results cache directory |
 | `KASEKI_BASELINE_CACHE_MAX_AGE_HOURS` | `24` | integer | Maximum baseline cache entry age in hours before expiration; `0` disables age-based invalidation |
@@ -438,7 +444,7 @@ export TASK_PROMPT="Fix the null pointer bug in src/parser.ts"
 export LLM_GATEWAY_URL="https://llmgateway.local.xyz/v1"
 export LLM_GATEWAY_API_KEY="your-api-key-here"
 
-KASEKI_API_URL=http://localhost:8080/api kaseki-agent run "$REPO_URL" "$GIT_REF" "$TASK_PROMPT"
+KASEKI_API_URL=http://localhost:8080/api/v1 kaseki-agent run "$REPO_URL" "$GIT_REF" "$TASK_PROMPT"
 ```
 
 ### Production Setup (API Service)
@@ -475,7 +481,7 @@ export KASEKI_MAX_DIFF_BYTES=50000
 export KASEKI_AGENT_TIMEOUT_SECONDS=900
 export KASEKI_CACHE_ENABLED=1
 
-KASEKI_API_URL=http://localhost:8080/api kaseki-agent run "$REPO_URL" "$GIT_REF" "$TASK_PROMPT"
+KASEKI_API_URL=http://localhost:8080/api/v1 kaseki-agent run "$REPO_URL" "$GIT_REF" "$TASK_PROMPT"
 ```
 
 ### High-Performance Setup
@@ -545,11 +551,12 @@ test -s "${LLM_GATEWAY_API_KEY_FILE:-$HOME/secrets/llm_gateway_api_key}" && \
 
 The following query parameters are supported on gateway testing endpoints:
 
-### `/api/gateway-test` Query Parameters
+### `/api/v1/gateway-test` Query Parameters
 
 | Parameter | Values | Purpose | Example |
 | --- | --- | --- | --- |
-| `stage` | `1`, `2`, `0` | Test stage: 1=connectivity only, 2=full test, 0=auto-detect | `?stage=2` |
+| `stage` | `1`, `2`, `0` | Test stage: 1=connectivity only, 2=full test, 0=auto-detect | `?inference=true&stage=2` |
+| `inference` | `true`, `false` | Explicit opt-in required for token-consuming checks | `?inference=true` |
 | `piProvider` | `true`, `false` | Enable Pi provider adapter smoke test | `?piProvider=true` |
 | `responseSmoke` | `true`, `false` | Enable response parsing smoke test (included in stage 2) | `?responseSmoke=true` |
 | `debug` | `true`, `false` | Enable debug mode with full response diagnostics | `?debug=true` |
@@ -558,16 +565,16 @@ The following query parameters are supported on gateway testing endpoints:
 
 ```bash
 # Basic connectivity test (stage 1)
-curl http://localhost:3000/api/gateway-test?stage=1
+curl http://localhost:3000/api/v1/gateway-test?stage=1
 
 # Full inference test (stage 2)
-curl http://localhost:3000/api/gateway-test?stage=2
+curl "http://localhost:3000/api/v1/gateway-test?inference=true&stage=2"
 
 # Full test with Pi provider adapter check
-curl http://localhost:3000/api/gateway-test?stage=2&piProvider=true
+curl "http://localhost:3000/api/v1/gateway-test?inference=true&stage=2&piProvider=true"
 
 # Full test with debug diagnostics
-curl "http://localhost:3000/api/gateway-test?stage=2&piProvider=true&debug=true"
+curl "http://localhost:3000/api/v1/gateway-test?inference=true&stage=2&piProvider=true&debug=true"
 ```
 
 **Response with debug mode:** When `?debug=true` is used with a Pi provider adapter error, the response includes detailed diagnostics:

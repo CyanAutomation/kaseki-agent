@@ -139,6 +139,32 @@ describe('kaseki-api-config load configuration', () => {
     expect(config.host).toBe('0.0.0.0');
   });
 
+  test('loadConfig associates least-privilege scopes and rate limits with each API key', () => {
+    process.env.KASEKI_API_KEYS = 'monitor-key,worker-key';
+    process.env.KASEKI_API_KEY_SCOPES = JSON.stringify({
+      'monitor-key': ['runs:read', 'metrics:read'],
+      'worker-key': ['runs:write', 'runs:read'],
+    });
+    process.env.KASEKI_API_RATE_LIMIT_PER_MINUTE = '90';
+    process.env.KASEKI_API_DIAGNOSTIC_LIMIT_PER_HOUR = '4';
+    process.env.KASEKI_RESULTS_DIR = testDir;
+
+    const config = loadConfig();
+    expect(config.apiKeyScopes).toEqual({
+      'monitor-key': ['runs:read', 'metrics:read'],
+      'worker-key': ['runs:write', 'runs:read'],
+    });
+    expect(config.apiRequestsPerMinute).toBe(90);
+    expect(config.apiDiagnosticsPerHour).toBe(4);
+  });
+
+  test('loadConfig rejects API scope entries for unknown keys', () => {
+    process.env.KASEKI_API_KEYS = 'known-key';
+    process.env.KASEKI_API_KEY_SCOPES = JSON.stringify({ 'unknown-key': ['runs:read'] });
+    process.env.KASEKI_RESULTS_DIR = testDir;
+    expect(() => loadConfig()).toThrow('contains a key not present in KASEKI_API_KEYS');
+  });
+
   test('loadConfig throws when KASEKI_API_PORT is invalid', () => {
     const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue('test-key');

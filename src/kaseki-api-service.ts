@@ -195,7 +195,7 @@ async function main(): Promise<void> {
   const bootstrapDurationMs = performance.now() - bootstrapStartTime;
 
   // Run container preflight diagnostics (non-blocking startup checks)
-  // Results are cached and accessible via /api/preflight endpoint
+  // Results are cached and accessible via /api/v1/preflight endpoint
   logger.info('Running container preflight diagnostics...');
   const preflightStartTime = performance.now();
   const containerPreflight = new ContainerPreflightDiagnostics(config);
@@ -263,7 +263,7 @@ async function main(): Promise<void> {
   }));
 
   // Mount OpenAPI spec endpoint
-  app.get('/api/openapi.json', (_req, res) => {
+  app.get('/api/v1/openapi.json', (_req, res) => {
     res.json(openApiSpec);
   });
 
@@ -271,10 +271,10 @@ async function main(): Promise<void> {
   // Serve a same-origin task console for operators using the REST API directly.
   app.use(createWebRouter());
 
-  // Mount API routes (mount /api first, then / for backward compatibility)
+  // Versioned public API. Root-level liveness/readiness probes remain available.
   const apiRouter = createApiRouter(scheduler, config, idempotencyStore, preFlightValidator, artifactCache);
-  app.use('/api', apiRouter);
-  app.use('/', apiRouter);
+  app.use('/api/v1', apiRouter);
+  app.get(['/health', '/ready'], apiRouter);
 
   // Mount Sentry error handler to capture errors in routes and middleware
   app.use(sentryErrorHandler());
@@ -292,7 +292,7 @@ async function main(): Promise<void> {
       resultsDir: config.resultsDir,
       nodeVersion: process.versions.node,
       swaggerDocumentationUrl: `${baseUrl}/docs`,
-      openApiSpecUrl: `${baseUrl}/api/openapi.json`,
+      openApiSpecUrl: `${baseUrl}/api/v1/openapi.json`,
     });
   };
   const server = config.host

@@ -19,229 +19,52 @@ type RouteContract = {
 };
 
 describe('OpenAPI Path Builders', () => {
+  const contract = (
+    path: string,
+    method: string,
+    operationId: string,
+    requiresAuth: boolean,
+    statuses: string[],
+    tag: string,
+  ): RouteContract => ({ path, method, operationId, requiresAuth, statuses, tags: [tag] });
+
   const routeContracts: RouteContract[] = [
-    {
-      path: '/health',
-      method: 'get',
-      operationId: 'getHealth',
-      requiresAuth: false,
-      statuses: ['200'],
-      tags: ['Health & Status']
-    },
-    {
-      path: '/ready',
-      method: 'get',
-      operationId: 'getReady',
-      requiresAuth: false,
-      statuses: ['200', '503'],
-      tags: ['Health & Status']
-    },
-    {
-      path: '/api/capabilities',
-      method: 'get',
-      operationId: 'getCapabilities',
-      requiresAuth: true,
-      statuses: ['200', '401'],
-      tags: ['Service Info']
-    },
-    {
-      path: '/api/metrics',
-      method: 'get',
-      operationId: 'getMetrics',
-      requiresAuth: true,
-      statuses: ['200', '401'],
-      tags: ['Service Info']
-    },
-    {
-      path: '/api/preflight',
-      method: 'get',
-      operationId: 'getPreFlight',
-      requiresAuth: true,
-      statuses: ['200', '401'],
-      tags: ['Service Info']
-    },
-    {
-      path: '/api/startup-health',
-      method: 'get',
-      operationId: 'getStartupHealth',
-      requiresAuth: true,
-      statuses: ['200', '401', '404', '500'],
-      tags: ['Service Info']
-    },
-    {
-      path: '/api/gateway-test',
-      method: 'get',
-      operationId: 'testGateway',
-      requiresAuth: true,
-      statuses: ['200', '401', '503'],
-      tags: ['Gateway Diagnostics']
-    },
-    {
-      path: '/api/github-issues',
-      method: 'post',
-      operationId: 'listGitHubIssues',
-      requiresAuth: true,
-      statuses: ['200', '400', '401', '404'],
-      tags: ['GitHub Issues']
-    },
-    {
-      path: '/api/validate',
-      method: 'post',
-      operationId: 'validateTask',
-      requiresAuth: true,
-      statuses: ['200', '400', '401'],
-      tags: ['Service Info'],
-      requiredResponseSchemas: ({ errorSchema }) => [
-        { status: '400', mediaType: 'application/json', schema: errorSchema },
-        { status: '401', mediaType: 'application/json', schema: errorSchema }
-      ]
-    },
-    {
-      path: '/api/runs',
-      method: 'get',
-      operationId: 'listRuns',
-      requiresAuth: true,
-      statuses: ['200', '401'],
-      tags: ['Run Management']
-    },
-    {
-      path: '/api/runs',
-      method: 'post',
-      operationId: 'triggerRun',
-      requiresAuth: true,
-      statuses: ['200', '202', '400', '401', '422'],
-      tags: ['Run Management'],
-      requiredResponseSchemas: ({ errorSchema, responseSchema }) => [
-        { status: '200', mediaType: 'application/json', schema: responseSchema },
-        { status: '202', mediaType: 'application/json', schema: responseSchema },
-        { status: '400', mediaType: 'application/json', schema: errorSchema },
-        { status: '401', mediaType: 'application/json', schema: errorSchema }
-      ]
-    },
-    {
-      path: '/api/runs/{id}/status',
-      method: 'get',
-      operationId: 'getRunStatus',
-      requiresAuth: true,
-      statuses: ['200', '401', '404'],
-      tags: ['Run Management'],
-      requiredResponseSchemas: ({ errorSchema }) => [
-        { status: '200', mediaType: 'application/json', schema: { $ref: '#/components/schemas/StatusResponse' } },
-        { status: '404', mediaType: 'application/json', schema: errorSchema }
-      ]
-    },
-    {
-      path: '/api/runs/{id}/retry',
-      method: 'post',
-      operationId: 'retryRun',
-      requiresAuth: true,
-      statuses: ['200', '202', '400', '401', '404', '409'],
-      tags: ['Run Management'],
-      requiredResponseSchemas: ({ errorSchema, responseSchema }) => [
-        { status: '200', mediaType: 'application/json', schema: responseSchema },
-        { status: '202', mediaType: 'application/json', schema: responseSchema },
-        { status: '400', mediaType: 'application/json', schema: errorSchema },
-        { status: '401', mediaType: 'application/json', schema: errorSchema },
-        { status: '404', mediaType: 'application/json', schema: errorSchema },
-        { status: '409', mediaType: 'application/json', schema: errorSchema }
-      ]
-    },
-    {
-      path: '/api/runs/{id}/cancel',
-      method: 'post',
-      operationId: 'cancelRun',
-      requiresAuth: true,
-      statuses: ['200', '401', '404'],
-      tags: ['Run Management']
-    },
-    {
-      path: '/api/runs/{id}/events',
-      method: 'get',
-      operationId: 'getRunEvents',
-      requiresAuth: true,
-      statuses: ['200', '401', '404'],
-      tags: ['Run Logs & Progress']
-    },
-    {
-      path: '/api/runs/{id}/events/stream',
-      method: 'get',
-      operationId: 'streamRunEvents',
-      requiresAuth: true,
-      statuses: ['200', '401', '404'],
-      tags: ['Run Logs & Progress']
-    },
-    {
-      path: '/api/runs/{id}/progress',
-      method: 'get',
-      operationId: 'getRunProgress',
-      requiresAuth: true,
-      statuses: ['200', '401', '404'],
-      tags: ['Run Logs & Progress']
-    },
-    {
-      path: '/api/runs/{id}/logs/{logtype}',
-      method: 'get',
-      operationId: 'getRunLog',
-      requiresAuth: true,
-      statuses: ['200', '401', '404'],
-      tags: ['Run Logs & Progress']
-    },
-    {
-      path: '/api/runs/{id}/artifacts',
-      method: 'get',
-      operationId: 'getRunArtifacts',
-      requiresAuth: true,
-      statuses: ['200', '401', '404'],
-      tags: ['Artifacts']
-    },
-    {
-      path: '/api/results/{id}/{file}',
-      method: 'get',
-      operationId: 'downloadArtifact',
-      requiresAuth: true,
-      statuses: ['200', '401', '404', '422'],
-      tags: ['Artifacts']
-    },
-    {
-      path: '/api/runs/{id}/analysis',
-      method: 'get',
-      operationId: 'getRunAnalysis',
-      requiresAuth: true,
-      statuses: ['200', '401', '404'],
-      tags: ['Run Details']
-    },
-    {
-      path: '/api/improvements',
-      method: 'get',
-      operationId: 'getRunImprovements',
-      requiresAuth: true,
-      statuses: ['200', '401'],
-      tags: ['Run Details']
-    },
-    {
-      path: '/api/runs/{id}/scorecard', method: 'get', operationId: 'getRunScorecard',
-      requiresAuth: true, statuses: ['200','400','401','404','409','422'], tags: ['Artifacts']
-    },
-    {
-      path: '/api/scorecards', method: 'get', operationId: 'listScorecards',
-      requiresAuth: true, statuses: ['200','401'], tags: ['Run Details']
-    },
-    {
-      path: '/api/webhooks/test',
-      method: 'post',
-      operationId: 'testWebhook',
-      requiresAuth: true,
-      statuses: ['200', '400', '401'],
-      tags: ['Webhooks'],
-      requiredResponseSchemas: ({ errorSchema }) => [
-        { status: '400', mediaType: 'application/json', schema: errorSchema }
-      ]
-    }
+    contract('/health', 'get', 'getHealth', false, ['200'], 'Health & Status'),
+    contract('/ready', 'get', 'getReady', false, ['200', '503'], 'Health & Status'),
+    contract('/api/v1/health', 'get', 'getApiHealth', false, ['200'], 'Health & Status'),
+    contract('/api/v1/ready', 'get', 'getApiReady', false, ['200', '503'], 'Health & Status'),
+    contract('/api/v1/usage', 'get', 'getApiUsage', true, ['200', '401'], 'Service Info'),
+    contract('/api/v1/capabilities', 'get', 'getCapabilities', true, ['200', '401'], 'Service Info'),
+    contract('/api/v1/metrics', 'get', 'getMetrics', true, ['200', '401'], 'Service Info'),
+    contract('/api/v1/preflight', 'get', 'getPreFlight', true, ['200', '401', '503'], 'Service Info'),
+    contract('/api/v1/startup-health', 'get', 'getStartupHealth', true, ['200', '401', '404', '500'], 'Service Info'),
+    contract('/api/v1/openapi.json', 'get', 'getOpenApiSpec', false, ['200'], 'Service Info'),
+    contract('/api/v1/gateway-test', 'get', 'testGateway', true, ['200', '400', '401', '429', '503'], 'Gateway Diagnostics'),
+    contract('/api/v1/github-issues', 'post', 'listGitHubIssues', true, ['200', '400', '401', '404', '429'], 'GitHub Issues'),
+    contract('/api/v1/validate', 'post', 'validateTask', true, ['200', '400', '401'], 'Service Info'),
+    contract('/api/v1/runs', 'post', 'triggerRun', true, ['200', '202', '400', '401', '422'], 'Run Management'),
+        contract('/api/v1/runs', 'get', 'listRuns', true, ['200', '400', '401'], 'Run Management'),
+    contract('/api/v1/runs/{id}', 'get', 'getRun', true, ['200', '401', '404'], 'Run Management'),
+    contract('/api/v1/runs/{id}/status', 'get', 'getRunStatus', true, ['200', '401', '404'], 'Run Management'),
+    contract('/api/v1/runs/{id}/retry', 'post', 'retryRun', true, ['200', '202', '400', '401', '404', '409', '422'], 'Run Management'),
+    contract('/api/v1/runs/{id}/cancel', 'post', 'cancelRun', true, ['200', '401', '404'], 'Run Management'),
+    contract('/api/v1/runs/{id}/events', 'get', 'getRunEvents', true, ['200', '401', '404'], 'Run Logs & Progress'),
+    contract('/api/v1/runs/{id}/events/stream', 'get', 'streamRunEvents', true, ['200', '401', '404'], 'Run Logs & Progress'),
+    contract('/api/v1/runs/{id}/logs/{logtype}', 'get', 'getRunLog', true, ['200', '400', '401', '404', '500'], 'Run Logs & Progress'),
+    contract('/api/v1/runs/{id}/artifacts', 'get', 'getRunArtifacts', true, ['200', '401', '404'], 'Artifacts'),
+    contract('/api/v1/results/{id}/{file}', 'get', 'downloadArtifact', true, ['200', '202', '400', '401', '404', '413', '422'], 'Artifacts'),
+    contract('/api/v1/runs/{id}/analysis', 'get', 'getRunAnalysis', true, ['200', '401', '404', '500'], 'Run Details'),
+    contract('/api/v1/runs/{id}/scorecard', 'get', 'getRunScorecard', true, ['200', '400', '401', '404', '409', '422'], 'Artifacts'),
+    contract('/api/v1/scorecards', 'get', 'listScorecards', true, ['200', '400', '401'], 'Run Details'),
+    contract('/api/v1/improvements', 'get', 'getRunImprovements', true, ['200', '400', '401'], 'Run Details'),
+    contract('/api/v1/runs/{id}/webhook-deliveries', 'get', 'listRunWebhookDeliveries', true, ['200', '401', '404'], 'Webhooks'),
+    contract('/api/v1/runs/{id}/webhook-deliveries/{deliveryId}/retry', 'post', 'retryRunWebhookDelivery', true, ['202', '401', '404', '409', '429'], 'Webhooks'),
+    contract('/api/v1/webhooks/test', 'post', 'testWebhook', true, ['200', '400', '401', '429'], 'Webhooks'),
   ];
 
   it('documents the GitHub issues envelope returned by the console route', () => {
     const paths = buildAllPaths(buildErrorResponseSchema(), buildRunRequestSchema(), buildRunResponseSchema());
-    const schema = (paths['/api/github-issues'] as Record<string, any>).post.responses['200']
+    const schema = (paths['/api/v1/github-issues'] as Record<string, any>).post.responses['200']
       .content['application/json'].schema;
 
     expect(schema).toMatchObject({
@@ -304,10 +127,10 @@ describe('OpenAPI Path Builders', () => {
 
     it('request body routes should define precise required JSON contracts', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
-      const validatePath = paths['/api/validate'] as Record<string, any>;
-      const runsPath = paths['/api/runs'] as Record<string, any>;
-      const retryPath = paths['/api/runs/{id}/retry'] as Record<string, any>;
-      const webhookTestPath = paths['/api/webhooks/test'] as Record<string, any>;
+      const validatePath = paths['/api/v1/validate'] as Record<string, any>;
+      const runsPath = paths['/api/v1/runs'] as Record<string, any>;
+      const retryPath = paths['/api/v1/runs/{id}/retry'] as Record<string, any>;
+      const webhookTestPath = paths['/api/v1/webhooks/test'] as Record<string, any>;
       const expectedRunRequestBody = {
         required: true,
         content: {
@@ -354,9 +177,9 @@ describe('OpenAPI Path Builders', () => {
       });
     });
 
-    it('POST /api/runs should define the trigger run responses', () => {
+    it('POST /api/v1/runs should define the trigger run responses', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
-      const runsPath = paths['/api/runs'] as Record<string, any>;
+      const runsPath = paths['/api/v1/runs'] as Record<string, any>;
 
       expect(Object.keys(runsPath)).toEqual(expect.arrayContaining(['post']));
       expect(runsPath.post.operationId).toBe('triggerRun');
@@ -378,14 +201,14 @@ describe('OpenAPI Path Builders', () => {
           }),
           '400': expect.objectContaining({
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorSchema
               }
             }
           }),
           '401': expect.objectContaining({
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorSchema
               }
             }
@@ -394,9 +217,9 @@ describe('OpenAPI Path Builders', () => {
       );
     });
 
-    it('GET /api/runs/{id}/status should define required id parameter and status responses', () => {
+    it('GET /api/v1/runs/{id}/status should define required id parameter and status responses', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
-      const runStatusPath = paths['/api/runs/{id}/status'] as Record<string, any>;
+      const runStatusPath = paths['/api/v1/runs/{id}/status'] as Record<string, any>;
 
       expect(runStatusPath.get.operationId).toBe('getRunStatus');
       expect(runStatusPath.get.parameters).toEqual(
@@ -420,7 +243,7 @@ describe('OpenAPI Path Builders', () => {
           }),
           '404': expect.objectContaining({
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorSchema
               }
             }
@@ -429,9 +252,9 @@ describe('OpenAPI Path Builders', () => {
       );
     });
 
-    it('POST /api/webhooks/test should define required payload and key status codes', () => {
+    it('POST /api/v1/webhooks/test should define required payload and key status codes', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
-      const webhookTestPath = paths['/api/webhooks/test'] as Record<string, any>;
+      const webhookTestPath = paths['/api/v1/webhooks/test'] as Record<string, any>;
 
       expect(webhookTestPath.post.operationId).toBe('testWebhook');
       expect(webhookTestPath.post.requestBody.required).toBe(true);
@@ -450,7 +273,7 @@ describe('OpenAPI Path Builders', () => {
           '200': expect.any(Object),
           '400': expect.objectContaining({
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorSchema
               }
             }
@@ -471,21 +294,27 @@ describe('OpenAPI Path Builders', () => {
         getMetrics: ['prometheus', 'metrics'],
         getPreFlight: ['pre-flight', 'validation'],
         getReady: ['readiness', 'probe'],
+        getApiHealth: ['versioned', 'liveness'],
+        getApiReady: ['versioned', 'readiness'],
+        getApiUsage: ['per-key', 'usage'],
+        getOpenApiSpec: ['openapi', 'specification'],
         getStartupHealth: ['cached', 'startup', 'health'],
+        getRun: ['run', 'resource'],
         getRunAnalysis: ['run', 'analysis'],
         getRunArtifacts: ['list', 'artifacts'],
         getRunImprovements: ['improvement', 'findings'],
         getRunLog: ['log', 'file'],
         getRunEvents: ['structured', 'event', 'snapshot'],
-        getRunProgress: ['legacy', 'progress', 'event'],
         streamRunEvents: ['stream', 'run', 'events'],
         getRunStatus: ['run', 'status'],
         getRunScorecard: ['run', 'scorecard'],
         listGitHubIssues: ['repository', 'issues', 'task'],
         listRuns: ['list', 'runs'],
         listScorecards: ['list', 'scorecards'],
+        listRunWebhookDeliveries: ['inspect', 'webhook', 'deliveries'],
+        retryRunWebhookDelivery: ['retry', 'failed', 'webhook'],
         retryRun: ['retry', 'terminal', 'run'],
-        testGateway: ['gateway', 'inference', 'adapter'],
+        testGateway: ['gateway', 'inference'],
         testWebhook: ['test', 'webhook'],
         triggerRun: ['trigger', 'run'],
         validateTask: ['validate', 'task']
@@ -501,7 +330,7 @@ describe('OpenAPI Path Builders', () => {
         },
         {
           operationId: 'getStartupHealth',
-          terms: ['cached', 'boot-time', 'current readiness', '/api/preflight']
+          terms: ['cached', 'boot-time', 'current readiness', '/api/v1/preflight']
         },
         {
           operationId: 'validateTask',
@@ -528,16 +357,12 @@ describe('OpenAPI Path Builders', () => {
           terms: ['server-sent events', 'sse']
         },
         {
-          operationId: 'getRunProgress',
-          terms: ['deprecated', '/api/runs/{id}/events', 'stream=sse', '/api/runs/{id}/events/stream']
-        },
-        {
           operationId: 'getRunLog',
           terms: ['stdout', 'stderr', 'validation', 'large logs', 'truncated']
         },
         {
           operationId: 'downloadArtifact',
-          terms: ['specific artifact file', 'metadata.json', '/api/runs/{id}/artifacts']
+          terms: ['specific artifact file', 'metadata.json', '/api/v1/runs/{id}/artifacts']
         },
         {
           operationId: 'getRunAnalysis',
@@ -545,12 +370,19 @@ describe('OpenAPI Path Builders', () => {
         },
         {
           operationId: 'getRunImprovements',
-          terms: ['run-evaluation artifacts', 'stage timings', 'dashboards']
+          terms: ['evaluator artifacts', 'stage timings', 'cursor page']
         },
         {
           operationId: 'testGateway',
-          terms: ['gateway connectivity', 'inference', 'pi adapter']
+          terms: ['connectivity check', 'inference', 'pi adapter']
         },
+        { operationId: 'getApiHealth', terms: ['liveness'] },
+        { operationId: 'getApiReady', terms: ['ready', 'queue', 'scheduler'] },
+        { operationId: 'getApiUsage', terms: ['per-key', 'usage'] },
+        { operationId: 'getOpenApiSpec', terms: ['openapi', 'specification'] },
+        { operationId: 'getRun', terms: ['stable run identity', 'lifecycle timestamps', 'links'] },
+        { operationId: 'listRunWebhookDeliveries', terms: ['secret-free delivery status', 'attempt history'] },
+        { operationId: 'retryRunWebhookDelivery', terms: ['retry', 'failed webhook delivery'] },
         {
           operationId: 'listGitHubIssues',
           terms: ['repository issues', 'task creation']
@@ -603,11 +435,11 @@ describe('OpenAPI Path Builders', () => {
     it('should expose only expected HTTP methods for stable public routes', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
 
-      expect(Object.keys(paths['/api/runs'] as Record<string, unknown>).sort()).toEqual(['get', 'post']);
-      expect(Object.keys(paths['/api/capabilities'] as Record<string, unknown>).sort()).toEqual(['get']);
-      expect(Object.keys(paths['/api/runs/{id}/retry'] as Record<string, unknown>).sort()).toEqual(['post']);
-      expect(Object.keys(paths['/api/runs/{id}/status'] as Record<string, unknown>).sort()).toEqual(['get']);
-      expect(Object.keys(paths['/api/webhooks/test'] as Record<string, unknown>).sort()).toEqual(['post']);
+      expect(Object.keys(paths['/api/v1/runs'] as Record<string, unknown>).sort()).toEqual(['get', 'post']);
+      expect(Object.keys(paths['/api/v1/capabilities'] as Record<string, unknown>).sort()).toEqual(['get']);
+      expect(Object.keys(paths['/api/v1/runs/{id}/retry'] as Record<string, unknown>).sort()).toEqual(['post']);
+      expect(Object.keys(paths['/api/v1/runs/{id}/status'] as Record<string, unknown>).sort()).toEqual(['get']);
+      expect(Object.keys(paths['/api/v1/webhooks/test'] as Record<string, unknown>).sort()).toEqual(['post']);
     });
   });
 
@@ -616,21 +448,23 @@ describe('OpenAPI Path Builders', () => {
       const emptyErrorSchema = {};
       const paths = buildAllPaths(emptyErrorSchema, requestSchema, responseSchema);
       const expectedErrorResponsesByOperation: Record<string, Record<string, string[]>> = {
-        '/api/capabilities': { get: ['401'] },
-        '/api/metrics': { get: ['401'] },
-        '/api/preflight': { get: ['401'] },
-        '/api/validate': { post: ['400', '401'] },
-        '/api/runs': { get: ['401'], post: ['400', '401'] },
-        '/api/runs/{id}/status': { get: ['401', '404'] },
-        '/api/runs/{id}/retry': { post: ['400', '401', '404', '409'] },
-        '/api/runs/{id}/cancel': { post: ['401', '404'] },
-        '/api/runs/{id}/progress': { get: ['401', '404'] },
-        '/api/runs/{id}/logs/{logtype}': { get: ['401', '404'] },
-        '/api/runs/{id}/artifacts': { get: ['401', '404'] },
-        '/api/results/{id}/{file}': { get: ['401', '404', '422'] },
-        '/api/runs/{id}/analysis': { get: ['401', '404'] },
-        '/api/improvements': { get: ['401'] },
-        '/api/webhooks/test': { post: ['400', '401'] }
+        '/api/v1/capabilities': { get: ['401'] },
+        '/api/v1/metrics': { get: ['401'] },
+        '/api/v1/preflight': { get: ['401'] },
+        '/api/v1/validate': { post: ['400', '401'] },
+        '/api/v1/runs': { get: ['400', '401'], post: ['400', '401'] },
+        '/api/v1/runs/{id}/status': { get: ['401', '404'] },
+        '/api/v1/runs/{id}/retry': { post: ['400', '401', '404', '409'] },
+        '/api/v1/runs/{id}/cancel': { post: ['401', '404'] },
+        '/api/v1/runs/{id}/logs/{logtype}': { get: ['400', '401', '404', '500'] },
+        '/api/v1/runs/{id}/artifacts': { get: ['401', '404'] },
+        '/api/v1/results/{id}/{file}': { get: ['202', '400', '401', '404', '413', '422'] },
+        '/api/v1/runs/{id}/analysis': { get: ['401', '404', '500'] },
+        '/api/v1/scorecards': { get: ['400', '401'] },
+        '/api/v1/improvements': { get: ['400', '401'] },
+        '/api/v1/webhooks/test': { post: ['400', '401', '429'] },
+        '/api/v1/runs/{id}/webhook-deliveries': { get: ['401', '404'] },
+        '/api/v1/runs/{id}/webhook-deliveries/{deliveryId}/retry': { post: ['401', '404', '409', '429'] },
       };
 
       Object.entries(expectedErrorResponsesByOperation).forEach(([path, methods]) => {
@@ -639,7 +473,7 @@ describe('OpenAPI Path Builders', () => {
 
           const fallbackStatuses = Object.entries(operation.responses)
             .filter(([, response]: [string, any]) => {
-              const jsonSchema = response.content?.['application/json']?.schema;
+              const jsonSchema = response.content?.['application/problem+json']?.schema ?? response.content?.['application/json']?.schema;
               return jsonSchema !== undefined && Object.keys(jsonSchema).length === 0;
             })
             .map(([status]) => status)
@@ -648,10 +482,8 @@ describe('OpenAPI Path Builders', () => {
           expect(operation).toBeDefined();
           expect(fallbackStatuses).toEqual(statuses);
           statuses.forEach((status) => {
-            expect(operation.responses[status].content).toEqual({
-              'application/json': {
-                schema: emptyErrorSchema
-              }
+            expect(operation.responses[status].content).toMatchObject({
+              'application/problem+json': { schema: emptyErrorSchema }
             });
           });
         });
@@ -688,7 +520,7 @@ describe('OpenAPI Path Builders', () => {
     it('should preserve an empty response schema as the OpenAPI any-type schema required for OpenAPI generation', () => {
       const emptyResponseSchema = {};
       const paths = buildAllPaths(errorSchema, requestSchema, emptyResponseSchema);
-      const runsPath = paths['/api/runs'] as Record<string, any>;
+      const runsPath = paths['/api/v1/runs'] as Record<string, any>;
 
       expect(Object.keys(runsPath.post.responses).sort()).toEqual(['200', '202', '400', '401', '422']);
       ['200', '202'].forEach((status) => {
@@ -699,25 +531,13 @@ describe('OpenAPI Path Builders', () => {
         });
       });
 
-      expect(Object.keys(runsPath.get.responses).sort()).toEqual(['200', '401']);
-      expect(runsPath.get.responses['200'].content).toEqual({
-        'application/json': {
-          schema: {
-            type: 'object',
-            required: ['runs', 'total'],
-            properties: {
-              runs: {
-                type: 'array',
-                items: emptyResponseSchema
-              },
-              total: {
-                type: 'integer',
-                description: 'Total number of runs available'
-              }
-            }
-          }
-        }
-      });
+      expect(Object.keys(runsPath.get.responses).sort()).toEqual(['200', '400', '401']);
+      const runListSchema = runsPath.get.responses['200'].content['application/json'].schema;
+      expect(runListSchema.type).toBe('object');
+      expect(runListSchema.required).toEqual(['runs', 'total', 'hasMore']);
+      expect(runListSchema.properties.runs).toEqual({ type: 'array', items: emptyResponseSchema });
+      expect(runListSchema.properties.total.type).toBe('integer');
+      expect(runListSchema.properties.hasMore.type).toBe('boolean');
     });
   });
 
@@ -740,7 +560,7 @@ describe('OpenAPI Path Builders', () => {
       const responseSchema = (healthPath.responses['200'].content['application/json'].schema as Record<string, any>)
         .properties.status;
       expect(responseSchema.type).toBe('string');
-      expect(responseSchema.enum).toEqual(['healthy', 'degraded']);
+      expect(responseSchema.enum).toEqual(['ok']);
     });
 
     it('GET /ready should have readiness probe logic and 503 error response', () => {
@@ -774,15 +594,15 @@ describe('OpenAPI Path Builders', () => {
       paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
     });
 
-    it('GET /api/metrics should require authentication and return Prometheus format', () => {
-      const metricsPath = (paths['/api/metrics'] as Record<string, any>).get;
+    it('GET /api/v1/metrics should require authentication and return Prometheus format', () => {
+      const metricsPath = (paths['/api/v1/metrics'] as Record<string, any>).get;
       expect(metricsPath.operationId).toBe('getMetrics');
       expect(metricsPath.security).toEqual([{ BearerAuth: [] }]);
       expect(metricsPath.responses['200'].content['text/plain']).toBeDefined();
     });
 
-    it('GET /api/preflight should validate controller configuration', () => {
-      const preflightPath = (paths['/api/preflight'] as Record<string, any>).get;
+    it('GET /api/v1/preflight should validate controller configuration', () => {
+      const preflightPath = (paths['/api/v1/preflight'] as Record<string, any>).get;
       expect(preflightPath.operationId).toBe('getPreFlight');
       expect(preflightPath.security).toEqual([{ BearerAuth: [] }]);
       expect(preflightPath.parameters).toContainEqual(expect.objectContaining({
@@ -803,12 +623,12 @@ describe('OpenAPI Path Builders', () => {
         'excluded-from-current-readiness'
       ]);
       expect(responseProps.containerStartup.properties.current.enum).toEqual([false]);
-      expect(responseProps.containerStartup.properties.recommendedCurrentEndpoint.enum).toEqual(['/api/preflight']);
+      expect(responseProps.containerStartup.properties.recommendedCurrentEndpoint.enum).toEqual(['/api/v1/preflight']);
       expect(responseProps.containerStartup.properties.cachedAt.format).toBe('date-time');
     });
 
-    it('POST /api/validate should accept RunRequest schema and return validation result', () => {
-      const validatePath = (paths['/api/validate'] as Record<string, any>).post;
+    it('POST /api/v1/validate should accept RunRequest schema and return validation result', () => {
+      const validatePath = (paths['/api/v1/validate'] as Record<string, any>).post;
       expect(validatePath.operationId).toBe('validateTask');
       expect(validatePath.requestBody.required).toBe(true);
       expect(validatePath.requestBody.content['application/json'].schema).toBe(requestSchema);
@@ -826,28 +646,27 @@ describe('OpenAPI Path Builders', () => {
       paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
     });
 
-    it('POST /api/runs should trigger a new run and return 202 Accepted', () => {
-      const runsPath = (paths['/api/runs'] as Record<string, any>).post;
+    it('POST /api/v1/runs should trigger a new run and return 202 Accepted', () => {
+      const runsPath = (paths['/api/v1/runs'] as Record<string, any>).post;
       expect(runsPath.operationId).toBe('triggerRun');
       expect(runsPath.responses['202']).toBeDefined();
       expect(runsPath.responses['202'].description).toContain('queued');
     });
 
-    it('GET /api/runs should list runs with pagination parameters', () => {
-      const runsPath = (paths['/api/runs'] as Record<string, any>).get;
+    it('GET /api/v1/runs should list runs with pagination parameters', () => {
+      const runsPath = (paths['/api/v1/runs'] as Record<string, any>).get;
       expect(runsPath.operationId).toBe('listRuns');
       const limitParam = runsPath.parameters.find((p: Record<string, any>) => p.name === 'limit');
-      const offsetParam = runsPath.parameters.find((p: Record<string, any>) => p.name === 'offset');
+      const cursorParam = runsPath.parameters.find((p: Record<string, any>) => p.name === 'cursor');
       expect(limitParam.schema.type).toBe('integer');
       expect(limitParam.schema.default).toBe(50);
       expect(limitParam.schema.minimum).toBe(1);
       expect(limitParam.schema.maximum).toBe(500);
-      expect(offsetParam.schema.default).toBe(0);
-      expect(offsetParam.schema.minimum).toBe(0);
+      expect(cursorParam.schema.type).toBe('string');
     });
 
-    it('GET /api/runs/{id}/status should require kaseki-N pattern parameter', () => {
-      const statusPath = (paths['/api/runs/{id}/status'] as Record<string, any>).get;
+    it('GET /api/v1/runs/{id}/status should require kaseki-N pattern parameter', () => {
+      const statusPath = (paths['/api/v1/runs/{id}/status'] as Record<string, any>).get;
       expect(statusPath.operationId).toBe('getRunStatus');
       const idParam = statusPath.parameters.find((p: Record<string, any>) => p.name === 'id');
       expect(idParam.in).toBe('path');
@@ -855,8 +674,8 @@ describe('OpenAPI Path Builders', () => {
       expect(idParam.schema.pattern).toBe('^kaseki-\\d+$');
     });
 
-    it('POST /api/runs/{id}/cancel should accept cancellation requests', () => {
-      const cancelPath = (paths['/api/runs/{id}/cancel'] as Record<string, any>).post;
+    it('POST /api/v1/runs/{id}/cancel should accept cancellation requests', () => {
+      const cancelPath = (paths['/api/v1/runs/{id}/cancel'] as Record<string, any>).post;
       expect(cancelPath.operationId).toBe('cancelRun');
       expect(cancelPath.responses['200'].description).toContain('accepted');
       const idParam = cancelPath.parameters.find((p: Record<string, any>) => p.name === 'id');
@@ -871,8 +690,8 @@ describe('OpenAPI Path Builders', () => {
       paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
     });
 
-    it('GET /api/runs/{id}/events should be the canonical structured event snapshot', () => {
-      const eventsPath = (paths['/api/runs/{id}/events'] as Record<string, any>).get;
+    it('GET /api/v1/runs/{id}/events should be the canonical structured event snapshot', () => {
+      const eventsPath = (paths['/api/v1/runs/{id}/events'] as Record<string, any>).get;
       expect(eventsPath.operationId).toBe('getRunEvents');
       expect(eventsPath.responses['200'].content['application/json'].schema.required).toEqual([
         'id',
@@ -883,26 +702,18 @@ describe('OpenAPI Path Builders', () => {
       ]);
     });
 
-    it('GET /api/runs/{id}/events/stream should support SSE streaming', () => {
-      const streamPath = (paths['/api/runs/{id}/events/stream'] as Record<string, any>).get;
+    it('GET /api/v1/runs/{id}/events/stream should support SSE streaming', () => {
+      const streamPath = (paths['/api/v1/runs/{id}/events/stream'] as Record<string, any>).get;
       expect(streamPath.operationId).toBe('streamRunEvents');
       expect(streamPath.responses['200'].content['text/event-stream']).toBeDefined();
     });
 
-    it('GET /api/runs/{id}/progress should be a deprecated alias with the same snapshot schema', () => {
-      const eventsPath = (paths['/api/runs/{id}/events'] as Record<string, any>).get;
-      const progressPath = (paths['/api/runs/{id}/progress'] as Record<string, any>).get;
-      expect(progressPath.operationId).toBe('getRunProgress');
-      expect(progressPath.deprecated).toBe(true);
-      expect(progressPath.responses['200'].content['application/json'].schema).toEqual(
-        eventsPath.responses['200'].content['application/json'].schema
-      );
-      const streamParam = progressPath.parameters.find((p: Record<string, any>) => p.name === 'stream');
-      expect(streamParam.schema.enum).toEqual(['sse']);
+    it('does not publish the retired progress alias', () => {
+      expect(paths['/api/v1/runs/{id}/progress']).toBeUndefined();
     });
 
-    it('GET /api/runs/{id}/logs/{logtype} should support multiple log types', () => {
-      const logsPath = (paths['/api/runs/{id}/logs/{logtype}'] as Record<string, any>).get;
+    it('GET /api/v1/runs/{id}/logs/{logtype} should support multiple log types', () => {
+      const logsPath = (paths['/api/v1/runs/{id}/logs/{logtype}'] as Record<string, any>).get;
       expect(logsPath.operationId).toBe('getRunLog');
       const logtypeParam = logsPath.parameters.find((p: Record<string, any>) => p.name === 'logtype');
       expect(logtypeParam.schema.enum).toContain('stdout');
@@ -911,8 +722,8 @@ describe('OpenAPI Path Builders', () => {
       expect(logtypeParam.schema.enum).toContain('combined');
     });
 
-    it('GET /api/runs/{id}/logs/{logtype} should support tail parameter', () => {
-      const logsPath = (paths['/api/runs/{id}/logs/{logtype}'] as Record<string, any>).get;
+    it('GET /api/v1/runs/{id}/logs/{logtype} should support tail parameter', () => {
+      const logsPath = (paths['/api/v1/runs/{id}/logs/{logtype}'] as Record<string, any>).get;
       const tailParam = logsPath.parameters.find((p: Record<string, any>) => p.name === 'tail');
       expect(tailParam.schema.type).toBe('integer');
       expect(tailParam.schema.minimum).toBe(1);
@@ -927,8 +738,8 @@ describe('OpenAPI Path Builders', () => {
       paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
     });
 
-    it('GET /api/runs/{id}/artifacts should list all available artifacts', () => {
-      const artifactsPath = (paths['/api/runs/{id}/artifacts'] as Record<string, any>).get;
+    it('GET /api/v1/runs/{id}/artifacts should list all available artifacts', () => {
+      const artifactsPath = (paths['/api/v1/runs/{id}/artifacts'] as Record<string, any>).get;
       expect(artifactsPath.operationId).toBe('getRunArtifacts');
       const responseProps = (artifactsPath.responses['200'].content['application/json'].schema as Record<string, any>)
         .properties;
@@ -936,8 +747,8 @@ describe('OpenAPI Path Builders', () => {
       expect(responseProps.recommended.type).toBe('array');
     });
 
-    it('GET /api/results/{id}/{file} should support artifact download', () => {
-      const downloadPath = (paths['/api/results/{id}/{file}'] as Record<string, any>).get;
+    it('GET /api/v1/results/{id}/{file} should support artifact download', () => {
+      const downloadPath = (paths['/api/v1/results/{id}/{file}'] as Record<string, any>).get;
       expect(downloadPath.operationId).toBe('downloadArtifact');
       const fileParam = downloadPath.parameters.find((p: Record<string, any>) => p.name === 'file');
       expect(fileParam.in).toBe('path');
@@ -960,8 +771,8 @@ describe('OpenAPI Path Builders', () => {
       paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
     });
 
-    it('GET /api/runs/{id}/analysis should provide comprehensive run analysis', () => {
-      const analysisPath = (paths['/api/runs/{id}/analysis'] as Record<string, any>).get;
+    it('GET /api/v1/runs/{id}/analysis should provide comprehensive run analysis', () => {
+      const analysisPath = (paths['/api/v1/runs/{id}/analysis'] as Record<string, any>).get;
       expect(analysisPath.operationId).toBe('getRunAnalysis');
       expect(analysisPath.security).toEqual([{ BearerAuth: [] }]);
     });
@@ -974,8 +785,8 @@ describe('OpenAPI Path Builders', () => {
       paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
     });
 
-    it('POST /api/webhooks/test should test webhook delivery', () => {
-      const webhookPath = (paths['/api/webhooks/test'] as Record<string, any>).post;
+    it('POST /api/v1/webhooks/test should test webhook delivery', () => {
+      const webhookPath = (paths['/api/v1/webhooks/test'] as Record<string, any>).post;
       expect(webhookPath.operationId).toBe('testWebhook');
       expect(webhookPath.requestBody.required).toBe(true);
       expect(webhookPath.responses['200']).toBeDefined();
@@ -998,8 +809,8 @@ describe('OpenAPI Path Builders', () => {
     });
 
     it('protected endpoints should require BearerAuth', () => {
-      const metricsPath = (paths['/api/metrics'] as Record<string, any>).get;
-      const runsPath = (paths['/api/runs'] as Record<string, any>).post;
+      const metricsPath = (paths['/api/v1/metrics'] as Record<string, any>).get;
+      const runsPath = (paths['/api/v1/runs'] as Record<string, any>).post;
       expect(metricsPath.security).toEqual([{ BearerAuth: [] }]);
       expect(runsPath.security).toEqual([{ BearerAuth: [] }]);
     });
@@ -1027,14 +838,13 @@ describe('OpenAPI Path Builders', () => {
 
     it('id parameters should match kaseki-N pattern', () => {
       const pathsWithIdParam = [
-        '/api/runs/{id}/status',
-        '/api/runs/{id}/cancel',
-        '/api/runs/{id}/retry',
-        '/api/runs/{id}/progress',
-        '/api/runs/{id}/logs/{logtype}',
-        '/api/runs/{id}/artifacts',
-        '/api/results/{id}/{file}',
-        '/api/runs/{id}/analysis'
+        '/api/v1/runs/{id}/status',
+        '/api/v1/runs/{id}/cancel',
+        '/api/v1/runs/{id}/retry',
+        '/api/v1/runs/{id}/logs/{logtype}',
+        '/api/v1/runs/{id}/artifacts',
+        '/api/v1/results/{id}/{file}',
+        '/api/v1/runs/{id}/analysis'
       ];
 
       pathsWithIdParam.forEach((pathKey) => {
@@ -1058,13 +868,13 @@ describe('OpenAPI Path Builders', () => {
     });
 
     it('query parameters should have appropriate constraints', () => {
-      const listRunsPath = (paths['/api/runs'] as Record<string, any>).get;
+      const listRunsPath = (paths['/api/v1/runs'] as Record<string, any>).get;
       const limit = listRunsPath.parameters.find((p: Record<string, any>) => p.name === 'limit');
-      const offset = listRunsPath.parameters.find((p: Record<string, any>) => p.name === 'offset');
+      const cursor = listRunsPath.parameters.find((p: Record<string, any>) => p.name === 'cursor');
 
       expect(limit.schema.minimum).toBe(1);
       expect(limit.schema.maximum).toBe(500);
-      expect(offset.schema.minimum).toBe(0);
+      expect(cursor.schema.type).toBe('string');
     });
   });
 
@@ -1077,23 +887,28 @@ describe('OpenAPI Path Builders', () => {
 
     it('each GET operation should document its expected success status', () => {
       const expectedGetSuccessStatusByRoute: Record<string, string> = {
-        '/api/capabilities': '200',
-        '/api/gateway-test': '200',
-        '/api/improvements': '200',
-        '/api/metrics': '200',
-        '/api/preflight': '200',
-        '/api/startup-health': '200',
-        '/api/results/{id}/{file}': '200',
-        '/api/runs': '200',
-        '/api/runs/{id}/analysis': '200',
-        '/api/runs/{id}/artifacts': '200',
-        '/api/runs/{id}/events': '200',
-        '/api/runs/{id}/events/stream': '200',
-        '/api/runs/{id}/logs/{logtype}': '200',
-        '/api/runs/{id}/progress': '200',
-        '/api/runs/{id}/status': '200',
-        '/api/runs/{id}/scorecard': '200',
-        '/api/scorecards': '200',
+        '/api/v1/health': '200',
+        '/api/v1/ready': '200',
+        '/api/v1/usage': '200',
+        '/api/v1/capabilities': '200',
+        '/api/v1/gateway-test': '200',
+        '/api/v1/improvements': '200',
+        '/api/v1/metrics': '200',
+        '/api/v1/openapi.json': '200',
+        '/api/v1/preflight': '200',
+        '/api/v1/startup-health': '200',
+        '/api/v1/results/{id}/{file}': '200',
+        '/api/v1/runs': '200',
+        '/api/v1/runs/{id}': '200',
+        '/api/v1/runs/{id}/analysis': '200',
+        '/api/v1/runs/{id}/artifacts': '200',
+        '/api/v1/runs/{id}/events': '200',
+        '/api/v1/runs/{id}/events/stream': '200',
+        '/api/v1/runs/{id}/logs/{logtype}': '200',
+        '/api/v1/runs/{id}/status': '200',
+        '/api/v1/runs/{id}/scorecard': '200',
+        '/api/v1/runs/{id}/webhook-deliveries': '200',
+        '/api/v1/scorecards': '200',
         '/health': '200',
         '/ready': '200'
       };
@@ -1115,18 +930,18 @@ describe('OpenAPI Path Builders', () => {
     });
 
     it('POST requests that queue jobs should return 202 Accepted', () => {
-      const triggerRunPath = (paths['/api/runs'] as Record<string, any>).post;
+      const triggerRunPath = (paths['/api/v1/runs'] as Record<string, any>).post;
       expect(triggerRunPath.responses['202']).toBeDefined();
     });
 
     it('bad requests should return 400 with error schema', () => {
-      const validatePath = (paths['/api/validate'] as Record<string, any>).post;
+      const validatePath = (paths['/api/v1/validate'] as Record<string, any>).post;
       expect(validatePath.responses['400']).toBeDefined();
-      expect(validatePath.responses['400'].content['application/json'].schema).toBe(errorSchema);
+      expect(validatePath.responses['400'].content['application/problem+json'].schema).toBe(errorSchema);
     });
 
     it('not found errors should return 404', () => {
-      const statusPath = (paths['/api/runs/{id}/status'] as Record<string, any>).get;
+      const statusPath = (paths['/api/v1/runs/{id}/status'] as Record<string, any>).get;
       expect(statusPath.responses['404']).toBeDefined();
     });
 

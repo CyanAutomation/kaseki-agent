@@ -75,16 +75,17 @@ kaseki-agent status kaseki-1
 ### 5. Run API Locally
 
 ```bash
-# Start local API on port 8080
-kaseki-agent serve --port 8080 &
+# Start an authenticated local API on port 8080
+KASEKI_API_KEYS=sk-local-secret \
+KASEKI_API_KEY_SCOPES='{"sk-local-secret":["diagnostics:read"]}' \
+  kaseki-agent serve --port 8080 &
 
 # Health check (no auth required)
 curl http://localhost:8080/health
 
 # Authenticated endpoint
-KASEKI_API_KEYS=sk-local-secret \
-  curl -H "Authorization: Bearer sk-local-secret" \
-  http://localhost:8080/api/preflight
+curl -H "Authorization: Bearer sk-local-secret" \
+  http://localhost:8080/api/v1/preflight
 
 # Override default URL
 KASEKI_API_URL=http://localhost:9090 kaseki-agent serve --port 9090
@@ -137,14 +138,14 @@ curl http://localhost:8080/health
 
 A 200 OK response confirms the Kaseki API service is running. Non-200 responses indicate the service is unavailable or not yet started.
 
-### GET /api/preflight Endpoint with Authentication
+### GET /api/v1/preflight Endpoint with Authentication
 
 The preflight endpoint validates controller configuration (Docker, image, GitHub App) and requires Bearer token authentication:
 
 ```bash
 # Preflight with Bearer token
 curl -H "Authorization: Bearer sk-kaseki-secret-key" \
-  http://localhost:8080/api/preflight
+  http://localhost:8080/api/v1/preflight
 ```
 
 The endpoint returns diagnostic information about container state, image availability, and provider readiness. Requests require a valid API key configured in `KASEKI_API_KEYS`. Without valid credentials, the endpoint returns 401 Unauthorized.
@@ -203,7 +204,7 @@ See [docs/CLI.md](docs/CLI.md) for command usage details and the live monitoring
 kaseki-agent run https://github.com/owner/repo main "Fix TypeScript errors"
 
 # With custom API URL
-KASEKI_API_URL=http://localhost:8080/api \
+KASEKI_API_URL=http://localhost:8080/api/v1 \
   kaseki-agent run https://github.com/owner/repo main "Add unit tests"
 
 # Monitor progress
@@ -298,11 +299,12 @@ Server validates tokens listed in `KASEKI_API_KEYS` config (comma-separated).
 curl http://localhost:8080/health
 
 # Health check with bearer token
-curl -H "Authorization: Bearer sk-kaseki-..." http://localhost:8080/api/preflight
+curl -H "Authorization: Bearer sk-kaseki-..." http://localhost:8080/api/v1/preflight
 
 # Submit a task run via the API
-curl -X POST http://localhost:8080/api/runs \
+curl -X POST http://localhost:8080/api/v1/runs \
   -H "Authorization: Bearer sk-kaseki-..." \
+  -H "Idempotency-Key: 123e4567-e89b-42d3-a456-426614174000" \
   -H "Content-Type: application/json" \
   -d '{
     "repo": "https://github.com/org/repo",

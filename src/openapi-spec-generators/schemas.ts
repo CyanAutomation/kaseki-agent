@@ -421,7 +421,6 @@ function buildFailureProperties(): Record<string, unknown> {
 
 function buildArtifactProperties(): Record<string, unknown> {
   return {
-    resultDir: { type: 'string', description: 'Path to results directory on server' },
     resultSummaryContent: { type: 'string', description: 'Human-readable markdown summary (truncated to 64KB)' },
     failureJsonContent: { type: 'object', description: 'Structured failure information (only if failed)' },
     diagnosticSummary: {
@@ -487,11 +486,28 @@ function buildStatusResponseSchema(): Record<string, unknown> {
 export function buildErrorResponseSchema(): Record<string, unknown> {
   return {
     type: 'object',
-    required: ['error'],
+    required: ['type', 'title', 'status', 'detail', 'instance'],
     properties: {
-      error: {
+      type: {
         type: 'string',
-        description: 'Error message',
+        format: 'uri',
+        description: 'Problem type identifier',
+      },
+      title: {
+        type: 'string',
+        description: 'Short problem summary',
+      },
+      status: {
+        type: 'integer',
+        description: 'HTTP status code',
+      },
+      detail: {
+        type: 'string',
+        description: 'Human-readable problem detail',
+      },
+      instance: {
+        type: 'string',
+        description: 'Request path associated with the problem',
       },
       requestId: {
         type: 'string',

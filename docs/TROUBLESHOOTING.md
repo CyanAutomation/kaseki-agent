@@ -44,7 +44,7 @@ Run automated checks before manual troubleshooting:
 kaseki-agent doctor --json        # Machine-readable output
 kaseki-agent doctor --fix         # Auto-remediate detected issues
 
-# Host preflight — submits to /api/preflight endpoint
+# Host preflight — submits to /api/v1/preflight endpoint
 kaseki-agent host preflight [--url URL]
 
 # Preflight script — guided dependency checks

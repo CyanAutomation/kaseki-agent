@@ -72,7 +72,7 @@ The setup wizard validates the environment, prompts for key settings, stores cre
 kaseki-agent config show
 
 # Store a user-global API controller URL for task commands
-kaseki-agent config set api.base_url http://localhost:8080/api --global
+kaseki-agent config set api.base_url http://localhost:8080/api/v1 --global
 
 # Store a bearer token for an authenticated controller
 kaseki-agent config set api.key sk-your-kaseki-api-key --global
@@ -109,7 +109,7 @@ On headless Linux hosts, secrets can fall back to files under `~/.kaseki/secrets
 
 The following commands are API clients. They do **not** run the agent directly from the npm process. They require either:
 
-1. a local API service listening at the default `http://localhost:8080/api`, or
+1. a local API service listening at the default `http://localhost:8080/api/v1`, or
 2. `KASEKI_API_URL` / `api.base_url` pointing at an existing Kaseki controller API.
 
 Start a local API service when this host should execute work:
@@ -119,13 +119,13 @@ Start a local API service when this host should execute work:
 kaseki-agent serve --port 8080
 
 # For authenticated or network-exposed service mode
-KASEKI_API_KEYS=sk-dev kaseki-agent serve --port 8080
+KASEKI_API_KEYS=sk-dev KASEKI_API_KEY_SCOPES='{"sk-dev":["runs:read","runs:write"]}' kaseki-agent serve --port 8080
 ```
 
 Point the CLI at a controller API when the service is elsewhere:
 
 ```bash
-export KASEKI_API_URL=https://controller.example.com/api
+export KASEKI_API_URL=https://controller.example.com/api/v1
 export KASEKI_API_KEY=sk-your-kaseki-api-key
 ```
 
@@ -136,7 +136,7 @@ kaseki-agent run https://github.com/your-org/your-repo main \
   "Fix the TypeScript errors in src/"
 ```
 
-`run` submits `repoUrl`, `gitRef`, and `taskPrompt` to `POST /api/runs`, then prints the returned run ID and status URL.
+`run` submits `repoUrl`, `gitRef`, and `taskPrompt` to `POST /api/v1/runs`, then prints the returned run ID and status URL.
 
 ### `list` — list API-known runs
 
@@ -146,7 +146,7 @@ kaseki-agent list --status completed
 kaseki-agent list --status failed
 ```
 
-`list` reads the controller's run index from `GET /api/runs`. It does not scan local result directories.
+`list` reads the controller's run index from `GET /api/v1/runs`. It does not scan local result directories.
 
 ### `report` — retrieve API-backed run diagnostics
 
@@ -167,7 +167,7 @@ kaseki-agent status kaseki-1
 kaseki-agent status kaseki-1 --json
 ```
 
-`status` reads `GET /api/runs/:id/status` and exits non-zero only when a terminal API result reports failure.
+`status` reads `GET /api/v1/runs/:id/status` and exits non-zero only when a terminal API result reports failure.
 
 ### `stop` / `cancel` — cancel queued or running work
 
@@ -183,7 +183,7 @@ Both commands call the controller API cancel endpoint and require the same API U
 
 | Key | Type | Used by | Description |
 |-----|------|---------|-------------|
-| `KASEKI_API_URL` | Environment | npm API-client commands | Base URL for task commands, for example `http://localhost:8080/api` or `https://controller.example.com/api`. Overrides config. |
+| `KASEKI_API_URL` | Environment | npm API-client commands | Base URL for task commands, for example `http://localhost:8080/api/v1` or `https://controller.example.com/api/v1`. Overrides config. |
 | `KASEKI_API_BASE_URL` | Environment | npm API-client commands | Backward-compatible alias for `KASEKI_API_URL`. |
 | `KASEKI_API_KEY` | Environment | npm API-client commands | Bearer token sent to an authenticated API service. Overrides config. |
 | `api.base_url` | Config | npm API-client commands | Persistent base URL used when `KASEKI_API_URL` is unset. |
@@ -205,10 +205,10 @@ Both commands call the controller API cancel endpoint and require the same API U
 npm install -g @cyanautomation/kaseki-agent
 kaseki-agent doctor --help
 kaseki-agent setup
-kaseki-agent config set api.base_url http://localhost:8080/api --global
+kaseki-agent config set api.base_url http://localhost:8080/api/v1 --global
 
 # Start the API service in one terminal.
-KASEKI_API_KEYS=sk-dev kaseki-agent serve --port 8080
+KASEKI_API_KEYS=sk-dev KASEKI_API_KEY_SCOPES='{"sk-dev":["runs:read","runs:write"]}' kaseki-agent serve --port 8080
 
 # Use the API-backed client commands in another terminal.
 KASEKI_API_KEY=sk-dev kaseki-agent run https://github.com/your-org/your-repo main "Make the requested change"

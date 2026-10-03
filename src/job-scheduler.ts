@@ -14,7 +14,7 @@ import {
   KasekiApiConfig,
 } from './kaseki-api-config';
 import { createEventLogger, EventLogger } from './logger';
-import { WebhookManager } from './webhook-manager';
+import { WebhookDeliverySummary, WebhookManager } from './webhook-manager';
 import { metricsRegistry } from './metrics';
 import { execSubprocess } from './lib/subprocess-helpers';
 import { FailureArtifactWriter } from './utils/failure-artifact-writer';
@@ -245,8 +245,31 @@ export class JobScheduler {
    */
   listJobs(): Job[] {
     return Array.from(this.jobs.values()).sort(
-      (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id),
     );
+  }
+
+  /** Read durable run history and overlay current in-memory states for API pagination. */
+  async listAllJobs(): Promise<Job[]> {
+    const byId = new Map((await this.persistenceManager.listPersistedJobs()).map((job) => [job.id, job]));
+    for (const job of this.jobs.values()) byId.set(job.id, job);
+    return Array.from(byId.values()).sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id),
+    );
+  }
+
+  async getJobIncludingHistory(id: string): Promise<Job | undefined> {
+    const active = this.jobs.get(id);
+    if (active) return active;
+    return (await this.persistenceManager.listPersistedJobs()).find((job) => job.id === id);
+  }
+
+  getWebhookDeliveries(id: string): WebhookDeliverySummary[] {
+    return this.webhookManager.getDeliveriesForJob(id);
+  }
+
+  retryWebhookDelivery(id: string, deliveryId: string): boolean {
+    return this.webhookManager.retryFailedDelivery(id, deliveryId);
   }
 
   /**

@@ -52,6 +52,7 @@ describe('kaseki API fast route/service integration', () => {
     }
     cleanup = [];
     delete process.env.KASEKI_SKIP_BOOTSTRAP_CHECK;
+    delete process.env.KASEKI_TEMPLATE_DIR;
   });
 
   test('validates request payloads before scheduler submission', async () => {
@@ -62,7 +63,11 @@ describe('kaseki API fast route/service integration', () => {
 
     const response = await fetch(`${harness.baseUrl}/runs`, {
       method: 'POST',
-      headers: { ...auth, 'Content-Type': 'application/json' },
+      headers: {
+        ...auth,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': '22222222-2222-4222-8222-222222222222',
+      },
       body: JSON.stringify({ repoUrl: 'not-a-url' }),
     });
 
@@ -82,12 +87,17 @@ describe('kaseki API fast route/service integration', () => {
       riskScore: 2,
     });
     const harness = await createFastRouteHarness(scheduler, taskAdmissionEvaluator);
+    process.env.KASEKI_TEMPLATE_DIR = path.join(harness.resultsDir, 'template');
     cleanup.push(() => close(harness.server, harness.idempotencyStore));
     cleanup.push(() => fs.rmSync(harness.resultsDir, { recursive: true, force: true }));
 
     const response = await fetch(`${harness.baseUrl}/runs`, {
       method: 'POST',
-      headers: { ...auth, 'Content-Type': 'application/json' },
+      headers: {
+        ...auth,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': '33333333-3333-4333-8333-333333333333',
+      },
       body: JSON.stringify({
         repoUrl: 'https://github.com/example/repo',
         taskPrompt: 'Change deployment permissions',
@@ -182,7 +192,7 @@ describe('kaseki API fast route/service integration', () => {
     expect(payload).toEqual({
       status: 'not_ready',
       timestamp: expect.any(String),
-      reasons: ['results_dir_unwritable:EACCES'],
+      reasons: ['results_dir_unwritable'],
     });
     expect(scheduler.submitJob).not.toHaveBeenCalled();
   });

@@ -19,16 +19,16 @@ The **Gateway Test** feature validates kaseki-agent's LLM gateway connectivity a
 
 ```bash
 # Full two-stage test (connectivity + inference)
-curl http://localhost:3000/api/gateway-test?stage=2
+curl http://localhost:3000/api/v1/gateway-test?inference=true&stage=2
 
 # Stage 1 only (connectivity check)
-curl http://localhost:3000/api/gateway-test?stage=1
+curl http://localhost:3000/api/v1/gateway-test?stage=1
 
 # Full test with Pi provider adapter check
-curl http://localhost:3000/api/gateway-test?stage=2&piProvider=true
+curl http://localhost:3000/api/v1/gateway-test?inference=true&stage=2&piProvider=true
 
 # Full test with debug diagnostics
-curl http://localhost:3000/api/gateway-test?stage=2&piProvider=true&debug=true
+curl http://localhost:3000/api/v1/gateway-test?inference=true&stage=2&piProvider=true&debug=true
 ```
 
 
@@ -80,7 +80,7 @@ test start time as a valid ISO-8601 string.
 
 **Example:**
 ```bash
-curl http://localhost:3000/api/gateway-test?stage=1
+curl http://localhost:3000/api/v1/gateway-test?stage=1
 # Response:
 {
   "status": "ok",
@@ -110,7 +110,7 @@ curl http://localhost:3000/api/gateway-test?stage=1
 
 **Example:**
 ```bash
-curl http://localhost:3000/api/gateway-test?stage=2
+curl http://localhost:3000/api/v1/gateway-test?inference=true&stage=2
 # Response:
 {
   "status": "ok",
@@ -142,10 +142,10 @@ The **Pi provider adapter** translates kaseki-agent's requests into the LLM gate
 
 ```bash
 # Test Pi provider with Cloudflare gateway
-curl "http://localhost:3000/api/gateway-test?stage=2&piProvider=true"
+curl "http://localhost:3000/api/v1/gateway-test?inference=true&stage=2&piProvider=true"
 
 # With debug diagnostics
-curl "http://localhost:3000/api/gateway-test?stage=2&piProvider=true&debug=true"
+curl "http://localhost:3000/api/v1/gateway-test?inference=true&stage=2&piProvider=true&debug=true"
 ```
 
 ### Response Structure
@@ -370,7 +370,7 @@ Use this checklist before deploying kaseki-agent to production:
 
 ```bash
 # Quick connectivity check
-curl http://localhost:3000/api/gateway-test?stage=1
+curl http://localhost:3000/api/v1/gateway-test?stage=1
 
 # Expected output:
 # {
@@ -384,7 +384,7 @@ curl http://localhost:3000/api/gateway-test?stage=1
 
 ```bash
 # Full validation with Pi provider adapter
-curl "http://localhost:3000/api/gateway-test?stage=2&piProvider=true"
+curl "http://localhost:3000/api/v1/gateway-test?inference=true&stage=2&piProvider=true"
 
 # Check response:
 # - status: ok
@@ -398,7 +398,7 @@ curl "http://localhost:3000/api/gateway-test?stage=2&piProvider=true"
 
 ```bash
 # Test with full diagnostics
-curl "http://localhost:3000/api/gateway-test?stage=2&piProvider=true&debug=true"
+curl "http://localhost:3000/api/v1/gateway-test?inference=true&stage=2&piProvider=true&debug=true"
 
 # If fails, check:
 # - piProviderSmoke.diagnostics.fieldsFound
@@ -412,7 +412,7 @@ curl "http://localhost:3000/api/gateway-test?stage=2&piProvider=true&debug=true"
 #!/bin/bash
 # Deploy test: verify gateway before starting kaseki runs
 
-RESPONSE=$(curl -s http://localhost:3000/api/gateway-test?stage=2&piProvider=true)
+RESPONSE=$(curl -s http://localhost:3000/api/v1/gateway-test?inference=true&stage=2&piProvider=true)
 
 if [[ $(echo "$RESPONSE" | jq -r '.piProviderSmoke.status') == "ok" ]]; then
   echo "✅ Gateway test passed, proceeding with deployment"

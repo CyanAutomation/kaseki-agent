@@ -2904,7 +2904,7 @@ describe('JobScheduler persistence merge safety', () => {
     expect(artifactCache.clearForJob).toHaveBeenCalledWith('kaseki-1');
   });
 
-  test('persistJobs truncates old terminal jobs and writes compact JSON at the retention limit', async () => {
+  test('persistJobs retains durable terminal history and writes compact JSON', async () => {
     const resultsDir = createResultsDir();
     const scheduler = new JobScheduler(
       {
@@ -2958,7 +2958,11 @@ describe('JobScheduler persistence merge safety', () => {
       'utf-8',
     );
     const parsed = JSON.parse(rawIndex) as { jobs: Array<{ id: string }> };
-    expect(parsed.jobs.map((job) => job.id)).toEqual(['kaseki-3', 'kaseki-2']);
+    expect(parsed.jobs.map((job) => job.id)).toEqual([
+      'kaseki-3',
+      'kaseki-2',
+      'kaseki-1',
+    ]);
     expect(rawIndex).not.toContain('\n  "');
   });
 });

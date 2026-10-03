@@ -165,13 +165,13 @@ describe('scorecard routes', () => {
     expect(excluded.status).toBe(200);
     expect(excluded.body.scorecards).toEqual([]);
   });
-  test('uses safe pagination defaults for invalid and negative query values', async () => {
+  test('rejects invalid page sizes instead of silently changing the requested page', async () => {
     const {app,dir,card}=fixture(); fs.writeFileSync(path.join(dir,'run-scorecard.json'),JSON.stringify(card));
 
-    const response = await get(app, '/scorecards?limit=not-a-number&offset=-4');
+    const response = await get(app, '/scorecards?limit=not-a-number');
 
-    expect(response.status).toBe(200);
-    expect(response.body.pagination).toMatchObject({ limit: 25, offset: 0 });
+    expect(response.status).toBe(400);
+    expect(response.body.detail).toContain('limit must be a positive integer');
   });
   test('reports another page only when an additional match exists', async () => {
     const first=fixture(); fs.writeFileSync(path.join(first.dir,'run-scorecard.json'),JSON.stringify(first.card));
@@ -190,7 +190,7 @@ describe('scorecard routes', () => {
 
     const fullPage=await get(app,'/scorecards?limit=2');
     expect(fullPage.body.pagination).toMatchObject({ returned:2,hasMore:true });
-    const lastPage=await get(app,'/scorecards?limit=2&offset=2');
+    const lastPage=await get(app,`/scorecards?limit=2&cursor=${encodeURIComponent(fullPage.body.pagination.nextCursor)}`);
     expect(lastPage.body.pagination).toMatchObject({ returned:1,hasMore:false });
   });
 

@@ -2,10 +2,11 @@
  * GitHub Issues Routes
  *
  * Provides endpoints for fetching and filtering GitHub issues:
- * - POST /api/github-issues - Fetch filtered issues from a repository
+ * - POST /api/v1/github-issues - Fetch filtered issues from a repository
  */
 
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import { createLogger } from '../logger';
 import { sendErrorResponse } from '../utils/response-helpers';
 import {
@@ -30,19 +31,19 @@ interface GitHubIssuesResponse {
   issues: GitHubIssueResponse[];
 }
 
-interface FetchIssuesRequest {
-  repoUrl?: string;
-  repo?: string;
-  label?: string;
-  labels?: string[];
+const FetchIssuesRequestSchema = z.object({
+  repoUrl: z.string().trim().min(1).max(500).optional(),
+  repo: z.string().trim().min(1).max(500).optional(),
+  label: z.string().trim().min(1).max(50).optional(),
+  labels: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
   /** Request issues regardless of label instead of applying the default label. */
-  allLabels?: boolean;
-  limit?: number;
-  state?: 'open' | 'closed' | 'all';
-}
+  allLabels: z.boolean().optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+  state: z.enum(['open', 'closed', 'all']).optional(),
+}).strict().refine((body) => Boolean(body.repoUrl || body.repo), 'repoUrl or repo is required');
 
 /**
- * POST /api/github-issues
+ * POST /api/v1/github-issues
  * Fetch GitHub issues from a repository with optional filtering
  *
  * Request body:
@@ -74,7 +75,11 @@ export function createGitHubIssuesRoutes(): Router {
 
   router.post('/github-issues', async (req: Request, res: Response) => {
     try {
-      const body = req.body as FetchIssuesRequest;
+      const parsedBody = FetchIssuesRequestSchema.safeParse(req.body);
+      if (!parsedBody.success) {
+        return sendErrorResponse(res, 400, 'Bad Request', 'Request body must contain a repository and only supported, valid filter fields');
+      }
+      const body = parsedBody.data;
 
       // Validate repo URL
       const repoUrl = body.repoUrl || body.repo;
@@ -131,7 +136,7 @@ export function createGitHubIssuesRoutes(): Router {
 
       const issues = await fetchGitHubIssues(owner, repo, token, {
         labels,
-        limit: body.limit || 5,
+        limit: body.limit ?? 5,
         state: body.state || 'open',
       });
 
@@ -177,7 +182,7 @@ export function createGitHubIssuesRoutes(): Router {
         res,
         500,
         'Internal Server Error',
-        `Failed to fetch GitHub issues: ${errorMessage}`
+        'Failed to fetch GitHub issues'
       );
     }
   });

@@ -2,20 +2,20 @@
 
 ## Run scorecards
 
-`GET /api/runs/:id/scorecard` returns the validated canonical scorecard. Add
+`GET /api/v1/runs/:id/scorecard` returns the validated canonical scorecard. Add
 `?format=markdown` for the same reviewer-safe formatter used by PR generation. It returns `404` for
 an unknown run or a terminal run without a scorecard, `409` when an active run has no provisional
 score, and `422` for a malformed artifact.
 
-`GET /api/scorecards` returns compact summaries from the scheduler's bounded retained index; it
-does not enumerate the results directory or include dimension evidence. `limit` defaults to 25 and
-is capped at 100; use `offset` for pagination. Exact-match filters are `lifecycleStatus`, `grade`,
+`GET /api/v1/scorecards` returns compact summaries from durable run history; it does not enumerate
+the results directory or include dimension evidence. `limit` defaults to 25 and is capped at 100.
+Use the opaque `nextCursor` from the response as `cursor` for the next page. Exact-match filters are `lifecycleStatus`, `grade`,
 `rubricVersion`, `model`, and `repository`; `startedAfter` and `startedBefore` accept ISO-8601 times.
 
 ```bash
-curl -H "Authorization: Bearer sk-your-api-key" http://localhost:8080/api/runs/kaseki-42/scorecard
+curl -H "Authorization: Bearer sk-your-api-key" http://localhost:8080/api/v1/runs/kaseki-42/scorecard
 curl -H "Authorization: Bearer sk-your-api-key" \
-  'http://localhost:8080/api/scorecards?grade=A&limit=25&startedAfter=2026-08-01T00:00:00Z'
+  'http://localhost:8080/api/v1/scorecards?grade=A&limit=25&startedAfter=2026-08-01T00:00:00Z'
 ```
 
 ## Overview
@@ -28,7 +28,9 @@ The Kaseki API Service provides HTTP endpoints for remotely triggering, monitori
 
 ```bash
 # Set API keys and start
-KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
+KASEKI_API_KEYS=sk-test-abc123 \
+KASEKI_API_KEY_SCOPES='{"sk-test-abc123":["runs:read","runs:write"]}' \
+npm run kaseki-api
 
 # Or place one API key per line in /agents/secrets/kaseki_api_keys or ~/secrets/kaseki_api_keys
 npm run kaseki-api
@@ -45,9 +47,15 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | `KASEKI_API_HOST` | loopback when unauthenticated; Node default when authenticated | Optional API bind host. Empty-key unauthenticated mode is rejected unless this is `localhost`, `127.0.0.1`, or `::1`. |
 | `KASEKI_API_KEYS` | *(empty/local unauthenticated)* | Comma-separated API keys for auth; leave empty only for trusted local development |
 | Host secret files | `/agents/secrets/kaseki_api_keys`, then `~/secrets/kaseki_api_keys` | Newline-separated API keys for auth when `KASEKI_API_KEYS` is unset |
-| `KASEKI_API_URL` | `http://localhost:8080/api` | Preferred CLI client base URL for API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
-| `KASEKI_API_BASE_URL` | `http://localhost:8080/api` | Backward-compatible CLI client base URL alias |
+| `KASEKI_API_URL` | `http://localhost:8080/api/v1` | Preferred CLI client base URL for API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
+| `KASEKI_API_BASE_URL` | `http://localhost:8080/api/v1` | Backward-compatible CLI client base URL alias |
 | `KASEKI_API_KEY` | — | CLI client bearer token; omit when the local API is intentionally running with empty `KASEKI_API_KEYS` |
+| `KASEKI_API_KEY_SCOPES` | read-only scopes for each configured key | JSON object mapping configured API keys to allowed scope arrays, such as `{"monitor-key":["runs:read","metrics:read"]}` |
+| `KASEKI_API_RATE_LIMIT_PER_MINUTE` | 300 | Per-key API request limit |
+| `KASEKI_API_DIAGNOSTIC_LIMIT_PER_HOUR` | 10 | Per-key limit for token-consuming diagnostics |
+| `KASEKI_API_WEBHOOK_TESTS_PER_HOUR` | 10 | Per-key limit for webhook tests and manual delivery retries |
+| `KASEKI_API_GITHUB_ISSUES_PER_MINUTE` | 30 | Per-key limit for GitHub issue lookups |
+| `KASEKI_WEBHOOK_ALLOWED_ORIGINS` | *(empty)* | Comma-separated exact HTTP(S) origins allowed to receive webhooks on private networks or over plain HTTP; only use for trusted receivers |
 | `KASEKI_API_LOG_DIR` | /var/log/kaseki-api/ | Log file output directory |
 | `KASEKI_API_MAX_CONCURRENT_RUNS` | 3 | Max concurrent kaseki jobs |
 | `KASEKI_RESULTS_DIR` | /agents/kaseki-results | Directory for run artifacts |
@@ -66,10 +74,10 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 
 ## Authentication
 
-All endpoints (except `/health`, `/api/health`, `/ready`, and `/api/ready`) require Bearer token authentication when the API service is configured with one or more keys:
+All `/api/v1` endpoints except `/api/v1/health` and `/api/v1/ready` require Bearer token authentication when the API service is configured with one or more keys. The root `/health` and `/ready` probes are also unauthenticated; no other routes are mounted at the root.
 
 ```bash
-curl -H "Authorization: Bearer sk-your-api-key" http://localhost:8080/api/runs
+curl -H "Authorization: Bearer sk-your-api-key" http://localhost:8080/api/v1/runs
 ```
 
 The CLI client uses `KASEKI_API_KEY`, `api.key`, or the first configured `api.keys` value as a bearer token. If auth is enabled and the token is missing or invalid, the API returns `401 Unauthorized`.
@@ -77,6 +85,10 @@ The CLI client uses `KASEKI_API_KEY`, `api.key`, or the first configured `api.ke
 > **Warning: unauthenticated mode is for trusted local development only.** When `KASEKI_API_KEYS` is empty, the API service binds to `127.0.0.1` by default, rejects non-loopback requests in route middleware, and refuses to start if `KASEKI_API_HOST` is set to a non-loopback address such as `0.0.0.0`. Do not expose unauthenticated mode through containers, reverse proxies, SSH tunnels, or load balancers. Configure `KASEKI_API_KEYS` before any production or network-accessible deployment.
 
 For intentional local-only development, run the API with `KASEKI_API_KEYS` empty and omit `KASEKI_API_KEY`; the CLI will submit requests without an `Authorization` header.
+
+Configured keys default to read-only access (`runs:read`, `artifacts:read`, `diagnostics:read`, `metrics:read`, and `usage:read`). Grant only the extra scopes each key needs through `KASEKI_API_KEY_SCOPES`; run clients need `runs:write`. Supported scopes are `runs:read`, `runs:write`, `artifacts:read`, `diagnostics:read`, `diagnostics:run`, `metrics:read`, `github:read`, `webhooks:write`, and `usage:read`. Fixed-window limits are process-local. `GET /api/v1/usage` reports counts for the presented key; gateway spend is reported as `costUsd: null` because token cost is not currently available from the gateway probe.
+
+Every API response includes `X-Request-ID`. Errors use `application/problem+json` with `type`, `title`, `status`, `detail`, `instance`, and `requestId` fields.
 
 ## Interactive Swagger Documentation
 
@@ -98,9 +110,9 @@ http://localhost:8080/docs
 - **View request/response schemas** with type information and examples
 - **Try it out:** Send test requests directly from the UI with automatic code samples
 - **Authentication:** Authorize with your Bearer token in the top-right corner
-- **OpenAPI specification:** Access the raw spec at `http://localhost:8080/api/openapi.json`
+- **OpenAPI specification:** Access the raw spec at `http://localhost:8080/api/v1/openapi.json`
 
-### Example: Testing `/api/runs` Endpoint
+### Example: Testing `/api/v1/runs` Endpoint
 
 1. Open <http://localhost:8080/docs>
 2. Click **"Run Management"** → **"Trigger a new kaseki run"**
@@ -113,35 +125,28 @@ http://localhost:8080/docs
 
 ### Health Check
 
-**GET `/health`** or **GET `/api/health`**
+**GET `/health`** or **GET `/api/v1/health`**
 
-No authentication required. Check service health and queue status.
+No authentication required. This minimal liveness probe confirms the HTTP process is serving requests.
 
 **Response (200 OK):**
 
 ```json
 {
-  "status": "healthy",
-  "timestamp": "2026-05-02T14:30:00Z",
-  "queue": {
-    "pending": 2,
-    "running": 1,
-    "maxConcurrent": 3
-  }
+  "status": "ok",
+  "timestamp": "2026-10-03T14:30:00.000Z"
 }
 ```
 
-`image` and `templateImage` reflect the configured image reference that the runner looks up locally, such as `docker.io/cyanautomation/kaseki-agent:latest`. `imageDigest` and `templateImageDigest` report the resolved local digest when available.
-
 ### Controller Preflight
 
-**GET `/api/preflight`**
+**GET `/api/v1/preflight`**
 
 Requires authentication. Run this before submitting jobs from OpenClaw or another remote controller. It validates the runtime dependencies that the API needs in order to launch ephemeral Kaseki containers.
 
 ```bash
 curl -H "Authorization: Bearer sk-your-api-key" \
-  http://localhost:8080/api/preflight
+  http://localhost:8080/api/v1/preflight
 ```
 
 **Response (200 OK or 503 Service Unavailable):**
@@ -195,7 +200,7 @@ and is intentionally excluded from the current readiness status:
     "scope": "startup",
     "readinessImpact": "excluded-from-current-readiness",
     "current": false,
-    "recommendedCurrentEndpoint": "/api/preflight",
+    "recommendedCurrentEndpoint": "/api/v1/preflight",
     "timestamp": "2026-05-03T21:29:50.000Z",
     "cachedAt": "2026-05-03T21:29:50.000Z",
     "checks": []
@@ -203,25 +208,25 @@ and is intentionally excluded from the current readiness status:
 }
 ```
 
-Use the top-level `/api/preflight` `status`, `timestamp`, and `checks` fields for
+Use the top-level `/api/v1/preflight` `status`, `timestamp`, and `checks` fields for
 current readiness decisions.
 
 ### Gateway Diagnostics
 
-**GET `/api/gateway-test`**
+**GET `/api/v1/gateway-test`**
 
 Requires authentication. Runs LLM gateway diagnostics in layers:
 
-- `?stage=1` checks gateway reachability and authentication via `/models` without inference tokens for standard OpenAI-compatible gateways. Cloudflare `/compat` URLs are scoped gateway URLs (`/v1/{account_id}/{gateway_id}/compat`) and are probed through `/compat/chat/completions` instead of being reduced to `/v1/models`; this minimal probe may consume a small amount of gateway/provider quota.
-- `?stage=2&responseSmoke=true` checks OpenAI Responses API inference with the configured gateway model, defaulting to `dynamic/kaseki-agent` via `KASEKI_MODEL` or `LLM_GATEWAY_MODEL`, including JSON, streaming, and larger prompt responses. This consumes gateway tokens.
-- `?stage=2&responseSmoke=true&piProvider=true` also runs a Pi CLI provider smoke through `--provider gateway --model <configured-model>`, where the model is `LLM_GATEWAY_MODEL`, `KASEKI_MODEL`, or the default `dynamic/kaseki-agent`. This production adapter check catches Pi provider registration problems even when raw gateway HTTP checks pass. In development/test it is skipped unless `KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE=1` is set.
+- The default query-free request runs the connectivity check. Standard OpenAI-compatible gateways use `/models`; Cloudflare `/compat` gateways use a scoped compatibility probe that may consume a small amount of provider quota.
+- Inference, Pi adapter, and evaluation checks require explicit `inference=true`. Stage 2 checks Responses API inference with the configured gateway model and consumes gateway tokens.
+- `piProvider=true` also runs a Pi CLI provider smoke. In development/test it is skipped unless `KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE=1` is set.
 
 ```bash
 curl -H "Authorization: Bearer sk-your-api-key" \
-  "http://localhost:8080/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"
+  "http://localhost:8080/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true"
 ```
 
-For Cloudflare `/compat` gateways, use `/api/gateway-test?stage=2&responseSmoke=true` as the authoritative compatibility check; Stage 2 records that Responses API smoke is not applicable and relies on the scoped compatibility probe.
+For Cloudflare `/compat` gateways, use `/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true` as the authoritative compatibility check. Requests that ask for costly checks without `inference=true` return `400`.
 
 Successful raw gateway checks do not prove the Pi provider adapter is healthy.
 When provider failures occur, inspect `.gateway-diagnostics.jsonl` along with
@@ -229,25 +234,25 @@ When provider failures occur, inspect `.gateway-diagnostics.jsonl` along with
 
 ### Startup Health Report
 
-**GET `/api/startup-health`**
+**GET `/api/v1/startup-health`**
 
 Requires authentication. Returns the cached boot-time startup health report that
 was generated during API initialization. This endpoint is historical diagnostic
 context, not a live readiness probe, and JSON responses are marked with
 `scope: "startup"`, `current: false`, and
-`recommendedCurrentEndpoint: "/api/preflight"`.
+`recommendedCurrentEndpoint: "/api/v1/preflight"`.
 
 ```bash
 curl -H "Authorization: Bearer sk-your-api-key" \
-  http://localhost:8080/api/startup-health
+  http://localhost:8080/api/v1/startup-health
 ```
 
 Request Markdown with `Accept: text/markdown` or `?format=markdown` for operator
-runbooks. For current controller readiness, call `GET /api/preflight` instead.
+runbooks. For current controller readiness, call `GET /api/v1/preflight` instead.
 
 ### Readiness Check
 
-**GET `/ready`** or **GET `/api/ready`**
+**GET `/ready`** or **GET `/api/v1/ready`**
 
 No authentication required. Returns readiness for queue/scheduler dependencies used to accept and execute runs.
 
@@ -272,15 +277,13 @@ No authentication required. Returns readiness for queue/scheduler dependencies u
 {
   "status": "not_ready",
   "timestamp": "2026-05-05T12:00:00.000Z",
-  "reasons": [
-    "results_dir_unwritable:EACCES: permission denied, access '/agents/kaseki-results'"
-  ]
+  "reasons": ["results_dir_unwritable"]
 }
 ```
 
 ### Prometheus Metrics
 
-**GET `/api/metrics`**
+**GET `/api/v1/metrics`**
 
 Requires authentication. Returns Prometheus text exposition (`text/plain; version=0.0.4`) including:
 
@@ -290,10 +293,15 @@ Requires authentication. Returns Prometheus text exposition (`text/plain; versio
 - `kaseki_run_duration_seconds` (histogram)
 - `kaseki_timeouts_total` (counter)
 - `kaseki_timeout_rate` (gauge)
+- `kaseki_api_requests_total{method,route,status_class}` (counter)
+- `kaseki_api_request_duration_seconds_{sum,count}{method,route}` (summary)
+- Artifact cache and dependency cache gauges/counters
+
+API route labels use Express route templates (for example `/runs/:id/status`) to keep label cardinality bounded.
 
 ### Trigger a Run
 
-**POST `/api/runs`**
+**POST `/api/v1/runs`**
 
 Submit a new kaseki job to the queue. Returns immediately (async).
 
@@ -306,8 +314,9 @@ follow the configured fail-open policy.
 **Request:**
 
 ```bash
-curl -X POST http://localhost:8080/api/runs \
+curl -X POST http://localhost:8080/api/v1/runs \
   -H "Authorization: Bearer sk-your-api-key" \
+  -H "Idempotency-Key: 123e4567-e89b-42d3-a456-426614174000" \
   -H "Content-Type: application/json" \
   -d '{
     "repoUrl": "https://github.com/org/repo",
@@ -341,9 +350,12 @@ curl -X POST http://localhost:8080/api/runs \
   startupCheck?: boolean;     // Start worker, verify boot/runtime, then exit
   scouting?: { enabled?: boolean; model?: string; timeoutSeconds?: number }; // Optional; default behavior is enabled when omitted
   runEvaluation?: { enabled?: boolean; model?: string; timeoutSeconds?: number }; // Optional final task-agnostic run evaluator
+  idempotencyKey?: string;     // UUID v4; required here or in the Idempotency-Key header
   timeoutSeconds?: number;    // Optional per-run timeout (60-10800 seconds)
 }
 ```
+
+The caller must generate and reuse a UUID v4 idempotency key for network retries. If both header and body fields are set, they must match. Omitting both returns `400`.
 
 Omitting `publishMode` defaults controller API runs to `pr`, which pushes
 a Kaseki branch and creates a normal pull request after validation. Set
@@ -352,7 +364,7 @@ a Kaseki branch and creates a normal pull request after validation. Set
 branch without opening a PR, `auto` creates a normal PR when credentials are
 available and gracefully skips when they are not, and `none` skips GitHub
 publishing. Requests with effective publish mode `branch` or `pr` fail before
-queueing unless GitHub App credentials are readable; call `GET /api/preflight`
+queueing unless GitHub App credentials are readable; call `GET /api/v1/preflight`
 first to verify that readiness.
 
 ### Automatic Owner Review Requests (Personal Repositories)
@@ -410,7 +422,7 @@ When scouting is enabled (`scouting.enabled: true` or `KASEKI_SCOUTING=1`), the 
 
 See [docs/QUICK_START.md](QUICK_START.md#scouting-agent--allowlist-control) for usage examples and [docs/ADVANCED_CONFIG.md](ADVANCED_CONFIG.md) for detailed allowlist configuration.
 
-For controller activation checks, submit `startupCheck: true` or call `POST /api/runs?dryRun=true`. The default `startupCheckMode: "boot"` performs a minimal container boot smoke test for OpenRouter secret mount, writable workspace/results/cache paths, Node, Git, and Pi CLI without cloning or installing dependencies. Use `startupCheckMode: "baseline-validation"` (or provide validation commands with the startup check) to keep Pi disabled while invoking `/usr/local/bin/kaseki-agent` far enough to clone the repo, install dependencies, and run pre-agent baseline validation.
+For controller activation checks, submit `startupCheck: true` or call `POST /api/v1/runs?dryRun=true`. The default `startupCheckMode: "boot"` performs a minimal container boot smoke test for OpenRouter secret mount, writable workspace/results/cache paths, Node, Git, and Pi CLI without cloning or installing dependencies. Use `startupCheckMode: "baseline-validation"` (or provide validation commands with the startup check) to keep Pi disabled while invoking `/usr/local/bin/kaseki-agent` far enough to clone the repo, install dependencies, and run pre-agent baseline validation.
 
 Dependency installation in worker runs is lockfile-enforced (`npm ci --omit=dev`, optionally with `--ignore-scripts`), and run artifacts expose cache/install observability. Controllers can read `progress.jsonl`, `stage-timings.tsv`, and `dependency-cache.log` for install elapsed time plus cache hit/miss and reuse source details.
 
@@ -430,17 +442,23 @@ PR-publishing patch runs (`publishMode: "pr"`) run a final annotate-only Pi eval
 
 The evaluator writes `run-evaluation.json` plus event, summary, and stderr artifacts. It never blocks PR creation in v1; failures are recorded as warnings.
 
-**GET `/api/improvements?limit=50`**
+**GET `/api/v1/improvements?limit=50`**
 
-Returns recent terminal-run improvement aggregates from indexed runs, including assessment/confidence counts, evaluator availability, recurring improvement opportunities, slowest stages, and compact per-run entries.
+Returns cursor-paginated terminal-run improvement data from durable run history. `totalRuns` counts all terminal runs; evaluator counts, opportunities, stage timings, and run summaries describe only the current page. Use `nextCursor` to continue.
 
-**Response (202 Accepted):**
+**Response (200 OK):**
 
 ```json
 {
-  "id": "kaseki-42",
-  "status": "queued",
-  "createdAt": "2026-05-02T14:30:00Z"
+  "limit": 50,
+  "totalRuns": 82,
+  "hasMore": true,
+  "nextCursor": "eyJjcmVhdGVkQXQiOi...",
+  "counts": { "byAssessment": { "good": 12 }, "byConfidence": { "high": 12 } },
+  "evaluator": { "available": 12, "missing": 0, "invalid": 0, "expired": 38, "diagnostics": {} },
+  "topImprovementOpportunities": [],
+  "slowestStages": [],
+  "runs": []
 }
 ```
 
@@ -448,9 +466,9 @@ Idempotency replays return `200 OK` with `cached: true` and the current job stat
 
 ### List All Runs
 
-**GET `/api/runs`**
+**GET `/api/v1/runs`**
 
-List recent kaseki runs, newest first.
+List durable run history, newest first. Use `limit` (1–500) and the opaque `cursor` from `nextCursor`. Optional filters are `status`, exact `repo`, `from`, and `to` (ISO 8601). `total` is counted after filters and before cursor pagination. Artifact files may expire independently of run history.
 
 **Response (200 OK):**
 
@@ -469,13 +487,16 @@ List recent kaseki runs, newest first.
       "completedAt": "2026-05-02T14:28:00Z"
     }
   ],
-  "total": 2
+  "total": 2,
+  "hasMore": false
 }
 ```
 
+`GET /api/v1/runs/:id` returns the canonical run resource with lifecycle timestamps and links to status, events, artifacts, analysis, scorecard, and webhook deliveries. Read-only detail routes resolve records from durable history. `resultDir` is internal and is not returned.
+
 ### Get Run Status
 
-**GET `/api/runs/:id/status`**
+**GET `/api/v1/runs/:id/status`**
 
 Poll the status of a specific run. Returns progress and timeout risk.
 
@@ -556,7 +577,7 @@ For non-running jobs, `progress` is omitted.
 - `failureJsonContent` — Inline structured failure details (only for failed runs, ≤64 KB)
 - `goalCheckFailureReason` — Goal-check failure reason when a goal-check evaluator failed or rejected the run
 
-These optional fields eliminate the need for separate API calls to fetch critical diagnostic content. Controllers can immediately access failure reasons without calling `/api/results/:id/result-summary.md` and `/api/results/:id/failure.json`.
+These optional fields eliminate the need for separate API calls to fetch critical diagnostic content. Controllers can immediately access failure reasons without calling `/api/v1/results/:id/result-summary.md` and `/api/v1/results/:id/failure.json`.
 
 **Legacy Response Fields:**
 
@@ -576,44 +597,17 @@ For backward compatibility, the response still includes:
 
 **Timeout Risk:** Percentage of agent timeout elapsed. Monitor for >85% and consider canceling if needed.
 
-### Get Progress Events
-
-**GET `/api/runs/:id/progress`**
-
-Returns sanitized progress events from `progress.jsonl`. Assistant text, environment values, and secrets are not included.
-For running jobs whose result directory has not been promoted yet, the API falls back to sanitized `[progress]` lines from the live Docker container logs.
-
-```bash
-curl -H "Authorization: Bearer sk-your-api-key" \
-  "http://localhost:8080/api/runs/kaseki-42/progress?tail=25"
-```
-
-**Response (200 OK):**
-
-```json
-{
-  "id": "kaseki-42",
-  "status": "running",
-  "events": [
-    {
-      "timestamp": "2026-05-02T14:31:00Z",
-      "stage": "pi coding agent",
-      "message": "working; events=65, tool starts=4, tool ends=3"
-    }
-  ],
-  "total": 120
-}
-```
+The former `/runs/:id/progress` endpoint has been removed. Use `/runs/:id/events` for a sanitized snapshot or `/runs/:id/events/stream` for live SSE updates.
 
 ### Get Controller Events
 
-**GET `/api/runs/:id/events`**
+**GET `/api/v1/runs/:id/events`**
 
 Returns a controller-friendly event snapshot. It reads promoted `progress.jsonl` events when available and appends sanitized live Docker progress events while the worker container is still running.
 
 ```bash
 curl -H "Authorization: Bearer sk-your-api-key" \
-  "http://localhost:8080/api/runs/kaseki-42/events?tail=50"
+  "http://localhost:8080/api/v1/runs/kaseki-42/events?tail=50"
 ```
 
 **Response (200 OK):**
@@ -636,14 +630,14 @@ curl -H "Authorization: Bearer sk-your-api-key" \
 
 ### Cancel a Run
 
-**POST `/api/runs/:id/cancel`**
+**POST `/api/v1/runs/:id/cancel`**
 
-Cancels a queued or running job. Completed jobs are returned unchanged.
+Cancels a queued or running job. Completed jobs are returned unchanged with `cancelOutcome: "already_terminal"`; accepted cancellation returns `cancelOutcome: "cancelled"`.
 Cancelled jobs get API-written fallback diagnostics when the worker exits before writing its own final artifacts. Guaranteed non-empty files on failure are: `analysis.md`, `metadata.json`, `stderr.log`, `failure.json`, and `result-summary.md` (kept for backward compatibility during migration).
 
 ```bash
 curl -X POST -H "Authorization: Bearer sk-your-api-key" \
-  http://localhost:8080/api/runs/kaseki-42/cancel
+  http://localhost:8080/api/v1/runs/kaseki-42/cancel
 ```
 
 **Response (200 OK):**
@@ -660,7 +654,7 @@ curl -X POST -H "Authorization: Bearer sk-your-api-key" \
 
 ### Get Logs
 
-**GET `/api/runs/:id/logs/:logtype`**
+**GET `/api/v1/runs/:id/logs/:logtype`**
 
 Retrieve specific log files from a run.
 
@@ -677,7 +671,7 @@ Retrieve specific log files from a run.
 
 ```bash
 curl -H "Authorization: Bearer sk-your-api-key" \
-  http://localhost:8080/api/runs/kaseki-42/logs/stdout
+  http://localhost:8080/api/v1/runs/kaseki-42/logs/stdout
 ```
 
 **Response (200 OK):**
@@ -694,7 +688,7 @@ Note: Large logs (>100 KB) are truncated with a marker showing how much is hidde
 
 ### Get Run Analysis
 
-**GET `/api/runs/:id/analysis`**
+**GET `/api/v1/runs/:id/analysis`**
 
 Comprehensive post-run analysis including metadata, changes, and validation results.
 
@@ -738,7 +732,7 @@ Comprehensive post-run analysis including metadata, changes, and validation resu
 
 ### List Run Artifacts (Discovery Endpoint)
 
-**GET `/api/runs/:id/artifacts`**
+**GET `/api/v1/runs/:id/artifacts`**
 
 Comprehensively enumerate all available artifacts with metadata, descriptions, and availability status.
 This endpoint exposes 25+ artifact types with detailed metadata to guide clients on triage priority and content selection.
@@ -752,7 +746,7 @@ Resolution logic:
 
 ```bash
 curl -s -H "Authorization: Bearer sk-your-api-key" \
-  http://localhost:8080/api/runs/kaseki-42/artifacts | jq '.'
+  http://localhost:8080/api/v1/runs/kaseki-42/artifacts | jq '.'
 ```
 
 **Response (200 OK):**
@@ -763,7 +757,7 @@ curl -s -H "Authorization: Bearer sk-your-api-key" \
   "runStatus": "failed",
   "exitCode": 1,
   "artifactCount": 18,
-  "downloadBaseUrl": "/api/results/kaseki-42/",
+  "downloadBaseUrl": "/api/v1/results/kaseki-42/",
   "artifacts": [
     {
       "name": "failure.json",
@@ -855,15 +849,15 @@ curl -s -H "Authorization: Bearer sk-your-api-key" \
 
 ### Download Artifact
 
-**GET `/api/results/:id/:file`**
+**GET `/api/v1/results/:id/:file`**
 
-Download a specific artifact file. Now supports all 25+ artifact types enumerated by `/api/runs/:id/artifacts`.
+Downloads the artifact as raw bytes with its actual content type and `Content-Disposition: attachment`. Downloads are capped at 64 MiB (larger artifacts return `413`). Sensitive text artifacts are redacted before delivery. `?format=rendered` for `run-evaluation.json` remains a JSON representation; `?tail=N` returns the last N lines of supported text artifacts.
 
 **Example:**
 
 ```bash
 curl -H "Authorization: Bearer sk-your-api-key" \
-  http://localhost:8080/api/results/kaseki-42/failure.json
+  http://localhost:8080/api/v1/results/kaseki-42/failure.json
 ```
 
 **Availability Filtering:**
@@ -884,7 +878,7 @@ Structured fields are authoritative for UI binding; `markdown` is optional and o
 
 ```bash
 curl -s -H "Authorization: Bearer sk-your-api-key" \
-  "http://localhost:8080/api/results/kaseki-42/run-evaluation.json?format=rendered&markdown=true" | jq '.'
+  "http://localhost:8080/api/v1/results/kaseki-42/run-evaluation.json?format=rendered&markdown=true" | jq '.'
 ```
 
 **Example response (200 OK):**
@@ -943,8 +937,9 @@ Common error codes:
 ### 1. Trigger a run
 
 ```bash
-RESPONSE=$(curl -s -X POST http://localhost:8080/api/runs \
+RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/runs \
   -H "Authorization: Bearer sk-test-key" \
+  -H "Idempotency-Key: 123e4567-e89b-42d3-a456-426614174000" \
   -H "Content-Type: application/json" \
   -d '{
     "repoUrl": "https://github.com/org/repo",
@@ -960,7 +955,7 @@ echo "Run started: $RUN_ID"
 ```bash
 while true; do
   STATUS=$(curl -s -H "Authorization: Bearer sk-test-key" \
-    http://localhost:8080/api/runs/$RUN_ID/status)
+    http://localhost:8080/api/v1/runs/$RUN_ID/status)
   
   STATE=$(echo $STATUS | jq -r '.status')
   PROGRESS=$(echo $STATUS | jq -r '.progress // "waiting"')
@@ -978,11 +973,11 @@ done
 ```bash
 # Get comprehensive analysis
 curl -s -H "Authorization: Bearer sk-test-key" \
-  http://localhost:8080/api/runs/$RUN_ID/analysis | jq '.'
+  http://localhost:8080/api/v1/runs/$RUN_ID/analysis | jq '.'
 
 # Download the diff
 curl -H "Authorization: Bearer sk-test-key" \
-  http://localhost:8080/api/results/$RUN_ID/git.diff -o changes.diff
+  http://localhost:8080/api/v1/results/$RUN_ID/git.diff -o changes.diff
 ```
 
 ## Best Practices
@@ -1005,11 +1000,44 @@ curl -H "Authorization: Bearer sk-test-key" \
    - `quality` — Diff/allowlist/secret scan violation
    - `empty-diff` — No changes (when mode=patch)
 
+### Webhook Delivery History
+
+**GET `/api/v1/runs/:id/webhook-deliveries`**
+
+Requires `runs:read`. Returns durable, secret-free delivery state and attempt history for the run. Delivery URLs and payload bodies are never returned. Terminal history is retained for the newest 1,000 deliveries.
+
+**POST `/api/v1/runs/:id/webhook-deliveries/:deliveryId/retry`**
+
+Requires `webhooks:write`. Retries a terminal failed delivery and returns `202 Accepted`; retrying a successful or active delivery returns `409 Conflict`.
+
+Webhook delivery uses HTTPS and public internet destinations by default. The sender rejects private, loopback, link-local, and other non-public DNS answers, pins the selected address for the request, and does not follow redirects. To deliver to a trusted private receiver, set `KASEKI_WEBHOOK_ALLOWED_ORIGINS` to its exact origin (scheme, host, and port, no path). This explicitly permits that origin to use HTTP or resolve to private addresses.
+
+### API Usage
+
+**GET `/api/v1/usage`**
+
+Requires `usage:read`. Returns in-process request, diagnostic, webhook retry/test, and GitHub lookup counts plus configured rate limits for the current key. `costUsd` is `null` until the gateway exposes reliable per-request cost data.
+
+### GitHub Issues
+
+**POST `/api/v1/github-issues`**
+
+Requires `github:read`. The strict request body accepts `repoUrl` or `repo` (`owner/repo`), one `label` or up to ten `labels`, `allLabels`, `limit` (1–100, default 5), and `state` (`open`, `closed`, or `all`). Invalid or extra fields return `400` before a GitHub App call; per-key limits return `429` with `Retry-After`.
+
+```json
+{
+  "repoUrl": "https://github.com/CyanAutomation/kaseki-agent",
+  "labels": ["bug", "help wanted"],
+  "limit": 20,
+  "state": "open"
+}
+```
+
 ## API Versioning
 
-Current version: **v1** (embedded in base path `/api/`)
+Current version: **v1** (embedded in base path `/api/v1/`)
 
-Future versions will use `/api/v2/`, `/api/v3/`, etc., allowing peaceful transitions.
+Breaking API contract changes use a new top-level version such as `/api/v2/`.
 
 ---
 
@@ -1035,11 +1063,12 @@ if (!validation.isValid) {
 }
 
 // Submit via direct HTTP call (client.submit() is deprecated)
-const response = await fetch('http://localhost:8080/api/runs', {
+const response = await fetch('http://localhost:8080/api/v1/runs', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
-    'Authorization': 'Bearer sk-api-key'
+    'Authorization': 'Bearer sk-api-key',
+    'Idempotency-Key': crypto.randomUUID()
   },
   body: JSON.stringify({
     repoUrl: 'https://github.com/org/repo',

@@ -109,11 +109,12 @@ const ScorecardSummarySchema = z.object({
 });
 const ScorecardsListResponseSchema = z.object({
   scorecards: z.array(ScorecardSummarySchema),
+  total: z.number().int().nonnegative(),
   pagination: z.object({
     limit: z.number().int().positive(),
-    offset: z.number().int().nonnegative(),
     returned: z.number().int().nonnegative(),
     hasMore: z.boolean(),
+    nextCursor: z.string().optional(),
   }),
   filters: z.object({
     lifecycleStatus: z.string().optional(),
@@ -179,7 +180,7 @@ export class KasekiApiClient {
    * Validate a job request before submission.
    */
   async validate(request: RunRequest): Promise<ValidationResponse> {
-    const res = await fetch(`${this.baseUrl}/api/validate`, {
+    const res = await fetch(`${this.baseUrl}/api/v1/validate`, {
       method: 'POST',
       headers: this.baseHeaders,
       body: JSON.stringify(request),
@@ -205,7 +206,7 @@ export class KasekiApiClient {
    * Get the status of a run.
    */
   async getStatus(runId: string): Promise<StatusResponse> {
-    const res = await fetch(`${this.baseUrl}/api/runs/${runId}/status`, {
+    const res = await fetch(`${this.baseUrl}/api/v1/runs/${runId}/status`, {
       method: 'GET',
       headers: this.baseHeaders,
     });
@@ -227,14 +228,14 @@ export class KasekiApiClient {
   }
 
   async getScorecard(runId: string): Promise<ScorecardResponse> {
-    const res = await fetch(`${this.baseUrl}/api/runs/${encodeURIComponent(runId)}/scorecard`, { headers: this.baseHeaders });
+    const res = await fetch(`${this.baseUrl}/api/v1/runs/${encodeURIComponent(runId)}/scorecard`, { headers: this.baseHeaders });
     if (!res.ok) { await res.text().catch(() => {}); throw new Error(`Failed to get scorecard: ${res.status}`); }
     return ScorecardResponseSchema.parse(await res.json());
   }
 
   async listScorecards(query: Record<string, string | number> = {}): Promise<ScorecardsListResponse> {
     const params = new URLSearchParams(Object.entries(query).map(([key, value]) => [key, String(value)]));
-    const res = await fetch(`${this.baseUrl}/api/scorecards${params.size ? `?${params}` : ''}`, { headers: this.baseHeaders });
+    const res = await fetch(`${this.baseUrl}/api/v1/scorecards${params.size ? `?${params}` : ''}`, { headers: this.baseHeaders });
     if (!res.ok) { await res.text().catch(() => {}); throw new Error(`Failed to list scorecards: ${res.status}`); }
     return ScorecardsListResponseSchema.parse(await res.json());
   }

@@ -173,7 +173,7 @@ Next steps for production REST API:
    docker-compose logs -f kaseki-api
 
 3. Submit a task via API:
-   curl -X POST http://localhost:8080/api/runs \\
+   curl -X POST http://localhost:8080/api/v1/runs \\
      -H "Authorization: Bearer $(grep kaseki_api_keys ~/.kaseki/secrets.json | head -1)" \\
      -H "Content-Type: application/json" \\
      -d '{
@@ -183,7 +183,7 @@ Next steps for production REST API:
      }'
 
 4. Monitor progress:
-   curl http://localhost:8080/api/runs
+   curl http://localhost:8080/api/v1/runs
       `,
     };
 
