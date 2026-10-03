@@ -36,7 +36,7 @@ describe('postWebhookSafely', () => {
   });
 
   test('pins the request to a validated DNS answer', async () => {
-    const request = jest.fn(async (_url, options) => ({
+    const request = jest.fn(async (_url, _options) => ({
       status: 204,
       statusText: 'No Content',
       ok: true,

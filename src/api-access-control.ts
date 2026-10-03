@@ -38,8 +38,7 @@ interface RateWindow {
   count: number;
 }
 
-interface MutableUsage extends ApiUsageSnapshot {
-}
+type MutableUsage = ApiUsageSnapshot;
 
 /** In-process API key scope, burst limit, and usage accounting. */
 export class ApiAccessController {

@@ -1226,7 +1226,7 @@ describe('kaseki-api-routes template readiness gate', () => {
       const res = await fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), repoUrl: 'https://github.com/org/repo', idempotencyKey: crypto.randomUUID() })
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), repoUrl: 'https://github.com/org/repo' })
       });
       const body = (await res.json()) as any;
 

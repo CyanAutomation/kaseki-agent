@@ -71,7 +71,7 @@ export function queryRegistryMetadata(selector, exec = execFileSync) {
   }
 }
 
-export function verifyPackageMetadata({ name, selector }, metadata, { allowMissingNodeEngine = false } = {}) {
+export function verifyPackageMetadata({ selector }, metadata, { allowMissingNodeEngine = false } = {}) {
   const pinnedVersion = selector.slice(selector.lastIndexOf('@') + 1);
   if (metadata.version !== pinnedVersion) {
     throw new Error(
