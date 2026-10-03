@@ -109,12 +109,12 @@ export function isPublicInternetAddress(address: string): boolean {
       if (ipv6.isIPv4MappedAddress()) parsed = ipv6.toIPv4Address();
     }
 
-    // `unicast` is the only ipaddr.js range that is globally routable. Keep
-    // the non-public ranges explicit here so a future broadening of this
-    // predicate cannot accidentally turn private or special-use addresses
-    // into valid webhook destinations.
+    // Check the actual range returned by ipaddr.js against the explicit
+    // denylist before allowing its globally routable `unicast` range. The
+    // final equality also fails closed if ipaddr.js adds another range later.
     const range = parsed.range();
-    return range === 'unicast' && !NON_PUBLIC_ADDRESS_RANGES.has(range);
+    if (NON_PUBLIC_ADDRESS_RANGES.has(range)) return false;
+    return range === 'unicast';
   } catch {
     return false;
   }
