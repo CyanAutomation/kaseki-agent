@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import { readHostSecret } from './secrets/host-secrets-reader';
+import type { ApiScope } from './api-access-control';
 
 /**
  * Configuration for the Kaseki API service.
@@ -15,6 +16,12 @@ export interface KasekiApiConfig {
   /** Optional HTTP bind host. Omitted values keep Node's default all-interface binding. */
   host?: string;
   apiKeys: string[];
+  /** Optional per-key scope overrides keyed by the configured bearer token. */
+  apiKeyScopes?: Record<string, ApiScope[]>;
+  apiRequestsPerMinute?: number;
+  apiDiagnosticsPerHour?: number;
+  apiWebhookTestsPerHour?: number;
+  apiGitHubIssuesPerMinute?: number;
   resultsDir: string;
   maxConcurrentRuns: number;
   defaultTaskMode: 'patch' | 'inspect';
@@ -197,6 +204,7 @@ function loadArtifactCacheConfig(): {
  */
 export function loadConfig(): KasekiApiConfig {
   const apiKeys = loadApiKeys();
+  const apiKeyScopes = loadApiKeyScopes(apiKeys);
 
   const port = validatePort('KASEKI_API_PORT', 8080);
   const host = validateApiHost(apiKeys);
@@ -237,6 +245,11 @@ export function loadConfig(): KasekiApiConfig {
     port,
     host,
     apiKeys,
+    apiKeyScopes,
+    apiRequestsPerMinute: validatePositiveInt('KASEKI_API_RATE_LIMIT_PER_MINUTE', 300),
+    apiDiagnosticsPerHour: validatePositiveInt('KASEKI_API_DIAGNOSTIC_LIMIT_PER_HOUR', 10),
+    apiWebhookTestsPerHour: validatePositiveInt('KASEKI_API_WEBHOOK_TESTS_PER_HOUR', 10),
+    apiGitHubIssuesPerMinute: validatePositiveInt('KASEKI_API_GITHUB_ISSUES_PER_MINUTE', 30),
     resultsDir,
     maxConcurrentRuns,
     defaultTaskMode: taskMode,
@@ -253,6 +266,35 @@ export function loadConfig(): KasekiApiConfig {
     dependencyCacheMaxBytes,
     dependencyCacheMaxAgeDays,
   };
+}
+
+const VALID_API_SCOPES: ApiScope[] = [
+  'runs:read', 'runs:write', 'artifacts:read', 'diagnostics:read',
+  'diagnostics:run', 'metrics:read', 'github:read', 'webhooks:write', 'usage:read',
+];
+
+function loadApiKeyScopes(apiKeys: string[]): Record<string, ApiScope[]> {
+  const raw = process.env.KASEKI_API_KEY_SCOPES;
+  if (!raw?.trim()) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('KASEKI_API_KEY_SCOPES must be a JSON object mapping API keys to scope arrays');
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('KASEKI_API_KEY_SCOPES must be a JSON object mapping API keys to scope arrays');
+  }
+  const configured = parsed as Record<string, unknown>;
+  const result: Record<string, ApiScope[]> = {};
+  for (const [key, scopes] of Object.entries(configured)) {
+    if (!apiKeys.includes(key)) throw new Error('KASEKI_API_KEY_SCOPES contains a key not present in KASEKI_API_KEYS');
+    if (!Array.isArray(scopes) || scopes.some((scope) => typeof scope !== 'string' || !VALID_API_SCOPES.includes(scope as ApiScope))) {
+      throw new Error('KASEKI_API_KEY_SCOPES contains an invalid scope list');
+    }
+    result[key] = Array.from(new Set(scopes as ApiScope[]));
+  }
+  return result;
 }
 
 /**

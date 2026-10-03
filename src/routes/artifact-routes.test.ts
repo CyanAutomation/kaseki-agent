@@ -207,18 +207,14 @@ describe('artifact-routes', () => {
       try {
         const response = await fetch(`${url}/api/results/${job.id}/metadata.json`);
         const text = await response.text();
-        const body = JSON.parse(text);
 
         expect(response.status).toBe(200);
+        expect(text).toBe(content);
+        expect(response.headers.get('content-type')).toContain('application/json');
+        expect(response.headers.get('content-disposition')).toContain('attachment; filename="metadata.json"');
         expect(mockScheduler.getJob).toHaveBeenCalledWith(job.id);
         expect(fs.statSync).toHaveBeenCalledWith('/results/kaseki-1/metadata.json');
         expect(mockCache.getOrLoad).toHaveBeenCalledWith('/results/kaseki-1/metadata.json');
-        expect(body).toEqual({
-          file: 'metadata.json',
-          contentType: 'application/json',
-          size: Buffer.byteLength(content),
-          content,
-        });
       } finally {
         await close(server);
       }
@@ -241,16 +237,12 @@ describe('artifact-routes', () => {
 
       try {
         const response = await fetch(`${url}/api/results/${job.id}/${fileName}`);
-        const body = await response.json();
+        const body = await response.text();
 
         expect(response.status).toBe(200);
         expect(fs.statSync).toHaveBeenCalledWith(`/results/${job.id}/${fileName}`);
-        expect(body).toEqual({
-          file: fileName,
-          contentType,
-          size: Buffer.byteLength(content),
-          content,
-        });
+        expect(response.headers.get('content-type')).toContain(contentType);
+        expect(body).toBe(content);
       } finally {
         await close(server);
       }
@@ -268,12 +260,12 @@ describe('artifact-routes', () => {
       const { server, url } = await listen(createMountedArtifactApp());
       try {
         const response = await fetch(`${url}/api/results/${job.id}/run-evaluation.json`);
-        const body = await response.json();
+        const body = await response.text();
         expect(response.status).toBe(200);
-        expect(body.content).not.toContain('JEV');
-        expect(body.content).not.toContain('provider-name');
-        expect(body.content).not.toContain('~typesafe/latest');
-        expect(JSON.parse(body.content)).toMatchObject({ summary: expect.stringContaining('Evaluation') });
+        expect(body).not.toContain('JEV');
+        expect(body).not.toContain('provider-name');
+        expect(body).not.toContain('~typesafe/latest');
+        expect(JSON.parse(body)).toMatchObject({ summary: expect.stringContaining('Evaluation') });
       } finally {
         await close(server);
       }
@@ -292,17 +284,11 @@ describe('artifact-routes', () => {
 
       try {
         const response = await fetch(`${url}/api/results/${job.id}/pi-events.jsonl?tail=2`);
-        const body = await response.json();
+        const body = await response.text();
 
         expect(response.status).toBe(200);
-        expect(body).toEqual({
-          file: 'pi-events.jsonl',
-          contentType: 'application/x-jsonl',
-          size: Buffer.byteLength(content),
-          content: '{"line":2}\n{"line":3}\n',
-          truncated: true,
-          tailLines: 2,
-        });
+        expect(body).toBe('{"line":2}\n{"line":3}\n');
+        expect(response.headers.get('x-artifact-tail-lines')).toBe('2');
       } finally {
         await close(server);
       }
@@ -330,6 +316,19 @@ describe('artifact-routes', () => {
       }
     });
 
+    it('rejects artifacts larger than the bounded download size before reading them', async () => {
+      const job = mockCompletedJob();
+      (fs.statSync as jest.Mock).mockReturnValue({ isFile: () => true, size: 64 * 1024 * 1024 + 1 });
+      const { server, url } = await listen(createMountedArtifactApp());
+      try {
+        const response = await fetch(`${url}/api/results/${job.id}/metadata.json`);
+        expect(response.status).toBe(413);
+        expect(mockCache.getOrLoad).not.toHaveBeenCalled();
+      } finally {
+        await close(server);
+      }
+    });
+
     it('serves live stdout for a running job before the stdout artifact exists', async () => {
       const job: Job = {
         ...mockCompletedJob(),
@@ -345,16 +344,11 @@ describe('artifact-routes', () => {
 
       try {
         const response = await fetch(`${url}/api/results/${job.id}/stdout.log`);
-        const body = await response.json();
+        const body = await response.text();
 
         expect(response.status).toBe(200);
         expect(mockScheduler.getLiveDockerLogTail).toHaveBeenCalledWith(job.id, 300);
-        expect(body).toEqual({
-          file: 'stdout.log',
-          contentType: 'text/plain',
-          size: Buffer.byteLength('live line\n'),
-          content: 'live line\n',
-        });
+        expect(body).toBe('live line\n');
       } finally {
         await close(server);
       }
@@ -544,6 +538,7 @@ describe('artifact-routes', () => {
           title: 'Bad Request',
           status: 400,
           detail: 'Artifact not found: metadata.json',
+          instance: `/results/${job.id}/metadata.json`,
         });
       } finally {
         await close(server);

@@ -41,8 +41,8 @@ docker-compose logs kaseki-api | tail -20
 
 ### ✅ Phase 4: API Endpoint Verification
 ```bash
-# Check the /api/preflight endpoint
-curl http://localhost:8080/api/preflight | jq .
+# Check the /api/v1/preflight endpoint
+curl http://localhost:8080/api/v1/preflight | jq .
 
 # Expected:
 {
@@ -80,7 +80,7 @@ npm test -- src/startup/container-preflight.test.ts --no-coverage
 2. Run `sudo kaseki-agent host setup --fix`
 3. Run `sudo kaseki-agent host preflight`
 4. Check `docker-compose` logs
-5. Query `/api/preflight` endpoint
+5. Query `/api/v1/preflight` endpoint
 
 **Expected Result:** All checks pass, status="ok"
 
@@ -101,7 +101,7 @@ npm test -- src/startup/container-preflight.test.ts --no-coverage
 1. Clear system git config: `sudo git config --system --remove-section safe || true`
 2. Start container
 3. Check logs for auto-remediation attempt
-4. Verify `/api/preflight` eventually reports ok=true
+4. Verify `/api/v1/preflight` eventually reports ok=true
 
 **Expected Result:** 
 - Container detects missing git config
@@ -139,7 +139,7 @@ npm test -- src/startup/container-preflight.test.ts --no-coverage
 1. Create `/agents` with restrictive permissions: `sudo mkdir -p /agents && sudo chmod 0700 /agents`
 2. Start container
 3. Check docker-entrypoint.sh validation output
-4. Check `/api/preflight` endpoint
+4. Check `/api/v1/preflight` endpoint
 
 **Expected Result:**
 - docker-entrypoint.sh permission validation fails with clear error
@@ -226,7 +226,7 @@ kaseki-api    | {"timestamp":"2026-06-06T10:05:01Z","level":"debug","component":
 kaseki-api    | {"timestamp":"2026-06-06T10:05:02Z","level":"info","component":"kaseki-api","message":"API server listening on port 8080"}
 ```
 
-### curl /api/preflight output (successful)
+### curl /api/v1/preflight output (successful)
 ```json
 {
   "status": "ok",

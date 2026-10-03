@@ -16,12 +16,14 @@ import { sendErrorResponse } from './response-helpers';
  * @param res Express response object (for error responses)
  * @returns Job object if found, null if error response already sent
  */
-export function getJobOrRespond(
+export async function getJobOrRespond(
   scheduler: JobScheduler,
   jobId: string,
   res: Response
-): Job | null {
-  const job = scheduler.getJob(jobId) ?? findJobCaseInsensitive(scheduler, jobId);
+): Promise<Job | null> {
+  const job = scheduler.getJob(jobId) ??
+    (typeof scheduler.getJobIncludingHistory === 'function' ? await scheduler.getJobIncludingHistory(jobId) : undefined) ??
+    await findJobCaseInsensitive(scheduler, jobId);
   if (!job) {
     const normalizedHint = jobId.toLowerCase();
     const hint = normalizedHint !== jobId ? ` Did you mean: ${normalizedHint}?` : '';
@@ -31,10 +33,11 @@ export function getJobOrRespond(
   return job;
 }
 
-function findJobCaseInsensitive(scheduler: JobScheduler, jobId: string): Job | undefined {
+async function findJobCaseInsensitive(scheduler: JobScheduler, jobId: string): Promise<Job | undefined> {
   const lowerJobId = jobId.toLowerCase();
   if (lowerJobId === jobId) {
     return undefined;
   }
-  return scheduler.listJobs().find((job) => job.id.toLowerCase() === lowerJobId);
+  const jobs = typeof scheduler.listAllJobs === 'function' ? await scheduler.listAllJobs() : scheduler.listJobs();
+  return jobs.find((job) => job.id.toLowerCase() === lowerJobId);
 }

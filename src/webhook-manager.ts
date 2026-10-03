@@ -5,6 +5,7 @@ import { EventEmitter } from 'events';
 import { WebhookPayload, WebhookConfig } from './kaseki-api-types';
 import { createEventLogger, EventLogger } from './logger';
 import { getRetryDecision } from './webhook-retry-policy';
+import { postWebhookSafely, WebhookHttpResponse } from './safe-webhook-http';
 
 /**
  * Webhook delivery attempt record.
@@ -41,11 +42,14 @@ interface PersistedWebhookQueueEntry {
   nextRetryTime?: number;
   deliveryClaimOwner?: string;
   deliveryClaimExpiresAt?: number;
+  terminal?: boolean;
 }
 
 export interface WebhookManagerOptions {
   now?: () => number;
   deliveryClaimLeaseMs?: number;
+  allowedOrigins?: readonly string[];
+  sendWebhook?: (url: string, body: string, headers: Record<string, string>) => Promise<WebhookHttpResponse>;
 }
 
 export interface WebhookQueueSnapshotEntry {
@@ -53,6 +57,15 @@ export interface WebhookQueueSnapshotEntry {
   deliveryAttempts: number;
   nextRetryTime?: number;
   lastAttemptStatus?: WebhookDeliveryAttempt['status'];
+}
+
+export interface WebhookDeliverySummary {
+  id: string;
+  jobId: string;
+  eventType: string;
+  status: WebhookDeliveryAttempt['status'];
+  attempts: Array<Pick<WebhookDeliveryAttempt, 'timestamp' | 'status' | 'statusCode' | 'durationMs' | 'error'>>;
+  nextRetryAt?: string;
 }
 
 /**
@@ -71,6 +84,7 @@ export class WebhookManager extends EventEmitter {
   private readonly fileSystemClockOffsetMs: number;
   private readonly deliveryClaimOwner = `${process.pid}:${crypto.randomUUID()}`;
   private readonly deliveryClaimLeaseMs: number;
+  private readonly sendWebhook: NonNullable<WebhookManagerOptions['sendWebhook']>;
 
   constructor(resultsDir: string, options: WebhookManagerOptions = {}) {
     super();
@@ -79,6 +93,9 @@ export class WebhookManager extends EventEmitter {
     this.deliveryLogLockPath = path.join(resultsDir, '.kaseki-webhook-delivery.log.lock');
     this.now = options.now ?? Date.now;
     this.deliveryClaimLeaseMs = options.deliveryClaimLeaseMs ?? 30_000;
+    this.sendWebhook = options.sendWebhook ?? ((url, body, headers) => postWebhookSafely(url, body, headers, {
+      allowedOrigins: options.allowedOrigins,
+    }));
     // File timestamps use the system clock. Translate them into the injected
     // clock's domain so stale-lock recovery remains deterministic in tests.
     this.fileSystemClockOffsetMs = this.now() - Date.now();
@@ -119,6 +136,79 @@ export class WebhookManager extends EventEmitter {
       webhookUrl: config.url,
       queueSize: this.deliveryQueue.length,
     });
+  }
+
+  /** Return a secret-free delivery history snapshot for one run. */
+  getDeliveriesForJob(jobId: string): WebhookDeliverySummary[] {
+    return this.readPersistedEntries()
+      .filter((entry) => entry.jobId === jobId)
+      .map((entry) => {
+        const attempts = (entry.attempts ?? []).map((attempt) => ({
+          timestamp: attempt.timestamp,
+          status: attempt.status,
+          statusCode: attempt.statusCode,
+          durationMs: attempt.durationMs,
+          error: safeDeliveryError(attempt.error),
+        }));
+        const lastAttempt = attempts[attempts.length - 1];
+        const retryPolicy = entry.config.retryPolicy ?? { maxAttempts: 5, initialDelayMs: 1000, maxDelayMs: 30000 };
+        const status: WebhookDeliveryAttempt['status'] = lastAttempt?.status === 'success'
+          ? 'success'
+          : lastAttempt?.status === 'failed' || entry.terminal || entry.deliveryAttempts >= retryPolicy.maxAttempts
+            ? 'failed'
+            : lastAttempt?.status === 'retry'
+              ? 'retry'
+              : 'pending';
+        return {
+          id: this.deliveryId(entry),
+          jobId: entry.jobId,
+          eventType: entry.payload.eventType,
+          status,
+          attempts,
+          ...(typeof entry.nextRetryTime === 'number' && status === 'retry'
+            ? { nextRetryAt: new Date(entry.nextRetryTime).toISOString() }
+            : {}),
+        };
+      })
+      .sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  /** Requeue a terminal failed delivery once, retaining its prior attempts. */
+  retryFailedDelivery(jobId: string, deliveryId: string): boolean {
+    let lockOwner: string | undefined;
+    try {
+      lockOwner = this.acquireDeliveryLogLock();
+      const entries = this.readPersistedEntries();
+      const entry = entries.find((candidate) => candidate.jobId === jobId && this.deliveryId(candidate) === deliveryId);
+      if (!entry) return false;
+      const lastAttempt = entry.attempts?.[entry.attempts.length - 1];
+      if (lastAttempt?.status !== 'failed') return false;
+
+      entry.terminal = false;
+      entry.deliveryAttempts = 0;
+      entry.nextRetryTime = this.now();
+      delete entry.deliveryClaimOwner;
+      delete entry.deliveryClaimExpiresAt;
+      entry.attempts = [...(entry.attempts ?? []), { timestamp: this.nowIso(), status: 'pending' }];
+      this.writePersistedEntries(entries);
+      this.deliveryQueue = this.deliveryQueue.filter((queued) => this.deliveryKey(queued) !== this.deliveryKey(entry));
+      this.deliveryQueue.push({
+        jobId: entry.jobId,
+        payload: entry.payload,
+        config: entry.config,
+        deliveryAttempts: 0,
+        attempts: entry.attempts,
+        nextRetryTime: this.now(),
+      });
+      return true;
+    } catch (error) {
+      this.logger.error('Failed to retry webhook delivery', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    } finally {
+      if (lockOwner) this.releaseDeliveryLogLock(lockOwner);
+    }
   }
 
   /**
@@ -206,22 +296,15 @@ export class WebhookManager extends EventEmitter {
     const startTime = this.now();
 
     try {
-      const response = await fetch(config.url, {
-        method: 'POST',
-        headers: {
+      const response = await this.sendWebhook(config.url, JSON.stringify(payload), {
           'Content-Type': 'application/json',
           'X-Kaseki-Event': payload.eventType,
           'X-Kaseki-Job-Id': jobId,
           ...(signature && { 'X-Kaseki-Signature': signature }),
-        },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(10000), // 10s timeout
       });
 
       const durationMs = this.now() - startTime;
 
-      // Drain the response body to release the HTTP connection
-      await response.text().catch(() => {});
       this.handleWebhookResponse(entry, response, durationMs);
     } catch (error) {
       this.handleWebhookError(entry, error, this.now() - startTime);
@@ -230,7 +313,7 @@ export class WebhookManager extends EventEmitter {
 
   private handleWebhookResponse(
     entry: WebhookQueueEntry,
-    response: Response,
+    response: WebhookHttpResponse,
     durationMs: number,
   ): void {
     const { config, payload, jobId } = entry;
@@ -353,7 +436,14 @@ export class WebhookManager extends EventEmitter {
       }
 
       if (remove) {
-        entries.splice(index, 1);
+        entries[index] = {
+          ...entries[index],
+          deliveryAttempts: entry.deliveryAttempts,
+          attempts: entry.attempts,
+          terminal: true,
+        };
+        delete entries[index].deliveryClaimOwner;
+        delete entries[index].deliveryClaimExpiresAt;
         this.deliveryQueue = this.deliveryQueue.filter((candidate) => candidate !== entry);
       } else {
         delete entry.deliveryClaimOwner;
@@ -380,7 +470,9 @@ export class WebhookManager extends EventEmitter {
   private writePersistedEntries(entries: PersistedWebhookQueueEntry[]): void {
     const tempPath = `${this.deliveryLogPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
     try {
-      fs.writeFileSync(tempPath, entries.map((entry) => JSON.stringify(entry)).join('\n'), {
+      const terminalEntries = entries.filter((entry) => this.isTerminalEntry(entry)).slice(-1000);
+      const activeEntries = entries.filter((entry) => !this.isTerminalEntry(entry));
+      fs.writeFileSync(tempPath, [...activeEntries, ...terminalEntries].map((entry) => JSON.stringify(entry)).join('\n'), {
         encoding: 'utf-8',
         mode: 0o600,
       });
@@ -580,6 +672,15 @@ export class WebhookManager extends EventEmitter {
     ]);
   }
 
+  private deliveryId(entry: Pick<PersistedWebhookQueueEntry, 'jobId' | 'payload' | 'config'>): string {
+    return crypto.createHash('sha256').update(this.deliveryKey(entry)).digest('hex').slice(0, 32);
+  }
+
+  private isTerminalEntry(entry: PersistedWebhookQueueEntry): boolean {
+    const lastAttempt = entry.attempts?.[entry.attempts.length - 1];
+    return entry.terminal === true || lastAttempt?.status === 'success' || lastAttempt?.status === 'failed';
+  }
+
   /**
    * Load delivery log from disk.
    */
@@ -635,7 +736,7 @@ export class WebhookManager extends EventEmitter {
         const isTerminalSuccess = lastAttempt?.status === 'success';
         const hasRemainingAttempts = candidate.deliveryAttempts! < retryPolicy.maxAttempts;
 
-        if (isTerminalSuccess || !hasRemainingAttempts) {
+        if (isTerminalSuccess || !hasRemainingAttempts || candidate.terminal) {
           continue;
         }
 
@@ -731,4 +832,12 @@ export class WebhookManager extends EventEmitter {
     // Clean up all event listeners to prevent handle leaks
     this.removeAllListeners();
   }
+}
+
+function safeDeliveryError(error: string | undefined): string | undefined {
+  if (!error) return undefined;
+  const httpStatus = /^HTTP (\d{3})\b/.exec(error);
+  if (httpStatus) return `HTTP ${httpStatus[1]}`;
+  if (/egress policy/i.test(error)) return 'Webhook egress policy blocked delivery';
+  return 'Webhook delivery failed';
 }

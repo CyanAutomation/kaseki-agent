@@ -177,6 +177,11 @@ export class JobPersistenceManager {
     });
   }
 
+  /** Read the complete durable history without changing the scheduler's bounded in-memory index. */
+  async listPersistedJobs(): Promise<Job[]> {
+    return this.withLockedJobsIndex((jobs) => jobs.map((job) => this.deserializeJob(job)));
+  }
+
   /**
    * Load persisted jobs from index file.
    * Returns array of loaded jobs and queued jobs that should be restarted.
@@ -440,9 +445,7 @@ export class JobPersistenceManager {
     }
   }
 
-  /**
-   * Merge existing persisted jobs with incoming jobs, applying retention policy.
-   */
+  /** Merge current records into the durable history index without dropping terminal history. */
   private mergePersistedJobs(
     existing: PersistedJob[],
     incoming: PersistedJob[],
@@ -470,11 +473,7 @@ export class JobPersistenceManager {
       }
     }
 
-    const retainedTerminalJobs = terminalJobs
-      .sort((a, b) => this.comparePersistedJobsByTerminalRecency(a, b))
-      .slice(0, this.getJobIndexMaxEntries());
-
-    return [...activeJobs, ...retainedTerminalJobs].sort((a, b) =>
+    return [...activeJobs, ...terminalJobs].sort((a, b) =>
       this.comparePersistedJobsByCreatedAt(a, b),
     );
   }
@@ -539,30 +538,6 @@ export class JobPersistenceManager {
    */
   private isTerminalPersistedJob(job: PersistedJob): boolean {
     return job.status === 'completed' || job.status === 'failed';
-  }
-
-  /**
-   * Compare persisted jobs by terminal recency (most recent first).
-   */
-  private comparePersistedJobsByTerminalRecency(
-    a: PersistedJob,
-    b: PersistedJob,
-  ): number {
-    const updatedDiff =
-      this.persistedJobUpdatedAt(b) - this.persistedJobUpdatedAt(a);
-    if (updatedDiff !== 0) {
-      return updatedDiff;
-    }
-    return this.comparePersistedJobsByCreatedAt(a, b);
-  }
-
-  /**
-   * Get the "updated at" timestamp for a persisted job (completed → started → created).
-   */
-  private persistedJobUpdatedAt(job: PersistedJob): number {
-    const completed = job.completedAt ? new Date(job.completedAt).getTime() : 0;
-    const started = job.startedAt ? new Date(job.startedAt).getTime() : 0;
-    return Math.max(completed, started);
   }
 
   /**

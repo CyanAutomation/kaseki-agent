@@ -356,13 +356,13 @@ export function createLogRoutes(
   const analysisHelper = new AnalysisArtifactHelper(cachedReader);
 
   /**
-   * GET /api/runs/:id/events - Canonical structured event snapshot.
+   * GET /api/v1/runs/:id/events - Canonical structured event snapshot.
    *
    * This endpoint always prefers promoted progress.jsonl events, then appends
    * live Docker progress while a worker is still running.
    */
-  router.get('/runs/:id/events', (req: Request, res: Response) => {
-    const job = getJobOrRespond(scheduler, req.params.id, res);
+  router.get('/runs/:id/events', async (req: Request, res: Response) => {
+    const job = await getJobOrRespond(scheduler, req.params.id, res);
     if (!job) {
       return;
     }
@@ -373,10 +373,10 @@ export function createLogRoutes(
   });
 
   /**
-   * GET /api/runs/:id/events/stream - Server-Sent Events stream for progress updates.
+   * GET /api/v1/runs/:id/events/stream - Server-Sent Events stream for progress updates.
    */
-  router.get('/runs/:id/events/stream', (req: Request, res: Response) => {
-    const job = getJobOrRespond(scheduler, req.params.id, res);
+  router.get('/runs/:id/events/stream', async (req: Request, res: Response) => {
+    const job = await getJobOrRespond(scheduler, req.params.id, res);
     if (!job) {
       return;
     }
@@ -385,39 +385,10 @@ export function createLogRoutes(
   });
 
   /**
-   * GET /api/runs/:id/progress - Legacy structured event snapshot endpoint.
-   *
-   * Non-streaming responses intentionally match GET /api/runs/:id/events.
-   * Use GET /api/runs/:id/events/stream for SSE; ?stream=sse remains as a
-   * legacy alias for older clients.
+   * GET /api/v1/runs/:id/logs/:logtype - Retrieve logs.
    */
-  router.get('/runs/:id/progress', (req: Request, res: Response) => {
-    const job = getJobOrRespond(scheduler, req.params.id, res);
-    if (!job) {
-      return;
-    }
-
-    const wantsSSE = req.query.stream === 'sse' || req.get('Accept')?.includes('text/event-stream');
-
-    if (wantsSSE) {
-      res.setHeader('Deprecation', 'true');
-      res.setHeader('Link', '</api/runs/' + job.id + '/events/stream>; rel="successor-version"');
-      streamProgressEvents(scheduler, config, job, req, res);
-      return;
-    }
-
-    res.setHeader('Deprecation', 'true');
-    res.setHeader('Link', '</api/runs/' + job.id + '/events>; rel="successor-version"');
-    const tailParam = Number(req.query.tail ?? 50);
-    const tail = Number.isFinite(tailParam) ? Math.max(0, Math.floor(tailParam)) : 50;
-    res.json(readStructuredEventSnapshot(scheduler, config, job, tail));
-  });
-
-  /**
-   * GET /api/runs/:id/logs/:logtype - Retrieve logs.
-   */
-  router.get('/runs/:id/logs/:logtype', (req: Request, res: Response) => {
-    const job = getJobOrRespond(scheduler, req.params.id, res);
+  router.get('/runs/:id/logs/:logtype', async (req: Request, res: Response) => {
+    const job = await getJobOrRespond(scheduler, req.params.id, res);
     if (!job) {
       return;
     }
@@ -512,10 +483,10 @@ export function createLogRoutes(
   });
 
   /**
-   * GET /api/runs/:id/analysis - Comprehensive run analysis.
+   * GET /api/v1/runs/:id/analysis - Comprehensive run analysis.
    */
-  router.get('/runs/:id/analysis', (req: Request, res: Response) => {
-    const job = getJobOrRespond(scheduler, req.params.id, res);
+  router.get('/runs/:id/analysis', async (req: Request, res: Response) => {
+    const job = await getJobOrRespond(scheduler, req.params.id, res);
     if (!job) {
       return;
     }

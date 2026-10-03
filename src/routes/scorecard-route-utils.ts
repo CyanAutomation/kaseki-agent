@@ -13,16 +13,7 @@ export interface ScorecardFilters {
   startedBefore?: string;
 }
 
-export function parsePagination(query: Record<string, unknown>): { limit: number; offset: number } {
-  const numeric = (value: unknown, fallback: number, maximum: number) => {
-    const parsed = Number(value);
-    return Number.isInteger(parsed) && parsed >= 0 ? Math.min(parsed, maximum) : fallback;
-  };
-  return {
-    limit: Math.max(1, numeric(query.limit, DEFAULT_LIMIT, MAX_LIMIT)),
-    offset: numeric(query.offset, 0, 100_000),
-  };
-}
+export { DEFAULT_LIMIT, MAX_LIMIT };
 
 export function parseFilters(query: Record<string, unknown>): ScorecardFilters {
   const value = (key: keyof ScorecardFilters) => typeof query[key] === 'string' ? query[key] as string : undefined;

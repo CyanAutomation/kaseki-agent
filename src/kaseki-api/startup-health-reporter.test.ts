@@ -138,7 +138,7 @@ describe('Startup Health Reporter', () => {
       const report = generateStartupHealthReport(1, 1, [], {});
 
       expect(healthReportToMarkdown(report)).toContain('Historical boot-time snapshot only');
-      expect(healthReportToMarkdown(report)).toContain('/api/preflight');
+      expect(healthReportToMarkdown(report)).toContain('/api/v1/preflight');
     });
   });
 });

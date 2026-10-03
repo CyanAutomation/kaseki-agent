@@ -27,7 +27,7 @@ kaseki-agent quickstart
 4. Creates `/agents/{kaseki-results,kaseki-runs,kaseki-cache}` owned by UID 10000 (uses sudo if needed)
 5. Starts the `kaseki-api` container
 6. Waits for `http://localhost:8080/ready` to confirm the API is ready
-7. Smoke-tests your bearer token against `/api/runs`
+7. Smoke-tests your bearer token against `/api/v1/runs`
 
 Use `--dry-run` to see what it would do without making changes:
 

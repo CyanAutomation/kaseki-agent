@@ -17,12 +17,12 @@
  * These are unauthenticated endpoints for service health verification.
  */
 function buildHealthCheckPaths(): Record<string, unknown> {
-  return {
+  const probes: Record<string, unknown> = {
     '/health': {
       get: {
         operationId: 'getHealth',
         summary: 'Health check endpoint',
-        description: 'Returns 200 OK if the service is running. No authentication required.',
+        description: 'Liveness probe. Returns 200 while the process can serve requests. No authentication required.',
         tags: ['Health & Status'],
         responses: {
           '200': {
@@ -32,11 +32,8 @@ function buildHealthCheckPaths(): Record<string, unknown> {
                 schema: {
                   type: 'object',
                   properties: {
-                    status: { type: 'string', enum: ['healthy', 'degraded'] },
+                    status: { type: 'string', enum: ['ok'] },
                     timestamp: { type: 'string', format: 'date-time' },
-                    queue: { type: 'object' },
-                    dependencyCache: { type: 'object' },
-                    errors: { type: 'array', items: { type: 'string' } },
                   }
                 }
               }
@@ -92,6 +89,11 @@ function buildHealthCheckPaths(): Record<string, unknown> {
       }
     }
   };
+  return {
+    ...probes,
+    '/api/v1/health': { get: { ...((probes['/health'] as { get: Record<string, unknown> }).get), operationId: 'getApiHealth', summary: 'Versioned liveness probe' } },
+    '/api/v1/ready': { get: { ...((probes['/ready'] as { get: Record<string, unknown> }).get), operationId: 'getApiReady', summary: 'Versioned readiness probe' } },
+  };
 }
 
 /**
@@ -100,6 +102,7 @@ function buildHealthCheckPaths(): Record<string, unknown> {
  */
 function buildServiceInfoPaths(errorResponseSchema: Record<string, unknown>, runRequestSchema: Record<string, unknown>): Record<string, unknown> {
   return {
+    ...buildUsagePath(errorResponseSchema),
     ...buildServiceInfoApiCapabilitiesPath(errorResponseSchema, runRequestSchema),
     ...buildServiceInfoApiMetricsPath(errorResponseSchema, runRequestSchema),
     ...buildServiceInfoApiPreflightPath(errorResponseSchema, runRequestSchema),
@@ -108,9 +111,27 @@ function buildServiceInfoPaths(errorResponseSchema: Record<string, unknown>, run
   };
 }
 
+function buildUsagePath(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
+  return {
+    '/api/v1/usage': {
+      get: {
+        operationId: 'getApiUsage',
+        summary: 'Get per-key API usage counters',
+        description: 'Returns per-key in-process API usage and configured request limits for the authenticated key. Gateway spend is unavailable and costUsd is null.',
+        tags: ['Service Info'],
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': { description: 'API usage snapshot', content: { 'application/json': { schema: { type: 'object', required: ['startedAt', 'requestCount', 'diagnosticProbeCount', 'webhookTestCount', 'githubIssueLookupCount', 'costUsd', 'limits'], properties: { startedAt: { type: 'string', format: 'date-time' }, requestCount: { type: 'integer' }, diagnosticProbeCount: { type: 'integer' }, webhookTestCount: { type: 'integer' }, githubIssueLookupCount: { type: 'integer' }, costUsd: { type: 'null' }, limits: { type: 'object' } } } } } },
+          '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+        },
+      },
+    },
+  };
+}
+
 function buildServiceInfoApiCapabilitiesPath(errorResponseSchema: Record<string, unknown>, _runRequestSchema: Record<string, unknown>): Record<string, unknown> {
   return {
-    '/api/capabilities': {
+    '/api/v1/capabilities': {
       get: {
         operationId: 'getCapabilities',
         summary: 'Get API capabilities and limits',
@@ -119,7 +140,7 @@ function buildServiceInfoApiCapabilitiesPath(errorResponseSchema: Record<string,
         security: [{ BearerAuth: [] }],
         responses: {
           '200': { description: 'Capabilities', content: { 'application/json': { schema: { type: 'object', required: ['apiVersion', 'taskModes', 'publishModes', 'limits', 'eventProtocol'] } } } },
-          '401': { description: 'Unauthorized', content: { 'application/json': { schema: errorResponseSchema } } },
+          '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
         },
       },
     }
@@ -128,7 +149,7 @@ function buildServiceInfoApiCapabilitiesPath(errorResponseSchema: Record<string,
 
 function buildServiceInfoApiMetricsPath(errorResponseSchema: Record<string, unknown>, _runRequestSchema: Record<string, unknown>): Record<string, unknown> {
   return {
-    '/api/metrics': {
+    '/api/v1/metrics': {
       get: {
         operationId: 'getMetrics',
         summary: 'Prometheus metrics',
@@ -149,7 +170,7 @@ function buildServiceInfoApiMetricsPath(errorResponseSchema: Record<string, unkn
           '401': {
             description: 'Unauthorized',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
@@ -162,7 +183,7 @@ function buildServiceInfoApiMetricsPath(errorResponseSchema: Record<string, unkn
 
 function buildServiceInfoApiPreflightPath(errorResponseSchema: Record<string, unknown>, _runRequestSchema: Record<string, unknown>): Record<string, unknown> {
   return {
-    '/api/preflight': {
+    '/api/v1/preflight': {
       get: {
         operationId: 'getPreFlight',
         summary: 'Pre-flight validation',
@@ -217,7 +238,7 @@ function buildServiceInfoApiPreflightPath(errorResponseSchema: Record<string, un
                         current: { type: 'boolean', enum: [false] },
                         recommendedCurrentEndpoint: {
                           type: 'string',
-                          enum: ['/api/preflight']
+                          enum: ['/api/v1/preflight']
                         },
                         timestamp: { type: 'string', format: 'date-time' },
                         cachedAt: { type: 'string', format: 'date-time' },
@@ -245,11 +266,15 @@ function buildServiceInfoApiPreflightPath(errorResponseSchema: Record<string, un
           '401': {
             description: 'Unauthorized',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
-          }
+          },
+          '503': {
+            description: 'One or more preflight checks failed; response body uses the same checks schema as 200.',
+            content: { 'application/json': { schema: { type: 'object', properties: { status: { type: 'string', enum: ['error'] }, checks: { type: 'array', items: { type: 'object' } }, failedChecks: { type: 'array', items: { type: 'object' } }, timestamp: { type: 'string', format: 'date-time' } } } } },
+          },
         }
       }
     }
@@ -258,12 +283,12 @@ function buildServiceInfoApiPreflightPath(errorResponseSchema: Record<string, un
 
 function buildServiceInfoApiStartupHealthPath(errorResponseSchema: Record<string, unknown>, _runRequestSchema: Record<string, unknown>): Record<string, unknown> {
   return {
-    '/api/startup-health': {
+    '/api/v1/startup-health': {
       get: {
         operationId: 'getStartupHealth',
         summary: 'Cached startup health report',
         description:
-              'Returns cached boot-time diagnostics generated during API initialization. This is historical startup scope only (`scope: startup`, `current: false`); call /api/preflight for current readiness diagnostics.',
+              'Returns cached boot-time diagnostics generated during API initialization. This is historical startup scope only (`scope: startup`, `current: false`); call /api/v1/preflight for current readiness diagnostics.',
         tags: ['Service Info'],
         security: [{ BearerAuth: [] }],
         parameters: [
@@ -285,7 +310,7 @@ function buildServiceInfoApiStartupHealthPath(errorResponseSchema: Record<string
                   properties: {
                     scope: { type: 'string', enum: ['startup'] },
                     current: { type: 'boolean', enum: [false] },
-                    recommendedCurrentEndpoint: { type: 'string', enum: ['/api/preflight'] },
+                    recommendedCurrentEndpoint: { type: 'string', enum: ['/api/v1/preflight'] },
                     timestamp: { type: 'string', format: 'date-time' },
                     status: { type: 'string', enum: ['ok', 'degraded', 'error'] },
                     summary: { type: 'object' },
@@ -304,21 +329,21 @@ function buildServiceInfoApiStartupHealthPath(errorResponseSchema: Record<string
           '404': {
             description: 'Startup report is not available yet',
             content: {
-              'application/json': { schema: errorResponseSchema },
+              'application/problem+json': { schema: errorResponseSchema },
               'text/markdown': { schema: { type: 'string' } }
             }
           },
           '500': {
             description: 'Failed to retrieve startup report',
             content: {
-              'application/json': { schema: errorResponseSchema },
+              'application/problem+json': { schema: errorResponseSchema },
               'text/markdown': { schema: { type: 'string' } }
             }
           },
           '401': {
             description: 'Unauthorized',
             content: {
-              'application/json': { schema: errorResponseSchema }
+              'application/problem+json': { schema: errorResponseSchema }
             }
           }
         }
@@ -329,7 +354,7 @@ function buildServiceInfoApiStartupHealthPath(errorResponseSchema: Record<string
 
 function buildServiceInfoApiValidatePath(errorResponseSchema: Record<string, unknown>, runRequestSchema: Record<string, unknown>): Record<string, unknown> {
   return {
-    '/api/validate': {
+    '/api/v1/validate': {
       post: {
         operationId: 'validateTask',
         summary: 'Validate task configuration',
@@ -377,7 +402,7 @@ function buildServiceInfoApiValidatePath(errorResponseSchema: Record<string, unk
           '400': {
             description: 'Invalid request',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
@@ -385,7 +410,7 @@ function buildServiceInfoApiValidatePath(errorResponseSchema: Record<string, unk
           '401': {
             description: 'Unauthorized',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
@@ -398,26 +423,29 @@ function buildServiceInfoApiValidatePath(errorResponseSchema: Record<string, unk
 
 function buildInteractiveConsolePaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
-    '/api/gateway-test': {
+    '/api/v1/gateway-test': {
       get: {
         operationId: 'testGateway',
-        summary: 'Test gateway connectivity, inference, and Pi adapter support',
-        description: 'Stage 1 validates gateway connectivity without inference tokens. Stage 2 can run real inference and an optional Pi adapter provider smoke test.',
+        summary: 'Test gateway connectivity and explicitly opted-in inference',
+        description: 'Without inference=true, this route performs the inexpensive connectivity check only. Token-consuming inference, Pi adapter, and evaluation probes require inference=true and are rate limited.',
         tags: ['Gateway Diagnostics'],
         security: [{ BearerAuth: [] }],
         parameters: [
           { name: 'stage', in: 'query', required: false, schema: { type: 'string', enum: ['1', '2'] }, description: 'Run connectivity (1) or inference (2) diagnostics.' },
+          { name: 'inference', in: 'query', required: false, schema: { type: 'boolean' }, description: 'Explicitly opt in to token-consuming inference diagnostics.' },
           { name: 'responseSmoke', in: 'query', required: false, schema: { type: 'boolean' }, description: 'Run the inference response smoke test.' },
           { name: 'piProvider', in: 'query', required: false, schema: { type: 'boolean' }, description: 'Run the Pi provider adapter smoke test.' },
         ],
         responses: {
           '200': { description: 'Gateway diagnostic completed', content: { 'application/json': { schema: { type: 'object' } } } },
-          '401': { description: 'Unauthorized', content: { 'application/json': { schema: errorResponseSchema } } },
+          '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '400': { description: 'Costly diagnostics require inference=true', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '429': { description: 'Per-key diagnostic or request quota exceeded', headers: { 'Retry-After': { schema: { type: 'integer' } } }, content: { 'application/problem+json': { schema: errorResponseSchema } } },
           '503': { description: 'Gateway diagnostic failed', content: { 'application/json': { schema: { type: 'object' } } } },
         },
       },
     },
-    '/api/github-issues': {
+    '/api/v1/github-issues': {
       post: {
         operationId: 'listGitHubIssues',
         summary: 'Fetch repository issues for task creation',
@@ -430,14 +458,18 @@ function buildInteractiveConsolePaths(errorResponseSchema: Record<string, unknow
             'application/json': {
               schema: {
                 type: 'object',
-                required: ['repoUrl'],
+                required: [],
                 properties: {
                   repoUrl: { type: 'string', description: 'GitHub repository URL or owner/repo' },
+                  repo: { type: 'string', description: 'Alias for repoUrl, accepted as owner/repo' },
                   label: { type: 'string' },
-                  labels: { type: 'array', items: { type: 'string' } },
+                  labels: { type: 'array', maxItems: 10, items: { type: 'string', minLength: 1, maxLength: 50 } },
+                  allLabels: { type: 'boolean', description: 'Do not apply the default kaseki-agent label' },
                   limit: { type: 'integer', minimum: 1, maximum: 100 },
                   state: { type: 'string', enum: ['open', 'closed', 'all'] },
                 },
+                additionalProperties: false,
+                anyOf: [{ required: ['repoUrl'] }, { required: ['repo'] }],
               },
             },
           },
@@ -472,9 +504,10 @@ function buildInteractiveConsolePaths(errorResponseSchema: Record<string, unknow
               },
             },
           },
-          '400': { description: 'Invalid repository request', content: { 'application/json': { schema: errorResponseSchema } } },
-          '401': { description: 'Unauthorized', content: { 'application/json': { schema: errorResponseSchema } } },
-          '404': { description: 'Repository not found', content: { 'application/json': { schema: errorResponseSchema } } },
+          '400': { description: 'Invalid repository request', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '404': { description: 'Repository not found', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '429': { description: 'Per-key GitHub request limit exceeded', headers: { 'Retry-After': { schema: { type: 'integer' } } }, content: { 'application/problem+json': { schema: errorResponseSchema } } },
         },
       },
     },
@@ -488,6 +521,7 @@ function buildInteractiveConsolePaths(errorResponseSchema: Record<string, unknow
 function buildRunManagementPaths(errorResponseSchema: Record<string, unknown>, runRequestSchema: Record<string, unknown>, runResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
     ...buildRunManagementApiRunsPath(errorResponseSchema, runRequestSchema, runResponseSchema),
+    ...buildRunManagementApiRunsIdPath(errorResponseSchema),
     ...buildRunManagementApiRunsIdStatusPath(errorResponseSchema, runRequestSchema, runResponseSchema),
     ...buildRunManagementApiRunsIdRetryPath(errorResponseSchema, runRequestSchema, runResponseSchema),
     ...buildRunManagementApiRunsIdCancelPath(errorResponseSchema, runRequestSchema, runResponseSchema),
@@ -496,7 +530,7 @@ function buildRunManagementPaths(errorResponseSchema: Record<string, unknown>, r
 
 function buildRunManagementApiRunsPath(errorResponseSchema: Record<string, unknown>, runRequestSchema: Record<string, unknown>, runResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
-    '/api/runs': {
+    '/api/v1/runs': {
       post: {
         operationId: 'triggerRun',
         summary: 'Trigger a new kaseki run',
@@ -504,6 +538,13 @@ function buildRunManagementApiRunsPath(errorResponseSchema: Record<string, unkno
               'Submits a new job to the queue. Returns 202 Accepted with job metadata. Use the ID to poll status.',
         tags: ['Run Management'],
         security: [{ BearerAuth: [] }],
+        parameters: [{
+          name: 'Idempotency-Key',
+          in: 'header',
+          required: false,
+          schema: { type: 'string', format: 'uuid' },
+          description: 'Caller-generated UUID v4. Required unless idempotencyKey is present in the request body.',
+        }],
         requestBody: {
           required: true,
           content: {
@@ -532,7 +573,7 @@ function buildRunManagementApiRunsPath(errorResponseSchema: Record<string, unkno
           '400': {
             description: 'Invalid request',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
@@ -540,7 +581,7 @@ function buildRunManagementApiRunsPath(errorResponseSchema: Record<string, unkno
           '401': {
             description: 'Unauthorized',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
@@ -570,7 +611,7 @@ function buildRunManagementApiRunsPath(errorResponseSchema: Record<string, unkno
       get: {
         operationId: 'listRuns',
         summary: 'List all runs',
-        description: 'Returns paginated list of all kaseki runs, newest first. Includes basic metadata for each run.',
+        description: 'Returns durable run history, newest first, with stable cursor pagination and optional status, repository, and creation-time filters.',
         tags: ['Run Management'],
         security: [{ BearerAuth: [] }],
         parameters: [
@@ -581,11 +622,15 @@ function buildRunManagementApiRunsPath(errorResponseSchema: Record<string, unkno
             description: 'Maximum number of runs to return'
           },
           {
-            name: 'offset',
+            name: 'cursor',
             in: 'query',
-            schema: { type: 'integer', default: 0, minimum: 0 },
-            description: 'Offset for pagination'
-          }
+            schema: { type: 'string' },
+            description: 'Opaque cursor returned as nextCursor by the previous page'
+          },
+          { name: 'status', in: 'query', schema: { type: 'string', enum: ['queued', 'running', 'completed', 'failed'] } },
+          { name: 'repo', in: 'query', schema: { type: 'string', format: 'uri' } },
+          { name: 'from', in: 'query', schema: { type: 'string', format: 'date-time' } },
+          { name: 'to', in: 'query', schema: { type: 'string', format: 'date-time' } },
         ],
         responses: {
           '200': {
@@ -594,7 +639,7 @@ function buildRunManagementApiRunsPath(errorResponseSchema: Record<string, unkno
               'application/json': {
                 schema: {
                   type: 'object',
-                  required: ['runs', 'total'],
+                  required: ['runs', 'total', 'hasMore'],
                   properties: {
                     runs: {
                       type: 'array',
@@ -602,8 +647,11 @@ function buildRunManagementApiRunsPath(errorResponseSchema: Record<string, unkno
                     },
                     total: {
                       type: 'integer',
-                      description: 'Total number of runs available'
-                    }
+                      description: 'Total number of runs matching filters before cursor pagination'
+                    },
+                    hasMore: { type: 'boolean' },
+                    nextCursor: { type: 'string' },
+                    retention: { type: 'object' },
                   }
                 }
               }
@@ -612,20 +660,41 @@ function buildRunManagementApiRunsPath(errorResponseSchema: Record<string, unkno
           '401': {
             description: 'Unauthorized',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
-          }
+          },
+          '400': { description: 'Invalid cursor, limit, status, or date filter', content: { 'application/problem+json': { schema: errorResponseSchema } } }
         }
       }
     }
   };
 }
 
+function buildRunManagementApiRunsIdPath(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
+  return {
+    '/api/v1/runs/{id}': {
+      get: {
+        operationId: 'getRun',
+        summary: 'Get a run resource',
+        description: 'Returns stable run identity, lifecycle timestamps, and links to the run subresources.',
+        tags: ['Run Management'],
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^kaseki-\\d+$' } }],
+        responses: {
+          '200': { description: 'Run resource', content: { 'application/json': { schema: { type: 'object', required: ['id', 'status', 'createdAt', 'links'], properties: { id: { type: 'string' }, status: { type: 'string' }, createdAt: { type: 'string', format: 'date-time' }, startedAt: { type: 'string', format: 'date-time' }, completedAt: { type: 'string', format: 'date-time' }, projectName: { type: 'string' }, repoUrl: { type: 'string', format: 'uri' }, links: { type: 'object' } } } } } },
+          '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '404': { description: 'Run not found', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+        },
+      },
+    },
+  };
+}
+
 function buildRunManagementApiRunsIdStatusPath(errorResponseSchema: Record<string, unknown>, _runRequestSchema: Record<string, unknown>, _runResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
-    '/api/runs/{id}/status': {
+    '/api/v1/runs/{id}/status': {
       get: {
         operationId: 'getRunStatus',
         summary: 'Poll run status',
@@ -654,7 +723,7 @@ function buildRunManagementApiRunsIdStatusPath(errorResponseSchema: Record<strin
           '404': {
             description: 'Run not found',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
@@ -662,7 +731,7 @@ function buildRunManagementApiRunsIdStatusPath(errorResponseSchema: Record<strin
           '401': {
             description: 'Unauthorized',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
@@ -675,7 +744,7 @@ function buildRunManagementApiRunsIdStatusPath(errorResponseSchema: Record<strin
 
 function buildRunManagementApiRunsIdRetryPath(errorResponseSchema: Record<string, unknown>, _runRequestSchema: Record<string, unknown>, runResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
-    '/api/runs/{id}/retry': {
+    '/api/v1/runs/{id}/retry': {
       post: {
         operationId: 'retryRun',
         summary: 'Retry a terminal run',
@@ -687,10 +756,11 @@ function buildRunManagementApiRunsIdRetryPath(errorResponseSchema: Record<string
         responses: {
           '202': { description: 'Retry accepted', content: { 'application/json': { schema: runResponseSchema } } },
           '200': { description: 'Idempotency replay of a prior retry', content: { 'application/json': { schema: runResponseSchema } } },
-          '400': { description: 'Missing or invalid idempotency key', content: { 'application/json': { schema: errorResponseSchema } } },
-          '401': { description: 'Unauthorized', content: { 'application/json': { schema: errorResponseSchema } } },
-          '404': { description: 'Run not found', content: { 'application/json': { schema: errorResponseSchema } } },
-          '409': { description: 'Source run is not terminal or retry key is pending', content: { 'application/json': { schema: errorResponseSchema } } },
+          '400': { description: 'Missing or invalid idempotency key', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '404': { description: 'Run not found', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '409': { description: 'Source run is not terminal or retry key is pending', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '422': { description: 'Retry task rejected by the safety admission gate', content: { 'application/json': { schema: { allOf: [errorResponseSchema, { type: 'object', properties: { exitCode: { type: 'integer' }, admission: { type: 'object' } } }] } } } },
         },
       },
     }
@@ -699,7 +769,7 @@ function buildRunManagementApiRunsIdRetryPath(errorResponseSchema: Record<string
 
 function buildRunManagementApiRunsIdCancelPath(errorResponseSchema: Record<string, unknown>, _runRequestSchema: Record<string, unknown>, _runResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
-    '/api/runs/{id}/cancel': {
+    '/api/v1/runs/{id}/cancel': {
       post: {
         operationId: 'cancelRun',
         summary: 'Cancel a run',
@@ -735,7 +805,7 @@ function buildRunManagementApiRunsIdCancelPath(errorResponseSchema: Record<strin
           '404': {
             description: 'Run not found',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
@@ -743,7 +813,7 @@ function buildRunManagementApiRunsIdCancelPath(errorResponseSchema: Record<strin
           '401': {
             description: 'Unauthorized',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
@@ -796,8 +866,8 @@ function createLogProgressPathComponents(errorResponseSchema: Record<string, unk
       description: 'Structured run event snapshot',
       content: { 'application/json': { schema: eventSnapshotSchema } },
     },
-    '404': { description: 'Run not found', content: { 'application/json': { schema: errorResponseSchema } } },
-    '401': { description: 'Unauthorized', content: { 'application/json': { schema: errorResponseSchema } } },
+    '404': { description: 'Run not found', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+    '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
   };
   return { idParameter, tailParameter, eventSnapshotSchema, snapshotResponses };
 }
@@ -807,14 +877,13 @@ function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): R
   return {
     ...buildLogsProgressApiRunsIdEventsPath(errorResponseSchema, components),
     ...buildLogsProgressApiRunsIdEventsStreamPath(errorResponseSchema, components),
-    ...buildLogsProgressApiRunsIdProgressPath(errorResponseSchema, components),
     ...buildLogsProgressApiRunsIdLogsLogtypePath(errorResponseSchema),
   };
 }
 
 function buildLogsProgressApiRunsIdEventsPath(_errorResponseSchema: Record<string, unknown>, components: LogProgressPathComponents): Record<string, unknown> {
   return {
-    '/api/runs/{id}/events': {
+    '/api/v1/runs/{id}/events': {
       get: {
         operationId: 'getRunEvents',
         summary: 'Get structured event snapshot',
@@ -831,7 +900,7 @@ function buildLogsProgressApiRunsIdEventsPath(_errorResponseSchema: Record<strin
 
 function buildLogsProgressApiRunsIdEventsStreamPath(_errorResponseSchema: Record<string, unknown>, components: LogProgressPathComponents): Record<string, unknown> {
   return {
-    '/api/runs/{id}/events/stream': {
+    '/api/v1/runs/{id}/events/stream': {
       get: {
         operationId: 'streamRunEvents',
         summary: 'Stream run events',
@@ -860,47 +929,9 @@ function buildLogsProgressApiRunsIdEventsStreamPath(_errorResponseSchema: Record
   };
 }
 
-function buildLogsProgressApiRunsIdProgressPath(_errorResponseSchema: Record<string, unknown>, components: LogProgressPathComponents): Record<string, unknown> {
-  return {
-    '/api/runs/{id}/progress': {
-      get: {
-        operationId: 'getRunProgress',
-        summary: 'Get legacy progress event snapshot',
-        description:
-              'Deprecated legacy alias for GET /api/runs/{id}/events. Non-streaming responses return the same structured event snapshot schema. Legacy clients may still request SSE with ?stream=sse, but new clients should use GET /api/runs/{id}/events/stream.',
-        deprecated: true,
-        tags: ['Run Logs & Progress'],
-        parameters: [
-          components.idParameter,
-          components.tailParameter,
-          {
-            name: 'stream',
-            in: 'query',
-            schema: { type: 'string', enum: ['sse'] },
-            description: 'Deprecated. Use GET /api/runs/{id}/events/stream for Server-Sent Events.'
-          }
-        ],
-        security: [{ BearerAuth: [] }],
-        responses: {
-          ...components.snapshotResponses,
-          '200': {
-            description: 'Structured run event snapshot, or SSE when using deprecated stream=sse',
-            content: {
-              'application/json': { schema: components.eventSnapshotSchema },
-              'text/event-stream': {
-                schema: { type: 'string', description: 'Deprecated Server-Sent Events format when stream=sse' }
-              }
-            }
-          }
-        }
-      }
-    }
-  };
-}
-
 function buildLogsProgressApiRunsIdLogsLogtypePath(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
-    '/api/runs/{id}/logs/{logtype}': {
+    '/api/v1/runs/{id}/logs/{logtype}': {
       get: {
         operationId: 'getRunLog',
         summary: 'Get specific log file',
@@ -945,7 +976,7 @@ function buildLogsProgressApiRunsIdLogsLogtypePath(errorResponseSchema: Record<s
           '404': {
             description: 'Run or log not found',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
@@ -953,11 +984,13 @@ function buildLogsProgressApiRunsIdLogsLogtypePath(errorResponseSchema: Record<s
           '401': {
             description: 'Unauthorized',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
-          }
+          },
+          '400': { description: 'Unknown log type or invalid tail query', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '500': { description: 'Log could not be read', content: { 'application/problem+json': { schema: errorResponseSchema } } }
         }
       }
     }
@@ -977,7 +1010,7 @@ function buildArtifactPaths(errorResponseSchema: Record<string, unknown>): Recor
 
 function buildArtifactApiRunsIdArtifactsPath(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
-    '/api/runs/{id}/artifacts': {
+    '/api/v1/runs/{id}/artifacts': {
       get: {
         operationId: 'getRunArtifacts',
         summary: 'List artifacts',
@@ -1043,7 +1076,7 @@ function buildArtifactApiRunsIdArtifactsPath(errorResponseSchema: Record<string,
           '404': {
             description: 'Run not found',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
@@ -1051,7 +1084,7 @@ function buildArtifactApiRunsIdArtifactsPath(errorResponseSchema: Record<string,
           '401': {
             description: 'Unauthorized',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
@@ -1064,12 +1097,12 @@ function buildArtifactApiRunsIdArtifactsPath(errorResponseSchema: Record<string,
 
 function buildArtifactApiResultsIdFilePath(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
-    '/api/results/{id}/{file}': {
+    '/api/v1/results/{id}/{file}': {
       get: {
         operationId: 'downloadArtifact',
         summary: 'Download artifact file',
         description:
-              'Downloads a specific artifact file (e.g., git.diff, metadata.json, result-summary.md). Use `/api/runs/{id}/artifacts` to list available files.',
+              'Downloads a specific artifact file (e.g., git.diff, metadata.json, result-summary.md). Use `/api/v1/runs/{id}/artifacts` to list available files.',
         tags: ['Artifacts'],
         parameters: [
           {
@@ -1112,23 +1145,13 @@ function buildArtifactApiResultsIdFilePath(errorResponseSchema: Record<string, u
         security: [{ BearerAuth: [] }],
         responses: {
           '200': {
-            description: 'Artifact file content',
+            description: 'Raw artifact bytes using the artifact registry content type. The rendered evaluation format returns JSON.',
             content: {
+              '*/*': { schema: { type: 'string', format: 'binary' } },
               'application/json': {
                 schema: {
                   oneOf: [
-                    {
-                      type: 'object',
-                      required: ['file', 'contentType', 'size', 'content'],
-                      properties: {
-                        file: { type: 'string' },
-                        contentType: { type: 'string' },
-                        size: { type: 'integer' },
-                        content: { type: 'string' },
-                        truncated: { type: 'boolean' },
-                        tailLines: { type: 'integer' }
-                      }
-                    },
+                    { type: 'string', description: 'Raw JSON artifact bytes' },
                     {
                       type: 'object',
                       required: ['format', 'file', 'sections', 'raw'],
@@ -1174,15 +1197,16 @@ function buildArtifactApiResultsIdFilePath(errorResponseSchema: Record<string, u
           '422': {
             description: 'Invalid artifact content for requested format',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
           },
+          '413': { description: 'Artifact exceeds the bounded download size', content: { 'application/problem+json': { schema: errorResponseSchema } } },
           '404': {
             description: 'Artifact not found',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
@@ -1190,11 +1214,13 @@ function buildArtifactApiResultsIdFilePath(errorResponseSchema: Record<string, u
           '401': {
             description: 'Unauthorized',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
-          }
+          },
+          '202': { description: 'Artifact is not yet available', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '400': { description: 'Artifact is not available or is not registered', content: { 'application/problem+json': { schema: errorResponseSchema } } }
         }
       }
     }
@@ -1207,7 +1233,7 @@ function buildArtifactApiResultsIdFilePath(errorResponseSchema: Record<string, u
  */
 function buildRunAnalysisPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
-    '/api/runs/{id}/analysis': {
+    '/api/v1/runs/{id}/analysis': {
       get: {
         operationId: 'getRunAnalysis',
         summary: 'Get comprehensive run analysis',
@@ -1272,7 +1298,7 @@ function buildRunAnalysisPaths(errorResponseSchema: Record<string, unknown>): Re
           '404': {
             description: 'Run not found',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
@@ -1280,11 +1306,12 @@ function buildRunAnalysisPaths(errorResponseSchema: Record<string, unknown>): Re
           '401': {
             description: 'Unauthorized',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
-          }
+          },
+          '500': { description: 'Analysis artifacts could not be read', content: { 'application/problem+json': { schema: errorResponseSchema } } }
         }
       }
     }
@@ -1297,11 +1324,12 @@ function buildRunAnalysisPaths(errorResponseSchema: Record<string, unknown>): Re
  */
 function buildWebhookPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
-    '/api/webhooks/test': {
+    ...buildWebhookDeliveryPaths(errorResponseSchema),
+    '/api/v1/webhooks/test': {
       post: {
         operationId: 'testWebhook',
         summary: 'Test webhook configuration',
-        description: 'Tests a webhook configuration by sending a test event to the specified URL.',
+        description: 'Sends a signed test event. HTTPS and public internet destinations are required unless the exact origin is allowlisted.',
         tags: ['Webhooks'],
         security: [{ BearerAuth: [] }],
         requestBody: {
@@ -1311,60 +1339,113 @@ function buildWebhookPaths(errorResponseSchema: Record<string, unknown>): Record
               schema: {
                 type: 'object',
                 required: ['url'],
-                properties: {
-                  url: { type: 'string', format: 'uri' },
-                  secret: { type: 'string' }
-                }
-              }
-            }
-          }
+                properties: { url: { type: 'string', format: 'uri' }, secret: { type: 'string' } },
+              },
+            },
+          },
         },
         responses: {
           '200': {
-            description: 'Webhook test successful',
+            description: 'Webhook test result',
             content: {
               'application/json': {
                 schema: {
                   type: 'object',
+                  required: ['url', 'durationMs', 'success'],
                   properties: {
-                    success: { type: 'boolean' },
+                    url: { type: 'string', format: 'uri' },
                     statusCode: { type: 'integer' },
-                    message: { type: 'string' }
-                  }
-                }
-              }
-            }
+                    durationMs: { type: 'integer', minimum: 0 },
+                    success: { type: 'boolean' },
+                    error: { type: 'string' },
+                  },
+                },
+              },
+            },
           },
-          '400': {
-            description: 'Invalid webhook configuration',
-            content: {
-              'application/json': {
-                schema: errorResponseSchema
-              }
-            }
+          '400': { description: 'Invalid webhook URL or blocked egress destination', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '429': { description: 'Per-key webhook request limit exceeded', headers: { 'Retry-After': { schema: { type: 'integer' } } }, content: { 'application/problem+json': { schema: errorResponseSchema } } },
+        },
+      },
+    },
+  };
+}
+
+function buildWebhookDeliveryPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
+  const id = { name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^kaseki-\\\\d+$' } };
+  const attemptSchema = {
+    type: 'object',
+    properties: {
+      timestamp: { type: 'string', format: 'date-time' },
+      status: { type: 'string', enum: ['pending', 'retry', 'success', 'failed'] },
+      statusCode: { type: 'integer' },
+      durationMs: { type: 'integer' },
+      error: { type: 'string' },
+    },
+  };
+  const deliverySchema = {
+    type: 'object',
+    required: ['id', 'jobId', 'eventType', 'status', 'attempts'],
+    properties: {
+      id: { type: 'string' },
+      jobId: { type: 'string' },
+      eventType: { type: 'string' },
+      status: { type: 'string', enum: ['pending', 'retry', 'success', 'failed'] },
+      nextRetryAt: { type: 'string', format: 'date-time' },
+      attempts: { type: 'array', items: attemptSchema },
+    },
+  };
+  return {
+    '/api/v1/runs/{id}/webhook-deliveries': {
+      get: {
+        operationId: 'listRunWebhookDeliveries',
+        summary: 'Inspect webhook deliveries for a run',
+        description: 'Returns secret-free delivery status and attempt history. Delivery URLs and payload bodies are omitted.',
+        tags: ['Webhooks'],
+        security: [{ BearerAuth: [] }],
+        parameters: [id],
+        responses: {
+          '200': {
+            description: 'Webhook delivery history',
+            content: { 'application/json': { schema: { type: 'object', required: ['deliveries'], properties: { deliveries: { type: 'array', items: deliverySchema } } } } },
           },
-          '401': {
-            description: 'Unauthorized',
-            content: {
-              'application/json': {
-                schema: errorResponseSchema
-              }
-            }
-          }
-        }
-      }
-    }
+          '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '404': { description: 'Run not found', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+        },
+      },
+    },
+    '/api/v1/runs/{id}/webhook-deliveries/{deliveryId}/retry': {
+      post: {
+        operationId: 'retryRunWebhookDelivery',
+        summary: 'Retry a failed webhook delivery',
+        description: 'Supports manual retry: retries one failed webhook delivery after a terminal failure. Requires the webhooks:write scope.',
+        tags: ['Webhooks'],
+        security: [{ BearerAuth: [] }],
+        parameters: [id, { name: 'deliveryId', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '202': {
+            description: 'Retry queued',
+            content: { 'application/json': { schema: { type: 'object', required: ['id', 'jobId', 'status'], properties: { id: { type: 'string' }, jobId: { type: 'string' }, status: { type: 'string', enum: ['pending'] } } } } },
+          },
+          '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '404': { description: 'Run or delivery not found', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '409': { description: 'Delivery is not failed or changed before retry', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '429': { description: 'Per-key webhook request limit exceeded', headers: { 'Retry-After': { schema: { type: 'integer' } } }, content: { 'application/problem+json': { schema: errorResponseSchema } } },
+        },
+      },
+    },
   };
 }
 
 function buildImprovementPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
-    '/api/improvements': {
+    '/api/v1/improvements': {
       get: {
         operationId: 'getRunImprovements',
         summary: 'Aggregate run improvement findings',
         description:
-          'Aggregates recent terminal run-evaluation artifacts, stage timings, and compact run entries for continual improvement dashboards. Kaseki retains artifacts for the five most recent runs; older runs without artifact directories are counted as expired rather than evaluator failures.',
+          'Aggregates evaluator artifacts and stage timings for the requested cursor page of durable terminal run history. totalRuns counts all terminal runs; page-level evaluator and timing aggregates cover the returned runs.',
         tags: ['Run Details'],
         security: [{ BearerAuth: [] }],
         parameters: [
@@ -1374,7 +1455,8 @@ function buildImprovementPaths(errorResponseSchema: Record<string, unknown>): Re
             required: false,
             schema: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
             description: 'Maximum number of recent terminal runs to aggregate'
-          }
+          },
+          { name: 'cursor', in: 'query', required: false, schema: { type: 'string' }, description: 'Opaque cursor returned by the previous page' },
         ],
         responses: {
           '200': {
@@ -1386,6 +1468,8 @@ function buildImprovementPaths(errorResponseSchema: Record<string, unknown>): Re
                   properties: {
                     limit: { type: 'integer' },
                     totalRuns: { type: 'integer' },
+                    hasMore: { type: 'boolean' },
+                    nextCursor: { type: 'string' },
                     counts: { type: 'object' },
                     evaluator: {
                       type: 'object',
@@ -1408,11 +1492,12 @@ function buildImprovementPaths(errorResponseSchema: Record<string, unknown>): Re
           '401': {
             description: 'Unauthorized',
             content: {
-              'application/json': {
+              'application/problem+json': {
                 schema: errorResponseSchema
               }
             }
-          }
+          },
+          '400': { description: 'Invalid pagination cursor or limit', content: { 'application/problem+json': { schema: errorResponseSchema } } }
         }
       }
     }
@@ -1420,18 +1505,18 @@ function buildImprovementPaths(errorResponseSchema: Record<string, unknown>): Re
 }
 
 function buildScorecardPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
-  const error = (description: string) => ({ description, content: { 'application/json': { schema: errorResponseSchema } } });
+  const error = (description: string) => ({ description, content: { 'application/problem+json': { schema: errorResponseSchema } } });
   return {
-    '/api/runs/{id}/scorecard': { get: { operationId: 'getRunScorecard', summary: 'Get canonical run scorecard', description: 'Returns the validated structured run scorecard or its reviewer-safe Markdown representation.', tags: ['Artifacts'], security: [{ BearerAuth: [] }],
+    '/api/v1/runs/{id}/scorecard': { get: { operationId: 'getRunScorecard', summary: 'Get canonical run scorecard', description: 'Returns the validated structured run scorecard or its reviewer-safe Markdown representation.', tags: ['Artifacts'], security: [{ BearerAuth: [] }],
       parameters: [{ name:'id', in:'path', required:true, schema:{type:'string'} }, { name:'format', in:'query', required:false, schema:{type:'string',enum:['markdown']}, description:'Render with the same reviewer-safe formatter used for pull requests.' }],
       responses: { '200': { description:'Canonical scorecard', content: { 'application/json': { schema:{$ref:'#/components/schemas/RunScorecard'}, example:{run_id:'kaseki-42',overall_score:86,grade:'B',rubric_version:'1.0'} }, 'text/markdown': { schema:{type:'string'}, example:'- **Overall:** 86/100 (B)' } } },
         '400':error('Invalid format'), '401':error('Unauthorized'), '404':error('Run or scorecard not found'), '409':error('In-progress run has no provisional score'), '422':error('Malformed scorecard artifact') } } },
-    '/api/scorecards': { get: { operationId:'listScorecards', summary:'List compact run scorecards', description:'Queries only the bounded scheduler index and returns summaries without dimension evidence.', tags:['Run Details'], security:[{BearerAuth:[]}],
+    '/api/v1/scorecards': { get: { operationId:'listScorecards', summary:'List compact run scorecards', description:'Queries durable run history and returns summaries without dimension evidence using cursor pagination.', tags:['Run Details'], security:[{BearerAuth:[]}],
       parameters: [
-        {name:'limit',in:'query',schema:{type:'integer',minimum:1,maximum:100,default:25}}, {name:'offset',in:'query',schema:{type:'integer',minimum:0}},
+        {name:'limit',in:'query',schema:{type:'integer',minimum:1,maximum:100,default:25}}, {name:'cursor',in:'query',schema:{type:'string'}},
         ...['lifecycleStatus','grade','rubricVersion','model','repository'].map(name=>({name,in:'query',schema:{type:'string'}})),
         {name:'startedAfter',in:'query',schema:{type:'string',format:'date-time'}}, {name:'startedBefore',in:'query',schema:{type:'string',format:'date-time'}}],
-      responses:{'200':{description:'Paginated compact scorecard summaries',content:{'application/json':{schema:{type:'object',required:['scorecards','pagination','filters'],properties:{scorecards:{type:'array',items:{type:'object',required:['runId','overallScore','grade','rubricVersion'],properties:{runId:{type:'string'},overallScore:{type:'number'},grade:{type:'string'},rubricVersion:{type:'string'},lifecycleStatus:{type:'string'},completeness:{type:'string'},confidence:{type:'number'},startedAt:{type:['string','null'],format:'date-time'},endedAt:{type:['string','null']},scoredAt:{type:'string',format:'date-time'},model:{type:'string'},repository:{type:'string'}}}},pagination:{type:'object'},filters:{type:'object'}}},example:{scorecards:[{runId:'kaseki-42',overallScore:86,grade:'B',rubricVersion:'1.0'}],pagination:{limit:25,offset:0,returned:1,hasMore:false},filters:{}}}}},'401':error('Unauthorized')}} }
+      responses:{'200':{description:'Paginated compact scorecard summaries',content:{'application/json':{schema:{type:'object',required:['scorecards','total','pagination','filters'],properties:{scorecards:{type:'array',items:{type:'object',required:['runId','overallScore','grade','rubricVersion'],properties:{runId:{type:'string'},overallScore:{type:'number'},grade:{type:'string'},rubricVersion:{type:'string'},lifecycleStatus:{type:'string'},completeness:{type:'string'},confidence:{type:'number'},startedAt:{type:['string','null'],format:'date-time'},endedAt:{type:['string','null']},scoredAt:{type:'string',format:'date-time'},model:{type:'string'},repository:{type:'string'}}}},total:{type:'integer'},pagination:{type:'object',properties:{limit:{type:'integer'},returned:{type:'integer'},hasMore:{type:'boolean'},nextCursor:{type:'string'}}},filters:{type:'object'}}},example:{scorecards:[{runId:'kaseki-42',overallScore:86,grade:'B',rubricVersion:'1.0'}],total:1,pagination:{limit:25,returned:1,hasMore:false},filters:{}}}}},'400':error('Invalid pagination or filters'),'401':error('Unauthorized')}} }
   };
 }
 
@@ -1473,6 +1558,15 @@ export function buildAllPaths(
     ...buildRunAnalysisPaths(errorResponseSchema),
     ...buildImprovementPaths(errorResponseSchema),
     ...buildScorecardPaths(errorResponseSchema),
-    ...buildWebhookPaths(errorResponseSchema)
+    ...buildWebhookPaths(errorResponseSchema),
+    '/api/v1/openapi.json': {
+      get: {
+        operationId: 'getOpenApiSpec',
+        summary: 'Get the OpenAPI specification',
+        description: 'Returns the OpenAPI 3 specification for this versioned API.',
+        tags: ['Service Info'],
+        responses: { '200': { description: 'OpenAPI specification', content: { 'application/json': { schema: { type: 'object' } } } } },
+      },
+    },
   };
 }

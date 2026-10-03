@@ -8,7 +8,7 @@
  *   4. Bootstrap /agents (with sudo if needed)
  *   5. Start kaseki-api via docker (or docker run fallback)
  *   6. Wait for /ready body to confirm the API is truly ready
- *   7. Smoke-test the authenticated /api/runs endpoint
+ *   7. Smoke-test the authenticated /api/v1/runs endpoint
  */
 
 import { BaseCommand } from '../BaseCommand';
@@ -182,7 +182,7 @@ export class QuickstartCommand extends BaseCommand {
       if (apiKey) {
         const smokeResult = await this.containerLauncher.smokeTest(apiKey);
         if (smokeResult.ok) {
-          console.log('  ✓ Authenticated access confirmed (GET /api/runs succeeded)');
+          console.log('  ✓ Authenticated access confirmed (GET /api/v1/runs succeeded)');
         } else {
           console.warn('  ⚠️  Auth smoke test failed — check KASEKI_API_KEYS in your container env');
         }
@@ -190,7 +190,7 @@ export class QuickstartCommand extends BaseCommand {
         console.warn('  ⚠️  No API key found to test with; skipping auth check');
       }
     } else {
-      console.log('  [dry-run] would POST to /api/runs to confirm auth');
+      console.log('  [dry-run] would POST to /api/v1/runs to confirm auth');
     }
   }
 
@@ -239,7 +239,7 @@ WHAT IT DOES
      (uses sudo if needed; prints exact commands if sudo is unavailable)
   5. Starts the kaseki-api container via docker run
   6. Waits for http://localhost:8080/ready body to confirm ready status
-  7. Smoke-tests authenticated access to /api/runs
+  7. Smoke-tests authenticated access to /api/v1/runs
 
 SECRETS DISCOVERY ORDER
   For each secret, checks in priority order:

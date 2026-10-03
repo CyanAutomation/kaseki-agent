@@ -162,7 +162,7 @@ Sentry tracks transaction performance by default:
 View performance metrics in the **Performance** tab:
 
 ```
-/api/run             | 245ms avg | 89% <= 500ms
+/api/v1/runs            | 245ms avg | 89% <= 500ms
 /api/logs/:jobId     | 12ms avg  | 100% <= 100ms
 /api/artifacts/:id   | 450ms avg | 75% <= 1000ms
 ```

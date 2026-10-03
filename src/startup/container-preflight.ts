@@ -7,7 +7,7 @@
  *
  * All checks can run as UID 10000 (the container user) without requiring root privileges.
  * This module runs once at container startup and stores results in memory.
- * Later /api/preflight calls expose this cache as boot history only; they do
+ * Later /api/v1/preflight calls expose this cache as boot history only; they do
  * not treat it as current readiness.
  */
 
@@ -24,7 +24,7 @@ const logger = createEventLogger('container-preflight');
 
 /**
  * In-memory cache for container preflight results.
- * These are populated once at startup and exposed by /api/preflight as
+ * These are populated once at startup and exposed by /api/v1/preflight as
  * cached startup history. They are not rerun per request and must not be
  * interpreted as current readiness.
  */
@@ -529,13 +529,13 @@ export class ContainerPreflightDiagnostics {
 }
 
 /**
- * Log container preflight diagnostics results and cache them for later access via /api/preflight.
+ * Log container preflight diagnostics results and cache them for later access via /api/v1/preflight.
  * Non-blocking warnings are surfaced to logs and API metrics.
  */
 export function logContainerPreflightResults(checks: PreflightCheck[]): void {
   const failedChecks = checks.filter((check) => !check.ok);
 
-  // Cache results for /api/preflight endpoint to access
+  // Cache results for /api/v1/preflight endpoint to access
   cachedContainerPreflightResults = {
     timestamp: new Date().toISOString(),
     checks,
@@ -556,7 +556,7 @@ export function logContainerPreflightResults(checks: PreflightCheck[]): void {
   }
 
   logger.warn('');
-  logger.warn('The API will continue to start. See /api/preflight for full details.');
+  logger.warn('The API will continue to start. See /api/v1/preflight for full details.');
 }
 
 /**

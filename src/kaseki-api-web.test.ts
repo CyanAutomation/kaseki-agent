@@ -222,10 +222,10 @@ describe('kaseki API web console routes', () => {
     getElement(document, '[data-testid="task-repo-url"]');
     getElement(document, '[data-testid="issues-repo-url"]');
     expectAttribute(document, '#issues-label', 'value', 'kaseki-agent');
-    getElement(document, '[data-probe="/api/preflight"]');
-    expectAttribute(document, '[data-probe="/api/gateway-test?stage=1"]', 'data-auth', 'true');
-    expectTextContains(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&evaluation=true"]', 'AI Model Test');
-    expectAttribute(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&evaluation=true"]', 'data-cost-warning', 'true');
+    getElement(document, '[data-probe="/api/v1/preflight"]');
+    expectAttribute(document, '[data-probe="/api/v1/gateway-test?stage=1"]', 'data-auth', 'true');
+    expectTextContains(document, '[data-probe="/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true"]', 'AI Model Test');
+    expectAttribute(document, '[data-probe="/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true"]', 'data-cost-warning', 'true');
     expectAttribute(document, '#task-mode', 'name', 'taskMode');
     expectText(document, '.advanced-options summary', 'Advanced run controls');
     expectAttribute(document, '#task-ref', 'name', 'ref');
@@ -234,7 +234,7 @@ describe('kaseki API web console routes', () => {
     expectAttribute(document, '#changed-files-allowlist', 'name', 'changedFilesAllowlist');
     expectAttribute(document, '#validation-commands', 'name', 'validationCommands');
     expectTextContains(document, '[data-probe="/ready"]', 'Readiness');
-    expectTextContains(document, '[data-probe="/api/preflight"]', 'Live preflight');
+    expectTextContains(document, '[data-probe="/api/v1/preflight"]', 'Live preflight');
     getElement(document, '#runs-list');
     expectTextContains(document, '#refresh-runs', 'Refresh runs');
     expectTextContains(document, '#cancel-run', 'Cancel run');
@@ -262,16 +262,16 @@ describe('kaseki API web console behavior', () => {
     change(tokenInput!, 'newtoken456');
     expect(dom.window.sessionStorage.getItem('kasekiApiToken')).toBe('newtoken456');
 
-    click(document.querySelector('[data-probe="/api/preflight"]'));
+    click(document.querySelector('[data-probe="/api/v1/preflight"]'));
     await waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls[0]).toMatchObject({ path: '/api/preflight' });
+    expect(calls[0]).toMatchObject({ path: '/api/v1/preflight' });
     expect(calls[0].init?.headers).toMatchObject({ Authorization: 'Bearer newtoken456' });
     expect(dom.window.sessionStorage.getItem('kasekiApiToken')).toBe('newtoken456');
     await waitFor(() => expect(document.querySelector('#state')?.textContent).toBe('Current preflight completed.'));
     calls.length = 0;
 
     change(tokenInput!, 'bad token with spaces');
-    click(document.querySelector('[data-probe="/api/preflight"]'));
+    click(document.querySelector('[data-probe="/api/v1/preflight"]'));
     await waitFor(() => expect(document.querySelector('#state')?.textContent).toBe('Request could not be sent.'));
     expect(document.querySelector('#output')?.textContent).toContain('Token format looks invalid');
     expect(calls).toHaveLength(0);
@@ -281,7 +281,7 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: (path) => {
-        if (path === '/api/runs/kaseki-219/status') {
+        if (path === '/api/v1/runs/kaseki-219/status') {
           return createJsonResponse({
             id: 'kaseki-219',
             status: 'failed',
@@ -294,7 +294,7 @@ describe('kaseki API web console behavior', () => {
             },
           });
         }
-        if (path === '/api/runs') return createJsonResponse({ runs: [{ id: 'kaseki-219', status: 'failed' }] });
+        if (path === '/api/v1/runs') return createJsonResponse({ runs: [{ id: 'kaseki-219', status: 'failed' }] });
         return createJsonResponse({ status: 'ok' });
       },
     });
@@ -311,11 +311,11 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/runs/kaseki-220/status': createJsonResponse({
+        '/api/v1/runs/kaseki-220/status': createJsonResponse({
           id: 'kaseki-220', status: 'running',
           phaseOutcome: { scouting: 'completed', weaving: 'running', scoutingFallback: true },
         }),
-        '/api/runs': createJsonResponse({ runs: [{ id: 'kaseki-220', status: 'running' }] }),
+        '/api/v1/runs': createJsonResponse({ runs: [{ id: 'kaseki-220', status: 'running' }] }),
       }, createJsonResponse({ status: 'ok' })),
     });
 
@@ -328,13 +328,13 @@ describe('kaseki API web console behavior', () => {
     const { document, calls } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/runs': createJsonResponse({ runs: [{ id: 'kaseki-261', status: 'completed' }] }),
-        '/api/runs/kaseki-261/status': createJsonResponse({
+        '/api/v1/runs': createJsonResponse({ runs: [{ id: 'kaseki-261', status: 'completed' }] }),
+        '/api/v1/runs/kaseki-261/status': createJsonResponse({
           id: 'kaseki-261', status: 'completed',
           goalCheck: { status: 'warning', warning: 'goal_check_artifact_missing', exitCode: 0 },
           runEvaluation: { status: 'warning', warning: 'run_evaluation_failed_exit_86', exitCode: 86 },
         }),
-        '/api/runs/kaseki-261/retry': createJsonResponse({ id: 'kaseki-262', status: 'queued' }, 202),
+        '/api/v1/runs/kaseki-261/retry': createJsonResponse({ id: 'kaseki-262', status: 'queued' }, 202),
       }, createJsonResponse({ status: 'ok' })),
     });
 
@@ -345,26 +345,26 @@ describe('kaseki API web console behavior', () => {
     expect(getElement<HTMLButtonElement>(document, '#retry-run-btn').disabled).toBe(false);
 
     clickSelector(document, '#retry-run-btn');
-    await waitFor(() => expect(calls.some((call) => call.path === '/api/runs/kaseki-261/retry')).toBe(true));
+    await waitFor(() => expect(calls.some((call) => call.path === '/api/v1/runs/kaseki-261/retry')).toBe(true));
   });
 
   test('prefers durable structured progress events over an inferred Docker-tail status', async () => {
     const { document, calls } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/runs': createJsonResponse({ runs: [{ id: 'kaseki-263', status: 'running' }] }),
-        '/api/runs/kaseki-263/status': createJsonResponse({
+        '/api/v1/runs': createJsonResponse({ runs: [{ id: 'kaseki-263', status: 'running' }] }),
+        '/api/v1/runs/kaseki-263/status': createJsonResponse({
           id: 'kaseki-263', status: 'running',
           progress: { stage: 'npm run lint:fix', updatedAt: '2026-08-19T21:47:28Z', source: 'docker-logs', timestampEstimated: true },
         }),
-        '/api/runs/kaseki-263/events?tail=50': createJsonResponse({
+        '/api/v1/runs/kaseki-263/events?tail=50': createJsonResponse({
           events: [{ stage: 'validation', displayName: 'Validation', updatedAt: '2026-08-19T21:47:30Z', source: 'progress.jsonl' }],
         }),
       }, createJsonResponse({ status: 'ok' })),
     });
 
     await refreshAndSelectFirstRun(document);
-    await waitFor(() => expect(calls.some((call) => call.path === '/api/runs/kaseki-263/events?tail=50')).toBe(true));
+    await waitFor(() => expect(calls.some((call) => call.path === '/api/v1/runs/kaseki-263/events?tail=50')).toBe(true));
     expectTextContains(document, '#response-summary', 'Validation');
     expectTextContains(document, '#response-summary', 'Confirmed controller progress event');
   });
@@ -373,8 +373,8 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/runs': createJsonResponse({ runs: [{ id: 'kaseki-live-stale', status: 'running' }] }),
-        '/api/runs/kaseki-live-stale/status': createJsonResponse({
+        '/api/v1/runs': createJsonResponse({ runs: [{ id: 'kaseki-live-stale', status: 'running' }] }),
+        '/api/v1/runs/kaseki-live-stale/status': createJsonResponse({
           id: 'kaseki-live-stale', status: 'running',
           progress: { stage: 'pi coding agent', updatedAt: '2026-08-19T21:40:00Z' },
           progressHeartbeat: { ageSeconds: 420, stale: true, livenessAgeSeconds: 20 },
@@ -392,7 +392,7 @@ describe('kaseki API web console behavior', () => {
     const { document, calls } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/runs': createJsonResponse({
+        '/api/v1/runs': createJsonResponse({
           runs: [
             { id: 'kaseki-101', status: 'running', createdAt: '2026-06-09T12:00:00Z' },
             { id: 'kaseki-102', status: 'completed', createdAt: '2026-06-09T12:05:00Z' },
@@ -404,7 +404,7 @@ describe('kaseki API web console behavior', () => {
     click(document.querySelector('#refresh-runs'));
     await waitFor(() => expect(document.querySelectorAll('#runs-list button')).toHaveLength(2));
 
-    expect(calls[0]).toMatchObject({ path: '/api/runs' });
+    expect(calls[0]).toMatchObject({ path: '/api/v1/runs' });
     expect([...document.querySelectorAll('#runs-list button')].map((button) => button.textContent)).toEqual([
       expect.stringContaining('kaseki-101'),
       expect.stringContaining('kaseki-102'),
@@ -422,8 +422,8 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/runs': createJsonResponse({ runs: [{ id: 'kaseki-199', status: 'failed', createdAt: '2026-07-04T12:00:00Z' }] }),
-        '/api/runs/kaseki-199/status': createJsonResponse({
+        '/api/v1/runs': createJsonResponse({ runs: [{ id: 'kaseki-199', status: 'failed', createdAt: '2026-07-04T12:00:00Z' }] }),
+        '/api/v1/runs/kaseki-199/status': createJsonResponse({
           id: 'kaseki-199',
           status: 'failed',
           lifecyclePhase: 'terminal',
@@ -431,7 +431,7 @@ describe('kaseki API web console behavior', () => {
           attempt: { current: 2, maximum: 2, state: 'exhausted' },
           diagnosis: { severity: 'error', summary: 'Provider retry exhausted', remediation: 'Inspect provider attempts' },
         }),
-        '/api/runs/kaseki-199/artifacts': createJsonResponse({ artifacts: [] }),
+        '/api/v1/runs/kaseki-199/artifacts': createJsonResponse({ artifacts: [] }),
       }),
     });
 
@@ -448,9 +448,9 @@ describe('kaseki API web console behavior', () => {
       fetchHandler: () => createJsonResponse({ status: 'ok' }),
     });
 
-    expect(healthCheckButton(document, 'API Connection').getAttribute('data-probe')).toBe('/api/gateway-test?stage=1');
+    expect(healthCheckButton(document, 'API Connection').getAttribute('data-probe')).toBe('/api/v1/gateway-test?stage=1');
     expect(healthCheckButton(document, 'AI Model Test').getAttribute('data-probe'))
-      .toBe('/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&evaluation=true');
+      .toBe('/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true');
 
     const checkStatusButton = [...document.querySelectorAll('.health-check-button')]
       .find(btn => (btn.textContent || '').includes('Check Status'));
@@ -461,7 +461,7 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&evaluation=true': createJsonResponse({
+        '/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true': createJsonResponse({
           status: 'partial',
           partialSuccess: true,
           responseSmokeValidated: false,
@@ -491,17 +491,17 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/gateway-test?stage=1': () => {
+        '/api/v1/gateway-test?stage=1': () => {
           return new Promise((_resolve, reject) => { rejectGateway = reject; });
         },
-        '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&evaluation=true': () => {
+        '/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true': () => {
           return new Promise((_resolve, reject) => { rejectInference = reject; });
         },
-        '/api/runs': createJsonResponse({ runs: [] }),
+        '/api/v1/runs': createJsonResponse({ runs: [] }),
       }, createJsonResponse({ status: 'ok' })),
     });
-    const gateway = getElement<HTMLButtonElement>(document, '[data-probe="/api/gateway-test?stage=1"]');
-    const inference = getElement<HTMLButtonElement>(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&evaluation=true"]');
+    const gateway = getElement<HTMLButtonElement>(document, '[data-probe="/api/v1/gateway-test?stage=1"]');
+    const inference = getElement<HTMLButtonElement>(document, '[data-probe="/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true"]');
     const repo = getElement<HTMLInputElement>(document, '[name="repoUrl"]');
     click(gateway);
     await waitFor(() => expect(gateway.disabled).toBe(true));
@@ -524,12 +524,12 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/runs/kaseki-304/status': createJsonResponse({
+        '/api/v1/runs/kaseki-304/status': createJsonResponse({
           id: 'kaseki-304',
           status: 'completed',
           prUrl: 'https://github.com/CyanAutomation/tako-bako/pull/29',
         }),
-        '/api/runs/kaseki-304/artifacts': createJsonResponse({ artifacts: [] }),
+        '/api/v1/runs/kaseki-304/artifacts': createJsonResponse({ artifacts: [] }),
       }),
     });
 
@@ -543,20 +543,20 @@ describe('kaseki API web console behavior', () => {
     const { document, calls } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/runs/kaseki-304/status': createJsonResponse({
+        '/api/v1/runs/kaseki-304/status': createJsonResponse({
           id: 'kaseki-304', status: 'running', prUrl: '#',
           progress: {
             stage: 'pi coding agent2026-09-16T08:19:21.399658807Z',
             updatedAt: '2026-09-16T08:19:21.399658807Z',
           },
         }),
-        '/api/runs/kaseki-304/artifacts': createJsonResponse({ artifacts: [] }),
+        '/api/v1/runs/kaseki-304/artifacts': createJsonResponse({ artifacts: [] }),
       }),
     });
 
     setRunId(document, 'kaseki-304');
     clickSelector(document, '#full-results-btn');
-    await waitFor(() => expect(calls.some((call) => call.path === '/api/runs/kaseki-304/status')).toBe(true));
+    await waitFor(() => expect(calls.some((call) => call.path === '/api/v1/runs/kaseki-304/status')).toBe(true));
     await waitFor(() => expectTextContains(document, '#response-summary', 'pi coding agent'));
     expectHidden(document, '#pull-request-link', true);
     expect(getElement(document, '#pull-request-link').hasAttribute('href')).toBe(false);
@@ -567,10 +567,10 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: (path) => {
-        if (path === '/api/gateway-test?stage=1') {
+        if (path === '/api/v1/gateway-test?stage=1') {
           return createJsonResponse({ status: 'error', responseTime: 125 });
         }
-        if (path === '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&evaluation=true') {
+        if (path === '/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true') {
           return createJsonResponse({
             status: 'ok',
             responseTime: 480,
@@ -580,16 +580,16 @@ describe('kaseki API web console behavior', () => {
             piProviderSmoke: { status: 'ok' },
           });
         }
-        if (path === '/api/runs') return createJsonResponse({ runs: [] });
+        if (path === '/api/v1/runs') return createJsonResponse({ runs: [] });
         return createJsonResponse({ status: 'ok' });
       },
     });
 
-    click(document.querySelector('[data-probe="/api/gateway-test?stage=1"]'));
+    click(document.querySelector('[data-probe="/api/v1/gateway-test?stage=1"]'));
     await waitFor(() => expect(document.querySelector('[data-summary="gateway"]')?.textContent).toBe('Failed'));
     expect(document.querySelector('[data-summary="gateway"]')?.className).toContain('bad');
 
-    click(document.querySelector('[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&evaluation=true"]'));
+    click(document.querySelector('[data-probe="/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true"]'));
     await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Gateway inference passed. Pi adapter passed.'));
     expectText(document, '[data-summary="llm-test"]', 'Gateway inference passed · Pi adapter passed · gateway 480ms · 7 tokens stream ok, large ok');
     expect(document.querySelector('#response-summary')?.textContent).not.toContain('OpenRouter');
@@ -599,7 +599,7 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&evaluation=true': createJsonResponse({
+        '/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true': createJsonResponse({
           status: 'ok',
           responseTime: 600,
           outputTokens: 11,
@@ -612,11 +612,11 @@ describe('kaseki API web console behavior', () => {
           largePromptSmokeValidated: true,
           piProviderSmoke: { status: 'ok' },
         }),
-        '/api/runs': createJsonResponse({ runs: [] }),
+        '/api/v1/runs': createJsonResponse({ runs: [] }),
       }, createJsonResponse({ status: 'ok' })),
     });
 
-    clickSelector(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&evaluation=true"]');
+    clickSelector(document, '[data-probe="/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true"]');
 
     await waitFor(() => expectText(
       document,
@@ -629,7 +629,7 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&evaluation=true': createJsonResponse({
+        '/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true': createJsonResponse({
           status: 'ok',
           responseTime: 510,
           partialSuccess: true,
@@ -644,11 +644,11 @@ describe('kaseki API web console behavior', () => {
             },
           },
         }),
-        '/api/runs': createJsonResponse({ runs: [] }),
+        '/api/v1/runs': createJsonResponse({ runs: [] }),
       }, createJsonResponse({ status: 'ok' })),
     });
 
-    clickSelector(document, '[data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&evaluation=true"]');
+    clickSelector(document, '[data-probe="/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true"]');
 
     await waitFor(() => expectTextContains(document, '#response-summary', 'Gateway inference passed. Pi adapter failed.'));
     expectTextContains(document, '#response-summary', 'Fields found: message.output_text');
@@ -662,7 +662,7 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: async (path) => {
-        if (path !== '/api/runs') return createJsonResponse({});
+        if (path !== '/api/v1/runs') return createJsonResponse({});
         const retryTimeoutMs = Number(process.env.TEST_RETRY_TIMEOUT ?? 10);
         await new Promise((resolve) => setTimeout(resolve, retryTimeoutMs));
         return createJsonResponse({
@@ -693,7 +693,7 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/runs': createJsonResponse({ runs: [{
+        '/api/v1/runs': createJsonResponse({ runs: [{
           id: 'kaseki-905', status: 'failed', createdAt: '2026-06-09T12:00:00Z',
           failureClass: 'metadata_write_invalid',
           error: 'critical_change_expectations_failed: required file missing from changed-files.txt: docs/DEPLOYMENT_TROUBLESHOOTING.md',
@@ -713,12 +713,12 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/runs/kaseki-906/status': createJsonResponse({
+        '/api/v1/runs/kaseki-906/status': createJsonResponse({
           id: 'kaseki-906', status: 'failed',
           error: 'provider_empty_assistant_turn: Provider returned output tokens but no assistant text (phase: run-evaluation)',
           failureJsonContent: { provider_error_type: 'provider_empty_assistant_turn', provider_error_phase: 'run-evaluation' },
         }),
-        '/api/runs': createJsonResponse({ runs: [] }),
+        '/api/v1/runs': createJsonResponse({ runs: [] }),
       }),
     });
 
@@ -733,11 +733,11 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/runs/kaseki-907/status': createJsonResponse({
+        '/api/v1/runs/kaseki-907/status': createJsonResponse({
           id: 'kaseki-907', status: 'completed',
           runEvaluation: { status: 'warning', exitCode: 86, warning: 'run_evaluation_failed_exit_86' },
         }),
-        '/api/runs': createJsonResponse({ runs: [] }),
+        '/api/v1/runs': createJsonResponse({ runs: [] }),
       }),
     });
 
@@ -750,15 +750,15 @@ describe('kaseki API web console behavior', () => {
     const { document, calls } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/runs/kaseki-301/status': createJsonResponse({ id: 'kaseki-301', status: 'running' }),
-        '/api/runs/kaseki-301/artifacts': createJsonResponse({
+        '/api/v1/runs/kaseki-301/status': createJsonResponse({ id: 'kaseki-301', status: 'running' }),
+        '/api/v1/runs/kaseki-301/artifacts': createJsonResponse({
           artifacts: [
             { name: 'report.json', available: true, contentType: 'application/json', size: '1 KB' },
             { name: 'archive.tar', available: true, contentType: 'application/x-tar', size: '8 KB' },
             { name: 'missing.txt', available: false, contentType: 'text/plain', size: '1 KB' },
           ],
         }),
-        '/api/results/kaseki-301/report.json': createJsonResponse({
+        '/api/v1/results/kaseki-301/report.json': createJsonResponse({
           response: {
             file: 'report.json',
             contentType: 'application/json',
@@ -769,7 +769,7 @@ describe('kaseki API web console behavior', () => {
     });
 
     openFullResults(document, 'kaseki-301');
-    await waitFor(() => expect(calls.map((call) => call.path)).toContain('/api/runs/kaseki-301/status'));
+    await waitFor(() => expect(calls.map((call) => call.path)).toContain('/api/v1/runs/kaseki-301/status'));
 
     clickSelector(document, '.tab-btn[data-tab="artifacts"]');
     await waitFor(() => expect(document.querySelectorAll('#artifacts-output .artifact-item')).toHaveLength(1));
@@ -805,7 +805,7 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/runs/kaseki-303/status': createJsonResponse({
+        '/api/v1/runs/kaseki-303/status': createJsonResponse({
           id: 'kaseki-303',
           status: 'failed',
           exitCode: 88,
@@ -834,7 +834,7 @@ describe('kaseki API web console behavior', () => {
     const { document, calls } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/github-issues': createJsonResponse({
+        '/api/v1/github-issues': createJsonResponse({
           repoUrl: 'https://github.com/CyanAutomation/kaseki-agent',
           issueCount: 1,
           issues: [{
@@ -852,7 +852,7 @@ describe('kaseki API web console behavior', () => {
     inputSelector(document, '#issues-label', 'documentation');
     clickSelector(document, '#load-issues-btn');
     await waitFor(() => expectTextContains(document, '#issues-list', 'Stage names drift'));
-    expect(calls.find((call) => call.path === '/api/github-issues')?.init?.body).toBe(JSON.stringify({
+    expect(calls.find((call) => call.path === '/api/v1/github-issues')?.init?.body).toBe(JSON.stringify({
       repoUrl: 'CyanAutomation/kaseki-agent', label: 'documentation',
     }));
     expect(getElement(document, '.issues-list-item').tagName).toBe('BUTTON');
@@ -884,7 +884,7 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/github-issues': createJsonResponse({
+        '/api/v1/github-issues': createJsonResponse({
           repoUrl: 'https://github.com/CyanAutomation/tako-bako',
           issueCount: 0,
           issues: [],
@@ -906,7 +906,7 @@ describe('kaseki API web console behavior', () => {
     const { document, calls } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/github-issues': createJsonResponse({ repoUrl: 'https://github.com/CyanAutomation/tako-bako', issueCount: 0, issues: [] }),
+        '/api/v1/github-issues': createJsonResponse({ repoUrl: 'https://github.com/CyanAutomation/tako-bako', issueCount: 0, issues: [] }),
       }),
     });
 
@@ -916,7 +916,7 @@ describe('kaseki API web console behavior', () => {
     clickSelector(document, '#load-issues-btn');
 
     await waitFor(() => expectTextContains(document, '#issues-list', 'No issues found'));
-    expect(calls.find((call) => call.path === '/api/github-issues')?.init?.body).toBe(JSON.stringify({
+    expect(calls.find((call) => call.path === '/api/v1/github-issues')?.init?.body).toBe(JSON.stringify({
       repoUrl: 'CyanAutomation/tako-bako', allLabels: true,
     }));
   });
@@ -925,7 +925,7 @@ describe('kaseki API web console behavior', () => {
     const { dom, document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: (path) => {
-        if (path === '/api/github-issues') {
+        if (path === '/api/v1/github-issues') {
           return createJsonResponse({
             repoUrl: 'https://github.com/CyanAutomation/kaseki-agent',
             issueCount: 1,
@@ -962,17 +962,17 @@ describe('kaseki API web console behavior', () => {
     const { document, calls } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/validate': createJsonResponse({
+        '/api/v1/validate': createJsonResponse({
           isValid: true,
           checks: [{ name: 'repo-reachable', status: 'pass', message: 'ok' }],
           estimatedDurationSeconds: 10,
         }),
-        '/api/runs': createJsonResponse({
+        '/api/v1/runs': createJsonResponse({
           id: 'kaseki-777',
           status: 'queued',
           createdAt: '2026-06-12T21:30:00.000Z',
         }, 202),
-        '/api/runs/kaseki-777/status': createJsonResponse({ id: 'kaseki-777', status: 'running', elapsedSeconds: 1 }),
+        '/api/v1/runs/kaseki-777/status': createJsonResponse({ id: 'kaseki-777', status: 'running', elapsedSeconds: 1 }),
       }, createJsonResponse({ runs: [] })),
     });
 
@@ -991,7 +991,7 @@ describe('kaseki API web console behavior', () => {
     await waitFor(() => expect(getElement<HTMLInputElement>(document, '#run-id').value).toBe('kaseki-777'));
     expectTextContains(document, '#output-meta', 'Run ID: kaseki-777');
     expectText(document, '#state', 'Run submitted.');
-    const submitCall = calls.find((call) => call.path === '/api/runs' && call.init?.method === 'POST');
+    const submitCall = calls.find((call) => call.path === '/api/v1/runs' && call.init?.method === 'POST');
     expect(submitCall).toBeDefined();
     const submitBody = JSON.parse(String(submitCall?.init?.body || '{}')) as { idempotencyKey?: string };
     expect(submitBody.idempotencyKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
@@ -1001,8 +1001,8 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: (path) => {
-        if (path === '/api/runs/kaseki-302/status') return createJsonResponse({ id: 'kaseki-302', status: 'running' });
-        if (path === '/api/runs/kaseki-302/logs/stdout?tail=lines&lines=200') {
+        if (path === '/api/v1/runs/kaseki-302/status') return createJsonResponse({ id: 'kaseki-302', status: 'running' });
+        if (path === '/api/v1/runs/kaseki-302/logs/stdout?tail=lines&lines=200') {
           return createJsonResponse({ logType: 'stdout', content: 'line one\nline two\n', size: 18 });
         }
         return createJsonResponse({});
@@ -1024,8 +1024,8 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: (path) => {
-        if (path === '/api/runs/kaseki-305/status') return createJsonResponse({ id: 'kaseki-305', status: 'running' });
-        if (path === '/api/runs/kaseki-305/events?tail=50') return createJsonResponse({
+        if (path === '/api/v1/runs/kaseki-305/status') return createJsonResponse({ id: 'kaseki-305', status: 'running' });
+        if (path === '/api/v1/runs/kaseki-305/events?tail=50') return createJsonResponse({
           events: [{
             stage: 'goal check', status: 'started', message: 'started',
             updatedAt: '2026-09-03T17:20:52.604Z', timestamp: '2000-01-01T00:00:00Z',
@@ -1059,8 +1059,8 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: (path) => {
-        if (path === '/api/runs/kaseki-303/status') return createJsonResponse({ id: 'kaseki-303', status: 'completed' });
-        if (path === '/api/runs/kaseki-303/logs/stdout?tail=lines&lines=200') {
+        if (path === '/api/v1/runs/kaseki-303/status') return createJsonResponse({ id: 'kaseki-303', status: 'completed' });
+        if (path === '/api/v1/runs/kaseki-303/logs/stdout?tail=lines&lines=200') {
           return createJsonResponse({ logType: 'stdout', content: { message: 'structured agent output' } });
         }
         return createJsonResponse({});
@@ -1082,7 +1082,7 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: (path) => {
-        if (path === '/api/runs/kaseki-304/status') {
+        if (path === '/api/v1/runs/kaseki-304/status') {
           return createJsonResponse({
             id: 'kaseki-304',
             status: 'completed',
@@ -1106,7 +1106,7 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/preflight': createJsonResponse({
+        '/api/v1/preflight': createJsonResponse({
           status: 'ok',
           checks: [
             { name: 'results-dir', ok: true, detail: 'writable' },
@@ -1126,7 +1126,7 @@ describe('kaseki API web console behavior', () => {
           },
           doctorStdoutTail: 'large nested payload should not be displayed',
         }),
-        '/api/runs/kaseki-303/artifacts': createJsonResponse({
+        '/api/v1/runs/kaseki-303/artifacts': createJsonResponse({
           id: 'kaseki-303',
           runStatus: 'failed',
           artifactCount: 3,
@@ -1140,7 +1140,7 @@ describe('kaseki API web console behavior', () => {
       }),
     });
 
-    clickSelector(document, '[data-probe="/api/preflight"]');
+    clickSelector(document, '[data-probe="/api/v1/preflight"]');
     await waitFor(() => expectTextContains(document, '#output', '"checkCount": 2'));
     expectTextContains(document, '#output', '"currentDiagnostics"');
     expectTextContains(document, '#output', '"startupDiagnostics"');
@@ -1155,7 +1155,7 @@ describe('kaseki API web console behavior', () => {
     await waitFor(() => expectTextContains(document, '#artifacts-output', 'failure.json'));
     expectTextNotContains(document, '#artifacts-output', 'pending-summary.md');
     expectTextNotContains(document, '#artifacts-output', 'missing.txt');
-    expectTextContains(document, '#output', '"path": "/api/preflight"');
+    expectTextContains(document, '#output', '"path": "/api/v1/preflight"');
     expectTextNotContains(document, '#output', '"availableArtifacts"');
   });
 
@@ -1163,11 +1163,11 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: routeResponses({
-        '/api/validate': createJsonResponse({
+        '/api/v1/validate': createJsonResponse({
           isValid: true,
           checks: [{ name: 'repo-reachable', status: 'pass', message: 'ok' }],
         }),
-        '/api/runs': createTextResponse('Bad Gateway', 502),
+        '/api/v1/runs': createTextResponse('Bad Gateway', 502),
       }, createJsonResponse({ runs: [] })),
     });
 

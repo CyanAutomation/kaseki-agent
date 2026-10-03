@@ -50,7 +50,7 @@ Run the authenticated current preflight first; its `checkout-freshness`,
 
 ```bash
 curl -sS -H "Authorization: Bearer $KASEKI_API_KEY" \
-  http://localhost:3000/api/preflight | jq '{templateRef, imageDigest, checks: [.checks[] | select(.name == "checkout-freshness" or .name == "template-doctor" or .name == "image")]}'
+  http://localhost:3000/api/v1/preflight | jq '{templateRef, imageDigest, checks: [.checks[] | select(.name == "checkout-freshness" or .name == "template-doctor" or .name == "image")]}'
 ```
 
 On the controller host, compare the checked-out commit with the remote before
@@ -184,7 +184,7 @@ docker-compose logs -f kaseki-api
   • git-safe-directory: FAIL — Git safe.directory not configured
   → Remediation: Configure: git config --global --add safe.directory /agents/kaseki-agent
 
-The API will continue to start. See /api/preflight for full details.
+The API will continue to start. See /api/v1/preflight for full details.
 ```
 
 **Cause:** These are **non-blocking warnings** from container startup diagnostics. They indicate that:
@@ -214,13 +214,13 @@ docker-compose up -d
 docker-compose logs kaseki-api | grep "preflight"
 ```
 
-**For programmatic access:** Call the `/api/preflight` endpoint to see full diagnostic details:
+**For programmatic access:** Call the `/api/v1/preflight` endpoint to see full diagnostic details:
 
 ```bash
-curl -H "Authorization: Bearer $KASEKI_API_KEY" http://localhost:8080/api/preflight | jq '.containerStartup'
+curl -H "Authorization: Bearer $KASEKI_API_KEY" http://localhost:8080/api/v1/preflight | jq '.containerStartup'
 ```
 
-The `containerStartup` section is cached startup history (`scope: "startup"`, `current: false`) and is excluded from the endpoint's current readiness status. Use the top-level `checks` and `timestamp` for current `/api/preflight` readiness.
+The `containerStartup` section is cached startup history (`scope: "startup"`, `current: false`) and is excluded from the endpoint's current readiness status. Use the top-level `checks` and `timestamp` for current `/api/v1/preflight` readiness.
 
 ### Symptom: "Could not create /agents/kaseki-template"
 
@@ -317,7 +317,7 @@ If your environment is too restricted (read-only volumes, no permission escalati
    
    # Or via curl from within the container:
    curl -H "Authorization: Bearer $KASEKI_API_KEYS" \
-     http://localhost:8080/api/preflight
+     http://localhost:8080/api/v1/preflight
    ```
 
 #### **Troubleshooting Init Container Failures**
@@ -379,7 +379,7 @@ ls -la /agents/kaseki-template/run-kaseki.sh
 | `mkdir: cannot create directory '/agents'` | Run as root or ensure `/agents` exists: `sudo mkdir -p /agents && sudo chown $USER:$USER /agents` |
 | `Docker image not found` | Pull image first: `docker pull docker.io/cyanautomation/kaseki-agent:latest` |
 | `run-kaseki.sh not found after bootstrap` | Image may be corrupted; try: `docker pull --no-cache docker.io/cyanautomation/kaseki-agent:latest` and re-run bootstrap |
-| `/api/runs` returns 400 "bootstrap not complete" | File is missing; run bootstrap again |
+| `/api/v1/runs` returns 400 "bootstrap not complete" | File is missing; run bootstrap again |
 
 **Step 4: Start the API Service**
 
@@ -421,7 +421,7 @@ docker-compose down
 ```
 
 On a fresh host, run the host setup helper before starting the API, or any time
-`/api/preflight` reports missing results/template directories:
+`/api/v1/preflight` reports missing results/template directories:
 
 ```bash
 sudo npm install -g @cyanautomation/kaseki-agent@latest
@@ -459,7 +459,7 @@ authenticated preflight endpoint:
 sudo kaseki-agent host preflight
 ```
 
-Use `/ready` and authenticated `/api/preflight` for readiness. Docker health is
+Use `/ready` and authenticated `/api/v1/preflight` for readiness. Docker health is
 useful, but preflight explains host path, secret, Docker socket, template, and
 worker-container problems directly.
 
@@ -729,7 +729,7 @@ After starting the API container, verify with the preflight endpoint:
 
 ```bash
 curl -H "Authorization: Bearer sk-api-key-1" \
-  http://localhost:8080/api/preflight | \
+  http://localhost:8080/api/v1/preflight | \
   jq '.checks[] | select(.name == "openrouter-key")'
 ```
 
@@ -1238,7 +1238,7 @@ All deployments should monitor health:
 ```bash
 curl http://localhost:8080/health
 # Equivalent namespaced endpoint:
-curl http://localhost:8080/api/health
+curl http://localhost:8080/api/v1/health
 ```
 
 Expected response:
@@ -1331,7 +1331,7 @@ journalctl -u kaseki-api -f
 Metrics endpoint coming in Phase 8:
 
 ```bash
-curl -H "Authorization: Bearer $KASEKI_API_KEYS" http://localhost:8080/api/metrics
+curl -H "Authorization: Bearer $KASEKI_API_KEYS" http://localhost:8080/api/v1/metrics
 ```
 
 Example Prometheus scrape config:
@@ -1339,7 +1339,7 @@ Example Prometheus scrape config:
 ```yaml
 scrape_configs:
   - job_name: kaseki_api
-    metrics_path: /api/metrics
+    metrics_path: /api/v1/metrics
     scheme: http
     static_configs:
       - targets: ['kaseki-api:8080']
@@ -1352,7 +1352,7 @@ Readiness probe (no auth required):
 ```bash
 curl -f http://localhost:8080/ready
 # or
-curl -f http://localhost:8080/api/ready
+curl -f http://localhost:8080/api/v1/ready
 ```
 
 `/ready` returns `503` with machine-readable `reasons` when dependencies like results-dir writability,
@@ -1453,7 +1453,7 @@ Common issues:
 Check queue status:
 
 ```bash
-curl -H "Authorization: Bearer sk-key" http://localhost:8080/api/runs
+curl -H "Authorization: Bearer sk-key" http://localhost:8080/api/v1/runs
 
 # Monitor running jobs
 watch -n2 'curl -s http://localhost:8080/health | jq ".queue"'

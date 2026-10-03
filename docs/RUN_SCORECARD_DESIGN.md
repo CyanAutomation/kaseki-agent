@@ -1,7 +1,7 @@
 # Run scorecard design
 
-The API exposes the canonical artifact at `GET /api/runs/:id/scorecard` (or
-`?format=markdown`) and bounded compact history at `GET /api/scorecards`. See the
+The API exposes the canonical artifact at `GET /api/v1/runs/:id/scorecard` (or
+`?format=markdown`) and bounded compact history at `GET /api/v1/scorecards`. See the
 [REST API reference](API.md#run-scorecards) for lifecycle errors, filters, and pagination.
 
 ## Purpose and compatibility

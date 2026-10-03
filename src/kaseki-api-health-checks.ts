@@ -1075,7 +1075,7 @@ function workerSmokeStartupSecretsRemediation(
     extractLLMGatewayPathFromStartupDetail(detail) ||
     `/run/secrets/kaseki/${keyName}`;
 
-  return `The API can read host secrets, but the nested worker smoke test did not receive the same files. The effective LLM Gateway API key path reported by startup checks is ${effectivePath}. /run/secrets/kaseki/${keyName} is the API container and nested worker secret mount used by /api/preflight and run-kaseki.sh. Ensure the API container bind-mounts the host secrets directory, for example /home/pi/secrets:/run/secrets/kaseki:ro. If this persists, set KASEKI_HOST_SECRETS_DIR to the host path and recreate the API container.`;
+  return `The API can read host secrets, but the nested worker smoke test did not receive the same files. The effective LLM Gateway API key path reported by startup checks is ${effectivePath}. /run/secrets/kaseki/${keyName} is the API container and nested worker secret mount used by /api/v1/preflight and run-kaseki.sh. Ensure the API container bind-mounts the host secrets directory, for example /home/pi/secrets:/run/secrets/kaseki:ro. If this persists, set KASEKI_HOST_SECRETS_DIR to the host path and recreate the API container.`;
 }
 
 function workerSmokeStartupResultsRemediation(

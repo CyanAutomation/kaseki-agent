@@ -30,7 +30,7 @@ kaseki-agent config show
 kaseki-agent secrets list
 
 # Start an API service before task commands
-KASEKI_API_KEYS=sk-dev kaseki-agent serve --port 8080
+KASEKI_API_KEYS=sk-dev KASEKI_API_KEY_SCOPES='{"sk-dev":["runs:read","runs:write"]}' kaseki-agent serve --port 8080
 
 # Run your first API-backed task
 KASEKI_API_KEY=sk-dev kaseki-agent run https://github.com/CyanAutomation/crudmapper main
@@ -162,19 +162,21 @@ cd /agents/kaseki-template
 
 # Set your API key(s)
 export KASEKI_API_KEYS=sk-your-secret-key
+export KASEKI_API_KEY_SCOPES='{"sk-your-secret-key":["runs:read","runs:write"]}'
 
 # Start the service
 docker-compose up -d
 
 # Verify it's running
-curl http://localhost:8080/api/health
+curl http://localhost:8080/api/v1/health
 ```
 
 Then trigger runs via HTTP:
 
 ```bash
-curl -X POST http://localhost:8080/api/run \
+curl -X POST http://localhost:8080/api/v1/runs \
   -H "Authorization: Bearer sk-your-secret-key" \
+  -H "Idempotency-Key: 123e4567-e89b-42d3-a456-426614174000" \
   -H "Content-Type: application/json" \
   -d '{
     "repoUrl": "https://github.com/your-org/your-repo",
