@@ -1,6 +1,41 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { createPinnedRequestOptions, postWebhookSafely, WebhookEgressPolicyError } from './safe-webhook-http';
+import {
+  createPinnedRequestOptions,
+  isPublicInternetAddress,
+  postWebhookSafely,
+  WebhookEgressPolicyError,
+} from './safe-webhook-http';
+
+describe('isPublicInternetAddress', () => {
+  test.each([
+    '10.0.0.1',
+    '172.16.0.1',
+    '172.31.255.255',
+    '192.168.0.1',
+    '100.64.0.1',
+    '127.0.0.1',
+    '169.254.0.1',
+    '0.0.0.0',
+    '224.0.0.1',
+    '::1',
+    'fd00::1',
+    'fe80::1',
+    '::ffff:10.0.0.1',
+    '2001:db8::1',
+  ])('rejects non-public address %s', (address) => {
+    expect(isPublicInternetAddress(address)).toBe(false);
+  });
+
+  test.each([
+    '8.8.8.8',
+    '1.1.1.1',
+    '2606:4700:4700::1111',
+    '2001:4860:4860::8888',
+  ])('accepts public address %s', (address) => {
+    expect(isPublicInternetAddress(address)).toBe(true);
+  });
+});
 
 describe('postWebhookSafely', () => {
   test.each([

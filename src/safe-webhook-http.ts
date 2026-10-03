@@ -3,6 +3,26 @@ import * as http from 'node:http';
 import * as https from 'node:https';
 import * as ipaddr from 'ipaddr.js';
 
+const NON_PUBLIC_ADDRESS_RANGES = new Set([
+  'unspecified',
+  'broadcast',
+  'multicast',
+  'linkLocal',
+  'loopback',
+  'carrierGradeNat',
+  'private',
+  'reserved',
+  'uniqueLocal',
+  'ipv4Mapped',
+  'rfc6145',
+  'rfc6052',
+  '6to4',
+  'teredo',
+  'benchmarking',
+  'amt',
+  'as112',
+]);
+
 export interface WebhookResolvedAddress {
   address: string;
   family: 4 | 6;
@@ -88,7 +108,13 @@ export function isPublicInternetAddress(address: string): boolean {
       const ipv6 = parsed as ipaddr.IPv6;
       if (ipv6.isIPv4MappedAddress()) parsed = ipv6.toIPv4Address();
     }
-    return parsed.range() === 'unicast';
+
+    // `unicast` is the only ipaddr.js range that is globally routable. Keep
+    // the non-public ranges explicit here so a future broadening of this
+    // predicate cannot accidentally turn private or special-use addresses
+    // into valid webhook destinations.
+    const range = parsed.range();
+    return range === 'unicast' && !NON_PUBLIC_ADDRESS_RANGES.has(range);
   } catch {
     return false;
   }
