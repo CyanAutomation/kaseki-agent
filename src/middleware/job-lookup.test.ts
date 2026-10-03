@@ -43,7 +43,10 @@ describe('jobLookupMiddleware', () => {
     };
 
     mockRes = {
+      req: { path: '/api/runs/run-123' } as Request,
+      locals: {},
       status: jest.fn().mockReturnThis(),
+      type: jest.fn().mockReturnThis(),
       json: jest.fn().mockReturnThis(),
     };
 
@@ -88,6 +91,7 @@ describe('jobLookupMiddleware', () => {
       title: 'Bad Request',
       status: 400,
       detail: 'Job ID is required',
+      instance: '/api/runs/run-123',
     });
     expect(mockScheduler.getJob).not.toHaveBeenCalled();
     expect(nextCalled).toBe(false);
@@ -106,6 +110,7 @@ describe('jobLookupMiddleware', () => {
       title: 'Not Found',
       status: 404,
       detail: 'Run not found: run-123',
+      instance: '/api/runs/run-123',
     });
   });
 });

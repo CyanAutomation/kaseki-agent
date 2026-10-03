@@ -16,6 +16,9 @@ class MetricsRegistry {
   private criticalChangeFalseNegatives = 0;
   private scoutingFallbacks = 0;
   private persistenceFile?: string;
+  private apiRequestCounts = new Map<string, number>();
+  private apiRequestDurationSums = new Map<string, number>();
+  private apiRequestDurationCounts = new Map<string, number>();
 
   configurePersistence(file: string): void {
     if (this.persistenceFile === file) return;
@@ -55,6 +58,15 @@ class MetricsRegistry {
   observeEvaluatorArtifact(available: boolean): void { this.evaluatorArtifacts[available ? 'available' : 'unavailable'] += 1; this.persist(); }
   incCriticalChangeFalseNegative(): void { this.criticalChangeFalseNegatives += 1; this.persist(); }
   incScoutingFallback(): void { this.scoutingFallbacks += 1; this.persist(); }
+  observeHttpRequest(method: string, route: string, status: number, durationSeconds: number): void {
+    const normalizedMethod = /^[A-Z]{3,10}$/.test(method) ? method : 'OTHER';
+    const normalizedRoute = route.startsWith('/') && route.length < 200 ? route : 'unmatched';
+    const label = `${normalizedMethod}\0${normalizedRoute}\0${Math.floor(status / 100)}xx`;
+    const durationLabel = `${normalizedMethod}\0${normalizedRoute}`;
+    this.apiRequestCounts.set(label, (this.apiRequestCounts.get(label) ?? 0) + 1);
+    this.apiRequestDurationSums.set(durationLabel, (this.apiRequestDurationSums.get(durationLabel) ?? 0) + Math.max(0, durationSeconds));
+    this.apiRequestDurationCounts.set(durationLabel, (this.apiRequestDurationCounts.get(durationLabel) ?? 0) + 1);
+  }
   incGoalCheckFailure(reason: string): void {
     const normalized = reason.replace(/[^a-zA-Z0-9_-]/g, '_') || 'unknown';
     this.goalCheckFailures.set(normalized, (this.goalCheckFailures.get(normalized) || 0) + 1);
@@ -125,6 +137,21 @@ class MetricsRegistry {
     lines.push('# TYPE kaseki_scouting_fallbacks_total counter');
     lines.push(`kaseki_scouting_fallbacks_total ${this.scoutingFallbacks}`);
 
+    lines.push('# HELP kaseki_api_requests_total API requests grouped by method, route template, and status class.');
+    lines.push('# TYPE kaseki_api_requests_total counter');
+    if (this.apiRequestCounts.size === 0) lines.push('kaseki_api_requests_total{method="none",route="none",status_class="none"} 0');
+    else Array.from(this.apiRequestCounts.entries()).sort(([a], [b]) => a.localeCompare(b)).forEach(([labels, count]) => {
+      const [method, route, statusClass] = labels.split('\0');
+      lines.push(`kaseki_api_requests_total{method="${escapeLabel(method)}",route="${escapeLabel(route)}",status_class="${escapeLabel(statusClass)}"} ${count}`);
+    });
+    lines.push('# HELP kaseki_api_request_duration_seconds API request duration in seconds grouped by method and route template.');
+    lines.push('# TYPE kaseki_api_request_duration_seconds summary');
+    Array.from(this.apiRequestDurationSums.entries()).sort(([a], [b]) => a.localeCompare(b)).forEach(([labels, sum]) => {
+      const [method, route] = labels.split('\0');
+      lines.push(`kaseki_api_request_duration_seconds_sum{method="${escapeLabel(method)}",route="${escapeLabel(route)}"} ${sum}`);
+      lines.push(`kaseki_api_request_duration_seconds_count{method="${escapeLabel(method)}",route="${escapeLabel(route)}"} ${this.apiRequestDurationCounts.get(labels) ?? 0}`);
+    });
+
     lines.push('# HELP kaseki_admission_rejections_total Total number of run submissions rejected before scheduler admission.');
     lines.push('# TYPE kaseki_admission_rejections_total counter');
     const rejectionEntries = Array.from(this.admissionRejections.entries()).sort(([left], [right]) => left.localeCompare(right));
@@ -138,6 +165,10 @@ class MetricsRegistry {
 
     return `${lines.join('\n')}\n`;
   }
+}
+
+function escapeLabel(value: string | undefined): string {
+  return (value ?? '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/"/g, '\\"');
 }
 
 export const metricsRegistry = new MetricsRegistry();

@@ -17,10 +17,12 @@ export function sendErrorResponse(
     title,
     status,
     detail,
+    instance: res.req.path,
+    ...(typeof res.locals.requestId === 'string' ? { requestId: res.locals.requestId } : {}),
     ...extra,
   };
 
-  res.status(status).json(response);
+  res.status(status).type('application/problem+json').json(response);
 }
 
 /**

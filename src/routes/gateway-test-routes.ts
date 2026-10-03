@@ -2,8 +2,7 @@
  * Gateway connectivity test routes
  *
  * Provides comprehensive LLM gateway diagnostics:
- * - GET /api/gateway-test - Full test (connectivity, inference, and optional evaluation check)
- * - GET /api/gateway-test/stage1 - Connectivity only (lightweight)
+ * - GET /api/v1/gateway-test - Connectivity check; token-consuming checks require inference=true
  *
  * Stage 1: Authentication and connectivity check (no token consumption)
  * Stage 2: LLM inference test (with token consumption in production)
@@ -12,6 +11,7 @@
 
 import { Router, Request, Response } from 'express';
 import { createEventLogger } from '../logger';
+import { sendErrorResponse } from '../utils/response-helpers';
 import {
   testGatewayConnectivity_Stage1,
   testGatewayResponseSmoke_Stage2,
@@ -28,6 +28,8 @@ type GatewayRequestedStage = 0 | 1 | 2;
 
 type GatewayTestRequest = {
   requestedStage: GatewayRequestedStage;
+  inferenceOptIn: boolean;
+  inferenceOptInRequired: boolean;
   responseSmoke?: boolean;
   piProviderRequested: boolean;
   classificationRequested: boolean;
@@ -78,8 +80,16 @@ function parseQueryStage(value: unknown): 0 | 1 | 2 {
 }
 
 function parseGatewayTestRequest(req: Request): GatewayTestRequest {
+  const inferenceOptIn = parseQueryBoolean(req.query.inference) === true;
+  const explicitlyCostly = parseQueryStage(req.query.stage) === 2 ||
+    parseQueryBoolean(req.query.responseSmoke) === true ||
+    parseQueryBoolean(req.query.piProvider) === true ||
+    parseQueryBoolean(req.query.evaluation) === true ||
+    parseQueryBoolean(req.query.classification) === true;
   return {
-    requestedStage: parseQueryStage(req.query.stage),
+    requestedStage: inferenceOptIn ? parseQueryStage(req.query.stage) : 1,
+    inferenceOptIn,
+    inferenceOptInRequired: explicitlyCostly && !inferenceOptIn,
     responseSmoke: parseQueryBoolean(req.query.responseSmoke),
     piProviderRequested: parseQueryBoolean(req.query.piProvider) ?? false,
     classificationRequested: parseQueryBoolean(req.query.evaluation)
@@ -399,7 +409,7 @@ export function createGatewayTestRoutes(): Router {
   const router = Router();
 
   /**
-   * GET /api/gateway-test - Orchestrated full test (Stage 1 + Stage 2 + Classification)
+   * GET /api/v1/gateway-test - Orchestrated gateway diagnostics
    * Runs connectivity by default and response validation only when explicitly requested
    * Stage 2 consumes tokens and requires ?stage=2 or ?responseSmoke=true
    * Evaluation is opt-in via ?evaluation=true
@@ -414,6 +424,9 @@ export function createGatewayTestRoutes(): Router {
   router.get('/gateway-test', async (req: Request, res: Response) => {
     try {
       const request = parseGatewayTestRequest(req);
+      if (request.inferenceOptInRequired) {
+        return sendErrorResponse(res, 400, 'Bad Request', 'Token-consuming gateway checks require the explicit inference=true opt-in');
+      }
       const results = await runGatewayStages(request);
       const response = shapeGatewayTestResponse(request, results);
 
@@ -422,38 +435,7 @@ export function createGatewayTestRoutes(): Router {
       logger.error('Gateway test error', {
         error: error instanceof Error ? error.message : String(error),
       });
-      res.status(500).json({
-        status: 'error',
-        detail: 'Unexpected error during gateway test',
-        responseTime: 0,
-        timestamp: new Date().toISOString(),
-        authenticationValidated: false,
-      });
-    }
-  });
-
-  /**
-   * GET /api/gateway-test/stage1 - Stage 1 only: Lightweight LLM gateway connectivity test
-   * Tests reachability and authentication via /models endpoint
-   * Does NOT consume inference tokens - fast (<2s), runs by default
-   */
-  router.get('/gateway-test/stage1', async (_req: Request, res: Response) => {
-    try {
-      const result = await testGatewayConnectivity_Stage1();
-      const status = result.status === 'ok' ? 200 : 503;
-      res.status(status).json(result);
-    } catch (error) {
-      logger.error('Gateway test (stage 1) error', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      res.status(500).json({
-        status: 'error',
-        detail: 'Unexpected error during gateway connectivity test',
-        gatewayUrl: '',
-        responseTime: 0,
-        timestamp: new Date().toISOString(),
-        authenticationValidated: false,
-      });
+      return sendErrorResponse(res, 500, 'Internal Server Error', 'Unexpected error during gateway test');
     }
   });
 

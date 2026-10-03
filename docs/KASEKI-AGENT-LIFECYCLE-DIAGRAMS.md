@@ -14,7 +14,7 @@ A **typical patch-mode Kaseki run** looks like:
 stateDiagram-v2
     direction TB
 
-    [*] --> Submitted: POST /api/runs
+    [*] --> Submitted: POST /api/v1/runs
 
     Submitted --> Queued: Request accepted
     Queued --> Starting: Scheduler selects job
@@ -91,7 +91,7 @@ The high-level lifecycle can be much simpler:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Queued: POST /api/runs
+    [*] --> Queued: POST /api/v1/runs
 
     Queued --> Running: Worker available
 
@@ -108,7 +108,7 @@ stateDiagram-v2
     Cancelled --> [*]
 ```
 
-This corresponds closely to Kaseki's API model. Runs are submitted asynchronously through `POST /api/runs`, while the API provides status/progress, logs and result retrieval around that lifecycle. The current implementation distinguishes lifecycle outcomes including queued, running, completed, failed, cancelled and timed-out states in its run/scorecard model.
+This corresponds closely to Kaseki's API model. Runs are submitted asynchronously through `POST /api/v1/runs`, while the API provides status/progress, logs and result retrieval around that lifecycle. The current implementation distinguishes lifecycle outcomes including queued, running, completed, failed, cancelled and timed-out states in its run/scorecard model.
 
 ### The Agent Loop: The more interesting Kaseki-specific diagram
 
@@ -195,14 +195,14 @@ stateDiagram-v2
         ServiceReady: GET /ready
         ServiceReady --> ControllerCheck
 
-        ControllerCheck: GET /api/preflight
+        ControllerCheck: GET /api/v1/preflight
         ControllerCheck --> RequestValidation
 
-        RequestValidation: POST /api/validate
+        RequestValidation: POST /api/v1/validate
         RequestValidation --> [*]: Valid
     }
 
-    Preflight --> Queued: POST /api/runs
+    Preflight --> Queued: POST /api/v1/runs
     Preflight --> Rejected: Invalid request / preflight failure
 
     state Queued {
@@ -212,7 +212,7 @@ stateDiagram-v2
     }
 
     Queued --> Starting: Worker slot available
-    Queued --> Cancelled: POST /api/runs/:id/cancel
+    Queued --> Cancelled: POST /api/v1/runs/:id/cancel
 
     state Starting {
         [*] --> ContainerStart
@@ -271,27 +271,27 @@ stateDiagram-v2
     Running --> Completed: Successful completion
     Running --> Failed: Stage / quality / validation failure
     Running --> TimedOut: Timeout
-    Running --> Cancelled: POST /api/runs/:id/cancel
+    Running --> Cancelled: POST /api/v1/runs/:id/cancel
 
     state Completed {
         [*] --> Results
-        Results: GET /api/runs/:id/status
+        Results: GET /api/v1/runs/:id/status
         Results --> Analysis
-        Analysis: GET /api/runs/:id/analysis
+        Analysis: GET /api/v1/runs/:id/analysis
         Analysis --> Artifacts
-        Artifacts: GET /api/runs/:id/artifacts
+        Artifacts: GET /api/v1/runs/:id/artifacts
         Artifacts --> Scorecard
-        Scorecard: GET /api/runs/:id/scorecard
+        Scorecard: GET /api/v1/runs/:id/scorecard
         Scorecard --> [*]
     }
 
     state Failed {
         [*] --> FailureStatus
-        FailureStatus: GET /api/runs/:id/status
+        FailureStatus: GET /api/v1/runs/:id/status
         FailureStatus --> Diagnostics
         Diagnostics: failure.json / result-summary.md
         Diagnostics --> Logs
-        Logs: GET /api/runs/:id/logs/:logtype
+        Logs: GET /api/v1/runs/:id/logs/:logtype
         Logs --> [*]
     }
 
@@ -312,28 +312,28 @@ I’d describe the API surface like this:
 | Lifecycle  | Primary endpoint                  | Purpose                                       |
 | ---------- | --------------------------------- | --------------------------------------------- |
 | Before run | `GET /ready`                      | Can the service accept work?                  |
-| Before run | `GET /api/preflight`              | Is Docker/image/GitHub configuration healthy? |
-| Before run | `POST /api/validate`              | Is this particular run request valid?         |
-| Submit     | `POST /api/runs`                  | Create asynchronous run                       |
-| Any        | `GET /api/runs`                   | Discover/list runs                            |
-| Queued     | `GET /api/runs/:id/status`        | Queue/run state                               |
-| Queued     | `POST /api/runs/:id/cancel`       | Remove queued job                             |
-| Running    | `GET /api/runs/:id/status`        | Current stage, elapsed time, timeout risk     |
-| Running    | `GET /api/runs/:id/progress`      | Sanitised progress history                    |
-| Running    | `GET /api/runs/:id/events`        | Controller-friendly event stream snapshot     |
-| Running    | `GET /api/runs/:id/events/stream` | Live SSE updates                              |
-| Running    | `GET /api/runs/:id/logs/:logtype` | Inspect detailed logs                         |
-| Running    | `POST /api/runs/:id/cancel`       | Stop execution                                |
-| Terminal   | `GET /api/runs/:id/status`        | Final result and inline diagnostics           |
-| Terminal   | `GET /api/runs/:id/analysis`      | Consolidated run analysis                     |
-| Terminal   | `GET /api/runs/:id/artifacts`     | Discover generated artifacts                  |
-| Terminal   | `GET /api/results/:id/:file`      | Retrieve individual artifact                  |
-| Terminal   | `GET /api/runs/:id/scorecard`     | Canonical scored assessment                   |
+| Before run | `GET /api/v1/preflight`              | Is Docker/image/GitHub configuration healthy? |
+| Before run | `POST /api/v1/validate`              | Is this particular run request valid?         |
+| Submit     | `POST /api/v1/runs`                  | Create asynchronous run                       |
+| Any        | `GET /api/v1/runs`                   | Discover/list runs                            |
+| Queued     | `GET /api/v1/runs/:id/status`        | Queue/run state                               |
+| Queued     | `POST /api/v1/runs/:id/cancel`       | Remove queued job                             |
+| Running    | `GET /api/v1/runs/:id/status`        | Current stage, elapsed time, timeout risk     |
+| Running    | `GET /api/v1/runs/:id/events`      | Sanitised event snapshot                    |
+| Running    | `GET /api/v1/runs/:id/events`        | Controller-friendly event stream snapshot     |
+| Running    | `GET /api/v1/runs/:id/events/stream` | Live SSE updates                              |
+| Running    | `GET /api/v1/runs/:id/logs/:logtype` | Inspect detailed logs                         |
+| Running    | `POST /api/v1/runs/:id/cancel`       | Stop execution                                |
+| Terminal   | `GET /api/v1/runs/:id/status`        | Final result and inline diagnostics           |
+| Terminal   | `GET /api/v1/runs/:id/analysis`      | Consolidated run analysis                     |
+| Terminal   | `GET /api/v1/runs/:id/artifacts`     | Discover generated artifacts                  |
+| Terminal   | `GET /api/v1/results/:id/:file`      | Retrieve individual artifact                  |
+| Terminal   | `GET /api/v1/runs/:id/scorecard`     | Canonical scored assessment                   |
 
 The particularly useful addition since your earlier Kaseki architecture is the **event interface**. I would encourage a controller to use:
 
 ```text
-POST /api/runs
+POST /api/v1/runs
        │
        ▼
 run id
@@ -366,8 +366,8 @@ stateDiagram-v2
 
     [*] --> Validate
 
-    Validate: POST /api/validate
-    Validate --> Queued: POST /api/runs
+    Validate: POST /api/v1/validate
+    Validate --> Queued: POST /api/v1/runs
 
     Queued --> Running: Scheduler starts worker
     Queued --> Failed: cancel
@@ -410,13 +410,13 @@ sequenceDiagram
     C->>API: GET /ready
     API-->>C: ready
 
-    C->>API: GET /api/preflight
+    C->>API: GET /api/v1/preflight
     API-->>C: controller healthy
 
-    C->>API: POST /api/validate
+    C->>API: POST /api/v1/validate
     API-->>C: valid
 
-    C->>API: POST /api/runs
+    C->>API: POST /api/v1/runs
     API->>Q: enqueue job
     API-->>C: 202 + runId
 

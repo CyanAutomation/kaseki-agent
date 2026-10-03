@@ -121,16 +121,24 @@ describe('gateway-test-routes', () => {
   });
 
   describe('GET /gateway-test', () => {
-    it('should run both stages by default and return ok', async () => {
+    it('runs only the inexpensive connectivity check by default', async () => {
       const response = await fetch(`${baseUrl}/gateway-test`);
       const body = await response.json() as any;
 
       expect(response.status).toBe(200);
       expect(body.status).toBe('ok');
-      expect(body.responseSmokeValidated).toBe(true);
+      expect(body.responseSmokeValidated).toBe(false);
       expect(body.authenticationValidated).toBe(true);
       expect(kasekiGatewaySmoke.testGatewayConnectivity_Stage1).toHaveBeenCalled();
-      expect(kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2).toHaveBeenCalled();
+      expect(kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2).not.toHaveBeenCalled();
+    });
+
+    it('rejects a token-consuming check without explicit inference opt-in', async () => {
+      const response = await fetch(`${baseUrl}/gateway-test?stage=2`);
+      const body = await response.json() as any;
+      expect(response.status).toBe(400);
+      expect(body).toMatchObject({ status: 400, title: 'Bad Request' });
+      expect(kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2).not.toHaveBeenCalled();
     });
 
     it('should run only stage 1 when ?stage=1', async () => {
@@ -144,8 +152,8 @@ describe('gateway-test-routes', () => {
       expect(kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2).not.toHaveBeenCalled();
     });
 
-    it('should run only stage 2 when ?stage=2', async () => {
-      const response = await fetch(`${baseUrl}/gateway-test?stage=2`);
+    it('should run only stage 2 when ?inference=true&stage=2', async () => {
+      const response = await fetch(`${baseUrl}/gateway-test?inference=true&stage=2`);
       const body = await response.json() as any;
 
       expect(response.status).toBe(200);
@@ -156,7 +164,7 @@ describe('gateway-test-routes', () => {
 
     it('uses the stage-based evaluation query parameter for the optional evaluation check', async () => {
       (kasekiGatewaySmoke.shouldRunClassificationSmoke as jest.Mock).mockReturnValue(true);
-      const response = await fetch(`${baseUrl}/gateway-test?stage=2&evaluation=true`);
+      const response = await fetch(`${baseUrl}/gateway-test?inference=true&stage=2&evaluation=true`);
       const body = await response.json() as any;
       expect(response.status).toBe(200);
       expect(kasekiGatewaySmoke.shouldRunClassificationSmoke).toHaveBeenCalledWith(true);
@@ -173,7 +181,7 @@ describe('gateway-test-routes', () => {
         remediation: 'Check evaluator credentials',
       });
 
-      const response = await fetch(`${baseUrl}/gateway-test?stage=2&evaluation=true`);
+      const response = await fetch(`${baseUrl}/gateway-test?inference=true&stage=2&evaluation=true`);
       const body = await response.json() as any;
 
       expect(response.status).toBe(200);
@@ -184,7 +192,7 @@ describe('gateway-test-routes', () => {
     });
 
     it('continues to accept the previous optional evaluation query parameter', async () => {
-      const response = await fetch(`${baseUrl}/gateway-test?stage=2&classification=true`);
+      const response = await fetch(`${baseUrl}/gateway-test?inference=true&stage=2&classification=true`);
       expect(response.status).toBe(200);
       expect(kasekiGatewaySmoke.shouldRunClassificationSmoke).toHaveBeenCalledWith(true);
     });
@@ -212,7 +220,7 @@ describe('gateway-test-routes', () => {
         responseTime: 3000,
       });
 
-      const response = await fetch(`${baseUrl}/gateway-test`);
+      const response = await fetch(`${baseUrl}/gateway-test?inference=true`);
       const body = await response.json() as any;
 
       expect(response.status).toBe(503);
@@ -221,8 +229,8 @@ describe('gateway-test-routes', () => {
       expect(body.responseSmokeValidated).toBe(false);
     });
 
-    it('should include pi provider results when ?piProvider=true', async () => {
-      const response = await fetch(`${baseUrl}/gateway-test?piProvider=true`);
+    it('should include pi provider results when ?inference=true&piProvider=true', async () => {
+      const response = await fetch(`${baseUrl}/gateway-test?inference=true&piProvider=true`);
       const body = await response.json() as any;
 
       expect(response.status).toBe(200);
@@ -244,7 +252,7 @@ describe('gateway-test-routes', () => {
         multiTurnValidated: true,
       });
 
-      const response = await fetch(`${baseUrl}/gateway-test?stage=2&piProvider=true`);
+      const response = await fetch(`${baseUrl}/gateway-test?inference=true&stage=2&piProvider=true`);
       const body = await response.json() as any;
 
       expect(response.status).toBe(200);
@@ -261,7 +269,7 @@ describe('gateway-test-routes', () => {
         detail: 'Evaluation endpoint returned 400',
       });
 
-      const response = await fetch(`${baseUrl}/gateway-test?piProvider=true&evaluation=true`);
+      const response = await fetch(`${baseUrl}/gateway-test?inference=true&piProvider=true&evaluation=true`);
       const body = await response.json() as any;
 
       expect(response.status).toBe(200);
@@ -280,7 +288,8 @@ describe('gateway-test-routes', () => {
       const body = await response.json() as any;
 
       expect(response.status).toBe(500);
-      expect(body.status).toBe('error');
+      expect(body.status).toBe(500);
+      expect(body.title).toBe('Internal Server Error');
       expect(body.detail).toBe('Unexpected error during gateway test');
     });
 
@@ -290,7 +299,7 @@ describe('gateway-test-routes', () => {
         detail: 'Pi provider test failed',
       });
 
-      const response = await fetch(`${baseUrl}/gateway-test?piProvider=true`);
+      const response = await fetch(`${baseUrl}/gateway-test?inference=true&piProvider=true`);
       const body = await response.json() as any;
 
       expect(response.status).toBe(503);
@@ -306,7 +315,7 @@ describe('gateway-test-routes', () => {
         multiTurnValidated: false,
       });
 
-      const response = await fetch(`${baseUrl}/gateway-test?piProvider=true`);
+      const response = await fetch(`${baseUrl}/gateway-test?inference=true&piProvider=true`);
       const body = await response.json() as any;
 
       expect(response.status).toBe(503);
@@ -327,7 +336,7 @@ describe('gateway-test-routes', () => {
         multiTurnValidated: false,
       });
 
-      const response = await fetch(`${baseUrl}/gateway-test?stage=2&piProvider=on`);
+      const response = await fetch(`${baseUrl}/gateway-test?inference=true&stage=2&piProvider=on`);
       const body = await response.json() as any;
 
       expect(response.status).toBe(503);
@@ -348,21 +357,21 @@ describe('gateway-test-routes', () => {
     });
 
     it('should handle debug mode query param', async () => {
-      await fetch(`${baseUrl}/gateway-test?debug=true&piProvider=true`);
+      await fetch(`${baseUrl}/gateway-test?inference=true&debug=true&piProvider=true`);
 
       expect(kasekiGatewaySmoke.testPiGatewayProviderSmoke).toHaveBeenCalledWith(
         expect.objectContaining({ debug: true })
       );
     });
 
-    it('should treat invalid stage and boolean query values as defaults', async () => {
+    it('treats invalid query values as the inexpensive connectivity default', async () => {
       const response = await fetch(`${baseUrl}/gateway-test?stage=bogus&responseSmoke=maybe&piProvider=maybe`);
       const body = await response.json() as any;
 
       expect(response.status).toBe(200);
       expect(body.status).toBe('ok');
       expect(kasekiGatewaySmoke.testGatewayConnectivity_Stage1).toHaveBeenCalled();
-      expect(kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2).toHaveBeenCalled();
+      expect(kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2).not.toHaveBeenCalled();
       expect(kasekiGatewaySmoke.testPiGatewayProviderSmoke).not.toHaveBeenCalled();
     });
 
@@ -375,13 +384,13 @@ describe('gateway-test-routes', () => {
       expect(response.status).toBe(200);
       expect(body.status).toBe('ok');
       expect(body.responseSmokeValidated).toBe(false);
-      expect(kasekiGatewaySmoke.shouldRunGatewayResponseSmoke).toHaveBeenCalledWith({ responseSmoke: false });
+      expect(kasekiGatewaySmoke.shouldRunGatewayResponseSmoke).not.toHaveBeenCalled();
       expect(kasekiGatewaySmoke.testGatewayConnectivity_Stage1).toHaveBeenCalled();
       expect(kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2).not.toHaveBeenCalled();
     });
 
     it('should force stage 2 when stage=2 even if responseSmoke=false', async () => {
-      const response = await fetch(`${baseUrl}/gateway-test?stage=2&responseSmoke=false`);
+      const response = await fetch(`${baseUrl}/gateway-test?inference=true&stage=2&responseSmoke=false`);
 
       expect(response.status).toBe(200);
       expect(kasekiGatewaySmoke.testGatewayConnectivity_Stage1).not.toHaveBeenCalled();
@@ -404,7 +413,7 @@ describe('gateway-test-routes', () => {
         ],
       });
 
-      const response = await fetch(`${baseUrl}/gateway-test?stage=2`);
+      const response = await fetch(`${baseUrl}/gateway-test?inference=true&stage=2`);
       const body = await response.json() as any;
 
       expect(response.status).toBe(200);
@@ -419,7 +428,7 @@ describe('gateway-test-routes', () => {
     it('should return 503 for stage 2 only when smoke returns no result', async () => {
       (kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2 as jest.Mock).mockResolvedValueOnce(undefined);
 
-      const response = await fetch(`${baseUrl}/gateway-test?stage=2`);
+      const response = await fetch(`${baseUrl}/gateway-test?inference=true&stage=2`);
       const body = await response.json() as any;
 
       expect(response.status).toBe(503);
@@ -443,7 +452,7 @@ describe('gateway-test-routes', () => {
         multiTurnValidated: false,
       });
 
-      const response = await fetch(`${baseUrl}/gateway-test?stage=2&piProvider=yes&debug=on`);
+      const response = await fetch(`${baseUrl}/gateway-test?inference=true&stage=2&piProvider=yes&debug=on`);
       const body = await response.json() as any;
 
       expect(response.status).toBe(200);
@@ -459,56 +468,11 @@ describe('gateway-test-routes', () => {
     });
   });
 
-  describe('GET /gateway-test/stage1', () => {
-    it('should run only stage 1 connectivity test', async () => {
+  describe('removed GET /gateway-test/stage1 alias', () => {
+    it('returns 404; use GET /gateway-test for connectivity checks', async () => {
       const response = await fetch(`${baseUrl}/gateway-test/stage1`);
-      const body = await response.json() as any;
-
-      expect(response.status).toBe(200);
-      expect(body.status).toBe('ok');
-      expect(body.detail).toBe('Gateway is responsive');
-      expect(body.authenticationValidated).toBe(true);
-      expect(kasekiGatewaySmoke.testGatewayConnectivity_Stage1).toHaveBeenCalled();
-      expect(kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2).not.toHaveBeenCalled();
-    });
-
-    it('should return 503 on connectivity failure', async () => {
-      (kasekiGatewaySmoke.testGatewayConnectivity_Stage1 as jest.Mock).mockResolvedValueOnce({
-        status: 'error',
-        detail: 'Gateway unreachable (SSL certificate expired)',
-        responseTime: 10000,
-        authenticationValidated: false,
-      });
-
-      const response = await fetch(`${baseUrl}/gateway-test/stage1`);
-      const body = await response.json() as any;
-
-      expect(response.status).toBe(503);
-      expect(body.status).toBe('error');
-      expect(body.authenticationValidated).toBe(false);
-    });
-
-    it('should handle errors gracefully', async () => {
-      (kasekiGatewaySmoke.testGatewayConnectivity_Stage1 as jest.Mock).mockRejectedValueOnce(
-        new Error('Network timeout')
-      );
-
-      const response = await fetch(`${baseUrl}/gateway-test/stage1`);
-      const body = await response.json() as any;
-
-      expect(response.status).toBe(500);
-      expect(body.status).toBe('error');
-      expect(body.detail).toBe('Unexpected error during gateway connectivity test');
-    });
-
-    it('should return timestamp in response', async () => {
-      const response = await fetch(`${baseUrl}/gateway-test/stage1`);
-      const body = await response.json() as any;
-
-      expect(response.status).toBe(200);
-      expect(body.timestamp).toBeDefined();
-      // Verify it's a valid ISO string
-      expect(new Date(body.timestamp).getTime()).toBeGreaterThan(0);
+      expect(response.status).toBe(404);
+      expect(kasekiGatewaySmoke.testGatewayConnectivity_Stage1).not.toHaveBeenCalled();
     });
   });
 });

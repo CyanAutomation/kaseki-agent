@@ -11,7 +11,7 @@ import {
   isArtifactAvailable,
   isTerminalJobStatus,
 } from '../lib/artifact-availability';
-import type { ArtifactResponse, Job, RunArtifactsResponse } from '../kaseki-api-types';
+import type { Job, RunArtifactsResponse } from '../kaseki-api-types';
 import type { ResultCache } from '../result-cache';
 import { sendErrorResponse } from '../utils/response-helpers';
 import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
@@ -19,6 +19,7 @@ import { artifactContentType, renderRunEvaluationPayload, sanitizeEvaluationArti
 import { redactLogContent } from './log-file-reader';
 
 const ALL_ARTIFACT_NAMES = Object.keys(ARTIFACT_METADATA_REGISTRY);
+const MAX_ARTIFACT_DOWNLOAD_BYTES = 64 * 1024 * 1024;
 
 type ArtifactDownloadRequest = {
   fileName: string;
@@ -95,6 +96,11 @@ export function sendArtifactDownloadResponse(
       return;
     }
 
+    if (fileStats.size > MAX_ARTIFACT_DOWNLOAD_BYTES) {
+      sendErrorResponse(res, 413, 'Payload Too Large', `Artifact exceeds the ${MAX_ARTIFACT_DOWNLOAD_BYTES} byte download limit`);
+      return;
+    }
+
     const contentType = artifactContentType(request.fileName);
     const storedContent = readArtifactContent(filePath, job.status, cache);
     if (storedContent === null) {
@@ -113,9 +119,15 @@ export function sendArtifactDownloadResponse(
     }
 
     const safeContent = isSensitiveTextArtifact(request.fileName) ? redactLogContent(content) : content;
-    const response = buildArtifactResponse(request, contentType, safeContent, fileStats.size);
     res.setHeader('Content-Type', contentType);
-    res.json(response);
+    res.setHeader('Content-Disposition', `attachment; filename="${request.fileName}"`);
+    if (request.tailLines !== undefined) {
+      const tailed = tailArtifactContentByLines(safeContent, request.tailLines);
+      res.setHeader('X-Artifact-Tail-Lines', String(request.tailLines));
+      res.send(tailed);
+      return;
+    }
+    res.send(safeContent);
   } catch (err) {
     sendErrorResponse(
       res,
@@ -164,7 +176,7 @@ export function buildRunArtifactsResponse(
     artifacts: includeManifest ? artifacts : availableArtifacts,
     recommended,
     artifactCount: availableArtifacts.length,
-    downloadBaseUrl: `/api/results/${job.id}/`,
+    downloadBaseUrl: `/api/v1/results/${job.id}/`,
   };
 }
 
@@ -181,14 +193,9 @@ function sendLiveStdoutFallback(
 
   const contentType = artifactContentType(fileName);
   const safeContent = isSensitiveTextArtifact(fileName) ? redactLogContent(liveContent) : liveContent;
-  const response: ArtifactResponse = {
-    file: fileName,
-    contentType,
-    size: Buffer.byteLength(liveContent, 'utf-8'),
-    content: safeContent,
-  };
   res.setHeader('Content-Type', contentType);
-  res.json(response);
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+  res.send(safeContent);
   return true;
 }
 
@@ -232,25 +239,6 @@ function validateTailRequest(
   }
 
   return true;
-}
-
-function buildArtifactResponse(
-  request: ArtifactDownloadRequest,
-  contentType: string,
-  content: string,
-  size: number,
-): ArtifactResponse {
-  const responseContent = request.tailLines !== undefined
-    ? tailArtifactContentByLines(content, request.tailLines)
-    : content;
-
-  return {
-    file: request.fileName,
-    contentType,
-    size,
-    content: responseContent,
-    ...(request.tailLines !== undefined ? { truncated: responseContent !== content, tailLines: request.tailLines } : {}),
-  };
 }
 
 function sendRenderedArtifactResponse(

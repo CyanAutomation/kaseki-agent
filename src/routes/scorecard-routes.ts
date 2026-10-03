@@ -6,7 +6,8 @@ import { RunScorecardSchema, type RunScorecard } from '../types/run-scorecard';
 import { formatRunScorecardMarkdown } from '../run-scorecard-markdown';
 import type { Job, ScorecardSummary, ScorecardsListResponse } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
-import { matchesFilters, parseFilters, parsePagination } from './scorecard-route-utils';
+import { matchesFilters, parseFilters, DEFAULT_LIMIT, MAX_LIMIT } from './scorecard-route-utils';
+import { encodeCursor, isAfterCursor, parseCursor, parseLimit } from './cursor-pagination';
 
 const FILE = 'run-scorecard.json';
 const terminalCacheInvalidated = new WeakSet<Job>();
@@ -41,8 +42,10 @@ function summary(card: RunScorecard, job: Job): ScorecardSummary {
 
 export function createScorecardRoutes(scheduler: JobScheduler, cache: ResultCache): Router {
   const router = Router();
-  router.get('/runs/:id/scorecard', (req: Request, res: Response) => {
-    const job = scheduler.getJob(req.params.id);
+  router.get('/runs/:id/scorecard', async (req: Request, res: Response) => {
+    const job = typeof scheduler.getJobIncludingHistory === 'function'
+      ? await scheduler.getJobIncludingHistory(req.params.id)
+      : scheduler.getJob(req.params.id);
     if (!job) return sendErrorResponse(res, 404, 'Run not found', `Unknown run: ${req.params.id}`);
     const result = readScorecard(job, cache);
     if (result.malformed) return sendErrorResponse(res, 422, 'Malformed scorecard', `${FILE} failed schema validation`);
@@ -57,22 +60,40 @@ export function createScorecardRoutes(scheduler: JobScheduler, cache: ResultCach
     return res.json(result.card);
   });
 
-  router.get('/scorecards', (req: Request, res: Response) => {
-    const { limit, offset } = parsePagination(req.query as Record<string, unknown>);
+  router.get('/scorecards', async (req: Request, res: Response) => {
+    let limit: number;
+    let cursor;
+    try {
+      limit = parseLimit(req.query.limit, DEFAULT_LIMIT, MAX_LIMIT);
+      cursor = parseCursor(req.query.cursor);
+    } catch (error) {
+      return sendErrorResponse(res, 400, 'Bad Request', error instanceof Error ? error.message : 'Invalid pagination query');
+    }
     const filters = parseFilters(req.query as Record<string, unknown>);
-    const matches: ScorecardSummary[] = [];
-    // listJobs is the scheduler's bounded retained index; never enumerate resultsDir.
-    for (const job of scheduler.listJobs()) {
+    const matches: Array<{ job: Job; item: ScorecardSummary }> = [];
+    const allJobs = typeof scheduler.listAllJobs === 'function' ? await scheduler.listAllJobs() : scheduler.listJobs();
+    for (const job of allJobs) {
       const card = readScorecard(job, cache).card;
       if (!card) continue;
       const item = summary(card, job);
       if (!matchesFilters(item, filters)) continue;
-      matches.push(item);
-      if (matches.length >= offset + limit + 1) break;
+      matches.push({ job, item });
     }
-    const scorecards = matches.slice(offset, offset + limit);
-    const response: ScorecardsListResponse = { scorecards, pagination: { limit, offset, returned: scorecards.length,
-      hasMore: matches.length > offset + limit }, filters };
+    matches.sort((a, b) => b.job.createdAt.getTime() - a.job.createdAt.getTime() || b.job.id.localeCompare(a.job.id));
+    const pageCandidates = cursor ? matches.filter(({ job }) => isAfterCursor(job.createdAt, job.id, cursor)) : matches;
+    const page = pageCandidates.slice(0, limit);
+    const hasMore = pageCandidates.length > limit;
+    const response: ScorecardsListResponse = {
+      scorecards: page.map(({ item }) => item),
+      total: matches.length,
+      pagination: {
+        limit,
+        returned: page.length,
+        hasMore,
+        nextCursor: hasMore && page.length > 0 ? encodeCursor(page[page.length - 1].job.createdAt, page[page.length - 1].job.id) : undefined,
+      },
+      filters,
+    };
     res.json(response);
   });
   return router;

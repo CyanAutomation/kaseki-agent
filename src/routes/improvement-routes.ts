@@ -4,6 +4,7 @@ import * as path from 'path';
 import { JobScheduler } from '../job-scheduler';
 import { KasekiApiConfig } from '../kaseki-api-config';
 import type { Job } from '../kaseki-api-types';
+import { encodeCursor, isAfterCursor, parseCursor, parseLimit } from './cursor-pagination';
 
 type EvaluationArtifact = {
   overall_assessment?: string;
@@ -60,19 +61,43 @@ type ImprovementRunSummary = {
 export function createImprovementRoutes(scheduler: JobScheduler, config: KasekiApiConfig): Router {
   const router = Router();
 
-  router.get('/improvements', (req: Request, res: Response) => {
-    const limit = normalizeLimit(req.query.limit);
-    const orderedJobs = scheduler.listJobs().slice().sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+  router.get('/improvements', async (req: Request, res: Response) => {
+    let limit: number;
+    let cursor;
+    try {
+      limit = parseLimit(req.query.limit, 50, 200);
+      cursor = parseCursor(req.query.cursor);
+    } catch (error) {
+      return res.status(400).type('application/problem+json').json({
+        type: 'https://api.kaseki.local/errors#bad-request',
+        title: 'Bad Request',
+        status: 400,
+        detail: error instanceof Error ? error.message : 'Invalid pagination query',
+        instance: req.path,
+        ...(typeof res.locals.requestId === 'string' ? { requestId: res.locals.requestId } : {}),
+      });
+    }
+    const allJobs = typeof scheduler.listAllJobs === 'function' ? await scheduler.listAllJobs() : scheduler.listJobs();
+    const orderedJobs = allJobs.slice().sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime() || right.id.localeCompare(left.id));
     const terminalJobs = orderedJobs
       .filter((job) => job.status === 'completed' || job.status === 'failed')
-      .slice(0, limit);
+      .map((job, retentionIndex) => ({ job, retentionIndex }));
+    const pageCandidates = cursor
+      ? terminalJobs.filter(({ job }) => isAfterCursor(job.createdAt, job.id, cursor))
+      : terminalJobs;
+    const page = pageCandidates.slice(0, limit);
+    const hasMore = pageCandidates.length > limit;
 
     const accumulator = createImprovementAccumulator();
-    const runs = terminalJobs.map((job, index) => summarizeImprovementRun(job, config, accumulator, index < 5));
+    const runs = page.map(({ job, retentionIndex }) => summarizeImprovementRun(job, config, accumulator, retentionIndex < 5));
 
-    res.json({
+    return res.json({
       limit,
       totalRuns: terminalJobs.length,
+      hasMore,
+      nextCursor: hasMore && page.length > 0
+        ? encodeCursor(page[page.length - 1].job.createdAt, page[page.length - 1].job.id)
+        : undefined,
       counts: {
         byAssessment: accumulator.assessmentCounts,
         byConfidence: accumulator.confidenceCounts,
@@ -241,13 +266,6 @@ function countEvaluationDiagnostics(runs: ImprovementRunSummary[]): Record<strin
     }
     return counts;
   }, {});
-}
-
-function normalizeLimit(value: unknown): number {
-  const raw = Array.isArray(value) ? value[0] : value;
-  const parsed = Number.parseInt(String(raw ?? '50'), 10);
-  if (!Number.isFinite(parsed)) return 50;
-  return Math.max(1, Math.min(parsed, 200));
 }
 
 function readJson(file: string): unknown {

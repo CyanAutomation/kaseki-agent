@@ -7,6 +7,12 @@
  */
 
 import type { KasekiApiConfig } from './kaseki-api-config';
+import type { ApiScope } from './api-access-control';
+
+export const TEST_API_SCOPES: ApiScope[] = [
+  'runs:read', 'runs:write', 'artifacts:read', 'diagnostics:read',
+  'diagnostics:run', 'metrics:read', 'github:read', 'webhooks:write', 'usage:read',
+];
 
 /**
  * Test-specific config type with jest.fn() mocks.
@@ -68,6 +74,7 @@ export function createTestConfig(resultsDir: string): KasekiApiConfig {
   return {
     port: 0,
     apiKeys: ['test-key'],
+    apiKeyScopes: { 'test-key': TEST_API_SCOPES },
     resultsDir,
     maxConcurrentRuns: 1,
     defaultTaskMode: 'patch' as const,

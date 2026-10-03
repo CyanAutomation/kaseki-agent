@@ -2,6 +2,10 @@
 
 This guide shows how to integrate kaseki-agent into common CI/CD platforms: GitHub Actions, GitLab CI, and Jenkins.
 
+Every `POST /api/v1/runs` request requires a caller generated UUID v4 in the `Idempotency-Key` header. Generate one key per logical run and reuse it if the client retries that same submission after a network failure.
+
+The bearer key used by these submission examples also needs `runs:write` and `runs:read` in `KASEKI_API_KEY_SCOPES` so it can submit runs and poll their status.
+
 ---
 
 ## GitHub Actions Integration
@@ -37,16 +41,18 @@ jobs:
       - name: Submit to Kaseki API
         id: submit
         run: |
+          IDEMPOTENCY_KEY=$(node -p 'require("crypto").randomUUID()')
           RESPONSE=$(curl -s -X POST \
             -H "Authorization: Bearer ${{ secrets.KASEKI_API_KEY }}" \
             -H "Content-Type: application/json" \
+            -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
             -d '{
               "repoUrl": "https://github.com/${{ github.repository }}",
               "gitRef": "${{ github.event.repository.default_branch }}",
               "taskPrompt": "${{ steps.task.outputs.prompt }}",
               "timeoutSeconds": 1800
             }' \
-            http://kaseki-api:8080/api/runs)
+            http://kaseki-api:8080/api/v1/runs)
           
           INSTANCE_ID=$(echo "$RESPONSE" | jq -r '.instanceId')
           echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
@@ -60,7 +66,7 @@ jobs:
           while [ $ELAPSED -lt 2100 ]; do
             STATUS=$(curl -s \
               -H "Authorization: Bearer ${{ secrets.KASEKI_API_KEY }}" \
-              http://kaseki-api:8080/api/runs/$INSTANCE_ID | jq -r '.status')
+              http://kaseki-api:8080/api/v1/runs/$INSTANCE_ID | jq -r '.status')
             
             if [ "$STATUS" = "completed" ]; then
               echo "Run completed: $INSTANCE_ID"
@@ -149,17 +155,19 @@ jobs:
         run: |
           FILE="${{ steps.detect.outputs.untested_file }}"
           TASK="Add comprehensive unit tests for $FILE in tests/ directory. Achieve >80% coverage."
+          IDEMPOTENCY_KEY=$(node -p 'require("crypto").randomUUID()')
           
           RESPONSE=$(curl -s -X POST \
             -H "Authorization: Bearer ${{ secrets.KASEKI_API_KEY }}" \
             -H "Content-Type: application/json" \
+            -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
             -d '{
               "repoUrl": "https://github.com/${{ github.repository }}",
               "gitRef": "${{ github.ref }}",
               "taskPrompt": "'"$TASK"'",
               "allowlist": ["tests/**/*.test.ts"]
             }' \
-            http://kaseki-api:8080/api/runs)
+            http://kaseki-api:8080/api/v1/runs)
           
           INSTANCE_ID=$(echo "$RESPONSE" | jq -r '.instanceId')
           echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
@@ -190,15 +198,17 @@ jobs:
         id: kaseki
         run: |
           # Validate PR changes with kaseki-agent
+          IDEMPOTENCY_KEY=$(node -p 'require("crypto").randomUUID()')
           RESPONSE=$(curl -s -X POST \
             -H "Authorization: Bearer ${{ secrets.KASEKI_API_KEY }}" \
             -H "Content-Type: application/json" \
+            -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
             -d '{
               "repoUrl": "https://github.com/${{ github.repository }}",
               "gitRef": "${{ github.head_ref }}",
               "taskPrompt": "Validate and review the changes in this PR"
             }' \
-            http://kaseki-api:8080/api/runs)
+            http://kaseki-api:8080/api/v1/runs)
           
           INSTANCE_ID=$(echo "$RESPONSE" | jq -r '.instanceId')
           echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
@@ -212,7 +222,7 @@ jobs:
           # Create status check
           EXIT_CODE=$(curl -s \
             -H "Authorization: Bearer ${{ secrets.KASEKI_API_KEY }}" \
-            http://kaseki-api:8080/api/runs/$INSTANCE_ID | jq -r '.exitCode')
+            http://kaseki-api:8080/api/v1/runs/$INSTANCE_ID | jq -r '.exitCode')
           
           if [ "$EXIT_CODE" = "0" ]; then
             echo "✓ Kaseki validation passed"
@@ -235,20 +245,23 @@ kaseki-fix-issue:
   image: alpine:latest
   script:
     - |
+      apk add --no-cache curl jq nodejs
       # Extract task from GitLab issue
       TASK_PROMPT="Fix issue: $CI_COMMIT_MESSAGE"
+      IDEMPOTENCY_KEY=$(node -p 'require("crypto").randomUUID()')
       
       # Submit to Kaseki
       RESPONSE=$(curl -s -X POST \
         -H "Authorization: Bearer $KASEKI_API_KEY" \
         -H "Content-Type: application/json" \
+        -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
         -d '{
           "repoUrl": "'$CI_REPOSITORY_URL'",
           "gitRef": "'$CI_COMMIT_BRANCH'",
           "taskPrompt": "'"$TASK_PROMPT"'",
           "timeoutSeconds": 1800
         }' \
-        http://kaseki-api:8080/api/runs)
+        http://kaseki-api:8080/api/v1/runs)
       
       INSTANCE_ID=$(echo "$RESPONSE" | jq -r '.instanceId')
       echo "Kaseki run: $INSTANCE_ID"
@@ -258,7 +271,7 @@ kaseki-fix-issue:
       while [ $ELAPSED -lt 2100 ]; do
         STATUS=$(curl -s \
           -H "Authorization: Bearer $KASEKI_API_KEY" \
-          http://kaseki-api:8080/api/runs/$INSTANCE_ID | jq -r '.status')
+          http://kaseki-api:8080/api/v1/runs/$INSTANCE_ID | jq -r '.status')
         
         [ "$STATUS" = "completed" ] && exit 0
         sleep 10
@@ -281,19 +294,21 @@ kaseki-create-pr:
   stage: automated-fix
   image: alpine:latest
   script:
-    - apk add --no-cache curl git
+    - apk add --no-cache curl git jq nodejs
     
     - |
       # Submit task
+      IDEMPOTENCY_KEY=$(node -p 'require("crypto").randomUUID()')
       RESPONSE=$(curl -s -X POST \
         -H "Authorization: Bearer $KASEKI_API_KEY" \
         -H "Content-Type: application/json" \
+        -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
         -d '{
           "repoUrl": "'$CI_REPOSITORY_URL'",
           "gitRef": "'$CI_COMMIT_BRANCH'",
           "taskPrompt": "Add missing tests for uncovered functions"
         }' \
-        http://kaseki-api:8080/api/runs)
+        http://kaseki-api:8080/api/v1/runs)
       
       INSTANCE_ID=$(echo "$RESPONSE" | jq -r '.instanceId')
       
@@ -301,7 +316,7 @@ kaseki-create-pr:
       while true; do
         RESULT=$(curl -s \
           -H "Authorization: Bearer $KASEKI_API_KEY" \
-          http://kaseki-api:8080/api/runs/$INSTANCE_ID)
+          http://kaseki-api:8080/api/v1/runs/$INSTANCE_ID)
         
         STATUS=$(echo "$RESULT" | jq -r '.status')
         [ "$STATUS" = "completed" ] && break
@@ -337,24 +352,28 @@ pipeline {
     stage('Submit to Kaseki') {
       steps {
         script {
+          def idempotencyKey = sh(script: "node -p 'require(\"crypto\").randomUUID()'", returnStdout: true).trim()
+          withEnv(["IDEMPOTENCY_KEY=${idempotencyKey}"]) {
           def response = sh(
             script: '''
               curl -s -X POST \
                 -H "Authorization: Bearer ${KASEKI_API_KEY}" \
                 -H "Content-Type: application/json" \
+                -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
                 -d '{
                   "repoUrl": "'${GIT_REPOSITORY_URL}'",
                   "gitRef": "'${TASK_GIT_REF}'",
                   "taskPrompt": "'${TASK_PROMPT}'",
                   "timeoutSeconds": 1800
                 }' \
-                http://kaseki-api:8080/api/runs
+                http://kaseki-api:8080/api/v1/runs
             ''',
             returnStdout: true
           ).trim()
           
           env.KASEKI_INSTANCE_ID = readJSON(text: response).instanceId
           echo "Kaseki Instance: ${env.KASEKI_INSTANCE_ID}"
+          }
         }
       }
     }
@@ -372,7 +391,7 @@ pipeline {
               script: '''
                 curl -s \
                   -H "Authorization: Bearer ${KASEKI_API_KEY}" \
-                  http://kaseki-api:8080/api/runs/${KASEKI_INSTANCE_ID} \
+                  http://kaseki-api:8080/api/v1/runs/${KASEKI_INSTANCE_ID} \
                   | jq -r '.status'
               ''',
               returnStdout: true
@@ -400,7 +419,7 @@ pipeline {
             script: '''
               curl -s \
                 -H "Authorization: Bearer ${KASEKI_API_KEY}" \
-                http://kaseki-api:8080/api/runs/${KASEKI_INSTANCE_ID}
+                http://kaseki-api:8080/api/v1/runs/${KASEKI_INSTANCE_ID}
             ''',
             returnStdout: true
           ).trim()
@@ -442,20 +461,22 @@ node {
   
   stage('Submit Kaseki Runs') {
     repos.each { repo ->
-      def response = sh(
+      def idempotencyKey = sh(script: "node -p 'require(\"crypto\").randomUUID()'", returnStdout: true).trim()
+      def response = withEnv(["IDEMPOTENCY_KEY=${idempotencyKey}"]) { sh(
         script: '''
           curl -s -X POST \
             -H "Authorization: Bearer ${KASEKI_API_KEY}" \
             -H "Content-Type: application/json" \
+            -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
             -d '{
               "repoUrl": "https://github.com/''${repo}''",
               "gitRef": "main",
               "taskPrompt": "Add missing documentation"
             }' \
-            http://kaseki-api:8080/api/runs
+            http://kaseki-api:8080/api/v1/runs
         ''',
         returnStdout: true
-      ).trim()
+      ).trim() }
       
       results[repo] = readJSON(text: response).instanceId
       echo "Submitted ${repo}: ${results[repo]}"
@@ -468,7 +489,7 @@ node {
       
       for (int i = 0; i < 210; i++) {
         def status = sh(
-          script: "curl -s http://kaseki-api:8080/api/runs/${instanceId} | jq -r '.status'",
+          script: "curl -s http://kaseki-api:8080/api/v1/runs/${instanceId} | jq -r '.status'",
           returnStdout: true
         ).trim()
         
@@ -509,7 +530,7 @@ All CI platforms follow this pattern:
 2. Extract task prompt from trigger context
    ↓
 3. Submit to Kaseki API:
-   POST /api/runs
+   POST /api/v1/runs
    {
      "repoUrl": "...",
      "gitRef": "...",
@@ -525,7 +546,7 @@ All CI platforms follow this pattern:
    }
    ↓
 4. Poll for completion:
-   GET /api/runs/{instanceId}
+   GET /api/v1/runs/{instanceId}
    
    Loop until status === "completed"
    
@@ -564,7 +585,7 @@ All CI platforms follow this pattern:
 ### Handle Exit Codes
 
 ```bash
-EXIT_CODE=$(curl -s http://kaseki-api:8080/api/runs/$INSTANCE_ID | jq -r '.exitCode')
+EXIT_CODE=$(curl -s http://kaseki-api:8080/api/v1/runs/$INSTANCE_ID | jq -r '.exitCode')
 
 case $EXIT_CODE in
   0)
@@ -599,11 +620,13 @@ esac
 ```bash
 ATTEMPT=1
 MAX_ATTEMPTS=3
+IDEMPOTENCY_KEY=$(node -p 'require("crypto").randomUUID()')
 
 while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
   RESPONSE=$(curl -s -X POST \
     -H "Authorization: Bearer $KASEKI_API_KEY" \
-    http://kaseki-api:8080/api/runs \
+    -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
+    http://kaseki-api:8080/api/v1/runs \
     -d "{...}")
   
   INSTANCE_ID=$(echo "$RESPONSE" | jq -r '.instanceId')

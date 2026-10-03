@@ -412,6 +412,7 @@ export interface StatusResponse {
     message?: string;
   };
   error?: string;
+  /** Internal-only filesystem path used by status assembly; stripped from public API responses. */
   resultDir?: string;
   /** Canonical GitHub pull-request URL, when a patch run successfully published one. */
   prUrl?: string;
@@ -526,7 +527,8 @@ export interface ScorecardSummary {
 
 export interface ScorecardsListResponse {
   scorecards: ScorecardSummary[];
-  pagination: { limit: number; offset: number; returned: number; hasMore: boolean };
+  total: number;
+  pagination: { limit: number; returned: number; hasMore: boolean; nextCursor?: string };
   filters: {
     lifecycleStatus?: string; grade?: string; rubricVersion?: string; model?: string;
     repository?: string; startedAfter?: string; startedBefore?: string;
@@ -601,7 +603,6 @@ export interface RunsListResponse {
     status: 'queued' | 'running' | 'completed' | 'failed';
     createdAt: string;
     completedAt?: string;
-    resultDir?: string;
     exitCode?: number;
     failureClass?: string;
     failedCommand?: string;
@@ -618,8 +619,10 @@ export interface RunsListResponse {
     projectName?: string;
   }>;
   total: number;
+  hasMore: boolean;
+  nextCursor?: string;
   retention?: {
-    terminalJobIndexMaxEntries: number;
+    terminalJobMemoryMaxEntries: number;
     note: string;
   };
 }
@@ -655,12 +658,12 @@ export interface PreflightResponse {
   containerStartup?: {
     /**
      * Historical startup-cache record only. These checks are not rerun for the
-     * current /api/preflight request and are excluded from current readiness.
+     * current /api/v1/preflight request and are excluded from current readiness.
      */
     scope: 'startup';
     readinessImpact: 'excluded-from-current-readiness';
     current: false;
-    recommendedCurrentEndpoint: '/api/preflight';
+    recommendedCurrentEndpoint: '/api/v1/preflight';
     timestamp: string;
     cachedAt: string;
     checks: PreflightCheck[];
@@ -693,7 +696,8 @@ export interface ErrorResponse {
   title: string; // e.g., 'Unauthorized'
   status: number;
   detail: string;
-  instance?: string; // Run ID if applicable
+  instance?: string; // Request path
+  requestId?: string;
 }
 
 /**
@@ -750,10 +754,10 @@ export interface ComponentTiming {
  * Consolidates bootstrap timing, preflight checks, and environment info
  */
 export interface StartupHealthReport {
-  /** Cached boot-time diagnostics only; use /api/preflight for current readiness. */
+  /** Cached boot-time diagnostics only; use /api/v1/preflight for current readiness. */
   scope?: 'startup';
   current?: false;
-  recommendedCurrentEndpoint?: '/api/preflight';
+  recommendedCurrentEndpoint?: '/api/v1/preflight';
   timestamp: string;
   status: 'ok' | 'degraded' | 'error';
   summary: {

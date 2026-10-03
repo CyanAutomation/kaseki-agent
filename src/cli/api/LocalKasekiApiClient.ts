@@ -1,10 +1,11 @@
 import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
 import { TASK_ADMISSION_EXIT_CODE } from '../../task-admission';
 import type { ConfigManager } from '../../config/ConfigManager';
 import { ArtifactAvailability, type AnalysisResponse, type ArtifactResponse, type LogResponse, type RunArtifactsResponse, type RunRequest, type RunResponse, type RunsListResponse, type ScorecardResponse, type ScorecardsListResponse, type StatusResponse } from '../../kaseki-api-types';
 import { RunScorecardSchema } from '../../types/run-scorecard';
 
-const DEFAULT_LOCAL_API_BASE_URL = 'http://localhost:8080/api';
+const DEFAULT_LOCAL_API_BASE_URL = 'http://localhost:8080/api/v1';
 
 const CriticalChangeContractSchema = z.object({
   source: z.unknown().optional(),
@@ -36,7 +37,6 @@ const StatusResponseSchema = z.object({
   criticalChangeFailureReason: z.string().optional(),
   goalCheckFailureReason: z.string().optional(),
   error: z.string().optional(),
-  resultDir: z.string().optional(),
   correlationId: z.string().optional(),
   requestId: z.string().optional(),
   resultSummaryContent: z.string().optional(),
@@ -77,7 +77,6 @@ const RunsListResponseSchema = z.object({
     status: z.enum(['queued', 'running', 'completed', 'failed']),
     createdAt: z.string(),
     completedAt: z.string().optional(),
-    resultDir: z.string().optional(),
     exitCode: z.number().optional(),
     failureClass: z.string().optional(),
     failedCommand: z.string().optional(),
@@ -85,8 +84,10 @@ const RunsListResponseSchema = z.object({
     error: z.string().optional(),
   })),
   total: z.number(),
+  hasMore: z.boolean(),
+  nextCursor: z.string().optional(),
   retention: z.object({
-    terminalJobIndexMaxEntries: z.number(),
+    terminalJobMemoryMaxEntries: z.number(),
     note: z.string(),
   }).optional(),
 });
@@ -209,8 +210,10 @@ export class LocalKasekiApiClient {
   }
 
   async createRun(request: RunRequest): Promise<RunResponse> {
+    const idempotencyKey = request.idempotencyKey ?? randomUUID();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey,
     };
 
     if (this.apiKey) {
@@ -220,7 +223,7 @@ export class LocalKasekiApiClient {
     const response = await fetch(`${this.baseUrl}/runs`, {
       method: 'POST',
       headers,
-      body: JSON.stringify(request),
+      body: JSON.stringify({ ...request, idempotencyKey }),
     });
 
     if (!response.ok) {

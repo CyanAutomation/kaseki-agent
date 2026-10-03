@@ -1442,9 +1442,9 @@ const controllerPage = String.raw`<!doctype html>
           <div class="health-checks-grid">
             <button class="health-check-button" data-probe="/health" type="button" title="Check basic controller health status"><span class="hc-label">System Status</span><span class="health-check-status" data-status="health"></span></button>
             <button class="health-check-button" data-probe="/ready" type="button" title="Verify the controller is ready to accept tasks"><span class="hc-label">Readiness</span><span class="health-check-status" data-status="readiness"></span></button>
-            <button class="health-check-button" data-probe="/api/gateway-test?stage=1" data-auth="true" type="button" title="Validate API gateway connection and authentication"><span class="hc-label">API Connection</span><span class="health-check-status" data-status="gateway"></span></button>
-            <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&evaluation=true" data-auth="true" data-cost-warning="true" type="button" title="Test AI model inference and evaluation capability (uses tokens)"><span class="hc-label">AI Model Test</span><span class="health-check-status" data-status="llm-test"></span></button>
-            <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button" title="Run complete live controller diagnostics"><span class="hc-label">Live preflight</span><span class="health-check-status" data-status="preflight"></span></button>
+            <button class="health-check-button" data-probe="/api/v1/gateway-test?stage=1" data-auth="true" type="button" title="Validate API gateway connection and authentication"><span class="hc-label">API Connection</span><span class="health-check-status" data-status="gateway"></span></button>
+            <button class="health-check-button" data-probe="/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true" data-auth="true" data-cost-warning="true" type="button" title="Test AI model inference and evaluation capability (uses tokens)"><span class="hc-label">AI Model Test</span><span class="health-check-status" data-status="llm-test"></span></button>
+            <button class="health-check-button" data-probe="/api/v1/preflight" data-auth="true" type="button" title="Run complete live controller diagnostics"><span class="hc-label">Live preflight</span><span class="health-check-status" data-status="preflight"></span></button>
           </div>
           <p id="diagnostic-queue-state" class="field-helper" role="status" aria-live="polite">Diagnostics are ready.</p>
           <div class="summary-grid" id="health-summary" aria-live="polite">
@@ -2330,13 +2330,13 @@ const controllerPage = String.raw`<!doctype html>
         }
         if (path === '/health') return 'Health check completed.';
         if (path === '/ready') return 'Readiness check completed.';
-        if (path === '/api/gateway-test') return 'Gateway test completed.';
-        if (path.startsWith('/api/preflight')) return 'Current preflight completed.';
-        if (path === '/api/runs') return verb === 'POST' ? 'Run submitted.' : 'Recent runs refreshed.';
+        if (path === '/api/v1/gateway-test') return 'Gateway test completed.';
+        if (path.startsWith('/api/v1/preflight')) return 'Current preflight completed.';
+        if (path === '/api/v1/runs') return verb === 'POST' ? 'Run submitted.' : 'Recent runs refreshed.';
         if (path.endsWith('/status')) return 'Run status updated.';
         if (path.endsWith('/cancel')) return 'Cancel request sent.';
         if (path.endsWith('/artifacts')) return 'Artifacts loaded.';
-        if (path.startsWith('/api/results/')) return 'Artifact loaded.';
+        if (path.startsWith('/api/v1/results/')) return 'Artifact loaded.';
         if (payload && typeof payload === 'object' && typeof payload.id === 'string') return 'Run status updated.';
         return verb + ' ' + path + ' completed.';
       }
@@ -2371,11 +2371,11 @@ const controllerPage = String.raw`<!doctype html>
             ...base,
             error: typeof payload === 'string' ? stripControlSequences(payload) : payload,
             guidance: status === 502
-              ? 'The web endpoint returned Bad Gateway. The request may have failed before reaching the controller; retry once, then compare against /health and /api/preflight.'
+              ? 'The web endpoint returned Bad Gateway. The request may have failed before reaching the controller; retry once, then compare against /health and /api/v1/preflight.'
               : 'The request failed. Check the response status, authentication, and controller readiness.',
           }, null, 2);
         }
-        if (path.startsWith('/api/preflight') && payload && typeof payload === 'object') {
+        if (path.startsWith('/api/v1/preflight') && payload && typeof payload === 'object') {
           const checks = Array.isArray(payload.checks) ? payload.checks : [];
           const failed = checks.filter((check) => !check.ok);
           return JSON.stringify({
@@ -2426,7 +2426,7 @@ const controllerPage = String.raw`<!doctype html>
             note: 'Current diagnostics and startup diagnostics are separated to avoid treating boot history as live readiness.',
           }, null, 2);
         }
-        if (path.startsWith('/api/results/') && payload && typeof payload === 'object') {
+        if (path.startsWith('/api/v1/results/') && payload && typeof payload === 'object') {
           return artifactDisplayText(payload);
         }
         if (path.endsWith('/artifacts') && payload && typeof payload === 'object') {
@@ -2468,7 +2468,7 @@ const controllerPage = String.raw`<!doctype html>
             note: 'Open Full Results for raw status, events, logs, and artifacts.',
           }, null, 2);
         }
-        if (path === '/api/runs' && payload && typeof payload === 'object' && Array.isArray(payload.runs)) {
+        if (path === '/api/v1/runs' && payload && typeof payload === 'object' && Array.isArray(payload.runs)) {
           return JSON.stringify({
             ...base,
             response: {
@@ -2524,7 +2524,7 @@ const controllerPage = String.raw`<!doctype html>
       }
 
       function runUrl(runId, suffix) {
-        return '/api/runs/' + encodeURIComponent(runId) + suffix;
+        return '/api/v1/runs/' + encodeURIComponent(runId) + suffix;
       }
 
       function showRunLinks(runId) {
@@ -2542,7 +2542,7 @@ const controllerPage = String.raw`<!doctype html>
       }
 
       function artifactUrl(runId, fileName) {
-        return '/api/results/' + encodeURIComponent(runId) + '/' + encodeURIComponent(fileName);
+        return '/api/v1/results/' + encodeURIComponent(runId) + '/' + encodeURIComponent(fileName);
       }
 
       function showRecommendedArtifacts(runId, artifactsResponse) {
@@ -2770,7 +2770,7 @@ const controllerPage = String.raw`<!doctype html>
       async function loadRunsList(options) {
         if (pageDisposed) return;
         try {
-          const result = await apiRequest('/api/runs?limit=12', { auth: true, preserveOutput: options && options.preserveOutput });
+          const result = await apiRequest('/api/v1/runs?limit=12', { auth: true, preserveOutput: options && options.preserveOutput });
           if (pageDisposed) return;
           if (result.response.ok) {
             renderRunsList(result.payload);
@@ -2816,8 +2816,8 @@ const controllerPage = String.raw`<!doctype html>
         if (path === '/ready') {
           setSummary('controller', payload.status || 'Ready', 'ok');
         }
-        if (path.startsWith('/api/gateway-test')) {
-          // Handle both /api/gateway-test (full test), /api/gateway-test?stage=1 (connectivity), and /api/gateway-test?stage=2 (inference)
+        if (path.startsWith('/api/v1/gateway-test')) {
+          // Handle both /api/v1/gateway-test (full test), /api/v1/gateway-test?stage=1 (connectivity), and /api/v1/gateway-test?stage=2 (inference)
           const responseTime = Math.round(payload.responseTime || 0);
           const slow = payload.status === 'ok' && typeof payload.warning === 'string';
           const smoke = payload.responseSmokeValidated === true;
@@ -2904,7 +2904,7 @@ const controllerPage = String.raw`<!doctype html>
             setSummary('gateway', summary, payload.status === 'ok' ? (slow ? 'warning' : 'ok') : 'bad');
           }
         }
-        if (path === '/api/gateway-test/responses') {
+        if (path === '/api/v1/gateway-test/responses') {
           const responseTime = Math.round(payload.responseTime || 0);
           const outputTokens = payload.outputTokens || 0;
           const summary = payload.status === 'ok'
@@ -2912,7 +2912,7 @@ const controllerPage = String.raw`<!doctype html>
             : 'Failed';
           setSummary('llm-test', summary, payload.status === 'ok' ? 'ok' : 'bad');
         }
-        if (path.startsWith('/api/preflight')) {
+        if (path.startsWith('/api/v1/preflight')) {
           const checks = Array.isArray(payload.checks) ? payload.checks : [];
           const failed = checks.filter((check) => !check.ok);
           setSummary('preflight', failed.length === 0 ? String(checks.length) + ' checks passed' : String(failed.length) + ' failed', failed.length === 0 ? 'ok' : 'bad');
@@ -3001,9 +3001,9 @@ const controllerPage = String.raw`<!doctype html>
 
       function requestTimeoutFor(path, options) {
         if (options && typeof options.timeoutMs === 'number') return options.timeoutMs;
-        if (path.startsWith('/api/preflight')) return LONG_REQUEST_TIMEOUT_MS;
+        if (path.startsWith('/api/v1/preflight')) return LONG_REQUEST_TIMEOUT_MS;
         // Gateway tests (especially Stage 2 LLM inference) need more time (~15-20s for LLM response)
-        if (path.startsWith('/api/gateway-test')) return LONG_REQUEST_TIMEOUT_MS;
+        if (path.startsWith('/api/v1/gateway-test')) return LONG_REQUEST_TIMEOUT_MS;
         return DEFAULT_REQUEST_TIMEOUT_MS;
       }
 
@@ -3030,6 +3030,10 @@ const controllerPage = String.raw`<!doctype html>
       async function apiRequest(path, options) {
         const token = getApiToken();
         const needsAuth = options && options.auth;
+        const method = options && options.method || 'GET';
+        const idempotencyKey = method === 'POST' && path === '/api/v1/runs'
+          ? options && options.body && options.body.idempotencyKey
+          : undefined;
         if (needsAuth && !token) throw new Error('Enter the API bearer token in the header first.');
         if (needsAuth && token && !isLikelyBearerToken(token)) {
           throw new Error('Token format looks invalid. Use a plain bearer token without spaces.');
@@ -3037,10 +3041,11 @@ const controllerPage = String.raw`<!doctype html>
         let response;
         try {
           response = await fetchWithTimeout(path, {
-            method: options && options.method || 'GET',
+            method,
             headers: {
               ...(needsAuth ? { Authorization: 'Bearer ' + token } : {}),
               ...(options && options.body ? { 'Content-Type': 'application/json' } : {}),
+              ...(typeof idempotencyKey === 'string' ? { 'Idempotency-Key': idempotencyKey } : {}),
             },
             body: options && options.body ? JSON.stringify(options.body) : undefined,
           }, requestTimeoutFor(path, options));
@@ -3115,7 +3120,7 @@ const controllerPage = String.raw`<!doctype html>
           setResponseSummary(null);
           setOutputBody(sanitizeOutput(error instanceof Error ? error.message : String(error)));
           if (error instanceof RequestTimeoutError) {
-            setResponseSummary('The diagnostic timed out before the controller responded. The gateway or Pi adapter may still be working; check /health, /ready, /api/preflight, and the run logs before retrying.');
+            setResponseSummary('The diagnostic timed out before the controller responded. The gateway or Pi adapter may still be working; check /health, /ready, /api/v1/preflight, and the run logs before retrying.');
             setState('Diagnostic timed out; controller state is unknown.', 'bad');
           } else {
             setState('Request could not be sent.', 'bad');
@@ -3353,7 +3358,7 @@ const controllerPage = String.raw`<!doctype html>
         button.disabled = true;
         setOutputMetadata('running');
         setState('Validating task...');
-        apiRequest('/api/validate', {
+        apiRequest('/api/v1/validate', {
           method: 'POST',
           auth: true,
           body: requestBody(),
@@ -3397,7 +3402,7 @@ const controllerPage = String.raw`<!doctype html>
             const timedOut = error instanceof RequestTimeoutError;
             setState(timedOut ? 'Task validation timed out; controller state is unknown.' : 'Validation failed', 'bad');
             setResponseSummary(timedOut
-              ? 'Validation exceeded 120 seconds. Check /health and /api/preflight before retrying; no run was submitted.'
+              ? 'Validation exceeded 120 seconds. Check /health and /api/v1/preflight before retrying; no run was submitted.'
               : null);
             setOutputBody(message);
           })
@@ -3953,7 +3958,7 @@ const controllerPage = String.raw`<!doctype html>
             ? artifactsResult.payload.recommended.slice(0, 5)
             : [];
           const artifactSections = await Promise.all(recommended.map(async (name) => {
-            const result = await apiRequest('/api/results/' + encodeURIComponent(runId) + '/' + encodeURIComponent(name), { auth: true, preserveOutput: true });
+            const result = await apiRequest('/api/v1/results/' + encodeURIComponent(runId) + '/' + encodeURIComponent(name), { auth: true, preserveOutput: true });
             return '## ' + name + '\n' + artifactDisplayText(result.payload);
           }));
           const bundle = '# Kaseki diagnostic bundle: ' + runId + '\n\n## Status\n' +
@@ -3998,7 +4003,7 @@ const controllerPage = String.raw`<!doctype html>
       });
 
       document.querySelector('#refresh-runs').addEventListener('click', (event) => {
-        run(event.currentTarget, '/api/runs', { auth: true }).then(({ payload, response }) => {
+        run(event.currentTarget, '/api/v1/runs', { auth: true }).then(({ payload, response }) => {
           if (response.ok) renderRunsList(payload);
         });
       });
@@ -4051,7 +4056,7 @@ const controllerPage = String.raw`<!doctype html>
         setState('Contacting the controller...');
         const idempotencyKey = createRequestId();
         const submittedBody = requestBody(idempotencyKey);
-        apiRequest('/api/runs', { method: 'POST', auth: true, body: submittedBody, timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS })
+        apiRequest('/api/v1/runs', { method: 'POST', auth: true, body: submittedBody, timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS })
           .then(({ payload, response }) => {
             if (response.ok && payload && typeof payload.id === 'string') {
               activateSubmittedRun(payload, response.status, false);
@@ -4077,7 +4082,7 @@ const controllerPage = String.raw`<!doctype html>
         runIdInput.value = payload.id;
         setOutputMetadata(payload.status || 'queued', payload.id);
         setResponseSummary(payload);
-        setOutputBody(summarizedResponseBody('/api/runs', 'POST', responseStatus, payload));
+        setOutputBody(summarizedResponseBody('/api/v1/runs', 'POST', responseStatus, payload));
         setState(recovered ? 'Run submitted; recovered run id after request timeout.' : 'Run submitted.', 'ok');
         updateCancelRunButtonState();
         showRunLinks(payload.id);
@@ -4089,7 +4094,7 @@ const controllerPage = String.raw`<!doctype html>
 
       async function recoverSubmittedRunAfterTimeout(submittedBody) {
         try {
-          const result = await apiRequest('/api/runs', {
+          const result = await apiRequest('/api/v1/runs', {
             method: 'POST',
             auth: true,
             body: submittedBody,
@@ -4142,7 +4147,7 @@ const controllerPage = String.raw`<!doctype html>
         issuesError.hidden = true;
 
         try {
-          const result = await apiRequest('/api/github-issues', {
+          const result = await apiRequest('/api/v1/github-issues', {
             method: 'POST',
             auth: true,
             body: enteredLabel ? { repoUrl, label: enteredLabel } : { repoUrl, allLabels: true },
@@ -4165,7 +4170,7 @@ const controllerPage = String.raw`<!doctype html>
             setResponseSummary(null);
             setOutputBody(JSON.stringify({
               method: 'POST',
-              path: '/api/github-issues',
+              path: '/api/v1/github-issues',
               status: response.status,
               error: stripControlSequences(errorMessage),
             }, null, 2));
@@ -4189,7 +4194,7 @@ const controllerPage = String.raw`<!doctype html>
             setResponseSummary({ status: 'ok' });
             setOutputBody(JSON.stringify({
               method: 'POST',
-              path: '/api/github-issues',
+              path: '/api/v1/github-issues',
               status: response.status,
               response: {
                 repoUrl,
@@ -4207,7 +4212,7 @@ const controllerPage = String.raw`<!doctype html>
           setResponseSummary({ status: 'ok' });
           setOutputBody(JSON.stringify({
             method: 'POST',
-            path: '/api/github-issues',
+            path: '/api/v1/github-issues',
             status: response.status,
             response: {
               repoUrl,

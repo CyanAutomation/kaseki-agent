@@ -61,11 +61,9 @@ describe('WebhookManager retry attempts', () => {
     // Expected outcome: fetchMock.calls.length === expectedSends; queue is empty after max retries exhausted
     const resultsDir = fs.mkdtempSync('/tmp/kaseki-webhook-manager-test-');
     const clock = new FakeClock(Date.UTC(2026, 0, 1));
-    const manager = new WebhookManager(resultsDir, { now: clock.now });
+    const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 500, statusText: 'Internal Server Error' });
+    const manager = new WebhookManager(resultsDir, { now: clock.now, sendWebhook: fetchMock });
     manager.stopProcessing();
-
-    const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 500, text: async () => '' });
-    global.fetch = fetchMock as unknown as typeof fetch;
 
     manager.enqueueWebhook('job-123', basePayload, createConfig(maxAttempts));
 
@@ -150,20 +148,19 @@ describe('WebhookManager delivery log recovery', () => {
 
   test('allows only one manager to deliver a shared pending entry', async () => {
     const resultsDir = fs.mkdtempSync('/tmp/kaseki-webhook-manager-claim-test-');
-    const first = new WebhookManager(resultsDir);
-    first.stopProcessing();
-    first.enqueueWebhook('job-shared', basePayloadFor('job-shared'), configForTest());
-    const second = new WebhookManager(resultsDir);
-    second.stopProcessing();
     let resolveFetch:
-      | ((response: { ok: boolean; status: number; text: () => Promise<string> }) => void)
+      | ((response: { ok: boolean; status: number; statusText: string }) => void)
       | undefined;
     const fetchMock = jest.fn().mockReturnValue(
       new Promise((resolve) => {
         resolveFetch = resolve;
       })
     );
-    global.fetch = fetchMock as unknown as typeof fetch;
+    const first = new WebhookManager(resultsDir, { sendWebhook: fetchMock });
+    first.stopProcessing();
+    first.enqueueWebhook('job-shared', basePayloadFor('job-shared'), configForTest());
+    const second = new WebhookManager(resultsDir);
+    second.stopProcessing();
 
     try {
       const firstDrain = first.drainQueueForTest();
@@ -171,7 +168,7 @@ describe('WebhookManager delivery log recovery', () => {
       expect(await second.drainQueueForTest()).toBe(0);
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(resolveFetch).toBeDefined();
-      resolveFetch?.({ ok: true, status: 200, text: async () => '' });
+      resolveFetch?.({ ok: true, status: 200, statusText: 'OK' });
       await firstDrain;
       expect(fetchMock).toHaveBeenCalledTimes(1);
     } finally {
@@ -198,10 +195,9 @@ describe('WebhookManager delivery log recovery', () => {
         deliveryClaimExpiresAt: clock.now() - 1,
       })
     );
-    const manager = new WebhookManager(resultsDir, { now: clock.now });
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200, statusText: 'OK' });
+    const manager = new WebhookManager(resultsDir, { now: clock.now, sendWebhook: fetchMock });
     manager.stopProcessing();
-    const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '' });
-    global.fetch = fetchMock as unknown as typeof fetch;
 
     try {
       expect(await manager.drainQueueForTest()).toBe(1);
@@ -338,6 +334,49 @@ describe('WebhookManager delivery log recovery', () => {
       await manager.shutdown();
       fs.rmSync(resultsDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('Webhook delivery inspection and retry', () => {
+  it('retains terminal delivery attempts and allows an explicit retry of a failed delivery', async () => {
+    const resultsDir = fs.mkdtempSync('/tmp/kaseki-webhook-history-test-');
+    const clock = new FakeClock(Date.UTC(2026, 0, 1));
+    const payload: WebhookPayload = {
+      eventType: WebhookEventType.JOB_FAILED,
+      jobId: 'job-history',
+      timestamp: new Date(clock.now()).toISOString(),
+      data: { status: 'failed' },
+    };
+    const config: WebhookConfig = {
+      url: 'https://example.com/webhook',
+      retryPolicy: { maxAttempts: 1, initialDelayMs: 100, maxDelayMs: 1000 },
+    };
+    const sendWebhook = jest.fn()
+      .mockResolvedValueOnce({ ok: false, status: 500, statusText: 'Internal Server Error' })
+      .mockResolvedValueOnce({ ok: true, status: 204, statusText: 'No Content' });
+    const manager = new WebhookManager(resultsDir, { now: clock.now, sendWebhook });
+    manager.stopProcessing();
+    manager.enqueueWebhook('job-history', payload, config);
+    await manager.drainQueueForTest();
+
+    const [failed] = manager.getDeliveriesForJob('job-history');
+    expect(failed).toMatchObject({ jobId: 'job-history', eventType: WebhookEventType.JOB_FAILED, status: 'failed' });
+    expect(failed.attempts).toHaveLength(2);
+    expect(failed).not.toHaveProperty('url');
+    expect(failed).not.toHaveProperty('config');
+
+    expect(manager.retryFailedDelivery('job-history', failed.id)).toBe(true);
+    expect(manager.retryFailedDelivery('job-history', failed.id)).toBe(false);
+    expect(manager.getDeliveriesForJob('job-history')[0].status).toBe('pending');
+    await manager.drainQueueForTest();
+    expect(manager.getDeliveriesForJob('job-history')[0].status).toBe('success');
+
+    const recoveredManager = new WebhookManager(resultsDir, { now: clock.now, sendWebhook });
+    recoveredManager.stopProcessing();
+    expect(recoveredManager.getDeliveriesForJob('job-history')[0].status).toBe('success');
+    await manager.shutdown();
+    await recoveredManager.shutdown();
+    fs.rmSync(resultsDir, { recursive: true, force: true });
   });
 });
 

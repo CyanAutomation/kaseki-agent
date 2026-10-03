@@ -101,7 +101,7 @@ function collectEnvironmentChecks(
 ): void {
   checks.push(checkDeletedBindMounts([config.resultsDir, templateDir, checkoutDir, secretsDir]));
   checks.push(checkWritableDirectory('results-dir', config.resultsDir,
-    'Create the results directory and make it writable by the API container user. If /api/preflight reports a deleted bind mount, recreate the API container.'));
+    'Create the results directory and make it writable by the API container user. If /api/v1/preflight reports a deleted bind mount, recreate the API container.'));
 }
 
 function collectCredentialChecks(checks: PreflightCheck[]): void {

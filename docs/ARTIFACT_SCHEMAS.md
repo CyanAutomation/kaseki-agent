@@ -449,5 +449,5 @@ Breaking changes increment major version. Tools should check `schema_version` on
 # Scorecard API
 
 `run-scorecard.json` is available as a validated contract through
-[`GET /api/runs/:id/scorecard`](API.md#run-scorecards); consumers should prefer that endpoint over
+[`GET /api/v1/runs/:id/scorecard`](API.md#run-scorecards); consumers should prefer that endpoint over
 reading the result directory directly. Cross-run consumers can use the bounded compact summary API.
