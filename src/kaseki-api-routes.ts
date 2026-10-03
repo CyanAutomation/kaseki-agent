@@ -42,6 +42,7 @@ import { testPiGatewayProviderSmoke } from './kaseki-api-gateway-smoke';
 import { getPackageVersion } from './openapi-spec-generators/components';
 import { evaluateTaskAdmission, TASK_ADMISSION_EXIT_CODE, type TaskAdmissionEvaluator } from './task-admission';
 import { ApiAccessController } from './api-access-control';
+import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 
 function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
   if (!remoteAddress) {
@@ -221,6 +222,29 @@ function registerApiMiddleware(
 
     next();
   });
+
+  // Apply a framework-recognized limit before authorization so invalid
+  // credentials are throttled too. Authorized requests use ApiAccessController's
+  // fixed-window quota below, avoiding two independently resetting buckets.
+  router.use(rateLimit({
+    windowMs: 60_000,
+    limit: config.apiRequestsPerMinute ?? 300,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    skip: (req) => {
+      if (req.path === '/health' || req.path === '/ready') return true;
+      if (config.apiKeys.length === 0) return isLoopbackRemoteAddress(req.socket.remoteAddress);
+      const authorization = req.get('Authorization');
+      return authorization?.startsWith('Bearer ') === true && validateApiKey(config, authorization.slice(7));
+    },
+    keyGenerator: (req) => {
+      const clientAddress = req.ip ?? req.socket.remoteAddress;
+      return clientAddress ? `ip:${ipKeyGenerator(clientAddress)}` : 'ip:unknown';
+    },
+    handler: (_req, res) => {
+      sendErrorResponse(res, 429, 'Too Many Requests', 'API request limit exceeded; retry after the indicated delay');
+    },
+  }));
 
   /**
    * Middleware: API key validation.

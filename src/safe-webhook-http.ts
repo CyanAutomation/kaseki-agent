@@ -2,7 +2,6 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 import * as http from 'node:http';
 import * as https from 'node:https';
 import * as ipaddr from 'ipaddr.js';
-import type { LookupFunction } from 'node:net';
 
 export interface WebhookResolvedAddress {
   address: string;
@@ -40,8 +39,8 @@ export class WebhookEgressPolicyError extends Error {
 
 /**
  * Send one webhook request after validating its destination and resolving DNS
- * once. The selected address is pinned into the socket lookup callback, so a
- * second DNS answer cannot change the peer between validation and connect.
+ * once. The selected address becomes the socket host, so a second DNS answer
+ * cannot change the peer between validation and connect.
  * Redirects are returned to the caller and are never followed.
  */
 export async function postWebhookSafely(
@@ -156,19 +155,30 @@ async function resolveHostname(hostname: string): Promise<WebhookResolvedAddress
   }));
 }
 
+export function createPinnedRequestOptions(url: URL, options: WebhookRequestOptions): https.RequestOptions {
+  const hostname = normalizeHostname(url.hostname);
+  const headers = Object.fromEntries(
+    Object.entries(options.headers).filter(([name]) => name.toLowerCase() !== 'host'),
+  );
+
+  return {
+    protocol: url.protocol,
+    // Connect to the address that was validated above. The user-provided URL
+    // remains only in the HTTP authority and request target, never the socket host.
+    hostname: options.address,
+    port: url.port ? Number(url.port) : undefined,
+    path: `${url.pathname}${url.search}`,
+    method: 'POST',
+    headers: { ...headers, host: url.host },
+    family: options.family,
+    ...(url.protocol === 'https:' && !ipaddr.isValid(hostname) ? { servername: hostname } : {}),
+  };
+}
+
 function requestPinnedAddress(url: URL, options: WebhookRequestOptions): Promise<WebhookHttpResponse> {
   return new Promise((resolve, reject) => {
     const transport = url.protocol === 'https:' ? https : http;
-    const pinnedLookup = ((_: string, __: unknown, callback: (error: NodeJS.ErrnoException | null, address: string, family: number) => void) => {
-      callback(null, options.address, options.family);
-    }) as unknown as LookupFunction;
-
-    const request = transport.request(url, {
-      method: 'POST',
-      headers: options.headers,
-      lookup: pinnedLookup,
-      family: options.family,
-    }, (response) => {
+    const request = transport.request(createPinnedRequestOptions(url, options), (response) => {
       response.on('error', reject);
       response.on('end', () => resolve({
         status: response.statusCode ?? 0,
