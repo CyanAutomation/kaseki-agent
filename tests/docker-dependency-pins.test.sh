@@ -9,18 +9,18 @@ if ! jq -e '
   .dependencies.npm == "11.21.0" and
   .dependencies["@earendil-works/pi-coding-agent"] == "0.87.1" and
   .dependencies["@earendil-works/pi-server"] == "0.87.1" and
-  .dependencies["brace-expansion"] == "5.0.11" and
-  .dependencies["brace-expansion-v1"] == "npm:brace-expansion@1.1.20" and
-  .dependencies["brace-expansion-v2"] == "npm:brace-expansion@2.1.6" and
+  .dependencies["brace-expansion"] == "5.0.12" and
+  .dependencies["brace-expansion-v1"] == "npm:brace-expansion@1.1.21" and
+  .dependencies["brace-expansion-v2"] == "npm:brace-expansion@2.1.7" and
   (.dependencies | has("brace-expansion-v3") | not) and
   .dependencies.undici == "8.10.2" and
   .dependencies["undici-v6"] == "npm:undici@6.28.1" and
   .dependencies["undici-v7"] == "npm:undici@7.29.1" and
-  .overrides.npm["brace-expansion"] == "5.0.11" and
+  .overrides.npm["brace-expansion"] == "5.0.12" and
   .overrides.npm.undici == "6.28.1" and
-  .overrides["@earendil-works/pi-coding-agent"]["brace-expansion"] == "5.0.11" and
+  .overrides["@earendil-works/pi-coding-agent"]["brace-expansion"] == "5.0.12" and
   .overrides["@earendil-works/pi-coding-agent"].undici == "8.10.2" and
-  .overrides["@earendil-works/pi-server"]["brace-expansion"] == "5.0.11" and
+  .overrides["@earendil-works/pi-server"]["brace-expansion"] == "5.0.12" and
   .overrides["@earendil-works/pi-server"].undici == "8.10.2"
 ' "$toolchain_manifest" >/dev/null; then
   echo 'Image toolchain dependencies must use the reviewed versions and scoped security overrides.' >&2

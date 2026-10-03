@@ -19,12 +19,16 @@ describe('image bundled dependency patching', () => {
     const targets = path.join(root, 'targets');
 
     try {
-      createPackage(sources, 'brace-expansion', 'brace-expansion', '5.0.11', 'brace-fixed');
+      createPackage(sources, 'brace-expansion', 'brace-expansion', '5.0.12', 'brace-fixed');
+      createPackage(sources, 'brace-expansion-v1', 'brace-expansion', '1.1.21', 'brace-one-fixed');
+      createPackage(sources, 'brace-expansion-v2', 'brace-expansion', '2.1.7', 'brace-two-fixed');
       createPackage(sources, 'undici-v6', 'undici', '6.28.1', 'undici-six-fixed');
       createPackage(sources, 'undici-v7', 'undici', '7.29.1', 'undici-seven-fixed');
       createPackage(sources, 'undici', 'undici', '8.10.2', 'undici-eight-fixed');
 
       createPackage(targets, 'npm/node_modules/brace-expansion', 'brace-expansion', '5.0.9', 'old-brace');
+      createPackage(targets, 'npm/node_modules/brace-expansion-v1', 'brace-expansion', '1.1.20', 'old-brace-one');
+      createPackage(targets, 'npm/node_modules/brace-expansion-v2', 'brace-expansion', '2.1.6', 'old-brace-two');
       createPackage(targets, 'npm/node_modules/undici', 'undici', '6.28.0', 'old-undici-six');
       createPackage(targets, '@earendil-works/pi-coding-agent/node_modules/brace-expansion', 'brace-expansion', '5.0.9');
       createPackage(targets, '@earendil-works/pi-coding-agent/node_modules/undici', 'undici', '8.9.0', 'old-undici-eight');
@@ -32,8 +36,12 @@ describe('image bundled dependency patching', () => {
 
       execFileSync('node', [patcher, sources, targets], { encoding: 'utf8' });
 
-      expect(JSON.parse(readFileSync(path.join(targets, 'npm/node_modules/brace-expansion/package.json'), 'utf8')).version).toBe('5.0.11');
+      expect(JSON.parse(readFileSync(path.join(targets, 'npm/node_modules/brace-expansion/package.json'), 'utf8')).version).toBe('5.0.12');
       expect(readFileSync(path.join(targets, 'npm/node_modules/brace-expansion/replacement.txt'), 'utf8')).toBe('brace-fixed');
+      expect(JSON.parse(readFileSync(path.join(targets, 'npm/node_modules/brace-expansion-v1/package.json'), 'utf8')).version).toBe('1.1.21');
+      expect(readFileSync(path.join(targets, 'npm/node_modules/brace-expansion-v1/replacement.txt'), 'utf8')).toBe('brace-one-fixed');
+      expect(JSON.parse(readFileSync(path.join(targets, 'npm/node_modules/brace-expansion-v2/package.json'), 'utf8')).version).toBe('2.1.7');
+      expect(readFileSync(path.join(targets, 'npm/node_modules/brace-expansion-v2/replacement.txt'), 'utf8')).toBe('brace-two-fixed');
       expect(JSON.parse(readFileSync(path.join(targets, 'npm/node_modules/undici/package.json'), 'utf8')).version).toBe('6.28.1');
       expect(readFileSync(path.join(targets, 'npm/node_modules/undici/replacement.txt'), 'utf8')).toBe('undici-six-fixed');
       expect(JSON.parse(readFileSync(path.join(targets, '@earendil-works/pi-coding-agent/node_modules/undici/package.json'), 'utf8')).version).toBe('8.10.2');
@@ -51,7 +59,7 @@ describe('image bundled dependency patching', () => {
     const targets = path.join(root, 'targets');
 
     try {
-      createPackage(sources, 'brace-expansion', 'brace-expansion', '5.0.11');
+      createPackage(sources, 'brace-expansion', 'brace-expansion', '5.0.12');
       createPackage(targets, 'legacy/node_modules/brace-expansion', 'brace-expansion', '3.0.8');
 
       let error: NodeJS.ErrnoException & { stderr?: Buffer } | undefined;

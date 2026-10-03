@@ -6,12 +6,12 @@ import { pathToFileURL } from 'node:url';
 
 const FIXED_VERSIONS = {
   'brace-expansion': {
-    1: '1.1.20',
-    2: '2.1.6',
+    1: '1.1.21',
+    2: '2.1.7',
     // 3.x and 4.x have no fixed release; Trivy's first fixed major is 5.0.7.
     3: '5.0.7',
     4: '5.0.7',
-    5: '5.0.11',
+    5: '5.0.12',
   },
   undici: {
     6: '6.28.1',
