@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { postWebhookSafely, WebhookEgressPolicyError } from './safe-webhook-http';
+import { createPinnedRequestOptions, postWebhookSafely, WebhookEgressPolicyError } from './safe-webhook-http';
 
 describe('postWebhookSafely', () => {
   test.each([
@@ -10,6 +10,7 @@ describe('postWebhookSafely', () => {
     'https://169.254.169.254/latest/meta-data',
     'https://[::1]/hook',
     'https://[fd00::1]/hook',
+    'https://[::ffff:127.0.0.1]/hook',
     'https://2130706433/hook',
     'https://user:pass@example.com/hook',
   ])('rejects unsafe target %s before sending', async (url) => {
@@ -54,8 +55,38 @@ describe('postWebhookSafely', () => {
     }));
   });
 
+  test('uses the validated address as the socket host while preserving the webhook authority', () => {
+    const requestOptions = createPinnedRequestOptions(
+      new URL('https://hooks.example.test:8443/notify?event=complete'),
+      {
+        address: '93.184.216.34',
+        family: 4,
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+        timeoutMs: 10_000,
+      },
+    );
+
+    expect(requestOptions).toMatchObject({
+      protocol: 'https:',
+      hostname: '93.184.216.34',
+      port: 8443,
+      path: '/notify?event=complete',
+      family: 4,
+      servername: 'hooks.example.test',
+      headers: {
+        'Content-Type': 'application/json',
+        host: 'hooks.example.test:8443',
+      },
+    });
+  });
+
   test('allows explicitly allowlisted internal receivers and does not follow redirects', async () => {
-    const server = createServer((_req, res) => {
+    let receivedHost: string | undefined;
+    let receivedAddress: string | undefined;
+    const server = createServer((req, res) => {
+      receivedHost = req.headers.host;
+      receivedAddress = req.socket.remoteAddress;
       res.writeHead(302, { Location: 'http://169.254.169.254/latest/meta-data' });
       res.end('redirect');
     });
@@ -67,6 +98,8 @@ describe('postWebhookSafely', () => {
         allowedOrigins: [`http://127.0.0.1:${port}`],
       });
       expect(response.status).toBe(302);
+      expect(receivedHost).toBe(`127.0.0.1:${port}`);
+      expect(receivedAddress).toBe('127.0.0.1');
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

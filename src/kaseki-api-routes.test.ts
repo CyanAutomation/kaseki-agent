@@ -84,6 +84,79 @@ describe('webhook test egress policy', () => {
 });
 
 describe('API access scopes, quotas, and request identifiers', () => {
+  test('rate limits run retry submissions before the retry handler repeats work', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-retry-limit-'));
+    const config = createTestConfig(resultsDir);
+    config.apiRequestsPerMinute = 1;
+    const scheduler = {
+      ...createMockScheduler(),
+      getJobIncludingHistory: jest.fn(async () => undefined),
+    } as any;
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+    const request = () => fetch(`http://127.0.0.1:${port}/api/runs/missing/retry`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idempotencyKey: '77777777-7777-4777-8777-777777777777' }),
+    });
+
+    try {
+      const first = await request();
+      const second = await request();
+
+      expect(first.status).toBe(404);
+      expect(second.status).toBe(429);
+      expect(scheduler.getJobIncludingHistory).toHaveBeenCalledTimes(1);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('rate limits invalid bearer credentials by client IP instead of attacker-controlled tokens', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-invalid-key-limit-'));
+    const config = createTestConfig(resultsDir);
+    config.apiRequestsPerMinute = 1;
+    const { server, port, idempotencyStore } = await createTestApp(createMockScheduler(), config);
+    try {
+      const first = await fetch(`http://127.0.0.1:${port}/api/capabilities`, {
+        headers: { Authorization: 'Bearer invalid-one' },
+      });
+      const second = await fetch(`http://127.0.0.1:${port}/api/capabilities`, {
+        headers: { Authorization: 'Bearer invalid-two' },
+      });
+
+      expect(first.status).toBe(401);
+      expect(second.status).toBe(429);
+      expect(Number(second.headers.get('retry-after'))).toBeGreaterThan(0);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('keeps independent valid API keys in separate rate-limit buckets', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-key-limit-buckets-'));
+    const config = createTestConfig(resultsDir);
+    config.apiKeys = ['test-key', 'other-key'];
+    config.apiKeyScopes = { 'test-key': TEST_API_SCOPES, 'other-key': TEST_API_SCOPES };
+    config.apiRequestsPerMinute = 1;
+    const { server, port, idempotencyStore } = await createTestApp(createMockScheduler(), config);
+    try {
+      const first = await fetch(`http://127.0.0.1:${port}/api/capabilities`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      const second = await fetch(`http://127.0.0.1:${port}/api/capabilities`, {
+        headers: { Authorization: 'Bearer other-key' },
+      });
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
   test('defaults configured keys to read-only scopes when no scope map is set', async () => {
     const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-default-scopes-'));
     const config = createTestConfig(resultsDir);

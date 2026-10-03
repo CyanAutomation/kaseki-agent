@@ -13,6 +13,7 @@ import { progressEventsFromDockerLogTail } from '../utils/docker-log-progress-ev
 import { CachedArtifactReader } from '../utils/cached-artifact-reader';
 import { AnalysisArtifactHelper } from '../utils/analysis-artifact-helper';
 import type { ResultCache } from '../result-cache';
+import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 
 function readStructuredEventSnapshot(
   scheduler: JobScheduler,
@@ -352,6 +353,22 @@ export function createLogRoutes(
   artifactCache?: Pick<ResultCache, 'getOrLoad'>
 ): Router {
   const router = Router();
+  router.use(rateLimit({
+    windowMs: 60_000,
+    limit: config.apiRequestsPerMinute ?? 300,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    // The assembled API already applies its per-key fixed-window quota before
+    // this router. Keep this limit for standalone mounts without double-counting.
+    skip: (_req, res) => typeof res.locals.apiKey === 'string',
+    keyGenerator: (req) => {
+      const clientAddress = req.ip ?? req.socket.remoteAddress;
+      return clientAddress ? `ip:${ipKeyGenerator(clientAddress)}` : 'ip:unknown';
+    },
+    handler: (_req, res) => {
+      sendErrorResponse(res, 429, 'Too Many Requests', 'Log request limit exceeded; retry after the indicated delay');
+    },
+  }));
   const cachedReader = artifactCache ? new CachedArtifactReader(artifactCache as ResultCache) : undefined;
   const analysisHelper = new AnalysisArtifactHelper(cachedReader);
 
