@@ -45,10 +45,10 @@ export function createWebhookRoutes(): Router {
         }
 
         const response = await postWebhookSafely(url, JSON.stringify(testPayload), {
-            'Content-Type': 'application/json',
-            'X-Kaseki-Event': 'webhook.test',
-            'X-Kaseki-Job-Id': 'test',
-            ...(signature && { 'X-Kaseki-Signature': `sha256=${signature}` }),
+          'Content-Type': 'application/json',
+          'X-Kaseki-Event': 'webhook.test',
+          'X-Kaseki-Job-Id': 'test',
+          ...(signature && { 'X-Kaseki-Signature': `sha256=${signature}` }),
         });
 
         durationMs = Date.now() - startTime;

@@ -43,7 +43,7 @@ describe('OpenAPI Path Builders', () => {
     contract('/api/v1/github-issues', 'post', 'listGitHubIssues', true, ['200', '400', '401', '404', '429'], 'GitHub Issues'),
     contract('/api/v1/validate', 'post', 'validateTask', true, ['200', '400', '401'], 'Service Info'),
     contract('/api/v1/runs', 'post', 'triggerRun', true, ['200', '202', '400', '401', '422'], 'Run Management'),
-        contract('/api/v1/runs', 'get', 'listRuns', true, ['200', '400', '401'], 'Run Management'),
+    contract('/api/v1/runs', 'get', 'listRuns', true, ['200', '400', '401'], 'Run Management'),
     contract('/api/v1/runs/{id}', 'get', 'getRun', true, ['200', '401', '404'], 'Run Management'),
     contract('/api/v1/runs/{id}/status', 'get', 'getRunStatus', true, ['200', '401', '404'], 'Run Management'),
     contract('/api/v1/runs/{id}/retry', 'post', 'retryRun', true, ['200', '202', '400', '401', '404', '409', '422'], 'Run Management'),

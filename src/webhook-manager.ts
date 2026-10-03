@@ -297,10 +297,10 @@ export class WebhookManager extends EventEmitter {
 
     try {
       const response = await this.sendWebhook(config.url, JSON.stringify(payload), {
-          'Content-Type': 'application/json',
-          'X-Kaseki-Event': payload.eventType,
-          'X-Kaseki-Job-Id': jobId,
-          ...(signature && { 'X-Kaseki-Signature': signature }),
+        'Content-Type': 'application/json',
+        'X-Kaseki-Event': payload.eventType,
+        'X-Kaseki-Job-Id': jobId,
+        ...(signature && { 'X-Kaseki-Signature': signature }),
       });
 
       const durationMs = this.now() - startTime;
