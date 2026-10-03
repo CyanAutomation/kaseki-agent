@@ -137,7 +137,7 @@
   "overrides": {
     "babel-plugin-istanbul": "^8.0.2",
     "glob": "^13.0.6",
-    "brace-expansion": "5.0.11",
+    "brace-expansion": "5.0.12",
     "@actions/http-client": {
       "undici": "6.28.1"
     },
@@ -145,7 +145,7 @@
       "undici": "7.29.1"
     },
     "npm": {
-      "brace-expansion": "5.0.11",
+      "brace-expansion": "5.0.12",
       "undici": "6.28.1"
     }
   }
