@@ -45,7 +45,7 @@ import { clearCachedStartupHealthReport, writeStartupHealthArtifacts } from './k
 import type { StartupHealthReport } from './kaseki-api-types';
 import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
-import { createMockScheduler, createTestConfig, type TestScheduler } from './test-utils';
+import { createMockScheduler, createTestConfig, TEST_API_SCOPES, type TestScheduler } from './test-utils';
 import type { TaskAdmissionEvaluator } from './task-admission';
 import * as gatewaySmoke from './kaseki-api-gateway-smoke';
 import { applyHttpHardening } from './kaseki-api-service';
@@ -61,6 +61,217 @@ describe('kaseki-api-routes scorecard integration', () => {
       expect(response.status).toBe(404);
       expect((await response.json()).title).toBe('Run not found');
     } finally { await new Promise<void>(resolve => harness.server.close(() => resolve())); }
+  });
+});
+
+describe('webhook test egress policy', () => {
+  test('rejects loopback destinations through the API route', async () => {
+    const config = createTestConfig(fs.mkdtempSync(path.join(os.tmpdir(), 'webhook-egress-api-')));
+    const harness = await createTestApp(createMockScheduler(), config);
+    try {
+      const response = await fetch(`http://127.0.0.1:${harness.port}/api/webhooks/test`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.apiKeys[0]}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url: 'https://127.0.0.1/internal' }),
+      });
+      expect(response.status).toBe(400);
+      expect((await response.json()).detail).toContain('non-public network address');
+    } finally { await new Promise<void>(resolve => harness.server.close(() => resolve())); }
+  });
+});
+
+describe('API access scopes, quotas, and request identifiers', () => {
+  test('rate limits run retry submissions before the retry handler repeats work', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-retry-limit-'));
+    const config = createTestConfig(resultsDir);
+    config.apiRequestsPerMinute = 1;
+    const scheduler = {
+      ...createMockScheduler(),
+      getJobIncludingHistory: jest.fn(async () => undefined),
+    } as any;
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+    const request = () => fetch(`http://127.0.0.1:${port}/api/runs/missing/retry`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idempotencyKey: '77777777-7777-4777-8777-777777777777' }),
+    });
+
+    try {
+      const first = await request();
+      const second = await request();
+
+      expect(first.status).toBe(404);
+      expect(second.status).toBe(429);
+      expect(scheduler.getJobIncludingHistory).toHaveBeenCalledTimes(1);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('rate limits invalid bearer credentials by client IP instead of attacker-controlled tokens', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-invalid-key-limit-'));
+    const config = createTestConfig(resultsDir);
+    config.apiRequestsPerMinute = 1;
+    const { server, port, idempotencyStore } = await createTestApp(createMockScheduler(), config);
+    try {
+      const first = await fetch(`http://127.0.0.1:${port}/api/capabilities`, {
+        headers: { Authorization: 'Bearer invalid-one' },
+      });
+      const second = await fetch(`http://127.0.0.1:${port}/api/capabilities`, {
+        headers: { Authorization: 'Bearer invalid-two' },
+      });
+
+      expect(first.status).toBe(401);
+      expect(second.status).toBe(429);
+      expect(Number(second.headers.get('retry-after'))).toBeGreaterThan(0);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('keeps independent valid API keys in separate rate-limit buckets', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-key-limit-buckets-'));
+    const config = createTestConfig(resultsDir);
+    config.apiKeys = ['test-key', 'other-key'];
+    config.apiKeyScopes = { 'test-key': TEST_API_SCOPES, 'other-key': TEST_API_SCOPES };
+    config.apiRequestsPerMinute = 1;
+    const { server, port, idempotencyStore } = await createTestApp(createMockScheduler(), config);
+    try {
+      const first = await fetch(`http://127.0.0.1:${port}/api/capabilities`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      const second = await fetch(`http://127.0.0.1:${port}/api/capabilities`, {
+        headers: { Authorization: 'Bearer other-key' },
+      });
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('defaults configured keys to read-only scopes when no scope map is set', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-default-scopes-'));
+    const config = createTestConfig(resultsDir);
+    config.apiKeyScopes = undefined;
+    const scheduler = createMockScheduler();
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+    try {
+      const headers = { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' };
+      const read = await fetch(`http://127.0.0.1:${port}/api/runs`, { headers });
+      const write = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          repoUrl: 'https://github.com/org/repo',
+          taskPrompt: 'Must require explicit runs:write grant',
+          idempotencyKey: '99999999-9999-4999-8999-999999999999',
+        }),
+      });
+
+      expect(read.status).toBe(200);
+      expect(write.status).toBe(403);
+      expect((await write.json()).detail).toContain('runs:write');
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('blocks writes for a read-only key and returns RFC problem details with the request ID', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-scope-'));
+    const config = createTestConfig(resultsDir);
+    config.apiKeyScopes = { 'test-key': ['runs:read'] };
+    const scheduler = createMockScheduler();
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test-key',
+          'Content-Type': 'application/json',
+          'X-Request-ID': 'scope-test-42',
+        },
+        body: JSON.stringify({
+          repoUrl: 'https://github.com/org/repo',
+          ref: 'main',
+          taskPrompt: 'Scope enforcement regression',
+          publishMode: 'none',
+          idempotencyKey: '88888888-8888-4888-8888-888888888888',
+        }),
+      });
+      const body = await response.json() as any;
+      expect(response.status).toBe(403);
+      expect(response.headers.get('content-type')).toContain('application/problem+json');
+      expect(response.headers.get('x-request-id')).toBe('scope-test-42');
+      expect(body).toMatchObject({ status: 403, requestId: 'scope-test-42' });
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('enforces the webhook write scope for case-insensitive Express path matches', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-case-scope-'));
+    const config = createTestConfig(resultsDir);
+    config.apiKeyScopes = { 'test-key': ['runs:read'] };
+    const { server, port, idempotencyStore } = await createTestApp(createMockScheduler(), config);
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/WEBHOOKS/TEST`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: 'https://127.0.0.1/internal' }),
+      });
+      expect(response.status).toBe(403);
+      expect((await response.json()).detail).toContain('webhooks:write');
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('enforces per-key request quotas', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-usage-'));
+    const config = createTestConfig(resultsDir);
+    config.apiRequestsPerMinute = 1;
+    const { server, port, idempotencyStore } = await createTestApp(createMockScheduler(), config);
+    try {
+      const headers = { Authorization: 'Bearer test-key' };
+      expect((await fetch(`http://127.0.0.1:${port}/api/capabilities`, { headers })).status).toBe(200);
+      const limited = await fetch(`http://127.0.0.1:${port}/api/capabilities`, { headers });
+      expect(limited.status).toBe(429);
+      expect(Number(limited.headers.get('retry-after'))).toBeGreaterThan(0);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('exposes per-key request usage and reports unknown token cost as null', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-usage-view-'));
+    const { server, port, idempotencyStore } = await createTestApp(createMockScheduler(), createTestConfig(resultsDir));
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/usage`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      const body = await response.json() as any;
+      expect(response.status).toBe(200);
+      expect(body.requestCount).toBe(1);
+      expect(body.costUsd).toBeNull();
+      expect(body.limits.requestsPerMinute).toBeGreaterThan(0);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -468,7 +679,7 @@ describe('kaseki-api-routes startup health content negotiation', () => {
       expect(body).toMatchObject({
         scope: 'startup',
         current: false,
-        recommendedCurrentEndpoint: '/api/preflight',
+        recommendedCurrentEndpoint: '/api/v1/preflight',
       });
     } finally {
       await cleanupTestApp(server, idempotencyStore);
@@ -568,7 +779,7 @@ describe('kaseki-api-routes readiness and metrics endpoints', () => {
       expect(res.status).toBe(503);
       const body = (await res.json()) as any;
       expect(body.status).toBe('not_ready');
-      expect(body.reasons).toContain('results_dir_unwritable:EACCES');
+      expect(body.reasons).toContain('results_dir_unwritable');
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }
@@ -654,6 +865,43 @@ describe('kaseki-api-routes readiness and metrics endpoints', () => {
   });
 });
 
+describe('canonical run resource', () => {
+  test('returns stable lifecycle metadata and resource links without filesystem paths', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-run-resource-'));
+    const jobId = 'kaseki-resource-1';
+    const job = {
+      id: jobId,
+      status: 'completed',
+      createdAt: new Date('2026-08-02T00:00:00.000Z'),
+      startedAt: new Date('2026-08-02T00:01:00.000Z'),
+      completedAt: new Date('2026-08-02T00:02:00.000Z'),
+      resultDir: path.join(resultsDir, jobId),
+      request: { repoUrl: 'https://github.com/org/repo', projectName: 'test-project' },
+    };
+    const scheduler = createMockScheduler({ [jobId]: job as any });
+    (scheduler as any).getJobIncludingHistory = jest.fn().mockResolvedValue(job);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, createTestConfig(resultsDir));
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      const body = await response.json() as any;
+      expect(response.status).toBe(200);
+      expect(body).toMatchObject({
+        id: jobId,
+        status: 'completed',
+        projectName: 'test-project',
+        repoUrl: 'https://github.com/org/repo',
+        links: { status: `/api/v1/runs/${jobId}/status`, artifacts: `/api/v1/runs/${jobId}/artifacts` },
+      });
+      expect(body.resultDir).toBeUndefined();
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('kaseki-api-routes request aliases', () => {
   let resultsDir: string;
 
@@ -726,7 +974,8 @@ describe('kaseki-api-routes request aliases', () => {
           project_name: 'aliased-project',
           git_ref: 'main',
           task_prompt: 'Run a first-time setup task smoke test',
-          publish_mode: 'none'
+          publish_mode: 'none',
+          idempotency_key: crypto.randomUUID(),
         })
       });
 
@@ -781,6 +1030,7 @@ describe('kaseki-api-routes request aliases', () => {
           taskPrompt: 'Update the documentation for setup.',
           validationCommands: ['npm run docs:check'],
           publishMode: 'none',
+          idempotencyKey: crypto.randomUUID(),
         }),
       });
 
@@ -820,7 +1070,8 @@ describe('kaseki-api-routes request aliases', () => {
           ref: 'main',
           taskPrompt: 'Run a project identity smoke test',
           publishMode: 'none',
-          projectName: 'restored-project'
+          projectName: 'restored-project',
+          idempotencyKey: crypto.randomUUID(),
         })
       });
 
@@ -851,6 +1102,50 @@ describe('kaseki-api-routes idempotent submissions', () => {
 
   afterEach(() => {
     fs.rmSync(resultsDir, { recursive: true, force: true });
+  });
+
+  test('rejects submissions without a caller-provided idempotency key', async () => {
+    const scheduler = createMockScheduler();
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, createTestConfig(resultsDir));
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...requestBody, idempotencyKey: undefined }),
+      });
+      expect(response.status).toBe(400);
+      expect((await response.json()).detail).toContain('Idempotency-Key');
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('accepts a caller-provided Idempotency-Key header', async () => {
+    const scheduler = createMockScheduler();
+    scheduler.submitJob.mockResolvedValue({
+      id: 'kaseki-header-idempotency',
+      status: 'queued',
+      createdAt: new Date('2026-07-21T00:00:00.000Z'),
+      resultDir: path.join(resultsDir, 'kaseki-header-idempotency'),
+    });
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, createTestConfig(resultsDir));
+    try {
+      const { idempotencyKey: _bodyKey, ...body } = requestBody;
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test-key',
+          'Content-Type': 'application/json',
+          'Idempotency-Key': '88888888-8888-4888-8888-888888888888',
+        },
+        body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(202);
+      expect(await response.json()).toMatchObject({ id: 'kaseki-header-idempotency' });
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
   });
 
   test('releases a fresh claim when scheduler submission fails', async () => {
@@ -923,6 +1218,42 @@ describe('kaseki-api-routes idempotent submissions', () => {
   });
 });
 
+describe('retry admission parity', () => {
+  test('rechecks GitHub publish credentials before retry admission', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-retry-gates-'));
+    const jobId = 'kaseki-publish-retry';
+    const job = {
+      id: jobId,
+      status: 'failed',
+      createdAt: new Date('2026-08-01T00:00:00.000Z'),
+      completedAt: new Date('2026-08-01T00:01:00.000Z'),
+      resultDir: path.join(resultsDir, jobId),
+      request: {
+        repoUrl: 'https://github.com/org/repo',
+        ref: 'main',
+        taskPrompt: 'Retry the failed publish run',
+        publishMode: 'pr',
+      },
+    };
+    const scheduler = createMockScheduler({ [jobId]: job as any });
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, createTestConfig(resultsDir));
+    try {
+      jest.mocked(hostSecretsReader.readHostSecret).mockReturnValue(null);
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/retry`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idempotencyKey: '99999999-9999-4999-8999-999999999999' }),
+      });
+      expect(response.status).toBe(400);
+      expect((await response.json()).detail).toContain('GitHub App credentials');
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('kaseki-api-routes template readiness gate', () => {
   let resultsDir: string;
   let originalSkipBootstrapCheck: string | undefined;
@@ -968,7 +1299,7 @@ describe('kaseki-api-routes template readiness gate', () => {
       const res = await fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo' })
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), repoUrl: 'https://github.com/org/repo' })
       });
       const body = (await res.json()) as any;
 
@@ -1010,7 +1341,8 @@ describe('kaseki-api-routes template readiness gate', () => {
           repoUrl: 'https://github.com/org/repo',
           taskPrompt: 'Inspect this repository and report findings only.',
           taskMode: 'inspect',
-          publishMode: 'none'
+          publishMode: 'none',
+          idempotencyKey: crypto.randomUUID(),
         })
       });
 
@@ -1155,7 +1487,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
           scope: 'startup',
           readinessImpact: 'excluded-from-current-readiness',
           current: false,
-          recommendedCurrentEndpoint: '/api/preflight',
+          recommendedCurrentEndpoint: '/api/v1/preflight',
           timestamp: startupTimestamp,
           cachedAt: startupTimestamp
         })
@@ -1333,7 +1665,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
       });
 
       try {
-        const res = await fetch(`http://127.0.0.1:${port}/api/gateway-test?responseSmoke=1`, {
+        const res = await fetch(`http://127.0.0.1:${port}/api/gateway-test?inference=true&responseSmoke=1`, {
           headers: { Authorization: 'Bearer test-key' }
         });
         const body = (await res.json()) as any;
@@ -1441,7 +1773,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     }
   });
 
-  test('GET /api/gateway-test?stage=2&responseSmoke=true runs Stage 2 only (inference test)', async () => {
+  test('GET /api/gateway-test?inference=true&stage=2&responseSmoke=true runs Stage 2 only (inference test)', async () => {
     const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-gateway-test-stage2-results-'));
     const envSnapshot = { ...process.env };
     const originalFetch = global.fetch;
@@ -1484,7 +1816,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
       });
 
       try {
-        const res = await fetch(`http://127.0.0.1:${port}/api/gateway-test?stage=2&responseSmoke=true`, {
+        const res = await fetch(`http://127.0.0.1:${port}/api/gateway-test?inference=true&stage=2&responseSmoke=true`, {
           headers: { Authorization: 'Bearer test-key' }
         });
         const body = (await res.json()) as any;
@@ -1505,7 +1837,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     }
   });
 
-  test('GET /api/gateway-test?stage=2&responseSmoke=true returns 200 without Pi provider smoke by default', async () => {
+  test('GET /api/gateway-test?inference=true&stage=2&responseSmoke=true returns 200 without Pi provider smoke by default', async () => {
     const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-gateway-test-pi-skipped-results-'));
     const envSnapshot = { ...process.env };
     const originalFetch = global.fetch;
@@ -1541,7 +1873,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
       });
 
       try {
-        const res = await fetch(`http://127.0.0.1:${port}/api/gateway-test?stage=2&responseSmoke=true`, {
+        const res = await fetch(`http://127.0.0.1:${port}/api/gateway-test?inference=true&stage=2&responseSmoke=true`, {
           headers: { Authorization: 'Bearer test-key' }
         });
         const body = (await res.json()) as any;
@@ -1558,7 +1890,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     }
   });
 
-  test('GET /api/gateway-test?stage=2&responseSmoke=true&piProvider=true&debug=true returns debug output path for raw Pi output', async () => {
+  test('GET /api/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&debug=true returns debug output path for raw Pi output', async () => {
     const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-gateway-test-pi-debug-results-'));
     const envSnapshot = { ...process.env };
     const originalFetch = global.fetch;
@@ -1606,7 +1938,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
       });
 
       try {
-        const res = await fetch(`http://127.0.0.1:${port}/api/gateway-test?stage=2&responseSmoke=true&piProvider=true&debug=true`, {
+        const res = await fetch(`http://127.0.0.1:${port}/api/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&debug=true`, {
           headers: { Authorization: 'Bearer test-key' }
         });
         const body = (await res.json()) as any;
@@ -1628,7 +1960,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     }
   });
 
-  test('GET /api/gateway-test?stage=2&responseSmoke=true&piProvider=true returns 503 when explicit Pi provider smoke fails', async () => {
+  test('GET /api/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true returns 503 when explicit Pi provider smoke fails', async () => {
     const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-gateway-test-pi-explicit-fail-results-'));
     const envSnapshot = { ...process.env };
     const originalFetch = global.fetch;
@@ -1672,7 +2004,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
       });
 
       try {
-        const res = await fetch(`http://127.0.0.1:${port}/api/gateway-test?stage=2&responseSmoke=true&piProvider=true`, {
+        const res = await fetch(`http://127.0.0.1:${port}/api/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true`, {
           headers: { Authorization: 'Bearer test-key' }
         });
         const body = (await res.json()) as any;
@@ -2268,6 +2600,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     });
 
     const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-github-'));
+    const originalEnv = Object.fromEntries(githubEnvKeys.map((key) => [key, process.env[key]]));
     process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
 
     const scheduler = createMockScheduler();
@@ -2290,7 +2623,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     } finally {
       await cleanupTestApp(server, idempotencyStore);
       fs.rmSync(resultsDir, { recursive: true, force: true });
-      restoreEnv(Object.fromEntries(githubEnvKeys.map((key) => [key, process.env[key]])));
+      restoreEnv(originalEnv);
     }
   });
 
@@ -2313,6 +2646,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     });
 
     const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-github-single-line-'));
+    const originalEnv = Object.fromEntries(githubEnvKeys.map((key) => [key, process.env[key]]));
     process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
 
     const scheduler = createMockScheduler();
@@ -2338,7 +2672,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     } finally {
       await cleanupTestApp(server, idempotencyStore);
       fs.rmSync(resultsDir, { recursive: true, force: true });
-      restoreEnv(Object.fromEntries(githubEnvKeys.map((key) => [key, process.env[key]])));
+      restoreEnv(originalEnv);
     }
   });
 
@@ -2354,6 +2688,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     });
 
     const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-github-malformed-'));
+    const originalEnv = Object.fromEntries(githubEnvKeys.map((key) => [key, process.env[key]]));
     process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
 
     const scheduler = createMockScheduler();
@@ -2379,7 +2714,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     } finally {
       await cleanupTestApp(server, idempotencyStore);
       fs.rmSync(resultsDir, { recursive: true, force: true });
-      restoreEnv(Object.fromEntries(githubEnvKeys.map((key) => [key, process.env[key]])));
+      restoreEnv(originalEnv);
     }
   });
 
@@ -2388,6 +2723,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     (readHostSecret as jest.Mock).mockReturnValue(null); // No GitHub App credentials
 
     const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-github-missing-'));
+    const originalEnv = Object.fromEntries(githubEnvKeys.map((key) => [key, process.env[key]]));
     process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
 
     const scheduler = createMockScheduler();
@@ -2411,7 +2747,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     } finally {
       await cleanupTestApp(server, idempotencyStore);
       fs.rmSync(resultsDir, { recursive: true, force: true });
-      restoreEnv(Object.fromEntries(githubEnvKeys.map((key) => [key, process.env[key]])));
+      restoreEnv(originalEnv);
     }
   });
 });
@@ -2474,27 +2810,19 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
     try {
       const failureRes = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/failure.json`, { headers });
       expect(failureRes.status).toBe(200);
-      const failureBody = (await failureRes.json()) as any;
-      expect(failureBody.file).toBe('failure.json');
-      expect(failureBody.contentType).toBe('application/json');
+      expect(JSON.parse(await failureRes.text())).toMatchObject({ failureClass: 'validation' });
 
       const stderrRes = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/stderr.log`, { headers });
       expect(stderrRes.status).toBe(200);
-      const stderrBody = (await stderrRes.json()) as any;
-      expect(stderrBody.file).toBe('stderr.log');
-      expect(stderrBody.contentType).toBe('text/plain');
-      expect(stderrBody.content).toBe('stderr output');
+      expect(await stderrRes.text()).toBe('stderr output');
 
       const stdoutRes = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/stdout.log`, { headers });
       expect(stdoutRes.status).toBe(200);
-      const stdoutBody = (await stdoutRes.json()) as any;
-      expect(stdoutBody.file).toBe('stdout.log');
-      expect(stdoutBody.content).toBe('stdout output');
+      expect(await stdoutRes.text()).toBe('stdout output');
 
       const validationRes = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/validation.log`, { headers });
       expect(validationRes.status).toBe(200);
-      const validationBody = (await validationRes.json()) as any;
-      expect(validationBody.file).toBe('validation.log');
+      expect(await validationRes.text()).toBe('validation output');
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }
@@ -2516,10 +2844,10 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
         headers: { Authorization: 'Bearer test-key' }
       });
       expect(response.status).toBe(200);
-      const body = await response.json() as any;
-      expect(body.content).toContain('[redacted secret path]');
-      expect(body.content).toContain('sha256_fingerprint=[redacted]');
-      expect(body.content).not.toContain('api-token');
+      const body = await response.text();
+      expect(body).toContain('[redacted secret path]');
+      expect(body).toContain('sha256_fingerprint=[redacted]');
+      expect(body).not.toContain('api-token');
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }
@@ -2543,9 +2871,9 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
       const response = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/failure.json`, {
         headers: { Authorization: 'Bearer test-key' }
       });
-      const body = await response.json() as any;
-      expect(body.content).toContain('[redacted secret path]');
-      expect(body.content).not.toContain('github_app_private_key');
+      const body = await response.text();
+      expect(body).toContain('[redacted secret path]');
+      expect(body).not.toContain('github_app_private_key');
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }
@@ -2601,9 +2929,8 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
     try {
       const rawRes = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/run-evaluation.json`, { headers });
       expect(rawRes.status).toBe(200);
-      const rawBody = (await rawRes.json()) as any;
-      expect(rawBody.file).toBe('run-evaluation.json');
-      expect(typeof rawBody.content).toBe('string');
+      const rawBody = await rawRes.text();
+      expect(JSON.parse(rawBody)).toMatchObject({ overall_assessment: 'good' });
 
       const renderedRes = await fetch(
         `http://127.0.0.1:${port}/api/results/${jobId}/run-evaluation.json?format=rendered`,
@@ -2715,6 +3042,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -2819,6 +3147,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -2890,6 +3219,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -2916,7 +3246,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       // Verify comprehensive enumeration
       expect(body.artifacts.length).toBeGreaterThan(10); // Should have many artifacts
       expect(body.artifactCount).toBeGreaterThan(5); // At least some available
-      expect(body.downloadBaseUrl).toBe(`/api/results/${jobId}/`);
+      expect(body.downloadBaseUrl).toBe(`/api/v1/results/${jobId}/`);
 
       // Verify metadata inclusion
       const piSummary = body.artifacts.find((a: any) => a.name === 'pi-summary.json');
@@ -2972,6 +3302,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir: fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-notfound-test-')),
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3039,6 +3370,7 @@ describe('kaseki-api-routes logs endpoint stderr fallback', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3097,6 +3429,7 @@ describe('kaseki-api-routes logs endpoint stderr fallback', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3273,6 +3606,7 @@ describe('kaseki-api-routes controller replay and events', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3322,7 +3656,7 @@ describe('kaseki-api-routes controller replay and events', () => {
     }
   });
 
-  test('legacy progress endpoint returns the canonical structured events schema', async () => {
+  test('removed progress endpoint returns 404; events remain available', async () => {
     const jobId = 'kaseki-legacy-progress-events';
     const jobDir = path.join(resultsDir, jobId);
     fs.mkdirSync(jobDir, { recursive: true });
@@ -3349,9 +3683,8 @@ describe('kaseki-api-routes controller replay and events', () => {
       });
 
       expect(eventsResponse.status).toBe(200);
-      expect(progressResponse.status).toBe(200);
-      expect(progressResponse.headers.get('deprecation')).toBe('true');
-      expect(await progressResponse.json()).toEqual(await eventsResponse.json());
+      expect(progressResponse.status).toBe(404);
+      expect(await eventsResponse.json()).toMatchObject({ events: expect.any(Array) });
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }
@@ -3373,6 +3706,7 @@ describe('kaseki-api-routes controller replay and events', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3475,6 +3809,7 @@ describe('kaseki-api-routes controller replay and events', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3540,6 +3875,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3626,6 +3962,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3696,6 +4033,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3968,6 +4306,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4061,6 +4400,32 @@ describe('kaseki-api-routes status artifact hints', () => {
       const body = (await response.json()) as any;
       expect(body.total).toBe(4);
       expect(body.runs.map((run: any) => run.id)).toEqual(['kaseki-1', 'kaseki-2']);
+      expect(body.runs[0].resultDir).toBeUndefined();
+      expect(body.hasMore).toBe(true);
+      expect(typeof body.nextCursor).toBe('string');
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('runs list uses a stable cursor and supports state and repository filters', async () => {
+    const jobs = [
+      { id: 'kaseki-4', status: 'failed', createdAt: new Date('2026-05-07T12:03:00Z'), request: { repoUrl: 'https://github.com/org/a' } },
+      { id: 'kaseki-3', status: 'completed', createdAt: new Date('2026-05-07T12:02:00Z'), request: { repoUrl: 'https://github.com/org/a' } },
+      { id: 'kaseki-2', status: 'completed', createdAt: new Date('2026-05-07T12:01:00Z'), request: { repoUrl: 'https://github.com/org/b' } },
+      { id: 'kaseki-1', status: 'completed', createdAt: new Date('2026-05-07T12:00:00Z'), request: { repoUrl: 'https://github.com/org/a' } },
+    ];
+    const scheduler = createMockScheduler(Object.fromEntries(jobs.map((job) => [job.id, job as any])));
+    scheduler.listAllJobs = jest.fn().mockResolvedValue(jobs as any);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, createTestConfig(resultsDir));
+    try {
+      const headers = { Authorization: 'Bearer test-key' };
+      const first = await fetch(`http://127.0.0.1:${port}/api/runs?limit=1&status=completed&repo=https%3A%2F%2Fgithub.com%2Forg%2Fa`, { headers });
+      const firstBody = await first.json() as any;
+      expect(firstBody.runs.map((run: any) => run.id)).toEqual(['kaseki-3']);
+      expect(firstBody.total).toBe(2);
+      const second = await fetch(`http://127.0.0.1:${port}/api/runs?limit=1&status=completed&repo=https%3A%2F%2Fgithub.com%2Forg%2Fa&cursor=${encodeURIComponent(firstBody.nextCursor)}`, { headers });
+      expect((await second.json() as any).runs.map((run: any) => run.id)).toEqual(['kaseki-1']);
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }
@@ -4084,6 +4449,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4139,6 +4505,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4185,6 +4552,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4236,6 +4604,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4296,6 +4665,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4346,6 +4716,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4521,6 +4892,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4572,6 +4944,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4622,6 +4995,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4799,7 +5173,7 @@ exit 0
       const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'pr' })
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), repoUrl: 'https://github.com/org/repo', publishMode: 'pr' })
       });
 
       expect(response.status).toBe(202);
@@ -4847,7 +5221,7 @@ exit 0
       const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'pr' })
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), repoUrl: 'https://github.com/org/repo', publishMode: 'pr' })
       });
 
       expect(response.status).toBe(202);
@@ -4894,7 +5268,7 @@ exit 0
       const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'pr' })
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), repoUrl: 'https://github.com/org/repo', publishMode: 'pr' })
       });
       expect(response.status).toBe(202);
       await drainResponseBody(response);
@@ -4953,7 +5327,7 @@ exit 0
       const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'pr' })
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), repoUrl: 'https://github.com/org/repo', publishMode: 'pr' })
       });
       expect(response.status).toBe(202);
       // Drain response body to release HTTP connection
@@ -4989,7 +5363,7 @@ exit 0
       const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'none' })
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), repoUrl: 'https://github.com/org/repo', publishMode: 'none' })
       });
       expect(response.status).toBe(202);
       // Drain response body to release HTTP connection
@@ -5011,7 +5385,7 @@ exit 0
       const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'pr' })
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), repoUrl: 'https://github.com/org/repo', publishMode: 'pr' })
       });
 
       expect(response.status).toBe(400);
@@ -5036,7 +5410,7 @@ exit 0
       const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'pr' })
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), repoUrl: 'https://github.com/org/repo', publishMode: 'pr' })
       });
 
       expect(response.status).toBe(400);
@@ -5061,7 +5435,7 @@ exit 0
       const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'auto' })
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), repoUrl: 'https://github.com/org/repo', publishMode: 'auto' })
       });
 
       expect(response.status).toBe(400);
@@ -5085,7 +5459,7 @@ exit 0
       const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'auto' })
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), repoUrl: 'https://github.com/org/repo', publishMode: 'auto' })
       });
 
       expect(response.status).toBe(400);
@@ -5119,7 +5493,7 @@ exit 0
       const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'auto' })
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), repoUrl: 'https://github.com/org/repo', publishMode: 'auto' })
       });
 
       expect(response.status).toBe(202);
@@ -5154,7 +5528,7 @@ exit 0
       const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'auto' })
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), repoUrl: 'https://github.com/org/repo', publishMode: 'auto' })
       });
       expect(response.status).toBe(202);
       // Drain response body to release HTTP connection
@@ -5175,7 +5549,7 @@ exit 0
       const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'auto' })
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), repoUrl: 'https://github.com/org/repo', publishMode: 'auto' })
       });
       expect(response.status).toBe(400);
       const body = (await response.json()) as any;
@@ -5255,6 +5629,7 @@ describe('kaseki-api-routes idempotency concurrency', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -5316,6 +5691,7 @@ describe('kaseki-api-routes idempotency concurrency', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
+      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -5337,7 +5713,7 @@ describe('kaseki-api-routes idempotency concurrency', () => {
       const runPromise = fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: 'https://github.com/example/repo', ref: 'main' })
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), repoUrl: 'https://github.com/example/repo', ref: 'main' })
       });
 
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -5389,6 +5765,7 @@ describe('kaseki-api-routes timeoutSeconds validation', () => {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          idempotencyKey: crypto.randomUUID(),
           repoUrl: 'https://github.com/example/repo',
           ref: 'main',
           timeoutSeconds: 10
@@ -5442,6 +5819,7 @@ describe('kaseki-api-routes publish mode validation', () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
+          idempotencyKey: crypto.randomUUID(),
           repoUrl: 'https://github.com/org/repo',
           publishMode: 'auto'
         })
@@ -5483,7 +5861,8 @@ describe('kaseki-api-routes publish mode validation', () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          repoUrl: 'https://github.com/org/repo'
+          repoUrl: 'https://github.com/org/repo',
+          idempotencyKey: crypto.randomUUID(),
         })
       });
 
@@ -5531,7 +5910,8 @@ describe('kaseki-api-routes publish mode validation', () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          repoUrl: 'https://github.com/org/repo'
+          repoUrl: 'https://github.com/org/repo',
+          idempotencyKey: crypto.randomUUID(),
         })
       });
 
@@ -5581,6 +5961,7 @@ describe('kaseki-api-routes publish mode validation', () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
+          idempotencyKey: crypto.randomUUID(),
           repoUrl: 'https://github.com/org/repo',
           publishMode: 'pr'
         })
@@ -5632,6 +6013,7 @@ describe('kaseki-api-routes publish mode validation', () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
+          idempotencyKey: crypto.randomUUID(),
           repoUrl: 'https://github.com/org/repo',
           publishMode: 'draft_pr'
         })

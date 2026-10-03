@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 const fixturesDir = path.resolve(process.cwd(), 'tests/fixtures/docker-package-metadata');
+const rootLockPath = path.resolve(process.cwd(), 'package-lock.json');
 const toolchainManifestPath = path.resolve(process.cwd(), 'docker/image-toolchain/package.json');
 const toolchainLockPath = path.resolve(process.cwd(), 'docker/image-toolchain/package-lock.json');
 
@@ -44,6 +45,17 @@ try {
 }
 
 describe('Docker global package registry verification', () => {
+  test('keeps root lockfile brace-expansion 5.x copies on the patched release', () => {
+    const lock = JSON.parse(readFileSync(rootLockPath, 'utf8')) as {
+      packages: Record<string, { version?: string }>;
+    };
+    const braceExpansionCopies = Object.entries(lock.packages)
+      .filter(([path, pkg]) => path.includes('brace-expansion') && pkg.version?.startsWith('5.'));
+
+    expect(braceExpansionCopies.length).toBeGreaterThan(0);
+    expect(braceExpansionCopies.every(([, pkg]) => pkg.version === '5.0.12')).toBe(true);
+  });
+
   test('extracts exact reviewed selectors from the lockfile-backed image toolchain', () => {
     const manifest = JSON.parse(readFileSync(toolchainManifestPath, 'utf8'));
     const response = JSON.parse(runVerifier('extract', { manifest })) as { ok: boolean; result: unknown };
@@ -55,15 +67,15 @@ describe('Docker global package registry verification', () => {
       { name: 'undici', selector: 'undici@8.10.2' },
       { name: 'undici-v6', selector: 'undici@6.28.1' },
       { name: 'undici-v7', selector: 'undici@7.29.1' },
-      { name: 'brace-expansion', selector: 'brace-expansion@5.0.11' },
-      { name: 'brace-expansion-v1', selector: 'brace-expansion@1.1.20' },
-      { name: 'brace-expansion-v2', selector: 'brace-expansion@2.1.6' },
+      { name: 'brace-expansion', selector: 'brace-expansion@5.0.12' },
+      { name: 'brace-expansion-v1', selector: 'brace-expansion@1.1.21' },
+      { name: 'brace-expansion-v2', selector: 'brace-expansion@2.1.7' },
     ]);
     expect(manifest.overrides).toEqual({
-      'brace-expansion': '5.0.11',
-      npm: { 'brace-expansion': '5.0.11', undici: '6.28.1' },
-      '@earendil-works/pi-coding-agent': { 'brace-expansion': '5.0.11', undici: '8.10.2' },
-      '@earendil-works/pi-server': { 'brace-expansion': '5.0.11', undici: '8.10.2' },
+      'brace-expansion': '5.0.12',
+      npm: { 'brace-expansion': '5.0.12', undici: '6.28.1' },
+      '@earendil-works/pi-coding-agent': { 'brace-expansion': '5.0.12', undici: '8.10.2' },
+      '@earendil-works/pi-server': { 'brace-expansion': '5.0.12', undici: '8.10.2' },
     });
   });
 
@@ -71,12 +83,14 @@ describe('Docker global package registry verification', () => {
     const lock = JSON.parse(readFileSync(toolchainLockPath, 'utf8')) as {
       packages: Record<string, { version?: string }>;
     };
-    expect(lock.packages['node_modules/brace-expansion']?.version).toBe('5.0.11');
+    expect(lock.packages['node_modules/brace-expansion']?.version).toBe('5.0.12');
     expect(lock.packages['node_modules/undici']?.version).toBe('8.10.2');
     expect(lock.packages['node_modules/undici-v6']?.version).toBe('6.28.1');
     expect(lock.packages['node_modules/undici-v7']?.version).toBe('7.29.1');
-    expect(lock.packages['node_modules/brace-expansion-v1']?.version).toBe('1.1.20');
-    expect(lock.packages['node_modules/brace-expansion-v2']?.version).toBe('2.1.6');
+    expect(lock.packages['node_modules/brace-expansion-v1']?.version).toBe('1.1.21');
+    expect(lock.packages['node_modules/brace-expansion-v2']?.version).toBe('2.1.7');
+    expect(lock.packages['node_modules/npm/node_modules/brace-expansion']?.version).toBe('5.0.12');
+    expect(lock.packages['node_modules/npm/node_modules/undici']?.version).toBe('6.28.1');
     expect(lock.packages['node_modules/brace-expansion-v3']).toBeUndefined();
   });
 
@@ -87,8 +101,8 @@ describe('Docker global package registry verification', () => {
 
   test('accepts exact registry metadata for legacy brace-expansion with no engine declaration', () => {
     const response = JSON.parse(runVerifier('verify', {
-      pin: { name: 'brace-expansion-v1', selector: 'brace-expansion@1.1.20' },
-      metadata: { version: '1.1.20' },
+      pin: { name: 'brace-expansion-v1', selector: 'brace-expansion@1.1.21' },
+      metadata: { version: '1.1.21' },
       allowMissingNodeEngine: true,
     })) as { ok: boolean };
     expect(response.ok).toBe(true);
@@ -96,10 +110,10 @@ describe('Docker global package registry verification', () => {
 
   test('normalizes npm metadata that only reports a version', () => {
     const response = JSON.parse(runVerifier('query', {
-      selector: 'brace-expansion@1.1.20',
-      output: JSON.stringify('1.1.20'),
+      selector: 'brace-expansion@1.1.21',
+      output: JSON.stringify('1.1.21'),
     })) as { ok: boolean; result: unknown };
-    expect(response).toEqual({ ok: true, result: { version: '1.1.20' } });
+    expect(response).toEqual({ ok: true, result: { version: '1.1.21' } });
   });
 
   test('identifies a missing selector when npm reports ETARGET', () => {

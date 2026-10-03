@@ -380,13 +380,13 @@ describe('JobPersistenceManager', () => {
       expect(typeof content.jobs[0].createdAt).toBe('string');
     });
 
-    test('should apply retention policy to terminal jobs', async () => {
+    test('durable run history retains terminal jobs beyond the scheduler memory cap', async () => {
       const maxEntries = 5;
       config.jobIndexMaxEntries = maxEntries;
       manager = new JobPersistenceManager(config);
 
       const jobs: Job[] = [];
-      for (let i = 1; i <= 10; i++) {
+      for (let i = 1; i <= 15; i++) {
         jobs.push({
           id: `kaseki-${i}`,
           status: i <= 5 ? 'running' : 'completed',
@@ -408,8 +408,8 @@ describe('JobPersistenceManager', () => {
       const indexPath = path.join(tempDir, '.kaseki-api-jobs.json');
       const content = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
 
-      // Should keep all 5 active jobs + max 5 terminal jobs
-      expect(content.jobs.length).toBeLessThanOrEqual(10);
+      expect(content.jobs).toHaveLength(15);
+      expect(await manager.listPersistedJobs()).toHaveLength(15);
     });
   });
 

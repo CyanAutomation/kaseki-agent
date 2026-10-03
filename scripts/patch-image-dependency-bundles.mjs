@@ -6,9 +6,9 @@ import { pathToFileURL } from 'node:url';
 
 const FIXED_VERSIONS = {
   'brace-expansion': {
-    1: '1.1.20',
-    2: '2.1.6',
-    5: '5.0.11',
+    1: '1.1.21',
+    2: '2.1.7',
+    5: '5.0.12',
   },
   undici: {
     6: '6.28.1',

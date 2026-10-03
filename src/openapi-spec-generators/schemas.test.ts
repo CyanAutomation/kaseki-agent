@@ -118,13 +118,17 @@ describe('OpenAPI Schema Builders', () => {
   });
 
   describe('buildErrorResponseSchema', () => {
-    it('defines required error field and optional debugging identifiers', () => {
+    it('defines RFC 9457 problem detail fields and optional request correlation', () => {
       const schema = buildErrorResponseSchema() as JsonSchemaObject;
       const properties = schema.properties as Record<string, JsonSchemaObject>;
 
       expect(schema.type).toBe('object');
-      expect(schema.required).toEqual(['error']);
-      expect(properties.error).toMatchObject({ type: 'string' });
+      expect(schema.required).toEqual(['type', 'title', 'status', 'detail', 'instance']);
+      expect(properties.type).toMatchObject({ type: 'string', format: 'uri' });
+      expect(properties.title).toMatchObject({ type: 'string' });
+      expect(properties.detail).toMatchObject({ type: 'string' });
+      expect(properties.instance).toMatchObject({ type: 'string' });
+      expect(properties.error).toBeUndefined();
       expect(properties.requestId).toMatchObject({ type: 'string' });
       expect(schema.required).not.toContain('requestId');
     });
@@ -184,7 +188,7 @@ describe('OpenAPI Schema Builders', () => {
       expect(runResponse.properties?.status).toHaveProperty('type', 'string');
       expect(runResponse.properties?.createdAt).toMatchObject({ type: 'string', format: 'date-time' });
 
-      expect(errorResponse.required).toEqual(['error']);
+      expect(errorResponse.required).toEqual(['type', 'title', 'status', 'detail', 'instance']);
       expect(errorResponse.properties?.requestId).toMatchObject({ type: 'string' });
 
       // Status is externally documented and should remain exact
@@ -363,9 +367,9 @@ describe('OpenAPI Schema Builders', () => {
       expect(schema.required).toEqual(['id', 'status', 'createdAt']);
     });
 
-    it('ErrorResponse should only require error', () => {
+    it('ErrorResponse should require the problem detail core fields', () => {
       const schema = buildErrorResponseSchema() as JsonSchemaObject;
-      expect(schema.required).toEqual(['error']);
+      expect(schema.required).toEqual(['type', 'title', 'status', 'detail', 'instance']);
     });
 
     it('optional RunRequest fields should not be in required array', () => {

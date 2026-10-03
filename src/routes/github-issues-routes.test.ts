@@ -115,4 +115,28 @@ describe('github-issues-routes', () => {
       expect.objectContaining({ labels: [] }),
     );
   });
+
+  it.each([
+    [{ repoUrl: 'CyanAutomation/tako-bako', limit: 0 }],
+    [{ repoUrl: 'CyanAutomation/tako-bako', limit: 101 }],
+    [{ repoUrl: 'CyanAutomation/tako-bako', state: 'draft' }],
+    [{ repoUrl: 'CyanAutomation/tako-bako', labels: ['valid', ''] }],
+    [{ repoUrl: 'CyanAutomation/tako-bako', allLabels: 'true' }],
+  ])('rejects invalid input before making GitHub calls: %j', async (body) => {
+    const app = express();
+    app.use(express.json());
+    app.use(createGitHubIssuesRoutes());
+    const started = await listen(app);
+    server = started.server;
+
+    const response = await fetch(`${started.url}/github-issues`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    expect(response.status).toBe(400);
+    expect(githubUtils.generateGitHubAppToken).not.toHaveBeenCalled();
+    expect(githubUtils.fetchGitHubIssues).not.toHaveBeenCalled();
+  });
 });

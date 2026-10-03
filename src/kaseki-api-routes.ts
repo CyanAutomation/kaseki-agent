@@ -1,6 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import * as crypto from 'crypto';
-import { randomUUID } from 'node:crypto';
 import { JobScheduler } from './job-scheduler';
 import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
@@ -21,6 +20,7 @@ import { createStatusRoutes } from './routes/status-routes';
 import { createLogRoutes } from './routes/log-routes';
 import { createArtifactRoutes } from './routes/artifact-routes';
 import { createWebhookRoutes } from './routes/webhook-routes';
+import { createWebhookDeliveryRoutes } from './routes/webhook-delivery-routes';
 import { createHealthRoutes } from './routes/health-routes';
 import { createImprovementRoutes } from './routes/improvement-routes';
 import { createGitHubIssuesRoutes } from './routes/github-issues-routes';
@@ -41,6 +41,8 @@ import { createScorecardRoutes } from './routes/scorecard-routes';
 import { testPiGatewayProviderSmoke } from './kaseki-api-gateway-smoke';
 import { getPackageVersion } from './openapi-spec-generators/components';
 import { evaluateTaskAdmission, TASK_ADMISSION_EXIT_CODE, type TaskAdmissionEvaluator } from './task-admission';
+import { ApiAccessController } from './api-access-control';
+import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 
 function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
   if (!remoteAddress) {
@@ -120,7 +122,15 @@ export function createApiRouter(
 ): Router {
   const router = Router();
   const logger = createEventLogger('api');
-  registerApiMiddleware(router, config, logger);
+  const apiAccess = new ApiAccessController({
+    apiKeys: config.apiKeys,
+    apiKeyScopes: config.apiKeyScopes,
+    requestsPerMinute: config.apiRequestsPerMinute,
+    diagnosticsPerHour: config.apiDiagnosticsPerHour,
+    webhookTestsPerHour: config.apiWebhookTestsPerHour,
+    githubIssuesPerMinute: config.apiGitHubIssuesPerMinute,
+  });
+  registerApiMiddleware(router, config, logger, apiAccess);
 
   /**
    * Mount health-check routes (/health, /ready, /metrics)
@@ -128,12 +138,11 @@ export function createApiRouter(
   router.use(createHealthRoutes(scheduler, config, artifactCache));
 
   /**
-   * Mount gateway test routes (/gateway-test, /gateway-test/stage1)
+   * Mount gateway test routes (/gateway-test)
    */
   router.use(createGatewayTestRoutes());
-  registerApiInfoRoutes(router, config, logger);
+  registerApiInfoRoutes(router, config, logger, apiAccess);
   registerRunRoutes(router, scheduler, idempotencyStore, taskAdmissionEvaluator, logger);
-  registerWebhookTestRoute(router, logger);
   registerValidationRoute(router, preFlightValidator, taskAdmissionEvaluator, logger);
 
   // Register domain-focused route modules
@@ -143,7 +152,14 @@ export function createApiRouter(
   router.use(createScorecardRoutes(scheduler, artifactCache));
   router.use(createImprovementRoutes(scheduler, config));
   router.use(createWebhookRoutes());
+  router.use(createWebhookDeliveryRoutes(scheduler));
   router.use(createGitHubIssuesRoutes());
+
+  router.use((error: unknown, req: Request, res: Response, next: NextFunction) => {
+    if (res.headersSent) return next(error);
+    logger.error('Unhandled API route error', { path: req.path, error: error instanceof Error ? error.message : String(error) });
+    return sendErrorResponse(res, 500, 'Internal Server Error', 'An unexpected error occurred');
+  });
 
   return router;
 }
@@ -163,12 +179,29 @@ async function admitTaskWithLogging(
   return result;
 }
 
-function registerApiMiddleware(router: Router, config: KasekiApiConfig, logger: ReturnType<typeof createEventLogger>): void {
+function registerApiMiddleware(
+  router: Router,
+  config: KasekiApiConfig,
+  logger: ReturnType<typeof createEventLogger>,
+  apiAccess: ApiAccessController,
+): void {
+  router.use((req: Request, res: Response, next: NextFunction) => {
+    const suppliedId = req.get('X-Request-ID');
+    const requestId = suppliedId && /^[\w.-]{1,128}$/.test(suppliedId) ? suppliedId : crypto.randomUUID();
+    res.locals.requestId = requestId;
+    res.setHeader('X-Request-ID', requestId);
+    next();
+  });
+
   /**
    * Middleware: Request/Response logging.
    */
   router.use((req: Request, res: Response, next: NextFunction) => {
     const startTime = Date.now();
+    res.on('finish', () => {
+      const routeTemplate = typeof req.route?.path === 'string' ? req.route.path : 'unmatched';
+      metricsRegistry.observeHttpRequest(req.method, routeTemplate, res.statusCode, (Date.now() - startTime) / 1000);
+    });
     const originalSend = res.send;
 
     res.send = function (data: any) {
@@ -190,18 +223,41 @@ function registerApiMiddleware(router: Router, config: KasekiApiConfig, logger: 
     next();
   });
 
+  // Apply a framework-recognized limit before authorization so invalid
+  // credentials are throttled too. Authorized requests use ApiAccessController's
+  // fixed-window quota below, avoiding two independently resetting buckets.
+  router.use(rateLimit({
+    windowMs: 60_000,
+    limit: config.apiRequestsPerMinute ?? 300,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    skip: (req) => {
+      if (req.path === '/health' || req.path === '/ready') return true;
+      if (config.apiKeys.length === 0) return isLoopbackRemoteAddress(req.socket.remoteAddress);
+      const authorization = req.get('Authorization');
+      return authorization?.startsWith('Bearer ') === true && validateApiKey(config, authorization.slice(7));
+    },
+    keyGenerator: (req) => {
+      const clientAddress = req.ip ?? req.socket.remoteAddress;
+      return clientAddress ? `ip:${ipKeyGenerator(clientAddress)}` : 'ip:unknown';
+    },
+    handler: (_req, res) => {
+      sendErrorResponse(res, 429, 'Too Many Requests', 'API request limit exceeded; retry after the indicated delay');
+    },
+  }));
+
   /**
    * Middleware: API key validation.
    */
   router.use((req: Request, res: Response, next: NextFunction) => {
     // Skip auth for health check endpoints only
-    if (req.path === '/health' || req.path === '/ready' || req.path === '/readiness') {
+    if (req.path === '/health' || req.path === '/ready') {
       return next();
     }
 
     if (config.apiKeys.length === 0) {
       if (isLoopbackRemoteAddress(req.socket.remoteAddress)) {
-        return next();
+        return authorizeAndLimit('__loopback__');
       }
 
       logger.event('api_auth_failed', {
@@ -240,11 +296,40 @@ function registerApiMiddleware(router: Router, config: KasekiApiConfig, logger: 
       return sendErrorResponse(res, 401, 'Unauthorized', 'Invalid API key');
     }
 
-    next();
+    return authorizeAndLimit(token);
+
+    function authorizeAndLimit(apiKey: string) {
+      const scope = apiAccess.requiredScope(req.method, req.path, req.query);
+      if (!apiAccess.hasScope(apiKey, scope)) {
+        return sendErrorResponse(res, 403, 'Forbidden', `API key is missing the ${scope} scope`);
+      }
+      res.locals.apiKey = apiKey;
+      const retryAfter = apiAccess.checkAndRecord(apiKey, req.method, req.path, req.query);
+      if (retryAfter !== undefined) {
+        res.setHeader('Retry-After', String(retryAfter));
+        return sendErrorResponse(res, 429, 'Too Many Requests', 'API request limit exceeded; retry after the indicated delay');
+      }
+      return next();
+    }
   });
 }
 
-function registerApiInfoRoutes(router: Router, config: KasekiApiConfig, logger: ReturnType<typeof createEventLogger>): void {
+function registerApiInfoRoutes(
+  router: Router,
+  config: KasekiApiConfig,
+  logger: ReturnType<typeof createEventLogger>,
+  apiAccess: ApiAccessController,
+): void {
+  router.get('/usage', (_req: Request, res: Response) => {
+    const apiKey = typeof res.locals.apiKey === 'string' ? res.locals.apiKey : '__loopback__';
+    res.json({ ...apiAccess.getUsage(apiKey), limits: {
+      requestsPerMinute: config.apiRequestsPerMinute ?? 300,
+      diagnosticsPerHour: config.apiDiagnosticsPerHour ?? 10,
+      webhookTestsPerHour: config.apiWebhookTestsPerHour ?? 10,
+      githubIssuesPerMinute: config.apiGitHubIssuesPerMinute ?? 30,
+    } });
+  });
+
   router.get('/capabilities', (_req: Request, res: Response) => {
     res.json({
       apiVersion: getPackageVersion(),
@@ -257,8 +342,8 @@ function registerApiInfoRoutes(router: Router, config: KasekiApiConfig, logger: 
         terminalRunIndexMaxEntries: config.jobIndexMaxEntries,
       },
       eventProtocol: {
-        snapshot: '/api/runs/{id}/events',
-        stream: '/api/runs/{id}/events/stream',
+        snapshot: '/api/v1/runs/{id}/events',
+        stream: '/api/v1/runs/{id}/events/stream',
         cursorQueryParameter: 'cursor',
         reconnectHeader: 'Last-Event-ID',
         eventIds: true,
@@ -268,7 +353,7 @@ function registerApiInfoRoutes(router: Router, config: KasekiApiConfig, logger: 
   });
 
   /**
-   * GET /api/preflight - Controller-oriented readiness diagnostics.
+   * GET /api/v1/preflight - Controller-oriented readiness diagnostics.
    */
   router.get('/preflight', (_req: Request, res: Response) => {
     const response = buildPreflightResponse(config);
@@ -302,7 +387,7 @@ function registerApiInfoRoutes(router: Router, config: KasekiApiConfig, logger: 
         scope: 'startup',
         readinessImpact: 'excluded-from-current-readiness',
         current: false,
-        recommendedCurrentEndpoint: '/api/preflight',
+        recommendedCurrentEndpoint: '/api/v1/preflight',
         timestamp: containerPreflightResults.timestamp,
         cachedAt: containerPreflightResults.timestamp,
         checks: containerPreflightResults.checks,
@@ -313,7 +398,7 @@ function registerApiInfoRoutes(router: Router, config: KasekiApiConfig, logger: 
   });
 
   /**
-   * GET /api/startup-health — Unified startup health report (Phase 4)
+   * GET /api/v1/startup-health — Unified startup health report (Phase 4)
    * Returns consolidated health status with bootstrap timing, preflight checks, and component status
    */
   router.get('/startup-health', (req: Request, res: Response): void => {
@@ -330,11 +415,7 @@ function registerApiInfoRoutes(router: Router, config: KasekiApiConfig, logger: 
           return;
         }
 
-        res.status(404).json({
-          error: 'startup-health-not-available',
-          detail: 'Startup health report not yet generated. Check back after service initialization.',
-        });
-        return;
+        return sendErrorResponse(res, 404, 'Not Found', 'Startup health report not yet generated. Check back after service initialization.');
       }
 
       if (wantsMarkdown) {
@@ -346,7 +427,7 @@ function registerApiInfoRoutes(router: Router, config: KasekiApiConfig, logger: 
       res.status(200).json({
         scope: 'startup',
         current: false,
-        recommendedCurrentEndpoint: '/api/preflight',
+        recommendedCurrentEndpoint: '/api/v1/preflight',
         ...report,
       });
     } catch (err) {
@@ -359,10 +440,7 @@ function registerApiInfoRoutes(router: Router, config: KasekiApiConfig, logger: 
         return;
       }
 
-      res.status(500).json({
-        error: 'health-report-error',
-        detail: 'Failed to retrieve startup health report',
-      });
+      return sendErrorResponse(res, 500, 'Internal Server Error', 'Failed to retrieve startup health report');
     }
   });
 }
@@ -386,7 +464,7 @@ function registerRunRoutes(
     ) {
       return {
         ok: false,
-        error: `publishMode=${publishMode} requires readable GitHub App credentials. Check /api/preflight before submitting publishable runs.`,
+        error: `publishMode=${publishMode} requires readable GitHub App credentials. Check /api/v1/preflight before submitting publishable runs.`,
       };
     }
     return { ok: true };
@@ -471,7 +549,11 @@ function registerRunRoutes(
     );
 
     if (claimResult.kind === 'fulfilled') {
-      const currentJob = scheduler.getJob(claimResult.response.id);
+      const currentJob = scheduler.getJob(claimResult.response.id) ?? (
+        typeof scheduler.getJobIncludingHistory === 'function'
+          ? await scheduler.getJobIncludingHistory(claimResult.response.id)
+          : undefined
+      );
       const response = currentJob
         ? buildRunResponse(currentJob, true)
         : (claimResult.response as RunResponse);
@@ -516,6 +598,9 @@ function registerRunRoutes(
     idempotencyStore,
     taskAdmissionEvaluator,
     logger,
+    validatePublishModeAndAuth,
+    validateTemplateReadiness,
+    normalizeTaskMode,
     handleIdempotency,
   });
 }
@@ -558,7 +643,7 @@ function registerRunSubmissionRoute(
     handleIdempotency,
   } = dependencies;
   /**
-   * POST /api/runs - Trigger a new kaseki run.
+   * POST /api/v1/runs - Trigger a new kaseki run.
    */
   router.post('/runs', async (req: Request, res: Response) => {
     try {
@@ -570,6 +655,18 @@ function registerRunSubmissionRoute(
             ? true
             : req.body?.startupCheck,
       });
+
+      const headerIdempotencyKey = req.get('Idempotency-Key');
+      if (headerIdempotencyKey && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(headerIdempotencyKey)) {
+        return sendErrorResponse(res, 400, 'Bad Request', 'Idempotency-Key must be a UUID v4');
+      }
+      if (headerIdempotencyKey && runRequest.idempotencyKey && headerIdempotencyKey !== runRequest.idempotencyKey) {
+        return sendErrorResponse(res, 400, 'Bad Request', 'Idempotency-Key header must match the idempotencyKey body field when both are provided');
+      }
+      const idempotencyKey = headerIdempotencyKey || runRequest.idempotencyKey;
+      if (!idempotencyKey) {
+        return sendErrorResponse(res, 400, 'Bad Request', 'A caller-provided Idempotency-Key header or idempotencyKey body field is required');
+      }
 
       const effectivePublishMode = runRequest.publishMode || 'pr';
       runRequest.publishMode = effectivePublishMode;
@@ -587,7 +684,7 @@ function registerRunSubmissionRoute(
       }
 
       // 2. Validate template readiness. Checkout freshness remains advisory in
-      // /api/preflight so development checkouts cannot interrupt active runs.
+      // /api/v1/preflight so development checkouts cannot interrupt active runs.
       const templateValidation =
         await validateTemplateReadiness(effectivePublishMode);
       if (!templateValidation.ok) {
@@ -602,18 +699,13 @@ function registerRunSubmissionRoute(
       // 4. Safety admission must happen before idempotency claim and scheduler submission.
       const admission = await admitTaskWithLogging(taskAdmissionEvaluator, logger, runRequest);
       if (!admission.allowed) {
-        return res.status(422).json({
-          type: 'https://api.kaseki.local/errors#task-admission-rejected',
-          title: 'Task rejected by safety admission gate',
-          status: 422,
-          detail: admission.reason,
+        return sendErrorResponse(res, 422, 'Task rejected by safety admission gate', admission.reason, {
           exitCode: TASK_ADMISSION_EXIT_CODE,
           admission,
         });
       }
 
       // 5. Handle idempotency
-      const idempotencyKey = runRequest.idempotencyKey || randomUUID();
       const requestFingerprint = buildRequestFingerprint(
         runRequest as Record<string, unknown>,
       );
@@ -703,15 +795,24 @@ function registerRunSubmissionRoute(
 
 function registerRunRetryRoute(
   router: Router,
-  dependencies: RunRouteSharedDependencies & Pick<RunRouteHelpers, 'handleIdempotency'>,
+  dependencies: RunRouteSharedDependencies & RunRouteHelpers,
 ): void {
-  const { scheduler, idempotencyStore, taskAdmissionEvaluator, logger, handleIdempotency } = dependencies;
+  const {
+    scheduler,
+    idempotencyStore,
+    taskAdmissionEvaluator,
+    logger,
+    validatePublishModeAndAuth,
+    validateTemplateReadiness,
+    normalizeTaskMode,
+    handleIdempotency,
+  } = dependencies;
   /**
    * Retry only a terminal run. The caller must supply a fresh UUID key; a
    * replay of that key returns the same newly-created run without enqueueing twice.
    */
   router.post('/runs/:id/retry', async (req: Request, res: Response) => {
-    const source = scheduler.getJob(req.params.id);
+    const source = scheduler.getJob(req.params.id) ?? await scheduler.getJobIncludingHistory(req.params.id);
     if (!source) {
       return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
     }
@@ -726,13 +827,20 @@ function registerRunRetryRoute(
       return sendErrorResponse(res, 400, 'Bad Request', 'A UUID idempotencyKey is required for retries');
     }
     const retryRequest: RunRequest = { ...source.request, idempotencyKey };
+    const publishMode = retryRequest.publishMode || 'pr';
+    retryRequest.publishMode = publishMode;
+    const authValidation = await validatePublishModeAndAuth(publishMode);
+    if (!authValidation.ok) {
+      return sendErrorResponse(res, 400, 'Bad Request', authValidation.error!);
+    }
+    const templateValidation = await validateTemplateReadiness(publishMode);
+    if (!templateValidation.ok) {
+      return res.status(templateValidation.statusCode || 400).json(templateValidation.response);
+    }
+    normalizeTaskMode(retryRequest);
     const admission = await admitTaskWithLogging(taskAdmissionEvaluator, logger, retryRequest);
     if (!admission.allowed) {
-      return res.status(422).json({
-        type: 'https://api.kaseki.local/errors#task-admission-rejected',
-        title: 'Task rejected by safety admission gate',
-        status: 422,
-        detail: admission.reason,
+      return sendErrorResponse(res, 422, 'Task rejected by safety admission gate', admission.reason, {
         exitCode: TASK_ADMISSION_EXIT_CODE,
         admission,
       });
@@ -760,103 +868,6 @@ function registerRunRetryRoute(
   });
 }
 
-function registerWebhookTestRoute(router: Router, logger: ReturnType<typeof createEventLogger>): void {
-  /**
-   * POST /api/webhooks/test - Test webhook configuration.
-   */
-  router.post('/webhooks/test', async (req: Request, res: Response) => {
-    try {
-      const { url, secret } = req.body;
-
-      if (!url || typeof url !== 'string') {
-        return sendErrorResponse(
-          res,
-          400,
-          'Bad Request',
-          'Webhook URL is required',
-        );
-      }
-
-      // Validate URL format
-      try {
-        new URL(url);
-      } catch {
-        return sendErrorResponse(
-          res,
-          400,
-          'Bad Request',
-          'Invalid webhook URL format',
-        );
-      }
-
-      // Send test webhook
-      let statusCode: number | undefined;
-      let error: string | undefined;
-      let durationMs = 0;
-      const startTime = Date.now();
-
-      try {
-        const testPayload = {
-          eventType: 'webhook.test',
-          jobId: 'test',
-          timestamp: new Date().toISOString(),
-          data: { message: 'This is a test webhook from kaseki-agent API' },
-        };
-
-        // Generate HMAC signature if secret provided
-        let signature: string | null = null;
-        if (secret && typeof secret === 'string') {
-          const body = JSON.stringify(testPayload);
-          signature = crypto
-            .createHmac('sha256', secret)
-            .update(body)
-            .digest('hex');
-        }
-
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Kaseki-Event': 'webhook.test',
-            'X-Kaseki-Job-Id': 'test',
-            ...(signature && { 'X-Kaseki-Signature': `sha256=${signature}` }),
-          },
-          body: JSON.stringify(testPayload),
-          signal: AbortSignal.timeout(10000),
-        });
-
-        durationMs = Date.now() - startTime;
-        statusCode = response.status;
-
-        if (!response.ok) {
-          error = `HTTP ${response.status} ${response.statusText}`;
-        }
-      } catch (err) {
-        durationMs = Date.now() - startTime;
-        error = err instanceof Error ? err.message : String(err);
-      }
-
-      const result = {
-        url,
-        statusCode,
-        durationMs,
-        success: !error,
-        error,
-      };
-
-      logger.event('webhook_test', result);
-
-      res.json(result);
-    } catch (err) {
-      logger.event('api_error', {
-        path: '/webhooks/test',
-        error: (err as Error).message,
-      });
-      return sendErrorResponse(res, 400, 'Bad Request', (err as Error).message);
-    }
-  });
-}
-
 function registerValidationRoute(
   router: Router,
   preFlightValidator: PreFlightValidator,
@@ -864,7 +875,7 @@ function registerValidationRoute(
   logger: ReturnType<typeof createEventLogger>,
 ): void {
   /**
-   * POST /api/validate - Pre-flight validation of job request (dry-run).
+   * POST /api/v1/validate - Pre-flight validation of job request (dry-run).
    */
   router.post('/validate', async (req: Request, res: Response) => {
     try {

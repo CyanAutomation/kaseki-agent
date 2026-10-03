@@ -42,216 +42,47 @@ type PropertyConstraint = {
 };
 
 const httpMethods = ['get', 'post', 'put', 'delete', 'patch', 'head', 'options'] as const;
+const endpoint = (
+  path: string,
+  method: string,
+  operationId: string,
+  auth: 'public' | 'protected',
+  successCodes: string[],
+  errorCodes: string[] = [],
+): EndpointContract => ({ path, method, operationId, auth, successCodes, errorCodes });
+
 const expectedEndpoints: EndpointContract[] = [
-  {
-    path: '/api/capabilities',
-    method: 'get',
-    operationId: 'getCapabilities',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['401'],
-  },
-  {
-    path: '/health',
-    method: 'get',
-    operationId: 'getHealth',
-    auth: 'public',
-    successCodes: ['200'],
-  },
-  {
-    path: '/api/runs/{id}/retry',
-    method: 'post',
-    operationId: 'retryRun',
-    auth: 'protected',
-    successCodes: ['202', '200'],
-    errorCodes: ['400', '404', '409', '401'],
-    pathParams: ['id'],
-  },
-  {
-    path: '/ready',
-    method: 'get',
-    operationId: 'getReady',
-    auth: 'public',
-    successCodes: ['200'],
-  },
-  {
-    path: '/api/metrics',
-    method: 'get',
-    operationId: 'getMetrics',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['401'],
-  },
-  {
-    path: '/api/preflight',
-    method: 'get',
-    operationId: 'getPreFlight',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['401'],
-  },
-  {
-    path: '/api/startup-health',
-    method: 'get',
-    operationId: 'getStartupHealth',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['404', '500', '401'],
-  },
-  {
-    path: '/api/gateway-test',
-    method: 'get',
-    operationId: 'testGateway',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['401'],
-  },
-  {
-    path: '/api/github-issues',
-    method: 'post',
-    operationId: 'listGitHubIssues',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['400', '404', '401'],
-  },
-  {
-    path: '/api/validate',
-    method: 'post',
-    operationId: 'validateTask',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['400', '401'],
-  },
-  {
-    path: '/api/runs',
-    method: 'post',
-    operationId: 'triggerRun',
-    auth: 'protected',
-    successCodes: ['202', '200'],
-    errorCodes: ['400', '401'],
-  },
-  {
-    path: '/api/runs',
-    method: 'get',
-    operationId: 'listRuns',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['401'],
-  },
-  {
-    path: '/api/scorecards',
-    method: 'get',
-    operationId: 'listScorecards',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['401'],
-  },
-  {
-    path: '/api/runs/{id}/status',
-    method: 'get',
-    operationId: 'getRunStatus',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['404', '401'],
-    pathParams: ['id'],
-  },
-  {
-    path: '/api/runs/{id}/cancel',
-    method: 'post',
-    operationId: 'cancelRun',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['404', '401'],
-    pathParams: ['id'],
-  },
-  {
-    path: '/api/runs/{id}/events',
-    method: 'get',
-    operationId: 'getRunEvents',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['404', '401'],
-    pathParams: ['id'],
-  },
-  {
-    path: '/api/runs/{id}/events/stream',
-    method: 'get',
-    operationId: 'streamRunEvents',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['404', '401'],
-    pathParams: ['id'],
-  },
-  {
-    path: '/api/runs/{id}/progress',
-    method: 'get',
-    operationId: 'getRunProgress',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['404', '401'],
-    pathParams: ['id'],
-  },
-  {
-    path: '/api/runs/{id}/logs/{logtype}',
-    method: 'get',
-    operationId: 'getRunLog',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['404', '401'],
-    pathParams: ['id', 'logtype'],
-  },
-  {
-    path: '/api/runs/{id}/artifacts',
-    method: 'get',
-    operationId: 'getRunArtifacts',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['404', '401'],
-    pathParams: ['id'],
-  },
-  {
-    path: '/api/results/{id}/{file}',
-    method: 'get',
-    operationId: 'downloadArtifact',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['422', '404', '401'],
-    pathParams: ['id', 'file'],
-  },
-  {
-    path: '/api/runs/{id}/analysis',
-    method: 'get',
-    operationId: 'getRunAnalysis',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['404', '401'],
-    pathParams: ['id'],
-  },
-  {
-    path: '/api/runs/{id}/scorecard',
-    method: 'get',
-    operationId: 'getRunScorecard',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['400', '401', '404', '409', '422'],
-    pathParams: ['id'],
-  },
-  {
-    path: '/api/improvements',
-    method: 'get',
-    operationId: 'getRunImprovements',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['401'],
-  },
-  {
-    path: '/api/webhooks/test',
-    method: 'post',
-    operationId: 'testWebhook',
-    auth: 'protected',
-    successCodes: ['200'],
-    errorCodes: ['400', '401'],
-  },
+  endpoint('/health', 'get', 'getHealth', 'public', ['200']),
+  endpoint('/ready', 'get', 'getReady', 'public', ['200'], []),
+  endpoint('/api/v1/health', 'get', 'getApiHealth', 'public', ['200']),
+  endpoint('/api/v1/ready', 'get', 'getApiReady', 'public', ['200']),
+  endpoint('/api/v1/usage', 'get', 'getApiUsage', 'protected', ['200'], ['401']),
+  endpoint('/api/v1/capabilities', 'get', 'getCapabilities', 'protected', ['200'], ['401']),
+  endpoint('/api/v1/metrics', 'get', 'getMetrics', 'protected', ['200'], ['401']),
+  endpoint('/api/v1/preflight', 'get', 'getPreFlight', 'protected', ['200'], ['401']),
+  endpoint('/api/v1/startup-health', 'get', 'getStartupHealth', 'protected', ['200'], ['401']),
+  endpoint('/api/v1/openapi.json', 'get', 'getOpenApiSpec', 'public', ['200']),
+  endpoint('/api/v1/gateway-test', 'get', 'testGateway', 'protected', ['200'], ['400', '401', '429']),
+  endpoint('/api/v1/github-issues', 'post', 'listGitHubIssues', 'protected', ['200'], ['400', '401', '404', '429']),
+  endpoint('/api/v1/validate', 'post', 'validateTask', 'protected', ['200'], ['400', '401']),
+  endpoint('/api/v1/runs', 'post', 'triggerRun', 'protected', ['202', '200'], ['400', '401']),
+  endpoint('/api/v1/runs', 'get', 'listRuns', 'protected', ['200'], ['400', '401']),
+  endpoint('/api/v1/runs/{id}', 'get', 'getRun', 'protected', ['200'], ['401', '404']),
+  endpoint('/api/v1/runs/{id}/status', 'get', 'getRunStatus', 'protected', ['200'], ['401', '404']),
+  endpoint('/api/v1/runs/{id}/retry', 'post', 'retryRun', 'protected', ['202', '200'], ['400', '401', '404', '409']),
+  endpoint('/api/v1/runs/{id}/cancel', 'post', 'cancelRun', 'protected', ['200'], ['401', '404']),
+  endpoint('/api/v1/runs/{id}/events', 'get', 'getRunEvents', 'protected', ['200'], ['401', '404']),
+  endpoint('/api/v1/runs/{id}/events/stream', 'get', 'streamRunEvents', 'protected', ['200'], ['401', '404']),
+  endpoint('/api/v1/runs/{id}/logs/{logtype}', 'get', 'getRunLog', 'protected', ['200'], ['400', '401', '404', '500']),
+  endpoint('/api/v1/runs/{id}/artifacts', 'get', 'getRunArtifacts', 'protected', ['200'], ['401', '404']),
+  endpoint('/api/v1/results/{id}/{file}', 'get', 'downloadArtifact', 'protected', ['200'], ['202', '400', '401', '404', '413', '422']),
+  endpoint('/api/v1/runs/{id}/analysis', 'get', 'getRunAnalysis', 'protected', ['200'], ['401', '404', '500']),
+  endpoint('/api/v1/runs/{id}/scorecard', 'get', 'getRunScorecard', 'protected', ['200'], ['400', '401', '404', '409', '422']),
+  endpoint('/api/v1/scorecards', 'get', 'listScorecards', 'protected', ['200'], ['400', '401']),
+  endpoint('/api/v1/improvements', 'get', 'getRunImprovements', 'protected', ['200'], ['400', '401']),
+  endpoint('/api/v1/runs/{id}/webhook-deliveries', 'get', 'listRunWebhookDeliveries', 'protected', ['200'], ['401', '404']),
+  endpoint('/api/v1/runs/{id}/webhook-deliveries/{deliveryId}/retry', 'post', 'retryRunWebhookDelivery', 'protected', ['202'], ['401', '404', '409', '429']),
+  endpoint('/api/v1/webhooks/test', 'post', 'testWebhook', 'protected', ['200'], ['400', '401', '429']),
 ];
 
 const expectedSchemas: SchemaContract[] = [
@@ -292,9 +123,13 @@ const expectedSchemas: SchemaContract[] = [
   },
   {
     schemaName: 'ErrorResponse',
-    required: ['error'],
+    required: ['type', 'title', 'status', 'detail', 'instance'],
     properties: {
-      error: { type: 'string' },
+      type: { type: 'string', format: 'uri' },
+      title: { type: 'string' },
+      status: { type: 'integer' },
+      detail: { type: 'string' },
+      instance: { type: 'string' },
       requestId: { type: 'string' },
     },
   },
@@ -401,7 +236,7 @@ function getJsonResponseSchema(operation: Operation, statusCode: string): Schema
   if (!response) return undefined;
 
   const content = response.content as Record<string, Record<string, unknown>> | undefined;
-  return content?.['application/json']?.schema as Schema | undefined;
+  return (content?.['application/problem+json']?.schema ?? content?.['application/json']?.schema) as Schema | undefined;
 }
 
 function getProperty(schema: Schema, propertyPath: string[]): Schema {
@@ -422,9 +257,12 @@ function getProperty(schema: Schema, propertyPath: string[]): Schema {
 function expectErrorResponseSchema(schema: Schema | undefined): void {
   expect(schema).toMatchObject({
     type: 'object',
-    required: ['error'],
+    required: ['type', 'title', 'status', 'detail', 'instance'],
     properties: expect.objectContaining({
-      error: expect.objectContaining({ type: 'string' }),
+      type: expect.objectContaining({ type: 'string', format: 'uri' }),
+      title: expect.objectContaining({ type: 'string' }),
+      detail: expect.objectContaining({ type: 'string' }),
+      instance: expect.objectContaining({ type: 'string' }),
     }),
   });
 }
@@ -575,9 +413,9 @@ describe('OpenAPI Spec Generator', () => {
 
   describe('Request and response payload semantics', () => {
     test.each([
-      ['/api/runs', 'post', 'RunRequest'],
-      ['/api/validate', 'post', 'RunRequest'],
-      ['/api/webhooks/test', 'post', undefined],
+      ['/api/v1/runs', 'post', 'RunRequest'],
+      ['/api/v1/validate', 'post', 'RunRequest'],
+      ['/api/v1/webhooks/test', 'post', undefined],
     ] as Array<[string, string, string | undefined]>)('%s %s request body contract is JSON and required', (path, method, schemaName) => {
       const operation = getOperation(spec, path, method);
       const requestBody = operation.requestBody as Record<string, unknown>;
@@ -605,13 +443,13 @@ describe('OpenAPI Spec Generator', () => {
     });
 
     test('response schemas preserve public API status enums', () => {
-      const runArtifacts = getJsonResponseSchema(getOperation(spec, '/api/runs/{id}/artifacts', 'get'), '200');
+      const runArtifacts = getJsonResponseSchema(getOperation(spec, '/api/v1/runs/{id}/artifacts', 'get'), '200');
       expect(getProperty(runArtifacts as Schema, ['runStatus'])).toMatchObject({
         type: 'string',
         enum: ['queued', 'running', 'completed', 'failed'],
       });
 
-      const runAnalysis = getJsonResponseSchema(getOperation(spec, '/api/runs/{id}/analysis', 'get'), '200');
+      const runAnalysis = getJsonResponseSchema(getOperation(spec, '/api/v1/runs/{id}/analysis', 'get'), '200');
       expect(getProperty(runAnalysis as Schema, ['status'])).toMatchObject({
         type: 'string',
         enum: ['queued', 'running', 'completed', 'failed'],

@@ -507,11 +507,13 @@ jobs:
         id: kaseki
         run: |
           # Call Kaseki API
+          IDEMPOTENCY_KEY=$(node -p 'require("crypto").randomUUID()')
           RESPONSE=$(curl -X POST \
             -H "Authorization: Bearer ${{ secrets.KASEKI_API_KEY }}" \
             -H "Content-Type: application/json" \
+            -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
             -d @- \
-            http://kaseki-api:8080/api/runs << 'EOF'
+            http://kaseki-api:8080/api/v1/runs << 'EOF'
           {
             "repoUrl": "https://github.com/${{ github.repository }}",
             "gitRef": "${{ github.event.repository.default_branch }}",
@@ -533,7 +535,7 @@ jobs:
           while [ $timeout -lt 2000 ]; do
             STATUS=$(curl -s \
               -H "Authorization: Bearer ${{ secrets.KASEKI_API_KEY }}" \
-              http://kaseki-api:8080/api/runs/$INSTANCE_ID | jq -r '.status')
+              http://kaseki-api:8080/api/v1/runs/$INSTANCE_ID | jq -r '.status')
             
             if [ "$STATUS" = "completed" ]; then
               echo "Run completed"

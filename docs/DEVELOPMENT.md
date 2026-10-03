@@ -49,7 +49,7 @@ Kaseki Agent is an ephemeral coding-agent runner that:
 
 **HTTP REST API for remote control**
 
-- **Endpoints**: `/api/runs`, `/api/runs/:id/status`, `/api/runs/:id/analysis`
+- **Endpoints**: `/api/v1/runs`, `/api/v1/runs/:id/status`, `/api/v1/runs/:id/analysis`
 - **Authentication**: Bearer token validation
 - **Job Queue**: FIFO with concurrency control
 - **Result Cache**: Lazy-loading with TTL expiration
@@ -266,7 +266,7 @@ docker logs kaseki-1
 ```bash
 # Check job state via API
 curl -H "Authorization: Bearer sk-key" \
-  http://localhost:8080/api/runs | jq .
+  http://localhost:8080/api/v1/runs | jq .
 
 # Monitor job spawning
 ps aux | grep kaseki-agent

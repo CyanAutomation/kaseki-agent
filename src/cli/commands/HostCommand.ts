@@ -94,7 +94,7 @@ OPTIONS
   --fix           Create/fix /agents, normalize secrets, and bootstrap the template.
   --recreate-api  Recreate the kaseki-api container after host paths are fixed.
   --wait-ready    Wait for http://127.0.0.1:8080/ready before returning.
-  --url URL       Preflight URL. Defaults to http://127.0.0.1:8080/api/preflight.
+  --url URL       Preflight URL. Defaults to http://127.0.0.1:8080/api/v1/preflight.
 
 EXAMPLES
   kaseki-agent host setup
@@ -147,7 +147,7 @@ EXAMPLES
     const urlArgIndex = args.indexOf('--url');
     const url = urlArgIndex >= 0 && args[urlArgIndex + 1]
       ? args[urlArgIndex + 1]
-      : process.env.KASEKI_PREFLIGHT_URL || 'http://127.0.0.1:8080/api/preflight';
+      : process.env.KASEKI_PREFLIGHT_URL || 'http://127.0.0.1:8080/api/v1/preflight';
     configureHostSecretsDirForPreflight();
 
     // Check for discovered path from setup

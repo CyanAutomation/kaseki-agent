@@ -80,7 +80,7 @@ describe('RunCommand', () => {
     const apiClient: RunApiClient = {
       baseUrl: 'http://localhost:8080/api',
       createRun,
-      getRunStatusUrl: (runId) => `http://localhost:8080/api/runs/${runId}/status`,
+      getRunStatusUrl: (runId) => `http://localhost:8080/api/v1/runs/${runId}/status`,
     };
     const command = new RunCommand(configManager, () => apiClient);
 
@@ -103,7 +103,7 @@ describe('RunCommand', () => {
       timeoutSeconds: 10800,
     }));
     expect(consoleLog).toHaveBeenCalledWith('Job ID: kaseki-123');
-    expect(consoleLog).toHaveBeenCalledWith('Status URL: http://localhost:8080/api/runs/kaseki-123/status');
+    expect(consoleLog).toHaveBeenCalledWith('Status URL: http://localhost:8080/api/v1/runs/kaseki-123/status');
     expect(consoleLog).toHaveBeenCalledWith('  kaseki-agent status kaseki-123');
   });
 
@@ -114,7 +114,7 @@ describe('RunCommand', () => {
     const apiClient: RunApiClient = {
       baseUrl: 'http://localhost:8080/api',
       createRun,
-      getRunStatusUrl: (runId) => `http://localhost:8080/api/runs/${runId}/status`,
+      getRunStatusUrl: (runId) => `http://localhost:8080/api/v1/runs/${runId}/status`,
     };
     const command = new RunCommand(configManager, () => apiClient);
 
@@ -132,7 +132,7 @@ describe('RunCommand', () => {
     const apiClient: RunApiClient = {
       baseUrl: 'http://localhost:8080/api',
       createRun,
-      getRunStatusUrl: (runId) => `http://localhost:8080/api/runs/${runId}/status`,
+      getRunStatusUrl: (runId) => `http://localhost:8080/api/v1/runs/${runId}/status`,
     };
     const command = new RunCommand(configManager, () => apiClient);
 
@@ -158,7 +158,7 @@ describe('RunCommand', () => {
     const apiClient: RunApiClient = {
       baseUrl: 'http://localhost:8080/api',
       createRun,
-      getRunStatusUrl: (runId) => `http://localhost:8080/api/runs/${runId}/status`,
+      getRunStatusUrl: (runId) => `http://localhost:8080/api/v1/runs/${runId}/status`,
     };
     const command = new RunCommand(configManager, () => apiClient);
 

@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import * as crypto from 'crypto';
 import { sendErrorResponse } from '../utils/response-helpers';
 import { createEventLogger } from '../logger';
+import { postWebhookSafely, WebhookEgressPolicyError } from '../safe-webhook-http';
 
 const logger = createEventLogger('api');
 
@@ -12,7 +13,7 @@ export function createWebhookRoutes(): Router {
   const router = Router();
 
   /**
-   * POST /api/webhooks/test - Test webhook configuration.
+   * POST /api/v1/webhooks/test - Test webhook configuration.
    */
   router.post('/webhooks/test', async (req: Request, res: Response) => {
     try {
@@ -20,13 +21,6 @@ export function createWebhookRoutes(): Router {
 
       if (!url || typeof url !== 'string') {
         return sendErrorResponse(res, 400, 'Bad Request', 'Webhook URL is required');
-      }
-
-      // Validate URL format
-      try {
-        new URL(url);
-      } catch {
-        return sendErrorResponse(res, 400, 'Bad Request', 'Invalid webhook URL format');
       }
 
       // Send test webhook
@@ -50,28 +44,23 @@ export function createWebhookRoutes(): Router {
           signature = crypto.createHmac('sha256', secret).update(body).digest('hex');
         }
 
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Kaseki-Event': 'webhook.test',
-            'X-Kaseki-Job-Id': 'test',
-            ...(signature && { 'X-Kaseki-Signature': `sha256=${signature}` }),
-          },
-          body: JSON.stringify(testPayload),
-          signal: AbortSignal.timeout(10000),
+        const response = await postWebhookSafely(url, JSON.stringify(testPayload), {
+          'Content-Type': 'application/json',
+          'X-Kaseki-Event': 'webhook.test',
+          'X-Kaseki-Job-Id': 'test',
+          ...(signature && { 'X-Kaseki-Signature': `sha256=${signature}` }),
         });
 
         durationMs = Date.now() - startTime;
         statusCode = response.status;
 
-        // Drain the response body to release the HTTP connection
-        await response.text().catch(() => {});
-
         if (!response.ok) {
           error = `HTTP ${response.status} ${response.statusText}`;
         }
       } catch (err) {
+        if (err instanceof WebhookEgressPolicyError) {
+          return sendErrorResponse(res, 400, 'Bad Request', err.message);
+        }
         durationMs = Date.now() - startTime;
         error = err instanceof Error ? err.message : String(err);
       }

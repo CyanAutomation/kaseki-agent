@@ -5,12 +5,14 @@
  */
 
 import express from 'express';
+import swaggerUi from 'swagger-ui-express';
 import type { Server } from 'http';
 import { loadConfig } from './kaseki-api-config';
 import { createApiRouter } from './kaseki-api-routes';
 import { createEventLogger } from './logger';
 import { initializeSetup } from './kaseki-api/setup-orchestrator';
 import { bootstrapServices, gracefulShutdown, type BootstrappedServices } from './kaseki-api/service-bootstrapper';
+import { generateOpenAPISpec } from './openapi-spec-generator';
 
 interface KasekiAPIServiceOptions {
   port?: number;
@@ -82,7 +84,17 @@ class KasekiAPIServiceImpl {
 
       // Create Express app
       const app = express();
+      app.disable('x-powered-by');
+      app.use((_req, res, next) => {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Cache-Control', 'no-store');
+        next();
+      });
       app.use(express.json());
+
+      const openApiSpec = generateOpenAPISpec();
+      app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, { customCss: '.topbar { display: none }' }));
+      app.get('/api/v1/openapi.json', (_req, res) => res.json(openApiSpec));
 
       // Mount API routes
       const apiRouter = createApiRouter(
@@ -92,8 +104,8 @@ class KasekiAPIServiceImpl {
         this.services.preFlightValidator,
         this.services.artifactCache
       );
-      app.use('/api', apiRouter);
-      app.use('/', apiRouter);
+      app.use('/api/v1', apiRouter);
+      app.get(['/health', '/ready'], apiRouter);
 
       // Start server
       const onListening = () => {
@@ -107,7 +119,7 @@ class KasekiAPIServiceImpl {
         });
         console.log(`\n✓ Kaseki API service started on ${displayHost}:${this.config.port}`);
         console.log(`  Health check: http://${displayHost}:${this.config.port}/health`);
-        console.log(`  API routes: http://${displayHost}:${this.config.port}/api/\n`);
+        console.log(`  API routes: http://${displayHost}:${this.config.port}/api/v1/\n`);
       };
       this.server = this.config.host
         ? app.listen(this.config.port, this.config.host, onListening)

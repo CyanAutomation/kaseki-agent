@@ -149,10 +149,15 @@ await withCleanup(async () => {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
     const { port } = server.address();
-    const response = await fetch(`http://127.0.0.1:${port}/api/health`);
-    const body = await response.json();
-    assert.equal(response.status, 200, 'createApiRouter should serve unauthenticated health checks');
-    assert.equal(body.status, 'healthy', 'createApiRouter should expose healthy status from scheduler readiness');
+    const healthResponse = await fetch(`http://127.0.0.1:${port}/api/health`);
+    const healthBody = await healthResponse.json();
+    assert.equal(healthResponse.status, 200, 'createApiRouter should serve unauthenticated health checks');
+    assert.equal(healthBody.status, 'ok', 'createApiRouter should expose liveness through /health');
+
+    const readinessResponse = await fetch(`http://127.0.0.1:${port}/api/ready`);
+    const readinessBody = await readinessResponse.json();
+    assert.equal(readinessResponse.status, 200, 'createApiRouter should serve unauthenticated readiness checks');
+    assert.equal(readinessBody.status, 'ready', 'createApiRouter should expose scheduler readiness through /ready');
   } finally {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }

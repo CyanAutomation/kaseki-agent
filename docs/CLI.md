@@ -58,7 +58,7 @@ WHAT IT DOES
   4. Creates /agents/{kaseki-results,kaseki-runs,kaseki-cache} owned by UID 10000
   5. Starts the kaseki-api container via docker run
   6. Waits for http://localhost:8080/ready body to confirm ready status
-  7. Smoke-tests authenticated access to /api/runs
+  7. Smoke-tests authenticated access to /api/v1/runs
 
 EXAMPLES
   kaseki-agent quickstart                          # Full setup
@@ -106,14 +106,14 @@ NOTE
 
 ### `run`
 
-Submit a task run through the configured Kaseki API. Requires a local API service (`http://localhost:8080/api`) or `KASEKI_API_URL`. Set `KASEKI_API_KEY` when the API requires bearer-token authentication.
+Submit a task run through the configured Kaseki API. Requires a local API service (`http://localhost:8080/api/v1`) or `KASEKI_API_URL`. Set `KASEKI_API_KEY` when the API requires bearer-token authentication.
 
 ```bash
 USAGE
   kaseki-agent run <REPO_URL> [GIT_REF] [TASK_PROMPT] [--dry-run]
 
 REQUIRES
-  A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.
+  A local API service at http://localhost:8080/api/v1 or KASEKI_API_URL pointing to a controller API.
   Set KASEKI_API_KEY when the API requires bearer-token authentication.
 
 OPTIONS
@@ -205,7 +205,7 @@ USAGE
   kaseki-agent list [--status queued|running|completed|failed]
 
 REQUIRES
-  A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.
+  A local API service at http://localhost:8080/api/v1 or KASEKI_API_URL pointing to a controller API.
 
 EXAMPLES
   kaseki-agent list                                              # All instances
@@ -242,7 +242,7 @@ USAGE
   kaseki-agent status <RUN_ID> [--json]
 
 REQUIRES
-  A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.
+  A local API service at http://localhost:8080/api/v1 or KASEKI_API_URL pointing to a controller API.
 
 STATUS OUTPUT
   State:     current status (queued, running, completed, failed)
@@ -271,7 +271,7 @@ USAGE
   kaseki-agent cancel <RUN_ID> [--json]
 
 REQUIRES
-  A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.
+  A local API service at http://localhost:8080/api/v1 or KASEKI_API_URL pointing to a controller API.
 
 FLAGS
   --json    Emit cancellation response as JSON
@@ -292,7 +292,7 @@ USAGE
   kaseki-agent stop <RUN_ID>
 
 REQUIRES
-  A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.
+  A local API service at http://localhost:8080/api/v1 or KASEKI_API_URL pointing to a controller API.
 
 EXAMPLES
   kaseki-agent stop kaseki-1
@@ -358,7 +358,7 @@ OPTIONS (setup)
   --wait-ready     Wait for http://127.0.0.1:8080/ready before returning
 
 OPTIONS (preflight)
-  --url URL        Preflight endpoint URL (default: http://127.0.0.1:8080/api/preflight)
+  --url URL        Preflight endpoint URL (default: http://127.0.0.1:8080/api/v1/preflight)
 
 EXAMPLES
   kaseki-agent host setup                                        # Standard setup

@@ -36,29 +36,10 @@ export function createHealthRoutes(
    * GET /health - Queue and infrastructure health check
    */
   router.get('/health', (_req: Request, res: Response) => {
-    const queueStatus = scheduler.getQueueStatus();
-    const errors: string[] = [];
-
-    // Check if results directory is accessible
-    if (!fs.existsSync(config.resultsDir)) {
-      errors.push(`Results directory not accessible: ${config.resultsDir}`);
-    }
-
-    const status = errors.length === 0 ? 'healthy' : 'degraded';
-
-    res.json({
-      status,
-      timestamp: new Date().toISOString(),
-      queue: queueStatus,
-      dependencyCache: readDependencyCacheMetrics(config),
-      errors: errors.length > 0 ? errors : undefined,
-    });
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  /**
-   * GET /ready and /readiness - Kubernetes-style readiness probe.
-   * /readiness is a compatibility alias for clients that use the UI label.
-   */
+  /** GET /ready - Kubernetes-style readiness probe. */
   const readinessHandler = (_req: Request, res: Response) => {
     const readiness = scheduler.getReadiness();
     if (readiness.ready) {
@@ -67,11 +48,10 @@ export function createHealthRoutes(
     return res.status(503).json({
       status: 'not_ready',
       timestamp: new Date().toISOString(),
-      reasons: readiness.reasons,
+      reasons: readiness.reasons.map((reason) => reason.split(':', 1)[0]),
     });
   };
   router.get('/ready', readinessHandler);
-  router.get('/readiness', readinessHandler);
 
   /**
    * GET /metrics - Prometheus-formatted metrics

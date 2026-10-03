@@ -6,8 +6,13 @@ describe('response-helpers', () => {
       const mockResponse = {
         body: null as any,
         statusValue: 200,
+        req: { path: '/api/runs/example' },
+        locals: {},
         status: function(code: number) {
           this.statusValue = code;
+          return this;
+        },
+        type: function() {
           return this;
         },
         json: function(data: any) {
@@ -23,6 +28,7 @@ describe('response-helpers', () => {
         title: 'Not Found',
         status: 404,
         detail: 'Run not found: abc123',
+        instance: '/api/runs/example',
       });
     });
 
@@ -30,8 +36,13 @@ describe('response-helpers', () => {
       const mockResponse = {
         body: null as any,
         statusValue: 200,
+        req: { path: '/api/runs/example' },
+        locals: {},
         status: function(code: number) {
           this.statusValue = code;
+          return this;
+        },
+        type: function() {
           return this;
         },
         json: function(data: any) {
