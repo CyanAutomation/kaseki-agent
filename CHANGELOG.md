@@ -4,6 +4,25 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.148.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.147.2...v1.148.0) (2026-10-03)
+
+
+### Bug Fixes
+
+* address CodeQL API security findings ([d81874b](https://github.com/CyanAutomation/kaseki-agent/commit/d81874b6c984348961ad0e2ea1ac4db7b4119cd3))
+* clarify webhook address range validation ([4ecc141](https://github.com/CyanAutomation/kaseki-agent/commit/4ecc1413e3be49db569e91c93b78a63f0ded7948))
+* make webhook range denylist check explicit ([#1489](https://github.com/CyanAutomation/kaseki-agent/issues/1489)) ([7591d51](https://github.com/CyanAutomation/kaseki-agent/commit/7591d51a51f941c7be82bbede777521346b2301d))
+* reject non-public webhook addresses ([8750079](https://github.com/CyanAutomation/kaseki-agent/commit/875007957627869159458f1640007aa7e30f0c90))
+* reject private and special-use webhook destinations ([#1488](https://github.com/CyanAutomation/kaseki-agent/issues/1488)) ([8c5e709](https://github.com/CyanAutomation/kaseki-agent/commit/8c5e709f11098b357ea1622a823341782b73788b))
+* resolve API update lint findings ([ca4031b](https://github.com/CyanAutomation/kaseki-agent/commit/ca4031b4892fb6b6babebd9628d1b9861c8da5fc))
+* update vulnerable dependency pins ([54e9e9b](https://github.com/CyanAutomation/kaseki-agent/commit/54e9e9bd7c1faa5119c52a87a91b3dceac80136c))
+
+
+### Features
+
+* **api:** harden and version the Kaseki API ([079247b](https://github.com/CyanAutomation/kaseki-agent/commit/079247b37f5fff7355a1f25805caf61a0b2d846d))
+* **api:** version and harden Kaseki API ([#1487](https://github.com/CyanAutomation/kaseki-agent/issues/1487)) ([5f7c071](https://github.com/CyanAutomation/kaseki-agent/commit/5f7c0719fe80ede6c7de982e52202404e497d15f))
+
 ## [1.147.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.147.1...v1.147.2) (2026-10-02)
 
 
