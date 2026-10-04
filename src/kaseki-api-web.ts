@@ -103,6 +103,12 @@ const controllerPage = String.raw`<!doctype html>
         --color-focus:        #00daf3;
         --color-focus-bright: #00e5ff;
         --color-focus-text:   #c3f5ff;
+        --color-accent:       var(--color-focus);
+        --color-on-primary:   #00363d;
+        --color-on-primary-hover: #001f24;
+        --color-disabled-bg:  #31353c;
+        --color-disabled-text: #849396;
+        --color-disabled-border: #3b494c;
 
         /* Status — Success */
         --color-ok:      #2ff801;
@@ -164,6 +170,7 @@ const controllerPage = String.raw`<!doctype html>
         --space-2: 12px;
         --space-3: 16px;
         --space-4: 24px;
+        --space-075: 6px;
 
         /* Component spacing */
         --control-gap: var(--space-2);
@@ -222,12 +229,13 @@ const controllerPage = String.raw`<!doctype html>
         /* Dropdowns & modals */
         --dropdown-max-height: 250px;
         --panel-max-height: 500px;
-        --mobile-viewport-height: 40vh;
 
         /* Z-index scale */
         --z-dropdown: 100;
+        --z-modal-backdrop: 190;
         --z-modal: 200;
         --z-tooltip: 300;
+        --z-toast: 400;
 
         /* Min/max widths for inputs and containers */
         --input-min-width: 200px;
@@ -237,7 +245,8 @@ const controllerPage = String.raw`<!doctype html>
         /* ===== COMPONENT SIZING ===== */
         /* Standard component heights for consistent visual hierarchy */
         --card-min-height: 76px;
-        --panel-min-height: 300px;
+        --panel-min-height: 240px;
+        --response-empty-min-height: 144px;
         --health-check-height: 80px;
         --textarea-min-height: 140px;
         --state-indicator-height: 22px;
@@ -256,8 +265,7 @@ const controllerPage = String.raw`<!doctype html>
         font: var(--font-size-lg)/var(--line-height-relaxed) var(--font-ui);
       }
       /* ===== HEADER ===== */
-      /* Main application header with branding and API token input.
-         Uses flexbox for horizontal layout; status indicator positioned on right. */
+      /* Main application header with branding, controller state, and API token. */
       .header-bar {
         background: var(--color-surface-low);
         border-bottom: 1px solid var(--color-border);
@@ -285,35 +293,30 @@ const controllerPage = String.raw`<!doctype html>
         min-width: var(--input-min-width);
         max-width: var(--input-max-width);
         width: auto;
-        background: var(--color-surface-highest);
-        border: none;
-        border-bottom: 1px solid var(--color-border-strong);
-        border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-        color: var(--color-text);
-        font-family: var(--font-ui);
-        font-size: var(--font-size-md);
-        padding: var(--input-padding);
-        min-height: var(--control-min-height);
-        transition: border-color var(--transition-fast) var(--transition-easing);
       }
-      .header-token-input:focus {
-        outline: none;
-        border-bottom: 2px solid var(--color-focus);
-      }
-      .header-token-input::placeholder { color: var(--color-text-muted); }
+      .header-token-field { min-width: 280px; }
+      .header-token-field > label { font-size: var(--font-size-sm); }
       @media (max-width: 767px) {
-        .header-token-input {
-          min-width: 0;
-          width: min(100%, 220px);
-          flex: 1 1 160px;
-        }
         .header-bar {
-          align-items: flex-start;
-          flex-wrap: wrap;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
+          align-items: stretch;
         }
         .header-bar-title {
           min-width: 0;
-          flex: 1 1 170px;
+          width: 100%;
+          justify-content: space-between;
+        }
+        .header-token-field {
+          min-width: 0;
+          grid-template-columns: 96px minmax(0, 1fr);
+          align-items: center;
+          gap: var(--space-1);
+        }
+        .header-token-input {
+          min-width: 0;
+          max-width: none;
+          width: 100%;
         }
       }
       /* ===== STATUS INDICATOR ===== */
@@ -342,6 +345,16 @@ const controllerPage = String.raw`<!doctype html>
         flex-shrink: 0;
       }
       .status-indicator::after { content: 'Idle'; }
+      .status-indicator.ok {
+        background: var(--color-ok-overlay-15);
+        color: var(--color-ok);
+      }
+      .status-indicator.ok::after { content: 'Ready'; }
+      .status-indicator.queued {
+        background: var(--color-focus-overlay-15);
+        color: var(--color-focus-bright);
+      }
+      .status-indicator.queued::after { content: 'Queued'; }
       .status-indicator.running {
         background: var(--color-focus-overlay-15);
         color: var(--color-focus-bright);
@@ -367,6 +380,7 @@ const controllerPage = String.raw`<!doctype html>
         display: grid;
         gap: var(--space-4);
         grid-template-columns: minmax(0, 1fr);
+        align-items: start;
         margin: 0 auto;
         max-width: var(--max-content-width);
         padding: var(--content-pad-mobile);
@@ -389,7 +403,7 @@ const controllerPage = String.raw`<!doctype html>
       .panel {
         background: var(--color-surface-low);
         border: 1px solid var(--color-border);
-        border-radius: var(--radius-sm);
+        border-radius: var(--radius-md);
         padding: var(--space-4);
       }
       header, form, .stack, fieldset { display: grid; gap: var(--space-3); }
@@ -420,24 +434,22 @@ const controllerPage = String.raw`<!doctype html>
       .form-fields { display: grid; gap: var(--space-3); }
       .form-field { display: grid; gap: var(--space-1); }
       .form-field > label {
-        font-family: var(--font-mono);
-        font-size: var(--font-size-xs);
-        font-weight: var(--font-weight-bold);
-        letter-spacing: var(--letter-spacing-wide);
-        text-transform: uppercase;
+        font-family: var(--font-ui);
+        font-size: var(--font-size-sm);
+        font-weight: var(--font-weight-semibold);
         color: var(--color-text-muted);
         line-height: var(--line-height-snug);
       }
       .field-helper { 
         color: var(--color-text-muted);
         font-family: var(--font-ui);
-        font-size: 13px;
+        font-size: var(--font-size-base);
         line-height: var(--line-height-relaxed);
       }
       .field-error {
         color: var(--color-bad);
         font-family: var(--font-ui);
-        font-size: 13px;
+        font-size: var(--font-size-base);
         line-height: var(--line-height-normal);
         min-height: 1em;
       }
@@ -457,7 +469,7 @@ const controllerPage = String.raw`<!doctype html>
         color: inherit;
         font: inherit;
       }
-      input, textarea, select {
+      .form-control {
         background: var(--color-surface-highest);
         border: none;
         border-bottom: 1px solid var(--color-border-strong);
@@ -470,9 +482,9 @@ const controllerPage = String.raw`<!doctype html>
         width: 100%;
         transition: border-color var(--transition-fast) var(--transition-easing);
       }
-      input::placeholder, textarea::placeholder { color: var(--color-text-muted); }
-      textarea { min-height: var(--textarea-min-height); resize: vertical; }
-      input:focus, textarea:focus, select:focus {
+      .form-control::placeholder { color: var(--color-text-muted); }
+      textarea.form-control { min-height: var(--textarea-min-height); resize: vertical; }
+      .form-control:focus {
         outline: none;
         border-bottom: 2px solid var(--color-focus);
       }
@@ -561,25 +573,7 @@ const controllerPage = String.raw`<!doctype html>
       }
       .run-links[hidden] { display: none; }
       .link-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-      .link-grid a {
-        align-items: center;
-        background: transparent;
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-sm);
-        color: var(--color-text);
-        display: inline-flex;
-        font-family: var(--font-ui);
-        font-weight: var(--font-weight-semibold);
-        justify-content: center;
-        min-height: var(--control-min-height);
-        padding: var(--control-pad);
-        text-decoration: none;
-        transition: border-color var(--transition-fast) var(--transition-easing), color var(--transition-fast) var(--transition-easing);
-      }
-      .link-grid a:hover {
-        border-color: var(--color-focus);
-        color: var(--color-focus-text);
-      }
+      .link-grid .button { align-items: center; display: inline-flex; justify-content: center; text-decoration: none; }
       .run-button-content {
         display: grid;
         gap: 2px;
@@ -607,13 +601,8 @@ const controllerPage = String.raw`<!doctype html>
         color: var(--color-text-muted);
       }
       /* ===== BUTTONS ===== */
-      /* Button system uses three variants via CSS classes:  
-         1. Default (secondary): transparent bg, border-based (uses --color-border)
-         2. .secondary: same as default; explicit class for clarity
-         3. .run: solid cyan bg for primary actions (submit, execute tasks)
-         Hover states maintain affordance; disabled uses opacity. All buttons
-         use consistent padding (--control-pad) and min-height. */
-      button {
+      /* Shared button component with semantic primary, secondary, and danger variants. */
+      button, .button {
         background: transparent;
         border: 1px solid var(--color-border);
         border-radius: var(--radius-sm);
@@ -626,51 +615,59 @@ const controllerPage = String.raw`<!doctype html>
         padding: var(--control-pad);
         transition: border-color var(--transition-fast) var(--transition-easing), color var(--transition-fast) var(--transition-easing), background var(--transition-fast) var(--transition-easing);
       }
-      button:hover:not(:disabled) {
+      button:hover:not(:disabled), .button:hover:not(:disabled) {
         border-color: var(--color-focus);
         color: var(--color-focus-text);
       }
-      button.secondary, button.button-secondary {
+      .button-secondary {
         background: transparent;
         color: var(--color-text);
         border-color: var(--color-border);
       }
-      button.secondary:hover:not(:disabled), button.button-secondary:hover:not(:disabled) {
+      .button-secondary:hover:not(:disabled) {
         border-color: var(--color-focus);
         color: var(--color-focus-text);
       }
-      button.run, button.button-primary {
+      .button-primary {
         background: var(--color-focus-bright);
         border-color: var(--color-focus-bright);
-        color: #00363d;
+        color: var(--color-on-primary);
         font-weight: var(--font-weight-bold);
       }
-      button.run:hover:not(:disabled), button.button-primary:hover:not(:disabled) {
+      .button-primary:hover:not(:disabled) {
         background: var(--color-focus-text);
         border-color: var(--color-focus-text);
-        color: #001f24;
+        color: var(--color-on-primary-hover);
       }
-      button:disabled { cursor: not-allowed; opacity: var(--opacity-disabled); }
-      #submit:disabled { background-color: #666; border-color: #666; color: #aaa; }
-      #submit:enabled { cursor: pointer; }
-      button.button-danger {
+      button:disabled, .button[aria-disabled="true"] { cursor: not-allowed; opacity: var(--opacity-disabled); }
+      .button-primary:disabled {
+        background: var(--color-disabled-bg);
+        border-color: var(--color-disabled-border);
+        color: var(--color-disabled-text);
+      }
+      .button-danger {
         border-color: var(--color-bad);
         color: var(--color-bad);
       }
-      button.button-danger:hover:not(:disabled) {
+      .button-danger:hover:not(:disabled) {
         background: var(--color-bad-bg);
         border-color: var(--color-bad);
         color: var(--color-bad);
       }
+      .button-quiet {
+        background: transparent;
+        border-color: transparent;
+        color: var(--color-text-muted);
+      }
+      .button-quiet:hover:not(:disabled) { color: var(--color-text); }
       #cancel-run:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
       #cancel-run:enabled { cursor: pointer; }
       .validation-badge {
-        margin-left: 6px;
-        color: #00d084;
+        margin-left: var(--space-075);
+        color: var(--color-ok);
         font-weight: var(--font-weight-bold);
         font-size: 0.9em;
       }
-      .toolbar-button { }
       .toolbar-button-no-wrap { white-space: nowrap; }
       /* ===== RESPONSE PANEL ===== */
       /* Three-tier grid layout for task results:
@@ -687,6 +684,7 @@ const controllerPage = String.raw`<!doctype html>
         min-height: var(--panel-min-height);
         overflow: hidden;
       }
+      .response-panel[data-state="empty"] { min-height: var(--response-empty-min-height); }
       .response-meta {
         border-bottom: 1px solid var(--color-border);
         color: var(--color-text-muted);
@@ -763,14 +761,14 @@ const controllerPage = String.raw`<!doctype html>
         letter-spacing: var(--letter-spacing-wide);
         text-transform: uppercase;
       }
-      #state {
+      #state, #task-state {
         color: var(--color-text-muted);
         font-family: var(--font-mono);
         font-size: var(--font-size-sm);
         min-height: var(--state-indicator-height);
       }
-      #state.ok { color: var(--color-ok); }
-      #state.bad { color: var(--color-bad); }
+      #state.ok, #task-state.ok { color: var(--color-ok); }
+      #state.bad, #task-state.bad { color: var(--color-bad); }
       /* ===== RESPONSIVE MEDIA QUERIES ===== */
       @media (min-width: 768px) {
         .header-bar {
@@ -957,23 +955,16 @@ const controllerPage = String.raw`<!doctype html>
       }
       .recent-repo-delete {
         flex: 0 0 auto;
-        background: none;
-        border: none;
-        color: var(--color-text-muted);
-        cursor: pointer;
         font-size: 18px;
         padding: 0;
-        width: 24px;
-        height: 24px;
+        width: var(--touch-target-min);
+        min-width: var(--touch-target-min);
+        min-height: var(--touch-target-min);
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: color var(--transition-fast) var(--transition-easing);
-        min-height: auto;
       }
-      .recent-repo-delete:hover {
-        color: var(--color-bad);
-      }
+      .recent-repo-delete:hover:not(:disabled) { color: var(--color-bad); }
       /* ===== ISSUES TAB ===== */
       /* GitHub issues list uses grid layout for flexible item sizing.
          Items highlight on hover with color shift. Issue number is cyan (--color-focus)
@@ -1015,11 +1006,6 @@ const controllerPage = String.raw`<!doctype html>
         text-align: left;
         padding: var(--space-2) var(--space-3);
         background: var(--color-surface-high);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-sm);
-        cursor: pointer;
-        color: var(--color-text);
-        font: inherit;
         transition: all var(--transition-base) var(--transition-easing);
       }
       .issues-list-item:hover {
@@ -1066,17 +1052,14 @@ const controllerPage = String.raw`<!doctype html>
       /* ===== MOBILE RESPONSIVE ===== */
       @media (max-width: 767px) {
         /* Ensure touch targets meet minimum 44px height on mobile */
-        button, input, textarea, select { min-height: var(--touch-target-min); }
-        .health-check-button { min-height: var(--touch-target-min); }
+        button, .button, .form-control, .tabs-nav button { min-height: var(--touch-target-min); }
+        .health-check-button { min-height: 64px; }
         
-        /* Stack actions vertically on mobile */
-        .action-row.run-actions > .run, .action-row.run-actions > .button-primary { order: 1; }
-        
-        /* Responsive panel heights */
-        .response-panel { min-height: var(--mobile-viewport-height); }
-        
-        /* Health checks grid */
-        .health-checks-grid { grid-template-columns: repeat(2, 1fr); }
+        /* Keep validation and submission actions easy to distinguish on touch screens. */
+        .action-row.run-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+        .action-row.run-actions > button { width: 100%; min-width: 0; }
+        .response-panel { min-height: 0; }
+        .response-panel[data-state="empty"] { min-height: 0; }
         
         /* Single column main layout */
         main { grid-template-columns: minmax(0, 1fr); }
@@ -1093,9 +1076,6 @@ const controllerPage = String.raw`<!doctype html>
         main { padding: var(--space-3); }
         .panel { padding: var(--space-3); }
         
-        /* Better grid on tablet */
-        .health-checks-grid { grid-template-columns: repeat(3, 1fr); }
-        
         /* Tab navigation improvement */
         .tabs-nav button { padding: var(--space-2) var(--space-2); }
       }
@@ -1105,17 +1085,11 @@ const controllerPage = String.raw`<!doctype html>
         main { padding: var(--space-2); }
         .panel { padding: var(--space-2); }
         
-        /* Single column health checks */
-        .health-checks-grid { grid-template-columns: 1fr; }
-        
         /* Full width form inputs */
         .issues-input-group input { min-width: auto; }
         
         /* Limit issues list height on mobile */
         .issues-list-container { max-height: var(--panel-max-height); }
-        
-        /* Stack summary grid */
-        .summary-grid { grid-template-columns: 1fr; }
         
         /* Improve button visibility on mobile */
         button { font-size: var(--font-size-md); }
@@ -1128,7 +1102,7 @@ const controllerPage = String.raw`<!doctype html>
         right: 0;
         bottom: 0;
         background: rgba(0, 0, 0, 0.5);
-        z-index: 999;
+        z-index: var(--z-modal-backdrop);
         animation: fadeIn var(--transition-fast) var(--transition-easing);
       }
       .modal-backdrop[hidden] { display: none; }
@@ -1145,7 +1119,7 @@ const controllerPage = String.raw`<!doctype html>
         max-height: 80vh;
         display: flex;
         flex-direction: column;
-        z-index: 1000;
+        z-index: var(--z-modal);
         animation: slideUp var(--transition-fast) var(--transition-easing);
       }
       .modal[hidden] { display: none; }
@@ -1171,22 +1145,13 @@ const controllerPage = String.raw`<!doctype html>
         color: var(--color-text);
       }
       .modal-close {
-        background: transparent;
-        border: none;
-        color: var(--color-text-muted);
-        cursor: pointer;
         font-size: 24px;
         padding: 0;
-        min-height: auto;
-        width: 32px;
-        height: 32px;
+        min-width: var(--touch-target-min);
+        min-height: var(--touch-target-min);
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: color var(--transition-fast) var(--transition-easing);
-      }
-      .modal-close:hover {
-        color: var(--color-text);
       }
       .modal-body {
         display: flex;
@@ -1374,7 +1339,7 @@ const controllerPage = String.raw`<!doctype html>
         display: flex;
         flex-direction: column;
         gap: var(--space-2);
-        z-index: 10000;
+        z-index: var(--z-toast);
         pointer-events: none;
       }
       .toast {
@@ -1425,14 +1390,17 @@ const controllerPage = String.raw`<!doctype html>
         <h1>Kaseki Task Console</h1>
         <span class="status-indicator" id="header-status" data-status="idle"></span>
       </div>
-      <input id="header-api-token" class="header-token-input" type="password" autocomplete="off" placeholder="API bearer token (required)" aria-label="API bearer token">
+      <div class="header-token-field form-field">
+        <label for="header-api-token">API bearer token</label>
+        <input id="header-api-token" class="form-control header-token-input" type="password" autocomplete="off" placeholder="Paste bearer token" aria-label="API bearer token">
+      </div>
     </header>
     <main>
       <section class="panel stack" aria-labelledby="tabs-heading">
-        <div class="tabs-nav" role="tablist" aria-label="Console tabs">
-          <button class="tab-button active" data-tab="health" role="tab" aria-selected="true" aria-controls="health-tab">Health</button>
-          <button class="tab-button" data-tab="issues" role="tab" aria-selected="false" aria-controls="issues-tab">Issues</button>
-          <button class="tab-button" data-tab="submit" role="tab" aria-selected="false" aria-controls="submit-tab">Submit Task</button>
+        <div class="tabs-nav" id="tabs-heading" role="tablist" aria-label="Console tabs">
+          <button class="tab-button active" data-tab="health" role="tab" tabindex="0" aria-selected="true" aria-controls="health-tab">Health</button>
+          <button class="tab-button" data-tab="issues" role="tab" tabindex="-1" aria-selected="false" aria-controls="issues-tab">Issues</button>
+          <button class="tab-button" data-tab="submit" role="tab" tabindex="-1" aria-selected="false" aria-controls="submit-tab">Submit Task</button>
         </div>
         <div id="health-tab" class="tab-content" role="tabpanel" aria-labelledby="health-heading">
           <div>
@@ -1476,14 +1444,14 @@ const controllerPage = String.raw`<!doctype html>
           </div>
           <div class="form-field">
             <label for="run-id">Run ID (for Check Status)</label>
-            <input id="run-id" placeholder="Filled after a run is submitted">
+            <input class="form-control" id="run-id" placeholder="Filled after a run is submitted">
           </div>
           <div class="run-links" id="runs-list-panel">
             <strong class="panel-section-label">Recent runs</strong>
             <div class="action-row controller-actions">
-              <button class="secondary toolbar-button" id="refresh-runs" type="button" title="Reload the list of recent runs">Refresh runs</button>
+              <button class="button button-secondary toolbar-button" id="refresh-runs" type="button" title="Reload the list of recent runs">Refresh runs</button>
               <label for="runs-filter">Show</label>
-              <select id="runs-filter" aria-label="Filter recent runs" title="Filter runs by status">
+              <select class="form-control" id="runs-filter" aria-label="Filter recent runs" title="Filter runs by status">
                 <option value="all">All</option>
                 <option value="failed">Failed</option>
                 <option value="completed">Completed</option>
@@ -1508,17 +1476,17 @@ const controllerPage = String.raw`<!doctype html>
             <div class="form-field">
               <label for="repo-url">Task repository URL</label>
               <div class="repo-input-wrapper">
-                <input id="repo-url" name="repoUrl" type="url" required placeholder="https://github.com/org/repo" data-testid="task-repo-url">
+                <input class="form-control" id="repo-url" name="repoUrl" type="url" required placeholder="https://github.com/org/repo" data-testid="task-repo-url">
                 <div id="recent-repos-dropdown" class="recent-repos-dropdown hidden" role="listbox"></div>
               </div>
               <p class="field-error" data-error-for="repoUrl" aria-live="polite"></p>
             </div>
             <div class="form-field">
               <label for="task-prompt">Task details</label>
-              <textarea id="task-prompt" name="taskPrompt" required minlength="10" placeholder="Describe the task for the ephemeral agent."></textarea>
+              <textarea class="form-control" id="task-prompt" name="taskPrompt" required minlength="10" placeholder="Describe the task for the ephemeral agent."></textarea>
               <div id="issue-prompt-preview" class="field-helper" hidden></div>
               <label for="issue-scope" id="issue-scope-label" hidden>Editable issue scope</label>
-              <input id="issue-scope" type="text" placeholder="Optional: narrow the issue scope before validation" hidden />
+              <input class="form-control" id="issue-scope" type="text" placeholder="Optional: narrow the issue scope before validation" hidden />
               <p class="field-error" data-error-for="taskPrompt" aria-live="polite"></p>
             </div>
           </fieldset>
@@ -1526,7 +1494,7 @@ const controllerPage = String.raw`<!doctype html>
             <legend>Options</legend>
             <div class="form-field">
               <label for="task-mode">Task mode</label>
-              <select id="task-mode" name="taskMode">
+              <select class="form-control" id="task-mode" name="taskMode">
                 <option value="patch" selected>Patch</option>
                 <option value="inspect">Inspect</option>
               </select>
@@ -1536,21 +1504,22 @@ const controllerPage = String.raw`<!doctype html>
             <details class="advanced-options">
               <summary>Advanced run controls</summary>
               <div class="form-fields">
-                <div class="form-field"><label for="task-ref">Git ref</label><input id="task-ref" name="ref" value="main" placeholder="main"></div>
-                <div class="form-field"><label for="publish-mode">Publish result</label><select id="publish-mode" name="publishMode"><option value="pr">Pull request</option><option value="branch">Branch only</option><option value="none">Do not publish</option></select></div>
-                <div class="form-field"><label for="timeout-seconds">Run timeout (seconds)</label><input id="timeout-seconds" name="timeoutSeconds" type="number" min="60" max="10800" value="3600"></div>
-                <div class="form-field"><label for="changed-files-allowlist">Changed-file allowlist</label><input id="changed-files-allowlist" name="changedFilesAllowlist" placeholder="README.md, docs/**/*.md"><p class="field-helper">Comma-separated patterns. Leave empty to use controller defaults.</p></div>
-                <div class="form-field"><label for="validation-commands">Validation commands</label><input id="validation-commands" name="validationCommands" placeholder="npm test, npm run check"><p class="field-helper">Comma-separated commands. Leave empty to use controller defaults.</p></div>
+                <div class="form-field"><label for="task-ref">Git ref</label><input class="form-control" id="task-ref" name="ref" value="main" placeholder="main"></div>
+                <div class="form-field"><label for="publish-mode">Publish result</label><select class="form-control" id="publish-mode" name="publishMode"><option value="pr">Pull request</option><option value="branch">Branch only</option><option value="none">Do not publish</option></select></div>
+                <div class="form-field"><label for="timeout-seconds">Run timeout (seconds)</label><input class="form-control" id="timeout-seconds" name="timeoutSeconds" type="number" min="60" max="10800" value="3600"></div>
+                <div class="form-field"><label for="changed-files-allowlist">Changed-file allowlist</label><input class="form-control" id="changed-files-allowlist" name="changedFilesAllowlist" placeholder="README.md, docs/**/*.md"><p class="field-helper">Comma-separated patterns. Leave empty to use controller defaults.</p></div>
+                <div class="form-field"><label for="validation-commands">Validation commands</label><input class="form-control" id="validation-commands" name="validationCommands" placeholder="npm test, npm run check"><p class="field-helper">Comma-separated commands. Leave empty to use controller defaults.</p></div>
               </div>
             </details>
           </fieldset>
           <fieldset>
             <legend>Run actions</legend>
             <div class="action-row run-actions">
-            <button class="button-secondary" id="validate" type="button" title="Check repository and configuration before starting">Validate task <span id="validation-badge" class="validation-badge" style="display: none;">✓</span></button>
-            <button class="button-primary" id="submit" type="submit" disabled title="Please validate task first">Start run</button>
-            <button class="button-danger" id="cancel-run" type="button" title="Stop the currently running task">Cancel run</button>
+            <button class="button button-secondary" id="validate" type="button" title="Check repository and configuration before starting">Validate task <span id="validation-badge" class="validation-badge" style="display: none;">✓</span></button>
+            <button class="button button-primary" id="submit" type="submit" disabled title="Please validate task first">Start run</button>
+            <button class="button button-danger" id="cancel-run" type="button" title="Stop the currently running task">Cancel run</button>
             </div>
+            <div id="task-state" role="status" aria-live="polite"></div>
           </fieldset>
         </form>
         </div>
@@ -1564,8 +1533,8 @@ const controllerPage = String.raw`<!doctype html>
               <label for="issues-repo-url">Issues repository URL</label>
               <div class="issues-repo-input-wrapper">
                 <div class="issues-input-group">
-                  <input id="issues-repo-url" type="text" placeholder="https://github.com/owner/repo or owner/repo" data-testid="issues-repo-url" />
-                  <button class="run" id="load-issues-btn" type="button">Load Issues</button>
+                  <input class="form-control" id="issues-repo-url" type="text" placeholder="https://github.com/owner/repo or owner/repo" data-testid="issues-repo-url" />
+                  <button class="button button-primary" id="load-issues-btn" type="button">Load Issues</button>
                 </div>
                 <div id="issues-recent-repos-dropdown" class="recent-repos-dropdown hidden" role="listbox"></div>
               </div>
@@ -1573,7 +1542,7 @@ const controllerPage = String.raw`<!doctype html>
             </div>
             <div class="form-field">
               <label for="issues-label">Issue label</label>
-              <input id="issues-label" type="text" value="kaseki-agent" placeholder="kaseki-agent" />
+              <input class="form-control" id="issues-label" type="text" value="kaseki-agent" placeholder="kaseki-agent" />
               <p class="field-helper">Leave the default to show Kaseki-labelled work, enter a label to filter, or clear the field to browse all issues.</p>
             </div>
           </form>
@@ -1591,11 +1560,11 @@ const controllerPage = String.raw`<!doctype html>
         <div class="run-links" id="run-links" hidden>
           <strong class="panel-section-label">Run follow-through</strong>
           <div class="link-grid">
-            <button class="secondary toolbar-button-no-wrap" id="full-results-btn" type="button">Full Results</button>
-            <a class="secondary toolbar-button-no-wrap" id="pull-request-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Open Pull Request</a>
-            <button class="secondary toolbar-button-no-wrap" id="evaluation-diagnostics-btn" type="button">Evaluation diagnostics</button>
-            <button class="secondary toolbar-button-no-wrap" id="copy-diagnostic-bundle-btn" type="button">Copy Debug Summary</button>
-            <button class="secondary toolbar-button-no-wrap" id="retry-run-btn" type="button" disabled title="Select a completed or failed run to retry">Retry run</button>
+            <button class="button button-secondary toolbar-button-no-wrap" id="full-results-btn" type="button">Full Results</button>
+            <a class="button button-secondary toolbar-button-no-wrap" id="pull-request-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Open Pull Request</a>
+            <button class="button button-secondary toolbar-button-no-wrap" id="evaluation-diagnostics-btn" type="button">Evaluation diagnostics</button>
+            <button class="button button-secondary toolbar-button-no-wrap" id="copy-diagnostic-bundle-btn" type="button">Copy Debug Summary</button>
+            <button class="button button-secondary toolbar-button-no-wrap" id="retry-run-btn" type="button" disabled title="Select a completed or failed run to retry">Retry run</button>
           </div>
           <div class="recommended-artifacts" id="recommended-artifacts" hidden>
             <span class="summary-label">Key Diagnostics</span>
@@ -1606,7 +1575,7 @@ const controllerPage = String.raw`<!doctype html>
             <pre class="response-log" id="token-timeline-output"></pre>
           </div>
         </div>
-        <div class="response-panel">
+        <div class="response-panel" data-state="empty">
           <p class="response-meta" id="output-meta" aria-live="polite">Status: idle</p>
           <div class="response-summary" id="response-summary" hidden aria-live="polite"></div>
           <details id="raw-response">
@@ -1622,14 +1591,14 @@ const controllerPage = String.raw`<!doctype html>
       <div class="modal-content">
         <div class="modal-header">
           <h3 class="modal-title" id="modal-title-heading">Full Results</h3>
-          <button class="modal-close" id="modal-close-btn" type="button" aria-label="Close">✕</button>
+          <button class="button button-quiet modal-close" id="modal-close-btn" type="button" aria-label="Close">✕</button>
         </div>
         <div class="modal-body">
           <div class="tabs-nav" role="tablist" aria-label="Run results">
-            <button class="tab-btn active" id="modal-tab-status" data-tab="status" type="button" role="tab" aria-selected="true" aria-controls="tab-status">Status</button>
-            <button class="tab-btn" id="modal-tab-events" data-tab="events" type="button" role="tab" aria-selected="false" aria-controls="tab-events">Progress Timeline</button>
-            <button class="tab-btn" id="modal-tab-stdout" data-tab="stdout" type="button" role="tab" aria-selected="false" aria-controls="tab-stdout">Output Log</button>
-            <button class="tab-btn" id="modal-tab-artifacts" data-tab="artifacts" type="button" role="tab" aria-selected="false" aria-controls="tab-artifacts">Artifacts</button>
+            <button class="tab-btn active" id="modal-tab-status" data-tab="status" type="button" role="tab" tabindex="0" aria-selected="true" aria-controls="tab-status">Status</button>
+            <button class="tab-btn" id="modal-tab-events" data-tab="events" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-events">Progress Timeline</button>
+            <button class="tab-btn" id="modal-tab-stdout" data-tab="stdout" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-stdout">Output Log</button>
+            <button class="tab-btn" id="modal-tab-artifacts" data-tab="artifacts" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-artifacts">Artifacts</button>
           </div>
           <div class="modal-tabs-container">
             <div class="tab-content active" id="tab-status" data-tab="status" role="tabpanel" aria-labelledby="modal-tab-status">
@@ -1654,6 +1623,7 @@ const controllerPage = String.raw`<!doctype html>
       const outputMeta = document.querySelector('#output-meta');
       const responseSummary = document.querySelector('#response-summary');
       const state = document.querySelector('#state');
+      const taskState = document.querySelector('#task-state');
       const headerTokenInput = document.querySelector('#header-api-token');
       const runIdInput = document.querySelector('#run-id');
       const runLinks = document.querySelector('#run-links');
@@ -1794,7 +1764,7 @@ const controllerPage = String.raw`<!doctype html>
           textSpan.title = repo;
 
           const deleteBtn = document.createElement('button');
-          deleteBtn.className = 'recent-repo-delete';
+          deleteBtn.className = 'button button-quiet recent-repo-delete';
           deleteBtn.type = 'button';
           deleteBtn.innerHTML = '×';
           deleteBtn.title = 'Delete from recent';
@@ -1871,15 +1841,20 @@ const controllerPage = String.raw`<!doctype html>
         if (!headerStatus) return;
         const statusMap = {
           'idle': 'idle',
+          'ok': 'ok',
+          'queued': 'queued',
           'running': 'running',
-          'queued': 'running',
+          'submitting': 'running',
+          'loading': 'running',
           'completed': 'completed',
           'failed': 'failed',
-          'request ok': 'idle',
+          'blocked': 'failed',
+          'request ok': 'ok',
         };
         const statusClass = statusMap[status] || 'idle';
         headerStatus.className = 'status-indicator ' + statusClass;
         headerStatus.setAttribute('data-status', statusClass);
+        headerStatus.setAttribute('aria-label', (runIdInput.value.trim() ? 'Run' : 'Controller') + ' status: ' + status);
       }
 
       function sanitizeOutput(value) {
@@ -1945,17 +1920,14 @@ const controllerPage = String.raw`<!doctype html>
       function setState(message, kind) {
         state.textContent = message;
         state.className = kind || '';
+        taskState.textContent = message;
+        taskState.className = kind || '';
       }
 
       function setOutputMetadata(status, runId) {
         outputMeta.textContent = 'Status: ' + status + (runId ? ' | Run ID: ' + runId : '');
-        if (runId) {
-          headerStatus.textContent = 'Viewing run: ' + status;
-          updateHeaderStatus(status);
-        } else {
-          headerStatus.textContent = 'Controller: ' + status;
-          updateHeaderStatus(status);
-        }
+        headerStatus.textContent = runId ? 'Run' : 'Controller';
+        updateHeaderStatus(status);
       }
 
       function formatElapsedSeconds(value) {
@@ -2319,6 +2291,11 @@ const controllerPage = String.raw`<!doctype html>
       function setOutputBody(text) {
         output.textContent = text;
         output.classList.toggle('empty', !text);
+        const responsePanel = output.closest('.response-panel');
+        if (responsePanel) {
+          const isEmpty = !text || text === 'No output yet. Run a health check or submit a task to see responses.';
+          responsePanel.dataset.state = isEmpty ? 'empty' : 'populated';
+        }
       }
 
       function requestCompletionMessage(path, method, response, payload) {
@@ -2577,7 +2554,7 @@ const controllerPage = String.raw`<!doctype html>
 
           // Main artifact button
           const button = document.createElement('button');
-          button.className = 'secondary toolbar-button-no-wrap';
+          button.className = 'button button-secondary toolbar-button-no-wrap';
           button.type = 'button';
           button.dataset.artifactFile = fileName;
           button.textContent = fileName;
@@ -2741,7 +2718,7 @@ const controllerPage = String.raw`<!doctype html>
           : 'No recent runs.';
         visibleRuns.forEach((run) => {
           const button = document.createElement('button');
-          button.className = 'secondary toolbar-button';
+          button.className = 'button button-secondary toolbar-button';
           button.type = 'button';
           setRunButtonContent(button, run);
           button.addEventListener('click', () => {
@@ -2923,6 +2900,7 @@ const controllerPage = String.raw`<!doctype html>
         // Health and gateway responses also carry a status field. Only a run
         // status response should replace their purpose-built summary.
         if (!payload || !payload.status || typeof payload.id !== 'string') return;
+        setOutputMetadata(payload.status, payload.id);
         setSummary('run', payload.status, payload.status === 'failed' ? 'bad' : 'ok');
         setRunDetails(payload);
         updateCancelRunButtonState(payload);
@@ -3195,6 +3173,7 @@ const controllerPage = String.raw`<!doctype html>
             const active = b.dataset.tab === tabName;
             b.classList.toggle('active', active);
             b.setAttribute('aria-selected', active ? 'true' : 'false');
+            b.setAttribute('tabindex', active ? '0' : '-1');
           });
           document.querySelectorAll('main .tab-content').forEach(content => {
             const contentTabName = content.id.replace('-tab', '');
@@ -3418,6 +3397,10 @@ const controllerPage = String.raw`<!doctype html>
         modalBackdrop.hidden = true;
         modalTabCache = {};
         modalTitleEl.textContent = 'Full Results';
+        document.querySelector('header').removeAttribute('inert');
+        document.querySelector('header').removeAttribute('aria-hidden');
+        document.querySelector('main').removeAttribute('inert');
+        document.querySelector('main').removeAttribute('aria-hidden');
         if (modalOpener) { modalOpener.focus(); modalOpener = null; }
       }
 
@@ -3431,6 +3414,7 @@ const controllerPage = String.raw`<!doctype html>
           const active = btn.dataset.tab === tabName;
           btn.classList.toggle('active', active);
           btn.setAttribute('aria-selected', active ? 'true' : 'false');
+          btn.setAttribute('tabindex', active ? '0' : '-1');
         });
 
         document.querySelectorAll('.modal-tabs-container .tab-content').forEach(tab => {
@@ -3445,6 +3429,10 @@ const controllerPage = String.raw`<!doctype html>
         modalOpener = document.activeElement;
         const runId = runIdInput.value.trim();
         modalTitleEl.textContent = runId ? 'Full Results — ' + runId : 'Full Results';
+        document.querySelector('header').setAttribute('inert', '');
+        document.querySelector('header').setAttribute('aria-hidden', 'true');
+        document.querySelector('main').setAttribute('inert', '');
+        document.querySelector('main').setAttribute('aria-hidden', 'true');
         fullResultsModal.hidden = false;
         modalBackdrop.hidden = false;
         setModalActiveTab('status');
@@ -3995,10 +3983,51 @@ const controllerPage = String.raw`<!doctype html>
         });
       });
 
-      // Keyboard escape to close modal
+      // Keep both tab sets keyboard-operable and trap focus in the results dialog.
       document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && !fullResultsModal.hidden) {
+        const eventTarget = event.target;
+        const tabButton = eventTarget && eventTarget.closest
+          ? eventTarget.closest('[role="tab"]')
+          : null;
+        if (tabButton && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+          const tablist = tabButton.closest('[role="tablist"]');
+          const tabs = tablist ? [...tablist.querySelectorAll('[role="tab"]')].filter(tab => !tab.disabled) : [];
+          const currentIndex = tabs.indexOf(tabButton);
+          if (currentIndex >= 0 && tabs.length > 0) {
+            const nextIndex = event.key === 'Home'
+              ? 0
+              : event.key === 'End'
+                ? tabs.length - 1
+                : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+            event.preventDefault();
+            tabs[nextIndex].click();
+            tabs[nextIndex].focus();
+          }
+        }
+
+        if (fullResultsModal.hidden) return;
+        if (event.key === 'Escape') {
           closeModal();
+          return;
+        }
+        if (event.key !== 'Tab') return;
+
+        const focusable = [...fullResultsModal.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+          .filter(element => element.tabIndex >= 0 && !element.closest('[hidden], [aria-hidden="true"], [inert]'));
+        if (focusable.length === 0) {
+          event.preventDefault();
+          modalCloseBtn.focus();
+          return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        const activeIndex = focusable.indexOf(document.activeElement);
+        if (event.shiftKey && activeIndex <= 0) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && (activeIndex === -1 || activeIndex === focusable.length - 1)) {
+          event.preventDefault();
+          first.focus();
         }
       });
 
@@ -4227,7 +4256,7 @@ const controllerPage = String.raw`<!doctype html>
           setState('Issues loaded.', 'ok');
           issues.forEach(issue => {
             const item = document.createElement('button');
-            item.className = 'issues-list-item';
+            item.className = 'button button-secondary issues-list-item';
             item.type = 'button';
             
             const numberEl = document.createElement('div');

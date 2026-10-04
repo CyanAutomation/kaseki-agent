@@ -248,6 +248,26 @@ describe('kaseki API web console routes', () => {
     expectAttribute(document, '#submit-tab', 'aria-hidden', 'true');
     expect(document.body.textContent).not.toContain('Task Progress');
   });
+
+  test('uses defined design tokens and canonical shared control variants', async () => {
+    const { body } = await fetchConsole('/');
+    const dom = new JSDOM(body);
+    const document = dom.window.document;
+    const styles = getElement(document, 'style').textContent || '';
+    const declaredTokens = new Set([...styles.matchAll(/(--[\w-]+)\s*:/g)].map((match) => match[1]));
+    const referencedTokens = new Set([...styles.matchAll(/var\((--[\w-]+)/g)].map((match) => match[1]));
+    const undefinedTokens = [...referencedTokens].filter((token) => !declaredTokens.has(token));
+
+    expect(undefinedTokens).toEqual([]);
+    expect(getElement(document, '#submit').classList.contains('button-primary')).toBe(true);
+    expect(getElement(document, '#load-issues-btn').classList.contains('button-primary')).toBe(true);
+    expect(getElement(document, '#validate').classList.contains('button-secondary')).toBe(true);
+    expect(getElement(document, '#cancel-run').classList.contains('button-danger')).toBe(true);
+    expect(getElement(document, '#cancel-run').classList.contains('button')).toBe(true);
+    expect(getElement(document, '#header-api-token').classList.contains('form-control')).toBe(true);
+    expect(getElement(document, '#repo-url').classList.contains('form-control')).toBe(true);
+    expect(getElement(document, '#task-state').getAttribute('role')).toBe('status');
+  });
 });
 
 describe('kaseki API web console behavior', () => {
@@ -801,6 +821,66 @@ describe('kaseki API web console behavior', () => {
     expectAttribute(document, '#tab-artifacts', 'aria-hidden', 'true');
   });
 
+  test('keeps focus inside the results dialog and supports keyboard tab navigation', async () => {
+    const { dom, document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/v1/runs/kaseki-301/status': createJsonResponse({ id: 'kaseki-301', status: 'running' }),
+      }),
+    });
+
+    openFullResults(document, 'kaseki-301');
+    await waitFor(() => expectHidden(document, '#full-results-modal', false));
+    expect(document.querySelector('header')?.hasAttribute('inert')).toBe(true);
+    expect(document.querySelector('main')?.hasAttribute('inert')).toBe(true);
+    expectAttribute(document, 'header', 'aria-hidden', 'true');
+    expectAttribute(document, 'main', 'aria-hidden', 'true');
+
+    const closeButton = getElement<HTMLButtonElement>(document, '#modal-close-btn');
+    const statusTab = getElement<HTMLButtonElement>(document, '#modal-tab-status');
+    closeButton.focus();
+    const shiftTab = new dom.window.KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true });
+    closeButton.dispatchEvent(shiftTab);
+    expect(shiftTab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(statusTab);
+
+    const nextTab = new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true });
+    statusTab.dispatchEvent(nextTab);
+    expect(nextTab.defaultPrevented).toBe(true);
+    expect(document.activeElement?.id).toBe('modal-tab-events');
+    expectAttribute(document, '#modal-tab-events', 'aria-selected', 'true');
+    expectAttribute(document, '#modal-tab-events', 'tabindex', '0');
+    expectAttribute(document, '#modal-tab-status', 'tabindex', '-1');
+
+    const tabOut = new dom.window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+    document.activeElement?.dispatchEvent(tabOut);
+    expect(tabOut.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(closeButton);
+
+    click(closeButton);
+    expect(document.querySelector('header')?.hasAttribute('inert')).toBe(false);
+    expect(document.querySelector('main')?.hasAttribute('inert')).toBe(false);
+    expect(document.querySelector('header')?.hasAttribute('aria-hidden')).toBe(false);
+    expect(document.querySelector('main')?.hasAttribute('aria-hidden')).toBe(false);
+  });
+
+  test('supports arrow key navigation and roving focus across console tabs', async () => {
+    const { dom, document } = await renderConsole();
+    const healthTab = getElement<HTMLButtonElement>(document, '.tab-button[data-tab="health"]');
+    healthTab.focus();
+
+    const nextTab = new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true });
+    healthTab.dispatchEvent(nextTab);
+
+    const issuesTab = getElement<HTMLButtonElement>(document, '.tab-button[data-tab="issues"]');
+    expect(nextTab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(issuesTab);
+    expectAttribute(document, '.tab-button[data-tab="issues"]', 'tabindex', '0');
+    expectAttribute(document, '.tab-button[data-tab="health"]', 'tabindex', '-1');
+    expectHidden(document, '#issues-tab', false);
+    expectHidden(document, '#health-tab', true);
+  });
+
   test('leads failed status results with an actionable compact summary', async () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
@@ -995,6 +1075,36 @@ describe('kaseki API web console behavior', () => {
     expect(submitCall).toBeDefined();
     const submitBody = JSON.parse(String(submitCall?.init?.body || '{}')) as { idempotencyKey?: string };
     expect(submitBody.idempotencyKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  });
+
+  test('updates the visible status when the first run poll is already terminal', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path, init) => {
+        if (path === '/api/v1/validate') return createJsonResponse({ isValid: true, checks: [] });
+        if (path === '/api/v1/runs' && init?.method === 'POST') {
+          return createJsonResponse({ id: 'kaseki-981', status: 'queued' }, 202);
+        }
+        if (path === '/api/v1/runs/kaseki-981/status') {
+          return createJsonResponse({ id: 'kaseki-981', status: 'completed', taskProgressPercent: 100 });
+        }
+        if (path === '/api/v1/runs/kaseki-981/artifacts') return createJsonResponse({ artifacts: [], recommended: [] });
+        return createJsonResponse({ runs: [] });
+      },
+    });
+
+    inputSelector(document, '#repo-url', 'https://github.com/CyanAutomation/kaseki-agent');
+    inputSelector(document, '#task-prompt', 'Make a small, validated UI improvement.');
+    clickSelector(document, '#validate');
+    await waitFor(() => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
+    clickSelector(document, '#submit');
+
+    await waitFor(() => expectTextContains(document, '[data-summary="run"]', 'completed'));
+    expectText(document, '#output-meta', 'Status: completed | Run ID: kaseki-981');
+    expect(getElement(document, '#header-status').classList.contains('completed')).toBe(true);
+    expectText(document, '#header-status', 'Run');
+    expectText(document, '#task-state', 'Run submitted.');
+    expectAttribute(document, '.response-panel', 'data-state', 'populated');
   });
 
   test('renders stdout modal content from structured log responses', async () => {
