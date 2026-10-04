@@ -162,6 +162,25 @@ describe('gateway-test-routes', () => {
       expect(kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2).toHaveBeenCalled();
     });
 
+    it('returns gateway inference recovery guidance for stage-2-only failures', async () => {
+      (kasekiGatewaySmoke.testGatewayResponseSmoke_Stage2 as jest.Mock).mockResolvedValueOnce({
+        status: 'error',
+        detail: 'Gateway Responses API smoke test returned HTTP 401: Unauthorized',
+        responseTime: 100,
+        authenticationValidated: false,
+        httpStatus: 401,
+        remediation: 'The gateway rejected LLM_GATEWAY_API_KEY; it may be expired.',
+      });
+
+      const response = await fetch(`${baseUrl}/gateway-test?inference=true&stage=2`);
+      const body = await response.json() as any;
+
+      expect(response.status).toBe(503);
+      expect(body.httpStatus).toBe(401);
+      expect(body.authenticationValidated).toBe(false);
+      expect(body.remediation).toContain('expired');
+    });
+
     it('uses the stage-based evaluation query parameter for the optional evaluation check', async () => {
       (kasekiGatewaySmoke.shouldRunClassificationSmoke as jest.Mock).mockReturnValue(true);
       const response = await fetch(`${baseUrl}/gateway-test?inference=true&stage=2&evaluation=true`);
@@ -218,6 +237,9 @@ describe('gateway-test-routes', () => {
         status: 'error',
         detail: 'Model inference failed',
         responseTime: 3000,
+        authenticationValidated: false,
+        httpStatus: 401,
+        remediation: 'Replace the expired LLM Gateway API key.',
       });
 
       const response = await fetch(`${baseUrl}/gateway-test?inference=true`);
@@ -227,6 +249,12 @@ describe('gateway-test-routes', () => {
       // Handler keeps body.status='ok' when stage1 passes, but returns 503 HTTP status
       // responseSmokeValidated is false since stage2 failed
       expect(body.responseSmokeValidated).toBe(false);
+      expect(body.responseSmokeFailure).toMatchObject({
+        detail: 'Model inference failed',
+        httpStatus: 401,
+        authenticationValidated: false,
+        remediation: 'Replace the expired LLM Gateway API key.',
+      });
     });
 
     it('should include pi provider results when ?inference=true&piProvider=true', async () => {

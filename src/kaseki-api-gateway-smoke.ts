@@ -26,7 +26,7 @@ import {
 } from './gateway-validation/gateway-response-smoke-checks';
 import { resolveOpenRouterApiKey } from './gateway-detection/resolve-openrouter-api-key';
 import { validateClassificationConfidence } from './utils/classification-validation';
-import { classifyWithJev } from './jev-classifier';
+import { classifyWithJev, JevClassificationError } from './jev-classifier';
 import type { QuestionDefinition } from './types/openrouter-decisions';
 
 /**
@@ -393,7 +393,7 @@ function stage1HttpErrorResult(options: {
 
 function stage1HttpRemediation(status: number, authError: boolean, invalidPathError: boolean): string {
   if (authError) {
-    return 'Authentication failed. Check that LLM_GATEWAY_API_KEY is valid, or that the llm_gateway_api_key file in the configured Kaseki secrets directory contains the expected token';
+    return `The gateway rejected LLM_GATEWAY_API_KEY (HTTP ${status}). The key may be invalid, expired, revoked, or missing access. Replace the key in LLM_GATEWAY_API_KEY or the llm_gateway_api_key file in the configured Kaseki secrets directory, then retry.`;
   }
   if (invalidPathError) {
     return 'Gateway request path is invalid. For Cloudflare /compat gateways, preserve the scoped /v1/{account_id}/{gateway_id}/compat path and do not reduce it to /v1/models.';
@@ -1076,6 +1076,50 @@ export function shouldRunClassificationSmoke(requested: boolean): boolean {
   return requested === true;
 }
 
+function classificationFailure(error: unknown): Pick<ClassificationSmokeTestResult, 'detail' | 'remediation' | 'httpStatus'> {
+  if (!(error instanceof JevClassificationError)) {
+    return {
+      detail: `Evaluation endpoint error: ${error instanceof Error ? error.message : String(error)}`,
+      remediation: 'Check the OpenRouter decision endpoint and controller logs, then retry the Evaluation stage check.',
+    };
+  }
+
+  if (error.code === 'credentials') {
+    return {
+      detail: 'Evaluation endpoint check could not run because OPENROUTER_API_KEY is not configured.',
+      remediation: 'Set OPENROUTER_API_KEY or OPENROUTER_API_KEY_FILE to a readable OpenRouter key, then rerun the Evaluation stage check.',
+    };
+  }
+
+  if (error.code === 'http' && (error.status === 401 || error.status === 403)) {
+    return {
+      detail: `OpenRouter rejected the evaluation API key (HTTP ${error.status}); it may be invalid, expired, revoked, or missing access to the decisions endpoint.`,
+      remediation: 'Replace the key configured by OPENROUTER_API_KEY or OPENROUTER_API_KEY_FILE with a valid OpenRouter key that can access the decisions endpoint, then rerun the Evaluation stage check.',
+      httpStatus: error.status,
+    };
+  }
+
+  if (error.code === 'network') {
+    return {
+      detail: error.message,
+      remediation: 'Check DNS, outbound HTTPS access, firewall or proxy rules, and OpenRouter endpoint availability, then retry the Evaluation stage check.',
+    };
+  }
+
+  if (error.code === 'timeout') {
+    return {
+      detail: error.message,
+      remediation: 'Check outbound HTTPS access, proxy timeouts, and OpenRouter endpoint availability, then retry the Evaluation stage check.',
+    };
+  }
+
+  return {
+    detail: `Evaluation endpoint error: ${error.message}`,
+    remediation: 'Check OPENROUTER_API_KEY or OPENROUTER_API_KEY_FILE, the OpenRouter decision endpoint, and controller network access.',
+    ...(error.status !== undefined ? { httpStatus: error.status } : {}),
+  };
+}
+
 /**
  * Test OpenRouter classification model using the decisions API endpoint
  * @param requested Whether classification smoke was explicitly requested
@@ -1140,12 +1184,12 @@ export async function testClassificationSmoke(requested: boolean = false): Promi
     };
   } catch (error) {
     const responseTime = Math.round(performance.now() - startTime);
+    const failure = classificationFailure(error);
     return {
       status: 'error',
-      detail: `Evaluation endpoint error: ${error instanceof Error ? error.message : String(error)}`,
+      ...failure,
       responseTime,
       timestamp,
-      remediation: 'The optional evaluation smoke uses the separate OpenRouter decision API. Check OPENROUTER_API_KEY or OPENROUTER_API_KEY_FILE, network connectivity, and evaluator endpoint health; this result does not diagnose LLM_GATEWAY_URL.',
     };
   }
 }
