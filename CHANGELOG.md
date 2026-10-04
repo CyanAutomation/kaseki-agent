@@ -4,6 +4,16 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.148.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.148.0...v1.148.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* explain external API failure causes ([9070097](https://github.com/CyanAutomation/kaseki-agent/commit/9070097bccb644d183607bbd876b52d92af2e6aa))
+* explain external API failure causes ([#1491](https://github.com/CyanAutomation/kaseki-agent/issues/1491)) ([d426e2a](https://github.com/CyanAutomation/kaseki-agent/commit/d426e2a27f8fcc0901f703509ec934b9316159d2))
+* preserve evaluation network diagnostics contract ([73a901a](https://github.com/CyanAutomation/kaseki-agent/commit/73a901a7842992b1e1c5849bd4cfbb1c94dbb475))
+* **ui:** standardize console design components ([#1490](https://github.com/CyanAutomation/kaseki-agent/issues/1490)) ([170ba72](https://github.com/CyanAutomation/kaseki-agent/commit/170ba72e2b0c740f74b39a2a59261b9d116712d9))
+
 # [1.148.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.147.2...v1.148.0) (2026-10-03)
 
 
