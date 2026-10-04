@@ -31,6 +31,19 @@ describe('github-issues-routes', () => {
     jest.clearAllMocks();
   });
 
+  async function postValidIssuesRequest(): Promise<Response> {
+    const app = express();
+    app.use(express.json());
+    app.use(createGitHubIssuesRoutes());
+    const started = await listen(app);
+    server = started.server;
+    return fetch(`${started.url}/github-issues`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repoUrl: 'CyanAutomation/tako-bako' }),
+    });
+  }
+
   it('returns the documented issue envelope', async () => {
     (githubUtils.parseGitHubUrl as jest.Mock).mockReturnValue({ isValid: true, owner: 'CyanAutomation', repo: 'tako-bako' });
     (githubUtils.generateGitHubAppToken as jest.Mock).mockResolvedValue({ token: 'installation-token' });
@@ -90,6 +103,45 @@ describe('github-issues-routes', () => {
       'CyanAutomation', 'tako-bako', 'installation-token',
       expect.objectContaining({ labels: ['documentation'] }),
     );
+  });
+
+  it('explains how to configure missing GitHub App credentials', async () => {
+    (githubUtils.parseGitHubUrl as jest.Mock).mockReturnValue({ isValid: true, owner: 'CyanAutomation', repo: 'tako-bako' });
+    (githubUtils.generateGitHubAppToken as jest.Mock).mockResolvedValue({ error: 'GitHub App ID not found' });
+
+    const response = await postValidIssuesRequest();
+    const body = await response.json() as any;
+
+    expect(response.status).toBe(503);
+    expect(body.title).toBe('GitHub App is not configured');
+    expect(body.detail).toMatch(/GITHUB_APP_ID_FILE.*GITHUB_APP_PRIVATE_KEY_FILE/);
+    expect(githubUtils.fetchGitHubIssues).not.toHaveBeenCalled();
+  });
+
+  it('explains how to recover when GitHub rejects its installation token', async () => {
+    (githubUtils.parseGitHubUrl as jest.Mock).mockReturnValue({ isValid: true, owner: 'CyanAutomation', repo: 'tako-bako' });
+    (githubUtils.generateGitHubAppToken as jest.Mock).mockResolvedValue({ token: 'installation-token' });
+    (githubUtils.fetchGitHubIssues as jest.Mock).mockRejectedValue(new Error('GitHub API error: 401'));
+
+    const response = await postValidIssuesRequest();
+    const body = await response.json() as any;
+
+    expect(response.status).toBe(502);
+    expect(body.title).toBe('GitHub authentication failed');
+    expect(body.detail).toMatch(/App ID and private key.*installed on this repository.*mint a fresh token/i);
+  });
+
+  it('reports GitHub API connectivity failures with network recovery steps', async () => {
+    (githubUtils.parseGitHubUrl as jest.Mock).mockReturnValue({ isValid: true, owner: 'CyanAutomation', repo: 'tako-bako' });
+    (githubUtils.generateGitHubAppToken as jest.Mock).mockResolvedValue({ token: 'installation-token' });
+    (githubUtils.fetchGitHubIssues as jest.Mock).mockRejectedValue(new Error('getaddrinfo ENOTFOUND api.github.com'));
+
+    const response = await postValidIssuesRequest();
+    const body = await response.json() as any;
+
+    expect(response.status).toBe(503);
+    expect(body.title).toBe('GitHub API unavailable');
+    expect(body.detail).toMatch(/DNS.*outbound HTTPS.*firewall/i);
   });
 
   it('allows callers to explicitly request issues with every label', async () => {

@@ -2,15 +2,23 @@ import { classifyWithJev, answerConfidence, answerIsTrue, DEFAULT_JEV_MODEL, JEV
 
 describe('JEV classifier client', () => {
   const originalKey = process.env.OPENROUTER_API_KEY;
+  const originalKeyFile = process.env.OPENROUTER_API_KEY_FILE;
+  const originalDecisionKeyFile = process.env.KASEKI_DECISION_API_KEY_FILE;
   const originalRetiredWorkflowSetting = process.env.KASEKI_JEV_WORKFLOW;
 
   beforeEach(() => {
     process.env.OPENROUTER_API_KEY = 'sk-test-key';
+    delete process.env.OPENROUTER_API_KEY_FILE;
+    delete process.env.KASEKI_DECISION_API_KEY_FILE;
   });
 
   afterEach(() => {
     if (originalKey === undefined) delete process.env.OPENROUTER_API_KEY;
     else process.env.OPENROUTER_API_KEY = originalKey;
+    if (originalKeyFile === undefined) delete process.env.OPENROUTER_API_KEY_FILE;
+    else process.env.OPENROUTER_API_KEY_FILE = originalKeyFile;
+    if (originalDecisionKeyFile === undefined) delete process.env.KASEKI_DECISION_API_KEY_FILE;
+    else process.env.KASEKI_DECISION_API_KEY_FILE = originalDecisionKeyFile;
     if (originalRetiredWorkflowSetting === undefined) delete process.env.KASEKI_JEV_WORKFLOW;
     else process.env.KASEKI_JEV_WORKFLOW = originalRetiredWorkflowSetting;
   });
@@ -81,6 +89,25 @@ describe('JEV classifier client', () => {
 
     const failed = jest.fn().mockResolvedValue(new Response('busy', { status: 503 }));
     await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, { fetchImpl: failed, maxRetries: 0 })).rejects.toMatchObject({ code: 'http', status: 503 });
+  });
+
+  it('explains when OpenRouter rejects an invalid or expired evaluation key', async () => {
+    const unauthorized = jest.fn().mockResolvedValue(new Response('Unauthorized', { status: 401 }));
+
+    await expect(classifyWithJev('state', {}, { fetchImpl: unauthorized, maxRetries: 0 })).rejects.toMatchObject({
+      code: 'http',
+      status: 401,
+      message: expect.stringMatching(/invalid, expired, revoked/i),
+    });
+  });
+
+  it('explains when the OpenRouter decision endpoint cannot be reached', async () => {
+    const disconnected = jest.fn().mockRejectedValue(new TypeError('fetch failed'));
+
+    await expect(classifyWithJev('state', {}, { fetchImpl: disconnected, maxRetries: 0 })).rejects.toMatchObject({
+      code: 'network',
+      message: expect.stringContaining('Could not reach the OpenRouter decision endpoint'),
+    });
   });
 
   it('reports the number of provider attempts when malformed responses exhaust retries', async () => {

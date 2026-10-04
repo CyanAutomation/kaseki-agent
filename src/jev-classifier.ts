@@ -21,9 +21,12 @@ function wait(ms: number): Promise<void> { return new Promise((resolve) => setTi
 function normalizeClassificationError(error: unknown, timeout: number): JevClassificationError {
   if (error instanceof JevClassificationError) return error;
   if (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError') {
-    return new JevClassificationError('timeout', `evaluation request timed out after ${timeout}ms`);
+    return new JevClassificationError('timeout', `OpenRouter decision endpoint request timed out after ${timeout}ms`);
   }
-  return new JevClassificationError('network', error instanceof Error ? error.message : String(error));
+  return new JevClassificationError(
+    'network',
+    `Could not reach the OpenRouter decision endpoint: ${error instanceof Error ? error.message : String(error)}`,
+  );
 }
 
 async function requestClassificationAttempt(
@@ -43,7 +46,12 @@ async function requestClassificationAttempt(
       body: JSON.stringify(request),
       signal: controller.signal,
     });
-    if (!response.ok) throw new JevClassificationError('http', `evaluation request returned HTTP ${response.status}`, response.status);
+    if (!response.ok) {
+      const message = response.status === 401 || response.status === 403
+        ? `OpenRouter rejected the evaluation API key (HTTP ${response.status}); it may be invalid, expired, revoked, or missing access to the decisions endpoint.`
+        : `OpenRouter decision endpoint returned HTTP ${response.status}`;
+      throw new JevClassificationError('http', message, response.status);
+    }
     const parsed = parseResponse(await response.json(), request.questions, DEFAULT_JEV_MODEL);
     if (!parsed) throw new JevClassificationError('invalid_response', 'evaluation response did not match the requested typed answer format');
     parsed.responseTime = Math.round(performance.now() - started);

@@ -42,6 +42,50 @@ const FetchIssuesRequestSchema = z.object({
   state: z.enum(['open', 'closed', 'all']).optional(),
 }).strict().refine((body) => Boolean(body.repoUrl || body.repo), 'repoUrl or repo is required');
 
+function classifyGitHubDependencyFailure(message: string): { status: number; title: string; detail: string } {
+  const normalized = message.toLowerCase();
+  if (/enotfound|eai_again|econnrefused|econnreset|etimedout|timed out|socket hang up|fetch failed/.test(normalized)) {
+    return {
+      status: 503,
+      title: 'GitHub API unavailable',
+      detail: 'Kaseki could not reach GitHub. Check DNS, outbound HTTPS access, firewall or proxy rules, then retry.',
+    };
+  }
+  if (/401|bad credentials|unauthorized/.test(normalized)) {
+    return {
+      status: 502,
+      title: 'GitHub authentication failed',
+      detail: 'GitHub rejected the GitHub App credentials or installation token. Check that the App ID and private key are current, the app is installed on this repository, and then retry to mint a fresh token.',
+    };
+  }
+  if (/403|forbidden/.test(normalized)) {
+    return {
+      status: 502,
+      title: 'GitHub access denied',
+      detail: 'GitHub denied access to this repository. Confirm the GitHub App is installed and has permission to read Issues; if the request was rate limited, wait before retrying.',
+    };
+  }
+  if (/404/.test(normalized)) {
+    return {
+      status: 404,
+      title: 'Repository unavailable',
+      detail: 'GitHub could not find this repository or the GitHub App cannot access it. Check the repository URL and app installation.',
+    };
+  }
+  if (/not found|not configured|invalid key|private key/.test(normalized)) {
+    return {
+      status: 503,
+      title: 'GitHub App is not configured',
+      detail: 'GitHub App credentials are missing or invalid. Configure readable GITHUB_APP_ID_FILE and GITHUB_APP_PRIVATE_KEY_FILE secrets, then retry.',
+    };
+  }
+  return {
+    status: 502,
+    title: 'GitHub API request failed',
+    detail: 'Kaseki could not complete the request to GitHub. Check GitHub API availability and the App installation, then retry.',
+  };
+}
+
 /**
  * POST /api/v1/github-issues
  * Fetch GitHub issues from a repository with optional filtering
@@ -119,11 +163,12 @@ export function createGitHubIssuesRoutes(): Router {
 
       if (!tokenResult.token || tokenResult.error) {
         logger.error(`GitHub App token generation failed: ${tokenResult.error}`);
+        const failure = classifyGitHubDependencyFailure(tokenResult.error || 'GitHub App token was not returned');
         return sendErrorResponse(
           res,
-          401,
-          'Unauthorized',
-          `GitHub App authentication failed: ${tokenResult.error}`
+          failure.status,
+          failure.title,
+          failure.detail,
         );
       }
 
@@ -160,30 +205,8 @@ export function createGitHubIssuesRoutes(): Router {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error(`GitHub issues request failed: ${errorMessage}`);
 
-      if (errorMessage.includes('404')) {
-        return sendErrorResponse(
-          res,
-          404,
-          'Not Found',
-          'Repository not found'
-        );
-      }
-
-      if (errorMessage.includes('401')) {
-        return sendErrorResponse(
-          res,
-          401,
-          'Unauthorized',
-          'GitHub API authentication failed'
-        );
-      }
-
-      return sendErrorResponse(
-        res,
-        500,
-        'Internal Server Error',
-        'Failed to fetch GitHub issues'
-      );
+      const failure = classifyGitHubDependencyFailure(errorMessage);
+      return sendErrorResponse(res, failure.status, failure.title, failure.detail);
     }
   });
 
