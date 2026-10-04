@@ -1101,8 +1101,8 @@ function classificationFailure(error: unknown): Pick<ClassificationSmokeTestResu
 
   if (error.code === 'network') {
     return {
-      detail: error.message,
-      remediation: 'Check DNS, outbound HTTPS access, firewall or proxy rules, and OpenRouter endpoint availability, then retry the Evaluation stage check.',
+      detail: `Evaluation endpoint error: ${error.message}`,
+      remediation: 'The optional evaluation smoke uses the separate OpenRouter decision API and does not diagnose LLM_GATEWAY_URL. Check DNS, outbound HTTPS access, firewall or proxy rules, and OpenRouter endpoint availability, then retry the Evaluation stage check.',
     };
   }
 
