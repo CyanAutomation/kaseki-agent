@@ -121,6 +121,20 @@ function addStageTwoFields(response: any, stage2Result: any): void {
     largePromptSmokeValidated: stage2Result.largePromptSmokeValidated,
     checks: stage2Result.checks,
   });
+  if (stage2Result.status === 'error') {
+    response.responseSmokeFailure = stage2FailureDetails(stage2Result);
+  }
+}
+
+function stage2FailureDetails(stage2Result: any): Record<string, unknown> {
+  return {
+    detail: stage2Result.detail,
+    ...(stage2Result.remediation ? { remediation: stage2Result.remediation } : {}),
+    ...(typeof stage2Result.httpStatus === 'number' ? { httpStatus: stage2Result.httpStatus } : {}),
+    ...(typeof stage2Result.authenticationValidated === 'boolean'
+      ? { authenticationValidated: stage2Result.authenticationValidated }
+      : {}),
+  };
 }
 
 function addPiProviderFields(response: any, stage2Result: any, piProviderResult: any, state: DualStageState): void {
@@ -213,6 +227,9 @@ function addStage2ResponseFields(result: any, stage2Result: any): void {
     result.largePromptSmokeValidated = stage2Result.largePromptSmokeValidated;
   }
   if (stage2Result?.checks) result.checks = stage2Result.checks;
+  if (stage2Result?.status === 'error') {
+    Object.assign(result, stage2FailureDetails(stage2Result));
+  }
 }
 
 function addStage2ProviderFields(

@@ -93,15 +93,21 @@ export async function testGatewayResponseSmokeFull(
     } catch (error) {
       const responseTime = performance.now() - startTime;
       const detail = error instanceof Error ? error.message : String(error);
+      const authenticationRejected = /HTTP (401|403)/i.test(detail);
+      const networkFailure = /fetch|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|ETIMEDOUT|socket hang up/i.test(detail);
       return {
         status: 'error',
         detail,
         gatewayUrl,
         responseTime,
         timestamp,
-        authenticationValidated: !/HTTP (401|403)/.test(detail),
+        authenticationValidated: false,
         responseSmokeValidated: false,
-        remediation: 'Verify the Cloudflare token, model route, and /compat Chat Completions endpoint.',
+        remediation: authenticationRejected
+          ? 'Cloudflare rejected the gateway credential. It may be invalid, expired, or revoked; replace it and confirm it has access to the configured model route.'
+          : networkFailure
+            ? 'Could not reach the Cloudflare /compat endpoint. Check DNS, outbound HTTPS, firewall or proxy rules, and gateway availability.'
+            : 'Verify the Cloudflare gateway credential, model route, and /compat Chat Completions endpoint.',
         checks: [{ name: 'cloudflare-compat-note', status: 'error', detail, responseTime }],
       };
     }
@@ -227,7 +233,7 @@ async function runGatewayResponseJsonCheck(
           responseSmokeValidated: false,
           httpStatus: response.status,
           remediation: authError
-            ? 'Authentication failed for the Responses API smoke test. Check that LLM_GATEWAY_API_KEY is valid for response generation.'
+            ? 'The gateway rejected LLM_GATEWAY_API_KEY for Responses API generation. The key may be invalid, expired, or revoked; replace it and confirm response-generation access.'
             : 'Gateway /responses path is unhealthy or incompatible. Verify the gateway supports OpenAI Responses API requests with the resolved gateway model (default dynamic/kaseki-agent).',
         },
         check: { name: checkName, status: 'error', detail: `HTTP ${response.status}`, responseTime },
@@ -298,16 +304,24 @@ async function runGatewayResponseJsonCheck(
   } catch (error) {
     const responseTime = Math.round(performance.now() - startTime);
     const errorMessage = error instanceof Error ? error.message : String(error);
+    const networkFailure = /fetch|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|ETIMEDOUT|socket hang up/i.test(errorMessage);
+    const timeoutFailure = /timeout|timed out|abort/i.test(errorMessage);
     return {
       result: {
         status: 'error',
-        detail: `Gateway ${checkName} smoke test failed: ${errorMessage}`,
+        detail: networkFailure
+          ? `Could not reach the gateway ${checkName} endpoint: ${errorMessage}`
+          : `Gateway ${checkName} smoke test failed: ${errorMessage}`,
         gatewayUrl,
         responseTime,
         timestamp,
         authenticationValidated: false,
         responseSmokeValidated: false,
-        remediation: 'Cannot complete a Responses API request with the resolved gateway model. Check gateway health, routing, and network access.',
+        remediation: networkFailure
+          ? 'Check gateway DNS, outbound HTTPS access, firewall or proxy rules, and endpoint availability, then retry the inference check.'
+          : timeoutFailure
+            ? 'The gateway Responses API request timed out. Check gateway health, upstream latency, and proxy timeouts, then retry.'
+            : 'Cannot complete a Responses API request with the resolved gateway model. Check gateway health and routing, then retry.',
       },
       check: { name: checkName, status: 'error', detail: errorMessage, responseTime },
     };
@@ -362,7 +376,7 @@ async function runGatewayResponseStreamCheck(
           streamSmokeValidated: false,
           httpStatus: response.status,
           remediation: authError
-            ? 'Authentication failed for the streaming Responses API smoke test. Check that LLM_GATEWAY_API_KEY is valid for response generation.'
+            ? 'The gateway rejected LLM_GATEWAY_API_KEY for streaming Responses API generation. The key may be invalid, expired, or revoked; replace it and confirm response-generation access.'
             : 'Gateway streaming /responses path is unhealthy or incompatible. Verify it emits OpenAI Responses SSE events for stream=true.',
         },
         check: { name: 'streaming-response', status: 'error', detail: `HTTP ${response.status}`, responseTime },
@@ -427,17 +441,25 @@ async function runGatewayResponseStreamCheck(
   } catch (error) {
     const responseTime = Math.round(performance.now() - startTime);
     const errorMessage = error instanceof Error ? error.message : String(error);
+    const networkFailure = /fetch|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|ETIMEDOUT|socket hang up/i.test(errorMessage);
+    const timeoutFailure = /timeout|timed out|abort/i.test(errorMessage);
     return {
       result: {
         status: 'error',
-        detail: `Gateway streaming smoke test failed: ${errorMessage}`,
+        detail: networkFailure
+          ? `Could not reach the gateway streaming endpoint: ${errorMessage}`
+          : `Gateway streaming smoke test failed: ${errorMessage}`,
         gatewayUrl,
         responseTime,
         timestamp,
         authenticationValidated: false,
         responseSmokeValidated: false,
         streamSmokeValidated: false,
-        remediation: 'Cannot complete a stream=true Responses API request with the resolved gateway model. Check gateway health, routing, and SSE adapter behavior.',
+        remediation: networkFailure
+          ? 'Check gateway DNS, outbound HTTPS access, firewall or proxy rules, and endpoint availability, then retry the streaming inference check.'
+          : timeoutFailure
+            ? 'The gateway streaming request timed out. Check gateway health, upstream latency, and proxy timeouts, then retry.'
+            : 'Cannot complete a stream=true Responses API request with the resolved gateway model. Check gateway health and SSE adapter behavior, then retry.',
       },
       check: { name: 'streaming-response', status: 'error', detail: errorMessage, responseTime },
     };
