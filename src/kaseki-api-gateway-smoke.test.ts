@@ -12,6 +12,7 @@ import {
   detectGatewayTestEnvironment,
   testGatewayConnectivity_Stage1,
   testGatewayResponseSmoke_Stage2,
+  testClassificationSmoke,
   shouldRunPiProviderSmoke,
   GatewayTestResult,
   isCloudflareGateway,
@@ -319,6 +320,7 @@ describe('LLM Gateway Test', () => {
       expect(result.remediation).toBeDefined();
       expect(result.remediation).toContain('LLM_GATEWAY_API_KEY');
       expect(result.remediation).toContain('llm_gateway_api_key');
+      expect(result.remediation).toContain('expired');
     });
 
     it('should return error with 403 when forbidden', async () => {
@@ -351,6 +353,7 @@ describe('LLM Gateway Test', () => {
       expect(result.errorKind).toBe('network');
       expect(result.attempts).toBe(2);
       expect(result.retryDelayMs).toBe(250);
+      expect(result.remediation).toContain('Cannot reach the gateway endpoint');
       expect(mockFetch).toHaveBeenCalledTimes(2);
       expect(result.responseTime).toBeGreaterThanOrEqual(0);
     });
@@ -1076,6 +1079,22 @@ describe('LLM Gateway Test', () => {
 
         expect(result.status).toBe('error');
         expect(result.authenticationValidated).toBe(false);
+        expect(result.remediation).toMatch(/invalid, expired, or revoked/i);
+      });
+
+      it('should explain how to recover when the inference endpoint becomes unreachable', async () => {
+        mockFetch.mockRejectedValueOnce(new TypeError('getaddrinfo ENOTFOUND gateway.example'));
+
+        const result = await testGatewayResponseSmoke_Stage2(
+          'https://llmgateway.local.xyz/v1',
+          'test-key',
+          new Date().toISOString(),
+          performance.now(),
+        );
+
+        expect(result.status).toBe('error');
+        expect(result.detail).toContain('Could not reach the gateway json-response endpoint');
+        expect(result.remediation).toMatch(/DNS.*outbound HTTPS.*firewall/i);
       });
 
       it('should return error on timeout', async () => {
@@ -1561,6 +1580,44 @@ describe('LLM Gateway Test', () => {
     });
 
     describe('testClassificationSmoke', () => {
+      it('skips the optional evaluation check with actionable guidance when its API key is missing', async () => {
+        delete process.env.OPENROUTER_API_KEY;
+        delete process.env.OPENROUTER_API_KEY_FILE;
+        delete process.env.KASEKI_DECISION_API_KEY_FILE;
+
+        const result = await testClassificationSmoke(true);
+
+        expect(result.status).toBe('skipped');
+        expect(result.detail).toContain('OPENROUTER_API_KEY not configured');
+        expect(result.remediation).toContain('OPENROUTER_API_KEY_FILE');
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      it('explains that an HTTP 401 may mean the evaluation API key expired or was revoked', async () => {
+        process.env.OPENROUTER_API_KEY = 'sk-test-evaluator-key';
+        mockFetch.mockResolvedValueOnce({ ok: false, status: 401, text: async () => 'Unauthorized' });
+
+        const result = await testClassificationSmoke(true);
+
+        expect(result.status).toBe('error');
+        expect(result.httpStatus).toBe(401);
+        expect(result.detail).toMatch(/invalid, expired, revoked/i);
+        expect(result.remediation).toContain('Replace the key');
+        expect(JSON.stringify(result)).not.toContain('sk-test-evaluator-key');
+      });
+
+      it('explains how to recover when the evaluation endpoint cannot be reached', async () => {
+        process.env.OPENROUTER_API_KEY = 'sk-test-evaluator-key';
+        mockFetch.mockRejectedValue(new TypeError('fetch failed'));
+
+        const result = await testClassificationSmoke(true);
+
+        expect(result.status).toBe('error');
+        expect(result.detail).toContain('Could not reach the OpenRouter decision endpoint');
+        expect(result.remediation).toMatch(/DNS.*outbound HTTPS.*firewall/i);
+        expect(mockFetch).toHaveBeenCalledTimes(3);
+      });
+
       it('should return ClassificationSmokeTestResult on successful probe', async () => {
         process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-123';
         process.env.CLOUDFLARE_API_TOKEN = 'test-token-xyz';
