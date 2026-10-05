@@ -33,9 +33,18 @@ grep -q '"image_cache_absent"' "$ROOT_DIR/kaseki-agent.sh"
 grep -q '"image_cache_key_mismatch"' "$ROOT_DIR/kaseki-agent.sh"
 grep -q 'build-essential' "$ROOT_DIR/Dockerfile"
 grep -q 'golang-go' "$ROOT_DIR/Dockerfile"
+runtime_stage_packages="$(awk '/^FROM base AS runtime$/{in_runtime=1} in_runtime && /^FROM / && $0 != "FROM base AS runtime"{exit} in_runtime{print}' "$ROOT_DIR/Dockerfile")"
 final_stage_packages="$(awk '/^FROM base AS final$/{in_final=1} in_final && /^FROM / && $0 != "FROM base AS final"{exit} in_final{print}' "$ROOT_DIR/Dockerfile")"
+grep -Eq 'apt-get install.*(^|[[:space:]])libpcre2-8-0([[:space:]]|$)' <<<"$runtime_stage_packages" || {
+  printf 'Runtime image does not explicitly install the patched libpcre2 package\n' >&2
+  exit 1
+}
 grep -Eq 'apt-get install.*(^|[[:space:]])make([[:space:]]|$)' <<<"$final_stage_packages" || {
   printf 'Final worker image does not install make for make-based validation commands\n' >&2
+  exit 1
+}
+grep -Eq 'apt-get install.*(^|[[:space:]])libpcre2-8-0([[:space:]]|$)' <<<"$final_stage_packages" || {
+  printf 'Final worker image does not explicitly install the patched libpcre2 package\n' >&2
   exit 1
 }
 

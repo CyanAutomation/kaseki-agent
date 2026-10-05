@@ -235,10 +235,10 @@ jobs:
           set -euo pipefail
           finding_count="$(jq '[.Results[]?.Vulnerabilities[]?] | length' trivy-results.json)"
           if (( finding_count == 0 )); then
-            echo 'No unfixed high/critical vulnerabilities found.'
+            echo 'No fixable high/critical vulnerabilities found.'
             exit 0
           fi
-          echo "::error title=Trivy high/critical findings::$finding_count unfixed high/critical vulnerabilities found"
+          echo "::error title=Trivy high/critical findings::$finding_count fixable high/critical vulnerabilities found"
           jq -r '.Results[]? as $result | $result.Vulnerabilities[]? | [ ($result.Target // "unknown target"), .Severity, .VulnerabilityID, .PkgName, (.PkgPath // "no package path"), .InstalledVersion, (.FixedVersion // "no fixed version") ] | @tsv' trivy-results.json
           exit 1
       - if: always()
