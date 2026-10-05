@@ -28,15 +28,15 @@ describe('artifact-content-helpers', () => {
       const content = JSON.stringify({
         summary: 'JEV classified the applicable success criteria.',
         pr_summary: 'JEV evaluated task completion and reviewer confidence from the persisted run artifacts.',
-        classifier: { provider: 'provider-name', model: '~typesafe/latest' },
+        classifier: { provider: 'provider-name', model: '~typesafe/jev-latest' },
         warnings: ['jev_classifier_unavailable'],
-        goal_check_actual_model: '~typesafe/latest',
+        goal_check_actual_model: '~typesafe/jev-latest',
       });
 
       const sanitized = sanitizeEvaluationArtifactContent('run-evaluation.json', content);
       expect(sanitized).not.toContain('JEV');
       expect(sanitized).not.toContain('provider-name');
-      expect(sanitized).not.toContain('~typesafe/latest');
+      expect(sanitized).not.toContain('~typesafe/jev-latest');
       expect(sanitized).toContain('Evaluation');
       expect(sanitized).toContain('Run evaluation assessed task completion');
       expect(sanitized).not.toContain('Evaluation evaluated');
@@ -49,20 +49,20 @@ describe('artifact-content-helpers', () => {
     });
 
     test('preserves provider and model metadata in compact decision telemetry', () => {
-      const content = '{"provider":"jev","model":"~typesafe/latest","outcome":"met"}';
+      const content = '{"provider":"jev","model":"~typesafe/jev-latest","outcome":"met"}';
       expect(sanitizeEvaluationArtifactContent('decisions.jsonl', content)).toBe(content);
     });
 
     test('removes retired evaluation metadata from legacy run metadata responses', () => {
       const content = JSON.stringify({
-        jev_classifier_model: '~typesafe/latest',
-        goal_check_actual_model: '~typesafe/latest',
+        jev_classifier_model: '~typesafe/jev-latest',
+        goal_check_actual_model: '~typesafe/jev-latest',
         provider: 'gateway',
       });
       const sanitized = sanitizeEvaluationArtifactContent('metadata.json', content);
       expect(sanitized).not.toContain('jev_');
       expect(sanitized).not.toContain('goal_check_actual_model');
-      expect(sanitized).not.toContain('~typesafe/latest');
+      expect(sanitized).not.toContain('~typesafe/jev-latest');
       expect(JSON.parse(sanitized)).toEqual({ provider: 'gateway' });
     });
   });

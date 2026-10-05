@@ -26,7 +26,7 @@ import {
 } from './gateway-validation/gateway-response-smoke-checks';
 import { resolveOpenRouterApiKey } from './gateway-detection/resolve-openrouter-api-key';
 import { validateClassificationConfidence } from './utils/classification-validation';
-import { classifyWithJev, JevClassificationError } from './jev-classifier';
+import { classifyWithJev, DEFAULT_JEV_MODEL, JevClassificationError } from './jev-classifier';
 import type { QuestionDefinition } from './types/openrouter-decisions';
 
 /**
@@ -1015,7 +1015,7 @@ export function resolveCloudflareApiToken(): string {
 }
 
 function resolveClassificationModel(): string {
-  return process.env.KASEKI_DECISION_MODEL || '~typesafe/latest';
+  return process.env.KASEKI_DECISION_MODEL || DEFAULT_JEV_MODEL;
 }
 
 function resolveClassificationConfig(timestamp: string): ClassificationConfig {
