@@ -22,6 +22,11 @@ eval "$(awk '
   /^run_static_test_impact_check\(\)/ { emit=0 }
   emit { print }
 ' "$ROOT_DIR/kaseki-agent.sh")"
+eval "$(awk '
+  /^run_dependency_cache_prune_with_heartbeat\(\)/ { emit=1 }
+  emit { print }
+  emit && /^}/ { exit }
+' "$ROOT_DIR/kaseki-agent.sh")"
 
 fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
 pass() { printf '✓ %s\n' "$1"; }
@@ -102,3 +107,35 @@ if (artifact.source !== 'git-diff-head-and-untracked') throw new Error('unexpect
 if (artifact.files.join('\n') !== 'staged.txt\nuntracked.txt') throw new Error(`unexpected files: ${artifact.files}`);
 NODE
 pass "CACHE-CONTRACT-ARTIFACT-004 changed-file artifacts include staged and untracked files"
+
+# CACHE-CONTRACT-HEARTBEAT-005: long cache pruning reports its active work
+# often enough to keep the controller's durable-progress stall timer fresh.
+PROGRESS_LOG="$TMP_DIR/dependency-cache-progress.tsv"
+export PROGRESS_LOG
+: > "$PROGRESS_LOG"
+emit_progress() {
+  printf '%s\t%s\t%s\n' "$1" "$2" "${3:-info}" >> "$PROGRESS_LOG"
+}
+prune_dependency_cache() {
+  sleep 0.22
+  return "${TEST_PRUNE_EXIT:-0}"
+}
+KASEKI_DEPENDENCY_CACHE_HEARTBEAT_INTERVAL_SECONDS=0.05
+TEST_PRUNE_EXIT=0
+run_dependency_cache_prune_with_heartbeat /cache 1 1 /metrics
+grep -Fq $'dependency cache maintenance\tpruning dependency cache entries' "$PROGRESS_LOG" \
+  || fail "cache prune heartbeat omitted its initial progress event"
+heartbeat_count="$(grep -Fc $'dependency cache maintenance\tstill pruning dependency cache entries' "$PROGRESS_LOG" || true)"
+[ "$heartbeat_count" -ge 2 ] || fail "long cache prune emitted only $heartbeat_count periodic progress events"
+grep -Fq $'dependency cache maintenance\tcache pruning finished successfully' "$PROGRESS_LOG" \
+  || fail "cache prune heartbeat omitted successful completion"
+pass "CACHE-CONTRACT-HEARTBEAT-005 long cache pruning emits periodic durable progress"
+
+: > "$PROGRESS_LOG"
+TEST_PRUNE_EXIT=7
+if run_dependency_cache_prune_with_heartbeat /cache 1 1 /metrics; then
+  fail "cache prune wrapper hid a pruning failure"
+fi
+grep -Fq $'dependency cache maintenance\tcache pruning failed (exit 7;' "$PROGRESS_LOG" \
+  || fail "cache prune heartbeat omitted failure completion"
+pass "CACHE-CONTRACT-HEARTBEAT-006 cache pruning preserves failures and reports completion"

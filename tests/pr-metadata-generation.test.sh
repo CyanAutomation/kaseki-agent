@@ -48,8 +48,18 @@ eval "$(extract_function build_pr_agent_evaluation)"
 eval "$(extract_function build_pr_improvements_summary)"
 eval "$(extract_function format_pr_run_scorecard)"
 eval "$(extract_function build_pr_body)"
+eval "$(extract_function update_github_pull_request_body)"
+eval "$(extract_function refresh_finalized_pr_scorecard)"
 eval "$(extract_function run_node_subprocess)"
 eval "$(extract_function validate_run_evaluation_candidate)"
+
+finish_body="$(sed -n '/^finish() {/,/^}/p' "$ROOT_DIR/kaseki-agent.sh")"
+finish_artifact_line="$(grep -n 'finalize_artifacts_and_publish_status ' <<<"$finish_body" | cut -d: -f1)"
+finish_pr_refresh_line="$(grep -n 'refresh_finalized_pr_scorecard' <<<"$finish_body" | cut -d: -f1)"
+if [ -z "$finish_artifact_line" ] || [ -z "$finish_pr_refresh_line" ] || [ "$finish_pr_refresh_line" -le "$finish_artifact_line" ]; then
+  fail "final PR scorecard refresh must run after terminal artifact finalization"
+fi
+pass "Terminal artifacts are finalized before a missing PR scorecard is refreshed"
 
 grep -Fq '\"draft\": false' "$ROOT_DIR/kaseki-agent.sh" || fail "PR creation must explicitly request a normal PR"
 if grep -Fq 'is_pr_draft_mode' "$ROOT_DIR/kaseki-agent.sh"; then
@@ -964,6 +974,56 @@ if grep -Fq '## Kaseki run scorecard' <<<"$absent_scorecard_body"; then
 fi
 grep -Fq 'Scorecard unavailable at publication' <<<"$absent_scorecard_body" || fail "Absent scorecard lacked an accurate fallback summary"
 pass "Malformed and absent scorecards use deterministic fallback summaries"
+
+# PR body refresh uses the short-lived installation token created during the
+# publish operation and never upgrades an authoritative run failure.
+CURL_ARGUMENTS_FILE="$TMP_DIR/curl-arguments.txt"
+export CURL_ARGUMENTS_FILE
+curl() {
+  printf '%s\n' "$*" > "$CURL_ARGUMENTS_FILE"
+  printf '{"number":42}200'
+}
+if ! update_github_pull_request_body "test-owner" "test-repo" "42" "test-installation-token" $'## Kaseki run scorecard\nFinal score: 88.6/100'; then
+  fail "PR body updater rejected a successful GitHub response"
+fi
+grep -Fq -- '-X PATCH' "$CURL_ARGUMENTS_FILE" || fail "PR body updater did not use PATCH"
+grep -Fq 'repos/test-owner/test-repo/pulls/42' "$CURL_ARGUMENTS_FILE" || fail "PR body updater targeted the wrong pull request"
+grep -Fq '"body"' "$CURL_ARGUMENTS_FILE" || fail "PR body updater did not send the updated body field"
+pass "PR body updater patches the intended pull request"
+
+REAL_FORMAT_PR_RUN_SCORECARD="$(declare -f format_pr_run_scorecard)"
+REAL_BUILD_PR_BODY="$(declare -f build_pr_body)"
+REAL_UPDATE_GITHUB_PULL_REQUEST_BODY="$(declare -f update_github_pull_request_body)"
+REFRESHED_PR_BODY=""
+format_pr_run_scorecard() { printf 'Final score: 88.6/100\n'; }
+build_pr_body() { printf '## Summary\nUpdated task.\n\n## Kaseki run scorecard\nFinal score: 88.6/100\n'; }
+update_github_pull_request_body() {
+  REFRESHED_PR_BODY="$5"
+  return 0
+}
+emit_progress() { :; }
+GITHUB_PR_SCORECARD_PENDING=1
+GITHUB_PR_UPDATE_OWNER="test-owner"
+GITHUB_PR_UPDATE_REPO="test-repo"
+GITHUB_PR_UPDATE_NUMBER=42
+GITHUB_PR_UPDATE_TOKEN="test-installation-token"
+GITHUB_PR_URL="https://github.com/test-owner/test-repo/pull/42"
+refresh_finalized_pr_scorecard
+grep -Fq '## Kaseki run scorecard' <<<"$REFRESHED_PR_BODY" || fail "Finalized PR refresh omitted the available scorecard"
+[ -z "${GITHUB_PR_UPDATE_TOKEN:-}" ] || fail "PR refresh retained the installation token after use"
+pass "Finalized scorecard replaces the publication-time fallback in the PR body"
+
+REFRESHED_PR_BODY=""
+format_pr_run_scorecard() { :; }
+GITHUB_PR_SCORECARD_PENDING=1
+GITHUB_PR_UPDATE_TOKEN="test-installation-token"
+refresh_finalized_pr_scorecard
+[ -z "$REFRESHED_PR_BODY" ] || fail "PR refresh patched the body without an available scorecard"
+[ -z "${GITHUB_PR_UPDATE_TOKEN:-}" ] || fail "PR refresh retained a token when no scorecard was available"
+pass "PR refresh skips absent scorecards and clears the short-lived token"
+eval "$REAL_FORMAT_PR_RUN_SCORECARD"
+eval "$REAL_BUILD_PR_BODY"
+eval "$REAL_UPDATE_GITHUB_PULL_REQUEST_BODY"
 
 # The evaluator contract must preserve explicit implementation bullets in the
 # published PR body and reject older responses that omit the field.
