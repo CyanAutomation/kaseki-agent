@@ -1419,7 +1419,7 @@ function buildWebhookDeliveryPaths(errorResponseSchema: Record<string, unknown>)
       post: {
         operationId: 'retryRunWebhookDelivery',
         summary: 'Retry a failed webhook delivery',
-        description: 'Supports manual retry: retries one failed webhook delivery after a terminal failure. Requires the webhooks:write scope.',
+        description: 'Retries one failed webhook delivery after a terminal failure. Requires a valid API key.',
         tags: ['Webhooks'],
         security: [{ BearerAuth: [] }],
         parameters: [id, { name: 'deliveryId', in: 'path', required: true, schema: { type: 'string' } }],

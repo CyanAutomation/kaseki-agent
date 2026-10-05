@@ -1284,8 +1284,8 @@ describe('kaseki API web console behavior', () => {
         '/api/v1/results/kaseki-304/report.json': createJsonResponse({
           title: 'Forbidden',
           status: 403,
-          detail: 'API key is missing the artifacts:read scope',
-          requestId: 'artifact-scope-request',
+          detail: 'The request is not allowed by the API service.',
+          requestId: 'artifact-forbidden-request',
         }, 403),
       }),
     });
@@ -1295,9 +1295,9 @@ describe('kaseki API web console behavior', () => {
     await waitFor(() => expect(document.querySelectorAll('#artifacts-output .artifact-item')).toHaveLength(1));
     clickSelector(document, '#artifacts-output .artifact-item');
 
-    await waitFor(() => expectTextContains(document, '#artifacts-output', 'KASEKI_API_KEY_SCOPES'));
-    expectTextContains(document, '#artifacts-output', 'artifacts:read');
-    expectTextContains(document, '#artifacts-output', 'artifact-scope-request');
+    await waitFor(() => expectTextContains(document, '#artifacts-output', 'Ask the API operator to review access'));
+    expectTextNotContains(document, '#artifacts-output', 'KASEKI_API_KEY_SCOPES');
+    expectTextContains(document, '#artifacts-output', 'artifact-forbidden-request');
     expect(document.querySelectorAll('#artifacts-output .artifact-item')).toHaveLength(1);
   });
 
@@ -1325,36 +1325,10 @@ describe('kaseki API web console behavior', () => {
     expectTextContains(document, '#output', 'Bad Gateway');
   });
 
-  test('explains how to fix a missing diagnostics scope and preserves the raw problem response', async () => {
-    const { document } = await renderConsole({
-      storedToken: 'token12345',
-      fetchHandler: routeResponses({
-        '/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true': createJsonResponse({
-          type: 'https://api.kaseki.local/errors#forbidden',
-          title: 'Forbidden',
-          status: 403,
-          detail: 'API key is missing the diagnostics:run scope',
-          instance: '/gateway-test',
-          requestId: 'scope-request-17',
-        }, 403),
-      }, createJsonResponse({ runs: [] })),
-    });
-
-    click(healthCheckButton(document, 'AI Model Test'));
-
-    await waitFor(() => expectTextContains(document, '#response-summary', 'diagnostics:run'));
-    expectTextContains(document, '#response-summary', 'KASEKI_API_KEY_SCOPES');
-    expectTextContains(document, '#response-summary', 'scope-request-17');
-    expectTextContains(document, '#output', 'API key is missing the diagnostics:run scope');
-    expectTextContains(document, '#output', 'scope-request-17');
-    expect(getElement<HTMLDetailsElement>(document, '#raw-response').open).toBe(false);
-    expectTextContains(document, '#state', 'Forbidden (HTTP 403)');
-  });
-
   test.each([
     [400, 'Correct the request', {}],
     [401, 'Enter a valid API bearer token', {}],
-    [403, 'add the permission required for this action', {}],
+    [403, 'Ask the API operator to review access', {}],
     [404, 'Verify the URL and resource ID', {}],
     [409, 'Refresh the current status', {}],
     [413, 'Reduce the request', {}],

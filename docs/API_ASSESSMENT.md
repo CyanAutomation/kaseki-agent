@@ -6,7 +6,7 @@
 
 ## Executive summary
 
-The API keeps its core run lifecycle and diagnostics, with a versioned `/api/v1` namespace. The principal changes are in place: unsafe webhook egress is constrained; request authorization and quotas are scoped by key; run creation is caller-idempotent; persisted run history is cursor-paginated; artifact downloads return bytes; webhook deliveries are inspectable/retryable; and OpenAPI/docs match the new contract.
+The API keeps its core run lifecycle and diagnostics, with a versioned `/api/v1` namespace. The principal changes are in place: unsafe webhook egress is constrained; bearer-key authentication and per-key quotas are enforced; run creation is caller-idempotent; persisted run history is cursor-paginated; artifact downloads return bytes; webhook deliveries are inspectable/retryable; and OpenAPI/docs match the new contract.
 
 Removed routes and aliases are listed below. Root `/health` and `/ready` remain for probes. API consumers should move to `/api/v1` and use the routes in the updated [API guide](API.md).
 
@@ -59,7 +59,7 @@ There was no production route-usage data to identify consumers before removal. C
 ## Cross-cutting improvements implemented
 
 - Versioned API namespace and regenerated OpenAPI contracts.
-- Per-key scopes default to read-only; operators explicitly grant write and expensive diagnostic scopes. Fixed-window limits cover general traffic, diagnostics, GitHub lookups, and webhook test/retry calls.
+- All valid bearer keys have equal route access. Fixed-window per-key limits cover general traffic, diagnostics, GitHub lookups, and webhook test/retry calls.
 - RFC 9457-style `application/problem+json` errors with request IDs and `X-Request-ID` response headers.
 - Request-template counters/latency metrics with no unbounded labels.
 - Durable history lookup and cursor pagination for run, scorecard, and improvement listings.

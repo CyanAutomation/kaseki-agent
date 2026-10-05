@@ -4,7 +4,7 @@ This guide shows how to integrate kaseki-agent into common CI/CD platforms: GitH
 
 Every `POST /api/v1/runs` request requires a caller generated UUID v4 in the `Idempotency-Key` header. Generate one key per logical run and reuse it if the client retries that same submission after a network failure.
 
-The bearer key used by these submission examples also needs `runs:write` and `runs:read` in `KASEKI_API_KEY_SCOPES` so it can submit runs and poll their status.
+The configured bearer key used by these examples can submit runs and poll their status.
 
 ---
 

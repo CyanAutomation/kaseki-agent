@@ -45,7 +45,7 @@ import { clearCachedStartupHealthReport, writeStartupHealthArtifacts } from './k
 import type { StartupHealthReport } from './kaseki-api-types';
 import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
-import { createMockScheduler, createTestConfig, TEST_API_SCOPES, type TestScheduler } from './test-utils';
+import { createMockScheduler, createTestConfig, type TestScheduler } from './test-utils';
 import type { TaskAdmissionEvaluator } from './task-admission';
 import * as gatewaySmoke from './kaseki-api-gateway-smoke';
 import { applyHttpHardening } from './kaseki-api-service';
@@ -83,7 +83,7 @@ describe('webhook test egress policy', () => {
   });
 });
 
-describe('API access scopes, quotas, and request identifiers', () => {
+describe('API access quotas and request identifiers', () => {
   test('rate limits run retry submissions before the retry handler repeats work', async () => {
     const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-retry-limit-'));
     const config = createTestConfig(resultsDir);
@@ -138,7 +138,6 @@ describe('API access scopes, quotas, and request identifiers', () => {
     const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-key-limit-buckets-'));
     const config = createTestConfig(resultsDir);
     config.apiKeys = ['test-key', 'other-key'];
-    config.apiKeyScopes = { 'test-key': TEST_API_SCOPES, 'other-key': TEST_API_SCOPES };
     config.apiRequestsPerMinute = 1;
     const { server, port, idempotencyStore } = await createTestApp(createMockScheduler(), config);
     try {
@@ -157,82 +156,39 @@ describe('API access scopes, quotas, and request identifiers', () => {
     }
   });
 
-  test('defaults configured keys to read-only scopes when no scope map is set', async () => {
-    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-default-scopes-'));
-    const config = createTestConfig(resultsDir);
-    config.apiKeyScopes = undefined;
+  test('allows a valid bearer key to submit runs without per-key permissions', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-key-run-access-'));
     const scheduler = createMockScheduler();
-    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+    scheduler.submitJob.mockImplementation(async request => ({
+      id: 'kaseki-key-run-access',
+      status: 'queued',
+      createdAt: new Date('2026-05-15T00:00:00.000Z'),
+      resultDir: path.join(resultsDir, 'kaseki-key-run-access'),
+      request,
+    }));
+    const config = createTestConfig(resultsDir);
+    const taskAdmissionEvaluator: TaskAdmissionEvaluator = async () => ({
+      allowed: true,
+      status: 'allowed',
+      reason: 'test accepted',
+      responseTime: 1,
+    });
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config, taskAdmissionEvaluator);
     try {
-      const headers = { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' };
-      const read = await fetch(`http://127.0.0.1:${port}/api/runs`, { headers });
-      const write = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
-        headers,
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
         body: JSON.stringify({
           repoUrl: 'https://github.com/org/repo',
-          taskPrompt: 'Must require explicit runs:write grant',
+          taskPrompt: 'Submit a run with a valid bearer key',
+          publishMode: 'none',
           idempotencyKey: '99999999-9999-4999-8999-999999999999',
         }),
       });
 
-      expect(read.status).toBe(200);
-      expect(write.status).toBe(403);
-      expect((await write.json()).detail).toContain('runs:write');
-      expect(scheduler.submitJob).not.toHaveBeenCalled();
-    } finally {
-      await cleanupTestApp(server, idempotencyStore);
-      fs.rmSync(resultsDir, { recursive: true, force: true });
-    }
-  });
-
-  test('blocks writes for a read-only key and returns RFC problem details with the request ID', async () => {
-    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-scope-'));
-    const config = createTestConfig(resultsDir);
-    config.apiKeyScopes = { 'test-key': ['runs:read'] };
-    const scheduler = createMockScheduler();
-    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer test-key',
-          'Content-Type': 'application/json',
-          'X-Request-ID': 'scope-test-42',
-        },
-        body: JSON.stringify({
-          repoUrl: 'https://github.com/org/repo',
-          ref: 'main',
-          taskPrompt: 'Scope enforcement regression',
-          publishMode: 'none',
-          idempotencyKey: '88888888-8888-4888-8888-888888888888',
-        }),
-      });
-      const body = await response.json() as any;
-      expect(response.status).toBe(403);
-      expect(response.headers.get('content-type')).toContain('application/problem+json');
-      expect(response.headers.get('x-request-id')).toBe('scope-test-42');
-      expect(body).toMatchObject({ status: 403, requestId: 'scope-test-42' });
-      expect(scheduler.submitJob).not.toHaveBeenCalled();
-    } finally {
-      await cleanupTestApp(server, idempotencyStore);
-      fs.rmSync(resultsDir, { recursive: true, force: true });
-    }
-  });
-
-  test('enforces the webhook write scope for case-insensitive Express path matches', async () => {
-    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-case-scope-'));
-    const config = createTestConfig(resultsDir);
-    config.apiKeyScopes = { 'test-key': ['runs:read'] };
-    const { server, port, idempotencyStore } = await createTestApp(createMockScheduler(), config);
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/WEBHOOKS/TEST`, {
-        method: 'POST',
-        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: 'https://127.0.0.1/internal' }),
-      });
-      expect(response.status).toBe(403);
-      expect((await response.json()).detail).toContain('webhooks:write');
+      expect(response.status).toBe(202);
+      expect(await response.json()).toMatchObject({ id: 'kaseki-key-run-access' });
+      expect(scheduler.submitJob).toHaveBeenCalledTimes(1);
     } finally {
       await cleanupTestApp(server, idempotencyStore);
       fs.rmSync(resultsDir, { recursive: true, force: true });
@@ -3042,7 +2998,6 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3147,7 +3102,6 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3219,7 +3173,6 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3302,7 +3255,6 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir: fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-notfound-test-')),
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3370,7 +3322,6 @@ describe('kaseki-api-routes logs endpoint stderr fallback', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3429,7 +3380,6 @@ describe('kaseki-api-routes logs endpoint stderr fallback', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3606,7 +3556,6 @@ describe('kaseki-api-routes controller replay and events', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3706,7 +3655,6 @@ describe('kaseki-api-routes controller replay and events', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3809,7 +3757,6 @@ describe('kaseki-api-routes controller replay and events', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3875,7 +3822,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -3962,7 +3908,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4033,7 +3978,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4306,7 +4250,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4449,7 +4392,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4505,7 +4447,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4552,7 +4493,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4604,7 +4544,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4665,7 +4604,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4716,7 +4654,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4892,7 +4829,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4944,7 +4880,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -4995,7 +4930,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -5629,7 +5563,6 @@ describe('kaseki-api-routes idempotency concurrency', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
@@ -5691,7 +5624,6 @@ describe('kaseki-api-routes idempotency concurrency', () => {
     const config = {
       port: 0,
       apiKeys: ['test-key'],
-      apiKeyScopes: { 'test-key': TEST_API_SCOPES },
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,

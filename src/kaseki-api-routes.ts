@@ -123,8 +123,6 @@ export function createApiRouter(
   const router = Router();
   const logger = createEventLogger('api');
   const apiAccess = new ApiAccessController({
-    apiKeys: config.apiKeys,
-    apiKeyScopes: config.apiKeyScopes,
     requestsPerMinute: config.apiRequestsPerMinute,
     diagnosticsPerHour: config.apiDiagnosticsPerHour,
     webhookTestsPerHour: config.apiWebhookTestsPerHour,
@@ -299,10 +297,6 @@ function registerApiMiddleware(
     return authorizeAndLimit(token);
 
     function authorizeAndLimit(apiKey: string) {
-      const scope = apiAccess.requiredScope(req.method, req.path, req.query);
-      if (!apiAccess.hasScope(apiKey, scope)) {
-        return sendErrorResponse(res, 403, 'Forbidden', `API key is missing the ${scope} scope`);
-      }
       res.locals.apiKey = apiKey;
       const retryAfter = apiAccess.checkAndRecord(apiKey, req.method, req.path, req.query);
       if (retryAfter !== undefined) {
