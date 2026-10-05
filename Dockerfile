@@ -344,6 +344,7 @@ COPY --from=runtime /app/package.json /app/package-lock.json /app/tsconfig.json 
 COPY --from=runtime /app/Dockerfile /app/.dockerignore /app/README.md /app/CLAUDE.md /app/CONTRIBUTING.md ./
 COPY --from=runtime /app/kaseki /app/run-kaseki.sh /app/kaseki-agent.sh ./
 COPY --from=runtime /app/src ./src
+RUN chmod -R a+rX /app/src
 COPY --from=runtime /app/templates ./templates
 COPY --from=runtime /app/ops ./ops
 COPY --from=runtime /app/scripts ./scripts

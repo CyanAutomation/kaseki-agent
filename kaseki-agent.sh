@@ -4601,7 +4601,7 @@ prune_dependency_cache() {
   local metrics_file="$4"
   local size_bytes oldest_entry now_epoch max_age_seconds access_epoch entry entry_size
   local cleanup_count=0 cleanup_reasons="" reconciliation_reason="not_due" reconciled_size_bytes=0
-  local reconcile_file="$cache_dir/.kaseki-cache-reconcile" last_reconcile=0 reconcile_due=0 lock_fd orphan
+  local reconcile_file="$cache_dir/.kaseki-cache-reconcile" last_reconcile=0 reconcile_due=0 lock_fd orphan orphan_pattern
   local reconcile_interval="${KASEKI_DEPENDENCY_CACHE_RECONCILE_INTERVAL_SECONDS:-86400}"
   local reconcile_threshold="${KASEKI_DEPENDENCY_CACHE_RECONCILE_THRESHOLD_PERCENT:-90}"
 
@@ -4613,21 +4613,23 @@ prune_dependency_cache() {
   # A killed publisher can leave either side of its atomic rename behind.
   # Only remove such directories after acquiring the same per-entry lock used
   # by publishers; a busy lock means the directory may still be in use.
-  while IFS= read -r orphan; do
-    [ -n "$orphan" ] || continue
-    entry="$(dirname "$orphan")"
-    exec {lock_fd}>"${entry}.lock" || continue
-    if flock -n "$lock_fd"; then
-      case "$(basename "$orphan")" in
-        node_modules.tmp.*) cleanup_reasons="${cleanup_reasons:+$cleanup_reasons,}abandoned_tmp" ;;
-        node_modules.old.*) cleanup_reasons="${cleanup_reasons:+$cleanup_reasons,}abandoned_old" ;;
-        *) flock -u "$lock_fd" || true; exec {lock_fd}>&-; continue ;;
-      esac
-      rm -rf -- "$orphan" && cleanup_count=$((cleanup_count + 1))
-      flock -u "$lock_fd" || true
-    fi
-    exec {lock_fd}>&-
-  done < <(find "$cache_dir" -maxdepth 8 -type d \( -name 'node_modules.tmp.*' -o -name 'node_modules.old.*' \) 2>/dev/null)
+  for orphan_pattern in 'node_modules.tmp.*' 'node_modules.old.*'; do
+    while IFS= read -r orphan; do
+      [ -n "$orphan" ] || continue
+      entry="$(dirname "$orphan")"
+      exec {lock_fd}>"${entry}.lock" || continue
+      if flock -n "$lock_fd"; then
+        case "$(basename "$orphan")" in
+          node_modules.tmp.*) cleanup_reasons="${cleanup_reasons:+$cleanup_reasons,}abandoned_tmp" ;;
+          node_modules.old.*) cleanup_reasons="${cleanup_reasons:+$cleanup_reasons,}abandoned_old" ;;
+          *) flock -u "$lock_fd" || true; exec {lock_fd}>&-; continue ;;
+        esac
+        rm -rf -- "$orphan" && cleanup_count=$((cleanup_count + 1))
+        flock -u "$lock_fd" || true
+      fi
+      exec {lock_fd}>&-
+    done < <(find "$cache_dir" -maxdepth 8 -type d -name "$orphan_pattern" 2>/dev/null)
+  done
 
   if [ "$max_age_days" -gt 0 ] 2>/dev/null; then
     now_epoch="$(date +%s)"
