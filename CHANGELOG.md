@@ -4,6 +4,19 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.149.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.148.1...v1.149.0) (2026-10-05)
+
+
+### Bug Fixes
+
+* **docker:** remediate libpcre2 vulnerability ([#1492](https://github.com/CyanAutomation/kaseki-agent/issues/1492)) ([9240504](https://github.com/CyanAutomation/kaseki-agent/commit/92405040eca4bb3ed23223ca436b3209983c24cb))
+* improve file permissions and enhance npm packaging tests ([1d4ac34](https://github.com/CyanAutomation/kaseki-agent/commit/1d4ac349c3d1639034cbaf76fffa6d90f71891c5))
+
+
+### Features
+
+* **api:** enhance error handling with detailed guidance for various HTTP responses ([ccf13d5](https://github.com/CyanAutomation/kaseki-agent/commit/ccf13d54b3db94c06ddc262049845099a7c8d531))
+
 ## [1.148.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.148.0...v1.148.1) (2026-10-04)
 
 
