@@ -646,6 +646,13 @@ GITHUB_OPERATION_PHASE=""
 ACTUAL_MODEL="unknown"
 GITHUB_PR_URL=""
 GITHUB_SKIP_REASONS=()
+GITHUB_PR_SCORECARD_PENDING=0
+GITHUB_PR_UPDATE_OWNER=""
+GITHUB_PR_UPDATE_REPO=""
+GITHUB_PR_UPDATE_NUMBER=""
+# Keep the installation token only in shell memory until optional post-finalize
+# PR enrichment; it is never exported, written to disk, or included in logs.
+GITHUB_PR_UPDATE_TOKEN=""
 VALIDATION_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/validation-timings.tsv"
 PRE_VALIDATION_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/pre-validation-timings.tsv"
 STAGE_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/stage-timings.tsv"
@@ -3917,6 +3924,7 @@ EOF
   ensure_validation_evidence_artifacts
   finalize_artifacts_and_publish_status "${KASEKI_RESULTS_DIR}" write_metadata "$STATUS" "${VALIDATION_TIMINGS_FILE}" "${PRE_VALIDATION_TIMINGS_FILE}"
   maybe_call_finish_helper write_result_summary
+  refresh_finalized_pr_scorecard
   maybe_call_finish_helper remove_low_value_artifacts
   if [ "$KASEKI_REPO_SESSION_ACTIVE" = "1" ] && [ "$(cat "$KASEKI_REPO_SESSION_MARKER" 2>/dev/null || true)" = "${BASHPID:-$$}" ]; then
     rm -f "$KASEKI_REPO_SESSION_MARKER"
@@ -4718,6 +4726,37 @@ prune_dependency_cache() {
   fi
   [ -n "$cleanup_reasons" ] || cleanup_reasons="none"
   write_dependency_cache_metrics "$cache_dir" "$metrics_file" "$size_bytes" "$reconciled_size_bytes" "$reconciliation_reason" "$cleanup_count" "$cleanup_reasons"
+}
+
+# Cache maintenance can spend several minutes scanning and evicting entries.
+# Keep durable run progress current while the bounded cleanup is active so the
+# controller does not report a healthy setup phase as stalled.
+run_dependency_cache_prune_with_heartbeat() {
+  local interval="${KASEKI_DEPENDENCY_CACHE_HEARTBEAT_INTERVAL_SECONDS:-30}"
+  local heartbeat_pid prune_exit=0 started_epoch elapsed
+  [[ "$interval" =~ ^[0-9]+([.][0-9]+)?$ ]] || interval=30
+  started_epoch="$(date +%s)"
+
+  emit_progress "dependency cache maintenance" "pruning dependency cache entries"
+  (
+    while sleep "$interval"; do
+      elapsed="$(($(date +%s) - started_epoch))"
+      emit_progress "dependency cache maintenance" "still pruning dependency cache entries (elapsed=${elapsed}s)"
+    done
+  ) &
+  heartbeat_pid=$!
+
+  prune_dependency_cache "$@" || prune_exit=$?
+  kill "$heartbeat_pid" 2>/dev/null || true
+  wait "$heartbeat_pid" 2>/dev/null || true
+
+  elapsed="$(($(date +%s) - started_epoch))"
+  if [ "$prune_exit" -eq 0 ]; then
+    emit_progress "dependency cache maintenance" "cache pruning finished successfully (elapsed=${elapsed}s)"
+  else
+    emit_progress "dependency cache maintenance" "cache pruning failed (exit $prune_exit; elapsed=${elapsed}s)"
+  fi
+  return "$prune_exit"
 }
 
 npm_run_script_name() {
@@ -9793,6 +9832,74 @@ $task_summary
 EOF
 }
 
+update_github_pull_request_body() {
+  local owner="$1" repo="$2" pr_number="$3" token="$4" body="$5"
+  local body_json response_file response_with_status http_status curl_exit
+  [[ "$pr_number" =~ ^[0-9]+$ ]] || return 1
+  if ! run_node_subprocess body_json "process.stdout.write(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$body" /dev/null; then
+    printf 'WARN: Could not JSON-encode the finalized pull request body.\n' >&2
+    return 1
+  fi
+
+  response_file="$(umask 077 && mktemp /tmp/kaseki-pr-update.XXXXXX)" || {
+    printf 'WARN: Could not create a temporary response file for the pull request update.\n' >&2
+    return 1
+  }
+  curl --connect-timeout 5 --max-time 20 -s -w '%{http_code}' -X PATCH \
+    -H "Authorization: token $token" \
+    -H "Accept: application/vnd.github.v3+json" \
+    "https://api.github.com/repos/$owner/$repo/pulls/$pr_number" \
+    -d "{\"body\": $body_json}" > "$response_file" 2>&1
+  curl_exit=$?
+  response_with_status="$(cat "$response_file" 2>/dev/null || true)"
+  rm -f -- "$response_file"
+  http_status="${response_with_status: -3}"
+  GITHUB_API_HTTP_STATUS="${http_status:-unknown}"
+  if [ "$curl_exit" -eq 0 ] && [ "$http_status" = "200" ]; then
+    return 0
+  fi
+  printf 'WARN: Could not refresh pull request metadata (curl_exit=%s, http_status=%s).\n' "$curl_exit" "${http_status:-unknown}" >&2
+  return 1
+}
+
+# PR creation happens before the EXIT finalizer so the run can persist its PR
+# URL. If its scorecard was not ready yet, replace the fallback body once the
+# finalizer has written terminal metadata and regenerated scorecard artifacts.
+refresh_finalized_pr_scorecard() {
+  local scorecard_markdown finalized_body
+  if [ "${GITHUB_PR_SCORECARD_PENDING:-0}" != "1" ] || [ -z "${GITHUB_PR_UPDATE_TOKEN:-}" ]; then
+    return 0
+  fi
+
+  scorecard_markdown="$(format_pr_run_scorecard)"
+  if [ -z "$scorecard_markdown" ]; then
+    emit_progress "github operations" "final scorecard is still unavailable; keeping the original PR body"
+    unset GITHUB_PR_UPDATE_TOKEN
+    GITHUB_PR_SCORECARD_PENDING=0
+    return 0
+  fi
+
+  finalized_body="$(build_pr_body)"
+  if [[ "$finalized_body" != *"## Kaseki run scorecard"* ]]; then
+    emit_progress "github operations" "final scorecard could not be rendered; keeping the original PR body"
+    unset GITHUB_PR_UPDATE_TOKEN
+    GITHUB_PR_SCORECARD_PENDING=0
+    return 0
+  fi
+
+  if update_github_pull_request_body \
+    "$GITHUB_PR_UPDATE_OWNER" "$GITHUB_PR_UPDATE_REPO" "$GITHUB_PR_UPDATE_NUMBER" \
+    "$GITHUB_PR_UPDATE_TOKEN" "$finalized_body"; then
+    emit_progress "github operations" "updated pull request body with the finalized run scorecard"
+  else
+    emit_event "github_pr_scorecard_update_failed" \
+      "pull_request=$GITHUB_PR_UPDATE_NUMBER" "http_status=${GITHUB_API_HTTP_STATUS:-unknown}" \
+      "severity=warning" "action=continue"
+  fi
+  unset GITHUB_PR_UPDATE_TOKEN
+  GITHUB_PR_SCORECARD_PENDING=0
+}
+
 run_github_operations() {
   local app_id private_key_file owner repo feature_branch token token_data git_push_exit
   
@@ -10118,6 +10225,15 @@ EOF
   
   if [ "$pr_created" -eq 0 ] && [ "$GITHUB_PR_EXIT" -ne 0 ]; then
     return "$GITHUB_PR_EXIT"
+  fi
+
+  if [ "$pr_created" -eq 1 ] && [ -n "$pr_number" ] \
+    && [[ "$pr_body" != *"## Kaseki run scorecard"* ]]; then
+    GITHUB_PR_SCORECARD_PENDING=1
+    GITHUB_PR_UPDATE_OWNER="$owner"
+    GITHUB_PR_UPDATE_REPO="$repo"
+    GITHUB_PR_UPDATE_NUMBER="$pr_number"
+    GITHUB_PR_UPDATE_TOKEN="$token"
   fi
   
   # Clean up token
@@ -10557,7 +10673,7 @@ prepare_dependencies() {
     printf 'Dependency cache status: workspace cache already current; skipping cache publish.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
     set_dependency_cache_status "workspace-cache-publish-skipped" "$cache_detail restore_method=$restore_method reason=workspace_cache_hit"
     emit_event "dependency_cache_decision" "strategy=skip_workspace_cache_publish" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=workspace_cache_hit" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
-    prune_dependency_cache "$KASEKI_DEPENDENCY_CACHE_DIR" "$KASEKI_DEPENDENCY_CACHE_MAX_BYTES" "$KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS" "$KASEKI_DEPENDENCY_CACHE_METRICS_FILE"
+    run_dependency_cache_prune_with_heartbeat "$KASEKI_DEPENDENCY_CACHE_DIR" "$KASEKI_DEPENDENCY_CACHE_MAX_BYTES" "$KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS" "$KASEKI_DEPENDENCY_CACHE_METRICS_FILE"
     exec {cache_lock_fd}>&-
     return 0
   fi
@@ -10623,7 +10739,7 @@ prepare_dependencies() {
     return 1
   fi
 
-  prune_dependency_cache "$KASEKI_DEPENDENCY_CACHE_DIR" "$KASEKI_DEPENDENCY_CACHE_MAX_BYTES" "$KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS" "$KASEKI_DEPENDENCY_CACHE_METRICS_FILE"
+  run_dependency_cache_prune_with_heartbeat "$KASEKI_DEPENDENCY_CACHE_DIR" "$KASEKI_DEPENDENCY_CACHE_MAX_BYTES" "$KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS" "$KASEKI_DEPENDENCY_CACHE_METRICS_FILE"
   record_dependency_cache_publish_timing "$cache_publish_start_ns" 0 "published_and_validated"
 
   exec {cache_lock_fd}>&-

@@ -1443,8 +1443,8 @@ const controllerPage = String.raw`<!doctype html>
             </div>
           </div>
           <div class="form-field">
-            <label for="run-id">Run ID (for Check Status)</label>
-            <input class="form-control" id="run-id" placeholder="Filled after a run is submitted">
+            <label for="run-id">Selected run ID</label>
+            <input class="form-control" id="run-id" placeholder="Select a recent run or submit a task" readonly>
           </div>
           <div class="run-links" id="runs-list-panel">
             <strong class="panel-section-label">Recent runs</strong>
@@ -2362,7 +2362,10 @@ const controllerPage = String.raw`<!doctype html>
 
       async function readApiResponse(response) {
         const contentType = response.headers.get('content-type') || '';
-        return contentType.includes('json') ? response.json() : response.text();
+        const mediaType = contentType.split(';', 1)[0].trim().toLowerCase();
+        const subtype = mediaType.split('/').pop() || '';
+        const isJson = subtype === 'json' || subtype.endsWith('+json');
+        return isJson ? response.json() : response.text();
       }
 
       function setApiErrorSummary(response, payload) {
@@ -2802,7 +2805,11 @@ const controllerPage = String.raw`<!doctype html>
             tokenTimeline.hidden = false;
             return;
           }
-          const content = result.payload && typeof result.payload.content === 'string' ? result.payload.content : '';
+          const content = typeof result.payload === 'string'
+            ? result.payload
+            : result.payload && typeof result.payload.content === 'string'
+              ? result.payload.content
+              : '';
           const entries = content.split(/\r?\n/).filter(Boolean).flatMap((line) => {
             try { return [JSON.parse(line)]; } catch { return []; }
           });
@@ -2970,7 +2977,17 @@ const controllerPage = String.raw`<!doctype html>
           // Determine which summary to update based on the path
           if (path.includes('stage=2')) {
             // Stage 2 (LLM inference test)
-            const outputTokens = payload.outputTokens || 0;
+            const tokenUsage = payload.usage && typeof payload.usage === 'object'
+              ? payload.usage
+              : payload.tokenUsage && typeof payload.tokenUsage === 'object'
+                ? payload.tokenUsage
+                : {};
+            const reportedTokenCount = payload.totalTokens ?? payload.outputTokens
+              ?? tokenUsage.total_tokens ?? tokenUsage.totalTokens
+              ?? tokenUsage.output_tokens ?? tokenUsage.completion_tokens ?? tokenUsage.outputTokens;
+            const numericTokenCount = Number(reportedTokenCount);
+            const hasReportedTokenCount = reportedTokenCount !== undefined && reportedTokenCount !== null
+              && reportedTokenCount !== '' && Number.isFinite(numericTokenCount);
             const timing = payload.modelTest || {};
             const streamOk = payload.streamSmokeValidated === true;
             const largeOk = payload.largePromptSmokeValidated === true;
@@ -2999,7 +3016,7 @@ const controllerPage = String.raw`<!doctype html>
               + (timing.piAdapterMs != null ? ' · Pi ' + timing.piAdapterMs + 'ms' : '')
               + (evaluationMs != null ? ' · evaluation ' + evaluationMs + 'ms' : '')
               + (timing.endToEndMs ? ' · total ' + timing.endToEndMs + 'ms' : '')
-              + (outputTokens ? ' · ' + outputTokens + ' tokens' : ' · tokens unavailable')
+              + (hasReportedTokenCount ? ' · ' + numericTokenCount + ' tokens' : ' · token usage not reported')
               + (coverage ? ' ' + coverage : '');
             setSummary('llm-test', outcomes.join(' · ') + ' · ' + timingSummary,
               failedOutcome ? (passedOutcome ? 'warning' : 'bad') : 'ok');
@@ -3621,8 +3638,8 @@ const controllerPage = String.raw`<!doctype html>
         if (!runId) {
           setOutputMetadata('idle');
           setResponseSummary(null);
-          setOutputBody('Submit a run or enter a run ID first.');
-          setState('Modal needs a run ID.', 'bad');
+          setOutputBody('Submit a task or select a recent run first.');
+          setState('Select a recent run first.', 'bad');
           return;
         }
 
@@ -3642,14 +3659,32 @@ const controllerPage = String.raw`<!doctype html>
           const result = await apiRequest(paths[tabName], {
             auth: true,
             preserveOutput: true,
-            showApiError: !(options && options.background),
+            showApiError: !(options && options.background) && tabName !== 'stdout',
           });
 
           if (!result.response.ok) {
+            const responseText = typeof result.payload === 'string'
+              ? result.payload
+              : JSON.stringify(result.payload);
+            const missingStdoutLog = tabName === 'stdout' && result.response.status === 404
+              && /(?:log file not found|stdout[^\n]*not found|not found[^\n]*stdout)/i.test(responseText);
+            if (missingStdoutLog) {
+              const emptyLogMessage = 'No stdout log was captured for this run.';
+              modalTabCache.stdout = emptyLogMessage;
+              tabOutputEl.textContent = emptyLogMessage;
+              displayModalTab('stdout');
+              return;
+            }
             const guidance = apiErrorGuidance(result.response.status, result.payload, result.response.headers);
             if (!(options && options.background)) {
               tabOutputEl.textContent = guidance.title + ' (HTTP ' + String(result.response.status) + ')'
                 + (guidance.detail ? '\n' + guidance.detail : '') + '\n\nNext step: ' + guidance.action;
+              if (tabName === 'stdout') {
+                setOutputMetadata('failed', runId);
+                setApiErrorSummary(result.response, result.payload);
+                setOutputBody(summarizedResponseBody(paths[tabName], 'GET', result.response.status, result.payload, result.response));
+                setState(requestCompletionMessage(paths[tabName], 'GET', result.response, result.payload), 'bad');
+              }
             }
             return;
           }
@@ -4238,8 +4273,8 @@ const controllerPage = String.raw`<!doctype html>
         if (!runId) {
           setOutputMetadata('idle');
           setResponseSummary(null);
-          setOutputBody('Submit a run or enter a run ID first.');
-          setState('Cancel needs a run ID.', 'bad');
+          setOutputBody('Submit a task or select a recent run first.');
+          setState('Select a run to cancel.', 'bad');
           return;
         }
         stopPolling();

@@ -36,12 +36,14 @@ async function fetchConsole(path = '/'): Promise<{ response: Response; body: str
 }
 
 function createJsonResponse(payload: unknown, status = 200, responseHeaders: Record<string, string> = {}): MockResponse {
+  const contentType = Object.entries(responseHeaders)
+    .find(([headerName]) => headerName.toLowerCase() === 'content-type')?.[1] || 'application/json';
   return {
     ok: status >= 200 && status < 300,
     status,
     headers: {
       get: (name: string) => name.toLowerCase() === 'content-type'
-        ? 'application/json'
+        ? contentType
         : Object.entries(responseHeaders).find(([headerName]) => headerName.toLowerCase() === name.toLowerCase())?.[1] || null,
     },
     json: async () => payload,
@@ -49,12 +51,12 @@ function createJsonResponse(payload: unknown, status = 200, responseHeaders: Rec
   };
 }
 
-function createTextResponse(payload: string, status = 200): MockResponse {
+function createTextResponse(payload: string, status = 200, contentType = 'text/plain'): MockResponse {
   return {
     ok: status >= 200 && status < 300,
     status,
-    headers: { get: (name: string) => name.toLowerCase() === 'content-type' ? 'text/plain' : null },
-    json: async () => payload,
+    headers: { get: (name: string) => name.toLowerCase() === 'content-type' ? contentType : null },
+    json: async () => { throw new SyntaxError('Unexpected non-whitespace character after JSON'); },
     text: async () => payload,
   };
 }
@@ -242,6 +244,8 @@ describe('kaseki API web console routes', () => {
     getElement(document, '#runs-list');
     expectTextContains(document, '#refresh-runs', 'Refresh runs');
     expectTextContains(document, '#cancel-run', 'Cancel run');
+    expectText(document, 'label[for="run-id"]', 'Selected run ID');
+    expect(getElement<HTMLInputElement>(document, '#run-id').readOnly).toBe(true);
     expectTextContains(document, '[data-tab="artifacts"]', 'Artifacts');
     expectTextContains(document, '#recommended-artifacts', 'Key Diagnostics');
     expectTextContains(document, '#copy-diagnostic-bundle-btn', 'Copy Debug Summary');
@@ -649,6 +653,46 @@ describe('kaseki API web console behavior', () => {
     ));
   });
 
+  test('makes missing token usage explicit after a successful model test', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true': createJsonResponse({
+          status: 'ok',
+          responseTime: 480,
+          streamSmokeValidated: true,
+          largePromptSmokeValidated: true,
+          piProviderSmoke: { status: 'ok' },
+        }),
+      }, createJsonResponse({ status: 'ok', runs: [] })),
+    });
+
+    clickSelector(document, '[data-probe="/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true"]');
+
+    await waitFor(() => expectTextContains(document, '[data-summary="llm-test"]', 'token usage not reported'));
+    expectTextContains(document, '[data-summary="llm-test"]', 'Gateway inference passed');
+    expectTextContains(document, '#response-summary', 'Pi adapter passed.');
+  });
+
+  test('uses token counts reported in the provider usage object', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true': createJsonResponse({
+          status: 'ok',
+          responseTime: 480,
+          usage: { total_tokens: 19 },
+          piProviderSmoke: { status: 'ok' },
+        }),
+      }, createJsonResponse({ status: 'ok', runs: [] })),
+    });
+
+    clickSelector(document, '[data-probe="/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true"]');
+
+    await waitFor(() => expectTextContains(document, '[data-summary="llm-test"]', '19 tokens'));
+    expectTextNotContains(document, '[data-summary="llm-test"]', 'token usage not reported');
+  });
+
   test('keeps Pi provider gateway smoke diagnostics for adapter failures', async () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
@@ -823,6 +867,36 @@ describe('kaseki API web console behavior', () => {
     expectAttribute(document, '#tab-status', 'aria-hidden', 'false');
     expectHidden(document, '#tab-artifacts', true);
     expectAttribute(document, '#tab-artifacts', 'aria-hidden', 'true');
+  });
+
+  test('reads JSONL artifacts as text and builds the token timeline from JSONL lines', async () => {
+    const ledger = [
+      JSON.stringify({ phase: 'goal-setting', billed_input_tokens: 20, output_tokens: 5 }),
+      JSON.stringify({ phase: 'coding', billed_input_tokens: 30, output_tokens: 7 }),
+    ].join('\n') + '\n';
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/v1/runs/kaseki-322/status') return createJsonResponse({ id: 'kaseki-322', status: 'completed' });
+        if (path === '/api/v1/runs/kaseki-322/artifacts') return createJsonResponse({
+          artifacts: [{ name: 'token-ledger.jsonl', available: true, contentType: 'text/plain', size: ledger.length }],
+        });
+        if (path === '/api/v1/results/kaseki-322/token-ledger.jsonl') {
+          return createTextResponse(ledger, 200, 'application/x-jsonl');
+        }
+        return createJsonResponse({});
+      },
+    });
+
+    openFullResults(document, 'kaseki-322');
+    await waitFor(() => expectText(document, '#token-timeline-output', '2 stages · 50 input tokens · 12 output tokens'));
+
+    clickSelector(document, '.tab-btn[data-tab="artifacts"]');
+    await waitFor(() => expect(document.querySelectorAll('#artifacts-output .artifact-item')).toHaveLength(1));
+    clickSelector(document, '#artifacts-output .artifact-item');
+    await waitFor(() => expectTextContains(document, '.artifact-content-pre', '"phase":"goal-setting"'));
+    expectTextContains(document, '.artifact-content-pre', '"phase":"coding"');
+    expectTextNotContains(document, '#artifacts-output', 'Could not reach the controller');
   });
 
   test('keeps focus inside the results dialog and supports keyboard tab navigation', async () => {
@@ -1132,6 +1206,48 @@ describe('kaseki API web console behavior', () => {
     click(document.querySelector('.tab-btn[data-tab="stdout"]'));
     await waitFor(() => expect(document.querySelector('#stdout-output')?.textContent).toBe('line one\nline two\n'));
     expect(document.querySelector('#stdout-output')?.textContent).not.toBe('[object Object]');
+  });
+
+  test('shows a clear empty state when a completed run has no stdout log', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/v1/runs/kaseki-323/status') return createJsonResponse({ id: 'kaseki-323', status: 'completed' });
+        if (path === '/api/v1/runs/kaseki-323/logs/stdout?tail=lines&lines=200') {
+          return createJsonResponse({ title: 'Log file not found', detail: 'stdout was not captured' }, 404);
+        }
+        if (path === '/api/v1/runs/kaseki-323/artifacts') return createJsonResponse({ artifacts: [] });
+        return createJsonResponse({});
+      },
+    });
+
+    openFullResults(document, 'kaseki-323');
+    await waitFor(() => expectText(document, '#stdout-output', 'No stdout log was captured for this run.'));
+    expectTextNotContains(document, '#stdout-output', 'HTTP 404');
+
+    clickSelector(document, '.tab-btn[data-tab="stdout"]');
+    await waitFor(() => expectText(document, '#stdout-output', 'No stdout log was captured for this run.'));
+    expectTextNotContains(document, '#state', '404');
+    expectTextNotContains(document, '#response-summary', 'Log file not found');
+  });
+
+  test('still surfaces real stdout access errors in the response panel', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/v1/runs/kaseki-324/status') return createJsonResponse({ id: 'kaseki-324', status: 'completed' });
+        if (path === '/api/v1/runs/kaseki-324/logs/stdout?tail=lines&lines=200') {
+          return createJsonResponse({ title: 'Permission required', detail: 'stdout access is restricted' }, 403);
+        }
+        if (path === '/api/v1/runs/kaseki-324/artifacts') return createJsonResponse({ artifacts: [] });
+        return createJsonResponse({});
+      },
+    });
+
+    openFullResults(document, 'kaseki-324');
+    clickSelector(document, '.tab-btn[data-tab="stdout"]');
+    await waitFor(() => expectTextContains(document, '#response-summary', 'Permission required'));
+    expectTextContains(document, '#stdout-output', 'HTTP 403');
   });
 
   test('renders progress events as a readable timeline rather than raw JSON', async () => {
