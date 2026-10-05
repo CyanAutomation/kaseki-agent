@@ -35,11 +35,15 @@ async function fetchConsole(path = '/'): Promise<{ response: Response; body: str
   };
 }
 
-function createJsonResponse(payload: unknown, status = 200): MockResponse {
+function createJsonResponse(payload: unknown, status = 200, responseHeaders: Record<string, string> = {}): MockResponse {
   return {
     ok: status >= 200 && status < 300,
     status,
-    headers: { get: (name: string) => name.toLowerCase() === 'content-type' ? 'application/json' : null },
+    headers: {
+      get: (name: string) => name.toLowerCase() === 'content-type'
+        ? 'application/json'
+        : Object.entries(responseHeaders).find(([headerName]) => headerName.toLowerCase() === name.toLowerCase())?.[1] || null,
+    },
     json: async () => payload,
     text: async () => JSON.stringify(payload),
   };
@@ -292,7 +296,7 @@ describe('kaseki API web console behavior', () => {
 
     change(tokenInput!, 'bad token with spaces');
     click(document.querySelector('[data-probe="/api/v1/preflight"]'));
-    await waitFor(() => expect(document.querySelector('#state')?.textContent).toBe('Request could not be sent.'));
+    await waitFor(() => expect(document.querySelector('#state')?.textContent).toBe('API bearer token format is invalid.'));
     expect(document.querySelector('#output')?.textContent).toContain('Token format looks invalid');
     expect(calls).toHaveLength(0);
   });
@@ -1269,6 +1273,34 @@ describe('kaseki API web console behavior', () => {
     expectTextNotContains(document, '#output', '"availableArtifacts"');
   });
 
+  test('shows shared API guidance when an artifact request is forbidden', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/v1/runs/kaseki-304/status': createJsonResponse({ id: 'kaseki-304', status: 'completed' }),
+        '/api/v1/runs/kaseki-304/artifacts': createJsonResponse({
+          artifacts: [{ name: 'report.json', available: true, contentType: 'application/json', size: 100 }],
+        }),
+        '/api/v1/results/kaseki-304/report.json': createJsonResponse({
+          title: 'Forbidden',
+          status: 403,
+          detail: 'API key is missing the artifacts:read scope',
+          requestId: 'artifact-scope-request',
+        }, 403),
+      }),
+    });
+
+    openFullResults(document, 'kaseki-304');
+    clickSelector(document, '.tab-btn[data-tab="artifacts"]');
+    await waitFor(() => expect(document.querySelectorAll('#artifacts-output .artifact-item')).toHaveLength(1));
+    clickSelector(document, '#artifacts-output .artifact-item');
+
+    await waitFor(() => expectTextContains(document, '#artifacts-output', 'KASEKI_API_KEY_SCOPES'));
+    expectTextContains(document, '#artifacts-output', 'artifacts:read');
+    expectTextContains(document, '#artifacts-output', 'artifact-scope-request');
+    expect(document.querySelectorAll('#artifacts-output .artifact-item')).toHaveLength(1);
+  });
+
   test('renders gateway failures with retry guidance', async () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
@@ -1287,9 +1319,87 @@ describe('kaseki API web console behavior', () => {
     await waitFor(() => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
 
     clickSelector(document, '#submit');
-    await waitFor(() => expectTextContains(document, '#state', 'web gateway'));
+    await waitFor(() => expectTextContains(document, '#state', 'Web gateway'));
     expectTextContains(document, '#output', '"status": 502');
-    expectTextContains(document, '#output', 'retry once');
+    expectTextContains(document, '#output', 'review the web gateway and controller logs');
     expectTextContains(document, '#output', 'Bad Gateway');
+  });
+
+  test('explains how to fix a missing diagnostics scope and preserves the raw problem response', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true': createJsonResponse({
+          type: 'https://api.kaseki.local/errors#forbidden',
+          title: 'Forbidden',
+          status: 403,
+          detail: 'API key is missing the diagnostics:run scope',
+          instance: '/gateway-test',
+          requestId: 'scope-request-17',
+        }, 403),
+      }, createJsonResponse({ runs: [] })),
+    });
+
+    click(healthCheckButton(document, 'AI Model Test'));
+
+    await waitFor(() => expectTextContains(document, '#response-summary', 'diagnostics:run'));
+    expectTextContains(document, '#response-summary', 'KASEKI_API_KEY_SCOPES');
+    expectTextContains(document, '#response-summary', 'scope-request-17');
+    expectTextContains(document, '#output', 'API key is missing the diagnostics:run scope');
+    expectTextContains(document, '#output', 'scope-request-17');
+    expect(getElement<HTMLDetailsElement>(document, '#raw-response').open).toBe(false);
+    expectTextContains(document, '#state', 'Forbidden (HTTP 403)');
+  });
+
+  test.each([
+    [400, 'Correct the request', {}],
+    [401, 'Enter a valid API bearer token', {}],
+    [403, 'add the permission required for this action', {}],
+    [404, 'Verify the URL and resource ID', {}],
+    [409, 'Refresh the current status', {}],
+    [413, 'Reduce the request', {}],
+    [429, 'Wait 12 seconds', { 'Retry-After': '12' }],
+    [500, 'review the controller logs', {}],
+    [502, 'review the web gateway and controller logs', {}],
+    [418, 'Review the error details', {}],
+  ])('shows actionable guidance for HTTP %i responses', async (status, guidance) => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/v1/gateway-test?stage=1': createJsonResponse({
+          type: 'https://api.kaseki.local/errors#test',
+          title: 'Test error',
+          status,
+          detail: 'A useful server detail',
+          requestId: 'request-http-error',
+        }, status, status === 429 ? { 'Retry-After': '12' } : {}),
+      }, createJsonResponse({ runs: [] })),
+    });
+
+    click(healthCheckButton(document, 'API Connection'));
+
+    await waitFor(() => expectTextContains(document, '#response-summary', guidance));
+    expectTextContains(document, '#response-summary', 'A useful server detail');
+    expectTextContains(document, '#response-summary', 'request-http-error');
+    expectTextContains(document, '#output', '"status": ' + String(status));
+  });
+
+  test.each([
+    ['network failure', () => Promise.reject(new Error('offline')), 'Could not reach the controller', 'Check the API URL, network, and controller health'],
+    ['timeout', () => Promise.reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), 'Request timed out', 'controller state may be unknown'],
+  ])('shows next steps for a %s', async (_name, failure, title, guidance) => {
+    const probePath = '/api/v1/gateway-test?stage=1';
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => path === probePath
+        ? failure()
+        : createJsonResponse({ runs: [] }),
+    });
+
+    click(healthCheckButton(document, 'API Connection'));
+
+    await waitFor(() => expectTextContains(document, '#response-summary', title));
+    expectTextContains(document, '#response-summary', guidance);
+    expectTextContains(document, '#output', '"status": null');
   });
 });
