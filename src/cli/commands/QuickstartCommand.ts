@@ -94,19 +94,16 @@ export class QuickstartCommand extends BaseCommand {
       throw new Error('LLM Gateway API key not found');
     }
 
-    const missingGithubSecrets = [
-      ['GitHub App ID', secrets.githubAppIdFile, 'github_app_id', 'GITHUB_APP_ID_FILE'],
-      ['GitHub App Client ID', secrets.githubAppClientIdFile, 'github_app_client_id', 'GITHUB_APP_CLIENT_ID_FILE'],
-      ['GitHub App private key', secrets.githubAppPrivateKeyFile, 'github_app_private_key', 'GITHUB_APP_PRIVATE_KEY_FILE'],
-    ].filter(([, location]) => !location);
+    if (!process.env.LLM_GATEWAY_URL?.trim()) {
+      console.error('\n❌ LLM_GATEWAY_URL is required.');
+      console.error('   Set it to your OpenAI-compatible gateway base URL before running quickstart.');
+      throw new Error('LLM_GATEWAY_URL is required');
+    }
 
-    if (missingGithubSecrets.length > 0) {
-      console.error('\n❌ GitHub App credentials are incomplete.');
-      console.error('   Default Kaseki runs create GitHub PRs, so these secrets are required:');
-      for (const [label, , filename, envVar] of missingGithubSecrets) {
-        console.error(`   - ${label}: place it at ~/secrets/${filename} OR set ${envVar}`);
-      }
-      throw new Error('GitHub App credentials incomplete');
+    if (!secrets.kasekiApiKeysFile) {
+      console.error('\n❌ Kaseki API key file not found.');
+      console.error('   Place it at ~/secrets/kaseki_api_keys before exposing the API through Docker.');
+      throw new Error('Kaseki API key file not found');
     }
 
     return secrets;
@@ -145,8 +142,13 @@ export class QuickstartCommand extends BaseCommand {
     // Step 5: Start container
     console.log('\nStep 5/7: Starting kaseki-api container...');
     if (!dryRun) {
-      const apiKey = this.secretResolver.readApiKey(secrets) ?? 'changeme';
-      const startResult = this.containerLauncher.launch(apiKey);
+      const startResult = this.containerLauncher.launch({
+        llmGatewayKeyFile: secrets.llmGatewayKeyFile?.filePath,
+        githubAppIdFile: secrets.githubAppIdFile?.filePath,
+        githubAppClientIdFile: secrets.githubAppClientIdFile?.filePath,
+        githubAppPrivateKeyFile: secrets.githubAppPrivateKeyFile?.filePath,
+        kasekiApiKeysFile: secrets.kasekiApiKeysFile?.filePath,
+      });
       if (!startResult.ok) {
         console.error(`\n❌ Failed to start container: ${startResult.error}`);
         throw new Error(`Failed to start container: ${startResult.error}`);
@@ -163,10 +165,10 @@ export class QuickstartCommand extends BaseCommand {
     if (!dryRun) {
       const readyResult = await this.containerLauncher.waitForReadiness();
       if (!readyResult.ok) {
-        console.error('\n❌ API did not become ready within 60s.');
+        console.error('\n❌ API did not become ready within 120s.');
         console.error('   Check: docker logs kaseki-api');
         console.error('   Verify: /agents is writable by UID 10000 (ls -la /agents)');
-        throw new Error('API did not become ready within 60s');
+        throw new Error('API did not become ready within 120s');
       }
       console.log('  ✓ API is ready at http://localhost:8080');
     } else {
@@ -184,7 +186,7 @@ export class QuickstartCommand extends BaseCommand {
         if (smokeResult.ok) {
           console.log('  ✓ Authenticated access confirmed (GET /api/v1/runs succeeded)');
         } else {
-          console.warn('  ⚠️  Auth smoke test failed — check KASEKI_API_KEYS in your container env');
+          console.warn('  ⚠️  Auth smoke test failed — check the mounted kaseki_api_keys secret file');
         }
       } else {
         console.warn('  ⚠️  No API key found to test with; skipping auth check');
@@ -205,7 +207,9 @@ export class QuickstartCommand extends BaseCommand {
 
     if (!dryRun && apiKey) {
       console.log('Submit your first task:');
-      console.log(`  export KASEKI_API_KEY=${apiKey}`);
+      const apiKeyFile = secrets.kasekiApiKeysFile?.filePath ?? '~/secrets/kaseki_api_keys';
+      const quotedPath = `'${apiKeyFile.replace(/'/g, "'\\''")}'`;
+      console.log(`  export KASEKI_API_KEY="$(head -n 1 ${quotedPath})"`);
       console.log('  kaseki-agent run https://github.com/CyanAutomation/crudmapper main "List all public methods"');
       console.log('  kaseki-agent list');
       console.log('  kaseki-agent status kaseki-1');
@@ -240,6 +244,9 @@ WHAT IT DOES
   5. Starts the kaseki-api container via docker run
   6. Waits for http://localhost:8080/ready body to confirm ready status
   7. Smoke-tests authenticated access to /api/v1/runs
+
+  GitHub App credentials are optional. Configure LLM_GATEWAY_URL and keep the
+  gateway and API keys in mounted secret files before starting the API.
 
 SECRETS DISCOVERY ORDER
   For each secret, checks in priority order:

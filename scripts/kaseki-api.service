@@ -5,8 +5,9 @@ After=network.target docker.service
 
 [Service]
 Type=simple
-User=nobody
-Group=nogroup
+User=pi
+Group=pi
+SupplementaryGroups=docker
 EnvironmentFile=-/etc/kaseki-api/kaseki-api.env
 
 # Security hardening (match Docker settings)
@@ -42,16 +43,22 @@ ExecStartPre=/usr/bin/bash -lc 'printf "KASEKI_API_IMAGE=%s\n" "${KASEKI_API_IMA
 ExecStartPre=/usr/bin/docker run --rm --entrypoint /bin/bash "${KASEKI_API_IMAGE:-kaseki-agent:node24-local}" -lc 'test -f /app/dist/kaseki-api-service.js && ls -l /app/dist/kaseki-api-service.js'
 ExecStart=/usr/bin/docker run --rm \
   --name kaseki-api-container \
-  -p 8080:8080 \
+  -p 127.0.0.1:8080:8080 \
   -v /agents:/agents:rw \
   -v /agents/kaseki-results:/agents/kaseki-results:rw \
   -v /var/log/kaseki-api:/var/log/kaseki-api:rw \
+  -v /home/pi/secrets:/run/secrets/kaseki:ro \
   -v /var/run/docker.sock:/var/run/docker.sock \
+  --group-add ${DOCKER_GID} \
   --env-file /etc/kaseki-api/kaseki-api.env \
-  --user 0:0 \
+  --user 10000:10000 \
   --cap-drop ALL \
   --security-opt no-new-privileges:true \
   --read-only \
+  --tmpfs /tmp \
+  --tmpfs /var/tmp \
+  --tmpfs /run \
+  --tmpfs /results \
   --entrypoint /bin/bash \
   "${KASEKI_API_IMAGE:-kaseki-agent:node24-local}" \
   -lc 'set -euo pipefail; test -f /app/dist/kaseki-api-service.js; ls -l /app/dist/kaseki-api-service.js; test ! -e /agents/kaseki-template/dist/kaseki-api-service.js || echo "INFO: host /agents/kaseki-template/dist exists but is ignored in Docker mode"; exec node /app/dist/kaseki-api-service.js'

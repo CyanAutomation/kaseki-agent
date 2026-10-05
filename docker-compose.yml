@@ -4,19 +4,12 @@
 # Setup (First Time):
 # ═══════════════════════════════════════════════════════════════════════════════════
 #
-# Run this ONE command to configure everything:
+# Raspberry Pi setup (no host Node.js required):
 #
-#    kaseki-agent init
+#    bash scripts/setup-pi.sh
 #
-# That's it! The wizard will:
-# - Auto-configure secrets directories with correct permissions
-# - Ask for your LLM Gateway endpoint and API key
-# - Create necessary files and directories
-# - Show you how to deploy
-#
-# Then start the service:
-#
-#    docker-compose up -d
+# The script configures secrets and /agents, pins the pulled image digest,
+# validates Compose, and starts the service.
 #
 # See docs/QUICK_START.md for full instructions.
 # ═══════════════════════════════════════════════════════════════════════════════════
@@ -31,12 +24,13 @@ services:
       - "${DOCKER_GID:-985}"
     command: ["api"]
     ports:
-      - "${KASEKI_API_PORT:-8080}:8080"
+      - "${KASEKI_API_BIND_ADDRESS:-127.0.0.1}:${KASEKI_API_PORT:-8080}:8080"
     environment:
       KASEKI_API_PORT: "8080"
       KASEKI_API_LOG_LEVEL: "${KASEKI_API_LOG_LEVEL:-warn}"
       KASEKI_STREAM_PROGRESS: "${KASEKI_STREAM_PROGRESS:-1}"
-      KASEKI_API_MAX_CONCURRENT_RUNS: "${KASEKI_API_MAX_CONCURRENT_RUNS:-3}"
+      KASEKI_API_MAX_CONCURRENT_RUNS: "${KASEKI_API_MAX_CONCURRENT_RUNS:-1}"
+      KASEKI_TASK_MODE: "${KASEKI_TASK_MODE:-patch}"
       # Sentry error tracking (optional; leave empty to disable)
       SENTRY_DSN: "${SENTRY_DSN:-}"
       SENTRY_ENVIRONMENT: "${SENTRY_ENVIRONMENT:-production}"
@@ -48,18 +42,23 @@ services:
       KASEKI_AGENT_TIMEOUT_SECONDS: "${KASEKI_AGENT_TIMEOUT_SECONDS:-10800}"
       KASEKI_TEMPLATE_DOCTOR_TIMEOUT_MS: "${KASEKI_TEMPLATE_DOCTOR_TIMEOUT_MS:-15000}"
       KASEKI_MAX_DIFF_BYTES: "${KASEKI_MAX_DIFF_BYTES:-400000}"
+      # Keep worker containers on the exact API image revision.
+      KASEKI_IMAGE: "${KASEKI_IMAGE:-${KASEKI_API_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}}"
+      KASEKI_PROVIDER: "${KASEKI_PROVIDER:-gateway}"
+      KASEKI_MODEL: "${KASEKI_MODEL:-${LLM_GATEWAY_MODEL:-dynamic/kaseki-agent}}"
       # LLM Gateway Configuration
       # Supports any OpenAI-compatible endpoint (CloudFlare AI Workers, Azure OpenAI, Ollama, etc.)
       # Example CloudFlare: https://gateway.ai.cloudflare.com/v1/{account_id}/{namespace}/compat
       LLM_GATEWAY_URL: "${LLM_GATEWAY_URL:-}"
-      LLM_GATEWAY_API_KEY_FILE: "${LLM_GATEWAY_API_KEY_FILE:-/run/secrets/kaseki/llm_gateway_api_key}"
+      LLM_GATEWAY_MODEL: "${LLM_GATEWAY_MODEL:-dynamic/kaseki-agent}"
+      LLM_GATEWAY_API_KEY_FILE: /run/secrets/kaseki/llm_gateway_api_key
       # Per-model billing rates in USD per million tokens. Unknown models are
       # deliberately left unpriced instead of receiving another model's rate.
       # The default catalog covers the current DeepSeek V4 Flash deployment.
       KASEKI_LLM_PRICING_JSON: '${KASEKI_LLM_PRICING_JSON:-{"deepseek/deepseek-v4-flash":{"input_usd_per_mtoken":0.14,"cache_read_usd_per_mtoken":0.0028,"cache_write_usd_per_mtoken":0,"output_usd_per_mtoken":0.28},"qwen/qwen3.7-flash":{"input_usd_per_mtoken":0.03,"cache_read_usd_per_mtoken":0.006,"cache_write_usd_per_mtoken":0.038,"output_usd_per_mtoken":0.13,"tiers":[{"min_context_tokens":32000,"input_usd_per_mtoken":0.1,"cache_read_usd_per_mtoken":0.02,"cache_write_usd_per_mtoken":0.125,"output_usd_per_mtoken":0.4},{"min_context_tokens":256000,"input_usd_per_mtoken":0.2,"cache_read_usd_per_mtoken":0.04,"cache_write_usd_per_mtoken":0.25,"output_usd_per_mtoken":0.8}]}}}'
-      GITHUB_APP_ID_FILE: "${GITHUB_APP_ID_FILE:-/run/secrets/kaseki/github_app_id}"
-      GITHUB_APP_CLIENT_ID_FILE: "${GITHUB_APP_CLIENT_ID_FILE:-/run/secrets/kaseki/github_app_client_id}"
-      GITHUB_APP_PRIVATE_KEY_FILE: "${GITHUB_APP_PRIVATE_KEY_FILE:-/run/secrets/kaseki/github_app_private_key}"
+      GITHUB_APP_ID_FILE: /run/secrets/kaseki/github_app_id
+      GITHUB_APP_CLIENT_ID_FILE: /run/secrets/kaseki/github_app_client_id
+      GITHUB_APP_PRIVATE_KEY_FILE: /run/secrets/kaseki/github_app_private_key
     volumes:
       # /agents: Shared workspace for template, runs, results, and cache
       #   - Must be writable by UID 10000 (see one-time setup above)
@@ -72,13 +71,15 @@ services:
       #   - Must be writable for scouting and validation artifacts
       - /agents/kaseki-results:/agents/kaseki-results:rw
       # Secrets: one read-only host directory mount. Put all required files in
-      # /home/pi/secrets, or set KASEKI_HOST_SECRETS_DIR to another directory.
-      - ${KASEKI_HOST_SECRETS_DIR:-/home/pi/secrets}:/run/secrets/kaseki:ro
+      # ~/secrets, or set KASEKI_HOST_SECRETS_DIR to another directory.
+      - ${KASEKI_HOST_SECRETS_DIR:-${HOME:-/home/pi}/secrets}:/run/secrets/kaseki:ro
       # Logs: Persistent API service logs with rotation
       - kaseki-logs:/var/log/kaseki-api
       # Docker socket: Allows API service to spawn worker containers
       - /var/run/docker.sock:/var/run/docker.sock
-    restart: unless-stopped
+    # Bound crash loops caused by invalid credentials/configuration. Correct
+    # the configuration and run `docker compose up -d` to retry.
+    restart: on-failure:3
     cap_drop:
       - ALL
     security_opt:
@@ -94,7 +95,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 90s
     networks:
       - kaseki-network
     logging:
