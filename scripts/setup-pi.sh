@@ -172,7 +172,7 @@ trap - EXIT
 docker compose --project-directory "$ROOT_DIR" --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" config --quiet || \
   fail "Compose configuration is invalid. Review $ENV_FILE and try again."
 docker compose --project-directory "$ROOT_DIR" --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" up -d || \
-  fail 'Compose could not start Kaseki. Check `docker compose logs kaseki-api` for the reported cause.'
+  fail "Compose could not start Kaseki. Check docker compose logs kaseki-api for the reported cause."
 
 log 'Kaseki API setup completed.'
 log "API endpoint: ${API_BIND_ADDRESS}:${API_PORT}"
