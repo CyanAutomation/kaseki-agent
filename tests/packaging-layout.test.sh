@@ -11,27 +11,30 @@ fail() {
   exit 1
 }
 
-file_mode() {
-  local path="$1"
-
-  # GNU stat and BSD/macOS stat expose file modes through different flags.
-  if stat -c '%a' "$path" 2>/dev/null; then
-    return
-  fi
-  stat -f '%Lp' "$path"
-}
-
 printf '\n## Produced npm package contents\n'
-npm pack --pack-destination "$TMP_DIR" >/dev/null 2>&1
+npm_config_cache="$TMP_DIR/npm-cache" npm pack --pack-destination "$TMP_DIR" >/dev/null 2>&1
 archives=()
 while IFS= read -r archive; do
   archives+=("$archive")
 done < <(find "$TMP_DIR" -maxdepth 1 -type f -name '*.tgz' -print)
 [[ "${#archives[@]}" -eq 1 ]] || fail "npm pack did not produce exactly one archive"
+archive_listing="$TMP_DIR/archive.list"
+tar -tvzf "${archives[0]}" > "$archive_listing"
 
 PACKAGE_DIR="$TMP_DIR/staged-package"
 mkdir -p "$PACKAGE_DIR"
 tar -xzf "${archives[0]}" --strip-components=1 -C "$PACKAGE_DIR"
+
+archive_file_mode() {
+  local package_path="package/$1"
+  local symbolic_mode
+  symbolic_mode="$(awk -v target="$package_path" '$NF == target { print $1; exit }' "$archive_listing")"
+  case "$symbolic_mode" in
+    -rwxr-xr-x) printf '755' ;;
+    -rw-r--r--) printf '644' ;;
+    *) printf '%s' "$symbolic_mode" ;;
+  esac
+}
 
 # path|mode (an empty mode means that only presence is required). This is the
 # publish contract: assertions are made against the cleanly staged tarball,
@@ -75,7 +78,7 @@ for item in "${package_manifest[@]}"; do
   IFS='|' read -r path mode <<<"$item"
   [[ -e "$PACKAGE_DIR/$path" ]] || fail "installed npm package is missing $path"
   if [[ -n "$mode" ]]; then
-    actual_mode="$(file_mode "$PACKAGE_DIR/$path")"
+    actual_mode="$(archive_file_mode "$path")"
     [[ "$actual_mode" == "$mode" ]] || fail "installed npm package $path has mode $actual_mode, expected $mode"
   fi
 done
