@@ -4,7 +4,7 @@
 # setup-secrets.sh - Unified secrets and permissions setup
 #
 # Automatically configures secrets directories with proper permissions:
-# - Docker deployment: /home/pi/secrets (GID 10000, mode 750)
+# - Docker deployment: $KASEKI_HOST_SECRETS_DIR or ~/secrets (GID 10000, mode 750)
 # - Local development: ~/.kaseki/secrets (mode 700)
 #
 # USAGE
@@ -41,7 +41,7 @@
 set -euo pipefail
 
 # Configuration
-DOCKER_SECRETS_DIR="/home/pi/secrets"
+DOCKER_SECRETS_DIR="${KASEKI_HOST_SECRETS_DIR:-$HOME/secrets}"
 LOCAL_SECRETS_DIR="$HOME/.kaseki/secrets"
 KASEKI_GID=10000
 KASEKI_GROUP="kaseki"
@@ -110,7 +110,13 @@ setup_kaseki_group() {
   # Try to create the group
   if command -v groupadd >/dev/null 2>&1; then
     log_debug "Creating group '$KASEKI_GROUP' (GID: $KASEKI_GID)"
-    if sudo groupadd --gid "$KASEKI_GID" "$KASEKI_GROUP" 2>/dev/null; then
+    if [ "$(id -u)" -eq 0 ]; then
+      if groupadd --gid "$KASEKI_GID" "$KASEKI_GROUP" 2>/dev/null; then
+        log_info "Created group '$KASEKI_GROUP' (GID: $KASEKI_GID)"
+      else
+        log_debug "Could not create group (may already exist)"
+      fi
+    elif sudo groupadd --gid "$KASEKI_GID" "$KASEKI_GROUP" 2>/dev/null; then
       log_info "Created group '$KASEKI_GROUP' (GID: $KASEKI_GID)"
     else
       # Group might already exist with different GID, or we don't have sudo

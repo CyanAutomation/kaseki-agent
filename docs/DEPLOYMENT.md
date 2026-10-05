@@ -4,42 +4,27 @@
 
 The Kaseki API Service allows remote execution and monitoring of kaseki-agent runs via HTTP REST API.
 
-**Authoritative deployment mode: Docker container runtime** (docker-compose, systemd+docker, or manual `docker run`). Host Node.js process mode is fallback/dev-only and is not the production reference path.
+**Authoritative deployment mode: Docker container runtime** (Docker Compose, systemd+Docker, or manual `docker run`). Host Node.js process mode is fallback/dev-only and is not the production reference path.
 
 ## 🚀 Docker Compose Quick Start
 
-**Before deploying**, ensure the host `/agents` directory exists with correct permissions:
+### Raspberry Pi setup
 
 ```bash
-# 1. Create /agents on the host with UID 10000 ownership
-sudo mkdir -p /agents
-sudo chown 10000:10000 /agents
-sudo chmod 755 /agents
-
-# 2. (Optional) Validate setup with pre-flight checks
-./scripts/kaseki-preflight-docker-compose.sh
-
-# 3. Create secrets directory with correct ownership for UID 10000
-sudo mkdir -p /agents/secrets
-
-sudo tee /agents/secrets/openrouter_api_key >/dev/null <<'EOF'
-REPLACE_WITH_YOUR_OPENROUTER_API_KEY
-EOF
-
-sudo tee /agents/secrets/kaseki_api_keys >/dev/null <<'EOF'
-REPLACE_WITH_YOUR_KASEKI_API_KEY
-EOF
-
-sudo chown -R 10000:10000 /agents/secrets
-sudo chmod 700 /agents/secrets
-sudo chmod 600 /agents/secrets/*
-
-# 4. Deploy the API service
-docker-compose up -d
-
-# 5. Monitor startup (should complete without permission errors)
-docker-compose logs -f kaseki-api
+bash scripts/setup-pi.sh
 ```
+
+The script creates the `/agents` directories, secures host secret files for
+container UID/GID 10000, pins the pulled image digest for API and workers,
+validates the Compose configuration, and starts Kaseki. It does not require
+Node.js on the Pi. See [QUICK_START.md](QUICK_START.md) for provider and LAN
+access options.
+
+For a manual Compose deployment, copy `.env.example` to `.env`, set the gateway
+URL/model and host secret directory, place `llm_gateway_api_key` and
+`kaseki_api_keys` in that directory, and set files to mode `0640` with group
+10000 access. Set `/agents` to owner `10000:10000` and mode `0755`, then run
+`docker compose config --quiet` before `docker compose up -d`.
 
 ### Verify deployed revisions
 
@@ -134,7 +119,7 @@ user: "10000:10000"  # Consistent across API service, kaseki-agent,
 **Critical:** Ensure the host `/agents` directory is owned by UID 10000:
 
 ```bash
-# Before docker-compose up -d, run on the host:
+# Before docker compose up -d, run on the host:
 sudo mkdir -p /agents
 sudo chown 10000:10000 /agents
 sudo chmod 755 /agents
@@ -165,11 +150,11 @@ sudo chown 10000:10000 /agents
 sudo chmod 755 /agents
 
 # Restart the container:
-docker-compose down
-docker-compose up -d
+docker compose down
+docker compose up -d
 
 # Monitor:
-docker-compose logs -f kaseki-api
+docker compose logs -f kaseki-api
 ```
 
 ### Symptom: Container startup warnings in logs
@@ -179,7 +164,7 @@ docker-compose logs -f kaseki-api
 ```
 ⚠️ Container preflight diagnostics completed with X warning(s):
   • git-freshness: FAIL — Permission denied
-  → Remediation: Fix permissions: sudo chown -R 10000:10000 /agents
+  → Remediation: Fix checkout ownership: sudo chown -R 10000:10000 /agents/kaseki-template
   
   • git-safe-directory: FAIL — Git safe.directory not configured
   → Remediation: Configure: git config --global --add safe.directory /agents/kaseki-agent
@@ -207,11 +192,11 @@ cd /path/to/kaseki-agent && sudo ./scripts/kaseki-setup-host.sh --fix --recreate
 **Verify fix:** After remediation, restart the container and check logs for "All container preflight checks passed":
 
 ```bash
-docker-compose down
-docker-compose up -d
+docker compose down
+docker compose up -d
 
 # Check for success message:
-docker-compose logs kaseki-api | grep "preflight"
+docker compose logs kaseki-api | grep "preflight"
 ```
 
 **For programmatic access:** Call the `/api/v1/preflight` endpoint to see full diagnostic details:
@@ -238,7 +223,7 @@ The `containerStartup` section is cached startup history (`scope: "startup"`, `c
 
 ```bash
 ls -la /agents/kaseki-template/run-kaseki.sh  # Should exist
-docker-compose logs kaseki-api | grep "Template initialized"
+docker compose logs kaseki-api | grep "Template initialized"
 ```
 
 ### Symptom: Permission denied errors in validation logs
@@ -256,13 +241,15 @@ docker-compose logs kaseki-api | grep "Template initialized"
 **Fix:**
 
 ```bash
-# Recursively fix all subdirectories:
-sudo chown -R 10000:10000 /agents
-sudo chmod -R 755 /agents
+# Repair only Kaseki's writable directories:
+sudo mkdir -p /agents/kaseki-results /agents/kaseki-runs /agents/kaseki-cache /agents/kaseki-template
+sudo chown 10000:10000 /agents /agents/kaseki-results /agents/kaseki-runs /agents/kaseki-cache /agents/kaseki-template
+sudo chmod 0755 /agents
+sudo chmod 0750 /agents/kaseki-results /agents/kaseki-runs /agents/kaseki-cache /agents/kaseki-template
 
 # Restart:
-docker-compose down
-docker-compose up -d
+docker compose down
+docker compose up -d
 ```
 
 ### Dockhand/Portainer Deployment
@@ -282,7 +269,7 @@ Modern kaseki-agent versions include an init container that automatically attemp
 **To verify success:**
 
 ```bash
-docker-compose logs kaseki-api    # API service logs
+docker compose logs kaseki-api    # API service logs
 ```
 
 #### **Approach 2: Manual Host Setup (If Init Container Fails)**
@@ -386,13 +373,13 @@ ls -la /agents/kaseki-template/run-kaseki.sh
 Only after bootstrap verification passes, start the API service:
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 If the API starts before bootstrap, it will log a warning but continue running. Job submissions will fail with a 400 error until bootstrap is complete. Restart the API after bootstrap:
 
 ```bash
-docker-compose restart kaseki-api
+docker compose restart kaseki-api
 ```
 
 ## Quick Start
@@ -400,24 +387,14 @@ docker-compose restart kaseki-api
 ### ✅ Recommended: Docker Compose
 
 ```bash
-# Navigate to kaseki-agent repository
-cd /agents/kaseki-template
-
-# Set API key
-export KASEKI_API_KEYS=sk-your-secret-key-here
-
-# Build image from this repo
-docker build -t kaseki-agent:node24-local .
-
-# Start services (uses KASEKI_API_IMAGE, default:
-# kaseki-agent:node24-local)
-docker-compose up -d
+# From the repository checkout, run the guided host setup.
+bash scripts/setup-pi.sh
 
 # View logs
-docker-compose logs -f kaseki-api
+docker compose logs -f kaseki-api
 
 # Stop services
-docker-compose down
+docker compose down
 ```
 
 On a fresh host, run the host setup helper before starting the API, or any time
@@ -435,7 +412,7 @@ to the group owner of `/var/run/docker.sock`:
 
 ```bash
 export DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
-docker-compose up -d
+docker compose up -d
 ```
 
 In Dockhand, Portainer, or another compose manager, keep the same
@@ -467,25 +444,22 @@ worker-container problems directly.
 
 Kaseki Agent reads all secrets from host-based files instead of environment variables. This improves security by separating secrets from configuration.
 
-> **Docker deployments:** Always use `/agents/secrets` as the canonical secret directory. The Docker Compose configuration mounts `/agents:/agents:rw`, so `/agents/secrets` is accessible inside the container. The `~/secrets` path is supported only for non-Docker (host Node.js) deployments and is **not** reliably mounted into containers.
+**Docker Compose** mounts the host directory in `KASEKI_HOST_SECRETS_DIR` at
+`/run/secrets/kaseki` as read-only. The default host path is `~/secrets`; the
+Pi installer writes that value into `.env`. Keep the canonical filenames in
+that directory so the API and worker containers resolve the same files.
 
 ### Multi-Path Secret Resolution
 
-Secrets are resolved from the host filesystem in this priority order:
+For API containers, secrets are resolved from the following locations:
 
-1. **Discovered path** (from `.kaseki/host-state.json`): When you run `kaseki-agent host setup`, it records where it normalized your secrets to a state file (`~/.kaseki/host-state.json`). Preflight commands discover and use this path automatically.
-2. **Explicit environment variable**: `$KASEKI_SECRETS_DIR` (highest priority override)
-3. **SUDO_USER home fallback**: `~/secrets/{secret-name}` (non-Docker only; when running with sudo)
-4. **Container default**: `/agents/secrets/{secret-name}` (canonical Docker path; used when no state file exists)
+- Compose mount: `/run/secrets/kaseki/{secret-name}` (the default `KASEKI_SECRETS_DIR`)
+- Local development fallback: `~/.kaseki/secrets/{secret-name}`
+- GitHub App compatibility mount: `/run/secrets/{secret-name}`
 
-**Recommended workflow**:
-
-1. Run `sudo kaseki-agent host setup --fix` once during initial setup
-2. This normalizes secrets and creates `.kaseki/host-state.json`
-3. Subsequent `sudo kaseki-agent host preflight` calls automatically use the discovered path
-4. If you need to override, use `KASEKI_SECRETS_DIR=/custom/path` before any kaseki commands
-
-The system will check each location in order and use the first that contains the secret.
+For Compose deployments, set `KASEKI_HOST_SECRETS_DIR` to change the host
+directory. `KASEKI_SECRETS_DIR` changes the path inside the container and
+should normally stay `/run/secrets/kaseki`.
 
 ### State File
 
@@ -495,7 +469,8 @@ When you run `sudo kaseki-agent host setup --fix`, it creates:
 ~/.kaseki/host-state.json
 ```
 
-> **Note on `sudo` and home directory:** When you run a command with `sudo`, the shell's `~` expands to the **effective user's** home directory. Depending on your `sudo` configuration and shell settings, `~` may resolve to `/root` (if `sudo` drops to root) or `/home/pi` (if `sudo -E` preserves the environment). If you are unsure, check `echo ~` before and after `sudo` to confirm where the state file is written. Docker deployments should use `/agents/secrets` directly to avoid this ambiguity.
+This host state file is used by host preflight and directory setup. Compose
+secret mounts use `KASEKI_HOST_SECRETS_DIR` from `.env` instead.
 
 This file (created with 0644 permissions) records where setup normalized your secrets:
 
@@ -528,294 +503,71 @@ This file (created with 0644 permissions) records where setup normalized your se
 
 ### Required Secret Files
 
-Create these files on your host machine:
+For Raspberry Pi Docker deployments, run `bash scripts/setup-pi.sh`. The
+script prompts for the gateway URL, reads a missing gateway key without
+echoing it, generates a separate API bearer key, and writes both files to
+`$HOME/secrets/`. Compose mounts that directory read-only at
+`/run/secrets/kaseki/`.
 
-#### 1. OpenRouter API Key (Required)
+The required files are:
 
-File: `/agents/secrets/openrouter_api_key`
+| File | Purpose |
+| --- | --- |
+| `llm_gateway_api_key` | Provider authentication for coding-agent inference |
+| `kaseki_api_keys` | Bearer token(s) used by API clients |
 
-> **Docker deployments:** Use `/agents/secrets` (mounted via `/agents:/agents:rw`). The `~/secrets` path is for non-Docker (host Node.js) deployments only.
+The setup script keeps the directory mode `0750`, files mode `0640`, and
+group-readable access for container GID 10000. Do not put credential values
+in `.env`, command arguments, or Docker environment variables. GitHub App
+credentials are optional; add `github_app_id`, `github_app_client_id`, and
+`github_app_private_key` only when using GitHub App operations. OpenRouter
+credentials are only needed for optional evaluation stages.
 
-```bash
-# Get your API key from: https://openrouter.ai/keys
+### Optional GitHub App Credentials
 
-sudo mkdir -p /agents/secrets
+GitHub App credentials are optional. Add `github_app_id`,
+`github_app_client_id`, and `github_app_private_key` to the host secret
+directory only when you use GitHub App operations. Compose mounts them at
+`/run/secrets/kaseki/`; do not set inline `GITHUB_APP_ID` or private-key values.
 
-sudo tee /agents/secrets/openrouter_api_key >/dev/null <<'EOF'
-sk-or-your-actual-key
-EOF
-
-sudo chown -R 10000:10000 /agents/secrets
-sudo chmod 700 /agents/secrets
-sudo chmod 600 /agents/secrets/openrouter_api_key
-
-# Verify (without exposing the key in terminal history)
-sudo test -s /agents/secrets/openrouter_api_key && echo "OpenRouter key exists"
-```
-
-#### 2. Kaseki API Keys (Required)
-
-File: `/agents/secrets/kaseki_api_keys`
-
-> **Docker deployments:** Use `/agents/secrets` (mounted via `/agents:/agents:rw`). The `~/secrets` path is for non-Docker (host Node.js) deployments only.
-
-Format: One API key per line (newline-separated). Comment lines
-starting with `#` are ignored.
+### Verify Secret Setup
 
 ```bash
-sudo mkdir -p /agents/secrets
-
-sudo tee /agents/secrets/kaseki_api_keys >/dev/null <<'EOF'
-# Kaseki API Keys
-sk-api-key-1
-sk-api-key-2
-sk-api-key-3
-EOF
-
-sudo chown -R 10000:10000 /agents/secrets
-sudo chmod 700 /agents/secrets
-sudo chmod 600 /agents/secrets/kaseki_api_keys
-
-# Verify (without exposing keys in terminal history)
-sudo test -s /agents/secrets/kaseki_api_keys && echo "Kaseki API keys exist"
+test -s "$HOME/secrets/llm_gateway_api_key" && echo 'Gateway key file exists'
+test -s "$HOME/secrets/kaseki_api_keys" && echo 'API key file exists'
+docker exec kaseki-api test -r /run/secrets/kaseki/llm_gateway_api_key
+docker exec kaseki-api test -r /run/secrets/kaseki/kaseki_api_keys
+curl http://127.0.0.1:8080/ready
 ```
 
-#### 3. GitHub App Credentials (Optional, for PR creation)
-
-If you want to enable GitHub App authentication for PR creation,
-create these files in `/agents/secrets`:
-
-> **Docker deployments:** Use `/agents/secrets` (mounted via `/agents:/agents:rw`). The `~/secrets` path is for non-Docker (host Node.js) deployments only.
-
-```bash
-sudo mkdir -p /agents/secrets
-
-# GitHub App ID (numeric)
-sudo tee /agents/secrets/github_app_id >/dev/null <<'EOF'
-123456
-EOF
-
-# OAuth Client ID
-sudo tee /agents/secrets/github_app_client_id >/dev/null <<'EOF'
-Iv1.abcdef...
-EOF
-
-# PEM private key
-sudo cp your-private-key.pem /agents/secrets/github_app_private_key
-
-sudo chown -R 10000:10000 /agents/secrets
-sudo chmod 700 /agents/secrets
-sudo chmod 600 /agents/secrets/github_app_id \
-               /agents/secrets/github_app_client_id \
-               /agents/secrets/github_app_private_key
-```
-
-### GitHub App Credential Auto-Detection
-
-GitHub App credentials are now **enabled by default** if available.
-Kaseki Agent automatically searches for credentials in multiple
-locations, reducing setup friction:
-
-**Search Order (by priority):**
-
-1. **Environment variables** (highest priority)
-   - `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`,
-     `GITHUB_APP_PRIVATE_KEY`
-
-2. **Standard secret paths**
-   - `/agents/secrets/github_app_*`
-   - `~/secrets/github_app_*`
-
-3. **Convenience auto-detect locations** (private key only)
-   - `~/.ssh/github-app-private-key` — SSH directory for easy
-     key management
-   - `$PWD/.github-app-secrets/private-key` — Workspace-local
-     secrets
-   - `/etc/kaseki-secrets/github_app_private_key` — System-wide
-     secrets
-
-**Examples:**
-
-Option 1 — Use standard paths (recommended):
-
-```bash
-sudo mkdir -p /agents/secrets
-
-sudo tee /agents/secrets/github_app_id >/dev/null <<'EOF'
-123456
-EOF
-
-sudo tee /agents/secrets/github_app_client_id >/dev/null <<'EOF'
-Iv1.abc...
-EOF
-
-sudo cp your-key.pem /agents/secrets/github_app_private_key
-sudo chown -R 10000:10000 /agents/secrets
-sudo chmod 600 /agents/secrets/github_app_*
-```
-
-Option 2 — Use SSH directory (convenient for development):
-
-```bash
-mkdir -p ~/.ssh
-cat your-key.pem > ~/.ssh/github-app-private-key
-chmod 600 ~/.ssh/github-app-private-key
-# Still need ID and Client ID in env vars or standard paths
-export GITHUB_APP_ID="123456"
-export GITHUB_APP_CLIENT_ID="Iv1.abc..."
-```
-
-Option 3 — Disable auto-detection (explicit control):
-
-```bash
-export GITHUB_APP_ENABLED=0  # Skips GitHub operations entirely
-```
-
-**Behavior by Mode:**
-
-- `KASEKI_PUBLISH_MODE=pr` (default) — Creates a normal pull request; requires
-  all 3 GitHub credentials, fails with exit code 7 if missing
-- `KASEKI_PUBLISH_MODE=branch` — Pushes to a branch without creating a PR; requires
-  all 3 credentials, fails with exit code 7 if missing
-- `KASEKI_PUBLISH_MODE=auto` (legacy) — Enables GitHub ops if all
-  3 credentials found; gracefully skips if missing
-- `KASEKI_PUBLISH_MODE=none` — Always skips GitHub operations
-  (ignores credentials)
-
-### Verification
-
-**Step 1: Verify host-side permissions**
-
-```bash
-# Check ownership and permissions
-sudo ls -la /agents/secrets/
-# Expected: drwx------ 10000 10000 /agents/secrets
-# Expected: -rw------- 10000 10000 /agents/secrets/openrouter_api_key
-# Expected: -rw------- 10000 10000 /agents/secrets/kaseki_api_keys
-
-# Confirm files are non-empty (without exposing secret values)
-sudo test -s /agents/secrets/openrouter_api_key && \
-  echo "✓ OpenRouter key found" || echo "✗ OpenRouter key missing"
-sudo test -s /agents/secrets/kaseki_api_keys && \
-  echo "✓ API keys found" || echo "✗ API keys missing"
-```
-
-**Step 2: Verify container readability**
-
-After secrets are in place, confirm that the container (running as UID 10000) can read the files:
-
-```bash
-docker compose run --rm --entrypoint sh kaseki-api -lc '
-  id
-  ls -la /agents/secrets
-  test -s /agents/secrets/openrouter_api_key && echo "OpenRouter key readable"
-  test -s /agents/secrets/kaseki_api_keys && echo "API keys readable"
-'
-# Expected output:
-#   uid=10000(kaseki) gid=10000(kaseki) groups=10000(kaseki),...
-#   total ...
-#   drwx------  ... 10000 10000 ...  .
-#   -rw-------  ... 10000 10000 ...  kaseki_api_keys
-#   -rw-------  ... 10000 10000 ...  openrouter_api_key
-#   OpenRouter key readable
-#   API keys readable
-```
-
-This immediately catches UID mismatches, missing mounts, incorrect permissions, and missing files.
-
-**Step 3: Verify via API preflight**
-
-After starting the API container, verify with the preflight endpoint:
-
-```bash
-curl -H "Authorization: Bearer sk-api-key-1" \
-  http://localhost:8080/api/v1/preflight | \
-  jq '.checks[] | select(.name == "openrouter-key")'
-```
-
-Should return:
-
-```json
-{
-  "name": "openrouter-key",
-  "ok": true,
-  "detail": "OpenRouter API key is available from host secrets."
-}
-```
-
-### Troubleshooting Secrets Not Found
-
-**Symptom**: `kaseki-agent host preflight` fails with "Could not read kaseki_api_keys from host secrets"
-
-**Solution Steps**:
-
-1. **Check the state file** (created by setup):
-
-   ```bash
-   sudo cat ~/.kaseki/host-state.json
-   # Should show: { "normalized_secrets_dir": "/home/pi/secrets", ... }
-   ```
-
-2. **If state file doesn't exist**, re-run setup to create it:
-
-   ```bash
-   sudo kaseki-agent host setup --fix
-   # This creates ~/.kaseki/host-state.json and normalizes secrets
-   ```
-
-3. **Verify secrets exist** at the discovered location:
-
-   ```bash
-   # Replace /home/pi with your actual home from the state file
-   sudo ls -la /home/pi/secrets/
-   sudo test -f /home/pi/secrets/kaseki_api_keys && echo "✓ Found" || echo "✗ Missing"
-   ```
-
-4. **If using a custom secrets path**:
-
-   ```bash
-   # Re-run setup with the custom path
-   sudo KASEKI_HOST_SECRETS_DIR=/custom/path kaseki-agent host setup --fix
-   # Then preflight will find it via the updated state file
-   ```
-
-5. **If secrets are in `/agents/secrets` but preflight checks elsewhere**:
-
-   ```bash
-   # Force preflight to use the correct path
-   sudo KASEKI_SECRETS_DIR=/agents/secrets kaseki-agent host preflight
-   ```
-
-**Debug Mode**: Enable logging to see where preflight is checking:
-
-```bash
-sudo KASEKI_DEBUG=1 kaseki-agent host preflight
-# Will show: "Discovered secrets directory from setup: /home/pi/secrets"
-```
+If a file is unreadable, check host directory mode `0750`, file mode `0640`,
+and group ownership `10000`. For startup failures, check
+`docker compose logs kaseki-api` and run `docker compose config --quiet` after
+correcting `.env` or secret files.
 
 ---
 
 ## Configuration
 
-**Configuration** (via environment variables):
+**Compose settings** (via environment variables):
 
 ```bash
-# Secrets (read from files, see "Secret File Setup" section)
-# Kaseki API keys are read from /agents/secrets/kaseki_api_keys or ~/secrets/kaseki_api_keys
-OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key # Path to OpenRouter key
-GITHUB_APP_ID_FILE=/agents/secrets/github_app_id           # Optional: Path to GitHub App ID
-GITHUB_APP_CLIENT_ID_FILE=/agents/secrets/github_app_client_id   # Optional
-GITHUB_APP_PRIVATE_KEY_FILE=/agents/secrets/github_app_private_key # Optional
+# Secrets are mounted into Compose at /run/secrets/kaseki.
+# Host directory defaults to ~/secrets and can be set with KASEKI_HOST_SECRETS_DIR.
 
 # Core settings
 KASEKI_API_PORT=8080                        # API listen port (default: 8080)
+KASEKI_API_BIND_ADDRESS=127.0.0.1           # Host bind; set Pi LAN IP for LAN clients
 KASEKI_API_LOG_LEVEL=info                  # Log level: debug/info/warn/error
 KASEKI_API_IMAGE=kaseki-agent:node24-local # Must be built from
                                             # this repo's Dockerfile
+KASEKI_IMAGE=${KASEKI_API_IMAGE}            # Worker image; default is API image
+LLM_GATEWAY_URL=https://gateway.example/v1  # Gateway base URL
+LLM_GATEWAY_MODEL=dynamic/kaseki-agent     # Gateway model identifier
 KASEKI_TEMPLATE_DOCTOR_TIMEOUT_MS=15000    # Pi-safe template doctor timeout
 
 # Performance
-KASEKI_API_MAX_CONCURRENT_RUNS=3           # Max concurrent jobs (default: 3)
+KASEKI_API_MAX_CONCURRENT_RUNS=1           # Pi-friendly Compose default
 KASEKI_AGENT_TIMEOUT_SECONDS=10800         # Agent timeout in seconds (default: 3 hours)
 KASEKI_MAX_DIFF_BYTES=400000               # Max diff size (default: 400 KB)
 
@@ -824,7 +576,7 @@ KASEKI_RESULTS_DIR=/agents/kaseki-results
 KASEKI_API_LOG_DIR=/var/log/kaseki-api
 ```
 
-**Note on secrets:** Kaseki API keys are read from the fixed host-secret locations. For Docker deployments, the canonical path is `/agents/secrets/kaseki_api_keys`; the `~/secrets/kaseki_api_keys` fallback is for non-Docker (host Node.js) deployments only. Other supported secret file variables are optional if their files are in `/agents/secrets/`; set them only for non-standard locations.
+Compose mounts the selected host directory at `/run/secrets/kaseki`; keep provider and API keys there in canonical filenames. The `KASEKI_IMAGE` setting defaults to `KASEKI_API_IMAGE`, so worker containers use the same build.
 
 ### LLM Provider Configuration
 
@@ -858,29 +610,23 @@ Startup checks are organized by category:
 # docker-compose.yml or .env
 KASEKI_PROVIDER=gateway
 LLM_GATEWAY_URL=https://gateway.example.com/v1
-LLM_GATEWAY_API_KEY_FILE=/agents/secrets/llm_gateway_api_key
+LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api_key
 
 # OpenRouter is not used as a gateway fallback. Configure it only when
 # running OpenRouter directly as the primary provider.
 ```
 
-Then set up secrets:
-
-```bash
-sudo tee /agents/secrets/llm_gateway_api_key >/dev/null <<'EOF'
-your-gateway-api-key-here
-EOF
-
-sudo chown 10000:10000 /agents/secrets/llm_gateway_api_key
-sudo chmod 600 /agents/secrets/llm_gateway_api_key
-```
+For Raspberry Pi, `bash scripts/setup-pi.sh` stores the provider key in
+`$HOME/secrets/llm_gateway_api_key` and mounts it at the container path above.
+For manual setup, use a secret manager or an interactive hidden prompt; do not
+put the key in `.env` or a command argument.
 
 **Using OpenRouter:**
 
 ```bash
 # docker-compose.yml or .env
 KASEKI_PROVIDER=openrouter
-OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key
+OPENROUTER_API_KEY_FILE=/run/secrets/kaseki/openrouter_api_key
 
 # Gateway settings are not used while OpenRouter is the primary provider.
 ```
@@ -913,25 +659,33 @@ Quick alternative if Docker/docker-compose is unavailable:
 ```bash
 cd /agents/kaseki-template
 
+# Set up host-local secret files (including kaseki_api_keys).
+bash scripts/setup-secrets.sh --local
+
 # Install dependencies (lockfile-enforced)
 npm ci --omit=dev
 
 # Verify runtime
 node -v  # Must report v24.x or newer
 
-# Start API
-KASEKI_API_KEYS=sk-dev-key npm run kaseki-api
+# Start API. API and gateway keys are read from files in
+# ~/.kaseki/secrets; set the non-secret gateway URL/model as needed.
+KASEKI_PROVIDER=gateway \
+LLM_GATEWAY_URL=https://gateway.example/v1 \
+npm run kaseki-api
 ```
 
 **Environment variables:**
 
 ```bash
-# Secrets (must be set up in host files first, see "Secret File Setup" section)
-# Kaseki API keys are read from /agents/secrets/kaseki_api_keys or ~/secrets/kaseki_api_keys
-OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key # Path to OpenRouter key
-GITHUB_APP_ID_FILE=/agents/secrets/github_app_id           # Optional
-GITHUB_APP_CLIENT_ID_FILE=/agents/secrets/github_app_client_id    # Optional
-GASEKI_APP_PRIVATE_KEY_FILE=/agents/secrets/github_app_private_key # Optional
+# Secrets are read from ~/.kaseki/secrets by the local process.
+# Gateway credentials use llm_gateway_api_key; GitHub files are optional.
+KASEKI_SECRETS_DIR=$HOME/.kaseki/secrets
+LLM_GATEWAY_API_KEY_FILE=$HOME/.kaseki/secrets/llm_gateway_api_key
+OPENROUTER_API_KEY_FILE=$HOME/.kaseki/secrets/openrouter_api_key # Optional
+GITHUB_APP_ID_FILE=$HOME/.kaseki/secrets/github_app_id           # Optional
+GITHUB_APP_CLIENT_ID_FILE=$HOME/.kaseki/secrets/github_app_client_id # Optional
+GITHUB_APP_PRIVATE_KEY_FILE=$HOME/.kaseki/secrets/github_app_private_key # Optional
 
 # Core settings
 KASEKI_API_PORT=8080                        # Default: 8080
@@ -970,16 +724,21 @@ sudo systemctl daemon-reload
 # 4. Create environment file
 sudo mkdir -p /etc/kaseki-api
 sudo tee /etc/kaseki-api/kaseki-api.env << EOF
-KASEKI_API_KEYS=sk-your-secret-key
 KASEKI_API_PORT=8080
 KASEKI_API_LOG_LEVEL=info
+KASEKI_PROVIDER=gateway
+LLM_GATEWAY_URL=https://gateway.example/v1
+LLM_GATEWAY_MODEL=dynamic/kaseki-agent
+KASEKI_SECRETS_DIR=/run/secrets/kaseki
+LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api_key
 KASEKI_RESULTS_DIR=/agents/kaseki-results
 KASEKI_API_IMAGE=kaseki-agent:node24-local
+DOCKER_GID=985 # Replace with the GID from: stat -c '%g' /var/run/docker.sock
 EOF
 
 # 5. Set appropriate permissions
-sudo chown root:root /etc/kaseki-api/kaseki-api.env
-sudo chmod 600 /etc/kaseki-api/kaseki-api.env
+sudo chown root:pi /etc/kaseki-api/kaseki-api.env
+sudo chmod 640 /etc/kaseki-api/kaseki-api.env
 
 # 6. Start service
 sudo systemctl enable kaseki-api
@@ -1003,13 +762,18 @@ Run the API container directly without docker-compose:
 ```bash
 docker run --rm \
   --name kaseki-api \
-  -p 8080:8080 \
+  -p 127.0.0.1:8080:8080 \
   -v /agents:/agents:rw \
   -v /agents/kaseki-results:/agents/kaseki-results:rw \
   -v /var/log/kaseki-api:/var/log/kaseki-api:rw \
+  -v "$HOME/secrets:/run/secrets/kaseki:ro" \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  -e KASEKI_API_KEYS=sk-your-key \
   -e KASEKI_API_PORT=8080 \
+  -e KASEKI_SECRETS_DIR=/run/secrets/kaseki \
+  -e KASEKI_PROVIDER=gateway \
+  -e LLM_GATEWAY_URL=https://gateway.example/v1 \
+  -e LLM_GATEWAY_MODEL=dynamic/kaseki-agent \
+  -e LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api_key \
   -e KASEKI_CONTAINER_USER=10000:10000 \
   -e KASEKI_AGENT_TIMEOUT_SECONDS=1200 \
   --user 10000:10000 \
@@ -1017,6 +781,7 @@ docker run --rm \
   --cap-drop ALL \
   --security-opt no-new-privileges:true \
   --read-only \
+  --tmpfs /tmp --tmpfs /var/tmp --tmpfs /run --tmpfs /results \
   --entrypoint node \
   ${KASEKI_API_IMAGE:-kaseki-agent:node24-local} \
   /app/dist/kaseki-api-service.js
@@ -1188,7 +953,7 @@ docker run --rm \
      # Traefik + Kaseki Configuration
      KASEKI_API_IMAGE=docker.io/cyanautomation/kaseki-agent:latest
      KASEKI_API_LOG_LEVEL=warn
-     KASEKI_API_MAX_CONCURRENT_RUNS=3
+     KASEKI_API_MAX_CONCURRENT_RUNS=1
      KASEKI_AGENT_TIMEOUT_SECONDS=10800
      KASEKI_MAX_DIFF_BYTES=400000
      KASEKI_STREAM_PROGRESS=1
@@ -1209,14 +974,15 @@ docker run --rm \
         ```bash
         sudo mkdir -p /home/pi/secrets
         sudo chown 10000:10000 /home/pi/secrets
-        sudo chmod 700 /home/pi/secrets
+        sudo chgrp 10000 /home/pi/secrets
+        sudo chmod 750 /home/pi/secrets
         ```
 
      4. Start services:
 
         ```bash
-        docker-compose up -d
-        docker-compose logs -f traefik kaseki-api
+        docker compose up -d
+        docker compose logs -f traefik kaseki-api
         ```
 
      5. Access the Task Console at `https://kaseki-api.example.com/ui`
@@ -1297,7 +1063,7 @@ Expected response:
 
 ```bash
 # View logs
-docker-compose logs -f kaseki-api
+docker compose logs -f kaseki-api
 
 # Check resource usage
 docker stats kaseki-api
@@ -1431,7 +1197,7 @@ View logs for detailed error:
 
 ```bash
 # Docker Compose
-docker-compose logs kaseki-api | head -50
+docker compose logs kaseki-api | head -50
 
 # Node.js
 npm run kaseki-api  # Run in foreground to see errors
@@ -1469,7 +1235,7 @@ Increase `KASEKI_API_MAX_CONCURRENT_RUNS` if jobs are queueing unnecessarily.
 
 ```bash
 cd /agents/kaseki-template
-docker-compose down
+docker compose down
 docker volume prune  # Optional: delete unused volumes
 ```
 
@@ -1601,17 +1367,17 @@ tee: /results/pi-stderr.log: Permission denied
 **Root Cause:**
 The Dockerfile creates the kaseki user with UID 10000, and docker-compose.yml runs the container as UID 10000. However, if the host `/agents` directory is owned by root (or another UID) with restrictive permissions (e.g., `755`), the container cannot write to it.
 
-**One-Line Fix:**
+**Recommended Fix:**
 
 ```bash
-sudo mkdir -p /agents && sudo chmod 777 /agents
+sudo mkdir -p /agents
+sudo chown 10000:10000 /agents
+sudo chmod 755 /agents
 ```
 
 **Explanation:**
 
-- Makes `/agents` world-writable so UID 1000 (and any user) can write
-- Subdirectories created by the container inherit restrictive permissions (`700`) automatically
-- Safe for production because worker containers cannot read/write outside their instance directories
+- Gives the Kaseki container user ownership without making the directory world-writable.
 
 **Better Fix (if you own the host user):**
 
@@ -1634,7 +1400,7 @@ touch /agents/test-write && rm /agents/test-write  # Should succeed
 1. **For Docker Compose API service:** Restart the service
 
    ```bash
-   docker-compose down && docker-compose up -d
+   docker compose down && docker compose up -d
    ```
 
 2. **For kaseki-agent CLI:** Re-run your command
@@ -1658,12 +1424,13 @@ The container runs as UID 10000, but the host `/agents` directory is owned by ro
 **Quick Fix:**
 
 ```bash
-# On the host, make /agents writable for all users (including container UID 1000)
+# On the host, give the Kaseki container user ownership
 sudo mkdir -p /agents
-sudo chmod 777 /agents
+sudo chown 10000:10000 /agents
+sudo chmod 755 /agents
 
 # Verify
-ls -ld /agents  # Should show: drwxrwxrwx ... /agents
+ls -ld /agents  # Should show owner/group 10000:10000
 ```
 
 **Better Fix (if you control the host user):**
@@ -1677,8 +1444,8 @@ sudo chmod 755 /agents
 
 **After Fixing:**
 
-1. Restart docker-compose: `docker-compose down && docker-compose up -d`
-2. Verify container can write: `docker-compose logs kaseki-api | grep KASEKI_RESULTS_DIR`
+1. Restart docker-compose: `docker compose down && docker compose up -d`
+2. Verify container can write: `docker compose logs kaseki-api | grep KASEKI_RESULTS_DIR`
 3. Retry your kaseki-agent run or API request
 
 ### Startup Logs Show "Failed to create KASEKI_RESULTS_DIR"
@@ -1686,7 +1453,7 @@ sudo chmod 755 /agents
 **Check:**
 
 ```bash
-docker-compose logs kaseki-api | grep "Failed to create"
+docker compose logs kaseki-api | grep "Failed to create"
 ```
 
 **Verify host directory:**
@@ -1700,7 +1467,7 @@ rm /agents/test-write
 
 **If touch fails:**
 
-- Run: `sudo chmod 777 /agents`
+- Run: `sudo chown 10000:10000 /agents && sudo chmod 755 /agents`
 - Or: `sudo chown 10000:10000 /agents && sudo chmod 755 /agents`
 
 ### Container Exits with Code 1
@@ -1708,7 +1475,7 @@ rm /agents/test-write
 **Check logs:**
 
 ```bash
-docker-compose logs kaseki-api --tail 50
+docker compose logs kaseki-api --tail 50
 ```
 
 **Common causes:**
@@ -1721,13 +1488,13 @@ docker-compose logs kaseki-api --tail 50
 
 ```bash
 # Ensure /agents exists and is writable
-sudo mkdir -p /agents && sudo chmod 777 /agents
+sudo mkdir -p /agents && sudo chown 10000:10000 /agents && sudo chmod 755 /agents
 
 # Restart service
-docker-compose restart kaseki-api
+docker compose restart kaseki-api
 
 # View logs
-docker-compose logs -f kaseki-api
+docker compose logs -f kaseki-api
 ```
 
 ### Runs Fail with "Cannot write to workspace"
@@ -1763,7 +1530,7 @@ stat -c '%g' /var/run/docker.sock  # Returns e.g., 985
 export DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
 
 # Restart docker-compose with the GID
-docker-compose down && docker-compose up -d
+docker compose down && docker compose up -d
 ```
 
 The docker-compose.yml should have:
@@ -1784,7 +1551,7 @@ Error: ENOENT: no such file or directory, mkdir '/agents/kaseki-results'
 **Verify volume mount:**
 
 ```bash
-docker-compose ps  # Check if kaseki-api is running
+docker compose ps  # Check if kaseki-api is running
 
 docker inspect kaseki-api | grep -A 5 Mounts
 # Should show: /agents -> /agents
@@ -1792,9 +1559,9 @@ docker inspect kaseki-api | grep -A 5 Mounts
 
 **Fix:**
 
-1. Ensure `/agents` exists on host: `mkdir -p /agents && chmod 777 /agents`
+1. Ensure `/agents` exists on host: `sudo mkdir -p /agents && sudo chown 10000:10000 /agents && sudo chmod 755 /agents`
 2. Check docker-compose.yml has: `- /agents:/agents:rw`
-3. Restart: `docker-compose down && docker-compose up -d`
+3. Restart: `docker compose down && docker compose up -d`
 
 ---
 
@@ -1830,18 +1597,13 @@ The service startup precheck logs detected Node version and exits with a clear e
 Before deploying, run these commands once on the Docker host:
 
 ```bash
-# Create and permission the /agents directory
-sudo mkdir -p /agents
-sudo chown 10000:10000 /agents
-sudo chmod 755 /agents
-
-# Set group-based read access for the container GID (default: 10000)
-sudo chgrp -R 10000 /home/pi/secrets
-sudo chmod 0750 /home/pi/secrets
-sudo chmod 0640 /home/pi/secrets/*
+bash scripts/setup-pi.sh
 ```
 
-The host secret contract is intentionally small: the mounted directory is `0750`, each secret file is `0640`, and both are group-owned by the container GID. `kaseki-agent host setup --fix` and `kaseki-agent secrets fix-permissions` apply that same contract.
+For a manual deployment, create only the `/agents` directories used by Kaseki
+and assign them to UID/GID `10000:10000`. Keep host credentials in the mounted
+secret directory with directory mode `0750` and file mode `0640`, owned by the
+host user and group `10000`.
 
 See [docs/QUICK_START.md](QUICK_START.md) for the full setup walkthrough.
 

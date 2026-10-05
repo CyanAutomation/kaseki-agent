@@ -12,6 +12,7 @@ WORKDIR /opt/kaseki/image-toolchain
 COPY docker/image-toolchain/package.json docker/image-toolchain/package-lock.json ./
 COPY scripts/patch-image-dependency-bundles.mjs scripts/verify-image-dependency-versions.mjs /tmp/
 RUN --mount=type=secret,id=proxy_ca,required=false \
+    --mount=type=cache,target=/root/.npm \
     if [ -r /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi \
     && npm ci --strict-ssl=true --no-audit --prefer-offline \
     && node /tmp/patch-image-dependency-bundles.mjs node_modules node_modules \
@@ -48,6 +49,7 @@ WORKDIR /opt/kaseki/workspace-cache-seed
 COPY docker/workspace-cache/package.json docker/workspace-cache/package-lock.json ./
 COPY scripts/dependency-cache-helpers.sh /opt/kaseki/dependency-cache-helpers.sh
 RUN --mount=type=secret,id=proxy_ca,required=false \
+    --mount=type=cache,target=/root/.npm \
     if [ -r /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi \
     && npm ci --strict-ssl=true --no-audit --prefer-offline --ignore-scripts \
     && mkdir -p node_modules \
@@ -111,6 +113,7 @@ COPY scripts ./scripts
 # binary that Kaseki does not use at runtime. Omit optional packages so that
 # build-only analyzer is not carried into the production image.
 RUN --mount=type=secret,id=proxy_ca,required=false \
+    --mount=type=cache,target=/root/.npm \
     if [ -r /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi \
     && npm ci --strict-ssl=true --omit=optional --no-audit --prefer-offline --ignore-scripts \
     && node /app/scripts/patch-image-dependency-bundles.mjs /usr/local/lib/node_modules /usr/local/lib/node_modules /app/node_modules \

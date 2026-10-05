@@ -12,8 +12,104 @@ import { createLogger } from '../../logger';
 const logger = createLogger('container-launcher');
 
 const CONTAINER_UID = 10000;
-const READY_TIMEOUT_MS = 60_000;
+const READY_TIMEOUT_MS = 120_000;
 const READY_POLL_MS = 2_000;
+
+export interface ContainerSecretFiles {
+  llmGatewayKeyFile?: string | null;
+  githubAppIdFile?: string | null;
+  githubAppClientIdFile?: string | null;
+  githubAppPrivateKeyFile?: string | null;
+  kasekiApiKeysFile?: string | null;
+}
+
+export interface DockerArgsOptions {
+  image: string;
+  secretsDir: string;
+  dockerGid: string;
+  gatewayUrl?: string;
+  gatewayModel?: string;
+  apiPort?: string;
+  apiBindAddress?: string;
+  secretFiles?: ContainerSecretFiles;
+}
+
+const CONTAINER_SECRET_PATHS: Array<[keyof ContainerSecretFiles, string]> = [
+  ['llmGatewayKeyFile', 'llm_gateway_api_key'],
+  ['githubAppIdFile', 'github_app_id'],
+  ['githubAppClientIdFile', 'github_app_client_id'],
+  ['githubAppPrivateKeyFile', 'github_app_private_key'],
+  ['kasekiApiKeysFile', 'kaseki_api_keys'],
+];
+
+/** Build safe, repeatable Docker arguments for the standalone API container. */
+export function buildDockerArgs(options: DockerArgsOptions): string[] {
+  const {
+    image,
+    secretsDir,
+    dockerGid,
+    gatewayUrl = process.env.LLM_GATEWAY_URL ?? '',
+    gatewayModel = process.env.LLM_GATEWAY_MODEL ?? process.env.KASEKI_MODEL ?? 'dynamic/kaseki-agent',
+    apiPort = process.env.KASEKI_API_PORT ?? '8080',
+    apiBindAddress = process.env.KASEKI_API_BIND_ADDRESS ?? '127.0.0.1',
+    secretFiles = {},
+  } = options;
+  const args = [
+    'run', '-d',
+    '--name', 'kaseki-api',
+    '--restart', 'on-failure:3',
+    '--user', `${CONTAINER_UID}:${CONTAINER_UID}`,
+    '--group-add', dockerGid,
+    '-p', `${apiBindAddress}:${apiPort}:8080`,
+    '-e', 'KASEKI_API_PORT=8080',
+    '-e', 'KASEKI_API_LOG_LEVEL=info',
+    '-e', 'KASEKI_API_MAX_CONCURRENT_RUNS=1',
+    '-e', 'KASEKI_RESULTS_DIR=/agents/kaseki-results',
+    '-e', 'KASEKI_SECRETS_DIR=/run/secrets/kaseki',
+    '-e', `KASEKI_HOST_SECRETS_DIR=${secretsDir}`,
+    '-e', `KASEKI_CONTAINER_USER=${CONTAINER_UID}:${CONTAINER_UID}`,
+    '-e', `KASEKI_CONTAINER_UID=${CONTAINER_UID}`,
+    '-e', `KASEKI_CONTAINER_GID=${CONTAINER_UID}`,
+    '-e', 'KASEKI_AGENT_TIMEOUT_SECONDS=10800',
+    '-e', 'KASEKI_MAX_DIFF_BYTES=400000',
+    '-e', `KASEKI_IMAGE=${image}`,
+    '-e', 'KASEKI_PROVIDER=gateway',
+    '-e', `KASEKI_MODEL=${gatewayModel}`,
+    '-e', `LLM_GATEWAY_URL=${gatewayUrl}`,
+    '-e', `LLM_GATEWAY_MODEL=${gatewayModel}`,
+    '-e', 'LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api_key',
+    '-e', 'GITHUB_APP_ID_FILE=/run/secrets/kaseki/github_app_id',
+    '-e', 'GITHUB_APP_CLIENT_ID_FILE=/run/secrets/kaseki/github_app_client_id',
+    '-e', 'GITHUB_APP_PRIVATE_KEY_FILE=/run/secrets/kaseki/github_app_private_key',
+    '-v', '/agents:/agents:rw',
+    '-v', `${secretsDir}:/run/secrets/kaseki:ro`,
+    '-v', '/var/run/docker.sock:/var/run/docker.sock',
+  ];
+
+  for (const [key, secretName] of CONTAINER_SECRET_PATHS) {
+    const filePath = secretFiles[key];
+    if (!filePath) continue;
+    const resolvedFilePath = path.resolve(filePath);
+    const relativeToSecretDir = path.relative(path.resolve(secretsDir), resolvedFilePath);
+    const isInsideSecretsDir = relativeToSecretDir === '' ||
+      (relativeToSecretDir !== '..' && !relativeToSecretDir.startsWith(`..${path.sep}`) && !path.isAbsolute(relativeToSecretDir));
+    if (!isInsideSecretsDir) {
+      args.push('-v', `${resolvedFilePath}:/run/secrets/kaseki/${secretName}:ro`);
+    }
+  }
+
+  return args.concat([
+    '--cap-drop', 'ALL',
+    '--security-opt', 'no-new-privileges:true',
+    '--read-only',
+    '--tmpfs', '/tmp',
+    '--tmpfs', '/var/tmp',
+    '--tmpfs', '/run',
+    '--tmpfs', '/results',
+    image,
+    'api',
+  ]);
+}
 
 export interface LaunchResult {
   ok: boolean;
@@ -36,12 +132,9 @@ export class ContainerLauncher {
   /**
    * Start the kaseki-api Docker container
    */
-  launch(apiKey: string): LaunchResult {
-    // Remove any existing broken container
-    spawnSync('docker', ['rm', '-f', 'kaseki-api'], { stdio: 'ignore' });
-
+  launch(secretFiles: ContainerSecretFiles = {}): LaunchResult {
     const image = this.configManager.get('docker.image', 'docker.io/cyanautomation/kaseki-agent:latest');
-    const secretsDir = path.join(os.homedir(), 'secrets');
+    const secretsDir = process.env.KASEKI_HOST_SECRETS_DIR || path.join(os.homedir(), 'secrets');
 
     // Get docker GID for socket access
     let dockerGid = '985';
@@ -52,7 +145,7 @@ export class ContainerLauncher {
       logger.debug('Could not determine docker GID, using default');
     }
 
-    const args = this.buildDockerArgs(image, secretsDir, apiKey, dockerGid);
+    const args = buildDockerArgs({ image, secretsDir, dockerGid, secretFiles });
 
     logger.debug(`Launching container with image: ${image}`);
     const result = spawnSync('docker', args, { stdio: 'pipe', encoding: 'utf-8' });
@@ -140,45 +233,4 @@ export class ContainerLauncher {
     }
   }
 
-  /**
-   * Build docker run arguments for the kaseki-api container
-   */
-  private buildDockerArgs(image: string, secretsDir: string, apiKey: string, dockerGid: string): string[] {
-    return [
-      'run', '-d',
-      '--name', 'kaseki-api',
-      '--restart', 'unless-stopped',
-      '--user', `${CONTAINER_UID}:${CONTAINER_UID}`,
-      '--group-add', dockerGid,
-      '-p', '8080:8080',
-      '-e', 'KASEKI_API_PORT=8080',
-      '-e', 'KASEKI_API_LOG_LEVEL=info',
-      '-e', 'KASEKI_API_MAX_CONCURRENT_RUNS=3',
-      '-e', 'KASEKI_RESULTS_DIR=/agents/kaseki-results',
-      '-e', 'KASEKI_SECRETS_DIR=/run/secrets/kaseki',
-      '-e', `KASEKI_HOST_SECRETS_DIR=${secretsDir}`,
-      '-e', `KASEKI_CONTAINER_USER=${CONTAINER_UID}:${CONTAINER_UID}`,
-      '-e', `KASEKI_CONTAINER_UID=${CONTAINER_UID}`,
-      '-e', `KASEKI_CONTAINER_GID=${CONTAINER_UID}`,
-      '-e', 'KASEKI_AGENT_TIMEOUT_SECONDS=10800',
-      '-e', 'KASEKI_MAX_DIFF_BYTES=400000',
-      '-e', `KASEKI_API_KEYS=${apiKey}`,
-      '-e', 'LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api_key',
-      '-e', 'GITHUB_APP_ID_FILE=/run/secrets/kaseki/github_app_id',
-      '-e', 'GITHUB_APP_CLIENT_ID_FILE=/run/secrets/kaseki/github_app_client_id',
-      '-e', 'GITHUB_APP_PRIVATE_KEY_FILE=/run/secrets/kaseki/github_app_private_key',
-      '-v', '/agents:/agents:rw',
-      '-v', `${secretsDir}:/run/secrets/kaseki:ro`,
-      '-v', '/var/run/docker.sock:/var/run/docker.sock',
-      '--cap-drop', 'ALL',
-      '--security-opt', 'no-new-privileges:true',
-      '--read-only',
-      '--tmpfs', '/tmp',
-      '--tmpfs', '/var/tmp',
-      '--tmpfs', '/run',
-      '--tmpfs', '/results',
-      image,
-      'api',
-    ];
-  }
 }

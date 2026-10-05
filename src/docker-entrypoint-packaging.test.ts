@@ -531,7 +531,7 @@ exit 2
     const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf-8');
 
     expect(compose).toContain('KASEKI_SECRETS_DIR: "${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}"');
-    expect(compose).toContain('${KASEKI_HOST_SECRETS_DIR:-/home/pi/secrets}:/run/secrets/kaseki:ro');
+    expect(compose).toContain('${KASEKI_HOST_SECRETS_DIR:-${HOME:-/home/pi}/secrets}:/run/secrets/kaseki:ro');
   });
 
   test('compose health check reaches the readiness endpoint', () => {

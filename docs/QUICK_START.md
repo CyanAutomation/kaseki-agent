@@ -4,65 +4,65 @@ Get kaseki-agent running in **3 simple steps**. No manual permission setup neede
 
 ---
 
-## Step 1: Run the Setup Wizard
+## Step 1: Set Up the Raspberry Pi
 
 ```bash
-kaseki-agent init
+bash scripts/setup-pi.sh
 ```
 
-This will:
+This setup path uses Docker Compose directly and does not require Node.js on the Pi. It will:
 
-- ✓ Auto-configure secrets directories with proper permissions
-- ✓ Ask which deployment path you want (Docker Compose or single-run)
-- ✓ Collect provider credentials (LLM Gateway by default)
-- ✓ Save everything securely
+- ask for the OpenAI-compatible gateway URL and hidden API key if the key file is missing
+- create `~/secrets/kaseki_api_keys` with a separate random API bearer token
+- set secret directory/file permissions for the UID/GID 10000 container user
+- create the `/agents` directories and detect port conflicts
+- pull the image for the Pi architecture and pin its digest for API and worker containers
+- validate the rendered Compose configuration before starting it
 
-**First time?** The wizard will guide you through each step.
+Set a model explicitly when the gateway does not use Kaseki's default route:
 
----
+```bash
+KASEKI_SETUP_LLM_GATEWAY_MODEL=provider/model \
+KASEKI_SETUP_LLM_GATEWAY_URL=https://your-gateway.example/v1 \
+bash scripts/setup-pi.sh
+```
 
-## Step 2: Add Your Secrets
-
-When prompted, provide:
-
-1. **LLM Gateway settings** (required for the default provider)
-   - Kaseki defaults to `KASEKI_PROVIDER=gateway` so the LLM Gateway is the primary provider.
-   - Provide `LLM_GATEWAY_URL` and `LLM_GATEWAY_API_KEY` or `LLM_GATEWAY_API_KEY_FILE`.
-   - The gateway endpoint should be any OpenAI-compatible API (CloudFlare AI Workers, Azure OpenAI, local Ollama, etc.)
-   - **CloudFlare AI Workers example**:
-     - `LLM_GATEWAY_URL`: `https://gateway.ai.cloudflare.com/v1/{account_id}/{namespace}/compat`
-     - `LLM_GATEWAY_API_KEY`: CloudFlare API token (starts with `cfut_`)
-   - **Other examples**: `https://api.openai.com/v1`, `http://localhost:11434/v1`, Azure OpenAI endpoints
-   - Gateway preflight validates URL/key configuration, worker secret mounting, and Pi provider registration before agent phases run.
-
-2. **OpenRouter API Key** (evaluation stages only, optional)
-   - Coding-agent inference always uses the LLM Gateway (`KASEKI_PROVIDER=gateway`); OpenRouter is never routed to coding inference.
-   - Set `OPENROUTER_API_KEY` or `OPENROUTER_API_KEY_FILE` only to enable evaluation stages (task admission, goal check, run evaluation, validation recovery).
-
-3. **GitHub App Credentials** (optional)
-   - Only needed if you want GitHub-authenticated deployments
-   - Provide App ID, Client ID, and Private Key
+If the gateway key is already in `~/secrets/llm_gateway_api_key`, the script reuses it without displaying its value. To use another file, set `KASEKI_SETUP_LLM_GATEWAY_API_KEY_FILE`.
 
 ---
 
-## Step 3: Deploy
+## Step 2: Choose API Access
+
+The API is bound to `127.0.0.1` by default. To allow clients on the LAN, rerun setup with the Pi's LAN address, for example:
+
+```bash
+KASEKI_API_BIND_ADDRESS=192.168.88.200 \
+KASEKI_SETUP_LLM_GATEWAY_URL=https://your-gateway.example/v1 \
+bash scripts/setup-pi.sh
+```
+
+An API bearer token is generated and saved in `~/secrets/kaseki_api_keys`. Keep that file private. GitHub App credentials are optional and only needed for GitHub App authenticated operations.
+
+---
+
+## Step 3: Verify the Service
 
 ### Docker Compose (Recommended)
 
 ```bash
-docker-compose up -d
+docker compose ps
 ```
 
 Monitor startup:
 
 ```bash
-docker-compose logs -f kaseki-api
+docker compose logs -f kaseki-api
 ```
 
 Verify it's running:
 
 ```bash
-curl http://localhost:8080/ready
+curl http://127.0.0.1:8080/ready
 ```
 
 ### Single-Run Execution
@@ -85,7 +85,7 @@ If you want to use CloudFlare AI Workers as your LLM Gateway (the default provid
 
 ### Configuration
 
-When running `kaseki-agent init`, choose the LLM Gateway option and provide:
+Provide the gateway URL and model to `scripts/setup-pi.sh`:
 
 1. **Gateway URL**:
    ```
@@ -107,24 +107,24 @@ Once configured, verify connectivity:
 curl http://localhost:8080/ready
 
 # View logs (should show successful gateway initialization)
-docker-compose logs -f kaseki-api | grep -i cloudflare
+docker compose logs -f kaseki-api | grep -i cloudflare
 ```
 
-The setup wizard validates the gateway URL and API key format before completing setup.
+The setup script checks the gateway URL and confirms the provider key file is non-empty before starting Compose.
 
 ---
 
 ## What Just Happened?
 
-The setup wizard created:
+The Pi setup script created:
 
-- **`/home/pi/secrets/`** on the host, mounted read-only at **`/run/secrets/kaseki/`** in Docker, or **`~/.kaseki/secrets/`** for local runs
+- **`~/secrets/`** on the host, mounted read-only at **`/run/secrets/kaseki/`** in Docker, or **`~/.kaseki/secrets/`** for local runs
   - Your API keys and credentials
-  - Permissions automatically secured (not world-readable)
+- Permissions set to directory mode `750` and file mode `640`, with group `10000` access for the container
 
-- **`.env`** (current directory)
-  - Configuration for Docker Compose or local runs
-  - Safe to commit to Git (no secrets included)
+- **`.env`** (current directory, mode `600`)
+- Configuration for Docker Compose or local runs
+- Contains the immutable image digest, gateway URL/model, and host paths; it contains no secret values
 
 ---
 
@@ -197,7 +197,7 @@ kaseki-agent host preflight
 
 ```bash
 ./scripts/setup-secrets.sh --fix
-docker-compose restart kaseki-api
+docker compose restart kaseki-api
 
 # Or use new host setup tool
 sudo kaseki-agent host setup --fix
@@ -208,7 +208,7 @@ sudo kaseki-agent host setup --fix
 Check where they're stored:
 
 ```bash
-ls -la /home/pi/secrets/                    # Host Docker source
+ls -la "$HOME/secrets/"                    # Host Docker source
 docker exec kaseki-api ls -la /run/secrets/kaseki/  # Container mount
 ls -la ~/.kaseki/secrets/                   # Local
 
@@ -222,16 +222,13 @@ Verify the files are readable:
 
 ```bash
 docker exec kaseki-api test -r /run/secrets/kaseki/llm_gateway_api_key
-docker exec kaseki-api test -r /run/secrets/kaseki/github_app_id
-docker exec kaseki-api test -r /run/secrets/kaseki/github_app_client_id
-docker exec kaseki-api test -r /run/secrets/kaseki/github_app_private_key
-cat ~/.kaseki/secrets.json # Local only (contains llm_gateway_api_key)
+docker exec kaseki-api test -r /run/secrets/kaseki/kaseki_api_keys
 ```
 
 If it looks correct, try running the API service again:
 
 ```bash
-docker-compose up kaseki-api
+docker compose up kaseki-api
 ```
 
 ### Host Setup or Permission Issues?
@@ -472,7 +469,7 @@ ls -la /var/run/docker.sock
 
 ```bash
 # Check logs
-docker-compose logs kaseki-api
+docker compose logs kaseki-api
 
 # Verify Docker image is available
 docker pull docker.io/cyanautomation/kaseki-agent:latest
