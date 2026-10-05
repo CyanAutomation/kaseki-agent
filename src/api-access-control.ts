@@ -1,18 +1,3 @@
-export type ApiScope =
-  | 'runs:read'
-  | 'runs:write'
-  | 'artifacts:read'
-  | 'diagnostics:read'
-  | 'diagnostics:run'
-  | 'metrics:read'
-  | 'github:read'
-  | 'webhooks:write'
-  | 'usage:read';
-
-const DEFAULT_SCOPES: readonly ApiScope[] = [
-  'runs:read', 'artifacts:read', 'diagnostics:read', 'metrics:read', 'usage:read',
-];
-
 export interface ApiUsageSnapshot {
   startedAt: string;
   requestCount: number;
@@ -24,8 +9,6 @@ export interface ApiUsageSnapshot {
 }
 
 export interface ApiAccessControllerOptions {
-  apiKeys: readonly string[];
-  apiKeyScopes?: Record<string, readonly ApiScope[]>;
   requestsPerMinute?: number;
   diagnosticsPerHour?: number;
   webhookTestsPerHour?: number;
@@ -40,43 +23,14 @@ interface RateWindow {
 
 type MutableUsage = ApiUsageSnapshot;
 
-/** In-process API key scope, burst limit, and usage accounting. */
+/** In-process API key burst limits and usage accounting. */
 export class ApiAccessController {
-  private readonly scopes: Record<string, readonly ApiScope[]>;
   private readonly rates = new Map<string, RateWindow>();
   private readonly usage = new Map<string, MutableUsage>();
   private readonly now: () => number;
 
   constructor(private readonly options: ApiAccessControllerOptions) {
-    this.scopes = options.apiKeyScopes ?? {};
     this.now = options.now ?? Date.now;
-  }
-
-  requiredScope(method: string, path: string, query: Record<string, unknown> = {}): ApiScope {
-    const normalizedPath = path.toLowerCase();
-    if (normalizedPath === '/usage') return 'usage:read';
-    if (normalizedPath === '/metrics') return 'metrics:read';
-    if (normalizedPath.startsWith('/results/')) return 'artifacts:read';
-    if (normalizedPath.startsWith('/webhooks/')) return 'webhooks:write';
-    if (/^\/runs\/[^/]+\/webhook-deliveries/.test(normalizedPath)) {
-      return method.toUpperCase() === 'POST' ? 'webhooks:write' : 'runs:read';
-    }
-    if (normalizedPath === '/github-issues') return 'github:read';
-    if (normalizedPath === '/gateway-test') return hasCostlyDiagnosticQuery(query) ? 'diagnostics:run' : 'diagnostics:read';
-    if (normalizedPath === '/preflight' && isQueryTrue(query.agentCapability)) return 'diagnostics:run';
-    if (['/preflight', '/startup-health', '/capabilities'].includes(normalizedPath)) return 'diagnostics:read';
-    if (method.toUpperCase() === 'POST' && (normalizedPath === '/validate' || normalizedPath === '/runs' || /^\/runs\/[^/]+\/(retry|cancel)$/.test(normalizedPath))) {
-      return 'runs:write';
-    }
-    if (normalizedPath.startsWith('/runs/')) return 'runs:read';
-    return 'runs:read';
-  }
-
-  hasScope(apiKey: string, scope: ApiScope): boolean {
-    if (this.options.apiKeys.length === 0) return true;
-    if (!this.options.apiKeys.includes(apiKey)) return false;
-    const configured = this.scopes[apiKey];
-    return configured === undefined ? DEFAULT_SCOPES.includes(scope) : configured.includes(scope);
   }
 
   /** Return Retry-After seconds when a request exceeds a configured fixed-window limit. */

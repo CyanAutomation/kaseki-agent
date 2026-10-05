@@ -119,7 +119,7 @@ Start a local API service when this host should execute work:
 kaseki-agent serve --port 8080
 
 # For authenticated or network-exposed service mode
-KASEKI_API_KEYS=sk-dev KASEKI_API_KEY_SCOPES='{"sk-dev":["runs:read","runs:write"]}' kaseki-agent serve --port 8080
+KASEKI_API_KEYS=sk-dev kaseki-agent serve --port 8080
 ```
 
 Point the CLI at a controller API when the service is elsewhere:
@@ -208,7 +208,7 @@ kaseki-agent setup
 kaseki-agent config set api.base_url http://localhost:8080/api/v1 --global
 
 # Start the API service in one terminal.
-KASEKI_API_KEYS=sk-dev KASEKI_API_KEY_SCOPES='{"sk-dev":["runs:read","runs:write"]}' kaseki-agent serve --port 8080
+KASEKI_API_KEYS=sk-dev kaseki-agent serve --port 8080
 
 # Use the API-backed client commands in another terminal.
 KASEKI_API_KEY=sk-dev kaseki-agent run https://github.com/your-org/your-repo main "Make the requested change"

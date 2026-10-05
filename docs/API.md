@@ -29,7 +29,6 @@ The Kaseki API Service provides HTTP endpoints for remotely triggering, monitori
 ```bash
 # Set API keys and start
 KASEKI_API_KEYS=sk-test-abc123 \
-KASEKI_API_KEY_SCOPES='{"sk-test-abc123":["runs:read","runs:write"]}' \
 npm run kaseki-api
 
 # Or place one API key per line in /agents/secrets/kaseki_api_keys or ~/secrets/kaseki_api_keys
@@ -50,7 +49,6 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | `KASEKI_API_URL` | `http://localhost:8080/api/v1` | Preferred CLI client base URL for API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
 | `KASEKI_API_BASE_URL` | `http://localhost:8080/api/v1` | Backward-compatible CLI client base URL alias |
 | `KASEKI_API_KEY` | — | CLI client bearer token; omit when the local API is intentionally running with empty `KASEKI_API_KEYS` |
-| `KASEKI_API_KEY_SCOPES` | read-only scopes for each configured key | JSON object mapping configured API keys to allowed scope arrays, such as `{"monitor-key":["runs:read","metrics:read"]}` |
 | `KASEKI_API_RATE_LIMIT_PER_MINUTE` | 300 | Per-key API request limit |
 | `KASEKI_API_DIAGNOSTIC_LIMIT_PER_HOUR` | 10 | Per-key limit for token-consuming diagnostics |
 | `KASEKI_API_WEBHOOK_TESTS_PER_HOUR` | 10 | Per-key limit for webhook tests and manual delivery retries |
@@ -86,7 +84,7 @@ The CLI client uses `KASEKI_API_KEY`, `api.key`, or the first configured `api.ke
 
 For intentional local-only development, run the API with `KASEKI_API_KEYS` empty and omit `KASEKI_API_KEY`; the CLI will submit requests without an `Authorization` header.
 
-Configured keys default to read-only access (`runs:read`, `artifacts:read`, `diagnostics:read`, `metrics:read`, and `usage:read`). Grant only the extra scopes each key needs through `KASEKI_API_KEY_SCOPES`; run clients need `runs:write`. Supported scopes are `runs:read`, `runs:write`, `artifacts:read`, `diagnostics:read`, `diagnostics:run`, `metrics:read`, `github:read`, `webhooks:write`, and `usage:read`. Fixed-window limits are process-local. `GET /api/v1/usage` reports counts for the presented key; gateway spend is reported as `costUsd: null` because token cost is not currently available from the gateway probe.
+All configured bearer keys have equal access to API endpoints. Keep keys secret and configure `KASEKI_API_KEYS` only for callers you trust to submit runs and invoke diagnostics. Fixed-window limits are per-key and process-local. `GET /api/v1/usage` reports counts for the presented key; gateway spend is reported as `costUsd: null` because token cost is not currently available from the gateway probe.
 
 Every API response includes `X-Request-ID`. Errors use `application/problem+json` with `type`, `title`, `status`, `detail`, `instance`, and `requestId` fields.
 
@@ -1004,11 +1002,11 @@ curl -H "Authorization: Bearer sk-test-key" \
 
 **GET `/api/v1/runs/:id/webhook-deliveries`**
 
-Requires `runs:read`. Returns durable, secret-free delivery state and attempt history for the run. Delivery URLs and payload bodies are never returned. Terminal history is retained for the newest 1,000 deliveries.
+Requires a valid API key. Returns durable, secret-free delivery state and attempt history for the run. Delivery URLs and payload bodies are never returned. Terminal history is retained for the newest 1,000 deliveries.
 
 **POST `/api/v1/runs/:id/webhook-deliveries/:deliveryId/retry`**
 
-Requires `webhooks:write`. Retries a terminal failed delivery and returns `202 Accepted`; retrying a successful or active delivery returns `409 Conflict`.
+Requires a valid API key. Retries a terminal failed delivery and returns `202 Accepted`; retrying a successful or active delivery returns `409 Conflict`.
 
 Webhook delivery uses HTTPS and public internet destinations by default. The sender rejects private, loopback, link-local, and other non-public DNS answers, pins the selected address for the request, and does not follow redirects. To deliver to a trusted private receiver, set `KASEKI_WEBHOOK_ALLOWED_ORIGINS` to its exact origin (scheme, host, and port, no path). This explicitly permits that origin to use HTTP or resolve to private addresses.
 
@@ -1016,13 +1014,13 @@ Webhook delivery uses HTTPS and public internet destinations by default. The sen
 
 **GET `/api/v1/usage`**
 
-Requires `usage:read`. Returns in-process request, diagnostic, webhook retry/test, and GitHub lookup counts plus configured rate limits for the current key. `costUsd` is `null` until the gateway exposes reliable per-request cost data.
+Returns in-process request, diagnostic, webhook retry/test, and GitHub lookup counts plus configured rate limits for the current key. `costUsd` is `null` until the gateway exposes reliable per-request cost data. Requires a valid API key when authentication is enabled.
 
 ### GitHub Issues
 
 **POST `/api/v1/github-issues`**
 
-Requires `github:read`. The strict request body accepts `repoUrl` or `repo` (`owner/repo`), one `label` or up to ten `labels`, `allLabels`, `limit` (1–100, default 5), and `state` (`open`, `closed`, or `all`). Invalid or extra fields return `400` before a GitHub App call; per-key limits return `429` with `Retry-After`.
+Requires a valid API key. The strict request body accepts `repoUrl` or `repo` (`owner/repo`), one `label` or up to ten `labels`, `allLabels`, `limit` (1–100, default 5), and `state` (`open`, `closed`, or `all`). Invalid or extra fields return `400` before a GitHub App call; per-key limits return `429` with `Retry-After`.
 
 ```json
 {

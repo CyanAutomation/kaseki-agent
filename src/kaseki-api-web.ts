@@ -2324,10 +2324,7 @@ const controllerPage = String.raw`<!doctype html>
           action = 'Enter a valid API bearer token in the header and retry.';
         } else if (status === 403) {
           title = problemTitle || 'Permission required';
-          const scopeMatch = detail.match(/missing the ([a-z][a-z0-9-]*:[a-z][a-z0-9-]*) scope/i);
-          action = scopeMatch
-            ? 'Add the ' + scopeMatch[1] + ' scope to this key in KASEKI_API_KEY_SCOPES. If you add an explicit entry, include every scope this key should retain. Restart or redeploy the API service.'
-            : 'Check this key’s KASEKI_API_KEY_SCOPES entry and add the permission required for this action. An explicit entry must include every scope this key should retain. Restart or redeploy the API service.';
+          action = 'Ask the API operator to review access for this request.';
         } else if (status === 404) {
           title = problemTitle || 'Resource not found';
           action = 'Verify the URL and resource ID, and confirm the resource exists.';

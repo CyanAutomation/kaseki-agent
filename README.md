@@ -77,7 +77,6 @@ kaseki-agent status kaseki-1
 ```bash
 # Start an authenticated local API on port 8080
 KASEKI_API_KEYS=sk-local-secret \
-KASEKI_API_KEY_SCOPES='{"sk-local-secret":["diagnostics:read"]}' \
   kaseki-agent serve --port 8080 &
 
 # Health check (no auth required)

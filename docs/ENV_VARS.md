@@ -142,7 +142,6 @@ Remove these names from deployment configuration and use the replacement shown. 
 | `KASEKI_API_URL` | `http://localhost:8080/api/v1` | string | Client-side base URL used by npm API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
 | `KASEKI_API_KEY` | — | string | Client-side bearer token for authenticated Kaseki API services |
 | `KASEKI_API_KEYS` | `/agents/secrets/kaseki_api_keys`, `~/secrets/kaseki_api_keys` | string | Newline-separated API keys accepted by the Kaseki service |
-| `KASEKI_API_KEY_SCOPES` | read-only scopes for configured keys | JSON object | Map bearer keys to allowed scope arrays; grant `runs:write` to keys that submit runs and store the mapping in the deployment secret manager |
 | `KASEKI_API_RATE_LIMIT_PER_MINUTE` | `300` | integer | Per-key fixed-window request limit |
 | `KASEKI_API_DIAGNOSTIC_LIMIT_PER_HOUR` | `10` | integer | Per-key limit for token-consuming diagnostic probes |
 | `KASEKI_API_WEBHOOK_TESTS_PER_HOUR` | `10` | integer | Per-key limit for webhook tests and delivery retries |
