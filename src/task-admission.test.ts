@@ -52,7 +52,7 @@ describe('task admission classifier', () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        model: '~typesafe/latest',
+        model: '~typesafe/jev-latest',
         answers: {
           contains_credentials: { type: 'noul', noul: 0.01 },
           changes_permissions: { type: 'noul', noul: 0.95 },

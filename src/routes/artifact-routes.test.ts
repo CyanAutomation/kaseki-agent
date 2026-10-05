@@ -252,7 +252,7 @@ describe('artifact-routes', () => {
       const job = mockCompletedJob();
       const content = JSON.stringify({
         summary: 'JEV classified the applicable success criteria.',
-        classifier: { provider: 'provider-name', model: '~typesafe/latest' },
+        classifier: { provider: 'provider-name', model: '~typesafe/jev-latest' },
       });
       (fs.statSync as jest.Mock).mockReturnValue({ isFile: () => true, size: Buffer.byteLength(content) });
       mockCache.getOrLoad.mockReturnValue(content);
@@ -264,7 +264,7 @@ describe('artifact-routes', () => {
         expect(response.status).toBe(200);
         expect(body).not.toContain('JEV');
         expect(body).not.toContain('provider-name');
-        expect(body).not.toContain('~typesafe/latest');
+        expect(body).not.toContain('~typesafe/jev-latest');
         expect(JSON.parse(body)).toMatchObject({ summary: expect.stringContaining('Evaluation') });
       } finally {
         await close(server);

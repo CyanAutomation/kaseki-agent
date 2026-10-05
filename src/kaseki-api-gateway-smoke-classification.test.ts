@@ -1,19 +1,24 @@
 import * as classificationModule from './kaseki-api-gateway-smoke';
+import { DEFAULT_JEV_MODEL } from './jev-classifier';
 import type { ClassificationAnswer } from './types/openrouter-decisions';
 
 describe('testClassificationSmoke (mocked)', () => {
   const originalFetch = global.fetch;
+  const originalDecisionModel = process.env.KASEKI_DECISION_MODEL;
   const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
 
   beforeEach(() => {
     jest.clearAllMocks();
     global.fetch = mockFetch;
     process.env.OPENROUTER_API_KEY = 'sk-test-key-mock';
+    delete process.env.KASEKI_DECISION_MODEL;
   });
 
   afterEach(() => {
     global.fetch = originalFetch;
     delete process.env.OPENROUTER_API_KEY;
+    if (originalDecisionModel === undefined) delete process.env.KASEKI_DECISION_MODEL;
+    else process.env.KASEKI_DECISION_MODEL = originalDecisionModel;
   });
 
   it('should return skipped when OPENROUTER_API_KEY not configured', async () => {
@@ -35,7 +40,7 @@ describe('testClassificationSmoke (mocked)', () => {
      * relevant Kaseki content when the LLM returns a confident decision set.
      */
     const mockResponse = {
-      model: '~typesafe/latest',
+      model: '~typesafe/jev-latest',
       answers: {
         code_quality_issue: {
           type: 'noul',
@@ -90,6 +95,20 @@ describe('testClassificationSmoke (mocked)', () => {
     expect(result).not.toHaveProperty('modelUsed');
     expect(result.outputTokens).toBeGreaterThan(0);
     expect(result.detail).toBeTruthy();
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body as string).model).toBe(DEFAULT_JEV_MODEL);
+  });
+
+  it('honors an explicit KASEKI_DECISION_MODEL override', async () => {
+    process.env.KASEKI_DECISION_MODEL = 'custom/decision-model';
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      text: async () => 'Invalid model',
+    } as Response);
+
+    await classificationModule.testClassificationSmoke(true);
+
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body as string).model).toBe('custom/decision-model');
   });
 
   it('should handle low-confidence classifications (mocked)', async () => {
@@ -98,7 +117,7 @@ describe('testClassificationSmoke (mocked)', () => {
      * it can incorrectly route or skip important review tasks.
      */
     const mockResponse = {
-      model: '~typesafe/latest',
+      model: '~typesafe/jev-latest',
       answers: {
         code_quality_issue: {
           type: 'noul',
@@ -176,7 +195,7 @@ describe('testClassificationSmoke (mocked)', () => {
       status: 200,
       json: async () => ({
         id: 'gen-125',
-        model: '~typesafe/latest',
+        model: '~typesafe/jev-latest',
         // Missing 'answers' field
       }),
       text: async () => '{}',

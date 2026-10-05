@@ -1436,7 +1436,7 @@ describe('LLM Gateway Test', () => {
 
   describe('Evaluation Smoke Test', () => {
     const mockClassificationRequest = {
-      model: '~typesafe/latest',
+      model: '~typesafe/jev-latest',
       input: {
         state: 'Help! My payouts have been failing for 3 days.',
         questions: {
@@ -1472,19 +1472,19 @@ describe('LLM Gateway Test', () => {
       it('should resolve Cloudflare AI Run credentials from environment', () => {
         process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-123';
         process.env.CLOUDFLARE_API_TOKEN = 'test-token-xyz';
-        process.env.KASEKI_DECISION_MODEL = '~typesafe/latest';
+        process.env.KASEKI_DECISION_MODEL = '~typesafe/jev-latest';
 
         // This test validates the config shape; implementation test
         // will verify the helper builds the right Cloudflare endpoint
         expect(process.env.CLOUDFLARE_ACCOUNT_ID).toBe('test-account-123');
         expect(process.env.CLOUDFLARE_API_TOKEN).toBe('test-token-xyz');
-        expect(process.env.KASEKI_DECISION_MODEL).toBe('~typesafe/latest');
+        expect(process.env.KASEKI_DECISION_MODEL).toBe('~typesafe/jev-latest');
       });
 
       it('should read Cloudflare API token from host secrets when inline env is not configured', () => {
         delete process.env.CLOUDFLARE_API_TOKEN;
         process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-456';
-        process.env.KASEKI_DECISION_MODEL = '~typesafe/latest';
+        process.env.KASEKI_DECISION_MODEL = '~typesafe/jev-latest';
         process.env.KASEKI_SECRETS_DIR = secretsDir;
 
         // Write API token to secrets file
@@ -1494,14 +1494,14 @@ describe('LLM Gateway Test', () => {
         expect(fs.existsSync(path.join(secretsDir, 'cloudflare_api_token'))).toBe(true);
       });
 
-      it('should default to dynamic/classify model when KASEKI_DECISION_MODEL is not set', () => {
+      it('should default to the latest Jev model alias when KASEKI_DECISION_MODEL is not set', () => {
         delete process.env.KASEKI_DECISION_MODEL;
         process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-789';
         process.env.CLOUDFLARE_API_TOKEN = 'test-token-abc';
 
         // Validation: expected default model
-        const expectedDefault = '~typesafe/latest';
-        expect(expectedDefault).toBe('~typesafe/latest');
+        const expectedDefault = '~typesafe/jev-latest';
+        expect(expectedDefault).toBe('~typesafe/jev-latest');
       });
 
       it('should fail gracefully when CLOUDFLARE_ACCOUNT_ID is not configured', () => {
@@ -1526,7 +1526,7 @@ describe('LLM Gateway Test', () => {
       it('should build a valid evaluation request body', () => {
         const requestBody = mockClassificationRequest;
 
-        expect(requestBody.model).toBe('~typesafe/latest');
+        expect(requestBody.model).toBe('~typesafe/jev-latest');
         expect(requestBody.input).toBeDefined();
         expect(requestBody.input.state).toBe('Help! My payouts have been failing for 3 days.');
         expect(requestBody.input.questions).toBeDefined();

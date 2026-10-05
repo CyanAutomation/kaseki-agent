@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { classifyWithJev, answerConfidence, answerIsTrue, DEFAULT_JEV_MODEL, JEV_DECISIONS_URL, JevClassificationError } from './jev-classifier';
 
 describe('JEV classifier client', () => {
@@ -24,7 +26,21 @@ describe('JEV classifier client', () => {
   });
 
   it('keeps the configured rolling model alias at the latest release', () => {
-    expect(DEFAULT_JEV_MODEL).toBe('~typesafe/latest');
+    expect(DEFAULT_JEV_MODEL).toBe('~typesafe/jev-latest');
+  });
+
+  it('keeps the launcher and published environment defaults aligned with the runtime default', () => {
+    const repoRoot = path.resolve(__dirname, '..');
+    const launcher = fs.readFileSync(path.join(repoRoot, 'run-kaseki.sh'), 'utf8');
+    const skill = fs.readFileSync(path.join(repoRoot, '.agents/skills/environment-configuration/SKILL.md'), 'utf8');
+    const metadata = JSON.parse(fs.readFileSync(path.join(repoRoot, '.agents/skills/environment-configuration/environment-variables.json'), 'utf8'));
+    const envDocs = fs.readFileSync(path.join(repoRoot, 'docs/ENV_VARS.md'), 'utf8');
+
+    expect(launcher).toContain(`KASEKI_DECISION_MODEL="\${KASEKI_DECISION_MODEL:-${DEFAULT_JEV_MODEL}}"`);
+    expect(metadata.find((item: { name: string }) => item.name === 'KASEKI_DECISION_MODEL')?.default).toBe(DEFAULT_JEV_MODEL);
+    expect(skill).toContain(`| \`KASEKI_DECISION_MODEL\` | \`${DEFAULT_JEV_MODEL}\` |`);
+    expect(envDocs).toContain(`| \`KASEKI_DECISION_MODEL\` | \`${DEFAULT_JEV_MODEL}\` |`);
+    expect(envDocs).toContain(`KASEKI_DECISION_MODEL\` (keep \`${DEFAULT_JEV_MODEL}\`)`);
   });
 
   it('rejects retired evaluation configuration without using it as an alias', async () => {
@@ -61,7 +77,7 @@ describe('JEV classifier client', () => {
 
   it('accepts a normalized Choice distribution and a fractional zero-based Score answer', async () => {
     const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({
-      model: '~typesafe/latest',
+      model: '~typesafe/jev-latest',
       answers: {
         department: { type: 'choice', choice: 'billing', probabilities: { billing: 0.85, technical: 0.15, sales: 0 }, confidence: 0.78 },
         frustration: { type: 'score', score: 1.05, legend: { 0: 'Calm', 1: 'Frustrated', 2: 'Very angry' }, probabilities: { 0: 0, 1: 0.95, 2: 0.05 }, confidence: 0.93 },

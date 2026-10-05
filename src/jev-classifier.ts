@@ -3,7 +3,7 @@ import { resolveOpenRouterApiKey } from './gateway-detection/resolve-openrouter-
 import { parseResponse } from './jev-classifier-response';
 export { answerConfidence, answerIsFalse, answerIsTrue } from './decision-answers';
 
-export const DEFAULT_JEV_MODEL = '~typesafe/latest';
+export const DEFAULT_JEV_MODEL = '~typesafe/jev-latest';
 export const JEV_DECISIONS_URL = 'https://openrouter.ai/api/alpha/decisions';
 export interface JevClassificationOptions { model?: string; timeoutMs?: number; fetchImpl?: typeof fetch; maxRetries?: number; }
 export interface JevClassificationResult { model: string; answers: Record<string, ClassificationAnswer>; usage: Record<string, unknown>; responseTime: number; attemptCount: number; }

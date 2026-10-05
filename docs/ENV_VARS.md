@@ -104,7 +104,7 @@ For the gateway path, worker preflight checks verify gateway URL/key configurati
 | `KASEKI_GATEWAY_RESPONSE_SMOKE` | production: `true`, test/dev: `false` | boolean | Controls whether `/api/v1/gateway-test` performs a real OpenAI Responses API smoke request with the configured gateway model (default `dynamic/kaseki-agent`). Set `0`, `false`, `off`, or `no` to disable in production; set `1`, `true`, `on`, or `yes` to force-enable in test/dev. |
 | `KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE` | `false` | boolean | Enables Pi provider smoke in non-production environments. Any token-consuming probe must be explicitly requested with `inference=true` on `/api/v1/gateway-test`. In development/test, set to `1`, `true`, `on`, or `yes` to enable the adapter smoke. |
 | `KASEKI_PI_PROVIDER_SMOKE_TIMEOUT_MS` | `60000` | integer | Timeout for the opt-in Pi gateway provider smoke test. |
-| `KASEKI_DECISION_MODEL` | `~typesafe/latest` | string | Model alias used by Task Admission, Goal Check, Run Evaluation, and validation recovery through the shared DecisionService. The default follows the latest supported release and is intentionally not pinned. See [DECISION_MODELS.md](DECISION_MODELS.md) for the decision hierarchy and current integrations. |
+| `KASEKI_DECISION_MODEL` | `~typesafe/jev-latest` | string | Model alias used by Task Admission, Goal Check, Run Evaluation, and validation recovery through the shared DecisionService. The default follows the latest supported release and is intentionally not pinned. See [DECISION_MODELS.md](DECISION_MODELS.md) for the decision hierarchy and current integrations. |
 | `KASEKI_TASK_ADMISSION_TIMEOUT_MS` | `5000` | integer | Per-attempt timeout for task admission classification. Retryable failures can be attempted up to three times; operational failures are reported as degraded, while deterministic credential and policy checks remain authoritative. |
 | `KASEKI_TASK_ADMISSION_CONFIDENCE` | `0.8` | number | Noul probability required to reject a task for a sensitive condition, and Choice confidence required to reject a high-risk task. |
 | `KASEKI_TYPED_EVALUATION_ENABLED` | `1` in production; `0` with `KASEKI_TEST_MODE=1` | boolean | Use structured decision responses for Goal Check and Run Evaluation. Set to `0` to use the existing Pi evaluation stages. Task Admission remains independently configured. |
@@ -129,7 +129,7 @@ Remove these names from deployment configuration and use the replacement shown. 
 
 | Retired setting | Replacement |
 |---|---|
-| `KASEKI_CLASSIFICATION_MODEL` | `KASEKI_DECISION_MODEL` (keep `~typesafe/latest`) |
+| `KASEKI_CLASSIFICATION_MODEL` | `KASEKI_DECISION_MODEL` (keep `~typesafe/jev-latest`) |
 | `KASEKI_JEV_WORKFLOW` | `KASEKI_TYPED_EVALUATION_ENABLED` |
 | `KASEKI_JEV_CONFIDENCE` | `KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD` |
 | `KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS` | `KASEKI_GOAL_CHECK_DECISION_TIMEOUT_MS` |
