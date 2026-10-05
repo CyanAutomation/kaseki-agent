@@ -10,6 +10,23 @@ Kaseki is a proof-of-concept ephemeral coding-agent runner. Each run creates a n
 
 ## Quick Start
 
+### Raspberry Pi Docker Setup
+
+From a checkout of this repository, run:
+
+```bash
+bash scripts/setup-pi.sh
+```
+
+This path uses Docker Compose without installing Node.js on the Pi. It prompts
+for the gateway URL and hidden key when needed, creates a separate API bearer
+key file, sets container-readable permissions, pins the pulled image digest for
+the API and workers, validates Compose configuration, and starts the service.
+The API binds to localhost by default; set `KASEKI_API_BIND_ADDRESS` to the
+Pi's LAN address when LAN clients need access.
+
+See [the Raspberry Pi quick-start guide](docs/QUICK_START.md) for details.
+
 ### 1. Install Setup
 
 ```bash
@@ -52,7 +69,7 @@ The live probe requires `CLOUDFLARE_GATEWAY_TEST=1`, a configured `LLM_GATEWAY_U
 
 ```bash
 # Start API service (Docker Compose recommended)
-docker-compose up -d
+docker compose up -d
 
 # Submit a task
 kaseki-agent run https://github.com/CyanAutomation/crudmapper main \
@@ -236,7 +253,7 @@ See [docs/ENV_VARS.md](docs/ENV_VARS.md) for complete configuration reference.
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `LLM_GATEWAY_URL` | `https://llmgateway.local.xyz/v1` | Required; Pi CLI appends endpoint path |
-| `LLM_GATEWAY_API_KEY_FILE` | `~/.kaseki/secrets.json` | Required; secret file (mode 0600) |
+| `LLM_GATEWAY_API_KEY_FILE` | `/run/secrets/kaseki/llm_gateway_api_key` in Docker | Required; keep the key in a host file with mode 0640 and group 10000 |
 | `KASEKI_MODEL` | `dynamic/kaseki-agent` | Pi model string |
 | `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test;npm run build` | Semicolon-separated |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | Agent timeout (3 hours) |
