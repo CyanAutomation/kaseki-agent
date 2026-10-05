@@ -2298,12 +2298,163 @@ const controllerPage = String.raw`<!doctype html>
         }
       }
 
+      function apiErrorGuidance(status, payload, headers) {
+        const body = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+        const nestedError = body.error && typeof body.error === 'object' ? body.error : {};
+        const rawDetail = typeof body.detail === 'string' ? body.detail
+          : typeof body.message === 'string' ? body.message
+          : typeof body.error === 'string' ? body.error
+          : typeof nestedError.detail === 'string' ? nestedError.detail
+          : typeof nestedError.message === 'string' ? nestedError.message
+          : typeof payload === 'string' ? payload
+          : '';
+        const detail = stripControlSequences(rawDetail).trim().slice(0, 500);
+        const problemTitle = typeof body.title === 'string' ? stripControlSequences(body.title).trim() : '';
+        const headerRequestId = headers && typeof headers.get === 'function' ? headers.get('X-Request-ID') || '' : '';
+        const rawRequestId = typeof body.requestId === 'string' ? body.requestId : headerRequestId;
+        const requestId = typeof rawRequestId === 'string' ? stripControlSequences(rawRequestId).slice(0, 128) : '';
+        let title = problemTitle || 'Request failed';
+        let action = 'Review the error details. If the issue continues, contact the API operator with the request ID.';
+
+        if (status === 400 || status === 422) {
+          title = problemTitle || 'Check the request';
+          action = 'Correct the request using the details above, then submit it again.';
+        } else if (status === 401) {
+          title = problemTitle || 'Authentication required';
+          action = 'Enter a valid API bearer token in the header and retry.';
+        } else if (status === 403) {
+          title = problemTitle || 'Permission required';
+          const scopeMatch = detail.match(/missing the ([a-z][a-z0-9-]*:[a-z][a-z0-9-]*) scope/i);
+          action = scopeMatch
+            ? 'Add the ' + scopeMatch[1] + ' scope to this key in KASEKI_API_KEY_SCOPES. If you add an explicit entry, include every scope this key should retain. Restart or redeploy the API service.'
+            : 'Check this key’s KASEKI_API_KEY_SCOPES entry and add the permission required for this action. An explicit entry must include every scope this key should retain. Restart or redeploy the API service.';
+        } else if (status === 404) {
+          title = problemTitle || 'Resource not found';
+          action = 'Verify the URL and resource ID, and confirm the resource exists.';
+        } else if (status === 409) {
+          title = problemTitle || 'Request conflicts with current state';
+          action = 'Refresh the current status and retry after the resource reaches the required state.';
+        } else if (status === 413) {
+          title = problemTitle || 'Request is too large';
+          action = 'Reduce the request or select a smaller artifact, then retry.';
+        } else if (status === 429) {
+          title = problemTitle || 'Request limit reached';
+          const retryAfter = headers && typeof headers.get === 'function' ? headers.get('Retry-After') : null;
+          const retrySeconds = retryAfter && /^[0-9]+$/.test(retryAfter) ? Number(retryAfter) : 0;
+          action = retrySeconds > 0
+            ? 'Wait ' + String(retrySeconds) + ' seconds before retrying.'
+            : 'Wait for the rate limit window to reset before retrying.';
+        } else if (status === 502) {
+          title = problemTitle || 'Web gateway could not reach the controller';
+          action = 'Check /health and /api/v1/preflight, then review the web gateway and controller logs before retrying.';
+        } else if (status >= 500) {
+          title = problemTitle || 'Controller error';
+          action = 'Check /health and /api/v1/preflight, then review the controller logs.';
+        }
+
+        return { title, detail, action, requestId };
+      }
+
+      function formatApiErrorText(response, payload) {
+        const guidance = apiErrorGuidance(response.status, payload, response.headers);
+        return guidance.title + ' (HTTP ' + String(response.status) + ')'
+          + (guidance.detail ? '\n' + guidance.detail : '')
+          + '\n\nNext step: ' + guidance.action
+          + (guidance.requestId ? '\n\nRequest ID: ' + guidance.requestId : '');
+      }
+
+      async function readApiResponse(response) {
+        const contentType = response.headers.get('content-type') || '';
+        return contentType.includes('json') ? response.json() : response.text();
+      }
+
+      function setApiErrorSummary(response, payload) {
+        if (!responseSummary) return apiErrorGuidance(response.status, payload, response.headers);
+        responseSummary.replaceChildren();
+        const guidance = apiErrorGuidance(response.status, payload, response.headers);
+        responseSummary.hidden = false;
+        const whatHappened = guidance.title + ' (HTTP ' + String(response.status) + ')'
+          + (guidance.detail ? ': ' + guidance.detail : '');
+        appendSummaryItem('What happened', whatHappened, { warning: true, critical: true, fullWidth: true });
+        appendSummaryItem('Next step', guidance.action, { warning: true, fullWidth: true });
+        if (guidance.requestId) appendSummaryItem('Request ID', guidance.requestId, { fullWidth: true });
+        return guidance;
+      }
+
+      function requestFailureGuidance(error, path, method) {
+        const message = error instanceof Error ? error.message : String(error);
+        const requestPath = String(path || '').split('?')[0];
+        const requestMethod = String(method || 'GET').toUpperCase();
+        const isRunSubmission = requestPath === '/api/v1/runs' && requestMethod === 'POST';
+        if (error instanceof RequestTimeoutError) {
+          return {
+            title: 'Request timed out',
+            detail: 'The controller did not respond within the allowed time.',
+            action: isRunSubmission
+              ? 'Check recent runs to see whether the request completed before submitting it again.'
+              : requestPath === '/api/v1/validate'
+                ? 'Check /health and /api/v1/preflight, then retry validation. No run was submitted.'
+              : 'Check /health, /ready, and /api/v1/preflight before retrying; the controller state may be unknown.',
+          };
+        }
+        if (/API bearer token in the header/i.test(message)) {
+          return { title: 'API bearer token required', detail: '', action: 'Enter the API bearer token in the header, then retry.' };
+        }
+        if (/Token format looks invalid/i.test(message)) {
+          return { title: 'API bearer token format is invalid', detail: '', action: 'Enter the plain API bearer token without spaces, then retry.' };
+        }
+        if (/Page is closing/i.test(message)) {
+          return { title: 'Request canceled', detail: '', action: 'Keep the console open and retry the request.' };
+        }
+        return {
+          title: 'Could not reach the controller',
+          detail: stripControlSequences(message).slice(0, 300),
+          action: isRunSubmission
+            ? 'Check the API URL and network. Before resubmitting, check recent runs to see whether this request was received.'
+            : requestPath === '/api/v1/validate'
+              ? 'Check the API URL, network, and controller health, then retry validation. No run was submitted.'
+            : 'Check the API URL, network, and controller health, then retry.',
+        };
+      }
+
+      function setRequestFailureSummary(error, path, method) {
+        if (!responseSummary) return requestFailureGuidance(error, path, method);
+        responseSummary.replaceChildren();
+        const guidance = requestFailureGuidance(error, path, method);
+        responseSummary.hidden = false;
+        appendSummaryItem('What happened', guidance.title + (guidance.detail ? ': ' + guidance.detail : ''), { warning: true, critical: true, fullWidth: true });
+        appendSummaryItem('Next step', guidance.action, { warning: true, fullWidth: true });
+        return guidance;
+      }
+
+      function displayApiResponseError(response, path, method, payload) {
+        const guidance = setApiErrorSummary(response, payload);
+        setOutputMetadata('failed');
+        setOutputBody(summarizedResponseBody(path, method || 'GET', response.status, payload, response));
+        setState(guidance.title + ' (HTTP ' + String(response.status) + ').', 'bad');
+        return guidance;
+      }
+
+      function displayRequestFailure(error, path, method) {
+        const guidance = setRequestFailureSummary(error, path, method);
+        const message = error instanceof Error ? error.message : String(error);
+        setOutputMetadata('failed');
+        setOutputBody(JSON.stringify({
+          method: method || 'GET',
+          path,
+          status: null,
+          error: stripControlSequences(message),
+          guidance: guidance.action,
+        }, null, 2));
+        setState(guidance.title + '.', 'bad');
+        return guidance;
+      }
+
       function requestCompletionMessage(path, method, response, payload) {
         const verb = method || 'GET';
         if (!response.ok) {
-          return response.status === 502
-            ? 'Request failed at the web gateway. Retry once, then check health/preflight.'
-            : verb + ' ' + path + ' failed with HTTP ' + response.status + '.';
+          const guidance = apiErrorGuidance(response.status, payload, response.headers);
+          return guidance.title + ' (HTTP ' + String(response.status) + ').';
         }
         if (path === '/health') return 'Health check completed.';
         if (path === '/ready') return 'Readiness check completed.';
@@ -2341,15 +2492,14 @@ const controllerPage = String.raw`<!doctype html>
         return typeof parsedPayload === 'string' ? parsedPayload : JSON.stringify(parsedPayload, null, 2);
       }
 
-      function summarizedResponseBody(path, method, status, payload) {
+      function summarizedResponseBody(path, method, status, payload, response) {
         const base = { method, path, status };
         if (status >= 400) {
+          const guidance = apiErrorGuidance(status, payload, response && response.headers);
           return JSON.stringify({
             ...base,
             error: typeof payload === 'string' ? stripControlSequences(payload) : payload,
-            guidance: status === 502
-              ? 'The web endpoint returned Bad Gateway. The request may have failed before reaching the controller; retry once, then compare against /health and /api/v1/preflight.'
-              : 'The request failed. Check the response status, authentication, and controller readiness.',
+            guidance: guidance.action,
           }, null, 2);
         }
         if (path.startsWith('/api/v1/preflight') && payload && typeof payload === 'object') {
@@ -2562,11 +2712,19 @@ const controllerPage = String.raw`<!doctype html>
             const target = document.querySelector('#artifacts-output');
             if (target) target.textContent = 'Loading ' + fileName + '...';
             try {
-              const result = await apiRequest(artifactUrl(runId, fileName), { auth: true, preserveOutput: true });
+              const path = artifactUrl(runId, fileName);
+              const result = await apiRequest(path, { auth: true, preserveOutput: true, showApiError: true });
+              if (!result.response.ok) {
+                if (target) target.textContent = formatApiErrorText(result.response, result.payload);
+                return;
+              }
               if (target) target.textContent = artifactDisplayText(result.payload);
               setModalActiveTab('artifacts');
             } catch (error) {
-              if (target) target.textContent = 'Error loading ' + fileName + ': ' + (error instanceof Error ? error.message : String(error));
+              const path = artifactUrl(runId, fileName);
+              const guidance = requestFailureGuidance(error, path);
+              displayRequestFailure(error, path, 'GET');
+              if (target) target.textContent = guidance.title + (guidance.detail ? '\n' + guidance.detail : '') + '\n\nNext step: ' + guidance.action;
             }
           });
           wrapper.appendChild(button);
@@ -2581,27 +2739,16 @@ const controllerPage = String.raw`<!doctype html>
           copyBtn.addEventListener('click', async (event) => {
             event.stopPropagation(); // Prevent opening modal
             try {
-              const token = sessionStorage.getItem('kasekiApiToken');
-              const response = await fetch(artifactUrl(runId, fileName), {
-                headers: token ? { 'Authorization': 'Bearer ' + token } : {}
-              });
-              
-              if (!response.ok) {
-                let errorMsg = 'Error loading artifact';
-                if (response.status === 401) {
-                  errorMsg = 'Authentication failed';
-                } else if (response.status === 404) {
-                  errorMsg = 'Artifact not found';
-                }
-                setCopyButtonStatus(copyBtn, { ok: false, message: errorMsg });
-                showToast(errorMsg, 'error', 2000);
+              const path = artifactUrl(runId, fileName);
+              const result = await apiRequest(path, { auth: true, preserveOutput: true, showApiError: true });
+              if (!result.response.ok) {
+                const guidance = apiErrorGuidance(result.response.status, result.payload, result.response.headers);
+                const errorMessage = guidance.title + ': ' + guidance.action;
+                setCopyButtonStatus(copyBtn, { ok: false, message: errorMessage });
+                showToast(errorMessage, 'error', 5000);
                 return;
               }
-              
-              const contentType = response.headers.get('content-type') || '';
-              const isJson = contentType.includes('json');
-              const content = isJson ? await response.json() : await response.text();
-              const textToCopy = artifactDisplayText(content);
+              const textToCopy = artifactDisplayText(result.payload);
               
               if (textToCopy) {
                 setCopyButtonStatus(copyBtn, await copyToClipboard(textToCopy));
@@ -2610,10 +2757,12 @@ const controllerPage = String.raw`<!doctype html>
                 showToast('No content to copy', 'error', 2000);
               }
             } catch (error) {
-              const message = error instanceof Error ? error.message : 'Copy failed';
-              const copyMessage = 'Copy failed: ' + message;
+              const path = artifactUrl(runId, fileName);
+              const guidance = requestFailureGuidance(error, path);
+              displayRequestFailure(error, path, 'GET');
+              const copyMessage = guidance.title + ': ' + guidance.action;
               setCopyButtonStatus(copyBtn, { ok: false, message: copyMessage });
-              showToast(copyMessage, 'error', 2000);
+              showToast(copyMessage, 'error', 5000);
             }
           });
           wrapper.appendChild(copyBtn);
@@ -2631,9 +2780,18 @@ const controllerPage = String.raw`<!doctype html>
           if (result.response.ok) {
             showRecommendedArtifacts(runId, result.payload);
             loadTokenTimeline(runId);
+          } else if (result.response.status !== 404 && recommendedArtifacts && recommendedArtifactLinks) {
+            recommendedArtifactLinks.textContent = formatApiErrorText(result.response, result.payload);
+            recommendedArtifacts.hidden = false;
+          } else if (result.response.status === 404 && recommendedArtifacts) {
+            recommendedArtifacts.hidden = true;
           }
-        } catch {
-          if (recommendedArtifacts) recommendedArtifacts.hidden = true;
+        } catch (error) {
+          if (recommendedArtifacts && recommendedArtifactLinks) {
+            const guidance = requestFailureGuidance(error, runUrl(runId, '/artifacts'));
+            recommendedArtifactLinks.textContent = guidance.title + (guidance.detail ? ': ' + guidance.detail : '') + '\n\nNext step: ' + guidance.action;
+            recommendedArtifacts.hidden = false;
+          }
         }
       }
 
@@ -2641,6 +2799,12 @@ const controllerPage = String.raw`<!doctype html>
         if (!tokenTimeline || !tokenTimelineOutput || !runId) return;
         try {
           const result = await apiRequest(artifactUrl(runId, 'token-ledger.jsonl'), { auth: true, preserveOutput: true });
+          if (!result.response.ok) {
+            if (result.response.status === 404) { tokenTimeline.hidden = true; return; }
+            tokenTimelineOutput.textContent = formatApiErrorText(result.response, result.payload);
+            tokenTimeline.hidden = false;
+            return;
+          }
           const content = result.payload && typeof result.payload.content === 'string' ? result.payload.content : '';
           const entries = content.split(/\r?\n/).filter(Boolean).flatMap((line) => {
             try { return [JSON.parse(line)]; } catch { return []; }
@@ -2655,8 +2819,10 @@ const controllerPage = String.raw`<!doctype html>
             + totals.input.toLocaleString() + ' input tokens · '
             + totals.output.toLocaleString() + ' output tokens';
           tokenTimeline.hidden = false;
-        } catch {
-          tokenTimeline.hidden = true;
+        } catch (error) {
+          const guidance = requestFailureGuidance(error, artifactUrl(runId, 'token-ledger.jsonl'));
+          tokenTimelineOutput.textContent = guidance.title + (guidance.detail ? ': ' + guidance.detail : '') + '\n\nNext step: ' + guidance.action;
+          tokenTimeline.hidden = false;
         }
       }
 
@@ -2751,13 +2917,15 @@ const controllerPage = String.raw`<!doctype html>
           if (pageDisposed) return;
           if (result.response.ok) {
             renderRunsList(result.payload);
+          } else if (runsList) {
+            runsList.textContent = formatApiErrorText(result.response, result.payload);
           }
         } catch (error) {
+          const guidance = requestFailureGuidance(error, '/api/v1/runs?limit=12');
           if (runsList) {
-            runsList.textContent = error instanceof Error && error.message.includes('API bearer token')
-              ? 'Enter the API bearer token to load recent runs.'
-              : 'Runs could not be loaded.';
+            runsList.textContent = guidance.title + '. ' + guidance.action;
           }
+          if (!(options && options.preserveOutput)) displayRequestFailure(error, '/api/v1/runs?limit=12', 'GET');
         }
       }
 
@@ -3033,19 +3201,26 @@ const controllerPage = String.raw`<!doctype html>
           }
           throw new Error('Network request failed before the controller responded: ' + (error instanceof Error ? error.message : String(error)));
         }
-        const contentType = response.headers.get('content-type') || '';
-        let payload = contentType.includes('json') ? await response.json() : await response.text();
+        let payload = await readApiResponse(response);
         payload = applyProgressHighWater(payload);
         if (needsAuth && response.ok) sessionStorage.setItem('kasekiApiToken', token);
         const runId = payload && typeof payload.id === 'string'
           ? payload.id
           : String(runIdInput.value || '').trim();
         const statusLabel = responseStatusLabel(response, payload);
-        if (!(options && options.preserveOutput)) {
+        const shouldDisplayResponse = !(options && options.preserveOutput) ||
+          (!response.ok && options && options.showApiError === true);
+        if (shouldDisplayResponse) {
           setOutputMetadata(statusLabel, runId || undefined);
-          setResponseSummary(payload);
-          setOutputBody(summarizedResponseBody(path, options && options.method || 'GET', response.status, payload));
-          setState(requestCompletionMessage(path, options && options.method || 'GET', response, payload), response.ok ? 'ok' : 'bad');
+          if (response.ok) {
+            setResponseSummary(payload);
+            setOutputBody(summarizedResponseBody(path, options && options.method || 'GET', response.status, payload));
+            setState(requestCompletionMessage(path, options && options.method || 'GET', response, payload), 'ok');
+          } else {
+            setApiErrorSummary(response, payload);
+            setOutputBody(summarizedResponseBody(path, options && options.method || 'GET', response.status, payload, response));
+            setState(requestCompletionMessage(path, options && options.method || 'GET', response, payload), 'bad');
+          }
         }
         if (response.ok && payload && typeof payload === 'object') {
           summarizeHealth(path, payload);
@@ -3094,15 +3269,8 @@ const controllerPage = String.raw`<!doctype html>
         try {
           return await apiRequest(path, options);
         } catch (error) {
-          setOutputMetadata('failed', String(runIdInput.value || '').trim() || undefined);
-          setResponseSummary(null);
-          setOutputBody(sanitizeOutput(error instanceof Error ? error.message : String(error)));
-          if (error instanceof RequestTimeoutError) {
-            setResponseSummary('The diagnostic timed out before the controller responded. The gateway or Pi adapter may still be working; check /health, /ready, /api/v1/preflight, and the run logs before retrying.');
-            setState('Diagnostic timed out; controller state is unknown.', 'bad');
-          } else {
-            setState('Request could not be sent.', 'bad');
-          }
+          displayRequestFailure(error, path, options && options.method || 'GET');
+          if (String(runIdInput.value || '').trim()) setOutputMetadata('failed', String(runIdInput.value || '').trim());
           return { payload: null, response: { ok: false } };
         } finally {
           if (elapsedTimer) window.clearInterval(elapsedTimer);
@@ -3128,9 +3296,14 @@ const controllerPage = String.raw`<!doctype html>
         async function poll() {
           if (pageDisposed) return;
           try {
+            const isFirstPoll = firstPoll;
             const preserveOutput = (options && options.preserveFirstOutput && firstPoll) || activeRunView !== 'status';
             firstPoll = false;
-            const result = await apiRequest(runUrl(runId, '/status'), { auth: true, preserveOutput });
+            const result = await apiRequest(runUrl(runId, '/status'), {
+              auth: true,
+              preserveOutput,
+              showApiError: isFirstPoll && options && options.preserveFirstOutput === true,
+            });
             let payload = result.payload;
             // Status may be backed by a timestamp-less Docker tail while the
             // worker's durable progress stream is available. Prefer the most
@@ -3152,13 +3325,14 @@ const controllerPage = String.raw`<!doctype html>
             } else {
               loadRunsList({ preserveOutput: true });
             }
-          } catch {
+          } catch (error) {
             if (pageDisposed) return;
             retryCount++;
             if (retryCount < maxRetries) {
               pollTimer = window.setTimeout(poll, 10000);
             } else {
-              setState('Polling stopped after repeated failures.', 'bad');
+              const guidance = displayRequestFailure(error, runUrl(runId, '/status'), 'GET');
+              setState(guidance.title + '. Polling stopped after repeated failures.', 'bad');
             }
           }
         }
@@ -3367,6 +3541,8 @@ const controllerPage = String.raw`<!doctype html>
                 errors: payload.errors || [],
                 warnings: payload.warnings || [],
               }, null, 2));
+            } else if (!response.ok) {
+              resetValidationState();
             } else {
               resetValidationState();
               setOutputMetadata('failed');
@@ -3376,14 +3552,7 @@ const controllerPage = String.raw`<!doctype html>
           })
           .catch((error) => {
             resetValidationState();
-            setOutputMetadata('failed');
-            const message = sanitizeOutput(error instanceof Error ? error.message : String(error));
-            const timedOut = error instanceof RequestTimeoutError;
-            setState(timedOut ? 'Task validation timed out; controller state is unknown.' : 'Validation failed', 'bad');
-            setResponseSummary(timedOut
-              ? 'Validation exceeded 120 seconds. Check /health and /api/v1/preflight before retrying; no run was submitted.'
-              : null);
-            setOutputBody(message);
+            displayRequestFailure(error, '/api/v1/validate', 'POST');
           })
           .finally(() => {
             button.disabled = false;
@@ -3464,16 +3633,29 @@ const controllerPage = String.raw`<!doctype html>
         if (!tabOutputEl) return;
         
         if (!(options && options.background)) tabOutputEl.textContent = 'Loading...';
+
+        const paths = {
+          status: runUrl(runId, '/status'),
+          events: runUrl(runId, '/events?tail=50'),
+          stdout: runUrl(runId, '/logs/stdout?tail=lines&lines=200'),
+          artifacts: runUrl(runId, '/artifacts'),
+        };
         
         try {
-          const paths = {
-            status: runUrl(runId, '/status'),
-            events: runUrl(runId, '/events?tail=50'),
-            stdout: runUrl(runId, '/logs/stdout?tail=lines&lines=200'),
-            artifacts: runUrl(runId, '/artifacts'),
-          };
-          
-          const result = await apiRequest(paths[tabName], { auth: true, preserveOutput: true });
+          const result = await apiRequest(paths[tabName], {
+            auth: true,
+            preserveOutput: true,
+            showApiError: !(options && options.background),
+          });
+
+          if (!result.response.ok) {
+            const guidance = apiErrorGuidance(result.response.status, result.payload, result.response.headers);
+            if (!(options && options.background)) {
+              tabOutputEl.textContent = guidance.title + ' (HTTP ' + String(result.response.status) + ')'
+                + (guidance.detail ? '\n' + guidance.detail : '') + '\n\nNext step: ' + guidance.action;
+            }
+            return;
+          }
           
           if (tabName === 'artifacts') {
             // Format artifacts as a grid of links
@@ -3510,7 +3692,9 @@ const controllerPage = String.raw`<!doctype html>
             }
           }
         } catch (error) {
-          tabOutputEl.textContent = 'Error loading tab: ' + (error instanceof Error ? error.message : String(error));
+          const guidance = requestFailureGuidance(error, paths[tabName]);
+          if (!(options && options.background)) displayRequestFailure(error, paths[tabName], 'GET');
+          tabOutputEl.textContent = guidance.title + (guidance.detail ? ': ' + guidance.detail : '') + '\n\nNext step: ' + guidance.action;
         }
       }
 
@@ -3685,20 +3869,29 @@ const controllerPage = String.raw`<!doctype html>
           download.textContent = 'Download full artifact';
           download.className = 'artifact-download-link';
           download.addEventListener('click', async () => {
-            const token = getApiToken();
-            const response = await fetch(artifactUrl(runId, artifactName), {
-              headers: { 'Authorization': 'Bearer ' + token },
-            });
-            if (!response.ok) {
-              showToast('Could not download artifact (' + response.status + ').', 'error', 2500);
-              return;
+            const path = artifactUrl(runId, artifactName);
+            try {
+              const token = getApiToken();
+              const response = await fetch(path, {
+                headers: { 'Authorization': 'Bearer ' + token },
+              });
+              if (!response.ok) {
+                const payload = await readApiResponse(response);
+                const guidance = displayApiResponseError(response, path, 'GET', payload);
+                showToast(guidance.title + ': ' + guidance.action, 'error', 5000);
+                return;
+              }
+              const blobUrl = URL.createObjectURL(await response.blob());
+              const anchor = document.createElement('a');
+              anchor.href = blobUrl;
+              anchor.download = artifactName;
+              anchor.click();
+              URL.revokeObjectURL(blobUrl);
+            } catch (error) {
+              const guidance = requestFailureGuidance(error, path);
+              displayRequestFailure(error, path, 'GET');
+              showToast(guidance.title + ': ' + guidance.action, 'error', 5000);
             }
-            const blobUrl = URL.createObjectURL(await response.blob());
-            const anchor = document.createElement('a');
-            anchor.href = blobUrl;
-            anchor.download = artifactName;
-            anchor.click();
-            URL.revokeObjectURL(blobUrl);
           });
           artifactsOutputEl.append(notice, download);
           return;
@@ -3709,37 +3902,18 @@ const controllerPage = String.raw`<!doctype html>
         artifactsOutputEl.innerHTML = '<div class="artifact-loading">Loading ' + artifactName + '...</div>';
         
         try {
-          const token = getApiToken();
-          if (!token) {
+          const path = artifactUrl(runId, artifactName);
+          const result = await apiRequest(path, { auth: true, preserveOutput: true, showApiError: true });
+          if (!result.response.ok) {
             artifactsOutputEl.innerHTML = originalContent;
-            throw new Error('Authentication token required. Enter your API bearer token in the header.');
+            const errorEl = document.createElement('div');
+            errorEl.className = 'artifact-error';
+            errorEl.textContent = formatApiErrorText(result.response, result.payload);
+            artifactsOutputEl.appendChild(errorEl);
+            return;
           }
-          
-          const response = await fetch(artifactUrl(runId, artifactName), {
-            method: 'GET',
-            headers: {
-              'Authorization': 'Bearer ' + token,
-            },
-          });
-          
-          if (!response.ok) {
-            artifactsOutputEl.innerHTML = originalContent;
-            let errorMsg = 'Error loading artifact';
-            if (response.status === 401) {
-              errorMsg = 'Authentication failed: Invalid or expired token. Please re-enter your API key.';
-            } else if (response.status === 404) {
-              errorMsg = 'Artifact not found.';
-            } else if (response.status === 400) {
-              errorMsg = 'Artifact is not available yet. Please wait for the run to complete.';
-            } else if (response.status >= 500) {
-              errorMsg = 'Server error: Could not read artifact (' + response.status + ').';
-            }
-            throw new Error(errorMsg);
-          }
-          
-          const contentType = response.headers.get('content-type') || '';
-          const isJson = contentType.includes('json');
-          const content = isJson ? await response.json() : await response.text();
+          const contentType = result.response.headers.get('content-type') || '';
+          const content = result.payload;
           const displayText = artifactDisplayText(content);
           
           // Display the artifact content
@@ -3817,14 +3991,14 @@ const controllerPage = String.raw`<!doctype html>
           
           artifactsOutputEl.appendChild(container);
           
-          // Save token if authentication was successful
-          if (token) sessionStorage.setItem('kasekiApiToken', token);
         } catch (error) {
-          artifactsOutputEl.innerHTML = originalContent;
-          const errorMsg = error instanceof Error ? error.message : String(error);
+          const path = artifactUrl(runId, artifactName);
+          const guidance = requestFailureGuidance(error, path);
+          displayRequestFailure(error, path, 'GET');
           const errorEl = document.createElement('div');
           errorEl.className = 'artifact-error';
-          errorEl.textContent = 'Error: ' + errorMsg;
+          errorEl.textContent = guidance.title + (guidance.detail ? ': ' + guidance.detail : '') + '\n\nNext step: ' + guidance.action;
+          artifactsOutputEl.innerHTML = originalContent;
           artifactsOutputEl.appendChild(errorEl);
         }
       }
@@ -3937,24 +4111,49 @@ const controllerPage = String.raw`<!doctype html>
           return;
         }
         copyDiagnosticBundleBtn.disabled = true;
+        let activeRequestPath = '';
         try {
-          const [statusResult, artifactsResult] = await Promise.all([
-            apiRequest(runUrl(runId, '/status'), { auth: true, preserveOutput: true }),
-            apiRequest(runUrl(runId, '/artifacts'), { auth: true, preserveOutput: true }),
-          ]);
+          activeRequestPath = runUrl(runId, '/status');
+          const statusResult = await apiRequest(activeRequestPath, { auth: true, preserveOutput: true, showApiError: true });
+          if (!statusResult.response.ok) {
+            const guidance = apiErrorGuidance(statusResult.response.status, statusResult.payload, statusResult.response.headers);
+            showToast(guidance.title + ': ' + guidance.action, 'error', 5000);
+            return;
+          }
+          activeRequestPath = runUrl(runId, '/artifacts');
+          const artifactsResult = await apiRequest(activeRequestPath, { auth: true, preserveOutput: true, showApiError: true });
+          if (!artifactsResult.response.ok) {
+            const guidance = apiErrorGuidance(artifactsResult.response.status, artifactsResult.payload, artifactsResult.response.headers);
+            showToast(guidance.title + ': ' + guidance.action, 'error', 5000);
+            return;
+          }
           const recommended = Array.isArray(artifactsResult.payload && artifactsResult.payload.recommended)
             ? artifactsResult.payload.recommended.slice(0, 5)
             : [];
-          const artifactSections = await Promise.all(recommended.map(async (name) => {
-            const result = await apiRequest('/api/v1/results/' + encodeURIComponent(runId) + '/' + encodeURIComponent(name), { auth: true, preserveOutput: true });
-            return '## ' + name + '\n' + artifactDisplayText(result.payload);
-          }));
+          const artifactSections = [];
+          for (const name of recommended) {
+            const path = '/api/v1/results/' + encodeURIComponent(runId) + '/' + encodeURIComponent(name);
+            activeRequestPath = path;
+            const result = await apiRequest(path, { auth: true, preserveOutput: true, showApiError: true });
+            if (!result.response.ok) {
+              const guidance = apiErrorGuidance(result.response.status, result.payload, result.response.headers);
+              showToast(guidance.title + ': ' + guidance.action, 'error', 5000);
+              return;
+            }
+            artifactSections.push('## ' + name + '\n' + artifactDisplayText(result.payload));
+          }
           const bundle = '# Kaseki diagnostic bundle: ' + runId + '\n\n## Status\n' +
             JSON.stringify(statusResult.payload, null, 2) + '\n\n' + artifactSections.join('\n\n');
           const copied = await copyToClipboard(bundle);
           showToast(copied.ok ? 'Diagnostic bundle copied.' : copied.message, copied.ok ? 'success' : 'error', 2500);
         } catch (error) {
-          showToast('Could not copy diagnostic bundle: ' + (error instanceof Error ? error.message : String(error)), 'error', 3000);
+          if (activeRequestPath) {
+            const guidance = requestFailureGuidance(error, activeRequestPath);
+            displayRequestFailure(error, activeRequestPath, 'GET');
+            showToast(guidance.title + ': ' + guidance.action, 'error', 5000);
+          } else {
+            showToast('Could not copy diagnostic bundle: ' + (error instanceof Error ? error.message : String(error)), 'error', 3000);
+          }
         } finally {
           copyDiagnosticBundleBtn.disabled = false;
         }
@@ -4096,10 +4295,7 @@ const controllerPage = String.raw`<!doctype html>
               const recovered = await recoverSubmittedRunAfterTimeout(submittedBody);
               if (recovered) return;
             }
-            setOutputMetadata('failed');
-            setResponseSummary(null);
-            setOutputBody(sanitizeOutput(error instanceof Error ? error.message : String(error)));
-            setState('Request could not be sent.', 'bad');
+            displayRequestFailure(error, '/api/v1/runs', 'POST');
           })
           .finally(() => {
             updateSubmitButtonState();
@@ -4182,28 +4378,16 @@ const controllerPage = String.raw`<!doctype html>
             body: enteredLabel ? { repoUrl, label: enteredLabel } : { repoUrl, allLabels: true },
             timeoutMs: ISSUE_REQUEST_TIMEOUT_MS,
             preserveOutput: true,
+            showApiError: true,
           });
           const response = result.response;
           const payload = result.payload;
 
           if (!response.ok) {
-            let errorMessage = 'Failed to fetch issues';
-            if (payload && typeof payload === 'object') {
-              errorMessage = payload.detail || payload.error || payload.title || errorMessage;
-            } else if (payload) {
-              errorMessage = String(payload);
-            }
-            showIssuesError(errorMessage);
+            const guidance = apiErrorGuidance(response.status, payload, response.headers);
+            showIssuesError(guidance.title + (guidance.detail ? ': ' + guidance.detail : '') + ' Next step: ' + guidance.action);
             issuesList.innerHTML = '<div class="issues-list-empty">No issues found</div>';
-            setOutputMetadata('failed');
-            setResponseSummary(null);
-            setOutputBody(JSON.stringify({
-              method: 'POST',
-              path: '/api/v1/github-issues',
-              status: response.status,
-              error: stripControlSequences(errorMessage),
-            }, null, 2));
-            setState('Issue load failed.', 'bad');
+            displayApiResponseError(response, '/api/v1/github-issues', 'POST', payload);
             return;
           }
 
@@ -4316,13 +4500,10 @@ const controllerPage = String.raw`<!doctype html>
             issuesList.appendChild(item);
           });
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          showIssuesError('Error: ' + errorMsg);
+          const guidance = requestFailureGuidance(error, '/api/v1/github-issues');
+          showIssuesError(guidance.title + (guidance.detail ? ': ' + guidance.detail : '') + ' Next step: ' + guidance.action);
           issuesList.innerHTML = '<div class="issues-list-empty">Failed to load issues</div>';
-          setOutputMetadata('failed');
-          setResponseSummary(null);
-          setOutputBody(sanitizeOutput('Issue load failed: ' + errorMsg));
-          setState('Issue load failed.', 'bad');
+          displayRequestFailure(error, '/api/v1/github-issues', 'POST');
         } finally {
           loadIssuesBtn.disabled = false;
         }
