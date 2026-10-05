@@ -178,6 +178,14 @@ assert_contains "$PUBLISH_WORKFLOW" '  scan:' \
   'Published images must be vulnerability scanned'
 assert_contains "$PUBLISH_WORKFLOW" 'scanners: vuln' \
   'Trivy must scan vulnerabilities only; repository secrets are not image findings'
+assert_contains "$PUBLISH_WORKFLOW" 'ignore-unfixed: true' \
+  'Trivy scan output must be limited to vulnerabilities with a known fix'
+assert_contains "$PUBLISH_WORKFLOW" "No fixable high/critical vulnerabilities found." \
+  'The empty Trivy result message must describe fixable findings accurately'
+assert_contains "$PUBLISH_WORKFLOW" 'fixable high/critical vulnerabilities found' \
+  'The Trivy failure message must describe fixable findings accurately'
+assert_not_contains "$PUBLISH_WORKFLOW" 'unfixed high/critical vulnerabilities found' \
+  'The Trivy gate must not call fixed-version findings unfixed'
 assert_contains "$PUBLISH_WORKFLOW" 'Trivy high/critical findings' \
   'Trivy findings must be summarized before the gate fails'
 assert_contains "$PUBLISH_WORKFLOW" '($result.Target // "unknown target")' \

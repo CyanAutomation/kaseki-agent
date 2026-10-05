@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Bump the pinned Node base image monthly with a security review.
-# Node v24 base image: Updated May 2026 for improved performance and security.
+# Node v24 base image: Revalidated October 2026; the upstream tag still resolves to this digest.
 # Using ARG for DRY principle - base image used in both stages
 ARG NODE_IMAGE=node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6
 
@@ -67,7 +67,7 @@ FROM base AS runtime
 
 # System dependencies + user setup (consolidated)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash build-essential ca-certificates curl docker.io git golang-go jq procps ruby shellcheck tini \
+    && apt-get install -y --no-install-recommends bash build-essential ca-certificates curl docker.io git golang-go jq libpcre2-8-0 procps ruby shellcheck tini \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10000 kaseki \
     && useradd --system --uid 10000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
@@ -307,7 +307,7 @@ ARG TARGETARCH
 
 # Runtime plus the Node and Go toolchains used by ephemeral repository checks.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash build-essential ca-certificates curl docker.io git jq make procps shellcheck tini \
+    && apt-get install -y --no-install-recommends bash build-essential ca-certificates curl docker.io git jq libpcre2-8-0 make procps shellcheck tini \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10000 kaseki \
     && useradd --system --uid 10000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
