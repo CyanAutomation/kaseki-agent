@@ -17,10 +17,9 @@
  * 3. Package.json version
  */
 
-import * as Sentry from '@sentry/node';
-import { expressIntegration } from '@sentry/node';
 import { spawnSync } from 'child_process';
-import { Request, Response, NextFunction } from 'express';
+import type { ErrorRequestHandler, NextFunction, Request, Response } from 'express';
+import { createLogger } from './logger';
 
 export interface SentryConfig {
   dsn?: string;
@@ -30,7 +29,36 @@ export interface SentryConfig {
   enabled?: boolean;
 }
 
+type SentrySdk = typeof import('@sentry/node');
+
+let sentrySdk: SentrySdk | undefined;
 let isInitialized = false;
+let initializationPromise: Promise<void> | undefined;
+const fallbackLogger = createLogger('error-tracking');
+
+function serializeException(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
+  return { message: String(error) };
+}
+
+function logExceptionFallback(
+  error: unknown,
+  context?: Record<string, unknown>,
+  sentryError?: unknown,
+): void {
+  fallbackLogger.error('Exception captured without Sentry', {
+    error: serializeException(error),
+    ...(context ? { context } : {}),
+    ...(sentryError !== undefined ? { sentryError: serializeException(sentryError) } : {}),
+  });
+}
 
 /**
  * Get the release version for Sentry.
@@ -87,10 +115,14 @@ function detectReleaseVersion(): string | undefined {
  * Can be called multiple times safely - only initializes once.
  *
  * @param customConfig - Optional custom configuration overrides
+ * @returns A promise that resolves after the optional SDK has loaded and initialized
  */
-export function initSentry(customConfig?: Partial<SentryConfig>): void {
+export function initSentry(customConfig?: Partial<SentryConfig>): Promise<void> {
   if (isInitialized) {
-    return;
+    return Promise.resolve();
+  }
+  if (initializationPromise) {
+    return initializationPromise;
   }
 
   const dsn = customConfig?.dsn || process.env.SENTRY_DSN;
@@ -99,49 +131,68 @@ export function initSentry(customConfig?: Partial<SentryConfig>): void {
     : process.env.SENTRY_ENABLED === 'true' || process.env.SENTRY_ENABLED === '1' || !!dsn;
 
   if (!enabled) {
-    return;
+    return Promise.resolve();
   }
 
   if (!dsn) {
-    console.warn(
-      '⚠️  Sentry is enabled but SENTRY_DSN is not set. Sentry will be disabled. ' +
-      'Set SENTRY_DSN environment variable to enable error reporting.'
+    fallbackLogger.warn(
+      'Sentry is enabled but SENTRY_DSN is not set; structured logging will be used for errors.',
     );
-    return;
+    return Promise.resolve();
   }
 
-  // Detect release version dynamically
-  const releaseVersion = customConfig?.release || detectReleaseVersion();
+  initializationPromise = (async () => {
+    try {
+      // The optional SDK is loaded only when error reporting is configured.
+      const sdk = await import('@sentry/node');
+      const releaseVersion = customConfig?.release || detectReleaseVersion();
+      const config: import('@sentry/node').NodeOptions = {
+        dsn,
+        environment: customConfig?.environment || process.env.SENTRY_ENVIRONMENT || 'production',
+        release: releaseVersion,
+        tracesSampleRate: customConfig?.sampleRate ?? parseFloat(process.env.SENTRY_SAMPLE_RATE || '0.1'),
+        integrations: [sdk.expressIntegration()],
+        maxBreadcrumbs: 100,
+        beforeSend: (event) => {
+          if (process.env.JEST_WORKER_ID) {
+            return null;
+          }
+          return event;
+        },
+      };
 
-  const config: Sentry.NodeOptions = {
-    dsn,
-    environment: customConfig?.environment || process.env.SENTRY_ENVIRONMENT || 'production',
-    release: releaseVersion,
-    tracesSampleRate: customConfig?.sampleRate || parseFloat(process.env.SENTRY_SAMPLE_RATE || '0.1'),
-    integrations: [
-      expressIntegration(),
-    ],
-    // Capture breadcrumbs for debugging
-    maxBreadcrumbs: 100,
-    // Do not send errors if we're in test environment
-    beforeSend: (event) => {
-      if (process.env.JEST_WORKER_ID) {
-        return null;
-      }
-      return event;
-    },
-  };
+      sdk.init(config);
+      sentrySdk = sdk;
+      isInitialized = true;
+    } catch (error) {
+      sentrySdk = undefined;
+      fallbackLogger.warn('Sentry SDK is unavailable; structured logging will be used for errors.', {
+        error: serializeException(error),
+      });
+    }
+  })();
 
-  Sentry.init(config);
-  isInitialized = true;
+  return initializationPromise;
 }
 
 /**
  * Get the Express error handler middleware.
  * Should be mounted after all other middleware and route handlers.
  */
-export function sentryErrorHandler(): any {
-  return Sentry.expressErrorHandler();
+export function sentryErrorHandler(): ErrorRequestHandler {
+  if (isInitialized && sentrySdk) {
+    return sentrySdk.expressErrorHandler();
+  }
+
+  return (error, req, _res, next) => {
+    logExceptionFallback(error, {
+      request: {
+        method: req.method,
+        url: req.originalUrl,
+      },
+    });
+    next(error);
+  };
 }
 
 /**
@@ -160,18 +211,23 @@ export function sentryRequestHandler(): (req: Request, res: Response, next: Next
  * @param context - Additional context data
  */
 export function captureException(error: unknown, context?: Record<string, unknown>): void {
-  if (!isInitialized) {
+  if (!isInitialized || !sentrySdk) {
+    logExceptionFallback(error, context);
     return;
   }
 
-  Sentry.withScope((scope) => {
-    if (context) {
-      Object.entries(context).forEach(([key, value]) => {
-        scope.setContext(key, value as Record<string, unknown>);
-      });
-    }
-    Sentry.captureException(error);
-  });
+  try {
+    sentrySdk.withScope((scope) => {
+      if (context) {
+        Object.entries(context).forEach(([key, value]) => {
+          scope.setContext(key, value as Record<string, unknown>);
+        });
+      }
+      sentrySdk?.captureException(error);
+    });
+  } catch (sentryError) {
+    logExceptionFallback(error, context, sentryError);
+  }
 }
 
 /**
@@ -186,5 +242,5 @@ export async function flushSentry(timeoutMs: number = 2000): Promise<boolean> {
     return Promise.resolve(true);
   }
 
-  return Sentry.close(timeoutMs);
+  return sentrySdk?.close(timeoutMs) ?? Promise.resolve(true);
 }

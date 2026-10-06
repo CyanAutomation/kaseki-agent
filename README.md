@@ -335,7 +335,7 @@ open http://localhost:8080/ui
 - **Issues** — Browse GitHub issues
 - **Submit Task** — Submit a coding task with repo, ref, and prompt
 
-Swagger API documentation available at `/docs`.
+The local API operation index is available at `/docs`; the full OpenAPI specification is at `/api/v1/openapi.json`.
 
 ### Programmatic Usage
 
