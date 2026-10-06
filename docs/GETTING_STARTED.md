@@ -1,173 +1,64 @@
 # Getting Started with Kaseki Agent
 
-Kaseki Agent runs your coding tasks in isolated Docker containers, driven by an AI model (via OpenRouter) and validated by your own test suite.
+Kaseki runs coding tasks in short-lived Docker workers and provides an API and
+CLI for submitting and monitoring tasks. For a Raspberry Pi deployment, the
+Compose path is the supported low-friction setup and does not need Node.js on
+the host.
 
-## Prerequisites
+## Raspberry Pi
 
-| Requirement | Version | Notes |
-|---|---|---|
-| Docker | 20.10+ | Must be running (`docker ps`) |
-| Node.js | 24+ | For the CLI; `node --version` |
-| OpenRouter API key | — | From https://openrouter.ai/keys |
+On a clean Debian 12/13 or 64-bit Raspberry Pi OS device, follow
+[Raspberry Pi Quick Start](QUICK_START.md). It installs Docker when needed,
+downloads a checksum-verified Kaseki release bundle, asks for the gateway
+settings, and waits for `/ready` before reporting success.
 
----
+From an existing checkout, run:
 
-## One-command setup (recommended)
+```bash
+bash scripts/setup-pi.sh
+```
+
+The required provider for coding inference is an OpenAI-compatible gateway
+URL and its key. The gateway key stays in `~/secrets/llm_gateway_api_key`;
+Kaseki generates a separate API bearer key. The default API binding is
+localhost. OpenRouter is optional and used only for evaluation stages.
+
+## Use the npm CLI
+
+Install the CLI on a workstation or controller with Node.js 24 or later:
 
 ```bash
 npm install -g @cyanautomation/kaseki-agent
-kaseki-agent quickstart
+kaseki-agent --help
+kaseki-agent doctor
 ```
 
-`quickstart` does everything in one pass:
+Task commands such as `run`, `list`, `status`, and `report` use a Kaseki API
+service. Point the CLI at the Pi API over an SSH tunnel or a secured LAN
+connection. See [NPM_SETUP.md](NPM_SETUP.md) for CLI configuration and
+[API.md](API.md) for API endpoints.
 
-1. Detects Docker, Node.js, and sudo access
-2. Discovers your secrets at `~/secrets/` (or environment variables — see [Secrets](#secrets))
-3. Writes `~/.kaseki/config.json` with resolved paths
-4. Creates `/agents/{kaseki-results,kaseki-runs,kaseki-cache}` owned by UID 10000 (uses sudo if needed)
-5. Starts the `kaseki-api` container
-6. Waits for `http://localhost:8080/ready` to confirm the API is ready
-7. Smoke-tests your bearer token against `/api/v1/runs`
+## First task
 
-Use `--dry-run` to see what it would do without making changes:
+After setup, connect to the API and submit a task from the CLI:
 
 ```bash
-kaseki-agent quickstart --dry-run
-```
-
----
-
-## Verify
-
-```bash
-kaseki-agent doctor           # all checks green
-kaseki-agent host preflight   # full API preflight
-```
-
----
-
-## Submit your first task
-
-```bash
-export KASEKI_API_KEY=<your-bearer-token>
-
+export KASEKI_API_URL=http://127.0.0.1:8080/api/v1
+export KASEKI_API_KEY="$(head -n 1 ~/secrets/kaseki_api_keys)"
 kaseki-agent run https://github.com/CyanAutomation/crudmapper main \
   "Add input validation to all POST endpoints"
-
-kaseki-agent list                # show queued/running tasks
-kaseki-agent status kaseki-1     # poll until done
-kaseki-agent report kaseki-1     # show diff + validation output
+kaseki-agent list
 ```
 
----
-
-## Secrets
-
-Kaseki needs an OpenRouter API key and (optionally) GitHub App credentials for automated PR creation.
-
-### Recommended layout
-
-```
-~/secrets/
-  openrouter_api_key        # required
-  github_app_id             # optional — needed for PR creation
-  github_app_client_id      # optional
-  github_app_private_key    # optional
-  kaseki_api_keys           # bearer token(s) for API auth
-```
-
-```bash
-sudo chgrp -R 10000 ~/secrets
-chmod 0750 ~/secrets
-chmod 0640 ~/secrets/*
-```
-
-### Discovery order
-
-For each secret, kaseki-agent checks in this order:
-
-1. `~/.kaseki/config.json` `auth.*_file` fields
-2. Environment variable (`$OPENROUTER_API_KEY_FILE`, `$GITHUB_APP_ID_FILE`, …)
-3. `~/.kaseki/secrets/<filename>`
-4. `~/secrets/<filename>`
-
-### Persistent config (alternative to files)
-
-```bash
-mkdir -p ~/.kaseki
-cat > ~/.kaseki/config.json <<EOF
-{
-  "auth": {
-    "openrouter_api_key_file": "~/secrets/openrouter_api_key",
-    "github_app_id_file": "~/secrets/github_app_id",
-    "github_app_client_id_file": "~/secrets/github_app_client_id",
-    "github_app_private_key_file": "~/secrets/github_app_private_key"
-  }
-}
-EOF
-```
-
----
-
-## Step-by-step wizard (alternative to quickstart)
-
-If you prefer an interactive guided flow:
-
-```bash
-kaseki-agent init
-```
-
-Choose between:
-- **Single-run** — one-off tasks via `./run-kaseki.sh`
-- **Local API service** — persistent service via `kaseki-agent serve`
-- **Production REST API** — Docker Compose deployment (same as `quickstart`)
-
----
-
-## Troubleshooting
-
-### Doctor reports issues
-
-```bash
-kaseki-agent doctor --json   # machine-readable; valid JSON only on stdout
-kaseki-agent doctor --fix    # attempt auto-remediation
-```
-
-### API returns "not_ready"
-
-The most common cause is `/agents` missing or wrong ownership:
-
-```bash
-ls -la /agents/              # should be owned by UID 10000
-sudo mkdir -p /agents/kaseki-results /agents/kaseki-runs /agents/kaseki-cache
-sudo chown -R 10000:10000 /agents
-docker restart kaseki-api
-curl http://localhost:8080/ready   # should return {"status":"ready"}
-```
-
-### Init container fails (exit 3)
-
-Exit code 3 means warnings-but-continuing; it does not block setup when you run `kaseki-agent quickstart` directly. If you use `docker compose up`, the `depends_on: service_completed_successfully` constraint treats it as failure. Use `quickstart` or run `kaseki-api` with `docker run` directly.
-
-### Host preflight hangs
-
-Fixed in v1.31+. Earlier versions had no timeout on `host preflight`. Upgrade or use:
-
-```bash
-timeout 20 kaseki-agent host preflight
-```
-
----
+If the CLI is on another machine, use the tunnel described in
+[QUICK_START.md](QUICK_START.md), or configure the API to bind to a specific
+LAN interface and allow access only to trusted clients.
 
 ## Further reading
 
-| Topic | Doc |
-|---|---|
-| Full env-var reference | [ADVANCED_CONFIG.md](ADVANCED_CONFIG.md) |
-| REST API reference | [API.md](API.md) |
-| Docker Compose deployment | [DEPLOYMENT.md](DEPLOYMENT.md) |
-| GitHub App setup | [AUTH_SETUP.md](AUTH_SETUP.md) |
-| Distributed multi-host setup | [DISTRIBUTED_SETUP.md](DISTRIBUTED_SETUP.md) |
-| Quality gates & allowlists | [QUALITY_GATES.md](QUALITY_GATES.md) |
-| Troubleshooting | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
-| CLI monitoring tool | [CLI.md](CLI.md) |
+- [Docker Setup](DOCKER_SETUP.md) — Compose details, credentials, networking,
+  diagnostics, and updates.
+- [Deployment Guide](DEPLOYMENT.md) — production deployment options.
+- [Environment Variables](ENV_VARS.md) — full configuration reference.
+- [NPM Setup](NPM_SETUP.md) — install and configure the CLI.
+- [Troubleshooting](TROUBLESHOOTING.md) — diagnosing common failures.

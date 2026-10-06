@@ -10,46 +10,43 @@ Kaseki is a proof-of-concept ephemeral coding-agent runner. Each run creates a n
 
 ## Quick Start
 
-### Raspberry Pi Docker Setup
+### Raspberry Pi API setup
 
-From a checkout of this repository, run:
+On a clean Debian 12/13 or 64-bit Raspberry Pi OS device, download and verify
+the release bootstrap before running it:
 
 ```bash
-bash scripts/setup-pi.sh
+if ! command -v curl >/dev/null 2>&1; then
+  sudo apt-get update && sudo apt-get install -y ca-certificates curl
+fi
+curl -fsSL https://github.com/CyanAutomation/kaseki-agent/releases/latest/download/bootstrap-pi.sh \
+  -o /tmp/kaseki-bootstrap-pi.sh
+curl -fsSL https://github.com/CyanAutomation/kaseki-agent/releases/latest/download/bootstrap-pi.sh.sha256 \
+  -o /tmp/bootstrap-pi.sh.sha256
+(cd /tmp && sha256sum -c bootstrap-pi.sh.sha256)
+bash /tmp/kaseki-bootstrap-pi.sh
 ```
 
-This path uses Docker Compose without installing Node.js on the Pi. It prompts
-for the gateway URL and hidden key when needed, creates a separate API bearer
-key file, sets container-readable permissions, pins the pulled image digest for
-the API and workers, validates Compose configuration, and starts the service.
-The API binds to localhost by default; set `KASEKI_API_BIND_ADDRESS` to the
-Pi's LAN address when LAN clients need access.
+The bootstrap installs Docker Engine and Compose when needed, verifies the
+matching source bundle checksum, and runs the guided Compose setup. It does not
+require host Node.js. Setup asks for an OpenAI-compatible gateway URL and a
+hidden key when needed, stores credentials in files, pins the pulled image
+digest, validates Compose, and waits for `/ready`. The API binds to loopback by
+default. It does not send a model inference request during setup.
 
-See [the Raspberry Pi quick-start guide](docs/QUICK_START.md) for details.
+From an existing checkout, run `bash scripts/setup-pi.sh`. For setup details,
+provider examples, LAN access, and diagnostics, see
+[the Raspberry Pi quick-start guide](docs/QUICK_START.md).
 
-### 1. Install Setup
+### Install the CLI on a workstation
 
 ```bash
-# Global install (recommended)
 npm install -g @cyanautomation/kaseki-agent
-
-# One-command setup with auto-detection
 kaseki-agent init
 ```
 
-Or use Docker:
-
-```bash
-docker run -it docker.io/cyanautomation/kaseki-agent:latest init
-```
-
-### 2. Configure Authentication
-
-The setup wizard will guide you through providing:
-
-- **LLM Gateway URL** (required): Your LLM provider endpoint (e.g., `https://llmgateway.local.xyz/v1/responses`)
-- **LLM Gateway API Key** (required): Authentication token for your provider
-- **GitHub App Credentials** (optional): App ID, Client ID, Private Key
+Use the CLI to submit and monitor tasks through the Pi API. See
+[NPM_SETUP.md](docs/NPM_SETUP.md) for CLI configuration.
 
 
 ### CloudFlare Gateway Live Probe
@@ -242,7 +239,7 @@ docker run -v /path/to/results:/results:rw docker.io/cyanautomation/kaseki-agent
 
 - **Config file** (recommended): `~/.kaseki/config.json`
 - **Environment variables**: `LLM_GATEWAY_API_KEY_FILE`, `GITHUB_APP_*_FILE`
-- **Docker secrets**: Mount `/secrets` volume
+- **Pi Compose secrets**: host files under `~/secrets`, mounted read-only at `/run/secrets/kaseki/`
 
 ### Environment Variables
 
@@ -252,7 +249,7 @@ See [docs/ENV_VARS.md](docs/ENV_VARS.md) for complete configuration reference.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `LLM_GATEWAY_URL` | `https://llmgateway.local.xyz/v1` | Required; Pi CLI appends endpoint path |
+| `LLM_GATEWAY_URL` | *(required)* | OpenAI-compatible gateway base URL |
 | `LLM_GATEWAY_API_KEY_FILE` | `/run/secrets/kaseki/llm_gateway_api_key` in Docker | Required; keep the key in a host file with mode 0640 and group 10000 |
 | `KASEKI_MODEL` | `dynamic/kaseki-agent` | Pi model string |
 | `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test;npm run build` | Semicolon-separated |

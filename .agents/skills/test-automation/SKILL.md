@@ -193,7 +193,7 @@ docker build -t kaseki-test:latest .
 
 echo "Testing Pi CLI is installed..."
 docker run --rm kaseki-test:latest which pi
-docker run --rm kaseki-test:latest pi --version | grep -q "0.70.2"
+docker run --rm kaseki-test:latest pi --version | grep -q "0.87.1"
 
 echo "Testing non-root user..."
 docker run --rm kaseki-test:latest id -u | grep -q "10000"

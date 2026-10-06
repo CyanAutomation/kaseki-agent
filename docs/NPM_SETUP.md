@@ -36,7 +36,8 @@ npx kaseki-agent secrets list
 | **git** | Setup checks and agent service runs | Repository access |
 | **Docker** | Local API service / worker execution | Required by the Kaseki API service when it launches agent containers; not required to print command help |
 | **Kaseki API service** | `run`, `list`, `report`, `status`, `stop`, `cancel` | Local service from `kaseki-agent serve` or a remote controller configured with `KASEKI_API_URL` |
-| **OpenRouter credentials** | Agent execution | Used by workers that run coding-agent tasks |
+| **Gateway credentials** | Coding-agent inference | OpenAI-compatible gateway URL and key; prefer the host key file on Pi |
+| **OpenRouter credential** | Optional evaluation stages | Used only when those stages are configured; not a coding fallback |
 
 ## Primary npm workflows
 
@@ -89,7 +90,7 @@ Project config can live in `kaseki-agent.json`; user-global config lives under `
 # Initialize the secret backend when needed
 kaseki-agent secrets init
 
-# Store an OpenRouter key for local worker execution
+# Store an OpenRouter key for evaluation stages when needed
 kaseki-agent secrets set openrouter-api-key sk-or-...
 
 # Store a Kaseki API client key for an authenticated controller
@@ -190,7 +191,7 @@ Both commands call the controller API cancel endpoint and require the same API U
 | `api.key` | Config | npm API-client commands | Persistent bearer token used when `KASEKI_API_KEY` is unset. |
 | `api.keys` | Config | npm API-client commands | Legacy list; the first key is used as the client bearer token if `api.key` is unset. |
 | `KASEKI_API_KEYS` | Environment | API service | Comma- or newline-separated bearer tokens accepted by `kaseki-agent serve`. Required before exposing the service on non-localhost interfaces. |
-| `OPENROUTER_API_KEY_FILE` | Environment/config auth | Worker execution | Path to an OpenRouter API key file used by agent workers. |
+| `OPENROUTER_API_KEY_FILE` | Environment/config auth | Evaluation stages | Path to an OpenRouter key file. Coding-agent inference uses the configured gateway. |
 | `KASEKI_ROOT` | Environment | Host/service paths | Base directory for Kaseki run and result data. |
 | `KASEKI_RUNS_DIR` | Environment | Host/service paths | Per-run workspace root. |
 | `KASEKI_RESULTS_DIR` | Environment | Host/service paths | Persistent run artifact directory. |

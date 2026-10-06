@@ -28,12 +28,16 @@ This skill provides comprehensive reference for all kaseki-agent environment var
 
 ## Core Agent Variables
 
-### Required Variables
+### Required Variables for the Pi API deployment
 
 | Variable | Purpose | Format | Example |
 |---|---|---|---|
-| `OPENROUTER_API_KEY` | OpenRouter authentication | String (sk-or-...) | `sk-or-abc123...` |
-| `REPO_URL` | Git repository to clone | HTTPS URL | `https://github.com/org/repo` |
+| `LLM_GATEWAY_URL` | OpenAI-compatible coding inference endpoint | HTTPS URL or a trusted local HTTP endpoint | `https://api.openai.com/v1` |
+| `LLM_GATEWAY_API_KEY_FILE` | Gateway authentication file | Host/container path | `/run/secrets/kaseki/llm_gateway_api_key` |
+| `REPO_URL` | Git repository for a submitted task | HTTPS URL | `https://github.com/org/repo` |
+
+OpenRouter is an optional credential for configured evaluation stages. It is
+not used for coding-agent inference or as a fallback when the gateway fails.
 
 ### Optional Agent Variables
 
@@ -208,25 +212,27 @@ KASEKI_API_QUEUE_SIZE=200
 
 ---
 
-## OpenRouter Configuration
+## LLM Gateway and Optional Evaluation Credentials
 
-| Variable | Default | Purpose | Example |
-|---|---|---|---|
-| `OPENROUTER_API_KEY` | (required) | API authentication | `sk-or-abc123...` |
-| `KASEKI_MODEL` | `auto` | Model selection; resolved by the configured gateway | Provider-supported model identifier |
-| `KASEKI_API_BASE` | (OpenRouter default) | Alternative API endpoint | `https://api.custom.com` |
+Coding-agent inference uses the configured OpenAI-compatible gateway:
 
-**Model Examples**:
-```bash
-# Let the configured gateway resolve the model (default)
-KASEKI_MODEL=auto
+| Variable | Default | Purpose |
+|---|---|---|
+| `LLM_GATEWAY_URL` | unset; required for gateway runs | Gateway base endpoint |
+| `LLM_GATEWAY_API_KEY_FILE` | `/run/secrets/kaseki/llm_gateway_api_key` in Compose | File containing gateway authentication |
+| `LLM_GATEWAY_MODEL` | `dynamic/kaseki-agent` | Optional model override for gateway routing |
+| `KASEKI_MODEL` | `dynamic/kaseki-agent` | Model identifier passed to the coding agent |
 
-# Specific model
-KASEKI_MODEL=anthropic/claude-3.5-sonnet
+Keep gateway credentials in a host secret file; do not put the value in `.env`,
+shell arguments, or the container environment. On Raspberry Pi, use
+`bash scripts/setup-pi.sh` to create and permission the file.
 
-# Alternative provider
-KASEKI_MODEL=openai/gpt-4-turbo
-```
+OpenRouter is a separate optional credential for evaluation stages. It is not
+used for coding-agent inference or as a gateway fallback:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OPENROUTER_API_KEY_FILE` | unset | File containing the optional evaluation API key |
 
 ---
 
