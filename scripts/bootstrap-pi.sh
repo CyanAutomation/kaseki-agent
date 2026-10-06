@@ -86,7 +86,7 @@ if docker_ready; then
   log 'Docker Engine and Compose are already available.'
 else
   command -v sudo >/dev/null 2>&1 || fail 'Docker is missing or unavailable and sudo is required to install Docker Engine.'
-  log 'Installing Docker Engine and Compose from Docker’s official Debian package repository...'
+  log "Installing Docker Engine and Compose from Docker's official Debian package repository..."
   sudo -v
   sudo apt-get update
   sudo apt-get install -y ca-certificates curl
@@ -120,7 +120,9 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 log 'Downloading the matching Kaseki release bundle and checksum...'
 curl -fsSL "$DOWNLOAD_BASE/$ARCHIVE_NAME" -o "$WORK_DIR/$ARCHIVE_NAME"
 curl -fsSL "$DOWNLOAD_BASE/$ARCHIVE_NAME.sha256" -o "$WORK_DIR/$ARCHIVE_NAME.sha256"
-(cd "$WORK_DIR" && sha256sum -c "$ARCHIVE_NAME.sha256") || fail 'The release bundle checksum did not match; nothing was extracted.'
+if ! (cd "$WORK_DIR" && sha256sum -c "$ARCHIVE_NAME.sha256"); then
+  fail 'The release bundle checksum did not match; nothing was extracted.'
+fi
 
 mkdir -p "$INSTALL_DIR"
 tar -xzf "$WORK_DIR/$ARCHIVE_NAME" -C "$INSTALL_DIR"

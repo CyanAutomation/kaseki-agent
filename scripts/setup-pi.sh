@@ -161,10 +161,18 @@ esac
   fail 'KASEKI_API_IMAGE must be a valid Docker image reference without whitespace.'
 is_valid_ipv4 "$API_BIND_ADDRESS" || \
   fail 'KASEKI_API_BIND_ADDRESS must be a valid IPv4 address.'
-[[ "$API_PORT" =~ ^[0-9]+$ ]] && (( 10#$API_PORT >= 1 && 10#$API_PORT <= 65535 )) || \
+if ! [[ "$API_PORT" =~ ^[0-9]+$ ]]; then
   fail 'KASEKI_API_PORT must be an integer from 1 to 65535.'
-[[ "$API_MAX_CONCURRENT_RUNS" =~ ^[0-9]+$ ]] && (( 10#$API_MAX_CONCURRENT_RUNS >= 1 )) || \
+fi
+if (( 10#$API_PORT < 1 || 10#$API_PORT > 65535 )); then
+  fail 'KASEKI_API_PORT must be an integer from 1 to 65535.'
+fi
+if ! [[ "$API_MAX_CONCURRENT_RUNS" =~ ^[0-9]+$ ]]; then
   fail 'KASEKI_API_MAX_CONCURRENT_RUNS must be a positive integer.'
+fi
+if (( 10#$API_MAX_CONCURRENT_RUNS < 1 )); then
+  fail 'KASEKI_API_MAX_CONCURRENT_RUNS must be a positive integer.'
+fi
 case "$API_LOG_LEVEL" in
   debug|info|warn|error) ;;
   *) fail 'KASEKI_API_LOG_LEVEL must be debug, info, warn, or error.' ;;
@@ -192,8 +200,9 @@ fi
 [[ "$GATEWAY_URL" =~ ^https?://[^[:space:]]+$ ]] || fail 'LLM_GATEWAY_URL must be a valid http(s) URL without spaces.'
 gateway_authority="${GATEWAY_URL#*://}"
 gateway_authority="${gateway_authority%%/*}"
-[[ "$gateway_authority" != *@* && "$GATEWAY_URL" != *\?* && "$GATEWAY_URL" != *\#* ]] || \
+if [[ "$gateway_authority" == *@* || "$GATEWAY_URL" == *\?* || "$GATEWAY_URL" == *\#* ]]; then
   fail 'LLM_GATEWAY_URL must not contain credentials, query parameters, or a fragment. Store authentication in the key file.'
+fi
 [[ "$GATEWAY_MODEL" =~ ^[^[:space:]]+$ ]] || fail 'LLM_GATEWAY_MODEL must be a non-empty model identifier without spaces.'
 if [ -f "$ENV_FILE" ] && grep -Eq '^(LLM_GATEWAY_API_KEY|KASEKI_API_KEYS|OPENROUTER_API_KEY|GITHUB_APP_ID|GITHUB_APP_CLIENT_ID|GITHUB_APP_PRIVATE_KEY)=' "$ENV_FILE"; then
   fail "Inline credentials are present in $ENV_FILE. Move them to files in $SECRETS_DIR, remove the inline entries, and re-run setup."
