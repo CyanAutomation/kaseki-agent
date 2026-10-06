@@ -646,13 +646,6 @@ GITHUB_OPERATION_PHASE=""
 ACTUAL_MODEL="unknown"
 GITHUB_PR_URL=""
 GITHUB_SKIP_REASONS=()
-GITHUB_PR_SCORECARD_PENDING=0
-GITHUB_PR_UPDATE_OWNER=""
-GITHUB_PR_UPDATE_REPO=""
-GITHUB_PR_UPDATE_NUMBER=""
-# Keep the installation token only in shell memory until optional post-finalize
-# PR enrichment; it is never exported, written to disk, or included in logs.
-GITHUB_PR_UPDATE_TOKEN=""
 VALIDATION_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/validation-timings.tsv"
 PRE_VALIDATION_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/pre-validation-timings.tsv"
 STAGE_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/stage-timings.tsv"
@@ -3924,7 +3917,6 @@ EOF
   ensure_validation_evidence_artifacts
   finalize_artifacts_and_publish_status "${KASEKI_RESULTS_DIR}" write_metadata "$STATUS" "${VALIDATION_TIMINGS_FILE}" "${PRE_VALIDATION_TIMINGS_FILE}"
   maybe_call_finish_helper write_result_summary
-  refresh_finalized_pr_scorecard
   maybe_call_finish_helper remove_low_value_artifacts
   if [ "$KASEKI_REPO_SESSION_ACTIVE" = "1" ] && [ "$(cat "$KASEKI_REPO_SESSION_MARKER" 2>/dev/null || true)" = "${BASHPID:-$$}" ]; then
     rm -f "$KASEKI_REPO_SESSION_MARKER"
@@ -9086,91 +9078,33 @@ NODE
 
 format_pr_command_results() {
   local timings_file="$1"
-  local include_failed_summary="${2:-0}"
   if [ ! -s "$timings_file" ]; then
-    printf -- '- Not recorded\n'
     return 0
   fi
 
-  local command exit_code duration detail safe_command safe_detail row rows=0 all_rows="" failed_rows=""
-  while IFS=$'\t' read -r command exit_code duration detail || [ -n "$command" ]; do
+  local command exit_code safe_command status row rows=0 all_rows="" tick='`'
+  while IFS=$'\t' read -r command exit_code _duration _detail || [ -n "$command" ]; do
     [ -n "$command" ] || continue
     safe_command="$(printf '%s' "$command" | sanitize_pr_metadata_text)"
-    safe_detail="$(printf '%s' "${detail:-}" | sanitize_pr_metadata_text)"
-    if [ -n "$safe_detail" ]; then
-      row="- ${safe_command} — exit ${exit_code:-unknown}, ${duration:-0}s (${safe_detail})"
+    safe_command="${safe_command//\`/\\\`}"
+    if [ "${exit_code:-}" = "0" ]; then
+      status="passed"
+    elif [ -n "${exit_code:-}" ]; then
+      status="failed (exit ${exit_code})"
     else
-      row="- ${safe_command} — exit ${exit_code:-unknown}, ${duration:-0}s"
+      status="result not recorded"
     fi
+    row="- ${tick}${safe_command}${tick} — ${status}"
     all_rows="${all_rows}${row}
 "
-    if [ "${exit_code:-0}" != "0" ]; then
-      failed_rows="${failed_rows}${row}
-"
-    fi
     rows=$((rows + 1))
   done < "$timings_file"
 
   if [ "$rows" -eq 0 ]; then
-    printf -- '- Not recorded\n'
     return 0
   fi
 
-  if [ "$include_failed_summary" = "1" ] && [ -n "$failed_rows" ]; then
-    printf '%b' "$failed_rows"
-  else
-    printf '%b' "$all_rows"
-  fi
-}
-
-format_pr_changed_files() {
-  local changed_files_file="${KASEKI_RESULTS_DIR}/changed-files.txt"
-  local details_threshold=8
-  if [ ! -s "$changed_files_file" ]; then
-    printf '0 files changed.\n'
-    return 0
-  fi
-
-  local path safe_path rows=0 total=0 omitted=0 list_output=""
-  while IFS= read -r path || [ -n "$path" ]; do
-    [ -n "$path" ] || continue
-    safe_path="$(printf '%s' "$path" | sanitize_pr_metadata_text)"
-    safe_path="$(truncate_pr_metadata_text 300 "$safe_path")"
-    [ -n "$safe_path" ] || continue
-    total=$((total + 1))
-    if [ "$rows" -lt 100 ]; then
-      list_output="${list_output}- ${safe_path}
-"
-      rows=$((rows + 1))
-    else
-      omitted=1
-    fi
-  done < "$changed_files_file"
-
-  if [ "$total" -eq 1 ]; then
-    printf '1 file changed.\n'
-  else
-    printf '%s files changed.\n' "$total"
-  fi
-
-  if [ "$total" -eq 0 ]; then
-    return 0
-  fi
-
-  if [ "$rows" -eq 100 ]; then
-    omitted=1
-  fi
-
-  if [ "$total" -gt "$details_threshold" ]; then
-    printf '\n<details><summary>View files</summary>\n\n'
-    printf '%b' "$list_output"
-    if [ "$omitted" -eq 1 ]; then
-      printf -- '- ...additional changed files omitted\n'
-    fi
-    printf '\n</details>\n'
-  else
-    printf '%b' "$list_output"
-  fi
+  printf '%b' "$all_rows"
 }
 
 format_pr_json_list() {
@@ -9275,63 +9209,49 @@ build_pr_changes() {
 build_pr_human_review_focus() {
   local evaluation_file="${KASEKI_RESULTS_DIR}/run-evaluation.json"
   [ -s "$evaluation_file" ] || return 0
-  local focus confidence
-  focus="$(format_pr_json_list "$evaluation_file" "human_review_focus" 3 220 | sanitize_pr_body_text)"
-  confidence="$(node - "$evaluation_file" <<'NODE' 2>/dev/null || true
+  node - "$evaluation_file" <<'NODE' 2>/dev/null | sanitize_pr_body_text || true
 const fs = require('fs');
 try {
   const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-  process.stdout.write(String(data.reviewer_confidence || 'unknown'));
+  const items = Array.isArray(data?.human_review_focus) ? data.human_review_focus : [];
+  const actionable = /\b(?:confirm|check|verify|inspect|review|test|validate|ensure|compare|exercise|reproduce|follow up on)\b/i;
+  const internal = /\b(?:goal[- ]setting|goal check|task criteria|fallback artifact|reviewer confidence|evaluator|scorecard|task prompt|kaseki|run metadata)\b/i;
+  const speculative = /\b(?:could also mean|might|perhaps|possibly|probably|likely|either|interpretation|derived from|unclear|ambiguous)\b/i;
+  let count = 0;
+  for (const item of items) {
+    const text = String(item || '').replace(/\s+/g, ' ').trim();
+    if (!text || !actionable.test(text) || /^(?:make sure it works|review everything|check manually)[.!]?$/i.test(text) || internal.test(text) || speculative.test(text)) continue;
+    const clipped = text.length > 220 ? `${text.slice(0, 217)}...` : text;
+    console.log(`- ${clipped}`);
+    count += 1;
+    if (count >= 3) break;
+  }
 } catch {}
 NODE
-)"
-  if [ -n "$focus" ]; then
-    printf '### Human review focus\n%s\n' "$focus"
-  elif [ "$confidence" = "low" ] || [ "$confidence" = "medium" ]; then
-    printf '### Human review focus\n- Reviewer confidence is %s; inspect the diff and validation evidence manually.\n' "$confidence"
-  fi
 }
 
 build_pr_agent_review() {
-  local validation_pass_flag="${1:-0}"
-  case "$validation_pass_flag" in
-    ''|*[!0-9-]*) validation_pass_flag=0 ;;
-  esac
   local goal_file="${KASEKI_RESULTS_DIR}/goal-check.json"
-  local scouting_file="${KASEKI_RESULTS_DIR}/scouting.json"
-  local missing risks goal_met
+  local missing goal_met line
 
-  # An uncertain goal-check verdict requires explicit human review notice.
+  # If completion could not be established, say what the reviewer should do
+  # without publishing evaluator or artifact-processing details.
   if [ -s "$goal_file" ] && node - "$goal_file" <<'NODE' >/dev/null 2>&1
 const fs = require('fs');
 try {
   const value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-  process.exit(value?.evaluation_warning === 'goal_check_uncertain_review_required' ? 0 : 1);
-} catch { process.exit(1); }
-NODE
-  then
-    printf '### Needs attention\n'
-    printf -- '- Goal check is uncertain; human review is required before merging.\n'
-    return 0
-  fi
-
-  # A deterministic fallback cannot establish semantic task completion.
-  if [ -s "$goal_file" ] && node - "$goal_file" <<'NODE' >/dev/null 2>&1
-const fs = require('fs');
-try {
-  const value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-  process.exit(value?.evaluation_unavailable === true ||
+  process.exit(value?.evaluation_warning === 'goal_check_uncertain_review_required' ||
+    value?.evaluation_unavailable === true ||
     typeof value?.evaluation_fallback === 'string' ||
     typeof value?.evaluation_warning === 'string' ? 0 : 1);
 } catch { process.exit(1); }
 NODE
   then
-    printf '### Needs attention\n'
-    printf -- '- Goal-check evaluator unavailable; this is a degraded result and requires human review.\n'
+    printf -- '- Confirm the changed behavior meets the required outcomes; completion could not be established.\n'
     return 0
   fi
 
-  # A missing or malformed artifact is not evidence that the goal was met.
+  # A missing or malformed result is not evidence that the goal was met.
   if [ ! -s "$goal_file" ] || ! node - "$goal_file" <<'NODE' >/dev/null 2>&1
 const fs = require('fs');
 try {
@@ -9340,11 +9260,11 @@ try {
 } catch { process.exit(1); }
 NODE
   then
+    printf -- '- Confirm the changed behavior meets the required outcomes; completion could not be established.\n'
     return 0
   fi
 
   missing="$(format_pr_json_list "$goal_file" "missing" 3 180 | sanitize_pr_metadata_text)"
-  risks="$(format_pr_json_list "$scouting_file" "risks" 2 180 | sanitize_pr_metadata_text)"
   goal_met="$(node - "$goal_file" <<'NODE' 2>/dev/null || true
 const fs = require('fs');
 try {
@@ -9353,210 +9273,39 @@ try {
 } catch {}
 NODE
 )"
-  if [ -z "$missing" ] && [ -z "$risks" ] && [ "$goal_met" != "false" ] && [ "$validation_pass_flag" -eq 1 ]; then
-    return 0
+  if [ "$goal_met" = "false" ]; then
+    if [ -n "$missing" ]; then
+      while IFS= read -r line || [ -n "$line" ]; do
+        [ -n "$line" ] || continue
+        printf -- '- Not verified: %s\n' "${line#- }"
+      done <<<"$missing"
+    else
+      printf -- '- Completion could not be confirmed; compare the changed behavior with the required outcomes.\n'
+    fi
   fi
-
-  printf '### Needs attention\n'
-  if [ -n "$missing" ]; then printf '%s\n' "$missing"; fi
-  if [ -n "$risks" ]; then printf '%s\n' "$risks"; fi
-  if [ "$goal_met" = "false" ] && [ -z "$missing" ]; then
-    printf -- '- The goal check did not confirm completion; compare the requested scope with the diff.\n'
-  fi
-  if [ "$validation_pass_flag" -ne 1 ]; then
-    printf -- '- Review the failed validation or quality gate output before merging.\n'
-  fi
-}
-
-build_pr_agent_evaluation() {
-  local evaluation_file="${KASEKI_RESULTS_DIR}/run-evaluation.json"
-  if [ ! -s "$evaluation_file" ]; then
-    return 0
-  fi
-
-  node - "$evaluation_file" <<'NODE' 2>/dev/null | sanitize_pr_body_text || true
-const fs = require('fs');
-const file = process.argv[2];
-let data;
-try {
-  data = JSON.parse(fs.readFileSync(file, 'utf8'));
-} catch {
-  process.exit(0);
-}
-if (!data || typeof data !== 'object' || typeof data.overall_assessment !== 'string' || typeof data.reviewer_confidence !== 'string') {
-  process.exit(0);
-}
-const text = (value, max = 220) => {
-  const normalized = String(value || '')
-    .replace(/\r/g, '')
-    .replace(/\n+/g, ' ')
-    .replace(/[\x00-\x1F\x7F]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return normalized.length > max ? `${normalized.slice(0, Math.max(0, max - 3))}...` : normalized;
-};
-
-const parseEpochMs = (value) => {
-  if (typeof value !== 'string' || !value.trim()) return null;
-  const epochMs = Date.parse(value);
-  return Number.isFinite(epochMs) ? epochMs : null;
-};
-
-const durationMsFromTimestamps = (() => {
-  const startMs = parseEpochMs(data.started_at || data.start_time || null);
-  const endMs = parseEpochMs(data.ended_at || data.end_time || null);
-  if (startMs === null || endMs === null) return null;
-  return Math.max(0, endMs - startMs);
-})();
-
-const fallbackDurationMs = (() => {
-  if (typeof data.duration_ms === 'number' && Number.isFinite(data.duration_ms) && data.duration_ms >= 0) {
-    return data.duration_ms;
-  }
-  if (typeof data.duration_seconds === 'number' && Number.isFinite(data.duration_seconds) && data.duration_seconds >= 0) {
-    return data.duration_seconds * 1000;
-  }
-  return null;
-})();
-
-const durationMs = durationMsFromTimestamps ?? fallbackDurationMs;
-const formatDuration = (ms) => {
-  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) return 'unknown';
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  return `${(ms / 1000).toFixed(2).replace(/\.00$/, '')}s`;
-};
-
-// Key-value summary
-const assessment = text(data.overall_assessment || 'unknown', 40);
-const confidence = text(data.reviewer_confidence || 'unknown', 40);
-console.log(`- Overall: ${assessment}`);
-console.log(`- Reviewer confidence: ${confidence}`);
-if (durationMs !== null) console.log(`- Duration: ${formatDuration(durationMs)}`);
-
-// Summary and human review focus are rendered in dedicated sections above.
-
-// Efficiency findings and improvement opportunities are operational telemetry,
-// not reviewer-facing change evidence. They remain in run artifacts and the
-// improvements endpoint instead of adding noise to every pull request.
-NODE
 }
 
 build_pr_improvements_summary() {
-  local changed_files_file="${KASEKI_RESULTS_DIR}/changed-files.txt"
-  local diff_file="${KASEKI_RESULTS_DIR}/git.diff"
-  local total=0 source_count=0 test_count=0 docs_count=0 config_count=0 other_count=0
-  local path lower additions deletions summary_rows=0 summary_source=""
-  local artifact raw_line line safe_line summary_capture=0 content json_text fallback_summary
+  local summary="" summary_file="$KASEKI_RESULTS_DIR/result-summary.md"
+  local pi_summary_file="$KASEKI_RESULTS_DIR/pi-summary.json"
+  local path safe_path total=0 first_path="" second_path="" third_path=""
+  local tick="$(printf '\140')"
 
-  if [ -s "$changed_files_file" ]; then
-    while IFS= read -r path || [ -n "$path" ]; do
-      [ -n "$path" ] || continue
-      lower="$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')"
-      total=$((total + 1))
-      case "$lower" in
-        tests/*|test/*|*.test.*|*.spec.*|*test*|*spec*) test_count=$((test_count + 1)) ;;
-        docs/*|doc/*|*.md|*.markdown|*.rst|*.txt) docs_count=$((docs_count + 1)) ;;
-        package.json|package-lock.json|pnpm-lock.yaml|yarn.lock|*.yml|*.yaml|*.json|*.toml|*.ini|*.cfg|*.conf|dockerfile|*.dockerfile|.github/*) config_count=$((config_count + 1)) ;;
-        *.sh|*.bash|*.js|*.jsx|*.ts|*.tsx|*.py|*.rb|*.go|*.rs|*.java|*.kt|*.kts|*.c|*.cc|*.cpp|*.h|*.hpp|*.cs|*.php|*.swift|*.m|*.mm|*.scala|*.lua|*.pl|*.r) source_count=$((source_count + 1)) ;;
-        *) other_count=$((other_count + 1)) ;;
-      esac
-    done < "$changed_files_file"
+  if [ -s "$summary_file" ]; then
+    summary="$(awk '
+      /^#{1,3}[[:space:]]+Summary[[:space:]]*$/ { in_summary=1; next }
+      in_summary && /^#{1,3}[[:space:]]+/ { exit }
+      in_summary {
+        line=$0
+        sub(/^[[:space:]]*[-*][[:space:]]+/, "", line)
+        sub(/^[[:space:]]*[0-9]+[.)][[:space:]]+/, "", line)
+        if (line ~ /[^[:space:]]/) { print line; exit }
+      }
+    ' "$summary_file" 2>/dev/null | sanitize_pr_body_text)"
   fi
 
-  if [ -s "${KASEKI_RESULTS_DIR}"/result-summary.md ] && awk '
-    /^#{1,3}[[:space:]]+Summary[[:space:]]*$/ { in_summary=1; next }
-    in_summary && /^#{1,3}[[:space:]]+/ { exit }
-    in_summary && NF { found_summary=1; exit }
-    END { exit !found_summary }
-  ' "${KASEKI_RESULTS_DIR}"/result-summary.md; then
-    summary_source="${KASEKI_RESULTS_DIR}/result-summary.md"
-  else
-    for artifact in "${KASEKI_RESULTS_DIR}"/analysis.md ${KASEKI_RESULTS_DIR}/pi-summary.json; do
-      if [ -s "$artifact" ]; then
-        summary_source="$artifact"
-        break
-      fi
-    done
-  fi
-
-  if [ -n "$summary_source" ]; then
-    if [ "${summary_source##*.}" = "json" ]; then
-      json_text="$(node - "$summary_source" <<'NODE' 2>/dev/null || true
-const fs = require('fs');
-const file = process.argv[2];
-const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-const keys = new Set(['summary', 'notes', 'title', 'description']);
-const out = [];
-function visit(value, key = '') {
-  if (out.length >= 8 || value == null) return;
-  if (typeof value === 'string') {
-    // Only explicitly reviewer-facing fields may become PR prose. Generic
-    // scalar traversal leaked provider names and raw timestamps from
-    // pi-summary.json into otherwise useful summaries.
-    if (keys.has(key.toLowerCase())) out.push(value);
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) visit(item, key);
-    return;
-  }
-  if (typeof value === 'object') {
-    for (const [childKey, childValue] of Object.entries(value)) visit(childValue, childKey);
-  }
-}
-visit(data);
-console.log(out.join('\n'));
-NODE
-)"
-      while IFS= read -r raw_line || [ -n "$raw_line" ]; do
-        line="$(printf '%s' "$raw_line" | sanitize_pr_metadata_text)"
-        [ -n "$line" ] || continue
-        line="$(printf '%s' "$line" | sed -E 's/^[-*][[:space:]]+//; s/^[0-9]+[.)][[:space:]]+//')"
-        safe_line="$(truncate_pr_metadata_text 180 "$line")"
-        [ -n "$safe_line" ] || continue
-        printf -- '- %s\n' "$safe_line"
-        summary_rows=$((summary_rows + 1))
-        [ "$summary_rows" -lt 4 ] || break
-      done <<EOF_JSON_SUMMARY
-$json_text
-EOF_JSON_SUMMARY
-    else
-      # shellcheck disable=SC2094 # File is only read, not written; output goes to stdout
-      summary_file_content="$(cat "$summary_source" 2>/dev/null || echo '')"
-      while IFS= read -r raw_line || [ -n "$raw_line" ]; do
-        case "$raw_line" in
-          \#*)
-            if printf '%s' "$raw_line" | grep -Eiq '^#{1,3}[[:space:]]+summary[[:space:]]*$'; then
-              summary_capture=1
-              continue
-            fi
-            [ "$summary_capture" -eq 1 ] && break
-            continue
-            ;;
-        esac
-        if [ "$summary_capture" -eq 0 ] && [ "$summary_source" = "${KASEKI_RESULTS_DIR}/result-summary.md" ]; then
-          continue
-        fi
-        line="$(printf '%s' "$raw_line" | sanitize_pr_metadata_text)"
-        [ -n "$line" ] || continue
-        case "$line" in
-          '```'*|'<'*'>'*) continue ;;
-        esac
-        content="$(printf '%s' "$line" | sed -E 's/^[-*][[:space:]]+//; s/^[0-9]+[.)][[:space:]]+//')"
-        [ -n "$content" ] || continue
-        safe_line="$(truncate_pr_metadata_text 180 "$content")"
-        [ -n "$safe_line" ] || continue
-        printf -- '- %s\n' "$safe_line"
-        summary_rows=$((summary_rows + 1))
-        [ "$summary_rows" -lt 4 ] || break
-      done <<EOF_SUMMARY_FILE
-$summary_file_content
-EOF_SUMMARY_FILE
-    fi
-  fi
-
-  if [ "$summary_rows" -eq 0 ] && [ -s "${KASEKI_RESULTS_DIR}/pi-summary.json" ]; then
-    fallback_summary="$(node - "${KASEKI_RESULTS_DIR}/pi-summary.json" <<'NODE' 2>/dev/null || true
+  if [ -z "$summary" ] && [ -s "$pi_summary_file" ]; then
+    summary="$(node - "$pi_summary_file" <<'NODE' 2>/dev/null || true
 const fs = require('fs');
 try {
   const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
@@ -9564,208 +9313,48 @@ try {
 } catch {}
 NODE
 )"
-    fallback_summary="$(printf '%s' "$fallback_summary" | sanitize_pr_metadata_text)"
-    fallback_summary="$(truncate_pr_metadata_text 180 "$fallback_summary")"
-    if [ -n "$fallback_summary" ]; then
-      printf -- '- %s\n' "$fallback_summary"
-      summary_rows=$((summary_rows + 1))
-    fi
+    summary="$(printf '%s' "$summary" | sanitize_pr_body_text)"
   fi
 
-  if [ "$summary_rows" -eq 0 ]; then
-    local requested_outcome
-    requested_outcome="$(printf '%s\n' "${TASK_PROMPT:-}" \
-      | awk 'NF && $0 !~ /^#{1,6}[[:space:]]/ { print; exit }' \
-      | sed -E 's/^[[:space:]]*([0-9]+[.)]|[-*])[[:space:]]+//')"
-    requested_outcome="$(printf '%s' "$requested_outcome" | sanitize_pr_metadata_text)"
-    requested_outcome="$(truncate_pr_metadata_text 180 "$requested_outcome")"
-    if [ -n "$requested_outcome" ]; then
-      printf -- '- Requested outcome (from the task prompt; no reviewer-ready run summary was available): %s\n' "$requested_outcome"
-    elif [ "$total" -eq 0 ]; then
-      printf -- '- No file changes detected in local artifacts.\n'
-    else
-      local categories=""
-      [ "$source_count" -eq 0 ] || categories="${categories}source, "
-      [ "$test_count" -eq 0 ] || categories="${categories}tests, "
-      [ "$docs_count" -eq 0 ] || categories="${categories}documentation, "
-      [ "$config_count" -eq 0 ] || categories="${categories}configuration or metadata, "
-      [ "$other_count" -eq 0 ] || categories="${categories}other files, "
-      categories="${categories%, }"
-      [ -n "$categories" ] || categories="local files"
-      printf -- '- Updated %s across %s changed file(s).\n' "$categories" "$total"
-    fi
+  if [ -n "$summary" ]; then
+    printf '%s' "$(truncate_pr_metadata_text 600 "$summary")"
+    return 0
   fi
 
-  local changes
-  changes="$(build_pr_changes)"
-  if [ -n "$changes" ]; then
-    printf '\n### Changes\n%s\n' "$changes"
+  if [ -s "$KASEKI_RESULTS_DIR/changed-files.txt" ]; then
+    while IFS= read -r path || [ -n "$path" ]; do
+      [ -n "$path" ] || continue
+      total=$((total + 1))
+      safe_path="$(truncate_pr_metadata_text 160 "$(printf '%s' "$path" | sanitize_pr_metadata_text)")"
+      case "$total" in
+        1) first_path="$safe_path" ;;
+        2) second_path="$safe_path" ;;
+        3) third_path="$safe_path" ;;
+      esac
+    done < "$KASEKI_RESULTS_DIR/changed-files.txt"
   fi
 
-  printf '\n### Change metadata\n'
   if [ "$total" -eq 0 ]; then
-    printf -- '- No file changes detected in local artifacts.\n'
+    printf 'No file changes were recorded.'
+  elif [ "$total" -eq 1 ]; then
+    printf 'Updated %s%s%s.' "$tick" "$first_path" "$tick"
+  elif [ "$total" -eq 2 ]; then
+    printf 'Updated %s%s%s and %s%s%s.' "$tick" "$first_path" "$tick" "$tick" "$second_path" "$tick"
+  elif [ "$total" -eq 3 ]; then
+    printf 'Updated %s%s%s, %s%s%s, and %s%s%s.' "$tick" "$first_path" "$tick" "$tick" "$second_path" "$tick" "$tick" "$third_path" "$tick"
   else
-    printf -- '- Changed files: %s total.\n' "$total"
-    [ "$source_count" -eq 0 ] || printf -- '- Source files updated: %s.\n' "$source_count"
-    [ "$test_count" -eq 0 ] || printf -- '- Tests updated: %s.\n' "$test_count"
-    [ "$docs_count" -eq 0 ] || printf -- '- Documentation updated: %s.\n' "$docs_count"
-    [ "$config_count" -eq 0 ] || printf -- '- Configuration or metadata updated: %s.\n' "$config_count"
-    [ "$other_count" -eq 0 ] || printf -- '- Other files updated: %s.\n' "$other_count"
-  fi
-
-  if [ -s "$diff_file" ]; then
-    additions="$(awk '/^\+/ && !/^\+\+\+/ { count++ } END { print count + 0 }' "$diff_file" 2>/dev/null || printf '0')"
-    deletions="$(awk '/^-/ && !/^---/ { count++ } END { print count + 0 }' "$diff_file" 2>/dev/null || printf '0')"
-    printf -- '- Diff stats: +%s/-%s lines from sanitized local diff metadata.\n' "$additions" "$deletions"
+    printf 'Updated several files, including %s%s%s, %s%s%s, and %s%s%s.' \
+      "$tick" "$first_path" "$tick" "$tick" "$second_path" "$tick" "$tick" "$third_path" "$tick"
   fi
 }
-format_pr_run_scorecard() {
-  local scorecard_file="${KASEKI_RESULTS_DIR}/run-scorecard.json"
-  local formatter="${KASEKI_SCORECARD_MARKDOWN_HELPER:-kaseki-run-scorecard-markdown}"
-  local rendered=""
-
-  if [ -s "$scorecard_file" ] && command -v "$formatter" >/dev/null 2>&1; then
-    rendered="$("$formatter" "$scorecard_file" 2>/dev/null || true)"
-  elif [ -s "$scorecard_file" ] && [ -f "${KASEKI_APP_ROOT:-/app}/dist/run-scorecard-markdown.js" ]; then
-    rendered="$(node "${KASEKI_APP_ROOT:-/app}/dist/run-scorecard-markdown.js" "$scorecard_file" 2>/dev/null || true)"
-  elif [ -s "$scorecard_file" ] && [ -f "${KASEKI_APP_ROOT:-/app}/lib/run-scorecard-markdown.js" ]; then
-    rendered="$(node "${KASEKI_APP_ROOT:-/app}/lib/run-scorecard-markdown.js" "$scorecard_file" 2>/dev/null || true)"
-  fi
-  rendered="$(printf '%s' "$rendered" | sanitize_pr_body_text)"
-  case "$rendered" in *'Scorecard unavailable:'*) rendered="" ;; esac
-  # PR publication is the final deterministic opportunity to regenerate a
-  # missing or malformed scorecard after terminal artifacts are consolidated.
-  if [ -z "$rendered" ] && command -v kaseki-run-scorecard >/dev/null 2>&1; then
-    KASEKI_RESULTS_DIR="$KASEKI_RESULTS_DIR" kaseki-run-scorecard >/dev/null 2>&1 || true
-    if [ -s "$scorecard_file" ] && command -v "$formatter" >/dev/null 2>&1; then
-      rendered="$("$formatter" "$scorecard_file" 2>/dev/null || true)"
-    elif [ -s "$scorecard_file" ] && [ -f "${KASEKI_APP_ROOT:-/app}/dist/run-scorecard-markdown.js" ]; then
-      rendered="$(node "${KASEKI_APP_ROOT:-/app}/dist/run-scorecard-markdown.js" "$scorecard_file" 2>/dev/null || true)"
-    elif [ -s "$scorecard_file" ] && [ -f "${KASEKI_APP_ROOT:-/app}/lib/run-scorecard-markdown.js" ]; then
-      rendered="$(node "${KASEKI_APP_ROOT:-/app}/lib/run-scorecard-markdown.js" "$scorecard_file" 2>/dev/null || true)"
-    fi
-    rendered="$(printf '%s' "$rendered" | sanitize_pr_body_text)"
-    case "$rendered" in *'Scorecard unavailable:'*) rendered="" ;; esac
-  fi
-  # Invalid evidence is deliberately omitted. build_pr_body supplies a
-  # deterministic fallback summary without implying a score exists.
-  [ -n "$rendered" ] || return 0
-  # The formatter is bounded internally; cap its entire output as defense in depth.
-  printf '%.*s' 12000 "$rendered"
-}
-
 build_pr_body() {
-  local duration_seconds pre_validation_status validation_status quality_status secret_scan_status task_summary model_summary generated_at changed_files_summary
-  local pre_validation_commands pre_validation_full_commands post_validation_commands post_validation_full_commands validation_command_sections all_validation_statuses_pass scorecard_markdown agent_review agent_evaluation review_focus review_notes scorecard_section scorecard_fallback model_requested model_actual pr_summary pr_changes summary_content
-  duration_seconds="$(($(date +%s) - START_EPOCH))"
-  if [ "${PRE_VALIDATION_EXIT:-0}" -ne 0 ]; then
-    pre_validation_status="failed (exit $PRE_VALIDATION_EXIT)"
-  elif [ -s "$PRE_VALIDATION_TIMINGS_FILE" ]; then
-    pre_validation_status="passed"
-  elif [ "${KASEKI_PRE_AGENT_VALIDATION:-1}" = "0" ]; then
-    pre_validation_status="skipped (disabled)"
-  else
-    pre_validation_status="not run (no commands recorded)"
-  fi
-  if [ "$VALIDATION_EXIT" -ne 0 ]; then
-    validation_status="failed (exit $VALIDATION_EXIT)"
-  elif [ -s "$VALIDATION_TIMINGS_FILE" ]; then
-    validation_status="passed"
-  elif [ "${KASEKI_DRY_RUN:-0}" = "1" ]; then
-    validation_status="skipped (dry run)"
-  elif [ -z "${KASEKI_VALIDATION_COMMANDS:-}" ] || [ "${KASEKI_VALIDATION_COMMANDS:-}" = "none" ]; then
-    validation_status="skipped (no commands configured)"
-  else
-    validation_status="not run (no commands recorded)"
-  fi
-  quality_status="$([ "$QUALITY_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$QUALITY_EXIT")"
-  secret_scan_status="$([ "$SECRET_SCAN_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$SECRET_SCAN_EXIT")"
-  task_summary="$(printf '%s' "${TASK_PROMPT:-Not provided}" | sanitize_pr_body_text)"
-  task_summary="$(truncate_pr_metadata_text 1000 "$task_summary")"
-  model_requested="$(printf '%s' "${KASEKI_MODEL:-not configured}" | sanitize_pr_metadata_text)"
-  model_actual="$(printf '%s' "${ACTUAL_MODEL:-}" | sanitize_pr_metadata_text)"
-  model_summary="Requested model: $model_requested"
-  if [ -n "$model_actual" ] && [ "$model_actual" != "unknown" ]; then
-    model_summary="$model_summary; actual model: $model_actual"
-  else
-    model_summary="$model_summary; actual model: not reported by provider"
-  fi
-  generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  changed_files_summary="$(format_pr_changed_files)"
-  scorecard_markdown="$(format_pr_run_scorecard)"
-  pr_summary="$(build_pr_summary)"
-  pr_changes=""
-  if [ -n "$pr_summary" ]; then
-    pr_changes="$(build_pr_changes)"
-    summary_content="$pr_summary"
-  else
-    summary_content="$(build_pr_improvements_summary)"
-  fi
-
-  if [ "$pre_validation_status" = "passed" ] && [ "$validation_status" = "passed" ] && [ "$QUALITY_EXIT" -eq 0 ] && [ "$SECRET_SCAN_EXIT" -eq 0 ]; then
-    all_validation_statuses_pass=1
-  else
-    all_validation_statuses_pass=0
-  fi
-
-  if [ "$all_validation_statuses_pass" -eq 1 ]; then
-    validation_command_sections="### Post-agent checks
-$(format_pr_command_results_bounded "$VALIDATION_TIMINGS_FILE")"
-    if [ -s "$PRE_VALIDATION_TIMINGS_FILE" ]; then
-      validation_command_sections="${validation_command_sections}
-
-<details><summary>Pre-agent baseline checks</summary>
-
-Artifact: \`pre-validation-timings.tsv\`
-$(format_pr_command_results "$PRE_VALIDATION_TIMINGS_FILE")
-
-</details>"
-    fi
-  else
-    validation_command_sections=""
-    if [ -s "$PRE_VALIDATION_TIMINGS_FILE" ]; then
-      pre_validation_full_commands="$(format_pr_command_results "$PRE_VALIDATION_TIMINGS_FILE")"
-      pre_validation_commands="$(format_pr_command_results "$PRE_VALIDATION_TIMINGS_FILE" 1)"
-      if [ "$pre_validation_full_commands" != "$pre_validation_commands" ]; then
-        pre_validation_commands="${pre_validation_commands}
-<details><summary>Full pre-agent validation command list</summary>
-
-$pre_validation_full_commands
-
-</details>"
-      fi
-      validation_command_sections="### Pre-agent validation commands
-$pre_validation_commands"
-    fi
-
-    if [ -s "$VALIDATION_TIMINGS_FILE" ]; then
-      post_validation_full_commands="$(format_pr_command_results "$VALIDATION_TIMINGS_FILE")"
-      post_validation_commands="$(format_pr_command_results "$VALIDATION_TIMINGS_FILE" 1)"
-      if [ "$post_validation_full_commands" != "$post_validation_commands" ]; then
-        post_validation_commands="${post_validation_commands}
-<details><summary>Full post-agent validation command list</summary>
-
-$post_validation_full_commands
-
-</details>"
-      fi
-      if [ -n "$validation_command_sections" ]; then
-        validation_command_sections="${validation_command_sections}
-
-### Post-agent validation commands
-$post_validation_commands"
-      else
-        validation_command_sections="### Post-agent validation commands
-$post_validation_commands"
-      fi
-    fi
-  fi
-
-  agent_review="$(build_pr_agent_review "$all_validation_statuses_pass")"
-  agent_evaluation="$(build_pr_agent_evaluation)"
+  local summary="" changes agent_review review_focus review_notes="" verification
+  summary="$(build_pr_summary)"
+  [ -n "$summary" ] || summary="$(build_pr_improvements_summary)"
+  changes="$(build_pr_changes)"
+  agent_review="$(build_pr_agent_review)"
   review_focus="$(build_pr_human_review_focus)"
-  review_notes=""
+
   if [ -n "$agent_review" ] || [ -n "$review_focus" ]; then
     review_notes="## Review notes"
     if [ -n "$agent_review" ]; then
@@ -9779,127 +9368,48 @@ ${agent_review}"
 ${review_focus}"
     fi
   fi
-  if [ -n "$scorecard_markdown" ]; then
-    scorecard_section="## Kaseki run scorecard
-$scorecard_markdown
 
-"
-    scorecard_fallback=""
-  else
-    scorecard_section=""
-    scorecard_fallback="- Scorecard unavailable at publication. Validation status and changed-file metadata are included below; inspect the run artifacts for evaluator evidence."
+  verification="$(format_pr_command_results_bounded "$VALIDATION_TIMINGS_FILE")"
+  if [ -z "$verification" ]; then
+    if [ "$VALIDATION_EXIT" -ne 0 ]; then
+      verification="- Post-agent validation failed (exit $VALIDATION_EXIT)"
+    else
+      verification="- No post-agent validation commands were recorded."
+    fi
+  fi
+  if [ "$QUALITY_EXIT" -ne 0 ]; then
+    verification="${verification}
+- Quality gate failed (exit $QUALITY_EXIT)"
+  fi
+  if [ "$SECRET_SCAN_EXIT" -ne 0 ]; then
+    verification="${verification}
+- Secret scan failed (exit $SECRET_SCAN_EXIT)"
   fi
 
+  printf '## Summary\n%s\n' "$summary"
+  if [ -n "$changes" ]; then
+    printf '\n## Changes\n%s\n' "$changes"
+  fi
+  if [ -n "$review_notes" ]; then
+    printf '\n%s\n' "$review_notes"
+  fi
+  printf '\n## Verification\n%s\n' "$verification"
+}
+
+build_pr_fallback_body() {
+  local fallback_summary fallback_verification
+  fallback_summary="$(build_pr_improvements_summary)"
+  [ -n "$fallback_summary" ] || fallback_summary="This pull request updates repository files."
+  fallback_verification="$(format_pr_command_results_bounded "$VALIDATION_TIMINGS_FILE")"
+  [ -n "$fallback_verification" ] || fallback_verification="- No post-agent validation commands were recorded."
   cat <<EOF
 ## Summary
-${summary_content}
+$fallback_summary
 
-$(if [ -n "$pr_changes" ]; then printf '## Changes\n%s\n\n' "$pr_changes"; fi)
-
-${review_notes}
-
-## Validation
-### Validation statuses
-- Pre-agent validation: $pre_validation_status (artifact: \`pre-validation-timings.tsv\`)
-- Post-agent validation: $validation_status (artifact: \`validation-timings.tsv\`)
-- Quality gate: $quality_status
-- Secret scan: $secret_scan_status
-
-$validation_command_sections
-
-## Files changed
-$changed_files_summary
-
-<details><summary>Kaseki run details</summary>
-
-$(if [ -n "$agent_evaluation" ]; then printf '### Evaluator assessment\n%s\n\n' "$agent_evaluation"; fi)
-$scorecard_section
-$scorecard_fallback
-
-### Run metadata
-- Model: $model_summary
-- Duration: ${duration_seconds}s
-- Generated by: Kaseki agent
-- Generated at: $generated_at
-
-</details>
-
-<details><summary>Task prompt</summary>
-
-$task_summary
-
-</details>
+## Verification
+$fallback_verification
 EOF
 }
-
-update_github_pull_request_body() {
-  local owner="$1" repo="$2" pr_number="$3" token="$4" body="$5"
-  local body_json response_file response_with_status http_status curl_exit
-  [[ "$pr_number" =~ ^[0-9]+$ ]] || return 1
-  if ! run_node_subprocess body_json "process.stdout.write(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$body" /dev/null; then
-    printf 'WARN: Could not JSON-encode the finalized pull request body.\n' >&2
-    return 1
-  fi
-
-  response_file="$(umask 077 && mktemp /tmp/kaseki-pr-update.XXXXXX)" || {
-    printf 'WARN: Could not create a temporary response file for the pull request update.\n' >&2
-    return 1
-  }
-  curl --connect-timeout 5 --max-time 20 -s -w '%{http_code}' -X PATCH \
-    -H "Authorization: token $token" \
-    -H "Accept: application/vnd.github.v3+json" \
-    "https://api.github.com/repos/$owner/$repo/pulls/$pr_number" \
-    -d "{\"body\": $body_json}" > "$response_file" 2>&1
-  curl_exit=$?
-  response_with_status="$(cat "$response_file" 2>/dev/null || true)"
-  rm -f -- "$response_file"
-  http_status="${response_with_status: -3}"
-  GITHUB_API_HTTP_STATUS="${http_status:-unknown}"
-  if [ "$curl_exit" -eq 0 ] && [ "$http_status" = "200" ]; then
-    return 0
-  fi
-  printf 'WARN: Could not refresh pull request metadata (curl_exit=%s, http_status=%s).\n' "$curl_exit" "${http_status:-unknown}" >&2
-  return 1
-}
-
-# PR creation happens before the EXIT finalizer so the run can persist its PR
-# URL. If its scorecard was not ready yet, replace the fallback body once the
-# finalizer has written terminal metadata and regenerated scorecard artifacts.
-refresh_finalized_pr_scorecard() {
-  local scorecard_markdown finalized_body
-  if [ "${GITHUB_PR_SCORECARD_PENDING:-0}" != "1" ] || [ -z "${GITHUB_PR_UPDATE_TOKEN:-}" ]; then
-    return 0
-  fi
-
-  scorecard_markdown="$(format_pr_run_scorecard)"
-  if [ -z "$scorecard_markdown" ]; then
-    emit_progress "github operations" "final scorecard is still unavailable; keeping the original PR body"
-    unset GITHUB_PR_UPDATE_TOKEN
-    GITHUB_PR_SCORECARD_PENDING=0
-    return 0
-  fi
-
-  finalized_body="$(build_pr_body)"
-  if [[ "$finalized_body" != *"## Kaseki run scorecard"* ]]; then
-    emit_progress "github operations" "final scorecard could not be rendered; keeping the original PR body"
-    unset GITHUB_PR_UPDATE_TOKEN
-    GITHUB_PR_SCORECARD_PENDING=0
-    return 0
-  fi
-
-  if update_github_pull_request_body \
-    "$GITHUB_PR_UPDATE_OWNER" "$GITHUB_PR_UPDATE_REPO" "$GITHUB_PR_UPDATE_NUMBER" \
-    "$GITHUB_PR_UPDATE_TOKEN" "$finalized_body"; then
-    emit_progress "github operations" "updated pull request body with the finalized run scorecard"
-  else
-    emit_event "github_pr_scorecard_update_failed" \
-      "pull_request=$GITHUB_PR_UPDATE_NUMBER" "http_status=${GITHUB_API_HTTP_STATUS:-unknown}" \
-      "severity=warning" "action=continue"
-  fi
-  unset GITHUB_PR_UPDATE_TOKEN
-  GITHUB_PR_SCORECARD_PENDING=0
-}
-
 run_github_operations() {
   local app_id private_key_file owner repo feature_branch token token_data git_push_exit
   
@@ -10056,22 +9566,7 @@ run_github_operations() {
   local pr_body_compact
   pr_body_compact="$(printf '%s' "$pr_body" | tr -d '[:space:]')"
   if [ -z "$pr_body_compact" ]; then
-    local fallback_timestamp fallback_validation_status
-    fallback_timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-    fallback_validation_status="unknown"
-    fallback_validation_status="$([ "$VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$VALIDATION_EXIT")"
-    pr_body=$(cat <<EOF
-## Summary
-- Automated PR body fallback was used because generated body was empty after sanitization.
-
-## Validation
-- Post-agent validation: $fallback_validation_status
-- Publish mode: ${KASEKI_PUBLISH_MODE:-pr}
-
-## Run metadata
-- Generated at (UTC): $fallback_timestamp
-EOF
-)
+    pr_body="$(build_pr_fallback_body)"
     printf 'WARN: build_pr_body returned empty content after sanitization; using fallback PR body.\n'  >&2
   fi
   # Retry loop for transient errors
@@ -10227,15 +9722,6 @@ EOF
     return "$GITHUB_PR_EXIT"
   fi
 
-  if [ "$pr_created" -eq 1 ] && [ -n "$pr_number" ] \
-    && [[ "$pr_body" != *"## Kaseki run scorecard"* ]]; then
-    GITHUB_PR_SCORECARD_PENDING=1
-    GITHUB_PR_UPDATE_OWNER="$owner"
-    GITHUB_PR_UPDATE_REPO="$repo"
-    GITHUB_PR_UPDATE_NUMBER="$pr_number"
-    GITHUB_PR_UPDATE_TOKEN="$token"
-  fi
-  
   # Clean up token
   GITHUB_OPERATION_PHASE="completed"
   unset token

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2034
 # Tests for deterministic, sanitized GitHub PR metadata generation.
 
 set -euo pipefail
@@ -31,35 +30,28 @@ RESULTS_DIR="$TMP_DIR/results"
 mkdir -p "$RESULTS_DIR"
 KASEKI_RESULTS_DIR="$RESULTS_DIR"
 
-# Load only the helpers needed for PR metadata and the existing JSON encoding path.
+# Load only helpers exercised here; avoid sourcing the worker's startup path.
 eval "$(extract_function sanitize_pr_metadata_text)"
 eval "$(extract_function sanitize_pr_body_text)"
 eval "$(extract_function truncate_pr_metadata_text)"
 eval "$(extract_function derive_pr_title)"
 eval "$(extract_function format_pr_command_results)"
 eval "$(extract_function format_pr_command_results_bounded)"
-eval "$(extract_function format_pr_changed_files)"
 eval "$(extract_function format_pr_json_list)"
 eval "$(extract_function build_pr_agent_review)"
 eval "$(extract_function build_pr_summary)"
 eval "$(extract_function build_pr_changes)"
 eval "$(extract_function build_pr_human_review_focus)"
-eval "$(extract_function build_pr_agent_evaluation)"
 eval "$(extract_function build_pr_improvements_summary)"
-eval "$(extract_function format_pr_run_scorecard)"
 eval "$(extract_function build_pr_body)"
-eval "$(extract_function update_github_pull_request_body)"
-eval "$(extract_function refresh_finalized_pr_scorecard)"
+eval "$(extract_function build_pr_fallback_body)"
 eval "$(extract_function run_node_subprocess)"
 eval "$(extract_function validate_run_evaluation_candidate)"
 
-finish_body="$(sed -n '/^finish() {/,/^}/p' "$ROOT_DIR/kaseki-agent.sh")"
-finish_artifact_line="$(grep -n 'finalize_artifacts_and_publish_status ' <<<"$finish_body" | cut -d: -f1)"
-finish_pr_refresh_line="$(grep -n 'refresh_finalized_pr_scorecard' <<<"$finish_body" | cut -d: -f1)"
-if [ -z "$finish_artifact_line" ] || [ -z "$finish_pr_refresh_line" ] || [ "$finish_pr_refresh_line" -le "$finish_artifact_line" ]; then
-  fail "final PR scorecard refresh must run after terminal artifact finalization"
+if grep -Eq 'refresh_finalized_pr_scorecard|GITHUB_PR_UPDATE_TOKEN|update_github_pull_request_body' "$ROOT_DIR/kaseki-agent.sh"; then
+  fail "PR publication must not retain an installation token for scorecard enrichment"
 fi
-pass "Terminal artifacts are finalized before a missing PR scorecard is refreshed"
+pass "PR publication does not retain a token for scorecard enrichment"
 
 grep -Fq '\"draft\": false' "$ROOT_DIR/kaseki-agent.sh" || fail "PR creation must explicitly request a normal PR"
 if grep -Fq 'is_pr_draft_mode' "$ROOT_DIR/kaseki-agent.sh"; then
@@ -67,6 +59,24 @@ if grep -Fq 'is_pr_draft_mode' "$ROOT_DIR/kaseki-agent.sh"; then
 fi
 pass "Worker PR creation has one normal, non-draft path"
 
+grep -Fq 'Do not repeat the task prompt, including as a fallback.' "$ROOT_DIR/scripts/evaluation-prompts.sh" \
+  || fail "Run-evaluation prompt does not prohibit task-prompt echoes"
+grep -Fq 'Keep validation results in the generated Verification section.' "$ROOT_DIR/scripts/evaluation-prompts.sh" \
+  || fail "Run-evaluation prompt does not separate change prose from validation results"
+pass "Run-evaluation prompt keeps PR prose focused on changes and reserves validation for its section"
+
+INSTANCE_NAME="kaseki-test-instance"
+TASK_PROMPT='Fix OAuth flow for quoted "input" using secret=task-secret and ghp_1234567890abcdef. Preserve redirect state.'
+KASEKI_MODEL='openrouter/private-test-model'
+ACTUAL_MODEL='openrouter/private-actual-model'
+START_EPOCH=$(($(date +%s) - 125))
+PRE_VALIDATION_EXIT=1
+VALIDATION_EXIT=0
+QUALITY_EXIT=0
+SECRET_SCAN_EXIT=0
+GIT_REF='main'
+KASEKI_PUBLISH_MODE='pr'
+feature_branch='kaseki/kaseki-test-instance'
 PRE_VALIDATION_TIMINGS_FILE="$RESULTS_DIR/pre-validation-timings.tsv"
 VALIDATION_TIMINGS_FILE="$RESULTS_DIR/validation-timings.tsv"
 cat > "$PRE_VALIDATION_TIMINGS_FILE" <<'TSV'
@@ -76,957 +86,159 @@ cat > "$VALIDATION_TIMINGS_FILE" <<'TSV'
 npm run test -- --token=abc123	0	12	tee_exit=0 filter_exit=0
 npm run build	0	5	tee_exit=0 filter_exit=0
 TSV
-
-INSTANCE_NAME="kaseki-test-instance"
-TASK_PROMPT=$(cat <<'PROMPT'
-Fix OAuth flow for quoted "input" using secret=abc123 and ghp_1234567890abcdef.
-
-1. Preserve the redirect-state handoff.
-2. Add regression tests.
-
-
-
-- Keep reviewer notes readable.
-PROMPT
-)
-KASEKI_MODEL='openrouter/test-model'
-ACTUAL_MODEL='openrouter/actual-model'
-START_EPOCH=$(($(date +%s) - 125))
-PRE_VALIDATION_EXIT=0
-VALIDATION_EXIT=0
-QUALITY_EXIT=0
-SECRET_SCAN_EXIT=0
-GIT_REF='main'
-KASEKI_PUBLISH_MODE='pr'
-feature_branch='kaseki/kaseki-test-instance'
-
-pr_title="$(derive_pr_title)"
 cat > "$RESULTS_DIR/changed-files.txt" <<'FILES'
-kaseki-agent.sh
-tests/pr-metadata-generation.test.sh
-docs/usage-token=abc123.md
+src/oauth/callback.ts
+tests/oauth-callback.test.ts
 FILES
 cat > "$RESULTS_DIR/git.diff" <<'DIFF'
-diff --git a/kaseki-agent.sh b/kaseki-agent.sh
---- a/kaseki-agent.sh
-+++ b/kaseki-agent.sh
+diff --git a/src/oauth/callback.ts b/src/oauth/callback.ts
+--- a/src/oauth/callback.ts
++++ b/src/oauth/callback.ts
 @@ -1,2 +1,3 @@
--old
-+new
-+another
+-drop redirect state
++preserve redirect state
++handle callback retry
 DIFF
 cat > "$RESULTS_DIR/result-summary.md" <<'SUMMARY'
 # Kaseki result
 
 ## Summary
-- Updated publish mode documentation to describe normal PR creation as the default.
-- Regenerated API metadata so publishMode includes pr and token=abc123.
+- Preserves OAuth redirect state through callback retries.
+- Adds a regression test for callback retries.
 
 ## Validation
-- Do not include this validation detail in the reviewer summary.
+- This internal validation prose must not appear in the PR summary.
 SUMMARY
 cat > "$RESULTS_DIR/goal-check.json" <<'JSON'
-{
-  "met": true,
-  "summary": "Implemented the OAuth redirect-state fix and verified the requested reviewer-facing behavior.",
-  "evidence": [
-    "Added regression coverage for quoted redirect-state values.",
-    "Preserved the existing fallback path while tightening token handling.",
-    "Updated reviewer notes so the behavior is discoverable."
-  ],
-  "missing": [],
-  "validation_notes": [
-    "npm run test passed for the OAuth route tests.",
-    "No secret-scan findings were reported."
-  ]
-}
-JSON
-cat > "$RESULTS_DIR/scouting.json" <<'JSON'
-{
-  "risks": [
-    "OAuth provider behavior can vary for unusual redirect-state encodings.",
-    "Manual review should confirm the copy matches product terminology."
-  ]
-}
+{"met":false,"missing":["The expired-state callback behavior was not verified."]}
 JSON
 cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
 {
   "overall_assessment": "good",
   "reviewer_confidence": "high",
-  "task_completion_score": 4,
-  "summary": "The run produced a focused OAuth fix.",
-  "human_review_focus": [
-    "Confirm OAuth provider behavior with quoted redirect-state values.",
-    "Check reviewer-facing copy for product terminology."
-  ],
-  "stage_value": [
-    { "stage": "goal check", "value": "high", "reason": "Confirmed requirements." }
-  ],
-  "efficiency_findings": [
-    "Post-validation repeated the same test command and may benefit from delta-aware validation."
-  ],
-  "kaseki_improvement_opportunities": [
-    { "category": "validation", "priority": "medium", "suggestion": "Consider reusing pre-validation results when commands are identical." }
-  ],
-  "pr_summary": "Fixed OAuth redirect-state handling and added regression coverage for quoted values.",
+  "task_completion_score": 5,
+  "pr_summary": "Preserves OAuth redirect state when callbacks are retried, preventing valid authorization flows from losing their original destination.",
   "pr_changes": [
-    "Preserved redirect-state values across the OAuth fallback path.",
-    "Added regression cases for quoted redirect-state values."
+    "Carries redirect state through callback retries.",
+    "Adds regression coverage for callback retry behavior."
   ],
-  "warnings": []
+  "human_review_focus": [
+    "The callback retry limit could also mean retries happen before state validation.",
+    "Review task criteria because goal-setting used a fallback artifact.",
+    "Expired-state callbacks may return an unhelpful error; confirm callers receive the expected response."
+  ],
+  "model": "openrouter/private-actual-model",
+  "started_at": "2026-10-05T12:00:00Z",
+  "ended_at": "2026-10-05T12:02:05Z",
+  "duration_ms": 125000,
+  "phase_scorecard": {"coding": {"score": 100}}
 }
 JSON
+cat > "$RESULTS_DIR/run-scorecard.json" <<'JSON'
+{"overall_score":100,"grade":"A","model":"private-model","details":"internal evaluator telemetry"}
+JSON
 
-# Mock kaseki-agent.sh global variables that normally point to /results
-KASEKI_RESULTS_DIR="$RESULTS_DIR"
-KASEKI_APP_ROOT="$ROOT_DIR"
-
+pr_title="$(derive_pr_title)"
 pr_body="$(build_pr_body)"
-
-case "$pr_title" in
-  "fix: OAuth flow"*) pass "PR title is derived from the task prompt with conventional prefix" ;;
-  *) fail "PR title was not derived from prompt: $pr_title" ;;
-esac
-
-case "$pr_title" in
-  *" ($INSTANCE_NAME)") pass "PR title includes sanitized instance suffix" ;;
-  *) fail "PR title missing instance suffix: $pr_title" ;;
-esac
-
-if printf '%s\n%s' "$pr_title" "$pr_body" | grep -Eq 'secret=abc123|ghp_1234567890abcdef|--token=abc123'; then
-  fail "PR metadata leaked secret-like values"
-else
-  pass "PR metadata redacts secret-like values"
+grep -Fq '## Summary' <<<"$pr_body" || fail "PR body is missing a summary"
+grep -Fq 'Preserves OAuth redirect state when callbacks are retried' <<<"$pr_body" || fail "PR body omitted the reviewer-facing change summary"
+grep -Fq 'Carries redirect state through callback retries.' <<<"$pr_body" || fail "PR body omitted an implementation bullet"
+grep -Fq $'destination.\n\n## Changes' <<<"$pr_body" || fail "PR body did not separate the summary and changes sections"
+grep -Fq $'callback retry behavior.\n\n## Review notes' <<<"$pr_body" || fail "PR body did not separate the changes and review sections"
+grep -Fq '## Verification' <<<"$pr_body" || fail "PR body is missing verification results"
+grep -Fq 'npm run test' <<<"$pr_body" || fail "PR body omitted post-agent validation"
+grep -Fq 'passed' <<<"$pr_body" || fail "PR body omitted validation status"
+grep -Fq 'Expired-state callbacks may return an unhelpful error; confirm callers receive the expected response.' <<<"$pr_body" || fail "PR body omitted a specific reviewer action"
+if grep -Eiq 'task prompt|task-secret|ghp_1234567890abcdef|private-(test|actual)-model|reviewer.confidence|overall.assessment|duration_ms|125000|started_at|ended_at|phase_scorecard|overall_score|file(s)? changed|pre-agent validation|tee_exit|filter_exit|exit 0, [0-9]+s|internal validation prose' <<<"$pr_body"; then
+  fail "PR body exposed task, evaluator, file-count, baseline, or process telemetry"
 fi
-
-# Keep title-source cases isolated: the evaluator artifact is intentionally
-# tested below and would otherwise override their prompt/summary fixtures.
-rm -f "$RESULTS_DIR/run-evaluation.json"
-
-INSTANCE_NAME="kaseki-title-cases"
-: > "$RESULTS_DIR/changed-files.txt"
-TASK_PROMPT=$(cat <<'PROMPT'
-1. Update userfacing onboarding copy.
-2. Add implementation coverage.
-PROMPT
-)
-rm -f "$RESULTS_DIR/result-summary.md"
-numbered_prompt_pr_title="$(derive_pr_title)"
-case "$numbered_prompt_pr_title" in
-  "chore: user-facing onboarding copy"*) pass "PR title removes numbered prompt marker and normalizes compound wording" ;;
-  *) fail "PR title did not normalize numbered prompt candidate: $numbered_prompt_pr_title" ;;
-esac
-
-TASK_PROMPT=$(cat <<'PROMPT'
-1. Implement internal retry plumbing.
-2. Update tests.
-PROMPT
-)
-cat > "$RESULTS_DIR/result-summary.md" <<'SUMMARY'
-# Kaseki result
-
-## Summary
-- Updated userfacing settings labels for account admins.
-- Added tests for the label rendering.
-
-## Validation
-- npm test passed.
-SUMMARY
-summary_pr_title="$(derive_pr_title)"
-case "$summary_pr_title" in
-  "test: Updated user-facing settings labels"*) pass "PR title prefers concise result summary line and normalizes compound wording" ;;
-  *) fail "PR title did not prefer summary candidate: $summary_pr_title" ;;
-esac
-
-TASK_PROMPT="Fix OAuth fallback path"
-cat > "$RESULTS_DIR/result-summary.md" <<'SUMMARY'
-# Kaseki result
-
-## Validation
-- npm test passed.
-SUMMARY
-no_summary_pr_title="$(derive_pr_title)"
-case "$no_summary_pr_title" in
-  "fix: OAuth fallback path"*) pass "PR title falls back to prompt when result summary has no summary line" ;;
-  *) fail "PR title did not fall back to prompt candidate: $no_summary_pr_title" ;;
-esac
-
-INSTANCE_NAME="kaseki-42"
-TASK_PROMPT="Update $(printf 'verylong %.0s' {1..20})"
-rm -f "$RESULTS_DIR/result-summary.md"
-long_pr_title="$(derive_pr_title)"
-if [ "${#long_pr_title}" -le 72 ] && [[ "$long_pr_title" == *" ($INSTANCE_NAME)" ]]; then
-  pass "Long PR titles truncate before preserving the instance suffix"
-else
-  fail "Long PR title did not preserve suffix within length: $long_pr_title (${#long_pr_title})"
+if grep -Eiq 'could also mean|goal-setting|fallback artifact|callback retry limit' <<<"$pr_body"; then
+  fail "PR body included speculative or internal review focus"
 fi
+pass "PR body describes implemented changes and excludes task and run telemetry"
+pass "PR body includes only actionable review focus and post-agent validation status"
 
-cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
-{"overall_assessment":"good","reviewer_confidence":"high","pr_summary":"Clarify the deployment health-check contract."}
-JSON
-TASK_PROMPT="Perform a very detailed review of every deployment and health-check implementation detail in the repository before making a focused documentation change."
-evaluation_pr_title="$(derive_pr_title)"
-case "$evaluation_pr_title" in
-  "docs: Clarify the deployment health-check contract"*) pass "PR title prefers the concise evaluator summary" ;;
-  *) fail "PR title did not prefer evaluator summary: $evaluation_pr_title" ;;
-esac
-cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
-{"overall_assessment":"good","reviewer_confidence":"medium","pr_summary":"JEV evaluated task completion and reviewer confidence from the persisted run artifacts."}
-JSON
-TASK_PROMPT="Fix the deployment health-check fallback path."
-generic_evaluation_title="$(derive_pr_title)"
-case "$generic_evaluation_title" in
-  "fix: the deployment health-check fallback path"*) pass "PR title ignores generic evaluator boilerplate" ;;
-  *) fail "PR title used generic evaluator boilerplate: $generic_evaluation_title" ;;
-esac
-cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
-{"overall_assessment":"good","reviewer_confidence":"high","pr_summary":"The JEV classifier detected a transient validation failure.","pr_changes":["The JEV classifier identified the retry-safe command."]}
-JSON
-TASK_PROMPT="Fix the deployment validation retry."
-neutral_evaluation_title="$(derive_pr_title)"
-neutral_evaluation_body="$(build_pr_body)"
-if [[ "$neutral_evaluation_title" == "fix: The evaluation detected a transient validation failure"* ]] \
-  && ! printf '%s\n%s' "$neutral_evaluation_title" "$neutral_evaluation_body" | grep -Eiq 'JEV'; then
-  pass "PR title and body use the Evaluation stage name"
-else
-  fail "PR metadata exposed internal evaluator naming: $neutral_evaluation_title"
+mv "$VALIDATION_TIMINGS_FILE" "$RESULTS_DIR/validation-timings.saved.tsv"
+no_validation_body="$(build_pr_body)"
+mv "$RESULTS_DIR/validation-timings.saved.tsv" "$VALIDATION_TIMINGS_FILE"
+grep -Fq 'No post-agent validation commands were recorded.' <<<"$no_validation_body" || fail "Missing validation evidence was not described accurately"
+if grep -Fq -- '- Not recorded' <<<"$no_validation_body"; then
+  fail "Missing validation evidence used an ambiguous status"
 fi
-cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
-{"overall_assessment":"unknown","reviewer_confidence":"low","pr_summary":"Run evaluation was unavailable; please rely on the summary, validation results, and changed files.","warnings":["jev_classifier_unavailable"]}
-JSON
-TASK_PROMPT="Fix the deployment health-check contract."
-unavailable_evaluation_title="$(derive_pr_title)"
-case "$unavailable_evaluation_title" in
-  "fix: the deployment health-check contract"*) pass "PR title ignores unavailable evaluator fallback text" ;;
-  *) fail "PR title used unavailable evaluator text: $unavailable_evaluation_title" ;;
-esac
-cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
-{"overall_assessment":"good","reviewer_confidence":"high","pr_summary":"3 changed files with a persisted diff; 4 validation commands passed; goal check succeeded.","pr_changes":["Added a safe health-check fallback."]}
-JSON
-TASK_PROMPT="Fix the deployment health-check fallback path."
-generated_evaluation_title="$(derive_pr_title)"
-case "$generated_evaluation_title" in
-  "fix: the deployment health-check fallback path"*) pass "PR title ignores mechanical evaluator evidence summaries" ;;
-  *) fail "PR title used mechanical evaluator summary: $generated_evaluation_title" ;;
-esac
-generated_evaluation_body="$(build_pr_body)"
-if grep -Fq 'changed files with a persisted diff' <<<"$generated_evaluation_body"; then
-  fail "PR body exposed mechanical evaluator evidence as reviewer prose"
-else
-  pass "PR body omits mechanical evaluator evidence summaries"
-fi
-if grep -Fq 'Added a safe health-check fallback.' <<<"$generated_evaluation_body"; then
-  pass "PR body retains specific changes when evaluator summary is mechanical"
-else
-  fail "PR body omitted specific changes when evaluator summary is mechanical"
-fi
-if grep -Fq '## Original task prompt' <<<"$generated_evaluation_body" \
-  || [ "$(grep -Fc '<details><summary>Task prompt</summary>' <<<"$generated_evaluation_body")" -ne 1 ]; then
-  fail "PR body must include one collapsed task prompt section without a duplicate heading"
-else
-  pass "PR body includes one collapsed task prompt section"
-fi
-cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
-{"overall_assessment":"good","reviewer_confidence":"high","pr_summary":"3 changed files with no persisted diff; validation was not run; goal check unavailable.","pr_changes":[]}
-JSON
-cat > "$RESULTS_DIR/pi-summary.json" <<'JSON'
-{"summary":"Added a safe health-check fallback for missing status data.","changes":["Preserved existing healthy-state behavior.","Added regression coverage for missing status data."]}
-JSON
-pi_fallback_body="$(build_pr_body)"
-if grep -Fq 'Added a safe health-check fallback for missing status data.' <<<"$pi_fallback_body" \
-  && grep -Fq 'Preserved existing healthy-state behavior.' <<<"$pi_fallback_body" \
-  && grep -Fq 'Added regression coverage for missing status data.' <<<"$pi_fallback_body"; then
-  pass "PR body falls back to the coding summary and changes when evaluator prose is mechanical"
-else
-  fail "PR body omitted pi-summary fallback prose"
-fi
-cat > "$RESULTS_DIR/result-summary.md" <<'SUMMARY'
-# Run result
+pass "Missing validation evidence is stated explicitly without implying a pass"
 
-## Validation
-- npm test passed.
-SUMMARY
-summary_file_fallback_body="$(build_pr_body)"
-if grep -Fq 'Added a safe health-check fallback for missing status data.' <<<"$summary_file_fallback_body"; then
-  pass "PR body falls back to pi-summary when result-summary has no summary section"
-else
-  fail "PR body did not fall back to pi-summary when result-summary had no summary"
-fi
-cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
-{"overall_assessment":"good","reviewer_confidence":"high","pr_summary":"JEV evaluated task completion and reviewer confidence from the persisted run artifacts.","pr_changes":[]}
-JSON
-TASK_PROMPT="Fix the human-readable health-check fallback path."
-jev_evaluation_title="$(derive_pr_title)"
-case "$jev_evaluation_title" in
-  "fix: the human-readable health-check fallback path"*) pass "PR title ignores the JEV evaluation placeholder" ;;
-  *) fail "PR title used the JEV placeholder: $jev_evaluation_title" ;;
-esac
-jev_evaluation_markdown="$(build_pr_agent_evaluation)"
-if grep -Fq 'JEV evaluated task completion' <<<"$jev_evaluation_markdown"; then
-  fail "PR body exposed the JEV evaluation placeholder"
-else
-  pass "PR body omits the JEV evaluation placeholder"
-fi
-rm -f "$RESULTS_DIR/pi-summary.json"
-rm -f "$RESULTS_DIR/run-evaluation.json"
-
-TASK_PROMPT=''
-rm -f "$RESULTS_DIR/result-summary.md"
-fallback_pr_title="$(derive_pr_title)"
-if [ "$fallback_pr_title" = "chore: Kaseki agent changes ($INSTANCE_NAME)" ]; then
-  pass "Empty prompts produce conventional fallback title with instance suffix"
-else
-  fail "Empty prompt fallback title had unexpected format: $fallback_pr_title"
-fi
-
-TASK_PROMPT='Improve README.md only: make the project purpose and quick-start instructions clearer, then add a concise usage example.'
-planned_change_title="$(derive_pr_title)"
-case "$planned_change_title" in
-  "docs: Improve README.md ($INSTANCE_NAME)") pass "PR title uses the concise planned change rather than truncating the task brief" ;;
-  *) fail "PR title did not isolate the planned change: $planned_change_title" ;;
-esac
-TASK_PROMPT='Fix OAuth flow for quoted "input" using secret=abc123 and ghp_1234567890abcdef.'
-
-for expected in \
-  '<details><summary>Task prompt</summary>' \
-  'Fix OAuth flow for quoted "input" using [redacted] and [redacted].' \
-  '1. Preserve the redirect-state handoff.' \
-  '2. Add regression tests.' \
-  '- Keep reviewer notes readable.' \
-  '## Files changed' \
-  '3 files changed.' \
-  'kaseki-agent.sh' \
-  'tests/pr-metadata-generation.test.sh' \
-  'docs/usage-[redacted]' \
-  '## Summary' \
-  'Fixed OAuth redirect-state handling and added regression coverage for quoted values.' \
-  '## Changes' \
-  'Preserved redirect-state values across the OAuth fallback path.' \
-  'Added regression cases for quoted redirect-state values.' \
-  '## Review notes' \
-  '### Needs attention' \
-  'OAuth provider behavior can vary for unusual redirect-state encodings.' \
-  '### Human review focus' \
-  'Confirm OAuth provider behavior with quoted redirect-state values.' \
-  'Check reviewer-facing copy for product terminology.' \
-  '## Validation' \
-  '### Validation statuses' \
-  'Pre-agent validation: passed' \
-  'Post-agent validation: passed' \
-  '### Post-agent checks' \
-  '<details><summary>Pre-agent baseline checks</summary>' \
-  'npm run check — exit 0, 3s' \
-  'npm run test -- --[redacted] — exit 0, 12s' \
-  '<details><summary>Kaseki run details</summary>' \
-  '### Evaluator assessment' \
-  '- Overall: good' \
-  '- Reviewer confidence: high' \
-  '### Run metadata' \
-  'Model: Requested model: openrouter/test-model; actual model: openrouter/actual-model' \
-  'Generated by: Kaseki agent' \
-  '</details>' \
-  'Quality gate: passed' \
-  'Secret scan: passed'; do
-  if grep -Fq -- "$expected" <<<"$pr_body"; then
-    pass "PR body contains: $expected"
-  else
-    fail "PR body missing expected text: $expected"
-  fi
-done
-
-if [ "$(grep -Fc 'Fixed OAuth redirect-state handling and added regression coverage for quoted values.' <<<"$pr_body")" -eq 1 ] \
-  && ! grep -Fq '## Agent review' <<<"$pr_body" \
-  && ! grep -Fq '## Agent evaluation' <<<"$pr_body" \
-  && ! grep -Fq 'No unmet task requirements were reported by the goal check.' <<<"$pr_body"; then
-  pass "PR body keeps evaluator summary singular and omits positive boilerplate"
-else
-  fail "PR body duplicated evaluator prose or included positive boilerplate"
-fi
-
-cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
-{"overall_assessment":"good","reviewer_confidence":"medium","pr_summary":"JEV evaluated task completion and reviewer confidence from the persisted run artifacts."}
-JSON
-if [ -z "$(build_pr_summary)" ]; then
-  pass "PR body summary omits generic evaluator boilerplate"
-else
-  fail "PR body used generic evaluator boilerplate as its summary"
-fi
-cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
-{"overall_assessment":"unknown","reviewer_confidence":"low","pr_summary":"Run evaluation was unavailable; please rely on the summary, validation results, and changed files.","warnings":["jev_classifier_unavailable"]}
-JSON
-if [ -z "$(build_pr_summary)" ]; then
-  pass "PR body summary omits unavailable-evaluator boilerplate"
-else
-  fail "PR body used unavailable-evaluator boilerplate as its summary"
-fi
-cat > "$RESULTS_DIR/result-summary.md" <<'SUMMARY'
-# Kaseki result
-
-## Summary
-- The artifact fallback describes the implemented documentation update.
-
-## Validation
-- Validation evidence is recorded separately.
-SUMMARY
-fallback_body="$(build_pr_body)"
-if grep -Fq 'The artifact fallback describes the implemented documentation update.' <<<"$fallback_body" \
-  && ! grep -Fq 'Run evaluation was unavailable; please rely on the summary, validation results, and changed files.' <<<"$fallback_body"; then
-  pass "PR body falls back to result-summary prose when evaluator output is generic"
-else
-  fail "PR body did not use the reviewer-facing artifact summary fallback"
-fi
-rm -f "$RESULTS_DIR/run-evaluation.json" "$RESULTS_DIR/result-summary.md"
-
-if awk '
-  /### Post-agent checks/ { saw_post_heading=1; next }
-  saw_post_heading && /npm run test -- --\[redacted\] — exit 0, 12s/ { saw_post_command=1; next }
-  /<details><summary>Pre-agent baseline checks<\/summary>/ { in_details=1; saw_details=1; next }
-  in_details && /npm run check — exit 0, 3s/ { saw_pre_command=1; next }
-  in_details && /<\/details>/ { exit(saw_details && saw_pre_command && saw_post_command ? 0 : 1) }
-  END { if (!saw_details) exit 1 }
-' <<<"$pr_body"; then
-  pass "Passing post-agent validation is visible and pre-agent baseline is collapsed"
-else
-  fail "Validation visibility did not distinguish post-agent checks from the baseline"
-fi
-
-printf 'npm run lint\t0\t1\ttee_exit=0 filter_exit=0\nnpm run typecheck\t0\t2\ttee_exit=0 filter_exit=0\nnpm run test:unit\t0\t3\ttee_exit=0 filter_exit=0\nnpm run test:integration\t0\t4\ttee_exit=0 filter_exit=0\nnpm run build\t0\t5\ttee_exit=0 filter_exit=0\nnpm run test:e2e\t0\t6\ttee_exit=0 filter_exit=0\nnpm run check:docs\t0\t7\ttee_exit=0 filter_exit=0\n' > "$VALIDATION_TIMINGS_FILE"
-bounded_validation="$(format_pr_command_results_bounded "$VALIDATION_TIMINGS_FILE")"
-if grep -Fq 'npm run lint — exit 0, 1s' <<<"$bounded_validation" \
-  && grep -Fq 'npm run build — exit 0, 5s' <<<"$bounded_validation" \
-  && grep -Fq '<details><summary>2 additional validation commands</summary>' <<<"$bounded_validation" \
-  && grep -Fq 'npm run check:docs — exit 0, 7s' <<<"$bounded_validation"; then
-  pass "Long passing validation lists keep five commands visible and collapse the remainder"
-else
-  fail "Long passing validation list was not bounded as expected"
-fi
-
-pr_template="$(cat "$ROOT_DIR/.github/PULL_REQUEST_TEMPLATE/default.md")"
-if grep -Fq '<!-- Keep the published PR body concise and reviewer-focused.' <<<"$pr_template" \
-  && ! grep -Eq 'Closes #123|--some-flag|npm test|CLAUDE\.md|^- \[ \]|^## ' <<<"$pr_template"; then
-  pass "Default PR template contains only hidden guidance, without visible placeholders"
-else
-  fail "Default PR template still exposes boilerplate or sample placeholders"
-fi
-
-if grep -Fq '<details><summary>View files</summary>' <<<"$pr_body"; then
-  fail "Short PR file list should render inline without collapsed details"
-else
-  pass "Short PR file list renders inline without collapsed details"
-fi
-
-cat > "$VALIDATION_TIMINGS_FILE" <<'TSV'
-npm run lint	0	2	tee_exit=0 filter_exit=0
-npm run test -- --token=abc123	1	8	tee_exit=0 filter_exit=0
-npm run build	0	4	tee_exit=0 filter_exit=0
-TSV
-VALIDATION_EXIT=1
-failed_validation_pr_body="$(build_pr_body)"
-VALIDATION_EXIT=0
-cat > "$VALIDATION_TIMINGS_FILE" <<'TSV'
-npm run test -- --token=abc123	0	12	tee_exit=0 filter_exit=0
-npm run build	0	5	tee_exit=0 filter_exit=0
-TSV
-
-failed_command_line="$(grep -nF -- '- npm run test -- --[redacted] — exit 1, 8s' <<<"$failed_validation_pr_body" | head -n 1 | cut -d: -f1)"
-full_post_details_line="$(grep -nF '<details><summary>Full post-agent validation command list</summary>' <<<"$failed_validation_pr_body" | head -n 1 | cut -d: -f1)"
-if [ -n "$failed_command_line" ] && [ -n "$full_post_details_line" ] && [ "$failed_command_line" -lt "$full_post_details_line" ]; then
-  pass "Failed validation command row is visible above collapsed full command list"
-else
-  fail "Failed validation command row was not visible above collapsed full command list"
-fi
-
-if awk '
-  /<details><summary>Full post-agent validation command list<\/summary>/ { in_details=1; saw_details=1; next }
-  in_details && /npm run lint — exit 0, 2s/ { saw_lint=1; next }
-  in_details && /npm run test -- --\[redacted\] — exit 1, 8s/ { saw_test=1; next }
-  in_details && /npm run build — exit 0, 4s/ { saw_build=1; next }
-  in_details && /<\/details>/ { exit(saw_details && saw_lint && saw_test && saw_build ? 0 : 1) }
-  END { if (!saw_details) exit 1 }
-' <<<"$failed_validation_pr_body"; then
-  pass "Failed validation body includes full command list inside details"
-else
-  fail "Failed validation body did not include full command list inside details"
-fi
-
-: > "$RESULTS_DIR/changed-files.txt"
-for file_number in $(seq 1 101); do
-  printf 'src/file-%03d.sh\n' "$file_number" >> "$RESULTS_DIR/changed-files.txt"
-done
-long_pr_body="$(build_pr_body)"
-for expected in \
-  '101 files changed.' \
-  '<details><summary>View files</summary>' \
-  '- src/file-001.sh' \
-  '- src/file-100.sh' \
-  '- ...additional changed files omitted' \
-  '</details>'; do
-  if grep -Fq -- "$expected" <<<"$long_pr_body"; then
-    pass "Long PR body contains collapsed file-list text: $expected"
-  else
-    fail "Long PR body missing collapsed file-list text: $expected"
-  fi
-done
-
-if grep -Fq -- '- src/file-101.sh' <<<"$long_pr_body"; then
-  fail "Long PR body should cap the changed-files list at 100 entries"
-else
-  pass "Long PR body caps the changed-files list at 100 entries"
-fi
-
-omitted_line="$(grep -nF -- '- ...additional changed files omitted' <<<"$long_pr_body" | head -n 1 | cut -d: -f1)"
-files_details_close_line="$(awk '
-  /<details><summary>View files<\/summary>/ { in_files=1; next }
-  in_files && /<\/details>/ { print NR; exit }
-' <<<"$long_pr_body")"
-task_prompt_line_for_long="$(grep -nF '<details><summary>Task prompt</summary>' <<<"$long_pr_body" | head -n 1 | cut -d: -f1)"
-if [ -n "$omitted_line" ] && [ -n "$files_details_close_line" ] && [ -n "$task_prompt_line_for_long" ] \
-  && [ "$omitted_line" -lt "$files_details_close_line" ] \
-  && [ "$files_details_close_line" -lt "$task_prompt_line_for_long" ]; then
-  pass "Long PR body keeps omitted-files message inside the file details block"
-else
-  fail "Long PR body did not keep omitted-files message inside the file details block"
-fi
-
-summary_line="$(grep -nF '## Summary' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-changes_line="$(grep -nF '## Changes' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-review_notes_line="$(grep -nF '## Review notes' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-validation_line="$(grep -nF '## Validation' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-files_changed_line="$(grep -nF '## Files changed' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-run_details_line="$(grep -nF '<details><summary>Kaseki run details</summary>' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-task_prompt_line="$(grep -nF '<details><summary>Task prompt</summary>' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-run_metadata_line="$(grep -nF '### Run metadata' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-if [ -n "$summary_line" ] && [ -n "$changes_line" ] && [ -n "$review_notes_line" ] && [ -n "$validation_line" ] && [ -n "$files_changed_line" ] && [ -n "$run_details_line" ] && [ -n "$task_prompt_line" ] && [ -n "$run_metadata_line" ] \
-  && [ "$summary_line" -lt "$changes_line" ] \
-  && [ "$changes_line" -lt "$review_notes_line" ] \
-  && [ "$review_notes_line" -lt "$validation_line" ] \
-  && [ "$validation_line" -lt "$files_changed_line" ] \
-  && [ "$files_changed_line" -lt "$run_details_line" ] \
-  && [ "$run_details_line" -lt "$run_metadata_line" ] \
-  && [ "$run_metadata_line" -lt "$task_prompt_line" ]; then
-  pass "PR body orders Summary, Changes, Review notes, Validation, Files changed, run details, and task prompt"
-else
-  fail "PR body sections were not in expected order"
-fi
-
-cat > "$RESULTS_DIR/goal-check.json" <<'JSON'
-{
-  "met": true,
-  "summary": "Goal-check evaluator was unavailable; code and deterministic validation require human review.",
-  "evaluation_unavailable": true,
-  "evaluation_warning": "goal_check_artifact_missing"
-}
-JSON
-degraded_review="$(build_pr_agent_review 1)"
-grep -Fq 'Goal-check evaluator unavailable; this is a degraded result and requires human review.' <<<"$degraded_review" || fail "Degraded evaluator state was not made visible in PR review metadata"
-if grep -Fq 'No unmet task requirements were reported by the goal check.' <<<"$degraded_review"; then
-  fail "Degraded evaluator state must not claim that the goal check found no unmet requirements"
-fi
-pass "Degraded evaluator state does not manufacture a goal-check verdict"
-pass "PR review metadata makes evaluator degradation visible"
-
-cat > "$RESULTS_DIR/goal-check.json" <<'JSON'
-{
-  "met": true,
-  "confidence": "medium",
-  "summary": "Deterministic fallback confirmed only the changed-file contract.",
-  "evaluation_fallback": "deterministic_critical_change_contract",
-  "evaluation_warning": "jev_classifier_unavailable"
-}
-JSON
-fallback_review="$(build_pr_agent_review 1)"
-grep -Fq 'Goal-check evaluator unavailable; this is a degraded result and requires human review.' <<<"$fallback_review" || fail "Deterministic fallback was presented as semantic goal-check evidence"
-if grep -Fq 'Deterministic fallback confirmed only the changed-file contract.' <<<"$fallback_review"; then
-  fail "PR review must not present a deterministic contract fallback as semantic success"
-fi
-pass "Deterministic goal-check fallback requires human review"
-
-cat > "$RESULTS_DIR/goal-check.json" <<'JSON'
-{
-  "met": false,
-  "outcome": "uncertain",
-  "confidence": "medium",
-  "summary": "JEV could not establish whether every criterion is satisfied.",
-  "missing": ["Criterion evidence remains uncertain."],
-  "evaluation_warning": "goal_check_uncertain_review_required"
-}
-JSON
-uncertain_review="$(build_pr_agent_review 1)"
-grep -Fq 'Goal check is uncertain; human review is required before merging.' <<<"$uncertain_review" || fail "Uncertain goal-check verdict was not made explicit in PR review metadata"
-pass "Uncertain goal-check PR metadata requires human review"
-
-
-agent_eval_overall_line="$(grep -nF -- '- Overall: good' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-agent_eval_confidence_line="$(grep -nF -- '- Reviewer confidence: high' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-agent_eval_review_focus_line="$(grep -nF '### Human review focus' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-if [ -n "$run_details_line" ] && [ -n "$agent_eval_overall_line" ] && [ -n "$agent_eval_confidence_line" ] \
-  && [ -n "$agent_eval_review_focus_line" ] \
-  && [ "$review_notes_line" -lt "$agent_eval_review_focus_line" ] \
-  && [ "$run_details_line" -lt "$agent_eval_overall_line" ] \
-  && [ "$agent_eval_overall_line" -lt "$agent_eval_confidence_line" ]; then
-  pass "Human review focus is visible while evaluator confidence stays in collapsed run details"
-else
-  fail "Evaluator detail placement or human review focus visibility was incorrect"
-fi
-
-if grep -Fq '### Process notes' <<<"$pr_body"; then
-  fail "PR body must not expose internal process notes"
-else
-  pass "PR body keeps internal process notes in run artifacts"
-fi
-
-if [ "$summary_line" -lt "$task_prompt_line" ]; then
-  pass "PR body places Summary before the collapsed task prompt"
-else
-  fail "PR body did not place Summary before Original task prompt"
-fi
-
-prompt_start_line="$(grep -nF 'Fix OAuth flow for quoted "input" using [redacted] and [redacted].' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-first_numbered_line="$(grep -nF '1. Preserve the redirect-state handoff.' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-second_numbered_line="$(grep -nF '2. Add regression tests.' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-bullet_line="$(grep -nF -- '- Keep reviewer notes readable.' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-if [ -n "$prompt_start_line" ] && [ -n "$first_numbered_line" ] && [ -n "$second_numbered_line" ] && [ -n "$bullet_line" ] \
-  && [ "$prompt_start_line" -lt "$first_numbered_line" ] \
-  && [ "$first_numbered_line" -lt "$second_numbered_line" ] \
-  && [ "$second_numbered_line" -lt "$bullet_line" ]; then
-  pass "PR body preserves multiline task prompt bullet and numbered-list structure"
-else
-  fail "PR body did not preserve multiline task prompt structure"
-fi
-
-if awk '
-  /Fix OAuth flow for quoted "input" using \[redacted\] and \[redacted\]\./ { in_prompt=1 }
-  in_prompt && /^$/ { blanks++; if (blanks > 1) exit 1; next }
-  in_prompt && /^<\/details>$/ { exit 0 }
-  in_prompt { blanks=0 }
-' <<<"$pr_body"; then
-  pass "PR body normalizes excessive blank lines in the task prompt"
-else
-  fail "PR body left excessive blank lines in the task prompt"
-fi
-
-if grep -Fq '## Quality checks' <<<"$pr_body"; then
-  fail "PR body should not include a separate Quality checks section"
-else
-  pass "PR body folds quality checks into Validation"
-fi
-
-quality_gate_count="$(awk 'index($0, "Quality gate:") { count++ } END { print count + 0 }' <<<"$pr_body")"
-secret_scan_count="$(awk 'index($0, "Secret scan:") { count++ } END { print count + 0 }' <<<"$pr_body")"
-quality_gate_line="$(grep -nF 'Quality gate:' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-secret_scan_line="$(grep -nF 'Secret scan:' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-if [ "$quality_gate_count" -eq 1 ] && [ -n "$quality_gate_line" ] \
-  && [ "$validation_line" -lt "$quality_gate_line" ] \
-  && [ "$quality_gate_line" -lt "$files_changed_line" ]; then
-  pass "PR body has one Quality gate status in Validation"
-else
-  fail "PR body should include exactly one Quality gate status in Validation"
-fi
-
-if [ "$secret_scan_count" -eq 1 ] && [ -n "$secret_scan_line" ] \
-  && [ "$validation_line" -lt "$secret_scan_line" ] \
-  && [ "$secret_scan_line" -lt "$files_changed_line" ]; then
-  pass "PR body has one Secret scan status in Validation"
-else
-  fail "PR body should include exactly one Secret scan status in Validation"
-fi
-
-if grep -Eq 'Duration: 12[0-9]s' <<<"$pr_body"; then
-  pass "PR body contains run duration"
-else
-  fail "PR body missing run duration"
-fi
-
-
-cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
-{
-  "overall_assessment": "good",
-  "reviewer_confidence": "high",
-  "started_at": "2026-01-01T00:00:00.000Z",
-  "ended_at": "2026-01-01T00:00:00.350Z"
-}
-JSON
-subsecond_eval="$(build_pr_agent_evaluation)"
-if grep -Fq 'Duration: 350ms' <<<"$subsecond_eval"; then
-  pass "Agent evaluation shows sub-second duration in milliseconds"
-else
-  fail "Agent evaluation did not show sub-second milliseconds precision"
-fi
-
-cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
-{
-  "overall_assessment": "good",
-  "reviewer_confidence": "high",
-  "started_at": "2026-01-01T00:00:00.000Z",
-  "ended_at": "2026-01-01T00:00:01.450Z"
-}
-JSON
-one_to_two_second_eval="$(build_pr_agent_evaluation)"
-if grep -Fq 'Duration: 1.45s' <<<"$one_to_two_second_eval"; then
-  pass "Agent evaluation shows 1-2 second duration with sub-second precision"
-else
-  fail "Agent evaluation did not format 1-2 second duration correctly"
-fi
-
-cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
-{
-  "overall_assessment": "good",
-  "reviewer_confidence": "high",
-  "duration_seconds": 2
-}
-JSON
-missing_timestamp_eval="$(build_pr_agent_evaluation)"
-if grep -Fq 'Duration: 2s' <<<"$missing_timestamp_eval"; then
-  pass "Agent evaluation falls back to duration_seconds when timestamps are missing"
-else
-  fail "Agent evaluation missing timestamp fallback behavior"
-fi
-
-cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
-{
-  "overall_assessment": "good",
-  "reviewer_confidence": "high",
-  "task_completion_score": 4,
-  "summary": "The run produced a focused OAuth fix.",
-  "human_review_focus": [
-    "Confirm OAuth provider behavior with quoted redirect-state values.",
-    "Check reviewer-facing copy for product terminology."
-  ],
-  "stage_value": [
-    { "stage": "goal check", "value": "high", "reason": "Confirmed requirements." }
-  ],
-  "efficiency_findings": [
-    "Post-validation repeated the same test command and may benefit from delta-aware validation."
-  ],
-  "kaseki_improvement_opportunities": [
-    { "category": "validation", "priority": "medium", "suggestion": "Consider reusing pre-validation results when commands are identical." }
-  ],
-  "pr_summary": "Fixed OAuth redirect-state handling and added regression coverage for quoted values.",
-  "pr_changes": [
-    "Preserved redirect-state values across the OAuth fallback path.",
-    "Added regression cases for quoted redirect-state values."
-  ],
-  "warnings": []
-}
-JSON
-
-grep -Fq '## Summary' <<<"$pr_body" || fail "Normal PR body is missing its summary"
-pass "Normal PR body contains reviewer-facing summary"
-
-# Preserve the existing safe JSON encoding path used by the GitHub PR API payload.
+pr_title_json=""
+pr_body_json=""
 run_node_subprocess pr_title_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_title" "$TMP_DIR/node.log"
 run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_body" "$TMP_DIR/node.log"
-# shellcheck disable=SC2154 # Variables set by run_node_subprocess function
 payload="{\"title\": $pr_title_json, \"body\": $pr_body_json, \"head\": \"$feature_branch\", \"base\": \"$GIT_REF\", \"draft\": false}"
-
 PAYLOAD="$payload" node <<'NODE'
 const payload = JSON.parse(process.env.PAYLOAD);
-if (!payload.title.startsWith('fix: OAuth flow')) process.exit(1);
-if (!payload.body.includes('<details><summary>Task prompt</summary>')) process.exit(2);
+if (!payload.title.startsWith('fix:')) process.exit(1);
+if (!payload.body.includes('## Summary')) process.exit(2);
 if (payload.draft !== false) process.exit(3);
 NODE
-pass "Explicit normal PR mode GitHub PR API payload marks the PR as ready for review"
+pass "GitHub PR API payload preserves the reviewer-facing body and requests a normal PR"
 
-regression_pr_body=$(cat <<'PRBODY'
-## Regression stderr markdown
-
-The agent's output preserved quoted review text: stage literally named 'deploy error'.
-
-Parser reference: JobScheduler.parseLiveProgressEvents().
-
-text block:
-stderr log excerpt:
-bash: -c: line 1: syntax error near unexpected token (open parenthesis)
-Inline code and markdown-like text should stay intact.
-The agent's output mentioned stage literally named 'deploy error' while parsing JobScheduler.parseLiveProgressEvents().
-end text block.
-PRBODY
-)
-
-if run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$regression_pr_body" "$TMP_DIR/node.log"; then
-  pass "PR body JSON encoding handles quotes, parentheses, and multiline markdown"
-else
-  fail "PR body JSON encoding failed for regression markdown fixture"
+# The published body may use the agent result summary when evaluator prose is
+# absent, but it must not echo the prompt or fold validation text into summary.
+cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
+{"overall_assessment":"unknown","reviewer_confidence":"low","pr_summary":"Run evaluation was unavailable; please rely on the summary, validation results, and changed files."}
+JSON
+fallback_body="$(build_pr_body)"
+grep -Fq 'Preserves OAuth redirect state through callback retries.' <<<"$fallback_body" || fail "Result-summary fallback did not describe the implemented change"
+if grep -Eiq 'This internal validation prose|Fix OAuth flow|Requested outcome|secret=task-secret|Duration:|Run metadata' <<<"$fallback_body"; then
+  fail "Fallback summary included validation details, task prompt, or run metadata"
 fi
+pass "Evaluator fallback uses concise change evidence without repeating the task"
 
-payload="{\"title\": $pr_title_json, \"body\": $pr_body_json, \"head\": \"$feature_branch\", \"base\": \"$GIT_REF\", \"draft\": false}"
-PAYLOAD="$payload" EXPECTED_PR_BODY="$regression_pr_body" node <<'NODE'
-const payload = JSON.parse(process.env.PAYLOAD);
-if (payload.body !== process.env.EXPECTED_PR_BODY) process.exit(1);
-NODE
-pass "PR body JSON payload preserves regression markdown fixture exactly"
-
-if [ -f "$TMP_DIR/node.log" ] && grep -Fq 'syntax error near unexpected token' "$TMP_DIR/node.log"; then
-  fail "Node subprocess log unexpectedly contains shell syntax error output"
-else
-  pass "Node subprocess log omits shell syntax error output for regression fixture"
+mv "$RESULTS_DIR/result-summary.md" "$RESULTS_DIR/result-summary.saved.md"
+cat > "$RESULTS_DIR/changed-files.txt" <<'FILES'
+src/alpha.ts
+src/beta.ts
+src/gamma.ts
+src/delta.ts
+src/epsilon.ts
+FILES
+file_only_body="$(build_pr_body 2>"$TMP_DIR/file-fallback.stderr")"
+mv "$RESULTS_DIR/result-summary.saved.md" "$RESULTS_DIR/result-summary.md"
+grep -Fq 'Updated several files, including' <<<"$file_only_body" || fail "File-based fallback did not identify the changed files"
+grep -Fq '`src/alpha.ts`' <<<"$file_only_body" || fail "File-based fallback omitted a changed path"
+if [ -s "$TMP_DIR/file-fallback.stderr" ]; then
+  fail "File-based fallback wrote an error while formatting paths"
 fi
+if grep -Eiq '[0-9]+ files? changed|across [0-9]+ changed files?' <<<"$file_only_body" || grep -Fq '## Changes' <<<"$file_only_body"; then
+  fail "File-based fallback repeated file counts or a duplicate file inventory"
+fi
+if grep -Fq 'Fix OAuth flow' <<<"$file_only_body"; then
+  fail "File-based fallback repeated the task prompt"
+fi
+pass "File-based fallback avoids task echoes, counts, and duplicate file lists"
 
-PAYLOAD="$payload" node <<'NODE'
-const payload = JSON.parse(process.env.PAYLOAD);
-if (payload.draft !== false) process.exit(1);
-NODE
-pass "GitHub PR API payload always requests a normal PR"
-
-build_pr_body_for_payload() {
-  local candidate_body="$1"
-  local compact_body fallback_timestamp fallback_validation_status
-  compact_body="$(printf '%s' "$candidate_body" | tr -d '[:space:]')"
-  if [ -n "$compact_body" ]; then
-    printf '%s' "$candidate_body"
-    return 0
-  fi
-
-  fallback_timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-  fallback_validation_status="unknown"
-  if [ -n "${POST_AGENT_VALIDATION_STATUS:-}" ]; then
-    fallback_validation_status="$POST_AGENT_VALIDATION_STATUS"
-  fi
-  cat <<EOF
-## Summary
-- Automated PR body fallback was used because generated body was empty after sanitization.
-
-## Validation
-- Post-agent validation: $fallback_validation_status
-- Publish mode: ${KASEKI_PUBLISH_MODE:-pr}
-
-## Run metadata
-- Generated at (UTC): $fallback_timestamp
-EOF
-}
+# A final safety fallback remains nonempty and excludes publication/run metadata.
+fallback_body="$(build_pr_fallback_body)"
+grep -Fq '## Summary' <<<"$fallback_body" || fail "Empty-body fallback omitted the summary"
+grep -Fq '## Verification' <<<"$fallback_body" || fail "Empty-body fallback omitted verification"
+if grep -Eiq 'Run metadata|Generated at|Publish mode|Duration:|pre-agent validation|file(s)? changed' <<<"$fallback_body"; then
+  fail "Empty-body fallback included run metadata or baseline validation"
+fi
+pass "Empty-body fallback stays concise and reviewer-focused"
 
 for publish_mode in pr auto; do
   KASEKI_PUBLISH_MODE="$publish_mode"
-  ensured_body="$(build_pr_body_for_payload $'   \n\t  ')"
-  run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$ensured_body" "$TMP_DIR/node.log"
-  payload="{\"title\": $pr_title_json, \"body\": $pr_body_json, \"head\": \"$feature_branch\", \"base\": \"$GIT_REF\", \"draft\": false}"
+  fallback_body_json=""
+  run_node_subprocess fallback_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$fallback_body" "$TMP_DIR/node.log"
+  payload="{\"body\": $fallback_body_json, \"draft\": false}"
   PAYLOAD="$payload" node <<'NODE'
 const payload = JSON.parse(process.env.PAYLOAD);
-if (typeof payload.body !== 'string') process.exit(1);
-if (payload.body.trim().length === 0) process.exit(2);
-if (!payload.body.includes('## Summary')) process.exit(3);
+if (typeof payload.body !== 'string' || !payload.body.trim().includes('## Summary')) process.exit(1);
+if (payload.draft !== false) process.exit(2);
 NODE
-  pass "PR payload body is never empty in ${publish_mode} mode"
 done
+pass "Fallback PR body remains valid JSON for PR and auto publish modes"
 
-# Scorecard fixtures exercise the same compiled formatter invoked by PR creation.
-if [ ! -f "$ROOT_DIR/dist/run-scorecard.js" ] || [ ! -f "$ROOT_DIR/dist/run-scorecard-markdown.js" ]; then
-  fail "Scorecard formatter build artifacts are missing; run npm run build before this test"
-fi
-cat > "$RESULTS_DIR/metadata.json" <<'JSON'
-{"instance":"fixture","started_at":"2026-08-07T00:00:00Z","ended_at":"2026-08-07T00:01:00Z","exit_code":0,"quality_exit_code":0,"duration_seconds":60}
-JSON
-cat > "$RESULTS_DIR/timings-manifest.json" <<'JSON'
-{"validation_timings":[{"exit_code":0,"elapsed_seconds":3}],"stage_timings":[{"elapsed_seconds":60}]}
-JSON
-cat > "$RESULTS_DIR/coding-summary.json" <<'JSON'
-{"phase":"coding","request_id":"fixture-request","usage":{"input":120,"output":30,"cacheRead":10}}
-JSON
-node "$ROOT_DIR/dist/run-scorecard.js" "$RESULTS_DIR"
-SCORECARD="$RESULTS_DIR/run-scorecard.json"
-SCORECARD="$SCORECARD" node <<'NODE'
-const fs = require('fs');
-const card = JSON.parse(fs.readFileSync(process.env.SCORECARD, 'utf8'));
-card.completeness = 'complete';
-card.evidence_coverage = { required: 8, available: 8, ratio: 1, missing_critical: [] };
-card.token_totals.unavailable = false;
-card.token_totals.completeness = 'complete';
-card.phases.scouting.measurements = {
-  z_sensitive_raw_response: 'raw model response secret=do-not-publish ' + 'x'.repeat(5000),
-  a_table_value: 'left|right',
-  m_files: 4
-};
-card.warnings = ['bounded warning ' + 'w'.repeat(5000), 'token=fixture-secret', 'third warning', 'not rendered'];
-fs.writeFileSync(process.env.SCORECARD, JSON.stringify(card));
-NODE
-complete_scorecard_body="$(build_pr_body)"
-grep -Fq '## Kaseki run scorecard' <<<"$complete_scorecard_body" || fail "Complete scorecard section is missing"
-grep -Fq 'left\|right' <<<"$complete_scorecard_body" || fail "Scorecard table cells do not escape Markdown pipes"
-grep -Fq '| Goal quality |' <<<"$complete_scorecard_body" || fail "Scorecard dimensions are not in stable rubric order"
-if grep -Eq 'fixture-secret|raw model response|xxxxx{200}|wwwww{200}|not rendered' <<<"$complete_scorecard_body"; then
-  fail "Scorecard exposed sensitive, raw, unbounded, or excess evaluator evidence"
-fi
-pass "Complete scorecard is ordered, escaped, bounded, and sanitized"
-
-SCORECARD="$SCORECARD" node <<'NODE'
-const fs = require('fs');
-const card = JSON.parse(fs.readFileSync(process.env.SCORECARD, 'utf8'));
-card.completeness = 'provisional';
-card.evidence_coverage = { required: 8, available: 4, ratio: 0.5, missing_critical: ['validation_result'] };
-card.token_totals.unavailable = true;
-card.token_totals.completeness = 'unavailable';
-fs.writeFileSync(process.env.SCORECARD, JSON.stringify(card));
-NODE
-partial_scorecard_body="$(build_pr_body)"
-grep -Fq '**Provisional score:** some evidence is unavailable' <<<"$partial_scorecard_body" || fail "Partial scorecard lacks provisional evidence note"
-pass "Partial scorecard identifies unavailable evidence"
-
-printf '{malformed' > "$SCORECARD"
-malformed_scorecard_body="$(build_pr_body)"
-if grep -Fq '## Kaseki run scorecard' <<<"$malformed_scorecard_body"; then
-  fail "Malformed scorecard should be omitted rather than rendered as an unavailable score"
-fi
-grep -Fq 'Scorecard unavailable at publication' <<<"$malformed_scorecard_body" || fail "Malformed scorecard lacked an accurate fallback summary"
-rm -f "$SCORECARD"
-absent_scorecard_body="$(build_pr_body)"
-if grep -Fq '## Kaseki run scorecard' <<<"$absent_scorecard_body"; then
-  fail "Absent scorecard should be omitted rather than rendered as an unavailable score"
-fi
-grep -Fq 'Scorecard unavailable at publication' <<<"$absent_scorecard_body" || fail "Absent scorecard lacked an accurate fallback summary"
-pass "Malformed and absent scorecards use deterministic fallback summaries"
-
-# PR body refresh uses the short-lived installation token created during the
-# publish operation and never upgrades an authoritative run failure.
-CURL_ARGUMENTS_FILE="$TMP_DIR/curl-arguments.txt"
-export CURL_ARGUMENTS_FILE
-curl() {
-  printf '%s\n' "$*" > "$CURL_ARGUMENTS_FILE"
-  printf '{"number":42}200'
-}
-if ! update_github_pull_request_body "test-owner" "test-repo" "42" "test-installation-token" $'## Kaseki run scorecard\nFinal score: 88.6/100'; then
-  fail "PR body updater rejected a successful GitHub response"
-fi
-grep -Fq -- '-X PATCH' "$CURL_ARGUMENTS_FILE" || fail "PR body updater did not use PATCH"
-grep -Fq 'repos/test-owner/test-repo/pulls/42' "$CURL_ARGUMENTS_FILE" || fail "PR body updater targeted the wrong pull request"
-grep -Fq '"body"' "$CURL_ARGUMENTS_FILE" || fail "PR body updater did not send the updated body field"
-pass "PR body updater patches the intended pull request"
-
-REAL_FORMAT_PR_RUN_SCORECARD="$(declare -f format_pr_run_scorecard)"
-REAL_BUILD_PR_BODY="$(declare -f build_pr_body)"
-REAL_UPDATE_GITHUB_PULL_REQUEST_BODY="$(declare -f update_github_pull_request_body)"
-REFRESHED_PR_BODY=""
-format_pr_run_scorecard() { printf 'Final score: 88.6/100\n'; }
-build_pr_body() { printf '## Summary\nUpdated task.\n\n## Kaseki run scorecard\nFinal score: 88.6/100\n'; }
-update_github_pull_request_body() {
-  REFRESHED_PR_BODY="$5"
-  return 0
-}
-emit_progress() { :; }
-GITHUB_PR_SCORECARD_PENDING=1
-GITHUB_PR_UPDATE_OWNER="test-owner"
-GITHUB_PR_UPDATE_REPO="test-repo"
-GITHUB_PR_UPDATE_NUMBER=42
-GITHUB_PR_UPDATE_TOKEN="test-installation-token"
-GITHUB_PR_URL="https://github.com/test-owner/test-repo/pull/42"
-refresh_finalized_pr_scorecard
-grep -Fq '## Kaseki run scorecard' <<<"$REFRESHED_PR_BODY" || fail "Finalized PR refresh omitted the available scorecard"
-[ -z "${GITHUB_PR_UPDATE_TOKEN:-}" ] || fail "PR refresh retained the installation token after use"
-pass "Finalized scorecard replaces the publication-time fallback in the PR body"
-
-REFRESHED_PR_BODY=""
-format_pr_run_scorecard() { :; }
-GITHUB_PR_SCORECARD_PENDING=1
-GITHUB_PR_UPDATE_TOKEN="test-installation-token"
-refresh_finalized_pr_scorecard
-[ -z "$REFRESHED_PR_BODY" ] || fail "PR refresh patched the body without an available scorecard"
-[ -z "${GITHUB_PR_UPDATE_TOKEN:-}" ] || fail "PR refresh retained a token when no scorecard was available"
-pass "PR refresh skips absent scorecards and clears the short-lived token"
-eval "$REAL_FORMAT_PR_RUN_SCORECARD"
-eval "$REAL_BUILD_PR_BODY"
-eval "$REAL_UPDATE_GITHUB_PULL_REQUEST_BODY"
-
-# The evaluator contract must preserve explicit implementation bullets in the
-# published PR body and reject older responses that omit the field.
+# Keep the evaluation schema contract aligned with the fields consumed by the
+# reviewer-facing body, and reject older candidates without pr_changes.
 RUN_EVALUATION_CANDIDATE_ARTIFACT="$RESULTS_DIR/run-evaluation-candidate.json"
 RUN_EVALUATION_ARTIFACT="$RESULTS_DIR/validated-run-evaluation.json"
 KASEKI_RUN_EVALUATION_MODEL="test-model"
@@ -1034,26 +246,16 @@ RUN_EVALUATION_ACTUAL_MODEL="test-model"
 export RUN_EVALUATION_CANDIDATE_ARTIFACT RUN_EVALUATION_ARTIFACT KASEKI_RUN_EVALUATION_MODEL RUN_EVALUATION_ACTUAL_MODEL
 cat > "$RUN_EVALUATION_CANDIDATE_ARTIFACT" <<'JSON'
 {
-  "overall_assessment": "good",
-  "reviewer_confidence": "medium",
-  "task_completion_score": 4,
-  "summary": "A focused change with validation evidence.",
-  "human_review_focus": [],
-  "stage_value": [],
-  "evidence_sources_inspected": [],
-  "contradictions": [],
-  "confidence_calibration": {"objective_outcome":"met","calibrated":true,"reason":"Evidence supports the result."},
-  "phase_scorecard": {},
-  "efficiency_findings": [],
-  "kaseki_improvement_opportunities": [],
-  "pr_summary": "Fixed the deployment health-check fallback.",
-  "pr_changes": ["Preserved healthy-state behavior.", "Added regression coverage for missing health data."],
-  "warnings": []
+  "overall_assessment":"good","reviewer_confidence":"medium","task_completion_score":4,
+  "summary":"Evaluation summary.","pr_summary":"Implemented behavior.","pr_changes":["Specific implementation change."],
+  "human_review_focus":[],"stage_value":[],"evidence_sources_inspected":[],"contradictions":[],
+  "confidence_calibration":{"objective_outcome":"met","calibrated":true,"reason":"Evidence supports the result."},
+  "phase_scorecard":{},"efficiency_findings":[],"kaseki_improvement_opportunities":[],"warnings":[]
 }
 JSON
 if validate_run_evaluation_candidate >/dev/null 2>&1 \
-  && node -e 'const value=require(process.argv[1]); if (!Array.isArray(value.pr_changes) || value.pr_changes.length !== 2) process.exit(1);' "$RUN_EVALUATION_ARTIFACT"; then
-  pass "Run-evaluation validation preserves pr_changes in the published artifact"
+  && node -e 'const value=require(process.argv[1]); if (!Array.isArray(value.pr_changes) || value.pr_changes.length !== 1) process.exit(1);' "$RUN_EVALUATION_ARTIFACT"; then
+  pass "Run-evaluation validation preserves PR summary and implementation bullets"
 else
   fail "Run-evaluation validation did not preserve pr_changes"
 fi
@@ -1061,52 +263,5 @@ node -e 'const fs=require("fs"); const file=process.argv[1]; const value=JSON.pa
 rm -f "$RUN_EVALUATION_ARTIFACT"
 if validate_run_evaluation_candidate >/dev/null 2>&1; then
   fail "Run-evaluation validator accepted a response without pr_changes"
-else
-  pass "Run-evaluation validator rejects candidates missing pr_changes"
 fi
-
-if grep -Fq '.### Human review focus' <<<"$pr_body"; then
-  fail "PR body concatenated the needs-attention note and human-review heading"
-else
-  pass "PR body separates the needs-attention note from human-review focus"
-fi
-
-cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
-{"overall_assessment":"unknown","reviewer_confidence":"low"}
-JSON
-unknown_duration_eval="$(build_pr_agent_evaluation)"
-if grep -Fq 'Duration: unknown' <<<"$unknown_duration_eval"; then
-  fail "Evaluator details should omit unknown duration when run metadata has the actual duration"
-else
-  pass "Evaluator details omit unknown duration"
-fi
-
-TASK_PROMPT='Improve the root README.md for a new contributor. Inspect setup and basic usage instructions.'
-PRE_VALIDATION_EXIT=0
-VALIDATION_EXIT=0
-KASEKI_PRE_AGENT_VALIDATION=0
-: > "$PRE_VALIDATION_TIMINGS_FILE"
-printf 'npm run check\t0\t13\ttee_exit=0 filter_exit=0\n' > "$VALIDATION_TIMINGS_FILE"
-cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
-{"overall_assessment":"unknown","reviewer_confidence":"low","evaluation_unavailable":true,"pr_summary":""}
-JSON
-rm -f "$RESULTS_DIR/result-summary.md" "$RESULTS_DIR/analysis.md" "$RESULTS_DIR/pi-summary.json"
-printf 'README.md\n' > "$RESULTS_DIR/changed-files.txt"
-readme_fallback_body="$(build_pr_body)"
-if grep -Fq 'Pre-agent validation: skipped (disabled)' <<<"$readme_fallback_body" \
-  && ! grep -Fq '<details><summary>Pre-agent baseline checks</summary>' <<<"$readme_fallback_body"; then
-  pass "PR body does not call disabled pre-agent validation a pass or show an empty baseline"
-else
-  fail "PR body did not clearly label skipped pre-agent validation"
-fi
-if grep -Fq 'Requested outcome (from the task prompt; no reviewer-ready run summary was available): Improve the root README.md for a new contributor.' <<<"$readme_fallback_body" \
-  && ! grep -Fq 'Updated documentation across 1 changed file(s).' <<<"$readme_fallback_body"; then
-  pass "PR summary fallback states the requested outcome when evaluator prose is unavailable"
-else
-  fail "PR summary fallback was generic despite a clear task prompt"
-fi
-if [ "$(grep -Ec 'Duration: [0-9]+s' <<<"$readme_fallback_body")" -eq 1 ]; then
-  pass "PR body shows run duration once when evaluator duration is unknown"
-else
-  fail "PR body duplicated or omitted the known run duration"
-fi
+pass "Run-evaluation validator rejects candidates missing implementation bullets"
