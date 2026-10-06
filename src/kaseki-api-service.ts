@@ -1,11 +1,11 @@
 import express from 'express';
-import swaggerUi from 'swagger-ui-express';
 import * as fs from 'fs';
 import { loadConfig } from './kaseki-api-config';
 import { createApiRouter } from './kaseki-api-routes';
 import { createWebRouter } from './kaseki-api-web';
 import { createEventLogger } from './logger';
 import { generateOpenAPISpec } from './openapi-spec-generator';
+import { renderOpenApiOperationIndex } from './openapi-operation-index';
 import { initializeSetup, assertSupportedNodeVersion, ensureTemplateInitialized } from './kaseki-api/setup-orchestrator';
 import { bootstrapServices, gracefulShutdown, type ShutdownDeps } from './kaseki-api/service-bootstrapper';
 import { ContainerPreflightDiagnostics, logContainerPreflightResults } from './startup/container-preflight';
@@ -106,9 +106,9 @@ async function main(): Promise<void> {
   const logger = createEventLogger('kaseki-api');
 
   // Initialize Sentry for error tracking and monitoring
-  initSentry();
-  logger.debug('Sentry initialized', {
-    enabled: process.env.SENTRY_DSN ? 'true' : 'false',
+  await initSentry();
+  logger.debug('Sentry initialization finished', {
+    configured: Boolean(process.env.SENTRY_DSN),
     environment: process.env.SENTRY_ENVIRONMENT || 'development',
   });
 
@@ -257,10 +257,10 @@ async function main(): Promise<void> {
   // Generate OpenAPI specification
   const openApiSpec = generateOpenAPISpec();
 
-  // Mount Swagger UI documentation
-  app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, {
-    customCss: '.topbar { display: none }',
-  }));
+  // Serve a local operation index without loading a browser documentation bundle.
+  app.get('/docs', (_req, res) => {
+    res.type('html').send(renderOpenApiOperationIndex(openApiSpec));
+  });
 
   // Mount OpenAPI spec endpoint
   app.get('/api/v1/openapi.json', (_req, res) => {
@@ -291,7 +291,7 @@ async function main(): Promise<void> {
       maxConcurrentRuns: config.maxConcurrentRuns,
       resultsDir: config.resultsDir,
       nodeVersion: process.versions.node,
-      swaggerDocumentationUrl: `${baseUrl}/docs`,
+      documentationUrl: `${baseUrl}/docs`,
       openApiSpecUrl: `${baseUrl}/api/v1/openapi.json`,
     });
   };

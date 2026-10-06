@@ -5,7 +5,6 @@
  */
 
 import express from 'express';
-import swaggerUi from 'swagger-ui-express';
 import type { Server } from 'http';
 import { loadConfig } from './kaseki-api-config';
 import { createApiRouter } from './kaseki-api-routes';
@@ -13,6 +12,7 @@ import { createEventLogger } from './logger';
 import { initializeSetup } from './kaseki-api/setup-orchestrator';
 import { bootstrapServices, gracefulShutdown, type BootstrappedServices } from './kaseki-api/service-bootstrapper';
 import { generateOpenAPISpec } from './openapi-spec-generator';
+import { renderOpenApiOperationIndex } from './openapi-operation-index';
 
 interface KasekiAPIServiceOptions {
   port?: number;
@@ -93,7 +93,9 @@ class KasekiAPIServiceImpl {
       app.use(express.json());
 
       const openApiSpec = generateOpenAPISpec();
-      app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, { customCss: '.topbar { display: none }' }));
+      app.get('/docs', (_req, res) => {
+        res.type('html').send(renderOpenApiOperationIndex(openApiSpec));
+      });
       app.get('/api/v1/openapi.json', (_req, res) => res.json(openApiSpec));
 
       // Mount API routes
