@@ -528,7 +528,7 @@ Focus on things Kaseki didn't already verify (goal-check, validation).
 
 Summarize the implemented behavior and why it matters, NOT the original task or whether the task was completed. Keep command outcomes for the generated Verification section.
 
-✅ Good: "Added null-safety to `parseRole()` and regression coverage for empty and malformed inputs."
+✅ Good: "Added null-safety to parseRole() and regression coverage for empty and malformed inputs."
 ❌ Poor: "Fixed the parser bug. All validation passes."
 
 ## Reviewer-facing PR description
