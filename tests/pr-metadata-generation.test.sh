@@ -167,6 +167,8 @@ if grep -Fq -- '- Not recorded' <<<"$no_validation_body"; then
 fi
 pass "Missing validation evidence is stated explicitly without implying a pass"
 
+pr_title_json=""
+pr_body_json=""
 run_node_subprocess pr_title_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_title" "$TMP_DIR/node.log"
 run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_body" "$TMP_DIR/node.log"
 payload="{\"title\": $pr_title_json, \"body\": $pr_body_json, \"head\": \"$feature_branch\", \"base\": \"$GIT_REF\", \"draft\": false}"
@@ -224,6 +226,7 @@ pass "Empty-body fallback stays concise and reviewer-focused"
 
 for publish_mode in pr auto; do
   KASEKI_PUBLISH_MODE="$publish_mode"
+  fallback_body_json=""
   run_node_subprocess fallback_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$fallback_body" "$TMP_DIR/node.log"
   payload="{\"body\": $fallback_body_json, \"draft\": false}"
   PAYLOAD="$payload" node <<'NODE'
