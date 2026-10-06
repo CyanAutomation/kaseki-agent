@@ -29,7 +29,32 @@ export interface SentryConfig {
   enabled?: boolean;
 }
 
-type SentrySdk = typeof import('@sentry/node');
+type SentryEvent = Record<string, unknown>;
+
+interface SentryScope {
+  setContext(key: string, context: Record<string, unknown>): void;
+}
+
+interface SentryOptions {
+  dsn: string;
+  environment?: string;
+  release?: string;
+  tracesSampleRate?: number;
+  integrations?: unknown[];
+  maxBreadcrumbs?: number;
+  beforeSend?: (event: SentryEvent) => SentryEvent | null;
+}
+
+interface SentrySdk {
+  init(options: SentryOptions): void;
+  expressIntegration(): unknown;
+  expressErrorHandler(): (...args: unknown[]) => unknown;
+  withScope(callback: (scope: SentryScope) => void): void;
+  captureException(error: unknown): void;
+  close(timeoutMs: number): Promise<boolean>;
+}
+
+const SENTRY_SDK_MODULE: string = '@sentry/node';
 
 let sentrySdk: SentrySdk | undefined;
 let isInitialized = false;
@@ -144,9 +169,10 @@ export function initSentry(customConfig?: Partial<SentryConfig>): Promise<void> 
   initializationPromise = (async () => {
     try {
       // The optional SDK is loaded only when error reporting is configured.
-      const sdk = await import('@sentry/node');
+      // Keep this specifier dynamic so builds also work with optional dependencies omitted.
+      const sdk = await import(SENTRY_SDK_MODULE) as unknown as SentrySdk;
       const releaseVersion = customConfig?.release || detectReleaseVersion();
-      const config: import('@sentry/node').NodeOptions = {
+      const config: SentryOptions = {
         dsn,
         environment: customConfig?.environment || process.env.SENTRY_ENVIRONMENT || 'production',
         release: releaseVersion,
