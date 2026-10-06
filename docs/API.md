@@ -88,11 +88,11 @@ All configured bearer keys have equal access to API endpoints. Keep keys secret 
 
 Every API response includes `X-Request-ID`. Errors use `application/problem+json` with `type`, `title`, `status`, `detail`, `instance`, and `requestId` fields.
 
-## Interactive Swagger Documentation
+## API Operation Index
 
-The Kaseki API includes an interactive **Swagger UI** for exploring and testing endpoints:
+The API serves a local operation index with endpoint methods, paths, summaries, and descriptions:
 
-### Access Swagger UI
+### Open the operation index
 
 When the API service is running, open your browser to:
 
@@ -100,24 +100,11 @@ When the API service is running, open your browser to:
 http://localhost:8080/docs
 ```
 
-**Note:** Replace `8080` with the port specified by `KASEKI_API_PORT`.
+Replace `8080` with the port specified by `KASEKI_API_PORT`.
 
-### Features
+The index groups operations by API tag. The OpenAPI 3.1 JSON document remains available at:
 
-- **Browse all endpoints** organized by category (Run Management, Logs & Progress, Artifacts, etc.)
-- **View request/response schemas** with type information and examples
-- **Try it out:** Send test requests directly from the UI with automatic code samples
-- **Authentication:** Authorize with your Bearer token in the top-right corner
-- **OpenAPI specification:** Access the raw spec at `http://localhost:8080/api/v1/openapi.json`
-
-### Example: Testing `/api/v1/runs` Endpoint
-
-1. Open <http://localhost:8080/docs>
-2. Click **"Run Management"** → **"Trigger a new kaseki run"**
-3. Click **"Authorize"** in the top-right; enter your API key
-4. Click **"Try it out"**
-5. Fill in the request body with a repository URL
-6. Click **"Execute"** to submit and see the response
+`http://localhost:8080/api/v1/openapi.json`
 
 ## API Endpoints
 

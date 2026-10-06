@@ -60,6 +60,7 @@ npm run kaseki-api
 ```
 
 Sentry will now capture any errors and report them to your Sentry project.
+The `@sentry/node` SDK is an optional dependency and is loaded only when Sentry is enabled. If it is not installed or cannot initialize, captured errors are written to the structured application log.
 
 ## Configuration Reference
 
