@@ -357,21 +357,20 @@ If dependency restore logs show EXDEV/cross-device hardlink failures:
 
 | Variable | Default | Type | Purpose |
 |----------|---------|------|---------|
-| `LLM_GATEWAY_URL` | — | string | Gateway API endpoint URL (required; e.g., `https://llmgateway.local.xyz/v1`). Pi CLI automatically appends `/responses` for OpenAI Responses API. |
+| `LLM_GATEWAY_URL` | — | string | OpenAI-compatible gateway base URL (required for coding inference). The Pi provider appends the endpoint path it needs. |
 
 **Examples:**
 
-- `https://llmgateway.local.xyz/v1` — Manifest Gateway (Pi appends `/responses`)
+- `https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat` — Cloudflare AI Gateway
 - `https://api.openai.com/v1` — OpenAI (Pi appends `/chat/completions`)
-- `http://localhost:11434/v1/chat/completions` — Ollama (self-hosted)
-- `https://api.anthropic.com/v1/messages` — Anthropic
+- `http://<ollama-host-ip>:11434/v1` — Ollama on the local network
 
 ### API Authentication
 
 | Variable | Default | Type | Purpose |
 | ---------- | --------- | ------ | --------- |
 | `LLM_GATEWAY_API_KEY` | — | string | Gateway API key (required if using inline auth) |
-| `LLM_GATEWAY_API_KEY_FILE` | `$HOME/.kaseki/secrets.json` | string | Path to file containing API key (preferred) |
+| `LLM_GATEWAY_API_KEY_FILE` | `/run/secrets/kaseki/llm_gateway_api_key` in Compose | string | Path to file containing the gateway key (preferred; never put the value in `.env` or a container environment variable) |
 | `LLM_GATEWAY_MODEL` | `$KASEKI_MODEL` (default `dynamic/kaseki-agent`) | string | Optional gateway-specific model override. If omitted, gateway checks and Pi provider smoke use `KASEKI_MODEL`, whose compiled default is `dynamic/kaseki-agent`. |
 
 ### Model Selection
@@ -440,8 +439,8 @@ chown 10000:10000 /agents/secrets/*
 export REPO_URL="https://github.com/myorg/myrepo"
 export GIT_REF="main"
 export TASK_PROMPT="Fix the null pointer bug in src/parser.ts"
-export LLM_GATEWAY_URL="https://llmgateway.local.xyz/v1"
-export LLM_GATEWAY_API_KEY="your-api-key-here"
+export LLM_GATEWAY_URL="https://api.openai.com/v1"
+export LLM_GATEWAY_API_KEY_FILE="$HOME/secrets/llm_gateway_api_key"
 
 KASEKI_API_URL=http://localhost:8080/api/v1 kaseki-agent run "$REPO_URL" "$GIT_REF" "$TASK_PROMPT"
 ```
@@ -451,7 +450,7 @@ KASEKI_API_URL=http://localhost:8080/api/v1 kaseki-agent run "$REPO_URL" "$GIT_R
 ```bash
 # API server configuration
 # Put one API key per line in /agents/secrets/kaseki_api_keys or ~/secrets/kaseki_api_keys
-export LLM_GATEWAY_URL="https://llmgateway.local.xyz/v1"
+export LLM_GATEWAY_URL="https://api.openai.com/v1"
 export LLM_GATEWAY_API_KEY_FILE="/agents/secrets/llm_gateway_api_key"
 export KASEKI_API_PORT=8080
 export KASEKI_API_LOG_LEVEL=info

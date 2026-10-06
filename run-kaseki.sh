@@ -64,7 +64,7 @@ RETIRED_EVALUATION_SETTINGS=(
   KASEKI_JEV_VALIDATION_FOCUS
 )
 for retired_setting in "${RETIRED_EVALUATION_SETTINGS[@]}"; do
-  if [[ -v $retired_setting ]]; then
+  if [ "${!retired_setting+x}" = x ]; then
     printf 'ERROR: Retired evaluation settings are configured. Remove them and use the stage-based settings documented in docs/ENV_VARS.md.\n' >&2
     exit 2
   fi
