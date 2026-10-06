@@ -1,678 +1,119 @@
-# Kaseki Agent Quick Start
+# Raspberry Pi Quick Start
 
-Get kaseki-agent running in **3 simple steps**. No manual permission setup needed.
+This guide installs Kaseki Agent as a Docker Compose API service on Debian 12/13
+or 64-bit Raspberry Pi OS. Host Node.js is not needed. Allow about 2 GiB of
+free disk space for the initial image and run data.
 
----
+## 1. Bootstrap a clean Pi
 
-## Step 1: Set Up the Raspberry Pi
-
-```bash
-bash scripts/setup-pi.sh
-```
-
-This setup path uses Docker Compose directly and does not require Node.js on the Pi. It will:
-
-- ask for the OpenAI-compatible gateway URL and hidden API key if the key file is missing
-- create `~/secrets/kaseki_api_keys` with a separate random API bearer token
-- set secret directory/file permissions for the UID/GID 10000 container user
-- create the `/agents` directories and detect port conflicts
-- pull the image for the Pi architecture and pin its digest for API and worker containers
-- validate the rendered Compose configuration before starting it
-
-Set a model explicitly when the gateway does not use Kaseki's default route:
+Run these commands on the Pi as your normal login user. The release bootstrap
+installs Docker Engine and Compose from Docker's official Debian repository if
+they are missing, verifies both release checksums, and starts the guided setup.
+It invokes `sudo` only for system packages and host directory permissions.
 
 ```bash
-KASEKI_SETUP_LLM_GATEWAY_MODEL=provider/model \
-KASEKI_SETUP_LLM_GATEWAY_URL=https://your-gateway.example/v1 \
-bash scripts/setup-pi.sh
-```
-
-If the gateway key is already in `~/secrets/llm_gateway_api_key`, the script reuses it without displaying its value. To use another file, set `KASEKI_SETUP_LLM_GATEWAY_API_KEY_FILE`.
-
----
-
-## Step 2: Choose API Access
-
-The API is bound to `127.0.0.1` by default. To allow clients on the LAN, rerun setup with the Pi's LAN address, for example:
-
-```bash
-KASEKI_API_BIND_ADDRESS=192.168.88.200 \
-KASEKI_SETUP_LLM_GATEWAY_URL=https://your-gateway.example/v1 \
-bash scripts/setup-pi.sh
-```
-
-An API bearer token is generated and saved in `~/secrets/kaseki_api_keys`. Keep that file private. GitHub App credentials are optional and only needed for GitHub App authenticated operations.
-
----
-
-## Step 3: Verify the Service
-
-### Docker Compose (Recommended)
-
-```bash
-docker compose ps
-```
-
-Monitor startup:
-
-```bash
-docker compose logs -f kaseki-api
-```
-
-Verify it's running:
-
-```bash
-curl http://127.0.0.1:8080/ready
-```
-
-### Single-Run Execution
-
-```bash
-./run-kaseki.sh https://github.com/your-org/your-repo main
-```
-
----
-
-## CloudFlare AI Workers Gateway Setup (Optional)
-
-If you want to use CloudFlare AI Workers as your LLM Gateway (the default provider):
-
-### Prerequisites
-
-1. **CloudFlare Account** with AI Workers enabled
-2. **API Token**: Create one in CloudFlare dashboard → API Tokens
-3. **Account ID and Namespace**: Available in CloudFlare dashboard
-
-### Configuration
-
-Provide the gateway URL and model to `scripts/setup-pi.sh`:
-
-1. **Gateway URL**:
-   ```
-   https://gateway.ai.cloudflare.com/v1/{account_id}/{namespace}/compat
-   ```
-   Replace `{account_id}` with your CloudFlare account ID and `{namespace}` with your AI namespace (default: `default`)
-
-2. **API Key**:
-   ```
-   cfut_xxxxx (your CloudFlare API token)
-   ```
-
-### Verification
-
-Once configured, verify connectivity:
-
-```bash
-# Check that the setup completed
-curl http://localhost:8080/ready
-
-# View logs (should show successful gateway initialization)
-docker compose logs -f kaseki-api | grep -i cloudflare
-```
-
-The setup script checks the gateway URL and confirms the provider key file is non-empty before starting Compose.
-
----
-
-## What Just Happened?
-
-The Pi setup script created:
-
-- **`~/secrets/`** on the host, mounted read-only at **`/run/secrets/kaseki/`** in Docker, or **`~/.kaseki/secrets/`** for local runs
-  - Your API keys and credentials
-- Permissions set to directory mode `750` and file mode `640`, with group `10000` access for the container
-
-- **`.env`** (current directory, mode `600`)
-- Configuration for Docker Compose or local runs
-- Contains the immutable image digest, gateway URL/model, and host paths; it contains no secret values
-
----
-
-## Host Setup (Phase 1-5)
-
-**New in v2.5**: Comprehensive host setup validation and troubleshooting tools.
-
-### Validate Your Setup
-
-```bash
-# Check if host is ready for Kaseki (no changes)
-kaseki-agent host preflight
-```
-
-This runs through 8 validation stages and outputs structured JSON:
-
-```json
-{
-  "status": "ok",
-  "checks": {
-    "checkout_freshness_probe": "ok",
-    "template_ready": "ok"
-  },
-  "performance": {
-    "stage_1_ms": 45,
-    "probe_duration_ms": 2150
-  }
-}
-```
-
-### Fix Setup Issues
-
-If validation reports failures:
-
-```bash
-# Fix all identified issues
-sudo kaseki-agent host setup --fix
-
-# Verify fixes took effect
-kaseki-agent host preflight
-```
-
-### Understanding Validation Stages (Phase 4-5)
-
-- **Stage 1**: Host prerequisites (git, utilities)
-- **Stage 2**: Create/fix /agents directories
-- **Stage 3-4**: Configure secrets & checkout (run in parallel - Phase 4)
-- **Stage 5**: Bootstrap checkout (conditional on Stage 6)
-- **Stage 6**: Checkout freshness probe (parallel privilege tools - Phase 4)
-- **Stage 7**: Verify fixes applied
-- **Stage 8**: Template verification
-- **Stage 9**: API container recreation (optional)
-
-**Phase 4 Optimizations**:
-
-- Stages 3 & 4 run in parallel (~250ms combined vs. ~500ms sequential)
-- Privilege tools tested in parallel (~2s vs. ~6s)
-
-**Phase 5 Documentation**:
-
-- [HOST_SETUP_STAGES.md](docs/archive/HOST_SETUP_STAGES.md) — Detailed stage information & execution flow
-- [HOST_SETUP_TROUBLESHOOTING.md](docs/archive/HOST_SETUP_TROUBLESHOOTING.md) — 11+ failure scenarios with diagnosis & fixes
-- [HOST_SETUP_API_REFERENCE.md](HOST_SETUP_API_REFERENCE.md) — JSON schemas, function reference & integration examples
-
----
-
-## Troubleshooting
-
-### Permission Errors on Startup?
-
-```bash
-./scripts/setup-secrets.sh --fix
-docker compose restart kaseki-api
-
-# Or use new host setup tool
-sudo kaseki-agent host setup --fix
-```
-
-### Secrets Not Found?
-
-Check where they're stored:
-
-```bash
-ls -la "$HOME/secrets/"                    # Host Docker source
-docker exec kaseki-api ls -la /run/secrets/kaseki/  # Container mount
-ls -la ~/.kaseki/secrets/                   # Local
-
-# Or diagnose with host setup
-# Verify secrets are accessible via Docker or local paths
-```
-
-### API Key Not Working?
-
-Verify the files are readable:
-
-```bash
-docker exec kaseki-api test -r /run/secrets/kaseki/llm_gateway_api_key
-docker exec kaseki-api test -r /run/secrets/kaseki/kaseki_api_keys
-```
-
-If it looks correct, try running the API service again:
-
-```bash
-docker compose up kaseki-api
-```
-
-### Host Setup or Permission Issues?
-
-See [HOST_SETUP_TROUBLESHOOTING.md](docs/archive/HOST_SETUP_TROUBLESHOOTING.md) for detailed diagnosis of 11+ common failure scenarios.
-
----
-
-## Single-Run Execution
-
-**Best for**: One-off tasks, CI/CD scripts, experiments
-
-```bash
-export LLM_GATEWAY_URL=https://llmgateway.local.xyz/v1
-export LLM_GATEWAY_API_KEY=your-api-key-here
-./run-kaseki.sh https://github.com/user/repo main
-```
-
-Check results: `ls -la /agents/kaseki-results/`
-
----
-
-## Goal-Setting Agent (Pre-Scouting Prompt Enhancement)
-
-**New in v2.7**: The goal-setting agent runs **before scouting** to upgrade your task prompt into a mature, specific goal.
-
-### What's Goal-Setting?
-
-The goal-setting agent:
-
-1. Reads your raw task prompt
-2. Analyzes for clarity, measurability, and scope
-3. Creates an **upgraded goal** with clear success criteria
-4. Returns a refined prompt that improves downstream agent performance
-
-**Example**:
-
-- **Your prompt**: "Fix the parser"
-- **Upgraded goal**: "Fix parseRole() to safely handle null/undefined values in FriendlyName field. Add test coverage for 5 edge cases. All tests must pass."
-
-### Enable Goal-Setting
-
-Goal-setting is **enabled by default**. To disable it:
-
-```bash
-export KASEKI_GOAL_SETTING=0
-./run-kaseki.sh
-```
-
-Or via API:
-
-```json
-{
-  "repoUrl": "https://github.com/user/repo",
-  "taskPrompt": "Your task prompt",
-  "goalSetting": {
-    "enabled": false
-  }
-}
-```
-
-### Fine-Tune Goal-Setting
-
-Use a different model or timeout:
-
-```bash
-export KASEKI_GOAL_SETTING_MODEL=gpt-4-turbo
-export KASEKI_GOAL_SETTING_TIMEOUT_SECONDS=600
-./run-kaseki.sh
-```
-
-### Check Goal-Setting Results
-
-After a run:
-
-- `/results/goal-setting.json` — The upgraded goal with reasoning
-- `/results/goal-setting-events.jsonl` — Agent activity details
-
-Example output:
-
-```json
-{
-  "original_prompt": "Fix the parser bug",
-  "upgraded_goal": "Fix parseRole() to handle null FriendlyName safely.",
-  "key_requirements": ["Handle null values", "Preserve valid inputs"],
-  "success_criteria": ["All tests pass", "No TypeErrors"],
-  "confidence": "high"
-}
-```
-
-For detailed guidance, see [GOAL_SETTING_GUIDE.md](../docs/GOAL_SETTING_GUIDE.md).
-
----
-
-## Scouting Agent & Allowlist Control
-
-**New in v2.6**: When you enable scouting, the agent automatically analyzes the task and generates allowlist patterns to narrow the scope of the main coding agent.
-
-### What's Scouting?
-
-1. **Research Phase**: Scouting agent (Pi) reads the repository and task prompt (read-only)
-   - Identifies relevant files, dependencies, and constraints
-   - Generates a task plan and validation strategy
-   - Outputs structured research to `scouting.json`
-
-2. **Allowlist Generation**: Scouting recommends which files the main coding agent should modify
-   - Generates glob patterns (e.g., `src/parser.ts`, `tests/**`, `src/lib/parser.ts`)
-   - Calculates coverage metrics (% of changed files matching patterns)
-   - Warns if patterns are too broad (>98%) or too narrow (<30%)
-
-3. **Merge & Apply**: Scouting patterns are merged with any user-provided allowlist, then applied to the main agent
-   - Both agent-phase and validation-phase allowlists are controlled
-   - Main agent runs with narrowed scope, reducing unwanted changes
-
-### Enable Scouting
-
-Via environment variable:
-
-```bash
-export KASEKI_SCOUTING=1
-export LLM_GATEWAY_URL=https://llmgateway.local.xyz/v1
-export LLM_GATEWAY_API_KEY=your-api-key-here
-./run-kaseki.sh
-```
-
-Or via API request:
-
-```json
-{
-  "repoUrl": "https://github.com/user/repo",
-  "taskPrompt": "Fix the parser bug in src/parser.ts",
-  "scouting": {
-    "enabled": true,
-    "model": "auto",
-    "timeoutSeconds": 300
-  }
-}
-```
-
-### Combine with Manual Allowlist
-
-If you also provide a custom allowlist, both are **merged** (union):
-
-```bash
-export KASEKI_SCOUTING=1
-export KASEKI_CHANGED_FILES_ALLOWLIST="src/** tests/**"
-./run-kaseki.sh
-```
-
-In this case:
-
-- Scouting recommends: `src/parser.ts src/lexer.ts tests/parser.test.ts`
-- You provide: `src/** tests/**`
-- **Result**: Main agent can modify any files in `src/` or `tests/` (broadest of both)
-
-### Check Scouting Results
-
-After a run, inspect:
-
-- `/results/scouting.json` — Full research artifact with recommended patterns
-- `/results/scouting-report.md` — Coverage metrics and warnings
-- `/results/restoration.jsonl` — Log of allowlist merge decisions
-
-Example `scouting.json`:
-
-```json
-{
-  "task": "Fix parser bug when handling nested expressions",
-  "plan": ["Identify parse error", "Update parser logic", "Add test"],
-  "suggested_allowlist": {
-    "agent_patterns": ["src/lib/parser.ts", "tests/parser.validation.ts"],
-    "validation_patterns": ["src/lib/parser.ts", "tests/**"]
-  },
-  "coverage": {
-    "agent_phase_percent": 75,
-    "validation_phase_percent": 85,
-    "warnings": ["patterns too narrow"]
-  }
-}
-```
-
----
-
-## Advanced Configuration
-
-For more options (timeouts, validation commands, quality gates, etc.), see:
-
-- [docs/ADVANCED_CONFIG.md](../docs/ADVANCED_CONFIG.md) — 60+ environment variables
-- [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md) — Production deployment guide
-- [docs/TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md) — Common issues
-
----
-
-## Questions?
-
-- **Setup issues?** Check [docs/TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)
-- **Need help?** Open an issue: [github.com/CyanAutomation/kaseki-agent/issues](https://github.com/CyanAutomation/kaseki-agent/issues)
-- **More features?** See [docs/ADVANCED_CONFIG.md](../docs/ADVANCED_CONFIG.md)
-
-- [ ] API accessible from CI/CD: correct base URL and firewall rules
-- [ ] Logging configured: `KASEKI_LOG_DIR` points to persistent storage
-- [ ] Monitoring/alerts setup (optional): track API health, queue depth
-
-### Common Issues
-
-**Permission denied writing to `/agents`**
-
-```bash
-sudo mkdir -p /agents
-sudo chown 10000:10000 /agents
-sudo chmod 775 /agents
-```
-
-Or run: `sudo kaseki-agent host setup --fix`
-
-**Preflight reports a deleted bind mount**
-
-The host directory was removed after the container started. Recreate the host
-directories, then recreate the container:
-
-```bash
-sudo npm install -g @cyanautomation/kaseki-agent@latest
-sudo kaseki-agent host setup --fix --recreate-api --wait-ready
-sudo kaseki-agent host preflight
-```
-
-**Docker socket not accessible**
-
-```bash
-# Verify socket exists and is readable
-ls -la /var/run/docker.sock
-
-# If using rootless Docker, adjust mount path
-# See: https://docs.docker.com/engine/security/rootless/
-```
-
-**API service won't start**
-
-```bash
-# Check logs
-docker compose logs kaseki-api
-
-# Verify Docker image is available
-docker pull docker.io/cyanautomation/kaseki-agent:latest
-```
-
-**Host log mirror warning at startup**
-
-If `KASEKI_LOG_DIR` is not writable, startup prints a warning and continues by default.
-
-- To fail fast instead: `KASEKI_STRICT_HOST_LOGGING=1`
-- To keep mirroring enabled: set `KASEKI_LOG_DIR` to a writable host path
-
----
-
-## Advanced Configuration
-
-All three paths support advanced customization via environment variables:
-
-### Common Customizations
-
-**Restrict files agent can modify**:
-
-```bash
-KASEKI_CHANGED_FILES_ALLOWLIST="src/** tests/**"
-```
-
-**Use a different AI model** (check your gateway for available models):
-
-```bash
-KASEKI_MODEL=gpt-4-turbo
-```
-
-**Increase timeout for complex tasks**:
-
-```bash
-KASEKI_AGENT_TIMEOUT_SECONDS=3600  # 1 hour
-```
-
-**Skip pre-flight validation** (only validate after agent runs):
-
-```bash
-KASEKI_PRE_AGENT_VALIDATION=false
-```
-
-**Disable TypeScript pre-check** (enabled by default for early error detection):
-
-```bash
-KASEKI_TS_PRE_CHECK=0
-```
-
-By default, kaseki-agent runs `npm run build` before invoking the agent to catch TypeScript compilation errors early (saves ~15 minutes when export issues occur). This is automatic and transparent; errors are logged to `/results/pre-validation-ts-check.log`.
-
----
-
-## Baseline Test Failure Comparison
-
-**New in v2.8**: Kaseki automatically compares test results before and after the agent's changes to identify newly-introduced failures.
-
-### What's Baseline Validation?
-
-Baseline validation checks out the `main` branch and runs your validation commands (tests) on the pristine code, then compares against the agent's modified code:
-
-- **Pre-existing failures**: Failures that existed in main (not the agent's fault)
-- **Newly-introduced failures**: Tests that passed in main but fail after agent changes ⚠️
-- **Fixed failures**: Tests that failed in main but now pass ✅
-
-### Enable Baseline Validation
-
-Baseline validation is **enabled by default**. Just set your validation commands:
-
-```bash
-export KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run test"
-./run-kaseki.sh https://github.com/user/repo main
-```
-
-To disable it:
-
-```bash
-export KASEKI_BASELINE_VALIDATION_ENABLED=0
-```
-
-### View Results
-
-After the run, check:
-
-- **result-summary.md** — Quick summary:
-
-  ```
-  - Test failure analysis: completed
-    - ⚠️ **Newly introduced failures: 1**
-  ```
-
-- **test-baseline-comparison.json** — Full breakdown:
-
-  ```json
-  {
-    "summary": {
-      "total_pre_existing": 2,
-      "total_newly_introduced": 1,
-      "total_fixed": 0
-    },
-    "classification": {
-      "should validate input": {
-        "category": "pre-existing"
-      },
-      "should handle null": {
-        "category": "newly-introduced"
-      }
-    }
-  }
-  ```
-
-- **metadata.json** — Quick metrics:
-
-  ```json
-  {
-    "test_failure_classification_status": "completed",
-    "newly_introduced_failures_count": 1
-  }
-  ```
-
-### Optimize Cache
-
-First run caches the main branch baseline; subsequent runs reuse it (faster):
-
-```bash
-# Run 1: ~30-60 sec overhead (baseline checkout + validation)
-# Run 2-N: baseline reused from cache (~2 sec overhead)
-
-# Control cache expiration (days):
-export KASEKI_BASELINE_CACHE_MAX_AGE_DAYS=14
-```
-
-### Use Case: Quality Gate
-
-Fail the run if agent introduces failures:
-
-```bash
-./run-kaseki.sh
-
-NEWLY_INTRO=$(jq '.summary.total_newly_introduced' \
-  /agents/kaseki-results/kaseki-1/test-baseline-comparison.json)
-
-if [ "$NEWLY_INTRO" -gt 0 ]; then
-  echo "❌ Agent introduced $NEWLY_INTRO failures"
-  exit 1
+if ! command -v curl >/dev/null 2>&1; then
+  sudo apt-get update && sudo apt-get install -y ca-certificates curl
 fi
+curl -fsSL https://github.com/CyanAutomation/kaseki-agent/releases/latest/download/bootstrap-pi.sh \
+  -o /tmp/kaseki-bootstrap-pi.sh
+curl -fsSL https://github.com/CyanAutomation/kaseki-agent/releases/latest/download/bootstrap-pi.sh.sha256 \
+  -o /tmp/bootstrap-pi.sh.sha256
+(cd /tmp && sha256sum -c bootstrap-pi.sh.sha256)
+bash /tmp/kaseki-bootstrap-pi.sh
 ```
 
-**For detailed guide**: → See [docs/BASELINE_TEST_COMPARISON.md](../docs/BASELINE_TEST_COMPARISON.md)
+The source bundle is installed in `~/kaseki-agent`. On a host that already has
+a checkout, update that checkout and run `bash scripts/setup-pi.sh` there.
 
-### Complete Variable Reference
+## 2. Enter provider settings
 
-For full documentation of all 60+ configuration variables:
-→ See [docs/ADVANCED_CONFIG.md](../docs/ADVANCED_CONFIG.md)
+Kaseki needs the base URL for an OpenAI-compatible model gateway. Examples:
 
-Variables are organized by zone:
+- Cloudflare AI Gateway: `https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat`
+- OpenAI API: `https://api.openai.com/v1`
+- Ollama on your network: `http://<ollama-host-ip>:11434/v1`
 
-- **Execution**: What code to run
-- **Validation**: What to check
-- **Caching**: Performance optimization
-- **Infrastructure**: API service & Docker
-- **Advanced**: Experimental features
+The default model route is `dynamic/kaseki-agent`. Set `KASEKI_SETUP_LLM_GATEWAY_MODEL`
+only when your gateway requires a provider-specific model identifier. Use a
+base endpoint without embedded credentials, query parameters, or a fragment.
 
----
+The gateway key is read silently into `~/secrets/llm_gateway_api_key` when that
+file does not already exist. Kaseki creates its own API bearer token in
+`~/secrets/kaseki_api_keys`. Setup does not infer the gateway URL from secret
+filenames, put secret values in `.env`, or send an inference request. The
+OpenRouter key is optional and is used only for configured evaluation stages;
+GitHub App files are optional unless you use those operations.
 
-## Next Steps
+The `/ready` check confirms that the local API started. It does not contact the
+gateway, validate the provider key, or confirm that the selected model is
+available; setup avoids a provider request that could incur cost.
 
-### For Understanding
+You can provide the URL without putting a key in shell history:
 
-- [Architecture Overview](docs/internal/IMPLEMENTATION_SUMMARY.md) — How kaseki-agent works
-- [Advanced Configuration](../docs/ADVANCED_CONFIG.md) — All 60+ variables explained
-- [Troubleshooting](../docs/TROUBLESHOOTING.md) — Error decision tree
+```bash
+KASEKI_SETUP_LLM_GATEWAY_URL='https://your-gateway.example/v1' \
+  bash ~/kaseki-agent/scripts/setup-pi.sh
+```
 
-### For Integration
+## 3. Confirm the API is ready
 
-- [CI/CD Integration](../docs/CI_CD_INTEGRATION.md) — GitHub Actions, GitLab CI, etc.
-- [API Reference](../docs/API.md) — REST API endpoints and schemas
-- [Distributed Setup](../docs/DISTRIBUTED_SETUP.md) — Multi-host deployments
+Setup pulls and pins the architecture-matched image digest, validates the
+rendered Compose configuration, starts the service, and waits up to three
+minutes for the container healthcheck to pass `/ready`. Docker displays layer
+download progress. In the October 2026 Pi evaluation, Docker reported an image
+size of about 546 MB and the uncached pull took a few minutes; actual transfer
+time depends on the registry connection and cached layers.
 
-### For Operations
+```bash
+cd ~/kaseki-agent
+docker compose ps
+curl http://127.0.0.1:8080/ready
+bash scripts/setup-pi.sh --diagnose
+```
 
-- [Deployment Guide](../docs/DEPLOYMENT.md) — Production hardening, monitoring
-- [Disaster Recovery](#) — Not yet documented
-- [Cost Estimation](../docs/COST_ESTIMATION.md) — Gateway pricing, cost optimization
+The API listens on `127.0.0.1:8080` by default. From another computer, use an
+SSH tunnel:
 
----
+```bash
+ssh -L 8080:127.0.0.1:8080 pi@<pi-address>
+```
 
-## Getting Help
+For direct LAN access, bind to the Pi's LAN IP and rerun setup:
 
-**First time?**
-→ Re-read the [Decision Tree](#decision-tree) section above
+```bash
+cd ~/kaseki-agent
+KASEKI_API_BIND_ADDRESS=192.168.88.200 bash scripts/setup-pi.sh
+```
 
-**Configuration issue?**
-→ Run: `kaseki-agent doctor --verbose`
-→ Check: [docs/TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)
+Restrict port 8080 in the host firewall to trusted clients and keep the bearer
+token private. Kaseki mounts the Docker socket to create worker containers, so
+an API token has broad control over host Docker and should be treated like a
+host administrator credential. Setup warns about existing containers that
+publish Docker management ports 2375 or 2376 and leaves those services alone.
 
-**Found a bug?**
-→ Open an issue: <https://github.com/CyanAutomation/kaseki-agent/issues>
+## Credentials and permissions
 
-**Want to contribute?**
-→ See: [CONTRIBUTING.md](../CONTRIBUTING.md)
+The setup script stores the gateway key and API token in files under
+`~/secrets`, sets directory mode `0750`, and sets file mode `0640` with access
+for container GID 10000. `.env` stores only non-secret settings and the pinned
+image digest. Do not place credentials in command arguments, environment
+values, or `.env`.
 
----
+## Troubleshooting and updates
 
-**Happy coding! 🚀**
+- Run `bash scripts/setup-pi.sh --diagnose` to inspect Docker, disk space,
+  secret filenames and permissions, published ports, and current health without
+  changing the deployment or printing secret values.
+- If startup fails, setup shows Compose status and startup logs after replacing
+  values found in secret files. To inspect logs yourself, run
+  `docker compose logs --tail=80 kaseki-api`.
+- To update to the current `latest` image, run
+  `KASEKI_API_IMAGE=docker.io/cyanautomation/kaseki-agent:latest bash scripts/setup-pi.sh`
+  from the source checkout. The script records the newly pulled immutable
+  digest in `.env`.
+- On first boot, change the default `pi` password and configure SSH keys. The
+  Kaseki setup does not alter SSH or existing Docker services.
+
+For lower-level Compose options, see [DOCKER_SETUP.md](DOCKER_SETUP.md) and
+[DEPLOYMENT.md](DEPLOYMENT.md).

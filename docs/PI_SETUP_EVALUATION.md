@@ -1,5 +1,9 @@
 # Raspberry Pi 4 Setup Evaluation
 
+> Historical evaluation snapshot. Host and image details have since changed;
+> use [PI_SETUP_EVALUATION_2026-10-06.md](PI_SETUP_EVALUATION_2026-10-06.md)
+> for the current findings and implementation status.
+
 ## Result
 
 The setup experience has been streamlined in this checkout, and the Pi's

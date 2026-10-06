@@ -1,565 +1,115 @@
-# Container-Based Setup Guide
+# Docker Setup
 
-This guide covers the **simplified container-based workflows** for kaseki-agent. These are ideal for users who want to minimize host-level complexity.
+The supported Pi deployment runs the `kaseki-api` service with Docker Compose.
+The API container launches short-lived worker containers from the same pinned
+Kaseki image. It needs the host Docker socket, a mounted workspace, and secret
+files.
 
-## Quick Start (Choose Your Scenario)
+For a clean Raspberry Pi, follow [QUICK_START.md](QUICK_START.md). The release
+bootstrap checks the OS and architecture, installs Docker Engine and Compose
+when needed, checks disk space, verifies its release bundle checksum, and runs
+the setup script. Docker is installed from the official Docker Debian apt
+repository on Debian 12/13 and 64-bit Raspberry Pi OS.
 
-### **Scenario A: Interactive Setup (Easiest)**
+## Existing Docker host
 
-Perfect for: Single host, local development, first-time users
-
-```bash
-# 1. One-time setup (interactive, saves API key)
-docker run -it \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v ~/.kaseki/secrets:/secrets \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  setup
-
-# 2. Run your first task (API key already saved)
-docker run -it \
-  -v ~/.kaseki/secrets:/secrets \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  agent https://github.com/your-org/your-repo main
-```
-
-**Or with the convenience wrapper (if you've installed kaseki):**
+From a repository checkout:
 
 ```bash
-./kaseki setup
-./kaseki agent https://github.com/your-org/your-repo main
+bash scripts/setup-pi.sh
 ```
 
----
+The setup script:
 
-### **Scenario B: One-Command Run (No Setup)**
+1. Checks Docker Engine and Compose access, including sudo fallback.
+2. Prompts for an OpenAI-compatible gateway base URL and a hidden key when
+   neither is already configured.
+3. Stores provider and API credentials only in host files and sets the access
+   required by the container's UID/GID 10000.
+4. Creates `/agents` paths and checks for port conflicts and published Docker
+   management endpoints.
+5. Pulls the image for the host architecture, records its immutable registry
+   digest in `.env`, and checks `docker compose config`.
+6. Starts Compose and waits up to three minutes for the container's `/ready`
+   healthcheck to pass.
 
-Perfect for: CI/CD, temporary runs, scripts
+Setup does not make an inference request. The gateway URL is required because
+it cannot be determined from the API key. The default model is
+`dynamic/kaseki-agent`. OpenRouter credentials are optional and used only for
+evaluation stages; GitHub App credentials are optional unless those features
+are used.
+
+The `/ready` healthcheck confirms the local API is running. It does not contact
+the gateway or validate provider authentication/model availability; setup
+avoids a provider request that could incur cost.
+
+## Provider and secret files
+
+Supported gateway URL examples include:
+
+- Cloudflare AI Gateway: `https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat`
+- OpenAI: `https://api.openai.com/v1`
+- Ollama on a LAN host: `http://<host-ip>:11434/v1`
+
+The key is stored at `~/secrets/llm_gateway_api_key`. Kaseki creates
+`~/secrets/kaseki_api_keys` for API bearer authentication. Existing files are
+reused without displaying their contents. The directory is mode `0750`, files
+are mode `0640`, and group 10000 can read them. `.env` contains the gateway URL,
+model, image digest, and host settings, but no credential values.
+
+To use a different credential file:
 
 ```bash
-# Single command, API key from environment variable
-OPENROUTER_API_KEY=sk-or-v1-your-key docker run -it \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  run-mode https://github.com/your-org/your-repo main
+KASEKI_SETUP_LLM_GATEWAY_API_KEY_FILE=/path/to/gateway-key \
+  bash scripts/setup-pi.sh
 ```
 
-**Or with wrapper:**
+Keep credentials out of URL userinfo and environment variables. The setup
+script rejects gateway URLs with credentials, query parameters, or fragments.
+
+## API network access
+
+Compose binds to `127.0.0.1:8080` by default. An SSH tunnel provides access
+from a trusted workstation without exposing the port on the LAN:
 
 ```bash
-OPENROUTER_API_KEY=sk-or-v1-your-key ./kaseki run-mode \
-  https://github.com/your-org/your-repo main
+ssh -L 8080:127.0.0.1:8080 pi@<pi-address>
 ```
 
----
-
-### **Scenario C: Multi-Host Setup (From Controller)**
-
-Perfect for: Distributed execution, managing multiple Pi/hosts
-
-**From your controller machine (Mac, Linux):**
+For direct LAN access, configure a specific host interface and rerun setup:
 
 ```bash
-# Bootstrap each host
-docker run \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  setup-remote pi@192.168.88.201 sk-or-v1-your-key
-
-docker run \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  setup-remote pi@192.168.88.202 sk-or-v1-your-key
-
-# Then run tasks on each host via SSH
-ssh pi@192.168.88.201 \
-  'docker run -it \
-    -v ~/.kaseki/secrets:/secrets \
-    -v /var/run/docker.sock:/var/run/docker.sock \
-    docker.io/cyanautomation/kaseki-agent:latest \
-    agent https://github.com/your-org/your-repo main'
+KASEKI_API_BIND_ADDRESS=192.168.88.200 bash scripts/setup-pi.sh
 ```
 
----
+Restrict port 8080 in the host firewall and use the bearer token from
+`~/secrets/kaseki_api_keys`. The mounted Docker socket allows the API to manage
+host containers; protect the API token as a host administrator credential.
+Do not expose the Docker daemon on port 2375/2376 without strong access
+controls. Setup reports existing published Docker management ports but does
+not stop or reconfigure containers.
 
-## Entry Points Reference
-
-The container supports the following entry points (commands):
-
-### `setup` — Interactive Setup Wizard
-
-**Purpose:** Securely prompt for API key and validate configuration
-
-**Usage:**
+## Diagnostics and common commands
 
 ```bash
-docker run -it \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v ~/.kaseki/secrets:/secrets \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  setup
+bash scripts/setup-pi.sh --diagnose  # no changes; prints no credential values
+docker compose ps
+docker compose logs --tail=80 kaseki-api
+curl http://127.0.0.1:8080/ready
 ```
 
-**What it does:**
+On a startup failure, the setup script shows Compose status and redacts values
+read from secret files before printing the last 80 log lines. If a manual
+review is needed, Compose logs may contain application configuration details;
+inspect them before sharing.
 
-1. Prompts: "Enter your OpenRouter API key (sk-or-v1-...): "
-2. Creates `~/.kaseki/secrets/openrouter_api_key` with mode 600
-3. Validates Docker daemon accessibility
-4. Confirms Pi CLI availability
-5. Reports readiness status
-
-**Credential sources (in priority order):**
-
-1. Existing `/secrets/openrouter_api_key` file (asks to reuse)
-2. `OPENROUTER_API_KEY` environment variable (if set)
-3. Interactive prompt (if neither above)
-
----
-
-### `doctor` — Health Check & Diagnostics
-
-**Purpose:** Validate system readiness for kaseki operations
-
-**Usage:**
+To update the image from a source checkout, set the tag for one setup run. The
+script pulls it and writes the immutable digest to `.env`:
 
 ```bash
-docker run \
-  -v ~/.kaseki/secrets:/secrets \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  doctor
+KASEKI_API_IMAGE=docker.io/cyanautomation/kaseki-agent:latest \
+  bash scripts/setup-pi.sh
 ```
 
-**Validates:**
-
-- Docker daemon accessibility
-- Pi CLI availability
-- API key file readability
-- Image and tools integrity
-
----
-
-### `agent` — Run Agent Task
-
-**Purpose:** Execute kaseki-agent against a repository
-
-**Usage:**
-
-```bash
-docker run -it \
-  -v ~/.kaseki/secrets:/secrets \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  agent <repo-url> <git-ref> [task-prompt]
-```
-
-**Arguments:**
-
-- `<repo-url>` — Git repository URL (e.g., `https://github.com/org/repo`)
-- `<git-ref>` — Branch, tag, or commit (e.g., `main`, `v1.0.0`, `abc1234`)
-- `[task-prompt]` — Optional: Custom task description (overrides default)
-
-**Example:**
-
-```bash
-docker run -it \
-  -v ~/.kaseki/secrets:/secrets \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v results:/results \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  agent https://github.com/CyanAutomation/crudmapper main \
-    "Refactor the auth module"
-```
-
-**Environment variables (optional):**
-
-- `KASEKI_AGENT_TIMEOUT_SECONDS` — Timeout in seconds (default: 10800 / 3 hours)
-- `KASEKI_MODEL` — Pi model to use (default: dynamic/kaseki-agent)
-- `KASEKI_VALIDATION_COMMANDS` — Validation steps (default: npm run check; npm run test; npm run build)
-- `KASEKI_CHANGED_FILES_ALLOWLIST` — Restrict which files can change
-- `KASEKI_MAX_DIFF_BYTES` — Maximum diff size (default: 400000 bytes)
-
-**Result location:**
-
-- Output: Streamed to stdout in real-time
-- Artifacts: Saved to `/results` (mounted volume)
-
----
-
-### `run-mode` — One-Command Run
-
-**Purpose:** Execute a complete run with API key from
-  environment variable (no pre-setup)
-
-**Usage:**
-
-```bash
-OPENROUTER_API_KEY=sk-or-v1-your-key docker run -it \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v results:/results \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  run-mode <repo-url> <git-ref> [task-prompt]
-```
-
-**Key differences from `agent` mode:**
-
-- API key comes from `OPENROUTER_API_KEY` env var (not file)
-- No pre-setup required
-- One-shot execution (no need for `./kaseki setup` first)
-- Ideal for CI/CD, scripts, temporary runs
-
-**Example:**
-
-```bash
-OPENROUTER_API_KEY=sk-or-v1-abc... docker run -it \
-  -e OPENROUTER_API_KEY \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  run-mode https://github.com/org/repo main
-```
-
-**Security note:** API key is read from environment, written to a secure temp file (mode 600), and the environment variable is cleared immediately to prevent exposure in child process listings.
-
----
-
-### `setup-remote` — Remote Host Setup
-
-**Purpose:** Bootstrap kaseki-agent on a remote host via SSH
-  (orchestrated from container)
-
-**Usage:**
-
-```bash
-docker run \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  setup-remote <remote-host> <api-key-or-file>
-```
-
-**Arguments:**
-
-- `<remote-host>` — SSH destination (e.g., `pi@192.168.88.201`)
-- `<api-key-or-file>` — API key directly (sk-or-...) OR path to file
-
-**Examples:**
-
-```bash
-# Inline API key
-docker run \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  setup-remote pi@192.168.88.201 sk-or-v1-your-key
-
-# API key from file
-docker run \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  setup-remote pi@192.168.88.202 ~/.kaseki/secrets/
-    openrouter_api_key
-```
-
-**What it does:**
-
-1. Validates SSH connectivity
-2. Creates `~/.kaseki/secrets/` on remote with proper permissions
-3. Securely transfers API key via stdin (avoids shell history exposure)
-4. Attempts Docker-based setup on remote (if Docker available)
-5. Reports readiness
-
-**Assumptions:**
-
-- SSH keys are already configured (run `ssh-copy-id` first if needed)
-- Remote host has Docker installed (or manually runs kaseki-install.sh)
-
----
-
-## Volume Mounts Reference
-
-### Required Mounts
-
-| Mount | Purpose | Example |
-| ------- | --------- | --------- |
-| **Docker Socket** | Allows container to launch child containers | `-v /var/run/docker.sock:/var/run/docker.sock` |
-| **Secrets** | API key storage | `-v ~/.kaseki/secrets:/secrets` |
-| **Results** | Output artifacts (optional) | `-v ./results:/results` |
-
-### Optional Mounts
-
-| Mount | Purpose | Example |
-|-------|---------|---------|
-| **Git Cache** | Speed up repeated clones | `-v ~/.kaseki/git-cache:/cache/git` |
-| **npm Cache** | Speed up npm installs | `-v ~/.kaseki/npm-cache:/cache/npm` |
-
-### Full Example with All Mounts
-
-```bash
-docker run -it \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v ~/.kaseki/secrets:/secrets \
-  -v ./results:/results \
-  -v ~/.kaseki/git-cache:/cache/git \
-  -v ~/.kaseki/npm-cache:/cache/npm \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  agent https://github.com/org/repo main
-```
-
----
-
-## Convenience Wrapper Script
-
-If you've installed the `kaseki` wrapper script at the root, you can use simplified commands:
-
-```bash
-# Interactive setup
-./kaseki setup
-
-# Health check
-./kaseki doctor
-
-# Run agent task (uses saved API key)
-./kaseki agent https://github.com/org/repo main
-
-# One-command run (uses OPENROUTER_API_KEY env var)
-OPENROUTER_API_KEY=sk-or-... ./kaseki run-mode https://github.com/org/repo main
-
-# Multi-host setup
-./kaseki setup-remote pi@host1 sk-or-key
-./kaseki setup-remote pi@host2 sk-or-key
-```
-
-### Installing the Wrapper
-
-The `kaseki` script is at the repository root:
-
-```bash
-# Option 1: Use directly from repo
-cd /path/to/kaseki-agent
-./kaseki setup
-
-# Option 2: Copy to PATH for system-wide access
-cp ./kaseki ~/bin/kaseki
-chmod +x ~/bin/kaseki
-kaseki setup
-
-# Option 3: Create symlink
-ln -s /path/to/kaseki-agent/kaseki ~/bin/kaseki
-```
-
----
-
-## Environment Variables
-
-### Execution Control
-
-| Variable | Default | Purpose |
-| ---------- | --------- | --------- |
-| `KASEKI_IMAGE` | `docker.io/cyanautomation/kaseki-agent:latest` | Docker image to use |
-| `KASEKI_INSTANCE` | `kaseki-run` | Instance name (for run-mode) |
-| `KASEKI_RESULTS_DIR` | `/results` | Results directory |
-| `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | Agent timeout (3 hours) |
-
-### Credentials
-
-| Variable | Purpose |
-|----------|---------|
-| `OPENROUTER_API_KEY` | API key (for run-mode only; not recommended for interactive use) |
-| `OPENROUTER_API_KEY_FILE` | Path to API key file (set automatically during setup) |
-
-### Agent Configuration
-
-| Variable | Purpose |
-| ---------- | --------- |
-| `TASK_PROMPT` | Custom task description |
-| `KASEKI_MODEL` | Model to use (default: dynamic/kaseki-agent) |
-| `KASEKI_VALIDATION_COMMANDS` | Validation steps (semicolon-separated) |
-| `KASEKI_CHANGED_FILES_ALLOWLIST` | Restrict file changes |
-| `KASEKI_MAX_DIFF_BYTES` | Maximum diff size (bytes) |
-
----
-
-## Common Workflows
-
-### Workflow 1: Daily Development Tasks
-
-```bash
-# Day 1: Initial setup
-docker run -it \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v ~/.kaseki/secrets:/secrets \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  setup
-
-# Days 2+: Run tasks (API key cached)
-docker run -it \
-  -v ~/.kaseki/secrets:/secrets \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v results:/results \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  agent https://github.com/my-org/my-repo feature/branch
-```
-
-### Workflow 2: CI/CD Pipeline
-
-```bash
-# In your GitHub Actions / GitLab CI / Jenkins:
-OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }} docker run \
-  -e OPENROUTER_API_KEY \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  run-mode $REPO_URL main "Fix failing tests"
-```
-
-### Workflow 3: Multi-Host Distributed Execution
-
-```bash
-#!/bin/bash
-
-# Bootstrap 3 Pi hosts (from controller)
-for i in 1 2 3; do
-  docker run \
-    docker.io/cyanautomation/kaseki-agent:latest \
-    setup-remote pi@192.168.88.20$i sk-or-v1-your-key
-done
-
-# Run tasks on each host in parallel
-for i in 1 2 3; do
-  host="pi@192.168.88.20$i"
-  ssh "$host" 'docker run -it \
-    -v ~/.kaseki/secrets:/secrets \
-    -v /var/run/docker.sock:/var/run/docker.sock \
-    docker.io/cyanautomation/kaseki-agent:latest \
-    agent https://github.com/org/repo main' &
-done
-
-wait
-echo "All hosts completed!"
-```
-
----
-
-## Troubleshooting
-
-### "Docker daemon not responding"
-
-The container needs access to the Docker socket. Make sure
-you're mounting it:
-
-```bash
-docker run -v /var/run/docker.sock:/var/run/docker.sock ...
-```
-
-If using Docker Desktop (Mac/Windows), ensure Docker Desktop
-is running.
-
-### "API key file not found"
-
-For `setup` and `agent` modes, the API key file must exist at
-`~/.kaseki/secrets/openrouter_api_key`:
-
-```bash
-# Create it manually if needed
-mkdir -p ~/.kaseki/secrets
-echo "sk-or-v1-your-key" > ~/.kaseki/secrets/openrouter_api_key
-chmod 600 ~/.kaseki/secrets/openrouter_api_key
-
-# Or run setup to create it interactively
-docker run -it \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v ~/.kaseki/secrets:/secrets \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  setup
-```
-
-### "OPENROUTER_API_KEY environment variable is required"
-
-For `run-mode`, you must pass the API key as an environment
-variable:
-
-```bash
-OPENROUTER_API_KEY=sk-or-v1-... docker run -it \
-  -e OPENROUTER_API_KEY \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  run-mode https://github.com/org/repo main
-```
-
-### "SSH: permission denied"
-
-For `setup-remote`, you need SSH keys configured:
-
-```bash
-# Generate SSH key (if you don't have one)
-ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519
-
-# Copy public key to remote host
-ssh-copy-id -i ~/.ssh/id_ed25519.pub pi@192.168.88.201
-
-# Test SSH
-ssh pi@192.168.88.201 "echo OK"
-```
-
-### Results not saved
-
-Make sure you're mounting the results directory:
-
-```bash
-docker run -it \
-  ...
-  -v ./results:/results \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  agent ...
-```
-
-Results will be in `./results/` after the run completes.
-
----
-
-## Comparison: Container vs. Host Setup
-
-| Aspect | Container-Based | Host-Based (`run-kaseki.sh`) |
-| -------- | ----------------- | ------------------------------ |
-| **Setup** | `docker run ... setup` | Clone repo, run `./scripts/kaseki-setup.sh` |
-| **Execution** | `docker run ... agent` | `./run-kaseki.sh` |
-| **API key** | File (`/secrets/`) or env var | File (`~/.kaseki/secrets/`) |
-| **Host dependencies** | Docker + curl/wget | Docker + bash + git |
-| **First-time user** | "Run `docker run ... setup`" | "Read SETUP_GUIDE.md" |
-| **Multi-host** | `docker run ... setup-remote` (from controller) | Clone repo, run `pi-setup-remote.sh` on each host |
-
----
-
-## Image Configuration: Pre-Configured Git Safe.directory
-
-The kaseki-agent Docker image comes with system-wide git configuration pre-built to avoid runtime setup overhead:
-
-### What's Pre-Configured
-
-```dockerfile
-# Built into image at layer time
-RUN git config --system --add safe.directory /agents/kaseki-agent
-```
-
-This ensures the git repository at `/agents/kaseki-agent` can be read by the container without additional configuration.
-
-### Why This Matters
-
-- **Eliminates "Dubious Ownership" errors** when git operations access the checkout directory
-- **Works for all users** (including UID 10000 containers) because system-wide config is global
-- **Zero runtime overhead** — no need to configure git during container startup
-- **Backwards compatible** — host-side `ensure_git_safe_directory()` also configures system-wide, so all layers agree
-
-### When to Reconfigure
-
-If you're using a **custom checkout directory** (not `/agents/kaseki-agent`), you need to configure git for that path:
-
-```bash
-# On the host, before running containers:
-sudo git config --system --add safe.directory /your/custom/path
-
-# Or inside a container:
-git config --system --add safe.directory /your/custom/path  # Requires root in container
-```
-
----
-
-## See Also
-
-- [SETUP_GUIDE.md](SETUP_GUIDE.md) — Traditional host-based setup
-- [DEPLOYMENT.md](DEPLOYMENT.md) — REST API service deployment
-- [CLI.md](CLI.md) — Monitoring with kaseki-cli
-- [QUALITY_GATES.md](QUALITY_GATES.md) — Quality gates and allowlists
-- [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) — Writing effective task prompts
+For environment variables and alternative deployment modes, see
+[ENV_VARS.md](ENV_VARS.md) and [DEPLOYMENT.md](DEPLOYMENT.md).

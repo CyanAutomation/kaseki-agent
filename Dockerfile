@@ -91,7 +91,7 @@ COPY --from=deps /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=deps /opt/kaseki/workspace-cache /opt/kaseki/workspace-cache
 
 # Create a wrapper script for the Pi CLI that properly resolves node modules
-# and explicitly loads Kaseki's bundled gateway provider extension. Pi 0.77
+# and explicitly loads Kaseki's bundled gateway provider extension. Pi 0.87.1
 # does not auto-discover image-bundled home extensions for non-interactive
 # commands such as --list-models, so relying on implicit discovery makes
 # preflight pass/fail depend on Pi internals.

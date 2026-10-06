@@ -67,7 +67,8 @@ See [Troubleshooting Startup Failures](#troubleshooting-startup-failures) for di
 - Docker + Docker Compose (for docker-compose deployment)
 - Host `/agents` directory with UID 10000 ownership (see Docker Compose Quick Start above)
 - Node.js ≥ 24.x (for Node.js fallback deployment only)
-- OpenRouter API key for Pi agent invocation (inherited from kaseki-agent)
+- OpenAI-compatible LLM gateway URL and key for coding-agent inference
+- OpenRouter key only when enabling the optional evaluation stages
 
 ## Volume Mounts & Directory Structure
 
@@ -580,73 +581,17 @@ Compose mounts the selected host directory at `/run/secrets/kaseki`; keep provid
 
 ### LLM Provider Configuration
 
-Kaseki Agent uses one active LLM provider per run:
+Coding-agent inference uses the OpenAI-compatible LLM gateway configured by
+`LLM_GATEWAY_URL`, `LLM_GATEWAY_MODEL`, and the file
+`/run/secrets/kaseki/llm_gateway_api_key`. Gateway failures remain gateway
+failures; Kaseki does not switch providers when a request fails. The Raspberry
+Pi setup script stores the gateway key in `$HOME/secrets/llm_gateway_api_key`
+and never writes its value to `.env` or the container environment.
 
-1. **Primary Provider** (selected via `KASEKI_PROVIDER`):
-   - `gateway` (default): LLM Gateway for all agent runs
-   - `openrouter`: OpenRouter directly for all agent runs
-
-OpenRouter is supported as an explicit primary provider, not as a backup path for gateway outages. When `KASEKI_PROVIDER=gateway`, gateway failures are retried on the gateway. If retries are exhausted, the run reports a gateway provider failure instead of switching to OpenRouter.
-
-**Provider Selection & Startup Behavior:**
-
-When the API service starts, it logs the active LLM provider:
-
-```
-ℹ Active LLM provider: gateway
-```
-
-Startup checks are organized by category:
-
-- **Primary LLM Provider** — validates the active provider (gateway or openrouter)
-- **GitHub Integration** — separate from provider choice
-- **Platform Infrastructure** — /agents paths, git config
-
-**Configuration Examples:**
-
-**Using Gateway (recommended, default):**
-
-```bash
-# docker-compose.yml or .env
-KASEKI_PROVIDER=gateway
-LLM_GATEWAY_URL=https://gateway.example.com/v1
-LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api_key
-
-# OpenRouter is not used as a gateway fallback. Configure it only when
-# running OpenRouter directly as the primary provider.
-```
-
-For Raspberry Pi, `bash scripts/setup-pi.sh` stores the provider key in
-`$HOME/secrets/llm_gateway_api_key` and mounts it at the container path above.
-For manual setup, use a secret manager or an interactive hidden prompt; do not
-put the key in `.env` or a command argument.
-
-**Using OpenRouter:**
-
-```bash
-# docker-compose.yml or .env
-KASEKI_PROVIDER=openrouter
-OPENROUTER_API_KEY_FILE=/run/secrets/kaseki/openrouter_api_key
-
-# Gateway settings are not used while OpenRouter is the primary provider.
-```
-
-**Startup Log Example (Gateway Primary):**
-
-```
-ℹ Active LLM provider: gateway
-
-ℹ Checking primary LLM provider...
-✓ LLM_GATEWAY_URL is set
-✓ Gateway API key found and readable: /run/secrets/kaseki/llm_gateway_api_key
-✓ Pi provider registration verified
-
-ℹ Checking fallback LLM provider (OpenRouter)...
-✓ OpenRouter API key found and readable: /run/secrets/kaseki/openrouter_api_key
-
-ℹ Checking GitHub integration...
-✓ GitHub App credentials found
-```
+OpenRouter is an optional credential for evaluation stages. It is not a
+fallback coding provider. GitHub App credentials are also optional and only
+needed for GitHub App operations. See [ENV_VARS.md](ENV_VARS.md) for the exact
+provider variables and evaluation data flow.
 
 ---
 

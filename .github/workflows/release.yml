@@ -94,6 +94,22 @@ jobs:
             fi
           fi
 
+      - name: Publish Raspberry Pi bootstrap bundle
+        if: steps.release.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          set -euo pipefail
+          archive='kaseki-agent-source.tar.gz'
+          git archive --format=tar.gz --output "$archive" "$RELEASE_SHA"
+          sha256sum "$archive" > "$archive.sha256"
+          cp scripts/bootstrap-pi.sh ./bootstrap-pi.sh
+          sha256sum bootstrap-pi.sh > bootstrap-pi.sh.sha256
+          gh release upload "v$RELEASE_VERSION" "$archive" "$archive.sha256" bootstrap-pi.sh bootstrap-pi.sh.sha256
+
       - name: Upload release log
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

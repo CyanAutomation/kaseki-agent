@@ -71,6 +71,12 @@ assert_job_contains "$RELEASE_WORKFLOW" 'publish_npm' 'needs: release' \
   'npm publishing must wait for a successful release'
 assert_job_contains "$RELEASE_WORKFLOW" 'publish_npm' "if: needs.release.outputs.released == 'true'" \
   'npm publishing must be skipped when semantic-release creates no release'
+assert_job_contains "$RELEASE_WORKFLOW" 'release' 'kaseki-agent-source.tar.gz' \
+  'A successful release must publish the source bundle used by Pi bootstrap'
+assert_job_contains "$RELEASE_WORKFLOW" 'release' 'sha256sum "$archive"' \
+  'The Pi bootstrap release bundle must have a SHA-256 checksum'
+assert_job_contains "$RELEASE_WORKFLOW" 'release' 'gh release upload' \
+  'The Pi bootstrap bundle and checksum must be uploaded to the GitHub release'
 
 test -f "$CODEQL_WORKFLOW" || fail 'CodeQL workflow must exist'
 assert_contains "$CODEQL_WORKFLOW" 'pull_request:' \
