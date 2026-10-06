@@ -181,7 +181,8 @@ export function initSentry(customConfig?: Partial<SentryConfig>): Promise<void> 
  */
 export function sentryErrorHandler(): ErrorRequestHandler {
   if (isInitialized && sentrySdk) {
-    return sentrySdk.expressErrorHandler();
+    // Sentry and @types/express expose incompatible Response typings for the same Express middleware signature.
+    return sentrySdk.expressErrorHandler() as unknown as ErrorRequestHandler;
   }
 
   return (error, req, _res, next) => {
