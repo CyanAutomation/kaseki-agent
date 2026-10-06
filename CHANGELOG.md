@@ -4,6 +4,18 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.150.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.149.0...v1.150.0) (2026-10-06)
+
+
+### Bug Fixes
+
+* update proxy-addr for CVE-2026-90711 ([#1497](https://github.com/CyanAutomation/kaseki-agent/issues/1497)) ([abcd7e4](https://github.com/CyanAutomation/kaseki-agent/commit/abcd7e4e5e720a144f982c1e9e8b3a39940f45e0))
+
+
+### Features
+
+* update KASEKI_DECISION_MODEL to use latest Jev model alias across documentation and code ([318db0c](https://github.com/CyanAutomation/kaseki-agent/commit/318db0c3824adb49142b2fb58d44ddefbda5e1ab))
+
 # [1.149.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.148.1...v1.149.0) (2026-10-05)
 
 
