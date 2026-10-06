@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import semver from 'semver';
 
 const fixturesDir = path.resolve(process.cwd(), 'tests/fixtures/docker-package-metadata');
 const rootLockPath = path.resolve(process.cwd(), 'package-lock.json');
@@ -45,6 +46,17 @@ try {
 }
 
 describe('Docker global package registry verification', () => {
+  test('keeps every root lockfile proxy-addr copy on the patched release', () => {
+    const lock = JSON.parse(readFileSync(rootLockPath, 'utf8')) as {
+      packages: Record<string, { version?: string }>;
+    };
+    const proxyAddrCopies = Object.entries(lock.packages)
+      .filter(([packagePath]) => packagePath === 'node_modules/proxy-addr' || packagePath.endsWith('/node_modules/proxy-addr'));
+
+    expect(proxyAddrCopies.length).toBeGreaterThan(0);
+    expect(proxyAddrCopies.every(([, pkg]) => semver.gte(pkg.version ?? '0.0.0', '2.0.8'))).toBe(true);
+  });
+
   test('keeps root lockfile brace-expansion 5.x copies on the patched release', () => {
     const lock = JSON.parse(readFileSync(rootLockPath, 'utf8')) as {
       packages: Record<string, { version?: string }>;
