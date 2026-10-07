@@ -388,7 +388,7 @@ docker compose restart kaseki-api
 ### ✅ Recommended: Docker Compose
 
 ```bash
-# From the repository checkout, run the guided host setup.
+# From the repository checkout, run the guided Pi setup.
 bash scripts/setup-pi.sh
 
 # View logs
@@ -398,8 +398,13 @@ docker compose logs -f kaseki-api
 docker compose down
 ```
 
-On a fresh host, run the host setup helper before starting the API, or any time
-`/api/v1/preflight` reports missing results/template directories:
+The Pi setup script above provisions the host directories and secrets, starts
+Compose, and relies on the image to initialize its bundled template. You do
+not need to run `host setup --fix` just because you pulled a newer image.
+
+For a manual or older deployment, run the host setup helper if the host has not
+been provisioned yet, or when `/api/v1/preflight` reports missing directories,
+template files, or permissions:
 
 ```bash
 sudo npm install -g @cyanautomation/kaseki-agent@latest
