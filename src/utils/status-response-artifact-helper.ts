@@ -14,7 +14,7 @@ import { isPreAgentValidationFailedCommand } from './pre-validation-classificati
 import { DiagnosticExtractor } from './diagnostic-extractor';
 
 const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', 'failure.json', 'stderr.log', 'stdout.log'] as const;
-const DECISION_DIAGNOSTIC_FILES = ['decisions.jsonl'] as const;
+const DECISION_DIAGNOSTIC_FILES = ['decisions.jsonl', 'caveman-routing.jsonl'] as const;
 const PRE_VALIDATION_DIAGNOSTIC_FILES = ['pre-validation.log', 'test-baseline-comparison.json'] as const;
 const GOAL_CHECK_DIAGNOSTIC_FILES = [
   'goal-check-validation-errors.jsonl',
@@ -285,6 +285,7 @@ export class StatusArtifactHelper {
   ): void {
     const phaseDiagnosticEntryPoints: DiagnosticEntryPoint[] = [
       'decisions.jsonl',
+      'caveman-routing.jsonl',
       ...(flags.prioritizePreValidation && flags.includePreValidation
         ? (['pre-validation.log', 'test-baseline-comparison.json'] as DiagnosticEntryPoint[])
         : []),
