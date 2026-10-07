@@ -61,6 +61,10 @@ if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
   printf '%s\n' '{"original_prompt":"make a required change","upgraded_goal":"Make a required change","outcome_policy":"change_required","reasoning":"test","key_requirements":[],"success_criteria":[{"criterion":"Complete the requested repository change","source_requirement":"make a required change","verification_sources":["git.diff"],"smart_score":"high","reasoning":"The repository diff directly verifies the requested change."}]}' > "$RESULTS_DIR/goal-setting-candidate.json"
 elif printf '%s' "\$prompt" | grep -q 'scouting Pi agent'; then
   printf 'scouting\n' >> "$PI_CALLS"
+  if [ "\${FAKE_SCOUTING_MODE:-}" = "timeout" ]; then
+    printf '%s\n' 'simulated scouting timeout' >&2
+    exit 124
+  fi
   # Simulate a model/tool path that exits 0 but forgets to write scouting-candidate.json.
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "$PI_CALLS"
@@ -121,5 +125,40 @@ grep -q 'Failure Detail: critical_change_expectations_failed' "$RESULTS_DIR/resu
 grep -q 'empty diff\|diff is empty\|no patch diff' "$RESULTS_DIR/result-summary.md" || fail "summary did not mention empty diff"
 grep -q 'no-op is not acceptable' "$RESULTS_DIR/goal-check-stderr.log" || fail "retry guidance did not forbid no-op"
 grep -q 'Do not finish until git diff is non-empty' "$RESULTS_DIR/goal-check-stderr.log" || fail "retry guidance did not require non-empty diff"
+
+# Transient scouting failures can proceed with a validated conservative handoff
+# after the bounded retries, while terminal task outcomes remain authoritative.
+find "$RESULTS_DIR" -mindepth 1 -delete
+rm -rf "$TMP_DIR/dependency-cache" "$TMP_DIR/image-cache"
+: > "$PI_CALLS"
+: > "$RUN_LOG"
+set +e
+env FAKE_SCOUTING_MODE=timeout PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="make a required change" \
+  KASEKI_PROVIDER=gateway KASEKI_SCOUTING_MODEL=auto LLM_GATEWAY_URL=http://gateway.test/v1 LLM_GATEWAY_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off KASEKI_TASK_MODE=patch \
+  KASEKI_TYPED_EVALUATION_ENABLED=0 KASEKI_GOAL_SETTING=1 KASEKI_SCOUTING=1 KASEKI_GOAL_CHECK=1 KASEKI_GOAL_CHECK_MAX_RETRIES=0 \
+  KASEKI_WORKSPACE_DIR="$TMP_DIR" KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
+  KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" KASEKI_VALIDATION_COMMANDS=":" KASEKI_SKIP_GATEWAY_HEALTH_CHECK=1 \
+  bash "$MODIFIED_SCRIPT" > "$RUN_LOG" 2>&1
+run_exit=$?
+set -e
+
+[ "$run_exit" -eq 8 ] || fail "expected terminal empty-diff exit 8 after scouting timeout recovery, got $run_exit"
+expected_calls=$'goal-setting\nscouting\nscouting\ncoding\ngoal-check'
+actual_calls="$(cat "$PI_CALLS" 2>/dev/null || true)"
+[ "$actual_calls" = "$expected_calls" ] || fail "scouting timeout fallback did not continue through coding and goal-check"
+[ -s "$RESULTS_DIR/scouting.json" ] || fail "timeout fallback scouting artifact was not produced"
+node - "$RESULTS_DIR/scouting.json" "$RESULTS_DIR/metadata.json" "$RESULTS_DIR/scouting-retry-diagnostics.jsonl" "$RESULTS_DIR/scouting-validation-errors.jsonl" <<'NODE' || fail "scouting timeout fallback was not validated and recorded"
+const fs = require('node:fs');
+const [artifactPath, metadataPath, retryPath, errorsPath] = process.argv.slice(2);
+const artifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+const retries = fs.readFileSync(retryPath, 'utf8').trim().split(/\n+/).map((line) => JSON.parse(line));
+const errors = fs.readFileSync(errorsPath, 'utf8').trim().split(/\n+/).map((line) => JSON.parse(line));
+if (artifact.fallback !== true || !String(artifact.fallback_reason).includes('patch')) throw new Error('expected conservative patch fallback artifact');
+if (metadata.scouting_fallback_used !== true || metadata.scouting_fallback_mode !== 'transient_retries_exhausted') throw new Error('fallback metadata missing or incorrect');
+if (metadata.scouting_exit_code !== 0 || metadata.exit_code !== 8) throw new Error('fallback did not clear scouting failure while preserving terminal empty-diff result');
+if (retries.length !== 2 || retries.some((entry) => entry.exit_code !== 124)) throw new Error('both timeout attempts should be retained in retry diagnostics');
+if (!errors.some((entry) => entry.reason_code === 'patch_transient_fallback_recovered' && entry.recovered === true)) throw new Error('fallback recovery marker missing');
+NODE
 
 echo "PASS: $TEST_NAME"

@@ -16,6 +16,8 @@ export interface DecisionTelemetryRecord {
   usage?: Record<string, unknown>;
   generativeCallsAvoided?: number;
   errorCode?: string;
+  httpStatus?: number;
+  requestId?: string;
 }
 
 const USAGE_FIELDS = [
@@ -62,6 +64,8 @@ export function appendDecisionTelemetry(resultsDir: string, record: DecisionTele
     ...(safeUsage(record.usage) ? { usage: safeUsage(record.usage) } : {}),
     ...(finiteNumber(record.generativeCallsAvoided) ? { generativeCallsAvoided: Math.floor(record.generativeCallsAvoided) } : {}),
     ...(record.errorCode ? { errorCode: record.errorCode.slice(0, 80) } : {}),
+    ...(Number.isInteger(record.httpStatus) && record.httpStatus! >= 100 && record.httpStatus! <= 599 ? { httpStatus: record.httpStatus } : {}),
+    ...(record.requestId && /^[A-Za-z0-9._:/-]{1,128}$/.test(record.requestId) ? { requestId: record.requestId } : {}),
   };
   fs.mkdirSync(resultsDir, { recursive: true });
   fs.appendFileSync(path.join(resultsDir, 'decisions.jsonl'), JSON.stringify(safeRecord) + '\n', { mode: 0o600 });

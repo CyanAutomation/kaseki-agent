@@ -57,6 +57,10 @@ if [ "\${1:-}" = "--list-models" ]; then echo "gateway"; exit 0; fi
 prompt="\${*: -1}"
 if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
   printf 'goal-setting\n' >> "$PI_CALLS"
+  if [ "\${FAKE_GOAL_MODE:-}" = "timeout" ]; then
+    printf '%s\n' 'simulated goal-setting timeout' >&2
+    exit 124
+  fi
   printf '%s\n' '{"original_prompt":"inspect then code","upgraded_goal":"INVALID UPGRADED GOAL SHOULD NOT BE USED","reasoning":"test","key_requirements":"not-an-array","success_criteria":[]}' > "$RESULTS_DIR/goal-setting-candidate.json"
 elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf 'scouting\n' >> "$PI_CALLS"
@@ -103,7 +107,7 @@ run_exit=$?
 set -e
 
 [ "$run_exit" -eq 0 ] || fail "expected zero exit, got $run_exit"
-[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check' ] || fail "Pi calls did not continue through scouting/coding/final goal-check"
+[ "$(cat "$PI_CALLS")" = $'goal-setting\ngoal-setting\nscouting\ncoding\ngoal-check' ] || fail "Pi calls did not continue through scouting/coding/final goal-check"
 [ -s "$RESULTS_DIR/goal-setting-validation-errors.jsonl" ] || fail "missing goal-setting validation errors"
 [ -s "$RESULTS_DIR/goal-setting-validation-summary.txt" ] || fail "missing goal-setting validation summary"
 ! grep -q 'validation_commands_for_goal_prompt: command not found' "$RUN_LOG" || fail "goal-setting prompt called an unloaded validation helper"
@@ -121,7 +125,7 @@ const metadata = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 if (metadata.exit_code !== 0) throw new Error(`expected exit_code 0, got ${metadata.exit_code}`);
 if (metadata.goal_setting_exit_code !== 0) throw new Error(`expected goal_setting_exit_code 0, got ${metadata.goal_setting_exit_code}`);
 if (metadata.failed_command !== '') throw new Error(`expected empty failed_command, got ${metadata.failed_command}`);
-if (metadata.goal_setting_attempts !== 1) throw new Error(`expected one deterministic goal-setting attempt, got ${metadata.goal_setting_attempts}`);
+if (metadata.goal_setting_attempts !== 2) throw new Error('expected two goal-setting attempts, got ' + metadata.goal_setting_attempts);
 if (metadata.goal_setting_fallback_used !== true) throw new Error('goal_setting_fallback_used should be true');
 if (metadata.goal_setting_fallback_mode !== 'invalid_candidate_artifact') throw new Error(`expected fallback_mode invalid_candidate_artifact, got ${metadata.goal_setting_fallback_mode}`);
 NODE
@@ -132,5 +136,37 @@ const invalid = events.find((event) => event.event_type === 'error' && event.err
 if (!invalid) throw new Error('missing pi_goal_setting_artifact_invalid event');
 if (invalid.recovery_action !== 'continue') throw new Error(`expected continue recovery, got ${invalid.recovery_action}`);
 NODE
+
+# Exhausting transient retries should leave a valid, observable fallback goal.
+find "$RESULTS_DIR" -mindepth 1 -delete
+rm -rf "$TMP_DIR/dependency-cache" "$TMP_DIR/image-cache"
+: > "$PI_CALLS"
+: > "$RUN_LOG"
+set +e
+env KASEKI_WORKSPACE_DIR="$TMP_DIR" PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspect then code" \
+  FAKE_GOAL_MODE=timeout LLM_GATEWAY_URL=https://example.invalid/v1 LLM_GATEWAY_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off \
+  KASEKI_TYPED_EVALUATION_ENABLED=0 \
+  KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
+  KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" KASEKI_VALIDATION_COMMANDS=":" KASEKI_ALLOW_EMPTY_DIFF=1 \
+  KASEKI_SKIP_GATEWAY_HEALTH_CHECK=1 \
+  bash "$MODIFIED_SCRIPT" > "$RUN_LOG" 2>&1
+run_exit=$?
+set -e
+
+[ "$run_exit" -eq 0 ] || fail "expected zero exit after exhausted goal-setting timeouts, got $run_exit"
+[ "$(cat "$PI_CALLS")" = $'goal-setting\ngoal-setting\nscouting\ncoding\ngoal-check' ] || fail "goal-setting timeout fallback did not continue through later phases"
+node - "$RESULTS_DIR/goal-setting.json" "$RESULTS_DIR/metadata.json" "$RESULTS_DIR/goal-setting-validation-errors.jsonl" <<'NODE' || fail "exhausted goal-setting retries did not produce an observable original-prompt fallback"
+const fs = require('node:fs');
+const [goalPath, metadataPath, errorsPath] = process.argv.slice(2);
+const goal = JSON.parse(fs.readFileSync(goalPath, 'utf8'));
+const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+const errors = fs.readFileSync(errorsPath, 'utf8').trim().split(/\n+/).map((line) => JSON.parse(line));
+if (goal.fallback !== true || goal.original_prompt !== 'inspect then code') throw new Error('fallback did not preserve the original prompt');
+if (metadata.exit_code !== 0 || metadata.goal_setting_exit_code !== 0) throw new Error('optional goal-setting failure changed terminal status');
+if (metadata.goal_setting_attempts !== 2) throw new Error('expected two goal-setting attempts, got ' + metadata.goal_setting_attempts);
+if (metadata.goal_setting_fallback_used !== true || metadata.goal_setting_fallback_mode !== 'max_retry_attempts_exhausted') throw new Error('fallback metadata missing or incorrect');
+if (!errors.some((entry) => entry.reason === 'max_retry_attempts_exhausted' && entry.fallback_to_original_prompt === true)) throw new Error('exhaustion diagnostic missing');
+NODE
+grep -q 'inspect then code' "$RESULTS_DIR/coding-prompt.txt" || fail "coding prompt did not preserve original prompt after timeout fallback"
 
 echo "PASS: $TEST_NAME"

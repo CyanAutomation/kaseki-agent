@@ -440,6 +440,8 @@ async function runValidationRecovery(resultsDir: string, dependencies: DecisionW
       ...(failure.attemptCount ? { attemptCount: failure.attemptCount } : {}),
       generativeCallsAvoided: 0,
       errorCode: failure.code,
+      ...(failure.httpStatus ? { httpStatus: failure.httpStatus } : {}),
+      ...(failure.requestId ? { requestId: failure.requestId } : {}),
     }, dependencies.appendTelemetry);
     return buildValidationRecoveryArtifact({
       ...base,
@@ -502,6 +504,8 @@ export async function evaluateWorkflow(
         ...(failure.attemptCount ? { attemptCount: failure.attemptCount } : {}),
         generativeCallsAvoided: 0,
         errorCode: failure.code,
+        ...(failure.httpStatus ? { httpStatus: failure.httpStatus } : {}),
+        ...(failure.requestId ? { requestId: failure.requestId } : {}),
       }, dependencies.appendTelemetry);
     }
     throw error;

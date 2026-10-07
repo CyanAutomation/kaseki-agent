@@ -140,6 +140,7 @@ describe('Scouting prompt contracts', () => {
         STATUS=0
         FAILED_COMMAND=''
         GOAL_SETTING_FALLBACK_USED=0
+        ORIGINAL_TASK_PROMPT='retry-state regression prompt'
         GOAL_SETTING_ARTIFACT="$2/goal-setting.json"
         GOAL_SETTING_CANDIDATE_ARTIFACT="$2/goal-setting-candidate.json"
         GOAL_SETTING_RAW_EVENTS="$2/goal-setting-events.jsonl"
@@ -161,6 +162,8 @@ describe('Scouting prompt contracts', () => {
         capture_provider_error_from_log() { return 0; }
         clear_provider_error() { return 0; }
         write_goal_setting_metrics() { return 0; }
+        create_fallback_goal_setting_artifact() { return 0; }
+        emit_progress() { return 0; }
 
         printf '%s\n' '--- invocation 1 ---'
         run_goal_setting_agent_with_retry

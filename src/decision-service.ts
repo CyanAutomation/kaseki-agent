@@ -37,6 +37,8 @@ export interface DecisionService {
 export interface DecisionFailureMetadata {
   code: 'configuration' | 'credentials' | 'timeout' | 'http' | 'invalid_response' | 'network' | 'provider_failure';
   attemptCount?: number;
+  httpStatus?: number;
+  requestId?: string;
 }
 
 export function decisionFailureMetadata(error: unknown): DecisionFailureMetadata {
@@ -44,6 +46,8 @@ export function decisionFailureMetadata(error: unknown): DecisionFailureMetadata
   return {
     code: error.code,
     ...(error.attemptCount ? { attemptCount: error.attemptCount } : {}),
+    ...(Number.isInteger(error.status) && error.status! >= 100 && error.status! <= 599 ? { httpStatus: error.status } : {}),
+    ...(error.requestId && /^[A-Za-z0-9._:/-]{1,128}$/.test(error.requestId) ? { requestId: error.requestId } : {}),
   };
 }
 

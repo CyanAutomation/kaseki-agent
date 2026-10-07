@@ -58,6 +58,21 @@ describe('DecisionService', () => {
     expect(decisionFailureMetadata(new Error('untrusted state'))).toEqual({ code: 'provider_failure' });
   });
 
+  it('retains HTTP status and request ID while excluding provider response text', () => {
+    const rejected = new JevClassificationError(
+      'http',
+      'HTTP 400: private provider detail',
+      400,
+      'request-400-test',
+    );
+
+    expect(decisionFailureMetadata(rejected)).toEqual({
+      code: 'http',
+      httpStatus: 400,
+      requestId: 'request-400-test',
+    });
+  });
+
   it('adapts the current JEV client without coupling callers to its HTTP endpoint', async () => {
     process.env.OPENROUTER_API_KEY = 'test-decision-service-key';
     const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({
