@@ -40,7 +40,10 @@ function extractProviderErrorDetail(body: string): string | undefined {
 }
 
 function providerRequestId(response: Response): string | undefined {
-  const value = response.headers.get('x-request-id') || response.headers.get('request-id');
+  const headers = response.headers;
+  if (!headers || typeof headers.get !== 'function') return undefined;
+  let value: string | null;
+  try { value = headers.get('x-request-id') || headers.get('request-id'); } catch { return undefined; }
   return value && /^[A-Za-z0-9._:/-]{1,128}$/.test(value) ? value : undefined;
 }
 
