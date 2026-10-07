@@ -31,6 +31,17 @@ assert_not_matching() {
   ! grep -Eq -- "$pattern" "$file" || fail "$message"
 }
 
+assert_top_level_not_contains() {
+  local file="$1"
+  local unexpected="$2"
+  local message="$3"
+  awk -v unexpected="$unexpected" '
+    /^jobs:/ { exit }
+    index($0, unexpected) { found = 1 }
+    END { exit found }
+  ' "$file" || fail "$message"
+}
+
 assert_job_contains() {
   local file="$1"
   local job="$2"
@@ -41,6 +52,19 @@ assert_job_contains() {
     in_job && /^  [[:alnum:]_-]+:/ { in_job = 0 }
     in_job && index($0, expected) { found = 1 }
     END { exit !found }
+  ' "$file" || fail "$message"
+}
+
+assert_job_not_contains() {
+  local file="$1"
+  local job="$2"
+  local unexpected="$3"
+  local message="$4"
+  awk -v target="$job" -v unexpected="$unexpected" '
+    $0 == "  " target ":" { in_job = 1; next }
+    in_job && /^  [[:alnum:]_-]+:/ { in_job = 0 }
+    in_job && index($0, unexpected) { found = 1 }
+    END { exit found }
   ' "$file" || fail "$message"
 }
 
@@ -57,12 +81,26 @@ assert_step_contains() {
   ' "$file" || fail "$message"
 }
 
+assert_step_not_contains() {
+  local file="$1"
+  local step="$2"
+  local unexpected="$3"
+  local message="$4"
+  awk -v target="$step" -v unexpected="$unexpected" '
+    $0 == "      - name: " target { in_step = 1; next }
+    in_step && /^      - name:/ { in_step = 0 }
+    in_step && index($0, unexpected) { found = 1 }
+    END { exit found }
+  ' "$file" || fail "$message"
+}
+
 RELEASE_WORKFLOW="$WORKFLOWS_DIR/release.yml"
 PUBLISH_WORKFLOW="$WORKFLOWS_DIR/build-docker-image.yml"
 CODEQL_WORKFLOW="$WORKFLOWS_DIR/codeql.yml"
 DEPENDENCY_REVIEW_WORKFLOW="$WORKFLOWS_DIR/dependency-review.yml"
 DEPENDABOT_CONFIG="$ROOT_DIR/.github/dependabot.yml"
 CI_WORKFLOW="$WORKFLOWS_DIR/ci.yml"
+NPM_PUBLISH_WORKFLOW="$WORKFLOWS_DIR/publish-npm.yml"
 KASEKI_DOCS_WORKFLOW="$WORKFLOWS_DIR/kaseki-docs.yaml"
 KASEKI_DRY_WORKFLOW="$WORKFLOWS_DIR/kaseki-dry.yaml"
 
@@ -72,6 +110,14 @@ assert_not_contains "$RELEASE_WORKFLOW" '  push:' \
   'Release workflow must not run automatically on pushes'
 assert_contains "$RELEASE_WORKFLOW" 'environment: release' \
   'Release creation must be protected by the release environment'
+assert_contains "$RELEASE_WORKFLOW" 'permissions: {}' \
+  'The release workflow must deny permissions by default'
+assert_contains "$RELEASE_WORKFLOW" 'DRY_RUN: ${{ inputs.dry_run }}' \
+  'The release dry-run input must be passed through the environment, not interpolated into shell'
+assert_not_contains "$RELEASE_WORKFLOW" 'github.event.inputs.dry_run' \
+  'The release script must not interpolate a workflow input into shell source'
+assert_not_contains "$RELEASE_WORKFLOW" 'secrets: inherit' \
+  'The Docker reusable workflow must not inherit unrelated secrets'
 assert_not_contains "$RELEASE_WORKFLOW" 'grep -q "Published release"' \
   'Release detection must not rely on semantic-release log wording'
 assert_contains "$RELEASE_WORKFLOW" 'comm -13' \
@@ -167,6 +213,10 @@ for job in prepare type_check_changed type_check_full checks docker_integration 
 done
 assert_job_contains "$RELEASE_WORKFLOW" 'release' 'timeout-minutes: 120' \
   'Release validation must have a bounded runtime'
+assert_job_contains "$RELEASE_WORKFLOW" 'release' "if: github.ref == 'refs/heads/main'" \
+  'Release dispatches must be restricted to main'
+assert_job_contains "$PUBLISH_WORKFLOW" 'prepare' "if: github.ref == 'refs/heads/main'" \
+  'Manual and scheduled Docker publishes must be restricted to main'
 assert_job_contains "$WORKFLOWS_DIR/publish-npm.yml" 'publish' 'timeout-minutes: 90' \
   'npm publishing must have a bounded runtime'
 assert_job_contains "$WORKFLOWS_DIR/publish-npm.yml" 'publish' 'package-manager-cache: false' \
@@ -183,6 +233,32 @@ assert_not_contains "$WORKFLOWS_DIR/publish-npm.yml" 'path: /tmp/npm-view.json' 
   'npm publishing must not upload the obsolete standalone metadata path'
 assert_not_matching "$WORKFLOWS_DIR/publish-npm.yml" 'path:.*\.npmrc' \
   'npm publish artifacts must never include generated npm configuration'
+assert_top_level_not_contains "$NPM_PUBLISH_WORKFLOW" 'id-token: write' \
+  'The npm publisher must not grant OIDC permission to all jobs'
+assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'build' 'npm ci' \
+  'The npm package must be built in a job without publishing credentials'
+assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'build' 'npm run build' \
+  'The npm package must be built before publishing'
+assert_job_not_contains "$NPM_PUBLISH_WORKFLOW" 'build' 'id-token: write' \
+  'The npm build job must not be able to request an OIDC token'
+assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'build' 'actions/upload-artifact@' \
+  'The verified npm tarball must be passed to the publish job as an artifact'
+assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'publish' 'id-token: write' \
+  'Only the npm publish job may request the trusted-publishing OIDC token'
+assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'publish' 'actions/download-artifact@' \
+  'The npm publish job must consume the verified package artifact'
+assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'publish' 'npm publish "$PACKAGE_TARBALL" --access public --provenance --loglevel verbose --ignore-scripts' \
+  'The npm publish job must publish the verified tarball without running package scripts'
+assert_job_not_contains "$NPM_PUBLISH_WORKFLOW" 'publish' 'npm ci' \
+  'The npm publish job must not install dependencies'
+assert_job_not_contains "$NPM_PUBLISH_WORKFLOW" 'publish' 'npm run build' \
+  'The npm publish job must not execute repository build scripts'
+assert_job_not_contains "$NPM_PUBLISH_WORKFLOW" 'publish' 'npm-verify-publish.sh' \
+  'The OIDC-enabled npm publish job must not execute repository verification scripts'
+assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'verify' 'npm-verify-publish.sh' \
+  'Published package verification must run in a separate job'
+assert_job_not_contains "$NPM_PUBLISH_WORKFLOW" 'verify' 'id-token: write' \
+  'The npm verification job must not be able to request an OIDC token'
 
 assert_job_contains "$KASEKI_DOCS_WORKFLOW" 'docs_sweep' "if: github.ref == 'refs/heads/main'" \
   'Documentation sweeps must be restricted to main'
@@ -203,22 +279,20 @@ assert_step_contains "$KASEKI_DRY_WORKFLOW" 'Verify controller readiness' "jq -e
 
 assert_contains "$PUBLISH_WORKFLOW" '  scan:' \
   'Published images must be vulnerability scanned'
-assert_contains "$PUBLISH_WORKFLOW" 'scanners: vuln' \
-  'Trivy must scan vulnerabilities only; repository secrets are not image findings'
+assert_contains "$PUBLISH_WORKFLOW" 'scanners: vuln,misconfig,secret' \
+  'Trivy must scan image vulnerabilities, configuration, and embedded secrets'
+assert_contains "$PUBLISH_WORKFLOW" 'scanners: vuln,misconfig' \
+  'The uploaded SARIF report must omit secret match content'
 assert_contains "$PUBLISH_WORKFLOW" 'ignore-unfixed: true' \
-  'Trivy scan output must be limited to vulnerabilities with a known fix'
-assert_contains "$PUBLISH_WORKFLOW" "No fixable high/critical vulnerabilities found." \
-  'The empty Trivy result message must describe fixable findings accurately'
-assert_contains "$PUBLISH_WORKFLOW" 'fixable high/critical vulnerabilities found' \
-  'The Trivy failure message must describe fixable findings accurately'
-assert_not_contains "$PUBLISH_WORKFLOW" 'unfixed high/critical vulnerabilities found' \
-  'The Trivy gate must not call fixed-version findings unfixed'
-assert_contains "$PUBLISH_WORKFLOW" 'Trivy high/critical findings' \
-  'Trivy findings must be summarized before the gate fails'
-assert_contains "$PUBLISH_WORKFLOW" '($result.Target // "unknown target")' \
-  'Trivy finding summaries must identify the affected scan target'
-assert_contains "$PUBLISH_WORKFLOW" '(.PkgPath // "no package path")' \
-  'Trivy finding summaries must include package location metadata'
+  'Trivy must exclude vulnerabilities that do not have a known fix'
+assert_contains "$PUBLISH_WORKFLOW" 'scripts/check-trivy-image-findings.mjs trivy-results.json --summary trivy-results-summary.json' \
+  'The Docker promotion gate must validate all high and critical Trivy findings'
+assert_job_contains "$PUBLISH_WORKFLOW" 'scan' 'needs: [prepare, build_candidate]' \
+  'The image scan job must declare direct dependencies for every needs output it reads'
+assert_step_contains "$PUBLISH_WORKFLOW" 'Upload sanitized image scan reports' 'trivy-results-summary.json' \
+  'Only sanitized Trivy findings may be retained as artifacts'
+assert_step_not_contains "$PUBLISH_WORKFLOW" 'Upload sanitized image scan reports' 'trivy-results.json' \
+  'Raw Trivy JSON containing secret matches must not be uploaded'
 assert_contains "$PUBLISH_WORKFLOW" 'needs: [prepare, build_candidate, verify, scan]' \
   'Promotion must wait for a successful vulnerability scan'
 assert_contains "$PUBLISH_WORKFLOW" 'tags="latest"' \
@@ -227,6 +301,31 @@ assert_contains "$PUBLISH_WORKFLOW" 'tags+=",main-$short_sha"' \
   'Non-release Docker builds must retain a main-specific tag'
 assert_contains "$PUBLISH_WORKFLOW" 'tags+=",$RELEASE_VERSION"' \
   'Release Docker builds must retain their version-specific tag'
+
+assert_job_contains "$CI_WORKFLOW" 'workflow_lint' 'go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.9' \
+  'CI must run a version-pinned actionlint check'
+assert_job_contains "$CI_WORKFLOW" 'workflow_lint' 'zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482' \
+  'CI must run a commit-pinned zizmor check'
+assert_job_contains "$CI_WORKFLOW" 'workflow_lint' 'advanced-security: false' \
+  'The zizmor workflow lint job must run without elevated security-events permissions'
+assert_job_contains "$CI_WORKFLOW" 'workflow_lint' 'min-severity: high' \
+  'Zizmor must gate CI on high-severity workflow security findings'
+
+assert_top_level_not_contains "$CODEQL_WORKFLOW" 'security-events: write' \
+  'CodeQL write permission must be scoped to its analysis job'
+assert_job_contains "$CODEQL_WORKFLOW" 'analyze' 'security-events: write' \
+  'The CodeQL analysis job must be able to upload scan results'
+assert_contains "$CODEQL_WORKFLOW" 'concurrency:' \
+  'CodeQL runs must be concurrency-limited'
+assert_contains "$DEPENDENCY_REVIEW_WORKFLOW" 'concurrency:' \
+  'Dependency review runs must be concurrency-limited'
+
+assert_contains "$ROOT_DIR/package.json" '"test:publish-smoke": "test -f dist/cli.js && npm run test:pack-artifact && npm pack --dry-run' \
+  'Publish smoke checks must reuse the existing build instead of repeating the full packaging suite'
+assert_not_contains "$ROOT_DIR/package.json" '"test:publish-smoke": "npm run test:packaging-verification"' \
+  'Publish smoke checks must not rerun the full packaging verification suite'
+assert_contains "$ROOT_DIR/package.json" 'node --test scripts/check-trivy-image-findings.test.mjs' \
+  'Workflow contract checks must include the Trivy gate behavior tests'
 
 assert_contains "$ROOT_DIR/Dockerfile" 'node:24-bookworm-slim@sha256:' \
   'The Docker base image must be pinned by digest'
