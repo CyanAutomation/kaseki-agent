@@ -55,6 +55,22 @@ describe('kaseki API fast route/service integration', () => {
     delete process.env.KASEKI_TEMPLATE_DIR;
   });
 
+  test('reports the health response contract without submitting work', async () => {
+    const scheduler = createMockScheduler();
+    const harness = await createFastRouteHarness(scheduler);
+    cleanup.push(() => close(harness.server, harness.idempotencyStore));
+    cleanup.push(() => fs.rmSync(harness.resultsDir, { recursive: true, force: true }));
+
+    const response = await fetch(`${harness.baseUrl}/health`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      status: 'ok',
+      timestamp: expect.any(String),
+    });
+    expect(scheduler.submitJob).not.toHaveBeenCalled();
+  });
+
   test('validates request payloads before scheduler submission', async () => {
     process.env.KASEKI_SKIP_BOOTSTRAP_CHECK = '1';
     const harness = await createFastRouteHarness();

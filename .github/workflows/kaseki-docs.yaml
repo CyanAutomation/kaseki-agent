@@ -59,7 +59,7 @@ jobs:
           curl --fail-with-body --silent --show-error --retry 3 --retry-all-errors \
             --connect-timeout 10 --max-time 20 --output "$response_file" \
             "$KASEKI_BASE_URL/health"
-          jq -e '.status == "healthy"' "$response_file" >/dev/null
+          jq -e '.status == "ok"' "$response_file" >/dev/null
           echo "Kaseki health check succeeded."
 
       - name: Verify controller readiness

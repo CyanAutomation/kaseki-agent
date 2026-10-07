@@ -44,6 +44,19 @@ assert_job_contains() {
   ' "$file" || fail "$message"
 }
 
+assert_step_contains() {
+  local file="$1"
+  local step="$2"
+  local expected="$3"
+  local message="$4"
+  awk -v target="$step" -v expected="$expected" '
+    $0 == "      - name: " target { in_step = 1; next }
+    in_step && /^      - name:/ { in_step = 0 }
+    in_step && index($0, expected) { found = 1 }
+    END { exit !found }
+  ' "$file" || fail "$message"
+}
+
 RELEASE_WORKFLOW="$WORKFLOWS_DIR/release.yml"
 PUBLISH_WORKFLOW="$WORKFLOWS_DIR/build-docker-image.yml"
 CODEQL_WORKFLOW="$WORKFLOWS_DIR/codeql.yml"
@@ -179,6 +192,14 @@ assert_contains "$KASEKI_DOCS_WORKFLOW" 'REF: main' \
   'Documentation sweeps must target main explicitly'
 assert_contains "$KASEKI_DRY_WORKFLOW" 'REF: main' \
   'DRY sweeps must target main explicitly'
+assert_step_contains "$KASEKI_DOCS_WORKFLOW" 'Verify controller health' "jq -e '.status == \"ok\"'" \
+  'Documentation sweeps must match the controller health response contract'
+assert_step_contains "$KASEKI_DRY_WORKFLOW" 'Verify controller health' "jq -e '.status == \"ok\"'" \
+  'DRY sweeps must match the controller health response contract'
+assert_step_contains "$KASEKI_DOCS_WORKFLOW" 'Verify controller readiness' "jq -e '.status == \"ready\"'" \
+  'Documentation sweeps must keep readiness separate from liveness'
+assert_step_contains "$KASEKI_DRY_WORKFLOW" 'Verify controller readiness' "jq -e '.status == \"ready\"'" \
+  'DRY sweeps must keep readiness separate from liveness'
 
 assert_contains "$PUBLISH_WORKFLOW" '  scan:' \
   'Published images must be vulnerability scanned'
