@@ -4,6 +4,18 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.151.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.150.0...v1.151.0) (2026-10-07)
+
+
+### Bug Fixes
+
+* **ci:** align Kaseki health checks with /health ([#1500](https://github.com/CyanAutomation/kaseki-agent/issues/1500)) ([be0d58b](https://github.com/CyanAutomation/kaseki-agent/commit/be0d58bd067a95a78af7a39b3ec476df14091ac5))
+
+
+### Features
+
+* extend semantic context routing ([#1503](https://github.com/CyanAutomation/kaseki-agent/issues/1503)) ([466ba06](https://github.com/CyanAutomation/kaseki-agent/commit/466ba06a2e1037cda443e2743123904f4e186dbb))
+
 # [1.150.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.149.0...v1.150.0) (2026-10-06)
 
 
