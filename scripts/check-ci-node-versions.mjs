@@ -19,16 +19,29 @@ for (const name of workflowNames) {
   const relativePath = path.posix.join('.github', 'workflows', name);
   const content = await readFile(path.join(workflowDirectory, name), 'utf8');
   const environmentValues = new Map();
+  const nodeVersionMatches = [...content.matchAll(/^\s*node-version:\s*(.+?)\s*(?:#.*)?$/gm)];
+  const nodeVersionEnvironmentNames = new Set();
+
+  for (const match of nodeVersionMatches) {
+    const value = match[1].trim().replace(/^(['"])(.*)\1$/, '$2');
+    const environmentReference = value.match(/^\$\{\{\s*env\.([A-Z][A-Z0-9_]*)\s*\}\}$/);
+    if (environmentReference) {
+      nodeVersionEnvironmentNames.add(environmentReference[1]);
+    }
+  }
 
   for (const match of content.matchAll(/^\s*([A-Z][A-Z0-9_]*):\s*['"]?([^'"#\n]+?)['"]?\s*(?:#.*)?$/gm)) {
     const [, key, value] = match;
+    if (!nodeVersionEnvironmentNames.has(key)) {
+      continue;
+    }
     if (environmentValues.has(key) && environmentValues.get(key) !== value.trim()) {
       throw new Error(`${relativePath} assigns conflicting values to ${key}`);
     }
     environmentValues.set(key, value.trim());
   }
 
-  for (const match of content.matchAll(/^\s*node-version:\s*(.+?)\s*(?:#.*)?$/gm)) {
+  for (const match of nodeVersionMatches) {
     let value = match[1].trim().replace(/^(['"])(.*)\1$/, '$2');
     const environmentReference = value.match(/^\$\{\{\s*env\.([A-Z][A-Z0-9_]*)\s*\}\}$/);
     if (environmentReference) {

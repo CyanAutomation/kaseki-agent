@@ -16,13 +16,16 @@ concurrency:
   group: release-${{ github.repository }}
   cancel-in-progress: false
 
+permissions: {}
+
 jobs:
   release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     environment: release
     permissions:
-      contents: write
+      contents: write # Create semantic-release tags, commits, and GitHub releases.
     outputs:
       released: ${{ steps.release.outputs.released }}
       version: ${{ steps.release.outputs.version }}
@@ -66,16 +69,20 @@ jobs:
         id: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
           before_tags="$(mktemp)"
           after_tags="$(mktemp)"
           trap 'rm -f "$before_tags" "$after_tags"' EXIT
           git tag --list 'v[0-9]*' | sort -V > "$before_tags"
-          if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
+          released=false
+          dry_run_output=false
+          new_tag=''
+          release_sha=''
+          if [[ "$DRY_RUN" == "true" ]]; then
             npm run release:dry 2>&1 | tee release-output.log
-            echo "released=false" >> "$GITHUB_OUTPUT"
-            echo "dry_run=true" >> "$GITHUB_OUTPUT"
+            dry_run_output=true
           else
             npm run release 2>&1 | tee release-output.log
             git tag --list 'v[0-9]*' | sort -V > "$after_tags"
@@ -86,13 +93,17 @@ jobs:
                 echo "New release tag $new_tag does not point at HEAD" >&2
                 exit 1
               }
-              echo "released=true" >> "$GITHUB_OUTPUT"
-              echo "version=${new_tag#v}" >> "$GITHUB_OUTPUT"
-              echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
-            else
-              echo "released=false" >> "$GITHUB_OUTPUT"
+              released=true
             fi
           fi
+          {
+            echo "released=$released"
+            echo "dry_run=$dry_run_output"
+            if [[ "$released" == "true" ]]; then
+              echo "version=${new_tag#v}"
+              echo "sha=$release_sha"
+            fi
+          } >> "$GITHUB_OUTPUT"
 
       - name: Publish Raspberry Pi bootstrap bundle
         if: steps.release.outputs.released == 'true'
@@ -123,7 +134,7 @@ jobs:
     if: needs.release.outputs.released == 'true'
     permissions:
       contents: read
-      id-token: write
+      id-token: write # Request npm trusted-publishing credentials in the reusable workflow.
     uses: ./.github/workflows/publish-npm.yml
     with:
       ref: ${{ needs.release.outputs.sha }}
@@ -134,10 +145,9 @@ jobs:
     if: needs.release.outputs.released == 'true'
     permissions:
       contents: read
-      packages: write
-      security-events: write
+      packages: write # Publish verified candidate and promoted Docker images.
+      security-events: write # Upload Trivy results from the reusable workflow.
     uses: ./.github/workflows/build-docker-image.yml
     with:
       ref: ${{ needs.release.outputs.sha }}
       version: ${{ needs.release.outputs.version }}
-    secrets: inherit
