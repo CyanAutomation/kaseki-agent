@@ -64,6 +64,7 @@ package_manifest=(
   'scripts/lib/repo-memory.sh|644'
   'scripts/lib/goal-contract.cjs|644'
   'scripts/context-handoff.js|755'
+  'scripts/semantic-phase-transfer.js|644'
   'scripts/write-run-metadata.mjs|644'
   'scripts/restore-disallowed-changes.sh|755'
   'scripts/evaluation-prompts.sh|755'

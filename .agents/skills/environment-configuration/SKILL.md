@@ -51,9 +51,15 @@ not used for coding-agent inference or as a fallback when the gateway fails.
 | `KASEKI_CAVEMAN` | `1` | Legacy switch for terse communication guidance | `0` (disable) or `1` (enable) |
 | `KASEKI_CAVEMAN_LEVEL` | `2` | Soft prompt and tool-output reduction level | Integer `0` through `3` |
 | `KASEKI_CAVEMAN_ROUTER` | `jev` | Enable or disable JEV routing for large tool results | `jev` or `off` |
-| `KASEKI_CAVEMAN_ROUTER_MIN_CHARS` | `6000 at level 2; 3000 at level 3` | Minimum result size for a JEV routing decision | Positive integer |
+| `KASEKI_CAVEMAN_ROUTER_MIN_CHARS` | `6000 at level 2; 3000 at level 3` | Minimum result size for the legacy JEV tool-output router; semantic routing uses its token threshold | Positive integer |
 | `KASEKI_CAVEMAN_ROUTER_TIMEOUT_MS` | `1200` | Maximum wait for one dynamic tool-output routing decision | Positive integer milliseconds |
-| `KASEKI_CAVEMAN_ROUTER_CONFIDENCE_THRESHOLD` | `0.86` | Minimum confidence required to apply a local tool-output transformation | Number from 0 to 1 |
+| `KASEKI_CAVEMAN_ROUTER_CONFIDENCE_THRESHOLD` | `0.86` | Minimum choice confidence for a local transform in the legacy tool-output router | Number from 0 to 1 |
+| `KASEKI_SEMANTIC_CONTEXT_ROUTER_ENABLED` | `1` | Enable semantic disposition decisions for large coding-phase tool results | `0` (use existing Caveman routing) or `1` (enable semantic routing) |
+| `KASEKI_SEMANTIC_CONTEXT_MIN_TOKENS` | `1500` | Minimum estimated tool-result size before semantic routing considers JEV | Positive integer tokens |
+| `KASEKI_SEMANTIC_CONTEXT_DISCARD_THRESHOLD` | `0.98` | Minimum discard probability required to omit tool output or a scouting fact from active context | Number from 0 to 1 |
+| `KASEKI_SEMANTIC_CONTEXT_CONDENSE_THRESHOLD` | `0.7` | Minimum condense probability required to condense tool output or reduce a scouting fact | Number from 0 to 1 |
+| `KASEKI_SEMANTIC_PHASE_TRANSFER_ENABLED` | `1` | Enable bounded JEV routing of scouting facts as they enter coding context | `0` (preserve existing handoff) or `1` (route scouting facts) |
+| `KASEKI_SEMANTIC_CONTEXT_REEVALUATION_ENABLED` | `1` | Replace stale large file-read results after a successful same-path file edit | `0` (disable event reevaluation) or `1` (enable event reevaluation) |
 | `KASEKI_PROMPT_TOKEN_WARN_THRESHOLD` | `32000` | Per-request context size that triggers a compaction recommendation | Positive integer tokens |
 | `KASEKI_CODING_MAX_CONTEXT_TOKENS` | `32000` | Advisory context target for the coding phase | Positive integer tokens |
 | `KASEKI_CODING_MAX_TURNS` | `36` | Advisory logical-turn target for the coding phase | Positive integer turns |

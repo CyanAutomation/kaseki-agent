@@ -764,6 +764,7 @@ check_packaged_agent_helpers() {
     "evaluation-prompts.sh"
     "allowlist-helper.sh"
     "context-handoff.js"
+    "semantic-phase-transfer.js"
     "restore-disallowed-changes.sh"
     "inspect-mode-defaults.sh"
     "dependency-cache-helpers.sh"
