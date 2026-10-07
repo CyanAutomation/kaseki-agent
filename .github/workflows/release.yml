@@ -77,12 +77,12 @@ jobs:
           trap 'rm -f "$before_tags" "$after_tags"' EXIT
           git tag --list 'v[0-9]*' | sort -V > "$before_tags"
           released=false
-          dry_run=false
+          dry_run_output=false
           new_tag=''
           release_sha=''
           if [[ "$DRY_RUN" == "true" ]]; then
             npm run release:dry 2>&1 | tee release-output.log
-            dry_run=true
+            dry_run_output=true
           else
             npm run release 2>&1 | tee release-output.log
             git tag --list 'v[0-9]*' | sort -V > "$after_tags"
@@ -98,7 +98,7 @@ jobs:
           fi
           {
             echo "released=$released"
-            echo "dry_run=$dry_run"
+            echo "dry_run=$dry_run_output"
             if [[ "$released" == "true" ]]; then
               echo "version=${new_tag#v}"
               echo "sha=$release_sha"
