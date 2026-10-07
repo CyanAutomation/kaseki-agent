@@ -25,13 +25,22 @@ export function parseHealthResponse(responseText) {
   return response.status;
 }
 
+export function readHealthResponseFile(responsePath) {
+  try {
+    return readFileSync(responsePath, 'utf8');
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'unknown error';
+    throw new Error(`Failed to read Kaseki /health response file: ${detail}`);
+  }
+}
+
 function main() {
   const responsePath = process.argv[2];
   if (!responsePath) {
     throw new Error('Usage: verify-controller-health.mjs <response-file>');
   }
 
-  const status = parseHealthResponse(readFileSync(responsePath, 'utf8'));
+  const status = parseHealthResponse(readHealthResponseFile(responsePath));
   console.log(`Kaseki health check succeeded (${status}).`);
 }
 
