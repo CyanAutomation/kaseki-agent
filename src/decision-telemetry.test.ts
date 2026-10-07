@@ -64,4 +64,20 @@ describe('decision telemetry', () => {
 
     expect(fs.readFileSync(path.join(resultsDir, 'decisions.jsonl'), 'utf8').trim().split('\n')).toHaveLength(2);
   });
+
+  it('records bounded HTTP diagnostics without storing response bodies', () => {
+    appendDecisionTelemetry(resultsDir, {
+      stage: 'run_evaluation',
+      status: 'unavailable',
+      provider: 'jev',
+      durationMs: 12,
+      errorCode: 'http',
+      httpStatus: 400,
+      requestId: 'request-400-test',
+    });
+
+    const line = fs.readFileSync(path.join(resultsDir, 'decisions.jsonl'), 'utf8').trim();
+    expect(JSON.parse(line)).toMatchObject({ httpStatus: 400, requestId: 'request-400-test', errorCode: 'http' });
+    expect(line).not.toContain('response body');
+  });
 });

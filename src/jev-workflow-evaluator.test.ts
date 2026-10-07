@@ -109,6 +109,32 @@ describe('decision workflow telemetry', () => {
     ]);
   });
 
+  it('records the HTTP status and provider request ID when Run Evaluation is unavailable', async () => {
+    const error = new JevClassificationError(
+      'http',
+      'OpenRouter decision endpoint returned HTTP 400',
+      400,
+      'request-400-test',
+    );
+
+    await expect(evaluateWorkflow('run-evaluation', resultsDir, '1', {
+      decisionService: {
+        providerId: 'test-provider',
+        decide: async () => { throw error; },
+      },
+    })).rejects.toBe(error);
+
+    expect(telemetryFor(resultsDir)).toEqual([
+      expect.objectContaining({
+        stage: 'run_evaluation',
+        status: 'unavailable',
+        errorCode: 'http',
+        httpStatus: 400,
+        requestId: 'request-400-test',
+      }),
+    ]);
+  });
+
   it('adds failure diagnosis questions when persisted run evidence records a failure', async () => {
     fs.writeFileSync(path.join(resultsDir, 'metadata.json'), JSON.stringify({ exit_code: 1 }));
     fs.writeFileSync(path.join(resultsDir, 'validation.log'), 'npm test failed with exit code 1');
