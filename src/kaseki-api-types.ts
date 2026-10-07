@@ -252,6 +252,7 @@ export type DiagnosticEntryPoint =
   | 'goal-check-validation-errors.jsonl'
   | 'goal-check-stderr.log'
   | 'decisions.jsonl'
+  | 'caveman-routing.jsonl'
   | 'hashline-failure.json'
   | 'empty-diff.json'
   | 'pi-agent-diagnostics.jsonl'

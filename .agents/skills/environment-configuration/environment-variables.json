@@ -43,7 +43,7 @@
   },
   {
     "name": "KASEKI_CAVEMAN_ROUTER_MIN_CHARS",
-    "description": "Minimum result size for a JEV routing decision",
+    "description": "Minimum result size for the legacy JEV tool-output router; semantic routing uses its token threshold",
     "default": "6000 at level 2; 3000 at level 3",
     "acceptedValues": "Positive integer"
   },
@@ -55,9 +55,45 @@
   },
   {
     "name": "KASEKI_CAVEMAN_ROUTER_CONFIDENCE_THRESHOLD",
-    "description": "Minimum confidence required to apply a local tool-output transformation",
+    "description": "Minimum choice confidence for a local transform in the legacy tool-output router",
     "default": "0.86",
     "acceptedValues": "Number from 0 to 1"
+  },
+  {
+    "name": "KASEKI_SEMANTIC_CONTEXT_ROUTER_ENABLED",
+    "description": "Enable semantic disposition decisions for large coding-phase tool results",
+    "default": "1",
+    "acceptedValues": "`0` (use existing Caveman routing) or `1` (enable semantic routing)"
+  },
+  {
+    "name": "KASEKI_SEMANTIC_CONTEXT_MIN_TOKENS",
+    "description": "Minimum estimated tool-result size before semantic routing considers JEV",
+    "default": "1500",
+    "acceptedValues": "Positive integer tokens"
+  },
+  {
+    "name": "KASEKI_SEMANTIC_CONTEXT_DISCARD_THRESHOLD",
+    "description": "Minimum discard probability required to omit tool output or a scouting fact from active context",
+    "default": "0.98",
+    "acceptedValues": "Number from 0 to 1"
+  },
+  {
+    "name": "KASEKI_SEMANTIC_CONTEXT_CONDENSE_THRESHOLD",
+    "description": "Minimum condense probability required to condense tool output or reduce a scouting fact",
+    "default": "0.7",
+    "acceptedValues": "Number from 0 to 1"
+  },
+  {
+    "name": "KASEKI_SEMANTIC_PHASE_TRANSFER_ENABLED",
+    "description": "Enable bounded JEV routing of scouting facts as they enter coding context",
+    "default": "1",
+    "acceptedValues": "`0` (preserve existing handoff) or `1` (route scouting facts)"
+  },
+  {
+    "name": "KASEKI_SEMANTIC_CONTEXT_REEVALUATION_ENABLED",
+    "description": "Replace stale large file-read results after a successful same-path file edit",
+    "default": "1",
+    "acceptedValues": "`0` (disable event reevaluation) or `1` (enable event reevaluation)"
   },
   {
     "name": "KASEKI_PROMPT_TOKEN_WARN_THRESHOLD",

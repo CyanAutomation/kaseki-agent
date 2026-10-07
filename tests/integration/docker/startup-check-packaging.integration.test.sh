@@ -54,6 +54,7 @@ docker run --rm --entrypoint /bin/sh \
     do
       test -x "$KASEKI_RESOLVED_HELPER_DIR/$helper"
     done
+    test -r "$KASEKI_RESOLVED_HELPER_DIR/semantic-phase-transfer.js"
 
     json_helper="$KASEKI_RESOLVED_HELPER_DIR/lib/json.sh"
     test -r "$json_helper"
@@ -91,6 +92,7 @@ docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c '
     /usr/local/bin/provider-error-classifier.js|755
     /usr/local/bin/scripts/scouting-allowlist.js|755
     /usr/local/bin/scripts/context-handoff.js|755
+    /usr/local/bin/scripts/semantic-phase-transfer.js|644
     /usr/local/bin/scripts/lib/provider-retry.sh|644
     /usr/local/bin/scripts/restore-disallowed-changes.sh|755
     /usr/local/bin/scripts/evaluation-prompts.sh|755

@@ -352,6 +352,15 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'caveman-routing.jsonl': {
+    name: 'caveman-routing.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Per-tool semantic routing dispositions, JEV outcomes, and estimated token reductions without tool payload text',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 9,
+    sizeHint: 'medium',
+  },
+
   'goal-check-events.jsonl': {
     name: 'goal-check-events.jsonl',
     contentType: 'application/x-jsonl',

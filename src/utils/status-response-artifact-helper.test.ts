@@ -243,6 +243,7 @@ describe('StatusArtifactHelper', () => {
         'result-summary.md': { exists: true, size: 200 },
         'failure.json': { exists: true, size: 50 },
         'decisions.jsonl': { exists: true, size: 240 },
+        'caveman-routing.jsonl': { exists: true, size: 380 },
         'analysis.md': { exists: false, size: 0 },
         'stderr.log': { exists: false, size: 0 },
         'stdout.log': { exists: false, size: 0 },
@@ -256,10 +257,11 @@ describe('StatusArtifactHelper', () => {
       expect(response.artifacts?.failureJson).toBe(true);
       expect(response.artifacts?.analysisMd).toBe(false);
       expect(response.artifacts?.diagnosticFiles).toContain('decisions.jsonl');
+      expect(response.artifacts?.diagnosticFiles).toContain('caveman-routing.jsonl');
       expect(artifactMetadataCache.getRunArtifactMetadata).toHaveBeenCalledWith(
         job.id,
         runDir,
-        expect.arrayContaining(['decisions.jsonl']),
+        expect.arrayContaining(['decisions.jsonl', 'caveman-routing.jsonl']),
         true,
       );
     });

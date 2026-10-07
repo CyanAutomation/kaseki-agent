@@ -240,6 +240,7 @@ RUN chmod +x \
     && install -m 0755 /app/scripts/evaluation-prompts.sh /usr/local/bin/scripts/evaluation-prompts.sh \
     && install -m 0755 /app/scripts/allowlist-helper.sh /usr/local/bin/scripts/allowlist-helper.sh \
     && install -m 0755 /app/scripts/context-handoff.js /usr/local/bin/scripts/context-handoff.js \
+    && install -m 0644 /app/scripts/semantic-phase-transfer.js /usr/local/bin/scripts/semantic-phase-transfer.js \
     && install -m 0755 /app/scripts/restore-disallowed-changes.sh /usr/local/bin/scripts/restore-disallowed-changes.sh \
     && install -m 0755 /app/scripts/inspect-mode-defaults.sh /usr/local/bin/scripts/inspect-mode-defaults.sh \
     && install -m 0755 /app/scripts/dependency-cache-helpers.sh /usr/local/bin/scripts/dependency-cache-helpers.sh \
@@ -411,6 +412,7 @@ RUN mkdir -p /scripts \
     && install -m 0755 /app/scripts/evaluation-prompts.sh /usr/local/bin/scripts/evaluation-prompts.sh \
     && install -m 0755 /app/scripts/allowlist-helper.sh /usr/local/bin/scripts/allowlist-helper.sh \
     && install -m 0755 /app/scripts/context-handoff.js /usr/local/bin/scripts/context-handoff.js \
+    && install -m 0644 /app/scripts/semantic-phase-transfer.js /usr/local/bin/scripts/semantic-phase-transfer.js \
     && install -m 0755 /app/scripts/restore-disallowed-changes.sh /usr/local/bin/scripts/restore-disallowed-changes.sh \
     && install -m 0755 /app/scripts/inspect-mode-defaults.sh /usr/local/bin/scripts/inspect-mode-defaults.sh \
     && install -m 0755 /app/scripts/dependency-cache-helpers.sh /usr/local/bin/scripts/dependency-cache-helpers.sh \
