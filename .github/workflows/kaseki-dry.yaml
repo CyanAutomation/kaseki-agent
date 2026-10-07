@@ -78,7 +78,7 @@ jobs:
             --output "$response_file" \
             "$KASEKI_BASE_URL/health"
 
-          jq -e '.status == "healthy"' "$response_file" >/dev/null
+          jq -e '.status == "ok"' "$response_file" >/dev/null
 
           echo "Kaseki health check succeeded."
 
