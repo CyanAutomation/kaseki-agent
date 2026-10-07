@@ -107,6 +107,31 @@ describe('JEV classifier client', () => {
     await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, { fetchImpl: failed, maxRetries: 0 })).rejects.toMatchObject({ code: 'http', status: 503 });
   });
 
+  it('retains safe structured provider diagnostics for rejected decision requests', async () => {
+    const rejected = jest.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: {
+        code: 'invalid_request',
+        message: 'questions.validation_failure_cause.criteria is required; Bearer sk-test-secret0123456789',
+      },
+      state: 'private run evidence must not be copied into diagnostics',
+    }), {
+      status: 400,
+      headers: { 'x-request-id': 'request-400-test' },
+    }));
+
+    const error = await classifyWithJev('private run evidence', {
+      safe: { type: 'noul', instructions: 'Is this safe?' },
+    }, { fetchImpl: rejected, maxRetries: 0 }).then(() => undefined, (caught: unknown) => caught as Error & {
+      code?: string; status?: number; requestId?: string;
+    });
+
+    expect(error).toMatchObject({ code: 'http', status: 400, requestId: 'request-400-test' });
+    expect(error?.message).toContain('invalid_request');
+    expect(error?.message).toContain('questions.validation_failure_cause.criteria is required');
+    expect(error?.message).toContain('[REDACTED_CREDENTIAL]');
+    expect(error?.message).not.toContain('private run evidence');
+  });
+
   it('explains when OpenRouter rejects an invalid or expired evaluation key', async () => {
     const unauthorized = jest.fn().mockResolvedValue(new Response('Unauthorized', { status: 401 }));
 

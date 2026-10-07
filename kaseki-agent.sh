@@ -551,6 +551,8 @@ SCOUTING_ACTUAL_MODEL="unknown"
 KASEKI_SCOUTING_ATTEMPTS=1
 KASEKI_SCOUTING_MAX_ATTEMPTS=2
 KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=""
+SCOUTING_FALLBACK_USED=0
+SCOUTING_FALLBACK_MODE=""
 GOAL_SETTING_EXIT=0
 GOAL_SETTING_DURATION_SECONDS=0
 GOAL_SETTING_ACTUAL_MODEL="unknown"
@@ -2039,6 +2041,8 @@ write_metadata() {
   "scouting_attempts": ${KASEKI_SCOUTING_ATTEMPTS:-1},
   "scouting_max_attempts": ${KASEKI_SCOUTING_MAX_ATTEMPTS:-2},
   "scouting_succeeded_on_attempt": $([ -n "${KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT:-}" ] && printf '%s' "$KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT" || printf 'null'),
+  "scouting_fallback_used": $([[ "${SCOUTING_FALLBACK_USED:-0}" == "1" ]] && printf 'true' || printf 'false'),
+  "scouting_fallback_mode": $(printf '%s' "${SCOUTING_FALLBACK_MODE:-}" | json_encode),
   "goal_setting_duration_seconds": $GOAL_SETTING_DURATION_SECONDS,
   "goal_setting_attempts": ${KASEKI_GOAL_SETTING_ATTEMPTS:-1},
   "goal_setting_succeeded_on_attempt": $([ -n "${KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT:-}" ] && printf '%s' "$KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT" || printf 'null'),
@@ -7034,6 +7038,16 @@ run_goal_setting_agent_with_retry() {
   
   STATUS="$pre_goal_setting_status"
   FAILED_COMMAND="$pre_goal_setting_failed_command"
+  if create_fallback_goal_setting_artifact "$ORIGINAL_TASK_PROMPT" "$GOAL_SETTING_ARTIFACT"; then
+    GOAL_SETTING_EXIT=0
+    GOAL_SETTING_FALLBACK_USED=1
+    GOAL_SETTING_FALLBACK_MODE="max_retry_attempts_exhausted"
+    emit_progress "pi goal-setting agent" "degraded: transient retries exhausted; original task preserved with confidence=low"
+    printf '%s\n' '{"phase":"goal-setting","severity":"warning","code":"fallback_activated","detail":"Transient goal-setting retries exhausted; original task preserved with confidence=low"}' >> "${KASEKI_RESULTS_DIR}/stage-warnings.jsonl"
+  else
+    GOAL_SETTING_EXIT="$goal_setting_last_exit"
+    printf '%s\n' 'Goal-setting fallback artifact could not be created after transient retries exhausted.' >> "${KASEKI_RESULTS_DIR}/goal-setting.log" 2>/dev/null || true
+  fi
   clear_provider_error
   write_goal_setting_metrics "$goal_setting_phase_start_time" "$(date +%s)"
   return 0
@@ -7326,6 +7340,7 @@ run_scouting_agent() {
 
   kaseki-pi-event-filter "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/scouting-events.jsonl "${KASEKI_RESULTS_DIR}"/scouting-summary.json 2>/dev/null || cp "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/scouting-events.raw.jsonl 2>/dev/null || true
   SCOUTING_FALLBACK_USED=0
+  SCOUTING_FALLBACK_MODE=""
   if capture_provider_error_from_summary "${KASEKI_RESULTS_DIR}/scouting-summary.json" "scouting"; then
     if [ "$PROVIDER_ERROR_TYPE" = "provider_empty_assistant_turn" ] && [ "${KASEKI_SCOUTING_CONTRACT_STRICT:-0}" != "1" ]; then
       emit_error_event "$PROVIDER_ERROR_TYPE" "Scouting provider returned an empty assistant turn; continuing with conservative fallback" "continue"
@@ -7333,6 +7348,7 @@ run_scouting_agent() {
       rm -f "$SCOUTING_CANDIDATE_ARTIFACT" 2>/dev/null || true
       write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
       SCOUTING_FALLBACK_USED=1
+      SCOUTING_FALLBACK_MODE="provider_empty_assistant_turn"
       SCOUTING_EXIT=0
     elif [ "$PROVIDER_ERROR_TYPE" = "provider_empty_assistant_turn" ] && [ "${KASEKI_SCOUTING_CONTRACT_STRICT:-0}" = "1" ]; then
       SCOUTING_EXIT=86
@@ -7347,6 +7363,7 @@ run_scouting_agent() {
   if [ "$SCOUTING_EXIT" -eq 0 ] && [ "$KASEKI_TASK_MODE" = "inspect" ] && [ ! -f "$SCOUTING_CANDIDATE_ARTIFACT" ]; then
     write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
     SCOUTING_FALLBACK_USED=1
+    SCOUTING_FALLBACK_MODE="missing_candidate_artifact"
   fi
 
   if [ "$SCOUTING_EXIT" -eq 0 ] && ! validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
@@ -7357,6 +7374,7 @@ run_scouting_agent() {
       rm -f "$SCOUTING_CANDIDATE_ARTIFACT" 2>/dev/null || true
       write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
       SCOUTING_FALLBACK_USED=1
+      SCOUTING_FALLBACK_MODE="invalid_candidate_artifact"
       if ! validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
         SCOUTING_EXIT=86
         scouting_validation_error="$(tail -1 "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl 2>/dev/null | jq -r '.details // .reason_code // "validation failed"' 2>/dev/null || printf 'scouting artifact validation failed')"
@@ -7415,6 +7433,8 @@ run_scouting_agent_with_retry() {
   export KASEKI_SCOUTING_ATTEMPTS=0
   export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=""
   export KASEKI_SCOUTING_ERRORS=""
+  SCOUTING_FALLBACK_USED=0
+  SCOUTING_FALLBACK_MODE=""
 
   while [ "$attempt" -le "$max_attempts" ]; do
     printf '[Scouting Phase] Attempt %d/%d\n' "$attempt" "$max_attempts"
@@ -7577,7 +7597,9 @@ NODE
           mark_scouting_fallback_recovered "patch_fallback_recovered"
           printf '[Scouting Phase] Artifact contract failed; validated conservative patch fallback and continuing\n'
           export KASEKI_SCOUTING_ATTEMPTS=$attempt
-          export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT="fallback"
+          export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=""
+          SCOUTING_FALLBACK_USED=1
+          SCOUTING_FALLBACK_MODE="invalid_candidate_artifact"
           STATUS=0
           SCOUTING_EXIT=0
           # The conservative fallback is now the authoritative scouting
@@ -7623,6 +7645,28 @@ NODE
   # Max attempts exhausted
   export KASEKI_SCOUTING_ATTEMPTS=$max_attempts
   export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=""
+  if [ "$KASEKI_TASK_MODE" = "patch" ]; then
+    printf '[Scouting Phase] Transient retries exhausted; validating conservative patch fallback\n'
+    rm -f "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" 2>/dev/null || true
+    write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
+    if KASEKI_SCOUTING_FALLBACK_VALIDATION=1 validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
+      mark_scouting_fallback_recovered "patch_transient_fallback_recovered"
+      SCOUTING_FALLBACK_USED=1
+      SCOUTING_FALLBACK_MODE="transient_retries_exhausted"
+      SCOUTING_EXIT=0
+      STATUS=0
+      if [ "${FAILED_COMMAND:-}" = "pi scouting agent" ]; then
+        FAILED_COMMAND=""
+      fi
+      clear_provider_error
+      rm -f "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt" 2>/dev/null || true
+      emit_progress "pi scouting agent" "degraded: transient retries exhausted; validated conservative patch fallback"
+      printf '%s\n' '{"phase":"scouting","severity":"warning","code":"fallback_activated","detail":"Transient retries exhausted; validated conservative patch fallback used"}' >> "${KASEKI_RESULTS_DIR}/stage-warnings.jsonl"
+      printf '[Scouting Phase] Validated conservative fallback; continuing to coding\n'
+      return 0
+    fi
+    printf '[Scouting Phase] Conservative fallback failed validation; preserving scouting failure\n'
+  fi
   printf '[Scouting Phase] Max retry attempts exhausted (exit %d)\n' "$scouting_last_exit"
   return "$scouting_last_exit"
 }
