@@ -1,0 +1,28 @@
+name: Verify Kaseki controller health
+description: Check the Kaseki liveness endpoint and support current and legacy healthy statuses.
+inputs:
+  base-url:
+    description: Base URL of the Kaseki controller, without a trailing slash.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Verify controller health
+      shell: bash
+      env:
+        KASEKI_BASE_URL: ${{ inputs.base-url }}
+      run: |
+        set -euo pipefail
+        : "${KASEKI_BASE_URL:?Provide the Kaseki controller base URL}"
+        if [[ "$KASEKI_BASE_URL" != https://* || "$KASEKI_BASE_URL" == *[[:space:]]* ]]; then
+          echo "::error title=Invalid Kaseki URL::The controller URL must use HTTPS and contain no whitespace."
+          exit 1
+        fi
+
+        response_file="$(mktemp)"
+        trap 'rm -f "$response_file"' EXIT
+        curl --proto '=https' --tlsv1.2 --fail-with-body --silent --show-error \
+          --retry 3 --retry-all-errors --connect-timeout 10 --max-time 20 \
+          --max-filesize 1048576 --output "$response_file" \
+          "${KASEKI_BASE_URL%/}/health"
+        node "$GITHUB_ACTION_PATH/verify-controller-health.mjs" "$response_file"
