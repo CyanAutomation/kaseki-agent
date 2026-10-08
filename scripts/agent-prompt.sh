@@ -65,7 +65,7 @@ NODE
 }
 
 build_agent_prompt() {
-  local memory_section scouting_section retry_section hashline_edits_section summarization_section allowlist_section handoff_section implementation_brief_section evaluation_routing_section task_type_hint validation_focus_hint caveman_instruction completion_checklist completion_contract
+  local memory_section scouting_section retry_section hashline_edits_section summarization_section allowlist_section handoff_section implementation_brief_section evaluation_routing_section task_type_hint validation_focus_hint caveman_instruction completion_checklist completion_contract reviewer_description_file
   
   if declare -F construct_context_handoff >/dev/null; then
     construct_context_handoff "scouting" "Implement every normalized requirement, produce the required repository diff, and complete the focused coding checks."
@@ -84,6 +84,7 @@ build_agent_prompt() {
   evaluation_routing_section=""
   task_type_hint=""
   validation_focus_hint=""
+  reviewer_description_file="${KASEKI_RESULTS_DIR}/agent-review.md"
   case "${KASEKI_TASK_TYPE_HINT:-}" in
     feature|bug_fix|refactor|documentation|investigation|test_only|infrastructure) task_type_hint="$KASEKI_TASK_TYPE_HINT" ;;
   esac
@@ -105,6 +106,7 @@ Evaluation routing hints:
 4. Do not restate established conclusions or explore optional improvements.
 5. For Markdown edits, verify the Markdown structure in rendered output; indent nested list items by two spaces per level unless the repository's renderer requires another style.
 6. Treat soft token targets as efficiency guidance, not limits. Batch focused reads, avoid repeating evidence, and continue past a target when needed to satisfy the checklist and checks.
+7. After the implementation and focused checks are complete, write a reviewer-facing PR description to $reviewer_description_file. Use exactly these sections: `## Summary` with 1-2 sentences describing the implemented behavior and impact, and `## Changes` with 2-4 concrete bullets grounded in the diff (include meaningful regression coverage when applicable). Do not repeat the task prompt, list filenames as a substitute for describing behavior, or include validation status, evaluator scores, or run telemetry.
 
 Completion checklist (machine-readable; deduplicated):
 $completion_checklist

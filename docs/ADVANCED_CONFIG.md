@@ -455,6 +455,17 @@ The goal-setting agent runs **before scouting** to upgrade your task prompt into
   KASEKI_GOAL_SETTING_TIMEOUT_SECONDS=600
   ```
 
+#### `KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS`
+
+- **Type**: `number` (integer, positive)
+- **Default**: `60`
+- **Description**: Maximum time for the one goal-setting retry after the initial attempt reaches its timeout. The retry deadline is capped at `KASEKI_GOAL_SETTING_TIMEOUT_SECONDS`.
+- **Example**:
+
+  ```bash
+  KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS=90
+  ```
+
 **API Request Example**:
 
 ```json

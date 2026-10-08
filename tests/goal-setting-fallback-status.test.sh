@@ -12,6 +12,7 @@ RESULTS_DIR="$TMP_DIR/results"
 WORKSPACE_REPO="$TMP_DIR/repo"
 APP_LIB="$TMP_DIR/app/lib"
 PI_CALLS="$TMP_DIR/pi-calls.log"
+GOAL_TIMEOUTS="$TMP_DIR/goal-setting-timeouts.log"
 RUN_LOG="$TMP_DIR/kaseki-run.log"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -58,6 +59,7 @@ prompt="\${*: -1}"
 if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
   printf 'goal-setting\n' >> "$PI_CALLS"
   if [ "\${FAKE_GOAL_MODE:-}" = "timeout" ]; then
+    sleep 1
     printf '%s\n' 'simulated goal-setting timeout' >&2
     exit 124
   fi
@@ -86,7 +88,11 @@ EOF_FILTER
 cat > "$FAKE_BIN/timeout" <<'EOF_TIMEOUT'
 #!/usr/bin/env bash
 while [[ "${1:-}" == -* ]]; do shift; done
+timeout_seconds="${1:-}"
 shift
+if [[ "$*" == *'goal-setting Pi agent'* ]]; then
+  printf '%s\n' "$timeout_seconds" >> "$GOAL_TIMEOUTS"
+fi
 "$@"
 EOF_TIMEOUT
 cat > "$FAKE_BIN/validation-output-filter" <<'EOF_VALIDATION_FILTER'
@@ -141,10 +147,12 @@ NODE
 find "$RESULTS_DIR" -mindepth 1 -delete
 rm -rf "$TMP_DIR/dependency-cache" "$TMP_DIR/image-cache"
 : > "$PI_CALLS"
+: > "$GOAL_TIMEOUTS"
 : > "$RUN_LOG"
 set +e
 env KASEKI_WORKSPACE_DIR="$TMP_DIR" PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspect then code" \
   FAKE_GOAL_MODE=timeout LLM_GATEWAY_URL=https://example.invalid/v1 LLM_GATEWAY_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off \
+  KASEKI_GOAL_SETTING_TIMEOUT_SECONDS=300 KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS=60 GOAL_TIMEOUTS="$GOAL_TIMEOUTS" \
   KASEKI_TYPED_EVALUATION_ENABLED=0 \
   KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
   KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" KASEKI_VALIDATION_COMMANDS=":" KASEKI_ALLOW_EMPTY_DIFF=1 \
@@ -155,6 +163,8 @@ set -e
 
 [ "$run_exit" -eq 0 ] || fail "expected zero exit after exhausted goal-setting timeouts, got $run_exit"
 [ "$(cat "$PI_CALLS")" = $'goal-setting\ngoal-setting\nscouting\ncoding\ngoal-check' ] || fail "goal-setting timeout fallback did not continue through later phases"
+[[ "$(cat "$GOAL_TIMEOUTS")" == $'300\n60' ]] || fail "timeout retry did not use the shorter configured deadline"
+grep -Eq '\[attempt 1 exit 124 duration [1-9][0-9]*\.[0-9]s' "$RESULTS_DIR/goal-setting-stderr.log" || { cat "$RESULTS_DIR/goal-setting-stderr.log" >&2; fail "goal-setting attempt duration was not recorded without bc"; }
 node - "$RESULTS_DIR/goal-setting.json" "$RESULTS_DIR/metadata.json" "$RESULTS_DIR/goal-setting-validation-errors.jsonl" <<'NODE' || fail "exhausted goal-setting retries did not produce an observable original-prompt fallback"
 const fs = require('node:fs');
 const [goalPath, metadataPath, errorsPath] = process.argv.slice(2);
@@ -165,7 +175,7 @@ if (goal.fallback !== true || goal.original_prompt !== 'inspect then code') thro
 if (metadata.exit_code !== 0 || metadata.goal_setting_exit_code !== 0) throw new Error('optional goal-setting failure changed terminal status');
 if (metadata.goal_setting_attempts !== 2) throw new Error('expected two goal-setting attempts, got ' + metadata.goal_setting_attempts);
 if (metadata.goal_setting_fallback_used !== true || metadata.goal_setting_fallback_mode !== 'max_retry_attempts_exhausted') throw new Error('fallback metadata missing or incorrect');
-if (!errors.some((entry) => entry.reason === 'max_retry_attempts_exhausted' && entry.fallback_to_original_prompt === true)) throw new Error('exhaustion diagnostic missing');
+if (!errors.some((entry) => entry.reason === 'max_retry_attempts_exhausted' && entry.fallback_to_original_prompt === true && entry.timeout_seconds === 300 && entry.retry_timeout_seconds === 60 && Number.isFinite(entry.last_attempt_duration_seconds))) throw new Error('timeout-retry diagnostic missing or incomplete');
 NODE
 grep -q 'inspect then code' "$RESULTS_DIR/coding-prompt.txt" || fail "coding prompt did not preserve original prompt after timeout fallback"
 

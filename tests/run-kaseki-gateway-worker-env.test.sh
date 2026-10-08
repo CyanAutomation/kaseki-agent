@@ -60,6 +60,7 @@ GITHUB_APP_ENABLED="0" \
 KASEKI_PUBLISH_MODE="none" \
 KASEKI_TASK_TYPE_HINT="documentation" \
 KASEKI_VALIDATION_FOCUS_HINT="docs_checks" \
+KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS="45" \
 "$PROJECT_ROOT/run-kaseki.sh" >"$OUTPUT_LOG" 2>&1
 
 if [ ! -s "$DOCKER_ARGS_CAPTURE" ]; then
@@ -87,6 +88,7 @@ assert_arg_present 'LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api
 assert_arg_present 'KASEKI_DECISION_API_KEY_FILE=/run/secrets/kaseki/decision_api_key' 'evaluation key worker file env'
 assert_arg_present 'KASEKI_TASK_TYPE_HINT=documentation' 'advisory task type'
 assert_arg_present 'KASEKI_VALIDATION_FOCUS_HINT=docs_checks' 'advisory validation focus'
+assert_arg_present 'KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS=45' 'goal-setting retry timeout'
 if grep -Fxq 'OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key' "$DOCKER_ARGS_CAPTURE"; then
   printf '✗ OpenRouter key must not be routed to the coding worker\n'
   exit 1

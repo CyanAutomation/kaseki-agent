@@ -34,7 +34,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   'agent-review.md': {
     name: 'agent-review.md',
     contentType: 'text/markdown',
-    description: 'Agent-authored result-summary.md preserved before the controller writes its canonical run summary',
+    description: 'Coding-agent-authored reviewer-facing PR summary and implementation bullets',
     availability: ArtifactAvailability.CONDITIONAL,
     triageOrder: 4,
     sizeHint: 'small',
