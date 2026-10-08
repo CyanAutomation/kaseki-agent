@@ -370,7 +370,7 @@ function buildRunSummaries(
   facts: RunEvaluationFacts,
   state: RunEvaluationState,
   assessment: string,
-): { summary: string; prSummary: string } {
+): { summary: string } {
   const validationSummary = runValidationSummary(facts, state);
   const changeSummary = `${state.changed} changed ${state.changed === 1 ? 'file' : 'files'}`;
   const failureSummary = state.failedRun
@@ -378,7 +378,6 @@ function buildRunSummaries(
     : state.incompletePatch ? '; patch mode produced no accepted change' : '';
   return {
     summary: `Run assessed ${assessment}; ${validationSummary}; ${changeSummary}${failureSummary}.`,
-    prSummary: `${changeSummary}${state.hasDiff ? ' with a persisted diff' : ' with no persisted diff'}; ${validationSummary}; goal check ${state.goalCheckOutcome.replace(/_/g, ' ')}.`,
   };
 }
 
@@ -454,7 +453,11 @@ export function buildRunEvaluationArtifact(
     phase_scorecard: phaseScorecard,
     efficiency_findings: efficiency.findings,
     kaseki_improvement_opportunities: opportunities,
-    pr_summary: summaries.prSummary,
+    // The typed evaluator classifies run quality but does not generate change
+    // prose. The coding agent writes reviewer-ready prose to agent-review.md;
+    // leave these fields empty rather than mislabeling run telemetry as a PR
+    // description when that artifact is missing.
+    pr_summary: '',
     pr_changes: [],
     warnings,
     evaluation,

@@ -38,11 +38,14 @@ eval "$(extract_function derive_pr_title)"
 eval "$(extract_function format_pr_command_results)"
 eval "$(extract_function format_pr_command_results_bounded)"
 eval "$(extract_function format_pr_json_list)"
+eval "$(extract_function extract_pr_review_section)"
+eval "$(extract_function is_reviewer_ready_pr_summary)"
 eval "$(extract_function build_pr_agent_review)"
 eval "$(extract_function build_pr_summary)"
 eval "$(extract_function build_pr_changes)"
 eval "$(extract_function build_pr_human_review_focus)"
 eval "$(extract_function build_pr_improvements_summary)"
+eval "$(extract_function build_pr_files_changed)"
 eval "$(extract_function build_pr_body)"
 eval "$(extract_function build_pr_fallback_body)"
 eval "$(extract_function run_node_subprocess)"
@@ -158,6 +161,20 @@ fi
 pass "PR body describes implemented changes and excludes task and run telemetry"
 pass "PR body includes only actionable review focus and post-agent validation status"
 
+cat > "$RESULTS_DIR/goal-check.json" <<'JSON'
+{"met":false,"outcome":"uncertain","review_required":true,"confidence":"medium","missing":["Task completed as specified (noul=0.75 is between the unmet boundary and pass threshold; direct evidence is inconclusive)"]}
+JSON
+uncertain_review="$(build_pr_agent_review)"
+grep -Fq 'The evidence does not conclusively verify one expected outcome; please check it against the diff.' <<<"$uncertain_review" \
+  || fail "Uncertain goal-check evidence was not translated into a reviewer action"
+if grep -Eiq 'noul|threshold|confidence|uncertain|boundary' <<<"$uncertain_review"; then
+  fail "Uncertain goal-check internals leaked into reviewer notes"
+fi
+cat > "$RESULTS_DIR/goal-check.json" <<'JSON'
+{"met":false,"missing":["The expired-state callback behavior was not verified."]}
+JSON
+pass "Uncertain goal-check results use plain language without evaluator internals"
+
 mv "$VALIDATION_TIMINGS_FILE" "$RESULTS_DIR/validation-timings.saved.tsv"
 no_validation_body="$(build_pr_body)"
 mv "$RESULTS_DIR/validation-timings.saved.tsv" "$VALIDATION_TIMINGS_FILE"
@@ -192,6 +209,59 @@ if grep -Eiq 'This internal validation prose|Fix OAuth flow|Requested outcome|se
 fi
 pass "Evaluator fallback uses concise change evidence without repeating the task"
 
+# Typed evaluation currently classifies the run but has no model-authored change
+# prose. The coding agent's dedicated artifact must supply the reviewer copy.
+cat > "$RESULTS_DIR/agent-review.md" <<'REVIEW'
+## Summary
+The callback preserves the original destination across provider retries.
+
+## Changes
+- Carry redirect state through callback retries.
+- Cover callback retry behavior with a regression test.
+REVIEW
+cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
+{"overall_assessment":"excellent","reviewer_confidence":"high","pr_summary":"1 changed file with a persisted diff; 1 validation commands passed; goal check succeeded.","pr_changes":[]}
+JSON
+review_artifact_body="$(build_pr_body)"
+grep -Fq 'The callback preserves the original destination across provider retries.' <<<"$review_artifact_body" \
+  || fail "Dedicated agent review summary did not override generic typed-evaluation prose"
+grep -Fq 'Carry redirect state through callback retries.' <<<"$review_artifact_body" \
+  || fail "Dedicated agent review artifact did not populate the PR changes section"
+if grep -Fq '1 changed file with a persisted diff' <<<"$review_artifact_body"; then
+  fail "Generic typed-evaluation evidence was published as PR prose"
+fi
+rm -f "$RESULTS_DIR/agent-review.md"
+pass "Typed evaluation uses the coding agent's reviewer-ready description"
+
+cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
+{"overall_assessment":"good","reviewer_confidence":"medium","pr_summary":"src/oauth/callback.ts","pr_changes":[]}
+JSON
+if [ -n "$(build_pr_summary)" ]; then
+  fail "A filename-only evaluator summary passed the PR description quality check"
+fi
+mv "$RESULTS_DIR/result-summary.md" "$RESULTS_DIR/result-summary.quality-check.md"
+cat > "$RESULTS_DIR/agent-review.md" <<'REVIEW'
+## Summary
+Updated `src/oauth/callback.ts`.
+
+## Changes
+- Preserves callback state during retry.
+REVIEW
+if [ -n "$(build_pr_improvements_summary)" ]; then
+  fail "A filename-only agent summary passed the PR description quality check"
+fi
+rm -f "$RESULTS_DIR/agent-review.md"
+mv "$RESULTS_DIR/result-summary.quality-check.md" "$RESULTS_DIR/result-summary.md"
+pass "PR description quality check rejects filename-only summaries"
+
+printf '## Summary\nDo not expose this external content through a linked artifact.\n' > "$TMP_DIR/external-review.md"
+ln -s "$TMP_DIR/external-review.md" "$RESULTS_DIR/agent-review.md"
+if [ -n "$(extract_pr_review_section "$RESULTS_DIR/agent-review.md" summary)" ]; then
+  fail "PR description parser followed an agent-created symlink"
+fi
+rm -f "$RESULTS_DIR/agent-review.md"
+pass "PR description parser does not follow agent-created symlinks"
+
 mv "$RESULTS_DIR/result-summary.md" "$RESULTS_DIR/result-summary.saved.md"
 cat > "$RESULTS_DIR/changed-files.txt" <<'FILES'
 src/alpha.ts
@@ -202,13 +272,19 @@ src/epsilon.ts
 FILES
 file_only_body="$(build_pr_body 2>"$TMP_DIR/file-fallback.stderr")"
 mv "$RESULTS_DIR/result-summary.saved.md" "$RESULTS_DIR/result-summary.md"
-grep -Fq 'Updated several files, including' <<<"$file_only_body" || fail "File-based fallback did not identify the changed files"
+grep -Fq 'A reviewer-ready change description was not generated; review the diff for implementation details.' <<<"$file_only_body" \
+  || fail "File-only fallback did not disclose that a change description is missing"
+grep -Fq '## Files changed' <<<"$file_only_body" || fail "File-only fallback did not label its file inventory"
 grep -Fq '`src/alpha.ts`' <<<"$file_only_body" || fail "File-based fallback omitted a changed path"
 if [ -s "$TMP_DIR/file-fallback.stderr" ]; then
   fail "File-based fallback wrote an error while formatting paths"
 fi
 if grep -Eiq '[0-9]+ files? changed|across [0-9]+ changed files?' <<<"$file_only_body" || grep -Fq '## Changes' <<<"$file_only_body"; then
   fail "File-based fallback repeated file counts or a duplicate file inventory"
+fi
+file_summary="$(sed -n '/^## Summary$/,/^## /{ /^## Summary$/d; /^## /d; p; }' <<<"$file_only_body")"
+if grep -Fq '`src/alpha.ts`' <<<"$file_summary"; then
+  fail "Changed filenames were presented as the summary"
 fi
 if grep -Fq 'Fix OAuth flow' <<<"$file_only_body"; then
   fail "File-based fallback repeated the task prompt"
@@ -219,7 +295,7 @@ pass "File-based fallback avoids task echoes, counts, and duplicate file lists"
 fallback_body="$(build_pr_fallback_body)"
 grep -Fq '## Summary' <<<"$fallback_body" || fail "Empty-body fallback omitted the summary"
 grep -Fq '## Verification' <<<"$fallback_body" || fail "Empty-body fallback omitted verification"
-if grep -Eiq 'Run metadata|Generated at|Publish mode|Duration:|pre-agent validation|file(s)? changed' <<<"$fallback_body"; then
+if grep -Eiq 'Run metadata|Generated at|Publish mode|Duration:|pre-agent validation|[0-9]+ files? changed' <<<"$fallback_body"; then
   fail "Empty-body fallback included run metadata or baseline validation"
 fi
 pass "Empty-body fallback stays concise and reviewer-focused"

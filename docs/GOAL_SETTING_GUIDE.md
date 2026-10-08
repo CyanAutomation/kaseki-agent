@@ -330,6 +330,7 @@ const warnings = hasQualityWarnings(goal_setting_output);
 | `KASEKI_GOAL_SETTING` | `1` (enabled) | Set to `0` to disable goal-setting |
 | `KASEKI_GOAL_SETTING_MODEL` | same as `KASEKI_SCOUTING_MODEL` | Optional Pi model override |
 | `KASEKI_GOAL_SETTING_TIMEOUT_SECONDS` | `300` | Max seconds for goal-setting agent |
+| `KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS` | `60` | Max seconds for the retry after an initial timeout; capped at the initial timeout |
 
 ### API Request Example
 
