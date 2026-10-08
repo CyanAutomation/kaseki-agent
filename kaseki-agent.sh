@@ -6858,6 +6858,7 @@ run_goal_setting_agent_with_retry() {
   local goal_setting_stderr_capture goal_setting_last_exit goal_setting_last_stderr
   local pre_goal_setting_status pre_goal_setting_failed_command goal_setting_phase_start_time
   local attempt_start_time attempt_end_time attempt_duration_ms attempt_duration_sec attempt_timeout_seconds
+  local retry_timeout_seconds="${KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS:-60}"
   local goal_setting_errexit_was_enabled=0
 
   case $- in
@@ -6879,7 +6880,7 @@ run_goal_setting_agent_with_retry() {
   while [ "$attempt" -le "$max_attempts" ]; do
     attempt_timeout_seconds="$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS"
     if [ "$attempt" -gt 1 ] && [ "$goal_setting_last_exit" -eq 124 ]; then
-      attempt_timeout_seconds="$KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS"
+      attempt_timeout_seconds="$retry_timeout_seconds"
       if [ "$attempt_timeout_seconds" -gt "$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS" ]; then
         attempt_timeout_seconds="$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS"
       fi
@@ -7050,7 +7051,7 @@ run_goal_setting_agent_with_retry() {
     "$max_attempts" \
     "$total_goal_setting_duration" \
     "${KASEKI_GOAL_SETTING_TIMEOUT_SECONDS:-300}" \
-    "$KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS" \
+    "$retry_timeout_seconds" \
     "$attempt_duration_sec" \
     "${GOAL_SETTING_ACTUAL_MODEL:-unknown}" \
     "$(printf '%s' "$goal_setting_last_stderr" | tail -c 400)" \
