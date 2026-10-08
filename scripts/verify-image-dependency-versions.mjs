@@ -13,6 +13,9 @@ const FIXED_VERSIONS = {
     4: '5.0.7',
     5: '5.0.12',
   },
+  handlebars: {
+    4: '4.7.10',
+  },
   undici: {
     6: '6.28.1',
     7: '7.29.1',
@@ -101,7 +104,7 @@ if (isMain) {
   const roots = process.argv.slice(2);
   try {
     verifyImageDependencyVersions(roots);
-    process.stdout.write(`No vulnerable brace-expansion or undici versions found under ${roots.join(', ')}.\n`);
+    process.stdout.write(`No vulnerable brace-expansion, handlebars, or undici versions found under ${roots.join(', ')}.\n`);
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;

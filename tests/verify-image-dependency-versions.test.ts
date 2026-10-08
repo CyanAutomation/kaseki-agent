@@ -42,6 +42,7 @@ describe('image dependency version verification', () => {
       createPackage(root, 'npm/node_modules/brace-expansion-v1', 'brace-expansion', '1.1.21');
       createPackage(root, 'npm/node_modules/brace-expansion-v2', 'brace-expansion', '2.1.7');
       createPackage(root, 'npm/node_modules/undici', 'undici', '6.28.1');
+      createPackage(root, 'handlebars', 'handlebars', '4.7.10');
       createPackage(root, '@earendil-works/pi-coding-agent', '@earendil-works/pi-coding-agent', '0.87.1');
       createPackage(root, '@earendil-works/pi-coding-agent/node_modules/brace-expansion', 'brace-expansion', '5.0.12');
       createPackage(root, '@earendil-works/pi-coding-agent/node_modules/undici', 'undici', '8.10.2');
@@ -58,6 +59,7 @@ describe('image dependency version verification', () => {
       createPackage(root, 'npm/node_modules/brace-expansion-v2', 'brace-expansion', '2.1.6');
       createPackage(root, 'npm/node_modules/undici', 'undici', '6.28.0');
       createPackage(root, '@earendil-works/pi-coding-agent/node_modules/undici', 'undici', '8.9.0');
+      createPackage(root, 'handlebars', 'handlebars', '4.7.9');
       createPackage(root, 'brace-expansion-v3', 'brace-expansion', '3.0.8');
       createPackage(root, 'legacy-v4/node_modules/brace-expansion', 'brace-expansion', '4.0.1');
 
@@ -70,6 +72,7 @@ describe('image dependency version verification', () => {
       expect(result.stderr).toContain('@earendil-works/pi-coding-agent/node_modules/undici/package.json: 8.9.0');
       expect(result.stderr).toContain('brace-expansion-v3/package.json: 3.0.8 (fixed in 5.0.7)');
       expect(result.stderr).toContain('legacy-v4/node_modules/brace-expansion/package.json: 4.0.1 (fixed in 5.0.7)');
+      expect(result.stderr).toContain('handlebars/package.json: 4.7.9 (fixed in 4.7.10)');
     });
   });
 });
