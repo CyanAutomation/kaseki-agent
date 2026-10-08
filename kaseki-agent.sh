@@ -437,6 +437,10 @@ KASEKI_HASHLINE_EDITS="${KASEKI_HASHLINE_EDITS:-1}"
 KASEKI_GOAL_SETTING="${KASEKI_GOAL_SETTING:-1}"
 KASEKI_GOAL_SETTING_MODEL="${KASEKI_GOAL_SETTING_MODEL:-$KASEKI_SCOUTING_MODEL}"
 KASEKI_GOAL_SETTING_TIMEOUT_SECONDS="${KASEKI_GOAL_SETTING_TIMEOUT_SECONDS:-300}"
+KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS="${KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS:-60}"
+if ! [[ "$KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+  KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS=60
+fi
 KASEKI_GOAL_SETTING_MAX_OUTPUT_TOKENS="${KASEKI_GOAL_SETTING_MAX_OUTPUT_TOKENS:-$KASEKI_SCOUTING_MAX_OUTPUT_TOKENS}"
 KASEKI_GOAL_SETTING_MAX_CONTEXT_TOKENS="${KASEKI_GOAL_SETTING_MAX_CONTEXT_TOKENS:-18000}"
 KASEKI_GOAL_SETTING_MAX_TURNS="${KASEKI_GOAL_SETTING_MAX_TURNS:-6}"
@@ -6603,6 +6607,7 @@ NODE_FALLBACK
 
 run_goal_setting_agent() {
   local goal_setting_prompt goal_setting_start goal_setting_stderr_capture
+  local goal_setting_timeout_seconds="${1:-$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS}"
 
   printf '\n==> pi goal-setting agent\n'
   set_current_stage "pi goal-setting agent"
@@ -6631,7 +6636,7 @@ run_goal_setting_agent() {
   set +e
   KASEKI_PHASE_OUTPUT_TOKEN_TARGET="${KASEKI_GOAL_SETTING_MAX_OUTPUT_TOKENS:-}"
   export KASEKI_PHASE_OUTPUT_TOKEN_TARGET
-  run_pi_with_retry "$GOAL_SETTING_RAW_EVENTS" "$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS" "$KASEKI_GOAL_SETTING_MODEL" "$goal_setting_prompt" "goal-setting-summary" "" "goal-setting"
+  run_pi_with_retry "$GOAL_SETTING_RAW_EVENTS" "$goal_setting_timeout_seconds" "$KASEKI_GOAL_SETTING_MODEL" "$goal_setting_prompt" "goal-setting-summary" "" "goal-setting"
   GOAL_SETTING_EXIT="$?"
   GOAL_SETTING_DURATION_SECONDS=$(($(date +%s) - goal_setting_start))
   unset goal_setting_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL KASEKI_PHASE_OUTPUT_TOKEN_TARGET
@@ -6720,7 +6725,7 @@ run_goal_setting_agent() {
   consolidate_completed_phase "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "goal-setting" "${KASEKI_RESULTS_DIR}"/goal-setting-summary.json
   GOAL_SETTING_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/goal-setting-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
   
-  record_stage_timing "pi goal-setting agent" "$GOAL_SETTING_EXIT" "$GOAL_SETTING_DURATION_SECONDS" "artifact=$GOAL_SETTING_ARTIFACT timeout_seconds=$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS degraded=$GOAL_SETTING_FALLBACK_USED fallback_mode=${GOAL_SETTING_FALLBACK_MODE:-none}"
+  record_stage_timing "pi goal-setting agent" "$GOAL_SETTING_EXIT" "$GOAL_SETTING_DURATION_SECONDS" "artifact=$GOAL_SETTING_ARTIFACT timeout_seconds=$goal_setting_timeout_seconds degraded=$GOAL_SETTING_FALLBACK_USED fallback_mode=${GOAL_SETTING_FALLBACK_MODE:-none}"
   
   if [ "$GOAL_SETTING_EXIT" -ne 0 ]; then
     emit_error_event "pi_goal_setting_failed" "Goal-setting agent exited before scouting: $GOAL_SETTING_EXIT; continuing with original TASK_PROMPT" "continue"
@@ -6852,7 +6857,7 @@ run_goal_setting_agent_with_retry() {
   local attempt=1 max_attempts=2
   local goal_setting_stderr_capture goal_setting_last_exit goal_setting_last_stderr
   local pre_goal_setting_status pre_goal_setting_failed_command goal_setting_phase_start_time
-  local attempt_start_time attempt_end_time attempt_duration_sec
+  local attempt_start_time attempt_end_time attempt_duration_ms attempt_duration_sec attempt_timeout_seconds
   local goal_setting_errexit_was_enabled=0
 
   case $- in
@@ -6872,8 +6877,16 @@ run_goal_setting_agent_with_retry() {
   GOAL_SETTING_CONTRACT_REPAIR_REQUIRED=0
 
   while [ "$attempt" -le "$max_attempts" ]; do
-    attempt_start_time="$(date +%s.%N)"
-    printf '[Goal-Setting Phase] Attempt %d/%d (timeout: %ds)\n' "$attempt" "$max_attempts" "$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS"
+    attempt_timeout_seconds="$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS"
+    if [ "$attempt" -gt 1 ] && [ "$goal_setting_last_exit" -eq 124 ]; then
+      attempt_timeout_seconds="$KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS"
+      if [ "$attempt_timeout_seconds" -gt "$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS" ]; then
+        attempt_timeout_seconds="$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS"
+      fi
+      printf '[Goal-Setting Phase] Prior attempt reached its timeout; bounding the retry to %ds.\n' "$attempt_timeout_seconds"
+    fi
+    attempt_start_time="$(date +%s%3N)"
+    printf '[Goal-Setting Phase] Attempt %d/%d (timeout: %ds)\n' "$attempt" "$max_attempts" "$attempt_timeout_seconds"
     rm -f "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt 2>/dev/null || true
 
     # Capture stderr for failure classification
@@ -6884,7 +6897,7 @@ run_goal_setting_agent_with_retry() {
     else
       unset KASEKI_GOAL_SETTING_CONTRACT_STRICT
     fi
-    run_goal_setting_agent 2>"$goal_setting_stderr_capture"
+    run_goal_setting_agent "$attempt_timeout_seconds" 2>"$goal_setting_stderr_capture"
     goal_setting_last_exit=$?
     unset KASEKI_GOAL_SETTING_CONTRACT_STRICT
     if [ "$goal_setting_errexit_was_enabled" -eq 1 ]; then
@@ -6892,13 +6905,14 @@ run_goal_setting_agent_with_retry() {
     else
       set +e
     fi
-    attempt_end_time="$(date +%s.%N)"
-    attempt_duration_sec=$(printf '%.1f' "$(printf '%s - %s\n' "$attempt_end_time" "$attempt_start_time" | bc -l 2>/dev/null || echo 0)")
+    attempt_end_time="$(date +%s%3N)"
+    attempt_duration_ms=$((attempt_end_time - attempt_start_time))
+    attempt_duration_sec="$((attempt_duration_ms / 1000)).$(((attempt_duration_ms % 1000) / 100))"
 
     goal_setting_last_stderr="$(cat "$goal_setting_stderr_capture" 2>/dev/null || true)"
     if [ -n "$goal_setting_last_stderr" ] || [ "$goal_setting_last_exit" -ne 0 ]; then
       {
-        printf '[attempt %d exit %d duration %.1fs timestamp %s]\n' "$attempt" "$goal_setting_last_exit" "$attempt_duration_sec" "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)"
+        printf '[attempt %d exit %d duration %ss timestamp %s]\n' "$attempt" "$goal_setting_last_exit" "$attempt_duration_sec" "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)"
         if [ -n "$goal_setting_last_stderr" ]; then
           printf '%s\n' "$goal_setting_last_stderr"
         else
@@ -7009,6 +7023,8 @@ run_goal_setting_agent_with_retry() {
       maxAttempts,
       totalDurationSeconds,
       timeoutSeconds,
+      retryTimeoutSeconds,
+      lastAttemptDurationSeconds,
       model,
       stderrTail,
     ] = process.argv.slice(1);
@@ -7019,6 +7035,8 @@ run_goal_setting_agent_with_retry() {
       attempts: Number(maxAttempts),
       total_duration_seconds: Number(totalDurationSeconds),
       timeout_seconds: Number(timeoutSeconds),
+      retry_timeout_seconds: Number(retryTimeoutSeconds),
+      last_attempt_duration_seconds: Number(lastAttemptDurationSeconds),
       model,
       reason: "max_retry_attempts_exhausted",
       stderr_tail: stderrTail,
@@ -7032,6 +7050,8 @@ run_goal_setting_agent_with_retry() {
     "$max_attempts" \
     "$total_goal_setting_duration" \
     "${KASEKI_GOAL_SETTING_TIMEOUT_SECONDS:-300}" \
+    "$KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS" \
+    "$attempt_duration_sec" \
     "${GOAL_SETTING_ACTUAL_MODEL:-unknown}" \
     "$(printf '%s' "$goal_setting_last_stderr" | tail -c 400)" \
     2>/dev/null || true
@@ -9203,10 +9223,82 @@ format_pr_command_results_bounded() {
   printf '\n</details>\n'
 }
 
+extract_pr_review_section() {
+  local review_file="$1"
+  local section="$2"
+  local max_rows="${3:-1}"
+  local max_length="${4:-600}"
+  [ -s "$review_file" ] && [ ! -L "$review_file" ] || return 0
+  node - "$review_file" "$section" "$max_rows" "$max_length" <<'NODE' 2>/dev/null || true
+const fs = require('fs');
+const [file, requestedSection, maxRowsValue, maxLengthValue] = process.argv.slice(2);
+const maxRows = Number.parseInt(maxRowsValue, 10) || 1;
+const maxLength = Number.parseInt(maxLengthValue, 10) || 600;
+const accepted = requestedSection === 'summary'
+  ? new Set(['summary', 'pr summary'])
+  : new Set(['changes', 'pr changes', 'implementation changes']);
+let current = '';
+let paragraph = [];
+const bullets = [];
+try {
+  for (const rawLine of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const heading = rawLine.match(/^#{1,3}\s+(.+?)\s*#*\s*$/);
+    if (heading) {
+      if (current === 'summary' && paragraph.length) break;
+      current = accepted.has(heading[1].trim().toLowerCase()) ? requestedSection : '';
+      if (requestedSection === 'summary' && current) paragraph = [];
+      if (requestedSection !== 'summary' && !current && bullets.length) break;
+      continue;
+    }
+    if (current !== requestedSection) continue;
+    const line = rawLine.replace(/[\x00-\x1f\x7f]/g, '').trim();
+    if (!line) {
+      if (requestedSection === 'summary' && paragraph.length) break;
+      continue;
+    }
+    if (requestedSection === 'summary') {
+      paragraph.push(line.replace(/^(?:[-*+]\s+|\d+[.)]\s+)/, ''));
+    } else {
+      const bullet = line.match(/^(?:[-*+]\s+|\d+[.)]\s+)(.+)$/);
+      if (!bullet) continue;
+      const value = bullet[1].replace(/\s+/g, ' ').trim();
+      if (value) bullets.push(value);
+      if (bullets.length >= maxRows) break;
+    }
+  }
+} catch {}
+const values = requestedSection === 'summary'
+  ? [paragraph.join(' ').replace(/\s+/g, ' ').trim()]
+  : bullets;
+for (const value of values.slice(0, maxRows)) {
+  if (!value) continue;
+  const clipped = value.length > maxLength ? `${value.slice(0, Math.max(0, maxLength - 3))}...` : value;
+  console.log(requestedSection === 'summary' ? clipped : `- ${clipped}`);
+}
+NODE
+}
+
+is_reviewer_ready_pr_summary() {
+  local candidate="$1"
+  [ -n "$candidate" ] || return 1
+  node - "$candidate" <<'NODE' >/dev/null 2>&1
+const text = String(process.argv[2] || '').replace(/\s+/g, ' ').trim();
+if (text.length < 24 || /^(run assessed|\d+ changed files?\b)|\bvalidation (was not run|commands? (passed|failed))\b|\bgoal check (succeeded|failed|met|unmet|uncertain)\b/i.test(text)) process.exit(1);
+const tokens = text.replace(/[`*_~]/g, '').split(/\s+/).filter(Boolean);
+const fileToken = token => /^(?:[\w.-]+\/)*[\w.-]+\.(?:[cm]?[jt]sx?|vue|svelte|py|go|rs|java|md|json|ya?ml|css|scss|html|sh|sql|toml|xml|gradle|kt|swift|rb|php|ex|exs|erl|hs|c|h|cpp|hpp)[,;:.!?)]*$/i.test(token);
+const withoutFiles = tokens.filter(token => !fileToken(token)).join(' ');
+const filler = new Set(['a', 'an', 'the', 'and', 'or', 'of', 'to', 'for', 'in', 'on', 'with', 'from', 'this', 'that', 'updated', 'update', 'changed', 'change', 'file', 'files', 'repository', 'repo']);
+const descriptiveWords = (withoutFiles.match(/[\p{L}\p{N}]+/gu) || []).filter(word => !filler.has(word.toLowerCase()));
+if (descriptiveWords.length < 3 || !/[.!?]$/.test(text)) process.exit(1);
+process.exit(0);
+NODE
+}
+
 build_pr_summary() {
   local evaluation_file="${KASEKI_RESULTS_DIR}/run-evaluation.json"
+  local summary
   [ -s "$evaluation_file" ] || return 0
-  node - "$evaluation_file" <<'NODE' 2>/dev/null | sanitize_pr_body_text || true
+  summary="$(node - "$evaluation_file" <<'NODE' 2>/dev/null | sanitize_pr_body_text || true
 const fs = require('fs');
 try {
   const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
@@ -9226,15 +9318,25 @@ try {
   if (summary) process.stdout.write(summary.slice(0, 600));
 } catch {}
 NODE
+ )"
+  if is_reviewer_ready_pr_summary "$summary"; then
+    printf '%s' "$summary"
+  fi
 }
 
 build_pr_changes() {
   local evaluation_file="${KASEKI_RESULTS_DIR}/run-evaluation.json"
   local pi_summary_file="${KASEKI_RESULTS_DIR}/pi-summary.json"
+  local agent_review_file="${KASEKI_RESULTS_DIR}/agent-review.md"
   local changes="" key
   if [ -s "$evaluation_file" ]; then
     changes="$(format_pr_json_list "$evaluation_file" "pr_changes" 4 220 | sanitize_pr_body_text)"
   fi
+  if [ -n "$changes" ]; then
+    printf '%s\n' "$changes"
+    return 0
+  fi
+  changes="$(extract_pr_review_section "$agent_review_file" changes 4 220 | sanitize_pr_body_text)"
   if [ -n "$changes" ]; then
     printf '%s\n' "$changes"
     return 0
@@ -9277,6 +9379,22 @@ NODE
 build_pr_agent_review() {
   local goal_file="${KASEKI_RESULTS_DIR}/goal-check.json"
   local missing goal_met line
+
+  # A threshold-adjacent verdict is not a concrete missing requirement. Ask
+  # the reviewer to verify the behavior without exposing scoring internals.
+  if [ -s "$goal_file" ] && node - "$goal_file" <<'NODE' >/dev/null 2>&1
+const fs = require('fs');
+try {
+  const value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  const internalUncertainty = Array.isArray(value?.missing) && value.missing.some(item =>
+    /\b(?:noul|threshold|unmet boundary|pass threshold|inconclusive|uncertain|probabilit(?:y|ies))\b/i.test(String(item)));
+  process.exit(value?.outcome === 'uncertain' || value?.review_required === true || internalUncertainty ? 0 : 1);
+} catch { process.exit(1); }
+NODE
+  then
+    printf -- '- The evidence does not conclusively verify one expected outcome; please check it against the diff.\n'
+    return 0
+  fi
 
   # If completion could not be established, say what the reviewer should do
   # without publishing evaluator or artifact-processing details.
@@ -9331,71 +9449,62 @@ NODE
 
 build_pr_improvements_summary() {
   local summary="" summary_file="$KASEKI_RESULTS_DIR/result-summary.md"
+  local agent_review_file="$KASEKI_RESULTS_DIR/agent-review.md"
   local pi_summary_file="$KASEKI_RESULTS_DIR/pi-summary.json"
-  local path safe_path total=0 first_path="" second_path="" third_path=""
-  local tick="$(printf '\140')"
+  local review_file
 
-  if [ -s "$summary_file" ]; then
-    summary="$(awk '
-      /^#{1,3}[[:space:]]+Summary[[:space:]]*$/ { in_summary=1; next }
-      in_summary && /^#{1,3}[[:space:]]+/ { exit }
-      in_summary {
-        line=$0
-        sub(/^[[:space:]]*[-*][[:space:]]+/, "", line)
-        sub(/^[[:space:]]*[0-9]+[.)][[:space:]]+/, "", line)
-        if (line ~ /[^[:space:]]/) { print line; exit }
-      }
-    ' "$summary_file" 2>/dev/null | sanitize_pr_body_text)"
-  fi
+  for review_file in "$agent_review_file" "$summary_file"; do
+    [ -s "$review_file" ] || continue
+    summary="$(extract_pr_review_section "$review_file" summary 1 600 | sanitize_pr_body_text)"
+    if is_reviewer_ready_pr_summary "$summary"; then
+      printf '%s' "$(truncate_pr_metadata_text 600 "$summary")"
+      return 0
+    fi
+  done
 
-  if [ -z "$summary" ] && [ -s "$pi_summary_file" ]; then
+  if [ -s "$pi_summary_file" ]; then
     summary="$(node - "$pi_summary_file" <<'NODE' 2>/dev/null || true
 const fs = require('fs');
 try {
   const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-  if (typeof data?.summary === 'string') process.stdout.write(data.summary.replace(/\s+/g, ' ').trim());
+  const value = typeof data?.summary === 'string' ? data.summary.replace(/\s+/g, ' ').trim() : '';
+  if (value) process.stdout.write(value);
 } catch {}
 NODE
 )"
     summary="$(printf '%s' "$summary" | sanitize_pr_body_text)"
   fi
 
-  if [ -n "$summary" ]; then
+  if is_reviewer_ready_pr_summary "$summary"; then
     printf '%s' "$(truncate_pr_metadata_text 600 "$summary")"
     return 0
   fi
+}
 
-  if [ -s "$KASEKI_RESULTS_DIR/changed-files.txt" ]; then
-    while IFS= read -r path || [ -n "$path" ]; do
-      [ -n "$path" ] || continue
-      total=$((total + 1))
-      safe_path="$(truncate_pr_metadata_text 160 "$(printf '%s' "$path" | sanitize_pr_metadata_text)")"
-      case "$total" in
-        1) first_path="$safe_path" ;;
-        2) second_path="$safe_path" ;;
-        3) third_path="$safe_path" ;;
-      esac
-    done < "$KASEKI_RESULTS_DIR/changed-files.txt"
-  fi
-
-  if [ "$total" -eq 0 ]; then
-    printf 'No file changes were recorded.'
-  elif [ "$total" -eq 1 ]; then
-    printf 'Updated %s%s%s.' "$tick" "$first_path" "$tick"
-  elif [ "$total" -eq 2 ]; then
-    printf 'Updated %s%s%s and %s%s%s.' "$tick" "$first_path" "$tick" "$tick" "$second_path" "$tick"
-  elif [ "$total" -eq 3 ]; then
-    printf 'Updated %s%s%s, %s%s%s, and %s%s%s.' "$tick" "$first_path" "$tick" "$tick" "$second_path" "$tick" "$tick" "$third_path" "$tick"
-  else
-    printf 'Updated several files, including %s%s%s, %s%s%s, and %s%s%s.' \
-      "$tick" "$first_path" "$tick" "$tick" "$second_path" "$tick" "$tick" "$third_path" "$tick"
+build_pr_files_changed() {
+  local path safe_path total=0 max_rows=10 tick="$(printf '\140')"
+  [ -s "$KASEKI_RESULTS_DIR/changed-files.txt" ] || return 0
+  while IFS= read -r path || [ -n "$path" ]; do
+    [ -n "$path" ] || continue
+    total=$((total + 1))
+    [ "$total" -le "$max_rows" ] || continue
+    safe_path="$(truncate_pr_metadata_text 180 "$(printf '%s' "$path" | sanitize_pr_metadata_text)")"
+    safe_path="${safe_path//\`/\\\`}"
+    [ -n "$safe_path" ] || continue
+    printf -- '- %s%s%s\n' "$tick" "$safe_path" "$tick"
+  done < "$KASEKI_RESULTS_DIR/changed-files.txt"
+  if [ "$total" -gt "$max_rows" ]; then
+    printf -- '- %s more changed files\n' "$((total - max_rows))"
   fi
 }
 build_pr_body() {
-  local summary="" changes agent_review review_focus review_notes="" verification
+  local summary="" changes agent_review review_focus review_notes="" verification files_changed
   summary="$(build_pr_summary)"
   [ -n "$summary" ] || summary="$(build_pr_improvements_summary)"
+  [ -n "$summary" ] || summary="A reviewer-ready change description was not generated; review the diff for implementation details."
   changes="$(build_pr_changes)"
+  files_changed=""
+  [ -n "$changes" ] || files_changed="$(build_pr_files_changed | sanitize_pr_body_text)"
   agent_review="$(build_pr_agent_review)"
   review_focus="$(build_pr_human_review_focus)"
 
@@ -9433,6 +9542,8 @@ ${review_focus}"
   printf '## Summary\n%s\n' "$summary"
   if [ -n "$changes" ]; then
     printf '\n## Changes\n%s\n' "$changes"
+  elif [ -n "$files_changed" ]; then
+    printf '\n## Files changed\n%s\n' "$files_changed"
   fi
   if [ -n "$review_notes" ]; then
     printf '\n%s\n' "$review_notes"
@@ -9441,15 +9552,17 @@ ${review_focus}"
 }
 
 build_pr_fallback_body() {
-  local fallback_summary fallback_verification
+  local fallback_summary fallback_verification fallback_files_changed
   fallback_summary="$(build_pr_improvements_summary)"
-  [ -n "$fallback_summary" ] || fallback_summary="This pull request updates repository files."
+  [ -n "$fallback_summary" ] || fallback_summary="A reviewer-ready change description was not generated; review the diff for implementation details."
+  fallback_files_changed="$(build_pr_files_changed | sanitize_pr_body_text)"
   fallback_verification="$(format_pr_command_results_bounded "$VALIDATION_TIMINGS_FILE")"
   [ -n "$fallback_verification" ] || fallback_verification="- No post-agent validation commands were recorded."
+  printf '## Summary\n%s\n' "$fallback_summary"
+  if [ -n "$fallback_files_changed" ]; then
+    printf '\n## Files changed\n%s\n' "$fallback_files_changed"
+  fi
   cat <<EOF
-## Summary
-$fallback_summary
-
 ## Verification
 $fallback_verification
 EOF

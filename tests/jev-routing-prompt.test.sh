@@ -25,5 +25,9 @@ grep -q 'Likely task type: documentation' <<< "$prompt"
 grep -q 'Suggested validation focus: docs_checks' <<< "$prompt"
 grep -q 'explicit validation commands, allowlists, and repository instructions take precedence' <<< "$prompt"
 grep -q 'Do not skip required validation or request human input' <<< "$prompt"
+grep -Fq "$KASEKI_RESULTS_DIR/agent-review.md" <<< "$prompt" \
+  || { printf '✗ coding prompt omitted the reviewer description artifact path\n' >&2; exit 1; }
+grep -q 'reviewer-facing PR description' <<< "$prompt" \
+  || { printf '✗ coding prompt omitted the reviewer description contract\n' >&2; exit 1; }
 
 printf '✓ Evaluation routing hints stay advisory and preserve automatic flow\n'

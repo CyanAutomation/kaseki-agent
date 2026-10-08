@@ -79,6 +79,19 @@ grep -q -- '- Goal Check: Contract met; semantic evaluation unavailable, human r
 grep -q -- '- No-Change Outcome: Accepted by run policy' "$summary"
 grep -q 'The run made no changes because no safe improvement was found\.' "$KASEKI_RESULTS_DIR/agent-review.md"
 
+# A coding agent may write the dedicated reviewer description directly. The
+# canonical run-summary writer must preserve that artifact unchanged.
+cat > "$KASEKI_RESULTS_DIR/agent-review.md" <<'REVIEW'
+## Summary
+Preserves callback state across retries.
+
+## Changes
+- Adds retry regression coverage.
+REVIEW
+write_result_summary
+grep -Fq 'Preserves callback state across retries.' "$KASEKI_RESULTS_DIR/agent-review.md"
+grep -Fq 'Adds retry regression coverage.' "$KASEKI_RESULTS_DIR/agent-review.md"
+
 printf '%s\n' '{"instance":"run-123","exit_code":8,"validation_commands_attempted":0,"validation_exit_code":0,"phases":{"validation":{"commands_attempted":2,"results":[{"status":"passed"},{"status":"passed"}]}}}' > "$KASEKI_RESULTS_DIR/metadata.json"
 write_result_summary
 grep -q -- '- Validation: Passed (2 commands attempted)' "$summary"
