@@ -126,7 +126,7 @@ function createFetch(state: ReturnType<typeof runState>, options: { loseFirstAck
   let pulls = 0;
   let acks = 0;
   const calls: Array<{ url: string; method: string; body?: Record<string, unknown> }> = [];
-  const fetchImpl = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  const fetchImpl = jest.fn(async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     const url = String(input);
     const method = init?.method ?? 'GET';
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : undefined;

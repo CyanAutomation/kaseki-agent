@@ -1,6 +1,8 @@
 import { CloudflareQueueConsumer } from './CloudflareQueueConsumer';
 import type { SoyuzAdapterConfig } from './config';
 
+type FetchOptions = Parameters<typeof fetch>[1];
+
 const config: SoyuzAdapterConfig = {
   enabled: true,
   apiUrl: 'https://soyuz.example.test',
@@ -32,7 +34,7 @@ describe('Cloudflare HTTP pull consumer', () => {
       attempts: 1,
       lease_id: 'lease',
     }]);
-    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, FetchOptions];
     expect(url).toContain('/messages/pull');
     expect(JSON.parse(String(init.body))).toEqual({ visibility_timeout_ms: 120_000, batch_size: 1 });
     expect(init.headers).toMatchObject({ authorization: 'Bearer cloudflare-queue-secret' });
@@ -45,8 +47,8 @@ describe('Cloudflare HTTP pull consumer', () => {
     await queue.acknowledge('lease-1');
     await queue.retry('lease-2', 30);
 
-    const acknowledgement = JSON.parse(String((fetchImpl.mock.calls[0][1] as RequestInit).body));
-    const retry = JSON.parse(String((fetchImpl.mock.calls[1][1] as RequestInit).body));
+    const acknowledgement = JSON.parse(String((fetchImpl.mock.calls[0][1] as FetchOptions).body));
+    const retry = JSON.parse(String((fetchImpl.mock.calls[1][1] as FetchOptions).body));
     expect(acknowledgement).toEqual({ acks: [{ lease_id: 'lease-1' }], retries: [] });
     expect(retry).toEqual({ acks: [], retries: [{ lease_id: 'lease-2', delay_seconds: 30 }] });
   });
