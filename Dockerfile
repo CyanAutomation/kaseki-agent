@@ -1,8 +1,10 @@
 # syntax=docker/dockerfile:1
 # Bump the pinned Node base image monthly with a security review.
 # Node v24 base image: Revalidated October 2026; the upstream tag still resolves to this digest.
+# Use the AWS ECR Public mirror of the Docker Official Image to avoid Docker Hub
+# unauthenticated pull limits in CI. The pinned manifest digest is unchanged.
 # Using ARG for DRY principle - base image used in both stages
-ARG NODE_IMAGE=node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6
+ARG NODE_IMAGE=public.ecr.aws/docker/library/node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6
 
 # The Node image bundles npm, whose dependency tree is part of every image
 # stage. Install reviewed tool versions from a lockfile and repair bundled
