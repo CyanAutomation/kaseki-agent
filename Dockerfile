@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# BuildKit's bundled Dockerfile frontend is used to avoid pulling syntax from Docker Hub.
 # Bump the pinned Node base image monthly with a security review.
 # Node v24 base image: Revalidated October 2026; the upstream tag still resolves to this digest.
 # Use the AWS ECR Public mirror of the Docker Official Image to avoid Docker Hub
