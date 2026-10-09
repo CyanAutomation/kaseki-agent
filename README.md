@@ -377,6 +377,7 @@ Each run produces isolated workspace with:
 - [API Documentation](docs/API.md) - REST API specification
 - [Deployment Guide](docs/DEPLOYMENT.md) - Production deployment
 - [Environment Variables](docs/ENV_VARS.md) - Configuration reference
+- [Soyuz Host Integration](docs/SOYUZ_INTEGRATION.md) - Queue adapter setup, recovery, and operations
 - [Advanced Configuration](docs/ADVANCED_CONFIG.md) - Detailed setup options
 - [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues and solutions
 

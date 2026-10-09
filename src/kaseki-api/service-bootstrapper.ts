@@ -52,6 +52,10 @@ const defaultServiceBootstrapFactories: ServiceBootstrapFactories = {
 export interface ShutdownDeps {
   server: Server;
   scheduler: Pick<JobScheduler, 'shutdown'>;
+  soyuzAdapter?: {
+    stopConsuming(): Promise<void>;
+    shutdown(): Promise<void>;
+  };
   webhookManager: Pick<WebhookManager, 'shutdown'>;
   idempotencyStore: Pick<IdempotencyStore, 'shutdown'>;
   forceExitAfterMs?: number;
@@ -226,7 +230,10 @@ export async function gracefulShutdown(deps: ShutdownDeps): Promise<boolean> {
   }, forceExitAfterMs);
 
   try {
-    // 1. Close HTTP server
+    // 1. Stop taking Queue messages before the scheduler begins shutdown.
+    if (deps.soyuzAdapter) await deps.soyuzAdapter.stopConsuming();
+
+    // 2. Close HTTP server
     if (server.listening === false) {
       logger.info('HTTP server already closed');
     } else {
@@ -242,15 +249,19 @@ export async function gracefulShutdown(deps: ShutdownDeps): Promise<boolean> {
       });
     }
 
-    // 2. Shutdown scheduler
+    // 3. Shutdown scheduler
     await scheduler.shutdown();
     logger.info('Job scheduler shutdown');
 
-    // 3. Shutdown webhook manager
+    // 4. Persist and make a final bounded attempt to deliver terminal callbacks.
+    await deps.soyuzAdapter?.shutdown();
+    logger.info('Soyuz adapter shutdown');
+
+    // 5. Shutdown webhook manager
     await webhookManager.shutdown();
     logger.info('Webhook manager shutdown');
 
-    // 4. Shutdown idempotency store
+    // 6. Shutdown idempotency store
     idempotencyStore.shutdown();
     logger.info('Idempotency store shutdown');
 
