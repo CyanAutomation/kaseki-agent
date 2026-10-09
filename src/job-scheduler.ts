@@ -21,7 +21,11 @@ import { FailureArtifactWriter } from './utils/failure-artifact-writer';
 import { clearRunArtifactMetadataCache } from './run-artifact-metadata-cache';
 import { getSecretFilePath } from './secrets/host-secrets-reader';
 import type { ResultCache } from './result-cache';
-import { JobPersistenceManager } from './job-persistence-manager';
+import {
+  ExternalRunAlreadyPersistedError,
+  JobPersistenceManager,
+  type SoyuzOutboxEntry,
+} from './job-persistence-manager';
 import { EXIT_CODE_SPAWN_FAILED } from './exit-codes';
 import { configureScoutingAndGoalCheckEnv } from './job-environment';
 import type { TaskAdmissionRoutingHints } from './task-admission';
@@ -231,6 +235,228 @@ export class JobScheduler {
     return job;
   }
 
+  /** Persist a Soyuz-owned job without allowing the scheduler to start it yet. */
+  async submitSoyuzJob(
+    request: RunRequest,
+    externalRunId: string,
+    workerId: string,
+    correlationId: string,
+    requestId: string,
+    advisoryRoutingHints?: TaskAdmissionRoutingHints,
+  ): Promise<Job> {
+    await this.ready();
+    const existing = await this.findSoyuzJob(externalRunId);
+    if (existing) return existing;
+
+    const instanceId = await this.persistenceManager.generateInstanceId(Array.from(this.jobs.keys()));
+    const job: Job = {
+      id: instanceId,
+      status: 'queued',
+      request,
+      advisoryRoutingHints,
+      createdAt: new Date(),
+      resultDir: this.persistenceManager.getResultDir(instanceId),
+      correlationId,
+      requestId,
+      soyuz: {
+        externalRunId,
+        workerId,
+        contractVersion: '1',
+        startedCallbackId: randomUUID(),
+        startAuthorized: false,
+        metadataUpdatedAt: new Date().toISOString(),
+      },
+    };
+
+    this.jobs.set(instanceId, job);
+    this.queue.push(job);
+    try {
+      await this.persistenceManager.persistQueuedJob(job);
+    } catch (error) {
+      this.jobs.delete(instanceId);
+      this.queue = this.queue.filter((queued) => queued.id !== instanceId);
+      if (error instanceof ExternalRunAlreadyPersistedError) {
+        const winner = await this.findSoyuzJob(externalRunId);
+        if (winner) return winner;
+      }
+      throw error;
+    }
+
+    this.processQueue();
+    metricsRegistry.setQueuePending(this.queue.length);
+    this.logger.event('soyuz_job_durably_accepted', {
+      jobId: job.id,
+      externalRunId,
+      correlationId,
+      requestId,
+      workerId,
+    });
+    return job;
+  }
+
+  async recordSoyuzAdmissionFailure(
+    request: RunRequest,
+    externalRunId: string,
+    workerId: string,
+    correlationId: string,
+    requestId: string,
+  ): Promise<Job> {
+    await this.ready();
+    const existing = await this.findSoyuzJob(externalRunId);
+    if (existing) return existing;
+    const instanceId = await this.persistenceManager.generateInstanceId(Array.from(this.jobs.keys()));
+    const now = new Date();
+    const job: Job = {
+      id: instanceId,
+      status: 'failed',
+      request,
+      createdAt: now,
+      completedAt: now,
+      exitCode: 9,
+      failureClass: 'kaseki_admission_rejected',
+      error: 'Kaseki rejected this run during local admission. Review Kaseki diagnostics before submitting a corrected request.',
+      finalized: true,
+      resultDir: this.persistenceManager.getResultDir(instanceId),
+      correlationId,
+      requestId,
+      soyuz: {
+        externalRunId,
+        workerId,
+        contractVersion: '1',
+        startedCallbackId: randomUUID(),
+        startAuthorized: false,
+        metadataUpdatedAt: now.toISOString(),
+      },
+    };
+    await this.persistenceManager.persistJobStrict(job);
+    this.jobs.set(instanceId, job);
+    return job;
+  }
+
+  async findSoyuzJob(externalRunId: string): Promise<Job | undefined> {
+    const inMemory = Array.from(this.jobs.values()).find(
+      (job) => job.soyuz?.externalRunId === externalRunId,
+    );
+    return inMemory ?? this.persistenceManager.findJobByExternalRunId(externalRunId);
+  }
+
+  /**
+   * Open the scheduler gate only after the Soyuz started callback succeeded.
+   * The local running state is also persisted before Docker is launched.
+   */
+  async authorizeSoyuzStart(localRunId: string): Promise<boolean> {
+    await this.ready();
+    const job = this.jobs.get(localRunId)
+      ?? (await this.persistenceManager.listPersistedJobs()).find((candidate) => candidate.id === localRunId);
+    if (!job?.soyuz || job.status !== 'queued') return false;
+    if (job.soyuz.startAuthorized && !job.soyuz.startNeedsCanonicalRecheck) {
+      this.processQueue();
+      return true;
+    }
+
+    job.soyuz.startAuthorized = true;
+    job.soyuz.startNeedsCanonicalRecheck = false;
+    job.soyuz.metadataUpdatedAt = new Date().toISOString();
+    try {
+      await this.persistenceManager.persistJobStrict(job);
+    } catch (error) {
+      job.soyuz.startNeedsCanonicalRecheck = true;
+      throw error;
+    }
+    this.jobs.set(job.id, job);
+    if (!this.queue.some((queued) => queued.id === job.id)) this.queue.push(job);
+    this.processQueue();
+    metricsRegistry.setQueuePending(this.queue.length);
+    return true;
+  }
+
+  async updateSoyuzJobMetadata(
+    localRunId: string,
+    update: Partial<NonNullable<Job['soyuz']>>,
+  ): Promise<void> {
+    const job = this.jobs.get(localRunId);
+    if (!job?.soyuz) return;
+    const previous = { ...job.soyuz };
+    job.soyuz = { ...job.soyuz, ...update, metadataUpdatedAt: new Date().toISOString() };
+    try {
+      await this.persistenceManager.persistJobStrict(job);
+    } catch (error) {
+      job.soyuz = previous;
+      throw error;
+    }
+  }
+
+  isJobExecuting(localRunId: string): boolean {
+    return this.running.has(localRunId);
+  }
+
+  isJobProcessAlive(localRunId: string): boolean {
+    return this.processes.has(localRunId) && this.processExited.get(localRunId) !== true;
+  }
+
+  holdSoyuzJob(localRunId: string): void {
+    const job = this.jobs.get(localRunId);
+    if (!job?.soyuz || job.status !== 'queued') return;
+    this.queue = this.queue.filter((queued) => queued.id !== localRunId);
+    metricsRegistry.setQueuePending(this.queue.length);
+  }
+
+  getSoyuzJobs(): Job[] {
+    return Array.from(this.jobs.values()).filter((job) => job.soyuz !== undefined);
+  }
+
+  async listSoyuzJobs(): Promise<Job[]> {
+    const byId = new Map((await this.persistenceManager.listPersistedJobs())
+      .filter((job) => job.soyuz !== undefined && (
+        job.status === 'queued' || job.status === 'running' ||
+        (this.isTerminalJob(job) && !job.soyuz.terminalCallbackDelivered)
+      ))
+      .map((job) => [job.id, job]));
+    for (const job of this.getSoyuzJobs()) {
+      if (job.status === 'queued' || job.status === 'running' ||
+        (this.isTerminalJob(job) && !job.soyuz?.terminalCallbackDelivered)) {
+        byId.set(job.id, job);
+      }
+    }
+    return Array.from(byId.values());
+  }
+
+  async enqueueSoyuzCallback(entry: SoyuzOutboxEntry): Promise<void> {
+    await this.persistenceManager.enqueueSoyuzCallback(entry);
+  }
+
+  async persistSoyuzTerminalCallback(job: Job, entry: SoyuzOutboxEntry): Promise<void> {
+    if (!job.soyuz) return;
+    const previous = { ...job.soyuz };
+    job.soyuz.terminalCallbackId = entry.callbackId;
+    job.soyuz.terminalCallbackDelivered = false;
+    job.soyuz.metadataUpdatedAt = new Date().toISOString();
+    try {
+      await this.persistenceManager.persistSoyuzTerminalCallback(job, entry);
+    } catch (error) {
+      job.soyuz = previous;
+      throw error;
+    }
+  }
+
+  async claimSoyuzCallbacks(limit = 25): Promise<SoyuzOutboxEntry[]> {
+    return this.persistenceManager.claimDueSoyuzCallbacks(new Date(), 60_000, limit);
+  }
+
+  async completeSoyuzCallback(callbackId: string): Promise<void> {
+    await this.persistenceManager.completeSoyuzCallback(callbackId);
+    const job = Array.from(this.jobs.values()).find((candidate) => candidate.soyuz?.terminalCallbackId === callbackId);
+    if (job?.soyuz) job.soyuz.terminalCallbackDelivered = true;
+  }
+
+  async retrySoyuzCallback(callbackId: string, nextAttemptAt: string, error: string): Promise<void> {
+    await this.persistenceManager.retrySoyuzCallback(callbackId, nextAttemptAt, error);
+  }
+
+  async getSoyuzOutboxStatus(): Promise<{ pending: number; oldestPendingAt?: string; failures: number }> {
+    return this.persistenceManager.getSoyuzOutboxStatus();
+  }
+
   /**
    * Get a job by ID.
    */
@@ -368,6 +594,60 @@ export class JobScheduler {
     return job;
   }
 
+  /** Apply a Soyuz cancellation while preserving a successful process-exit race. */
+  async cancelSoyuzJob(id: string): Promise<Job | undefined> {
+    await this.ready();
+    const job = this.jobs.get(id);
+    if (!job || !job.soyuz || job.status === 'completed' || job.status === 'failed') return job;
+    if (job.status === 'queued') {
+      const cancelled = this.cancelJob(id);
+      if (cancelled) await this.persistenceManager.persistJobStrict(cancelled);
+      return cancelled;
+    }
+    if (job.status !== 'running') return job;
+
+    const previousCancellationAt = job.soyuz.cancellationRequestedAt;
+    const previousMetadataUpdatedAt = job.soyuz.metadataUpdatedAt;
+    job.soyuz.cancellationRequestedAt ??= new Date().toISOString();
+    job.soyuz.metadataUpdatedAt = new Date().toISOString();
+    try {
+      await this.persistenceManager.persistJobStrict(job);
+    } catch (error) {
+      job.soyuz.cancellationRequestedAt = previousCancellationAt;
+      job.soyuz.metadataUpdatedAt = previousMetadataUpdatedAt;
+      throw error;
+    }
+
+    const proc = this.processes.get(id);
+    if (!proc) {
+      this.finalizeJobIfNeeded(job, {
+        status: 'failed',
+        exitCode: 143,
+        failureClass: 'cancelled',
+        error: 'Job cancelled before its worker process was launched',
+        completedAt: new Date(),
+      });
+      this.clearExecutionState(id);
+      return job;
+    }
+
+    proc.kill('SIGTERM');
+    if (!this.shutdownKillTimers.has(id)) {
+      const forceKillHandle = setTimeout(() => {
+        if (!this.processExited.get(id)) proc.kill('SIGKILL');
+        this.shutdownKillTimers.delete(id);
+      }, JobScheduler.SHUTDOWN_GRACE_MS);
+      this.unrefTimer(forceKillHandle);
+      this.shutdownKillTimers.set(id, forceKillHandle);
+    }
+    this.logger.event('soyuz_job_cancellation_signalled', {
+      jobId: id,
+      externalRunId: job.soyuz.externalRunId,
+      processId: job.processId,
+    });
+    return job;
+  }
+
   /**
    * Process the queue, respecting max concurrent limit.
    */
@@ -380,9 +660,27 @@ export class JobScheduler {
       this.queue.length > 0 &&
       this.running.size < this.config.maxConcurrentRuns
     ) {
-      const job = this.queue.shift();
+      const runnableIndex = this.queue.findIndex(
+        (candidate) => !candidate.soyuz
+          || (candidate.soyuz.startAuthorized && !candidate.soyuz.startNeedsCanonicalRecheck),
+      );
+      if (runnableIndex < 0) break;
+      const [job] = this.queue.splice(runnableIndex, 1);
       if (job) {
-        this.executeJob(job);
+        void this.executeJob(job).catch((error: unknown) => {
+          this.logger.error('Failed to start scheduled job', {
+            jobId: job.id,
+            externalRunId: job.soyuz?.externalRunId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          this.finalizeJobIfNeeded(job, {
+            status: 'failed',
+            exitCode: EXIT_CODE_SPAWN_FAILED,
+            failureClass: 'scheduler_start_failed',
+            error: 'Kaseki could not start this run. See host logs for details.',
+            completedAt: new Date(),
+          });
+        });
       }
     }
   }
@@ -696,7 +994,7 @@ export class JobScheduler {
     });
   }
 
-  private executeJob(job: Job): void {
+  private async executeJob(job: Job): Promise<void> {
     const effectiveTimeoutSeconds =
       job.request.timeoutSeconds ?? this.config.agentTimeoutSeconds;
 
@@ -715,6 +1013,39 @@ export class JobScheduler {
     job.resultDir = this.getResultDir(job.id);
     this.running.add(job.id);
     metricsRegistry.setRunningJobs(this.running.size);
+
+    if (job.soyuz) {
+      try {
+        await this.persistenceManager.persistJobStrict(job);
+      } catch (error) {
+        this.logger.error('Refusing to launch Soyuz job because its running state was not durable', {
+          jobId: job.id,
+          externalRunId: job.soyuz.externalRunId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        this.finalizeJobIfNeeded(job, {
+          status: 'failed',
+          exitCode: EXIT_CODE_SPAWN_FAILED,
+          failureClass: 'local_persistence_failed',
+          error: 'Kaseki could not durably record the authorized start; no Docker process was launched.',
+          completedAt: new Date(),
+        });
+        return;
+      }
+    }
+
+    if (job.finalized) return;
+    if (job.soyuz?.cancellationRequestedAt) {
+      this.finalizeJobIfNeeded(job, {
+        status: 'failed',
+        exitCode: 143,
+        failureClass: 'cancelled',
+        error: 'Job cancelled before its worker process was launched',
+        completedAt: new Date(),
+      });
+      this.clearExecutionState(job.id);
+      return;
+    }
 
     // Emit webhook event for job start
     if (job.webhookConfig) {
@@ -828,10 +1159,11 @@ export class JobScheduler {
     };
 
     // Handle cancelled jobs - they were marked as cancelled in cancelJob()
-    if (job.failureClass === 'cancelled') {
+    if (job.failureClass === 'cancelled' || (job.soyuz?.cancellationRequestedAt && code !== 0)) {
       // Job was already marked as cancelled, just ensure completion status
       updates.status = 'failed';
       updates.exitCode = 143; // SIGTERM + 1
+      updates.failureClass = 'cancelled';
       updates.error = job.error || 'Job cancelled by API request';
 
       this.logger.event('job_cancelled_completed', {
@@ -1466,6 +1798,17 @@ export class JobScheduler {
 
   private async initializeFromPersistence(): Promise<void> {
     await this.loadPersistedJobs();
+    // A controller restart must re-check Soyuz's canonical state before it
+    // resumes any queued external run. A cancellation may have arrived while
+    // this host was offline, even though an earlier `started` callback was
+    // durably recorded locally. Keep the historical authorization, but close
+    // the execution gate until the adapter reconciles canonical state.
+    for (const job of this.queue) {
+      if (job.soyuz) {
+        job.soyuz.startNeedsCanonicalRecheck = true;
+        job.soyuz.metadataUpdatedAt = new Date().toISOString();
+      }
+    }
     await this.persistJobs();
     this.processQueue();
     metricsRegistry.setQueuePending(this.queue.length);
