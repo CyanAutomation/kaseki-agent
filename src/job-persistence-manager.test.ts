@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { Job } from './kaseki-api-types';
-import { JobPersistenceManager, PersistedJob } from './job-persistence-manager';
+import { JobPersistenceManager, PersistedJob, type SoyuzOutboxEntry } from './job-persistence-manager';
 import { KasekiApiConfig } from './kaseki-api-config';
 
 /**
@@ -287,6 +287,55 @@ describe('JobPersistenceManager', () => {
         clearTimeout(releaseLock);
       }
     });
+  });
+
+  test('persists terminal Soyuz callbacks across a manager restart and records confirmation', async () => {
+    const externalRunId = '11111111-1111-4111-8111-111111111111';
+    const callbackId = '22222222-2222-4222-8222-222222222222';
+    const now = new Date();
+    const job: Job = {
+      id: 'kaseki-soyuz-1',
+      status: 'failed',
+      request: { repoUrl: 'https://github.com/test/repo', ref: 'main' },
+      createdAt: now,
+      completedAt: now,
+      finalized: true,
+      failureClass: 'api_restart',
+      resultDir: manager.getResultDir('kaseki-soyuz-1'),
+      correlationId: '33333333-3333-4333-8333-333333333333',
+      requestId: '44444444-4444-4444-8444-444444444444',
+      soyuz: {
+        externalRunId,
+        workerId: 'host-test-1',
+        contractVersion: '1',
+        startedCallbackId: '55555555-5555-4555-8555-555555555555',
+        startAuthorized: true,
+      },
+    };
+    const entry: SoyuzOutboxEntry = {
+      externalRunId,
+      callbackId,
+      eventType: 'failed',
+      payload: { callbackId, workerId: 'host-test-1', failureClass: 'api_restart', failureMessage: 'Kaseki restarted.' },
+      attemptCount: 0,
+      nextAttemptAt: now.toISOString(),
+      deliveryState: 'pending',
+      createdAt: now.toISOString(),
+    };
+
+    await manager.persistSoyuzTerminalCallback(job, entry);
+    const restartedManager = new JobPersistenceManager(config);
+    const claimed = await restartedManager.claimDueSoyuzCallbacks(new Date(Date.now() + 1), 60_000);
+    expect(claimed).toHaveLength(1);
+    expect(claimed[0].callbackId).toBe(callbackId);
+    expect(claimed[0].payload).toEqual(entry.payload);
+    expect(claimed[0].attemptCount).toBe(1);
+
+    await restartedManager.completeSoyuzCallback(callbackId);
+    expect(await restartedManager.getSoyuzOutboxStatus()).toMatchObject({ pending: 0, failures: 0 });
+    const persistedJob = (await restartedManager.listPersistedJobs())[0];
+    expect(persistedJob.soyuz?.terminalCallbackId).toBe(callbackId);
+    expect(persistedJob.soyuz?.terminalCallbackDelivered).toBe(true);
   });
 
   describe('persistJobs', () => {

@@ -34,6 +34,28 @@ export interface RestartClaim {
   leasedAt: string;
 }
 
+export type SoyuzCallbackType = 'event' | 'completed' | 'failed' | 'cancelled';
+
+export interface SoyuzOutboxEntry {
+  externalRunId: string;
+  callbackId: string;
+  eventType: SoyuzCallbackType;
+  payload: Record<string, unknown>;
+  attemptCount: number;
+  nextAttemptAt: string;
+  lastError?: string;
+  deliveryState: 'pending' | 'delivering' | 'delivered';
+  deliveryLeaseExpiresAt?: string;
+  createdAt: string;
+  deliveredAt?: string;
+}
+
+interface PersistedJobsIndex {
+  version?: number;
+  jobs?: PersistedJob[];
+  soyuzOutbox?: SoyuzOutboxEntry[];
+}
+
 type JobWithRestartClaim = Job & { restartClaim?: RestartClaim };
 
 type LoadPersistedJobsStatus = 'loaded' | 'lock_contention' | 'read_error';
@@ -65,6 +87,13 @@ export class JobIndexUnavailableError extends Error {
   constructor(indexPath: string, cause?: unknown) {
     super(`Unable to read jobs index ${indexPath}`, { cause });
     this.name = 'JobIndexUnavailableError';
+  }
+}
+
+export class ExternalRunAlreadyPersistedError extends Error {
+  constructor(externalRunId: string, localRunId: string) {
+    super(`Soyuz run ${externalRunId} is already mapped to local run ${localRunId}`);
+    this.name = 'ExternalRunAlreadyPersistedError';
   }
 }
 
@@ -268,6 +297,7 @@ export class JobPersistenceManager {
           version: 1,
           updatedAt: new Date().toISOString(),
           jobs: merged,
+          soyuzOutbox: current.soyuzOutbox ?? [],
         };
         const tmpPath = `${this.indexPath}.tmp`;
         const json = this.shouldWriteCompactIndex(merged)
@@ -306,8 +336,159 @@ export class JobPersistenceManager {
       this.claimRestartableJob(persisted);
       (job as JobWithRestartClaim).restartClaim = persisted.restartClaim;
       const current = this.readPersistedJobsIndex();
+      if (job.soyuz) {
+        const existing = (current.jobs ?? []).find(
+          (candidate) => candidate.soyuz?.externalRunId === job.soyuz?.externalRunId,
+        );
+        if (existing && existing.id !== job.id) {
+          throw new ExternalRunAlreadyPersistedError(job.soyuz.externalRunId, existing.id);
+        }
+      }
       const merged = this.mergePersistedJobs(current.jobs || [], [persisted]);
-      this.writePersistedJobsIndex(merged);
+      this.writePersistedJobsIndex(merged, current.soyuzOutbox ?? []);
+    });
+  }
+
+  /** Persist one scheduler state transition and fail closed if the durable write fails. */
+  async persistJobStrict(job: Job): Promise<void> {
+    await this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
+      fs.mkdirSync(this.config.resultsDir, { recursive: true });
+      const current = this.readPersistedJobsIndex();
+      if (job.soyuz) {
+        const existing = (current.jobs ?? []).find(
+          (candidate) => candidate.soyuz?.externalRunId === job.soyuz?.externalRunId,
+        );
+        if (existing && existing.id !== job.id) {
+          throw new ExternalRunAlreadyPersistedError(job.soyuz.externalRunId, existing.id);
+        }
+      }
+      const merged = this.mergePersistedJobs(current.jobs ?? [], [this.serializeJob(job)]);
+      this.writePersistedJobsIndex(merged, current.soyuzOutbox ?? []);
+    });
+  }
+
+  async findJobByExternalRunId(externalRunId: string): Promise<Job | undefined> {
+    return this.withLockedJobsIndex((jobs) => {
+      const match = jobs.find((job) => job.soyuz?.externalRunId === externalRunId);
+      return match ? this.deserializeJob(match) : undefined;
+    });
+  }
+
+  /** Atomically persist a terminal Soyuz job and its callback before network delivery. */
+  async persistSoyuzTerminalCallback(job: Job, entry: SoyuzOutboxEntry): Promise<void> {
+    const soyuz = job.soyuz;
+    if (!soyuz) throw new Error('Cannot persist a Soyuz terminal callback for a local-only job');
+    await this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
+      fs.mkdirSync(this.config.resultsDir, { recursive: true });
+      const current = this.readPersistedJobsIndex();
+      const callbackJob = {
+        ...job,
+        soyuz: {
+          ...soyuz,
+          terminalCallbackId: entry.callbackId,
+          terminalCallbackDelivered: false,
+          metadataUpdatedAt: new Date(this.now()).toISOString(),
+        },
+      };
+      const jobs = this.mergePersistedJobs(current.jobs ?? [], [this.serializeJob(callbackJob)]);
+      const outbox = this.addOutboxEntry(current.soyuzOutbox ?? [], entry);
+      this.writePersistedJobsIndex(jobs, outbox);
+    });
+  }
+
+  async enqueueSoyuzCallback(entry: SoyuzOutboxEntry): Promise<void> {
+    await this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
+      const current = this.readPersistedJobsIndex();
+      const outbox = this.addOutboxEntry(current.soyuzOutbox ?? [], entry);
+      this.writePersistedJobsIndex(current.jobs ?? [], outbox);
+    });
+  }
+
+  async claimDueSoyuzCallbacks(
+    now = new Date(),
+    leaseMs = 180_000,
+    limit = 25,
+  ): Promise<SoyuzOutboxEntry[]> {
+    return this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
+      const current = this.readPersistedJobsIndex();
+      const outbox = current.soyuzOutbox ?? [];
+      const nowMs = now.getTime();
+      const leaseUntil = new Date(nowMs + leaseMs).toISOString();
+      const due = outbox
+        .filter((entry) => entry.deliveryState !== 'delivered')
+        .filter((entry) => Date.parse(entry.nextAttemptAt) <= nowMs)
+        .filter((entry) => entry.deliveryState !== 'delivering'
+          || !entry.deliveryLeaseExpiresAt
+          || Date.parse(entry.deliveryLeaseExpiresAt) <= nowMs)
+        .sort((a, b) => a.nextAttemptAt.localeCompare(b.nextAttemptAt))
+        .slice(0, limit);
+      const ids = new Set(due.map((entry) => entry.callbackId));
+      const claimed = outbox.map((entry) => {
+        if (!ids.has(entry.callbackId)) return entry;
+        return {
+          ...entry,
+          attemptCount: entry.attemptCount + 1,
+          deliveryState: 'delivering' as const,
+          deliveryLeaseExpiresAt: leaseUntil,
+        };
+      });
+      if (due.length > 0) this.writePersistedJobsIndex(current.jobs ?? [], claimed);
+      return claimed.filter((entry) => ids.has(entry.callbackId));
+    });
+  }
+
+  async completeSoyuzCallback(callbackId: string): Promise<void> {
+    await this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
+      const current = this.readPersistedJobsIndex();
+      const now = new Date().toISOString();
+      const outbox = (current.soyuzOutbox ?? []).map((entry) => entry.callbackId === callbackId
+        ? { ...entry, deliveryState: 'delivered' as const, deliveredAt: now, deliveryLeaseExpiresAt: undefined }
+        : entry);
+      const delivered = outbox.filter((entry) => entry.deliveryState === 'delivered')
+        .sort((a, b) => (b.deliveredAt ?? '').localeCompare(a.deliveredAt ?? ''))
+        .slice(500);
+      const deliveredIdsToRemove = new Set(delivered.map((entry) => entry.callbackId));
+      const compactOutbox = outbox.filter((entry) => !deliveredIdsToRemove.has(entry.callbackId));
+      const jobs = (current.jobs ?? []).map((persisted) => {
+        if (persisted.soyuz?.terminalCallbackId !== callbackId) return persisted;
+        return {
+          ...persisted,
+          soyuz: { ...persisted.soyuz, terminalCallbackDelivered: true },
+        };
+      });
+      this.writePersistedJobsIndex(jobs, compactOutbox);
+    });
+  }
+
+  async retrySoyuzCallback(
+    callbackId: string,
+    nextAttemptAt: string,
+    error: string,
+  ): Promise<void> {
+    await this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
+      const current = this.readPersistedJobsIndex();
+      const outbox = (current.soyuzOutbox ?? []).map((entry) => entry.callbackId === callbackId
+        ? {
+          ...entry,
+          deliveryState: 'pending' as const,
+          nextAttemptAt,
+          lastError: error.slice(0, 500),
+          deliveryLeaseExpiresAt: undefined,
+        }
+        : entry);
+      this.writePersistedJobsIndex(current.jobs ?? [], outbox);
+    });
+  }
+
+  async getSoyuzOutboxStatus(): Promise<{ pending: number; oldestPendingAt?: string; failures: number }> {
+    return this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
+      const entries = this.readPersistedJobsIndex().soyuzOutbox ?? [];
+      const pending = entries.filter((entry) => entry.deliveryState !== 'delivered');
+      return {
+        pending: pending.length,
+        oldestPendingAt: pending.map((entry) => entry.createdAt).sort()[0],
+        failures: pending.filter((entry) => entry.attemptCount > 0).length,
+      };
     });
   }
 
@@ -402,11 +583,13 @@ export class JobPersistenceManager {
     return true;
   }
 
-  private writePersistedJobsIndex(jobs: PersistedJob[]): void {
+  private writePersistedJobsIndex(jobs: PersistedJob[], soyuzOutbox?: SoyuzOutboxEntry[]): void {
+    const existingOutbox = soyuzOutbox ?? this.readPersistedJobsIndex().soyuzOutbox ?? [];
     const payload = {
       version: 1,
       updatedAt: new Date(this.now()).toISOString(),
       jobs,
+      soyuzOutbox: existingOutbox,
     };
     const tmpPath = `${this.indexPath}.tmp-${this.pid}-${this.lockTokenGenerator()}`;
     const json = this.shouldWriteCompactIndex(jobs)
@@ -419,7 +602,7 @@ export class JobPersistenceManager {
   /**
    * Read the current job index from disk.
    */
-  private readPersistedJobsIndex(): { jobs?: PersistedJob[] } {
+  private readPersistedJobsIndex(): PersistedJobsIndex {
     let contents: string;
     try {
       contents = this.indexFileReader(this.indexPath);
@@ -431,7 +614,7 @@ export class JobPersistenceManager {
     }
 
     try {
-      const parsed = JSON.parse(contents) as { jobs?: unknown };
+      const parsed = JSON.parse(contents) as { jobs?: unknown; soyuzOutbox?: unknown };
       if (
         parsed === null ||
         typeof parsed !== 'object' ||
@@ -439,10 +622,36 @@ export class JobPersistenceManager {
       ) {
         throw new Error('jobs index must contain a jobs array');
       }
-      return parsed as { jobs?: PersistedJob[] };
+      if (parsed.soyuzOutbox !== undefined && !Array.isArray(parsed.soyuzOutbox)) {
+        throw new Error('jobs index soyuzOutbox must be an array');
+      }
+      return parsed as PersistedJobsIndex;
     } catch (error) {
       throw new JobIndexUnavailableError(this.indexPath, error);
     }
+  }
+
+  private addOutboxEntry(
+    current: SoyuzOutboxEntry[],
+    entry: SoyuzOutboxEntry,
+  ): SoyuzOutboxEntry[] {
+    if (Buffer.byteLength(JSON.stringify(entry.payload), 'utf8') > 12_000) {
+      throw new Error('Soyuz callback payload exceeds 12 KB');
+    }
+    const existing = current.find((candidate) => candidate.callbackId === entry.callbackId);
+    if (existing) {
+      if (existing.eventType !== entry.eventType
+        || existing.externalRunId !== entry.externalRunId
+        || JSON.stringify(existing.payload) !== JSON.stringify(entry.payload)) {
+        throw new Error(`Soyuz callback ID ${entry.callbackId} was reused with a different payload`);
+      }
+      return current;
+    }
+    const pendingCount = current.filter((candidate) => candidate.deliveryState !== 'delivered').length;
+    if (pendingCount >= 5_000) {
+      throw new Error('Soyuz callback outbox is full; pause new Soyuz work and resolve callback delivery failures');
+    }
+    return [...current, entry];
   }
 
   /** Merge current records into the durable history index without dropping terminal history. */
@@ -530,7 +739,23 @@ export class JobPersistenceManager {
     prev: PersistedJob,
     job: PersistedJob,
   ): PersistedJob {
-    return this.comparePersistedJobRecency(prev, job) > 0 ? job : prev;
+    const selected = this.comparePersistedJobRecency(prev, job) > 0 ? job : prev;
+    if (!prev.soyuz && !job.soyuz) return selected;
+    const previousMetadataTime = Date.parse(prev.soyuz?.metadataUpdatedAt ?? '');
+    const incomingMetadataTime = Date.parse(job.soyuz?.metadataUpdatedAt ?? '');
+    const latestMetadata = incomingMetadataTime >= previousMetadataTime ? job.soyuz : prev.soyuz;
+    const soyuzMetadata = latestMetadata ?? prev.soyuz ?? job.soyuz;
+    if (!soyuzMetadata) return selected;
+    return {
+      ...selected,
+      soyuz: {
+        ...soyuzMetadata,
+        startAuthorized: Boolean(prev.soyuz?.startAuthorized || job.soyuz?.startAuthorized),
+        terminalCallbackDelivered: Boolean(prev.soyuz?.terminalCallbackDelivered || job.soyuz?.terminalCallbackDelivered),
+        startedCallbackId: prev.soyuz?.startedCallbackId ?? job.soyuz?.startedCallbackId ?? '',
+        terminalCallbackId: job.soyuz?.terminalCallbackId ?? prev.soyuz?.terminalCallbackId,
+      },
+    };
   }
 
   /**

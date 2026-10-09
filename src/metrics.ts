@@ -19,6 +19,10 @@ class MetricsRegistry {
   private apiRequestCounts = new Map<string, number>();
   private apiRequestDurationSums = new Map<string, number>();
   private apiRequestDurationCounts = new Map<string, number>();
+  private soyuzCounters = new Map<string, number>();
+  private soyuzCallbacksPending = 0;
+  private soyuzHandoffDurationSum = 0;
+  private soyuzHandoffDurationCount = 0;
 
   configurePersistence(file: string): void {
     if (this.persistenceFile === file) return;
@@ -48,6 +52,20 @@ class MetricsRegistry {
 
   setQueuePending(count: number): void { this.queuePending = Math.max(0, count); }
   setRunningJobs(count: number): void { this.runningJobs = Math.max(0, count); }
+  incSoyuzCounter(name: string): void {
+    const allowed = new Set([
+      'queue_pull_success', 'queue_pull_failure', 'claim_success', 'claim_conflict',
+      'runs_started', 'runs_completed', 'runs_failed', 'callbacks_retry',
+    ]);
+    if (!allowed.has(name)) return;
+    this.soyuzCounters.set(name, (this.soyuzCounters.get(name) ?? 0) + 1);
+  }
+  setSoyuzCallbacksPending(count: number): void { this.soyuzCallbacksPending = Math.max(0, count); }
+  observeSoyuzHandoffDuration(seconds: number): void {
+    if (!Number.isFinite(seconds) || seconds < 0) return;
+    this.soyuzHandoffDurationSum += seconds;
+    this.soyuzHandoffDurationCount += 1;
+  }
   incRunSuccess(): void { this.runsTotal.success += 1; this.persist(); }
   incRunFailure(): void { this.runsTotal.failure += 1; this.persist(); }
   incTimeout(): void { this.timeoutsTotal += 1; this.persist(); }
@@ -95,6 +113,22 @@ class MetricsRegistry {
     lines.push('# HELP kaseki_running_jobs Number of jobs currently running.');
     lines.push('# TYPE kaseki_running_jobs gauge');
     lines.push(`kaseki_running_jobs ${this.runningJobs}`);
+
+    for (const name of [
+      'queue_pull_success', 'queue_pull_failure', 'claim_success', 'claim_conflict',
+      'runs_started', 'runs_completed', 'runs_failed', 'callbacks_retry',
+    ]) {
+      lines.push(`# HELP soyuz_${name}_total Soyuz integration ${name.replace(/_/g, ' ')}.`);
+      lines.push(`# TYPE soyuz_${name}_total counter`);
+      lines.push(`soyuz_${name}_total ${this.soyuzCounters.get(name) ?? 0}`);
+    }
+    lines.push('# HELP soyuz_callbacks_pending Pending durable Soyuz callbacks.');
+    lines.push('# TYPE soyuz_callbacks_pending gauge');
+    lines.push(`soyuz_callbacks_pending ${this.soyuzCallbacksPending}`);
+    lines.push('# HELP soyuz_execution_handoff_duration_seconds Time from queue pull to local durable acceptance and start authorization.');
+    lines.push('# TYPE soyuz_execution_handoff_duration_seconds summary');
+    lines.push(`soyuz_execution_handoff_duration_seconds_sum ${this.soyuzHandoffDurationSum}`);
+    lines.push(`soyuz_execution_handoff_duration_seconds_count ${this.soyuzHandoffDurationCount}`);
 
     lines.push('# HELP kaseki_runs_total Total number of completed runs partitioned by outcome.');
     lines.push('# TYPE kaseki_runs_total counter');

@@ -726,6 +726,21 @@ export interface Job {
   currentStage?: string; // Current job stage for progress tracking
   idempotencyKey?: string; // Idempotency key for deduplication
   effectiveTimeoutSeconds?: number; // Resolved timeout applied to this job
+  /** Soyuz ownership metadata. Present only for runs received through the optional adapter. */
+  soyuz?: {
+    externalRunId: string;
+    workerId: string;
+    contractVersion: '1';
+    startedCallbackId: string;
+    startAuthorized: boolean;
+    startNeedsCanonicalRecheck?: boolean;
+    cancellationRequestedAt?: string;
+    lastReportedStage?: string;
+    lastHeartbeatAt?: string;
+    terminalCallbackId?: string;
+    terminalCallbackDelivered?: boolean;
+    metadataUpdatedAt?: string;
+  };
 }
 
 /**

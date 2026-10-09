@@ -12,6 +12,8 @@ import { ContainerPreflightDiagnostics, logContainerPreflightResults } from './s
 import { getNpmVersion } from './kaseki-api/npm-version';
 import { generateStartupHealthReport } from './kaseki-api/startup-health-reporter';
 import { writeStartupHealthArtifacts } from './kaseki-api/startup-summary-artifact';
+import { evaluateTaskAdmission } from './task-admission';
+import { SoyuzAdapter } from './integrations/soyuz/SoyuzAdapter';
 import {
   initSentry,
   sentryRequestHandler,
@@ -192,6 +194,14 @@ async function main(): Promise<void> {
     preFlightValidator,
     scheduler
   } = await bootstrapServices(config);
+  const soyuzAdapter = config.soyuz?.enabled
+    ? new SoyuzAdapter(config, scheduler, evaluateTaskAdmission)
+    : undefined;
+  soyuzAdapter?.start();
+  logger.event('soyuz_adapter_configuration', {
+    enabled: config.soyuz?.enabled ?? false,
+    workerId: config.soyuz?.enabled ? config.soyuz.workerId : undefined,
+  });
   const bootstrapDurationMs = performance.now() - bootstrapStartTime;
 
   // Run container preflight diagnostics (non-blocking startup checks)
@@ -300,7 +310,7 @@ async function main(): Promise<void> {
     : app.listen(config.port, onListening);
 
   // Graceful shutdown
-  registerShutdownSignalHandlers({ server, scheduler, webhookManager, idempotencyStore });
+  registerShutdownSignalHandlers({ server, scheduler, soyuzAdapter, webhookManager, idempotencyStore });
 
   // Catch unhandled errors
   process.on('uncaughtException', (err) => {
