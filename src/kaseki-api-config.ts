@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import { readHostSecret } from './secrets/host-secrets-reader';
+import { loadSoyuzAdapterConfig, type SoyuzAdapterConfig } from './integrations/soyuz/config';
 
 /**
  * Configuration for the Kaseki API service.
@@ -46,6 +47,7 @@ export interface KasekiApiConfig {
   dependencyCacheMaxBytes?: number;
   /** Configured maximum dependency cache entry age before worker pruning, in days. */
   dependencyCacheMaxAgeDays?: number;
+  soyuz?: SoyuzAdapterConfig;
 }
 
 /**
@@ -236,6 +238,7 @@ export function loadConfig(): KasekiApiConfig {
   const taskMode = validateTaskMode();
   const resultsDir = ensureResultsDir();
   const logLevel = validateLogLevel();
+  const soyuz = loadSoyuzAdapterConfig();
 
   return {
     port,
@@ -260,6 +263,7 @@ export function loadConfig(): KasekiApiConfig {
     dependencyCacheMetricsFile,
     dependencyCacheMaxBytes,
     dependencyCacheMaxAgeDays,
+    soyuz,
   };
 }
 

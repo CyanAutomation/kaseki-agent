@@ -304,6 +304,26 @@ If dependency restore logs show EXDEV/cross-device hardlink failures:
 
 ## API Service Configuration
 
+### Soyuz Queue Adapter
+
+The external Soyuz adapter is opt-in. See [Soyuz host integration](SOYUZ_INTEGRATION.md) for Cloudflare Queue setup, secret files, recovery behavior, metrics, and operator procedures.
+
+| Variable | Default | Type | Purpose |
+| ---------- | --------- | ------ | --------- |
+| `SOYUZ_ENABLED` | `false` | boolean | Enable the host-side Soyuz Queue consumer. |
+| `SOYUZ_API_URL` | — | URL | Soyuz API base URL; required when enabled. |
+| `SOYUZ_WORKER_API_TOKEN` | host secret | secret | Bearer token for Soyuz worker reads/callbacks; distinct from the Queue token. |
+| `CLOUDFLARE_ACCOUNT_ID` | — | string | Cloudflare account ID for the Queue API. |
+| `CLOUDFLARE_QUEUE_ID` | — | string | Soyuz Queue resource ID. |
+| `CLOUDFLARE_QUEUE_API_TOKEN` | host secret | secret | Queue read/write token for pull, acknowledgement, and retry. |
+| `SOYUZ_WORKER_ID` | — | string | Stable, unique identity for this Kaseki host. |
+| `SOYUZ_POLL_INTERVAL_MS` | `5000` | integer | Queue poll interval (250–60000 ms). |
+| `SOYUZ_BATCH_SIZE` | `1` | integer | Maximum pull batch size (1–100), limited further by local capacity. |
+| `SOYUZ_VISIBILITY_TIMEOUT_MS` | `120000` | integer | Queue lease duration (1000 ms–12 hours), for handoff only. |
+| `SOYUZ_REQUEST_TIMEOUT_MS` | `20000` | integer | Timeout for each external API request (1000–120000 ms). |
+| `SOYUZ_CANCELLATION_POLL_INTERVAL_MS` | `15000` | integer | Interval for active-run cancellation checks (1000–300000 ms). |
+| `SOYUZ_HEARTBEAT_INTERVAL_MS` | `60000` | integer | Interval for active-run heartbeat events (10000–900000 ms). |
+
 ### Server Settings
 
 | Variable | Default | Type | Purpose |
