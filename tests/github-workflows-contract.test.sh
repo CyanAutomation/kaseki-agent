@@ -334,6 +334,8 @@ assert_contains "$ROOT_DIR/package.json" 'node --test scripts/check-trivy-image-
 
 assert_contains "$ROOT_DIR/Dockerfile" 'node:24-bookworm-slim@sha256:' \
   'The Docker base image must be pinned by digest'
+assert_contains "$ROOT_DIR/Dockerfile" 'ARG NODE_IMAGE=public.ecr.aws/docker/library/node:' \
+  'The Docker base image must use the public ECR mirror to avoid unauthenticated Docker Hub pull limits'
 assert_contains "$ROOT_DIR/.github/dependabot.yml" 'package-ecosystem: "docker"' \
   'Dependabot must keep Docker base-image digests current'
 

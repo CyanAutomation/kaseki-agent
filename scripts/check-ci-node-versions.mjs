@@ -56,9 +56,9 @@ for (const name of workflowNames) {
 }
 
 const dockerfile = await readFile(path.join(root, 'Dockerfile'), 'utf8');
-const dockerNodeImage = dockerfile.match(/^ARG\s+NODE_IMAGE=node:([^\s-]+)/m);
+const dockerNodeImage = dockerfile.match(/^ARG\s+NODE_IMAGE=(?:[^\s/]+\/)*node:([^\s:@-]+)/m);
 if (!dockerNodeImage) {
-  throw new Error('Dockerfile must declare ARG NODE_IMAGE=node:<version>');
+  throw new Error('Dockerfile must declare ARG NODE_IMAGE pointing to node:<version>');
 }
 configuredVersions.push({ source: 'Dockerfile (NODE_IMAGE)', value: dockerNodeImage[1] });
 
