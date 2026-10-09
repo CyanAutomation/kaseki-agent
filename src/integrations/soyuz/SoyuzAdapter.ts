@@ -537,25 +537,25 @@ export class SoyuzAdapter {
     for (const entry of entries) {
       try {
         switch (entry.eventType) {
-          case 'event': {
-            const payload = entry.payload;
-            const workerId = typeof payload.workerId === 'string' ? payload.workerId : this.config.workerId;
-            const type = typeof payload.type === 'string' ? payload.type : 'progress.updated';
-            const { workerId: _workerId, type: _type, ...data } = payload;
-            await this.api.event(entry.externalRunId, entry.callbackId, workerId, type, data);
-            break;
-          }
-          case 'completed':
-            await this.api.completed(entry.externalRunId, entry.payload);
-            metricsRegistry.incSoyuzCounter('runs_completed');
-            break;
-          case 'failed':
-            await this.api.failed(entry.externalRunId, entry.payload);
-            metricsRegistry.incSoyuzCounter('runs_failed');
-            break;
-          case 'cancelled':
-            await this.api.cancelled(entry.externalRunId, entry.payload);
-            break;
+        case 'event': {
+          const payload = entry.payload;
+          const workerId = typeof payload.workerId === 'string' ? payload.workerId : this.config.workerId;
+          const type = typeof payload.type === 'string' ? payload.type : 'progress.updated';
+          const { workerId: _workerId, type: _type, ...data } = payload;
+          await this.api.event(entry.externalRunId, entry.callbackId, workerId, type, data);
+          break;
+        }
+        case 'completed':
+          await this.api.completed(entry.externalRunId, entry.payload);
+          metricsRegistry.incSoyuzCounter('runs_completed');
+          break;
+        case 'failed':
+          await this.api.failed(entry.externalRunId, entry.payload);
+          metricsRegistry.incSoyuzCounter('runs_failed');
+          break;
+        case 'cancelled':
+          await this.api.cancelled(entry.externalRunId, entry.payload);
+          break;
         }
         await this.scheduler.completeSoyuzCallback(entry.callbackId);
       } catch (error) {
