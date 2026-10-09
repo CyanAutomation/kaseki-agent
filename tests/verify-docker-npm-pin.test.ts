@@ -68,6 +68,14 @@ describe('Docker global package registry verification', () => {
     expect(braceExpansionCopies.every(([, pkg]) => pkg.version === '5.0.12')).toBe(true);
   });
 
+  test('keeps root lockfile handlebars on the patched release', () => {
+    const lock = JSON.parse(readFileSync(rootLockPath, 'utf8')) as {
+      packages: Record<string, { version?: string }>;
+    };
+
+    expect(lock.packages['node_modules/handlebars']?.version).toBe('4.7.10');
+  });
+
   test('extracts exact reviewed selectors from the lockfile-backed image toolchain', () => {
     const manifest = JSON.parse(readFileSync(toolchainManifestPath, 'utf8'));
     const response = JSON.parse(runVerifier('extract', { manifest })) as { ok: boolean; result: unknown };

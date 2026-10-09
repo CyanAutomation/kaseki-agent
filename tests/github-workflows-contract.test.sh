@@ -283,6 +283,11 @@ assert_contains "$PUBLISH_WORKFLOW" 'scanners: vuln,misconfig,secret' \
   'Trivy must scan image vulnerabilities, configuration, and embedded secrets'
 assert_contains "$PUBLISH_WORKFLOW" 'scanners: vuln,misconfig' \
   'The uploaded SARIF report must omit secret match content'
+go_source_dockerfile_exclusions='skip-files: usr/local/go/src/crypto/internal/boring/Dockerfile,usr/local/go/src/crypto/internal/fips140/nistec/fiat/Dockerfile'
+go_source_dockerfile_exclusion_count="$(grep -Fc "$go_source_dockerfile_exclusions" "$PUBLISH_WORKFLOW" || true)"
+trivy_skip_files_count="$(grep -Fc 'skip-files:' "$PUBLISH_WORKFLOW" || true)"
+[[ "$go_source_dockerfile_exclusion_count" -eq 2 && "$trivy_skip_files_count" -eq 2 ]] \
+  || fail 'Both Trivy reports must exclude only the upstream Go source-maintenance Dockerfiles'
 assert_contains "$PUBLISH_WORKFLOW" 'ignore-unfixed: true' \
   'Trivy must exclude vulnerabilities that do not have a known fix'
 assert_contains "$PUBLISH_WORKFLOW" 'scripts/check-trivy-image-findings.mjs trivy-results.json --summary trivy-results-summary.json' \
