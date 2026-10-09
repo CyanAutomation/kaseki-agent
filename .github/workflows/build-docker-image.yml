@@ -222,12 +222,16 @@ jobs:
       # SARIF output is intentionally non-gating: Trivy otherwise returns exit
       # code 1 without printing the findings that caused it. The JSON report
       # below is summarized and becomes the explicit promotion gate.
+      # Go's source archive includes these optional maintainer recipes. They
+      # are not image build inputs or runtime configuration, so exclude only
+      # these two source files from image scanning while retaining Go itself.
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: docker.io/${{ env.DOCKER_IMAGE }}@${{ needs.build_candidate.outputs.digest }}
           format: sarif
           output: trivy-results.sarif
           scanners: vuln,misconfig
+          skip-files: usr/local/go/src/crypto/internal/boring/Dockerfile,usr/local/go/src/crypto/internal/fips140/nistec/fiat/Dockerfile
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '0'
@@ -237,6 +241,7 @@ jobs:
           format: json
           output: trivy-results.json
           scanners: vuln,misconfig,secret
+          skip-files: usr/local/go/src/crypto/internal/boring/Dockerfile,usr/local/go/src/crypto/internal/fips140/nistec/fiat/Dockerfile
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '0'
