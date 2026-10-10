@@ -50,10 +50,19 @@ export interface SoyuzOutboxEntry {
   deliveredAt?: string;
 }
 
+export interface SoyuzClaimIntent {
+  externalRunId: string;
+  workerId: string;
+  queuedAt: string;
+  claimCallbackId: string;
+  createdAt: string;
+}
+
 interface PersistedJobsIndex {
   version?: number;
   jobs?: PersistedJob[];
   soyuzOutbox?: SoyuzOutboxEntry[];
+  soyuzClaimIntents?: SoyuzClaimIntent[];
 }
 
 type JobWithRestartClaim = Job & { restartClaim?: RestartClaim };
@@ -298,6 +307,7 @@ export class JobPersistenceManager {
           updatedAt: new Date().toISOString(),
           jobs: merged,
           soyuzOutbox: current.soyuzOutbox ?? [],
+          soyuzClaimIntents: current.soyuzClaimIntents ?? [],
         };
         const tmpPath = `${this.indexPath}.tmp`;
         const json = this.shouldWriteCompactIndex(merged)
@@ -371,6 +381,37 @@ export class JobPersistenceManager {
     return this.withLockedJobsIndex((jobs) => {
       const match = jobs.find((job) => job.soyuz?.externalRunId === externalRunId);
       return match ? this.deserializeJob(match) : undefined;
+    });
+  }
+
+  /** Persist claim ownership before the remote claim call so a lost response is recoverable after restart. */
+  async persistSoyuzClaimIntent(intent: SoyuzClaimIntent): Promise<void> {
+    await this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
+      fs.mkdirSync(this.config.resultsDir, { recursive: true });
+      const current = this.readPersistedJobsIndex();
+      const cutoff = this.now() - 24 * 60 * 60 * 1_000;
+      const retained = (current.soyuzClaimIntents ?? [])
+        .filter((entry) => Date.parse(entry.createdAt) >= cutoff)
+        .filter((entry) => entry.claimCallbackId !== intent.claimCallbackId);
+      retained.push(intent);
+      this.writePersistedJobsIndex(current.jobs ?? [], current.soyuzOutbox ?? [], retained.slice(-2_000));
+    });
+  }
+
+  async hasSoyuzClaimIntent(externalRunId: string, claimCallbackId: string): Promise<boolean> {
+    return this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
+      const intents = this.readPersistedJobsIndex().soyuzClaimIntents ?? [];
+      return intents.some((entry) => entry.externalRunId === externalRunId
+        && entry.claimCallbackId === claimCallbackId);
+    });
+  }
+
+  async removeSoyuzClaimIntent(externalRunId: string, claimCallbackId: string): Promise<void> {
+    await this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
+      const current = this.readPersistedJobsIndex();
+      const retained = (current.soyuzClaimIntents ?? []).filter((entry) => entry.externalRunId !== externalRunId
+        || entry.claimCallbackId !== claimCallbackId);
+      this.writePersistedJobsIndex(current.jobs ?? [], current.soyuzOutbox ?? [], retained);
     });
   }
 
@@ -583,13 +624,20 @@ export class JobPersistenceManager {
     return true;
   }
 
-  private writePersistedJobsIndex(jobs: PersistedJob[], soyuzOutbox?: SoyuzOutboxEntry[]): void {
-    const existingOutbox = soyuzOutbox ?? this.readPersistedJobsIndex().soyuzOutbox ?? [];
+  private writePersistedJobsIndex(
+    jobs: PersistedJob[],
+    soyuzOutbox?: SoyuzOutboxEntry[],
+    soyuzClaimIntents?: SoyuzClaimIntent[],
+  ): void {
+    const current = this.readPersistedJobsIndex();
+    const existingOutbox = soyuzOutbox ?? current.soyuzOutbox ?? [];
+    const existingClaimIntents = soyuzClaimIntents ?? current.soyuzClaimIntents ?? [];
     const payload = {
       version: 1,
       updatedAt: new Date(this.now()).toISOString(),
       jobs,
       soyuzOutbox: existingOutbox,
+      soyuzClaimIntents: existingClaimIntents,
     };
     const tmpPath = `${this.indexPath}.tmp-${this.pid}-${this.lockTokenGenerator()}`;
     const json = this.shouldWriteCompactIndex(jobs)
@@ -614,7 +662,7 @@ export class JobPersistenceManager {
     }
 
     try {
-      const parsed = JSON.parse(contents) as { jobs?: unknown; soyuzOutbox?: unknown };
+      const parsed = JSON.parse(contents) as { jobs?: unknown; soyuzOutbox?: unknown; soyuzClaimIntents?: unknown };
       if (
         parsed === null ||
         typeof parsed !== 'object' ||
@@ -624,6 +672,9 @@ export class JobPersistenceManager {
       }
       if (parsed.soyuzOutbox !== undefined && !Array.isArray(parsed.soyuzOutbox)) {
         throw new Error('jobs index soyuzOutbox must be an array');
+      }
+      if (parsed.soyuzClaimIntents !== undefined && !Array.isArray(parsed.soyuzClaimIntents)) {
+        throw new Error('jobs index soyuzClaimIntents must be an array');
       }
       return parsed as PersistedJobsIndex;
     } catch (error) {
@@ -752,6 +803,7 @@ export class JobPersistenceManager {
         ...soyuzMetadata,
         startAuthorized: Boolean(prev.soyuz?.startAuthorized || job.soyuz?.startAuthorized),
         terminalCallbackDelivered: Boolean(prev.soyuz?.terminalCallbackDelivered || job.soyuz?.terminalCallbackDelivered),
+        claimCallbackId: soyuzMetadata.claimCallbackId ?? prev.soyuz?.claimCallbackId ?? job.soyuz?.claimCallbackId,
         startedCallbackId: prev.soyuz?.startedCallbackId ?? job.soyuz?.startedCallbackId ?? '',
         terminalCallbackId: job.soyuz?.terminalCallbackId ?? prev.soyuz?.terminalCallbackId,
       },
