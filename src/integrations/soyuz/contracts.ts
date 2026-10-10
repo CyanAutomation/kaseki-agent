@@ -100,6 +100,7 @@ export interface SoyuzWorkerRun {
   status: SoyuzRunStatus;
   stage: string | null;
   claimExpiresAt: string | null;
+  claimCallbackId?: string | null;
   cancelRequestedAt: string | null;
   workerId: string | null;
   updatedAt: string;
