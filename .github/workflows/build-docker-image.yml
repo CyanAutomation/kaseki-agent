@@ -6,6 +6,11 @@ on:
     inputs:
       ref: { description: Immutable release commit to build, required: true, type: string }
       version: { description: Release version without a leading v, required: true, type: string }
+    secrets:
+      DOCKER_USERNAME:
+        required: false
+      DOCKER_PASSWORD:
+        required: false
   schedule:
     - cron: '0 0 * * 0'
 
@@ -183,6 +188,15 @@ jobs:
         with:
           platforms: arm64
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Validate Docker Hub credentials
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          if [[ -z "$DOCKER_USERNAME" || -z "$DOCKER_PASSWORD" ]]; then
+            echo "::error::Docker Hub credentials are missing. Configure DOCKER_USERNAME and DOCKER_PASSWORD as repository or organization Actions secrets."
+            exit 1
+          fi
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
@@ -273,6 +287,15 @@ jobs:
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
         with:
           platforms: arm64
+      - name: Validate Docker Hub credentials
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          if [[ -z "$DOCKER_USERNAME" || -z "$DOCKER_PASSWORD" ]]; then
+            echo "::error::Docker Hub credentials are missing. Configure DOCKER_USERNAME and DOCKER_PASSWORD as repository or organization Actions secrets."
+            exit 1
+          fi
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
@@ -309,6 +332,15 @@ jobs:
       contents: read
       packages: write # Promote the verified digest to release tags.
     steps:
+      - name: Validate Docker Hub credentials
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          if [[ -z "$DOCKER_USERNAME" || -z "$DOCKER_PASSWORD" ]]; then
+            echo "::error::Docker Hub credentials are missing. Configure DOCKER_USERNAME and DOCKER_PASSWORD as repository or organization Actions secrets."
+            exit 1
+          fi
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
