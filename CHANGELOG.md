@@ -4,6 +4,23 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.152.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.151.0...v1.152.0) (2026-10-10)
+
+
+### Bug Fixes
+
+* avoid Docker Hub base image rate limits ([181fb7b](https://github.com/CyanAutomation/kaseki-agent/commit/181fb7bd5ba2ff62bcca4c94bf87825169b6632c))
+* avoid Docker Hub frontend pull in builds ([7976c03](https://github.com/CyanAutomation/kaseki-agent/commit/7976c034f7faeab352eb9e87247450d92c861495))
+* clear high severity image scan findings ([039c7cd](https://github.com/CyanAutomation/kaseki-agent/commit/039c7cd1b2d2a8fb69211354adf3f21d6639a818))
+* default goal retry timeout in isolated runs ([0a09202](https://github.com/CyanAutomation/kaseki-agent/commit/0a09202d58c41cf98b9277756a11d1f6e87a5329))
+* resolve Soyuz adapter lint errors ([3920630](https://github.com/CyanAutomation/kaseki-agent/commit/3920630ca5ac5a5fa99741f0c3661db6eb45ba85))
+* restore reviewer-ready PR descriptions ([71b74dd](https://github.com/CyanAutomation/kaseki-agent/commit/71b74dd6621c1def9b0f156c4870e7ceb9b7da64))
+
+
+### Features
+
+* add Soyuz integration adapter ([6417c5f](https://github.com/CyanAutomation/kaseki-agent/commit/6417c5f67d3a2073f3fc284f628dd2b4c66cd398))
+
 # [1.151.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.150.0...v1.151.0) (2026-10-07)
 
 
