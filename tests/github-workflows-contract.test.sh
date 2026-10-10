@@ -118,6 +118,27 @@ assert_not_contains "$RELEASE_WORKFLOW" 'github.event.inputs.dry_run' \
   'The release script must not interpolate a workflow input into shell source'
 assert_not_contains "$RELEASE_WORKFLOW" 'secrets: inherit' \
   'The Docker reusable workflow must not inherit unrelated secrets'
+assert_job_contains "$RELEASE_WORKFLOW" 'publish_docker' 'DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}' \
+  'The Docker reusable workflow must receive the Docker Hub username explicitly'
+assert_job_contains "$RELEASE_WORKFLOW" 'publish_docker' 'DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}' \
+  'The Docker reusable workflow must receive the Docker Hub password explicitly'
+assert_contains "$PUBLISH_WORKFLOW" '      DOCKER_USERNAME:' \
+  'The Docker reusable workflow must declare its Docker Hub username secret'
+assert_contains "$PUBLISH_WORKFLOW" '      DOCKER_PASSWORD:' \
+  'The Docker reusable workflow must declare its Docker Hub password secret'
+for job in build_candidate verify promote; do
+  assert_job_contains "$PUBLISH_WORKFLOW" "$job" 'name: Validate Docker Hub credentials' \
+    "The $job job must explain when Docker Hub credentials are missing"
+done
+assert_step_contains "$PUBLISH_WORKFLOW" 'Validate Docker Hub credentials' \
+  'Configure DOCKER_USERNAME and DOCKER_PASSWORD as repository or organization Actions secrets.' \
+  'Missing Docker Hub credentials must point to the required Actions secret configuration'
+assert_step_contains "$PUBLISH_WORKFLOW" 'Validate Docker Hub credentials' \
+  'DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}' \
+  'Docker Hub credential validation must check the username used by the login action'
+assert_step_contains "$PUBLISH_WORKFLOW" 'Validate Docker Hub credentials' \
+  'DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}' \
+  'Docker Hub credential validation must check the password used by the login action'
 assert_not_contains "$RELEASE_WORKFLOW" 'grep -q "Published release"' \
   'Release detection must not rely on semantic-release log wording'
 assert_contains "$RELEASE_WORKFLOW" 'comm -13' \
