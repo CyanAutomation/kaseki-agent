@@ -13,6 +13,7 @@ import {
   parseGoalSettingOutput,
 } from '../../src/types/goal-setting';
 
+// Requirement reference: docs/archive/GOAL_SETTING_IMPROVEMENTS.md, §1 "Explicit Anti-Patterns / Do NOT Clauses".
 describe('Goal-Setting: Anti-Patterns Extraction (#1)', () => {
   it('should validate supported anti-pattern categories and report missing or malformed input', () => {
     const baseGoal = {
@@ -82,22 +83,48 @@ describe('Goal-Setting: Anti-Patterns Extraction (#1)', () => {
     ).toBe(false);
   });
 
-  it('should support empty anti-pattern categories', () => {
-    const goal: GoalSettingOutput = {
-      original_prompt: 'Simple fix',
-      upgraded_goal: 'Simple fix upgraded',
-      key_requirements: [],
-      success_criteria: [],
+  it('accepts an empty category when another anti-pattern category has a boundary', () => {
+    const goal = parseGoalSettingOutput({
+      original_prompt: 'Preserve existing behavior',
+      upgraded_goal: 'Make the requested change while preserving existing behavior',
+      key_requirements: ['Keep existing behavior stable'],
+      success_criteria: ['Focused tests pass'],
       anti_patterns: {
         do_not_modify: [],
         do_not_break: ['existing behavior'],
       },
-      reasoning: 'minimal anti-patterns',
-      confidence: 'medium',
-    };
+      reasoning: 'The empty category has no restrictions; the non-empty category preserves the behavior.',
+      confidence: 'high',
+    });
 
-    expect(goal.anti_patterns?.do_not_modify).toEqual([]);
-    expect(goal.anti_patterns?.do_not_break).toContain('existing behavior');
+    expect(goal.anti_patterns).toEqual({
+      do_not_modify: [],
+      do_not_break: ['existing behavior'],
+    });
+  });
+
+  it('rejects anti-patterns when all categories are empty', () => {
+    const result = GoalSettingOutputSchema.safeParse({
+      original_prompt: 'Preserve existing behavior',
+      upgraded_goal: 'Make the requested change while preserving existing behavior',
+      key_requirements: ['Keep existing behavior stable'],
+      success_criteria: ['Focused tests pass'],
+      anti_patterns: {
+        do_not_modify: [],
+        do_not_break: [],
+        must_preserve: [],
+      },
+      reasoning: 'No explicit anti-pattern boundary was provided.',
+      confidence: 'high',
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) {
+      throw new Error('Expected all-empty anti-patterns to be rejected');
+    }
+    expect(result.error.issues.map((issue) => issue.message)).toContain(
+      'anti_patterns must include at least one non-empty boundary',
+    );
   });
 
   it('should validate that anti-patterns are semantically coherent', () => {

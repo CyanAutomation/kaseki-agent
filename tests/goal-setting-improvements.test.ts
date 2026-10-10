@@ -123,51 +123,10 @@ describe('Goal-Setting Agent Improvements', () => {
       ).toBe(false);
     });
 
-    it('should support empty anti-pattern categories', () => {
-      const goal: GoalSettingOutput = {
-        original_prompt: 'Simple fix',
-        upgraded_goal: 'Simple fix upgraded',
-        key_requirements: [],
-        success_criteria: [],
-        anti_patterns: {
-          do_not_modify: [],
-          do_not_break: ['existing behavior'],
-        },
-        reasoning: 'minimal anti-patterns',
-        confidence: 'medium',
-      };
-
-      expect(goal.anti_patterns?.do_not_modify).toEqual([]);
-      expect(goal.anti_patterns?.do_not_break).toContain('existing behavior');
-    });
   });
 
   // ===== IMPROVEMENT #2: SMART CRITERIA =====
   describe('Improvement #2: SMART Criteria Validation', () => {
-    it('should validate SMART criteria format', () => {
-      const criteria = [
-        {
-          criterion: 'all tests pass',
-          smart_score: 'high' as const,
-          reasoning: 'binary, measurable outcome',
-        },
-        {
-          criterion: 'add 5 edge-case tests',
-          smart_score: 'high' as const,
-          reasoning: 'specific count, achievable in one run',
-        },
-        {
-          criterion: 'improve code quality',
-          smart_score: 'low' as const,
-          reasoning: 'vague, not measurable',
-        },
-      ];
-
-      const weak = criteria.filter((c) => c.smart_score === 'low');
-      expect(weak.length).toBe(1);
-      expect(weak[0].criterion).toBe('improve code quality');
-    });
-
     it('should detect weak SMART quality', () => {
       const goal: GoalSettingOutput = {
         original_prompt: 'Fix something',
@@ -201,26 +160,6 @@ describe('Goal-Setting Agent Improvements', () => {
 
       expect(typeof goal.success_criteria[0]).toBe('string');
       expect(getCriterionText(goal.success_criteria[0] as any)).toBe('criterion 1');
-    });
-  });
-
-  // ===== IMPROVEMENT #3: CODEBASE CONTEXT =====
-  describe('Improvement #3: Codebase Context Preservation', () => {
-    it('should include codebase signals in reasoning', () => {
-      const goal: GoalSettingOutput = {
-        original_prompt: 'Add error handling',
-        upgraded_goal:
-          'Add error handling to async functions in src/api/ using try-catch. Format errors per established pattern. No new dependencies.',
-        key_requirements: ['Follow existing error pattern', 'Node.js + TypeScript environment'],
-        success_criteria: ['All errors caught', 'Consistent with codebase'],
-        reasoning:
-          'Codebase uses Node.js + TypeScript with async/await patterns. Error messages follow "action failed: reason" format.',
-        confidence: 'high',
-      };
-
-      expect(goal.reasoning).toContain('Node.js');
-      expect(goal.reasoning).toContain('TypeScript');
-      expect(goal.key_requirements).toContain('Follow existing error pattern');
     });
   });
 
