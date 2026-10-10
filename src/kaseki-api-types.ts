@@ -731,6 +731,8 @@ export interface Job {
     externalRunId: string;
     workerId: string;
     contractVersion: '1';
+    /** Stable identifier of the accepted Soyuz claim attempt, used to fence stale callbacks. */
+    claimCallbackId?: string;
     startedCallbackId: string;
     startAuthorized: boolean;
     startNeedsCanonicalRecheck?: boolean;

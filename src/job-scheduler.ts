@@ -24,6 +24,7 @@ import type { ResultCache } from './result-cache';
 import {
   ExternalRunAlreadyPersistedError,
   JobPersistenceManager,
+  type SoyuzClaimIntent,
   type SoyuzOutboxEntry,
 } from './job-persistence-manager';
 import { EXIT_CODE_SPAWN_FAILED } from './exit-codes';
@@ -242,6 +243,7 @@ export class JobScheduler {
     workerId: string,
     correlationId: string,
     requestId: string,
+    claimCallbackId?: string,
     advisoryRoutingHints?: TaskAdmissionRoutingHints,
   ): Promise<Job> {
     await this.ready();
@@ -262,6 +264,7 @@ export class JobScheduler {
         externalRunId,
         workerId,
         contractVersion: '1',
+        ...(claimCallbackId ? { claimCallbackId } : {}),
         startedCallbackId: randomUUID(),
         startAuthorized: false,
         metadataUpdatedAt: new Date().toISOString(),
@@ -300,6 +303,7 @@ export class JobScheduler {
     workerId: string,
     correlationId: string,
     requestId: string,
+    claimCallbackId?: string,
   ): Promise<Job> {
     await this.ready();
     const existing = await this.findSoyuzJob(externalRunId);
@@ -323,6 +327,7 @@ export class JobScheduler {
         externalRunId,
         workerId,
         contractVersion: '1',
+        ...(claimCallbackId ? { claimCallbackId } : {}),
         startedCallbackId: randomUUID(),
         startAuthorized: false,
         metadataUpdatedAt: now.toISOString(),
@@ -338,6 +343,18 @@ export class JobScheduler {
       (job) => job.soyuz?.externalRunId === externalRunId,
     );
     return inMemory ?? this.persistenceManager.findJobByExternalRunId(externalRunId);
+  }
+
+  async persistSoyuzClaimIntent(intent: SoyuzClaimIntent): Promise<void> {
+    await this.persistenceManager.persistSoyuzClaimIntent(intent);
+  }
+
+  hasSoyuzClaimIntent(externalRunId: string, claimCallbackId: string): Promise<boolean> {
+    return this.persistenceManager.hasSoyuzClaimIntent(externalRunId, claimCallbackId);
+  }
+
+  async removeSoyuzClaimIntent(externalRunId: string, claimCallbackId: string): Promise<void> {
+    await this.persistenceManager.removeSoyuzClaimIntent(externalRunId, claimCallbackId);
   }
 
   /**

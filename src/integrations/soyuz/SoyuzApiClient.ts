@@ -26,8 +26,8 @@ export class SoyuzApiClient {
     return this.callback(runId, 'claim', { callbackId, workerId, leaseSeconds: 120 });
   }
 
-  started(runId: string, callbackId: string, workerId: string, startedAt: string): Promise<unknown> {
-    return this.callback(runId, 'started', { callbackId, workerId, startedAt });
+  started(runId: string, callbackId: string, workerId: string, startedAt: string, claimCallbackId?: string): Promise<unknown> {
+    return this.callback(runId, 'started', { callbackId, workerId, startedAt, ...(claimCallbackId ? { claimCallbackId } : {}) });
   }
 
   event(runId: string, eventId: string, workerId: string, type: string, data: Record<string, unknown>): Promise<unknown> {

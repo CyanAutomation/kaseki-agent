@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { Job } from './kaseki-api-types';
-import { JobPersistenceManager, PersistedJob, type SoyuzOutboxEntry } from './job-persistence-manager';
+import { JobPersistenceManager, PersistedJob, type SoyuzClaimIntent, type SoyuzOutboxEntry } from './job-persistence-manager';
 import { KasekiApiConfig } from './kaseki-api-config';
 
 /**
@@ -336,6 +336,23 @@ describe('JobPersistenceManager', () => {
     const persistedJob = (await restartedManager.listPersistedJobs())[0];
     expect(persistedJob.soyuz?.terminalCallbackId).toBe(callbackId);
     expect(persistedJob.soyuz?.terminalCallbackDelivered).toBe(true);
+  });
+
+  test('persists an unconfirmed Soyuz claim intent across manager restart', async () => {
+    const intent: SoyuzClaimIntent = {
+      externalRunId: '11111111-1111-4111-8111-111111111111',
+      workerId: 'host-test-1',
+      queuedAt: '2026-10-10T12:00:00.000Z',
+      claimCallbackId: '22222222-2222-4222-8222-222222222222',
+      createdAt: new Date().toISOString(),
+    };
+
+    await manager.persistSoyuzClaimIntent(intent);
+    const restartedManager = new JobPersistenceManager(config);
+    expect(await restartedManager.hasSoyuzClaimIntent(intent.externalRunId, intent.claimCallbackId)).toBe(true);
+
+    await restartedManager.removeSoyuzClaimIntent(intent.externalRunId, intent.claimCallbackId);
+    expect(await manager.hasSoyuzClaimIntent(intent.externalRunId, intent.claimCallbackId)).toBe(false);
   });
 
   describe('persistJobs', () => {
