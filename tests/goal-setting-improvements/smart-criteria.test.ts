@@ -13,33 +13,37 @@ import {
   parseGoalSettingOutput,
 } from '../../src/types/goal-setting';
 
+// Requirement reference: docs/archive/GOAL_SETTING_IMPROVEMENTS.md, §2 "SMART Criteria Validation".
 describe('Goal-Setting: SMART Criteria Validation (#2)', () => {
-  it('should validate SMART criteria format and scores', () => {
-    const criteria = [
-      {
-        criterion: 'all tests pass',
-        smart_score: 'high' as const,
-        reasoning: 'binary, measurable outcome',
-      },
-      {
-        criterion: 'add 5 edge-case tests',
-        smart_score: 'high' as const,
-        reasoning: 'specific count, achievable in one run',
-      },
-      {
-        criterion: 'improve code quality',
-        smart_score: 'low' as const,
-        reasoning: 'vague, not measurable',
-      },
-    ];
+  it.each(['high', 'medium', 'low'] as const)('accepts the supported SMART score "%s"', (smartScore) => {
+    const result = GoalSettingOutputSchema.safeParse({
+      original_prompt: 'Improve parser validation',
+      upgraded_goal: 'Improve parser validation with measurable criteria',
+      key_requirements: ['Preserve parser behavior'],
+      success_criteria: [
+        { criterion: 'Add parser boundary coverage', smart_score: smartScore },
+        { criterion: 'Focused parser tests pass', smart_score: 'high' },
+      ],
+      reasoning: 'The measurable criterion supports the goal.',
+      confidence: 'high',
+    });
 
-    const strongCriteria = criteria.filter((c) => c.smart_score === 'high');
-    expect(strongCriteria).toHaveLength(2);
-    expect(strongCriteria[0].criterion).toBe('all tests pass');
+    expect(result.success).toBe(true);
+  });
 
-    const weakCriteria = criteria.filter((c) => c.smart_score === 'low');
-    expect(weakCriteria).toHaveLength(1);
-    expect(weakCriteria[0].criterion).toBe('improve code quality');
+  it('rejects a SMART criterion with an unsupported score', () => {
+    const result = GoalSettingOutputSchema.safeParse({
+      original_prompt: 'Improve parser validation',
+      upgraded_goal: 'Improve parser validation with measurable criteria',
+      key_requirements: ['Preserve parser behavior'],
+      success_criteria: [
+        { criterion: 'Add parser boundary coverage', smart_score: 'excellent' },
+      ],
+      reasoning: 'The score value is outside the supported contract.',
+      confidence: 'high',
+    });
+
+    expect(result.success).toBe(false);
   });
 
   it('should detect weak SMART criteria quality and trigger warnings', () => {
