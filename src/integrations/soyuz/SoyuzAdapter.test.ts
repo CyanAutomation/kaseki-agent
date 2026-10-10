@@ -56,6 +56,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function createScheduler(workerId: string, maxConcurrent = 1) {
   const jobs: Job[] = [];
+  const claimIntents: Array<{ externalRunId: string; workerId: string; queuedAt: string; claimCallbackId: string; createdAt: string }> = [];
   const scheduler = {
     getQueueStatus: jest.fn(() => ({
       pending: jobs.filter((job) => job.status === 'queued').length,
@@ -65,7 +66,7 @@ function createScheduler(workerId: string, maxConcurrent = 1) {
     getReadiness: jest.fn(() => ({ ready: true, reasons: [] })),
     listSoyuzJobs: jest.fn(async () => [...jobs]),
     findSoyuzJob: jest.fn(async (externalRunId: string) => jobs.find((job) => job.soyuz?.externalRunId === externalRunId)),
-    submitSoyuzJob: jest.fn(async (_request: unknown, externalRunId: string, owner: string, correlationId: string, requestId: string) => {
+    submitSoyuzJob: jest.fn(async (_request: unknown, externalRunId: string, owner: string, correlationId: string, requestId: string, claimCallbackId?: string) => {
       const job: Job = {
         id: `kaseki-${jobs.length + 1}`,
         status: 'queued',
@@ -77,6 +78,7 @@ function createScheduler(workerId: string, maxConcurrent = 1) {
           externalRunId,
           workerId: owner,
           contractVersion: '1',
+          ...(claimCallbackId ? { claimCallbackId } : {}),
           startedCallbackId: '44444444-4444-4444-8444-444444444444',
           startAuthorized: false,
           metadataUpdatedAt: new Date().toISOString(),
@@ -101,6 +103,7 @@ function createScheduler(workerId: string, maxConcurrent = 1) {
         job.failureClass = 'cancelled';
       }
     }),
+    holdSoyuzJob: jest.fn(),
     getLiveProgressEvents: jest.fn(() => []),
     claimSoyuzCallbacks: jest.fn(async () => []),
     getSoyuzOutboxStatus: jest.fn(async () => ({ pending: 0, failures: 0 })),
@@ -109,22 +112,36 @@ function createScheduler(workerId: string, maxConcurrent = 1) {
       if (job?.soyuz) Object.assign(job.soyuz, update);
     }),
     enqueueSoyuzCallback: jest.fn(async () => undefined),
+    persistSoyuzClaimIntent: jest.fn(async (intent: typeof claimIntents[number]) => {
+      const index = claimIntents.findIndex((candidate) => candidate.claimCallbackId === intent.claimCallbackId);
+      if (index >= 0) claimIntents[index] = intent;
+      else claimIntents.push(intent);
+    }),
+    hasSoyuzClaimIntent: jest.fn(async (externalRunId: string, claimCallbackId: string) => claimIntents.some(
+      (intent) => intent.externalRunId === externalRunId && intent.claimCallbackId === claimCallbackId,
+    )),
+    removeSoyuzClaimIntent: jest.fn(async (externalRunId: string, claimCallbackId: string) => {
+      const index = claimIntents.findIndex((intent) => intent.externalRunId === externalRunId && intent.claimCallbackId === claimCallbackId);
+      if (index >= 0) claimIntents.splice(index, 1);
+    }),
   };
-  return { scheduler, jobs };
+  return { scheduler, jobs, claimIntents };
 }
 
 function runState() {
   return {
     status: 'queued' as 'queued' | 'claimed' | 'running' | 'cancel_requested',
     workerId: null as string | null,
+    claimCallbackId: null as string | null,
     claimExpiresAt: null as string | null,
     startedAt: null as string | null,
   };
 }
 
-function createFetch(state: ReturnType<typeof runState>, options: { loseFirstAck?: boolean } = {}) {
+function createFetch(state: ReturnType<typeof runState>, options: { loseFirstAck?: boolean; loseFirstClaimResponse?: boolean } = {}) {
   let pulls = 0;
   let acks = 0;
+  let claims = 0;
   const calls: Array<{ url: string; method: string; body?: Record<string, unknown> }> = [];
   const fetchImpl = jest.fn(async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     const url = String(input);
@@ -160,6 +177,7 @@ function createFetch(state: ReturnType<typeof runState>, options: { loseFirstAck
       claimExpiresAt: state.claimExpiresAt,
       cancelRequestedAt: null,
       workerId: state.workerId,
+      claimCallbackId: state.claimCallbackId,
       updatedAt: new Date().toISOString(),
       lastHeartbeatAt: null,
       operationalHealth: 'healthy',
@@ -167,17 +185,28 @@ function createFetch(state: ReturnType<typeof runState>, options: { loseFirstAck
 
     if (method === 'GET' && action === RUN_ID) return jsonResponse({ data: responseData(), requestId: 'soyuz-request' });
     if (method === 'POST' && action === 'claim') {
+      claims += 1;
       await Promise.resolve();
       if (state.status !== 'queued') {
+        if ((state.status === 'claimed' || state.status === 'running')
+          && state.workerId === body?.workerId
+          && state.claimCallbackId === body?.callbackId) {
+          return jsonResponse({ data: responseData(), requestId: 'soyuz-request' });
+        }
         return jsonResponse({ error: { code: 'RUN_CLAIMED', message: 'Another worker already owns this run' } }, 409);
       }
       state.status = 'claimed';
       state.workerId = String(body?.workerId);
+      state.claimCallbackId = String(body?.callbackId);
       state.claimExpiresAt = new Date(Date.now() + 120_000).toISOString();
+      if (options.loseFirstClaimResponse && claims === 1) {
+        return jsonResponse({ error: { code: 'UPSTREAM_TIMEOUT', message: 'simulated lost claim response' } }, 503);
+      }
       return jsonResponse({ data: responseData(), requestId: 'soyuz-request' });
     }
     if (method === 'POST' && action === 'started') {
-      if (state.status === 'claimed' && state.workerId === body?.workerId) {
+      if (state.status === 'claimed' && state.workerId === body?.workerId
+        && (!body?.claimCallbackId || state.claimCallbackId === body.claimCallbackId)) {
         state.status = 'running';
         state.startedAt = String(body?.startedAt);
         state.claimExpiresAt = null;
@@ -225,6 +254,25 @@ describe('Soyuz adapter handoff', () => {
     expect(calls.some((call) => call.url.endsWith('/messages/ack') && Array.isArray(call.body?.retries) && (call.body?.retries as unknown[]).length > 0)).toBe(false);
   });
 
+  test('recovers a claim accepted before its response was lost after the adapter restarts', async () => {
+    const state = runState();
+    const { fetchImpl, calls } = createFetch(state, { loseFirstClaimResponse: true });
+    const { scheduler, jobs, claimIntents } = createScheduler('host-a', 2);
+
+    await makeAdapter('host-a', scheduler, fetchImpl).runOnce();
+    expect(state.status).toBe('claimed');
+    expect(jobs).toHaveLength(0);
+    expect(claimIntents[0]?.claimCallbackId).toBe(state.claimCallbackId);
+
+    await makeAdapter('host-a', scheduler, fetchImpl).runOnce();
+
+    expect(state.status).toBe('running');
+    expect(jobs).toHaveLength(1);
+    expect(scheduler.authorizeSoyuzStart).toHaveBeenCalledTimes(1);
+    expect(calls.filter((call) => call.url.endsWith('/claim'))).toHaveLength(1);
+    expect(calls.find((call) => call.url.endsWith('/started'))?.body?.claimCallbackId).toBe(state.claimCallbackId);
+  });
+
   test('two simulated hosts cannot both claim and schedule one Soyuz run', async () => {
     const state = runState();
     const { fetchImpl } = createFetch(state);
@@ -238,6 +286,24 @@ describe('Soyuz adapter handoff', () => {
     expect(['claimed', 'running']).toContain(state.status);
     expect(hostA.jobs.length + hostB.jobs.length).toBe(1);
     expect(hostA.scheduler.authorizeSoyuzStart.mock.calls.length + hostB.scheduler.authorizeSoyuzStart.mock.calls.length).toBe(1);
+    expect(hostA.scheduler.submitSoyuzJob.mock.calls.length + hostB.scheduler.submitSoyuzJob.mock.calls.length).toBe(1);
+  });
+
+  test('two controller instances with the same worker ID cannot share one claim', async () => {
+    const state = runState();
+    const { fetchImpl } = createFetch(state);
+    const hostA = createScheduler('duplicated-host-id');
+    const hostB = createScheduler('duplicated-host-id');
+    const adapterA = makeAdapter('duplicated-host-id', hostA.scheduler, fetchImpl);
+    const adapterB = makeAdapter('duplicated-host-id', hostB.scheduler, fetchImpl);
+
+    await Promise.all([adapterA.runOnce(), adapterB.runOnce()]);
+
+    expect(state.status).toBe('running');
+    expect(state.claimCallbackId).toBeTruthy();
+    expect(hostA.jobs.length + hostB.jobs.length).toBe(1);
+    expect(hostA.scheduler.authorizeSoyuzStart.mock.calls.length + hostB.scheduler.authorizeSoyuzStart.mock.calls.length).toBe(1);
+    expect(hostA.scheduler.submitSoyuzJob.mock.calls.length + hostB.scheduler.submitSoyuzJob.mock.calls.length).toBe(1);
   });
 
   test('reconciles a pre-start cancellation without authorizing execution', async () => {

@@ -24,6 +24,8 @@ const CLAIM_CALLBACK_NAMESPACE = Buffer.from('3b7d4c748b5b5f8fa2d0a13c4a44c955',
 const logger = createEventLogger('soyuz-adapter');
 
 export class SoyuzAdapter {
+  private readonly adapterInstanceId = randomUUID();
+  private readonly pendingClaimCallbackIds = new Map<string, { queuedAt: string; callbackId: string }>();
   private readonly config: SoyuzAdapterConfig;
   private readonly api: SoyuzApiClient;
   private readonly queue: CloudflareQueueConsumer;
@@ -216,6 +218,48 @@ export class SoyuzAdapter {
     return Math.min(900, Math.max(5, 5 * (2 ** Math.min(attempts, 7))));
   }
 
+  private claimCallbackIdFor(runId: string, queuedAt: string): string {
+    const pending = this.pendingClaimCallbackIds.get(runId);
+    if (pending?.queuedAt === queuedAt) return pending.callbackId;
+    const callbackId = claimCallbackId(runId, this.config.workerId, queuedAt, this.adapterInstanceId);
+    this.pendingClaimCallbackIds.set(runId, { queuedAt, callbackId });
+    return callbackId;
+  }
+
+  private async syncLocalClaim(job: Job, canonical: SoyuzWorkerRun): Promise<boolean> {
+    if (!job.soyuz || !canonical.claimCallbackId) return true;
+    if (!job.soyuz.claimCallbackId) {
+      // A durable local run mapping is the recovery proof for pre-fencing jobs.
+      await this.scheduler.updateSoyuzJobMetadata(job.id, { claimCallbackId: canonical.claimCallbackId });
+      return true;
+    }
+    return job.soyuz.claimCallbackId === canonical.claimCallbackId;
+  }
+
+  private async hasPendingClaim(runId: string, canonical: SoyuzWorkerRun): Promise<boolean> {
+    if (!canonical.claimCallbackId) return true;
+    if (this.pendingClaimCallbackIds.get(runId)?.callbackId === canonical.claimCallbackId) return true;
+    return this.scheduler.hasSoyuzClaimIntent(runId, canonical.claimCallbackId);
+  }
+
+  private async persistClaimIntent(runId: string, workerId: string, queuedAt: string, callbackId: string): Promise<void> {
+    await this.scheduler.persistSoyuzClaimIntent({
+      externalRunId: runId,
+      workerId,
+      queuedAt,
+      claimCallbackId: callbackId,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  private async persistClaimCallbackId(job: Job, callbackId?: string): Promise<void> {
+    if (!callbackId || !job.soyuz) return;
+    if (job.soyuz.claimCallbackId !== callbackId) {
+      await this.scheduler.updateSoyuzJobMetadata(job.id, { claimCallbackId: callbackId });
+    }
+    this.pendingClaimCallbackIds.delete(job.soyuz.externalRunId);
+  }
+
   private async handoff(run: SoyuzQueuedRun): Promise<boolean> {
     const handoffStartedAt = Date.now();
     let canonical = await this.api.getRun(run.runId);
@@ -225,11 +269,25 @@ export class SoyuzAdapter {
     let localJob = await this.scheduler.findSoyuzJob(run.runId);
     if (canonical.status === 'running' || canonical.status === 'cancel_requested') {
       if (localJob && canonical.workerId === this.config.workerId) {
-        if (canonical.status === 'cancel_requested') {
+        const claimMatches = await this.syncLocalClaim(localJob, canonical);
+        if (!claimMatches) {
+          if (localJob.status === 'queued') this.scheduler.holdSoyuzJob(localJob.id);
+          logger.error('Soyuz run claim does not match the durable local execution attempt; refusing stale callbacks', {
+            runId: run.runId,
+            localRunId: localJob.id,
+            workerId: this.config.workerId,
+          });
+        } else if (canonical.status === 'cancel_requested') {
           await this.scheduler.cancelSoyuzJob(localJob.id);
         } else if (localJob.status === 'queued'
           && (!localJob.soyuz?.startAuthorized || localJob.soyuz.startNeedsCanonicalRecheck)) {
-          await this.api.started(run.runId, localJob.soyuz?.startedCallbackId ?? randomUUID(), this.config.workerId, new Date().toISOString());
+          await this.api.started(
+            run.runId,
+            localJob.soyuz?.startedCallbackId ?? randomUUID(),
+            this.config.workerId,
+            new Date().toISOString(),
+            localJob.soyuz?.claimCallbackId,
+          );
           await this.scheduler.authorizeSoyuzStart(localJob.id);
         }
       } else if (!localJob) {
@@ -245,6 +303,16 @@ export class SoyuzAdapter {
 
     if (canonical.status === 'claimed' && canonical.workerId !== this.config.workerId) return false;
     if (canonical.status !== 'queued' && canonical.status !== 'claimed') return false;
+    if (canonical.status === 'claimed' && !localJob && !(await this.hasPendingClaim(run.runId, canonical))) return false;
+    if (localJob && canonical.status === 'claimed' && canonical.workerId === this.config.workerId
+      && !(await this.syncLocalClaim(localJob, canonical))) {
+      this.scheduler.holdSoyuzJob(localJob.id);
+      return false;
+    }
+
+    let activeClaimCallbackId = canonical.status === 'claimed'
+      ? canonical.claimCallbackId ?? this.pendingClaimCallbackIds.get(run.runId)?.callbackId
+      : undefined;
 
     if (!localJob) {
       let request: RunRequest;
@@ -252,42 +320,68 @@ export class SoyuzAdapter {
         request = await this.assertKasekiAdmission(run);
       } catch (error) {
         if (!(error instanceof SoyuzAdmissionRejectedError)) throw error;
+        activeClaimCallbackId = canonical.status === 'queued'
+          ? this.claimCallbackIdFor(run.runId, canonical.updatedAt)
+          : activeClaimCallbackId ?? canonical.claimCallbackId ?? undefined;
         if (canonical.status === 'queued') {
-          await this.api.claim(run.runId, claimCallbackId(run.runId, this.config.workerId, canonical.updatedAt), this.config.workerId);
-          metricsRegistry.incSoyuzCounter('claim_success');
-          canonical = await this.api.getRun(run.runId);
+          await this.persistClaimIntent(run.runId, this.config.workerId, canonical.updatedAt, activeClaimCallbackId!);
+          try {
+            await this.api.claim(run.runId, activeClaimCallbackId!, this.config.workerId);
+            metricsRegistry.incSoyuzCounter('claim_success');
+            canonical = await this.api.getRun(run.runId);
+          } catch (claimError) {
+            if (!(claimError instanceof SoyuzApiError) || claimError.status !== 409) throw claimError;
+            metricsRegistry.incSoyuzCounter('claim_conflict');
+            canonical = await this.api.getRun(run.runId);
+            if (canonical.claimCallbackId !== activeClaimCallbackId) {
+              await this.scheduler.removeSoyuzClaimIntent(run.runId, activeClaimCallbackId!);
+              return isTerminal(canonical.status) || canonical.status === 'running' || canonical.status === 'cancel_requested';
+            }
+          }
         }
-        if (canonical.status !== 'claimed' || canonical.workerId !== this.config.workerId) return false;
+        if (canonical.status !== 'claimed' || canonical.workerId !== this.config.workerId
+          || (canonical.claimCallbackId && canonical.claimCallbackId !== activeClaimCallbackId)) {
+          if (activeClaimCallbackId) await this.scheduler.removeSoyuzClaimIntent(run.runId, activeClaimCallbackId);
+          return false;
+        }
         localJob = await this.scheduler.recordSoyuzAdmissionFailure(
           run.request,
           run.runId,
           this.config.workerId,
           run.correlationId,
           run.requestId,
+          activeClaimCallbackId,
         );
+        if (activeClaimCallbackId) await this.scheduler.removeSoyuzClaimIntent(run.runId, activeClaimCallbackId);
+        activeClaimCallbackId ??= canonical.claimCallbackId ?? undefined;
         await this.ensureTerminalCallback(localJob);
         return true;
       }
 
       if (canonical.status === 'queued') {
+        activeClaimCallbackId = this.claimCallbackIdFor(run.runId, canonical.updatedAt);
+        await this.persistClaimIntent(run.runId, this.config.workerId, canonical.updatedAt, activeClaimCallbackId);
         try {
-          await this.api.claim(run.runId, claimCallbackId(run.runId, this.config.workerId, canonical.updatedAt), this.config.workerId);
+          await this.api.claim(run.runId, activeClaimCallbackId, this.config.workerId);
           metricsRegistry.incSoyuzCounter('claim_success');
           canonical = await this.api.getRun(run.runId);
+          if (canonical.claimCallbackId && canonical.claimCallbackId !== activeClaimCallbackId) {
+            await this.scheduler.removeSoyuzClaimIntent(run.runId, activeClaimCallbackId);
+            return false;
+          }
         } catch (error) {
           if (error instanceof SoyuzApiError && error.status === 409) {
             metricsRegistry.incSoyuzCounter('claim_conflict');
             canonical = await this.api.getRun(run.runId);
             if (isTerminal(canonical.status)) return true;
-            if (canonical.status === 'claimed' && canonical.workerId === this.config.workerId) {
+            if (canonical.status === 'claimed' && canonical.workerId === this.config.workerId
+              && (!canonical.claimCallbackId || canonical.claimCallbackId === activeClaimCallbackId)) {
               // This host received the response-lost claim on a previous Queue delivery.
             } else if (canonical.status === 'running' && canonical.workerId === this.config.workerId) {
-              localJob = await this.scheduler.submitSoyuzJob(request, run.runId, this.config.workerId, run.correlationId, run.requestId);
-              await this.api.started(run.runId, localJob.soyuz?.startedCallbackId ?? randomUUID(), this.config.workerId, new Date().toISOString());
-              await this.scheduler.authorizeSoyuzStart(localJob.id);
-              metricsRegistry.observeSoyuzHandoffDuration((Date.now() - handoffStartedAt) / 1000);
+              await this.scheduler.removeSoyuzClaimIntent(run.runId, activeClaimCallbackId);
               return true;
             } else {
+              await this.scheduler.removeSoyuzClaimIntent(run.runId, activeClaimCallbackId);
               return canonical.status === 'running' || canonical.status === 'cancel_requested' ? true : false;
             }
           } else {
@@ -296,21 +390,34 @@ export class SoyuzAdapter {
         }
       }
 
-      localJob = await this.scheduler.submitSoyuzJob(
-        request,
-        run.runId,
-        this.config.workerId,
-        run.correlationId,
-        run.requestId,
-      );
+      if (!localJob) {
+        localJob = await this.scheduler.submitSoyuzJob(
+          request,
+          run.runId,
+          this.config.workerId,
+          run.correlationId,
+          run.requestId,
+          activeClaimCallbackId,
+        );
+      }
     }
+
+    if (canonical.status === 'claimed' && canonical.claimCallbackId
+      && activeClaimCallbackId && canonical.claimCallbackId !== activeClaimCallbackId) return false;
+    activeClaimCallbackId ??= canonical.claimCallbackId ?? localJob.soyuz?.claimCallbackId;
+    await this.persistClaimCallbackId(localJob, activeClaimCallbackId);
+    if (activeClaimCallbackId) await this.scheduler.removeSoyuzClaimIntent(run.runId, activeClaimCallbackId);
 
     if (localJob.status !== 'queued') {
       if (canonical.status === 'queued') {
+        activeClaimCallbackId = this.claimCallbackIdFor(run.runId, canonical.updatedAt);
+        await this.persistClaimCallbackId(localJob, activeClaimCallbackId);
         try {
-          await this.api.claim(run.runId, claimCallbackId(run.runId, this.config.workerId, canonical.updatedAt), this.config.workerId);
+          await this.api.claim(run.runId, activeClaimCallbackId, this.config.workerId);
           metricsRegistry.incSoyuzCounter('claim_success');
           canonical = await this.api.getRun(run.runId);
+          if (canonical.claimCallbackId && canonical.claimCallbackId !== activeClaimCallbackId) return false;
+          await this.persistClaimCallbackId(localJob, activeClaimCallbackId);
         } catch (error) {
           if (!(error instanceof SoyuzApiError) || error.status !== 409) throw error;
           metricsRegistry.incSoyuzCounter('claim_conflict');
@@ -318,6 +425,7 @@ export class SoyuzAdapter {
         }
       }
       if (canonical.status === 'claimed' && canonical.workerId === this.config.workerId) {
+        if (canonical.claimCallbackId && canonical.claimCallbackId !== localJob.soyuz?.claimCallbackId) return false;
         await this.ensureTerminalCallback(localJob);
         return true;
       }
@@ -326,23 +434,38 @@ export class SoyuzAdapter {
     }
 
     if (canonical.status === 'queued') {
+      activeClaimCallbackId = this.claimCallbackIdFor(run.runId, canonical.updatedAt);
+      await this.persistClaimCallbackId(localJob, activeClaimCallbackId);
       try {
-        await this.api.claim(run.runId, claimCallbackId(run.runId, this.config.workerId, canonical.updatedAt), this.config.workerId);
+        await this.api.claim(run.runId, activeClaimCallbackId, this.config.workerId);
         metricsRegistry.incSoyuzCounter('claim_success');
+        canonical = await this.api.getRun(run.runId);
+        if (canonical.claimCallbackId && canonical.claimCallbackId !== activeClaimCallbackId) return false;
+        await this.persistClaimCallbackId(localJob, activeClaimCallbackId);
       } catch (error) {
         if (!(error instanceof SoyuzApiError) || error.status !== 409) throw error;
         metricsRegistry.incSoyuzCounter('claim_conflict');
         canonical = await this.api.getRun(run.runId);
         if (isTerminal(canonical.status)) return true;
         if (canonical.status !== 'claimed' || canonical.workerId !== this.config.workerId) return false;
+        if (canonical.claimCallbackId && canonical.claimCallbackId !== activeClaimCallbackId) return false;
       }
     }
     if (canonical.status !== 'claimed' && canonical.status !== 'queued') return false;
     if (canonical.status === 'claimed' && canonical.workerId !== this.config.workerId) return false;
+    if (canonical.claimCallbackId && activeClaimCallbackId && canonical.claimCallbackId !== activeClaimCallbackId) return false;
+    activeClaimCallbackId ??= canonical.claimCallbackId ?? localJob.soyuz?.claimCallbackId;
+    await this.persistClaimCallbackId(localJob, activeClaimCallbackId);
 
     const startedAt = new Date().toISOString();
     try {
-      await this.api.started(run.runId, localJob.soyuz?.startedCallbackId ?? randomUUID(), this.config.workerId, startedAt);
+      await this.api.started(
+        run.runId,
+        localJob.soyuz?.startedCallbackId ?? randomUUID(),
+        this.config.workerId,
+        startedAt,
+        activeClaimCallbackId,
+      );
     } catch (error) {
       if (error instanceof SoyuzApiError && error.status === 409) {
         const latest = await this.api.getRun(run.runId);
@@ -415,27 +538,42 @@ export class SoyuzAdapter {
       return;
     }
     if (canonical.status === 'admitting') return;
+    let currentClaimCallbackId = job.soyuz.claimCallbackId;
+    if (canonical.status === 'claimed' || canonical.status === 'running') {
+      if (!(await this.syncLocalClaim(job, canonical))) return;
+      currentClaimCallbackId = job.soyuz.claimCallbackId ?? canonical.claimCallbackId ?? undefined;
+    }
     if (canonical.status === 'queued') {
+      currentClaimCallbackId = this.claimCallbackIdFor(job.soyuz.externalRunId, canonical.updatedAt);
+      await this.persistClaimCallbackId(job, currentClaimCallbackId);
       try {
-        await this.api.claim(job.soyuz.externalRunId, claimCallbackId(job.soyuz.externalRunId, this.config.workerId, canonical.updatedAt), this.config.workerId);
+        await this.api.claim(job.soyuz.externalRunId, currentClaimCallbackId, this.config.workerId);
         metricsRegistry.incSoyuzCounter('claim_success');
       } catch (error) {
         if (!(error instanceof SoyuzApiError) || error.status !== 409) throw error;
         metricsRegistry.incSoyuzCounter('claim_conflict');
         const latest = await this.api.getRun(job.soyuz.externalRunId);
-        if (latest.status !== 'claimed' || latest.workerId !== this.config.workerId) return;
+        if ((latest.status !== 'claimed' && latest.status !== 'running') || latest.workerId !== this.config.workerId
+          || (latest.claimCallbackId && latest.claimCallbackId !== currentClaimCallbackId)) return;
+        canonical = latest;
       }
+      if (canonical.status === 'queued') canonical = await this.api.getRun(job.soyuz.externalRunId);
     } else if (canonical.status !== 'claimed' && canonical.status !== 'running') {
       return;
     } else if (canonical.status === 'claimed' && canonical.workerId !== this.config.workerId) {
       return;
     }
 
+    if (canonical.claimCallbackId && currentClaimCallbackId && canonical.claimCallbackId !== currentClaimCallbackId) return;
+    currentClaimCallbackId ??= canonical.claimCallbackId ?? undefined;
+    await this.persistClaimCallbackId(job, currentClaimCallbackId);
+
     await this.api.started(
       job.soyuz.externalRunId,
       job.soyuz.startedCallbackId,
       this.config.workerId,
       new Date().toISOString(),
+      currentClaimCallbackId,
     );
     await this.scheduler.authorizeSoyuzStart(job.id);
     metricsRegistry.incSoyuzCounter('runs_started');
@@ -602,7 +740,10 @@ export class SoyuzAdapter {
       externalRunId: job.soyuz?.externalRunId ?? '',
       callbackId,
       eventType,
-      payload,
+      payload: {
+        ...payload,
+        ...(job.soyuz?.claimCallbackId ? { claimCallbackId: job.soyuz.claimCallbackId } : {}),
+      },
       attemptCount: 0,
       nextAttemptAt: new Date().toISOString(),
       deliveryState: 'pending',
@@ -652,10 +793,10 @@ function isTerminal(status: SoyuzWorkerRun['status']): boolean {
   return status === 'cancelled' || status === 'completed' || status === 'failed' || status === 'admission_failed';
 }
 
-function claimCallbackId(runId: string, workerId: string, queuedAt: string): string {
+function claimCallbackId(runId: string, workerId: string, queuedAt: string, adapterInstanceId: string): string {
   const bytes = createHash('sha1')
     .update(CLAIM_CALLBACK_NAMESPACE)
-    .update(`soyuz-claim-v1:${runId}:${workerId}:${queuedAt}`)
+    .update(`soyuz-claim-v1:${runId}:${workerId}:${queuedAt}:${adapterInstanceId}`)
     .digest('hex')
     .slice(0, 32)
     .split('');
