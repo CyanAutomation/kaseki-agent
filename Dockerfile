@@ -326,7 +326,7 @@ RUN --mount=type=secret,id=proxy_ca,required=false \
     && /usr/local/sbin/install-go-toolchain install "$TARGETARCH" \
     && rm /usr/local/sbin/install-go-toolchain \
     && rm -f /tmp/curl-ca-bundle.pem \
-    && /usr/local/go/bin/go version | grep -F 'go1.27.1'
+    && /usr/local/go/bin/go version | grep -F 'go1.27.2'
 
 ENV HOME=/tmp/kaseki-home \
     PATH="/usr/local/go/bin:${PATH}" \
