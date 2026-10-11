@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly GO_VERSION='1.27.1'
+readonly GO_VERSION='1.27.2'
 
 # Keep the version safe to interpolate into URLs, paths, and expected command
 # output if its source becomes configurable in the future.
@@ -12,8 +12,8 @@ fi
 
 go_archive_checksum() {
   case "$1" in
-    amd64) printf '%s' '63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445' ;;
-    arm64) printf '%s' '3450b45a3f9ee8568792736a5c5e70a1f2e9b36c35a8f74958c03e51d7d92bec' ;;
+    amd64) printf '%s' 'ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5' ;;
+    arm64) printf '%s' '94f3e30b8e374bc285e7dadc11e0865726b9bc6e85b841ccceaabc0214c6b7c8' ;;
     *)
       printf 'Unsupported target architecture: %s\n' "$1" >&2
       return 2
