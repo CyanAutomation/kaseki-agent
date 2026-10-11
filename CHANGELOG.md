@@ -4,6 +4,21 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.153.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.152.0...v1.153.0) (2026-10-11)
+
+
+### Bug Fixes
+
+* update Go toolchain for image CVEs ([2753b88](https://github.com/CyanAutomation/kaseki-agent/commit/2753b88851540f5dee508dc7320a9c7e6189fe51))
+
+
+### Features
+
+* pass Soyuz settings through Compose ([#1513](https://github.com/CyanAutomation/kaseki-agent/issues/1513)) ([bed375f](https://github.com/CyanAutomation/kaseki-agent/commit/bed375f0fff39c3ff368fbbb8c59c1dd556aa808))
+* wire Soyuz settings into Compose ([c55e567](https://github.com/CyanAutomation/kaseki-agent/commit/c55e567f30a964e137cd3a89362cc34e11a968f4))
+* wire Soyuz settings into Compose ([6162824](https://github.com/CyanAutomation/kaseki-agent/commit/61628247a4cb7d7b5b0e58e67e327bf15530d915))
+* wire Soyuz settings into Compose ([#1514](https://github.com/CyanAutomation/kaseki-agent/issues/1514)) ([7541e91](https://github.com/CyanAutomation/kaseki-agent/commit/7541e91558f95d98a0da1f8bf1d1feb6165e11e8))
+
 # [1.152.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.151.0...v1.152.0) (2026-10-10)
 
 
