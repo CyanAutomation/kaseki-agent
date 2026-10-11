@@ -31,6 +31,13 @@ services:
       KASEKI_STREAM_PROGRESS: "${KASEKI_STREAM_PROGRESS:-1}"
       KASEKI_API_MAX_CONCURRENT_RUNS: "${KASEKI_API_MAX_CONCURRENT_RUNS:-1}"
       KASEKI_TASK_MODE: "${KASEKI_TASK_MODE:-patch}"
+      # Soyuz intake is opt-in. Credentials are read from the existing
+      # /run/secrets/kaseki mount, not from this environment file.
+      SOYUZ_ENABLED: "${SOYUZ_ENABLED:-false}"
+      SOYUZ_API_URL: "${SOYUZ_API_URL:-}"
+      CLOUDFLARE_ACCOUNT_ID: "${CLOUDFLARE_ACCOUNT_ID:-}"
+      CLOUDFLARE_QUEUE_ID: "${CLOUDFLARE_QUEUE_ID:-}"
+      SOYUZ_WORKER_ID: "${SOYUZ_WORKER_ID:-}"
       # Sentry error tracking (optional; leave empty to disable)
       SENTRY_DSN: "${SENTRY_DSN:-}"
       SENTRY_ENVIRONMENT: "${SENTRY_ENVIRONMENT:-production}"
