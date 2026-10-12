@@ -30,6 +30,10 @@ services:
       KASEKI_API_LOG_LEVEL: "${KASEKI_API_LOG_LEVEL:-warn}"
       KASEKI_STREAM_PROGRESS: "${KASEKI_STREAM_PROGRESS:-1}"
       KASEKI_API_MAX_CONCURRENT_RUNS: "${KASEKI_API_MAX_CONCURRENT_RUNS:-1}"
+      KASEKI_RETENTION_RUNS: "${KASEKI_RETENTION_RUNS:-5}"
+      KASEKI_STORAGE_WARN_FREE_BYTES: "${KASEKI_STORAGE_WARN_FREE_BYTES:-5368709120}"
+      KASEKI_STORAGE_MIN_FREE_BYTES: "${KASEKI_STORAGE_MIN_FREE_BYTES:-2147483648}"
+      KASEKI_HOST_NPM_CACHE_DIR: "${KASEKI_HOST_NPM_CACHE_DIR:-/agents/kaseki-cache/npm-cache}"
       KASEKI_TASK_MODE: "${KASEKI_TASK_MODE:-patch}"
       # Soyuz intake is opt-in. Credentials are read from the existing
       # /run/secrets/kaseki mount, not from this environment file.

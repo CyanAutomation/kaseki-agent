@@ -49,6 +49,7 @@ import { createMockScheduler, createTestConfig, type TestScheduler } from './tes
 import type { TaskAdmissionEvaluator } from './task-admission';
 import * as gatewaySmoke from './kaseki-api-gateway-smoke';
 import { applyHttpHardening } from './kaseki-api-service';
+import { StorageCapacityError } from './storage-capacity';
 
 describe('kaseki-api-routes scorecard integration', () => {
   test('registers the protected scorecard route in the /api assembly', async () => {
@@ -1133,6 +1134,50 @@ describe('kaseki-api-routes idempotent submissions', () => {
       expect(retry.status).toBe(202);
       expect((await retry.json()) as object).toEqual(expect.objectContaining({ id: 'kaseki-retry' }));
       expect(scheduler.submitJob).toHaveBeenCalledTimes(2);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('returns a structured 507 and releases the idempotency claim for low storage', async () => {
+    const scheduler = createMockScheduler();
+    scheduler.submitJob
+      .mockRejectedValueOnce(new StorageCapacityError({
+        code: 'insufficient_storage',
+        statusCode: 507,
+        availableBytes: 1024 ** 3,
+        warningBytes: 5 * 1024 ** 3,
+        minimumBytes: 2 * 1024 ** 3,
+        cleanupAttempted: true,
+        cleanupFreedBytes: 0,
+      }))
+      .mockResolvedValueOnce({
+        id: 'kaseki-storage-retry',
+        status: 'queued',
+        createdAt: new Date('2026-07-21T00:00:00.000Z'),
+        resultDir: path.join(resultsDir, 'kaseki-storage-retry'),
+      });
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, createTestConfig(resultsDir));
+
+    try {
+      const submit = () => fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+      const rejected = await submit();
+      expect(rejected.status).toBe(507);
+      expect(await rejected.json()).toMatchObject({
+        code: 'insufficient_storage',
+        availableBytes: 1024 ** 3,
+        minimumBytes: 2 * 1024 ** 3,
+        cleanupAttempted: true,
+        remediation: expect.any(String),
+      });
+
+      const retried = await submit();
+      expect(retried.status).toBe(202);
+      expect(await retried.json()).toMatchObject({ id: 'kaseki-storage-retry' });
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }

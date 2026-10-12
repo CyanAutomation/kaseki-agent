@@ -30,6 +30,14 @@ import {
 import { EXIT_CODE_SPAWN_FAILED } from './exit-codes';
 import { configureScoutingAndGoalCheckEnv } from './job-environment';
 import type { TaskAdmissionRoutingHints } from './task-admission';
+import {
+  cleanupOldRuns,
+  cleanupStaleStagingDirectories,
+  getActiveRunNames,
+  hasActiveRunWorkspaceOrStaging,
+  pruneNpmCache,
+} from './cleanup-manager';
+import { StorageCapacityManager, type StorageCapacityStatus } from './storage-capacity';
 
 function isLowRiskTaskPrompt(prompt?: string): boolean {
   if (!prompt) {
@@ -93,6 +101,10 @@ function allowsNoChangeTaskPrompt(prompt?: string): boolean {
   ].some((signal) => normalized.includes(signal));
 }
 
+function isStorageWriteFailure(message: string): boolean {
+  return /\b(?:ENOSPC|EDQUOT)\b|no space left on device|disk quota exceeded/i.test(message);
+}
+
 /**
  * Execution state for a job process lifecycle.
  * Replaces distributed boolean flags (timedOut, processExited) with a single state machine.
@@ -147,6 +159,9 @@ export class JobScheduler {
   private failureArtifactWriter: FailureArtifactWriter;
   private artifactCache?: Pick<ResultCache, 'clearForJob'>;
   private persistenceManager: JobPersistenceManager;
+  private storageCapacityManager: StorageCapacityManager;
+  private storageMonitor?: NodeJS.Timeout;
+  private readonly storageGuardEnabled: boolean;
   private initializationPromise: Promise<void>;
   private static readonly SHUTDOWN_GRACE_MS = 5000;
 
@@ -155,6 +170,7 @@ export class JobScheduler {
     webhookManager: WebhookManager,
     artifactCache?: Pick<ResultCache, 'clearForJob'>,
     persistenceManager?: JobPersistenceManager,
+    storageCapacityManager?: StorageCapacityManager,
   ) {
     this.config = config;
     metricsRegistry.configurePersistence(path.join(config.resultsDir, '.kaseki-api-metrics.json'));
@@ -164,7 +180,14 @@ export class JobScheduler {
     this.artifactCache = artifactCache;
     this.persistenceManager =
       persistenceManager ?? new JobPersistenceManager(config);
-    this.initializationPromise = this.initializeFromPersistence();
+    this.storageGuardEnabled = config.storageWarnFreeBytes !== undefined && config.storageMinFreeBytes !== undefined;
+    this.storageCapacityManager = storageCapacityManager ?? new StorageCapacityManager(config, {
+      cleanup: (pruneCache) => this.cleanupForStorage(pruneCache),
+      hasActiveRuns: () => this.hasActiveRunsForStorageCleanup(),
+    });
+    this.initializationPromise = this.initializeFromPersistence().then(() => {
+      if (this.storageGuardEnabled) this.startStorageMonitor();
+    });
   }
 
   /**
@@ -172,6 +195,7 @@ export class JobScheduler {
    */
   async submitJob(request: RunRequest, advisoryRoutingHints?: TaskAdmissionRoutingHints): Promise<Job> {
     await this.ready();
+    await this.ensureStorageCapacity();
     const instanceId = await this.persistenceManager.generateInstanceId(
       Array.from(this.jobs.keys()),
     );
@@ -249,6 +273,7 @@ export class JobScheduler {
     await this.ready();
     const existing = await this.findSoyuzJob(externalRunId);
     if (existing) return existing;
+    await this.ensureStorageCapacity();
 
     const instanceId = await this.persistenceManager.generateInstanceId(Array.from(this.jobs.keys()));
     const job: Job = {
@@ -987,16 +1012,19 @@ export class JobScheduler {
         JobExecutionState.STARTING,
         JobExecutionState.FAILED,
       );
-      const errorMsg = `Failed to spawn process: ${err.message}`;
+      const storageFailure = isStorageWriteFailure(`${(err as NodeJS.ErrnoException).code ?? ''} ${err.message}`);
+      const errorMsg = storageFailure
+        ? 'The host ran out of storage while starting this run. Free disk space, then retry.'
+        : `Failed to spawn process: ${err.message}`;
       this.logger.event('job_failed', {
         jobId,
-        failureClass: 'spawn_error',
+        failureClass: storageFailure ? 'storage_exhausted' : 'spawn_error',
         error: errorMsg,
       });
       this.finalizeJobIfNeeded(job, {
         status: 'failed',
         exitCode: EXIT_CODE_SPAWN_FAILED,
-        failureClass: 'spawn_error',
+        failureClass: storageFailure ? 'storage_exhausted' : 'spawn_error',
         error: errorMsg,
         completedAt: new Date(),
       });
@@ -1247,7 +1275,15 @@ export class JobScheduler {
         JobExecutionState.EXITED,
         JobExecutionState.FAILED,
       );
-      this.parseFailureFromResults(job);
+      const failureOutput = this.decodeUtf8Tail(stderrTail);
+      if (isStorageWriteFailure(failureOutput)) {
+        job.failureClass = 'storage_exhausted';
+        job.error = 'The host ran out of storage while this run was executing. Free disk space, then retry.';
+        updates.failureClass = job.failureClass;
+        updates.error = job.error;
+      } else {
+        this.parseFailureFromResults(job);
+      }
       this.writeControllerBootstrapLogs(job, stdoutTail, stderrTail);
       this.failureArtifactWriter.writeFailureArtifacts(
         job,
@@ -1912,7 +1948,92 @@ export class JobScheduler {
     } catch {
       reasons.push('scheduler_unavailable');
     }
+    if (this.storageGuardEnabled) {
+      const storage = this.storageCapacityManager.getStatus();
+      if (storage.state === 'blocked') reasons.push('storage_capacity_insufficient');
+      if (storage.state === 'unknown') reasons.push('storage_capacity_unknown');
+    }
     return { ready: reasons.length === 0, reasons };
+  }
+
+  /** Capacity snapshot used by health, preflight, and metrics surfaces. */
+  getStorageStatus(): StorageCapacityStatus {
+    return this.storageCapacityManager.getStatus();
+  }
+
+  /** Reject new work only after cleanup has been attempted below the warning threshold. */
+  async ensureStorageCapacity(): Promise<StorageCapacityStatus> {
+    if (!this.storageGuardEnabled) return this.storageCapacityManager.getStatus();
+    return this.storageCapacityManager.ensureCapacity();
+  }
+
+  private startStorageMonitor(): void {
+    if (this.storageMonitor) return;
+    const inspect = async () => {
+      try {
+        const status = await this.storageCapacityManager.ensureCapacity();
+        if (status.state === 'warning') {
+          this.logger.warn('Persistent storage is below the cleanup warning threshold', {
+            availableBytes: status.availableBytes,
+            warningBytes: status.warningBytes,
+            cleanupAttempted: status.cleanupAttempted,
+            cleanupFreedBytes: status.cleanupFreedBytes,
+          });
+        }
+      } catch (error) {
+        this.logger.warn('Persistent storage capacity prevents new runs', {
+          code: (error as { code?: string })?.code,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    };
+    void inspect();
+    this.storageMonitor = setInterval(() => { void inspect(); }, 60_000);
+    this.unrefTimer(this.storageMonitor);
+  }
+
+  private async cleanupForStorage(pruneCache: boolean): Promise<{ freedBytes: number }> {
+    const retention = await cleanupOldRuns(
+      this.config.resultsDir,
+      this.config.hostCacheDir ?? '/agents/kaseki-cache',
+      this.config.retentionRuns ?? 5,
+      false,
+      {
+        logDir: this.config.resultsDir,
+        activeRunsDir: this.config.runsDir ?? '/agents/kaseki-runs',
+        preserveCache: true,
+      },
+    );
+    const staging = await cleanupStaleStagingDirectories(
+      this.config.resultsDir,
+      this.config.runsDir ?? '/agents/kaseki-runs',
+    );
+    const npm = pruneCache && this.config.npmCacheDir
+      ? pruneNpmCache(this.config.npmCacheDir)
+      : { freedBytes: 0, deletedCount: 0 };
+    const freedBytes = retention.freedBytes + staging.freedBytes + npm.freedBytes;
+    this.logger.event('storage_cleanup_completed', {
+      retentionRunsDeleted: retention.deletedCount,
+      runLogsDeleted: retention.deletedLogCount,
+      stagingDirectoriesDeleted: staging.deletedCount,
+      npmCacheDirectoriesDeleted: npm.deletedCount,
+      freedBytes,
+      npmCachePruned: pruneCache,
+    });
+    return { freedBytes };
+  }
+
+  private hasActiveRunsForStorageCleanup(): boolean {
+    if (this.queue.length > 0 || this.running.size > 0) return true;
+    try {
+      return getActiveRunNames(this.config.resultsDir).size > 0 || hasActiveRunWorkspaceOrStaging(
+        this.config.resultsDir,
+        this.config.runsDir ?? '/agents/kaseki-runs',
+      );
+    } catch {
+      // If the durable index cannot be read, preserve the shared npm cache.
+      return true;
+    }
   }
 
   /**
@@ -1920,6 +2041,10 @@ export class JobScheduler {
    */
   async shutdown(): Promise<void> {
     this.isShuttingDown = true;
+    if (this.storageMonitor) {
+      clearInterval(this.storageMonitor);
+      this.storageMonitor = undefined;
+    }
 
     // Detach pending work before finalizing running jobs. A running job may
     // complete synchronously while it is being terminated, and its completion

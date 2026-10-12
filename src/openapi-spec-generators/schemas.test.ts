@@ -130,6 +130,11 @@ describe('OpenAPI Schema Builders', () => {
       expect(properties.instance).toMatchObject({ type: 'string' });
       expect(properties.error).toBeUndefined();
       expect(properties.requestId).toMatchObject({ type: 'string' });
+      expect(properties.code).toMatchObject({ type: 'string' });
+      expect(properties.availableBytes).toMatchObject({ type: 'integer', minimum: 0 });
+      expect(properties.minimumBytes).toMatchObject({ type: 'integer', minimum: 0 });
+      expect(properties.cleanupAttempted).toMatchObject({ type: 'boolean' });
+      expect(properties.remediation).toMatchObject({ type: 'string' });
       expect(schema.required).not.toContain('requestId');
     });
   });

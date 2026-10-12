@@ -42,13 +42,21 @@ export function createHealthRoutes(
   /** GET /ready - Kubernetes-style readiness probe. */
   const readinessHandler = (_req: Request, res: Response) => {
     const readiness = scheduler.getReadiness();
+    const storageCapacity = typeof scheduler.getStorageStatus === 'function'
+      ? scheduler.getStorageStatus()
+      : undefined;
     if (readiness.ready) {
-      return res.status(200).json({ status: 'ready', timestamp: new Date().toISOString() });
+      return res.status(200).json({
+        status: 'ready',
+        timestamp: new Date().toISOString(),
+        ...(storageCapacity ? { storageCapacity } : {}),
+      });
     }
     return res.status(503).json({
       status: 'not_ready',
       timestamp: new Date().toISOString(),
       reasons: readiness.reasons.map((reason) => reason.split(':', 1)[0]),
+      ...(storageCapacity ? { storageCapacity } : {}),
     });
   };
   router.get('/ready', readinessHandler);

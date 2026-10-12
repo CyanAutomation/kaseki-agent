@@ -241,12 +241,13 @@ runbooks. For current controller readiness, call `GET /api/v1/preflight` instead
 
 **GET `/ready`** or **GET `/api/v1/ready`**
 
-No authentication required. Returns readiness for queue/scheduler dependencies used to accept and execute runs.
+No authentication required. Returns readiness for queue/scheduler dependencies and persistent storage capacity used to accept and execute runs.
 
 - `200` when:
   - results directory is readable+writable,
   - scheduler queue status is available,
-  - webhook manager loop is healthy.
+  - webhook manager loop is healthy,
+  - storage capacity is measurable and at or above the admission minimum.
 - `503` when one or more dependencies are not ready.
 
 **Response (200 OK):**
@@ -254,7 +255,13 @@ No authentication required. Returns readiness for queue/scheduler dependencies u
 ```json
 {
   "status": "ready",
-  "timestamp": "2026-05-05T12:00:00.000Z"
+  "timestamp": "2026-05-05T12:00:00.000Z",
+  "storageCapacity": {
+    "state": "ok",
+    "availableBytes": 6442450944,
+    "warningBytes": 5368709120,
+    "minimumBytes": 2147483648
+  }
 }
 ```
 
@@ -355,6 +362,28 @@ available and gracefully skips when they are not, and `none` skips GitHub
 publishing. Requests with effective publish mode `branch` or `pr` fail before
 queueing unless GitHub App credentials are readable; call `GET /api/v1/preflight`
 first to verify that readiness.
+
+### Storage Admission
+
+The API reports storage capacity in `GET /api/v1/preflight`, `GET /ready`, and Prometheus metrics. Below `KASEKI_STORAGE_WARN_FREE_BYTES` (5 GiB by default), it applies `KASEKI_RETENTION_RUNS` retention, removes staging directories older than 24 hours, and prunes npm `_cacache` and `_npx` only when no runs are active. It preserves retained results and the dependency cache. Cleanup never cancels active runs.
+
+If cleanup leaves less than `KASEKI_STORAGE_MIN_FREE_BYTES` (2 GiB by default), `POST /api/v1/runs` and the retry endpoint return `507 Insufficient Storage` with `code: "insufficient_storage"`, measured capacity, cleanup outcome, and remediation. If capacity cannot be measured, admission returns `503 Service Unavailable` with `code: "storage_capacity_unknown"`. An `ENOSPC` or quota error during execution appears on the run with `failureClass: "storage_exhausted"`.
+
+```json
+{
+  "type": "https://api.kaseki.local/errors#insufficient-storage",
+  "title": "Insufficient Storage",
+  "status": 507,
+  "detail": "Available storage remains below the 2.0 GiB minimum after cleanup.",
+  "code": "insufficient_storage",
+  "availableBytes": 1073741824,
+  "warningBytes": 5368709120,
+  "minimumBytes": 2147483648,
+  "cleanupAttempted": true,
+  "cleanupFreedBytes": 0,
+  "remediation": "Remove unrelated files or increase the host volume, then retry. Retained run artifacts and the dependency cache are preserved."
+}
+```
 
 ### Automatic Owner Review Requests (Personal Repositories)
 
@@ -919,6 +948,8 @@ Common error codes:
 | 400 | Invalid request (validation failed) |
 | 401 | Missing/invalid API key |
 | 404 | Run not found |
+| 503 | Storage capacity could not be measured; new runs are temporarily blocked |
+| 507 | Insufficient storage remains after automatic cleanup |
 | 500 | Server error (check logs) |
 
 ## Workflow Example
