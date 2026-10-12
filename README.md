@@ -6,185 +6,59 @@
 [![Publish Docker Image](https://github.com/CyanAutomation/kaseki-agent/actions/workflows/build-docker-image.yml/badge.svg?branch=main)](https://github.com/CyanAutomation/kaseki-agent/actions/workflows/build-docker-image.yml)
 
 
-Kaseki is a proof-of-concept ephemeral coding-agent runner. Each run creates a numbered, disposable container instance (kaseki-1, kaseki-2, etc.) that orchestrates the Pi coding-agent via an OpenAI-compatible LLM gateway (CloudFlare AI Workers, Azure OpenAI, Ollama, etc.).
+Kaseki Agent is a Docker-based coding-agent runner with a REST API, a command-line client, and a browser console. The API schedules tasks in disposable worker containers; each worker checks out a target repository, runs the Pi coding agent through an OpenAI-compatible gateway, validates changes, and collects results.
 
-## Quick Start
+Kaseki Agent is currently presented as a proof of concept. Its documented guided API deployment supports Debian 12/13 and 64-bit Raspberry Pi OS. The `/ready` check confirms API startup; it does not validate gateway credentials or model availability by making an inference request.
 
-### Raspberry Pi API setup
+## Choose your path
 
-On a clean Debian 12/13 or 64-bit Raspberry Pi OS device, download and verify
-the release bootstrap before running it:
+| Goal | Start here | Requirements |
+| --- | --- | --- |
+| Deploy an API host | [Raspberry Pi quick start](docs/QUICK_START.md) | Debian 12/13 or 64-bit Raspberry Pi OS; the guide installs Docker if needed |
+| Install the CLI client | [Quick start below](#quick-start-api-host-and-cli-client) and [npm setup](docs/NPM_SETUP.md) | Linux, Node.js 24 or later, npm |
+| Develop Kaseki Agent | [Development guide](docs/DEVELOPMENT.md) and [contribution guide](CONTRIBUTING.md) | Linux, Node.js 24 or later, npm |
 
-```bash
-if ! command -v curl >/dev/null 2>&1; then
-  sudo apt-get update && sudo apt-get install -y ca-certificates curl
-fi
-curl -fsSL https://github.com/CyanAutomation/kaseki-agent/releases/latest/download/bootstrap-pi.sh \
-  -o /tmp/kaseki-bootstrap-pi.sh
-curl -fsSL https://github.com/CyanAutomation/kaseki-agent/releases/latest/download/bootstrap-pi.sh.sha256 \
-  -o /tmp/bootstrap-pi.sh.sha256
-(cd /tmp && sha256sum -c bootstrap-pi.sh.sha256)
-bash /tmp/kaseki-bootstrap-pi.sh
-```
+The published Docker image runs API or worker workloads; it is not an npm CLI installation. For container deployment, follow the [deployment guide](docs/DEPLOYMENT.md).
 
-The bootstrap installs Docker Engine and Compose when needed, verifies the
-matching source bundle checksum, and runs the guided Compose setup. It does not
-require host Node.js. Setup asks for an OpenAI-compatible gateway URL and a
-hidden key when needed, stores credentials in files, pins the pulled image
-digest, validates Compose, and waits for `/ready`. The API binds to loopback by
-default. It does not send a model inference request during setup.
+## Quick start: API host and CLI client
 
-From an existing checkout, run `bash scripts/setup-pi.sh`. For setup details,
-provider examples, LAN access, and diagnostics, see
-[the Raspberry Pi quick-start guide](docs/QUICK_START.md).
+### 1. Set up the API host
 
-### Install the CLI on a workstation
+On the API host, follow the [Pi quick-start guide](docs/QUICK_START.md) to install and configure the service. The guided setup configures the gateway URL, stores credentials in files, pins the image digest, and starts the API. The API binds to loopback by default. Its bearer token controls Docker-backed task execution, so treat it like an administrator credential.
+
+### 2. Connect a Linux workstation
+
+The examples below use an SSH tunnel, which works with the API's default loopback bind. Keep the tunnel open in one terminal:
 
 ```bash
-npm install -g @cyanautomation/kaseki-agent
-kaseki-agent init
+ssh -N -L 8080:127.0.0.1:8080 pi@your-pi-host
 ```
 
-Use the CLI to submit and monitor tasks through the Pi API. See
-[NPM_SETUP.md](docs/NPM_SETUP.md) for CLI configuration.
-
-
-### CloudFlare Gateway Live Probe
-
-The Jest suite uses deterministic unit/contract coverage for CloudFlare gateway behavior and mocks `fetch`; it does not perform live network calls or consume gateway tokens. To run the live CloudFlare probe explicitly, use:
+In another terminal on the workstation, copy the API token file from the host. The CLI discovers this file at `~/.kaseki/secrets/kaseki_api_keys` and reads its first non-empty line. Restrict local access to the copied credential:
 
 ```bash
-CLOUDFLARE_GATEWAY_TEST=1 \
-LLM_GATEWAY_URL=https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat \
-LLM_GATEWAY_API_KEY=<token> \
-npm run test:integration:cloudflare-gateway
+mkdir -p ~/.kaseki/secrets
+chmod 700 ~/.kaseki/secrets
+scp pi@your-pi-host:~/secrets/kaseki_api_keys ~/.kaseki/secrets/kaseki_api_keys
+chmod 600 ~/.kaseki/secrets/kaseki_api_keys
 ```
 
-The live probe requires `CLOUDFLARE_GATEWAY_TEST=1`, a configured `LLM_GATEWAY_URL`, either `LLM_GATEWAY_API_KEY` or `LLM_GATEWAY_API_KEY_FILE`, and working token/network access to CloudFlare. `LLM_GATEWAY_MODEL` is optional and defaults to `dynamic/kaseki-agent`.
-
-### 3. Run Your First Task
-
-```bash
-# Start API service (Docker Compose recommended)
-docker compose up -d
-
-# Submit a task
-kaseki-agent run https://github.com/CyanAutomation/crudmapper main \
-  "Add input validation to all POST endpoints"
-```
-
-### 4. Monitor Results
-
-```bash
-# List all instances
-kaseki-agent list
-
-# Get detailed report
-kaseki-agent report kaseki-1
-
-# Live monitoring
-kaseki-agent status kaseki-1
-```
-
-### 5. Run API Locally
-
-```bash
-# Start an authenticated local API on port 8080
-KASEKI_API_KEYS=sk-local-secret \
-  kaseki-agent serve --port 8080 &
-
-# Health check (no auth required)
-curl http://localhost:8080/health
-
-# Authenticated endpoint
-curl -H "Authorization: Bearer sk-local-secret" \
-  http://localhost:8080/api/v1/preflight
-
-# Override default URL
-KASEKI_API_URL=http://localhost:9090 kaseki-agent serve --port 9090
-```
-
----
-
-## Overview
-
-Kaseki provides three deployment patterns:
-
-- **NPM CLI**: Admin/helper workflows and task clients
-- **Docker**: Containerized execution without host Node.js
-- **REST API**: Local/distributed orchestration via `kaseki-agent serve`
-
-Each task execution produces isolated workspace and results for reproducible AI coding workflows.
-
----
-
-## Development
-
-- Node.js >= 24 required
-- Install dependencies: `npm ci`
-- Run validation: `npm run check`
-
-Structural summaries are available for TypeScript and JavaScript files. Go files and unsupported languages are read in full.
-
----
-
-## Troubleshooting
-
-### Node.js 24+ Runtime Required
-
-Kaseki requires Node.js version 24 or later. Earlier versions will fail during module resolution or syntax parsing. Verify your Node.js version before running:
-
-```bash
-node -v
-```
-
-Upgrade using your system package manager or nvm if the version is below 24.
-
-### GET /health Endpoint Usage
-
-The API service exposes an unauthenticated health check endpoint for monitoring:
-
-```bash
-# Basic health check (no authentication required)
-curl http://localhost:8080/health
-```
-
-A 200 OK response confirms the Kaseki API service is running. Non-200 responses indicate the service is unavailable or not yet started.
-
-### GET /api/v1/preflight Endpoint with Authentication
-
-The preflight endpoint validates controller configuration (Docker, image, GitHub App) and requires Bearer token authentication:
-
-```bash
-# Preflight with Bearer token
-curl -H "Authorization: Bearer sk-kaseki-secret-key" \
-  http://localhost:8080/api/v1/preflight
-```
-
-The endpoint returns diagnostic information about container state, image availability, and provider readiness. Requests require a valid API key configured in `KASEKI_API_KEYS`. Without valid credentials, the endpoint returns 401 Unauthorized.
-
-## Installation
-
-### Global NPM (Recommended)
+Install the CLI and submit a task through the tunnel:
 
 ```bash
 npm install -g @cyanautomation/kaseki-agent
+KASEKI_API_URL=http://localhost:8080/api/v1 \
+  kaseki-agent run https://github.com/owner/repo main "Fix the failing tests"
 ```
 
-### Local NPM
+The CLI prints the run ID. Use it to monitor the task and retrieve its report:
 
 ```bash
-npm install @cyanautomation/kaseki-agent
-npx kaseki-agent init
+KASEKI_API_URL=http://localhost:8080/api/v1 kaseki-agent status kaseki-1 --follow
+KASEKI_API_URL=http://localhost:8080/api/v1 kaseki-agent report kaseki-1
 ```
 
-### Docker
-
-```bash
-docker run -it docker.io/cyanautomation/kaseki-agent:latest init
-```
-
----
+Replace `kaseki-1` with the ID returned by `run`. For other API access patterns, secret locations, or local development, see the [npm setup guide](docs/NPM_SETUP.md) and [API reference](docs/API.md).
 
 ## Basic Usage
 
@@ -210,26 +84,9 @@ All 15 commands registered by `src/cli/KasekiCLI.ts`:
 
 See [docs/CLI.md](docs/CLI.md) for command usage details and the live monitoring CLI.
 
-### Task Execution
+### Direct worker containers
 
-```bash
-# Basic task
-kaseki-agent run https://github.com/owner/repo main "Fix TypeScript errors"
-
-# With custom API URL
-KASEKI_API_URL=http://localhost:8080/api/v1 \
-  kaseki-agent run https://github.com/owner/repo main "Add unit tests"
-
-# Monitor progress
-kaseki-agent status kaseki-1 --follow
-```
-
-> **Docker volume mounts:** Direct `docker run` invocations must mount `/results` read-write. A missing or `:ro` mount fails scouting/validation with exit code 86.
-
-```bash
-# Correct: /results mounted read-write
-docker run -v /path/to/results:/results:rw docker.io/cyanautomation/kaseki-agent:latest
-```
+When running a worker container directly, mount `/results` read-write. A missing or read-only mount fails scouting or validation with exit code 86. For complete container invocation and deployment requirements, use the [deployment guide](docs/DEPLOYMENT.md).
 
 ---
 
@@ -252,7 +109,7 @@ See [docs/ENV_VARS.md](docs/ENV_VARS.md) for complete configuration reference.
 | `LLM_GATEWAY_URL` | *(required)* | OpenAI-compatible gateway base URL |
 | `LLM_GATEWAY_API_KEY_FILE` | `/run/secrets/kaseki/llm_gateway_api_key` in Docker | Required; keep the key in a host file with mode 0640 and group 10000 |
 | `KASEKI_MODEL` | `dynamic/kaseki-agent` | Pi model string |
-| `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test;npm run build` | Semicolon-separated |
+| `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test` | Semicolon-separated |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | Agent timeout (3 hours) |
 | `KASEKI_MAX_DIFF_BYTES` | `400000` | Max diff size (400 KB) |
 | `KASEKI_RETENTION_RUNS` | `5` | Runs kept between executions |
@@ -299,11 +156,9 @@ kaseki-agent serve --port 8080
 
 Web UI served at `/ui` (and `/`) by `kaseki-agent serve`. Use it to monitor health, browse GitHub issues, and submit tasks.
 
-**Base URL:** `http://<host>:<port>/ui` (default `http://localhost:8080/ui`).
-Override host/port with `KASEKI_API_URL` env var (e.g., `KASEKI_API_URL=http://localhost:9090`).
+**Base URL:** `http://<host>:<port>/ui` (default `http://localhost:8080/ui`). Set the server bind port with `kaseki-agent serve --port PORT`; `KASEKI_API_URL` configures the CLI client target, not the server bind address.
 
-**Authentication:** Bearer token. Enter token in the header input field or set `KASEKI_API_KEY` env var. Requests to authenticated endpoints include `Authorization: Bearer <token>`.
-Server validates tokens listed in `KASEKI_API_KEYS` config (comma-separated).
+**Authentication:** Enter a bearer token in the console's header field. API requests include `Authorization: Bearer <token>`. The server accepts keys from `KASEKI_API_KEYS` or its configured key file; see the [API authentication reference](docs/API.md#authentication).
 
 **Usage examples:**
 
@@ -320,9 +175,9 @@ curl -X POST http://localhost:8080/api/v1/runs \
   -H "Idempotency-Key: 123e4567-e89b-42d3-a456-426614174000" \
   -H "Content-Type: application/json" \
   -d '{
-    "repo": "https://github.com/org/repo",
+    "repoUrl": "https://github.com/org/repo",
     "ref": "main",
-    "prompt": "Fix the failing test"
+    "taskPrompt": "Fix the failing test"
   }'
 
 # Access the Task Console in browser
@@ -368,15 +223,41 @@ Each run produces isolated workspace with:
 
 ---
 
+## Local development
+
+The npm package targets Linux. Development requires Node.js 24 or later, npm, and ShellCheck (used by `npm run check`). From a checkout:
+
+```bash
+npm ci
+npm run check
+npm test
+```
+
+`npm test` builds the project before running the unit suite. See [development](docs/DEVELOPMENT.md) and [contributing](CONTRIBUTING.md) for additional workflows.
+
+For an optional live Cloudflare gateway probe, configure `LLM_GATEWAY_URL` and `LLM_GATEWAY_API_KEY` in your shell, then run `npm run test:integration:cloudflare-gateway`. This makes a live network request and may use gateway tokens; see [gateway testing](docs/GATEWAY_TEST.md).
+
+## Troubleshooting
+
+- Check `node -v` if the CLI reports a runtime or module error; Node.js 24 or later is required.
+- Check `curl http://localhost:8080/health` to confirm that the API responds. This unauthenticated endpoint reports service health, not gateway inference readiness.
+- Use the authenticated `GET /api/v1/preflight` endpoint for controller diagnostics. See [API documentation](docs/API.md#authentication) and the [troubleshooting guide](docs/TROUBLESHOOTING.md).
+
+---
+
 ## Resources
 
 ### Documentation
 
 - [Quick Start Guide](docs/QUICK_START.md) - Step-by-step setup
+- [NPM Setup](docs/NPM_SETUP.md) - CLI installation, configuration, and API client setup
 - [CLI Reference](docs/CLI.md) - Command-line monitoring tools
 - [API Documentation](docs/API.md) - REST API specification
 - [Deployment Guide](docs/DEPLOYMENT.md) - Production deployment
 - [Environment Variables](docs/ENV_VARS.md) - Configuration reference
+- [Development Guide](docs/DEVELOPMENT.md) - Architecture and developer workflows
+- [Contribution Guide](CONTRIBUTING.md) - Contribution process and standards
+- [Exit Codes](docs/EXIT_CODES.md) - Run outcomes and diagnostic codes
 - [Soyuz Host Integration](docs/SOYUZ_INTEGRATION.md) - Queue adapter setup, recovery, and operations
 - [Advanced Configuration](docs/ADVANCED_CONFIG.md) - Detailed setup options
 - [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues and solutions
