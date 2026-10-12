@@ -11,6 +11,7 @@ import { JobPersistenceManager } from './job-persistence-manager';
 import { gracefulShutdown } from './kaseki-api/service-bootstrapper';
 import type { Job } from './kaseki-api-types';
 import { metricsRegistry } from './metrics';
+import { StorageCapacityManager } from './storage-capacity';
 
 // Mock the host-secrets-reader module
 jest.mock('./secrets/host-secrets-reader', () => ({
@@ -104,6 +105,39 @@ describe('JobScheduler queue behavior', () => {
   afterEach(async () => {
     await cleanupWebhookManagers();
     cleanupResultsDirs();
+  });
+
+  test('reports worker disk exhaustion with a storage-specific failure class', async () => {
+    mockSpawn.mockReset();
+    mockSpawnSync.mockReset();
+    const resultsDir = createResultsDir();
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+    const scheduler = new JobScheduler({
+      port: 8080,
+      apiKeys: [],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch',
+      maxDiffBytes: 400000,
+      agentTimeoutSeconds: 300,
+      logLevel: 'info',
+    }, createMockWebhookManager());
+
+    try {
+      const job = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo' });
+      proc.stderr.emit('data', Buffer.from('write failed: ENOSPC: no space left on device'));
+      proc.emit('exit', 1);
+
+      expect(job.status).toBe('failed');
+      expect(job.failureClass).toBe('storage_exhausted');
+      expect(job.error).toContain('host ran out of storage');
+    } finally {
+      await scheduler.shutdown();
+      mockSpawn.mockReset();
+      mockSpawnSync.mockReset();
+    }
   });
 
   test('queues submitted jobs when concurrency is exhausted', async () => {
@@ -3249,6 +3283,46 @@ describe('JobScheduler readiness repair', () => {
 
     expect(scheduler.getReadiness()).toEqual({ ready: true, reasons: [] });
     expect(fs.statSync(resultsDir).isDirectory()).toBe(true);
+  });
+
+  test('checks storage before admitting a new run', async () => {
+    const parent = createResultsDir();
+    const resultsDir = path.join(parent, 'results');
+    fs.mkdirSync(resultsDir);
+    const config = {
+      port: 8080,
+      apiKeys: ['test-key'],
+      resultsDir,
+      runsDir: path.join(parent, 'runs'),
+      hostCacheDir: path.join(parent, 'cache'),
+      npmCacheDir: path.join(parent, 'cache', 'npm-cache'),
+      retentionRuns: 5,
+      storageWarnFreeBytes: 5 * 1024 ** 3,
+      storageMinFreeBytes: 2 * 1024 ** 3,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 400000,
+      agentTimeoutSeconds: 30,
+      logLevel: 'info' as const,
+    };
+    const cleanup = jest.fn(async () => ({ freedBytes: 0 }));
+    const capacity = new StorageCapacityManager(config, {
+      measureAvailableBytes: () => 1024 ** 3,
+      cleanup,
+      hasActiveRuns: () => false,
+    });
+    const scheduler = new JobScheduler(config, createMockWebhookManager(), undefined, undefined, capacity);
+
+    try {
+      await expect(scheduler.submitJob({ repoUrl: 'https://github.com/org/repo' })).rejects.toMatchObject({
+        code: 'insufficient_storage',
+        statusCode: 507,
+      });
+      expect(cleanup).toHaveBeenCalledTimes(1);
+      expect(scheduler.getQueueStatus().pending).toBe(0);
+    } finally {
+      await scheduler.shutdown();
+    }
   });
 });
 

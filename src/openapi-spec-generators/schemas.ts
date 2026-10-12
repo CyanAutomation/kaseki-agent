@@ -513,6 +513,14 @@ export function buildErrorResponseSchema(): Record<string, unknown> {
         type: 'string',
         description: 'Request ID for debugging',
       },
+      code: { type: 'string', description: 'Stable machine-readable error code' },
+      availableBytes: { type: 'integer', minimum: 0, description: 'Measured free bytes after automatic cleanup, when available' },
+      warningBytes: { type: 'integer', minimum: 0, description: 'Free-space threshold that triggers automatic cleanup' },
+      minimumBytes: { type: 'integer', minimum: 0, description: 'Minimum free bytes required to accept a run' },
+      cleanupAttempted: { type: 'boolean', description: 'Whether automatic cleanup ran during admission' },
+      cleanupFreedBytes: { type: 'integer', minimum: 0, description: 'Bytes reported freed by automatic cleanup' },
+      cleanupError: { type: 'string', description: 'Cleanup error, when cleanup could not complete' },
+      remediation: { type: 'string', description: 'Suggested recovery action' },
     },
   };
 }

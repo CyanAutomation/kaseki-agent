@@ -48,6 +48,9 @@ not used for coding-agent inference or as a fallback when the gateway fails.
 | `TASK_PROMPT` | `A code-fix task` | Instruction passed to the coding agent | Natural-language task prompt |
 | `KASEKI_MODEL` | `dynamic/kaseki-agent` | LLM model used for agent execution | Provider-supported model identifier, or `auto` |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | Maximum agent execution time in seconds | Non-negative integer, up to 86400 |
+| `KASEKI_RETENTION_RUNS` | `5` | Number of terminal run result directories retained during storage cleanup | Integer from 0 to 100 |
+| `KASEKI_STORAGE_WARN_FREE_BYTES` | `5368709120` | Free-space threshold that triggers automatic retention and cache cleanup | Positive integer bytes, greater than or equal to the minimum threshold |
+| `KASEKI_STORAGE_MIN_FREE_BYTES` | `2147483648` | Minimum free space required to accept a new run after cleanup | Positive integer bytes, less than or equal to the warning threshold |
 | `KASEKI_CAVEMAN` | `1` | Legacy switch for terse communication guidance | `0` (disable) or `1` (enable) |
 | `KASEKI_CAVEMAN_LEVEL` | `2` | Soft prompt and tool-output reduction level | Integer `0` through `3` |
 | `KASEKI_CAVEMAN_ROUTER` | `jev` | Enable or disable JEV routing for large tool results | `jev` or `off` |

@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'node:path';
 import { readHostSecret } from './secrets/host-secrets-reader';
 import { loadSoyuzAdapterConfig, type SoyuzAdapterConfig } from './integrations/soyuz/config';
 
@@ -6,6 +7,8 @@ import { loadSoyuzAdapterConfig, type SoyuzAdapterConfig } from './integrations/
  * Configuration for the Kaseki API service.
  */
 export const DEFAULT_JOB_INDEX_MAX_ENTRIES = 1000;
+export const DEFAULT_STORAGE_WARN_FREE_BYTES = 5 * 1024 ** 3;
+export const DEFAULT_STORAGE_MIN_FREE_BYTES = 2 * 1024 ** 3;
 // Artifact cache constants moved to private scope (no longer exported as they are only used internally)
 const DEFAULT_ARTIFACT_CACHE_MAX_ENTRIES = 20;
 const DEFAULT_ARTIFACT_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -21,6 +24,8 @@ export interface KasekiApiConfig {
   apiWebhookTestsPerHour?: number;
   apiGitHubIssuesPerMinute?: number;
   resultsDir: string;
+  /** Host-mounted run workspace directory used by worker containers. */
+  runsDir?: string;
   maxConcurrentRuns: number;
   defaultTaskMode: 'patch' | 'inspect';
   maxDiffBytes: number;
@@ -39,6 +44,16 @@ export interface KasekiApiConfig {
   artifactCacheMaxFileBytes?: number;
   /** Root cache directory mounted into API and worker containers. */
   cacheDir?: string;
+  /** Host-side persistent cache mount path, visible to the API container. */
+  hostCacheDir?: string;
+  /** Host-side npm cache path that may be pruned during low-space recovery. */
+  npmCacheDir?: string;
+  /** Number of terminal result directories retained during low-space recovery. */
+  retentionRuns?: number;
+  /** Free-space threshold that triggers automatic cleanup. */
+  storageWarnFreeBytes?: number;
+  /** Minimum free space required before a new run can be accepted. */
+  storageMinFreeBytes?: number;
   /** Dependency cache directory used by worker containers. */
   dependencyCacheDir?: string;
   /** Worker-maintained metrics file for dependency cache size/count. */
@@ -220,6 +235,29 @@ export function loadConfig(): KasekiApiConfig {
   const { maxEntries: artifactCacheMaxEntries, ttlMs: artifactCacheTtlMs, maxFileBytes: artifactCacheMaxFileBytes } =
     loadArtifactCacheConfig();
   const cacheDir = process.env.KASEKI_CACHE_DIR || '/cache';
+  const kasekiRoot = process.env.KASEKI_ROOT || '/agents';
+  const runsDir = process.env.KASEKI_RUNS_DIR || path.join(kasekiRoot, 'kaseki-runs');
+  const hostCacheDir = process.env.KASEKI_CACHE_DIR || process.env.KASEKI_HOST_CACHE_DIR || path.join(kasekiRoot, 'kaseki-cache');
+  const npmCacheDir = process.env.KASEKI_HOST_NPM_CACHE_DIR || path.join(hostCacheDir, 'npm-cache');
+  const retentionRuns = validatePositiveInt('KASEKI_RETENTION_RUNS', 5, 0, 'KASEKI_RETENTION_RUNS');
+  if (retentionRuns > 100) {
+    throw new Error(`KASEKI_RETENTION_RUNS must be between 0 and 100, got: ${retentionRuns}`);
+  }
+  const storageWarnFreeBytes = validatePositiveInt(
+    'KASEKI_STORAGE_WARN_FREE_BYTES',
+    DEFAULT_STORAGE_WARN_FREE_BYTES,
+    1,
+    'KASEKI_STORAGE_WARN_FREE_BYTES',
+  );
+  const storageMinFreeBytes = validatePositiveInt(
+    'KASEKI_STORAGE_MIN_FREE_BYTES',
+    DEFAULT_STORAGE_MIN_FREE_BYTES,
+    1,
+    'KASEKI_STORAGE_MIN_FREE_BYTES',
+  );
+  if (storageMinFreeBytes > storageWarnFreeBytes) {
+    throw new Error('KASEKI_STORAGE_MIN_FREE_BYTES must be less than or equal to KASEKI_STORAGE_WARN_FREE_BYTES');
+  }
   const dependencyCacheDir = process.env.KASEKI_DEPENDENCY_CACHE_DIR || `${cacheDir}/dependencies`;
   const dependencyCacheMetricsFile =
     process.env.KASEKI_DEPENDENCY_CACHE_METRICS_FILE || `${dependencyCacheDir}/.kaseki-cache-metrics`;
@@ -250,6 +288,7 @@ export function loadConfig(): KasekiApiConfig {
     apiWebhookTestsPerHour: validatePositiveInt('KASEKI_API_WEBHOOK_TESTS_PER_HOUR', 10),
     apiGitHubIssuesPerMinute: validatePositiveInt('KASEKI_API_GITHUB_ISSUES_PER_MINUTE', 30),
     resultsDir,
+    runsDir,
     maxConcurrentRuns,
     defaultTaskMode: taskMode,
     maxDiffBytes,
@@ -260,6 +299,11 @@ export function loadConfig(): KasekiApiConfig {
     artifactCacheTtlMs,
     artifactCacheMaxFileBytes,
     cacheDir,
+    hostCacheDir,
+    npmCacheDir,
+    retentionRuns,
+    storageWarnFreeBytes,
+    storageMinFreeBytes,
     dependencyCacheDir,
     dependencyCacheMetricsFile,
     dependencyCacheMaxBytes,

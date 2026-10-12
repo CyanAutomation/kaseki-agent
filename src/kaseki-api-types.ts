@@ -699,6 +699,15 @@ export interface ErrorResponse {
   detail: string;
   instance?: string; // Request path
   requestId?: string;
+  /** Stable machine-readable error code, present for storage-capacity failures. */
+  code?: string;
+  availableBytes?: number;
+  warningBytes?: number;
+  minimumBytes?: number;
+  cleanupAttempted?: boolean;
+  cleanupFreedBytes?: number;
+  cleanupError?: string;
+  remediation?: string;
 }
 
 /**

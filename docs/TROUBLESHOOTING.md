@@ -20,6 +20,7 @@ Diagnose and resolve common kaseki-agent failures. Start with the symptom table,
 | API key errors or 401 responses | Authentication | [Authentication Failures](#authentication-failures) |
 | Docker volume mount or filesystem errors | Docker | [Docker Failures](#docker-failures) |
 | Provider returns 503, 429, or model-not-found | Gateway | [Gateway Failures](#gateway-failures) |
+| API rejects a run with `507 Insufficient Storage` or run fails with `storage_exhausted` | Storage | [Disk Space and Storage Failures](#disk-space-and-storage-failures) |
 
 ### Exit Code to Category Map
 
@@ -52,6 +53,31 @@ bash scripts/kaseki-preflight.sh doctor --guide
 ```
 
 ---
+
+## Disk Space and Storage Failures
+
+### Problem: New runs are rejected or a run cannot write its artifacts
+
+**Symptoms:**
+
+- `POST /api/v1/runs` or a retry returns `507 Insufficient Storage` with `code: "insufficient_storage"`.
+- Capacity checks return `503` with `code: "storage_capacity_unknown"` when the API cannot inspect the persistent mounts.
+- A run fails with `failureClass: "storage_exhausted"`, or its artifacts mention `ENOSPC`, `EDQUOT`, or “No space left on device”.
+
+**Diagnosis:**
+
+```bash
+df -h /agents
+kaseki-agent cleanup --dry-run
+```
+
+The `/api/v1/preflight` response includes a `storage-capacity` check. `/ready` includes the current free bytes and thresholds, and `/api/v1/metrics` exports `kaseki_storage_available_bytes` and `kaseki_storage_admission_blocked`.
+
+**Fix:**
+
+Apply the configured run-retention policy with `kaseki-agent cleanup --force`. Automatic recovery removes only retention-eligible results/logs, staging directories older than 24 hours, and npm `_cacache`/`_npx` data when no runs are active. It preserves retained run artifacts and the dependency cache. If free space remains below 2 GiB, remove unrelated host files or increase the volume, then retry. The API does not cancel active runs to reclaim space.
+
+If capacity is unknown, check that `/agents` and the worker cache path are mounted and readable inside the API container, then query `/api/v1/preflight` again.
 
 ## Gateway Failures
 

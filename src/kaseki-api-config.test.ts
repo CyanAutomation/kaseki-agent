@@ -44,6 +44,13 @@ describe('kaseki-api-config load configuration', () => {
     process.env.KASEKI_ARTIFACT_CACHE_TTL_MS = '12345';
     process.env.KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES = '4096';
     delete process.env.KASEKI_CACHE_DIR;
+    delete process.env.KASEKI_ROOT;
+    delete process.env.KASEKI_RUNS_DIR;
+    delete process.env.KASEKI_HOST_CACHE_DIR;
+    delete process.env.KASEKI_HOST_NPM_CACHE_DIR;
+    delete process.env.KASEKI_RETENTION_RUNS;
+    delete process.env.KASEKI_STORAGE_WARN_FREE_BYTES;
+    delete process.env.KASEKI_STORAGE_MIN_FREE_BYTES;
     delete process.env.KASEKI_DEPENDENCY_CACHE_DIR;
     delete process.env.KASEKI_DEPENDENCY_CACHE_METRICS_FILE;
     delete process.env.KASEKI_DEPENDENCY_CACHE_MAX_BYTES;
@@ -81,6 +88,13 @@ describe('kaseki-api-config load configuration', () => {
     delete process.env.KASEKI_ARTIFACT_CACHE_TTL_MS;
     delete process.env.KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES;
     delete process.env.KASEKI_CACHE_DIR;
+    delete process.env.KASEKI_ROOT;
+    delete process.env.KASEKI_RUNS_DIR;
+    delete process.env.KASEKI_HOST_CACHE_DIR;
+    delete process.env.KASEKI_HOST_NPM_CACHE_DIR;
+    delete process.env.KASEKI_RETENTION_RUNS;
+    delete process.env.KASEKI_STORAGE_WARN_FREE_BYTES;
+    delete process.env.KASEKI_STORAGE_MIN_FREE_BYTES;
     delete process.env.KASEKI_DEPENDENCY_CACHE_DIR;
     delete process.env.KASEKI_DEPENDENCY_CACHE_METRICS_FILE;
     delete process.env.KASEKI_DEPENDENCY_CACHE_MAX_BYTES;
@@ -104,6 +118,21 @@ describe('kaseki-api-config load configuration', () => {
     expect(config.dependencyCacheMetricsFile).toBe('/cache/dependencies/.kaseki-cache-metrics'); // default
     expect(config.dependencyCacheMaxBytes).toBe(10 * 1024 * 1024 * 1024); // default
     expect(config.dependencyCacheMaxAgeDays).toBe(30); // default
+    expect(config.runsDir).toBe('/agents/kaseki-runs');
+    expect(config.hostCacheDir).toBe('/agents/kaseki-cache');
+    expect(config.npmCacheDir).toBe('/agents/kaseki-cache/npm-cache');
+    expect(config.retentionRuns).toBe(5);
+    expect(config.storageWarnFreeBytes).toBe(5 * 1024 ** 3);
+    expect(config.storageMinFreeBytes).toBe(2 * 1024 ** 3);
+  });
+
+  test('rejects an admission minimum above the cleanup warning threshold', () => {
+    process.env.KASEKI_API_KEYS = 'default-key';
+    process.env.KASEKI_RESULTS_DIR = testDir;
+    process.env.KASEKI_STORAGE_WARN_FREE_BYTES = String(2 * 1024 ** 3);
+    process.env.KASEKI_STORAGE_MIN_FREE_BYTES = String(3 * 1024 ** 3);
+
+    expect(() => loadConfig()).toThrow('KASEKI_STORAGE_MIN_FREE_BYTES must be less than or equal to KASEKI_STORAGE_WARN_FREE_BYTES');
   });
 
   test('prefers KASEKI_API_LOG_LEVEL and falls back to LOG_LEVEL', () => {
