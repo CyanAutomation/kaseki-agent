@@ -63,7 +63,9 @@ Each claim has a `claimCallbackId` fencing token. The token is saved with the lo
 
 Queue delivery and callback delivery are at least once. Kaseki deduplicates by Soyuz `runId`; this is not an exactly-once guarantee. Keep the results volume persistent and monitor the callback outbox before allowing it to approach its 5,000-entry intake pause limit.
 
-During execution, the adapter polls canonical run state for cancellation, sends one heartbeat per configured interval, and sends stage changes from Kaseki's sanitized progress events. It sends compact lifecycle metadata only; prompts, raw logs, source files, and artifacts remain on the Kaseki host. A Soyuz cancellation signals the existing Kaseki process and waits for exit before reporting a terminal outcome. If that process exits successfully during the race, Soyuz receives `completed`; if cancellation stops it, Soyuz receives `cancelled`. Direct Kaseki API cancellation keeps its existing behavior.
+During execution, the adapter polls canonical run state for cancellation, sends one heartbeat per configured interval, and sends stage changes from Kaseki's sanitized progress events. It never sends prompts or raw stdout/stderr logs to Soyuz. When finalizing a run, it uploads only regular, non-symlink `result-summary.md`, `failure.json`, and `git.diff` files, with a 2 MB per-file cap. Artifact requests carry the current worker ID and claim fencing token. Soyuz serves the files only through authenticated reads and expires them after 30 days. Uploads get the initial attempt plus up to three retries with the durable terminal callback; after that, terminal status delivery continues and the host logs the artifact failure. Successful file names are persisted so a restarted controller can safely resume the handoff.
+
+A Soyuz cancellation signals the existing Kaseki process and waits for exit before reporting a terminal outcome. If that process exits successfully during the race, Soyuz receives `completed`; if cancellation stops it, Soyuz receives `cancelled`. Direct Kaseki API cancellation keeps its existing behavior.
 
 ## Stalled runs and safe recovery
 

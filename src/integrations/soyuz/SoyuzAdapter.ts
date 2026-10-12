@@ -11,6 +11,7 @@ import { loadSoyuzAdapterConfig, type SoyuzAdapterConfig } from './config';
 import { CloudflareQueueConsumer } from './CloudflareQueueConsumer';
 import { decodeQueueMessageBody, parseSoyuzQueuedRun, type CloudflarePulledMessage, type SoyuzQueuedRun, type SoyuzWorkerRun } from './contracts';
 import { SoyuzApiClient, SoyuzApiError } from './SoyuzApiClient';
+import { loadSoyuzArtifacts } from './soyuz-artifacts';
 
 class SoyuzAdmissionRejectedError extends Error {
   constructor(readonly safeReason: string) {
@@ -20,6 +21,7 @@ class SoyuzAdmissionRejectedError extends Error {
 }
 
 const MAX_NONTERMINAL_OUTBOX_PENDING = 250;
+const MAX_ARTIFACT_UPLOAD_RETRIES_BEFORE_TERMINAL = 3;
 const CLAIM_CALLBACK_NAMESPACE = Buffer.from('3b7d4c748b5b5f8fa2d0a13c4a44c955', 'hex');
 const logger = createEventLogger('soyuz-adapter');
 
@@ -684,14 +686,17 @@ export class SoyuzAdapter {
           break;
         }
         case 'completed':
+          await this.uploadTerminalArtifacts(entry);
           await this.api.completed(entry.externalRunId, entry.payload);
           metricsRegistry.incSoyuzCounter('runs_completed');
           break;
         case 'failed':
+          await this.uploadTerminalArtifacts(entry);
           await this.api.failed(entry.externalRunId, entry.payload);
           metricsRegistry.incSoyuzCounter('runs_failed');
           break;
         case 'cancelled':
+          await this.uploadTerminalArtifacts(entry);
           await this.api.cancelled(entry.externalRunId, entry.payload);
           break;
         }
@@ -749,6 +754,46 @@ export class SoyuzAdapter {
       deliveryState: 'pending',
       createdAt: new Date().toISOString(),
     };
+  }
+
+  private async uploadTerminalArtifacts(entry: SoyuzOutboxEntry): Promise<void> {
+    const job = await this.scheduler.findSoyuzJob(entry.externalRunId);
+    if (!job?.soyuz || !job.resultDir || !job.soyuz.claimCallbackId) return;
+    const uploaded = [...(job.soyuz.uploadedArtifactNames ?? [])];
+    const { artifacts, skipped } = await loadSoyuzArtifacts(entry.externalRunId, job.resultDir, uploaded);
+    for (const item of skipped) {
+      logger.warn('Skipping an unsafe or oversized Soyuz artifact', {
+        runId: entry.externalRunId,
+        name: item.name,
+        reason: item.reason,
+      });
+    }
+    let firstFailure: unknown;
+    for (const artifact of artifacts) {
+      try {
+        await this.api.uploadArtifact(entry.externalRunId, job.soyuz.workerId, job.soyuz.claimCallbackId, artifact);
+        uploaded.push(artifact.name);
+        await this.scheduler.updateSoyuzJobMetadata(job.id, { uploadedArtifactNames: [...new Set(uploaded)] });
+      } catch (error) {
+        firstFailure ??= error;
+        logger.warn('Soyuz artifact upload failed and will be retried with the terminal callback', {
+          runId: entry.externalRunId,
+          name: artifact.name,
+          status: error instanceof SoyuzApiError ? error.status : undefined,
+          code: error instanceof SoyuzApiError ? error.code : undefined,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    if (firstFailure && entry.attemptCount < MAX_ARTIFACT_UPLOAD_RETRIES_BEFORE_TERMINAL) {
+      throw firstFailure;
+    }
+    if (firstFailure) {
+      logger.error('Continuing terminal delivery after bounded Soyuz artifact upload retries', {
+        runId: entry.externalRunId,
+        attemptCount: entry.attemptCount,
+      });
+    }
   }
 
   private async assertKasekiAdmission(run: SoyuzQueuedRun): Promise<RunRequest> {
