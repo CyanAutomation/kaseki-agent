@@ -23,6 +23,9 @@ class MetricsRegistry {
   private soyuzCallbacksPending = 0;
   private soyuzHandoffDurationSum = 0;
   private soyuzHandoffDurationCount = 0;
+  private storageAvailableBytes = -1;
+  private storageWarningBytes = 5 * 1024 ** 3;
+  private storageMinimumBytes = 2 * 1024 ** 3;
 
   configurePersistence(file: string): void {
     if (this.persistenceFile === file) return;
@@ -73,6 +76,11 @@ class MetricsRegistry {
     const normalized = reason.replace(/[^a-zA-Z0-9_-]/g, '_') || 'unknown';
     this.admissionRejections.set(normalized, (this.admissionRejections.get(normalized) || 0) + 1);
   }
+  setStorageCapacity(availableBytes: number | null, warningBytes: number, minimumBytes: number): void {
+    this.storageAvailableBytes = availableBytes ?? -1;
+    this.storageWarningBytes = warningBytes;
+    this.storageMinimumBytes = minimumBytes;
+  }
   observeEvaluatorArtifact(available: boolean): void { this.evaluatorArtifacts[available ? 'available' : 'unavailable'] += 1; this.persist(); }
   incCriticalChangeFalseNegative(): void { this.criticalChangeFalseNegatives += 1; this.persist(); }
   incScoutingFallback(): void { this.scoutingFallbacks += 1; this.persist(); }
@@ -113,6 +121,18 @@ class MetricsRegistry {
     lines.push('# HELP kaseki_running_jobs Number of jobs currently running.');
     lines.push('# TYPE kaseki_running_jobs gauge');
     lines.push(`kaseki_running_jobs ${this.runningJobs}`);
+    lines.push('# HELP kaseki_storage_available_bytes Free bytes across persistent Kaseki storage paths; -1 means unavailable.');
+    lines.push('# TYPE kaseki_storage_available_bytes gauge');
+    lines.push(`kaseki_storage_available_bytes ${this.storageAvailableBytes}`);
+    lines.push('# HELP kaseki_storage_warning_free_bytes Free-space threshold that triggers cleanup.');
+    lines.push('# TYPE kaseki_storage_warning_free_bytes gauge');
+    lines.push(`kaseki_storage_warning_free_bytes ${this.storageWarningBytes}`);
+    lines.push('# HELP kaseki_storage_minimum_free_bytes Minimum free space required to accept a run.');
+    lines.push('# TYPE kaseki_storage_minimum_free_bytes gauge');
+    lines.push(`kaseki_storage_minimum_free_bytes ${this.storageMinimumBytes}`);
+    lines.push('# HELP kaseki_storage_admission_blocked Whether storage capacity prevents new runs.');
+    lines.push('# TYPE kaseki_storage_admission_blocked gauge');
+    lines.push(`kaseki_storage_admission_blocked ${this.storageAvailableBytes < 0 || this.storageAvailableBytes < this.storageMinimumBytes ? 1 : 0}`);
 
     for (const name of [
       'queue_pull_success', 'queue_pull_failure', 'claim_success', 'claim_conflict',

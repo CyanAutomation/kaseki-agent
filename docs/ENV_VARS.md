@@ -364,6 +364,17 @@ The external Soyuz adapter is opt-in. See [Soyuz host integration](SOYUZ_INTEGRA
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | integer | Timeout for agent execution (same as CLI) |
 | `KASEKI_MAX_DIFF_BYTES` | `400000` | integer | Quality gate limit (same as CLI) |
 
+### Storage Guardrails
+
+The API checks free space across the persistent results, run-workspace, and host-cache paths. Below the warning threshold it applies configured run retention, removes staging directories older than 24 hours, and prunes npm's `_cacache` and `_npx` directories when no runs are active. It preserves retained results and the dependency cache. If cleanup still leaves less than the minimum, new submissions and retries receive `507 Insufficient Storage`; active runs continue.
+
+| Variable | Default | Type | Purpose |
+| ---------- | --------- | ------ | --------- |
+| `KASEKI_RETENTION_RUNS` | `5` | integer (0–100) | Number of terminal run result directories to keep during automatic and manual retention cleanup |
+| `KASEKI_STORAGE_WARN_FREE_BYTES` | `5368709120` (5 GiB) | positive integer | Free space that triggers cleanup |
+| `KASEKI_STORAGE_MIN_FREE_BYTES` | `2147483648` (2 GiB) | positive integer | Minimum free space required after cleanup before accepting a new run; must not exceed the warning threshold |
+| `KASEKI_HOST_NPM_CACHE_DIR` | `/agents/kaseki-cache/npm-cache` | path | API-visible host npm cache path; only `_cacache` and `_npx` are eligible for cleanup |
+
 ### Docker Integration
 
 | Variable | Default | Type | Purpose |

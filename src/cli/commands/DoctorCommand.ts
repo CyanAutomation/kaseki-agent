@@ -485,15 +485,17 @@ export class DoctorCommand extends BaseCommand {
       }
 
       const availableGB = availableBytes / (1024 ** 3);
+      const warningThreshold = this.getStorageThreshold('KASEKI_STORAGE_WARN_FREE_BYTES', 5 * 1024 ** 3);
+      const minimumThreshold = this.getStorageThreshold('KASEKI_STORAGE_MIN_FREE_BYTES', 2 * 1024 ** 3);
       const suffix = rootExists ? '' : ` (checking ${label})`;
 
-      if (availableGB > 10) {
+      if (availableBytes >= warningThreshold) {
         return {
           name: 'Disk Space',
           status: 'pass',
           message: `✓ Sufficient disk space available (${availableGB.toFixed(1)} GB${suffix})`,
         };
-      } else if (availableGB > 1) {
+      } else if (availableBytes >= minimumThreshold) {
         return {
           name: 'Disk Space',
           status: 'warn',
@@ -513,6 +515,11 @@ export class DoctorCommand extends BaseCommand {
         message: `⚠️  Could not determine disk space for ${label}`,
       };
     }
+  }
+
+  private getStorageThreshold(name: string, fallback: number): number {
+    const value = Number(process.env[name]);
+    return Number.isSafeInteger(value) && value > 0 ? value : fallback;
   }
 
   /**

@@ -48,7 +48,7 @@ function buildHealthCheckPaths(): Record<string, unknown> {
         operationId: 'getReady',
         summary: 'Readiness probe',
         description:
-          'Returns 200 OK when the service is ready to accept requests. Checks queue and scheduler dependencies. No authentication required.',
+          'Returns 200 OK when the service is ready to accept requests. Checks queue, scheduler dependencies, and minimum persistent storage capacity. No authentication required.',
         tags: ['Health & Status'],
         responses: {
           '200': {
@@ -61,6 +61,7 @@ function buildHealthCheckPaths(): Record<string, unknown> {
                   properties: {
                     status: { type: 'string', enum: ['ready'] },
                     timestamp: { type: 'string', format: 'date-time' },
+                    storageCapacity: { type: 'object', description: 'Current persistent storage capacity and admission thresholds' },
                   }
                 }
               }
@@ -80,6 +81,7 @@ function buildHealthCheckPaths(): Record<string, unknown> {
                       type: 'array',
                       items: { type: 'string' },
                     },
+                    storageCapacity: { type: 'object', description: 'Current persistent storage capacity and admission thresholds' },
                   },
                 }
               }
@@ -604,7 +606,15 @@ function buildRunManagementApiRunsPath(errorResponseSchema: Record<string, unkno
                 },
               }
             }
-          }
+          },
+          '503': {
+            description: 'Storage capacity could not be measured; new runs are temporarily blocked',
+            content: { 'application/problem+json': { schema: errorResponseSchema } },
+          },
+          '507': {
+            description: 'Insufficient storage remains after automatic cleanup',
+            content: { 'application/problem+json': { schema: errorResponseSchema } },
+          },
         }
       },
 
@@ -761,6 +771,8 @@ function buildRunManagementApiRunsIdRetryPath(errorResponseSchema: Record<string
           '404': { description: 'Run not found', content: { 'application/problem+json': { schema: errorResponseSchema } } },
           '409': { description: 'Source run is not terminal or retry key is pending', content: { 'application/problem+json': { schema: errorResponseSchema } } },
           '422': { description: 'Retry task rejected by the safety admission gate', content: { 'application/json': { schema: { allOf: [errorResponseSchema, { type: 'object', properties: { exitCode: { type: 'integer' }, admission: { type: 'object' } } }] } } } },
+          '503': { description: 'Storage capacity could not be measured; new runs are temporarily blocked', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '507': { description: 'Insufficient storage remains after automatic cleanup', content: { 'application/problem+json': { schema: errorResponseSchema } } },
         },
       },
     }
