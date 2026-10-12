@@ -19,7 +19,7 @@ No setting should move to API merely to reduce ENV count. The API caller must no
 * `KASEKI_API_URL`/`KASEKI_API_BASE_URL`, general/API log level, direct secret/secret-file variants, API/worker image, host/container paths, model overrides, and cache controls create precedence or duplication.
 * The worker environment is both configuration transport and internal metadata channel. Scheduler code already projects request values into worker env; that does not make those fields deployment settings.
 * Boolean flags include legitimate security/rollout switches and implementation-stage switches. A flag is not redundant solely because it is boolean; its lifecycle and rollback value must be established.
-* Some behavior is policy but exposed as a flag (`KASEKI_ALLOW_EMPTY_DIFF`, validation recovery and safe commands). Keep policy in server validation and encode only bounded preferences in requests.
+* Some behavior is policy but exposed as a flag (`KASEKI_ALLOW_EMPTY_DIFF`, validation recovery and safe commands). API worker creation now derives empty-diff acceptance from the admitted task mode/contract and explicitly overrides any inherited process value for ordinary patch requests. Direct CLI configuration remains a compatibility path. Keep policy in server validation and encode only bounded preferences in requests.
 * Docs differ in defaults and describe retired controls; operators may configure values which the current runtime ignores.
 
 ## 3. Target configuration architecture
