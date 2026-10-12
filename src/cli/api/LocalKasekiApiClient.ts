@@ -197,6 +197,9 @@ export class LocalKasekiApiClient {
 
   static fromConfig(configManager: ConfigManager): LocalKasekiApiClient {
     const configuredBaseUrl = configManager.get<string>('api.base_url', DEFAULT_LOCAL_API_BASE_URL);
+    if (!process.env.KASEKI_API_URL && process.env.KASEKI_API_BASE_URL) {
+      console.warn('KASEKI_API_BASE_URL is deprecated; use KASEKI_API_URL instead.');
+    }
     const baseUrl = process.env.KASEKI_API_URL || process.env.KASEKI_API_BASE_URL || configuredBaseUrl || DEFAULT_LOCAL_API_BASE_URL;
     const configuredApiKey = configManager.get<string>('api.key', '');
     const configuredApiKeys = configManager.get<string[]>('api.keys', []);

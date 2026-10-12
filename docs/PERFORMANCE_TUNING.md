@@ -18,7 +18,7 @@ This guide helps you optimize kaseki-agent for your specific use case: managing 
 | Too many files modified | Agent scope creep | Tighten allowlist | Clarify task prompt |
 | API queue backing up | Not enough workers | Increase `KASEKI_API_MAX_CONCURRENT_RUNS` | Monitor Docker resource usage |
 | High OpenRouter costs | Too many/large runs | Use allowlist to reduce search space | Increase timeout to reduce retries |
-| Dependency install slow | Fresh npm ci on each run | Enable `KASEKI_CACHE_ENABLED=1` | Pre-warm cache with `docker/workspace-cache/` |
+| Dependency install slow | Dependency cache not retained between runs | Mount a persistent cache and set `KASEKI_DEPENDENCY_CACHE_DIR` | Pre-warm the configured cache |
 | Cannot exceed 24-hour timeout | Agent genuinely needs more time | Split into multiple smaller tasks | Scope with allowlist |
 
 ---
@@ -188,11 +188,11 @@ Directory structure:
   └── npm-cache/                                 ← npm package cache
 ```
 
-### Enabling Cache
+### Configuring the Dependency Cache
 
 ```bash
-# Method 1: Environment variable (per-run)
-export KASEKI_CACHE_ENABLED=1
+# Use a persistent cache directory shared with worker containers.
+export KASEKI_DEPENDENCY_CACHE_DIR=/agents/kaseki-cache/dependencies
 kaseki-agent run $REPO $REF "$TASK"
 
 # Method 2: Docker Compose (persistent)
@@ -201,7 +201,6 @@ volumes:
   - /agents/kaseki-cache:/cache
   
 environment:
-  KASEKI_CACHE_ENABLED: "1"
   KASEKI_DEPENDENCY_CACHE_DIR: /cache/dependencies
 ```
 
@@ -518,7 +517,7 @@ These are **not kaseki-agent changes**, but improve overall throughput:
    ```bash
    export KASEKI_CHANGED_FILES_ALLOWLIST="..."
    export KASEKI_AGENT_TIMEOUT_SECONDS=...
-   export KASEKI_CACHE_ENABLED=1
+   export KASEKI_DEPENDENCY_CACHE_DIR=/agents/kaseki-cache/dependencies
    
    kaseki-agent run $REPO $REF "$TASK"
    ```

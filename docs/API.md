@@ -31,7 +31,8 @@ The Kaseki API Service provides HTTP endpoints for remotely triggering, monitori
 KASEKI_API_KEYS=sk-test-abc123 \
 npm run kaseki-api
 
-# Or place one API key per line in /agents/secrets/kaseki_api_keys or ~/secrets/kaseki_api_keys
+# In Docker Compose, place one key per line in the host secrets directory (default ~/secrets), mounted at /run/secrets/kaseki.
+# For a local process, use ~/.kaseki/secrets/kaseki_api_keys.
 npm run kaseki-api
 
 # Specify custom port
@@ -45,10 +46,11 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | `KASEKI_API_PORT` | 8080 | HTTP port for API server |
 | `KASEKI_API_HOST` | loopback when unauthenticated; Node default when authenticated | Optional API bind host. Empty-key unauthenticated mode is rejected unless this is `localhost`, `127.0.0.1`, or `::1`. |
 | `KASEKI_API_KEYS` | *(empty/local unauthenticated)* | Comma-separated API keys for auth; leave empty only for trusted local development |
-| Host secret files | `/agents/secrets/kaseki_api_keys`, then `~/secrets/kaseki_api_keys` | Newline-separated API keys for auth when `KASEKI_API_KEYS` is unset |
-| `KASEKI_API_URL` | `http://localhost:8080/api/v1` | Preferred CLI client base URL for API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
-| `KASEKI_API_BASE_URL` | `http://localhost:8080/api/v1` | Backward-compatible CLI client base URL alias |
+| Host secret files | `/run/secrets/kaseki/kaseki_api_keys` in the container; `~/.kaseki/secrets/kaseki_api_keys` for local runs | Newline-separated API keys for auth when `KASEKI_API_KEYS` is unset. Compose mounts the host directory (default `~/secrets`) at `/run/secrets/kaseki`; `KASEKI_SECRETS_DIR` changes the container path. |
+| `KASEKI_API_URL` | `http://localhost:8080/api/v1` | Canonical CLI client base URL for API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
+| `KASEKI_API_BASE_URL` | `http://localhost:8080/api/v1` | Deprecated CLI client base URL alias. Used only when `KASEKI_API_URL` is unset; emits a warning. |
 | `KASEKI_API_KEY` | — | CLI client bearer token; omit when the local API is intentionally running with empty `KASEKI_API_KEYS` |
+| `KASEKI_API_KEYS_FILE` | discovered secret file | Optional CLI key-file path used by secret discovery; this is separate from the API server's host-secret lookup |
 | `KASEKI_API_RATE_LIMIT_PER_MINUTE` | 300 | Per-key API request limit |
 | `KASEKI_API_DIAGNOSTIC_LIMIT_PER_HOUR` | 10 | Per-key limit for token-consuming diagnostics |
 | `KASEKI_API_WEBHOOK_TESTS_PER_HOUR` | 10 | Per-key limit for webhook tests and manual delivery retries |
@@ -57,15 +59,15 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | `KASEKI_API_LOG_DIR` | /var/log/kaseki-api/ | Log file output directory |
 | `KASEKI_API_MAX_CONCURRENT_RUNS` | 3 | Max concurrent kaseki jobs |
 | `KASEKI_RESULTS_DIR` | /agents/kaseki-results | Directory for run artifacts |
-| `KASEKI_AGENT_TIMEOUT_SECONDS` | 10800 | Timeout for agent (3 hours) |
-| `KASEKI_MAX_DIFF_BYTES` | 400000 | Max diff size (400 KB) |
+| `KASEKI_AGENT_TIMEOUT_SECONDS` | 10800 | Server default and maximum per-run agent timeout (3 hours); a request can ask for a shorter timeout but cannot exceed this value |
+| `KASEKI_MAX_DIFF_BYTES` | 400000 | Server maximum diff size (400 KB); a request can ask for a lower limit but cannot raise this maximum |
 | `KASEKI_TASK_MODE` | patch | Default task mode: patch or inspect |
 | `KASEKI_PUBLISH_MODE` | pr | Publish behavior for workers/CLI/API: `pr` creates a normal PR (default), `branch` pushes without creating a PR, `auto` creates a normal PR when credentials are available and otherwise skips publishing, and `none` skips publishing. Controller API runs with omitted `publishMode` default to `pr`. |
 | `KASEKI_REPO_MEMORY_MODE` | off | Opt-in repository prompt memory: `off` or `summary` |
 | `KASEKI_REPO_MEMORY_TTL_DAYS` | 30 | Maximum age of repository memory summaries |
 | `KASEKI_REPO_MEMORY_MAX_BYTES` | 8000 | Maximum bytes read/written for repository memory summaries |
 | `KASEKI_REPO_MEMORY_ROOT` | /cache/repo-memory | Directory root for repository memory summaries |
-| `KASEKI_API_LOG_LEVEL` | info | Log verbosity: debug/info/warn/error |
+| `KASEKI_API_LOG_LEVEL` | info | Log verbosity: debug/info/warn/error. Takes precedence over the generic `LOG_LEVEL` fallback. |
 | `GITHUB_APP_ID_FILE` | — | Path to file containing GitHub App ID for PR creation |
 | `GITHUB_APP_CLIENT_ID_FILE` | — | Path to file containing GitHub App Client ID |
 | `GITHUB_APP_PRIVATE_KEY_FILE` | — | Path to GitHub App private key file; preferred over inline private key env |
@@ -327,7 +329,7 @@ curl -X POST http://localhost:8080/api/v1/runs \
   taskPrompt?: string;       // Instructions for Pi agent
   changedFilesAllowlist?: string[];  // File patterns Pi must not modify outside
   allowlist?: { include?: string[] }; // Alias accepted for controllers
-  maxDiffBytes?: number;     // Max diff size in bytes
+  maxDiffBytes?: number;     // Optional lower limit; the server maximum always applies
   validationCommands?: string[];     // Commands to run after agent completes
   validation?: { commands?: string[] }; // Alias accepted for controllers
   taskMode?: "patch" | "inspect";    // "patch" (default) = require changes; "inspect" = read-only analysis, skips pre-validation
@@ -336,9 +338,11 @@ curl -X POST http://localhost:8080/api/v1/runs \
   scouting?: { enabled?: boolean; model?: string; timeoutSeconds?: number }; // Optional; default behavior is enabled when omitted
   runEvaluation?: { enabled?: boolean; model?: string; timeoutSeconds?: number }; // Optional final task-agnostic run evaluator
   idempotencyKey?: string;     // UUID v4; required here or in the Idempotency-Key header
-  timeoutSeconds?: number;    // Optional per-run timeout (60-10800 seconds)
+  timeoutSeconds?: number;    // Requested timeout (60-10800 seconds), capped by server configuration
 }
 ```
+
+`maxDiffBytes` and `timeoutSeconds` are requests within server policy. The scheduler clamps a requested timeout to the configured `KASEKI_AGENT_TIMEOUT_SECONDS` ceiling and clamps a requested diff limit to `KASEKI_MAX_DIFF_BYTES`; callers cannot increase either server limit.
 
 The caller must generate and reuse a UUID v4 idempotency key for network retries. If both header and body fields are set, they must match. Omitting both returns `400`.
 
@@ -967,7 +971,7 @@ curl -H "Authorization: Bearer sk-test-key" \
 
 ## Best Practices
 
-1. **Set appropriate timeouts** — Agent timeout defaults to 95 minutes. Adjust globally via `KASEKI_AGENT_TIMEOUT_SECONDS` or per-run via `timeoutSeconds`.
+1. **Set appropriate timeouts** — Agent timeout defaults to 180 minutes. `KASEKI_AGENT_TIMEOUT_SECONDS` sets the server default and maximum; `timeoutSeconds` can request a shorter run.
 
 2. **Monitor timeout risk** — Check `timeoutRiskPercent` in status. If >85%, consider graceful shutdown.
 
@@ -977,7 +981,7 @@ curl -H "Authorization: Bearer sk-test-key" \
 
 5. **Require authentication outside localhost** — Set `KASEKI_API_KEYS` before binding the API to any network-accessible interface or proxy. Empty-key mode is blocked on non-loopback binds and should never be used in production.
 
-6. **Rotate API keys** — Keep keys in secure host-secret files (`/agents/secrets/kaseki_api_keys` or `~/secrets/kaseki_api_keys`), not in scripts.
+6. **Rotate API keys** — Keep keys in secure host-secret files, not in scripts. Compose mounts the host directory (default `~/secrets`) at `/run/secrets/kaseki`; local API processes read `~/.kaseki/secrets/kaseki_api_keys`.
 
 7. **Parse errors** — Check `failureClass` in status to determine failure root cause:
    - `validation` — Validation command failed

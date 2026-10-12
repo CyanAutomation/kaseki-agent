@@ -1,0 +1,74 @@
+# Environment scoring and recommendations
+
+Scores are 0–4 and follow the supplied rubric in order: necessity, deployment specificity, run variability, user control, security, complexity. Confidence is confidence in the destination recommendation, not removal confidence. Recommendations apply to the runtime role of the setting; internal worker transport fields are not API surface. Values remain unchanged until a separately authorized implementation.
+
+## Scored inventory
+
+Rows group tightly coupled settings that share a destination and materially similar scores. For any grouped row, the recommendation applies to every named member; family-specific exceptions are noted. Scores describe the current setting, not a proposed API field.
+
+| Variable(s) | N | D | Run | User | Sec | Cx | Primary recommendation | Confidence | Evidence-based rationale |
+|---|---:|---:|---:|---:|---:|---:|---|---|---|
+| `KASEKI_API_KEYS`, `KASEKI_API_KEY` | 4 | 4 | 0 | 1 | 4 | 2 | ENV | High | Auth material is deployment-owned and must not travel in a run request. Server key set and CLI presented key have separate roles. |
+| `LLM_GATEWAY_URL`, `LLM_GATEWAY_API_KEY`, `LLM_GATEWAY_API_KEY_FILE` | 4 | 4 | 0 | 1 | 4 | 2 | ENV | High | Provider endpoint and credential establish runtime dependency; `_FILE`/direct key overlap should resolve to secret-file preference. |
+| `OPENROUTER_API_KEY`, `OPENROUTER_API_KEY_FILE`, `KASEKI_DECISION_API_KEY_FILE` | 3 | 4 | 0 | 1 | 4 | 3 | ENV + MERGE | High | JEV service credential is deployment-owned; scheduler-internal file alias should converge on one secret reference. |
+| GitHub App ID/client ID/private key direct and `_FILE` pairs | 4 | 4 | 0 | 1 | 4 | 2 | ENV | High | Required for publication and repository operations; credential values belong in secret files/store. |
+| `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`, `SENTRY_SAMPLE_RATE`, `SENTRY_ENABLED` | 2 | 3 | 0 | 2 | 2 | 2 | ENV + MERGE | Medium-high | Deployment telemetry varies; DSN already implies enabled unless explicitly disabled, so review toggle redundancy. |
+| Soyuz endpoint/worker and Cloudflare account/queue identifiers | 2 | 4 | 0 | 1 | 2 | 2 | ENV | High | Optional external service integration; endpoint and credentials differ per installation. |
+| `KASEKI_API_HOST`, `KASEKI_API_BIND_ADDRESS`, `KASEKI_API_PORT` | 4 | 3 | 0 | 1 | 1 | 2 | ENV | High | Listener/bind are deployment details and bind/auth boundary. Bind address is host-published; host and container port are distinct. |
+| `KASEKI_API_IMAGE`, `KASEKI_IMAGE` | 3 | 3 | 0 | 1 | 0 | 3 | MERGE | Medium-high | Same-revision policy is already documented; one deployment image reference should feed API and workers, with explicit split only if supported. |
+| `KASEKI_API_USER`, `DOCKER_GID`, container UID/GID/user | 3 | 4 | 0 | 1 | 1 | 3 | CONFIG + MERGE | Medium | Host/container identity varies with deployment but currently duplicates related IDs across compose and worker configuration. |
+| `KASEKI_API_LOG_LEVEL`, `LOG_LEVEL` | 2 | 2 | 0 | 2 | 0 | 3 | MERGE | High | Two environment names control overlapping logger behavior; keep one documented process-level log setting. |
+| `KASEKI_API_MAX_CONCURRENT_RUNS` | 4 | 3 | 0 | 2 | 0 | 1 | ENV | High | Scheduler capacity is infrastructure resource policy; entry-point defaults differ and need reconciliation. |
+| Four API rate-limit settings | 3 | 3 | 0 | 1 | 0 | 2 | CONFIG | Medium-high | Server-owned policy defaults, not caller controls. Store together only if schema stays small and validated. |
+| API job index and artifact cache bounds | 2 | 2 | 0 | 1 | 0 | 3 | CONFIG | Medium | Internal memory/resource tuning; current defaults already exist. Retain operator overrides only where production evidence supports them. |
+| `KASEKI_API_URL`, `KASEKI_API_BASE_URL` | 3 | 2 | 0 | 2 | 0 | 3 | MERGE | High | Client endpoint is a CLI/user installation preference; two aliases have precedence ambiguity. Retain one config key and one legacy alias during migration. |
+| `KASEKI_RESULTS_DIR`, `KASEKI_CACHE_DIR`, `KASEKI_LOG_DIR`, `KASEKI_RUNS_DIR` | 4 | 4 | 0 | 1 | 0 | 2 | ENV | High | Persistent mount topology and data locations are deployment-specific. Derive child paths from one root where current layout permits. |
+| `KASEKI_ROOT`, `KASEKI_WORKSPACE_DIR`, `KASEKI_CHECKOUT_DIR`, `KASEKI_TEMPLATE_DIR`, `KASEKI_APP_ROOT`, `KASEKI_SCRIPT_DIR` | 3 | 3 | 0 | 1 | 0 | 4 | MERGE | Medium | Several overlapping roots/aliases cross host/container boundaries; do not consolidate until path ownership and packaged-image layouts are confirmed. |
+| `KASEKI_HOST_SECRETS_DIR`, `KASEKI_SECRETS_DIR`, `KASEKI_HOST_CACHE_DIR`, `KASEKI_DEPENDENCY_CACHE_DIR` | 4 | 4 | 0 | 1 | 3 | 3 | ENV + MERGE | Medium-high | Mount paths vary by deployment; host location and in-container destination have different owners but should have explicit mapping. |
+| `KASEKI_TASK_MODE` | 3 | 1 | 4 | 4 | 0 | 1 | API | High | `taskMode` is already request schema and scheduler behavior. Keep env only as CLI compatibility/default during migration. |
+| `KASEKI_PUBLISH_MODE` | 3 | 1 | 4 | 3 | 2 | 2 | API | High | `publishMode` is already per-request. Server still enforces auth/credential/publish policy; request must not inject credentials or bypass policy. |
+| `REPO_URL`, `GIT_REF`, `TASK_PROMPT` | 4 | 1 | 4 | 4 | 1 | 1 | API | High | Request data for a run, already mapped to `repoUrl`, `gitRef`, `taskPrompt`; environment remains CLI/script transport only. |
+| `KASEKI_AGENT_TIMEOUT_SECONDS` | 4 | 3 | 3 | 3 | 0 | 2 | API + ENV | High | Request `timeoutSeconds` exists. Resolve as min(caller request, server configured ceiling); omitted request inherits default. Never silently change precedence. |
+| `KASEKI_MAX_DIFF_BYTES` | 4 | 3 | 0 | 0 | 0 | 1 | CONFIG | High | Maximum diff is a server-enforced policy/quality guard, not a caller option. Keep one server policy value and no request override. |
+| `KASEKI_ALLOW_EMPTY_DIFF` | 2 | 1 | 1 | 1 | 1 | 3 | CONST | Medium-high | Shell-only exceptional behavior is already coupled to inspect/task contract. Remove unrestricted flag after verifying critical-change contract coverage. |
+| `KASEKI_VALIDATION_COMMANDS`, `KASEKI_PRE_AGENT_VALIDATION*`, validation API properties | 4 | 2 | 4 | 4 | 1 | 4 | API + MERGE | Medium | Request already accepts validation command properties; normalize aliases to one schema. Server policy must mandate baseline validation and validate command execution boundary. |
+| validation timeout/fail-fast/allowlist/recovery settings | 4 | 3 | 1 | 2 | 2 | 4 | CONFIG + MERGE | Medium | Policy and implementation settings are split across names and explicitness markers. User commands cannot weaken mandatory checks; recovery remains gated by exact safe commands. |
+| `KASEKI_MODEL`, `LLM_GATEWAY_MODEL`, `KASEKI_SCOUTING_MODEL`, evaluation model overrides | 3 | 3 | 3 | 3 | 0 | 4 | MERGE (then API for allowed model choice) | Medium | Different phases and aliases create precedence burden. First decide supported model-routing contract and allowlist; never accept arbitrary unsafe/provider values. |
+| `KASEKI_PROVIDER` | 3 | 3 | 0 | 1 | 0 | 3 | CONST | Medium-high | Docs state gateway is the only coding provider. Retain deployment endpoint choice, remove a runtime provider selector if no alternate is actually supported. |
+| `KASEKI_DECISION_MODEL` and admission/goal/evaluation decision timeouts and thresholds | 3 | 3 | 1 | 1 | 1 | 4 | CONFIG + MERGE | Medium | Shared DecisionService already shares credentials/retry and model alias; phase-specific timeouts/confidence remain policy, consolidate by operation only when validated. |
+| `KASEKI_TYPED_EVALUATION_ENABLED` | 3 | 2 | 0 | 0 | 0 | 3 | REMOVE (after rollout) | Medium | Genuine migration/rollout switch with two existing implementations; target one supported path after telemetry and fallback tests establish safe deletion. |
+| `KASEKI_CAVEMAN`, `KASEKI_CAVEMAN_LEVEL`, `KASEKI_CAVEMAN_ROUTER` | 2 | 1 | 0 | 1 | 0 | 4 | MERGE | High | Boolean + level + router mode overlap and expose implementation details. Replace by one supported profile only if operators demonstrably use variants. |
+| semantic router thresholds, timeout and enable switches | 2 | 1 | 0 | 1 | 0 | 4 | CONFIG + MERGE | Medium-high | Thresholds form one bounded policy; booleans represent rollback/rollout controls. Keep only operationally useful kill switch after rollout. |
+| `KASEKI_SUMMARY_*` | 2 | 1 | 0 | 1 | 0 | 4 | CONFIG + MERGE | High | `src/summarization/summarizer-config.ts` assembles a structured config already. Several scalar envs duplicate one stable internal component policy. |
+| `KASEKI_ARTIFACT_CACHE_*`, `KASEKI_PREFLIGHT_CACHE_*`, `KASEKI_LIVE_PROGRESS_CACHE_TTL_MS` | 2 | 2 | 0 | 1 | 0 | 3 | CONFIG | Medium | Separate caches serve separate data and cannot all be merged; keep documented defaults, expose only capacity/TTL with operational need. |
+| `KASEKI_BASELINE_CACHE_*`, `KASEKI_DEPENDENCY_CACHE_*` | 3 | 3 | 0 | 1 | 0 | 3 | CONFIG + MERGE | Medium | Persistent cache locations and bounds are deployment preferences; each cache should have compact config, avoid repeated max-age units/aliases. |
+| `KASEKI_GITHUB_API_RETRY_ATTEMPTS`, `KASEKI_GITHUB_API_RETRY_DELAY_MS` | 3 | 2 | 0 | 1 | 0 | 2 | CONFIG | High | `src/github-utils.ts` gives both compiled defaults and options; stable service behavior, rarely deployment-specific. |
+| `KASEKI_WEBHOOK_ALLOWED_ORIGINS` | 4 | 4 | 0 | 0 | 3 | 1 | ENV | High | SSRF/egress trust policy; caller override would cross server security boundary. |
+| `KASEKI_LLM_PRICING_JSON`, `KASEKI_LLM_*_USD_PER_MTOKEN` | 2 | 3 | 0 | 1 | 0 | 4 | MERGE | Medium | Catalog and scalar rate compatibility are overlapping price representations; one validated catalog should be authoritative if billing estimates are used. |
+| startup/preflight, `KASEKI_SAFE_DIRECTORY_SCOPE`, `KASEKI_NPM_OMIT_DEV` | 3 | 3 | 0 | 1 | 1 | 3 | CONFIG | Medium | Operator deployment options exist but startup/security behavior should default safe and cannot be bypassed per request. |
+| `KASEKI_GATEWAY_RESPONSE_SMOKE`, dev smoke switches and smoke timeout/output limits | 2 | 2 | 0 | 1 | 2 | 3 | CONFIG | High | Diagnostic opt-in is operational rather than per-run behavior; token use and production guard belong in server policy. |
+| inference metadata, `KASEKI_INSTANCE`, timing, retry counts, phase and resolved model transport | 1 | 0 | 0 | 0 | 1 | 3 | CONST | Medium | Scheduler/worker observability metadata is generated internally. Existing child-process env transport can be replaced internally without user-facing config. |
+| retired `KASEKI_CLASSIFICATION_MODEL`, JEV timeout/threshold/model/key/task/focus names | 0 | 1 | 0 | 0 | 0 | 3 | REMOVE | High | Current docs label retired and list replacement; runtime aliases are absent except deliberate `KASEKI_JEV_WORKFLOW` rejection. External configs are not observable. |
+| `KASEKI_PROVIDER_FALLBACK`, `KASEKI_PROVIDER_FALLBACK_MODEL` | 0 | 1 | 0 | 0 | 0 | 3 | REMOVE | High | Docs mark deprecated and current gateway behavior never falls back; external deployment dependency unknown. |
+| `KASEKI_API_KEY_SCOPES` | 0 | 1 | 0 | 0 | 0 | 2 | REMOVE | High | Test explicitly says it is no longer read; current auth assigns equal access to configured keys. External users may still set it. |
+| `OPENROUTER_KEY`, `OPENROUTER_KEY_FILE` | 1 | 2 | 0 | 0 | 3 | 3 | REMOVE pending confirmation | Low | Whole-repo mention only; active resolver uses `OPENROUTER_API_KEY*`. External wrappers are unverified, so retain pending operator confirmation. |
+| Process/platform names (`PATH`, `HOME`, `CI`, `NODE_ENV`, Git/terminal conventions) | 4 | 4 | 0 | 0 | 1 | 0 | ENV (external) | High | Platform-owned contracts; outside Kaseki's rationalization authority. |
+| Harness/test-only names (`TEST_*`, `KASEKI_TEST_*`, helper/fake/marker variables) | 2 | 0 | 0 | 0 | 0 | 2 | CONST / harness-local | Medium | Used by tests/scripts, not production runtime. Do not count as supported product environment knobs. |
+
+This table explicitly scores every discovered *setting family* from the inventory. `docs/ENV_VARS.md` includes additional individually named phase-target overrides; these follow the family rules above: run-scoped model/retry preferences may be API fields only when validated and bounded; advisory token/context/turn targets are CONFIG or constants; phase-specific duplicates merge into a compact phase budget profile. Do not silently reinterpret undocumented historical names as supported settings.
+
+## Removal confidence
+
+Removal confidence is separate from classification confidence. Unknown evidence earns zero points. No test suite was run for this assessment; only existing test source was inspected.
+
+| Candidate | No active references / consumers (30) | No documented current use (20) | Covered by other setting/default (20) | No known external dependency (15) | Tests demonstrate equivalence without it (15) | Total | Consequence / disposition |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Retired JEV aliases except `KASEKI_JEV_WORKFLOW` | 30 | 0 | 20 | 0 | 0 | 50 | Stale deployment files stop having effect (they already have no effect); docs say remove. External usage unknown; investigate before deprecation notice/removal from docs. |
+| `KASEKI_JEV_WORKFLOW` | 0 | 0 | 20 | 0 | 0 | 20 | Removing its rejection/detection could turn a clear config error into silent ignored config. Keep detection until announced transition and operator migration. |
+| `KASEKI_PROVIDER_FALLBACK`, `KASEKI_PROVIDER_FALLBACK_MODEL` | 30 | 0 | 20 | 0 | 0 | 50 | Removing names from docs changes no observed runtime behavior; old deployments may believe they configure fallback when they do not. Clarify gateway-only policy first. |
+| `KASEKI_API_KEY_SCOPES` | 30 | 0 | 20 | 0 | 0 | 50 | Deleting obsolete scope config has no current code consumer; deployments relying on scope restriction could have mistaken expectations because all keys are presently equal-access. External dependency/permission policy remains unknown. |
+| `OPENROUTER_KEY`, `OPENROUTER_KEY_FILE` | 30 | 0 | 0 | 0 | 0 | 30 | Removing legacy spellings may break external scripts; no evidence of alias fallback. Confirm these names are not an intended compatibility contract. |
+| `KASEKI_ALLOW_EMPTY_DIFF` | 0 | 0 | 20 | 0 | 0 | 20 | May remove a bypass-like escape only after verifying no legitimate workflow and all no-op allowances are represented by task mode/contracts. Not presently approved. |
+| `KASEKI_TYPED_EVALUATION_ENABLED` | 0 | 0 | 0 | 0 | 0 | 0 | Removing a live rollout switch can strand operators or block rollback. Only remove after typed and legacy paths converge, usage is known, and equivalence tests exist. |
+
+Tests demonstrate equivalence for none of these removals based on inspection alone; 0 points were awarded in that category.

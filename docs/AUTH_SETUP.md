@@ -173,8 +173,9 @@ chmod 0640 ~/secrets/github_app_private_key
 
 The preferred GitHub App private key setup is still file based: paste the PEM
 text value into a dedicated secret file such as
-`/agents/secrets/github_app_private_key` for service/container deployments or
-`~/secrets/github_app_private_key` for local CLI usage, then configure
+`/run/secrets/kaseki/github_app_private_key` inside a service container (the host
+source defaults to `~/secrets/github_app_private_key`) or
+`~/.kaseki/secrets/github_app_private_key` for local use, then configure
 `github_app_private_key_file` or `GITHUB_APP_PRIVATE_KEY_FILE` to point at that
 file.
 
@@ -247,7 +248,7 @@ export GITHUB_APP_CLIENT_ID_FILE=/home/pi/secrets/github_app_client_id
 
    ```bash
    # Correct secret name
-   /agents/secrets/github_app_client_id
+   /run/secrets/kaseki/github_app_client_id
    ```
 
 Then run `kaseki-agent doctor` again to verify the fix.
