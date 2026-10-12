@@ -649,6 +649,44 @@ describe('JobScheduler timeout lifecycle', () => {
     }
   });
 
+  test('does not inherit the server KASEKI_ALLOW_EMPTY_DIFF setting for ordinary patch requests', async () => {
+    const originalAllowEmptyDiff = process.env.KASEKI_ALLOW_EMPTY_DIFF;
+    process.env.KASEKI_ALLOW_EMPTY_DIFF = '1';
+
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    try {
+      const scheduler = new JobScheduler(
+        {
+          port: 8080,
+          apiKeys: ['test-key'],
+          resultsDir: createResultsDir(),
+          maxConcurrentRuns: 1,
+          defaultTaskMode: 'patch',
+          maxDiffBytes: 400000,
+          agentTimeoutSeconds: 30,
+          logLevel: 'info',
+        },
+        createMockWebhookManager(),
+      );
+
+      await scheduler.submitJob({
+        repoUrl: 'https://github.com/org/repo',
+        ref: 'main',
+        taskPrompt: 'Add a regression test for the parser error message.',
+      });
+
+      const spawnedEnv = mockSpawn.mock.calls[0][2].env;
+      expect(spawnedEnv.KASEKI_TASK_MODE).toBe('patch');
+      expect(spawnedEnv.KASEKI_ALLOW_EMPTY_DIFF).toBe('0');
+    } finally {
+      if (originalAllowEmptyDiff === undefined) delete process.env.KASEKI_ALLOW_EMPTY_DIFF;
+      else process.env.KASEKI_ALLOW_EMPTY_DIFF = originalAllowEmptyDiff;
+    }
+  });
+
   test('does not override explicit validation commands for docs-like prompts', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
