@@ -1,5 +1,6 @@
 import type { SoyuzAdapterConfig } from './config';
 import type { SoyuzWorkerRun } from './contracts';
+import type { SoyuzArtifactFile } from './soyuz-artifacts';
 
 export class SoyuzApiError extends Error {
   constructor(
@@ -44,6 +45,54 @@ export class SoyuzApiClient {
 
   cancelled(runId: string, payload: Record<string, unknown>): Promise<unknown> {
     return this.callback(runId, 'cancelled', payload);
+  }
+
+  async uploadArtifact(
+    runId: string,
+    workerId: string,
+    claimCallbackId: string,
+    artifact: SoyuzArtifactFile,
+  ): Promise<void> {
+    const response = await this.fetchImpl(
+      `${this.config.apiUrl}/v1/worker/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifact.artifactId)}`,
+      {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${this.config.workerApiToken}`,
+          'content-type': artifact.contentType,
+          'content-length': String(artifact.body.byteLength),
+          'x-artifact-name': artifact.name,
+          'x-artifact-kind': artifact.kind,
+          'x-soyuz-worker-id': workerId,
+          'x-soyuz-claim-callback-id': claimCallbackId,
+        },
+        body: Uint8Array.from(artifact.body),
+        signal: AbortSignal.timeout(this.config.requestTimeoutMs),
+      },
+    );
+    const text = await response.text();
+    if (Buffer.byteLength(text, 'utf8') > 128 * 1024) {
+      throw new Error('Soyuz response exceeded the 128 KB client limit');
+    }
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      throw new Error(`Soyuz returned invalid JSON (${response.status})`);
+    }
+    if (!response.ok) {
+      const error = parsed.error && typeof parsed.error === 'object'
+        ? parsed.error as Record<string, unknown>
+        : {};
+      throw new SoyuzApiError(
+        response.status,
+        typeof error.code === 'string' ? error.code : 'SOYUZ_REQUEST_FAILED',
+        typeof error.message === 'string' ? error.message : `Soyuz request failed (${response.status})`,
+      );
+    }
+    if (!parsed.data || typeof parsed.data !== 'object') {
+      throw new Error('Soyuz response did not contain a data object');
+    }
   }
 
   private callback(runId: string, action: string, payload: Record<string, unknown>): Promise<unknown> {
