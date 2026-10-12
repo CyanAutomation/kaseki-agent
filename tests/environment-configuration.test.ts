@@ -46,4 +46,19 @@ describe('Environment configuration documentation parity', () => {
 
     expect(skill).toContain(generatedSection);
   });
+
+  it('does not present ignored provider fallback names as supported configuration', () => {
+    const docs = fs.readFileSync(path.join(process.cwd(), 'docs/ENV_VARS.md'), 'utf8');
+    const modelSelection = docs.split('### Model Selection')[1]?.split('### Multi-Phase Model Overrides')[0] ?? '';
+    const activeModelRows = modelSelection.split('\n').filter((line) => line.startsWith('|')).join('\n');
+    expect(activeModelRows.includes('KASEKI_PROVIDER_FALLBACK')).toBe(false);
+    expect(docs.includes('### Retired provider fallback settings')).toBe(true);
+    expect(docs.includes('KASEKI_PROVIDER_FALLBACK_MODEL')).toBe(true);
+  });
+
+  it('documents that API key scopes are not a supported setting', () => {
+    const docs = fs.readFileSync(path.join(process.cwd(), 'docs/ENV_VARS.md'), 'utf8');
+    expect(docs.includes('API keys currently have equal access')).toBe(true);
+    expect(docs.includes('is not supported and does not restrict a key')).toBe(true);
+  });
 });

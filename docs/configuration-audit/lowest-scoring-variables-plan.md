@@ -14,7 +14,15 @@ This document records the implementation backlog from the audit. A first follow-
 | Request timeout and diff policy | API caller preferences are bounded by the server configured maximum and are documented/tested. |
 | Summary configuration | Integer overrides now reject malformed/out-of-range values to defaults with a warning; the existing component config remains the runtime object. |
 | No-op cache toggle and obsolete setup examples | Removed from templates and setup output; persistent cache path remains supported. |
-| Model/provider, image/path, routing flags, cache families and external aliases | Deferred pending usage evidence and migration decisions; no compatibility contract was removed. |
+| Model/provider and phase model selectors | Retained. They serve different inference phases; gateway and decision-provider credentials remain isolated. No server allowlist or production usage data supports safely narrowing them yet. |
+| API and worker image references | Retained as separate role-specific settings. Worker defaults to the API image, while an explicit worker override remains available for controlled rollout. |
+| Host/container path variables and direct/`_FILE` secrets | Retained because each pair describes distinct mount or hosting-platform behavior. File-based secrets are preferred; direct values remain compatibility inputs. |
+| Caveman/semantic and typed-evaluation flags | Retained as explicit operating/rollback modes. Removing them would delete real behavior; use evidence and an announced compatibility window before retirement. |
+| Cache families | Retained as separate cache policies because each has a different correctness, persistence, or lifecycle boundary. Validation and naming should stay consistent. |
+| Pricing scalar variables | JSON catalog is the canonical setting. The four scalar rates remain accepted as a documented, legacy single-model fallback until consumers can migrate. |
+| Phase advisory targets | Retained for now. They populate prompt-generation and run-assessment targets; converting them to constants changes tuning behavior and needs operator evidence. |
+| API worker empty-diff policy | Scheduler now explicitly sets `KASEKI_ALLOW_EMPTY_DIFF` from the admitted task mode and no-change task contract; a service-level value cannot enable it for ordinary API patch runs. Direct CLI compatibility remains. |
+| Provider fallback and API key scope documentation | Fallback names moved out of the supported model table and marked ignored; docs now state API keys have equal access and `KASEKI_API_KEY_SCOPES` is not an authorization control. |
 
 ## Goals and guardrails
 
@@ -51,7 +59,7 @@ This document records the implementation backlog from the audit. A first follow-
 
 ### Batch 1 — Low-risk contract cleanup (P1)
 
-Update only current documentation and templates for explicitly retired JEV/provider settings, `KASEKI_API_KEY_SCOPES`, and duplicate CLI/API URL and log-level names. For the latter two, document the current precedence and migration alias. Keep `KASEKI_JEV_WORKFLOW` rejection during the transition. Check README/setup wizard/API/Compose references and packaged docs together.
+The API URL and log-level precedence plus stale cache-toggle cleanup are already implemented. The remaining docs-only cleanup is done for provider fallback and API key scopes. Retired JEV mappings and `KASEKI_JEV_WORKFLOW` rejection remain as migration diagnostics. Check README/setup wizard/API/Compose references and packaged docs together before considering this batch fully closed.
 
 **Complete when:** every retired setting points to its replacement or says it is unsupported; no current setup path instructs users to configure an ignored variable; alias precedence is written down; no runtime behavior changed.
 
@@ -94,4 +102,4 @@ After usage evidence and implementation equivalence, retire temporary typed-eval
 
 ## Suggested first batch
 
-Start with Batch 1: reconcile and label the retired JEV/provider settings and document API URL/log-level precedence. It offers clear maintainability gains without touching runtime behavior. Then complete Batch 2 before deleting any live name or migration diagnostic.
+The safe part of Batch 1 is implemented. Next, complete Batch 2's deployment evidence matrix before removing any compatibility name. The API empty-diff server-boundary fix is covered by a regression test; do not remove the direct CLI setting until the CLI migration contract is separately established.
