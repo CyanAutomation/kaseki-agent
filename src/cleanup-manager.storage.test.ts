@@ -80,6 +80,13 @@ describe('storage cleanup helpers', () => {
     fs.mkdirSync(retainedRun);
     fs.writeFileSync(path.join(oldRun, 'artifact'), 'old');
     fs.writeFileSync(path.join(retainedRun, 'artifact'), 'new');
+
+    // Make retention ordering independent of filesystem timestamp precision
+    // and directory enumeration order.
+    const retainedRunTime = new Date(Date.now() - 60 * 60 * 1000);
+    const oldRunTime = new Date(retainedRunTime.getTime() - 60 * 60 * 1000);
+    fs.utimesSync(oldRun, oldRunTime, oldRunTime);
+    fs.utimesSync(retainedRun, retainedRunTime, retainedRunTime);
     const cacheEntry = path.join(cacheDir, 'dependency-entry');
     fs.mkdirSync(cacheEntry);
     fs.writeFileSync(path.join(cacheEntry, '.used-by-runs'), 'kaseki-1\n');
