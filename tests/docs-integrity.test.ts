@@ -107,6 +107,39 @@ describe('Documentation integrity', () => {
     });
   });
 
+  it('resolves internal markdown links and anchors in the root README', () => {
+    const readmePath = path.join(projectRoot, 'README.md');
+    const readme = fs.readFileSync(readmePath, 'utf8');
+    const readmeAnchors = collectMarkdownAnchors(readme);
+
+    extractMarkdownLinks(readme, 'README.md').forEach(({ link }) => {
+      if (isExternalMarkdownLink(link)) return;
+
+      const { filePart, anchor } = splitMarkdownLink(link);
+      const targetPath = filePart ? path.resolve(projectRoot, filePart) : readmePath;
+      expect(fs.existsSync(targetPath)).toBe(true);
+
+      if (anchor) {
+        const targetContent = targetPath === readmePath
+          ? readme
+          : fs.readFileSync(targetPath, 'utf8');
+        const targetAnchors = targetPath === readmePath
+          ? readmeAnchors
+          : collectMarkdownAnchors(targetContent);
+        expect(targetAnchors).toContain(anchor);
+      }
+    });
+  });
+
+  it('keeps README API and setup examples aligned with the implemented interfaces', () => {
+    const readme = fs.readFileSync(path.join(projectRoot, 'README.md'), 'utf8');
+
+    expect(readme).toContain('repoUrl');
+    expect(readme).toContain('taskPrompt');
+    expect(readme).not.toMatch(/KASEKI_API_URL=.*kaseki-agent serve/);
+    expect(readme).not.toMatch(/docker run -it docker\.io\/cyanautomation\/kaseki-agent:latest init/);
+  });
+
   it('preserves documented navigation contracts', () => {
     documentationContracts.forEach(({ fileName, requiredLinks, stableAnchors }) => {
       const sourcePath = path.join(docsDir, fileName);
