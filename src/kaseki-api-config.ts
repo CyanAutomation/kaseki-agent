@@ -125,9 +125,10 @@ function validateTaskMode(): 'patch' | 'inspect' {
  * @throws Error if level is not debug/info/warn/error
  */
 function validateLogLevel(): 'debug' | 'info' | 'warn' | 'error' {
-  const logLevel = (process.env.KASEKI_API_LOG_LEVEL ?? 'info') as 'debug' | 'info' | 'warn' | 'error';
+  const envVar = process.env.KASEKI_API_LOG_LEVEL !== undefined ? 'KASEKI_API_LOG_LEVEL' : 'LOG_LEVEL';
+  const logLevel = (process.env.KASEKI_API_LOG_LEVEL ?? process.env.LOG_LEVEL ?? 'info') as 'debug' | 'info' | 'warn' | 'error';
   if (!['debug', 'info', 'warn', 'error'].includes(logLevel)) {
-    throw new Error(`KASEKI_API_LOG_LEVEL must be debug/info/warn/error, got: ${logLevel}`);
+    throw new Error(`${envVar} must be debug/info/warn/error, got: ${logLevel}`);
   }
   return logLevel;
 }
@@ -154,7 +155,7 @@ function ensureResultsDir(): string {
   } catch (err) {
     // chmod might fail on special filesystems (e.g., /tmp) or read-only mounts
     // This is not fatal since mkdir succeeded; log warning but continue
-    if (process.env.KASEKI_API_LOG_LEVEL === 'debug') {
+    if ((process.env.KASEKI_API_LOG_LEVEL ?? process.env.LOG_LEVEL) === 'debug') {
       console.warn(
         `[config] Warning: Could not chmod KASEKI_RESULTS_DIR ${resultsDir} to 777: ` +
           `${err instanceof Error ? err.message : String(err)}. ` +

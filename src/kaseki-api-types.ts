@@ -91,7 +91,7 @@ const RunRequestShape = z.object({
     })
     .optional()
     .describe('Controller-friendly allowlist alias'),
-  maxDiffBytes: z.number().int().positive().optional().describe('Max diff size in bytes'),
+  maxDiffBytes: z.number().int().positive().optional().describe('Optional per-run lower diff-size limit; the server configured maximum always applies'),
   validationCommands: z.array(z.string()).optional().describe('Validation commands to run'),
   autoLintCleanup: z
     .object({
@@ -156,7 +156,7 @@ const RunRequestShape = z.object({
   webhookConfig: WebhookConfigSchema.optional().describe('Webhook configuration for job events'),
   tracing: RequestTracingSchema.optional().describe('Request tracing identifiers'),
   idempotencyKey: z.string().uuid().optional().describe('Idempotency key for safe retries'),
-  timeoutSeconds: z.number().int().min(60).max(10800).optional().describe('Per-run timeout in seconds'),
+  timeoutSeconds: z.number().int().min(60).max(10800).optional().describe('Requested per-run timeout in seconds; the server configured maximum always applies'),
 });
 
 function normalizeRunRequestAliases(input: unknown): unknown {

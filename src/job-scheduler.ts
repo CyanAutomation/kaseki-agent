@@ -722,7 +722,7 @@ export class JobScheduler {
       KASEKI_TASK_MODE: job.request.taskMode || this.config.defaultTaskMode,
       KASEKI_PUBLISH_MODE: job.request.publishMode || 'pr',
       KASEKI_MAX_DIFF_BYTES: String(
-        job.request.maxDiffBytes || this.config.maxDiffBytes,
+        Math.min(job.request.maxDiffBytes ?? this.config.maxDiffBytes ?? 400000, this.config.maxDiffBytes ?? 400000),
       ),
       KASEKI_AGENT_TIMEOUT_SECONDS: String(effectiveTimeoutSeconds),
       KASEKI_HOST_CACHE_DIR: process.env.KASEKI_HOST_CACHE_DIR || '/agents/kaseki-cache',
@@ -1012,8 +1012,11 @@ export class JobScheduler {
   }
 
   private async executeJob(job: Job): Promise<void> {
-    const effectiveTimeoutSeconds =
-      job.request.timeoutSeconds ?? this.config.agentTimeoutSeconds;
+    const configuredTimeoutLimit = this.config.agentTimeoutSeconds ?? 10800;
+    const effectiveTimeoutSeconds = Math.min(
+      job.request.timeoutSeconds ?? configuredTimeoutLimit,
+      configuredTimeoutLimit,
+    );
 
     this.persistenceManager.releaseQueuedJobOwnership(job);
 

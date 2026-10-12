@@ -14,7 +14,7 @@
   {
     "name": "KASEKI_MODEL",
     "description": "LLM model used for agent execution",
-    "default": "auto",
+    "default": "dynamic/kaseki-agent",
     "acceptedValues": "Provider-supported model identifier, or `auto`"
   },
   {

@@ -19,10 +19,10 @@ This skill provides comprehensive reference for all kaseki-agent environment var
 - Creating configuration templates for teams
 
 **Key Concepts**:
-- Environment variables control all kaseki behavior
-- Configuration hierarchy: CLI args > env file > .env > env vars
-- Secrets should use file-based resolution (not hardcoded)
-- Configuration is validated on startup via `--doctor`
+- Deployment environment variables configure the API service and worker runtime; run-specific choices belong in the API request (the CLI translates its arguments into that request).
+- Configuration sources and precedence depend on the setting. See the setting-specific documentation; do not assume one global hierarchy.
+- Secrets should use mounted secret files or a secret store rather than inline values where supported.
+- The API validates its server configuration at startup. CLI and worker settings have their own validation paths.
 
 ---
 
@@ -46,7 +46,7 @@ not used for coding-agent inference or as a fallback when the gateway fails.
 |---|---|---|---|
 | `GIT_REF` | `main` | Git branch, tag, or commit to check out | Branch name, tag, or commit SHA |
 | `TASK_PROMPT` | `A code-fix task` | Instruction passed to the coding agent | Natural-language task prompt |
-| `KASEKI_MODEL` | `auto` | LLM model used for agent execution | Provider-supported model identifier, or `auto` |
+| `KASEKI_MODEL` | `dynamic/kaseki-agent` | LLM model used for agent execution | Provider-supported model identifier, or `auto` |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | Maximum agent execution time in seconds | Non-negative integer, up to 86400 |
 | `KASEKI_CAVEMAN` | `1` | Legacy switch for terse communication guidance | `0` (disable) or `1` (enable) |
 | `KASEKI_CAVEMAN_LEVEL` | `2` | Soft prompt and tool-output reduction level | Integer `0` through `3` |
@@ -174,18 +174,18 @@ KASEKI_VALIDATION_COMMANDS="npm test"
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `KASEKI_API_KEYS` | (required) | Comma-separated API keys for requests |
-| `KASEKI_API_KEY_FILE` | `/run/secrets/kaseki_api_keys` | Read keys from file (preferred) |
+| `KASEKI_API_KEYS` | empty only for trusted loopback development | Comma-separated API keys accepted by the service |
+| Host secret file | `/run/secrets/kaseki/kaseki_api_keys` in Docker; `~/.kaseki/secrets/kaseki_api_keys` locally | Read accepted API keys from the mounted host secret file when `KASEKI_API_KEYS` is unset. Compose mounts the host directory (default `~/secrets`) at `/run/secrets/kaseki`. |
+| `KASEKI_API_KEY` | unset | CLI bearer token presented to the server |
+| `KASEKI_API_KEYS_FILE` | discovered secret file | Optional CLI client key-file path; it does not configure the server's accepted keys |
 
 **Setup** (file-based, recommended):
 ```bash
-# Create secret file
-echo "api-key-1,api-key-2" > /etc/kaseki/api-keys
-chmod 600 /etc/kaseki/api-keys
-
-# Use in docker-compose.yml
-environment:
-  KASEKI_API_KEY_FILE: /etc/kaseki/api-keys
+# In Docker Compose, create this in the host secrets directory (default ~/secrets), mounted at /run/secrets/kaseki.
+# For a local API process, create it at ~/.kaseki/secrets/kaseki_api_keys.
+printf '%s\n' 'api-key-1' > ~/secrets/kaseki_api_keys
+chmod 600 ~/secrets/kaseki_api_keys
+# Docker deployments mount the selected host secret directory read-only.
 ```
 
 ### Service Port & Concurrency
@@ -193,17 +193,16 @@ environment:
 | Variable | Default | Purpose | Values |
 |---|---|---|---|
 | `KASEKI_API_PORT` | `8080` | HTTP listen port | Port number (1–65535) |
-| `KASEKI_API_HOST` | `0.0.0.0` | Bind address | IP or hostname |
+| `KASEKI_API_HOST` | `127.0.0.1` without API keys; otherwise Node default | In-container API bind address | Hostname or IP; unauthenticated mode must remain loopback |
 | `KASEKI_API_MAX_CONCURRENT_RUNS` | `3` | Parallel run limit | 1–10 (typical) |
-| `KASEKI_API_QUEUE_SIZE` | `100` | Max pending runs | Integer |
 
 **Example**:
 ```bash
-# High-throughput configuration
+# Network-accessible Docker API service: place the key file in the host secrets directory (default ~/secrets).
+# (mounted read-only by the deployment) before binding beyond loopback.
 KASEKI_API_PORT=8080
 KASEKI_API_HOST=0.0.0.0
 KASEKI_API_MAX_CONCURRENT_RUNS=8
-KASEKI_API_QUEUE_SIZE=200
 ```
 
 ---
@@ -246,7 +245,9 @@ used for coding-agent inference or as a gateway fallback:
 
 | Variable | Default | Purpose | Values |
 |---|---|---|---|
-| `KASEKI_CACHE_ENABLED` | `1` | Enable npm caching | 0=disabled, 1=enabled |
+| `KASEKI_DEPENDENCY_CACHE_DIR` | `/cache/dependencies` | Dependency cache root | Writable mounted directory |
+| `KASEKI_DEPENDENCY_CACHE_MAX_BYTES` | `10737418240` | Maximum dependency cache size before pruning | Non-negative integer bytes |
+| `KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS` | `30` | Maximum dependency cache entry age | Non-negative integer days |
 | `KASEKI_KEEP_WORKSPACE` | `0` | Keep temp workspace after run | 0=delete, 1=keep |
 | `KASEKI_STREAM_PROGRESS` | `1` | Stream progress logs | 0=off, 1=on |
 
@@ -257,14 +258,13 @@ used for coding-agent inference or as a gateway fallback:
 | Variable | Default | Purpose |
 |---|---|---|
 | `KASEKI_DEBUG_RAW_EVENTS` | `0` | Keep raw Pi JSONL (no filtering) |
-| `KASEKI_LOG_LEVEL` | `info` | Log verbosity |
+| `KASEKI_API_LOG_LEVEL` | `info` | API log verbosity; takes precedence over generic `LOG_LEVEL` |
 
 **Values** (log levels):
 - `error` — Only errors
 - `warn` — Warnings and errors
 - `info` — Standard logging (default)
 - `debug` — Verbose debugging
-- `trace` — Ultra-verbose
 
 ---
 
@@ -272,10 +272,10 @@ used for coding-agent inference or as a gateway fallback:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `AGENTS_ROOT_DIR` | `/agents` | Base directory for all kaseki data |
-| `AGENTS_RESULTS_DIR` | `/agents/kaseki-results` | Where run artifacts are stored |
-| `AGENTS_CACHE_DIR` | `/agents/kaseki-cache` | Persistent npm cache |
-| `AGENTS_RUNS_DIR` | `/agents/kaseki-runs` | Ephemeral workspace (if `KASEKI_KEEP_WORKSPACE=1`) |
+| `KASEKI_ROOT` | `/agents` | Base directory for agent data where applicable |
+| `KASEKI_RESULTS_DIR` | `/agents/kaseki-results` | Where run artifacts are stored |
+| `KASEKI_CACHE_DIR` | `/cache` | Container cache root |
+| `KASEKI_RUNS_DIR` | `/agents/kaseki-runs` | Ephemeral worker workspace root |
 
 ---
 
@@ -307,14 +307,14 @@ KASEKI_VALIDATION_COMMANDS="npm run check;npm run test;npm run build"
 # API service
 KASEKI_API_PORT=8080
 KASEKI_API_MAX_CONCURRENT_RUNS=5
-KASEKI_API_KEY_FILE=/etc/kaseki/api-keys
+# Mount the API key file as the Kaseki host secret `kaseki_api_keys`.
 
 # Performance
 KASEKI_AGENT_TIMEOUT_SECONDS=1800
-KASEKI_CACHE_ENABLED=1
+KASEKI_DEPENDENCY_CACHE_DIR=/agents/kaseki-cache/dependencies
 
 # Logging
-KASEKI_LOG_LEVEL=info
+KASEKI_API_LOG_LEVEL=info
 ```
 
 ### Cost-Optimized Configuration
@@ -325,7 +325,7 @@ KASEKI_LOG_LEVEL=info
 KASEKI_MODEL=auto  # Let the configured gateway resolve the model
 KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts tests/parser.test.ts"  # Tight scope
 KASEKI_AGENT_TIMEOUT_SECONDS=2400  # Longer timeout = less thrashing
-KASEKI_CACHE_ENABLED=1  # Faster validation
+KASEKI_DEPENDENCY_CACHE_DIR=/agents/kaseki-cache/dependencies
 ```
 
 ### High-Performance Configuration
@@ -335,7 +335,7 @@ KASEKI_CACHE_ENABLED=1  # Faster validation
 
 KASEKI_API_MAX_CONCURRENT_RUNS=8
 KASEKI_AGENT_TIMEOUT_SECONDS=10800
-KASEKI_CACHE_ENABLED=1
+KASEKI_DEPENDENCY_CACHE_DIR=/agents/kaseki-cache/dependencies
 KASEKI_STREAM_PROGRESS=1
 KASEKI_VALIDATION_COMMANDS="npm run test"  # Skip lint/build for speed
 ```

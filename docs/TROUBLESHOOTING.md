@@ -301,24 +301,24 @@ See [HOST_SETUP_TROUBLESHOOTING.md](HOST_SETUP_TROUBLESHOOTING.md) for host-leve
 **Diagnosis:**
 
 ```bash
-# Check which API key is configured
-echo $OPENROUTER_API_KEY              # Inline env var
-echo $OPENROUTER_API_KEY_FILE         # Explicit file path
-cat ~/.kaseki/secrets.json             # Default file location
+# Check whether a key is configured without printing its value
+test -n "${OPENROUTER_API_KEY:-}" && echo 'OPENROUTER_API_KEY is set' || echo 'OPENROUTER_API_KEY is unset'
+test -r "${OPENROUTER_API_KEY_FILE:-}" && echo 'OPENROUTER_API_KEY_FILE is readable' || echo 'OPENROUTER_API_KEY_FILE is unset or unreadable'
+test -r "$HOME/.kaseki/secrets/llm_gateway_api_key" && echo 'Gateway key file is readable' || echo 'Gateway key file is missing or unreadable'
 ```
 
 ### Problem: Secret Files Inaccessible (Permission Denied)
 
 **Symptoms:**
 
-- Container startup shows: "Cannot traverse /agents/secrets by UID 10000"
+- Container startup shows that a secret file is unreadable by UID 10000
 - API key fails to load silently
 - API service binds only to loopback (127.0.0.1) instead of 0.0.0.0
 - Preflight checks fail with "Cannot read secret file"
 
 **Root Cause:**
 
-The `/agents/secrets` directory has restrictive permissions preventing the container (UID 10000) from traversing it.
+The host secret directory mounted at `/run/secrets/kaseki` has permissions that prevent the container (UID 10000) from reading its files.
 
 **Automatic Fix (Enabled by Default):**
 
@@ -330,23 +330,23 @@ The `/agents/secrets` directory has restrictive permissions preventing the conta
 
 **Manual Fix (If Auto-Fix Not Possible):**
 
-If the container logs `Cannot auto-fix /agents/secrets (possibly on read-only mount)`, fix permissions on the host:
+If the container reports that a secret on the read-only mount is inaccessible, fix the host source directory and file permissions:
 
 ```bash
-# Fix /agents/secrets directory
-sudo chmod 0750 /agents/secrets
+# Compose defaults to $HOME/secrets as the host source directory.
+sudo chmod 0750 "$HOME/secrets"
 
 # Fix secret files
-sudo chmod 0640 /agents/secrets/openrouter_api_key
-sudo chmod 0640 ~/.kaseki/secrets.json
+sudo chmod 0640 "$HOME"/secrets/*
+chmod 0600 "$HOME/.kaseki/secrets/llm_gateway_api_key"
 ```
 
 **Secret Paths (in order of resolution):**
 
 1. `OPENROUTER_API_KEY` — Inline environment variable (preferred)
 2. `OPENROUTER_API_KEY_FILE` — Explicit file path
-3. `~/.kaseki/secrets.json` — Default file location (created by `kaseki-agent init`)
-4. `/agents/secrets/openrouter_api_key` — Container mount point (Docker Compose)
+3. `~/.kaseki/secrets/llm_gateway_api_key` — Local setup wizard secret file
+4. `/run/secrets/kaseki/openrouter_api_key` — Container mount point for the decision-provider key; the host source defaults to `~/secrets`
 
 **Migrating from Legacy Docker Secrets:**
 
@@ -355,7 +355,7 @@ sudo chmod 0640 ~/.kaseki/secrets.json
 kaseki-agent init
 
 # Or set OPENROUTER_API_KEY_FILE explicitly
-export OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key
+export OPENROUTER_API_KEY_FILE=/run/secrets/kaseki/openrouter_api_key
 ./run-kaseki.sh
 ```
 
@@ -589,7 +589,7 @@ npm ERR! code E401 Unauthorized
 **Fix:** Dependency cache may be stale:
 
 - Increase timeout: `KASEKI_AGENT_TIMEOUT_SECONDS=2400`
-- Force clean install: `KASEKI_CACHE_ENABLED=0`
+- For a clean-cache diagnostic, point `KASEKI_DEPENDENCY_CACHE_DIR` at a new temporary directory and remove that directory after the run. There is no `KASEKI_CACHE_ENABLED` runtime switch.
 
 ### Quality Gate Failures
 

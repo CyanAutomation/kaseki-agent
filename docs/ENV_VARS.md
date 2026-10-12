@@ -151,9 +151,11 @@ Remove these names from deployment configuration and use the replacement shown. 
 | `KASEKI_JEV_TASK_TYPE` | `KASEKI_TASK_TYPE_HINT` |
 | `KASEKI_JEV_VALIDATION_FOCUS` | `KASEKI_VALIDATION_FOCUS_HINT` |
 
-| `KASEKI_API_URL` | `http://localhost:8080/api/v1` | string | Client-side base URL used by npm API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
+| `KASEKI_API_URL` | `http://localhost:8080/api/v1` | string | Canonical client-side base URL used by npm API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
+| `KASEKI_API_BASE_URL` | `http://localhost:8080/api/v1` | string | Deprecated client-side alias. Used only if `KASEKI_API_URL` is unset; emits a warning. |
 | `KASEKI_API_KEY` | — | string | Client-side bearer token for authenticated Kaseki API services |
-| `KASEKI_API_KEYS` | `/agents/secrets/kaseki_api_keys`, `~/secrets/kaseki_api_keys` | string | Newline-separated API keys accepted by the Kaseki service |
+| `KASEKI_API_KEYS_FILE` | discovered secret file | path | Optional CLI client key-file path used by secret discovery; the server uses its mounted host-secret lookup instead |
+| `KASEKI_API_KEYS` | `/run/secrets/kaseki/kaseki_api_keys` in Docker; `~/.kaseki/secrets/kaseki_api_keys` locally | string | Newline-separated API keys accepted by the Kaseki service when the environment variable is unset. Compose mounts the host directory (default `~/secrets`) at `/run/secrets/kaseki`; `KASEKI_SECRETS_DIR` overrides the container path. |
 | `KASEKI_API_RATE_LIMIT_PER_MINUTE` | `300` | integer | Per-key fixed-window request limit |
 | `KASEKI_API_DIAGNOSTIC_LIMIT_PER_HOUR` | `10` | integer | Per-key limit for token-consuming diagnostic probes |
 | `KASEKI_API_WEBHOOK_TESTS_PER_HOUR` | `10` | integer | Per-key limit for webhook tests and delivery retries |
@@ -168,8 +170,8 @@ Remove these names from deployment configuration and use the replacement shown. 
 
 | Priority | Path |
 |----------|------|
-| 1 | `/agents/secrets/{name}` (preferred) |
-| 2 | `~/secrets/{name}` (fallback) |
+| 1 | `${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/{name}` (primary; Compose mounts the host secrets directory here) |
+| 2 | `~/.kaseki/secrets/{name}` (local-process fallback) |
 
 ### GitHub App Configuration
 
@@ -186,7 +188,7 @@ When `GITHUB_APP_ENABLED=1` and credentials are not explicitly provided, kaseki-
 | Priority | Source | Details |
 | ---------- | -------- | --------- |
 | 1 | **Environment variables** | `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_PRIVATE_KEY` |
-| 2 | **Secret files** | `/agents/secrets/github_app_*`, `~/secrets/github_app_*` |
+| 2 | **Secret files** | `${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/github_app_*`; local fallback `~/.kaseki/secrets/github_app_*` |
 | 3 | **Auto-detected paths** | `~/.ssh/github-app-private-key`, `$PWD/.github-app-secrets/private-key`, `/etc/kaseki-secrets/github_app_private_key` (private key only) |
 
 **Behavior by `KASEKI_PUBLISH_MODE`:**
@@ -247,7 +249,6 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 
 | Variable | Default | Type | Purpose |
 | ---------- | --------- | ------ | --------- |
-| `KASEKI_CACHE_ENABLED` | `0` | boolean | Enable dependency caching for npm install |
 | `KASEKI_CACHE_DIR` | `/cache` | string | Root cache directory (container mount point) |
 | `KASEKI_DEPENDENCY_CACHE_DIR` | `${KASEKI_CACHE_DIR}/dependencies` | string | npm packages cache |
 | `KASEKI_DEPENDENCY_RESTORE_MODE` | `auto` | enum | Restore `node_modules` from cache with `auto`, `copy`, `hardlink`, or `symlink` |
@@ -261,6 +262,23 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 | `KASEKI_BASELINE_CACHE_ROOT` | `/cache/kaseki-baseline` | string | Baseline validation results cache directory |
 | `KASEKI_BASELINE_CACHE_MAX_AGE_HOURS` | `24` | integer | Maximum baseline cache entry age in hours before expiration; `0` disables age-based invalidation |
 | `KASEKI_BASELINE_CACHE_DISABLED` | `0` | boolean | Disable baseline validation caching (useful for testing or cost-sensitive deployments) |
+
+### Summarization
+
+These optional controls tune large-file summaries. Invalid integer values are ignored with a warning and the compiled default is used. Cache capacity and expiry controls may be set to `0` to disable the corresponding limit/retention behavior.
+
+| Variable | Default | Type | Purpose |
+|---|---:|---|---|
+| `KASEKI_SUMMARY_MIN_BYTES` | `2048` | integer | Files smaller than this threshold are read in full |
+| `KASEKI_SUMMARY_MAX_BYTES` | `1048576` | integer | Files above this size use a full read rather than structural parsing |
+| `KASEKI_SUMMARY_PARSE_TIMEOUT` | `2000` | integer milliseconds | Structural parsing deadline |
+| `KASEKI_SUMMARY_LLM_TIMEOUT` | `5000` | integer milliseconds | LLM fallback deadline |
+| `KASEKI_SUMMARY_LLM_FALLBACK` | enabled | boolean | Use LLM fallback when parsing cannot produce a summary; set `false` to disable |
+| `KASEKI_SUMMARY_CACHE` | enabled | boolean | Enable summary caching; set `false` to disable |
+| `KASEKI_SUMMARY_CACHE_DIR` | `.kaseki-summary-cache` | path | Summary cache directory relative to workspace |
+| `KASEKI_SUMMARY_CACHE_TTL_MS` | `86400000` | integer milliseconds | Cache entry lifetime |
+| `KASEKI_SUMMARY_CACHE_MAX_ENTRIES` | `1000` | integer | Maximum summary cache entries |
+| `KASEKI_SUMMARY_CACHE_MAX_SIZE_BYTES` | `52428800` | integer bytes | Maximum total cached summary content |
 
 #### `KASEKI_DEPENDENCY_RESTORE_MODE` decision guide
 
@@ -330,7 +348,7 @@ The external Soyuz adapter is opt-in. See [Soyuz host integration](SOYUZ_INTEGRA
 | ---------- | --------- | ------ | --------- |
 | `KASEKI_API_PORT` | `8080` | integer | HTTP listen port |
 | `KASEKI_API_HOST` | loopback when unauthenticated | string | Optional bind host; unauthenticated empty-key mode is restricted to `localhost`, `127.0.0.1`, or `::1` |
-| `KASEKI_API_LOG_LEVEL` | `info` | string | Log verbosity (debug/info/warn/error) |
+| `KASEKI_API_LOG_LEVEL` | `info` | string | Log verbosity (debug/info/warn/error); takes precedence over generic `LOG_LEVEL`, which remains a compatibility fallback |
 | `NODE_ENV` | `production` | string | Node.js environment mode |
 
 ### Concurrency & Performance
@@ -436,29 +454,31 @@ The external Soyuz adapter is opt-in. See [Soyuz host integration](SOYUZ_INTEGRA
 
 ### File-Based Secrets
 
-All secrets support **two-path resolution**:
+The API and worker secret resolver checks the configured primary directory first, then the local development fallback:
 
 ```
-Primary:   /agents/secrets/{secret-name}
-Fallback:  ~/secrets/{secret-name}
+Primary:   ${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/{secret-name}
+Fallback:  ~/.kaseki/secrets/{secret-name}
 ```
+
+Docker Compose mounts the host directory `${KASEKI_HOST_SECRETS_DIR:-$HOME/secrets}` read-only at `/run/secrets/kaseki`. `KASEKI_HOST_SECRETS_DIR` selects the host source; `KASEKI_SECRETS_DIR` selects the in-container primary path. For a local process, create files under `~/.kaseki/secrets` or set `KASEKI_SECRETS_DIR` explicitly.
 
 **Secret Files:**
 
 | Secret Name | File Path | Content | Required |
 | --- | --- | --- | --- |
-| `llm_gateway_api_key` | `/agents/secrets/llm_gateway_api_key` | API key for your LLM gateway | ✓ |
-| `kaseki_api_keys` | `/agents/secrets/kaseki_api_keys` | Newline-separated keys | ✓ (for API service) |
-| `github_app_id` | `/agents/secrets/github_app_id` | Numeric ID | — |
-| `github_app_client_id` | `/agents/secrets/github_app_client_id` | OAuth Client ID | — |
-| `github_app_private_key` | `/agents/secrets/github_app_private_key` | PEM-format private key | — |
+| `llm_gateway_api_key` | `${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/llm_gateway_api_key` | API key for your LLM gateway | ✓ |
+| `kaseki_api_keys` | `${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/kaseki_api_keys` | Newline-separated keys | ✓ (for API service) |
+| `github_app_id` | `${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/github_app_id` | Numeric ID | — |
+| `github_app_client_id` | `${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/github_app_client_id` | OAuth Client ID | — |
+| `github_app_private_key` | `${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/github_app_private_key` | PEM-format private key | — |
 
 **File Permissions:**
 
 ```bash
 # Recommended permissions
-chmod 600 /agents/secrets/*
-chown 10000:10000 /agents/secrets/*
+chmod 600 "$HOME/secrets"/*
+chown 10000:10000 "$HOME/secrets"/*
 ```
 
 ---
@@ -481,9 +501,10 @@ KASEKI_API_URL=http://localhost:8080/api/v1 kaseki-agent run "$REPO_URL" "$GIT_R
 
 ```bash
 # API server configuration
-# Put one API key per line in /agents/secrets/kaseki_api_keys or ~/secrets/kaseki_api_keys
+# Put one API key per line in the host secret directory (default ~/secrets); Compose mounts it at /run/secrets/kaseki.
+# For a local API process, use ~/.kaseki/secrets/kaseki_api_keys.
 export LLM_GATEWAY_URL="https://api.openai.com/v1"
-export LLM_GATEWAY_API_KEY_FILE="/agents/secrets/llm_gateway_api_key"
+export LLM_GATEWAY_API_KEY_FILE="/run/secrets/kaseki/llm_gateway_api_key"
 export KASEKI_API_PORT=8080
 export KASEKI_API_LOG_LEVEL=info
 export KASEKI_API_MAX_CONCURRENT_RUNS=5
@@ -491,7 +512,6 @@ export KASEKI_API_MAX_CONCURRENT_RUNS=5
 # Agent defaults
 export KASEKI_AGENT_TIMEOUT_SECONDS=1800
 export KASEKI_MAX_DIFF_BYTES=200000
-export KASEKI_CACHE_ENABLED=1
 
 # Paths
 export KASEKI_RESULTS_DIR=/agents/kaseki-results
@@ -509,7 +529,6 @@ export TASK_PROMPT="Add tests for calculateDiscount() in src/pricing/"
 export KASEKI_CHANGED_FILES_ALLOWLIST="tests/pricing/*.test.ts"
 export KASEKI_MAX_DIFF_BYTES=50000
 export KASEKI_AGENT_TIMEOUT_SECONDS=900
-export KASEKI_CACHE_ENABLED=1
 
 KASEKI_API_URL=http://localhost:8080/api/v1 kaseki-agent run "$REPO_URL" "$GIT_REF" "$TASK_PROMPT"
 ```
@@ -527,7 +546,6 @@ export KASEKI_AGENT_TIMEOUT_SECONDS=300
 export KASEKI_MAX_DIFF_BYTES=50000
 
 # Enable caching
-export KASEKI_CACHE_ENABLED=1
 
 # Strict validation
 export KASEKI_VALIDATION_COMMANDS="npm run check;npm run test;npm run lint;npm run build"
@@ -541,8 +559,8 @@ Configuration is resolved in this order (first match wins):
 
 1. **Explicit env var** (e.g., `LLM_GATEWAY_API_KEY=...`)
 2. **File-based env var** (e.g., `LLM_GATEWAY_API_KEY_FILE=...`)
-3. **Default location** (e.g., `/agents/secrets/llm_gateway_api_key`)
-4. **Fallback location** (e.g., `~/secrets/llm_gateway_api_key`)
+3. **Default container location** (e.g., `/run/secrets/kaseki/llm_gateway_api_key`)
+4. **Local-process fallback** (e.g., `~/.kaseki/secrets/llm_gateway_api_key`)
 5. **Compiled default** (e.g., `dynamic/kaseki-agent` for `KASEKI_MODEL`)
 
 ---
@@ -570,7 +588,7 @@ test -s "${LLM_GATEWAY_API_KEY_FILE:-$HOME/secrets/llm_gateway_api_key}" && \
   echo "✓ LLM Gateway key found" || \
   echo "✗ LLM Gateway key missing"
 
-{ test -s /agents/secrets/kaseki_api_keys || test -s "$HOME/secrets/kaseki_api_keys"; } && \
+{ test -s "${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/kaseki_api_keys" || test -s "$HOME/.kaseki/secrets/kaseki_api_keys"; } && \
   echo "✓ Kaseki API keys found" || \
   echo "✗ Kaseki API keys missing"
 ```
