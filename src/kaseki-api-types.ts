@@ -741,6 +741,7 @@ export interface Job {
     lastHeartbeatAt?: string;
     terminalCallbackId?: string;
     terminalCallbackDelivered?: boolean;
+    uploadedArtifactNames?: string[];
     metadataUpdatedAt?: string;
   };
 }

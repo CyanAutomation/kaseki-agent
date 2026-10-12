@@ -1,5 +1,9 @@
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import type { KasekiApiConfig } from '../../kaseki-api-config';
 import type { Job } from '../../kaseki-api-types';
+import type { SoyuzOutboxEntry } from '../../job-persistence-manager';
 import { SoyuzAdapter } from './SoyuzAdapter';
 import type { SoyuzAdapterConfig } from './config';
 
@@ -56,6 +60,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function createScheduler(workerId: string, maxConcurrent = 1) {
   const jobs: Job[] = [];
+  const callbacks: SoyuzOutboxEntry[] = [];
   const claimIntents: Array<{ externalRunId: string; workerId: string; queuedAt: string; claimCallbackId: string; createdAt: string }> = [];
   const scheduler = {
     getQueueStatus: jest.fn(() => ({
@@ -96,6 +101,7 @@ function createScheduler(workerId: string, maxConcurrent = 1) {
       return true;
     }),
     isJobExecuting: jest.fn((localRunId: string) => jobs.some((job) => job.id === localRunId && job.status === 'running')),
+    isJobProcessAlive: jest.fn(() => false),
     cancelSoyuzJob: jest.fn(async (localRunId: string) => {
       const job = jobs.find((candidate) => candidate.id === localRunId);
       if (job) {
@@ -105,7 +111,28 @@ function createScheduler(workerId: string, maxConcurrent = 1) {
     }),
     holdSoyuzJob: jest.fn(),
     getLiveProgressEvents: jest.fn(() => []),
-    claimSoyuzCallbacks: jest.fn(async () => []),
+    claimSoyuzCallbacks: jest.fn(async () => callbacks.filter((candidate) => candidate.deliveryState === 'pending').slice(0, 25)),
+    persistSoyuzTerminalCallback: jest.fn(async (job: Job, entry: SoyuzOutboxEntry) => {
+      if (!callbacks.some((candidate) => candidate.callbackId === entry.callbackId)) callbacks.push(entry);
+      if (job.soyuz) {
+        job.soyuz.terminalCallbackId = entry.callbackId;
+        job.soyuz.terminalCallbackDelivered = false;
+      }
+    }),
+    completeSoyuzCallback: jest.fn(async (callbackId: string) => {
+      const entry = callbacks.find((candidate) => candidate.callbackId === callbackId);
+      if (entry) entry.deliveryState = 'delivered';
+      const job = jobs.find((candidate) => candidate.soyuz?.terminalCallbackId === callbackId);
+      if (job?.soyuz) job.soyuz.terminalCallbackDelivered = true;
+    }),
+    retrySoyuzCallback: jest.fn(async (callbackId: string) => {
+      const entry = callbacks.find((candidate) => candidate.callbackId === callbackId);
+      if (entry) {
+        entry.attemptCount += 1;
+        entry.deliveryState = 'pending';
+        entry.nextAttemptAt = new Date(0).toISOString();
+      }
+    }),
     getSoyuzOutboxStatus: jest.fn(async () => ({ pending: 0, failures: 0 })),
     updateSoyuzJobMetadata: jest.fn(async (localRunId: string, update: Partial<NonNullable<Job['soyuz']>>) => {
       const job = jobs.find((candidate) => candidate.id === localRunId);
@@ -138,16 +165,21 @@ function runState() {
   };
 }
 
-function createFetch(state: ReturnType<typeof runState>, options: { loseFirstAck?: boolean; loseFirstClaimResponse?: boolean } = {}) {
+function createFetch(state: ReturnType<typeof runState>, options: {
+  loseFirstAck?: boolean;
+  loseFirstClaimResponse?: boolean;
+  failFirstArtifactUpload?: boolean;
+} = {}) {
   let pulls = 0;
   let acks = 0;
   let claims = 0;
-  const calls: Array<{ url: string; method: string; body?: Record<string, unknown> }> = [];
+  const calls: Array<{ url: string; method: string; body?: Record<string, unknown>; headers: Headers; payloadBytes?: number }> = [];
   const fetchImpl = jest.fn(async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     const url = String(input);
     const method = init?.method ?? 'GET';
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : undefined;
-    calls.push({ url, method, body });
+    const headers = new Headers(init?.headers);
+    calls.push({ url, method, body, headers, payloadBytes: init?.body instanceof Uint8Array ? init.body.byteLength : undefined });
 
     if (url.endsWith('/messages/pull')) {
       pulls += 1;
@@ -169,6 +201,16 @@ function createFetch(state: ReturnType<typeof runState>, options: { loseFirstAck
 
     const parsed = new URL(url);
     const action = parsed.pathname.split('/').pop();
+    if (method === 'PUT' && parsed.pathname.includes('/artifacts/')) {
+      if (options.failFirstArtifactUpload && calls.filter((call) => call.method === 'PUT').length === 1) {
+        return jsonResponse({ error: { code: 'ARTIFACT_STORE_FAILED', message: 'simulated upload failure' } }, 503);
+      }
+      return jsonResponse({ data: { id: action } }, 201);
+    }
+    if (method === 'POST' && ['completed', 'failed', 'cancelled'].includes(action ?? '')) {
+      state.status = action as 'completed' | 'failed' | 'cancelled';
+      return jsonResponse({ data: { runId: RUN_ID }, requestId: 'soyuz-request' });
+    }
     const responseData = () => ({
       runId: RUN_ID,
       contractVersion: '1',
@@ -234,6 +276,59 @@ function makeAdapter(workerId: string, scheduler: object, fetchImpl: typeof fetc
 }
 
 describe('Soyuz adapter handoff', () => {
+  test('uploads bounded allowlisted artifacts and retries them before reporting terminal status', async () => {
+    const resultDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kaseki-soyuz-terminal-'));
+    try {
+      await fs.writeFile(path.join(resultDir, 'result-summary.md'), '# Finished\n');
+      await fs.writeFile(path.join(resultDir, 'git.diff'), 'diff --git a/a b/a\n');
+      await fs.writeFile(path.join(resultDir, 'stdout.log'), 'private raw log');
+      const state = runState();
+      state.status = 'running';
+      state.workerId = 'host-a';
+      state.claimCallbackId = '66666666-6666-4666-8666-666666666666';
+      const { fetchImpl, calls } = createFetch(state, { failFirstArtifactUpload: true });
+      const { scheduler, jobs } = createScheduler('host-a', 0);
+      jobs.push({
+        id: 'kaseki-terminal',
+        status: 'completed',
+        request: queuedRun.request,
+        createdAt: new Date(),
+        completedAt: new Date(),
+        resultDir,
+        correlationId: CORRELATION_ID,
+        requestId: REQUEST_ID,
+        soyuz: {
+          externalRunId: RUN_ID,
+          workerId: 'host-a',
+          contractVersion: '1',
+          claimCallbackId: state.claimCallbackId,
+          startedCallbackId: '44444444-4444-4444-8444-444444444444',
+          startAuthorized: true,
+          metadataUpdatedAt: new Date().toISOString(),
+        },
+      });
+      const adapter = makeAdapter('host-a', scheduler, fetchImpl);
+
+      await adapter.runOnce();
+      await adapter.runOnce();
+      expect(state.status).toBe('running');
+      expect(calls.some((call) => call.method === 'POST' && call.url.endsWith('/completed'))).toBe(false);
+      await adapter.runOnce();
+
+      const artifactCalls = calls.filter((call) => call.method === 'PUT');
+      expect(artifactCalls.map((call) => call.headers.get('x-artifact-name'))).toEqual([
+        'result-summary.md', 'git.diff', 'result-summary.md',
+      ]);
+      expect(artifactCalls.every((call) => call.payloadBytes && call.payloadBytes < 2_000_000)).toBe(true);
+      expect(calls.find((call) => call.method === 'POST' && call.url.endsWith('/completed'))).toBeDefined();
+      expect(artifactCalls.at(-1)!.url.localeCompare(calls.find((call) => call.method === 'POST' && call.url.endsWith('/completed'))!.url)).toBeLessThan(0);
+      expect(jobs[0].soyuz?.uploadedArtifactNames).toEqual(expect.arrayContaining(['result-summary.md', 'git.diff']));
+      expect(state.status).toBe('completed');
+    } finally {
+      await fs.rm(resultDir, { recursive: true, force: true });
+    }
+  });
+
   test('recovers an uncertain queue acknowledgement by external run ID without a second local job', async () => {
     const state = runState();
     const { fetchImpl, calls } = createFetch(state, { loseFirstAck: true });
