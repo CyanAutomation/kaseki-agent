@@ -865,6 +865,11 @@ export class JobScheduler {
         : '0';
     } else if (allowsNoChangeTaskPrompt(job.request.taskPrompt)) {
       env.KASEKI_ALLOW_EMPTY_DIFF = '1';
+    } else {
+      // This value is inherited from the API process environment by default.
+      // Resolve it exclusively from the admitted request so an operator-level
+      // setting cannot silently relax the patch-mode no-op gate for all runs.
+      env.KASEKI_ALLOW_EMPTY_DIFF = '0';
     }
   }
 

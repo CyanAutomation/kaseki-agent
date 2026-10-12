@@ -161,6 +161,9 @@ Remove these names from deployment configuration and use the replacement shown. 
 | `KASEKI_API_WEBHOOK_TESTS_PER_HOUR` | `10` | integer | Per-key limit for webhook tests and delivery retries |
 | `KASEKI_API_GITHUB_ISSUES_PER_MINUTE` | `30` | integer | Per-key limit for GitHub issue lookups |
 | `KASEKI_WEBHOOK_ALLOWED_ORIGINS` | unset | comma-separated origins | Exact HTTP(S) origins trusted for webhook delivery to private or plain-HTTP receivers |
+
+API keys currently have equal access. `KASEKI_API_KEY_SCOPES` is not supported and does not restrict a key; do not rely on it as an authorization boundary.
+
 | `GITHUB_TOKEN` | (env var only) | string | GitHub API token for PR creation |
 | `GITHUB_APP_ID` | `GITHUB_APP_ID_FILE` | string | GitHub App ID (numeric) |
 | `GITHUB_APP_CLIENT_ID` | `GITHUB_APP_CLIENT_ID_FILE` | string | GitHub OAuth Client ID |
@@ -216,6 +219,8 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 | `KASEKI_VALIDATION_ALLOWLIST` | `` (none) | string | Space-separated glob patterns for validation-phase file restrictions (gates exit code 7) |
 | `KASEKI_STARTUP_CHECK_MODE` | `boot` | enum | Dry-run startup check depth: `boot` or `baseline-validation` |
 | `KASEKI_BASELINE_VALIDATION_DRY_RUN` | `0` | boolean | Run pre-agent validation during a dry-run startup check while still skipping Pi |
+
+For API-backed runs, empty-diff acceptance is derived from the admitted task mode and task contract. A service-level `KASEKI_ALLOW_EMPTY_DIFF` value is not forwarded as an override; use `taskMode: "inspect"` for inspection-only runs or an explicit task contract that permits a no-change result.
 
 ### Validation Commands
 
@@ -428,8 +433,6 @@ The external Soyuz adapter is opt-in. See [Soyuz host integration](SOYUZ_INTEGRA
 | Variable | Default | Type | Purpose |
 | ---------- | --------- | ------ | --------- |
 | `KASEKI_MODEL` | `dynamic/kaseki-agent` | string | Model identifier. Gateway production deployments should use the default `dynamic/kaseki-agent` unless a specific gateway model is intentionally configured. |
-| `KASEKI_PROVIDER_FALLBACK` | deprecated | string | Deprecated. Gateway runs never switch providers after gateway retries are exhausted. |
-| `KASEKI_PROVIDER_FALLBACK_MODEL` | deprecated | string | Deprecated. OpenRouter is not a coding-inference provider. |
 
 **Common Model Values:**
 
@@ -438,6 +441,10 @@ The external Soyuz adapter is opt-in. See [Soyuz host integration](SOYUZ_INTEGRA
 - `gpt-4-turbo` — OpenAI GPT-4 Turbo (if using OpenAI gateway)
 - `claude-3-opus-20240229` — Anthropic Claude 3 Opus (if using Anthropic gateway)
 - Gateway-specific IDs — Check your gateway's model list for available options; for current Cloudflare/gateway production behavior, prefer `dynamic/kaseki-agent`
+
+### Retired provider fallback settings
+
+`KASEKI_PROVIDER_FALLBACK` and `KASEKI_PROVIDER_FALLBACK_MODEL` are ignored. Coding runs use the configured gateway and do not switch to another provider after retries. Remove these names from deployment files; they do not configure fallback behavior.
 
 ### Multi-Phase Model Overrides
 
