@@ -17,6 +17,7 @@ import { PreflightCheck, PreflightResponse } from './kaseki-api-types';
 import { KasekiApiConfig } from './kaseki-api-config';
 import { execDockerCommand } from './lib/subprocess-helpers';
 import { readFirstLine, commandOutput } from './utils/file-helpers';
+import { StorageCapacityManager } from './storage-capacity';
 
 /**
  * Imported check functions from health checks module.
@@ -102,6 +103,41 @@ function collectEnvironmentChecks(
   checks.push(checkDeletedBindMounts([config.resultsDir, templateDir, checkoutDir, secretsDir]));
   checks.push(checkWritableDirectory('results-dir', config.resultsDir,
     'Create the results directory and make it writable by the API container user. If /api/v1/preflight reports a deleted bind mount, recreate the API container.'));
+  checks.push(checkStorageCapacity(config));
+}
+
+function checkStorageCapacity(config: KasekiApiConfig): PreflightCheck {
+  const status = new StorageCapacityManager(config).getStatus();
+  if (status.state === 'unknown') {
+    return {
+      name: 'storage-capacity',
+      ok: false,
+      detail: 'Free storage could not be measured for the persistent Kaseki storage paths.',
+      remediation: 'Check that /agents and the worker cache mount are present and readable from the API container.',
+    };
+  }
+  const availableGiB = (status.availableBytes! / 1024 ** 3).toFixed(2);
+  if (status.state === 'blocked') {
+    return {
+      name: 'storage-capacity',
+      ok: false,
+      detail: `Only ${availableGiB} GiB is free; new runs are blocked below ${(status.minimumBytes / 1024 ** 3).toFixed(1)} GiB.`,
+      remediation: 'Run `kaseki-agent cleanup --dry-run`, then `kaseki-agent cleanup --force` to apply the configured retention policy. Remove unrelated host files if space is still low.',
+    };
+  }
+  if (status.state === 'warning') {
+    return {
+      name: 'storage-capacity',
+      ok: false,
+      detail: `Only ${availableGiB} GiB is free; automatic retention cleanup runs before new submissions below ${(status.warningBytes / 1024 ** 3).toFixed(1)} GiB.`,
+      remediation: 'Review run retention with `kaseki-agent cleanup --dry-run`; automatic cleanup preserves retained results and the dependency cache.',
+    };
+  }
+  return {
+    name: 'storage-capacity',
+    ok: true,
+    detail: `${availableGiB} GiB is free across persistent Kaseki storage paths.`,
+  };
 }
 
 function collectCredentialChecks(checks: PreflightCheck[]): void {

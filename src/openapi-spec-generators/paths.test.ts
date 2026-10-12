@@ -42,11 +42,11 @@ describe('OpenAPI Path Builders', () => {
     contract('/api/v1/gateway-test', 'get', 'testGateway', true, ['200', '400', '401', '429', '503'], 'Gateway Diagnostics'),
     contract('/api/v1/github-issues', 'post', 'listGitHubIssues', true, ['200', '400', '401', '404', '429'], 'GitHub Issues'),
     contract('/api/v1/validate', 'post', 'validateTask', true, ['200', '400', '401'], 'Service Info'),
-    contract('/api/v1/runs', 'post', 'triggerRun', true, ['200', '202', '400', '401', '422'], 'Run Management'),
+    contract('/api/v1/runs', 'post', 'triggerRun', true, ['200', '202', '400', '401', '422', '503', '507'], 'Run Management'),
     contract('/api/v1/runs', 'get', 'listRuns', true, ['200', '400', '401'], 'Run Management'),
     contract('/api/v1/runs/{id}', 'get', 'getRun', true, ['200', '401', '404'], 'Run Management'),
     contract('/api/v1/runs/{id}/status', 'get', 'getRunStatus', true, ['200', '401', '404'], 'Run Management'),
-    contract('/api/v1/runs/{id}/retry', 'post', 'retryRun', true, ['200', '202', '400', '401', '404', '409', '422'], 'Run Management'),
+    contract('/api/v1/runs/{id}/retry', 'post', 'retryRun', true, ['200', '202', '400', '401', '404', '409', '422', '503', '507'], 'Run Management'),
     contract('/api/v1/runs/{id}/cancel', 'post', 'cancelRun', true, ['200', '401', '404'], 'Run Management'),
     contract('/api/v1/runs/{id}/events', 'get', 'getRunEvents', true, ['200', '401', '404'], 'Run Logs & Progress'),
     contract('/api/v1/runs/{id}/events/stream', 'get', 'streamRunEvents', true, ['200', '401', '404'], 'Run Logs & Progress'),
@@ -452,9 +452,9 @@ describe('OpenAPI Path Builders', () => {
         '/api/v1/metrics': { get: ['401'] },
         '/api/v1/preflight': { get: ['401'] },
         '/api/v1/validate': { post: ['400', '401'] },
-        '/api/v1/runs': { get: ['400', '401'], post: ['400', '401'] },
+        '/api/v1/runs': { get: ['400', '401'], post: ['400', '401', '503', '507'] },
         '/api/v1/runs/{id}/status': { get: ['401', '404'] },
-        '/api/v1/runs/{id}/retry': { post: ['400', '401', '404', '409'] },
+        '/api/v1/runs/{id}/retry': { post: ['400', '401', '404', '409', '503', '507'] },
         '/api/v1/runs/{id}/cancel': { post: ['401', '404'] },
         '/api/v1/runs/{id}/logs/{logtype}': { get: ['400', '401', '404', '500'] },
         '/api/v1/runs/{id}/artifacts': { get: ['401', '404'] },
@@ -522,7 +522,7 @@ describe('OpenAPI Path Builders', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, emptyResponseSchema);
       const runsPath = paths['/api/v1/runs'] as Record<string, any>;
 
-      expect(Object.keys(runsPath.post.responses).sort()).toEqual(['200', '202', '400', '401', '422']);
+      expect(Object.keys(runsPath.post.responses).sort()).toEqual(['200', '202', '400', '401', '422', '503', '507']);
       ['200', '202'].forEach((status) => {
         expect(runsPath.post.responses[status].content).toEqual({
           'application/json': {

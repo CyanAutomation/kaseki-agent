@@ -43,6 +43,7 @@ import { getPackageVersion } from './openapi-spec-generators/components';
 import { evaluateTaskAdmission, TASK_ADMISSION_EXIT_CODE, type TaskAdmissionEvaluator } from './task-admission';
 import { ApiAccessController } from './api-access-control';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
+import { getStorageCapacityError, storageErrorFields } from './storage-capacity';
 
 function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
   if (!remoteAddress) {
@@ -156,6 +157,16 @@ export function createApiRouter(
   router.use((error: unknown, req: Request, res: Response, next: NextFunction) => {
     if (res.headersSent) return next(error);
     logger.error('Unhandled API route error', { path: req.path, error: error instanceof Error ? error.message : String(error) });
+    const storageError = getStorageCapacityError(error);
+    if (storageError) {
+      return sendErrorResponse(
+        res,
+        storageError.statusCode,
+        storageError.statusCode === 507 ? 'Insufficient Storage' : 'Service Unavailable',
+        storageError.message,
+        storageErrorFields(storageError),
+      );
+    }
     return sendErrorResponse(res, 500, 'Internal Server Error', 'An unexpected error occurred');
   });
 
@@ -767,6 +778,25 @@ function registerRunSubmissionRoute(
       }
       res.status(202).json(submissionResult.response); // 202 Accepted
     } catch (err: unknown) {
+      const storageError = getStorageCapacityError(err);
+      if (storageError) {
+        metricsRegistry.incAdmissionRejection('storage-capacity');
+        logger.event('api_storage_admission_rejected', {
+          path: '/runs',
+          code: storageError.code,
+          availableBytes: storageError.availableBytes,
+          minimumBytes: storageError.minimumBytes,
+          cleanupAttempted: storageError.cleanupAttempted,
+          cleanupFreedBytes: storageError.cleanupFreedBytes,
+        });
+        return sendErrorResponse(
+          res,
+          storageError.statusCode,
+          storageError.statusCode === 507 ? 'Insufficient Storage' : 'Service Unavailable',
+          storageError.message,
+          storageErrorFields(storageError),
+        );
+      }
       if (err instanceof Error && 'errors' in err) {
         // Zod validation error
         const details = (err as any).errors
@@ -843,13 +873,18 @@ function registerRunRetryRoute(
     const result = await idempotencyStore.runWithIdempotencyLock(async () => {
       const existing = await handleIdempotency(idempotencyKey, fingerprint);
       if (existing.state !== 'fresh') return existing;
-      const job = admission.routingHints
-        ? await scheduler.submitJob(retryRequest, admission.routingHints)
-        : await scheduler.submitJob(retryRequest);
-      job.idempotencyKey = idempotencyKey;
-      const response = buildRunResponse(job);
-      await idempotencyStore.storeResponse(idempotencyKey, response, fingerprint);
-      return { state: 'submitted' as const, response };
+      try {
+        const job = admission.routingHints
+          ? await scheduler.submitJob(retryRequest, admission.routingHints)
+          : await scheduler.submitJob(retryRequest);
+        job.idempotencyKey = idempotencyKey;
+        const response = buildRunResponse(job);
+        await idempotencyStore.storeResponse(idempotencyKey, response, fingerprint);
+        return { state: 'submitted' as const, response };
+      } catch (error) {
+        await idempotencyStore.releasePendingClaim(idempotencyKey, fingerprint);
+        throw error;
+      }
     });
     if (result.state === 'pending') {
       return sendErrorResponse(res, 409, 'Conflict', 'Retry with this idempotency key is already being processed');

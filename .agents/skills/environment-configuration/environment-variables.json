@@ -24,6 +24,24 @@
     "acceptedValues": "Non-negative integer, up to 86400"
   },
   {
+    "name": "KASEKI_RETENTION_RUNS",
+    "description": "Number of terminal run result directories retained during storage cleanup",
+    "default": "5",
+    "acceptedValues": "Integer from 0 to 100"
+  },
+  {
+    "name": "KASEKI_STORAGE_WARN_FREE_BYTES",
+    "description": "Free-space threshold that triggers automatic retention and cache cleanup",
+    "default": "5368709120",
+    "acceptedValues": "Positive integer bytes, greater than or equal to the minimum threshold"
+  },
+  {
+    "name": "KASEKI_STORAGE_MIN_FREE_BYTES",
+    "description": "Minimum free space required to accept a new run after cleanup",
+    "default": "2147483648",
+    "acceptedValues": "Positive integer bytes, less than or equal to the warning threshold"
+  },
+  {
     "name": "KASEKI_CAVEMAN",
     "description": "Legacy switch for terse communication guidance",
     "default": "1",

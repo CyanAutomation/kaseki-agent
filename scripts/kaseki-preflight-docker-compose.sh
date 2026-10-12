@@ -34,12 +34,12 @@ log_pass() {
 
 log_warning() {
   echo -e "${YELLOW}⚠ $1${NC}"
-  ((WARNINGS++))
+  WARNINGS=$((WARNINGS + 1))
 }
 
 log_error() {
   echo -e "${RED}✗ $1${NC}"
-  ((ERRORS++))
+  ERRORS=$((ERRORS + 1))
 }
 
 log_info() {
@@ -225,22 +225,30 @@ check_secrets_directory() {
 check_disk_space() {
   log_header "Checking disk space..."
   
-  local available_mb; available_mb=$(df /agents 2>/dev/null | tail -1 | awk '{print $4}')
+  local available_kib; available_kib=$(df -Pk /agents 2>/dev/null | tail -1 | awk '{print $4}')
   
-  if [[ -z "$available_mb" ]]; then
+  if [[ -z "$available_kib" ]]; then
     log_warning "Could not determine disk space for /agents"
     return 0  # Non-blocking
   fi
   
-  local required_mb=5000  # 5 GB minimum
-  
-  if (( available_mb < required_mb )); then
-    log_warning "Low disk space: $(( available_mb / 1024 )) GB available, recommend at least 5 GB"
-    log_info "Clean up old artifacts: rm -rf /agents/kaseki-results/kaseki-* /agents/kaseki-runs/kaseki-*"
+  local warning_kib=$((5 * 1024 * 1024))
+  local minimum_kib=$((2 * 1024 * 1024))
+
+  if (( available_kib < minimum_kib )); then
+    log_error "Insufficient disk space: $(( available_kib / 1024 / 1024 )) GiB available; new runs require at least 2 GiB after cleanup"
+    log_info "Review the retention plan with: kaseki-agent cleanup --dry-run"
+    log_info "Apply configured retention with: kaseki-agent cleanup --force"
+    log_info "Remove unrelated files or increase the host volume if space remains below 2 GiB"
+    return 1
+  elif (( available_kib < warning_kib )); then
+    log_warning "Low disk space: $(( available_kib / 1024 / 1024 )) GiB available, recommend at least 5 GiB"
+    log_info "Review and apply configured run retention: kaseki-agent cleanup --dry-run"
+    log_info "Apply configured retention with: kaseki-agent cleanup --force"
     return 0  # Non-blocking
   fi
   
-  log_pass "Disk space OK: $(( available_mb / 1024 )) GB available"
+  log_pass "Disk space OK: $(( available_kib / 1024 / 1024 )) GiB available"
   return 0
 }
 

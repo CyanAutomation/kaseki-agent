@@ -53,8 +53,18 @@ export interface CleanupOptions {
   activeRunsDir?: string;
   /** Protect a run whose log is open before its result directory is created. */
   protectedRunNames?: ReadonlySet<string>;
+  /** Preserve every cache entry; used by automatic storage recovery to protect dependency caches. */
+  preserveCache?: boolean;
   afterPlanning?: () => void | Promise<void>;
 }
+
+export interface AuxiliaryCleanupResult {
+  deletedCount: number;
+  freedBytes: number;
+}
+
+const STALE_STAGING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const STAGING_DIRECTORY_PATTERN = /^\.staging-(?:run|result)-(kaseki-\d+)-[A-Za-z0-9_-]+$/;
 
 const JOBS_INDEX_NAME = '.kaseki-api-jobs.json';
 
@@ -247,7 +257,7 @@ function listRunLogs(logDir: string): RunLogInfo[] {
 }
 
 /** List active direct-run workspaces, treating an unreadable directory as unsafe. */
-function listActiveRunNamesFromDirectory(runsDir?: string): Set<string> {
+export function listActiveRunNamesFromDirectory(runsDir?: string): Set<string> {
   const activeRunNames = new Set<string>();
   if (!runsDir) return activeRunNames;
 
@@ -265,6 +275,26 @@ function listActiveRunNamesFromDirectory(runsDir?: string): Set<string> {
     }
   }
   return activeRunNames;
+}
+
+/** Treat any direct run workspace or still-present staging directory as active. */
+export function hasActiveRunWorkspaceOrStaging(resultsDir: string, runsDir?: string): boolean {
+  if (listActiveRunNamesFromDirectory(runsDir).size > 0) return true;
+  for (const directory of [resultsDir, runsDir].filter((value): value is string => Boolean(value))) {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      throw error;
+    }
+    for (const entry of entries) {
+      if (!STAGING_DIRECTORY_PATTERN.test(entry.name) || !entry.isDirectory()) continue;
+      const stats = fs.lstatSync(path.join(directory, entry.name));
+      if (stats.isDirectory() && !stats.isSymbolicLink()) return true;
+    }
+  }
+  return false;
 }
 
 /** Remove stale run logs without following symlinks or touching unrelated log files. */
@@ -530,11 +560,13 @@ export async function cleanupOldRuns(
       result.deletedLogCount = logCleanup.deletedCount;
       result.freedBytes += logCleanup.freedBytes;
 
-      result.cachedEntriesRemoved = cleanupCacheDir(
-        cacheDir,
-        retainedRunNames,
-        dryRun,
-      );
+      if (!options.preserveCache) {
+        result.cachedEntriesRemoved = cleanupCacheDir(
+          cacheDir,
+          retainedRunNames,
+          dryRun,
+        );
+      }
     });
   } catch (error) {
     if (error instanceof JobIndexUnavailableError) {
@@ -555,6 +587,105 @@ export async function cleanupOldRuns(
   }
 
   return result;
+}
+
+/**
+ * Remove only old, exact-name staging directories while holding the durable
+ * scheduler index lock. A run still marked queued/running is always protected.
+ */
+export async function cleanupStaleStagingDirectories(
+  resultsDir: string,
+  runsDir: string,
+  options: { olderThanMs?: number; now?: number } = {},
+): Promise<AuxiliaryCleanupResult> {
+  const result: AuxiliaryCleanupResult = { deletedCount: 0, freedBytes: 0 };
+  const cutoff = (options.now ?? Date.now()) - (options.olderThanMs ?? STALE_STAGING_MAX_AGE_MS);
+  const persistence = new JobPersistenceManager({ resultsDir });
+
+  await persistence.withLockedJobsIndex((jobs) => {
+    const activeRunNames = activeNamesFromJobs(jobs);
+    cleanupStagingDirectory(resultsDir, activeRunNames, cutoff, result);
+    cleanupStagingDirectory(runsDir, activeRunNames, cutoff, result);
+  });
+
+  return result;
+}
+
+/**
+ * Prune npm's mutable content and npx caches, leaving npm logs and all other
+ * cache children (including Kaseki dependency-cache data) untouched.
+ */
+export function pruneNpmCache(npmCacheDir: string): AuxiliaryCleanupResult {
+  const result: AuxiliaryCleanupResult = { deletedCount: 0, freedBytes: 0 };
+  try {
+    const root = fs.lstatSync(npmCacheDir);
+    if (!root.isDirectory() || root.isSymbolicLink()) return result;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return result;
+    throw error;
+  }
+  for (const child of ['_cacache', '_npx']) {
+    const target = path.join(npmCacheDir, child);
+    try {
+      const stats = fs.lstatSync(target);
+      if (!stats.isDirectory() || stats.isSymbolicLink()) continue;
+      result.freedBytes += getDirectorySizeWithoutFollowingLinks(target);
+      fs.rmSync(target, { recursive: true, force: false });
+      result.deletedCount++;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.debug(`Error pruning npm cache ${target}:`, error);
+      }
+    }
+  }
+  return result;
+}
+
+function cleanupStagingDirectory(
+  directory: string,
+  activeRunNames: ReadonlySet<string>,
+  cutoff: number,
+  result: AuxiliaryCleanupResult,
+): void {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(directory, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw error;
+  }
+
+  for (const entry of entries) {
+    const match = STAGING_DIRECTORY_PATTERN.exec(entry.name);
+    if (!match || activeRunNames.has(match[1]) || !entry.isDirectory()) continue;
+    const target = path.join(directory, entry.name);
+    try {
+      const stats = fs.lstatSync(target);
+      if (!stats.isDirectory() || stats.isSymbolicLink() || stats.mtimeMs > cutoff) continue;
+      const bytes = getDirectorySizeWithoutFollowingLinks(target);
+      fs.rmSync(target, { recursive: true, force: false });
+      result.deletedCount++;
+      result.freedBytes += bytes;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.debug(`Error pruning stale staging directory ${target}:`, error);
+      }
+    }
+  }
+}
+
+function getDirectorySizeWithoutFollowingLinks(directory: string): number {
+  let total = 0;
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const target = path.join(directory, entry.name);
+    const stats = fs.lstatSync(target);
+    if (stats.isDirectory() && !stats.isSymbolicLink()) {
+      total += getDirectorySizeWithoutFollowingLinks(target);
+    } else if (stats.isFile() || stats.isSymbolicLink()) {
+      total += stats.size;
+    }
+  }
+  return total;
 }
 
 function activeNamesFromJobs(jobs: readonly PersistedJob[]): Set<string> {
