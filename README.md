@@ -54,11 +54,11 @@ KASEKI_API_URL=http://localhost:8080/api/v1 \
 The CLI prints the run ID. Use it to monitor the task and retrieve its report:
 
 ```bash
-KASEKI_API_URL=http://localhost:8080/api/v1 kaseki-agent status kaseki-1 --follow
+KASEKI_API_URL=http://localhost:8080/api/v1 kaseki-agent status kaseki-1
 KASEKI_API_URL=http://localhost:8080/api/v1 kaseki-agent report kaseki-1
 ```
 
-Replace `kaseki-1` with the ID returned by `run`. For other API access patterns, secret locations, or local development, see the [npm setup guide](docs/NPM_SETUP.md) and [API reference](docs/API.md).
+Replace `kaseki-1` with the ID returned by `run`. `status` prints one snapshot; run it again to refresh while a task is active. For other API access patterns, secret locations, or local development, see the [npm setup guide](docs/NPM_SETUP.md) and [API reference](docs/API.md).
 
 ## Basic Usage
 
@@ -117,8 +117,6 @@ See [docs/ENV_VARS.md](docs/ENV_VARS.md) for complete configuration reference.
 | `GIT_REF` | `main` | Branch/tag/commit (single-run) |
 | `TASK_PROMPT` | *(code fix task)* | Agent instruction (single-run) |
 
-See [docs/ENV_VARS.md](docs/ENV_VARS.md) for the complete reference.
-
 #### Quality Gates and Exit Codes
 
 Quality gates run after the agent completes, before reporting success:
@@ -170,6 +168,7 @@ curl http://localhost:8080/health
 curl -H "Authorization: Bearer sk-kaseki-..." http://localhost:8080/api/v1/preflight
 
 # Submit a task run via the API
+# Generate a fresh UUID v4 for each new request; reuse it only for retries.
 curl -X POST http://localhost:8080/api/v1/runs \
   -H "Authorization: Bearer sk-kaseki-..." \
   -H "Idempotency-Key: 123e4567-e89b-42d3-a456-426614174000" \
@@ -177,12 +176,25 @@ curl -X POST http://localhost:8080/api/v1/runs \
   -d '{
     "repoUrl": "https://github.com/org/repo",
     "ref": "main",
-    "taskPrompt": "Fix the failing test"
+    "taskPrompt": "Fix the failing test",
+    "publishMode": "none"
   }'
 
 # Access the Task Console in browser
 open http://localhost:8080/ui
 ```
+
+The submit endpoint responds with HTTP `202 Accepted` and a run object. A successful response looks like this:
+
+```json
+{
+  "id": "kaseki-123",
+  "status": "queued",
+  "createdAt": "2026-10-12T12:00:00.000Z"
+}
+```
+
+Use the returned `id` with the status and report commands above. This example sets `publishMode` to `none`, so it does not require GitHub App credentials. See [authentication setup](docs/AUTH_SETUP.md) to configure credentials for pull-request publishing.
 
 **Tabs:**
 
@@ -194,11 +206,7 @@ The local API operation index is available at `/docs`; the full OpenAPI specific
 
 ### Programmatic Usage
 
-- **Live monitoring**: Query running instances
-- **Error detection**: Identify failures and anomalies
-- **Post-run analysis**: Detailed result summaries
-- **Log streaming**: Real-time log consumption
-- **Automatic review requests**: PRs on personal repositories automatically request the owner as a reviewer
+For integrations, query `GET /api/v1/runs/{id}/status` for the current state, `GET /api/v1/runs/{id}/events` for structured progress, or `GET /api/v1/runs/{id}/events/stream` for live updates. The [API reference](docs/API.md) documents authentication, response schemas, analysis, artifacts, and webhook behavior.
 
 See [docs/API.md](docs/API.md) and [docs/CLI.md](docs/CLI.md) for complete API and CLI documentation.
 
@@ -265,8 +273,7 @@ For an optional live Cloudflare gateway probe, configure `LLM_GATEWAY_URL` and `
 ### Community
 
 - **Issues**: [GitHub Issues](https://github.com/CyanAutomation/kaseki-agent/issues)
-- **Discussions**: GitHub Discussions
-- **Updates**: Follow for releases and announcements
+- **Releases**: [GitHub Releases](https://github.com/CyanAutomation/kaseki-agent/releases)
 
 ---
 
