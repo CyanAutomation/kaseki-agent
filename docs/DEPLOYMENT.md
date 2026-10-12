@@ -102,7 +102,7 @@ subdirectories:
   default)
 
 - `/agents/kaseki-cache/` — Optional dependency cache (npm packages)
-  - Created by worker containers if `KASEKI_CACHE_ENABLED=1`
+  - Created by worker containers under the configured dependency cache path; there is no cache-enabled runtime switch
   - Speeds up repeated runs by sharing npm dependencies across
   instances
 

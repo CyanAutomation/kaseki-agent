@@ -1,7 +1,8 @@
 /**
  * Centralized logging utility with log level filtering.
  *
- * Emits structured JSON events to stdout, respecting LOG_LEVEL env var.
+ * Emits structured JSON events to stdout, respecting KASEKI_API_LOG_LEVEL and
+ * the generic LOG_LEVEL compatibility fallback.
  * All timestamps are ISO 8601 format.
  *
  * Log levels: debug < info < warn < error
@@ -24,7 +25,7 @@ const LOG_LEVEL_ORDER: Record<LogLevel, number> = {
  * Get the log level from environment variable with default.
  */
 function getLogLevel(): LogLevel {
-  const envLevel = process.env.LOG_LEVEL || process.env.KASEKI_API_LOG_LEVEL || 'info';
+  const envLevel = process.env.KASEKI_API_LOG_LEVEL || process.env.LOG_LEVEL || 'info';
   const normalized = envLevel.toLowerCase() as LogLevel;
 
   if (normalized in LOG_LEVEL_ORDER) {

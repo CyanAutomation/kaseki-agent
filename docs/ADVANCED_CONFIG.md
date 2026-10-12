@@ -813,24 +813,6 @@ Check `/results/pre-validation-ts-check.log` for TypeScript compiler output. Com
 
 Variables for dependency caching and performance optimization.
 
-### `KASEKI_CACHE_ENABLED`
-
-- **Type**: `boolean`
-- **Default**: `true`
-- **Paths**: Single-run, Local API, Production API
-- **Description**: Enable 4-layer npm dependency cache
-- **Benefits**: Significantly faster dependency installation (especially across multiple runs)
-- **Layers**:
-  1. Workspace-level stamp check (if node_modules exists with matching lock file)
-  2. Workspace cache (per-project dependency cache)
-  3. Image seed cache (bundled in Docker image)
-  4. Fresh `npm install` (fallback)
-- **Example**:
-
-  ```bash
-  KASEKI_CACHE_ENABLED=false  # Disable caching for isolated/fresh installs
-  ```
-
 ### `KASEKI_DEPENDENCY_CACHE_DIR`
 
 - **Type**: `string` (directory path)
@@ -1104,19 +1086,17 @@ Variables for API service configuration and Docker integration.
 ### `KASEKI_API_KEYS`
 
 - **Type**: `string` (comma or newline-separated tokens)
-- **Default**: Auto-generated during setup
-- **Required**: Yes (for Local API, Production API)
+- **Default**: Read from `/run/secrets/kaseki/kaseki_api_keys` or `~/.kaseki/secrets/kaseki_api_keys` when present; empty is allowed only for trusted loopback development
+- **Required**: Required before exposing the API beyond loopback
 - **Paths**: Local API, Production API only
-- **Description**: Bearer tokens for API authentication
+- **Description**: Bearer tokens accepted by API authentication. Prefer the mounted host-secret file over inline `KASEKI_API_KEYS`.
 - **Security**: Keep secure; treat like passwords
 - **Format**: Multiple keys separated by commas or newlines
 - **Example**:
 
   ```bash
-  KASEKI_API_KEYS=sk-key-1,sk-key-2
-  # or
-  KASEKI_API_KEYS=sk-key-1
-  KASEKI_API_KEYS=sk-key-2
+  # Put one key per line in the mounted host secret file `kaseki_api_keys`.
+  # Inline KASEKI_API_KEYS is supported for local development only.
   ```
 
 ### `KASEKI_API_PORT`
@@ -1131,18 +1111,20 @@ Variables for API service configuration and Docker integration.
   KASEKI_API_PORT=3000
   ```
 
-### `KASEKI_API_BASE_URL`
+### `KASEKI_API_URL`
 
 - **Type**: `string` (URL)
-- **Default**: `http://localhost:8080`
+- **Default**: `http://localhost:8080/api/v1`
 - **Paths**: Local API, Production API only
-- **Description**: Base URL for external access to API
+- **Description**: Canonical CLI client URL for the API
 - **Use case**: When API is behind a reverse proxy or on a different host
 - **Example**:
 
   ```bash
-  KASEKI_API_BASE_URL=https://kaseki.example.com
+  KASEKI_API_URL=https://kaseki.example.com/api/v1
   ```
+
+`KASEKI_API_BASE_URL` is a deprecated alias. The canonical `KASEKI_API_URL` wins when both are set; the alias is used only when the canonical value is absent and then emits a value-free warning.
 
 ### `KASEKI_API_MAX_CONCURRENT_RUNS`
 
@@ -1397,10 +1379,10 @@ set +a
 
 ### Boolean variables
 
-- Examples: `KASEKI_CACHE_ENABLED`, `KASEKI_DRY_RUN`
+- Examples: `KASEKI_DRY_RUN`, `KASEKI_STARTUP_CHECK_AUTO_REMEDIATE`
 - Accepted values: `true`, `false`, `1`, `0`
 - In `.env` files: Use `true`/`false`
-- Example: `KASEKI_CACHE_ENABLED=true`
+- Example: `KASEKI_DRY_RUN=true`
 
 ### Number variables
 

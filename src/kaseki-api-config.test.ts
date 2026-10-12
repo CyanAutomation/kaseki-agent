@@ -106,6 +106,18 @@ describe('kaseki-api-config load configuration', () => {
     expect(config.dependencyCacheMaxAgeDays).toBe(30); // default
   });
 
+  test('prefers KASEKI_API_LOG_LEVEL and falls back to LOG_LEVEL', () => {
+    process.env.KASEKI_API_KEYS = 'test-key';
+    process.env.KASEKI_RESULTS_DIR = testDir;
+    process.env.LOG_LEVEL = 'debug';
+    process.env.KASEKI_API_LOG_LEVEL = 'error';
+
+    expect(loadConfig().logLevel).toBe('error');
+
+    delete process.env.KASEKI_API_LOG_LEVEL;
+    expect(loadConfig().logLevel).toBe('debug');
+  });
+
   test('loadConfig allows empty API keys for trusted unauthenticated local mode', () => {
     const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue(null);

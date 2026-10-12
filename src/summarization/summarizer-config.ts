@@ -111,17 +111,33 @@ const DEFAULT_CONFIG: SummarizerConfig = {
  */
 function getConfigFromEnv(): Partial<SummarizerConfig> {
   return {
-    minSizeBytes: process.env.KASEKI_SUMMARY_MIN_BYTES ? parseInt(process.env.KASEKI_SUMMARY_MIN_BYTES, 10) : undefined,
-    maxSizeBytes: process.env.KASEKI_SUMMARY_MAX_BYTES ? parseInt(process.env.KASEKI_SUMMARY_MAX_BYTES, 10) : undefined,
-    parseTimeoutMs: process.env.KASEKI_SUMMARY_PARSE_TIMEOUT ? parseInt(process.env.KASEKI_SUMMARY_PARSE_TIMEOUT, 10) : undefined,
-    llmFallbackTimeoutMs: process.env.KASEKI_SUMMARY_LLM_TIMEOUT ? parseInt(process.env.KASEKI_SUMMARY_LLM_TIMEOUT, 10) : undefined,
+    minSizeBytes: integerOverride('KASEKI_SUMMARY_MIN_BYTES', 0),
+    maxSizeBytes: integerOverride('KASEKI_SUMMARY_MAX_BYTES', 1),
+    parseTimeoutMs: integerOverride('KASEKI_SUMMARY_PARSE_TIMEOUT', 1),
+    llmFallbackTimeoutMs: integerOverride('KASEKI_SUMMARY_LLM_TIMEOUT', 1),
     enableLLMFallback: process.env.KASEKI_SUMMARY_LLM_FALLBACK !== 'false',
     enableCache: process.env.KASEKI_SUMMARY_CACHE !== 'false',
     cacheDir: process.env.KASEKI_SUMMARY_CACHE_DIR || undefined,
-    cacheTTLMs: process.env.KASEKI_SUMMARY_CACHE_TTL_MS ? parseInt(process.env.KASEKI_SUMMARY_CACHE_TTL_MS, 10) : undefined,
-    cacheMaxEntries: process.env.KASEKI_SUMMARY_CACHE_MAX_ENTRIES ? parseInt(process.env.KASEKI_SUMMARY_CACHE_MAX_ENTRIES, 10) : undefined,
-    cacheMaxSizeBytes: process.env.KASEKI_SUMMARY_CACHE_MAX_SIZE_BYTES ? parseInt(process.env.KASEKI_SUMMARY_CACHE_MAX_SIZE_BYTES, 10) : undefined,
+    cacheTTLMs: integerOverride('KASEKI_SUMMARY_CACHE_TTL_MS', 0),
+    cacheMaxEntries: integerOverride('KASEKI_SUMMARY_CACHE_MAX_ENTRIES', 0),
+    cacheMaxSizeBytes: integerOverride('KASEKI_SUMMARY_CACHE_MAX_SIZE_BYTES', 0),
   };
+}
+
+function integerOverride(name: string, minimum: number): number | undefined {
+  const raw = process.env[name]?.trim();
+  if (raw === undefined || raw === '') return undefined;
+  if (!/^\d+$/.test(raw)) {
+    console.warn(`${name} must be a whole number >= ${minimum}; using the default.`);
+    return undefined;
+  }
+
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < minimum) {
+    console.warn(`${name} must be a whole number >= ${minimum}; using the default.`);
+    return undefined;
+  }
+  return value;
 }
 
 /**
@@ -133,5 +149,11 @@ export function getConfig(): SummarizerConfig {
   const definedOverrides = Object.fromEntries(
     Object.entries(envOverrides).filter(([, v]) => v !== undefined)
   ) as Partial<SummarizerConfig>;
-  return { ...DEFAULT_CONFIG, ...definedOverrides };
+  const config = { ...DEFAULT_CONFIG, ...definedOverrides };
+  if (config.minSizeBytes > config.maxSizeBytes) {
+    console.warn('KASEKI_SUMMARY_MIN_BYTES must not exceed KASEKI_SUMMARY_MAX_BYTES; using the default size range.');
+    config.minSizeBytes = DEFAULT_CONFIG.minSizeBytes;
+    config.maxSizeBytes = DEFAULT_CONFIG.maxSizeBytes;
+  }
+  return config;
 }
