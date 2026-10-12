@@ -4,6 +4,20 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.154.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.153.0...v1.154.0) (2026-10-12)
+
+
+### Bug Fixes
+
+* enforce API empty-diff policy per run ([e9bfd9b](https://github.com/CyanAutomation/kaseki-agent/commit/e9bfd9b816c6a0555fc75f182f3fb8379e31e785))
+
+
+### Features
+
+* guard run admission against low storage ([4d6be2f](https://github.com/CyanAutomation/kaseki-agent/commit/4d6be2f149d9e2fff971f1bcfcd1101cd1e8174b))
+* rationalize configuration behavior and docs ([58c264d](https://github.com/CyanAutomation/kaseki-agent/commit/58c264d79a1f303f6e498c11f399564421c7aadf))
+* upload Kaseki run artifacts to Soyuz ([9acbd2c](https://github.com/CyanAutomation/kaseki-agent/commit/9acbd2cd0f0638cca58aa4e6b2f0e6550581c731))
+
 # [1.153.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.152.0...v1.153.0) (2026-10-11)
 
 
