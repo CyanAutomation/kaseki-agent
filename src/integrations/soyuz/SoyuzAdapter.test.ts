@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import type { KasekiApiConfig } from '../../kaseki-api-config';
 import type { Job } from '../../kaseki-api-types';
 import type { SoyuzOutboxEntry } from '../../job-persistence-manager';
+import type { TaskAdmissionEvaluator } from '../../task-admission';
 import { SoyuzAdapter } from './SoyuzAdapter';
 import type { SoyuzAdapterConfig } from './config';
 
@@ -77,6 +78,36 @@ function createScheduler(workerId: string, maxConcurrent = 1) {
         status: 'queued',
         request: queuedRun.request,
         createdAt: new Date(),
+        correlationId,
+        requestId,
+        soyuz: {
+          externalRunId,
+          workerId: owner,
+          contractVersion: '1',
+          ...(claimCallbackId ? { claimCallbackId } : {}),
+          startedCallbackId: '44444444-4444-4444-8444-444444444444',
+          startAuthorized: false,
+          metadataUpdatedAt: new Date().toISOString(),
+        },
+      };
+      jobs.push(job);
+      return job;
+    }),
+    recordSoyuzAdmissionFailure: jest.fn(async (
+      _request: unknown,
+      externalRunId: string,
+      owner: string,
+      correlationId: string,
+      requestId: string,
+      claimCallbackId?: string,
+    ) => {
+      const job: Job = {
+        id: `kaseki-${jobs.length + 1}`,
+        status: 'failed',
+        failureClass: 'admission_rejected',
+        request: queuedRun.request,
+        createdAt: new Date(),
+        completedAt: new Date(),
         correlationId,
         requestId,
         soyuz: {
@@ -264,12 +295,22 @@ function createFetch(state: ReturnType<typeof runState>, options: {
   return { fetchImpl, calls };
 }
 
-function makeAdapter(workerId: string, scheduler: object, fetchImpl: typeof fetch): SoyuzAdapter {
+function makeAdapter(
+  workerId: string,
+  scheduler: object,
+  fetchImpl: typeof fetch,
+  taskAdmissionEvaluator: TaskAdmissionEvaluator = async () => ({
+    allowed: true,
+    status: 'allowed',
+    reason: 'safe',
+    responseTime: 1,
+  }),
+): SoyuzAdapter {
   const config = adapterConfig(workerId);
   return new SoyuzAdapter(
     { soyuz: config } as KasekiApiConfig,
     scheduler as never,
-    async () => ({ allowed: true, status: 'allowed', reason: 'safe', responseTime: 1 }),
+    taskAdmissionEvaluator,
     config,
     fetchImpl,
   );
@@ -366,6 +407,59 @@ describe('Soyuz adapter handoff', () => {
     expect(scheduler.authorizeSoyuzStart).toHaveBeenCalledTimes(1);
     expect(calls.filter((call) => call.url.endsWith('/claim'))).toHaveLength(1);
     expect(calls.find((call) => call.url.endsWith('/started'))?.body?.claimCallbackId).toBe(state.claimCallbackId);
+  });
+
+  test('reconciles a queued local run by claiming it before authorizing its start', async () => {
+    const state = runState();
+    const { fetchImpl, calls } = createFetch(state);
+    const { scheduler, jobs } = createScheduler('host-a', 0);
+    jobs.push({
+      id: 'kaseki-recovery',
+      status: 'queued',
+      request: queuedRun.request,
+      createdAt: new Date(),
+      correlationId: CORRELATION_ID,
+      requestId: REQUEST_ID,
+      soyuz: {
+        externalRunId: RUN_ID,
+        workerId: 'host-a',
+        contractVersion: '1',
+        startedCallbackId: '44444444-4444-4444-8444-444444444444',
+        startAuthorized: false,
+        metadataUpdatedAt: new Date().toISOString(),
+      },
+    });
+
+    await makeAdapter('host-a', scheduler, fetchImpl).runOnce();
+
+    expect(state.status).toBe('running');
+    expect(calls.filter((call) => call.url.endsWith('/claim'))).toHaveLength(1);
+    expect(calls.filter((call) => call.url.endsWith('/started'))).toHaveLength(1);
+    expect(scheduler.authorizeSoyuzStart).toHaveBeenCalledWith('kaseki-recovery');
+    expect(calls.some((call) => call.url.endsWith('/messages/pull'))).toBe(false);
+  });
+
+  test('claims and durably reports work rejected by Kaseki admission without starting it', async () => {
+    const state = runState();
+    const { fetchImpl, calls } = createFetch(state);
+    const { scheduler, jobs, claimIntents } = createScheduler('host-a');
+    const rejectAdmission: TaskAdmissionEvaluator = async () => ({
+      allowed: false,
+      status: 'rejected',
+      reason: 'unsafe task',
+      responseTime: 1,
+    });
+
+    await makeAdapter('host-a', scheduler, fetchImpl, rejectAdmission).runOnce();
+
+    expect(state.status).toBe('claimed');
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].status).toBe('failed');
+    expect(scheduler.recordSoyuzAdmissionFailure).toHaveBeenCalledTimes(1);
+    expect(scheduler.authorizeSoyuzStart).not.toHaveBeenCalled();
+    expect(calls.some((call) => call.url.endsWith('/started'))).toBe(false);
+    expect(calls.some((call) => call.url.endsWith('/messages/ack'))).toBe(true);
+    expect(claimIntents).toHaveLength(0);
   });
 
   test('two simulated hosts cannot both claim and schedule one Soyuz run', async () => {

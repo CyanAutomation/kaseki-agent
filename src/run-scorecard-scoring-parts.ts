@@ -1,4 +1,4 @@
-import type { Evidence } from './run-scorecard-evidence';
+import type { Evidence } from './run-scorecard-evidence-types';
 import type { RunScorecard } from './types/run-scorecard';
 import { PHASES, DIMENSIONS, WEIGHTS } from './run-scorecard-phases';
 import { computeImplementationQualityScore } from './run-scorecard-scoring-efficiency';

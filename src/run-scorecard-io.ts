@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ArtifactSnapshot } from './run-scorecard-evidence';
+import type { ArtifactSnapshot } from './run-scorecard-evidence-types';
 
 const JSON_ARTIFACTS = [
   'metadata.json', 'timings-manifest.json', 'all-phase-summaries.json', 'performance-metrics.json',

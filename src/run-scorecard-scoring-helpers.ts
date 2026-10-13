@@ -3,7 +3,7 @@
  * Reduces cognitive complexity by extracting multi-level conditionals into named functions
  */
 
-import type { Evidence } from './run-scorecard-evidence';
+import type { Evidence } from './run-scorecard-evidence-types';
 
 /**
  * Determines the outcome status for a phase based on evidence.

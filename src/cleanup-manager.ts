@@ -7,9 +7,9 @@ import {
 } from './job-persistence-manager';
 
 /**
- * Result structure returned by cleanupOldRuns
+ * Result structure returned by cleanupOldRuns.
  */
-export interface CleanupResult {
+export interface CleanupOldRunsResult {
   deletedCount: number;
   deletedLogCount: number;
   freedBytes: number;
@@ -483,7 +483,7 @@ export function cleanupCacheDir(
  * @param cacheDir - Path to /agents/kaseki-cache directory
  * @param retentionCount - Number of recent runs to keep
  * @param dryRun - If true, report what would be deleted without actually deleting
- * @returns CleanupResult with deletion stats
+ * @returns CleanupOldRunsResult with deletion stats
  */
 export async function cleanupOldRuns(
   resultsDir: string,
@@ -491,8 +491,8 @@ export async function cleanupOldRuns(
   retentionCount: number,
   dryRun: boolean = false,
   options: CleanupOptions = {},
-): Promise<CleanupResult> {
-  const result: CleanupResult = {
+): Promise<CleanupOldRunsResult> {
+  const result: CleanupOldRunsResult = {
     deletedCount: 0,
     deletedLogCount: 0,
     freedBytes: 0,
