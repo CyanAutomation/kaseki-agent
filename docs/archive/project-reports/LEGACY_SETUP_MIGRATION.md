@@ -1,0 +1,49 @@
+# Kaseki Agent Setup Guide
+
+Issue: [cyanautomation/kaseki-agent#984](https://github.com/cyanautomation/kaseki-agent/issues/984)
+Migration reference. For full quick-start, see [docs/QUICK_START.md](../../QUICK_START.md).
+
+## Command Migrations
+
+| Old Command | New Command | Notes |
+|---|---|---|
+| `kaseki-agent setup` | `kaseki-agent init` | Unified wizard; `setup` removed |
+| `kaseki-report <dir>` | `docker run ... kaseki-report /results` | Built into container image |
+| `kaseki-cli <cmd>` | `./kaseki-cli.js <cmd>` | Node.js script; [CLI docs](../../CLI.md) |
+
+## Deprecated Commands
+Commands no longer supported:
+
+- `kaseki-agent quickstart` -- replaced by `kaseki-agent init`
+- `scripts/kaseki-setup.sh` -- removed; use `kaseki-agent init`
+- `scripts/kaseki-activate.sh` -- removed; template auto-initializes on API startup
+
+## Credentials and Configuration
+
+### Secret Storage
+Store credentials in `~/.kaseki/secrets.json` with permissions `0600`. Point the selected provider's `*_API_KEY_FILE` variable to it; see [credential variables](../../ENV_VARS.md#api-keys--credentials).
+
+### Primary Provider: LLM Gateway
+
+Kaseki defaults to an LLM Gateway. Select it explicitly with:
+
+```bash
+# LLM Gateway (primary)
+export KASEKI_PROVIDER=gateway
+export LLM_GATEWAY_URL=https://your-gateway/v1
+export LLM_GATEWAY_API_KEY_FILE=~/.kaseki/secrets.json
+# Alternatively, select OpenRouter as the primary provider (not as a fallback):
+# export KASEKI_PROVIDER=openrouter
+# export OPENROUTER_API_KEY_FILE=~/.kaseki/openrouter-api-key
+```
+
+### Essential 8 Variables
+Minimum 8 variables required; see [advanced configuration](../../ADVANCED_CONFIG.md):
+1. `LLM_GATEWAY_URL` -- LLM Gateway endpoint
+2. `LLM_GATEWAY_API_KEY_FILE` -- Path to gateway key secret (default: `~/.kaseki/secrets.json`)
+3. `KASEKI_MODEL` -- AI model identifier
+4. `REPO_URL` -- Target repository URL
+5. `GIT_REF` -- Branch, tag, or commit
+6. `KASEKI_VALIDATION_COMMANDS` -- Post-run validation commands
+7. `KASEKI_AGENT_TIMEOUT_SECONDS` -- Max agent duration (default: 10800s)
+8. `TASK_PROMPT` -- Instruction for the coding agent

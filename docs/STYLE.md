@@ -1,6 +1,6 @@
 # Kaseki Agent Code Style Guide
 
-This document outlines the code style expectations for contributions to the Kaseki Agent repository. All code must pass linting checks before submission. See [CONTRIBUTING.md](CONTRIBUTING.md#3-code-quality-linting-and-style) for how to run linters locally.
+This document outlines code style expectations for contributions to Kaseki Agent. All code must pass linting checks before submission. See [CONTRIBUTING.md](../CONTRIBUTING.md) for the contribution workflow.
 
 ## TypeScript Style
 
@@ -496,7 +496,8 @@ Avoid inline ESLint directives (e.g., `// eslint-disable`) unless absolutely nec
 This repo includes Jest test suites for TypeScript utilities and CLI functions:
 
 ```bash
-npm test                       # Run type-check, Jest tests, and bash integration tests
+npm test                       # Build the project and run the unit suite
+npm run test:ci                # Run the CI validation and integration suite
 npm run test:watch             # Watch mode for active development
 npm run test:coverage          # Generate coverage report
 ```
@@ -516,6 +517,18 @@ The scripts are also validated by the target repositories they orchestrate. Keep
 
 ## Related Documents
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) — Contribution guidelines
-- [README.md](README.md) — Project overview and usage
-- [CLAUDE.md](CLAUDE.md) — Internal guidance for Claude Code
+- [CONTRIBUTING.md](../CONTRIBUTING.md) — Contribution guidelines
+- [README.md](../README.md) — Project overview and usage
+- [CLAUDE.md](../CLAUDE.md) — Repository instructions
+- [Documentation index](INDEX.md) — Current guides and references
+
+## Documentation conventions
+
+- Keep current product guidance in a canonical page linked from `INDEX.md`.
+- Keep historical reports in `archive/` and label dated snapshots clearly.
+- Keep agent skills, workflow templates, and task templates beside the tools
+  that consume them.
+- Update `internal/MARKDOWN_INVENTORY.md` when a Markdown file moves or changes
+  role.
+- Use `npm run check:markdown-links` to validate links across repository
+  Markdown files.

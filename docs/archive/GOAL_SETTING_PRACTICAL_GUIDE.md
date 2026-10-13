@@ -414,7 +414,7 @@ Track these over time:
 ## References
 
 - [Goal-Setting Improvements](./GOAL_SETTING_IMPROVEMENTS.md)
-- [Goal-Setting Guide](./GOAL_SETTING_GUIDE.md)
-- TypeScript Types: [`src/types/goal-setting.ts`](../src/types/goal-setting.ts)
-- Feedback Infrastructure: [`src/lib/goal-setting-feedback.ts`](../src/lib/goal-setting-feedback.ts)
-- Test Suite: [`tests/goal-setting-improvements.test.ts`](../tests/goal-setting-improvements.test.ts)
+- [Goal-Setting Guide](../GOAL_SETTING_GUIDE.md)
+- TypeScript Types: [`src/types/goal-setting.ts`](../../src/types/goal-setting.ts)
+- Feedback Infrastructure: [`src/lib/goal-setting-feedback.ts`](../../src/lib/goal-setting-feedback.ts)
+- Test Suite: [`tests/goal-setting-improvements.test.ts`](../../tests/goal-setting-improvements.test.ts)

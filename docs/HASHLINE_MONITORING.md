@@ -549,5 +549,5 @@ curl -X POST https://analytics.example.com/hashline-metrics \
 ## References
 
 - [HASHLINE_ROLLOUT_STRATEGY.md](HASHLINE_ROLLOUT_STRATEGY.md) — Rollout phases
-- [HASHLINE_ARCHITECTURE.md](HASHLINE_ARCHITECTURE.md) — Technical details
+- [HASHLINE_ARCHITECTURE.md](internal/HASHLINE_ARCHITECTURE.md) — Technical details
 - [kaseki-agent.sh](../kaseki-agent.sh) — Implementation

@@ -1,80 +1,49 @@
-# Test Isolation Best Practices
+# Test Environment Isolation
 
-## Environment Variable Cleanup
+Tests that assert default behavior must not inherit runtime values from the
+shell, a worker container, or an earlier test. Save and restore every related
+environment variable, including when the test throws.
 
-### Problem
-Tests that verify "neutral default" behavior may fail when run inside kaseki worker containers where runtime environment variables persist across test runs.
+## Use the shared helper
 
-### Solution
-Always clean up **all** related environment variables in tests that validate default behavior.
+For Cloudflare gateway metadata, use
+[`withIsolatedEnvSync`](../test/helpers/env-isolation.ts) and the shared
+`CLOUDFLARE_METADATA_ENV_VARS` list:
 
-### Example Pattern
-
-**❌ Incomplete Cleanup (causes failures):**
 ```typescript
-delete process.env.KASEKI_INSTANCE;
-// Missing: KASEKI_INFERENCE_PHASE, KASEKI_INFERENCE_ATTEMPT, KASEKI_INFERENCE_REQUEST_ID
-```
+import {
+  CLOUDFLARE_METADATA_ENV_VARS,
+  withIsolatedEnvSync,
+} from '../test/helpers/env-isolation.js';
 
-**✅ Complete Cleanup:**
-```typescript
-// Save original state
-const originalEnv = {
-  KASEKI_INSTANCE: process.env.KASEKI_INSTANCE,
-  KASEKI_INFERENCE_PHASE: process.env.KASEKI_INFERENCE_PHASE,
-  KASEKI_INFERENCE_ATTEMPT: process.env.KASEKI_INFERENCE_ATTEMPT,
-  KASEKI_INFERENCE_REQUEST_ID: process.env.KASEKI_INFERENCE_REQUEST_ID,
-};
-
-// Delete all related variables
-delete process.env.KASEKI_INSTANCE;
-delete process.env.KASEKI_INFERENCE_PHASE;
-delete process.env.KASEKI_INFERENCE_ATTEMPT;
-delete process.env.KASEKI_INFERENCE_REQUEST_ID;
-
-try {
-  // Test code here
-} finally {
-  // Restore original state
-  Object.entries(originalEnv).forEach(([key, value]) => {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
+it('uses neutral metadata defaults', () => {
+  withIsolatedEnvSync(CLOUDFLARE_METADATA_ENV_VARS, () => {
+    registerGatewayProvider(mockPi);
+    expect(mockPi.registerProvider).toHaveBeenCalled();
   });
-}
+});
 ```
 
-## CloudFlare Gateway Metadata Variables
+The helper snapshots those variables, deletes them for the callback, and
+restores their original values in a `finally` block. The metadata group covers
+`KASEKI_INSTANCE`, `KASEKI_INFERENCE_PHASE`, `KASEKI_INFERENCE_ATTEMPT`, and
+`KASEKI_INFERENCE_REQUEST_ID`.
 
-When testing CloudFlare gateway provider registration, always clean up these variables:
+## When adding another environment group
 
-| Variable | Description | Example Value |
-|----------|-------------|---------------|
-| `KASEKI_INSTANCE` | Run instance ID | `kaseki-237` |
-| `KASEKI_INFERENCE_PHASE` | Current execution phase | `goal-check`, `weaving`, `scouting` |
-| `KASEKI_INFERENCE_ATTEMPT` | Retry attempt | `primary-1`, `retry-2` |
-| `KASEKI_INFERENCE_REQUEST_ID` | Correlation UUID | `3c06b6c8-5f79-4f9d-87a4-3cedd19574ec` |
+- Add the related variable names to a shared constant in
+  `test/helpers/env-isolation.ts`.
+- Use the helper in tests that assert unset or default behavior.
+- Keep variables that are part of a test scenario set outside the isolated
+  callback only when they are not included in the cleanup group.
+- Add a regression case that proves values are removed during the callback and
+  restored afterward.
 
-## Detection Strategy
+Avoid deleting one variable from a related group by hand. Partial cleanup can
+make tests pass locally while failing in worker environments that set the
+other runtime metadata.
 
-### Grep Pattern for Incomplete Cleanup
-Search for tests that delete only some CloudFlare metadata variables:
-
-```bash
-# Find potential incomplete cleanups
-grep -r "delete process.env.KASEKI_INSTANCE" tests/ --include="*.test.ts" -A 5 | \
-  grep -v "KASEKI_INFERENCE_PHASE" | \
-  grep -v "KASEKI_INFERENCE_ATTEMPT" | \
-  grep -v "KASEKI_INFERENCE_REQUEST_ID"
-```
-
-### Validation Command
-Add to CI pipeline:
-```bash
-npm run test:isolation-check
-```
-
-## References
-
-- Fixed Issue: kaseki-237, kaseki-238 (CloudFlare gateway integration test failure)
-- Implementation: [tests/cloudflare-gateway-integration.test.ts](../tests/cloudflare-gateway-integration.test.ts)
-- Gateway Provider: [src/.extensions.ts](../src/.extensions.ts)
+The original pollution incident and its timeline are preserved in the
+[postmortem](archive/TEST_ENVIRONMENT_POLLUTION_POSTMORTEM.md). The older
+[quick reference](archive/QUICK_REF_TEST_ISOLATION.md) is retained as history;
+the shared helper above is the current pattern.

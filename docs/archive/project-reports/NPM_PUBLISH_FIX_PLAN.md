@@ -265,8 +265,8 @@ If the retry still fails after OIDC setup:
 - **npm OIDC Docs**: <https://docs.npmjs.com/cli/using-npm/configure-npm/configuring-your-npm-client-with-github-actions>
 - **GitHub Actions OIDC**: <https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect>
 - **Provenance Verification**: <https://docs.npmjs.com/generating-provenance-statements>
-- **Current Workflow**: [.github/workflows/publish-npm.yml](.github/workflows/publish-npm.yml)
-- **Current Troubleshooting**: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#troubleshooting-404-not-found-on-npm-publish)
+- **Current Workflow**: [.github/workflows/publish-npm.yml](../../../.github/workflows/publish-npm.yml)
+- **Current Troubleshooting**: [current deployment guide](../../DEPLOYMENT.md)
 
 ---
 

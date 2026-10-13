@@ -103,7 +103,7 @@ Score 0 (Useless):         7 artifacts   (7%)  🔴 Remove
 
 Files to modify:
 
-- [kaseki-agent.sh](kaseki-agent.sh) — Remove progress.log, validation-raw.log, pre-validation-raw.log generation
+- [kaseki-agent.sh](../../kaseki-agent.sh) — Remove progress.log, validation-raw.log, pre-validation-raw.log generation
 - Feature agent scripts (scouting, goal-check, etc.) — Remove feature-specific .stderr.log generation
 
 **Changes**:
@@ -132,17 +132,17 @@ echo "..." > validation-raw.log
 Consolidate duplicated information into primary artifacts:
 
 1. **secret-scan.log** → consolidate into secret-scan.json
-   - Modify: [kaseki-agent.sh](kaseki-agent.sh) secret scanning section
+   - Modify: [kaseki-agent.sh](../../kaseki-agent.sh) secret scanning section
    - Keep: secret-scan.json only
    - Delete: secret-scan.log generation
 
 2. **quality.log** → consolidate into quality-gates.json
-   - Modify: [kaseki-agent.sh](kaseki-agent.sh) quality gates section
+   - Modify: [kaseki-agent.sh](../../kaseki-agent.sh) quality gates section
    - Keep: quality-gates.json only
    - Delete: quality.log generation
 
 3. **validation-results.json** → merge into metadata.json.phases.validation
-   - Modify: [kaseki-report.js](src/kaseki-report.js)
+   - Modify: [kaseki-report.js](../../src/kaseki-report.ts)
    - Move validation results into metadata structure
    - Delete: validation-results.json file
 
@@ -206,7 +206,7 @@ Add schema versioning for forward compatibility:
 
 1. **All JSON/JSONL artifacts** add `schema_version` and `artifact_version` fields
 2. **Create OpenAPI/JSON Schema specs** for all ≥8 score artifacts
-3. **Document stable schemas** in [docs/ARTIFACT_SCHEMAS.md](docs/ARTIFACT_SCHEMAS.md)
+3. **Document stable schemas** in [docs/ARTIFACT_SCHEMAS.md](../ARTIFACT_SCHEMAS.md)
 4. **Update CLAUDE.md** with new artifact inventory
 
 **Example**:
@@ -364,8 +364,8 @@ Add schema versioning for forward compatibility:
 
 ### Phase 1 Implementation
 
-- [ ] Remove progress.log generation from [kaseki-agent.sh](kaseki-agent.sh)
-- [ ] Remove validation-raw.log generation from [kaseki-agent.sh](kaseki-agent.sh)
+- [ ] Remove progress.log generation from [kaseki-agent.sh](../../kaseki-agent.sh)
+- [ ] Remove validation-raw.log generation from [kaseki-agent.sh](../../kaseki-agent.sh)
 - [ ] Remove pre-validation-raw.log generation from validation scripts
 - [ ] Remove feature-specific .stderr.log generation from:
   - Scouting agent
@@ -380,7 +380,7 @@ Add schema versioning for forward compatibility:
 - [ ] Create metadata.json.phases structure template
 - [ ] Migrate validation-results.json into metadata.json.phases.validation
 - [ ] Migrate quality-gates.json into metadata.json.phases.quality_gates
-- [ ] Update [kaseki-report.js](src/kaseki-report.js) to read from new paths
+- [ ] Update [kaseki-report.js](../../src/kaseki-report.ts) to read from new paths
 - [ ] Make secret-scan.log optional (only generate if KASEKI_DEBUG_SECRET_SCAN=1)
 - [ ] Make quality.log optional (only generate if KASEKI_DEBUG_QUALITY=1)
 - [ ] Update agent code that reads these artifacts
@@ -392,17 +392,17 @@ Add schema versioning for forward compatibility:
 - [ ] Add conditional generation for .raw.jsonl files (if KASEKI_DEBUG_RAW_EVENTS=1)
 - [ ] Add conditional retention for stdout.log, stderr.log (if exit_code ≠ 0)
 - [ ] Add retention_days field to metadata.json
-- [ ] Implement auto-delete logic in [scripts/cleanup.sh](scripts/cleanup.sh)
+- [ ] Implement auto-delete logic in [scripts/cleanup.sh](../../scripts/cleanup-kaseki.sh)
 - [ ] Test on success and failure runs
 - [ ] Deploy to staging; monitor for 2 weeks
 
 ### Phase 4 Implementation
 
 - [ ] Add schema_version field to all JSON/JSONL artifacts
-- [ ] Create [docs/ARTIFACT_SCHEMAS.md](docs/ARTIFACT_SCHEMAS.md) with OpenAPI specs
-- [ ] Update [CLAUDE.md](CLAUDE.md) with new inventory
+- [ ] Create [docs/ARTIFACT_SCHEMAS.md](../ARTIFACT_SCHEMAS.md) with OpenAPI specs
+- [ ] Update [CLAUDE.md](../../CLAUDE.md) with new inventory
 - [ ] Update agent code to handle schema versioning
-- [ ] Document in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
+- [ ] Document in [docs/DEVELOPMENT.md](../DEVELOPMENT.md)
 
 ---
 
@@ -410,22 +410,22 @@ Add schema versioning for forward compatibility:
 
 After implementation, create/update:
 
-1. **[docs/ARTIFACT_SCHEMAS.md](docs/ARTIFACT_SCHEMAS.md)** (NEW)
+1. **[docs/ARTIFACT_SCHEMAS.md](../ARTIFACT_SCHEMAS.md)** (NEW)
    - OpenAPI/JSON Schema specs for all ≥8 artifacts
    - Field descriptions, enums, examples
    - Schema versioning strategy
 
-2. **[CLAUDE.md](CLAUDE.md)** (UPDATE "Result Artifacts" section)
+2. **[CLAUDE.md](../../CLAUDE.md)** (UPDATE "Result Artifacts" section)
    - New compact artifact inventory
    - Retention policies per artifact
    - Feature flag documentation
 
-3. **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** (NEW section)
+3. **[docs/DEVELOPMENT.md](../DEVELOPMENT.md)** (NEW section)
    - How to add new artifacts
    - Artifact naming conventions
    - Schema requirements
 
-4. **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** (UPDATE)
+4. **[docs/TROUBLESHOOTING.md](../TROUBLESHOOTING.md)** (UPDATE)
    - What artifacts to check for specific failures
    - Why certain artifacts were removed
 
@@ -444,7 +444,7 @@ After implementation, create/update:
 
 ## 🔗 References
 
-- [Artifact Scoring Evaluation](docs/ARTIFACT_SCORING_EVALUATION.md) — Full evaluation with rubric scores
-- [CLAUDE.md](CLAUDE.md) — Current artifact inventory (to be updated)
-- [kaseki-agent.sh](kaseki-agent.sh) — Artifact generation logic
-- [src/kaseki-report.js](src/kaseki-report.js) — Artifact consolidation & reporting
+- [Artifact Scoring Evaluation](ARTIFACT_SCORING_EVALUATION.md) — Full evaluation with rubric scores
+- [CLAUDE.md](../../CLAUDE.md) — Current artifact inventory (to be updated)
+- [kaseki-agent.sh](../../kaseki-agent.sh) — Artifact generation logic
+- [src/kaseki-report.js](../../src/kaseki-report.ts) — Artifact consolidation & reporting

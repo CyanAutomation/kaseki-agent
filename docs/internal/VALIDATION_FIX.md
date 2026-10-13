@@ -22,7 +22,7 @@ The validation phase executed npm commands using `bash -lc` (login shell), which
 
 ## Solution
 
-Three complementary fixes applied to [kaseki-agent.sh](kaseki-agent.sh):
+Three complementary fixes applied to [kaseki-agent.sh](../../kaseki-agent.sh):
 
 ### Fix 1: Use Non-Login Shell (Line 1579)
 

@@ -11,18 +11,18 @@ This document guides deployment of the evaluation prompt enhancements and feedba
 
 ### Documentation & Best Practices Framework
 
-- [x] Create [docs/EVALUATION_BEST_PRACTICES.md](../docs/EVALUATION_BEST_PRACTICES.md)
+- [x] Create [docs/EVALUATION_BEST_PRACTICES.md](../EVALUATION_BEST_PRACTICES.md)
   - SMART framework for goal-check evaluation
   - Confidence grounding guidance
   - Anti-patterns and examples
-- [x] Create [docs/FEEDBACK_LOOP_INTEGRATION.md](../docs/FEEDBACK_LOOP_INTEGRATION.md)
+- [x] Create [docs/FEEDBACK_LOOP_INTEGRATION.md](../FEEDBACK_LOOP_INTEGRATION.md)
   - Feedback data flow and schema
   - Correlation analysis methodology
   - Example feedback loops
-- [x] Update [docs/GOAL_SETTING_GUIDE.md](../docs/GOAL_SETTING_GUIDE.md)
+- [x] Update [docs/GOAL_SETTING_GUIDE.md](../GOAL_SETTING_GUIDE.md)
   - Cross-reference evaluation phases
   - Show how goal quality feeds into evaluation
-- [x] Update [CONTRIBUTING.md](../CONTRIBUTING.md)
+- [x] Update [CONTRIBUTING.md](../../CONTRIBUTING.md)
   - Section 6: Evaluation best practices for contributors
   - PR checklist for evaluation changes
 
@@ -71,11 +71,11 @@ This document guides deployment of the evaluation prompt enhancements and feedba
 
 ### Feedback Collection & Analysis
 
-- [x] Create [scripts/collect-feedback.js](../scripts/collect-feedback.js)
+- [x] Create [scripts/collect-feedback.js](../../scripts/collect-feedback.ts)
   - Collects goal-check feedback (quality → verdict correlation)
   - Collects run-evaluation feedback (improvement suggestions)
   - Outputs JSONL format for append
-- [x] Create [scripts/analyze-goal-feedback.js](../scripts/analyze-goal-feedback.js)
+- [x] Create [scripts/analyze-goal-feedback.js](../../scripts/analyze-goal-feedback.ts)
   - Analyzes feedback across multiple runs
   - Computes success rate by goal quality bucket
   - Generates recommendations
@@ -86,7 +86,7 @@ This document guides deployment of the evaluation prompt enhancements and feedba
 
 ### Testing & Documentation
 
-- [x] Create [tests/evaluation-prompts.test.ts](../tests/evaluation-prompts.test.ts)
+- [x] Create [tests/evaluation-prompts.test.ts](../../tests/evaluation-prompts.test.ts)
   - Verify goal-setting context is included
   - Verify SMART framework mention
   - Verify confidence grounding guidance
@@ -368,7 +368,7 @@ If critical issues detected:
 
 ## References
 
-- [docs/EVALUATION_BEST_PRACTICES.md](../docs/EVALUATION_BEST_PRACTICES.md)
-- [docs/FEEDBACK_LOOP_INTEGRATION.md](../docs/FEEDBACK_LOOP_INTEGRATION.md)
-- [docs/GOAL_SETTING_IMPROVEMENTS.md](../docs/GOAL_SETTING_IMPROVEMENTS.md)
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — Section 6 (Evaluation Best Practices)
+- [docs/EVALUATION_BEST_PRACTICES.md](../EVALUATION_BEST_PRACTICES.md)
+- [docs/FEEDBACK_LOOP_INTEGRATION.md](../FEEDBACK_LOOP_INTEGRATION.md)
+- [docs/GOAL_SETTING_IMPROVEMENTS.md](GOAL_SETTING_IMPROVEMENTS.md)
+- [CONTRIBUTING.md](../../CONTRIBUTING.md) — Section 6 (Evaluation Best Practices)

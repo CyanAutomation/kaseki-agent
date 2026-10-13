@@ -211,16 +211,16 @@ All original environment variables still work for backward compatibility:
 
 ### New Documentation
 
-- **[docs/NPM_SETUP.md](docs/NPM_SETUP.md)** — Comprehensive npm package setup guide
-- **[README.md](README.md)** — Updated with npm-first approach
-- **[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** — Points to npm setup, preserves shell script reference
+- **[docs/NPM_SETUP.md](../NPM_SETUP.md)** — Comprehensive npm package setup guide
+- **[README.md](../../README.md)** — Updated with npm-first approach
+- **[docs/SETUP_GUIDE.md](../SETUP_GUIDE.md)** — Points to npm setup, preserves shell script reference
 
 ### Preserved Documentation
 
-- **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** — Development guide
-- **[docs/CLI.md](docs/CLI.md)** — CLI monitoring
-- **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** — Production deployment
-- **[docs/QUALITY_GATES.md](docs/QUALITY_GATES.md)** — Quality gate config
+- **[docs/DEVELOPMENT.md](../DEVELOPMENT.md)** — Development guide
+- **[docs/CLI.md](../CLI.md)** — CLI monitoring
+- **[docs/DEPLOYMENT.md](../DEPLOYMENT.md)** — Production deployment
+- **[docs/QUALITY_GATES.md](../QUALITY_GATES.md)** — Quality gate config
 - All other docs remain relevant
 
 ## Testing
@@ -382,7 +382,7 @@ archived/scripts/dry-run-allowlist.sh
 
 For questions or issues:
 
-1. Check [docs/NPM_SETUP.md](docs/NPM_SETUP.md)
+1. Check [docs/NPM_SETUP.md](../NPM_SETUP.md)
 2. Run `kaseki-agent doctor --verbose`
 3. View logs in `/agents/kaseki-results/kaseki-N/`
 4. Open issue on GitHub with `kaseki-agent doctor` output

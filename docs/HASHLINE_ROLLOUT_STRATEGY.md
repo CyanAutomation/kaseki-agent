@@ -418,7 +418,7 @@ grep -i "hashline" /results/pi-task-prompt.txt
 
 ## References
 
-- [HASHLINE_ARCHITECTURE.md](HASHLINE_ARCHITECTURE.md) — Architecture deep-dive
+- [HASHLINE_ARCHITECTURE.md](internal/HASHLINE_ARCHITECTURE.md) — Architecture deep-dive
 - [PI_TOOL_HASHLINE_EDIT.md](PI_TOOL_HASHLINE_EDIT.md) — Tool specification
-- [OHMYPI_FEATURE_INTEGRATION.md](OHMYPI_FEATURE_INTEGRATION.md) — Feature integration overview
+- [Hashline edit tool](PI_TOOL_HASHLINE_EDIT.md) — Current tool behavior
 - [kaseki-agent.sh](../kaseki-agent.sh) — Implementation in orchestration

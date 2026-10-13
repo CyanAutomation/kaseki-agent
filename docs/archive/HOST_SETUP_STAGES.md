@@ -555,7 +555,7 @@ See [HOST_SETUP_TROUBLESHOOTING.md](HOST_SETUP_TROUBLESHOOTING.md) for detailed 
 
 ## JSON Schema
 
-See [HOST_SETUP_API_REFERENCE.md](HOST_SETUP_API_REFERENCE.md) for complete JSON schemas, function signatures, and API reference.
+See [HOST_SETUP_API_REFERENCE.md](../HOST_SETUP_API_REFERENCE.md) for complete JSON schemas, function signatures, and API reference.
 
 ---
 
@@ -576,5 +576,5 @@ See [HOST_SETUP_API_REFERENCE.md](HOST_SETUP_API_REFERENCE.md) for complete JSON
 ## See Also
 
 - [HOST_SETUP_TROUBLESHOOTING.md](HOST_SETUP_TROUBLESHOOTING.md) — Failure diagnosis & recovery
-- [HOST_SETUP_API_REFERENCE.md](HOST_SETUP_API_REFERENCE.md) — JSON schemas & function reference
-- [QUICK_START.md](QUICK_START.md) — User-facing quick start guide
+- [HOST_SETUP_API_REFERENCE.md](../HOST_SETUP_API_REFERENCE.md) — JSON schemas & function reference
+- [QUICK_START.md](../QUICK_START.md) — User-facing quick start guide
