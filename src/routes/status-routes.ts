@@ -4,7 +4,7 @@ import { JobScheduler } from '../job-scheduler';
 import { DEFAULT_JOB_INDEX_MAX_ENTRIES, KasekiApiConfig } from '../kaseki-api-config';
 import { RunsListResponse } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
-import { getJobOrRespond } from '../utils/route-helpers';
+import { findRunJob, getJobOrRespond } from '../utils/route-helpers';
 import { StatusResponseBuilder } from '../utils/status-response-builder';
 import { StatusMetadataHelper } from '../utils/status-response-metadata-helper';
 import type { ResultCache } from '../result-cache';
@@ -105,9 +105,7 @@ export function createStatusRoutes(
   });
 
   router.get('/runs/:id', async (req: Request, res: Response) => {
-    const job = typeof scheduler.getJobIncludingHistory === 'function'
-      ? await scheduler.getJobIncludingHistory(req.params.id)
-      : scheduler.getJob(req.params.id);
+    const job = await findRunJob(scheduler, req.params.id);
     if (!job) return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
     return res.json({
       id: job.id,

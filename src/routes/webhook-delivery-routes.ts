@@ -1,23 +1,20 @@
 import { Router, Request, Response } from 'express';
 import { JobScheduler } from '../job-scheduler';
 import { sendErrorResponse } from '../utils/response-helpers';
+import { findRunJob } from '../utils/route-helpers';
 
 /** Run-scoped inspection and manual retry for durable webhook delivery history. */
 export function createWebhookDeliveryRoutes(scheduler: JobScheduler): Router {
   const router = Router();
 
   router.get('/runs/:id/webhook-deliveries', async (req: Request, res: Response) => {
-    const job = typeof scheduler.getJobIncludingHistory === 'function'
-      ? await scheduler.getJobIncludingHistory(req.params.id)
-      : scheduler.getJob(req.params.id);
+    const job = await findRunJob(scheduler, req.params.id);
     if (!job) return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
     return res.json({ deliveries: scheduler.getWebhookDeliveries(req.params.id) });
   });
 
   router.post('/runs/:id/webhook-deliveries/:deliveryId/retry', async (req: Request, res: Response) => {
-    const job = typeof scheduler.getJobIncludingHistory === 'function'
-      ? await scheduler.getJobIncludingHistory(req.params.id)
-      : scheduler.getJob(req.params.id);
+    const job = await findRunJob(scheduler, req.params.id);
     if (!job) return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
 
     const delivery = scheduler.getWebhookDeliveries(req.params.id)
