@@ -656,7 +656,9 @@ export class SoyuzAdapter {
       new Date().toISOString(),
       recovery.callbackId,
     );
-    await this.scheduler.authorizeSoyuzStart(job.id);
+    if (!(await this.scheduler.authorizeSoyuzStart(job.id))) {
+      throw new Error('Soyuz accepted started callback but Kaseki no longer has an authorizable queued job');
+    }
     metricsRegistry.incSoyuzCounter('runs_started');
   }
 
