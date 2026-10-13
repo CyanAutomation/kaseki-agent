@@ -1,4 +1,4 @@
-import type { Evidence } from './run-scorecard-evidence';
+import type { Evidence } from './run-scorecard-evidence-types';
 import { ScorecardContext } from './run-scorecard-context';
 
 const clamp = (value: number) => Math.max(0, Math.min(100, Math.round(value)));

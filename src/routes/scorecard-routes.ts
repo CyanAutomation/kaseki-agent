@@ -6,6 +6,7 @@ import { RunScorecardSchema, type RunScorecard } from '../types/run-scorecard';
 import { formatRunScorecardMarkdown } from '../run-scorecard-markdown';
 import type { Job, ScorecardSummary, ScorecardsListResponse } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
+import { findRunJob } from '../utils/route-helpers';
 import { matchesFilters, parseFilters, DEFAULT_LIMIT, MAX_LIMIT } from './scorecard-route-utils';
 import { encodeCursor, isAfterCursor, parseCursor, parseLimit } from './cursor-pagination';
 
@@ -43,9 +44,7 @@ function summary(card: RunScorecard, job: Job): ScorecardSummary {
 export function createScorecardRoutes(scheduler: JobScheduler, cache: ResultCache): Router {
   const router = Router();
   router.get('/runs/:id/scorecard', async (req: Request, res: Response) => {
-    const job = typeof scheduler.getJobIncludingHistory === 'function'
-      ? await scheduler.getJobIncludingHistory(req.params.id)
-      : scheduler.getJob(req.params.id);
+    const job = await findRunJob(scheduler, req.params.id);
     if (!job) return sendErrorResponse(res, 404, 'Run not found', `Unknown run: ${req.params.id}`);
     const result = readScorecard(job, cache);
     if (result.malformed) return sendErrorResponse(res, 422, 'Malformed scorecard', `${FILE} failed schema validation`);

@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const PHASE_TRANSFER_QUESTIONS = {
+const PHASE_TRANSFER_QUESTIONS = {
   preserve: 'Keep this scouting fact in the coding handoff at its current fidelity. Use for task-relevant architecture, implementation files, tests, conventions, or facts that may affect a required change.',
   condense: 'Keep the useful part at lower fidelity. Preserve exact paths and reduce supporting explanation to the strongest concise fact.',
   discard: 'Omit only when this fact is clearly unrelated to the current task and safe to leave out of coding context.',
@@ -157,20 +157,20 @@ function appendTelemetry(filePath, event) {
   } catch { /* Context routing telemetry must not affect handoff behavior. */ }
 }
 
-export async function routeScoutingContext(input, options = {}) {
+function transferThreshold(value, fallback) {
+  return Number.isFinite(value) && value >= 0 && value <= 1 ? value : fallback;
+}
+
+function prepareRouting(input, options, redact) {
   const enabled = options.enabled === true;
-  const redact = typeof options.redact === 'function' ? options.redact : value => value;
   const { items } = candidateItems(input, redact);
   const protectedItems = items.filter(item => item.protected);
-  const candidates = items.filter(item => !item.protected).slice(0, MAX_CANDIDATES);
-  const overflow = items.filter(item => !item.protected).slice(MAX_CANDIDATES);
+  const transferable = items.filter(item => !item.protected);
+  const candidates = transferable.slice(0, MAX_CANDIDATES);
+  const overflow = transferable.slice(MAX_CANDIDATES);
   const thresholds = {
-    discard: Number.isFinite(options.discardThreshold) && options.discardThreshold >= 0 && options.discardThreshold <= 1
-      ? options.discardThreshold
-      : DEFAULT_DISCARD_THRESHOLD,
-    condense: Number.isFinite(options.condenseThreshold) && options.condenseThreshold >= 0 && options.condenseThreshold <= 1
-      ? options.condenseThreshold
-      : DEFAULT_CONDENSE_THRESHOLD,
+    discard: transferThreshold(options.discardThreshold, DEFAULT_DISCARD_THRESHOLD),
+    condense: transferThreshold(options.condenseThreshold, DEFAULT_CONDENSE_THRESHOLD),
   };
   const selections = new Map(items.map(item => [item.id, 'preserve']));
   const state = {
@@ -179,13 +179,19 @@ export async function routeScoutingContext(input, options = {}) {
     goal_summary: String(redact(input.goalSummary || '') || '').replace(/\s+/g, ' ').trim().slice(0, MAX_GOAL_CHARS),
     candidates: candidates.map(({ id, kind, path: itemPath, text }) => ({ id, kind, ...(itemPath ? { path: itemPath.slice(0, 256) } : {}), text })),
   };
-  let attempted = false; let failed = false; let latencyMs = 0;
-  if (enabled && candidates.length && typeof options.classify === 'function') {
+  return { enabled, items, protectedItems, overflow, candidates, thresholds, selections, state };
+}
+
+async function evaluateCandidates(candidates, state, selections, thresholds, enabled, classify) {
+  let attempted = false;
+  let failed = false;
+  let latencyMs = 0;
+  if (enabled && candidates.length && typeof classify === 'function') {
     attempted = true;
     const started = performance.now();
     try {
       const questions = Object.fromEntries(candidates.map(candidate => [candidate.id, makeQuestion()]));
-      const result = await options.classify(state, questions);
+      const result = await classify(state, questions);
       latencyMs = Math.round(performance.now() - started);
       const candidateSelections = new Map();
       for (const candidate of candidates) {
@@ -198,32 +204,36 @@ export async function routeScoutingContext(input, options = {}) {
       failed = true;
       latencyMs = Math.round(performance.now() - started);
     }
-  } else if (enabled && candidates.length) failed = typeof options.classify !== 'function';
+  } else if (enabled && candidates.length) failed = typeof classify !== 'function';
+  return { attempted, failed, latencyMs };
+}
 
-  // Protected candidates and candidates beyond the bounded request cap remain intact.
-  for (const candidate of [...protectedItems, ...overflow]) selections.set(candidate.id, 'preserve');
-  const output = applySelections(input, items, selections);
+function summarizeRouting(input, output, context, evaluation) {
+  const { enabled, items, candidates, protectedItems, selections } = context;
   const beforeChars = JSON.stringify({ inspectedFiles: input.inspectedFiles, implementationBrief: input.implementationBrief }).length;
   const afterChars = JSON.stringify(output).length;
-  const metrics = {
-    status: !enabled ? 'disabled' : failed ? 'unavailable' : candidates.length ? 'completed' : 'no_candidates',
+  return {
+    status: !enabled ? 'disabled' : evaluation.failed ? 'unavailable' : candidates.length ? 'completed' : 'no_candidates',
     candidateCount: items.length,
-    evaluatedItems: attempted && !failed ? candidates.length : 0,
+    evaluatedItems: evaluation.attempted && !evaluation.failed ? candidates.length : 0,
     protectedItems: protectedItems.length,
     preservedItems: [...selections.values()].filter(value => value === 'preserve').length,
     condensedItems: [...selections.values()].filter(value => value === 'condense').length,
     discardedItems: [...selections.values()].filter(value => value === 'discard').length,
-    jevRequests: attempted ? 1 : 0,
-    jevFailures: failed ? 1 : 0,
+    jevRequests: evaluation.attempted ? 1 : 0,
+    jevFailures: evaluation.failed ? 1 : 0,
     estimatedInputTokens: Math.ceil(beforeChars / 4),
     estimatedOutputTokens: Math.ceil(afterChars / 4),
     estimatedTokensSaved: Math.max(0, Math.ceil(beforeChars / 4) - Math.ceil(afterChars / 4)),
-    latencyMs,
+    latencyMs: evaluation.latencyMs,
   };
-  appendTelemetry(options.telemetryPath, {
+}
+
+function recordTransferTelemetry(filePath, phaseFrom, metrics) {
+  appendTelemetry(filePath, {
     timestamp: new Date().toISOString(),
     event_type: 'phase_transfer',
-    phase_from: options.phaseFrom || 'scouting',
+    phase_from: phaseFrom || 'scouting',
     phase_to: 'coding',
     status: metrics.status,
     candidate_count: metrics.candidateCount,
@@ -239,5 +249,18 @@ export async function routeScoutingContext(input, options = {}) {
     estimated_tokens_saved: metrics.estimatedTokensSaved,
     latency_ms: metrics.latencyMs,
   });
+}
+
+export async function routeScoutingContext(input, options = {}) {
+  const redact = typeof options.redact === 'function' ? options.redact : value => value;
+  const context = prepareRouting(input, options, redact);
+  const evaluation = await evaluateCandidates(
+    context.candidates, context.state, context.selections, context.thresholds, context.enabled, options.classify,
+  );
+  // Protected candidates and candidates beyond the bounded request cap remain intact.
+  for (const candidate of [...context.protectedItems, ...context.overflow]) context.selections.set(candidate.id, 'preserve');
+  const output = applySelections(input, context.items, context.selections);
+  const metrics = summarizeRouting(input, output, context, evaluation);
+  recordTransferTelemetry(options.telemetryPath, options.phaseFrom, metrics);
   return { ...output, metrics };
 }

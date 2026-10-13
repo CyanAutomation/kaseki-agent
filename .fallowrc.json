@@ -2,12 +2,19 @@
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
   "entry": [
     ".pi-extensions.js",
+    "src/index.ts",
+    "src/.extensions.ts",
     "src/cli.ts",
     "src/kaseki-cli.ts",
     "src/kaseki-api-service.ts",
     "src/get-caveman-prompt.ts",
+    "src/caveman/caveman-instructions.ts",
+    "src/caveman/impact-report.ts",
+    "src/caveman/tool-output-router.ts",
     "src/kaseki-api/index.ts",
     "src/jev-workflow-evaluator.ts",
+    "scripts/patch-image-dependency-bundles.mjs",
+    "scripts/verify-image-dependency-versions.mjs",
     "scripts/context-handoff.js",
     "scripts/write-run-metadata.mjs",
     "scripts/render-caveman-impact-report.mjs",
@@ -16,19 +23,15 @@
   "ignorePatterns": [
     "**/*.test.d.ts",
     "**/*.test.d.ts.map",
-    "**/*.test.ts",
-    "**/*.spec.ts",
-    "**/*.type-test.ts",
-    "src/**/*-test-fixtures.ts",
-    "src/test-utils.ts",
-    "src/test-utils/**",
-    "test/**",
-    "tests/**",
-    "src/__test-utils/**",
     "src/**/*.test.js.map",
     "scripts/score-tests.ts",
     ".github/**"
   ],
+  "production": {
+    "deadCode": true,
+    "health": true,
+    "dupes": true
+  },
   "duplicates": {
     "minOccurrences": 3
   },
@@ -36,7 +39,16 @@
     "unused-dependencies": "warn"
   },
   "ignoreDependencies": [
-    "@earendil-works/pi-coding-agent"
+    "@earendil-works/pi-coding-agent",
+    "@earendil-works/pi-server",
+    "@sentry/node",
+    "brace-expansion",
+    "brace-expansion-v1",
+    "brace-expansion-v2",
+    "npm",
+    "undici",
+    "undici-v6",
+    "undici-v7"
   ],
   "usedClassMembers": [
     "execute",
@@ -88,6 +100,10 @@
     {
       "file": "src/utils/file-helpers.ts",
       "exports": ["*"]
+    },
+    {
+      "file": "scripts/semantic-phase-transfer.js",
+      "exports": ["routeScoutingContext"]
     }
   ]
 }
