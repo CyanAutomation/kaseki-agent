@@ -1,6 +1,8 @@
 # Environment Variables Reference
 
-Complete reference for all environment variables used by kaseki-agent.
+Canonical catalog of environment variables used by Kaseki Agent, including
+their current defaults and purposes. For detailed behavior and configuration
+examples, see [advanced configuration](ADVANCED_CONFIG.md).
 
 ---
 
@@ -16,6 +18,9 @@ Complete reference for all environment variables used by kaseki-agent.
 | `KASEKI_MODEL` | `dynamic/kaseki-agent` | string | LLM model identifier (for gateway production deployments, use `dynamic/kaseki-agent`; other providers may use their native model IDs) |
 | `KASEKI_PROVIDER` | `gateway` | string | Primary LLM provider. `gateway` is the only supported coding-inference provider. |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | integer | Agent reasoning timeout in seconds (max 86400) |
+| `KASEKI_GOAL_SETTING` | `1` for patch runs; `0` by default for inspect runs | boolean | Enable the pre-scouting goal-setting phase; inspect mode requires an explicit enable |
+| `KASEKI_GOAL_SETTING_TIMEOUT_SECONDS` | `300` | integer | Goal-setting phase timeout in seconds |
+| `KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS` | `60` | integer | Timeout for a constrained goal-setting contract-repair retry |
 | `KASEKI_GOAL_CHECK` | `KASEKI_SCOUTING` | boolean | Enable the post-validation goal-check Pi evaluator when scouting artifacts are available |
 | `KASEKI_GOAL_CHECK_MAX_RETRIES` | `1` | integer | Number of coding-agent retries after goal-check misses |
 | `KASEKI_GOAL_CHECK_MODEL` | `KASEKI_SCOUTING_MODEL` | string | Pi model identifier for the goal-check evaluator |
@@ -355,6 +360,20 @@ The external Soyuz adapter is opt-in. See [Soyuz host integration](SOYUZ_INTEGRA
 | `KASEKI_API_HOST` | loopback when unauthenticated | string | Optional bind host; unauthenticated empty-key mode is restricted to `localhost`, `127.0.0.1`, or `::1` |
 | `KASEKI_API_LOG_LEVEL` | `info` | string | Log verbosity (debug/info/warn/error); takes precedence over generic `LOG_LEVEL`, which remains a compatibility fallback |
 | `NODE_ENV` | `production` | string | Node.js environment mode |
+
+### Error Tracking
+
+| Variable | Default | Type | Purpose |
+| ---------- | --------- | ------ | --------- |
+| `SENTRY_DSN` | — | URL | Enables Sentry error reporting when configured |
+| `SENTRY_ENABLED` | Auto-detect from DSN | boolean | Set to `true` or `1` to enable without a DSN; otherwise a configured DSN enables Sentry |
+| `SENTRY_ENVIRONMENT` | `production` | string | Environment label attached to Sentry events |
+| `SENTRY_RELEASE` | Git tag, commit hash, or package version | string | Optional release label; auto-detected when unset |
+| `SENTRY_SAMPLE_RATE` | `0.1` | number | Transaction sampling rate from `0.0` to `1.0` |
+
+The Sentry SDK is optional. When Sentry is enabled but the SDK is unavailable,
+errors fall back to structured application logs. See the
+[Sentry integration guide](SENTRY_INTEGRATION.md) for setup and operation.
 
 ### Concurrency & Performance
 

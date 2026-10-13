@@ -72,9 +72,9 @@ All Sentry configuration is optional and controlled by environment variables:
 | `SENTRY_ENVIRONMENT` | `production` | Environment label in Sentry |
 | `SENTRY_RELEASE` | Auto-detected (git tags or commit hash) | Version/release label |
 | `SENTRY_SAMPLE_RATE` | `0.1` | Transaction sampling (0.0-1.0) |
-| `SENTRY_ENABLED` | Auto-detect | Explicitly enable/disable |
+| `SENTRY_ENABLED` | Auto-detect from DSN | Set to `true` or `1` to enable without a DSN; otherwise a configured DSN enables Sentry |
 
-See [docs/ADVANCED_CONFIG.md](ADVANCED_CONFIG.md#monitoring-zone-sentry) for detailed configuration.
+See the [canonical environment variable reference](ENV_VARS.md#error-tracking) for these settings and defaults.
 
 ## Using Sentry
 

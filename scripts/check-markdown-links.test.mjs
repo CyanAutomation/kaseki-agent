@@ -1,9 +1,45 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { findBrokenMarkdownLinks } from './check-markdown-links.mjs';
+import { findBrokenMarkdownLinks, getMarkdownFilesToCheck } from './check-markdown-links.mjs';
+
+test('checks tracked and untracked Markdown files by default', () => {
+  const repositoryRoot = mkdtempSync(path.join(os.tmpdir(), 'kaseki-markdown-files-'));
+  try {
+    mkdirSync(path.join(repositoryRoot, 'docs'), { recursive: true });
+    mkdirSync(path.join(repositoryRoot, '.agents', 'skills'), { recursive: true });
+    writeFileSync(path.join(repositoryRoot, 'README.md'), '# Readme\n');
+    writeFileSync(path.join(repositoryRoot, 'docs', 'guide.MD'), '# Guide\n');
+    writeFileSync(path.join(repositoryRoot, 'docs', 'reference.markdown'), '# Reference\n');
+    writeFileSync(path.join(repositoryRoot, '.agents', 'skills', 'SKILL.mdx'), '# Skill\n');
+    writeFileSync(path.join(repositoryRoot, 'docs', 'draft.md'), '# Draft\n');
+
+    execFileSync('git', ['init', '--quiet'], { cwd: repositoryRoot });
+    execFileSync('git', ['add', 'README.md', 'docs/guide.MD', 'docs/reference.markdown', '.agents/skills/SKILL.mdx'], {
+      cwd: repositoryRoot,
+    });
+
+    assert.deepEqual(getMarkdownFilesToCheck([], repositoryRoot), [
+      '.agents/skills/SKILL.mdx',
+      'README.md',
+      'docs/draft.md',
+      'docs/guide.MD',
+      'docs/reference.markdown',
+    ]);
+  } finally {
+    rmSync(repositoryRoot, { recursive: true, force: true });
+  }
+});
+
+test('uses explicitly requested Markdown files when provided', () => {
+  assert.deepEqual(getMarkdownFilesToCheck(['README.md', 'docs/changed.md'], '/unused'), [
+    'README.md',
+    'docs/changed.md',
+  ]);
+});
 
 test('finds missing relative Markdown targets and reports their source line', () => {
   const repositoryRoot = mkdtempSync(path.join(os.tmpdir(), 'kaseki-markdown-links-'));

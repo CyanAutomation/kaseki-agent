@@ -253,10 +253,10 @@ npm run build
 
 | Document | Content |
 |----------|---------|
-| [API.md](docs/API.md) | **START HERE** for API usage |
-| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production deployment options |
-| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Architecture and dev workflow |
-| [INTEGRATION_EXAMPLE.md](docs/INTEGRATION_EXAMPLE.md) | OpenClaw integration patterns |
+| [API.md](../API.md) | **START HERE** for API usage |
+| [DEPLOYMENT.md](../DEPLOYMENT.md) | Production deployment options |
+| [DEVELOPMENT.md](../DEVELOPMENT.md) | Architecture and dev workflow |
+| [INTEGRATION_EXAMPLE.md](../INTEGRATION_EXAMPLE.md) | OpenClaw integration patterns |
 | [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) | What was built |
 
 ---

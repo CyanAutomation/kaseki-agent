@@ -784,5 +784,5 @@ validate_container_entry all
 ## See Also
 
 - [HOST_SETUP_STAGES.md](HOST_SETUP_STAGES.md) — Stage details and execution flow
-- [HOST_SETUP_API_REFERENCE.md](HOST_SETUP_API_REFERENCE.md) — JSON schemas & functions
-- [QUICK_START.md](QUICK_START.md) — User-facing quick start guide
+- [HOST_SETUP_API_REFERENCE.md](../HOST_SETUP_API_REFERENCE.md) — JSON schemas & functions
+- [QUICK_START.md](../QUICK_START.md) — User-facing quick start guide

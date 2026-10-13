@@ -473,7 +473,7 @@ if (critical_change_failed && goal_check_passed) {
 
 ### Schema Validation Location
 
-[scripts/scouting-allowlist.ts](scripts/scouting-allowlist.ts):
+[scripts/scouting-allowlist.ts](../../../scripts/scouting-allowlist.ts):
 
 - `validateScoutingArtifactObject()` - Main validator (line 284)
 - `validateTestImpactArray()` - test_impact schema (line 155)
@@ -481,7 +481,7 @@ if (critical_change_failed && goal_check_passed) {
 
 ### Critical Change Verification Location
 
-[kaseki-agent.sh](kaseki-agent.sh):
+[kaseki-agent.sh](../../../kaseki-agent.sh):
 
 - `derive_critical_change_expectations()` - Extract from artifacts (line 2539)
 - `verify_critical_change_expectations()` - Verify against changed-files (line 2688)
@@ -489,7 +489,7 @@ if (critical_change_failed && goal_check_passed) {
 
 ### Goal-Check Integration Point
 
-[kaseki-agent.sh](kaseki-agent.sh):
+[kaseki-agent.sh](../../../kaseki-agent.sh):
 
 - Goal-check runs post-validation (around line 9950)
 - Override would be inserted after verification failure checks (around line 10090)

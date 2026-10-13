@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,10 +68,26 @@ export function findBrokenMarkdownLinks(markdown, sourceFile, repositoryRoot = p
   return brokenLinks;
 }
 
+/**
+ * Select explicit files or discover repository Markdown files, including new files.
+ */
+export function getMarkdownFilesToCheck(sourceFiles = [], repositoryRoot = process.cwd()) {
+  if (sourceFiles.length > 0) return sourceFiles;
+
+  const repositoryFiles = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], {
+    cwd: repositoryRoot,
+    encoding: 'utf8',
+  });
+
+  return repositoryFiles
+    .split('\0')
+    .filter((file) => /\.(?:md|markdown|mdx)$/i.test(file))
+    .sort();
+}
+
 function main() {
   const repositoryRoot = process.cwd();
-  const sourceFiles = process.argv.slice(2);
-  const files = sourceFiles.length > 0 ? sourceFiles : ['README.md'];
+  const files = getMarkdownFilesToCheck(process.argv.slice(2), repositoryRoot);
   let hasErrors = false;
 
   for (const sourceFile of files) {

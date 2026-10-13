@@ -205,10 +205,10 @@ All documentation is now complete and cross-referenced:
 
 | Document | Purpose | Status |
 |----------|---------|--------|
-| [ADVANCED_CONFIG.md](ADVANCED_CONFIG.md#kaseki_caveman_level) | Configuration reference | ✅ Updated |
+| [ENV_VARS.md](../ENV_VARS.md#caveman-and-jev-tool-output-routing) | Configuration reference | ✅ Updated |
 | [CAVEMAN_BASELINE.md](CAVEMAN_BASELINE.md) | Measurement methodology & results | ✅ Updated |
 | [CAVEMAN_PHASE2_COMPLETE.md](CAVEMAN_PHASE2_COMPLETE.md) | Implementation summary | ✅ Existing |
-| [.env.advanced.template](../.env.advanced.template) | Configuration template | ✅ Updated |
+| [.env.advanced.template](../../.env.advanced.template) | Configuration template | ✅ Updated |
 | [/memories/repo/caveman-input-compression-phase2-complete.md](/memories/repo/caveman-input-compression-phase2-complete.md) | Repository memory | ✅ Existing |
 
 ---

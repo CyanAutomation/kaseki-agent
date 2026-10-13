@@ -303,7 +303,7 @@ kaseki-agent doctor --fix
 
 ### Problem: Docker Volume or Permission Issues
 
-See [HOST_SETUP_TROUBLESHOOTING.md](HOST_SETUP_TROUBLESHOOTING.md) for host-level Docker setup failures including:
+See the [host setup reference](HOST_SETUP_API_REFERENCE.md) for host-level Docker setup failures including:
 
 - Docker daemon not running
 - Volume mount permissions
@@ -448,7 +448,7 @@ sudo git config --system --add safe.directory /agents/kaseki-agent
 2. Verify system config: `git config --system --get-all safe.directory`
 3. Use system scope for containers
 
-See [HOST_SETUP_TROUBLESHOOTING.md](HOST_SETUP_TROUBLESHOOTING.md) for additional host-level authentication failures.
+See the [host setup reference](HOST_SETUP_API_REFERENCE.md) for additional host-level authentication failures.
 
 ---
 
@@ -802,5 +802,5 @@ zip -r kaseki-debug-kaseki-N.zip .
 - [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) — Writing better task prompts
 - [CLI.md](CLI.md) — Monitoring with kaseki-cli
 - [GATEWAY_TEST.md](GATEWAY_TEST.md) — Gateway connectivity and inference testing
-- [HOST_SETUP_TROUBLESHOOTING.md](HOST_SETUP_TROUBLESHOOTING.md) — Host-level setup failures
+- [Host setup reference](HOST_SETUP_API_REFERENCE.md) — Host-level setup failures
 - [ENV_VARS.md](ENV_VARS.md) — Environment variable reference, dynamic model resolution

@@ -196,6 +196,6 @@ test/kaseki-api.integration.test.sh:sk-test-integration-key
 
 ## References
 
-- [CLAUDE.md](CLAUDE.md#Quality-Gates-and-Exit-Codes) — Exit codes and quality gates
-- [docs/SECURITY.md](SECURITY.md) — Security hardening overview
+- [Exit codes](EXIT_CODES.md) — Run and quality-gate outcomes
+- [Deployment security](DEPLOYMENT.md) — API and Docker access guidance
 - [docs/QUALITY_GATES.md](QUALITY_GATES.md) — Other quality gates (diff size, changed files)

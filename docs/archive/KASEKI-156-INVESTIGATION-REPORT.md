@@ -171,8 +171,8 @@ Comprehensive guide covering:
 
 | File | Changes | Lines |
 |------|---------|-------|
-| [kaseki-agent.sh](kaseki-agent.sh) | 3 major functions fixed | ~150 |
-| [docs/GOAL_SETTING_EXIT_CODES.md](docs/GOAL_SETTING_EXIT_CODES.md) | NEW: comprehensive guide | 500+ |
+| [kaseki-agent.sh](../../kaseki-agent.sh) | 3 major functions fixed | ~150 |
+| [docs/GOAL_SETTING_EXIT_CODES.md](GOAL_SETTING_EXIT_CODES.md) | NEW: comprehensive guide | 500+ |
 
 ### kaseki-agent.sh Functions Updated
 
@@ -322,7 +322,7 @@ Comprehensive guide with:
 ## References & Related Changes
 
 ### Documentation Updated
-- New: [docs/GOAL_SETTING_EXIT_CODES.md](docs/GOAL_SETTING_EXIT_CODES.md) — Full reference
+- New: [docs/GOAL_SETTING_EXIT_CODES.md](GOAL_SETTING_EXIT_CODES.md) — Full reference
 
 ### Similar Issues in Other Phases
 This fix should also be applied to:

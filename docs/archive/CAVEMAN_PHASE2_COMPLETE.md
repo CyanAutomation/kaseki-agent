@@ -313,8 +313,8 @@ KASEKI_CAVEMAN_LEVEL=2 npm test
 
 If you have questions about caveman configuration, token optimization, or Phase 3 enhancements:
 
-- See [docs/ADVANCED_CONFIG.md](ADVANCED_CONFIG.md) for configuration reference
-- See [.agents/skills/cost-optimization/SKILL.md](../.agents/skills/cost-optimization/SKILL.md) for cost optimization strategies
+- See [docs/ADVANCED_CONFIG.md](../ADVANCED_CONFIG.md) for configuration reference
+- See [.agents/skills/cost-optimization/SKILL.md](../../.agents/skills/cost-optimization/SKILL.md) for cost optimization strategies
 - Open an issue or discussion on GitHub
 
 ---
