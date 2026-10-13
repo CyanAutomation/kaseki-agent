@@ -35,6 +35,16 @@ kaseki-agent status kaseki-1
 kaseki-agent report kaseki-1
 ```
 
+API clients submit the repository and task using `repoUrl` and `taskPrompt`:
+
+```json
+{
+  "repoUrl": "https://github.com/owner/repo",
+  "ref": "main",
+  "taskPrompt": "Fix the failing tests"
+}
+```
+
 Use the run ID returned by `run` in the status and report commands. The CLI
 reads API credentials from the configured Kaseki secret store. See the
 [CLI reference](docs/CLI.md) and [API reference](docs/API.md) for options and
