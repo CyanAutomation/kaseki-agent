@@ -439,6 +439,52 @@ describe('Soyuz adapter handoff', () => {
     expect(calls.some((call) => call.url.endsWith('/messages/pull'))).toBe(false);
   });
 
+  test('surfaces recovery when Soyuz starts a run that Kaseki cannot authorize', async () => {
+    const state = runState();
+    const { fetchImpl } = createFetch(state);
+    const { scheduler, jobs } = createScheduler('host-a', 0);
+    jobs.push({
+      id: 'kaseki-recovery',
+      status: 'queued',
+      request: queuedRun.request,
+      createdAt: new Date(),
+      correlationId: CORRELATION_ID,
+      requestId: REQUEST_ID,
+      soyuz: {
+        externalRunId: RUN_ID,
+        workerId: 'host-a',
+        contractVersion: '1',
+        startedCallbackId: '44444444-4444-4444-8444-444444444444',
+        startAuthorized: false,
+        metadataUpdatedAt: new Date().toISOString(),
+      },
+    });
+    scheduler.authorizeSoyuzStart.mockResolvedValue(false);
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    try {
+      await makeAdapter('host-a', scheduler, fetchImpl).runOnce();
+
+      const loggedEvents = logSpy.mock.calls.map(([line]) => JSON.parse(String(line)) as {
+        component?: string;
+        message?: string;
+        detail?: Record<string, unknown>;
+      });
+      expect(state.status).toBe('running');
+      expect(jobs[0].status).toBe('queued');
+      expect(loggedEvents).toContainEqual(expect.objectContaining({
+        component: 'soyuz-adapter',
+        message: 'Soyuz local-run reconciliation failed',
+        detail: expect.objectContaining({
+          localRunId: 'kaseki-recovery',
+          error: 'Soyuz accepted started callback but Kaseki no longer has an authorizable queued job',
+        }),
+      }));
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
   test('claims and durably reports work rejected by Kaseki admission without starting it', async () => {
     const state = runState();
     const { fetchImpl, calls } = createFetch(state);
