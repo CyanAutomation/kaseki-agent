@@ -58,7 +58,7 @@ export function findBrokenMarkdownLinks(markdown, sourceFile, repositoryRoot = p
     const resolvedPath = path.resolve(path.dirname(sourcePath), decodedTarget);
     if (!existsSync(resolvedPath)) {
       brokenLinks.push({
-        line: markdown.slice(0, match.index).split('\n').length,
+        line: scannedMarkdown.slice(0, match.index).split('\n').length,
         href,
         resolvedPath,
       });

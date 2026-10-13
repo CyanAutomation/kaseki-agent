@@ -16,6 +16,8 @@ test('checks tracked and untracked Markdown files by default', () => {
     writeFileSync(path.join(repositoryRoot, 'docs', 'reference.markdown'), '# Reference\n');
     writeFileSync(path.join(repositoryRoot, '.agents', 'skills', 'SKILL.mdx'), '# Skill\n');
     writeFileSync(path.join(repositoryRoot, 'docs', 'draft.md'), '# Draft\n');
+    writeFileSync(path.join(repositoryRoot, 'docs', 'ignored.md'), '# Ignored\n');
+    writeFileSync(path.join(repositoryRoot, '.gitignore'), 'docs/ignored.md\n');
 
     execFileSync('git', ['init', '--quiet'], { cwd: repositoryRoot });
     execFileSync('git', ['add', 'README.md', 'docs/guide.MD', 'docs/reference.markdown', '.agents/skills/SKILL.mdx'], {
@@ -61,6 +63,26 @@ test('finds missing relative Markdown targets and reports their source line', ()
     assert.deepEqual(
       findBrokenMarkdownLinks(markdown, 'README.md', repositoryRoot),
       [{ line: 3, href: 'docs/missing.md', resolvedPath: path.join(repositoryRoot, 'docs', 'missing.md') }],
+    );
+  } finally {
+    rmSync(repositoryRoot, { recursive: true, force: true });
+  }
+});
+
+test('reports the original line number for links after fenced code blocks', () => {
+  const repositoryRoot = mkdtempSync(path.join(os.tmpdir(), 'kaseki-markdown-links-'));
+  try {
+    const markdown = [
+      '# Guide',
+      '```json',
+      '{ "sample": "a longer fenced block" }',
+      '```',
+      '[missing](docs/missing.md)',
+    ].join('\n');
+
+    assert.deepEqual(
+      findBrokenMarkdownLinks(markdown, 'README.md', repositoryRoot),
+      [{ line: 5, href: 'docs/missing.md', resolvedPath: path.join(repositoryRoot, 'docs', 'missing.md') }],
     );
   } finally {
     rmSync(repositoryRoot, { recursive: true, force: true });
