@@ -446,7 +446,7 @@ File editing with content-based anchors (hashline_edit):
 ## References
 
 - [PI_TOOL_HASHLINE_EDIT.md](../PI_TOOL_HASHLINE_EDIT.md) — Tool specification
-- [OHMYPI_FEATURE_INTEGRATION.md](../OHMYPI_FEATURE_INTEGRATION.md) — Feature overview
+- [Hashline rollout strategy](../HASHLINE_ROLLOUT_STRATEGY.md) — Feature overview
 - [src/hashline-validator.ts](../../src/hashline-validator.ts) — Core implementation
 - [src/hashline-event-handler.ts](../../src/hashline-event-handler.ts) — JSONL processor
 - [tests/hashline-validator.test.ts](../../tests/hashline-validator.test.ts) — Unit tests

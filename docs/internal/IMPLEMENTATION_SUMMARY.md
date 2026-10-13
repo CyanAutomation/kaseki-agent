@@ -538,10 +538,10 @@ npm run kaseki-api
 
 ## Support & Documentation
 
-- **API Reference**: [docs/API.md](docs/API.md)
-- **Deployment Guide**: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
-- **Development Guide**: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
-- **Integration Examples**: [docs/INTEGRATION_EXAMPLE.md](docs/INTEGRATION_EXAMPLE.md)
+- **API Reference**: [docs/API.md](../API.md)
+- **Deployment Guide**: [docs/DEPLOYMENT.md](../DEPLOYMENT.md)
+- **Development Guide**: [docs/DEVELOPMENT.md](../DEVELOPMENT.md)
+- **Integration Examples**: [docs/INTEGRATION_EXAMPLE.md](../INTEGRATION_EXAMPLE.md)
 
 ---
 

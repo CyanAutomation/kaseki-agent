@@ -44,4 +44,4 @@ provider- and location-specific.
 
 Do not treat example prices from old documentation as current quotes. For
 optimization methods, see [PERFORMANCE_TUNING.md](PERFORMANCE_TUNING.md) and
-[COST_OPTIMIZATION.md](COST_OPTIMIZATION.md).
+[COST_OPTIMIZATION.md](../.agents/skills/cost-optimization/SKILL.md).

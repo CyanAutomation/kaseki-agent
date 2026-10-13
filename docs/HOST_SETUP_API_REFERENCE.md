@@ -772,6 +772,5 @@ done
 
 ## See Also
 
-- [HOST_SETUP_STAGES.md](HOST_SETUP_STAGES.md) — Detailed stage information
-- [HOST_SETUP_TROUBLESHOOTING.md](HOST_SETUP_TROUBLESHOOTING.md) — Failure diagnosis
+- [Troubleshooting](TROUBLESHOOTING.md) — Current host and run failure diagnosis
 - [QUICK_START.md](QUICK_START.md) — User-facing quick start guide

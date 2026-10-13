@@ -24,9 +24,9 @@ Fallow report identified **80 clone groups** across the codebase. This audit foc
 
 ### Files Affected
 
-- [src/pi-event-filter.ts](../src/pi-event-filter.ts#L150) (extracting `timestamp` from multiple paths)
-- [src/kaseki-report.ts](../src/kaseki-report.ts#L200) (normalizing timestamps for report headers)
-- [src/progress-stream-utils.ts](../src/progress-stream-utils.ts#L45) (parsing timestamp formats)
+- [src/pi-event-filter.ts](../../../src/pi-event-filter.ts#L150) (extracting `timestamp` from multiple paths)
+- [src/kaseki-report.ts](../../../src/kaseki-report.ts#L200) (normalizing timestamps for report headers)
+- [src/progress-stream-utils.ts](../../../src/progress-stream-utils.ts#L45) (parsing timestamp formats)
 
 ### Pattern
 
@@ -79,11 +79,11 @@ export function getTimestampISO(event: Record<string, unknown>): string;
 
 ### Migration Path
 
-1. **Create utility** ([src/lib/timestamp-utils.ts](../src/lib/timestamp-utils.ts)) with 3 exported functions
-2. **Refactor [pi-event-filter.ts](../src/pi-event-filter.ts)**: Replace inline extraction with `extractEventTimestamp()`
-3. **Refactor [kaseki-report.ts](../src/kaseki-report.ts)**: Use `getTimestampISO()` for report headers
-4. **Refactor [progress-stream-utils.ts](../src/progress-stream-utils.ts)**: Use `normalizeTimestamp()` for normalization
-5. **Add tests**: [src/lib/timestamp-utils.test.ts](../src/lib/timestamp-utils.test.ts) with 15+ test cases
+1. **Create utility** (src/lib/timestamp-utils.ts) with 3 exported functions
+2. **Refactor [pi-event-filter.ts](../../../src/pi-event-filter.ts)**: Replace inline extraction with `extractEventTimestamp()`
+3. **Refactor [kaseki-report.ts](../../../src/kaseki-report.ts)**: Use `getTimestampISO()` for report headers
+4. **Refactor [progress-stream-utils.ts](../../../src/progress-stream-utils.ts)**: Use `normalizeTimestamp()` for normalization
+5. **Add tests**: src/lib/timestamp-utils.test.ts with 15+ test cases
    - Null/undefined handling
    - Multiple event structure variants
    - Format validation
@@ -111,9 +111,9 @@ npm run lint:unused  # Should have 0 unused imports in refactored files
 
 ### Files Affected
 
-- [src/job-scheduler.ts](../src/job-scheduler.ts#L300) (spins up kaseki-agent.sh, manages lifecycle)
-- [src/kaseki-api-routes.ts](../src/kaseki-api-routes.ts#L180) (Docker image fingerprinting via shell exec)
-- [src/file-helpers.ts](../src/file-helpers.ts#L120) (spawning git, validation commands)
+- [src/job-scheduler.ts](../../../src/job-scheduler.ts#L300) (spins up kaseki-agent.sh, manages lifecycle)
+- [src/kaseki-api-routes.ts](../../../src/kaseki-api-routes.ts#L180) (Docker image fingerprinting via shell exec)
+- [src/file-helpers.ts](../../../src/utils/file-helpers.ts#L120) (spawning git, validation commands)
 
 ### Pattern
 
@@ -189,11 +189,11 @@ export function executeShell(
 
 ### Migration Path
 
-1. **Create executor**: [src/lib/process-executor.ts](../src/lib/process-executor.ts) with shared patterns
-2. **Refactor [job-scheduler.ts](../src/job-scheduler.ts)**: Use `executeProcess()` for kaseki-agent.sh invocation
-3. **Refactor [kaseki-api-routes.ts](../src/kaseki-api-routes.ts)**: Use `executeShell()` for Docker queries
-4. **Refactor [file-helpers.ts](../src/file-helpers.ts)**: Use `executeProcess()` for git/validation commands
-5. **Add tests**: [src/lib/process-executor.test.ts](../src/lib/process-executor.test.ts)
+1. **Create executor**: src/lib/process-executor.ts with shared patterns
+2. **Refactor [job-scheduler.ts](../../../src/job-scheduler.ts)**: Use `executeProcess()` for kaseki-agent.sh invocation
+3. **Refactor [kaseki-api-routes.ts](../../../src/kaseki-api-routes.ts)**: Use `executeShell()` for Docker queries
+4. **Refactor [file-helpers.ts](../../../src/utils/file-helpers.ts)**: Use `executeProcess()` for git/validation commands
+5. **Add tests**: src/lib/process-executor.test.ts
    - Timeout handling
    - Signal propagation
    - Output capture
@@ -221,10 +221,10 @@ npm run lint:unused
 
 ### Files Affected
 
-- [src/kaseki-api-routes.test.ts](../src/kaseki-api-routes.test.ts#L10) (createMockScheduler, createMockConfig)
-- [src/job-scheduler.test.ts](../src/job-scheduler.test.ts#L15) (similar fixtures)
-- [src/kaseki-api-service.test.ts](../src/kaseki-api-service.test.ts#L8) (config/scheduler mocks)
-- [src/*.test.ts](../src/) (individual test files)
+- [src/kaseki-api-routes.test.ts](../../../src/kaseki-api-routes.test.ts#L10) (createMockScheduler, createMockConfig)
+- [src/job-scheduler.test.ts](../../../src/job-scheduler.test.ts#L15) (similar fixtures)
+- [src/kaseki-api-service.test.ts](../../../src/kaseki-api-service.test.ts#L8) (config/scheduler mocks)
+- [src/*.test.ts](../../../src) (individual test files)
 
 ### Pattern
 
@@ -256,7 +256,7 @@ function createSchedulerMock(): JobScheduler {
 
 ### Solution
 
-**Consolidate into [src/test-utils.ts](../src/test-utils.ts)** (expand existing module):
+**Consolidate into [src/test-utils.ts](../../../src/test-utils.ts)** (expand existing module):
 
 ```typescript
 /**
@@ -273,9 +273,9 @@ export function createMockIdempotencyStore(): IdempotencyStore;
 
 ### Migration Path
 
-1. **Expand [src/test-utils.ts](../src/test-utils.ts)** with consolidated factories
-2. **Refactor [kaseki-api-routes.test.ts](../src/kaseki-api-routes.test.ts)**: Import and use `createMockScheduler()`, remove local factory
-3. **Refactor [job-scheduler.test.ts](../src/job-scheduler.test.ts)**: Same as above
+1. **Expand [src/test-utils.ts](../../../src/test-utils.ts)** with consolidated factories
+2. **Refactor [kaseki-api-routes.test.ts](../../../src/kaseki-api-routes.test.ts)**: Import and use `createMockScheduler()`, remove local factory
+3. **Refactor [job-scheduler.test.ts](../../../src/job-scheduler.test.ts)**: Same as above
 4. **Refactor other test files**: Replace inline mocks with imported factories
 5. **Document patterns**: Add JSDoc to test-utils explaining mock philosophy
 
@@ -300,13 +300,13 @@ npm run lint:unused  # Local mock factories should be unused (can remove)
 
 ### Phase 3, Week 1: Timestamp Extraction
 
-- **Day 1**: Create [src/lib/timestamp-utils.ts](../src/lib/timestamp-utils.ts) + tests
+- **Day 1**: Create src/lib/timestamp-utils.ts + tests
 - **Day 1–2**: Refactor 3 source files
 - **Verification**: All tests pass, 0 unused imports
 
 ### Phase 3, Week 2: Process Execution
 
-- **Day 3–4**: Create [src/lib/process-executor.ts](../src/lib/process-executor.ts) + tests
+- **Day 3–4**: Create src/lib/process-executor.ts + tests
 - **Day 4–5**: Refactor 3 source files
 - **Verification**: All tests pass, stress test timeout handling
 
@@ -328,8 +328,8 @@ npm run lint:unused  # Local mock factories should be unused (can remove)
 
 ### Future Opportunities
 
-1. **CLI validation duplication** ([kaseki-cli.ts](../src/kaseki-cli.ts), [kaseki-cli-lib.ts](../src/kaseki-cli-lib.ts)) — ~50–80 LOC saving
-2. **Error response builders** ([status-response-builder.ts](../src/utils/status-response-builder.ts), artifact routes) — ~40–60 LOC saving
+1. **CLI validation duplication** ([kaseki-cli.ts](../../../src/kaseki-cli.ts), [kaseki-cli-lib.ts](../../../src/kaseki-cli-lib.ts)) — ~50–80 LOC saving
+2. **Error response builders** ([status-response-builder.ts](../../../src/utils/status-response-builder.ts), artifact routes) — ~40–60 LOC saving
 3. **Config schema duplication** (Zod validators) — Phase 4 candidate
 
 ---
@@ -337,5 +337,5 @@ npm run lint:unused  # Local mock factories should be unused (can remove)
 ## References
 
 - [Fallow Report](../README.md) — Complete health metrics (maintained in CI)
-- [Phase 2 Completion](./PHASE1_COMPLETION.md) — Refactoring progress tracking
-- [ESLint Configuration](../.eslintrc.json) — unused-imports plugin settings
+- [Phase 2 Completion](../../internal/PHASE1_COMPLETION.md) — Refactoring progress tracking
+- [ESLint Configuration](../../../.eslintrc.json) — unused-imports plugin settings

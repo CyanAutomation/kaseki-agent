@@ -193,7 +193,7 @@ fi
 **Output Location**: `/results/validation-causality-analysis.json`
 
 The top-level `timestamp` records artifact creation time, not validation start or completion time.
-See the canonical [artifact schema](ARTIFACT_SCHEMAS.md#validation-causality-analysisjson).
+See the current [analysis implementation](../src/lib/validation-causality-analysis.ts); the artifact schema is defined alongside its writer and tests.
 
 **Artifact Structure**:
 
@@ -388,6 +388,6 @@ Run kaseki-agent with change to validateConfig():
 ## References
 
 - [VALIDATION_CAUSALITY_ANALYSIS.md](./VALIDATION_CAUSALITY_ANALYSIS.md) - User guide
-- [BASELINE_VALIDATION_CACHE.md](./BASELINE_VALIDATION_CACHE.md) - Phase 1 (dependency)
+- [BASELINE_VALIDATION_CACHE.md](BASELINE_TEST_COMPARISON.md) - Phase 1 (dependency)
 - [src/lib/validation-causality-analysis.ts](../src/lib/validation-causality-analysis.ts) - Implementation
 - [src/lib/validation-causality-analysis.test.ts](../src/lib/validation-causality-analysis.test.ts) - Tests

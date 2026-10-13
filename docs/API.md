@@ -438,7 +438,7 @@ When scouting is enabled (`scouting.enabled: true` or `KASEKI_SCOUTING=1`), the 
 - Scouting suggests: `src/parser.ts` and `tests/parser.test.ts`
 - **Merged result**: Main agent can modify `src/**` OR `src/parser.ts` OR `tests/parser.test.ts` → effectively `src/**` (most permissive)
 
-See [docs/QUICK_START.md](QUICK_START.md#scouting-agent--allowlist-control) for usage examples and [docs/ADVANCED_CONFIG.md](ADVANCED_CONFIG.md) for detailed allowlist configuration.
+See [quality gates](QUALITY_GATES.md) for allowlist options and usage examples, and [advanced configuration](ADVANCED_CONFIG.md) for related configuration guidance.
 
 For controller activation checks, submit `startupCheck: true` or call `POST /api/v1/runs?dryRun=true`. The default `startupCheckMode: "boot"` performs a minimal container boot smoke test for OpenRouter secret mount, writable workspace/results/cache paths, Node, Git, and Pi CLI without cloning or installing dependencies. Use `startupCheckMode: "baseline-validation"` (or provide validation commands with the startup check) to keep Pi disabled while invoking `/usr/local/bin/kaseki-agent` far enough to clone the repo, install dependencies, and run pre-agent baseline validation.
 

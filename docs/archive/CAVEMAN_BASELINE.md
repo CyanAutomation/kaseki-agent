@@ -377,9 +377,9 @@ jobs:
 ## References
 
 - [docs/CAVEMAN_PHASE2_COMPLETE.md](CAVEMAN_PHASE2_COMPLETE.md) — Implementation summary
-- [docs/ADVANCED_CONFIG.md](ADVANCED_CONFIG.md) — KASEKI_CAVEMAN_LEVEL configuration
-- [src/caveman/caveman-prompts.ts](../src/caveman/caveman-prompts.ts) — Compression templates
-- [src/caveman/caveman-prompts.test.ts](../src/caveman/caveman-prompts.test.ts) — Validation tests
+- [docs/ADVANCED_CONFIG.md](../ADVANCED_CONFIG.md) — KASEKI_CAVEMAN_LEVEL configuration
+- [src/caveman/caveman-prompts.ts](../../src/caveman/caveman-prompts.ts) — Compression templates
+- [src/caveman/caveman-prompts.test.ts](../../src/caveman/caveman-prompts.test.ts) — Validation tests
 
 ### Task 3: Large Refactor
 

@@ -130,7 +130,7 @@ USER kaseki  # UID 10000
 
 - Regular security updates (monthly planned)
 - Debian bookworm-slim: minimal base (excludes build tools, docs)
-- See [SECURITY.md](../SECURITY.md) for vulnerability response procedures
+- Review GitHub Code security and Dependabot alerts for current vulnerability reports
 
 **Pi CLI Agent Security**:
 
@@ -154,7 +154,7 @@ USER kaseki  # UID 10000
 A separate cache seeding mechanism (`docker/workspace-cache/`) pre-builds node_modules for fast runtime:
 
 - Kaski container instances use cached dependencies to avoid repeated npm install
-- See [DEVELOPMENT.md](DEVELOPMENT.md) for kaseki-agent.sh dependency caching strategy
+- See [DEVELOPMENT.md](../DEVELOPMENT.md) for kaseki-agent.sh dependency caching strategy
 - Expected time savings: 20-30 seconds per kaseki run when cache is warm
 
 ### CI/CD Pipeline Optimization (May 2026)
@@ -298,7 +298,7 @@ Check GitHub → Settings → Code security → Dependabot alerts for any discov
 - Pi CLI dependencies (usually addressed via version updates)
 - Node.js base image vulnerabilities (patched monthly)
 
-**Response procedure**: See [SECURITY.md](../SECURITY.md)
+**Response procedure**: Review the current GitHub alert and follow the repository maintainers' coordinated patch and release process.
 
 ---
 
@@ -383,10 +383,9 @@ docker buildx build \
 
 ## References
 
-- [CLAUDE.md](../CLAUDE.md) — Project overview and running kaseki-agent
-- [SECURITY.md](../SECURITY.md) — Vulnerability response procedures
-- [.github/skills/docker-image-management/SKILL.md](../.github/skills/docker-image-management/SKILL.md) — When/how to update base image
-- [.github/workflows/build-docker-image.yml](../.github/workflows/build-docker-image.yml) — Full CI/CD pipeline
+- [CLAUDE.md](../../CLAUDE.md) — Project overview and running kaseki-agent
+- [.github/skills/docker-image-management/SKILL.md](../../.agents/skills/docker-image-management/SKILL.md) — When/how to update base image
+- [.github/workflows/build-docker-image.yml](../../.github/workflows/build-docker-image.yml) — Full CI/CD pipeline
 
 ---
 

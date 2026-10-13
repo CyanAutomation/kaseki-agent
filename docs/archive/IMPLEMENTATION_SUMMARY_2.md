@@ -8,7 +8,7 @@
 
 ### Phase 1: Docker Image Build Fix ✅
 
-**File**: [Dockerfile](Dockerfile)
+**File**: [Dockerfile](../../Dockerfile)
 
 **Issue**: Missing `github-app-token-runtime.js` installation preventing GitHub App token generation
 
@@ -31,7 +31,7 @@ docker run --rm kaseki-test:local ls -la /usr/local/bin/github-app-token-runtime
 
 ### Phase 2: Dependency Cache Integrity Fix ✅
 
-**File**: [kaseki-agent.sh](kaseki-agent.sh)
+**File**: [kaseki-agent.sh](../../kaseki-agent.sh)
 
 **Issue**: TypeScript compiler (`tsc`) missing at runtime despite successful pre-validation build
 
@@ -58,7 +58,7 @@ npm list typescript
 
 ### Phase 3: Executable Integrity Checks ✅
 
-**File**: [kaseki-agent.sh](kaseki-agent.sh)
+**File**: [kaseki-agent.sh](../../kaseki-agent.sh)
 
 **Issue**: No pre-execution validation that critical tools are available
 
@@ -84,7 +84,7 @@ npm list typescript
 
 ### Phase 4: Scouting Output Schema Validation ✅
 
-**File**: [kaseki-agent.sh](kaseki-agent.sh)
+**File**: [kaseki-agent.sh](../../kaseki-agent.sh)
 
 **Issue**: Invalid scouting output (arrays as strings) passed to goal-setting, causing 422 errors downstream
 
@@ -115,7 +115,7 @@ npm list typescript
 
 ### Phase 5: Enhanced 422 Error Diagnostics ✅
 
-**Files**: [scripts/lib/provider-retry.sh](scripts/lib/provider-retry.sh)
+**Files**: [scripts/lib/provider-retry.sh](../../scripts/lib/provider-retry.sh)
 
 **Issue**: 422 errors appeared without context about upstream artifact corruption
 
@@ -204,12 +204,12 @@ OPENROUTER_API_KEY=sk-or-... \
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| [Dockerfile](Dockerfile) | 151, 189 | Install github-app-token-runtime.js to /usr/local/bin/ |
-| [kaseki-agent.sh](kaseki-agent.sh) | 8980-9011 | Add critical executables validation before scouting |
-| [kaseki-agent.sh](kaseki-agent.sh) | 1098-1102 | Integrate schema validation into scouting artifact check |
-| [kaseki-agent.sh](kaseki-agent.sh) | 1113-1170 | Add validate_scouting_output_schema() function |
-| [scripts/lib/provider-retry.sh](scripts/lib/provider-retry.sh) | 155-184 | Add capture_422_diagnostics() function |
-| [scripts/lib/provider-retry.sh](scripts/lib/provider-retry.sh) | 595 | Call capture_422_diagnostics() when error captured |
+| [Dockerfile](../../Dockerfile) | 151, 189 | Install github-app-token-runtime.js to /usr/local/bin/ |
+| [kaseki-agent.sh](../../kaseki-agent.sh) | 8980-9011 | Add critical executables validation before scouting |
+| [kaseki-agent.sh](../../kaseki-agent.sh) | 1098-1102 | Integrate schema validation into scouting artifact check |
+| [kaseki-agent.sh](../../kaseki-agent.sh) | 1113-1170 | Add validate_scouting_output_schema() function |
+| [scripts/lib/provider-retry.sh](../../scripts/lib/provider-retry.sh) | 155-184 | Add capture_422_diagnostics() function |
+| [scripts/lib/provider-retry.sh](../../scripts/lib/provider-retry.sh) | 595 | Call capture_422_diagnostics() when error captured |
 
 ---
 
@@ -248,4 +248,4 @@ OPENROUTER_API_KEY=sk-or-... \
 
 - Original failure analysis: [KASEKI-198-FAILURE-ANALYSIS.md](KASEKI-198-FAILURE-ANALYSIS.md)
 - Remediation plan: Stored in session memory `/memories/session/plan.md`
-- Exit code reference: [docs/EXIT_CODES.md](docs/EXIT_CODES.md)
+- Exit code reference: [docs/EXIT_CODES.md](../EXIT_CODES.md)

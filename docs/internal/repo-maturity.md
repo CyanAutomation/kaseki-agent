@@ -1,4 +1,6 @@
-Kaseki-Agent: Production Readiness & Maturity Guide
+# Kaseki-Agent: Production Readiness & Maturity Guide
+
+> Historical point-in-time assessment. Its score, repository signals, and recommendations have not been revalidated against the current repository. Use current setup and operations guides for supported behavior.
 
 ## Why This Matters
 
@@ -21,29 +23,29 @@ Critical concerns for teams using kaseki-agent:
 
 **Part 1: Understanding the Score**
 
-- [Scoring System](#-scoring-system) — Formula, weights, thresholds
-- [9 Signal Categories](#-kaseki-agent-signal-categories) — What we measure
+- [Scoring System](#scoring-system) — Formula, weights, thresholds
+- [9 Signal Categories](#kaseki-agent-signal-categories) — What we measure
 
 **Part 2: Self-Assessment**
 
-- [How to Self-Assess](#-how-to-self-assess) — 6-step workflow with concrete examples
-- [Current State Assessment](#-current-state-kaseki-agent-today) — Today's score: 96/100
+- [How to Self-Assess](#how-to-self-assess) — 6-step workflow with concrete examples
+- [Current State Assessment](#current-state-kaseki-agent-today) — Today's score: 96/100
 
 **Part 3: Specialized Signals (Phases 2–3)**
 
-- [DevOps/Container Tool Weights](#️-phase-2-devopscontainer-tool-weights) — Custom weights for this project type
-- [Container Security Signals](#-phase-3-container-security-signals) — Docker hardening, image scanning, secrets
-- [Performance & Efficiency Signals](#-phase-3-performance--efficiency-signals) — Cache stats, artifact validation
-- [Observability & Debugging](#-phase-3-observability--debugging-signals) — Health checks, logs, event streams
+- [DevOps/Container Tool Weights](#phase-2-devopscontainer-tool-weights) — Custom weights for this project type
+- [Container Security Signals](#phase-3-container-security-signals) — Docker hardening, image scanning, secrets
+- [Performance & Efficiency Signals](#phase-3-performance--efficiency-signals) — Cache stats, artifact validation
+- [Observability & Debugging](#phase-3-observability--debugging-signals) — Health checks, logs, event streams
 
 **Part 4: Automation & Operations (Phase 4)**
 
-- [CI/CD Integration](#-phase-4-cicd-automation--integration) — GitHub Actions, image publishing, automated scoring
+- [CI/CD Integration](#phase-4-cicd-automation--integration) — GitHub Actions, image publishing, automated scoring
 
 **Part 5: Future-Focused (Phase 5)**
 
-- [Production Readiness Roadmap](#️-phase-5-production-readiness-roadmap) — Path to 95+, industry best practices
-- [Maintenance & Governance](#-phase-5-maintenance--governance) — Keeping maturity high over time
+- [Production Readiness Roadmap](#phase-5-production-readiness-roadmap) — Path to 95+, industry best practices
+- [Maintenance & Governance](#phase-5-maintenance--governance) — Keeping maturity high over time
 
 ---
 
@@ -92,7 +94,7 @@ Ensures discoverability and first-time user experience.
 
 | Signal | Detection | Evidence for Kaseki |
 |--------|-----------|-------------------|
-| README with clear purpose | README exists in root | ✅ [README.md](../README.md) explains what kaseki-agent does |
+| README with clear purpose | README exists in root | ✅ [README.md](../../README.md) explains what kaseki-agent does |
 | License clearly stated | LICENSE file present | ✅ LICENSE file visible in repo |
 | GitHub description populated | Non-empty repo description | ✅ "Ephemeral coding-agent runner" description |
 | Topics/tags configured | ≥1 GitHub topic | ✅ docker, ci-cd, llm-agent, automation topics |
@@ -655,7 +657,7 @@ Kaseki-agent is at **96/100** (Exemplary). To push toward **98+** and sustain it
 
 ---
 
-## 💡 Phase 5: Maintenance & Governance
+## Phase 5: Maintenance & Governance
 
 ### Keeping Maturity High Over Time
 

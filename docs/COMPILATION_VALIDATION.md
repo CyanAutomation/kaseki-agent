@@ -393,4 +393,4 @@ console.log(report);
 
 - [QUALITY_GATES.md](QUALITY_GATES.md) — Compilation gate in quality gate system
 - [ASYNC_AWARENESS.md](ASYNC_AWARENESS.md) — Async-aware code changes
-- [GOAL_SETTING_IMPROVEMENTS.md](GOAL_SETTING_IMPROVEMENTS.md) — Smart goal criteria
+- [Goal-setting guide](GOAL_SETTING_GUIDE.md) — Current goal-setting behavior

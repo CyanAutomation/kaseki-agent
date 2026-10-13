@@ -320,7 +320,7 @@ When goal-check is enabled, causality analysis results inform the goal verdict:
 - **pre_existing failures**: Goal might still be met if non-critical tests fail
 - **inconclusive**: Goal verdict requires manual review
 
-See [GOAL_SETTING_PRACTICAL_GUIDE.md](./GOAL_SETTING_PRACTICAL_GUIDE.md) for details.
+See the current [goal-setting guide](GOAL_SETTING_GUIDE.md) for details.
 
 ## Troubleshooting
 
@@ -358,6 +358,6 @@ See [GOAL_SETTING_PRACTICAL_GUIDE.md](./GOAL_SETTING_PRACTICAL_GUIDE.md) for det
 
 ## References
 
-- [Validation Architecture](./VALIDATION_ARCHITECTURE.md)
-- [Baseline Validation Caching](./BASELINE_VALIDATION_CACHE.md)
-- [Goal-Check Integration](./GOAL_SETTING_PRACTICAL_GUIDE.md)
+- [Validation Architecture](VALIDATION_CAUSALITY_ANALYSIS_ARCHITECTURE.md)
+- [Baseline Validation Caching](BASELINE_TEST_COMPARISON.md)
+- [Goal-setting guide](GOAL_SETTING_GUIDE.md)

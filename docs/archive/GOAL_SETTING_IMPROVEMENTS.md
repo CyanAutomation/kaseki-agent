@@ -534,6 +534,6 @@ For the improved prompt above, expect:
 ## References
 
 - [OpenAI Codex Best Practices](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex)
-- [Goal-Setting Guide](./GOAL_SETTING_GUIDE.md)
-- [TypeScript Types](../src/types/goal-setting.ts)
-- [Feedback Loop Implementation](../src/lib/goal-setting-feedback.ts)
+- [Goal-Setting Guide](../GOAL_SETTING_GUIDE.md)
+- [TypeScript Types](../../src/types/goal-setting.ts)
+- [Feedback Loop Implementation](../../src/lib/goal-setting-feedback.ts)
