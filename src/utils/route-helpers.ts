@@ -7,6 +7,13 @@ import { JobScheduler } from '../job-scheduler';
 import { Job } from '../kaseki-api-types';
 import { sendErrorResponse } from './response-helpers';
 
+/** Prefer durable history when supported, with a fallback for lightweight schedulers. */
+export async function findRunJob(scheduler: JobScheduler, jobId: string): Promise<Job | undefined> {
+  return typeof scheduler.getJobIncludingHistory === 'function'
+    ? scheduler.getJobIncludingHistory(jobId)
+    : scheduler.getJob(jobId);
+}
+
 /**
  * Extract and validate a job ID from a request, sending an error response if not found.
  * Consolidates the pattern used across artifact, log, and status routes.

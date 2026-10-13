@@ -121,6 +121,16 @@ describe('semantic scouting phase transfer', () => {
     expect(result.metrics).toMatchObject({ status: 'no_candidates', candidateCount: 0, jevRequests: 0 });
   });
 
+  it('preserves candidates and reports unavailable when enabled without a classifier', async () => {
+    const input = scouting();
+
+    const result = await routeScoutingContext(input, { enabled: true });
+
+    expect(result.inspectedFiles).toEqual(input.inspectedFiles);
+    expect(result.implementationBrief).toEqual(input.implementationBrief);
+    expect(result.metrics).toMatchObject({ status: 'unavailable', jevFailures: 1, preservedItems: 6 });
+  });
+
   it('redacts scouting facts from the bounded JEV envelope while preserving the original handoff value', async () => {
     let request: Record<string, unknown> | undefined;
     const fact = 'Configured credential token=supersecretvalue';

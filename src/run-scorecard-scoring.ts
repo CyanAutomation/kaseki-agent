@@ -1,5 +1,5 @@
 import { RunScorecardSchema, type RunScorecard } from './types/run-scorecard';
-import type { Evidence } from './run-scorecard-evidence';
+import type { Evidence } from './run-scorecard-evidence-types';
 import { ScorecardContext } from './run-scorecard-context';
 import { buildDimensions, buildPhases, DIMENSIONS, WEIGHTS, PHASES } from './run-scorecard-scoring-parts';
 import { buildScorecardWarnings } from './run-scorecard-warnings';

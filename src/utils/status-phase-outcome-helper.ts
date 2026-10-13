@@ -19,6 +19,24 @@ type GoalSettingFacts = {
   fallbackReason?: string;
 };
 
+type PhaseOutcome = NonNullable<StatusResponse['phaseOutcome']>;
+type PhaseTimestampKey =
+  | 'scoutingStartedAt'
+  | 'scoutingCompletedAt'
+  | 'goalSettingStartedAt'
+  | 'goalSettingCompletedAt'
+  | 'weavingStartedAt'
+  | 'weavingCompletedAt';
+
+const PHASE_TIMESTAMP_KEYS: PhaseTimestampKey[] = [
+  'scoutingStartedAt',
+  'scoutingCompletedAt',
+  'goalSettingStartedAt',
+  'goalSettingCompletedAt',
+  'weavingStartedAt',
+  'weavingCompletedAt',
+];
+
 function omitUndefined<T extends Record<string, unknown>>(record: T): Partial<T> {
   return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined)) as Partial<T>;
 }
@@ -155,11 +173,7 @@ export class StatusPhaseOutcomeHelper {
     const heartbeatAgeSeconds = Number.isFinite(updatedMs)
       ? Math.max(0, Math.floor((Date.now() - updatedMs) / 1000))
       : undefined;
-    const requestedTimeout = stage && /goal check/i.test(stage)
-      ? Number(job.request?.goalCheck?.timeoutSeconds)
-      : stage && /run evaluation/i.test(stage)
-        ? Number(job.request?.runEvaluation?.timeoutSeconds)
-        : Number(job.request?.timeoutSeconds);
+    const requestedTimeout = this.requestedPhaseTimeout(stage, job);
     const timeoutSeconds = Number.isFinite(requestedTimeout) && requestedTimeout > 0
       ? requestedTimeout
       : this.config.agentTimeoutSeconds ?? 3600;
@@ -176,10 +190,16 @@ export class StatusPhaseOutcomeHelper {
     };
   }
 
+  private requestedPhaseTimeout(stage: string | undefined, job: Job): number {
+    if (stage && /goal check/i.test(stage)) return Number(job.request?.goalCheck?.timeoutSeconds);
+    if (stage && /run evaluation/i.test(stage)) return Number(job.request?.runEvaluation?.timeoutSeconds);
+    return Number(job.request?.timeoutSeconds);
+  }
+
   private monotonicPhaseOutcome(
     job: Job,
-    next: NonNullable<StatusResponse['phaseOutcome']>,
-  ): NonNullable<StatusResponse['phaseOutcome']> {
+    next: PhaseOutcome,
+  ): PhaseOutcome {
     const previous = this.runningOutcomeHighWater.get(job.id);
 
     if (job.status !== 'running') {
@@ -195,15 +215,18 @@ export class StatusPhaseOutcomeHelper {
       goalSetting: this.moreAdvancedScouting(previous.goalSetting, next.goalSetting),
       scouting: this.moreAdvancedScouting(previous.scouting, next.scouting),
       weaving: this.moreAdvancedWeaving(previous.weaving, next.weaving),
-      ...(previous.scoutingStartedAt && !next.scoutingStartedAt ? { scoutingStartedAt: previous.scoutingStartedAt } : {}),
-      ...(previous.scoutingCompletedAt && !next.scoutingCompletedAt ? { scoutingCompletedAt: previous.scoutingCompletedAt } : {}),
-      ...(previous.goalSettingStartedAt && !next.goalSettingStartedAt ? { goalSettingStartedAt: previous.goalSettingStartedAt } : {}),
-      ...(previous.goalSettingCompletedAt && !next.goalSettingCompletedAt ? { goalSettingCompletedAt: previous.goalSettingCompletedAt } : {}),
-      ...(previous.weavingStartedAt && !next.weavingStartedAt ? { weavingStartedAt: previous.weavingStartedAt } : {}),
-      ...(previous.weavingCompletedAt && !next.weavingCompletedAt ? { weavingCompletedAt: previous.weavingCompletedAt } : {}),
+      ...this.preservedPhaseTimestamps(previous, next),
     } : next;
     this.runningOutcomeHighWater.set(job.id, merged);
     return merged;
+  }
+
+  private preservedPhaseTimestamps(previous: PhaseOutcome, next: PhaseOutcome): Partial<PhaseOutcome> {
+    const retained: Partial<PhaseOutcome> = {};
+    for (const key of PHASE_TIMESTAMP_KEYS) {
+      if (previous[key] && !next[key]) retained[key] = previous[key];
+    }
+    return retained;
   }
 
   private moreAdvancedScouting(
