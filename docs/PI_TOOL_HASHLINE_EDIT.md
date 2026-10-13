@@ -320,9 +320,9 @@ Verify Pi can:
 
 ## References
 
-- **Kaseki Integration**: See [docs/OHMYPI_FEATURE_INTEGRATION.md](docs/OHMYPI_FEATURE_INTEGRATION.md) — Feature 1
-- **HashlineValidator**: See [src/hashline-validator.ts](src/hashline-validator.ts) — Kaseki-side validation
-- **Event Handler**: See [src/hashline-event-handler.ts](src/hashline-event-handler.ts) — Processes Pi events
+- **Kaseki Integration**: See [hashline architecture](internal/HASHLINE_ARCHITECTURE.md)
+- **HashlineValidator**: See [src/hashline-validator.ts](../src/hashline-validator.ts) — Kaseki-side validation
+- **Event Handler**: See [src/hashline-event-handler.ts](../src/hashline-event-handler.ts) — Processes Pi events
 
 ---
 

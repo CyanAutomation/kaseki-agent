@@ -771,7 +771,7 @@
 ### Phase 1: Immediate Removals (No Breaking Changes)
 
 1. **Stop generating**: progress.log, validation-raw.log, pre-validation-raw.log
-   - **Files to modify**: [kaseki-agent.sh](kaseki-agent.sh), feature agent scripts
+   - **Files to modify**: [kaseki-agent.sh](../../kaseki-agent.sh), feature agent scripts
    - **Impact**: -30 KB per run, instant cleanup
 
 2. **Consolidate feature-specific .stderr.log**: Merge into phase-errors.jsonl instead

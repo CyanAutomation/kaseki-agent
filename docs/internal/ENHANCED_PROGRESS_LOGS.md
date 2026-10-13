@@ -258,7 +258,7 @@ If performance becomes a concern, add `KASEKI_PROGRESS_SUMMARIZATION=0` to disab
 
 ## Related Files
 
-- [docs/QUALITY_GATES.md](QUALITY_GATES.md) — Progress logs used for quality gate reporting
-- [docs/TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) — Examples of prompts that generate informative agent decisions
-- [src/pi-event-filter.ts](../src/pi-event-filter.ts) — Post-run filtering (unchanged)
-- [src/progress-stream-utils.ts](../src/progress-stream-utils.ts) — Tool name sanitization (existing utility)
+- [docs/QUALITY_GATES.md](../QUALITY_GATES.md) — Progress logs used for quality gate reporting
+- [docs/TASK_PROMPT_TEMPLATES.md](../TASK_PROMPT_TEMPLATES.md) — Examples of prompts that generate informative agent decisions
+- [src/pi-event-filter.ts](../../src/pi-event-filter.ts) — Post-run filtering (unchanged)
+- [src/progress-stream-utils.ts](../../src/progress-stream-utils.ts) — Tool name sanitization (existing utility)

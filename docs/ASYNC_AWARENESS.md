@@ -488,5 +488,5 @@ npm run build  # Ensure types check out
 ## See Also
 
 - [COMPILATION_VALIDATION.md](COMPILATION_VALIDATION.md) — Build validation for typed languages
-- [GOAL_SETTING_IMPROVEMENTS.md](GOAL_SETTING_IMPROVEMENTS.md) — Smart goal criteria
+- [Goal-setting guide](GOAL_SETTING_GUIDE.md) — Current goal-setting behavior
 - [QUALITY_GATES.md](QUALITY_GATES.md) — Quality gate system

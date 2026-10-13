@@ -1,590 +1,68 @@
-# AGENTS.md
+# Repository Instructions
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Kaseki Agent schedules coding tasks through a REST API and runs them in
+disposable Docker workers. The TypeScript CLI submits and monitors runs; Bash
+and Docker scripts configure hosts and execute worker phases.
 
-## What This Is
+## Where to look
 
-Kaseki Agent is an ephemeral coding-agent runner: it spins up a disposable Docker container, clones a target Git repository inside it, invokes the Pi CLI coding agent via OpenRouter, runs validation commands, and collects artifacts. Each run is a numbered instance (kaseki-1, kaseki-2, …).
+- [README](README.md) — product overview and entry points.
+- [Documentation index](docs/INDEX.md) — current guides, references, and design notes.
+- [Contributing guide](CONTRIBUTING.md) — contribution workflow and review standards.
+- `src/` — TypeScript API, CLI, configuration, and run orchestration.
+- `scripts/`, `Dockerfile`, and `docker-compose.yml` — host setup and container behavior.
+- `.agents/skills/` — agent-facing operational knowledge.
+- [Markdown inventory](docs/internal/MARKDOWN_INVENTORY.md) — documentation roles and locations.
 
-## Current Infrastructure Status (May 2026)
+Check the implementation and its tests before changing a behavior description.
+The active deployment guide is [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md); dated
+reports and superseded guides are under `docs/archive/`.
 
-- **Node.js**: v24 (bookworm-slim base image)
-- **Docker Build**: Optimized multi-stage with consolidated RUN layers
-- **CI/CD**: Parallelized pipeline with GHA caching (80-90% hit rate)
-  - **GitHub Actions**: All actions updated to native Node.js 24 support (v6+ for checkout/setup-node, v7+ for upload-artifact)
-  - **Trivy Scanner**: Pinned to v0.36.0 (no floating @master refs)
-- **Security**: Trivy scanning with SBOM generation
-- **Deployment**: Docker Compose (preferred) with Node.js fallback
+## Development
 
-## Setup Simplification (Completed May 2026)
-
-A major simplification initiative has been completed to reduce setup friction. **Breaking changes released** — old setup paths no longer supported.
-
-### What Changed
-
-**Before**: 3 fragmented entry points
-
-- npm CLI setup + serve (complex dependency on global Node.js)
-- Shell script path (`./scripts/kaseki-setup.sh` + `./run-kaseki.sh`)
-- Docker bootstrap ceremony: manual `kaseki-activate.sh --controller bootstrap`
-- Configuration: 60+ env vars scattered across 3 files
-
-**After**: Unified `kaseki-agent init` wizard + Zero-Touch Docker
-
-- Single decision tree: single-run vs local API vs production
-- Auto-detects environment (Docker, Node.js, permissions)
-- Unified credential storage: `~/.kaseki/secrets.json` (mode 0600)
-- Essential 8 variables (8 shown, 50+ auto-detected)
-- Early permission checks prevent silent failures
-- Template auto-initializes; no bootstrap ceremony needed
-
-### Implementation Complete (Phases 1, 2, 3, 4, 5, 6)
-
-**Phase 1: Unified Setup Command** ✅
-
-- `src/setup/SetupWizard.ts` — Interactive wizard with environment detection
-- `src/cli/commands/InitCommand.ts` — New primary setup entry point
-
-**Phase 2: Permission Validation** ✅
-
-- `scripts/startup-checks.sh` — Early permission checking with actionable errors
-- Integrated into `scripts/docker-entrypoint.sh` — runs before any operation
-
-**Phase 3: Bootstrap Auto-Initialization** ✅
-
-- `src/kaseki-api-service.ts` → `ensureTemplateInitialized()` — auto-copies template from image
-- No manual `kaseki-activate.sh --controller bootstrap` needed anymore
-- API service starts automatically with zero setup ceremony
-
-**Phase 4: Configuration Complexity Reduction** ✅
-
-- Essential 8 variables identified and documented
-- 50+ advanced variables auto-detected based on environment
-
-**Phase 5: Unified Documentation** ✅
-
-- `docs/QUICK_START.md` — Single decision tree for all paths
-- `docs/ADVANCED_CONFIG.md` — Complete reference (60+ variables organized by zone)
-
-**Phase 6: Formal Deprecation** ✅
-
-- `kaseki-agent init --import-legacy` — migrate legacy setup (see docs/CLI.md)
-- Old commands/scripts no longer functional (breaking changes)
-- Clear error messages direct users to new setup process
-
-### Files Created/Modified
-
-**New Files (9)**:
-
-- `src/setup/SetupWizard.ts` — Interactive setup orchestrator
-- `src/cli/commands/InitCommand.ts` — New primary setup command
-- `.env.template` — Minimal Essential 8 configuration
-- `.env.advanced.template` — Complete variable reference
-- `scripts/startup-checks.sh` — Permission validation and startup diagnostics
-- `docs/QUICK_START.md` — Unified quick-start guide (decision tree)
-- `docs/ADVANCED_CONFIG.md` — Complete configuration reference
-
-**Modified Files (5)**:
-
-- `scripts/docker-entrypoint.sh` — Added Phase 2 startup checks
-- `src/kaseki-api-service.ts` — Added Phase 3 auto-initialization
-- `src/cli/commands/SetupCommand.ts` — Deprecated (now delegates to wizard)
-- `src/cli/KasekiCLI.ts` — Updated to feature 'init' command
-- `src/cli.ts` — Updated help text
-
-## Architecture: Host-Container Separation
-
-Two layers, each with its own script:
-
-**Host (`run-kaseki.sh`)** — runs on the bare host:
-
-- Auto-generates instance names, creates per-run workspace and results directories (ephemeral, cleaned up after run)
-- Resolves the OpenRouter API key (env var or secret file), mounts it read-only
-- Launches Docker with hardened runtime flags (`--read-only`, `--cap-drop ALL`, tmpfs, non-root user)
-- Cleans up on exit
-
-**Container (`kaseki-agent.sh`)** — runs inside the container:
-
-- Clones the repo at the requested ref
-- Prepares Node.js dependencies via a 4-layer cache (stamp check → workspace cache → image seed cache → fresh install)
-- Invokes Pi with a configurable timeout
-- Runs validation commands sequentially, recording timings
-- Enforces quality gates (diff size, changed-file allowlist, secret scan)
-- Writes all artifacts to `/results`
-
-**Supporting utilities (Node.js):**
-
-- `pi-event-filter.js` — filters raw Pi JSONL, strips thinking blocks, emits `pi-events.jsonl` + `pi-summary.json`
-- `kaseki-report.js` — reads a results directory and prints a compact diagnostic report
-- `kaseki-cli.js` + `kaseki-cli-lib.js` — live monitoring CLI for external AI agents (see [docs/CLI.md](docs/CLI.md))
-
-**Directory layout at runtime:**
-
-```
-/agents/kaseki-template/          # Dockerfile, scripts (this repo)
-/agents/kaseki-runs/kaseki-N/     # Per-run workspace (cloned repo, node_modules)
-/agents/kaseki-results/kaseki-N/  # Artifacts (logs, diff, metadata, summary)
-/agents/kaseki-cache/             # Optional host-level dependency cache
-```
-
-**Skills directory** (AI agent domain knowledge):
-
-```
-.agents/skills/                   # Specialized domain knowledge for operations, troubleshooting, optimization
-├── README.md                     # Skills index with decision tree and skill interconnections
-├── workflow-diagnosis/           # Troubleshooting and failure diagnosis
-├── environment-configuration/    # Configuration reference
-├── quality-gate-config/          # Quality gates and validation
-├── prompt-engineering/           # Task prompt design
-├── [11 other skills]/            # See .agents/skills/README.md for complete index
-```
-
-See [.agents/skills/README.md](.agents/skills/README.md) for the complete skills inventory, decision tree, and cross-reference map.
-
-## Common Commands
-
-### 🎯 Setup (All New Users Start Here)
+Use Node.js 24 or later and install dependencies with `npm ci`. The standard
+checks are:
 
 ```bash
-# Interactive setup wizard - choose your execution path
-kaseki-agent init
-
-# This guides you through:
-# - Environment detection (Docker, Node.js, permissions)
-# - Path selection (single-run vs local API vs production)
-# - Essential 8 configuration (API key, validation, timeouts)
-# - Auto-generated smart defaults
-# - Secure credential storage
+npm run check
+npm test
 ```
 
-### Single-Run Execution
+`npm run check` runs type checking, linting, and local Markdown-link checks.
+`npm test` builds the project and runs the unit suite. For a focused change,
+run the relevant test first and add regression coverage before fixing the
+behavior.
+
+For workflow or documentation-checker changes, also run:
 
 ```bash
-# Using run-kaseki.sh (recommended - handles all setup automatically)
-OPENROUTER_API_KEY=sk-or-... ./run-kaseki.sh
-
-# Explicit instance name
-OPENROUTER_API_KEY=sk-or-... ./run-kaseki.sh kaseki-7
-
-# API key via secret file
-OPENROUTER_API_KEY_FILE=~/.kaseki/secrets.json ./run-kaseki.sh
-
-# Custom target repo + branch
-REPO_URL=https://github.com/org/repo GIT_REF=feature/branch OPENROUTER_API_KEY=... ./run-kaseki.sh
-
-# Health/sanity check (no agent run)
-./run-kaseki.sh --doctor
-
-# Build image locally
-docker build -t kaseki-template:latest .
-
-# Generate diagnostic report for a completed run
-docker run --rm --entrypoint kaseki-report \
-  -v /agents/kaseki-results/kaseki-4:/results:ro \
-  kaseki-template:latest /results
+npm run test:markdown-links
+npm run test:workflows
 ```
 
-### Docker Run (Direct Container Invocation)
-
-If you're using `docker run` directly instead of `run-kaseki.sh`, ensure proper volume mounts:
-
-```bash
-# ✅ CORRECT: /results mounted with :rw flag (read-write)
-docker run \
-  -v /path/to/results:/results:rw \
-  -e OPENROUTER_API_KEY=sk-or-... \
-  -e TASK_PROMPT="your task here" \
-  docker.io/cyanautomation/kaseki-agent:latest
-
-# ❌ WRONG: /results mounted with :ro flag (read-only)
-# This will cause exit code 86 (scouting artifact validation failed)
-docker run \
-  -v /path/to/results:/results:ro \
-  ...  # WILL FAIL
-
-# ❌ WRONG: /results not mounted at all
-# Artifacts will be lost or fail to write
-docker run \
-  ...  # NO VOLUME MOUNT FOR /results - WILL FAIL
-
-# ✅ CORRECT: Use tmpfs for /results (temporary in-memory storage)
-docker run \
-  --tmpfs /results:rw \
-  -e OPENROUTER_API_KEY=sk-or-... \
-  ...
-
-# ✅ CORRECT: Container-wide --read-only with explicit /results writable
-docker run \
-  --read-only \
-  -v /path/to/results:/results:rw \
-  --tmpfs /tmp \
-  -e OPENROUTER_API_KEY=sk-or-... \
-  ...
-```
-
-**Key Point**: The `/results` directory MUST be writable (`:rw` flag or tmpfs). Without this, scouting and validation will fail with exit code 86.
-
-### Run Retention & Cleanup
-
-```bash
-# Preview what would be deleted (dry-run)
-kaseki-agent cleanup --dry-run
-
-# Delete old runs (keep last 5, default behavior)
-kaseki-agent cleanup --force
-
-# Delete old runs (keep only last 3)
-kaseki-agent cleanup --force --count 3
-
-# Cleanup is automatic: happens before each new run starts
-# Default retention: 5 runs (configurable via KASEKI_RETENTION_RUNS env var)
-# Set KASEKI_RETENTION_RUNS=0 to delete all runs between each execution
-# Matching run-kaseki-kaseki-N-*.log host logs follow the same retention policy.
-# KASEKI_LOG_DIR selects their directory (default: /var/log/kaseki).
-```
-
-### Deprecated Commands (No Longer Supported)
-
-The following commands have been **removed**:
-
-```bash
-# ✗ Old setup command (removed)
-kaseki-agent setup
-
-# ✗ Old shell scripts (removed)
-./scripts/kaseki-setup.sh
-./scripts/kaseki-activate.sh
-
-# ✗ Bootstrap ceremony (no longer needed)
-# The API service auto-initializes now; just run: docker-compose up -d
-```
-
-See `kaseki-agent init --import-legacy` for legacy migration guidance (see [docs/CLI.md](docs/CLI.md)).
-
-## Deploying the Kaseki API Service
-
-### ✅ Recommended: Docker Compose
-
-```bash
-# Start the API service (see docs/DEPLOYMENT.md for full options)
-export KASEKI_API_KEYS=sk-your-secret-key
-cd /agents/kaseki-template
-docker-compose up -d
-
-# Monitor
-docker-compose logs -f kaseki-api
-```
-
-### Fallback: Node.js Process
-
-```bash
-# Install and run (if Docker is unavailable)
-npm install
-KASEKI_API_KEYS=sk-your-secret-key npm run kaseki-api
-```
-
-**Note on directory structure:**
-
-- `run-kaseki.sh` and ephemeral worker containers create their own per-run `/agents/kaseki-runs/` workspaces (cleaned up after each run)
-- The kaseki-api service **automatically creates** `/agents/kaseki-results/` on startup (no pre-setup needed) — this persists run artifacts for monitoring and analysis
-- Both approaches share the same `/agents/kaseki-cache/` for optional dependency caching
-
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for comprehensive deployment guidance, including volume mount requirements for Dockhand/Portainer deployments.
-
-## Key Environment Variables
-
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `OPENROUTER_API_KEY` | — | Required (or use file) |
-| `OPENROUTER_API_KEY_FILE` | `~/.kaseki/secrets.json` | Preferred; set by setup wizard |
-| `REPO_URL` | CyanAutomation/crudmapper | Target repo |
-| `GIT_REF` | main | Branch/tag/commit |
-| `KASEKI_MODEL` | dynamic/kaseki-agent | Pi model string |
-| `KASEKI_AGENT_TIMEOUT_SECONDS` | 10800 | Pi invocation timeout (3 hours) |
-| `TASK_PROMPT` | *(code fix task)* | Agent instruction |
-| `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test;npm run build` | Semicolon-separated; missing npm scripts are skipped (non-fatal) |
-| `KASEKI_CHANGED_FILES_ALLOWLIST` | `**` | Optional space-separated path restrictions; task scope is enforced semantically from scouting |
-| `KASEKI_VALIDATION_ALLOWLIST` | — | Space-separated patterns (validation phase; optional) |
-| `KASEKI_MAX_DIFF_BYTES` | 400000 | Max diff size (400 KB) |
-| `KASEKI_DEBUG_RAW_EVENTS` | 0 | Keep raw Pi JSONL |
-| `KASEKI_KEEP_WORKSPACE` | 0 | Remove per-run workspace after each run |
-| `KASEKI_STREAM_PROGRESS` | 1 | Stream sanitized progress lines |
-| `KASEKI_IMAGE` | docker.io/cyanautomation/kaseki-agent:latest | Image to use |
-
-## Quality Gates and Exit Codes
-
-Quality gates run after the agent completes, before reporting success:
-
-| Gate | Exit Code | Variable |
-| --- | --- | --- |
-| Missing API key / config | 2 | — |
-| Empty git diff | 3 | — |
-| Diff exceeds max bytes | 4 | `KASEKI_MAX_DIFF_BYTES` |
-| Changed file outside allowlist | 5 | `KASEKI_CHANGED_FILES_ALLOWLIST` |
-| Secret scan hit (sk-or-* leak NOT in allowlist) | 6 | `.kaseki-secret-allowlist` |
-| Validation phase files outside allowlist | 7 | `KASEKI_VALIDATION_ALLOWLIST` |
-| Provider/model error (non-retryable after retry) | 88 | — |
-| Pi agent timeout | 124 | `KASEKI_AGENT_TIMEOUT_SECONDS` |
-| Validation command failure | propagated | `KASEKI_VALIDATION_COMMANDS` |
-
-## Provider Resilience & Automatic Retry
-
-**Exit Code 88** — LLM Provider Error (Non-Retryable)
-
-Kaseki-agent implements automatic retry logic for transient provider/model errors to improve reliability when interacting with LLM gateways (OpenRouter, etc.):
-
-**Automatic retry triggers on:**
-
-- HTTP 503 (Service Unavailable)
-- HTTP 429 (Rate Limited)
-- Connection errors (ECONNRESET, ETIMEDOUT, etc.)
-- "Model is unavailable" (temporary service issue)
-
-**Non-retryable errors** (exit 88 immediately):
-
-- HTTP 404 (Model not found — permanent)
-- "Deprecated" or "discontinued" model (permanent removal)
-- Authentication errors (invalid API key)
-- Malformed requests
-
-**How retry works:**
-
-1. Pi CLI invocation fails with transient error
-2. Error classification in `pi-event-filter.ts` detects retryable pattern
-3. Bash wrapper `run_pi_with_retry()` retries the same invocation once after 3-second delay
-4. Retry result tracked in metadata: `provider_error_retry_result` (success/failed) and `provider_error_retry_attempt_count` (0/1/2)
-5. If retry succeeds, run continues normally (exit 0)
-6. If retry also fails, exit code 88
-
-**Metadata fields for provider errors:**
-
-- `provider_error_type` — Classification (model_unavailable, auth_error, etc.)
-- `provider_error_message` — Full error text from provider
-- `provider_error_retryable` — Whether transient (true/false, "true"/"false" string)
-- `provider_error_retry_attempt_count` — Number of attempts (0=no retry, 1=first attempt failed, 2=retry also failed)
-- `provider_error_retry_result` — Outcome (none/success/failed)
-
-**Troubleshooting exit 88:**
-
-See [docs/EXIT_CODES.md](docs/EXIT_CODES.md#88--provider-model-error-non-retryable) for detailed scenarios and fixes. Quick reference:
-
-- **Transient (503, 429):** Wait and retry; check provider status
-- **404 model not found:** Update `KASEKI_MODEL` to available model
-- **Deprecated model:** Switch to current model version
-- **Auth failure:** Verify API key and account credits
-- **Quota exceeded:** Add credits or wait for reset
-
-## Result Artifacts
-
-All written to `/agents/kaseki-results/kaseki-N/`:
-
-- `metadata.json` — core metadata with consolidated phase data (schema_version: 2.0)
-  - timestamps, exit codes per stage, model, instance name
-  - `.phases.validation` — validation results array with commands, exit codes, durations
-  - `.phases.quality_gates` — quality gate violations with types and details
-  - `.phases.secret_scan` — detected credentials with patterns and allowlist status
-- `result-summary.md` — human-readable status + key facts
-- `pi-events.jsonl` / `pi-summary.json` — filtered agent events and stats
-- `git.diff` / `git.status` / `changed-files.txt` — repo changes
-- `validation.log` / `validation-timings.tsv` — command output + timing
-- `quality.log` — gate failures and diagnostics
-- `restoration.jsonl` — structured allowlist restoration events (JSONL format)
-- `restoration-report.md` — human-readable allowlist restoration report
-- `progress.log` / `progress.jsonl` — sanitized stage and Pi event progress
-- `cleanup.log` — mandatory post-run cleanup summary
-- `exit_code` — container exit code (0=success, non-zero=failure)
-
-**Phase 3–4 Consolidations (v2.0)**:
-Previously separate artifacts (`validation-results.json`, `quality-gates.json`, `secret-scan.json`, `secret-scan.log`) are now consolidated into `metadata.json.phases.*` to reduce artifact count and improve discoverability. The Web UI and API automatically fetch the consolidated phases structure from `metadata.json`.
-
-## Dependency Caching
-
-`kaseki-agent.sh` uses a stamp-based, 4-layer cache to avoid redundant `npm ci` runs:
-
-1. Check if node_modules + lock hash stamp already match → skip
-2. Restore from workspace cache (`/workspace/.kaseki-cache/<repo-hash>/<lock-hash>/`)
-3. Restore from image seed cache (`/opt/kaseki/workspace-cache/`)
-4. Run `npm ci --prefer-offline` or `npm install`
-
-The stamp file lives outside the repo directory to keep `git.status` clean.
-
-## Security Hardening
-
-- API key is **never passed as an env var to child processes** — resolved from file at runtime
-- Docker runtime: `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges:true`, non-root user (UID 10000)
-- Secret scan checks the results, workspace git metadata, and source dirs for `sk-or-*` patterns
-- Detected patterns are allowlisted via `.kaseki-secret-allowlist` file (one entry per line: `<file>:<pattern>`)
-- Only real leaks (unallowlisted patterns) trigger exit code 6; test fixtures are permitted
-
-## Container Image Scanning
-
-Kaseki-agent container images are scanned for vulnerabilities using industry-standard tools:
-
-### Automated Scanning (CI/CD)
-
-GitHub Actions scans each candidate image before it can be promoted. The scan
-checks only vulnerabilities (not repository secrets), ignores findings with no
-available fix, uploads SARIF and JSON evidence, and blocks promotion on an
-unfixed high- or critical-severity finding. A human-readable summary is printed
-in the job log before the gate fails.
-
-```yaml
-- name: Generate Trivy vulnerability report
-  uses: aquasecurity/trivy-action@<pinned-commit> # v0.36.0
-  with:
-    image-ref: docker.io/cyanautomation/kaseki-agent@<immutable-digest>
-    format: sarif
-    output: trivy-results.sarif
-    scanners: vuln
-    severity: HIGH,CRITICAL
-    ignore-unfixed: true
-    exit-code: '0'
-
-- name: Upload to GitHub Security tab
-  uses: github/codeql-action/upload-sarif@<pinned-commit> # v4
-  with:
-    sarif_file: 'trivy-results.sarif'
-```
-
-Results are published to GitHub's **Security** → **Code scanning alerts** tab.
-The JSON report is retained as a workflow artifact for 30 days.
-
-### Manual Scanning
-
-To scan the image locally:
-
-```bash
-# Install Trivy (macOS)
-brew install trivy
-
-# Install Trivy (Linux)
-curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
-
-# Scan latest image
-trivy image docker.io/cyanautomation/kaseki-agent:latest
-
-# Scan with severity filter
-trivy image --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL docker.io/cyanautomation/kaseki-agent:latest
-
-# Generate JSON report
-trivy image --format json --output report.json docker.io/cyanautomation/kaseki-agent:latest
-```
-
-### Known Vulnerabilities
-
-Check GitHub Settings → Code security → Dependabot alerts for any discovered vulnerabilities. Most are transitive (in Pi CLI dependencies) and are addressed via dependency updates.
-
-### Image Integrity (Optional)
-
-Images can be signed using **cosign** for supply chain security:
-
-```bash
-# Verify signed image (requires public key)
-cosign verify --key cosign.pub docker.io/cyanautomation/kaseki-agent:latest
-
-# View image attestation
-cosign verify-attestation --key cosign.pub docker.io/cyanautomation/kaseki-agent:latest
-```
-
-See [SECURITY.md](SECURITY.md) for detailed vulnerability response procedures.
-
-## Diagnosing Failures
-
-Recommended inspection order:
-
-1. `kaseki-report /agents/kaseki-results/kaseki-N` (compact summary, includes allowlist metrics)
-2. `result-summary.md` → status + failed command
-3. `restoration-report.md` → if many files were restored before validation
-4. `metadata.json` → per-stage exit codes
-5. `stdout.log` / `stderr.log` → execution flow
-6. `pi-summary.json` / `pi-events.jsonl` → agent activity
-7. `validation.log` + `validation-timings.tsv` → command failures
-8. `quality.log` + `changed-files.txt` → allowlist/diff violations
-9. `secret-scan.log` → credential detection
-
-## Allowlist Configuration & Troubleshooting
-
-**Problem: Too many files are restored before validation?**
-
-See [docs/QUALITY_GATES.md](docs/QUALITY_GATES.md) for:
-
-- Allowlist pattern syntax and examples
-- Pre-built templates for common task types
-- How to use `scripts/suggest-allowlist.sh` to auto-generate patterns
-- How to use `scripts/dry-run-allowlist.sh` to preview restoration
-- Decision tree for choosing the right allowlist
-
-**Problem: Agent made too many unintended changes?**
-
-See [docs/TASK_PROMPT_TEMPLATES.md](docs/TASK_PROMPT_TEMPLATES.md) for:
-
-- How to write clear, scoped task prompts
-- Examples of good vs. bad prompts
-- Anti-patterns that lead to scope creep
-- How to combine prompts with allowlist for best results
-
-## CI/CD
-
-`.github/workflows/build-docker-image.yml` builds multi-arch images (amd64 + arm64 via QEMU), runs smoke tests (Pi CLI available, metadata structure valid), and publishes to `docker.io/cyanautomation/kaseki-agent:latest`.
-
-## External Agent Monitoring with Kaseki CLI
-
-The **Kaseki CLI** enables external AI agents to interrogate running and completed kaseki instances in real-time. This is useful for:
-
-- **Status polling**: Get current stage, elapsed time, timeout risk
-- **Error detection**: Identify failures in validation, quality gates, secret scans
-- **Anomaly flagging**: Warn when timeout is imminent (>85% elapsed)
-- **Log streaming**: Follow logs live as agent runs
-- **Post-run analysis**: Comprehensive summary of changes, validation results, metrics
-
-### Quick Example
-
-```bash
-# List all instances
-./kaseki-cli.js list
-
-# Get status of a running instance (JSON)
-./kaseki-cli.js status kaseki-1
-
-# Detect errors
-./kaseki-cli.js errors kaseki-1
-
-# Get post-run analysis
-./kaseki-cli.js analysis kaseki-1
-
-# Live monitor with anomaly alerts
-./kaseki-cli.js watch kaseki-1 --interval=2
-
-# Stream logs in real-time
-./kaseki-cli.js follow kaseki-1
-
-# Show sanitized progress events
-./kaseki-cli.js progress kaseki-1 --tail=25
-```
-
-### Integration Pattern
-
-An external agent can use the CLI to monitor kaseki:
-
-```bash
-#!/bin/bash
-while true; do
-  STATUS=$(./kaseki-cli.js status kaseki-1)
-  RUNNING=$(echo $STATUS | jq -r '.running')
-  TIMEOUT_RISK=$(echo $STATUS | jq -r '.timeoutRiskPercent')
-
-  # Alert on timeout risk
-  if (( $(echo "$TIMEOUT_RISK >= 85" | bc -l) )); then
-    echo "⚠ Timeout imminent: ${TIMEOUT_RISK}%"
-  fi
-
-  # Exit when complete
-  [ "$RUNNING" = "false" ] && break
-  sleep 5
-done
-
-# Final analysis
-./kaseki-cli.js analysis kaseki-1
-```
-
-See [docs/CLI.md](docs/CLI.md) for comprehensive documentation, library usage, and advanced integration patterns.
+## Documentation
+
+- Keep product setup and operation guidance in `docs/` and link it from
+  `docs/INDEX.md`.
+- Keep project history in `docs/archive/`; do not present dated snapshots as
+  current product instructions.
+- Keep agent skills, GitHub templates, and script templates beside the tools
+  that consume them.
+- Update `docs/internal/MARKDOWN_INVENTORY.md` whenever Markdown files move or
+  their role changes.
+- `npm run check:markdown-links` checks all tracked Markdown files by default.
+- Environment variable names and defaults must agree with the implementation
+  and [the environment reference](docs/ENV_VARS.md).
+
+## Operational accuracy
+
+- The guided Docker Compose deployment supports Debian 12/13 and 64-bit
+  Raspberry Pi OS; see [the quick start](docs/QUICK_START.md).
+- The API mounts the Docker socket to launch workers. Treat API bearer tokens
+  as host-administrator credentials.
+- `/ready` reports API startup and does not test gateway credentials or model
+  availability.
+- Coding inference uses the configured OpenAI-compatible gateway. OpenRouter
+  credentials are optional for evaluation stages.
+- Never put real credentials in source, docs, logs, command examples, or test
+  fixtures. Use clearly fake values in tests.

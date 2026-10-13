@@ -318,6 +318,6 @@ When goal-setting phase runs (regardless of success/failure):
 
 ## References
 
-- [GOAL_SETTING_GUIDE.md](GOAL_SETTING_GUIDE.md) - Full goal-setting guide
-- [ADVANCED_CONFIG.md](ADVANCED_CONFIG.md) - Environment variable reference
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - General troubleshooting
+- [GOAL_SETTING_GUIDE.md](../GOAL_SETTING_GUIDE.md) - Full goal-setting guide
+- [ADVANCED_CONFIG.md](../ADVANCED_CONFIG.md) - Environment variable reference
+- [TROUBLESHOOTING.md](../TROUBLESHOOTING.md) - General troubleshooting

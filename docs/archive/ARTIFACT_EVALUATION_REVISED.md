@@ -127,7 +127,7 @@ Remove all score ≤4 artifacts:
 
 **Files to modify**:
 
-- [kaseki-agent.sh](kaseki-agent.sh) — Remove generation of all low-value artifacts
+- [kaseki-agent.sh](../../kaseki-agent.sh) — Remove generation of all low-value artifacts
 - Feature agent scripts — Remove .stderr.log generation (scouting, goal-check, etc.)
 
 **Expected result**:
@@ -151,7 +151,7 @@ Consolidate free-text logs into structured JSON:
 
 **Files to modify**:
 
-- [kaseki-agent.sh](kaseki-agent.sh) — Stop generating duplicate logs
+- [kaseki-agent.sh](../../kaseki-agent.sh) — Stop generating duplicate logs
 - Validation scripts — Only output structured JSON
 
 **Expected result**:
@@ -175,7 +175,7 @@ Move redundant JSON/JSONL data into `metadata.json`:
 
 **Files to modify**:
 
-- [kaseki-report.js](src/kaseki-report.js) — Update paths for consolidated data
+- [kaseki-report.js](../../src/kaseki-report.ts) — Update paths for consolidated data
 - All agents reading these artifacts — Update to read from metadata.json
 
 **Expected result**:
@@ -193,8 +193,8 @@ Move redundant JSON/JSONL data into `metadata.json`:
 For all KEEP artifacts (score ≥8):
 
 1. Add `schema_version` and `artifact_version` fields
-2. Create [docs/ARTIFACT_SCHEMAS.md](docs/ARTIFACT_SCHEMAS.md) with OpenAPI specs
-3. Update [CLAUDE.md](CLAUDE.md) with final artifact inventory
+2. Create [docs/ARTIFACT_SCHEMAS.md](../ARTIFACT_SCHEMAS.md) with OpenAPI specs
+3. Update [CLAUDE.md](../../CLAUDE.md) with final artifact inventory
 
 **Example**:
 
@@ -335,5 +335,5 @@ For all KEEP artifacts (score ≥8):
 ## 📖 Reference Documents
 
 - [ARTIFACT_SCORING_EVALUATION.md](ARTIFACT_SCORING_EVALUATION.md) — Full 5-dimensional scoring for all 105+ artifacts
-- [ARTIFACT_SCORING_QUICK_REFERENCE.md](ARTIFACT_SCORING_QUICK_REFERENCE.md) — Quick lookup table
+- [ARTIFACT_SCORING_QUICK_REFERENCE.md](../ARTIFACT_SCORING_QUICK_REFERENCE.md) — Quick lookup table
 - [ARTIFACT_CONSUMPTION_RESEARCH.md](ARTIFACT_CONSUMPTION_RESEARCH.md) — Detailed artifact usage patterns

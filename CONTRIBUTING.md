@@ -28,11 +28,11 @@ When changing default prompt behavior, update both files in the same PR so host 
 
 Behavior changes in target repos must include corresponding tests. In particular:
 
-- Add or update **focused Vitest coverage** whenever behavior changes.
+- Add or update focused regression tests whenever behavior changes.
 - Prefer narrow, deterministic tests near the touched behavior (for example, parser-focused tests rather than broad end-to-end-only coverage).
 - Ensure `KASEKI_VALIDATION_COMMANDS` still reflects the expected upstream validation sequence.
 
-If a prompt requests behavior changes but no focused Vitest update is present, treat that as an incomplete contribution.
+If a behavior change has no focused regression coverage, treat it as an incomplete contribution.
 
 ### Validation fail-fast behavior
 
@@ -235,7 +235,7 @@ Before opening a pull request that adds a test credential:
 **References:**
 
 - [docs/SECRET_SCAN_ALLOWLIST.md](docs/SECRET_SCAN_ALLOWLIST.md) — Detailed allowlist documentation
-- [CLAUDE.md](CLAUDE.md#Quality-Gates-and-Exit-Codes) — Quality gates and exit codes
+- [Quality gates](docs/QUALITY_GATES.md) and [exit codes](docs/EXIT_CODES.md) — Change limits, validation gates, and their outcomes
 
 ## 6) Evaluation Best Practices
 
@@ -468,49 +468,43 @@ When retiring or significantly refactoring a function, module, or pattern:
 
    ```typescript
    /**
-    * @deprecated Use `newTimestampExtractor()` instead. Will be removed in v2.0.
-    * @see docs/DUPLICATION_AUDIT.md for migration examples.
+     * @deprecated Use `replacementFunction()` instead. Remove this export after
+     * downstream callers have migrated.
     */
    export function legacyExtractTimestamp(event: unknown): string { ... }
    ```
 
-2. **Link documentation** — Reference the duplication/refactoring doc:
-   - [docs/DUPLICATION_AUDIT.md](docs/DUPLICATION_AUDIT.md) — Active refactoring targets and consolidation strategies
-   - [docs/PHASE2_COMPLETION.md](docs/PHASE2_COMPLETION.md) — Historical record of major refactors
+2. **Update callers and guidance** — Change internal call sites, tests, and any
+   current documentation that names the old API. Keep a deprecation notice only
+   when external consumers need time to migrate.
 
-3. **Define removal deadline** — Specify which minor version will remove the deprecated function (e.g., v2.0).
+3. **Set a removal condition** — Coordinate removal with the package's public
+   compatibility policy and active release plan.
 
-4. **Group removals** — Don't remove deprecated functions piecemeal; batch removal in a single "cleanup" PR after a grace period (typically 1–2 minor releases).
+4. **Remove obsolete code** — Delete the deprecated path once callers and
+   compatibility requirements are addressed.
 
 ### Identifying Refactoring Opportunities
 
-The codebase tracks health metrics using **Fallow** (code health analyzer). Run locally to identify hotspots:
+Use **Fallow** as one input when investigating repeated code or high-maintenance
+areas:
 
 ```bash
 npx fallow
 ```
 
-Key metrics to monitor:
-
-- **Hotspots** (52.5+ score) — Files with high churn + complexity (job-scheduler, api-routes, cli)
-- **Accelerating files** (▲ trend) — Files getting worse, signal to intervene early
-- **Clone groups** (80+ identified) — Duplication candidates for consolidation
-- **Maintainability** (currently 84.3, target 87+) — Overall health score
-
-**Action triggers:**
-
-- File churn >30 commits in 6 months → Candidate for modularization
-- Clone group >50 LOC × 3 files → Create shared utility (see [DUPLICATION_AUDIT.md](docs/DUPLICATION_AUDIT.md))
-- Accelerating trend (▲) for 2+ consecutive runs → Design intervention before it compounds
+Review the current report and surrounding code before acting on a metric. A
+clone group is a candidate for investigation, not proof that a shared
+abstraction would improve the design.
 
 ### When to Refactor
 
 **Good candidates for refactoring PRs:**
 
-- Consolidating duplication identified in `fallow` report
-- Extracting concerns from "god objects" (e.g., splitting api-routes into sub-routers)
-- Extracting test utilities and mock factories into test-utils
-- Creating shared library utilities for common patterns
+- Consolidating repeated behavior when the callers share a stable contract
+- Extracting concerns when a module boundary makes behavior easier to test
+- Sharing test helpers when their setup and expectations truly match
+- Creating utilities that have multiple clear callers
 
 **Bad candidates (defer to feature PRs):**
 
@@ -521,8 +515,8 @@ Key metrics to monitor:
 
 **PR expectations for refactoring:**
 
-- Explain the refactoring goal (e.g., "Reduce api-routes from 350 → 200 LOC"; "Consolidate 3-file duplication")
-- Include before/after LOC counts or metrics (use `fallow` output)
+- Explain the maintenance problem and intended boundary
+- Include focused evidence from the affected callers or current analysis report
 - Confirm all tests pass; no regression in coverage
 - No functional changes (refactors are behavior-preserving)
 - Use conventional commit: `refactor(scope): description` (does NOT trigger version bump)
@@ -550,45 +544,36 @@ npm run lint:fix     # Auto-fix most issues
 
 When in doubt, mark as deprecated first and remove in a later cleanup PR.
 
-### Plugin/Registry Patterns (Prevent Future Churn)
+### Choosing an abstraction
 
-When a module is expanding rapidly (e.g., `preflight-validator` grew from 5 → 15 checks, or `pi-event-filter` handles 3+ event types), convert to a **plugin registry** pattern:
+Use the simplest boundary that makes ownership, behavior, and tests clearer.
+Registries and plugin interfaces are useful when implementations are selected
+or extended independently; they add indirection when the set of behaviors is
+small and stable. Review the current callers and tests before introducing a
+shared abstraction.
 
-**Before (grows with each new check/type):**
+## 12) Documentation maintenance
 
-```typescript
-// pre-flight-validator.ts — 300+ LOC, tight coupling
-function validateGithubApp() { ... }
-function validateOpenRouter() { ... }
-function validateDocker() { ... }
-// → Adding new check requires modifying this file
-```
+- Put current user and developer guidance in `docs/` and link it from
+  [the documentation index](docs/INDEX.md).
+- Keep one canonical source for each topic. Use the environment reference for
+  variable names and defaults; use the advanced configuration guide for
+  detailed behavior and examples.
+- Keep investigations and superseded instructions in `docs/archive/`.
+- Update [the Markdown inventory](docs/internal/MARKDOWN_INVENTORY.md) when
+  Markdown files move or change role.
+- Run `npm run check:markdown-links` after documentation changes. It checks
+  tracked and untracked repository Markdown files.
 
-**After (plugin-based, extensible):**
-
-```typescript
-// pre-flight-validator.ts — 100 LOC, just registry
-export class PreflightCheckRegistry {
-  register(check: PreflightCheck): void { ... }
-  runAll(): Promise<CheckResult[]> { ... }
-}
-
-// Each check is separate: src/preflight/github-app-check.ts
-export class GithubAppCheck implements PreflightCheck { ... }
-
-// → Adding new check: create new file, register in test setup
-```
-
-**See [docs/DUPLICATION_AUDIT.md](docs/DUPLICATION_AUDIT.md)** for specific plugin targets (e.g., `pre-flight-validator`, `pi-event-filter`).
-
-## 12) PR checklist
+## 13) PR checklist
 
 Before opening/merging, include:
 
 - [ ] Prompt rationale for any `TASK_PROMPT` default or guardrail change.
-- [ ] Test evidence (commands + output summary), including focused Vitest updates when behavior changed.
+- [ ] Test evidence (commands + output summary), including focused regression coverage when behavior changed.
 - [ ] Confirmation that changed-file allowlist and max diff checks still pass (or documented rationale for updates).
 - [ ] Any operator-impacting env var, default, or runbook/documentation updates.
+- [ ] Documentation index, inventory, and local links updated when documentation moved or changed role.
 - [ ] For refactoring: explain the goal (LOC reduction, duplication elimination, churn prevention), confirm fallow metrics improve or stay flat.
-- [ ] For deprecation: `@deprecated` JSDoc + link to migration docs + removal version specified.
+- [ ] For deprecation: `@deprecated` JSDoc, caller updates, and a removal condition consistent with compatibility policy.
 - [ ] Linting passes: `npm run lint:unused` is clean (0 unused imports/exports).

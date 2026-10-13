@@ -124,10 +124,10 @@ Run this to check your tests:
 
 ## More Information
 
-- Full guide: [docs/TEST_ISOLATION_BEST_PRACTICES.md](TEST_ISOLATION_BEST_PRACTICES.md)
+- Full guide: [docs/TEST_ISOLATION_BEST_PRACTICES.md](../TEST_ISOLATION_BEST_PRACTICES.md)
 - Postmortem: [docs/TEST_ENVIRONMENT_POLLUTION_POSTMORTEM.md](TEST_ENVIRONMENT_POLLUTION_POSTMORTEM.md)
-- Helper source: [test/helpers/env-isolation.ts](../test/helpers/env-isolation.ts)
+- Helper source: [test/helpers/env-isolation.ts](../../test/helpers/env-isolation.ts)
 
 ## Real Example
 
-See [tests/cloudflare-gateway-integration.test.ts](../tests/cloudflare-gateway-integration.test.ts) line 149+
+See [tests/cloudflare-gateway-integration.test.ts](../../tests/cloudflare-gateway-integration.test.ts) line 149+

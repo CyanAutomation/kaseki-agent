@@ -623,4 +623,3 @@ stat /agents/kaseki-results/kaseki-N/metadata.json  # On multiple hosts
 
 - [DEPLOYMENT.md](DEPLOYMENT.md) — Single-host setup
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues
-- [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md) — Failover procedures
