@@ -104,6 +104,12 @@ describe('language-detection', () => {
   });
 
   describe('getBuildCommand', () => {
+    test('uses Bun when the checkout has only a Bun lockfile', () => {
+      fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ scripts: { build: 'tsc' } }));
+      fs.writeFileSync(path.join(tempDir, 'bun.lock'), '{}');
+      expect(getBuildCommand(tempDir, 'typescript')).toBe('bun run build');
+    });
+
     it('should return npm run build for TypeScript with npm', () => {
       fs.writeFileSync(path.join(tempDir, 'tsconfig.json'), '{}');
       const packageJson = {

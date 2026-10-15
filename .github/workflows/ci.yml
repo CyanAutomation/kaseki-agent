@@ -49,6 +49,11 @@ jobs:
       - name: Install ShellCheck
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck ripgrep
       - run: npm ci
+      - name: Install pinned Bun for target repository tests
+        run: |
+          bun_version=$(node -p "require('./docker/image-toolchain/package.json').dependencies.bun")
+          npm install --prefix "$RUNNER_TEMP/kaseki-bun" --no-audit "bun@$bun_version"
+          echo "$RUNNER_TEMP/kaseki-bun/node_modules/.bin" >> "$GITHUB_PATH"
       - run: npm run check:ci-node-versions
       - run: npm run lint
       - run: npm run check:markdown-links

@@ -346,9 +346,11 @@ KASEKI_STARTUP_CHECK_MODE="${KASEKI_STARTUP_CHECK_MODE:-boot}"
 KASEKI_BASELINE_VALIDATION_DRY_RUN="${KASEKI_BASELINE_VALIDATION_DRY_RUN:-0}"
 KASEKI_AGENT_TIMEOUT_SECONDS="${KASEKI_AGENT_TIMEOUT_SECONDS:-10800}"
 KASEKI_VALIDATION_COMMANDS_EXPLICIT="${KASEKI_VALIDATION_COMMANDS+x}"
+[ "${KASEKI_VALIDATION_COMMANDS:-auto}" != auto ] || KASEKI_VALIDATION_COMMANDS_EXPLICIT=""
 KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS-npm run build;npm run type-check;npm run test}"
 KASEKI_AUTO_LINT_CLEANUP_EXPLICIT="${KASEKI_AUTO_LINT_CLEANUP+x}"
 KASEKI_AUTO_LINT_CLEANUP="${KASEKI_AUTO_LINT_CLEANUP:-1}"
+KASEKI_AUTO_LINT_CLEANUP_COMMANDS_EXPLICIT="${KASEKI_AUTO_LINT_CLEANUP_COMMANDS+x}"
 KASEKI_AUTO_LINT_CLEANUP_COMMANDS="${KASEKI_AUTO_LINT_CLEANUP_COMMANDS-npm run lint:fix;__kaseki_trailing_whitespace_cleanup__}"
 KASEKI_SKIP_MISSING_NPM_SCRIPTS="${KASEKI_SKIP_MISSING_NPM_SCRIPTS:-1}"
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
@@ -388,6 +390,7 @@ export KASEKI_CACHE_DIR
 KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
 KASEKI_PRE_AGENT_VALIDATION="${KASEKI_PRE_AGENT_VALIDATION:-1}"
 KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT="${KASEKI_PRE_AGENT_VALIDATION_COMMANDS+x}"
+[ "${KASEKI_PRE_AGENT_VALIDATION_COMMANDS:-auto}" != auto ] || KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT=""
 KASEKI_PRE_AGENT_VALIDATION_COMMANDS="${KASEKI_PRE_AGENT_VALIDATION_COMMANDS-$KASEKI_VALIDATION_COMMANDS}"
 KASEKI_BASELINE_VALIDATION_ENABLED="${KASEKI_BASELINE_VALIDATION_ENABLED:-1}"
 KASEKI_BASELINE_REF="${KASEKI_BASELINE_REF:-$GIT_REF}"
@@ -403,7 +406,7 @@ if [[ "$KASEKI_BASELINE_CACHE_DISABLED" != "0" && "$KASEKI_BASELINE_CACHE_DISABL
   KASEKI_BASELINE_CACHE_DISABLED=0
 fi
 KASEKI_TS_PRE_CHECK="${KASEKI_TS_PRE_CHECK:-1}"
-KASEKI_TS_CHECK_COMMAND="${KASEKI_TS_CHECK_COMMAND:-npm run build}"
+KASEKI_TS_CHECK_COMMAND="${KASEKI_TS_CHECK_COMMAND:-auto}"
 export KASEKI_SCOUTING_EXPLICIT="${KASEKI_SCOUTING+x}"
 export KASEKI_GOAL_SETTING_EXPLICIT="${KASEKI_GOAL_SETTING+x}"
 export KASEKI_GOAL_CHECK_EXPLICIT="${KASEKI_GOAL_CHECK+x}"
@@ -2158,6 +2161,9 @@ write_metadata() {
   "newly_introduced_failures_count": $NEWLY_INTRODUCED_FAILURES_COUNT,
   "environment_fingerprints": $(metadata_env_fingerprints_json),
   "node_version": $(node --version 2>/dev/null | json_encode || printf 'null'),
+  "package_manager": $(printf '%s' "${KASEKI_PACKAGE_MANAGER:-}" | json_encode),
+  "package_manager_version": $(printf '%s' "${KASEKI_PACKAGE_MANAGER_VERSION:-}" | json_encode),
+  "dependency_lockfile": $(printf '%s' "${KASEKI_LOCKFILE:-}" | json_encode),
   "npm_version": $(npm --version 2>/dev/null | json_encode || printf 'null'),
   "pi_version": $(printf '%s' "$PI_VERSION" | json_encode),
   "stages": $stages_json,
@@ -4771,9 +4777,9 @@ run_dependency_cache_prune_with_heartbeat() {
 
 npm_run_script_name() {
   local command="$1"
-  local npm_run_regex='^npm[[:space:]]+run[[:space:]]+([^[:space:]-][^[:space:]-]*)($|[[:space:]])'
+  local npm_run_regex='^(npm|bun)[[:space:]]+run[[:space:]]+([^[:space:]-][^[:space:]]*)($|[[:space:]])'
   if [[ "$command" =~ $npm_run_regex ]]; then
-    printf '%s' "${BASH_REMATCH[1]}"
+    printf '%s' "${BASH_REMATCH[2]}"
     return 0
   fi
   return 1
@@ -4832,11 +4838,11 @@ default_lightweight_validation_commands() {
   if [ -n "${KASEKI_LIGHTWEIGHT_VALIDATION_COMMANDS:-}" ]; then
     printf '%s' "$KASEKI_LIGHTWEIGHT_VALIDATION_COMMANDS"
   elif package_json_has_npm_script "type-check"; then
-    printf '%s' "npm run type-check"
+    printf '%s' "$(target_package_manager) run type-check"
   elif has_typescript_project; then
-    printf '%s' "npm exec -- tsc --noEmit"
+    printf '%s' "./node_modules/.bin/tsc --noEmit"
   elif package_json_has_npm_script "check"; then
-    printf '%s' "npm run check"
+    printf '%s' "$(target_package_manager) run check"
   else
     printf '%s' ":"
   fi
@@ -4874,12 +4880,12 @@ ensure_build_before_test_validation() {
   for command in "${command_array[@]}"; do
     trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
     [ -z "$trimmed" ] && continue
-    [[ "$trimmed" == npm\ run\ build* ]] && has_build=1
-    [[ "$trimmed" == npm\ run\ test* ]] && has_test=1
+    [[ "$trimmed" =~ ^(npm|bun)[[:space:]]+run[[:space:]]+build($|[[:space:]]) ]] && has_build=1
+    [[ "$trimmed" =~ ^(npm|bun)[[:space:]]+run[[:space:]]+test(:[^[:space:]]*)?($|[[:space:]]) ]] && has_test=1
     normalized="$(append_default_validation_command "$normalized" "$trimmed")"
   done
   if [ "$has_test" -eq 1 ] && [ "$has_build" -eq 0 ]; then
-    normalized="$(append_default_validation_command "npm run build" "$normalized")"
+    normalized="$(append_default_validation_command "$(target_package_manager) run build" "$normalized")"
   fi
   printf '%s' "$normalized"
 }
@@ -4893,22 +4899,22 @@ construct_default_validation_commands() {
   if package_json_has_npm_script "type-check" &&
     package_json_has_npm_script "lint" &&
     package_json_has_npm_script "test:unit"; then
-    printf '%s' "npm run type-check;npm run lint;npm run test:unit"
+    printf '%s' "$(target_package_manager) run type-check;$(target_package_manager) run lint;$(target_package_manager) run test:unit"
     return 0
   fi
 
   if package_json_has_npm_script "build"; then
-    commands="$(append_default_validation_command "$commands" "npm run build")"
+    commands="$(append_default_validation_command "$commands" "$(target_package_manager) run build")"
   elif package_json_has_npm_script "type-check"; then
-    commands="$(append_default_validation_command "$commands" "npm run type-check")"
+    commands="$(append_default_validation_command "$commands" "$(target_package_manager) run type-check")"
   elif has_typescript_project; then
-    commands="$(append_default_validation_command "$commands" "npm exec -- tsc --noEmit")"
+    commands="$(append_default_validation_command "$commands" "./node_modules/.bin/tsc --noEmit")"
   elif package_json_has_npm_script "check"; then
-    commands="$(append_default_validation_command "$commands" "npm run check")"
+    commands="$(append_default_validation_command "$commands" "$(target_package_manager) run check")"
   fi
 
   if package_json_has_npm_script "test"; then
-    commands="$(append_default_validation_command "$commands" "npm run test")"
+    commands="$(append_default_validation_command "$commands" "$(target_package_manager) run test")"
   fi
 
   if [ -n "$commands" ]; then
@@ -4918,7 +4924,7 @@ construct_default_validation_commands() {
 
   # Keep validation non-empty even when the repository does not define common
   # scripts. The validation runner will report each missing npm script clearly.
-  printf '%s' "npm run build;npm run type-check;npm run test"
+  printf '%s' "$(target_package_manager) run build;$(target_package_manager) run type-check;$(target_package_manager) run test"
 }
 
 all_requested_validation_scripts_are_missing() {
@@ -4953,8 +4959,12 @@ apply_default_validation_commands() {
   if [ -z "${KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
     KASEKI_PRE_AGENT_VALIDATION_COMMANDS="${detected_commands:-$KASEKI_VALIDATION_COMMANDS}"
   fi
-  KASEKI_VALIDATION_COMMANDS="$(ensure_build_before_test_validation "$KASEKI_VALIDATION_COMMANDS")"
-  KASEKI_PRE_AGENT_VALIDATION_COMMANDS="$(ensure_build_before_test_validation "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS")"
+  if [ -z "${KASEKI_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
+    KASEKI_VALIDATION_COMMANDS="$(ensure_build_before_test_validation "$KASEKI_VALIDATION_COMMANDS")"
+  fi
+  if [ -z "${KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT:-}" ] && [ -z "${KASEKI_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
+    KASEKI_PRE_AGENT_VALIDATION_COMMANDS="$(ensure_build_before_test_validation "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS")"
+  fi
 }
 
 # shellcheck source=scripts/auto-lint-cleanup-classification.sh
@@ -5146,7 +5156,7 @@ baseline_validation_cache_key() {
 
 baseline_validation_install_flags() {
   local -a flags=()
-  append_npm_install_flags flags
+  package_manager_install_flags flags
   printf '%s\n' "${flags[*]}"
 }
 
@@ -5175,6 +5185,8 @@ const manifest = {
   runtime: {
     node: env.BASELINE_MANIFEST_NODE,
     npm: env.BASELINE_MANIFEST_NPM,
+    package_manager: env.KASEKI_PACKAGE_MANAGER || 'npm',
+    package_manager_version: env.KASEKI_PACKAGE_MANAGER_VERSION || env.BASELINE_MANIFEST_NPM,
     validation_toolchains: env.BASELINE_MANIFEST_VALIDATION_TOOLCHAINS
   },
   dependency_install_flags: env.BASELINE_MANIFEST_INSTALL_FLAGS,
@@ -5348,7 +5360,6 @@ choose_baseline_log_dir() {
 checkout_baseline_repo() {
   local baseline_dir="${KASEKI_WORKSPACE_BASELINE_DIR}"
   local baseline_log_dir
-  local -a baseline_install_flags
   BASELINE_SETUP_FAILURE_REASON=""
   if ! baseline_log_dir="$(choose_baseline_log_dir)"; then
     BASELINE_SETUP_FAILURE_REASON="log_directory_failed"
@@ -5382,8 +5393,7 @@ checkout_baseline_repo() {
     # previous `! cd ... && npm ci` only negated `cd`, so a successful cd
     # short-circuited the install and baseline validation ran without its
     # dependencies (typically as an opaque exit 127).
-    append_npm_install_flags baseline_install_flags
-    if ! (cd "$baseline_dir" && npm ci --prefer-offline "${baseline_install_flags[@]}" 2>>"$baseline_npm_ci_log"); then
+    if ! (cd "$baseline_dir" && resolve_target_package_manager && install_target_dependencies) 2>>"$baseline_npm_ci_log"; then
       BASELINE_SETUP_FAILURE_REASON="dependency_install_failed"
       emit_error_event "baseline_deps_failed" "Failed to install baseline dependencies" "continue"
       cd "${KASEKI_WORKSPACE_DIR}"/repo
@@ -5410,15 +5420,27 @@ run_baseline_validation() {
   
   # Save current working directory
   local saved_pwd="$PWD"
+  local KASEKI_PACKAGE_MANAGER="${KASEKI_PACKAGE_MANAGER:-npm}"
+  local KASEKI_PACKAGE_MANAGER_VERSION="${KASEKI_PACKAGE_MANAGER_VERSION:-}"
+  local KASEKI_LOCKFILE="${KASEKI_LOCKFILE:-}"
+  local KASEKI_PACKAGE_WORKSPACES="${KASEKI_PACKAGE_WORKSPACES:-0}"
+  local KASEKI_PACKAGE_TREE_CACHE="${KASEKI_PACKAGE_TREE_CACHE:-1}"
+  local baseline_commands="$KASEKI_PRE_AGENT_VALIDATION_COMMANDS"
   # Change to baseline directory temporarily
   cd "$baseline_dir" || return 1
   : > "$baseline_raw_log"
   : > "$baseline_timings"
   
+  if [ -f package.json ]; then
+    resolve_target_package_manager || { cd "$saved_pwd" || return 1; return 1; }
+  fi
+  if [ -z "${KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT:-}" ] && [ -z "${KASEKI_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
+    baseline_commands="$(construct_default_validation_commands)"
+  fi
   # Run validation commands in baseline
   run_validation_commands \
     "baseline validation" \
-    "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
+    "$baseline_commands" \
     "$baseline_log" \
     "$baseline_raw_log" \
     "$baseline_timings" \
@@ -10020,7 +10042,18 @@ if ! run_clone_repository; then
 fi
 cd "${KASEKI_WORKSPACE_DIR}"/repo || { STATUS=1; FAILED_COMMAND="enter repository"; exit "$STATUS"; }
 begin_repo_session
+if [ -f package.json ]; then
+  if ! run_step "resolve package manager" resolve_target_package_manager; then
+    exit 0
+  fi
+fi
 apply_default_validation_commands
+if [ "$KASEKI_TS_CHECK_COMMAND" = auto ]; then
+  KASEKI_TS_CHECK_COMMAND="$(target_package_manager) run build"
+fi
+if [ -z "${KASEKI_AUTO_LINT_CLEANUP_COMMANDS_EXPLICIT:-}" ]; then
+  KASEKI_AUTO_LINT_CLEANUP_COMMANDS="$(target_package_manager) run lint:fix;__kaseki_trailing_whitespace_cleanup__"
+fi
 
 # Catch missing direct validation tools before dependency preparation or a
 # baseline checkout. This avoids repeating a command-not-found failure and
@@ -10055,16 +10088,16 @@ prepare_dependencies() {
     return 0
   fi
 
-  local lock_source=""
-  if [ -f package-lock.json ]; then
-    lock_source="package-lock.json"
-  elif [ -f npm-shrinkwrap.json ]; then
-    lock_source="npm-shrinkwrap.json"
-  else
-    printf 'Dependency install requires package-lock.json or npm-shrinkwrap.json; lockfile missing.\n' >&2
-    set_dependency_cache_status "lockfile-missing" "cache_key=none repo_url=$REPO_URL git_ref=$GIT_REF"
-    emit_progress "dependency install" "failed lockfile missing; refusing non-deterministic install" "error"
-    return 1
+  resolve_target_package_manager || return $?
+  local lock_source="$KASEKI_LOCKFILE"
+  KASEKI_DEPENDENCY_INPUT_HASH="$(target_dependency_input_hash)" || return 1
+  export KASEKI_DEPENDENCY_INPUT_HASH
+  # Workspace installs can create node_modules outside the root. Reinstall
+  # from the package store instead of restoring an incomplete root-only tree.
+  if [ "$KASEKI_PACKAGE_TREE_CACHE" = 0 ]; then
+    set_dependency_cache_status "package-store-install" "package_manager=$KASEKI_PACKAGE_MANAGER tree_cache=disabled reason=workspace_or_local_dependencies"
+    install_target_dependencies || return $?
+    return 0
   fi
 
   local repo_ref_key lock_hash flags_hash cache_key workspace_cache_root workspace_cache_dir image_cache_root image_cache_dir image_validation_marker stamp_file metadata_file
@@ -10094,6 +10127,11 @@ prepare_dependencies() {
   install_mode="skipped"
   install_reason="no_cache_available"
   restore_mode="$KASEKI_DEPENDENCY_RESTORE_MODE"
+  if [ "$KASEKI_PACKAGE_MANAGER" = bun ] && [ "$restore_mode" = symlink ]; then
+    # Bun reconciliation writes the restored tree; keep the shared cache isolated.
+    restore_mode=copy
+    emit_progress "dependency install" "using isolated copy for Bun cache reconciliation"
+  fi
   restore_method="$restore_mode"
   case "$restore_mode" in
     auto|copy|hardlink|symlink) ;;
@@ -10104,9 +10142,9 @@ prepare_dependencies() {
       return 1
       ;;
   esac
-  append_npm_install_flags install_flags
+  package_manager_install_flags install_flags
   install_flags_display="$(render_npm_install_flags "${install_flags[@]}")"
-  cache_detail="lock_hash=$lock_hash cache_key=$cache_key repo_ref_key=$repo_ref_key repo_url=$REPO_URL git_ref=$GIT_REF lockfile=$lock_source node_major=$node_major node_platform=$node_platform node_arch=$node_arch node_abi=$node_abi flags_hash=$flags_hash flags=$install_flags_display restore_mode=$restore_mode"
+  cache_detail="package_manager=$KASEKI_PACKAGE_MANAGER package_manager_version=$KASEKI_PACKAGE_MANAGER_VERSION input_hash=$KASEKI_DEPENDENCY_INPUT_HASH lock_hash=$lock_hash cache_key=$cache_key repo_ref_key=$repo_ref_key repo_url=$REPO_URL git_ref=$GIT_REF lockfile=$lock_source node_major=$node_major node_platform=$node_platform node_arch=$node_arch node_abi=$node_abi flags_hash=$flags_hash flags=$install_flags_display restore_mode=$restore_mode"
 
   if ! mkdir -p "$(dirname "$workspace_cache_root")"; then
     return 1
@@ -10129,7 +10167,7 @@ prepare_dependencies() {
       existing_graph_error=""
       existing_graph_exit=0
       cache_metric_start_ns="$(cache_metric_now)"
-      existing_graph_error="$(npm ls --depth=0 2>&1)" || existing_graph_exit=$?
+      existing_graph_error="$(validate_target_dependency_graph 2>&1)" || existing_graph_exit=$?
       if [ "$existing_graph_exit" -ne 0 ] || ! dependency_cache_required_bins_valid package.json; then
         DEPENDENCY_FAILURE_DETAIL="existing node_modules cache failed integrity validation; npm graph or required executable links are invalid"
         printf 'Dependency cache status: existing node_modules failed graph/executable validation; invalidating and reinstalling.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
@@ -10204,9 +10242,9 @@ prepare_dependencies() {
     if ! dependency_cache_schema_valid "$validation_marker" "$KASEKI_DEPENDENCY_CACHE_SCHEMA_VERSION"; then
       restore_validation_reason="missing_or_stale_schema_marker"
     else
-      restore_npm_output="$(npm ls --depth=0 2>&1)" || restore_npm_exit=$?
+      restore_npm_output="$(validate_target_dependency_graph 2>&1)" || restore_npm_exit=$?
       if [ "$restore_npm_exit" -ne 0 ]; then
-        restore_validation_reason="npm_ls_failed_after_restore"
+        restore_validation_reason="dependency_graph_failed_after_restore"
       fi
     fi
     if [ -z "$restore_validation_reason" ] && ! validate_or_repair_required_dependency_bins package.json; then
@@ -10237,7 +10275,7 @@ prepare_dependencies() {
       if ! update_dependency_cache_access "$workspace_cache_root"; then
         printf 'Warning: could not update dependency cache access record for %s.\n' "$workspace_cache_root" >&2
       fi
-      printf 'Dependency cache status: restored validated workspace cache; skipping redundant npm ls validation.\n'
+      printf 'Dependency cache status: restored validated workspace cache; skipping redundant dependency graph validation.\n'
       emit_event "dependency_cache_decision" "strategy=trust_validated_workspace_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=validated_marker_and_cache_key_match" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key"
     fi
     cache_metric_elapsed="$(cache_metric_elapsed_seconds "$cache_metric_start_ns")"
@@ -10264,9 +10302,9 @@ prepare_dependencies() {
     restore_npm_output=""
     restore_npm_exit=0
     DEPENDENCY_CACHE_BIN_REPAIRED=0
-    restore_npm_output="$(npm ls --depth=0 2>&1)" || restore_npm_exit=$?
+    restore_npm_output="$(validate_target_dependency_graph 2>&1)" || restore_npm_exit=$?
     if [ "$restore_npm_exit" -ne 0 ]; then
-      restore_validation_reason="npm_ls_failed_after_restore"
+      restore_validation_reason="dependency_graph_failed_after_restore"
     elif ! validate_or_repair_required_dependency_bins package.json; then
       restore_validation_reason="required_executable_missing_after_repair"
     elif [ "${DEPENDENCY_CACHE_BIN_REPAIRED:-0}" -eq 1 ]; then
@@ -10315,32 +10353,32 @@ prepare_dependencies() {
     emit_progress "dependency install" "started cache_hit=false restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
     install_start="$(date +%s)"
     install_start_ns="$(cache_metric_now)"
-    if npm ci --prefer-offline "${install_flags[@]}"; then
+    if install_target_dependencies; then
       :
     else
       install_exit=$?
       cache_metric_elapsed="$(cache_metric_elapsed_seconds "$install_start_ns")"
-      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "fresh_install" "true" "none" "$cache_metric_elapsed" "${install_reason}_npm_ci_failed"
-      DEPENDENCY_FAILURE_DETAIL="npm ci failed with exit $install_exit (lock_hash=$lock_hash; cache_reason=$install_reason)"
-      printf 'cache_source=none\nreason=npm_ci_failed\nexit_code=%s\nlock_hash=%s\n' "$install_exit" "$lock_hash" >> "${KASEKI_RESULTS_DIR}/dependency-cache-diagnostics.log"
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "fresh_install" "true" "none" "$cache_metric_elapsed" "${install_reason}_frozen_install_failed"
+      DEPENDENCY_FAILURE_DETAIL="$KASEKI_PACKAGE_MANAGER frozen install failed with exit $install_exit (lock_hash=$lock_hash; cache_reason=$install_reason)"
+      printf 'cache_source=none\nreason=frozen_install_failed\nexit_code=%s\nlock_hash=%s\n' "$install_exit" "$lock_hash" >> "${KASEKI_RESULTS_DIR}/dependency-cache-diagnostics.log"
       exec {cache_lock_fd}>&-
       # Report to Sentry if available
-      sentry_error "npm ci failed with exit code $install_exit" "npm-ci" "$install_exit" "$(($(date +%s) - install_start))" 2>/dev/null || true
+      sentry_error "$KASEKI_PACKAGE_MANAGER frozen install failed with exit code $install_exit" "dependency-install" "$install_exit" "$(($(date +%s) - install_start))" 2>/dev/null || true
       return "$install_exit"
     fi
     if ! validate_or_repair_required_dependency_bins package.json node_modules; then
       npm_version="$(npm --version 2>/dev/null || printf 'unknown')"
       node_version="$(node --version 2>/dev/null || printf 'unknown')"
-      emit_error_event "dependency_integrity_failure" "npm ci completed but required package executables are unavailable (node=$node_version npm=$npm_version omit_dev=${KASEKI_NPM_OMIT_DEV:-0})" "exit"
-      DEPENDENCY_FAILURE_DETAIL="npm ci completed but required package executables are unavailable (node=$node_version npm=$npm_version omit_dev=${KASEKI_NPM_OMIT_DEV:-0})"
-      printf 'Dependency cache error: npm ci completed but required executables are unavailable (node=%s npm=%s omit_dev=%s). Check package sections and npm install flags.\n' "$node_version" "$npm_version" "${KASEKI_NPM_OMIT_DEV:-0}" >&2
+      emit_error_event "dependency_integrity_failure" "$KASEKI_PACKAGE_MANAGER install completed but required package executables are unavailable (node=$node_version npm=$npm_version omit_dev=${KASEKI_NPM_OMIT_DEV:-0})" "exit"
+      DEPENDENCY_FAILURE_DETAIL="$KASEKI_PACKAGE_MANAGER install completed but required package executables are unavailable (node=$node_version npm=$npm_version omit_dev=${KASEKI_NPM_OMIT_DEV:-0})"
+      printf 'Dependency cache error: frozen install completed but required executables are unavailable (node=%s npm=%s omit_dev=%s). Check package sections and npm install flags.\n' "$node_version" "$npm_version" "${KASEKI_NPM_OMIT_DEV:-0}" >&2
       exec {cache_lock_fd}>&-
       return 1
     fi
     install_elapsed="$(($(date +%s) - install_start))"
     cache_metric_elapsed="$(cache_metric_elapsed_seconds "$install_start_ns")"
     append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "fresh_install" "true" "none" "$cache_metric_elapsed" "$install_reason"
-    install_mode="npm_ci_lockfile"
+    install_mode="${KASEKI_PACKAGE_MANAGER}_frozen_lockfile"
     emit_progress "dependency install" "finished elapsed=${install_elapsed}s cache_hit=false restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
     record_stage_timing "dependency install" "0" "$cache_metric_elapsed" "cache_hit=false cache_source=none install_mode=$install_mode restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
   else
@@ -10411,7 +10449,7 @@ prepare_dependencies() {
   fi
 
   # Only advertise a cache entry after its installed dependency graph validates.
-  if npm ls --depth=0 >/dev/null 2>&1 && dependency_cache_required_bins_valid package.json; then
+  if validate_target_dependency_graph >/dev/null 2>&1 && dependency_cache_required_bins_valid package.json; then
     rm -f "$workspace_cache_root"/validated "$workspace_cache_root"/validated-v*
     printf '%s\n' "$KASEKI_DEPENDENCY_CACHE_SCHEMA_VERSION" > "$validation_marker"
     if ! update_dependency_cache_access "$workspace_cache_root"; then
@@ -10700,7 +10738,7 @@ validate_critical_executables_for_scouting() {
   
   # npm and node are runtime tools. TypeScript and ESLint are repository-local
   # dependencies and must not depend on a global PATH entry.
-  for exe in npm node; do
+  for exe in "${KASEKI_PACKAGE_MANAGER:-npm}" node; do
     if ! command -v "$exe" >/dev/null 2>&1; then
       missing+=("$exe")
       missing_details="${missing_details}  - $exe: not found in PATH\n"
@@ -10725,7 +10763,7 @@ validate_critical_executables_for_scouting() {
   fi
   
   # All checks passed
-  printf '✓ Critical executables validation passed (project tsc/eslint and runtime npm/node available)\n'
+  printf '✓ Critical executables validation passed (project tsc/eslint and selected package manager and node available)\n'
   return 0
 }
 
@@ -11325,7 +11363,7 @@ else
   # sequence; ordinary test/type failures remain fail-fast and are not retried.
   validation_dependency_retry_count=0
   lockfile_present=0
-  [ -f package-lock.json ] && lockfile_present=1
+  [ -n "${KASEKI_LOCKFILE:-}" ] && [ -f "$KASEKI_LOCKFILE" ] && lockfile_present=1
   validation_dependency_action="$(validation_dependency_recovery_action "$VALIDATION_EXIT" "$lockfile_present" "$validation_dependency_retry_count")"
     if [ "$validation_dependency_action" = "reinstall_and_retry" ]; then
     validation_dependency_retry_count=$((validation_dependency_retry_count + 1))

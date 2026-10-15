@@ -50,9 +50,15 @@ reads API credentials from the configured Kaseki secret store. See the
 [CLI reference](docs/CLI.md) and [API reference](docs/API.md) for options and
 authentication.
 
+Target repositories can use npm or Bun. Kaseki detects the committed lockfile and
+uses frozen installs and the matching script runner. See [package manager
+configuration](docs/ENV_VARS.md#target-repository-package-managers) for version and
+workspace behavior.
+
 ## Develop locally
 
-Development requires Linux, Node.js 24 or later, npm, and ShellCheck:
+Development requires Linux, Node.js 24 or later, npm, and ShellCheck. The package
+manager integration tests also require Bun 1.4.3:
 
 ```bash
 npm ci

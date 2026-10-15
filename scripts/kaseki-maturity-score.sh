@@ -39,8 +39,10 @@ evaluate_setup() {
   # Check for package.json (1 point)
   [ -f "$REPO_PATH/package.json" ] && score=$((score + 1))
   
-  # Check for package-lock.json (1 point)
-  [ -f "$REPO_PATH/package-lock.json" ] && score=$((score + 1))
+  # Check for a supported dependency lockfile (1 point)
+  if [ -f "$REPO_PATH/package-lock.json" ] || [ -f "$REPO_PATH/npm-shrinkwrap.json" ] || [ -f "$REPO_PATH/bun.lock" ] || [ -f "$REPO_PATH/bun.lockb" ]; then
+    score=$((score + 1))
+  fi
   
   # Check for TypeScript config (1 point)
   [ -f "$REPO_PATH/tsconfig.json" ] && score=$((score + 1))

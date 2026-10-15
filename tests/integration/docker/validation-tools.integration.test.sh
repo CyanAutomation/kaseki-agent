@@ -65,6 +65,11 @@ for required_file in /app/tsconfig.json /app/eslint.config.js; do
   fi
 done
 
+test "$(bun --version)" = "$(node -p "require('/app/docker/image-toolchain/package.json').dependencies.bun")"
+for helper in package-manager.cjs package-manager-helpers.sh; do
+  test -r "/app/scripts/$helper"
+done
+
 for tool in tsc eslint jest; do
   tool_path="/app/node_modules/.bin/${tool}"
   if [ ! -f "$tool_path" ]; then

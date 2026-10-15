@@ -233,7 +233,7 @@ For API-backed runs, empty-diff acceptance is derived from the admitted task mod
 | ---------- | --------- | ------ | --------- |
 | `KASEKI_PRE_AGENT_VALIDATION` | `1` | boolean | Run validation before Pi so existing baseline failures are caught before agent work starts |
 | `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` | same as `KASEKI_VALIDATION_COMMANDS` | string | Semicolon-separated validation commands for the pre-agent baseline phase |
-| `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test` | string | Semicolon-separated validation commands for the post-agent final-diff phase |
+| `KASEKI_VALIDATION_COMMANDS` | `auto` | string | Discover scripts using the target repository package manager, or supply semicolon-separated commands for the post-agent final-diff phase |
 | `KASEKI_VALIDATION_TIMEOUT_SECONDS` | `300` | positive integer | Maximum time allowed for each validation command; unset or invalid values use the default, and timed-out commands emit structured diagnostics and stop the phase when fail-fast is enabled |
 | `KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS` | `900` | positive integer | Timeout for explicit build commands such as `npm run build`; unset or invalid values use the default, preventing production builds from being terminated by the shorter general validation timeout |
 
@@ -246,7 +246,7 @@ For API-backed runs, empty-diff acceptance is derived from the admitted task mod
 - Explicit build commands use `KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS`; all other commands use `KASEKI_VALIDATION_TIMEOUT_SECONDS`.
 - Plain `npm run` chains are expanded into separate timed stages when their scripts contain only further plain `npm run` chains and have no lifecycle hooks. Shell operations and other script bodies remain intact. An expanded build stage receives the build budget.
 - The host launcher forwards both validation timeout overrides to workers. Worker metadata records the selected image reference and immutable local image ID; baseline cache identity also includes the kernel, architecture, page size, and virtual-memory limit.
-- Missing npm scripts are skipped (non-fatal).
+- Missing package scripts in `npm run` or `bun run` commands are skipped (non-fatal). Native `bun test` is executed as supplied.
 - First failure stops that validation phase and exits with code 7.
 - Empty or `none` post-agent commands (`KASEKI_VALIDATION_COMMANDS=""` or `KASEKI_VALIDATION_COMMANDS=none`) skip post-agent validation.
 - Set `KASEKI_PRE_AGENT_VALIDATION=0` to skip the baseline phase; otherwise `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` defaults to the post-agent command list.
@@ -262,7 +262,7 @@ For API-backed runs, empty-diff acceptance is derived from the admitted task mod
 | Variable | Default | Type | Purpose |
 | ---------- | --------- | ------ | --------- |
 | `KASEKI_CACHE_DIR` | `/cache` | string | Root cache directory (container mount point) |
-| `KASEKI_DEPENDENCY_CACHE_DIR` | `${KASEKI_CACHE_DIR}/dependencies` | string | npm packages cache |
+| `KASEKI_DEPENDENCY_CACHE_DIR` | `${KASEKI_CACHE_DIR}/dependencies` | string | Installed dependency trees, separated by package manager and version |
 | `KASEKI_DEPENDENCY_RESTORE_MODE` | `auto` | enum | Restore `node_modules` from cache with `auto`, `copy`, `hardlink`, or `symlink` |
 | `KASEKI_DEPENDENCY_CACHE_MAX_BYTES` | `10737418240` | integer | Maximum dependency cache size before worker pruning; `0` disables size pruning |
 | `KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS` | `30` | integer | Maximum dependency cache entry age before worker pruning; `0` disables age pruning |
@@ -270,6 +270,9 @@ For API-backed runs, empty-diff acceptance is derived from the admitted task mod
 | `KASEKI_DEPENDENCY_CACHE_RECONCILE_THRESHOLD_PERCENT` | `90` | integer | Recorded percentage of the byte limit that triggers early actual-disk-usage reconciliation |
 | `KASEKI_DEPENDENCY_CACHE_PRUNE` | `1` | boolean | Enable dependency cache pruning after dependency preparation |
 | `KASEKI_DEPENDENCY_CACHE_METRICS_FILE` | `${KASEKI_DEPENDENCY_CACHE_DIR}/.kaseki-cache-metrics` | string | Worker-written cache size/count file read by `/api/v1/metrics` |
+| `BUN_INSTALL_CACHE_DIR` | `/cache/bun-cache` in workers | string | Bun package store; workspace installs use this store rather than restoring only root `node_modules` |
+| `KASEKI_INSTALL_IGNORE_SCRIPTS` | `1` | boolean (`0`/`1`) | Disable lifecycle scripts for npm and Bun installs |
+| `KASEKI_NPM_OMIT_DEV` | `0` | boolean (`0`/`1`) | Omit dev dependencies for npm and Bun; retained legacy variable name |
 | `NPM_CONFIG_CACHE` | `${KASEKI_CACHE_DIR}/npm-cache` | string | npm internal cache |
 | `KASEKI_BASELINE_CACHE_ROOT` | `/cache/kaseki-baseline` | string | Baseline validation results cache directory |
 | `KASEKI_BASELINE_CACHE_MAX_AGE_HOURS` | `24` | integer | Maximum baseline cache entry age in hours before expiration; `0` disables age-based invalidation |
@@ -305,6 +308,37 @@ These optional controls tune large-file summaries. Invalid integer values are ig
   - `copy`: isolated across devices; uses copy-on-write reflinks when available, with a normal-copy fallback.
   - `auto`: safest default; capability-probes and selects the verified isolated `reflink` or `copy` path.
   - `symlink`: experimental, highest coupling between cache and active workspace.
+
+#### Target repository package managers
+
+Kaseki supports npm and Bun repositories. Commit an npm lockfile (`package-lock.json`
+or `npm-shrinkwrap.json`) or a Bun lockfile (`bun.lock` or legacy `bun.lockb`) at the
+repository root. Installs run at that root, including repositories with workspaces.
+The worker rejects missing, mixed, or unsupported lockfiles; it never converts a
+repository to another package manager. npm shrinkwrap takes precedence over
+package-lock when both are present. Keep only one Bun lockfile format.
+
+An optional `packageManager` field must name npm or Bun and pin an exact version.
+The declared manager must match the lockfile, and its version must match the worker
+executable. The standard image ships npm 11.21.0 and Bun 1.4.3; use a custom worker
+image when a repository requires another version. Kaseki does not download a
+replacement manager during a run. Node remains available for Kaseki and scripts
+that explicitly invoke Node.
+
+`KASEKI_VALIDATION_COMMANDS=auto` discovers existing build, type-check, check, and
+test scripts and invokes them with `npm run` or `bun run`. Explicit command lists
+keep their command spelling and arguments. TypeScript prechecks and automatic lint
+cleanup also use the selected manager. Baseline checkouts resolve their own manager
+and lockfile. `KASEKI_TS_CHECK_COMMAND=auto` selects the manager's build script;
+operators can override it with a repository command.
+
+Dependency cache identity includes the manager version, lockfile, package manifests,
+`.npmrc`, `bunfig.toml`, Node ABI, platform, architecture, and install flags. Bun cache
+restores are reconciled with a frozen install with lifecycle scripts disabled.
+Bun uses an isolated copy when `symlink` restore mode is requested.
+Workspace repositories and repositories with local dependencies or patched
+packages use frozen installs from the package store; root-only tree caching is
+bypassed so package links and nested installations are recreated correctly.
 
 #### Operator runbook: EXDEV during dependency restore
 

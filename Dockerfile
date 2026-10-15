@@ -24,6 +24,8 @@ RUN --mount=type=secret,id=proxy_ca,required=false \
     && cp -a node_modules/. /usr/local/lib/node_modules/ \
     && node /tmp/patch-image-dependency-bundles.mjs /usr/local/lib/node_modules /usr/local/lib/node_modules \
     && node /tmp/verify-image-dependency-versions.mjs /usr/local/lib/node_modules \
+    && ln -sf /usr/local/lib/node_modules/bun/bin/bun.exe /usr/local/bin/bun \
+    && bun --version \
     && rm -rf /opt/kaseki/image-toolchain /tmp/patch-image-dependency-bundles.mjs /tmp/verify-image-dependency-versions.mjs
 WORKDIR /
 
@@ -49,7 +51,7 @@ ENV HOME=/tmp/kaseki-home \
 # Phase 2: Workspace cache seed for Layer 3 runtime fallback
 WORKDIR /opt/kaseki/workspace-cache-seed
 COPY docker/workspace-cache/package.json docker/workspace-cache/package-lock.json ./
-COPY scripts/dependency-cache-helpers.sh /opt/kaseki/dependency-cache-helpers.sh
+COPY scripts/dependency-cache-helpers.sh scripts/package-manager.cjs /opt/kaseki/
 RUN --mount=type=secret,id=proxy_ca,required=false \
     --mount=type=cache,target=/root/.npm \
     if [ -r /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi \
@@ -59,7 +61,8 @@ RUN --mount=type=secret,id=proxy_ca,required=false \
     && dependency_cache_publish_image_seed \
       /opt/kaseki/workspace-cache-seed/package-lock.json \
       /opt/kaseki/workspace-cache-seed/node_modules \
-      /opt/kaseki/workspace-cache
+      /opt/kaseki/workspace-cache \
+      /opt/kaseki/package-manager.cjs
 
 # Phase 3: Prepare Pi CLI Custom Extensions (LLM Gateway provider)
 # Extensions are loaded from ~/.pi/extensions/ and must be compiled TypeScript
