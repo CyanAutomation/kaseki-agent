@@ -37,6 +37,12 @@ describe('target repository package manager', () => {
     expect(packageScriptCommand('npm', 'test')).toBe('npm run test');
   });
 
+  test('rejects an empty lockfile path before reading cache inputs', () => {
+    expect(() => dependencyInputHash(os.tmpdir(), '')).toThrow(
+      'dependencyInputHash requires a non-empty lockfile path',
+    );
+  });
+
   test('cache inputs include manifests and configuration, excluding installed packages', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-pm-'));
     try {
