@@ -3,6 +3,38 @@
 # This file intentionally exposes only validation-related helpers and has no
 # top-level side effects beyond function definitions.
 
+validation_runtime_helper() {
+  local helper
+  helper="$(dirname "${BASH_SOURCE[0]}")/validation-runtime.mjs"
+  if [ ! -r "$helper" ]; then helper=/app/scripts/validation-runtime.mjs; fi
+  printf '%s' "$helper"
+}
+
+validation_expand_commands() {
+  local helper
+  helper="$(validation_runtime_helper)"
+  if [ -r "$helper" ]; then node "$helper" expand "$1"; else printf '%s' "$1"; fi
+}
+
+validation_runtime_preflight() {
+  local workspace="$1" log_file="$2" helper result runtime_exit=0
+  helper="$(validation_runtime_helper)"
+  [ -r "$helper" ] || return 0
+  result="$(node "$helper" smoke "$workspace" "${3:-}")" || runtime_exit=$?
+  printf '%s\n' "$result" >> "${KASEKI_RESULTS_DIR}/validation-runtime.jsonl"
+  if [ "$runtime_exit" -ne 0 ]; then
+    printf '[validation runtime preflight] %s\nexit_code=70\n' "$result" | tee -a "$log_file"
+    return 70
+  fi
+}
+
+validation_runtime_failure() {
+  local helper
+  helper="$(validation_runtime_helper)"
+  [ -r "$helper" ] || return 1
+  node "$helper" classify "$1"
+}
+
 npm_run_script_name() {
   local command="$1"
   local npm_run_regex='^npm[[:space:]]+run[[:space:]]+([^[:space:]-][^[:space:]]*)($|[[:space:]])'
@@ -384,6 +416,15 @@ run_validation_commands() {
     record_stage_timing "$stage_label" "$validation_exit_ref" "$(($(date +%s) - stage_start))" "directory_missing"
   else
     set +e
+    if ! validation_runtime_preflight "${KASEKI_WORKSPACE_DIR}/repo" "$log_file" "$commands"; then
+      validation_exit_ref=70
+      validation_stopped_ref=true
+      validation_detail_ref="workerd runtime startup failed before $stage_label; see validation-runtime.jsonl"
+      validation_reason_ref="validation_runtime_incompatible: workerd startup failed"
+      record_stage_timing "$stage_label" 70 "$(($(date +%s) - stage_start))" "runtime_preflight_failed"
+      return 70
+    fi
+    commands="$(validation_expand_commands "$commands")"
     IFS=';' read -r -a validation_commands <<< "$commands"
     for command in "${validation_commands[@]}"; do
       trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
@@ -452,6 +493,18 @@ run_validation_commands() {
           printf '  Full raw command output: %s\n' "$raw_log"
           printf '  Filter diagnostics: %s\n' "$FILTER_DIAGNOSTICS_LOG"
         } | tee -a "$log_file" "${KASEKI_RESULTS_DIR}"/quality.log "$FILTER_DIAGNOSTICS_LOG"
+      fi
+      local runtime_failure=""
+      if [ "$command_exit" -ne 0 ]; then
+        runtime_failure="$(validation_runtime_failure "$raw_log")" || runtime_failure=""
+      fi
+      if [ -n "$runtime_failure" ]; then
+        validation_exit_ref=70
+        validation_detail_ref="$runtime_failure while running $trimmed; see $log_file"
+        validation_reason_ref="validation_runtime_incompatible: $runtime_failure"
+        printf '[validation runtime failure] %s\nexit_code=70\n' "$runtime_failure" | tee -a "$log_file"
+        validation_stopped_ref=true
+        break
       fi
       if [ "$validation_infra_failure" = "true" ] && [ "$validation_exit_ref" -eq 0 ]; then
         validation_exit_ref=1

@@ -12,6 +12,8 @@ Use [the documentation index](../INDEX.md) for current product guidance and
 
 | Path | Disposition |
 | --- | --- |
+| `docs/PI4_VA48_MIGRATION.md` | Current product guidance for a separately verified custom-kernel migration |
+| `docs/archive/run-failures-449-451-2026-10-15.md` | Historical investigation and remediation evidence |
 | `.agents/skills/README.md` | Agent-facing skill and reference |
 | `.agents/skills/ci-cd-integration/SKILL.md` | Agent-facing skill and reference |
 | `.agents/skills/cost-optimization/SKILL.md` | Agent-facing skill and reference |

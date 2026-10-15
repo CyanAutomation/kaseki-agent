@@ -208,6 +208,12 @@ describe('validation-causality-analysis', () => {
       expect(assessment.confidence).toBeGreaterThan(0.7);
     });
 
+    it('does not mistake successful timeout test names for infrastructure failure', () => {
+      const assessment = assessCausality('✔ existing test', '✔ returns a timeout error for a disconnected endpoint\n✗ version-history-modal.test.ts\nError: ReferenceError: window is not defined', '+docs only', ['README.md']);
+      expect(assessment.signals.logMarkers?.markers.some(marker => marker.type === 'infra_failure' && marker.found)).toBe(false);
+      expect(assessment.rationale).not.toContain('Infrastructure failure detected');
+    });
+
     it('should verdict pre_existing for infrastructure failures', () => {
       const baseline = 'PASS';
       const postChange = 'Error: timeout waiting for database';

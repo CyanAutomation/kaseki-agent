@@ -174,9 +174,11 @@ export class StatusPhaseOutcomeHelper {
       ? Math.max(0, Math.floor((Date.now() - updatedMs) / 1000))
       : undefined;
     const requestedTimeout = this.requestedPhaseTimeout(stage, job);
+    const runTimeout = Number(job.effectiveTimeoutSeconds ?? job.request?.timeoutSeconds ?? this.config.agentTimeoutSeconds ?? 3600);
+    const effectiveRunTimeout = Number.isFinite(runTimeout) && runTimeout > 0 ? runTimeout : 3600;
     const timeoutSeconds = Number.isFinite(requestedTimeout) && requestedTimeout > 0
-      ? requestedTimeout
-      : this.config.agentTimeoutSeconds ?? 3600;
+      ? Math.min(requestedTimeout, effectiveRunTimeout)
+      : effectiveRunTimeout;
     // A phase that is silent for two minutes is actionable even when its hard
     // timeout is much larger. Keep the run running, but make the condition
     // explicit so callers can decide whether to cancel or inspect logs.

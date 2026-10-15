@@ -804,6 +804,20 @@ describe('StatusPhaseOutcomeHelper', () => {
       expect(response.phaseHealth?.heartbeatAgeSeconds).toBeGreaterThanOrEqual(120);
     });
 
+    it('reports the persisted effective deadline rather than a later service default', () => {
+      const helper = new StatusPhaseOutcomeHelper(makeScheduler([]), { ...makeConfig(resultsDir), agentTimeoutSeconds: 10800 });
+      const response = makeResponse('pre-agent validation');
+      helper.addPhaseOutcome(response, makeJob({ effectiveTimeoutSeconds: 3600 }), {});
+      expect(response.phaseHealth?.timeoutSeconds).toBe(3600);
+    });
+
+    it('caps a requested phase timeout at the effective run deadline', () => {
+      const helper = new StatusPhaseOutcomeHelper(makeScheduler([]), makeConfig(resultsDir));
+      const response = makeResponse('goal check');
+      helper.addPhaseOutcome(response, makeJob({ effectiveTimeoutSeconds: 600, request: { repoUrl: 'https://github.com/org/repo', goalCheck: { timeoutSeconds: 900 } } }), {});
+      expect(response.phaseHealth?.timeoutSeconds).toBe(600);
+    });
+
     it('uses the run-evaluation timeout for final-review health', () => {
       const helper = new StatusPhaseOutcomeHelper(makeScheduler([]), makeConfig(resultsDir));
       const response = makeResponse('run evaluation');

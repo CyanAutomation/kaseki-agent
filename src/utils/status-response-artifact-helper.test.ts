@@ -1179,6 +1179,24 @@ describe('StatusArtifactHelper', () => {
       });
     });
 
+    it.each([null, 124])('honors unavailable comparison evidence with working exit %s', (workingExit) => {
+      const response = makeResponse();
+      const runDir = path.join(resultsDir, 'job-unreliable-comparison');
+      fs.mkdirSync(runDir, { recursive: true });
+      fs.writeFileSync(path.join(runDir, 'test-baseline-comparison.json'), JSON.stringify({
+        baseline_validation_exit_code: 1,
+        working_validation_exit_code: workingExit,
+        baseline_comparison_reliable: false,
+        baseline_comparison_warning: 'Working validation did not complete.',
+        summary: { total_newly_introduced: 0 },
+      }));
+      helper.addDiagnosticSummary(response, makeJob({ status: 'failed', resultDir: runDir }));
+      expect(response.diagnosticSummary?.testFailure?.baselineComparison).toMatchObject({
+        baselineComparisonReliable: false,
+        baselineComparisonWarning: 'Working validation did not complete.',
+      });
+    });
+
     it('should omit test failure summary for malformed comparison content with no log evidence', () => {
       const response = makeResponse();
       const runDir = path.join(resultsDir, 'job-malformed-comparison');

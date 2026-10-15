@@ -244,6 +244,8 @@ For API-backed runs, empty-diff acceptance is derived from the admitted task mod
 - Post-agent commands run after Pi, allowlist restoration, and quality gates. A failure means the final agent output failed validation; inspect `validation.log`, `validation-raw.log`, `validation-env.log`, and `validation-timings.tsv`.
 - Commands are executed sequentially within each phase.
 - Explicit build commands use `KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS`; all other commands use `KASEKI_VALIDATION_TIMEOUT_SECONDS`.
+- Plain `npm run` chains are expanded into separate timed stages when their scripts contain only further plain `npm run` chains and have no lifecycle hooks. Shell operations and other script bodies remain intact. An expanded build stage receives the build budget.
+- The host launcher forwards both validation timeout overrides to workers. Worker metadata records the selected image reference and immutable local image ID; baseline cache identity also includes the kernel, architecture, page size, and virtual-memory limit.
 - Missing npm scripts are skipped (non-fatal).
 - First failure stops that validation phase and exits with code 7.
 - Empty or `none` post-agent commands (`KASEKI_VALIDATION_COMMANDS=""` or `KASEKI_VALIDATION_COMMANDS=none`) skip post-agent validation.
