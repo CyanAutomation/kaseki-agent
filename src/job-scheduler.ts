@@ -1314,6 +1314,8 @@ export class JobScheduler {
       });
     }
 
+    // Recover again after graceful exit: shutdown may have created new evidence
+    // after the pre-SIGTERM snapshot. Existing final files remain authoritative.
     if (isTimedOut) this.recoverStagedArtifacts(job);
     const lastStage = job.currentStage || 'unknown';
     if (isTimedOut) {

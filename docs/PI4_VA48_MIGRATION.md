@@ -7,8 +7,8 @@ systems. Both exposed `CONFIG_ARM64_VA_BITS=39` with 4 KiB pages.
 
 This is a custom-kernel migration, separate from a Kaseki image update. Start
 with the spare Pi, preserve its stock boot files and modules, and validate
-the candidate before scheduling a service-host maintenance window. A build
-that compiles successfully has not yet been verified to boot on the device.
+the candidate before scheduling a service-host maintenance window. A successful build alone is insufficient; verify boot and runtime behavior
+on the device as described below.
 
 ## Prepare the candidate
 
@@ -90,3 +90,45 @@ Kernel package upgrades may replace stock boot files while the custom
 candidate remains separately named. Keep ownership of the selected boot
 configuration explicit and re-run the runtime smoke after future kernel or
 workerd changes. Preserve the last known working bundle for rollback.
+
+## Verified spare-host result, 15 October 2026
+
+The candidate booted on `192.168.88.200` using one-time tryboot. SSH,
+networking, Docker, and the ext4 root filesystem remained available, with
+no failed systemd units. The running release was `6.18.56-kaseki-va48+`,
+with `CONFIG_ARM64_VA_BITS=48` and a 4,096-byte page size.
+
+The exact workerd binary from the failed runs, version `1.20261006.1`,
+had SHA-256 `771ea4ae96265a16ee19ba2c0612190d1e93831ca9e3ebd62607d36be6b3b990`.
+Its actual-worker smoke aborted with exit 134 under the stock 39-bit kernel
+and passed under the candidate. The locked Matmetrics auth-worker suite
+then passed type checking and all 28 tests across three files in a Node 24
+Linux ARM64 container. Vitest completed in 46.25 seconds.
+
+The tested kernel/modules/DTB/overlay archive has SHA-256
+`4a2c8cb4dc735837c254c7402734cf2b8aa1c1b7b4736c8ec7b5783106aea63e`.
+Stage modules on a case-sensitive filesystem; the archive preserves both
+`xt_RATEEST.ko.xz` and `xt_rateest.ko.xz`.
+
+The tested `tryboot.txt` was:
+
+```ini
+[all]
+overlay_prefix=kaseki-va48/overlays/
+include config.txt
+[all]
+auto_initramfs=0
+kernel=kaseki-va48/kernel8-kaseki-va48.img
+device_tree=kaseki-va48/bcm2711-rpi-4-b.dtb
+initramfs kaseki-va48/initramfs8 followkernel
+```
+
+The normal `config.txt`, `cmdline.txt`, and stock `kernel8.img` checksums
+remained unchanged. A normal reboot still selects the stock configuration;
+this test did not permanently promote the candidate. The spare host uses a
+RAM-backed `/tmp` cleared on reboot, so retain test checkouts and rollout
+bundles under persistent storage such as `/home/pi`.
+
+The service Pi `192.168.88.201` has not been rebooted or migrated by this
+spare-host test. Validate its own boot configuration, recovery access, and
+active jobs before applying the tested bundle there.
