@@ -38,6 +38,7 @@ disposition, see the [documentation inventory](internal/MARKDOWN_INVENTORY.md).
 | [Quality gates](QUALITY_GATES.md) | Configure file allowlists and validation gates |
 | [Secret scan allowlist](SECRET_SCAN_ALLOWLIST.md) | Allow intentional test fixtures in secret scans |
 | [Performance tuning](PERFORMANCE_TUNING.md) | Tune execution time, caching, and resource use |
+| [Pi 4 virtual-address migration](PI4_VA48_MIGRATION.md) | Prepare and validate a separate 48-bit kernel candidate for workerd compatibility |
 | [Cost estimation](COST_ESTIMATION.md) | Estimate and manage provider costs |
 | [Suggested models](suggested_models.md) | Review model suggestions |
 

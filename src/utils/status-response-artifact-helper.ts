@@ -490,10 +490,15 @@ export class StatusArtifactHelper {
       const baselineValidationExitCode = typeof parsed.baseline_validation_exit_code === 'number'
         ? parsed.baseline_validation_exit_code
         : undefined;
-      const baselineComparisonReliable = baselineValidationExitCode === undefined || baselineValidationExitCode === 0 || baselineValidationExitCode === 1;
+      const baselineComparisonReliable = typeof parsed.baseline_comparison_reliable === 'boolean'
+        ? parsed.baseline_comparison_reliable
+        : (baselineValidationExitCode === undefined || baselineValidationExitCode === 0 || baselineValidationExitCode === 1)
+          && (parsed.working_validation_exit_code === undefined || parsed.working_validation_exit_code === 0 || parsed.working_validation_exit_code === 1);
       const baselineComparisonWarning = baselineComparisonReliable
         ? undefined
-        : `Baseline validation exited ${baselineValidationExitCode}; failure classification may be incomplete.`;
+        : typeof parsed.baseline_comparison_warning === 'string'
+          ? parsed.baseline_comparison_warning
+          : `Baseline validation exited ${baselineValidationExitCode}; failure classification may be incomplete.`;
       return {
         baselineComparison: {
           totalNewlyIntroduced: this.optionalNumber(parsed.summary?.total_newly_introduced),

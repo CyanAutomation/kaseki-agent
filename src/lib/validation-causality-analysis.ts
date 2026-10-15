@@ -238,7 +238,7 @@ export function detectLogMarkers(
 
   // Detect infrastructure failures
   const infraPatterns: LogMarker[] = [
-    { type: 'infra_failure', pattern: 'timeout', found: /timeout/i.test(failureLog) },
+    { type: 'infra_failure', pattern: 'timeout', found: /^(?!.*(?:✔|✓|PASS|ok \d)).*(?:Error:.*(?:timeout|timed out)|validation command timed out|ETIMEDOUT|exit_code=124)/im.test(failureLog) },
     { type: 'infra_failure', pattern: 'ENOTFOUND', found: /ENOTFOUND/.test(failureLog) },
     { type: 'infra_failure', pattern: 'ECONNREFUSED', found: /ECONNREFUSED/.test(failureLog) },
     { type: 'infra_failure', pattern: 'out of memory', found: /out of memory/i.test(failureLog) },

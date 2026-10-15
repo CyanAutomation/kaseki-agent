@@ -1975,6 +1975,7 @@ write_metadata() {
     metadata_stage="$TERMINAL_FAILURE_STAGE"
   fi
   runner_package_json="${KASEKI_APP_ROOT:-${KASEKI_SCRIPT_DIR:-/app}}/package.json"
+  if [ ! -r "$runner_package_json" ] && [ -r /app/package.json ]; then runner_package_json=/app/package.json; fi
   runner_version="${KASEKI_RUNNER_VERSION:-$(node -e 'try { process.stdout.write(String(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).version || "unknown")); } catch { process.stdout.write("unknown"); }' "$runner_package_json" 2>/dev/null || printf 'unknown')}"
   
   # Convert stages array to JSON array
@@ -2146,7 +2147,7 @@ write_metadata() {
     "filter_diagnostics_log": "filter-diagnostics.log",
     "has_memory_pressure_events": $([ -f "${KASEKI_RESULTS_DIR}/filter-diagnostics.log" ] && grep -q "memory" "${KASEKI_RESULTS_DIR}/filter-diagnostics.log" && printf 'true' || printf 'false'),
     "has_backpressure_events": $([ -f "${KASEKI_RESULTS_DIR}/filter-diagnostics.log" ] && grep -q "backpressure" "${KASEKI_RESULTS_DIR}/filter-diagnostics.log" && printf 'true' || printf 'false'),
-    "infrastructure_failure": $([[ "$VALIDATION_EXIT" == "141" ]] && printf 'true' || printf 'false')
+    "infrastructure_failure": $([[ "$VALIDATION_EXIT" == "141" || "${PRE_VALIDATION_FAILURE_REASON:-}${VALIDATION_FAILURE_REASON:-}${BASELINE_VALIDATION_FAILURE_REASON:-}" == *validation_runtime_incompatible* ]] && printf 'true' || printf 'false')
   },
   "baseline_validation_enabled": $([[ "$KASEKI_BASELINE_VALIDATION_ENABLED" == "1" ]] && printf 'true' || printf 'false'),
   "baseline_cache_status": $(printf '%s' "$BASELINE_CACHE_STATUS" | json_encode),
@@ -2632,6 +2633,15 @@ write_validation_infrastructure_diagnostics() {
   local validation_exit="$VALIDATION_EXIT"
   
   # Only generate if infrastructure failure (SIGPIPE exit code 141)
+  if [[ "${PRE_VALIDATION_FAILURE_REASON:-}${VALIDATION_FAILURE_REASON:-}${BASELINE_VALIDATION_FAILURE_REASON:-}" == *validation_runtime_incompatible* ]]; then
+    {
+      printf '# Validation Runtime Startup Failure\n\n'
+      printf 'Native runtime startup failed. Check host virtual address capabilities and process/container limits before retrying. Keep integration validation enabled.\n\n'
+      printf 'Details: %s %s\n' "${PRE_VALIDATION_FAILURE_REASON:-}" "${VALIDATION_FAILURE_REASON:-}"
+      if [ -f "${KASEKI_RESULTS_DIR}/validation-runtime.jsonl" ]; then cat "${KASEKI_RESULTS_DIR}/validation-runtime.jsonl"; fi
+    } > "$diagnostics_file"
+    return 0
+  fi
   [ "$validation_exit" -ne 141 ] && return 0
   
   {
@@ -5212,6 +5222,7 @@ baseline_validation_cache_is_valid() {
   [ -f "$cache_dir/validation.log" ] || return 1
   [ -f "$cache_dir/validation-raw.log" ] || return 1
   [ -f "$cache_dir/validation-timings.tsv" ] || return 1
+  if validation_runtime_failure "$cache_dir/validation.log" >/dev/null 2>&1; then return 1; fi
 
   # Do not trust the directory name alone: require a well-formed manifest whose
   # complete set of result-affecting inputs still matches this process.
@@ -5280,6 +5291,8 @@ save_baseline_validation_to_cache() {
     *) return 2 ;;
   esac
   
+  if validation_runtime_failure "${KASEKI_RESULTS_DIR}/validation-baseline.log" >/dev/null 2>&1; then return 2; fi
+
   # Create cache directory
   mkdir -p "$cache_dir" || return 1
 
@@ -5695,6 +5708,19 @@ run_validation_commands() {
         emit_event "validation_commands_fallback" "stage=$stage_label" "reason=all_requested_npm_scripts_missing" "commands=$fallback_commands"
         commands="$fallback_commands"
       fi
+      if ! validation_runtime_preflight "$validation_workspace" "$log_file" "$commands"; then
+        validation_exit_ref=70
+        WORKER_ERROR_TYPE="validation_runtime_incompatible"
+        WORKER_ERROR_PHASE="$stage_label"
+        WORKER_ERROR_MESSAGE="workerd startup failed; see validation-runtime.jsonl"
+        validation_stopped_ref=true
+        validation_detail_ref="workerd runtime startup failed before $stage_label; see validation-runtime.jsonl"
+        validation_reason_ref="validation_runtime_incompatible: workerd startup failed"
+        record_stage_timing "$stage_label" 70 "$(($(date +%s) - stage_start))" "runtime_preflight_failed"
+        emit_error_event "validation_runtime_incompatible" "$validation_detail_ref" "exit"
+        return 70
+      fi
+      commands="$(validation_expand_commands "$commands")"
       IFS=';' read -r -a validation_commands <<< "$commands"
       for command in "${validation_commands[@]}"; do
         trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
@@ -5817,6 +5843,22 @@ run_validation_commands() {
           } | tee -a "$log_file" "${KASEKI_RESULTS_DIR}"/quality.log "$FILTER_DIAGNOSTICS_LOG"
         fi
 
+        local runtime_failure=""
+        if [ "$command_exit" -ne 0 ]; then
+          runtime_failure="$(validation_runtime_failure "$raw_log")" || runtime_failure=""
+        fi
+        if [ -n "$runtime_failure" ]; then
+          validation_exit_ref=70
+          WORKER_ERROR_TYPE="validation_runtime_incompatible"
+          WORKER_ERROR_PHASE="$stage_label"
+          WORKER_ERROR_MESSAGE="$runtime_failure"
+          validation_detail_ref="$runtime_failure while running $trimmed; see $log_file"
+          validation_reason_ref="validation_runtime_incompatible: $runtime_failure"
+          printf '[validation runtime failure] %s\nexit_code=70\n' "$runtime_failure" | tee -a "$log_file"
+          emit_error_event "validation_runtime_incompatible" "$validation_detail_ref" "exit"
+          validation_stopped_ref=true
+          break
+        fi
         if [ "$validation_infra_failure" = "true" ] && [ "$validation_exit_ref" -eq 0 ]; then
           validation_exit_ref=1
           VALIDATION_FAILED_COMMAND="$trimmed"

@@ -1020,7 +1020,26 @@ write_cleanup_log() {
 promote_staging_dirs() {
   mkdir -p "$RUNS" "$RESULTS"
   if [ "$PROMOTED_RESULT_DIR" -eq 0 ]; then
-    mv "$RESULT_STAGE_DIR" "$FINAL_RESULT_DIR"
+    # Rename atomically; plain mv nests staging when API finalization creates
+    # the destination during a deadline race. Merge evidence without replacing
+    # the authoritative API outcome when that directory already exists.
+    if ! mv -T "$RESULT_STAGE_DIR" "$FINAL_RESULT_DIR" 2>/dev/null; then
+      # GNU mv -T prevents directory nesting. On other hosts, or when the
+      # API already finalized the destination, copy without replacing files.
+      mkdir -p "$FINAL_RESULT_DIR" || return 1
+      local source_entry target_entry
+      while IFS= read -r -d '' source_entry; do
+        target_entry="$FINAL_RESULT_DIR/${source_entry#"$RESULT_STAGE_DIR"/}"
+        if [ -d "$source_entry" ] && [ ! -L "$source_entry" ]; then
+          mkdir -p "$target_entry" || return 1
+        elif [ ! -e "$target_entry" ] && [ ! -L "$target_entry" ]; then
+          # Check before cp: BSD cp -n returns 1 for an existing target.
+          # Keep -n as protection against a concurrent finalizer.
+          cp -P -n "$source_entry" "$target_entry" || return 1
+        fi
+      done < <(find "$RESULT_STAGE_DIR" -mindepth 1 -print0)
+      rm -rf "$RESULT_STAGE_DIR" || return 1
+    fi
     RESULT_DIR="$FINAL_RESULT_DIR"
     HOST_EXIT_CODE_FILE="$RESULT_DIR/host_exit_code"
     PROMOTED_RESULT_DIR=1
@@ -1210,6 +1229,10 @@ case "$REPO_URL" in
     ;;
 esac
 
+# Capture the exact image identity selected for this worker without inspecting secrets.
+runner_image_id="$(docker image inspect --format '{{.Id}}' "$IMAGE" 2>/dev/null || true)"
+if ! [[ "$runner_image_id" =~ ^sha256:[a-f0-9]{64}$ ]]; then runner_image_id=""; fi
+
 docker_args=(
   run --rm
   --name "$INSTANCE"
@@ -1219,6 +1242,10 @@ docker_args=(
   --cap-drop ALL
   -u "$KASEKI_CONTAINER_USER"
   -e KASEKI_INSTANCE="$INSTANCE"
+  -e KASEKI_RUNNER_IMAGE_REFERENCE="$IMAGE"
+  -e KASEKI_RUNNER_IMAGE_ID="$runner_image_id"
+  -e KASEKI_VALIDATION_TIMEOUT_SECONDS="${KASEKI_VALIDATION_TIMEOUT_SECONDS:-300}"
+  -e KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS="${KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS:-900}"
   -e REPO_URL="$WORKER_REPO_URL"
   -e GIT_REF="$GIT_REF"
   -e KASEKI_PROVIDER="$KASEKI_PROVIDER"

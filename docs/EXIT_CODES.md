@@ -18,6 +18,7 @@ This document describes the exit codes returned by kaseki-agent commands and wha
 | **7** | Quality Gate | Validation Allowlist Violation | Files changed during validation are outside allowlist |
 | **8** | Goal Check | Goal Unmet | Goal-check evaluator determined the scouting objective was not met after retries |
 | **9** | Security Admission | Task Admission Rejected | Task request was rejected by the pre-submission safety classifier |
+| **70** | Validation Runtime | Native Runtime Startup Failed | Required workerd runtime cannot start; inspect `validation-runtime.jsonl` and the validation log |
 | **86** | Scouting | Scouting Validation Failed | Scouting artifact missing or invalid (check Docker volume mounts) |
 | **88** | Provider | Provider/Model Error (Non-Retryable) | LLM provider error that could not be recovered after automatic retry |
 | **124** | Timeout | Agent Timeout | Agent invocation exceeded `KASEKI_AGENT_TIMEOUT_SECONDS` |
