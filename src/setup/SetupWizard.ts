@@ -533,7 +533,7 @@ export class SetupWizard {
         type: 'input',
         name: 'validationCommands',
         message: '✓ Validation commands (semicolon-separated)',
-        initial: 'npm run check;npm run test;npm run build',
+        initial: 'auto',
       },
       {
         type: 'number',

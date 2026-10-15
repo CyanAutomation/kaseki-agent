@@ -145,7 +145,7 @@ const DEFAULT_CONFIG: Config = {
     task_mode: 'patch',
   },
   validation: {
-    commands: ['npm run check', 'npm run test', 'npm run build'],
+    commands: [],
     skip_missing_npm_scripts: true,
     fail_fast: true,
     validate_after_agent_failure: false,
@@ -348,7 +348,7 @@ export class ConfigManager {
       // Validation
       KASEKI_VALIDATION_COMMANDS: (v) => {
         if (!this.config.validation) this.config.validation = {};
-        this.config.validation.commands = v.split(';').map((c) => c.trim());
+        this.config.validation.commands = v === 'auto' ? [] : v.split(';').map((c) => c.trim());
       },
       KASEKI_MAX_DIFF_BYTES: (v) => {
         if (!this.config.validation) this.config.validation = {};

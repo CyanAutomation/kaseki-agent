@@ -19,7 +19,7 @@ GIT_REF="${GIT_REF:-main}"
 KASEKI_PROVIDER="${KASEKI_PROVIDER:-gateway}"
 KASEKI_MODEL="${KASEKI_MODEL:-auto}"
 KASEKI_AGENT_TIMEOUT_SECONDS="${KASEKI_AGENT_TIMEOUT_SECONDS:-10800}"
-KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS-npm run check;npm run test}"
+KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS-auto}"
 KASEKI_PRE_AGENT_VALIDATION="${KASEKI_PRE_AGENT_VALIDATION:-1}"
 KASEKI_PRE_AGENT_VALIDATION_COMMANDS="${KASEKI_PRE_AGENT_VALIDATION_COMMANDS-$KASEKI_VALIDATION_COMMANDS}"
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
@@ -354,7 +354,7 @@ ENVIRONMENT VARIABLES (override defaults, CLI args take precedence):
   KASEKI_CHANGED_FILES_ALLOWLIST    Space-separated file patterns (agent phase)
   KASEKI_VALIDATION_ALLOWLIST       Space-separated file patterns (validation phase; optional)
   KASEKI_MAX_DIFF_BYTES             Max diff size in bytes (default: 400000)
-  KASEKI_NPM_OMIT_DEV              Set to 1 to omit dev dependencies during npm ci (default: 0)
+  KASEKI_NPM_OMIT_DEV              Set to 1 to omit dev dependencies during dependency install (default: 0)
   GITHUB_APP_ID                     GitHub App ID (optional, for PR creation)
   GITHUB_APP_ID_FILE                Path to file containing GitHub App ID
   GITHUB_APP_CLIENT_ID              GitHub App Client ID (optional)
@@ -1289,6 +1289,10 @@ docker_args=(
   -e KASEKI_STRICT_SCRIPT_CHECK="$KASEKI_STRICT_SCRIPT_CHECK"
   -e KASEKI_DEPENDENCY_CACHE_DIR="/cache/dependencies"
   -e TMPDIR="/workspace/tmp"
+  -e BUN_INSTALL_CACHE_DIR="/cache/bun-cache"
+  -e KASEKI_INSTALL_IGNORE_SCRIPTS="${KASEKI_INSTALL_IGNORE_SCRIPTS:-1}"
+  -e KASEKI_TS_CHECK_COMMAND="${KASEKI_TS_CHECK_COMMAND:-auto}"
+  -e KASEKI_AUTO_LINT_CLEANUP="${KASEKI_AUTO_LINT_CLEANUP:-1}"
   -e NPM_CONFIG_CACHE="/cache/npm-cache"
   -e npm_config_cache="/cache/npm-cache"
   -e PI_CODING_AGENT_DIR="/cache/pi-agent"
@@ -1296,6 +1300,9 @@ docker_args=(
   -v "$CACHE:/cache:rw"
   -v "$RESULT_DIR:/results:rw"
 )
+if [ "${KASEKI_AUTO_LINT_CLEANUP_COMMANDS+x}" = x ]; then
+  docker_args+=(-e KASEKI_AUTO_LINT_CLEANUP_COMMANDS="$KASEKI_AUTO_LINT_CLEANUP_COMMANDS")
+fi
 if [ "$KASEKI_PROVIDER" = "gateway" ]; then
   if [ -n "${LLM_GATEWAY_URL:-}" ]; then
     docker_args+=(

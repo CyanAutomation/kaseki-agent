@@ -1,3 +1,4 @@
+import { resolvePackageManager, packageScriptCommand } from '../scripts/package-manager.cjs';
 import { spawn } from 'child_process';
 import { ValidationCheck, ValidationResponse, RunRequest } from './kaseki-api-types';
 import { createEventLogger, EventLogger } from './logger';
@@ -94,15 +95,16 @@ export function validateAllowlistPatternMatching(
 }
 
 /** Pick commands that actually exist in a repository package manifest. */
-export function selectPackageValidationCommands(packageJson: unknown): string[] {
+export function selectPackageValidationCommands(packageJson: unknown, lockfiles: string[] = []): string[] {
   const scripts = packageJson && typeof packageJson === 'object' && !Array.isArray(packageJson)
     ? (packageJson as { scripts?: unknown }).scripts
     : undefined;
   if (!scripts || typeof scripts !== 'object' || Array.isArray(scripts)) return [];
   const available = scripts as Record<string, unknown>;
+  const { manager } = resolvePackageManager(packageJson, lockfiles, false);
   return ['build', 'type-check', 'check', 'test']
     .filter((script) => typeof available[script] === 'string' && available[script].trim())
-    .map((script) => `npm run ${script}`);
+    .map((script) => packageScriptCommand(manager, script));
 }
 
 /**
@@ -294,7 +296,17 @@ export class PreFlightValidator {
         { signal: AbortSignal.timeout(this.gitCheckTimeoutMs) },
       );
       if (!response.ok) return [];
-      return selectPackageValidationCommands(await response.json());
+      const manifest: unknown = await response.json();
+      const lockNames = ['package-lock.json', 'npm-shrinkwrap.json', 'bun.lock', 'bun.lockb', 'pnpm-lock.yaml', 'yarn.lock'];
+      const lockfiles = await Promise.all(lockNames.map(async name => {
+        const lock = await fetch(
+          `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/${encodeURIComponent(ref)}/${name}`,
+          { method: 'HEAD', signal: AbortSignal.timeout(this.gitCheckTimeoutMs) },
+        );
+        if (!lock.ok && lock.status !== 404) throw new Error('Could not inspect repository lockfiles');
+        return lock.ok ? name : undefined;
+      }));
+      return selectPackageValidationCommands(manifest, lockfiles.filter((name): name is string => name !== undefined));
     } catch {
       return [];
     }

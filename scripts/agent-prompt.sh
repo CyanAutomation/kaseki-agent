@@ -218,7 +218,7 @@ You are editing inside a Kaseki-managed ephemeral workspace.
 
 Operational guardrails:
 - Do not run git add, git commit, git push, gh, hub, or create pull requests. Kaseki owns commit, push, and PR creation after validation passes.
-- Do not run npm install, npm ci, yarn install, pnpm install, or package-manager commands that modify lockfiles. Kaseki owns dependency setup and validation.
+- Do not run npm install, npm ci, bun install, yarn install, pnpm install, or package-manager commands that modify lockfiles. Kaseki owns dependency setup and validation.
 - Critical change first: identify the primary required code change from the task prompt, scouting artifact, and goal-setting artifact before editing.
 - Apply that primary required code change before adding tests, refactoring, cleanup, formatting-only edits, or other secondary work.
 - Do not report success or finish until the required repository diff is present and contains the primary code change, not just tests or scaffolding.

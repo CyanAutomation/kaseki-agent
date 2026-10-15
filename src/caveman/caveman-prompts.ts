@@ -20,7 +20,7 @@ export function compressGuardrails(): string {
   return `Kaseki-managed ephemeral workspace guardrails:
 
 No git add/commit/push, gh, hub, or PR creation. Kaseki owns VCS.
-No npm/yarn/pnpm install or lockfile edits. Kaseki owns deps and validation.
+No npm/bun/yarn/pnpm install or lockfile edits. Kaseki owns deps and validation.
 Never inspect or print environment variables, secrets, credentials, API keys, or mounted secret files.
 Primary code change first, before tests/refactor/cleanup. Follow handoff and write allowlist; protect protected_files. Skip unrelated work.
 Complete primary task fully. No TODOs or partial work. Validate after code is finished.

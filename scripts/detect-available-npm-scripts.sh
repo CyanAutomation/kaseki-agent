@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck source=package-manager-helpers.sh
+. "$(dirname "${BASH_SOURCE[0]}")/package-manager-helpers.sh"
 # Detect available npm scripts in target repository's package.json.
 # This helper queries the package.json and returns only npm scripts that are actually defined.
 # Usage:
@@ -38,9 +40,9 @@ NODE
 # Extract script name from npm command like "npm run lint:fix"
 npm_run_script_name() {
   local command="$1"
-  local npm_run_regex='^npm[[:space:]]+run[[:space:]]+([^[:space:]-][^[:space:]-]*)($|[[:space:]])'
+  local npm_run_regex='^(npm|bun)[[:space:]]+run[[:space:]]+([^[:space:]-][^[:space:]]*)($|[[:space:]])'
   if [[ "$command" =~ $npm_run_regex ]]; then 
-    printf '%s' "${BASH_REMATCH[1]}"
+    printf '%s' "${BASH_REMATCH[2]}"
     return 0
   fi
   return 1

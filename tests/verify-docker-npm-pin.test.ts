@@ -81,6 +81,7 @@ describe('Docker global package registry verification', () => {
     const response = JSON.parse(runVerifier('extract', { manifest })) as { ok: boolean; result: unknown };
     expect(response.ok).toBe(true);
     expect(response.result).toEqual([
+      { name: 'bun', selector: 'bun@1.4.3' },
       { name: 'npm', selector: 'npm@11.21.0' },
       { name: '@earendil-works/pi-coding-agent', selector: '@earendil-works/pi-coding-agent@0.87.1' },
       { name: '@earendil-works/pi-server', selector: '@earendil-works/pi-server@0.87.1' },

@@ -65,7 +65,7 @@ cat > tsconfig.json <<'JSON'
 JSON
 assert_success "has_typescript_project() detects tsconfig.json" has_typescript_project
 assert_equals "construct_default_validation_commands() chooses tsc for tsconfig.json" \
-  "tsc --noEmit" \
+  "./node_modules/.bin/tsc --noEmit" \
   "$(construct_default_validation_commands)"
 rm tsconfig.json
 
@@ -75,7 +75,7 @@ write_package_json <<'JSON'
 JSON
 assert_success "has_typescript_project() detects TypeScript dependency" has_typescript_project
 assert_equals "construct_default_validation_commands() chooses tsc for TypeScript dependency" \
-  "tsc --noEmit" \
+  "./node_modules/.bin/tsc --noEmit" \
   "$(construct_default_validation_commands)"
 
 echo "=== Decision: TypeScript precheck skipped for non-TypeScript package ==="
