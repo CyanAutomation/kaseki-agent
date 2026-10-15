@@ -34,6 +34,8 @@ test('smoke starts the installed binary with a real test config and reports earl
     mkdirSync(join(root, 'workers/auth'), { recursive: true });
     writeFileSync(join(root, 'workers/auth/package.json'), JSON.stringify({ scripts: { test: 'vitest run' }, devDependencies: { '@cloudflare/vitest-pool-workers': '1.0.0' } }));
     assert.equal(smokeWorkerd(root, 'npm run verify').status, 'passed');
+    writeFileSync(join(root, 'workers/auth/package.json'), JSON.stringify({ scripts: { test: 'vitest run' }, devDependencies: { '@cloudflare/vitest-plugin': '1.4.0' } }));
+    assert.equal(smokeWorkerd(root, 'npm run verify').status, 'passed');
     const linked = join(root, 'linked-workspace');
     mkdirSync(linked);
     symlinkSync(join(root, 'node_modules'), join(linked, 'node_modules'), 'dir');
