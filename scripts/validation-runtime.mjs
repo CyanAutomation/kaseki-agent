@@ -72,7 +72,7 @@ function requiredRuntimeDirectories(workspace, commands) {
     try { pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')); } catch { return; }
     const dependencies = { ...pkg.dependencies, ...pkg.devDependencies };
     if (/\b(?:workerd|wrangler)\s+(?:test|serve|dev|types)\b/.test(text)
-        || (/\bvitest(?:\s|$)/.test(text) && dependencies['@cloudflare/vitest-pool-workers'])) required.add(dir);
+        || (/\bvitest(?:\s|$)/.test(text) && (dependencies['@cloudflare/vitest-pool-workers'] || dependencies['@cloudflare/vitest-plugin']))) required.add(dir);
     for (const match of text.matchAll(/\bnpm\s+(?:--prefix\s+([\w./-]+)\s+)?(?:run\s+)?([\w:.-]+)/g)) {
       const target = match[1] ? path.resolve(dir, match[1]) : dir;
       let scripts;
