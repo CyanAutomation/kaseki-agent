@@ -133,7 +133,17 @@ for (const modulePath of distLibModules) {
   }
 }
 
-console.log(`✓ Imported ${distLibModules.length} packed dist/lib runtime modules.`);
+// These modules share a runtime resolver in scripts/, outside dist/.
+const { selectPackageValidationCommands } = await import(pathToFileURL(path.join(distDir, 'pre-flight-validator.js')).href);
+await import(pathToFileURL(path.join(distDir, 'language-detection.js')).href);
+const bunCommands = selectPackageValidationCommands({ scripts: { test: 'jest' } }, ['bun.lock']);
+if (JSON.stringify(bunCommands) !== JSON.stringify(['bun run test'])) {
+  throw new Error('Packed package-manager resolver did not select Bun');
+}
+for (const helper of ['package-manager.cjs', 'package-manager-helpers.sh']) {
+  if (!fs.existsSync(path.join(packageDir, 'scripts', helper))) throw new Error(`Missing packed helper: ${helper}`);
+}
+console.log(`✓ Imported ${distLibModules.length} packed dist/lib runtime modules and exercised the shared package-manager resolver.`);
 NODE
 
 printf '✓ Packed artifact contains dist/lib runtime modules, SetupCommand.js dynamic import, and no extensionless relative dynamic imports.\n'

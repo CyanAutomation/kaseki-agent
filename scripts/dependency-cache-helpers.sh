@@ -3,7 +3,7 @@
 # to be sourced by kaseki-agent.sh and tests.
 
 dependency_cache_schema_version() {
-  printf '2\n'
+  printf '3\n'
 }
 
 dependency_cache_flags_identity() {
@@ -21,8 +21,12 @@ dependency_cache_key() {
   local node_platform="${4:-$(node -p 'process.platform' 2>/dev/null || uname -s)}"
   local node_arch="${5:-$(node -p 'process.arch' 2>/dev/null || uname -m)}"
   local node_abi="${6:-$(node -p 'process.versions.modules || "none"' 2>/dev/null || printf 'unknown')}"
-  printf 'npm/%s/node-%s/platform-%s/arch-%s/abi-%s/flags-%s' \
-    "$lock_hash" "$node_major" "$node_platform" "$node_arch" "$node_abi" "$flags_hash"
+  local manager="${KASEKI_PACKAGE_MANAGER:-npm}"
+  local manager_version="${KASEKI_PACKAGE_MANAGER_VERSION:-$("$manager" --version 2>/dev/null || printf unknown)}"
+  local identity
+  identity="$(printf '%s\n%s' "$manager_version" "${KASEKI_DEPENDENCY_INPUT_HASH:-$lock_hash}" | sha256sum | awk '{print $1}')"
+  printf '%s/%s/node-%s/platform-%s/arch-%s/abi-%s/flags-%s' \
+    "$manager" "${lock_hash}-${identity}" "$node_major" "$node_platform" "$node_arch" "$node_abi" "$flags_hash"
 }
 
 # Publish an image seed under the exact runtime lookup key. The caller must
@@ -33,6 +37,9 @@ dependency_cache_publish_image_seed() {
   local cache_root="$3"
   local lock_hash node_major flags_hash cache_key destination schema_version
 
+  local KASEKI_DEPENDENCY_INPUT_HASH
+  local manager_cli="${4:-$(dirname "${BASH_SOURCE:-$0}")/package-manager.cjs}"
+  KASEKI_DEPENDENCY_INPUT_HASH="$(node "$manager_cli" hash "$(dirname "$lockfile")")" || return 1
   lock_hash="$(sha256sum "$lockfile" | awk '{print $1}')"
   node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || printf unknown)"
   flags_hash="$(dependency_cache_flags_hash)"
@@ -60,15 +67,16 @@ dependency_cache_write_restore_diagnostic() {
     | tail -20)"
   {
     printf 'timestamp=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    printf 'cache_source=%s\nreason=%s\nrestore_method=%s\nnpm_ls_exit_code=%s\n' \
+    printf 'cache_source=%s\nreason=%s\nrestore_method=%s\ndependency_graph_exit_code=%s\n' \
       "$cache_source" "$reason" "$restore_method" "$npm_exit_code"
+    printf 'package_manager=%s\npackage_manager_version=%s\n' "${KASEKI_PACKAGE_MANAGER:-npm}" "${KASEKI_PACKAGE_MANAGER_VERSION:-unknown}"
     printf 'node_version=%s\nnpm_version=%s\nnode_platform=%s\nnode_arch=%s\nnode_abi=%s\n' \
       "$(node --version 2>/dev/null || printf unknown)" \
       "$(npm --version 2>/dev/null || printf unknown)" \
       "$(node -p 'process.platform' 2>/dev/null || uname -s)" \
       "$(node -p 'process.arch' 2>/dev/null || uname -m)" \
       "$(node -p 'process.versions.modules || "none"' 2>/dev/null || printf unknown)"
-    printf 'npm_ls_output_tail:\n%s\n---\n' "$safe_output"
+    printf 'dependency_graph_output_tail:\n%s\n---\n' "$safe_output"
   } >> "$diagnostic_file"
 }
 

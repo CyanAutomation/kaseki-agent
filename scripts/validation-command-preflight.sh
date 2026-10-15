@@ -55,6 +55,8 @@ validation_command_missing_executable() {
           ;;
       esac
 
+      # Repository package binaries become available during dependency setup.
+      [[ "$executable" == ./node_modules/.bin/* ]] && continue
       if [[ "$executable" == */* ]]; then
         [ -x "$executable" ] || { printf '%s' "$executable"; return 0; }
       elif ! command -v "$executable" >/dev/null 2>&1; then
@@ -86,6 +88,8 @@ validation_runtime_identity() {
   go_version="$(go version 2>/dev/null | head -n 1 || printf '<unavailable>')"
   make_version="$(make --version 2>/dev/null | head -n 1 || printf '<unavailable>')"
   gcc_version="$(gcc --version 2>/dev/null | head -n 1 || printf '<unavailable>')"
-  printf 'kernel=%s\narch=%s\npage_size=%s\nvirtual_memory_limit=%s\nimage=%s\ngo=%s\nmake=%s\ngcc=%s' \
-    "$(uname -sr)" "$(uname -m)" "$(getconf PAGESIZE 2>/dev/null || true)" "$(ulimit -v)" "${KASEKI_RUNNER_IMAGE_ID:-unknown}" "$go_version" "$make_version" "$gcc_version"
+  printf 'npm=%s\nbun=%s\nkernel=%s\narch=%s\npage_size=%s\nvirtual_memory_limit=%s\nimage=%s\ngo=%s\nmake=%s\ngcc=%s' \
+    "$(npm --version 2>/dev/null || printf '<unavailable>')" "$(bun --version 2>/dev/null || printf '<unavailable>')" \
+    "$(uname -sr)" "$(uname -m)" "$(getconf PAGESIZE 2>/dev/null || true)" "$(ulimit -v)" "${KASEKI_RUNNER_IMAGE_ID:-unknown}" \
+    "$go_version" "$make_version" "$gcc_version"
 }

@@ -130,13 +130,14 @@ env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspe
   OPENROUTER_API_KEY=test LLM_GATEWAY_URL=https://example.invalid/v1 LLM_GATEWAY_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off \
   KASEKI_WORKSPACE_DIR="$TMP_DIR" KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
   KASEKI_TASK_MODE=inspect KASEKI_SCOUTING=1 KASEKI_GOAL_SETTING=0 KASEKI_GOAL_CHECK=0 KASEKI_RUN_EVALUATION=0 KASEKI_BASELINE_VALIDATION_ENABLED=0 \
+  KASEKI_SKIP_GATEWAY_HEALTH_CHECK=1 \
   KASEKI_PRE_AGENT_VALIDATION_COMMANDS=":" KASEKI_VALIDATION_COMMANDS=":" KASEKI_ALLOW_EMPTY_DIFF=1 \
   bash "$MODIFIED_SCRIPT" > "$RUN_LOG" 2>&1
 run_exit=$?
 set -e
 
 [ "$run_exit" -eq 86 ] || fail "expected exit 86 from scouting artifact validation, got $run_exit"
-[ "$(cat "$PI_CALLS")" = "scouting" ] || fail "expected only scouting Pi to run before failure"
+[ "$(cat "$PI_CALLS")" = $'scouting\nscouting' ] || fail "expected the bounded scouting attempts to run before failure"
 
 node - "$RESULTS_DIR" <<'NODE' || fail "artifact assertions failed"
 const fs = require('node:fs');
@@ -159,7 +160,7 @@ if (!String(failure.diagnostic_reason || '').includes('schema_mismatch')) errors
 if (!validationLines.some((entry) => entry.reason_code === 'schema_mismatch' && entry.field === 'scouting-candidate.json' && entry.severity === 'critical')) {
   errors.push('missing critical schema_mismatch scouting validation artifact');
 }
-if (!progress.includes('pi_scouting_artifact_invalid') || !progress.includes('pi_scouting_failed')) {
+if (!progress.includes('pi_scouting_artifact_contract_failed') || !progress.includes('pi_scouting_failed')) {
   errors.push('progress.jsonl missing scouting failure error events');
 }
 if (errors.length) throw new Error(errors.join('\n'));

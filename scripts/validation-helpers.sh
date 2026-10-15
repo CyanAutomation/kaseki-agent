@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
+# shellcheck source=package-manager-helpers.sh
+. "$(dirname "${BASH_SOURCE[0]}")/package-manager-helpers.sh"
 # Shell library for validation command helpers shared by runtime tests.
-# This file intentionally exposes only validation-related helpers and has no
-# top-level side effects beyond function definitions.
+# Script inspection and package-manager selection are shared with the worker.
 
 validation_runtime_helper() {
   local helper
@@ -37,9 +38,9 @@ validation_runtime_failure() {
 
 npm_run_script_name() {
   local command="$1"
-  local npm_run_regex='^npm[[:space:]]+run[[:space:]]+([^[:space:]-][^[:space:]]*)($|[[:space:]])'
+  local npm_run_regex='^(npm|bun)[[:space:]]+run[[:space:]]+([^[:space:]-][^[:space:]]*)($|[[:space:]])'
   if [[ "$command" =~ $npm_run_regex ]]; then
-    printf '%s' "${BASH_REMATCH[1]}"
+    printf '%s' "${BASH_REMATCH[2]}"
     return 0
   fi
   return 1
@@ -88,12 +89,12 @@ ensure_build_before_test_validation() {
   for command in "${command_array[@]}"; do
     trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
     [ -z "$trimmed" ] && continue
-    [[ "$trimmed" == npm\ run\ build* ]] && has_build=1
-    [[ "$trimmed" == npm\ run\ test* ]] && has_test=1
+    [[ "$trimmed" =~ ^(npm|bun)[[:space:]]+run[[:space:]]+build($|[[:space:]]) ]] && has_build=1
+    [[ "$trimmed" =~ ^(npm|bun)[[:space:]]+run[[:space:]]+test(:[^[:space:]]*)?($|[[:space:]]) ]] && has_test=1
     normalized="$(append_default_validation_command "$normalized" "$trimmed")"
   done
   if [ "$has_test" -eq 1 ] && [ "$has_build" -eq 0 ]; then
-    normalized="$(append_default_validation_command "npm run build" "$normalized")"
+    normalized="$(append_default_validation_command "$(target_package_manager) run build" "$normalized")"
   fi
   printf '%s' "$normalized"
 }
@@ -139,7 +140,7 @@ construct_default_validation_commands() {
   if package_json_has_npm_script "type-check" &&
     package_json_has_npm_script "lint" &&
     package_json_has_npm_script "test:unit"; then
-    printf '%s' "npm run type-check;npm run lint;npm run test:unit"
+    printf '%s' "$(target_package_manager) run type-check;$(target_package_manager) run lint;$(target_package_manager) run test:unit"
     return 0
   fi
 
@@ -159,17 +160,17 @@ construct_default_validation_commands() {
   fi
 
   if package_json_has_npm_script "build"; then
-    commands="$(append_default_validation_command "$commands" "npm run build")"
+    commands="$(append_default_validation_command "$commands" "$(target_package_manager) run build")"
   elif package_json_has_npm_script "type-check"; then
-    commands="$(append_default_validation_command "$commands" "npm run type-check")"
+    commands="$(append_default_validation_command "$commands" "$(target_package_manager) run type-check")"
   elif has_typescript_project; then
-    commands="$(append_default_validation_command "$commands" "tsc --noEmit")"
+    commands="$(append_default_validation_command "$commands" "./node_modules/.bin/tsc --noEmit")"
   elif package_json_has_npm_script "check"; then
-    commands="$(append_default_validation_command "$commands" "npm run check")"
+    commands="$(append_default_validation_command "$commands" "$(target_package_manager) run check")"
   fi
 
   if package_json_has_npm_script "test"; then
-    commands="$(append_default_validation_command "$commands" "npm run test")"
+    commands="$(append_default_validation_command "$commands" "$(target_package_manager) run test")"
   fi
 
   if [ -n "$commands" ]; then
@@ -177,7 +178,7 @@ construct_default_validation_commands() {
     return 0
   fi
 
-  printf '%s' "npm run build;npm run type-check;npm run test"
+  printf '%s' "$(target_package_manager) run build;$(target_package_manager) run type-check;$(target_package_manager) run test"
 }
 
 all_requested_validation_scripts_are_missing() {
@@ -230,8 +231,12 @@ apply_default_validation_commands() {
   if [ -z "${KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
     KASEKI_PRE_AGENT_VALIDATION_COMMANDS="${detected_commands:-$KASEKI_VALIDATION_COMMANDS}"
   fi
-  KASEKI_VALIDATION_COMMANDS="$(ensure_build_before_test_validation "$KASEKI_VALIDATION_COMMANDS")"
-  KASEKI_PRE_AGENT_VALIDATION_COMMANDS="$(ensure_build_before_test_validation "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS")"
+  if [ -z "${KASEKI_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
+    KASEKI_VALIDATION_COMMANDS="$(ensure_build_before_test_validation "$KASEKI_VALIDATION_COMMANDS")"
+  fi
+  if [ -z "${KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT:-}" ] && [ -z "${KASEKI_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
+    KASEKI_PRE_AGENT_VALIDATION_COMMANDS="$(ensure_build_before_test_validation "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS")"
+  fi
   export KASEKI_VALIDATION_COMMANDS KASEKI_PRE_AGENT_VALIDATION_COMMANDS
 }
 

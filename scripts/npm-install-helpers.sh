@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Helper functions for npm install flag construction. This file is intended
 # to be sourced by kaseki-agent.sh and tests.
+# shellcheck source=package-manager-helpers.sh
+. "$(dirname "${BASH_SOURCE[0]}")/package-manager-helpers.sh"
 
 # Install command contract: callers pass these flags directly to
 # `npm ci --prefer-offline "${install_flags[@]}"`. KASEKI_NPM_OMIT_DEV=1

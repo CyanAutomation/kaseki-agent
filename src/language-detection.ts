@@ -1,3 +1,4 @@
+import { resolvePackageManager, packageScriptCommand } from '../scripts/package-manager.cjs';
 /**
  * Language and build system detection
  *
@@ -139,9 +140,14 @@ export function getBuildCommand(
   javaSystem?: JavaBuildSystem,
 ): string | null {
   switch (language) {
-  case 'typescript':
-    // Prefer explicit npm run build script; fallback to npm run build
-    return 'npm run build';
+  case 'typescript': {
+    try {
+      const manifestPath = path.join(workspaceRoot, 'package.json');
+      const manifest: unknown = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')) : {};
+      const { manager } = resolvePackageManager(manifest, fs.readdirSync(workspaceRoot), false);
+      return packageScriptCommand(manager, 'build');
+    } catch { return null; }
+  }
 
   case 'go':
     return 'go build';
