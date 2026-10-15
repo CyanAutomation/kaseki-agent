@@ -38,6 +38,10 @@ make -j4 ARCH=arm64 Image modules dtbs
 make ARCH=arm64 INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH=/path/to/staging modules_install
 ```
 
+Build and install the staging tree on a case-sensitive Linux filesystem.
+Some module names differ only by case; a macOS bind mount can overwrite
+those files. Export the completed tree as a tar archive for transfer.
+
 Check the resolved configuration for `CONFIG_ARM64_VA_BITS_48=y`,
 `CONFIG_ARM64_VA_BITS=48`, and `CONFIG_ARM64_4K_PAGES=y`. Save the source
 commit, complete config, compiler identity, kernel release, build log, and

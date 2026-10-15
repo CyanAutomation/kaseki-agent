@@ -1023,17 +1023,13 @@ promote_staging_dirs() {
     # Rename atomically; plain mv nests staging when API finalization creates
     # the destination during a deadline race. Merge evidence without replacing
     # the authoritative API outcome when that directory already exists.
-    node - "$RESULT_STAGE_DIR" "$FINAL_RESULT_DIR" <<'NODE' || return 1
-const fs = require('node:fs');
-const [source, destination] = process.argv.slice(2);
-try {
-  fs.renameSync(source, destination);
-} catch (error) {
-  if (!fs.existsSync(destination) || !fs.statSync(destination).isDirectory()) throw error;
-  fs.cpSync(source, destination, { recursive: true, force: false, errorOnExist: false });
-  fs.rmSync(source, { recursive: true });
-}
-NODE
+    if ! mv -T "$RESULT_STAGE_DIR" "$FINAL_RESULT_DIR" 2>/dev/null; then
+      # GNU mv -T prevents directory nesting. On other hosts, or when the
+      # API already finalized the destination, copy without replacing files.
+      mkdir -p "$FINAL_RESULT_DIR" || return 1
+      cp -R -n "$RESULT_STAGE_DIR/." "$FINAL_RESULT_DIR/" || return 1
+      rm -rf "$RESULT_STAGE_DIR" || return 1
+    fi
     RESULT_DIR="$FINAL_RESULT_DIR"
     HOST_EXIT_CODE_FILE="$RESULT_DIR/host_exit_code"
     PROMOTED_RESULT_DIR=1
