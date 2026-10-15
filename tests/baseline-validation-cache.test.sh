@@ -15,6 +15,7 @@ cleanup() {
 trap cleanup EXIT
 . "$ROOT_DIR/scripts/npm-install-helpers.sh"
 . "$ROOT_DIR/scripts/validation-command-preflight.sh"
+. "$ROOT_DIR/scripts/validation-helpers.sh"
 eval "$(awk '/^baseline_validation_cache_key\(\)/ { emit=1 } /^choose_baseline_log_dir\(\)/ { if (emit) exit } emit { print }' "$ROOT_DIR/kaseki-agent.sh")"
 eval "$(awk '/^record_dependency_cache_publish_timing\(\)/ { emit=1 } /^# Append a secret scan result/ { if (emit) exit } emit { print }' "$ROOT_DIR/kaseki-agent.sh")"
 
@@ -119,3 +120,9 @@ save_baseline_validation_to_cache "$failed_test_cache_dir" || fail 'test failure
 [ -f "$failed_test_cache_dir/manifest.json" ] || fail 'test failure cache did not produce a manifest'
 
 printf '✓ Baseline cache hits only for matching commit and validation inputs.\n'
+
+printf 'MmapAligned() failed\nTCMalloc assumes a 48-bit virtual address space size\nexit_code=1\n' > "$KASEKI_RESULTS_DIR/validation-baseline.log"
+if save_baseline_validation_to_cache "$TMP_DIR/native-crash-cache"; then fail 'native runtime startup failure was cached as an ordinary test failure'; fi
+cp "$KASEKI_RESULTS_DIR/validation-baseline.log" "$failed_test_cache_dir/validation.log"
+if baseline_validation_cache_is_valid "$failed_test_cache_dir"; then fail 'legacy runtime crash cache was accepted'; fi
+printf '✓ native startup failures cannot enter or restore the baseline cache\n'

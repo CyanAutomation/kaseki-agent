@@ -24,6 +24,7 @@ chmod +x "$FAKE_BIN/git"
 cat > "$FAKE_BIN/docker" <<'EOF_DOCKER'
 #!/usr/bin/env bash
 if [ "${1:-}" = "image" ] && [ "${2:-}" = "inspect" ]; then
+  if [ "${3:-}" = "--format" ]; then printf 'sha256:%064d\n' 1; fi
   exit 0
 fi
 if [ "${1:-}" = "run" ]; then
@@ -61,6 +62,8 @@ GITHUB_APP_ID="123456" \
 GITHUB_APP_CLIENT_ID="Iv1.testclient" \
 GITHUB_APP_PRIVATE_KEY_FILE="$PRIVATE_KEY_FILE" \
 KASEKI_PUBLISH_MODE="branch" \
+KASEKI_VALIDATION_TIMEOUT_SECONDS=420 \
+KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS=1200 \
 "$PROJECT_ROOT/run-kaseki.sh" >"$OUTPUT_LOG" 2>&1
 
 if [ ! -s "$DOCKER_ARGS_CAPTURE" ]; then
@@ -110,3 +113,8 @@ if grep -Fxq -- 'KASEKI_SECRETS_DIR=/run/secrets' "$DOCKER_ARGS_CAPTURE"; then
 fi
 
 printf '✓ run-kaseki.sh passes explicit GitHub App worker secret file env vars\n'
+
+assert_arg_present 'KASEKI_VALIDATION_TIMEOUT_SECONDS=420' 'general validation budget'
+assert_arg_present 'KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS=1200' 'build validation budget'
+assert_arg_present 'KASEKI_RUNNER_IMAGE_ID=sha256:0000000000000000000000000000000000000000000000000000000000000001' 'worker immutable image identity'
+assert_arg_matches '^KASEKI_RUNNER_IMAGE_REFERENCE=.+$' 'worker image reference'

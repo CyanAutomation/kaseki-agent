@@ -38,6 +38,7 @@ import {
   pruneNpmCache,
 } from './cleanup-manager';
 import { StorageCapacityManager, type StorageCapacityStatus } from './storage-capacity';
+import { ARTIFACT_METADATA_REGISTRY } from './artifact-metadata';
 
 function isLowRiskTaskPrompt(prompt?: string): boolean {
   if (!prompt) {
@@ -921,6 +922,8 @@ export class JobScheduler {
         JobExecutionState.TIMED_OUT,
       );
 
+      const job = this.jobs.get(jobId);
+      if (job) this.recoverStagedArtifacts(job);
       proc.kill('SIGTERM');
 
       // Grace period: attempt SIGKILL after 5 seconds if process still alive
@@ -1311,6 +1314,12 @@ export class JobScheduler {
       });
     }
 
+    if (isTimedOut) this.recoverStagedArtifacts(job);
+    const lastStage = job.currentStage || 'unknown';
+    if (isTimedOut) {
+      this.writeControllerBootstrapLogs(job, stdoutTail, stderrTail);
+      this.captureTimeoutDiagnostics(job, lastStage);
+    }
     this.finalizeJobIfNeeded(job, updates);
     this.clearExecutionState(job.id);
 
@@ -1319,7 +1328,7 @@ export class JobScheduler {
       this.failureArtifactWriter.writeFailureArtifacts(job, cleanup, {
         stdoutTail,
         stderrTail,
-        lastStage: 'timeout',
+        lastStage,
       });
     }
   }
@@ -1502,23 +1511,78 @@ export class JobScheduler {
     stderrTail: Buffer<ArrayBufferLike>,
   ): void {
     const resultDir = this.getResultDir(job.id);
-    const stderrPath = path.join(resultDir, 'stderr.log');
-    if (fs.existsSync(stderrPath)) {
-      return;
-    }
-
     try {
       fs.mkdirSync(resultDir, { recursive: true });
-      const stderrContent = `controller bootstrap stderr (captured by api wrapper)\n${this.decodeUtf8Tail(stderrTail)}`;
-      fs.writeFileSync(stderrPath, stderrContent, 'utf-8');
-
-      const stdoutPath = path.join(resultDir, 'stdout.log');
-      if (!fs.existsSync(stdoutPath)) {
-        const stdoutContent = `controller bootstrap stdout (captured by api wrapper)\n${this.decodeUtf8Tail(stdoutTail)}`;
-        fs.writeFileSync(stdoutPath, stdoutContent, 'utf-8');
+      for (const [filename, tail] of [['stderr.log', stderrTail], ['stdout.log', stdoutTail]] as const) {
+        const logPath = path.join(resultDir, filename);
+        if (!fs.existsSync(logPath) || fs.statSync(logPath).size === 0) {
+          const content = filename === 'stderr.log'
+            ? `controller bootstrap output (captured by api wrapper)\n--- captured stderr tail ---\n${this.decodeUtf8Tail(stderrTail)}${stdoutTail.length ? `\n--- captured stdout tail ---\n${this.decodeUtf8Tail(stdoutTail)}` : ''}`
+            : `controller bootstrap stdout (captured by api wrapper)\n${this.decodeUtf8Tail(tail)}`;
+          fs.writeFileSync(logPath, content, 'utf-8');
+        }
       }
     } catch {
       // Best effort fallback: avoid masking original run failure.
+    }
+  }
+
+  private captureTimeoutDiagnostics(job: Job, lastStage: string): void {
+    // Capture only selected inspection fields: full Docker inspect includes secrets.
+    try {
+      const resultDir = this.getResultDir(job.id);
+      fs.mkdirSync(resultDir, { recursive: true });
+      const logResult = execSubprocess('docker', ['logs', '--timestamps', '--tail', '200', job.id], { timeoutMs: 2000, maxBufferBytes: 256 * 1024 });
+      const logs = logResult.ok ? [logResult.stdout, logResult.stderr].filter(Boolean).join('\n') : '';
+      if (logs) fs.writeFileSync(path.join(resultDir, 'worker-timeout.log'), logs, { mode: 0o600 });
+      const inspect = execSubprocess('docker', ['inspect', '--format',
+        '{"imageId":{{json .Image}},"status":{{json .State.Status}},"oomKilled":{{json .State.OOMKilled}},"memoryLimitBytes":{{json .HostConfig.Memory}},"pidsLimit":{{json .HostConfig.PidsLimit}}}', job.id], { timeoutMs: 2000 });
+      let container: unknown;
+      try { container = inspect.ok && inspect.stdout ? JSON.parse(inspect.stdout) : undefined; } catch { /* Keep timeout evidence even if inspect failed. */ }
+      fs.writeFileSync(path.join(resultDir, 'timeout-diagnostics.json'), JSON.stringify({
+        capturedAt: new Date().toISOString(), lastStage, timeoutSeconds: job.effectiveTimeoutSeconds,
+        workerLogsCaptured: Boolean(logs), container, inspectSucceeded: inspect.ok,
+      }, null, 2) + '\n', { mode: 0o600 });
+    } catch {
+      // Diagnostic capture must never prevent forced cleanup or mask the deadline.
+    }
+  }
+
+  private recoverStagedArtifacts(job: Job): void {
+    const resultDir = this.getResultDir(job.id);
+    // A controller deadline may race host-side staging promotion. Recover
+    // registered evidence only; never follow symlinks or replace final artifacts.
+    for (const parent of [this.config.resultsDir, resultDir]) {
+      try {
+        fs.mkdirSync(resultDir, { recursive: true });
+        for (const entry of fs.readdirSync(parent, { withFileTypes: true })) {
+          if (!entry.isDirectory() || !entry.name.startsWith(`.staging-result-${job.id}-`)) continue;
+          const staging = path.join(parent, entry.name);
+          for (const name of Object.keys(ARTIFACT_METADATA_REGISTRY)) {
+            if (['metadata.json', 'failure.json', 'result-summary.md', 'exit_code'].includes(name)) continue;
+            try {
+              const source = path.join(staging, name);
+              const stat = fs.lstatSync(source);
+              if (!stat.isFile() || stat.size === 0 || stat.size > 20 * 1024 * 1024) continue;
+              fs.copyFileSync(source, path.join(resultDir, name), fs.constants.COPYFILE_EXCL);
+            } catch { /* Missing, already finalized, or unavailable evidence. */ }
+          }
+        }
+      } catch { /* Evidence recovery cannot prevent timeout cleanup. */ }
+    }
+    if (!job.currentStage) {
+      try {
+        const progress = fs.readFileSync(path.join(resultDir, 'progress.jsonl'), 'utf8').split('\n').reverse();
+        for (const line of progress) {
+          try {
+            const event = JSON.parse(line);
+            if (typeof event.stage === 'string' && event.stage.trim()) {
+              job.currentStage = event.stage.trim();
+              break;
+            }
+          } catch { /* Ignore incomplete event lines. */ }
+        }
+      } catch { /* Progress may never have started. */ }
     }
   }
 

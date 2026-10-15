@@ -421,6 +421,47 @@ describe('JobScheduler timeout lifecycle', () => {
     cleanupResultsDirs();
   });
 
+  test.each([false, true])('retains timeout evidence before removing worker (Docker unavailable: %s)', async (dockerUnavailable) => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const resultsDir = createResultsDir();
+    const scheduler = new JobScheduler({ port: 8080, apiKeys: [], resultsDir, maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch', maxDiffBytes: 400000, agentTimeoutSeconds: 1, logLevel: 'info' }, createMockWebhookManager());
+    const job = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo' });
+    job.currentStage = 'prepare node dependencies';
+    const runDir = path.join(resultsDir, job.id);
+    fs.mkdirSync(runDir, { recursive: true });
+    fs.writeFileSync(path.join(runDir, 'stderr.log'), 'original worker stderr');
+    const stagedDir = path.join(runDir, `.staging-result-${job.id}-fixture`);
+    fs.mkdirSync(stagedDir);
+    fs.writeFileSync(path.join(stagedDir, 'validation.log'), 'recovered validation evidence');
+    fs.symlinkSync('/etc/passwd', path.join(stagedDir, 'quality.log'));
+    proc.stdout.emit('data', Buffer.from('controller startup output'));
+    mockSpawnSync.mockImplementation((_command, args, options) => {
+      if (args[0] === 'rm') {
+        expect(fs.readFileSync(path.join(runDir, 'stdout.log'), 'utf8')).toContain('controller startup output');
+        expect(JSON.parse(fs.readFileSync(path.join(runDir, 'timeout-diagnostics.json'), 'utf8'))).toMatchObject({
+          lastStage: 'prepare node dependencies', timeoutSeconds: 1,
+        });
+      }
+      if (args[0] === 'logs') {
+        expect(options.timeout).toBeLessThanOrEqual(5000);
+        return dockerUnavailable ? { status: 1, stderr: 'daemon unavailable' } : { status: 0, stdout: 'last worker output' };
+      }
+      if (args[0] === 'inspect') return { status: 0, stdout: '{"imageId":"sha256:test","oomKilled":false}' };
+      return { status: 0, stdout: '' };
+    });
+    jest.advanceTimersByTime(1000);
+    proc.emit('exit', 143);
+    expect(fs.readFileSync(path.join(runDir, 'validation.log'), 'utf8')).toBe('recovered validation evidence');
+    expect(fs.existsSync(path.join(runDir, 'quality.log'))).toBe(false);
+    expect(job.exitCode).toBe(124);
+    expect(mockSpawnSync).toHaveBeenCalledWith('docker', ['rm', '-f', job.id], expect.anything());
+    expect(fs.readFileSync(path.join(runDir, 'stderr.log'), 'utf8')).toBe('original worker stderr');
+    expect(JSON.parse(fs.readFileSync(path.join(runDir, 'metadata.json'), 'utf8')).lifecycle.lastStage).toBe('prepare node dependencies');
+    if (!dockerUnavailable) expect(fs.readFileSync(path.join(runDir, 'worker-timeout.log'), 'utf8')).toContain('last worker output');
+  });
+
   test('timeout followed by quick exit sets timeout failure on exit', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);

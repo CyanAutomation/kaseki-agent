@@ -86,5 +86,6 @@ validation_runtime_identity() {
   go_version="$(go version 2>/dev/null | head -n 1 || printf '<unavailable>')"
   make_version="$(make --version 2>/dev/null | head -n 1 || printf '<unavailable>')"
   gcc_version="$(gcc --version 2>/dev/null | head -n 1 || printf '<unavailable>')"
-  printf 'go=%s\nmake=%s\ngcc=%s' "$go_version" "$make_version" "$gcc_version"
+  printf 'kernel=%s\narch=%s\npage_size=%s\nvirtual_memory_limit=%s\nimage=%s\ngo=%s\nmake=%s\ngcc=%s' \
+    "$(uname -sr)" "$(uname -m)" "$(getconf PAGESIZE 2>/dev/null || true)" "$(ulimit -v)" "${KASEKI_RUNNER_IMAGE_ID:-unknown}" "$go_version" "$make_version" "$gcc_version"
 }
