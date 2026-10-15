@@ -77,6 +77,60 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'timeout-diagnostics.json': {
+    name: 'timeout-diagnostics.json',
+    contentType: 'application/json',
+    description: 'Effective deadline, last recorded stage, and selected container state captured before timeout cleanup',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 2,
+    sizeHint: 'small',
+  },
+
+  'worker-timeout.log': {
+    name: 'worker-timeout.log',
+    contentType: 'text/plain',
+    description: 'Bounded worker Docker log tail captured before forced removal',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 2,
+    sizeHint: 'small',
+  },
+
+  'validation-runtime.jsonl': {
+    name: 'validation-runtime.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Native runtime startup smoke, address-space capabilities, process limits, and remediation',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 2,
+    sizeHint: 'small',
+  },
+
+  'validation-command-diagnostics.log': {
+    name: 'validation-command-diagnostics.log',
+    contentType: 'text/plain',
+    description: 'Validation command timeout and missing executable details',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 2,
+    sizeHint: 'small',
+  },
+
+  'validation-startup-diagnostics.log': {
+    name: 'validation-startup-diagnostics.log',
+    contentType: 'text/plain',
+    description: 'System state before validation starts',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 2,
+    sizeHint: 'small',
+  },
+
+  'validation-infrastructure-diagnostics.md': {
+    name: 'validation-infrastructure-diagnostics.md',
+    contentType: 'text/markdown',
+    description: 'Validation runtime and output pipeline infrastructure failure explanation',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 2,
+    sizeHint: 'small',
+  },
+
   // Agent output
   'pi-events.jsonl': {
     name: 'pi-events.jsonl',

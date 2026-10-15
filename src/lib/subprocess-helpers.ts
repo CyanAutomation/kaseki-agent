@@ -104,12 +104,14 @@ export function execSubprocess(
   options?: {
     cwd?: string;
     timeoutMs?: number;
+    maxBufferBytes?: number;
   },
 ): SubprocessResult {
   const result = spawnSync(command, args, {
     cwd: options?.cwd,
     encoding: 'utf-8',
     timeout: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    maxBuffer: options?.maxBufferBytes ?? 1024 * 1024,
   });
 
   const detail = extractErrorMessage(result);

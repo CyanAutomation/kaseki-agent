@@ -454,6 +454,60 @@ See the [host setup reference](HOST_SETUP_API_REFERENCE.md) for additional host-
 
 ## Validation Failures
 
+### Native Worker Runtime Startup Failure (Exit Code 70)
+
+`workerd_address_space_incompatible`, `MmapAligned() failed`, and TCMalloc's
+48-bit virtual-address warning indicate a native runtime startup failure.
+Vitest may subsequently report `write EPIPE`, no tests executed, or a
+Cloudflare pool startup timeout. These are distinct from failed assertions.
+
+Kaseki runs a bounded actual-worker smoke for installed workerd binaries
+referenced by validation scripts. The smoke uses a minimal test configuration,
+disables core dumps, and records host capabilities and process limits in
+`validation-runtime.jsonl`. A runtime failure stops validation with exit 70,
+including when it is discovered in command output. It is not reusable as an
+ordinary baseline test result. If nested dependencies are not installed yet,
+the smoke records that limitation and command-output classification still
+applies when validation installs and starts them.
+
+To test an installed repository runtime without running inference:
+
+```bash
+node scripts/validation-runtime.mjs smoke /path/to/repository
+```
+
+On ARM64, inspect `CONFIG_ARM64_VA_BITS` in `/boot/config-$(uname -r)` or
+`/proc/config.gz`, the virtual-memory limit (`ulimit -v`), and container
+memory limits. A kernel configured for 39-bit virtual addressing cannot
+satisfy the observed 48-bit TCMalloc mappings. Validate on a compatible host
+or plan a separately verified kernel/runtime migration. Adding swap,
+increasing timeouts, or changing the container image alone does not change
+the host kernel's address-space capability. Keep integration tests enabled.
+
+### Validation Budgets and Timeout Evidence
+
+Validation commands have separate budgets. Plain chains of `npm run` calls
+are expanded into separately timed stages when their scripts consist entirely
+of such chains. Scripts with lifecycle hooks, arguments, environment
+assignments, or other shell operations remain intact. This lets an explicit
+build stage use its longer build budget even when reached through a
+`verify` script. Measure healthy stages and configure the general and build
+budgets described in [the environment reference](ENV_VARS.md#validation-commands).
+
+The run deadline also covers cloning, dependency preparation, baseline and
+pre-agent validation, agent work, final validation, and corrective attempts.
+Budget the complete run from measured phase durations.
+
+On a controller deadline, the API recovers registered staged evidence before
+termination and captures bounded Docker logs and selected inspection fields
+before forced removal. Inspect `timeout-diagnostics.json`, `worker-timeout.log`,
+and controller stdout/stderr. Existing final artifacts and the authoritative
+timeout outcome are preserved. `validation-command-diagnostics.log` is also
+available through artifact discovery when a validation command times out.
+
+An unreliable baseline comparison means the test comparison is unavailable;
+zero classified failures in that case does not mean validation passed.
+
 ### Exit Code 3: No Changes Made
 
 **Problem:** Agent produced no diff.

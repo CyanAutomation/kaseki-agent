@@ -146,6 +146,8 @@ exit "${'${KASEKI_ENTRYPOINT_STUB_EXIT:-0}'}"
           ...process.env,
           PATH: `${path.join(tempRoot, 'bin')}:${process.env.PATH ?? ''}`,
           KASEKI_SKIP_STARTUP_CHECKS: '1',
+          KASEKI_CACHE_DIR: path.join(tempRoot, 'cache'),
+          KASEKI_RESULTS_DIR: path.join(tempRoot, 'results'),
           ...env,
         },
       });
@@ -253,9 +255,13 @@ kill -TERM "$$"
       ({ args, mode, validatesByDefault }) => {
         withTempRoot(`kaseki-entrypoint-${mode}-permissions-`, (tempRoot) => {
           const capturePath = path.join(tempRoot, `${mode}.args`);
-          const permissionRoot = path.join(tempRoot, 'missing-permission-root');
+          const blocker = path.join(tempRoot, 'not-a-directory');
+          fs.writeFileSync(blocker, 'prevent directory creation even when tests run as root');
+          const permissionRoot = path.join(blocker, 'root');
           const env: NodeJS.ProcessEnv = {
             KASEKI_ROOT: permissionRoot,
+            KASEKI_CACHE_DIR: path.join(blocker, 'cache'),
+            KASEKI_RESULTS_DIR: path.join(blocker, 'results'),
             KASEKI_TEST_CAPTURE_PATH: capturePath,
           };
 
@@ -270,22 +276,9 @@ kill -TERM "$$"
           }
 
           const result = runEntrypoint(args, tempRoot, env);
-          // Validation checking depends on the mode:
-          // - API mode checks KASEKI_ROOT directories
-          // - Agent mode checks /cache and /results
-          // - Other modes don't validate by default
-          let validationWasInvoked: boolean;
-          if (mode === 'api' || mode === 'kaseki-api') {
-            validationWasInvoked = result.stderr.includes(
-              `warning: required directory does not exist: ${permissionRoot}`,
-            );
-          } else if (mode === 'agent') {
-            // Agent mode checks /cache and /results
-            validationWasInvoked = result.stderr.includes('warning: required directory does not exist: /cache') ||
-              result.stderr.includes('warning: required directory does not exist: /results');
-          } else {
-            validationWasInvoked = false;
-          }
+          // A regular-file parent prevents setup from creating directories,
+          // including in a privileged test container.
+          const validationWasInvoked = result.stderr.includes('warning: required directory does not exist:');
 
           expect(result.status).toBe(0);
           expect(result.signal).toBeNull();
