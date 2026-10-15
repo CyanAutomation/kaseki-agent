@@ -38,6 +38,9 @@ function packageScriptCommand(manager, script) {
 
 // Include configuration and all workspace manifests, never credentials in output.
 function dependencyInputHash(root, lockfile) {
+  if (typeof lockfile !== 'string' || lockfile.length === 0) {
+    throw new Error('dependencyInputHash requires a non-empty lockfile path');
+  }
   const hash = crypto.createHash('sha256');
   const inputs = [lockfile];
   const walk = dir => {
