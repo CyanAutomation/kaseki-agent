@@ -22,13 +22,28 @@ const verifierModuleUrl = pathToFileURL(path.resolve(process.cwd(), 'scripts/ver
 
 function runVerifier(action: string, payload: unknown): string {
   const runner = `
-import { extractImageToolchainSelectors, queryRegistryMetadata, verifyPackageMetadata } from ${JSON.stringify(verifierModuleUrl)};
+import { extractImageToolchainSelectors, queryRegistryMetadata, verifyDockerPackagePins, verifyPackageMetadata } from ${JSON.stringify(verifierModuleUrl)};
 const action = process.argv[1];
 const payload = JSON.parse(process.argv[2]);
 try {
   let result = null;
   if (action === 'extract') result = extractImageToolchainSelectors(payload.manifest);
   if (action === 'verify') result = verifyPackageMetadata(payload.pin, payload.metadata, { allowMissingNodeEngine: payload.allowMissingNodeEngine });
+  if (action === 'verifyPins') {
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const queried = [];
+      verifyDockerPackagePins(payload.manifest, (selector) => {
+        queried.push(selector);
+        const version = selector.slice(selector.lastIndexOf('@') + 1);
+        return selector === 'bun@1.4.3' ? { version } : { version, engines: { node: '>=24' } };
+      });
+      result = queried;
+    } finally {
+      console.log = originalLog;
+    }
+  }
   if (action === 'query') result = queryRegistryMetadata(payload.selector, () => payload.output);
   if (action === 'queryError') {
     result = queryRegistryMetadata(payload.selector, () => {
@@ -127,6 +142,14 @@ describe('Docker global package registry verification', () => {
       allowMissingNodeEngine: true,
     })) as { ok: boolean };
     expect(response.ok).toBe(true);
+  });
+
+  test('accepts the Bun runtime pin when its package metadata omits a Node engine range', () => {
+    const manifest = JSON.parse(readFileSync(toolchainManifestPath, 'utf8'));
+    const response = JSON.parse(runVerifier('verifyPins', { manifest })) as { ok: boolean; result: string[] };
+
+    expect(response.ok).toBe(true);
+    expect(response.result).toContain('bun@1.4.3');
   });
 
   test('normalizes npm metadata that only reports a version', () => {
