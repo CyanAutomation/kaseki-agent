@@ -20,5 +20,10 @@ mkdir -p "$relocated_root/scripts/lib"
 cp "$repo_root"/scripts/*.sh "$relocated_root/scripts/"
 # JS helpers (e.g. context-handoff.js) are invoked directly by kaseki-agent.sh
 [ -n "$(ls "$repo_root"/scripts/*.js 2>/dev/null)" ] && cp "$repo_root"/scripts/*.js "$relocated_root/scripts/" || true
+# CJS helpers (e.g. package-manager.cjs) are invoked by the staged shell helpers.
+for helper in "$repo_root"/scripts/*.cjs; do
+  [ -f "$helper" ] || continue
+  cp "$helper" "$relocated_root/scripts/"
+done
 cp "$repo_root"/scripts/lib/*.sh "$relocated_root/scripts/lib/"
 cp "$repo_root"/scripts/lib/goal-contract.cjs "$relocated_root/scripts/lib/"
