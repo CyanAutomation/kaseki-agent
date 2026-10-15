@@ -166,7 +166,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     process.stdout.write(JSON.stringify({ ...result, host: hostRuntimeIdentity() }) + '\n');
     if (result.status === 'failed') process.exitCode = 70;
   } else {
-    console.error('Usage: node validation-runtime.mjs expand COMMANDS | classify LOG | smoke WORKSPACE');
+    console.error('Usage: node validation-runtime.mjs expand COMMANDS | classify LOG | smoke WORKSPACE [COMMANDS]');
     process.exitCode = 2;
   }
 }

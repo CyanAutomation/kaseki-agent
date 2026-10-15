@@ -1027,7 +1027,17 @@ promote_staging_dirs() {
       # GNU mv -T prevents directory nesting. On other hosts, or when the
       # API already finalized the destination, copy without replacing files.
       mkdir -p "$FINAL_RESULT_DIR" || return 1
-      cp -R -n "$RESULT_STAGE_DIR/." "$FINAL_RESULT_DIR/" || return 1
+      local source_entry target_entry
+      while IFS= read -r -d '' source_entry; do
+        target_entry="$FINAL_RESULT_DIR/${source_entry#"$RESULT_STAGE_DIR"/}"
+        if [ -d "$source_entry" ] && [ ! -L "$source_entry" ]; then
+          mkdir -p "$target_entry" || return 1
+        elif [ ! -e "$target_entry" ] && [ ! -L "$target_entry" ]; then
+          # Check before cp: BSD cp -n returns 1 for an existing target.
+          # Keep -n as protection against a concurrent finalizer.
+          cp -P -n "$source_entry" "$target_entry" || return 1
+        fi
+      done < <(find "$RESULT_STAGE_DIR" -mindepth 1 -print0)
       rm -rf "$RESULT_STAGE_DIR" || return 1
     fi
     RESULT_DIR="$FINAL_RESULT_DIR"
