@@ -24,6 +24,13 @@ describe('PreFlightValidator validation logic', () => {
     expect(selectPackageValidationCommands({ scripts: { lint: 'eslint .' } })).toEqual([]);
   });
 
+  test('uses Bun for declared and lockfile-only Bun repositories', () => {
+    expect(selectPackageValidationCommands({ packageManager: 'bun@1.4.3', scripts: { test: 'jest' } }))
+      .toEqual(['bun run test']);
+    expect(selectPackageValidationCommands({ scripts: { build: 'tsc' } }, ['bun.lock']))
+      .toEqual(['bun run build']);
+  });
+
   describe('validateCommandsSyntax', () => {
     beforeEach(() => {
       jest.spyOn(validator as any, 'lsRemoteHeadsAndTags').mockResolvedValue(successfulGitResult);
@@ -654,5 +661,30 @@ describe('PreFlightValidator validation logic', () => {
       expect(refCheck?.detail).toBeDefined();
       expect(refCheck?.detail).toContain('documentation');
     });
+  });
+});
+
+describe('repository package manager discovery', () => {
+  afterEach(() => { jest.restoreAllMocks(); });
+
+  test('discovers Bun from a remote lockfile when packageManager is absent', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      const url = String(input);
+      if (url.endsWith('/package.json')) return new Response(JSON.stringify({ scripts: { test: 'jest' } }));
+      return new Response(null, { status: url.endsWith('/bun.lock') ? 200 : 404 });
+    });
+    const validator = new PreFlightValidator();
+    expect(await (validator as any).resolveRepositoryValidationCommands('https://github.com/example/repo', 'main'))
+      .toEqual(['bun run test']);
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/bun.lock'), expect.objectContaining({ method: 'HEAD' }));
+  });
+
+  test('does not guess npm when lockfile inspection fails', async () => {
+    jest.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      if (String(input).endsWith('/package.json')) return new Response(JSON.stringify({ scripts: { test: 'jest' } }));
+      return new Response(null, { status: 503 });
+    });
+    expect(await (new PreFlightValidator() as any).resolveRepositoryValidationCommands('https://github.com/example/repo', 'main'))
+      .toEqual([]);
   });
 });

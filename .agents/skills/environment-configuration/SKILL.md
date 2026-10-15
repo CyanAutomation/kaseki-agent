@@ -155,7 +155,7 @@ KASEKI_CHANGED_FILES_ALLOWLIST="src/**/*.ts tests/**/*.test.ts"
 
 | Variable | Default | Purpose | Format |
 |---|---|---|---|
-| `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test;npm run build` | Commands to run after agent | Semicolon-separated |
+| `KASEKI_VALIDATION_COMMANDS` | `auto` | Discover validation scripts with npm or Bun; explicit commands override discovery | `auto` or semicolon-separated |
 
 **Examples**:
 ```bash

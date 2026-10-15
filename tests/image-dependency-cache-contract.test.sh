@@ -13,6 +13,8 @@ cache_key="$(dependency_cache_publish_image_seed \
   "$ROOT_DIR/docker/workspace-cache/package-lock.json" \
   "$tmpdir/node_modules" \
   "$tmpdir/image-cache")"
+KASEKI_DEPENDENCY_INPUT_HASH="$(node "$ROOT_DIR/scripts/package-manager.cjs" hash "$ROOT_DIR/docker/workspace-cache")"
+export KASEKI_DEPENDENCY_INPUT_HASH
 expected_key="$(dependency_cache_key \
   "$(sha256sum "$ROOT_DIR/docker/workspace-cache/package-lock.json" | awk '{print $1}')" \
   "$(node -p 'process.versions.node.split(".")[0]')" \
@@ -48,4 +50,10 @@ grep -Eq 'apt-get install.*(^|[[:space:]])libpcre2-8-0([[:space:]]|$)' <<<"$fina
   exit 1
 }
 
+# Docker's RUN uses /bin/sh, so the seed publisher must also work in that shell.
+sh_key="$(sh -c '. "$1"; dependency_cache_publish_image_seed "$2" "$3" "$4" "$5"' sh \
+  "$ROOT_DIR/scripts/dependency-cache-helpers.sh" \
+  "$ROOT_DIR/docker/workspace-cache/package-lock.json" \
+  "$tmpdir/node_modules" "$tmpdir/sh-cache" "$ROOT_DIR/scripts/package-manager.cjs")"
+[ "$sh_key" = "$expected_key" ]
 printf 'image dependency cache contract tests passed\n'

@@ -23,6 +23,7 @@ FAKE_BIN="$TMP_DIR/bin"
 FAKE_BASELINE_SOURCE="$TMP_DIR/source"
 mkdir -p "$FAKE_BIN" "$FAKE_BASELINE_SOURCE" "$TMP_DIR/workspace/repo" "$TMP_DIR/results" "$TMP_DIR/logs"
 printf '%s\n' '{"name":"baseline-fixture","version":"1.0.0"}' > "$FAKE_BASELINE_SOURCE/package.json"
+printf '{}' > "$FAKE_BASELINE_SOURCE/package-lock.json"
 
 cat > "$FAKE_BIN/git" <<'EOF_GIT'
 #!/usr/bin/env bash
@@ -39,6 +40,7 @@ fi
 EOF_GIT
 cat > "$FAKE_BIN/npm" <<'EOF_NPM'
 #!/usr/bin/env bash
+if [ "${1:-}" = --version ]; then printf '11.21.0\n'; exit 0; fi
 printf '%s\n' "$@" > "$FAKE_NPM_ARGS"
 exit "${FAKE_NPM_EXIT:-0}"
 EOF_NPM

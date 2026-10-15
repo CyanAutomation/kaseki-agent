@@ -96,12 +96,12 @@ describe('RunCommand', () => {
       ref: 'feature/test',
       taskPrompt: 'Implement the requested API refactor',
       changedFilesAllowlist: ['src/lib/parser.ts', 'tests/parser.validation.ts'],
-      validationCommands: ['npm run check', 'npm run test', 'npm run build'],
       maxDiffBytes: 400000,
       taskMode: 'patch',
       publishMode: 'auto',
       timeoutSeconds: 10800,
     }));
+    expect(createRun.mock.calls[0][0].validationCommands).toBeUndefined();
     expect(consoleLog).toHaveBeenCalledWith('Job ID: kaseki-123');
     expect(consoleLog).toHaveBeenCalledWith('Status URL: http://localhost:8080/api/v1/runs/kaseki-123/status');
     expect(consoleLog).toHaveBeenCalledWith('  kaseki-agent status kaseki-123');

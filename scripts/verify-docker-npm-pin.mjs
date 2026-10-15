@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import semver from 'semver';
 
 const REQUIRED_PACKAGES = [
+  { name: 'bun', dependency: 'bun', registryName: 'bun' },
   { name: 'npm', dependency: 'npm', registryName: 'npm' },
   { name: '@earendil-works/pi-coding-agent', dependency: '@earendil-works/pi-coding-agent', registryName: '@earendil-works/pi-coding-agent' },
   { name: '@earendil-works/pi-server', dependency: '@earendil-works/pi-server', registryName: '@earendil-works/pi-server' },

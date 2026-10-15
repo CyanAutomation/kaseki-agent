@@ -57,8 +57,7 @@ filter_cleanup_commands_to_available() {
     [ -z "$trimmed" ] && continue
     
     # Check if this is an npm run command and if the script exists
-    if [[ "$trimmed" =~ ^npm[[:space:]]+run[[:space:]]+([^[:space:]-][^[:space:]-]*)($|[[:space:]]) ]]; then
-      local script_name="${BASH_REMATCH[1]}"
+    if script_name="$(npm_run_script_name "$trimmed")"; then
       # Try to check if script exists (simple check)
       if grep -q "\"$script_name\"" "$package_json" 2>/dev/null; then
         filtered_commands+=("$trimmed")
