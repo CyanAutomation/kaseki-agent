@@ -93,12 +93,14 @@ export function verifyDockerPackagePins(manifest, query = queryRegistryMetadata)
   const packages = extractImageToolchainSelectors(manifest);
   for (const packagePin of packages) {
     const metadata = query(packagePin.selector);
-    const allowMissingNodeEngine = ['brace-expansion-v1', 'brace-expansion-v2'].includes(packagePin.name);
+    // Bun is distributed as a standalone runtime binary and does not publish
+    // an engines.node range for its npm installer package.
+    const allowMissingNodeEngine = ['bun', 'brace-expansion-v1', 'brace-expansion-v2'].includes(packagePin.name);
     verifyPackageMetadata(packagePin, metadata, { allowMissingNodeEngine });
     console.log(
       metadata.engines?.node
         ? `${packagePin.selector} is published and supports Node 24 (${metadata.engines.node}).`
-        : `${packagePin.selector} is published and has no Node engine restriction.`,
+        : `${packagePin.selector} is published and has no Node engine metadata.`,
     );
   }
 }
