@@ -37,7 +37,7 @@ try {
       verifyDockerPackagePins(payload.manifest, (selector) => {
         queried.push(selector);
         const version = selector.slice(selector.lastIndexOf('@') + 1);
-        return selector === 'bun@1.4.3' ? { version } : { version, engines: { node: '>=24' } };
+        return selector.startsWith('bun@') ? { version } : { version, engines: { node: '>=24' } };
       });
       result = queried;
     } finally {
