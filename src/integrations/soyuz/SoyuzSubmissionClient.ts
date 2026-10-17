@@ -2,6 +2,8 @@ import type { SoyuzAdapterConfig } from './config';
 import { SoyuzApiError } from './SoyuzApiClient';
 import type { SoyuzRunStatus, SoyuzWorkerRun } from './contracts';
 
+const MAX_RESPONSE_BYTES = 128 * 1024;
+
 export interface SoyuzSubmittedRun {
   id: string;
   status: SoyuzRunStatus;
@@ -57,10 +59,7 @@ export class SoyuzSubmissionClient {
       ...(body ? { body: JSON.stringify({ ...body, ...(idempotencyKey ? { idempotencyKey } : {}) }) } : {}),
       signal: AbortSignal.timeout(this.config.requestTimeoutMs),
     });
-    const text = await response.text();
-    if (Buffer.byteLength(text, 'utf8') > 128 * 1024) {
-      throw new Error('Soyuz response exceeded the 128 KB client limit');
-    }
+    const text = await readResponseText(response);
     let parsed: Record<string, unknown>;
     try {
       parsed = JSON.parse(text) as Record<string, unknown>;
@@ -82,6 +81,34 @@ export class SoyuzSubmissionClient {
     }
     return parsed.data as T;
   }
+}
+
+async function readResponseText(response: Response): Promise<string> {
+  const contentLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > MAX_RESPONSE_BYTES) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new Error('Soyuz response exceeded the 128 KB client limit');
+  }
+  if (!response.body) return '';
+
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_RESPONSE_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error('Soyuz response exceeded the 128 KB client limit');
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks, size).toString('utf8');
 }
 
 export function normalizeSoyuzRunStatus(status: SoyuzRunStatus): 'queued' | 'running' | 'completed' | 'failed' {

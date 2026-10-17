@@ -151,6 +151,21 @@ describe('kaseki-api-config load configuration', () => {
     });
   });
 
+  test('does not read the Soyuz submission secret while submission routing is disabled', () => {
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
+    (readHostSecret as jest.Mock).mockReturnValue(null);
+    process.env.KASEKI_API_KEYS = 'test-key';
+    process.env.KASEKI_RESULTS_DIR = testDir;
+    process.env.SOYUZ_ENABLED = 'false';
+    process.env.SOYUZ_SUBMISSION_ENABLED = 'false';
+    delete process.env.SOYUZ_API_URL;
+
+    const config = loadConfig();
+
+    expect(config.soyuz?.submissionEnabled).toBe(false);
+    expect(readHostSecret).not.toHaveBeenCalledWith('soyuz_submission_api_token');
+  });
+
   test('rejects an admission minimum above the cleanup warning threshold', () => {
     process.env.KASEKI_API_KEYS = 'default-key';
     process.env.KASEKI_RESULTS_DIR = testDir;
