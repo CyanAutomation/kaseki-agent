@@ -251,6 +251,16 @@ describe('checkWorkerGatewayConfig', () => {
 });
 
 describe('checkGitHubAppCredentials', () => {
+  it('accepts GitHub App IDs from environment and keeps the private key file-backed', () => {
+    setEnv({ GITHUB_APP_ID: '123456', GITHUB_APP_CLIENT_ID: 'client-id' });
+    mockSecretReader({ github_app_private_key: '-----BEGIN RSA PRIVATE KEY-----' });
+
+    expect(checkGitHubAppCredentials()).toMatchObject({
+      ok: true,
+      detail: 'GitHub App credentials are readable and structurally valid for PR creation.',
+    });
+  });
+
   it('confirms readable and structurally valid GitHub App credentials', () => {
     mockSecretReader({ github_app_id: '123456', github_app_client_id: 'client-id', github_app_private_key: '-----BEGIN RSA PRIVATE KEY-----' });
 
@@ -272,6 +282,13 @@ describe('checkGitHubAppCredentials', () => {
 
   it('reports non-numeric app id', () => {
     mockSecretReader({ github_app_id: 'not-a-number', github_app_client_id: 'client-id', github_app_private_key: 'key' });
+
+    expect(checkGitHubAppCredentials().detail).toBe('GitHub App ID is present but is not numeric.');
+  });
+
+  it('reports non-numeric environment app id', () => {
+    setEnv({ GITHUB_APP_ID: 'not-a-number', GITHUB_APP_CLIENT_ID: 'client-id' });
+    mockSecretReader({ github_app_private_key: 'key' });
 
     expect(checkGitHubAppCredentials().detail).toBe('GitHub App ID is present but is not numeric.');
   });

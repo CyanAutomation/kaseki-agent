@@ -1391,12 +1391,18 @@ export class JobScheduler {
 
   private populateGitHubAppEnv(env: NodeJS.ProcessEnv): void {
     const githubAppSecretFiles = [
-      ['GITHUB_APP_ID_FILE', 'github_app_id'],
-      ['GITHUB_APP_CLIENT_ID_FILE', 'github_app_client_id'],
-      ['GITHUB_APP_PRIVATE_KEY_FILE', 'github_app_private_key'],
+      ['GITHUB_APP_ID_FILE', 'github_app_id', 'GITHUB_APP_ID'],
+      ['GITHUB_APP_CLIENT_ID_FILE', 'github_app_client_id', 'GITHUB_APP_CLIENT_ID'],
+      ['GITHUB_APP_PRIVATE_KEY_FILE', 'github_app_private_key', undefined],
     ] as const;
 
-    for (const [envName, secretName] of githubAppSecretFiles) {
+    for (const [envName, secretName, valueEnvName] of githubAppSecretFiles) {
+      // Public IDs are passed as values. Do not reintroduce their legacy file
+      // paths into controller runs when Compose has supplied those values.
+      if (valueEnvName && env[valueEnvName]?.trim()) {
+        continue;
+      }
+
       // If already configured via environment, skip
       const configuredPath = env[envName];
       if (configuredPath) {

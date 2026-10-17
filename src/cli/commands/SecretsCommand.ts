@@ -14,8 +14,6 @@ import { spawnSync } from 'child_process';
 const logger = createLogger('secrets-cmd');
 const REQUIRED_HOST_SECRET_FILES = [
   'openrouter_api_key',
-  'github_app_id',
-  'github_app_client_id',
   'github_app_private_key',
   'kaseki_api_keys',
 ] as const;
@@ -128,15 +126,14 @@ export class SecretsCommand extends BaseCommand {
     console.log('  kaseki-agent secrets fix-permissions         Normalize host secret file permissions');
     console.log('\nCommon Keys:');
     console.log('  openrouter-api-key    OpenRouter API key');
-    console.log('  github-app-id         GitHub App ID');
-    console.log('  github-app-client-id  GitHub App Client ID');
     console.log('  github-app-private-key GitHub App Private Key\n');
+    console.log('  GitHub App ID and Client ID are configuration values, not secret files.');
     console.log('Storage:');
     console.log('  - Uses filesystem secret files only');
     console.log('  - Docker hosts use KASEKI_HOST_SECRETS_DIR, usually /home/pi/secrets');
     console.log('  - Docker host permissions: directory 0750, files 0640, group id KASEKI_CONTAINER_GID');
     console.log('  - Local runs use ~/.kaseki/secrets/ with 0600 file permissions');
-    console.log('  - Keys are never exposed via environment variables');
+    console.log('  - Secret values are stored in files; public GitHub App IDs are configured separately');
     return 0;
   }
 

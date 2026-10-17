@@ -204,7 +204,7 @@ if [[ "$gateway_authority" == *@* || "$GATEWAY_URL" == *\?* || "$GATEWAY_URL" ==
   fail 'LLM_GATEWAY_URL must not contain credentials, query parameters, or a fragment. Store authentication in the key file.'
 fi
 [[ "$GATEWAY_MODEL" =~ ^[^[:space:]]+$ ]] || fail 'LLM_GATEWAY_MODEL must be a non-empty model identifier without spaces.'
-if [ -f "$ENV_FILE" ] && grep -Eq '^(LLM_GATEWAY_API_KEY|KASEKI_API_KEYS|OPENROUTER_API_KEY|GITHUB_APP_ID|GITHUB_APP_CLIENT_ID|GITHUB_APP_PRIVATE_KEY)=' "$ENV_FILE"; then
+if [ -f "$ENV_FILE" ] && grep -Eq '^(LLM_GATEWAY_API_KEY|KASEKI_API_KEYS|OPENROUTER_API_KEY|GITHUB_APP_PRIVATE_KEY)=' "$ENV_FILE"; then
   fail "Inline credentials are present in $ENV_FILE. Move them to files in $SECRETS_DIR, remove the inline entries, and re-run setup."
 fi
 

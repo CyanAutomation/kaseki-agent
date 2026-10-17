@@ -70,8 +70,9 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | `KASEKI_REPO_MEMORY_MAX_BYTES` | 8000 | Maximum bytes read/written for repository memory summaries |
 | `KASEKI_REPO_MEMORY_ROOT` | /cache/repo-memory | Directory root for repository memory summaries |
 | `KASEKI_API_LOG_LEVEL` | info | Log verbosity: debug/info/warn/error. Takes precedence over the generic `LOG_LEVEL` fallback. |
-| `GITHUB_APP_ID_FILE` | — | Path to file containing GitHub App ID for PR creation |
-| `GITHUB_APP_CLIENT_ID_FILE` | — | Path to file containing GitHub App Client ID |
+| `GITHUB_APP_ID` | — | Public GitHub App numeric ID for PR creation; Compose reads it from `.env` or the shell environment |
+| `GITHUB_APP_CLIENT_ID` | — | Public GitHub App OAuth Client ID; Compose reads it from `.env` or the shell environment |
+| `GITHUB_APP_PRIVATE_KEY_FILE` | `/run/secrets/kaseki/github_app_private_key` | File containing the GitHub App signing private key |
 | `GITHUB_APP_PRIVATE_KEY_FILE` | — | Path to GitHub App private key file; preferred over inline private key env |
 
 ## Authentication

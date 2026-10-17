@@ -327,10 +327,10 @@ validate_operation_ready() {
 
   # Check GitHub App credentials (optional)
   if [ "${GITHUB_APP_ENABLED:-1}" = "1" ]; then
-    if [ -f "$KASEKI_SECRETS_DIR/github_app_id" ] && [ -r "$KASEKI_SECRETS_DIR/github_app_id" ]; then
-      log_pass "GitHub App ID found"
+    if [ -n "${GITHUB_APP_ID:-}" ] || { [ -f "$KASEKI_SECRETS_DIR/github_app_id" ] && [ -r "$KASEKI_SECRETS_DIR/github_app_id" ]; }; then
+      log_pass "GitHub App ID configured"
     else
-      log_warn "GitHub App ID not found; GitHub features will be limited"
+      log_warn "GitHub App ID not configured; GitHub features will be limited"
       exit_code=$((exit_code > 3 ? exit_code : 3))
     fi
   else

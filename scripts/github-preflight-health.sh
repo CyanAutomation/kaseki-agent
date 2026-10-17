@@ -53,7 +53,7 @@ log_github_private_key_metadata() {
 
 check_github_operations_health() {
   # Preflight health check for github operations before pi agent runs
-  # Tests: GitHub App secrets, git config, Node.js token generation capability
+  # Tests: GitHub App configuration/private key, git config, Node.js token generation capability
   local github_app_token_helper="${1:-${KASEKI_GITHUB_APP_TOKEN_HELPER:-/usr/local/bin/github-app-token}}"
   local secrets_dir="${2:-${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}}"
   local results_dir="${3:-${KASEKI_RESULTS_DIR:-/results}}"
@@ -83,17 +83,26 @@ check_github_operations_health() {
   printf '[preflight] github operations health check started\n' | tee -a "$health_log"
   
   # must match host preflight/API secret resolution contract.
-  local github_app_id_file github_app_client_id_file github_app_private_key_file
+  local github_app_id github_app_client_id github_app_id_file github_app_client_id_file github_app_private_key_file
   github_app_id_file="$(resolve_github_secret_file "GITHUB_APP_ID_FILE" "github_app_id")"
   github_app_client_id_file="$(resolve_github_secret_file "GITHUB_APP_CLIENT_ID_FILE" "github_app_client_id")"
   github_app_private_key_file="$(resolve_github_secret_file "GITHUB_APP_PRIVATE_KEY_FILE" "github_app_private_key")"
   
-  if ! [ -r "$github_app_id_file" ]; then
-    github_preflight_fail "missing_github_app_id" "Provide a readable GitHub App ID secret via GITHUB_APP_ID_FILE or KASEKI_SECRETS_DIR/github_app_id." "Cannot read GitHub App ID from %s" "$github_app_id_file"
+  github_app_id="${GITHUB_APP_ID:-}"
+  if [ -z "$github_app_id" ] && [ -r "$github_app_id_file" ]; then
+    github_app_id="$(cat "$github_app_id_file" 2>/dev/null)" || github_app_id=""
+  fi
+  if [ -z "$github_app_id" ]; then
+    github_preflight_fail "missing_github_app_id" "Provide GITHUB_APP_ID or a legacy file via GITHUB_APP_ID_FILE or KASEKI_SECRETS_DIR/github_app_id." "Cannot read GitHub App ID from %s" "$github_app_id_file"
     return $?
   fi
-  if ! [ -r "$github_app_client_id_file" ]; then
-    github_preflight_fail "missing_github_app_client_id" "Provide a readable GitHub App client ID secret via GITHUB_APP_CLIENT_ID_FILE or KASEKI_SECRETS_DIR/github_app_client_id." "Cannot read GitHub App client ID from %s" "$github_app_client_id_file"
+
+  github_app_client_id="${GITHUB_APP_CLIENT_ID:-}"
+  if [ -z "$github_app_client_id" ] && [ -r "$github_app_client_id_file" ]; then
+    github_app_client_id="$(cat "$github_app_client_id_file" 2>/dev/null)" || github_app_client_id=""
+  fi
+  if [ -z "$github_app_client_id" ]; then
+    github_preflight_fail "missing_github_app_client_id" "Provide GITHUB_APP_CLIENT_ID or a legacy file via GITHUB_APP_CLIENT_ID_FILE or KASEKI_SECRETS_DIR/github_app_client_id." "Cannot read GitHub App client ID from %s" "$github_app_client_id_file"
     return $?
   fi
   if ! [ -r "$github_app_private_key_file" ]; then
@@ -101,7 +110,7 @@ check_github_operations_health() {
     return $?
   fi
   log_github_private_key_metadata "$github_app_private_key_file" "$health_log"
-  printf '[health-check] ✓ GitHub App secrets are readable\n' | tee -a "$health_log"
+  printf '[health-check] ✓ GitHub App configuration and private key are readable\n' | tee -a "$health_log"
   
   # Check 2: Verify git is available
   if ! git --version >/dev/null 2>&1; then
@@ -184,9 +193,9 @@ check_github_operations_health() {
     if parse_github_repo_url "$repo_url"; then
       owner="$GITHUB_REPO_OWNER"
       repo="$GITHUB_REPO_NAME"
-      app_id="$(cat "$github_app_id_file" 2>/dev/null)" || app_id=""
+      app_id="$github_app_id"
       if [ -z "$app_id" ]; then
-        github_preflight_fail "missing_github_app_id" "Ensure the GitHub App ID secret is readable and non-empty before enabling the auth smoke test." "Cannot read GitHub App ID for auth smoke test"
+        github_preflight_fail "missing_github_app_id" "Set GITHUB_APP_ID as configuration or provide a legacy ID file before enabling the auth smoke test." "Cannot read GitHub App ID for auth smoke test"
         return $?
       fi
 
