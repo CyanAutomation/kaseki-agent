@@ -21,6 +21,22 @@ describe('resolveGitHubAppId', () => {
     delete process.env.GITHUB_APP_ID;
     expect(resolveGitHubAppId()).toBe('file-app-id');
   });
+
+  it('treats an empty environment default as unset for legacy compatibility', () => {
+    const readSecret = jest.spyOn(hostSecretsReader, 'readHostSecret').mockReturnValue('file-app-id');
+    process.env.GITHUB_APP_ID = '';
+
+    expect(resolveGitHubAppId()).toBe('file-app-id');
+    expect(readSecret).toHaveBeenCalledWith('github_app_id');
+  });
+
+  it('rejects whitespace-only environment values instead of silently using a legacy ID', () => {
+    const readSecret = jest.spyOn(hostSecretsReader, 'readHostSecret').mockReturnValue('file-app-id');
+    process.env.GITHUB_APP_ID = '   ';
+
+    expect(() => resolveGitHubAppId()).toThrow('GITHUB_APP_ID is set but contains only whitespace.');
+    expect(readSecret).not.toHaveBeenCalled();
+  });
 });
 
 describe('retryTransientGitHubRequest', () => {

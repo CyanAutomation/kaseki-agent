@@ -59,6 +59,11 @@ model, image digest, host settings, and public `GITHUB_APP_ID` and
 `GITHUB_APP_CLIENT_ID` values. The GitHub App private key remains in
 `~/secrets/github_app_private_key`.
 
+Compose passes the App IDs as container environment values, so Docker daemon
+clients can see them through `docker inspect` and the Docker API. They are
+public identifiers; keep Docker daemon access restricted and keep the private
+key in the mounted secret file.
+
 To use a different credential file:
 
 ```bash

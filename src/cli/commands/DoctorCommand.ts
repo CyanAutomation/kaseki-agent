@@ -238,13 +238,19 @@ export class DoctorCommand extends BaseCommand {
 
     const missingFiles: Array<{ name: string; envVar: string; path: string | null; checkedPaths: string[] }> = [];
     const unreadableFiles: Array<{ name: string; path: string; reason: string }> = [];
+    const invalidValues: Array<{ name: string; source: string }> = [];
     const home = os.homedir();
 
     for (const authFile of requiredAuthFiles) {
       try {
-        const directValue = authFile.valueKey
-          ? process.env[authFile.envVar] || this.configManager.get(authFile.valueKey, '')
-          : '';
+        const envValue = authFile.valueKey ? process.env[authFile.envVar] : undefined;
+        const configValue = authFile.valueKey ? this.configManager.get(authFile.valueKey, '') : '';
+        const directValue = envValue || configValue;
+        const valueSource = envValue ? authFile.envVar : authFile.valueKey || authFile.envVar;
+        if (directValue.length > 0 && !directValue.trim()) {
+          invalidValues.push({ name: authFile.name, source: valueSource });
+          continue;
+        }
         if (directValue?.trim()) continue;
 
         const resolved = this.resolveAuthFilePath(
@@ -284,8 +290,8 @@ export class DoctorCommand extends BaseCommand {
       }
     }
 
-    if (missingFiles.length > 0 || unreadableFiles.length > 0) {
-      const errorMessage = this.buildAuthErrorMessage(missingFiles, unreadableFiles);
+    if (missingFiles.length > 0 || unreadableFiles.length > 0 || invalidValues.length > 0) {
+      const errorMessage = this.buildAuthErrorMessage(missingFiles, unreadableFiles, invalidValues);
       return {
         name: 'Authentication Files',
         status: 'fail',
@@ -312,7 +318,8 @@ export class DoctorCommand extends BaseCommand {
    */
   private buildAuthErrorMessage(
     missingFiles: Array<{ name: string; envVar: string; path: string | null; checkedPaths: string[] }>,
-    unreadableFiles: Array<{ name: string; path: string; reason: string }>
+    unreadableFiles: Array<{ name: string; path: string; reason: string }>,
+    invalidValues: Array<{ name: string; source: string }> = [],
   ): string {
     const lines: string[] = ['❌ Authentication validation failed:'];
     lines.push('');
@@ -344,6 +351,14 @@ export class DoctorCommand extends BaseCommand {
       lines.push('Unreadable files:');
       for (const file of unreadableFiles) {
         lines.push(`  • ${file.name}: ${file.path} (${file.reason})`);
+      }
+      lines.push('');
+    }
+
+    if (invalidValues.length > 0) {
+      lines.push('Invalid configuration values:');
+      for (const value of invalidValues) {
+        lines.push(`  • ${value.name}: ${value.source} contains only whitespace`);
       }
       lines.push('');
     }
