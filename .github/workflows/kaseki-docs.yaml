@@ -92,7 +92,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          idempotency_key="$(tr '[:upper:]' '[:lower:]' < /proc/sys/kernel/random/uuid)"
+          idempotency_hash="$(printf '%s' "$GITHUB_RUN_ID:kaseki-docs:$REPO_URL:$REF" | sha256sum | cut -c1-32)"
+          idempotency_key="${idempotency_hash:0:8}-${idempotency_hash:8:4}-4${idempotency_hash:13:3}-8${idempotency_hash:17:3}-${idempotency_hash:20:12}"
           payload="$(
             jq -n \
               --arg repoUrl "$REPO_URL" \
@@ -138,7 +139,8 @@ jobs:
               --output "$response_file" --write-out '%{http_code}' \
               --request POST "$KASEKI_BASE_URL/api/v1/runs" \
               --header "Authorization: Bearer $KASEKI_API_TOKEN" \
-              --header "Content-Type: application/json" --data "$payload"
+              --header "Content-Type: application/json" \
+              --header "Idempotency-Key: $idempotency_key" --data "$payload"
           )"
 
           if [[ ! "$http_status" =~ ^2 ]]; then

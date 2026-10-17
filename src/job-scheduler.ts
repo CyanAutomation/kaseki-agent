@@ -270,6 +270,8 @@ export class JobScheduler {
     requestId: string,
     claimCallbackId?: string,
     advisoryRoutingHints?: TaskAdmissionRoutingHints,
+    origin?: NonNullable<Job['soyuz']>['origin'],
+    retryOf?: string | null,
   ): Promise<Job> {
     await this.ready();
     const existing = await this.findSoyuzJob(externalRunId);
@@ -288,6 +290,8 @@ export class JobScheduler {
       requestId,
       soyuz: {
         externalRunId,
+        ...(origin ? { origin } : {}),
+        ...(retryOf !== undefined ? { retryOf } : {}),
         workerId,
         contractVersion: '1',
         ...(claimCallbackId ? { claimCallbackId } : {}),
@@ -330,6 +334,8 @@ export class JobScheduler {
     correlationId: string,
     requestId: string,
     claimCallbackId?: string,
+    origin?: NonNullable<Job['soyuz']>['origin'],
+    retryOf?: string | null,
   ): Promise<Job> {
     await this.ready();
     const existing = await this.findSoyuzJob(externalRunId);
@@ -351,6 +357,8 @@ export class JobScheduler {
       requestId,
       soyuz: {
         externalRunId,
+        ...(origin ? { origin } : {}),
+        ...(retryOf !== undefined ? { retryOf } : {}),
         workerId,
         contractVersion: '1',
         ...(claimCallbackId ? { claimCallbackId } : {}),
@@ -504,7 +512,9 @@ export class JobScheduler {
    * Get a job by ID.
    */
   getJob(id: string): Job | undefined {
-    return this.jobs.get(id);
+    return this.jobs.get(id) ?? Array.from(this.jobs.values()).find(
+      (job) => job.soyuz?.externalRunId.toLowerCase() === id.toLowerCase(),
+    );
   }
 
   /**
@@ -528,9 +538,12 @@ export class JobScheduler {
   }
 
   async getJobIncludingHistory(id: string): Promise<Job | undefined> {
-    const active = this.jobs.get(id);
+    const active = this.getJob(id);
     if (active) return active;
-    return (await this.persistenceManager.listPersistedJobs()).find((job) => job.id === id);
+    const normalizedId = id.toLowerCase();
+    return (await this.persistenceManager.listPersistedJobs()).find(
+      (job) => job.id.toLowerCase() === normalizedId || job.soyuz?.externalRunId.toLowerCase() === normalizedId,
+    );
   }
 
   getWebhookDeliveries(id: string): WebhookDeliverySummary[] {

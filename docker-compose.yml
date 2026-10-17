@@ -38,6 +38,7 @@ services:
       # Soyuz intake is opt-in. Credentials are read from the existing
       # /run/secrets/kaseki mount, not from this environment file.
       SOYUZ_ENABLED: "${SOYUZ_ENABLED:-false}"
+      SOYUZ_SUBMISSION_ENABLED: "${SOYUZ_SUBMISSION_ENABLED:-false}"
       SOYUZ_API_URL: "${SOYUZ_API_URL:-}"
       CLOUDFLARE_ACCOUNT_ID: "${CLOUDFLARE_ACCOUNT_ID:-}"
       CLOUDFLARE_QUEUE_ID: "${CLOUDFLARE_QUEUE_ID:-}"

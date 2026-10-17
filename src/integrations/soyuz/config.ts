@@ -2,6 +2,10 @@ import { readHostSecret } from '../../secrets/host-secrets-reader';
 
 export interface SoyuzAdapterConfig {
   enabled: boolean;
+  /** Enables API submissions through Soyuz independently from queue consumption. */
+  submissionEnabled?: boolean;
+  /** Scoped Kaseki credential used only for create, retry, and cancel requests. */
+  submissionApiToken?: string;
   apiUrl: string;
   workerApiToken: string;
   accountId: string;
@@ -36,9 +40,19 @@ export function loadSoyuzAdapterConfig(env: NodeJS.ProcessEnv = process.env): So
     throw new Error('SOYUZ_ENABLED must be true or false');
   }
   const enabled = enabledValue === 'true';
-  if (!enabled) {
+  const submissionEnabledValue = env.SOYUZ_SUBMISSION_ENABLED?.trim().toLowerCase() ?? 'false';
+  if (submissionEnabledValue !== 'true' && submissionEnabledValue !== 'false') {
+    throw new Error('SOYUZ_SUBMISSION_ENABLED must be true or false');
+  }
+  const submissionEnabled = submissionEnabledValue === 'true';
+  const apiUrlRaw = env.SOYUZ_API_URL?.trim();
+  const submissionApiToken = readSecret(env, 'SOYUZ_SUBMISSION_API_TOKEN', 'soyuz_submission_api_token');
+
+  if (!enabled && !submissionEnabled) {
     return {
       enabled: false,
+      submissionEnabled: false,
+      submissionApiToken: '',
       apiUrl: '',
       workerApiToken: '',
       accountId: '',
@@ -54,14 +68,7 @@ export function loadSoyuzAdapterConfig(env: NodeJS.ProcessEnv = process.env): So
     };
   }
 
-  const apiUrlRaw = env.SOYUZ_API_URL?.trim();
-  const workerApiToken = readSecret(env, 'SOYUZ_WORKER_API_TOKEN', 'soyuz_worker_api_token');
-  const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim() ?? '';
-  const queueId = env.CLOUDFLARE_QUEUE_ID?.trim() ?? '';
-  const queueApiToken = readSecret(env, 'CLOUDFLARE_QUEUE_API_TOKEN', 'cloudflare_queue_api_token');
-  const workerId = env.SOYUZ_WORKER_ID?.trim() ?? '';
-
-  if (!apiUrlRaw) throw new Error('SOYUZ_API_URL is required when SOYUZ_ENABLED=true');
+  if (!apiUrlRaw) throw new Error('SOYUZ_API_URL is required when Soyuz submissions or queue consumption are enabled');
   let parsedUrl: URL;
   try {
     parsedUrl = new URL(apiUrlRaw);
@@ -72,14 +79,35 @@ export function loadSoyuzAdapterConfig(env: NodeJS.ProcessEnv = process.env): So
     throw new Error('SOYUZ_API_URL must use HTTPS except for localhost development');
   }
   if (parsedUrl.search || parsedUrl.hash) throw new Error('SOYUZ_API_URL must not include a query string or fragment');
-  if (!/^[a-f0-9]{32}$/i.test(accountId)) throw new Error('CLOUDFLARE_ACCOUNT_ID must be a 32-character hexadecimal account ID');
-  if (!queueId || queueId.length > 200) throw new Error('CLOUDFLARE_QUEUE_ID is required');
-  if (workerApiToken.length < 16) throw new Error('SOYUZ_WORKER_API_TOKEN is required and must contain at least 16 characters');
-  if (queueApiToken.length < 16) throw new Error('CLOUDFLARE_QUEUE_API_TOKEN is required and must contain at least 16 characters');
-  if (!/^[A-Za-z0-9_.:-]{1,200}$/.test(workerId)) throw new Error('SOYUZ_WORKER_ID is required and must be a stable, unique host identifier');
+
+  if (submissionEnabled && submissionApiToken.length < 16) {
+    throw new Error('SOYUZ_SUBMISSION_API_TOKEN is required and must contain at least 16 characters when SOYUZ_SUBMISSION_ENABLED=true');
+  }
+
+  const workerApiToken = enabled || submissionEnabled ? readSecret(env, 'SOYUZ_WORKER_API_TOKEN', 'soyuz_worker_api_token') : '';
+  const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim() ?? '';
+  const queueId = env.CLOUDFLARE_QUEUE_ID?.trim() ?? '';
+  const queueApiToken = enabled ? readSecret(env, 'CLOUDFLARE_QUEUE_API_TOKEN', 'cloudflare_queue_api_token') : '';
+  const workerId = env.SOYUZ_WORKER_ID?.trim() ?? '';
+
+  if (enabled) {
+    if (!/^[a-f0-9]{32}$/i.test(accountId)) throw new Error('CLOUDFLARE_ACCOUNT_ID must be a 32-character hexadecimal account ID');
+    if (!queueId || queueId.length > 200) throw new Error('CLOUDFLARE_QUEUE_ID is required');
+    if (workerApiToken.length < 16) throw new Error('SOYUZ_WORKER_API_TOKEN is required and must contain at least 16 characters');
+    if (queueApiToken.length < 16) throw new Error('CLOUDFLARE_QUEUE_API_TOKEN is required and must contain at least 16 characters');
+    if (!/^[A-Za-z0-9_.:-]{1,200}$/.test(workerId)) throw new Error('SOYUZ_WORKER_ID is required and must be a stable, unique host identifier');
+  }
+  if (submissionEnabled && workerApiToken.length < 16) {
+    throw new Error('SOYUZ_WORKER_API_TOKEN is required for canonical run status reads when SOYUZ_SUBMISSION_ENABLED=true');
+  }
+  if (submissionEnabled && submissionApiToken === workerApiToken) {
+    throw new Error('SOYUZ_SUBMISSION_API_TOKEN must be distinct from SOYUZ_WORKER_API_TOKEN');
+  }
 
   return {
     enabled,
+    submissionEnabled,
+    submissionApiToken,
     apiUrl: apiUrlRaw.replace(/\/+$/, ''),
     workerApiToken,
     accountId,

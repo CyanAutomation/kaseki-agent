@@ -5,6 +5,7 @@
 
 import { ApiBackedCommand, type ApiClientFactory } from '../ApiBackedCommand';
 import { createLogger } from '../../logger';
+import { randomUUID } from 'node:crypto';
 import { RunRequestSchema, type RunRequest, type RunResponse } from '../../kaseki-api-types';
 import type { ConfigManager } from '../../config/ConfigManager';
 
@@ -27,6 +28,7 @@ export class RunCommand extends ApiBackedCommand<RunApiClient> {
   }
 
   async execute(args: string[]): Promise<number> {
+    let retryableIdempotencyKey: string | undefined;
     try {
       const { positional, flags } = this.parseArgs(args);
 
@@ -48,6 +50,8 @@ export class RunCommand extends ApiBackedCommand<RunApiClient> {
       }
 
       const runRequest = this.buildRunRequest(repoUrl, gitRef, taskPrompt, flags);
+      runRequest.idempotencyKey ??= randomUUID();
+      retryableIdempotencyKey = runRequest.idempotencyKey;
       const apiClient = this.apiClientFactory(this.configManager);
 
       console.log('🚀 Kaseki Agent Runner\n');
@@ -71,6 +75,9 @@ export class RunCommand extends ApiBackedCommand<RunApiClient> {
     } catch (error) {
       logger.error(`Run failed: ${error}`);
       console.error(`❌ Run failed: ${error instanceof Error ? error.message : String(error)}`);
+      if (retryableIdempotencyKey) {
+        console.error(`Retry this exact request with the same key: --idempotency-key=${retryableIdempotencyKey}`);
+      }
       return typeof error === 'object' && error !== null && 'exitCode' in error && typeof error.exitCode === 'number'
         ? error.exitCode
         : 1;
@@ -87,6 +94,11 @@ export class RunCommand extends ApiBackedCommand<RunApiClient> {
       repoUrl,
       ref: gitRef,
     };
+
+    const idempotencyKey = flags.get('idempotency-key');
+    if (typeof idempotencyKey === 'string') {
+      request.idempotencyKey = idempotencyKey;
+    }
 
     if (taskPrompt) {
       request.taskPrompt = taskPrompt;

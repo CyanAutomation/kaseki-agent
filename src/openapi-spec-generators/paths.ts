@@ -691,9 +691,9 @@ function buildRunManagementApiRunsIdPath(errorResponseSchema: Record<string, unk
         description: 'Returns stable run identity, lifecycle timestamps, and links to the run subresources.',
         tags: ['Run Management'],
         security: [{ BearerAuth: [] }],
-        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^kaseki-\\d+$' } }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: 'Canonical Soyuz UUID or legacy local Kaseki ID' }],
         responses: {
-          '200': { description: 'Run resource', content: { 'application/json': { schema: { type: 'object', required: ['id', 'status', 'createdAt', 'links'], properties: { id: { type: 'string' }, status: { type: 'string' }, createdAt: { type: 'string', format: 'date-time' }, startedAt: { type: 'string', format: 'date-time' }, completedAt: { type: 'string', format: 'date-time' }, projectName: { type: 'string' }, repoUrl: { type: 'string', format: 'uri' }, links: { type: 'object' } } } } } },
+          '200': { description: 'Run resource', content: { 'application/json': { schema: { type: 'object', required: ['id', 'status', 'createdAt', 'links'], properties: { id: { type: 'string', description: 'Canonical Soyuz UUID or legacy local Kaseki ID' }, localRunId: { type: 'string' }, origin: { type: 'object', properties: { type: { type: 'string', enum: ['api_client', 'kaseki', 'mcp'] }, id: { type: 'string' } } }, retryOf: { type: 'string', format: 'uuid' }, status: { type: 'string' }, createdAt: { type: 'string', format: 'date-time' }, startedAt: { type: 'string', format: 'date-time' }, completedAt: { type: 'string', format: 'date-time' }, projectName: { type: 'string' }, repoUrl: { type: 'string', format: 'uri' }, links: { type: 'object' } } } } } },
           '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
           '404': { description: 'Run not found', content: { 'application/problem+json': { schema: errorResponseSchema } } },
         },
@@ -709,15 +709,15 @@ function buildRunManagementApiRunsIdStatusPath(errorResponseSchema: Record<strin
         operationId: 'getRunStatus',
         summary: 'Poll run status',
         description:
-              'Returns current status of a kaseki run, including progress, elapsed time, and timeout risk percentage.',
+              'Returns current status for a canonical Soyuz UUID or legacy local Kaseki ID, including progress, elapsed time, and timeout risk percentage.',
         tags: ['Run Management'],
         parameters: [
           {
             name: 'id',
             in: 'path',
             required: true,
-            schema: { type: 'string', pattern: '^kaseki-\\d+$' },
-            description: 'Kaseki instance ID (e.g., kaseki-42)'
+            schema: { type: 'string' },
+            description: 'Canonical Soyuz UUID or legacy local Kaseki ID (e.g., a UUID or kaseki-42)'
           }
         ],
         security: [{ BearerAuth: [] }],
@@ -761,7 +761,7 @@ function buildRunManagementApiRunsIdRetryPath(errorResponseSchema: Record<string
         description: 'Creates one new run from the original request only when the source run is completed or failed. A UUID idempotencyKey is required; repeating it replays the same retry instead of enqueueing another run.',
         tags: ['Run Management'],
         security: [{ BearerAuth: [] }],
-        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^kaseki-\\d+$' } }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: 'Canonical Soyuz UUID or legacy local Kaseki ID' }],
         requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['idempotencyKey'], properties: { idempotencyKey: { type: 'string', format: 'uuid' } } } } } },
         responses: {
           '202': { description: 'Retry accepted', content: { 'application/json': { schema: runResponseSchema } } },
@@ -793,8 +793,8 @@ function buildRunManagementApiRunsIdCancelPath(errorResponseSchema: Record<strin
             name: 'id',
             in: 'path',
             required: true,
-            schema: { type: 'string', pattern: '^kaseki-\\d+$' },
-            description: 'Kaseki instance ID'
+            schema: { type: 'string' },
+            description: 'Canonical Soyuz UUID or legacy local Kaseki ID'
           }
         ],
         security: [{ BearerAuth: [] }],
@@ -852,8 +852,8 @@ function createLogProgressPathComponents(errorResponseSchema: Record<string, unk
     name: 'id',
     in: 'path',
     required: true,
-    schema: { type: 'string', pattern: '^kaseki-\\d+$' },
-    description: 'Kaseki instance ID',
+    schema: { type: 'string' },
+    description: 'Canonical Soyuz UUID or legacy local Kaseki ID',
   };
   const tailParameter = {
     name: 'tail',
@@ -865,7 +865,8 @@ function createLogProgressPathComponents(errorResponseSchema: Record<string, unk
     type: 'object',
     required: ['id', 'status', 'events', 'total', 'sources'],
     properties: {
-      id: { type: 'string' },
+      id: { type: 'string', description: 'Canonical Soyuz UUID or legacy local Kaseki ID' },
+      localRunId: { type: 'string', description: 'Local Kaseki ID retained for diagnostics' },
       status: { type: 'string' },
       events: { type: 'array', items: { type: 'object', additionalProperties: true }, description: 'Normalized events with a stable numeric id.' },
       total: { type: 'integer', description: 'Total number of parseable events before tail filtering' },
@@ -955,8 +956,8 @@ function buildLogsProgressApiRunsIdLogsLogtypePath(errorResponseSchema: Record<s
             name: 'id',
             in: 'path',
             required: true,
-            schema: { type: 'string', pattern: '^kaseki-\\d+$' },
-            description: 'Kaseki instance ID'
+            schema: { type: 'string' },
+            description: 'Canonical Soyuz UUID or legacy local Kaseki ID'
           },
           {
             name: 'logtype',
@@ -1034,8 +1035,8 @@ function buildArtifactApiRunsIdArtifactsPath(errorResponseSchema: Record<string,
             name: 'id',
             in: 'path',
             required: true,
-            schema: { type: 'string', pattern: '^kaseki-\\d+$' },
-            description: 'Kaseki instance ID'
+            schema: { type: 'string' },
+            description: 'Canonical Soyuz UUID or legacy local Kaseki ID'
           },
           {
             name: 'manifest',
@@ -1055,7 +1056,8 @@ function buildArtifactApiRunsIdArtifactsPath(errorResponseSchema: Record<string,
                   type: 'object',
                   required: ['id', 'artifacts', 'artifactCount'],
                   properties: {
-                    id: { type: 'string' },
+                    id: { type: 'string', description: 'Canonical Soyuz UUID or legacy local Kaseki ID' },
+                    localRunId: { type: 'string', description: 'Local Kaseki ID retained for diagnostics' },
                     runStatus: {
                       type: 'string',
                       enum: ['queued', 'running', 'completed', 'failed']
@@ -1121,8 +1123,8 @@ function buildArtifactApiResultsIdFilePath(errorResponseSchema: Record<string, u
             name: 'id',
             in: 'path',
             required: true,
-            schema: { type: 'string', pattern: '^kaseki-\\d+$' },
-            description: 'Kaseki instance ID'
+            schema: { type: 'string' },
+            description: 'Canonical Soyuz UUID or legacy local Kaseki ID'
           },
           {
             name: 'file',
@@ -1257,8 +1259,8 @@ function buildRunAnalysisPaths(errorResponseSchema: Record<string, unknown>): Re
             name: 'id',
             in: 'path',
             required: true,
-            schema: { type: 'string', pattern: '^kaseki-\\d+$' },
-            description: 'Kaseki instance ID'
+            schema: { type: 'string' },
+            description: 'Canonical Soyuz UUID or legacy local Kaseki ID'
           }
         ],
         security: [{ BearerAuth: [] }],
@@ -1271,7 +1273,8 @@ function buildRunAnalysisPaths(errorResponseSchema: Record<string, unknown>): Re
                   type: 'object',
                   required: ['id', 'status'],
                   properties: {
-                    id: { type: 'string' },
+                    id: { type: 'string', description: 'Canonical Soyuz UUID or legacy local Kaseki ID' },
+                    localRunId: { type: 'string', description: 'Local Kaseki ID retained for diagnostics' },
                     status: {
                       type: 'string',
                       enum: ['queued', 'running', 'completed', 'failed']
@@ -1385,7 +1388,7 @@ function buildWebhookPaths(errorResponseSchema: Record<string, unknown>): Record
 }
 
 function buildWebhookDeliveryPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
-  const id = { name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^kaseki-\\\\d+$' } };
+  const id = { name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: 'Canonical Soyuz UUID or legacy local Kaseki ID' };
   const attemptSchema = {
     type: 'object',
     properties: {
@@ -1528,7 +1531,7 @@ function buildScorecardPaths(errorResponseSchema: Record<string, unknown>): Reco
         {name:'limit',in:'query',schema:{type:'integer',minimum:1,maximum:100,default:25}}, {name:'cursor',in:'query',schema:{type:'string'}},
         ...['lifecycleStatus','grade','rubricVersion','model','repository'].map(name=>({name,in:'query',schema:{type:'string'}})),
         {name:'startedAfter',in:'query',schema:{type:'string',format:'date-time'}}, {name:'startedBefore',in:'query',schema:{type:'string',format:'date-time'}}],
-      responses:{'200':{description:'Paginated compact scorecard summaries',content:{'application/json':{schema:{type:'object',required:['scorecards','total','pagination','filters'],properties:{scorecards:{type:'array',items:{type:'object',required:['runId','overallScore','grade','rubricVersion'],properties:{runId:{type:'string'},overallScore:{type:'number'},grade:{type:'string'},rubricVersion:{type:'string'},lifecycleStatus:{type:'string'},completeness:{type:'string'},confidence:{type:'number'},startedAt:{type:['string','null'],format:'date-time'},endedAt:{type:['string','null']},scoredAt:{type:'string',format:'date-time'},model:{type:'string'},repository:{type:'string'}}}},total:{type:'integer'},pagination:{type:'object',properties:{limit:{type:'integer'},returned:{type:'integer'},hasMore:{type:'boolean'},nextCursor:{type:'string'}}},filters:{type:'object'}}},example:{scorecards:[{runId:'kaseki-42',overallScore:86,grade:'B',rubricVersion:'1.0'}],total:1,pagination:{limit:25,returned:1,hasMore:false},filters:{}}}}},'400':error('Invalid pagination or filters'),'401':error('Unauthorized')}} }
+      responses:{'200':{description:'Paginated compact scorecard summaries',content:{'application/json':{schema:{type:'object',required:['scorecards','total','pagination','filters'],properties:{scorecards:{type:'array',items:{type:'object',required:['runId','overallScore','grade','rubricVersion'],properties:{runId:{type:'string',description:'Canonical Soyuz UUID or legacy local Kaseki ID'},localRunId:{type:'string'},overallScore:{type:'number'},grade:{type:'string'},rubricVersion:{type:'string'},lifecycleStatus:{type:'string'},completeness:{type:'string'},confidence:{type:'number'},startedAt:{type:['string','null'],format:'date-time'},endedAt:{type:['string','null']},scoredAt:{type:'string',format:'date-time'},model:{type:'string'},repository:{type:'string'}}}},total:{type:'integer'},pagination:{type:'object',properties:{limit:{type:'integer'},returned:{type:'integer'},hasMore:{type:'boolean'},nextCursor:{type:'string'}}},filters:{type:'object'}}},example:{scorecards:[{runId:'kaseki-42',overallScore:86,grade:'B',rubricVersion:'1.0'}],total:1,pagination:{limit:25,returned:1,hasMore:false},filters:{}}}}},'400':error('Invalid pagination or filters'),'401':error('Unauthorized')}} }
   };
 }
 

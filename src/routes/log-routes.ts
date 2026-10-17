@@ -7,7 +7,7 @@ import { LogResponse, AnalysisResponse, type Job } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
 import { isNonEmptyFile } from '../utils/file-helpers';
 import { readLogContent, readCombinedLogs, collectDiagnostics, isPathInsideDirectory, logFileForType, VALID_LOG_TYPES } from './log-file-reader';
-import { getJobOrRespond } from '../utils/route-helpers';
+import { getJobOrRespond, localRunId, publicRunId } from '../utils/route-helpers';
 import { normalizeProgressEvent } from '../utils/progress-normalizer';
 import { progressEventsFromDockerLogTail } from '../utils/docker-log-progress-events';
 import { CachedArtifactReader } from '../utils/cached-artifact-reader';
@@ -18,9 +18,9 @@ import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 function readStructuredEventSnapshot(
   scheduler: JobScheduler,
   config: KasekiApiConfig,
-  job: { id: string; status: string; startedAt?: Date },
+  job: { id: string; status: string; startedAt?: Date; soyuz?: Job['soyuz'] },
   tail: number
-): { id: string; status: string; events: Array<Record<string, unknown>>; total: number; nextCursor: string; sources: string[] } {
+): { id: string; localRunId?: string; status: string; events: Array<Record<string, unknown>>; total: number; nextCursor: string; sources: string[] } {
   const progressFile = path.join(config.resultsDir, job.id, 'progress.jsonl');
   const events: Array<Record<string, unknown>> = [];
   const sources = new Set<string>();
@@ -76,7 +76,8 @@ function readStructuredEventSnapshot(
     id: String(Math.max(0, events.length - selectedEvents.length + index)),
   }));
   return {
-    id: job.id,
+    id: publicRunId(job),
+    ...(localRunId(job) ? { localRunId: localRunId(job) } : {}),
     status: job.status,
     events: selectedEventsWithIds,
     total: events.length,
@@ -88,7 +89,7 @@ function readStructuredEventSnapshot(
 function streamProgressEvents(
   scheduler: JobScheduler,
   config: KasekiApiConfig,
-  job: { id: string; status: string; startedAt?: Date },
+  job: { id: string; status: string; startedAt?: Date; soyuz?: Job['soyuz'] },
   req: Request,
   res: Response
 ): void {
@@ -155,11 +156,11 @@ function streamProgressEvents(
     }
   };
 
-  res.write(`data: ${JSON.stringify({ type: 'start', jobId: job.id, status: job.status })}\n\n`);
+  res.write(`data: ${JSON.stringify({ type: 'start', jobId: publicRunId(job), ...(localRunId(job) ? { localRunId: localRunId(job) } : {}), status: job.status })}\n\n`);
 
   const heartbeat = setInterval(() => {
     if (!res.destroyed) {
-      res.write(`event: heartbeat\ndata: ${JSON.stringify({ type: 'heartbeat', jobId: job.id, cursor: String(lastEventCount), timestamp: new Date().toISOString() })}\n\n`);
+      res.write(`event: heartbeat\ndata: ${JSON.stringify({ type: 'heartbeat', jobId: publicRunId(job), ...(localRunId(job) ? { localRunId: localRunId(job) } : {}), cursor: String(lastEventCount), timestamp: new Date().toISOString() })}\n\n`);
     }
   }, 15000);
   heartbeat.unref?.();
@@ -187,7 +188,10 @@ function buildAnalysisResponse(
 ): AnalysisResponse {
   const runDir = job.resultDir || path.join(config.resultsDir, job.id);
   const response: AnalysisResponse = {
-    id: job.id,
+    id: publicRunId(job),
+    ...(localRunId(job) ? { localRunId: localRunId(job) } : {}),
+    ...(job.soyuz?.origin ? { origin: job.soyuz.origin } : {}),
+    ...(job.soyuz?.retryOf ? { retryOf: job.soyuz.retryOf } : {}),
     status: job.status,
     createdAt: job.createdAt.toISOString(),
     completedAt: job.completedAt?.toISOString(),
