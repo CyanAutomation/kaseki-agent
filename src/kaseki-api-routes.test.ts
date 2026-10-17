@@ -663,7 +663,7 @@ describe('Soyuz submission routing', () => {
         headers: { Authorization: 'Bearer test-key' },
       });
       const statusBody = await status.json() as any;
-      const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+      const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, NonNullable<Parameters<typeof fetch>[1]>];
 
       expect(first.status).toBe(202);
       expect(firstBody.id).toBe(soyuzId);
@@ -715,7 +715,7 @@ describe('Soyuz submission routing', () => {
   test('routes canonical Soyuz retries through the terminal-state checked retry operation', async () => {
     const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-soyuz-retry-'));
     const config = createTestConfig(resultsDir);
-    const fetchImpl = jest.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const fetchImpl = jest.fn(async (input: Parameters<typeof fetch>[0]) => {
       const url = String(input);
       if (url.endsWith(`/v1/worker/runs/${sourceId}`)) {
         return apiResponse({ runId: sourceId, status: 'completed', updatedAt: '2026-10-17T12:00:00.000Z' }, 200);
