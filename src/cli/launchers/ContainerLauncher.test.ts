@@ -67,5 +67,22 @@ describe('buildDockerArgs', () => {
         encoding: 'utf-8',
       });
     });
+
+    it('forwards GitHub App IDs from ConfigManager into the API container environment', () => {
+      const configValues: Record<string, string> = {
+        'docker.image': 'kaseki:test',
+        'auth.github_app_id': '123456',
+        'auth.github_app_client_id': 'Iv1.public-client-id',
+      };
+      const configManager = {
+        get: jest.fn((key: string, defaultValue = '') => configValues[key] ?? defaultValue),
+      };
+      const launcher = new ContainerLauncher(configManager as any);
+
+      expect(launcher.launch()).toEqual({ ok: true });
+      const dockerArgs = (spawnSync as jest.Mock).mock.calls[0][1] as string[];
+      expect(dockerArgs).toContain('GITHUB_APP_ID=123456');
+      expect(dockerArgs).toContain('GITHUB_APP_CLIENT_ID=Iv1.public-client-id');
+    });
   });
 });

@@ -65,7 +65,22 @@ interface ParsedGitHubUrl {
 
 /** Resolve the public App ID from configuration, with a legacy file fallback. */
 export function resolveGitHubAppId(overrideAppId?: string): string | null {
-  return overrideAppId?.trim() || process.env.GITHUB_APP_ID?.trim() || readHostSecret('github_app_id');
+  const resolveConfiguredValue = (value: string | undefined, source: string): string | undefined => {
+    if (value === undefined || value === '') return undefined;
+    const normalized = value.trim();
+    if (!normalized) {
+      throw new Error(`${source} is set but contains only whitespace.`);
+    }
+    return normalized;
+  };
+
+  const overrideValue = resolveConfiguredValue(overrideAppId, 'GitHub App ID override');
+  if (overrideValue !== undefined) return overrideValue;
+
+  const environmentValue = resolveConfiguredValue(process.env.GITHUB_APP_ID, 'GITHUB_APP_ID');
+  if (environmentValue !== undefined) return environmentValue;
+
+  return readHostSecret('github_app_id');
 }
 
 function isTransientGitHubError(error: unknown): boolean {

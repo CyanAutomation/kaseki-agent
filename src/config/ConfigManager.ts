@@ -287,6 +287,13 @@ export class ConfigManager {
    * Public GitHub App identifiers are configuration values. Signing and provider credentials remain file-backed.
    */
   private applyEnvironmentVariables(): void {
+    for (const publicIdVar of ['GITHUB_APP_ID', 'GITHUB_APP_CLIENT_ID']) {
+      const value = process.env[publicIdVar];
+      if (value !== undefined && value.length > 0 && !value.trim()) {
+        throw new Error(`${publicIdVar} is set but contains only whitespace.`);
+      }
+    }
+
     // Check for inline secret variables and reject them
     const inlineSecrets = [
       'OPENROUTER_API_KEY',

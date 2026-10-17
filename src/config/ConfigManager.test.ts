@@ -105,6 +105,14 @@ describe('ConfigManager', () => {
     expect(manager.get('auth.github_app_client_id')).toBe('Iv1.public-client-id');
   });
 
+  test.each(['GITHUB_APP_ID', 'GITHUB_APP_CLIENT_ID'])('rejects whitespace-only %s values', async (envName) => {
+    process.env[envName] = '   ';
+
+    await expect(new ConfigManager().load()).rejects.toThrow(
+      `${envName} is set but contains only whitespace.`,
+    );
+  });
+
   describe('validateAuthPaths', () => {
     test('should detect github_client_id naming mistake', () => {
       configManager.set('auth.github_app_client_id_file', '/home/pi/secrets/github_client_id');
