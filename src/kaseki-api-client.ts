@@ -38,6 +38,7 @@ const CriticalChangeContractSchema = z.object({
 
 const StatusResponseSchema = z.object({
   id: z.string(),
+  localRunId: z.string().optional(),
   status: z.enum(['queued', 'running', 'completed', 'failed']),
   failureClass: z.string().optional(),
   failedCommand: z.string().optional(),
@@ -54,6 +55,8 @@ const StatusResponseSchema = z.object({
   taskProgressPercent: z.number().optional(),
   correlationId: z.string().optional(),
   requestId: z.string().optional(),
+  origin: z.object({ type: z.enum(['api_client', 'kaseki', 'mcp']), id: z.string() }).optional(),
+  retryOf: z.string().optional(),
   resultDir: z.string().optional(),
   progress: StructuredProgressSchema.optional(),
   runEvaluation: z.object({
@@ -95,6 +98,7 @@ const StatusResponseSchema = z.object({
 const ScorecardResponseSchema = RunScorecardSchema;
 const ScorecardSummarySchema = z.object({
   runId: z.string(),
+  localRunId: z.string().optional(),
   lifecycleStatus: RunScorecardLifecycleStatusSchema,
   overallScore: z.number().min(0).max(100),
   grade: z.enum(['A', 'B', 'C', 'D', 'F']),

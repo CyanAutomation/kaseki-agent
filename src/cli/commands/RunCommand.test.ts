@@ -125,6 +125,28 @@ describe('RunCommand', () => {
     expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('--local-direct is no longer supported'));
   });
 
+  test('reuses an explicitly supplied idempotency key for a retry after an uncertain submission', async () => {
+    const idempotencyKey = '11111111-1111-4111-8111-111111111111';
+    const createRun = jest.fn<Promise<RunResponse>, [RunRequest]>().mockRejectedValue(new Error('network timeout'));
+    const apiClient: RunApiClient = {
+      baseUrl: 'http://localhost:8080/api',
+      createRun,
+      getRunStatusUrl: (runId) => `http://localhost:8080/api/v1/runs/${runId}/status`,
+    };
+    const command = new RunCommand(configManager, () => apiClient);
+
+    const exitCode = await command.execute([
+      'https://github.com/org/repo',
+      'main',
+      'Implement a small change',
+      `--idempotency-key=${idempotencyKey}`,
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(createRun).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey }));
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(`--idempotency-key=${idempotencyKey}`));
+  });
+
   test('should return the task admission exit code when the API rejects a task', async () => {
     const createRun = jest.fn<Promise<RunResponse>, [RunRequest]>().mockRejectedValue(
       new TaskAdmissionRejectedError('Task admission rejected: changes_permissions.'),

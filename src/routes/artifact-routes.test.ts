@@ -193,6 +193,32 @@ describe('artifact-routes', () => {
       }
     });
 
+    it('uses the Soyuz UUID in the artifact response and download links', async () => {
+      const job = mockCompletedJob();
+      job.soyuz = {
+        externalRunId: '11111111-1111-4111-8111-111111111111',
+        workerId: 'worker-1',
+        contractVersion: '1',
+        startedCallbackId: 'started-1',
+        startAuthorized: true,
+      };
+      mockFileStats({ 'stdout.log': { content: 'worker output\n' } });
+      const { server, url } = await listen(createMountedArtifactApp());
+
+      try {
+        const response = await fetch(`${url}/api/runs/${job.id}/artifacts`);
+        const body = await response.json();
+
+        expect(body).toMatchObject({
+          id: job.soyuz.externalRunId,
+          localRunId: job.id,
+          downloadBaseUrl: `/api/v1/results/${job.soyuz.externalRunId}/`,
+        });
+      } finally {
+        await close(server);
+      }
+    });
+
     it('serves a registered artifact for a known job', async () => {
       const job = mockCompletedJob();
       const content = '{"id":"kaseki-1","status":"completed"}';

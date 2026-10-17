@@ -22,6 +22,8 @@ curl -H "Authorization: Bearer sk-your-api-key" \
 
 The Kaseki API Service provides HTTP endpoints for remotely triggering, monitoring, and retrieving results from kaseki-agent runs. This allows external tools like OpenClaw to control kaseki without SSH/sshpass.
 
+When `SOYUZ_SUBMISSION_ENABLED=true`, responses use the Soyuz UUID as the canonical `id`; otherwise local runs continue to use `kaseki-N`. Run lookup endpoints accept both forms during migration. Once the worker host has created its local mapping, responses include `localRunId` for diagnostics. `origin` and `retryOf` are derived from Soyuz's authenticated run record.
+
 ## Quick Start
 
 ### Start the API Service

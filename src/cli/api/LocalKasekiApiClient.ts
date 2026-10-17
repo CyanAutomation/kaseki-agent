@@ -17,6 +17,7 @@ const CriticalChangeContractSchema = z.object({
 
 const StatusResponseSchema = z.object({
   id: z.string(),
+  localRunId: z.string().optional(),
   status: z.enum(['queued', 'running', 'completed', 'failed']),
   progress: z.object({
     stage: z.string(),
@@ -39,6 +40,11 @@ const StatusResponseSchema = z.object({
   error: z.string().optional(),
   correlationId: z.string().optional(),
   requestId: z.string().optional(),
+  origin: z.object({ type: z.enum(['api_client', 'kaseki', 'mcp']), id: z.string() }).optional(),
+  retryOf: z.string().optional(),
+  updatedAt: z.string().optional(),
+  cancelRequestedAt: z.string().optional(),
+  operationalHealth: z.enum(['unknown', 'healthy', 'suspect_stalled']).optional(),
   resultSummaryContent: z.string().optional(),
   failureJsonContent: z.record(z.any()).optional(),
   artifacts: z.object({
@@ -74,6 +80,7 @@ const StatusResponseSchema = z.object({
 const RunsListResponseSchema = z.object({
   runs: z.array(z.object({
     id: z.string(),
+    localRunId: z.string().optional(),
     status: z.enum(['queued', 'running', 'completed', 'failed']),
     createdAt: z.string(),
     completedAt: z.string().optional(),
@@ -82,6 +89,8 @@ const RunsListResponseSchema = z.object({
     failedCommand: z.string().optional(),
     criticalChangeContract: CriticalChangeContractSchema.optional(),
     error: z.string().optional(),
+    origin: z.object({ type: z.enum(['api_client', 'kaseki', 'mcp']), id: z.string() }).optional(),
+    retryOf: z.string().optional(),
   })),
   total: z.number(),
   hasMore: z.boolean(),
@@ -94,6 +103,9 @@ const RunsListResponseSchema = z.object({
 
 const AnalysisResponseSchema = z.object({
   id: z.string(),
+  localRunId: z.string().optional(),
+  origin: z.object({ type: z.enum(['api_client', 'kaseki', 'mcp']), id: z.string() }).optional(),
+  retryOf: z.string().optional(),
   status: z.enum(['queued', 'running', 'completed', 'failed']),
   createdAt: z.string(),
   completedAt: z.string().optional(),
@@ -124,6 +136,7 @@ const AnalysisResponseSchema = z.object({
 
 const RunArtifactsResponseSchema = z.object({
   id: z.string(),
+  localRunId: z.string().optional(),
   runStatus: z.enum(['queued', 'running', 'completed', 'failed']),
   exitCode: z.number().optional(),
   artifacts: z.array(z.object({
@@ -156,10 +169,14 @@ const ArtifactResponseSchema = z.object({
 
 const RunResponseSchema = z.object({
   id: z.string(),
+  localRunId: z.string().optional(),
   status: z.enum(['queued', 'running', 'completed', 'failed']),
   createdAt: z.string(),
   correlationId: z.string().optional(),
   requestId: z.string().optional(),
+  projectName: z.string().optional(),
+  origin: z.object({ type: z.enum(['api_client', 'kaseki', 'mcp']), id: z.string() }).optional(),
+  retryOf: z.string().optional(),
   cached: z.boolean().optional(),
   completedAt: z.string().optional(),
   exitCode: z.number().optional(),

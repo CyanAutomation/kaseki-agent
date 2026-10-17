@@ -375,8 +375,10 @@ The external Soyuz adapter is opt-in. See [Soyuz host integration](SOYUZ_INTEGRA
 | Variable | Default | Type | Purpose |
 | ---------- | --------- | ------ | --------- |
 | `SOYUZ_ENABLED` | `false` | boolean | Enable the host-side Soyuz Queue consumer. |
-| `SOYUZ_API_URL` | — | URL | Soyuz API base URL; required when enabled. |
-| `SOYUZ_WORKER_API_TOKEN` | host secret | secret | Bearer token for Soyuz worker reads/callbacks; distinct from the Queue token. |
+| `SOYUZ_SUBMISSION_ENABLED` | `false` | boolean | Route Kaseki API create/retry/cancel calls through Soyuz; requires the scoped submission token and worker status-read token. |
+| `SOYUZ_API_URL` | — | URL | Soyuz API base URL; required when submission routing or Queue consumption is enabled. |
+| `SOYUZ_SUBMISSION_API_TOKEN` | host secret | secret | Scoped bearer token for Kaseki submissions; distinct from the worker token. Secret file: `soyuz_submission_api_token`. |
+| `SOYUZ_WORKER_API_TOKEN` | host secret | secret | Bearer token for Soyuz worker reads/callbacks and canonical status reads; distinct from the Queue token. |
 | `CLOUDFLARE_ACCOUNT_ID` | — | string | Cloudflare account ID for the Queue API. |
 | `CLOUDFLARE_QUEUE_ID` | — | string | Soyuz Queue resource ID. |
 | `CLOUDFLARE_QUEUE_API_TOKEN` | host secret | secret | Queue read/write token for pull, acknowledgement, and retry. |

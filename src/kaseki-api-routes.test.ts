@@ -50,6 +50,8 @@ import type { TaskAdmissionEvaluator } from './task-admission';
 import * as gatewaySmoke from './kaseki-api-gateway-smoke';
 import { applyHttpHardening } from './kaseki-api-service';
 import { StorageCapacityError } from './storage-capacity';
+import { SoyuzSubmissionClient } from './integrations/soyuz/SoyuzSubmissionClient';
+import type { SoyuzAdapterConfig } from './integrations/soyuz/config';
 
 describe('kaseki-api-routes scorecard integration', () => {
   test('registers the protected scorecard route in the /api assembly', async () => {
@@ -274,6 +276,7 @@ async function createTestApp(
   scheduler: TestScheduler,
   config: ReturnType<typeof createTestConfig>,
   taskAdmissionEvaluator?: TaskAdmissionEvaluator,
+  submissionClient?: SoyuzSubmissionClient,
 ): Promise<{
   app: Express;
   server: Server;
@@ -287,7 +290,7 @@ async function createTestApp(
   const app = express();
   applyHttpHardening(app);
   app.use(express.json());
-  app.use('/api', createApiRouter(scheduler as any, config, idempotencyStore, preFlightValidator, undefined, taskAdmissionEvaluator));
+  app.use('/api', createApiRouter(scheduler as any, config, idempotencyStore, preFlightValidator, undefined, taskAdmissionEvaluator, submissionClient));
 
   const { server, port } = await listenTestApp(app);
 
@@ -590,6 +593,201 @@ describe('kaseki-api-routes artifact read behavior', () => {
     const secondRead = readArtifactContent(artifactPath, 'running', cache);
     expect(secondRead).toBe('{"version":2}');
   });
+});
+
+describe('Soyuz submission routing', () => {
+  const soyuzId = '11111111-1111-4111-8111-111111111111';
+  const sourceId = '22222222-2222-4222-8222-222222222222';
+
+  function makeSubmissionClient(fetchImpl: typeof fetch): SoyuzSubmissionClient {
+    const config: SoyuzAdapterConfig = {
+      enabled: false,
+      submissionEnabled: true,
+      submissionApiToken: 'soyuz-submission-token-123456',
+      apiUrl: 'https://soyuz.example.test',
+      workerApiToken: 'soyuz-worker-token-123456',
+      accountId: '',
+      queueId: '',
+      queueApiToken: '',
+      workerId: '',
+      pollIntervalMs: 5_000,
+      batchSize: 1,
+      visibilityTimeoutMs: 120_000,
+      requestTimeoutMs: 20_000,
+      cancellationPollIntervalMs: 15_000,
+      heartbeatIntervalMs: 60_000,
+    };
+    return new SoyuzSubmissionClient(config, fetchImpl);
+  }
+
+  function apiResponse(data: Record<string, unknown>, status = 202): Response {
+    return new Response(JSON.stringify({ data }), { status, headers: { 'content-type': 'application/json' } });
+  }
+
+  test('uses a durable idempotency intent and returns the Soyuz UUID as the public ID', async () => {
+    const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-soyuz-submit-'));
+    const config = createTestConfig(resultsDir);
+    const scheduler = createMockScheduler();
+    const fetchImpl = jest.fn(async (input: string | URL | Request) => {
+      if (String(input).endsWith(`/v1/worker/runs/${soyuzId}`)) {
+        return apiResponse({
+          runId: soyuzId,
+          status: 'queued',
+          updatedAt: '2026-10-17T12:00:00.000Z',
+          origin: { type: 'kaseki', id: 'kaseki-prod' },
+        }, 200);
+      }
+      return apiResponse({
+        id: soyuzId,
+        status: 'queued',
+        createdAt: '2026-10-17T12:00:00.000Z',
+        origin: { type: 'kaseki', id: 'kaseki-prod' },
+      });
+    });
+    const client = makeSubmissionClient(fetchImpl as typeof fetch);
+    const harness = await createTestApp(scheduler, config, undefined, client);
+    const key = crypto.randomUUID();
+    const body = { repoUrl: 'https://github.com/example/repo', ref: 'main', taskPrompt: 'Add a focused health check.', publishMode: 'none', idempotencyKey: key };
+    const submit = () => fetch(`http://127.0.0.1:${harness.port}/api/runs`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json', 'Idempotency-Key': key },
+      body: JSON.stringify(body),
+    });
+
+    try {
+      const first = await submit();
+      const firstBody = await first.json() as any;
+      const replay = await submit();
+      const replayBody = await replay.json() as any;
+      const status = await fetch(`http://127.0.0.1:${harness.port}/api/runs/${soyuzId}/status`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      const statusBody = await status.json() as any;
+      const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, NonNullable<Parameters<typeof fetch>[1]>];
+
+      expect(first.status).toBe(202);
+      expect(firstBody.id).toBe(soyuzId);
+      expect(firstBody.origin).toEqual({ type: 'kaseki', id: 'kaseki-prod' });
+      expect(replay.status).toBe(200);
+      expect(replayBody.id).toBe(soyuzId);
+      expect(status.status).toBe(200);
+      expect(statusBody.id).toBe(soyuzId);
+      expect(statusBody.origin).toEqual({ type: 'kaseki', id: 'kaseki-prod' });
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      expect(url).toBe('https://soyuz.example.test/v1/runs');
+      expect(new Headers(init.headers).get('idempotency-key')).toBe(key);
+      expect(JSON.parse(String(init.body)).idempotencyKey).toBe(key);
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(harness.server, harness.idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects webhook secrets before creating a Soyuz submission intent', async () => {
+    const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-soyuz-webhook-'));
+    const fetchImpl = jest.fn(async () => apiResponse({ id: soyuzId, status: 'queued', createdAt: '2026-10-17T12:00:00.000Z' }));
+    const scheduler = createMockScheduler();
+    const harness = await createTestApp(scheduler, createTestConfig(resultsDir), undefined, makeSubmissionClient(fetchImpl as typeof fetch));
+    const key = crypto.randomUUID();
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${harness.port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json', 'Idempotency-Key': key },
+        body: JSON.stringify({
+          repoUrl: 'https://github.com/example/repo',
+          ref: 'main',
+          taskPrompt: 'Add a focused health check.',
+          publishMode: 'none',
+          idempotencyKey: key,
+          webhookConfig: { url: 'https://hooks.example.test/run', secret: 'webhook-secret-value-123456' },
+        }),
+      });
+      const body = await response.json() as any;
+
+      expect(response.status).toBe(400);
+      expect(body.detail).toContain('does not support webhookConfig');
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(harness.server, harness.idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('keeps the submission intent after an uncertain network failure', async () => {
+    const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-soyuz-uncertain-'));
+    const config = createTestConfig(resultsDir);
+    const fetchImpl = jest.fn(async () => { throw new Error('socket reset after request'); });
+    const harness = await createTestApp(createMockScheduler(), config, undefined, makeSubmissionClient(fetchImpl as typeof fetch));
+    const key = crypto.randomUUID();
+    const submit = () => fetch(`http://127.0.0.1:${harness.port}/api/runs`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json', 'Idempotency-Key': key },
+      body: JSON.stringify({ repoUrl: 'https://github.com/example/repo', ref: 'main', taskPrompt: 'Add a focused health check.', publishMode: 'none', idempotencyKey: key }),
+    });
+
+    try {
+      const uncertain = await submit();
+      const uncertainBody = await uncertain.json() as any;
+      const immediateReplay = await submit();
+
+      expect(uncertain.status).toBe(503);
+      expect(uncertainBody.idempotencyKey).toBe(key);
+      expect(uncertainBody.retryWithSameIdempotencyKey).toBe(true);
+      expect(immediateReplay.status).toBe(409);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    } finally {
+      await cleanupTestApp(harness.server, harness.idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test.each(['completed', 'failed', 'cancelled', 'admission_failed'])(
+    'routes canonical Soyuz retries through the retry operation for terminal state %s',
+    async (sourceStatus) => {
+      const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-soyuz-retry-'));
+      const config = createTestConfig(resultsDir);
+      const fetchImpl = jest.fn(async (input: Parameters<typeof fetch>[0]) => {
+        const url = String(input);
+        if (url.endsWith(`/v1/worker/runs/${sourceId}`)) {
+          return apiResponse({ runId: sourceId, status: sourceStatus, updatedAt: '2026-10-17T12:00:00.000Z' }, 200);
+        }
+        return apiResponse({
+          id: soyuzId,
+          status: 'queued',
+          createdAt: '2026-10-17T12:01:00.000Z',
+          origin: { type: 'kaseki', id: 'kaseki-prod' },
+          retryOf: sourceId,
+        });
+      });
+      const harness = await createTestApp(createMockScheduler(), config, undefined, makeSubmissionClient(fetchImpl as typeof fetch));
+      const key = crypto.randomUUID();
+      const retry = () => fetch(`http://127.0.0.1:${harness.port}/api/runs/${sourceId}/retry`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idempotencyKey: key }),
+      });
+
+      try {
+        const first = await retry();
+        const firstBody = await first.json() as any;
+        const replay = await retry();
+        const replayBody = await replay.json() as any;
+
+        expect(first.status).toBe(202);
+        expect(firstBody.id).toBe(soyuzId);
+        expect(firstBody.retryOf).toBe(sourceId);
+        expect(replay.status).toBe(200);
+        expect(replayBody.id).toBe(soyuzId);
+        expect(fetchImpl.mock.calls.filter(([input]) => String(input).includes('/retry'))).toHaveLength(1);
+      } finally {
+        await cleanupTestApp(harness.server, harness.idempotencyStore);
+        fs.rmSync(resultsDir, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 describe('kaseki-api-routes startup health content negotiation', () => {

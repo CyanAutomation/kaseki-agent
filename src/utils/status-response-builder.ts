@@ -90,8 +90,11 @@ export class StatusResponseBuilder {
       ? derivedFailureClass
       : job.failureClass;
     const response: StatusResponse = {
-      id: job.id,
+      id: job.soyuz?.externalRunId ?? job.id,
+      ...(job.soyuz ? { localRunId: job.id } : {}),
       status: job.status,
+      origin: job.soyuz?.origin,
+      retryOf: job.soyuz?.retryOf ?? undefined,
       completedAt: this.metadataHelper.resolveCompletedAt(job, metadata),
       exitCode: exitCode ?? undefined,
       failureClass: canonicalFailureClass,

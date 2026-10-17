@@ -17,6 +17,7 @@ import { sendErrorResponse } from '../utils/response-helpers';
 import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
 import { artifactContentType, renderRunEvaluationPayload, sanitizeEvaluationArtifactContent } from './artifact-content-helpers';
 import { redactLogContent } from './log-file-reader';
+import { localRunId, publicRunId } from '../utils/route-helpers';
 
 const ALL_ARTIFACT_NAMES = Object.keys(ARTIFACT_METADATA_REGISTRY);
 const MAX_ARTIFACT_DOWNLOAD_BYTES = 64 * 1024 * 1024;
@@ -170,13 +171,14 @@ export function buildRunArtifactsResponse(
   const recommended = recommendedArtifactNames(availableArtifacts, runMetadata);
 
   return {
-    id: job.id,
+    id: publicRunId(job),
+    ...(localRunId(job) ? { localRunId: localRunId(job) } : {}),
     runStatus: job.status,
     exitCode: job.exitCode,
     artifacts: includeManifest ? artifacts : availableArtifacts,
     recommended,
     artifactCount: availableArtifacts.length,
-    downloadBaseUrl: `/api/v1/results/${job.id}/`,
+    downloadBaseUrl: `/api/v1/results/${publicRunId(job)}/`,
   };
 }
 

@@ -665,13 +665,14 @@ describe('OpenAPI Path Builders', () => {
       expect(cursorParam.schema.type).toBe('string');
     });
 
-    it('GET /api/v1/runs/{id}/status should require kaseki-N pattern parameter', () => {
+    it('GET /api/v1/runs/{id}/status should accept canonical and legacy run IDs', () => {
       const statusPath = (paths['/api/v1/runs/{id}/status'] as Record<string, any>).get;
       expect(statusPath.operationId).toBe('getRunStatus');
       const idParam = statusPath.parameters.find((p: Record<string, any>) => p.name === 'id');
       expect(idParam.in).toBe('path');
       expect(idParam.required).toBe(true);
-      expect(idParam.schema.pattern).toBe('^kaseki-\\d+$');
+      expect(idParam.schema.type).toBe('string');
+      expect(idParam.description).toContain('legacy local Kaseki ID');
     });
 
     it('POST /api/v1/runs/{id}/cancel should accept cancellation requests', () => {
@@ -679,7 +680,8 @@ describe('OpenAPI Path Builders', () => {
       expect(cancelPath.operationId).toBe('cancelRun');
       expect(cancelPath.responses['200'].description).toContain('accepted');
       const idParam = cancelPath.parameters.find((p: Record<string, any>) => p.name === 'id');
-      expect(idParam.schema.pattern).toBe('^kaseki-\\d+$');
+      expect(idParam.schema.type).toBe('string');
+      expect(idParam.description).toContain('legacy local Kaseki ID');
     });
   });
 
@@ -836,7 +838,7 @@ describe('OpenAPI Path Builders', () => {
       paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
     });
 
-    it('id parameters should match kaseki-N pattern', () => {
+    it('id parameters should accept canonical Soyuz UUIDs and legacy local IDs', () => {
       const pathsWithIdParam = [
         '/api/v1/runs/{id}/status',
         '/api/v1/runs/{id}/cancel',
@@ -857,7 +859,8 @@ describe('OpenAPI Path Builders', () => {
             const idParam = pathDef[method].parameters.find((p: Record<string, any>) => p.name === 'id');
             if (idParam) {
               found = true;
-              expect(idParam.schema.pattern).toBe('^kaseki-\\d+$');
+              expect(idParam.schema.type).toBe('string');
+              expect(idParam.description).toContain('legacy local Kaseki ID');
               expect(idParam.required).toBe(true);
             }
           }

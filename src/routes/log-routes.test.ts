@@ -7,6 +7,46 @@ import { createLogRoutes } from './log-routes';
 import { createMockScheduler, createTestConfig } from '../test-utils';
 
 describe('log route rate limiting', () => {
+  test('returns the Soyuz UUID and local diagnostic ID in event snapshots', async () => {
+    const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-log-soyuz-id-'));
+    const localId = 'kaseki-log-soyuz-id';
+    const soyuzId = '11111111-1111-4111-8111-111111111111';
+    const job = {
+      id: localId,
+      status: 'completed' as const,
+      createdAt: new Date(),
+      resultDir: path.join(resultsDir, localId),
+      soyuz: {
+        externalRunId: soyuzId,
+        origin: { type: 'kaseki' as const, id: 'kaseki-prod' },
+        retryOf: null,
+        workerId: 'worker-1',
+        contractVersion: '1' as const,
+        startedCallbackId: 'started-1',
+        startAuthorized: true,
+      },
+    };
+    const config = createTestConfig(resultsDir);
+    const scheduler = createMockScheduler({ [soyuzId]: job });
+    const app = express();
+    app.use(createLogRoutes(scheduler as any, config));
+    const server = app.listen(0, '127.0.0.1');
+    await new Promise<void>((resolve, reject) => {
+      server.once('listening', resolve);
+      server.once('error', reject);
+    });
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/runs/${soyuzId}/events`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ id: soyuzId, localRunId: localId });
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
   test('limits repeated filesystem log reads for a client IP', async () => {
     const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-log-rate-limit-'));
     const jobId = 'kaseki-log-rate-limit';

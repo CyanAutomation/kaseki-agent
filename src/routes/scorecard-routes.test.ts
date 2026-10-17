@@ -6,6 +6,7 @@ import { createScorecardRoutes } from './scorecard-routes';
 import { ResultCache } from '../result-cache';
 import { buildScorecard, collectEvidence, normalizeConfig } from '../run-scorecard';
 import { ScorecardContext } from '../run-scorecard-context';
+import type { Job } from '../kaseki-api-types';
 
 const temporaryDirectories = new Set<string>();
 
@@ -53,10 +54,10 @@ function fixture(status: 'running'|'completed' = 'completed') {
   ScorecardContext.reset();
   ScorecardContext.initialize(normalizeConfig({}));
   const card = buildScorecard(collectEvidence({ json: { 'metadata.json': { instance:'kaseki-1', status, started_at:'2026-08-07T00:00:00.000Z', ended_at: status === 'completed' ? '2026-08-07T00:01:00.000Z' : undefined } }, text:{}, summaries:[] }), new Date('2026-08-07T00:02:00.000Z'));
-  const job = { id:'kaseki-1', status, request:{repoUrl:'https://github.com/acme/repo',ref:'main',model:'gpt-5'}, createdAt:new Date(), resultDir:dir, finalized:status === 'completed' };
+  const job: Job = { id:'kaseki-1', status, request:{repoUrl:'https://github.com/acme/repo',ref:'main',model:'gpt-5'}, createdAt:new Date(), resultDir:dir, finalized:status === 'completed' };
   const scheduler = { getJob:(id:string)=>id === job.id ? job : undefined, listJobs:()=>[job] };
   const app=express(); app.use(createScorecardRoutes(scheduler as any,new ResultCache()));
-  return { app,dir,card };
+  return { app,dir,card,job };
 }
 
 describe('scorecard routes', () => {
@@ -89,6 +90,25 @@ describe('scorecard routes', () => {
     expect((await get(app,'/runs/kaseki-1/scorecard')).body.run_id).toBe('kaseki-1');
     const markdown=await get(app,'/runs/kaseki-1/scorecard?format=markdown');
     expect(markdown.status).toBe(200); expect(markdown.text).toContain('**Overall:**');
+  });
+  test('uses the Soyuz UUID in scorecard API identities and retains the local ID', async () => {
+    const {app,dir,card,job}=fixture();
+    job.soyuz = {
+      externalRunId:'11111111-1111-4111-8111-111111111111',
+      workerId:'worker-1',
+      contractVersion:'1',
+      startedCallbackId:'started-1',
+      startAuthorized:true,
+    };
+    fs.writeFileSync(path.join(dir,'run-scorecard.json'),JSON.stringify(card));
+
+    const response=await get(app,'/runs/11111111-1111-4111-8111-111111111111/scorecard');
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({run_id:'11111111-1111-4111-8111-111111111111',local_run_id:'kaseki-1'});
+    const markdown=await get(app,'/runs/11111111-1111-4111-8111-111111111111/scorecard?format=markdown');
+    expect(markdown.text).toContain('11111111-1111-4111-8111-111111111111');
+    const list=await get(app,'/scorecards');
+    expect(list.body.scorecards[0]).toMatchObject({runId:'11111111-1111-4111-8111-111111111111',localRunId:'kaseki-1'});
   });
   test('reads scorecards written before timing reconciliation fields were added', async () => {
     const {app,dir,card}=fixture();

@@ -5,6 +5,7 @@ import { JobScheduler } from '../job-scheduler';
 import { KasekiApiConfig } from '../kaseki-api-config';
 import type { Job } from '../kaseki-api-types';
 import { encodeCursor, isAfterCursor, parseCursor, parseLimit } from './cursor-pagination';
+import { localRunId, publicRunId } from '../utils/route-helpers';
 
 type EvaluationArtifact = {
   overall_assessment?: string;
@@ -47,6 +48,7 @@ type ImprovementAccumulator = {
 
 type ImprovementRunSummary = {
   id: string;
+  localRunId?: string;
   repoUrl: string;
   assessment: string;
   confidence: string;
@@ -244,7 +246,8 @@ function buildRunSummary(
     : '';
 
   return {
-    id: job.id,
+    id: publicRunId(job),
+    ...(localRunId(job) ? { localRunId: localRunId(job) } : {}),
     repoUrl: typeof metadata?.repo_url === 'string' ? metadata.repo_url : job.request.repoUrl,
     assessment: validEvaluation ? normalizeBucket(evaluation?.overall_assessment, 'unknown') : evaluationDiagnostic === 'artifacts_expired' ? 'unavailable' : 'missing',
     confidence: validEvaluation ? normalizeBucket(evaluation?.reviewer_confidence, 'unknown') : evaluationDiagnostic === 'artifacts_expired' ? 'unavailable' : 'missing',

@@ -9,6 +9,7 @@ import { sendErrorResponse } from '../utils/response-helpers';
 import { findRunJob } from '../utils/route-helpers';
 import { matchesFilters, parseFilters, DEFAULT_LIMIT, MAX_LIMIT } from './scorecard-route-utils';
 import { encodeCursor, isAfterCursor, parseCursor, parseLimit } from './cursor-pagination';
+import { localRunId, publicRunId } from '../utils/route-helpers';
 
 const FILE = 'run-scorecard.json';
 const terminalCacheInvalidated = new WeakSet<Job>();
@@ -35,7 +36,7 @@ function modelFor(job: Job): string | undefined {
 }
 
 function summary(card: RunScorecard, job: Job): ScorecardSummary {
-  return { runId: card.run_id, lifecycleStatus: card.lifecycle_status, overallScore: card.overall_score,
+  return { runId: publicRunId(job), ...(localRunId(job) ? { localRunId: localRunId(job) } : {}), lifecycleStatus: card.lifecycle_status, overallScore: card.overall_score,
     grade: card.grade, rubricVersion: card.rubric_version, completeness: card.completeness,
     confidence: card.confidence.score, startedAt: card.started_at, endedAt: card.ended_at,
     scoredAt: card.scored_at, model: modelFor(job), repository: job.request.repoUrl };
@@ -54,9 +55,14 @@ export function createScorecardRoutes(scheduler: JobScheduler, cache: ResultCach
       }
       return sendErrorResponse(res, 404, 'Scorecard unavailable', `No scorecard was produced for run ${job.id}`);
     }
-    if (req.query.format === 'markdown') return res.type('text/markdown').send(formatRunScorecardMarkdown(result.card));
+    const publicCard = {
+      ...result.card,
+      run_id: publicRunId(job),
+      ...(localRunId(job) ? { local_run_id: localRunId(job) } : {}),
+    };
+    if (req.query.format === 'markdown') return res.type('text/markdown').send(formatRunScorecardMarkdown(publicCard));
     if (req.query.format !== undefined) return sendErrorResponse(res, 400, 'Invalid format', 'format must be markdown when provided');
-    return res.json(result.card);
+    return res.json(publicCard);
   });
 
   router.get('/scorecards', async (req: Request, res: Response) => {

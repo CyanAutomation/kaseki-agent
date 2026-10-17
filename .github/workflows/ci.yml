@@ -72,4 +72,22 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:packaging-verification
+      - name: Check for Docker Hub credentials
+        id: docker_hub_credentials
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          if [[ -n "$DOCKER_USERNAME" && -n "$DOCKER_PASSWORD" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Docker Hub credentials are unavailable; anonymous pull limits apply."
+          fi
+      - name: Authenticate to Docker Hub for base image pulls
+        if: steps.docker_hub_credentials.outputs.available == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
       - run: npm run test:integration:docker
