@@ -76,7 +76,7 @@ function classifyGitHubDependencyFailure(message: string): { status: number; tit
     return {
       status: 503,
       title: 'GitHub App is not configured',
-      detail: 'GitHub App credentials are missing or invalid. Configure readable GITHUB_APP_ID_FILE and GITHUB_APP_PRIVATE_KEY_FILE secrets, then retry.',
+      detail: 'GitHub App credentials are missing or invalid. Set GITHUB_APP_ID and keep GITHUB_APP_PRIVATE_KEY_FILE readable, then retry.',
     };
   }
   return {

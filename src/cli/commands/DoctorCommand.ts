@@ -231,8 +231,8 @@ export class DoctorCommand extends BaseCommand {
   private async checkAuthFiles(): Promise<Check> {
     const requiredAuthFiles = [
       { key: 'auth.llm_gateway_api_key_file', name: 'LLM Gateway API Key File', envVar: 'LLM_GATEWAY_API_KEY_FILE', filename: 'llm_gateway_api_key' },
-      { key: 'auth.github_app_id_file', name: 'GitHub App ID File', envVar: 'GITHUB_APP_ID_FILE', filename: 'github_app_id' },
-      { key: 'auth.github_app_client_id_file', name: 'GitHub App Client ID File', envVar: 'GITHUB_APP_CLIENT_ID_FILE', filename: 'github_app_client_id' },
+      { key: 'auth.github_app_id_file', valueKey: 'auth.github_app_id', name: 'GitHub App ID', envVar: 'GITHUB_APP_ID', fileEnvVar: 'GITHUB_APP_ID_FILE', filename: 'github_app_id' },
+      { key: 'auth.github_app_client_id_file', valueKey: 'auth.github_app_client_id', name: 'GitHub App Client ID', envVar: 'GITHUB_APP_CLIENT_ID', fileEnvVar: 'GITHUB_APP_CLIENT_ID_FILE', filename: 'github_app_client_id' },
       { key: 'auth.github_app_private_key_file', name: 'GitHub App Private Key File', envVar: 'GITHUB_APP_PRIVATE_KEY_FILE', filename: 'github_app_private_key' },
     ];
 
@@ -242,7 +242,16 @@ export class DoctorCommand extends BaseCommand {
 
     for (const authFile of requiredAuthFiles) {
       try {
-        const resolved = this.resolveAuthFilePath(authFile.key, authFile.envVar, authFile.filename);
+        const directValue = authFile.valueKey
+          ? process.env[authFile.envVar] || this.configManager.get(authFile.valueKey, '')
+          : '';
+        if (directValue?.trim()) continue;
+
+        const resolved = this.resolveAuthFilePath(
+          authFile.key,
+          authFile.fileEnvVar || authFile.envVar,
+          authFile.filename,
+        );
 
         if (!resolved) {
           const checkedPaths = [
@@ -349,8 +358,8 @@ export class DoctorCommand extends BaseCommand {
     lines.push('   {');
     lines.push('     "auth": {');
     lines.push('       "openrouter_api_key_file": "~/secrets/openrouter_api_key",');
-    lines.push('       "github_app_id_file": "~/secrets/github_app_id",');
-    lines.push('       "github_app_client_id_file": "~/secrets/github_app_client_id",');
+    lines.push('       "github_app_id": "123456",');
+    lines.push('       "github_app_client_id": "Iv1.public-client-id",');
     lines.push('       "github_app_private_key_file": "~/secrets/github_app_private_key"');
     lines.push('     }');
     lines.push('   }');
@@ -365,15 +374,15 @@ export class DoctorCommand extends BaseCommand {
       lines.push('   $ sudo -E kaseki-agent run <repo> <branch> <task>');
     } else {
       lines.push('   $ export OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key');
-      lines.push('   $ export GITHUB_APP_ID_FILE=~/secrets/github_app_id');
-      lines.push('   $ export GITHUB_APP_CLIENT_ID_FILE=~/secrets/github_app_client_id');
+      lines.push('   $ export GITHUB_APP_ID=123456');
+      lines.push('   $ export GITHUB_APP_CLIENT_ID=Iv1.public-client-id');
       lines.push('   $ export GITHUB_APP_PRIVATE_KEY_FILE=~/secrets/github_app_private_key');
       lines.push('   $ kaseki-agent run <repo> <branch> <task>');
     }
     lines.push('');
 
     lines.push('3️⃣  Docker Compose (recommended for services):');
-    lines.push('   Set env vars in .env or docker-compose.yml secrets');
+    lines.push('   Set GITHUB_APP_ID and GITHUB_APP_CLIENT_ID in .env; keep the private key in the mounted secret file.');
     lines.push('   See docs/DEPLOYMENT.md for setup instructions');
     lines.push('');
 

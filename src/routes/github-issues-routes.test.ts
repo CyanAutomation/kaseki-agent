@@ -114,7 +114,7 @@ describe('github-issues-routes', () => {
 
     expect(response.status).toBe(503);
     expect(body.title).toBe('GitHub App is not configured');
-    expect(body.detail).toMatch(/GITHUB_APP_ID_FILE.*GITHUB_APP_PRIVATE_KEY_FILE/);
+    expect(body.detail).toMatch(/GITHUB_APP_ID.*GITHUB_APP_PRIVATE_KEY_FILE/);
     expect(githubUtils.fetchGitHubIssues).not.toHaveBeenCalled();
   });
 

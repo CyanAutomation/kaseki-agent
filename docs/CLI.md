@@ -325,10 +325,11 @@ STORAGE LOCATIONS
 
 REQUIRED HOST SECRETS
   openrouter_api_key      OpenRouter LLM gateway API key
-  github_app_id           GitHub App numeric ID
-  github_app_client_id    GitHub App client identifier
   github_app_private_key  GitHub App PEM private key
   kaseki_api_keys         Bearer tokens for the API service
+
+GitHub App IDs are public configuration values supplied through GITHUB_APP_ID
+and GITHUB_APP_CLIENT_ID, not files managed by the secrets command.
 
 EXAMPLES
   kaseki-agent secrets init                                          # Create directories

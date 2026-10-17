@@ -17,7 +17,7 @@ trap cleanup EXIT
 
 BIN_DIR="$TMP_DIR/bin"
 mkdir -p "$BIN_DIR" "$TMP_DIR/project" "$TMP_DIR/secrets"
-printf 'CUSTOM_SETTING=keep-me\n' > "$TMP_DIR/project/.env"
+printf 'CUSTOM_SETTING=keep-me\nGITHUB_APP_ID=123456\nGITHUB_APP_CLIENT_ID=Iv1.public-client-id\n' > "$TMP_DIR/project/.env"
 printf 'provider-key-do-not-print\n' > "$TMP_DIR/provider-key"
 chmod 600 "$TMP_DIR/provider-key"
 DOCKER_LOG="$TMP_DIR/docker.log"
@@ -81,6 +81,8 @@ grep -q '^KASEKI_IMAGE=docker.io/cyanautomation/kaseki-agent@sha256:aaaaaaaaaaaa
 grep -q '^LLM_GATEWAY_URL=https://gateway.example/v1$' "$KASEKI_SETUP_ENV_FILE"
 grep -q '^LLM_GATEWAY_MODEL=vendor/model$' "$KASEKI_SETUP_ENV_FILE"
 grep -q '^CUSTOM_SETTING=keep-me$' "$KASEKI_SETUP_ENV_FILE"
+grep -q '^GITHUB_APP_ID=123456$' "$KASEKI_SETUP_ENV_FILE"
+grep -q '^GITHUB_APP_CLIENT_ID=Iv1.public-client-id$' "$KASEKI_SETUP_ENV_FILE"
 if grep -q 'provider-key-do-not-print' "$KASEKI_SETUP_ENV_FILE" "$TMP_DIR/setup.log"; then
   echo 'provider credential leaked to setup output or .env' >&2
   exit 1
@@ -102,6 +104,12 @@ grep -q 'KASEKI_API_IMAGE:' "$ROOT_DIR/docker-compose.yml"
 grep -q 'KASEKI_IMAGE:' "$ROOT_DIR/docker-compose.yml"
 grep -q 'KASEKI_MODEL:' "$ROOT_DIR/docker-compose.yml"
 grep -q 'LLM_GATEWAY_MODEL:' "$ROOT_DIR/docker-compose.yml"
+grep -q 'GITHUB_APP_ID:' "$ROOT_DIR/docker-compose.yml"
+grep -q 'GITHUB_APP_CLIENT_ID:' "$ROOT_DIR/docker-compose.yml"
+if grep -Eq 'GITHUB_APP_(ID|CLIENT_ID)_FILE:' "$ROOT_DIR/docker-compose.yml"; then
+  echo 'Compose must use public GitHub App IDs as environment values, not secret-file paths' >&2
+  exit 1
+fi
 grep -q 'restart: on-failure:3' "$ROOT_DIR/docker-compose.yml"
 grep -q '127.0.0.1:8080:8080' "$ROOT_DIR/scripts/kaseki-api.service"
 grep -q '/home/pi/secrets:/run/secrets/kaseki:ro' "$ROOT_DIR/scripts/kaseki-api.service"
