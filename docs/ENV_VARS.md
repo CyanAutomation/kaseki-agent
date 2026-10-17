@@ -170,11 +170,11 @@ Remove these names from deployment configuration and use the replacement shown. 
 API keys currently have equal access. `KASEKI_API_KEY_SCOPES` is not supported and does not restrict a key; do not rely on it as an authorization boundary.
 
 | `GITHUB_TOKEN` | (env var only) | string | GitHub API token for PR creation |
-| `GITHUB_APP_ID` | `GITHUB_APP_ID_FILE` | string | GitHub App ID (numeric) |
-| `GITHUB_APP_CLIENT_ID` | `GITHUB_APP_CLIENT_ID_FILE` | string | GitHub OAuth Client ID |
+| `GITHUB_APP_ID` | legacy `GITHUB_APP_ID_FILE` | string | Public GitHub App ID (numeric); Compose receives the value from `.env` or the shell environment |
+| `GITHUB_APP_CLIENT_ID` | legacy `GITHUB_APP_CLIENT_ID_FILE` | string | Public GitHub App OAuth Client ID; Compose receives the value from `.env` or the shell environment |
 | `GITHUB_APP_PRIVATE_KEY` | `GITHUB_APP_PRIVATE_KEY_FILE` | string | GitHub App private key (PEM format) |
 
-**Note:** Prefer host-secret files for security. Most credentials also support explicit `_FILE` variables; Kaseki API keys use the fixed host-secret files listed above instead of a path environment variable. Files are resolved from:
+**Note:** GitHub App IDs are public configuration, not secrets. Keep the private key and provider/API credentials in host-secret files. Legacy ID files and `_FILE` variables remain supported as a migration fallback. Files are resolved from:
 
 | Priority | Path |
 |----------|------|
@@ -195,8 +195,8 @@ When `GITHUB_APP_ENABLED=1` and credentials are not explicitly provided, kaseki-
 
 | Priority | Source | Details |
 | ---------- | -------- | --------- |
-| 1 | **Environment variables** | `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_PRIVATE_KEY` |
-| 2 | **Secret files** | `${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/github_app_*`; local fallback `~/.kaseki/secrets/github_app_*` |
+| 1 | **Environment configuration** | `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, and the `GITHUB_APP_PRIVATE_KEY_FILE` path |
+| 2 | **Legacy ID files / private key file** | `github_app_id` and `github_app_client_id` remain migration fallbacks; the private key is read from `${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/github_app_private_key` |
 | 3 | **Auto-detected paths** | `~/.ssh/github-app-private-key`, `$PWD/.github-app-secrets/private-key`, `/etc/kaseki-secrets/github_app_private_key` (private key only) |
 
 **Behavior by `KASEKI_PUBLISH_MODE`:**
@@ -544,8 +544,6 @@ Docker Compose mounts the host directory `${KASEKI_HOST_SECRETS_DIR:-$HOME/secre
 | --- | --- | --- | --- |
 | `llm_gateway_api_key` | `${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/llm_gateway_api_key` | API key for your LLM gateway | ✓ |
 | `kaseki_api_keys` | `${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/kaseki_api_keys` | Newline-separated keys | ✓ (for API service) |
-| `github_app_id` | `${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/github_app_id` | Numeric ID | — |
-| `github_app_client_id` | `${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/github_app_client_id` | OAuth Client ID | — |
 | `github_app_private_key` | `${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/github_app_private_key` | PEM-format private key | — |
 
 **File Permissions:**

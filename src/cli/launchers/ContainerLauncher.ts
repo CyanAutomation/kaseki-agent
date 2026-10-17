@@ -29,6 +29,8 @@ export interface DockerArgsOptions {
   dockerGid: string;
   gatewayUrl?: string;
   gatewayModel?: string;
+  githubAppId?: string;
+  githubAppClientId?: string;
   apiPort?: string;
   apiBindAddress?: string;
   secretFiles?: ContainerSecretFiles;
@@ -50,6 +52,8 @@ export function buildDockerArgs(options: DockerArgsOptions): string[] {
     dockerGid,
     gatewayUrl = process.env.LLM_GATEWAY_URL ?? '',
     gatewayModel = process.env.LLM_GATEWAY_MODEL ?? process.env.KASEKI_MODEL ?? 'dynamic/kaseki-agent',
+    githubAppId = process.env.GITHUB_APP_ID ?? '',
+    githubAppClientId = process.env.GITHUB_APP_CLIENT_ID ?? '',
     apiPort = process.env.KASEKI_API_PORT ?? '8080',
     apiBindAddress = process.env.KASEKI_API_BIND_ADDRESS ?? '127.0.0.1',
     secretFiles = {},
@@ -78,8 +82,8 @@ export function buildDockerArgs(options: DockerArgsOptions): string[] {
     '-e', `LLM_GATEWAY_URL=${gatewayUrl}`,
     '-e', `LLM_GATEWAY_MODEL=${gatewayModel}`,
     '-e', 'LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api_key',
-    '-e', 'GITHUB_APP_ID_FILE=/run/secrets/kaseki/github_app_id',
-    '-e', 'GITHUB_APP_CLIENT_ID_FILE=/run/secrets/kaseki/github_app_client_id',
+    '-e', `GITHUB_APP_ID=${githubAppId}`,
+    '-e', `GITHUB_APP_CLIENT_ID=${githubAppClientId}`,
     '-e', 'GITHUB_APP_PRIVATE_KEY_FILE=/run/secrets/kaseki/github_app_private_key',
     '-v', '/agents:/agents:rw',
     '-v', `${secretsDir}:/run/secrets/kaseki:ro`,
@@ -145,7 +149,14 @@ export class ContainerLauncher {
       logger.debug('Could not determine docker GID, using default');
     }
 
-    const args = buildDockerArgs({ image, secretsDir, dockerGid, secretFiles });
+    const args = buildDockerArgs({
+      image,
+      secretsDir,
+      dockerGid,
+      githubAppId: this.configManager.get('auth.github_app_id', process.env.GITHUB_APP_ID ?? ''),
+      githubAppClientId: this.configManager.get('auth.github_app_client_id', process.env.GITHUB_APP_CLIENT_ID ?? ''),
+      secretFiles,
+    });
 
     logger.debug(`Launching container with image: ${image}`);
     const result = spawnSync('docker', args, { stdio: 'pipe', encoding: 'utf-8' });

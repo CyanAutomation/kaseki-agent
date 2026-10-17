@@ -896,9 +896,10 @@ function readHostSecretValue(secretName: string): string | undefined {
 }
 
 export function checkGitHubAppCredentials(): PreflightCheck {
-  // Check if any GitHub App credentials are present in host secrets
-  const appId = readHostSecretValue('github_app_id');
-  const clientId = readHostSecretValue('github_app_client_id');
+  // App IDs are public configuration. Keep file reads as a compatibility
+  // fallback for deployments that have not migrated from the old secret flow.
+  const appId = process.env.GITHUB_APP_ID?.trim() || readHostSecretValue('github_app_id');
+  const clientId = process.env.GITHUB_APP_CLIENT_ID?.trim() || readHostSecretValue('github_app_client_id');
   const privateKey = readHostSecretValue('github_app_private_key');
 
   if (!appId && !clientId && !privateKey) {
@@ -911,9 +912,9 @@ export function checkGitHubAppCredentials(): PreflightCheck {
       detail:
         'GitHub App credentials are not configured; default PR creation cannot run.',
       remediation: [
-        'Create one secret file per GitHub App credential:',
-        `  github_app_id: ${idLocations.primary} or ${idLocations.secondary}`,
-        `  github_app_client_id: ${clientLocations.primary} or ${clientLocations.secondary}`,
+        'Set the public GitHub App IDs in the service environment and keep the private key in a secret file:',
+        '  GITHUB_APP_ID and GITHUB_APP_CLIENT_ID: Docker Compose environment values',
+        `  Legacy ID files remain supported: ${idLocations.primary} or ${idLocations.secondary}; ${clientLocations.primary} or ${clientLocations.secondary}`,
         `  github_app_private_key: ${keyLocations.primary} or ${keyLocations.secondary}`,
       ].join('\n'),
     };
@@ -931,17 +932,17 @@ export function checkGitHubAppCredentials(): PreflightCheck {
   }
 
   if (missing.length > 0) {
-    const secretLocations = missing
-      .map((name) => {
-        const locations = getSecretLocations(name);
-        return `${name}: ${locations.primary} or ${locations.secondary}`;
-      })
-      .join('; ');
+    const secretLocations = missing.map((name) => {
+      if (name === 'github_app_id') return 'set GITHUB_APP_ID in the service environment (legacy file fallback is supported)';
+      if (name === 'github_app_client_id') return 'set GITHUB_APP_CLIENT_ID in the service environment (legacy file fallback is supported)';
+      const locations = getSecretLocations(name);
+      return `${name}: ${locations.primary} or ${locations.secondary}`;
+    }).join('; ');
     return {
       name: 'github-app',
       ok: false,
       detail: `GitHub App credentials are incomplete: missing ${missing.join(', ')}.`,
-      remediation: `Create the missing secret files:\n${secretLocations}`,
+      remediation: `Configure the missing GitHub App values:\n${secretLocations}`,
     };
   }
   if (!/^\d+$/.test(appId as string)) {
@@ -950,7 +951,7 @@ export function checkGitHubAppCredentials(): PreflightCheck {
       ok: false,
       detail: 'GitHub App ID is present but is not numeric.',
       remediation:
-        'The github_app_id secret file must contain only the numeric GitHub App ID.',
+        'Set GITHUB_APP_ID to the numeric GitHub App ID. Legacy deployments may keep it in the github_app_id file.',
     };
   }
   const privateKeyValidation = validateGitHubAppPrivateKey(

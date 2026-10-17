@@ -88,6 +88,53 @@ describe('DoctorCommand', () => {
     });
   });
 
+  test('accepts GitHub App IDs as values without requiring their legacy files', async () => {
+    const originalAppId = process.env.GITHUB_APP_ID;
+    const originalClientId = process.env.GITHUB_APP_CLIENT_ID;
+    process.env.GITHUB_APP_ID = '123456';
+    process.env.GITHUB_APP_CLIENT_ID = 'Iv1.public-client-id';
+    (existsSync as jest.Mock).mockImplementation((filePath: string) =>
+      !filePath.endsWith('/github_app_id') && !filePath.endsWith('/github_app_client_id'),
+    );
+    const command = new DoctorCommand(configManager as ConfigManager);
+
+    try {
+      expect(await command.execute(['--json'])).toBe(0);
+      const report = JSON.parse(consoleLog.mock.calls[0][0] as string) as Array<{ name: string; status: string; message: string }>;
+      const authCheck = report.find((check) => check.name === 'Authentication Files');
+      expect(authCheck?.status).toBe('pass');
+      expect(authCheck?.message).not.toContain('github_app_id');
+      expect(authCheck?.message).not.toContain('github_app_client_id');
+    } finally {
+      if (originalAppId === undefined) delete process.env.GITHUB_APP_ID;
+      else process.env.GITHUB_APP_ID = originalAppId;
+      if (originalClientId === undefined) delete process.env.GITHUB_APP_CLIENT_ID;
+      else process.env.GITHUB_APP_CLIENT_ID = originalClientId;
+    }
+  });
+
+  test('reports whitespace-only GitHub App IDs as invalid configuration', async () => {
+    const originalAppId = process.env.GITHUB_APP_ID;
+    const originalClientId = process.env.GITHUB_APP_CLIENT_ID;
+    process.env.GITHUB_APP_ID = '   ';
+    process.env.GITHUB_APP_CLIENT_ID = 'Iv1.public-client-id';
+    const command = new DoctorCommand(configManager as ConfigManager);
+
+    try {
+      expect(await command.execute(['--json'])).not.toBe(0);
+      const report = JSON.parse(consoleLog.mock.calls[0][0] as string) as Array<{ name: string; status: string; message: string }>;
+      const authCheck = report.find((check) => check.name === 'Authentication Files');
+      expect(authCheck?.status).toBe('fail');
+      expect(authCheck?.message).toContain('GITHUB_APP_ID');
+      expect(authCheck?.message).toContain('only whitespace');
+    } finally {
+      if (originalAppId === undefined) delete process.env.GITHUB_APP_ID;
+      else process.env.GITHUB_APP_ID = originalAppId;
+      if (originalClientId === undefined) delete process.env.GITHUB_APP_CLIENT_ID;
+      else process.env.GITHUB_APP_CLIENT_ID = originalClientId;
+    }
+  });
+
   test('uses argv-based child processes for docker image and disk checks', async () => {
     const command = new DoctorCommand(configManager as ConfigManager);
 

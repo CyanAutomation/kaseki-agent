@@ -231,18 +231,33 @@ export class DoctorCommand extends BaseCommand {
   private async checkAuthFiles(): Promise<Check> {
     const requiredAuthFiles = [
       { key: 'auth.llm_gateway_api_key_file', name: 'LLM Gateway API Key File', envVar: 'LLM_GATEWAY_API_KEY_FILE', filename: 'llm_gateway_api_key' },
-      { key: 'auth.github_app_id_file', name: 'GitHub App ID File', envVar: 'GITHUB_APP_ID_FILE', filename: 'github_app_id' },
-      { key: 'auth.github_app_client_id_file', name: 'GitHub App Client ID File', envVar: 'GITHUB_APP_CLIENT_ID_FILE', filename: 'github_app_client_id' },
+      { key: 'auth.github_app_id_file', valueKey: 'auth.github_app_id', name: 'GitHub App ID', envVar: 'GITHUB_APP_ID', fileEnvVar: 'GITHUB_APP_ID_FILE', filename: 'github_app_id' },
+      { key: 'auth.github_app_client_id_file', valueKey: 'auth.github_app_client_id', name: 'GitHub App Client ID', envVar: 'GITHUB_APP_CLIENT_ID', fileEnvVar: 'GITHUB_APP_CLIENT_ID_FILE', filename: 'github_app_client_id' },
       { key: 'auth.github_app_private_key_file', name: 'GitHub App Private Key File', envVar: 'GITHUB_APP_PRIVATE_KEY_FILE', filename: 'github_app_private_key' },
     ];
 
     const missingFiles: Array<{ name: string; envVar: string; path: string | null; checkedPaths: string[] }> = [];
     const unreadableFiles: Array<{ name: string; path: string; reason: string }> = [];
+    const invalidValues: Array<{ name: string; source: string }> = [];
     const home = os.homedir();
 
     for (const authFile of requiredAuthFiles) {
       try {
-        const resolved = this.resolveAuthFilePath(authFile.key, authFile.envVar, authFile.filename);
+        const envValue = authFile.valueKey ? process.env[authFile.envVar] : undefined;
+        const configValue = authFile.valueKey ? this.configManager.get(authFile.valueKey, '') : '';
+        const directValue = envValue || configValue;
+        const valueSource = envValue ? authFile.envVar : authFile.valueKey || authFile.envVar;
+        if (directValue.length > 0 && !directValue.trim()) {
+          invalidValues.push({ name: authFile.name, source: valueSource });
+          continue;
+        }
+        if (directValue?.trim()) continue;
+
+        const resolved = this.resolveAuthFilePath(
+          authFile.key,
+          authFile.fileEnvVar || authFile.envVar,
+          authFile.filename,
+        );
 
         if (!resolved) {
           const checkedPaths = [
@@ -275,8 +290,8 @@ export class DoctorCommand extends BaseCommand {
       }
     }
 
-    if (missingFiles.length > 0 || unreadableFiles.length > 0) {
-      const errorMessage = this.buildAuthErrorMessage(missingFiles, unreadableFiles);
+    if (missingFiles.length > 0 || unreadableFiles.length > 0 || invalidValues.length > 0) {
+      const errorMessage = this.buildAuthErrorMessage(missingFiles, unreadableFiles, invalidValues);
       return {
         name: 'Authentication Files',
         status: 'fail',
@@ -303,7 +318,8 @@ export class DoctorCommand extends BaseCommand {
    */
   private buildAuthErrorMessage(
     missingFiles: Array<{ name: string; envVar: string; path: string | null; checkedPaths: string[] }>,
-    unreadableFiles: Array<{ name: string; path: string; reason: string }>
+    unreadableFiles: Array<{ name: string; path: string; reason: string }>,
+    invalidValues: Array<{ name: string; source: string }> = [],
   ): string {
     const lines: string[] = ['❌ Authentication validation failed:'];
     lines.push('');
@@ -339,6 +355,14 @@ export class DoctorCommand extends BaseCommand {
       lines.push('');
     }
 
+    if (invalidValues.length > 0) {
+      lines.push('Invalid configuration values:');
+      for (const value of invalidValues) {
+        lines.push(`  • ${value.name}: ${value.source} contains only whitespace`);
+      }
+      lines.push('');
+    }
+
     // Add guidance
     lines.push('💡 To fix, choose one of these approaches:');
     lines.push('');
@@ -349,8 +373,8 @@ export class DoctorCommand extends BaseCommand {
     lines.push('   {');
     lines.push('     "auth": {');
     lines.push('       "openrouter_api_key_file": "~/secrets/openrouter_api_key",');
-    lines.push('       "github_app_id_file": "~/secrets/github_app_id",');
-    lines.push('       "github_app_client_id_file": "~/secrets/github_app_client_id",');
+    lines.push('       "github_app_id": "123456",');
+    lines.push('       "github_app_client_id": "Iv1.public-client-id",');
     lines.push('       "github_app_private_key_file": "~/secrets/github_app_private_key"');
     lines.push('     }');
     lines.push('   }');
@@ -365,15 +389,15 @@ export class DoctorCommand extends BaseCommand {
       lines.push('   $ sudo -E kaseki-agent run <repo> <branch> <task>');
     } else {
       lines.push('   $ export OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key');
-      lines.push('   $ export GITHUB_APP_ID_FILE=~/secrets/github_app_id');
-      lines.push('   $ export GITHUB_APP_CLIENT_ID_FILE=~/secrets/github_app_client_id');
+      lines.push('   $ export GITHUB_APP_ID=123456');
+      lines.push('   $ export GITHUB_APP_CLIENT_ID=Iv1.public-client-id');
       lines.push('   $ export GITHUB_APP_PRIVATE_KEY_FILE=~/secrets/github_app_private_key');
       lines.push('   $ kaseki-agent run <repo> <branch> <task>');
     }
     lines.push('');
 
     lines.push('3️⃣  Docker Compose (recommended for services):');
-    lines.push('   Set env vars in .env or docker-compose.yml secrets');
+    lines.push('   Set GITHUB_APP_ID and GITHUB_APP_CLIENT_ID in .env; keep the private key in the mounted secret file.');
     lines.push('   See docs/DEPLOYMENT.md for setup instructions');
     lines.push('');
 

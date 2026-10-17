@@ -1,4 +1,43 @@
 import { retryTransientGitHubRequest } from './github-utils';
+import * as hostSecretsReader from './secrets/host-secrets-reader';
+import { resolveGitHubAppId } from './github-utils';
+
+describe('resolveGitHubAppId', () => {
+  const originalAppId = process.env.GITHUB_APP_ID;
+
+  afterEach(() => {
+    if (originalAppId === undefined) delete process.env.GITHUB_APP_ID;
+    else process.env.GITHUB_APP_ID = originalAppId;
+    jest.restoreAllMocks();
+  });
+
+  it('prefers a configured environment value and retains the legacy file fallback', () => {
+    const readSecret = jest.spyOn(hostSecretsReader, 'readHostSecret').mockReturnValue('file-app-id');
+    process.env.GITHUB_APP_ID = '123456';
+
+    expect(resolveGitHubAppId()).toBe('123456');
+    expect(readSecret).not.toHaveBeenCalled();
+
+    delete process.env.GITHUB_APP_ID;
+    expect(resolveGitHubAppId()).toBe('file-app-id');
+  });
+
+  it('treats an empty environment default as unset for legacy compatibility', () => {
+    const readSecret = jest.spyOn(hostSecretsReader, 'readHostSecret').mockReturnValue('file-app-id');
+    process.env.GITHUB_APP_ID = '';
+
+    expect(resolveGitHubAppId()).toBe('file-app-id');
+    expect(readSecret).toHaveBeenCalledWith('github_app_id');
+  });
+
+  it('rejects whitespace-only environment values instead of silently using a legacy ID', () => {
+    const readSecret = jest.spyOn(hostSecretsReader, 'readHostSecret').mockReturnValue('file-app-id');
+    process.env.GITHUB_APP_ID = '   ';
+
+    expect(() => resolveGitHubAppId()).toThrow('GITHUB_APP_ID is set but contains only whitespace.');
+    expect(readSecret).not.toHaveBeenCalled();
+  });
+});
 
 describe('retryTransientGitHubRequest', () => {
   it('retries a transient GitHub timeout before succeeding', async () => {

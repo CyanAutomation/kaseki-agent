@@ -243,11 +243,7 @@ check_secret_paths() {
 
   if [ ! "$secrets_dir_found" = true ]; then
     if [ -r "${OPENROUTER_API_KEY_FILE:-}" ] ||
-      [ -r "${GITHUB_APP_ID_FILE:-}" ] ||
-      [ -r "${GITHUB_APP_CLIENT_ID_FILE:-}" ] ||
       [ -r "${GITHUB_APP_PRIVATE_KEY_FILE:-}" ] ||
-      [ -r /run/secrets/github_app_id ] ||
-      [ -r /run/secrets/github_app_client_id ] ||
       [ -r /run/secrets/github_app_private_key ]; then
       log_info "Secrets directory not mounted at $primary_secrets_dir or $fallback_secrets_dir; using readable configured or legacy secret files."
       return 0
@@ -337,13 +333,21 @@ check_github_app_secrets() {
   github_app_client_id_file="$(resolve_github_secret_file "GITHUB_APP_CLIENT_ID_FILE" "github_app_client_id")"
   github_app_private_key_file="$(resolve_github_secret_file "GITHUB_APP_PRIVATE_KEY_FILE" "github_app_private_key")"
 
-  check_secret_file_sources \
-    "GitHub App ID" \
-    "$github_app_id_file" || exit_code=$(merge_startup_status "$exit_code" "$?")
+  if [ -n "${GITHUB_APP_ID:-}" ]; then
+    log_pass "GitHub App ID configured as a public environment value"
+  else
+    check_secret_file_sources \
+      "Legacy GitHub App ID file" \
+      "$github_app_id_file" || exit_code=$(merge_startup_status "$exit_code" "$?")
+  fi
 
-  check_secret_file_sources \
-    "GitHub App Client ID" \
-    "$github_app_client_id_file" || exit_code=$(merge_startup_status "$exit_code" "$?")
+  if [ -n "${GITHUB_APP_CLIENT_ID:-}" ]; then
+    log_pass "GitHub App Client ID configured as a public environment value"
+  else
+    check_secret_file_sources \
+      "Legacy GitHub App Client ID file" \
+      "$github_app_client_id_file" || exit_code=$(merge_startup_status "$exit_code" "$?")
+  fi
 
   check_secret_file_sources \
     "GitHub App private key" \
@@ -356,8 +360,8 @@ check_github_app_secrets() {
     return 2
   fi
 
-  log_warn "GitHub App credentials are incomplete; default PR creation will not work"
-  log_info "  Create: github_app_id, github_app_client_id, and github_app_private_key in $KASEKI_SECRETS_DIR or run: kaseki-agent init"
+  log_warn "GitHub App configuration is incomplete; default PR creation will not work"
+  log_info "  Set GITHUB_APP_ID and GITHUB_APP_CLIENT_ID as configuration values; keep github_app_private_key in $KASEKI_SECRETS_DIR. Legacy ID files remain supported."
   return 3
 }
 
@@ -379,18 +383,20 @@ check_github_app_secret_paths() {
   primary_client_id="$KASEKI_SECRETS_DIR/github_app_client_id"
   primary_key="$KASEKI_SECRETS_DIR/github_app_private_key"
 
-  if [ -r "$primary_id" ]; then
-    log_pass "GitHub App ID mounted in primary secrets directory: $primary_id"
+  if [ -n "${GITHUB_APP_ID:-}" ]; then
+    log_pass "GitHub App ID is supplied as configuration"
+  elif [ -r "$primary_id" ]; then
+    log_info "Legacy GitHub App ID file found in primary secrets directory: $primary_id"
   elif [ -r "$root_level_id" ]; then
-    log_info "GitHub App ID found at legacy root path: $root_level_id"
-    log_info "  Prefer one directory mount at $KASEKI_SECRETS_DIR"
+    log_info "Legacy GitHub App ID file found at root path: $root_level_id"
   fi
 
-  if [ -r "$primary_client_id" ]; then
-    log_pass "GitHub App Client ID mounted in primary secrets directory: $primary_client_id"
+  if [ -n "${GITHUB_APP_CLIENT_ID:-}" ]; then
+    log_pass "GitHub App Client ID is supplied as configuration"
+  elif [ -r "$primary_client_id" ]; then
+    log_info "Legacy GitHub App Client ID file found in primary secrets directory: $primary_client_id"
   elif [ -r "$root_level_client_id" ]; then
-    log_info "GitHub App Client ID found at legacy root path: $root_level_client_id"
-    log_info "  Prefer one directory mount at $KASEKI_SECRETS_DIR"
+    log_info "Legacy GitHub App Client ID file found at root path: $root_level_client_id"
   fi
 
   if [ -r "$primary_key" ]; then

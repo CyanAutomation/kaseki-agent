@@ -20,14 +20,14 @@ This guide covers how to configure authentication credentials for Kaseki Agent, 
    {
      "auth": {
        "openrouter_api_key_file": "/home/pi/secrets/openrouter_api_key",
-       "github_app_id_file": "/home/pi/secrets/github_app_id",
-       "github_app_client_id_file": "/home/pi/secrets/github_app_client_id",
+       "github_app_id": "123456",
+       "github_app_client_id": "Iv1.public-client-id",
        "github_app_private_key_file": "/home/pi/secrets/github_app_private_key"
      }
    }
    ```
 
-3. Update paths to your actual secret file locations:
+3. Replace the public ID examples with your app's IDs and update the private-key path:
 
    ```bash
    # Example: if your secrets are in ~/secrets/
@@ -35,8 +35,8 @@ This guide covers how to configure authentication credentials for Kaseki Agent, 
    {
      "auth": {
        "openrouter_api_key_file": "/home/pi/secrets/openrouter_api_key",
-       "github_app_id_file": "/home/pi/secrets/github_app_id",
-       "github_app_client_id_file": "/home/pi/secrets/github_app_client_id",
+       "github_app_id": "123456",
+       "github_app_client_id": "Iv1.public-client-id",
        "github_app_private_key_file": "/home/pi/secrets/github_app_private_key"
      }
    }
@@ -62,8 +62,8 @@ This guide covers how to configure authentication credentials for Kaseki Agent, 
 
 ```bash
 export OPENROUTER_API_KEY_FILE=/home/pi/secrets/openrouter_api_key
-export GITHUB_APP_ID_FILE=/home/pi/secrets/github_app_id
-export GITHUB_APP_CLIENT_ID_FILE=/home/pi/secrets/github_app_client_id
+export GITHUB_APP_ID=123456
+export GITHUB_APP_CLIENT_ID=Iv1.public-client-id
 export GITHUB_APP_PRIVATE_KEY_FILE=/home/pi/secrets/github_app_private_key
 
 kaseki-agent run https://github.com/CyanAutomation/kaseki-agent main "Your task here"
@@ -73,8 +73,8 @@ kaseki-agent run https://github.com/CyanAutomation/kaseki-agent main "Your task 
 
 ```bash
 export OPENROUTER_API_KEY_FILE=/home/pi/secrets/openrouter_api_key
-export GITHUB_APP_ID_FILE=/home/pi/secrets/github_app_id
-export GITHUB_APP_CLIENT_ID_FILE=/home/pi/secrets/github_app_client_id
+export GITHUB_APP_ID=123456
+export GITHUB_APP_CLIENT_ID=Iv1.public-client-id
 export GITHUB_APP_PRIVATE_KEY_FILE=/home/pi/secrets/github_app_private_key
 
 # Use -E flag to preserve environment variables
@@ -97,7 +97,7 @@ sudo -E kaseki-agent run https://github.com/CyanAutomation/kaseki-agent main "Yo
 
 ### Option 3: Docker Compose (Recommended for Services)
 
-Use Docker Compose for persistent, managed deployments. The service automatically mounts secrets and handles environment variable injection.
+Use Docker Compose for persistent, managed deployments. The service passes the public App IDs as environment values and mounts the private key as a secret file.
 
 See [docs/DEPLOYMENT.md](DEPLOYMENT.md) for full Docker Compose setup with:
 
@@ -115,7 +115,7 @@ Kaseki Agent looks for configuration in this order (highest to lowest priority):
 1. **Explicit config file path** — passed via CLI
 2. **Project config** — `./kaseki-agent.json` in current directory
 3. **User config** — `~/.kaseki/config.json` (home directory)
-4. **Environment variables** — `GITHUB_APP_ID_FILE`, etc.
+4. **Environment variables** — `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, and `GITHUB_APP_PRIVATE_KEY_FILE`.
 5. **Built-in defaults** — hardcoded fallbacks
 
 ### Full Auth Schema
@@ -124,14 +124,14 @@ Kaseki Agent looks for configuration in this order (highest to lowest priority):
 {
   "auth": {
     "openrouter_api_key_file": "/path/to/openrouter_key",
-    "github_app_id_file": "/path/to/github_app_id",
-    "github_app_client_id_file": "/path/to/github_app_client_id",
+    "github_app_id": "123456",
+    "github_app_client_id": "Iv1.public-client-id",
     "github_app_private_key_file": "/path/to/github_app_private_key"
   }
 }
 ```
 
-All paths are **absolute** or relative to the current working directory.
+File paths are **absolute** or relative to the current working directory.
 
 ## Secret File Setup
 
@@ -148,15 +148,8 @@ echo "sk-or-..." > ~/secrets/openrouter_api_key
 sudo chgrp 10000 ~/secrets/openrouter_api_key
 chmod 0640 ~/secrets/openrouter_api_key
 
-# GitHub App ID
-echo "123456" > ~/secrets/github_app_id
-sudo chgrp 10000 ~/secrets/github_app_id
-chmod 0640 ~/secrets/github_app_id
-
-# GitHub App Client ID
-echo "Iv1.abcd1234..." > ~/secrets/github_app_client_id
-sudo chgrp 10000 ~/secrets/github_app_client_id
-chmod 0640 ~/secrets/github_app_client_id
+# GitHub App ID and Client ID are public configuration values, not secret files.
+# Set GITHUB_APP_ID and GITHUB_APP_CLIENT_ID in .env or the service environment.
 
 # GitHub App Private Key (PEM format, usually multi-line)
 cat > ~/secrets/github_app_private_key << 'EOF'
@@ -205,53 +198,14 @@ kaseki-agent doctor
 
 The output will suggest all three approaches (env vars, config file, docker-compose).
 
-### ⚠️ Common mistake: github_client_id vs github_app_client_id
+### GitHub App IDs in Docker Compose
 
-**Problem**: Error mentions path like `/home/pi/secrets/github_client_id` instead of `github_app_client_id`
-
-```
-❌ GitHub App Client ID File: not found at /home/pi/secrets/github_client_id
-   Hint: Did you mean "/home/pi/secrets/github_app_client_id"?
-   The filename should be "github_app_client_id" (with "app_" prefix), not just "github_client_id".
-```
-
-**Solution**: The filename must include the `app_` prefix:
-
-```bash
-# ❌ WRONG
-export GITHUB_APP_CLIENT_ID_FILE=/home/pi/secrets/github_client_id
-
-# ✅ CORRECT
-export GITHUB_APP_CLIENT_ID_FILE=/home/pi/secrets/github_app_client_id
-```
-
-**Fix**:
-
-1. **If using environment variables**: Update the path in your shell profile or `.env` file:
-
-   ```bash
-   # ~/.bashrc or ~/.env
-   export GITHUB_APP_CLIENT_ID_FILE=~/.../github_app_client_id  # Add "app_" prefix
-   ```
-
-2. **If using config file**: Fix the path in `~/.kaseki/config.json`:
-
-   ```json
-   {
-     "auth": {
-       "github_app_client_id_file": "/home/pi/secrets/github_app_client_id"
-     }
-   }
-   ```
-
-3. **If using Docker**: Verify your secret filename in the container or docker-compose volume:
-
-   ```bash
-   # Correct secret name
-   /run/secrets/kaseki/github_app_client_id
-   ```
-
-Then run `kaseki-agent doctor` again to verify the fix.
+Set `GITHUB_APP_ID` and `GITHUB_APP_CLIENT_ID` in the project `.env` file or
+export them in the shell before running Compose. They are public identifiers,
+so the secrets command does not manage or permission-check them. Keep only the
+App private key in `~/secrets/github_app_private_key`. Existing deployments
+with `github_app_id` and `github_app_client_id` files continue to work as a
+legacy fallback during migration.
 
 ### Sudo environment variables not working
 
@@ -302,7 +256,8 @@ Create `./kaseki-agent.json` in your project directory to override user config:
 ```json
 {
   "auth": {
-    "github_app_id_file": "/path/to/project-specific/id"
+    "github_app_id": "123456",
+    "github_app_client_id": "Iv1.public-client-id"
   }
 }
 ```
@@ -332,7 +287,7 @@ This takes precedence over `~/.kaseki/config.json`.
 
 5. **Use config files for local development**, env vars for CI/CD
 
-6. **Docker Compose:** Use secrets mounts instead of env vars when possible
+6. **Docker Compose:** Keep private credentials in secret mounts; configure public GitHub App IDs through environment values.
 
 ## Integration Examples
 
@@ -352,7 +307,8 @@ kaseki-agent run <repo> <branch> <task>
 ```bash
 # In GitHub Actions, GitLab CI, or similar
 export OPENROUTER_API_KEY_FILE=/tmp/openrouter_key
-export GITHUB_APP_ID_FILE=/tmp/github_app_id
+export GITHUB_APP_ID=123456
+export GITHUB_APP_CLIENT_ID=Iv1.public-client-id
 # ... etc
 
 kaseki-agent run <repo> <branch> <task>
@@ -364,7 +320,9 @@ kaseki-agent run <repo> <branch> <task>
 services:
   kaseki-api:
     environment:
-      GITHUB_APP_ID_FILE: /run/secrets/kaseki/github_app_id
+      GITHUB_APP_ID: "${GITHUB_APP_ID:-}"
+      GITHUB_APP_CLIENT_ID: "${GITHUB_APP_CLIENT_ID:-}"
+      GITHUB_APP_PRIVATE_KEY_FILE: /run/secrets/kaseki/github_app_private_key
     volumes:
       - /home/pi/secrets:/run/secrets/kaseki:ro
 ```

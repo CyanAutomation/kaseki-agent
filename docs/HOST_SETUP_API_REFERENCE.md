@@ -395,7 +395,7 @@ fi
 **Checks Performed**:
 
 - API key is available
-- GitHub App secrets are present
+- GitHub App IDs are configured and the private key is present
 - Host directories are accessible
 - Container can run
 

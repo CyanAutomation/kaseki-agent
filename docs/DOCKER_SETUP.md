@@ -36,8 +36,8 @@ The setup script:
 Setup does not make an inference request. The gateway URL is required because
 it cannot be determined from the API key. The default model is
 `dynamic/kaseki-agent`. OpenRouter credentials are optional and used only for
-evaluation stages; GitHub App credentials are optional unless those features
-are used.
+evaluation stages; GitHub App IDs are public Compose configuration values, and
+the private key remains an optional host secret file unless publishing is used.
 
 The `/ready` healthcheck confirms the local API is running. It does not contact
 the gateway or validate provider authentication/model availability; setup
@@ -55,7 +55,14 @@ The key is stored at `~/secrets/llm_gateway_api_key`. Kaseki creates
 `~/secrets/kaseki_api_keys` for API bearer authentication. Existing files are
 reused without displaying their contents. The directory is mode `0750`, files
 are mode `0640`, and group 10000 can read them. `.env` contains the gateway URL,
-model, image digest, and host settings, but no credential values.
+model, image digest, host settings, and public `GITHUB_APP_ID` and
+`GITHUB_APP_CLIENT_ID` values. The GitHub App private key remains in
+`~/secrets/github_app_private_key`.
+
+Compose passes the App IDs as container environment values, so Docker daemon
+clients can see them through `docker inspect` and the Docker API. They are
+public identifiers; keep Docker daemon access restricted and keep the private
+key in the mounted secret file.
 
 To use a different credential file:
 

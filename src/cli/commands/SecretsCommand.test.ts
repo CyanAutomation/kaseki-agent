@@ -33,5 +33,8 @@ describe('SecretsCommand dispatch and validation', () => {
   it('keeps help as a successful, non-mutating command', async () => {
     await expect(command.execute(['help'])).resolves.toBe(0);
     expect(log).toHaveBeenCalledWith(expect.stringContaining('Secrets Management'));
+    expect(log).not.toHaveBeenCalledWith(expect.stringContaining('github-app-id'));
+    expect(log).not.toHaveBeenCalledWith(expect.stringContaining('github-app-client-id'));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('GitHub App ID and Client ID are configuration values'));
   });
 });
