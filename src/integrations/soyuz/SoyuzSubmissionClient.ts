@@ -86,18 +86,18 @@ export class SoyuzSubmissionClient {
 
 export function normalizeSoyuzRunStatus(status: SoyuzRunStatus): 'queued' | 'running' | 'completed' | 'failed' {
   switch (status) {
-    case 'admitting':
-    case 'queued':
-      return 'queued';
-    case 'claimed':
-    case 'running':
-    case 'cancel_requested':
-      return 'running';
-    case 'completed':
-      return 'completed';
-    case 'failed':
-    case 'cancelled':
-    case 'admission_failed':
-      return 'failed';
+  case 'admitting':
+  case 'queued':
+    return 'queued';
+  case 'claimed':
+  case 'running':
+  case 'cancel_requested':
+    return 'running';
+  case 'completed':
+    return 'completed';
+  case 'failed':
+  case 'cancelled':
+  case 'admission_failed':
+    return 'failed';
   }
 }
