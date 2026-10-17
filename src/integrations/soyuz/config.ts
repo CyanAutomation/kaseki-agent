@@ -46,7 +46,9 @@ export function loadSoyuzAdapterConfig(env: NodeJS.ProcessEnv = process.env): So
   }
   const submissionEnabled = submissionEnabledValue === 'true';
   const apiUrlRaw = env.SOYUZ_API_URL?.trim();
-  const submissionApiToken = readSecret(env, 'SOYUZ_SUBMISSION_API_TOKEN', 'soyuz_submission_api_token');
+  const submissionApiToken = submissionEnabled
+    ? readSecret(env, 'SOYUZ_SUBMISSION_API_TOKEN', 'soyuz_submission_api_token')
+    : '';
 
   if (!enabled && !submissionEnabled) {
     return {

@@ -681,14 +681,28 @@ function registerRunSubmissionRoute(
   router.post('/runs', async (req: Request, res: Response) => {
     let idempotencyKeyForError: string | undefined;
     try {
-      // Validate request body
-      const runRequest = RunRequestSchema.parse({
+      // Validate the raw request before Zod strips unknown fields. Soyuz's
+      // contract must reject webhook secrets instead of silently dropping them.
+      const requestInput = {
         ...req.body,
         startupCheck:
           req.query.dryRun === 'true' || req.query.startupCheck === 'true'
             ? true
             : req.body?.startupCheck,
-      });
+      };
+      let runRequest: RunRequest;
+      if (submissionClient) {
+        try {
+          runRequest = parseSoyuzRunRequest(requestInput);
+        } catch (error) {
+          if (error instanceof Error && !('errors' in error)) {
+            return sendErrorResponse(res, 400, 'Bad Request', error.message);
+          }
+          throw error;
+        }
+      } else {
+        runRequest = RunRequestSchema.parse(requestInput);
+      }
 
       const headerIdempotencyKey = req.get('Idempotency-Key');
       if (headerIdempotencyKey && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(headerIdempotencyKey)) {
@@ -730,7 +744,6 @@ function registerRunSubmissionRoute(
 
       // 3. Normalize task mode
       normalizeTaskMode(runRequest);
-      if (submissionClient) parseSoyuzRunRequest(runRequest);
 
       // 4. Safety admission must happen before idempotency claim and scheduler submission.
       const admission = await admitTaskWithLogging(taskAdmissionEvaluator, logger, runRequest);
@@ -769,7 +782,7 @@ function registerRunSubmissionRoute(
             let response: RunResponse;
             if (submissionClient) {
               const remoteRun = await submissionClient.createRun(
-                parseSoyuzRunRequest(runRequest) as unknown as Record<string, unknown>,
+                runRequest as unknown as Record<string, unknown>,
                 idempotencyKey,
               );
               response = buildSoyuzRunResponse(remoteRun, runRequest);
@@ -919,7 +932,7 @@ function registerRunRetryRoute(
             await idempotencyStore.releasePendingClaim(idempotencyKey, fingerprint);
             throw error;
           }
-          if (remoteSource.status !== 'completed' && remoteSource.status !== 'failed') {
+          if (!['completed', 'failed', 'cancelled', 'admission_failed'].includes(remoteSource.status)) {
             await idempotencyStore.releasePendingClaim(idempotencyKey, fingerprint);
             return { state: 'not_retryable' as const };
           }
@@ -939,7 +952,7 @@ function registerRunRetryRoute(
           return sendErrorResponse(res, 409, 'Conflict', 'Retry with this idempotency key is already being processed');
         }
         if (result.state === 'not_retryable') {
-          return sendErrorResponse(res, 409, 'Conflict', 'Only completed or failed Soyuz runs can be retried');
+          return sendErrorResponse(res, 409, 'Conflict', 'Only terminal Soyuz runs can be retried');
         }
         return res.status(result.state === 'fulfilled' ? 200 : 202).json(result.state === 'fulfilled'
           ? result.response
@@ -961,8 +974,8 @@ function registerRunRetryRoute(
     if (!source) {
       return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
     }
-    if (source.status !== 'completed' && source.status !== 'failed') {
-      return sendErrorResponse(res, 409, 'Conflict', 'Only completed or failed runs can be retried');
+    if (!['completed', 'failed', 'cancelled', 'admission_failed'].includes(source.status)) {
+      return sendErrorResponse(res, 409, 'Conflict', 'Only terminal runs can be retried');
     }
     const retryRequest: RunRequest = { ...source.request, idempotencyKey };
     const publishMode = retryRequest.publishMode || 'pr';

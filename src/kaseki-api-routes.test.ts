@@ -684,6 +684,38 @@ describe('Soyuz submission routing', () => {
     }
   });
 
+  test('rejects webhook secrets before creating a Soyuz submission intent', async () => {
+    const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-soyuz-webhook-'));
+    const fetchImpl = jest.fn(async () => apiResponse({ id: soyuzId, status: 'queued', createdAt: '2026-10-17T12:00:00.000Z' }));
+    const scheduler = createMockScheduler();
+    const harness = await createTestApp(scheduler, createTestConfig(resultsDir), undefined, makeSubmissionClient(fetchImpl as typeof fetch));
+    const key = crypto.randomUUID();
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${harness.port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json', 'Idempotency-Key': key },
+        body: JSON.stringify({
+          repoUrl: 'https://github.com/example/repo',
+          ref: 'main',
+          taskPrompt: 'Add a focused health check.',
+          publishMode: 'none',
+          idempotencyKey: key,
+          webhookConfig: { url: 'https://hooks.example.test/run', secret: 'webhook-secret-value-123456' },
+        }),
+      });
+      const body = await response.json() as any;
+
+      expect(response.status).toBe(400);
+      expect(body.detail).toContain('does not support webhookConfig');
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(harness.server, harness.idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
   test('keeps the submission intent after an uncertain network failure', async () => {
     const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-soyuz-uncertain-'));
     const config = createTestConfig(resultsDir);
@@ -712,47 +744,50 @@ describe('Soyuz submission routing', () => {
     }
   });
 
-  test('routes canonical Soyuz retries through the terminal-state checked retry operation', async () => {
-    const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-soyuz-retry-'));
-    const config = createTestConfig(resultsDir);
-    const fetchImpl = jest.fn(async (input: Parameters<typeof fetch>[0]) => {
-      const url = String(input);
-      if (url.endsWith(`/v1/worker/runs/${sourceId}`)) {
-        return apiResponse({ runId: sourceId, status: 'completed', updatedAt: '2026-10-17T12:00:00.000Z' }, 200);
-      }
-      return apiResponse({
-        id: soyuzId,
-        status: 'queued',
-        createdAt: '2026-10-17T12:01:00.000Z',
-        origin: { type: 'kaseki', id: 'kaseki-prod' },
-        retryOf: sourceId,
+  test.each(['completed', 'failed', 'cancelled', 'admission_failed'])(
+    'routes canonical Soyuz retries through the retry operation for terminal state %s',
+    async (sourceStatus) => {
+      const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-soyuz-retry-'));
+      const config = createTestConfig(resultsDir);
+      const fetchImpl = jest.fn(async (input: Parameters<typeof fetch>[0]) => {
+        const url = String(input);
+        if (url.endsWith(`/v1/worker/runs/${sourceId}`)) {
+          return apiResponse({ runId: sourceId, status: sourceStatus, updatedAt: '2026-10-17T12:00:00.000Z' }, 200);
+        }
+        return apiResponse({
+          id: soyuzId,
+          status: 'queued',
+          createdAt: '2026-10-17T12:01:00.000Z',
+          origin: { type: 'kaseki', id: 'kaseki-prod' },
+          retryOf: sourceId,
+        });
       });
-    });
-    const harness = await createTestApp(createMockScheduler(), config, undefined, makeSubmissionClient(fetchImpl as typeof fetch));
-    const key = crypto.randomUUID();
-    const retry = () => fetch(`http://127.0.0.1:${harness.port}/api/runs/${sourceId}/retry`, {
-      method: 'POST',
-      headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idempotencyKey: key }),
-    });
+      const harness = await createTestApp(createMockScheduler(), config, undefined, makeSubmissionClient(fetchImpl as typeof fetch));
+      const key = crypto.randomUUID();
+      const retry = () => fetch(`http://127.0.0.1:${harness.port}/api/runs/${sourceId}/retry`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idempotencyKey: key }),
+      });
 
-    try {
-      const first = await retry();
-      const firstBody = await first.json() as any;
-      const replay = await retry();
-      const replayBody = await replay.json() as any;
+      try {
+        const first = await retry();
+        const firstBody = await first.json() as any;
+        const replay = await retry();
+        const replayBody = await replay.json() as any;
 
-      expect(first.status).toBe(202);
-      expect(firstBody.id).toBe(soyuzId);
-      expect(firstBody.retryOf).toBe(sourceId);
-      expect(replay.status).toBe(200);
-      expect(replayBody.id).toBe(soyuzId);
-      expect(fetchImpl.mock.calls.filter(([input]) => String(input).includes('/retry'))).toHaveLength(1);
-    } finally {
-      await cleanupTestApp(harness.server, harness.idempotencyStore);
-      fs.rmSync(resultsDir, { recursive: true, force: true });
-    }
-  });
+        expect(first.status).toBe(202);
+        expect(firstBody.id).toBe(soyuzId);
+        expect(firstBody.retryOf).toBe(sourceId);
+        expect(replay.status).toBe(200);
+        expect(replayBody.id).toBe(soyuzId);
+        expect(fetchImpl.mock.calls.filter(([input]) => String(input).includes('/retry'))).toHaveLength(1);
+      } finally {
+        await cleanupTestApp(harness.server, harness.idempotencyStore);
+        fs.rmSync(resultsDir, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 describe('kaseki-api-routes startup health content negotiation', () => {
