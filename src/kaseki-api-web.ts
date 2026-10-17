@@ -1673,6 +1673,8 @@ const controllerPage = String.raw`<!doctype html>
       let validationState = { isValid: false, lastValidated: null, checks: [] };
       let piAdapterValidationState = 'unknown';
       let submittedRunId = '';
+      let pendingSubmissionIntentStorageKey = '';
+      const pendingSubmissionIntentKeys = new Map();
       const validationStateKey = 'kasekiValidationState';
 
       function getApiToken() {
@@ -2028,6 +2030,16 @@ const controllerPage = String.raw`<!doctype html>
           }
           if (typeof payload.status === 'string') {
             items.push(['Status', stripControlSequences(payload.status)]);
+          }
+          if (payload.origin && typeof payload.origin === 'object'
+              && typeof payload.origin.type === 'string' && typeof payload.origin.id === 'string') {
+            items.push(['Origin', stripControlSequences(payload.origin.type + ' · ' + payload.origin.id)]);
+          }
+          if (typeof payload.retryOf === 'string' && payload.retryOf) {
+            items.push(['Retry of', stripControlSequences(payload.retryOf)]);
+          }
+          if (typeof payload.localRunId === 'string' && payload.localRunId) {
+            items.push(['Local diagnostic ID', stripControlSequences(payload.localRunId)]);
           }
           const evaluatorWarnings = [];
           if (payload.goalCheck && typeof payload.goalCheck === 'object' && payload.goalCheck.status === 'warning') {
@@ -3128,6 +3140,35 @@ const controllerPage = String.raw`<!doctype html>
         });
       }
 
+      async function getStableSubmissionIntent(request) {
+        const serialized = JSON.stringify(request);
+        let fingerprint;
+        try {
+          const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(serialized));
+          fingerprint = Array.from(new Uint8Array(digest)).map((value) => value.toString(16).padStart(2, '0')).join('');
+        } catch {
+          let hash = 2166136261;
+          for (let index = 0; index < serialized.length; index += 1) {
+            hash = Math.imul(hash ^ serialized.charCodeAt(index), 16777619);
+          }
+          fingerprint = (hash >>> 0).toString(16).padStart(8, '0');
+        }
+        const storageKey = 'kasekiPendingRunIntent:' + fingerprint;
+        const inMemoryKey = pendingSubmissionIntentKeys.get(storageKey);
+        if (typeof inMemoryKey === 'string') return { idempotencyKey: inMemoryKey, storageKey };
+        try {
+          const savedKey = sessionStorage.getItem(storageKey);
+          if (savedKey && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(savedKey)) {
+            pendingSubmissionIntentKeys.set(storageKey, savedKey);
+            return { idempotencyKey: savedKey, storageKey };
+          }
+        } catch { /* Keep the intent in memory when session storage is unavailable. */ }
+        const idempotencyKey = createRequestId();
+        pendingSubmissionIntentKeys.set(storageKey, idempotencyKey);
+        try { sessionStorage.setItem(storageKey, idempotencyKey); } catch { /* Keep the intent in memory when session storage is unavailable. */ }
+        return { idempotencyKey, storageKey };
+      }
+
       function requestBody(idempotencyKey) {
         const data = new FormData(form);
         const csv = (name) => String(data.get(name) || '').split(',').map((value) => value.trim()).filter(Boolean);
@@ -3191,7 +3232,9 @@ const controllerPage = String.raw`<!doctype html>
         const token = getApiToken();
         const needsAuth = options && options.auth;
         const method = options && options.method || 'GET';
-        const idempotencyKey = method === 'POST' && path === '/api/v1/runs'
+        const isRunMutation = method === 'POST'
+          && (path === '/api/v1/runs' || /^\/api\/v1\/runs\/[^/]+\/retry$/.test(path));
+        const idempotencyKey = isRunMutation
           ? options && options.body && options.body.idempotencyKey
           : undefined;
         if (needsAuth && !token) throw new Error('Enter the API bearer token in the header first.');
@@ -4129,11 +4172,23 @@ const controllerPage = String.raw`<!doctype html>
       retryRunBtn.addEventListener('click', (event) => {
         const runId = runIdInput.value.trim();
         if (!runId) return;
-        run(event.currentTarget, runUrl(runId, '/retry'), {
-          method: 'POST', auth: true, body: { idempotencyKey: createRequestId() },
-        }).then(({ payload, response }) => {
-          if (response.ok && payload && typeof payload.id === 'string') activateSubmittedRun(payload, response.status, false);
-        });
+        const button = event.currentTarget;
+        button.disabled = true;
+        void (async () => {
+          try {
+            const intent = await getStableSubmissionIntent({ operation: 'retry', runId });
+            const { payload, response } = await run(button, runUrl(runId, '/retry'), {
+              method: 'POST', auth: true, body: { idempotencyKey: intent.idempotencyKey },
+            });
+            if (response.ok && payload && typeof payload.id === 'string') {
+              activateSubmittedRun(payload, response.status, false, intent.storageKey);
+            }
+          } catch (error) {
+            displayRequestFailure(error, runUrl(runId, '/retry'), 'POST');
+          } finally {
+            button.disabled = false;
+          }
+        })();
       });
 
       copyDiagnosticBundleBtn.addEventListener('click', async () => {
@@ -4314,27 +4369,37 @@ const controllerPage = String.raw`<!doctype html>
         setResponseSummary(null);
         setOutputBody('Submitting run request...');
         setState('Contacting the controller...');
-        const idempotencyKey = createRequestId();
-        const submittedBody = requestBody(idempotencyKey);
-        apiRequest('/api/v1/runs', { method: 'POST', auth: true, body: submittedBody, timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS })
-          .then(({ payload, response }) => {
+        void (async () => {
+          let submittedBody;
+          try {
+            const intent = await getStableSubmissionIntent(requestBody());
+            pendingSubmissionIntentStorageKey = intent.storageKey;
+            submittedBody = requestBody(intent.idempotencyKey);
+            const { payload, response } = await apiRequest('/api/v1/runs', {
+              method: 'POST', auth: true, body: submittedBody, timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
+            });
             if (response.ok && payload && typeof payload.id === 'string') {
               activateSubmittedRun(payload, response.status, false);
             }
-          })
-          .catch(async (error) => {
-            if (error instanceof RequestTimeoutError) {
+          } catch (error) {
+            if (error instanceof RequestTimeoutError && submittedBody) {
               const recovered = await recoverSubmittedRunAfterTimeout(submittedBody);
               if (recovered) return;
             }
             displayRequestFailure(error, '/api/v1/runs', 'POST');
-          })
-          .finally(() => {
+          } finally {
             updateSubmitButtonState();
-          });
+          }
+        })();
       });
 
-      function activateSubmittedRun(payload, responseStatus, recovered) {
+      function activateSubmittedRun(payload, responseStatus, recovered, completedIntentStorageKey) {
+        const storageKey = completedIntentStorageKey || pendingSubmissionIntentStorageKey;
+        if (storageKey) {
+          pendingSubmissionIntentKeys.delete(storageKey);
+          try { sessionStorage.removeItem(storageKey); } catch { /* Storage can be unavailable in private browsing. */ }
+          if (pendingSubmissionIntentStorageKey === storageKey) pendingSubmissionIntentStorageKey = '';
+        }
         submittedRunId = payload.id;
         runIdInput.value = payload.id;
         setOutputMetadata(payload.status || 'queued', payload.id);

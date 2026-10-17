@@ -21,13 +21,16 @@ export interface SoyuzQueuedRun {
   request: RunRequest;
 }
 
-export function parseSoyuzQueuedRun(value: unknown): SoyuzQueuedRun {
-  const envelope = QueuedRunEnvelopeSchema.parse(value);
-  if ('webhookConfig' in envelope.request || 'webhook_config' in envelope.request) {
+export function parseSoyuzRunRequest(value: unknown): RunRequest {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Soyuz run request must be an object');
+  }
+  const raw = value as Record<string, unknown>;
+  if ('webhookConfig' in raw || 'webhook_config' in raw) {
     throw new Error('Soyuz contract v1 does not support webhookConfig');
   }
-  rejectUnsupportedNestedOptions(envelope.request);
-  const request = RunRequestSchema.parse(envelope.request);
+  rejectUnsupportedNestedOptions(raw);
+  const request = RunRequestSchema.parse(raw);
   const knownRequestAliases = new Set([
     'repo_url', 'project_name', 'git_ref', 'task_prompt', 'changed_files_allowlist',
     'max_diff_bytes', 'validation_commands', 'auto_lint_cleanup', 'scouting_config',
@@ -35,11 +38,17 @@ export function parseSoyuzQueuedRun(value: unknown): SoyuzQueuedRun {
     'startup_check', 'startup_check_mode', 'webhook_config', 'idempotency_key',
     'timeout_seconds',
   ]);
-  const unsupportedFields = Object.keys(envelope.request)
+  const unsupportedFields = Object.keys(raw)
     .filter((key) => !(key in request) && !knownRequestAliases.has(key));
   if (unsupportedFields.length > 0) {
     throw new Error(`Soyuz run request contains unsupported Kaseki fields: ${unsupportedFields.join(', ')}`);
   }
+  return request;
+}
+
+export function parseSoyuzQueuedRun(value: unknown): SoyuzQueuedRun {
+  const envelope = QueuedRunEnvelopeSchema.parse(value);
+  const request = parseSoyuzRunRequest(envelope.request);
   return { ...envelope, request };
 }
 
@@ -106,6 +115,8 @@ export interface SoyuzWorkerRun {
   updatedAt: string;
   lastHeartbeatAt?: string | null;
   operationalHealth?: 'unknown' | 'healthy' | 'suspect_stalled';
+  origin?: { type: 'api_client' | 'kaseki' | 'mcp'; id: string };
+  retryOf?: string | null;
 }
 
 export interface CloudflarePulledMessage {

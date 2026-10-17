@@ -14,6 +14,7 @@ import { generateStartupHealthReport } from './kaseki-api/startup-health-reporte
 import { writeStartupHealthArtifacts } from './kaseki-api/startup-summary-artifact';
 import { evaluateTaskAdmission } from './task-admission';
 import { SoyuzAdapter } from './integrations/soyuz/SoyuzAdapter';
+import { SoyuzSubmissionClient } from './integrations/soyuz/SoyuzSubmissionClient';
 import {
   initSentry,
   sentryRequestHandler,
@@ -197,9 +198,13 @@ async function main(): Promise<void> {
   const soyuzAdapter = config.soyuz?.enabled
     ? new SoyuzAdapter(config, scheduler, evaluateTaskAdmission)
     : undefined;
+  const soyuzSubmissionClient = config.soyuz?.submissionEnabled
+    ? new SoyuzSubmissionClient(config.soyuz)
+    : undefined;
   soyuzAdapter?.start();
   logger.event('soyuz_adapter_configuration', {
     enabled: config.soyuz?.enabled ?? false,
+    submissionEnabled: config.soyuz?.submissionEnabled ?? false,
     workerId: config.soyuz?.enabled ? config.soyuz.workerId : undefined,
   });
   const bootstrapDurationMs = performance.now() - bootstrapStartTime;
@@ -282,7 +287,7 @@ async function main(): Promise<void> {
   app.use(createWebRouter());
 
   // Versioned public API. Root-level liveness/readiness probes remain available.
-  const apiRouter = createApiRouter(scheduler, config, idempotencyStore, preFlightValidator, artifactCache);
+  const apiRouter = createApiRouter(scheduler, config, idempotencyStore, preFlightValidator, artifactCache, evaluateTaskAdmission, soyuzSubmissionClient);
   app.use('/api/v1', apiRouter);
   app.get(['/health', '/ready'], apiRouter);
 

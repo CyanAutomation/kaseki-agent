@@ -126,6 +126,31 @@ describe('kaseki-api-config load configuration', () => {
     expect(config.storageMinFreeBytes).toBe(2 * 1024 ** 3);
   });
 
+  test('loads submission routing credentials independently from Queue consumption', () => {
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
+    (readHostSecret as jest.Mock).mockImplementation((name: string) => {
+      if (name === 'soyuz_submission_api_token') return 'submission-token-123456';
+      if (name === 'soyuz_worker_api_token') return 'worker-read-token-123456';
+      return null;
+    });
+    process.env.KASEKI_API_KEYS = 'test-key';
+    process.env.KASEKI_RESULTS_DIR = testDir;
+    process.env.SOYUZ_ENABLED = 'false';
+    process.env.SOYUZ_SUBMISSION_ENABLED = 'true';
+    process.env.SOYUZ_API_URL = 'https://soyuz.example.test';
+
+    const config = loadConfig();
+
+    expect(config.soyuz).toMatchObject({
+      enabled: false,
+      submissionEnabled: true,
+      apiUrl: 'https://soyuz.example.test',
+      submissionApiToken: 'submission-token-123456',
+      workerApiToken: 'worker-read-token-123456',
+      queueApiToken: '',
+    });
+  });
+
   test('rejects an admission minimum above the cleanup warning threshold', () => {
     process.env.KASEKI_API_KEYS = 'default-key';
     process.env.KASEKI_RESULTS_DIR = testDir;

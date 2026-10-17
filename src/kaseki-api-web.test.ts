@@ -352,18 +352,25 @@ describe('kaseki API web console behavior', () => {
     expectTextContains(document, '#response-summary', 'Weaving: In progress');
   });
 
-  test('flags degraded terminal evaluations and enables retry with diagnostics', async () => {
+  test('reuses the retry idempotency key after an uncertain response', async () => {
+    let retryAttempts = 0;
     const { document, calls } = await renderConsole({
       storedToken: 'token12345',
-      fetchHandler: routeResponses({
-        '/api/v1/runs': createJsonResponse({ runs: [{ id: 'kaseki-261', status: 'completed' }] }),
-        '/api/v1/runs/kaseki-261/status': createJsonResponse({
+      fetchHandler: (path, init) => {
+        if (path === '/api/v1/runs') return createJsonResponse({ runs: [{ id: 'kaseki-261', status: 'completed' }] });
+        if (path === '/api/v1/runs/kaseki-261/status') return createJsonResponse({
           id: 'kaseki-261', status: 'completed',
           goalCheck: { status: 'warning', warning: 'goal_check_artifact_missing', exitCode: 0 },
           runEvaluation: { status: 'warning', warning: 'run_evaluation_failed_exit_86', exitCode: 86 },
-        }),
-        '/api/v1/runs/kaseki-261/retry': createJsonResponse({ id: 'kaseki-262', status: 'queued' }, 202),
-      }, createJsonResponse({ status: 'ok' })),
+        });
+        if (path === '/api/v1/runs/kaseki-261/retry' && init?.method === 'POST') {
+          retryAttempts += 1;
+          return retryAttempts === 1
+            ? createJsonResponse({ title: 'Soyuz Retry Uncertain', status: 503, detail: 'Retry with the same idempotencyKey.' }, 503)
+            : createJsonResponse({ id: 'kaseki-262', status: 'queued' }, 202);
+        }
+        return createJsonResponse({ status: 'ok' });
+      },
     });
 
     await refreshAndSelectFirstRun(document);
@@ -373,7 +380,19 @@ describe('kaseki API web console behavior', () => {
     expect(getElement<HTMLButtonElement>(document, '#retry-run-btn').disabled).toBe(false);
 
     clickSelector(document, '#retry-run-btn');
-    await waitFor(() => expect(calls.some((call) => call.path === '/api/v1/runs/kaseki-261/retry')).toBe(true));
+    await waitFor(() => expect(retryAttempts).toBe(1));
+    await waitFor(() => expect(getElement<HTMLButtonElement>(document, '#retry-run-btn').disabled).toBe(false));
+    clickSelector(document, '#retry-run-btn');
+    await waitFor(() => expect(getElement<HTMLInputElement>(document, '#run-id').value).toBe('kaseki-262'));
+
+    const retryCalls = calls.filter((call) => call.path === '/api/v1/runs/kaseki-261/retry' && call.init?.method === 'POST');
+    expect(retryAttempts).toBe(2);
+    expect(retryCalls).toHaveLength(2);
+    const firstKey = JSON.parse(String(retryCalls[0].init?.body || '{}')).idempotencyKey;
+    const secondKey = JSON.parse(String(retryCalls[1].init?.body || '{}')).idempotencyKey;
+    expect(firstKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    expect(secondKey).toBe(firstKey);
+    expect((retryCalls[0].init?.headers as Record<string, string>)['Idempotency-Key']).toBe(firstKey);
   });
 
   test('prefers durable structured progress events over an inferred Docker-tail status', async () => {
@@ -1153,6 +1172,77 @@ describe('kaseki API web console behavior', () => {
     expect(submitCall).toBeDefined();
     const submitBody = JSON.parse(String(submitCall?.init?.body || '{}')) as { idempotencyKey?: string };
     expect(submitBody.idempotencyKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  });
+
+  test('shows trusted Soyuz provenance and the local diagnostic ID in run details', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: routeResponses({
+        '/api/v1/validate': createJsonResponse({ isValid: true, checks: [] }),
+        '/api/v1/runs': createJsonResponse({
+          id: '11111111-1111-4111-8111-111111111111',
+          localRunId: 'kaseki-777',
+          status: 'queued',
+          createdAt: '2026-10-17T21:30:00.000Z',
+          origin: { type: 'kaseki', id: 'kaseki-prod' },
+          retryOf: '22222222-2222-4222-8222-222222222222',
+        }, 202),
+      }, createJsonResponse({ runs: [] })),
+    });
+
+    inputSelector(document, '#repo-url', 'https://github.com/CyanAutomation/kaseki-agent');
+    inputSelector(document, '#task-prompt', 'Inspect the repository and report stage naming drift.');
+    clickSelector(document, '#validate');
+    await waitFor(() => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
+    clickSelector(document, '#submit');
+    await waitFor(() => expect(getText(document, '#response-summary')).toContain('kaseki-prod'));
+
+    expectTextContains(document, '#response-summary', 'Origin');
+    expectTextContains(document, '#response-summary', 'Retry of');
+    expectTextContains(document, '#response-summary', 'Local diagnostic ID');
+    expectTextContains(document, '#response-summary', 'kaseki-777');
+  });
+
+  test('reuses a pending idempotency key when the same request is submitted after an uncertain response', async () => {
+    let submissionAttempts = 0;
+    const { document, calls } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path, init) => {
+        if (path === '/api/v1/validate') return createJsonResponse({ isValid: true, checks: [] });
+        if (path === '/api/v1/runs' && init?.method === 'POST') {
+          submissionAttempts += 1;
+          if (submissionAttempts === 1) {
+            return createJsonResponse({
+              title: 'Soyuz Submission Uncertain',
+              status: 503,
+              detail: 'Retry with the same Idempotency-Key.',
+              retryWithSameIdempotencyKey: true,
+            }, 503);
+          }
+          return createJsonResponse({ id: '11111111-1111-4111-8111-111111111111', status: 'queued' }, 202);
+        }
+        if (path.endsWith('/status')) return createJsonResponse({ id: '11111111-1111-4111-8111-111111111111', status: 'running' });
+        return createJsonResponse({ runs: [] });
+      },
+    });
+
+    inputSelector(document, '#repo-url', 'https://github.com/CyanAutomation/kaseki-agent');
+    inputSelector(document, '#task-prompt', 'Inspect the repository and report stage naming drift.');
+    clickSelector(document, '#validate');
+    await waitFor(() => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
+
+    clickSelector(document, '#submit');
+    await waitFor(() => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
+    clickSelector(document, '#submit');
+    await waitFor(() => expect(getElement<HTMLInputElement>(document, '#run-id').value).toBe('11111111-1111-4111-8111-111111111111'));
+
+    const submissionBodies = calls
+      .filter((call) => call.path === '/api/v1/runs' && call.init?.method === 'POST')
+      .map((call) => JSON.parse(String(call.init?.body || '{}')) as { idempotencyKey?: string });
+    expect(submissionAttempts).toBe(2);
+    expect(submissionBodies).toHaveLength(2);
+    expect(submissionBodies[0].idempotencyKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    expect(submissionBodies[1].idempotencyKey).toBe(submissionBodies[0].idempotencyKey);
   });
 
   test('updates the visible status when the first run poll is already terminal', async () => {
