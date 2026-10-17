@@ -68,8 +68,10 @@ services:
       # deliberately left unpriced instead of receiving another model's rate.
       # The default catalog covers the current DeepSeek V4 Flash deployment.
       KASEKI_LLM_PRICING_JSON: '${KASEKI_LLM_PRICING_JSON:-{"deepseek/deepseek-v4-flash":{"input_usd_per_mtoken":0.14,"cache_read_usd_per_mtoken":0.0028,"cache_write_usd_per_mtoken":0,"output_usd_per_mtoken":0.28},"qwen/qwen3.7-flash":{"input_usd_per_mtoken":0.03,"cache_read_usd_per_mtoken":0.006,"cache_write_usd_per_mtoken":0.038,"output_usd_per_mtoken":0.13,"tiers":[{"min_context_tokens":32000,"input_usd_per_mtoken":0.1,"cache_read_usd_per_mtoken":0.02,"cache_write_usd_per_mtoken":0.125,"output_usd_per_mtoken":0.4},{"min_context_tokens":256000,"input_usd_per_mtoken":0.2,"cache_read_usd_per_mtoken":0.04,"cache_write_usd_per_mtoken":0.25,"output_usd_per_mtoken":0.8}]}}}'
-      GITHUB_APP_ID_FILE: /run/secrets/kaseki/github_app_id
-      GITHUB_APP_CLIENT_ID_FILE: /run/secrets/kaseki/github_app_client_id
+      # GitHub App IDs identify the app and are public configuration. Set them
+      # in .env or the shell environment; only the signing key stays secret.
+      GITHUB_APP_ID: "${GITHUB_APP_ID:-}"
+      GITHUB_APP_CLIENT_ID: "${GITHUB_APP_CLIENT_ID:-}"
       GITHUB_APP_PRIVATE_KEY_FILE: /run/secrets/kaseki/github_app_private_key
     volumes:
       # /agents: Shared workspace for template, runs, results, and cache

@@ -1,7 +1,5 @@
 export const INLINE_SECRET_ENV_VARS = [
   'OPENROUTER_API_KEY',
-  'GITHUB_APP_ID',
-  'GITHUB_APP_CLIENT_ID',
   'GITHUB_APP_PRIVATE_KEY',
 ] as const;
 

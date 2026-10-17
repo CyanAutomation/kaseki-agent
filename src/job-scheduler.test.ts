@@ -406,6 +406,8 @@ describe('JobScheduler timeout lifecycle', () => {
     secretValueCache.clear();
     delete process.env.KASEKI_AUTO_LINT_CLEANUP;
     delete process.env.KASEKI_AUTO_LINT_CLEANUP_COMMANDS;
+    delete process.env.GITHUB_APP_ID;
+    delete process.env.GITHUB_APP_CLIENT_ID;
   });
 
   afterEach(async () => {
@@ -416,6 +418,8 @@ describe('JobScheduler timeout lifecycle', () => {
     delete process.env.GITHUB_APP_ID_FILE;
     delete process.env.GITHUB_APP_CLIENT_ID_FILE;
     delete process.env.GITHUB_APP_PRIVATE_KEY_FILE;
+    delete process.env.GITHUB_APP_ID;
+    delete process.env.GITHUB_APP_CLIENT_ID;
     jest.useRealTimers();
     await cleanupWebhookManagers();
     cleanupResultsDirs();
@@ -861,6 +865,46 @@ describe('JobScheduler timeout lifecycle', () => {
       );
     } finally {
       // Cleanup handled by afterEach
+    }
+  });
+
+  test('forwards public GitHub App IDs without adding legacy ID file paths', async () => {
+    process.env.GITHUB_APP_ID = '12345';
+    process.env.GITHUB_APP_CLIENT_ID = 'Iv123client';
+    const secretsDir = fs.mkdtempSync('/tmp/kaseki-job-public-github-ids-');
+    tempDirs.push(secretsDir);
+    const { getSecretFilePath } = jest.mocked(hostSecretsReader);
+    (getSecretFilePath as jest.Mock).mockImplementation((name: string) => path.join(secretsDir, name));
+    fs.writeFileSync(path.join(secretsDir, 'github_app_id'), 'legacy-id');
+    fs.writeFileSync(path.join(secretsDir, 'github_app_client_id'), 'legacy-client-id');
+    fs.writeFileSync(path.join(secretsDir, 'github_app_private_key'), 'private-key');
+
+    const resultsDir = createResultsDir();
+    const scheduler = new JobScheduler({
+      port: 3000,
+      apiKeys: [],
+      resultsDir,
+      maxConcurrentRuns: 0,
+      defaultTaskMode: 'patch',
+      maxDiffBytes: 400000,
+      agentTimeoutSeconds: 30,
+      logLevel: 'info',
+    }, createMockWebhookManager());
+
+    try {
+      const job = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+      const buildEnvironment = (scheduler as unknown as {
+        buildProcessEnvironment: (job: Job, timeoutSeconds: number) => NodeJS.ProcessEnv;
+      }).buildProcessEnvironment;
+      const env = buildEnvironment.call(scheduler, job, 30);
+
+      expect(env.GITHUB_APP_ID).toBe('12345');
+      expect(env.GITHUB_APP_CLIENT_ID).toBe('Iv123client');
+      expect(env.GITHUB_APP_ID_FILE).toBeUndefined();
+      expect(env.GITHUB_APP_CLIENT_ID_FILE).toBeUndefined();
+      expect(env.GITHUB_APP_PRIVATE_KEY_FILE).toBe(path.join(secretsDir, 'github_app_private_key'));
+    } finally {
+      await scheduler.shutdown();
     }
   });
 

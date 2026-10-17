@@ -10,6 +10,7 @@ describe('ConfigManager', () => {
   let configManager: ConfigManager;
   let originalInlineSecretEnv: Record<string, string | undefined>;
   let originalCleanupEnv: Record<string, string | undefined>;
+  let originalGitHubAppEnv: Record<string, string | undefined>;
 
   beforeEach(async () => {
     originalInlineSecretEnv = snapshotEnv(INLINE_SECRET_ENV_VARS);
@@ -18,12 +19,14 @@ describe('ConfigManager', () => {
       'KASEKI_AUTO_LINT_CLEANUP_COMMANDS',
       'KASEKI_PROVIDER',
     ]);
+    originalGitHubAppEnv = snapshotEnv(['GITHUB_APP_ID', 'GITHUB_APP_CLIENT_ID']);
     clearEnv(INLINE_SECRET_ENV_VARS);
     clearEnv([
       'KASEKI_AUTO_LINT_CLEANUP',
       'KASEKI_AUTO_LINT_CLEANUP_COMMANDS',
       'KASEKI_PROVIDER',
     ]);
+    clearEnv(['GITHUB_APP_ID', 'GITHUB_APP_CLIENT_ID']);
 
     configManager = new ConfigManager();
     // Load to initialize config with defaults
@@ -33,6 +36,7 @@ describe('ConfigManager', () => {
   afterEach(() => {
     restoreEnv(originalInlineSecretEnv);
     restoreEnv(originalCleanupEnv);
+    restoreEnv(originalGitHubAppEnv);
   });
 
   test('defaults provider to gateway', () => {
@@ -88,6 +92,17 @@ describe('ConfigManager', () => {
     await expect(manager.load()).rejects.toThrow(
       'Inline secret variable OPENROUTER_API_KEY is not allowed.'
     );
+  });
+
+  test('accepts GitHub App identifiers as non-secret environment configuration', async () => {
+    process.env.GITHUB_APP_ID = '123456';
+    process.env.GITHUB_APP_CLIENT_ID = 'Iv1.public-client-id';
+
+    const manager = new ConfigManager();
+    await manager.load();
+
+    expect(manager.get('auth.github_app_id')).toBe('123456');
+    expect(manager.get('auth.github_app_client_id')).toBe('Iv1.public-client-id');
   });
 
   describe('validateAuthPaths', () => {

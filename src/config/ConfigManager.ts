@@ -28,6 +28,8 @@ const ConfigSchema = z.object({
   // Authentication
   auth: z.object({
     openrouter_api_key_file: z.string().optional(),
+    github_app_id: z.string().optional(),
+    github_app_client_id: z.string().optional(),
     github_app_id_file: z.string().optional(),
     github_app_client_id_file: z.string().optional(),
     github_app_private_key_file: z.string().optional(),
@@ -282,14 +284,12 @@ export class ConfigManager {
 
   /**
    * Apply environment variables to config (lowest priority after files)
-   * Only accepts *_FILE variables for provider/GitHub credentials; Kaseki API client keys are allowed.
+   * Public GitHub App identifiers are configuration values. Signing and provider credentials remain file-backed.
    */
   private applyEnvironmentVariables(): void {
     // Check for inline secret variables and reject them
     const inlineSecrets = [
       'OPENROUTER_API_KEY',
-      'GITHUB_APP_ID',
-      'GITHUB_APP_CLIENT_ID',
       'GITHUB_APP_PRIVATE_KEY',
     ];
     for (const secretVar of inlineSecrets) {
@@ -303,10 +303,18 @@ export class ConfigManager {
     }
 
     const envMap: Record<string, (value: string) => any> = {
-      // Auth - only *_FILE variables allowed
+      // Auth - provider and private-key credentials use files; App IDs are public configuration.
       OPENROUTER_API_KEY_FILE: (v) => {
         if (!this.config.auth) this.config.auth = {};
         this.config.auth.openrouter_api_key_file = v;
+      },
+      GITHUB_APP_ID: (v) => {
+        if (!this.config.auth) this.config.auth = {};
+        this.config.auth.github_app_id = v.trim();
+      },
+      GITHUB_APP_CLIENT_ID: (v) => {
+        if (!this.config.auth) this.config.auth = {};
+        this.config.auth.github_app_client_id = v.trim();
       },
       GITHUB_APP_ID_FILE: (v) => {
         if (!this.config.auth) this.config.auth = {};

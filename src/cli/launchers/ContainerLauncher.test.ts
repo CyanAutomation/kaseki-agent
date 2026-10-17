@@ -15,6 +15,8 @@ describe('buildDockerArgs', () => {
       dockerGid: '985',
       gatewayUrl: 'https://gateway.example/v1',
       gatewayModel: 'vendor/model',
+      githubAppId: '123456',
+      githubAppClientId: 'Iv1.public-client-id',
     });
     const joined = args.join('\n');
 
@@ -23,6 +25,10 @@ describe('buildDockerArgs', () => {
     expect(joined).toContain('LLM_GATEWAY_MODEL=vendor/model');
     expect(joined).toContain('KASEKI_API_MAX_CONCURRENT_RUNS=1');
     expect(joined).toContain('/home/pi/secrets:/run/secrets/kaseki:ro');
+    expect(joined).toContain('GITHUB_APP_ID=123456');
+    expect(joined).toContain('GITHUB_APP_CLIENT_ID=Iv1.public-client-id');
+    expect(joined).not.toContain('GITHUB_APP_ID_FILE=/run/secrets/kaseki/github_app_id');
+    expect(joined).not.toContain('GITHUB_APP_CLIENT_ID_FILE=/run/secrets/kaseki/github_app_client_id');
     expect(joined).not.toContain('KASEKI_API_KEYS=');
   });
 
@@ -49,7 +55,9 @@ describe('buildDockerArgs', () => {
     });
 
     it('does not delete an existing container before attempting to run', () => {
-      const configManager = { get: jest.fn(() => 'kaseki:test') };
+      const configManager = {
+        get: jest.fn((key: string, defaultValue = '') => key === 'docker.image' ? 'kaseki:test' : defaultValue),
+      };
       const launcher = new ContainerLauncher(configManager as any);
 
       expect(launcher.launch()).toEqual({ ok: true });

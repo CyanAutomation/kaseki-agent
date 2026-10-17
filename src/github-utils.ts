@@ -63,6 +63,11 @@ interface ParsedGitHubUrl {
   error?: string;
 }
 
+/** Resolve the public App ID from configuration, with a legacy file fallback. */
+export function resolveGitHubAppId(overrideAppId?: string): string | null {
+  return overrideAppId?.trim() || process.env.GITHUB_APP_ID?.trim() || readHostSecret('github_app_id');
+}
+
 function isTransientGitHubError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /timed out|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|socket hang up|\b429\b|\b5\d\d\b/i.test(message);
@@ -352,9 +357,8 @@ async function getAccessToken(
 /**
  * Generate a GitHub App access token
  *
- * Loads GitHub App credentials from host secrets:
- * - github_app_id
- * - github_app_private_key
+ * Loads the public GitHub App ID from environment/config or a legacy file and
+ * the signing key from its host secret file.
  *
  * Returns token, expires_at, and error fields
  */
@@ -365,10 +369,10 @@ export async function generateGitHubAppToken(
   overridePrivateKey?: string
 ): Promise<TokenResult> {
   try {
-    const appId = overrideAppId || readHostSecret('github_app_id');
+    const appId = resolveGitHubAppId(overrideAppId);
     if (!appId) {
       return {
-        error: 'GitHub App ID not found. Configure GITHUB_APP_ID_FILE or .kaseki/secrets/github_app_id',
+        error: 'GitHub App ID not found. Set GITHUB_APP_ID or use the legacy GITHUB_APP_ID_FILE configuration.',
       };
     }
 

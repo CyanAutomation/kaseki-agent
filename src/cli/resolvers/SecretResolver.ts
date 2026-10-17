@@ -102,8 +102,12 @@ export class SecretResolver {
       }
     };
     show('LLM Gateway key     ', secrets.llmGatewayKeyFile);
-    show('GitHub App ID       ', secrets.githubAppIdFile);
-    show('GitHub App Client ID', secrets.githubAppClientIdFile);
+    show('GitHub App ID       ', process.env.GITHUB_APP_ID?.trim()
+      ? { filePath: '', source: '$GITHUB_APP_ID' }
+      : secrets.githubAppIdFile);
+    show('GitHub App Client ID', process.env.GITHUB_APP_CLIENT_ID?.trim()
+      ? { filePath: '', source: '$GITHUB_APP_CLIENT_ID' }
+      : secrets.githubAppClientIdFile);
     show('GitHub App key      ', secrets.githubAppPrivateKeyFile);
     show('Kaseki API keys     ', secrets.kasekiApiKeysFile);
   }
