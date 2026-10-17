@@ -136,6 +136,7 @@ export const RunScorecardSchema = z.object({
   schema_version: z.string().min(1),
   rubric_version: z.string().min(1),
   run_id: z.string().min(1),
+  local_run_id: z.string().min(1).optional(),
   started_at: z.string().datetime().nullable(),
   ended_at: z.string().datetime().nullable(),
   scored_at: z.string().datetime(),

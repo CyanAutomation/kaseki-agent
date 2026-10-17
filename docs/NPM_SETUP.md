@@ -139,6 +139,8 @@ kaseki-agent run https://github.com/your-org/your-repo main \
 
 `run` submits `repoUrl`, `gitRef`, and `taskPrompt` to `POST /api/v1/runs`, then prints the returned run ID and status URL.
 
+When a submission result is uncertain, retry the same request with the same UUID idempotency key. The CLI prints the key after a failed request and accepts `--idempotency-key=<UUID>` to reuse it. Soyuz-routed responses use the Soyuz UUID as the run ID; older `kaseki-N` IDs remain accepted by lookup commands.
+
 ### `list` — list API-known runs
 
 ```bash

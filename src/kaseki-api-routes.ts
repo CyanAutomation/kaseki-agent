@@ -44,6 +44,9 @@ import { evaluateTaskAdmission, TASK_ADMISSION_EXIT_CODE, type TaskAdmissionEval
 import { ApiAccessController } from './api-access-control';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import { getStorageCapacityError, storageErrorFields } from './storage-capacity';
+import { SoyuzApiError } from './integrations/soyuz/SoyuzApiClient';
+import { SoyuzSubmissionClient, normalizeSoyuzRunStatus, type SoyuzSubmittedRun } from './integrations/soyuz/SoyuzSubmissionClient';
+import { parseSoyuzRunRequest } from './integrations/soyuz/contracts';
 
 function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
   if (!remoteAddress) {
@@ -92,17 +95,36 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
 
 function buildRunResponse(job: Job, cached = false): RunResponse {
   return {
-    id: job.id,
+    id: job.soyuz?.externalRunId ?? job.id,
+    ...(job.soyuz ? { localRunId: job.id } : {}),
     status: job.status,
     createdAt: job.createdAt.toISOString(),
     correlationId: job.correlationId,
     requestId: job.requestId,
     projectName: job.request?.projectName,
+    origin: job.soyuz?.origin,
+    retryOf: job.soyuz?.retryOf ?? undefined,
     cached: cached || undefined,
     completedAt: job.completedAt?.toISOString(),
     exitCode: job.exitCode,
     failureClass: job.failureClass,
     error: job.error,
+  };
+}
+
+function buildSoyuzRunResponse(run: SoyuzSubmittedRun, request?: RunRequest, retryOf?: string): RunResponse {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(run.id)) {
+    throw new Error('Soyuz returned an invalid canonical run ID');
+  }
+  return {
+    id: run.id,
+    status: normalizeSoyuzRunStatus(run.status),
+    createdAt: run.createdAt,
+    correlationId: run.correlationId,
+    requestId: run.requestId,
+    projectName: request?.projectName,
+    origin: run.origin,
+    ...((retryOf ?? run.retryOf) ? { retryOf: retryOf ?? run.retryOf ?? undefined } : {}),
   };
 }
 
@@ -120,6 +142,7 @@ export function createApiRouter(
     maxFileBytes: config.artifactCacheMaxFileBytes,
   }),
   taskAdmissionEvaluator: TaskAdmissionEvaluator = evaluateTaskAdmission,
+  submissionClient?: SoyuzSubmissionClient,
 ): Router {
   const router = Router();
   const logger = createEventLogger('api');
@@ -141,11 +164,11 @@ export function createApiRouter(
    */
   router.use(createGatewayTestRoutes());
   registerApiInfoRoutes(router, config, logger, apiAccess);
-  registerRunRoutes(router, scheduler, idempotencyStore, taskAdmissionEvaluator, logger);
+  registerRunRoutes(router, scheduler, idempotencyStore, taskAdmissionEvaluator, logger, submissionClient);
   registerValidationRoute(router, preFlightValidator, taskAdmissionEvaluator, logger);
 
   // Register domain-focused route modules
-  router.use(createStatusRoutes(scheduler, config, artifactCache));
+  router.use(createStatusRoutes(scheduler, config, artifactCache, submissionClient));
   router.use(createLogRoutes(scheduler, config, artifactCache));
   router.use(createArtifactRoutes(scheduler, config, artifactCache));
   router.use(createScorecardRoutes(scheduler, artifactCache));
@@ -456,6 +479,7 @@ function registerRunRoutes(
   idempotencyStore: IdempotencyStore,
   taskAdmissionEvaluator: TaskAdmissionEvaluator,
   logger: ReturnType<typeof createEventLogger>,
+  submissionClient?: SoyuzSubmissionClient,
 ): void {
   /**
    * Extract: Validate publish mode has proper authentication.
@@ -597,6 +621,7 @@ function registerRunRoutes(
     validateTemplateReadiness,
     normalizeTaskMode,
     handleIdempotency,
+    submissionClient,
   });
   registerRunRetryRoute(router, {
     scheduler,
@@ -607,6 +632,7 @@ function registerRunRoutes(
     validateTemplateReadiness,
     normalizeTaskMode,
     handleIdempotency,
+    submissionClient,
   });
 }
 
@@ -620,6 +646,7 @@ interface RunRouteSharedDependencies {
   idempotencyStore: IdempotencyStore;
   taskAdmissionEvaluator: TaskAdmissionEvaluator;
   logger: ReturnType<typeof createEventLogger>;
+  submissionClient?: SoyuzSubmissionClient;
 }
 
 interface RunRouteHelpers {
@@ -646,20 +673,36 @@ function registerRunSubmissionRoute(
     validateTemplateReadiness,
     normalizeTaskMode,
     handleIdempotency,
+    submissionClient,
   } = dependencies;
   /**
    * POST /api/v1/runs - Trigger a new kaseki run.
    */
   router.post('/runs', async (req: Request, res: Response) => {
+    let idempotencyKeyForError: string | undefined;
     try {
-      // Validate request body
-      const runRequest = RunRequestSchema.parse({
+      // Validate the raw request before Zod strips unknown fields. Soyuz's
+      // contract must reject webhook secrets instead of silently dropping them.
+      const requestInput = {
         ...req.body,
         startupCheck:
           req.query.dryRun === 'true' || req.query.startupCheck === 'true'
             ? true
             : req.body?.startupCheck,
-      });
+      };
+      let runRequest: RunRequest;
+      if (submissionClient) {
+        try {
+          runRequest = parseSoyuzRunRequest(requestInput);
+        } catch (error) {
+          if (error instanceof Error && !('errors' in error)) {
+            return sendErrorResponse(res, 400, 'Bad Request', error.message);
+          }
+          throw error;
+        }
+      } else {
+        runRequest = RunRequestSchema.parse(requestInput);
+      }
 
       const headerIdempotencyKey = req.get('Idempotency-Key');
       if (headerIdempotencyKey && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(headerIdempotencyKey)) {
@@ -669,6 +712,7 @@ function registerRunSubmissionRoute(
         return sendErrorResponse(res, 400, 'Bad Request', 'Idempotency-Key header must match the idempotencyKey body field when both are provided');
       }
       const idempotencyKey = headerIdempotencyKey || runRequest.idempotencyKey;
+      idempotencyKeyForError = idempotencyKey;
       if (!idempotencyKey) {
         return sendErrorResponse(res, 400, 'Bad Request', 'A caller-provided Idempotency-Key header or idempotencyKey body field is required');
       }
@@ -735,11 +779,20 @@ function registerRunSubmissionRoute(
           });
 
           try {
-            const job = admission.routingHints
-              ? await scheduler.submitJob(runRequest, admission.routingHints)
-              : await scheduler.submitJob(runRequest);
-            job.idempotencyKey = idempotencyKey;
-            const response = buildRunResponse(job);
+            let response: RunResponse;
+            if (submissionClient) {
+              const remoteRun = await submissionClient.createRun(
+                runRequest as unknown as Record<string, unknown>,
+                idempotencyKey,
+              );
+              response = buildSoyuzRunResponse(remoteRun, runRequest);
+            } else {
+              const job = admission.routingHints
+                ? await scheduler.submitJob(runRequest, admission.routingHints)
+                : await scheduler.submitJob(runRequest);
+              job.idempotencyKey = idempotencyKey;
+              response = buildRunResponse(job);
+            }
             await idempotencyStore.storeResponse(
               idempotencyKey,
               response,
@@ -747,10 +800,11 @@ function registerRunSubmissionRoute(
             );
             return { state: 'submitted' as const, response };
           } catch (error) {
-            await idempotencyStore.releasePendingClaim(
-              idempotencyKey,
-              requestFingerprint,
-            );
+            // A network failure or 5xx may happen after Soyuz has committed the
+            // run. Keep the durable intent so a retry reuses this same key.
+            if (!submissionClient || (error instanceof SoyuzApiError && error.status < 500)) {
+              await idempotencyStore.releasePendingClaim(idempotencyKey, requestFingerprint);
+            }
             throw error;
           }
         },
@@ -808,6 +862,19 @@ function registerRunSubmissionRoute(
         });
         return sendErrorResponse(res, 400, 'Bad Request', details);
       }
+      if (err instanceof SoyuzApiError) {
+        return sendErrorResponse(res, err.status < 500 ? err.status : 503, 'Soyuz Submission Failed', err.message, {
+          code: err.code,
+          idempotencyKey: idempotencyKeyForError,
+          retryWithSameIdempotencyKey: err.status >= 500,
+        });
+      }
+      if (submissionClient) {
+        return sendErrorResponse(res, 503, 'Soyuz Submission Uncertain', 'Soyuz may have accepted this run. Retry the same request with the same Idempotency-Key.', {
+          idempotencyKey: idempotencyKeyForError,
+          retryWithSameIdempotencyKey: true,
+        });
+      }
       logger.event('api_error', {
         path: '/runs',
         error: (err as Error).message,
@@ -830,25 +897,85 @@ function registerRunRetryRoute(
     validateTemplateReadiness,
     normalizeTaskMode,
     handleIdempotency,
+    submissionClient,
   } = dependencies;
   /**
    * Retry only a terminal run. The caller must supply a fresh UUID key; a
    * replay of that key returns the same newly-created run without enqueueing twice.
    */
   router.post('/runs/:id/retry', async (req: Request, res: Response) => {
-    const source = scheduler.getJob(req.params.id) ?? await scheduler.getJobIncludingHistory(req.params.id);
-    if (!source) {
-      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
-    }
-    if (source.status !== 'completed' && source.status !== 'failed') {
-      return sendErrorResponse(res, 409, 'Conflict', 'Only completed or failed runs can be retried');
-    }
+    const source = scheduler.getJob(req.params.id) ?? (
+      typeof scheduler.getJobIncludingHistory === 'function'
+        ? await scheduler.getJobIncludingHistory(req.params.id)
+        : undefined
+    );
     const idempotencyKey = req.body?.idempotencyKey;
     if (
       typeof idempotencyKey !== 'string' ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)
     ) {
       return sendErrorResponse(res, 400, 'Bad Request', 'A UUID idempotencyKey is required for retries');
+    }
+    const canResolveCanonicalId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id);
+    if (submissionClient && (source?.soyuz || (!source && canResolveCanonicalId))) {
+      const canonicalSourceId = source?.soyuz?.externalRunId ?? req.params.id;
+      try {
+        const fingerprint = buildRequestFingerprint({ retryOf: canonicalSourceId, idempotencyKey });
+        const result = await idempotencyStore.runWithIdempotencyLock(async () => {
+          const existing = await handleIdempotency(idempotencyKey, fingerprint);
+          if (existing.state !== 'fresh') return existing;
+          let remoteSource;
+          try {
+            remoteSource = await submissionClient.getWorkerRun(canonicalSourceId);
+          } catch (error) {
+            // The source-state read is non-mutating, so no uncertain retry exists yet.
+            await idempotencyStore.releasePendingClaim(idempotencyKey, fingerprint);
+            throw error;
+          }
+          if (!['completed', 'failed', 'cancelled', 'admission_failed'].includes(remoteSource.status)) {
+            await idempotencyStore.releasePendingClaim(idempotencyKey, fingerprint);
+            return { state: 'not_retryable' as const };
+          }
+          try {
+            const remoteRun = await submissionClient.retryRun(canonicalSourceId, idempotencyKey);
+            const response = buildSoyuzRunResponse(remoteRun, undefined, canonicalSourceId);
+            await idempotencyStore.storeResponse(idempotencyKey, response, fingerprint);
+            return { state: 'submitted' as const, response };
+          } catch (error) {
+            if (error instanceof SoyuzApiError && error.status < 500) {
+              await idempotencyStore.releasePendingClaim(idempotencyKey, fingerprint);
+            }
+            throw error;
+          }
+        });
+        if (result.state === 'pending') {
+          return sendErrorResponse(res, 409, 'Conflict', 'Retry with this idempotency key is already being processed');
+        }
+        if (result.state === 'not_retryable') {
+          return sendErrorResponse(res, 409, 'Conflict', 'Only terminal Soyuz runs can be retried');
+        }
+        return res.status(result.state === 'fulfilled' ? 200 : 202).json(result.state === 'fulfilled'
+          ? result.response
+          : { ...result.response, retryPolicy: 'Terminal runs only; reuse this idempotencyKey to replay safely.' });
+      } catch (error) {
+        if (error instanceof SoyuzApiError) {
+          return sendErrorResponse(res, error.status < 500 ? error.status : 503, 'Soyuz Retry Failed', error.message, {
+            code: error.code,
+            idempotencyKey,
+            retryWithSameIdempotencyKey: error.status >= 500,
+          });
+        }
+        return sendErrorResponse(res, 503, 'Soyuz Retry Uncertain', 'Soyuz may have accepted this retry. Retry with the same idempotencyKey.', {
+          idempotencyKey,
+          retryWithSameIdempotencyKey: true,
+        });
+      }
+    }
+    if (!source) {
+      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
+    }
+    if (!['completed', 'failed', 'cancelled', 'admission_failed'].includes(source.status)) {
+      return sendErrorResponse(res, 409, 'Conflict', 'Only terminal runs can be retried');
     }
     const retryRequest: RunRequest = { ...source.request, idempotencyKey };
     const publishMode = retryRequest.publishMode || 'pr';

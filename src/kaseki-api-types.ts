@@ -211,12 +211,15 @@ export type RunRequest = z.infer<typeof RunRequestSchema>;
  * Response after triggering a run.
  */
 export interface RunResponse {
-  id: string; // kaseki-N instance ID
+  id: string; // canonical Soyuz UUID when remotely admitted, otherwise kaseki-N
+  /** Local Kaseki ID retained for diagnostics when `id` is a Soyuz UUID. */
+  localRunId?: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
   createdAt: string; // ISO 8601
   correlationId?: string; // Request correlation ID
   requestId?: string; // Unique request ID
   projectName?: string; // Caller-provided project identity
+  origin?: { type: 'api_client' | 'kaseki' | 'mcp'; id: string };
   cached?: boolean; // True when returned from an idempotency replay
   completedAt?: string; // ISO 8601 when replaying a terminal run
   exitCode?: number;
@@ -230,6 +233,7 @@ export interface RunResponse {
     retryCount: number;
   };
   error?: string;
+  retryOf?: string;
 }
 
 /**
@@ -280,8 +284,15 @@ export interface StructuredProgress {
  */
 export interface StatusResponse {
   id: string;
+  /** Local Kaseki ID retained for diagnostics when `id` is a Soyuz UUID. */
+  localRunId?: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
   projectName?: string;
+  origin?: { type: 'api_client' | 'kaseki' | 'mcp'; id: string };
+  retryOf?: string;
+  updatedAt?: string;
+  cancelRequestedAt?: string;
+  operationalHealth?: 'unknown' | 'healthy' | 'suspect_stalled';
   lifecyclePhase?: 'queued' | 'executing' | 'finalizing' | 'terminal';
   cancellable?: boolean;
   attempt?: {
@@ -513,6 +524,7 @@ export type ScorecardResponse = RunScorecard;
 
 export interface ScorecardSummary {
   runId: string;
+  localRunId?: string;
   lifecycleStatus: RunScorecard['lifecycle_status'];
   overallScore: number;
   grade: RunScorecard['grade'];
@@ -548,6 +560,7 @@ export interface RunArtifactFileMetadata {
 
 export interface RunArtifactsResponse {
   id: string;
+  localRunId?: string;
   runStatus: 'queued' | 'running' | 'completed' | 'failed';
   exitCode?: number;
   artifacts: RunArtifactFileMetadata[];
@@ -561,6 +574,9 @@ export interface RunArtifactsResponse {
  */
 export interface AnalysisResponse {
   id: string;
+  localRunId?: string;
+  origin?: { type: 'api_client' | 'kaseki' | 'mcp'; id: string };
+  retryOf?: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
   createdAt: string;
   completedAt?: string;
@@ -601,6 +617,7 @@ export interface AnalysisResponse {
 export interface RunsListResponse {
   runs: Array<{
     id: string;
+    localRunId?: string;
     status: 'queued' | 'running' | 'completed' | 'failed';
     createdAt: string;
     completedAt?: string;
@@ -618,6 +635,8 @@ export interface RunsListResponse {
     correlationId?: string;
     requestId?: string;
     projectName?: string;
+    origin?: { type: 'api_client' | 'kaseki' | 'mcp'; id: string };
+    retryOf?: string;
   }>;
   total: number;
   hasMore: boolean;
@@ -738,6 +757,8 @@ export interface Job {
   /** Soyuz ownership metadata. Present only for runs received through the optional adapter. */
   soyuz?: {
     externalRunId: string;
+    origin?: { type: 'api_client' | 'kaseki' | 'mcp'; id: string };
+    retryOf?: string | null;
     workerId: string;
     contractVersion: '1';
     /** Stable identifier of the accepted Soyuz claim attempt, used to fence stale callbacks. */

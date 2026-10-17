@@ -7,11 +7,26 @@ import { JobScheduler } from '../job-scheduler';
 import { Job } from '../kaseki-api-types';
 import { sendErrorResponse } from './response-helpers';
 
+/** Public run identity prefers Soyuz when a local job has been mapped to it. */
+export function publicRunId(job: Pick<Job, 'id' | 'soyuz'>): string {
+  return job.soyuz?.externalRunId ?? job.id;
+}
+
+export function localRunId(job: Pick<Job, 'id' | 'soyuz'>): string | undefined {
+  return job.soyuz ? job.id : undefined;
+}
+
 /** Prefer durable history when supported, with a fallback for lightweight schedulers. */
 export async function findRunJob(scheduler: JobScheduler, jobId: string): Promise<Job | undefined> {
-  return typeof scheduler.getJobIncludingHistory === 'function'
+  const direct = typeof scheduler.getJobIncludingHistory === 'function'
     ? scheduler.getJobIncludingHistory(jobId)
     : scheduler.getJob(jobId);
+  const job = await direct;
+  if (job) return job;
+  const normalizedId = jobId.toLowerCase();
+  const jobs = typeof scheduler.listAllJobs === 'function' ? await scheduler.listAllJobs() : scheduler.listJobs();
+  return jobs.find((candidate) => candidate.id.toLowerCase() === normalizedId
+    || candidate.soyuz?.externalRunId.toLowerCase() === normalizedId);
 }
 
 /**
@@ -46,5 +61,6 @@ async function findJobCaseInsensitive(scheduler: JobScheduler, jobId: string): P
     return undefined;
   }
   const jobs = typeof scheduler.listAllJobs === 'function' ? await scheduler.listAllJobs() : scheduler.listJobs();
-  return jobs.find((job) => job.id.toLowerCase() === lowerJobId);
+  return jobs.find((job) => job.id.toLowerCase() === lowerJobId
+    || job.soyuz?.externalRunId.toLowerCase() === lowerJobId);
 }

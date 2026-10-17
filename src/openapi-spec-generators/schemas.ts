@@ -232,9 +232,18 @@ export function buildRunResponseSchema(): Record<string, unknown> {
     properties: {
       id: {
         type: 'string',
-        description: 'Unique kaseki instance ID (kaseki-N)',
+        description: 'Canonical run ID (Soyuz UUID when remotely admitted; otherwise the local Kaseki ID)',
         example: 'kaseki-42',
       },
+      localRunId: { type: 'string', description: 'Local Kaseki ID retained for diagnostics when id is a Soyuz UUID' },
+      origin: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: ['api_client', 'kaseki', 'mcp'] },
+          id: { type: 'string' },
+        },
+      },
+      retryOf: { type: 'string', format: 'uuid', description: 'Canonical source run ID when this run is a retry' },
       status: {
         type: 'string',
         enum: ['queued', 'running', 'completed', 'failed'],
@@ -303,7 +312,16 @@ function buildCriticalChangeContractSchema(): Record<string, unknown> {
  */
 function buildStatusIdentityProperties(): Record<string, unknown> {
   return {
-    id: { type: 'string', description: 'Kaseki instance ID' },
+    id: { type: 'string', description: 'Canonical run ID (Soyuz UUID when remotely admitted; otherwise the local Kaseki ID)' },
+    localRunId: { type: 'string', description: 'Local Kaseki ID retained for diagnostics when id is a Soyuz UUID' },
+    origin: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ['api_client', 'kaseki', 'mcp'] },
+        id: { type: 'string' },
+      },
+    },
+    retryOf: { type: 'string', format: 'uuid', description: 'Canonical source run ID when this run is a retry' },
     status: { type: 'string', enum: ['queued', 'running', 'completed', 'failed'] },
     lifecyclePhase: {
       type: 'string',
@@ -530,7 +548,9 @@ export function buildRunScorecardSchema(): Record<string, unknown> {
     type: 'object', required: ['schema_version','rubric_version','run_id','started_at','scored_at','lifecycle_status','overall_score','grade','completeness','confidence','dimensions','phases','token_totals','timing_totals','scoring_config','warnings'],
     properties: {
       schema_version: { type: 'string', example: '1.0' }, rubric_version: { type: 'string', example: '1.0' },
-      run_id: { type: 'string', example: 'kaseki-42' }, started_at: { type: ['string','null'], format: 'date-time' },
+      run_id: { type: 'string', description: 'Canonical Soyuz UUID when remotely admitted; otherwise the local Kaseki ID', example: 'kaseki-42' },
+      local_run_id: { type: 'string', description: 'Local Kaseki ID retained for diagnostics when run_id is a Soyuz UUID' },
+      started_at: { type: ['string','null'], format: 'date-time' },
       ended_at: { type: ['string','null'], format: 'date-time' }, scored_at: { type: 'string', format: 'date-time' },
       lifecycle_status: { type: 'string', enum: ['queued','running','completed','failed','cancelled','timed_out'] },
       overall_score: { type: 'number', minimum: 0, maximum: 100, example: 86 }, grade: { type: 'string', enum: ['A','B','C','D','F'], example: 'B' },

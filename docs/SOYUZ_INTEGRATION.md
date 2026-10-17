@@ -1,6 +1,6 @@
 # Soyuz host integration
 
-This document describes Kaseki's opt-in Soyuz Queue adapter. Direct Kaseki API and CLI runs remain available. The adapter is disabled by default and is started by the Kaseki API service when `SOYUZ_ENABLED=true`.
+This document describes Kaseki's opt-in Soyuz Queue adapter and API submission path. Both are disabled by default. `SOYUZ_ENABLED=true` starts Queue consumption; `SOYUZ_SUBMISSION_ENABLED=true` routes Kaseki API create/retry/cancel operations through Soyuz. They can be enabled independently during rollout.
 
 ## Host configuration
 
@@ -11,8 +11,10 @@ The jobs index also stores short-lived Soyuz claim intents. Kaseki writes an int
 | Setting | Default | Accepted values / purpose |
 | --- | --- | --- |
 | `SOYUZ_ENABLED` | `false` | `true` or `false`; turns the adapter on. |
-| `SOYUZ_API_URL` | — | Required when enabled; HTTPS URL (HTTP is allowed only for localhost), without a query or fragment. |
-| `SOYUZ_WORKER_API_TOKEN` | host secret | Soyuz Worker API bearer token. |
+| `SOYUZ_SUBMISSION_ENABLED` | `false` | `true` or `false`; routes Kaseki API run creation and retry through Soyuz. Requires a scoped submission token and worker read token. |
+| `SOYUZ_API_URL` | — | Required when either feature is enabled; HTTPS URL (HTTP is allowed only for localhost), without a query or fragment. |
+| `SOYUZ_SUBMISSION_API_TOKEN` | host secret | Scoped credential for create, retry, and cancel only. Keep distinct from the worker token. |
+| `SOYUZ_WORKER_API_TOKEN` | host secret | Soyuz Worker API bearer token used by the adapter and canonical status reads. |
 | `CLOUDFLARE_ACCOUNT_ID` | — | 32-character hexadecimal account ID. |
 | `CLOUDFLARE_QUEUE_ID` | — | Queue ID returned by Cloudflare. |
 | `CLOUDFLARE_QUEUE_API_TOKEN` | host secret | Separate Queue Read+Write API token for HTTP pull and ack/retry. |
@@ -24,12 +26,13 @@ The jobs index also stores short-lived Soyuz claim intents. Kaseki writes an int
 | `SOYUZ_CANCELLATION_POLL_INTERVAL_MS` | `15000` | 1000–300000 ms. |
 | `SOYUZ_HEARTBEAT_INTERVAL_MS` | `60000` | 10000–900000 ms between active-run heartbeat events. |
 
-The two tokens may be supplied through environment variables or Kaseki's host secret reader. Secret file names are `soyuz_worker_api_token` and `cloudflare_queue_api_token`, searched under `$KASEKI_SECRETS_DIR` (default `/run/secrets/kaseki`) and then `~/.kaseki/secrets`. Never put either value in the job index or logs. Configure the Queue token with Cloudflare Queues read and write permissions only.
+Tokens may be supplied through environment variables or Kaseki's host secret reader. Secret file names are `soyuz_submission_api_token`, `soyuz_worker_api_token`, and `cloudflare_queue_api_token`, searched under `$KASEKI_SECRETS_DIR` (default `/run/secrets/kaseki`) and then `~/.kaseki/secrets`. Never put their values in the job index or logs. Configure the Queue token with Cloudflare Queues read and write permissions only.
 
 Example environment (fill secrets using the host's secret manager):
 
 ```sh
 SOYUZ_ENABLED=true
+SOYUZ_SUBMISSION_ENABLED=true
 SOYUZ_API_URL=https://soyuz.example.workers.dev
 CLOUDFLARE_ACCOUNT_ID=0123456789abcdef0123456789abcdef
 CLOUDFLARE_QUEUE_ID=<queue-id>
@@ -38,6 +41,20 @@ SOYUZ_POLL_INTERVAL_MS=5000
 SOYUZ_BATCH_SIZE=1
 SOYUZ_VISIBILITY_TIMEOUT_MS=120000
 ```
+
+## Kaseki submission contract
+
+When submission routing is enabled, Kaseki validates the request and its existing task-safety gate, persists the caller's idempotency key and request fingerprint, then sends the same UUID as the Soyuz `Idempotency-Key` header and body field. On a timeout or uncertain 5xx response Kaseki keeps that durable intent; clients must repeat the same request with the same key. Once the remote response is recorded, the Soyuz UUID is the public `id`; Kaseki includes `localRunId` after a worker host creates its local job mapping. Existing `kaseki-N` IDs remain valid for local logs, artifacts, and diagnostics.
+
+Retries go through Soyuz's canonical retry operation and are accepted for terminal source runs (`completed`, `failed`, `cancelled`, or `admission_failed`) owned by the authenticated Kaseki identity. Kaseki callers supply a fresh UUID for each retry and reuse it after timeouts. Legacy local `kaseki-N` runs continue to use Kaseki's local retry path. Kaseki preserves its worker-side admission checks before execution.
+
+Soyuz contract v1 does not accept `webhookConfig`, because it can contain webhook secrets. Kaseki rejects such requests with submission routing enabled before persisting an idempotency intent or contacting Soyuz; it does not silently downgrade them to local runs. To handle a webhook-bearing request locally, disable submission routing for that host or remove the webhook configuration. Trusted `origin` and `retryOf` fields in Kaseki API and dashboard responses come from Soyuz's authenticated run record. The scoped Kaseki credential can cancel or retry only runs created by its configured Soyuz origin.
+
+| Kaseki API | Soyuz contract | Submission support |
+| --- | --- | --- |
+| Current Kaseki adapter | v1 | Create, canonical retry, cancellation, worker status, trusted origin, and `retryOf`; webhook configuration rejected. |
+| Older Kaseki API | v1 | Queue intake only; it does not route Kaseki API submissions or expose canonical IDs. |
+| Kaseki submission routing | Pre-v1 or unknown | Disabled until a compatible Soyuz deployment is confirmed. |
 
 ## Queue setup and poison messages
 

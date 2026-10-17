@@ -4,11 +4,13 @@ import { JobScheduler } from '../job-scheduler';
 import { DEFAULT_JOB_INDEX_MAX_ENTRIES, KasekiApiConfig } from '../kaseki-api-config';
 import { RunsListResponse } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
-import { findRunJob, getJobOrRespond } from '../utils/route-helpers';
+import { findRunJob } from '../utils/route-helpers';
 import { StatusResponseBuilder } from '../utils/status-response-builder';
 import { StatusMetadataHelper } from '../utils/status-response-metadata-helper';
 import type { ResultCache } from '../result-cache';
 import { encodeCursor, isAfterCursor, parseCursor, parseLimit, type RunCursor } from './cursor-pagination';
+import { SoyuzApiError } from '../integrations/soyuz/SoyuzApiClient';
+import { SoyuzSubmissionClient, normalizeSoyuzRunStatus } from '../integrations/soyuz/SoyuzSubmissionClient';
 
 /**
  * Create status-related routes (runs list, status, cancel).
@@ -16,7 +18,8 @@ import { encodeCursor, isAfterCursor, parseCursor, parseLimit, type RunCursor } 
 export function createStatusRoutes(
   scheduler: JobScheduler,
   config: KasekiApiConfig,
-  artifactCache?: Pick<ResultCache, 'getOrLoad'>
+  artifactCache?: Pick<ResultCache, 'getOrLoad'>,
+  submissionClient?: SoyuzSubmissionClient,
 ): Router {
   const router = Router();
   const statusBuilder = new StatusResponseBuilder(scheduler, config, artifactCache);
@@ -67,7 +70,8 @@ export function createStatusRoutes(
       runs: jobs.map((job) => {
         const status = statusBuilder.buildStatus(job);
         return {
-          id: job.id,
+          id: job.soyuz?.externalRunId ?? job.id,
+          ...(job.soyuz ? { localRunId: job.id } : {}),
           status: job.status,
           createdAt: job.createdAt.toISOString(),
           completedAt: job.completedAt?.toISOString(),
@@ -88,6 +92,8 @@ export function createStatusRoutes(
           correlationId: status.correlationId,
           requestId: status.requestId,
           projectName: status.projectName,
+          origin: status.origin,
+          retryOf: status.retryOf,
         };
       }),
       total: filteredJobs.length,
@@ -106,24 +112,48 @@ export function createStatusRoutes(
 
   router.get('/runs/:id', async (req: Request, res: Response) => {
     const job = await findRunJob(scheduler, req.params.id);
+    if (!job && submissionClient && isCanonicalSoyuzId(req.params.id)) {
+      try {
+        const remote = await submissionClient.getWorkerRun(req.params.id);
+        return res.json({
+          id: remote.runId,
+          status: normalizeSoyuzRunStatus(remote.status),
+          updatedAt: remote.updatedAt,
+          stage: remote.stage ?? undefined,
+          cancelRequestedAt: remote.cancelRequestedAt ?? undefined,
+          operationalHealth: remote.operationalHealth,
+          origin: remote.origin,
+          retryOf: remote.retryOf ?? undefined,
+        });
+      } catch (error) {
+        if (error instanceof SoyuzApiError) {
+          return sendErrorResponse(res, error.status === 404 ? 404 : 503, error.status === 404 ? 'Not Found' : 'Soyuz Unavailable', error.message);
+        }
+        return sendErrorResponse(res, 503, 'Soyuz Unavailable', 'Could not read canonical Soyuz run state');
+      }
+    }
     if (!job) return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
+    const canonicalId = job.soyuz?.externalRunId ?? job.id;
     return res.json({
-      id: job.id,
+      id: canonicalId,
+      ...(job.soyuz ? { localRunId: job.id } : {}),
       status: job.status,
+      origin: job.soyuz?.origin,
+      retryOf: job.soyuz?.retryOf ?? undefined,
       createdAt: job.createdAt.toISOString(),
       startedAt: job.startedAt?.toISOString(),
       completedAt: job.completedAt?.toISOString(),
       projectName: job.request.projectName,
       repoUrl: job.request.repoUrl,
       links: {
-        self: `/api/v1/runs/${encodeURIComponent(job.id)}`,
-        status: `/api/v1/runs/${encodeURIComponent(job.id)}/status`,
-        events: `/api/v1/runs/${encodeURIComponent(job.id)}/events`,
-        eventStream: `/api/v1/runs/${encodeURIComponent(job.id)}/events/stream`,
-        artifacts: `/api/v1/runs/${encodeURIComponent(job.id)}/artifacts`,
-        analysis: `/api/v1/runs/${encodeURIComponent(job.id)}/analysis`,
-        scorecard: `/api/v1/runs/${encodeURIComponent(job.id)}/scorecard`,
-        webhookDeliveries: `/api/v1/runs/${encodeURIComponent(job.id)}/webhook-deliveries`,
+        self: `/api/v1/runs/${encodeURIComponent(canonicalId)}`,
+        status: `/api/v1/runs/${encodeURIComponent(canonicalId)}/status`,
+        events: `/api/v1/runs/${encodeURIComponent(canonicalId)}/events`,
+        eventStream: `/api/v1/runs/${encodeURIComponent(canonicalId)}/events/stream`,
+        artifacts: `/api/v1/runs/${encodeURIComponent(canonicalId)}/artifacts`,
+        analysis: `/api/v1/runs/${encodeURIComponent(canonicalId)}/analysis`,
+        scorecard: `/api/v1/runs/${encodeURIComponent(canonicalId)}/scorecard`,
+        webhookDeliveries: `/api/v1/runs/${encodeURIComponent(canonicalId)}/webhook-deliveries`,
       },
     });
   });
@@ -132,11 +162,31 @@ export function createStatusRoutes(
    * GET /api/v1/runs/:id/status - Get run status.
    */
   router.get('/runs/:id/status', async (req: Request, res: Response) => {
-    const job = await getJobOrRespond(scheduler, req.params.id, res);
+    const job = await findRunJob(scheduler, req.params.id);
     if (!job) {
-      return;
+      if (submissionClient && isCanonicalSoyuzId(req.params.id)) {
+        try {
+          const remote = await submissionClient.getWorkerRun(req.params.id);
+          return res.json({
+            id: remote.runId,
+            status: normalizeSoyuzRunStatus(remote.status),
+            lifecyclePhase: remote.status === 'queued' || remote.status === 'admitting' ? 'queued' : remote.status === 'completed' || remote.status === 'failed' || remote.status === 'cancelled' || remote.status === 'admission_failed' ? 'terminal' : 'executing',
+            progress: remote.stage ? { stage: remote.stage } : undefined,
+            updatedAt: remote.updatedAt,
+            cancelRequestedAt: remote.cancelRequestedAt ?? undefined,
+            operationalHealth: remote.operationalHealth,
+            origin: remote.origin,
+            retryOf: remote.retryOf ?? undefined,
+          });
+        } catch (error) {
+          if (error instanceof SoyuzApiError) {
+            return sendErrorResponse(res, error.status === 404 ? 404 : 503, error.status === 404 ? 'Not Found' : 'Soyuz Unavailable', error.message);
+          }
+          return sendErrorResponse(res, 503, 'Soyuz Unavailable', 'Could not read canonical Soyuz run state');
+        }
+      }
+      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
     }
-
     const { resultDir: _resultDir, ...response } = statusBuilder.buildStatus(job);
     res.json(response);
   });
@@ -150,6 +200,25 @@ export function createStatusRoutes(
       ? await scheduler.getJobIncludingHistory(requestedId) ?? (await scheduler.listAllJobs()).find((job) => job.id.toLowerCase() === requestedId.toLowerCase())
       : scheduler.getJob(requestedId) ?? scheduler.listJobs().find((job) => job.id.toLowerCase() === requestedId.toLowerCase());
     const wasTerminal = resolvedJob?.status === 'completed' || resolvedJob?.status === 'failed';
+    if (submissionClient && ((resolvedJob?.soyuz) || (!resolvedJob && isCanonicalSoyuzId(requestedId)))) {
+      const canonicalId = resolvedJob?.soyuz?.externalRunId ?? requestedId;
+      try {
+        const remote = await submissionClient.cancelRun(canonicalId);
+        return res.json({
+          id: remote.id,
+          ...(resolvedJob?.soyuz ? { localRunId: resolvedJob.id } : {}),
+          status: normalizeSoyuzRunStatus(remote.status),
+          origin: remote.origin,
+          cancelOutcome: remote.status === 'completed' || remote.status === 'failed' || remote.status === 'cancelled' ? 'already_terminal' : 'cancel_requested',
+          retryOf: remote.retryOf ?? undefined,
+        });
+      } catch (error) {
+        if (error instanceof SoyuzApiError) {
+          return sendErrorResponse(res, error.status === 404 ? 404 : 503, error.status === 404 ? 'Not Found' : 'Soyuz Cancel Failed', error.message, { code: error.code });
+        }
+        return sendErrorResponse(res, 503, 'Soyuz Cancel Uncertain', 'Could not confirm the Soyuz cancellation request');
+      }
+    }
     const job = wasTerminal ? resolvedJob : resolvedJob ? scheduler.cancelJob(resolvedJob.id) : undefined;
     if (!job) {
       const hint = requestedId.toLowerCase() !== requestedId ? ` Did you mean: ${requestedId.toLowerCase()}?` : '';
@@ -161,6 +230,10 @@ export function createStatusRoutes(
   });
 
   return router;
+}
+
+function isCanonicalSoyuzId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
 function parseDateFilter(value: unknown, name: string, res: Response): number | undefined | null {

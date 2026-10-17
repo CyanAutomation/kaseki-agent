@@ -278,7 +278,7 @@ USAGE
       run: `run - submit a task run through the configured Kaseki API
 
 USAGE
-  kaseki-agent run <REPO_URL> [GIT_REF] [TASK_PROMPT] [--dry-run]
+  kaseki-agent run <REPO_URL> [GIT_REF] [TASK_PROMPT] [--dry-run] [--idempotency-key=UUID]
 
 REQUIRES
   A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.
@@ -286,7 +286,8 @@ REQUIRES
 
 OPTIONS
   --dry-run              Submit a startup-check run without Pi agent work.
-  --baseline-validation  With --dry-run, clone and run baseline validation before exiting.`,
+  --baseline-validation  With --dry-run, clone and run baseline validation before exiting.
+  --idempotency-key=UUID Reuse a submission key after an uncertain response.`,
       list: `list - list task runs through the configured Kaseki API
 
 USAGE

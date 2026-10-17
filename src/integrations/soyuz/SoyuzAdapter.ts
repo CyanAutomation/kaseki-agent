@@ -354,6 +354,8 @@ export class SoyuzAdapter {
       run.correlationId,
       run.requestId,
       callbackId,
+      canonical.origin,
+      canonical.retryOf,
     );
     if (callbackId) await this.scheduler.removeSoyuzClaimIntent(run.runId, callbackId);
     callbackId ??= canonical.claimCallbackId ?? undefined;
@@ -414,6 +416,9 @@ export class SoyuzAdapter {
       run.correlationId,
       run.requestId,
       callbackId,
+      undefined,
+      canonical.origin,
+      canonical.retryOf,
     );
     return { kind: 'ready', canonical, job, callbackId };
   }
