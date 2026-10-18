@@ -49,6 +49,7 @@ export interface IdempotencyStoreDependencies {
   processLivenessChecker?: ProcessLivenessChecker;
   lockTokenGenerator?: () => string;
   pid?: number;
+  waitForLockRetry?: (delayMs: number) => Promise<void>;
 }
 
 export function createProcessLivenessChecker(
@@ -90,6 +91,7 @@ export class IdempotencyStore {
   private processLivenessChecker: ProcessLivenessChecker;
   private lockTokenGenerator: () => string;
   private pid: number;
+  private waitForLockRetry: (delayMs: number) => Promise<void>;
   private readonly lockContext = new AsyncLocalStorage<boolean>();
 
   constructor(
@@ -112,6 +114,8 @@ export class IdempotencyStore {
     this.lockTokenGenerator =
       dependencies.lockTokenGenerator ?? (() => crypto.randomUUID());
     this.pid = dependencies.pid ?? process.pid;
+    this.waitForLockRetry =
+      dependencies.waitForLockRetry ?? ((delayMs) => this.delay(delayMs));
     this.loadFromDisk();
     this.startCleanup();
   }
@@ -307,7 +311,7 @@ export class IdempotencyStore {
         }
 
         this.logLockContention(retries + 1, maxRetries);
-        await this.delay(5);
+        await this.waitForLockRetry(5);
         retries++;
       }
     }

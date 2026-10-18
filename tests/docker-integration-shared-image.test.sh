@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ORCHESTRATOR="$ROOT_DIR/tests/integration/docker/run-all.integration.test.sh"
+ORCHESTRATOR="$ROOT_DIR/tests/integration/docker/run-all.integration-suite.sh"
 STARTUP_SUITE="$ROOT_DIR/tests/integration/docker/startup-check-packaging.integration.test.sh"
 VALIDATION_SUITE="$ROOT_DIR/tests/integration/docker/validation-tools.integration.test.sh"
 PACKAGE_JSON="$ROOT_DIR/package.json"
@@ -60,7 +60,7 @@ node - "$PACKAGE_JSON" <<'NODE'
 const fs = require('node:fs');
 const packageJson = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const command = packageJson.scripts?.['test:integration:docker'] ?? '';
-if (!command.includes('run-all.integration.test.sh')) {
+if (!command.includes('run-all.integration-suite.sh')) {
   console.error('FAIL: test:integration:docker must use the shared-image orchestrator');
   process.exit(1);
 }
