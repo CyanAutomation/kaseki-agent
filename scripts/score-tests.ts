@@ -162,7 +162,7 @@ export function scoreBehavioralRelevance(content: string): number {
   
   if (hasTraceableReference) {
     score = 2; // Directly traceable to a requirement
-  } else if (hasDetailedComment || hasInlineComment || /\b(?:spec|requirement|PRD|bugfix|regression)\b/i.test(content)) {
+  } else if (hasDetailedComment || hasInlineComment || /\b(?:requirement|PRD|bugfix|regression)\b|\bSpec\s*:/i.test(content)) {
     score = 1; // Has documented intent
   } else {
     score = 0; // No clear intent or traceability
@@ -233,20 +233,17 @@ export function scoreAssertionQuality(content: string, fileExt: string): number 
 }
 
 function scoreIsolationRobustness(content: string): number {
-  const concerns: string[] = [];
   let score = 2;
   
   // Check for timing sleeps (major red flag)
   if (content.match(/setTimeout|test.*sleep|delay.*\d{3,}|await.*new Promise.*\d{3,}/gi)) {
     score -= 2;
-    concerns.push('timing-based');
   }
   
   // Check for heavy mocking of internals (moderate concern)
   const mockCount = (content.match(/jest\.mock\(|jest\.spyOn\(/gi) || []).length;
   if (mockCount > 5) {
     score -= 1;
-    concerns.push('heavy-internal-mocking');
   } else if (mockCount > 0) {
     // Some mocking is okay, just deduct a bit
     score -= 0.5;
@@ -255,14 +252,12 @@ function scoreIsolationRobustness(content: string): number {
   // Check for global state modifications
   if (content.match(/global\.|process\.env\[/gi)) {
     score -= 1;
-    concerns.push('global-state-modification');
   }
   
   // Check for nested describes or setup complexity (indicator of tight coupling)
   const nestedDescribes = (content.match(/describe\(/g) || []).length;
   if (nestedDescribes > 4) {
     score -= 0.5;
-    concerns.push('high-nesting-complexity');
   }
   
   // Bonus for proper cleanup

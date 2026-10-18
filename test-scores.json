@@ -533,6 +533,28 @@
     "concerns": []
   },
   {
+    "id": "tests/dependency-restore-mode.test.sh",
+    "file": "/workspace/kaseki-agent/tests/dependency-restore-mode.test.sh",
+    "testName": "Source the pure key helpers and load only dependency restore/cache helper functions from kaseki-agent.sh.",
+    "language": "shell",
+    "lineCount": 367,
+    "intentClarity": 1,
+    "behavioralRelevance": 0,
+    "assertionQuality": 2,
+    "isolationRobustness": 2,
+    "costCoverage": 1,
+    "total": 6,
+    "segment": "Refactor",
+    "summary": "1 | 0 | 2 | 2 | 1",
+    "assertionTypes": [],
+    "hasSnapshots": false,
+    "hasMocking": false,
+    "hasAsyncWaits": false,
+    "concerns": [
+      "overly-long"
+    ]
+  },
+  {
     "id": "tests/detect-available-npm-scripts.test.sh",
     "file": "/workspace/kaseki-agent/tests/detect-available-npm-scripts.test.sh",
     "testName": "Tests for detect-available-npm-scripts helper.",
@@ -1547,6 +1569,29 @@
     ]
   },
   {
+    "id": "scripts/score-tests.test.ts",
+    "file": "/workspace/kaseki-agent/scripts/score-tests.test.ts",
+    "testName": "test quality scorer",
+    "language": "typescript",
+    "lineCount": 104,
+    "intentClarity": 0,
+    "behavioralRelevance": 2,
+    "assertionQuality": 2,
+    "isolationRobustness": 2,
+    "costCoverage": 1,
+    "total": 7,
+    "segment": "Refactor",
+    "summary": "0 | 2 | 2 | 2 | 1",
+    "assertionTypes": [
+      "toBe",
+      "toEqual"
+    ],
+    "hasSnapshots": false,
+    "hasMocking": false,
+    "hasAsyncWaits": true,
+    "concerns": []
+  },
+  {
     "id": "src/cli/api/LocalKasekiApiClient.test.ts",
     "file": "/workspace/kaseki-agent/src/cli/api/LocalKasekiApiClient.test.ts",
     "testName": "LocalKasekiApiClient.fromConfig environment precedence",
@@ -2481,28 +2526,6 @@
     "hasMocking": false,
     "hasAsyncWaits": false,
     "concerns": []
-  },
-  {
-    "id": "tests/dependency-restore-mode.test.sh",
-    "file": "/workspace/kaseki-agent/tests/dependency-restore-mode.test.sh",
-    "testName": "Source the pure key helpers and load only dependency restore/cache helper functions from kaseki-agent.sh.",
-    "language": "shell",
-    "lineCount": 367,
-    "intentClarity": 1,
-    "behavioralRelevance": 1,
-    "assertionQuality": 2,
-    "isolationRobustness": 2,
-    "costCoverage": 1,
-    "total": 7,
-    "segment": "Refactor",
-    "summary": "1 | 1 | 2 | 2 | 1",
-    "assertionTypes": [],
-    "hasSnapshots": false,
-    "hasMocking": false,
-    "hasAsyncWaits": false,
-    "concerns": [
-      "overly-long"
-    ]
   },
   {
     "id": "tests/error-classification-schema-mismatch.test.sh",
@@ -4430,29 +4453,6 @@
     "total": 8,
     "segment": "Keep",
     "summary": "2 | 0 | 2 | 2 | 2",
-    "assertionTypes": [
-      "toBe",
-      "toEqual"
-    ],
-    "hasSnapshots": false,
-    "hasMocking": false,
-    "hasAsyncWaits": false,
-    "concerns": []
-  },
-  {
-    "id": "scripts/score-tests.test.ts",
-    "file": "/workspace/kaseki-agent/scripts/score-tests.test.ts",
-    "testName": "test quality scorer",
-    "language": "typescript",
-    "lineCount": 71,
-    "intentClarity": 0,
-    "behavioralRelevance": 2,
-    "assertionQuality": 2,
-    "isolationRobustness": 2,
-    "costCoverage": 2,
-    "total": 8,
-    "segment": "Keep",
-    "summary": "0 | 2 | 2 | 2 | 2",
     "assertionTypes": [
       "toBe",
       "toEqual"
