@@ -3,10 +3,10 @@
 [![CI](https://github.com/CyanAutomation/kaseki-agent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/CyanAutomation/kaseki-agent/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/CyanAutomation/kaseki-agent/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/CyanAutomation/kaseki-agent/actions/workflows/codeql.yml)
 
-Kaseki Agent runs coding tasks in disposable Docker workers. A REST API
-schedules the workers, a CLI submits and monitors runs, and each worker clones
-the target repository, invokes Pi through an OpenAI-compatible gateway, runs
-validation, and collects results.
+Kaseki Agent lets teams run repository coding tasks in disposable Docker
+workers. Operators deploy a REST API; CLI and API clients submit and monitor
+runs. Each worker clones the target repository, invokes Pi through an
+OpenAI-compatible gateway, runs validation, and collects results.
 
 Kaseki Agent is a proof of concept. The guided host deployment supports Debian
 12/13 and 64-bit Raspberry Pi OS. Its `/ready` endpoint confirms API startup;
@@ -26,7 +26,10 @@ the API server or worker image.
 
 ## Submit a task
 
-After connecting the CLI to a running Kaseki API, submit and monitor a task:
+The Kaseki API must be running before the CLI can submit work; installing the
+npm package alone does not start the API or workers. Follow the setup path above,
+configure the CLI as described in [Getting started](docs/GETTING_STARTED.md),
+then submit and monitor a task:
 
 ```bash
 export KASEKI_API_URL=http://localhost:8080/api/v1
@@ -35,15 +38,26 @@ kaseki-agent status kaseki-1
 kaseki-agent report kaseki-1
 ```
 
-API clients submit the repository and task using `repoUrl` and `taskPrompt`:
+For direct API use, set `KASEKI_API_URL` to the API base URL (ending in
+`/api/v1`) and configure `KASEKI_API_KEY` as described in the
+[API authentication reference](docs/API.md#authentication). Submit a task with
+`POST /api/v1/runs`:
 
-```json
-{
-  "repoUrl": "https://github.com/owner/repo",
-  "ref": "main",
-  "taskPrompt": "Fix the failing tests"
-}
+```bash
+curl --request POST "$KASEKI_API_URL/runs" \
+  --header "Authorization: Bearer $KASEKI_API_KEY" \
+  --header "Idempotency-Key: 123e4567-e89b-42d3-a456-426614174000" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "repoUrl": "https://github.com/owner/repo",
+    "ref": "main",
+    "taskPrompt": "Fix the failing tests"
+  }'
 ```
+
+Replace the sample UUID for a new request; reuse that request's UUID only when
+retrying it. The API returns a run ID that can be used with the CLI commands
+below. See the [API reference](docs/API.md) for the response schema and options.
 
 Use the run ID returned by `run` in the status and report commands. The CLI
 reads API credentials from the configured Kaseki secret store. See the

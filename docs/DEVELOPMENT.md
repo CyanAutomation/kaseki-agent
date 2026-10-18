@@ -1,456 +1,111 @@
-# Kaseki Agent - Development Guide
+# Development Guide
 
-This guide provides an overview of the Kaseki Agent architecture for developers working on the codebase.
+This guide covers local development and the main code paths in Kaseki Agent. For
+deployment and operator workflows, start at the [documentation index](INDEX.md).
 
-## Architecture Overview
+## Architecture
 
-Kaseki Agent is an ephemeral coding-agent runner that:
+Kaseki Agent accepts task requests through a REST API or CLI. The API validates
+and schedules each run; a disposable Docker worker clones the requested
+repository, invokes the Pi coding agent through an OpenAI-compatible model
+gateway, runs configured validation, and stores the resulting artifacts.
 
-1. Spins up a disposable Docker container
-2. Clones a target Git repository inside it
-3. Invokes the Pi CLI coding agent via OpenRouter
-4. Runs validation commands
-5. Collects artifacts and produces reports
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ External Client (Web UI, CLI, CI/CD, etc.)                  │
-└─────────────────────┬───────────────────────────────────────┘
-                      │ HTTP REST + Bearer Auth (API Service)
-            ┌─────────▼─────────────────────────────────────┐
-            │ Kaseki API Service                           │
-            │ └─ Job Queue Management                      │
-            │ └─ Result Caching                           │
-            │ └─ REST Endpoints                            │
-            └────────────┬───────────────────────────────────┘
-                        │
-            ┌────────────▼───────────────────────────────────┐
-            │ Agent Execution                               │
-            │ └─ kaseki-agent.sh (spawned in container)    │
-            │ └─ Docker Container (ephemeral)              │
-            │ └─ Pi CLI Invocation                         │
-            │ └─ Validation & Quality Gates                │
-            └─────────────────────────────────────────────────┘
+```text
+CLI or API client
+        │
+        ▼
+REST API and job scheduler
+        │
+        ▼
+Disposable Docker worker ── model gateway
+        │
+        ├── clone target repository
+        ├── run agent and validation
+        └── store logs, reports, and artifacts
 ```
 
-## Core Components
+OpenRouter is an optional credential for configured evaluation stages. It is
+separate from the gateway used for coding inference. The `/ready` endpoint
+confirms API readiness; it does not send a model request. See the
+[environment reference](ENV_VARS.md) for provider configuration and the
+[deployment guide](DEPLOYMENT.md) for the API's security boundary.
 
-### 1. CLI Interface (`src/cli/`)
+## Main components
 
-**Entry point for all user interactions**
+| Component | Source | Responsibility |
+|---|---|---|
+| CLI | `src/cli/` | Setup, host diagnostics, and API-backed task commands |
+| API service | `src/kaseki-api-service.ts`, `src/kaseki-api-routes.ts`, `src/routes/` | HTTP endpoints, authentication, task admission, and run access |
+| Scheduler | `src/job-scheduler.ts` | Queue and worker lifecycle |
+| Worker | `Dockerfile`, `kaseki-agent.sh`, `scripts/` | Disposable task execution, validation, and artifact collection |
+| Configuration | `src/config/`, `src/setup/` | CLI settings, initialization, and secret discovery |
 
-- **`kaseki-agent init`** - Interactive setup wizard
-- **`kaseki-agent run`** - Execute single runs
-- **`kaseki-agent serve`** - Start API service
-- **`kaseki-agent status`** - Monitor running jobs
-- **`kaseki-agent doctor`** - Health checks
+The REST contract is documented in the [API reference](API.md); CLI commands
+are documented in the [CLI reference](CLI.md).
 
-### 2. API Service (`src/kaseki-api-*.ts`)
+## Development environment
 
-**HTTP REST API for remote control**
+The npm package supports Linux and requires Node.js 24 or later. Install
+ShellCheck to run the full lint command. Bun 1.4.3 is needed only for the target
+repository package-manager integration tests; Docker is needed for Docker-backed
+integration checks.
 
-- **Endpoints**: `/api/v1/runs`, `/api/v1/runs/:id/status`, `/api/v1/runs/:id/analysis`
-- **Authentication**: Bearer token validation
-- **Job Queue**: FIFO with concurrency control
-- **Result Cache**: Lazy-loading with TTL expiration
-- **Type Safety**: Zod validation + TypeScript interfaces
-
-### 3. Agent Runner (`kaseki-agent.sh`)
-
-**Containerized execution engine**
-
-- **Environment Setup**: Node.js v24, Docker, dependencies
-- **Repository Management**: Clone, checkout, reset
-- **Pi CLI Integration**: Invoke coding agent with timeout
-- **Validation Pipeline**: Execute user-defined commands
-- **Artifact Collection**: Git diffs, logs, metadata, reports
-
-#### Scouting and Weaving Phases
-
-Kaseki performs a read-only repository analysis before agent execution, writing findings exclusively to `/results/scouting.json` without modifying source files. The scouting run explores codebase patterns and requirements, generating planning data for subsequent transformation. Weaving processes scouting JSON outputs into agent execution instructions, translating research findings into actionable task prompts and structured guidance for the Pi CLI coding agent.
-
-### 4. Setup System (`src/setup/`)
-
-**Configuration and initialization**
-
-- **Environment Detection**: Auto-detect Docker, Node.js, permissions
-- **Setup Wizard**: Interactive configuration with validation
-- **Secret Management**: Secure credential storage (~/.kaseki/)
-- **Template System**: Auto-initialize workspace templates
-
-### 5. Quality Gates (`src/quality/`)
-
-**Automated validation and filtering**
-
-- **Diff Size Limits**: Configurable maximum change size
-- **File Allowlists**: Pattern-based restoration of approved changes
-- **Secret Scanning**: Detect and handle credential leaks
-- **Validation Commands**: Execute user-defined checks
-- **Exit Codes**: Structured error reporting
-
-### 6. Utilities (`src/utils/`, `scripts/`)
-
-**Supporting tools and scripts**
-
-- **Progress Streaming**: Real-time Pi event filtering
-- **Report Generation**: Markdown summaries and structured data
-- **CLI Monitoring**: External agent integration
-- **Validation Helpers**: Test running, allowlist management
-- **Docker Integration**: Container lifecycle management
-
-## Development Workflow
-
-### Setup Development Environment
+From a checkout, install the locked dependencies and run the standard checks:
 
 ```bash
-# Clone and install dependencies
-git clone <repo>
-cd kaseki-agent
-npm install
-
-# Build TypeScript
-npm run build
-
-# Run type checking
-npm run type-check
-
-# Run tests
-npm run test:unit
-npm run test:ci  # Full CI validation
-```
-
-### Key Development Commands
-
-```bash
-# Development server (watch mode)
-npm run dev
-
-# Lint and fix issues
-npm run lint:fix
-
-# Run specific test file
-npm run test:unit -- src/result-cache.test.ts
-
-# Validate module imports (Docker dependencies)
-npm run validate-module-imports
-
-# Build Docker image
-docker build -t kaseki-agent:latest .
-
-# Run smoke tests
-npm run test:smoke
-```
-
-### Adding New Features
-
-#### 1. New CLI Command
-
-1. Add command class in `src/cli/commands/`
-2. Register in `src/cli/KasekiCLI.ts`
-3. Add tests and documentation
-4. Update help text
-
-#### 2. New API Endpoint
-
-1. Define types in `src/kaseki-api-types.ts`
-2. Add validation schema (if needed)
-3. Implement handler in `src/kaseki-api-routes.ts`
-4. Add route registration
-5. Write unit tests
-6. Update API documentation
-
-#### 3. New Quality Gate
-
-1. Implement logic in `src/quality/`
-2. Add configuration option
-3. Update exit code handling
-4. Add tests
-5. Document in QUALITY_GATES.md
-
-#### 4. New Utility Module
-
-1. Add TypeScript file in `src/utils/`
-2. Build project: `npm run build`
-3. Validate dependencies: `npm run validate-module-imports`
-4. Add to Dockerfile if needed
-5. Write tests
-
-### Testing Strategy
-
-#### Unit Tests
-
-- **Component Tests**: Isolated testing of individual modules
-- **Configuration Tests**: Environment variable parsing and validation
-- **Queue Tests**: Job scheduling and timeout handling
-- **Cache Tests**: Result caching and eviction logic
-
-#### Integration Tests
-
-- **API Tests**: HTTP endpoint validation
-- **CLI Tests**: Command-line interface testing
-- **Docker Tests**: Container lifecycle and execution
-- **End-to-End Tests**: Full workflow validation
-
-#### Test Commands
-
-```bash
-# Run all tests
+npm ci
+npm run check
 npm test
-
-# Watch mode for development
-npm run test:watch
-
-# Coverage report
-npm run test:coverage
-
-# CI-style validation
-npm run test:ci
 ```
 
-### Configuration Management
+- `npm run check` runs type checking, ESLint, ShellCheck, and local Markdown link
+  and command-reference checks.
+- `npm test` builds the project and runs the Jest unit tests.
+- `npm run test:ci` runs the broader CI validation suite. It includes additional
+  shell and integration checks and may require Bun and other CI tools.
 
-The system uses environment variables with sensible defaults:
-
-- **Development**: `.env` file with development settings
-- **Production**: Environment variables or secret files
-- **Docker**: Build args and runtime env vars
-
-Key configuration files:
-
-- `.env.template` - Essential 8 variables
-- `.env.advanced.template` - Complete variable reference
-- `src/kaseki-api-config.ts` - Configuration loading and validation
-
-### Code Style and Quality
-
-#### TypeScript
-
-- Strict mode enabled
-- Interface-heavy design
-- Type guards for runtime validation
-- Generic types for reusable components
-
-#### JavaScript
-
-- ES2024 features with Node.js v24 target
-- Async/await throughout
-- Error handling with try/catch
-- Logging with structured JSON
-
-#### Testing
-
-- Jest for unit tests
-- Mock external dependencies
-- Test environment isolation
-- Coverage thresholds enforced
-
-### Debugging
-
-#### Development Logging
+For a focused unit test while iterating:
 
 ```bash
-# Enable debug logging
-KASEKI_API_LOG_LEVEL=debug npm run kaseki-api
-
-# Verbose CLI output
-kaseki-agent --verbose run ...
-
-# Docker container debugging
-docker logs kaseki-1
+npm run test:unit -- src/path/to/module.test.ts
 ```
 
-#### Common Debug Scenarios
+The unit-test script builds before invoking Jest. For Docker-backed integration
+coverage, use `npm run test:integration:docker` on a host with Docker available.
+See the [verification guide](VERIFICATION_GUIDE.md) for a change-specific test
+selection workflow.
 
-**Job Queue Issues**
+## Making changes
 
-```bash
-# Check job state via API
-curl -H "Authorization: Bearer sk-key" \
-  http://localhost:8080/api/v1/runs | jq .
+- **CLI command:** Add or update a handler in `src/cli/commands/`, register it
+  through `src/cli/KasekiCLI.ts`, and update CLI help, focused tests, and
+  `CLI.md`.
+- **API behavior:** Update the route or service under `src/kaseki-api-routes.ts`,
+  `src/routes/`, or `src/kaseki-api-service.ts`; add focused coverage and update
+  `API.md` when the contract changes.
+- **Configuration:** Update the owning configuration source and
+  `ENV_VARS.md`. Run `npm run check:environment-docs` when changing generated
+  environment documentation.
+- **Worker behavior:** Update the worker scripts or image setup, add regression
+  coverage, and document user-visible configuration or behavior changes.
 
-# Monitor job spawning
-ps aux | grep kaseki-agent
-```
+Use the project's existing validation scripts rather than adding new
+dependencies for routine checks. Keep changes scoped, add regression tests for
+behavior changes, and update the relevant user guide when a command, API, or
+configuration contract changes. See [CONTRIBUTING.md](../CONTRIBUTING.md) for
+contribution expectations.
 
-**Module Import Problems**
+## CI workflow
 
-```bash
-# Validate Docker dependencies
-npm run validate-module-imports
+The GitHub Actions validation job uses Node.js 24, installs ShellCheck and the
+pinned Bun version, installs npm dependencies with `npm ci`, and runs lint,
+documentation checks, and the CI test suite. Keep local instructions aligned
+with the scripts in `package.json` and the workflow in `.github/workflows/ci.yml`.
 
-# Check built files
-ls -la dist/
-```
+## Further reading
 
-**Configuration Issues**
-
-```bash
-# Test configuration loading
-node -e "console.log(require('./src/kaseki-api-config').loadConfig())"
-
-# Check environment setup
-./scripts/startup-checks.sh
-```
-
-## Release Process
-
-Kaseki Agent uses semantic-release for automated versioning:
-
-1. **Conventional Commits**: Use `feat:`, `fix:`, `perf:` prefixes
-2. **Version Bumps**: Automatic based on commit types
-3. **Changelog**: Auto-generated and updated
-4. **GitHub Releases**: Automated creation with release notes
-5. **Docker Builds**: Multi-arch images triggered automatically
-
-```bash
-# Dry-run release preview
-npm run release:dry
-
-# Create actual release
-npm run release
-```
-
-## Deployment Architecture
-
-### Development
-
-- Direct Node.js execution
-- Hot reload with `npm run dev`
-- Local Docker testing
-
-### Production
-
-- **Recommended**: Docker Compose with API service
-- **Alternative**: Systemd service with Node.js
-- **Scaling**: Multiple instances with load balancing
-- **Monitoring**: Health checks and metrics endpoints
-
-### Infrastructure
-
-- **Docker**: Multi-stage builds, security scanning
-- **CI/CD**: GitHub Actions with caching
-- **Security**: Trivy scanning, SBOM generation
-- **Monitoring**: Built-in health checks and metrics
-
-## Contributing
-
-### Development Guidelines
-
-1. Follow TypeScript strict mode
-2. Write comprehensive tests
-3. Use conventional commits
-4. Update documentation for new features
-5. Test both CLI and API interfaces
-6. Validate Docker dependencies
-
-### Quality Standards
-
-- **Code Coverage**: Minimum 80% test coverage
-- **Type Safety**: No `any` types, strict null checks
-- **Error Handling**: Proper error propagation and logging
-- **Documentation**: JSDoc for all public APIs
-- **Performance**: Monitor memory usage and execution time
-
-### Common Issues to Avoid
-
-- Missing Docker dependency validation
-- Inadequate error handling in async operations
-- Hardcoded paths or environment assumptions
-- Missing configuration validation
-- Incomplete test coverage for edge cases
-
-## Useful Resources
-
-### Documentation
-
-- **[API.md](./API.md)** - Complete API reference
-- **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Production deployment guide
-- **[QUALITY_GATES.md](./QUALITY_GATES.md)** - Quality validation system
-- **[CLI.md](./CLI.md)** - Command-line interface documentation
-
-### External Links
-
-- **Express.js**: <https://expressjs.com/>
-- **Zod**: <https://zod.dev/>
-- **TypeScript**: <https://www.typescriptlang.org/>
-- **Docker**: <https://docs.docker.com/>
-- **GitHub Actions**: <https://docs.github.com/actions>
-
-### Community
-
-- **Issues**: GitHub Issues for bug reports and feature requests
-- **Discussions**: GitHub Discussions for questions and ideas
-- **Contributing**: See CONTRIBUTING.md for guidelines
-
-## Run-Scorecard Architecture
-
-The run-scorecard system transforms kaseki agent execution artifacts into scored `RunScorecard` objects, providing post-execution quality assessment through 6 phases (goal_setting → scouting → coding → validation → goal_check → run_evaluation) and 6 weighted quality dimensions.
-
-### Evidence Extraction (`src/run-scorecard-evidence-*.ts`)
-
-Evidence extraction is organized by phase type, with each phase having a dedicated collector function:
-
-- **goal-setting evidence**: `collectGoalSettingEvidence()` - Detects phase initiation signals
-- **scouting evidence**: `collectScoutingEvidence()` - Analyzes repository context capture
-- **coding evidence**: `collectCodingEvidence()` - Evaluates agent code changes (tokens, diff size)
-- **validation evidence**: `collectValidationEvidence()` - Tracks validation command results
-- **goal-check evidence**: `collectGoalCheckEvidence()` - Verifies goal achievement
-- **run-evaluation evidence**: `collectEvaluationEvidence()` - Assesses completion quality
-
-**Utilities** (`src/run-scorecard-evidence-utils.ts`):
-
-- `object()`, `number()`, `bool()` - Type-safe data extraction
-- `stagePhase()` - Maps stage names to canonical phase types
-- `computePhaseDurations()` - Aggregates phase timing from stage rows
-
-**Phase Detection** (`src/run-scorecard-evidence-phases.ts`):
-
-- `detectPhaseReached()` - Determines if a phase was entered during execution (uses artifact presence, timing, metadata signals)
-- `detectPhaseFailures()` - Identifies terminal phase failures from exit codes
-
-**Main Aggregator** (`src/run-scorecard-evidence.ts`):
-
-- `collectEvidence()` - Orchestrates all phase collectors and consolidates into unified Evidence object
-
-### Scoring System (`src/run-scorecard-scoring-*.ts`)
-
-Scoring maps evidence to weighted dimensions:
-
-- **Dimensions**: goal_quality, scouting_quality, implementation_quality, validation_quality, goal_check_quality, quality_measurement
-- **Weights**: Configurable per dimension (default: goal 15%, implementation 30%, etc.)
-- **Disabled Phases**: Exclude phases from scoring when not applicable
-- **Status Tracking**: Each dimension reports availability, confidence, and raw measurements
-
-**Scoring Helpers** (`src/run-scorecard-scoring-helpers.ts`):
-
-- `determinePhaseOutcome()` - Maps evidence to phase status (succeeded/failed/not_started/skipped)
-- `determineDimensionStatus()` - Evaluates dimension availability (complete/unavailable/not_applicable)
-- `calculateEffectiveWeight()` - Redistributes weights among enabled dimensions
-- `calculateWeightedPoints()` - Computes weighted score contribution
-
-**Phase Builders** (`src/run-scorecard-scoring-parts.ts`):
-
-- `buildDimensions()` - Constructs RunScorecard.dimensions from evidence using scoring helpers
-- `buildPhases()` - Constructs RunScorecard.phases with outcome determination
-- `normalizeEvaluationScore()` - Handles 1-5 completion scale → 0-100 normalization
-
-### Recent Refactoring (2026-09-16)
-
-**Phase 1: Consolidation & Testing**
-
-- Merged evidence-values + evidence-helpers → evidence-utils (reduced micro-utilities from 2 files to 1)
-- Added comprehensive unit tests for evidence-validation (13 tests, previously untested)
-- Extracted phase detection logic from evidence.ts → evidence-phases.ts (improved testability)
-
-**Phase 2: Complexity Reduction**
-
-- Extracted scoring conditionals into named helpers (determinePhaseOutcome, determineDimensionStatus)
-- Reduced buildPhases cognitive complexity from 7-level chain to single function call
-- Added scoring-helpers.test.ts with 21 tests for new functions
-
-**Result**:
-
-- 61 new tests covering previously untested code
-- ~40% reduction in cyclomatic complexity in scoring-parts.ts
-- Clean separation: phase detection logic, evidence extraction, scoring functions
-- All 3737 tests passing
+- [Development verification](VERIFICATION_GUIDE.md)
+- [Environment variables](ENV_VARS.md)
+- [API reference](API.md)
+- [CLI reference](CLI.md)
+- [Documentation index](INDEX.md)

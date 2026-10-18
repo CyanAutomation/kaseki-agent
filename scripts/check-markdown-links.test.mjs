@@ -4,7 +4,11 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { findBrokenMarkdownLinks, getMarkdownFilesToCheck } from './check-markdown-links.mjs';
+import {
+  findBrokenMarkdownLinks,
+  findUnknownNpmScriptReferences,
+  getMarkdownFilesToCheck,
+} from './check-markdown-links.mjs';
 
 test('checks tracked and untracked Markdown files by default', () => {
   const repositoryRoot = mkdtempSync(path.join(os.tmpdir(), 'kaseki-markdown-files-'));
@@ -47,7 +51,7 @@ test('finds missing relative Markdown targets and reports their source line', ()
   const repositoryRoot = mkdtempSync(path.join(os.tmpdir(), 'kaseki-markdown-links-'));
   try {
     mkdirSync(path.join(repositoryRoot, 'docs'));
-    writeFileSync(path.join(repositoryRoot, 'docs', 'present.md'), '# Present\n');
+    writeFileSync(path.join(repositoryRoot, 'docs', 'present.md'), '# Intro\n');
     const markdown = [
       '# Guide',
       '[present](docs/present.md#intro)',
@@ -102,4 +106,104 @@ test('resolves relative links from the Markdown file directory', () => {
   } finally {
     rmSync(repositoryRoot, { recursive: true, force: true });
   }
+});
+
+test('validates fragment-only links against heading slugs and duplicate headings', () => {
+  const repositoryRoot = mkdtempSync(path.join(os.tmpdir(), 'kaseki-markdown-anchors-'));
+  try {
+    const markdown = [
+      '# Guide',
+      '## Quick Start',
+      '[first](#quick-start)',
+      '## Quick Start',
+      '[second](#quick-start-1)',
+      '[missing](#unknown-section)',
+    ].join('\n');
+
+    assert.deepEqual(
+      findBrokenMarkdownLinks(markdown, 'README.md', repositoryRoot),
+      [{
+        line: 6,
+        href: '#unknown-section',
+        resolvedPath: path.join(repositoryRoot, 'README.md'),
+        fragment: 'unknown-section',
+      }],
+    );
+  } finally {
+    rmSync(repositoryRoot, { recursive: true, force: true });
+  }
+});
+
+test('validates fragments on relative Markdown links', () => {
+  const repositoryRoot = mkdtempSync(path.join(os.tmpdir(), 'kaseki-markdown-anchors-'));
+  try {
+    mkdirSync(path.join(repositoryRoot, 'docs'));
+    writeFileSync(path.join(repositoryRoot, 'docs', 'guide.md'), '# Setup Guide\n');
+    const markdown = [
+      '[valid](docs/guide.md#setup-guide)',
+      '[missing](docs/guide.md#nonexistent)',
+    ].join('\n');
+
+    assert.deepEqual(
+      findBrokenMarkdownLinks(markdown, 'README.md', repositoryRoot),
+      [{
+        line: 2,
+        href: 'docs/guide.md#nonexistent',
+        resolvedPath: path.join(repositoryRoot, 'docs', 'guide.md'),
+        fragment: 'nonexistent',
+      }],
+    );
+  } finally {
+    rmSync(repositoryRoot, { recursive: true, force: true });
+  }
+});
+
+test('matches GitHub heading slugs when punctuation separates words', () => {
+  const repositoryRoot = mkdtempSync(path.join(os.tmpdir(), 'kaseki-markdown-anchors-'));
+  try {
+    const markdown = [
+      '## API Keys & Credentials',
+      '[section](#api-keys--credentials)',
+    ].join('\n');
+
+    assert.deepEqual(findBrokenMarkdownLinks(markdown, 'README.md', repositoryRoot), []);
+  } finally {
+    rmSync(repositoryRoot, { recursive: true, force: true });
+  }
+});
+
+test('recognizes explicitly authored HTML anchors', () => {
+  const repositoryRoot = mkdtempSync(path.join(os.tmpdir(), 'kaseki-markdown-anchors-'));
+  try {
+    const markdown = [
+      '<a id="custom-section"></a>',
+      '[section](#custom-section)',
+    ].join('\n');
+
+    assert.deepEqual(findBrokenMarkdownLinks(markdown, 'README.md', repositoryRoot), []);
+  } finally {
+    rmSync(repositoryRoot, { recursive: true, force: true });
+  }
+});
+
+test('finds npm run commands that are not package scripts and reports their source line', () => {
+  const markdown = [
+    'Run `npm run check` before submitting.',
+    '```bash',
+    'npm run test:unit -- path/to/test',
+    'npm run test:smoke',
+    '```',
+  ].join('\n');
+
+  assert.deepEqual(
+    findUnknownNpmScriptReferences(markdown, { check: 'node check.js', 'test:unit': 'jest' }),
+    [{ line: 4, script: 'test:smoke' }],
+  );
+});
+
+test('checks the npm test alias against package scripts', () => {
+  assert.deepEqual(
+    findUnknownNpmScriptReferences('Run `npm test` before submitting.', {}),
+    [{ line: 1, script: 'test' }],
+  );
 });
