@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2317
 #
-# Nightly/stress test: Validation output filter handles large output without crashing.
+# Nightly/stress test: Validation output filter preserves contract lines across large input.
 #
 # This test is intentionally excluded from routine CI. Run it explicitly with:
 #   RUN_VALIDATION_OUTPUT_STRESS_TESTS=1 bash tests/stress/validation-large-output-stress.test.sh
@@ -9,15 +9,15 @@
 # Expected runtime: typically 10-30 seconds on a developer workstation, and up to
 # 2 minutes on constrained Raspberry Pi-class hardware.
 #
-# Validates that validation-output-filter can process large bounded output (50k+ lines)
-# on memory-constrained systems (RPi 4 with 4GB) without OOM or SIGPIPE.
+# Validates that validation-output-filter processes large bounded input without
+# losing command boundaries, error lines, or its completion diagnostics. This
+# suite does not measure peak memory usage.
 #
 # Scenarios tested:
 # 1. Large output (50k lines)
 # 2. Very large single line (1MB in one line)
 # 3. Rapid bounded burst of output (10k lines)
 # 4. Deterministic stdin closure
-# 5. Memory-bounds smoke coverage
 #
 
 set -euo pipefail
@@ -59,7 +59,7 @@ assert_diagnostics_logged() {
   if [ ! -f "$diagnostics_file" ]; then
     echo -e "${RED}✗ FAIL${NC}: $test_name - diagnostics file not created: $diagnostics_file"
     ((TESTS_FAILED += 1))
-    return 1
+    return 0
   fi
   
   if grep -q "$expected_pattern" "$diagnostics_file"; then
@@ -71,7 +71,37 @@ assert_diagnostics_logged() {
     echo "  Diagnostics file contents:"
     head -20 "$diagnostics_file" | sed 's/^/    /'
     ((TESTS_FAILED += 1))
-    return 1
+    return 0
+  fi
+}
+
+assert_output_contains() {
+  local test_name="$1"
+  local output_file="$2"
+  local expected_line="$3"
+
+  if grep -Fqx -- "$expected_line" "$output_file"; then
+    echo -e "${GREEN}✓ PASS${NC}: $test_name - output contains expected line"
+    ((TESTS_PASSED += 1))
+  else
+    echo -e "${RED}✗ FAIL${NC}: $test_name - expected output line missing: $expected_line"
+    ((TESTS_FAILED += 1))
+  fi
+}
+
+assert_output_line_count() {
+  local test_name="$1"
+  local output_file="$2"
+  local expected_count="$3"
+  local actual_count
+
+  actual_count=$(wc -l < "$output_file")
+  if [ "$actual_count" -eq "$expected_count" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: $test_name - output contains $actual_count lines"
+    ((TESTS_PASSED += 1))
+  else
+    echo -e "${RED}✗ FAIL${NC}: $test_name - expected $expected_count output lines, got $actual_count"
+    ((TESTS_FAILED += 1))
   fi
 }
 
@@ -99,29 +129,11 @@ test_large_output() {
   # Verify filter exited cleanly
   assert_filter_exit_code_zero "large output" $exit_code
   
-  # Verify diagnostics captured (optional for current impl)
-  if [ -f "$filter_diagnostics" ]; then
-    if grep -q "filter-startup:" "$filter_diagnostics"; then
-      echo -e "${GREEN}✓ PASS${NC}: large output - diagnostics captured"
-      ((TESTS_PASSED += 1))
-    fi
-  fi
-  
-  # Verify output was processed
-  local output_lines
-  output_lines=$(wc -l < "$output_log")
-  if [ "$output_lines" -gt 0 ]; then
-    echo -e "${GREEN}✓ PASS${NC}: large output - processed $output_lines output lines"
-    ((TESTS_PASSED += 1))
-  else
-    echo -e "${RED}✗ FAIL${NC}: large output - no output lines generated"
-    ((TESTS_FAILED += 1))
-  fi
-  
-  # Check memory pressure warnings if they appear
-  if grep -q "memory_pressure\|excessive_output" "$filter_diagnostics"; then
-    echo -e "${YELLOW}⚠ WARNING${NC}: large output - memory pressure detected in diagnostics"
-  fi
+  assert_output_contains "large output" "$output_log" "==> Running large test suite"
+  assert_output_contains "large output" "$output_log" "exit_code=0"
+  assert_output_line_count "large output" "$output_log" 2
+  assert_diagnostics_logged "large output" "$filter_diagnostics" "filter-close: lines_processed=50002"
+  assert_diagnostics_logged "large output" "$filter_diagnostics" "filter-close: exit_code=0"
 }
 
 # Test 2: Very large single line (1MB)
@@ -159,6 +171,19 @@ test_large_single_line() {
     echo -e "${RED}✗ FAIL${NC}: large single line - error line was filtered out"
     ((TESTS_FAILED += 1))
   fi
+
+  local error_line_bytes
+  error_line_bytes=$({ grep '^ERROR:' "$output_log" || true; } | wc -c | tr -d '[:space:]')
+  if [ "$error_line_bytes" -eq 1000008 ]; then
+    echo -e "${GREEN}✓ PASS${NC}: large single line - preserved the complete 1MB error line"
+    ((TESTS_PASSED += 1))
+  else
+    echo -e "${RED}✗ FAIL${NC}: large single line - expected 1000008 bytes, got $error_line_bytes"
+    ((TESTS_FAILED += 1))
+  fi
+  assert_output_contains "large single line" "$output_log" "exit_code=1"
+  assert_output_line_count "large single line" "$output_log" 3
+  assert_diagnostics_logged "large single line" "$filter_diagnostics" "filter-close: lines_processed=3"
 }
 
 # Test 3: Rapid bounded burst of output
@@ -186,10 +211,9 @@ test_rapid_burst() {
   assert_filter_exit_code_zero "rapid burst" $exit_code
   
   # Verify diagnostics show processing completed (optional)
-  if [ -f "$filter_diagnostics" ] && grep -q "filter-close:" "$filter_diagnostics"; then
-    echo -e "${GREEN}✓ PASS${NC}: rapid burst - diagnostics show completion"
-    ((TESTS_PASSED += 1))
-  fi
+  assert_diagnostics_logged "rapid burst" "$filter_diagnostics" "filter-close: lines_processed=10002"
+  assert_output_contains "rapid burst" "$output_log" "exit_code=0"
+  assert_output_line_count "rapid burst" "$output_log" 2
 }
 
 # Test 4: Filter handles deterministic finite stdin closure gracefully
@@ -216,52 +240,16 @@ test_stdin_closure() {
   # Verify filter exited cleanly (not SIGPIPE)
   assert_filter_exit_code_zero "stdin closure" $exit_code
   
-  # Verify diagnostics captured the closure (optional)
-  if [ -f "$filter_diagnostics" ] && grep -q "filter-close:" "$filter_diagnostics"; then
-    echo -e "${GREEN}✓ PASS${NC}: stdin closure - diagnostics captured closure"
-    ((TESTS_PASSED += 1))
-  fi
-}
-
-# Test 5: Filter memory usage stays within bounds (RPi 4 constraint)
-test_memory_bounds() {
-  echo -e "\n${YELLOW}Test 5: Memory bounds on RPi 4 (4GB total)${NC}"
-  
-  local tmpdir
-  tmpdir=$(mktemp -d)
-  trap 'rm -rf "$tmpdir"' RETURN
-  
-  local filter_diagnostics="$tmpdir/filter-diagnostics.log"
-  local output_log="$tmpdir/output.log"
-  
-  # Generate 50k lines (moderate-to-large test)
-  (
-    echo "==> Running test suite"
-    seq 1 50000 | awk '{print "Test case " NR}'
-    echo "exit_code=0"
-  ) | FILTER_DIAGNOSTICS_LOG="$filter_diagnostics" \
-      "$FILTER_BIN" > "$output_log" 2>&1
-  
-  local exit_code=$?
-  
-  # Verify filter exited cleanly
-  assert_filter_exit_code_zero "memory bounds" $exit_code
-  
-  # On a real system, we'd measure actual memory usage
-  # For now, verify the process completed without OOM errors
-  if ! grep -q "out of memory\|ENOMEM\|OOM" "$filter_diagnostics"; then
-    echo -e "${GREEN}✓ PASS${NC}: memory bounds - no OOM errors detected"
-    ((TESTS_PASSED += 1))
-  else
-    echo -e "${RED}✗ FAIL${NC}: memory bounds - OOM errors detected in diagnostics"
-    ((TESTS_FAILED += 1))
-  fi
+  assert_output_contains "stdin closure" "$output_log" "ERROR: deterministic producer finished before exit marker"
+  assert_diagnostics_logged "stdin closure" "$filter_diagnostics" "filter-close: stdin_closed"
+  assert_diagnostics_logged "stdin closure" "$filter_diagnostics" "filter-close: lines_processed=2"
+  assert_output_line_count "stdin closure" "$output_log" 2
 }
 
 # Main test execution
 main() {
   echo -e "${YELLOW}=== Validation Output Filter - Large Output Stress Tests ===${NC}"
-  echo "Platform: Raspberry Pi 4 with 4GB memory"
+  echo "Platform: $(uname -s) $(uname -m)"
   echo "Filter binary: $FILTER_BIN"
   echo "Expected runtime: 10-30 seconds on workstations; up to 2 minutes on constrained hosts."
   
@@ -278,12 +266,11 @@ main() {
     exit 1
   fi
   
-  # Run all tests
+  # Run all scenarios
   test_large_output
   test_large_single_line
   test_rapid_burst
   test_stdin_closure
-  test_memory_bounds
   
   # Summary
   echo -e "\n${YELLOW}=== Test Summary ===${NC}"

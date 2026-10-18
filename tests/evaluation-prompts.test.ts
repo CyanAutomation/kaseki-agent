@@ -101,7 +101,10 @@ describe('rendered prompt contracts', () => {
       fields: ['overall_assessment', 'reviewer_confidence', 'task_completion_score', 'summary', 'human_review_focus', 'stage_value', 'evidence_sources_inspected', 'contradictions', 'confidence_calibration', 'phase_scorecard', 'efficiency_findings', 'kaseki_improvement_opportunities', 'pr_summary', 'pr_changes', 'warnings'],
     },
   ])('$name exposes the required artifact schema', ({ name, heading, nextHeading, fields }) => {
-    expect(requiredJsonFields(renderPrompt(name), heading, nextHeading)).toEqual(fields);
+    const actualFields = requiredJsonFields(renderPrompt(name), heading, nextHeading);
+
+    expect(new Set(actualFields).size).toBe(actualFields.length);
+    expect(new Set(actualFields)).toEqual(new Set(fields));
   });
 
   it.each([

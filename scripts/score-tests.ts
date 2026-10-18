@@ -1,25 +1,24 @@
 /**
  * Test Quality Scoring Script
  * 
- * Analyzes all 102 test files and scores them on the following rubric (0-2 per dimension):
+ * Analyzes discovered test files and scores them on the following rubric (0-2 per dimension):
  * 1. Intent clarity — Test name + body state behavior (not implementation)
  * 2. Behavioral relevance — Maps to spec/issue with traceable ID
  * 3. Assertion quality — Precise, semantic assertions (not snapshots)
  * 4. Isolation & robustness — Deterministic, minimal mocking, no flakes
  * 5. Cost vs. coverage — Fast execution + meaningful mutation coverage
  * 
- * Outputs JSON report with all scores and identifies bottom 10 tests.
+ * Outputs JSON report with one score per discovered test file and identifies the bottom 10 files.
  */
 
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
 
 interface TestScore {
   id: string;
   file: string;
   testName: string;
-  language: 'typescript' | 'shell' | 'bash' | 'other';
+  language: 'typescript' | 'javascript' | 'shell' | 'bash' | 'other';
   lineCount: number;
   intentClarity: number;
   behavioralRelevance: number;
@@ -36,9 +35,17 @@ interface TestScore {
   concerns: string[];
 }
 
-function getAllTestFiles(rootDir: string): string[] {
+export function getAllTestFiles(rootDir: string): string[] {
   const testFiles: string[] = [];
-  const isGeneratedSourceMap = (fileName: string) => fileName.endsWith('.map');
+  const ignoredDirectories = new Set([
+    '.git',
+    'node_modules',
+    'dist',
+    'coverage',
+    '.next',
+    '.turbo',
+  ]);
+  const testFilePattern = /(?:\.test\.(?:[cm]?[jt]sx?|sh|bash)|\.integration\.test\.(?:[cm]?[jt]sx?|sh|bash))$/i;
   
   function walk(dir: string) {
     try {
@@ -47,12 +54,10 @@ function getAllTestFiles(rootDir: string): string[] {
         const fullPath = path.join(dir, file);
         const stat = fs.statSync(fullPath);
         
-        if (stat.isDirectory() && !file.startsWith('.') && file !== 'node_modules') {
+        if (stat.isDirectory() && !ignoredDirectories.has(file)) {
           walk(fullPath);
-        } else if (stat.isFile() && !isGeneratedSourceMap(file)) {
-          if (file.match(/\.test\.(ts|js|sh|bash)$/) || file.match(/\.integration\.test\./)) {
-            testFiles.push(fullPath);
-          }
+        } else if (stat.isFile() && testFilePattern.test(file)) {
+          testFiles.push(fullPath);
         }
       }
     } catch (e) {
@@ -61,7 +66,7 @@ function getAllTestFiles(rootDir: string): string[] {
   }
   
   walk(rootDir);
-  return testFiles;
+  return testFiles.sort();
 }
 
 function readTestFile(filePath: string): string {
@@ -72,34 +77,65 @@ function readTestFile(filePath: string): string {
   }
 }
 
-function extractTestName(content: string, fileExt: string): string {
+function extractTestName(content: string, fileExt: string, filePath: string): string {
   // Extract main describe block or test name
-  if (fileExt === 'ts') {
+  if (/^(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/i.test(fileExt)) {
     const describeMatch = content.match(/describe\(['"`](.*?)['"`]/);
     if (describeMatch) return describeMatch[1];
-    const itMatch = content.match(/it\(['"`](.*?)['"`]/);
-    if (itMatch) return itMatch[1];
-  } else if (fileExt.match(/sh|bash/)) {
-    // For shell scripts, look for comment headers or function names
-    const commentMatch = content.match(/^#\s*(.+?)$/m);
-    if (commentMatch) return commentMatch[1];
+    const testMatch = content.match(/(?:it|test)\s*\(\s*['"`](.*?)['"`]/);
+    if (testMatch) return testMatch[1];
+  } else if (/^(?:sh|bash)$/i.test(fileExt)) {
+    const testFunctionMatch = content.match(/^\s*(?:function\s+)?(test_[a-z0-9_]+)\s*\(\s*\)\s*\{/im);
+    if (testFunctionMatch) return testFunctionMatch[1].replace(/_/g, ' ');
+    const commentLine = content
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line.startsWith('#') && !/^#!|^#\s*shellcheck\b/i.test(line));
+    if (commentLine) return commentLine.replace(/^#\s*/, '').trim();
   }
   return path.basename(filePath).replace(/\.test\..*/, '');
 }
 
-function scoreIntentClarity(content: string, fileName: string, fileExt: string): number {
+export function scoreIntentClarity(content: string, fileName: string, fileExt: string): number {
+  if (/^(?:sh|bash)$/i.test(fileExt)) {
+    const testFunction = content.match(/^\s*(?:function\s+)?test_([a-z0-9_]+)\s*\(\s*\)\s*\{/im)?.[1];
+    if (testFunction && !/^(?:test|helper|function|main)$/i.test(testFunction)) {
+      return 2;
+    }
+    const descriptiveHeader = content
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line.startsWith('#') && !/^#!|^#\s*shellcheck\b/i.test(line));
+    const fileTitle = fileName
+      .replace(/(?:\.integration)?\.test\.[^.]+$/i, '')
+      .replace(/[-_]+/g, ' ')
+      .trim();
+    const descriptiveFileTitle = fileTitle.length >= 8
+      && !/^(?:test|helper|function|works?|tests?)$/i.test(fileTitle);
+    return descriptiveHeader && descriptiveHeader.length > 12
+      || (descriptiveFileTitle && getAssertionCount(content, fileExt) > 0)
+      ? 1
+      : 0;
+  }
+
+  const testTitles = [...content.matchAll(/(?:it|test)\s*\(\s*['"`]([^'"`\n]{1,})['"`]/gi)]
+    .map((match) => match[1].trim());
+  const descriptiveTestTitle = testTitles.some(
+    (title) => title.length >= 12 && !/^(?:test|helper|function|works?|todo)\b/i.test(title),
+  );
+
   // Check if test name clearly states behavior
   const docBlock = content.match(/\/\*\*[\s\S]*?\*\//) ? true : false;
   const hasDescriptiveComment = content.match(/\/\/\s*(?:Should|Tests?|Validates?|Checks?|Ensures?)/i) ? true : false;
   
   // Check for "should" statements in test names (TypeScript)
   const shouldPattern = content.match(/(?:it|describe|test)\(['"`].*?(?:should|must|will|can|returns?|validates?|handles?|fails?|throws?)/i);
-  const vacuousPattern = content.match(/(?:it|describe|test)\(['"`](?:test|helper|function|works?|tests?)[^'`]*['"`]/i);
+  const vacuousPattern = /(?:it|describe|test)\s*\(\s*['"`](?:test|helper|function|works?|tests?)\b/i.test(content);
   
   let score = 0;
   
   // Clear "should" pattern = 2
-  if (shouldPattern && !vacuousPattern) {
+  if ((shouldPattern || descriptiveTestTitle) && !vacuousPattern) {
     score = 2;
   }
   // Descriptive comments or doc blocks = 1
@@ -114,9 +150,9 @@ function scoreIntentClarity(content: string, fileName: string, fileExt: string):
   return Math.min(2, score);
 }
 
-function scoreBehavioralRelevance(content: string): number {
-  // Check for issue/PR links or spec references
-  const hasIssueLink = content.match(/#\d+|issue|fixes|resolves|spec|requirement|PRD|bugfix|regression/i) ? true : false;
+export function scoreBehavioralRelevance(content: string): number {
+  // Award full relevance only for a traceable issue/spec reference.
+  const hasTraceableReference = /(?:#\d+|(?:GH|PR|ISSUE|SPEC|REQ|PRD)[-# ]?\d+|github\.com\/[^\s]+\/(?:issues|pull)\/\d+)/i.test(content);
   
   // Check for meaningful comment blocks describing what the test validates
   const hasDetailedComment = content.match(/\/\*\*[\s\S]*?(?:Validates?|Ensures?|Tests?|Checks?)[\s\S]*?\*\//m) ? true : false;
@@ -124,9 +160,9 @@ function scoreBehavioralRelevance(content: string): number {
   
   let score = 0;
   
-  if (hasIssueLink) {
+  if (hasTraceableReference) {
     score = 2; // Directly traceable to a requirement
-  } else if (hasDetailedComment || hasInlineComment) {
+  } else if (hasDetailedComment || hasInlineComment || /\b(?:spec|requirement|PRD|bugfix|regression)\b/i.test(content)) {
     score = 1; // Has documented intent
   } else {
     score = 0; // No clear intent or traceability
@@ -135,18 +171,44 @@ function scoreBehavioralRelevance(content: string): number {
   return Math.min(2, score);
 }
 
-function scoreAssertionQuality(content: string, fileExt: string): number {
-  const lines = content.split('\n');
-  const assertions = content.match(/expect\(|assert\(/gi) || [];
-  
-  if (assertions.length === 0) return 0;
+function getShellAssertions(content: string): string[] {
+  const executableLines = content
+    .split('\n')
+    .map((line) => line.replace(/\s+#.*$/, '').trim())
+    .filter((line) => line.length > 0 && !line.startsWith('#'));
+  return executableLines.filter((line) => {
+    const command = line
+      .replace(/^(?:if|elif|while|until)\s+/i, '')
+      .replace(/^!\s+/, '');
+    return /^(?:assert(?:_[a-z0-9_]+|\.[a-z0-9_]+)?(?:\s*\(|\s+)|\[\[?|test\s|(?:grep|jq|cmp|diff)\s)/i.test(command)
+      || /\bthrow\s+new\s+Error\b|\bexit\s+1\b/i.test(command)
+      || /^(?:if|elif)\s+[a-z_][a-z0-9_]*\s+[^;]+;/i.test(line);
+  });
+}
+
+function getAssertionCount(content: string, fileExt: string): number {
+  if (/^(?:sh|bash)$/i.test(fileExt)) {
+    return getShellAssertions(content).length;
+  }
+  return (content.match(/expect\(|assert(?:\.|\s*\()|throw\s+new\s+Error\b/gi) || []).length;
+}
+
+export function scoreAssertionQuality(content: string, fileExt: string): number {
+  const isShell = /^(?:sh|bash)$/i.test(fileExt);
+  const assertionCount = getAssertionCount(content, fileExt);
+
+  if (assertionCount === 0) return 0;
   
   // Check for snapshot testing (brittle)
   const hasSnapshots = content.match(/toMatchSnapshot|snapshot/i) ? true : false;
   
   // Check for semantic assertions (these are more meaningful)
-  const semanticMatchers = content.match(/toBe\(|toEqual\(|toContain\(|toMatch\(|toThrow\(|toHaveBeenCalled|toBeGreaterThan|toBeLessThan|toHaveProperty/gi) || [];
-  const vacuousAssertions = content.match(/toBeTruthy|toBeDefined|toBeDefined|toStrictEqual|toHaveLength/gi) || [];
+  const semanticMatchers = isShell
+    ? getShellAssertions(content)
+    : content.match(/toBe\(|toEqual\(|toContain\(|toMatch\(|toThrow\(|toHaveBeenCalled|toBeGreaterThan|toBeLessThan|toHaveProperty|toStrictEqual|assert\.(?:equal|strictEqual|deepEqual|deepStrictEqual|match|throws|doesNotThrow)\(|throw\s+new\s+Error\b/gi) || [];
+  const vacuousAssertions = isShell
+    ? []
+    : content.match(/toBeTruthy|toBeDefined|toHaveLength/gi) || [];
   
   let score = 0;
   
@@ -216,9 +278,9 @@ function scoreIsolationRobustness(content: string): number {
   return Math.max(0, Math.min(2, Math.round(score * 2) / 2));
 }
 
-function scoreCostCoverage(content: string): number {
+export function scoreCostCoverage(content: string, fileExt: string): number {
   const lines = content.split('\n').length;
-  const assertionCount = (content.match(/expect\(|assert\(/gi) || []).length;
+  const assertionCount = getAssertionCount(content, fileExt);
   
   let score = 1; // Start at 1 since most tests have some value
   
@@ -247,17 +309,23 @@ function scoreCostCoverage(content: string): number {
 
 function analyzeTest(filePath: string, content: string): TestScore {
   const fileExt = path.extname(filePath).slice(1);
-  const language = fileExt === 'ts' ? 'typescript' : fileExt.match(/sh|bash/) ? 'shell' : 'other' as any;
+  const language = /^(?:ts|tsx)$/i.test(fileExt)
+    ? 'typescript'
+    : /^(?:js|jsx|mjs|cjs)$/i.test(fileExt)
+      ? 'javascript'
+      : /^(?:sh|bash)$/i.test(fileExt)
+        ? 'shell'
+        : 'other';
   const fileName = path.basename(filePath);
   const lineCount = content.split('\n').length;
-  const testName = extractTestName(content, fileExt);
+  const testName = extractTestName(content, fileExt, filePath);
   
   const scores = {
     intentClarity: scoreIntentClarity(content, fileName, fileExt),
     behavioralRelevance: scoreBehavioralRelevance(content),
     assertionQuality: scoreAssertionQuality(content, fileExt),
     isolationRobustness: scoreIsolationRobustness(content),
-    costCoverage: scoreCostCoverage(content),
+    costCoverage: scoreCostCoverage(content, fileExt),
   };
   
   const total = Object.values(scores).reduce((a, b) => a + b, 0);
@@ -328,7 +396,7 @@ function main() {
   const bottom10 = scores.slice(0, 10);
   
   console.log('\n' + '='.repeat(80));
-  console.log('BOTTOM 10 LOWEST-SCORING TESTS');
+  console.log('BOTTOM 10 LOWEST-SCORING TEST FILES');
   console.log('='.repeat(80) + '\n');
   
   bottom10.forEach((test, idx) => {
@@ -349,11 +417,14 @@ function main() {
   console.log('='.repeat(80));
   console.log('SUMMARY');
   console.log('='.repeat(80));
-  console.log(`Total tests scored: ${scores.length}`);
+  console.log(`Total test files scored: ${scores.length}`);
   console.log(`Keep (≥8): ${bySegment.Keep}`);
   console.log(`Refactor (5–7): ${bySegment.Refactor}`);
   console.log(`Remove (≤4): ${bySegment.Remove}`);
   console.log(`\nFull results saved to: ${resultsFile}`);
 }
 
-main();
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : undefined;
+if (invokedPath && /^score-tests\.(?:[cm]?[jt]s)$/i.test(path.basename(invokedPath))) {
+  main();
+}
