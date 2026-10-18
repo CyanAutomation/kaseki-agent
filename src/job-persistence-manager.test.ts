@@ -1,9 +1,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawn } from 'child_process';
 import { Job } from './kaseki-api-types';
 import { JobPersistenceManager, PersistedJob, type SoyuzClaimIntent, type SoyuzOutboxEntry } from './job-persistence-manager';
 import { KasekiApiConfig } from './kaseki-api-config';
+
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
 
 /**
  * JobPersistenceManager Tests
@@ -210,10 +217,8 @@ describe('JobPersistenceManager', () => {
       expect(stored.jobs[0].restartClaim?.pid).toBe(404);
     });
 
-    test('should retry sync lock acquisition during initial contention and eventually load jobs', async () => {
-      // Spec: If lock exists (held by another process), retry with exponential backoff
-      // Behavioral intent: Polling strategy allows concurrent safe access to shared index file
-      // This test spawns a subprocess to simulate contention
+    test('waits without blocking the event loop, then loads jobs after lock release', async () => {
+      // Spec: A contended jobs-index lock must be retried without blocking other work.
       const job: PersistedJob = {
         id: 'kaseki-1',
         status: 'completed',
@@ -232,60 +237,45 @@ describe('JobPersistenceManager', () => {
       const lockPath = path.join(tempDir, '.kaseki-api-jobs.lock');
       fs.writeFileSync(indexPath, JSON.stringify({ jobs: [job] }), 'utf-8');
       fs.mkdirSync(lockPath, { recursive: true });
+      fs.writeFileSync(
+        path.join(lockPath, 'owner.json'),
+        JSON.stringify({
+          pid: process.pid,
+          token: 'test-holder',
+          createdAt: new Date().toISOString(),
+        }),
+      );
 
-      const releaseProc = spawn(process.execPath, [
-        '-e',
-        `setTimeout(() => require('fs').rmSync(${JSON.stringify(lockPath)}, { recursive: true, force: true }), 50)`,
-      ]);
+      const retryStarted = deferred();
+      const releaseRetry = deferred();
+      const contendedManager = new JobPersistenceManager(config, {
+        waitForLockRetry: async () => {
+          retryStarted.resolve();
+          await releaseRetry.promise;
+        },
+      });
+      const loadPromise = contendedManager.loadPersistedJobs();
+      let loadSettledBeforeRelease = false;
+      void loadPromise.then(
+        () => {
+          loadSettledBeforeRelease = true;
+        },
+        () => {
+          loadSettledBeforeRelease = true;
+        },
+      );
 
-      const result = await manager.loadPersistedJobs();
-      releaseProc.on('exit', async () => {});
-      releaseProc.unref();
-      expect(releaseProc.pid).toBeGreaterThan(0);
+      await retryStarted.promise;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(loadSettledBeforeRelease).toBe(false);
+      expect(fs.existsSync(lockPath)).toBe(true);
+
+      fs.rmSync(lockPath, { recursive: true, force: true });
+      releaseRetry.resolve();
+
+      const result = await loadPromise;
       expect(result.status).toBe('loaded');
-      expect(result.jobs).toHaveLength(1);
-    });
-
-    test('should keep the event loop responsive while waiting for jobs index lock', async () => {
-      // Spec: Lock waiting uses async primitives (not busy-loop)
-      // Behavioral intent: Event loop should tick regularly while blocked on lock
-      // Assertion: Multiple event loop ticks should occur during lock wait
-      const job: PersistedJob = {
-        id: 'kaseki-1',
-        status: 'completed',
-        request: {
-          repoUrl: 'https://github.com/test/repo',
-          ref: 'main',
-        },
-        createdAt: '2026-05-11T12:00:00Z',
-        resultDir: manager.getResultDir('kaseki-1'),
-        finalized: true,
-        correlationId: 'corr-1',
-        requestId: 'req-1',
-      };
-
-      const indexPath = path.join(tempDir, '.kaseki-api-jobs.json');
-      const lockPath = path.join(tempDir, '.kaseki-api-jobs.lock');
-      fs.writeFileSync(indexPath, JSON.stringify({ jobs: [job] }), 'utf-8');
-      fs.mkdirSync(lockPath, { recursive: true });
-
-      let ticks = 0;
-      const interval = setInterval(() => {
-        ticks += 1;
-      }, 5);
-      const releaseLock = setTimeout(() => {
-        fs.rmSync(lockPath, { recursive: true, force: true });
-      }, 75);
-
-      try {
-        const result = await manager.loadPersistedJobs();
-        expect(result.status).toBe('loaded');
-        expect(result.jobs).toHaveLength(1);
-        expect(ticks).toBeGreaterThanOrEqual(5);
-      } finally {
-        clearInterval(interval);
-        clearTimeout(releaseLock);
-      }
+      expect(result.jobs.map(({ id }) => id)).toEqual(['kaseki-1']);
     });
   });
 

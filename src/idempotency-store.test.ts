@@ -9,6 +9,14 @@ import {
 } from './idempotency-store';
 import { RunResponse } from './kaseki-api-types';
 
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
+
 /**
  * IdempotencyStore Tests
  *
@@ -249,14 +257,34 @@ describe('IdempotencyStore', () => {
   // Expected behavior: Race condition resolved deterministically
   test('only one parallel claimer gets claimed for the same key', async () => {
     const workerPath = path.join(resultsDir, 'claim-worker.ts');
+    const lockPath = path.join(resultsDir, '.kaseki-api-idempotency.lock');
+    const waiterPaths = [
+      path.join(resultsDir, 'claim-worker-0-waiting'),
+      path.join(resultsDir, 'claim-worker-1-waiting'),
+    ];
+    fs.mkdirSync(lockPath, { recursive: true });
+    fs.writeFileSync(
+      path.join(lockPath, 'owner.json'),
+      JSON.stringify({
+        pid: process.pid,
+        token: 'test-lock-holder',
+        createdAt: new Date().toISOString(),
+      }),
+      'utf-8',
+    );
     fs.writeFileSync(
       workerPath,
       `
       import { IdempotencyStore } from '${path.resolve('src/idempotency-store.ts').replace(/\\/g, '\\\\')}';
       import * as fs from 'fs';
       void (async () => {
-        const [resultsDir, key, fingerprint, resultPath] = process.argv.slice(2);
-        const store = new IdempotencyStore(resultsDir, 24);
+        const [resultsDir, key, fingerprint, resultPath, waiterPath] = process.argv.slice(2);
+        const store = new IdempotencyStore(resultsDir, 24, {
+          waitForLockRetry: async (delayMs) => {
+            if (!fs.existsSync(waiterPath)) fs.writeFileSync(waiterPath, 'waiting', 'utf-8');
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+          },
+        });
         const result = await store.claimOrGet(key, fingerprint);
         store.shutdown();
         fs.writeFileSync(resultPath, JSON.stringify(result), 'utf-8');
@@ -269,7 +297,7 @@ describe('IdempotencyStore', () => {
     );
 
     let claimWorkerIndex = 0;
-    const claimFromProcess = (): Promise<{ kind: string }> =>
+    const claimFromProcess = (waiterPath: string): Promise<{ kind: string }> =>
       new Promise((resolve, reject) => {
         const resultPath = path.join(
           resultsDir,
@@ -283,10 +311,13 @@ describe('IdempotencyStore', () => {
           'concurrent-key',
           'same-fp',
           resultPath,
+          waiterPath,
         ]);
         let stdout = '';
         let stderr = '';
         let settled = false;
+        let timedOut = false;
+        let forceKill: NodeJS.Timeout | undefined;
 
         const finish = (callback: () => void): void => {
           if (settled) {
@@ -294,18 +325,14 @@ describe('IdempotencyStore', () => {
           }
           settled = true;
           clearTimeout(timeout);
+          if (forceKill) clearTimeout(forceKill);
           callback();
         };
 
         const timeout = setTimeout(() => {
+          timedOut = true;
           child.kill('SIGTERM');
-          finish(() => {
-            reject(
-              new Error(
-                `worker timed out after 10000ms (stdout: ${stdout || '<empty>'}; stderr: ${stderr || '<empty>'})`,
-              ),
-            );
-          });
+          forceKill = setTimeout(() => child.kill('SIGKILL'), 1000);
         }, 10000);
 
         child.stdout.on('data', (chunk) => {
@@ -319,6 +346,14 @@ describe('IdempotencyStore', () => {
         });
         child.on('close', (code, signal) => {
           finish(() => {
+            if (timedOut) {
+              reject(
+                new Error(
+                  `worker timed out after 10000ms (stdout: ${stdout || '<empty>'}; stderr: ${stderr || '<empty>'})`,
+                ),
+              );
+              return;
+            }
             if (code !== 0) {
               reject(
                 new Error(
@@ -354,95 +389,89 @@ describe('IdempotencyStore', () => {
         });
       });
 
-    const [result1, result2] = await Promise.all([
-      claimFromProcess(),
-      claimFromProcess(),
-    ]);
-    const kinds = [result1.kind, result2.kind].sort();
+    const waitForBothClaimers = (): Promise<void> =>
+      new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = (error?: Error): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          watcher.close();
+          if (error) reject(error);
+          else resolve();
+        };
+        const checkReady = (): void => {
+          if (waiterPaths.every((waiterPath) => fs.existsSync(waiterPath))) finish();
+        };
+        const watcher = fs.watch(resultsDir, checkReady);
+        const timeout = setTimeout(
+          () => finish(new Error('both idempotency claimers did not reach the held lock')),
+          10000,
+        );
+        checkReady();
+      });
 
-    expect(kinds).toEqual(['claimed', 'pending']);
+    const workerResults = waiterPaths.map((waiterPath) => claimFromProcess(waiterPath));
+    try {
+      await waitForBothClaimers();
+      fs.rmSync(lockPath, { recursive: true, force: true });
+
+      const [result1, result2] = await Promise.all(workerResults);
+      const kinds = [result1.kind, result2.kind].sort();
+      expect(kinds).toEqual(['claimed', 'pending']);
+    } finally {
+      fs.rmSync(lockPath, { recursive: true, force: true });
+      await Promise.allSettled(workerResults);
+    }
   }, 15000);
 
   // Spec: Lock ensures exclusive critical sections during contention
-  test('enforces exclusive critical section during long-held lock contention', async () => {
-    const workerPath = path.join(resultsDir, 'lock-worker.ts');
-    const markerPath = path.join(resultsDir, 'critical-section-marker.txt');
-    const overlapPath = path.join(resultsDir, 'critical-overlap.log');
+  test('keeps a second operation outside the critical section until the first releases the lock', async () => {
+    const firstEntered = deferred();
+    const releaseFirst = deferred();
+    const secondWaiting = deferred();
+    const store = new IdempotencyStore(resultsDir, 24, {
+      waitForLockRetry: async (delayMs) => {
+        secondWaiting.resolve();
+        await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+      },
+    });
+    let firstIsActive = false;
+    let secondEnteredWhileFirstActive = false;
+    let secondEntered = false;
+    let secondPromise: Promise<void> | undefined;
 
-    fs.writeFileSync(markerPath, '0', 'utf-8');
-    fs.writeFileSync(overlapPath, '', 'utf-8');
+    const first = withIdempotencyStoreLock(store, async () => {
+      firstIsActive = true;
+      firstEntered.resolve();
+      await releaseFirst.promise;
+      firstIsActive = false;
+    });
 
-    fs.writeFileSync(
-      workerPath,
-      `
-      import * as fs from 'fs';
-      import { IdempotencyStore, withIdempotencyStoreLock } from '${path.resolve('src/idempotency-store.ts').replace(/\\/g, '\\\\')}';
-
-      void (async () => {
-        const [resultsDir, markerPath, overlapPath] = process.argv.slice(2);
-        const store = new IdempotencyStore(resultsDir, 24);
-
-        await withIdempotencyStoreLock(store, () => {
-        const active = Number(fs.readFileSync(markerPath, 'utf-8'));
-        if (active > 0) {
-          fs.appendFileSync(overlapPath, 'overlap\\n', 'utf-8');
-        }
-
-        fs.writeFileSync(markerPath, String(active + 1), 'utf-8');
-        const start = Date.now();
-        while (Date.now() - start < 600) {
-          // Hold lock
-        }
-        const after = Number(fs.readFileSync(markerPath, 'utf-8'));
-        fs.writeFileSync(markerPath, String(after - 1), 'utf-8');
-        });
-
-        store.shutdown();
-        process.stdout.write('done');
-      })().catch((error) => {
-        console.error(error);
-        process.exit(1);
-      });
-    `,
-      'utf-8',
-    );
-
-    const runWorker = (): Promise<void> =>
-      new Promise((resolve, reject) => {
-        const child = spawn(process.execPath, [
-          '--import',
-          'tsx',
-          workerPath,
-          resultsDir,
-          markerPath,
-          overlapPath,
-        ]);
-        let stderr = '';
-        child.stderr.on('data', (chunk) => {
-          stderr += chunk.toString();
-        });
-        child.on('error', reject);
-        child.on('close', (code) => {
-          if (code !== 0) {
-            reject(new Error(`worker exited with code ${code}: ${stderr}`));
-            return;
-          }
-          resolve();
-        });
+    try {
+      await firstEntered.promise;
+      secondPromise = withIdempotencyStoreLock(store, () => {
+        secondEnteredWhileFirstActive = firstIsActive;
+        secondEntered = true;
       });
 
-    await Promise.all([runWorker(), runWorker(), runWorker(), runWorker()]);
-    const overlaps = fs
-      .readFileSync(overlapPath, 'utf-8')
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
+      await secondWaiting.promise;
+      expect(secondEntered).toBe(false);
 
-    expect(overlaps).toEqual([]);
-  }, 20000);
+      releaseFirst.resolve();
+      await Promise.all([first, secondPromise]);
 
-  // Spec: Event loop remains responsive while waiting for lock
-  test('keeps the event loop responsive while waiting for the idempotency lock', async () => {
+      expect(secondEnteredWhileFirstActive).toBe(false);
+      expect(secondEntered).toBe(true);
+    } finally {
+      releaseFirst.resolve();
+      await Promise.allSettled([first, ...(secondPromise ? [secondPromise] : [])]);
+      store.shutdown();
+    }
+  });
+
+  // Spec: Lock retry must yield so unrelated event-loop work can proceed.
+  test('yields to other work while waiting for the idempotency lock', async () => {
     const lockPath = path.join(resultsDir, '.kaseki-api-idempotency.lock');
     fs.mkdirSync(lockPath, { recursive: true });
     fs.writeFileSync(
@@ -451,23 +480,37 @@ describe('IdempotencyStore', () => {
       'utf-8',
     );
 
-    const store = new IdempotencyStore(resultsDir, 24);
-    let ticks = 0;
-    const interval = setInterval(() => {
-      ticks += 1;
-    }, 5);
-    const releaseLock = setTimeout(() => {
-      fs.rmSync(lockPath, { recursive: true, force: true });
-    }, 75);
+    const retryStarted = deferred();
+    const releaseRetry = deferred();
+    const store = new IdempotencyStore(resultsDir, 24, {
+      waitForLockRetry: async () => {
+        retryStarted.resolve();
+        await releaseRetry.promise;
+      },
+    });
 
     try {
-      await expect(
-        store.claimOrGet('responsive-key', 'responsive-fp'),
-      ).resolves.toEqual({ kind: 'claimed' });
-      expect(ticks).toBeGreaterThan(0);
+      const claimPromise = store.claimOrGet('responsive-key', 'responsive-fp');
+      let claimSettledBeforeRelease = false;
+      void claimPromise.then(
+        () => {
+          claimSettledBeforeRelease = true;
+        },
+        () => {
+          claimSettledBeforeRelease = true;
+        },
+      );
+      await retryStarted.promise;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(claimSettledBeforeRelease).toBe(false);
+      expect(fs.existsSync(lockPath)).toBe(true);
+
+      fs.rmSync(lockPath, { recursive: true, force: true });
+      releaseRetry.resolve();
+      await expect(claimPromise).resolves.toEqual({ kind: 'claimed' });
     } finally {
-      clearInterval(interval);
-      clearTimeout(releaseLock);
+      releaseRetry.resolve();
       store.shutdown();
     }
   });

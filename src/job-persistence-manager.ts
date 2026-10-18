@@ -89,6 +89,7 @@ export interface JobPersistenceManagerDependencies {
     lockPath: string,
     quarantinePath: string,
   ) => void;
+  waitForLockRetry?: (delayMs: number) => Promise<void>;
 }
 
 /** Raised when a lock-scoped consumer cannot safely inspect the jobs index. */
@@ -156,6 +157,7 @@ export class JobPersistenceManager {
     lockPath: string,
     quarantinePath: string,
   ) => void;
+  private waitForLockRetry: (delayMs: number) => Promise<void>;
 
   constructor(
     config: Pick<KasekiApiConfig, 'resultsDir' | 'jobIndexMaxEntries'>,
@@ -182,6 +184,8 @@ export class JobPersistenceManager {
     this.indexFileRenamer = dependencies.indexFileRenamer ?? fs.renameSync;
     this.restartOwnerToken = `${this.pid}-${this.now()}-${this.lockTokenGenerator()}`;
     this.staleLockQuarantineObserver = dependencies.staleLockQuarantineObserver;
+    this.waitForLockRetry =
+      dependencies.waitForLockRetry ?? ((delayMs) => this.delay(delayMs));
   }
 
   /**
@@ -972,7 +976,7 @@ export class JobPersistenceManager {
         }
 
         this.logLockContention(lockName, lockPath, attempt + 1, maxRetries);
-        await this.delay(retryDelayMs);
+        await this.waitForLockRetry(retryDelayMs);
       }
     }
 

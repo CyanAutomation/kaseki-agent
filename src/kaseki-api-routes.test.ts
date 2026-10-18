@@ -1381,40 +1381,6 @@ describe('kaseki-api-routes idempotent submissions', () => {
     }
   });
 
-  test('serializes concurrent identical submissions and creates one job', async () => {
-    const scheduler = createMockScheduler();
-    scheduler.submitJob.mockImplementation(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      return {
-        id: 'kaseki-concurrent',
-        status: 'queued',
-        createdAt: new Date('2026-07-21T00:00:00.000Z'),
-        resultDir: path.join(resultsDir, 'kaseki-concurrent')
-      };
-    });
-    const { server, port, idempotencyStore } = await createTestApp(
-      scheduler,
-      createTestConfig(resultsDir)
-    );
-
-    try {
-      const submit = () => fetch(`http://127.0.0.1:${port}/api/runs`, {
-        method: 'POST',
-        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-      });
-      const [first, second] = await Promise.all([submit(), submit()]);
-      expect([first.status, second.status].sort()).toEqual([200, 202]);
-      const responses = await Promise.all([first.json(), second.json()]) as Array<{ id: string }>;
-      expect(responses.map(({ id }) => id)).toEqual([
-        'kaseki-concurrent',
-        'kaseki-concurrent'
-      ]);
-      expect(scheduler.submitJob).toHaveBeenCalledTimes(1);
-    } finally {
-      await cleanupTestApp(server, idempotencyStore);
-    }
-  });
 });
 
 describe('retry admission parity', () => {
@@ -5781,15 +5747,32 @@ describe('kaseki-api-routes idempotency concurrency', () => {
     fs.rmSync(resultsDir, { recursive: true, force: true });
   });
 
-  test('parallel requests with same idempotency key create exactly one job', async () => {
-    let submitted = 0;
-    const submitJob = jest.fn((runRequest: any) => {
-      submitted += 1;
+  test('concurrent requests with the same idempotency key return one submitted job', async () => {
+    let releaseSubmission!: () => void;
+    let releaseLockRetries!: () => void;
+    let signalSubmissionStarted!: () => void;
+    let signalAllRequestsWaiting!: () => void;
+    let waitingRequestCount = 0;
+    const submissionGate = new Promise<void>((resolve) => {
+      releaseSubmission = resolve;
+    });
+    const lockRetryGate = new Promise<void>((resolve) => {
+      releaseLockRetries = resolve;
+    });
+    const submissionStarted = new Promise<void>((resolve) => {
+      signalSubmissionStarted = resolve;
+    });
+    const allRequestsWaiting = new Promise<void>((resolve) => {
+      signalAllRequestsWaiting = resolve;
+    });
+    const submitJob = jest.fn(async (runRequest: any) => {
+      signalSubmissionStarted();
+      await submissionGate;
       return {
-        id: `job-${submitted}`,
+        id: 'job-1',
         status: 'queued',
         createdAt: new Date(),
-        resultDir: path.join(resultsDir, `job-${submitted}`),
+        resultDir: path.join(resultsDir, 'job-1'),
         requestId: runRequest.requestId,
         correlationId: runRequest.correlationId
       };
@@ -5814,7 +5797,13 @@ describe('kaseki-api-routes idempotency concurrency', () => {
       logLevel: 'info' as const
     };
 
-    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24, {
+      waitForLockRetry: async () => {
+        waitingRequestCount += 1;
+        if (waitingRequestCount === 7) signalAllRequestsWaiting();
+        await lockRetryGate;
+      },
+    });
     const preFlightValidator = new PreFlightValidator();
 
     const app = express();
@@ -5823,6 +5812,7 @@ describe('kaseki-api-routes idempotency concurrency', () => {
 
     const { server, port } = await listenTestApp(app);
     const headers = { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' };
+    let responsesPromise: Promise<Response[]> | undefined;
     const body = {
       repoUrl: 'https://github.com/example/repo',
       ref: 'main',
@@ -5838,28 +5828,52 @@ describe('kaseki-api-routes idempotency concurrency', () => {
           body: JSON.stringify(body)
         })
       );
-      const responses = await Promise.all(requests);
+      responsesPromise = Promise.all(requests);
+      await submissionStarted;
+      await allRequestsWaiting;
+      expect(submitJob).toHaveBeenCalledTimes(1);
+      releaseSubmission();
+      const acceptedResponse = await Promise.race(requests.map(async (request) => {
+        const response = await request;
+        return response.status === 202
+          ? response
+          : new Promise<Response>(() => {});
+      }));
+      expect(acceptedResponse.status).toBe(202);
+      releaseLockRetries();
+      const responses = await responsesPromise;
       const payloads = await Promise.all(responses.map((r) => r.json() as Promise<any>));
 
       expect(submitJob).toHaveBeenCalledTimes(1);
-      expect(responses.every((r) => r.status === 200 || r.status === 202)).toBe(true);
-      expect(new Set(payloads.map((p) => p.id)).size).toBe(1);
+      expect(responses.filter((response) => response.status === 202)).toHaveLength(1);
+      expect(responses.filter((response) => response.status === 200)).toHaveLength(7);
+      expect(payloads.map(({ id }) => id)).toEqual(Array(8).fill('job-1'));
     } finally {
+      releaseSubmission();
+      releaseLockRetries();
+      if (responsesPromise) await Promise.allSettled([responsesPromise]);
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await idempotencyStore.shutdown();
     }
   });
 
   test('health endpoint remains responsive while run submission is contended', async () => {
-    let resolveSubmission: any;
-    const submissionGate = new Promise<any>((resolve) => {
-      resolveSubmission = resolve;
+    let releaseSubmission!: (job: Record<string, unknown>) => void;
+    let signalSubmissionStarted!: () => void;
+    const submissionGate = new Promise<Record<string, unknown>>((resolve) => {
+      releaseSubmission = resolve;
+    });
+    const submissionStarted = new Promise<void>((resolve) => {
+      signalSubmissionStarted = resolve;
     });
 
     const scheduler = {
       getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: jest.fn(),
-      submitJob: jest.fn(async () => submissionGate),
+      submitJob: jest.fn(async () => {
+        signalSubmissionStarted();
+        return submissionGate;
+      }),
       listJobs: () => [],
       cancelJob: jest.fn()
     } as any;
@@ -5884,38 +5898,55 @@ describe('kaseki-api-routes idempotency concurrency', () => {
 
     const { server, port } = await listenTestApp(app);
 
+    let runPromise: Promise<Response> | undefined;
+    let runResponse: Response | undefined;
+    let runError: unknown;
     try {
-      const runPromise = fetch(`http://127.0.0.1:${port}/api/runs`, {
+      runPromise = fetch(`http://127.0.0.1:${port}/api/runs`, {
         method: 'POST',
         headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), repoUrl: 'https://github.com/example/repo', ref: 'main' })
+        body: JSON.stringify({ idempotencyKey: '99999999-9999-4999-8999-999999999999', repoUrl: 'https://github.com/example/repo', ref: 'main' })
       });
+      let runSettled = false;
+      void runPromise.then(
+        () => {
+          runSettled = true;
+        },
+        () => {
+          runSettled = true;
+        },
+      );
+      await submissionStarted;
 
-      await new Promise((resolve) => setTimeout(resolve, 20));
-
-      const healthResponse = await fetch(`http://127.0.0.1:${port}/api/health`);
+      const healthResponse = await fetch(`http://127.0.0.1:${port}/api/health`, {
+        signal: AbortSignal.timeout(1000),
+      });
       expect(healthResponse.status).toBe(200);
       const healthBody = (await healthResponse.json()) as any;
-      expect(healthBody.status).toBeDefined();
-
-      if (resolveSubmission)
-        resolveSubmission({
-          id: 'job-1',
-          status: 'queued',
-          createdAt: new Date(),
-          resultDir: path.join(resultsDir, 'job-1'),
-          requestId: 'req-1',
-          correlationId: 'corr-1'
-        });
-
-      const runResponse = await runPromise;
-      expect(runResponse.status).toBe(202);
-      // Drain response body to release HTTP connection
-      await drainResponseBody(runResponse);
+      expect(healthBody.status).toBe('ok');
+      expect(runSettled).toBe(false);
     } finally {
+      releaseSubmission({
+        id: 'job-1',
+        status: 'queued',
+        createdAt: new Date(),
+        resultDir: path.join(resultsDir, 'job-1'),
+        requestId: 'req-1',
+        correlationId: 'corr-1',
+      });
+      if (runPromise) {
+        try {
+          runResponse = await runPromise;
+          await drainResponseBody(runResponse);
+        } catch (error) {
+          runError = error;
+        }
+      }
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await idempotencyStore.shutdown();
     }
+    if (runError) throw runError;
+    expect(runResponse?.status).toBe(202);
   });
 });
 
