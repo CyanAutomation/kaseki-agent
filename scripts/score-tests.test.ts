@@ -36,6 +36,39 @@ describe('test quality scorer', () => {
     expect(scoreBehavioralRelevance('// Regression: GH#2789')).toBe(2);
   });
 
+  test('does not treat a generic spec variable as behavioral relevance', () => {
+    expect(scoreBehavioralRelevance('const spec = await parse(input);')).toBe(0);
+    expect(scoreBehavioralRelevance('const specifier = buildSpecifier();')).toBe(0);
+  });
+
+  test('scores JavaScript and TypeScript cost coverage by size, speed, and assertions', () => {
+    const fixture = (lineCount: number, overrides: Record<number, string>) =>
+      Array.from({ length: lineCount }, (_, index) => overrides[index] ?? '// fixture').join('\n');
+    const focusedTypeScript = fixture(20, {
+      0: "it('keeps the contract', () => {",
+      19: 'assert.equal(actual, expected);',
+    });
+    const slowJavaScript = fixture(20, {
+      0: "it('keeps the contract', () => {",
+      10: 'execSync(command);',
+      19: 'expect(actual).toBe(expected);',
+    });
+    const highAssertionDensity = [
+      'expect(first).toBe(1);',
+      'expect(second).toBe(2);',
+      'expect(third).toBe(3);',
+    ].join('\n');
+    const longTypeScript = fixture(101, {
+      0: "it('keeps the contract', () => {",
+      100: 'assert.equal(actual, expected);',
+    });
+
+    expect(scoreCostCoverage(focusedTypeScript, 'ts')).toBe(2);
+    expect(scoreCostCoverage(slowJavaScript, 'js')).toBe(1);
+    expect(scoreCostCoverage(highAssertionDensity, 'js')).toBe(2);
+    expect(scoreCostCoverage(longTypeScript, 'ts')).toBe(0);
+  });
+
   test('discovers tests in hidden source directories and skips generated or dependency trees', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'score-tests-inventory-'));
     try {
