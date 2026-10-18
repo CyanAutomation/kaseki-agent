@@ -111,7 +111,7 @@ npm test
 
 - **Strict mode enabled** — All files compile with `"strict": true`
 - **No implicit any** — Function parameters and return types must be explicit
-- **ESM modules** — Source uses ES2024 syntax; CommonJS output for Node compatibility
+- **ESM modules** — Source compiles to ES modules for the Node.js runtime (`module: ESNext`)
 - **Declaration files** — TypeScript generates `.d.ts` for CLI library exports
 
 ## 4) Code Quality: Linting and Style
@@ -132,8 +132,8 @@ npm run lint:fix               # Auto-fix formatting and common issues
 
 Specific linting commands:
 
-- `npm run lint:ts` — Check only TypeScript files
-- `npm run lint:ts:fix` — Auto-fix TypeScript issues
+- `npm run lint:js` — Check JavaScript and TypeScript files with ESLint
+- `npm run lint:js:fix` — Apply ESLint fixes to JavaScript and TypeScript files
 - `npm run lint:sh` — Check only shell scripts
 
 ### What gets linted

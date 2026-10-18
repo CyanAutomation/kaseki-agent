@@ -1,6 +1,6 @@
 # NPM Package Setup Guide
 
-This guide covers installing and using `@cyanautomation/kaseki-agent` as an npm package. The npm CLI is primarily an admin/helper toolbox (`doctor`, `setup`, `config`, and `secrets`) plus a client for API-backed task workflows.
+This guide covers installing and using `@cyanautomation/kaseki-agent` as an npm package. The npm CLI is primarily an admin/helper toolbox (`doctor`, `init`, `config`, and `secrets`) plus a client for API-backed task workflows.
 
 ## Installation
 
@@ -22,7 +22,7 @@ Use the same commands through `npx` when you do not want a global install:
 
 ```bash
 npx kaseki-agent doctor
-npx kaseki-agent setup
+npx kaseki-agent init
 npx kaseki-agent config show
 npx kaseki-agent secrets list
 ```
@@ -58,13 +58,13 @@ kaseki-agent doctor --json
 
 `doctor` validates the local host dependencies, configuration files, auth files, Docker availability, image status, and disk space. It is the fastest way to confirm whether this machine can host Kaseki services or workers.
 
-### 2. `setup` — first-time interactive configuration
+### 2. `init` — first-time interactive configuration
 
 ```bash
-kaseki-agent setup
+kaseki-agent init
 ```
 
-The setup wizard validates the environment, prompts for key settings, stores credentials, writes config in the selected scope, and suggests follow-up checks.
+The setup wizard validates the environment, prompts for key settings, stores credentials, writes config in the selected scope, and suggests follow-up checks. `kaseki-agent setup` remains available as a deprecated alias; use `init` for new workflows.
 
 ### 3. `config` — inspect and edit configuration
 
@@ -207,7 +207,7 @@ Both commands call the controller API cancel endpoint and require the same API U
 ```bash
 npm install -g @cyanautomation/kaseki-agent
 kaseki-agent doctor --help
-kaseki-agent setup
+kaseki-agent init
 kaseki-agent config set api.base_url http://localhost:8080/api/v1 --global
 
 # Start the API service in one terminal.
