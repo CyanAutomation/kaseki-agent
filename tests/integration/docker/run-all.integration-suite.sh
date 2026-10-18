@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Suite runner only: child integration scripts own the Docker behavior checks.
+# Build one image here so those checks share setup cost and the same image tag.
 
 set -euo pipefail
 
