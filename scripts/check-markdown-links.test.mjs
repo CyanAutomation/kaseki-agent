@@ -186,18 +186,34 @@ test('recognizes explicitly authored HTML anchors', () => {
   }
 });
 
+test('ignores inline HTML tags when matching heading anchors', () => {
+  const repositoryRoot = mkdtempSync(path.join(os.tmpdir(), 'kaseki-markdown-anchors-'));
+  try {
+    const markdown = [
+      '## <span>Safe heading</span>',
+      '[section](#safe-heading)',
+    ].join('\n');
+
+    assert.deepEqual(findBrokenMarkdownLinks(markdown, 'README.md', repositoryRoot), []);
+  } finally {
+    rmSync(repositoryRoot, { recursive: true, force: true });
+  }
+});
+
 test('finds npm run commands that are not package scripts and reports their source line', () => {
   const markdown = [
     'Run `npm run check` before submitting.',
     '```bash',
     'npm run test:unit -- path/to/test',
     'npm run test:smoke',
+    'npm test',
     '```',
+    'Run `npm run missing:script` after the example.',
   ].join('\n');
 
   assert.deepEqual(
     findUnknownNpmScriptReferences(markdown, { check: 'node check.js', 'test:unit': 'jest' }),
-    [{ line: 4, script: 'test:smoke' }],
+    [{ line: 7, script: 'missing:script' }],
   );
 });
 

@@ -91,10 +91,11 @@ export function findBrokenMarkdownLinks(markdown, sourceFile, repositoryRoot = p
 }
 
 function slugHeading(heading) {
-  return heading
+  const plainHeading = stripInlineHtmlTags(heading
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
-    .replace(/<[^>]*>/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1'));
+
+  return plainHeading
     .replace(/`([^`]*)`/g, '$1')
     .normalize('NFKD')
     .replace(/\p{Diacritic}/gu, '')
@@ -102,6 +103,42 @@ function slugHeading(heading) {
     .replace(/[^\p{L}\p{N}\s-]/gu, '')
     .trim()
     .replace(/\s/g, '-');
+}
+
+function stripInlineHtmlTags(heading) {
+  let textStart = 0;
+  let index = 0;
+  const text = [];
+
+  while (index < heading.length) {
+    if (heading[index] !== '<') {
+      index += 1;
+      continue;
+    }
+
+    let tagStart = index + 1;
+    if (heading[tagStart] === '/') tagStart += 1;
+    if (!/[A-Za-z]/.test(heading[tagStart] ?? '')) {
+      index += 1;
+      continue;
+    }
+
+    let tagEnd = tagStart + 1;
+    while (tagEnd < heading.length && heading[tagEnd] !== '>' && heading[tagEnd] !== '<' && heading[tagEnd] !== '\n') {
+      tagEnd += 1;
+    }
+
+    if (heading[tagEnd] === '>') {
+      text.push(heading.slice(textStart, index));
+      textStart = tagEnd + 1;
+      index = textStart;
+    } else {
+      index += 1;
+    }
+  }
+
+  text.push(heading.slice(textStart));
+  return text.join('');
 }
 
 function collectMarkdownAnchors(markdown) {
@@ -143,15 +180,16 @@ function collectMarkdownAnchors(markdown) {
  * not defined by this repository's package.json.
  */
 export function findUnknownNpmScriptReferences(markdown, packageScripts = {}) {
+  const scannedMarkdown = stripFencedCodeBlocks(markdown);
   const unknownScripts = [];
   const scriptPattern = /\bnpm\s+(?:run\s+([A-Za-z0-9][A-Za-z0-9:_-]*)|(test)\b)/g;
   let match;
 
-  while ((match = scriptPattern.exec(markdown)) !== null) {
+  while ((match = scriptPattern.exec(scannedMarkdown)) !== null) {
     const script = match[1] ?? match[2];
     if (!Object.hasOwn(packageScripts, script)) {
       unknownScripts.push({
-        line: markdown.slice(0, match.index).split('\n').length,
+        line: scannedMarkdown.slice(0, match.index).split('\n').length,
         script,
       });
     }
