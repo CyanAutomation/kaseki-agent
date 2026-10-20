@@ -3,7 +3,6 @@ export interface ApiUsageSnapshot {
   requestCount: number;
   diagnosticProbeCount: number;
   webhookTestCount: number;
-  githubIssueLookupCount: number;
   /** Token-level spend is not available from the current gateway probe interface. */
   costUsd: null;
 }
@@ -12,7 +11,6 @@ export interface ApiAccessControllerOptions {
   requestsPerMinute?: number;
   diagnosticsPerHour?: number;
   webhookTestsPerHour?: number;
-  githubIssuesPerMinute?: number;
   now?: () => number;
 }
 
@@ -48,16 +46,13 @@ export class ApiAccessController {
     const isDiagnosticProbe = (normalizedPath === '/gateway-test' && hasCostlyDiagnosticQuery(query)) ||
       (normalizedPath === '/preflight' && isQueryTrue(query.agentCapability));
     const isWebhookTest = (normalizedPath === '/webhooks/test' || /^\/runs\/[^/]+\/webhook-deliveries\/[^/]+\/retry$/.test(normalizedPath)) && method.toUpperCase() === 'POST';
-    const isGithubLookup = normalizedPath === '/github-issues' && method.toUpperCase() === 'POST';
     if (isDiagnosticProbe) usage.diagnosticProbeCount += 1;
     if (isWebhookTest) usage.webhookTestCount += 1;
-    if (isGithubLookup) usage.githubIssueLookupCount += 1;
 
     const exceeded: number[] = [];
     this.consumeRate(apiKey, 'requests', 60_000, this.options.requestsPerMinute ?? 300, now, exceeded);
     if (isDiagnosticProbe) this.consumeRate(apiKey, 'diagnostics', 3_600_000, this.options.diagnosticsPerHour ?? 10, now, exceeded);
     if (isWebhookTest) this.consumeRate(apiKey, 'webhooks', 3_600_000, this.options.webhookTestsPerHour ?? 10, now, exceeded);
-    if (isGithubLookup) this.consumeRate(apiKey, 'github', 60_000, this.options.githubIssuesPerMinute ?? 30, now, exceeded);
     return exceeded.length > 0 ? Math.max(...exceeded) : undefined;
   }
 
@@ -68,7 +63,6 @@ export class ApiAccessController {
       requestCount: current.requestCount,
       diagnosticProbeCount: current.diagnosticProbeCount,
       webhookTestCount: current.webhookTestCount,
-      githubIssueLookupCount: current.githubIssueLookupCount,
       costUsd: null,
     };
   }
@@ -98,7 +92,6 @@ export class ApiAccessController {
         requestCount: 0,
         diagnosticProbeCount: 0,
         webhookTestCount: 0,
-        githubIssueLookupCount: 0,
         costUsd: null,
       };
       this.usage.set(apiKey, current);

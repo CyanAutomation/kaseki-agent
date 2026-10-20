@@ -23,7 +23,6 @@ import { createWebhookRoutes } from './routes/webhook-routes';
 import { createWebhookDeliveryRoutes } from './routes/webhook-delivery-routes';
 import { createHealthRoutes } from './routes/health-routes';
 import { createImprovementRoutes } from './routes/improvement-routes';
-import { createGitHubIssuesRoutes } from './routes/github-issues-routes';
 import { ResultCache } from './result-cache';
 import { metricsRegistry } from './metrics';
 import { getCachedStartupHealthReport } from './kaseki-api/startup-summary-artifact';
@@ -150,7 +149,6 @@ export function createApiRouter(
     requestsPerMinute: config.apiRequestsPerMinute,
     diagnosticsPerHour: config.apiDiagnosticsPerHour,
     webhookTestsPerHour: config.apiWebhookTestsPerHour,
-    githubIssuesPerMinute: config.apiGitHubIssuesPerMinute,
   });
   registerApiMiddleware(router, config, logger, apiAccess);
 
@@ -175,7 +173,6 @@ export function createApiRouter(
   router.use(createImprovementRoutes(scheduler, config));
   router.use(createWebhookRoutes());
   router.use(createWebhookDeliveryRoutes(scheduler));
-  router.use(createGitHubIssuesRoutes());
 
   router.use((error: unknown, req: Request, res: Response, next: NextFunction) => {
     if (res.headersSent) return next(error);
@@ -354,7 +351,6 @@ function registerApiInfoRoutes(
       requestsPerMinute: config.apiRequestsPerMinute ?? 300,
       diagnosticsPerHour: config.apiDiagnosticsPerHour ?? 10,
       webhookTestsPerHour: config.apiWebhookTestsPerHour ?? 10,
-      githubIssuesPerMinute: config.apiGitHubIssuesPerMinute ?? 30,
     } });
   });
 

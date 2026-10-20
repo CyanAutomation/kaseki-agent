@@ -36,9 +36,8 @@ const controllerPage = String.raw`<!doctype html>
          13. Tabs — Tab navigation and content switching
          14. Health checks — Health status buttons
          15. Dropdowns — Repo selection and similar
-         16. Issues tab — GitHub issues browser
-         17. Animations — Keyframe definitions
-         18. Responsive — Media query breakpoints (768px desktop, 480px tablet)
+         16. Animations — Keyframe definitions
+         17. Responsive — Media query breakpoints (768px desktop, 480px tablet)
          
          KEY DESIGN DECISIONS:
          • No shadows; depth via tonal layering (surface hierarchy)
@@ -965,90 +964,6 @@ const controllerPage = String.raw`<!doctype html>
         justify-content: center;
       }
       .recent-repo-delete:hover:not(:disabled) { color: var(--color-bad); }
-      /* ===== ISSUES TAB ===== */
-      /* GitHub issues list uses grid layout for flexible item sizing.
-         Items highlight on hover with color shift. Issue number is cyan (--color-focus)
-         for visual distinction. Loading state uses pulsing animation (--animation-duration-pulse-slow). */
-      .issues-form {
-        display: grid;
-        gap: var(--space-3);
-      }
-      .issues-repo-input-wrapper {
-        position: relative;
-      }
-      .issues-input-group {
-        display: flex;
-        gap: var(--space-2);
-      }
-      .issues-input-group input {
-        flex: 1;
-        min-width: 300px;
-      }
-      .issues-list-container {
-        display: grid;
-        gap: var(--space-3);
-        max-height: var(--panel-max-height);
-        overflow-y: auto;
-        padding: var(--space-2);
-        background: var(--color-surface);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-sm);
-        min-height: 100px;
-      }
-      .issues-list-empty {
-        text-align: center;
-        color: var(--color-text-muted);
-        padding: var(--space-3);
-      }
-      .issues-list-item {
-        display: block;
-        width: 100%;
-        text-align: left;
-        padding: var(--space-2) var(--space-3);
-        background: var(--color-surface-high);
-        transition: all var(--transition-base) var(--transition-easing);
-      }
-      .issues-list-item:hover {
-        background: var(--color-surface-highest);
-        border-color: var(--color-focus);
-        color: var(--color-focus-text);
-      }
-      .issues-list-item:focus {
-        outline: 2px solid var(--color-focus);
-        outline-offset: 1px;
-      }
-      .issues-list-item-number {
-        font-weight: var(--font-weight-semibold);
-        color: var(--color-focus);
-        font-family: var(--font-mono);
-        font-size: var(--font-size-sm);
-      }
-      .issues-list-item-title {
-        margin-top: var(--space-1);
-        font-weight: var(--font-weight-medium);
-      }
-      .issues-list-item-meta {
-        margin-top: var(--space-1);
-        font-size: var(--font-size-sm);
-        color: var(--color-text-muted);
-      }
-      .issues-loading {
-        text-align: center;
-        color: var(--color-text-muted);
-        padding: var(--space-3);
-        animation: pulse-loader var(--animation-duration-pulse-slow) var(--animation-easing-pulse-slow);
-      }
-      @keyframes pulse-loader {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.5; }
-      }
-      .issues-error {
-        color: var(--color-bad);
-        background: var(--color-bad-bg);
-        padding: var(--space-2) var(--space-3);
-        border-radius: var(--radius-sm);
-        border: 1px solid var(--color-bad);
-      }
       /* ===== MOBILE RESPONSIVE ===== */
       @media (max-width: 767px) {
         /* Ensure touch targets meet minimum 44px height on mobile */
@@ -1084,12 +999,6 @@ const controllerPage = String.raw`<!doctype html>
         /* Compact padding for small screens */
         main { padding: var(--space-2); }
         .panel { padding: var(--space-2); }
-        
-        /* Full width form inputs */
-        .issues-input-group input { min-width: auto; }
-        
-        /* Limit issues list height on mobile */
-        .issues-list-container { max-height: var(--panel-max-height); }
         
         /* Improve button visibility on mobile */
         button { font-size: var(--font-size-md); }
@@ -1399,7 +1308,6 @@ const controllerPage = String.raw`<!doctype html>
       <section class="panel stack" aria-labelledby="tabs-heading">
         <div class="tabs-nav" id="tabs-heading" role="tablist" aria-label="Console tabs">
           <button class="tab-button active" data-tab="health" role="tab" tabindex="0" aria-selected="true" aria-controls="health-tab">Health</button>
-          <button class="tab-button" data-tab="issues" role="tab" tabindex="-1" aria-selected="false" aria-controls="issues-tab">Issues</button>
           <button class="tab-button" data-tab="submit" role="tab" tabindex="-1" aria-selected="false" aria-controls="submit-tab">Submit Task</button>
         </div>
         <div id="health-tab" class="tab-content" role="tabpanel" aria-labelledby="health-heading">
@@ -1484,9 +1392,6 @@ const controllerPage = String.raw`<!doctype html>
             <div class="form-field">
               <label for="task-prompt">Task details</label>
               <textarea class="form-control" id="task-prompt" name="taskPrompt" required minlength="10" placeholder="Describe the task for the ephemeral agent."></textarea>
-              <div id="issue-prompt-preview" class="field-helper" hidden></div>
-              <label for="issue-scope" id="issue-scope-label" hidden>Editable issue scope</label>
-              <input class="form-control" id="issue-scope" type="text" placeholder="Optional: narrow the issue scope before validation" hidden />
               <p class="field-error" data-error-for="taskPrompt" aria-live="polite"></p>
             </div>
           </fieldset>
@@ -1522,35 +1427,6 @@ const controllerPage = String.raw`<!doctype html>
             <div id="task-state" role="status" aria-live="polite"></div>
           </fieldset>
         </form>
-        </div>
-        <div id="issues-tab" class="tab-content hidden" role="tabpanel" aria-labelledby="issues-heading" hidden aria-hidden="true">
-          <div>
-            <h2 id="issues-heading">Load GitHub Issues</h2>
-            <p>Fetch recent issues from a GitHub repository and populate the task prompt with an issue's details.</p>
-          </div>
-          <form class="issues-form" id="issues-form">
-            <div class="form-field">
-              <label for="issues-repo-url">Issues repository URL</label>
-              <div class="issues-repo-input-wrapper">
-                <div class="issues-input-group">
-                  <input class="form-control" id="issues-repo-url" type="text" placeholder="https://github.com/owner/repo or owner/repo" data-testid="issues-repo-url" />
-                  <button class="button button-primary" id="load-issues-btn" type="button">Load Issues</button>
-                </div>
-                <div id="issues-recent-repos-dropdown" class="recent-repos-dropdown hidden" role="listbox"></div>
-              </div>
-              <p class="field-error" id="issues-error" aria-live="polite" hidden></p>
-            </div>
-            <div class="form-field">
-              <label for="issues-label">Issue label</label>
-              <input class="form-control" id="issues-label" type="text" value="kaseki-agent" placeholder="kaseki-agent" />
-              <p class="field-helper">Leave the default to show Kaseki-labelled work, enter a label to filter, or clear the field to browse all issues.</p>
-            </div>
-          </form>
-          <div id="issues-container">
-            <div class="issues-list-container" id="issues-list">
-              <div class="issues-list-empty">Enter a repository URL and click "Load Issues" to begin</div>
-            </div>
-          </div>
         </div>
       </section>
       <section class="panel stack" aria-labelledby="responses-heading">
@@ -1655,7 +1531,6 @@ const controllerPage = String.raw`<!doctype html>
       
       let pollTimer = null;
       let repoBlurTimer = null;
-      let issuesRepoBlurTimer = null;
       let activeRunView = 'status';
       let runProgressHighWater = {};
       let pageDisposed = false;
@@ -1667,7 +1542,6 @@ const controllerPage = String.raw`<!doctype html>
       // Repository validation can take longer than ordinary controller reads,
       // but must still have a bounded, user-visible failure mode.
       const VALIDATION_REQUEST_TIMEOUT_MS = 120000;
-      const ISSUE_REQUEST_TIMEOUT_MS = 20000;
       
       // Validation state
       let validationState = { isValid: false, lastValidated: null, checks: [] };
@@ -1698,8 +1572,6 @@ const controllerPage = String.raw`<!doctype html>
       const recentReposKey = 'kasekiRecentRepos';
       const repoUrlInput = document.querySelector('#repo-url');
       const recentReposDropdown = document.querySelector('#recent-repos-dropdown');
-      const issuesRepoUrlInput = document.querySelector('#issues-repo-url');
-      const issuesRecentReposDropdown = document.querySelector('#issues-recent-repos-dropdown');
 
       function loadRecentRepos() {
         try {
@@ -1797,7 +1669,6 @@ const controllerPage = String.raw`<!doctype html>
 
       function renderRecentReposDropdown() {
         renderDropdownInto(recentReposDropdown, repoUrlInput);
-        renderDropdownInto(issuesRecentReposDropdown, issuesRepoUrlInput);
       }
 
       function showRecentReposDropdown(dropdown) {
@@ -1819,20 +1690,6 @@ const controllerPage = String.raw`<!doctype html>
         repoBlurTimer = window.setTimeout(() => {
           hideRecentReposDropdown(recentReposDropdown);
           repoBlurTimer = null;
-        }, 150);
-      });
-
-      // Event listeners for Issues repo input
-      issuesRepoUrlInput.addEventListener('focus', () => {
-        showRecentReposDropdown(issuesRecentReposDropdown);
-      });
-
-      issuesRepoUrlInput.addEventListener('blur', () => {
-        // Delay to allow click on dropdown items
-        if (issuesRepoBlurTimer) window.clearTimeout(issuesRepoBlurTimer);
-        issuesRepoBlurTimer = window.setTimeout(() => {
-          hideRecentReposDropdown(issuesRecentReposDropdown);
-          issuesRepoBlurTimer = null;
         }, 150);
       });
 
@@ -2961,8 +2818,6 @@ const controllerPage = String.raw`<!doctype html>
         modalRefreshTimer = null;
         if (repoBlurTimer) window.clearTimeout(repoBlurTimer);
         repoBlurTimer = null;
-        if (issuesRepoBlurTimer) window.clearTimeout(issuesRepoBlurTimer);
-        issuesRepoBlurTimer = null;
         activeRequestControllers.forEach((controller) => controller.abort());
         activeRequestControllers.clear();
       }
@@ -4433,192 +4288,6 @@ const controllerPage = String.raw`<!doctype html>
         return false;
       }
       
-      // Issues tab handlers
-      const loadIssuesBtn = document.querySelector('#load-issues-btn');
-      const issuesList = document.querySelector('#issues-list');
-      const issuesError = document.querySelector('#issues-error');
-      const issuesLabelInput = document.querySelector('#issues-label');
-      const taskPrompt = document.querySelector('#task-prompt');
-      const issuePromptPreview = document.querySelector('#issue-prompt-preview');
-      const issueScopeInput = document.querySelector('#issue-scope');
-      const issueScopeLabel = document.querySelector('#issue-scope-label');
-      const submitTab = document.querySelector('[data-tab="submit"]');
-
-      taskPrompt.addEventListener('input', () => {
-        issuePromptPreview.hidden = true;
-        issuePromptPreview.textContent = '';
-        issueScopeInput.value = '';
-        issueScopeInput.hidden = true;
-        issueScopeLabel.hidden = true;
-        issueScopeInput.oninput = null;
-      });
-
-      loadIssuesBtn.addEventListener('click', async (event) => {
-        event.preventDefault();
-        const repoUrl = issuesRepoUrlInput.value.trim();
-        const enteredLabel = issuesLabelInput.value.trim();
-        const label = enteredLabel || 'all labels';
-        
-        if (!repoUrl) {
-          showIssuesError('Please enter a repository URL');
-          return;
-        }
-
-        loadIssuesBtn.disabled = true;
-        issuesList.innerHTML = '<div class="issues-loading">Loading issues...</div>';
-        issuesError.hidden = true;
-
-        try {
-          const result = await apiRequest('/api/v1/github-issues', {
-            method: 'POST',
-            auth: true,
-            body: enteredLabel ? { repoUrl, label: enteredLabel } : { repoUrl, allLabels: true },
-            timeoutMs: ISSUE_REQUEST_TIMEOUT_MS,
-            preserveOutput: true,
-            showApiError: true,
-          });
-          const response = result.response;
-          const payload = result.payload;
-
-          if (!response.ok) {
-            const guidance = apiErrorGuidance(response.status, payload, response.headers);
-            showIssuesError(guidance.title + (guidance.detail ? ': ' + guidance.detail : '') + ' Next step: ' + guidance.action);
-            issuesList.innerHTML = '<div class="issues-list-empty">No issues found</div>';
-            displayApiResponseError(response, '/api/v1/github-issues', 'POST', payload);
-            return;
-          }
-
-          const issuesResponse = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
-          const issues = issuesResponse && Array.isArray(issuesResponse.issues) ? issuesResponse.issues : [];
-          if (!Array.isArray(issues) || issues.length === 0) {
-            // Keep the empty state on the same safe DOM-rendering path as issue
-            // cards. Besides avoiding an HTML injection sink, this prevents a
-            // missing string-escape helper from turning a successful empty
-            // response into an apparent controller failure.
-            issuesList.replaceChildren();
-            const emptyState = document.createElement('div');
-            emptyState.className = 'issues-list-empty';
-            emptyState.textContent = 'No issues found with label "' + label + '"';
-            issuesList.appendChild(emptyState);
-            setOutputMetadata('ok');
-            setResponseSummary({ status: 'ok' });
-            setOutputBody(JSON.stringify({
-              method: 'POST',
-              path: '/api/v1/github-issues',
-              status: response.status,
-              response: {
-                repoUrl,
-                issueCount: 0,
-                issues: [],
-              },
-            }, null, 2));
-            setState('No matching issues found.', 'ok');
-            return;
-          }
-
-          issuesList.replaceChildren();
-          addRepoToRecent(repoUrl);
-          setOutputMetadata('ok');
-          setResponseSummary({ status: 'ok' });
-          setOutputBody(JSON.stringify({
-            method: 'POST',
-            path: '/api/v1/github-issues',
-            status: response.status,
-            response: {
-              repoUrl,
-              issueCount: issues.length,
-              issues: issues.slice(0, 5).map((issue) => ({
-                number: issue.number,
-                title: issue.title,
-                url: issue.html_url,
-              })),
-            },
-          }, null, 2));
-          setState('Issues loaded.', 'ok');
-          issues.forEach(issue => {
-            const item = document.createElement('button');
-            item.className = 'button button-secondary issues-list-item';
-            item.type = 'button';
-            
-            const numberEl = document.createElement('div');
-            numberEl.className = 'issues-list-item-number';
-            numberEl.textContent = '#' + issue.number;
-            
-            const titleEl = document.createElement('div');
-            titleEl.className = 'issues-list-item-title';
-            titleEl.textContent = issue.title;
-            
-            const createdDate = new Date(issue.created_at);
-            const daysAgo = Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
-            const metaEl = document.createElement('div');
-            metaEl.className = 'issues-list-item-meta';
-            metaEl.textContent = daysAgo === 0 ? 'Today' : daysAgo + ' days ago';
-            
-            item.append(numberEl, titleEl, metaEl);
-            item.addEventListener('click', () => {
-              const submitRepoUrl = normalizeRepoUrlForSubmit(repoUrl);
-              const issueUrl = issue.html_url || (submitRepoUrl + '/issues/' + issue.number);
-              const maxIssueBodyChars = 12000;
-              const originalBody = issue.body || '(No description)';
-              const body = originalBody.length > maxIssueBodyChars
-                ? originalBody.slice(0, maxIssueBodyChars) + '\n\n[Issue body truncated; refine the scope below before validation.]'
-                : originalBody;
-              taskPrompt.value = [
-                'GitHub issue #' + issue.number + ': ' + issue.title,
-                issueUrl,
-                '',
-                body,
-              ].join('\n');
-              issueScopeInput.value = '';
-              issueScopeInput.hidden = false;
-              issueScopeLabel.hidden = false;
-              issuePromptPreview.hidden = false;
-              issuePromptPreview.textContent = 'Issue preview: ' + originalBody.length.toLocaleString() + ' characters (~' + Math.ceil(originalBody.length / 4).toLocaleString() + ' tokens)' + (originalBody.length > maxIssueBodyChars ? '; body truncated to 12,000 characters.' : '.');
-              issueScopeInput.oninput = () => {
-                const scope = issueScopeInput.value.trim();
-                taskPrompt.value = [
-                  'GitHub issue #' + issue.number + ': ' + issue.title,
-                  issueUrl,
-                  scope ? 'Requested scope: ' + scope : '',
-                  '',
-                  body,
-                ].filter(Boolean).join('\n');
-              };
-              repoUrlInput.value = submitRepoUrl;
-              repoUrlInput.dispatchEvent(new Event('input', { bubbles: true }));
-              addRepoToRecent(submitRepoUrl);
-              // Switch to Submit Task tab
-              submitTab.click();
-              // Scroll to task prompt
-              taskPrompt.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              setState('Issue #' + issue.number + ' copied into the task prompt.', 'ok');
-            });
-            
-            issuesList.appendChild(item);
-          });
-        } catch (error) {
-          const guidance = requestFailureGuidance(error, '/api/v1/github-issues');
-          showIssuesError(guidance.title + (guidance.detail ? ': ' + guidance.detail : '') + ' Next step: ' + guidance.action);
-          issuesList.innerHTML = '<div class="issues-list-empty">Failed to load issues</div>';
-          displayRequestFailure(error, '/api/v1/github-issues', 'POST');
-        } finally {
-          loadIssuesBtn.disabled = false;
-        }
-      });
-
-      function showIssuesError(message) {
-        issuesError.textContent = message;
-        issuesError.hidden = false;
-      }
-
-      // Pre-fill issues repo URL with current task repo if available
-      repoUrlInput.addEventListener('change', () => {
-        const repoUrl = repoUrlInput.value.trim();
-        if (repoUrl && !issuesRepoUrlInput.value) {
-          issuesRepoUrlInput.value = repoUrl;
-        }
-      });
-
       loadRunsList({ preserveOutput: true });
     </script>
     <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>

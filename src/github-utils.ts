@@ -4,7 +4,6 @@
  * Provides helper functions for interacting with GitHub API:
  * - Token generation using GitHub App authentication
  * - URL parsing and validation
- * - Issue fetching with filtering
  */
 
 import { KeyObject, createPrivateKey, createSign } from 'crypto';
@@ -38,16 +37,6 @@ interface AccessTokenResponse {
   token: string;
   expires_at: string;
   [key: string]: any;
-}
-
-interface GitHubIssue {
-  number: number;
-  title: string;
-  body: string | null;
-  url: string;
-  created_at: string;
-  state: string;
-  labels: Array<{ name: string }>;
 }
 
 interface TokenResult {
@@ -421,97 +410,4 @@ export async function generateGitHubAppToken(
       error: errorMessage,
     };
   }
-}
-
-/**
- * Fetch GitHub issues from a repository with filtering
- *
- * @param owner - GitHub repository owner
- * @param repo - GitHub repository name
- * @param token - GitHub API access token
- * @param options - Filtering options
- * @returns Array of issues matching the criteria
- */
-export async function fetchGitHubIssues(
-  owner: string,
-  repo: string,
-  token: string,
-  options: {
-    labels?: string[];
-    limit?: number;
-    state?: 'open' | 'closed' | 'all';
-  } = {}
-): Promise<GitHubIssue[]> {
-  const { labels = [], limit = 5, state = 'open' } = options;
-
-  return new Promise((resolve, reject) => {
-    // Build query parameters
-    const params = new URLSearchParams();
-    params.append('state', state);
-    params.append('sort', 'created');
-    params.append('direction', 'desc');
-    params.append('per_page', String(Math.min(limit, 100))); // GitHub max 100
-
-    if (labels.length > 0) {
-      params.append('labels', labels.join(','));
-    }
-
-    const path = `/repos/${owner}/${repo}/issues?${params.toString()}`;
-
-    const options_https = {
-      hostname: 'api.github.com',
-      path,
-      method: 'GET',
-      headers: {
-        'Authorization': `token ${token}`,
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'Kaseki-Agent',
-      },
-    };
-
-    let settled = false;
-    const failOnce = (error: Error): void => {
-      if (settled) return;
-      settled = true;
-      reject(error);
-    };
-    const req = request(options_https, (res) => {
-      let data = '';
-      res.on('data', (chunk: Buffer) => {
-        data += chunk;
-      });
-      res.on('end', () => {
-        if (settled) return;
-        settled = true;
-        if (res.statusCode !== 200) {
-          const errorMsg = `GitHub API error: ${res.statusCode}`;
-          logger.error(errorMsg);
-          reject(new Error(errorMsg));
-        } else {
-          try {
-            const issues: GitHubIssue[] = JSON.parse(data);
-            // Return only the first `limit` issues
-            resolve(issues.slice(0, limit));
-          } catch (e) {
-            reject(
-              new Error(
-                `Failed to parse issues response: ${
-                  e instanceof Error ? e.message : String(e)
-                }`
-              )
-            );
-          }
-        }
-      });
-    });
-
-    req.on('error', (err) => {
-      logger.error(`GitHub API request failed: ${err.message}`);
-      failOnce(err);
-    });
-    req.setTimeout(GITHUB_API_TIMEOUT_MS, () => {
-      req.destroy(new Error(`GitHub API request timed out after ${GITHUB_API_TIMEOUT_MS}ms while fetching issues`));
-    });
-    req.end();
-  });
 }
