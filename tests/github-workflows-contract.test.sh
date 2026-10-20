@@ -141,6 +141,20 @@ assert_step_contains "$PUBLISH_WORKFLOW" 'Validate Docker Hub credentials' \
   'Docker Hub credential validation must check the password used by the login action'
 assert_not_contains "$RELEASE_WORKFLOW" 'grep -q "Published release"' \
   'Release detection must not rely on semantic-release log wording'
+assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Bun for target repository tests' \
+  "bun_version=\$(node -p \"require('./docker/image-toolchain/package.json').dependencies.bun\")" \
+  'Release validation must install the Bun version pinned for the target repository toolchain'
+assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Bun for target repository tests' \
+  'npm install --prefix "$RUNNER_TEMP/kaseki-bun" --no-audit "bun@$bun_version"' \
+  'Release validation must install the pinned Bun npm package in an isolated prefix'
+assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Bun for target repository tests' \
+  'echo "$RUNNER_TEMP/kaseki-bun/node_modules/.bin" >> "$GITHUB_PATH"' \
+  'Release validation must add the installed Bun binary to PATH for subsequent test steps'
+awk '
+  $0 == "      - name: Install pinned Bun for target repository tests" { install = NR }
+  $0 == "      - name: Run release validation suite" { suite = NR }
+  END { exit !(install && suite && install < suite) }
+' "$RELEASE_WORKFLOW" || fail 'Release validation must install Bun before running the test suite'
 assert_contains "$RELEASE_WORKFLOW" 'comm -13' \
   'Release detection must identify the newly-created immutable tag'
 assert_job_contains "$RELEASE_WORKFLOW" 'publish_npm' 'uses: ./.github/workflows/publish-npm.yml' \
