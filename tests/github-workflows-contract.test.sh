@@ -141,6 +141,26 @@ assert_step_contains "$PUBLISH_WORKFLOW" 'Validate Docker Hub credentials' \
   'Docker Hub credential validation must check the password used by the login action'
 assert_not_contains "$RELEASE_WORKFLOW" 'grep -q "Published release"' \
   'Release detection must not rely on semantic-release log wording'
+assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Bun for target repository tests' \
+  'const bunVersion = require("./docker/image-toolchain/package.json").dependencies?.bun;' \
+  'Release validation must read the Bun pin from the target repository toolchain metadata'
+assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Bun for target repository tests' \
+  'if (typeof bunVersion !== "string" || semver.valid(bunVersion) !== bunVersion) {' \
+  'Release validation must reject a missing Bun pin or a non-exact version'
+assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Bun for target repository tests' \
+  'ERROR: dependencies.bun in docker/image-toolchain/package.json must be an exact semantic version' \
+  'Release validation must explain when its Bun pin is invalid'
+assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Bun for target repository tests' \
+  'npm install --prefix "$RUNNER_TEMP/kaseki-bun" --no-audit "bun@$bun_version"' \
+  'Release validation must install the pinned Bun npm package in an isolated prefix'
+assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Bun for target repository tests' \
+  'echo "$RUNNER_TEMP/kaseki-bun/node_modules/.bin" >> "$GITHUB_PATH"' \
+  'Release validation must add the installed Bun binary to PATH for subsequent test steps'
+awk '
+  $0 == "      - name: Install pinned Bun for target repository tests" { install = NR }
+  $0 == "      - name: Run release validation suite" { suite = NR }
+  END { exit !(install && suite && install < suite) }
+' "$RELEASE_WORKFLOW" || fail 'Release validation must install Bun before running the test suite'
 assert_contains "$RELEASE_WORKFLOW" 'comm -13' \
   'Release detection must identify the newly-created immutable tag'
 assert_job_contains "$RELEASE_WORKFLOW" 'publish_npm' 'uses: ./.github/workflows/publish-npm.yml' \
