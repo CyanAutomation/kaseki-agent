@@ -15,18 +15,29 @@ concurrency:
 
 jobs:
   build:
+    if: github.repository == 'CyanAutomation/kaseki-agent' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
       contents: read
     outputs:
+      source_sha: ${{ steps.source_ref.outputs.sha }}
       version: ${{ steps.version.outputs.version }}
       package_name: ${{ steps.version.outputs.package_name }}
       package_file: ${{ steps.pack.outputs.package_file }}
     steps:
+      - name: Validate immutable source ref
+        id: source_ref
+        shell: bash
+        env:
+          REQUESTED_REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$REQUESTED_REF" =~ ^[0-9a-f]{40}$ ]] || { echo "Release ref must be a full commit SHA" >&2; exit 1; }
+          echo "sha=$REQUESTED_REF" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ steps.source_ref.outputs.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -59,10 +70,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           PACKAGE_NAME: ${{ steps.version.outputs.package_name }}
         run: |
-          set -euo pipefail
-          if npm view "${PACKAGE_NAME}@${VERSION}" version --json >/tmp/existing-version.json 2>/dev/null; then
-            cat /tmp/existing-version.json; echo "Target npm version already exists" >&2; exit 1
-          fi
+          ./scripts/check-npm-version-unpublished.sh "$PACKAGE_NAME" "$VERSION"
       - run: npm run test:publish-smoke
       - name: Capture package metadata
         run: |
@@ -94,6 +102,7 @@ jobs:
 
   publish:
     needs: build
+    if: github.repository == 'CyanAutomation/kaseki-agent' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     environment: release
@@ -103,7 +112,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ needs.build.outputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -128,6 +137,7 @@ jobs:
 
   verify:
     needs: [build, publish]
+    if: github.repository == 'CyanAutomation/kaseki-agent' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -135,7 +145,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ needs.build.outputs.source_sha }}
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
