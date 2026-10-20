@@ -47,7 +47,16 @@ jobs:
 
       - name: Install pinned Bun for target repository tests
         run: |
-          bun_version=$(node -p "require('./docker/image-toolchain/package.json').dependencies.bun")
+          bun_version=$(node <<'NODE'
+          const bunVersion = require("./docker/image-toolchain/package.json").dependencies?.bun;
+          const semver = require("semver");
+          if (typeof bunVersion !== "string" || semver.valid(bunVersion) !== bunVersion) {
+            console.error("ERROR: dependencies.bun in docker/image-toolchain/package.json must be an exact semantic version");
+            process.exit(1);
+          }
+          process.stdout.write(bunVersion);
+          NODE
+          )
           npm install --prefix "$RUNNER_TEMP/kaseki-bun" --no-audit "bun@$bun_version"
           echo "$RUNNER_TEMP/kaseki-bun/node_modules/.bin" >> "$GITHUB_PATH"
 
