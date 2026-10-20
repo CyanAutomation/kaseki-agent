@@ -45,6 +45,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install pinned Bun for target repository tests
+        run: |
+          bun_version=$(node -p "require('./docker/image-toolchain/package.json').dependencies.bun")
+          npm install --prefix "$RUNNER_TEMP/kaseki-bun" --no-audit "bun@$bun_version"
+          echo "$RUNNER_TEMP/kaseki-bun/node_modules/.bin" >> "$GITHUB_PATH"
+
       - name: Run release validation suite
         run: npm run test:ci
 
