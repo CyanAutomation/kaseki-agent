@@ -112,8 +112,24 @@ assert_contains "$RELEASE_WORKFLOW" 'environment: release' \
   'Release creation must be protected by the release environment'
 assert_contains "$RELEASE_WORKFLOW" 'permissions: {}' \
   'The release workflow must deny permissions by default'
-assert_contains "$RELEASE_WORKFLOW" 'DRY_RUN: ${{ inputs.dry_run }}' \
-  'The release dry-run input must be passed through the environment, not interpolated into shell'
+assert_job_contains "$RELEASE_WORKFLOW" 'validate' 'contents: read' \
+  'Release validation must use read-only repository permissions'
+assert_job_not_contains "$RELEASE_WORKFLOW" 'validate' 'contents: write' \
+  'Release validation must not receive repository write permissions'
+assert_job_contains "$RELEASE_WORKFLOW" 'validate' 'persist-credentials: false' \
+  'Release validation checkout must not persist its token'
+assert_job_contains "$RELEASE_WORKFLOW" 'dry_run' "if: github.ref == 'refs/heads/main' && inputs.dry_run == 'true'" \
+  'Dry-run must execute in its own read-only job on main'
+assert_job_contains "$RELEASE_WORKFLOW" 'dry_run' 'contents: read' \
+  'Dry-run must use read-only repository permissions'
+assert_job_not_contains "$RELEASE_WORKFLOW" 'dry_run' 'contents: write' \
+  'Dry-run must not receive repository write permissions'
+assert_job_contains "$RELEASE_WORKFLOW" 'release' "if: github.ref == 'refs/heads/main' && inputs.dry_run != 'true'" \
+  'The write-enabled release job must not run for dry-runs'
+assert_job_contains "$RELEASE_WORKFLOW" 'release' 'contents: write' \
+  'The real release job must have permission to create releases'
+assert_job_contains "$RELEASE_WORKFLOW" 'release' 'persist-credentials: false' \
+  'The real release checkout must not persist its token'
 assert_not_contains "$RELEASE_WORKFLOW" 'github.event.inputs.dry_run' \
   'The release script must not interpolate a workflow input into shell source'
 assert_not_contains "$RELEASE_WORKFLOW" 'secrets: inherit' \
@@ -163,6 +179,14 @@ awk '
 ' "$RELEASE_WORKFLOW" || fail 'Release validation must install Bun before running the test suite'
 assert_contains "$RELEASE_WORKFLOW" 'comm -13' \
   'Release detection must identify the newly-created immutable tag'
+assert_step_contains "$RELEASE_WORKFLOW" 'Run semantic-release' 'GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}' \
+  'The write-capable token must be scoped to the semantic-release step'
+assert_step_contains "$RELEASE_WORKFLOW" 'Publish Raspberry Pi bootstrap bundle' 'GH_TOKEN: ${{ github.token }}' \
+  'The GitHub token must be scoped to the release asset upload step'
+assert_step_contains "$RELEASE_WORKFLOW" 'Run semantic-release dry-run' 'GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}' \
+  'The read-only token must be scoped to the dry-run semantic-release step'
+assert_step_contains "$RELEASE_WORKFLOW" 'Run semantic-release dry-run' 'npm run release:dry' \
+  'The dry-run job must run semantic-release in preview mode'
 assert_job_contains "$RELEASE_WORKFLOW" 'publish_npm' 'uses: ./.github/workflows/publish-npm.yml' \
   'Successful releases must invoke the npm publisher'
 assert_job_contains "$RELEASE_WORKFLOW" 'publish_npm' 'id-token: write' \
@@ -252,12 +276,14 @@ for job in prepare type_check_changed type_check_full checks docker_integration 
   assert_job_contains "$WORKFLOWS_DIR/build-docker-image.yml" "$job" "timeout-minutes: $timeout" \
     "Docker workflow job $job must have a bounded runtime"
 done
-assert_job_contains "$RELEASE_WORKFLOW" 'release' 'timeout-minutes: 120' \
+assert_job_contains "$RELEASE_WORKFLOW" 'validate' 'timeout-minutes: 120' \
   'Release validation must have a bounded runtime'
-assert_job_contains "$RELEASE_WORKFLOW" 'release' "if: github.ref == 'refs/heads/main'" \
-  'Release dispatches must be restricted to main'
-assert_job_contains "$PUBLISH_WORKFLOW" 'prepare' "if: github.ref == 'refs/heads/main'" \
-  'Manual and scheduled Docker publishes must be restricted to main'
+assert_job_contains "$RELEASE_WORKFLOW" 'dry_run' 'timeout-minutes: 120' \
+  'Release dry-run must retain its bounded runtime'
+assert_job_contains "$RELEASE_WORKFLOW" 'release' 'timeout-minutes: 120' \
+  'Release publishing must have a bounded runtime'
+assert_job_contains "$PUBLISH_WORKFLOW" 'prepare' "if: github.ref == 'refs/heads/main' && github.repository == 'CyanAutomation/kaseki-agent'" \
+  'Manual and scheduled Docker publishes must be restricted to the canonical main repository'
 assert_job_contains "$WORKFLOWS_DIR/publish-npm.yml" 'publish' 'timeout-minutes: 90' \
   'npm publishing must have a bounded runtime'
 assert_job_contains "$WORKFLOWS_DIR/publish-npm.yml" 'publish' 'package-manager-cache: false' \
@@ -356,6 +382,38 @@ assert_job_contains "$CI_WORKFLOW" 'workflow_lint' 'advanced-security: false' \
   'The zizmor workflow lint job must run without elevated security-events permissions'
 assert_job_contains "$CI_WORKFLOW" 'workflow_lint' 'min-severity: high' \
   'Zizmor must gate CI on high-severity workflow security findings'
+assert_job_contains "$CI_WORKFLOW" 'docker_artifact_validation' 'persist-credentials: false' \
+  'Docker integration checkout must not persist its GitHub token'
+assert_step_contains "$CI_WORKFLOW" 'Check for Docker Hub credentials' "if: github.event_name == 'push'" \
+  'Docker Hub credentials must be inspected only in a trusted push workflow'
+assert_step_contains "$CI_WORKFLOW" 'Authenticate to Docker Hub for base image pulls' \
+  "if: github.event_name == 'push' && steps.docker_hub_credentials.outputs.available == 'true'" \
+  'Docker Hub authentication must be unavailable to pull request test code'
+
+assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'build' "if: github.repository == 'CyanAutomation/kaseki-agent' && github.ref == 'refs/heads/main'" \
+  'The npm publisher must reject callers outside the canonical main repository'
+assert_step_contains "$NPM_PUBLISH_WORKFLOW" 'Validate immutable source ref' \
+  'REQUESTED_REF: ${{ inputs.ref }}' \
+  'The npm publisher must validate its requested source ref before checkout'
+assert_step_contains "$NPM_PUBLISH_WORKFLOW" 'Validate immutable source ref' \
+  '[[ "$REQUESTED_REF" =~ ^[0-9a-f]{40}$ ]]' \
+  'The npm publisher must require a full commit SHA'
+assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'publish' "github.repository == 'CyanAutomation/kaseki-agent'" \
+  'The npm publish job must reject callers outside the canonical repository'
+assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'verify' "github.repository == 'CyanAutomation/kaseki-agent'" \
+  'The npm verify job must reject callers outside the canonical repository'
+assert_step_contains "$NPM_PUBLISH_WORKFLOW" 'Confirm target version is unpublished' \
+  './scripts/check-npm-version-unpublished.sh "$PACKAGE_NAME" "$VERSION"' \
+  'The npm publisher must use the tested version-existence check'
+
+assert_job_contains "$PUBLISH_WORKFLOW" 'prepare' "github.repository == 'CyanAutomation/kaseki-agent'" \
+  'The Docker publisher must reject callers outside the canonical repository'
+assert_step_contains "$PUBLISH_WORKFLOW" 'Validate immutable source ref' \
+  'TARGET_REF: ${{ inputs.ref || github.sha }}' \
+  'The Docker publisher must validate its requested source ref before checkout'
+assert_step_contains "$PUBLISH_WORKFLOW" 'Validate immutable source ref' \
+  '[[ "$TARGET_REF" =~ ^[0-9a-f]{40}$ ]]' \
+  'The Docker publisher must require a full commit SHA'
 
 assert_top_level_not_contains "$CODEQL_WORKFLOW" 'security-events: write' \
   'CodeQL write permission must be scoped to its analysis job'

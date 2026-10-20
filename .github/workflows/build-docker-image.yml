@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   prepare:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.repository == 'CyanAutomation/kaseki-agent'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -38,9 +38,18 @@ jobs:
       promotion_hub_tags: ${{ steps.metadata.outputs.promotion_hub_tags }}
       promotion_ghcr_tags: ${{ steps.metadata.outputs.promotion_ghcr_tags }}
     steps:
+      - name: Validate immutable source ref
+        id: source_ref
+        shell: bash
+        env:
+          TARGET_REF: ${{ inputs.ref || github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_REF" =~ ^[0-9a-f]{40}$ ]] || { echo "Docker source ref must be a full commit SHA" >&2; exit 1; }
+          echo "sha=$TARGET_REF" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ steps.source_ref.outputs.sha }}
           persist-credentials: false
       - id: metadata
         shell: bash
