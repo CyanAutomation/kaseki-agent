@@ -142,8 +142,14 @@ assert_step_contains "$PUBLISH_WORKFLOW" 'Validate Docker Hub credentials' \
 assert_not_contains "$RELEASE_WORKFLOW" 'grep -q "Published release"' \
   'Release detection must not rely on semantic-release log wording'
 assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Bun for target repository tests' \
-  "bun_version=\$(node -p \"require('./docker/image-toolchain/package.json').dependencies.bun\")" \
-  'Release validation must install the Bun version pinned for the target repository toolchain'
+  'const bunVersion = require("./docker/image-toolchain/package.json").dependencies?.bun;' \
+  'Release validation must read the Bun pin from the target repository toolchain metadata'
+assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Bun for target repository tests' \
+  'if (typeof bunVersion !== "string" || semver.valid(bunVersion) !== bunVersion) {' \
+  'Release validation must reject a missing Bun pin or a non-exact version'
+assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Bun for target repository tests' \
+  'ERROR: dependencies.bun in docker/image-toolchain/package.json must be an exact semantic version' \
+  'Release validation must explain when its Bun pin is invalid'
 assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Bun for target repository tests' \
   'npm install --prefix "$RUNNER_TEMP/kaseki-bun" --no-audit "bun@$bun_version"' \
   'Release validation must install the pinned Bun npm package in an isolated prefix'
