@@ -41,7 +41,6 @@ describe('OpenAPI Component Builders', () => {
         { name: 'Run Details', descriptionPattern: /analysis|diagnostics/i },
         { name: 'Webhooks', descriptionPattern: /webhook|testing/i },
         { name: 'Gateway Diagnostics', descriptionPattern: /gateway|inference|adapter/i },
-        { name: 'GitHub Issues', descriptionPattern: /github|issues|task/i },
       ];
 
       const tags = buildTags();

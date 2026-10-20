@@ -8999,32 +8999,6 @@
     ]
   },
   {
-    "id": "src/routes/github-issues-routes.test.ts",
-    "file": "/workspace/kaseki-agent/src/routes/github-issues-routes.test.ts",
-    "testName": "github-issues-routes",
-    "language": "typescript",
-    "lineCount": 195,
-    "intentClarity": 2,
-    "behavioralRelevance": 2,
-    "assertionQuality": 2,
-    "isolationRobustness": 2,
-    "costCoverage": 2,
-    "total": 10,
-    "segment": "Keep",
-    "summary": "2 | 2 | 2 | 2 | 2",
-    "assertionTypes": [
-      "toBe",
-      "toEqual"
-    ],
-    "hasSnapshots": false,
-    "hasMocking": true,
-    "hasAsyncWaits": true,
-    "concerns": [
-      "overly-long",
-      "heavy-internal-mocking"
-    ]
-  },
-  {
     "id": "src/startup/preflight-summary.test.ts",
     "file": "/workspace/kaseki-agent/src/startup/preflight-summary.test.ts",
     "testName": "Preflight Summary",

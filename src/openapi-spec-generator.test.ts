@@ -63,7 +63,6 @@ const expectedEndpoints: EndpointContract[] = [
   endpoint('/api/v1/startup-health', 'get', 'getStartupHealth', 'protected', ['200'], ['401']),
   endpoint('/api/v1/openapi.json', 'get', 'getOpenApiSpec', 'public', ['200']),
   endpoint('/api/v1/gateway-test', 'get', 'testGateway', 'protected', ['200'], ['400', '401', '429']),
-  endpoint('/api/v1/github-issues', 'post', 'listGitHubIssues', 'protected', ['200'], ['400', '401', '404', '429']),
   endpoint('/api/v1/validate', 'post', 'validateTask', 'protected', ['200'], ['400', '401']),
   endpoint('/api/v1/runs', 'post', 'triggerRun', 'protected', ['202', '200'], ['400', '401']),
   endpoint('/api/v1/runs', 'get', 'listRuns', 'protected', ['200'], ['400', '401']),

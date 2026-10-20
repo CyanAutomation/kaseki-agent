@@ -123,7 +123,7 @@ function buildUsagePath(errorResponseSchema: Record<string, unknown>): Record<st
         tags: ['Service Info'],
         security: [{ BearerAuth: [] }],
         responses: {
-          '200': { description: 'API usage snapshot', content: { 'application/json': { schema: { type: 'object', required: ['startedAt', 'requestCount', 'diagnosticProbeCount', 'webhookTestCount', 'githubIssueLookupCount', 'costUsd', 'limits'], properties: { startedAt: { type: 'string', format: 'date-time' }, requestCount: { type: 'integer' }, diagnosticProbeCount: { type: 'integer' }, webhookTestCount: { type: 'integer' }, githubIssueLookupCount: { type: 'integer' }, costUsd: { type: 'null' }, limits: { type: 'object' } } } } } },
+          '200': { description: 'API usage snapshot', content: { 'application/json': { schema: { type: 'object', required: ['startedAt', 'requestCount', 'diagnosticProbeCount', 'webhookTestCount', 'costUsd', 'limits'], properties: { startedAt: { type: 'string', format: 'date-time' }, requestCount: { type: 'integer' }, diagnosticProbeCount: { type: 'integer' }, webhookTestCount: { type: 'integer' }, costUsd: { type: 'null' }, limits: { type: 'object' } } } } } },
           '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
         },
       },
@@ -444,72 +444,6 @@ function buildInteractiveConsolePaths(errorResponseSchema: Record<string, unknow
           '400': { description: 'Costly diagnostics require inference=true', content: { 'application/problem+json': { schema: errorResponseSchema } } },
           '429': { description: 'Per-key diagnostic or request quota exceeded', headers: { 'Retry-After': { schema: { type: 'integer' } } }, content: { 'application/problem+json': { schema: errorResponseSchema } } },
           '503': { description: 'Gateway diagnostic failed', content: { 'application/json': { schema: { type: 'object' } } } },
-        },
-      },
-    },
-    '/api/v1/github-issues': {
-      post: {
-        operationId: 'listGitHubIssues',
-        summary: 'Fetch repository issues for task creation',
-        description: 'Fetches repository issues through the configured GitHub App for task creation in the console.',
-        tags: ['GitHub Issues'],
-        security: [{ BearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                required: [],
-                properties: {
-                  repoUrl: { type: 'string', description: 'GitHub repository URL or owner/repo' },
-                  repo: { type: 'string', description: 'Alias for repoUrl, accepted as owner/repo' },
-                  label: { type: 'string' },
-                  labels: { type: 'array', maxItems: 10, items: { type: 'string', minLength: 1, maxLength: 50 } },
-                  allLabels: { type: 'boolean', description: 'Do not apply the default kaseki-agent label' },
-                  limit: { type: 'integer', minimum: 1, maximum: 100 },
-                  state: { type: 'string', enum: ['open', 'closed', 'all'] },
-                },
-                additionalProperties: false,
-                anyOf: [{ required: ['repoUrl'] }, { required: ['repo'] }],
-              },
-            },
-          },
-        },
-        responses: {
-          '200': {
-            description: 'Repository issues',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  required: ['repoUrl', 'issueCount', 'issues'],
-                  properties: {
-                    repoUrl: { type: 'string', format: 'uri' },
-                    issueCount: { type: 'integer', minimum: 0 },
-                    issues: {
-                      type: 'array',
-                      items: {
-                        type: 'object',
-                        required: ['number', 'title', 'body', 'url', 'created_at'],
-                        properties: {
-                          number: { type: 'integer' },
-                          title: { type: 'string' },
-                          body: { type: ['string', 'null'] },
-                          url: { type: 'string', format: 'uri' },
-                          created_at: { type: 'string', format: 'date-time' },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-          '400': { description: 'Invalid repository request', content: { 'application/problem+json': { schema: errorResponseSchema } } },
-          '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
-          '404': { description: 'Repository not found', content: { 'application/problem+json': { schema: errorResponseSchema } } },
-          '429': { description: 'Per-key GitHub request limit exceeded', headers: { 'Retry-After': { schema: { type: 'integer' } } }, content: { 'application/problem+json': { schema: errorResponseSchema } } },
         },
       },
     },
