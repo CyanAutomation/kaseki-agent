@@ -227,6 +227,25 @@ describe('API access quotas and request identifiers', () => {
       expect(body.requestCount).toBe(1);
       expect(body.costUsd).toBeNull();
       expect(body.limits.requestsPerMinute).toBeGreaterThan(0);
+      expect(body).not.toHaveProperty('githubIssueLookupCount');
+      expect(body.limits).not.toHaveProperty('githubIssuesPerMinute');
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('does not expose the removed GitHub issues endpoint', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-api-removed-github-issues-'));
+    const { server, port, idempotencyStore } = await createTestApp(createMockScheduler(), createTestConfig(resultsDir));
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/github-issues`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl: 'owner/repo' }),
+      });
+
+      expect(response.status).toBe(404);
     } finally {
       await cleanupTestApp(server, idempotencyStore);
       fs.rmSync(resultsDir, { recursive: true, force: true });

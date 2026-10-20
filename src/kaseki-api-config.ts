@@ -22,7 +22,6 @@ export interface KasekiApiConfig {
   apiRequestsPerMinute?: number;
   apiDiagnosticsPerHour?: number;
   apiWebhookTestsPerHour?: number;
-  apiGitHubIssuesPerMinute?: number;
   resultsDir: string;
   /** Host-mounted run workspace directory used by worker containers. */
   runsDir?: string;
@@ -286,7 +285,6 @@ export function loadConfig(): KasekiApiConfig {
     apiRequestsPerMinute: validatePositiveInt('KASEKI_API_RATE_LIMIT_PER_MINUTE', 300),
     apiDiagnosticsPerHour: validatePositiveInt('KASEKI_API_DIAGNOSTIC_LIMIT_PER_HOUR', 10),
     apiWebhookTestsPerHour: validatePositiveInt('KASEKI_API_WEBHOOK_TESTS_PER_HOUR', 10),
-    apiGitHubIssuesPerMinute: validatePositiveInt('KASEKI_API_GITHUB_ISSUES_PER_MINUTE', 30),
     resultsDir,
     runsDir,
     maxConcurrentRuns,

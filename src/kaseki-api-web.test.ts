@@ -63,6 +63,7 @@ function createTextResponse(payload: string, status = 200, contentType = 'text/p
 
 async function renderConsole(options: {
   storedToken?: string;
+  storedRecentRepos?: string[];
   fetchHandler?: (path: string, init?: FetchInit) => MockResponse | Promise<MockResponse>;
 } = {}) {
   const { body } = await fetchConsole('/');
@@ -79,6 +80,9 @@ async function renderConsole(options: {
     beforeParse(window) {
       if (options.storedToken) {
         window.sessionStorage.setItem('kasekiApiToken', options.storedToken);
+      }
+      if (options.storedRecentRepos) {
+        window.sessionStorage.setItem('kasekiRecentRepos', JSON.stringify(options.storedRecentRepos));
       }
       window.fetch = fetchMock as unknown as typeof window.fetch;
       window.confirm = () => true;
@@ -223,11 +227,11 @@ describe('kaseki API web console routes', () => {
     expectText(document, 'h1', 'Kaseki Task Console');
     expectAttribute(document, '#header-api-token', 'aria-label', 'API bearer token');
     expectText(document, 'label[for="repo-url"]', 'Task repository URL');
-    expectText(document, 'label[for="issues-repo-url"]', 'Issues repository URL');
-    expectText(document, 'label[for="issues-label"]', 'Issue label');
+    expect([...document.querySelectorAll('.tab-button')].map((tab) => tab.textContent?.trim())).toEqual(['Health', 'Submit Task']);
+    expect(document.querySelector('#issues-tab')).toBeNull();
+    expect(document.querySelector('#issues-repo-url')).toBeNull();
+    expect(document.querySelector('#issue-prompt-preview')).toBeNull();
     getElement(document, '[data-testid="task-repo-url"]');
-    getElement(document, '[data-testid="issues-repo-url"]');
-    expectAttribute(document, '#issues-label', 'value', 'kaseki-agent');
     getElement(document, '[data-probe="/api/v1/preflight"]');
     expectAttribute(document, '[data-probe="/api/v1/gateway-test?stage=1"]', 'data-auth', 'true');
     expectTextContains(document, '[data-probe="/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true"]', 'AI Model Test');
@@ -268,7 +272,6 @@ describe('kaseki API web console routes', () => {
 
     expect(undefinedTokens).toEqual([]);
     expect(getElement(document, '#submit').classList.contains('button-primary')).toBe(true);
-    expect(getElement(document, '#load-issues-btn').classList.contains('button-primary')).toBe(true);
     expect(getElement(document, '#validate').classList.contains('button-secondary')).toBe(true);
     expect(getElement(document, '#cancel-run').classList.contains('button-danger')).toBe(true);
     expect(getElement(document, '#cancel-run').classList.contains('button')).toBe(true);
@@ -961,7 +964,7 @@ describe('kaseki API web console behavior', () => {
     expect(document.querySelector('main')?.hasAttribute('aria-hidden')).toBe(false);
   });
 
-  test('supports arrow key navigation and roving focus across console tabs', async () => {
+  test('supports arrow key navigation across the remaining console tabs', async () => {
     const { dom, document } = await renderConsole();
     const healthTab = getElement<HTMLButtonElement>(document, '.tab-button[data-tab="health"]');
     healthTab.focus();
@@ -969,12 +972,12 @@ describe('kaseki API web console behavior', () => {
     const nextTab = new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true });
     healthTab.dispatchEvent(nextTab);
 
-    const issuesTab = getElement<HTMLButtonElement>(document, '.tab-button[data-tab="issues"]');
+    const submitTab = getElement<HTMLButtonElement>(document, '.tab-button[data-tab="submit"]');
     expect(nextTab.defaultPrevented).toBe(true);
-    expect(document.activeElement).toBe(issuesTab);
-    expectAttribute(document, '.tab-button[data-tab="issues"]', 'tabindex', '0');
+    expect(document.activeElement).toBe(submitTab);
+    expectAttribute(document, '.tab-button[data-tab="submit"]', 'tabindex', '0');
     expectAttribute(document, '.tab-button[data-tab="health"]', 'tabindex', '-1');
-    expectHidden(document, '#issues-tab', false);
+    expectHidden(document, '#submit-tab', false);
     expectHidden(document, '#health-tab', true);
   });
 
@@ -1007,132 +1010,19 @@ describe('kaseki API web console behavior', () => {
     expect(text).not.toContain('RAW STATUS');
   });
 
-  test('selecting a GitHub issue carries its repository into the submit form', async () => {
-    const { document, calls } = await renderConsole({
-      storedToken: 'token12345',
-      fetchHandler: routeResponses({
-        '/api/v1/github-issues': createJsonResponse({
-          repoUrl: 'https://github.com/CyanAutomation/kaseki-agent',
-          issueCount: 1,
-          issues: [{
-            number: 517,
-            title: 'Stage names drift',
-            body: 'Align the setup stage name.',
-            created_at: new Date().toISOString(),
-          }],
-        }),
-      }),
-    });
+  test('retains recent repository suggestions for Submit Task', async () => {
+    const recentRepo = 'https://github.com/CyanAutomation/kaseki-agent';
+    const { dom, document } = await renderConsole({ storedRecentRepos: [recentRepo] });
 
-    clickSelector(document, '[data-tab="issues"]');
-    inputSelector(document, '#issues-repo-url', 'CyanAutomation/kaseki-agent');
-    inputSelector(document, '#issues-label', 'documentation');
-    clickSelector(document, '#load-issues-btn');
-    await waitFor(() => expectTextContains(document, '#issues-list', 'Stage names drift'));
-    expect(calls.find((call) => call.path === '/api/v1/github-issues')?.init?.body).toBe(JSON.stringify({
-      repoUrl: 'CyanAutomation/kaseki-agent', label: 'documentation',
-    }));
-    expect(getElement(document, '.issues-list-item').tagName).toBe('BUTTON');
-    expectText(document, '#state', 'Issues loaded.');
-    expectText(document, '#output-meta', 'Status: ok');
-    expectTextContains(document, '#output', '"issueCount": 1');
-
-    clickSelector(document, '.issues-list-item');
-    expectAttribute(document, '#submit-tab', 'aria-hidden', 'false');
     const repoInput = getElement<HTMLInputElement>(document, '#repo-url');
-    const taskPrompt = getElement<HTMLTextAreaElement>(document, '#task-prompt');
-    expect(repoInput.value).toBe('https://github.com/CyanAutomation/kaseki-agent');
-    expect(taskPrompt.value).toBe([
-      'GitHub issue #517: Stage names drift',
-      'https://github.com/CyanAutomation/kaseki-agent/issues/517',
-      '',
-      'Align the setup stage name.',
-    ].join('\n'));
-    const issuePreview = getElement<HTMLElement>(document, '#issue-prompt-preview');
-    expect(issuePreview.hidden).toBe(false);
-    expect(issuePreview.textContent).toContain('Issue preview:');
+    repoInput.focus();
+    const recentRepoOption = getElement(document, '#recent-repos-dropdown .recent-repo-item');
+    expect(recentRepoOption.textContent).toContain(recentRepo);
 
-    input(taskPrompt, 'A manually written prompt that replaces the selected issue.');
-    expect(issuePreview.hidden).toBe(true);
-    expect(issuePreview.textContent).toBe('');
-  });
+    click(recentRepoOption);
 
-  test('shows an empty issue state when the repository has no matching issues', async () => {
-    const { document } = await renderConsole({
-      storedToken: 'token12345',
-      fetchHandler: routeResponses({
-        '/api/v1/github-issues': createJsonResponse({
-          repoUrl: 'https://github.com/CyanAutomation/tako-bako',
-          issueCount: 0,
-          issues: [],
-        }),
-      }),
-    });
-
-    clickSelector(document, '[data-tab="issues"]');
-    inputSelector(document, '#issues-repo-url', 'CyanAutomation/tako-bako');
-    inputSelector(document, '#issues-label', 'documentation');
-    clickSelector(document, '#load-issues-btn');
-
-    await waitFor(() => expectTextContains(document, '#issues-list', 'No issues found with label "documentation"'));
-    expectText(document, '#state', 'No matching issues found.');
-    expectText(document, '#output-meta', 'Status: ok');
-  });
-
-  test('uses the explicit all-labels mode when the issue label is cleared', async () => {
-    const { document, calls } = await renderConsole({
-      storedToken: 'token12345',
-      fetchHandler: routeResponses({
-        '/api/v1/github-issues': createJsonResponse({ repoUrl: 'https://github.com/CyanAutomation/tako-bako', issueCount: 0, issues: [] }),
-      }),
-    });
-
-    clickSelector(document, '[data-tab="issues"]');
-    inputSelector(document, '#issues-repo-url', 'CyanAutomation/tako-bako');
-    inputSelector(document, '#issues-label', '');
-    clickSelector(document, '#load-issues-btn');
-
-    await waitFor(() => expectTextContains(document, '#issues-list', 'No issues found'));
-    expect(calls.find((call) => call.path === '/api/v1/github-issues')?.init?.body).toBe(JSON.stringify({
-      repoUrl: 'CyanAutomation/tako-bako', allLabels: true,
-    }));
-  });
-
-  test('normalizes recent repository entries across submit and issues flows', async () => {
-    const { dom, document } = await renderConsole({
-      storedToken: 'token12345',
-      fetchHandler: (path) => {
-        if (path === '/api/v1/github-issues') {
-          return createJsonResponse({
-            repoUrl: 'https://github.com/CyanAutomation/kaseki-agent',
-            issueCount: 1,
-            issues: [{
-              number: 516,
-              title: 'Progress fallback issue',
-              body: 'Use better progress fallback.',
-              created_at: new Date().toISOString(),
-            }],
-          });
-        }
-        return createJsonResponse({ runs: [] });
-      },
-    });
-
-    const repoInput = document.querySelector<HTMLInputElement>('#repo-url');
-    const issuesRepoInput = document.querySelector<HTMLInputElement>('#issues-repo-url');
-    if (!repoInput || !issuesRepoInput) throw new Error('Expected repo inputs to exist');
-
-    input(repoInput, 'https://github.com/CyanAutomation/kaseki-agent');
-    dom.window.sessionStorage.setItem('kasekiRecentRepos', JSON.stringify(['https://github.com/CyanAutomation/kaseki-agent']));
-
-    click(document.querySelector('[data-tab="issues"]'));
-    input(issuesRepoInput, 'CyanAutomation/kaseki-agent');
-    click(document.querySelector('#load-issues-btn'));
-    await waitFor(() => expect(document.querySelector('#issues-list')?.textContent).toContain('Progress fallback issue'));
-
-    expect(JSON.parse(dom.window.sessionStorage.getItem('kasekiRecentRepos') || '[]')).toEqual([
-      'https://github.com/CyanAutomation/kaseki-agent',
-    ]);
+    expect(repoInput.value).toBe(recentRepo);
+    expect(JSON.parse(dom.window.sessionStorage.getItem('kasekiRecentRepos') || '[]')).toEqual([recentRepo]);
   });
 
   test('submitting a validated task immediately surfaces the new run id', async () => {

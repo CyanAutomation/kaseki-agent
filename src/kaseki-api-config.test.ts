@@ -40,6 +40,7 @@ describe('kaseki-api-config load configuration', () => {
     process.env.KASEKI_RESULTS_DIR = testDir;
     process.env.KASEKI_API_LOG_LEVEL = 'debug';
     process.env.KASEKI_API_JOB_INDEX_MAX_ENTRIES = '250';
+    process.env.KASEKI_API_GITHUB_ISSUES_PER_MINUTE = '1';
     process.env.KASEKI_ARTIFACT_CACHE_MAX_ENTRIES = '7';
     process.env.KASEKI_ARTIFACT_CACHE_TTL_MS = '12345';
     process.env.KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES = '4096';
@@ -72,6 +73,7 @@ describe('kaseki-api-config load configuration', () => {
     expect(config.artifactCacheMaxFileBytes).toBe(4096);
     expect(config.dependencyCacheMaxBytes).toBe(10 * 1024 * 1024 * 1024);
     expect(config.dependencyCacheMaxAgeDays).toBe(30);
+    expect(config).not.toHaveProperty('apiGitHubIssuesPerMinute');
   });
 
   test('loadConfig uses default values when env vars are not set', () => {

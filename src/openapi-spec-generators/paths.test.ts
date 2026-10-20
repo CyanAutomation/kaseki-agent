@@ -40,7 +40,6 @@ describe('OpenAPI Path Builders', () => {
     contract('/api/v1/startup-health', 'get', 'getStartupHealth', true, ['200', '401', '404', '500'], 'Service Info'),
     contract('/api/v1/openapi.json', 'get', 'getOpenApiSpec', false, ['200'], 'Service Info'),
     contract('/api/v1/gateway-test', 'get', 'testGateway', true, ['200', '400', '401', '429', '503'], 'Gateway Diagnostics'),
-    contract('/api/v1/github-issues', 'post', 'listGitHubIssues', true, ['200', '400', '401', '404', '429'], 'GitHub Issues'),
     contract('/api/v1/validate', 'post', 'validateTask', true, ['200', '400', '401'], 'Service Info'),
     contract('/api/v1/runs', 'post', 'triggerRun', true, ['200', '202', '400', '401', '422', '503', '507'], 'Run Management'),
     contract('/api/v1/runs', 'get', 'listRuns', true, ['200', '400', '401'], 'Run Management'),
@@ -62,21 +61,6 @@ describe('OpenAPI Path Builders', () => {
     contract('/api/v1/webhooks/test', 'post', 'testWebhook', true, ['200', '400', '401', '429'], 'Webhooks'),
   ];
 
-  it('documents the GitHub issues envelope returned by the console route', () => {
-    const paths = buildAllPaths(buildErrorResponseSchema(), buildRunRequestSchema(), buildRunResponseSchema());
-    const schema = (paths['/api/v1/github-issues'] as Record<string, any>).post.responses['200']
-      .content['application/json'].schema;
-
-    expect(schema).toMatchObject({
-      type: 'object',
-      required: ['repoUrl', 'issueCount', 'issues'],
-      properties: {
-        repoUrl: { type: 'string', format: 'uri' },
-        issueCount: { type: 'integer', minimum: 0 },
-        issues: { type: 'array' },
-      },
-    });
-  });
   let errorSchema: Record<string, unknown>;
   let requestSchema: Record<string, unknown>;
   let responseSchema: Record<string, unknown>;
@@ -123,6 +107,15 @@ describe('OpenAPI Path Builders', () => {
         .sort();
 
       expect(actualOperations).toEqual(expectedOperations);
+    });
+
+    it('omits GitHub issue lookup fields from the API usage contract', () => {
+      const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
+      const usagePath = paths['/api/v1/usage'] as Record<string, any>;
+      const usageSchema = usagePath.get.responses['200'].content['application/json'].schema;
+
+      expect(usageSchema.required).not.toContain('githubIssueLookupCount');
+      expect(usageSchema.properties).not.toHaveProperty('githubIssueLookupCount');
     });
 
     it('request body routes should define precise required JSON contracts', () => {
@@ -308,7 +301,6 @@ describe('OpenAPI Path Builders', () => {
         streamRunEvents: ['stream', 'run', 'events'],
         getRunStatus: ['run', 'status'],
         getRunScorecard: ['run', 'scorecard'],
-        listGitHubIssues: ['repository', 'issues', 'task'],
         listRuns: ['list', 'runs'],
         listScorecards: ['list', 'scorecards'],
         listRunWebhookDeliveries: ['inspect', 'webhook', 'deliveries'],
@@ -383,10 +375,6 @@ describe('OpenAPI Path Builders', () => {
         { operationId: 'getRun', terms: ['stable run identity', 'lifecycle timestamps', 'links'] },
         { operationId: 'listRunWebhookDeliveries', terms: ['secret-free delivery status', 'attempt history'] },
         { operationId: 'retryRunWebhookDelivery', terms: ['retry', 'failed webhook delivery'] },
-        {
-          operationId: 'listGitHubIssues',
-          terms: ['repository issues', 'task creation']
-        }
       ];
       const operations = Object.entries(paths).flatMap(([route, pathDef]) => {
         const def = pathDef as Record<string, any>;

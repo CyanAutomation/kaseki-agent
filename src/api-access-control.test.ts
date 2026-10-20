@@ -18,6 +18,7 @@ describe('API key request limits and usage', () => {
     const usage = access.getUsage('key-a');
     expect(usage.requestCount).toBe(1);
     expect(usage.diagnosticProbeCount).toBe(1);
+    expect(usage).not.toHaveProperty('githubIssueLookupCount');
     expect(usage.costUsd).toBeNull();
   });
 
