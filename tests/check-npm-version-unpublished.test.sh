@@ -14,6 +14,7 @@ printf '%s\n' "$*" >>"$stub_root/args"
 case "${STUB_NPM_MODE:?}" in
   unpublished) printf '["1.2.2","1.2.4"]\n' ;;
   published) printf '["1.2.2","1.2.3","1.2.4"]\n' ;;
+  package_not_found) printf '{"error":{"code":"E404","summary":"Not Found"}}\n'; exit 1 ;;
   auth_error) echo 'npm error code E401' >&2; exit 1 ;;
   network_error) echo 'npm error code ECONNRESET' >&2; exit 1 ;;
   malformed) printf 'not-json\n' ;;
@@ -40,6 +41,11 @@ grep -q 'Confirmed @example/package@1.2.3 is unpublished' "$TMP/unpublished.out"
   || fail 'unpublished confirmation missing'
 grep -q '^view @example/package versions --json --registry=https://registry.npmjs.org/$' "$TMP/args" \
   || fail 'registry query must request the package version list'
+
+run_case package_not_found
+[[ $STATUS == 0 ]] || fail 'an unpublished package (E404) should allow its first version to publish'
+grep -q 'Confirmed @example/package@1.2.3 is unpublished' "$TMP/package_not_found.out" \
+  || fail 'package-not-found confirmation missing'
 
 run_case published
 [[ $STATUS == 1 ]] || fail 'published version should fail'
