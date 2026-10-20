@@ -4,6 +4,12 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Breaking Changes
+
+* Remove the GitHub Issues browser, `POST /api/v1/github-issues`, and `KASEKI_API_GITHUB_ISSUES_PER_MINUTE`; `/api/v1/usage` no longer reports GitHub issue lookup counts or limits.
+
 # [1.154.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.153.0...v1.154.0) (2026-10-12)
 
 

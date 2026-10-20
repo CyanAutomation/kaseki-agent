@@ -164,7 +164,6 @@ Remove these names from deployment configuration and use the replacement shown. 
 | `KASEKI_API_RATE_LIMIT_PER_MINUTE` | `300` | integer | Per-key fixed-window request limit |
 | `KASEKI_API_DIAGNOSTIC_LIMIT_PER_HOUR` | `10` | integer | Per-key limit for token-consuming diagnostic probes |
 | `KASEKI_API_WEBHOOK_TESTS_PER_HOUR` | `10` | integer | Per-key limit for webhook tests and delivery retries |
-| `KASEKI_API_GITHUB_ISSUES_PER_MINUTE` | `30` | integer | Per-key limit for GitHub issue lookups |
 | `KASEKI_WEBHOOK_ALLOWED_ORIGINS` | unset | comma-separated origins | Exact HTTP(S) origins trusted for webhook delivery to private or plain-HTTP receivers |
 
 API keys currently have equal access. `KASEKI_API_KEY_SCOPES` is not supported and does not restrict a key; do not rely on it as an authorization boundary.

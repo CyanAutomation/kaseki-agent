@@ -56,7 +56,6 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | `KASEKI_API_RATE_LIMIT_PER_MINUTE` | 300 | Per-key API request limit |
 | `KASEKI_API_DIAGNOSTIC_LIMIT_PER_HOUR` | 10 | Per-key limit for token-consuming diagnostics |
 | `KASEKI_API_WEBHOOK_TESTS_PER_HOUR` | 10 | Per-key limit for webhook tests and manual delivery retries |
-| `KASEKI_API_GITHUB_ISSUES_PER_MINUTE` | 30 | Per-key limit for GitHub issue lookups |
 | `KASEKI_WEBHOOK_ALLOWED_ORIGINS` | *(empty)* | Comma-separated exact HTTP(S) origins allowed to receive webhooks on private networks or over plain HTTP; only use for trusted receivers |
 | `KASEKI_API_LOG_DIR` | /var/log/kaseki-api/ | Log file output directory |
 | `KASEKI_API_MAX_CONCURRENT_RUNS` | 3 | Max concurrent kaseki jobs |
@@ -1039,22 +1038,7 @@ Webhook delivery uses HTTPS and public internet destinations by default. The sen
 
 **GET `/api/v1/usage`**
 
-Returns in-process request, diagnostic, webhook retry/test, and GitHub lookup counts plus configured rate limits for the current key. `costUsd` is `null` until the gateway exposes reliable per-request cost data. Requires a valid API key when authentication is enabled.
-
-### GitHub Issues
-
-**POST `/api/v1/github-issues`**
-
-Requires a valid API key. The strict request body accepts `repoUrl` or `repo` (`owner/repo`), one `label` or up to ten `labels`, `allLabels`, `limit` (1–100, default 5), and `state` (`open`, `closed`, or `all`). Invalid or extra fields return `400` before a GitHub App call; per-key limits return `429` with `Retry-After`.
-
-```json
-{
-  "repoUrl": "https://github.com/CyanAutomation/kaseki-agent",
-  "labels": ["bug", "help wanted"],
-  "limit": 20,
-  "state": "open"
-}
-```
+Returns in-process request, diagnostic, and webhook retry/test counts plus configured rate limits for the current key. `costUsd` is `null` until the gateway exposes reliable per-request cost data. Requires a valid API key when authentication is enabled.
 
 ## API Versioning
 
