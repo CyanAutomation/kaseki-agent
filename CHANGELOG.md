@@ -4,6 +4,25 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.155.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.154.0...v1.155.0) (2026-10-20)
+
+
+### Bug Fixes
+
+* avoid ECR public base image quota in CI ([c8f792b](https://github.com/CyanAutomation/kaseki-agent/commit/c8f792ba03b6f0c075fe6817a6fb48a6e517dc04))
+* **ci:** install pinned Bun in release validation ([6d3c9f5](https://github.com/CyanAutomation/kaseki-agent/commit/6d3c9f521220933995985d46968eaf4c98ac1b2e))
+* **ci:** install pinned Bun in release validation ([#1531](https://github.com/CyanAutomation/kaseki-agent/issues/1531)) ([2797f72](https://github.com/CyanAutomation/kaseki-agent/commit/2797f7269c148b8743c621bdbc349fa4c26a3e6b))
+* **ci:** validate pinned Bun version before install ([b3c5a98](https://github.com/CyanAutomation/kaseki-agent/commit/b3c5a98cbd2af29cad800c4ea0b6b66123e33669))
+* ignore fenced npm examples in docs checks ([e3d05a7](https://github.com/CyanAutomation/kaseki-agent/commit/e3d05a73cc6cd6c71c3de07e9e99850fa894cc06))
+* restore documentation and link-check contracts ([02d3fac](https://github.com/CyanAutomation/kaseki-agent/commit/02d3fac4cb04084b13a86641a732b6622b07aad7))
+* validate dependency hash lockfile input ([c3fcaac](https://github.com/CyanAutomation/kaseki-agent/commit/c3fcaacc780b38487d48ca0b73e6bc85b11acdb7))
+
+
+### Features
+
+* remove GitHub Issues feature ([#1530](https://github.com/CyanAutomation/kaseki-agent/issues/1530)) ([04fc6f2](https://github.com/CyanAutomation/kaseki-agent/commit/04fc6f237414b1582b0f3270d107e4f18910112c))
+* support npm and Bun package managers ([67df573](https://github.com/CyanAutomation/kaseki-agent/commit/67df573751c1d34a90b87c1bccb5bd8ac0b5bbf4))
+
 ## [Unreleased]
 
 ### Breaking Changes
