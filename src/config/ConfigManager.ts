@@ -256,7 +256,7 @@ export class ConfigManager {
     } catch (error) {
       if (error instanceof z.ZodError) {
         logger.error(`Configuration validation error: ${error.message}`);
-        throw new Error(`Invalid configuration: ${error.errors[0]?.message}`);
+        throw new Error(`Invalid configuration: ${error.issues[0]?.message}`);
       }
       throw error;
     }
