@@ -599,7 +599,7 @@ kaseki-agent run https://github.com/org/repo main "Task description"
 
 ### "Unknown command"
 
-Verify the subcommand exists. All 15 active commands plus `setup` (deprecated) are registered in `src/cli/KasekiCLI.ts`. Run `kaseki-agent --help` to see available top-level flags. For command-specific help, run `kaseki-agent <command> --help`.
+Verify the subcommand exists. All 14 active commands plus `setup` (deprecated) are registered in `src/cli/KasekiCLI.ts`. Run `kaseki-agent --help` to see available top-level flags. For command-specific help, run `kaseki-agent <command> --help`.
 
 ### "Unable to list runs from local Kaseki API"
 
