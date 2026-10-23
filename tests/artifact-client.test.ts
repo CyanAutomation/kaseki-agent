@@ -130,7 +130,8 @@ describe('Artifact Client Utilities', () => {
           }),
         } as unknown as Response);
 
-        await expect(client.getRunArtifact('kaseki-run-20260607-abc123', 'metadata.json')).rejects.toThrow(/Required/);
+        await expect(client.getRunArtifact('kaseki-run-20260607-abc123', 'metadata.json'))
+          .rejects.toThrow(/expected number, received undefined/);
       } finally {
         global.fetch = originalFetch;
       }

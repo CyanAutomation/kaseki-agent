@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { z } from 'zod';
 import * as crypto from 'crypto';
 import { JobScheduler } from './job-scheduler';
 import { IdempotencyStore } from './idempotency-store';
@@ -46,6 +47,12 @@ import { getStorageCapacityError, storageErrorFields } from './storage-capacity'
 import { SoyuzApiError } from './integrations/soyuz/SoyuzApiClient';
 import { SoyuzSubmissionClient, normalizeSoyuzRunStatus, type SoyuzSubmittedRun } from './integrations/soyuz/SoyuzSubmissionClient';
 import { parseSoyuzRunRequest } from './integrations/soyuz/contracts';
+
+function formatZodValidationError(error: z.ZodError): string {
+  return error.issues
+    .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+    .join('; ');
+}
 
 function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
   if (!remoteAddress) {
@@ -847,11 +854,9 @@ function registerRunSubmissionRoute(
           storageErrorFields(storageError),
         );
       }
-      if (err instanceof Error && 'errors' in err) {
+      if (err instanceof z.ZodError) {
         // Zod validation error
-        const details = (err as any).errors
-          .map((e: any) => `${(e.path as string[]).join('.')}: ${e.message}`)
-          .join('; ');
+        const details = formatZodValidationError(err);
         logger.event('api_validation_error', {
           path: '/runs',
           details,
@@ -1047,11 +1052,9 @@ function registerValidationRoute(
 
       res.json(response);
     } catch (err: unknown) {
-      if (err instanceof Error && 'errors' in err) {
+      if (err instanceof z.ZodError) {
         // Zod validation error
-        const details = (err as any).errors
-          .map((e: any) => `${(e.path as string[]).join('.')}: ${e.message}`)
-          .join('; ');
+        const details = formatZodValidationError(err);
         logger.event('api_validation_error', {
           path: '/validate',
           details,
