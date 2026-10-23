@@ -30,7 +30,7 @@ DIAGNOSTIC_REASON='metadata_write_invalid'
 extract_failure_diagnostic_reason() { printf '%s' "$DIAGNOSTIC_REASON"; }
 
 cat > "$KASEKI_RESULTS_DIR/metadata.json" <<'JSON'
-{"instance":"run-123","exit_code":8,"validation_commands_attempted":0,"validation_exit_code":0,"task_mode":"patch"}
+{"instance":"run-123","exit_code":8,"validation_commands_attempted":0,"validation_exit_code":0,"task_mode":"patch","no_change_accepted":true}
 JSON
 cat > "$KASEKI_RESULTS_DIR/failure.json" <<'JSON'
 {"validation_exit_code":0,"worker_error_type":"metadata_write_invalid","worker_error_phase":"finalize"}
@@ -66,10 +66,24 @@ if grep -q -- '- Goal Setting: Fallback used' "$summary"; then
 fi
 grep -q -- '- Agent review: agent-review.md' "$summary"
 grep -q 'The run made no changes because no safe improvement was found\.' "$KASEKI_RESULTS_DIR/agent-review.md"
+if grep -q -- '- No-Change Outcome:' "$summary"; then
+  printf 'FAIL: a changed run was reported as an accepted no-change outcome\n' >&2
+  exit 1
+fi
+printf '%s\n' '{"instance":"run-123","exit_code":0,"task_mode":"patch","no_change_accepted":true}' > "$KASEKI_RESULTS_DIR/metadata.json"
+STATUS=0
+printf '' > "$KASEKI_RESULTS_DIR/git.diff"
+write_result_summary
+if grep -q -- '- No-Change Outcome:' "$summary"; then
+  printf 'FAIL: a non-empty changed-file list was reported as an accepted no-change outcome\n' >&2
+  exit 1
+fi
 
 cat > "$KASEKI_RESULTS_DIR/goal-check.json" <<'JSON'
 {"met":true,"confidence":"medium","evaluation_unavailable":true,"summary":"No diff was produced; empty diffs are allowed by this run. Semantic requirements require human review."}
 JSON
+printf '' > "$KASEKI_RESULTS_DIR/changed-files.txt"
+printf '' > "$KASEKI_RESULTS_DIR/git.diff"
 cat > "$KASEKI_RESULTS_DIR/metadata.json" <<'JSON'
 {"instance":"run-123","exit_code":0,"validation_commands_attempted":0,"validation_exit_code":0,"task_mode":"patch","no_change_accepted":true}
 JSON
@@ -95,6 +109,11 @@ grep -Fq 'Adds retry regression coverage.' "$KASEKI_RESULTS_DIR/agent-review.md"
 printf '%s\n' '{"instance":"run-123","exit_code":8,"validation_commands_attempted":0,"validation_exit_code":0,"phases":{"validation":{"commands_attempted":2,"results":[{"status":"passed"},{"status":"passed"}]}}}' > "$KASEKI_RESULTS_DIR/metadata.json"
 write_result_summary
 grep -q -- '- Validation: Passed (2 commands attempted)' "$summary"
+printf '%s\n' '{"instance":"run-123","exit_code":0,"pre_validation_commands_attempted":2,"pre_validation_exit_code":0,"validation_commands_attempted":3,"validation_exit_code":0}' > "$KASEKI_RESULTS_DIR/metadata.json"
+STATUS=0
+write_result_summary
+grep -q -- '- Pre-agent Validation: Passed (2 commands attempted)' "$summary"
+grep -q -- '- Validation: Passed (3 commands attempted)' "$summary"
 
 # Agent-writable artifact paths must not allow the summary writer to follow
 # symlinks outside the results directory when preserving or replacing content.

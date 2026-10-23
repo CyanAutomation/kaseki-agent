@@ -10,6 +10,9 @@ const ARTIFACT_FILES = [
   { name: 'result-summary.md', kind: 'report', contentType: 'text/markdown; charset=utf-8' },
   { name: 'failure.json', kind: 'report', contentType: 'application/json' },
   { name: 'git.diff', kind: 'patch', contentType: 'text/x-diff; charset=utf-8' },
+  { name: 'changed-files.txt', kind: 'report', contentType: 'text/plain; charset=utf-8' },
+  { name: 'run-scorecard.json', kind: 'report', contentType: 'application/json' },
+  { name: 'run-evaluation.json', kind: 'report', contentType: 'application/json' },
 ] as const;
 
 export interface SoyuzArtifactFile {
@@ -23,6 +26,43 @@ export interface SoyuzArtifactFile {
 export interface SoyuzArtifactLoadResult {
   artifacts: SoyuzArtifactFile[];
   skipped: Array<{ name: string; reason: 'unsafe_file' | 'too_large' }>;
+}
+
+export interface SoyuzTerminalOutcome {
+  summary?: string;
+  publishedUrl?: string;
+  changedFileCount?: number;
+}
+
+export async function loadSoyuzTerminalOutcome(resultDir: string | undefined): Promise<SoyuzTerminalOutcome> {
+  if (!resultDir) return {};
+  const [summaryFile, metadataFile, changedFilesFile] = await Promise.all([
+    readArtifactFile(path.join(resultDir, 'result-summary.md')),
+    readArtifactFile(path.join(resultDir, 'metadata.json')),
+    readArtifactFile(path.join(resultDir, 'changed-files.txt')),
+  ]);
+  const outcome: SoyuzTerminalOutcome = {};
+
+  if (Buffer.isBuffer(summaryFile)) {
+    const summary = summaryFile.toString('utf8').trim().slice(0, 2_000);
+    if (summary) outcome.summary = summary;
+  }
+
+  if (Buffer.isBuffer(metadataFile)) {
+    try {
+      const metadata = JSON.parse(metadataFile.toString('utf8')) as Record<string, unknown>;
+      const publishedUrl = safePublishedUrl(metadata.github_pr_url ?? metadata.pr_url);
+      if (publishedUrl) outcome.publishedUrl = publishedUrl;
+    } catch {
+      // Invalid metadata does not prevent the canonical run from completing.
+    }
+  }
+
+  if (Buffer.isBuffer(changedFilesFile)) {
+    const changedFiles = new Set(changedFilesFile.toString('utf8').split(/\r?\n/).map((file) => file.trim()).filter(Boolean));
+    if (changedFiles.size <= 100_000) outcome.changedFileCount = changedFiles.size;
+  }
+  return outcome;
 }
 
 export async function loadSoyuzArtifacts(
@@ -60,6 +100,19 @@ export function artifactIdForSoyuzFile(runId: string, name: string): string {
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
   const hex = bytes.toString('hex');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function safePublishedUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.username || url.password) return undefined;
+    url.search = '';
+    url.hash = '';
+    return url.href.length <= 2_048 ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function readArtifactFile(filePath: string): Promise<Buffer | null | 'unsafe_file' | 'too_large'> {
