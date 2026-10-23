@@ -207,6 +207,52 @@ SECRET
   else
     fail "Secret allowlist: expected exit 0 and allowlisted artifact"
   fi
+
+  reset_results
+  cd "$TMP_DIR/workspace/repo"
+  mkdir -p tests
+  rm -f src/allowed-secret.ts
+  cat > tests/fixture.test.sh <<'SECRET'
+# Intentional integration-test credential fixture.
+API_KEY='sk-test-integration-key'
+OPENROUTER_KEY='sk-or-aBcDeFgHiJkLmNoPqRsT'
+SECRET
+  printf '%s\n' \
+    'tests/fixture.test.sh:sk-test-integration-key' \
+    'tests/fixture.test.sh:sk-or-aBcDeFgHiJkLmNoPqRsT' > .kaseki-secret-allowlist
+  printf '{"type":"tool_execution_end","content":"%s %s"}\n' \
+    'sk-test-integration-key' 'sk-or-aBcDeFgHiJkLmNoPqRsT' \
+    > "$KASEKI_RESULTS_DIR/goal-setting-events.jsonl"
+
+  run_secret_scan
+
+  if [ "$SECRET_SCAN_EXIT" -eq 0 ] && \
+    jq -se --arg file "$KASEKI_RESULTS_DIR/goal-setting-events.jsonl" \
+      '[.[] | select(.file == $file)] as $matches | ($matches | length) == 2 and all($matches[]; .status == "allowlisted")' \
+      "$KASEKI_RESULTS_DIR/.secret-scan-temp.jsonl" >/dev/null; then
+    pass "Secret allowlist: an allowlisted test fixture echoed into run artifacts stays allowlisted"
+  else
+    fail "Secret allowlist: expected an echoed, allowlisted test fixture not to fail the scan"
+  fi
+
+  reset_results
+  cd "$TMP_DIR/workspace/repo"
+  mkdir -p src
+  printf 'export const key = "sk-or-ZyXwVuTsRqPoNmLkJiHg";\n' > src/allowed-secret.ts
+  printf 'src/allowed-secret.ts:sk-or-ZyXwVuTsRqPoNmLkJiHg\n' > .kaseki-secret-allowlist
+  printf '{"content":"%s"}\n' 'sk-or-ZyXwVuTsRqPoNmLkJiHg' \
+    > "$KASEKI_RESULTS_DIR/goal-setting-events.jsonl"
+
+  run_secret_scan
+
+  if [ "$SECRET_SCAN_EXIT" -eq 6 ] && \
+    jq -se --arg file "$KASEKI_RESULTS_DIR/goal-setting-events.jsonl" \
+      'any(.[]; .file == $file and .status == "real_leak")' \
+      "$KASEKI_RESULTS_DIR/.secret-scan-temp.jsonl" >/dev/null; then
+    pass "Secret allowlist: result artifacts do not inherit production-path approvals"
+  else
+    fail "Secret allowlist: expected a production-path approval not to apply to result artifacts"
+  fi
 }
 
 # Test 5: Multiple file allowlist via production quality checks

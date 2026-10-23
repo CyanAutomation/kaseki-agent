@@ -8,11 +8,12 @@ The secret scan allowlist permits known safe patterns (test fixtures) while stil
 
 The secret scan executes in two phases:
 
-1. **Detection**: Scans `/results`, `/workspace/repo/.git`, `/workspace/repo/src`, and `/workspace/repo/tests` for patterns matching `sk-or-[A-Za-z0-9_-]{20,}` (OpenRouter API key format)
+1. **Detection**: Scans `/results`, `/workspace/repo/.git`, `/workspace/repo/src`, and `/workspace/repo/tests` for patterns matching `sk-or-[A-Za-z0-9_-]{20,}` (OpenRouter key format) or `sk-test-[A-Za-z0-9_-]*` (test key format)
 
 2. **Filtering**: Each detected pattern is checked against `.kaseki-secret-allowlist`
-   - If the pattern is in the allowlist → marked as safe, does NOT trigger exit code 6
-   - If the pattern is NOT in the allowlist → real leak detected, triggers exit code 6
+   - A source-tree match is safe only when its exact file and pattern are allowlisted.
+   - A result artifact can inherit an exact-pattern approval only from a test fixture entry (`test/`, `tests/`, or a test-named file). This covers agent logs that echo a documented mock key.
+   - Other unallowlisted matches trigger exit code 6.
 
 ## Allowlist File Format
 
