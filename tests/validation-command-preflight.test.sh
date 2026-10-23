@@ -19,7 +19,11 @@ cat > "$TMP_DIR/bin/npm" <<'EOF'
 #!/bin/sh
 exit 0
 EOF
-chmod +x "$TMP_DIR/bin/npm"
+cat > "$TMP_DIR/bin/node" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+chmod +x "$TMP_DIR/bin/npm" "$TMP_DIR/bin/node"
 PATH="$TMP_DIR/bin"
 
 assert_missing() {
@@ -47,6 +51,7 @@ assert_missing make 'npm test; make ci'
 assert_missing go 'KASEKI_MODE=ci go test ./...'
 assert_available 'npm run build'
 assert_available "npm run 'test|build'"
+assert_available "node -e 'const [major, minor] = process.versions.node.split(\".\").map(Number); if (major !== 24 || minor < 10) process.exit(1)' && npm run check"
 assert_available 'none'
 assert_available ''
 

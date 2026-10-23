@@ -318,11 +318,13 @@ repository to another package manager. npm shrinkwrap takes precedence over
 package-lock when both are present. Keep only one Bun lockfile format.
 
 An optional `packageManager` field must name npm or Bun and pin an exact version.
-The declared manager must match the lockfile, and its version must match the worker
-executable. The standard image ships npm 11.21.0 and Bun 1.4.3; use a custom worker
-image when a repository requires another version. Kaseki does not download a
-replacement manager during a run. Node remains available for Kaseki and scripts
-that explicitly invoke Node.
+The declared manager must match the lockfile. The standard image ships npm 11.21.0
+and Bun 1.4.3. If an npm pin differs, Kaseki provisions that exact npm release into
+the configured npm exec cache, verifies it, and places it first on `PATH` for the
+run; the image's bundled npm is left untouched. The configured npm registry must
+be reachable when the pinned release is not cached. A Bun version mismatch still
+requires a worker image with that Bun release. Node remains available for Kaseki
+and scripts that explicitly invoke Node.
 
 `KASEKI_VALIDATION_COMMANDS=auto` discovers existing build, type-check, check, and
 test scripts and invokes them with `npm run` or `bun run`. Explicit command lists

@@ -5,6 +5,20 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kaseki-failure-json.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+diagnostic_function_source="$(awk '
+  /^extract_failure_diagnostic_reason\(\)/ { emit=1; depth=0 }
+  emit {
+    print
+    for (i = 1; i <= length($0); i++) {
+      ch = substr($0, i, 1)
+      if (ch == "{") depth++
+      if (ch == "}") depth--
+    }
+    if (emit && depth == 0) exit
+  }
+' "$ROOT_DIR/kaseki-agent.sh")"
+eval "$diagnostic_function_source"
+
 function_source="$(awk '
   /^write_failure_json\(\)/ { emit=1 }
   emit && /<<FAILURE/ { heredoc=1 }
@@ -14,12 +28,37 @@ function_source="$(awk '
 ' "$ROOT_DIR/kaseki-agent.sh")"
 eval "$function_source"
 
+# A terminal secret-scan failure must not be masked by a recoverable earlier
+# goal-setting artifact warning.
+KASEKI_RESULTS_DIR="$TMP_DIR/diagnostics"
+mkdir -p "$KASEKI_RESULTS_DIR"
+: > "$KASEKI_RESULTS_DIR/stderr.log"
+printf '%s\n' '{"reason":"goal-setting completed without required candidate artifact","severity":"error"}' \
+  > "$KASEKI_RESULTS_DIR/goal-setting-validation-errors.jsonl"
+WORKER_ERROR_MESSAGE=''
+PROVIDER_ERROR_MESSAGE=''
+CRITICAL_CHANGE_FAILURE_REASON=''
+GOAL_CHECK_FAILURE_REASON=''
+QUALITY_FAILURE_REASON=''
+VALIDATION_FAILURE_REASON=''
+VALIDATION_ALLOWLIST_FAILURE_REASON=''
+PRE_VALIDATION_FAILURE_REASON=''
+FAILED_COMMAND='secret scan'
+SECRET_SCAN_EXIT=6
+SECRET_SCAN_FAILURE_REASON='secret_scan_unallowlisted_matches: 15 potential credential match(es)'
+diagnostic_reason="$(extract_failure_diagnostic_reason)"
+[ "$diagnostic_reason" = "$SECRET_SCAN_FAILURE_REASON" ] || {
+  printf '✗ expected terminal secret-scan diagnostic, got: %s\n' "$diagnostic_reason" >&2
+  exit 1
+}
+
 # Initialize the extracted function's globals so the complete failure artifact
 # can be serialized without sourcing the worker's startup side effects.
 while IFS= read -r variable; do
   [ -n "$variable" ] || continue
   printf -v "$variable" '%s' 0
 done < <(printf '%s\n' "$function_source" | grep -oE '\$[A-Z][A-Z0-9_]+' | tr -d '$' | sort -u)
+SECRET_SCAN_FAILURE_REASON='secret_scan_unallowlisted_matches: 15 potential credential match(es); inspect secret-scan findings'
 
 json_encode() {
   node -e 'let value=""; process.stdin.setEncoding("utf8"); process.stdin.on("data", chunk => value += chunk); process.stdin.on("end", () => process.stdout.write(JSON.stringify(value)));'
@@ -46,6 +85,7 @@ if (failure.started_at !== '2026-09-23T19:20:54Z') throw new Error('failure.json
 if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(failure.ended_at)) throw new Error('failure.json omitted a durable end timestamp');
 if (failure.failed_command !== 'goal check' || failure.exit_code !== 8) throw new Error('failure.json lost the root failure classification');
 if (failure.stage !== 'goal check') throw new Error(`failure.json recorded finalization stage instead of failure stage: ${failure.stage}`);
+if (failure.secret_scan_failure_reason !== 'secret_scan_unallowlisted_matches: 15 potential credential match(es); inspect secret-scan findings') throw new Error('failure.json omitted secret-scan diagnostic details');
 NODE
 
 printf '✓ failure.json preserves original run timestamps and root failure classification.\n'

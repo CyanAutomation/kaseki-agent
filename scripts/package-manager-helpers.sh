@@ -2,6 +2,37 @@
 # Shared package-manager operations. Resolution always runs in the checkout root.
 KASEKI_PACKAGE_MANAGER_HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+provision_declared_npm() {
+  local requested_version="$1" bootstrap_npm npm_cli resolved_version
+  bootstrap_npm="$(command -v npm)" || {
+    printf 'Package manager: npm is unavailable; cannot provision npm@%s.\n' "$requested_version" >&2
+    return 127
+  }
+
+  # Use npm's isolated exec cache rather than replacing the image's bundled
+  # npm. The exact packageManager version is verified before any repository
+  # install or validation command is run.
+  npm_cli="$("$bootstrap_npm" exec --yes --ignore-scripts --no-audit --no-fund --no-update-notifier \
+    --package="npm@$requested_version" -- sh -c 'command -v npm' 2>/dev/null)" || {
+    printf 'Package manager: could not provision required npm@%s from the configured npm registry.\n' "$requested_version" >&2
+    return 1
+  }
+  if [[ "$npm_cli" != /* ]] || [ ! -x "$npm_cli" ]; then
+    printf 'Package manager: npm exec did not return an executable for required npm@%s.\n' "$requested_version" >&2
+    return 1
+  fi
+
+  PATH="$(dirname "$npm_cli"):$PATH"
+  export PATH
+  hash -r
+  resolved_version="$("$npm_cli" --version 2>/dev/null)" || return 1
+  if [ "$resolved_version" != "$requested_version" ]; then
+    printf 'Package manager: requested npm@%s but npm exec resolved npm@%s.\n' "$requested_version" "$resolved_version" >&2
+    return 1
+  fi
+  printf 'Package manager: using repository-pinned npm@%s from the npm exec cache.\n' "$requested_version" >&2
+}
+
 resolve_target_package_manager() {
   local selection requested_version
   selection="$(node "$KASEKI_PACKAGE_MANAGER_HELPER_DIR/package-manager.cjs" resolve "${1:-$PWD}")" || return 1
@@ -16,8 +47,13 @@ resolve_target_package_manager() {
     return 1
   fi
   if [ "$requested_version" != '-' ] && [ "$requested_version" != "$KASEKI_PACKAGE_MANAGER_VERSION" ]; then
-    printf 'Package manager: repository requires %s@%s but worker provides %s; use a worker image with the required version.\n' "$KASEKI_PACKAGE_MANAGER" "$requested_version" "$KASEKI_PACKAGE_MANAGER_VERSION" >&2
-    return 1
+    if [ "$KASEKI_PACKAGE_MANAGER" = npm ]; then
+      provision_declared_npm "$requested_version" || return $?
+      KASEKI_PACKAGE_MANAGER_VERSION="$(npm --version 2>/dev/null)" || return 1
+    else
+      printf 'Package manager: repository requires %s@%s but worker provides %s; use a worker image with the required version.\n' "$KASEKI_PACKAGE_MANAGER" "$requested_version" "$KASEKI_PACKAGE_MANAGER_VERSION" >&2
+      return 1
+    fi
   fi
   export KASEKI_PACKAGE_MANAGER KASEKI_PACKAGE_MANAGER_VERSION KASEKI_LOCKFILE KASEKI_PACKAGE_WORKSPACES KASEKI_PACKAGE_TREE_CACHE
 }
