@@ -6247,7 +6247,8 @@ describe('kaseki-api-routes publish mode validation', () => {
       expect(response.status).toBe(400);
       const body = (await response.json()) as any;
       expect(body.detail).toContain('publishMode');
-      expect(body.detail).toContain('draft_pr');
+      expect(body.detail).toContain('Invalid option');
+      expect(body.detail).toContain('"pr"');
       expect(body.detail).not.toContain('requires readable GitHub App credentials');
       expect(scheduler.submitJob).not.toHaveBeenCalled();
     } finally {

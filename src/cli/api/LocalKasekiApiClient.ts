@@ -46,7 +46,7 @@ const StatusResponseSchema = z.object({
   cancelRequestedAt: z.string().optional(),
   operationalHealth: z.enum(['unknown', 'healthy', 'suspect_stalled']).optional(),
   resultSummaryContent: z.string().optional(),
-  failureJsonContent: z.record(z.any()).optional(),
+  failureJsonContent: z.record(z.string(), z.any()).optional(),
   artifacts: z.object({
     metadataJson: z.boolean(),
     analysisMd: z.boolean(),
