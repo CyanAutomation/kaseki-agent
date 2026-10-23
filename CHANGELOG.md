@@ -4,6 +4,15 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.155.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.155.0...v1.155.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* allow first npm package publish ([5423dc3](https://github.com/CyanAutomation/kaseki-agent/commit/5423dc3492c5d1d0f2ed26f6db47b01c9a01364d))
+* harden workflow publishing credentials ([bbe5561](https://github.com/CyanAutomation/kaseki-agent/commit/bbe55615718621162822dfeb34bf9f721b9031bc))
+* recent Kaseki run failures ([#1534](https://github.com/CyanAutomation/kaseki-agent/issues/1534)) ([f80d3e7](https://github.com/CyanAutomation/kaseki-agent/commit/f80d3e7fba65c6461bd079c8ab8e3d6f107c04c7))
+
 # [1.155.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.154.0...v1.155.0) (2026-10-20)
 
 
