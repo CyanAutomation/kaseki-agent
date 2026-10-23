@@ -2568,10 +2568,35 @@ SUMMARY
     printf -- "- Changed Files: %s\n" "$changed_count" >> "$summary_file"
   fi
 
-  if [ -f "$metadata_file" ] && [ "$(jq -r 'if .no_change_accepted == true then "true" else "false" end' "$metadata_file" 2>/dev/null || printf 'false')" = "true" ]; then
+  local has_changed_files=false
+  if [ -f "${KASEKI_RESULTS_DIR}/changed-files.txt" ] && grep -q '[^[:space:]]' "${KASEKI_RESULTS_DIR}/changed-files.txt"; then
+    has_changed_files=true
+  fi
+  if [ "$exit_code" -eq 0 ] \
+    && [ -f "$metadata_file" ] \
+    && [ "$(jq -r 'if .no_change_accepted == true then "true" else "false" end' "$metadata_file" 2>/dev/null || printf 'false')" = "true" ] \
+    && [ ! -s "${KASEKI_RESULTS_DIR}/git.diff" ] \
+    && [ "$has_changed_files" = false ]; then
     printf -- '- No-Change Outcome: Accepted by run policy\n' >> "$summary_file"
   fi
   
+  local pre_validation_attempts pre_validation_exit
+  pre_validation_attempts="$(jq -r '([.pre_validation_commands_attempted, .phases.pre_validation.commands_attempted] | map(select(type == "number")) | max) // empty' "$metadata_file" 2>/dev/null || true)"
+  pre_validation_exit="$(jq -r '.pre_validation_exit_code // empty' "$failure_file" 2>/dev/null || true)"
+  [ -n "$pre_validation_exit" ] || pre_validation_exit="$(jq -r '.pre_validation_exit_code // empty' "$metadata_file" 2>/dev/null || true)"
+  if [ -n "$pre_validation_attempts" ]; then
+    [ -n "$pre_validation_exit" ] || pre_validation_exit="-1"
+    if [ "$pre_validation_attempts" -gt 0 ] && [ "$pre_validation_exit" -ge 0 ]; then
+      if [ "$pre_validation_exit" -eq 0 ]; then
+        printf -- "- Pre-agent Validation: Passed (%s commands attempted)\n" "$pre_validation_attempts" >> "$summary_file"
+      else
+        printf -- "- Pre-agent Validation: Failed (exit code %s; %s commands attempted)\n" "$pre_validation_exit" "$pre_validation_attempts" >> "$summary_file"
+      fi
+    elif [ "$pre_validation_attempts" -eq 0 ]; then
+      printf -- "- Pre-agent Validation: Not run (0 commands attempted; exit code %s is not a pass)\n" "$pre_validation_exit" >> "$summary_file"
+    fi
+  fi
+
   # Add validation status if available
   if [ -f "$failure_file" ]; then
     local validation_exit validation_attempts
