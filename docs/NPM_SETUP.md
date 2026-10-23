@@ -91,17 +91,17 @@ Project config can live in `kaseki-agent.json`; user-global config lives under `
 kaseki-agent secrets init
 
 # Store an OpenRouter key for evaluation stages when needed
-kaseki-agent secrets set openrouter-api-key sk-or-...
+kaseki-agent secrets set openrouter_api_key sk-or-...
 
 # Store a Kaseki API client key for an authenticated controller
-kaseki-agent secrets set kaseki-api-key sk-your-kaseki-api-key
+kaseki-agent secrets set kaseki_api_keys sk-your-kaseki-api-key
 
 # List and inspect stored secret names
 kaseki-agent secrets list
-kaseki-agent secrets get openrouter-api-key
+kaseki-agent secrets get openrouter_api_key
 
 # Explicitly print a value when you really need it
-kaseki-agent secrets get openrouter-api-key --show
+kaseki-agent secrets get openrouter_api_key --show
 ```
 
 On headless Linux hosts, secrets can fall back to files under `~/.kaseki/secrets/` with restrictive permissions.
