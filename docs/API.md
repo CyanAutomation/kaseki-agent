@@ -605,7 +605,7 @@ For backward compatibility, the response still includes:
 
 - `artifacts` — Hint object showing which artifacts are available
 - `diagnosticEntryPoint` — Recommended artifact to examine first. For goal-check schema-validation failures, this may be `goal-check-validation-errors.jsonl` or `goal-check-stderr.log`; otherwise the fallback order remains `failure.json`, `analysis.md`, then `result-summary.md`.
-- `availableFiles` — Array of file names available for download
+- `availableFiles` — Curated diagnostic files available for download from this status response. It is not the full run artifact manifest; use `GET /api/v1/runs/:id/artifacts` to enumerate all retained artifacts.
 - `diagnosticFiles` — Optional array of additional diagnostic artifact files recommended for the current failure reason (for example, goal-check validation logs when `goalCheckFailureReason` is `goal_check_artifact_invalid`)
 
 **Status Values:**

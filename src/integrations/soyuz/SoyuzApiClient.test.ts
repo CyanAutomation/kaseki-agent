@@ -62,7 +62,7 @@ describe('Soyuz artifact upload', () => {
     const result = await loadSoyuzArtifacts(
       '11111111-1111-4111-8111-111111111111',
       '/missing/results',
-      ['result-summary.md', 'failure.json', 'git.diff'],
+      ['result-summary.md', 'failure.json', 'git.diff', 'changed-files.txt', 'run-scorecard.json', 'run-evaluation.json'],
     );
     expect(result.artifacts).toEqual([]);
   });
