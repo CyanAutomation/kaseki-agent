@@ -54,7 +54,7 @@ export const ScorecardPhaseMeasurementSchema = z.object({
   ended_at: z.string().datetime().nullable(),
   duration_ms: NonNegativeNumberSchema.nullable(),
   token_usage: ScorecardTokenUsageSchema,
-  measurements: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  measurements: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
   completeness: RunScorecardCompletenessSchema,
   confidence: ScoreSchema,
   evidence: z.array(ScorecardEvidenceReferenceSchema),
@@ -91,7 +91,7 @@ export const ScorecardDimensionSchema = z.object({
   ]),
   weight: z.number().positive().max(1),
   effective_weight: z.number().nonnegative().max(1),
-  raw_measurements: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  raw_measurements: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
   normalized_score: ScoreSchema,
   weighted_points: z.number().min(0).max(100),
   status: RunScorecardCompletenessSchema,
@@ -103,18 +103,18 @@ export const ScorecardDimensionSchema = z.object({
 const NormalizationRuleSchema = z.object({
   function: z.enum(['binary', 'weighted_components', 'target_ratio', 'inverse_target_ratio']),
   expression: z.string().min(1),
-  parameters: z.record(z.number().finite()),
+  parameters: z.record(z.string(), z.number().finite()),
 });
 
 export const RunScorecardScoringConfigSchema = z.object({
   rubric_version: z.string().min(1),
-  dimension_weights: z.record(z.number().nonnegative()),
+  dimension_weights: z.record(z.string(), z.number().nonnegative()),
   grade_bands: z.array(z.object({
     grade: z.enum(['A', 'B', 'C', 'D', 'F']),
     minimum_score: ScoreSchema,
     maximum_score: ScoreSchema,
   })),
-  normalization_rules: z.record(NormalizationRuleSchema),
+  normalization_rules: z.record(z.string(), NormalizationRuleSchema),
   task_size: z.enum(['small', 'medium', 'large', 'custom']),
   selected_targets: z.object({
     token_budget: z.number().int().positive(),
