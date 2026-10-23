@@ -17,7 +17,7 @@ validation_command_first_missing_executable() {
       env|command|exec|builtin|time|timeout|sudo|nice|nohup|bash|sh)
         return 1
         ;;
-      if|then|else|elif|fi|for|while|until|select|do|done|case|esac|function|'{'|'}'|'('|')'|'!')
+      if|then|else|elif|fi|for|while|until|select|do|done|case|'esac'|function|'{'|'}'|'('|')'|'!')
         return 1
         ;;
     esac
