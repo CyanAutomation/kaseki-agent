@@ -772,6 +772,14 @@ export interface Job {
     terminalCallbackId?: string;
     terminalCallbackDelivered?: boolean;
     uploadedArtifactNames?: string[];
+    artifactUploadReport?: {
+      eventId: string;
+      timestamp: string;
+      status: 'complete' | 'partial';
+      uploadedCount: number;
+      failedCount: number;
+      skippedCount: number;
+    };
     metadataUpdatedAt?: string;
   };
 }

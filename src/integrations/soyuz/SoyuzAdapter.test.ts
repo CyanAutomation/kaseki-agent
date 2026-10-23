@@ -200,6 +200,7 @@ function createFetch(state: ReturnType<typeof runState>, options: {
   loseFirstAck?: boolean;
   loseFirstClaimResponse?: boolean;
   failFirstArtifactUpload?: boolean;
+  rejectArtifactUploadReport?: boolean;
 } = {}) {
   let pulls = 0;
   let acks = 0;
@@ -290,6 +291,12 @@ function createFetch(state: ReturnType<typeof runState>, options: {
       }
       return jsonResponse({ error: { code: 'INVALID_STATE_TRANSITION', message: 'Run cannot start' } }, 409);
     }
+    if (method === 'POST' && action === 'events') {
+      if (options.rejectArtifactUploadReport && body?.type === 'artifacts.uploaded') {
+        return jsonResponse({ error: { code: 'INVALID_WORKER_EVENT', message: 'Unsupported event type' } }, 422);
+      }
+      return jsonResponse({ data: { eventId: body?.eventId } }, 202);
+    }
     throw new Error(`Unexpected request ${method} ${url}`);
   });
   return { fetchImpl, calls };
@@ -322,6 +329,10 @@ describe('Soyuz adapter handoff', () => {
     try {
       await fs.writeFile(path.join(resultDir, 'result-summary.md'), '# Finished\n');
       await fs.writeFile(path.join(resultDir, 'git.diff'), 'diff --git a/a b/a\n');
+      await fs.writeFile(path.join(resultDir, 'changed-files.txt'), 'src/a.ts\nsrc/b.ts\n');
+      await fs.writeFile(path.join(resultDir, 'metadata.json'), JSON.stringify({ github_pr_url: 'https://github.com/example/project/pull/7' }));
+      await fs.writeFile(path.join(resultDir, 'run-scorecard.json'), '{"overall_score":72}\n');
+      await fs.writeFile(path.join(resultDir, 'run-evaluation.json'), '{"task_completion_score":3}\n');
       await fs.writeFile(path.join(resultDir, 'stdout.log'), 'private raw log');
       const state = runState();
       state.status = 'running';
@@ -358,12 +369,78 @@ describe('Soyuz adapter handoff', () => {
 
       const artifactCalls = calls.filter((call) => call.method === 'PUT');
       expect(artifactCalls.map((call) => call.headers.get('x-artifact-name'))).toEqual([
-        'result-summary.md', 'git.diff', 'result-summary.md',
+        'result-summary.md', 'git.diff', 'changed-files.txt', 'run-scorecard.json', 'run-evaluation.json', 'result-summary.md',
       ]);
       expect(artifactCalls.every((call) => call.payloadBytes && call.payloadBytes < 2_000_000)).toBe(true);
-      expect(calls.find((call) => call.method === 'POST' && call.url.endsWith('/completed'))).toBeDefined();
-      expect(artifactCalls.at(-1)!.url.localeCompare(calls.find((call) => call.method === 'POST' && call.url.endsWith('/completed'))!.url)).toBeLessThan(0);
-      expect(jobs[0].soyuz?.uploadedArtifactNames).toEqual(expect.arrayContaining(['result-summary.md', 'git.diff']));
+      const completion = calls.find((call) => call.method === 'POST' && call.url.endsWith('/completed'));
+      expect(completion).toMatchObject({
+        body: {
+          summary: '# Finished',
+          publishedUrl: 'https://github.com/example/project/pull/7',
+          changedFileCount: 2,
+        },
+      });
+      const artifactReport = calls.find((call) => call.method === 'POST' && call.url.endsWith('/events'));
+      expect(artifactReport).toMatchObject({
+        body: {
+          type: 'artifacts.uploaded',
+          payload: { status: 'complete', uploadedCount: 5, failedCount: 0, skippedCount: 0 },
+        },
+      });
+      expect(calls.indexOf(artifactReport!)).toBeLessThan(calls.indexOf(completion!));
+      expect(artifactCalls.at(-1)!.url.localeCompare(completion!.url)).toBeLessThan(0);
+      expect(jobs[0].soyuz?.uploadedArtifactNames).toEqual(expect.arrayContaining([
+        'result-summary.md', 'git.diff', 'changed-files.txt', 'run-scorecard.json', 'run-evaluation.json',
+      ]));
+      expect(jobs[0].soyuz?.artifactUploadReport).toMatchObject({
+        status: 'complete',
+        uploadedCount: 5,
+        failedCount: 0,
+        skippedCount: 0,
+      });
+      expect(state.status).toBe('completed');
+    } finally {
+      await fs.rm(resultDir, { recursive: true, force: true });
+    }
+  });
+
+  test('continues terminal delivery when an older Soyuz host rejects the artifact report event', async () => {
+    const resultDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kaseki-soyuz-legacy-report-'));
+    try {
+      await fs.writeFile(path.join(resultDir, 'result-summary.md'), '# Finished\n');
+      const state = runState();
+      state.status = 'running';
+      state.workerId = 'host-a';
+      state.claimCallbackId = '66666666-6666-4666-8666-666666666666';
+      const { fetchImpl, calls } = createFetch(state, { rejectArtifactUploadReport: true });
+      const { scheduler, jobs } = createScheduler('host-a', 0);
+      jobs.push({
+        id: 'kaseki-legacy-report',
+        status: 'completed',
+        request: queuedRun.request,
+        createdAt: new Date(),
+        completedAt: new Date(),
+        resultDir,
+        correlationId: CORRELATION_ID,
+        requestId: REQUEST_ID,
+        soyuz: {
+          externalRunId: RUN_ID,
+          workerId: 'host-a',
+          contractVersion: '1',
+          claimCallbackId: state.claimCallbackId,
+          startedCallbackId: '44444444-4444-4444-8444-444444444444',
+          startAuthorized: true,
+          metadataUpdatedAt: new Date().toISOString(),
+        },
+      });
+      const adapter = makeAdapter('host-a', scheduler, fetchImpl);
+
+      await adapter.runOnce();
+      await adapter.runOnce();
+      await adapter.runOnce();
+
+      expect(calls.some((call) => call.method === 'POST' && call.url.endsWith('/events') && call.body?.type === 'artifacts.uploaded')).toBe(true);
+      expect(calls.some((call) => call.method === 'POST' && call.url.endsWith('/completed'))).toBe(true);
       expect(state.status).toBe('completed');
     } finally {
       await fs.rm(resultDir, { recursive: true, force: true });
