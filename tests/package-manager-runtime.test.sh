@@ -37,11 +37,40 @@ KASEKI_NPM_OMIT_DEV=1 install_target_dependencies
 [ "$(tail -1 "$PM_CALLS")" = 'install --frozen-lockfile --production --ignore-scripts' ]
 KASEKI_INSTALL_IGNORE_SCRIPTS=0 install_target_dependencies
 [ "$(tail -1 "$PM_CALLS")" = 'install --frozen-lockfile' ]
-# A declared version mismatch must stop before running an install.
+# A declared Bun version mismatch still requires a compatible worker image.
 printf '%s\n' '{"packageManager":"bun@0.0.1"}' > package.json
 if resolve_target_package_manager 2> "$tmp_dir/version-error"; then exit 1; fi
 grep -q 'requires bun@0.0.1' "$tmp_dir/version-error"
+# npm pins are provisioned into npm's cache when the worker's bundled npm differs.
+mkdir -p "$tmp_dir/npm-bootstrap" "$tmp_dir/pinned-npm"
+cat > "$tmp_dir/npm-bootstrap/npm" <<'NPM_BOOTSTRAP'
+#!/usr/bin/env bash
+if [ "$1" = --version ]; then printf '11.21.0\n'; exit 0; fi
+if [ "$1" = exec ]; then
+  [[ " $* " == *" --package=npm@11.6.2 "* ]] || exit 1
+  printf '%s\n' "$PM_PINNED_NPM_BIN"
+  exit 0
+fi
+exit 1
+NPM_BOOTSTRAP
+cat > "$tmp_dir/pinned-npm/npm" <<'PINNED_NPM'
+#!/usr/bin/env bash
+if [ "$1" = --version ]; then printf '11.6.2\n'; exit 0; fi
+printf '%s\n' "$*" >> "$PM_CALLS"
+PINNED_NPM
+chmod +x "$tmp_dir/npm-bootstrap/npm" "$tmp_dir/pinned-npm/npm"
+rm -f bun.lock
+printf '%s\n' '{"packageManager":"npm@11.6.2"}' > package.json
+printf '%s\n' '{}' > package-lock.json
+PATH="$tmp_dir/npm-bootstrap:$PATH"
+export PM_PINNED_NPM_BIN="$tmp_dir/pinned-npm/npm"
+resolve_target_package_manager
+[ "$KASEKI_PACKAGE_MANAGER_VERSION" = 11.6.2 ]
+[ "$(command -v npm)" = "$tmp_dir/pinned-npm/npm" ]
+install_target_dependencies
+[ "$(tail -1 "$PM_CALLS")" = 'ci --prefer-offline --ignore-scripts' ]
 # Installer errors retain their exit status.
+KASEKI_PACKAGE_MANAGER=bun
 printf '%s\n' '#!/usr/bin/env bash' 'exit 42' > "$tmp_dir/bin/bun"
 install_exit=0
 install_target_dependencies || install_exit=$?

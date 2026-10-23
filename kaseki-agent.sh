@@ -646,6 +646,7 @@ FILESYSTEM_READONLY_REASON=""
 QUALITY_EXIT=0
 QUALITY_FAILURE_REASON=""
 SECRET_SCAN_EXIT=0
+SECRET_SCAN_FAILURE_REASON=""
 GITHUB_PUSH_EXIT=0
 GITHUB_PR_EXIT=0
 GITHUB_API_ERROR_TYPE=""
@@ -1110,6 +1111,28 @@ run_quality_checks() {
   record_stage_timing "quality checks" "$QUALITY_EXIT" "$(($(date +%s) - stage_start))" "diff_size_bytes=$diff_size"
 }
 
+secret_scan_match_is_allowlisted() {
+  local file_path="$1" pattern="$2" allowlist_file="$3"
+  [ -f "$allowlist_file" ] || return 1
+
+  if grep -Fqx -- "${file_path}:${pattern}" "$allowlist_file" 2>/dev/null; then
+    return 0
+  fi
+
+  # An agent can echo an already-approved test fixture into its diagnostic
+  # artifacts. Preserve the repository's exact-pattern approval for those
+  # generated copies, while keeping source-tree approvals file-scoped.
+  case "$file_path" in
+    "${KASEKI_RESULTS_DIR}"/*)
+      awk -F: -v expected_pattern="$pattern" \
+        '$NF == expected_pattern && ($1 ~ /(^|\/)(test|tests)(\/|$)/ || $1 ~ /(^|\/)[^/]*test[^/]*$/) { found = 1 }
+         END { exit found ? 0 : 1 }' \
+        "$allowlist_file"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 run_secret_scan() {
   local stage_start allowlist_file unallowlisted_count allowlisted_count match_line file_path pattern
 
@@ -1117,6 +1140,7 @@ run_secret_scan() {
   set_current_stage "secret scan"
   emit_progress "secret scan" "started"
   stage_start="$(date +%s)"
+  SECRET_SCAN_FAILURE_REASON=""
   # secret-scan.json consolidated into metadata.json.phases.secret_scan
   if [ "$KASEKI_DRY_RUN" = "1" ]; then
     emit_progress "secret scan" "skipped_dry_run"
@@ -1128,20 +1152,21 @@ run_secret_scan() {
     unallowlisted_count=0
     allowlisted_count=0
 
-    if grep -R -n -E 'sk-or-[A-Za-z0-9_-]{20,}' "${KASEKI_RESULTS_DIR}" "${KASEKI_WORKSPACE_DIR}"/repo/.git "${KASEKI_WORKSPACE_DIR}"/repo/src "${KASEKI_WORKSPACE_DIR}"/repo/tests 2>/dev/null | grep -v '/secret-scan.json:' > /tmp/secret-scan-matches.tmp 2>&1; then
+    if grep -R -I -n -o -E 'sk-or-[A-Za-z0-9_-]{20,}|sk-test-[A-Za-z0-9_-]*' \
+      "${KASEKI_RESULTS_DIR}" "${KASEKI_WORKSPACE_DIR}"/repo/.git \
+      "${KASEKI_WORKSPACE_DIR}"/repo/src "${KASEKI_WORKSPACE_DIR}"/repo/tests 2>/dev/null \
+      | grep -v '/secret-scan.json:' > /tmp/secret-scan-matches.tmp 2>&1; then
       # Matches found - process against allowlist
       while IFS= read -r match_line || [ -n "$match_line" ]; do
         [ -z "$match_line" ] && continue
-        file_path=""
-        pattern=""
-        file_path=$(printf '%s\n' "$match_line" | cut -d: -f1)
-        pattern=$(printf '%s\n' "$match_line" | sed 's/^[^:]*:[^:]*://' | grep -oE 'sk-or-[A-Za-z0-9_-]{20,}|sk-test-[A-Za-z0-9_-]*' | head -n1)
+        file_path="${match_line%%:*}"
+        pattern="${match_line##*:}"
         [ -z "$pattern" ] && continue
         file_path="${file_path#"${KASEKI_WORKSPACE_DIR}"/repo/}"
         file_path="${file_path#repo/}"
         file_path="${file_path#./}"
 
-        if [ -f "$allowlist_file" ] && grep -q "^${file_path}:${pattern}$" "$allowlist_file" 2>/dev/null; then
+        if secret_scan_match_is_allowlisted "$file_path" "$pattern" "$allowlist_file"; then
           allowlisted_count=$((allowlisted_count + 1))
           append_secret_scan_result "${KASEKI_RESULTS_DIR}"/secret-scan.json "$file_path" "$pattern" "allowlisted"
           emit_event "secret_scan_result" "status=allowlisted" "file=$file_path" "pattern=$pattern"
@@ -1155,6 +1180,7 @@ run_secret_scan() {
 
       if [ "$unallowlisted_count" -gt 0 ]; then
         SECRET_SCAN_EXIT=6
+        SECRET_SCAN_FAILURE_REASON="secret_scan_unallowlisted_matches: $unallowlisted_count potential credential match(es); inspect secret-scan findings"
       else
         SECRET_SCAN_EXIT=0
       fi
@@ -2297,6 +2323,10 @@ build_stages_array() {
 extract_failure_diagnostic_reason() {
   # Prefer terminal failure state captured by the main flow over validation
   # diagnostics from earlier phases that recovered and completed successfully.
+  if [ "${FAILED_COMMAND:-}" = "secret scan" ] && [ "${SECRET_SCAN_EXIT:-0}" -ne 0 ]; then
+    printf '%s' "${SECRET_SCAN_FAILURE_REASON:-secret scan detected unallowlisted credential-like matches}"
+    return 0
+  fi
   if [ -n "$WORKER_ERROR_MESSAGE" ]; then
     printf '%s: %s%s' "$WORKER_ERROR_TYPE" "$WORKER_ERROR_MESSAGE" "$([ -n "$WORKER_ERROR_PHASE" ] && printf ' (phase: %s)' "$WORKER_ERROR_PHASE")"
     return 0
@@ -2774,6 +2804,7 @@ write_failure_json() {
   "validation_allowlist_failure_reason": $(printf '%s' "$VALIDATION_ALLOWLIST_FAILURE_REASON" | json_encode),
   "pre_validation_failed_command": $(printf '%s' "$PRE_VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
   "pre_validation_failure_reason": $(printf '%s' "$PRE_VALIDATION_FAILURE_REASON" | json_encode),
+  "secret_scan_failure_reason": $(printf '%s' "$SECRET_SCAN_FAILURE_REASON" | json_encode),
   "quality_failure_reason": $(printf '%s' "$QUALITY_FAILURE_REASON" | json_encode),
   "critical_change_failure_reason": $(printf '%s' "$CRITICAL_CHANGE_FAILURE_REASON" | json_encode),
   "goal_check_failure_reason": $(printf '%s' "$GOAL_CHECK_FAILURE_REASON" | json_encode),
