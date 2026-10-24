@@ -1398,6 +1398,10 @@ const controllerPage = String.raw`<!doctype html>
           <fieldset>
             <legend>Options</legend>
             <div class="form-field">
+              <label><input id="direct-local-submission" type="checkbox"> Submit directly to this Kaseki host</label>
+              <p class="field-helper" id="submission-target-help">Use this path when Soyuz is unavailable. If a Soyuz submission timed out, check Soyuz before resubmitting locally.</p>
+            </div>
+            <div class="form-field">
               <label for="task-mode">Task mode</label>
               <select class="form-control" id="task-mode" name="taskMode">
                 <option value="patch" selected>Patch</option>
@@ -1495,6 +1499,7 @@ const controllerPage = String.raw`<!doctype html>
     </div>
     <script>
       const form = document.querySelector('#run-form');
+      const directLocalSubmission = document.querySelector('#direct-local-submission');
       const output = document.querySelector('#output');
       const outputMeta = document.querySelector('#output-meta');
       const responseSummary = document.querySelector('#response-summary');
@@ -2254,7 +2259,7 @@ const controllerPage = String.raw`<!doctype html>
         const message = error instanceof Error ? error.message : String(error);
         const requestPath = String(path || '').split('?')[0];
         const requestMethod = String(method || 'GET').toUpperCase();
-        const isRunSubmission = requestPath === '/api/v1/runs' && requestMethod === 'POST';
+        const isRunSubmission = (requestPath === '/api/v1/runs' || requestPath === '/api/v1/runs/local') && requestMethod === 'POST';
         if (error instanceof RequestTimeoutError) {
           return {
             title: 'Request timed out',
@@ -2329,6 +2334,7 @@ const controllerPage = String.raw`<!doctype html>
         if (path === '/ready') return 'Readiness check completed.';
         if (path === '/api/v1/gateway-test') return 'Gateway test completed.';
         if (path.startsWith('/api/v1/preflight')) return 'Current preflight completed.';
+        if (path === '/api/v1/runs/local' && verb === 'POST') return 'Run submitted directly to this Kaseki host.';
         if (path === '/api/v1/runs') return verb === 'POST' ? 'Run submitted.' : 'Recent runs refreshed.';
         if (path.endsWith('/status')) return 'Run status updated.';
         if (path.endsWith('/cancel')) return 'Cancel request sent.';
@@ -3088,7 +3094,7 @@ const controllerPage = String.raw`<!doctype html>
         const needsAuth = options && options.auth;
         const method = options && options.method || 'GET';
         const isRunMutation = method === 'POST'
-          && (path === '/api/v1/runs' || /^\/api\/v1\/runs\/[^/]+\/retry$/.test(path));
+          && (path === '/api/v1/runs' || path === '/api/v1/runs/local' || /^\/api\/v1\/runs\/[^/]+\/retry$/.test(path));
         const idempotencyKey = isRunMutation
           ? options && options.body && options.body.idempotencyKey
           : undefined;
@@ -4210,6 +4216,7 @@ const controllerPage = String.raw`<!doctype html>
           return;
         }
         
+        const submissionPath = directLocalSubmission.checked ? '/api/v1/runs/local' : '/api/v1/runs';
         const repoUrl = String(repoUrlInput.value || '').trim();
         if (repoUrl) {
           addRepoToRecent(repoUrl);
@@ -4227,28 +4234,32 @@ const controllerPage = String.raw`<!doctype html>
         void (async () => {
           let submittedBody;
           try {
-            const intent = await getStableSubmissionIntent(requestBody());
+            const requestForIntent = requestBody();
+            const intentRequest = submissionPath === '/api/v1/runs/local'
+              ? { ...requestForIntent, submissionTarget: 'local' }
+              : requestForIntent;
+            const intent = await getStableSubmissionIntent(intentRequest);
             pendingSubmissionIntentStorageKey = intent.storageKey;
             submittedBody = requestBody(intent.idempotencyKey);
-            const { payload, response } = await apiRequest('/api/v1/runs', {
+            const { payload, response } = await apiRequest(submissionPath, {
               method: 'POST', auth: true, body: submittedBody, timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
             });
             if (response.ok && payload && typeof payload.id === 'string') {
-              activateSubmittedRun(payload, response.status, false);
+              activateSubmittedRun(payload, response.status, false, undefined, submissionPath);
             }
           } catch (error) {
             if (error instanceof RequestTimeoutError && submittedBody) {
-              const recovered = await recoverSubmittedRunAfterTimeout(submittedBody);
+              const recovered = await recoverSubmittedRunAfterTimeout(submittedBody, submissionPath);
               if (recovered) return;
             }
-            displayRequestFailure(error, '/api/v1/runs', 'POST');
+            displayRequestFailure(error, submissionPath, 'POST');
           } finally {
             updateSubmitButtonState();
           }
         })();
       });
 
-      function activateSubmittedRun(payload, responseStatus, recovered, completedIntentStorageKey) {
+      function activateSubmittedRun(payload, responseStatus, recovered, completedIntentStorageKey, submissionPath) {
         const storageKey = completedIntentStorageKey || pendingSubmissionIntentStorageKey;
         if (storageKey) {
           pendingSubmissionIntentKeys.delete(storageKey);
@@ -4259,8 +4270,11 @@ const controllerPage = String.raw`<!doctype html>
         runIdInput.value = payload.id;
         setOutputMetadata(payload.status || 'queued', payload.id);
         setResponseSummary(payload);
-        setOutputBody(summarizedResponseBody('/api/v1/runs', 'POST', responseStatus, payload));
-        setState(recovered ? 'Run submitted; recovered run id after request timeout.' : 'Run submitted.', 'ok');
+        setOutputBody(summarizedResponseBody(submissionPath || '/api/v1/runs', 'POST', responseStatus, payload));
+        const isDirectLocalSubmission = submissionPath === '/api/v1/runs/local';
+        setState(isDirectLocalSubmission
+          ? 'Run submitted directly to this Kaseki host.'
+          : recovered ? 'Run submitted; recovered run id after request timeout.' : 'Run submitted.', 'ok');
         updateCancelRunButtonState();
         showRunLinks(payload.id);
         activeRunView = 'status';
@@ -4269,9 +4283,9 @@ const controllerPage = String.raw`<!doctype html>
         pollRun(payload.id, { preserveFirstOutput: true });
       }
 
-      async function recoverSubmittedRunAfterTimeout(submittedBody) {
+      async function recoverSubmittedRunAfterTimeout(submittedBody, submissionPath) {
         try {
-          const result = await apiRequest('/api/v1/runs', {
+          const result = await apiRequest(submissionPath, {
             method: 'POST',
             auth: true,
             body: submittedBody,
@@ -4279,7 +4293,7 @@ const controllerPage = String.raw`<!doctype html>
             timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
           });
           if (result.response.ok && result.payload && typeof result.payload.id === 'string') {
-            activateSubmittedRun(result.payload, result.response.status, true);
+            activateSubmittedRun(result.payload, result.response.status, true, undefined, submissionPath);
             return true;
           }
         } catch {

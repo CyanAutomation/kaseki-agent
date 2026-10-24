@@ -678,10 +678,9 @@ function registerRunSubmissionRoute(
     handleIdempotency,
     submissionClient,
   } = dependencies;
-  /**
-   * POST /api/v1/runs - Trigger a new kaseki run.
-   */
-  router.post('/runs', async (req: Request, res: Response) => {
+  const submitRun = async (req: Request, res: Response, forceLocal: boolean) => {
+    const routePath = forceLocal ? '/runs/local' : '/runs';
+    const routeSubmissionClient = forceLocal ? undefined : submissionClient;
     let idempotencyKeyForError: string | undefined;
     try {
       // Validate the raw request before Zod strips unknown fields. Soyuz's
@@ -694,7 +693,7 @@ function registerRunSubmissionRoute(
             : req.body?.startupCheck,
       };
       let runRequest: RunRequest;
-      if (submissionClient) {
+      if (routeSubmissionClient) {
         try {
           runRequest = parseSoyuzRunRequest(requestInput);
         } catch (error) {
@@ -719,6 +718,9 @@ function registerRunSubmissionRoute(
       if (!idempotencyKey) {
         return sendErrorResponse(res, 400, 'Bad Request', 'A caller-provided Idempotency-Key header or idempotencyKey body field is required');
       }
+      // The local path has its own idempotency namespace, so an explicit
+      // fallback cannot replay a remote Soyuz submission with the same UUID.
+      const storeIdempotencyKey = forceLocal ? `local:${idempotencyKey}` : idempotencyKey;
 
       const effectivePublishMode = runRequest.publishMode || 'pr';
       runRequest.publishMode = effectivePublishMode;
@@ -765,7 +767,7 @@ function registerRunSubmissionRoute(
       const submissionResult = await idempotencyStore.runWithIdempotencyLock(
         async () => {
           const idempotencyResult = await handleIdempotency(
-            idempotencyKey,
+            storeIdempotencyKey,
             requestFingerprint,
           );
           if (idempotencyResult.state !== 'fresh') {
@@ -783,8 +785,8 @@ function registerRunSubmissionRoute(
 
           try {
             let response: RunResponse;
-            if (submissionClient) {
-              const remoteRun = await submissionClient.createRun(
+            if (routeSubmissionClient) {
+              const remoteRun = await routeSubmissionClient.createRun(
                 runRequest as unknown as Record<string, unknown>,
                 idempotencyKey,
               );
@@ -797,7 +799,7 @@ function registerRunSubmissionRoute(
               response = buildRunResponse(job);
             }
             await idempotencyStore.storeResponse(
-              idempotencyKey,
+              storeIdempotencyKey,
               response,
               requestFingerprint,
             );
@@ -805,8 +807,8 @@ function registerRunSubmissionRoute(
           } catch (error) {
             // A network failure or 5xx may happen after Soyuz has committed the
             // run. Keep the durable intent so a retry reuses this same key.
-            if (!submissionClient || (error instanceof SoyuzApiError && error.status < 500)) {
-              await idempotencyStore.releasePendingClaim(idempotencyKey, requestFingerprint);
+            if (!routeSubmissionClient || (error instanceof SoyuzApiError && error.status < 500)) {
+              await idempotencyStore.releasePendingClaim(storeIdempotencyKey, requestFingerprint);
             }
             throw error;
           }
@@ -839,7 +841,7 @@ function registerRunSubmissionRoute(
       if (storageError) {
         metricsRegistry.incAdmissionRejection('storage-capacity');
         logger.event('api_storage_admission_rejected', {
-          path: '/runs',
+          path: routePath,
           code: storageError.code,
           availableBytes: storageError.availableBytes,
           minimumBytes: storageError.minimumBytes,
@@ -858,7 +860,7 @@ function registerRunSubmissionRoute(
         // Zod validation error
         const details = formatZodValidationError(err);
         logger.event('api_validation_error', {
-          path: '/runs',
+          path: routePath,
           details,
         });
         return sendErrorResponse(res, 400, 'Bad Request', details);
@@ -870,19 +872,22 @@ function registerRunSubmissionRoute(
           retryWithSameIdempotencyKey: err.status >= 500,
         });
       }
-      if (submissionClient) {
+      if (routeSubmissionClient) {
         return sendErrorResponse(res, 503, 'Soyuz Submission Uncertain', 'Soyuz may have accepted this run. Retry the same request with the same Idempotency-Key.', {
           idempotencyKey: idempotencyKeyForError,
           retryWithSameIdempotencyKey: true,
         });
       }
       logger.event('api_error', {
-        path: '/runs',
+        path: routePath,
         error: (err as Error).message,
       });
       return sendErrorResponse(res, 400, 'Bad Request', (err as Error).message);
     }
-  });
+  };
+
+  router.post('/runs', (req: Request, res: Response) => submitRun(req, res, false));
+  router.post('/runs/local', (req: Request, res: Response) => submitRun(req, res, true));
 }
 
 function registerRunRetryRoute(
