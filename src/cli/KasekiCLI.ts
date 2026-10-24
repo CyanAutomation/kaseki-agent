@@ -56,17 +56,6 @@ export class KasekiCLI {
       },
     });
 
-    // DEPRECATED: Old setup command (delegated to InitCommand for backwards compat)
-    this.commands.set('setup', {
-      name: 'setup',
-      description: '(DEPRECATED: use "init" instead) Interactive setup wizard',
-      execute: async (args) => {
-        const { SetupCommand } = await import('./commands/SetupCommand.js');
-        const cmd = new SetupCommand(this.configManager);
-        return cmd.execute(args);
-      },
-    });
-
     this.commands.set('run', {
       name: 'run',
       description: 'Submit a task run through the local Kaseki API',
@@ -242,10 +231,6 @@ OPTIONS
   --json       Emit machine-readable check results
   --fix        Attempt safe auto-remediation for fixable checks
   --verbose    Include more diagnostic context where available`,
-      setup: `setup - interactive first-time configuration wizard
-
-USAGE
-  kaseki-agent setup`,
       config: `config - manage Kaseki configuration
 
 USAGE

@@ -90,20 +90,6 @@ EXAMPLES
 
 ---
 
-### `setup` (DEPRECATED)
-
-Interactive first-time configuration wizard. Deprecated in favor of `init`; prints a deprecation notice then delegates to the same SetupWizard.
-
-```bash
-USAGE
-  kaseki-agent setup
-
-NOTE
-  This command is deprecated. Use "kaseki-agent init" instead.
-```
-
----
-
 ### `run`
 
 Submit a task run through the configured Kaseki API. Requires a local API service (`http://localhost:8080/api/v1`) or `KASEKI_API_URL`. Set `KASEKI_API_KEY` when the API requires bearer-token authentication.
@@ -599,7 +585,7 @@ kaseki-agent run https://github.com/org/repo main "Task description"
 
 ### "Unknown command"
 
-Verify the subcommand exists. All 14 active commands plus `setup` (deprecated) are registered in `src/cli/KasekiCLI.ts`. Run `kaseki-agent --help` to see available top-level flags. For command-specific help, run `kaseki-agent <command> --help`.
+Verify the subcommand exists. The active commands are registered in `src/cli/KasekiCLI.ts`. Run `kaseki-agent --help` to see available top-level flags. For command-specific help, run `kaseki-agent <command> --help`.
 
 ### "Unable to list runs from local Kaseki API"
 

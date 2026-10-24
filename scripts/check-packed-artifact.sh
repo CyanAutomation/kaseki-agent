@@ -15,13 +15,17 @@ cd "$ROOT_DIR"
 
 npm pack --pack-destination "$TMPDIR" >/dev/null
 
-mapfile -t tgz_files < <(find "$TMPDIR" -maxdepth 1 -type f -name '*.tgz' -print)
-if [[ "${#tgz_files[@]}" -ne 1 ]]; then
-  printf 'Expected npm pack to create exactly one .tgz in %s, found %s\n' "$TMPDIR" "${#tgz_files[@]}" >&2
+tgz_file_count=0
+package_tgz=''
+while IFS= read -r candidate; do
+  tgz_file_count=$((tgz_file_count + 1))
+  package_tgz="$candidate"
+done < <(find "$TMPDIR" -maxdepth 1 -type f -name '*.tgz' -print)
+if [[ "$tgz_file_count" -ne 1 ]]; then
+  printf 'Expected npm pack to create exactly one .tgz in %s, found %s\n' "$TMPDIR" "$tgz_file_count" >&2
   exit 1
 fi
 
-package_tgz="${tgz_files[0]}"
 # Install the tarball and only its declared production dependencies into a clean
 # prefix so validation cannot accidentally use the repository's node_modules.
 npm install \
@@ -39,13 +43,13 @@ if [[ ! -f "$cli_file" ]]; then
   exit 1
 fi
 
-if grep -Fq "import('./commands/SetupCommand')" "$cli_file"; then
-  printf 'Packed artifact contains extensionless SetupCommand dynamic import in package/dist/cli/KasekiCLI.js\n' >&2
+if grep -Fq "SetupCommand" "$cli_file"; then
+  printf 'Packed artifact still contains the removed SetupCommand alias in package/dist/cli/KasekiCLI.js\n' >&2
   exit 1
 fi
 
-if ! grep -Fq "import('./commands/SetupCommand.js')" "$cli_file"; then
-  printf 'Packed artifact is missing required SetupCommand.js dynamic import in package/dist/cli/KasekiCLI.js\n' >&2
+if [[ -f "$package_dir/dist/cli/commands/SetupCommand.js" ]]; then
+  printf 'Packed artifact still contains the removed SetupCommand implementation in package/dist/cli/commands/SetupCommand.js\n' >&2
   exit 1
 fi
 
@@ -146,4 +150,4 @@ for (const helper of ['package-manager.cjs', 'package-manager-helpers.sh']) {
 console.log(`✓ Imported ${distLibModules.length} packed dist/lib runtime modules and exercised the shared package-manager resolver.`);
 NODE
 
-printf '✓ Packed artifact contains dist/lib runtime modules, SetupCommand.js dynamic import, and no extensionless relative dynamic imports.\n'
+printf '✓ Packed artifact contains dist/lib runtime modules and no deprecated SetupCommand alias or extensionless relative dynamic imports.\n'

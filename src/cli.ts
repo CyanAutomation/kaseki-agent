@@ -105,7 +105,6 @@ COMMANDS
   Setup & Configuration
   quickstart [--dry-run]    One-command setup: detect, bootstrap, start API, verify
   init [--dry-run]          Guided wizard (step-by-step path selection)
-  setup                     (DEPRECATED) Interactive setup wizard (use 'init' instead)
   doctor [--json] [--fix]   Diagnose host, dependencies, templates, and configuration
   config [--get|--set]      Manage configuration
   secrets                   Manage stored secrets (keyring/file)

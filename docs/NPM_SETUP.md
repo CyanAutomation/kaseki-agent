@@ -64,7 +64,7 @@ kaseki-agent doctor --json
 kaseki-agent init
 ```
 
-The setup wizard validates the environment, prompts for key settings, stores credentials, writes config in the selected scope, and suggests follow-up checks. `kaseki-agent setup` remains available as a deprecated alias; use `init` for new workflows.
+The setup wizard validates the environment, prompts for key settings, stores credentials, writes config in the selected scope, and suggests follow-up checks. Use `kaseki-agent init`; the deprecated npm CLI `setup` alias has been removed.
 
 ### 3. `config` — inspect and edit configuration
 

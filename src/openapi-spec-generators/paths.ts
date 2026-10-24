@@ -466,6 +466,35 @@ function buildRunManagementPaths(errorResponseSchema: Record<string, unknown>, r
 
 function buildRunManagementApiRunsPath(errorResponseSchema: Record<string, unknown>, runRequestSchema: Record<string, unknown>, runResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
+    '/api/v1/runs/local': {
+      post: {
+        operationId: 'triggerLocalRun',
+        summary: 'Trigger a local-only Kaseki run',
+        description: 'Always submits directly to this Kaseki host\'s scheduler, even when Soyuz submission routing is configured. This explicit local path never fails over automatically from /runs.',
+        tags: ['Run Management'],
+        security: [{ BearerAuth: [] }],
+        parameters: [{
+          name: 'Idempotency-Key',
+          in: 'header',
+          required: false,
+          schema: { type: 'string', format: 'uuid' },
+          description: 'Caller-generated UUID v4. Required unless idempotencyKey is present in the request body.',
+        }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: runRequestSchema } },
+        },
+        responses: {
+          '202': { description: 'Local job accepted and queued', content: { 'application/json': { schema: runResponseSchema } } },
+          '200': { description: 'Idempotency replay: the local job already exists with the same configuration', content: { 'application/json': { schema: runResponseSchema } } },
+          '400': { description: 'Invalid request', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '422': { description: 'Task rejected by the safety admission gate', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '503': { description: 'Storage capacity could not be measured; new runs are temporarily blocked', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '507': { description: 'Insufficient storage remains after automatic cleanup', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+        },
+      },
+    },
     '/api/v1/runs': {
       post: {
         operationId: 'triggerRun',
