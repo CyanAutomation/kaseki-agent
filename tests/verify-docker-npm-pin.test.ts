@@ -101,31 +101,32 @@ describe('Docker global package registry verification', () => {
       { name: '@earendil-works/pi-coding-agent', selector: '@earendil-works/pi-coding-agent@0.87.1' },
       { name: '@earendil-works/pi-server', selector: '@earendil-works/pi-server@0.87.1' },
       { name: 'undici', selector: 'undici@8.12.2' },
-      { name: 'undici-v6', selector: 'undici@6.28.1' },
-      { name: 'undici-v7', selector: 'undici@7.29.1' },
+      { name: 'undici-v6', selector: 'undici@6.29.1' },
+      { name: 'undici-v7', selector: 'undici@7.30.1' },
       { name: 'brace-expansion', selector: 'brace-expansion@5.0.12' },
       { name: 'brace-expansion-v1', selector: 'brace-expansion@1.1.21' },
       { name: 'brace-expansion-v2', selector: 'brace-expansion@2.1.7' },
     ]);
     expect(manifest.overrides).toEqual({
       'brace-expansion': '5.0.12',
-      npm: { 'brace-expansion': '5.0.12', undici: '6.28.1' },
-      '@earendil-works/pi-coding-agent': { 'brace-expansion': '5.0.12', undici: '8.10.2' },
-      '@earendil-works/pi-server': { 'brace-expansion': '5.0.12', undici: '8.10.2' },
+      npm: { 'brace-expansion': '5.0.12', undici: '6.29.1' },
+      '@earendil-works/pi-coding-agent': { 'brace-expansion': '5.0.12', undici: '8.12.2' },
+      '@earendil-works/pi-server': { 'brace-expansion': '5.0.12', undici: '8.12.2' },
     });
   });
 
-  test('locks patched package sources for nested bundle replacement', () => {
+  test('locks patched replacement sources for nested dependency repair', () => {
     const lock = JSON.parse(readFileSync(toolchainLockPath, 'utf8')) as {
       packages: Record<string, { version?: string }>;
     };
     expect(lock.packages['node_modules/brace-expansion']?.version).toBe('5.0.12');
     expect(lock.packages['node_modules/undici']?.version).toBe('8.12.2');
-    expect(lock.packages['node_modules/undici-v6']?.version).toBe('6.28.1');
-    expect(lock.packages['node_modules/undici-v7']?.version).toBe('7.29.1');
+    expect(lock.packages['node_modules/undici-v6']?.version).toBe('6.29.1');
+    expect(lock.packages['node_modules/undici-v7']?.version).toBe('7.30.1');
     expect(lock.packages['node_modules/brace-expansion-v1']?.version).toBe('1.1.21');
     expect(lock.packages['node_modules/brace-expansion-v2']?.version).toBe('2.1.7');
     expect(lock.packages['node_modules/npm/node_modules/brace-expansion']?.version).toBe('5.0.12');
+    // npm ships its own undici copy in the npm tarball; the Docker build replaces it from undici-v6.
     expect(lock.packages['node_modules/npm/node_modules/undici']?.version).toBe('6.28.1');
     expect(lock.packages['node_modules/brace-expansion-v3']).toBeUndefined();
   });
