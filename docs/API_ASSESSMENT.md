@@ -23,6 +23,7 @@ Removed routes and aliases are listed below. Root `/health` and `/ready` remain 
 | `GET /api/v1/gateway-test` | Keep; update | Connectivity is the default. Inference, Pi adapter, and evaluation checks require `inference=true` and are rate limited. Errors use Problem Details. |
 | `GET /api/v1/runs` | Keep; update | Reads persisted history, supports opaque cursor pagination and status/repository/time filters, and omits internal result paths. |
 | `POST /api/v1/runs` | Keep; update | Requires a UUID v4 `Idempotency-Key` header or body field; conflicting copies are rejected. Admission and template/publish checks remain enforced. |
+| `POST /api/v1/runs/local` | Keep; add | Explicit local-only submission for standalone operation or deliberate fallback; it bypasses Soyuz routing, retains the same admission checks, and has a separate local idempotency namespace. |
 | `GET /api/v1/runs/{id}` | Keep; add | Canonical run resource with lifecycle identity and links to status, events, artifacts, scorecard, and analysis. Resolves persisted history. |
 | `GET /api/v1/runs/{id}/status` | Keep; update | Resolves persisted history and omits `resultDir` host paths. |
 | `POST /api/v1/runs/{id}/retry` | Keep; update | Reuses submission admission, template readiness, and GitHub publish-credential checks before queueing. |

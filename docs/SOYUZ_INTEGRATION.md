@@ -44,7 +44,11 @@ SOYUZ_VISIBILITY_TIMEOUT_MS=120000
 
 ## Kaseki submission contract
 
-When submission routing is enabled, Kaseki validates the request and its existing task-safety gate, persists the caller's idempotency key and request fingerprint, then sends the same UUID as the Soyuz `Idempotency-Key` header and body field. On a timeout or uncertain 5xx response Kaseki keeps that durable intent; clients must repeat the same request with the same key. Once the remote response is recorded, the Soyuz UUID is the public `id`; Kaseki includes `localRunId` after a worker host creates its local job mapping. Existing `kaseki-N` IDs remain valid for local logs, artifacts, and diagnostics.
+Soyuz remains the shared control plane for cross-host run intake and canonical run history. New cross-host integrations should submit to Soyuz directly when it is available. Kaseki's submission proxy remains for existing Kaseki API clients during migration; `/api/v1/runs/local` is the standalone host path.
+
+With submission routing enabled, `POST /api/v1/runs` validates the request and its existing task-safety gate, persists the caller's idempotency key and request fingerprint, then sends the same UUID as the Soyuz `Idempotency-Key` header and body field. On a timeout or uncertain 5xx response Kaseki keeps that durable intent; clients must repeat the same request with the same key. Once the remote response is recorded, the Soyuz UUID is the public `id`; Kaseki includes `localRunId` after a worker host creates its local job mapping. Existing `kaseki-N` IDs remain valid for local logs, artifacts, and diagnostics.
+
+`POST /api/v1/runs/local` is the explicit direct-submit path. It always submits to this Kaseki host's scheduler, bypasses Soyuz routing, and remains available when the Soyuz service is unreachable. It applies the local validation and safety gates and keeps a separate local idempotency record. Kaseki does not switch to this endpoint automatically. After an uncertain Soyuz timeout or 5xx response, inspect Soyuz's canonical state before submitting a local copy because the local and Soyuz backends cannot deduplicate each other's acceptance.
 
 Retries go through Soyuz's canonical retry operation and are accepted for terminal source runs (`completed`, `failed`, `cancelled`, or `admission_failed`) owned by the authenticated Kaseki identity. Kaseki callers supply a fresh UUID for each retry and reuse it after timeouts. Legacy local `kaseki-N` runs continue to use Kaseki's local retry path. Kaseki preserves its worker-side admission checks before execution.
 

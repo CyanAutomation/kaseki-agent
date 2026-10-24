@@ -1064,6 +1064,35 @@ describe('kaseki API web console behavior', () => {
     expect(submitBody.idempotencyKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
   });
 
+  test('can explicitly submit a validated task directly to this Kaseki host', async () => {
+    const { document, calls } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path, init) => {
+        if (path === '/api/v1/validate') return createJsonResponse({ isValid: true, checks: [] });
+        if (path === '/api/v1/runs/local' && init?.method === 'POST') {
+          return createJsonResponse({ id: 'kaseki-direct-1', status: 'queued' }, 202);
+        }
+        if (path === '/api/v1/runs/kaseki-direct-1/status') {
+          return createJsonResponse({ id: 'kaseki-direct-1', status: 'running', elapsedSeconds: 1 });
+        }
+        return createJsonResponse({ runs: [] });
+      },
+    });
+
+    inputSelector(document, '#repo-url', 'https://github.com/CyanAutomation/kaseki-agent');
+    inputSelector(document, '#task-prompt', 'Submit this task directly to the local Kaseki controller.');
+    expectTextContains(document, '#submission-target-help', 'check Soyuz before resubmitting locally');
+    getElement<HTMLInputElement>(document, '#direct-local-submission').checked = true;
+    clickSelector(document, '#validate');
+    await waitFor(() => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
+    clickSelector(document, '#submit');
+    await waitFor(() => expect(getElement<HTMLInputElement>(document, '#run-id').value).toBe('kaseki-direct-1'));
+
+    expect(calls.some((call) => call.path === '/api/v1/runs/local' && call.init?.method === 'POST')).toBe(true);
+    expect(calls.some((call) => call.path === '/api/v1/runs' && call.init?.method === 'POST')).toBe(false);
+    expectText(document, '#state', 'Run submitted directly to this Kaseki host.');
+  });
+
   test('shows trusted Soyuz provenance and the local diagnostic ID in run details', async () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
