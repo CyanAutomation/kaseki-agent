@@ -33,7 +33,9 @@ describe('Environment configuration documentation parity', () => {
 
   it('keeps the generated public-variable catalog in parity with canonical metadata', () => {
     const skill = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
-    const catalog = fs.readFileSync(path.join(skillDir, 'PUBLIC_ENVIRONMENT_VARIABLES.md'), 'utf8');
+    const catalogPath = path.join(skillDir, 'PUBLIC_ENVIRONMENT_VARIABLES.md');
+    expect(fs.existsSync(catalogPath)).toBe(true);
+    const catalog = fs.readFileSync(catalogPath, 'utf8');
     const generatedRows = metadata.map((variable) =>
       `| \`${variable.name}\` | \`${variable.default}\` | ${variable.description} | ${variable.acceptedValues} |`,
     );
@@ -47,7 +49,7 @@ describe('Environment configuration documentation parity', () => {
 
     expect(catalog).toContain(generatedSection);
     expect(skill).toContain('[generated public-variable catalog](PUBLIC_ENVIRONMENT_VARIABLES.md)');
-    expect(skill).not.toContain('BEGIN GENERATED PUBLIC ENVIRONMENT VARIABLES');
+    expect(skill).not.toMatch(/<!-- BEGIN GENERATED PUBLIC ENVIRONMENT VARIABLES -->/);
   });
 
   it('keeps environment setup guidance focused and concise', () => {

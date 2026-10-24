@@ -49,7 +49,8 @@ check_progressive_disclosure() {
 check_repository_instructions_consolidation() {
   [ -f "$ROOT_DIR/AGENTS.md" ] || fail "repository guidance: AGENTS.md is missing"
   [ ! -e "$ROOT_DIR/CLAUDE.md" ] || fail "repository guidance: CLAUDE.md should be consolidated into AGENTS.md"
-  grep -q 'AGENTS\.md' "$ROOT_DIR/Dockerfile" || fail "repository guidance: Dockerfile does not include AGENTS.md"
+  grep -qE '^[[:space:]]*COPY[[:space:]].*AGENTS\.md' "$ROOT_DIR/Dockerfile" || \
+    fail "repository guidance: Dockerfile does not copy AGENTS.md"
   grep -q '^!AGENTS\.md$' "$ROOT_DIR/.dockerignore" || fail "repository guidance: Docker build context excludes AGENTS.md"
 
   if grep -q 'CLAUDE\.md' \
