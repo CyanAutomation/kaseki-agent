@@ -1,10 +1,10 @@
 # BuildKit's bundled Dockerfile frontend is used to avoid pulling syntax from Docker Hub.
 # Bump the pinned Node base image monthly with a security review.
-# Node v24 base image: Revalidated October 2026; the upstream tag still resolves to this digest.
+# Node v24.22.1 base image: includes the patched undici 7.30.1 runtime.
 # Pull the canonical Docker Official Image from Docker Hub. CI and image-publish
 # workflows authenticate when Docker Hub credentials are available.
 # Using ARG for DRY principle - base image used in both stages
-ARG NODE_IMAGE=docker.io/library/node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6
+ARG NODE_IMAGE=docker.io/library/node:24-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205
 
 # The Node image bundles npm, whose dependency tree is part of every image
 # stage. Install reviewed tool versions from a lockfile and repair bundled
