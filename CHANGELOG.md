@@ -4,6 +4,15 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.155.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.155.1...v1.155.2) (2026-10-24)
+
+
+### Bug Fixes
+
+* handle Zod 4 validation errors ([416afcb](https://github.com/CyanAutomation/kaseki-agent/commit/416afcb6165950c87185cad95dd45a8aa113a465))
+* patch undici CVE in image dependencies ([4bb89f4](https://github.com/CyanAutomation/kaseki-agent/commit/4bb89f4ddbfb5d1a316d27d1de0fd31f09de434c))
+* update Go toolchain for CVE-2026-111943 ([79b8fa4](https://github.com/CyanAutomation/kaseki-agent/commit/79b8fa40b642d5e38b3aa935d46156f6e1bc1a01))
+
 ## [1.155.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.155.0...v1.155.1) (2026-10-23)
 
 
