@@ -17,7 +17,7 @@
 !src/**
 !.dockerignore
 !README.md
-!CLAUDE.md
+!AGENTS.md
 !CONTRIBUTING.md
 !STYLE.md
 !docs/

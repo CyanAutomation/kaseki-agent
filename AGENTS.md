@@ -12,6 +12,7 @@ and Docker scripts configure hosts and execute worker phases.
 - `src/` — TypeScript API, CLI, configuration, and run orchestration.
 - `scripts/`, `Dockerfile`, and `docker-compose.yml` — host setup and container behavior.
 - `.agents/skills/` — agent-facing operational knowledge.
+- `.agents/skills/README.md` — skill index and maintenance guidance. The repository does not define an automatic keyword registry; consult a skill when the task matches its scope.
 - [Markdown inventory](docs/internal/MARKDOWN_INVENTORY.md) — documentation roles and locations.
 
 Check the implementation and its tests before changing a behavior description.

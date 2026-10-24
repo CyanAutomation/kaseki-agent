@@ -519,7 +519,7 @@ The scripts are also validated by the target repositories they orchestrate. Keep
 
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — Contribution guidelines
 - [README.md](../README.md) — Project overview and usage
-- [CLAUDE.md](../CLAUDE.md) — Repository instructions
+- [AGENTS.md](../AGENTS.md) — Repository instructions
 - [Documentation index](INDEX.md) — Current guides and references
 
 ## Documentation conventions

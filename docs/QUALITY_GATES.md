@@ -324,7 +324,7 @@ KASEKI_RESTORE_DISALLOWED_CHANGES=0 ./run-kaseki.sh
 
 ## Related
 
-- [CLAUDE.md](../CLAUDE.md) — Overall kaseki-agent documentation
+- [AGENTS.md](../AGENTS.md) — Repository instructions
 - [docs/TASK_PROMPT_TEMPLATES.md](./TASK_PROMPT_TEMPLATES.md) — How to write prompts that minimize scope creep
 - [scripts/suggest-allowlist.sh](../scripts/suggest-allowlist.sh) — Auto-generate allowlist from completed run
 - `templates/allowlist-*.txt` — Pre-built templates for common task types
@@ -504,7 +504,7 @@ See [COMPILATION_VALIDATION.md](COMPILATION_VALIDATION.md) for comprehensive com
 
 - [docs/COMPILATION_VALIDATION.md](./COMPILATION_VALIDATION.md) — Full compilation validation guide
 - [docs/ASYNC_AWARENESS.md](./ASYNC_AWARENESS.md) — Async-aware code changes and mock file handling
-- [CLAUDE.md](../CLAUDE.md) — Overall kaseki-agent documentation
+- [AGENTS.md](../AGENTS.md) — Repository instructions
 - [docs/TASK_PROMPT_TEMPLATES.md](./TASK_PROMPT_TEMPLATES.md) — How to write prompts that minimize scope creep
 - [scripts/suggest-allowlist.sh](../scripts/suggest-allowlist.sh) — Auto-generate allowlist from completed run
 - `templates/allowlist-*.txt` — Pre-built templates for common task types

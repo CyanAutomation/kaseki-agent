@@ -199,7 +199,8 @@ export function findUnknownNpmScriptReferences(markdown, packageScripts = {}) {
 }
 
 /**
- * Select explicit files or discover repository Markdown files, including new files.
+ * Select explicit files or discover existing Markdown files in the current
+ * worktree, including untracked additions and excluding deleted tracked files.
  */
 export function getMarkdownFilesToCheck(sourceFiles = [], repositoryRoot = process.cwd()) {
   if (sourceFiles.length > 0) return sourceFiles;
@@ -211,7 +212,7 @@ export function getMarkdownFilesToCheck(sourceFiles = [], repositoryRoot = proce
 
   return repositoryFiles
     .split('\0')
-    .filter((file) => /\.(?:md|markdown|mdx)$/i.test(file))
+    .filter((file) => /\.(?:md|markdown|mdx)$/i.test(file) && existsSync(path.resolve(repositoryRoot, file)))
     .sort();
 }
 

@@ -8,9 +8,16 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const skillDir = path.join(repoRoot, '.agents/skills/environment-configuration');
 const metadataPath = path.join(skillDir, 'environment-variables.json');
-const skillPath = path.join(skillDir, 'SKILL.md');
+const catalogPath = path.join(skillDir, 'PUBLIC_ENVIRONMENT_VARIABLES.md');
 const startMarker = '<!-- BEGIN GENERATED PUBLIC ENVIRONMENT VARIABLES -->';
 const endMarker = '<!-- END GENERATED PUBLIC ENVIRONMENT VARIABLES -->';
+const catalogHeader = [
+  '# Public Environment Variables',
+  '',
+  'Generated from `environment-variables.json`. This is a published quick lookup, not a complete runtime manifest.',
+  'Use the [canonical environment reference](../../../docs/ENV_VARS.md) for supported settings, defaults, and behavior.',
+  '',
+].join('\n');
 
 export function renderPublicEnvironmentVariables(metadata) {
   const rows = metadata.map(({ name, default: defaultValue, description, acceptedValues }) =>
@@ -30,7 +37,7 @@ function readRequiredFiles() {
   try {
     return {
       metadata: JSON.parse(fs.readFileSync(metadataPath, 'utf8')),
-      skill: fs.readFileSync(skillPath, 'utf8'),
+      catalog: fs.existsSync(catalogPath) ? fs.readFileSync(catalogPath, 'utf8') : '',
     };
   } catch (error) {
     console.error(`Failed to read required files: ${error.message}`);
@@ -38,20 +45,13 @@ function readRequiredFiles() {
   }
 }
 
-const { metadata, skill } = readRequiredFiles();
-const generated = renderPublicEnvironmentVariables(metadata);
-const markerPattern = new RegExp(`${startMarker}[\\s\\S]*?${endMarker}`);
-
-if (!markerPattern.test(skill)) {
-  throw new Error(`Generated environment-variable markers are missing from ${skillPath}`);
-}
-
-const nextSkill = skill.replace(markerPattern, generated);
+const { metadata, catalog } = readRequiredFiles();
+const generated = `${catalogHeader}${renderPublicEnvironmentVariables(metadata)}\n`;
 if (process.argv.includes('--check')) {
-  if (nextSkill !== skill) {
-    console.error('Environment configuration skill is out of date; run npm run generate:environment-docs.');
+  if (generated !== catalog) {
+    console.error('Public environment-variable catalog is out of date; run npm run generate:environment-docs.');
     process.exitCode = 1;
   }
 } else {
-  fs.writeFileSync(skillPath, nextSkill);
+  fs.writeFileSync(catalogPath, generated);
 }

@@ -207,7 +207,7 @@ Add schema versioning for forward compatibility:
 1. **All JSON/JSONL artifacts** add `schema_version` and `artifact_version` fields
 2. **Create OpenAPI/JSON Schema specs** for all ≥8 score artifacts
 3. **Document stable schemas** in [docs/ARTIFACT_SCHEMAS.md](../ARTIFACT_SCHEMAS.md)
-4. **Update CLAUDE.md** with new artifact inventory
+4. **Update AGENTS.md** with new artifact inventory
 
 **Example**:
 
@@ -400,7 +400,7 @@ Add schema versioning for forward compatibility:
 
 - [ ] Add schema_version field to all JSON/JSONL artifacts
 - [ ] Create [docs/ARTIFACT_SCHEMAS.md](../ARTIFACT_SCHEMAS.md) with OpenAPI specs
-- [ ] Update [CLAUDE.md](../../CLAUDE.md) with new inventory
+- [ ] Update [AGENTS.md](../../AGENTS.md) with new inventory
 - [ ] Update agent code to handle schema versioning
 - [ ] Document in [docs/DEVELOPMENT.md](../DEVELOPMENT.md)
 
@@ -415,7 +415,7 @@ After implementation, create/update:
    - Field descriptions, enums, examples
    - Schema versioning strategy
 
-2. **[CLAUDE.md](../../CLAUDE.md)** (UPDATE "Result Artifacts" section)
+2. **[AGENTS.md](../../AGENTS.md)** (UPDATE "Result Artifacts" section)
    - New compact artifact inventory
    - Retention policies per artifact
    - Feature flag documentation
@@ -445,6 +445,6 @@ After implementation, create/update:
 ## 🔗 References
 
 - [Artifact Scoring Evaluation](ARTIFACT_SCORING_EVALUATION.md) — Full evaluation with rubric scores
-- [CLAUDE.md](../../CLAUDE.md) — Current artifact inventory (to be updated)
+- [AGENTS.md](../../AGENTS.md) — Current artifact inventory (to be updated)
 - [kaseki-agent.sh](../../kaseki-agent.sh) — Artifact generation logic
 - [src/kaseki-report.js](../../src/kaseki-report.ts) — Artifact consolidation & reporting
