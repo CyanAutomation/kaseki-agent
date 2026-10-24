@@ -41,11 +41,12 @@ describe('image dependency version verification', () => {
       createPackage(root, 'npm/node_modules/brace-expansion', 'brace-expansion', '5.0.12');
       createPackage(root, 'npm/node_modules/brace-expansion-v1', 'brace-expansion', '1.1.21');
       createPackage(root, 'npm/node_modules/brace-expansion-v2', 'brace-expansion', '2.1.7');
-      createPackage(root, 'npm/node_modules/undici', 'undici', '6.28.1');
+      createPackage(root, 'npm/node_modules/undici', 'undici', '6.29.1');
+      createPackage(root, 'undici-v7', 'undici', '7.30.1');
       createPackage(root, 'handlebars', 'handlebars', '4.7.10');
       createPackage(root, '@earendil-works/pi-coding-agent', '@earendil-works/pi-coding-agent', '0.87.1');
       createPackage(root, '@earendil-works/pi-coding-agent/node_modules/brace-expansion', 'brace-expansion', '5.0.12');
-      createPackage(root, '@earendil-works/pi-coding-agent/node_modules/undici', 'undici', '8.10.2');
+      createPackage(root, '@earendil-works/pi-coding-agent/node_modules/undici', 'undici', '8.12.2');
 
       const result = runVerifier(root);
       expect(result.status).toBe(0);
@@ -57,8 +58,9 @@ describe('image dependency version verification', () => {
       createPackage(root, 'npm/node_modules/brace-expansion', 'brace-expansion', '5.0.9');
       createPackage(root, 'npm/node_modules/brace-expansion-v1', 'brace-expansion', '1.1.20');
       createPackage(root, 'npm/node_modules/brace-expansion-v2', 'brace-expansion', '2.1.6');
-      createPackage(root, 'npm/node_modules/undici', 'undici', '6.28.0');
-      createPackage(root, '@earendil-works/pi-coding-agent/node_modules/undici', 'undici', '8.9.0');
+      createPackage(root, 'npm/node_modules/undici', 'undici', '6.29.0');
+      createPackage(root, 'undici-v7', 'undici', '7.30.0');
+      createPackage(root, '@earendil-works/pi-coding-agent/node_modules/undici', 'undici', '8.12.1');
       createPackage(root, 'handlebars', 'handlebars', '4.7.9');
       createPackage(root, 'brace-expansion-v3', 'brace-expansion', '3.0.8');
       createPackage(root, 'legacy-v4/node_modules/brace-expansion', 'brace-expansion', '4.0.1');
@@ -68,8 +70,9 @@ describe('image dependency version verification', () => {
       expect(result.stderr).toContain('npm/node_modules/brace-expansion/package.json: 5.0.9');
       expect(result.stderr).toContain('npm/node_modules/brace-expansion-v1/package.json: 1.1.20 (fixed in 1.1.21)');
       expect(result.stderr).toContain('npm/node_modules/brace-expansion-v2/package.json: 2.1.6 (fixed in 2.1.7)');
-      expect(result.stderr).toContain('npm/node_modules/undici/package.json: 6.28.0');
-      expect(result.stderr).toContain('@earendil-works/pi-coding-agent/node_modules/undici/package.json: 8.9.0');
+      expect(result.stderr).toContain('npm/node_modules/undici/package.json: 6.29.0');
+      expect(result.stderr).toContain('undici-v7/package.json: 7.30.0');
+      expect(result.stderr).toContain('@earendil-works/pi-coding-agent/node_modules/undici/package.json: 8.12.1');
       expect(result.stderr).toContain('brace-expansion-v3/package.json: 3.0.8 (fixed in 5.0.7)');
       expect(result.stderr).toContain('legacy-v4/node_modules/brace-expansion/package.json: 4.0.1 (fixed in 5.0.7)');
       expect(result.stderr).toContain('handlebars/package.json: 4.7.9 (fixed in 4.7.10)');

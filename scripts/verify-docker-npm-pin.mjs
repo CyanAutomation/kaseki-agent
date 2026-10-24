@@ -37,9 +37,9 @@ export function extractImageToolchainSelectors(manifest) {
 
   const requiredOverrides = {
     'brace-expansion': '5.0.12',
-    npm: { 'brace-expansion': '5.0.12', undici: '6.28.1' },
-    '@earendil-works/pi-coding-agent': { 'brace-expansion': '5.0.12', undici: '8.10.2' },
-    '@earendil-works/pi-server': { 'brace-expansion': '5.0.12', undici: '8.10.2' },
+    npm: { 'brace-expansion': '5.0.12', undici: '6.29.1' },
+    '@earendil-works/pi-coding-agent': { 'brace-expansion': '5.0.12', undici: '8.12.2' },
+    '@earendil-works/pi-server': { 'brace-expansion': '5.0.12', undici: '8.12.2' },
   };
   for (const [parent, required] of Object.entries(requiredOverrides)) {
     if (typeof required === 'string') {
