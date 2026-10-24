@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -35,6 +35,23 @@ test('checks tracked and untracked Markdown files by default', () => {
       'docs/guide.MD',
       'docs/reference.markdown',
     ]);
+  } finally {
+    rmSync(repositoryRoot, { recursive: true, force: true });
+  }
+});
+
+test('ignores tracked Markdown files deleted from the working tree', () => {
+  const repositoryRoot = mkdtempSync(path.join(os.tmpdir(), 'kaseki-markdown-deleted-'));
+  try {
+    writeFileSync(path.join(repositoryRoot, 'kept.md'), '# Kept\n');
+    writeFileSync(path.join(repositoryRoot, 'retired.md'), '# Retired\n');
+    writeFileSync(path.join(repositoryRoot, 'added.md'), '# Added\n');
+
+    execFileSync('git', ['init', '--quiet'], { cwd: repositoryRoot });
+    execFileSync('git', ['add', 'kept.md', 'retired.md'], { cwd: repositoryRoot });
+    unlinkSync(path.join(repositoryRoot, 'retired.md'));
+
+    assert.deepEqual(getMarkdownFilesToCheck([], repositoryRoot), ['added.md', 'kept.md']);
   } finally {
     rmSync(repositoryRoot, { recursive: true, force: true });
   }

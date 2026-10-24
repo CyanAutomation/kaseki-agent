@@ -107,8 +107,8 @@ evaluate_docs() {
   # Check for CONTRIBUTING.md (1 point)
   [ -f "$REPO_PATH/CONTRIBUTING.md" ] && score=$((score + 1))
   
-  # Check for CLAUDE.md (1 point)
-  [ -f "$REPO_PATH/CLAUDE.md" ] && score=$((score + 1))
+  # Check for repository agent instructions (1 point)
+  [ -f "$REPO_PATH/AGENTS.md" ] && score=$((score + 1))
   
   # Check for docs directory (1 point)
   [ -d "$REPO_PATH/docs" ] && score=$((score + 1))

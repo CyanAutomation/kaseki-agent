@@ -194,7 +194,7 @@ For all KEEP artifacts (score ≥8):
 
 1. Add `schema_version` and `artifact_version` fields
 2. Create [docs/ARTIFACT_SCHEMAS.md](../ARTIFACT_SCHEMAS.md) with OpenAPI specs
-3. Update [CLAUDE.md](../../CLAUDE.md) with final artifact inventory
+3. Update [AGENTS.md](../../AGENTS.md) with final artifact inventory
 
 **Example**:
 
@@ -297,7 +297,7 @@ For all KEEP artifacts (score ≥8):
 
 - [ ] Add schema_version = "1.0" to all JSON/JSONL artifacts
 - [ ] Create docs/ARTIFACT_SCHEMAS.md with OpenAPI specs
-- [ ] Update CLAUDE.md result-artifacts section
+- [ ] Update AGENTS.md result-artifacts section
 - [ ] Document stable schema contracts
 
 ---
@@ -327,7 +327,7 @@ For all KEEP artifacts (score ≥8):
 2. **Implement Phase 1** — Remove low-value artifacts (highest impact)
 3. **Test thoroughly** — Verify agent functionality with new artifact set
 4. **Implement Phases 2–4** — Consolidate and add schema versioning
-5. **Update documentation** — CLAUDE.md, agent integration guides, etc.
+5. **Update documentation** — AGENTS.md, agent integration guides, etc.
 6. **Monitor metrics** — Track storage, agent performance, error rates
 
 ---

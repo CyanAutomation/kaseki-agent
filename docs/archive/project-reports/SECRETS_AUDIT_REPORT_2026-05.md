@@ -295,7 +295,7 @@ This resolved path is then passed to the worker via job scheduler, but the **wor
 | [.env.example](/.env.example#L37-L39) | 37-39 | `/agents/secrets/github_app_*` | `/run/secrets/github_app_*` | ⚠️ STALE |
 | [README.md](../../../README.md) | 1277 | `/agents/secrets/github_app_private_key` | `/run/secrets/github_app_private_key` | ⚠️ STALE |
 | [README.md](../../../README.md) | 125-127 | Various paths | **Mixed** | ⚠️ NEEDS AUDIT |
-| [CLAUDE.md](../../../CLAUDE.md) | 198-211 | `KASEKI_API_KEYS` | Correct | ✓ Accurate |
+| [AGENTS.md](../../../AGENTS.md) | 198-211 | `KASEKI_API_KEYS` | Correct | ✓ Accurate |
 | [docs/DEPLOYMENT.md](../../DEPLOYMENT.md) | 399-408 | `KASEKI_SECRETS_DIR` | Correct | ✓ Accurate |
 
 ---
