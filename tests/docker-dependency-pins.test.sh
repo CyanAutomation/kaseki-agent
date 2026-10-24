@@ -13,7 +13,7 @@ if ! jq -e '
   .dependencies["brace-expansion-v1"] == "npm:brace-expansion@1.1.21" and
   .dependencies["brace-expansion-v2"] == "npm:brace-expansion@2.1.7" and
   (.dependencies | has("brace-expansion-v3") | not) and
-  .dependencies.undici == "8.10.2" and
+  .dependencies.undici == "8.12.2" and
   .dependencies["undici-v6"] == "npm:undici@6.28.1" and
   .dependencies["undici-v7"] == "npm:undici@7.29.1" and
   .overrides.npm["brace-expansion"] == "5.0.12" and
