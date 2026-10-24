@@ -42,6 +42,7 @@ describe('OpenAPI Path Builders', () => {
     contract('/api/v1/gateway-test', 'get', 'testGateway', true, ['200', '400', '401', '429', '503'], 'Gateway Diagnostics'),
     contract('/api/v1/validate', 'post', 'validateTask', true, ['200', '400', '401'], 'Service Info'),
     contract('/api/v1/runs', 'post', 'triggerRun', true, ['200', '202', '400', '401', '422', '503', '507'], 'Run Management'),
+    contract('/api/v1/runs/local', 'post', 'triggerLocalRun', true, ['200', '202', '400', '401', '422', '503', '507'], 'Run Management'),
     contract('/api/v1/runs', 'get', 'listRuns', true, ['200', '400', '401'], 'Run Management'),
     contract('/api/v1/runs/{id}', 'get', 'getRun', true, ['200', '401', '404'], 'Run Management'),
     contract('/api/v1/runs/{id}/status', 'get', 'getRunStatus', true, ['200', '401', '404'], 'Run Management'),
@@ -308,6 +309,7 @@ describe('OpenAPI Path Builders', () => {
         retryRun: ['retry', 'terminal', 'run'],
         testGateway: ['gateway', 'inference'],
         testWebhook: ['test', 'webhook'],
+        triggerLocalRun: ['trigger', 'local-only', 'run'],
         triggerRun: ['trigger', 'run'],
         validateTask: ['validate', 'task']
       };
@@ -639,6 +641,16 @@ describe('OpenAPI Path Builders', () => {
       expect(runsPath.operationId).toBe('triggerRun');
       expect(runsPath.responses['202']).toBeDefined();
       expect(runsPath.responses['202'].description).toContain('queued');
+    });
+
+    it('POST /api/v1/runs/local should document the explicit local-only submission path', () => {
+      const localRunPath = (paths['/api/v1/runs/local'] as Record<string, any>).post;
+      expect(localRunPath.operationId).toBe('triggerLocalRun');
+      expect(localRunPath.description).toContain('Always submits directly to this Kaseki host');
+      expect(localRunPath.requestBody.content['application/json'].schema).toBe(requestSchema);
+      expect(localRunPath.parameters).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: 'Idempotency-Key', in: 'header', required: false }),
+      ]));
     });
 
     it('GET /api/v1/runs should list runs with pagination parameters', () => {

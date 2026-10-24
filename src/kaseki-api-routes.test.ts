@@ -703,6 +703,71 @@ describe('Soyuz submission routing', () => {
     }
   });
 
+  test('submits directly to the local scheduler when requested, even with Soyuz routing enabled', async () => {
+    const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-soyuz-local-submit-'));
+    const config = createTestConfig(resultsDir);
+    const scheduler = createMockScheduler();
+    scheduler.submitJob.mockImplementation(async request => ({
+      id: 'kaseki-local-fallback',
+      status: 'queued',
+      createdAt: new Date('2026-10-17T12:00:00.000Z'),
+      resultDir: path.join(resultsDir, 'kaseki-local-fallback'),
+      request,
+    }));
+    const fetchImpl = jest.fn(async () => apiResponse({
+      id: soyuzId,
+      status: 'queued',
+      createdAt: '2026-10-17T12:00:00.000Z',
+      origin: { type: 'kaseki', id: 'kaseki-prod' },
+    }));
+    const harness = await createTestApp(scheduler, config, undefined, makeSubmissionClient(fetchImpl as typeof fetch));
+    const key = crypto.randomUUID();
+    const baseRequest = {
+      repoUrl: 'https://github.com/example/repo',
+      ref: 'main',
+      taskPrompt: 'Add a focused health check.',
+      publishMode: 'none',
+      idempotencyKey: key,
+    };
+    const localRequestBody = {
+      ...baseRequest,
+      webhookConfig: { url: 'https://hooks.example.test/run', secret: 'webhook-secret-value-123456' },
+    };
+    const submitLocal = () => fetch(`http://127.0.0.1:${harness.port}/api/runs/local`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json', 'Idempotency-Key': key },
+      body: JSON.stringify(localRequestBody),
+    });
+
+    try {
+      const localResponse = await submitLocal();
+      const localBody = await localResponse.json() as any;
+      const localReplay = await submitLocal();
+      const localReplayBody = await localReplay.json() as any;
+      const soyuzResponse = await fetch(`http://127.0.0.1:${harness.port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json', 'Idempotency-Key': key },
+        body: JSON.stringify(baseRequest),
+      });
+      const soyuzBody = await soyuzResponse.json() as any;
+
+      expect(localResponse.status).toBe(202);
+      expect(localBody.id).toBe('kaseki-local-fallback');
+      expect(localReplay.status).toBe(200);
+      expect(localReplayBody.id).toBe('kaseki-local-fallback');
+      expect(scheduler.submitJob).toHaveBeenCalledTimes(1);
+      expect(scheduler.submitJob).toHaveBeenCalledWith(expect.objectContaining({
+        webhookConfig: expect.objectContaining({ url: 'https://hooks.example.test/run' }),
+      }));
+      expect(soyuzResponse.status).toBe(202);
+      expect(soyuzBody.id).toBe(soyuzId);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    } finally {
+      await cleanupTestApp(harness.server, harness.idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
   test('rejects webhook secrets before creating a Soyuz submission intent', async () => {
     const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-soyuz-webhook-'));
     const fetchImpl = jest.fn(async () => apiResponse({ id: soyuzId, status: 'queued', createdAt: '2026-10-17T12:00:00.000Z' }));

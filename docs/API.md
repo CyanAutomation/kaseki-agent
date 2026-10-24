@@ -299,7 +299,21 @@ API route labels use Express route templates (for example `/runs/:id/status`) to
 
 **POST `/api/v1/runs`**
 
-Submit a new kaseki job to the queue. Returns immediately (async).
+Submit a new Kaseki run through the configured submission route. Returns immediately (async). With Soyuz submission routing enabled, Kaseki sends this request to Soyuz.
+
+To intentionally bypass Soyuz and submit to this Kaseki host's scheduler, use the local-only endpoint:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/runs/local \
+  -H "Authorization: Bearer sk-your-api-key" \
+  -H "Idempotency-Key: 123e4567-e89b-42d3-a456-426614174000" \
+  -H "Content-Type: application/json" \
+  -d '{"repoUrl":"https://github.com/org/repo","ref":"main","taskPrompt":"Fix the parser bug","publishMode":"none"}'
+```
+
+`POST /api/v1/runs/local` always uses this host's scheduler, even when `SOYUZ_SUBMISSION_ENABLED=true`. It uses the same authentication, validation, safety admission, and idempotency requirements as normal submission. Its idempotency records are local to Kaseki and separate from Soyuz submissions. It never activates automatically after a Soyuz failure. If a Soyuz request timed out or returned an uncertain server error, check Soyuz's canonical run state before submitting locally; the two backends cannot deduplicate an uncertain acceptance.
+
+The Kaseki web console exposes the same choice with **Submit directly to this Kaseki host**.
 
 Before queue admission, Kaseki runs the task safety classifier. High-confidence
 requests involving credentials, permission changes, or security-boundary changes
