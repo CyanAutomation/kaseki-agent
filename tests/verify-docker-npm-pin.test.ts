@@ -100,7 +100,7 @@ describe('Docker global package registry verification', () => {
       { name: 'npm', selector: 'npm@11.21.0' },
       { name: '@earendil-works/pi-coding-agent', selector: '@earendil-works/pi-coding-agent@0.87.1' },
       { name: '@earendil-works/pi-server', selector: '@earendil-works/pi-server@0.87.1' },
-      { name: 'undici', selector: 'undici@8.10.2' },
+      { name: 'undici', selector: 'undici@8.12.2' },
       { name: 'undici-v6', selector: 'undici@6.28.1' },
       { name: 'undici-v7', selector: 'undici@7.29.1' },
       { name: 'brace-expansion', selector: 'brace-expansion@5.0.12' },
@@ -120,7 +120,7 @@ describe('Docker global package registry verification', () => {
       packages: Record<string, { version?: string }>;
     };
     expect(lock.packages['node_modules/brace-expansion']?.version).toBe('5.0.12');
-    expect(lock.packages['node_modules/undici']?.version).toBe('8.10.2');
+    expect(lock.packages['node_modules/undici']?.version).toBe('8.12.2');
     expect(lock.packages['node_modules/undici-v6']?.version).toBe('6.28.1');
     expect(lock.packages['node_modules/undici-v7']?.version).toBe('7.29.1');
     expect(lock.packages['node_modules/brace-expansion-v1']?.version).toBe('1.1.21');
