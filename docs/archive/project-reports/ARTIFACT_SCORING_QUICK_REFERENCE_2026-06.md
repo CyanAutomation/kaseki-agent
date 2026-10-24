@@ -268,7 +268,7 @@ docs/ARTIFACT_SCHEMAS.md           # OpenAPI specs
 docs/ARTIFACT_SCHEMAS.json         # JSON Schema definitions
 
 # Files to update:
-CLAUDE.md                          # New artifact inventory
+AGENTS.md                          # New artifact inventory
 docs/DEVELOPMENT.md                # Artifact requirements
 ```
 
@@ -317,7 +317,7 @@ docs/DEVELOPMENT.md                # Artifact requirements
 
 **Phase 4 (Documentation)**:
 
-- [CLAUDE.md](../../../CLAUDE.md)
+- [AGENTS.md](../../../AGENTS.md)
 - [docs/DEVELOPMENT.md](../../DEVELOPMENT.md)
 - [docs/ARTIFACT_SCHEMAS.md](../../ARTIFACT_SCHEMAS.md) (new)
 

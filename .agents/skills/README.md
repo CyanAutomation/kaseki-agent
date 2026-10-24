@@ -24,7 +24,7 @@ This directory contains specialized domain knowledge skills for kaseki-agent ope
 
 | Skill | Description | Trigger Keywords |
 | --- | --- | --- |
-| **[environment-configuration](environment-configuration/SKILL.md)** | Complete reference for configuring kaseki-agent via environment variables | env vars, configuration, settings, API key setup |
+| **[environment-configuration](environment-configuration/SKILL.md)** | Deployment setup guidance and pointers to the canonical environment reference | env vars, configuration, settings, API key setup |
 | **[quality-gate-config](quality-gate-config/SKILL.md)** | Defining and validating quality gates for kaseki runs | allowlist, diff size limits, file restrictions, quality gates |
 | **[prompt-engineering](prompt-engineering/SKILL.md)** | Composing, testing, and validating TASK_PROMPT for agent runs | task prompt, prompt design, security review, prompt testing |
 
@@ -55,7 +55,7 @@ This directory contains specialized domain knowledge skills for kaseki-agent ope
 | Skill | Description | Trigger Keywords |
 | --- | --- | --- |
 | **[fallow](fallow/SKILL.md)** | Codebase intelligence for JavaScript/TypeScript (dead code, duplication, complexity) | code health, unused code, circular dependencies, code duplication, complexity |
-| **[frontend-design](frontend-design/SKILL.md)** | Huashu-Design system for prototypes, animations, and interactive demos | HTML prototypes, design variations, animations, UI mockups, design direction |
+| **[frontend-design](frontend-design/SKILL.md)** | Opt-in guidance for focused, accessible HTML prototypes and visual demos | HTML prototypes, mockups, interactive demos, design exploration |
 
 ---
 
@@ -188,7 +188,9 @@ The skills form a knowledge graph with cross-references. Central "hub" skills th
 
 ## Skill Metadata Reference
 
-Each skill follows a consistent YAML frontmatter structure:
+Repository-maintained skills use this YAML frontmatter structure. `activation` is
+optional and should be `explicit` for skills that must only load when requested.
+Imported skills may also carry source-specific metadata:
 
 ```yaml
 ---
@@ -196,6 +198,7 @@ name: skill-name                    # Matches directory name
 description: One-line description   # Concise purpose statement
 tags: [tag1, tag2, ...]            # Categorization (kaseki, domain, tech)
 relatedSkills: [skill1, skill2]    # Cross-references to other skills
+activation: explicit               # Optional opt-in behavior
 ---
 ```
 
@@ -215,14 +218,14 @@ relatedSkills: [skill1, skill2]    # Cross-references to other skills
 
 Two skills are maintained as external or independently sourced integrations:
 
-- **fallow**: MIT-licensed tool by Bart Waardenburg (v1.0.0)
-- **frontend-design**: Huashu-Design system for HTML prototyping
+- **fallow**: MIT-licensed tool by Bart Waardenburg (skill version v1.0.0; upstream source is recorded in `skills-lock.json`)
+- **frontend-design**: Explicitly activated prototype guidance. The repository version is self-contained and does not require the upstream skill's omitted assets or reference files.
 
 External skills are opt-in and should be loaded only when a user explicitly requests that
 domain. They are not part of the default Kaseki operations, troubleshooting, or deployment
 workflow.
 
-These skills include additional frontmatter fields:
+Imported skills may include source-specific frontmatter fields, for example:
 
 ```yaml
 license: MIT
@@ -247,9 +250,13 @@ Browse skills by domain or use the decision tree to find the right skill for you
 
 ### For AI Agents
 
-Skills are automatically loaded via the CLAUDE.md skill registry. When a user request matches trigger keywords or domain patterns, the agent reads the corresponding SKILL.md file for domain-specific guidance.
+The repository does not define an automatic keyword registry. Use this index to
+select a skill when the task matches its scope, and consult the host agent's
+documentation for automatic skill discovery. `AGENTS.md` points agents to this
+directory but does not register individual skills.
 
-**Trigger Mechanism**: Keywords in user requests are matched against skill names, descriptions, and tags. The agent then reads the full skill content to answer the question or perform the task.
+**Activation**: Treat `activation: explicit` as opt-in guidance. For other
+skills, load only when their stated use cases match the task.
 
 **Cross-Reference Navigation**: When a skill references another skill (via `relatedSkills` field or inline links), the agent can follow these references to gather comprehensive context.
 
@@ -263,7 +270,7 @@ Skills are automatically loaded via the CLAUDE.md skill registry. When a user re
 2. Create SKILL.md with standard frontmatter
 3. Add related skills to connect it to the knowledge graph
 4. Update this README.md to list the new skill in the appropriate domain
-5. Update CLAUDE.md skill registry if needed
+5. Update `AGENTS.md` only when repository-wide instructions change; it is not a skill registry.
 
 ### Updating Cross-References
 
@@ -288,14 +295,11 @@ grep -r "relatedSkills:" .agents/skills/*/SKILL.md
 
 | Metric | Value |
 | --- | --- |
-| **Total Skills** | 15 |
-| **Internal Skills** | 13 |
+| **Total Skills** | 14 |
+| **Internal Skills** | 12 |
 | **External Skills** | 2 (fallow, frontend-design) |
-| **Average Cross-References** | 4-5 per skill |
-| **Hub Skills** | 2 (workflow-diagnosis, environment-configuration) |
-| **Skill Clusters** | 4 (Quality, Performance, Deployment, Testing) |
 
 ---
 
-**Last Updated**: 2026-07-26  
-**Skill Schema Version**: 1.0
+**Last Updated**: 2026-10-24
+**Skill Schema Version**: 1.1

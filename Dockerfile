@@ -130,7 +130,7 @@ RUN test -f /app/dist/kaseki-api-service.js \
     && test -f /app/dist/run-scorecard-markdown.js
 
 # Copy all application files (after build, so layer invalidation is minimal)
-COPY Dockerfile .dockerignore README.md CLAUDE.md CONTRIBUTING.md ./
+COPY Dockerfile .dockerignore README.md AGENTS.md CONTRIBUTING.md ./
 COPY kaseki run-kaseki.sh kaseki-agent.sh ./
 COPY templates ./templates
 COPY docs ./docs
@@ -350,7 +350,7 @@ COPY --from=runtime /opt/kaseki/workspace-cache /opt/kaseki/workspace-cache
 # Copy application files (excluding build artifacts)
 WORKDIR /app
 COPY --from=runtime /app/package.json /app/package-lock.json /app/tsconfig.json /app/eslint.config.js /app/
-COPY --from=runtime /app/Dockerfile /app/.dockerignore /app/README.md /app/CLAUDE.md /app/CONTRIBUTING.md ./
+COPY --from=runtime /app/Dockerfile /app/.dockerignore /app/README.md /app/AGENTS.md /app/CONTRIBUTING.md ./
 COPY --from=runtime /app/kaseki /app/run-kaseki.sh /app/kaseki-agent.sh ./
 COPY --from=runtime /app/src ./src
 RUN chmod -R a+rX /app/src

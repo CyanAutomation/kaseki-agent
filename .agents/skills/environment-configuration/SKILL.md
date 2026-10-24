@@ -1,436 +1,64 @@
 ---
 name: environment-configuration
-description: Complete reference for configuring kaseki-agent via environment variables
-tags: [kaseki, configuration, environment-variables, settings, secrets, tuning]
-relatedSkills: [cost-optimization, performance-tuning, docker-image-management, distributed-deployment, ci-cd-integration, quality-gate-config]
+description: Set up Kaseki deployments and find the supported environment settings.
+tags: [kaseki, configuration, environment-variables, secrets, deployment]
+relatedSkills: [cost-optimization, performance-tuning, docker-image-management, distributed-deployment, ci-cd-integration, quality-gate-config, prompt-engineering, workflow-diagnosis]
 ---
 
 # Environment Configuration for Kaseki Agent
 
-This skill provides comprehensive reference for all kaseki-agent environment variables and configuration options.
-
-## Overview
-
-**When to Use**:
-- Setting up a new kaseki deployment
-- Tuning performance for specific use cases
-- Securing credentials and API keys
-- Configuring Docker, OpenRouter, or quality gates
-- Creating configuration templates for teams
-
-**Key Concepts**:
-- Deployment environment variables configure the API service and worker runtime; run-specific choices belong in the API request (the CLI translates its arguments into that request).
-- Configuration sources and precedence depend on the setting. See the setting-specific documentation; do not assume one global hierarchy.
-- Secrets should use mounted secret files or a secret store rather than inline values where supported.
-- The API validates its server configuration at startup. CLI and worker settings have their own validation paths.
-
----
-
-## Core Agent Variables
-
-### Required Variables for the Pi API deployment
-
-| Variable | Purpose | Format | Example |
-|---|---|---|---|
-| `LLM_GATEWAY_URL` | OpenAI-compatible coding inference endpoint | HTTPS URL or a trusted local HTTP endpoint | `https://api.openai.com/v1` |
-| `LLM_GATEWAY_API_KEY_FILE` | Gateway authentication file | Host/container path | `/run/secrets/kaseki/llm_gateway_api_key` |
-| `REPO_URL` | Git repository for a submitted task | HTTPS URL | `https://github.com/org/repo` |
-
-OpenRouter is an optional credential for configured evaluation stages. It is
-not used for coding-agent inference or as a fallback when the gateway fails.
-
-### Optional Agent Variables
-
-<!-- BEGIN GENERATED PUBLIC ENVIRONMENT VARIABLES -->
-| Variable | Default | Description | Accepted values |
-|---|---|---|---|
-| `GIT_REF` | `main` | Git branch, tag, or commit to check out | Branch name, tag, or commit SHA |
-| `TASK_PROMPT` | `A code-fix task` | Instruction passed to the coding agent | Natural-language task prompt |
-| `KASEKI_MODEL` | `dynamic/kaseki-agent` | LLM model used for agent execution | Provider-supported model identifier, or `auto` |
-| `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | Maximum agent execution time in seconds | Non-negative integer, up to 86400 |
-| `KASEKI_RETENTION_RUNS` | `5` | Number of terminal run result directories retained during storage cleanup | Integer from 0 to 100 |
-| `KASEKI_STORAGE_WARN_FREE_BYTES` | `5368709120` | Free-space threshold that triggers automatic retention and cache cleanup | Positive integer bytes, greater than or equal to the minimum threshold |
-| `KASEKI_STORAGE_MIN_FREE_BYTES` | `2147483648` | Minimum free space required to accept a new run after cleanup | Positive integer bytes, less than or equal to the warning threshold |
-| `KASEKI_CAVEMAN` | `1` | Legacy switch for terse communication guidance | `0` (disable) or `1` (enable) |
-| `KASEKI_CAVEMAN_LEVEL` | `2` | Soft prompt and tool-output reduction level | Integer `0` through `3` |
-| `KASEKI_CAVEMAN_ROUTER` | `jev` | Enable or disable JEV routing for large tool results | `jev` or `off` |
-| `KASEKI_CAVEMAN_ROUTER_MIN_CHARS` | `6000 at level 2; 3000 at level 3` | Minimum result size for the legacy JEV tool-output router; semantic routing uses its token threshold | Positive integer |
-| `KASEKI_CAVEMAN_ROUTER_TIMEOUT_MS` | `1200` | Maximum wait for one dynamic tool-output routing decision | Positive integer milliseconds |
-| `KASEKI_CAVEMAN_ROUTER_CONFIDENCE_THRESHOLD` | `0.86` | Minimum choice confidence for a local transform in the legacy tool-output router | Number from 0 to 1 |
-| `KASEKI_SEMANTIC_CONTEXT_ROUTER_ENABLED` | `1` | Enable semantic disposition decisions for large coding-phase tool results | `0` (use existing Caveman routing) or `1` (enable semantic routing) |
-| `KASEKI_SEMANTIC_CONTEXT_MIN_TOKENS` | `1500` | Minimum estimated tool-result size before semantic routing considers JEV | Positive integer tokens |
-| `KASEKI_SEMANTIC_CONTEXT_DISCARD_THRESHOLD` | `0.98` | Minimum discard probability required to omit tool output or a scouting fact from active context | Number from 0 to 1 |
-| `KASEKI_SEMANTIC_CONTEXT_CONDENSE_THRESHOLD` | `0.7` | Minimum condense probability required to condense tool output or reduce a scouting fact | Number from 0 to 1 |
-| `KASEKI_SEMANTIC_PHASE_TRANSFER_ENABLED` | `1` | Enable bounded JEV routing of scouting facts as they enter coding context | `0` (preserve existing handoff) or `1` (route scouting facts) |
-| `KASEKI_SEMANTIC_CONTEXT_REEVALUATION_ENABLED` | `1` | Replace stale large file-read results after a successful same-path file edit | `0` (disable event reevaluation) or `1` (enable event reevaluation) |
-| `KASEKI_PROMPT_TOKEN_WARN_THRESHOLD` | `32000` | Per-request context size that triggers a compaction recommendation | Positive integer tokens |
-| `KASEKI_CODING_MAX_CONTEXT_TOKENS` | `32000` | Advisory context target for the coding phase | Positive integer tokens |
-| `KASEKI_CODING_MAX_TURNS` | `36` | Advisory logical-turn target for the coding phase | Positive integer turns |
-| `KASEKI_CODING_MAX_TOOL_OUTPUT_TOKENS` | `8000` | Advisory aggregate tool-output target for the coding phase | Positive integer tokens |
-| `KASEKI_CODING_OUTPUT_TOKEN_TARGET` | `4096` | Advisory generated-output target per coding response; not sent to the provider as a cap | Positive integer tokens |
-| `KASEKI_SCOUTING_MAX_TOOL_OUTPUT_TOKENS` | `4000` | Advisory aggregate tool-output target for the scouting phase | Positive integer tokens |
-| `KASEKI_GOAL_SETTING_MAX_TOOL_OUTPUT_TOKENS` | `4000` | Advisory aggregate tool-output target for the goal-setting phase | Positive integer tokens |
-| `KASEKI_GOAL_CHECK_MAX_TOOL_OUTPUT_TOKENS` | `3000` | Advisory aggregate tool-output target for the goal-check phase | Positive integer tokens |
-| `KASEKI_RUN_EVALUATION_MAX_TOOL_OUTPUT_TOKENS` | `3000` | Advisory aggregate tool-output target for the run-evaluation phase | Positive integer tokens |
-| `KASEKI_DECISION_MODEL` | `~typesafe/jev-latest` | Model alias used by Task Admission, Goal Check, Run Evaluation, and validation recovery through the shared DecisionService | A supported model alias |
-| `KASEKI_TYPED_EVALUATION_ENABLED` | `1` | Enable structured decision evaluation for Goal Check and Run Evaluation | `0` (disable) or `1` (enable) |
-| `KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD` | `0.8` | Confidence threshold for Goal Check criteria | Number from 0 to 1 |
-| `KASEKI_VALIDATION_RECOVERY_MODE` | `observe` | Validation failure assessment and retry policy | `off`, `observe`, or `auto` |
-| `KASEKI_VALIDATION_RETRY_SAFE_COMMANDS` | `[]` | Exact validation commands eligible for a bounded automatic retry | JSON array of command strings |
-| `KASEKI_VALIDATION_RETRY_CONFIDENCE_THRESHOLD` | `0.9` | Minimum confidence for a validation recovery retry | Number from 0 to 1 |
-<!-- END GENERATED PUBLIC ENVIRONMENT VARIABLES -->
-
----
-
-## Agent Communication Modes
-
-### Caveman Mode (Token Efficiency)
-
-**What it does**: Activates the Caveman skill to reduce prompt token usage ~75% across all Pi phases (goal-setting, scouting, coding, goal-check, evaluation) while preserving technical accuracy.
-
-**How it works**: 
-- Drop articles (a/an/the), filler (just, really, basically), pleasantries (sure, certainly)
-- Keep full sentences; use fragments when clear
-- Use short synonyms (big not extensive, fix not implement)
-- No tool narration, decorative tables, or emoji
-- Technical terms exact; code blocks unchanged
-- Pattern: `[thing] [action] [reason]. [next step].`
-
-**Usage**:
-```bash
-# Enable (default)
-KASEKI_CAVEMAN=1 ./run-kaseki.sh
-
-# Disable (verbose mode)
-KASEKI_CAVEMAN=0 ./run-kaseki.sh
-```
-
-**When to use**:
-- Cost-sensitive runs (OpenRouter/OpenAI token billing)
-- Long multi-step tasks where prompt length impacts quality
-- Large codebases requiring detailed exploration
-- Limited context window for complex tasks
-
-**When to disable** (`KASEKI_CAVEMAN=0`):
-- Prefer verbose, detailed guidance
-- Complex ambiguous tasks where clarity matters more than efficiency
-- Initial setup/testing where extra detail helps
-
-**Impact**:
-- Prompt token usage: ~75% reduction
-- Response quality: Maintained (technical substance preserved)
-- Processing time: No impact (token reduction only affects input)
-- Model behavior: No difference (same instructions, just more concise)
-
----
-
-## Quality Gate Variables
-
-### File Allowlist
-
-| Variable | Default | Purpose | Format |
-|---|---|---|---|
-| `KASEKI_CHANGED_FILES_ALLOWLIST` | (none) | Restrict agent changes | Space-separated glob patterns |
-
-**Examples**:
-```bash
-# Single file
-KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts"
-
-# Multiple files
-KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts tests/parser.test.ts"
-
-# Glob patterns
-KASEKI_CHANGED_FILES_ALLOWLIST="src/**/*.ts tests/**/*.test.ts"
-```
-
-### Diff Size & Security
-
-| Variable | Default | Purpose | Format |
-|---|---|---|---|
-| `KASEKI_MAX_DIFF_BYTES` | `400000` | Max diff size | Bytes (integer) |
-| `KASEKI_VALIDATION_ALLOWLIST` | (none) | Limit validation file changes | Space-separated glob patterns |
-
-### Validation Commands
-
-| Variable | Default | Purpose | Format |
-|---|---|---|---|
-| `KASEKI_VALIDATION_COMMANDS` | `auto` | Discover validation scripts with npm or Bun; explicit commands override discovery | `auto` or semicolon-separated |
-
-**Examples**:
-```bash
-# TypeScript
-KASEKI_VALIDATION_COMMANDS="npm run check;npm run test;npm run build"
-
-# Python
-KASEKI_VALIDATION_COMMANDS="python -m pytest;mypy src/"
-
-# Single command
-KASEKI_VALIDATION_COMMANDS="npm test"
-```
-
----
-
-## API Service Configuration
-
-### Authentication
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `KASEKI_API_KEYS` | empty only for trusted loopback development | Comma-separated API keys accepted by the service |
-| Host secret file | `/run/secrets/kaseki/kaseki_api_keys` in Docker; `~/.kaseki/secrets/kaseki_api_keys` locally | Read accepted API keys from the mounted host secret file when `KASEKI_API_KEYS` is unset. Compose mounts the host directory (default `~/secrets`) at `/run/secrets/kaseki`. |
-| `KASEKI_API_KEY` | unset | CLI bearer token presented to the server |
-| `KASEKI_API_KEYS_FILE` | discovered secret file | Optional CLI client key-file path; it does not configure the server's accepted keys |
-
-**Setup** (file-based, recommended):
-```bash
-# In Docker Compose, create this in the host secrets directory (default ~/secrets), mounted at /run/secrets/kaseki.
-# For a local API process, create it at ~/.kaseki/secrets/kaseki_api_keys.
-printf '%s\n' 'api-key-1' > ~/secrets/kaseki_api_keys
-chmod 600 ~/secrets/kaseki_api_keys
-# Docker deployments mount the selected host secret directory read-only.
-```
-
-### Service Port & Concurrency
-
-| Variable | Default | Purpose | Values |
-|---|---|---|---|
-| `KASEKI_API_PORT` | `8080` | HTTP listen port | Port number (1–65535) |
-| `KASEKI_API_HOST` | `127.0.0.1` without API keys; otherwise Node default | In-container API bind address | Hostname or IP; unauthenticated mode must remain loopback |
-| `KASEKI_API_MAX_CONCURRENT_RUNS` | `3` | Parallel run limit | 1–10 (typical) |
-
-**Example**:
-```bash
-# Network-accessible Docker API service: place the key file in the host secrets directory (default ~/secrets).
-# (mounted read-only by the deployment) before binding beyond loopback.
-KASEKI_API_PORT=8080
-KASEKI_API_HOST=0.0.0.0
-KASEKI_API_MAX_CONCURRENT_RUNS=8
-```
-
----
-
-## Docker & Container Settings
-
-| Variable | Default | Purpose | Values |
-|---|---|---|---|
-| `KASEKI_IMAGE` | `docker.io/cyanautomation/kaseki-agent:latest` | Container image | Registry/image:tag |
-| `DOCKER_HOST` | `/var/run/docker.sock` | Docker daemon socket | Path or TCP URL |
-| `DOCKER_GID` | (auto-detect) | Docker group ID | Numeric GID |
-
----
-
-## LLM Gateway and Optional Evaluation Credentials
-
-Coding-agent inference uses the configured OpenAI-compatible gateway:
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `LLM_GATEWAY_URL` | unset; required for gateway runs | Gateway base endpoint |
-| `LLM_GATEWAY_API_KEY_FILE` | `/run/secrets/kaseki/llm_gateway_api_key` in Compose | File containing gateway authentication |
-| `LLM_GATEWAY_MODEL` | `dynamic/kaseki-agent` | Optional model override for gateway routing |
-| `KASEKI_MODEL` | `dynamic/kaseki-agent` | Model identifier passed to the coding agent |
-
-Keep gateway credentials in a host secret file; do not put the value in `.env`,
-shell arguments, or the container environment. On Raspberry Pi, use
-`bash scripts/setup-pi.sh` to create and permission the file.
-
-OpenRouter is a separate optional credential for evaluation stages. It is not
-used for coding-agent inference or as a gateway fallback:
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `OPENROUTER_API_KEY_FILE` | unset | File containing the optional evaluation API key |
-
----
-
-## Cache & Performance
-
-| Variable | Default | Purpose | Values |
-|---|---|---|---|
-| `KASEKI_DEPENDENCY_CACHE_DIR` | `/cache/dependencies` | Dependency cache root | Writable mounted directory |
-| `KASEKI_DEPENDENCY_CACHE_MAX_BYTES` | `10737418240` | Maximum dependency cache size before pruning | Non-negative integer bytes |
-| `KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS` | `30` | Maximum dependency cache entry age | Non-negative integer days |
-| `KASEKI_KEEP_WORKSPACE` | `0` | Keep temp workspace after run | 0=delete, 1=keep |
-| `KASEKI_STREAM_PROGRESS` | `1` | Stream progress logs | 0=off, 1=on |
-
----
-
-## Logging & Debugging
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `KASEKI_DEBUG_RAW_EVENTS` | `0` | Keep raw Pi JSONL (no filtering) |
-| `KASEKI_API_LOG_LEVEL` | `info` | API log verbosity; takes precedence over generic `LOG_LEVEL` |
-
-**Values** (log levels):
-- `error` — Only errors
-- `warn` — Warnings and errors
-- `info` — Standard logging (default)
-- `debug` — Verbose debugging
-
----
-
-## Directory Structure
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `KASEKI_ROOT` | `/agents` | Base directory for agent data where applicable |
-| `KASEKI_RESULTS_DIR` | `/agents/kaseki-results` | Where run artifacts are stored |
-| `KASEKI_CACHE_DIR` | `/cache` | Container cache root |
-| `KASEKI_RUNS_DIR` | `/agents/kaseki-runs` | Ephemeral worker workspace root |
-
----
-
-## Configuration by Use Case
-
-### Minimal Configuration (Development)
+Use this skill to plan a setup or locate the right configuration source. The
+published [environment reference](../../../docs/ENV_VARS.md) is the source for
+supported public variable names, defaults, and behavior. The
+[generated public-variable catalog](PUBLIC_ENVIRONMENT_VARIABLES.md) is a
+compact, partial lookup; it is not a complete runtime manifest.
+
+## Key boundaries
+
+- Coding inference uses the configured OpenAI-compatible gateway. OpenRouter
+  credentials are optional for evaluation stages and are not a coding fallback.
+- API service, CLI, host scripts, and worker settings have setting-specific
+  sources and precedence; do not assume one global order.
+- Repository, ref, task prompt, and per-run quality gates are run inputs passed
+  through the CLI or API request.
+- Keep gateway and API credentials in supported secret files or a secret store.
+  Never put credential values in prompts, logs, or committed configuration.
+- Treat API bearer tokens as host-administrator credentials because the API can
+  launch workers through the mounted Docker socket.
+
+## Setup workflow
+
+1. Follow the active [deployment guide](../../../docs/DEPLOYMENT.md) for the
+   target host and Docker Compose layout.
+2. Configure the gateway URL and key file for coding inference. Keep evaluation
+   credentials separate and configure them only when evaluation stages need
+   them.
+3. Configure API authentication and secret mounts using the deployment guide.
+   Keep the API bound to loopback unless network access is intentionally
+   protected and configured.
+4. Supply repository, ref, task prompt, and task-specific gates on each run.
+   See [quality-gate-config](../quality-gate-config/SKILL.md) for change and
+   validation limits.
+5. Verify the actual values with the supported setup or diagnosis command for
+   that deployment. Check the environment reference when a setting's source or
+   default is unclear.
+
+### Local gateway run
 
 ```bash
-# .env
-OPENROUTER_API_KEY=sk-or-...
-REPO_URL=https://github.com/org/repo
+export KASEKI_PROVIDER=gateway
+export LLM_GATEWAY_URL=https://gateway.example.com/v1
+export LLM_GATEWAY_API_KEY_FILE="$HOME/.kaseki/secrets/llm_gateway_api_key"
+kaseki-agent run https://github.com/org/repo main "Fix the failing test"
 ```
 
-### Production Configuration
+The key path is an example; create and permission the file using the setup
+instructions for the selected deployment.
 
-```bash
-# /etc/kaseki/env
+## Related references
 
-# Core
-OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key
-REPO_URL=https://github.com/org/repo
-GIT_REF=main
-
-# Quality gates
-KASEKI_CHANGED_FILES_ALLOWLIST="src/** tests/**"
-KASEKI_MAX_DIFF_BYTES=300000
-KASEKI_VALIDATION_COMMANDS="npm run check;npm run test;npm run build"
-
-# API service
-KASEKI_API_PORT=8080
-KASEKI_API_MAX_CONCURRENT_RUNS=5
-# Mount the API key file as the Kaseki host secret `kaseki_api_keys`.
-
-# Performance
-KASEKI_AGENT_TIMEOUT_SECONDS=1800
-KASEKI_DEPENDENCY_CACHE_DIR=/agents/kaseki-cache/dependencies
-
-# Logging
-KASEKI_API_LOG_LEVEL=info
-```
-
-### Cost-Optimized Configuration
-
-```bash
-# Focus on reducing token usage
-
-KASEKI_MODEL=auto  # Let the configured gateway resolve the model
-KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts tests/parser.test.ts"  # Tight scope
-KASEKI_AGENT_TIMEOUT_SECONDS=2400  # Longer timeout = less thrashing
-KASEKI_DEPENDENCY_CACHE_DIR=/agents/kaseki-cache/dependencies
-```
-
-### High-Performance Configuration
-
-```bash
-# Focus on speed and throughput
-
-KASEKI_API_MAX_CONCURRENT_RUNS=8
-KASEKI_AGENT_TIMEOUT_SECONDS=10800
-KASEKI_DEPENDENCY_CACHE_DIR=/agents/kaseki-cache/dependencies
-KASEKI_STREAM_PROGRESS=1
-KASEKI_VALIDATION_COMMANDS="npm run test"  # Skip lint/build for speed
-```
-
-### Scoped/Restricted Configuration
-
-```bash
-# Limit blast radius for untrusted tasks
-
-KASEKI_CHANGED_FILES_ALLOWLIST="src/parser.ts tests/parser.test.ts"
-KASEKI_MAX_DIFF_BYTES=50000
-KASEKI_VALIDATION_COMMANDS="npm run test -- tests/parser.test.ts"
-KASEKI_AGENT_TIMEOUT_SECONDS=900  # Shorter timeout
-```
-
----
-
-## Environment Variable Precedence
-
-Order of precedence (highest to lowest):
-
-1. **Command-line arguments** (if using CLI)
-   ```bash
-   ./run-kaseki.sh --api-key sk-or-... --repo-url https://...
-   ```
-
-2. **Explicit env file** (with `--env-file`)
-   ```bash
-   ./run-kaseki.sh --env-file /path/to/.env
-   ```
-
-3. **Local .env file** (automatically loaded)
-   ```bash
-   # In current directory: .env
-   OPENROUTER_API_KEY=sk-or-...
-   ```
-
-4. **System environment variables**
-   ```bash
-   export OPENROUTER_API_KEY=sk-or-...
-   ```
-
-5. **Defaults** (hardcoded in scripts)
-   ```bash
-   # Default: GIT_REF=main, KASEKI_AGENT_TIMEOUT_SECONDS=10800
-   ```
-
----
-
-## Validation Checklist
-
-Before running kaseki, verify configuration:
-
-```bash
-#!/bin/bash
-# kaseki-config-check.sh
-
-echo "🔍 Validating kaseki configuration..."
-
-# Check API key
-[[ -z "$OPENROUTER_API_KEY" ]] && \
-  echo "❌ OPENROUTER_API_KEY not set" || echo "✅ API key set"
-
-# Check repo URL
-[[ -z "$REPO_URL" ]] && \
-  echo "❌ REPO_URL not set" || echo "✅ Repo URL set"
-
-# Check ports available
-if netstat -tuln | grep -q ":8080 "; then
-  echo "⚠️  Port 8080 in use"
-else
-  echo "✅ Port 8080 available"
-fi
-
-# Check disk space
-DISK_AVAIL=$(df /agents | awk 'NR==2 {print $4}')
-[[ $DISK_AVAIL -lt 5000000 ]] && \
-  echo "⚠️  Low disk space: $((DISK_AVAIL/1024)) MB available" || \
-  echo "✅ Sufficient disk space"
-
-# Check Docker
-docker ps > /dev/null 2>&1 && \
-  echo "✅ Docker available" || echo "❌ Docker not available"
-
-echo "✅ Configuration check complete"
-```
-
----
-
-## See Also
-
-- [ENV_VARS.md](../../../docs/ENV_VARS.md) — Authoritative environment variable reference
-- [PERFORMANCE_TUNING.md](../../../docs/PERFORMANCE_TUNING.md) — Configuration tuning for performance
-- [COST_ESTIMATION.md](../../../docs/COST_ESTIMATION.md) — Cost-aware configuration
-- [DEPLOYMENT.md](../../../docs/DEPLOYMENT.md) — Deployment-specific configuration
+- [Environment variables](../../../docs/ENV_VARS.md)
+- [Deployment](../../../docs/DEPLOYMENT.md)
+- [Advanced configuration](../../../docs/ADVANCED_CONFIG.md)
+- [Cost optimization](../cost-optimization/SKILL.md)
+- [Docker image management](../docker-image-management/SKILL.md)

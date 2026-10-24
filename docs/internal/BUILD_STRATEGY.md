@@ -204,7 +204,7 @@ build (multi-arch amd64 + arm64)
 
 4. **Update Dockerfile** with new pinned base image (if security patches available)
 5. **Trigger full CI pipeline** (workflow_dispatch)
-6. **Document in CLAUDE.md** and git commit message
+6. **Document in AGENTS.md** and git commit message
 
 ### Node Version Upgrade Path
 
@@ -383,8 +383,8 @@ docker buildx build \
 
 ## References
 
-- [CLAUDE.md](../../CLAUDE.md) — Project overview and running kaseki-agent
-- [.github/skills/docker-image-management/SKILL.md](../../.agents/skills/docker-image-management/SKILL.md) — When/how to update base image
+- [AGENTS.md](../../AGENTS.md) — Project overview and repository instructions
+- [.agents/skills/docker-image-management/SKILL.md](../../.agents/skills/docker-image-management/SKILL.md) — When/how to update base image
 - [.github/workflows/build-docker-image.yml](../../.github/workflows/build-docker-image.yml) — Full CI/CD pipeline
 
 ---

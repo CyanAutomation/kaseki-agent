@@ -21,6 +21,7 @@ Use [the documentation index](../INDEX.md) for current product guidance and
 | `.agents/skills/distributed-deployment/SKILL.md` | Agent-facing skill and reference |
 | `.agents/skills/docker-image-management/SKILL.md` | Agent-facing skill and reference |
 | `.agents/skills/environment-configuration/SKILL.md` | Agent-facing skill and reference |
+| `.agents/skills/environment-configuration/PUBLIC_ENVIRONMENT_VARIABLES.md` | Generated environment-variable quick lookup |
 | `.agents/skills/fallow/SKILL.md` | Agent-facing skill and reference |
 | `.agents/skills/fallow/references/cli-reference.md` | Agent-facing skill and reference |
 | `.agents/skills/fallow/references/gotchas.md` | Agent-facing skill and reference |
@@ -37,7 +38,7 @@ Use [the documentation index](../INDEX.md) for current product guidance and
 | `.github/ISSUE_TEMPLATE/security.md` | GitHub workflow or contribution template |
 | `.github/PULL_REQUEST_TEMPLATE/default.md` | GitHub workflow or contribution template |
 | `CHANGELOG.md` | Release history |
-| `CLAUDE.md` | Assistant instructions |
+| `AGENTS.md` | Repository agent instructions |
 | `CONTRIBUTING.md` | Contributor guidance |
 | `README.md` | Project entry point |
 | `SETUP_GUIDE.md` | Compatibility pointer to current setup guidance |

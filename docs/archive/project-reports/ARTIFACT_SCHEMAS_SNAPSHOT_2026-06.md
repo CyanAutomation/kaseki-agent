@@ -447,7 +447,7 @@ Breaking changes increment major version. Tools should check `schema_version` on
 
 ## References
 
-- [CLAUDE.md](../../../CLAUDE.md) — Artifact inventory and availability
+- [AGENTS.md](../../../AGENTS.md) — Artifact inventory and availability
 - [ARTIFACT_EVALUATION_REVISED.md](../ARTIFACT_EVALUATION_REVISED.md) — Phase 1-4 implementation
 - [Quality Gates](../../QUALITY_GATES.md) — Exit codes and gate definitions
 # Scorecard API

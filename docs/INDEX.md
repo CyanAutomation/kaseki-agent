@@ -90,7 +90,7 @@ current user guides as the source of truth for shipped behavior.
 ## Repository material
 
 - [Contributing guide](../CONTRIBUTING.md)
-- [Repository instructions](../CLAUDE.md)
+- [Repository instructions](../AGENTS.md)
 - [Agent skills](../.agents/skills/README.md)
 - [Internal engineering notes](internal/)
 - [Configuration audit](configuration-audit/)

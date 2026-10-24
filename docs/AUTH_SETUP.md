@@ -333,4 +333,4 @@ See [docs/DEPLOYMENT.md](DEPLOYMENT.md) for full examples.
 
 - [docs/DEVELOPMENT.md](DEVELOPMENT.md) — Local development setup
 - [docs/DEPLOYMENT.md](DEPLOYMENT.md) — Docker Compose service deployment
-- [CLAUDE.md](../CLAUDE.md) — Architecture and environment variables reference
+- [AGENTS.md](../AGENTS.md) — Repository architecture and development guidance

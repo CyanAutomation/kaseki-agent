@@ -2,7 +2,7 @@
 name: cost-optimization
 description: Cost analysis, budgeting, and optimization strategies for kaseki-agent deployments
 tags: [kaseki, cost, budget, optimization, token-usage, roi]
-relatedSkills: [prompt-engineering, quality-gate-config, dependency-cache-optimization, performance-tuning, environment-configuration]
+relatedSkills: [prompt-engineering, quality-gate-config, dependency-cache-optimization, performance-tuning, environment-configuration, ci-cd-integration]
 ---
 
 # Cost Optimization for Kaseki Agent
