@@ -102,6 +102,12 @@ for skill_file in "$SKILLS_DIR"/*/SKILL.md; do
     
     skill_dir=$(dirname "$skill_file")
     skill_name=$(basename "$skill_dir")
+
+    if [ "$(head -n 1 "$skill_file")" != "---" ] || \
+        ! awk '/^---$/{if (++n==2) found=1} END {exit !found}' "$skill_file"; then
+        echo "❌ $skill_name: Missing or unterminated YAML frontmatter"
+        EXIT_CODE=1
+    fi
     
     # Extract name from frontmatter
     frontmatter_name=$(extract_yaml_field "$skill_file" "name")
@@ -109,11 +115,18 @@ for skill_file in "$SKILLS_DIR"/*/SKILL.md; do
     # Check if name matches directory
     if [ -z "$frontmatter_name" ]; then
         echo "⚠️  $skill_name: Could not extract name from frontmatter"
+        EXIT_CODE=1
     elif [ "$frontmatter_name" != "$skill_name" ]; then
         echo "❌ $skill_name: Frontmatter name '$frontmatter_name' doesn't match directory name"
         EXIT_CODE=1
     else
         echo "✅ $skill_name: Name matches directory"
+    fi
+
+    description=$(extract_yaml_field "$skill_file" "description")
+    if [ -z "$description" ]; then
+        echo "❌ $skill_name: Missing description in frontmatter"
+        EXIT_CODE=1
     fi
     
     # Extract relatedSkills (handle array format: [skill1, skill2])
@@ -176,6 +189,7 @@ for skill_file in "$SKILLS_DIR"/*/SKILL.md; do
         
         if [ -z "$reverse_line" ]; then
             echo "⚠️  $skill_name → $related, but $related has no relatedSkills"
+            EXIT_CODE=1
             continue
         fi
         
@@ -185,6 +199,7 @@ for skill_file in "$SKILLS_DIR"/*/SKILL.md; do
             : # Reciprocal reference exists, all good
         else
             echo "⚠️  $skill_name → $related, but $related ↛ $skill_name"
+            EXIT_CODE=1
         fi
     done <<< "$related_skills"
 done

@@ -207,7 +207,7 @@ Is there clear ownership and responsive maintenance?
 ls -la
 
 # Check for architecture docs
-cat CLAUDE.md README.md CONTRIBUTING.md
+cat AGENTS.md README.md CONTRIBUTING.md
 
 # Verify entrypoints
 cat run-kaseki.sh | head -20

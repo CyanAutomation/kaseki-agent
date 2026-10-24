@@ -32,13 +32,16 @@ describe('JEV classifier client', () => {
   it('keeps the launcher and published environment defaults aligned with the runtime default', () => {
     const repoRoot = path.resolve(__dirname, '..');
     const launcher = fs.readFileSync(path.join(repoRoot, 'run-kaseki.sh'), 'utf8');
-    const skill = fs.readFileSync(path.join(repoRoot, '.agents/skills/environment-configuration/SKILL.md'), 'utf8');
+    const catalog = fs.readFileSync(
+      path.join(repoRoot, '.agents/skills/environment-configuration/PUBLIC_ENVIRONMENT_VARIABLES.md'),
+      'utf8',
+    );
     const metadata = JSON.parse(fs.readFileSync(path.join(repoRoot, '.agents/skills/environment-configuration/environment-variables.json'), 'utf8'));
     const envDocs = fs.readFileSync(path.join(repoRoot, 'docs/ENV_VARS.md'), 'utf8');
 
     expect(launcher).toContain(`KASEKI_DECISION_MODEL="\${KASEKI_DECISION_MODEL:-${DEFAULT_JEV_MODEL}}"`);
     expect(metadata.find((item: { name: string }) => item.name === 'KASEKI_DECISION_MODEL')?.default).toBe(DEFAULT_JEV_MODEL);
-    expect(skill).toContain(`| \`KASEKI_DECISION_MODEL\` | \`${DEFAULT_JEV_MODEL}\` |`);
+    expect(catalog).toContain(`| \`KASEKI_DECISION_MODEL\` | \`${DEFAULT_JEV_MODEL}\` |`);
     expect(envDocs).toContain(`| \`KASEKI_DECISION_MODEL\` | \`${DEFAULT_JEV_MODEL}\` |`);
     expect(envDocs).toContain(`KASEKI_DECISION_MODEL\` (keep \`${DEFAULT_JEV_MODEL}\`)`);
   });

@@ -31,8 +31,11 @@ describe('Environment configuration documentation parity', () => {
     });
   });
 
-  it('keeps the generated skill table in parity with canonical metadata', () => {
+  it('keeps the generated public-variable catalog in parity with canonical metadata', () => {
     const skill = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
+    const catalogPath = path.join(skillDir, 'PUBLIC_ENVIRONMENT_VARIABLES.md');
+    expect(fs.existsSync(catalogPath)).toBe(true);
+    const catalog = fs.readFileSync(catalogPath, 'utf8');
     const generatedRows = metadata.map((variable) =>
       `| \`${variable.name}\` | \`${variable.default}\` | ${variable.description} | ${variable.acceptedValues} |`,
     );
@@ -44,7 +47,14 @@ describe('Environment configuration documentation parity', () => {
       '<!-- END GENERATED PUBLIC ENVIRONMENT VARIABLES -->',
     ].join('\n');
 
-    expect(skill).toContain(generatedSection);
+    expect(catalog).toContain(generatedSection);
+    expect(skill).toContain('[generated public-variable catalog](PUBLIC_ENVIRONMENT_VARIABLES.md)');
+    expect(skill).not.toMatch(/<!-- BEGIN GENERATED PUBLIC ENVIRONMENT VARIABLES -->/);
+  });
+
+  it('keeps environment setup guidance focused and concise', () => {
+    const skill = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
+    expect(skill.split('\n').length).toBeLessThanOrEqual(140);
   });
 
   it('does not present ignored provider fallback names as supported configuration', () => {
