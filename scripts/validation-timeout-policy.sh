@@ -17,6 +17,17 @@ validation_timeout_or_default() {
   fi
 }
 
+validation_default_timeout_seconds() {
+  local architecture="${KASEKI_VALIDATION_HOST_ARCH:-}"
+  if [ -z "$architecture" ]; then
+    architecture="$(uname -m 2>/dev/null || printf 'unknown')"
+  fi
+  case "$architecture" in
+    aarch64|arm64) printf '900\n' ;;
+    *) printf '300\n' ;;
+  esac
+}
+
 validation_timeout_for_command() {
   local command="$1"
   local timeout_value
@@ -29,7 +40,7 @@ validation_timeout_for_command() {
       ;;
     *)
       timeout_value="${KASEKI_VALIDATION_TIMEOUT_SECONDS:-}"
-      default_value=300
+      default_value="$(validation_default_timeout_seconds)"
       ;;
   esac
 

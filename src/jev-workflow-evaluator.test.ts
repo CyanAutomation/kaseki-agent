@@ -8,6 +8,7 @@ import type { ClassificationAnswer } from './types/openrouter-decisions';
 
 const ENVIRONMENT_KEYS = [
   'KASEKI_TASK_MODE',
+  'KASEKI_WORKSPACE_DIR',
   'KASEKI_VALIDATION_RECOVERY_MODE',
   'KASEKI_FAILED_VALIDATION_COMMAND',
   'KASEKI_FAILED_VALIDATION_EXIT_CODE',
@@ -158,6 +159,89 @@ describe('decision workflow telemetry', () => {
       reviewer_confidence: 'low',
       task_completion_score: 2,
     });
+  });
+
+  it('supplies bounded, redacted implementation evidence to JEV for documentation-only changes', async () => {
+    const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-workflow-repo-'));
+    const repoDir = path.join(workspaceDir, 'repo');
+    fs.mkdirSync(path.join(repoDir, 'src'), { recursive: true });
+    fs.mkdirSync(path.join(repoDir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(repoDir, 'src/api.ts'), 'export const endpoint = "/api/v1/runs";\nconst credential = "' + 'sk-or-' + 'P9m4Q2x7L8v3R1w6T0a5NcKd";\n');
+    fs.writeFileSync(path.join(repoDir, 'scripts/run.sh'), 'npm run check\n');
+    fs.writeFileSync(path.join(repoDir, '.env'), 'LOCAL_ONLY_SENTINEL=must-not-be-sent\n');
+    fs.writeFileSync(path.join(resultsDir, 'changed-files.txt'), 'docs/API.md\n');
+    fs.writeFileSync(path.join(resultsDir, 'git.diff'), 'diff --git a/docs/API.md b/docs/API.md\n+GET /api/v1/runs\n');
+    fs.writeFileSync(path.join(resultsDir, 'goal-setting.json'), JSON.stringify({
+      outcome_policy: 'change_required',
+      success_criteria: [{
+        id: 'criterion_1',
+        criterion: 'Documentation statements match the current implementation.',
+        verification_sources: ['src/api.ts', '../outside.env', 'src/../.env', '.env'],
+      }],
+    }));
+    fs.writeFileSync(path.join(resultsDir, 'scouting.json'), JSON.stringify({
+      relevant_files: [{ path: 'scripts/run.sh', reason: 'Defines the documented check command.' }],
+    }));
+    process.env.KASEKI_WORKSPACE_DIR = workspaceDir;
+
+    let capturedRequest: DecisionRequest | undefined;
+    const service = successfulService();
+    try {
+      await evaluateWorkflow('goal-check', resultsDir, '1', {
+        decisionService: {
+          ...service,
+          decide: async (request) => {
+            capturedRequest = request;
+            return service.decide(request);
+          },
+        },
+      });
+    } finally {
+      fs.rmSync(workspaceDir, { recursive: true, force: true });
+    }
+
+    expect(capturedRequest?.state).toMatchObject({
+      implementation_evidence: [
+        expect.objectContaining({ path: 'src/api.ts', content: expect.stringContaining('/api/v1/runs') }),
+        expect.objectContaining({ path: 'scripts/run.sh', content: expect.stringContaining('npm run check') }),
+      ],
+    });
+    expect(JSON.stringify(capturedRequest?.state)).not.toContain('P9m4Q2x7L8v3R1w6T0a5NcKd');
+    expect(JSON.stringify(capturedRequest?.state.implementation_evidence)).not.toContain('outside.env');
+    expect(JSON.stringify(capturedRequest?.state.implementation_evidence)).not.toContain('.env');
+    expect(JSON.stringify(capturedRequest?.state.implementation_evidence)).not.toContain('LOCAL_ONLY_SENTINEL');
+  });
+
+  it('omits implementation snippets for non-documentation changes', async () => {
+    const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-workflow-repo-'));
+    const repoDir = path.join(workspaceDir, 'repo');
+    fs.mkdirSync(path.join(repoDir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(repoDir, 'src/api.ts'), 'export const endpoint = "/api/v1/runs";\n');
+    fs.writeFileSync(path.join(resultsDir, 'changed-files.txt'), 'src/api.ts\n');
+    fs.writeFileSync(path.join(resultsDir, 'goal-setting.json'), JSON.stringify({
+      outcome_policy: 'change_required',
+      success_criteria: [{ criterion: 'The implementation matches the source contract.', verification_sources: ['src/api.ts'] }],
+    }));
+    fs.writeFileSync(path.join(resultsDir, 'scouting.json'), JSON.stringify({ relevant_files: [{ path: 'src/api.ts' }] }));
+    process.env.KASEKI_WORKSPACE_DIR = workspaceDir;
+
+    let capturedRequest: DecisionRequest | undefined;
+    const service = successfulService();
+    try {
+      await evaluateWorkflow('goal-check', resultsDir, '1', {
+        decisionService: {
+          ...service,
+          decide: async (request) => {
+            capturedRequest = request;
+            return service.decide(request);
+          },
+        },
+      });
+    } finally {
+      fs.rmSync(workspaceDir, { recursive: true, force: true });
+    }
+
+    expect(capturedRequest?.state.implementation_evidence).toEqual([]);
   });
 
   it.each([

@@ -233,7 +233,7 @@ For API-backed runs, empty-diff acceptance is derived from the admitted task mod
 | `KASEKI_PRE_AGENT_VALIDATION` | `1` | boolean | Run validation before Pi so existing baseline failures are caught before agent work starts |
 | `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` | same as `KASEKI_VALIDATION_COMMANDS` | string | Semicolon-separated validation commands for the pre-agent baseline phase |
 | `KASEKI_VALIDATION_COMMANDS` | `auto` | string | Discover scripts using the target repository package manager, or supply semicolon-separated commands for the post-agent final-diff phase |
-| `KASEKI_VALIDATION_TIMEOUT_SECONDS` | `300` | positive integer | Maximum time allowed for each validation command; unset or invalid values use the default, and timed-out commands emit structured diagnostics and stop the phase when fail-fast is enabled |
+| `KASEKI_VALIDATION_TIMEOUT_SECONDS` | `300` on other architectures; `900` on ARM64 | positive integer | Maximum time allowed for each validation command; unset or invalid values use the architecture-specific default, and timed-out commands emit structured diagnostics and stop the phase when fail-fast is enabled |
 | `KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS` | `900` | positive integer | Timeout for explicit build commands such as `npm run build`; unset or invalid values use the default, preventing production builds from being terminated by the shorter general validation timeout |
 
 **Behavior:**
@@ -243,8 +243,9 @@ For API-backed runs, empty-diff acceptance is derived from the admitted task mod
 - Post-agent commands run after Pi, allowlist restoration, and quality gates. A failure means the final agent output failed validation; inspect `validation.log`, `validation-raw.log`, `validation-env.log`, and `validation-timings.tsv`.
 - Commands are executed sequentially within each phase.
 - Explicit build commands use `KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS`; all other commands use `KASEKI_VALIDATION_TIMEOUT_SECONDS`.
-- Plain `npm run` chains are expanded into separate timed stages when their scripts contain only further plain `npm run` chains and have no lifecycle hooks. Shell operations and other script bodies remain intact. An expanded build stage receives the build budget.
-- The host launcher forwards both validation timeout overrides to workers. Worker metadata records the selected image reference and immutable local image ID; baseline cache identity also includes the kernel, architecture, page size, and virtual-memory limit.
+- Simple `&&` command chains are expanded into separate timed stages, including dependency installation followed by tests. Commands using quotes, pipes, redirects, `||`, control flow, or stateful shell builtins remain intact. An expanded build stage receives the build budget.
+- The host launcher forwards the selected timeout to workers. ARM64 hosts such as Raspberry Pi default to 900 seconds per command; other architectures default to 300 seconds. Worker metadata records the selected image reference and immutable local image ID; baseline cache identity also includes the kernel, architecture, page size, and virtual-memory limit.
+- Workerd compatibility is checked again immediately before each relevant validation command. This lets dependency installation complete before the worker tests the installed native runtime and can stop early with host/kernel diagnostics when the Pi cannot run that binary.
 - Missing package scripts in `npm run` or `bun run` commands are skipped (non-fatal). Native `bun test` is executed as supplied.
 - First failure stops that validation phase and exits with code 7.
 - Empty or `none` post-agent commands (`KASEKI_VALIDATION_COMMANDS=""` or `KASEKI_VALIDATION_COMMANDS=none`) skip post-agent validation.

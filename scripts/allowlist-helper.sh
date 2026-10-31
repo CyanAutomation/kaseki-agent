@@ -46,12 +46,13 @@ allowlist_pattern_to_regex() {
 }
 
 build_allowlist_regex() {
-  local patterns pattern regexes=()
+  local patterns pattern regexes=""
   patterns="${1:-${KASEKI_CHANGED_FILES_ALLOWLIST:-}}"
   while IFS= read -r pattern || [ -n "$pattern" ]; do
     [ -z "$pattern" ] && continue
-    regexes+=("$(allowlist_pattern_to_regex "$pattern")")
+    if [ -n "$regexes" ]; then regexes="$regexes|"; fi
+    regexes="$regexes$(allowlist_pattern_to_regex "$pattern")"
   done < <(printf '%s\n' "$patterns" | tr ' ' '\n')
 
-  (IFS='|'; printf '%s' "${regexes[*]}")
+  printf '%s' "$regexes"
 }

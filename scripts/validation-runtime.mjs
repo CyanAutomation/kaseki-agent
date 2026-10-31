@@ -15,20 +15,47 @@ export function classifyRuntimeFailure(text) {
   return null;
 }
 
-// Only flatten complete chains of plain npm script calls. Hooks, arguments,
-// environment assignments, redirects, and other shell syntax stay opaque.
+const SIMPLE_COMMAND_TOKEN = /^[A-Za-z0-9_./:@%+=,-]+$/;
+const SAFE_ENVIRONMENT_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=[A-Za-z0-9_./:@%+=,-]+$/;
+const STATEFUL_SHELL_BUILTINS = new Set([
+  '.', 'alias', 'break', 'builtin', 'cd', 'continue', 'declare', 'eval', 'exec', 'exit', 'export', 'local',
+  'popd', 'pushd', 'read', 'readonly', 'return', 'set', 'shopt', 'source', 'trap', 'typeset', 'umask',
+  'unalias', 'unset', 'wait',
+]);
+
+function splitSimpleAndChain(text) {
+  const pieces = text.split(/\s*&&\s*/).map((piece) => piece.trim());
+  if (pieces.length < 2) return undefined;
+  for (const piece of pieces) {
+    if (!piece) return undefined;
+    const words = piece.split(/\s+/);
+    let index = 0;
+    while (index < words.length && SAFE_ENVIRONMENT_ASSIGNMENT.test(words[index])) index += 1;
+    const executable = words[index];
+    if (!executable || STATEFUL_SHELL_BUILTINS.has(executable)) return undefined;
+    if (words.some((word) => !SIMPLE_COMMAND_TOKEN.test(word))) return undefined;
+  }
+  return pieces;
+}
+
+// Split only simple command lists. Quotes, redirections, pipes, control flow,
+// and stateful builtins remain intact so separate shells preserve semantics.
 export function expandValidationCommands(commands, scripts) {
+  function expandOne(command, seen) {
+    const match = /^npm run ([\w:.-]+)$/.exec(command);
+    if (!match) return [command];
+    const name = match[1];
+    if (!scripts[name] || scripts[`pre${name}`] || scripts[`post${name}`] || seen.has(name) || seen.size >= 12) return [command];
+    const nested = splitSimpleAndChain(scripts[name]);
+    if (!nested) return [command];
+    const next = new Set(seen).add(name);
+    return nested.flatMap((piece) => expand(piece, next));
+  }
+
   function expand(command, seen = new Set()) {
-    const pieces = command.split(/\s*&&\s*/);
-    if (!pieces.every(piece => /^npm run [\w:.-]+$/.test(piece.trim()))) return [command];
-    return pieces.flatMap(piece => {
-      const name = piece.trim().slice(8);
-      if (!scripts[name] || scripts[`pre${name}`] || scripts[`post${name}`] || seen.has(name) || seen.size >= 12) return [piece.trim()];
-      const next = new Set(seen).add(name);
-      const nested = scripts[name].split(/\s*&&\s*/);
-      if (nested.length < 2 || !nested.every(part => /^npm run [\w:.-]+$/.test(part.trim()))) return [piece.trim()];
-      return expand(scripts[name], next);
-    });
+    const pieces = splitSimpleAndChain(command);
+    if (pieces) return pieces.flatMap((piece) => expandOne(piece, seen));
+    return expandOne(command.trim(), seen);
   }
   return commands.split(';').flatMap(command => expand(command.trim())).join(';');
 }
@@ -52,7 +79,7 @@ export function hostRuntimeIdentity() {
   return {
     platform: os.platform(), arch: os.arch(), kernel: os.release(),
     pageSize: spawnSync('getconf', ['PAGESIZE'], { encoding: 'utf8', timeout: 1000 }).stdout?.trim(),
-    addressSpaceConfig: kernelConfig?.split('\n').filter(line => /^CONFIG_ARM64_VA_BITS/.test(line)),
+    addressSpaceConfig: kernelConfig?.split('\n').filter(line => /^CONFIG_ARM64_VA_BITS/.test(line)) || [],
     processLimits: readOptional('/proc/self/limits'),
     memoryLimit: readOptional('/sys/fs/cgroup/memory.max'),
     memoryEvents: readOptional('/sys/fs/cgroup/memory.events'),
@@ -144,7 +171,9 @@ export function smokeWorkerd(workspace, commands) {
       results.push({ binary, exitCode: result.status, signal: result.signal, stderr, error: result.error?.message });
       if (result.status !== 0 || result.error) return {
         status: 'failed', classification: classifyRuntimeFailure(stderr) || 'workerd_startup_failed', results,
-        remediation: 'Verify host virtual address capabilities and process/container limits; run validation on a host compatible with this locked workerd binary. Keep integration tests enabled.',
+        remediation: os.arch() === 'arm64'
+          ? 'On a Raspberry Pi or other arm64 host, inspect CONFIG_ARM64_VA_BITS in /boot/config-$(uname -r) or /proc/config.gz and check process/container limits. Use a kernel and host compatible with this locked workerd binary. Keep integration tests enabled.'
+          : 'Verify host virtual address capabilities and process/container limits; run validation on a host compatible with this locked workerd binary. Keep integration tests enabled.',
       };
     }
     return { status: 'passed', results };
