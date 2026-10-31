@@ -162,14 +162,14 @@ echo "==> Test: Secret scanning"
   reset_results
   cd "$TMP_DIR/workspace/repo"
   mkdir -p src tests
-  cat > src/secret.ts <<'SECRET'
-export const key = "sk-or-aBcDeFgHiJkLmNoPqRsT";
-SECRET
+  unknown_prefix='sk-or-'
+  unknown_suffix='P9m4Q2x7L8v3R1w6T0a5NcKd'
+  printf 'export const key = "%s%s";\n' "$unknown_prefix" "$unknown_suffix" > src/secret.ts
 
   run_secret_scan
 
   if [ "$SECRET_SCAN_EXIT" -eq 6 ] && \
-    jq -e 'select(.file == "src/secret.ts" and .pattern == "sk-or-aBcDeFgHiJkLmNoPqRsT" and .status == "real_leak")' "$KASEKI_RESULTS_DIR/.secret-scan-temp.jsonl" >/dev/null; then
+    jq -e --arg pattern "${unknown_prefix}${unknown_suffix}" 'select(.file == "src/secret.ts" and .pattern == $pattern and .status == "real_leak")' "$KASEKI_RESULTS_DIR/.secret-scan-temp.jsonl" >/dev/null; then
     pass "Secret scanning: production path detects unallowlisted sk-or-* pattern"
   else
     fail "Secret scanning: expected exit 6 and real_leak artifact for src/secret.ts"
@@ -188,21 +188,60 @@ SECRET
   fi
 }
 
+# Synthetic provider examples copied into agent events must not fail the
+# repository-wide scan, while live-looking keys on the same line still must.
+echo '==> Test: Synthetic fixture noise in run artifacts'
+{
+  reset_results
+  cd "$TMP_DIR/workspace/repo"
+  rm -f src/fixtures.ts
+  mkdir -p src
+  fixture_prefix='sk-or-'
+  fixture_suffix_a='aBcDeFgHiJkLmNoPqRsT'
+  fixture_suffix_b='ZyXwVuTsRqPoNmLkJiHg'
+  printf 'const fixtures = "%s%s %s%s";\n' "$fixture_prefix" "$fixture_suffix_a" "$fixture_prefix" "$fixture_suffix_b" > src/fixtures.ts
+  printf '*:%s%s\n*:%s%s\n' "$fixture_prefix" "$fixture_suffix_a" "$fixture_prefix" "$fixture_suffix_b" > .kaseki-secret-allowlist
+  unknown_prefix='sk-or-'
+  unknown_suffix='P9m4Q2x7L8v3R1w6T0a5NcKd'
+  printf 'sk-test-key %s%s %s%s %s%s\n' "$fixture_prefix" "$fixture_suffix_a" "$fixture_prefix" "$fixture_suffix_b" "$unknown_prefix" "$unknown_suffix" > "$KASEKI_RESULTS_DIR/pi-events.jsonl"
+
+  run_secret_scan
+
+  if [ "$SECRET_SCAN_EXIT" -eq 6 ] && \
+    jq -e -s \
+      --arg file "$KASEKI_RESULTS_DIR/pi-events.jsonl" \
+      --arg first "${fixture_prefix}${fixture_suffix_a}" \
+      --arg second "${fixture_prefix}${fixture_suffix_b}" \
+      --arg unknown "${unknown_prefix}${unknown_suffix}" \
+      'any(.[]; .file == "src/fixtures.ts" and .pattern == $first and .status == "allowlisted")
+        and any(.[]; .file == $file and .pattern == $first and .status == "allowlisted")
+        and any(.[]; .file == $file and .pattern == $second and .status == "allowlisted")
+        and any(.[]; .file == $file and .pattern == $unknown and .status == "real_leak")
+        and all(.[]; .pattern != "sk-test-key")' \
+      "$KASEKI_RESULTS_DIR/.secret-scan-temp.jsonl" >/dev/null; then
+    pass 'Secret scanning: known synthetic keys are allowed and each actual match on a line is recorded'
+  else
+    cat "$KASEKI_RESULTS_DIR/.secret-scan-temp.jsonl" >&2
+    fail 'Secret scanning: expected synthetic examples to be allowlisted and real-looking match to fail'
+  fi
+}
+
 # Test 4: Secret allowlist behavior via production secret-scan path
 echo "==> Test: Secret allowlist behavior"
 {
   reset_results
   cd "$TMP_DIR/workspace/repo"
+  rm -f src/fixtures.ts
   mkdir -p src
-  cat > src/allowed-secret.ts <<'SECRET'
-export const key = "sk-or-ZyXwVuTsRqPoNmLkJiHg";
-SECRET
-  printf 'src/allowed-secret.ts:sk-or-ZyXwVuTsRqPoNmLkJiHg\n' > .kaseki-secret-allowlist
+  fixture_prefix='sk-or-'
+  fixture_suffix='ZyXwVuTsRqPoNmLkJiHg'
+  printf 'export const key = "%s%s";\n' "$fixture_prefix" "$fixture_suffix" > src/allowed-secret.ts
+  printf 'src/allowed-secret.ts:%s%s\n' "$fixture_prefix" "$fixture_suffix" > .kaseki-secret-allowlist
 
   run_secret_scan
 
   if [ "$SECRET_SCAN_EXIT" -eq 0 ] && \
-    jq -e 'select(.file == "src/allowed-secret.ts" and .pattern == "sk-or-ZyXwVuTsRqPoNmLkJiHg" and .status == "allowlisted")' "$KASEKI_RESULTS_DIR/.secret-scan-temp.jsonl" >/dev/null; then
+    jq -e --arg pattern "${fixture_prefix}${fixture_suffix}" 'select(.file == "src/allowed-secret.ts" and .pattern == $pattern and .status == "allowlisted")' "$KASEKI_RESULTS_DIR/.secret-scan-temp.jsonl" >/dev/null; then
     pass "Secret allowlist: production path records allowlisted match without failing"
   else
     fail "Secret allowlist: expected exit 0 and allowlisted artifact"
@@ -214,21 +253,19 @@ SECRET
   rm -f src/allowed-secret.ts
   cat > tests/fixture.test.sh <<'SECRET'
 # Intentional integration-test credential fixture.
-API_KEY='sk-test-integration-key'
 OPENROUTER_KEY='sk-or-aBcDeFgHiJkLmNoPqRsT'
 SECRET
   printf '%s\n' \
-    'tests/fixture.test.sh:sk-test-integration-key' \
     'tests/fixture.test.sh:sk-or-aBcDeFgHiJkLmNoPqRsT' > .kaseki-secret-allowlist
-  printf '{"type":"tool_execution_end","content":"%s %s"}\n' \
-    'sk-test-integration-key' 'sk-or-aBcDeFgHiJkLmNoPqRsT' \
+  printf '{"type":"tool_execution_end","content":"%s"}\n' \
+    'sk-or-aBcDeFgHiJkLmNoPqRsT' \
     > "$KASEKI_RESULTS_DIR/goal-setting-events.jsonl"
 
   run_secret_scan
 
   if [ "$SECRET_SCAN_EXIT" -eq 0 ] && \
     jq -se --arg file "$KASEKI_RESULTS_DIR/goal-setting-events.jsonl" \
-      '[.[] | select(.file == $file)] as $matches | ($matches | length) == 2 and all($matches[]; .status == "allowlisted")' \
+      '[.[] | select(.file == $file)] as $matches | ($matches | length) == 1 and all($matches[]; .status == "allowlisted")' \
       "$KASEKI_RESULTS_DIR/.secret-scan-temp.jsonl" >/dev/null; then
     pass "Secret allowlist: an allowlisted test fixture echoed into run artifacts stays allowlisted"
   else

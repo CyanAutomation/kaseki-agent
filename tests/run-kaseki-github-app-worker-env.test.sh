@@ -21,6 +21,16 @@ exec /usr/bin/git "$@"
 EOF_GIT
 chmod +x "$FAKE_BIN/git"
 
+cat > "$FAKE_BIN/uname" <<'EOF_UNAME'
+#!/usr/bin/env bash
+if [ "${1:-}" = '-m' ] && [ -n "${FAKE_HOST_ARCH:-}" ]; then
+  printf '%s\n' "$FAKE_HOST_ARCH"
+else
+  exec /usr/bin/uname "$@"
+fi
+EOF_UNAME
+chmod +x "$FAKE_BIN/uname"
+
 cat > "$FAKE_BIN/docker" <<'EOF_DOCKER'
 #!/usr/bin/env bash
 if [ "${1:-}" = "image" ] && [ "${2:-}" = "inspect" ]; then
@@ -118,3 +128,26 @@ assert_arg_present 'KASEKI_VALIDATION_TIMEOUT_SECONDS=420' 'general validation b
 assert_arg_present 'KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS=1200' 'build validation budget'
 assert_arg_present 'KASEKI_RUNNER_IMAGE_ID=sha256:0000000000000000000000000000000000000000000000000000000000000001' 'worker immutable image identity'
 assert_arg_matches '^KASEKI_RUNNER_IMAGE_REFERENCE=.+$' 'worker image reference'
+
+if ! env -u KASEKI_VALIDATION_TIMEOUT_SECONDS \
+  PATH="$FAKE_BIN:$PATH" \
+  FAKE_HOST_ARCH=aarch64 \
+  DOCKER_ARGS_CAPTURE="$DOCKER_ARGS_CAPTURE" \
+  KASEKI_ROOT="$TMP_DIR/kaseki-arm64-default" \
+  OPENROUTER_API_KEY="test-openrouter-key" \
+  LLM_GATEWAY_URL="https://example.invalid/v1" \
+  LLM_GATEWAY_API_KEY="test-openrouter-key" \
+  REPO_URL="https://github.com/acme/widgets" \
+  GIT_REF="main" \
+  GITHUB_APP_ENABLED="1" \
+  GITHUB_APP_ID="123456" \
+  GITHUB_APP_CLIENT_ID="Iv1.testclient" \
+  GITHUB_APP_PRIVATE_KEY_FILE="$PRIVATE_KEY_FILE" \
+  KASEKI_PUBLISH_MODE="branch" \
+  "$PROJECT_ROOT/run-kaseki.sh" >"$OUTPUT_LOG" 2>&1; then
+  cat "$OUTPUT_LOG"
+  exit 1
+fi
+
+assert_arg_present 'KASEKI_VALIDATION_TIMEOUT_SECONDS=900' 'ARM64 default validation budget'
+printf '✓ run-kaseki.sh selects the longer default validation budget on ARM64 hosts\n'

@@ -9,6 +9,7 @@ source "$ROOT_DIR/scripts/validation-timeout-policy.sh"
 # Timeout selection is a standalone policy and must not depend on unrelated
 # worker process state being initialized by kaseki-agent.sh.
 unset PROCESS_TIMEOUT pid
+KASEKI_VALIDATION_HOST_ARCH=x86_64
 
 assert_timeout() {
   local description="$1"
@@ -52,6 +53,18 @@ negative build timeout uses default|next build|45|-1|900
 fractional general timeout uses default|npm run test|2.5|1200|300
 CASES
 
+KASEKI_VALIDATION_HOST_ARCH=x86_64
+[ "$(validation_default_timeout_seconds)" = 300 ] || { echo 'FAIL: expected 300s general timeout on x86_64' >&2; exit 1; }
+KASEKI_VALIDATION_HOST_ARCH=aarch64
+[ "$(validation_default_timeout_seconds)" = 900 ] || { echo 'FAIL: expected 900s general timeout on Raspberry Pi arm64' >&2; exit 1; }
+KASEKI_VALIDATION_HOST_ARCH=arm64
+[ "$(validation_default_timeout_seconds)" = 900 ] || { echo 'FAIL: expected 900s general timeout on arm64' >&2; exit 1; }
+
+unset KASEKI_VALIDATION_TIMEOUT_SECONDS KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS
+KASEKI_VALIDATION_HOST_ARCH=aarch64
+[ "$(validation_timeout_for_command 'npm run test')" = 900 ] || { echo 'FAIL: arm64 command did not receive its slower-host budget' >&2; exit 1; }
+unset KASEKI_VALIDATION_HOST_ARCH
+
 if invalid_default_output="$(validation_timeout_or_default 45 invalid 2>&1)"; then
   echo 'FAIL: invalid fallback timeout was accepted' >&2
   exit 1
@@ -61,4 +74,4 @@ fi
   exit 1
 }
 
-echo '✓ validation timeout policy covers build and ordinary commands, defaults, and invalid values'
+echo '✓ validation timeout policy covers build and ordinary commands, host-aware defaults, and invalid values'

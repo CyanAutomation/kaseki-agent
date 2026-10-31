@@ -527,7 +527,7 @@ TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback 
 KASEKI_AGENT_GUARDRAILS="${KASEKI_AGENT_GUARDRAILS:-1}"
 KASEKI_RESTORE_DISALLOWED_CHANGES="${KASEKI_RESTORE_DISALLOWED_CHANGES:-1}"
 KASEKI_VALIDATION_FAIL_FAST="${KASEKI_VALIDATION_FAIL_FAST:-1}"
-KASEKI_VALIDATION_TIMEOUT_SECONDS="${KASEKI_VALIDATION_TIMEOUT_SECONDS:-300}"
+KASEKI_VALIDATION_TIMEOUT_SECONDS="${KASEKI_VALIDATION_TIMEOUT_SECONDS:-$(validation_default_timeout_seconds)}"
 # Production builds regularly perform compilation and type checking after the
 # bundler reports success. Give explicit build commands a longer budget while
 # retaining the short default for fast checks and tests.
@@ -1119,13 +1119,25 @@ secret_scan_match_is_allowlisted() {
     return 0
   fi
 
+  # Allow a single exact synthetic fixture pattern to appear in copied run
+  # artifacts without granting a pattern family or a regular-expression match.
+  if grep -Fqx -- "*:${pattern}" "$allowlist_file" 2>/dev/null; then
+    return 0
+  fi
+
   # An agent can echo an already-approved test fixture into its diagnostic
   # artifacts. Preserve the repository's exact-pattern approval for those
   # generated copies, while keeping source-tree approvals file-scoped.
   case "$file_path" in
     "${KASEKI_RESULTS_DIR}"/*)
       awk -F: -v expected_pattern="$pattern" \
-        '$NF == expected_pattern && ($1 ~ /(^|\/)(test|tests)(\/|$)/ || $1 ~ /(^|\/)[^/]*test[^/]*$/) { found = 1 }
+        '$NF == expected_pattern {
+           count = split($1, path_parts, "/")
+           for (i = 1; i <= count; i++) {
+             part = tolower(path_parts[i])
+             if (part == "test" || part == "tests" || (i == count && part ~ /test/)) found = 1
+           }
+         }
          END { exit found ? 0 : 1 }' \
         "$allowlist_file"
       ;;
@@ -1152,15 +1164,14 @@ run_secret_scan() {
     unallowlisted_count=0
     allowlisted_count=0
 
-    if grep -R -I -n -o -E 'sk-or-[A-Za-z0-9_-]{20,}|sk-test-[A-Za-z0-9_-]*' \
-      "${KASEKI_RESULTS_DIR}" "${KASEKI_WORKSPACE_DIR}"/repo/.git \
-      "${KASEKI_WORKSPACE_DIR}"/repo/src "${KASEKI_WORKSPACE_DIR}"/repo/tests 2>/dev/null \
-      | grep -v '/secret-scan.json:' > /tmp/secret-scan-matches.tmp 2>&1; then
+    if grep -R -I -n -o -E --exclude=secret-scan.json --exclude=.secret-scan-temp.jsonl 'sk-or-[A-Za-z0-9_-]{20,}' \
+      "${KASEKI_RESULTS_DIR}" "${KASEKI_WORKSPACE_DIR}"/repo/.git "${KASEKI_WORKSPACE_DIR}"/repo/src "${KASEKI_WORKSPACE_DIR}"/repo/tests \
+      2>/dev/null > /tmp/secret-scan-matches.tmp; then
       # Matches found - process against allowlist
       while IFS= read -r match_line || [ -n "$match_line" ]; do
         [ -z "$match_line" ] && continue
-        file_path="${match_line%%:*}"
-        pattern="${match_line##*:}"
+        file_path=$(printf '%s\n' "$match_line" | cut -d: -f1)
+        pattern=$(printf '%s\n' "$match_line" | cut -d: -f3-)
         [ -z "$pattern" ] && continue
         file_path="${file_path#"${KASEKI_WORKSPACE_DIR}"/repo/}"
         file_path="${file_path#repo/}"
@@ -1186,6 +1197,7 @@ run_secret_scan() {
       fi
     else
       # No matches found
+      rm -f /tmp/secret-scan-matches.tmp
       SECRET_SCAN_EXIT=0
     fi
 
@@ -5786,18 +5798,6 @@ run_validation_commands() {
         emit_event "validation_commands_fallback" "stage=$stage_label" "reason=all_requested_npm_scripts_missing" "commands=$fallback_commands"
         commands="$fallback_commands"
       fi
-      if ! validation_runtime_preflight "$validation_workspace" "$log_file" "$commands"; then
-        validation_exit_ref=70
-        WORKER_ERROR_TYPE="validation_runtime_incompatible"
-        WORKER_ERROR_PHASE="$stage_label"
-        WORKER_ERROR_MESSAGE="workerd startup failed; see validation-runtime.jsonl"
-        validation_stopped_ref=true
-        validation_detail_ref="workerd runtime startup failed before $stage_label; see validation-runtime.jsonl"
-        validation_reason_ref="validation_runtime_incompatible: workerd startup failed"
-        record_stage_timing "$stage_label" 70 "$(($(date +%s) - stage_start))" "runtime_preflight_failed"
-        emit_error_event "validation_runtime_incompatible" "$validation_detail_ref" "exit"
-        return 70
-      fi
       commands="$(validation_expand_commands "$commands")"
       IFS=';' read -r -a validation_commands <<< "$commands"
       for command in "${validation_commands[@]}"; do
@@ -5814,6 +5814,18 @@ run_validation_commands() {
           record_skipped_validation_command "$trimmed" "$missing_npm_script" "$duration" "$log_file" "$timings_file"
           emit_event "validation_command_skipped" "stage=$stage_label" "command=$trimmed" "reason=missing_npm_script" "script=$missing_npm_script" "duration_seconds=$duration"
           continue
+        fi
+        if ! validation_runtime_preflight "$validation_workspace" "$log_file" "$trimmed"; then
+          validation_exit_ref=70
+          WORKER_ERROR_TYPE="validation_runtime_incompatible"
+          WORKER_ERROR_PHASE="$stage_label"
+          WORKER_ERROR_MESSAGE="workerd startup failed; see validation-runtime.jsonl"
+          validation_stopped_ref=true
+          validation_detail_ref="workerd runtime startup failed before $stage_label command: $trimmed; see validation-runtime.jsonl"
+          validation_reason_ref="validation_runtime_incompatible: workerd startup failed"
+          record_stage_timing "$stage_label" 70 "$(($(date +%s) - stage_start))" "runtime_preflight_failed command=$trimmed"
+          emit_error_event "validation_runtime_incompatible" "$validation_detail_ref" "exit"
+          return 70
         fi
         ((validation_attempted_ref++))
         command_timeout_seconds="$(validation_timeout_for_command "$trimmed")"
