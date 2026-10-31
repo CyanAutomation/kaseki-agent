@@ -243,8 +243,10 @@ describe('JobScheduler queue behavior', () => {
 
     try {
       await scheduler.authorizeSoyuzStart(job.id);
-      for (let attempt = 0; attempt < 20 && !mockSpawn.mock.calls.length; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 10));
+      // Let the scheduler's queued microtasks and I/O turn run without relying
+      // on an arbitrary sleep interval.
+      for (let turn = 0; turn < 20 && !mockSpawn.mock.calls.length; turn += 1) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
       }
       expect(mockSpawn).toHaveBeenCalledTimes(1);
       const proc = mockSpawn.mock.results[0].value as MockProcess;
