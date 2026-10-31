@@ -14,11 +14,37 @@ test('classifies native address-space startup failure independently of exit 1 or
 
 test('expands only plain npm run chains, preserves lifecycle hooks and shell semantics', () => {
   const scripts = { verify: 'npm run test:all && npm run auth-worker:verify && npm run build', 'test:all': 'NODE_ENV=test node --test', 'auth-worker:verify': 'npm --prefix workers/auth ci && npm --prefix workers/auth test' };
-  assert.equal(expandValidationCommands('npm run verify && npm run lint', scripts), 'npm run test:all;npm run auth-worker:verify;npm run build;npm run lint');
+  assert.equal(expandValidationCommands('npm run verify && npm run lint', scripts), 'npm run test:all;npm --prefix workers/auth ci;npm --prefix workers/auth test;npm run build;npm run lint');
   assert.equal(expandValidationCommands('npm run verify', { ...scripts, preverify: 'node setup.js' }), 'npm run verify');
   assert.equal(expandValidationCommands('npm run verify || npm run lint', scripts), 'npm run verify || npm run lint');
   assert.equal(expandValidationCommands('npm run verify', { verify: 'npm run verify' }), 'npm run verify');
-  assert.equal(expandValidationCommands('npm run verify', { verify: 'npm run build && echo done' }), 'npm run verify');
+  assert.equal(expandValidationCommands('npm run verify', { verify: 'npm run build && echo done' }), 'npm run build;echo done');
+});
+
+test('splits simple && validation chains into independently timed commands', () => {
+  const script = [
+    'npm ci',
+    'npm --prefix parser-node ci',
+    'npm test',
+    'PARSER_SCRIPT=./parser-node/parse.ts go vet ./...',
+    'PARSER_SCRIPT=./parser-node/parse.ts go test ./... -count=1',
+    'PARSER_SCRIPT=./parser-node/parse.ts go test -tags=integration ./cmd/server -count=1',
+  ].join(' && ');
+  const expected = script.split(' && ').join(';');
+
+  assert.equal(expandValidationCommands('npm run verify', { verify: script }), expected);
+  assert.equal(expandValidationCommands('npm ci && npm test', {}), 'npm ci;npm test');
+});
+
+test('keeps shell expressions opaque when a chain is not a simple command list', () => {
+  const scripts = {
+    verify: 'npm ci && echo "skip && test"',
+    conditional: 'npm test && npm run lint || npm run fallback',
+    stateful: 'exit 0 && npm test',
+  };
+  assert.equal(expandValidationCommands('npm run verify', scripts), 'npm run verify');
+  assert.equal(expandValidationCommands('npm run conditional', scripts), 'npm run conditional');
+  assert.equal(expandValidationCommands('npm run stateful', scripts), 'npm run stateful');
 });
 
 test('smoke starts the installed binary with a real test config and reports early native crashes', () => {

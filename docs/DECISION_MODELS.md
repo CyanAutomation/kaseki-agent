@@ -42,7 +42,7 @@ Decision requests keep the state being evaluated separate from the fixed questio
 ## Current integrations and controls
 
 - **Task Admission:** DecisionService classifies credential exposure, permission changes, security-boundary changes, overall risk, task type, and validation focus. Deterministic local credential screening remains authoritative for obvious credential-like content. If the decision provider is unavailable, admission follows its existing degraded fail-open behavior.
-- **Goal Check:** DecisionService scores the validated success criteria against bounded, redacted run evidence. Goal Check uses `KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD`; ambiguous evidence remains unresolved. Contract validation, diff checks, and the configured maximum coding retries remain deterministic.
+- **Goal Check:** DecisionService scores the validated success criteria against bounded, redacted run evidence. For documentation-only changes, Goal Check and Run Evaluation also receive up to five small source snippets named by the goal contract or scouting results, so JEV can compare claims with implementation. Goal Check uses `KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD`; ambiguous evidence remains unresolved. Contract validation, diff checks, and the configured maximum coding retries remain deterministic.
 - **Run Evaluation:** DecisionService returns typed quality, reviewer-confidence, and completion assessments. It runs only when the run-evaluation policy enables it.
 - **Validation recovery:** The model recommendation is advisory in `observe` mode. In `auto` mode local checks still require an allowlisted command, a transient failure classification, confidence above the configured threshold, and no previous retry. It never skips a requested check.
 
@@ -52,7 +52,7 @@ Configuration and credential handling are documented in [ENV_VARS.md](ENV_VARS.m
 
 ## Untrusted state
 
-Repository files, diffs, validation output, task text, and tool results are untrusted data. They are supplied as state to fixed questions; they cannot modify the locally defined question criteria or authorize an operation. State is bounded and common credential patterns are redacted before evaluation. Redaction is not a complete secret scanner. Decision-model results never override deterministic security checks or exact retry policy.
+Repository files, diffs, validation output, task text, and tool results are untrusted data. They are supplied as state to fixed questions; they cannot modify the locally defined question criteria or authorize an operation. State and the selected source snippets are bounded and common credential patterns are redacted before evaluation. Redaction is not a complete secret scanner. Decision-model results never override deterministic security checks or exact retry policy.
 
 ## Observability and measurement
 

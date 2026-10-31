@@ -421,14 +421,6 @@ run_validation_commands() {
     record_stage_timing "$stage_label" "$validation_exit_ref" "$(($(date +%s) - stage_start))" "directory_missing"
   else
     set +e
-    if ! validation_runtime_preflight "${KASEKI_WORKSPACE_DIR}/repo" "$log_file" "$commands"; then
-      validation_exit_ref=70
-      validation_stopped_ref=true
-      validation_detail_ref="workerd runtime startup failed before $stage_label; see validation-runtime.jsonl"
-      validation_reason_ref="validation_runtime_incompatible: workerd startup failed"
-      record_stage_timing "$stage_label" 70 "$(($(date +%s) - stage_start))" "runtime_preflight_failed"
-      return 70
-    fi
     commands="$(validation_expand_commands "$commands")"
     IFS=';' read -r -a validation_commands <<< "$commands"
     for command in "${validation_commands[@]}"; do
@@ -441,6 +433,14 @@ run_validation_commands() {
         record_skipped_validation_command "$trimmed" "$missing_npm_script" "$duration" "$log_file" "$timings_file"
         emit_event "validation_command_skipped" "stage=$stage_label" "command=$trimmed" "reason=missing_npm_script" "script=$missing_npm_script" "duration_seconds=$duration"
         continue
+      fi
+      if ! validation_runtime_preflight "${KASEKI_WORKSPACE_DIR}/repo" "$log_file" "$trimmed"; then
+        validation_exit_ref=70
+        validation_stopped_ref=true
+        validation_detail_ref="workerd runtime startup failed before $stage_label command: $trimmed; see validation-runtime.jsonl"
+        validation_reason_ref="validation_runtime_incompatible: workerd startup failed"
+        record_stage_timing "$stage_label" 70 "$(($(date +%s) - stage_start))" "runtime_preflight_failed command=$trimmed"
+        return 70
       fi
       ((validation_attempted_ref++))
       emit_event "validation_command_started" "stage=$stage_label" "command=$trimmed"
