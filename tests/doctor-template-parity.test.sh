@@ -13,7 +13,8 @@ cp "$ROOT_DIR/run-kaseki.sh" "$template_dir/run-kaseki.sh"
 cp "$ROOT_DIR/kaseki-agent.sh" "$template_dir/kaseki-agent.sh"
 cp "$ROOT_DIR/scripts/kaseki-preflight.sh" "$template_dir/scripts/kaseki-preflight.sh"
 cp "$ROOT_DIR/scripts/dry-run-artifacts.sh" "$template_dir/scripts/dry-run-artifacts.sh"
-chmod +x "$template_dir/run-kaseki.sh" "$template_dir/kaseki-agent.sh" "$template_dir/scripts/kaseki-preflight.sh" "$template_dir/scripts/dry-run-artifacts.sh"
+cp "$ROOT_DIR/scripts/validation-timeout-policy.sh" "$template_dir/scripts/validation-timeout-policy.sh"
+chmod +x "$template_dir/run-kaseki.sh" "$template_dir/kaseki-agent.sh" "$template_dir/scripts/kaseki-preflight.sh" "$template_dir/scripts/dry-run-artifacts.sh" "$template_dir/scripts/validation-timeout-policy.sh"
 
 install_fake_docker_doctor_parity "$fake_bin"
 
