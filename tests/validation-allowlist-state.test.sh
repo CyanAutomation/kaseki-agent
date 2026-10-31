@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1091,SC2034
-# Tests validation-phase allowlist enforcement against before/after state snapshots.
+# Contract from docs/API.md (validation commands respect the validation-phase allowlist):
+# compare before/after state so pre-existing agent edits remain allowed while
+# validation-created or validation-mutated files outside the allowlist fail.
 
 set -euo pipefail
 

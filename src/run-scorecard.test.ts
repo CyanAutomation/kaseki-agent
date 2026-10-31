@@ -5,7 +5,8 @@ import { lifecycle, statusFrom } from './run-scorecard-evidence-status';
 import { bool, number, object } from './run-scorecard-guards';
 import { aggregateTokenUsage, countRetries, providerRetryCounts } from './run-scorecard-evidence-tokens';
 
-describe('run scorecard', () => {
+// Public scoring behavior is specified in docs/RUN_SCORECARD_DESIGN.md.
+describe('run scorecard evidence and scoring contracts', () => {
   afterEach(() => {
     ScorecardContext.reset();
   });

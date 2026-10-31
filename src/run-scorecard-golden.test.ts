@@ -1,6 +1,7 @@
 import { buildScorecard, collectEvidence, normalizeConfig, type ArtifactSnapshot } from './run-scorecard';
 import { ScorecardContext } from './run-scorecard-context';
 
+// These invariants mirror the public scorecard contract in docs/RUN_SCORECARD_DESIGN.md.
 const NOW = new Date('2026-08-07T12:00:00.000Z');
 function bundle(overrides: Partial<ArtifactSnapshot> = {}): ArtifactSnapshot {
   return {
@@ -17,6 +18,8 @@ function bundle(overrides: Partial<ArtifactSnapshot> = {}): ArtifactSnapshot {
 }
 
 describe('scorecard dimension tables and invariants', () => {
+  const dimensionScore = (card: ReturnType<typeof buildScorecard>, id: string) =>
+    card.dimensions.find((dimension) => dimension.id === id)?.normalized_score;
   afterEach(() => {
     ScorecardContext.reset();
   });
@@ -57,7 +60,11 @@ describe('scorecard dimension tables and invariants', () => {
     const costly = collectEvidence(bundle({ text: { ...bundle().text, 'provider-attempts.jsonl': '{"phase":"coding","attempt":"primary-1"}\n{"phase":"coding","attempt":"primary-2"}\n' }, summaries: [{ phase:'coding', request_id:'large', usage:{ input:80000, output:20000 } }] }));
     const config = normalizeConfig({ KASEKI_SCORECARD_TASK_SIZE:'small' });
     ScorecardContext.initialize(config);
-    expect(buildScorecard(costly, NOW).dimensions[2].normalized_score).toBeLessThanOrEqual(buildScorecard(base, NOW).dimensions[2].normalized_score);
+    const costlyScore = dimensionScore(buildScorecard(costly, NOW), 'implementation_quality');
+    const baseScore = dimensionScore(buildScorecard(base, NOW), 'implementation_quality');
+    expect(costlyScore).toBeDefined();
+    expect(baseScore).toBeDefined();
+    expect(costlyScore!).toBeLessThanOrEqual(baseScore!);
   });
 
   test('failed required validation cannot receive top solution quality', () => {

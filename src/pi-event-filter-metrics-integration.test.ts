@@ -1,7 +1,7 @@
 /**
  * pi-event-filter-metrics-integration.test.ts
  *
- * Integration test demonstrating all new metrics:
+ * Integration contract for metrics emitted by the Pi event filter:
  * - Tool reliability (success/failure rates)
  * - Execution time breakdown (API vs tool)
  * - Per-tool and per-API statistics
@@ -83,9 +83,22 @@ async function runPiEventFilter(
       summaryPath,
     ]);
 
-    const exitCode = await new Promise<number | null>((resolve) => {
-      child.once('error', () => resolve(1));
-      child.once('close', resolve);
+    const exitCode = await new Promise<number | null>((resolve, reject) => {
+      let timedOut = false;
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        child.kill('SIGKILL');
+      }, 30_000);
+      timeout.unref();
+      child.once('error', (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+      child.once('close', (code) => {
+        clearTimeout(timeout);
+        if (timedOut) reject(new Error('Pi event filter did not exit within 30 seconds'));
+        else resolve(code);
+      });
     });
 
     const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));

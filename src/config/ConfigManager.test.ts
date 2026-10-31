@@ -6,7 +6,8 @@ import {
   snapshotEnv,
 } from '../__test-utils/env';
 
-describe('ConfigManager', () => {
+// Environment variable names and defaults are also documented in docs/ENV_VARS.md.
+describe('configuration values loaded from defaults and environment', () => {
   let configManager: ConfigManager;
   let originalInlineSecretEnv: Record<string, string | undefined>;
   let originalCleanupEnv: Record<string, string | undefined>;
@@ -84,7 +85,7 @@ describe('ConfigManager', () => {
     }
   });
 
-  test('should reject inline OPENROUTER_API_KEY secret variable', async () => {
+  test('rejects OPENROUTER_API_KEY when supplied as an inline secret', async () => {
     process.env.OPENROUTER_API_KEY = 'inline-secret-value';
 
     const manager = new ConfigManager();
