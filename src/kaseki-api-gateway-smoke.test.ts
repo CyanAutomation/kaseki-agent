@@ -1,5 +1,6 @@
 /**
- * Tests for LLM Gateway responsiveness validation
+ * Tests the public gateway connectivity checks and provider smoke contracts.
+ * The response shape is documented in docs/ENV_VARS.md under API Endpoint Query Parameters.
  */
 
 import * as fs from 'fs';
@@ -28,7 +29,7 @@ import { buildGatewayAuthHeaders } from './gateway-detection/detect-gateway-prov
 // Mock fetch before importing
 global.fetch = jest.fn();
 
-describe('LLM Gateway Test', () => {
+describe('gateway connectivity and provider smoke contracts', () => {
   const originalEnv = process.env;
   const mockFetch = global.fetch as jest.Mock;
   let secretsDir: string;

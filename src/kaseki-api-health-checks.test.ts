@@ -1,7 +1,7 @@
 /**
  * src/kaseki-api-health-checks.test.ts
  *
- * Robust behavioral coverage for public health-check functions.
+ * Behavioral contracts for doctor and startup health checks (see docs/CLI.md).
  */
 
 import fs from 'node:fs';
