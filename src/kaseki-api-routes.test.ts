@@ -1,4 +1,6 @@
 // Mock Docker subprocess helpers so preflight route tests can assert generated Docker args deterministically.
+// HTTP behavior here follows the public contracts in docs/API.md; external
+// effects are mocked so route assertions stay deterministic.
 jest.mock('./lib/subprocess-helpers', () => {
   const actual = jest.requireActual('./lib/subprocess-helpers');
   return {

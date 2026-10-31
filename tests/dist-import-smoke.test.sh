@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Post-build packaging smoke test. Requires `npm run build` to have produced dist/ first.
+# Post-build package contract: built entry points import and serve real API
+# behavior. Requires `npm run build` to have produced dist/ first.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
