@@ -62,6 +62,75 @@ function bounded(value: unknown, maxChars: number): unknown {
   return { truncated: true, preview: serialized.slice(0, maxChars) };
 }
 
+function documentationOnlyChange(resultsDir: string): boolean {
+  const changedFiles = readText(path.join(resultsDir, 'changed-files.txt'))
+    .split('\n').map((file) => file.trim()).filter(Boolean);
+  return changedFiles.length > 0 && changedFiles.every((file) => (
+    /(^|\/)docs\//i.test(file)
+    || /\.(?:md|mdx|rst|adoc)$/i.test(file)
+    || /(^|\/)(?:readme|changelog|contributing)(?:\.[^/]*)?$/i.test(file)
+  ));
+}
+
+function implementationEvidence(resultsDir: string, goal: JsonObject, scouting: JsonObject): JsonObject[] {
+  if (!documentationOnlyChange(resultsDir)) return [];
+  const workspace = process.env.KASEKI_WORKSPACE_DIR || '/workspace';
+  const repository = path.join(workspace, 'repo');
+  let canonicalRepository: string;
+  try { canonicalRepository = fs.realpathSync(repository); } catch { return []; }
+
+  const candidates: string[] = [];
+  for (const criterion of Array.isArray(goal.success_criteria) ? goal.success_criteria : []) {
+    if (!criterion || typeof criterion !== 'object' || Array.isArray(criterion)) continue;
+    const sources = (criterion as JsonObject).verification_sources;
+    if (Array.isArray(sources)) candidates.push(...sources.filter((source): source is string => typeof source === 'string'));
+  }
+  for (const item of Array.isArray(scouting.relevant_files) ? scouting.relevant_files : []) {
+    if (typeof item === 'string') candidates.push(item);
+    else if (item && typeof item === 'object' && !Array.isArray(item)) {
+      const file = (item as JsonObject).path;
+      if (typeof file === 'string') candidates.push(file);
+    }
+  }
+
+  const evidence: JsonObject[] = [];
+  const seen = new Set<string>();
+  let totalChars = 0;
+  for (const candidate of candidates) {
+    if (evidence.length >= 5 || totalChars >= 12000) break;
+    const requestedPath = candidate.trim().replaceAll('\\', '/');
+    if (!requestedPath || path.posix.isAbsolute(requestedPath)
+        || requestedPath.split('/').some((part) => part === '..')) continue;
+    const relativePath = path.posix.normalize(requestedPath);
+    if (/(^|\/)(?:\.env(?:\.[^/]*)?|credentials?(?:\.[^/]*)?|secrets?(?:\.[^/]*)?|id_(?:rsa|ed25519))$/i.test(relativePath)
+        || /\.(?:pem|key|p12|pfx|crt|cert)$/i.test(relativePath)
+        || relativePath.split('/').some((part) => part === '.git' || part === 'node_modules' || part === '.ssh')) continue;
+    let canonicalFile: string;
+    try { canonicalFile = fs.realpathSync(path.resolve(canonicalRepository, relativePath)); } catch { continue; }
+    if (!canonicalFile.startsWith(canonicalRepository + path.sep) || seen.has(canonicalFile)) continue;
+    seen.add(canonicalFile);
+    let descriptor: number;
+    try {
+      descriptor = fs.openSync(canonicalFile, 'r');
+      const stats = fs.fstatSync(descriptor);
+      if (!stats.isFile()) { fs.closeSync(descriptor); continue; }
+      const buffer = Buffer.alloc(4096);
+      const content = buffer.subarray(0, fs.readSync(descriptor, buffer, 0, buffer.length, 0)).toString('utf8');
+      fs.closeSync(descriptor);
+      if (content.includes('\0')) continue;
+      const redactedContent = String(redactJevEvidence(content));
+      const remaining = 12000 - totalChars;
+      const boundedContent = redactedContent.slice(0, Math.min(4096, remaining));
+      if (!boundedContent.trim()) continue;
+      evidence.push({ path: relativePath, content: boundedContent, truncated: stats.size > 4096 || redactedContent.length > boundedContent.length });
+      totalChars += boundedContent.length;
+    } catch {
+      try { fs.closeSync(descriptor!); } catch { /* Ignore an already-closed descriptor. */ }
+    }
+  }
+  return evidence;
+}
+
 function evidenceState(resultsDir: string): JsonObject {
   const goal = readJson(path.join(resultsDir, 'goal-setting.json'));
   const scouting = readJson(path.join(resultsDir, 'scouting.json'));
@@ -86,6 +155,7 @@ function evidenceState(resultsDir: string): JsonObject {
       omitted_fields: compactedGoal.omitted_fields,
     },
     scouting: bounded(redactJevEvidence(scouting), 8000),
+    implementation_evidence: implementationEvidence(resultsDir, goal, scouting),
     metadata: redactJevEvidence(readJson(path.join(resultsDir, 'metadata.json'))),
     failure: redactJevEvidence(readJson(path.join(resultsDir, 'failure.json'))),
     changed_files: redactJevEvidence(readText(path.join(resultsDir, 'changed-files.txt')).slice(0, 12000)),

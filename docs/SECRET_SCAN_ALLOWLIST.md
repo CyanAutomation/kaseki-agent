@@ -8,11 +8,12 @@ The secret scan allowlist permits known safe patterns (test fixtures) while stil
 
 The secret scan executes in two phases:
 
-1. **Detection**: Scans `/results`, `/workspace/repo/.git`, `/workspace/repo/src`, and `/workspace/repo/tests` for patterns matching `sk-or-[A-Za-z0-9_-]{20,}` (OpenRouter key format) or `sk-test-[A-Za-z0-9_-]*` (test key format)
+1. **Detection**: Scans `/results`, readable files in `/workspace/repo/.git`, `/workspace/repo/src`, and `/workspace/repo/tests` for each match of `sk-or-[A-Za-z0-9_-]{20,}` (OpenRouter API key format). Binary files are skipped, as are the scanner's own output files.
 
 2. **Filtering**: Each detected pattern is checked against `.kaseki-secret-allowlist`
-   - A source-tree match is safe only when its exact file and pattern are allowlisted.
-   - A result artifact can inherit an exact-pattern approval only from a test fixture entry (`test/`, `tests/`, or a test-named file). This covers agent logs that echo a documented mock key.
+   - A source-tree match is safe only when its exact file and pattern are allowlisted, or when the exact pattern has a `*:<pattern>` entry.
+   - A `*:<pattern>` entry approves only that exact synthetic string at any scanned path; it does not allow a key family or regex pattern.
+   - For older test-fixture entries, a result artifact can inherit an exact-pattern approval only from an entry under `test/`, `tests/`, or a test-named file.
    - Other unallowlisted matches trigger exit code 6.
 
 ## Allowlist File Format
@@ -22,14 +23,14 @@ The secret scan executes in two phases:
 **Format**: One entry per line
 
 ```
-<file-path>:<credential-pattern>
+<file-path-or-*>:<credential-pattern>
 ```
 
 **Example**:
 
 ```
-tests/quality-gates.test.sh:sk-or-aBcDeFgHiJkLmNoPqRsT
-test/kaseki-api.integration.test.sh:sk-test-integration-key
+*:sk-or-aBcDeFgHiJkLmNoPqRsT
+*:sk-or-ZyXwVuTsRqPoNmLkJiHg
 ```
 
 ## Adding Allowlist Entries
@@ -40,7 +41,7 @@ Add an allowlist entry when:
 
 - ✅ Creating a **test fixture** with a fake credential pattern (e.g., `sk-or-` test key)
 - ✅ The pattern is **intentional and documented** in the code
-- ✅ The file is in a **test directory** (`tests/`, `test/`, or `*test*`)
+- ✅ The allowlist entry is the **exact synthetic pattern** for a test fixture or known test example copied into run artifacts
 
 ### When NOT to Add an Entry
 
@@ -58,17 +59,17 @@ Do NOT add an allowlist entry for:
    ```bash
    # Example: comment in test file
    # Test fixture: intentional fake API key for integration testing
-   API_KEY="sk-test-integration-key"
+   API_KEY="sk-or-aBcDeFgHiJkLmNoPqRsT"
    ```
 
 2. **Extract the file path and pattern**
-   - File path: relative to repository root (e.g., `test/kaseki-api.integration.test.sh`)
-   - Pattern: the credential-like string detected by secret scan (e.g., `sk-test-integration-key`)
+   - File path: relative to repository root (e.g., `test/kaseki-api.integration.test.sh`), or `*` for an exact synthetic pattern copied to other scanned paths
+   - Pattern: the exact credential-like string detected by secret scan
 
 3. **Add entry to `.kaseki-secret-allowlist`**
 
    ```
-   test/kaseki-api.integration.test.sh:sk-test-integration-key
+   *:sk-or-aBcDeFgHiJkLmNoPqRsT
    ```
 
 4. **Test the fix**
@@ -93,7 +94,7 @@ Conduct a security audit of the allowlist quarterly:
 
    ```bash
    # For each entry, check:
-   grep -n "sk-or-\|sk-test-" <file> || echo "Pattern not found; consider removing entry"
+   grep -n "sk-or-" <file> || echo "Pattern not found; consider removing entry"
    ```
 
 3. **Confirm no test files have been removed**
@@ -129,7 +130,7 @@ Conduct a security audit of the allowlist quarterly:
 
 **Problem**: "Pattern in allowlist but still failing"
 
-- Verify the **exact file path** matches (relative to repo root)
+- Verify the **exact file path** matches (relative to repo root), or use `*:` only for a fixed synthetic pattern copied into artifacts
 - Verify the **exact pattern** matches (copy-paste from secret-scan.log)
 - Whitespace matters: no leading/trailing spaces
 - Check file path normalization (no `/workspace/repo/` prefix)
@@ -163,7 +164,7 @@ Recommendations:
 
 ## Examples
 
-### Example 1: Test Fixture for Secret Scan Validation
+### Example: Test Fixture for Secret Scan Validation
 
 **File**: `tests/quality-gates.test.sh` (line 91)
 
@@ -174,25 +175,10 @@ This file has an OpenRouter API key: sk-or-aBcDeFgHiJkLmNoPqRsT
 EOF
 ```
 
-**Allowlist Entry**:
+**Allowlist Entry** (global because this exact fake may be copied into run event artifacts):
 
 ```
-tests/quality-gates.test.sh:sk-or-aBcDeFgHiJkLmNoPqRsT
-```
-
-### Example 2: Integration Test with Mock API Key
-
-**File**: `test/kaseki-api.integration.test.sh` (line 5)
-
-```bash
-# Test fixture: intentional fake API key for integration testing
-API_KEY="sk-test-integration-key"
-```
-
-**Allowlist Entry**:
-
-```
-test/kaseki-api.integration.test.sh:sk-test-integration-key
+*:sk-or-aBcDeFgHiJkLmNoPqRsT
 ```
 
 ## References
