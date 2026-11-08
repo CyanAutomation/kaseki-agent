@@ -4,6 +4,18 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.156.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.155.2...v1.156.0) (2026-11-08)
+
+
+### Bug Fixes
+
+* upgrade runtime apt packages before image scan ([5673d7f](https://github.com/CyanAutomation/kaseki-agent/commit/5673d7ff25274b8b9567eeacf3106b677e3ee811))
+
+
+### Features
+
+* Enforce one active run per Kaseki agent ([#1548](https://github.com/CyanAutomation/kaseki-agent/issues/1548)) ([d5aa7b3](https://github.com/CyanAutomation/kaseki-agent/commit/d5aa7b39e5d1c7ba113db4c939f8eaa576ec6c41))
+
 ## [1.155.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.155.1...v1.155.2) (2026-10-24)
 
 
