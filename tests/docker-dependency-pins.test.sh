@@ -47,8 +47,8 @@ if [[ "$(grep -Fc 'patch-image-dependency-bundles.mjs' "$dockerfile")" -lt 2 ]];
   exit 1
 fi
 
-if ! grep -Fq '&& apt-get upgrade -y \' "$dockerfile"; then
-  echo 'Dockerfile runtime stage must upgrade base packages before installing tool dependencies.' >&2
+if [[ "$(grep -Fc '&& apt-get upgrade -y \' "$dockerfile")" -lt 2 ]]; then
+  echo 'Dockerfile runtime and final stages must both upgrade base packages before installing tool dependencies.' >&2
   exit 1
 fi
 
