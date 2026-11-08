@@ -189,21 +189,14 @@ export async function exampleStreamLogs(runId: string): Promise<void> {
   }, 5000); // Poll every 5 seconds
 }
 
-/**
-
-* Example: Check queue status
- */
-export async function exampleCheckQueue(): Promise<void> {
+/** Example: inspect recent runs handled by one Kaseki agent. */
+export async function exampleInspectAgentRuns(): Promise<void> {
   const client = new KasekiApiClient('<http://kaseki-host:8080>', 'sk-your-api-key');
 
   const health = await client.getHealth();
   console.log('API Health:', health.status);
 
-  if (health.status === 'healthy' || health.status === 'degraded') {
-    const queue = health.errors;
-    console.log(`Queue status:`);
-    console.log(`Status: ${health.status}`);
-  }
+  console.log('This Kaseki agent accepts one run at a time.');
 
   // List recent runs
   const runsList = await client.listRuns();

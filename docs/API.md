@@ -24,6 +24,12 @@ The Kaseki API Service provides HTTP endpoints for remotely triggering, monitori
 
 When `SOYUZ_SUBMISSION_ENABLED=true`, responses use the Soyuz UUID as the canonical `id`; otherwise local runs continue to use `kaseki-N`. Run lookup endpoints accept both forms during migration. Once the worker host has created its local mapping, responses include `localRunId` for diagnostics. `origin` and `retryOf` are derived from Soyuz's authenticated run record.
 
+Each Kaseki agent accepts one run at a time. A new local submission made while
+that run is active receives `409 Conflict` with `code: "RUN_ALREADY_ACTIVE"`;
+Kaseki does not keep a local FIFO backlog. Use multiple independent Kaseki
+agents when concurrent execution capacity is needed. `GET /api/v1/capabilities`
+reports `limits.maxActiveRunsPerAgent: 1`.
+
 ## Quick Start
 
 ### Start the API Service
@@ -58,7 +64,6 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | `KASEKI_API_WEBHOOK_TESTS_PER_HOUR` | 10 | Per-key limit for webhook tests and manual delivery retries |
 | `KASEKI_WEBHOOK_ALLOWED_ORIGINS` | *(empty)* | Comma-separated exact HTTP(S) origins allowed to receive webhooks on private networks or over plain HTTP; only use for trusted receivers |
 | `KASEKI_API_LOG_DIR` | /var/log/kaseki-api/ | Log file output directory |
-| `KASEKI_API_MAX_CONCURRENT_RUNS` | 3 | Max concurrent kaseki jobs |
 | `KASEKI_RESULTS_DIR` | /agents/kaseki-results | Directory for run artifacts |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | 10800 | Server default and maximum per-run agent timeout (3 hours); a request can ask for a shorter timeout but cannot exceed this value |
 | `KASEKI_MAX_DIFF_BYTES` | 400000 | Server maximum diff size (400 KB); a request can ask for a lower limit but cannot raise this maximum |
@@ -243,11 +248,11 @@ runbooks. For current controller readiness, call `GET /api/v1/preflight` instead
 
 **GET `/ready`** or **GET `/api/v1/ready`**
 
-No authentication required. Returns readiness for queue/scheduler dependencies and persistent storage capacity used to accept and execute runs.
+No authentication required. Returns readiness for scheduler dependencies and persistent storage capacity used to accept and execute runs. It does not report whether this agent's run slot is occupied.
 
 - `200` when:
   - results directory is readable+writable,
-  - scheduler queue status is available,
+  - scheduler startup has completed,
   - webhook manager loop is healthy,
   - storage capacity is measurable and at or above the admission minimum.
 - `503` when one or more dependencies are not ready.
@@ -283,7 +288,6 @@ No authentication required. Returns readiness for queue/scheduler dependencies a
 
 Requires authentication. Returns Prometheus text exposition (`text/plain; version=0.0.4`) including:
 
-- `kaseki_queue_pending` (gauge)
 - `kaseki_running_jobs` (gauge)
 - `kaseki_runs_total{result="success|failure"}` (counter)
 - `kaseki_run_duration_seconds` (histogram)
@@ -315,7 +319,7 @@ curl -X POST http://localhost:8080/api/v1/runs/local \
 
 The Kaseki web console exposes the same choice with **Submit directly to this Kaseki host**.
 
-Before queue admission, Kaseki runs the task safety classifier. High-confidence
+Before accepting a run, Kaseki runs the task safety classifier. High-confidence
 requests involving credentials, permission changes, or security-boundary changes
 are rejected with HTTP `422` and exit code `9`; the response includes an
 `admission` object. Classifier outages are reported as degraded warnings and
@@ -376,8 +380,13 @@ a Kaseki branch and creates a normal pull request after validation. Set
 branch without opening a PR, `auto` creates a normal PR when credentials are
 available and gracefully skips when they are not, and `none` skips GitHub
 publishing. Requests with effective publish mode `branch` or `pr` fail before
-queueing unless GitHub App credentials are readable; call `GET /api/v1/preflight`
+acceptance unless GitHub App credentials are readable; call `GET /api/v1/preflight`
 first to verify that readiness.
+
+The endpoint returns `409 Conflict` with `code: "RUN_ALREADY_ACTIVE"` when
+this agent is occupied. The idempotency claim is released, so a caller can
+retry the same key after the active run finishes. A successfully accepted run
+still replays as `200 OK` for that key while the run is active.
 
 ### Storage Admission
 
@@ -624,7 +633,7 @@ For backward compatibility, the response still includes:
 
 **Status Values:**
 
-- `queued` — Waiting in queue
+- `queued` — Accepted and awaiting execution handoff (for example, an externally authorized Soyuz run); local submissions reserve the single run slot immediately and are not held in a backlog
 - `running` — Currently executing
 - `completed` — Finished successfully (check exitCode)
 - `failed` — Failed validation, timeout, or quality gate
@@ -1024,7 +1033,7 @@ curl -H "Authorization: Bearer sk-test-key" \
 
 3. **Use allowlists** — Always set `changedFilesAllowlist` to prevent Pi from modifying unintended files.
 
-4. **Limit concurrent runs** — Set `KASEKI_API_MAX_CONCURRENT_RUNS` to prevent host overload.
+4. **Scale execution capacity** — Each Kaseki agent runs one task at a time. Use multiple independent agents with a dispatcher when concurrent work is needed.
 
 5. **Require authentication outside localhost** — Set `KASEKI_API_KEYS` before binding the API to any network-accessible interface or proxy. Empty-key mode is blocked on non-loopback binds and should never be used in production.
 

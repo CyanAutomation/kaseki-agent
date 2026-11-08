@@ -21,6 +21,7 @@ Diagnose and resolve common kaseki-agent failures. Start with the symptom table,
 | Docker volume mount or filesystem errors | Docker | [Docker Failures](#docker-failures) |
 | Provider returns 503, 429, or model-not-found | Gateway | [Gateway Failures](#gateway-failures) |
 | API rejects a run with `507 Insufficient Storage` or run fails with `storage_exhausted` | Storage | [Disk Space and Storage Failures](#disk-space-and-storage-failures) |
+| API rejects a run with `409 RUN_ALREADY_ACTIVE` | Run admission | [Agent Already Has an Active Run](#agent-already-has-an-active-run) |
 
 ### Exit Code to Category Map
 
@@ -779,13 +780,13 @@ awk -F'\t' '{print $1, $3 " seconds"}' /agents/kaseki-results/kaseki-N/validatio
 
 **Fix:** See [PERFORMANCE_TUNING.md](PERFORMANCE_TUNING.md).
 
-**High API queue backlog:**
+### Agent Already Has an Active Run
 
-```bash
-curl http://localhost:8080/health | jq '.queue'
-export KASEKI_API_MAX_CONCURRENT_RUNS=5  # Default: 3
-docker-compose restart kaseki-api
-```
+Each Kaseki agent accepts one run at a time. `409 Conflict` with
+`code: "RUN_ALREADY_ACTIVE"` means the agent is occupied and did not queue the
+request. Poll the active run, then retry with the same idempotency key after it
+finishes. Route work to another independent agent when parallel execution is
+needed.
 
 ---
 

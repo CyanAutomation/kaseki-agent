@@ -25,7 +25,6 @@ export interface KasekiApiConfig {
   resultsDir: string;
   /** Host-mounted run workspace directory used by worker containers. */
   runsDir?: string;
-  maxConcurrentRuns: number;
   defaultTaskMode: 'patch' | 'inspect';
   maxDiffBytes: number;
   agentTimeoutSeconds: number;
@@ -221,7 +220,6 @@ export function loadConfig(): KasekiApiConfig {
 
   const port = validatePort('KASEKI_API_PORT', 8080);
   const host = validateApiHost(apiKeys);
-  const maxConcurrentRuns = validatePositiveInt('KASEKI_API_MAX_CONCURRENT_RUNS', 3, 1, 'KASEKI_API_MAX_CONCURRENT_RUNS');
   const agentTimeoutSeconds = validatePositiveInt('KASEKI_AGENT_TIMEOUT_SECONDS', 10800, 1, 'KASEKI_AGENT_TIMEOUT_SECONDS');
   const maxDiffBytes = validatePositiveInt('KASEKI_MAX_DIFF_BYTES', 400000, 1, 'KASEKI_MAX_DIFF_BYTES');
   const jobIndexMaxEntries = validatePositiveInt(
@@ -287,7 +285,6 @@ export function loadConfig(): KasekiApiConfig {
     apiWebhookTestsPerHour: validatePositiveInt('KASEKI_API_WEBHOOK_TESTS_PER_HOUR', 10),
     resultsDir,
     runsDir,
-    maxConcurrentRuns,
     defaultTaskMode: taskMode,
     maxDiffBytes,
     agentTimeoutSeconds,

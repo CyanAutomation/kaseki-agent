@@ -6,6 +6,11 @@ Three conceptual levels:
 2. **Worker execution** — what happens inside `Running`.
 3. **Goal/retry loop** — the interesting agent-specific behaviour.
 
+Each Kaseki agent reserves one run slot at submission. A request made while
+that slot is occupied receives `409 RUN_ALREADY_ACTIVE`; it is not added to a
+local backlog. The `queued` status is a short pre-start state, including
+durable Soyuz authorization and restart recovery.
+
 ## A typical patch-mode Kaseki run
 
 A **typical patch-mode Kaseki run** looks like:
@@ -16,8 +21,8 @@ stateDiagram-v2
 
     [*] --> Submitted: POST /api/v1/runs
 
-    Submitted --> Queued: Request accepted
-    Queued --> Starting: Scheduler selects job
+    Submitted --> Queued: Accepted and single slot reserved
+    Queued --> Starting: Worker launch authorized
     Queued --> Cancelled: Cancel before execution
 
     Starting --> Running: Ephemeral container started
@@ -91,9 +96,12 @@ The high-level lifecycle can be much simpler:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Queued: POST /api/v1/runs
+    [*] --> Submitted: POST /api/v1/runs
 
-    Queued --> Running: Worker available
+    Submitted --> Starting: Single run slot is free
+    Submitted --> RejectedBusy: Slot occupied / HTTP 409
+    Submitted --> Queued: Awaiting external start authorization
+    Queued --> Starting: Authorization succeeds
 
     Queued --> Cancelled: Cancel
 
@@ -106,6 +114,7 @@ stateDiagram-v2
     Failed --> [*]
     TimedOut --> [*]
     Cancelled --> [*]
+    RejectedBusy --> [*]
 ```
 
 This corresponds closely to Kaseki's API model. Runs are submitted asynchronously through `POST /api/v1/runs`, while the API provides status/progress, logs and result retrieval around that lifecycle. The current implementation distinguishes lifecycle outcomes including queued, running, completed, failed, cancelled and timed-out states in its run/scorecard model.
@@ -202,17 +211,18 @@ stateDiagram-v2
         RequestValidation --> [*]: Valid
     }
 
-    Preflight --> Queued: POST /api/v1/runs
+    Preflight --> Queued: POST /api/v1/runs while slot is free
+    Preflight --> RejectedBusy: Slot occupied / HTTP 409
     Preflight --> Rejected: Invalid request / preflight failure
 
     state Queued {
         [*] --> Waiting
-        Waiting: Waiting for scheduler capacity
+        Waiting: Awaiting authorized worker launch
         Waiting --> [*]
     }
 
-    Queued --> Starting: Worker slot available
-    Queued --> Cancelled: POST /api/v1/runs/:id/cancel
+    Queued --> Starting: Single run authorized
+    Queued --> Cancelled: Cancel before worker launch
 
     state Starting {
         [*] --> ContainerStart
@@ -301,6 +311,7 @@ stateDiagram-v2
     Completed --> [*]
     Failed --> [*]
     Rejected --> [*]
+    RejectedBusy --> [*]
 ```
 
 There is a subtle point here: **`Cancelled` and `TimedOut` are useful conceptual states, but at the controller/job API level they can surface as `failed` with a `failureClass` such as `cancelled` or `timeout`.** I would retain them in the architecture diagram because they are genuinely distinct outcomes, but show that they collapse into the failed terminal path from the client's perspective.
@@ -316,8 +327,8 @@ I’d describe the API surface like this:
 | Before run | `POST /api/v1/validate`              | Is this particular run request valid?         |
 | Submit     | `POST /api/v1/runs`                  | Create asynchronous run                       |
 | Any        | `GET /api/v1/runs`                   | Discover/list runs                            |
-| Queued     | `GET /api/v1/runs/:id/status`        | Queue/run state                               |
-| Queued     | `POST /api/v1/runs/:id/cancel`       | Remove queued job                             |
+| Pre-start  | `GET /api/v1/runs/:id/status`        | Inspect a run awaiting worker handoff; there is no local backlog |
+| Pre-start  | `POST /api/v1/runs/:id/cancel`       | Cancel before worker launch                   |
 | Running    | `GET /api/v1/runs/:id/status`        | Current stage, elapsed time, timeout risk     |
 | Running    | `GET /api/v1/runs/:id/events`      | Sanitised event snapshot                    |
 | Running    | `GET /api/v1/runs/:id/events`        | Controller-friendly event stream snapshot     |
@@ -367,9 +378,10 @@ stateDiagram-v2
     [*] --> Validate
 
     Validate: POST /api/v1/validate
-    Validate --> Queued: POST /api/v1/runs
+    Validate --> Queued: POST /api/v1/runs when slot is free
+    Validate --> RejectedBusy: Slot occupied / HTTP 409
 
-    Queued --> Running: Scheduler starts worker
+    Queued --> Running: Worker launch authorized
     Queued --> Failed: cancel
 
     Running --> Running: GET /status\nGET /events\nSSE /events/stream
@@ -380,6 +392,7 @@ stateDiagram-v2
 
     Completed --> Results
     Failed --> Results
+    RejectedBusy --> [*]
 
     state Results {
         [*] --> Status
@@ -403,7 +416,7 @@ Strictly speaking this isn't a state diagram, but I think it belongs beside it b
 sequenceDiagram
     participant C as Controller
     participant API as Kaseki API
-    participant Q as Scheduler
+    participant S as Scheduler
     participant W as Ephemeral Worker
     participant GH as GitHub
 
@@ -417,10 +430,13 @@ sequenceDiagram
     API-->>C: valid
 
     C->>API: POST /api/v1/runs
-    API->>Q: enqueue job
-    API-->>C: 202 + runId
-
-    Q->>W: start ephemeral container
+    API->>S: reserve single run slot
+    alt slot available
+        S->>W: start ephemeral container
+        API-->>C: 202 + runId
+    else slot occupied
+        API-->>C: 409 RUN_ALREADY_ACTIVE
+    end
 
     C->>API: GET /runs/:id/events/stream
     API-->>C: stage: clone repository
@@ -462,7 +478,7 @@ ADMIT
   ready
   preflight
   validate request
-  queue
+  reserve one run slot
 
 PREPARE
   create container

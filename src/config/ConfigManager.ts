@@ -105,7 +105,6 @@ const ConfigSchema = z.object({
     key: z.string().optional(),
     keys: z.array(z.string()).optional(),
     log_level: z.enum(['debug', 'info', 'warn', 'error']).optional(),
-    max_concurrent_runs: z.number().int().positive().optional(),
   }).partial(),
 
   // Directory paths
@@ -185,7 +184,6 @@ const DEFAULT_CONFIG: Config = {
     port: 8080,
     base_url: 'http://localhost:8080/api',
     log_level: 'info',
-    max_concurrent_runs: 3,
   },
   directories: {
     root: '/agents',

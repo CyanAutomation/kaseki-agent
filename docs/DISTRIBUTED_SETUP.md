@@ -571,14 +571,16 @@ done
 ### Cross-Host Metrics
 
 ```bash
-# Aggregate queue status across hosts
+# Each independent Kaseki agent reports zero or one active run.
 for HOST in host-a host-b host-c; do
   echo "=== $HOST ==="
-  curl -s http://$HOST:8080/health | jq '.queue'
+  curl -s -H "Authorization: Bearer $KASEKI_API_KEY" \
+    http://$HOST:8080/api/v1/metrics | grep '^kaseki_running_jobs '
 done
-
-# Expected: queue state should be consistent across replicas
 ```
+
+Each agent accepts one run at a time. Route concurrent work across independent
+agents and aggregate their `kaseki_running_jobs` metrics for host-pool status.
 
 ---
 

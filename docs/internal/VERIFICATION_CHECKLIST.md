@@ -195,7 +195,7 @@ sleep 2
 
 # 5. Health check
 curl http://localhost:8080/health
-# Expected: 200 OK with queue stats
+# Expected: 200 OK with controller health status
 
 # 6. List runs
 curl -H "Authorization: Bearer sk-test" http://localhost:8080/api/runs
@@ -268,9 +268,9 @@ npm run build
 docker-compose logs -f kaseki-api    # Docker Compose
 journalctl -u kaseki-api -f          # systemd
 
-# Check queue status
+# List recent runs and inspect their statuses
 curl -H "Authorization: Bearer sk-key" \
-  http://localhost:8080/api/runs | jq .
+  'http://localhost:8080/api/v1/runs?limit=20' | jq .
 
 # View service health
 curl http://localhost:8080/health | jq .

@@ -386,7 +386,6 @@ The external Soyuz adapter is opt-in. See [Soyuz host integration](SOYUZ_INTEGRA
 | `CLOUDFLARE_QUEUE_API_TOKEN` | host secret | secret | Queue read/write token for pull, acknowledgement, and retry. |
 | `SOYUZ_WORKER_ID` | — | string | Stable, unique identity for this Kaseki host. |
 | `SOYUZ_POLL_INTERVAL_MS` | `5000` | integer | Queue poll interval (250–60000 ms). |
-| `SOYUZ_BATCH_SIZE` | `1` | integer | Maximum pull batch size (1–100), limited further by local capacity. |
 | `SOYUZ_VISIBILITY_TIMEOUT_MS` | `120000` | integer | Queue lease duration (1000 ms–12 hours), for handoff only. |
 | `SOYUZ_REQUEST_TIMEOUT_MS` | `20000` | integer | Timeout for each external API request (1000–120000 ms). |
 | `SOYUZ_CANCELLATION_POLL_INTERVAL_MS` | `15000` | integer | Interval for active-run cancellation checks (1000–300000 ms). |
@@ -401,7 +400,7 @@ The external Soyuz adapter is opt-in. See [Soyuz host integration](SOYUZ_INTEGRA
 | `KASEKI_API_LOG_LEVEL` | `info` | string | Log verbosity (debug/info/warn/error); takes precedence over generic `LOG_LEVEL`, which remains a compatibility fallback |
 | `NODE_ENV` | `production` | string | Node.js environment mode |
 
-The Compose deployment pins `KASEKI_API_LOG_LEVEL` to `warn` and `KASEKI_API_MAX_CONCURRENT_RUNS` to `1` by default; explicit `.env` values override them. `info` and `3` remain the software defaults for `serve` and other deployments.
+The Compose deployment pins `KASEKI_API_LOG_LEVEL` to `warn` by default; explicit `.env` values override it. `info` remains the software default for `serve` and other deployments.
 
 ### Error Tracking
 
@@ -417,11 +416,14 @@ The Sentry SDK is optional. When Sentry is enabled but the SDK is unavailable,
 errors fall back to structured application logs. See the
 [Sentry integration guide](SENTRY_INTEGRATION.md) for setup and operation.
 
-### Concurrency & Performance
+### Run Execution
+
+Each Kaseki agent accepts one run at a time. While a run is active, new local
+submissions return `409 Conflict` with `RUN_ALREADY_ACTIVE`; Kaseki does not
+queue a local backlog. Use multiple independent agents for concurrent work.
 
 | Variable | Default | Type | Purpose |
 | ---------- | --------- | ------ | --------- |
-| `KASEKI_API_MAX_CONCURRENT_RUNS` | `3` | integer | Max parallel kaseki-agent jobs |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | integer | Timeout for agent execution (same as CLI) |
 | `KASEKI_MAX_DIFF_BYTES` | `400000` | integer | Quality gate limit (same as CLI) |
 
@@ -584,8 +586,6 @@ export LLM_GATEWAY_URL="https://api.openai.com/v1"
 export LLM_GATEWAY_API_KEY_FILE="/run/secrets/kaseki/llm_gateway_api_key"
 export KASEKI_API_PORT=8080
 export KASEKI_API_LOG_LEVEL=info
-export KASEKI_API_MAX_CONCURRENT_RUNS=5
-
 # Agent defaults
 export KASEKI_AGENT_TIMEOUT_SECONDS=1800
 export KASEKI_MAX_DIFF_BYTES=200000

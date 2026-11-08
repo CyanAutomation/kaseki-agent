@@ -279,7 +279,6 @@ curl -H "Authorization: Bearer sk-your-secret-key-here" \
 | `KASEKI_API_PORT` | `8080` | HTTP listen port |
 | `KASEKI_API_LOG_LEVEL` | `info` | Log level: debug, info, warn, error |
 | `KASEKI_API_IMAGE` | `docker.io/cyanautomation/kaseki-agent:latest` | Docker image to use |
-| `KASEKI_API_MAX_CONCURRENT_RUNS` | `3` | Max parallel instances |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | Per-run timeout (3 hours) |
 | `KASEKI_MAX_DIFF_BYTES` | `400000` | Max diff size (400 KB) |
 | `OPENROUTER_API_KEY_FILE` | — | Required: path to OpenRouter key file |
@@ -295,7 +294,6 @@ version: '3.8'
 services:
   kaseki-api:
     environment:
-      KASEKI_API_MAX_CONCURRENT_RUNS: 5
       KASEKI_AGENT_TIMEOUT_SECONDS: 3600
     ports:
       - "9000:8080"  # Listen on port 9000 instead
@@ -386,17 +384,11 @@ curl -v -H "Authorization: Bearer sk-your-secret-key" \
   http://localhost:8080/api/health
 ```
 
-### "Max concurrent runs exceeded"
+### "RUN_ALREADY_ACTIVE"
 
-All worker slots are in use. Either:
-
-1. Wait for a run to complete
-2. Increase `KASEKI_API_MAX_CONCURRENT_RUNS`
-
-```bash
-export KASEKI_API_MAX_CONCURRENT_RUNS=10
-docker-compose up -d  # Restart with new limit
-```
+Each Kaseki agent accepts one run at a time. Wait for its active run to finish
+before retrying with the same idempotency key, or route work to another
+independent agent for parallel execution.
 
 ### Results Directory Filling Up
 

@@ -138,14 +138,25 @@ type TimeoutHandles = {
   isTimedOut?: () => boolean;
 };
 
+/** Raised when this Kaseki agent already owns a run slot. */
+export class RunAlreadyActiveError extends Error {
+  readonly code = 'RUN_ALREADY_ACTIVE';
+
+  constructor() {
+    super('This Kaseki agent already has an active run');
+    this.name = 'RunAlreadyActiveError';
+  }
+}
+
 /**
- * Job scheduler manages a FIFO queue of kaseki runs with concurrency control.
+ * Job scheduler manages one active Kaseki run at a time.
  */
 export class JobScheduler {
   private static readonly STREAM_TAIL_LIMIT_BYTES = 64 * 1024;
   private static readonly DEFAULT_LIVE_PROGRESS_CACHE_TTL_MS = 1500;
   private jobs = new Map<string, Job>();
-  private queue: Job[] = [];
+  private activeRunId?: string;
+  private runSlotReserved = false;
   private running = new Set<string>();
   private processes = new Map<string, ChildProcess>();
   private processExited = new Map<string, boolean>();
@@ -191,74 +202,74 @@ export class JobScheduler {
     });
   }
 
-  /**
-   * Submit a new job to the queue.
-   */
+  /** Submit a local run, rejecting it if this agent is already occupied. */
   async submitJob(request: RunRequest, advisoryRoutingHints?: TaskAdmissionRoutingHints): Promise<Job> {
     await this.ready();
-    await this.ensureStorageCapacity();
-    const instanceId = await this.persistenceManager.generateInstanceId(
-      Array.from(this.jobs.keys()),
-    );
+    this.reserveRunSlot();
 
-    // Generate tracing IDs if not provided
-    const correlationId = request.tracing?.correlationId || randomUUID();
-    const requestId = request.tracing?.requestId || randomUUID();
-
-    const job: Job = {
-      id: instanceId,
-      status: 'queued',
-      request,
-      advisoryRoutingHints,
-      createdAt: new Date(),
-      resultDir: this.persistenceManager.getResultDir(instanceId),
-      webhookConfig: request.webhookConfig,
-      correlationId,
-      requestId,
-    };
-
-    this.jobs.set(instanceId, job);
-    this.queue.push(job);
+    let instanceId: string | undefined;
+    let job: Job | undefined;
     try {
+      await this.ensureStorageCapacity();
+      instanceId = await this.persistenceManager.generateInstanceId(Array.from(this.jobs.keys()));
+
+      // Generate tracing IDs if not provided
+      const correlationId = request.tracing?.correlationId || randomUUID();
+      const requestId = request.tracing?.requestId || randomUUID();
+
+      job = {
+        id: instanceId,
+        status: 'queued',
+        request,
+        advisoryRoutingHints,
+        createdAt: new Date(),
+        resultDir: this.persistenceManager.getResultDir(instanceId),
+        webhookConfig: request.webhookConfig,
+        correlationId,
+        requestId,
+      };
+
+      this.activateRunSlot(instanceId);
+      this.jobs.set(instanceId, job);
       await this.persistenceManager.persistQueuedJob(job);
     } catch (error) {
-      this.jobs.delete(instanceId);
-      this.queue = this.queue.filter((queued) => queued.id !== instanceId);
+      if (instanceId) this.jobs.delete(instanceId);
+      this.releaseRunSlot(instanceId);
       throw error;
     }
 
     // Emit webhook event for job submission
-    if (job.webhookConfig) {
+    const acceptedJob = job!;
+    const acceptedId = instanceId!;
+    if (acceptedJob.webhookConfig) {
       const payload: WebhookPayload = {
         eventType: WebhookEventType.JOB_SUBMITTED,
-        jobId: instanceId,
+        jobId: acceptedId,
         timestamp: new Date().toISOString(),
         data: {
           status: 'queued',
         },
       };
       this.webhookManager.enqueueWebhook(
-        instanceId,
+        acceptedId,
         payload,
-        job.webhookConfig,
+        acceptedJob.webhookConfig,
       );
     }
 
-    this.processQueue();
-    metricsRegistry.setQueuePending(this.queue.length);
+    this.startAcceptedJob(acceptedJob);
 
     // Log job submission
     this.logger.event('job_submitted', {
-      jobId: instanceId,
-      correlationId,
-      requestId,
+      jobId: acceptedJob.id,
+      correlationId: acceptedJob.correlationId,
+      requestId: acceptedJob.requestId,
       repoUrl: request.repoUrl,
       ref: request.ref,
-      queueDepth: this.queue.length,
       runningCount: this.running.size,
     });
 
-    return job;
+    return acceptedJob;
   }
 
   /** Persist a Soyuz-owned job without allowing the scheduler to start it yet. */
@@ -276,38 +287,41 @@ export class JobScheduler {
     await this.ready();
     const existing = await this.findSoyuzJob(externalRunId);
     if (existing) return existing;
-    await this.ensureStorageCapacity();
+    this.reserveRunSlot();
 
-    const instanceId = await this.persistenceManager.generateInstanceId(Array.from(this.jobs.keys()));
-    const job: Job = {
-      id: instanceId,
-      status: 'queued',
-      request,
-      advisoryRoutingHints,
-      createdAt: new Date(),
-      resultDir: this.persistenceManager.getResultDir(instanceId),
-      correlationId,
-      requestId,
-      soyuz: {
-        externalRunId,
-        ...(origin ? { origin } : {}),
-        ...(retryOf !== undefined ? { retryOf } : {}),
-        workerId,
-        contractVersion: '1',
-        ...(claimCallbackId ? { claimCallbackId } : {}),
-        startedCallbackId: randomUUID(),
-        startAuthorized: false,
-        metadataUpdatedAt: new Date().toISOString(),
-      },
-    };
-
-    this.jobs.set(instanceId, job);
-    this.queue.push(job);
+    let instanceId: string | undefined;
+    let job: Job | undefined;
     try {
+      await this.ensureStorageCapacity();
+      instanceId = await this.persistenceManager.generateInstanceId(Array.from(this.jobs.keys()));
+      job = {
+        id: instanceId,
+        status: 'queued',
+        request,
+        advisoryRoutingHints,
+        createdAt: new Date(),
+        resultDir: this.persistenceManager.getResultDir(instanceId),
+        webhookConfig: request.webhookConfig,
+        correlationId,
+        requestId,
+        soyuz: {
+          externalRunId,
+          ...(origin ? { origin } : {}),
+          ...(retryOf !== undefined ? { retryOf } : {}),
+          workerId,
+          contractVersion: '1',
+          ...(claimCallbackId ? { claimCallbackId } : {}),
+          startedCallbackId: randomUUID(),
+          startAuthorized: false,
+          metadataUpdatedAt: new Date().toISOString(),
+        },
+      };
+      this.activateRunSlot(instanceId);
+      this.jobs.set(instanceId, job);
       await this.persistenceManager.persistQueuedJob(job);
     } catch (error) {
-      this.jobs.delete(instanceId);
-      this.queue = this.queue.filter((queued) => queued.id !== instanceId);
+      if (instanceId) this.jobs.delete(instanceId);
+      this.releaseRunSlot(instanceId);
       if (error instanceof ExternalRunAlreadyPersistedError) {
         const winner = await this.findSoyuzJob(externalRunId);
         if (winner) return winner;
@@ -315,16 +329,14 @@ export class JobScheduler {
       throw error;
     }
 
-    this.processQueue();
-    metricsRegistry.setQueuePending(this.queue.length);
     this.logger.event('soyuz_job_durably_accepted', {
-      jobId: job.id,
+      jobId: job!.id,
       externalRunId,
       correlationId,
       requestId,
       workerId,
     });
-    return job;
+    return job!;
   }
 
   async recordSoyuzAdmissionFailure(
@@ -391,17 +403,26 @@ export class JobScheduler {
     await this.persistenceManager.removeSoyuzClaimIntent(externalRunId, claimCallbackId);
   }
 
-  /**
-   * Open the scheduler gate only after the Soyuz started callback succeeded.
-   * The local running state is also persisted before Docker is launched.
-   */
+  /** Reserve the single run slot before notifying Soyuz that a queued run started. */
+  async reserveSoyuzStart(localRunId: string): Promise<boolean> {
+    await this.ready();
+    const job = this.jobs.get(localRunId)
+      ?? (await this.persistenceManager.listPersistedJobs()).find((candidate) => candidate.id === localRunId);
+    if (!job?.soyuz || job.status !== 'queued') return false;
+    this.jobs.set(job.id, job);
+    return this.reserveRunSlotForJob(job.id);
+  }
+
+  /** Open the scheduler gate only after the Soyuz started callback succeeded. */
   async authorizeSoyuzStart(localRunId: string): Promise<boolean> {
     await this.ready();
     const job = this.jobs.get(localRunId)
       ?? (await this.persistenceManager.listPersistedJobs()).find((candidate) => candidate.id === localRunId);
     if (!job?.soyuz || job.status !== 'queued') return false;
+    this.jobs.set(job.id, job);
+    if (!this.reserveRunSlotForJob(job.id)) return false;
     if (job.soyuz.startAuthorized && !job.soyuz.startNeedsCanonicalRecheck) {
-      this.processQueue();
+      this.startAcceptedJob(job);
       return true;
     }
 
@@ -414,10 +435,7 @@ export class JobScheduler {
       job.soyuz.startNeedsCanonicalRecheck = true;
       throw error;
     }
-    this.jobs.set(job.id, job);
-    if (!this.queue.some((queued) => queued.id === job.id)) this.queue.push(job);
-    this.processQueue();
-    metricsRegistry.setQueuePending(this.queue.length);
+    this.startAcceptedJob(job);
     return true;
   }
 
@@ -448,8 +466,7 @@ export class JobScheduler {
   holdSoyuzJob(localRunId: string): void {
     const job = this.jobs.get(localRunId);
     if (!job?.soyuz || job.status !== 'queued') return;
-    this.queue = this.queue.filter((queued) => queued.id !== localRunId);
-    metricsRegistry.setQueuePending(this.queue.length);
+    this.releaseRunSlot(localRunId);
   }
 
   getSoyuzJobs(): Job[] {
@@ -565,13 +582,13 @@ export class JobScheduler {
 
     const completedAt = new Date();
     if (job.status === 'queued') {
-      this.queue = this.queue.filter((queued) => queued.id !== id);
       job.status = 'failed';
       job.exitCode = 143;
       job.failureClass = 'cancelled';
       job.error = 'Job cancelled before execution';
       job.completedAt = completedAt;
       job.finalized = true;
+      this.releaseRunSlot(id);
       this.failureArtifactWriter.writeFailureArtifacts(job, {
         attempted: false,
         detail: 'Job never started; no worker container was created.',
@@ -704,41 +721,64 @@ export class JobScheduler {
     return job;
   }
 
-  /**
-   * Process the queue, respecting max concurrent limit.
-   */
-  private processQueue(): void {
+  /** Whether a new local or Soyuz run can reserve this agent. */
+  isRunSlotAvailable(): boolean {
+    return !this.isShuttingDown
+      && !this.runSlotReserved
+      && this.activeRunId === undefined
+      && this.running.size === 0;
+  }
+
+  private reserveRunSlot(): void {
+    if (!this.isRunSlotAvailable()) throw new RunAlreadyActiveError();
+    this.runSlotReserved = true;
+  }
+
+  private reserveRunSlotForJob(jobId: string): boolean {
+    if (this.activeRunId === jobId) return true;
+    if (!this.isRunSlotAvailable()) return false;
+    this.activeRunId = jobId;
+    return true;
+  }
+
+  private activateRunSlot(jobId: string): void {
+    this.runSlotReserved = false;
+    this.activeRunId = jobId;
+  }
+
+  private releaseRunSlot(jobId?: string): void {
+    if (this.activeRunId === undefined) this.runSlotReserved = false;
+    if (jobId === undefined || this.activeRunId === jobId) {
+      this.activeRunId = undefined;
+      this.runSlotReserved = false;
+    }
+  }
+
+  private startAcceptedJob(job: Job): void {
     if (this.isShuttingDown) {
+      this.finalizeJobIfNeeded(job, {
+        status: 'failed',
+        exitCode: 143,
+        failureClass: 'shutdown_aborted',
+        error: 'Job aborted during scheduler shutdown before execution',
+        completedAt: new Date(),
+      });
       return;
     }
-
-    while (
-      this.queue.length > 0 &&
-      this.running.size < this.config.maxConcurrentRuns
-    ) {
-      const runnableIndex = this.queue.findIndex(
-        (candidate) => !candidate.soyuz
-          || (candidate.soyuz.startAuthorized && !candidate.soyuz.startNeedsCanonicalRecheck),
-      );
-      if (runnableIndex < 0) break;
-      const [job] = this.queue.splice(runnableIndex, 1);
-      if (job) {
-        void this.executeJob(job).catch((error: unknown) => {
-          this.logger.error('Failed to start scheduled job', {
-            jobId: job.id,
-            externalRunId: job.soyuz?.externalRunId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          this.finalizeJobIfNeeded(job, {
-            status: 'failed',
-            exitCode: EXIT_CODE_SPAWN_FAILED,
-            failureClass: 'scheduler_start_failed',
-            error: 'Kaseki could not start this run. See host logs for details.',
-            completedAt: new Date(),
-          });
-        });
-      }
-    }
+    void this.executeJob(job).catch((error: unknown) => {
+      this.logger.error('Failed to start accepted run', {
+        jobId: job.id,
+        externalRunId: job.soyuz?.externalRunId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      this.finalizeJobIfNeeded(job, {
+        status: 'failed',
+        exitCode: EXIT_CODE_SPAWN_FAILED,
+        failureClass: 'scheduler_start_failed',
+        error: 'Kaseki could not start this run. See host logs for details.',
+        completedAt: new Date(),
+      });
+    });
   }
 
   /**
@@ -1729,12 +1769,11 @@ export class JobScheduler {
       this.timeoutKillTimers.delete(job.id);
     }
     this.clearJobCaches(job);
+    this.releaseRunSlot(job.id);
     this.pruneTerminalJobsIndex();
     if (!this.isShuttingDown) {
       void this.persistJobs();
-      this.processQueue();
     }
-    metricsRegistry.setQueuePending(this.queue.length);
   }
 
   private observeEvaluatorMetrics(job: Job): void {
@@ -1949,29 +1988,38 @@ export class JobScheduler {
     // this host was offline, even though an earlier `started` callback was
     // durably recorded locally. Keep the historical authorization, but close
     // the execution gate until the adapter reconciles canonical state.
-    for (const job of this.queue) {
-      if (job.soyuz) {
-        job.soyuz.startNeedsCanonicalRecheck = true;
-        job.soyuz.metadataUpdatedAt = new Date().toISOString();
-      }
+    const resumedJob = this.activeRunId ? this.jobs.get(this.activeRunId) : undefined;
+    if (resumedJob?.soyuz) {
+      resumedJob.soyuz.startNeedsCanonicalRecheck = true;
+      resumedJob.soyuz.metadataUpdatedAt = new Date().toISOString();
     }
     await this.persistJobs();
-    this.processQueue();
-    metricsRegistry.setQueuePending(this.queue.length);
+    if (resumedJob && !resumedJob.soyuz) this.startAcceptedJob(resumedJob);
     metricsRegistry.setRunningJobs(this.running.size);
   }
 
   private async loadPersistedJobs(): Promise<void> {
-    // The persistence manager returns only queued jobs durably claimed by this
-    // scheduler instance; jobs claimed by another live scheduler remain visible
-    // in `jobs`, but must never enter this process's execution queue.
+    // The persistence manager returns queued jobs durably claimed by this
+    // scheduler instance. Resume one and terminalize any legacy backlog so it
+    // cannot silently drain after upgrading to single-run behavior.
     const { jobs, queuedJobs: claimedQueuedJobs, status } =
       await this.persistenceManager.loadPersistedJobs();
     for (const job of jobs) {
       this.jobs.set(job.id, job);
     }
-    for (const job of claimedQueuedJobs) {
-      this.queue.push(job);
+    const [resumedJob, ...legacyQueuedJobs] = claimedQueuedJobs.sort(
+      (left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id),
+    );
+    if (resumedJob) this.activeRunId = resumedJob.id;
+    for (const job of legacyQueuedJobs) {
+      this.persistenceManager.releaseQueuedJobOwnership(job);
+      this.finalizeJobIfNeeded(job, {
+        status: 'failed',
+        exitCode: 9,
+        failureClass: 'single_run_only',
+        error: 'This run was not resumed because this Kaseki agent supports one run at a time. Submit it again when the agent is available.',
+        completedAt: new Date(),
+      });
     }
     this.pruneTerminalJobsIndex();
 
@@ -1993,21 +2041,6 @@ export class JobScheduler {
     await this.persistenceManager.persistJobs(Array.from(this.jobs.values()));
   }
 
-  /**
-   * Get queue status.
-   */
-  getQueueStatus(): {
-    pending: number;
-    running: number;
-    maxConcurrent: number;
-    } {
-    return {
-      pending: this.queue.length,
-      running: this.running.size,
-      maxConcurrent: this.config.maxConcurrentRuns,
-    };
-  }
-
   getReadiness(): { ready: boolean; reasons: string[] } {
     const reasons: string[] = [];
     try {
@@ -2021,17 +2054,6 @@ export class JobScheduler {
     }
     if (!this.webhookManager.isHealthy()) {
       reasons.push('webhook_manager_unhealthy');
-    }
-    try {
-      const status = this.getQueueStatus();
-      if (
-        !Number.isFinite(status.pending) ||
-        !Number.isFinite(status.running)
-      ) {
-        reasons.push('scheduler_status_invalid');
-      }
-    } catch {
-      reasons.push('scheduler_unavailable');
     }
     if (this.storageGuardEnabled) {
       const storage = this.storageCapacityManager.getStatus();
@@ -2109,7 +2131,7 @@ export class JobScheduler {
   }
 
   private hasActiveRunsForStorageCleanup(): boolean {
-    if (this.queue.length > 0 || this.running.size > 0) return true;
+    if (this.activeRunId !== undefined || this.runSlotReserved || this.running.size > 0) return true;
     try {
       return getActiveRunNames(this.config.resultsDir).size > 0 || hasActiveRunWorkspaceOrStaging(
         this.config.resultsDir,
@@ -2130,13 +2152,6 @@ export class JobScheduler {
       clearInterval(this.storageMonitor);
       this.storageMonitor = undefined;
     }
-
-    // Detach pending work before finalizing running jobs. A running job may
-    // complete synchronously while it is being terminated, and its completion
-    // must not start or mutate the jobs being aborted below.
-    const queuedJobs = this.queue;
-    this.queue = [];
-    metricsRegistry.setQueuePending(0);
 
     for (const jobId of this.running) {
       const j = this.jobs.get(jobId);
@@ -2175,18 +2190,14 @@ export class JobScheduler {
       }
     }
 
-    const now = new Date();
-    for (const queuedJob of queuedJobs) {
-      if (queuedJob.finalized) {
-        continue;
-      }
-
-      this.finalizeJobIfNeeded(queuedJob, {
+    const unstartedJob = this.activeRunId ? this.jobs.get(this.activeRunId) : undefined;
+    if (unstartedJob?.status === 'queued' && !unstartedJob.finalized) {
+      this.finalizeJobIfNeeded(unstartedJob, {
         status: 'failed',
         exitCode: 143,
         failureClass: 'shutdown_aborted',
-        error: 'Job dropped during scheduler shutdown before execution',
-        completedAt: now,
+        error: 'Job aborted during scheduler shutdown before execution',
+        completedAt: new Date(),
       });
     }
 

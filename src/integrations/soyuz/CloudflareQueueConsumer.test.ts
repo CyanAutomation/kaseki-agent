@@ -12,7 +12,6 @@ const config: SoyuzAdapterConfig = {
   queueApiToken: 'cloudflare-queue-secret',
   workerId: 'host-a',
   pollIntervalMs: 5_000,
-  batchSize: 2,
   visibilityTimeoutMs: 120_000,
   requestTimeoutMs: 20_000,
   cancellationPollIntervalMs: 15_000,
@@ -27,7 +26,7 @@ describe('Cloudflare HTTP pull consumer', () => {
     }), { headers: { 'content-type': 'application/json' } }));
     const queue = new CloudflareQueueConsumer(config, fetchImpl as typeof fetch);
 
-    await expect(queue.pull(1)).resolves.toEqual([{
+    await expect(queue.pull()).resolves.toEqual([{
       body: '{"runId":"external"}',
       id: 'ephemeral',
       timestamp_ms: 123,
@@ -60,6 +59,6 @@ describe('Cloudflare HTTP pull consumer', () => {
     }), { status: 429, headers: { 'retry-after': '17' } }));
     const queue = new CloudflareQueueConsumer(config, fetchImpl as typeof fetch);
 
-    await expect(queue.pull(1)).rejects.toMatchObject({ status: 429, retryAfterSeconds: 17 });
+    await expect(queue.pull()).rejects.toMatchObject({ status: 429, retryAfterSeconds: 17 });
   });
 });
