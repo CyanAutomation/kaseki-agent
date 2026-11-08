@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import * as crypto from 'crypto';
-import { JobScheduler } from './job-scheduler';
+import { JobScheduler, RunAlreadyActiveError } from './job-scheduler';
 import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
 import { classifyDockerFailure } from './lib/subprocess-helpers';
@@ -367,7 +367,7 @@ function registerApiInfoRoutes(
       taskModes: ['patch', 'inspect'],
       publishModes: ['auto', 'none', 'branch', 'pr'],
       limits: {
-        maxConcurrentRuns: config.maxConcurrentRuns,
+        maxActiveRunsPerAgent: 1,
         maxDiffBytes: config.maxDiffBytes,
         timeoutSeconds: config.agentTimeoutSeconds,
         terminalRunIndexMaxEntries: config.jobIndexMaxEntries,
@@ -837,6 +837,9 @@ function registerRunSubmissionRoute(
       }
       res.status(202).json(submissionResult.response); // 202 Accepted
     } catch (err: unknown) {
+      if (err instanceof RunAlreadyActiveError) {
+        return sendErrorResponse(res, 409, 'Conflict', err.message, { code: err.code });
+      }
       const storageError = getStorageCapacityError(err);
       if (storageError) {
         metricsRegistry.incAdmissionRejection('storage-capacity');
@@ -907,7 +910,7 @@ function registerRunRetryRoute(
   } = dependencies;
   /**
    * Retry only a terminal run. The caller must supply a fresh UUID key; a
-   * replay of that key returns the same newly-created run without enqueueing twice.
+   * replay of that key returns the same newly-created run without accepting it twice.
    */
   router.post('/runs/:id/retry', async (req: Request, res: Response) => {
     const source = scheduler.getJob(req.params.id) ?? (
@@ -1016,9 +1019,15 @@ function registerRunRetryRoute(
         return { state: 'submitted' as const, response };
       } catch (error) {
         await idempotencyStore.releasePendingClaim(idempotencyKey, fingerprint);
+        if (error instanceof RunAlreadyActiveError) return { state: 'run_busy' as const };
         throw error;
       }
     });
+    if (result.state === 'run_busy') {
+      return sendErrorResponse(res, 409, 'Conflict', 'This Kaseki agent already has an active run', {
+        code: 'RUN_ALREADY_ACTIVE',
+      });
+    }
     if (result.state === 'pending') {
       return sendErrorResponse(res, 409, 'Conflict', 'Retry with this idempotency key is already being processed');
     }

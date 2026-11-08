@@ -13,7 +13,6 @@ export interface SoyuzAdapterConfig {
   queueApiToken: string;
   workerId: string;
   pollIntervalMs: number;
-  batchSize: number;
   visibilityTimeoutMs: number;
   requestTimeoutMs: number;
   cancellationPollIntervalMs: number;
@@ -62,7 +61,6 @@ export function loadSoyuzAdapterConfig(env: NodeJS.ProcessEnv = process.env): So
       queueApiToken: '',
       workerId: '',
       pollIntervalMs: positiveInt(env, 'SOYUZ_POLL_INTERVAL_MS', 5_000, 250, 60_000),
-      batchSize: positiveInt(env, 'SOYUZ_BATCH_SIZE', 1, 1, 100),
       visibilityTimeoutMs: positiveInt(env, 'SOYUZ_VISIBILITY_TIMEOUT_MS', 120_000, 1_000, 43_200_000),
       requestTimeoutMs: positiveInt(env, 'SOYUZ_REQUEST_TIMEOUT_MS', 20_000, 1_000, 120_000),
       cancellationPollIntervalMs: positiveInt(env, 'SOYUZ_CANCELLATION_POLL_INTERVAL_MS', 15_000, 1_000, 300_000),
@@ -117,7 +115,6 @@ export function loadSoyuzAdapterConfig(env: NodeJS.ProcessEnv = process.env): So
     queueApiToken,
     workerId,
     pollIntervalMs: positiveInt(env, 'SOYUZ_POLL_INTERVAL_MS', 5_000, 250, 60_000),
-    batchSize: positiveInt(env, 'SOYUZ_BATCH_SIZE', 1, 1, 100),
     visibilityTimeoutMs: positiveInt(env, 'SOYUZ_VISIBILITY_TIMEOUT_MS', 120_000, 1_000, 43_200_000),
     requestTimeoutMs: positiveInt(env, 'SOYUZ_REQUEST_TIMEOUT_MS', 20_000, 1_000, 120_000),
     cancellationPollIntervalMs: positiveInt(env, 'SOYUZ_CANCELLATION_POLL_INTERVAL_MS', 15_000, 1_000, 300_000),

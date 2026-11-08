@@ -6,7 +6,7 @@ import type { Job } from '../../kaseki-api-types';
 import type { SoyuzOutboxEntry } from '../../job-persistence-manager';
 import type { TaskAdmissionEvaluator } from '../../task-admission';
 import { SoyuzAdapter } from './SoyuzAdapter';
-import type { SoyuzAdapterConfig } from './config';
+import { loadSoyuzAdapterConfig, type SoyuzAdapterConfig } from './config';
 
 jest.mock('../../kaseki-api-health-checks', () => ({
   checkGitHubAppCredentials: jest.fn(() => ({ name: 'github-app', ok: true })),
@@ -44,7 +44,6 @@ function adapterConfig(workerId: string): SoyuzAdapterConfig {
     queueApiToken: 'cloudflare-queue-token-that-is-not-logged',
     workerId,
     pollIntervalMs: 250,
-    batchSize: 1,
     visibilityTimeoutMs: 120_000,
     requestTimeoutMs: 1_000,
     cancellationPollIntervalMs: 15_000,
@@ -59,16 +58,12 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function createScheduler(workerId: string, maxConcurrent = 1) {
+function createScheduler(_workerId: string) {
   const jobs: Job[] = [];
   const callbacks: SoyuzOutboxEntry[] = [];
   const claimIntents: Array<{ externalRunId: string; workerId: string; queuedAt: string; claimCallbackId: string; createdAt: string }> = [];
   const scheduler = {
-    getQueueStatus: jest.fn(() => ({
-      pending: jobs.filter((job) => job.status === 'queued').length,
-      running: jobs.filter((job) => job.status === 'running').length,
-      maxConcurrent,
-    })),
+    isRunSlotAvailable: jest.fn(() => !jobs.some((job) => job.status === 'queued' || job.status === 'running')),
     getReadiness: jest.fn(() => ({ ready: true, reasons: [] })),
     listSoyuzJobs: jest.fn(async () => [...jobs]),
     findSoyuzJob: jest.fn(async (externalRunId: string) => jobs.find((job) => job.soyuz?.externalRunId === externalRunId)),
@@ -93,6 +88,7 @@ function createScheduler(workerId: string, maxConcurrent = 1) {
       jobs.push(job);
       return job;
     }),
+    reserveSoyuzStart: jest.fn(async (localRunId: string) => jobs.some((job) => job.id === localRunId && job.status === 'queued')),
     recordSoyuzAdmissionFailure: jest.fn(async (
       _request: unknown,
       externalRunId: string,
@@ -140,7 +136,10 @@ function createScheduler(workerId: string, maxConcurrent = 1) {
         job.failureClass = 'cancelled';
       }
     }),
-    holdSoyuzJob: jest.fn(),
+    holdSoyuzJob: jest.fn((localRunId: string) => {
+      const job = jobs.find((candidate) => candidate.id === localRunId);
+      if (job) job.status = 'failed';
+    }),
     getLiveProgressEvents: jest.fn(() => []),
     claimSoyuzCallbacks: jest.fn(async () => callbacks.filter((candidate) => candidate.deliveryState === 'pending').slice(0, 25)),
     persistSoyuzTerminalCallback: jest.fn(async (job: Job, entry: SoyuzOutboxEntry) => {
@@ -324,6 +323,29 @@ function makeAdapter(
 }
 
 describe('Soyuz adapter handoff', () => {
+  test('ignores the retired queue batch-size setting', () => {
+    const config = loadSoyuzAdapterConfig({ SOYUZ_ENABLED: 'false', SOYUZ_BATCH_SIZE: '100' });
+    expect(config).not.toHaveProperty('batchSize');
+  });
+
+  test('does not pull another message while this agent has an active run', async () => {
+    const state = runState();
+    const { fetchImpl, calls } = createFetch(state);
+    const { scheduler, jobs } = createScheduler('host-a');
+    jobs.push({
+      id: 'local-active-run',
+      status: 'running',
+      request: queuedRun.request,
+      createdAt: new Date(),
+      correlationId: CORRELATION_ID,
+      requestId: REQUEST_ID,
+    });
+
+    await makeAdapter('host-a', scheduler, fetchImpl).runOnce();
+
+    expect(calls.some((call) => call.url.endsWith('/messages/pull'))).toBe(false);
+  });
+
   test('uploads bounded allowlisted artifacts and retries them before reporting terminal status', async () => {
     const resultDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kaseki-soyuz-terminal-'));
     try {
@@ -339,7 +361,7 @@ describe('Soyuz adapter handoff', () => {
       state.workerId = 'host-a';
       state.claimCallbackId = '66666666-6666-4666-8666-666666666666';
       const { fetchImpl, calls } = createFetch(state, { failFirstArtifactUpload: true });
-      const { scheduler, jobs } = createScheduler('host-a', 0);
+      const { scheduler, jobs } = createScheduler('host-a');
       jobs.push({
         id: 'kaseki-terminal',
         status: 'completed',
@@ -413,7 +435,7 @@ describe('Soyuz adapter handoff', () => {
       state.workerId = 'host-a';
       state.claimCallbackId = '66666666-6666-4666-8666-666666666666';
       const { fetchImpl, calls } = createFetch(state, { rejectArtifactUploadReport: true });
-      const { scheduler, jobs } = createScheduler('host-a', 0);
+      const { scheduler, jobs } = createScheduler('host-a');
       jobs.push({
         id: 'kaseki-legacy-report',
         status: 'completed',
@@ -450,7 +472,7 @@ describe('Soyuz adapter handoff', () => {
   test('recovers an uncertain queue acknowledgement by external run ID without a second local job', async () => {
     const state = runState();
     const { fetchImpl, calls } = createFetch(state, { loseFirstAck: true });
-    const { scheduler, jobs } = createScheduler('host-a', 2);
+    const { scheduler, jobs } = createScheduler('host-a');
     const adapter = makeAdapter('host-a', scheduler, fetchImpl);
 
     await adapter.runOnce();
@@ -458,7 +480,13 @@ describe('Soyuz adapter handoff', () => {
     expect(jobs).toHaveLength(1);
     expect(jobs[0].soyuz?.startAuthorized).toBe(true);
     expect(scheduler.submitSoyuzJob).toHaveBeenCalledTimes(1);
+    expect(calls.find((call) => call.url.endsWith('/messages/pull'))?.body).toEqual({
+      visibility_timeout_ms: 120_000,
+      batch_size: 1,
+    });
 
+    jobs[0].status = 'completed';
+    state.status = 'completed';
     await adapter.runOnce();
     expect(jobs).toHaveLength(1);
     expect(scheduler.submitSoyuzJob).toHaveBeenCalledTimes(1);
@@ -470,7 +498,7 @@ describe('Soyuz adapter handoff', () => {
   test('recovers a claim accepted before its response was lost after the adapter restarts', async () => {
     const state = runState();
     const { fetchImpl, calls } = createFetch(state, { loseFirstClaimResponse: true });
-    const { scheduler, jobs, claimIntents } = createScheduler('host-a', 2);
+    const { scheduler, jobs, claimIntents } = createScheduler('host-a');
 
     await makeAdapter('host-a', scheduler, fetchImpl).runOnce();
     expect(state.status).toBe('claimed');
@@ -489,7 +517,7 @@ describe('Soyuz adapter handoff', () => {
   test('reconciles a queued local run by claiming it before authorizing its start', async () => {
     const state = runState();
     const { fetchImpl, calls } = createFetch(state);
-    const { scheduler, jobs } = createScheduler('host-a', 0);
+    const { scheduler, jobs } = createScheduler('host-a');
     jobs.push({
       id: 'kaseki-recovery',
       status: 'queued',
@@ -519,7 +547,7 @@ describe('Soyuz adapter handoff', () => {
   test('surfaces recovery when Soyuz starts a run that Kaseki cannot authorize', async () => {
     const state = runState();
     const { fetchImpl } = createFetch(state);
-    const { scheduler, jobs } = createScheduler('host-a', 0);
+    const { scheduler, jobs } = createScheduler('host-a');
     jobs.push({
       id: 'kaseki-recovery',
       status: 'queued',

@@ -23,7 +23,7 @@ describe('buildDockerArgs', () => {
     expect(joined).toContain('KASEKI_IMAGE=example/kaseki@sha256:abc123');
     expect(joined).toContain('LLM_GATEWAY_URL=https://gateway.example/v1');
     expect(joined).toContain('LLM_GATEWAY_MODEL=vendor/model');
-    expect(joined).toContain('KASEKI_API_MAX_CONCURRENT_RUNS=1');
+    expect(joined).not.toContain('KASEKI_API_MAX_CONCURRENT_RUNS');
     expect(joined).toContain('/home/pi/secrets:/run/secrets/kaseki:ro');
     expect(joined).toContain('GITHUB_APP_ID=123456');
     expect(joined).toContain('GITHUB_APP_CLIENT_ID=Iv1.public-client-id');

@@ -67,7 +67,6 @@ export function buildDockerArgs(options: DockerArgsOptions): string[] {
     '-p', `${apiBindAddress}:${apiPort}:8080`,
     '-e', 'KASEKI_API_PORT=8080',
     '-e', 'KASEKI_API_LOG_LEVEL=info',
-    '-e', 'KASEKI_API_MAX_CONCURRENT_RUNS=1',
     '-e', 'KASEKI_RESULTS_DIR=/agents/kaseki-results',
     '-e', 'KASEKI_SECRETS_DIR=/run/secrets/kaseki',
     '-e', `KASEKI_HOST_SECRETS_DIR=${secretsDir}`,

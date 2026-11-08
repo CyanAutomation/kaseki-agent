@@ -48,7 +48,7 @@ function buildHealthCheckPaths(): Record<string, unknown> {
         operationId: 'getReady',
         summary: 'Readiness probe',
         description:
-          'Returns 200 OK when the service is ready to accept requests. Checks queue, scheduler dependencies, and minimum persistent storage capacity. No authentication required.',
+          'Returns 200 OK when the service has started and its scheduler dependencies and minimum persistent storage are ready. It does not report whether the single run slot is occupied. No authentication required.',
         tags: ['Health & Status'],
         responses: {
           '200': {
@@ -137,11 +137,11 @@ function buildServiceInfoApiCapabilitiesPath(errorResponseSchema: Record<string,
       get: {
         operationId: 'getCapabilities',
         summary: 'Get API capabilities and limits',
-        description: 'Returns the running API version, supported task and publish modes, controller limits, and the canonical event-stream reconnect contract.',
+        description: 'Returns the running API version, supported task and publish modes, one active run per agent limit, and the canonical event-stream reconnect contract.',
         tags: ['Service Info'],
         security: [{ BearerAuth: [] }],
         responses: {
-          '200': { description: 'Capabilities', content: { 'application/json': { schema: { type: 'object', required: ['apiVersion', 'taskModes', 'publishModes', 'limits', 'eventProtocol'] } } } },
+          '200': { description: 'Capabilities', content: { 'application/json': { schema: { type: 'object', required: ['apiVersion', 'taskModes', 'publishModes', 'limits', 'eventProtocol'], properties: { limits: { type: 'object', required: ['maxActiveRunsPerAgent'], properties: { maxActiveRunsPerAgent: { type: 'integer', enum: [1] } } } } } } } },
           '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
         },
       },
@@ -155,7 +155,7 @@ function buildServiceInfoApiMetricsPath(errorResponseSchema: Record<string, unkn
       get: {
         operationId: 'getMetrics',
         summary: 'Prometheus metrics',
-        description: 'Returns Prometheus-formatted metrics (artifact cache + queue stats)',
+        description: 'Returns Prometheus-formatted run, API, storage, and artifact-cache metrics.',
         tags: ['Service Info'],
         security: [{ BearerAuth: [] }],
         responses: {
@@ -485,10 +485,11 @@ function buildRunManagementApiRunsPath(errorResponseSchema: Record<string, unkno
           content: { 'application/json': { schema: runRequestSchema } },
         },
         responses: {
-          '202': { description: 'Local job accepted and queued', content: { 'application/json': { schema: runResponseSchema } } },
+          '202': { description: 'Local run accepted for execution', content: { 'application/json': { schema: runResponseSchema } } },
           '200': { description: 'Idempotency replay: the local job already exists with the same configuration', content: { 'application/json': { schema: runResponseSchema } } },
           '400': { description: 'Invalid request', content: { 'application/problem+json': { schema: errorResponseSchema } } },
           '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '409': { description: 'This Kaseki agent already has an active run, or the idempotency key is being processed', content: { 'application/problem+json': { schema: errorResponseSchema } } },
           '422': { description: 'Task rejected by the safety admission gate', content: { 'application/problem+json': { schema: errorResponseSchema } } },
           '503': { description: 'Storage capacity could not be measured; new runs are temporarily blocked', content: { 'application/problem+json': { schema: errorResponseSchema } } },
           '507': { description: 'Insufficient storage remains after automatic cleanup', content: { 'application/problem+json': { schema: errorResponseSchema } } },
@@ -500,7 +501,7 @@ function buildRunManagementApiRunsPath(errorResponseSchema: Record<string, unkno
         operationId: 'triggerRun',
         summary: 'Trigger a new kaseki run',
         description:
-              'Submits a new job to the queue. Returns 202 Accepted with job metadata. Use the ID to poll status.',
+              'Submits a run to this Kaseki agent. Each agent accepts one run at a time; submissions while it is occupied return 409. Use multiple independent agents when concurrent runs are needed.',
         tags: ['Run Management'],
         security: [{ BearerAuth: [] }],
         parameters: [{
@@ -520,7 +521,7 @@ function buildRunManagementApiRunsPath(errorResponseSchema: Record<string, unkno
         },
         responses: {
           '202': {
-            description: 'Job accepted and queued',
+            description: 'Run accepted for execution on this Kaseki agent',
             content: {
               'application/json': {
                 schema: runResponseSchema
@@ -550,6 +551,10 @@ function buildRunManagementApiRunsPath(errorResponseSchema: Record<string, unkno
                 schema: errorResponseSchema
               }
             }
+          },
+          '409': {
+            description: 'This Kaseki agent already has an active run, or the idempotency key is being processed',
+            content: { 'application/problem+json': { schema: errorResponseSchema } },
           },
           '422': {
             description: 'Task rejected by the safety admission gate',
@@ -721,7 +726,7 @@ function buildRunManagementApiRunsIdRetryPath(errorResponseSchema: Record<string
       post: {
         operationId: 'retryRun',
         summary: 'Retry a terminal run',
-        description: 'Creates one new run from the original request only when the source run is completed or failed. A UUID idempotencyKey is required; repeating it replays the same retry instead of enqueueing another run.',
+        description: 'Creates one new run from the original request only when the source run is completed or failed. A UUID idempotencyKey is required; repeating it replays the same retry instead of creating another retry.',
         tags: ['Run Management'],
         security: [{ BearerAuth: [] }],
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: 'Canonical Soyuz UUID or legacy local Kaseki ID' }],

@@ -4,6 +4,10 @@
 **Scope:** Express route implementations, both service entry points, OpenAPI generation, API documentation, and in-repository CLI/UI callers. No production traffic or consumer telemetry was available.  
 **Implementation:** Recommendations from the source review were implemented on a clean checkout of `origin/main` (`adb830d3`). Breaking route and contract changes were applied directly as authorized.
 
+**Follow-up (2026-11-08):** Each agent now accepts one active run. Local run
+submissions return `409 RUN_ALREADY_ACTIVE` while occupied; the API does not
+queue a local backlog.
+
 ## Executive summary
 
 The API keeps its core run lifecycle and diagnostics, with a versioned `/api/v1` namespace. The principal changes are in place: unsafe webhook egress is constrained; bearer-key authentication and per-key quotas are enforced; run creation is caller-idempotent; persisted run history is cursor-paginated; artifact downloads return bytes; webhook deliveries are inspectable/retryable; and OpenAPI/docs match the new contract.
@@ -16,19 +20,19 @@ Removed routes and aliases are listed below. Root `/health` and `/ready` remain 
 |---|---|---|
 | `GET /health`, `GET /api/v1/health` | Keep | Minimal unauthenticated liveness response; no queue, filesystem, or cache details. |
 | `GET /ready`, `GET /api/v1/ready` | Keep | Unauthenticated readiness probe returns stable reason codes, not host paths or exception details. |
-| `GET /api/v1/metrics` | Keep; update | Authenticated Prometheus metrics now include bounded route-template request counts and latency summaries alongside existing queue/cache metrics. |
-| `GET /api/v1/capabilities` | Keep | Provides API version, supported modes/limits, and event reconnect contract. |
+| `GET /api/v1/metrics` | Keep; update | Authenticated Prometheus metrics include bounded route-template request counts and latency summaries alongside run and cache metrics. |
+| `GET /api/v1/capabilities` | Keep | Provides API version, supported modes/limits, and event reconnect contract; each agent advertises a maximum of one active run. |
 | `GET /api/v1/preflight` | Keep; update | Diagnostic detail remains authenticated. Token-consuming `agentCapability=true` is explicit and rate limited. Public readiness uses `/ready`. |
 | `GET /api/v1/startup-health` | Keep | Clearly marked cached boot history; current readiness points to preflight or `/ready`. |
 | `GET /api/v1/gateway-test` | Keep; update | Connectivity is the default. Inference, Pi adapter, and evaluation checks require `inference=true` and are rate limited. Errors use Problem Details. |
 | `GET /api/v1/runs` | Keep; update | Reads persisted history, supports opaque cursor pagination and status/repository/time filters, and omits internal result paths. |
-| `POST /api/v1/runs` | Keep; update | Requires a UUID v4 `Idempotency-Key` header or body field; conflicting copies are rejected. Admission and template/publish checks remain enforced. |
-| `POST /api/v1/runs/local` | Keep; add | Explicit local-only submission for standalone operation or deliberate fallback; it bypasses Soyuz routing, retains the same admission checks, and has a separate local idempotency namespace. |
+| `POST /api/v1/runs` | Keep; update | Requires a UUID v4 `Idempotency-Key` header or body field; conflicting copies are rejected. Admission and template/publish checks remain enforced. Each agent accepts one run at a time and returns `409 RUN_ALREADY_ACTIVE` while occupied. |
+| `POST /api/v1/runs/local` | Keep; add | Explicit local-only submission for standalone operation or deliberate fallback; it bypasses Soyuz routing, retains the same admission checks, and has a separate local idempotency namespace. It also returns `409 RUN_ALREADY_ACTIVE` while this agent is occupied. |
 | `GET /api/v1/runs/{id}` | Keep; add | Canonical run resource with lifecycle identity and links to status, events, artifacts, scorecard, and analysis. Resolves persisted history. |
 | `GET /api/v1/runs/{id}/status` | Keep; update | Resolves persisted history and omits `resultDir` host paths. |
-| `POST /api/v1/runs/{id}/retry` | Keep; update | Reuses submission admission, template readiness, and GitHub publish-credential checks before queueing. |
+| `POST /api/v1/runs/{id}/retry` | Keep; update | Reuses submission admission, template readiness, and GitHub publish-credential checks before accepting a replacement run. |
 | `POST /api/v1/runs/{id}/cancel` | Keep; update | Response reports whether cancellation was accepted or the run was already terminal. |
-| `POST /api/v1/validate` | Keep | Dry-run validation remains separate from queue submission and has a documented schema. |
+| `POST /api/v1/validate` | Keep | Dry-run validation remains separate from run submission and has a documented schema. |
 | `GET /api/v1/runs/{id}/events` | Keep | Preferred sanitized event snapshot; supports cursor-based recovery. |
 | `GET /api/v1/runs/{id}/events/stream` | Keep | SSE for live updates, with documented reconnect behavior. |
 | `GET /api/v1/runs/{id}/logs/{logtype}` | Keep; update | Logs are redacted, typed, and bounded; tail returns text content. |

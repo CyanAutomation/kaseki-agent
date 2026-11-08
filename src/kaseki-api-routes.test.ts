@@ -42,6 +42,7 @@ import { readArtifactContent } from './routes/artifact-routes';
 import { ResultCache } from './result-cache';
 import { validateGitHubAppPrivateKey } from './github-app-private-key';
 import { createApiRouter } from './kaseki-api-routes';
+import { RunAlreadyActiveError } from './job-scheduler';
 import { clearContainerPreflightResults, logContainerPreflightResults } from './startup/container-preflight';
 import { clearCachedStartupHealthReport, writeStartupHealthArtifacts } from './kaseki-api/startup-summary-artifact';
 import type { StartupHealthReport } from './kaseki-api-types';
@@ -632,7 +633,6 @@ describe('Soyuz submission routing', () => {
       queueApiToken: '',
       workerId: '',
       pollIntervalMs: 5_000,
-      batchSize: 1,
       visibilityTimeoutMs: 120_000,
       requestTimeoutMs: 20_000,
       cancellationPollIntervalMs: 15_000,
@@ -993,6 +993,19 @@ describe('kaseki-api-routes readiness and metrics endpoints', () => {
     fs.rmSync(resultsDir, { recursive: true, force: true });
   });
 
+  test('GET /api/capabilities reports the single-run agent limit', async () => {
+    const { server, port, idempotencyStore } = await createTestApp(createMockScheduler(), createTestConfig(resultsDir));
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/capabilities`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ limits: { maxActiveRunsPerAgent: 1 } });
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
   test('GET /api/ready returns 200 when scheduler dependencies are ready', async () => {
     const scheduler = createMockScheduler();
     scheduler.getReadiness.mockReturnValue({ ready: true, reasons: [] });
@@ -1091,7 +1104,7 @@ describe('kaseki-api-routes readiness and metrics endpoints', () => {
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toContain('text/plain');
       const body = await res.text();
-      expect(body).toContain('kaseki_queue_pending');
+      expect(body).not.toContain('kaseki_queue_pending');
       expect(body).toContain('kaseki_runs_total');
       expect(body).toContain('kaseki_run_duration_seconds');
       expect(body).toContain('kaseki_evaluator_artifact_completion_rate');
@@ -1417,6 +1430,41 @@ describe('kaseki-api-routes idempotent submissions', () => {
       const retry = await submit();
       expect(retry.status).toBe(202);
       expect((await retry.json()) as object).toEqual(expect.objectContaining({ id: 'kaseki-retry' }));
+      expect(scheduler.submitJob).toHaveBeenCalledTimes(2);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('returns 409 while the agent is busy, releases the key, then replays an accepted retry', async () => {
+    const scheduler = createMockScheduler();
+    scheduler.submitJob
+      .mockRejectedValueOnce(new RunAlreadyActiveError())
+      .mockResolvedValueOnce({
+        id: 'kaseki-after-busy',
+        status: 'running',
+        createdAt: new Date('2026-07-21T00:00:00.000Z'),
+        resultDir: path.join(resultsDir, 'kaseki-after-busy'),
+      });
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, createTestConfig(resultsDir));
+    const submit = () => fetch(`http://127.0.0.1:${port}/api/runs`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+
+    try {
+      const busy = await submit();
+      expect(busy.status).toBe(409);
+      expect(await busy.json()).toMatchObject({ code: 'RUN_ALREADY_ACTIVE' });
+
+      const accepted = await submit();
+      expect(accepted.status).toBe(202);
+      expect(await accepted.json()).toMatchObject({ id: 'kaseki-after-busy' });
+
+      const replay = await submit();
+      expect(replay.status).toBe(200);
+      expect(await replay.json()).toMatchObject({ id: 'kaseki-after-busy' });
       expect(scheduler.submitJob).toHaveBeenCalledTimes(2);
     } finally {
       await cleanupTestApp(server, idempotencyStore);
@@ -3280,7 +3328,6 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     fs.writeFileSync(path.join(jobDir, 'result-summary.md'), '# summary');
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId
           ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir, exitCode: 1 }
@@ -3294,7 +3341,6 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -3344,7 +3390,6 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     fs.writeFileSync(path.join(jobDir, 'result-summary.md'), '# summary');
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId
           ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir, exitCode: 88 }
@@ -3387,7 +3432,6 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     fs.writeFileSync(path.join(fallbackDir, 'stderr.log'), 'not yet final');
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 1, maxConcurrent: 1 }),
       getJob: (id: string) => (id === jobId ? { id: jobId, status: 'running', createdAt: new Date() } : undefined),
       submitJob: jest.fn(),
       listJobs: () => [],
@@ -3398,7 +3442,6 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -3455,7 +3498,6 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     fs.writeFileSync(path.join(jobDir, 'stage-timings.tsv'), 'stage\tstart\tend');
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId
           ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir, exitCode: 1 }
@@ -3469,7 +3511,6 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -3540,7 +3581,6 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
 
   test('returns 404 when run does not exist', async () => {
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: () => undefined,
       submitJob: jest.fn(),
       listJobs: () => [],
@@ -3551,7 +3591,6 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir: fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-notfound-test-')),
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -3596,7 +3635,6 @@ describe('kaseki-api-routes logs endpoint stderr fallback', () => {
     fs.mkdirSync(jobDir, { recursive: true });
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId
           ? {
@@ -3618,7 +3656,6 @@ describe('kaseki-api-routes logs endpoint stderr fallback', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -3657,7 +3694,6 @@ describe('kaseki-api-routes logs endpoint stderr fallback', () => {
     fs.mkdirSync(jobDir, { recursive: true });
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 1, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId
           ? {
@@ -3676,7 +3712,6 @@ describe('kaseki-api-routes logs endpoint stderr fallback', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -3841,7 +3876,6 @@ describe('kaseki-api-routes controller replay and events', () => {
     } as any;
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 1, running: 0, maxConcurrent: 1 }),
       getJob: (id: string) => (id === job.id ? job : undefined),
       submitJob: jest.fn(() => job),
       listJobs: () => [job],
@@ -3852,7 +3886,6 @@ describe('kaseki-api-routes controller replay and events', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -3937,7 +3970,6 @@ describe('kaseki-api-routes controller replay and events', () => {
   test('events endpoint falls back to live docker progress for active runs', async () => {
     const jobId = 'kaseki-live-events';
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 1, maxConcurrent: 1 }),
       getJob: (id: string) => (id === jobId ? { id: jobId, status: 'running', createdAt: new Date() } : undefined),
       getLiveProgressEvents: jest.fn(() => [
         { source: 'docker-logs', stage: 'startup check', message: 'container booted' }
@@ -3951,7 +3983,6 @@ describe('kaseki-api-routes controller replay and events', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -3982,7 +4013,6 @@ describe('kaseki-api-routes controller replay and events', () => {
   test('events endpoint derives early progress from live docker log stages', async () => {
     const jobId = 'kaseki-live-log-events';
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 1, maxConcurrent: 1 }),
       getJob: (id: string) => (id === jobId ? { id: jobId, status: 'running', createdAt: new Date() } : undefined),
       getLiveProgressEvents: jest.fn(() => []),
       getLiveDockerLogTail: jest.fn(() => '==> clone repository\n==> prepare node dependencies\n'),
@@ -4041,7 +4071,6 @@ describe('kaseki-api-routes controller replay and events', () => {
     fs.writeFileSync(path.join(jobDir, 'stderr.log'), 'stderr');
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir } : undefined,
       submitJob: jest.fn(),
@@ -4053,7 +4082,6 @@ describe('kaseki-api-routes controller replay and events', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -4104,7 +4132,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     fs.writeFileSync(path.join(jobDir, 'stderr.log'), 'stderr');
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId
           ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir, exitCode: 1 }
@@ -4118,7 +4145,6 @@ describe('kaseki-api-routes status artifact hints', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -4192,7 +4218,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     );
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir } : undefined,
       submitJob: jest.fn(),
@@ -4204,7 +4229,6 @@ describe('kaseki-api-routes status artifact hints', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -4262,7 +4286,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     fs.writeFileSync(path.join(jobDir, 'goal-check-stderr.log'), 'schema validation failed');
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir } : undefined,
       submitJob: jest.fn(),
@@ -4274,7 +4297,6 @@ describe('kaseki-api-routes status artifact hints', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -4330,7 +4352,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     fs.writeFileSync(path.join(jobDir, 'scouting-stderr.log'), 'scouting schema validation failed');
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir } : undefined,
       submitJob: jest.fn(),
@@ -4381,7 +4402,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     );
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir } : undefined,
       submitJob: jest.fn(),
@@ -4535,7 +4555,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     fs.writeFileSync(path.join(jobDir, 'metadata.json'), '{"exit_code":127}');
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: jest.fn(),
       submitJob: jest.fn(),
       listJobs: () => [{ id: jobId, status: 'failed', createdAt: new Date('2026-05-07T12:00:00Z'), resultDir: jobDir }],
@@ -4546,7 +4565,6 @@ describe('kaseki-api-routes status artifact hints', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -4676,7 +4694,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     fs.writeFileSync(path.join(jobDir, 'result-summary.md'), '# summary');
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir } : undefined,
       submitJob: jest.fn(),
@@ -4688,7 +4705,6 @@ describe('kaseki-api-routes status artifact hints', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -4732,7 +4748,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     fs.writeFileSync(path.join(jobDir, 'stdout.log'), 'controller bootstrap stdout\nmkdir: cannot create directory');
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir } : undefined,
       submitJob: jest.fn(),
@@ -4743,7 +4758,6 @@ describe('kaseki-api-routes status artifact hints', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -4778,7 +4792,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     fs.writeFileSync(path.join(jobDir, 'analysis.md'), '# analysis');
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir } : undefined,
       submitJob: jest.fn(),
@@ -4789,7 +4802,6 @@ describe('kaseki-api-routes status artifact hints', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -4825,7 +4837,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     );
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 1, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId
           ? { id: jobId, status: 'running', createdAt: new Date(), resultDir: jobDir, startedAt: new Date() }
@@ -4840,7 +4851,6 @@ describe('kaseki-api-routes status artifact hints', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -4883,7 +4893,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     );
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 1, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId
           ? { id: jobId, status: 'running', createdAt: new Date(), resultDir: jobDir, startedAt: new Date() }
@@ -4900,7 +4909,6 @@ describe('kaseki-api-routes status artifact hints', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -4935,7 +4943,6 @@ describe('kaseki-api-routes status artifact hints', () => {
   test('running status returns structured progress from live docker fallback', async () => {
     const jobId = 'kaseki-running-status-progress-live';
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 1, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId ? { id: jobId, status: 'running', createdAt: new Date(), startedAt: new Date() } : undefined,
       getLiveProgressEvents: jest.fn(() => [
@@ -4950,7 +4957,6 @@ describe('kaseki-api-routes status artifact hints', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -5111,7 +5117,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     fs.writeFileSync(path.join(jobDir, 'metadata.json'), '{}');
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId
           ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir, exitCode: 1 }
@@ -5125,7 +5130,6 @@ describe('kaseki-api-routes status artifact hints', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -5162,7 +5166,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     fs.writeFileSync(path.join(jobDir, 'result-summary.md'), '# Summary');
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId
           ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir, exitCode: 1 }
@@ -5176,7 +5179,6 @@ describe('kaseki-api-routes status artifact hints', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -5212,7 +5214,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     fs.writeFileSync(path.join(jobDir, 'metadata.json'), '{}');
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: (id: string) =>
         id === jobId
           ? { id: jobId, status: 'completed', createdAt: new Date(), resultDir: jobDir, exitCode: 0 }
@@ -5226,7 +5227,6 @@ describe('kaseki-api-routes status artifact hints', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -5865,7 +5865,6 @@ describe('kaseki-api-routes idempotency concurrency', () => {
     });
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: jest.fn(),
       submitJob,
       listJobs: () => [],
@@ -5876,7 +5875,6 @@ describe('kaseki-api-routes idempotency concurrency', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -5954,7 +5952,6 @@ describe('kaseki-api-routes idempotency concurrency', () => {
     });
 
     const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
       getJob: jest.fn(),
       submitJob: jest.fn(async () => {
         signalSubmissionStarted();
@@ -5968,7 +5965,6 @@ describe('kaseki-api-routes idempotency concurrency', () => {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -6314,8 +6310,8 @@ describe('kaseki-api-routes publish mode validation', () => {
       expect(response.status).toBe(400);
       const body = (await response.json()) as any;
       expect(body.detail).toContain('publishMode');
-      expect(body.detail).toContain('Invalid option');
-      expect(body.detail).toContain('"pr"');
+      expect(body.detail).toMatch(/Invalid (?:option|enum value)/);
+      expect(body.detail).toMatch(/["']pr["']/);
       expect(body.detail).not.toContain('requires readable GitHub App credentials');
       expect(scheduler.submitJob).not.toHaveBeenCalled();
     } finally {

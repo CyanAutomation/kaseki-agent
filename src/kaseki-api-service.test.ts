@@ -101,11 +101,9 @@ describe('Kaseki API Configuration', () => {
       name: 'parses numeric strings and normalizes newline-delimited API keys',
       apiKeysValue: ' key1 \n key2 \n key3 ',
       port: '3001',
-      maxConcurrentRuns: '7',
       expectedConfig: {
         port: 3001,
         apiKeys: ['key1', 'key2', 'key3'],
-        maxConcurrentRuns: 7,
       },
     },
     {
@@ -115,7 +113,6 @@ describe('Kaseki API Configuration', () => {
       expectedConfig: {
         port: 65535,
         apiKeys: ['solo-key'],
-        maxConcurrentRuns: 3,
       },
     },
     {
@@ -124,18 +121,14 @@ describe('Kaseki API Configuration', () => {
       expectedConfig: {
         port: 8080,
         apiKeys: ['alpha', 'beta', 'gamma'],
-        maxConcurrentRuns: 3,
       },
     },
-  ])('loadConfig normalization: $name', ({ apiKeysValue, port, maxConcurrentRuns, expectedConfig }) => {
+  ])('loadConfig normalization: $name', ({ apiKeysValue, port, expectedConfig }) => {
     const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue(apiKeysValue);
 
     if (port) process.env.KASEKI_API_PORT = port;
     else delete process.env.KASEKI_API_PORT;
-
-    if (maxConcurrentRuns) process.env.KASEKI_API_MAX_CONCURRENT_RUNS = maxConcurrentRuns;
-    else delete process.env.KASEKI_API_MAX_CONCURRENT_RUNS;
 
     process.env.KASEKI_RESULTS_DIR = '/tmp';
 
@@ -144,7 +137,6 @@ describe('Kaseki API Configuration', () => {
     expect({
       port: config.port,
       apiKeys: config.apiKeys,
-      maxConcurrentRuns: config.maxConcurrentRuns,
     }).toEqual(expectedConfig);
   });
 
@@ -409,7 +401,6 @@ describe('Job Scheduler', () => {
       port: 8080,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 2,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 10800,
@@ -426,39 +417,15 @@ describe('Job Scheduler', () => {
     fs.rmSync(resultsDir, { recursive: true, force: true });
   });
 
-  test('submitJob creates a queued job', async () => {
-    // Saturate scheduler concurrency so a newly submitted job remains queued.
+  test('submitJob rejects work while the scheduler is occupied', async () => {
     (scheduler as any).running.add('existing-running-job');
-    (scheduler as any).running.add('second-existing-running-job');
 
-    const request = {
-      repoUrl: 'https://github.com/org/repo',
-      ref: 'main',
-    };
-
-    const submitted = await scheduler.submitJob(request);
-
-    // Contract outcome: job is queued when concurrency limit is reached.
-    expect(submitted.status).toBe('queued');
-    expect(submitted.request).toEqual(request);
-
-    // Contract outcome: queued job is visible via status and list/get endpoints.
-    expect(scheduler.getQueueStatus()).toEqual({
-      pending: 1,
-      running: 2,
-      maxConcurrent: 2,
-    });
-
-    const retrieved = scheduler.getJob(submitted.id);
-    const jobs = scheduler.listJobs();
-
-    expect(retrieved).toBeDefined();
-    expect(retrieved?.id).toBe(submitted.id);
-    expect(retrieved?.status).toBe('queued');
-    expect(jobs.some((job) => job.id === submitted.id && job.status === 'queued')).toBe(true);
+    await expect(scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' }))
+      .rejects.toMatchObject({ code: 'RUN_ALREADY_ACTIVE' });
+    expect(scheduler.listJobs()).toEqual([]);
   });
 
-  test('submit/get/list keep job identity, request payload, and queue visibility coherent', async () => {
+  test('submit/get/list keep job identity and request payload coherent', async () => {
     const request = {
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
@@ -476,28 +443,10 @@ describe('Job Scheduler', () => {
     expect(jobs[0].request).toEqual(request);
   });
 
-  test('listJobs returns all jobs sorted by creation time (newest first)', async () => {
-    const request1 = { repoUrl: 'https://github.com/org/repo1', ref: 'main' };
-    const request2 = { repoUrl: 'https://github.com/org/repo2', ref: 'main' };
-
-    await scheduler.submitJob(request1);
-    await scheduler.submitJob(request2);
-
-    const jobs = scheduler.listJobs();
-    expect(jobs.length).toBe(2);
-    expect(jobs[0].request.repoUrl).toBe(request2.repoUrl); // Newest first
-    expect(jobs[1].request.repoUrl).toBe(request1.repoUrl);
-  });
-
-  test('getQueueStatus reports pending and running count', async () => {
+  test('a submitted run reserves the only run slot', async () => {
+    expect(scheduler.isRunSlotAvailable()).toBe(true);
     await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
-
-    const status = scheduler.getQueueStatus();
-    expect(status).toEqual({
-      pending: 0,
-      running: 1,
-      maxConcurrent: 2,
-    });
+    expect(scheduler.isRunSlotAvailable()).toBe(false);
   });
 });
 

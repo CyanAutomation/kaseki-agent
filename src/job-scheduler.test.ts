@@ -101,7 +101,7 @@ function persistedRuntimeJob(
   };
 }
 
-describe('JobScheduler queue behavior', () => {
+describe('JobScheduler single-run behavior', () => {
   afterEach(async () => {
     await cleanupWebhookManagers();
     cleanupResultsDirs();
@@ -118,7 +118,6 @@ describe('JobScheduler queue behavior', () => {
       port: 8080,
       apiKeys: [],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch',
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 300,
@@ -140,42 +139,157 @@ describe('JobScheduler queue behavior', () => {
     }
   });
 
-  test('queues submitted jobs when concurrency is exhausted', async () => {
+  test('rejects a second local submission while one run is active, then accepts work after completion', async () => {
     const resultsDir = createResultsDir();
+    const firstProcess = new MockProcess();
+    const secondProcess = new MockProcess();
+    mockSpawn.mockReset().mockReturnValueOnce(firstProcess).mockReturnValueOnce(secondProcess);
+    mockSpawnSync.mockReset().mockReturnValue({ stdout: '', stderr: '', status: 0 });
     const scheduler = new JobScheduler(
       {
         port: 3000,
-        workspaceDir: '/tmp/workspace',
         resultsDir,
-        maxConcurrentRuns: 0,
-        runTimeoutMs: 300000,
         apiKeys: [],
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 300,
+        logLevel: 'info',
       },
       createMockWebhookManager(),
     );
 
     try {
-      const job = await scheduler.submitJob({
+      const first = await scheduler.submitJob({
         repoUrl: 'https://github.com/example/repo',
         ref: 'main',
-        task: 'contract test',
       });
 
-      expect(job.status).toBe('queued');
-      expect(scheduler.getJob(job.id)).toMatchObject({ id: job.id, status: 'queued' });
+      await expect(scheduler.submitJob({
+        repoUrl: 'https://github.com/example/another-repo',
+        ref: 'main',
+      })).rejects.toMatchObject({ code: 'RUN_ALREADY_ACTIVE' });
+      expect(mockSpawn).toHaveBeenCalledTimes(1);
+      expect(scheduler.listJobs()).toHaveLength(1);
+
+      firstProcess.emit('exit', 0);
+      expect(first.status).toBe('completed');
+
+      const second = await scheduler.submitJob({
+        repoUrl: 'https://github.com/example/another-repo',
+        ref: 'main',
+      });
+      expect(second.status).toBe('running');
+      expect(mockSpawn).toHaveBeenCalledTimes(2);
     } finally {
       await scheduler.shutdown();
     }
   });
 
+  test('admits only one of two simultaneous local submissions', async () => {
+    const resultsDir = createResultsDir();
+    mockSpawn.mockReset().mockImplementation(() => new MockProcess());
+    mockSpawnSync.mockReset().mockReturnValue({ stdout: '', stderr: '', status: 0 });
+    const scheduler = new JobScheduler({
+      port: 3000,
+      resultsDir,
+      apiKeys: [],
+      defaultTaskMode: 'patch',
+      maxDiffBytes: 400000,
+      agentTimeoutSeconds: 300,
+      logLevel: 'info',
+    }, createMockWebhookManager());
+
+    try {
+      const results = await Promise.allSettled([
+        scheduler.submitJob({ repoUrl: 'https://github.com/example/first', ref: 'main' }),
+        scheduler.submitJob({ repoUrl: 'https://github.com/example/second', ref: 'main' }),
+      ]);
+
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+      expect(results.find((result) => result.status === 'rejected')).toMatchObject({
+        reason: { code: 'RUN_ALREADY_ACTIVE' },
+      });
+      expect(mockSpawn).toHaveBeenCalledTimes(1);
+      expect(scheduler.listJobs()).toHaveLength(1);
+    } finally {
+      await scheduler.shutdown();
+    }
+  });
+
+  test('holding an unrelated queued Soyuz job does not release a local reservation', async () => {
+    mockSpawn.mockReset().mockReturnValue(new MockProcess());
+    mockSpawnSync.mockReset().mockReturnValue({ stdout: '', stderr: '', status: 0 });
+    const scheduler = new JobScheduler({
+      port: 3000,
+      resultsDir: createResultsDir(),
+      apiKeys: [],
+      defaultTaskMode: 'patch',
+      maxDiffBytes: 400000,
+      agentTimeoutSeconds: 300,
+      logLevel: 'info',
+    }, createMockWebhookManager());
+    let signalFirstCapacityCheck!: () => void;
+    const firstCapacityCheckStarted = new Promise<void>((resolve) => {
+      signalFirstCapacityCheck = resolve;
+    });
+    let releaseFirstCapacityCheck!: () => void;
+    const firstCapacityCheckGate = new Promise<void>((resolve) => {
+      releaseFirstCapacityCheck = resolve;
+    });
+    const ensureStorageCapacity = scheduler.ensureStorageCapacity.bind(scheduler);
+    let capacityCheckCount = 0;
+    let firstSubmission: Promise<Job> | undefined;
+
+    try {
+      const soyuzJob = await scheduler.submitSoyuzJob(
+        { repoUrl: 'https://github.com/example/soyuz', ref: 'main' },
+        '11111111-1111-4111-8111-111111111111',
+        'host-test-1',
+        '22222222-2222-4222-8222-222222222222',
+        '33333333-3333-4333-8333-333333333333',
+      );
+      scheduler.holdSoyuzJob(soyuzJob.id);
+
+      jest.spyOn(scheduler, 'ensureStorageCapacity').mockImplementation(async () => {
+        capacityCheckCount += 1;
+        if (capacityCheckCount === 1) {
+          signalFirstCapacityCheck();
+          await firstCapacityCheckGate;
+        }
+        return ensureStorageCapacity();
+      });
+
+      firstSubmission = scheduler.submitJob({ repoUrl: 'https://github.com/example/local', ref: 'main' });
+      await firstCapacityCheckStarted;
+
+      // A second reconciliation of the old queued Soyuz job must not clear the
+      // local run's reservation while its submission is awaiting capacity.
+      scheduler.holdSoyuzJob(soyuzJob.id);
+      expect(scheduler.isRunSlotAvailable()).toBe(false);
+      await expect(scheduler.submitJob({ repoUrl: 'https://github.com/example/second', ref: 'main' }))
+        .rejects.toMatchObject({ code: 'RUN_ALREADY_ACTIVE' });
+      expect(capacityCheckCount).toBe(1);
+
+      releaseFirstCapacityCheck();
+      await firstSubmission;
+    } finally {
+      releaseFirstCapacityCheck();
+      await firstSubmission?.catch(() => undefined);
+      await scheduler.shutdown();
+    }
+  });
+
   test('does not start a Soyuz job until the durable start authorization gate is opened', async () => {
+    mockSpawn.mockReset();
+    mockSpawn.mockReturnValue(new MockProcess());
+    mockSpawnSync.mockReset().mockReturnValue({ stdout: '', stderr: '', status: 0 });
     const resultsDir = createResultsDir();
     const scheduler = new JobScheduler(
       {
         port: 3000,
         workspaceDir: '/tmp/workspace',
         resultsDir,
-        maxConcurrentRuns: 0,
         runTimeoutMs: 300000,
         apiKeys: [],
       },
@@ -205,17 +319,27 @@ describe('JobScheduler queue behavior', () => {
         '22222222-2222-4222-8222-222222222222',
         '33333333-3333-4333-8333-333333333333',
       );
+      await expect(scheduler.submitSoyuzJob(
+        request,
+        'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        'host-test-1',
+        'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      )).rejects.toMatchObject({ code: 'RUN_ALREADY_ACTIVE' });
 
       expect(duplicate.id).toBe(first.id);
       expect(first.soyuz?.startAuthorized).toBe(false);
-      expect(scheduler.getQueueStatus()).toMatchObject({ pending: 1, running: 0 });
+      expect(scheduler.isRunSlotAvailable()).toBe(false);
       expect(scheduler.isJobExecuting(first.id)).toBe(false);
       expect(mockSpawn).not.toHaveBeenCalled();
 
       expect(await scheduler.authorizeSoyuzStart(first.id)).toBe(true);
       expect(first.soyuz?.startAuthorized).toBe(true);
-      expect(scheduler.isJobExecuting(first.id)).toBe(false);
-      expect(mockSpawn).not.toHaveBeenCalled();
+      expect(scheduler.isJobExecuting(first.id)).toBe(true);
+      for (let turn = 0; turn < 20 && !mockSpawn.mock.calls.length; turn += 1) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      expect(mockSpawn).toHaveBeenCalledTimes(1);
     } finally {
       await scheduler.shutdown();
     }
@@ -223,12 +347,13 @@ describe('JobScheduler queue behavior', () => {
 
   test('preserves successful completion when Soyuz cancellation races with process exit', async () => {
     const resultsDir = createResultsDir();
+    mockSpawn.mockReset();
+    mockSpawnSync.mockReset().mockReturnValue({ stdout: '', stderr: '', status: 0 });
     mockSpawn.mockReturnValue(new MockProcess());
     const scheduler = new JobScheduler({
       port: 3000,
       workspaceDir: '/tmp/workspace',
       resultsDir,
-      maxConcurrentRuns: 1,
       runTimeoutMs: 300000,
       agentTimeoutSeconds: 300,
       apiKeys: [],
@@ -270,7 +395,6 @@ describe('JobScheduler queue behavior', () => {
       port: 3000,
       workspaceDir: '/tmp/workspace',
       resultsDir,
-      maxConcurrentRuns: 0,
       runTimeoutMs: 300000,
       apiKeys: [],
     }, createMockWebhookManager());
@@ -296,28 +420,6 @@ describe('JobScheduler queue behavior', () => {
     }
   });
 
-  test.each([
-    ['live owner', 2_000, true, 0],
-    ['expired lease', 62_000, true, 1],
-    ['dead owner', 2_000, false, 1],
-  ])('enforces submitted ownership for a %s', async (_case, now, alive, pending) => {
-    const resultsDir = createResultsDir();
-    const config = { port: 3000, apiKeys: [], resultsDir, maxConcurrentRuns: 0 };
-    const first = new JobScheduler(config, createMockWebhookManager(), undefined,
-      new JobPersistenceManager(config, {
-        pid: 101, now: () => 1_000, restartClaimLeaseMs: 60_000,
-        processLivenessChecker: () => true, lockTokenGenerator: () => 'first',
-      }));
-    await first.submitJob({ repoUrl: 'https://github.com/example/repo', ref: 'main' });
-    const second = new JobScheduler(config, createMockWebhookManager(), undefined,
-      new JobPersistenceManager(config, {
-        pid: 202, now: () => now, restartClaimLeaseMs: 60_000,
-        processLivenessChecker: () => alive, lockTokenGenerator: () => 'second',
-      }));
-
-    await second.ready();
-    expect(second.getQueueStatus().pending).toBe(pending);
-  });
 });
 
 describe('JobScheduler evaluator metrics', () => {
@@ -347,7 +449,6 @@ describe('JobScheduler evaluator metrics', () => {
         port: 3000,
         workspaceDir: '/tmp/workspace',
         resultsDir,
-        maxConcurrentRuns: 0,
         apiKeys: [],
       },
       createMockWebhookManager(),
@@ -382,7 +483,6 @@ describe('JobScheduler evaluator metrics', () => {
         port: 3000,
         workspaceDir: '/tmp/workspace',
         resultsDir,
-        maxConcurrentRuns: 0,
         apiKeys: [],
       },
       createMockWebhookManager(),
@@ -431,7 +531,7 @@ describe('JobScheduler timeout lifecycle', () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     const resultsDir = createResultsDir();
-    const scheduler = new JobScheduler({ port: 8080, apiKeys: [], resultsDir, maxConcurrentRuns: 1,
+    const scheduler = new JobScheduler({ port: 8080, apiKeys: [], resultsDir,
       defaultTaskMode: 'patch', maxDiffBytes: 400000, agentTimeoutSeconds: 1, logLevel: 'info' }, createMockWebhookManager());
     const job = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo' });
     job.currentStage = 'prepare node dependencies';
@@ -478,8 +578,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-
-        maxConcurrentRuns: 2,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 1,
@@ -533,7 +631,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir,
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -608,7 +705,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir,
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -651,7 +747,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir,
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -696,7 +791,6 @@ describe('JobScheduler timeout lifecycle', () => {
           port: 8080,
           apiKeys: ['test-key'],
           resultsDir: createResultsDir(),
-          maxConcurrentRuns: 1,
           defaultTaskMode: 'patch',
           maxDiffBytes: 400000,
           agentTimeoutSeconds: 30,
@@ -744,7 +838,6 @@ describe('JobScheduler timeout lifecycle', () => {
           port: 8080,
           apiKeys: ['test-key'],
           resultsDir: createResultsDir(),
-          maxConcurrentRuns: 1,
           defaultTaskMode: 'patch',
           maxDiffBytes: 400000,
           agentTimeoutSeconds: 30,
@@ -779,7 +872,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir,
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -834,7 +926,6 @@ describe('JobScheduler timeout lifecycle', () => {
           port: 8080,
           apiKeys: ['test-key'],
           resultsDir,
-          maxConcurrentRuns: 1,
           defaultTaskMode: 'patch',
           maxDiffBytes: 400000,
           agentTimeoutSeconds: 30,
@@ -871,6 +962,8 @@ describe('JobScheduler timeout lifecycle', () => {
   });
 
   test('forwards public GitHub App IDs without adding legacy ID file paths', async () => {
+    mockSpawn.mockReset().mockReturnValue(new MockProcess());
+    mockSpawnSync.mockReset().mockReturnValue({ stdout: '', stderr: '', status: 0 });
     process.env.GITHUB_APP_ID = '12345';
     process.env.GITHUB_APP_CLIENT_ID = 'Iv123client';
     const secretsDir = fs.mkdtempSync('/tmp/kaseki-job-public-github-ids-');
@@ -886,7 +979,6 @@ describe('JobScheduler timeout lifecycle', () => {
       port: 3000,
       apiKeys: [],
       resultsDir,
-      maxConcurrentRuns: 0,
       defaultTaskMode: 'patch',
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 30,
@@ -905,6 +997,7 @@ describe('JobScheduler timeout lifecycle', () => {
       expect(env.GITHUB_APP_ID_FILE).toBeUndefined();
       expect(env.GITHUB_APP_CLIENT_ID_FILE).toBeUndefined();
       expect(env.GITHUB_APP_PRIVATE_KEY_FILE).toBe(path.join(secretsDir, 'github_app_private_key'));
+      await jest.advanceTimersByTimeAsync(100);
     } finally {
       await scheduler.shutdown();
     }
@@ -927,7 +1020,6 @@ describe('JobScheduler timeout lifecycle', () => {
           port: 8080,
           apiKeys: ['test-key'],
           resultsDir,
-          maxConcurrentRuns: 1,
           defaultTaskMode: 'patch',
           maxDiffBytes: 400000,
           agentTimeoutSeconds: 30,
@@ -967,7 +1059,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 2,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 42,
@@ -1007,7 +1098,6 @@ describe('JobScheduler timeout lifecycle', () => {
           port: 8080,
           apiKeys: ['test-key'],
           resultsDir: createResultsDir(),
-          maxConcurrentRuns: 1,
           defaultTaskMode: 'patch',
           maxDiffBytes: 400000,
           agentTimeoutSeconds: 30,
@@ -1057,7 +1147,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 2,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1095,7 +1184,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1139,7 +1227,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 42,
@@ -1176,7 +1263,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 100000,
         agentTimeoutSeconds: 300,
@@ -1210,7 +1296,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1245,7 +1330,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1281,7 +1365,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1326,7 +1409,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1355,7 +1437,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1391,7 +1472,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1434,7 +1514,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir,
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1478,7 +1557,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir,
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1525,7 +1603,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1560,7 +1637,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1598,7 +1674,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1641,7 +1716,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1670,7 +1744,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1705,7 +1778,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir,
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1766,7 +1838,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir,
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1819,7 +1890,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1852,7 +1922,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 1,
@@ -1883,7 +1952,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 1,
@@ -1892,9 +1960,9 @@ describe('JobScheduler timeout lifecycle', () => {
       createMockWebhookManager(),
     );
 
-    const processQueueSpy = jest.spyOn(
-      scheduler as unknown as { processQueue: () => void },
-      'processQueue',
+    const completeJobSpy = jest.spyOn(
+      scheduler as unknown as { completeJob: () => void },
+      'completeJob',
     );
     const job = await scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
@@ -1907,8 +1975,7 @@ describe('JobScheduler timeout lifecycle', () => {
 
     expect(job.finalized).toBe(true);
 
-    // Once from submit, once from single guarded completion.
-    expect(processQueueSpy).toHaveBeenCalledTimes(3);
+    expect(completeJobSpy).toHaveBeenCalledTimes(1);
   });
 
   test('cancel immediately before process exit emits one terminal webhook', async () => {
@@ -1924,7 +1991,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -1967,7 +2033,6 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -2021,7 +2086,6 @@ describe('JobScheduler instance allocation and live progress', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -2042,6 +2106,10 @@ describe('JobScheduler instance allocation and live progress', () => {
 
   test('allocates after existing result directories and persists monotonic next id', async () => {
     const resultsDir = createResultsDir();
+    const firstProcess = new MockProcess();
+    const secondProcess = new MockProcess();
+    mockSpawn.mockReset().mockReturnValueOnce(firstProcess).mockReturnValueOnce(secondProcess);
+    mockSpawnSync.mockReset().mockReturnValue({ stdout: '', stderr: '', status: 0 });
     fs.mkdirSync(`${resultsDir}/kaseki-12`);
 
     const scheduler = new JobScheduler(
@@ -2049,7 +2117,6 @@ describe('JobScheduler instance allocation and live progress', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir,
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -2062,6 +2129,7 @@ describe('JobScheduler instance allocation and live progress', () => {
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
     });
+    firstProcess.emit('exit', 0);
     const second = await scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
@@ -2089,7 +2157,6 @@ describe('JobScheduler instance allocation and live progress', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -2134,7 +2201,6 @@ describe('JobScheduler instance allocation and live progress', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -2154,7 +2220,6 @@ describe('JobScheduler instance allocation and live progress', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -2232,7 +2297,6 @@ describe('JobScheduler instance allocation and live progress', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -2282,7 +2346,6 @@ describe('JobScheduler instance allocation and live progress', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -2347,7 +2410,6 @@ describe('JobScheduler instance allocation and live progress', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -2411,7 +2473,6 @@ Another regular line
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -2461,7 +2522,6 @@ Another regular line
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -2510,7 +2570,6 @@ Another regular line
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -2566,7 +2625,6 @@ Another regular line
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -2628,7 +2686,6 @@ describe('JobScheduler shutdown lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -2669,7 +2726,6 @@ describe('JobScheduler shutdown lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -2692,17 +2748,16 @@ describe('JobScheduler shutdown lifecycle', () => {
     expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
   });
 
-  test('shutdown aborts every queued job without starting additional processes', async () => {
+  test('shutdown aborts the only active run without starting additional processes', async () => {
     const proc = new MockProcess();
-    mockSpawn.mockReturnValue(proc);
-    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+    mockSpawn.mockReset().mockReturnValue(proc);
+    mockSpawnSync.mockReset().mockReturnValue({ stdout: '', stderr: '', status: 0 });
 
     const scheduler = new JobScheduler(
       {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -2715,46 +2770,14 @@ describe('JobScheduler shutdown lifecycle', () => {
       repoUrl: 'https://github.com/org/running',
       ref: 'main',
     });
-    const queuedJobs = [
-      await scheduler.submitJob({
-        repoUrl: 'https://github.com/org/queued-one',
-        ref: 'main',
-      }),
-      await scheduler.submitJob({
-        repoUrl: 'https://github.com/org/queued-two',
-        ref: 'main',
-      }),
-      await scheduler.submitJob({
-        repoUrl: 'https://github.com/org/queued-three',
-        ref: 'main',
-      }),
-    ];
-
     expect(runningJob.status).toBe('running');
-    expect(queuedJobs.every((job) => job.status === 'queued')).toBe(true);
     expect(mockSpawn).toHaveBeenCalledTimes(1);
 
-    scheduler.shutdown();
+    await jest.advanceTimersByTimeAsync(100);
+    await scheduler.shutdown();
 
     expect(mockSpawn).toHaveBeenCalledTimes(1);
-    expect(queuedJobs).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          status: 'failed',
-          failureClass: 'shutdown_aborted',
-          finalized: true,
-        }),
-      ]),
-    );
-    expect(
-      queuedJobs.every(
-        (job) =>
-          job.status === 'failed' &&
-          job.failureClass === 'shutdown_aborted' &&
-          job.finalized === true,
-      ),
-    ).toBe(true);
-    expect(scheduler.getQueueStatus().pending).toBe(0);
+    expect(runningJob).toMatchObject({ status: 'failed', failureClass: 'shutdown_aborted', finalized: true });
     expect(scheduler.listJobs().filter((job) => job.status === 'queued')).toEqual(
       [],
     );
@@ -2771,7 +2794,6 @@ describe('JobScheduler shutdown lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 0,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -2780,26 +2802,26 @@ describe('JobScheduler shutdown lifecycle', () => {
       webhookManager,
     );
 
-    const job = await scheduler.submitJob({
+    const job = await scheduler.submitSoyuzJob({
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
       webhookConfig: {
         url: 'https://example.com/webhook',
       },
-    });
+    }, '11111111-1111-4111-8111-111111111111', 'host-test-1', 'correlation', 'request');
 
     expect(job.status).toBe('queued');
-    expect(scheduler.getQueueStatus().pending).toBe(1);
+    expect(scheduler.isRunSlotAvailable()).toBe(false);
+    expect(job.webhookConfig).toEqual({ url: 'https://example.com/webhook' });
     enqueueWebhookSpy.mockClear();
 
-    scheduler.shutdown();
-    scheduler.shutdown();
+    await scheduler.shutdown();
+    await scheduler.shutdown();
 
     expect(job.finalized).toBe(true);
     expect(job.status).toBe('failed');
     expect(job.failureClass).toBe('shutdown_aborted');
     expect(job.completedAt).toBeInstanceOf(Date);
-    expect(scheduler.getQueueStatus().pending).toBe(0);
     expect(enqueueWebhookSpy).toHaveBeenCalledTimes(1);
     expect(enqueueWebhookSpy).toHaveBeenCalledWith(
       job.id,
@@ -2820,7 +2842,6 @@ describe('JobScheduler shutdown lifecycle', () => {
       port: 8080,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 0,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 30,
@@ -2913,7 +2934,6 @@ describe('JobScheduler persistence merge safety', () => {
       port: 8080,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       runTimeoutMs: 300000,
       soyuz: { enabled: true } as never,
     }, createMockWebhookManager());
@@ -2924,7 +2944,7 @@ describe('JobScheduler persistence merge safety', () => {
       expect(recovered?.status).toBe('queued');
       expect(recovered?.soyuz?.startAuthorized).toBe(true);
       expect(recovered?.soyuz?.startNeedsCanonicalRecheck).toBe(true);
-      expect(scheduler.getQueueStatus()).toMatchObject({ pending: 1, running: 0 });
+      expect(scheduler.isRunSlotAvailable()).toBe(false);
       expect(mockSpawn).not.toHaveBeenCalled();
     } finally {
       await scheduler.shutdown();
@@ -2957,7 +2977,6 @@ describe('JobScheduler persistence merge safety', () => {
       port: 8080,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 30,
@@ -2969,9 +2988,8 @@ describe('JobScheduler persistence merge safety', () => {
     await Promise.all([schedulerA.ready(), schedulerB.ready()]);
 
     expect(mockSpawn).toHaveBeenCalledTimes(1);
-    expect(
-      schedulerA.getQueueStatus().running + schedulerB.getQueueStatus().running,
-    ).toBe(1);
+    expect([schedulerA, schedulerB].flatMap((scheduler) => scheduler.listJobs())
+      .filter((job) => job.status === 'running')).toHaveLength(1);
   });
 
   test('persistJobs skips writes when index lock is already held', async () => {
@@ -2980,7 +2998,6 @@ describe('JobScheduler persistence merge safety', () => {
       port: 8080,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 0,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 30,
@@ -2995,13 +3012,11 @@ describe('JobScheduler persistence merge safety', () => {
     const indexPath = `${resultsDir}/.kaseki-api-jobs.json`;
     const before = fs.readFileSync(indexPath, 'utf-8');
 
-    fs.mkdirSync(`${resultsDir}/.kaseki-api-jobs.lock`, { mode: 0o700 });
-    await expect(
-      scheduler.submitJob({
-        repoUrl: 'https://github.com/org/repo',
-        ref: 'feature/locked',
-      }),
-    ).rejects.toThrow('Failed to acquire Kaseki jobs index lock');
+    const lockPath = `${resultsDir}/.kaseki-api-jobs.lock`;
+    for (let turn = 0; turn < 20 && fs.existsSync(lockPath); turn += 1) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    fs.mkdirSync(lockPath, { mode: 0o700, recursive: true });
     await (
       scheduler as unknown as { persistJobs: () => Promise<void> }
     ).persistJobs();
@@ -3026,7 +3041,6 @@ describe('JobScheduler persistence merge safety', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir,
-        maxConcurrentRuns: 0,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -3043,23 +3057,31 @@ describe('JobScheduler persistence merge safety', () => {
       port: 8080,
       apiKeys: ['test-key'],
       resultsDir,
-      maxConcurrentRuns: 0,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 30,
       logLevel: 'info' as const,
     };
 
+    const proc = new MockProcess();
+    mockSpawn.mockReset().mockReturnValue(proc);
+    mockSpawnSync.mockReset().mockReturnValue({ stdout: '', stderr: '', status: 0 });
     const schedulerA = new JobScheduler(config, createMockWebhookManager());
     const first = await schedulerA.submitJob({
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
     });
 
-    const schedulerB = new JobScheduler(config, createMockWebhookManager());
-    await schedulerB.ready();
-    const staleCopy = schedulerB.getJob(first.id);
-    expect(staleCopy?.status).toBe('queued');
+    const staleCopy = {
+      ...first,
+      status: 'queued' as const,
+      startedAt: undefined,
+      completedAt: undefined,
+      exitCode: undefined,
+      failureClass: undefined,
+      error: undefined,
+      finalized: false,
+    };
 
     const firstFromA = schedulerA.getJob(first.id);
     expect(firstFromA).toBeDefined();
@@ -3073,13 +3095,7 @@ describe('JobScheduler persistence merge safety', () => {
       schedulerA as unknown as { persistJobs: () => Promise<void> }
     ).persistJobs();
 
-    await schedulerB.submitJob({
-      repoUrl: 'https://github.com/org/repo',
-      ref: 'feature/branch',
-    });
-    await (
-      schedulerB as unknown as { persistJobs: () => Promise<void> }
-    ).persistJobs();
+    await new JobPersistenceManager(config).persistJobs([staleCopy]);
 
     const raw = JSON.parse(
       fs.readFileSync(`${resultsDir}/.kaseki-api-jobs.json`, 'utf-8'),
@@ -3120,7 +3136,6 @@ describe('JobScheduler persistence merge safety', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir,
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -3156,16 +3171,15 @@ describe('JobScheduler persistence merge safety', () => {
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
     });
-    const queued = await scheduler.submitJob({
+    await expect(scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
       ref: 'feature/queued',
-    });
+    })).rejects.toMatchObject({ code: 'RUN_ALREADY_ACTIVE' });
 
     expect(running.status).toBe('running');
-    expect(queued.status).toBe('queued');
     expect(scheduler.getJob(first.id)).toBeUndefined();
     expect(scheduler.listJobs().map((job) => job.id).sort()).toEqual(
-      [queued.id, running.id, second.id, third.id].sort(),
+      [running.id, second.id, third.id].sort(),
     );
     expect(artifactCache.clearForJob).toHaveBeenCalledWith(first.id);
   });
@@ -3213,7 +3227,6 @@ describe('JobScheduler persistence merge safety', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir,
-        maxConcurrentRuns: 0,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -3223,6 +3236,8 @@ describe('JobScheduler persistence merge safety', () => {
       createMockWebhookManager(),
       artifactCache,
     );
+    mockSpawn.mockReset().mockReturnValue(new MockProcess());
+    mockSpawnSync.mockReset().mockReturnValue({ stdout: '', stderr: '', status: 0 });
     await scheduler.ready();
 
     expect(scheduler.getJob('kaseki-1')).toBeUndefined();
@@ -3231,7 +3246,7 @@ describe('JobScheduler persistence merge safety', () => {
       'kaseki-3',
       'kaseki-4',
     ]);
-    expect(scheduler.getJob('kaseki-4')?.status).toBe('queued');
+    expect(scheduler.getJob('kaseki-4')?.status).toBe('running');
     expect(artifactCache.clearForJob).toHaveBeenCalledWith('kaseki-1');
   });
 
@@ -3242,7 +3257,6 @@ describe('JobScheduler persistence merge safety', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir,
-        maxConcurrentRuns: 0,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -3317,7 +3331,6 @@ describe('JobScheduler artifact cache invalidation', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir,
-        maxConcurrentRuns: 0,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 1,
@@ -3357,7 +3370,6 @@ describe('JobScheduler readiness repair', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir,
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -3386,7 +3398,6 @@ describe('JobScheduler readiness repair', () => {
       retentionRuns: 5,
       storageWarnFreeBytes: 5 * 1024 ** 3,
       storageMinFreeBytes: 2 * 1024 ** 3,
-      maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 400000,
       agentTimeoutSeconds: 30,
@@ -3406,7 +3417,7 @@ describe('JobScheduler readiness repair', () => {
         statusCode: 507,
       });
       expect(cleanup).toHaveBeenCalledTimes(1);
-      expect(scheduler.getQueueStatus().pending).toBe(0);
+      expect(scheduler.isRunSlotAvailable()).toBe(true);
     } finally {
       await scheduler.shutdown();
     }
@@ -3441,7 +3452,6 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -3487,7 +3497,6 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -3533,7 +3542,6 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -3573,7 +3581,6 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 1,
@@ -3629,7 +3636,6 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -3668,7 +3674,6 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 1,
@@ -3715,7 +3720,6 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 1,
@@ -3761,7 +3765,6 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 1,
@@ -3817,7 +3820,6 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
           port: 8080,
           apiKeys: ['test-key'],
           resultsDir: createResultsDir(),
-          maxConcurrentRuns: 1,
           defaultTaskMode: 'patch',
           maxDiffBytes: 400000,
           agentTimeoutSeconds: 1,
@@ -3872,7 +3874,6 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 1,
@@ -3932,7 +3933,6 @@ describe('JobScheduler gateway provider detection', () => {
           port: 8080,
           apiKeys: ['test-key'],
           resultsDir: createResultsDir(),
-          maxConcurrentRuns: 1,
           defaultTaskMode: 'patch',
           maxDiffBytes: 400000,
           agentTimeoutSeconds: 30,
@@ -3980,7 +3980,6 @@ describe('JobScheduler gateway provider detection', () => {
           port: 8080,
           apiKeys: ['test-key'],
           resultsDir: createResultsDir(),
-          maxConcurrentRuns: 1,
           defaultTaskMode: 'patch',
           maxDiffBytes: 400000,
           agentTimeoutSeconds: 30,

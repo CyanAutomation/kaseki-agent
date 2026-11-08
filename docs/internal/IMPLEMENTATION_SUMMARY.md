@@ -6,6 +6,10 @@
 **Files Created**: 12  
 **Files Modified**: 3
 
+> Historical snapshot from May 2026. Its queue and concurrency descriptions
+> below were superseded by the single-run scheduler: each current Kaseki agent
+> accepts one active run and returns `409 RUN_ALREADY_ACTIVE` while occupied.
+
 ---
 
 ## Executive Summary

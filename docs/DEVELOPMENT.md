@@ -36,7 +36,7 @@ confirms API readiness; it does not send a model request. See the
 |---|---|---|
 | CLI | `src/cli/` | Setup, host diagnostics, and API-backed task commands |
 | API service | `src/kaseki-api-service.ts`, `src/kaseki-api-routes.ts`, `src/routes/` | HTTP endpoints, authentication, task admission, and run access |
-| Scheduler | `src/job-scheduler.ts` | Queue and worker lifecycle |
+| Scheduler | `src/job-scheduler.ts` | Single-run admission and worker lifecycle |
 | Worker | `Dockerfile`, `kaseki-agent.sh`, `scripts/` | Disposable task execution, validation, and artifact collection |
 | Configuration | `src/config/`, `src/setup/` | CLI settings, initialization, and secret discovery |
 
