@@ -22,7 +22,6 @@ The CLI is a single binary built from TypeScript sources. All commands are dispa
 |---------|-------------|:---:|
 | `quickstart` | One-command production setup | No |
 | `init` | Unified setup wizard (recommended) | No |
-| `setup` | DEPRECATED — delegates to `init` | No |
 | `run` | Submit a task run | Yes |
 | `doctor` | Health checks and diagnostics | No |
 | `serve` | Start local REST API service | N/A |
@@ -69,7 +68,7 @@ EXAMPLES
 
 ### `init`
 
-Unified setup wizard for all execution paths (single-run, local API, production). Recommended over `setup`.
+Unified setup wizard for all execution paths (single-run, local API, production).
 
 ```bash
 USAGE
