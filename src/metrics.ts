@@ -2,7 +2,6 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 class MetricsRegistry {
-  private queuePending = 0;
   private runningJobs = 0;
   private runsTotal = { success: 0, failure: 0 };
   private timeoutsTotal = 0;
@@ -53,7 +52,6 @@ class MetricsRegistry {
     } catch { /* Metrics must never affect job execution. */ }
   }
 
-  setQueuePending(count: number): void { this.queuePending = Math.max(0, count); }
   setRunningJobs(count: number): void { this.runningJobs = Math.max(0, count); }
   incSoyuzCounter(name: string): void {
     const allowed = new Set([
@@ -115,9 +113,6 @@ class MetricsRegistry {
 
   renderPrometheus(): string {
     const lines: string[] = [];
-    lines.push('# HELP kaseki_queue_pending Number of queued jobs awaiting execution.');
-    lines.push('# TYPE kaseki_queue_pending gauge');
-    lines.push(`kaseki_queue_pending ${this.queuePending}`);
     lines.push('# HELP kaseki_running_jobs Number of jobs currently running.');
     lines.push('# TYPE kaseki_running_jobs gauge');
     lines.push(`kaseki_running_jobs ${this.runningJobs}`);

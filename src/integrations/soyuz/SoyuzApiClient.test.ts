@@ -11,7 +11,6 @@ const config: SoyuzAdapterConfig = {
   queueApiToken: 'queue-secret',
   workerId: 'host-1',
   pollIntervalMs: 5_000,
-  batchSize: 1,
   visibilityTimeoutMs: 120_000,
   requestTimeoutMs: 10_000,
   cancellationPollIntervalMs: 15_000,

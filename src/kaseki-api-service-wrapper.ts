@@ -67,7 +67,6 @@ class KasekiAPIServiceImpl {
         host: this.config.host,
         authMode: this.config.apiKeys.length > 0 ? 'bearer' : 'loopback-unauthenticated',
         logLevel: this.config.logLevel,
-        maxConcurrentRuns: this.config.maxConcurrentRuns,
         resultsDir: this.config.resultsDir,
         nodeVersion: process.versions.node,
       });
@@ -117,7 +116,6 @@ class KasekiAPIServiceImpl {
           host: this.config.host,
           authMode: this.config.apiKeys.length > 0 ? 'bearer' : 'loopback-unauthenticated',
           logLevel: this.config.logLevel,
-          maxConcurrentRuns: this.config.maxConcurrentRuns,
         });
         console.log(`\n✓ Kaseki API service started on ${displayHost}:${this.config.port}`);
         console.log(`  Health check: http://${displayHost}:${this.config.port}/health`);

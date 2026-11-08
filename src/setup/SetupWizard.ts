@@ -618,14 +618,12 @@ export class SetupWizard {
     // Production API specific
     if (executionPath === 'production-api') {
       defaults.KASEKI_API_PORT = 8080;
-      defaults.KASEKI_API_MAX_CONCURRENT_RUNS = 3;
       defaults.KASEKI_LOG_DIR = '/var/log/kaseki';
     }
 
     // Local API specific
     if (executionPath === 'local-api') {
       defaults.KASEKI_API_PORT = 8080;
-      defaults.KASEKI_API_MAX_CONCURRENT_RUNS = 2;
     }
 
     return defaults;

@@ -49,7 +49,6 @@ function createConfig(resultsDir) {
     port: 0,
     workspaceDir: path.join(resultsDir, 'workspace'),
     resultsDir,
-    maxConcurrentRuns: 1,
     runTimeoutMs: 300_000,
     apiKeys: [],
     defaultTaskMode: 'patch',
@@ -114,11 +113,7 @@ await withCleanup(async () => {
   const schedulerDir = makeTempDir('kaseki-dist-scheduler-');
   const scheduler = new schedulerModule.JobScheduler(createConfig(schedulerDir), createMockWebhookManager());
   await scheduler.ready();
-  assert.deepEqual(
-    scheduler.getQueueStatus(),
-    { pending: 0, running: 0, maxConcurrent: 1 },
-    'JobScheduler should report an empty initialized queue',
-  );
+  assert.equal(scheduler.isRunSlotAvailable(), true, 'JobScheduler should expose its free single-run slot');
   assert.deepEqual(
     scheduler.getReadiness(),
     { ready: true, reasons: [] },
@@ -133,7 +128,7 @@ await withCleanup(async () => {
   const app = express();
   const routeConfig = createConfig(makeTempDir('kaseki-dist-routes-'));
   const routeScheduler = {
-    getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+    isRunSlotAvailable: () => true,
     getReadiness: () => ({ ready: true, reasons: [] }),
     getJob: () => undefined,
     submitJob: async () => { throw new Error('submitJob should not be called by /health'); },

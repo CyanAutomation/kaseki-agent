@@ -15,7 +15,6 @@ const createMockConfig = (): KasekiApiConfig => ({
   resultsDir: path.join(os.tmpdir(), 'kaseki-results'),
   logLevel: 'debug',
   apiKeys: [],
-  maxConcurrentRuns: 5,
   maxDiffBytes: 200000,
   agentTimeoutSeconds: 10800,
   artifactCacheMaxEntries: 100,

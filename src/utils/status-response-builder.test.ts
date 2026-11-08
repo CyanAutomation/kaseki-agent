@@ -31,7 +31,6 @@ describe('StatusResponseBuilder', () => {
       defaultTaskMode: 'patch',
       port: 3000,
       apiKeys: [],
-      maxConcurrentRuns: 5,
       maxDiffBytes: 400000,
       logLevel: 'info',
     } as unknown as KasekiApiConfig;
