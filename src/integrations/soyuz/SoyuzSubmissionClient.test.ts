@@ -14,7 +14,6 @@ function makeClient(fetchImpl: typeof fetch): SoyuzSubmissionClient {
     queueApiToken: '',
     workerId: '',
     pollIntervalMs: 5_000,
-    batchSize: 1,
     visibilityTimeoutMs: 120_000,
     requestTimeoutMs: 20_000,
     cancellationPollIntervalMs: 15_000,

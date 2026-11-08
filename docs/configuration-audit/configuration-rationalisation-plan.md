@@ -15,7 +15,7 @@ No setting should move to API merely to reduce ENV count. The API caller must no
 ## 2. Current configuration problems
 
 * There is no single configuration ownership map or loader. API config has validated parsers, while extensions, evaluators, shell scripts, and summarization read ambient environment directly.
-* Defaults differ by entry point (`KASEKI_API_MAX_CONCURRENT_RUNS` is a salient example); dotenv templates and ENV documentation contain stale/retired entries.
+* The historical audit found defaults that differed by entry point (`KASEKI_API_MAX_CONCURRENT_RUNS`); the single-run scheduler change removed that setting and fixed per-agent capacity at one. Other dotenv and ENV documentation drift should still be assessed against implementation.
 * `KASEKI_API_URL`/`KASEKI_API_BASE_URL`, general/API log level, direct secret/secret-file variants, API/worker image, host/container paths, model overrides, and cache controls create precedence or duplication.
 * The worker environment is both configuration transport and internal metadata channel. Scheduler code already projects request values into worker env; that does not make those fields deployment settings.
 * Boolean flags include legitimate security/rollout switches and implementation-stage switches. A flag is not redundant solely because it is boolean; its lifecycle and rollback value must be established.

@@ -20,7 +20,6 @@ The jobs index also stores short-lived Soyuz claim intents. Kaseki writes an int
 | `CLOUDFLARE_QUEUE_API_TOKEN` | host secret | Separate Queue Read+Write API token for HTTP pull and ack/retry. |
 | `SOYUZ_WORKER_ID` | — | Stable unique host identifier, 1–200 letters, digits, `_`, `.`, `:`, or `-`. |
 | `SOYUZ_POLL_INTERVAL_MS` | `5000` | 250–60000 ms. |
-| `SOYUZ_BATCH_SIZE` | `1` | 1–100; adapter further limits pulls to available local capacity. |
 | `SOYUZ_VISIBILITY_TIMEOUT_MS` | `120000` | 1000 ms–12 hours. This covers the short handoff, not the coding run. |
 | `SOYUZ_REQUEST_TIMEOUT_MS` | `20000` | 1000–120000 ms for each API request. |
 | `SOYUZ_CANCELLATION_POLL_INTERVAL_MS` | `15000` | 1000–300000 ms. |
@@ -38,13 +37,16 @@ CLOUDFLARE_ACCOUNT_ID=0123456789abcdef0123456789abcdef
 CLOUDFLARE_QUEUE_ID=<queue-id>
 SOYUZ_WORKER_ID=kaseki-host-eu-01
 SOYUZ_POLL_INTERVAL_MS=5000
-SOYUZ_BATCH_SIZE=1
 SOYUZ_VISIBILITY_TIMEOUT_MS=120000
 ```
 
 ## Kaseki submission contract
 
 Soyuz remains the shared control plane for cross-host run intake and canonical run history. New cross-host integrations should submit to Soyuz directly when it is available. Kaseki's submission proxy remains for existing Kaseki API clients during migration; `/api/v1/runs/local` is the standalone host path.
+
+Each Kaseki agent consumes at most one queue message at a time and pulls one
+message only while its run slot is free. Add independent Kaseki agents when
+the Soyuz queue needs more concurrent execution capacity.
 
 With submission routing enabled, `POST /api/v1/runs` validates the request and its existing task-safety gate, persists the caller's idempotency key and request fingerprint, then sends the same UUID as the Soyuz `Idempotency-Key` header and body field. On a timeout or uncertain 5xx response Kaseki keeps that durable intent; clients must repeat the same request with the same key. Once the remote response is recorded, the Soyuz UUID is the public `id`; Kaseki includes `localRunId` after a worker host creates its local job mapping. Existing `kaseki-N` IDs remain valid for local logs, artifacts, and diagnostics.
 

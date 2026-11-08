@@ -18,7 +18,7 @@ Rows group tightly coupled settings that share a destination and materially simi
 | `KASEKI_API_IMAGE`, `KASEKI_IMAGE` | 3 | 3 | 0 | 1 | 0 | 3 | MERGE | Medium-high | Same-revision policy is already documented; one deployment image reference should feed API and workers, with explicit split only if supported. |
 | `KASEKI_API_USER`, `DOCKER_GID`, container UID/GID/user | 3 | 4 | 0 | 1 | 1 | 3 | CONFIG + MERGE | Medium | Host/container identity varies with deployment but currently duplicates related IDs across compose and worker configuration. |
 | `KASEKI_API_LOG_LEVEL`, `LOG_LEVEL` | 2 | 2 | 0 | 2 | 0 | 3 | MERGE | High | Two environment names control overlapping logger behavior; keep one documented process-level log setting. |
-| `KASEKI_API_MAX_CONCURRENT_RUNS` | 4 | 3 | 0 | 2 | 0 | 1 | ENV | High | Scheduler capacity is infrastructure resource policy; entry-point defaults differ and need reconciliation. |
+| `KASEKI_API_MAX_CONCURRENT_RUNS` | 4 | 3 | 0 | 2 | 0 | 1 | REMOVED | High | Historical setting removed by the single-run scheduler change; per-agent capacity is fixed at one run. |
 | Four API rate-limit settings | 3 | 3 | 0 | 1 | 0 | 2 | CONFIG | Medium-high | Server-owned policy defaults, not caller controls. Store together only if schema stays small and validated. |
 | API job index and artifact cache bounds | 2 | 2 | 0 | 1 | 0 | 3 | CONFIG | Medium | Internal memory/resource tuning; current defaults already exist. Retain operator overrides only where production evidence supports them. |
 | `KASEKI_API_URL`, `KASEKI_API_BASE_URL` | 3 | 2 | 0 | 2 | 0 | 3 | MERGE | High | Client endpoint is a CLI/user installation preference; two aliases have precedence ambiguity. Retain one config key and one legacy alias during migration. |

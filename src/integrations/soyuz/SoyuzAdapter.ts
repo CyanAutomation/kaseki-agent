@@ -61,7 +61,6 @@ export class SoyuzAdapter {
     logger.event('soyuz_adapter_started', {
       workerId: this.config.workerId,
       pollIntervalMs: this.config.pollIntervalMs,
-      batchSize: this.config.batchSize,
       visibilityTimeoutMs: this.config.visibilityTimeoutMs,
     });
     this.loopPromise = this.runLoop();
@@ -135,9 +134,7 @@ export class SoyuzAdapter {
     await this.reconcileLocalJobs();
     if (!this.accepting || this.stopping) return;
 
-    const status = this.scheduler.getQueueStatus();
-    const capacity = Math.max(0, status.maxConcurrent - status.running - status.pending);
-    if (capacity === 0) return;
+    if (!this.scheduler.isRunSlotAvailable()) return;
     const outbox = await this.scheduler.getSoyuzOutboxStatus();
     metricsRegistry.setSoyuzCallbacksPending(outbox.pending);
     if (outbox.pending >= 5_000) {
@@ -153,7 +150,7 @@ export class SoyuzAdapter {
 
     let messages: CloudflarePulledMessage[];
     try {
-      messages = await this.queue.pull(Math.min(this.config.batchSize, capacity));
+      messages = await this.queue.pull();
       this.pullFailures = 0;
       this.pullRetryAfterMs = 0;
       metricsRegistry.incSoyuzCounter('queue_pull_success');
@@ -522,6 +519,7 @@ export class SoyuzAdapter {
     if (!this.canStartLocalJob(canonical, claim.callbackId)) return false;
     const callbackId = claim.callbackId ?? canonical.claimCallbackId ?? job.soyuz?.claimCallbackId;
     await this.persistClaimCallbackId(job, callbackId);
+    if (!(await this.scheduler.reserveSoyuzStart(job.id))) return false;
     return this.sendStartedCallback(run, job, callbackId, handoffStartedAt);
   }
 

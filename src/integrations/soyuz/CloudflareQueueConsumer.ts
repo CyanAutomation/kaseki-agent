@@ -22,10 +22,10 @@ export class CloudflareQueueConsumer {
     this.baseUrl = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(config.accountId)}/queues/${encodeURIComponent(config.queueId)}/messages`;
   }
 
-  async pull(batchSize: number): Promise<CloudflarePulledMessage[]> {
+  async pull(): Promise<CloudflarePulledMessage[]> {
     const response = await this.call(`${this.baseUrl}/pull`, {
       visibility_timeout_ms: this.config.visibilityTimeoutMs,
-      batch_size: batchSize,
+      batch_size: 1,
     });
     const result = response.result as { messages?: unknown } | undefined;
     if (!Array.isArray(result?.messages)) throw new Error('Cloudflare Queue pull response has no messages array');

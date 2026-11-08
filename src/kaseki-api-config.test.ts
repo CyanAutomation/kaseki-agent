@@ -33,7 +33,7 @@ describe('kaseki-api-config load configuration', () => {
     (readHostSecret as jest.Mock).mockReturnValue('key1\nkey2\nkey3');
 
     process.env.KASEKI_API_PORT = '3000';
-    process.env.KASEKI_API_MAX_CONCURRENT_RUNS = '5';
+    process.env.KASEKI_API_MAX_CONCURRENT_RUNS = '5'; // Retired; must not affect scheduler behavior.
     process.env.KASEKI_AGENT_TIMEOUT_SECONDS = '600';
     process.env.KASEKI_MAX_DIFF_BYTES = '500000';
     process.env.KASEKI_TASK_MODE = 'inspect';
@@ -61,7 +61,7 @@ describe('kaseki-api-config load configuration', () => {
 
     expect(config.apiKeys).toEqual(['key1', 'key2', 'key3']);
     expect(config.port).toBe(3000);
-    expect(config.maxConcurrentRuns).toBe(5);
+    expect(config).not.toHaveProperty('maxConcurrentRuns');
     expect(config.agentTimeoutSeconds).toBe(600);
     expect(config.maxDiffBytes).toBe(500000);
     expect(config.defaultTaskMode).toBe('inspect');
@@ -106,7 +106,7 @@ describe('kaseki-api-config load configuration', () => {
 
     expect(config.apiKeys).toEqual(['default-key']);
     expect(config.port).toBe(8080); // default
-    expect(config.maxConcurrentRuns).toBe(3); // default
+    expect(config).not.toHaveProperty('maxConcurrentRuns');
     expect(config.agentTimeoutSeconds).toBe(10800); // default
     expect(config.maxDiffBytes).toBe(400000); // default
     expect(config.defaultTaskMode).toBe('patch'); // default
@@ -256,14 +256,14 @@ describe('kaseki-api-config load configuration', () => {
     expect(() => loadConfig()).toThrow('KASEKI_API_PORT must be a valid port number');
   });
 
-  test('loadConfig throws when KASEKI_API_MAX_CONCURRENT_RUNS is invalid', () => {
+  test('loadConfig ignores the retired KASEKI_API_MAX_CONCURRENT_RUNS setting', () => {
     const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue('test-key');
 
     process.env.KASEKI_RESULTS_DIR = testDir;
     process.env.KASEKI_API_MAX_CONCURRENT_RUNS = '-1';
 
-    expect(() => loadConfig()).toThrow('KASEKI_API_MAX_CONCURRENT_RUNS must be >= 1');
+    expect(loadConfig()).not.toHaveProperty('maxConcurrentRuns');
   });
 
   test('loadConfig throws when KASEKI_AGENT_TIMEOUT_SECONDS is invalid', () => {
@@ -414,7 +414,6 @@ describe('kaseki-api-config validate API key', () => {
     port: 8080,
     apiKeys: ['valid-key-1', 'valid-key-2'],
     resultsDir: '/tmp',
-    maxConcurrentRuns: 3,
     defaultTaskMode: 'patch' as const,
     maxDiffBytes: 400000,
     agentTimeoutSeconds: 10800,

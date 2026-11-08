@@ -1329,10 +1329,6 @@ const controllerPage = String.raw`<!doctype html>
               <span class="summary-value" data-summary="controller">Not checked</span>
             </div>
             <div class="summary-card">
-              <span class="summary-label">Queue</span>
-              <span class="summary-value" data-summary="queue">Not checked</span>
-            </div>
-            <div class="summary-card">
               <span class="summary-label">Preflight</span>
               <span class="summary-value" data-summary="preflight">Not checked</span>
             </div>
@@ -2831,9 +2827,6 @@ const controllerPage = String.raw`<!doctype html>
       function summarizeHealth(path, payload) {
         if (path === '/health') {
           setSummary('controller', payload.status || 'Healthy', 'ok');
-          if (payload.queue) {
-            setSummary('queue', String(payload.queue.running || 0) + ' running, ' + String(payload.queue.pending || 0) + ' pending', 'ok');
-          }
         }
         if (path === '/ready') {
           setSummary('controller', payload.status || 'Ready', 'ok');

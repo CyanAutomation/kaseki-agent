@@ -41,8 +41,8 @@ describe('OpenAPI Path Builders', () => {
     contract('/api/v1/openapi.json', 'get', 'getOpenApiSpec', false, ['200'], 'Service Info'),
     contract('/api/v1/gateway-test', 'get', 'testGateway', true, ['200', '400', '401', '429', '503'], 'Gateway Diagnostics'),
     contract('/api/v1/validate', 'post', 'validateTask', true, ['200', '400', '401'], 'Service Info'),
-    contract('/api/v1/runs', 'post', 'triggerRun', true, ['200', '202', '400', '401', '422', '503', '507'], 'Run Management'),
-    contract('/api/v1/runs/local', 'post', 'triggerLocalRun', true, ['200', '202', '400', '401', '422', '503', '507'], 'Run Management'),
+    contract('/api/v1/runs', 'post', 'triggerRun', true, ['200', '202', '400', '401', '409', '422', '503', '507'], 'Run Management'),
+    contract('/api/v1/runs/local', 'post', 'triggerLocalRun', true, ['200', '202', '400', '401', '409', '422', '503', '507'], 'Run Management'),
     contract('/api/v1/runs', 'get', 'listRuns', true, ['200', '400', '401'], 'Run Management'),
     contract('/api/v1/runs/{id}', 'get', 'getRun', true, ['200', '401', '404'], 'Run Management'),
     contract('/api/v1/runs/{id}/status', 'get', 'getRunStatus', true, ['200', '401', '404'], 'Run Management'),
@@ -316,7 +316,7 @@ describe('OpenAPI Path Builders', () => {
       const criticalDescriptionExpectations = [
         {
           operationId: 'getReady',
-          terms: ['ready', 'queue', 'scheduler']
+          terms: ['ready', 'single run slot', 'scheduler']
         },
         {
           operationId: 'getPreFlight',
@@ -332,11 +332,11 @@ describe('OpenAPI Path Builders', () => {
         },
         {
           operationId: 'triggerRun',
-          terms: ['queue', '202 accepted', 'id', 'poll status']
+          terms: ['one run at a time', '409', 'multiple independent agents']
         },
         {
           operationId: 'retryRun',
-          terms: ['completed or failed', 'uuid idempotencykey', 'replays', 'instead of enqueueing']
+          terms: ['completed or failed', 'uuid idempotencykey', 'replays', 'instead of creating another retry']
         },
         {
           operationId: 'getRunStatus',
@@ -371,7 +371,7 @@ describe('OpenAPI Path Builders', () => {
           terms: ['connectivity check', 'inference', 'pi adapter']
         },
         { operationId: 'getApiHealth', terms: ['liveness'] },
-        { operationId: 'getApiReady', terms: ['ready', 'queue', 'scheduler'] },
+        { operationId: 'getApiReady', terms: ['ready', 'single run slot', 'scheduler'] },
         { operationId: 'getApiUsage', terms: ['per-key', 'usage'] },
         { operationId: 'getOpenApiSpec', terms: ['openapi', 'specification'] },
         { operationId: 'getRun', terms: ['stable run identity', 'lifecycle timestamps', 'links'] },
@@ -430,6 +430,12 @@ describe('OpenAPI Path Builders', () => {
       expect(Object.keys(paths['/api/v1/runs/{id}/retry'] as Record<string, unknown>).sort()).toEqual(['post']);
       expect(Object.keys(paths['/api/v1/runs/{id}/status'] as Record<string, unknown>).sort()).toEqual(['get']);
       expect(Object.keys(paths['/api/v1/webhooks/test'] as Record<string, unknown>).sort()).toEqual(['post']);
+
+      const capabilities = (paths['/api/v1/capabilities'] as Record<string, any>).get;
+      expect(capabilities.responses['200'].content['application/json'].schema.properties.limits.properties.maxActiveRunsPerAgent).toEqual({
+        type: 'integer',
+        enum: [1],
+      });
     });
   });
 
@@ -442,7 +448,8 @@ describe('OpenAPI Path Builders', () => {
         '/api/v1/metrics': { get: ['401'] },
         '/api/v1/preflight': { get: ['401'] },
         '/api/v1/validate': { post: ['400', '401'] },
-        '/api/v1/runs': { get: ['400', '401'], post: ['400', '401', '503', '507'] },
+        '/api/v1/runs': { get: ['400', '401'], post: ['400', '401', '409', '503', '507'] },
+        '/api/v1/runs/local': { post: ['400', '401', '409', '422', '503', '507'] },
         '/api/v1/runs/{id}/status': { get: ['401', '404'] },
         '/api/v1/runs/{id}/retry': { post: ['400', '401', '404', '409', '503', '507'] },
         '/api/v1/runs/{id}/cancel': { post: ['401', '404'] },
@@ -512,7 +519,7 @@ describe('OpenAPI Path Builders', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, emptyResponseSchema);
       const runsPath = paths['/api/v1/runs'] as Record<string, any>;
 
-      expect(Object.keys(runsPath.post.responses).sort()).toEqual(['200', '202', '400', '401', '422', '503', '507']);
+      expect(Object.keys(runsPath.post.responses).sort()).toEqual(['200', '202', '400', '401', '409', '422', '503', '507']);
       ['200', '202'].forEach((status) => {
         expect(runsPath.post.responses[status].content).toEqual({
           'application/json': {
@@ -640,7 +647,8 @@ describe('OpenAPI Path Builders', () => {
       const runsPath = (paths['/api/v1/runs'] as Record<string, any>).post;
       expect(runsPath.operationId).toBe('triggerRun');
       expect(runsPath.responses['202']).toBeDefined();
-      expect(runsPath.responses['202'].description).toContain('queued');
+      expect(runsPath.responses['202'].description).toContain('accepted for execution');
+      expect(runsPath.responses['409']).toBeDefined();
     });
 
     it('POST /api/v1/runs/local should document the explicit local-only submission path', () => {
@@ -932,9 +940,10 @@ describe('OpenAPI Path Builders', () => {
       });
     });
 
-    it('POST requests that queue jobs should return 202 Accepted', () => {
+    it('POST run requests should document acceptance and busy-agent conflicts', () => {
       const triggerRunPath = (paths['/api/v1/runs'] as Record<string, any>).post;
       expect(triggerRunPath.responses['202']).toBeDefined();
+      expect(triggerRunPath.responses['409']).toBeDefined();
     });
 
     it('bad requests should return 400 with error schema', () => {

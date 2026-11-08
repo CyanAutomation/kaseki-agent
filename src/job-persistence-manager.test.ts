@@ -38,7 +38,6 @@ describe('JobPersistenceManager', () => {
       port: 3000,
       apiKeys: ['test'],
       resultsDir: tempDir,
-      maxConcurrentRuns: 2,
       defaultTaskMode: 'patch',
       maxDiffBytes: 100000,
       agentTimeoutSeconds: 10800,

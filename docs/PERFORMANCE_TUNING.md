@@ -16,7 +16,7 @@ This guide helps you optimize kaseki-agent for your specific use case: managing 
 | Large changes (>400 KB diff) | Scope too broad | Use `KASEKI_CHANGED_FILES_ALLOWLIST` | Or increase `KASEKI_MAX_DIFF_BYTES` |
 | Validation is slow | Tests/build slow | Nothing (inherent) | Optimize repository's test suite |
 | Too many files modified | Agent scope creep | Tighten allowlist | Clarify task prompt |
-| API queue backing up | Not enough workers | Increase `KASEKI_API_MAX_CONCURRENT_RUNS` | Monitor Docker resource usage |
+| Run submission returns `409 RUN_ALREADY_ACTIVE` | This agent is already running a task | Wait for it to finish or route work to another agent | Monitor Docker resource usage |
 | High OpenRouter costs | Too many/large runs | Use allowlist to reduce search space | Increase timeout to reduce retries |
 | Dependency install slow | Dependency cache not retained between runs | Mount a persistent cache and set `KASEKI_DEPENDENCY_CACHE_DIR` | Pre-warm the configured cache |
 | Cannot exceed 24-hour timeout | Agent genuinely needs more time | Split into multiple smaller tasks | Scope with allowlist |
@@ -364,58 +364,16 @@ done
 
 ---
 
-## API Service Concurrency Tuning
+## Run Capacity
 
-### Default Behavior
-
-```
-KASEKI_API_MAX_CONCURRENT_RUNS = 3
-(Other runs wait in queue)
-```
-
-### When to Adjust
-
-**Increase concurrency:**
-
-- Queue frequently backs up (>5 pending jobs)
-- Docker host has spare CPU/memory
-- Multiple teams submitting tasks
-
-```bash
-export KASEKI_API_MAX_CONCURRENT_RUNS=5  # Allow 5 parallel jobs
-docker-compose restart kaseki-api
-```
-
-**Decrease concurrency:**
-
-- High CPU/memory usage on host
-- OpenRouter rate limits being hit
-- Docker resource constraints
-
-```bash
-export KASEKI_API_MAX_CONCURRENT_RUNS=1  # Serialize runs
-docker-compose restart kaseki-api
-```
-
-### Monitoring Concurrency
-
-```bash
-# Check queue status
-curl http://localhost:8080/health | jq '.queue'
-
-# Output:
-# {
-#   "pending": 2,
-#   "running": 3,
-#   "maxConcurrent": 3
-# }
-
-# If pending >> 0, increase concurrency (or reduce timeout)
-```
+Each Kaseki agent accepts one run at a time. A submission while it is busy
+returns `409 RUN_ALREADY_ACTIVE`; the agent does not build a local queue. Wait
+for the current run to finish, or run multiple independent agents behind a
+dispatcher when parallel work is needed.
 
 ### Resource Scaling
 
-Estimate resources for concurrent runs:
+Estimate resources per active agent:
 
 ```
 Per run:
@@ -424,10 +382,9 @@ Per run:
   - Disk: 100-500 MB (repo clone + changes)
   - Network: 10-50 MB (code download, OpenRouter API)
 
-Example: 4 concurrent runs on 8-core system:
-  - CPU usage: ~50-80% (4 runs × 1-2 cores)
-  - Memory: 2-4 GB (4 runs × 512MB-1GB)
-  - Disk: 500MB-2GB (per-run workspaces)
+For a host with multiple independent agents, multiply the per-run estimates by
+the number of agents that may run at once. Leave headroom for the API process,
+Docker, and other host services.
 ```
 
 ---
