@@ -74,6 +74,7 @@ FROM base AS runtime
 
 # System dependencies + user setup (consolidated)
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends bash build-essential ca-certificates curl docker.io git golang-go jq libpcre2-8-0 procps ruby shellcheck tini \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10000 kaseki \
