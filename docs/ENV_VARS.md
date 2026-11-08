@@ -401,6 +401,8 @@ The external Soyuz adapter is opt-in. See [Soyuz host integration](SOYUZ_INTEGRA
 | `KASEKI_API_LOG_LEVEL` | `info` | string | Log verbosity (debug/info/warn/error); takes precedence over generic `LOG_LEVEL`, which remains a compatibility fallback |
 | `NODE_ENV` | `production` | string | Node.js environment mode |
 
+The Compose deployment pins `KASEKI_API_LOG_LEVEL` to `warn` and `KASEKI_API_MAX_CONCURRENT_RUNS` to `1` by default; explicit `.env` values override them. `info` and `3` remain the software defaults for `serve` and other deployments.
+
 ### Error Tracking
 
 | Variable | Default | Type | Purpose |
@@ -438,7 +440,7 @@ The API checks free space across the persistent results, run-workspace, and host
 
 | Variable | Default | Type | Purpose |
 | ---------- | --------- | ------ | --------- |
-| `KASEKI_API_IMAGE` | `kaseki-agent:node24-local` | string | Container image to invoke for worker runs |
+| `KASEKI_API_IMAGE` | `docker.io/cyanautomation/kaseki-agent:latest` | string | Container image to invoke for worker runs |
 | `DOCKER_HOST` | (system default) | string | Docker daemon socket/URL (usually /var/run/docker.sock) |
 | `KASEKI_CONTAINER_USER` | `10000:10000` | string | UID:GID for worker containers |
 
