@@ -317,6 +317,7 @@ ARG TARGETARCH
 
 # Runtime plus the Node and Go toolchains used by ephemeral repository checks.
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends bash build-essential ca-certificates curl docker.io git jq libpcre2-8-0 make procps shellcheck tini \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10000 kaseki \
