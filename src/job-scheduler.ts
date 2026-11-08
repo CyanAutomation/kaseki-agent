@@ -747,11 +747,9 @@ export class JobScheduler {
   }
 
   private releaseRunSlot(jobId?: string): void {
-    if (this.activeRunId === undefined) this.runSlotReserved = false;
-    if (jobId === undefined || this.activeRunId === jobId) {
-      this.activeRunId = undefined;
-      this.runSlotReserved = false;
-    }
+    if (jobId !== undefined && this.activeRunId !== jobId) return;
+    this.activeRunId = undefined;
+    this.runSlotReserved = false;
   }
 
   private startAcceptedJob(job: Job): void {

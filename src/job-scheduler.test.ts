@@ -217,6 +217,69 @@ describe('JobScheduler single-run behavior', () => {
     }
   });
 
+  test('holding an unrelated queued Soyuz job does not release a local reservation', async () => {
+    mockSpawn.mockReset().mockReturnValue(new MockProcess());
+    mockSpawnSync.mockReset().mockReturnValue({ stdout: '', stderr: '', status: 0 });
+    const scheduler = new JobScheduler({
+      port: 3000,
+      resultsDir: createResultsDir(),
+      apiKeys: [],
+      defaultTaskMode: 'patch',
+      maxDiffBytes: 400000,
+      agentTimeoutSeconds: 300,
+      logLevel: 'info',
+    }, createMockWebhookManager());
+    let signalFirstCapacityCheck!: () => void;
+    const firstCapacityCheckStarted = new Promise<void>((resolve) => {
+      signalFirstCapacityCheck = resolve;
+    });
+    let releaseFirstCapacityCheck!: () => void;
+    const firstCapacityCheckGate = new Promise<void>((resolve) => {
+      releaseFirstCapacityCheck = resolve;
+    });
+    const ensureStorageCapacity = scheduler.ensureStorageCapacity.bind(scheduler);
+    let capacityCheckCount = 0;
+    let firstSubmission: Promise<Job> | undefined;
+
+    try {
+      const soyuzJob = await scheduler.submitSoyuzJob(
+        { repoUrl: 'https://github.com/example/soyuz', ref: 'main' },
+        '11111111-1111-4111-8111-111111111111',
+        'host-test-1',
+        '22222222-2222-4222-8222-222222222222',
+        '33333333-3333-4333-8333-333333333333',
+      );
+      scheduler.holdSoyuzJob(soyuzJob.id);
+
+      jest.spyOn(scheduler, 'ensureStorageCapacity').mockImplementation(async () => {
+        capacityCheckCount += 1;
+        if (capacityCheckCount === 1) {
+          signalFirstCapacityCheck();
+          await firstCapacityCheckGate;
+        }
+        return ensureStorageCapacity();
+      });
+
+      firstSubmission = scheduler.submitJob({ repoUrl: 'https://github.com/example/local', ref: 'main' });
+      await firstCapacityCheckStarted;
+
+      // A second reconciliation of the old queued Soyuz job must not clear the
+      // local run's reservation while its submission is awaiting capacity.
+      scheduler.holdSoyuzJob(soyuzJob.id);
+      expect(scheduler.isRunSlotAvailable()).toBe(false);
+      await expect(scheduler.submitJob({ repoUrl: 'https://github.com/example/second', ref: 'main' }))
+        .rejects.toMatchObject({ code: 'RUN_ALREADY_ACTIVE' });
+      expect(capacityCheckCount).toBe(1);
+
+      releaseFirstCapacityCheck();
+      await firstSubmission;
+    } finally {
+      releaseFirstCapacityCheck();
+      await firstSubmission?.catch(() => undefined);
+      await scheduler.shutdown();
+    }
+  });
+
   test('does not start a Soyuz job until the durable start authorization gate is opened', async () => {
     mockSpawn.mockReset();
     mockSpawn.mockReturnValue(new MockProcess());
