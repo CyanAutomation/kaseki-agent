@@ -7,7 +7,7 @@ toolchain_manifest="$repo_root/docker/image-toolchain/package.json"
 
 if ! jq -e '
   .dependencies.npm == "11.21.0" and
-  .dependencies["@earendil-works/pi-coding-agent"] == "0.87.1" and
+  .dependencies["@earendil-works/pi-coding-agent"] == "1.5.0" and
   .dependencies["@earendil-works/pi-server"] == "0.87.1" and
   .dependencies["brace-expansion"] == "5.0.12" and
   .dependencies["brace-expansion-v1"] == "npm:brace-expansion@1.1.21" and
