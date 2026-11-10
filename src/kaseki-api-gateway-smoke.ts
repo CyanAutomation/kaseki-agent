@@ -24,9 +24,9 @@ import {
 import {
   testGatewayResponseSmokeFull,
 } from './gateway-validation/gateway-response-smoke-checks';
-import { resolveOpenRouterApiKey } from './gateway-detection/resolve-openrouter-api-key';
 import { validateClassificationConfidence } from './utils/classification-validation';
-import { classifyWithJev, DEFAULT_JEV_MODEL, JevClassificationError } from './jev-classifier';
+import { decisionService, DecisionServiceError } from './decision-service';
+import { resolveSenkuKasekiToken } from './decision-service/senku-client';
 import type { QuestionDefinition } from './types/openrouter-decisions';
 
 /**
@@ -986,7 +986,7 @@ async function testGatewayResponseSmoke(
  * Resolve Cloudflare AI Run credentials from environment
  */
 export type ClassificationConfig =
-  | { ok: true; accountId: string; apiToken: string; model: string }
+  | { ok: true }
   | { ok: false; result: ClassificationSmokeTestResult };
 
 /**
@@ -1014,38 +1014,40 @@ export function resolveCloudflareApiToken(): string {
   return '';
 }
 
-function resolveClassificationModel(): string {
-  return process.env.KASEKI_DECISION_MODEL || DEFAULT_JEV_MODEL;
-}
-
 function resolveClassificationConfig(timestamp: string): ClassificationConfig {
-  const apiKeyResult = resolveOpenRouterApiKey();
-  const model = resolveClassificationModel();
-
-  if (!apiKeyResult.configured) {
+  try {
+    if (!resolveSenkuKasekiToken().token) {
+      return {
+        ok: false,
+        result: {
+          status: 'skipped',
+          detail: 'Senku decision credentials are not configured',
+          responseTime: 0,
+          timestamp,
+          remediation: 'Mount the Kaseki Senku machine token, then rerun the opt-in Evaluation stage check.',
+        },
+      };
+    }
+  } catch {
     return {
       ok: false,
       result: {
-        status: 'skipped',
-        detail: 'OPENROUTER_API_KEY not configured',
+        status: 'error',
+        detail: 'Senku decision credentials are invalid or unreadable',
         responseTime: 0,
         timestamp,
-        remediation: 'Set OPENROUTER_API_KEY or OPENROUTER_API_KEY_FILE before running the Evaluation stage check.',
+        remediation: 'Check the mounted SENKU_KASEKI_API_TOKEN_FILE and file permissions, then rerun the opt-in Evaluation stage check.',
       },
     };
   }
 
   return {
     ok: true,
-    accountId: '', // Not used for OpenRouter, kept for backward compat
-    apiToken: apiKeyResult.value || '', // Use as bearer token for OpenRouter
-    model,
   };
 }
 
 function buildClassificationSmokeRequest(): Record<string, unknown> {
   return {
-    model: resolveClassificationModel(),
     state: "Recent code changes broke 3 existing tests. The async function wasn't waiting for database cleanup.",
     questions: {
       code_quality_issue: {
@@ -1077,51 +1079,45 @@ export function shouldRunClassificationSmoke(requested: boolean): boolean {
 }
 
 function classificationFailure(error: unknown): Pick<ClassificationSmokeTestResult, 'detail' | 'remediation' | 'httpStatus'> {
-  if (!(error instanceof JevClassificationError)) {
+  if (!(error instanceof DecisionServiceError)) {
     return {
-      detail: `Evaluation endpoint error: ${error instanceof Error ? error.message : String(error)}`,
-      remediation: 'Check the OpenRouter decision endpoint and controller logs, then retry the Evaluation stage check.',
+      detail: 'Senku decision service returned an unexpected failure.',
+      remediation: 'Check Senku availability and the Kaseki decision service diagnostics, then retry the Evaluation stage check.',
     };
   }
 
-  if (error.code === 'credentials') {
+  if (error.category === 'credentials') {
     return {
-      detail: 'Evaluation endpoint check could not run because OPENROUTER_API_KEY is not configured.',
-      remediation: 'Set OPENROUTER_API_KEY or OPENROUTER_API_KEY_FILE to a readable OpenRouter key, then rerun the Evaluation stage check.',
+      detail: 'Senku rejected or could not read the Kaseki machine credential.',
+      remediation: 'Check SENKU_KASEKI_API_TOKEN_FILE and confirm the Kaseki identity is authorized for generic decisions.',
+      ...(error.httpStatus ? { httpStatus: error.httpStatus } : {}),
     };
   }
 
-  if (error.code === 'http' && (error.status === 401 || error.status === 403)) {
+  if (error.category === 'network' || error.category === 'service_unavailable' || error.category === 'provider_failure') {
     return {
-      detail: `OpenRouter rejected the evaluation API key (HTTP ${error.status}); it may be invalid, expired, revoked, or missing access to the decisions endpoint.`,
-      remediation: 'Replace the key configured by OPENROUTER_API_KEY or OPENROUTER_API_KEY_FILE with a valid OpenRouter key that can access the decisions endpoint, then rerun the Evaluation stage check.',
-      httpStatus: error.status,
+      detail: 'Senku decision service is unavailable.',
+      remediation: 'Check DNS, outbound HTTPS access, firewall or proxy rules, and Senku availability, then retry the opt-in Evaluation stage check.',
+      ...(error.httpStatus ? { httpStatus: error.httpStatus } : {}),
     };
   }
 
-  if (error.code === 'network') {
+  if (error.category === 'timeout') {
     return {
-      detail: `Evaluation endpoint error: ${error.message}`,
-      remediation: 'The optional evaluation smoke uses the separate OpenRouter decision API and does not diagnose LLM_GATEWAY_URL. Check DNS, outbound HTTPS access, firewall or proxy rules, and OpenRouter endpoint availability, then retry the Evaluation stage check.',
-    };
-  }
-
-  if (error.code === 'timeout') {
-    return {
-      detail: error.message,
-      remediation: 'Check outbound HTTPS access, proxy timeouts, and OpenRouter endpoint availability, then retry the Evaluation stage check.',
+      detail: 'Senku decision service exceeded the Evaluation stage timeout.',
+      remediation: 'Check network and service latency, then retry the opt-in Evaluation stage check.',
     };
   }
 
   return {
-    detail: `Evaluation endpoint error: ${error.message}`,
-    remediation: 'Check OPENROUTER_API_KEY or OPENROUTER_API_KEY_FILE, the OpenRouter decision endpoint, and controller network access.',
-    ...(error.status !== undefined ? { httpStatus: error.status } : {}),
+    detail: `Senku decision request failed (${error.category}).`,
+    remediation: 'Check the decision request contract and Senku diagnostics, then retry the opt-in Evaluation stage check.',
+    ...(error.httpStatus !== undefined ? { httpStatus: error.httpStatus } : {}),
   };
 }
 
 /**
- * Test OpenRouter classification model using the decisions API endpoint
+ * Test Senku's generic decision endpoint.
  * @param requested Whether classification smoke was explicitly requested
  * @returns ClassificationSmokeTestResult with classifier validation details
  */
@@ -1147,11 +1143,11 @@ export async function testClassificationSmoke(requested: boolean = false): Promi
   const requestBody = buildClassificationSmokeRequest();
 
   try {
-    const parsed = await classifyWithJev(
-      requestBody.state as string,
-      requestBody.questions as Record<string, QuestionDefinition>,
-      { model: config.model, timeoutMs: 15000 },
-    );
+    const parsed = await decisionService.decide({
+      state: requestBody.state as string,
+      questions: requestBody.questions as Record<string, QuestionDefinition>,
+      timeoutMs: 15000,
+    });
     const answers = parsed.answers;
     const outputTokens = typeof parsed.usage.output_tokens === 'number' ? parsed.usage.output_tokens : 0;
     const validationResult = validateClassificationConfidence(answers as Record<string, any>);

@@ -1,18 +1,21 @@
 import type { ClassificationAnswer, QuestionDefinition } from './types/openrouter-decisions';
 import {
-  classifyWithJev,
-  DEFAULT_JEV_MODEL,
-  JevClassificationError,
-  type JevClassificationOptions,
-} from './jev-classifier';
+  DecisionServiceError,
+  requestSenkuDecision,
+  type DecisionFailureCategory,
+  type SenkuClientOptions,
+} from './decision-service/senku-client';
 
-export const DEFAULT_DECISION_MODEL = DEFAULT_JEV_MODEL;
+/** @deprecated Senku selects the model; retained for source compatibility only. */
+export const DEFAULT_DECISION_MODEL = '~typesafe/jev-latest';
 
 export interface DecisionRequest {
   state: string | Record<string, unknown>;
   questions: Record<string, QuestionDefinition>;
+  /** @deprecated Ignored; Senku owns model selection. */
   model?: string;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 export interface DecisionResult {
@@ -24,60 +27,53 @@ export interface DecisionResult {
   attemptCount: number;
 }
 
-export interface DecisionProvider {
-  readonly id: string;
-  decide(request: DecisionRequest): Promise<Omit<DecisionResult, 'provider'>>;
-}
-
 export interface DecisionService {
   readonly providerId: string;
   decide(request: DecisionRequest): Promise<DecisionResult>;
 }
 
 export interface DecisionFailureMetadata {
-  code: 'configuration' | 'credentials' | 'timeout' | 'http' | 'invalid_response' | 'network' | 'provider_failure';
+  code: DecisionFailureCategory | 'provider_failure';
   attemptCount?: number;
   httpStatus?: number;
   requestId?: string;
 }
 
 export function decisionFailureMetadata(error: unknown): DecisionFailureMetadata {
-  if (!(error instanceof JevClassificationError)) return { code: 'provider_failure' };
+  if (!(error instanceof DecisionServiceError)) return { code: 'provider_failure' };
   return {
-    code: error.code,
+    code: error.category,
     ...(error.attemptCount ? { attemptCount: error.attemptCount } : {}),
-    ...(Number.isInteger(error.status) && error.status! >= 100 && error.status! <= 599 ? { httpStatus: error.status } : {}),
-    ...(error.requestId && /^[A-Za-z0-9._:/-]{1,128}$/.test(error.requestId) ? { requestId: error.requestId } : {}),
+    ...(Number.isInteger(error.httpStatus) && error.httpStatus! >= 100 && error.httpStatus! <= 599
+      ? { httpStatus: error.httpStatus }
+      : {}),
+    ...(error.requestId ? { requestId: error.requestId } : {}),
   };
 }
 
-/** JEV adapter. The workflow depends on DecisionService, not this provider. */
-export class JevDecisionProvider implements DecisionProvider {
-  readonly id = 'jev';
+/** The only remote DecisionService implementation used by Kaseki. */
+export class SenkuDecisionService implements DecisionService {
+  readonly providerId = 'senku';
 
-  constructor(private readonly classifierOptions: Pick<JevClassificationOptions, 'fetchImpl' | 'maxRetries'> = {}) {}
-
-  async decide(request: DecisionRequest): Promise<Omit<DecisionResult, 'provider'>> {
-    const result = await classifyWithJev(request.state, request.questions, {
-      ...this.classifierOptions,
-      model: request.model,
-      timeoutMs: request.timeoutMs,
-    });
-    return result;
-  }
-}
-
-export class ProviderDecisionService implements DecisionService {
-  readonly providerId: string;
-
-  constructor(private readonly provider: DecisionProvider) {
-    this.providerId = provider.id;
-  }
+  constructor(private readonly options: SenkuClientOptions = {}) {}
 
   async decide(request: DecisionRequest): Promise<DecisionResult> {
-    const result = await this.provider.decide(request);
-    return { ...result, provider: this.provider.id };
+    const result = await requestSenkuDecision(request.state, request.questions, {
+      ...this.options,
+      timeoutMs: request.timeoutMs,
+      signal: request.signal,
+    });
+    return {
+      provider: this.providerId,
+      model: result.model,
+      answers: result.answers,
+      usage: result.usage ?? {},
+      responseTime: result.responseTime,
+      attemptCount: result.attemptCount,
+    };
   }
 }
 
-export const decisionService: DecisionService = new ProviderDecisionService(new JevDecisionProvider());
+export const decisionService: DecisionService = new SenkuDecisionService();
+
+export { DecisionServiceError };

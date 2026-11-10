@@ -246,12 +246,13 @@ WHAT IT DOES
   7. Smoke-tests authenticated access to /api/v1/runs
 
   GitHub App credentials are optional. Configure LLM_GATEWAY_URL and keep the
-  gateway and API keys in mounted secret files before starting the API.
+  gateway and API keys in mounted secret files before starting the API. The
+  Senku decision token is optional; without it, decision stages degrade safely.
 
 SECRETS DISCOVERY ORDER
   For each secret, checks in priority order:
     1. ~/.kaseki/config.json auth.* field
-    2. Environment variable ($OPENROUTER_API_KEY_FILE, etc.)
+    2. Environment variable (LLM_GATEWAY_API_KEY_FILE, SENKU_KASEKI_API_TOKEN_FILE, etc.)
     3. ~/.kaseki/secrets/<filename>
     4. ~/secrets/<filename>
 `);

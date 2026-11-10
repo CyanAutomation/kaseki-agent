@@ -37,7 +37,7 @@ npx kaseki-agent secrets list
 | **Docker** | Local API service / worker execution | Required by the Kaseki API service when it launches agent containers; not required to print command help |
 | **Kaseki API service** | `run`, `list`, `report`, `status`, `stop`, `cancel` | Local service from `kaseki-agent serve` or a remote controller configured with `KASEKI_API_URL` |
 | **Gateway credentials** | Coding-agent inference | OpenAI-compatible gateway URL and key; prefer the host key file on Pi |
-| **OpenRouter credential** | Optional evaluation stages | Used only when those stages are configured; not a coding fallback |
+| **Senku Kaseki machine token** | Optional typed decision stages | Used only for authenticated Senku decisions; it is not a coding-provider key |
 
 ## Primary npm workflows
 
@@ -90,21 +90,23 @@ Project config can live in `kaseki-agent.json`; user-global config lives under `
 # Initialize the secret backend when needed
 kaseki-agent secrets init
 
-# Store an OpenRouter key for evaluation stages when needed
-kaseki-agent secrets set openrouter_api_key sk-or-...
+# Install the approved Senku Kaseki token as a local file when needed
+install -d -m 0700 ~/.kaseki/secrets
+install -m 0600 /path/to/approved/kaseki-senku-token ~/.kaseki/secrets/senku_kaseki_api_token
 
 # Store a Kaseki API client key for an authenticated controller
 kaseki-agent secrets set kaseki_api_keys sk-your-kaseki-api-key
 
 # List and inspect stored secret names
 kaseki-agent secrets list
-kaseki-agent secrets get openrouter_api_key
-
-# Explicitly print a value when you really need it
-kaseki-agent secrets get openrouter_api_key --show
+kaseki-agent secrets list
 ```
 
-On headless Linux hosts, secrets can fall back to files under `~/.kaseki/secrets/` with restrictive permissions.
+On headless Linux hosts, the Senku token is read from
+`~/.kaseki/secrets/senku_kaseki_api_token` with restrictive permissions. For
+the Compose API, mount `~/secrets/senku_kaseki_api_token` as described in the
+[Pi quick start](QUICK_START.md). Existing OpenRouter files are not used for
+decision inference and are not automatically removed.
 
 ## API-backed task commands
 
@@ -193,7 +195,8 @@ Both commands call the controller API cancel endpoint and require the same API U
 | `api.key` | Config | npm API-client commands | Persistent bearer token used when `KASEKI_API_KEY` is unset. |
 | `api.keys` | Config | npm API-client commands | Legacy list; the first key is used as the client bearer token if `api.key` is unset. |
 | `KASEKI_API_KEYS` | Environment | API service | Comma- or newline-separated bearer tokens accepted by `kaseki-agent serve`. Required before exposing the service on non-localhost interfaces. |
-| `OPENROUTER_API_KEY_FILE` | Environment/config auth | Evaluation stages | Path to an OpenRouter key file. Coding-agent inference uses the configured gateway. |
+| `SENKU_URL` | Environment | Decision client | Trusted HTTPS Senku origin; defaults to `https://senku.scheimann.workers.dev`. |
+| `SENKU_KASEKI_API_TOKEN_FILE` | Environment | Decision client | Optional path to the Kaseki machine token. Prefer the file-based credential. |
 | `KASEKI_ROOT` | Environment | Host/service paths | Base directory for Kaseki run and result data. |
 | `KASEKI_RUNS_DIR` | Environment | Host/service paths | Per-run workspace root. |
 | `KASEKI_RESULTS_DIR` | Environment | Host/service paths | Persistent run artifact directory. |

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verifies run-kaseki.sh passes gateway URL and key file paths to the worker.
+# Verifies run-kaseki.sh passes gateway and Senku credentials to the worker.
 
 set -euo pipefail
 
@@ -41,27 +41,30 @@ KASEKI_ROOT="$TMP_DIR/kaseki"
 OUTPUT_LOG="$TMP_DIR/run-output.log"
 DOCKER_ARGS_CAPTURE="$TMP_DIR/docker-args.txt"
 GATEWAY_KEY_FILE="$TMP_DIR/llm_gateway_api_key"
-OPENROUTER_KEY_FILE="$TMP_DIR/openrouter_api_key"
 printf '%s' 'test-gateway-key' > "$GATEWAY_KEY_FILE"
-printf '%s' 'test-jev-key' > "$OPENROUTER_KEY_FILE"
 chmod 0600 "$GATEWAY_KEY_FILE"
-chmod 0600 "$OPENROUTER_KEY_FILE"
+SENKU_KEY_FILE="$TMP_DIR/senku_kaseki_api_token"
+printf '%s' 'synthetic-senku-machine-token-0123456789abcdef' > "$SENKU_KEY_FILE"
+chmod 0600 "$SENKU_KEY_FILE"
 
-PATH="$FAKE_BIN:$PATH" \
-DOCKER_ARGS_CAPTURE="$DOCKER_ARGS_CAPTURE" \
-KASEKI_ROOT="$KASEKI_ROOT" \
-OPENROUTER_API_KEY_FILE="$OPENROUTER_KEY_FILE" \
-KASEKI_PROVIDER="gateway" \
-LLM_GATEWAY_URL="https://gateway.example.invalid/v1/responses" \
-LLM_GATEWAY_API_KEY_FILE="$GATEWAY_KEY_FILE" \
-REPO_URL="https://github.com/acme/widgets" \
-GIT_REF="main" \
-GITHUB_APP_ENABLED="0" \
-KASEKI_PUBLISH_MODE="none" \
-KASEKI_TASK_TYPE_HINT="documentation" \
-KASEKI_VALIDATION_FOCUS_HINT="docs_checks" \
-KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS="45" \
-"$PROJECT_ROOT/run-kaseki.sh" >"$OUTPUT_LOG" 2>&1
+if ! PATH="$FAKE_BIN:$PATH" \
+  DOCKER_ARGS_CAPTURE="$DOCKER_ARGS_CAPTURE" \
+  KASEKI_ROOT="$KASEKI_ROOT" \
+  SENKU_KASEKI_API_TOKEN_FILE="$SENKU_KEY_FILE" \
+  KASEKI_PROVIDER="gateway" \
+  LLM_GATEWAY_URL="https://gateway.example.invalid/v1/responses" \
+  LLM_GATEWAY_API_KEY_FILE="$GATEWAY_KEY_FILE" \
+  REPO_URL="https://github.com/acme/widgets" \
+  GIT_REF="main" \
+  GITHUB_APP_ENABLED="0" \
+  KASEKI_PUBLISH_MODE="none" \
+  KASEKI_TASK_TYPE_HINT="documentation" \
+  KASEKI_VALIDATION_FOCUS_HINT="docs_checks" \
+  KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS="45" \
+  "$PROJECT_ROOT/run-kaseki.sh" >"$OUTPUT_LOG" 2>&1; then
+  cat "$OUTPUT_LOG"
+  exit 1
+fi
 
 if [ ! -s "$DOCKER_ARGS_CAPTURE" ]; then
   printf '✗ docker run arguments were not captured\n'
@@ -85,12 +88,12 @@ assert_arg_present() {
 assert_arg_present 'KASEKI_PROVIDER=gateway' 'gateway provider'
 assert_arg_present 'LLM_GATEWAY_URL=https://gateway.example.invalid/v1/responses' 'gateway URL worker env'
 assert_arg_present 'LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api_key' 'gateway key worker file env'
-assert_arg_present 'KASEKI_DECISION_API_KEY_FILE=/run/secrets/kaseki/decision_api_key' 'evaluation key worker file env'
+assert_arg_present 'SENKU_KASEKI_API_TOKEN_FILE=/run/secrets/kaseki/senku_kaseki_api_token' 'Senku decision credential worker file env'
 assert_arg_present 'KASEKI_TASK_TYPE_HINT=documentation' 'advisory task type'
 assert_arg_present 'KASEKI_VALIDATION_FOCUS_HINT=docs_checks' 'advisory validation focus'
 assert_arg_present 'KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS=45' 'goal-setting retry timeout'
-if grep -Fxq 'OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key' "$DOCKER_ARGS_CAPTURE"; then
-  printf '✗ OpenRouter key must not be routed to the coding worker\n'
+if grep -Fq 'OPENROUTER_API_KEY_FILE=' "$DOCKER_ARGS_CAPTURE"; then
+  printf '✗ OpenRouter decision credential must not be routed to the coding worker\n'
   exit 1
 fi
 if ! grep -Eq '.+/llm_gateway_api_key:/run/secrets/kaseki/llm_gateway_api_key:ro$' "$DOCKER_ARGS_CAPTURE"; then
@@ -101,8 +104,8 @@ if ! grep -Eq '.+/llm_gateway_api_key:/run/secrets/kaseki/llm_gateway_api_key:ro
   cat "$OUTPUT_LOG"
   exit 1
 fi
-if ! grep -Eq '.+/openrouter_api_key:/run/secrets/kaseki/decision_api_key:ro$' "$DOCKER_ARGS_CAPTURE"; then
-  printf '✗ missing docker volume mount for the evaluation credential secret path\n'
+if ! grep -Eq '.+/senku_kaseki_api_token:/run/secrets/kaseki/senku_kaseki_api_token:ro$' "$DOCKER_ARGS_CAPTURE"; then
+  printf '✗ missing docker volume mount for the Senku credential secret path\n'
   exit 1
 fi
 

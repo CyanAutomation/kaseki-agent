@@ -35,12 +35,14 @@ The setup script:
 
 Setup does not make an inference request. The gateway URL is required because
 it cannot be determined from the API key. The default model is
-`dynamic/kaseki-agent`. OpenRouter credentials are optional and used only for
-evaluation stages; GitHub App IDs are public Compose configuration values, and
-the private key remains an optional host secret file unless publishing is used.
+`dynamic/kaseki-agent`. Senku credentials are optional and used only for typed
+decisions; install the approved Kaseki token as
+`~/secrets/senku_kaseki_api_token` when available. GitHub App IDs are public
+Compose configuration values, and the private key remains an optional host
+secret file unless publishing is used.
 
 The `/ready` healthcheck confirms the local API is running. It does not contact
-the gateway or validate provider authentication/model availability; setup
+the gateway or Senku, or validate provider authentication/model availability; setup
 avoids a provider request that could incur cost.
 
 ## Provider and secret files

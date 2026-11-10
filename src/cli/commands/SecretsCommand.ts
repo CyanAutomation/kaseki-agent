@@ -13,10 +13,11 @@ import { spawnSync } from 'child_process';
 
 const logger = createLogger('secrets-cmd');
 const REQUIRED_HOST_SECRET_FILES = [
-  'openrouter_api_key',
+  'llm_gateway_api_key',
   'github_app_private_key',
   'kaseki_api_keys',
 ] as const;
+const OPTIONAL_HOST_SECRET_FILES = ['senku_kaseki_api_token'] as const;
 
 export class SecretsCommand extends BaseCommand {
   async execute(args: string[]): Promise<number> {
@@ -58,15 +59,19 @@ export class SecretsCommand extends BaseCommand {
       return 1;
     }
 
-    console.log('\nNext: Add your secrets with: kaseki-agent secrets set KEY VALUE');
-    console.log('Example: kaseki-agent secrets set openrouter_api_key sk-or-...');
+    console.log('\nLLM Gateway and Senku credentials should be stored as files in this directory.');
+    console.log('Use the setup scripts to enter credentials without placing values in shell history or process arguments.');
     return 0;
   }
 
   private async setSecret(manager: SecretsManager, key?: string, value?: string): Promise<number> {
     if (!key || !value) {
       console.error('Usage: kaseki-agent secrets set <KEY> <VALUE>');
-      console.error('Example: kaseki-agent secrets set openrouter-api-key sk-or-...');
+      console.error('Example: kaseki-agent secrets set <KEY> <VALUE> (do not use for machine tokens or provider keys)');
+      return 1;
+    }
+    if (['senku_kaseki_api_token', 'llm_gateway_api_key'].includes(key.replace(/-/g, '_').toLowerCase())) {
+      console.error('Use the interactive setup script to store this credential without exposing it in process arguments.');
       return 1;
     }
     await manager.store(key, value);
@@ -125,8 +130,9 @@ export class SecretsCommand extends BaseCommand {
     console.log('  kaseki-agent secrets doctor                  Check host secret file permissions');
     console.log('  kaseki-agent secrets fix-permissions         Normalize host secret file permissions');
     console.log('\nCommon Keys:');
-    console.log('  openrouter-api-key    OpenRouter API key');
-    console.log('  github-app-private-key GitHub App Private Key\n');
+    console.log('  llm_gateway_api_key       LLM Gateway coding inference key');
+    console.log('  senku_kaseki_api_token    Optional Senku decision machine token (install with ./scripts/kaseki-setup.sh)');
+    console.log('  github-app-private-key   GitHub App Private Key\n');
     console.log('  GitHub App ID and Client ID are configuration values, not secret files.');
     console.log('Storage:');
     console.log('  - Uses filesystem secret files only');
@@ -167,7 +173,11 @@ export class SecretsCommand extends BaseCommand {
       fix,
     }) || status;
 
-    for (const secretName of REQUIRED_HOST_SECRET_FILES) {
+    const secretNamesToCheck = [
+      ...REQUIRED_HOST_SECRET_FILES,
+      ...OPTIONAL_HOST_SECRET_FILES.filter((secretName) => fs.existsSync(path.join(secretsDir, secretName))),
+    ];
+    for (const secretName of secretNamesToCheck) {
       const secretPath = path.join(secretsDir, secretName);
       if (!fs.existsSync(secretPath)) {
         console.warn(`warning: secret missing: ${secretName}`);

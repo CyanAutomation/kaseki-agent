@@ -4,13 +4,12 @@
 #
 # This script runs INSIDE the kaseki-agent container during setup mode.
 # It:
-# 1. Securely prompts for OpenRouter API key (or accepts from env var)
-# 2. Creates /secrets directory with proper permissions
-# 3. Validates the API key
-# 4. Runs health checks
+# 1. Creates /secrets directory with proper permissions
+# 2. Optionally stores an approved Kaseki machine token for Senku decisions
+# 3. Runs health checks
 #
 # Entry point: docker run -it kaseki-agent setup
-# Or: docker run -e OPENROUTER_API_KEY=sk-or-... kaseki-agent setup
+# A missing Senku token does not block coding or deterministic checks.
 
 set -euo pipefail
 
@@ -46,60 +45,40 @@ setup_secrets_dir() {
   print_success "Secrets directory ready: $SECRETS_DIR"
 }
 
-# Get API key from various sources
-get_api_key() {
-  print_header "OpenRouter API Key Configuration"
-  
-  # Priority 1: Check if API key file already exists (mounted)
-  if [ -f "/secrets/openrouter_api_key" ] && [ -s "/secrets/openrouter_api_key" ]; then
-    print_warning "API key file already exists at /secrets/openrouter_api_key"
-    read -p "Use existing key? (y/n) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-      API_KEY=$(<"/secrets/openrouter_api_key")
-      return 0
-    fi
-  fi
-  
-  # Priority 2: Check environment variable
-  if [ -n "${OPENROUTER_API_KEY:-}" ]; then
-    print_success "Using API key from OPENROUTER_API_KEY environment variable"
-    API_KEY="$OPENROUTER_API_KEY"
+# Optionally install an approved Senku Kaseki machine token.
+setup_decision_token() {
+  local token_file="/secrets/senku_kaseki_api_token"
+  if [ -f "$token_file" ] && [ -s "$token_file" ]; then
+    chmod 600 "$token_file"
+    print_success "Senku decision credential is already present"
     return 0
   fi
-  
-  # Priority 3: Prompt interactively
-  echo "You can obtain an API key from: https://openrouter.ai/keys"
-  echo ""
-  read -rsp "Enter your OpenRouter API key (sk-or-v1-...): " API_KEY
-  echo
-  
-  # Validate key format
-  if [[ ! "$API_KEY" =~ ^sk-or ]]; then
-    print_error "Invalid API key format. Must start with 'sk-or'"
-    return 1
-  fi
-  
-  return 0
-}
 
-# Store API key securely
-store_api_key() {
-  local api_key="$1"
-  local secrets_dir="${2:-/secrets}"
-  local key_file="$secrets_dir/openrouter_api_key"
-  
-  # Write key to file with restrictive permissions
-  echo "$api_key" > "$key_file"
-  chmod 600 "$key_file"
-  
-  # Verify
-  if [ ! -f "$key_file" ] || [ ! -r "$key_file" ]; then
-    print_error "Failed to write API key to $key_file"
+  echo "The Senku Kaseki machine token is issued by the Senku operator."
+  echo "Leave it unset to continue; decision stages will degrade safely."
+  if [ -n "${SENKU_KASEKI_API_TOKEN:-}" ]; then
+    DECISION_TOKEN="$SENKU_KASEKI_API_TOKEN"
+  else
+    read -p "Install the approved Kaseki machine token now? (y/n) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+      print_warning "Senku decision credential not installed"
+      return 0
+    fi
+    read -rsp "Enter the approved Kaseki machine token: " DECISION_TOKEN
+    echo
+  fi
+
+  if [ "${#DECISION_TOKEN}" -lt 32 ] || [[ "$DECISION_TOKEN" =~ [[:space:]] ]]; then
+    unset DECISION_TOKEN
+    print_error "Invalid Senku machine token format"
     return 1
   fi
-  
-  print_success "API key stored securely at $key_file (mode 600)"
+  umask 077
+  printf '%s' "$DECISION_TOKEN" > "$token_file"
+  unset DECISION_TOKEN
+  chmod 600 "$token_file"
+  print_success "Senku machine token stored at $token_file (mode 600)"
   return 0
 }
 
@@ -132,12 +111,11 @@ run_health_checks() {
     return 1
   fi
   
-  # Check API key file is readable
-  if [ -f "/secrets/openrouter_api_key" ] && [ -r "/secrets/openrouter_api_key" ]; then
-    print_success "API key file is readable"
+  # The Senku decision credential is optional.
+  if [ -f "/secrets/senku_kaseki_api_token" ] && [ -r "/secrets/senku_kaseki_api_token" ]; then
+    print_success "Senku decision credential file is readable"
   else
-    print_error "API key file is missing or unreadable"
-    return 1
+    print_warning "Senku decision credential is unavailable; decision stages will degrade safely"
   fi
   
   print_success "All health checks passed"
@@ -156,21 +134,14 @@ main() {
   setup_secrets_dir "/secrets"
   echo ""
   
-  # Step 2: Get API key
-  if ! get_api_key; then
-    print_error "Failed to configure API key"
+  # Step 2: Optionally install the Senku decision token
+  if ! setup_decision_token; then
+    print_error "Failed to configure the Senku decision token"
     exit 1
   fi
   echo ""
-  
-  # Step 3: Store API key
-  if ! store_api_key "$API_KEY" "/secrets"; then
-    print_error "Failed to store API key"
-    exit 1
-  fi
-  echo ""
-  
-  # Step 4: Run health checks
+
+  # Step 3: Run health checks
   if ! run_health_checks; then
     print_warning "Some health checks failed. Setup may have issues."
   fi

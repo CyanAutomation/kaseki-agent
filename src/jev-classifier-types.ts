@@ -1,13 +1,18 @@
+import { DecisionServiceError, type DecisionFailureCategory } from './decision-service/senku-client';
 import type { ClassificationAnswer } from './types/openrouter-decisions';
 
+/** @deprecated Senku selects the model; retained only for source compatibility. */
 export const DEFAULT_JEV_MODEL = '~typesafe/jev-latest';
-export const JEV_DECISIONS_URL = 'https://openrouter.ai/api/alpha/decisions';
 
 export interface JevClassificationOptions {
+  /** @deprecated Senku selects its model and this value is ignored. */
   model?: string;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
+  /** @deprecated Senku calls are single-attempt; this value is ignored. */
   maxRetries?: number;
+  env?: NodeJS.ProcessEnv;
+  signal?: AbortSignal;
 }
 
 export interface JevClassificationResult {
@@ -18,17 +23,15 @@ export interface JevClassificationResult {
   attemptCount: number;
 }
 
-export class JevClassificationError extends Error {
-  readonly code: 'configuration' | 'credentials' | 'timeout' | 'http' | 'invalid_response' | 'network';
+/** @deprecated Use DecisionServiceError and its safe category fields. */
+export class JevClassificationError extends DecisionServiceError {
+  readonly code: DecisionFailureCategory;
   readonly status?: number;
-  readonly requestId?: string;
-  attemptCount?: number;
 
-  constructor(code: JevClassificationError['code'], message: string, status?: number, requestId?: string) {
-    super(message);
+  constructor(category: DecisionFailureCategory, _legacyMessage?: string, status?: number, requestId?: string) {
+    super(category, { httpStatus: status, requestId });
     this.name = 'JevClassificationError';
-    this.code = code;
+    this.code = category;
     this.status = status;
-    this.requestId = requestId;
   }
 }

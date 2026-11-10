@@ -308,21 +308,22 @@ validate_container_entry() {
 # --- Stage 4: Operation Ready ---
 
 # validate_operation_ready — Final validation before agent execution
-# Validates: secrets available, API key present, GitHub App configured
+# Validates optional Senku decision credentials and GitHub App configuration.
 validate_operation_ready() {
   local exit_code=0
 
   log_info "Validating operation readiness..."
 
-  # Check API key
-  if [ -n "${OPENROUTER_API_KEY:-}" ]; then
-    log_pass "OPENROUTER_API_KEY is set (from environment)"
-  elif [ -f "$KASEKI_SECRETS_DIR/openrouter_api_key" ] && [ -r "$KASEKI_SECRETS_DIR/openrouter_api_key" ]; then
-    log_pass "OPENROUTER_API_KEY found: $KASEKI_SECRETS_DIR/openrouter_api_key"
+  # Decision inference is advisory in some stages; missing Senku credentials
+  # must not prevent the agent or deterministic checks from running.
+  local senku_token_file="${SENKU_KASEKI_API_TOKEN_FILE:-$KASEKI_SECRETS_DIR/senku_kaseki_api_token}"
+  if [ -n "${SENKU_KASEKI_API_TOKEN:-}" ]; then
+    log_pass "Senku decision credential is set in the environment"
+  elif [ -f "$senku_token_file" ] && [ -r "$senku_token_file" ]; then
+    log_pass "Senku decision credential file is readable: $senku_token_file"
   else
-    log_error "OPENROUTER_API_KEY not found"
-    log_info "  Remediation: Set OPENROUTER_API_KEY env var or place key at $KASEKI_SECRETS_DIR/openrouter_api_key"
-    exit_code=$((exit_code > 1 ? exit_code : 1))
+    log_warn "Senku decision credential is unavailable; advisory decisions will degrade safely"
+    log_info "  Optional file: $KASEKI_SECRETS_DIR/senku_kaseki_api_token"
   fi
 
   # Check GitHub App credentials (optional)

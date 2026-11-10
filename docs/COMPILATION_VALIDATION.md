@@ -92,7 +92,8 @@ export KASEKI_KEEP_COMPILATION_LOGS=true      # Keep build logs in results (defa
 
 ```bash
 # Configuration
-export OPENROUTER_API_KEY="sk-or-..."
+export LLM_GATEWAY_URL="https://your-openai-compatible-gateway.example/v1"
+export LLM_GATEWAY_API_KEY_FILE="$HOME/.kaseki/secrets/llm_gateway_api_key"
 export KASEKI_CHANGED_FILES_ALLOWLIST="src/** tests/**"
 export KASEKI_VALIDATION_COMMANDS="npm run check;npm run test;npm run build"
 export TASK_PROMPT="Fix TypeScript compilation errors in the parser module"
@@ -114,7 +115,8 @@ export TASK_PROMPT="Fix TypeScript compilation errors in the parser module"
 ### Example: Go Project
 
 ```bash
-export OPENROUTER_API_KEY="sk-or-..."
+export LLM_GATEWAY_URL="https://your-openai-compatible-gateway.example/v1"
+export LLM_GATEWAY_API_KEY_FILE="$HOME/.kaseki/secrets/llm_gateway_api_key"
 export KASEKI_CHANGED_FILES_ALLOWLIST="cmd/** pkg/** tests/**"
 export TASK_PROMPT="Refactor the HTTP server to use context.Context properly"
 

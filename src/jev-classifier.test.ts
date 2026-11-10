@@ -1,263 +1,54 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { classifyWithJev, answerConfidence, answerIsTrue, DEFAULT_JEV_MODEL, JEV_DECISIONS_URL, JevClassificationError } from './jev-classifier';
+import { classifyWithJev, hasRetiredDecisionSettings, JevClassificationError } from './jev-classifier';
 
-describe('JEV classifier client', () => {
-  const originalKey = process.env.OPENROUTER_API_KEY;
-  const originalKeyFile = process.env.OPENROUTER_API_KEY_FILE;
-  const originalDecisionKeyFile = process.env.KASEKI_DECISION_API_KEY_FILE;
-  const originalRetiredWorkflowSetting = process.env.KASEKI_JEV_WORKFLOW;
+describe('JEV compatibility shim', () => {
+  const token = 'synthetic-senku-kaseki-token-value-1234567890';
 
-  beforeEach(() => {
-    process.env.OPENROUTER_API_KEY = 'sk-test-key';
-    delete process.env.OPENROUTER_API_KEY_FILE;
-    delete process.env.KASEKI_DECISION_API_KEY_FILE;
-  });
-
-  afterEach(() => {
-    if (originalKey === undefined) delete process.env.OPENROUTER_API_KEY;
-    else process.env.OPENROUTER_API_KEY = originalKey;
-    if (originalKeyFile === undefined) delete process.env.OPENROUTER_API_KEY_FILE;
-    else process.env.OPENROUTER_API_KEY_FILE = originalKeyFile;
-    if (originalDecisionKeyFile === undefined) delete process.env.KASEKI_DECISION_API_KEY_FILE;
-    else process.env.KASEKI_DECISION_API_KEY_FILE = originalDecisionKeyFile;
-    if (originalRetiredWorkflowSetting === undefined) delete process.env.KASEKI_JEV_WORKFLOW;
-    else process.env.KASEKI_JEV_WORKFLOW = originalRetiredWorkflowSetting;
-  });
-
-  it('keeps the configured rolling model alias at the latest release', () => {
-    expect(DEFAULT_JEV_MODEL).toBe('~typesafe/jev-latest');
-  });
-
-  it('keeps the launcher and published environment defaults aligned with the runtime default', () => {
-    const repoRoot = path.resolve(__dirname, '..');
-    const launcher = fs.readFileSync(path.join(repoRoot, 'run-kaseki.sh'), 'utf8');
-    const catalog = fs.readFileSync(
-      path.join(repoRoot, '.agents/skills/environment-configuration/PUBLIC_ENVIRONMENT_VARIABLES.md'),
-      'utf8',
-    );
-    const metadata = JSON.parse(fs.readFileSync(path.join(repoRoot, '.agents/skills/environment-configuration/environment-variables.json'), 'utf8'));
-    const envDocs = fs.readFileSync(path.join(repoRoot, 'docs/ENV_VARS.md'), 'utf8');
-
-    expect(launcher).toContain(`KASEKI_DECISION_MODEL="\${KASEKI_DECISION_MODEL:-${DEFAULT_JEV_MODEL}}"`);
-    expect(metadata.find((item: { name: string }) => item.name === 'KASEKI_DECISION_MODEL')?.default).toBe(DEFAULT_JEV_MODEL);
-    expect(catalog).toContain(`| \`KASEKI_DECISION_MODEL\` | \`${DEFAULT_JEV_MODEL}\` |`);
-    expect(envDocs).toContain(`| \`KASEKI_DECISION_MODEL\` | \`${DEFAULT_JEV_MODEL}\` |`);
-    expect(envDocs).toContain(`KASEKI_DECISION_MODEL\` (keep \`${DEFAULT_JEV_MODEL}\`)`);
-  });
-
-  it('rejects retired evaluation configuration without using it as an alias', async () => {
-    process.env.KASEKI_JEV_WORKFLOW = '0';
-    const fetchImpl = jest.fn();
-    await expect(classifyWithJev('state', {}, { fetchImpl })).rejects.toMatchObject({
-      code: 'configuration',
-      message: expect.stringContaining('stage-based settings'),
-    });
-    expect(fetchImpl).not.toHaveBeenCalled();
-  });
-
-  it('posts a typed decision request and preserves answers and usage', async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({
-      model: DEFAULT_JEV_MODEL,
-      answers: { safe: { type: 'noul', noul: 0.93 } },
-      usage: { input_tokens: 12, output_tokens: 4 },
-    }), { status: 200, headers: { 'content-type': 'application/json' } }));
-
-    const result = await classifyWithJev('task state', {
-      safe: { type: 'noul', instructions: 'Is this safe?' },
-    }, { fetchImpl });
-
-    expect(fetchImpl).toHaveBeenCalledWith(JEV_DECISIONS_URL, expect.objectContaining({ method: 'POST' }));
-    expect(JSON.parse(fetchImpl.mock.calls[0][1].body as string)).toMatchObject({
-      model: DEFAULT_JEV_MODEL,
-      state: 'task state',
-    });
-    expect(result.answers.safe).toEqual({ type: 'noul', noul: 0.93 });
-    expect(result.usage.output_tokens).toBe(4);
-    expect(result.responseTime).toBeGreaterThanOrEqual(0);
-    expect(result.attemptCount).toBe(1);
-  });
-
-  it('accepts a normalized Choice distribution and a fractional zero-based Score answer', async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({
-      model: '~typesafe/jev-latest',
+  it('delegates to Senku once and ignores legacy model and retry options', async () => {
+    const fetchImpl = jest.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      schemaVersion: '1',
+      requestId: 'dec-compat-test',
+      status: 'completed',
+      provider: 'jev',
+      model: 'typesafe/jev-resolved-test',
       answers: {
-        department: { type: 'choice', choice: 'billing', probabilities: { billing: 0.85, technical: 0.15, sales: 0 }, confidence: 0.78 },
-        frustration: { type: 'score', score: 1.05, legend: { 0: 'Calm', 1: 'Frustrated', 2: 'Very angry' }, probabilities: { 0: 0, 1: 0.95, 2: 0.05 }, confidence: 0.93 },
+        safe: {
+          type: 'noul', noul: 0.98,
+          probabilities: { false: 0.02, true: 0.98 }, confidence: null,
+        },
       },
+      durationMs: 1,
+      attemptCount: 1,
     }), { status: 200 }));
 
-    const result = await classifyWithJev('payouts have failed', {
-      department: { type: 'choice', instructions: 'Choose a team', criteria: { billing: 'Payments', technical: 'Bugs', sales: 'Pricing' } },
-      frustration: { type: 'score', instructions: 'Score the frustration', criteria: ['Calm', 'Frustrated', 'Very angry'] },
-    }, { fetchImpl });
-
-    expect(result.answers.frustration).toMatchObject({ score: 1.05, confidence: 0.93 });
-  });
-
-  it('reports missing credentials without making a request', async () => {
-    delete process.env.OPENROUTER_API_KEY;
-    const fetchImpl = jest.fn();
-    await expect(classifyWithJev('state', {}, { fetchImpl })).rejects.toMatchObject({ code: 'credentials' });
-    expect(fetchImpl).not.toHaveBeenCalled();
-  });
-
-  it('rejects malformed responses and HTTP failures', async () => {
-    const malformed = jest.fn().mockResolvedValue(new Response('{}', { status: 200 }));
-    await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, { fetchImpl: malformed, maxRetries: 0 })).rejects.toBeInstanceOf(JevClassificationError);
-
-    const failed = jest.fn().mockResolvedValue(new Response('busy', { status: 503 }));
-    await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, { fetchImpl: failed, maxRetries: 0 })).rejects.toMatchObject({ code: 'http', status: 503 });
-  });
-
-  it('retains safe structured provider diagnostics for rejected decision requests', async () => {
-    const rejected = jest.fn().mockResolvedValue(new Response(JSON.stringify({
-      error: {
-        code: 'invalid_request',
-        message: 'questions.validation_failure_cause.criteria is required; Bearer sk-test-secret0123456789',
+    const result = await classifyWithJev('state', {
+      safe: { type: 'noul', instructions: 'Is it safe?' },
+    }, {
+      env: {
+        NODE_ENV: 'test',
+        SENKU_URL: 'https://senku.example.test',
+        SENKU_KASEKI_API_TOKEN: token,
       },
-      state: 'private run evidence must not be copied into diagnostics',
-    }), {
-      status: 400,
-      headers: { 'x-request-id': 'request-400-test' },
-    }));
-
-    const error = await classifyWithJev('private run evidence', {
-      safe: { type: 'noul', instructions: 'Is this safe?' },
-    }, { fetchImpl: rejected, maxRetries: 0 }).then(() => undefined, (caught: unknown) => caught as Error & {
-      code?: string; status?: number; requestId?: string;
+      fetchImpl,
+      model: 'legacy-model',
+      maxRetries: 8,
     });
 
-    expect(error).toMatchObject({ code: 'http', status: 400, requestId: 'request-400-test' });
-    expect(error?.message).toContain('invalid_request');
-    expect(error?.message).toContain('questions.validation_failure_cause.criteria is required');
-    expect(error?.message).toContain('[REDACTED_CREDENTIAL]');
-    expect(error?.message).not.toContain('private run evidence');
+    expect(result.model).toBe('typesafe/jev-resolved-test');
+    expect(result.answers.safe).toMatchObject({ noul: 0.98, confidence: null });
+    expect(result.attemptCount).toBe(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it('explains when OpenRouter rejects an invalid or expired evaluation key', async () => {
-    const unauthorized = jest.fn().mockResolvedValue(new Response('Unauthorized', { status: 401 }));
-
-    await expect(classifyWithJev('state', {}, { fetchImpl: unauthorized, maxRetries: 0 })).rejects.toMatchObject({
-      code: 'http',
-      status: 401,
-      message: expect.stringMatching(/invalid, expired, revoked/i),
-    });
+  it('detects retired model and direct-provider settings', () => {
+    expect(hasRetiredDecisionSettings({ KASEKI_DECISION_MODEL: 'old/model' })).toBe(true);
+    expect(hasRetiredDecisionSettings({ KASEKI_CLASSIFICATION_MODEL: 'old/model' })).toBe(true);
+    expect(hasRetiredDecisionSettings({ KASEKI_JEV_API_KEY_FILE: '/old/key' })).toBe(true);
+    expect(hasRetiredDecisionSettings({})).toBe(false);
   });
 
-  it('explains when the OpenRouter decision endpoint cannot be reached', async () => {
-    const disconnected = jest.fn().mockRejectedValue(new TypeError('fetch failed'));
-
-    await expect(classifyWithJev('state', {}, { fetchImpl: disconnected, maxRetries: 0 })).rejects.toMatchObject({
-      code: 'network',
-      message: expect.stringContaining('Could not reach the OpenRouter decision endpoint'),
-    });
-  });
-
-  it('reports the number of provider attempts when malformed responses exhaust retries', async () => {
-    const fetchImpl = jest.fn().mockImplementation(() => Promise.resolve(new Response('{}', { status: 200 })));
-    await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, {
-      fetchImpl,
-      maxRetries: 1,
-    })).rejects.toMatchObject({ code: 'invalid_response', attemptCount: 2 });
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-  });
-
-  it('retries transient overload responses before returning a complete typed response', async () => {
-    const fetchImpl = jest.fn()
-      .mockResolvedValueOnce(new Response('busy', { status: 529 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        model: DEFAULT_JEV_MODEL,
-        answers: { safe: { type: 'noul', noul: 0.91 } },
-        usage: {},
-      }), { status: 200 }));
-
-    await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, { fetchImpl, maxRetries: 1 })).resolves.toMatchObject({ answers: { safe: { noul: 0.91 } }, attemptCount: 2 });
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-  });
-
-  it('retries a schema-invalid typed response once before returning a complete answer set', async () => {
-    const fetchImpl = jest.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ answers: {}, usage: {} }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        model: DEFAULT_JEV_MODEL,
-        answers: { safe: { type: 'noul', noul: 0.95 } },
-        usage: {},
-      }), { status: 200 }));
-
-    await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, {
-      fetchImpl,
-      maxRetries: 1,
-    })).resolves.toMatchObject({ answers: { safe: { noul: 0.95 } } });
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-  });
-
-  it('retries a classifier timeout before failing', async () => {
-    const fetchImpl = jest.fn()
-      .mockImplementationOnce((_url: string, options: NonNullable<Parameters<typeof fetch>[1]>) => new Promise((_resolve, reject) => {
-        const signal = options.signal as AbortSignal;
-        signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        model: DEFAULT_JEV_MODEL,
-        answers: { safe: { type: 'noul', noul: 0.95 } },
-        usage: {},
-      }), { status: 200 }));
-
-    await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, {
-      fetchImpl,
-      timeoutMs: 5,
-      maxRetries: 1,
-    })).resolves.toMatchObject({ answers: { safe: { noul: 0.95 } }, attemptCount: 2 });
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-  });
-
-  it('rejects an empty answer map rather than silently approving it', async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({ answers: {}, usage: {} }), { status: 200 }));
-    await expect(classifyWithJev('state', { safe: { type: 'noul', instructions: 'Is this safe?' } }, { fetchImpl, maxRetries: 0 })).rejects.toMatchObject({ code: 'invalid_response' });
-  });
-
-  it('rejects a same-sized answer map that omits a requested question', async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({
-      answers: { unexpected: { type: 'noul', noul: 0.93 } },
-      usage: {},
-    }), { status: 200 }));
-
-    await expect(classifyWithJev('state', {
-      safe: { type: 'noul', instructions: 'Is this safe?' },
-    }, { fetchImpl, maxRetries: 0 })).rejects.toMatchObject({ code: 'invalid_response' });
-  });
-
-  it.each([
-    ['choice probabilities omit a requested label', {
-      type: 'choice', choice: 'billing', probabilities: { billing: 1 }, confidence: 1,
-    }],
-    ['choice probabilities are not normalized', {
-      type: 'choice', choice: 'billing', probabilities: { billing: 0.4, technical: 0.2, sales: 0.2 }, confidence: 0.8,
-    }],
-    ['score exceeds the requested scale', {
-      type: 'score', score: 3, legend: { 0: 'Low', 1: 'Medium', 2: 'High' }, probabilities: { 0: 0, 1: 0.4, 2: 0.6 }, confidence: 0.6,
-    }],
-    ['score legend labels do not match requested levels', {
-      type: 'score', score: 1, legend: { 0: 'Low', 1: 'High' }, probabilities: { 0: 0.4, 1: 0.6 }, confidence: 0.6,
-    }],
-  ])('rejects malformed typed answer: %s', async (_description, answer) => {
-    const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({
-      answers: { result: answer },
-      usage: {},
-    }), { status: 200 }));
-    const question = answer.type === 'choice'
-      ? { type: 'choice' as const, instructions: 'Choose a team', criteria: { billing: 'Payment', technical: 'Bugs', sales: 'Sales' } }
-      : { type: 'score' as const, instructions: 'Score quality', criteria: ['Low', 'Medium', 'High'] };
-
-    await expect(classifyWithJev('state', { result: question }, { fetchImpl, maxRetries: 0 }))
-      .rejects.toMatchObject({ code: 'invalid_response' });
-  });
-
-  it('exposes conservative answer helpers', () => {
-    expect(answerConfidence({ type: 'choice', choice: 'yes', probabilities: { yes: 0.8, no: 0.2 }, confidence: 0.8 })).toBe(0.8);
-    expect(answerConfidence({ type: 'noul', noul: 0.9 })).toBe(0);
-    expect(answerIsTrue({ type: 'noul', noul: 0.9 })).toBe(true);
-    expect(answerIsTrue({ type: 'noul', noul: 0.5 })).toBe(false);
+  it('keeps the deprecated error name while exposing only safe error metadata', () => {
+    const error = new JevClassificationError('network', 'private request evidence', 502, 'dec-safe');
+    expect(error).toMatchObject({ category: 'network', status: 502, requestId: 'dec-safe' });
+    expect(error.message).not.toContain('private request evidence');
   });
 });

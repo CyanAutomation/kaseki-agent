@@ -43,18 +43,13 @@ ssh pi@192.168.88.203 "echo 'Pi 3: OK'"
 # (assumes SSH keys are already set up; if not, follow SSH key setup first)
 ```
 
-### 1c. Prepare Your OpenRouter API Key
+### 1c. Prepare LLM Gateway and Senku credentials
 
-```bash
-# Option 1: Store the key in a file on your controller
-mkdir -p ~/.kaseki/secrets
-read -sp 'Enter your OpenRouter API key: ' OPENROUTER_KEY
-echo "$OPENROUTER_KEY" > ~/.kaseki/secrets/openrouter_api_key
-chmod 600 ~/.kaseki/secrets/openrouter_api_key
-
-# Option 2: Have it as an environment variable (less secure)
-export OPENROUTER_API_KEY=sk-or-v1-your-key
-```
+Coding inference uses the LLM Gateway. The remote bootstrap prompts for the
+gateway URL and securely reads its key on each host. Senku decision inference
+uses a separate optional Kaseki machine token; install it on each host with
+`./scripts/kaseki-setup.sh` when the Senku operator has issued one. Without that
+token, decision stages degrade safely.
 
 ---
 
@@ -65,7 +60,7 @@ For each Pi host, run the remote setup script from your controller:
 ### Bootstrap Pi Host 1
 
 ```bash
-./scripts/pi-setup-remote.sh pi@192.168.88.201 ~/.kaseki/secrets/openrouter_api_key
+./scripts/pi-setup-remote.sh pi@192.168.88.201
 ```
 
 Expected output:
@@ -74,7 +69,7 @@ Expected output:
 Setting up pi@192.168.88.201...
 SSH check: pi@192.168.88.201 ✓
 Creating secrets directory on remote host... ✓
-Transferring API key securely... ✓
+Prompting for LLM Gateway settings on the remote host... ✓
 Running kaseki bootstrap... ✓
 Running health check...
 Preflight required dependencies: ok (docker)
@@ -87,13 +82,13 @@ Kaseki template image: available
 ### Bootstrap Pi Host 2
 
 ```bash
-./scripts/pi-setup-remote.sh pi@192.168.88.202 ~/.kaseki/secrets/openrouter_api_key
+./scripts/pi-setup-remote.sh pi@192.168.88.202
 ```
 
 ### Bootstrap Pi Host 3
 
 ```bash
-./scripts/pi-setup-remote.sh pi@192.168.88.203 ~/.kaseki/secrets/openrouter_api_key
+./scripts/pi-setup-remote.sh pi@192.168.88.203
 ```
 
 ---
@@ -121,8 +116,7 @@ All should output:
 
 ```bash
 ssh pi@192.168.88.201 \
-  'OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key \
-   /agents/kaseki-template/run-kaseki.sh \
+  '/agents/kaseki-template/run-kaseki.sh \
    https://github.com/your-org/your-repo main'
 ```
 
@@ -132,8 +126,7 @@ ssh pi@192.168.88.201 \
 # Start all three hosts in the background
 for host in pi@192.168.88.201 pi@192.168.88.202 pi@192.168.88.203; do
   ssh "$host" \
-    'OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key \
-     /agents/kaseki-template/run-kaseki.sh \
+    '/agents/kaseki-template/run-kaseki.sh \
      https://github.com/your-org/your-repo main' &
 done
 
@@ -185,8 +178,7 @@ If you prefer using `kaseki-activate.sh` commands for more control:
 ```bash
 # Run via kaseki-activate.sh (alternative to run-kaseki.sh)
 ssh pi@192.168.88.201 \
-  'OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key \
-   /agents/kaseki-template/scripts/kaseki-activate.sh run \
+  '/agents/kaseki-template/scripts/kaseki-activate.sh run \
    https://github.com/your-org/your-repo main'
 ```
 
@@ -234,8 +226,7 @@ for task in task1 task2 task3 task4 task5; do
   host=${hosts[$((counter % ${#hosts[@]}))]
   
   ssh "$host" \
-    'OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key \
-     /agents/kaseki-template/run-kaseki.sh \
+    '/agents/kaseki-template/run-kaseki.sh \
      https://github.com/your-org/your-repo main' &
   
   ((counter++))
@@ -304,7 +295,6 @@ HOSTS=(
   "pi@192.168.88.203"
 )
 
-API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key
 REPO_URL="${1:-https://github.com/your-org/your-repo}"
 GIT_REF="${2:-main}"
 
@@ -313,8 +303,7 @@ echo "Running kaseki-agent on all hosts for $REPO_URL @ $GIT_REF..."
 for host in "${HOSTS[@]}"; do
   echo "Starting run on $host..."
   ssh "$host" \
-    "OPENROUTER_API_KEY_FILE=$API_KEY_FILE \
-     /agents/kaseki-template/run-kaseki.sh $REPO_URL $GIT_REF" &
+    "/agents/kaseki-template/run-kaseki.sh $REPO_URL $GIT_REF" &
 done
 
 wait

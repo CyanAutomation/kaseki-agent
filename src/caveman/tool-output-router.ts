@@ -242,7 +242,8 @@ function semanticDisposition(
     return { preserveProbability: 1, condenseProbability: 0, discardProbability: 0, disposition: 'preserve', reason: 'invalid_jev_probabilities' };
   }
   const probabilityTotal = preserveProbability + condenseProbability + discardProbability;
-  if (Math.abs(probabilityTotal - 1) > 0.03 || !Number.isFinite(answer.confidence) || answer.confidence < 0 || answer.confidence > 1) {
+  if (Math.abs(probabilityTotal - 1) > 0.03 || answer.confidence === null
+    || !Number.isFinite(answer.confidence) || answer.confidence < 0 || answer.confidence > 1) {
     return { preserveProbability: 1, condenseProbability: 0, discardProbability: 0, disposition: 'preserve', reason: 'invalid_jev_probabilities' };
   }
   if (answer.choice === 'discard' && discardProbability >= thresholds.discard) {
@@ -377,10 +378,11 @@ function selectedRoute(
   if (!answer || answer.type !== 'choice' || !['preserve', 'compact_repeated', 'structural_code'].includes(answer.choice)) {
     return { route: 'preserve', reason: 'invalid_jev_answer' };
   }
-  if (!Number.isFinite(answer.confidence) || answer.confidence < confidenceThreshold) {
-    return { route: 'preserve', confidence: answer.confidence, reason: 'low_confidence' };
+  const confidence = answer.confidence ?? 0;
+  if (!Number.isFinite(confidence) || confidence < confidenceThreshold) {
+    return { route: 'preserve', confidence, reason: 'low_confidence' };
   }
-  return { route: answer.choice as CavemanToolOutputRoute, confidence: answer.confidence };
+  return { route: answer.choice as CavemanToolOutputRoute, confidence };
 }
 
 function compactRepeatedLines(text: string): string {

@@ -372,7 +372,7 @@ export class DoctorCommand extends BaseCommand {
     lines.push('   $ cat > ~/.kaseki/config.json << EOF');
     lines.push('   {');
     lines.push('     "auth": {');
-    lines.push('       "openrouter_api_key_file": "~/secrets/openrouter_api_key",');
+    lines.push('       "llm_gateway_api_key_file": "~/secrets/llm_gateway_api_key",');
     lines.push('       "github_app_id": "123456",');
     lines.push('       "github_app_client_id": "Iv1.public-client-id",');
     lines.push('       "github_app_private_key_file": "~/secrets/github_app_private_key"');
@@ -385,15 +385,17 @@ export class DoctorCommand extends BaseCommand {
     lines.push('2️⃣  Environment variables (one-off runs):');
     if (this.isSudo()) {
       lines.push('   Since you\'re running with sudo, preserve environment:');
-      lines.push('   $ export OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key');
+      lines.push('   $ export LLM_GATEWAY_API_KEY_FILE=~/secrets/llm_gateway_api_key');
       lines.push('   $ sudo -E kaseki-agent run <repo> <branch> <task>');
     } else {
-      lines.push('   $ export OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key');
+      lines.push('   $ export LLM_GATEWAY_API_KEY_FILE=~/secrets/llm_gateway_api_key');
+      lines.push('   $ export SENKU_KASEKI_API_TOKEN_FILE=~/secrets/senku_kaseki_api_token  # optional decision credential');
       lines.push('   $ export GITHUB_APP_ID=123456');
       lines.push('   $ export GITHUB_APP_CLIENT_ID=Iv1.public-client-id');
       lines.push('   $ export GITHUB_APP_PRIVATE_KEY_FILE=~/secrets/github_app_private_key');
       lines.push('   $ kaseki-agent run <repo> <branch> <task>');
     }
+    lines.push('   Senku decision credentials are optional; install the approved machine token with ./scripts/kaseki-setup.sh.');
     lines.push('');
 
     lines.push('3️⃣  Docker Compose (recommended for services):');

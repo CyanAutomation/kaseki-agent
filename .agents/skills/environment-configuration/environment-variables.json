@@ -168,10 +168,16 @@
     "acceptedValues": "Positive integer tokens"
   },
   {
-    "name": "KASEKI_DECISION_MODEL",
-    "description": "Model alias used by Task Admission, Goal Check, Run Evaluation, and validation recovery through the shared DecisionService",
-    "default": "~typesafe/jev-latest",
-    "acceptedValues": "A supported model alias"
+    "name": "SENKU_URL",
+    "description": "Trusted Senku origin for authenticated decision requests",
+    "default": "https://senku.scheimann.workers.dev",
+    "acceptedValues": "HTTPS origin; loopback HTTP is allowed for local tests"
+  },
+  {
+    "name": "SENKU_KASEKI_API_TOKEN_FILE",
+    "description": "File containing the Kaseki machine credential for Senku decisions",
+    "default": "/run/secrets/kaseki/senku_kaseki_api_token in workers; ~/.kaseki/secrets/senku_kaseki_api_token locally",
+    "acceptedValues": "Readable file path containing a Senku Kaseki token"
   },
   {
     "name": "KASEKI_TYPED_EVALUATION_ENABLED",

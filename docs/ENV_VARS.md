@@ -59,12 +59,12 @@ Phase targets guide concise evidence gathering and artifact review. They are rep
 
 The coding context target is set below the screenshot's roughly 39k-token request size so Kaseki can surface growth sooner. Pi receives these numbers as soft guidance; no provider request is capped, no evidence is truncated, and no run stops or retries because a target was exceeded.
 
-### Caveman and JEV tool-output routing
+### Caveman and Senku-backed decision routing
 
 | Variable | Default | Type | Purpose |
 | ---------- | --------- | ------ | --------- |
 | `KASEKI_CAVEMAN_LEVEL` | `2` | integer | Level 0 disables Caveman, level 1 adds terse response guidance, level 2 adds compact static prompts and metadata-routed large tool results, and level 3 asks JEV to consider results above a lower size threshold |
-| `KASEKI_CAVEMAN_ROUTER` | `jev` | string | Set to `off` to disable dynamic tool-result routing while keeping other Caveman behavior |
+| `KASEKI_CAVEMAN_ROUTER` | `jev` | string | Set to `off` to disable Senku-backed dynamic tool-result routing while keeping other Caveman behavior |
 | `KASEKI_CAVEMAN_ROUTER_MIN_CHARS` | `6000` (level 2); `3000` (level 3) | integer | Minimum result size for the legacy router; semantic routing uses `KASEKI_SEMANTIC_CONTEXT_MIN_TOKENS` |
 | `KASEKI_CAVEMAN_ROUTER_TIMEOUT_MS` | `1200` | integer | Maximum wait for one routing decision; failures preserve original tool output |
 | `KASEKI_CAVEMAN_ROUTER_CONFIDENCE_THRESHOLD` | `0.86` | number | Minimum choice confidence for a local transform in the legacy router |
@@ -75,13 +75,13 @@ The coding context target is set below the screenshot's roughly 39k-token reques
 | `KASEKI_SEMANTIC_PHASE_TRANSFER_ENABLED` | `1` | boolean | Enable bounded JEV routing of scouting facts into the coding handoff; `0` preserves the existing handoff contract |
 | `KASEKI_SEMANTIC_CONTEXT_REEVALUATION_ENABLED` | `1` | boolean | Replace tracked large file reads with a reread notice after a successful same-path edit; `0` disables event-driven reevaluation |
 
-For coding-phase results, the semantic router runs after deterministic checks and only above the configured token threshold. JEV receives a bounded envelope containing phase, tool/category, operation category, output size, line/repetition signals, read-range and error status, and a redacted goal summary (up to 1200 characters). It never receives raw tool output, source code, or shell command text. Errors, detected failure evidence, state-changing shell operations, and uncertain decisions preserve the original output. JEV decides **preserve**, **condense**, or **discard**; Caveman performs only its existing exact repeated-line compaction or TypeScript/JavaScript structural preview. Discard requires a 0.98 probability by default and leaves a short metadata marker. JEV failures or malformed decisions fail open to the full output.
+For coding-phase results, the semantic router runs after deterministic checks and only above the configured token threshold. Senku receives a bounded envelope containing phase, tool/category, operation category, output size, line/repetition signals, read-range and error status, and a redacted goal summary (up to 1200 characters). It never receives raw tool output, source code, or shell command text. Errors, detected failure evidence, state-changing shell operations, and uncertain decisions preserve the original output. Senku returns a **preserve**, **condense**, or **discard** assessment; Caveman performs only its existing exact repeated-line compaction or TypeScript/JavaScript structural preview. Discard requires a 0.98 probability by default and leaves a short metadata marker. Senku failures or malformed decisions fail open to the full output.
 
-The semantic router reuses Kaseki's shared JEV client, credentials, retry configuration, and rolling `~typesafe/jev-latest` model alias. It adds no provider stack. Routing diagnostics in `caveman-routing.jsonl` record deterministic bypasses, evaluations, disposition, category, estimated input/output tokens, latency, and reduction; they do not store tool payload text. Set `KASEKI_SEMANTIC_CONTEXT_ROUTER_ENABLED=0` to retain the pre-existing Caveman routing behavior. Other lifecycle phases keep their existing tool-output behavior.
+The semantic router uses Kaseki's shared Senku HTTP client and Kaseki machine credential. Senku owns model selection, and each routing decision makes one request with the caller's 1,200 ms default time budget. Routing diagnostics in `caveman-routing.jsonl` record deterministic bypasses, evaluations, disposition, category, estimated input/output tokens, latency, and reduction; they do not store tool payload text. Set `KASEKI_SEMANTIC_CONTEXT_ROUTER_ENABLED=0` to retain the pre-existing Caveman routing behavior. Other lifecycle phases keep their existing tool-output behavior.
 
-Two bounded extensions use the same router infrastructure. During the scouting-to-coding handoff, `KASEKI_SEMANTIC_PHASE_TRANSFER_ENABLED=0` disables JEV filtering and preserves the existing handoff shape. When enabled, JEV receives a compact goal and up to 32 redacted scouting facts in one Decisions request. Requirements, explicitly required/protected files, and overflow facts bypass classification; JEV failure preserves every fact. Phase-transfer counts and token estimates are written to the same routing log. For event reevaluation, `KASEKI_SEMANTIC_CONTEXT_REEVALUATION_ENABLED=0` disables tracking. While coding, Kaseki tracks large file reads by tool-call ID and, after a successful `write`, `edit`, or `hashline_edit` to the same path, replaces matching old context with a reread notice at the next Pi context build. This is in-memory and event-triggered; it does not rescore context each turn or add persistent memory. Reevaluation telemetry contains counts and token estimates, not file paths or source text.
+Two bounded extensions use the same Senku client. During the scouting-to-coding handoff, `KASEKI_SEMANTIC_PHASE_TRANSFER_ENABLED=0` disables Senku classification and preserves the existing handoff shape. When enabled, Senku receives a compact goal and up to 32 redacted scouting facts in one generic decision request. Requirements, explicitly required/protected files, and overflow facts bypass classification; unavailable classification preserves every fact. Phase-transfer counts and token estimates are written to the same routing log. For event reevaluation, `KASEKI_SEMANTIC_CONTEXT_REEVALUATION_ENABLED=0` disables tracking. While coding, Kaseki tracks large file reads by tool-call ID and, after a successful `write`, `edit`, or `hashline_edit` to the same path, replaces matching old context with a reread notice at the next Pi context build. This is in-memory and event-triggered; it does not rescore context each turn or add persistent memory. Reevaluation telemetry contains counts and token estimates, not file paths or source text.
 
-JEV makes the bounded semantic decision. Caveman applies existing local reductions where condensation is selected. Pi performs generative reasoning, coding, and synthesis. Deterministic checks handle small results, obvious repetitive output, and protected evidence before JEV is called. All JEV paths fail open to preserving the original information on timeouts, missing credentials, API errors, or invalid answers.
+Senku makes the bounded semantic decision. Caveman applies existing local reductions where condensation is selected. Pi performs generative reasoning, coding, and synthesis. Deterministic checks handle small results, obvious repetitive output, and protected evidence before Senku is called. Decision failures preserve the original information; null confidence is unavailable and cannot authorize a confidence-gated action.
 
 ### Provider Selection
 
@@ -89,13 +89,13 @@ JEV makes the bounded semantic decision. Caveman applies existing local reductio
 
 - **Primary Provider**: `gateway` is used for all agent runs.
 
-OpenRouter is reserved for evaluation stages. Coding-agent inference never receives this credential. Retryable gateway failures are retried against the gateway and reported as gateway failures when exhausted.
+Remote JEV decision inference uses Senku. The Kaseki machine token is separate from the LLM Gateway key and is not a coding-provider credential. Retryable coding-provider failures remain governed by the gateway's existing policy.
 
 **Startup Behavior:**
 
 - On startup, kaseki-agent logs the active LLM provider (e.g., "Active LLM provider: gateway")
 - Checks are organized by category: active provider, GitHub integration, and platform infrastructure
-- The OpenRouter secret is mounted only for evaluation stages
+- The Senku Kaseki machine token is mounted read-only only for decision calls
 
 **Configuration Guide:**
 
@@ -105,29 +105,30 @@ OpenRouter is reserved for evaluation stages. Coding-agent inference never recei
    export KASEKI_PROVIDER=gateway
    export LLM_GATEWAY_URL=https://gateway.example.com/v1
    export LLM_GATEWAY_API_KEY_FILE=/path/to/key
-   # OPENROUTER_API_KEY_FILE is reserved for evaluation stages.
+   # SENKU_URL defaults to https://senku.scheimann.workers.dev.
+   # Mount SENKU_KASEKI_API_TOKEN_FILE for decision inference when configured.
    ```
 
-For the gateway path, worker preflight checks verify gateway URL/key configuration, worker secret mounting, and Pi provider registration before agent phases start. Set `OPENROUTER_API_KEY_FILE` separately to enable evaluation stages. Missing evaluation credentials leave the existing stage fallback behavior in place.
+For the gateway path, worker preflight checks verify gateway URL/key configuration, worker secret mounting, and Pi provider registration before agent phases start. Senku credentials are optional at startup; unavailable decisions follow the stage-specific degradation behavior in [Senku integration](SENKU-INTEGRATION.md).
 
 ### API Keys & Credentials
 
 | Variable | Default / Alternative | Type | Purpose |
 | ---------- | --- | --- | --- |
-| `OPENROUTER_API_KEY` | `OPENROUTER_API_KEY_FILE` | string | OpenRouter API key used for decision evaluation. It is never routed to coding-agent inference. Prefer the file-based setting. |
-| `KASEKI_DECISION_API_KEY_FILE` | worker-internal mount of `OPENROUTER_API_KEY_FILE` | path | Internal worker path for the evaluation credential; do not configure a second key. |
+| `SENKU_URL` | `https://senku.scheimann.workers.dev` | HTTPS origin | Trusted Senku origin; Kaseki always uses its fixed `/v1/decisions` path. Loopback HTTP is allowed only outside production for local tests. |
+| `SENKU_KASEKI_API_TOKEN_FILE` | `/run/secrets/kaseki/senku_kaseki_api_token` in workers; `~/.kaseki/secrets/senku_kaseki_api_token` locally | path | File containing the Senku Kaseki machine credential. Prefer this file-based setting. |
+| `SENKU_KASEKI_API_TOKEN` | unset | secret | Optional inline credential for local/manual use. Do not put it in `.env`, prompts, logs, or task metadata. |
 | `LLM_GATEWAY_URL` | — | string | OpenAI-compatible gateway endpoint (CloudFlare AI Workers, Azure OpenAI, Ollama, etc.). Required for the default `KASEKI_PROVIDER=gateway` path. Example: `https://gateway.ai.cloudflare.com/v1/{account_id}/{namespace}/compat` or `https://api.openai.com/v1`. |
 | `LLM_GATEWAY_API_KEY` | `LLM_GATEWAY_API_KEY_FILE` | string | LLM Gateway API key. Required for the default `KASEKI_PROVIDER=gateway` path. |
 | `KASEKI_GATEWAY_RESPONSE_SMOKE` | production: `true`, test/dev: `false` | boolean | Controls whether `/api/v1/gateway-test` performs a real OpenAI Responses API smoke request with the configured gateway model (default `dynamic/kaseki-agent`). Set `0`, `false`, `off`, or `no` to disable in production; set `1`, `true`, `on`, or `yes` to force-enable in test/dev. |
 | `KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE` | `false` | boolean | Enables Pi provider smoke in non-production environments. Any token-consuming probe must be explicitly requested with `inference=true` on `/api/v1/gateway-test`. In development/test, set to `1`, `true`, `on`, or `yes` to enable the adapter smoke. |
 | `KASEKI_PI_PROVIDER_SMOKE_TIMEOUT_MS` | `60000` | integer | Timeout for the opt-in Pi gateway provider smoke test. |
-| `KASEKI_DECISION_MODEL` | `~typesafe/jev-latest` | string | Model alias used by Task Admission, Goal Check, Run Evaluation, and validation recovery through the shared DecisionService. The default follows the latest supported release and is intentionally not pinned. See [DECISION_MODELS.md](DECISION_MODELS.md) for the decision hierarchy and current integrations. |
-| `KASEKI_TASK_ADMISSION_TIMEOUT_MS` | `5000` | integer | Per-attempt timeout for task admission classification. Retryable failures can be attempted up to three times; operational failures are reported as degraded, while deterministic credential and policy checks remain authoritative. |
+| `KASEKI_TASK_ADMISSION_TIMEOUT_MS` | `5000` | integer | Full-operation timeout for the single Task Admission request. Classification failures degrade under the existing fail-open policy; deterministic credential checks remain authoritative. |
 | `KASEKI_TASK_ADMISSION_CONFIDENCE` | `0.8` | number | Noul probability required to reject a task for a sensitive condition, and Choice confidence required to reject a high-risk task. |
 | `KASEKI_TYPED_EVALUATION_ENABLED` | `1` in production; `0` with `KASEKI_TEST_MODE=1` | boolean | Use structured decision responses for Goal Check and Run Evaluation. Set to `0` to use the existing Pi evaluation stages. Task Admission remains independently configured. |
 | `KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD` | `0.8` | number | Noul probability required to mark a goal criterion met. Above `0.5`, probabilities at or below the complementary threshold are unmet and probabilities between the thresholds remain uncertain. An unresolved uncertain result is surfaced for human review after the configured coding retries. |
-| `KASEKI_GOAL_CHECK_DECISION_TIMEOUT_MS` | `15000` | integer | Per-attempt request timeout for Goal Check. Retryable failures can be attempted up to three times, so total elapsed time can exceed this value. |
-| `KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS` | `15000` | integer | Per-attempt request timeout for Run Evaluation. Retryable failures can be attempted up to three times, so total elapsed time can exceed this value. |
+| `KASEKI_GOAL_CHECK_DECISION_TIMEOUT_MS` | `15000` | integer | Full-operation timeout for the single Goal Check request. |
+| `KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS` | `15000` | integer | Full-operation timeout for the single Run Evaluation request. |
 | `KASEKI_DECISION_EVALUATOR_PATH` | bundled evaluator | path | Override the bundled evaluator executable path for Goal Check, Run Evaluation, and validation recovery. |
 | `KASEKI_TASK_TYPE_HINT` | unset | enum | Advisory Task Admission hint passed to the agent prompt. It never overrides the task request or repository instructions. |
 | `KASEKI_VALIDATION_FOCUS_HINT` | unset | enum | Advisory Task Admission hint for relevant validation. It never overrides explicit validation commands. |
@@ -136,7 +137,7 @@ For the gateway path, worker preflight checks verify gateway URL/key configurati
 | `KASEKI_VALIDATION_RETRY_CONFIDENCE_THRESHOLD` | `0.9` | number | Minimum confidence required for both the transient-cause assessment and retry recommendation. |
 | `KASEKI_VALIDATION_RECOVERY_DECISION_TIMEOUT_MS` | `15000` | integer | Request timeout for validation failure assessment. |
 
-Evaluation data handling: Task Admission sends requested task fields after local credential screening and common-pattern redaction. Goal Check and Run Evaluation send goal/scouting artifacts, metadata, failure details, changed paths, a bounded diff, and bounded validation output. Validation recovery sends only the failed command, exit status, and a bounded, redacted excerpt of that command's output. These payloads can include proprietary source code or task text; redaction covers common credential formats but is not a complete secret scanner. Review the applicable OpenRouter data policies before enabling these stages for sensitive repositories. Routing hints and run diagnostics are advisory. Automatic validation recovery never skips a requested check or changes quality or publishing gates; a retry failure remains a validation failure.
+Decision evidence handling: Task Admission sends requested task fields after local credential screening and common-pattern redaction. Goal Check and Run Evaluation send goal/scouting artifacts, metadata, failure details, changed paths, a bounded diff, and bounded validation output. Validation recovery sends only the failed command, exit status, and a bounded, redacted excerpt of that command's output. These payloads can include proprietary source code or task text; redaction covers common credential formats but is not a complete secret scanner. Review the Senku service's data-handling policy before enabling these stages for sensitive repositories. Routing hints and run diagnostics are advisory. Automatic validation recovery never skips a requested check or changes quality or publishing gates; a retry failure remains a validation failure.
 
 Typed workflow decisions write compact provider, outcome, confidence, timing, attempt-count, and usage records to `decisions.jsonl`. The artifact excludes evaluated state; see [DECISION_MODELS.md](DECISION_MODELS.md) for interpretation and limitations.
 
@@ -146,13 +147,13 @@ Remove these names from deployment configuration and use the replacement shown. 
 
 | Retired setting | Replacement |
 |---|---|
-| `KASEKI_CLASSIFICATION_MODEL` | `KASEKI_DECISION_MODEL` (keep `~typesafe/jev-latest`) |
+| `KASEKI_DECISION_MODEL` and `KASEKI_CLASSIFICATION_MODEL` | Removed; Senku selects the model |
 | `KASEKI_JEV_WORKFLOW` | `KASEKI_TYPED_EVALUATION_ENABLED` |
 | `KASEKI_JEV_CONFIDENCE` | `KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD` |
 | `KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS` | `KASEKI_GOAL_CHECK_DECISION_TIMEOUT_MS` |
 | `KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS` | `KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS` |
 | `KASEKI_JEV_WORKFLOW_EVALUATOR` | `KASEKI_DECISION_EVALUATOR_PATH` |
-| `KASEKI_JEV_API_KEY_FILE` | `KASEKI_DECISION_API_KEY_FILE` |
+| `KASEKI_JEV_API_KEY_FILE` and `KASEKI_DECISION_API_KEY_FILE` | `SENKU_KASEKI_API_TOKEN_FILE` |
 | `KASEKI_JEV_TASK_TYPE` | `KASEKI_TASK_TYPE_HINT` |
 | `KASEKI_JEV_VALIDATION_FOCUS` | `KASEKI_VALIDATION_FOCUS_HINT` |
 

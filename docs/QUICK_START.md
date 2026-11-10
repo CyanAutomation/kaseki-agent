@@ -42,12 +42,17 @@ The gateway key is read silently into `~/secrets/llm_gateway_api_key` when that
 file does not already exist. Kaseki creates its own API bearer token in
 `~/secrets/kaseki_api_keys`. Setup does not infer the gateway URL from secret
 filenames, put secret values in `.env`, or send an inference request. The
-OpenRouter key is optional and is used only for configured evaluation stages;
+Senku Kaseki machine token is optional during setup. If the operator has issued
+one, place it in `~/secrets/senku_kaseki_api_token`; Compose mounts the host
+secret directory read-only for the API and workers. Without that token,
+decision stages use their documented degraded behavior while coding and
+deterministic checks continue. For Compose, use mode `0640` with group `10000`
+so the API can read and stage the file. See [Senku integration](SENKU-INTEGRATION.md).
 GitHub App files are optional unless you use those operations.
 
 The `/ready` check confirms that the local API started. It does not contact the
-gateway, validate the provider key, or confirm that the selected model is
-available; setup avoids a provider request that could incur cost.
+gateway or Senku, validate provider credentials, or confirm that a selected
+model is available; setup avoids inference requests that could incur cost.
 
 You can provide the URL without putting a key in shell history:
 

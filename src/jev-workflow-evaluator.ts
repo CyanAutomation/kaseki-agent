@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
-import { DEFAULT_DECISION_MODEL, decisionFailureMetadata, decisionService } from './decision-service';
+import { decisionFailureMetadata, decisionService } from './decision-service';
 import type { DecisionResult, DecisionService } from './decision-service';
 import { appendDecisionTelemetry, summarizeDecisionConfidence } from './decision-telemetry';
 import { collectValidationEvidence } from './validation-evidence';
@@ -285,7 +285,6 @@ async function runGoalCheck(
   const result = await dependencies.decisionService.decide({
     state,
     questions,
-    model: process.env.KASEKI_DECISION_MODEL || DEFAULT_DECISION_MODEL,
     timeoutMs: Number.parseInt(process.env.KASEKI_GOAL_CHECK_DECISION_TIMEOUT_MS || '15000', 10),
   });
   const threshold = confidenceThreshold();
@@ -388,8 +387,8 @@ function runEvaluationFacts(state: JsonObject, goalCheck: JsonObject): RunEvalua
 
 function runEvaluationAnswer(answers: Record<string, ClassificationAnswer>, name: string): string | number {
   const value = answers[name];
-  if (value?.type === 'choice') return value.choice;
-  if (value?.type === 'score') return value.score;
+  if (value?.type === 'choice') return answerConfidence(value) > 0 ? value.choice : 'unknown';
+  if (value?.type === 'score') return answerConfidence(value) > 0 ? value.score : 'unknown';
   if (value?.type === 'noul') return value.noul;
   return 'unknown';
 }
@@ -432,7 +431,6 @@ async function runEvaluation(resultsDir: string, dependencies: DecisionWorkflowD
   const result = await dependencies.decisionService.decide({
     state: stateForRunEvaluation(state, goalCheck),
     questions: buildRunEvaluationQuestions(hasRunFailureEvidence(state)),
-    model: process.env.KASEKI_DECISION_MODEL || DEFAULT_DECISION_MODEL,
     timeoutMs: Number.parseInt(process.env.KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS || '15000', 10),
   });
   const classification = runEvaluationClassification(result.answers);
@@ -473,7 +471,6 @@ async function runValidationRecovery(resultsDir: string, dependencies: DecisionW
     const result = await dependencies.decisionService.decide({
       state,
       questions: buildValidationRecoveryQuestions(),
-      model: process.env.KASEKI_DECISION_MODEL || DEFAULT_DECISION_MODEL,
       timeoutMs: Number.parseInt(process.env.KASEKI_VALIDATION_RECOVERY_DECISION_TIMEOUT_MS || '15000', 10),
     });
     const decision = decideValidationRetry({
@@ -503,7 +500,6 @@ async function runValidationRecovery(resultsDir: string, dependencies: DecisionW
       stage: 'validation_recovery',
       status: 'unavailable',
       provider: dependencies.decisionService.providerId,
-      model: process.env.KASEKI_DECISION_MODEL || DEFAULT_DECISION_MODEL,
       outcome: 'classification_unavailable',
       confidence: 0,
       durationMs: performance.now() - decisionStarted,
@@ -567,7 +563,6 @@ export async function evaluateWorkflow(
         stage,
         status: 'unavailable',
         provider: dependencies.decisionService.providerId,
-        model: process.env.KASEKI_DECISION_MODEL || DEFAULT_DECISION_MODEL,
         outcome: 'classification_unavailable',
         confidence: 0,
         durationMs: performance.now() - decisionStarted,

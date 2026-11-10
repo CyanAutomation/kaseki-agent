@@ -52,7 +52,6 @@ initialize_dry_run_agent_artifacts() {
 
 write_dry_run_startup_check_artifacts() {
   local result_dir="${1:-${KASEKI_RESULTS_DIR:-/results}}"
-  local openrouter_file="${OPENROUTER_API_KEY_FILE:-}"
   local pi_version node_version git_version
 
   mkdir -p "$result_dir"
@@ -64,9 +63,6 @@ write_dry_run_startup_check_artifacts() {
     printf 'pi version check failed: %s\n' "$pi_version" >&2
     return 1
   }
-  if [ -n "$openrouter_file" ]; then
-    test -r "$openrouter_file"
-  fi
   test -w /workspace 2>/dev/null || test -w "${KASEKI_WORKSPACE_DIR:-$PWD}"
   test -w "$result_dir"
   test -w /cache 2>/dev/null || test -w "${KASEKI_CACHE_DIR:-${TMPDIR:-/tmp}}"

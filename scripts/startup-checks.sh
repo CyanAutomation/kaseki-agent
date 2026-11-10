@@ -242,7 +242,7 @@ check_secret_paths() {
   fi
 
   if [ ! "$secrets_dir_found" = true ]; then
-    if [ -r "${OPENROUTER_API_KEY_FILE:-}" ] ||
+    if [ -r "${SENKU_KASEKI_API_TOKEN_FILE:-}" ] ||
       [ -r "${GITHUB_APP_PRIVATE_KEY_FILE:-}" ] ||
       [ -r /run/secrets/github_app_private_key ]; then
       log_info "Secrets directory not mounted at $primary_secrets_dir or $fallback_secrets_dir; using readable configured or legacy secret files."
@@ -289,19 +289,19 @@ check_secret_file_sources() {
 }
 
 check_api_key() {
-  log_info "Checking OpenRouter API key..."
+  log_info "Checking optional Senku decision credential..."
 
-  if [ -n "${OPENROUTER_API_KEY:-}" ]; then
-    log_pass "OPENROUTER_API_KEY is set (from environment)"
+  if [ -n "${SENKU_KASEKI_API_TOKEN:-}" ]; then
+    log_pass "Senku decision credential is set in the environment"
     return 0
   fi
 
   local exit_code
   if check_secret_file_sources \
-    "OpenRouter API key" \
-    "${OPENROUTER_API_KEY_FILE:-}" \
-    "$KASEKI_SECRETS_DIR/openrouter_api_key" \
-    "$HOME/.kaseki/secrets/openrouter_api_key"; then
+    "Senku decision credential" \
+    "${SENKU_KASEKI_API_TOKEN_FILE:-}" \
+    "$KASEKI_SECRETS_DIR/senku_kaseki_api_token" \
+    "$HOME/.kaseki/secrets/senku_kaseki_api_token"; then
     return 0
   else
     exit_code=$?
@@ -311,12 +311,12 @@ check_api_key() {
     return 2
   fi
 
-  log_warn "No OpenRouter API key configured"
-  if [ -n "${OPENROUTER_API_KEY_FILE:-}" ]; then
-    log_info "  Checked configured OPENROUTER_API_KEY_FILE: $OPENROUTER_API_KEY_FILE"
+  log_warn "No Senku decision credential configured; advisory decisions will degrade safely"
+  if [ -n "${SENKU_KASEKI_API_TOKEN_FILE:-}" ]; then
+    log_info "  Checked configured SENKU_KASEKI_API_TOKEN_FILE: $SENKU_KASEKI_API_TOKEN_FILE"
   fi
-  log_info "  Create: $KASEKI_SECRETS_DIR/openrouter_api_key or run: kaseki-agent init"
-  return 3
+  log_info "  Optional file: $KASEKI_SECRETS_DIR/senku_kaseki_api_token"
+  return 0
 }
 
 check_github_app_secrets() {
@@ -749,7 +749,7 @@ check_unused_secrets() {
   
   # Warn about unused secrets (non-blocking)
   if [ "$active_provider" = "gateway" ] && [ "$openrouter_key_present" -eq 1 ]; then
-    log_warn "Unused secret detected: OpenRouter API key configured but gateway is primary provider"
+    log_warn "Legacy OpenRouter credential configured; Kaseki decision inference now uses Senku"
   fi
   
   if [ "$active_provider" = "openrouter" ] && [ "$gateway_key_present" -eq 1 ]; then

@@ -161,7 +161,7 @@ export class ContainerPreflightDiagnostics {
   private checkSecretsReadable(): PreflightCheck {
     const secretsDir = process.env.KASEKI_SECRETS_DIR || '/run/secrets/kaseki';
     const requiredSecrets = [
-      'openrouter_api_key',
+      'llm_gateway_api_key',
       'kaseki_api_keys',
     ];
 
