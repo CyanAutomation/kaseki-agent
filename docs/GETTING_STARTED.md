@@ -26,7 +26,7 @@ typed decisions; see [Senku integration](SENKU-INTEGRATION.md).
 
 ## Use the npm CLI
 
-Install the CLI on a workstation or controller with Node.js 24 or later:
+Install the CLI on a workstation or controller with Node.js 26 or later:
 
 ```bash
 npm install -g @cyanautomation/kaseki-agent

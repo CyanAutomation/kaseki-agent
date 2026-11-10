@@ -28,7 +28,7 @@ inventing test helpers or paths; inspect the current suite first.
 
 ## Focused commands
 
-Use Node.js 24 or later. Install the locked dependencies with `npm ci`.
+Use Node.js 26 or later. Install the locked dependencies with `npm ci`.
 
 ```bash
 # TypeScript/JavaScript unit suite (builds first)
@@ -69,7 +69,7 @@ pass. When a check is environment-dependent, report the dependency and result.
 ## CI conventions
 
 The pull-request workflow is [`.github/workflows/ci.yml`](../../../.github/workflows/ci.yml).
-It uses Node.js 24, pinned GitHub Actions, shell linting, Markdown-link checks,
+It uses Node.js 26, pinned GitHub Actions, shell linting, Markdown-link checks,
 workflow checks, the repository test sequence, and Docker artifact validation.
 Update the workflow contract tests when changing those expectations.
 

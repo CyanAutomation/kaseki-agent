@@ -36,7 +36,7 @@ export interface InitializeSetupDependencies {
 /** Validates Node version; calls process.exit(1) if invalid */
 export function assertSupportedNodeVersion(
   version: string = process.versions.node,
-  minimumMajor: number = 24,
+  minimumMajor: number = 26,
 ): void {
   const normalizedVersion = version.trim();
   const isValidVersion = /^\d+(?:\.\d+){0,2}$/.test(normalizedVersion);
@@ -46,7 +46,7 @@ export function assertSupportedNodeVersion(
 
   if (!isValidVersion || !Number.isFinite(major) || major < minimumMajor) {
     logger.error(
-      `Unsupported Node.js runtime v${normalizedVersion}. Kaseki API service requires Node.js >= ${minimumMajor}. Please upgrade Node or deploy the Docker image built from this repo's Dockerfile (node:24-bookworm-slim).`,
+      `Unsupported Node.js runtime v${normalizedVersion}. Kaseki API service requires Node.js >= ${minimumMajor}. Please upgrade Node or deploy the Docker image built from this repo's Dockerfile (node:26-bookworm-slim).`,
     );
     process.exit(1);
   }

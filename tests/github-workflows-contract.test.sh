@@ -259,7 +259,7 @@ done
 assert_contains "$ROOT_DIR/scripts/verify-docker-npm-pin.mjs" "['view', selector, 'version', 'engines', '--json']" \
   'Docker package verification must query exact selector version and engine metadata'
 assert_contains "$ROOT_DIR/scripts/verify-docker-npm-pin.mjs" "semver.satisfies(NODE_VERSION, nodeRange)" \
-  'Docker package verification must require Node 24 support for every pin'
+  'Docker package verification must require Node 26 support for every pin'
 
 for job in prepare type_check_changed type_check_full checks docker_integration build_candidate scan verify promote; do
   case "$job" in
@@ -431,7 +431,7 @@ assert_not_contains "$ROOT_DIR/package.json" '"test:publish-smoke": "npm run tes
 assert_contains "$ROOT_DIR/package.json" 'node --test scripts/check-trivy-image-findings.test.mjs' \
   'Workflow contract checks must include the Trivy gate behavior tests'
 
-assert_contains "$ROOT_DIR/Dockerfile" 'node:24-bookworm-slim@sha256:' \
+assert_contains "$ROOT_DIR/Dockerfile" 'node:26-bookworm-slim@sha256:' \
   'The Docker base image must be pinned by digest'
 assert_contains "$ROOT_DIR/Dockerfile" 'ARG NODE_IMAGE=docker.io/library/node:' \
   'The Docker base image must use the canonical Docker Official Image'

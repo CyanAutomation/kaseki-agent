@@ -24,7 +24,7 @@ describe('QuickstartCommand credential requirements', () => {
     };
     launch = jest.fn(() => ({ ok: true }));
     (command as any).environmentValidator = {
-      check: () => ({ hasDocker: true, nodeVersion: 'v24.0.0', hasSudo: true, agentsWritable: true }),
+      check: () => ({ hasDocker: true, nodeVersion: 'v26.0.0', hasSudo: true, agentsWritable: true }),
       printSummary: jest.fn(),
     };
     (command as any).secretResolver = {

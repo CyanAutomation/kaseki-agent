@@ -25,7 +25,7 @@ FAKE_BIN="$TMP_DIR/bin"
 mkdir -p "$FAKE_BIN" "$TMP_DIR/results"
 cat > "$FAKE_BIN/node" <<'EOF'
 #!/usr/bin/env bash
-if [ "${1:-}" = "--version" ]; then printf '%s\n' "${FAKE_NODE_VERSION:-v24.0.0}"; else exec "$REAL_NODE" "$@"; fi
+if [ "${1:-}" = "--version" ]; then printf '%s\n' "${FAKE_NODE_VERSION:-v26.0.0}"; else exec "$REAL_NODE" "$@"; fi
 EOF
 cat > "$FAKE_BIN/npm" <<'EOF'
 #!/usr/bin/env bash
@@ -95,7 +95,7 @@ BASELINE_COMMIT_SHA="2222222222222222222222222222222222222222"
 [ "$(baseline_validation_cache_key)" != "$original_key" ] || fail 'baseline SHA did not invalidate the key'
 [ ! -d "$(baseline_validation_cache_dir)" ] || fail 'baseline SHA unexpectedly hit cache'
 BASELINE_COMMIT_SHA="1111111111111111111111111111111111111111"
-FAKE_NODE_VERSION=v26.0.0; export FAKE_NODE_VERSION
+FAKE_NODE_VERSION=v26.1.0; export FAKE_NODE_VERSION
 [ "$(baseline_validation_cache_key)" != "$original_key" ] || fail 'Node runtime identity did not invalidate the key'
 unset FAKE_NODE_VERSION
 FAKE_GO_VERSION=go1.26.0; export FAKE_GO_VERSION

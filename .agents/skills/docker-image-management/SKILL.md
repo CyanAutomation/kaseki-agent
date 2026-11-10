@@ -12,7 +12,7 @@ multi-architecture builds, image size, or the Raspberry Pi Compose setup.
 
 ## Current image layout
 
-- `Dockerfile` uses a digest-pinned `node:24-bookworm-slim` base. Read the
+- `Dockerfile` uses a digest-pinned `node:26-bookworm-slim` base. Read the
   `NODE_IMAGE` argument there for the current tag and digest; do not duplicate
   an old base version in documentation.
 - `docker/image-toolchain/package.json` and its lockfile pin Pi CLI and server

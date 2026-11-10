@@ -124,7 +124,7 @@ export class DoctorCommand extends BaseCommand {
         stdio: this.getOutputStdio(),
       }).trim();
       const major = parseInt(version.replace('v', '').split('.')[0], 10);
-      if (major >= 24) {
+      if (major >= 26) {
         return {
           name: 'Node.js',
           status: 'pass',
@@ -134,7 +134,7 @@ export class DoctorCommand extends BaseCommand {
         return {
           name: 'Node.js',
           status: 'fail',
-          message: `❌ Node.js v24+ required, found ${version}`,
+          message: `❌ Node.js v26+ required, found ${version}`,
         };
       }
     } catch {

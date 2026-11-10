@@ -5,7 +5,7 @@
   "type": "module",
   "license": "MIT",
   "engines": {
-    "node": ">=24"
+    "node": ">=26"
   },
   "os": [
     "linux"
@@ -124,7 +124,7 @@
     "@semantic-release/release-notes-generator": "^14.1.0",
     "@types/express": "^4.17.21",
     "@types/jest": "^30.0.0",
-    "@types/node": "^22.10.5",
+    "@types/node": "^26.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "eslint": "^10.8.0",

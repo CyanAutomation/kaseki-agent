@@ -423,7 +423,7 @@ function main(): void {
   const stderr = process.stderr;
 
   if (stdout && typeof stdout.on === 'function') {
-    stdout.on('error', (err) => {
+    stdout.on('error', (err: NodeJS.ErrnoException) => {
       // EPIPE is expected when downstream closes; don't treat as error
       if (err.code !== 'EPIPE') {
         const errMsg = `stdout_error: ${err.message}`;
@@ -438,7 +438,7 @@ function main(): void {
   }
 
   if (stderr && typeof stderr.on === 'function') {
-    stderr.on('error', (err) => {
+    stderr.on('error', (err: NodeJS.ErrnoException) => {
       // Ignore stderr errors; we're already reporting issues
       if (err.code !== 'EPIPE') {
         const errMsg = `stderr_error: ${err.message}`;

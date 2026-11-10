@@ -44,7 +44,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: "24"
+          node-version: "26"
           cache: npm
       - name: Install ShellCheck
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck ripgrep
@@ -70,7 +70,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: "24"
+          node-version: "26"
           cache: npm
       - run: npm ci
       - run: npm run test:packaging-verification
