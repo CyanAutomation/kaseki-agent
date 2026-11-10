@@ -4,6 +4,24 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.157.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.156.0...v1.157.0) (2026-11-10)
+
+
+### Bug Fixes
+
+* address remaining Senku CI failures ([ae9fc99](https://github.com/CyanAutomation/kaseki-agent/commit/ae9fc993624a49bf0185c6273fb4132aa4f90092))
+* address Senku review feedback ([b03d1be](https://github.com/CyanAutomation/kaseki-agent/commit/b03d1be9ca8106732a9d70cd026f60922f5f5f9f))
+* avoid vulnerable minimatch in dependency review ([26a82a2](https://github.com/CyanAutomation/kaseki-agent/commit/26a82a24c9ef15f6ac192df7559927b42af18966))
+* expand Senku secret paths correctly ([78404af](https://github.com/CyanAutomation/kaseki-agent/commit/78404af44635a70881fb41b9d7cd4197907676fc))
+* resolve Senku PR validation failures ([e6728af](https://github.com/CyanAutomation/kaseki-agent/commit/e6728afa08ffda8da4a24ed29065a5f837d75ae3))
+* suppress ShellCheck EXIT trap false positives ([eb8bc2d](https://github.com/CyanAutomation/kaseki-agent/commit/eb8bc2d7a79b337bfa5fb0ed75466f417957fa46))
+
+
+### Features
+
+* route decision classification through Senku ([c5de968](https://github.com/CyanAutomation/kaseki-agent/commit/c5de968acd53622c8bfadf41a34224a9da20e391))
+* route decision classification through Senku ([#1550](https://github.com/CyanAutomation/kaseki-agent/issues/1550)) ([1ce5509](https://github.com/CyanAutomation/kaseki-agent/commit/1ce550946554390c81c30e68eb5f81a0cce38111))
+
 # [1.156.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.155.2...v1.156.0) (2026-11-08)
 
 
