@@ -34,7 +34,7 @@ function smokeResponse(overrides: Record<string, unknown> = {}) {
 describe('Senku evaluation smoke check', () => {
   const originalFetch = global.fetch;
   const originalEnv = new Map([
-    'NODE_ENV', 'SENKU_URL', 'SENKU_KASEKI_API_TOKEN', 'SENKU_KASEKI_API_TOKEN_FILE', 'KASEKI_SECRETS_DIR',
+    'NODE_ENV', 'HOME', 'SENKU_URL', 'SENKU_KASEKI_API_TOKEN', 'SENKU_KASEKI_API_TOKEN_FILE', 'KASEKI_SECRETS_DIR',
     'KASEKI_DECISION_MODEL', 'KASEKI_DECISION_API_KEY_FILE',
   ].map((name) => [name, process.env[name]]));
 
@@ -78,7 +78,9 @@ describe('Senku evaluation smoke check', () => {
 
   it('skips the opt-in check when the Senku credential is unavailable', async () => {
     delete process.env.SENKU_KASEKI_API_TOKEN;
-    process.env.SENKU_KASEKI_API_TOKEN_FILE = '/missing/senku-token';
+    delete process.env.SENKU_KASEKI_API_TOKEN_FILE;
+    process.env.KASEKI_SECRETS_DIR = '/synthetic/kaseki-no-secrets';
+    process.env.HOME = '';
 
     const result = await testClassificationSmoke(true);
 
