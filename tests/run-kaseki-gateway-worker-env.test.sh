@@ -46,6 +46,8 @@ GATEWAY_KEY_FILE="$TMP_DIR/llm_gateway_api_key"
 printf '%s' 'test-gateway-key' > "$GATEWAY_KEY_FILE"
 chmod 0600 "$GATEWAY_KEY_FILE"
 SENKU_KEY_FILE="$HOST_HOME/senku_kaseki_api_token"
+TILDE=$'\x7e'
+SENKU_RELATIVE_TOKEN_PATH="${TILDE}/senku_kaseki_api_token"
 printf '%s' 'synthetic-senku-machine-token-0123456789abcdef' > "$SENKU_KEY_FILE"
 chmod 0600 "$SENKU_KEY_FILE"
 
@@ -53,7 +55,7 @@ if ! PATH="$FAKE_BIN:$PATH" \
   DOCKER_ARGS_CAPTURE="$DOCKER_ARGS_CAPTURE" \
   KASEKI_ROOT="$KASEKI_ROOT" \
   HOME="$HOST_HOME" \
-  SENKU_KASEKI_API_TOKEN_FILE="~/senku_kaseki_api_token" \
+  SENKU_KASEKI_API_TOKEN_FILE="$SENKU_RELATIVE_TOKEN_PATH" \
   KASEKI_PROVIDER="gateway" \
   LLM_GATEWAY_URL="https://gateway.example.invalid/v1/responses" \
   LLM_GATEWAY_API_KEY_FILE="$GATEWAY_KEY_FILE" \
