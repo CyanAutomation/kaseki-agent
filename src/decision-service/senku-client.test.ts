@@ -1,3 +1,5 @@
+import { ReadableStream } from 'node:stream/web';
+import type { ReadableStreamDefaultController } from 'node:stream/web';
 import {
   MAX_SENKU_RESPONSE_BYTES,
   buildSenkuDecisionRequest,
@@ -264,6 +266,11 @@ describe('Senku decision transport', () => {
       model: 'caller-model',
       maxRetries: 8,
       ...makeOptions(fetchImpl),
+      env: {
+        ...makeOptions(fetchImpl).env,
+        SENKU_KASEKI_API_TOKEN_FILE: '',
+        SENKU_KASEKI_API_TOKEN: TOKEN,
+      },
     });
     expect(result.model).toBe('typesafe/jev-resolved-test');
     expect(result.attemptCount).toBe(1);

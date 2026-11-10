@@ -320,11 +320,11 @@ export async function routeSemanticToolOutput(
     condense: options.condenseThreshold ?? DEFAULT_CONDENSE_THRESHOLD,
   });
   if (selected.disposition === 'preserve') {
-    return { ...preserved(event, text, selected.reason || 'jev_preserved', { attempted: true, metadata, confidence: dispositionAnswer?.type === 'choice' ? dispositionAnswer.confidence : undefined }), disposition: 'preserve', decision: selected, estimatedInputTokens: inputTokens, estimatedOutputTokens: inputTokens, routingLatencyMs };
+    return { ...preserved(event, text, selected.reason || 'jev_preserved', { attempted: true, metadata, confidence: dispositionAnswer?.type === 'choice' ? dispositionAnswer.confidence ?? undefined : undefined }), disposition: 'preserve', decision: selected, estimatedInputTokens: inputTokens, estimatedOutputTokens: inputTokens, routingLatencyMs };
   }
   if (selected.disposition === 'discard') {
     const marker = `[Kaseki omitted routine ${event.toolName} output; operation=${metadata.operation}; estimated_tokens=${inputTokens}; result=${event.isError ? 'error' : 'successful-or-unknown'}.]`;
-    return { attempted: true, transformed: true, route: 'discard', reason: 'jev_selected_conservative_discard', confidence: dispositionAnswer?.type === 'choice' ? dispositionAnswer.confidence : undefined, inputChars: text.length, outputChars: marker.length, savedChars: text.length - marker.length, content: [{ type: 'text', text: marker }], metadata, disposition: 'discard', decision: selected, estimatedInputTokens: inputTokens, estimatedOutputTokens: Math.ceil(Buffer.byteLength(marker) / 4), routingLatencyMs };
+    return { attempted: true, transformed: true, route: 'discard', reason: 'jev_selected_conservative_discard', confidence: dispositionAnswer?.type === 'choice' ? dispositionAnswer.confidence ?? undefined : undefined, inputChars: text.length, outputChars: marker.length, savedChars: text.length - marker.length, content: [{ type: 'text', text: marker }], metadata, disposition: 'discard', decision: selected, estimatedInputTokens: inputTokens, estimatedOutputTokens: Math.ceil(Buffer.byteLength(marker) / 4), routingLatencyMs };
   }
   const repeatedCompaction = compactResult(event, text);
   const transformed = repeatedCompaction ?? summarizeCodeRead(event, text);
@@ -336,7 +336,7 @@ export async function routeSemanticToolOutput(
     transformed: true,
     route: repeatedCompaction !== undefined ? 'compact_repeated' : 'structural_code',
     reason: 'jev_selected_condense_caveman_transform',
-    confidence: dispositionAnswer?.type === 'choice' ? dispositionAnswer.confidence : undefined,
+    confidence: dispositionAnswer?.type === 'choice' ? dispositionAnswer.confidence ?? undefined : undefined,
     inputChars: text.length,
     outputChars: transformed.length,
     savedChars: text.length - transformed.length,
