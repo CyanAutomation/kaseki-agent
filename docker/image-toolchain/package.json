@@ -4,14 +4,14 @@
   "private": true,
   "description": "Pinned Node tools installed in the Kaseki container image",
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "1.5.0",
-    "@earendil-works/pi-server": "0.87.1",
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@earendil-works/pi-server": "1.1.0",
     "brace-expansion": "5.0.12",
     "brace-expansion-v1": "npm:brace-expansion@1.1.21",
     "brace-expansion-v2": "npm:brace-expansion@2.1.7",
     "bun": "1.4.3",
     "npm": "11.21.0",
-    "undici": "8.12.2",
+    "undici": "8.12.3",
     "undici-v6": "npm:undici@6.29.1",
     "undici-v7": "npm:undici@7.30.1"
   },
@@ -23,11 +23,11 @@
     },
     "@earendil-works/pi-coding-agent": {
       "brace-expansion": "5.0.12",
-      "undici": "8.12.2"
+      "undici": "8.12.3"
     },
     "@earendil-works/pi-server": {
       "brace-expansion": "5.0.12",
-      "undici": "8.12.2"
+      "undici": "8.12.3"
     }
   }
 }
