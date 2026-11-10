@@ -77,8 +77,8 @@ TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback 
 resolve_senku_host_secret_file() {
   if [ -n "${SENKU_KASEKI_API_TOKEN_FILE:-}" ]; then
     case "$SENKU_KASEKI_API_TOKEN_FILE" in
-      '~') printf '%s' "${HOME:-~}" ;;
-      '~/'*) printf '%s/%s' "${HOME:-}" "${SENKU_KASEKI_API_TOKEN_FILE#~/}" ;;
+      \~) printf '%s' "${HOME:-~}" ;;
+      \~/*) printf '%s/%s' "${HOME:-}" "${SENKU_KASEKI_API_TOKEN_FILE#~/}" ;;
       *) printf '%s' "$SENKU_KASEKI_API_TOKEN_FILE" ;;
     esac
     return 0

@@ -1109,6 +1109,13 @@ function classificationFailure(error: unknown): Pick<ClassificationSmokeTestResu
     };
   }
 
+  if (error.category === 'invalid_response') {
+    return {
+      detail: 'Senku returned an invalid response.',
+      remediation: 'Check the Senku decision response contract and service diagnostics, then retry the opt-in Evaluation stage check.',
+    };
+  }
+
   return {
     detail: `Senku decision request failed (${error.category}).`,
     remediation: 'Check the decision request contract and Senku diagnostics, then retry the opt-in Evaluation stage check.',
