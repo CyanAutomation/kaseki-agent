@@ -98,9 +98,9 @@ describe('Docker global package registry verification', () => {
     expect(response.result).toEqual([
       { name: 'bun', selector: 'bun@1.4.3' },
       { name: 'npm', selector: 'npm@11.21.0' },
-      { name: '@earendil-works/pi-coding-agent', selector: '@earendil-works/pi-coding-agent@1.5.0' },
-      { name: '@earendil-works/pi-server', selector: '@earendil-works/pi-server@0.87.1' },
-      { name: 'undici', selector: 'undici@8.12.2' },
+      { name: '@earendil-works/pi-coding-agent', selector: '@earendil-works/pi-coding-agent@1.5.2' },
+      { name: '@earendil-works/pi-server', selector: '@earendil-works/pi-server@1.1.0' },
+      { name: 'undici', selector: 'undici@8.12.3' },
       { name: 'undici-v6', selector: 'undici@6.29.1' },
       { name: 'undici-v7', selector: 'undici@7.30.1' },
       { name: 'brace-expansion', selector: 'brace-expansion@5.0.12' },
@@ -110,8 +110,8 @@ describe('Docker global package registry verification', () => {
     expect(manifest.overrides).toEqual({
       'brace-expansion': '5.0.12',
       npm: { 'brace-expansion': '5.0.12', undici: '6.29.1' },
-      '@earendil-works/pi-coding-agent': { 'brace-expansion': '5.0.12', undici: '8.12.2' },
-      '@earendil-works/pi-server': { 'brace-expansion': '5.0.12', undici: '8.12.2' },
+      '@earendil-works/pi-coding-agent': { 'brace-expansion': '5.0.12', undici: '8.12.3' },
+      '@earendil-works/pi-server': { 'brace-expansion': '5.0.12', undici: '8.12.3' },
     });
   });
 
@@ -120,7 +120,7 @@ describe('Docker global package registry verification', () => {
       packages: Record<string, { version?: string }>;
     };
     expect(lock.packages['node_modules/brace-expansion']?.version).toBe('5.0.12');
-    expect(lock.packages['node_modules/undici']?.version).toBe('8.12.2');
+    expect(lock.packages['node_modules/undici']?.version).toBe('8.12.3');
     expect(lock.packages['node_modules/undici-v6']?.version).toBe('6.29.1');
     expect(lock.packages['node_modules/undici-v7']?.version).toBe('7.30.1');
     expect(lock.packages['node_modules/brace-expansion-v1']?.version).toBe('1.1.21');

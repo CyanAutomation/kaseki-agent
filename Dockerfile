@@ -98,7 +98,7 @@ COPY --from=deps /opt/kaseki/workspace-cache /opt/kaseki/workspace-cache
 
 # Create a wrapper script for the Pi CLI that properly resolves node modules
 # and explicitly loads Kaseki's bundled gateway provider extension. The pinned
-# Pi coding-agent is 1.5.0; it does not auto-discover image-bundled home
+# Pi coding-agent is 1.5.2; it does not auto-discover image-bundled home
 # extensions for non-interactive commands such as --list-models, so relying on
 # implicit discovery makes preflight pass/fail depend on Pi internals.
 RUN mkdir -p /usr/local/bin && printf '%s\n' \
