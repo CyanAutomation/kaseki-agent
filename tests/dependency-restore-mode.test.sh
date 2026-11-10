@@ -36,7 +36,7 @@ cat > "$TMP_DIR/package-lock.json" <<'LOCK'
 LOCK
 
 lock_hash="$(sha256sum "$TMP_DIR/package-lock.json" | awk '{print $1}')"
-node_major="24"
+node_major="26"
 
 KASEKI_NPM_OMIT_DEV=0
 KASEKI_INSTALL_IGNORE_SCRIPTS=1

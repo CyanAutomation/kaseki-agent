@@ -1,7 +1,7 @@
 /**
  * TypeScript Compiler API based code summarizer
  * Pure JavaScript implementation using ts.createSourceFile() for AST parsing
- * No native dependencies - works with Node 24 and ARM64
+ * No native dependencies - works with Node 26 and ARM64
  */
 import * as ts from 'typescript';
 import { SupportedLanguage } from './summarizer-config';

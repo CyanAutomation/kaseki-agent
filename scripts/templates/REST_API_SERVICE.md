@@ -37,7 +37,7 @@ The API service acts as a broker, accepting HTTP requests and managing kaseki in
 ## Prerequisites
 
 - Docker (required)
-- Docker Compose (recommended) or Node.js ≥24.x (fallback)
+- Docker Compose (recommended) or Node.js ≥26.x (fallback)
 - LLM Gateway URL and API key for coding inference
 - Port 8080 available (or configure different port)
 

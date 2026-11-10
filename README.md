@@ -76,7 +76,7 @@ workspace behavior.
 
 ## Develop locally
 
-Development requires Linux, Node.js 24 or later, npm, and ShellCheck. The package
+Development requires Linux, Node.js 26 or later, npm, and ShellCheck. The package
 manager integration tests also require Bun 1.4.3:
 
 ```bash

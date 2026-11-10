@@ -154,19 +154,19 @@ describe('SetupOrchestrator', () => {
   describe('Node version validation', () => {
     it('should validate supported Node version boundaries deterministically', () => {
       expect(() => {
-        setupOrchestrator.assertSupportedNodeVersion('24.0.0', 24);
+        setupOrchestrator.assertSupportedNodeVersion('26.0.0', 26);
       }).not.toThrow();
 
       expect(() => {
-        setupOrchestrator.assertSupportedNodeVersion('25.1.2', 24);
+        setupOrchestrator.assertSupportedNodeVersion('27.1.2', 26);
       }).not.toThrow();
 
       expect(() => {
-        setupOrchestrator.assertSupportedNodeVersion('23.9.0', 24);
+        setupOrchestrator.assertSupportedNodeVersion('25.9.0', 26);
       }).toThrow('process.exit(1) called');
 
       expect(() => {
-        setupOrchestrator.assertSupportedNodeVersion('not-a-version', 24);
+        setupOrchestrator.assertSupportedNodeVersion('not-a-version', 26);
       }).toThrow('process.exit(1) called');
     });
   });

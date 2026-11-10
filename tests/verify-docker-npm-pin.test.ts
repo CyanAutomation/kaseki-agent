@@ -37,7 +37,7 @@ try {
       verifyDockerPackagePins(payload.manifest, (selector) => {
         queried.push(selector);
         const version = selector.slice(selector.lastIndexOf('@') + 1);
-        return selector.startsWith('bun@') ? { version } : { version, engines: { node: '>=24' } };
+        return selector.startsWith('bun@') ? { version } : { version, engines: { node: '>=26' } };
       });
       result = queried;
     } finally {
@@ -179,6 +179,6 @@ describe('Docker global package registry verification', () => {
   test('rejects an incompatible Node engine range', () => {
     const response = JSON.parse(runVerifier('verify', { pin, metadata: fixture('incompatible-engine') })) as { ok: boolean; message: string };
     expect(response.ok).toBe(false);
-    expect(response.message).toBe('example@1.2.3 is incompatible with Node 24 (engines.node=^22)');
+    expect(response.message).toBe('example@1.2.3 is incompatible with Node 26 (engines.node=^22)');
   });
 });

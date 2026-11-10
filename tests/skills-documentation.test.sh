@@ -74,9 +74,9 @@ check_skill_examples_match_current_project() {
     fail "dependency-cache skill: contains obsolete CLI or broad image-prune command"
   fi
   if grep -q -E 'node-version:.*22|actions/(checkout|setup-node)@v3' "$test_skill"; then
-    fail "test-automation skill: CI example does not match the current Node 24 workflow"
+    fail "test-automation skill: CI example does not match the current Node 26 workflow"
   fi
-  grep -q 'Node.js 24 or later' "$test_skill" || \
+  grep -q 'Node.js 26 or later' "$test_skill" || \
     fail "test-automation skill: missing the current Node.js requirement"
   if grep -q -E 'openrouter/free|\$0\.00 per run|Longer timeout = faster' "$performance_skill"; then
     fail "performance skill: contains unsupported model, pricing, or timeout claims"

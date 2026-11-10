@@ -47,7 +47,7 @@ describe('DoctorCommand', () => {
     (accessSync as jest.Mock).mockReturnValue(undefined);
     (readFileSync as jest.Mock).mockReturnValue('secret\n');
     (execSync as jest.Mock).mockImplementation((command: string) => {
-      if (command === 'node --version') return 'v24.0.0\n';
+      if (command === 'node --version') return 'v26.0.0\n';
       if (command === 'npm --version') return '11.0.0\n';
       if (command === 'git --version') return 'git version 2.45.0\n';
       return '';

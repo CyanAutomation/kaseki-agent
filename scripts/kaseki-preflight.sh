@@ -100,7 +100,7 @@ get_install_command() {
         git) echo "sudo apt install -y git" ;;
         curl) echo "sudo apt install -y curl" ;;
         wget) echo "sudo apt install -y wget" ;;
-        node|npm) echo "curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - && sudo apt install -y nodejs" ;;
+        node|npm) echo "curl -fsSL https://deb.nodesource.com/setup_26.x | sudo -E bash - && sudo apt install -y nodejs" ;;
         sshpass) echo "sudo apt install -y sshpass" ;;
         *) echo "sudo apt install -y $bin" ;;
       esac
@@ -111,7 +111,7 @@ get_install_command() {
         git) echo "sudo dnf install -y git" ;;
         curl) echo "sudo dnf install -y curl" ;;
         wget) echo "sudo dnf install -y wget" ;;
-        node|npm) echo "curl -fsSL https://rpm.nodesource.com/setup_24.x | sudo bash - && sudo dnf install -y nodejs" ;;
+        node|npm) echo "curl -fsSL https://rpm.nodesource.com/setup_26.x | sudo bash - && sudo dnf install -y nodejs" ;;
         sshpass) echo "sudo dnf install -y sshpass" ;;
         *) echo "sudo dnf install -y $bin" ;;
       esac

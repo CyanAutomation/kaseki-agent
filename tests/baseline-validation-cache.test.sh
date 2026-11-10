@@ -25,7 +25,7 @@ FAKE_BIN="$TMP_DIR/bin"
 mkdir -p "$FAKE_BIN" "$TMP_DIR/results"
 cat > "$FAKE_BIN/node" <<'EOF'
 #!/usr/bin/env bash
-if [ "${1:-}" = "--version" ]; then printf '%s\n' "${FAKE_NODE_VERSION:-v24.0.0}"; else exec "$REAL_NODE" "$@"; fi
+if [ "${1:-}" = "--version" ]; then printf '%s\n' "${FAKE_NODE_VERSION:-v26.0.0}"; else exec "$REAL_NODE" "$@"; fi
 EOF
 cat > "$FAKE_BIN/npm" <<'EOF'
 #!/usr/bin/env bash
