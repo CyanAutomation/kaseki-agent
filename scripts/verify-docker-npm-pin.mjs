@@ -17,7 +17,7 @@ const REQUIRED_PACKAGES = [
   { name: 'brace-expansion-v1', dependency: 'brace-expansion-v1', registryName: 'brace-expansion' },
   { name: 'brace-expansion-v2', dependency: 'brace-expansion-v2', registryName: 'brace-expansion' },
 ];
-const NODE_VERSION = '24.0.0';
+const NODE_VERSION = '26.0.0';
 
 export function extractImageToolchainSelectors(manifest) {
   const selectors = new Map();
@@ -84,7 +84,7 @@ export function verifyPackageMetadata({ selector }, metadata, { allowMissingNode
   if (!nodeRange && allowMissingNodeEngine) return;
   if (!nodeRange || !semver.satisfies(NODE_VERSION, nodeRange)) {
     throw new Error(
-      `${selector} is incompatible with Node 24 (engines.node=${nodeRange ?? 'missing'})`,
+      `${selector} is incompatible with Node 26 (engines.node=${nodeRange ?? 'missing'})`,
     );
   }
 }
@@ -99,7 +99,7 @@ export function verifyDockerPackagePins(manifest, query = queryRegistryMetadata)
     verifyPackageMetadata(packagePin, metadata, { allowMissingNodeEngine });
     console.log(
       metadata.engines?.node
-        ? `${packagePin.selector} is published and supports Node 24 (${metadata.engines.node}).`
+        ? `${packagePin.selector} is published and supports Node 26 (${metadata.engines.node}).`
         : `${packagePin.selector} is published and has no Node engine metadata.`,
     );
   }

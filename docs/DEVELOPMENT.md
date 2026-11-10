@@ -46,7 +46,7 @@ are documented in the [CLI reference](CLI.md).
 
 ## Development environment
 
-The npm package supports Linux and requires Node.js 24 or later. Install
+The npm package supports Linux and requires Node.js 26 or later. Install
 ShellCheck to run the full lint command. Bun 1.4.3 is needed only for the target
 repository package-manager integration tests; Docker is needed for Docker-backed
 integration checks.
@@ -98,7 +98,7 @@ contribution expectations.
 
 ## CI workflow
 
-The GitHub Actions validation job uses Node.js 24, installs ShellCheck and the
+The GitHub Actions validation job uses Node.js 26, installs ShellCheck and the
 pinned Bun version, installs npm dependencies with `npm ci`, and runs lint,
 documentation checks, and the CI test suite. Keep local instructions aligned
 with the scripts in `package.json` and the workflow in `.github/workflows/ci.yml`.

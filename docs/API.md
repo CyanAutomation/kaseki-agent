@@ -157,7 +157,7 @@ curl -H "Authorization: Bearer sk-your-api-key" \
   "templateRef": "abc1234",
   "resultsDir": "/agents/kaseki-results",
   "runtime": {
-    "nodeVersion": "v24.15.0",
+    "nodeVersion": "v26.13.0",
     "uid": 1000,
     "gid": 1000,
     "groups": [1000, 985]

@@ -21,7 +21,7 @@ reports and superseded guides are under `docs/archive/`.
 
 ## Development
 
-Use Node.js 24 or later and install dependencies with `npm ci`. The standard
+Use Node.js 26 or later and install dependencies with `npm ci`. The standard
 checks are:
 
 ```bash

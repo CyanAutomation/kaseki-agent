@@ -31,7 +31,7 @@ npx kaseki-agent secrets list
 
 | Requirement | Needed for | Description |
 |-------------|------------|-------------|
-| **Node.js v24 or higher** | All npm workflows | JavaScript runtime for the CLI |
+| **Node.js v26 or higher** | All npm workflows | JavaScript runtime for the CLI |
 | **npm** | Install and `npx` usage | Package manager |
 | **git** | Setup checks and agent service runs | Repository access |
 | **Docker** | Local API service / worker execution | Required by the Kaseki API service when it launches agent containers; not required to print command help |
