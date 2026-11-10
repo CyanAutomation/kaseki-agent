@@ -375,13 +375,14 @@ describe('Scouting Template: Task Validation', () => {
     baseContent = loadTemplate('base.txt');
   });
 
-  test('task validation section exists', () => {
-    expect(baseContent).toMatch(/TASK.*VALIDATION|validation.*task/i);
-  });
-
   // Task Validation requirement: valid examples must name an action, code target, and behavior.
   test.each([
     ['base.txt task-validation section', () => baseContent, true],
+    [
+      'template without a task-validation section',
+      () => '## [OUTPUT SCHEMA]\n**Valid tasks** (proceed with scouting):\n- Fix null-safety in parseRole() in src/lib/role.ts',
+      false,
+    ],
     [
       'unrelated prose containing validity markers',
       () => `## [TASK VALIDATION - Ensure Task is Valid Before Scouting]
@@ -391,7 +392,7 @@ This unrelated prose calls something a valid task and includes ✓ without docum
 - Make the code better`,
       false,
     ],
-  ])('%s satisfies the valid-task-example contract', (_name, templateFactory, expected) => {
+  ])('%s satisfies the valid-task-example contract [SCOUTING_PROMPT_DESIGN § Task Validation]', (_name, templateFactory, expected) => {
     expect(satisfiesValidTaskExamplesContract(templateFactory())).toBe(expected);
   });
 

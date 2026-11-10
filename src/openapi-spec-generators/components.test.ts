@@ -55,16 +55,6 @@ describe('OpenAPI Component Builders', () => {
   });
 
   describe('buildInfo', () => {
-    it('should build API info metadata', () => {
-      const info = buildInfo();
-
-      expect(info).toHaveProperty('title');
-      expect(info).toHaveProperty('version');
-      expect(info).toHaveProperty('description');
-      expect(info).toHaveProperty('contact');
-      expect(info).toHaveProperty('license');
-    });
-
     it('should have correct title and version', () => {
       const info = buildInfo();
       const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf-8'));
@@ -147,36 +137,8 @@ describe('OpenAPI Component Builders', () => {
   });
 
   describe('buildComponents', () => {
-    it('should build components object with schemas', () => {
-      const testSchemas = {
-        TestSchema: { type: 'object', properties: { id: { type: 'string' } } },
-      };
-
-      const components = buildComponents(testSchemas);
-
-      expect(components).toHaveProperty('schemas');
-      expect(components).toHaveProperty('securitySchemes');
-    });
-
-    it('should include passed schemas', () => {
-      const testSchemas = {
-        CustomSchema: { type: 'object' },
-      };
-
-      const components = buildComponents(testSchemas);
-
-      expect(components.schemas).toEqual(testSchemas);
-    });
-
-    it('should include security schemes', () => {
-      const testSchemas = {};
-      const components = buildComponents(testSchemas);
-
-      expect(components.securitySchemes).toBeDefined();
-      expect(components.securitySchemes).toHaveProperty('BearerAuth');
-    });
-
-    it('should aggregate all schemas passed', () => {
+    it('preserves supplied schemas and exposes bearer authentication in the OpenAPI components', () => {
+      // Sources: OpenAPI 3.1.1 Components Object and the authentication contract in docs/API.md.
       const testSchemas = {
         Schema1: { type: 'object' },
         Schema2: { type: 'array' },
@@ -185,8 +147,14 @@ describe('OpenAPI Component Builders', () => {
 
       const components = buildComponents(testSchemas);
 
-      expect(Object.keys(components.schemas as Record<string, unknown>)).toHaveLength(3);
       expect(components.schemas).toEqual(testSchemas);
+      expect(components.securitySchemes).toMatchObject({
+        BearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'token',
+        },
+      });
     });
   });
 
@@ -310,8 +278,8 @@ describe('OpenAPI Component Builders', () => {
 
   describe('Info Object Structure', () => {
     it('OpenAPI 3.1 Info Object contract: exposes semantic package identity, version, contact, and license metadata', () => {
-      // Contract source: generateOpenAPISpec() emits buildInfo() as the root OpenAPI `info` object.
-      // OpenAPI 3.1 requires `title` and `version`; this generator also requires real contact/license metadata.
+      // Source: OpenAPI Specification 3.1.1, Info Object (#info-object). The API emits this as its root `info` object.
+      // `title` and `version` are required; contact and license metadata must match this package's identity.
       const info = buildInfo();
       const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf-8')) as {
         author: string;
@@ -357,14 +325,5 @@ describe('OpenAPI Component Builders', () => {
       expect(licenseUrl.pathname).toContain('/LICENSE');
     });
 
-    it('license object should be complete', () => {
-      const info = buildInfo();
-      const license = info.license as Record<string, unknown>;
-
-      expect(license).toHaveProperty('name');
-      expect(license).toHaveProperty('url');
-      expect(typeof license.name).toBe('string');
-      expect(typeof license.url).toBe('string');
-    });
   });
 });

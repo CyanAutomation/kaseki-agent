@@ -639,39 +639,7 @@ describe('gateway connectivity and provider smoke contracts', () => {
     });
   });
 
-  describe('GatewayTestResult type', () => {
-    it('should have all required fields', () => {
-      const result: GatewayTestResult = {
-        status: 'ok',
-        detail: 'Gateway is responsive',
-        gatewayUrl: 'https://example.com/v1/responses',
-        responseTime: 125,
-        timestamp: new Date().toISOString(),
-        authenticationValidated: true,
-      };
-
-      expect(result.status).toBe('ok');
-      expect(result.detail).toBeDefined();
-      expect(result.gatewayUrl).toBeDefined();
-      expect(result.responseTime).toBeDefined();
-      expect(result.timestamp).toBeDefined();
-      expect(result.authenticationValidated).toBeDefined();
-    });
-
-    it('should support optional fields like remediation', () => {
-      const result: GatewayTestResult = {
-        status: 'error',
-        detail: 'Configuration missing',
-        gatewayUrl: undefined,
-        responseTime: 0,
-        timestamp: new Date().toISOString(),
-        authenticationValidated: false,
-        remediation: 'Set LLM_GATEWAY_URL environment variable',
-      };
-
-      expect(result.remediation).toBeDefined();
-    });
-
+  describe('Gateway response formatting', () => {
     it('formats optional latency warnings', () => {
       const result: GatewayTestResult = {
         status: 'ok',
