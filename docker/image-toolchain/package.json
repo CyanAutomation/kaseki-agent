@@ -4,7 +4,7 @@
   "private": true,
   "description": "Pinned Node tools installed in the Kaseki container image",
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.87.1",
+    "@earendil-works/pi-coding-agent": "1.5.0",
     "@earendil-works/pi-server": "0.87.1",
     "brace-expansion": "5.0.12",
     "brace-expansion-v1": "npm:brace-expansion@1.1.21",
