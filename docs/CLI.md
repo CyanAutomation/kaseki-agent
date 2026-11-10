@@ -309,18 +309,20 @@ STORAGE LOCATIONS
   - Host contract:       dir 0750, files 0640, group id KASEKI_CONTAINER_GID
 
 REQUIRED HOST SECRETS
-  openrouter_api_key      OpenRouter LLM gateway API key
+  llm_gateway_api_key     LLM Gateway coding inference key
   github_app_private_key  GitHub App PEM private key
   kaseki_api_keys         Bearer tokens for the API service
+
+OPTIONAL DECISION SECRET
+  senku_kaseki_api_token  Senku Kaseki machine token; decision stages degrade safely when absent
 
 GitHub App IDs are public configuration values supplied through GITHUB_APP_ID
 and GITHUB_APP_CLIENT_ID, not files managed by the secrets command.
 
 EXAMPLES
   kaseki-agent secrets init                                          # Create directories
-  kaseki-agent secrets set openrouter_api_key sk-or-...             # Store a key
-  kaseki-agent secrets get openrouter_api_key                       # Check existence
-  kaseki-agent secrets get openrouter_api_key --show                # Display value
+  ./scripts/setup-pi.sh                                           # Securely install the LLM Gateway key
+  ./scripts/kaseki-setup.sh                                       # Optionally install the Senku token
   kaseki-agent secrets list                                         # All stored keys
   kaseki-agent secrets delete my_secret                             # Remove a key
   kaseki-agent secrets doctor                                       # Audit permissions

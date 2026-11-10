@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { DecisionRequest, DecisionResult, DecisionService } from './decision-service';
-import { JevClassificationError } from './jev-classifier';
+import { DecisionServiceError } from './decision-service';
 import { evaluateWorkflow, type DecisionWorkflowDependencies } from './jev-workflow-evaluator';
 import type { ClassificationAnswer } from './types/openrouter-decisions';
 
@@ -42,7 +42,7 @@ function successfulService(providerId = 'test-provider'): DecisionService {
       answers: answersFor(request),
       usage: { input_tokens: 120, output_tokens: 24 },
       responseTime: 37,
-      attemptCount: 2,
+      attemptCount: 1,
     }),
   };
 }
@@ -104,19 +104,18 @@ describe('decision workflow telemetry', () => {
         provider: 'test-provider',
         model: 'test/model',
         outcome,
-        attemptCount: 2,
+        attemptCount: 1,
         usage: { input_tokens: 120, output_tokens: 24 },
       }),
     ]);
   });
 
   it('records the HTTP status and provider request ID when Run Evaluation is unavailable', async () => {
-    const error = new JevClassificationError(
-      'http',
-      'OpenRouter decision endpoint returned HTTP 400',
-      400,
-      'request-400-test',
-    );
+    const error = new DecisionServiceError('invalid_request', {
+      httpStatus: 400,
+      requestId: 'request-400-test',
+      attemptCount: 1,
+    });
 
     await expect(evaluateWorkflow('run-evaluation', resultsDir, '1', {
       decisionService: {
@@ -129,7 +128,7 @@ describe('decision workflow telemetry', () => {
       expect.objectContaining({
         stage: 'run_evaluation',
         status: 'unavailable',
-        errorCode: 'http',
+        errorCode: 'invalid_request',
         httpStatus: 400,
         requestId: 'request-400-test',
       }),
@@ -158,6 +157,28 @@ describe('decision workflow telemetry', () => {
       overall_assessment: 'poor',
       reviewer_confidence: 'low',
       task_completion_score: 2,
+    });
+  });
+
+  it('does not convert null choice or score confidence into a high run evaluation', async () => {
+    const service = successfulService();
+    const artifact = await evaluateWorkflow('run-evaluation', resultsDir, '1', {
+      decisionService: {
+        ...service,
+        decide: async (request) => {
+          const result = await service.decide(request);
+          for (const answer of Object.values(result.answers)) {
+            if (answer.type === 'choice' || answer.type === 'score') answer.confidence = null;
+          }
+          return result;
+        },
+      },
+    });
+
+    expect(artifact).toMatchObject({
+      overall_assessment: 'unknown',
+      reviewer_confidence: 'low',
+      task_completion_score: 1,
     });
   });
 
@@ -248,8 +269,7 @@ describe('decision workflow telemetry', () => {
     ['goal-check', 'goal_check'],
     ['run-evaluation', 'run_evaluation'],
   ] as const)('records an unavailable event when %s classification fails', async (mode, stage) => {
-    const error = new JevClassificationError('timeout', 'decision provider timed out');
-    error.attemptCount = 3;
+    const error = new DecisionServiceError('timeout', { attemptCount: 1 });
     const dependencies: DecisionWorkflowDependencies = {
       decisionService: {
         providerId: 'test-provider',
@@ -266,7 +286,7 @@ describe('decision workflow telemetry', () => {
         provider: 'test-provider',
         outcome: 'classification_unavailable',
         errorCode: 'timeout',
-        attemptCount: 3,
+        attemptCount: 1,
         generativeCallsAvoided: 0,
       }),
     ]);
@@ -276,8 +296,7 @@ describe('decision workflow telemetry', () => {
     process.env.KASEKI_VALIDATION_RECOVERY_MODE = 'auto';
     process.env.KASEKI_FAILED_VALIDATION_COMMAND = 'npm test';
     process.env.KASEKI_VALIDATION_RETRY_SAFE_COMMANDS = '["npm test"]';
-    const error = new JevClassificationError('network', 'decision provider unavailable');
-    error.attemptCount = 2;
+    const error = new DecisionServiceError('network', { attemptCount: 1 });
 
     const artifact = await evaluateWorkflow('validation-recovery', resultsDir, '1', {
       decisionService: {
@@ -294,7 +313,7 @@ describe('decision workflow telemetry', () => {
         provider: 'test-provider',
         outcome: 'classification_unavailable',
         errorCode: 'network',
-        attemptCount: 2,
+        attemptCount: 1,
       }),
     ]);
   });
@@ -310,7 +329,7 @@ describe('decision workflow telemetry', () => {
   });
 
   it('preserves the provider failure when writing failure telemetry also fails', async () => {
-    const providerError = new JevClassificationError('http', 'decision provider returned HTTP 503', 503);
+    const providerError = new DecisionServiceError('provider_failure', { httpStatus: 503, attemptCount: 1 });
     const telemetryError = new Error('telemetry disk is full');
     const appendTelemetry = jest.fn(() => { throw telemetryError; });
 
@@ -332,7 +351,7 @@ describe('decision workflow telemetry', () => {
     const artifact = await evaluateWorkflow('validation-recovery', resultsDir, '1', {
       decisionService: {
         providerId: 'test-provider',
-        decide: async () => { throw new JevClassificationError('network', 'decision provider unavailable'); },
+        decide: async () => { throw new DecisionServiceError('network', { attemptCount: 1 }); },
       },
       appendTelemetry,
     });

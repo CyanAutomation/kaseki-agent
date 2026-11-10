@@ -166,21 +166,21 @@ check_environment_variables() {
   log_header "Checking environment variables..."
   
   local required_vars=(
-    "OPENROUTER_API_KEY_FILE"
+    "SENKU_KASEKI_API_TOKEN_FILE"
   )
   
   local missing_vars=0
   
   for var in "${required_vars[@]}"; do
     if [[ -z "${!var}" ]]; then
-      log_warning "$var not set (will use default: /run/secrets/kaseki/openrouter_api_key)"
+      log_warning "$var not set (will use default: /run/secrets/kaseki/senku_kaseki_api_token)"
       ((missing_vars++))
     fi
   done
   
   if (( missing_vars > 0 )); then
     log_info "Suggestion: Set in .env or docker-compose.yml"
-    log_info "  OPENROUTER_API_KEY_FILE=/path/to/api/key/file"
+    log_info "  SENKU_KASEKI_API_TOKEN_FILE=/path/to/senku/kaseki/token/file"
     return 0  # Non-blocking
   fi
   
@@ -206,16 +206,16 @@ check_secrets_directory() {
   log_pass "Secrets directory exists: $secrets_dir"
   
   # Check for API key file
-  local api_key_file="${OPENROUTER_API_KEY_FILE:-$secrets_dir/openrouter_api_key}"
+  local api_key_file="${SENKU_KASEKI_API_TOKEN_FILE:-$secrets_dir/senku_kaseki_api_token}"
   
   if [[ ! -f "$api_key_file" ]]; then
-    log_warning "API key file not found: $api_key_file"
-    log_info "The API service will start but jobs will fail without an API key"
-    log_info "Add the key file before running: kaseki-agent init"
+    log_warning "Optional Senku machine token not found: $api_key_file"
+    log_info "Decision stages will degrade safely; coding inference uses the separate LLM Gateway credential"
+    log_info "Install an approved Kaseki token with: ./scripts/kaseki-setup.sh"
     return 0  # Non-blocking
   fi
   
-  log_pass "API key file exists: $api_key_file"
+  log_pass "Senku machine token file exists: $api_key_file"
   return 0
 }
 

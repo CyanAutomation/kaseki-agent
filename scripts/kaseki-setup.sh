@@ -4,9 +4,8 @@
 #
 # This script:
 # 1. Validates Docker installation (or guides to install)
-# 2. Prompts for OpenRouter API key securely
-# 3. Stores the key in ~/.kaseki/secrets/openrouter_api_key
-# 4. Runs final health checks
+# 2. Optionally stores the Kaseki machine token used for Senku decisions
+# 3. Runs final health checks
 #
 # Usage: ./scripts/kaseki-setup.sh
 
@@ -15,7 +14,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SECRETS_DIR="$HOME/.kaseki/secrets"
-API_KEY_FILE="$SECRETS_DIR/openrouter_api_key"
+SENKU_TOKEN_FILE="$SECRETS_DIR/senku_kaseki_api_token"
 
 # Colors for output
 RED='\033[0;31m'
@@ -85,41 +84,44 @@ check_docker() {
   fi
 }
 
-# Set up OpenRouter API key
-setup_api_key() {
-  print_header "OpenRouter API Key Setup"
+# Set up the optional Senku machine token
+setup_decision_token() {
+  print_header "Optional Senku Decision Credential"
   
   # Create secrets directory
   mkdir -p "$SECRETS_DIR"
   chmod 700 "$SECRETS_DIR"
   
-  # Check if key already exists
-  if [ -f "$API_KEY_FILE" ] && [ -s "$API_KEY_FILE" ]; then
-    print_warning "API key file already exists at $API_KEY_FILE"
-    read -p "Do you want to replace it? (y/n) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-      print_success "Using existing API key"
-      return 0
-    fi
+  # Keep an existing credential unless the operator explicitly replaces it.
+  if [ -f "$SENKU_TOKEN_FILE" ] && [ -s "$SENKU_TOKEN_FILE" ]; then
+    chmod 600 "$SENKU_TOKEN_FILE"
+    print_success "Senku decision credential already exists at $SENKU_TOKEN_FILE"
+    return 0
   fi
-  
-  # Prompt for API key securely
-  echo "You can obtain an API key from: https://openrouter.ai/keys"
-  echo ""
-  read -rsp "Enter your OpenRouter API key (sk-or-v1-...): " API_KEY
+
+  echo "A Senku Kaseki machine token is optional and is issued by the Senku operator."
+  echo "Without it, coding and deterministic checks continue; decision stages degrade safely."
+  read -p "Install the approved Kaseki machine token now? (y/n) " -n 1 -r
   echo
-  
-  # Validate key format
-  if [[ ! "$API_KEY" =~ ^sk-or ]]; then
-    print_error "Invalid API key format. Must start with 'sk-or'"
+  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    print_warning "Senku decision credential not installed; remote decision stages will degrade safely"
+    return 0
+  fi
+
+  # Read the token without putting it in command history or the process list.
+  read -rsp "Enter the approved Kaseki machine token: " SENKU_TOKEN
+  echo
+  if [ "${#SENKU_TOKEN}" -lt 32 ] || [[ "$SENKU_TOKEN" =~ [[:space:]] ]]; then
+    unset SENKU_TOKEN
+    print_error "Invalid Senku machine token format"
     return 1
   fi
-  
-  # Store key securely
-  echo "$API_KEY" > "$API_KEY_FILE"
-  chmod 600 "$API_KEY_FILE"
-  print_success "API key stored in $API_KEY_FILE (mode 600)"
+
+  umask 077
+  printf '%s' "$SENKU_TOKEN" > "$SENKU_TOKEN_FILE"
+  unset SENKU_TOKEN
+  chmod 600 "$SENKU_TOKEN_FILE"
+  print_success "Senku machine token stored in $SENKU_TOKEN_FILE (mode 600)"
 }
 
 # Run preflight checks
@@ -160,8 +162,8 @@ run_health_check() {
 offer_shell_profile_update() {
   print_header "Shell Profile Configuration (Optional)"
   
-  echo "Would you like to add the API key path to your shell profile?"
-  echo "This makes running kaseki-agent easier (no need to set OPENROUTER_API_KEY_FILE)."
+  echo "Would you like to add the Senku decision token path to your shell profile?"
+  echo "This makes the optional decision credential available to run-kaseki.sh."
   echo ""
   
   read -p "Add to shell profile? (y/n) " -n 1 -r
@@ -181,11 +183,11 @@ offer_shell_profile_update() {
     return 0
   fi
   
-  EXPORT_LINE="export OPENROUTER_API_KEY_FILE=$API_KEY_FILE"
+  EXPORT_LINE="export SENKU_KASEKI_API_TOKEN_FILE=$SENKU_TOKEN_FILE"
   
   # Check if already in profile
-  if grep -q "OPENROUTER_API_KEY_FILE" "$PROFILE_FILE"; then
-    print_warning "OPENROUTER_API_KEY_FILE already in $PROFILE_FILE"
+  if grep -q "SENKU_KASEKI_API_TOKEN_FILE" "$PROFILE_FILE"; then
+    print_warning "SENKU_KASEKI_API_TOKEN_FILE already in $PROFILE_FILE"
     return 0
   fi
   
@@ -218,9 +220,9 @@ main() {
   fi
   echo ""
   
-  # Step 2: Set up API key
-  if ! setup_api_key; then
-    print_error "Failed to set up API key."
+  # Step 2: Optionally set up the Senku decision token
+  if ! setup_decision_token; then
+    print_error "Failed to set up the Senku decision token."
     exit 1
   fi
   echo ""

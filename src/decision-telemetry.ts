@@ -44,7 +44,7 @@ function safeUsage(usage: Record<string, unknown> | undefined): Record<string, n
 export function summarizeDecisionConfidence(answers: Record<string, ClassificationAnswer>): number | undefined {
   const confidences = Object.values(answers).map((answer) => {
     if (answer.type === 'noul') return Math.max(answer.noul, 1 - answer.noul);
-    return answer.confidence;
+    return answer.confidence ?? 0;
   });
   return confidences.length > 0 ? Math.min(...confidences) : undefined;
 }

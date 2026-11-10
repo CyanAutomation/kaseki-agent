@@ -24,9 +24,10 @@ Disposable Docker worker ── model gateway
         └── store logs, reports, and artifacts
 ```
 
-OpenRouter is an optional credential for configured evaluation stages. It is
-separate from the gateway used for coding inference. The `/ready` endpoint
-confirms API readiness; it does not send a model request. See the
+Senku is the only remote service for typed workflow decisions; its Kaseki
+machine token is optional for degraded local development. It is separate from
+the gateway used for coding inference. The `/ready` endpoint confirms API
+readiness; it does not send a model request. See the
 [environment reference](ENV_VARS.md) for provider configuration and the
 [deployment guide](DEPLOYMENT.md) for the API's security boundary.
 

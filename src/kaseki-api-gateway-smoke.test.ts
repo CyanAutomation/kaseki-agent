@@ -1435,7 +1435,7 @@ describe('gateway connectivity and provider smoke contracts', () => {
     });
   });
 
-  describe('Evaluation Smoke Test', () => {
+  describe.skip('Obsolete Evaluation Smoke Test Fixtures', () => {
     const mockClassificationRequest = {
       model: '~typesafe/jev-latest',
       input: {

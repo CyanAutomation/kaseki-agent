@@ -38,7 +38,7 @@ export function validateClassificationConfidence(
   for (const [question, answer] of Object.entries(answers)) {
     const confidence = answer?.type === 'noul'
       ? Math.max(answer.noul, 1 - answer.noul)
-      : answer?.confidence;
+      : answer?.confidence ?? 0;
 
     const isValidConfidence =
       typeof confidence === 'number' &&
@@ -48,8 +48,7 @@ export function validateClassificationConfidence(
     if (!isValidConfidence) {
       failedQuestions.push(question);
 
-      const confidenceValue =
-        confidence === undefined ? 'undefined' : confidence.toFixed(2);
+      const confidenceValue = confidence.toFixed(2);
 
       messages.push(
         `${question} failed confidence validation: confidence ${confidenceValue} < required ${minConfidence.toFixed(2)}`,

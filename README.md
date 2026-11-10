@@ -24,6 +24,11 @@ it does not contact the model gateway.
 The npm package is a CLI client and host diagnostics tool. It does not install
 the API server or worker image.
 
+Typed workflow decisions use the authenticated Senku service. Kaseki keeps
+task-admission, retry, validation, and publication policy local; see the
+[Senku integration guide](docs/SENKU-INTEGRATION.md) for the optional machine
+credential and outage behavior.
+
 ## Submit a task
 
 The Kaseki API must be running before the CLI can submit work; installing the

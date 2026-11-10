@@ -723,7 +723,8 @@ export class SetupWizard {
     const pathInstructions: Record<ExecutionPath, string> = {
       'single-run': `
 Run a single task with:
-  export OPENROUTER_API_KEY=$(grep openrouter_api_key ${context.secretsPath} | cut -d'"' -f4)
+  # Decision inference uses Senku when the optional machine token is installed.
+  # Coding inference uses the configured LLM Gateway credentials.
   ./run-kaseki.sh --repo https://github.com/user/repo --ref main
       `,
       'local-api': `

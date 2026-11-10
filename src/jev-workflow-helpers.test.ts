@@ -137,6 +137,15 @@ describe('JEV workflow answer helpers', () => {
     expect(assessment.met).toBe(false);
   });
 
+  test('does not accept a not-applicable choice when confidence is null', () => {
+    const assessment = buildGoalCriterionAssessments([
+      { id: 'criterion_1', criterion: 'Add an alternative', appliesWhen: 'The candidate was rejected' },
+    ], {
+      criterion_1_applicability: { type: 'choice', choice: 'not_applicable', probabilities: { not_applicable: 1, applicable: 0, unknown: 0 }, confidence: null },
+    }, 0.8)[0];
+    expect(assessment).toMatchObject({ applicability: 'unknown', status: 'unknown', met: false });
+  });
+
   test('asks for failure triage only when failure evidence exists and marks it advisory', () => {
     const regularQuestions = buildRunEvaluationQuestions(false);
     const failureQuestions = buildRunEvaluationQuestions(true);

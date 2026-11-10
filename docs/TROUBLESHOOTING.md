@@ -178,16 +178,17 @@ provider_error_message: "401 Unauthorized: Invalid API key"
 **Fix:**
 
 ```bash
-# Check if API key is set
-echo $OPENROUTER_API_KEY
-
-# Verify it is valid at provider dashboard. Regenerate if needed.
+# Check whether the configured gateway key file can be read without printing it
+test -r "${LLM_GATEWAY_API_KEY_FILE:-$HOME/.kaseki/secrets/llm_gateway_api_key}" \
+  && echo 'LLM Gateway key file is readable' \
+  || echo 'LLM Gateway key file is missing or unreadable'
 
 # Update credential via wizard
 kaseki-agent init
 
-# Or set directly
-export OPENROUTER_API_KEY=sk-or-...
+# Configure the gateway origin and file path; keep the key in the file
+export LLM_GATEWAY_URL=https://your-openai-compatible-gateway.example/v1
+export LLM_GATEWAY_API_KEY_FILE="$HOME/.kaseki/secrets/llm_gateway_api_key"
 kaseki-agent run <repo> <ref> <task>
 ```
 
@@ -323,14 +324,14 @@ See the [host setup reference](HOST_SETUP_API_REFERENCE.md) for host-level Docke
 - Error: API key not found
 - Container startup shows: "Cannot read secret file"
 
-**Root Cause:** API key or configuration not set, or secret files are inaccessible.
+**Root Cause:** Coding inference gateway configuration is missing, or required secret files are inaccessible. A missing Senku decision token degrades decision stages safely and does not cause this error.
 
 **Diagnosis:**
 
 ```bash
-# Check whether a key is configured without printing its value
-test -n "${OPENROUTER_API_KEY:-}" && echo 'OPENROUTER_API_KEY is set' || echo 'OPENROUTER_API_KEY is unset'
-test -r "${OPENROUTER_API_KEY_FILE:-}" && echo 'OPENROUTER_API_KEY_FILE is readable' || echo 'OPENROUTER_API_KEY_FILE is unset or unreadable'
+# Check configured files without printing secret values
+test -r "${LLM_GATEWAY_API_KEY_FILE:-$HOME/.kaseki/secrets/llm_gateway_api_key}" && echo 'LLM Gateway key file is readable' || echo 'LLM Gateway key file is unset or unreadable'
+test -r "${SENKU_KASEKI_API_TOKEN_FILE:-$HOME/.kaseki/secrets/senku_kaseki_api_token}" && echo 'Senku decision token file is readable' || echo 'Senku decision token file is unset or unreadable (decision stages will degrade)'
 test -r "$HOME/.kaseki/secrets/llm_gateway_api_key" && echo 'Gateway key file is readable' || echo 'Gateway key file is missing or unreadable'
 ```
 
@@ -368,12 +369,11 @@ sudo chmod 0640 "$HOME"/secrets/*
 chmod 0600 "$HOME/.kaseki/secrets/llm_gateway_api_key"
 ```
 
-**Secret Paths (in order of resolution):**
+**Secret Paths:**
 
-1. `OPENROUTER_API_KEY` — Inline environment variable (preferred)
-2. `OPENROUTER_API_KEY_FILE` — Explicit file path
-3. `~/.kaseki/secrets/llm_gateway_api_key` — Local setup wizard secret file
-4. `/run/secrets/kaseki/openrouter_api_key` — Container mount point for the decision-provider key; the host source defaults to `~/secrets`
+- Coding inference uses `LLM_GATEWAY_API_KEY_FILE`, then the mounted or local `llm_gateway_api_key` file.
+- Senku decisions use `SENKU_KASEKI_API_TOKEN_FILE`, then `/run/secrets/kaseki/senku_kaseki_api_token` or `~/.kaseki/secrets/senku_kaseki_api_token`.
+- The Senku token is optional. See [SENKU-INTEGRATION.md](SENKU-INTEGRATION.md) for its resolution and outage behavior.
 
 **Migrating from Legacy Docker Secrets:**
 
@@ -381,8 +381,8 @@ chmod 0600 "$HOME/.kaseki/secrets/llm_gateway_api_key"
 # Use the init wizard
 kaseki-agent init
 
-# Or set OPENROUTER_API_KEY_FILE explicitly
-export OPENROUTER_API_KEY_FILE=/run/secrets/kaseki/openrouter_api_key
+# Set the optional Senku token path explicitly when using a non-standard mount
+export SENKU_KASEKI_API_TOKEN_FILE=/run/secrets/kaseki/senku_kaseki_api_token
 ./run-kaseki.sh
 ```
 

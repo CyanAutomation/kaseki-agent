@@ -77,7 +77,7 @@ A required configuration setting is missing or invalid.
 
 **Common causes:**
 
-- Missing OpenRouter API key
+- Missing LLM Gateway configuration or inaccessible required secret files
 - Incorrect directory paths
 - Invalid Docker image reference
 
@@ -453,7 +453,7 @@ The error occurred but was not retryable, OR the automatic retry also failed. Ex
 
 - The error was retried automatically. If it failed again, this indicates the provider is experiencing prolonged issues.
 - **Wait a few minutes** and retry the run.
-- Check OpenRouter status: <https://status.openrouter.io> or contact their support.
+- Check the configured LLM Gateway and, for decision-stage degradation, see [SENKU-INTEGRATION.md](SENKU-INTEGRATION.md).
 
 **If the error is permanent (404, deprecated, auth failure):**
 
@@ -472,9 +472,8 @@ The error occurred but was not retryable, OR the automatic retry also failed. Ex
 
 3. **For authentication error:**
 
-   - Verify your OpenRouter API key is valid and has not expired
-   - Check your account credits/quota at <https://openrouter.ai>
-   - Refresh your credentials: `kaseki-agent init` (interactive wizard)
+   - Verify the configured LLM Gateway key and endpoint. If the unavailable stage is a JEV decision, check the Senku Kaseki machine token and integration status.
+   - Refresh credentials through the relevant interactive setup script; do not print keys in the terminal.
 
 4. **For invalid configuration:**
 
