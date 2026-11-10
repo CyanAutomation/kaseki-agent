@@ -21,7 +21,8 @@ bash scripts/setup-pi.sh
 The required provider for coding inference is an OpenAI-compatible gateway
 URL and its key. The gateway key stays in `~/secrets/llm_gateway_api_key`;
 Kaseki generates a separate API bearer key. The default API binding is
-localhost. OpenRouter is optional and used only for evaluation stages.
+localhost. The Senku Kaseki machine token is optional and is used only for
+typed decisions; see [Senku integration](SENKU-INTEGRATION.md).
 
 ## Use the npm CLI
 

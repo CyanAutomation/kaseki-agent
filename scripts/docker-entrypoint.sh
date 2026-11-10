@@ -151,33 +151,25 @@ case "${1:-agent}" in
     ;;
   
   run-mode)
-    # One-command run with API key from environment variable
-    # Usage: docker run -e OPENROUTER_API_KEY=sk-or-... kaseki-agent run-mode <repo> <ref>
+  # One-command run. The Senku decision token is optional and file-backed.
+  # Mount it at /run/secrets/kaseki/senku_kaseki_api_token when configured.
     shift || true
-    
-    # Validate API key is provided
-    if [ -z "${OPENROUTER_API_KEY:-}" ]; then
-      echo "Error: OPENROUTER_API_KEY environment variable is required for run-mode" >&2
-      exit 2
+
+    if [ -n "${SENKU_KASEKI_API_TOKEN:-}" ]; then
+      mkdir -p /secrets
+      printf '%s' "$SENKU_KASEKI_API_TOKEN" > /secrets/senku_kaseki_api_token
+      chmod 600 /secrets/senku_kaseki_api_token
+      unset SENKU_KASEKI_API_TOKEN
+      export SENKU_KASEKI_API_TOKEN_FILE=/secrets/senku_kaseki_api_token
     fi
-    
-    # Create secrets directory and store key securely
-    mkdir -p /secrets
-    echo "$OPENROUTER_API_KEY" > /secrets/openrouter_api_key
-    chmod 600 /secrets/openrouter_api_key
-    
-    # Clear env var to avoid exposure in child process
-    unset OPENROUTER_API_KEY
-    
-    # Set required variables and execute agent
-    export OPENROUTER_API_KEY_FILE=/secrets/openrouter_api_key
+
     export KASEKI_INSTANCE="${KASEKI_INSTANCE:-kaseki-run}"
     exec "$KASEKI_AGENT_BIN" "$@"
     ;;
   
   setup-remote)
     # Remote host setup orchestration (runs from controller container)
-    # Usage: docker run kaseki-agent setup-remote <host> <api-key>
+    # Usage: docker run kaseki-agent setup-remote <ssh-target>
     shift || true
     exec /scripts/kaseki-container-setup-remote.sh "$@"
     ;;

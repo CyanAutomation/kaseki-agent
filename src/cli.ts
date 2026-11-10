@@ -161,7 +161,8 @@ DOCUMENTATION
 ENVIRONMENT
   KASEKI_ROOT              Base directory for runs/results (default: /agents)
   KASEKI_API_URL           API base URL for task commands (default: http://localhost:8080/api)
-  OPENROUTER_API_KEY_FILE  Path to API key file (default: ~/.kaseki/secrets.json)
+  LLM_GATEWAY_API_KEY_FILE Path to the coding inference key file
+  SENKU_KASEKI_API_TOKEN_FILE Optional file for Senku decision inference
   DEBUG                    Enable debug output (set to 1)
 `);
 }

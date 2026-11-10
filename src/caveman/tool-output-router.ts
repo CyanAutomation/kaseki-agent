@@ -242,7 +242,8 @@ function semanticDisposition(
     return { preserveProbability: 1, condenseProbability: 0, discardProbability: 0, disposition: 'preserve', reason: 'invalid_jev_probabilities' };
   }
   const probabilityTotal = preserveProbability + condenseProbability + discardProbability;
-  if (Math.abs(probabilityTotal - 1) > 0.03 || !Number.isFinite(answer.confidence) || answer.confidence < 0 || answer.confidence > 1) {
+  if (Math.abs(probabilityTotal - 1) > 0.03 || answer.confidence === null
+    || !Number.isFinite(answer.confidence) || answer.confidence < 0 || answer.confidence > 1) {
     return { preserveProbability: 1, condenseProbability: 0, discardProbability: 0, disposition: 'preserve', reason: 'invalid_jev_probabilities' };
   }
   if (answer.choice === 'discard' && discardProbability >= thresholds.discard) {
@@ -319,11 +320,11 @@ export async function routeSemanticToolOutput(
     condense: options.condenseThreshold ?? DEFAULT_CONDENSE_THRESHOLD,
   });
   if (selected.disposition === 'preserve') {
-    return { ...preserved(event, text, selected.reason || 'jev_preserved', { attempted: true, metadata, confidence: dispositionAnswer?.type === 'choice' ? dispositionAnswer.confidence : undefined }), disposition: 'preserve', decision: selected, estimatedInputTokens: inputTokens, estimatedOutputTokens: inputTokens, routingLatencyMs };
+    return { ...preserved(event, text, selected.reason || 'jev_preserved', { attempted: true, metadata, confidence: dispositionAnswer?.type === 'choice' ? dispositionAnswer.confidence ?? undefined : undefined }), disposition: 'preserve', decision: selected, estimatedInputTokens: inputTokens, estimatedOutputTokens: inputTokens, routingLatencyMs };
   }
   if (selected.disposition === 'discard') {
     const marker = `[Kaseki omitted routine ${event.toolName} output; operation=${metadata.operation}; estimated_tokens=${inputTokens}; result=${event.isError ? 'error' : 'successful-or-unknown'}.]`;
-    return { attempted: true, transformed: true, route: 'discard', reason: 'jev_selected_conservative_discard', confidence: dispositionAnswer?.type === 'choice' ? dispositionAnswer.confidence : undefined, inputChars: text.length, outputChars: marker.length, savedChars: text.length - marker.length, content: [{ type: 'text', text: marker }], metadata, disposition: 'discard', decision: selected, estimatedInputTokens: inputTokens, estimatedOutputTokens: Math.ceil(Buffer.byteLength(marker) / 4), routingLatencyMs };
+    return { attempted: true, transformed: true, route: 'discard', reason: 'jev_selected_conservative_discard', confidence: dispositionAnswer?.type === 'choice' ? dispositionAnswer.confidence ?? undefined : undefined, inputChars: text.length, outputChars: marker.length, savedChars: text.length - marker.length, content: [{ type: 'text', text: marker }], metadata, disposition: 'discard', decision: selected, estimatedInputTokens: inputTokens, estimatedOutputTokens: Math.ceil(Buffer.byteLength(marker) / 4), routingLatencyMs };
   }
   const repeatedCompaction = compactResult(event, text);
   const transformed = repeatedCompaction ?? summarizeCodeRead(event, text);
@@ -335,7 +336,7 @@ export async function routeSemanticToolOutput(
     transformed: true,
     route: repeatedCompaction !== undefined ? 'compact_repeated' : 'structural_code',
     reason: 'jev_selected_condense_caveman_transform',
-    confidence: dispositionAnswer?.type === 'choice' ? dispositionAnswer.confidence : undefined,
+    confidence: dispositionAnswer?.type === 'choice' ? dispositionAnswer.confidence ?? undefined : undefined,
     inputChars: text.length,
     outputChars: transformed.length,
     savedChars: text.length - transformed.length,
@@ -377,10 +378,11 @@ function selectedRoute(
   if (!answer || answer.type !== 'choice' || !['preserve', 'compact_repeated', 'structural_code'].includes(answer.choice)) {
     return { route: 'preserve', reason: 'invalid_jev_answer' };
   }
-  if (!Number.isFinite(answer.confidence) || answer.confidence < confidenceThreshold) {
-    return { route: 'preserve', confidence: answer.confidence, reason: 'low_confidence' };
+  const confidence = answer.confidence ?? 0;
+  if (!Number.isFinite(confidence) || confidence < confidenceThreshold) {
+    return { route: 'preserve', confidence, reason: 'low_confidence' };
   }
-  return { route: answer.choice as CavemanToolOutputRoute, confidence: answer.confidence };
+  return { route: answer.choice as CavemanToolOutputRoute, confidence };
 }
 
 function compactRepeatedLines(text: string): string {

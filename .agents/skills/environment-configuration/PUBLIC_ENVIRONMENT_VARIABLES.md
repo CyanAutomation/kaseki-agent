@@ -33,7 +33,8 @@ Use the [canonical environment reference](../../../docs/ENV_VARS.md) for support
 | `KASEKI_GOAL_SETTING_MAX_TOOL_OUTPUT_TOKENS` | `4000` | Advisory aggregate tool-output target for the goal-setting phase | Positive integer tokens |
 | `KASEKI_GOAL_CHECK_MAX_TOOL_OUTPUT_TOKENS` | `3000` | Advisory aggregate tool-output target for the goal-check phase | Positive integer tokens |
 | `KASEKI_RUN_EVALUATION_MAX_TOOL_OUTPUT_TOKENS` | `3000` | Advisory aggregate tool-output target for the run-evaluation phase | Positive integer tokens |
-| `KASEKI_DECISION_MODEL` | `~typesafe/jev-latest` | Model alias used by Task Admission, Goal Check, Run Evaluation, and validation recovery through the shared DecisionService | A supported model alias |
+| `SENKU_URL` | `https://senku.scheimann.workers.dev` | Trusted Senku origin for authenticated decision requests | HTTPS origin; loopback HTTP is allowed for local tests |
+| `SENKU_KASEKI_API_TOKEN_FILE` | `/run/secrets/kaseki/senku_kaseki_api_token in workers; ~/.kaseki/secrets/senku_kaseki_api_token locally` | File containing the Kaseki machine credential for Senku decisions | Readable file path containing a Senku Kaseki token |
 | `KASEKI_TYPED_EVALUATION_ENABLED` | `1` | Enable structured decision evaluation for Goal Check and Run Evaluation | `0` (disable) or `1` (enable) |
 | `KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD` | `0.8` | Confidence threshold for Goal Check criteria | Number from 0 to 1 |
 | `KASEKI_VALIDATION_RECOVERY_MODE` | `observe` | Validation failure assessment and retry policy | `off`, `observe`, or `auto` |

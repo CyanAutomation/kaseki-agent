@@ -59,11 +59,10 @@ KASEKI_VALIDATION_RECOVERY_MODE="${KASEKI_VALIDATION_RECOVERY_MODE:-observe}"
 KASEKI_VALIDATION_RETRY_SAFE_COMMANDS="${KASEKI_VALIDATION_RETRY_SAFE_COMMANDS:-[]}"
 KASEKI_VALIDATION_RETRY_CONFIDENCE_THRESHOLD="${KASEKI_VALIDATION_RETRY_CONFIDENCE_THRESHOLD:-0.9}"
 KASEKI_VALIDATION_RECOVERY_DECISION_TIMEOUT_MS="${KASEKI_VALIDATION_RECOVERY_DECISION_TIMEOUT_MS:-15000}"
-KASEKI_DECISION_MODEL="${KASEKI_DECISION_MODEL:-~typesafe/jev-latest}"
 RETIRED_EVALUATION_SETTINGS=(
   KASEKI_JEV_WORKFLOW KASEKI_JEV_CONFIDENCE KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS
   KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS KASEKI_JEV_WORKFLOW_EVALUATOR
-  KASEKI_CLASSIFICATION_MODEL KASEKI_JEV_API_KEY_FILE KASEKI_JEV_TASK_TYPE
+  KASEKI_DECISION_API_KEY_FILE KASEKI_DECISION_MODEL KASEKI_CLASSIFICATION_MODEL KASEKI_JEV_API_KEY_FILE KASEKI_JEV_TASK_TYPE
   KASEKI_JEV_VALIDATION_FOCUS
 )
 for retired_setting in "${RETIRED_EVALUATION_SETTINGS[@]}"; do
@@ -75,7 +74,35 @@ done
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
 # The decision-service credential is used only by evaluation stages. Coding
 # inference uses only the configured LLM gateway credential.
-HOST_SECRET_FILE="${OPENROUTER_API_KEY_FILE:-${KASEKI_DECISION_API_KEY_FILE:-${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/openrouter_api_key}}"
+resolve_senku_host_secret_file() {
+  if [ -n "${SENKU_KASEKI_API_TOKEN_FILE:-}" ]; then
+    case "$SENKU_KASEKI_API_TOKEN_FILE" in
+      \~) printf '%s' "${HOME:-~}" ;;
+      \~/*) printf '%s/%s' "${HOME:-}" "${SENKU_KASEKI_API_TOKEN_FILE:2}" ;;
+      *) printf '%s' "$SENKU_KASEKI_API_TOKEN_FILE" ;;
+    esac
+    return 0
+  fi
+
+  if [ -n "${KASEKI_SECRETS_DIR:-}" ]; then
+    printf '%s' "$KASEKI_SECRETS_DIR/senku_kaseki_api_token"
+    return 0
+  fi
+
+  local candidate
+  for candidate in \
+    "${HOME:-}/.kaseki/secrets/senku_kaseki_api_token" \
+    "${HOME:-}/secrets/senku_kaseki_api_token" \
+    "/run/secrets/kaseki/senku_kaseki_api_token"; do
+    if [ -r "$candidate" ]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+
+  printf '%s' "/run/secrets/kaseki/senku_kaseki_api_token"
+}
+HOST_SECRET_FILE="$(resolve_senku_host_secret_file)"
 resolve_gateway_host_secret_file() {
   if [ -n "${LLM_GATEWAY_API_KEY_FILE:-}" ]; then
     printf '%s' "$LLM_GATEWAY_API_KEY_FILE"
@@ -97,7 +124,7 @@ resolve_gateway_host_secret_file() {
 }
 GATEWAY_HOST_SECRET_FILE="$(resolve_gateway_host_secret_file)"
 GATEWAY_WORKER_SECRET_PATH="/run/secrets/kaseki/llm_gateway_api_key"
-DECISION_WORKER_SECRET_PATH="/run/secrets/kaseki/decision_api_key"
+DECISION_WORKER_SECRET_PATH="/run/secrets/kaseki/senku_kaseki_api_token"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
 KASEKI_APPEND_METRICS_JSONL="${KASEKI_APPEND_METRICS_JSONL:-1}"
@@ -806,7 +833,7 @@ RESULT_STAGE_DIR="$(mktemp -d "$RESULTS/.staging-result-${INSTANCE}-XXXXXX")"
 RUN_DIR="$RUN_STAGE_DIR"
 RESULT_DIR="$RESULT_STAGE_DIR"
 WORKSPACE="$RUN_DIR/workspace"
-SECRET_FILE="$RUN_DIR/openrouter_api_key"
+SECRET_FILE="$RUN_DIR/senku_kaseki_api_token"
 GATEWAY_SECRET_FILE="$RUN_DIR/llm_gateway_api_key"
 GITHUB_APP_ID_FILE="$RUN_DIR/github_app_id"
 GITHUB_APP_CLIENT_ID_FILE="$RUN_DIR/github_app_client_id"
@@ -1059,8 +1086,8 @@ initialize_result_artifacts
 write_dry_run_host_start_artifact "$RESULT_DIR"
 
 DECISION_SECRET_STAGED=0
-if [ -n "${OPENROUTER_API_KEY:-}" ]; then
-  key_value="$OPENROUTER_API_KEY"
+if [ -n "${SENKU_KASEKI_API_TOKEN:-}" ]; then
+  key_value="$SENKU_KASEKI_API_TOKEN"
 elif [ -r "$HOST_SECRET_FILE" ]; then
   key_value="$(cat "$HOST_SECRET_FILE")"
 else
@@ -1070,10 +1097,10 @@ if [ -n "$key_value" ]; then
   printf '%s' "$key_value" > "$SECRET_FILE"
   chmod 0600 "$SECRET_FILE"
   DECISION_SECRET_STAGED=1
-  printf 'Evaluation credential source: configured\n'
+  printf 'Senku decision credential source: configured\n'
 else
   if [ "$KASEKI_TYPED_EVALUATION_ENABLED" = "1" ]; then
-    printf 'Evaluation credential is unavailable; evaluation stages will use their configured fallback behavior.\n' >&2
+    printf 'Senku decision credential is unavailable; evaluation stages will use their configured degradation behavior.\n' >&2
   fi
 fi
 unset key_value
@@ -1262,7 +1289,6 @@ docker_args=(
   -e KASEKI_VALIDATION_FOCUS_HINT="${KASEKI_VALIDATION_FOCUS_HINT:-}"
   -e KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS="$KASEKI_GOAL_SETTING_RETRY_TIMEOUT_SECONDS"
   -e KASEKI_TYPED_EVALUATION_ENABLED="$KASEKI_TYPED_EVALUATION_ENABLED"
-  -e KASEKI_DECISION_MODEL="$KASEKI_DECISION_MODEL"
   -e KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD="$KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD"
   -e KASEKI_GOAL_CHECK_DECISION_TIMEOUT_MS="$KASEKI_GOAL_CHECK_DECISION_TIMEOUT_MS"
   -e KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS="$KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS"
@@ -1320,9 +1346,12 @@ if [ "$KASEKI_PROVIDER" = "gateway" ]; then
 fi
 if [ "$DECISION_SECRET_STAGED" -eq 1 ]; then
   docker_args+=(
-    -e KASEKI_DECISION_API_KEY_FILE="$DECISION_WORKER_SECRET_PATH"
+    -e SENKU_KASEKI_API_TOKEN_FILE="$DECISION_WORKER_SECRET_PATH"
     -v "$SECRET_FILE:$DECISION_WORKER_SECRET_PATH:ro"
   )
+fi
+if [ -n "${SENKU_URL:-}" ]; then
+  docker_args+=(-e SENKU_URL="$SENKU_URL")
 fi
 if [ "$GITHUB_APP_ENABLED" = "1" ]; then
   docker_args+=(

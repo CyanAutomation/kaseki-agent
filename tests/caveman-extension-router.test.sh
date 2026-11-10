@@ -8,7 +8,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 KASEKI_APP_ROOT="$ROOT_DIR" \
 KASEKI_RESULTS_DIR="$TMP_DIR/results" \
 LLM_GATEWAY_URL="https://gateway.example.test/v1" \
-OPENROUTER_API_KEY="unit-test-placeholder" \
+SENKU_KASEKI_API_TOKEN="synthetic-senku-kaseki-token-value-1234567890" \
 KASEKI_CAVEMAN=1 \
 KASEKI_CAVEMAN_LEVEL=2 \
 KASEKI_CAVEMAN_ROUTER=jev \

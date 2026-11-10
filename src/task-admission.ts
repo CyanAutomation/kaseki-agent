@@ -1,7 +1,6 @@
-import { resolveOpenRouterApiKey } from './gateway-detection/resolve-openrouter-api-key';
 import { parsePositiveInt } from './lib/env-var-helpers.js';
 import { answerConfidence, answerIsTrue } from './decision-answers';
-import { DEFAULT_DECISION_MODEL, decisionService } from './decision-service';
+import { DecisionServiceError, decisionFailureMetadata, decisionService } from './decision-service';
 import { hasRetiredDecisionSettings } from './jev-classifier';
 import type { ClassificationAnswer, QuestionDefinition } from './types/openrouter-decisions';
 
@@ -29,7 +28,6 @@ export interface TaskAdmissionResult {
 
 export type TaskAdmissionEvaluator = (request: Record<string, unknown>) => Promise<TaskAdmissionResult>;
 
-const DEFAULT_MODEL = DEFAULT_DECISION_MODEL;
 const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_CONFIDENCE_THRESHOLD = 0.8;
 
@@ -149,7 +147,6 @@ function buildClassifiedResult(
 
 export function buildTaskAdmissionRequest(request: Record<string, unknown>): Record<string, unknown> {
   return {
-    model: process.env.KASEKI_DECISION_MODEL || DEFAULT_MODEL,
     state: buildAdmissionState(request),
     questions: {
       contains_credentials: {
@@ -224,25 +221,11 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
     };
   }
 
-  const key = resolveOpenRouterApiKey();
-  if (!key.configured || !key.value) {
-    return {
-      allowed: true,
-      status: 'degraded',
-      degraded: true,
-      reason: 'Task admission evaluation is unavailable; submission allowed by fail-open policy.',
-      responseTime: 0,
-      warnings: ['Evaluation credentials are not configured.'],
-    };
-  }
-
-  const model = process.env.KASEKI_DECISION_MODEL || DEFAULT_MODEL;
   try {
     const requestBody = buildTaskAdmissionRequest(request);
     const parsed = await decisionService.decide({
       state: requestBody.state as string,
       questions: requestBody.questions as Record<string, QuestionDefinition>,
-      model,
       timeoutMs: parsePositiveInt('KASEKI_TASK_ADMISSION_TIMEOUT_MS', DEFAULT_TIMEOUT_MS),
     });
     return buildClassifiedResult(
@@ -251,13 +234,21 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
       started,
     );
   } catch (error) {
+    const failure = decisionFailureMetadata(error);
+    const credentialWarning = error instanceof DecisionServiceError && error.category === 'credentials'
+      ? error.credentialSource === 'none'
+        ? 'Senku decision credentials are not configured.'
+        : error.credentialSource === 'file' || error.credentialSource === 'environment'
+          ? 'Senku decision credentials are invalid or unreadable.'
+          : undefined
+      : undefined;
     return {
       allowed: true,
       status: 'degraded',
       degraded: true,
       reason: 'Task Admission evaluation failed; submission allowed by fail-open policy.',
       responseTime: Math.round(performance.now() - started),
-      warnings: [error instanceof Error ? error.message : String(error)],
+      warnings: [credentialWarning ?? `Senku decision classification is unavailable (${failure.code}).`],
     };
   }
 }

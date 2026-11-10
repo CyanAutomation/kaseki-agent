@@ -165,7 +165,8 @@ Ensure compilation succeeds with no errors or type mismatches.
 ### Example 1: Converting Callbacks to Async/Await
 
 ```bash
-export OPENROUTER_API_KEY="sk-or-..."
+export LLM_GATEWAY_URL="https://your-openai-compatible-gateway.example/v1"
+export LLM_GATEWAY_API_KEY_FILE="$HOME/.kaseki/secrets/llm_gateway_api_key"
 export TASK_PROMPT="Convert the HTTP client from callback-based to async/await.
 Currently: fetchUser(id, (err, user) => { ... })
 Target:   const user = await fetchUser(id); fetchUser(id) // throws on error"

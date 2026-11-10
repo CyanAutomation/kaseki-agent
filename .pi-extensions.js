@@ -86,9 +86,11 @@ export default async function (pi) {
       const appRoot = process.env.KASEKI_APP_ROOT || '/app';
       const routerUrl = pathToFileURL(path.join(appRoot, 'dist/caveman/tool-output-router.js')).href;
       const classifierUrl = pathToFileURL(path.join(appRoot, 'dist/jev-classifier.js')).href;
-      const keyResolverUrl = pathToFileURL(path.join(appRoot, 'dist/gateway-detection/resolve-openrouter-api-key.js')).href;
-      const [router, jev, keyResolver] = await Promise.all([import(routerUrl), import(classifierUrl), import(keyResolverUrl)]);
-      if (!keyResolver.resolveOpenRouterApiKey().value) {
+      const senkuClientUrl = pathToFileURL(path.join(appRoot, 'dist/decision-service/senku-client.js')).href;
+      const [router, jev, senkuClient] = await Promise.all([import(routerUrl), import(classifierUrl), import(senkuClientUrl)]);
+      let senkuConfigured = false;
+      try { senkuConfigured = Boolean(senkuClient.resolveSenkuKasekiToken().token); } catch { /* Report a safe unavailable state below. */ }
+      if (!senkuConfigured) {
         recordGatewayDiagnostic({ event: 'caveman_tool_output_router_skipped', reason: 'decision_credentials_unavailable' });
         return;
       }
