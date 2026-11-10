@@ -38,4 +38,11 @@ if grep -Eq 'OPENROUTER_API_KEY=sk-or|<remote-host> <api-key|API_KEY_SOURCE=' "$
   exit 1
 fi
 
+container_remote_help="$(KASEKI_APP_ROOT="$ROOT_DIR" bash "$ROOT_DIR/scripts/kaseki-container-setup-remote.sh" --help)"
+grep -q 'Usage: scripts/pi-setup-remote.sh <ssh-target>' <<< "$container_remote_help"
+if grep -Eq 'api-key|API_KEY_SOURCE|openrouter_api_key' "$ROOT_DIR/scripts/kaseki-container-setup-remote.sh"; then
+  echo 'container remote setup must not accept or transfer provider credentials' >&2
+  exit 1
+fi
+
 echo 'Pi bootstrap contract tests passed'

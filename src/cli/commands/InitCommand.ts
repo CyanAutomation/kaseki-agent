@@ -104,7 +104,7 @@ DESCRIPTION
   1. ✓ Sets up secrets directories with proper permissions (/home/pi/secrets, ~/.kaseki/secrets)
   2. Detects environment (Docker, Node.js)
   3. Guides you through execution path selection (Docker Compose or single-run)
-  4. Collects essential credentials (OpenRouter API key, etc.)
+  4. Collects LLM Gateway credentials for coding inference; Senku decision credentials are optional
   5. Saves configuration securely
 
   Configuration files created:
@@ -135,8 +135,10 @@ DOCUMENTATION
       'single-run': `
 Next steps for single-run execution:
 
-1. Export the API key:
-   export OPENROUTER_API_KEY=$(grep openrouter_api_key ~/.kaseki/secrets.json | cut -d'"' -f4)
+1. Optionally install the approved Senku Kaseki machine token:
+   ./scripts/kaseki-setup.sh
+   # The setup script stores it in ~/.kaseki/secrets/senku_kaseki_api_token.
+   # Without it, decision stages degrade safely.
 
 2. Run a task:
    ./run-kaseki.sh --repo https://github.com/user/repo --ref main

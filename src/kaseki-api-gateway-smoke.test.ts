@@ -1435,7 +1435,31 @@ describe('gateway connectivity and provider smoke contracts', () => {
     });
   });
 
-  describe('Evaluation Smoke Test', () => {
+  describe('Senku classification smoke credentials', () => {
+    it('reports missing credentials as skipped without making a request', async () => {
+      delete process.env.SENKU_KASEKI_API_TOKEN;
+      delete process.env.SENKU_KASEKI_API_TOKEN_FILE;
+
+      const result = await testClassificationSmoke(true);
+
+      expect(result.status).toBe('skipped');
+      expect(result.detail).toContain('credentials are not configured');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('reports an unreadable explicit token file as an error without making a request', async () => {
+      delete process.env.SENKU_KASEKI_API_TOKEN;
+      process.env.SENKU_KASEKI_API_TOKEN_FILE = path.join(secretsDir, 'missing-token');
+
+      const result = await testClassificationSmoke(true);
+
+      expect(result.status).toBe('error');
+      expect(result.detail).toContain('could not read');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe.skip('Obsolete Evaluation Smoke Test Fixtures', () => {
     const mockClassificationRequest = {
       model: '~typesafe/jev-latest',
       input: {

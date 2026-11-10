@@ -38,7 +38,7 @@ The API service acts as a broker, accepting HTTP requests and managing kaseki in
 
 - Docker (required)
 - Docker Compose (recommended) or Node.js ≥24.x (fallback)
-- OpenRouter API key
+- LLM Gateway URL and API key for coding inference
 - Port 8080 available (or configure different port)
 
 ---
@@ -79,20 +79,26 @@ EOF
 chmod 600 ~/.kaseki/secrets/kaseki_api_keys
 ```
 
-## Step 3: Configure OpenRouter API Key
+## Step 3: Configure LLM Gateway and Optional Senku Credential
 
-The service needs your OpenRouter key to invoke the Pi agent:
+The service uses the LLM Gateway for Pi coding inference. Senku handles remote
+JEV decisions; its Kaseki machine token is optional and decision stages degrade
+safely when it is absent.
 
 ```bash
 # Option 1: Environment variable (not recommended for production)
-export OPENROUTER_API_KEY=sk-or-v1-your-key
+export LLM_GATEWAY_URL=https://your-openai-compatible-gateway.example/v1
 
 # Option 2: File (recommended)
 mkdir -p ~/.kaseki/secrets
-read -sp 'Enter OpenRouter API key: ' OPENROUTER_KEY
-echo "$OPENROUTER_KEY" > ~/.kaseki/secrets/openrouter_api_key
-chmod 600 ~/.kaseki/secrets/openrouter_api_key
-export OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key
+read -sp 'Enter LLM Gateway API key: ' GATEWAY_KEY
+(umask 077; printf '%s' "$GATEWAY_KEY" > ~/.kaseki/secrets/llm_gateway_api_key)
+unset GATEWAY_KEY
+chmod 600 ~/.kaseki/secrets/llm_gateway_api_key
+export LLM_GATEWAY_API_KEY_FILE=~/.kaseki/secrets/llm_gateway_api_key
+
+# Optional: install the approved Senku Kaseki machine token with
+# ./scripts/kaseki-setup.sh. It is stored in its own mode-600 file.
 ```
 
 ---
@@ -107,7 +113,7 @@ cd /agents/kaseki-template
 
 # Set configuration
 export KASEKI_API_KEYS=sk-your-secret-key-here
-export OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key
+export LLM_GATEWAY_API_KEY_FILE=~/.kaseki/secrets/llm_gateway_api_key
 
 # Get Docker socket GID (required for container to launch kaseki instances)
 export DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
@@ -128,7 +134,7 @@ sudo cp scripts/kaseki-api.service /etc/systemd/system/
 # Create environment file
 sudo tee /etc/kaseki.env > /dev/null << 'EOF'
 KASEKI_API_KEYS=sk-your-secret-key-here
-OPENROUTER_API_KEY_FILE=/home/pi/secrets/openrouter_api_key
+LLM_GATEWAY_API_KEY_FILE=/home/pi/secrets/llm_gateway_api_key
 KASEKI_API_PORT=8080
 KASEKI_RESULTS_DIR=/agents/kaseki-results
 EOF
@@ -156,7 +162,7 @@ npm run build
 
 # Start API service
 KASEKI_API_KEYS=sk-your-secret-key-here \
-  OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key \
+  LLM_GATEWAY_API_KEY_FILE=~/.kaseki/secrets/llm_gateway_api_key \
   npm run kaseki-api
 
 # Service runs on http://localhost:8080
@@ -281,7 +287,8 @@ curl -H "Authorization: Bearer sk-your-secret-key-here" \
 | `KASEKI_API_IMAGE` | `docker.io/cyanautomation/kaseki-agent:latest` | Docker image to use |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | Per-run timeout (3 hours) |
 | `KASEKI_MAX_DIFF_BYTES` | `400000` | Max diff size (400 KB) |
-| `OPENROUTER_API_KEY_FILE` | — | Required: path to OpenRouter key file |
+| `LLM_GATEWAY_API_KEY_FILE` | — | Required: path to LLM Gateway key file for coding inference |
+| `SENKU_KASEKI_API_TOKEN_FILE` | — | Optional: Senku machine token; decisions degrade safely when absent |
 | `KASEKI_RESULTS_DIR` | `/agents/kaseki-results` | Output directory |
 
 ### Docker Compose Override

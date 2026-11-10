@@ -205,7 +205,7 @@ All documentation is now complete and cross-referenced:
 
 | Document | Purpose | Status |
 |----------|---------|--------|
-| [ENV_VARS.md](../ENV_VARS.md#caveman-and-jev-tool-output-routing) | Configuration reference | ✅ Updated |
+| [ENV_VARS.md](../ENV_VARS.md#caveman-and-senku-backed-decision-routing) | Configuration reference | ✅ Updated |
 | [CAVEMAN_BASELINE.md](CAVEMAN_BASELINE.md) | Measurement methodology & results | ✅ Updated |
 | [CAVEMAN_PHASE2_COMPLETE.md](CAVEMAN_PHASE2_COMPLETE.md) | Implementation summary | ✅ Existing |
 | [.env.advanced.template](../../.env.advanced.template) | Configuration template | ✅ Updated |

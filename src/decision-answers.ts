@@ -1,7 +1,7 @@
 import type { ClassificationAnswer } from './types/openrouter-decisions';
 
 export function answerConfidence(answer: ClassificationAnswer | undefined): number {
-  return answer?.type === 'choice' || answer?.type === 'score' ? answer.confidence : 0;
+  return answer?.type === 'choice' || answer?.type === 'score' ? answer.confidence ?? 0 : 0;
 }
 
 export function answerIsTrue(answer: ClassificationAnswer | undefined, threshold = 0.8): boolean {

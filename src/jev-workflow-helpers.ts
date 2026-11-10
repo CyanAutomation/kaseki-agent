@@ -1,4 +1,5 @@
 import type { ClassificationAnswer, QuestionDefinition } from './types/openrouter-decisions';
+import { answerConfidence } from './decision-answers';
 import { normalizeSuccessCriteria } from '../scripts/lib/goal-contract.cjs';
 import type { GoalCriterion } from '../scripts/lib/goal-contract.cjs';
 
@@ -98,7 +99,9 @@ export function buildGoalCriterionAssessments(
     const applicabilityAnswer = answers[`${id}_applicability`];
     const applicability = !appliesWhen
       ? 'applicable'
-      : applicabilityAnswer?.type === 'choice' && ['applicable', 'not_applicable', 'unknown'].includes(applicabilityAnswer.choice)
+      : applicabilityAnswer?.type === 'choice'
+        && answerConfidence(applicabilityAnswer) >= threshold
+        && ['applicable', 'not_applicable', 'unknown'].includes(applicabilityAnswer.choice)
         ? applicabilityAnswer.choice as GoalCriterionAssessment['applicability']
         : 'unknown';
     if (applicability === 'not_applicable') {
@@ -208,7 +211,7 @@ export function failureDiagnosisFromAnswers(answers: Record<string, Classificati
   return {
     cause: cause.choice,
     recommendedAction: action.choice,
-    confidence: Math.min(cause.confidence, action.confidence),
+    confidence: Math.min(cause.confidence ?? 0, action.confidence ?? 0),
     causeProbabilities: cause.probabilities,
     actionProbabilities: action.probabilities,
   };

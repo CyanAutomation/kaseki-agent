@@ -6,7 +6,7 @@ import {
   resolveValidationRecoveryMode,
 } from './validation-recovery';
 
-function choice(choiceValue: string, confidence: number, keys: string[]) {
+function choice(choiceValue: string, confidence: number | null, keys: string[]) {
   const probability = 1 / keys.length;
   return {
     type: 'choice' as const,
@@ -52,6 +52,21 @@ describe('validation recovery policy', () => {
       alreadyRetried: false,
     });
     expect(result).toMatchObject({ shouldRetry: true, reason: 'approved' });
+  });
+
+  test('does not authorize a validation retry when either answer confidence is null', () => {
+    const result = decideValidationRetry({
+      mode: 'auto',
+      command: 'npm test',
+      safeCommands: ['npm test'],
+      answers: {
+        ...answers,
+        validation_recovery_action: choice('retry_validation_once', null, ['fix_implementation', 'repair_environment', 'retry_validation_once', 'inspect_diagnostics']),
+      },
+      confidenceThreshold: 0.9,
+      alreadyRetried: false,
+    });
+    expect(result).toMatchObject({ shouldRetry: false, reason: 'confidence_below_threshold', confidence: 0 });
   });
 
   test.each([

@@ -1,68 +1,64 @@
 # Decision models in Kaseki
 
-Kaseki uses three layers for different kinds of work:
-
-1. **Deterministic code** handles rules that can be checked exactly.
-2. **DecisionService** handles small, bounded classifications and scores with typed answers.
-3. **Pi** handles reasoning, synthesis, planning, repository exploration, and code generation.
-
-Pi is Kaseki's creator and reasoner. The harness controls workflow decisions with deterministic rules and specialized decision models where those models add value.
-
-## Current architecture
+Kaseki owns workflow policy and deterministic execution safeguards. Senku owns
+remote JEV decision inference. Pi handles repository exploration, planning,
+coding, and synthesis through the configured LLM Gateway.
 
 ```text
-Kaseki workflow
-  ├─ deterministic policy and safeguards
-  ├─ DecisionService
-  │    └─ JEV decision provider (current provider)
-  └─ GenerativeAgent
-       └─ Pi
+Kaseki workflow and deterministic policy
+  ├─ SenkuDecisionService ── HTTPS POST /v1/decisions ── Senku ── JEV
+  └─ Pi coding agent ─────── configured LLM Gateway
 ```
 
-Workflow code calls the provider-neutral `DecisionService` interface. Its current adapter calls the OpenRouter Decisions API using the Typesafe model alias. A provider can be replaced or injected without changing goal-check, admission, or validation-recovery policy. There is no provider-selection environment variable yet because JEV is the only implemented decision provider.
+Kaseki uses Senku's authenticated generic REST endpoint as its only remote JEV
+transport. The `DecisionService` interface remains provider-neutral for
+workflow callers, but there is no provider-selection setting or local JEV
+fallback. Senku selects `~typesafe/jev-latest` and returns the resolved model
+identifier. Kaseki never sends a model, provider endpoint, or provider API key.
 
-Decision requests keep the state being evaluated separate from the fixed questions and criteria. Answers remain typed as Noul probabilities, choices with distributions, or scores with distributions. The service returns the selected provider, model, usage, duration, and request-attempt count.
+## Decision call inventory
 
-## Candidate decision points
+| Caller | Purpose and input | Time budget | Request/retry behavior | Failure policy |
+|---|---|---:|---|---|
+| Task Admission | Redacted task request fields; typed credential, permission, security, risk, task-type, and validation-focus answers | 5 seconds by default | One Senku request | Deterministic local credential screening runs first and remains a rejection. Missing or failed classification is degraded fail-open; it does not create a confident low-risk result or routing hint. |
+| Goal Check | Bounded run evidence, validated goal criteria, and required implementation evidence | 15 seconds by default | One Senku request | Invalid contracts, required-diff rules, retry ceilings, validation, and publication gates remain deterministic. Unavailable classification is recorded and cannot create success. Any existing explicitly configured Pi evaluation path remains separate from JEV. |
+| Run Evaluation | Bounded run metadata, goal-check outcome, diff, validation, and retained evidence | 15 seconds by default | One Senku request | No high score or success is manufactured when classification is missing. Existing score arithmetic and failure artifacts remain authoritative. |
+| Validation Recovery | Failed command, exit code, and bounded redacted output | 15 seconds by default | One Senku request | Unavailable classification writes the diagnostic artifact and authorizes no retry. Auto mode still requires an exact allowlisted command, a supported transient cause, a retry recommendation, sufficient non-null confidence, and an unused retry. |
+| Caveman tool-output routing | Bounded routing metadata and a redacted goal summary | 1.2 seconds by default | One Senku request | Preserve original tool output, error evidence, and protected information on timeout, missing credentials, or invalid answers. Coding continues. |
+| Scouting/context handoff | Compact goal and bounded scouting facts | 1.2 seconds by default | One Senku request | Preserve required, protected, and unclassified facts when Senku is unavailable. |
+| Gateway classification smoke | Synthetic bounded sample questions | 15 seconds | One request, only when explicitly requested | It is an inference check and can incur provider usage. Routine health checks do not invoke it. |
 
-| Lifecycle point | Current classification | Reason |
-| --- | --- | --- |
-| Local credential-pattern screening at admission | `DETERMINISTIC` | Exact local patterns can reject obvious secret-bearing requests before model access. |
-| Task risk, task type, and validation-focus classification | `DECISION_MODEL` | These are bounded labels. Risk and routing outputs use confidence thresholds; they do not replace the exact workflow controls. |
-| Queueing, timeouts, retry ceilings, allowlists, validation, quality gates, secret scanning, publish mode, and scorecard arithmetic | `DETERMINISTIC` | These have explicit inputs and rules, so a model must not overrule them. |
-| Goal setting and repository scouting | `GENERATIVE_LLM` | They require interpreting intent, exploring the repository, prioritizing work, and forming a plan. |
-| Selecting an individual Pi tool while coding | `GENERATIVE_LLM` | The choice is part of the coding agent's ongoing reasoning. Kaseki currently has no large dynamic skill catalog whose staged disclosure would justify another classifier. |
-| Goal-check criterion satisfaction | `DECISION_MODEL` | Each criterion is evaluated as a typed probability. Invalid goal contracts and required-diff rules are decided locally. Uncertain results remain uncertain and can require human review. |
-| Whether another coding attempt is allowed | `DETERMINISTIC` + `DECISION_MODEL` | The model classifies goal evidence; local retry limits and terminal workflow rules control whether work can continue. |
-| Validation-failure cause and recovery recommendation | `DECISION_MODEL` | The model classifies bounded failure evidence. Local policy requires a transient cause, high confidence, an exact command allowlist match, and an unused retry before any retry is authorized. |
-| Run quality label and task-completion score | `DECISION_MODEL` | These are bounded assessment outputs over retained run evidence. |
-| Scorecard dimensions and final score | `DETERMINISTIC` | The scorecard applies a documented formula to measured evidence; model scores do not replace the formula. |
-| Explanatory result summaries and future improvement synthesis | `GENERATIVE_LLM` | Useful explanations and synthesis need more than a bounded label or score. |
+Timeout values are per stage and cover the complete HTTP operation, including
+response-body reading. Senku requests use `AbortController`; Kaseki does not
+retry, switch providers, run shadow inference, or probe Senku before decisions.
 
-## Current integrations and controls
+## Answer and confidence handling
 
-- **Task Admission:** DecisionService classifies credential exposure, permission changes, security-boundary changes, overall risk, task type, and validation focus. Deterministic local credential screening remains authoritative for obvious credential-like content. If the decision provider is unavailable, admission follows its existing degraded fail-open behavior.
-- **Goal Check:** DecisionService scores the validated success criteria against bounded, redacted run evidence. For documentation-only changes, Goal Check and Run Evaluation also receive up to five small source snippets named by the goal contract or scouting results, so JEV can compare claims with implementation. Goal Check uses `KASEKI_GOAL_CHECK_CONFIDENCE_THRESHOLD`; ambiguous evidence remains unresolved. Contract validation, diff checks, and the configured maximum coding retries remain deterministic.
-- **Run Evaluation:** DecisionService returns typed quality, reviewer-confidence, and completion assessments. It runs only when the run-evaluation policy enables it.
-- **Validation recovery:** The model recommendation is advisory in `observe` mode. In `auto` mode local checks still require an allowlisted command, a transient failure classification, confidence above the configured threshold, and no previous retry. It never skips a requested check.
+Answers are typed as NouL probabilities, choices with probability
+distributions, or zero-based scores with probability distributions. Choice and
+score confidence is `number | null`; null means confidence is unavailable and
+is treated as zero for every threshold. NouL confidence is null and its `noul`
+probability remains separately validated. Zero is a valid value.
 
-Set `KASEKI_TYPED_EVALUATION_ENABLED=0` to use the existing Pi Goal Check and Run Evaluation stages. Validation recovery can be disabled with `KASEKI_VALIDATION_RECOVERY_MODE=off`. Provider errors, timeouts, invalid responses, or missing credentials degrade evaluation or recovery; they do not remove the deterministic quality, validation, allowlist, secret-scan, or publishing controls. Task Admission keeps its separate fail-open policy for provider outages.
+Kaseki validates the request before sending it and validates the full Senku
+response. It requires exactly the requested answer keys, validates answer
+types and normalized distributions, rejects unsupported schema versions, and
+accepts omitted usage while preserving valid reported usage. Requests are
+capped at 128 KiB and streamed responses at 64 KiB.
 
-Configuration and credential handling are documented in [ENV_VARS.md](ENV_VARS.md). The decision credential is not used for Pi coding inference.
+## Security and evidence boundaries
 
-## Untrusted state
+Task prompts, diffs, validation output, and repository evidence are untrusted
+data. Kaseki bounds and redacts evidence before evaluation; that redaction is
+not a complete secret detector. The Senku bearer token is used only for
+decision-service authentication. It is mounted as a read-only file for worker
+containers and is not copied into prompts, task metadata, artifacts, or
+structured telemetry.
 
-Repository files, diffs, validation output, task text, and tool results are untrusted data. They are supplied as state to fixed questions; they cannot modify the locally defined question criteria or authorize an operation. State and the selected source snippets are bounded and common credential patterns are redacted before evaluation. Redaction is not a complete secret scanner. Decision-model results never override deterministic security checks or exact retry policy.
+Decision telemetry records the stage, `provider: "senku"`, resolved model,
+outcome, confidence summary, duration, one-attempt count, usage when supplied,
+safe failure category, and request ID when available. It does not record
+prompts, evidence, full HTTP bodies, or credentials.
 
-## Observability and measurement
-
-Workflow decision calls append one compact record to `decisions.jsonl`. It records stage, status, provider, model, outcome, conservative confidence summary, duration, provider request attempts, reported token/cost usage, and the number of generative evaluation stages structurally replaced. Failure records contain an error category, not provider error text. The evaluated state and question payload are not copied into this log.
-
-`generativeCallsAvoided` counts a Goal Check or Run Evaluation phase that the typed evaluator replaced in that run; it is a phase count, not a measured cost saving. Compare latency and reported usage in `decisions.jsonl` with Pi phase timings and token-ledger data before drawing cost or quality conclusions. Task Admission runs before a results directory exists, so its decision metadata is returned with the admission result rather than copied into this per-run artifact. A shadow mode is not enabled yet; it should be added with a replayable evaluation set so that comparisons do not require duplicate provider calls on every production run.
-
-## Follow-up candidates
-
-- Build a replayable evaluation set and compare decision outputs with reviewed outcomes and the previous Pi evaluator.
-- Consider shadow comparisons for one stage after measuring added latency, credential/data handling, and provider cost.
-- Revisit progressive skill or tool disclosure only if Kaseki begins exposing a materially larger dynamic catalog to Pi.
-- Evaluate local or alternate decision providers through the existing `DecisionService` boundary when there is a concrete implementation to compare.
+For endpoint configuration, secret mounting, safe error mapping, testing, and
+rollout steps, see [Senku integration](SENKU-INTEGRATION.md).

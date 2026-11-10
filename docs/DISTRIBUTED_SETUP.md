@@ -259,11 +259,10 @@ spec:
             secretKeyRef:
               name: kaseki-secrets
               key: api-keys
-        - name: OPENROUTER_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: kaseki-secrets
-              key: openrouter-key
+        - name: SENKU_URL
+          value: "https://senku.scheimann.workers.dev"
+        - name: SENKU_KASEKI_API_TOKEN_FILE
+          value: /run/secrets/kaseki/senku_kaseki_api_token
         - name: KASEKI_API_PORT
           value: "8080"
         resources:
@@ -273,6 +272,17 @@ spec:
           limits:
             cpu: 2
             memory: 2Gi
+        volumeMounts:
+        - name: kaseki-secrets
+          mountPath: /run/secrets/kaseki
+          readOnly: true
+      volumes:
+      - name: kaseki-secrets
+        secret:
+          secretName: kaseki-secrets
+          items:
+          - key: senku-kaseki-api-token
+            path: senku_kaseki_api_token
         volumeMounts:
         - name: results
           mountPath: /agents/kaseki-results
@@ -346,7 +356,7 @@ kubectl create namespace kaseki
 # Add secrets
 kubectl create secret generic kaseki-secrets \
   --from-literal=api-keys="sk-your-key" \
-  --from-literal=openrouter-key="sk-or-your-key" \
+  --from-file=senku-kaseki-api-token=/path/to/approved/kaseki-senku-token \
   -n kaseki
 
 # Deploy

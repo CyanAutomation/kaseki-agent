@@ -147,11 +147,17 @@ describe('Caveman tool-output routing', () => {
     const original = event('bash', `${'repeated diagnostic\n'.repeat(500)}`);
     const failed = await routeToolOutput(original, async () => { throw new Error('network failure'); }, { minChars: 100 });
     const uncertain = await routeToolOutput(original, async () => decision('compact_repeated', 0.7), { minChars: 100, confidenceThreshold: 0.86 });
+    const missingConfidence = await routeToolOutput(original, async () => ({ answers: { route: {
+      type: 'choice', choice: 'compact_repeated', confidence: null,
+      probabilities: { preserve: 0, compact_repeated: 1, structural_code: 0 },
+    } } }), { minChars: 100, confidenceThreshold: 0.86 });
 
     expect(failed).toMatchObject({ transformed: false, reason: 'jev_unavailable' });
     expect(uncertain).toMatchObject({ transformed: false, reason: 'low_confidence', route: 'preserve' });
+    expect(missingConfidence).toMatchObject({ transformed: false, reason: 'low_confidence', route: 'preserve', confidence: 0 });
     expect(failed.content).toBe(original.content);
     expect(uncertain.content).toBe(original.content);
+    expect(missingConfidence.content).toBe(original.content);
   });
 
   it('compacts repeated successful command output while retaining exact line text and repeat count', async () => {
@@ -288,15 +294,21 @@ describe('Semantic context routing', () => {
     const failure = await routeSemanticToolOutput(original, async () => { throw new Error('offline'); }, { minTokens: 1 });
     const invalid = await routeSemanticToolOutput(original, async () => semanticDecision('discard', { preserve: 0.2, condense: 0.2, discard: 0.2 }), { minTokens: 1 });
     const unexpectedShape = await routeSemanticToolOutput(original, async () => undefined as unknown as JevToolOutputDecision, { minTokens: 1 });
+    const missingConfidence = await routeSemanticToolOutput(original, async () => ({ answers: { disposition: {
+      type: 'choice', choice: 'discard', confidence: null,
+      probabilities: { preserve: 0, condense: 0, discard: 1 },
+    } } }), { minTokens: 1 });
 
     expect(keep).toMatchObject({ disposition: 'preserve', transformed: false });
     expect(failure).toMatchObject({ disposition: 'preserve', reason: 'jev_unavailable' });
     expect(invalid).toMatchObject({ disposition: 'preserve', reason: 'invalid_jev_probabilities' });
     expect(unexpectedShape).toMatchObject({ disposition: 'preserve', reason: 'invalid_jev_answer' });
+    expect(missingConfidence).toMatchObject({ disposition: 'preserve', reason: 'invalid_jev_probabilities' });
     expect(keep.content).toBe(original.content);
     expect(failure.content).toBe(original.content);
     expect(invalid.content).toBe(original.content);
     expect(unexpectedShape.content).toBe(original.content);
+    expect(missingConfidence.content).toBe(original.content);
   });
 
   it('uses Caveman for condense and requires the configured conservative discard threshold', async () => {

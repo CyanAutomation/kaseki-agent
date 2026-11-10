@@ -3,8 +3,8 @@
 Kaseki does not set a universal per-run price. Coding inference uses the
 OpenAI-compatible gateway configured by `LLM_GATEWAY_URL` and
 `LLM_GATEWAY_MODEL`; the gateway's routing and pricing determine the charge.
-OpenRouter is a separate, optional credential for evaluation stages and is not
-the coding-agent fallback provider.
+Senku is a separate, optional service for typed decision stages and is not the
+coding-agent provider or fallback.
 
 ## Cost components
 
@@ -18,11 +18,11 @@ model and rate with that gateway before estimating a run.
 
 ### Optional evaluation stages
 
-When enabled and configured with an OpenRouter key, evaluation stages may send
-task and run artifacts to OpenRouter. Their cost depends on the stages enabled,
-payload size, and current model rates. See [ENV_VARS.md](ENV_VARS.md) for the
-stages and data handling details. Disable stages you do not need and review
-provider data policies before sending proprietary source or task content.
+When an inference stage runs, Senku may receive its bounded task or run
+evidence and invoke JEV. Cost depends on the stages enabled, payload size, and
+current provider rates. See [ENV_VARS.md](ENV_VARS.md) and
+[Senku integration](SENKU-INTEGRATION.md) for stages and data handling.
+Review Senku's data policies before sending proprietary source or task content.
 
 ### Host and image costs
 
@@ -38,7 +38,7 @@ provider- and location-specific.
 1. Record the selected gateway model and current input/output rates.
 2. Run representative tasks and use gateway usage reports to measure input,
    output, and any cached-token charges.
-3. Separately record evaluation-stage usage if OpenRouter stages are enabled.
+3. Separately record reported Senku decision usage when a decision stage runs.
 4. Set a monthly run limit and provider spending alerts based on the observed
    workload; repeat the estimate after changing models or validation scope.
 

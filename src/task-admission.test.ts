@@ -1,17 +1,68 @@
 import { buildTaskAdmissionRequest, evaluateTaskAdmission } from './task-admission';
 
+const TOKEN = 'synthetic-senku-kaseki-token-value-1234567890';
+const ENV_NAMES = [
+  'NODE_ENV', 'SENKU_URL', 'SENKU_KASEKI_API_TOKEN', 'SENKU_KASEKI_API_TOKEN_FILE', 'KASEKI_SECRETS_DIR',
+  'KASEKI_JEV_WORKFLOW', 'KASEKI_DECISION_MODEL', 'KASEKI_CLASSIFICATION_MODEL',
+];
+
+function answer(question: { type: string; criteria?: Record<string, unknown> | string[] }, choice?: string) {
+  if (question.type === 'noul') {
+    const noul = choice === 'true' ? 0.99 : 0.01;
+    return { type: 'noul', noul, probabilities: { false: 1 - noul, true: noul }, confidence: null };
+  }
+  const ids = question.type === 'score'
+    ? (question.criteria as string[]).map((_, index) => String(index))
+    : Object.keys(question.criteria ?? {});
+  const selected = choice && ids.includes(choice) ? choice : ids[0];
+  const probabilities = Object.fromEntries(ids.map((id) => [id, id === selected ? 1 : 0]));
+  if (question.type === 'score') {
+    const score = Number(selected);
+    return { type: 'score', score, legend: Object.fromEntries(ids.map((id) => [id, (question.criteria as string[])[Number(id)]])), probabilities, confidence: 1 };
+  }
+  return { type: 'choice', choice: selected, probabilities, confidence: 0.99 };
+}
+
+function contractResponse(answers: Record<string, unknown>, usage?: Record<string, number>) {
+  return new Response(JSON.stringify({
+    schemaVersion: '1',
+    requestId: 'dec-task-admission-test',
+    status: 'completed',
+    provider: 'jev',
+    model: 'typesafe/jev-resolved-test',
+    answers,
+    ...(usage ? { usage } : {}),
+    durationMs: 8,
+    attemptCount: 1,
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+}
+
+function fullAnswers(choices: Record<string, string> = {}) {
+  const questions = buildTaskAdmissionRequest({ taskPrompt: 'test' }).questions as Record<string, { type: string; criteria?: Record<string, unknown> | string[] }>;
+  return Object.fromEntries(Object.entries(questions).map(([id, question]) => [id, answer(question, choices[id])]));
+}
+
 describe('task admission classifier', () => {
   const originalFetch = global.fetch;
-  const originalKey = process.env.OPENROUTER_API_KEY;
-  const originalRetiredWorkflowSetting = process.env.KASEKI_JEV_WORKFLOW;
+  const originalEnv = new Map(ENV_NAMES.map((name) => [name, process.env[name]]));
+
+  beforeEach(() => {
+    process.env.NODE_ENV = 'test';
+    process.env.SENKU_KASEKI_API_TOKEN = TOKEN;
+    delete process.env.SENKU_KASEKI_API_TOKEN_FILE;
+    delete process.env.KASEKI_SECRETS_DIR;
+    delete process.env.SENKU_URL;
+    delete process.env.KASEKI_JEV_WORKFLOW;
+    delete process.env.KASEKI_DECISION_MODEL;
+    delete process.env.KASEKI_CLASSIFICATION_MODEL;
+  });
 
   afterEach(() => {
     global.fetch = originalFetch;
-    if (originalKey === undefined) delete process.env.OPENROUTER_API_KEY;
-    else process.env.OPENROUTER_API_KEY = originalKey;
-    delete process.env.KASEKI_DECISION_MODEL;
-    if (originalRetiredWorkflowSetting === undefined) delete process.env.KASEKI_JEV_WORKFLOW;
-    else process.env.KASEKI_JEV_WORKFLOW = originalRetiredWorkflowSetting;
+    for (const [name, value] of originalEnv) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
   });
 
   it('redacts secrets and uses independent typed safety questions', () => {
@@ -33,7 +84,7 @@ describe('task admission classifier', () => {
     expect(String(request.state)).toContain('[REDACTED_SECRET]');
   });
 
-  it('rejects obvious credential-like task content locally without calling the classifier', async () => {
+  it('rejects obvious credential-like task content locally without calling Senku', async () => {
     const fetchMock = jest.fn();
     global.fetch = fetchMock as typeof fetch;
 
@@ -47,23 +98,10 @@ describe('task admission classifier', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('rejects high-confidence unsafe classifier answers', async () => {
-    process.env.OPENROUTER_API_KEY = 'test-key';
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        model: '~typesafe/jev-latest',
-        answers: {
-          contains_credentials: { type: 'noul', noul: 0.01 },
-          changes_permissions: { type: 'noul', noul: 0.95 },
-          crosses_security_boundary: { type: 'noul', noul: 0.1 },
-          risk_level: { type: 'choice', choice: 'review', probabilities: { low: 0.05, review: 0.9, high: 0.05 }, confidence: 0.9 },
-          task_type: { type: 'choice', choice: 'bug_fix', probabilities: { feature: 0, bug_fix: 1, refactor: 0, documentation: 0, investigation: 0, test_only: 0, infrastructure: 0 }, confidence: 1 },
-          validation_focus: { type: 'choice', choice: 'type_and_lint', probabilities: { unit_tests: 0, integration_tests: 0, type_and_lint: 1, docs_checks: 0, repo_defined_checks: 0 }, confidence: 1 },
-        },
-        usage: { output_tokens: 12 },
-      }),
-    } as Response);
+  it('rejects high-confidence unsafe classifier answers returned by Senku', async () => {
+    global.fetch = jest.fn<typeof fetch>().mockResolvedValue(contractResponse(fullAnswers({
+      changes_permissions: 'true', risk_level: 'review', task_type: 'bug_fix', validation_focus: 'type_and_lint',
+    }), { input_tokens: 20, output_tokens: 12, total_tokens: 32 })) as typeof fetch;
 
     const result = await evaluateTaskAdmission({
       repoUrl: 'https://github.com/example/repo',
@@ -74,20 +112,22 @@ describe('task admission classifier', () => {
     expect(result.reason).toContain('changes_permissions');
     expect(result.outputTokens).toBe(12);
     expect(result).not.toHaveProperty('modelUsed');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(jest.mocked(global.fetch).mock.calls[0][1]?.body))).not.toHaveProperty('model');
   });
 
-  it('fails open when the classifier is unavailable', async () => {
-    process.env.OPENROUTER_API_KEY = 'test-key';
-    global.fetch = jest.fn().mockRejectedValue(new Error('network timeout')) as typeof fetch;
+  it('fails open when Senku is unavailable without exposing thrown network details', async () => {
+    global.fetch = jest.fn<typeof fetch>().mockRejectedValue(new Error('private DNS diagnostics')) as typeof fetch;
 
     const result = await evaluateTaskAdmission({
       repoUrl: 'https://github.com/example/repo',
       taskPrompt: 'Update the README wording',
     });
 
-    expect(result.allowed).toBe(true);
-    expect(result.status).toBe('degraded');
-    expect(result.degraded).toBe(true);
+    expect(result).toMatchObject({ allowed: true, status: 'degraded', degraded: true });
+    expect(result.warnings?.join(' ')).toContain('network');
+    expect(result.warnings?.join(' ')).not.toContain('private DNS diagnostics');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('fails open with a migration notice when retired evaluation settings are present', async () => {
@@ -103,20 +143,13 @@ describe('task admission classifier', () => {
   });
 
   it('allows low-confidence classifications with an explicit warning', async () => {
-    process.env.OPENROUTER_API_KEY = 'test-key';
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        answers: {
-          contains_credentials: { type: 'noul', noul: 0.5 },
-          changes_permissions: { type: 'noul', noul: 0.1 },
-          crosses_security_boundary: { type: 'noul', noul: 0.1 },
-          risk_level: { type: 'choice', choice: 'review', probabilities: { low: 0.3, review: 0.4, high: 0.3 }, confidence: 0.4 },
-          task_type: { type: 'choice', choice: 'investigation', probabilities: { feature: 0.2, bug_fix: 0.2, refactor: 0.2, documentation: 0.1, investigation: 0.2, test_only: 0.05, infrastructure: 0.05 }, confidence: 0.2 },
-          validation_focus: { type: 'choice', choice: 'repo_defined_checks', probabilities: { unit_tests: 0.2, integration_tests: 0.2, type_and_lint: 0.2, docs_checks: 0.2, repo_defined_checks: 0.2 }, confidence: 0.2 },
-        },
-      }),
-    } as Response);
+    const answers = fullAnswers({ risk_level: 'review', task_type: 'investigation', validation_focus: 'repo_defined_checks' }) as Record<string, Record<string, unknown>>;
+    answers.contains_credentials.noul = 0.5;
+    answers.contains_credentials.probabilities = { false: 0.5, true: 0.5 };
+    answers.risk_level.confidence = 0.4;
+    answers.task_type.confidence = 0.2;
+    answers.validation_focus.confidence = 0.2;
+    global.fetch = jest.fn<typeof fetch>().mockResolvedValue(contractResponse(answers)) as typeof fetch;
 
     const result = await evaluateTaskAdmission({
       repoUrl: 'https://github.com/example/repo',
@@ -131,20 +164,9 @@ describe('task admission classifier', () => {
   });
 
   it('returns high-confidence task and validation hints as nonbinding routing metadata', async () => {
-    process.env.OPENROUTER_API_KEY = 'test-key';
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        answers: {
-          contains_credentials: { type: 'noul', noul: 0.01 },
-          changes_permissions: { type: 'noul', noul: 0.01 },
-          crosses_security_boundary: { type: 'noul', noul: 0.01 },
-          risk_level: { type: 'choice', choice: 'low', probabilities: { low: 0.95, review: 0.05, high: 0 }, confidence: 0.95 },
-          task_type: { type: 'choice', choice: 'documentation', probabilities: { feature: 0, bug_fix: 0, refactor: 0, documentation: 0.95, investigation: 0.05, test_only: 0, infrastructure: 0 }, confidence: 0.95 },
-          validation_focus: { type: 'choice', choice: 'docs_checks', probabilities: { unit_tests: 0, integration_tests: 0, type_and_lint: 0.05, docs_checks: 0.95, repo_defined_checks: 0 }, confidence: 0.95 },
-        },
-      }),
-    } as Response);
+    global.fetch = jest.fn<typeof fetch>().mockResolvedValue(contractResponse(fullAnswers({
+      risk_level: 'low', task_type: 'documentation', validation_focus: 'docs_checks',
+    }))) as typeof fetch;
 
     const result = await evaluateTaskAdmission({
       repoUrl: 'https://github.com/example/repo',
@@ -155,5 +177,34 @@ describe('task admission classifier', () => {
     expect(result.allowed).toBe(true);
     expect(result.routingHints).toEqual({ taskType: 'documentation', validationFocus: 'docs_checks' });
     expect(result.answers?.risk_level).toMatchObject({ choice: 'low' });
+  });
+
+  it('treats null choice confidence as unavailable and emits no routing hints', async () => {
+    const answers = fullAnswers({ risk_level: 'low', task_type: 'documentation', validation_focus: 'docs_checks' }) as Record<string, Record<string, unknown>>;
+    answers.risk_level.confidence = null;
+    answers.task_type.confidence = null;
+    answers.validation_focus.confidence = null;
+    global.fetch = jest.fn<typeof fetch>().mockResolvedValue(contractResponse(answers)) as typeof fetch;
+
+    const result = await evaluateTaskAdmission({
+      repoUrl: 'https://github.com/example/repo',
+      taskPrompt: 'Update the docs',
+    });
+
+    expect(result.allowed).toBe(true);
+    expect(result.routingHints).toBeUndefined();
+    expect(result.warnings?.[0]).toContain('risk_level');
+  });
+
+  it('fails open when the Senku token is missing and makes no request', async () => {
+    delete process.env.SENKU_KASEKI_API_TOKEN;
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as typeof fetch;
+
+    const result = await evaluateTaskAdmission({ repoUrl: 'https://github.com/example/repo', taskPrompt: 'Improve docs' });
+
+    expect(result).toMatchObject({ allowed: true, status: 'degraded', degraded: true });
+    expect(result.warnings?.[0]).toContain('credentials are not configured');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

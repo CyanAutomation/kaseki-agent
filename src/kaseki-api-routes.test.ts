@@ -2247,6 +2247,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
         expect(body.piProviderSmoke?.detail).toContain('produced no assistant text');
         expect(debugOutputPath).toMatch(/^\/tmp\/kaseki-pi-debug-\d+\.jsonl$/);
         expect(fs.readFileSync(debugOutputPath, 'utf8')).toBe(rawPiOutput);
+        expect(fs.statSync(debugOutputPath).mode & 0o777).toBe(0o600);
         fs.rmSync(debugOutputPath, { force: true });
       } finally {
         fetchSpy.mockRestore();

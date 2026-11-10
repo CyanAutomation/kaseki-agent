@@ -10,7 +10,7 @@ For running kaseki-agent directly on a single host (Pi, Ubuntu VM, etc.) via com
 
 - Docker installed and running
 - Git installed
-- OpenRouter API key
+- LLM Gateway URL and API key for coding inference
 
 ## Step 1: Clone the Repository
 
@@ -29,8 +29,8 @@ cd /agents/kaseki-template
 This will:
 
 - Validate Docker is installed
-- Prompt for your OpenRouter API key (securely, not in shell history)
-- Create `~/.kaseki/secrets/openrouter_api_key` with proper permissions
+- Optionally prompt for the Senku Kaseki machine token (securely, not in shell history)
+- Store it at `~/.kaseki/secrets/senku_kaseki_api_token` with mode 600
 - Run health checks
 
 ## Step 3: Verify Setup
@@ -52,8 +52,18 @@ Kaseki template image: available
 ## Step 4: Run Your First Task
 
 ```bash
-# Set the API key file location
-export OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key
+# Store the LLM Gateway key without putting it in shell history or arguments.
+install -d -m 0700 ~/.kaseki/secrets
+read -r -s -p 'Enter the LLM Gateway API key: ' GATEWAY_KEY
+printf '\n'
+(umask 077; printf '%s' "$GATEWAY_KEY" > ~/.kaseki/secrets/llm_gateway_api_key)
+unset GATEWAY_KEY
+chmod 600 ~/.kaseki/secrets/llm_gateway_api_key
+
+# Configure the coding gateway. Senku's decision token is optional;
+# `kaseki-setup.sh` stores it at the standard path when provided.
+export LLM_GATEWAY_API_KEY_FILE=~/.kaseki/secrets/llm_gateway_api_key
+export LLM_GATEWAY_URL=https://your-openai-compatible-gateway.example/v1
 
 # Run kaseki-agent against a repository
 ./run-kaseki.sh https://github.com/your-org/your-repo main
@@ -65,7 +75,8 @@ Or with inline arguments:
 REPO_URL=https://github.com/your-org/your-repo \
   GIT_REF=main \
   TASK_PROMPT='Fix the bug in parser.ts' \
-  OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key \
+  LLM_GATEWAY_API_KEY_FILE=~/.kaseki/secrets/llm_gateway_api_key \
+  LLM_GATEWAY_URL=https://your-openai-compatible-gateway.example/v1 \
   ./run-kaseki.sh
 ```
 
@@ -89,11 +100,12 @@ cat /agents/kaseki-results/kaseki-1/git.diff
 
 ## Convenience: Add to Shell Profile
 
-To avoid typing `OPENROUTER_API_KEY_FILE=...` every time:
+To avoid typing the gateway settings every time:
 
 ```bash
 # Add to ~/.bashrc or ~/.zshrc
-export OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key
+export LLM_GATEWAY_API_KEY_FILE=~/.kaseki/secrets/llm_gateway_api_key
+export LLM_GATEWAY_URL=https://your-openai-compatible-gateway.example/v1
 export REPO_URL=https://github.com/your-org/your-repo
 export GIT_REF=main
 
@@ -113,7 +125,7 @@ Then simply run:
 
 ```bash
 TASK_PROMPT='Refactor the authentication module to use async/await' \
-  OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key \
+  LLM_GATEWAY_API_KEY_FILE=~/.kaseki/secrets/llm_gateway_api_key \
   ./run-kaseki.sh https://github.com/your-org/your-repo main
 ```
 
@@ -121,7 +133,7 @@ TASK_PROMPT='Refactor the authentication module to use async/await' \
 
 ```bash
 KASEKI_AGENT_TIMEOUT_SECONDS=3600 \
-  OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key \
+  LLM_GATEWAY_API_KEY_FILE=~/.kaseki/secrets/llm_gateway_api_key \
   ./run-kaseki.sh ...
 ```
 
@@ -129,7 +141,7 @@ KASEKI_AGENT_TIMEOUT_SECONDS=3600 \
 
 ```bash
 GIT_REF=abc1234def5678 \
-  OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key \
+  LLM_GATEWAY_API_KEY_FILE=~/.kaseki/secrets/llm_gateway_api_key \
   ./run-kaseki.sh https://github.com/your-org/your-repo abc1234def5678
 ```
 
@@ -137,7 +149,7 @@ GIT_REF=abc1234def5678 \
 
 ```bash
 KASEKI_DEBUG_RAW_EVENTS=1 \
-  OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key \
+  LLM_GATEWAY_API_KEY_FILE=~/.kaseki/secrets/llm_gateway_api_key \
   ./run-kaseki.sh ...
 ```
 
@@ -173,9 +185,9 @@ newgrp docker
 ```bash
 # Recreate the key file
 mkdir -p ~/.kaseki/secrets
-read -sp 'Enter your OpenRouter API key: ' OPENROUTER_KEY
-echo "$OPENROUTER_KEY" > ~/.kaseki/secrets/openrouter_api_key
-chmod 600 ~/.kaseki/secrets/openrouter_api_key
+read -sp 'Enter your LLM Gateway API key: ' GATEWAY_KEY
+echo "$GATEWAY_KEY" > ~/.kaseki/secrets/llm_gateway_api_key
+chmod 600 ~/.kaseki/secrets/llm_gateway_api_key
 ```
 
 ### Agent times out

@@ -1,0 +1,508 @@
+import { readFileSync } from 'node:fs';
+import { TextDecoder, TextEncoder } from 'node:util';
+import type { ClassificationAnswer, QuestionDefinition } from '../types/openrouter-decisions';
+
+export const DEFAULT_SENKU_URL = 'https://senku.scheimann.workers.dev';
+export const SENKU_DECISION_PATH = '/v1/decisions';
+export const SENKU_SCHEMA_VERSION = '1' as const;
+export const MAX_SENKU_REQUEST_BYTES = 128 * 1024;
+export const MAX_SENKU_RESPONSE_BYTES = 64 * 1024;
+
+export const RETIRED_DECISION_SETTINGS = [
+  'KASEKI_JEV_WORKFLOW',
+  'KASEKI_JEV_CONFIDENCE',
+  'KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS',
+  'KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS',
+  'KASEKI_JEV_WORKFLOW_EVALUATOR',
+  'KASEKI_DECISION_API_KEY_FILE',
+  'KASEKI_DECISION_MODEL',
+  'KASEKI_CLASSIFICATION_MODEL',
+  'KASEKI_JEV_API_KEY_FILE',
+  'KASEKI_JEV_TASK_TYPE',
+  'KASEKI_JEV_VALIDATION_FOCUS',
+] as const;
+
+export function hasRetiredDecisionSettings(env: NodeJS.ProcessEnv = process.env): boolean {
+  return RETIRED_DECISION_SETTINGS.some((name) => env[name] !== undefined);
+}
+
+export type DecisionFailureCategory =
+  | 'configuration'
+  | 'credentials'
+  | 'timeout'
+  | 'network'
+  | 'service_unavailable'
+  | 'invalid_request'
+  | 'invalid_response'
+  | 'provider_failure';
+
+const SAFE_MESSAGES: Record<DecisionFailureCategory, string> = {
+  configuration: 'Senku decision service configuration is invalid.',
+  credentials: 'Senku decision service credentials are unavailable or rejected.',
+  timeout: 'Senku decision service did not respond within the decision time budget.',
+  network: 'Senku decision service could not be reached.',
+  service_unavailable: 'Senku decision service is unavailable.',
+  invalid_request: 'The decision request is invalid for Senku.',
+  invalid_response: 'Senku returned an invalid decision response.',
+  provider_failure: 'Senku could not complete the decision.',
+};
+
+export class DecisionServiceError extends Error {
+  readonly category: DecisionFailureCategory;
+  readonly httpStatus?: number;
+  readonly requestId?: string;
+  readonly senkuCode?: string;
+  readonly attemptCount?: number;
+  readonly credentialSource?: SenkuTokenResolution['source'];
+
+  constructor(
+    category: DecisionFailureCategory,
+    metadata: {
+      httpStatus?: number;
+      requestId?: string;
+      senkuCode?: string;
+      attemptCount?: number;
+      credentialSource?: SenkuTokenResolution['source'];
+    } = {},
+  ) {
+    super(SAFE_MESSAGES[category]);
+    this.name = 'DecisionServiceError';
+    this.category = category;
+    this.httpStatus = metadata.httpStatus;
+    this.requestId = safeRequestId(metadata.requestId);
+    this.senkuCode = /^[A-Z_]{1,64}$/.test(metadata.senkuCode ?? '') ? metadata.senkuCode : undefined;
+    this.attemptCount = metadata.attemptCount === 1 ? 1 : undefined;
+    this.credentialSource = metadata.credentialSource;
+  }
+}
+
+export interface SenkuDecisionRequest {
+  schemaVersion: typeof SENKU_SCHEMA_VERSION;
+  state: string | Record<string, unknown>;
+  questions: Record<string, QuestionDefinition>;
+}
+
+export interface SenkuDecisionResponse {
+  schemaVersion: typeof SENKU_SCHEMA_VERSION;
+  requestId: string;
+  status: 'completed';
+  provider: 'jev';
+  model: string;
+  answers: Record<string, ClassificationAnswer>;
+  usage?: Record<string, number>;
+  durationMs: number;
+  attemptCount: 1;
+}
+
+export interface SenkuClientOptions {
+  env?: NodeJS.ProcessEnv;
+  fetchImpl?: typeof fetch;
+  readFile?: (path: string, encoding: 'utf8') => string;
+}
+
+export interface SenkuDecisionOptions extends SenkuClientOptions {
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+
+export interface SenkuDecisionResult extends SenkuDecisionResponse {
+  responseTime: number;
+}
+
+function fail(category: DecisionFailureCategory, metadata?: ConstructorParameters<typeof DecisionServiceError>[1]): never {
+  throw new DecisionServiceError(category, metadata);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function utf8Size(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function hasControlCharacter(value: string): boolean {
+  return Array.from(value).some((character) => {
+    const code = character.charCodeAt(0);
+    return code <= 0x1f || code === 0x7f;
+  });
+}
+
+function validJsonTree(value: unknown, depth = 0, budget = { nodes: 0 }): boolean {
+  budget.nodes += 1;
+  if (budget.nodes > 8192 || depth > 24) return false;
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every((child) => validJsonTree(child, depth + 1, budget));
+  if (!isRecord(value)) return false;
+  return Object.values(value).every((child) => validJsonTree(child, depth + 1, budget));
+}
+
+function validContent(value: unknown, budget: { nodes: number }): boolean {
+  if (typeof value === 'string') return value.trim().length > 0 && utf8Size(value) <= 16 * 1024;
+  if ((!Array.isArray(value) && !isRecord(value)) || Object.keys(value).length === 0) return false;
+  return validJsonTree(value, 0, budget);
+}
+
+function validQuestion(value: unknown, budget: { nodes: number }): value is QuestionDefinition {
+  if (!isRecord(value)
+    || Object.keys(value).some((key) => !['type', 'instructions', 'criteria'].includes(key))
+    || !validContent(value.instructions, budget)) return false;
+
+  if (value.type === 'noul') {
+    if (value.criteria === undefined) return true;
+    return isRecord(value.criteria)
+      && Object.keys(value.criteria).length > 0
+      && Object.keys(value.criteria).every((key) => ['true', 'false'].includes(key))
+      && Object.values(value.criteria).every((item) => validContent(item, budget));
+  }
+  if (value.type === 'choice') {
+    if (!isRecord(value.criteria)) return false;
+    const ids = Object.keys(value.criteria);
+    return ids.length >= 2 && ids.length <= 12
+      && ids.every((key) => /^[a-z][a-z0-9_]{0,63}$/.test(key))
+      && Object.values(value.criteria).every((item) => item === null || validContent(item, budget));
+  }
+  if (value.type === 'score') {
+    return Array.isArray(value.criteria)
+      && value.criteria.length >= 2
+      && value.criteria.length <= 12
+      && value.criteria.every((item) => validContent(item, budget));
+  }
+  return false;
+}
+
+export function buildSenkuDecisionRequest(
+  state: string | Record<string, unknown>,
+  questions: Record<string, QuestionDefinition>,
+): { envelope: SenkuDecisionRequest; body: string } {
+  const budget = { nodes: 0 };
+  if (typeof state === 'string') {
+    if (!state.trim() || utf8Size(state) > MAX_SENKU_REQUEST_BYTES) fail('invalid_request');
+  } else if (!isRecord(state) || !validJsonTree(state, 0, budget)) {
+    fail('invalid_request');
+  }
+
+  const ids = Object.keys(questions);
+  if (ids.length < 1 || ids.length > 64
+    || ids.some((key) => !/^[a-z][a-z0-9_]{0,63}$/.test(key))
+    || !ids.every((key) => validQuestion(questions[key], budget))) {
+    fail('invalid_request');
+  }
+
+  const envelope: SenkuDecisionRequest = {
+    schemaVersion: SENKU_SCHEMA_VERSION,
+    state,
+    questions,
+  };
+  let body: string;
+  try {
+    body = JSON.stringify(envelope);
+  } catch {
+    fail('invalid_request');
+  }
+  if (utf8Size(body!) > MAX_SENKU_REQUEST_BYTES) fail('invalid_request');
+  return { envelope, body: body! };
+}
+
+function isLoopback(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  return host === 'localhost' || host === '::1' || /^127(?:\.\d{1,3}){3}$/.test(host);
+}
+
+export function resolveSenkuDecisionUrl(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env.SENKU_URL?.trim() || DEFAULT_SENKU_URL;
+  let parsed: URL;
+  try {
+    parsed = new URL(configured);
+  } catch {
+    fail('configuration');
+  }
+
+  if (parsed.username || parsed.password || parsed.search || parsed.hash
+    || (parsed.pathname !== '' && parsed.pathname !== '/')
+    || (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && isLoopback(parsed.hostname) && env.NODE_ENV !== 'production'))) {
+    fail('configuration');
+  }
+  return new URL(SENKU_DECISION_PATH, parsed.origin).toString();
+}
+
+export interface SenkuTokenResolution {
+  token?: string;
+  source: 'file' | 'environment' | 'none';
+}
+
+function validToken(value: string): boolean {
+  return /^[\x21-\x7e]{32,1024}$/.test(value);
+}
+
+function expandedPath(value: string, env: NodeJS.ProcessEnv): string {
+  if (value === '~') return env.HOME || value;
+  if (value.startsWith('~/')) return `${env.HOME || ''}${value.slice(1)}`;
+  return value;
+}
+
+export function resolveSenkuKasekiToken(options: SenkuClientOptions = {}): SenkuTokenResolution {
+  const env = options.env ?? process.env;
+  const readFile = options.readFile ?? ((path: string, encoding: 'utf8') => readFileSync(path, encoding));
+  const explicitPath = env.SENKU_KASEKI_API_TOKEN_FILE?.trim();
+  const filePaths = explicitPath
+    ? [expandedPath(explicitPath, env)]
+    : [
+      `${env.KASEKI_SECRETS_DIR?.trim() || '/run/secrets/kaseki'}/senku_kaseki_api_token`,
+      env.HOME ? `${env.HOME}/.kaseki/secrets/senku_kaseki_api_token` : '',
+    ].filter(Boolean);
+
+  for (const filePath of filePaths) {
+    try {
+      const token = readFile(filePath, 'utf8').trim();
+      if (!validToken(token)) fail('credentials', { credentialSource: 'file' });
+      return { token, source: 'file' };
+    } catch (error) {
+      if (error instanceof DecisionServiceError) throw error;
+      if (explicitPath) fail('credentials', { credentialSource: 'file' });
+    }
+  }
+
+  const inline = env.SENKU_KASEKI_API_TOKEN?.trim();
+  if (!inline) return { source: 'none' };
+  if (!validToken(inline)) fail('credentials', { credentialSource: 'environment' });
+  return { token: inline, source: 'environment' };
+}
+
+function isProbability(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+function isDistribution(value: unknown, expectedKeys: string[]): value is Record<string, number> {
+  if (!isRecord(value)) return false;
+  const keys = Object.keys(value);
+  if (keys.length !== expectedKeys.length || !expectedKeys.every((key) => Object.hasOwn(value, key))
+    || !Object.values(value).every(isProbability)) return false;
+  const total = Object.values(value).reduce<number>((sum, probability) => sum + Number(probability), 0);
+  return Math.abs(total - 1) <= 0.03;
+}
+
+function validConfidence(value: unknown): value is number | null {
+  return value === null || isProbability(value);
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value);
+  return actual.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
+function validAnswer(question: QuestionDefinition, answer: unknown): answer is ClassificationAnswer {
+  if (!isRecord(answer)) return false;
+  if (question.type === 'noul') {
+    return hasExactKeys(answer, ['type', 'noul', 'probabilities', 'confidence'])
+      && answer.type === 'noul'
+      && isProbability(answer.noul)
+      && isDistribution(answer.probabilities, ['false', 'true'])
+      && answer.confidence === null;
+  }
+  if (question.type === 'choice') {
+    const ids = Object.keys(question.criteria);
+    return hasExactKeys(answer, ['type', 'choice', 'probabilities', 'confidence'])
+      && answer.type === 'choice'
+      && typeof answer.choice === 'string'
+      && ids.includes(answer.choice)
+      && isDistribution(answer.probabilities, ids)
+      && validConfidence(answer.confidence);
+  }
+  const scoreIds = question.criteria.map((_, index) => String(index));
+  const legend = answer.legend;
+  if (!hasExactKeys(answer, ['type', 'score', 'probabilities', 'confidence', 'legend'])
+    || answer.type !== 'score' || typeof answer.score !== 'number'
+    || !Number.isFinite(answer.score) || answer.score < 0 || answer.score > question.criteria.length - 1
+    || !isDistribution(answer.probabilities, scoreIds) || !validConfidence(answer.confidence)
+    || !isRecord(legend)) return false;
+  return Object.keys(legend).length === scoreIds.length
+    && scoreIds.every((key) => typeof legend[key] === 'string');
+}
+
+function safeRequestId(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[A-Za-z0-9._:/-]{1,128}$/.test(value) ? value : undefined;
+}
+
+function validUsage(value: unknown): value is Record<string, number> {
+  return isRecord(value)
+    && Object.keys(value).every((key) => ['input_tokens', 'output_tokens', 'total_tokens', 'cost'].includes(key))
+    && Object.values(value).every((item) => typeof item === 'number' && Number.isFinite(item) && item >= 0);
+}
+
+function validateResponse(value: unknown, questions: Record<string, QuestionDefinition>): SenkuDecisionResponse {
+  const allowedKeys = ['schemaVersion', 'requestId', 'status', 'provider', 'model', 'answers', 'usage', 'durationMs', 'attemptCount'];
+  if (!isRecord(value) || Object.keys(value).some((key) => !allowedKeys.includes(key))
+    || value.schemaVersion !== SENKU_SCHEMA_VERSION || value.status !== 'completed' || value.provider !== 'jev'
+    || typeof value.model !== 'string' || !value.model.trim() || value.model.length > 256 || hasControlCharacter(value.model)
+    || !safeRequestId(value.requestId) || typeof value.durationMs !== 'number' || !Number.isFinite(value.durationMs) || value.durationMs < 0
+    || value.attemptCount !== 1 || !isRecord(value.answers)) {
+    fail('invalid_response', { attemptCount: 1 });
+  }
+  const answers = value.answers as Record<string, unknown>;
+  if (value.usage !== undefined && !validUsage(value.usage)) fail('invalid_response', { attemptCount: 1 });
+  const answerIds = Object.keys(answers);
+  const expectedIds = Object.keys(questions);
+  if (answerIds.length !== expectedIds.length || answerIds.some((id) => !Object.hasOwn(questions, id))
+    || !expectedIds.every((id) => validAnswer(questions[id]!, answers[id]))) {
+    fail('invalid_response', { requestId: safeRequestId(value.requestId), attemptCount: 1 });
+  }
+  return value as unknown as SenkuDecisionResponse;
+}
+
+async function readBoundedBody(response: Response, maxBytes: number, category: DecisionFailureCategory): Promise<Uint8Array> {
+  if (!response.body) return new Uint8Array();
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      size += next.value.byteLength;
+      if (size > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        fail(category, { attemptCount: 1 });
+      }
+      chunks.push(next.value);
+    }
+  } catch (error) {
+    if (error instanceof DecisionServiceError) throw error;
+    throw new DecisionServiceError(category, { attemptCount: 1 });
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
+function parseJson(bytes: Uint8Array): unknown {
+  try {
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown;
+  } catch {
+    fail('invalid_response', { attemptCount: 1 });
+  }
+}
+
+async function responseError(response: Response): Promise<DecisionServiceError> {
+  const bytes = await readBoundedBody(response, MAX_SENKU_RESPONSE_BYTES, 'service_unavailable').catch((error: unknown) => {
+    if (error instanceof DecisionServiceError) return new Uint8Array();
+    return new Uint8Array();
+  });
+  let code: string | undefined;
+  let requestId: string | undefined;
+  try {
+    const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    if (isRecord(value) && isRecord(value.error)) {
+      code = typeof value.error.code === 'string' ? value.error.code : undefined;
+      requestId = safeRequestId(value.error.requestId);
+    }
+  } catch {
+    // Status mapping still yields a safe error when the public body is malformed.
+  }
+
+  let category: DecisionFailureCategory = 'service_unavailable';
+  if (response.status === 401 || response.status === 403) category = 'credentials';
+  else if (response.status === 400 || response.status === 413) category = 'invalid_request';
+  else if (response.status === 504 || code === 'PROVIDER_TIMEOUT') category = 'timeout';
+  else if (response.status === 502 && code === 'INVALID_PROVIDER_RESPONSE') category = 'invalid_response';
+  else if (response.status === 502 && code === 'PROVIDER_UNAVAILABLE') category = 'provider_failure';
+  return new DecisionServiceError(category, {
+    httpStatus: response.status,
+    requestId,
+    senkuCode: code,
+    attemptCount: 1,
+  });
+}
+
+function timeoutMs(value: number | undefined): number {
+  return value !== undefined && Number.isFinite(value) && value > 0
+    ? Math.max(1, Math.round(value))
+    : 15_000;
+}
+
+export async function requestSenkuDecision(
+  state: string | Record<string, unknown>,
+  questions: Record<string, QuestionDefinition>,
+  options: SenkuDecisionOptions = {},
+): Promise<SenkuDecisionResult> {
+  if (hasRetiredDecisionSettings(options.env ?? process.env)) fail('configuration');
+  const env = options.env ?? process.env;
+  const url = resolveSenkuDecisionUrl(env);
+  const credentials = resolveSenkuKasekiToken(options);
+  if (!credentials.token) fail('credentials', { credentialSource: 'none' });
+  const { body } = buildSenkuDecisionRequest(state, questions);
+
+  const controller = new AbortController();
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const started = performance.now();
+  const budget = timeoutMs(options.timeoutMs);
+  let timer: NodeJS.Timeout | undefined;
+  let removeExternalAbort = (): void => undefined;
+  let rejectAbort: ((error: DecisionServiceError) => void) | undefined;
+  const abortPromise = new Promise<never>((_resolve, reject) => { rejectAbort = reject; });
+
+  if (options.signal?.aborted) fail('timeout');
+  if (options.signal) {
+    const abort = (): void => {
+      controller.abort();
+      rejectAbort?.(new DecisionServiceError('timeout'));
+    };
+    options.signal.addEventListener('abort', abort, { once: true });
+    removeExternalAbort = () => options.signal?.removeEventListener('abort', abort);
+  }
+
+  const operation = (async (): Promise<SenkuDecisionResult> => {
+    let response: Response;
+    try {
+      response = await fetchImpl(url, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${credentials.token}`,
+        },
+        body,
+        redirect: 'manual',
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (controller.signal.aborted || (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError')) {
+        throw new DecisionServiceError('timeout', { attemptCount: 1 });
+      }
+      throw new DecisionServiceError('network', { attemptCount: 1 });
+    }
+
+    if (response.status >= 300 && response.status < 400) {
+      throw new DecisionServiceError('invalid_response', { httpStatus: response.status, attemptCount: 1 });
+    }
+    if (!response.ok) throw await responseError(response);
+
+    const bytes = await readBoundedBody(response, MAX_SENKU_RESPONSE_BYTES, 'invalid_response');
+    const validated = validateResponse(parseJson(bytes), questions);
+    return { ...validated, responseTime: Math.round(performance.now() - started) };
+  })();
+
+  try {
+    timer = setTimeout(() => {
+      controller.abort();
+      rejectAbort?.(new DecisionServiceError('timeout', { attemptCount: 1 }));
+    }, budget);
+    return await Promise.race([operation, abortPromise]);
+  } catch (error) {
+    if (controller.signal.aborted) throw new DecisionServiceError('timeout', { attemptCount: 1 });
+    if (error instanceof DecisionServiceError) throw error;
+    throw new DecisionServiceError('network', { attemptCount: 1 });
+  } finally {
+    if (timer) clearTimeout(timer);
+    removeExternalAbort();
+  }
+}

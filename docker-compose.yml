@@ -63,6 +63,8 @@ services:
       LLM_GATEWAY_URL: "${LLM_GATEWAY_URL:-}"
       LLM_GATEWAY_MODEL: "${LLM_GATEWAY_MODEL:-dynamic/kaseki-agent}"
       LLM_GATEWAY_API_KEY_FILE: /run/secrets/kaseki/llm_gateway_api_key
+      SENKU_URL: "${SENKU_URL:-https://senku.scheimann.workers.dev}"
+      SENKU_KASEKI_API_TOKEN_FILE: "${SENKU_KASEKI_API_TOKEN_FILE:-/run/secrets/kaseki/senku_kaseki_api_token}"
       # Per-model billing rates in USD per million tokens. Unknown models are
       # deliberately left unpriced instead of receiving another model's rate.
       # The default catalog covers the current DeepSeek V4 Flash deployment.

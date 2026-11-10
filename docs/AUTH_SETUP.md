@@ -2,7 +2,7 @@
 
 > **NPM CLI note:** `kaseki-agent run`, `list`, `report`, `status`, and `stop`/`cancel` are API-backed commands. Configure service-side `KASEKI_API_KEYS` for `kaseki-agent serve` and client-side `KASEKI_API_URL` / `KASEKI_API_KEY` for the npm task commands.
 
-This guide covers how to configure authentication credentials for Kaseki Agent, including OpenRouter API keys and GitHub App credentials.
+This guide covers the Senku decision token, Kaseki API bearer keys, and GitHub App credentials.
 
 ## Quick Start (Choose One)
 
@@ -19,7 +19,6 @@ This guide covers how to configure authentication credentials for Kaseki Agent, 
    ```json
    {
      "auth": {
-       "openrouter_api_key_file": "/home/pi/secrets/openrouter_api_key",
        "github_app_id": "123456",
        "github_app_client_id": "Iv1.public-client-id",
        "github_app_private_key_file": "/home/pi/secrets/github_app_private_key"
@@ -34,7 +33,6 @@ This guide covers how to configure authentication credentials for Kaseki Agent, 
    cat > ~/.kaseki/config.json << 'EOF'
    {
      "auth": {
-       "openrouter_api_key_file": "/home/pi/secrets/openrouter_api_key",
        "github_app_id": "123456",
        "github_app_client_id": "Iv1.public-client-id",
        "github_app_private_key_file": "/home/pi/secrets/github_app_private_key"
@@ -61,7 +59,7 @@ This guide covers how to configure authentication credentials for Kaseki Agent, 
 #### Without sudo
 
 ```bash
-export OPENROUTER_API_KEY_FILE=/home/pi/secrets/openrouter_api_key
+export SENKU_KASEKI_API_TOKEN_FILE=/home/pi/secrets/senku_kaseki_api_token
 export GITHUB_APP_ID=123456
 export GITHUB_APP_CLIENT_ID=Iv1.public-client-id
 export GITHUB_APP_PRIVATE_KEY_FILE=/home/pi/secrets/github_app_private_key
@@ -72,7 +70,7 @@ kaseki-agent run https://github.com/CyanAutomation/kaseki-agent main "Your task 
 #### With sudo (preserve env vars using `-E`)
 
 ```bash
-export OPENROUTER_API_KEY_FILE=/home/pi/secrets/openrouter_api_key
+export SENKU_KASEKI_API_TOKEN_FILE=/home/pi/secrets/senku_kaseki_api_token
 export GITHUB_APP_ID=123456
 export GITHUB_APP_CLIENT_ID=Iv1.public-client-id
 export GITHUB_APP_PRIVATE_KEY_FILE=/home/pi/secrets/github_app_private_key
@@ -123,7 +121,6 @@ Kaseki Agent looks for configuration in this order (highest to lowest priority):
 ```json
 {
   "auth": {
-    "openrouter_api_key_file": "/path/to/openrouter_key",
     "github_app_id": "123456",
     "github_app_client_id": "Iv1.public-client-id",
     "github_app_private_key_file": "/path/to/github_app_private_key"
@@ -131,11 +128,14 @@ Kaseki Agent looks for configuration in this order (highest to lowest priority):
 }
 ```
 
-File paths are **absolute** or relative to the current working directory.
+File paths are **absolute** or relative to the current working directory. The
+Senku token path is supplied with `SENKU_KASEKI_API_TOKEN_FILE` or the default
+secret file location, not embedded in project configuration.
 
 ## Secret File Setup
 
-Your auth files should contain just the credential value, one per file:
+Secret files should contain one credential value per file. Senku machine
+tokens are issued by the Senku operator; Kaseki does not create or rotate them.
 
 ```bash
 # Create secret files with appropriate permissions
@@ -143,10 +143,10 @@ mkdir -p ~/secrets
 sudo chgrp 10000 ~/secrets
 chmod 0750 ~/secrets
 
-# OpenRouter API Key (get from https://openrouter.ai/keys)
-echo "sk-or-..." > ~/secrets/openrouter_api_key
-sudo chgrp 10000 ~/secrets/openrouter_api_key
-chmod 0640 ~/secrets/openrouter_api_key
+# Install the approved Senku Kaseki token without printing its value.
+install -m 0600 /path/to/approved/kaseki-senku-token ~/secrets/senku_kaseki_api_token
+sudo chgrp 10000 ~/secrets/senku_kaseki_api_token
+sudo chmod 0640 ~/secrets/senku_kaseki_api_token
 
 # GitHub App ID and Client ID are public configuration values, not secret files.
 # Set GITHUB_APP_ID and GITHUB_APP_CLIENT_ID in .env or the service environment.
@@ -294,10 +294,9 @@ This takes precedence over `~/.kaseki/config.json`.
 ### Local development (config file)
 
 ```bash
-mkdir -p ~/.kaseki
-cat > ~/.kaseki/config.json << 'EOF'
-{ "auth": { "openrouter_api_key_file": "~/secrets/openrouter" } }
-EOF
+install -d -m 0700 ~/.kaseki/secrets
+install -m 0600 /path/to/approved/kaseki-senku-token \
+  ~/.kaseki/secrets/senku_kaseki_api_token
 
 kaseki-agent run <repo> <branch> <task>
 ```
@@ -306,7 +305,7 @@ kaseki-agent run <repo> <branch> <task>
 
 ```bash
 # In GitHub Actions, GitLab CI, or similar
-export OPENROUTER_API_KEY_FILE=/tmp/openrouter_key
+export SENKU_KASEKI_API_TOKEN_FILE=/tmp/senku_kaseki_api_token
 export GITHUB_APP_ID=123456
 export GITHUB_APP_CLIENT_ID=Iv1.public-client-id
 # ... etc
