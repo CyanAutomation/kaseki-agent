@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { TextDecoder, TextEncoder } from 'node:util';
 import type { ClassificationAnswer, QuestionDefinition } from '../types/openrouter-decisions';
 
 export const DEFAULT_SENKU_URL = 'https://senku.scheimann.workers.dev';
@@ -88,7 +89,7 @@ export interface SenkuDecisionResponse {
 export interface SenkuClientOptions {
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
-  readFile?: (path: string, encoding: BufferEncoding) => string;
+  readFile?: (path: string, encoding: 'utf8') => string;
 }
 
 export interface SenkuDecisionOptions extends SenkuClientOptions {
@@ -112,6 +113,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function utf8Size(value: string): number {
   return new TextEncoder().encode(value).byteLength;
+}
+
+function hasControlCharacter(value: string): boolean {
+  return Array.from(value).some((character) => {
+    const code = character.charCodeAt(0);
+    return code <= 0x1f || code === 0x7f;
+  });
 }
 
 function validJsonTree(value: unknown, depth = 0, budget = { nodes: 0 }): boolean {
@@ -207,7 +215,7 @@ export function resolveSenkuDecisionUrl(env: NodeJS.ProcessEnv = process.env): s
 
   if (parsed.username || parsed.password || parsed.search || parsed.hash
     || (parsed.pathname !== '' && parsed.pathname !== '/')
-    || (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && isLoopback(parsed.hostname) && env.NODE_ENV !== 'production')) {
+    || (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && isLoopback(parsed.hostname) && env.NODE_ENV !== 'production'))) {
     fail('configuration');
   }
   return new URL(SENKU_DECISION_PATH, parsed.origin).toString();
@@ -230,7 +238,7 @@ function expandedPath(value: string, env: NodeJS.ProcessEnv): string {
 
 export function resolveSenkuKasekiToken(options: SenkuClientOptions = {}): SenkuTokenResolution {
   const env = options.env ?? process.env;
-  const readFile = options.readFile ?? readFileSync;
+  const readFile = options.readFile ?? ((path: string, encoding: 'utf8') => readFileSync(path, encoding));
   const explicitPath = env.SENKU_KASEKI_API_TOKEN_FILE?.trim();
   const filePaths = explicitPath
     ? [expandedPath(explicitPath, env)]
@@ -265,7 +273,7 @@ function isDistribution(value: unknown, expectedKeys: string[]): value is Record
   const keys = Object.keys(value);
   if (keys.length !== expectedKeys.length || !expectedKeys.every((key) => Object.hasOwn(value, key))
     || !Object.values(value).every(isProbability)) return false;
-  const total = Object.values(value).reduce((sum, probability) => sum + probability, 0);
+  const total = Object.values(value).reduce<number>((sum, probability) => sum + Number(probability), 0);
   return Math.abs(total - 1) <= 0.03;
 }
 
@@ -297,13 +305,14 @@ function validAnswer(question: QuestionDefinition, answer: unknown): answer is C
       && validConfidence(answer.confidence);
   }
   const scoreIds = question.criteria.map((_, index) => String(index));
+  const legend = answer.legend;
   if (!hasExactKeys(answer, ['type', 'score', 'probabilities', 'confidence', 'legend'])
     || answer.type !== 'score' || typeof answer.score !== 'number'
     || !Number.isFinite(answer.score) || answer.score < 0 || answer.score > question.criteria.length - 1
     || !isDistribution(answer.probabilities, scoreIds) || !validConfidence(answer.confidence)
-    || !isRecord(answer.legend)) return false;
-  return Object.keys(answer.legend).length === scoreIds.length
-    && scoreIds.every((key) => typeof answer.legend![key] === 'string');
+    || !isRecord(legend)) return false;
+  return Object.keys(legend).length === scoreIds.length
+    && scoreIds.every((key) => typeof legend[key] === 'string');
 }
 
 function safeRequestId(value: unknown): string | undefined {
@@ -320,16 +329,17 @@ function validateResponse(value: unknown, questions: Record<string, QuestionDefi
   const allowedKeys = ['schemaVersion', 'requestId', 'status', 'provider', 'model', 'answers', 'usage', 'durationMs', 'attemptCount'];
   if (!isRecord(value) || Object.keys(value).some((key) => !allowedKeys.includes(key))
     || value.schemaVersion !== SENKU_SCHEMA_VERSION || value.status !== 'completed' || value.provider !== 'jev'
-    || typeof value.model !== 'string' || !value.model.trim() || value.model.length > 256 || /[\x00-\x1f\x7f]/.test(value.model)
+    || typeof value.model !== 'string' || !value.model.trim() || value.model.length > 256 || hasControlCharacter(value.model)
     || !safeRequestId(value.requestId) || typeof value.durationMs !== 'number' || !Number.isFinite(value.durationMs) || value.durationMs < 0
     || value.attemptCount !== 1 || !isRecord(value.answers)) {
     fail('invalid_response', { attemptCount: 1 });
   }
+  const answers = value.answers as Record<string, unknown>;
   if (value.usage !== undefined && !validUsage(value.usage)) fail('invalid_response', { attemptCount: 1 });
-  const answerIds = Object.keys(value.answers);
+  const answerIds = Object.keys(answers);
   const expectedIds = Object.keys(questions);
   if (answerIds.length !== expectedIds.length || answerIds.some((id) => !Object.hasOwn(questions, id))
-    || !expectedIds.every((id) => validAnswer(questions[id], value.answers![id]))) {
+    || !expectedIds.every((id) => validAnswer(questions[id]!, answers[id]))) {
     fail('invalid_response', { requestId: safeRequestId(value.requestId), attemptCount: 1 });
   }
   return value as unknown as SenkuDecisionResponse;

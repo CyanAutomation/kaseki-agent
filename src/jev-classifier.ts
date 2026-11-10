@@ -3,7 +3,6 @@ import {
   DecisionServiceError,
   hasRetiredDecisionSettings,
   requestSenkuDecision,
-  type DecisionFailureCategory,
 } from './decision-service/senku-client';
 import type { JevClassificationOptions, JevClassificationResult } from './jev-classifier-types';
 

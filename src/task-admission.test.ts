@@ -8,8 +8,8 @@ const ENV_NAMES = [
 
 function answer(question: { type: string; criteria?: Record<string, unknown> | string[] }, choice?: string) {
   if (question.type === 'noul') {
-    const noul = 0.01;
-    return { type: 'noul', noul, probabilities: { false: 0.99, true: noul }, confidence: null };
+    const noul = choice === 'true' ? 0.99 : 0.01;
+    return { type: 'noul', noul, probabilities: { false: 1 - noul, true: noul }, confidence: null };
   }
   const ids = question.type === 'score'
     ? (question.criteria as string[]).map((_, index) => String(index))
