@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2317 # cleanup is invoked indirectly by the EXIT trap.
+# shellcheck disable=SC2317,SC2329 # cleanup is invoked indirectly by the EXIT trap.
 
 ##############################################################################
 # test-scouting-retry.sh
