@@ -35,7 +35,6 @@ const config: Config = {
         module: 'esnext',
         target: 'ES2024',
         lib: ['ES2024'],
-        downlevelIteration: true,
       },
     }],
   },
