@@ -53,10 +53,17 @@ export class DecisionServiceError extends Error {
   readonly requestId?: string;
   readonly senkuCode?: string;
   readonly attemptCount?: number;
+  readonly credentialSource?: SenkuTokenResolution['source'];
 
   constructor(
     category: DecisionFailureCategory,
-    metadata: { httpStatus?: number; requestId?: string; senkuCode?: string; attemptCount?: number } = {},
+    metadata: {
+      httpStatus?: number;
+      requestId?: string;
+      senkuCode?: string;
+      attemptCount?: number;
+      credentialSource?: SenkuTokenResolution['source'];
+    } = {},
   ) {
     super(SAFE_MESSAGES[category]);
     this.name = 'DecisionServiceError';
@@ -65,6 +72,7 @@ export class DecisionServiceError extends Error {
     this.requestId = safeRequestId(metadata.requestId);
     this.senkuCode = /^[A-Z_]{1,64}$/.test(metadata.senkuCode ?? '') ? metadata.senkuCode : undefined;
     this.attemptCount = metadata.attemptCount === 1 ? 1 : undefined;
+    this.credentialSource = metadata.credentialSource;
   }
 }
 
@@ -250,17 +258,17 @@ export function resolveSenkuKasekiToken(options: SenkuClientOptions = {}): Senku
   for (const filePath of filePaths) {
     try {
       const token = readFile(filePath, 'utf8').trim();
-      if (!validToken(token)) fail('credentials');
+      if (!validToken(token)) fail('credentials', { credentialSource: 'file' });
       return { token, source: 'file' };
     } catch (error) {
       if (error instanceof DecisionServiceError) throw error;
-      if (explicitPath) fail('credentials');
+      if (explicitPath) fail('credentials', { credentialSource: 'file' });
     }
   }
 
   const inline = env.SENKU_KASEKI_API_TOKEN?.trim();
   if (!inline) return { source: 'none' };
-  if (!validToken(inline)) fail('credentials');
+  if (!validToken(inline)) fail('credentials', { credentialSource: 'environment' });
   return { token: inline, source: 'environment' };
 }
 
@@ -416,7 +424,9 @@ async function responseError(response: Response): Promise<DecisionServiceError> 
 }
 
 function timeoutMs(value: number | undefined): number {
-  return Number.isInteger(value) && value !== undefined && value > 0 ? value : 15_000;
+  return value !== undefined && Number.isFinite(value) && value > 0
+    ? Math.max(1, Math.round(value))
+    : 15_000;
 }
 
 export async function requestSenkuDecision(
@@ -425,11 +435,11 @@ export async function requestSenkuDecision(
   options: SenkuDecisionOptions = {},
 ): Promise<SenkuDecisionResult> {
   if (hasRetiredDecisionSettings(options.env ?? process.env)) fail('configuration');
-  const { body } = buildSenkuDecisionRequest(state, questions);
   const env = options.env ?? process.env;
   const url = resolveSenkuDecisionUrl(env);
   const credentials = resolveSenkuKasekiToken(options);
-  if (!credentials.token) fail('credentials');
+  if (!credentials.token) fail('credentials', { credentialSource: 'none' });
+  const { body } = buildSenkuDecisionRequest(state, questions);
 
   const controller = new AbortController();
   const fetchImpl = options.fetchImpl ?? fetch;

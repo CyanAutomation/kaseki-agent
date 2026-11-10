@@ -182,6 +182,27 @@ describe('decision workflow telemetry', () => {
     });
   });
 
+  it('preserves resolved choices and scores with zero confidence', async () => {
+    const service = successfulService();
+    const artifact = await evaluateWorkflow('run-evaluation', resultsDir, '1', {
+      decisionService: {
+        ...service,
+        decide: async (request) => {
+          const result = await service.decide(request);
+          for (const answer of Object.values(result.answers)) {
+            if (answer.type === 'choice' || answer.type === 'score') answer.confidence = 0;
+          }
+          return result;
+        },
+      },
+    });
+
+    expect(artifact).toMatchObject({
+      overall_assessment: 'excellent',
+      task_completion_score: 5,
+    });
+  });
+
   it('supplies bounded, redacted implementation evidence to JEV for documentation-only changes', async () => {
     const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-workflow-repo-'));
     const repoDir = path.join(workspaceDir, 'repo');

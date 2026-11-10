@@ -1,8 +1,7 @@
 import { parsePositiveInt } from './lib/env-var-helpers.js';
 import { answerConfidence, answerIsTrue } from './decision-answers';
-import { decisionFailureMetadata, decisionService } from './decision-service';
+import { DecisionServiceError, decisionFailureMetadata, decisionService } from './decision-service';
 import { hasRetiredDecisionSettings } from './jev-classifier';
-import { resolveSenkuKasekiToken } from './decision-service/senku-client';
 import type { ClassificationAnswer, QuestionDefinition } from './types/openrouter-decisions';
 
 export const TASK_ADMISSION_EXIT_CODE = 9;
@@ -223,28 +222,6 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
   }
 
   try {
-    if (!resolveSenkuKasekiToken().token) {
-      return {
-        allowed: true,
-        status: 'degraded',
-        degraded: true,
-        reason: 'Task admission evaluation is unavailable; submission allowed by fail-open policy.',
-        responseTime: 0,
-        warnings: ['Senku decision credentials are not configured.'],
-      };
-    }
-  } catch {
-    return {
-      allowed: true,
-      status: 'degraded',
-      degraded: true,
-      reason: 'Task admission evaluation is unavailable; submission allowed by fail-open policy.',
-      responseTime: 0,
-      warnings: ['Senku decision credentials are invalid or unreadable.'],
-    };
-  }
-
-  try {
     const requestBody = buildTaskAdmissionRequest(request);
     const parsed = await decisionService.decide({
       state: requestBody.state as string,
@@ -258,13 +235,20 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
     );
   } catch (error) {
     const failure = decisionFailureMetadata(error);
+    const credentialWarning = error instanceof DecisionServiceError && error.category === 'credentials'
+      ? error.credentialSource === 'none'
+        ? 'Senku decision credentials are not configured.'
+        : error.credentialSource === 'file' || error.credentialSource === 'environment'
+          ? 'Senku decision credentials are invalid or unreadable.'
+          : undefined
+      : undefined;
     return {
       allowed: true,
       status: 'degraded',
       degraded: true,
       reason: 'Task Admission evaluation failed; submission allowed by fail-open policy.',
       responseTime: Math.round(performance.now() - started),
-      warnings: [`Senku decision classification is unavailable (${failure.code}).`],
+      warnings: [credentialWarning ?? `Senku decision classification is unavailable (${failure.code}).`],
     };
   }
 }

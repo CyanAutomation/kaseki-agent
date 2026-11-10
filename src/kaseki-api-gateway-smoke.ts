@@ -26,7 +26,6 @@ import {
 } from './gateway-validation/gateway-response-smoke-checks';
 import { validateClassificationConfidence } from './utils/classification-validation';
 import { decisionService, DecisionServiceError } from './decision-service';
-import { resolveSenkuKasekiToken } from './decision-service/senku-client';
 import type { QuestionDefinition } from './types/openrouter-decisions';
 
 /**
@@ -575,7 +574,7 @@ function runPiProviderSmokeChild(config: Extract<PiProviderSmokeConfig, { ok: tr
 function debugPiProviderSmokeOutput(stdout: string): string | undefined {
   try {
     const debugPath = `/tmp/kaseki-pi-debug-${Date.now()}.jsonl`;
-    fs.writeFileSync(debugPath, stdout);
+    fs.writeFileSync(debugPath, stdout, { mode: 0o600 });
     return debugPath;
   } catch {
     return undefined;
@@ -983,13 +982,6 @@ async function testGatewayResponseSmoke(
 }
 
 /**
- * Resolve Cloudflare AI Run credentials from environment
- */
-export type ClassificationConfig =
-  | { ok: true }
-  | { ok: false; result: ClassificationSmokeTestResult };
-
-/**
  * @deprecated Retained for compatibility with the previous gateway smoke implementation
  * Kept for backward compatibility but should be removed in a future version.
  */
@@ -1012,38 +1004,6 @@ export function resolveCloudflareApiToken(): string {
   }
 
   return '';
-}
-
-function resolveClassificationConfig(timestamp: string): ClassificationConfig {
-  try {
-    if (!resolveSenkuKasekiToken().token) {
-      return {
-        ok: false,
-        result: {
-          status: 'skipped',
-          detail: 'Senku decision credentials are not configured',
-          responseTime: 0,
-          timestamp,
-          remediation: 'Mount the Kaseki Senku machine token, then rerun the opt-in Evaluation stage check.',
-        },
-      };
-    }
-  } catch {
-    return {
-      ok: false,
-      result: {
-        status: 'error',
-        detail: 'Senku decision credentials are invalid or unreadable',
-        responseTime: 0,
-        timestamp,
-        remediation: 'Check the mounted SENKU_KASEKI_API_TOKEN_FILE and file permissions, then rerun the opt-in Evaluation stage check.',
-      },
-    };
-  }
-
-  return {
-    ok: true,
-  };
 }
 
 function buildClassificationSmokeRequest(): Record<string, unknown> {
@@ -1142,11 +1102,6 @@ export async function testClassificationSmoke(requested: boolean = false): Promi
     };
   }
 
-  const config = resolveClassificationConfig(timestamp);
-  if (!config.ok) {
-    return config.result;
-  }
-
   const requestBody = buildClassificationSmokeRequest();
 
   try {
@@ -1187,6 +1142,15 @@ export async function testClassificationSmoke(requested: boolean = false): Promi
     };
   } catch (error) {
     const responseTime = Math.round(performance.now() - startTime);
+    if (error instanceof DecisionServiceError && error.credentialSource === 'none') {
+      return {
+        status: 'skipped',
+        detail: 'Senku decision credentials are not configured',
+        responseTime,
+        timestamp,
+        remediation: 'Mount the Kaseki Senku machine token, then rerun the opt-in Evaluation stage check.',
+      };
+    }
     const failure = classificationFailure(error);
     return {
       status: 'error',
