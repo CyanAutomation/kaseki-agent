@@ -213,6 +213,32 @@ describe('Senku decision transport', () => {
     expect(duringBody).toHaveBeenCalledTimes(1);
   });
 
+  it('rounds a positive fractional timeout instead of silently using the default budget', async () => {
+    jest.useFakeTimers();
+    const controller = new AbortController();
+    const fetchImpl = jest.fn<typeof fetch>().mockImplementation((_input, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+    }));
+    const pending = requestSenkuDecision('state', noulQuestion, {
+      ...makeOptions(fetchImpl),
+      timeoutMs: 10.5,
+      signal: controller.signal,
+    });
+    let settled = false;
+    void pending.then(() => { settled = true; }, () => { settled = true; });
+
+    try {
+      await jest.advanceTimersByTimeAsync(11);
+      expect(settled).toBe(true);
+      await expect(pending).rejects.toMatchObject({ category: 'timeout' });
+    } finally {
+      controller.abort();
+      await pending.catch(() => undefined);
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
+  });
+
   it('honors an already-aborted caller signal', async () => {
     const controller = new AbortController();
     controller.abort();
@@ -257,6 +283,16 @@ describe('Senku decision transport', () => {
     expect(() => buildSenkuDecisionRequest('state', {
       'bad-key': { type: 'noul', instructions: 'Does this question have an invalid ID?' },
     })).toThrow(DecisionServiceError);
+  });
+
+  it('checks credentials before serializing an oversized request', async () => {
+    const fetchImpl = jest.fn<typeof fetch>();
+    await expect(requestSenkuDecision('x'.repeat(130 * 1024), noulQuestion, {
+      fetchImpl,
+      env: { NODE_ENV: 'test', SENKU_URL: 'https://senku.example.test' },
+      readFile: () => { throw new Error('synthetic missing token file'); },
+    })).rejects.toMatchObject({ category: 'credentials', credentialSource: 'none' });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('keeps the legacy classifier shim on one Senku request and ignores retries and model overrides', async () => {

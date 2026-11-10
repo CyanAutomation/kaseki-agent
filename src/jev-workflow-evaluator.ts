@@ -2,7 +2,6 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { decisionFailureMetadata, decisionService } from './decision-service';
-import { answerConfidence } from './decision-answers';
 import type { DecisionResult, DecisionService } from './decision-service';
 import { appendDecisionTelemetry, summarizeDecisionConfidence } from './decision-telemetry';
 import { collectValidationEvidence } from './validation-evidence';
@@ -388,8 +387,8 @@ function runEvaluationFacts(state: JsonObject, goalCheck: JsonObject): RunEvalua
 
 function runEvaluationAnswer(answers: Record<string, ClassificationAnswer>, name: string): string | number {
   const value = answers[name];
-  if (value?.type === 'choice') return answerConfidence(value) > 0 ? value.choice : 'unknown';
-  if (value?.type === 'score') return answerConfidence(value) > 0 ? value.score : 'unknown';
+  if (value?.type === 'choice') return value.confidence !== null ? value.choice : 'unknown';
+  if (value?.type === 'score') return value.confidence !== null ? value.score : 'unknown';
   if (value?.type === 'noul') return value.noul;
   return 'unknown';
 }
