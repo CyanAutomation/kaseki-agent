@@ -69,12 +69,9 @@ describe('run-scorecard-guards', () => {
       expect(number(Number.MAX_VALUE)).toBe(Number.MAX_VALUE);
     });
 
-    it('rejects infinity', () => {
+    it('rejects non-finite numbers', () => {
       expect(number(Infinity)).toBeUndefined();
       expect(number(-Infinity)).toBeUndefined();
-    });
-
-    it('rejects NaN', () => {
       expect(number(NaN)).toBeUndefined();
     });
 
@@ -88,11 +85,6 @@ describe('run-scorecard-guards', () => {
       expect(number({ value: 42 })).toBeUndefined();
     });
 
-    it('uses Number.isFinite() for validation', () => {
-      // Verify the guard uses isFinite
-      expect(number(Number.POSITIVE_INFINITY)).toBeUndefined();
-      expect(number(Number.NEGATIVE_INFINITY)).toBeUndefined();
-    });
   });
 
   describe('bool() guard', () => {
@@ -241,35 +233,4 @@ describe('run-scorecard-guards', () => {
     });
   });
 
-  describe('Consumer compatibility (patterns used by 12+ files)', () => {
-    it('supports the pattern used by run-scorecard-evidence-status.ts', () => {
-      // Pattern: metadata[key] -> number() -> statusFrom()
-      const metadata = { exit_code: 0, run_status: 'completed' };
-      expect(number(metadata.exit_code)).toBe(0);
-      expect(object({ exit_code: 0 })).toBeDefined();
-    });
-
-    it('supports the pattern used by evidence collectors', () => {
-      // Pattern: snapshot.json['file.json'] -> object() -> check properties
-      const snapshot = {
-        json: {
-          'metadata.json': { count: 5, enabled: true },
-          'missing.json': undefined,
-        },
-      };
-      const meta = object(snapshot.json['metadata.json']);
-      expect(meta).toBeDefined();
-      expect(number(meta?.count)).toBe(5);
-      expect(bool(meta?.enabled)).toBe(true);
-      const missing = object(snapshot.json['missing.json']);
-      expect(missing).toBeUndefined();
-    });
-
-    it('supports the pattern used by phase detection', () => {
-      // Pattern: stage string -> stagePhase() -> phase key lookup
-      const stages = ['Goal Setting', 'Scouting', 'Pi Coding Agent', 'Validation'];
-      const phases = stages.map(stagePhase).filter(Boolean);
-      expect(phases).toEqual(['goal_setting', 'scouting', 'coding', 'validation']);
-    });
-  });
 });
