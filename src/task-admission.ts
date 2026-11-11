@@ -176,6 +176,9 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
 
   try {
     const requestBody = buildTaskAdmissionRequest(request);
+    if (!decisionService.evaluateProfile) {
+      throw new DecisionServiceError('configuration');
+    }
     const parsed = await decisionService.evaluateProfile({
       profileId: 'task_admission_v1',
       input: requestBody.input as Record<string, unknown>,
