@@ -175,8 +175,17 @@ jobs:
 
           if [[ -n "$RECOVER_VERSION" ]]; then
             recovery_target="$(./scripts/resolve-existing-release.sh "$RECOVER_VERSION")"
-            new_tag="v$(printf '%s\n' "$recovery_target" | sed -n 's/^version=//p')"
+            recovery_version="$(printf '%s\n' "$recovery_target" | sed -n 's/^version=//p')"
             release_sha="$(printf '%s\n' "$recovery_target" | sed -n 's/^sha=//p')"
+            [[ "$recovery_version" == "$RECOVER_VERSION" ]] || {
+              echo "Failed to resolve recovery version $RECOVER_VERSION" >&2
+              exit 1
+            }
+            [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || {
+              echo "Failed to resolve a full commit SHA for recovery version $RECOVER_VERSION" >&2
+              exit 1
+            }
+            new_tag="v$recovery_version"
             released=true
           else
             before_tags="$(mktemp)"

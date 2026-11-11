@@ -26,6 +26,7 @@ git -C "$tmp_dir/repo" add package.json
 git -C "$tmp_dir/repo" commit --quiet -m 'release 1.2.3'
 git -C "$tmp_dir/repo" tag v1.2.3
 release_sha="$(git -C "$tmp_dir/repo" rev-parse HEAD)"
+git -C "$tmp_dir/repo" tag v1.2.4 "$release_sha"
 
 # Recovery remains valid after main advances beyond the release tag.
 printf '{"name":"fixture","version":"1.2.4"}\n' > "$tmp_dir/repo/package.json"
@@ -39,11 +40,17 @@ resolved="$(cd "$tmp_dir/repo" && PATH="$tmp_dir/bin:$PATH" EXPECTED_RELEASE_VER
   exit 1
 }
 
-if (cd "$tmp_dir/repo" && PATH="$tmp_dir/bin:$PATH" EXPECTED_RELEASE_VERSION=1.2.3 \
-  "$ROOT_DIR/scripts/resolve-existing-release.sh" 1.2.4) >/dev/null 2>&1; then
+wrong_version_log="$tmp_dir/wrong-version.log"
+if (cd "$tmp_dir/repo" && PATH="$tmp_dir/bin:$PATH" EXPECTED_RELEASE_VERSION=1.2.4 \
+  "$ROOT_DIR/scripts/resolve-existing-release.sh" 1.2.4) >"$wrong_version_log" 2>&1; then
   echo 'recovery must reject a requested version that does not match the tag package metadata' >&2
   exit 1
 fi
+grep -Fq 'Release tag v1.2.4 contains package version 1.2.3' "$wrong_version_log" || {
+  echo 'the mismatch test must fail at the package-version validation check' >&2
+  cat "$wrong_version_log" >&2
+  exit 1
+}
 
 if (cd "$tmp_dir/repo" && PATH="$tmp_dir/bin:$PATH" EXPECTED_RELEASE_VERSION=1.2.5 \
   "$ROOT_DIR/scripts/resolve-existing-release.sh" 1.2.5) >/dev/null 2>&1; then
@@ -63,10 +70,16 @@ if (cd "$tmp_dir/repo" && PATH="$tmp_dir/bin:$PATH" EXPECTED_RELEASE_VERSION=1.2
   exit 1
 fi
 
+missing_release_log="$tmp_dir/missing-release.log"
 if (cd "$tmp_dir/repo" && PATH="$tmp_dir/bin:$PATH" EXPECTED_RELEASE_VERSION=1.2.3 GH_RELEASE_AVAILABLE=false \
-  "$ROOT_DIR/scripts/resolve-existing-release.sh" 1.2.3) >/dev/null 2>&1; then
+  "$ROOT_DIR/scripts/resolve-existing-release.sh" 1.2.3) >"$missing_release_log" 2>&1; then
   echo 'recovery must reject a tag with no GitHub release' >&2
   exit 1
 fi
+grep -Fq 'GitHub release v1.2.3 does not exist or is inaccessible' "$missing_release_log" || {
+  echo 'missing-release failures must include a clear diagnostic' >&2
+  cat "$missing_release_log" >&2
+  exit 1
+}
 
 echo 'existing release resolution tests passed'
