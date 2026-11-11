@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
-import { decisionFailureMetadata, decisionService } from './decision-service';
+import { DecisionServiceError, decisionFailureMetadata, decisionService } from './decision-service';
 import type { DecisionResult, DecisionService } from './decision-service';
 import { appendDecisionTelemetry, summarizeDecisionConfidence } from './decision-telemetry';
 import { collectValidationEvidence } from './validation-evidence';
@@ -13,10 +13,9 @@ import { aggregateStageDurations } from './stage-timings';
 import type { ClassificationAnswer } from './types/openrouter-decisions';
 import {
   buildValidationRecoveryArtifact,
-  buildValidationRecoveryQuestions,
   decideValidationRetry,
   parseRetrySafeCommands,
-  prepareValidationFailureState,
+  prepareValidationFailureInput,
   resolveValidationRecoveryMode,
 } from './validation-recovery';
 
@@ -461,16 +460,19 @@ async function runValidationRecovery(resultsDir: string, dependencies: DecisionW
     }) as unknown as JsonObject;
   }
 
-  const state = prepareValidationFailureState({
+  const input = prepareValidationFailureInput({
     command,
     exitCode,
     output: readText(path.join(resultsDir, 'validation-recovery-output.tmp')),
   });
   const decisionStarted = performance.now();
   try {
-    const result = await dependencies.decisionService.decide({
-      state,
-      questions: buildValidationRecoveryQuestions(),
+    if (!dependencies.decisionService.evaluateProfile) {
+      throw new DecisionServiceError('configuration');
+    }
+    const result = await dependencies.decisionService.evaluateProfile({
+      profileId: 'validation_recovery_v1',
+      input,
       timeoutMs: Number.parseInt(process.env.KASEKI_VALIDATION_RECOVERY_DECISION_TIMEOUT_MS || '15000', 10),
     });
     const decision = decideValidationRetry({

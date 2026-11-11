@@ -47,7 +47,11 @@ jobs:
           node-version: "26"
           cache: npm
       - name: Install ShellCheck
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck ripgrep
+        run: |
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends shellcheck
+          fi
       - run: npm ci
       - name: Install pinned Bun for target repository tests
         run: |

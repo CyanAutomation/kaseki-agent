@@ -166,6 +166,7 @@ Use [the documentation index](../INDEX.md) for current product guidance and
 | `docs/internal/PHASE1_COMPLETION.md` | Internal engineering note or audit |
 | `docs/internal/PHASE2_COMPLETION.md` | Internal engineering note or audit |
 | `docs/internal/PHASE6_MIGRATION.md` | Internal engineering note or audit |
+| `docs/internal/PRODUCT_BOUNDARY_AUDIT_2026-11.md` | Internal product-boundary audit and migration recommendations |
 | `docs/internal/PRINTF_SAFETY_FIX.md` | Internal engineering note or audit |
 | `docs/internal/VALIDATION_FIX.md` | Internal engineering note or audit |
 | `docs/internal/VERIFICATION_CHECKLIST.md` | Internal engineering note or audit |
