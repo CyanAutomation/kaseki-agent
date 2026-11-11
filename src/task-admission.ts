@@ -2,7 +2,7 @@ import { parsePositiveInt } from './lib/env-var-helpers.js';
 import { answerConfidence, answerIsTrue } from './decision-answers';
 import { DecisionServiceError, decisionFailureMetadata, decisionService } from './decision-service';
 import { hasRetiredDecisionSettings } from './jev-classifier';
-import type { ClassificationAnswer, QuestionDefinition } from './types/openrouter-decisions';
+import type { ClassificationAnswer } from './types/openrouter-decisions';
 
 export const TASK_ADMISSION_EXIT_CODE = 9;
 
@@ -53,7 +53,7 @@ function redact(value: unknown): unknown {
   return value;
 }
 
-function buildAdmissionState(request: Record<string, unknown>): string {
+function buildAdmissionInput(request: Record<string, unknown>): Record<string, unknown> {
   const safeRequest = redact({
     repoUrl: request.repoUrl,
     ref: request.ref,
@@ -65,8 +65,8 @@ function buildAdmissionState(request: Record<string, unknown>): string {
     startupCheck: request.startupCheck,
     scouting: request.scouting,
     goalSetting: request.goalSetting,
-  });
-  return JSON.stringify(safeRequest);
+  }) as Record<string, unknown>;
+  return Object.fromEntries(Object.entries(safeRequest).filter(([, value]) => value !== undefined));
 }
 
 function localCredentialSignal(request: Record<string, unknown>): boolean {
@@ -147,54 +147,7 @@ function buildClassifiedResult(
 
 export function buildTaskAdmissionRequest(request: Record<string, unknown>): Record<string, unknown> {
   return {
-    state: buildAdmissionState(request),
-    questions: {
-      contains_credentials: {
-        type: 'noul',
-        instructions: 'Does this task request contain, expose, create, copy, rotate, or exfiltrate credentials or secrets?',
-      },
-      changes_permissions: {
-        type: 'noul',
-        instructions: 'Will this task change permissions, authentication, authorization, ownership, or access control?',
-      },
-      crosses_security_boundary: {
-        type: 'noul',
-        instructions: 'Will this task weaken, bypass, or cross a security boundary or isolation boundary?',
-      },
-      risk_level: {
-        type: 'choice',
-        instructions: 'How risky is this task to run automatically?',
-        criteria: {
-          low: 'Low risk and reversible.',
-          review: 'Potentially consequential; record increased PR-stage review risk.',
-          high: 'Destructive, secret-related, or security-sensitive.',
-        },
-      },
-      task_type: {
-        type: 'choice',
-        instructions: 'What kind of repository task is requested? Classify the user objective, not incidental wording.',
-        criteria: {
-          feature: 'Add or extend user-facing behavior or capability.',
-          bug_fix: 'Correct behavior that currently fails or is incorrect.',
-          refactor: 'Restructure implementation while preserving behavior.',
-          documentation: 'Change documentation, examples, or explanatory text.',
-          investigation: 'Inspect or diagnose without necessarily changing code.',
-          test_only: 'Add or update automated tests without changing production behavior.',
-          infrastructure: 'Change build, deployment, CI, dependency, or runtime configuration.',
-        },
-      },
-      validation_focus: {
-        type: 'choice',
-        instructions: 'Which validation category is most relevant to this task? This is advisory and must not replace explicit commands.',
-        criteria: {
-          unit_tests: 'Focused unit tests are the clearest signal.',
-          integration_tests: 'Integration or end-to-end checks are the clearest signal.',
-          type_and_lint: 'Type checking or linting is the clearest signal.',
-          docs_checks: 'Documentation links, generation, formatting, or examples checks are the clearest signal.',
-          repo_defined_checks: 'Use the repository’s declared general check or validation target.',
-        },
-      },
-    },
+    input: buildAdmissionInput(request),
   };
 }
 
@@ -223,9 +176,9 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
 
   try {
     const requestBody = buildTaskAdmissionRequest(request);
-    const parsed = await decisionService.decide({
-      state: requestBody.state as string,
-      questions: requestBody.questions as Record<string, QuestionDefinition>,
+    const parsed = await decisionService.evaluateProfile({
+      profileId: 'task_admission_v1',
+      input: requestBody.input as Record<string, unknown>,
       timeoutMs: parsePositiveInt('KASEKI_TASK_ADMISSION_TIMEOUT_MS', DEFAULT_TIMEOUT_MS),
     });
     return buildClassifiedResult(

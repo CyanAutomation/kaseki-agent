@@ -1,4 +1,5 @@
-import type { ClassificationAnswer, QuestionDefinition } from './types/openrouter-decisions';
+import { TextEncoder } from 'node:util';
+import type { ClassificationAnswer } from './types/openrouter-decisions';
 import { answerConfidence } from './decision-answers';
 import { redactJevEvidence } from './jev-evidence-redaction';
 
@@ -45,23 +46,6 @@ export interface ValidationRecoveryArtifact {
   reason: string;
 }
 
-const CAUSES: Record<ValidationFailureCause, string> = {
-  test_failure: 'A test assertion or behavioral check failed.',
-  type_or_lint_failure: 'Type checking, linting, or formatting failed.',
-  build_failure: 'Compilation, bundling, or build failed.',
-  dependency_or_environment: 'A dependency, service, platform, or environment problem caused the failure.',
-  timeout_or_flaky: 'The evidence points to a timeout or intermittent failure.',
-  implementation_logic: 'The code change appears to cause incorrect behavior.',
-  unknown: 'The available evidence does not support a more specific cause.',
-};
-
-const ACTIONS = {
-  fix_implementation: 'Correct the implementation, then rerun the requested checks.',
-  repair_environment: 'Repair the dependency or environment issue, then rerun the requested checks.',
-  retry_validation_once: 'Retry the same validation command once to confirm a likely transient failure.',
-  inspect_diagnostics: 'Use the retained logs and failure artifact to narrow the cause before changing code.',
-};
-
 export function resolveValidationRecoveryMode(value: string | undefined): ValidationRecoveryMode {
   return value === 'off' || value === 'auto' || value === 'observe' ? value : 'observe';
 }
@@ -77,29 +61,42 @@ export function parseRetrySafeCommands(value: string | undefined): string[] {
   }
 }
 
-export function buildValidationRecoveryQuestions(): Record<string, QuestionDefinition> {
-  return {
-    validation_failure_cause: {
-      type: 'choice',
-      instructions: 'Classify the most likely cause of this validation failure from the supplied command, exit status, and bounded failure output.',
-      criteria: CAUSES,
-    },
-    validation_recovery_action: {
-      type: 'choice',
-      instructions: 'Recommend the safest next validation workflow action. A retry is only a recommendation and is subject to local retry policy.',
-      criteria: ACTIONS,
-    },
-  };
+function tailUtf8(value: string, maxBytes: number): string {
+  const characters = Array.from(value);
+  const encoder = new TextEncoder();
+  let start = characters.length;
+  let bytes = 0;
+  while (start > 0) {
+    const characterBytes = encoder.encode(characters[start - 1]!).byteLength;
+    if (bytes + characterBytes > maxBytes) break;
+    bytes += characterBytes;
+    start -= 1;
+  }
+  return characters.slice(start).join('');
 }
 
-export function prepareValidationFailureState(input: { command: string; exitCode: number; output: string; maxOutputChars?: number }): Record<string, unknown> {
-  const maxOutputChars = Number.isInteger(input.maxOutputChars) && Number(input.maxOutputChars) > 0
-    ? Math.min(Number(input.maxOutputChars), 6000)
-    : 5000;
+function headUtf8(value: string, maxBytes: number): string {
+  const characters = Array.from(value);
+  const encoder = new TextEncoder();
+  let end = 0;
+  let bytes = 0;
+  while (end < characters.length) {
+    const characterBytes = encoder.encode(characters[end]!).byteLength;
+    if (bytes + characterBytes > maxBytes) break;
+    bytes += characterBytes;
+    end += 1;
+  }
+  return characters.slice(0, end).join('');
+}
+
+export function prepareValidationFailureInput(input: { command: string; exitCode: number; output: string; maxOutputBytes?: number }): Record<string, unknown> {
+  const maxOutputBytes = Number.isInteger(input.maxOutputBytes) && Number(input.maxOutputBytes) > 0
+    ? Math.min(Number(input.maxOutputBytes), 6000)
+    : 6000;
   return {
-    command: String(redactJevEvidence(input.command)).slice(0, 1000),
-    exit_code: input.exitCode,
-    failure_output: String(redactJevEvidence(input.output)).slice(-maxOutputChars),
+    command: headUtf8(String(redactJevEvidence(input.command)), 1000),
+    exitCode: input.exitCode,
+    output: tailUtf8(String(redactJevEvidence(input.output)), maxOutputBytes),
   };
 }
 

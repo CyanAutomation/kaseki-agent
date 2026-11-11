@@ -28,9 +28,12 @@ function contractResponse(answers: Record<string, unknown>, usage?: Record<strin
     schemaVersion: '1',
     requestId: 'dec-task-admission-test',
     status: 'completed',
+    profileId: 'task_admission_v1',
+    profileVersion: '1',
     provider: 'jev',
     model: 'typesafe/jev-resolved-test',
     answers,
+    result: answers,
     ...(usage ? { usage } : {}),
     durationMs: 8,
     attemptCount: 1,
@@ -38,7 +41,14 @@ function contractResponse(answers: Record<string, unknown>, usage?: Record<strin
 }
 
 function fullAnswers(choices: Record<string, string> = {}) {
-  const questions = buildTaskAdmissionRequest({ taskPrompt: 'test' }).questions as Record<string, { type: string; criteria?: Record<string, unknown> | string[] }>;
+  const questions = {
+    contains_credentials: { type: 'noul' },
+    changes_permissions: { type: 'noul' },
+    crosses_security_boundary: { type: 'noul' },
+    risk_level: { type: 'choice', criteria: { low: '', review: '', high: '' } },
+    task_type: { type: 'choice', criteria: { feature: '', bug_fix: '', refactor: '', documentation: '', investigation: '', test_only: '', infrastructure: '' } },
+    validation_focus: { type: 'choice', criteria: { unit_tests: '', integration_tests: '', type_and_lint: '', docs_checks: '', repo_defined_checks: '' } },
+  } as const;
   return Object.fromEntries(Object.entries(questions).map(([id, question]) => [id, answer(question, choices[id])]));
 }
 
@@ -65,23 +75,22 @@ describe('task admission classifier', () => {
     }
   });
 
-  it('redacts secrets and uses independent typed safety questions', () => {
+  it('redacts secrets in the bounded input sent to the server-owned profile', () => {
     const request = buildTaskAdmissionRequest({
       repoUrl: 'https://github.com/example/repo',
       taskPrompt: 'Use api_key=sk-test-secret-value to update the service',
       validationCommands: ['echo token=abc123'],
     });
 
-    expect(request.questions).toEqual(expect.objectContaining({
-      contains_credentials: expect.objectContaining({ type: 'noul' }),
-      changes_permissions: expect.objectContaining({ type: 'noul' }),
-      crosses_security_boundary: expect.objectContaining({ type: 'noul' }),
-      risk_level: expect.objectContaining({ type: 'choice', criteria: expect.objectContaining({ high: expect.any(String) }) }),
-      task_type: expect.objectContaining({ type: 'choice', criteria: expect.objectContaining({ bug_fix: expect.any(String) }) }),
-      validation_focus: expect.objectContaining({ type: 'choice', criteria: expect.objectContaining({ type_and_lint: expect.any(String) }) }),
-    }));
-    expect(String(request.state)).not.toContain('sk-test-secret-value');
-    expect(String(request.state)).toContain('[REDACTED_SECRET]');
+    expect(request).toEqual({
+      input: expect.objectContaining({
+        repoUrl: 'https://github.com/example/repo',
+        taskPrompt: 'Use api_key=[REDACTED_SECRET] to update the service',
+        validationCommands: ['echo token=[REDACTED_SECRET]'],
+      }),
+    });
+    expect(JSON.stringify(request)).not.toContain('sk-test-secret-value');
+    expect(JSON.stringify(request)).not.toContain('questions');
   });
 
   it('rejects obvious credential-like task content locally without calling Senku', async () => {
@@ -177,6 +186,17 @@ describe('task admission classifier', () => {
     expect(result.allowed).toBe(true);
     expect(result.routingHints).toEqual({ taskType: 'documentation', validationFocus: 'docs_checks' });
     expect(result.answers?.risk_level).toMatchObject({ choice: 'low' });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = jest.mocked(global.fetch).mock.calls[0];
+    expect(url).toBe('https://senku.scheimann.workers.dev/v1/profiles/task_admission_v1/evaluate');
+    expect(JSON.parse(String(init?.body))).toEqual({
+      schemaVersion: '1',
+      input: expect.objectContaining({
+        repoUrl: 'https://github.com/example/repo',
+        taskPrompt: 'Update the documentation for the install flow',
+        validationCommands: ['npm run docs:check'],
+      }),
+    });
   });
 
   it('treats null choice confidence as unavailable and emits no routing hints', async () => {

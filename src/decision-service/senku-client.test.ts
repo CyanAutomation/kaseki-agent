@@ -4,8 +4,10 @@ import {
   MAX_SENKU_RESPONSE_BYTES,
   buildSenkuDecisionRequest,
   DecisionServiceError,
+  requestSenkuProfile,
   requestSenkuDecision,
   resolveSenkuDecisionUrl,
+  resolveSenkuProfileUrl,
   type SenkuDecisionOptions,
 } from './senku-client';
 import { SenkuDecisionService } from '../decision-service';
@@ -33,6 +35,58 @@ function responseBody(overrides: Record<string, unknown> = {}) {
     model: 'typesafe/jev-resolved-test',
     answers: { safe: noulAnswer() },
     usage: { input_tokens: 20, output_tokens: 4, total_tokens: 24, cost: 0.0001 },
+    durationMs: 17,
+    attemptCount: 1,
+    ...overrides,
+  };
+}
+
+const taskAdmissionAnswers = {
+  contains_credentials: noulAnswer(0.01),
+  changes_permissions: noulAnswer(0.01),
+  crosses_security_boundary: noulAnswer(0.01),
+  risk_level: { type: 'choice', choice: 'low', probabilities: { low: 1, review: 0, high: 0 }, confidence: 0.99 },
+  task_type: {
+    type: 'choice', choice: 'documentation',
+    probabilities: { feature: 0, bug_fix: 0, refactor: 0, documentation: 1, investigation: 0, test_only: 0, infrastructure: 0 },
+    confidence: 0.99,
+  },
+  validation_focus: {
+    type: 'choice', choice: 'docs_checks',
+    probabilities: { unit_tests: 0, integration_tests: 0, type_and_lint: 0, docs_checks: 1, repo_defined_checks: 0 },
+    confidence: 0.99,
+  },
+};
+
+const validationRecoveryAnswers = {
+  validation_failure_cause: {
+    type: 'choice', choice: 'timeout_or_flaky',
+    probabilities: { test_failure: 0, type_or_lint_failure: 0, build_failure: 0, dependency_or_environment: 0, timeout_or_flaky: 1, implementation_logic: 0, unknown: 0 },
+    confidence: 0.99,
+  },
+  validation_recovery_action: {
+    type: 'choice', choice: 'inspect_diagnostics',
+    probabilities: { fix_implementation: 0, repair_environment: 0, retry_validation_once: 0, inspect_diagnostics: 1 },
+    confidence: 0.99,
+  },
+};
+
+function profileResponse(
+  profileId: 'task_admission_v1' | 'validation_recovery_v1' = 'task_admission_v1',
+  answers: Record<string, unknown> = taskAdmissionAnswers,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    schemaVersion: '1',
+    requestId: 'dec-profile-test-123',
+    status: 'completed',
+    profileId,
+    profileVersion: '1',
+    provider: 'jev',
+    model: 'typesafe/jev-resolved-test',
+    answers,
+    result: answers,
+    usage: { input_tokens: 20, output_tokens: 8, total_tokens: 28 },
     durationMs: 17,
     attemptCount: 1,
     ...overrides,
@@ -82,6 +136,73 @@ describe('Senku decision transport', () => {
     expect(result).toMatchObject({ provider: 'senku', model: 'typesafe/jev-resolved-test', attemptCount: 1 });
     expect(result.usage).toEqual({ input_tokens: 20, output_tokens: 4, total_tokens: 24, cost: 0.0001 });
     expect(result.responseTime).toBeGreaterThanOrEqual(0);
+  });
+
+  it('posts a bounded versioned task-admission profile request to its fixed endpoint', async () => {
+    const fetchImpl = jest.fn<typeof fetch>().mockResolvedValue(jsonResponse(profileResponse()));
+    const input = {
+      repoUrl: 'https://github.com/example/repo',
+      ref: 'main',
+      taskPrompt: 'Update the README wording',
+    };
+
+    const result = await requestSenkuProfile('task_admission_v1', input, makeOptions(fetchImpl));
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe('https://senku.example.test/v1/profiles/task_admission_v1/evaluate');
+    expect(init?.method).toBe('POST');
+    expect(init?.redirect).toBe('manual');
+    expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${TOKEN}`);
+    expect(JSON.parse(String(init?.body))).toEqual({ schemaVersion: '1', input });
+    expect(JSON.parse(String(init?.body))).not.toHaveProperty('questions');
+    expect(JSON.parse(String(init?.body))).not.toHaveProperty('model');
+    expect(result).toMatchObject({
+      profileId: 'task_admission_v1', profileVersion: '1', provider: 'jev',
+      model: 'typesafe/jev-resolved-test', attemptCount: 1,
+      answers: { task_type: { choice: 'documentation' } },
+    });
+    expect(result.usage).toEqual({ input_tokens: 20, output_tokens: 8, total_tokens: 28 });
+  });
+
+  it('posts bounded validation evidence to the server-owned recovery profile', async () => {
+    const fetchImpl = jest.fn<typeof fetch>().mockResolvedValue(jsonResponse(
+      profileResponse('validation_recovery_v1', validationRecoveryAnswers),
+    ));
+    const input = { command: 'npm test', exitCode: 1, output: 'test timed out' };
+
+    const result = await requestSenkuProfile('validation_recovery_v1', input, makeOptions(fetchImpl));
+
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe('https://senku.example.test/v1/profiles/validation_recovery_v1/evaluate');
+    expect(JSON.parse(String(init?.body))).toEqual({ schemaVersion: '1', input });
+    expect(result.answers.validation_recovery_action).toMatchObject({ choice: 'inspect_diagnostics' });
+  });
+
+  it.each([
+    ['wrong profile', profileResponse('validation_recovery_v1')],
+    ['wrong profile version', profileResponse('task_admission_v1', taskAdmissionAnswers, { profileVersion: '2' })],
+    ['missing result mirror', profileResponse('task_admission_v1', taskAdmissionAnswers, { result: undefined })],
+    ['unexpected answer', profileResponse('task_admission_v1', { ...taskAdmissionAnswers, unexpected: noulAnswer() })],
+    ['invalid choice label', profileResponse('task_admission_v1', {
+      ...taskAdmissionAnswers, risk_level: { ...taskAdmissionAnswers.risk_level, choice: 'publish' },
+    })],
+  ])('rejects a %s profile response', async (_label, body) => {
+    const fetchImpl = jest.fn<typeof fetch>().mockResolvedValue(jsonResponse(body));
+    await expect(requestSenkuProfile('task_admission_v1', { repoUrl: 'https://github.com/example/repo' }, makeOptions(fetchImpl)))
+      .rejects.toMatchObject({ category: 'invalid_response' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an unregistered Kaseki profile before making a request', async () => {
+    const fetchImpl = jest.fn<typeof fetch>();
+    expect(resolveSenkuProfileUrl('task_admission_v1', { SENKU_URL: 'https://senku.example.test' }))
+      .toBe('https://senku.example.test/v1/profiles/task_admission_v1/evaluate');
+    expect(() => resolveSenkuProfileUrl('../decisions' as never, { SENKU_URL: 'https://senku.example.test' }))
+      .toThrow(DecisionServiceError);
+    await expect(requestSenkuProfile('../decisions' as never, {}, makeOptions(fetchImpl)))
+      .rejects.toMatchObject({ category: 'configuration' });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('validates the response and accepts null confidence while preserving missing usage', async () => {
