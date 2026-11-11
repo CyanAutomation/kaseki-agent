@@ -5,6 +5,7 @@
 
 import { ApiBackedCommand, type ApiClientFactory } from '../ApiBackedCommand';
 import { createLogger } from '../../logger';
+import { exitStatusForRun } from '../command-exit-status';
 import type { ConfigManager } from '../../config/ConfigManager';
 import type { StatusResponse } from '../../kaseki-api-types';
 
@@ -41,7 +42,7 @@ export class StatusCommand extends ApiBackedCommand<StatusApiClient> {
 
       if (flags.has('json')) {
         console.log(JSON.stringify(status, null, 2));
-        return status.exitCode === undefined ? 0 : status.exitCode === 0 ? 0 : 1;
+        return exitStatusForRun(status.exitCode);
       }
 
       console.log(`Status for ${status.id} (via ${apiClient.baseUrl})`);
@@ -68,7 +69,7 @@ export class StatusCommand extends ApiBackedCommand<StatusApiClient> {
         console.log(`Error:     ${status.error}`);
       }
 
-      return status.exitCode === undefined ? 0 : status.exitCode === 0 ? 0 : 1;
+      return exitStatusForRun(status.exitCode);
     } catch (error) {
       logger.error(`Status failed: ${error}`);
       console.error(`❌ Unable to fetch run status from local Kaseki API: ${error instanceof Error ? error.message : String(error)}`);

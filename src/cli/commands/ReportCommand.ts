@@ -5,6 +5,7 @@
 
 import { ApiBackedCommand, type ApiClientFactory } from '../ApiBackedCommand';
 import { createLogger } from '../../logger';
+import { exitStatusForRun } from '../command-exit-status';
 import type { ConfigManager } from '../../config/ConfigManager';
 import type { AnalysisResponse, LogResponse, RunArtifactsResponse, StatusResponse } from '../../kaseki-api-types';
 
@@ -80,7 +81,7 @@ export class ReportCommand extends ApiBackedCommand<ReportApiClient> {
     this.printArtifactSummary(status, artifacts);
     this.printSummary(status, stderrLog);
 
-    return status.exitCode === 0 ? 0 : (status.exitCode === undefined ? 0 : 1);
+    return exitStatusForRun(status.exitCode);
   }
 
   private printStatus(status: StatusResponse, analysis?: AnalysisResponse): void {
@@ -233,7 +234,7 @@ export class ReportCommand extends ApiBackedCommand<ReportApiClient> {
       this.printDiskOutcome(metadata);
 
       await this.printDiskSummary(fs, path.join(resultsDir, 'result-summary.md'));
-      return metadata.exitCode === 0 ? 0 : (metadata.exitCode === undefined ? 0 : 1);
+      return exitStatusForRun(metadata.exitCode);
     } catch (error) {
       console.error(`Instance not found on disk: ${instanceId}`);
       logger.debug(`Failed to read instance from disk: ${error}`);
