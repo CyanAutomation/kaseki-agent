@@ -11,6 +11,10 @@ on:
         options:
           - "true"
           - "false"
+      recover_version:
+        description: "Republish artifacts for an existing release version (for example, 1.158.0)"
+        required: false
+        type: string
 
 concurrency:
   group: release-${{ github.repository }}
@@ -26,6 +30,21 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Validate release request
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          RECOVER_VERSION: ${{ inputs.recover_version }}
+        run: |
+          set -euo pipefail
+          if [[ "$DRY_RUN" == true && -n "$RECOVER_VERSION" ]]; then
+            echo "Choose either dry-run or recovery mode, not both." >&2
+            exit 1
+          fi
+          if [[ -n "$RECOVER_VERSION" && ! "$RECOVER_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Recovery version must be a semantic version without a leading v." >&2
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -142,28 +161,43 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run semantic-release
+      - name: Resolve release or recovery target
         id: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          RECOVER_VERSION: ${{ inputs.recover_version }}
         run: |
           set -euo pipefail
-          before_tags="$(mktemp)"
-          after_tags="$(mktemp)"
-          trap 'rm -f "$before_tags" "$after_tags"' EXIT
-          git tag --list 'v[0-9]*' | sort -V > "$before_tags"
           released=false
           new_tag=''
           release_sha=''
-          npm run release 2>&1 | tee release-output.log
-          git tag --list 'v[0-9]*' | sort -V > "$after_tags"
-          new_tag="$(comm -13 "$before_tags" "$after_tags" | tail -n 1)"
+
+          if [[ -n "$RECOVER_VERSION" ]]; then
+            recovery_target="$(./scripts/resolve-existing-release.sh "$RECOVER_VERSION")"
+            new_tag="v$(printf '%s\n' "$recovery_target" | sed -n 's/^version=//p')"
+            release_sha="$(printf '%s\n' "$recovery_target" | sed -n 's/^sha=//p')"
+            released=true
+          else
+            before_tags="$(mktemp)"
+            after_tags="$(mktemp)"
+            trap 'rm -f "$before_tags" "$after_tags"' EXIT
+            # comm requires bytewise ordered inputs; version sorting is incompatible.
+            source scripts/release-tag-detection.sh
+            release_tag_snapshot > "$before_tags"
+            npm run release 2>&1 | tee release-output.log
+            release_tag_snapshot > "$after_tags"
+            new_tag="$(detect_new_release_tag "$before_tags" "$after_tags")"
+          fi
+
           if [[ -n "$new_tag" ]]; then
-            release_sha="$(git rev-list -n 1 "$new_tag")"
-            [[ "$release_sha" == "$(git rev-parse HEAD)" ]] || {
-              echo "New release tag $new_tag does not point at HEAD" >&2
-              exit 1
-            }
+            release_sha="${release_sha:-$(git rev-list -n 1 "$new_tag")}"
+            if [[ -z "$RECOVER_VERSION" ]]; then
+              [[ "$release_sha" == "$(git rev-parse HEAD)" ]] || {
+                echo "New release tag $new_tag does not point at HEAD" >&2
+                exit 1
+              }
+            fi
             released=true
           fi
           {
@@ -186,9 +220,9 @@ jobs:
           archive='kaseki-agent-source.tar.gz'
           git archive --format=tar.gz --output "$archive" "$RELEASE_SHA"
           sha256sum "$archive" > "$archive.sha256"
-          cp scripts/bootstrap-pi.sh ./bootstrap-pi.sh
+          git show "$RELEASE_SHA:scripts/bootstrap-pi.sh" > ./bootstrap-pi.sh
           sha256sum bootstrap-pi.sh > bootstrap-pi.sh.sha256
-          gh release upload "v$RELEASE_VERSION" "$archive" "$archive.sha256" bootstrap-pi.sh bootstrap-pi.sh.sha256
+          gh release upload --clobber "v$RELEASE_VERSION" "$archive" "$archive.sha256" bootstrap-pi.sh bootstrap-pi.sh.sha256
 
       - name: Upload release log
         if: always()
@@ -208,6 +242,7 @@ jobs:
     with:
       ref: ${{ needs.release.outputs.sha }}
       version: ${{ needs.release.outputs.version }}
+      allow_existing: ${{ inputs.recover_version != '' }}
 
   publish_docker:
     needs: release
@@ -220,6 +255,7 @@ jobs:
     with:
       ref: ${{ needs.release.outputs.sha }}
       version: ${{ needs.release.outputs.version }}
+      recovery: ${{ inputs.recover_version != '' }}
     secrets:
       DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
       DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
