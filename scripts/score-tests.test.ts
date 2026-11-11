@@ -141,7 +141,12 @@ describe('test quality scorer', () => {
     expect(scoreCostCoverage(longTypeScript, 'ts')).toBe(2);
     expect(scoreCostCoverage("spawnSync('node', ['worker.js']); expect(result.status).toBe(0)", 'ts')).toBe(1);
     expect(scoreCostCoverage("execSync('docker build .'); expect(result.status).toBe(0)", 'ts')).toBe(1);
-    expect(scoreCostCoverage(`const fixture = "execSync('docker build .')"; expect(value).toBe(1)`, 'ts')).toBe(1);
+    const commandLikeTextOnly = `const fixture = "execSync('docker build .')";
+      // spawnSync('npm ci');
+      expect(first).toBe(1);
+      expect(second).toBe(2);
+      expect(third).toBe(3);`;
+    expect(scoreCostCoverage(commandLikeTextOnly, 'ts')).toBe(2);
   });
 
   test('keeps every dimension integer-valued and derives the segment from the total', () => {

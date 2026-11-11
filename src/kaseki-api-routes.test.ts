@@ -76,7 +76,9 @@ describe('kaseki-api-routes scorecard integration', () => {
       });
       expect(response.status).toBe(404);
       expect((await response.json()).title).toBe('Run not found');
-    } finally { await new Promise<void>(resolve => harness.server.close(() => resolve())); }
+    } finally {
+      await cleanupTestApp(harness.server, harness.idempotencyStore);
+    }
   });
 });
 
@@ -95,7 +97,9 @@ describe('webhook test egress policy', () => {
       });
       expect(response.status).toBe(400);
       expect((await response.json()).detail).toContain('non-public network address');
-    } finally { await new Promise<void>(resolve => harness.server.close(() => resolve())); }
+    } finally {
+      await cleanupTestApp(harness.server, harness.idempotencyStore);
+    }
   });
 });
 

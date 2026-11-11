@@ -430,10 +430,7 @@ export function scoreCostCoverage(content: string, fileExt: string): number {
   if (assertionCount === 0) return 0;
 
   const code = maskCommentsAndStrings(content).code;
-  const commandCall = content.match(/\b(?:execSync|execFileSync|spawnSync|spawn|fork)\s*\(\s*(['"`])([^'"`]*)\1/);
-  const hasSubprocessCall = /\b(?:execSync|execFileSync|spawnSync|spawn|fork)\s*\(/i.test(code);
-  const invokesSlowTool = /\b(?:docker\s+(?:run|build|compose)|npm\s+(?:ci|install))\b/i.test(code)
-    || (hasSubprocessCall && /\b(?:docker\s+(?:run|build|compose)|npm\s+(?:ci|install))\b/i.test(commandCall?.[2] || ''));
+  const invokesSlowTool = /\b(?:docker\s+(?:run|build|compose)|npm\s+(?:ci|install))\b/i.test(code);
   if (invokesSlowTool) return 1;
 
   const invokesSubprocess = /\b(?:execSync|execFileSync|spawnSync|spawn|fork)\s*\(/i.test(code);
