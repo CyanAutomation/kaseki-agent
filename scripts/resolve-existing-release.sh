@@ -25,5 +25,8 @@ process.stdout.write(String(packageJson.version ?? ""));
   exit 1
 }
 
-gh release view "$tag" >/dev/null
+if ! gh release view "$tag" >/dev/null; then
+  printf 'GitHub release %s does not exist or is inaccessible\n' "$tag" >&2
+  exit 1
+fi
 printf 'version=%s\nsha=%s\n' "$VERSION" "$release_sha"

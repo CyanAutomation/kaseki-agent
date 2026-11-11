@@ -200,10 +200,15 @@ assert_step_contains "$RELEASE_WORKFLOW" 'Resolve release or recovery target' \
 assert_step_contains "$RELEASE_WORKFLOW" 'Resolve release or recovery target' \
   './scripts/resolve-existing-release.sh "$RECOVER_VERSION"' \
   'Recovery must validate the selected existing release before publishing artifacts'
+assert_step_contains "$RELEASE_WORKFLOW" 'Resolve release or recovery target' \
+  '[[ "$release_sha" =~ ^[0-9a-f]{40}$ ]]' \
+  'Recovery must validate the parsed immutable commit SHA before publishing'
 assert_contains "$ROOT_DIR/scripts/resolve-existing-release.sh" 'git merge-base --is-ancestor "$release_sha" HEAD' \
   'Recovery must reject a release tag that is not reachable from the selected main checkout'
 assert_contains "$ROOT_DIR/scripts/resolve-existing-release.sh" 'gh release view "$tag"' \
   'Recovery must require an existing GitHub release for the requested tag'
+assert_contains "$ROOT_DIR/scripts/resolve-existing-release.sh" 'GitHub release %s does not exist or is inaccessible' \
+  'Recovery must report a clear error when the GitHub release cannot be read'
 assert_step_contains "$RELEASE_WORKFLOW" 'Publish Raspberry Pi bootstrap bundle' \
   'gh release upload --clobber' \
   'Recovery must safely replace already-present release assets'
