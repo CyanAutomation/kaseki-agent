@@ -1,4 +1,5 @@
 /* global Document, HTMLTextAreaElement, HTMLSelectElement */
+// Contract: docs/API.md#trigger-a-run
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { getWebConsoleResponse } from './kaseki-api-web';
 
@@ -106,18 +107,51 @@ afterEach(() => {
 });
 
 async function waitFor(assertion: () => void | Promise<void>): Promise<void> {
-  const started = Date.now();
-  let lastError: unknown;
-  while (Date.now() - started < 1000) {
-    try {
-      await assertion();
-      return;
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 10));
+  const document = openDoms.at(-1)?.window.document;
+  const Observer = document?.defaultView?.MutationObserver;
+
+  return new Promise<void>((resolve, reject) => {
+    let lastError: unknown;
+    let checking = false;
+    let settled = false;
+    let observer: { disconnect(): void } | undefined;
+
+    const finish = (complete: () => void): void => {
+      if (settled) return;
+      settled = true;
+      observer?.disconnect();
+      clearTimeout(timeout);
+      complete();
+    };
+
+    const timeout = setTimeout(() => {
+      finish(() => reject(lastError ?? new Error('Timed out waiting for the expected console state')));
+    }, 1000);
+
+    const check = async (): Promise<void> => {
+      if (settled || checking) return;
+      checking = true;
+      try {
+        await assertion();
+        finish(resolve);
+      } catch (error) {
+        lastError = error;
+      } finally {
+        checking = false;
+      }
+    };
+
+    if (Observer && document?.documentElement) {
+      observer = new Observer(() => { void check(); });
+      observer.observe(document.documentElement, {
+        attributes: true,
+        childList: true,
+        characterData: true,
+        subtree: true,
+      });
     }
-  }
-  throw lastError;
+    void check();
+  });
 }
 
 function click(element: Element | null): void {

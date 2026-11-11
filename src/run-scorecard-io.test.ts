@@ -22,4 +22,17 @@ describe('readArtifactSnapshot', () => {
       fs.rmSync(directory, { recursive: true, force: true });
     }
   });
+
+  test('falls back to phase rollups when the token ledger has no valid records', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'scorecard-ledger-fallback-'));
+    const phaseSummaries = [{ phase: 'coding', request_id: 'rollup', usage: { input: 999 } }];
+    try {
+      fs.writeFileSync(path.join(directory, 'all-phase-summaries.json'), JSON.stringify({ phases: phaseSummaries }));
+      fs.writeFileSync(path.join(directory, 'token-ledger.jsonl'), '{malformed record}\n');
+
+      expect(readArtifactSnapshot(directory).summaries).toEqual(phaseSummaries);
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
 });
