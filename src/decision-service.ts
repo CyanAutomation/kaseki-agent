@@ -2,7 +2,9 @@ import type { ClassificationAnswer, QuestionDefinition } from './types/openroute
 import {
   DecisionServiceError,
   requestSenkuDecision,
+  requestSenkuProfile,
   type DecisionFailureCategory,
+  type SenkuProfileId,
   type SenkuClientOptions,
 } from './decision-service/senku-client';
 
@@ -27,9 +29,26 @@ export interface DecisionResult {
   attemptCount: number;
 }
 
+export interface ProfileDecisionRequest {
+  profileId: SenkuProfileId;
+  input: Record<string, unknown>;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+
+export interface ProfileDecisionResult extends DecisionResult {
+  profileId: SenkuProfileId;
+  profileVersion: string;
+}
+
 export interface DecisionService {
   readonly providerId: string;
   decide(request: DecisionRequest): Promise<DecisionResult>;
+  evaluateProfile?(request: ProfileDecisionRequest): Promise<ProfileDecisionResult>;
+}
+
+export interface ProfileDecisionService {
+  evaluateProfile(request: ProfileDecisionRequest): Promise<ProfileDecisionResult>;
 }
 
 export interface DecisionFailureMetadata {
@@ -52,7 +71,7 @@ export function decisionFailureMetadata(error: unknown): DecisionFailureMetadata
 }
 
 /** The only remote DecisionService implementation used by Kaseki. */
-export class SenkuDecisionService implements DecisionService {
+export class SenkuDecisionService implements DecisionService, ProfileDecisionService {
   readonly providerId = 'senku';
 
   constructor(private readonly options: SenkuClientOptions = {}) {}
@@ -72,8 +91,26 @@ export class SenkuDecisionService implements DecisionService {
       attemptCount: result.attemptCount,
     };
   }
+
+  async evaluateProfile(request: ProfileDecisionRequest): Promise<ProfileDecisionResult> {
+    const result = await requestSenkuProfile(request.profileId, request.input, {
+      ...this.options,
+      timeoutMs: request.timeoutMs,
+      signal: request.signal,
+    });
+    return {
+      provider: this.providerId,
+      model: result.model,
+      answers: result.answers,
+      usage: result.usage ?? {},
+      responseTime: result.responseTime,
+      attemptCount: result.attemptCount,
+      profileId: result.profileId,
+      profileVersion: result.profileVersion,
+    };
+  }
 }
 
-export const decisionService: DecisionService = new SenkuDecisionService();
+export const decisionService = new SenkuDecisionService();
 
 export { DecisionServiceError };

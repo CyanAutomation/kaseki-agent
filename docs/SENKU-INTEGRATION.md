@@ -8,8 +8,11 @@ HTTPS; Cloudflare Service Bindings are only for Worker-to-Worker consumers.
 
 The default endpoint is `https://senku.scheimann.workers.dev`. Set
 `SENKU_URL` to a trusted HTTPS origin when using another deployment. The client
-always posts to the fixed `/v1/decisions` path. It rejects embedded URL
-credentials, paths, query strings, fragments, and redirects. Explicit
+uses fixed paths: Task Admission calls
+`/v1/profiles/task_admission_v1/evaluate`, Validation Recovery calls
+`/v1/profiles/validation_recovery_v1/evaluate`, and other workflows that need
+dynamic questions call `/v1/decisions`. It rejects embedded URL credentials,
+paths, query strings, fragments, and redirects. Explicit
 `http://localhost`, `http://127.x.x.x`, and `http://[::1]` origins are allowed
 outside production for local contract tests.
 
@@ -54,7 +57,17 @@ startup; decision stages follow their stage-specific degradation policy.
 
 ## REST contract
 
-Phase 4A uses the Kaseki-only generic endpoint:
+Task Admission and Validation Recovery use versioned Senku profiles. They send
+only bounded input evidence; Senku owns their question wording, criteria, and
+profile response schema. Kaseki validates the expected profile ID and version,
+answer IDs and labels, and the canonical `result` mirror before consuming the
+answers. The task-admission profile receives the redacted repository URL, ref,
+task prompt, validation commands, allowlist, and enabled stage settings. The
+validation-recovery profile receives the redacted command, exit code, and
+bounded failure output. Both profile answers remain advisory.
+
+Other current callers use the Kaseki-only generic endpoint for dynamic or
+caller-specific questions:
 
 ```http
 POST /v1/decisions

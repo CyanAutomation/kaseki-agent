@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { DecisionRequest, DecisionResult, DecisionService } from './decision-service';
+import type { DecisionRequest, DecisionResult, DecisionService, ProfileDecisionResult } from './decision-service';
 import { DecisionServiceError } from './decision-service';
 import { evaluateWorkflow, type DecisionWorkflowDependencies } from './jev-workflow-evaluator';
 import type { ClassificationAnswer } from './types/openrouter-decisions';
@@ -33,7 +33,9 @@ function answersFor(request: DecisionRequest): Record<string, ClassificationAnsw
   }));
 }
 
-function successfulService(providerId = 'test-provider'): DecisionService {
+function successfulService(providerId = 'test-provider'): DecisionService & {
+  evaluateProfile: NonNullable<DecisionService['evaluateProfile']>;
+} {
   return {
     providerId,
     decide: async (request): Promise<DecisionResult> => ({
@@ -43,6 +45,27 @@ function successfulService(providerId = 'test-provider'): DecisionService {
       usage: { input_tokens: 120, output_tokens: 24 },
       responseTime: 37,
       attemptCount: 1,
+    }),
+    evaluateProfile: async (request): Promise<ProfileDecisionResult> => ({
+      provider: providerId,
+      model: 'test/model',
+      answers: {
+        validation_failure_cause: {
+          type: 'choice', choice: 'test_failure',
+          probabilities: { test_failure: 1, type_or_lint_failure: 0, build_failure: 0, dependency_or_environment: 0, timeout_or_flaky: 0, implementation_logic: 0, unknown: 0 },
+          confidence: 0.97,
+        },
+        validation_recovery_action: {
+          type: 'choice', choice: 'fix_implementation',
+          probabilities: { fix_implementation: 1, repair_environment: 0, retry_validation_once: 0, inspect_diagnostics: 0 },
+          confidence: 0.97,
+        },
+      },
+      usage: { input_tokens: 120, output_tokens: 24 },
+      responseTime: 37,
+      attemptCount: 1,
+      profileId: request.profileId,
+      profileVersion: '1',
     }),
   };
 }
@@ -91,9 +114,11 @@ describe('decision workflow telemetry', () => {
       process.env.KASEKI_FAILED_VALIDATION_EXIT_CODE = '1';
       process.env.KASEKI_VALIDATION_RETRY_SAFE_COMMANDS = '["npm test"]';
     }
+    const service = successfulService();
+    const evaluateProfile = jest.fn(service.evaluateProfile);
 
     const artifact = await evaluateWorkflow(mode, resultsDir, '1', {
-      decisionService: successfulService(),
+      decisionService: { ...service, evaluateProfile },
     });
 
     expect(artifact).toBeDefined();
@@ -108,6 +133,15 @@ describe('decision workflow telemetry', () => {
         usage: { input_tokens: 120, output_tokens: 24 },
       }),
     ]);
+    if (mode === 'validation-recovery') {
+      expect(evaluateProfile).toHaveBeenCalledWith({
+        profileId: 'validation_recovery_v1',
+        input: { command: 'npm test', exitCode: 1, output: '' },
+        timeoutMs: 15_000,
+      });
+    } else {
+      expect(evaluateProfile).not.toHaveBeenCalled();
+    }
   });
 
   it('records the HTTP status and provider request ID when Run Evaluation is unavailable', async () => {
@@ -323,6 +357,7 @@ describe('decision workflow telemetry', () => {
       decisionService: {
         providerId: 'test-provider',
         decide: async () => { throw error; },
+        evaluateProfile: async () => { throw error; },
       },
     });
 
@@ -373,6 +408,7 @@ describe('decision workflow telemetry', () => {
       decisionService: {
         providerId: 'test-provider',
         decide: async () => { throw new DecisionServiceError('network', { attemptCount: 1 }); },
+        evaluateProfile: async () => { throw new DecisionServiceError('network', { attemptCount: 1 }); },
       },
       appendTelemetry,
     });

@@ -1,8 +1,8 @@
+import { TextEncoder } from 'node:util';
 import {
-  buildValidationRecoveryQuestions,
   decideValidationRetry,
   parseRetrySafeCommands,
-  prepareValidationFailureState,
+  prepareValidationFailureInput,
   resolveValidationRecoveryMode,
 } from './validation-recovery';
 
@@ -35,11 +35,18 @@ describe('validation recovery policy', () => {
     expect(parseRetrySafeCommands('["npm test", "", 1]')).toEqual([]);
   });
 
-  test('defines diagnostic questions for one failure cause and one recovery action', () => {
-    expect(Object.keys(buildValidationRecoveryQuestions())).toEqual([
-      'validation_failure_cause',
-      'validation_recovery_action',
-    ]);
+  test('prepares only bounded, redacted input for the Senku recovery profile', () => {
+    const input = prepareValidationFailureInput({
+      command: 'npm test',
+      exitCode: 1,
+      output: `${'x'.repeat(10000)} Authorization: Bearer abcdefghijklmnop`,
+    });
+    expect(input).toMatchObject({ command: 'npm test', exitCode: 1 });
+    expect(typeof input.output).toBe('string');
+    expect(new TextEncoder().encode(String(input.output)).byteLength).toBeLessThanOrEqual(6000);
+    expect(JSON.stringify(input)).not.toContain('abcdefghijklmnop');
+    expect(JSON.stringify(input)).toContain('[REDACTED_CREDENTIAL]');
+    expect(input).not.toHaveProperty('questions');
   });
 
   test('authorizes one repeat only for a high-confidence transient failure and exact safe command', () => {
@@ -91,16 +98,4 @@ describe('validation recovery policy', () => {
     expect(result.reason).toBe(expectedReason);
   });
 
-  test('bounds and redacts classifier evidence without persisting the raw output', () => {
-    const state = prepareValidationFailureState({
-      command: 'npm test',
-      exitCode: 1,
-      output: `${'x'.repeat(10000)} Authorization: Bearer abcdefghijklmnop`,
-    });
-    expect(state.command).toBe('npm test');
-    expect(state.exit_code).toBe(1);
-    expect(JSON.stringify(state)).not.toContain('abcdefghijklmnop');
-    expect(JSON.stringify(state).length).toBeLessThan(7000);
-    expect(JSON.stringify(state)).toContain('[REDACTED_CREDENTIAL]');
-  });
 });
