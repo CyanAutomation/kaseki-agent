@@ -95,6 +95,7 @@ assert_step_not_contains() {
 }
 
 RELEASE_WORKFLOW="$WORKFLOWS_DIR/release.yml"
+TAG_DETECTION_HELPER="$ROOT_DIR/scripts/release-tag-detection.sh"
 PUBLISH_WORKFLOW="$WORKFLOWS_DIR/build-docker-image.yml"
 CODEQL_WORKFLOW="$WORKFLOWS_DIR/codeql.yml"
 DEPENDENCY_REVIEW_WORKFLOW="$WORKFLOWS_DIR/dependency-review.yml"
@@ -106,6 +107,8 @@ KASEKI_DRY_WORKFLOW="$WORKFLOWS_DIR/kaseki-dry.yaml"
 
 assert_contains "$RELEASE_WORKFLOW" 'workflow_dispatch:' \
   'Releases must remain manually invoked'
+assert_contains "$RELEASE_WORKFLOW" 'recover_version:' \
+  'The release workflow must support recovering artifacts for an existing version'
 assert_not_contains "$RELEASE_WORKFLOW" '  push:' \
   'Release workflow must not run automatically on pushes'
 assert_contains "$RELEASE_WORKFLOW" 'environment: release' \
@@ -138,10 +141,18 @@ assert_job_contains "$RELEASE_WORKFLOW" 'publish_docker' 'DOCKER_USERNAME: ${{ s
   'The Docker reusable workflow must receive the Docker Hub username explicitly'
 assert_job_contains "$RELEASE_WORKFLOW" 'publish_docker' 'DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}' \
   'The Docker reusable workflow must receive the Docker Hub password explicitly'
+assert_job_contains "$RELEASE_WORKFLOW" 'publish_docker' "recovery: \${{ inputs.recover_version != '' }}" \
+  'Docker recovery must republish its version without moving latest'
 assert_contains "$PUBLISH_WORKFLOW" '      DOCKER_USERNAME:' \
   'The Docker reusable workflow must declare its Docker Hub username secret'
 assert_contains "$PUBLISH_WORKFLOW" '      DOCKER_PASSWORD:' \
   'The Docker reusable workflow must declare its Docker Hub password secret'
+assert_contains "$PUBLISH_WORKFLOW" 'recovery: { description: Publish the release version without moving latest, required: false, type: boolean, default: false }' \
+  'The Docker reusable workflow must distinguish recovery from a new release'
+assert_contains "$PUBLISH_WORKFLOW" 'IS_RECOVERY: ${{ inputs.recovery || false }}' \
+  'Direct Docker publishes must default recovery mode to false'
+assert_contains "$PUBLISH_WORKFLOW" 'docker-promotion-tags.sh' \
+  'Docker tag selection must use the tested recovery-aware promotion helper'
 for job in build_candidate verify promote; do
   assert_job_contains "$PUBLISH_WORKFLOW" "$job" 'name: Validate Docker Hub credentials' \
     "The $job job must explain when Docker Hub credentials are missing"
@@ -177,9 +188,29 @@ awk '
   $0 == "      - name: Run release validation suite" { suite = NR }
   END { exit !(install && suite && install < suite) }
 ' "$RELEASE_WORKFLOW" || fail 'Release validation must install Bun before running the test suite'
-assert_contains "$RELEASE_WORKFLOW" 'comm -13' \
-  'Release detection must identify the newly-created immutable tag'
-assert_step_contains "$RELEASE_WORKFLOW" 'Run semantic-release' 'GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}' \
+assert_contains "$TAG_DETECTION_HELPER" 'LC_ALL=C sort' \
+  'Release tag snapshots must use the locale-stable order required by comm'
+assert_contains "$TAG_DETECTION_HELPER" 'LC_ALL=C comm -13' \
+  'Release tag comparison must use the same locale as its sorted inputs'
+assert_not_contains "$TAG_DETECTION_HELPER" 'sort -V' \
+  'Release tag comparison must not mix version sorting with comm ordering'
+assert_step_contains "$RELEASE_WORKFLOW" 'Resolve release or recovery target' \
+  'source scripts/release-tag-detection.sh' \
+  'Release detection must use the regression-tested tag helper'
+assert_step_contains "$RELEASE_WORKFLOW" 'Resolve release or recovery target' \
+  './scripts/resolve-existing-release.sh "$RECOVER_VERSION"' \
+  'Recovery must validate the selected existing release before publishing artifacts'
+assert_contains "$ROOT_DIR/scripts/resolve-existing-release.sh" 'git merge-base --is-ancestor "$release_sha" HEAD' \
+  'Recovery must reject a release tag that is not reachable from the selected main checkout'
+assert_contains "$ROOT_DIR/scripts/resolve-existing-release.sh" 'gh release view "$tag"' \
+  'Recovery must require an existing GitHub release for the requested tag'
+assert_step_contains "$RELEASE_WORKFLOW" 'Publish Raspberry Pi bootstrap bundle' \
+  'gh release upload --clobber' \
+  'Recovery must safely replace already-present release assets'
+assert_step_contains "$RELEASE_WORKFLOW" 'Publish Raspberry Pi bootstrap bundle' \
+  'git show "$RELEASE_SHA:scripts/bootstrap-pi.sh"' \
+  'Recovery must build the Pi bootstrap asset from the immutable release commit'
+assert_step_contains "$RELEASE_WORKFLOW" 'Resolve release or recovery target' 'GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}' \
   'The write-capable token must be scoped to the semantic-release step'
 assert_step_contains "$RELEASE_WORKFLOW" 'Publish Raspberry Pi bootstrap bundle' 'GH_TOKEN: ${{ github.token }}' \
   'The GitHub token must be scoped to the release asset upload step'
@@ -306,6 +337,12 @@ assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'build' 'npm ci' \
   'The npm package must be built in a job without publishing credentials'
 assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'build' 'npm run build' \
   'The npm package must be built before publishing'
+assert_contains "$NPM_PUBLISH_WORKFLOW" 'allow_existing:' \
+  'The npm publisher must accept an explicit existing-package recovery mode'
+assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'build' 'check-npm-publication-state.sh' \
+  'The npm build must validate an existing package against the exact release tarball'
+assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'publish' "needs.build.outputs.publish == 'true'" \
+  'The npm publisher must skip a matching package that was already published'
 assert_job_not_contains "$NPM_PUBLISH_WORKFLOW" 'build' 'id-token: write' \
   'The npm build job must not be able to request an OIDC token'
 assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'build' 'actions/upload-artifact@' \
@@ -324,6 +361,8 @@ assert_job_not_contains "$NPM_PUBLISH_WORKFLOW" 'publish' 'npm-verify-publish.sh
   'The OIDC-enabled npm publish job must not execute repository verification scripts'
 assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'verify' 'npm-verify-publish.sh' \
   'Published package verification must run in a separate job'
+assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'verify' "needs.publish.result == 'skipped'" \
+  'The npm verification job must still verify a matching package during recovery'
 assert_job_not_contains "$NPM_PUBLISH_WORKFLOW" 'verify' 'id-token: write' \
   'The npm verification job must not be able to request an OIDC token'
 
@@ -367,12 +406,12 @@ assert_step_not_contains "$PUBLISH_WORKFLOW" 'Upload sanitized image scan report
   'Raw Trivy JSON containing secret matches must not be uploaded'
 assert_contains "$PUBLISH_WORKFLOW" 'needs: [prepare, build_candidate, verify, scan]' \
   'Promotion must wait for a successful vulnerability scan'
-assert_contains "$PUBLISH_WORKFLOW" 'tags="latest"' \
-  'Every published Docker image must be promoted to the latest tag'
-assert_contains "$PUBLISH_WORKFLOW" 'tags+=",main-$short_sha"' \
+assert_contains "$ROOT_DIR/scripts/docker-promotion-tags.sh" 'if [[ "$RECOVERY" == true ]]; then' \
+  'Docker recovery must omit the mutable latest tag'
+assert_contains "$ROOT_DIR/scripts/docker-promotion-tags.sh" "printf 'latest,%s' \"\$RELEASE_VERSION\"" \
+  'New Docker releases must promote latest and their version tag'
+assert_contains "$ROOT_DIR/scripts/docker-promotion-tags.sh" "printf 'latest,main-%s' \"\$SHORT_SHA\"" \
   'Non-release Docker builds must retain a main-specific tag'
-assert_contains "$PUBLISH_WORKFLOW" 'tags+=",$RELEASE_VERSION"' \
-  'Release Docker builds must retain their version-specific tag'
 
 assert_job_contains "$CI_WORKFLOW" 'workflow_lint' 'go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.9' \
   'CI must run a version-pinned actionlint check'
@@ -402,9 +441,12 @@ assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'publish' "github.repository == 'Cya
   'The npm publish job must reject callers outside the canonical repository'
 assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'verify' "github.repository == 'CyanAutomation/kaseki-agent'" \
   'The npm verify job must reject callers outside the canonical repository'
-assert_step_contains "$NPM_PUBLISH_WORKFLOW" 'Confirm target version is unpublished' \
-  './scripts/check-npm-version-unpublished.sh "$PACKAGE_NAME" "$VERSION"' \
-  'The npm publisher must use the tested version-existence check'
+assert_step_contains "$NPM_PUBLISH_WORKFLOW" 'Validate npm publication state' \
+  './scripts/check-npm-publication-state.sh "$PACKAGE_NAME" "$VERSION" "$PACKAGE_TARBALL" "$ALLOW_EXISTING"' \
+  'The npm publisher must allow recovery only when an existing version matches the release tarball'
+assert_contains "$ROOT_DIR/scripts/check-npm-publication-state.sh" \
+  '"$SCRIPT_DIR/check-npm-version-unpublished.sh" "$PACKAGE_NAME" "$VERSION"' \
+  'Normal npm releases must retain the unpublished-version preflight'
 
 assert_job_contains "$PUBLISH_WORKFLOW" 'prepare' "github.repository == 'CyanAutomation/kaseki-agent'" \
   'The Docker publisher must reject callers outside the canonical repository'
