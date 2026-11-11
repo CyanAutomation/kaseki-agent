@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Contract: docs/API.md#environment-variables — repository memory expires after its configured TTL.
 set -euo pipefail
 # shellcheck source=helpers/repo-memory-test-helpers.sh
 . "$(dirname "$0")/helpers/repo-memory-test-helpers.sh"

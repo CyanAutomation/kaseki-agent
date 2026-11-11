@@ -14,7 +14,7 @@
 import fs from 'fs';
 import path from 'path';
 
-interface TestScore {
+export interface TestScore {
   id: string;
   file: string;
   testName: string;
@@ -77,20 +77,194 @@ function readTestFile(filePath: string): string {
   }
 }
 
-function extractTestName(content: string, fileExt: string, filePath: string): string {
-  // Extract main describe block or test name
+function maskCommentsAndStrings(source: string): { code: string; comments: string } {
+  let code = '';
+  let comments = '';
+  let state: 'code' | 'single' | 'double' | 'template' | 'regex' | 'line' | 'block' = 'code';
+  let escaped = false;
+  let inRegexCharacterClass = false;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    const next = source[index + 1];
+
+    if (state === 'line') {
+      comments += char;
+      code += char === '\n' ? '\n' : ' ';
+      if (char === '\n') state = 'code';
+      continue;
+    }
+    if (state === 'block') {
+      comments += char;
+      code += char === '\n' ? '\n' : ' ';
+      if (char === '*' && next === '/') {
+        comments += '/';
+        code += ' ';
+        index += 1;
+        state = 'code';
+      }
+      continue;
+    }
+    if (state === 'regex') {
+      code += char === '\n' ? '\n' : ' ';
+      comments += char === '\n' ? '\n' : ' ';
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '[') inRegexCharacterClass = true;
+      else if (char === ']') inRegexCharacterClass = false;
+      else if (char === '/' && !inRegexCharacterClass) state = 'code';
+      continue;
+    }
+    if (state === 'single' || state === 'double' || state === 'template') {
+      code += char === '\n' ? '\n' : ' ';
+      comments += char === '\n' ? '\n' : ' ';
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if ((state === 'single' && char === "'") || (state === 'double' && char === '"') || (state === 'template' && char === '`')) state = 'code';
+      continue;
+    }
+
+    if (char === '/' && next === '/') {
+      comments += '//';
+      code += '  ';
+      index += 1;
+      state = 'line';
+    } else if (char === '/' && next === '*') {
+      comments += '/*';
+      code += '  ';
+      index += 1;
+      state = 'block';
+    } else if (char === '/') {
+      const prefix = source.slice(0, index);
+      const previous = prefix.match(/\S(?=\s*$)/)?.[0];
+      const startsRegex = !previous
+        || /[([{=:;,!?&|+\-*%^~<>]/.test(previous)
+        || /\b(?:return|throw|case|typeof|instanceof|in|of|yield|await)\s*$/.test(prefix);
+      if (startsRegex) {
+        code += ' ';
+        comments += ' ';
+        state = 'regex';
+        inRegexCharacterClass = false;
+      } else {
+        code += char;
+        comments += ' ';
+      }
+    } else if (char === "'") {
+      code += ' ';
+      comments += ' ';
+      state = 'single';
+    } else if (char === '"') {
+      code += ' ';
+      comments += ' ';
+      state = 'double';
+    } else if (char === '`') {
+      code += ' ';
+      comments += ' ';
+      state = 'template';
+    } else {
+      code += char;
+      comments += ' ';
+    }
+  }
+  return { code, comments };
+}
+
+function readStringLiteral(content: string, start: number): { value: string; end: number } | undefined {
+  const quote = content[start];
+  if (quote !== "'" && quote !== '"' && quote !== '`') return undefined;
+
+  let value = '';
+  let escaped = false;
+  for (let index = start + 1; index < content.length; index += 1) {
+    const char = content[index];
+    if (escaped) {
+      value += char;
+      escaped = false;
+    } else if (char === '\\') {
+      escaped = true;
+    } else if (char === quote) {
+      return { value, end: index + 1 };
+    } else {
+      value += char;
+    }
+  }
+  return undefined;
+}
+
+function findMatchingDelimiter(content: string, openIndex: number, open: string, close: string): number | undefined {
+  let depth = 0;
+  let quote: string | undefined;
+  let escaped = false;
+  for (let index = openIndex; index < content.length; index += 1) {
+    const char = content[index];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === "'" || char === '"' || char === '`') quote = char;
+    else if (char === open) depth += 1;
+    else if (char === close && --depth === 0) return index;
+  }
+  return undefined;
+}
+
+function extractTestTitles(content: string): string[] {
+  const titles: string[] = [];
+  const callPattern = /\b(?:it|test)(?:\.(?:each|concurrent|only|skip))*\s*\(/g;
+  const executableCode = maskCommentsAndStrings(content).code;
+  for (const match of executableCode.matchAll(callPattern)) {
+    const openIndex = match.index! + match[0].lastIndexOf('(');
+    const leadingSpace = content.slice(openIndex + 1).match(/^\s*/)?.[0].length ?? 0;
+    const argumentStart = openIndex + 1 + leadingSpace;
+    let title = readStringLiteral(content, argumentStart);
+
+    // `test.each(rows)('rejects invalid rows', ...)` puts the title in a second call.
+    if (!title && content[argumentStart] === '[') {
+      const tableEnd = findMatchingDelimiter(content, argumentStart, '[', ']');
+      if (tableEnd !== undefined) {
+        const closeCall = content.indexOf(')', tableEnd);
+        const titleCall = closeCall === -1 ? -1 : content.indexOf('(', closeCall + 1);
+        if (titleCall !== -1) {
+          const titleStart = titleCall + 1 + (content.slice(titleCall + 1).match(/^\s*/)?.[0].length ?? 0);
+          title = readStringLiteral(content, titleStart);
+        }
+      }
+    }
+
+    if (title?.value) titles.push(title.value.trim());
+  }
+  return titles;
+}
+
+function isDescriptiveTitle(title: string): boolean {
+  return title.length >= 12 && !/^(?:test|helper|function|works?|todo)\b/i.test(title);
+}
+
+export function extractTestName(content: string, fileExt: string, filePath: string): string {
   if (/^(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/i.test(fileExt)) {
-    const describeMatch = content.match(/describe\(['"`](.*?)['"`]/);
-    if (describeMatch) return describeMatch[1];
-    const testMatch = content.match(/(?:it|test)\s*\(\s*['"`](.*?)['"`]/);
-    if (testMatch) return testMatch[1];
+    const titles = extractTestTitles(content);
+    const behaviorTitle = titles.find(isDescriptiveTitle);
+    if (behaviorTitle) return behaviorTitle;
+
+    const describeMatch = content.match(/describe\s*\(\s*(['"`])((?:\\.|(?!\1)[\s\S])*?)\1/);
+    if (describeMatch) return describeMatch[2];
+    if (titles[0]) return titles[0];
   } else if (/^(?:sh|bash)$/i.test(fileExt)) {
     const testFunctionMatch = content.match(/^\s*(?:function\s+)?(test_[a-z0-9_]+)\s*\(\s*\)\s*\{/im);
     if (testFunctionMatch) return testFunctionMatch[1].replace(/_/g, ' ');
-    const commentLine = content
+    const commentLines = content
       .split('\n')
       .map((line) => line.trim())
-      .find((line) => line.startsWith('#') && !/^#!|^#\s*shellcheck\b/i.test(line));
+      .filter((line) => line.startsWith('#') && !/^#!|^#\s*shellcheck\b/i.test(line));
+    const contractComment = commentLines.find((line) =>
+      /^#\s*(?:contract|build contract|publish contract|regression(?: test)?|integration test|test)\s*:/i.test(line),
+    );
+    const descriptiveComment = commentLines.find((line) =>
+      line.length > 12 && !line.includes('|') && !/^#\s*(?:path|mode|usage|helper)\b/i.test(line),
+    );
+    const commentLine = contractComment || descriptiveComment;
     if (commentLine) return commentLine.replace(/^#\s*/, '').trim();
   }
   return path.basename(filePath).replace(/\.test\..*/, '');
@@ -112,30 +286,25 @@ export function scoreIntentClarity(content: string, fileName: string, fileExt: s
       .trim();
     const descriptiveFileTitle = fileTitle.length >= 8
       && !/^(?:test|helper|function|works?|tests?)$/i.test(fileTitle);
+    const hasAssertions = getAssertionCount(content, fileExt) > 0;
+    if (descriptiveHeader && descriptiveHeader.length > 12 && hasAssertions) return 2;
     return descriptiveHeader && descriptiveHeader.length > 12
-      || (descriptiveFileTitle && getAssertionCount(content, fileExt) > 0)
+      || (descriptiveFileTitle && hasAssertions)
       ? 1
       : 0;
   }
 
-  const testTitles = [...content.matchAll(/(?:it|test)\s*\(\s*['"`]([^'"`\n]{1,})['"`]/gi)]
-    .map((match) => match[1].trim());
-  const descriptiveTestTitle = testTitles.some(
-    (title) => title.length >= 12 && !/^(?:test|helper|function|works?|todo)\b/i.test(title),
-  );
+  const testTitles = extractTestTitles(content);
+  const descriptiveTestTitle = testTitles.some(isDescriptiveTitle);
 
   // Check if test name clearly states behavior
-  const docBlock = content.match(/\/\*\*[\s\S]*?\*\//) ? true : false;
-  const hasDescriptiveComment = content.match(/\/\/\s*(?:Should|Tests?|Validates?|Checks?|Ensures?)/i) ? true : false;
-  
-  // Check for "should" statements in test names (TypeScript)
-  const shouldPattern = content.match(/(?:it|describe|test)\(['"`].*?(?:should|must|will|can|returns?|validates?|handles?|fails?|throws?)/i);
-  const vacuousPattern = /(?:it|describe|test)\s*\(\s*['"`](?:test|helper|function|works?|tests?)\b/i.test(content);
+  const docBlock = /\/\*\*[\s\S]*?\*\//.test(content);
+  const hasDescriptiveComment = /\/\/\s*(?:Should|Tests?|Validates?|Checks?|Ensures?)/i.test(content);
+  const vacuousPattern = testTitles.some((title) => /^(?:test|helper|function|works?|tests?)\b/i.test(title));
   
   let score = 0;
   
-  // Clear "should" pattern = 2
-  if ((shouldPattern || descriptiveTestTitle) && !vacuousPattern) {
+  if (descriptiveTestTitle && !vacuousPattern) {
     score = 2;
   }
   // Descriptive comments or doc blocks = 1
@@ -150,25 +319,24 @@ export function scoreIntentClarity(content: string, fileName: string, fileExt: s
   return Math.min(2, score);
 }
 
-export function scoreBehavioralRelevance(content: string): number {
-  // Award full relevance only for a traceable issue/spec reference.
-  const hasTraceableReference = /(?:#\d+|(?:GH|PR|ISSUE|SPEC|REQ|PRD)[-# ]?\d+|github\.com\/[^\s]+\/(?:issues|pull)\/\d+)/i.test(content);
-  
-  // Check for meaningful comment blocks describing what the test validates
-  const hasDetailedComment = content.match(/\/\*\*[\s\S]*?(?:Validates?|Ensures?|Tests?|Checks?)[\s\S]*?\*\//m) ? true : false;
-  const hasInlineComment = content.match(/\/\/\s*(?:Validates?|Ensures?|Tests?|Checks?|Regression|Issue|Spec)/i) ? true : false;
-  
-  let score = 0;
-  
-  if (hasTraceableReference) {
-    score = 2; // Directly traceable to a requirement
-  } else if (hasDetailedComment || hasInlineComment || /\b(?:requirement|PRD|bugfix|regression)\b|\bSpec\s*:/i.test(content)) {
-    score = 1; // Has documented intent
-  } else {
-    score = 0; // No clear intent or traceability
-  }
-  
-  return Math.min(2, score);
+export function scoreBehavioralRelevance(content: string, fileExt = 'ts'): number {
+  const extracted = maskCommentsAndStrings(content);
+  const comments = /^(?:sh|bash)$/i.test(fileExt)
+    ? content.split('\n').filter((line) => /^\s*#/.test(line) && !/^\s*#!/.test(line)).join('\n')
+    : extracted.comments;
+  const titles = extractTestTitles(content).join(' ');
+  const traceText = `${comments} ${titles}`;
+  const hasIssueReference = /(?:\b(?:GH|PR|ISSUE|BUG|KASEKI)[-# ]\d+\b|\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-\d+\b|(?<!\w)#\d+\b|github\.com\/[^\s]+\/(?:issues|pull)\/\d+)/i.test(traceText);
+  const hasSpecId = /\b(?:SPEC|REQ|PRD)[-:# ]+[A-Z]?\d+\b/i.test(traceText);
+  const hasSectionLink = /\b(?:Spec|Contract|Requirement)\s*:\s*[^\s)]+\.md#[\w-]+/i.test(comments);
+  if (hasIssueReference || hasSpecId || hasSectionLink) return 2;
+
+  const hasUnlinkedSpec = /\b(?:Spec|Contract|Requirement)\b/i.test(comments);
+  const shellTitle = (content.match(/^\s*(?:function\s+)?test_([a-z0-9_]+)\s*\(\s*\)/im)?.[1] || '').replace(/_/g, ' ');
+  const explicitlyIncidental = /\b(?:private helper|internal helper|implementation detail|function exists|export exists|module structure)\b/i.test(`${titles} ${shellTitle} ${comments}`);
+  if (explicitlyIncidental) return 0;
+  if (hasUnlinkedSpec || getAssertionCount(extracted.code, fileExt) > 0) return 1;
+  return 0;
 }
 
 function getShellAssertions(content: string): string[] {
@@ -180,7 +348,7 @@ function getShellAssertions(content: string): string[] {
     const command = line
       .replace(/^(?:if|elif|while|until)\s+/i, '')
       .replace(/^!\s+/, '');
-    return /^(?:assert(?:_[a-z0-9_]+|\.[a-z0-9_]+)?(?:\s*\(|\s+)|\[\[?|test\s|(?:grep|jq|cmp|diff)\s)/i.test(command)
+    return /^(?:assert(?:_[a-z0-9_]+|\.[a-z0-9_]+)?(?:\s*\(|\s+)|\[\[?|test\s|(?:awk|grep|jq|cmp|diff)\s)/i.test(command)
       || /\bthrow\s+new\s+Error\b|\bexit\s+1\b/i.test(command)
       || /^(?:if|elif)\s+[a-z_][a-z0-9_]*\s+[^;]+;/i.test(line);
   });
@@ -190,7 +358,8 @@ function getAssertionCount(content: string, fileExt: string): number {
   if (/^(?:sh|bash)$/i.test(fileExt)) {
     return getShellAssertions(content).length;
   }
-  return (content.match(/expect\(|assert(?:\.|\s*\()|throw\s+new\s+Error\b/gi) || []).length;
+  const code = maskCommentsAndStrings(content).code;
+  return (code.match(/\.(?:not\.)?(?:toBe|toEqual|toStrictEqual|toMatchObject|toContain|toContainEqual|toMatch|toThrow|toBeInstanceOf|toHaveBeenCalled(?:Times|With)?|toHaveProperty|toBeGreaterThan(?:OrEqual)?|toBeLessThan(?:OrEqual)?|toBeDefined|toBeUndefined|toBeTruthy|toBeFalsy|toHaveLength|toMatchSnapshot|toMatchInlineSnapshot)\s*\(|\bassert\.(?:equal|strictEqual|deepEqual|deepStrictEqual|match|ok|throws|doesNotThrow)\s*\(|(?<!function )\bassert[A-Z][\w$]*\s*\(|\bthrow\s+new\s+Error\b/gi) || []).length;
 }
 
 export function scoreAssertionQuality(content: string, fileExt: string): number {
@@ -199,16 +368,16 @@ export function scoreAssertionQuality(content: string, fileExt: string): number 
 
   if (assertionCount === 0) return 0;
   
-  // Check for snapshot testing (brittle)
-  const hasSnapshots = content.match(/toMatchSnapshot|snapshot/i) ? true : false;
-  
-  // Check for semantic assertions (these are more meaningful)
+  const code = maskCommentsAndStrings(content).code;
+  const hasSnapshots = /\.(?:toMatchSnapshot|toMatchInlineSnapshot)\s*\(/.test(code);
+
   const semanticMatchers = isShell
     ? getShellAssertions(content)
-    : content.match(/toBe\(|toEqual\(|toContain\(|toMatch\(|toThrow\(|toHaveBeenCalled|toBeGreaterThan|toBeLessThan|toHaveProperty|toStrictEqual|assert\.(?:equal|strictEqual|deepEqual|deepStrictEqual|match|throws|doesNotThrow)\(|throw\s+new\s+Error\b/gi) || [];
+    : code.match(/\.(?:not\.)?(?:toBe|toEqual|toStrictEqual|toMatchObject|toContain|toContainEqual|toMatch|toThrow|toBeInstanceOf|toHaveBeenCalled(?:Times|With)?|toHaveProperty|toBeGreaterThan(?:OrEqual)?|toBeLessThan(?:OrEqual)?)\s*\(|\bassert\.(?:equal|strictEqual|deepEqual|deepStrictEqual|match|ok|throws|doesNotThrow)\s*\(|(?<!function )\bassert[A-Z][\w$]*\s*\(|\bthrow\s+new\s+Error\b/gi) || [];
+  const hasPreciseAssertion = !isShell && /\.(?:not\.)?(?:toBe|toEqual|toStrictEqual|toMatchObject|toContainEqual|toThrow|toBeInstanceOf|toHaveBeenCalledWith|toHaveProperty)\s*\(|\bassert\.(?:equal|strictEqual|deepEqual|deepStrictEqual|throws|doesNotThrow)\s*\(/i.test(code);
   const vacuousAssertions = isShell
     ? []
-    : content.match(/toBeTruthy|toBeDefined|toHaveLength/gi) || [];
+    : code.match(/\.(?:toBeTruthy|toBeDefined|toHaveLength)\s*\(/gi) || [];
   
   let score = 0;
   
@@ -220,6 +389,10 @@ export function scoreAssertionQuality(content: string, fileExt: string): number 
   else if (semanticMatchers.length >= 2 && !hasSnapshots) {
     score = 2;
   } 
+  // A single exact contract assertion can carry more value than several broad checks.
+  else if (hasPreciseAssertion && !hasSnapshots) {
+    score = 2;
+  }
   // Mixed approach or single assertion
   else if (semanticMatchers.length >= 1) {
     score = 1;
@@ -232,77 +405,44 @@ export function scoreAssertionQuality(content: string, fileExt: string): number 
   return Math.min(2, score);
 }
 
-function scoreIsolationRobustness(content: string): number {
-  let score = 2;
-  
-  // Check for timing sleeps (major red flag)
-  if (content.match(/setTimeout|test.*sleep|delay.*\d{3,}|await.*new Promise.*\d{3,}/gi)) {
-    score -= 2;
-  }
-  
-  // Check for heavy mocking of internals (moderate concern)
-  const mockCount = (content.match(/jest\.mock\(|jest\.spyOn\(/gi) || []).length;
-  if (mockCount > 5) {
-    score -= 1;
-  } else if (mockCount > 0) {
-    // Some mocking is okay, just deduct a bit
-    score -= 0.5;
-  }
-  
-  // Check for global state modifications
-  if (content.match(/global\.|process\.env\[/gi)) {
-    score -= 1;
-  }
-  
-  // Check for nested describes or setup complexity (indicator of tight coupling)
-  const nestedDescribes = (content.match(/describe\(/g) || []).length;
-  if (nestedDescribes > 4) {
-    score -= 0.5;
-  }
-  
-  // Bonus for proper cleanup
-  if (content.match(/afterEach|afterAll|finally|teardown/gi)) {
-    score += 0.5;
-  }
-  
-  // Bonus for fixed seeds
-  if (content.match(/seed.*=|Math\.random.*fixed|randomSeed/i)) {
-    score += 0.5;
-  }
-  
-  return Math.max(0, Math.min(2, Math.round(score * 2) / 2));
+export function scoreIsolationRobustness(content: string): number {
+  const code = maskCommentsAndStrings(content).code;
+  const hasElapsedTimeBound = /Date\.now\(\)\s*-\s*\w+\s*<\s*\d+/s.test(code);
+  const hasBoundedPolling = hasElapsedTimeBound
+    || /\b(?:for|while)\b[\s\S]{0,180}\b(?:attempts?|maxAttempts|retries|timeout|deadline)\b/i.test(code);
+  const hasUncontrolledWait =
+    /\bawait\s+new\s+Promise(?:<[^>]+>)?\s*\(\s*\w+\s*=>\s*setTimeout\s*\(\s*\w+\s*,\s*\d+/s.test(code)
+    || /\bsleep\s+\d+(?:\.\d+)?\b/.test(code)
+    || (/while\s*\([^)]*Date\.now\s*\(/s.test(code) && !hasElapsedTimeBound);
+  if (hasUncontrolledWait) return hasBoundedPolling ? 1 : 0;
+  if (hasElapsedTimeBound) return 1;
+
+  const mutatesSharedState = /(?:process\.env(?:\.[A-Z0-9_]+|\[[^\]]+\])|global\.[\w$]+)\s*=(?!=)/i.test(code);
+  const restoresSharedState = /\b(?:afterEach|afterAll|finally|restoreEnv|restoreAllMocks|resetAllMocks)\b/i.test(code);
+  if (mutatesSharedState && !restoresSharedState) return 0;
+
+  const mockCount = (code.match(/jest\.(?:mock|spyOn)\s*\(/g) || []).length;
+  return mockCount > 5 ? 1 : 2;
 }
 
 export function scoreCostCoverage(content: string, fileExt: string): number {
-  const lines = content.split('\n').length;
   const assertionCount = getAssertionCount(content, fileExt);
-  
-  let score = 1; // Start at 1 since most tests have some value
-  
-  // Reward focused tests (20-50 lines per test is optimal)
-  const avgLinesPerTest = lines / Math.max(1, (content.match(/describe\(|it\(/gi) || []).length / 2);
-  if (avgLinesPerTest >= 15 && avgLinesPerTest <= 50) {
-    score = 2;
-  } else if (avgLinesPerTest > 100) {
-    score = 0; // Tests are too large/unfocused
-  }
-  
-  // Heavy penalty for extremely slow patterns
-  if (content.match(/execSync|spawn|fork|compilation|npm ci|npm install|docker/gi)) {
-    score = Math.max(0, score - 1);
-  }
-  
-  // Reward good assertion density
-  if (assertionCount >= 3) {
-    score = Math.min(2, score + 1);
-  } else if (assertionCount === 0) {
-    score = 0;
-  }
-  
-  return Math.max(0, Math.min(2, score));
+  if (assertionCount === 0) return 0;
+
+  const code = maskCommentsAndStrings(content).code;
+  const commandCall = content.match(/\b(?:execSync|execFileSync|spawnSync|spawn|fork)\s*\(\s*(['"`])([^'"`]*)\1/);
+  const hasSubprocessCall = /\b(?:execSync|execFileSync|spawnSync|spawn|fork)\s*\(/i.test(code);
+  const invokesSlowTool = /\b(?:docker\s+(?:run|build|compose)|npm\s+(?:ci|install))\b/i.test(code)
+    || (hasSubprocessCall && /\b(?:docker\s+(?:run|build|compose)|npm\s+(?:ci|install))\b/i.test(commandCall?.[2] || ''));
+  if (invokesSlowTool) return 1;
+
+  const invokesSubprocess = /\b(?:execSync|execFileSync|spawnSync|spawn|fork)\s*\(/i.test(code);
+  if (invokesSubprocess) return 1;
+
+  return assertionCount >= 3 ? 2 : 1;
 }
 
-function analyzeTest(filePath: string, content: string): TestScore {
+export function analyzeTest(filePath: string, content: string): TestScore {
   const fileExt = path.extname(filePath).slice(1);
   const language = /^(?:ts|tsx)$/i.test(fileExt)
     ? 'typescript'
@@ -317,7 +457,7 @@ function analyzeTest(filePath: string, content: string): TestScore {
   
   const scores = {
     intentClarity: scoreIntentClarity(content, fileName, fileExt),
-    behavioralRelevance: scoreBehavioralRelevance(content),
+    behavioralRelevance: scoreBehavioralRelevance(content, fileExt),
     assertionQuality: scoreAssertionQuality(content, fileExt),
     isolationRobustness: scoreIsolationRobustness(content),
     costCoverage: scoreCostCoverage(content, fileExt),
@@ -332,26 +472,29 @@ function analyzeTest(filePath: string, content: string): TestScore {
     segment = 'Refactor';
   }
   
-  const hasSnapshots = content.match(/toMatchSnapshot|snapshot/i) ? true : false;
-  const hasMocking = content.match(/jest\.mock|jest\.spyOn/i) ? true : false;
-  const hasAsyncWaits = content.match(/setTimeout|waitFor|await/i) ? true : false;
+  const executableCode = maskCommentsAndStrings(content).code;
+  const hasSnapshots = /\.(?:toMatchSnapshot|toMatchInlineSnapshot)\s*\(/.test(executableCode);
+  const hasMocking = /jest\.(?:mock|spyOn)\s*\(/i.test(executableCode);
+  const hasAsyncWaits = /\b(?:setTimeout|waitFor|await)\b/i.test(executableCode);
   
   const assertionTypes = [];
-  if (content.match(/toBe\(/)) assertionTypes.push('toBe');
-  if (content.match(/toEqual\(/)) assertionTypes.push('toEqual');
-  if (content.match(/toContain\(/)) assertionTypes.push('toContain');
-  if (content.match(/toThrow\(/)) assertionTypes.push('toThrow');
-  if (content.match(/toMatchSnapshot/)) assertionTypes.push('snapshot');
+  if (/\.toBe\s*\(/.test(executableCode)) assertionTypes.push('toBe');
+  if (/\.toEqual\s*\(/.test(executableCode)) assertionTypes.push('toEqual');
+  if (/\.toContain\s*\(/.test(executableCode)) assertionTypes.push('toContain');
+  if (/\.toThrow\s*\(/.test(executableCode)) assertionTypes.push('toThrow');
+  if (/\.(?:toMatchSnapshot|toMatchInlineSnapshot)\s*\(/.test(executableCode)) assertionTypes.push('snapshot');
   
   const concerns = [];
   if (hasSnapshots && assertionTypes.length === 1) concerns.push('snapshot-only');
-  if (lineCount > 150) concerns.push('overly-long');
-  if (hasAsyncWaits && content.match(/setTimeout|delay.*\d{3,}/)) concerns.push('timing-flake-risk');
-  if (hasMocking && !hasSnapshots) concerns.push('heavy-internal-mocking');
+  if (lineCount > 300) concerns.push('large-file-review');
+  if (hasAsyncWaits && scoreIsolationRobustness(content) === 0) concerns.push('timing-or-global-state-risk');
+  if ((executableCode.match(/jest\.(?:mock|spyOn)\s*\(/g) || []).length > 5) concerns.push('many-mocks-review');
+
+  const relativeFile = path.isAbsolute(filePath) ? path.relative(process.cwd(), filePath) : filePath;
   
   return {
-    id: path.relative(process.cwd(), filePath),
-    file: filePath,
+    id: relativeFile,
+    file: relativeFile,
     testName,
     language,
     lineCount,
@@ -380,7 +523,7 @@ function main() {
       return analyzeTest(file, content);
     })
     .filter((s): s is TestScore => s !== null)
-    .sort((a, b) => a.total - b.total);
+    .sort((a, b) => a.total - b.total || a.id.localeCompare(b.id));
   
   // Output complete results
   const resultsFile = path.join(rootDir, 'test-scores.json');
@@ -413,6 +556,7 @@ function main() {
   console.log('SUMMARY');
   console.log('='.repeat(80));
   console.log(`Total test files scored: ${scores.length}`);
+  console.log('Scores are source-based estimates; actual runtime and mutation coverage are not measured.');
   console.log(`Keep (≥8): ${bySegment.Keep}`);
   console.log(`Refactor (5–7): ${bySegment.Refactor}`);
   console.log(`Remove (≤4): ${bySegment.Remove}`);

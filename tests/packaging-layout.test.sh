@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Publish contract: the staged npm package includes required files and executable modes.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
