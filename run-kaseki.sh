@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/scripts/validation-timeout-policy.sh"
+. "$SCRIPT_DIR/scripts/lib/reject-retired-decision-settings.sh"
 KASEKI_VALIDATION_TIMEOUT_SECONDS="${KASEKI_VALIDATION_TIMEOUT_SECONDS:-$(validation_default_timeout_seconds)}"
 ROOT="${KASEKI_ROOT:-/agents}"
 RUNS="$ROOT/kaseki-runs"
@@ -59,18 +60,7 @@ KASEKI_VALIDATION_RECOVERY_MODE="${KASEKI_VALIDATION_RECOVERY_MODE:-observe}"
 KASEKI_VALIDATION_RETRY_SAFE_COMMANDS="${KASEKI_VALIDATION_RETRY_SAFE_COMMANDS:-[]}"
 KASEKI_VALIDATION_RETRY_CONFIDENCE_THRESHOLD="${KASEKI_VALIDATION_RETRY_CONFIDENCE_THRESHOLD:-0.9}"
 KASEKI_VALIDATION_RECOVERY_DECISION_TIMEOUT_MS="${KASEKI_VALIDATION_RECOVERY_DECISION_TIMEOUT_MS:-15000}"
-RETIRED_EVALUATION_SETTINGS=(
-  KASEKI_JEV_WORKFLOW KASEKI_JEV_CONFIDENCE KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS
-  KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS KASEKI_JEV_WORKFLOW_EVALUATOR
-  KASEKI_DECISION_API_KEY_FILE KASEKI_DECISION_MODEL KASEKI_CLASSIFICATION_MODEL KASEKI_JEV_API_KEY_FILE KASEKI_JEV_TASK_TYPE
-  KASEKI_JEV_VALIDATION_FOCUS
-)
-for retired_setting in "${RETIRED_EVALUATION_SETTINGS[@]}"; do
-  if [ "${!retired_setting+x}" = x ]; then
-    printf 'ERROR: Retired evaluation settings are configured. Remove them and use the stage-based settings documented in docs/ENV_VARS.md.\n' >&2
-    exit 2
-  fi
-done
+reject_retired_decision_settings
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
 # The decision-service credential is used only by evaluation stages. Coding
 # inference uses only the configured LLM gateway credential.

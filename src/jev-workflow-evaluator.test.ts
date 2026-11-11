@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { DecisionRequest, DecisionResult, DecisionService, ProfileDecisionResult } from './decision-service';
+import type { DecisionRequest, DecisionResult, DecisionService, ProfileDecisionRequest, ProfileDecisionResult } from './decision-service';
 import { DecisionServiceError } from './decision-service';
 import { evaluateWorkflow, type DecisionWorkflowDependencies } from './jev-workflow-evaluator';
 import type { ClassificationAnswer } from './types/openrouter-decisions';
@@ -33,6 +33,42 @@ function answersFor(request: DecisionRequest): Record<string, ClassificationAnsw
   }));
 }
 
+function profileAnswersFor(request: ProfileDecisionRequest): Record<string, ClassificationAnswer> {
+  if (request.profileId === 'kaseki_goal_check_v1') {
+    const answers: Record<string, ClassificationAnswer> = {};
+    const criteria = Array.isArray(request.input.criteria) ? request.input.criteria : [];
+    for (const item of criteria) {
+      if (!item || typeof item !== 'object' || !('id' in item) || typeof item.id !== 'string') continue;
+      if ('appliesWhen' in item && typeof item.appliesWhen === 'string' && item.appliesWhen) {
+        answers[`${item.id}_applicability`] = {
+          type: 'choice', choice: 'applicable',
+          probabilities: { applicable: 1, not_applicable: 0, unknown: 0 }, confidence: 0.97,
+        };
+      }
+      answers[item.id] = { type: 'noul', noul: 0.97 };
+    }
+    return answers;
+  }
+  if (request.profileId === 'kaseki_run_evaluation_v1') {
+    const choices = (choice: string, ids: string[]): ClassificationAnswer => ({
+      type: 'choice', choice, probabilities: Object.fromEntries(ids.map((id) => [id, id === choice ? 1 : 0])), confidence: 0.97,
+    });
+    return {
+      overall_assessment: choices('excellent', ['excellent', 'good', 'mixed', 'poor']),
+      reviewer_confidence: choices('high', ['high', 'medium', 'low']),
+      task_completion_score: {
+        type: 'score', score: 4, legend: { '0': '0', '1': '1', '2': '2', '3': '3', '4': '4' },
+        probabilities: { '0': 0, '1': 0, '2': 0, '3': 0, '4': 1 }, confidence: 0.97,
+      },
+      ...(request.input.includeFailureDiagnosis === true ? {
+        validation_failure_cause: choices('test_failure', ['test_failure', 'type_or_lint_failure', 'build_failure', 'dependency_or_environment', 'timeout_or_flaky', 'implementation_logic', 'unknown']),
+        validation_recovery_action: choices('fix_implementation', ['fix_implementation', 'repair_environment', 'retry_validation_once', 'inspect_diagnostics']),
+      } : {}),
+    };
+  }
+  return {};
+}
+
 function successfulService(providerId = 'test-provider'): DecisionService & {
   evaluateProfile: NonNullable<DecisionService['evaluateProfile']>;
 } {
@@ -49,7 +85,7 @@ function successfulService(providerId = 'test-provider'): DecisionService & {
     evaluateProfile: async (request): Promise<ProfileDecisionResult> => ({
       provider: providerId,
       model: 'test/model',
-      answers: {
+      answers: request.profileId === 'validation_recovery_v1' ? {
         validation_failure_cause: {
           type: 'choice', choice: 'test_failure',
           probabilities: { test_failure: 1, type_or_lint_failure: 0, build_failure: 0, dependency_or_environment: 0, timeout_or_flaky: 0, implementation_logic: 0, unknown: 0 },
@@ -60,7 +96,7 @@ function successfulService(providerId = 'test-provider'): DecisionService & {
           probabilities: { fix_implementation: 1, repair_environment: 0, retry_validation_once: 0, inspect_diagnostics: 0 },
           confidence: 0.97,
         },
-      },
+      } : profileAnswersFor(request),
       usage: { input_tokens: 120, output_tokens: 24 },
       responseTime: 37,
       attemptCount: 1,
@@ -133,14 +169,17 @@ describe('decision workflow telemetry', () => {
         usage: { input_tokens: 120, output_tokens: 24 },
       }),
     ]);
-    if (mode === 'validation-recovery') {
-      expect(evaluateProfile).toHaveBeenCalledWith({
-        profileId: 'validation_recovery_v1',
-        input: { command: 'npm test', exitCode: 1, output: '' },
-        timeoutMs: 15_000,
-      });
+    const call = evaluateProfile.mock.calls[0]?.[0];
+    expect(call?.profileId).toBe(mode === 'goal-check' ? 'kaseki_goal_check_v1' : mode === 'run-evaluation' ? 'kaseki_run_evaluation_v1' : 'validation_recovery_v1');
+    expect(call?.timeoutMs).toBe(15_000);
+    if (mode === 'goal-check') {
+      expect(call?.input).toMatchObject({ criteria: [{ id: 'criterion_1', criterion: 'The requested implementation is complete' }] });
+      expect(call?.input).toHaveProperty('state');
+    } else if (mode === 'run-evaluation') {
+      expect(call?.input).toMatchObject({ includeFailureDiagnosis: false });
+      expect(call?.input).toHaveProperty('state');
     } else {
-      expect(evaluateProfile).not.toHaveBeenCalled();
+      expect(call?.input).toEqual({ command: 'npm test', exitCode: 1, output: '' });
     }
   });
 
@@ -155,6 +194,7 @@ describe('decision workflow telemetry', () => {
       decisionService: {
         providerId: 'test-provider',
         decide: async () => { throw error; },
+        evaluateProfile: async () => { throw error; },
       },
     })).rejects.toBe(error);
 
@@ -169,24 +209,25 @@ describe('decision workflow telemetry', () => {
     ]);
   });
 
-  it('adds failure diagnosis questions when persisted run evidence records a failure', async () => {
+  it('requests the fixed run-evaluation profile with failure diagnosis when persisted run evidence records a failure', async () => {
     fs.writeFileSync(path.join(resultsDir, 'metadata.json'), JSON.stringify({ exit_code: 1 }));
     fs.writeFileSync(path.join(resultsDir, 'validation.log'), 'npm test failed with exit code 1');
-    let capturedRequest: DecisionRequest | undefined;
+    let capturedRequest: ProfileDecisionRequest | undefined;
     const service = successfulService();
     const artifact = await evaluateWorkflow('run-evaluation', resultsDir, '1', {
       decisionService: {
         ...service,
-        decide: async (request) => {
+        evaluateProfile: async (request) => {
           capturedRequest = request;
-          return service.decide(request);
+          return service.evaluateProfile!(request);
         },
       },
     });
 
-    expect(capturedRequest?.questions).toHaveProperty('validation_failure_cause');
-    expect(capturedRequest?.questions).toHaveProperty('validation_recovery_action');
-    expect(capturedRequest?.state).toMatchObject({ validation_present: true, diff_present: true });
+    expect(capturedRequest).toMatchObject({
+      profileId: 'kaseki_run_evaluation_v1',
+      input: { includeFailureDiagnosis: true, state: { validation_present: true, diff_present: true } },
+    });
     expect(artifact).toMatchObject({
       overall_assessment: 'poor',
       reviewer_confidence: 'low',
@@ -199,8 +240,8 @@ describe('decision workflow telemetry', () => {
     const artifact = await evaluateWorkflow('run-evaluation', resultsDir, '1', {
       decisionService: {
         ...service,
-        decide: async (request) => {
-          const result = await service.decide(request);
+        evaluateProfile: async (request) => {
+          const result = await service.evaluateProfile!(request);
           for (const answer of Object.values(result.answers)) {
             if (answer.type === 'choice' || answer.type === 'score') answer.confidence = null;
           }
@@ -221,8 +262,8 @@ describe('decision workflow telemetry', () => {
     const artifact = await evaluateWorkflow('run-evaluation', resultsDir, '1', {
       decisionService: {
         ...service,
-        decide: async (request) => {
-          const result = await service.decide(request);
+        evaluateProfile: async (request) => {
+          const result = await service.evaluateProfile!(request);
           for (const answer of Object.values(result.answers)) {
             if (answer.type === 'choice' || answer.type === 'score') answer.confidence = 0;
           }
@@ -260,15 +301,15 @@ describe('decision workflow telemetry', () => {
     }));
     process.env.KASEKI_WORKSPACE_DIR = workspaceDir;
 
-    let capturedRequest: DecisionRequest | undefined;
+    let capturedRequest: ProfileDecisionRequest | undefined;
     const service = successfulService();
     try {
       await evaluateWorkflow('goal-check', resultsDir, '1', {
         decisionService: {
           ...service,
-          decide: async (request) => {
+          evaluateProfile: async (request) => {
             capturedRequest = request;
-            return service.decide(request);
+            return service.evaluateProfile!(request);
           },
         },
       });
@@ -276,16 +317,16 @@ describe('decision workflow telemetry', () => {
       fs.rmSync(workspaceDir, { recursive: true, force: true });
     }
 
-    expect(capturedRequest?.state).toMatchObject({
+    expect(capturedRequest?.input.state).toMatchObject({
       implementation_evidence: [
         expect.objectContaining({ path: 'src/api.ts', content: expect.stringContaining('/api/v1/runs') }),
         expect.objectContaining({ path: 'scripts/run.sh', content: expect.stringContaining('npm run check') }),
       ],
     });
-    expect(JSON.stringify(capturedRequest?.state)).not.toContain('P9m4Q2x7L8v3R1w6T0a5NcKd');
-    expect(JSON.stringify(capturedRequest?.state.implementation_evidence)).not.toContain('outside.env');
-    expect(JSON.stringify(capturedRequest?.state.implementation_evidence)).not.toContain('.env');
-    expect(JSON.stringify(capturedRequest?.state.implementation_evidence)).not.toContain('LOCAL_ONLY_SENTINEL');
+    expect(JSON.stringify(capturedRequest?.input.state)).not.toContain('P9m4Q2x7L8v3R1w6T0a5NcKd');
+    expect(JSON.stringify(capturedRequest?.input.state.implementation_evidence)).not.toContain('outside.env');
+    expect(JSON.stringify(capturedRequest?.input.state.implementation_evidence)).not.toContain('.env');
+    expect(JSON.stringify(capturedRequest?.input.state.implementation_evidence)).not.toContain('LOCAL_ONLY_SENTINEL');
   });
 
   it('omits implementation snippets for non-documentation changes', async () => {
@@ -301,15 +342,15 @@ describe('decision workflow telemetry', () => {
     fs.writeFileSync(path.join(resultsDir, 'scouting.json'), JSON.stringify({ relevant_files: [{ path: 'src/api.ts' }] }));
     process.env.KASEKI_WORKSPACE_DIR = workspaceDir;
 
-    let capturedRequest: DecisionRequest | undefined;
+    let capturedRequest: ProfileDecisionRequest | undefined;
     const service = successfulService();
     try {
       await evaluateWorkflow('goal-check', resultsDir, '1', {
         decisionService: {
           ...service,
-          decide: async (request) => {
+          evaluateProfile: async (request) => {
             capturedRequest = request;
-            return service.decide(request);
+            return service.evaluateProfile!(request);
           },
         },
       });
@@ -317,7 +358,7 @@ describe('decision workflow telemetry', () => {
       fs.rmSync(workspaceDir, { recursive: true, force: true });
     }
 
-    expect(capturedRequest?.state.implementation_evidence).toEqual([]);
+    expect(capturedRequest?.input.state.implementation_evidence).toEqual([]);
   });
 
   it.each([
@@ -329,6 +370,7 @@ describe('decision workflow telemetry', () => {
       decisionService: {
         providerId: 'test-provider',
         decide: async () => { throw error; },
+        evaluateProfile: async () => { throw error; },
       },
     };
 
@@ -393,6 +435,7 @@ describe('decision workflow telemetry', () => {
       decisionService: {
         providerId: 'test-provider',
         decide: async () => { throw providerError; },
+        evaluateProfile: async () => { throw providerError; },
       },
       appendTelemetry,
     })).rejects.toBe(providerError);
@@ -473,13 +516,12 @@ describe('goal-check contract enforcement', () => {
     const artifact = await evaluateWorkflow('goal-check', resultsDir, '1', {
       decisionService: {
         providerId: 'test-provider',
-        decide: async () => ({
-          provider: 'test-provider',
-          model: 'test/model',
+        decide: async () => { throw new Error('goal checks must use a fixed profile'); },
+        evaluateProfile: async (request) => ({
+          provider: 'test-provider', model: 'test/model',
           answers: { criterion_1: { type: 'noul', noul: 0.99 } },
-          usage: {},
-          responseTime: 1,
-          attemptCount: 1,
+          usage: {}, responseTime: 1, attemptCount: 1,
+          profileId: request.profileId, profileVersion: '1',
         }),
       },
     });
@@ -496,12 +538,16 @@ describe('goal-check contract enforcement', () => {
     const decide = jest.fn(async () => {
       throw new Error('semantic classification should not run for an invalid contract');
     });
+    const evaluateProfile = jest.fn(async () => {
+      throw new Error('semantic classification should not run for an invalid contract');
+    });
 
     const artifact = await evaluateWorkflow('goal-check', resultsDir, '1', {
-      decisionService: { providerId: 'test-provider', decide },
+      decisionService: { providerId: 'test-provider', decide, evaluateProfile },
     });
 
     expect(decide).not.toHaveBeenCalled();
+    expect(evaluateProfile).not.toHaveBeenCalled();
     expect(artifact).toMatchObject({
       met: false,
       retryable: false,

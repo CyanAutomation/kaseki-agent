@@ -36,9 +36,18 @@ const providerFetch = async (input, init = {}) => {
       headers: { 'content-type': 'application/json' },
     });
   }
+  const request = JSON.parse(String(init.body));
+  const answers = Object.fromEntries(Object.entries(request.questions).map(([id, question]) => {
+    if (question.type === 'choice') {
+      const labels = Object.keys(question.criteria);
+      const probabilities = Object.fromEntries(labels.map((label, index) => [label, index === 0 ? 0.97 : 0.03 / (labels.length - 1)]));
+      return [id, { type: 'choice', choice: labels[0], probabilities, confidence: 0.97 }];
+    }
+    return [id, { type: 'noul', noul: 0.97 }];
+  }));
   return new Response(JSON.stringify({
     model: '~typesafe/jev-latest',
-    answers: { allowed: { type: 'noul', noul: 0.97 } },
+    answers,
     usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15, cost: 0.00001 },
   }), { status: 200, headers: { 'content-type': 'application/json' } });
 };
@@ -114,6 +123,23 @@ try {
   assert.equal(workerRequestCount, 1);
   assert.equal(providerAttemptCount, 1);
 
+  const contextRouting = await service.evaluateProfile({
+    profileId: 'kaseki_context_routing_v1',
+    input: {
+      mode: 'semantic_context',
+      evidence: {
+        phase: 'coding', toolName: 'read', resultKind: 'file_content', isError: false,
+        characters: 2_000, bytes: 2_000, approximateTokens: 500, lineCount: 60,
+        consecutiveDuplicateLineRatio: 0.1, hasReadRange: false, goalSummary: 'Inspect the bounded file context.',
+      },
+    },
+  });
+  assert.equal(contextRouting.profileId, 'kaseki_context_routing_v1');
+  assert.equal(contextRouting.answers.disposition.choice, 'preserve');
+  assert.equal(contextRouting.attemptCount, 1);
+  assert.equal(workerRequestCount, 2);
+  assert.equal(providerAttemptCount, 2);
+
   const wrongIdentity = new SenkuDecisionService({
     ...baseOptions,
     readFile: () => 'synthetic-wrong-identity-token-0123456789',
@@ -123,8 +149,8 @@ try {
     (error) => error.category === 'credentials' && error.httpStatus === 401
       && !error.message.includes('private evidence'),
   );
-  assert.equal(workerRequestCount, 2);
-  assert.equal(providerAttemptCount, 1);
+  assert.equal(workerRequestCount, 3);
+  assert.equal(providerAttemptCount, 2);
 
   malformedProviderResponse = true;
   await assert.rejects(
@@ -133,10 +159,10 @@ try {
       && !error.message.includes('provider private trace')
       && !error.message.includes('private evidence'),
   );
-  assert.equal(workerRequestCount, 3);
-  assert.equal(providerAttemptCount, 2);
+  assert.equal(workerRequestCount, 4);
+  assert.equal(providerAttemptCount, 3);
 
-  process.stdout.write('Senku Worker contract integration passed: authenticated Kaseki request, generic endpoint, one provider attempt per evaluation, and safe failures.\n');
+  process.stdout.write('Senku Worker contract integration passed: authenticated generic and context-profile calls, one provider attempt per evaluation, and safe failures.\n');
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }

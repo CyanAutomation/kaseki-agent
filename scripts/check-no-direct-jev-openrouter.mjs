@@ -9,6 +9,7 @@ const standaloneFiles = ['.pi-extensions.js', 'kaseki-agent.sh', 'run-kaseki.sh'
 const banned = [
   { pattern: /openrouter\.ai\/api\/alpha\/decisions/i, label: 'direct OpenRouter JEV endpoint' },
   { pattern: /resolveOpenRouterApiKey|jev-classifier-request|jev-classifier-response/, label: 'retired direct JEV transport module' },
+  { pattern: /\bclassifyWithJev\b|\bjev-classifier(?:-types)?\b/i, label: 'retired caller-side JEV classifier shim' },
 ];
 const findings = [];
 

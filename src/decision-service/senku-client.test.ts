@@ -4,6 +4,7 @@ import {
   MAX_SENKU_RESPONSE_BYTES,
   buildSenkuDecisionRequest,
   DecisionServiceError,
+  hasRetiredDecisionSettings,
   requestSenkuProfile,
   requestSenkuDecision,
   resolveSenkuDecisionUrl,
@@ -12,7 +13,6 @@ import {
 } from './senku-client';
 import { SenkuDecisionService } from '../decision-service';
 import { answerConfidence } from '../decision-answers';
-import { classifyWithJev } from '../jev-classifier';
 
 const TOKEN = 'synthetic-senku-kaseki-token-value-1234567890';
 const noulQuestion = { safe: { type: 'noul' as const, instructions: 'Is the result safe?' } };
@@ -72,7 +72,7 @@ const validationRecoveryAnswers = {
 };
 
 function profileResponse(
-  profileId: 'task_admission_v1' | 'validation_recovery_v1' = 'task_admission_v1',
+  profileId: 'task_admission_v1' | 'kaseki_goal_check_v1' | 'kaseki_run_evaluation_v1' | 'kaseki_context_routing_v1' | 'validation_recovery_v1' = 'task_admission_v1',
   answers: Record<string, unknown> = taskAdmissionAnswers,
   overrides: Record<string, unknown> = {},
 ) {
@@ -177,6 +177,87 @@ describe('Senku decision transport', () => {
     expect(url).toBe('https://senku.example.test/v1/profiles/validation_recovery_v1/evaluate');
     expect(JSON.parse(String(init?.body))).toEqual({ schemaVersion: '1', input });
     expect(result.answers.validation_recovery_action).toMatchObject({ choice: 'inspect_diagnostics' });
+  });
+
+  it('validates input-derived goal-check and run-evaluation answers against their fixed profile contracts', async () => {
+    const goalInput = {
+      state: { diff: 'updated src/worker.ts' },
+      criteria: [
+        { id: 'criterion_1', criterion: 'The worker handles cancellation.' },
+        { id: 'criterion_2', criterion: 'Credentials stay private.', appliesWhen: 'credentials are used' },
+      ],
+    };
+    const applicable = {
+      type: 'choice', choice: 'applicable',
+      probabilities: { applicable: 1, not_applicable: 0, unknown: 0 }, confidence: 0.9,
+    };
+    const goalAnswers = {
+      criterion_1: noulAnswer(0.9),
+      criterion_2_applicability: applicable,
+      criterion_2: noulAnswer(0.9),
+    };
+    const goalFetch = jest.fn<typeof fetch>().mockResolvedValue(jsonResponse(profileResponse(
+      'kaseki_goal_check_v1', goalAnswers,
+    )));
+    const goal = await requestSenkuProfile('kaseki_goal_check_v1', goalInput, makeOptions(goalFetch));
+    expect(goal.answers).toEqual(goalAnswers);
+    expect(JSON.parse(String(goalFetch.mock.calls[0][1]?.body))).toEqual({ schemaVersion: '1', input: goalInput });
+
+    const runInput = { state: { validation: 'npm test passed' }, includeFailureDiagnosis: true };
+    const completionProbabilities = { '0': 0, '1': 0, '2': 0, '3': 0, '4': 1 };
+    const runAnswers = {
+      overall_assessment: { type: 'choice', choice: 'excellent', probabilities: { excellent: 1, good: 0, mixed: 0, poor: 0 }, confidence: 0.9 },
+      reviewer_confidence: { type: 'choice', choice: 'high', probabilities: { high: 1, medium: 0, low: 0 }, confidence: 0.9 },
+      task_completion_score: {
+        type: 'score', score: 4, probabilities: completionProbabilities, confidence: null,
+        legend: { '0': 'Largely unrealized', '1': 'Major requirements unmet', '2': 'Partially complete', '3': 'Nearly complete', '4': 'All requirements verified' },
+      },
+      validation_failure_cause: { type: 'choice', choice: 'unknown', probabilities: { test_failure: 0, type_or_lint_failure: 0, build_failure: 0, dependency_or_environment: 0, timeout_or_flaky: 0, implementation_logic: 0, unknown: 1 }, confidence: 0.9 },
+      validation_recovery_action: { type: 'choice', choice: 'inspect_diagnostics', probabilities: { fix_implementation: 0, repair_environment: 0, retry_validation_once: 0, inspect_diagnostics: 1 }, confidence: 0.9 },
+    };
+    const runFetch = jest.fn<typeof fetch>().mockResolvedValue(jsonResponse(profileResponse(
+      'kaseki_run_evaluation_v1', runAnswers,
+    )));
+    const run = await requestSenkuProfile('kaseki_run_evaluation_v1', runInput, makeOptions(runFetch));
+    expect(run.answers).toEqual(runAnswers);
+    expect(JSON.parse(String(runFetch.mock.calls[0][1]?.body))).toEqual({ schemaVersion: '1', input: runInput });
+
+    const malformedFetch = jest.fn<typeof fetch>().mockResolvedValue(jsonResponse(profileResponse(
+      'kaseki_goal_check_v1', { ...goalAnswers, criterion_99: noulAnswer() },
+    )));
+    await expect(requestSenkuProfile('kaseki_goal_check_v1', goalInput, makeOptions(malformedFetch)))
+      .rejects.toMatchObject({ category: 'invalid_response' });
+  });
+
+  it('validates context-routing modes and candidate answers through one Senku profile', async () => {
+    const input = {
+      mode: 'phase_transfer',
+      evidence: {
+        phase_from: 'scouting', phase_to: 'coding', goal_summary: 'Share the common helper.',
+        candidates: [
+          { id: 'file_0', kind: 'inspected_file', path: 'src/shared.ts', text: 'Possible shared helper.' },
+          { id: 'observation_0', kind: 'observation', text: 'One call site duplicates the existing helper.' },
+        ],
+      },
+    };
+    const decision = (choice: string) => ({
+      type: 'choice', choice,
+      probabilities: { preserve: choice === 'preserve' ? 1 : 0, condense: choice === 'condense' ? 1 : 0, discard: choice === 'discard' ? 1 : 0 },
+      confidence: 0.9,
+    });
+    const answers = { file_0: decision('preserve'), observation_0: decision('condense') };
+    const fetchImpl = jest.fn<typeof fetch>().mockResolvedValue(jsonResponse(profileResponse(
+      'kaseki_context_routing_v1', answers,
+    )));
+    const result = await requestSenkuProfile('kaseki_context_routing_v1', input, makeOptions(fetchImpl));
+    expect(result.answers).toEqual(answers);
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toEqual({ schemaVersion: '1', input });
+
+    const invalid = jest.fn<typeof fetch>().mockResolvedValue(jsonResponse(profileResponse(
+      'kaseki_context_routing_v1', { ...answers, unexpected: decision('discard') },
+    )));
+    await expect(requestSenkuProfile('kaseki_context_routing_v1', input, makeOptions(invalid)))
+      .rejects.toMatchObject({ category: 'invalid_response' });
   });
 
   it.each([
@@ -416,22 +497,10 @@ describe('Senku decision transport', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('keeps the legacy classifier shim on one Senku request and ignores retries and model overrides', async () => {
-    const fetchImpl = jest.fn<typeof fetch>().mockResolvedValue(jsonResponse(responseBody()));
-    const result = await classifyWithJev('state', noulQuestion, {
-      fetchImpl,
-      model: 'caller-model',
-      maxRetries: 8,
-      ...makeOptions(fetchImpl),
-      env: {
-        ...makeOptions(fetchImpl).env,
-        SENKU_KASEKI_API_TOKEN_FILE: '',
-        SENKU_KASEKI_API_TOKEN: TOKEN,
-      },
-    });
-    expect(result.model).toBe('typesafe/jev-resolved-test');
-    expect(result.attemptCount).toBe(1);
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).not.toHaveProperty('model');
+  it('recognizes retired caller-owned JEV settings without retaining a classifier shim', () => {
+    expect(hasRetiredDecisionSettings({ KASEKI_DECISION_MODEL: 'old/model' })).toBe(true);
+    expect(hasRetiredDecisionSettings({ KASEKI_CLASSIFICATION_MODEL: 'old/model' })).toBe(true);
+    expect(hasRetiredDecisionSettings({ KASEKI_JEV_API_KEY_FILE: '/old/key' })).toBe(true);
+    expect(hasRetiredDecisionSettings({})).toBe(false);
   });
 });

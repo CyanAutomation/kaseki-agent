@@ -6,7 +6,7 @@ import type { DecisionResult, DecisionService } from './decision-service';
 import { appendDecisionTelemetry, summarizeDecisionConfidence } from './decision-telemetry';
 import { collectValidationEvidence } from './validation-evidence';
 import { buildRunEvaluationArtifact, buildRunEvaluationEvidenceSources } from './jev-run-evaluation-artifact';
-import { buildGoalCheckOutcome, buildGoalCheckQuestions, buildGoalCriterionAssessments, buildRunEvaluationQuestions, compactGoalSettingForEvaluation, failureDiagnosisFromAnswers, goalCheckUnmetThreshold, mapJevScoreToCompletion, selectCriterionEvidenceSources } from './jev-workflow-helpers';
+import { buildGoalCheckOutcome, buildGoalCriterionAssessments, compactGoalSettingForEvaluation, failureDiagnosisFromAnswers, goalCheckUnmetThreshold, mapJevScoreToCompletion, selectCriterionEvidenceSources } from './jev-workflow-helpers';
 import { redactJevEvidence } from './jev-evidence-redaction';
 import { normalizeSuccessCriteria, validateGoalContract } from '../scripts/lib/goal-contract.cjs';
 import { aggregateStageDurations } from './stage-timings';
@@ -280,10 +280,18 @@ async function runGoalCheck(
       evaluation: { stage: 'goal check', response_time_ms: 0, usage: {}, attempt },
     };
   }
-  const questions = buildGoalCheckQuestions(effectiveCriteria);
-  const result = await dependencies.decisionService.decide({
-    state,
-    questions,
+  if (!dependencies.decisionService.evaluateProfile) throw new DecisionServiceError('configuration');
+  const result = await dependencies.decisionService.evaluateProfile({
+    profileId: 'kaseki_goal_check_v1',
+    input: {
+      state,
+      criteria: effectiveCriteria.map(({ id, criterion, appliesWhen, sourceRequirement, verificationSources }) => ({
+        id, criterion,
+        ...(appliesWhen ? { appliesWhen } : {}),
+        ...(sourceRequirement ? { sourceRequirement } : {}),
+        ...(verificationSources?.length ? { verificationSources } : {}),
+      })),
+    },
     timeoutMs: Number.parseInt(process.env.KASEKI_GOAL_CHECK_DECISION_TIMEOUT_MS || '15000', 10),
   });
   const threshold = confidenceThreshold();
@@ -427,9 +435,13 @@ function recordRunEvaluationTelemetry(
 async function runEvaluation(resultsDir: string, dependencies: DecisionWorkflowDependencies): Promise<JsonObject> {
   const state = evidenceState(resultsDir);
   const goalCheck = readJson(path.join(resultsDir, 'goal-check.json'));
-  const result = await dependencies.decisionService.decide({
-    state: stateForRunEvaluation(state, goalCheck),
-    questions: buildRunEvaluationQuestions(hasRunFailureEvidence(state)),
+  if (!dependencies.decisionService.evaluateProfile) throw new DecisionServiceError('configuration');
+  const result = await dependencies.decisionService.evaluateProfile({
+    profileId: 'kaseki_run_evaluation_v1',
+    input: {
+      state: stateForRunEvaluation(state, goalCheck),
+      includeFailureDiagnosis: hasRunFailureEvidence(state),
+    },
     timeoutMs: Number.parseInt(process.env.KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS || '15000', 10),
   });
   const classification = runEvaluationClassification(result.answers);
