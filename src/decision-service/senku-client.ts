@@ -4,9 +4,32 @@ import type { ClassificationAnswer, QuestionDefinition } from '../types/openrout
 
 export const DEFAULT_SENKU_URL = 'https://senku.scheimann.workers.dev';
 export const SENKU_DECISION_PATH = '/v1/decisions';
+export const SENKU_PROFILE_PATH = '/v1/profiles';
 export const SENKU_SCHEMA_VERSION = '1' as const;
 export const MAX_SENKU_REQUEST_BYTES = 128 * 1024;
 export const MAX_SENKU_RESPONSE_BYTES = 64 * 1024;
+
+export const SENKU_PROFILE_IDS = ['task_admission_v1', 'validation_recovery_v1'] as const;
+export type SenkuProfileId = typeof SENKU_PROFILE_IDS[number];
+
+type ProfileAnswerContract =
+  | { type: 'noul' }
+  | { type: 'choice'; choices: readonly string[] };
+
+const PROFILE_ANSWER_CONTRACTS = {
+  task_admission_v1: {
+    contains_credentials: { type: 'noul' },
+    changes_permissions: { type: 'noul' },
+    crosses_security_boundary: { type: 'noul' },
+    risk_level: { type: 'choice', choices: ['low', 'review', 'high'] },
+    task_type: { type: 'choice', choices: ['feature', 'bug_fix', 'refactor', 'documentation', 'investigation', 'test_only', 'infrastructure'] },
+    validation_focus: { type: 'choice', choices: ['unit_tests', 'integration_tests', 'type_and_lint', 'docs_checks', 'repo_defined_checks'] },
+  },
+  validation_recovery_v1: {
+    validation_failure_cause: { type: 'choice', choices: ['test_failure', 'type_or_lint_failure', 'build_failure', 'dependency_or_environment', 'timeout_or_flaky', 'implementation_logic', 'unknown'] },
+    validation_recovery_action: { type: 'choice', choices: ['fix_implementation', 'repair_environment', 'retry_validation_once', 'inspect_diagnostics'] },
+  },
+} as const satisfies Record<SenkuProfileId, Record<string, ProfileAnswerContract>>;
 
 export const RETIRED_DECISION_SETTINGS = [
   'KASEKI_JEV_WORKFLOW',
@@ -82,6 +105,11 @@ export interface SenkuDecisionRequest {
   questions: Record<string, QuestionDefinition>;
 }
 
+export interface SenkuProfileRequest {
+  schemaVersion: typeof SENKU_SCHEMA_VERSION;
+  input: Record<string, unknown>;
+}
+
 export interface SenkuDecisionResponse {
   schemaVersion: typeof SENKU_SCHEMA_VERSION;
   requestId: string;
@@ -92,6 +120,25 @@ export interface SenkuDecisionResponse {
   usage?: Record<string, number>;
   durationMs: number;
   attemptCount: 1;
+}
+
+export interface SenkuProfileResponse {
+  schemaVersion: typeof SENKU_SCHEMA_VERSION;
+  requestId: string;
+  status: 'completed';
+  profileId: SenkuProfileId;
+  profileVersion: '1';
+  provider: 'jev';
+  model: string;
+  answers: Record<string, ClassificationAnswer>;
+  result: Record<string, ClassificationAnswer>;
+  usage?: Record<string, number>;
+  durationMs: number;
+  attemptCount: 1;
+}
+
+export interface SenkuProfileResult extends SenkuProfileResponse {
+  responseTime: number;
 }
 
 export interface SenkuClientOptions {
@@ -207,12 +254,30 @@ export function buildSenkuDecisionRequest(
   return { envelope, body: body! };
 }
 
+export function buildSenkuProfileRequest(
+  profileId: SenkuProfileId,
+  input: Record<string, unknown>,
+): { envelope: SenkuProfileRequest; body: string } {
+  if (!SENKU_PROFILE_IDS.includes(profileId) || !isRecord(input) || !validJsonTree(input)) {
+    fail('invalid_request');
+  }
+  const envelope: SenkuProfileRequest = { schemaVersion: SENKU_SCHEMA_VERSION, input };
+  let body: string;
+  try {
+    body = JSON.stringify(envelope);
+  } catch {
+    fail('invalid_request');
+  }
+  if (utf8Size(body!) > MAX_SENKU_REQUEST_BYTES) fail('invalid_request');
+  return { envelope, body: body! };
+}
+
 function isLoopback(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
   return host === 'localhost' || host === '::1' || /^127(?:\.\d{1,3}){3}$/.test(host);
 }
 
-export function resolveSenkuDecisionUrl(env: NodeJS.ProcessEnv = process.env): string {
+function resolveSenkuOrigin(env: NodeJS.ProcessEnv): string {
   const configured = env.SENKU_URL?.trim() || DEFAULT_SENKU_URL;
   let parsed: URL;
   try {
@@ -226,7 +291,16 @@ export function resolveSenkuDecisionUrl(env: NodeJS.ProcessEnv = process.env): s
     || (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && isLoopback(parsed.hostname) && env.NODE_ENV !== 'production'))) {
     fail('configuration');
   }
-  return new URL(SENKU_DECISION_PATH, parsed.origin).toString();
+  return parsed.origin;
+}
+
+export function resolveSenkuDecisionUrl(env: NodeJS.ProcessEnv = process.env): string {
+  return new URL(SENKU_DECISION_PATH, resolveSenkuOrigin(env)).toString();
+}
+
+export function resolveSenkuProfileUrl(profileId: SenkuProfileId, env: NodeJS.ProcessEnv = process.env): string {
+  if (!SENKU_PROFILE_IDS.includes(profileId)) fail('configuration');
+  return new URL(`${SENKU_PROFILE_PATH}/${profileId}/evaluate`, resolveSenkuOrigin(env)).toString();
 }
 
 export interface SenkuTokenResolution {
@@ -353,6 +427,61 @@ function validateResponse(value: unknown, questions: Record<string, QuestionDefi
   return value as unknown as SenkuDecisionResponse;
 }
 
+function profileQuestions(profileId: SenkuProfileId): Record<string, QuestionDefinition> {
+  const contracts = PROFILE_ANSWER_CONTRACTS[profileId] as Record<string, ProfileAnswerContract>;
+  return Object.fromEntries(Object.entries(contracts).map(([id, contract]) => {
+    if (contract.type === 'noul') {
+      return [id, { type: 'noul', instructions: 'Profile answer contract.' } satisfies QuestionDefinition];
+    }
+    return [id, {
+      type: 'choice',
+      instructions: 'Profile answer contract.',
+      criteria: Object.fromEntries(contract.choices.map((choice) => [choice, null])),
+    } satisfies QuestionDefinition];
+  }));
+}
+
+function equalJson(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right)
+      && left.length === right.length
+      && left.every((item, index) => equalJson(item, right[index]));
+  }
+  if (!isRecord(left) || !isRecord(right)) return false;
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every((key, index) => key === rightKeys[index] && equalJson(left[key], right[key]));
+}
+
+function validateProfileResponse(value: unknown, expectedProfileId: SenkuProfileId): SenkuProfileResponse {
+  const allowedKeys = [
+    'schemaVersion', 'requestId', 'status', 'profileId', 'profileVersion', 'provider',
+    'model', 'answers', 'result', 'usage', 'durationMs', 'attemptCount',
+  ];
+  if (!isRecord(value) || Object.keys(value).some((key) => !allowedKeys.includes(key))
+    || value.schemaVersion !== SENKU_SCHEMA_VERSION || value.status !== 'completed'
+    || value.profileId !== expectedProfileId || value.profileVersion !== '1' || value.provider !== 'jev'
+    || typeof value.model !== 'string' || !value.model.trim() || value.model.length > 256 || hasControlCharacter(value.model)
+    || !safeRequestId(value.requestId) || typeof value.durationMs !== 'number' || !Number.isFinite(value.durationMs)
+    || value.durationMs < 0 || value.attemptCount !== 1 || !isRecord(value.answers) || !isRecord(value.result)) {
+    fail('invalid_response', { attemptCount: 1 });
+  }
+  const questions = profileQuestions(expectedProfileId);
+  const answers = value.answers as Record<string, unknown>;
+  const result = value.result as Record<string, unknown>;
+  if (value.usage !== undefined && !validUsage(value.usage)) fail('invalid_response', { attemptCount: 1 });
+  const answerIds = Object.keys(answers);
+  const expectedIds = Object.keys(questions);
+  if (answerIds.length !== expectedIds.length || answerIds.some((id) => !Object.hasOwn(questions, id))
+    || !expectedIds.every((id) => validAnswer(questions[id]!, answers[id]))
+    || !equalJson(answers, result)) {
+    fail('invalid_response', { requestId: safeRequestId(value.requestId), attemptCount: 1 });
+  }
+  return value as unknown as SenkuProfileResponse;
+}
+
 async function readBoundedBody(response: Response, maxBytes: number, category: DecisionFailureCategory): Promise<Uint8Array> {
   if (!response.body) return new Uint8Array();
   const reader = response.body.getReader();
@@ -429,17 +558,17 @@ function timeoutMs(value: number | undefined): number {
     : 15_000;
 }
 
-export async function requestSenkuDecision(
-  state: string | Record<string, unknown>,
-  questions: Record<string, QuestionDefinition>,
-  options: SenkuDecisionOptions = {},
-): Promise<SenkuDecisionResult> {
+async function requestSenku<T extends object>(
+  resolveUrl: () => string,
+  buildBody: () => string,
+  validate: (value: unknown) => T,
+  options: SenkuDecisionOptions,
+): Promise<T & { responseTime: number }> {
   if (hasRetiredDecisionSettings(options.env ?? process.env)) fail('configuration');
-  const env = options.env ?? process.env;
-  const url = resolveSenkuDecisionUrl(env);
+  const url = resolveUrl();
   const credentials = resolveSenkuKasekiToken(options);
   if (!credentials.token) fail('credentials', { credentialSource: 'none' });
-  const { body } = buildSenkuDecisionRequest(state, questions);
+  const body = buildBody();
 
   const controller = new AbortController();
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -460,7 +589,7 @@ export async function requestSenkuDecision(
     removeExternalAbort = () => options.signal?.removeEventListener('abort', abort);
   }
 
-  const operation = (async (): Promise<SenkuDecisionResult> => {
+  const operation = (async (): Promise<T & { responseTime: number }> => {
     let response: Response;
     try {
       response = await fetchImpl(url, {
@@ -487,7 +616,7 @@ export async function requestSenkuDecision(
     if (!response.ok) throw await responseError(response);
 
     const bytes = await readBoundedBody(response, MAX_SENKU_RESPONSE_BYTES, 'invalid_response');
-    const validated = validateResponse(parseJson(bytes), questions);
+    const validated = validate(parseJson(bytes));
     return { ...validated, responseTime: Math.round(performance.now() - started) };
   })();
 
@@ -505,4 +634,30 @@ export async function requestSenkuDecision(
     if (timer) clearTimeout(timer);
     removeExternalAbort();
   }
+}
+
+export async function requestSenkuDecision(
+  state: string | Record<string, unknown>,
+  questions: Record<string, QuestionDefinition>,
+  options: SenkuDecisionOptions = {},
+): Promise<SenkuDecisionResult> {
+  return requestSenku(
+    () => resolveSenkuDecisionUrl(options.env ?? process.env),
+    () => buildSenkuDecisionRequest(state, questions).body,
+    (value) => validateResponse(value, questions),
+    options,
+  );
+}
+
+export async function requestSenkuProfile(
+  profileId: SenkuProfileId,
+  input: Record<string, unknown>,
+  options: SenkuDecisionOptions = {},
+): Promise<SenkuProfileResult> {
+  return requestSenku(
+    () => resolveSenkuProfileUrl(profileId, options.env ?? process.env),
+    () => buildSenkuProfileRequest(profileId, input).body,
+    (value) => validateProfileResponse(value, profileId),
+    options,
+  );
 }
