@@ -1,4 +1,5 @@
 import { buildTaskAdmissionRequest, evaluateTaskAdmission } from './task-admission';
+import { decisionService } from './decision-service';
 
 const TOKEN = 'synthetic-senku-kaseki-token-value-1234567890';
 const ENV_NAMES = [
@@ -69,6 +70,7 @@ describe('task admission classifier', () => {
 
   afterEach(() => {
     global.fetch = originalFetch;
+    Reflect.deleteProperty(decisionService, 'evaluateProfile');
     for (const [name, value] of originalEnv) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
@@ -137,6 +139,21 @@ describe('task admission classifier', () => {
     expect(result.warnings?.join(' ')).toContain('network');
     expect(result.warnings?.join(' ')).not.toContain('private DNS diagnostics');
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails open with a configuration warning when profile evaluation is unavailable', async () => {
+    Object.defineProperty(decisionService, 'evaluateProfile', { configurable: true, value: undefined });
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as typeof fetch;
+
+    const result = await evaluateTaskAdmission({
+      repoUrl: 'https://github.com/example/repo',
+      taskPrompt: 'Update the README wording',
+    });
+
+    expect(result).toMatchObject({ allowed: true, status: 'degraded', degraded: true });
+    expect(result.warnings?.join(' ')).toContain('configuration');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('fails open with a migration notice when retired evaluation settings are present', async () => {
