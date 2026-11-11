@@ -65,6 +65,37 @@ describe('Soyuz artifact selection', () => {
       changedFileCount: 2,
     });
   });
+
+  test('projects scorecard and evaluation files into a bounded text-free outcome contract', async () => {
+    await fs.writeFile(path.join(resultDir, 'run-scorecard.json'), JSON.stringify({
+      overall_score: 87, grade: 'B', rubric_version: 'scorecard-v2', completeness: 'complete',
+      confidence: { score: 91, rationale: 'Do not forward this text.' }, scored_at: '2026-11-11T12:00:00.000Z',
+      timing_totals: { phase_duration_ms: { coding: 120000, validation: null, unknown_phase: 999 } },
+    }));
+    await fs.writeFile(path.join(resultDir, 'run-evaluation.json'), JSON.stringify({
+      overall_assessment: 'good', reviewer_confidence: 'high', task_completion_score: 4,
+      human_review_focus: ['Do not forward this text.'],
+      kaseki_improvement_opportunities: [
+        { category: 'validation', priority: 'medium', suggestion: 'Do not forward this text.' },
+        { category: 'validation', priority: 'medium', suggestion: 'Another private sentence.' },
+      ],
+    }));
+
+    await expect(loadSoyuzTerminalOutcome(resultDir)).resolves.toMatchObject({
+      outcomeSummary: {
+        schemaVersion: 1,
+        scorecard: { score: 87, grade: 'B', rubricVersion: 'scorecard-v2', completeness: 'complete', confidence: 91, scoredAt: '2026-11-11T12:00:00.000Z' },
+        evaluation: {
+          assessment: 'good', reviewerConfidence: 'high', taskCompletionScore: 4,
+          improvementCategories: [{ category: 'validation', priority: 'medium', count: 2 }],
+        },
+        phaseDurationMs: { coding: 120000 },
+      },
+    });
+    const summary = JSON.stringify(await loadSoyuzTerminalOutcome(resultDir).then(result => result.outcomeSummary));
+    expect(summary).not.toContain('Do not forward this text');
+    expect(summary).not.toContain('Another private sentence');
+  });
 });
 
 const RUN_ID = '11111111-1111-4111-8111-111111111111';

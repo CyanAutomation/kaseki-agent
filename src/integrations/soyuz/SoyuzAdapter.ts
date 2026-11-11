@@ -730,6 +730,7 @@ export class SoyuzAdapter {
         completedAt,
         exitCode: job.exitCode ?? 143,
         reason: 'Kaseki stopped execution after cancellation was applied.',
+        ...await loadSoyuzTerminalOutcome(job.resultDir),
       };
     } else if (job.status === 'completed') {
       eventType = 'completed';
@@ -750,6 +751,7 @@ export class SoyuzAdapter {
         exitCode: job.exitCode ?? 1,
         failureClass: (job.failureClass || 'execution_failed').slice(0, 120),
         failureMessage: `Kaseki execution ended with failure class ${(job.failureClass || 'execution_failed').slice(0, 120)}. See Kaseki host artifacts for diagnostics.`,
+        ...await loadSoyuzTerminalOutcome(job.resultDir),
       };
     }
     const entry = this.outboxEntry(job, callbackId, eventType, payload);

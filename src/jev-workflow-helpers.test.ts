@@ -1,4 +1,4 @@
-import { buildGoalCheckQuestions, buildGoalCriterionAssessments, buildGoalCheckOutcome, buildRunEvaluationQuestions, compactGoalSettingForEvaluation, failureDiagnosisFromAnswers, mapJevScoreToCompletion, selectConditionalHelper, selectCriterionEvidenceSources } from './jev-workflow-helpers';
+import { buildGoalCriterionAssessments, buildGoalCheckOutcome, compactGoalSettingForEvaluation, failureDiagnosisFromAnswers, mapJevScoreToCompletion, selectConditionalHelper, selectCriterionEvidenceSources } from './jev-workflow-helpers';
 
 describe('JEV workflow answer helpers', () => {
   test('compacts verbose goal-setting details while preserving the complete contract', () => {
@@ -98,16 +98,6 @@ describe('JEV workflow answer helpers', () => {
     }, sources)).toEqual(['git.diff', 'validation.log']);
   });
 
-  test('includes criterion provenance and verification sources in the classifier question', () => {
-    const questions = buildGoalCheckQuestions([{
-      id: 'criterion_1', criterion: 'The shared normalizer is reused',
-      sourceRequirement: 'Prefer reusing an existing abstraction',
-      verificationSources: ['git.diff', 'changed-files.txt'],
-    }]);
-    expect(questions.criterion_1?.instructions).toContain('Source requirement: Prefer reusing an existing abstraction');
-    expect(questions.criterion_1?.instructions).toContain('Verify with: git.diff, changed-files.txt');
-  });
-
   test('selects conditional helpers in index order', () => {
     expect(selectConditionalHelper('first', 'second', 0)).toBe('first');
     expect(selectConditionalHelper('first', 'second', 1)).toBe('second');
@@ -115,10 +105,6 @@ describe('JEV workflow answer helpers', () => {
 
   test('marks a conditional criterion not applicable without treating it as unmet', () => {
     const criteria = [{ id: 'criterion_1', criterion: 'Add a verified alternative', appliesWhen: 'The candidate was rejected' }];
-    const questions = buildGoalCheckQuestions(criteria);
-    expect(questions.criterion_1_applicability?.type).toBe('choice');
-    expect(questions.criterion_1?.type).toBe('noul');
-
     expect(buildGoalCriterionAssessments(criteria, {
       criterion_1_applicability: { type: 'choice', choice: 'not_applicable', probabilities: { not_applicable: 0.97, applicable: 0.02, unknown: 0.01 }, confidence: 0.97 },
     }, 0.8)).toEqual([{
@@ -144,15 +130,6 @@ describe('JEV workflow answer helpers', () => {
       criterion_1_applicability: { type: 'choice', choice: 'not_applicable', probabilities: { not_applicable: 1, applicable: 0, unknown: 0 }, confidence: null },
     }, 0.8)[0];
     expect(assessment).toMatchObject({ applicability: 'unknown', status: 'unknown', met: false });
-  });
-
-  test('asks for failure triage only when failure evidence exists and marks it advisory', () => {
-    const regularQuestions = buildRunEvaluationQuestions(false);
-    const failureQuestions = buildRunEvaluationQuestions(true);
-    expect(regularQuestions.validation_failure_cause).toBeUndefined();
-    expect(failureQuestions.validation_failure_cause?.type).toBe('choice');
-    expect(failureQuestions.validation_recovery_action?.instructions).toMatch(/advisory/i);
-    expect(failureQuestions.validation_recovery_action?.instructions).toMatch(/pausing for human input/i);
   });
 
   test('turns failure answers into an advisory diagnostic carrying both distributions', () => {

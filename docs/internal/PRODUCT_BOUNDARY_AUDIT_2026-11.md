@@ -10,16 +10,17 @@ This architecture and ownership audit uses source and docs from the commits abov
 
 ## Implementation follow-through
 
-The first Kaseki-side Senku migration slice is now implemented:
+The repository follow-through now implements the actionable migrations from this audit:
 
-- Task Admission sends redacted, bounded evidence to Senku's `task_admission_v1` profile. Senku owns those questions; Kaseki retains deterministic credential rejection and the existing advisory/fail-open policy.
-- Validation Recovery sends redacted, bounded evidence to `validation_recovery_v1`. Kaseki retains its exact command allowlist, transient-cause check, confidence threshold, retry ceiling, and fail-closed behavior when Senku is unavailable.
-- The generic `/v1/decisions` endpoint remains for goal check, run evaluation, context routing, handoff, and the explicit gateway smoke evaluation.
-- The local direct submission API and UI remain available regardless of Soyuz routing. Their existing tests cover direct submission with Soyuz enabled.
+- Task Admission, Goal Check, Run Evaluation, and Validation Recovery use versioned Senku-owned profiles. Kaseki retains evidence extraction, local thresholds, retry authorization, validation requirements, and fail-open/fail-closed behavior.
+- Tool-output routing and scouting/context handoff share Senku's `kaseki_context_routing_v1` profile. Question builders and the unused classifier shim were removed from Kaseki. The generic `/v1/decisions` route is now used only by the explicit synthetic gateway smoke.
+- Retired caller-owned JEV settings are rejected through one shared shell primitive, and the source guard prevents reintroducing the direct classifier shim or OpenRouter JEV transport.
+- Soyuz accepts a strict, text-free terminal `outcomeSummary`, exposes aggregate reporting over the newest 30 retained runs, and presents the same bounded window on its authenticated dashboard. The Kaseki local scorecard/history and proxy remain because retention parity and complete caller migration are not established.
+- The local direct submission API and UI remain available regardless of Soyuz routing. POST `/api/v1/runs/local` remains an unconditional local scheduler route with its UI choice; the Soyuz dashboard remains read-only with respect to task submission.
 
-Follow-up verification: `npm test` passes (247 suites; 4,532 tests passed, 22 skipped), and type checking, JavaScript lint, and Markdown-link checks pass. The aggregate `npm run check` cannot finish in this environment because its shell lint step requires `shellcheck`, which is not installed.
+Focused tests were driven red then green for the new Senku profiles, Kaseki clients, retired-setting rejection, sanitized terminal outcome schema, Soyuz aggregate endpoint, and dashboard overview component. The audit itself does not authorize production deployment; the live Senku and Soyuz services were not changed.
 
-The live Senku deployment was not probed, so rollout still requires confirming that it serves both profile IDs and grants the Kaseki identity access. Soyuz history, aggregation, and proxy retirement remain gated on companion-side data parity and caller migration; no Kaseki code was deleted for those items.
+The live Senku deployment was not probed. Before enabling these workflows on production hosts, deploy and verify the five Kaseki profiles and Kaseki identity permissions. Deploy Soyuz's compatible callback/read contract next, then update Kaseki hosts. Soyuz retains only the newest 30 run records, so removal of Kaseki's historical aggregation and normal submission proxy remains gated on retention parity and caller migration. The permanent direct-local form and route are not candidates for removal.
 
 ## Recommendation
 
@@ -71,11 +72,11 @@ Soyuz’s current output-review profiles assess bounded summaries and recorded o
 
 | Element | Recommendation |
 | --- | --- |
-| JEV question definitions and inference | Move question wording, criteria, profile schemas, provider/model selection, and response validation to Senku’s versioned profile API. Senku already has Kaseki profiles for task admission and validation recovery, and Soyuz profiles for operations triage and output review. |
-| Remaining Kaseki JEV workflows | Add versioned Senku profiles for any goal-check or run-evaluation questions that remain valuable. Keep Kaseki evidence extraction and local policy evaluation around the response. Migrate each workflow independently. |
+| JEV question definitions and inference | Move question wording, criteria, profile schemas, provider/model selection, and response validation to Senku’s versioned profile API. Senku now has five Kaseki profiles and three Soyuz profiles for operations triage and output review. |
+| Goal Check and Run Evaluation | These workflows now use `kaseki_goal_check_v1` and `kaseki_run_evaluation_v1`. Keep Kaseki evidence extraction and local policy evaluation around the response. |
 | Provider-specific JEV implementation | Keep JEV provider credentials and model selection in Senku. Kaseki retains a small authenticated client and safe telemetry, not a second JEV provider implementation or per-stage model routing surface. This does not move Kaseki’s coding gateway or unrelated evaluation credentials. |
 
-At assessment time, Kaseki sent generic dynamic questions to Senku through its [DecisionService](../../src/decision-service.ts) and [workflow evaluator](../../src/jev-workflow-evaluator.ts). Task Admission and Validation Recovery have since moved to their server-owned profiles. The remaining generic callers still need distinct or dynamic contracts. Keep generic dynamic decisions only for a measured compatibility period, then remove that endpoint if no caller still needs it.
+At the original assessment baseline, several workflows used caller-defined generic questions. They now use server-owned profiles through the authenticated Senku client. The generic endpoint remains only for the explicit synthetic gateway Evaluation smoke; it is not a workflow fallback. Keep the Senku endpoint only while that smoke requires it, or replace the smoke with a non-inference health check before removing the endpoint.
 
 Senku must remain advisory and stateless. Kaseki keeps deterministic admission, confidence thresholds, retry authorization, validation outcomes, and publication gates. Soyuz keeps canonical run records, user ratings, and dashboard presentation; those do not belong in Senku.
 
@@ -83,7 +84,7 @@ Senku must remain advisory and stateless. Kaseki keeps deterministic admission, 
 
 1. **Duplicate shared control-plane behavior:** after client migration, retire the Kaseki submission proxy and its remote idempotency bridge. Keep local direct submission and local run APIs.
 2. **Duplicate cross-run presentation:** after Soyuz can query the required canonical data, remove the Kaseki /improvements aggregate and any shared-history dashboard views that only cover one host. Preserve per-run local diagnostic routes.
-3. **Caller-defined JEV contracts:** after profile migration, remove duplicated Kaseki question definitions, generic-decision dependence, and retired JEV provider/model settings. Preserve the Senku HTTP adapter and Kaseki-side deterministic policy.
+3. **Caller-defined JEV contracts:** completed for active workflows. Keep only the narrow generic smoke dependency while that probe remains useful; preserve the Senku HTTP adapter and Kaseki-side deterministic policy.
 4. **Obsolete configuration and documentation:** continue the existing configuration rationalization work. Remove no-op and retired names from current templates/docs after their compatibility window; collapse overlapping current setup guidance. The existing configuration audit already calls out alias precedence, worker-internal fields, and retired JEV settings. Keep historical reports archived where they remain useful; the archive is not deployed runtime.
 5. **Redundant product modes:** remove an execution mode only when it is unused, not needed for a supported host, and covered by a simpler supported path. This review did not find enough usage evidence to recommend deleting Pi support, CLI setup, host diagnostics, webhook delivery, or optional workflow stages outright.
 
@@ -93,8 +94,8 @@ Do not delete tests to reduce reported size. Under src, TypeScript files excludi
 
 1. **Lock the boundary:** document the permanent local route and the explicit UI choice; label normal Kaseki submission as Soyuz-routed only when configured. Keep uncertain-submit recovery explicit and idempotent.
 2. **Use Soyuz directly:** migrate new cross-host clients and team-facing workflows to Soyuz. Retain the Kaseki proxy for existing callers during a measured compatibility period.
-3. **Move JEV callers to profiles:** first confirm Senku deployment readiness, then migrate task admission and validation recovery, followed by goal-check and run-evaluation where justified. Keep existing fail-open/fail-closed stage behavior and deterministic safeguards.
-4. **Centralize shared history:** add the minimum sanitized execution evidence needed for Soyuz history, outcome review, and aggregate reporting. Keep raw logs and local diagnostics on Kaseki.
+3. **Move JEV callers to profiles:** source migration is complete for Kaseki's five workflows. Confirm Senku deployment readiness and permissions before enabling them on production hosts. Keep existing fail-open/fail-closed stage behavior and deterministic safeguards.
+4. **Centralize shared history:** Soyuz now accepts a text-free outcome projection and aggregates score, category, assessment, and phase timing over its newest 30 runs. Keep raw logs, local diagnostics, and Kaseki history until retention and evidence parity are established.
 5. **Retire duplicate surfaces:** remove the proxy, generic decision use, and local cross-run aggregate only after caller inventory, parity checks, and a rollback window.
 
 ## Readiness and limitations

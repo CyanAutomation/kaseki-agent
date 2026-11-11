@@ -2,14 +2,12 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  CAVEMAN_TOOL_OUTPUT_QUESTIONS,
   cavemanToolOutputRouterEnabled,
   cavemanToolOutputRouterMinChars,
   installCavemanToolOutputRouter,
   routeToolOutput,
   routeSemanticToolOutput,
   readSemanticGoalSummary,
-  SEMANTIC_CONTEXT_ROUTING_QUESTIONS,
   type CavemanPiExtension,
   type CavemanToolOutputContent,
   type CavemanToolOutputEvent,
@@ -136,11 +134,12 @@ describe('Caveman tool-output routing', () => {
 
     await routeToolOutput(event('bash', secretLikeOutput, { command: 'cat /run/secrets/private-key' }), classify, { minChars: 100 });
 
-    const [state, questions] = classify.mock.calls[0] as unknown as [Record<string, unknown>, typeof CAVEMAN_TOOL_OUTPUT_QUESTIONS];
-    expect(state).toMatchObject({ toolName: 'bash', resultKind: 'command_output', characters: secretLikeOutput.length });
-    expect(JSON.stringify(state)).not.toContain('TOKEN_VALUE');
-    expect(JSON.stringify(state)).not.toContain('/run/secrets');
-    expect(questions).toBe(CAVEMAN_TOOL_OUTPUT_QUESTIONS);
+    const [profileId, input] = classify.mock.calls[0] as unknown as [string, { mode: string; evidence: Record<string, unknown> }];
+    expect(profileId).toBe('kaseki_context_routing_v1');
+    expect(input.mode).toBe('tool_output');
+    expect(input.evidence).toMatchObject({ toolName: 'bash', resultKind: 'command_output', characters: secretLikeOutput.length });
+    expect(JSON.stringify(input)).not.toContain('TOKEN_VALUE');
+    expect(JSON.stringify(input)).not.toContain('/run/secrets');
   });
 
   it('keeps original tool output when JEV fails or confidence is below threshold', async () => {
@@ -244,7 +243,7 @@ describe('Semantic context routing', () => {
       } as NodeJS.ProcessEnv);
       const legacyResult = await handler?.(event('bash', repeated));
       expect(legacyResult?.content[0]).toMatchObject({ type: 'text' });
-      expect(legacyClassify.mock.calls[0]?.[1]).not.toBe(SEMANTIC_CONTEXT_ROUTING_QUESTIONS);
+      expect(legacyClassify.mock.calls[0]).toMatchObject(['kaseki_context_routing_v1', { mode: 'tool_output' }]);
       expect(fs.readFileSync(path.join(resultsRoot, 'disabled', 'caveman-routing.jsonl'), 'utf8')).toContain('"semantic_router_enabled":false');
 
       let phaseHandler: typeof handler;
@@ -256,7 +255,7 @@ describe('Semantic context routing', () => {
         KASEKI_RESULTS_DIR: path.join(resultsRoot, 'scouting'),
       } as NodeJS.ProcessEnv);
       await phaseHandler?.(event('bash', repeated));
-      expect(phaseClassify.mock.calls[0]?.[1]).not.toBe(SEMANTIC_CONTEXT_ROUTING_QUESTIONS);
+      expect(phaseClassify.mock.calls[0]).toMatchObject(['kaseki_context_routing_v1', { mode: 'tool_output' }]);
     } finally {
       fs.rmSync(resultsRoot, { recursive: true, force: true });
     }
@@ -280,12 +279,13 @@ describe('Semantic context routing', () => {
       phase: 'coding',
       goalSummary: 'Fix parser token=supersecretvalue',
     });
-    const [state, questions] = classify.mock.calls[0] as unknown as [Record<string, unknown>, typeof SEMANTIC_CONTEXT_ROUTING_QUESTIONS];
+    const [profileId, input] = classify.mock.calls[0] as unknown as [string, { mode: string; evidence: Record<string, unknown> }];
 
-    expect(state).toMatchObject({ phase: 'coding', toolName: 'bash', operation: 'package_quality_check', goalSummary: 'Fix parser token=[REDACTED_SECRET]' });
-    expect(questions).toBe(SEMANTIC_CONTEXT_ROUTING_QUESTIONS);
-    expect(JSON.stringify(state)).not.toContain('routine output');
-    expect(JSON.stringify(state)).not.toContain('npm test');
+    expect(profileId).toBe('kaseki_context_routing_v1');
+    expect(input.mode).toBe('semantic_context');
+    expect(input.evidence).toMatchObject({ phase: 'coding', toolName: 'bash', operation: 'package_quality_check', goalSummary: 'Fix parser token=[REDACTED_SECRET]' });
+    expect(JSON.stringify(input)).not.toContain('routine output');
+    expect(JSON.stringify(input)).not.toContain('npm test');
   });
 
   it('preserves original representation for preserve, JEV failure, and invalid probabilities', async () => {
