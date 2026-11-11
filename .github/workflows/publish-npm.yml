@@ -5,6 +5,7 @@ on:
     inputs:
       ref: { description: Immutable release commit to publish, required: true, type: string }
       version: { description: Exact package version to publish, required: true, type: string }
+      allow_existing: { description: Verify and reuse an already-published matching package, required: false, type: boolean, default: false }
 
 permissions:
   contents: read
@@ -25,6 +26,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       package_name: ${{ steps.version.outputs.package_name }}
       package_file: ${{ steps.pack.outputs.package_file }}
+      publish: ${{ steps.publication.outputs.publish }}
     steps:
       - name: Validate immutable source ref
         id: source_ref
@@ -64,13 +66,6 @@ jobs:
           grep -qE "^#{1,2} \[${version}\]" CHANGELOG.md || { echo "CHANGELOG.md is missing $version" >&2; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "package_name=$(node -p "require('./package.json').name")" >> "$GITHUB_OUTPUT"
-      - name: Confirm target version is unpublished
-        shell: bash
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          PACKAGE_NAME: ${{ steps.version.outputs.package_name }}
-        run: |
-          ./scripts/check-npm-version-unpublished.sh "$PACKAGE_NAME" "$VERSION"
       - run: npm run test:publish-smoke
       - name: Capture package metadata
         run: |
@@ -87,6 +82,16 @@ jobs:
           [[ "$package_file" =~ ^[A-Za-z0-9._-]+\.tgz$ ]] || { echo "Invalid npm package artifact filename" >&2; exit 1; }
           [[ -f "/tmp/npm-package/$package_file" ]] || { echo "npm package artifact is missing" >&2; exit 1; }
           echo "package_file=$package_file" >> "$GITHUB_OUTPUT"
+      - name: Validate npm publication state
+        id: publication
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE_NAME: ${{ steps.version.outputs.package_name }}
+          PACKAGE_TARBALL: /tmp/npm-package/${{ steps.pack.outputs.package_file }}
+          ALLOW_EXISTING: ${{ inputs.allow_existing }}
+        run: |
+          ./scripts/check-npm-publication-state.sh "$PACKAGE_NAME" "$VERSION" "$PACKAGE_TARBALL" "$ALLOW_EXISTING" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: npm-package
@@ -102,7 +107,7 @@ jobs:
 
   publish:
     needs: build
-    if: github.repository == 'CyanAutomation/kaseki-agent' && github.ref == 'refs/heads/main'
+    if: github.repository == 'CyanAutomation/kaseki-agent' && github.ref == 'refs/heads/main' && needs.build.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     environment: release
@@ -137,7 +142,7 @@ jobs:
 
   verify:
     needs: [build, publish]
-    if: github.repository == 'CyanAutomation/kaseki-agent' && github.ref == 'refs/heads/main'
+    if: always() && github.repository == 'CyanAutomation/kaseki-agent' && github.ref == 'refs/heads/main' && needs.build.result == 'success' && (needs.publish.result == 'success' || (needs.publish.result == 'skipped' && needs.build.outputs.publish == 'false'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

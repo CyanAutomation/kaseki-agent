@@ -6,6 +6,7 @@ on:
     inputs:
       ref: { description: Immutable release commit to build, required: true, type: string }
       version: { description: Release version without a leading v, required: true, type: string }
+      recovery: { description: Publish the release version without moving latest, required: false, type: boolean, default: false }
     secrets:
       DOCKER_USERNAME:
         required: false
@@ -56,18 +57,11 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_VERSION: ${{ inputs.version }}
+          IS_RECOVERY: ${{ inputs.recovery || false }}
         run: |
           set -euo pipefail
           sha="$(git rev-parse HEAD)"; short_sha="${sha::12}"
-          # Every successful publish promotes the verified image to `latest`.
-          # Keep a second, immutable tag for release and non-release runs.
-          tags="latest"
-          if [[ "$EVENT_NAME" == workflow_call ]]; then
-            [[ -n "$RELEASE_VERSION" ]] || { echo "Release version is required for workflow_call" >&2; exit 1; }
-            tags+=",$RELEASE_VERSION"
-          else
-            tags+=",main-$short_sha"
-          fi
+          tags="$(./scripts/docker-promotion-tags.sh "$EVENT_NAME" "$RELEASE_VERSION" "$short_sha" "$IS_RECOVERY")"
           hub_promotion=""; ghcr_promotion=""
           IFS=',' read -r -a tag_entries <<< "$tags"
           for raw_tag in "${tag_entries[@]}"; do

@@ -381,6 +381,7 @@ You can create a release in two ways:
 2. Select the **Release** workflow from the left sidebar
 3. Click **Run workflow** and choose your options:
    - **Dry-run (optional)**: Check to preview the release without creating tags/releases
+   - **Recovery version (optional)**: Enter an existing version without a leading `v` (for example, `1.158.0`) to republish its missing artifacts
    - Click **Run workflow**
 4. The workflow will:
    - Analyze commits since last release
@@ -389,6 +390,13 @@ You can create a release in two ways:
    - Automatically trigger Docker multi-arch build and publish images
 5. Monitor the workflow progress in the Actions tab
 6. Verify the release in the [Releases](https://github.com/CyanAutomation/kaseki-agent/releases) tab
+
+Use recovery when a release tag and GitHub release exist but one or more
+published artifacts are missing. Recovery checks that the tag is on `main`,
+uses the package version and bootstrap script from that tag, and republishes the
+versioned Docker image without moving `latest`. An npm version already in the
+registry is reused only when its integrity matches the release tarball. Recovery
+cannot be combined with dry-run.
 
 **Option B: Via Local Command (Advanced)**
 
