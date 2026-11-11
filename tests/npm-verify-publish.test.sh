@@ -91,7 +91,7 @@ run_case e404 40
 [[ $(cat "$TMP/state/count") == 7 ]] || fail 'deadline did not bound generated retry attempts'
 
 run_case network 1
-! rg -q 'npm_SUPERSECRET99' "$TMP/state" || fail 'secret leaked to output or artifact'
+! grep -rEq 'npm_SUPERSECRET99' "$TMP/state" || fail 'secret leaked to output or artifact'
 jq -e '.stderr | contains("[REDACTED]")' "$TMP/state/diagnostics/npm-verify-last-response.json" >/dev/null || fail 'redaction absent'
 ! find "$TMP/state/diagnostics" -name '*.npmrc' -print -quit | grep -q . || fail 'generated npmrc entered diagnostics'
 
