@@ -4,6 +4,19 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.159.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.158.0...v1.159.0) (2026-11-12)
+
+
+### Bug Fixes
+
+* **release:** make tag detection and recovery safe ([a9bb37f](https://github.com/CyanAutomation/kaseki-agent/commit/a9bb37f5b18e7877777375ee739a5abc974fcfe8))
+* **release:** make tag detection and recovery safe ([#1556](https://github.com/CyanAutomation/kaseki-agent/issues/1556)) ([1e1f929](https://github.com/CyanAutomation/kaseki-agent/commit/1e1f9297042e571bb8b8288731b889ee6f78b0dd))
+
+
+### Features
+
+* Move Kaseki workflow decisions to Senku profiles ([#1558](https://github.com/CyanAutomation/kaseki-agent/issues/1558)) ([a173124](https://github.com/CyanAutomation/kaseki-agent/commit/a173124c8b0f0287d05be09f10176abe76d1aebe))
+
 # [1.158.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.157.0...v1.158.0) (2026-11-11)
 
 
