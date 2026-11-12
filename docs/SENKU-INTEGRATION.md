@@ -70,42 +70,43 @@ receives output metadata or bounded scouting facts. Context Routing never
 receives raw tool output, source code, or shell command text. All profile
 answers remain advisory.
 
-Only the opt-in API gateway Evaluation smoke check still uses the Kaseki-only
-generic endpoint, with a fixed synthetic scenario. Workflow question definitions
-are no longer supplied by Kaseki callers:
+The opt-in API gateway Evaluation smoke uses the same fixed run-evaluation
+profile as the workflow, with synthetic evidence. Kaseki callers do not supply
+question definitions:
 
 ```http
-POST /v1/decisions
+POST /v1/profiles/kaseki_run_evaluation_v1/evaluate
 Content-Type: application/json
 Authorization: Bearer <Kaseki machine token>
 ```
 
-The request envelope is `{ "schemaVersion": "1", "state": ..., "questions": ... }`.
-For example:
+The request envelope is `{ "schemaVersion": "1", "input": ... }`. The smoke
+uses a synthetic completed-run summary:
 
 ```json
 {
   "schemaVersion": "1",
-  "state": { "status": "failed", "exitCode": 1 },
-  "questions": {
-    "likely_transient": {
-      "type": "noul",
-      "instructions": "Does the evidence indicate a transient failure?"
-    }
+  "input": {
+    "state": {
+      "status": "completed",
+      "task_mode": "inspect",
+      "validation_status": "passed",
+      "summary": "Synthetic profile smoke; no repository task was run."
+    },
+    "includeFailureDiagnosis": false
   }
 }
 ```
 
-Question types are `noul`, `choice`, and `score`. Kaseki validates the state,
-question identifiers, content tree, and serialized size before sending. The
-client sends no `model`, provider endpoint, or provider key. Senku owns question
-validation, permission enforcement, JEV selection, and upstream response
-validation.
+Kaseki validates the profile ID, input content tree, and serialized size before
+sending. The client sends no question definitions, model, provider endpoint, or
+provider key. Senku owns profile questions, permission enforcement, JEV
+selection, and upstream response validation.
 
 The success envelope includes `schemaVersion`, `requestId`, `status`,
 `provider: "jev"`, resolved `model`, exact `answers`, optional `usage`,
 `durationMs`, and `attemptCount: 1`. Kaseki maps the local provider identity to
-`provider: "senku"` in its `DecisionResult` and telemetry while preserving the
+`provider: "senku"` in its profile result and telemetry while preserving the
 resolved model and reported usage. Missing usage is represented as an empty
 object for existing Kaseki callers.
 
@@ -179,7 +180,7 @@ SENKU_REPO_PATH=/path/to/senku npm run test:senku-contract
 
 This exercises profile authentication, input and response validation, and
 Senku's safe error envelopes without a paid inference call. The opt-in gateway
-smoke separately covers the narrow generic-decision contract.
+smoke separately covers the Kaseki run-evaluation profile contract.
 The provider fetch is mocked and the test asserts exactly one upstream
 attempt. The script exits with a setup error if the checkout or Node.js 26 is
 unavailable; the transport unit tests remain independently runnable.
@@ -195,8 +196,8 @@ connectivity, and do not deploy changes as part of this implementation.
 Before a controlled rollout, install the approved Kaseki Senku machine token
 on each host as `senku_kaseki_api_token`, confirm the secret directory is
 mounted read-only, and set `SENKU_URL` only if the default origin is not used.
-The smoke can verify the narrow generic gateway-probe contract. Before
-enabling migrated workflows on a host, confirm the deployed Senku Worker
+The smoke verifies the Kaseki run-evaluation profile contract. Before enabling
+migrated workflows on a host, confirm the deployed Senku Worker
 exposes all five Kaseki profiles and grants the Kaseki identity access to them.
 The profile implementations and permission changes require a Senku deployment;
 do not assume a live service has them until its deployment is verified. Roll
@@ -212,7 +213,6 @@ confirming no unrelated coding integration uses them. The LLM Gateway key
 remains separate and continues to power Pi coding inference.
 
 Goal Check, Run Evaluation, Task Admission, Validation Recovery, context
-routing, and scouting handoff now use versioned, Senku-owned profiles. The
-generic endpoint remains only for the explicit synthetic gateway Evaluation
-smoke. Kaseki keeps evidence extraction, confidence thresholds, retry
-authorization, and execution safety in local deterministic policy.
+routing, scouting handoff, and the synthetic gateway smoke use versioned,
+Senku-owned profiles. Kaseki keeps evidence extraction, confidence thresholds,
+retry authorization, and execution safety in local deterministic policy.

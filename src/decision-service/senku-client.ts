@@ -1,9 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { TextDecoder, TextEncoder } from 'node:util';
-import type { ClassificationAnswer, QuestionDefinition } from '../types/openrouter-decisions';
+import type { ClassificationAnswer } from '../types/openrouter-decisions';
 
 export const DEFAULT_SENKU_URL = 'https://senku.scheimann.workers.dev';
-export const SENKU_DECISION_PATH = '/v1/decisions';
 export const SENKU_PROFILE_PATH = '/v1/profiles';
 export const SENKU_SCHEMA_VERSION = '1' as const;
 export const MAX_SENKU_REQUEST_BYTES = 128 * 1024;
@@ -116,27 +115,9 @@ export class DecisionServiceError extends Error {
   }
 }
 
-export interface SenkuDecisionRequest {
-  schemaVersion: typeof SENKU_SCHEMA_VERSION;
-  state: string | Record<string, unknown>;
-  questions: Record<string, QuestionDefinition>;
-}
-
 export interface SenkuProfileRequest {
   schemaVersion: typeof SENKU_SCHEMA_VERSION;
   input: Record<string, unknown>;
-}
-
-export interface SenkuDecisionResponse {
-  schemaVersion: typeof SENKU_SCHEMA_VERSION;
-  requestId: string;
-  status: 'completed';
-  provider: 'jev';
-  model: string;
-  answers: Record<string, ClassificationAnswer>;
-  usage?: Record<string, number>;
-  durationMs: number;
-  attemptCount: 1;
 }
 
 export interface SenkuProfileResponse {
@@ -164,13 +145,9 @@ export interface SenkuClientOptions {
   readFile?: (path: string, encoding: 'utf8') => string;
 }
 
-export interface SenkuDecisionOptions extends SenkuClientOptions {
+export interface SenkuRequestOptions extends SenkuClientOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
-}
-
-export interface SenkuDecisionResult extends SenkuDecisionResponse {
-  responseTime: number;
 }
 
 function fail(category: DecisionFailureCategory, metadata?: ConstructorParameters<typeof DecisionServiceError>[1]): never {
@@ -202,73 +179,6 @@ function validJsonTree(value: unknown, depth = 0, budget = { nodes: 0 }): boolea
   if (Array.isArray(value)) return value.every((child) => validJsonTree(child, depth + 1, budget));
   if (!isRecord(value)) return false;
   return Object.values(value).every((child) => validJsonTree(child, depth + 1, budget));
-}
-
-function validContent(value: unknown, budget: { nodes: number }): boolean {
-  if (typeof value === 'string') return value.trim().length > 0 && utf8Size(value) <= 16 * 1024;
-  if ((!Array.isArray(value) && !isRecord(value)) || Object.keys(value).length === 0) return false;
-  return validJsonTree(value, 0, budget);
-}
-
-function validQuestion(value: unknown, budget: { nodes: number }): value is QuestionDefinition {
-  if (!isRecord(value)
-    || Object.keys(value).some((key) => !['type', 'instructions', 'criteria'].includes(key))
-    || !validContent(value.instructions, budget)) return false;
-
-  if (value.type === 'noul') {
-    if (value.criteria === undefined) return true;
-    return isRecord(value.criteria)
-      && Object.keys(value.criteria).length > 0
-      && Object.keys(value.criteria).every((key) => ['true', 'false'].includes(key))
-      && Object.values(value.criteria).every((item) => validContent(item, budget));
-  }
-  if (value.type === 'choice') {
-    if (!isRecord(value.criteria)) return false;
-    const ids = Object.keys(value.criteria);
-    return ids.length >= 2 && ids.length <= 12
-      && ids.every((key) => /^[a-z][a-z0-9_]{0,63}$/.test(key))
-      && Object.values(value.criteria).every((item) => item === null || validContent(item, budget));
-  }
-  if (value.type === 'score') {
-    return Array.isArray(value.criteria)
-      && value.criteria.length >= 2
-      && value.criteria.length <= 12
-      && value.criteria.every((item) => validContent(item, budget));
-  }
-  return false;
-}
-
-export function buildSenkuDecisionRequest(
-  state: string | Record<string, unknown>,
-  questions: Record<string, QuestionDefinition>,
-): { envelope: SenkuDecisionRequest; body: string } {
-  const budget = { nodes: 0 };
-  if (typeof state === 'string') {
-    if (!state.trim() || utf8Size(state) > MAX_SENKU_REQUEST_BYTES) fail('invalid_request');
-  } else if (!isRecord(state) || !validJsonTree(state, 0, budget)) {
-    fail('invalid_request');
-  }
-
-  const ids = Object.keys(questions);
-  if (ids.length < 1 || ids.length > 64
-    || ids.some((key) => !/^[a-z][a-z0-9_]{0,63}$/.test(key))
-    || !ids.every((key) => validQuestion(questions[key], budget))) {
-    fail('invalid_request');
-  }
-
-  const envelope: SenkuDecisionRequest = {
-    schemaVersion: SENKU_SCHEMA_VERSION,
-    state,
-    questions,
-  };
-  let body: string;
-  try {
-    body = JSON.stringify(envelope);
-  } catch {
-    fail('invalid_request');
-  }
-  if (utf8Size(body!) > MAX_SENKU_REQUEST_BYTES) fail('invalid_request');
-  return { envelope, body: body! };
 }
 
 export function buildSenkuProfileRequest(
@@ -309,10 +219,6 @@ function resolveSenkuOrigin(env: NodeJS.ProcessEnv): string {
     fail('configuration');
   }
   return parsed.origin;
-}
-
-export function resolveSenkuDecisionUrl(env: NodeJS.ProcessEnv = process.env): string {
-  return new URL(SENKU_DECISION_PATH, resolveSenkuOrigin(env)).toString();
 }
 
 export function resolveSenkuProfileUrl(profileId: SenkuProfileId, env: NodeJS.ProcessEnv = process.env): string {
@@ -385,17 +291,17 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
   return actual.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 }
 
-function validAnswer(question: QuestionDefinition, answer: unknown): answer is ClassificationAnswer {
+function validAnswer(contract: ProfileAnswerContract, answer: unknown): answer is ClassificationAnswer {
   if (!isRecord(answer)) return false;
-  if (question.type === 'noul') {
+  if (contract.type === 'noul') {
     return hasExactKeys(answer, ['type', 'noul', 'probabilities', 'confidence'])
       && answer.type === 'noul'
       && isProbability(answer.noul)
       && isDistribution(answer.probabilities, ['false', 'true'])
       && answer.confidence === null;
   }
-  if (question.type === 'choice') {
-    const ids = Object.keys(question.criteria);
+  if (contract.type === 'choice') {
+    const ids = [...contract.choices];
     return hasExactKeys(answer, ['type', 'choice', 'probabilities', 'confidence'])
       && answer.type === 'choice'
       && typeof answer.choice === 'string'
@@ -403,11 +309,11 @@ function validAnswer(question: QuestionDefinition, answer: unknown): answer is C
       && isDistribution(answer.probabilities, ids)
       && validConfidence(answer.confidence);
   }
-  const scoreIds = question.criteria.map((_, index) => String(index));
+  const scoreIds = Array.from({ length: contract.levels }, (_value, index) => String(index));
   const legend = answer.legend;
   if (!hasExactKeys(answer, ['type', 'score', 'probabilities', 'confidence', 'legend'])
     || answer.type !== 'score' || typeof answer.score !== 'number'
-    || !Number.isFinite(answer.score) || answer.score < 0 || answer.score > question.criteria.length - 1
+    || !Number.isFinite(answer.score) || answer.score < 0 || answer.score > contract.levels - 1
     || !isDistribution(answer.probabilities, scoreIds) || !validConfidence(answer.confidence)
     || !isRecord(legend)) return false;
   return Object.keys(legend).length === scoreIds.length
@@ -424,27 +330,7 @@ function validUsage(value: unknown): value is Record<string, number> {
     && Object.values(value).every((item) => typeof item === 'number' && Number.isFinite(item) && item >= 0);
 }
 
-function validateResponse(value: unknown, questions: Record<string, QuestionDefinition>): SenkuDecisionResponse {
-  const allowedKeys = ['schemaVersion', 'requestId', 'status', 'provider', 'model', 'answers', 'usage', 'durationMs', 'attemptCount'];
-  if (!isRecord(value) || Object.keys(value).some((key) => !allowedKeys.includes(key))
-    || value.schemaVersion !== SENKU_SCHEMA_VERSION || value.status !== 'completed' || value.provider !== 'jev'
-    || typeof value.model !== 'string' || !value.model.trim() || value.model.length > 256 || hasControlCharacter(value.model)
-    || !safeRequestId(value.requestId) || typeof value.durationMs !== 'number' || !Number.isFinite(value.durationMs) || value.durationMs < 0
-    || value.attemptCount !== 1 || !isRecord(value.answers)) {
-    fail('invalid_response', { attemptCount: 1 });
-  }
-  const answers = value.answers as Record<string, unknown>;
-  if (value.usage !== undefined && !validUsage(value.usage)) fail('invalid_response', { attemptCount: 1 });
-  const answerIds = Object.keys(answers);
-  const expectedIds = Object.keys(questions);
-  if (answerIds.length !== expectedIds.length || answerIds.some((id) => !Object.hasOwn(questions, id))
-    || !expectedIds.every((id) => validAnswer(questions[id]!, answers[id]))) {
-    fail('invalid_response', { requestId: safeRequestId(value.requestId), attemptCount: 1 });
-  }
-  return value as unknown as SenkuDecisionResponse;
-}
-
-function profileQuestions(profileId: SenkuProfileId, input: Record<string, unknown>): Record<string, QuestionDefinition> {
+function profileAnswerContracts(profileId: SenkuProfileId, input: Record<string, unknown>): Record<string, ProfileAnswerContract> {
   let contracts: Record<string, ProfileAnswerContract> = { ...PROFILE_ANSWER_CONTRACTS[profileId] };
   if (profileId === 'kaseki_goal_check_v1') {
     if (!Array.isArray(input.criteria)) return {};
@@ -475,23 +361,7 @@ function profileQuestions(profileId: SenkuProfileId, input: Record<string, unkno
       }
     } else return {};
   }
-  return Object.fromEntries(Object.entries(contracts).map(([id, contract]) => {
-    if (contract.type === 'noul') {
-      return [id, { type: 'noul', instructions: 'Profile answer contract.' } satisfies QuestionDefinition];
-    }
-    if (contract.type === 'score') {
-      return [id, {
-        type: 'score',
-        instructions: 'Profile answer contract.',
-        criteria: Array.from({ length: contract.levels }, (_value, index) => String(index)),
-      } satisfies QuestionDefinition];
-    }
-    return [id, {
-      type: 'choice',
-      instructions: 'Profile answer contract.',
-      criteria: Object.fromEntries(contract.choices.map((choice) => [choice, null])),
-    } satisfies QuestionDefinition];
-  }));
+  return contracts;
 }
 
 function equalJson(left: unknown, right: unknown): boolean {
@@ -525,14 +395,14 @@ function validateProfileResponse(
     || value.durationMs < 0 || value.attemptCount !== 1 || !isRecord(value.answers) || !isRecord(value.result)) {
     fail('invalid_response', { attemptCount: 1 });
   }
-  const questions = profileQuestions(expectedProfileId, input);
+  const contracts = profileAnswerContracts(expectedProfileId, input);
   const answers = value.answers as Record<string, unknown>;
   const result = value.result as Record<string, unknown>;
   if (value.usage !== undefined && !validUsage(value.usage)) fail('invalid_response', { attemptCount: 1 });
   const answerIds = Object.keys(answers);
-  const expectedIds = Object.keys(questions);
-  if (expectedIds.length === 0 || answerIds.length !== expectedIds.length || answerIds.some((id) => !Object.hasOwn(questions, id))
-    || !expectedIds.every((id) => validAnswer(questions[id]!, answers[id]))
+  const expectedIds = Object.keys(contracts);
+  if (expectedIds.length === 0 || answerIds.length !== expectedIds.length || answerIds.some((id) => !Object.hasOwn(contracts, id))
+    || !expectedIds.every((id) => validAnswer(contracts[id]!, answers[id]))
     || !equalJson(answers, result)) {
     fail('invalid_response', { requestId: safeRequestId(value.requestId), attemptCount: 1 });
   }
@@ -619,7 +489,7 @@ async function requestSenku<T extends object>(
   resolveUrl: () => string,
   buildBody: () => string,
   validate: (value: unknown) => T,
-  options: SenkuDecisionOptions,
+  options: SenkuRequestOptions,
 ): Promise<T & { responseTime: number }> {
   if (hasRetiredDecisionSettings(options.env ?? process.env)) fail('configuration');
   const url = resolveUrl();
@@ -693,23 +563,10 @@ async function requestSenku<T extends object>(
   }
 }
 
-export async function requestSenkuDecision(
-  state: string | Record<string, unknown>,
-  questions: Record<string, QuestionDefinition>,
-  options: SenkuDecisionOptions = {},
-): Promise<SenkuDecisionResult> {
-  return requestSenku(
-    () => resolveSenkuDecisionUrl(options.env ?? process.env),
-    () => buildSenkuDecisionRequest(state, questions).body,
-    (value) => validateResponse(value, questions),
-    options,
-  );
-}
-
 export async function requestSenkuProfile(
   profileId: SenkuProfileId,
   input: Record<string, unknown>,
-  options: SenkuDecisionOptions = {},
+  options: SenkuRequestOptions = {},
 ): Promise<SenkuProfileResult> {
   return requestSenku(
     () => resolveSenkuProfileUrl(profileId, options.env ?? process.env),
