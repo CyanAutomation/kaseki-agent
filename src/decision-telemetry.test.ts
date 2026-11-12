@@ -47,11 +47,11 @@ describe('decision telemetry', () => {
 
   it('summarizes the least certain typed answer conservatively', () => {
     expect(summarizeDecisionConfidence({
-      satisfied: { type: 'noul', noul: 0.97 },
+      satisfied: { type: 'noul', noul: 0.97, probabilities: { false: 0.03, true: 0.97 }, confidence: null },
       risk: { type: 'choice', choice: 'low', probabilities: { low: 0.8, high: 0.2 }, confidence: 0.8 },
       score: { type: 'score', score: 1, legend: { 0: 'Low', 1: 'High' }, probabilities: { 0: 0.1, 1: 0.9 }, confidence: 0.9 },
     })).toBe(0.8);
-    expect(summarizeDecisionConfidence({ uncertain: { type: 'noul', noul: 0.5 } })).toBe(0.5);
+    expect(summarizeDecisionConfidence({ uncertain: { type: 'noul', noul: 0.5, probabilities: { false: 0.5, true: 0.5 }, confidence: null } })).toBe(0.5);
   });
 
   it('appends compact records for repeated stage decisions', () => {

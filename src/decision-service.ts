@@ -30,10 +30,6 @@ export interface ProfileDecisionResult extends DecisionResult {
 
 export interface DecisionService {
   readonly providerId: string;
-  evaluateProfile?(request: ProfileDecisionRequest): Promise<ProfileDecisionResult>;
-}
-
-export interface ProfileDecisionService {
   evaluateProfile(request: ProfileDecisionRequest): Promise<ProfileDecisionResult>;
 }
 
@@ -57,7 +53,7 @@ export function decisionFailureMetadata(error: unknown): DecisionFailureMetadata
 }
 
 /** The only remote DecisionService implementation used by Kaseki. */
-export class SenkuDecisionService implements DecisionService, ProfileDecisionService {
+export class SenkuDecisionService implements DecisionService {
   readonly providerId = 'senku';
 
   constructor(private readonly options: SenkuClientOptions = {}) {}

@@ -1076,7 +1076,6 @@ export async function testClassificationSmoke(requested: boolean = false): Promi
   }
 
   try {
-    if (!decisionService.evaluateProfile) throw new DecisionServiceError('configuration');
     const parsed = await decisionService.evaluateProfile({
       profileId: 'kaseki_run_evaluation_v1',
       input: {
