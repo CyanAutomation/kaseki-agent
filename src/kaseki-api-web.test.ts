@@ -1,4 +1,5 @@
 /* global Document, HTMLTextAreaElement, HTMLSelectElement */
+// Contract: docs/API.md#trigger-a-run
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { getWebConsoleResponse } from './kaseki-api-web';
 
@@ -90,7 +91,7 @@ async function renderConsole(options: {
   });
   openDoms.push(dom);
 
-  await waitFor(() => expect(dom.window.document.querySelector('#header-status')).not.toBeNull());
+  await waitFor(dom.window.document, () => expect(dom.window.document.querySelector('#header-status')).not.toBeNull());
   await new Promise((resolve) => setTimeout(resolve, 0));
   calls.length = 0;
   fetchMock.mockClear();
@@ -105,20 +106,64 @@ afterEach(() => {
   }
 });
 
-async function waitFor(assertion: () => void | Promise<void>): Promise<void> {
-  const started = Date.now();
-  let lastError: unknown;
-  while (Date.now() - started < 1000) {
-    try {
-      await assertion();
-      return;
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 10));
+async function waitFor(document: Document, assertion: () => void | Promise<void>): Promise<void> {
+  const Observer = document.defaultView?.MutationObserver;
+
+  return new Promise<void>((resolve, reject) => {
+    let lastError: unknown;
+    let checking = false;
+    let settled = false;
+    let observer: { disconnect(): void } | undefined;
+
+    const finish = (complete: () => void): void => {
+      if (settled) return;
+      settled = true;
+      observer?.disconnect();
+      clearTimeout(timeout);
+      complete();
+    };
+
+    const timeout = setTimeout(() => {
+      finish(() => reject(lastError ?? new Error('Timed out waiting for the expected console state')));
+    }, 1000);
+
+    const check = async (): Promise<void> => {
+      if (settled || checking) return;
+      checking = true;
+      try {
+        await assertion();
+        finish(resolve);
+      } catch (error) {
+        lastError = error;
+      } finally {
+        checking = false;
+      }
+    };
+
+    if (Observer && document.documentElement) {
+      observer = new Observer(() => { void check(); });
+      observer.observe(document.documentElement, {
+        attributes: true,
+        childList: true,
+        characterData: true,
+        subtree: true,
+      });
     }
-  }
-  throw lastError;
+    void check();
+  });
 }
+
+test('waitFor observes the document supplied by its caller', async () => {
+  const dom = new JSDOM('<div id="state"></div>');
+  const document = dom.window.document;
+  try {
+    const waiting = waitFor(document, () => expect(document.querySelector('#state')?.textContent).toBe('ready'));
+    void Promise.resolve().then(() => { document.querySelector('#state')!.textContent = 'ready'; });
+    await waiting;
+  } finally {
+    dom.window.close();
+  }
+});
 
 function click(element: Element | null): void {
   if (!element) throw new Error('Element is null');
@@ -206,7 +251,7 @@ function healthCheckButton(document: Document, label: string): Element {
 
 async function refreshAndSelectFirstRun(document: Document): Promise<void> {
   clickSelector(document, '#refresh-runs');
-  await waitFor(() => expect(document.querySelectorAll('#runs-list button')).not.toHaveLength(0));
+  await waitFor(document, () => expect(document.querySelectorAll('#runs-list button')).not.toHaveLength(0));
   clickSelector(document, '#runs-list button');
 }
 
@@ -294,16 +339,16 @@ describe('kaseki API web console behavior', () => {
     expect(dom.window.sessionStorage.getItem('kasekiApiToken')).toBe('newtoken456');
 
     click(document.querySelector('[data-probe="/api/v1/preflight"]'));
-    await waitFor(() => expect(calls).toHaveLength(1));
+    await waitFor(document, () => expect(calls).toHaveLength(1));
     expect(calls[0]).toMatchObject({ path: '/api/v1/preflight' });
     expect(calls[0].init?.headers).toMatchObject({ Authorization: 'Bearer newtoken456' });
     expect(dom.window.sessionStorage.getItem('kasekiApiToken')).toBe('newtoken456');
-    await waitFor(() => expect(document.querySelector('#state')?.textContent).toBe('Current preflight completed.'));
+    await waitFor(document, () => expect(document.querySelector('#state')?.textContent).toBe('Current preflight completed.'));
     calls.length = 0;
 
     change(tokenInput!, 'bad token with spaces');
     click(document.querySelector('[data-probe="/api/v1/preflight"]'));
-    await waitFor(() => expect(document.querySelector('#state')?.textContent).toBe('API bearer token format is invalid.'));
+    await waitFor(document, () => expect(document.querySelector('#state')?.textContent).toBe('API bearer token format is invalid.'));
     expect(document.querySelector('#output')?.textContent).toContain('Token format looks invalid');
     expect(calls).toHaveLength(0);
   });
@@ -331,9 +376,9 @@ describe('kaseki API web console behavior', () => {
     });
 
     click(document.querySelector('#refresh-runs'));
-    await waitFor(() => expect(document.querySelectorAll('#runs-list button')).toHaveLength(1));
+    await waitFor(document, () => expect(document.querySelectorAll('#runs-list button')).toHaveLength(1));
     click(document.querySelector('#runs-list button'));
-    await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Phase diagnostics'));
+    await waitFor(document, () => expect(document.querySelector('#response-summary')?.textContent).toContain('Phase diagnostics'));
     expect(document.querySelector('#response-summary')?.textContent).toContain('scouting: critical: missing_file');
     // Note: Correlation ID is no longer displayed (removed for simplicity)
   });
@@ -351,7 +396,7 @@ describe('kaseki API web console behavior', () => {
     });
 
     await refreshAndSelectFirstRun(document);
-    await waitFor(() => expectTextContains(document, '#response-summary', 'Scouting: Complete (fallback)'));
+    await waitFor(document, () => expectTextContains(document, '#response-summary', 'Scouting: Complete (fallback)'));
     expectTextContains(document, '#response-summary', 'Weaving: In progress');
   });
 
@@ -377,16 +422,16 @@ describe('kaseki API web console behavior', () => {
     });
 
     await refreshAndSelectFirstRun(document);
-    await waitFor(() => expectTextContains(document, '#response-summary', 'Completed — review incomplete'));
+    await waitFor(document, () => expectTextContains(document, '#response-summary', 'Completed — review incomplete'));
     expectTextContains(document, '#response-summary', 'goal_check_artifact_missing');
     expectTextContains(document, '#response-summary', 'run_evaluation_failed_exit_86');
     expect(getElement<HTMLButtonElement>(document, '#retry-run-btn').disabled).toBe(false);
 
     clickSelector(document, '#retry-run-btn');
-    await waitFor(() => expect(retryAttempts).toBe(1));
-    await waitFor(() => expect(getElement<HTMLButtonElement>(document, '#retry-run-btn').disabled).toBe(false));
+    await waitFor(document, () => expect(retryAttempts).toBe(1));
+    await waitFor(document, () => expect(getElement<HTMLButtonElement>(document, '#retry-run-btn').disabled).toBe(false));
     clickSelector(document, '#retry-run-btn');
-    await waitFor(() => expect(getElement<HTMLInputElement>(document, '#run-id').value).toBe('kaseki-262'));
+    await waitFor(document, () => expect(getElement<HTMLInputElement>(document, '#run-id').value).toBe('kaseki-262'));
 
     const retryCalls = calls.filter((call) => call.path === '/api/v1/runs/kaseki-261/retry' && call.init?.method === 'POST');
     expect(retryAttempts).toBe(2);
@@ -414,7 +459,7 @@ describe('kaseki API web console behavior', () => {
     });
 
     await refreshAndSelectFirstRun(document);
-    await waitFor(() => expect(calls.some((call) => call.path === '/api/v1/runs/kaseki-263/events?tail=50')).toBe(true));
+    await waitFor(document, () => expect(calls.some((call) => call.path === '/api/v1/runs/kaseki-263/events?tail=50')).toBe(true));
     expectTextContains(document, '#response-summary', 'Validation');
     expectTextContains(document, '#response-summary', 'Confirmed controller progress event');
   });
@@ -433,7 +478,7 @@ describe('kaseki API web console behavior', () => {
     });
 
     await refreshAndSelectFirstRun(document);
-    await waitFor(() => expectTextContains(document, '#response-summary', 'Agent heartbeat 20s ago'));
+    await waitFor(document, () => expectTextContains(document, '#response-summary', 'Agent heartbeat 20s ago'));
     expectTextContains(document, '#response-summary', 'no substantive stage or command update for 7m 00s');
     expectTextNotContains(document, '#response-summary', 'worker may still be alive');
   });
@@ -452,7 +497,7 @@ describe('kaseki API web console behavior', () => {
     });
 
     click(document.querySelector('#refresh-runs'));
-    await waitFor(() => expect(document.querySelectorAll('#runs-list button')).toHaveLength(2));
+    await waitFor(document, () => expect(document.querySelectorAll('#runs-list button')).toHaveLength(2));
 
     expect(calls[0]).toMatchObject({ path: '/api/v1/runs' });
     expect([...document.querySelectorAll('#runs-list button')].map((button) => button.textContent)).toEqual([
@@ -486,7 +531,7 @@ describe('kaseki API web console behavior', () => {
     });
 
     await refreshAndSelectFirstRun(document);
-    await waitFor(() => expectTextContains(document, '#response-summary', 'Provider retry exhausted'));
+    await waitFor(document, () => expectTextContains(document, '#response-summary', 'Provider retry exhausted'));
     expect(getElement<HTMLButtonElement>(document, '#cancel-run').disabled).toBe(true);
     // Note: "Provider attempt" field is no longer displayed (removed for simplicity)
     expectTextContains(document, '#response-summary', 'Inspect provider attempts');
@@ -527,7 +572,7 @@ describe('kaseki API web console behavior', () => {
     });
 
     click(healthCheckButton(document, 'AI Model Test'));
-    await waitFor(() => expectTextContains(document, '[data-summary="llm-test"]', 'Gateway inference failed'));
+    await waitFor(document, () => expectTextContains(document, '[data-summary="llm-test"]', 'Gateway inference failed'));
     expectTextContains(document, '[data-summary="llm-test"]', 'Pi adapter passed');
     expectTextContains(document, '[data-summary="llm-test"]', 'Evaluation passed');
     expectTextContains(document, '#response-summary', 'Gateway inference failed');
@@ -554,18 +599,18 @@ describe('kaseki API web console behavior', () => {
     const inference = getElement<HTMLButtonElement>(document, '[data-probe="/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true"]');
     const repo = getElement<HTMLInputElement>(document, '[name="repoUrl"]');
     click(gateway);
-    await waitFor(() => expect(gateway.disabled).toBe(true));
+    await waitFor(document, () => expect(gateway.disabled).toBe(true));
     expect(inference.disabled).toBe(false);
     click(inference);
-    await waitFor(() => expect(inference.disabled).toBe(true));
+    await waitFor(document, () => expect(inference.disabled).toBe(true));
     expect(repo.disabled).toBe(false);
     expectTextContains(document, '#diagnostic-queue-state', 'Diagnostic queued: AI Model Test');
     rejectGateway?.(new Error('gateway unavailable'));
-    await waitFor(() => expect(gateway.disabled).toBe(false));
+    await waitFor(document, () => expect(gateway.disabled).toBe(false));
     expect(inference.disabled).toBe(true);
-    await waitFor(() => expectTextContains(document, '#diagnostic-queue-state', 'Diagnostic running: AI Model Test'));
+    await waitFor(document, () => expectTextContains(document, '#diagnostic-queue-state', 'Diagnostic running: AI Model Test'));
     rejectInference?.(new Error('inference unavailable'));
-    await waitFor(() => expect(inference.disabled).toBe(false));
+    await waitFor(document, () => expect(inference.disabled).toBe(false));
     expect(repo.disabled).toBe(false);
     expectText(document, '#diagnostic-queue-state', 'Diagnostics are ready.');
   });
@@ -585,7 +630,7 @@ describe('kaseki API web console behavior', () => {
 
     setRunId(document, 'kaseki-304');
     clickSelector(document, '#full-results-btn');
-    await waitFor(() => expect(getElement<HTMLElement>(document, '#pull-request-link').hidden).toBe(false));
+    await waitFor(document, () => expect(getElement<HTMLElement>(document, '#pull-request-link').hidden).toBe(false));
     expectAttribute(document, '#pull-request-link', 'href', 'https://github.com/CyanAutomation/tako-bako/pull/29');
   });
 
@@ -606,8 +651,8 @@ describe('kaseki API web console behavior', () => {
 
     setRunId(document, 'kaseki-304');
     clickSelector(document, '#full-results-btn');
-    await waitFor(() => expect(calls.some((call) => call.path === '/api/v1/runs/kaseki-304/status')).toBe(true));
-    await waitFor(() => expectTextContains(document, '#response-summary', 'pi coding agent'));
+    await waitFor(document, () => expect(calls.some((call) => call.path === '/api/v1/runs/kaseki-304/status')).toBe(true));
+    await waitFor(document, () => expectTextContains(document, '#response-summary', 'pi coding agent'));
     expectHidden(document, '#pull-request-link', true);
     expect(getElement(document, '#pull-request-link').hasAttribute('href')).toBe(false);
     expectTextNotContains(document, '#response-summary', '2026-09-16T08:19:21');
@@ -636,11 +681,11 @@ describe('kaseki API web console behavior', () => {
     });
 
     click(document.querySelector('[data-probe="/api/v1/gateway-test?stage=1"]'));
-    await waitFor(() => expect(document.querySelector('[data-summary="gateway"]')?.textContent).toBe('Failed'));
+    await waitFor(document, () => expect(document.querySelector('[data-summary="gateway"]')?.textContent).toBe('Failed'));
     expect(document.querySelector('[data-summary="gateway"]')?.className).toContain('bad');
 
     click(document.querySelector('[data-probe="/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true"]'));
-    await waitFor(() => expect(document.querySelector('#response-summary')?.textContent).toContain('Gateway inference passed. Pi adapter passed.'));
+    await waitFor(document, () => expect(document.querySelector('#response-summary')?.textContent).toContain('Gateway inference passed. Pi adapter passed.'));
     expectText(document, '[data-summary="llm-test"]', 'Gateway inference passed · Pi adapter passed · gateway 480ms · 7 tokens stream ok, large ok');
     expect(document.querySelector('#response-summary')?.textContent).not.toContain('OpenRouter');
   });
@@ -668,7 +713,7 @@ describe('kaseki API web console behavior', () => {
 
     clickSelector(document, '[data-probe="/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true"]');
 
-    await waitFor(() => expectText(
+    await waitFor(document, () => expectText(
       document,
       '[data-summary="llm-test"]',
       'Gateway inference passed · Pi adapter passed · gateway 420ms · Pi 35ms · total 475ms · 11 tokens stream ok, large ok',
@@ -691,7 +736,7 @@ describe('kaseki API web console behavior', () => {
 
     clickSelector(document, '[data-probe="/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true"]');
 
-    await waitFor(() => expectTextContains(document, '[data-summary="llm-test"]', 'token usage not reported'));
+    await waitFor(document, () => expectTextContains(document, '[data-summary="llm-test"]', 'token usage not reported'));
     expectTextContains(document, '[data-summary="llm-test"]', 'Gateway inference passed');
     expectTextContains(document, '#response-summary', 'Pi adapter passed.');
   });
@@ -711,7 +756,7 @@ describe('kaseki API web console behavior', () => {
 
     clickSelector(document, '[data-probe="/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true"]');
 
-    await waitFor(() => expectTextContains(document, '[data-summary="llm-test"]', '19 tokens'));
+    await waitFor(document, () => expectTextContains(document, '[data-summary="llm-test"]', '19 tokens'));
     expectTextNotContains(document, '[data-summary="llm-test"]', 'token usage not reported');
   });
 
@@ -740,7 +785,7 @@ describe('kaseki API web console behavior', () => {
 
     clickSelector(document, '[data-probe="/api/v1/gateway-test?inference=true&stage=2&responseSmoke=true&piProvider=true&evaluation=true"]');
 
-    await waitFor(() => expectTextContains(document, '#response-summary', 'Gateway inference passed. Pi adapter failed.'));
+    await waitFor(document, () => expectTextContains(document, '#response-summary', 'Gateway inference passed. Pi adapter failed.'));
     expectTextContains(document, '#response-summary', 'Fields found: message.output_text');
     expectTextContains(document, '#response-summary', 'Event types seen: message(2)');
     expectTextContains(document, '#response-summary', 'Remediation: Check gateway configuration and Pi provider registration');
@@ -772,7 +817,7 @@ describe('kaseki API web console behavior', () => {
     });
 
     click(document.querySelector('#refresh-runs'));
-    await waitFor(() => expect(document.querySelectorAll('#runs-list button')).toHaveLength(1));
+    await waitFor(document, () => expect(document.querySelectorAll('#runs-list button')).toHaveLength(1));
     expect(document.querySelector('#runs-list')?.textContent).toContain('validation_failed');
     expect(document.querySelector('#runs-list')?.textContent).toContain('pre-agent validation');
     expect(document.querySelector('#runs-list')?.textContent).toContain('25%');
@@ -792,7 +837,7 @@ describe('kaseki API web console behavior', () => {
     });
 
     clickSelector(document, '#refresh-runs');
-    await waitFor(() => expect(document.querySelectorAll('#runs-list button')).toHaveLength(1));
+    await waitFor(document, () => expect(document.querySelectorAll('#runs-list button')).toHaveLength(1));
 
     const runButton = getElement(document, '#runs-list button');
     expect(runButton.textContent).toContain('critical_change_expectations');
@@ -814,7 +859,7 @@ describe('kaseki API web console behavior', () => {
 
     setRunId(document, 'kaseki-906');
     clickSelector(document, '#full-results-btn');
-    await waitFor(() => expectTextContains(document, '#response-summary', 'Provider returned empty evaluator response'));
+    await waitFor(document, () => expectTextContains(document, '#response-summary', 'Provider returned empty evaluator response'));
     expectTextContains(document, '#response-summary', 'final evaluator produced no assistant text or tool calls');
     expectTextNotContains(document, '#response-summary', 'no repository diff');
   });
@@ -833,7 +878,7 @@ describe('kaseki API web console behavior', () => {
 
     setRunId(document, 'kaseki-907');
     clickSelector(document, '#full-results-btn');
-    await waitFor(() => expectTextContains(document, '#response-summary', 'Completed — review incomplete'));
+    await waitFor(document, () => expectTextContains(document, '#response-summary', 'Completed — review incomplete'));
   });
 
   test('loads artifact lists in the full-results modal with DOM controls for text artifacts only', async () => {
@@ -859,10 +904,10 @@ describe('kaseki API web console behavior', () => {
     });
 
     openFullResults(document, 'kaseki-301');
-    await waitFor(() => expect(calls.map((call) => call.path)).toContain('/api/v1/runs/kaseki-301/status'));
+    await waitFor(document, () => expect(calls.map((call) => call.path)).toContain('/api/v1/runs/kaseki-301/status'));
 
     clickSelector(document, '.tab-btn[data-tab="artifacts"]');
-    await waitFor(() => expect(document.querySelectorAll('#artifacts-output .artifact-item')).toHaveLength(1));
+    await waitFor(document, () => expect(document.querySelectorAll('#artifacts-output .artifact-item')).toHaveLength(1));
 
     expectHidden(document, '#full-results-modal', false);
     expectText(document, '#modal-title-heading', 'Full Results — kaseki-301');
@@ -880,12 +925,12 @@ describe('kaseki API web console behavior', () => {
     expectTextNotContains(document, '#artifacts-output', 'missing.txt');
 
     clickSelector(document, '#artifacts-output .artifact-item');
-    await waitFor(() => expectTextContains(document, '.artifact-content-pre', '"status": "ok"'));
+    await waitFor(document, () => expectTextContains(document, '.artifact-content-pre', '"status": "ok"'));
     expectTextNotContains(document, '.artifact-content-pre', 'report.json');
 
     clickSelector(document, '#modal-close-btn');
     clickSelector(document, '#full-results-btn');
-    await waitFor(() => expectHidden(document, '#tab-status', false));
+    await waitFor(document, () => expectHidden(document, '#tab-status', false));
     expectAttribute(document, '#tab-status', 'aria-hidden', 'false');
     expectHidden(document, '#tab-artifacts', true);
     expectAttribute(document, '#tab-artifacts', 'aria-hidden', 'true');
@@ -911,12 +956,12 @@ describe('kaseki API web console behavior', () => {
     });
 
     openFullResults(document, 'kaseki-322');
-    await waitFor(() => expectText(document, '#token-timeline-output', '2 stages · 50 input tokens · 12 output tokens'));
+    await waitFor(document, () => expectText(document, '#token-timeline-output', '2 stages · 50 input tokens · 12 output tokens'));
 
     clickSelector(document, '.tab-btn[data-tab="artifacts"]');
-    await waitFor(() => expect(document.querySelectorAll('#artifacts-output .artifact-item')).toHaveLength(1));
+    await waitFor(document, () => expect(document.querySelectorAll('#artifacts-output .artifact-item')).toHaveLength(1));
     clickSelector(document, '#artifacts-output .artifact-item');
-    await waitFor(() => expectTextContains(document, '.artifact-content-pre', '"phase":"goal-setting"'));
+    await waitFor(document, () => expectTextContains(document, '.artifact-content-pre', '"phase":"goal-setting"'));
     expectTextContains(document, '.artifact-content-pre', '"phase":"coding"');
     expectTextNotContains(document, '#artifacts-output', 'Could not reach the controller');
   });
@@ -930,7 +975,7 @@ describe('kaseki API web console behavior', () => {
     });
 
     openFullResults(document, 'kaseki-301');
-    await waitFor(() => expectHidden(document, '#full-results-modal', false));
+    await waitFor(document, () => expectHidden(document, '#full-results-modal', false));
     expect(document.querySelector('header')?.hasAttribute('inert')).toBe(true);
     expect(document.querySelector('main')?.hasAttribute('inert')).toBe(true);
     expectAttribute(document, 'header', 'aria-hidden', 'true');
@@ -1001,7 +1046,7 @@ describe('kaseki API web console behavior', () => {
     });
 
     openFullResults(document, 'kaseki-303');
-    await waitFor(() => expectTextContains(document, '#status-output', 'RUN SUMMARY'));
+    await waitFor(document, () => expectTextContains(document, '#status-output', 'RUN SUMMARY'));
     const text = getText(document, '#status-output');
     expect(text).toContain('Provider: gateway');
     expect(text).toContain('Attempts: 2/2');
@@ -1049,13 +1094,13 @@ describe('kaseki API web console behavior', () => {
     inputSelector(document, '#task-prompt', 'Inspect the repository and report stage naming drift.');
     runIdInput.value = 'kaseki-old';
     clickSelector(document, '#validate');
-    await waitFor(() => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
+    await waitFor(document, () => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
 
     clickSelector(document, '#submit');
     expect(runIdInput.value).toBe('');
     expectText(document, '#output-meta', 'Status: submitting');
     expectTextNotContains(document, '#output-meta', 'kaseki-old');
-    await waitFor(() => expect(getElement<HTMLInputElement>(document, '#run-id').value).toBe('kaseki-777'));
+    await waitFor(document, () => expect(getElement<HTMLInputElement>(document, '#run-id').value).toBe('kaseki-777'));
     expectTextContains(document, '#output-meta', 'Run ID: kaseki-777');
     expectText(document, '#state', 'Run submitted.');
     const submitCall = calls.find((call) => call.path === '/api/v1/runs' && call.init?.method === 'POST');
@@ -1084,9 +1129,9 @@ describe('kaseki API web console behavior', () => {
     expectTextContains(document, '#submission-target-help', 'check Soyuz before resubmitting locally');
     getElement<HTMLInputElement>(document, '#direct-local-submission').checked = true;
     clickSelector(document, '#validate');
-    await waitFor(() => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
+    await waitFor(document, () => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
     clickSelector(document, '#submit');
-    await waitFor(() => expect(getElement<HTMLInputElement>(document, '#run-id').value).toBe('kaseki-direct-1'));
+    await waitFor(document, () => expect(getElement<HTMLInputElement>(document, '#run-id').value).toBe('kaseki-direct-1'));
 
     expect(calls.some((call) => call.path === '/api/v1/runs/local' && call.init?.method === 'POST')).toBe(true);
     expect(calls.some((call) => call.path === '/api/v1/runs' && call.init?.method === 'POST')).toBe(false);
@@ -1112,9 +1157,9 @@ describe('kaseki API web console behavior', () => {
     inputSelector(document, '#repo-url', 'https://github.com/CyanAutomation/kaseki-agent');
     inputSelector(document, '#task-prompt', 'Inspect the repository and report stage naming drift.');
     clickSelector(document, '#validate');
-    await waitFor(() => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
+    await waitFor(document, () => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
     clickSelector(document, '#submit');
-    await waitFor(() => expect(getText(document, '#response-summary')).toContain('kaseki-prod'));
+    await waitFor(document, () => expect(getText(document, '#response-summary')).toContain('kaseki-prod'));
 
     expectTextContains(document, '#response-summary', 'Origin');
     expectTextContains(document, '#response-summary', 'Retry of');
@@ -1148,12 +1193,12 @@ describe('kaseki API web console behavior', () => {
     inputSelector(document, '#repo-url', 'https://github.com/CyanAutomation/kaseki-agent');
     inputSelector(document, '#task-prompt', 'Inspect the repository and report stage naming drift.');
     clickSelector(document, '#validate');
-    await waitFor(() => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
+    await waitFor(document, () => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
 
     clickSelector(document, '#submit');
-    await waitFor(() => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
+    await waitFor(document, () => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
     clickSelector(document, '#submit');
-    await waitFor(() => expect(getElement<HTMLInputElement>(document, '#run-id').value).toBe('11111111-1111-4111-8111-111111111111'));
+    await waitFor(document, () => expect(getElement<HTMLInputElement>(document, '#run-id').value).toBe('11111111-1111-4111-8111-111111111111'));
 
     const submissionBodies = calls
       .filter((call) => call.path === '/api/v1/runs' && call.init?.method === 'POST')
@@ -1183,10 +1228,10 @@ describe('kaseki API web console behavior', () => {
     inputSelector(document, '#repo-url', 'https://github.com/CyanAutomation/kaseki-agent');
     inputSelector(document, '#task-prompt', 'Make a small, validated UI improvement.');
     clickSelector(document, '#validate');
-    await waitFor(() => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
+    await waitFor(document, () => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
     clickSelector(document, '#submit');
 
-    await waitFor(() => expectTextContains(document, '[data-summary="run"]', 'completed'));
+    await waitFor(document, () => expectTextContains(document, '[data-summary="run"]', 'completed'));
     expectText(document, '#output-meta', 'Status: completed | Run ID: kaseki-981');
     expect(getElement(document, '#header-status').classList.contains('completed')).toBe(true);
     expectText(document, '#header-status', 'Run');
@@ -1210,10 +1255,10 @@ describe('kaseki API web console behavior', () => {
     if (!runIdInput) throw new Error('Expected #run-id to exist');
     runIdInput.value = 'kaseki-302';
     click(document.querySelector('#full-results-btn'));
-    await waitFor(() => expect(document.querySelector('#full-results-modal')?.hasAttribute('hidden')).toBe(false));
+    await waitFor(document, () => expect(document.querySelector('#full-results-modal')?.hasAttribute('hidden')).toBe(false));
 
     click(document.querySelector('.tab-btn[data-tab="stdout"]'));
-    await waitFor(() => expect(document.querySelector('#stdout-output')?.textContent).toBe('line one\nline two\n'));
+    await waitFor(document, () => expect(document.querySelector('#stdout-output')?.textContent).toBe('line one\nline two\n'));
     expect(document.querySelector('#stdout-output')?.textContent).not.toBe('[object Object]');
   });
 
@@ -1231,11 +1276,11 @@ describe('kaseki API web console behavior', () => {
     });
 
     openFullResults(document, 'kaseki-323');
-    await waitFor(() => expectText(document, '#stdout-output', 'No stdout log was captured for this run.'));
+    await waitFor(document, () => expectText(document, '#stdout-output', 'No stdout log was captured for this run.'));
     expectTextNotContains(document, '#stdout-output', 'HTTP 404');
 
     clickSelector(document, '.tab-btn[data-tab="stdout"]');
-    await waitFor(() => expectText(document, '#stdout-output', 'No stdout log was captured for this run.'));
+    await waitFor(document, () => expectText(document, '#stdout-output', 'No stdout log was captured for this run.'));
     expectTextNotContains(document, '#state', '404');
     expectTextNotContains(document, '#response-summary', 'Log file not found');
   });
@@ -1255,7 +1300,7 @@ describe('kaseki API web console behavior', () => {
 
     openFullResults(document, 'kaseki-324');
     clickSelector(document, '.tab-btn[data-tab="stdout"]');
-    await waitFor(() => expectTextContains(document, '#response-summary', 'Permission required'));
+    await waitFor(document, () => expectTextContains(document, '#response-summary', 'Permission required'));
     expectTextContains(document, '#stdout-output', 'HTTP 403');
   });
 
@@ -1283,9 +1328,9 @@ describe('kaseki API web console behavior', () => {
     const runIdInput = getElement<HTMLInputElement>(document, '#run-id');
     runIdInput.value = 'kaseki-305';
     clickSelector(document, '#full-results-btn');
-    await waitFor(() => expect(document.querySelector('#full-results-modal')?.hasAttribute('hidden')).toBe(false));
+    await waitFor(document, () => expect(document.querySelector('#full-results-modal')?.hasAttribute('hidden')).toBe(false));
     clickSelector(document, '.tab-btn[data-tab="events"]');
-    await waitFor(() => expectTextContains(document, '#events-output', 'Goal Check — started'));
+    await waitFor(document, () => expectTextContains(document, '#events-output', 'Goal Check — started'));
     expectTextContains(document, '#events-output', '2026-09-03 17:20:52Z');
     expectTextNotContains(document, '#events-output', '2000-01-01');
     expectTextContains(document, '#events-output', 'Validation — passed');
@@ -1310,10 +1355,10 @@ describe('kaseki API web console behavior', () => {
     if (!runIdInput) throw new Error('Expected #run-id to exist');
     runIdInput.value = 'kaseki-303';
     click(document.querySelector('#full-results-btn'));
-    await waitFor(() => expect(document.querySelector('#full-results-modal')?.hasAttribute('hidden')).toBe(false));
+    await waitFor(document, () => expect(document.querySelector('#full-results-modal')?.hasAttribute('hidden')).toBe(false));
 
     click(document.querySelector('.tab-btn[data-tab="stdout"]'));
-    await waitFor(() => expect(document.querySelector('#stdout-output')?.textContent).toContain('structured agent output'));
+    await waitFor(document, () => expect(document.querySelector('#stdout-output')?.textContent).toContain('structured agent output'));
     expect(document.querySelector('#stdout-output')?.textContent).not.toBe('[object Object]');
   });
 
@@ -1337,7 +1382,7 @@ describe('kaseki API web console behavior', () => {
     if (!runIdInput) throw new Error('Expected #run-id to exist');
     runIdInput.value = 'kaseki-304';
     click(document.querySelector('#full-results-btn'));
-    await waitFor(() => expect(document.querySelector('#status-output')?.textContent).toContain('Status: completed'));
+    await waitFor(document, () => expect(document.querySelector('#status-output')?.textContent).toContain('Status: completed'));
     expect(document.querySelector('#status-output')?.textContent).not.toContain('fallback/failure signals');
   });
 
@@ -1380,7 +1425,7 @@ describe('kaseki API web console behavior', () => {
     });
 
     clickSelector(document, '[data-probe="/api/v1/preflight"]');
-    await waitFor(() => expectTextContains(document, '#output', '"checkCount": 2'));
+    await waitFor(document, () => expectTextContains(document, '#output', '"checkCount": 2'));
     expectTextContains(document, '#output', '"currentDiagnostics"');
     expectTextContains(document, '#output', '"startupDiagnostics"');
     expectTextContains(document, '#output', 'Historical startup diagnostics only');
@@ -1389,9 +1434,9 @@ describe('kaseki API web console behavior', () => {
     expectTextContains(document, '#response-summary', 'Startup diagnostics');
 
     openFullResults(document, 'kaseki-303');
-    await waitFor(() => expectHidden(document, '#full-results-modal', false));
+    await waitFor(document, () => expectHidden(document, '#full-results-modal', false));
     clickSelector(document, '.tab-btn[data-tab="artifacts"]');
-    await waitFor(() => expectTextContains(document, '#artifacts-output', 'failure.json'));
+    await waitFor(document, () => expectTextContains(document, '#artifacts-output', 'failure.json'));
     expectTextNotContains(document, '#artifacts-output', 'pending-summary.md');
     expectTextNotContains(document, '#artifacts-output', 'missing.txt');
     expectTextContains(document, '#output', '"path": "/api/v1/preflight"');
@@ -1417,10 +1462,10 @@ describe('kaseki API web console behavior', () => {
 
     openFullResults(document, 'kaseki-304');
     clickSelector(document, '.tab-btn[data-tab="artifacts"]');
-    await waitFor(() => expect(document.querySelectorAll('#artifacts-output .artifact-item')).toHaveLength(1));
+    await waitFor(document, () => expect(document.querySelectorAll('#artifacts-output .artifact-item')).toHaveLength(1));
     clickSelector(document, '#artifacts-output .artifact-item');
 
-    await waitFor(() => expectTextContains(document, '#artifacts-output', 'Ask the API operator to review access'));
+    await waitFor(document, () => expectTextContains(document, '#artifacts-output', 'Ask the API operator to review access'));
     expectTextNotContains(document, '#artifacts-output', 'KASEKI_API_KEY_SCOPES');
     expectTextContains(document, '#artifacts-output', 'artifact-forbidden-request');
     expect(document.querySelectorAll('#artifacts-output .artifact-item')).toHaveLength(1);
@@ -1441,10 +1486,10 @@ describe('kaseki API web console behavior', () => {
     inputSelector(document, '#repo-url', 'https://github.com/CyanAutomation/kaseki-agent');
     inputSelector(document, '#task-prompt', 'Inspect the repository and report docs formatting drift.');
     clickSelector(document, '#validate');
-    await waitFor(() => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
+    await waitFor(document, () => expect(getElement<HTMLButtonElement>(document, '#submit').disabled).toBe(false));
 
     clickSelector(document, '#submit');
-    await waitFor(() => expectTextContains(document, '#state', 'Web gateway'));
+    await waitFor(document, () => expectTextContains(document, '#state', 'Web gateway'));
     expectTextContains(document, '#output', '"status": 502');
     expectTextContains(document, '#output', 'review the web gateway and controller logs');
     expectTextContains(document, '#output', 'Bad Gateway');
@@ -1477,7 +1522,7 @@ describe('kaseki API web console behavior', () => {
 
     click(healthCheckButton(document, 'API Connection'));
 
-    await waitFor(() => expectTextContains(document, '#response-summary', guidance));
+    await waitFor(document, () => expectTextContains(document, '#response-summary', guidance));
     expectTextContains(document, '#response-summary', 'A useful server detail');
     expectTextContains(document, '#response-summary', 'request-http-error');
     expectTextContains(document, '#output', '"status": ' + String(status));
@@ -1497,7 +1542,7 @@ describe('kaseki API web console behavior', () => {
 
     click(healthCheckButton(document, 'API Connection'));
 
-    await waitFor(() => expectTextContains(document, '#response-summary', title));
+    await waitFor(document, () => expectTextContains(document, '#response-summary', title));
     expectTextContains(document, '#response-summary', guidance);
     expectTextContains(document, '#output', '"status": null');
   });

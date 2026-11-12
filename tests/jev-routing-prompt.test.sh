@@ -30,4 +30,5 @@ grep -Fq "$KASEKI_RESULTS_DIR/agent-review.md" <<< "$prompt" \
 grep -q 'reviewer-facing PR description' <<< "$prompt" \
   || { printf '✗ coding prompt omitted the reviewer description contract\n' >&2; exit 1; }
 
+printf '%s\n' "$prompt"
 printf '✓ Evaluation routing hints stay advisory and preserve automatic flow\n'

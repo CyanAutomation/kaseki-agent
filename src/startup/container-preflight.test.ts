@@ -2,6 +2,7 @@
  * Container Preflight Diagnostics - Test Suite
  *
  * Tests for git safe.directory configuration and auto-remediation behavior.
+ * Contract: docs/API.md#controller-preflight
  */
 
 import * as fs from 'fs';
@@ -23,10 +24,22 @@ jest.mock('../secrets/host-secrets-reader', () => ({
 describe('ContainerPreflightDiagnostics', () => {
   let diagnostics: ContainerPreflightDiagnostics;
   let mockConfig: Partial<KasekiApiConfig>;
+  const environmentKeys = [
+    'KASEKI_STARTUP_CHECK_AUTO_REMEDIATE',
+    'KASEKI_SAFE_DIRECTORY_SCOPE',
+    'KASEKI_CHECKOUT_DIR',
+    'KASEKI_ROOT',
+    'KASEKI_SECRETS_DIR',
+    'KASEKI_TEMPLATE_DIR',
+  ] as const;
+  let originalEnvironment: Partial<Record<(typeof environmentKeys)[number], string>>;
 
   beforeEach(() => {
     jest.clearAllMocks();
     clearContainerPreflightResults();
+    originalEnvironment = Object.fromEntries(
+      environmentKeys.map((key) => [key, process.env[key]]),
+    );
 
     // Create a minimal mock config
     mockConfig = {
@@ -43,6 +56,15 @@ describe('ContainerPreflightDiagnostics', () => {
     process.env.KASEKI_ROOT = '/agents';
     process.env.KASEKI_SECRETS_DIR = '/run/secrets/kaseki';
     process.env.KASEKI_TEMPLATE_DIR = '/agents/kaseki-template';
+  });
+
+  afterEach(() => {
+    for (const key of environmentKeys) {
+      const originalValue = originalEnvironment[key];
+      if (originalValue === undefined) delete process.env[key];
+      else process.env[key] = originalValue;
+    }
+    clearContainerPreflightResults();
   });
 
   describe('checkGitSafeDirectory - Read-Only Mode', () => {

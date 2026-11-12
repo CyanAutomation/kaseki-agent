@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Contract: docs/ENV_VARS.md#caveman-and-senku-backed-decision-routing — configured Caveman routing registers its Pi tool-result hook.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
