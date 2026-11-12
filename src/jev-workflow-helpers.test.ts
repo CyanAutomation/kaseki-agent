@@ -1,4 +1,9 @@
 import { buildGoalCriterionAssessments, buildGoalCheckOutcome, compactGoalSettingForEvaluation, failureDiagnosisFromAnswers, mapJevScoreToCompletion, selectConditionalHelper, selectCriterionEvidenceSources } from './jev-workflow-helpers';
+import type { NoulAnswer } from './types/openrouter-decisions';
+
+const noulAnswer = (noul: number): NoulAnswer => ({
+  type: 'noul', noul, probabilities: { false: 1 - noul, true: noul }, confidence: null,
+});
 
 describe('JEV workflow answer helpers', () => {
   test('compacts verbose goal-setting details while preserving the complete contract', () => {
@@ -47,11 +52,11 @@ describe('JEV workflow answer helpers', () => {
     expect(buildGoalCriterionAssessments(
       ['Adds a parser', 'Runs checks', 'Adds regression tests', 'Passes at the strict threshold', 'Fails at the unmet boundary'],
       {
-        criterion_1: { type: 'noul', noul: 0.95 },
-        criterion_2: { type: 'noul', noul: 0.62 },
-        criterion_3: { type: 'noul', noul: 0.05 },
-        criterion_4: { type: 'noul', noul: 0.8 },
-        criterion_5: { type: 'noul', noul: 0.2 },
+        criterion_1: noulAnswer(0.95),
+        criterion_2: noulAnswer(0.62),
+        criterion_3: noulAnswer(0.05),
+        criterion_4: noulAnswer(0.8),
+        criterion_5: noulAnswer(0.2),
       },
       0.8,
     )).toEqual([
@@ -65,7 +70,7 @@ describe('JEV workflow answer helpers', () => {
 
   test('keeps the unmet boundary below the configured pass threshold for low custom thresholds', () => {
     const assessment = buildGoalCriterionAssessments(['A criterion'], {
-      criterion_1: { type: 'noul', noul: 0.39 },
+      criterion_1: noulAnswer(0.39),
     }, 0.4)[0];
     expect(assessment.status).toBe('unmet');
   });

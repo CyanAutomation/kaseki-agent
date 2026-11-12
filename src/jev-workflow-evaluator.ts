@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
-import { DecisionServiceError, decisionFailureMetadata, decisionService } from './decision-service';
+import { decisionFailureMetadata, decisionService } from './decision-service';
 import type { DecisionResult, DecisionService } from './decision-service';
 import { appendDecisionTelemetry, summarizeDecisionConfidence } from './decision-telemetry';
 import { collectValidationEvidence } from './validation-evidence';
@@ -280,7 +280,6 @@ async function runGoalCheck(
       evaluation: { stage: 'goal check', response_time_ms: 0, usage: {}, attempt },
     };
   }
-  if (!dependencies.decisionService.evaluateProfile) throw new DecisionServiceError('configuration');
   const result = await dependencies.decisionService.evaluateProfile({
     profileId: 'kaseki_goal_check_v1',
     input: {
@@ -435,7 +434,6 @@ function recordRunEvaluationTelemetry(
 async function runEvaluation(resultsDir: string, dependencies: DecisionWorkflowDependencies): Promise<JsonObject> {
   const state = evidenceState(resultsDir);
   const goalCheck = readJson(path.join(resultsDir, 'goal-check.json'));
-  if (!dependencies.decisionService.evaluateProfile) throw new DecisionServiceError('configuration');
   const result = await dependencies.decisionService.evaluateProfile({
     profileId: 'kaseki_run_evaluation_v1',
     input: {
@@ -479,9 +477,6 @@ async function runValidationRecovery(resultsDir: string, dependencies: DecisionW
   });
   const decisionStarted = performance.now();
   try {
-    if (!dependencies.decisionService.evaluateProfile) {
-      throw new DecisionServiceError('configuration');
-    }
     const result = await dependencies.decisionService.evaluateProfile({
       profileId: 'validation_recovery_v1',
       input,

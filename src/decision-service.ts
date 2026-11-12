@@ -1,24 +1,11 @@
-import type { ClassificationAnswer, QuestionDefinition } from './types/openrouter-decisions';
+import type { ClassificationAnswer } from './types/openrouter-decisions';
 import {
   DecisionServiceError,
-  requestSenkuDecision,
   requestSenkuProfile,
   type DecisionFailureCategory,
   type SenkuProfileId,
   type SenkuClientOptions,
 } from './decision-service/senku-client';
-
-/** @deprecated Senku selects the model; retained for source compatibility only. */
-export const DEFAULT_DECISION_MODEL = '~typesafe/jev-latest';
-
-export interface DecisionRequest {
-  state: string | Record<string, unknown>;
-  questions: Record<string, QuestionDefinition>;
-  /** @deprecated Ignored; Senku owns model selection. */
-  model?: string;
-  timeoutMs?: number;
-  signal?: AbortSignal;
-}
 
 export interface DecisionResult {
   provider: string;
@@ -43,11 +30,6 @@ export interface ProfileDecisionResult extends DecisionResult {
 
 export interface DecisionService {
   readonly providerId: string;
-  decide(request: DecisionRequest): Promise<DecisionResult>;
-  evaluateProfile?(request: ProfileDecisionRequest): Promise<ProfileDecisionResult>;
-}
-
-export interface ProfileDecisionService {
   evaluateProfile(request: ProfileDecisionRequest): Promise<ProfileDecisionResult>;
 }
 
@@ -71,26 +53,10 @@ export function decisionFailureMetadata(error: unknown): DecisionFailureMetadata
 }
 
 /** The only remote DecisionService implementation used by Kaseki. */
-export class SenkuDecisionService implements DecisionService, ProfileDecisionService {
+export class SenkuDecisionService implements DecisionService {
   readonly providerId = 'senku';
 
   constructor(private readonly options: SenkuClientOptions = {}) {}
-
-  async decide(request: DecisionRequest): Promise<DecisionResult> {
-    const result = await requestSenkuDecision(request.state, request.questions, {
-      ...this.options,
-      timeoutMs: request.timeoutMs,
-      signal: request.signal,
-    });
-    return {
-      provider: this.providerId,
-      model: result.model,
-      answers: result.answers,
-      usage: result.usage ?? {},
-      responseTime: result.responseTime,
-      attemptCount: result.attemptCount,
-    };
-  }
 
   async evaluateProfile(request: ProfileDecisionRequest): Promise<ProfileDecisionResult> {
     const result = await requestSenkuProfile(request.profileId, request.input, {

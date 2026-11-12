@@ -115,7 +115,7 @@ For the gateway path, worker preflight checks verify gateway URL/key configurati
 
 | Variable | Default / Alternative | Type | Purpose |
 | ---------- | --- | --- | --- |
-| `SENKU_URL` | `https://senku.scheimann.workers.dev` | HTTPS origin | Trusted Senku origin; Kaseki uses fixed registered profile paths and `/v1/decisions`. Loopback HTTP is allowed only outside production for local tests. |
+| `SENKU_URL` | `https://senku.scheimann.workers.dev` | HTTPS origin | Trusted Senku origin; Kaseki uses fixed registered profile paths. Loopback HTTP is allowed only outside production for local tests. |
 | `SENKU_KASEKI_API_TOKEN_FILE` | `/run/secrets/kaseki/senku_kaseki_api_token` in workers; `~/.kaseki/secrets/senku_kaseki_api_token` locally | path | File containing the Senku Kaseki machine credential. Prefer this file-based setting. |
 | `SENKU_KASEKI_API_TOKEN` | unset | secret | Optional inline credential for local/manual use. Do not put it in `.env`, prompts, logs, or task metadata. |
 | `LLM_GATEWAY_URL` | — | string | OpenAI-compatible gateway endpoint (CloudFlare AI Workers, Azure OpenAI, Ollama, etc.). Required for the default `KASEKI_PROVIDER=gateway` path. Example: `https://gateway.ai.cloudflare.com/v1/{account_id}/{namespace}/compat` or `https://api.openai.com/v1`. |

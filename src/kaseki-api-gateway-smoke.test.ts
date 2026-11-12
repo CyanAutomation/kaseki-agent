@@ -1404,6 +1404,63 @@ describe('gateway connectivity and provider smoke contracts', () => {
   });
 
   describe('Senku classification smoke credentials', () => {
+    it('uses the server-owned run-evaluation profile instead of caller-defined questions', async () => {
+      process.env.SENKU_URL = 'https://senku.test';
+      process.env.SENKU_KASEKI_API_TOKEN = 'synthetic-kaseki-senku-token-1234567890';
+      const answers = {
+        overall_assessment: {
+          type: 'choice', choice: 'good',
+          probabilities: { excellent: 0, good: 1, mixed: 0, poor: 0 }, confidence: 0.99,
+        },
+        reviewer_confidence: {
+          type: 'choice', choice: 'high',
+          probabilities: { high: 1, medium: 0, low: 0 }, confidence: 0.99,
+        },
+        task_completion_score: {
+          type: 'score', score: 4,
+          legend: {
+            '0': 'Largely unrealized', '1': 'Major requirements unmet', '2': 'Partially complete',
+            '3': 'Nearly complete', '4': 'All requirements verified',
+          },
+          probabilities: { '0': 0, '1': 0, '2': 0, '3': 0, '4': 1 }, confidence: 0.99,
+        },
+      };
+      mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({
+        schemaVersion: '1',
+        requestId: 'evaluation-smoke-1',
+        status: 'completed',
+        profileId: 'kaseki_run_evaluation_v1',
+        profileVersion: '1',
+        provider: 'jev',
+        model: 'typesafe/jev-resolved-test',
+        answers,
+        result: answers,
+        usage: { output_tokens: 8 },
+        durationMs: 25,
+        attemptCount: 1,
+      }), { headers: { 'content-type': 'application/json' } }));
+
+      const result = await testClassificationSmoke(true);
+
+      expect(result.status).toBe('ok');
+      expect(result.evaluationValidated).toBe(true);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url, init] = mockFetch.mock.calls[0] as [string, { body?: string }];
+      expect(url).toBe('https://senku.test/v1/profiles/kaseki_run_evaluation_v1/evaluate');
+      expect(JSON.parse(String(init.body))).toEqual({
+        schemaVersion: '1',
+        input: {
+          state: {
+            status: 'completed',
+            task_mode: 'inspect',
+            validation_status: 'passed',
+            summary: 'Synthetic profile smoke; no repository task was run.',
+          },
+          includeFailureDiagnosis: false,
+        },
+      });
+    });
+
     it('reports missing credentials as skipped without making a request', async () => {
       delete process.env.SENKU_KASEKI_API_TOKEN;
       delete process.env.SENKU_KASEKI_API_TOKEN_FILE;
@@ -1427,287 +1484,4 @@ describe('gateway connectivity and provider smoke contracts', () => {
     });
   });
 
-  describe.skip('Obsolete Evaluation Smoke Test Fixtures', () => {
-    const mockClassificationRequest = {
-      model: '~typesafe/jev-latest',
-      input: {
-        state: 'Help! My payouts have been failing for 3 days.',
-        questions: {
-          is_urgent: {
-            type: 'boolean',
-            instructions: 'Does this convey urgency?',
-          },
-          department: {
-            type: 'choice',
-            instructions: 'Which team should handle this?',
-            criteria: {
-              billing: 'Payments, invoicing, refunds',
-              technical: 'Bugs, outages, integrations',
-              sales: 'Pricing, upgrades, new accounts',
-            },
-          },
-        },
-      },
-    };
-
-    const mockClassificationResponse = {
-      result: {
-        is_urgent: true,
-        department: 'billing',
-      },
-      usage: {
-        input_tokens: 42,
-        output_tokens: 8,
-      },
-    };
-
-    describe('resolveClassificationConfig', () => {
-      it('should resolve Cloudflare AI Run credentials from environment', () => {
-        process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-123';
-        process.env.CLOUDFLARE_API_TOKEN = 'test-token-xyz';
-        process.env.KASEKI_DECISION_MODEL = '~typesafe/jev-latest';
-
-        // This test validates the config shape; implementation test
-        // will verify the helper builds the right Cloudflare endpoint
-        expect(process.env.CLOUDFLARE_ACCOUNT_ID).toBe('test-account-123');
-        expect(process.env.CLOUDFLARE_API_TOKEN).toBe('test-token-xyz');
-        expect(process.env.KASEKI_DECISION_MODEL).toBe('~typesafe/jev-latest');
-      });
-
-      it('should read Cloudflare API token from host secrets when inline env is not configured', () => {
-        delete process.env.CLOUDFLARE_API_TOKEN;
-        process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-456';
-        process.env.KASEKI_DECISION_MODEL = '~typesafe/jev-latest';
-        process.env.KASEKI_SECRETS_DIR = secretsDir;
-
-        // Write API token to secrets file
-        fs.writeFileSync(path.join(secretsDir, 'cloudflare_api_token'), 'test-secret-token\n', { mode: 0o600 });
-
-        // Validation: the secrets file exists and is readable
-        expect(fs.existsSync(path.join(secretsDir, 'cloudflare_api_token'))).toBe(true);
-      });
-
-      it('should default to the latest Jev model alias when KASEKI_DECISION_MODEL is not set', () => {
-        delete process.env.KASEKI_DECISION_MODEL;
-        process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-789';
-        process.env.CLOUDFLARE_API_TOKEN = 'test-token-abc';
-
-        // Validation: expected default model
-        const expectedDefault = '~typesafe/jev-latest';
-        expect(expectedDefault).toBe('~typesafe/jev-latest');
-      });
-
-      it('should fail gracefully when CLOUDFLARE_ACCOUNT_ID is not configured', () => {
-        delete process.env.CLOUDFLARE_ACCOUNT_ID;
-        process.env.CLOUDFLARE_API_TOKEN = 'test-token';
-
-        // Validation: missing account ID should be detected
-        expect(process.env.CLOUDFLARE_ACCOUNT_ID).toBeUndefined();
-      });
-
-      it('should fail gracefully when CLOUDFLARE_API_TOKEN is not configured and not in secrets', () => {
-        delete process.env.CLOUDFLARE_API_TOKEN;
-        process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account';
-        process.env.KASEKI_SECRETS_DIR = secretsDir;
-
-        // Validation: no token file exists
-        expect(fs.existsSync(path.join(secretsDir, 'cloudflare_api_token'))).toBe(false);
-      });
-    });
-
-    describe('buildClassificationSmokeRequest', () => {
-      it('should build a valid evaluation request body', () => {
-        const requestBody = mockClassificationRequest;
-
-        expect(requestBody.model).toBe('~typesafe/jev-latest');
-        expect(requestBody.input).toBeDefined();
-        expect(requestBody.input.state).toBe('Help! My payouts have been failing for 3 days.');
-        expect(requestBody.input.questions).toBeDefined();
-        expect(requestBody.input.questions.is_urgent.type).toBe('boolean');
-        expect(requestBody.input.questions.department.type).toBe('choice');
-      });
-
-      it('should use resolved model from config in the request', () => {
-        process.env.KASEKI_DECISION_MODEL = 'custom/classifier';
-        const model = process.env.KASEKI_DECISION_MODEL;
-        expect(model).toBe('custom/classifier');
-      });
-
-      it('should not include chat-completions specific fields in the evaluation request', () => {
-        const requestBody = mockClassificationRequest;
-
-        expect(requestBody).not.toHaveProperty('messages');
-        expect(requestBody).not.toHaveProperty('role');
-        expect(requestBody).not.toHaveProperty('content');
-        expect(requestBody).not.toHaveProperty('max_tokens');
-      });
-    });
-
-    describe('parseClassificationResult', () => {
-      it('should extract classification result from Cloudflare AI Run response', () => {
-        const response = mockClassificationResponse;
-
-        expect(response.result).toBeDefined();
-        expect(response.result.is_urgent).toBe(true);
-        expect(response.result.department).toBe('billing');
-      });
-
-      it('should extract token usage from response', () => {
-        const response = mockClassificationResponse;
-
-        expect(response.usage.input_tokens).toBe(42);
-        expect(response.usage.output_tokens).toBe(8);
-      });
-
-      it('should fail when response has no result field', () => {
-        const invalidResponse = { usage: { input_tokens: 10, output_tokens: 5 } };
-
-        expect(invalidResponse.result).toBeUndefined();
-      });
-
-      it('should fail when response has no usage field', () => {
-        const invalidResponse = { result: { is_urgent: true, department: 'billing' } };
-
-        expect(invalidResponse.usage).toBeUndefined();
-      });
-    });
-
-    describe('testClassificationSmoke', () => {
-      it('skips the optional evaluation check with actionable guidance when its API key is missing', async () => {
-        delete process.env.OPENROUTER_API_KEY;
-        delete process.env.OPENROUTER_API_KEY_FILE;
-        delete process.env.KASEKI_DECISION_API_KEY_FILE;
-
-        const result = await testClassificationSmoke(true);
-
-        expect(result.status).toBe('skipped');
-        expect(result.detail).toContain('OPENROUTER_API_KEY not configured');
-        expect(result.remediation).toContain('OPENROUTER_API_KEY_FILE');
-        expect(mockFetch).not.toHaveBeenCalled();
-      });
-
-      it('explains that an HTTP 401 may mean the evaluation API key expired or was revoked', async () => {
-        process.env.OPENROUTER_API_KEY = 'sk-test-evaluator-key';
-        mockFetch.mockResolvedValueOnce({ ok: false, status: 401, text: async () => 'Unauthorized' });
-
-        const result = await testClassificationSmoke(true);
-
-        expect(result.status).toBe('error');
-        expect(result.httpStatus).toBe(401);
-        expect(result.detail).toMatch(/invalid, expired, revoked/i);
-        expect(result.remediation).toContain('Replace the key');
-        expect(JSON.stringify(result)).not.toContain('sk-test-evaluator-key');
-      });
-
-      it('explains how to recover when the evaluation endpoint cannot be reached', async () => {
-        process.env.OPENROUTER_API_KEY = 'sk-test-evaluator-key';
-        mockFetch.mockRejectedValue(new TypeError('fetch failed'));
-
-        const result = await testClassificationSmoke(true);
-
-        expect(result.status).toBe('error');
-        expect(result.detail).toContain('Could not reach the OpenRouter decision endpoint');
-        expect(result.remediation).toMatch(/DNS.*outbound HTTPS.*firewall/i);
-        expect(mockFetch).toHaveBeenCalledTimes(3);
-      });
-
-      it('should return ClassificationSmokeTestResult on successful probe', async () => {
-        process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-123';
-        process.env.CLOUDFLARE_API_TOKEN = 'test-token-xyz';
-
-        mockFetch.mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          text: async () => JSON.stringify(mockClassificationResponse),
-        });
-
-        // Note: actual implementation will have testClassificationSmoke function
-        // For now, we validate the expected response structure
-        const expectedResult = {
-          status: 'ok',
-          detail: 'Classification model validated',
-          responseTime: 250,
-          timestamp: new Date().toISOString(),
-          outputTokens: 8,
-          evaluationValidated: true,
-        };
-
-        expect(expectedResult.status).toBe('ok');
-        expect(expectedResult.evaluationValidated).toBe(true);
-      });
-
-      it('should return error when classification endpoint returns non-200', async () => {
-        process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-123';
-        process.env.CLOUDFLARE_API_TOKEN = 'test-token-xyz';
-
-        mockFetch.mockResolvedValueOnce({
-          ok: false,
-          status: 400,
-          text: async () => JSON.stringify({ error: 'Invalid request' }),
-        });
-
-        const expectedErrorResult = {
-          status: 'error',
-          detail: 'Classification endpoint returned HTTP 400',
-          responseTime: 100,
-          httpStatus: 400,
-        };
-
-        expect(expectedErrorResult.status).toBe('error');
-      });
-
-      it('should return error when missing Cloudflare credentials', () => {
-        delete process.env.CLOUDFLARE_ACCOUNT_ID;
-        delete process.env.CLOUDFLARE_API_TOKEN;
-
-        const expectedErrorResult = {
-          status: 'error',
-          detail: 'CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN is not configured',
-          responseTime: 0,
-        };
-
-        expect(expectedErrorResult.status).toBe('error');
-      });
-
-      it('should support debug mode for raw response inspection', async () => {
-        process.env.CLOUDFLARE_ACCOUNT_ID = 'test-account-123';
-        process.env.CLOUDFLARE_API_TOKEN = 'test-token-xyz';
-
-        mockFetch.mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          text: async () => JSON.stringify(mockClassificationResponse),
-        });
-
-        const expectedDebugResult = {
-          status: 'ok',
-          diagnostics: {
-            rawResponsePreview: JSON.stringify(mockClassificationResponse, null, 2),
-          },
-        };
-
-        expect(expectedDebugResult.diagnostics).toBeDefined();
-      });
-    });
-
-    describe('shouldRunClassificationSmoke', () => {
-      it('should skip by default when not explicitly requested', () => {
-        const shouldRun = false; // Default
-
-        expect(shouldRun).toBe(false);
-      });
-
-      it('should run when explicitly requested via query parameter', () => {
-        const shouldRun = true; // Explicit request
-
-        expect(shouldRun).toBe(true);
-      });
-
-      it('should respect KASEKI_ALLOW_DEV_CLASSIFICATION_SMOKE environment variable', () => {
-        process.env.KASEKI_ALLOW_DEV_CLASSIFICATION_SMOKE = '1';
-
-        expect(process.env.KASEKI_ALLOW_DEV_CLASSIFICATION_SMOKE).toBe('1');
-      });
-    });
-  });
 });

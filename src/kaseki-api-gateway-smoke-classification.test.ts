@@ -7,21 +7,38 @@ function smokeResponse(overrides: Record<string, unknown> = {}) {
     schemaVersion: '1',
     requestId: 'dec-smoke-test',
     status: 'completed',
+    profileId: 'kaseki_run_evaluation_v1',
+    profileVersion: '1',
     provider: 'jev',
     model: 'typesafe/jev-resolved-test',
     answers: {
-      code_quality_issue: {
-        type: 'noul', noul: 0.96,
-        probabilities: { false: 0.04, true: 0.96 }, confidence: null,
+      overall_assessment: {
+        type: 'choice', choice: 'good', confidence: 0.94,
+        probabilities: { excellent: 0.02, good: 0.94, mixed: 0.03, poor: 0.01 },
       },
-      requires_human_review: {
-        type: 'choice', choice: 'yes', confidence: 0.94,
-        probabilities: { yes: 0.94, no: 0.04, maybe: 0.02 },
+      reviewer_confidence: {
+        type: 'choice', choice: 'high', confidence: 0.92,
+        probabilities: { high: 0.92, medium: 0.06, low: 0.02 },
       },
-      fix_risk_level: {
-        type: 'score', score: 1, confidence: 0.92,
-        probabilities: { 0: 0.03, 1: 0.92, 2: 0.05 },
-        legend: { 0: 'Low risk', 1: 'Medium risk', 2: 'High risk' },
+      task_completion_score: {
+        type: 'score', score: 4, confidence: 0.92,
+        probabilities: { '0': 0.01, '1': 0.01, '2': 0.02, '3': 0.04, '4': 0.92 },
+        legend: { '0': 'Largely unrealized', '1': 'Major requirements unmet', '2': 'Partially complete', '3': 'Nearly complete', '4': 'All requirements verified' },
+      },
+    },
+    result: {
+      overall_assessment: {
+        type: 'choice', choice: 'good', confidence: 0.94,
+        probabilities: { excellent: 0.02, good: 0.94, mixed: 0.03, poor: 0.01 },
+      },
+      reviewer_confidence: {
+        type: 'choice', choice: 'high', confidence: 0.92,
+        probabilities: { high: 0.92, medium: 0.06, low: 0.02 },
+      },
+      task_completion_score: {
+        type: 'score', score: 4, confidence: 0.92,
+        probabilities: { '0': 0.01, '1': 0.01, '2': 0.02, '3': 0.04, '4': 0.92 },
+        legend: { '0': 'Largely unrealized', '1': 'Major requirements unmet', '2': 'Partially complete', '3': 'Nearly complete', '4': 'All requirements verified' },
       },
     },
     usage: { input_tokens: 427, output_tokens: 73, total_tokens: 500 },
@@ -63,7 +80,7 @@ describe('Senku evaluation smoke check', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it('calls Senku once and validates the returned typed answers', async () => {
+  it('calls the fixed Senku run-evaluation profile and validates its typed answers', async () => {
     const result = await testClassificationSmoke(true);
     expect(result.status).toBe('ok');
     expect(result.evaluationValidated).toBe(true);
@@ -71,9 +88,20 @@ describe('Senku evaluation smoke check', () => {
     expect(result.outputTokens).toBe(73);
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url, init] = jest.mocked(global.fetch).mock.calls[0];
-    expect(url).toBe('https://senku.scheimann.workers.dev/v1/decisions');
+    expect(url).toBe('https://senku.scheimann.workers.dev/v1/profiles/kaseki_run_evaluation_v1/evaluate');
     expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${TOKEN}`);
-    expect(JSON.parse(String(init?.body))).not.toHaveProperty('model');
+    expect(JSON.parse(String(init?.body))).toEqual({
+      schemaVersion: '1',
+      input: {
+        state: {
+          status: 'completed',
+          task_mode: 'inspect',
+          validation_status: 'passed',
+          summary: 'Synthetic profile smoke; no repository task was run.',
+        },
+        includeFailureDiagnosis: false,
+      },
+    });
   });
 
   it('skips the opt-in check when the Senku credential is unavailable', async () => {

@@ -43,6 +43,12 @@ const providerFetch = async (input, init = {}) => {
       const probabilities = Object.fromEntries(labels.map((label, index) => [label, index === 0 ? 0.97 : 0.03 / (labels.length - 1)]));
       return [id, { type: 'choice', choice: labels[0], probabilities, confidence: 0.97 }];
     }
+    if (question.type === 'score') {
+      const score = question.criteria.length - 1;
+      const probabilities = Object.fromEntries(question.criteria.map((_criterion, index) => [String(index), index === score ? 1 : 0]));
+      const legend = Object.fromEntries(question.criteria.map((criterion, index) => [String(index), String(criterion)]));
+      return [id, { type: 'score', score, probabilities, legend, confidence: 0.97 }];
+    }
     return [id, { type: 'noul', noul: 0.97 }];
   }));
   return new Response(JSON.stringify({
@@ -105,19 +111,24 @@ try {
     readFile: () => kasekiToken,
     timeoutMs: 5_000,
   };
-  const questions = { allowed: { type: 'noul', instructions: 'Does the evidence satisfy the requested policy?' } };
   const service = new SenkuDecisionService(baseOptions);
 
-  const success = await service.decide({ state: { status: 'ok' }, questions });
+  const success = await service.evaluateProfile({
+    profileId: 'kaseki_run_evaluation_v1',
+    input: {
+      state: {
+        status: 'completed', task_mode: 'inspect', validation_status: 'passed',
+        summary: 'Synthetic profile smoke; no repository task was run.',
+      },
+      includeFailureDiagnosis: false,
+    },
+  });
   assert.equal(success.provider, 'senku');
+  assert.equal(success.profileId, 'kaseki_run_evaluation_v1');
   assert.equal(success.model, '~typesafe/jev-latest');
   assert.equal(success.attemptCount, 1);
-  assert.deepEqual(success.answers.allowed, {
-    type: 'noul',
-    noul: 0.97,
-    probabilities: { false: 0.030000000000000027, true: 0.97 },
-    confidence: null,
-  });
+  assert.equal(success.answers.overall_assessment.choice, 'excellent');
+  assert.equal(success.answers.task_completion_score.score, 4);
   assert.deepEqual(success.usage, { input_tokens: 12, output_tokens: 3, total_tokens: 15, cost: 0.00001 });
   assert.equal(observedKasekiAuthorization, `Bearer ${kasekiToken}`);
   assert.equal(workerRequestCount, 1);
@@ -145,7 +156,9 @@ try {
     readFile: () => 'synthetic-wrong-identity-token-0123456789',
   });
   await assert.rejects(
-    () => wrongIdentity.decide({ state: 'private evidence', questions }),
+    () => wrongIdentity.evaluateProfile({
+      profileId: 'kaseki_run_evaluation_v1', input: { state: { summary: 'private evidence' }, includeFailureDiagnosis: false },
+    }),
     (error) => error.category === 'credentials' && error.httpStatus === 401
       && !error.message.includes('private evidence'),
   );
@@ -154,7 +167,9 @@ try {
 
   malformedProviderResponse = true;
   await assert.rejects(
-    () => service.decide({ state: 'private evidence', questions }),
+    () => service.evaluateProfile({
+      profileId: 'kaseki_run_evaluation_v1', input: { state: { summary: 'private evidence' }, includeFailureDiagnosis: false },
+    }),
     (error) => error.category === 'invalid_response' && error.httpStatus === 502
       && !error.message.includes('provider private trace')
       && !error.message.includes('private evidence'),
@@ -162,7 +177,7 @@ try {
   assert.equal(workerRequestCount, 4);
   assert.equal(providerAttemptCount, 3);
 
-  process.stdout.write('Senku Worker contract integration passed: authenticated generic and context-profile calls, one provider attempt per evaluation, and safe failures.\n');
+  process.stdout.write('Senku Worker contract integration passed: authenticated Kaseki profiles, one provider attempt per evaluation, and safe failures.\n');
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }
