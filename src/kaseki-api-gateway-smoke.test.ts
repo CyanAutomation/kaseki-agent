@@ -1445,7 +1445,7 @@ describe('gateway connectivity and provider smoke contracts', () => {
       expect(result.status).toBe('ok');
       expect(result.evaluationValidated).toBe(true);
       expect(mockFetch).toHaveBeenCalledTimes(1);
-      const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+      const [url, init] = mockFetch.mock.calls[0] as [string, { body?: string }];
       expect(url).toBe('https://senku.test/v1/profiles/kaseki_run_evaluation_v1/evaluate');
       expect(JSON.parse(String(init.body))).toEqual({
         schemaVersion: '1',

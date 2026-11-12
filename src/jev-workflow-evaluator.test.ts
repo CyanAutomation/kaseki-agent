@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { DecisionResult, DecisionService, ProfileDecisionRequest, ProfileDecisionResult } from './decision-service';
+import type { DecisionService, ProfileDecisionRequest, ProfileDecisionResult } from './decision-service';
 import { DecisionServiceError } from './decision-service';
 import { evaluateWorkflow, type DecisionWorkflowDependencies } from './jev-workflow-evaluator';
 import type { ClassificationAnswer } from './types/openrouter-decisions';
