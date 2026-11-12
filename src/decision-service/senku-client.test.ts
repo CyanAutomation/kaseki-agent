@@ -2,42 +2,23 @@ import { ReadableStream } from 'node:stream/web';
 import type { ReadableStreamDefaultController } from 'node:stream/web';
 import {
   MAX_SENKU_RESPONSE_BYTES,
-  buildSenkuDecisionRequest,
+  buildSenkuProfileRequest,
   DecisionServiceError,
   hasRetiredDecisionSettings,
   requestSenkuProfile,
-  requestSenkuDecision,
-  resolveSenkuDecisionUrl,
   resolveSenkuProfileUrl,
-  type SenkuDecisionOptions,
+  type SenkuRequestOptions,
 } from './senku-client';
 import { SenkuDecisionService } from '../decision-service';
 import { answerConfidence } from '../decision-answers';
 
 const TOKEN = 'synthetic-senku-kaseki-token-value-1234567890';
-const noulQuestion = { safe: { type: 'noul' as const, instructions: 'Is the result safe?' } };
-
 function noulAnswer(noul = 0.95) {
   return {
     type: 'noul',
     noul,
     probabilities: { false: 1 - noul, true: noul },
     confidence: null,
-  };
-}
-
-function responseBody(overrides: Record<string, unknown> = {}) {
-  return {
-    schemaVersion: '1',
-    requestId: 'dec-test-123',
-    status: 'completed',
-    provider: 'jev',
-    model: 'typesafe/jev-resolved-test',
-    answers: { safe: noulAnswer() },
-    usage: { input_tokens: 20, output_tokens: 4, total_tokens: 24, cost: 0.0001 },
-    durationMs: 17,
-    attemptCount: 1,
-    ...overrides,
   };
 }
 
@@ -93,7 +74,7 @@ function profileResponse(
   };
 }
 
-function makeOptions(fetchImpl: typeof fetch, envExtra: NodeJS.ProcessEnv = {}): SenkuDecisionOptions {
+function makeOptions(fetchImpl: typeof fetch, envExtra: NodeJS.ProcessEnv = {}): SenkuRequestOptions {
   return {
     fetchImpl,
     readFile: () => TOKEN,
@@ -111,30 +92,25 @@ function jsonResponse(value: unknown, status = 200): Response {
 }
 
 describe('Senku decision transport', () => {
-  it('posts the exact generic envelope with the Kaseki bearer token and no model override', async () => {
-    const fetchImpl = jest.fn<typeof fetch>().mockResolvedValue(jsonResponse(responseBody()));
+  it('uses only a versioned profile request through the DecisionService', async () => {
+    const fetchImpl = jest.fn<typeof fetch>().mockResolvedValue(jsonResponse(profileResponse()));
     const service = new SenkuDecisionService(makeOptions(fetchImpl));
-    const result = await service.decide({
-      state: { status: 'failed', evidence: 'private run evidence' },
-      questions: noulQuestion,
-      model: 'caller-selected-model-must-be-ignored',
+    const result = await service.evaluateProfile({
+      profileId: 'task_admission_v1',
+      input: { taskPrompt: 'Update the README wording' },
       timeoutMs: 1000,
     });
 
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
     const [url, init] = fetchImpl.mock.calls[0];
-    expect(url).toBe('https://senku.example.test/v1/decisions');
+    expect(url).toBe('https://senku.example.test/v1/profiles/task_admission_v1/evaluate');
     expect(init?.method).toBe('POST');
     expect(init?.redirect).toBe('manual');
     expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${TOKEN}`);
-    expect(JSON.parse(String(init?.body))).toEqual({
-      schemaVersion: '1',
-      state: { status: 'failed', evidence: 'private run evidence' },
-      questions: noulQuestion,
+    expect(JSON.parse(String(init?.body))).toEqual({ schemaVersion: '1', input: { taskPrompt: 'Update the README wording' } });
+    expect(result).toMatchObject({
+      provider: 'senku', profileId: 'task_admission_v1', profileVersion: '1',
+      model: 'typesafe/jev-resolved-test', attemptCount: 1,
     });
-    expect(JSON.parse(String(init?.body))).not.toHaveProperty('model');
-    expect(result).toMatchObject({ provider: 'senku', model: 'typesafe/jev-resolved-test', attemptCount: 1 });
-    expect(result.usage).toEqual({ input_tokens: 20, output_tokens: 4, total_tokens: 24, cost: 0.0001 });
     expect(result.responseTime).toBeGreaterThanOrEqual(0);
   });
 
@@ -286,12 +262,12 @@ describe('Senku decision transport', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('validates the response and accepts null confidence while preserving missing usage', async () => {
-    const body = responseBody({ usage: undefined });
+  it('accepts missing usage and nullable confidence on a valid profile response', async () => {
+    const body = profileResponse('task_admission_v1', taskAdmissionAnswers, { usage: undefined });
     const fetchImpl = jest.fn<typeof fetch>().mockResolvedValue(jsonResponse(body));
-    const result = await requestSenkuDecision('state', noulQuestion, makeOptions(fetchImpl));
+    const result = await requestSenkuProfile('task_admission_v1', {}, makeOptions(fetchImpl));
 
-    expect(result.answers.safe).toEqual(noulAnswer());
+    expect(result.answers).toEqual(taskAdmissionAnswers);
     expect(result.usage).toBeUndefined();
     expect(answerConfidence({
       type: 'choice', choice: 'yes', probabilities: { yes: 1, no: 0 }, confidence: null,
@@ -301,35 +277,20 @@ describe('Senku decision transport', () => {
     })).toBe(0);
   });
 
-  it('validates choice and score probability maps with nullable confidence', async () => {
-    const questions = {
-      route: { type: 'choice' as const, instructions: 'Choose a route', criteria: { preserve: null, discard: 'Drop it' } },
-      quality: { type: 'score' as const, instructions: 'Score quality', criteria: ['Low', 'High'] },
-    };
-    const fetchImpl = jest.fn<typeof fetch>().mockResolvedValue(jsonResponse(responseBody({
-      answers: {
-        route: { type: 'choice', choice: 'preserve', probabilities: { preserve: 0.8, discard: 0.2 }, confidence: null },
-        quality: { type: 'score', score: 1, legend: { 0: 'Low', 1: 'High' }, probabilities: { 0: 0, 1: 1 }, confidence: 0 },
-      },
-    })));
-    const result = await requestSenkuDecision('state', questions, makeOptions(fetchImpl));
-    expect(result.answers.route).toMatchObject({ choice: 'preserve', confidence: null });
-    expect(result.answers.quality).toMatchObject({ score: 1, confidence: 0 });
-  });
-
   it.each([
-    ['unsupported schema version', responseBody({ schemaVersion: '2' })],
-    ['missing answer', responseBody({ answers: {} })],
-    ['unexpected answer', responseBody({ answers: { unexpected: noulAnswer() } })],
-    ['invalid probability distribution', responseBody({ answers: { safe: { ...noulAnswer(), probabilities: { false: 0.4, true: 0.4 } } } })],
-    ['invalid answer type', responseBody({ answers: { safe: { type: 'choice', choice: 'yes' } } })],
-    ['unexpected answer field', responseBody({ answers: { safe: { ...noulAnswer(), evidence: 'uncontracted' } } })],
-    ['unexpected model control character', responseBody({ model: 'model\nforged-log-line' })],
-    ['invalid attempt count', responseBody({ attemptCount: 2 })],
-    ['invalid reported usage', responseBody({ usage: { input_tokens: -1 } })],
+    ['unsupported schema version', profileResponse('task_admission_v1', taskAdmissionAnswers, { schemaVersion: '2' })],
+    ['missing answer', profileResponse('task_admission_v1', {})],
+    ['unexpected answer', profileResponse('task_admission_v1', { ...taskAdmissionAnswers, unexpected: noulAnswer() })],
+    ['invalid probability distribution', profileResponse('task_admission_v1', {
+      ...taskAdmissionAnswers,
+      contains_credentials: { ...noulAnswer(), probabilities: { false: 0.4, true: 0.4 } },
+    })],
+    ['unexpected model control character', profileResponse('task_admission_v1', taskAdmissionAnswers, { model: 'model\nforged-log-line' })],
+    ['invalid attempt count', profileResponse('task_admission_v1', taskAdmissionAnswers, { attemptCount: 2 })],
+    ['invalid reported usage', profileResponse('task_admission_v1', taskAdmissionAnswers, { usage: { input_tokens: -1 } })],
   ])('rejects %s without exposing response details', async (_label, body) => {
     const fetchImpl = jest.fn<typeof fetch>().mockResolvedValue(jsonResponse(body));
-    const error = await requestSenkuDecision('private evidence', noulQuestion, makeOptions(fetchImpl))
+    const error = await requestSenkuProfile('task_admission_v1', { taskPrompt: 'private evidence' }, makeOptions(fetchImpl))
       .then(() => undefined, (caught: unknown) => caught as DecisionServiceError);
     expect(error).toMatchObject({ category: 'invalid_response' });
     expect(error.message).not.toContain('private evidence');
@@ -338,11 +299,11 @@ describe('Senku decision transport', () => {
 
   it('rejects malformed JSON and oversized streamed responses', async () => {
     const malformed = jest.fn<typeof fetch>().mockResolvedValue(new Response('{', { status: 200 }));
-    await expect(requestSenkuDecision('state', noulQuestion, makeOptions(malformed)))
+    await expect(requestSenkuProfile('task_admission_v1', {}, makeOptions(malformed)))
       .rejects.toMatchObject({ category: 'invalid_response' });
 
     const oversized = jest.fn<typeof fetch>().mockResolvedValue(new Response('x'.repeat(MAX_SENKU_RESPONSE_BYTES + 1), { status: 200 }));
-    await expect(requestSenkuDecision('state', noulQuestion, makeOptions(oversized)))
+    await expect(requestSenkuProfile('task_admission_v1', {}, makeOptions(oversized)))
       .rejects.toMatchObject({ category: 'invalid_response' });
   });
 
@@ -358,7 +319,7 @@ describe('Senku decision transport', () => {
     const fetchImpl = jest.fn<typeof fetch>().mockResolvedValue(jsonResponse({
       error: { code, message: 'secret evidence and provider diagnostics', requestId: 'dec-safe-id' },
     }, status));
-    const error = await requestSenkuDecision('private evidence', noulQuestion, makeOptions(fetchImpl))
+    const error = await requestSenkuProfile('task_admission_v1', { taskPrompt: 'private evidence' }, makeOptions(fetchImpl))
       .then(() => undefined, (caught: unknown) => caught as DecisionServiceError);
     expect(error).toMatchObject({ category, httpStatus: status, requestId: 'dec-safe-id', attemptCount: 1 });
     expect(error.message).not.toContain('private evidence');
@@ -370,22 +331,22 @@ describe('Senku decision transport', () => {
     const upstreamInvalid = jest.fn<typeof fetch>().mockResolvedValue(jsonResponse({
       error: { code: 'INVALID_PROVIDER_RESPONSE', requestId: 'dec-invalid' },
     }, 502));
-    await expect(requestSenkuDecision('state', noulQuestion, makeOptions(upstreamInvalid)))
+    await expect(requestSenkuProfile('task_admission_v1', {}, makeOptions(upstreamInvalid)))
       .rejects.toMatchObject({ category: 'invalid_response' });
 
     const redirect = jest.fn<typeof fetch>().mockResolvedValue(new Response('', {
       status: 302,
       headers: { location: 'https://attacker.example/collect' },
     }));
-    await expect(requestSenkuDecision('state', noulQuestion, makeOptions(redirect)))
+    await expect(requestSenkuProfile('task_admission_v1', {}, makeOptions(redirect)))
       .rejects.toMatchObject({ category: 'invalid_response', httpStatus: 302 });
     expect(redirect).toHaveBeenCalledTimes(1);
     expect(redirect.mock.calls[0][1]?.redirect).toBe('manual');
   });
 
-  it('maps DNS/network errors without exposing the thrown message', async () => {
+  it('maps network errors without exposing the thrown message', async () => {
     const fetchImpl = jest.fn<typeof fetch>().mockRejectedValue(new Error('token=private-value; DNS details'));
-    const error = await requestSenkuDecision('state', noulQuestion, makeOptions(fetchImpl))
+    const error = await requestSenkuProfile('task_admission_v1', {}, makeOptions(fetchImpl))
       .then(() => undefined, (caught: unknown) => caught as DecisionServiceError);
     expect(error.category).toBe('network');
     expect(error.message).not.toContain('private-value');
@@ -397,11 +358,10 @@ describe('Senku decision transport', () => {
     const beforeHeaders = jest.fn<typeof fetch>().mockImplementation((_input, init) => new Promise((_resolve, reject) => {
       init?.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
     }));
-    await expect(requestSenkuDecision('state', noulQuestion, {
+    await expect(requestSenkuProfile('task_admission_v1', {}, {
       ...makeOptions(beforeHeaders, { SENKU_URL: 'http://127.0.0.1:4011', NODE_ENV: 'test' }),
       timeoutMs: 10,
-    }))
-      .rejects.toMatchObject({ category: 'timeout' });
+    })).rejects.toMatchObject({ category: 'timeout' });
 
     const duringBody = jest.fn<typeof fetch>().mockImplementation((_input, init) => {
       let streamController: ReadableStreamDefaultController<Uint8Array>;
@@ -409,22 +369,20 @@ describe('Senku decision transport', () => {
       init?.signal?.addEventListener('abort', () => streamController.error(new Error('aborted')));
       return Promise.resolve(new Response(body, { status: 200 }));
     });
-    await expect(requestSenkuDecision('state', noulQuestion, {
+    await expect(requestSenkuProfile('task_admission_v1', {}, {
       ...makeOptions(duringBody, { SENKU_URL: 'http://127.0.0.1:4011' }), timeoutMs: 10,
     })).rejects.toMatchObject({ category: 'timeout' });
     expect(duringBody).toHaveBeenCalledTimes(1);
   });
 
-  it('rounds a positive fractional timeout instead of silently using the default budget', async () => {
+  it('rounds positive fractional timeouts and honors an already-aborted caller signal', async () => {
     jest.useFakeTimers();
     const controller = new AbortController();
     const fetchImpl = jest.fn<typeof fetch>().mockImplementation((_input, init) => new Promise((_resolve, reject) => {
       init?.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
     }));
-    const pending = requestSenkuDecision('state', noulQuestion, {
-      ...makeOptions(fetchImpl),
-      timeoutMs: 10.5,
-      signal: controller.signal,
+    const pending = requestSenkuProfile('task_admission_v1', {}, {
+      ...makeOptions(fetchImpl), timeoutMs: 10.5, signal: controller.signal,
     });
     let settled = false;
     void pending.then(() => { settled = true; }, () => { settled = true; });
@@ -439,39 +397,37 @@ describe('Senku decision transport', () => {
       jest.clearAllTimers();
       jest.useRealTimers();
     }
-  });
 
-  it('honors an already-aborted caller signal', async () => {
-    const controller = new AbortController();
-    controller.abort();
-    const fetchImpl = jest.fn<typeof fetch>();
-    await expect(requestSenkuDecision('state', noulQuestion, {
-      ...makeOptions(fetchImpl), signal: controller.signal,
+    const alreadyAborted = new AbortController();
+    alreadyAborted.abort();
+    const neverFetch = jest.fn<typeof fetch>();
+    await expect(requestSenkuProfile('task_admission_v1', {}, {
+      ...makeOptions(neverFetch), signal: alreadyAborted.signal,
     })).rejects.toMatchObject({ category: 'timeout' });
-    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(neverFetch).not.toHaveBeenCalled();
   });
 
-  it('rejects invalid endpoints and credentials before making a request', async () => {
-    expect(() => resolveSenkuDecisionUrl({ SENKU_URL: 'http://senku.example.test' })).toThrow(DecisionServiceError);
-    expect(() => resolveSenkuDecisionUrl({ NODE_ENV: 'production', SENKU_URL: 'http://127.0.0.1:4011' })).toThrow(DecisionServiceError);
+  it('rejects invalid profile endpoints and credentials before making a request', async () => {
+    expect(() => resolveSenkuProfileUrl('task_admission_v1', { SENKU_URL: 'http://senku.example.test' })).toThrow(DecisionServiceError);
+    expect(() => resolveSenkuProfileUrl('task_admission_v1', { NODE_ENV: 'production', SENKU_URL: 'http://127.0.0.1:4011' })).toThrow(DecisionServiceError);
     for (const SENKU_URL of [
       'https://user:pass@senku.example.test',
       'https://senku.example.test/path',
       'https://senku.example.test/?question=1',
       'https://senku.example.test/#fragment',
     ]) {
-      expect(() => resolveSenkuDecisionUrl({ SENKU_URL })).toThrow(DecisionServiceError);
+      expect(() => resolveSenkuProfileUrl('task_admission_v1', { SENKU_URL })).toThrow(DecisionServiceError);
     }
-    expect(resolveSenkuDecisionUrl({ SENKU_URL: 'http://127.0.0.1:4011', NODE_ENV: 'test' }))
-      .toBe('http://127.0.0.1:4011/v1/decisions');
+    expect(resolveSenkuProfileUrl('task_admission_v1', { SENKU_URL: 'http://127.0.0.1:4011', NODE_ENV: 'test' }))
+      .toBe('http://127.0.0.1:4011/v1/profiles/task_admission_v1/evaluate');
 
     const fetchImpl = jest.fn<typeof fetch>();
-    await expect(requestSenkuDecision('state', noulQuestion, {
+    await expect(requestSenkuProfile('task_admission_v1', {}, {
       fetchImpl,
       env: { NODE_ENV: 'test', SENKU_URL: 'https://senku.example.test', SENKU_KASEKI_API_TOKEN_FILE: '/missing' },
       readFile: () => { throw new Error('path and OS details'); },
     })).rejects.toMatchObject({ category: 'credentials' });
-    const invalidToken = await requestSenkuDecision('state', noulQuestion, {
+    const invalidToken = await requestSenkuProfile('task_admission_v1', {}, {
       ...makeOptions(fetchImpl, { SENKU_KASEKI_API_TOKEN_FILE: '/synthetic/token' }),
       readFile: () => 'short',
     }).then(() => undefined, (caught: unknown) => caught as DecisionServiceError);
@@ -479,17 +435,16 @@ describe('Senku decision transport', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('rejects unsupported or oversized requests locally', () => {
-    expect(() => buildSenkuDecisionRequest('x'.repeat(130 * 1024), noulQuestion))
+  it('rejects invalid or oversized profile input locally', () => {
+    expect(() => buildSenkuProfileRequest('task_admission_v1', { text: 'x'.repeat(130 * 1024) }))
       .toThrow(DecisionServiceError);
-    expect(() => buildSenkuDecisionRequest('state', {
-      'bad-key': { type: 'noul', instructions: 'Does this question have an invalid ID?' },
-    })).toThrow(DecisionServiceError);
+    expect(() => buildSenkuProfileRequest('task_admission_v1', [] as unknown as Record<string, unknown>))
+      .toThrow(DecisionServiceError);
   });
 
-  it('checks credentials before serializing an oversized request', async () => {
+  it('checks credentials before serializing an oversized profile input', async () => {
     const fetchImpl = jest.fn<typeof fetch>();
-    await expect(requestSenkuDecision('x'.repeat(130 * 1024), noulQuestion, {
+    await expect(requestSenkuProfile('task_admission_v1', { text: 'x'.repeat(130 * 1024) }, {
       fetchImpl,
       env: { NODE_ENV: 'test', SENKU_URL: 'https://senku.example.test' },
       readFile: () => { throw new Error('synthetic missing token file'); },
