@@ -29,7 +29,7 @@ function profileAnswersFor(request: ProfileDecisionRequest): Record<string, Clas
           probabilities: { applicable: 1, not_applicable: 0, unknown: 0 }, confidence: 0.97,
         };
       }
-      answers[item.id] = { type: 'noul', noul: 0.97 };
+      answers[item.id] = { type: 'noul', noul: 0.97, probabilities: { false: 0.03, true: 0.97 }, confidence: null };
     }
     return answers;
   }
@@ -54,7 +54,7 @@ function profileAnswersFor(request: ProfileDecisionRequest): Record<string, Clas
 }
 
 function successfulService(providerId = 'test-provider'): DecisionService & {
-  evaluateProfile: NonNullable<DecisionService['evaluateProfile']>;
+  evaluateProfile: DecisionService['evaluateProfile'];
 } {
   return {
     providerId,
@@ -195,7 +195,7 @@ describe('decision workflow telemetry', () => {
         ...service,
         evaluateProfile: async (request) => {
           capturedRequest = request;
-          return service.evaluateProfile!(request);
+          return service.evaluateProfile(request);
         },
       },
     });
@@ -217,7 +217,7 @@ describe('decision workflow telemetry', () => {
       decisionService: {
         ...service,
         evaluateProfile: async (request) => {
-          const result = await service.evaluateProfile!(request);
+          const result = await service.evaluateProfile(request);
           for (const answer of Object.values(result.answers)) {
             if (answer.type === 'choice' || answer.type === 'score') answer.confidence = null;
           }
@@ -239,7 +239,7 @@ describe('decision workflow telemetry', () => {
       decisionService: {
         ...service,
         evaluateProfile: async (request) => {
-          const result = await service.evaluateProfile!(request);
+          const result = await service.evaluateProfile(request);
           for (const answer of Object.values(result.answers)) {
             if (answer.type === 'choice' || answer.type === 'score') answer.confidence = 0;
           }
@@ -285,7 +285,7 @@ describe('decision workflow telemetry', () => {
           ...service,
           evaluateProfile: async (request) => {
             capturedRequest = request;
-            return service.evaluateProfile!(request);
+            return service.evaluateProfile(request);
           },
         },
       });
@@ -326,7 +326,7 @@ describe('decision workflow telemetry', () => {
           ...service,
           evaluateProfile: async (request) => {
             capturedRequest = request;
-            return service.evaluateProfile!(request);
+            return service.evaluateProfile(request);
           },
         },
       });
@@ -493,7 +493,7 @@ describe('goal-check contract enforcement', () => {
         decide: async () => { throw new Error('goal checks must use a fixed profile'); },
         evaluateProfile: async (request) => ({
           provider: 'test-provider', model: 'test/model',
-          answers: { criterion_1: { type: 'noul', noul: 0.99 } },
+          answers: { criterion_1: { type: 'noul', noul: 0.99, probabilities: { false: 0.01, true: 0.99 }, confidence: null } },
           usage: {}, responseTime: 1, attemptCount: 1,
           profileId: request.profileId, profileVersion: '1',
         }),

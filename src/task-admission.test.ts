@@ -1,5 +1,5 @@
 import { buildTaskAdmissionRequest, evaluateTaskAdmission } from './task-admission';
-import { decisionService } from './decision-service';
+import { decisionService, DecisionServiceError } from './decision-service';
 
 const TOKEN = 'synthetic-senku-kaseki-token-value-1234567890';
 const ENV_NAMES = [
@@ -70,7 +70,7 @@ describe('task admission classifier', () => {
 
   afterEach(() => {
     global.fetch = originalFetch;
-    Reflect.deleteProperty(decisionService, 'evaluateProfile');
+    jest.restoreAllMocks();
     for (const [name, value] of originalEnv) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
@@ -141,8 +141,8 @@ describe('task admission classifier', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it('fails open with a configuration warning when profile evaluation is unavailable', async () => {
-    Object.defineProperty(decisionService, 'evaluateProfile', { configurable: true, value: undefined });
+  it('fails open with a configuration warning when Senku configuration is invalid', async () => {
+    jest.spyOn(decisionService, 'evaluateProfile').mockRejectedValue(new DecisionServiceError('configuration'));
     const fetchMock = jest.fn();
     global.fetch = fetchMock as typeof fetch;
 
