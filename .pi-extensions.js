@@ -85,9 +85,8 @@ export default async function (pi) {
     try {
       const appRoot = process.env.KASEKI_APP_ROOT || '/app';
       const routerUrl = pathToFileURL(path.join(appRoot, 'dist/caveman/tool-output-router.js')).href;
-      const classifierUrl = pathToFileURL(path.join(appRoot, 'dist/jev-classifier.js')).href;
       const senkuClientUrl = pathToFileURL(path.join(appRoot, 'dist/decision-service/senku-client.js')).href;
-      const [router, jev, senkuClient] = await Promise.all([import(routerUrl), import(classifierUrl), import(senkuClientUrl)]);
+      const [router, senkuClient] = await Promise.all([import(routerUrl), import(senkuClientUrl)]);
       let senkuConfigured = false;
       try { senkuConfigured = Boolean(senkuClient.resolveSenkuKasekiToken().token); } catch { /* Report a safe unavailable state below. */ }
       if (!senkuConfigured) {
@@ -95,10 +94,9 @@ export default async function (pi) {
         return;
       }
       const configuredTimeout = Number.parseInt(process.env.KASEKI_CAVEMAN_ROUTER_TIMEOUT_MS || '1200', 10);
-      router.installCavemanToolOutputRouter(pi, (state, questions) =>
-        jev.classifyWithJev(state, questions, {
+      router.installCavemanToolOutputRouter(pi, (profileId, input) =>
+        senkuClient.requestSenkuProfile(profileId, input, {
           timeoutMs: Number.isInteger(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 1200,
-          maxRetries: 0,
         }),
       );
       recordGatewayDiagnostic({ event: 'caveman_tool_output_router_registered', mode: routerMode, level: cavemanLevel });

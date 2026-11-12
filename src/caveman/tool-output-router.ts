@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { ClassificationAnswer, QuestionDefinition } from '../types/openrouter-decisions';
+import type { ClassificationAnswer } from '../types/openrouter-decisions';
 import { CodeSummarizer } from '../summarization/code-summarizer';
 import { redactJevEvidence } from '../jev-evidence-redaction';
 import { EventDrivenContextReevaluator, type ContextReevaluationMessage } from './context-reevaluation';
@@ -73,33 +73,9 @@ export interface CavemanToolOutputResult {
 }
 
 export type ClassifyCavemanToolOutput = (
-  state: CavemanToolOutputMetadata,
-  questions: Record<string, QuestionDefinition>,
+  profileId: 'kaseki_context_routing_v1',
+  input: Record<string, unknown>,
 ) => Promise<JevToolOutputDecision>;
-
-export const CAVEMAN_TOOL_OUTPUT_QUESTIONS: Record<string, QuestionDefinition> = {
-  route: {
-    type: 'choice',
-    instructions: 'Choose a safe local reduction using only the supplied output metadata. Raw tool text, task text, and command text are not included. Preserve exact content when uncertain, when the result is an error, or when a reduction could hide relevant evidence.',
-    criteria: {
-      preserve: 'Keep result exactly as returned. Use for errors, exact evidence, code requiring implementation details, unfamiliar output, or uncertainty.',
-      compact_repeated: 'For successful bash/search results with a high ratio of consecutive repeated lines, replace repeated runs with their exact line and an explicit repeat count. Do not alter any other line.',
-      structural_code: 'For a large, full-file TypeScript or JavaScript read, return an AST structural preview only when a follow-up exact read of the same workspace path can recover implementation details.',
-    },
-  },
-};
-
-export const SEMANTIC_CONTEXT_ROUTING_QUESTIONS: Record<string, QuestionDefinition> = {
-  disposition: {
-    type: 'choice',
-    instructions: 'Choose whether this tool result should enter the current coding context in full, as a condensed representation, or be safely omitted. Use only the bounded metadata and goal summary provided. Preserve failure evidence, exact source details needed for implementation, state-changing operation evidence, and uncertainty. Condense repetitive successful output or large context that remains useful at lower fidelity. Discard only clearly routine, redundant output that cannot affect the current task.',
-    criteria: {
-      preserve: 'Retain the complete original output because exact details or evidence may matter.',
-      condense: 'Keep useful information but at lower fidelity; deterministic local Caveman reduction will perform the transformation.',
-      discard: 'Output is clearly irrelevant or redundant and safe to omit from active context; lightweight metadata will remain.',
-    },
-  },
-};
 
 const DEFAULT_MIN_CHARS = 6_000;
 const LEVEL_THREE_MIN_CHARS = 3_000;
@@ -309,7 +285,10 @@ export async function routeSemanticToolOutput(
   let decision: JevToolOutputDecision;
   try {
     const goalSummary = boundedGoalSummary(options.goalSummary);
-    decision = await classify({ ...metadata, ...(goalSummary ? { goalSummary } : {}) }, SEMANTIC_CONTEXT_ROUTING_QUESTIONS);
+    decision = await classify('kaseki_context_routing_v1', {
+      mode: 'semantic_context',
+      evidence: { ...metadata, ...(goalSummary ? { goalSummary } : {}) },
+    });
   } catch {
     return { ...preserved(event, text, 'jev_unavailable', { attempted: true, metadata }), disposition: 'preserve', estimatedInputTokens: inputTokens, estimatedOutputTokens: inputTokens, routingLatencyMs: Math.round(performance.now() - started) };
   }
@@ -462,7 +441,7 @@ export async function routeToolOutput(
   const metadata = buildCavemanToolOutputMetadata(event, text, options);
   let decision: JevToolOutputDecision;
   try {
-    decision = await classify(metadata, CAVEMAN_TOOL_OUTPUT_QUESTIONS);
+    decision = await classify('kaseki_context_routing_v1', { mode: 'tool_output', evidence: metadata });
   } catch {
     return preserved(event, text, 'jev_unavailable', { attempted: true, metadata });
   }

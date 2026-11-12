@@ -9,12 +9,15 @@ export const SENKU_SCHEMA_VERSION = '1' as const;
 export const MAX_SENKU_REQUEST_BYTES = 128 * 1024;
 export const MAX_SENKU_RESPONSE_BYTES = 64 * 1024;
 
-export const SENKU_PROFILE_IDS = ['task_admission_v1', 'validation_recovery_v1'] as const;
+export const SENKU_PROFILE_IDS = [
+  'task_admission_v1', 'kaseki_goal_check_v1', 'kaseki_run_evaluation_v1', 'kaseki_context_routing_v1', 'validation_recovery_v1',
+] as const;
 export type SenkuProfileId = typeof SENKU_PROFILE_IDS[number];
 
 type ProfileAnswerContract =
   | { type: 'noul' }
-  | { type: 'choice'; choices: readonly string[] };
+  | { type: 'choice'; choices: readonly string[] }
+  | { type: 'score'; levels: number };
 
 const PROFILE_ANSWER_CONTRACTS = {
   task_admission_v1: {
@@ -29,7 +32,21 @@ const PROFILE_ANSWER_CONTRACTS = {
     validation_failure_cause: { type: 'choice', choices: ['test_failure', 'type_or_lint_failure', 'build_failure', 'dependency_or_environment', 'timeout_or_flaky', 'implementation_logic', 'unknown'] },
     validation_recovery_action: { type: 'choice', choices: ['fix_implementation', 'repair_environment', 'retry_validation_once', 'inspect_diagnostics'] },
   },
+  kaseki_goal_check_v1: {},
+  kaseki_run_evaluation_v1: {},
+  kaseki_context_routing_v1: {},
 } as const satisfies Record<SenkuProfileId, Record<string, ProfileAnswerContract>>;
+
+const GOAL_APPLICABILITY_CHOICES = ['applicable', 'not_applicable', 'unknown'] as const;
+const RUN_EVALUATION_CONTRACTS = {
+  overall_assessment: { type: 'choice', choices: ['excellent', 'good', 'mixed', 'poor'] },
+  reviewer_confidence: { type: 'choice', choices: ['high', 'medium', 'low'] },
+  task_completion_score: { type: 'score', levels: 5 },
+  validation_failure_cause: { type: 'choice', choices: ['test_failure', 'type_or_lint_failure', 'build_failure', 'dependency_or_environment', 'timeout_or_flaky', 'implementation_logic', 'unknown'] },
+  validation_recovery_action: { type: 'choice', choices: ['fix_implementation', 'repair_environment', 'retry_validation_once', 'inspect_diagnostics'] },
+} as const satisfies Record<string, ProfileAnswerContract>;
+const CONTEXT_ROUTING_CHOICES = ['preserve', 'condense', 'discard'] as const;
+const TOOL_OUTPUT_ROUTE_CHOICES = ['preserve', 'compact_repeated', 'structural_code'] as const;
 
 export const RETIRED_DECISION_SETTINGS = [
   'KASEKI_JEV_WORKFLOW',
@@ -427,11 +444,47 @@ function validateResponse(value: unknown, questions: Record<string, QuestionDefi
   return value as unknown as SenkuDecisionResponse;
 }
 
-function profileQuestions(profileId: SenkuProfileId): Record<string, QuestionDefinition> {
-  const contracts = PROFILE_ANSWER_CONTRACTS[profileId] as Record<string, ProfileAnswerContract>;
+function profileQuestions(profileId: SenkuProfileId, input: Record<string, unknown>): Record<string, QuestionDefinition> {
+  let contracts: Record<string, ProfileAnswerContract> = { ...PROFILE_ANSWER_CONTRACTS[profileId] };
+  if (profileId === 'kaseki_goal_check_v1') {
+    if (!Array.isArray(input.criteria)) return {};
+    contracts = {};
+    for (const item of input.criteria) {
+      if (!isRecord(item) || typeof item.id !== 'string' || !/^criterion_[1-9][0-9]*$/.test(item.id)) return {};
+      if (typeof item.appliesWhen === 'string' && item.appliesWhen.trim()) {
+        contracts[`${item.id}_applicability`] = { type: 'choice', choices: GOAL_APPLICABILITY_CHOICES };
+      }
+      contracts[item.id] = { type: 'noul' };
+    }
+  }
+  if (profileId === 'kaseki_run_evaluation_v1') {
+    contracts = Object.fromEntries(Object.entries(RUN_EVALUATION_CONTRACTS).filter(([id]) => (
+      input.includeFailureDiagnosis === true
+      || (id !== 'validation_failure_cause' && id !== 'validation_recovery_action')
+    ))) as Record<string, ProfileAnswerContract>;
+  }
+  if (profileId === 'kaseki_context_routing_v1') {
+    const choices = (ids: readonly string[]) => ({ type: 'choice' as const, choices: ids });
+    if (input.mode === 'tool_output') contracts = { route: choices(TOOL_OUTPUT_ROUTE_CHOICES) };
+    else if (input.mode === 'semantic_context') contracts = { disposition: choices(CONTEXT_ROUTING_CHOICES) };
+    else if (input.mode === 'phase_transfer' && isRecord(input.evidence) && Array.isArray(input.evidence.candidates)) {
+      contracts = {};
+      for (const item of input.evidence.candidates) {
+        if (!isRecord(item) || typeof item.id !== 'string' || !/^(?:file|observation|plan|test)_[0-9]+$/.test(item.id)) return {};
+        contracts[item.id] = choices(CONTEXT_ROUTING_CHOICES);
+      }
+    } else return {};
+  }
   return Object.fromEntries(Object.entries(contracts).map(([id, contract]) => {
     if (contract.type === 'noul') {
       return [id, { type: 'noul', instructions: 'Profile answer contract.' } satisfies QuestionDefinition];
+    }
+    if (contract.type === 'score') {
+      return [id, {
+        type: 'score',
+        instructions: 'Profile answer contract.',
+        criteria: Array.from({ length: contract.levels }, (_value, index) => String(index)),
+      } satisfies QuestionDefinition];
     }
     return [id, {
       type: 'choice',
@@ -455,7 +508,11 @@ function equalJson(left: unknown, right: unknown): boolean {
     && leftKeys.every((key, index) => key === rightKeys[index] && equalJson(left[key], right[key]));
 }
 
-function validateProfileResponse(value: unknown, expectedProfileId: SenkuProfileId): SenkuProfileResponse {
+function validateProfileResponse(
+  value: unknown,
+  expectedProfileId: SenkuProfileId,
+  input: Record<string, unknown>,
+): SenkuProfileResponse {
   const allowedKeys = [
     'schemaVersion', 'requestId', 'status', 'profileId', 'profileVersion', 'provider',
     'model', 'answers', 'result', 'usage', 'durationMs', 'attemptCount',
@@ -468,13 +525,13 @@ function validateProfileResponse(value: unknown, expectedProfileId: SenkuProfile
     || value.durationMs < 0 || value.attemptCount !== 1 || !isRecord(value.answers) || !isRecord(value.result)) {
     fail('invalid_response', { attemptCount: 1 });
   }
-  const questions = profileQuestions(expectedProfileId);
+  const questions = profileQuestions(expectedProfileId, input);
   const answers = value.answers as Record<string, unknown>;
   const result = value.result as Record<string, unknown>;
   if (value.usage !== undefined && !validUsage(value.usage)) fail('invalid_response', { attemptCount: 1 });
   const answerIds = Object.keys(answers);
   const expectedIds = Object.keys(questions);
-  if (answerIds.length !== expectedIds.length || answerIds.some((id) => !Object.hasOwn(questions, id))
+  if (expectedIds.length === 0 || answerIds.length !== expectedIds.length || answerIds.some((id) => !Object.hasOwn(questions, id))
     || !expectedIds.every((id) => validAnswer(questions[id]!, answers[id]))
     || !equalJson(answers, result)) {
     fail('invalid_response', { requestId: safeRequestId(value.requestId), attemptCount: 1 });
@@ -657,7 +714,7 @@ export async function requestSenkuProfile(
   return requestSenku(
     () => resolveSenkuProfileUrl(profileId, options.env ?? process.env),
     () => buildSenkuProfileRequest(profileId, input).body,
-    (value) => validateProfileResponse(value, profileId),
+    (value) => validateProfileResponse(value, profileId, input),
     options,
   );
 }

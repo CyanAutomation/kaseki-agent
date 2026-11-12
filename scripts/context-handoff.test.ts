@@ -117,8 +117,10 @@ describe('context-handoff', () => {
         plan: ['Update the route'],
         critical_change_expectations: { required_files: ['src/router.ts'] },
       }));
-      const classify = jest.fn(async (state: Record<string, unknown>) => {
-        const candidates = state.candidates as Array<{ id: string; path?: string }>;
+      const classify = jest.fn(async (profileId: string, input: { mode: string; evidence: Record<string, unknown> }) => {
+        expect(profileId).toBe('kaseki_context_routing_v1');
+        expect(input.mode).toBe('phase_transfer');
+        const candidates = input.evidence.candidates as Array<{ id: string; path?: string }>;
         return { answers: Object.fromEntries(candidates.map(candidate => [candidate.id, {
           type: 'choice',
           choice: candidate.path === 'README.md' ? 'discard' : 'preserve',

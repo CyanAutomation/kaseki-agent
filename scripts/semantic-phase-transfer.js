@@ -2,11 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const PHASE_TRANSFER_QUESTIONS = {
-  preserve: 'Keep this scouting fact in the coding handoff at its current fidelity. Use for task-relevant architecture, implementation files, tests, conventions, or facts that may affect a required change.',
-  condense: 'Keep the useful part at lower fidelity. Preserve exact paths and reduce supporting explanation to the strongest concise fact.',
-  discard: 'Omit only when this fact is clearly unrelated to the current task and safe to leave out of coding context.',
-};
+const ROUTING_CHOICES = new Set(['preserve', 'condense', 'discard']);
 
 const DEFAULT_DISCARD_THRESHOLD = 0.98;
 const DEFAULT_CONDENSE_THRESHOLD = 0.7;
@@ -87,16 +83,8 @@ function candidateItems(input, redact) {
   return { items, requiredPaths };
 }
 
-function makeQuestion() {
-  return {
-    type: 'choice',
-    instructions: 'Route one bounded scouting fact from the prior scouting phase into the coding phase. Use only this fact and the bounded goal. Preserve task requirements, critical evidence, and uncertainty. Prefer condense to discard when the fact may help implementation or verification.',
-    criteria: PHASE_TRANSFER_QUESTIONS,
-  };
-}
-
 function interpretAnswer(answer, thresholds) {
-  if (!answer || answer.type !== 'choice' || !Object.hasOwn(PHASE_TRANSFER_QUESTIONS, answer.choice)) return null;
+  if (!answer || answer.type !== 'choice' || !ROUTING_CHOICES.has(answer.choice)) return null;
   const probabilities = answer.probabilities;
   if (!probabilities || typeof probabilities !== 'object' || Array.isArray(probabilities)) return null;
   const values = ['preserve', 'condense', 'discard'].map(key => probabilities[key]);
@@ -190,8 +178,7 @@ async function evaluateCandidates(candidates, state, selections, thresholds, ena
     attempted = true;
     const started = performance.now();
     try {
-      const questions = Object.fromEntries(candidates.map(candidate => [candidate.id, makeQuestion()]));
-      const result = await classify(state, questions);
+      const result = await classify('kaseki_context_routing_v1', { mode: 'phase_transfer', evidence: state });
       latencyMs = Math.round(performance.now() - started);
       const candidateSelections = new Map();
       for (const candidate of candidates) {

@@ -724,6 +724,10 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'json-events.sh'), join(scriptsDir, 'lib', 'json-events.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'phase-budget.sh'), join(scriptsDir, 'lib', 'phase-budget.sh'));
         expect(existsSync(join(scriptsDir, 'lib', 'phase-budget.sh'))).toBe(true);
+        copyFileSync(
+          join(repoRoot, 'scripts', 'lib', 'reject-retired-decision-settings.sh'),
+          join(scriptsDir, 'lib', 'reject-retired-decision-settings.sh'),
+        );
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'goal-contract.cjs'), join(scriptsDir, 'lib', 'goal-contract.cjs'));
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'repo-memory.sh'), join(scriptsDir, 'lib', 'repo-memory.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'provider-retry.sh'), join(scriptsDir, 'lib', 'provider-retry.sh'));
