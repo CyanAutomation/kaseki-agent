@@ -26,7 +26,6 @@ import {
 } from './gateway-validation/gateway-response-smoke-checks';
 import { validateClassificationConfidence } from './utils/classification-validation';
 import { decisionService, DecisionServiceError } from './decision-service';
-import type { QuestionDefinition } from './types/openrouter-decisions';
 
 /**
  * LLM Gateway Responsiveness Test
@@ -1006,32 +1005,6 @@ export function resolveCloudflareApiToken(): string {
   return '';
 }
 
-function buildClassificationSmokeRequest(): Record<string, unknown> {
-  return {
-    state: "Recent code changes broke 3 existing tests. The async function wasn't waiting for database cleanup.",
-    questions: {
-      code_quality_issue: {
-        type: 'noul',
-        instructions: 'Is there a clear code quality issue?',
-      },
-      requires_human_review: {
-        type: 'choice',
-        instructions: 'Does this code require human review?',
-        criteria: {
-          yes: 'Code needs review before merge',
-          no: 'Code is safe to merge',
-          maybe: 'Unclear - needs clarification',
-        },
-      },
-      fix_risk_level: {
-        type: 'score',
-        instructions: 'What is the risk level of this fix?',
-        criteria: ['Low risk', 'Medium risk', 'High risk'],
-      },
-    },
-  };
-}
-
 export function shouldRunClassificationSmoke(requested: boolean): boolean {
   // For starter, classification smoke is opt-in via request parameter
   // In future, can add env var override similar to Pi provider smoke
@@ -1049,7 +1022,7 @@ function classificationFailure(error: unknown): Pick<ClassificationSmokeTestResu
   if (error.category === 'credentials') {
     return {
       detail: 'Senku rejected or could not read the Kaseki machine credential.',
-      remediation: 'Check SENKU_KASEKI_API_TOKEN_FILE and confirm the Kaseki identity is authorized for generic decisions.',
+      remediation: 'Check SENKU_KASEKI_API_TOKEN_FILE and confirm the Kaseki identity can evaluate kaseki_run_evaluation_v1.',
       ...(error.httpStatus ? { httpStatus: error.httpStatus } : {}),
     };
   }
@@ -1084,7 +1057,7 @@ function classificationFailure(error: unknown): Pick<ClassificationSmokeTestResu
 }
 
 /**
- * Test Senku's generic decision endpoint.
+ * Test Senku's server-owned run-evaluation profile.
  * @param requested Whether classification smoke was explicitly requested
  * @returns ClassificationSmokeTestResult with classifier validation details
  */
@@ -1102,12 +1075,19 @@ export async function testClassificationSmoke(requested: boolean = false): Promi
     };
   }
 
-  const requestBody = buildClassificationSmokeRequest();
-
   try {
-    const parsed = await decisionService.decide({
-      state: requestBody.state as string,
-      questions: requestBody.questions as Record<string, QuestionDefinition>,
+    if (!decisionService.evaluateProfile) throw new DecisionServiceError('configuration');
+    const parsed = await decisionService.evaluateProfile({
+      profileId: 'kaseki_run_evaluation_v1',
+      input: {
+        state: {
+          status: 'completed',
+          task_mode: 'inspect',
+          validation_status: 'passed',
+          summary: 'Synthetic profile smoke; no repository task was run.',
+        },
+        includeFailureDiagnosis: false,
+      },
       timeoutMs: 15000,
     });
     const answers = parsed.answers;

@@ -6,17 +6,17 @@ coding, and synthesis through the configured LLM Gateway.
 
 ```text
 Kaseki workflow and deterministic policy
-  ├─ SenkuDecisionService ── fixed profile and decision endpoints ── Senku ── JEV
+  ├─ SenkuDecisionService ── fixed profile endpoints ──────────────── Senku ── JEV
   └─ Pi coding agent ─────── configured LLM Gateway
 ```
 
 Kaseki uses Senku's authenticated REST API as its only remote JEV transport.
-Task Admission and Validation Recovery use Senku-owned versioned profiles;
-other callers use the generic endpoint while their questions remain dynamic or
-workflow-specific. The `DecisionService` interface remains provider-neutral
-for workflow callers, but there is no provider-selection setting or local JEV
-fallback. Senku selects `~typesafe/jev-latest` and returns the resolved model
-identifier. Kaseki never sends a model, provider endpoint, or provider API key.
+Every caller, including the optional gateway smoke, uses a Senku-owned
+versioned profile. The `DecisionService` interface exposes profile evaluation
+only; there is no caller-defined question API, provider-selection setting, or
+local JEV fallback. Senku selects `~typesafe/jev-latest` and returns the
+resolved model identifier. Kaseki never sends a model, provider endpoint, or
+provider API key.
 
 ## Decision call inventory
 
@@ -28,7 +28,7 @@ identifier. Kaseki never sends a model, provider endpoint, or provider API key.
 | Validation Recovery | Redacted command, exit code, and bounded output sent to `validation_recovery_v1`; Senku owns cause and action questions | 15 seconds by default | One profile request | Unavailable classification writes the diagnostic artifact and authorizes no retry. Auto mode still requires an exact allowlisted command, a supported transient cause, a retry recommendation, sufficient non-null confidence, and an unused retry. |
 | Caveman tool-output routing | Bounded routing metadata and a redacted goal summary | 1.2 seconds by default | One Senku request | Preserve original tool output, error evidence, and protected information on timeout, missing credentials, or invalid answers. Coding continues. |
 | Scouting/context handoff | Compact goal and bounded scouting facts | 1.2 seconds by default | One Senku request | Preserve required, protected, and unclassified facts when Senku is unavailable. |
-| Gateway classification smoke | Synthetic bounded sample questions | 15 seconds | One request, only when explicitly requested | It is an inference check and can incur provider usage. Routine health checks do not invoke it. |
+| Gateway classification smoke | Synthetic bounded evidence to `kaseki_run_evaluation_v1` | 15 seconds | One profile request, only when explicitly requested | It is an inference check and can incur provider usage. Routine health checks do not invoke it. |
 
 Timeout values are per stage and cover the complete HTTP operation, including
 response-body reading. Senku requests use `AbortController`; Kaseki does not
@@ -42,11 +42,10 @@ score confidence is `number | null`; null means confidence is unavailable and
 is treated as zero for every threshold. NouL confidence is null and its `noul`
 probability remains separately validated. Zero is a valid value.
 
-Kaseki validates each request before sending it and validates the full Senku
-response. Generic decisions require exactly the requested answer keys; profile
-decisions require the expected profile ID/version and answer contract. Both
-paths validate answer types and normalized distributions, reject unsupported
-schema versions, and accept omitted usage while preserving valid reported
+Kaseki validates each profile input before sending it and validates the full
+Senku response against its registered profile ID/version and answer contract.
+It validates answer types and normalized distributions, rejects unsupported
+schema versions, and accepts omitted usage while preserving valid reported
 usage. Requests are capped at 128 KiB and streamed responses at 64 KiB.
 
 ## Security and evidence boundaries

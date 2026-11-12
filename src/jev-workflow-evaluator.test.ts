@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { DecisionRequest, DecisionResult, DecisionService, ProfileDecisionRequest, ProfileDecisionResult } from './decision-service';
+import type { DecisionResult, DecisionService, ProfileDecisionRequest, ProfileDecisionResult } from './decision-service';
 import { DecisionServiceError } from './decision-service';
 import { evaluateWorkflow, type DecisionWorkflowDependencies } from './jev-workflow-evaluator';
 import type { ClassificationAnswer } from './types/openrouter-decisions';
@@ -16,22 +16,6 @@ const ENVIRONMENT_KEYS = [
 ] as const;
 
 type SavedEnvironment = Partial<Record<typeof ENVIRONMENT_KEYS[number], string>>;
-
-function answersFor(request: DecisionRequest): Record<string, ClassificationAnswer> {
-  return Object.fromEntries(Object.entries(request.questions).map(([id, question]) => {
-    if (question.type === 'noul') return [id, { type: 'noul', noul: 0.97 } satisfies ClassificationAnswer];
-    if (question.type === 'choice') {
-      const choices = Object.keys(question.criteria);
-      const choice = choices[0];
-      const probabilities = Object.fromEntries(choices.map((key) => [key, key === choice ? 1 : 0]));
-      return [id, { type: 'choice', choice, probabilities, confidence: 0.97 } satisfies ClassificationAnswer];
-    }
-    const score = question.criteria.length - 1;
-    const legend = Object.fromEntries(question.criteria.map((criterion, index) => [String(index), String(criterion)]));
-    const probabilities = Object.fromEntries(question.criteria.map((_, index) => [String(index), index === score ? 1 : 0]));
-    return [id, { type: 'score', score, legend, probabilities, confidence: 0.97 } satisfies ClassificationAnswer];
-  }));
-}
 
 function profileAnswersFor(request: ProfileDecisionRequest): Record<string, ClassificationAnswer> {
   if (request.profileId === 'kaseki_goal_check_v1') {
@@ -74,14 +58,6 @@ function successfulService(providerId = 'test-provider'): DecisionService & {
 } {
   return {
     providerId,
-    decide: async (request): Promise<DecisionResult> => ({
-      provider: providerId,
-      model: 'test/model',
-      answers: answersFor(request),
-      usage: { input_tokens: 120, output_tokens: 24 },
-      responseTime: 37,
-      attemptCount: 1,
-    }),
     evaluateProfile: async (request): Promise<ProfileDecisionResult> => ({
       provider: providerId,
       model: 'test/model',
@@ -434,7 +410,6 @@ describe('decision workflow telemetry', () => {
     await expect(evaluateWorkflow('run-evaluation', resultsDir, '1', {
       decisionService: {
         providerId: 'test-provider',
-        decide: async () => { throw providerError; },
         evaluateProfile: async () => { throw providerError; },
       },
       appendTelemetry,
@@ -450,7 +425,6 @@ describe('decision workflow telemetry', () => {
     const artifact = await evaluateWorkflow('validation-recovery', resultsDir, '1', {
       decisionService: {
         providerId: 'test-provider',
-        decide: async () => { throw new DecisionServiceError('network', { attemptCount: 1 }); },
         evaluateProfile: async () => { throw new DecisionServiceError('network', { attemptCount: 1 }); },
       },
       appendTelemetry,
