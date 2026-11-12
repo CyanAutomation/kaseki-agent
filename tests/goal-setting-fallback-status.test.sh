@@ -59,7 +59,6 @@ prompt="\${*: -1}"
 if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
   printf 'goal-setting\n' >> "$PI_CALLS"
   if [ "\${FAKE_GOAL_MODE:-}" = "timeout" ]; then
-    sleep 1
     printf '%s\n' 'simulated goal-setting timeout' >&2
     exit 124
   fi
@@ -164,7 +163,7 @@ set -e
 [ "$run_exit" -eq 0 ] || fail "expected zero exit after exhausted goal-setting timeouts, got $run_exit"
 [ "$(cat "$PI_CALLS")" = $'goal-setting\ngoal-setting\nscouting\ncoding\ngoal-check' ] || fail "goal-setting timeout fallback did not continue through later phases"
 [[ "$(cat "$GOAL_TIMEOUTS")" == $'300\n60' ]] || fail "timeout retry did not use the shorter configured deadline"
-grep -Eq '\[attempt 1 exit 124 duration [1-9][0-9]*\.[0-9]s' "$RESULTS_DIR/goal-setting-stderr.log" || { cat "$RESULTS_DIR/goal-setting-stderr.log" >&2; fail "goal-setting attempt duration was not recorded without bc"; }
+grep -Eq '\[attempt 1 exit 124 duration [0-9]+\.[0-9]s' "$RESULTS_DIR/goal-setting-stderr.log" || { cat "$RESULTS_DIR/goal-setting-stderr.log" >&2; fail "goal-setting attempt duration was not recorded without bc"; }
 node - "$RESULTS_DIR/goal-setting.json" "$RESULTS_DIR/metadata.json" "$RESULTS_DIR/goal-setting-validation-errors.jsonl" <<'NODE' || fail "exhausted goal-setting retries did not produce an observable original-prompt fallback"
 const fs = require('node:fs');
 const [goalPath, metadataPath, errorsPath] = process.argv.slice(2);

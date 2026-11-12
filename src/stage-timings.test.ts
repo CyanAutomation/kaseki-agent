@@ -1,3 +1,4 @@
+// Contract: docs/API.md#run-evaluation--improvement-aggregation
 import { aggregateStageDurations } from './stage-timings';
 
 describe('aggregateStageDurations', () => {
