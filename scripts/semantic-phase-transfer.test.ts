@@ -25,8 +25,10 @@ describe('semantic scouting phase transfer', () => {
   });
 
   it('batches bounded candidate decisions, retains protected files, and applies preserve/condense/discard', async () => {
-    const classify = jest.fn(async (state: Record<string, unknown>) => {
-      const candidates = state.candidates as PhaseTransferCandidate[];
+    const classify = jest.fn(async (profileId: string, input: { mode: string; evidence: Record<string, unknown> }) => {
+      expect(profileId).toBe('kaseki_context_routing_v1');
+      expect(input.mode).toBe('phase_transfer');
+      const candidates = input.evidence.candidates as PhaseTransferCandidate[];
       return { answers: Object.fromEntries(candidates.map(candidate => [candidate.id,
         candidateDecision(candidate, candidate.path === 'README.md' ? 'discard' : candidate.path === 'src/router.ts' ? 'condense' : 'preserve'),
       ])) };
@@ -35,13 +37,14 @@ describe('semantic scouting phase transfer', () => {
     const result = await routeScoutingContext(scouting(), { classify, enabled: true });
 
     expect(classify).toHaveBeenCalledTimes(1);
-    const [state, questions] = classify.mock.calls[0] as unknown as [Record<string, unknown>, Record<string, unknown>];
-    expect((state.candidates as PhaseTransferCandidate[]).length).toBe(5);
-    expect(state).toMatchObject({ phase_from: 'scouting', phase_to: 'coding', goal_summary: 'Update the route without changing generated files' });
-    expect((state.candidates as PhaseTransferCandidate[]).every(candidate => candidate.text.length <= 700)).toBe(true);
-    expect((state.goal_summary as string).length).toBeLessThanOrEqual(1200);
-    expect(JSON.stringify(state)).not.toContain('TASK_PROMPT');
-    expect(Object.keys(questions)).toHaveLength(5);
+    const [profileId, input] = classify.mock.calls[0] as unknown as [string, { mode: string; evidence: Record<string, unknown> }];
+    expect(profileId).toBe('kaseki_context_routing_v1');
+    expect(input.mode).toBe('phase_transfer');
+    expect((input.evidence.candidates as PhaseTransferCandidate[]).length).toBe(5);
+    expect(input.evidence).toMatchObject({ phase_from: 'scouting', phase_to: 'coding', goal_summary: 'Update the route without changing generated files' });
+    expect((input.evidence.candidates as PhaseTransferCandidate[]).every(candidate => candidate.text.length <= 700)).toBe(true);
+    expect((input.evidence.goal_summary as string).length).toBeLessThanOrEqual(1200);
+    expect(JSON.stringify(input)).not.toContain('TASK_PROMPT');
     expect(result.inspectedFiles.map(item => item.path)).toEqual(['src/router.ts', 'src/required.ts']);
     expect(result.inspectedFiles[0].facts).toEqual(['Uses a shared handler', 'Returns a typed response']);
     expect(result.inspectedFiles[1].facts).toEqual(['Must remain in scope']);
@@ -67,8 +70,8 @@ describe('semantic scouting phase transfer', () => {
     const input = scouting();
     const invalid = await routeScoutingContext(input, {
       enabled: true,
-      classify: async (state: Record<string, unknown>) => ({
-        answers: Object.fromEntries((state.candidates as PhaseTransferCandidate[]).map(candidate => [candidate.id, {
+      classify: async (_profileId: string, input: { mode: string; evidence: Record<string, unknown> }) => ({
+        answers: Object.fromEntries((input.evidence.candidates as PhaseTransferCandidate[]).map(candidate => [candidate.id, {
           type: 'choice', choice: 'discard', confidence: 0.99,
           probabilities: { preserve: 0.2, condense: 0.2, discard: 0.2 },
         } satisfies PhaseTransferDecision])),
@@ -77,8 +80,8 @@ describe('semantic scouting phase transfer', () => {
     const atBoundary = await routeScoutingContext(input, {
       enabled: true,
       discardThreshold: 0.98,
-      classify: async (state: Record<string, unknown>) => ({
-        answers: Object.fromEntries((state.candidates as PhaseTransferCandidate[]).map(candidate => [candidate.id,
+      classify: async (_profileId: string, input: { mode: string; evidence: Record<string, unknown> }) => ({
+        answers: Object.fromEntries((input.evidence.candidates as PhaseTransferCandidate[]).map(candidate => [candidate.id,
           candidateDecision(candidate, candidate.path === 'README.md' ? 'discard' : 'preserve'),
         ])),
       }),
@@ -101,14 +104,14 @@ describe('semantic scouting phase transfer', () => {
       },
       goalSummary: 'A bounded goal',
     };
-    const classify = jest.fn(async (state: Record<string, unknown>) => {
-      const candidates = state.candidates as PhaseTransferCandidate[];
+    const classify = jest.fn(async (_profileId: string, input: { mode: string; evidence: Record<string, unknown> }) => {
+      const candidates = input.evidence.candidates as PhaseTransferCandidate[];
       return { answers: Object.fromEntries(candidates.map(candidate => [candidate.id, candidateDecision(candidate, 'discard')])) };
     });
 
     const result = await routeScoutingContext(input, { classify, enabled: true });
 
-    expect((classify.mock.calls[0]?.[0] as { candidates: unknown[] }).candidates).toHaveLength(32);
+    expect((classify.mock.calls[0]?.[1] as { evidence: { candidates: unknown[] } }).evidence.candidates).toHaveLength(32);
     expect(result.implementationBrief.observations).toEqual(['Observation 32', 'Observation 33']);
     expect(result.metrics).toMatchObject({ candidateCount: 34, evaluatedItems: 32, discardedItems: 32, preservedItems: 2 });
   });
@@ -141,9 +144,9 @@ describe('semantic scouting phase transfer', () => {
     }, {
       enabled: true,
       redact: value => value.replace('supersecretvalue', '[REDACTED_SECRET]'),
-      classify: async state => {
-        request = state;
-        const candidates = state.candidates as PhaseTransferCandidate[];
+      classify: async (_profileId, input) => {
+        request = input;
+        const candidates = input.evidence.candidates as PhaseTransferCandidate[];
         return { answers: Object.fromEntries(candidates.map(candidate => [candidate.id, candidateDecision(candidate, 'preserve')])) };
       },
     });

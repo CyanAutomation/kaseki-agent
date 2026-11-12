@@ -221,22 +221,21 @@ export const buildContextHandoff = async (resultsDir, phase, completionCondition
 async function runCli() {
   if (!process.argv[1] || path.basename(process.argv[1]) !== 'context-handoff.js') return;
   const appRoot = [process.env.KASEKI_APP_ROOT, process.cwd(), '/app']
-    .find(root => root && fs.existsSync(path.join(root, 'dist/jev-classifier.js')))
+    .find(root => root && fs.existsSync(path.join(root, 'dist/decision-service/senku-client.js')))
     || process.env.KASEKI_APP_ROOT || process.cwd();
   let dependencies = {};
   if (process.argv[3] === 'scouting'
     && process.env.KASEKI_SEMANTIC_CONTEXT_ROUTER_ENABLED !== '0'
     && process.env.KASEKI_SEMANTIC_PHASE_TRANSFER_ENABLED !== '0') {
     try {
-      const [classifier, redaction] = await Promise.all([
-        import(pathToFileURL(path.join(appRoot, 'dist/jev-classifier.js')).href),
+      const [senkuClient, redaction] = await Promise.all([
+        import(pathToFileURL(path.join(appRoot, 'dist/decision-service/senku-client.js')).href),
         import(pathToFileURL(path.join(appRoot, 'dist/jev-evidence-redaction.js')).href),
       ]);
       const timeout = Number.parseInt(process.env.KASEKI_CAVEMAN_ROUTER_TIMEOUT_MS || '1200', 10);
       dependencies = {
-        classify: (state, questions) => classifier.classifyWithJev(state, questions, {
+        classify: (profileId, input) => senkuClient.requestSenkuProfile(profileId, input, {
           timeoutMs: Number.isInteger(timeout) && timeout > 0 ? timeout : 1200,
-          maxRetries: 0,
         }),
         redact: redaction.redactJevEvidence,
       };

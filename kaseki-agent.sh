@@ -69,6 +69,7 @@ fi
 
 KASEKI_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export KASEKI_SCRIPT_DIR
+. "$KASEKI_SCRIPT_DIR/scripts/lib/reject-retired-decision-settings.sh"
 KASEKI_PHASE_BUDGET_HELPER="${KASEKI_PHASE_BUDGET_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/lib/phase-budget.sh}"
 if [ ! -r "$KASEKI_PHASE_BUDGET_HELPER" ] && [ -r /app/scripts/lib/phase-budget.sh ]; then
   KASEKI_PHASE_BUDGET_HELPER="/app/scripts/lib/phase-budget.sh"
@@ -84,18 +85,7 @@ if [ "$source_status" -ne 0 ]; then
   printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_PHASE_BUDGET_HELPER" "$source_status" >&2
   exit 1
 fi
-RETIRED_EVALUATION_SETTINGS=(
-  KASEKI_JEV_WORKFLOW KASEKI_JEV_CONFIDENCE KASEKI_JEV_GOAL_CHECK_TIMEOUT_MS
-  KASEKI_JEV_RUN_EVALUATION_TIMEOUT_MS KASEKI_JEV_WORKFLOW_EVALUATOR
-  KASEKI_CLASSIFICATION_MODEL KASEKI_JEV_API_KEY_FILE KASEKI_JEV_TASK_TYPE
-  KASEKI_JEV_VALIDATION_FOCUS
-)
-for retired_setting in "${RETIRED_EVALUATION_SETTINGS[@]}"; do
-  if [ "${!retired_setting+x}" = "x" ]; then
-    printf 'ERROR: Retired evaluation settings are configured. Remove them and use the stage-based settings documented in docs/ENV_VARS.md.\n' >&2
-    exit 2
-  fi
-done
+reject_retired_decision_settings || exit $?
 KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER="${KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/validation-timeout-policy.sh}"
 if [ ! -r "$KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER" ] && [ -r /app/scripts/validation-timeout-policy.sh ]; then
   KASEKI_VALIDATION_TIMEOUT_POLICY_HELPER="/app/scripts/validation-timeout-policy.sh"

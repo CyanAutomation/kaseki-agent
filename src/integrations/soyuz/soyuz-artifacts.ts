@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open } from 'node:fs/promises';
 import path from 'node:path';
+import { SoyuzRunOutcomeSummarySchema, type SoyuzRunOutcomeSummary } from './run-outcome-summary';
 
 export const MAX_SOYUZ_ARTIFACT_BYTES = 2_000_000;
 const SOYUZ_ARTIFACT_NAMESPACE = Buffer.from('d53a6a7436945ed7a108d82f89d94414', 'hex');
@@ -32,14 +33,17 @@ export interface SoyuzTerminalOutcome {
   summary?: string;
   publishedUrl?: string;
   changedFileCount?: number;
+  outcomeSummary?: SoyuzRunOutcomeSummary;
 }
 
 export async function loadSoyuzTerminalOutcome(resultDir: string | undefined): Promise<SoyuzTerminalOutcome> {
   if (!resultDir) return {};
-  const [summaryFile, metadataFile, changedFilesFile] = await Promise.all([
+  const [summaryFile, metadataFile, changedFilesFile, scorecardFile, evaluationFile] = await Promise.all([
     readArtifactFile(path.join(resultDir, 'result-summary.md')),
     readArtifactFile(path.join(resultDir, 'metadata.json')),
     readArtifactFile(path.join(resultDir, 'changed-files.txt')),
+    readArtifactFile(path.join(resultDir, 'run-scorecard.json')),
+    readArtifactFile(path.join(resultDir, 'run-evaluation.json')),
   ]);
   const outcome: SoyuzTerminalOutcome = {};
 
@@ -62,7 +66,95 @@ export async function loadSoyuzTerminalOutcome(resultDir: string | undefined): P
     const changedFiles = new Set(changedFilesFile.toString('utf8').split(/\r?\n/).map((file) => file.trim()).filter(Boolean));
     if (changedFiles.size <= 100_000) outcome.changedFileCount = changedFiles.size;
   }
+  const outcomeSummary = buildOutcomeSummary(scorecardFile, evaluationFile);
+  if (outcomeSummary) outcome.outcomeSummary = outcomeSummary;
   return outcome;
+}
+
+function buildOutcomeSummary(
+  scorecardFile: Buffer | null | 'unsafe_file' | 'too_large',
+  evaluationFile: Buffer | null | 'unsafe_file' | 'too_large',
+): SoyuzRunOutcomeSummary | undefined {
+  const scorecard = parseJsonRecord(scorecardFile);
+  const evaluation = parseJsonRecord(evaluationFile);
+  if (!scorecard && !evaluation) return undefined;
+
+  const projected: Record<string, unknown> = { schemaVersion: 1 };
+  const scorecardConfidence = record(scorecard?.confidence).score;
+  const scorecardProjection = {
+    score: scorecard?.overall_score,
+    grade: scorecard?.grade,
+    rubricVersion: scorecard?.rubric_version,
+    completeness: scorecard?.completeness,
+    confidence: scorecardConfidence,
+    scoredAt: scorecard?.scored_at,
+  };
+  if (SoyuzRunOutcomeSummarySchema.shape.scorecard.safeParse(scorecardProjection).success) {
+    projected.scorecard = scorecardProjection;
+  }
+
+  if (evaluation) {
+    const rawCategories = Array.isArray(evaluation.kaseki_improvement_opportunities)
+      ? evaluation.kaseki_improvement_opportunities
+      : [];
+    const categoryCounts = new Map<string, { category: string; priority: string; count: number }>();
+    for (const value of rawCategories.slice(0, 100)) {
+      const opportunity = record(value);
+      const category = slugCategory(opportunity.category);
+      if (!category) continue;
+      const priority = ['low', 'medium', 'high'].includes(String(opportunity.priority).toLowerCase())
+        ? String(opportunity.priority).toLowerCase()
+        : 'unknown';
+      const key = `${category}\0${priority}`;
+      const group = categoryCounts.get(key) ?? { category, priority, count: 0 };
+      group.count += 1;
+      categoryCounts.set(key, group);
+    }
+    const evaluationProjection = {
+      assessment: enumValue(evaluation.overall_assessment, ['excellent', 'good', 'mixed', 'poor'], 'unknown'),
+      reviewerConfidence: enumValue(evaluation.reviewer_confidence, ['high', 'medium', 'low'], 'unknown'),
+      ...(Number.isInteger(evaluation.task_completion_score)
+        && Number(evaluation.task_completion_score) >= 1 && Number(evaluation.task_completion_score) <= 5
+        ? { taskCompletionScore: Number(evaluation.task_completion_score) }
+        : {}),
+      improvementCategories: [...categoryCounts.values()].slice(0, 20),
+    };
+    if (SoyuzRunOutcomeSummarySchema.shape.evaluation.safeParse(evaluationProjection).success) {
+      projected.evaluation = evaluationProjection;
+    }
+  }
+
+  const phaseDurations = record(record(scorecard?.timing_totals).phase_duration_ms);
+  const phaseDurationMs = Object.fromEntries(
+    ['goal_setting', 'scouting', 'coding', 'validation', 'goal_check', 'run_evaluation']
+      .filter((phase) => Number.isFinite(phaseDurations[phase]) && Number(phaseDurations[phase]) >= 0)
+      .map((phase) => [phase, Number(phaseDurations[phase])]),
+  );
+  if (Object.keys(phaseDurationMs).length) projected.phaseDurationMs = phaseDurationMs;
+
+  const result = SoyuzRunOutcomeSummarySchema.safeParse(projected);
+  return result.success ? result.data : undefined;
+}
+
+function parseJsonRecord(file: Buffer | null | 'unsafe_file' | 'too_large'): Record<string, unknown> | undefined {
+  if (!Buffer.isBuffer(file)) return undefined;
+  try { return record(JSON.parse(file.toString('utf8'))); } catch { return undefined; }
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function slugCategory(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const slug = value.toLowerCase().trim().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 64);
+  return /^[a-z0-9][a-z0-9_-]{0,63}$/.test(slug) ? slug : undefined;
+}
+
+function enumValue<const T extends readonly string[], F extends string>(value: unknown, values: T, fallback: F): T[number] | F {
+  return typeof value === 'string' && (values as readonly string[]).includes(value.toLowerCase())
+    ? value.toLowerCase() as T[number]
+    : fallback;
 }
 
 export async function loadSoyuzArtifacts(

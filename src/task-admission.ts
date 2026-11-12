@@ -1,7 +1,7 @@
 import { parsePositiveInt } from './lib/env-var-helpers.js';
 import { answerConfidence, answerIsTrue } from './decision-answers';
 import { DecisionServiceError, decisionFailureMetadata, decisionService } from './decision-service';
-import { hasRetiredDecisionSettings } from './jev-classifier';
+import { hasRetiredDecisionSettings } from './decision-service/senku-client';
 import type { ClassificationAnswer } from './types/openrouter-decisions';
 
 export const TASK_ADMISSION_EXIT_CODE = 9;

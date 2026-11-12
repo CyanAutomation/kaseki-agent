@@ -9,9 +9,11 @@ HTTPS; Cloudflare Service Bindings are only for Worker-to-Worker consumers.
 The default endpoint is `https://senku.scheimann.workers.dev`. Set
 `SENKU_URL` to a trusted HTTPS origin when using another deployment. The client
 uses fixed paths: Task Admission calls
-`/v1/profiles/task_admission_v1/evaluate`, Validation Recovery calls
-`/v1/profiles/validation_recovery_v1/evaluate`, and other workflows that need
-dynamic questions call `/v1/decisions`. It rejects embedded URL credentials,
+`/v1/profiles/task_admission_v1/evaluate`, Goal Check calls
+`/v1/profiles/kaseki_goal_check_v1/evaluate`, Run Evaluation calls
+`/v1/profiles/kaseki_run_evaluation_v1/evaluate`, Validation Recovery calls
+`/v1/profiles/validation_recovery_v1/evaluate`, and Caveman/tool handoff calls
+`/v1/profiles/kaseki_context_routing_v1/evaluate`. It rejects embedded URL credentials,
 paths, query strings, fragments, and redirects. Explicit
 `http://localhost`, `http://127.x.x.x`, and `http://[::1]` origins are allowed
 outside production for local contract tests.
@@ -57,17 +59,20 @@ startup; decision stages follow their stage-specific degradation policy.
 
 ## REST contract
 
-Task Admission and Validation Recovery use versioned Senku profiles. They send
-only bounded input evidence; Senku owns their question wording, criteria, and
-profile response schema. Kaseki validates the expected profile ID and version,
-answer IDs and labels, and the canonical `result` mirror before consuming the
-answers. The task-admission profile receives the redacted repository URL, ref,
-task prompt, validation commands, allowlist, and enabled stage settings. The
-validation-recovery profile receives the redacted command, exit code, and
-bounded failure output. Both profile answers remain advisory.
+All workflow decisions use versioned Senku profiles. Callers send bounded input
+evidence; Senku owns question wording, criteria, and response schemas. Kaseki
+validates the expected profile ID and version, answer IDs and labels, and the
+canonical `result` mirror before consuming answers. Task Admission receives
+redacted repository/task fields, Goal Check receives bounded run evidence and
+success criteria, Run Evaluation receives bounded outcome evidence, Validation
+Recovery receives the failed command and bounded output, and Context Routing
+receives output metadata or bounded scouting facts. Context Routing never
+receives raw tool output, source code, or shell command text. All profile
+answers remain advisory.
 
-Other current callers use the Kaseki-only generic endpoint for dynamic or
-caller-specific questions:
+Only the opt-in API gateway Evaluation smoke check still uses the Kaseki-only
+generic endpoint, with a fixed synthetic scenario. Workflow question definitions
+are no longer supplied by Kaseki callers:
 
 ```http
 POST /v1/decisions
@@ -172,8 +177,9 @@ running:
 SENKU_REPO_PATH=/path/to/senku npm run test:senku-contract
 ```
 
-This exercises authentication, generic-request validation, response
-validation, and Senku's safe error envelopes without a paid inference call.
+This exercises profile authentication, input and response validation, and
+Senku's safe error envelopes without a paid inference call. The opt-in gateway
+smoke separately covers the narrow generic-decision contract.
 The provider fetch is mocked and the test asserts exactly one upstream
 attempt. The script exits with a setup error if the checkout or Node.js 26 is
 unavailable; the transport unit tests remain independently runnable.
@@ -189,9 +195,15 @@ connectivity, and do not deploy changes as part of this implementation.
 Before a controlled rollout, install the approved Kaseki Senku machine token
 on each host as `senku_kaseki_api_token`, confirm the secret directory is
 mounted read-only, and set `SENKU_URL` only if the default origin is not used.
-An explicitly invoked smoke can then verify the identity and response
-contract. No Senku Worker redeployment is required for the existing generic
-endpoint.
+The smoke can verify the narrow generic gateway-probe contract. Before
+enabling migrated workflows on a host, confirm the deployed Senku Worker
+exposes all five Kaseki profiles and grants the Kaseki identity access to them.
+The profile implementations and permission changes require a Senku deployment;
+do not assume a live service has them until its deployment is verified. Roll
+out Senku's profile contracts first, Soyuz's optional outcome-summary callback
+and read routes second, then Kaseki hosts that call the new profiles and send
+the summary. This order keeps strict version-1 callback validators compatible
+through the rollout.
 
 Kaseki no longer reads `OPENROUTER_API_KEY` or `OPENROUTER_API_KEY_FILE` for
 decision inference. Existing host OpenRouter files are left untouched; remove
@@ -199,9 +211,8 @@ them only through the host's normal credential-management process after
 confirming no unrelated coding integration uses them. The LLM Gateway key
 remains separate and continues to power Pi coding inference.
 
-## Phase 4B
-
-Phase 4A keeps existing Kaseki question maps on the generic endpoint. A later
-profile migration may move stable question sets to Senku-owned named profiles
-after the profile contracts cover Kaseki's required input and answer meanings.
-It must preserve local workflow and deterministic policy ownership.
+Goal Check, Run Evaluation, Task Admission, Validation Recovery, context
+routing, and scouting handoff now use versioned, Senku-owned profiles. The
+generic endpoint remains only for the explicit synthetic gateway Evaluation
+smoke. Kaseki keeps evidence extraction, confidence thresholds, retry
+authorization, and execution safety in local deterministic policy.
