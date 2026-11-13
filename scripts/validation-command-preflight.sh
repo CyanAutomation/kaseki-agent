@@ -22,8 +22,6 @@ validation_command_first_missing_executable() {
         ;;
     esac
 
-    # Repository package binaries become available during dependency setup.
-    [[ "$executable" == ./node_modules/.bin/* ]] && return 1
     if [[ "$executable" == */* ]]; then
       [ -x "$executable" ] || { printf '%s' "$executable"; return 0; }
     elif ! command -v "$executable" >/dev/null 2>&1; then
@@ -138,11 +136,29 @@ validation_command_preflight() {
   {
     printf '[validation toolchain preflight] missing_executable=%s\n' "$missing"
     printf '[validation toolchain preflight] commands=%s\n' "$commands"
-    printf 'Validation was not started because the worker image does not provide the required executable.\n'
-    printf 'Install the toolchain in the worker image or choose validation commands supported by this image.\n'
+    printf 'Validation was not started because the validation environment does not provide the required executable.\n'
+    printf 'Install it as a project dependency or in the worker image, or choose a supported validation command.\n'
     printf 'exit_code=127\n'
   } > "$log_file"
   return 127
+}
+
+# Add the repository's installed package binaries for direct validation
+# commands such as `eslint .` and `tsc -p ...`. Run this after dependency
+# preparation and only in the validation shell so repository binaries do not
+# shadow worker tools during agent or controller work.
+validation_prepend_repository_bins() {
+  local repository="$1" repository_root bin_dir
+  [ -d "$repository" ] || return 0
+  repository_root="$(cd -- "$repository" && pwd -P)" || return 0
+  bin_dir="$repository_root/node_modules/.bin"
+  [ -d "$bin_dir" ] || return 0
+  case ":${PATH:-}:" in
+    *":$bin_dir:"*) return 0 ;;
+  esac
+  PATH="$bin_dir${PATH:+:$PATH}"
+  export PATH
+  hash -r 2>/dev/null || true
 }
 
 validation_runtime_identity() {

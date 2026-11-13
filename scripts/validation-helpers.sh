@@ -380,10 +380,14 @@ run_validation_commands() {
   local stage_start validation_start validation_end duration command trimmed missing_npm_script
   local command_exit tee_exit filter_exit pipe_statuses execute_during_dry_run pipefail_was_enabled validation_infra_failure cmd_status heartbeat_pid
   local -a validation_commands
+  # Keep package-local executables available to direct commands, while limiting
+  # the repository PATH to this validation function's process tree.
+  local -x PATH="${PATH:-}"
 
   KASEKI_WORKSPACE_DIR="$workspace_dir"
   KASEKI_RESULTS_DIR="$results_dir"
   export KASEKI_WORKSPACE_DIR KASEKI_RESULTS_DIR
+  validation_prepend_repository_bins "${workspace_dir}/repo"
   mkdir -p "$KASEKI_RESULTS_DIR"
   : > "${KASEKI_RESULTS_DIR}/quality.log"
 

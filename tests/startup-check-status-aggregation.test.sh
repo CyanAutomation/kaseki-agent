@@ -153,7 +153,7 @@ test_worker_preflight_blocks_when_a_scouting_template_is_missing() {
   for helper in agent-prompt.sh evaluation-prompts.sh allowlist-helper.sh context-handoff.js semantic-phase-transfer.js restore-disallowed-changes.sh inspect-mode-defaults.sh dependency-cache-helpers.sh auto-lint-cleanup-classification.sh scouting-allowlist.js; do
     : > "$helper_root/$helper"
   done
-  for helper in json.sh json-events.sh provider-retry.sh; do
+  for helper in json.sh json-events.sh provider-retry.sh reject-retired-decision-settings.sh; do
     : > "$helper_root/lib/$helper"
   done
   # Deliberately omit compact.txt while keeping the other required templates.
@@ -183,6 +183,47 @@ test_worker_preflight_blocks_when_a_scouting_template_is_missing() {
     "$template_root/compact.txt"
 }
 
+test_worker_preflight_blocks_when_retired_decision_helper_is_missing() {
+  local case_tmp="$TMP_DIR/missing-retired-decision-helper"
+  local helper_root="$case_tmp/helpers" template_root="$case_tmp/templates/scouting"
+  local agent_bin="$case_tmp/kaseki-agent"
+  mkdir -p "$helper_root/lib" "$template_root" "$case_tmp/results" "$case_tmp/secrets"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$agent_bin"
+  chmod +x "$agent_bin"
+
+  local helper template
+  for helper in agent-prompt.sh evaluation-prompts.sh allowlist-helper.sh context-handoff.js semantic-phase-transfer.js restore-disallowed-changes.sh inspect-mode-defaults.sh dependency-cache-helpers.sh auto-lint-cleanup-classification.sh scouting-allowlist.js; do
+    : > "$helper_root/$helper"
+  done
+  for helper in json.sh json-events.sh provider-retry.sh; do
+    : > "$helper_root/lib/$helper"
+  done
+  for template in compact.txt base.txt detailed-test-impact.txt minimal-test-impact.txt common.txt; do
+    : > "$template_root/$template"
+  done
+
+  local output status
+  set +e
+  output="$(env \
+    HOME="$case_tmp/home" \
+    KASEKI_AGENT_BIN="$agent_bin" \
+    KASEKI_AGENT_HELPER_ROOT="$helper_root" \
+    KASEKI_SCOUTING_TEMPLATE_ROOT="$template_root" \
+    KASEKI_RESULTS_DIR="$case_tmp/results" \
+    KASEKI_SECRETS_DIR="$case_tmp/secrets" \
+    KASEKI_PROVIDER=unsupported \
+    GITHUB_APP_ENABLED=0 \
+    KASEKI_STARTUP_CHECK_AUTO_REMEDIATE=0 \
+    bash "$ROOT_DIR/scripts/startup-checks.sh" worker 2>&1)"
+  status=$?
+  set -e
+
+  assert_exit_code "$status" 2 "worker preflight with missing retired-decision helper" "$output"
+  assert_required_diagnostics "$output" \
+    "Packaged agent helper or scouting template files are missing or unreadable" \
+    "$helper_root/lib/reject-retired-decision-settings.sh"
+}
+
 test_worker_startup_accepts_public_github_ids_without_id_files() {
   local case_tmp="$TMP_DIR/public-github-ids"
   local helper_root="$case_tmp/helpers" template_root="$case_tmp/templates/scouting"
@@ -196,7 +237,7 @@ test_worker_startup_accepts_public_github_ids_without_id_files() {
   for helper in agent-prompt.sh evaluation-prompts.sh allowlist-helper.sh context-handoff.js semantic-phase-transfer.js restore-disallowed-changes.sh inspect-mode-defaults.sh dependency-cache-helpers.sh auto-lint-cleanup-classification.sh scouting-allowlist.js; do
     : > "$helper_root/$helper"
   done
-  for helper in json.sh json-events.sh provider-retry.sh; do
+  for helper in json.sh json-events.sh provider-retry.sh reject-retired-decision-settings.sh; do
     : > "$helper_root/lib/$helper"
   done
   for template in base.txt detailed-test-impact.txt minimal-test-impact.txt common.txt compact.txt; do
@@ -243,6 +284,9 @@ printf '✓ missing LLM_GATEWAY_URL stops before provider capability checks and 
 
 test_worker_preflight_blocks_when_a_scouting_template_is_missing
 printf '✓ worker preflight blocks missing scouting templates\n'
+
+test_worker_preflight_blocks_when_retired_decision_helper_is_missing
+printf '✓ worker preflight blocks a missing retired-decision helper\n'
 
 test_worker_startup_accepts_public_github_ids_without_id_files
 printf '✓ worker startup accepts public GitHub App IDs without ID files\n'
