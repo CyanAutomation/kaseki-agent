@@ -260,6 +260,7 @@ RUN chmod +x \
     && install -m 0644 /app/scripts/lib/provider-retry.sh /usr/local/bin/scripts/lib/provider-retry.sh \
     && install -m 0644 /app/scripts/lib/repo-memory.sh /usr/local/bin/scripts/lib/repo-memory.sh \
     && install -m 0644 /app/scripts/lib/goal-contract.cjs /usr/local/bin/scripts/lib/goal-contract.cjs \
+    && install -m 0644 /app/scripts/lib/reject-retired-decision-settings.sh /usr/local/bin/scripts/lib/reject-retired-decision-settings.sh \
     && chmod 0755 \
       /usr/local/bin/kaseki-entrypoint \
       /usr/local/bin/kaseki-pi-event-filter \
@@ -433,6 +434,7 @@ RUN mkdir -p /scripts \
     && install -m 0644 /app/scripts/lib/provider-retry.sh /usr/local/bin/scripts/lib/provider-retry.sh \
     && install -m 0644 /app/scripts/lib/repo-memory.sh /usr/local/bin/scripts/lib/repo-memory.sh \
     && install -m 0644 /app/scripts/lib/goal-contract.cjs /usr/local/bin/scripts/lib/goal-contract.cjs \
+    && install -m 0644 /app/scripts/lib/reject-retired-decision-settings.sh /usr/local/bin/scripts/lib/reject-retired-decision-settings.sh \
     && chmod 0755 \
       /usr/local/bin/kaseki-entrypoint \
       /usr/local/bin/kaseki-pi-event-filter \
