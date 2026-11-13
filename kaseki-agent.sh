@@ -10113,33 +10113,6 @@ if [ -z "${KASEKI_AUTO_LINT_CLEANUP_COMMANDS_EXPLICIT:-}" ]; then
   KASEKI_AUTO_LINT_CLEANUP_COMMANDS="$(target_package_manager) run lint:fix;__kaseki_trailing_whitespace_cleanup__"
 fi
 
-# Catch missing direct validation tools before dependency preparation or a
-# baseline checkout. This avoids repeating a command-not-found failure and
-# prevents infrastructure errors from entering the baseline cache.
-if [ "$KASEKI_PRE_AGENT_VALIDATION" = "1" ] && [ "$KASEKI_TASK_MODE" != "inspect" ]; then
-  validation_toolchain_preflight_status=0
-  validation_command_preflight \
-    "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
-    "${KASEKI_RESULTS_DIR}/pre-validation.log" || validation_toolchain_preflight_status=$?
-  if [ "$validation_toolchain_preflight_status" -ne 0 ]; then
-    missing_validation_executable="$(validation_command_missing_executable "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" || true)"
-    set_current_stage "pre-agent validation"
-    STATUS="$validation_toolchain_preflight_status"
-    FAILED_COMMAND="pre-agent validation"
-    PRE_VALIDATION_EXIT="$validation_toolchain_preflight_status"
-    PRE_VALIDATION_COMMANDS_ATTEMPTED=0
-    PRE_VALIDATION_FAILED_COMMAND_DETAIL="required executable '$missing_validation_executable' is not available in the worker image"
-    PRE_VALIDATION_FAILURE_REASON="validation_toolchain_preflight_failed: missing executable $missing_validation_executable"
-    record_stage_timing "pre-agent validation" "$validation_toolchain_preflight_status" 0 "preflight_missing_executable=$missing_validation_executable"
-    emit_progress "pre-agent validation" "blocked before validation because executable=$missing_validation_executable is missing" "error"
-    emit_event "validation_toolchain_preflight_failed" "stage=pre-agent validation" "missing_executable=$missing_validation_executable" "commands=$KASEKI_PRE_AGENT_VALIDATION_COMMANDS"
-    emit_event "phase_not_reached" "phase=scouting" "reason=pre_agent_validation_toolchain_missing" "missing_executable=$missing_validation_executable"
-    emit_event "phase_not_reached" "phase=weaving" "reason=pre_agent_validation_toolchain_missing" "missing_executable=$missing_validation_executable"
-    emit_error_event "pre_agent_validation_toolchain_missing" "Pre-agent validation was not run because the worker image lacks executable '$missing_validation_executable'. Install the toolchain or choose supported validation commands." "exit"
-    exit 0
-  fi
-fi
-
 prepare_dependencies() {
   if [ ! -f package.json ]; then
     printf 'No package.json found; skipping dependency installation.\n'
@@ -10530,6 +10503,43 @@ prepare_dependencies() {
 
 if ! run_step "prepare node dependencies" prepare_dependencies; then
   exit 0
+fi
+
+# Check direct validation tools after dependency preparation, when project-local
+# binaries such as eslint and tsc are installed and on PATH. Keep this before
+# baseline validation so missing tools cannot poison the baseline cache.
+if [ "$KASEKI_PRE_AGENT_VALIDATION" = "1" ] && [ "$KASEKI_TASK_MODE" != "inspect" ]; then
+  validation_toolchain_preflight_status=0
+  if (
+    validation_prepend_repository_bins "${KASEKI_WORKSPACE_DIR}/repo"
+    validation_command_preflight \
+      "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
+      "${KASEKI_RESULTS_DIR}/pre-validation.log"
+  ); then
+    validation_toolchain_preflight_status=0
+  else
+    validation_toolchain_preflight_status=$?
+  fi
+  if [ "$validation_toolchain_preflight_status" -ne 0 ]; then
+    missing_validation_executable="$(
+      validation_prepend_repository_bins "${KASEKI_WORKSPACE_DIR}/repo"
+      validation_command_missing_executable "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" || true
+    )"
+    set_current_stage "pre-agent validation"
+    STATUS="$validation_toolchain_preflight_status"
+    FAILED_COMMAND="pre-agent validation"
+    PRE_VALIDATION_EXIT="$validation_toolchain_preflight_status"
+    PRE_VALIDATION_COMMANDS_ATTEMPTED=0
+    PRE_VALIDATION_FAILED_COMMAND_DETAIL="required executable '$missing_validation_executable' is not available after dependency preparation"
+    PRE_VALIDATION_FAILURE_REASON="validation_toolchain_preflight_failed: missing executable $missing_validation_executable"
+    record_stage_timing "pre-agent validation" "$validation_toolchain_preflight_status" 0 "preflight_missing_executable=$missing_validation_executable"
+    emit_progress "pre-agent validation" "blocked before validation because executable=$missing_validation_executable is missing after dependency preparation" "error"
+    emit_event "validation_toolchain_preflight_failed" "stage=pre-agent validation" "missing_executable=$missing_validation_executable" "commands=$KASEKI_PRE_AGENT_VALIDATION_COMMANDS"
+    emit_event "phase_not_reached" "phase=scouting" "reason=pre_agent_validation_toolchain_missing" "missing_executable=$missing_validation_executable"
+    emit_event "phase_not_reached" "phase=weaving" "reason=pre_agent_validation_toolchain_missing" "missing_executable=$missing_validation_executable"
+    emit_error_event "pre_agent_validation_toolchain_missing" "Pre-agent validation was not run because executable '$missing_validation_executable' was unavailable after dependency preparation. Declare/install it as a project dependency or provide it in the worker image." "exit"
+    exit 0
+  fi
 fi
 
 # Baseline validation: resolve and checkout the configured baseline ref, then run
