@@ -4,6 +4,24 @@
 # Shell library for validation command helpers shared by runtime tests.
 # Script inspection and package-manager selection are shared with the worker.
 
+# Add the repository's installed package binaries for direct validation
+# commands such as `eslint .` and `tsc -p ...`. Run this after dependency
+# preparation and only in the validation shell so repository binaries do not
+# shadow worker tools during agent or controller work.
+validation_prepend_repository_bins() {
+  local repository="$1" repository_root bin_dir
+  [ -d "$repository" ] || return 0
+  repository_root="$(cd -- "$repository" && pwd -P)" || return 0
+  bin_dir="$repository_root/node_modules/.bin"
+  [ -d "$bin_dir" ] || return 0
+  case ":${PATH:-}:" in
+    *":$bin_dir:"*) return 0 ;;
+  esac
+  PATH="$bin_dir${PATH:+:$PATH}"
+  export PATH
+  hash -r 2>/dev/null || true
+}
+
 validation_runtime_helper() {
   local helper
   helper="$(dirname "${BASH_SOURCE[0]}")/validation-runtime.mjs"
