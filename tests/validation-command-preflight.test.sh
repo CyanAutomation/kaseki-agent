@@ -13,6 +13,8 @@ ORIGINAL_PATH="$PATH"
 trap cleanup EXIT
 
 . "$ROOT_DIR/scripts/validation-command-preflight.sh"
+# shellcheck source=../scripts/validation-helpers.sh
+. "$ROOT_DIR/scripts/validation-helpers.sh"
 
 mkdir -p "$TMP_DIR/bin"
 cat > "$TMP_DIR/bin/npm" <<'EOF'
