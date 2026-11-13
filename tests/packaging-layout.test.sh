@@ -87,6 +87,8 @@ done
 
 docker_helper_installs="$(grep -Fc 'install -m 0644 /app/scripts/lib/goal-contract.cjs /usr/local/bin/scripts/lib/goal-contract.cjs' "$ROOT_DIR/Dockerfile")"
 [[ "$docker_helper_installs" -eq 2 ]] || fail "Docker runtime must install the goal-contract helper in both image stages (found $docker_helper_installs)"
+retired_decision_helper_installs="$(grep -Fc 'install -m 0644 /app/scripts/lib/reject-retired-decision-settings.sh /usr/local/bin/scripts/lib/reject-retired-decision-settings.sh' "$ROOT_DIR/Dockerfile")"
+[[ "$retired_decision_helper_installs" -eq 2 ]] || fail "Docker runtime must install the retired-decision-settings helper in both image stages (found $retired_decision_helper_installs)"
 
 printf '\n## Importable package entry points\n'
 PACKAGE_DIR="$PACKAGE_DIR" node --input-type=module <<'NODE'

@@ -779,6 +779,7 @@ check_packaged_agent_helpers() {
     "lib/json.sh"
     "lib/json-events.sh"
     "lib/provider-retry.sh"
+    "lib/reject-retired-decision-settings.sh"
   )
   local required_scouting_templates=(
     "compact.txt"

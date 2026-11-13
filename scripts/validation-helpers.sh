@@ -4,6 +4,24 @@
 # Shell library for validation command helpers shared by runtime tests.
 # Script inspection and package-manager selection are shared with the worker.
 
+# Add the repository's installed package binaries for direct validation
+# commands such as `eslint .` and `tsc -p ...`. Run this after dependency
+# preparation and only in the validation shell so repository binaries do not
+# shadow worker tools during agent or controller work.
+validation_prepend_repository_bins() {
+  local repository="$1" repository_root bin_dir
+  [ -d "$repository" ] || return 0
+  repository_root="$(cd -- "$repository" && pwd -P)" || return 0
+  bin_dir="$repository_root/node_modules/.bin"
+  [ -d "$bin_dir" ] || return 0
+  case ":${PATH:-}:" in
+    *":$bin_dir:"*) return 0 ;;
+  esac
+  PATH="$bin_dir${PATH:+:$PATH}"
+  export PATH
+  hash -r 2>/dev/null || true
+}
+
 validation_runtime_helper() {
   local helper
   helper="$(dirname "${BASH_SOURCE[0]}")/validation-runtime.mjs"
@@ -380,10 +398,14 @@ run_validation_commands() {
   local stage_start validation_start validation_end duration command trimmed missing_npm_script
   local command_exit tee_exit filter_exit pipe_statuses execute_during_dry_run pipefail_was_enabled validation_infra_failure cmd_status heartbeat_pid
   local -a validation_commands
+  # Keep package-local executables available to direct commands, while limiting
+  # the repository PATH to this validation function's process tree.
+  local -x PATH="${PATH:-}"
 
   KASEKI_WORKSPACE_DIR="$workspace_dir"
   KASEKI_RESULTS_DIR="$results_dir"
   export KASEKI_WORKSPACE_DIR KASEKI_RESULTS_DIR
+  validation_prepend_repository_bins "${workspace_dir}/repo"
   mkdir -p "$KASEKI_RESULTS_DIR"
   : > "${KASEKI_RESULTS_DIR}/quality.log"
 
