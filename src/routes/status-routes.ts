@@ -1,5 +1,4 @@
 import { Router, Request, Response } from 'express';
-import * as path from 'path';
 import { JobScheduler } from '../job-scheduler';
 import { DEFAULT_JOB_INDEX_MAX_ENTRIES, KasekiApiConfig } from '../kaseki-api-config';
 import { RunsListResponse } from '../kaseki-api-types';
@@ -11,6 +10,7 @@ import type { ResultCache } from '../result-cache';
 import { encodeCursor, isAfterCursor, parseCursor, parseLimit, type RunCursor } from './cursor-pagination';
 import { SoyuzApiError } from '../integrations/soyuz/SoyuzApiClient';
 import { SoyuzSubmissionClient, normalizeSoyuzRunStatus } from '../integrations/soyuz/SoyuzSubmissionClient';
+import { runResultDir } from '../utils/run-result-dir';
 
 /**
  * Create status-related routes (runs list, status, cancel).
@@ -77,12 +77,14 @@ export function createStatusRoutes(
           completedAt: job.completedAt?.toISOString(),
           exitCode: status.exitCode ?? metadataHelper.resolveExitCode(
             job,
-            job.resultDir || path.join(config.resultsDir, job.id)
+            runResultDir(job, config.resultsDir)
           ) ?? undefined,
           failureClass: status.failureClass,
           failedCommand: status.failedCommand,
           criticalChangeContract: status.criticalChangeContract,
           error: status.error,
+          diagnosticSummary: status.diagnosticSummary,
+          runner: status.runner,
           lifecyclePhase: status.lifecyclePhase,
           elapsedSeconds: status.elapsedSeconds,
           taskProgressPercent: status.taskProgressPercent,

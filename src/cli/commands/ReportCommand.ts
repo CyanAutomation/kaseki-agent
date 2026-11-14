@@ -124,6 +124,12 @@ export class ReportCommand extends ApiBackedCommand<ReportApiClient> {
     if (status.failureClass) {
       console.log(`Failure:   ${status.failureClass}`);
     }
+    if (status.runner?.imageReference) {
+      console.log(`Runner:    ${status.runner.imageReference}`);
+    }
+    if (status.runner?.imageId) {
+      console.log(`Image ID:  ${status.runner.imageId}`);
+    }
     if (status.error) {
       console.log(`Error:     ${status.error}`);
     }

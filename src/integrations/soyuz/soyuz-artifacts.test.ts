@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { artifactIdForSoyuzFile, loadSoyuzArtifacts, loadSoyuzTerminalOutcome } from './soyuz-artifacts';
+import { artifactIdForSoyuzFile, loadSoyuzArtifacts, loadSoyuzFailureMessage, loadSoyuzTerminalOutcome } from './soyuz-artifacts';
 
 describe('Soyuz artifact selection', () => {
   let resultDir: string;
@@ -64,6 +64,27 @@ describe('Soyuz artifact selection', () => {
       publishedUrl: 'https://github.com/example/project/pull/7',
       changedFileCount: 2,
     });
+  });
+
+  test('projects a concise redacted failure reason for the Soyuz callback', async () => {
+    await fs.writeFile(path.join(resultDir, 'failure.json'), JSON.stringify({
+      diagnostic_reason: 'Worker image pull failed; registry credential at /run/secrets/registry-token',
+      stderr_tail: 'Do not forward raw logs.',
+    }));
+
+    await expect(loadSoyuzFailureMessage(resultDir, 'worker-container-startup')).resolves.toBe(
+      'Kaseki reported worker-container-startup: Worker image pull failed; registry credential at [redacted secret path]',
+    );
+  });
+
+  test('falls back to a useful failure class when failure.json is missing or malformed', async () => {
+    await expect(loadSoyuzFailureMessage(resultDir, 'validation')).resolves.toBe(
+      'Kaseki execution ended with failure class validation. See Kaseki host artifacts for diagnostics.',
+    );
+    await fs.writeFile(path.join(resultDir, 'failure.json'), '{invalid');
+    await expect(loadSoyuzFailureMessage(resultDir, 'validation')).resolves.toBe(
+      'Kaseki execution ended with failure class validation. See Kaseki host artifacts for diagnostics.',
+    );
   });
 
   test('projects scorecard and evaluation files into a bounded text-free outcome contract', async () => {

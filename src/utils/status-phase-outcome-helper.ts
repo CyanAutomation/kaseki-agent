@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import { Job } from '../kaseki-api-types';
 import type { StatusResponse } from '../kaseki-api-types';
 import { KasekiApiConfig } from '../kaseki-api-config';
+import { runResultDir } from './run-result-dir';
 import { isPreAgentValidationFailedCommand } from './pre-validation-classification';
 import { JobScheduler } from '../job-scheduler';
 
@@ -249,7 +250,7 @@ export class StatusPhaseOutcomeHelper {
 
   private readPhaseEvents(job: Job): Array<Record<string, unknown>> {
     const events: Array<Record<string, unknown>> = [];
-    const progressFile = path.join(this.config.resultsDir, job.id, 'progress.jsonl');
+    const progressFile = path.join(runResultDir(job, this.config.resultsDir), 'progress.jsonl');
     if (fs.existsSync(progressFile)) {
       try {
         for (const line of fs.readFileSync(progressFile, 'utf8').split('\n')) {
@@ -318,7 +319,7 @@ export class StatusPhaseOutcomeHelper {
     metadata: any,
     scoutingEvents: Array<Record<string, unknown>>,
   ): boolean {
-    const scoutingArtifactExists = fs.existsSync(path.join(this.config.resultsDir, job.id, 'scouting.json'));
+    const scoutingArtifactExists = fs.existsSync(path.join(runResultDir(job, this.config.resultsDir), 'scouting.json'));
     const scoutingDuration = Number(metadata?.scouting_duration_seconds ?? 0);
     const scoutingExitCode = Number(metadata?.scouting_exit_code ?? 0);
     const scoutingModel = String(metadata?.scouting_actual_model ?? '').trim();
@@ -394,7 +395,7 @@ export class StatusPhaseOutcomeHelper {
   }
 
   private scoutingFallbackReason(job: Job): string | undefined {
-    const file = path.join(this.config.resultsDir, job.id, 'scouting-validation-errors.jsonl');
+    const file = path.join(runResultDir(job, this.config.resultsDir), 'scouting-validation-errors.jsonl');
     try {
       for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
         if (!line.trim()) continue;
@@ -407,7 +408,7 @@ export class StatusPhaseOutcomeHelper {
   }
 
   private goalSettingFallbackReason(job: Job): string | undefined {
-    const file = path.join(this.config.resultsDir, job.id, 'goal-setting-validation-errors.jsonl');
+    const file = path.join(runResultDir(job, this.config.resultsDir), 'goal-setting-validation-errors.jsonl');
     try {
       for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
         if (!line.trim()) continue;

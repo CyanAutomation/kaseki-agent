@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { open } from 'node:fs/promises';
 import path from 'node:path';
 import { SoyuzRunOutcomeSummarySchema, type SoyuzRunOutcomeSummary } from './run-outcome-summary';
+import { redactLogContent } from '../../routes/log-redaction';
 
 export const MAX_SOYUZ_ARTIFACT_BYTES = 2_000_000;
 const SOYUZ_ARTIFACT_NAMESPACE = Buffer.from('d53a6a7436945ed7a108d82f89d94414', 'hex');
@@ -69,6 +70,38 @@ export async function loadSoyuzTerminalOutcome(resultDir: string | undefined): P
   const outcomeSummary = buildOutcomeSummary(scorecardFile, evaluationFile);
   if (outcomeSummary) outcome.outcomeSummary = outcomeSummary;
   return outcome;
+}
+
+export async function loadSoyuzFailureMessage(resultDir: string | undefined, failureClass: string): Promise<string> {
+  const safeFailureClass = failureClass.replace(/[\r\n\s]+/g, '-').slice(0, 120) || 'execution_failed';
+  const fallback = `Kaseki execution ended with failure class ${safeFailureClass}. See Kaseki host artifacts for diagnostics.`;
+  if (!resultDir) return fallback;
+
+  const failureFile = await readArtifactFile(path.join(resultDir, 'failure.json'));
+  if (!Buffer.isBuffer(failureFile)) return fallback;
+  try {
+    const failure = record(JSON.parse(failureFile.toString('utf8')));
+    const reason = [
+      failure.diagnostic_reason,
+      failure.failure_reason,
+      failure.pre_validation_failure_reason,
+      failure.validation_failure_reason,
+      failure.error,
+      failure.failed_command,
+    ].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+    if (!reason) return fallback;
+
+    const safeReason = redactLogContent(reason)
+      .split('')
+      .filter((character) => character.charCodeAt(0) >= 0x20 && character.charCodeAt(0) !== 0x7f)
+      .join('')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 1_800);
+    return safeReason ? `Kaseki reported ${safeFailureClass}: ${safeReason}` : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function buildOutcomeSummary(

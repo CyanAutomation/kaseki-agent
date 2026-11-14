@@ -18,6 +18,7 @@ import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
 import { artifactContentType, renderRunEvaluationPayload, sanitizeEvaluationArtifactContent } from './artifact-content-helpers';
 import { redactLogContent } from './log-file-reader';
 import { localRunId, publicRunId } from '../utils/route-helpers';
+import { runResultDir } from '../utils/run-result-dir';
 
 const ALL_ARTIFACT_NAMES = Object.keys(ARTIFACT_METADATA_REGISTRY);
 const MAX_ARTIFACT_DOWNLOAD_BYTES = 64 * 1024 * 1024;
@@ -83,7 +84,7 @@ export function sendArtifactDownloadResponse(
   res: Response,
 ): void {
   try {
-    const filePath = path.join(config.resultsDir, job.id, request.fileName);
+    const filePath = path.join(runResultDir(job, config.resultsDir), request.fileName);
     const fileStats = getSafeFileStats(filePath);
     const status = getArtifactStatus(request.fileName, job.status, fileStats.exists, fileStats.size);
 
@@ -145,7 +146,7 @@ export function buildRunArtifactsResponse(
   config: KasekiApiConfig,
   includeManifest = false,
 ): RunArtifactsResponse {
-  const runDir = job.resultDir || path.join(config.resultsDir, job.id);
+  const runDir = runResultDir(job, config.resultsDir);
   const artifactMetadata = getRunArtifactMetadata(job.id, runDir, ALL_ARTIFACT_NAMES, isTerminalJobStatus(job.status));
   const artifacts = ALL_ARTIFACT_NAMES.map((fileName) => {
     const artifactMeta = ARTIFACT_METADATA_REGISTRY[fileName];
@@ -277,15 +278,29 @@ function sendRenderedArtifactResponse(
 }
 
 function readArtifactMetadata(runDir: string): Record<string, unknown> {
+  let metadata: Record<string, unknown> = {};
   try {
     const metadataPath = path.join(runDir, 'metadata.json');
     if (fs.existsSync(metadataPath)) {
-      return JSON.parse(fs.readFileSync(metadataPath, 'utf8')) as Record<string, unknown>;
+      const parsed = JSON.parse(fs.readFileSync(metadataPath, 'utf8')) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) metadata = parsed as Record<string, unknown>;
     }
   } catch {
-    // Keep artifact listing resilient when metadata is malformed.
+    // Failure metadata can still guide triage when the optional run metadata is malformed.
   }
-  return {};
+  try {
+    const failurePath = path.join(runDir, 'failure.json');
+    if (fs.existsSync(failurePath)) {
+      const parsed = JSON.parse(fs.readFileSync(failurePath, 'utf8')) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const failureClass = (parsed as Record<string, unknown>).failureClass;
+        if (typeof failureClass === 'string') metadata.failureClass = failureClass;
+      }
+    }
+  } catch {
+    // Keep artifact listing resilient when terminal failure metadata is malformed.
+  }
+  return metadata;
 }
 
 function recommendedArtifactNames(
@@ -312,6 +327,10 @@ function triageRank(
     String(runMetadata.provider_error_type ?? '').trim().length > 0 ||
     failedCommand.includes('pi provider');
 
+  if (/worker[-_ ]container[-_ ]startup|container[-_ ]startup/i.test(String(runMetadata.failureClass ?? ''))) {
+    return workerStartupTriageRank(artifactName, fallback);
+  }
+
   if (providerFailure) {
     return providerFailureTriageRank(artifactName, fallback);
   }
@@ -319,6 +338,17 @@ function triageRank(
     return preAgentValidationTriageRank(artifactName, fallback);
   }
   return fallback ?? 999;
+}
+
+function workerStartupTriageRank(artifactName: string, fallback: number | undefined): number {
+  const ranks: Record<string, number> = {
+    'failure.json': 0,
+    'result-summary.md': 1,
+    'stderr.log': 2,
+    '.gateway-diagnostics.jsonl': 3,
+    'gateway-summary.json': 4,
+  };
+  return ranks[artifactName] ?? fallback ?? 999;
 }
 
 function providerFailureTriageRank(artifactName: string, fallback: number | undefined): number {

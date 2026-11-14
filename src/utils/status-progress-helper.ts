@@ -3,6 +3,7 @@ import * as path from 'path';
 import { Job } from '../kaseki-api-types';
 import type { StatusResponse } from '../kaseki-api-types';
 import { KasekiApiConfig } from '../kaseki-api-config';
+import { runResultDir } from './run-result-dir';
 import { JobScheduler } from '../job-scheduler';
 import { toStructuredProgress } from './progress-normalizer';
 import { readLastJsonlEvent, readTailLines } from './file-helpers';
@@ -105,7 +106,7 @@ export class StatusProgressHelper {
     }
 
     try {
-      const progressFile = path.join(this.config.resultsDir, job.id, 'progress.jsonl');
+      const progressFile = path.join(runResultDir(job, this.config.resultsDir), 'progress.jsonl');
       const candidates: ProgressCandidate[] = [];
       const fileEvents = readRecentProgressRecords(progressFile).map((event) => ({ ...event, source: 'progress.jsonl' }));
       const fileCandidates = fileEvents

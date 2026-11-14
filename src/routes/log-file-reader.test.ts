@@ -51,6 +51,11 @@ describe('log-file-reader', () => {
     const file = path.join(directory, 'stdout.log');
     fs.writeFileSync(file, [
       'mounted /run/secrets/kaseki/github-token',
+      'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.private.signature',
+      'api_key=sk-1234567890abcdefghijklmnop',
+      '{"api_key":"plain-secret-value"}',
+      String.raw`{"api_key":"escaped\"secret-value"}`,
+      '{"Authorization":"Bearer plain-json-token"}',
       'sha256_fingerprint=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
       '-----BEGIN PRIVATE KEY-----',
       'super-secret-key-material',
@@ -61,9 +66,19 @@ describe('log-file-reader', () => {
     expect(result.content).toContain('[redacted secret path]');
     expect(result.content).toContain('sha256_fingerprint=[redacted]');
     expect(result.content).toContain('[redacted private key]');
+    expect(result.content).toContain('Authorization: Bearer [redacted credential]');
+    expect(result.content).toContain('api_key=[redacted]');
+    expect(result.content).toContain('"api_key":"[redacted]"');
+    expect(result.content).toContain('"Authorization":"[redacted]"');
     expect(result.content).not.toContain('github-token');
     expect(result.content).not.toContain('0123456789abcdef');
     expect(result.content).not.toContain('super-secret-key-material');
+    expect(result.content).not.toContain('private.signature');
+    expect(result.content).not.toContain('sk-1234567890abcdefghijklmnop');
+    expect(result.content).not.toContain('plain-secret-value');
+    expect(result.content).not.toContain('escaped');
+    expect(result.content).not.toContain('secret-value');
+    expect(result.content).not.toContain('plain-json-token');
   });
 
   it('reads the final 100 KiB of large logs and applies line tails', () => {
