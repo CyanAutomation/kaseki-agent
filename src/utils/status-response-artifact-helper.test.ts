@@ -110,6 +110,30 @@ describe('StatusArtifactHelper', () => {
     }
   });
 
+  it('uses failure.json as the diagnostic entry point for worker startup failures', () => {
+    const response = {
+      ...makeResponse(),
+      status: 'failed',
+      failureClass: 'worker-container-startup',
+    } as StatusResponse;
+
+    helper['setDiagnosticEntryPoint'](
+      response,
+      {
+        includePiAgent: true,
+        includePreValidation: false,
+        includeGoalSetting: false,
+        includeScouting: false,
+        includeGoalCheck: false,
+        prioritizeScouting: false,
+        prioritizePreValidation: false,
+      },
+      (fileName) => ['.gateway-diagnostics.jsonl', 'failure.json'].includes(fileName),
+    );
+
+    expect(response.diagnosticEntryPoint).toBe('failure.json');
+  });
+
   describe('addTaskProgressInfo', () => {
     it('should set progress to 100% when job is completed', () => {
       const response = makeResponse();
@@ -343,7 +367,12 @@ describe('StatusArtifactHelper', () => {
       const runDir = path.join(resultsDir, 'job-failure-json');
       fs.mkdirSync(runDir, { recursive: true });
       fs.writeFileSync(path.join(runDir, 'metadata.json'), '{}');
-      fs.writeFileSync(path.join(runDir, 'failure.json'), JSON.stringify({ error: 'first failure' }));
+      fs.writeFileSync(path.join(runDir, 'failure.json'), JSON.stringify({
+        error: 'api_key=plain-secret',
+        stderr_tail: 'Authorization: Bearer plain-token',
+        api_key: 'another-secret',
+        nested: { client_secret: { value: 'nested-secret' } },
+      }));
 
       (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
         'metadata.json': { exists: true, size: 100 },
@@ -356,7 +385,12 @@ describe('StatusArtifactHelper', () => {
 
       const validResponse = makeResponse();
       helper.addArtifactInfo(validResponse, makeJob({ id: 'job-failure-json', status: 'failed', resultDir: runDir }));
-      expect(validResponse.failureJsonContent).toEqual({ error: 'first failure' });
+      expect(validResponse.failureJsonContent).toEqual({
+        error: 'api_key=[redacted]',
+        stderr_tail: 'Authorization: Bearer [redacted credential]',
+        api_key: '[redacted credential]',
+        nested: { client_secret: '[redacted credential]' },
+      });
 
       fs.writeFileSync(path.join(runDir, 'failure.json'), '{not json');
       const malformedResponse = makeResponse();

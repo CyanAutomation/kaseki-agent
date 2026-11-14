@@ -32,6 +32,25 @@ describe('KasekiApiClient', () => {
     });
   });
 
+  it('preserves failure diagnosis and validated runner image metadata from status', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      id: 'run-123',
+      status: 'failed',
+      failureClass: 'worker-container-startup',
+      error: 'Worker image could not start.',
+      diagnosticSummary: { primaryReason: 'Worker image could not start.', recommendedEntryPoint: 'failure.json' },
+      runner: { imageReference: 'ghcr.io/cyan/kaseki-runner:1.159.1', imageId: `sha256:${'a'.repeat(64)}` },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+
+    const client = new KasekiApiClient('http://localhost:8080', 'api-key');
+
+    await expect(client.getStatus('run-123')).resolves.toMatchObject({
+      error: 'Worker image could not start.',
+      diagnosticSummary: { primaryReason: 'Worker image could not start.' },
+      runner: { imageReference: 'ghcr.io/cyan/kaseki-runner:1.159.1', imageId: `sha256:${'a'.repeat(64)}` },
+    });
+  });
+
   it('validates scorecard list summaries', async () => {
     const response = {
       scorecards: [{

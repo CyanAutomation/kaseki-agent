@@ -6,6 +6,7 @@ import { KasekiApiConfig } from '../kaseki-api-config';
 import type { Job } from '../kaseki-api-types';
 import { encodeCursor, isAfterCursor, parseCursor, parseLimit } from './cursor-pagination';
 import { localRunId, publicRunId } from '../utils/route-helpers';
+import { runResultDir } from '../utils/run-result-dir';
 
 type EvaluationArtifact = {
   overall_assessment?: string;
@@ -143,7 +144,7 @@ function summarizeImprovementRun(
   accumulator: ImprovementAccumulator,
   artifactsExpectedToBeRetained: boolean,
 ): ImprovementRunSummary {
-  const runDir = job.resultDir || path.join(config.resultsDir, job.id);
+  const runDir = runResultDir(job, config.resultsDir);
   const metadata = readJson(path.join(runDir, 'metadata.json')) as Record<string, any>;
   const evaluationPath = path.join(runDir, 'run-evaluation.json');
   const evaluation = readJson(evaluationPath) as EvaluationArtifact | null;

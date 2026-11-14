@@ -288,6 +288,24 @@ export function buildRunResponseSchema(): Record<string, unknown> {
         type: 'string',
         description: 'Error message if the job failed',
       },
+      diagnosticSummary: {
+        type: 'object',
+        description: 'Primary failure cause and recommended first diagnostic artifact',
+        properties: {
+          primaryReason: { type: 'string' },
+          recoveryFailure: { type: 'string' },
+          recommendedEntryPoint: { type: 'string' },
+        },
+      },
+      diagnosticEntryPoint: { type: 'string', description: 'Recommended artifact to inspect first for a failed run' },
+      runner: {
+        type: 'object',
+        description: 'Validated worker image identity recorded in run metadata',
+        properties: {
+          imageReference: { type: 'string', maxLength: 512 },
+          imageId: { type: 'string', pattern: '^sha256:[a-fA-F0-9]{64}$' },
+        },
+      },
     },
   };
 }
@@ -434,6 +452,14 @@ function buildFailureProperties(): Record<string, unknown> {
     criticalChangeFailureReason: { type: 'string', description: 'Critical-change contract failure reason when verification fails before goal check runs' },
     goalCheckFailureReason: { type: 'string', description: 'Goal-check failure reason when the goal-check evaluator fails or rejects the run' },
     error: { type: 'string', description: 'Error message (only if failed)' },
+    runner: {
+      type: 'object',
+      description: 'Validated worker image identity recorded in run metadata',
+      properties: {
+        imageReference: { type: 'string', maxLength: 512 },
+        imageId: { type: 'string', pattern: '^sha256:[a-fA-F0-9]{64}$' },
+      },
+    },
   };
 }
 
