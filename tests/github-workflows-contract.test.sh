@@ -94,6 +94,22 @@ assert_step_not_contains() {
   ' "$file" || fail "$message"
 }
 
+assert_dependabot_group_type() {
+  local group="$1"
+  local dependency_type="$2"
+  awk -v group="$group" -v dependency_type="$dependency_type" '
+    $0 == "      " group ":" { in_group = 1; found_group = 1; next }
+    in_group && /^      [[:alnum:]_-]+:/ { in_group = 0 }
+    in_group && /^        dependency-type:/ {
+      if ($0 != "        dependency-type: \"" dependency_type "\"") {
+        invalid_type = 1
+      }
+      found_type = 1
+    }
+    END { exit !(found_group && found_type && !invalid_type) }
+  ' "$DEPENDABOT_CONFIG" || fail "Dependabot group $group must use the scalar dependency type $dependency_type"
+}
+
 RELEASE_WORKFLOW="$WORKFLOWS_DIR/release.yml"
 TAG_DETECTION_HELPER="$ROOT_DIR/scripts/release-tag-detection.sh"
 PUBLISH_WORKFLOW="$WORKFLOWS_DIR/build-docker-image.yml"
@@ -252,12 +268,9 @@ assert_job_contains "$DEPENDENCY_REVIEW_WORKFLOW" 'dependency-review' 'fail-on-s
 assert_job_contains "$DEPENDENCY_REVIEW_WORKFLOW" 'dependency-review' 'fail-on-scopes: runtime, development' \
   'Dependency review must include runtime and development dependencies'
 
-assert_contains "$DEPENDABOT_CONFIG" '- "development"' \
-  'Dependabot development groups must use the supported dependency type'
-assert_contains "$DEPENDABOT_CONFIG" '- "production"' \
-  'Dependabot production groups must use the supported dependency type'
-assert_contains "$DEPENDABOT_CONFIG" 'dependency-type:' \
-  'Dependabot groups must use the supported dependency-type key'
+assert_dependabot_group_type 'development-dependencies' 'development'
+assert_dependabot_group_type 'production-dependencies' 'production'
+assert_dependabot_group_type 'image-toolchain-dependencies' 'production'
 assert_not_contains "$DEPENDABOT_CONFIG" 'dependency-types:' \
   'Dependabot groups must not use the unsupported plural dependency-type key'
 assert_not_matching "$DEPENDABOT_CONFIG" '^[[:space:]]+- "(dev|prod)"$' \

@@ -41,8 +41,7 @@ updates:
       prefix: "chore(deps-image-toolchain)"
     groups:
       image-toolchain-dependencies:
-        dependency-type:
-          - "production"
+        dependency-type: "production"
 
   # npm dependency updates
   - package-ecosystem: "npm"
@@ -73,8 +72,6 @@ updates:
     # Group updates
     groups:
       development-dependencies:
-        dependency-type:
-          - "development"
+        dependency-type: "development"
       production-dependencies:
-        dependency-type:
-          - "production"
+        dependency-type: "production"
