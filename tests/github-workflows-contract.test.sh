@@ -435,7 +435,7 @@ assert_contains "$ROOT_DIR/scripts/docker-promotion-tags.sh" "printf 'latest,mai
 
 assert_job_contains "$CI_WORKFLOW" 'workflow_lint' 'go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.9' \
   'CI must run a version-pinned actionlint check'
-assert_job_contains "$CI_WORKFLOW" 'workflow_lint' 'zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482' \
+assert_job_contains "$CI_WORKFLOW" 'workflow_lint' 'zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd' \
   'CI must run a commit-pinned zizmor check'
 assert_job_contains "$CI_WORKFLOW" 'workflow_lint' 'advanced-security: false' \
   'The zizmor workflow lint job must run without elevated security-events permissions'
