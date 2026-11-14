@@ -277,7 +277,7 @@ jobs:
       - name: Fail on high or critical image findings
         run: node scripts/check-trivy-image-findings.mjs trivy-results.json --summary trivy-results-summary.json
       - if: always()
-        uses: github/codeql-action/upload-sarif@d8073367669608af8fbcc5f63dd0a0d52bb90cff # v4
+        uses: github/codeql-action/upload-sarif@3ea37a44b6e4e6847c46edae209410d258d548d1 # v4
         with:
           sarif_file: trivy-results.sarif
       - name: Upload sanitized image scan reports
