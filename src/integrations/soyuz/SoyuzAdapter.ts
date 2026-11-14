@@ -11,7 +11,7 @@ import { loadSoyuzAdapterConfig, type SoyuzAdapterConfig } from './config';
 import { CloudflareQueueConsumer } from './CloudflareQueueConsumer';
 import { decodeQueueMessageBody, parseSoyuzQueuedRun, type CloudflarePulledMessage, type SoyuzQueuedRun, type SoyuzWorkerRun } from './contracts';
 import { SoyuzApiClient, SoyuzApiError } from './SoyuzApiClient';
-import { loadSoyuzArtifacts, loadSoyuzTerminalOutcome } from './soyuz-artifacts';
+import { loadSoyuzArtifacts, loadSoyuzFailureMessage, loadSoyuzTerminalOutcome } from './soyuz-artifacts';
 
 class SoyuzAdmissionRejectedError extends Error {
   constructor(readonly safeReason: string) {
@@ -750,7 +750,7 @@ export class SoyuzAdapter {
         completedAt,
         exitCode: job.exitCode ?? 1,
         failureClass: (job.failureClass || 'execution_failed').slice(0, 120),
-        failureMessage: `Kaseki execution ended with failure class ${(job.failureClass || 'execution_failed').slice(0, 120)}. See Kaseki host artifacts for diagnostics.`,
+        failureMessage: await loadSoyuzFailureMessage(job.resultDir, job.failureClass || 'execution_failed'),
         ...await loadSoyuzTerminalOutcome(job.resultDir),
       };
     }

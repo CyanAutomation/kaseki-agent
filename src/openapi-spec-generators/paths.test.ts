@@ -785,6 +785,10 @@ describe('OpenAPI Path Builders', () => {
       const analysisPath = (paths['/api/v1/runs/{id}/analysis'] as Record<string, any>).get;
       expect(analysisPath.operationId).toBe('getRunAnalysis');
       expect(analysisPath.security).toEqual([{ BearerAuth: [] }]);
+      const properties = analysisPath.responses['200'].content['application/json'].schema.properties;
+      expect(properties.error.description).toContain('failure reason');
+      expect(properties.diagnosticEntryPoint.description).toContain('inspect first');
+      expect(properties.runner.properties.imageId.pattern).toBe('^sha256:[a-fA-F0-9]{64}$');
     });
   });
 

@@ -12,16 +12,18 @@ import { normalizeProgressEvent } from '../utils/progress-normalizer';
 import { progressEventsFromDockerLogTail } from '../utils/docker-log-progress-events';
 import { CachedArtifactReader } from '../utils/cached-artifact-reader';
 import { AnalysisArtifactHelper } from '../utils/analysis-artifact-helper';
+import { StatusResponseBuilder } from '../utils/status-response-builder';
+import { runResultDir } from '../utils/run-result-dir';
 import type { ResultCache } from '../result-cache';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 
 function readStructuredEventSnapshot(
   scheduler: JobScheduler,
   config: KasekiApiConfig,
-  job: { id: string; status: string; startedAt?: Date; soyuz?: Job['soyuz'] },
+  job: { id: string; status: string; resultDir?: string; startedAt?: Date; soyuz?: Job['soyuz'] },
   tail: number
 ): { id: string; localRunId?: string; status: string; events: Array<Record<string, unknown>>; total: number; nextCursor: string; sources: string[] } {
-  const progressFile = path.join(config.resultsDir, job.id, 'progress.jsonl');
+  const progressFile = path.join(runResultDir(job, config.resultsDir), 'progress.jsonl');
   const events: Array<Record<string, unknown>> = [];
   const sources = new Set<string>();
 
@@ -89,7 +91,7 @@ function readStructuredEventSnapshot(
 function streamProgressEvents(
   scheduler: JobScheduler,
   config: KasekiApiConfig,
-  job: { id: string; status: string; startedAt?: Date; soyuz?: Job['soyuz'] },
+  job: { id: string; status: string; resultDir?: string; startedAt?: Date; soyuz?: Job['soyuz'] },
   req: Request,
   res: Response
 ): void {
@@ -120,7 +122,8 @@ function streamProgressEvents(
       return;
     }
 
-    const progressFile = path.join(config.resultsDir, job.id, 'progress.jsonl');
+    const progressJob = currentJob?.resultDir ? currentJob : job;
+    const progressFile = path.join(runResultDir(progressJob, config.resultsDir), 'progress.jsonl');
 
     let hasNewEvents = false;
     if (fs.existsSync(progressFile)) {
@@ -184,9 +187,10 @@ function streamProgressEvents(
 function buildAnalysisResponse(
   job: Job,
   config: KasekiApiConfig,
-  analysisHelper: AnalysisArtifactHelper
+  analysisHelper: AnalysisArtifactHelper,
+  status: ReturnType<StatusResponseBuilder['buildStatus']>,
 ): AnalysisResponse {
-  const runDir = job.resultDir || path.join(config.resultsDir, job.id);
+  const runDir = runResultDir(job, config.resultsDir);
   const response: AnalysisResponse = {
     id: publicRunId(job),
     ...(localRunId(job) ? { localRunId: localRunId(job) } : {}),
@@ -196,7 +200,11 @@ function buildAnalysisResponse(
     createdAt: job.createdAt.toISOString(),
     completedAt: job.completedAt?.toISOString(),
     exitCode: job.exitCode,
-    failureClass: job.failureClass
+    failureClass: status.failureClass ?? job.failureClass,
+    error: status.error,
+    diagnosticSummary: status.diagnosticSummary,
+    diagnosticEntryPoint: status.diagnosticEntryPoint,
+    runner: status.runner,
   };
   const analysisWarnings: string[] = [];
 
@@ -375,6 +383,7 @@ export function createLogRoutes(
   }));
   const cachedReader = artifactCache ? new CachedArtifactReader(artifactCache as ResultCache) : undefined;
   const analysisHelper = new AnalysisArtifactHelper(cachedReader);
+  const statusBuilder = new StatusResponseBuilder(scheduler, config, artifactCache);
 
   /**
    * GET /api/v1/runs/:id/events - Canonical structured event snapshot.
@@ -425,7 +434,7 @@ export function createLogRoutes(
     }
 
     try {
-      const runDir = path.join(config.resultsDir, job.id);
+      const runDir = runResultDir(job, config.resultsDir);
       if (logType === 'combined') {
         const combined = readCombinedLogs(runDir, req);
         if (combined) {
@@ -513,7 +522,7 @@ export function createLogRoutes(
     }
 
     try {
-      res.json(buildAnalysisResponse(job, config, analysisHelper));
+      res.json(buildAnalysisResponse(job, config, analysisHelper, statusBuilder.buildStatus(job)));
     } catch (err) {
       sendErrorResponse(res, 500, 'Internal Server Error', `Failed to analyze run: ${(err as Error).message}`);
     }

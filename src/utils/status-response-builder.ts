@@ -23,6 +23,8 @@ import { StatusLifecycleHelper } from './status-lifecycle-helper';
 import { StatusPhaseOutcomeHelper } from './status-phase-outcome-helper';
 import { StatusProgressHelper } from './status-progress-helper';
 import type { EfficiencyPolicy } from '../efficiency-policy/index';
+import { runResultDir } from './run-result-dir';
+import { projectRunnerImage } from './runner-image-projection';
 
 /**
  * Builds StatusResponse objects with timing, progress, and artifact information.
@@ -74,7 +76,7 @@ export class StatusResponseBuilder {
    * Build a complete StatusResponse for a job.
    */
   buildStatus(job: Job): StatusResponse {
-    const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
+    const runDir = runResultDir(job, this.config.resultsDir);
     const exitCode = this.metadataHelper.resolveExitCode(job, runDir);
     const metadata = this.metadataHelper.readMetadata(runDir);
     const validationReason = extractValidationFailureReason(metadata);
@@ -109,6 +111,7 @@ export class StatusResponseBuilder {
       projectName: job.request?.projectName,
       error: job.error,
       resultDir: job.resultDir,
+      runner: projectRunnerImage(metadata),
     };
 
     this.addTimingInfo(response, job);
@@ -121,7 +124,7 @@ export class StatusResponseBuilder {
     this.addGoalCheckInfo(response, metadata);
     this.addRunEvaluationInfo(response, metadata);
     this.addPullRequestInfo(response, metadata);
-    this.addContractTelemetry(response, metadata);
+    this.addContractTelemetry(response, metadata, runDir);
     this.addEfficiencyPolicy(response, runDir);
 
     if (job.status === 'failed' && !response.error && response.diagnosticSummary?.primaryReason) {
@@ -131,8 +134,7 @@ export class StatusResponseBuilder {
     return response;
   }
 
-  private addContractTelemetry(response: StatusResponse, metadata: Record<string, unknown>): void {
-    const runDir = response.resultDir || path.join(this.config.resultsDir, response.id);
+  private addContractTelemetry(response: StatusResponse, metadata: Record<string, unknown>, runDir: string): void {
     try {
       const contract = JSON.parse(fs.readFileSync(path.join(runDir, 'critical-change-expectations.json'), 'utf8')) as Record<string, unknown>;
       response.criticalChangeContract = {

@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import express from 'express';
 import { Server } from 'http';
 import { JobScheduler } from '../job-scheduler';
@@ -240,6 +241,26 @@ describe('artifact-routes', () => {
         expect(mockScheduler.getJob).toHaveBeenCalledWith(job.id);
         expect(fs.statSync).toHaveBeenCalledWith('/results/kaseki-1/metadata.json');
         expect(mockCache.getOrLoad).toHaveBeenCalledWith('/results/kaseki-1/metadata.json');
+      } finally {
+        await close(server);
+      }
+    });
+
+    it('downloads artifacts from the same result directory used by run analysis', async () => {
+      const job = mockCompletedJob();
+      job.status = 'failed';
+      job.resultDir = '/mounted/results/kaseki-1';
+      const content = '{"failureClass":"worker-container-startup"}';
+      mockFileStats({ 'failure.json': { content } });
+      mockCache.getOrLoad.mockReturnValue(content);
+      const { server, url } = await listen(createMountedArtifactApp());
+
+      try {
+        const response = await fetch(`${url}/api/results/${job.id}/failure.json`);
+
+        expect(response.status).toBe(200);
+        expect(await response.text()).toBe(content);
+        expect(mockCache.getOrLoad).toHaveBeenCalledWith(path.join(job.resultDir, 'failure.json'));
       } finally {
         await close(server);
       }
@@ -597,6 +618,30 @@ describe('artifact-routes', () => {
           'git.diff',
           'failure.json',
         ]);
+      } finally {
+        await close(server);
+      }
+    });
+
+    it('recommends failure.json first for worker container startup failures', async () => {
+      const job = mockCompletedJob();
+      job.status = 'failed';
+      mockFileStats({
+        'metadata.json': { content: '{}' },
+        'failure.json': { content: JSON.stringify({ failureClass: 'worker-container-startup' }) },
+        'result-summary.md': { content: '# Worker could not start\n' },
+        'stderr.log': { content: 'Docker start error\n' },
+        '.gateway-diagnostics.jsonl': { content: '{}\n' },
+      });
+
+      const { server, url } = await listen(createMountedArtifactApp());
+
+      try {
+        const response = await fetch(`${url}/api/runs/${job.id}/artifacts`);
+        const body = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(body.recommended[0]).toBe('failure.json');
       } finally {
         await close(server);
       }

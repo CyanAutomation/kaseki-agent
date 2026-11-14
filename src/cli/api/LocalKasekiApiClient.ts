@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { TASK_ADMISSION_EXIT_CODE } from '../../task-admission';
 import type { ConfigManager } from '../../config/ConfigManager';
-import { ArtifactAvailability, type AnalysisResponse, type ArtifactResponse, type LogResponse, type RunArtifactsResponse, type RunRequest, type RunResponse, type RunsListResponse, type ScorecardResponse, type ScorecardsListResponse, type StatusResponse } from '../../kaseki-api-types';
+import { ArtifactAvailability, DIAGNOSTIC_ENTRY_POINTS, type AnalysisResponse, type ArtifactResponse, type LogResponse, type RunArtifactsResponse, type RunRequest, type RunResponse, type RunsListResponse, type ScorecardResponse, type ScorecardsListResponse, type StatusResponse } from '../../kaseki-api-types';
 import { RunScorecardSchema } from '../../types/run-scorecard';
 
 const DEFAULT_LOCAL_API_BASE_URL = 'http://localhost:8080/api/v1';
@@ -14,6 +14,7 @@ const CriticalChangeContractSchema = z.object({
   changedFiles: z.array(z.string()).optional(),
   retryCount: z.number(),
 });
+const DiagnosticEntryPointSchema = z.enum(DIAGNOSTIC_ENTRY_POINTS);
 
 const StatusResponseSchema = z.object({
   id: z.string(),
@@ -38,6 +39,7 @@ const StatusResponseSchema = z.object({
   criticalChangeFailureReason: z.string().optional(),
   goalCheckFailureReason: z.string().optional(),
   error: z.string().optional(),
+  runner: z.object({ imageReference: z.string().optional(), imageId: z.string().optional() }).optional(),
   correlationId: z.string().optional(),
   requestId: z.string().optional(),
   origin: z.object({ type: z.enum(['api_client', 'kaseki', 'mcp']), id: z.string() }).optional(),
@@ -57,24 +59,12 @@ const StatusResponseSchema = z.object({
     availableFiles: z.array(z.string()),
     diagnosticFiles: z.array(z.string()).optional(),
   }).optional(),
-  diagnosticEntryPoint: z.enum([
-    'failure.json',
-    'analysis.md',
-    'result-summary.md',
-    'stderr.log',
-    'stdout.log',
-    '.gateway-diagnostics.jsonl',
-    'pi-agent-diagnostics.jsonl',
-    'pi-events.jsonl',
-    'pi-summary.json',
-    'progress-stream-diagnostics.log',
-    'goal-setting-validation-errors.jsonl',
-    'goal-setting-stderr.log',
-    'scouting-validation-errors.jsonl',
-    'scouting-stderr.log',
-    'goal-check-validation-errors.jsonl',
-    'goal-check-stderr.log',
-  ]).optional(),
+  diagnosticEntryPoint: DiagnosticEntryPointSchema.optional(),
+  diagnosticSummary: z.object({
+    primaryReason: z.string().optional(),
+    recoveryFailure: z.string().optional(),
+    recommendedEntryPoint: DiagnosticEntryPointSchema.optional(),
+  }).passthrough().optional(),
 });
 
 const RunsListResponseSchema = z.object({
@@ -89,6 +79,13 @@ const RunsListResponseSchema = z.object({
     failedCommand: z.string().optional(),
     criticalChangeContract: CriticalChangeContractSchema.optional(),
     error: z.string().optional(),
+    diagnosticSummary: z.object({
+      primaryReason: z.string().optional(),
+      recoveryFailure: z.string().optional(),
+      recommendedEntryPoint: DiagnosticEntryPointSchema.optional(),
+    }).passthrough().optional(),
+    diagnosticEntryPoint: DiagnosticEntryPointSchema.optional(),
+    runner: z.object({ imageReference: z.string().optional(), imageId: z.string().optional() }).optional(),
     origin: z.object({ type: z.enum(['api_client', 'kaseki', 'mcp']), id: z.string() }).optional(),
     retryOf: z.string().optional(),
   })),
@@ -112,6 +109,14 @@ const AnalysisResponseSchema = z.object({
   elapsedSeconds: z.number().optional(),
   exitCode: z.number().optional(),
   failureClass: z.string().optional(),
+  error: z.string().optional(),
+  diagnosticSummary: z.object({
+    primaryReason: z.string().optional(),
+    recoveryFailure: z.string().optional(),
+    recommendedEntryPoint: DiagnosticEntryPointSchema.optional(),
+  }).optional(),
+  diagnosticEntryPoint: DiagnosticEntryPointSchema.optional(),
+  runner: z.object({ imageReference: z.string().optional(), imageId: z.string().optional() }).optional(),
   metadata: z.object({
     model: z.string().optional(),
     instance: z.string().optional(),
