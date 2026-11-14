@@ -94,6 +94,22 @@ assert_step_not_contains() {
   ' "$file" || fail "$message"
 }
 
+assert_dependabot_group_type() {
+  local group="$1"
+  local dependency_type="$2"
+  awk -v group="$group" -v dependency_type="$dependency_type" '
+    $0 == "      " group ":" { in_group = 1; found_group = 1; next }
+    in_group && /^      [[:alnum:]_-]+:/ { in_group = 0 }
+    in_group && /^        dependency-type:/ {
+      if ($0 != "        dependency-type: \"" dependency_type "\"") {
+        invalid_type = 1
+      }
+      found_type = 1
+    }
+    END { exit !(found_group && found_type && !invalid_type) }
+  ' "$DEPENDABOT_CONFIG" || fail "Dependabot group $group must use the scalar dependency type $dependency_type"
+}
+
 RELEASE_WORKFLOW="$WORKFLOWS_DIR/release.yml"
 TAG_DETECTION_HELPER="$ROOT_DIR/scripts/release-tag-detection.sh"
 PUBLISH_WORKFLOW="$WORKFLOWS_DIR/build-docker-image.yml"
@@ -104,6 +120,7 @@ CI_WORKFLOW="$WORKFLOWS_DIR/ci.yml"
 NPM_PUBLISH_WORKFLOW="$WORKFLOWS_DIR/publish-npm.yml"
 KASEKI_DOCS_WORKFLOW="$WORKFLOWS_DIR/kaseki-docs.yaml"
 KASEKI_DRY_WORKFLOW="$WORKFLOWS_DIR/kaseki-dry.yaml"
+SCORECARD_WORKFLOW="$WORKFLOWS_DIR/scorecard.yml"
 
 assert_contains "$RELEASE_WORKFLOW" 'workflow_dispatch:' \
   'Releases must remain manually invoked'
@@ -168,26 +185,23 @@ assert_step_contains "$PUBLISH_WORKFLOW" 'Validate Docker Hub credentials' \
   'Docker Hub credential validation must check the password used by the login action'
 assert_not_contains "$RELEASE_WORKFLOW" 'grep -q "Published release"' \
   'Release detection must not rely on semantic-release log wording'
-assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Bun for target repository tests' \
-  'const bunVersion = require("./docker/image-toolchain/package.json").dependencies?.bun;' \
-  'Release validation must read the Bun pin from the target repository toolchain metadata'
-assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Bun for target repository tests' \
-  'if (typeof bunVersion !== "string" || semver.valid(bunVersion) !== bunVersion) {' \
-  'Release validation must reject a missing Bun pin or a non-exact version'
-assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Bun for target repository tests' \
-  'ERROR: dependencies.bun in docker/image-toolchain/package.json must be an exact semantic version' \
-  'Release validation must explain when its Bun pin is invalid'
-assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Bun for target repository tests' \
-  'npm install --prefix "$RUNNER_TEMP/kaseki-bun" --no-audit "bun@$bun_version"' \
-  'Release validation must install the pinned Bun npm package in an isolated prefix'
-assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Bun for target repository tests' \
-  'echo "$RUNNER_TEMP/kaseki-bun/node_modules/.bin" >> "$GITHUB_PATH"' \
-  'Release validation must add the installed Bun binary to PATH for subsequent test steps'
+assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Docker toolchain dependencies' \
+  'npm ci --prefix "$GITHUB_WORKSPACE/docker/image-toolchain"' \
+  'Release validation must install the Docker toolchain from its committed lockfile'
+assert_step_contains "$RELEASE_WORKFLOW" 'Install pinned Docker toolchain dependencies' \
+  'echo "$GITHUB_WORKSPACE/docker/image-toolchain/node_modules/.bin" >> "$GITHUB_PATH"' \
+  'Release validation must add the lockfile-installed Bun binary to PATH'
+assert_step_contains "$CI_WORKFLOW" 'Install pinned Docker toolchain dependencies' \
+  'npm ci --prefix "$GITHUB_WORKSPACE/docker/image-toolchain"' \
+  'CI must install the Docker toolchain from its committed lockfile'
+assert_step_contains "$CI_WORKFLOW" 'Install pinned Docker toolchain dependencies' \
+  'echo "$GITHUB_WORKSPACE/docker/image-toolchain/node_modules/.bin" >> "$GITHUB_PATH"' \
+  'CI must add the lockfile-installed Bun binary to PATH'
 awk '
-  $0 == "      - name: Install pinned Bun for target repository tests" { install = NR }
+  $0 == "      - name: Install pinned Docker toolchain dependencies" { install = NR }
   $0 == "      - name: Run release validation suite" { suite = NR }
   END { exit !(install && suite && install < suite) }
-' "$RELEASE_WORKFLOW" || fail 'Release validation must install Bun before running the test suite'
+' "$RELEASE_WORKFLOW" || fail 'Release validation must install the Docker toolchain before running the test suite'
 assert_contains "$TAG_DETECTION_HELPER" 'LC_ALL=C sort' \
   'Release tag snapshots must use the locale-stable order required by comm'
 assert_contains "$TAG_DETECTION_HELPER" 'LC_ALL=C comm -13' \
@@ -254,12 +268,13 @@ assert_job_contains "$DEPENDENCY_REVIEW_WORKFLOW" 'dependency-review' 'fail-on-s
 assert_job_contains "$DEPENDENCY_REVIEW_WORKFLOW" 'dependency-review' 'fail-on-scopes: runtime, development' \
   'Dependency review must include runtime and development dependencies'
 
-assert_contains "$DEPENDABOT_CONFIG" '- "development"' \
-  'Dependabot development groups must use the supported dependency type'
-assert_contains "$DEPENDABOT_CONFIG" '- "production"' \
-  'Dependabot production groups must use the supported dependency type'
-assert_contains "$DEPENDABOT_CONFIG" 'dependency-type:' \
-  'Dependabot groups must use the supported dependency-type key'
+assert_dependabot_group_type 'development-dependencies' 'development'
+assert_dependabot_group_type 'production-dependencies' 'production'
+assert_dependabot_group_type 'image-toolchain-dependencies' 'production'
+assert_contains "$DEPENDABOT_CONFIG" '    open-pull-requests-limit: 5' \
+  'Dependabot must set its open pull request limit at the update level'
+assert_not_contains "$DEPENDABOT_CONFIG" 'pull-requests:' \
+  'Dependabot updates must not use the unsupported pull-requests key'
 assert_not_contains "$DEPENDABOT_CONFIG" 'dependency-types:' \
   'Dependabot groups must not use the unsupported plural dependency-type key'
 assert_not_matching "$DEPENDABOT_CONFIG" '^[[:space:]]+- "(dev|prod)"$' \
@@ -424,12 +439,27 @@ assert_job_contains "$CI_WORKFLOW" 'workflow_lint' 'zizmorcore/zizmor-action@cc9
   'CI must run a commit-pinned zizmor check'
 assert_job_contains "$CI_WORKFLOW" 'workflow_lint' 'advanced-security: false' \
   'The zizmor workflow lint job must run without elevated security-events permissions'
-assert_job_contains "$CI_WORKFLOW" 'workflow_lint' 'min-severity: high' \
-  'Zizmor must gate CI on high-severity workflow security findings'
+assert_job_contains "$CI_WORKFLOW" 'workflow_lint' 'min-severity: medium' \
+  'Zizmor must gate CI on medium-or-higher workflow security findings'
 assert_job_contains "$CI_WORKFLOW" 'docker_artifact_validation' 'persist-credentials: false' \
   'Docker integration checkout must not persist its GitHub token'
+assert_job_contains "$CI_WORKFLOW" 'docker_artifact_validation' \
+  "name: \${{ github.event_name == 'push' && 'ci-dockerhub' || 'ci-readonly' }}" \
+  'DockerHub test credentials must be available only through the main-only environment'
 assert_step_contains "$CI_WORKFLOW" 'Check for Docker Hub credentials' "if: github.event_name == 'push'" \
   'Docker Hub credentials must be inspected only in a trusted push workflow'
+assert_step_contains "$CI_WORKFLOW" 'Check for Docker Hub credentials' \
+  'CI_DOCKER_USERNAME: ${{ secrets.CI_DOCKER_USERNAME }}' \
+  'DockerHub CI credentials must come from the dedicated environment'
+assert_step_contains "$CI_WORKFLOW" 'Check for Docker Hub credentials' \
+  'CI_DOCKER_PASSWORD: ${{ secrets.CI_DOCKER_PASSWORD }}' \
+  'DockerHub CI credentials must come from the dedicated environment'
+assert_job_not_contains "$CI_WORKFLOW" 'docker_artifact_validation' \
+  'DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}' \
+  'CI must not expose the release Docker Hub credentials to test code'
+assert_job_not_contains "$CI_WORKFLOW" 'docker_artifact_validation' \
+  'DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}' \
+  'CI must not expose the release Docker Hub credentials to test code'
 assert_step_contains "$CI_WORKFLOW" 'Authenticate to Docker Hub for base image pulls' \
   "if: github.event_name == 'push' && steps.docker_hub_credentials.outputs.available == 'true'" \
   'Docker Hub authentication must be unavailable to pull request test code'
@@ -486,5 +516,73 @@ assert_not_contains "$ROOT_DIR/Dockerfile" '# syntax=docker/dockerfile:' \
   'Dockerfile must use the bundled BuildKit frontend instead of pulling its syntax from Docker Hub'
 assert_contains "$ROOT_DIR/.github/dependabot.yml" 'package-ecosystem: "docker"' \
   'Dependabot must keep Docker base-image digests current'
+
+assert_contains "$DEPENDABOT_CONFIG" 'directory: "/docker/image-toolchain"' \
+  'Dependabot must update dependencies installed in the Docker image toolchain'
+[[ "$(grep -Fc 'package-ecosystem: "npm"' "$DEPENDABOT_CONFIG")" -ge 2 ]] \
+  || fail 'Dependabot must monitor both root and Docker image-toolchain npm dependencies'
+
+for workflow in "$KASEKI_DOCS_WORKFLOW" "$KASEKI_DRY_WORKFLOW"; do
+  assert_not_matching "$workflow" '^      KASEKI_API_TOKEN:' \
+    'Kaseki API tokens must not be exported to every job step'
+  for step in 'Validate Kaseki configuration' 'Verify gateway connectivity and authentication' 'Submit documentation sweep' 'Submit DRY sweep' 'Wait for Kaseki completion'; do
+    if grep -Fq -- "$step" "$workflow"; then
+      assert_step_contains "$workflow" "$step" 'KASEKI_API_TOKEN: ${{ secrets.KASEKI_API_TOKEN }}' \
+        'Kaseki API tokens must be set only on the steps that use them'
+    fi
+  done
+done
+
+assert_contains "$PUBLISH_WORKFLOW" 'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8' \
+  'Docker candidates must receive a commit-pinned signed provenance attestation'
+assert_job_contains "$RELEASE_WORKFLOW" 'publish_docker' 'id-token: write' \
+  'The caller workflow must allow the Docker reusable workflow to request OIDC'
+assert_job_contains "$RELEASE_WORKFLOW" 'publish_docker' 'attestations: write' \
+  'The caller workflow must allow the Docker reusable workflow to persist attestations'
+assert_job_contains "$PUBLISH_WORKFLOW" 'build_candidate' 'id-token: write' \
+  'Only the Docker build job should request an OIDC token for provenance signing'
+assert_job_contains "$PUBLISH_WORKFLOW" 'build_candidate' 'attestations: write' \
+  'The Docker build job must be able to persist its provenance attestation'
+assert_step_contains "$PUBLISH_WORKFLOW" 'Attest Docker candidate provenance' \
+  'subject-digest: ${{ steps.build.outputs.digest }}' \
+  'Docker provenance must describe the immutable candidate digest'
+assert_step_contains "$PUBLISH_WORKFLOW" 'Attest Docker candidate provenance' \
+  'create-storage-record: false' \
+  'Docker provenance must avoid creating a registry metadata record without its permission'
+assert_step_contains "$PUBLISH_WORKFLOW" 'Verify provenance for candidate digest' \
+  'gh attestation verify "oci://$IMAGE@$DIGEST" --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/build-docker-image.yml"' \
+  'Docker promotion must verify provenance from the expected reusable workflow'
+assert_job_contains "$PUBLISH_WORKFLOW" 'verify' 'attestations: read' \
+  'The Docker verification job must have read-only access to artifact attestations'
+assert_contains "$PUBLISH_WORKFLOW" 'echo "cache_scope=docker-release"' \
+  'Trusted Docker builds must reuse a stable release cache scope across commits'
+
+for job in build_candidate verify promote; do
+  assert_job_contains "$PUBLISH_WORKFLOW" "$job" 'step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a' \
+    "The Docker $job job must audit runner egress"
+done
+assert_step_contains "$PUBLISH_WORKFLOW" 'Harden Runner' 'egress-policy: audit' \
+  'Docker jobs must observe outbound connections before considering egress blocks'
+assert_job_contains "$RELEASE_WORKFLOW" 'release' 'step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a' \
+  'The privileged release job must audit runner egress'
+assert_step_contains "$RELEASE_WORKFLOW" 'Harden Runner' 'egress-policy: audit' \
+  'The privileged release job must begin in egress audit mode'
+assert_job_contains "$NPM_PUBLISH_WORKFLOW" 'publish' 'step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a' \
+  'The npm publishing job must audit runner egress'
+
+assert_contains "$SCORECARD_WORKFLOW" 'schedule:' \
+  'OpenSSF Scorecard must run on a schedule'
+assert_contains "$SCORECARD_WORKFLOW" 'ossf/scorecard-action@46dc3187a971a9febf3aeb7f94ccde489f7bb46a' \
+  'OpenSSF Scorecard must use a commit-pinned action'
+assert_contains "$SCORECARD_WORKFLOW" 'publish_results: true' \
+  'OpenSSF Scorecard results must be published for repository posture tracking'
+assert_contains "$SCORECARD_WORKFLOW" 'security-events: write' \
+  'OpenSSF Scorecard must be able to upload SARIF results'
+assert_contains "$SCORECARD_WORKFLOW" 'id-token: write' \
+  'OpenSSF Scorecard must use OIDC to publish authenticated results'
+assert_contains "$SCORECARD_WORKFLOW" 'step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a' \
+  'OpenSSF Scorecard must audit its own workflow egress'
+assert_step_contains "$SCORECARD_WORKFLOW" 'Harden Runner' 'egress-policy: audit' \
+  'OpenSSF Scorecard must begin in egress audit mode'
 
 printf '✓ GitHub workflow contracts passed.\n'
