@@ -1252,6 +1252,24 @@ function buildRunAnalysisPaths(errorResponseSchema: Record<string, unknown>): Re
                     elapsedSeconds: { type: 'number' },
                     exitCode: { type: 'integer' },
                     failureClass: { type: 'string' },
+                    error: { type: 'string', description: 'Primary failure reason when available' },
+                    diagnosticEntryPoint: { type: 'string', description: 'Recommended artifact to inspect first' },
+                    diagnosticSummary: {
+                      type: 'object',
+                      properties: {
+                        primaryReason: { type: 'string' },
+                        recoveryFailure: { type: 'string' },
+                        recommendedEntryPoint: { type: 'string' },
+                      },
+                    },
+                    runner: {
+                      type: 'object',
+                      description: 'Validated worker image identity recorded in run metadata',
+                      properties: {
+                        imageReference: { type: 'string', maxLength: 512 },
+                        imageId: { type: 'string', pattern: '^sha256:[a-fA-F0-9]{64}$' },
+                      },
+                    },
                     metadata: { type: 'object' },
                     changes: {
                       type: 'object',

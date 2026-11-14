@@ -12,6 +12,8 @@ import { ArtifactContentLoader } from './artifact-content-loader';
 import { TaskProgressCalculator } from './task-progress-calculator';
 import { isPreAgentValidationFailedCommand } from './pre-validation-classification';
 import { DiagnosticExtractor } from './diagnostic-extractor';
+import { runResultDir } from './run-result-dir';
+import { redactLogContent } from '../routes/log-redaction';
 
 const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', 'failure.json', 'stderr.log', 'stdout.log'] as const;
 const DECISION_DIAGNOSTIC_FILES = ['decisions.jsonl', 'caveman-routing.jsonl'] as const;
@@ -74,7 +76,7 @@ export class StatusArtifactHelper {
       return;
     }
 
-    const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
+    const runDir = runResultDir(job, this.config.resultsDir);
     const metadata = this.readMetadata(runDir);
 
     const diagnosticInclusionFlags = this.deriveDiagnosticInclusionFlags(job, response, metadata, runDir);
@@ -102,7 +104,7 @@ export class StatusArtifactHelper {
       this.progressHighWater.delete(job.id);
       return;
     }
-    const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
+    const runDir = runResultDir(job, this.config.resultsDir);
     const metadata = this.readMetadata(runDir);
     const calculated = this.taskProgressCalculator.calculateProgressPercent(response, job, runDir, metadata);
     if (typeof calculated !== 'number') {
@@ -119,7 +121,7 @@ export class StatusArtifactHelper {
   }
 
   addDiagnosticSummary(response: StatusResponse, job: Job): void {
-    const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
+    const runDir = runResultDir(job, this.config.resultsDir);
     this.diagnosticExtractor.extractDiagnosticSummary(response, runDir, (filePath: string) => this.readSmallTerminalArtifact(filePath));
     if (job.status === 'failed') {
       this.addTestFailureSummary(response, runDir);
@@ -236,7 +238,11 @@ export class StatusArtifactHelper {
     const failureContent = this.readSmallTerminalArtifact(failurePath);
     if (failureContent && failureContent.length <= INLINE_ARTIFACT_LIMIT_BYTES) {
       try {
-        response.failureJsonContent = JSON.parse(failureContent);
+        const parsed = JSON.parse(failureContent) as unknown;
+        const redacted = redactFailureValues(parsed);
+        if (redacted && typeof redacted === 'object' && !Array.isArray(redacted)) {
+          response.failureJsonContent = redacted as Record<string, unknown>;
+        }
       } catch {
         // If JSON parse fails, skip inlining
       }
@@ -283,6 +289,8 @@ export class StatusArtifactHelper {
     flags: { includePiAgent: boolean; includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean; prioritizeScouting: boolean; prioritizePreValidation: boolean },
     isAvailable: (fileName: string) => boolean
   ): void {
+    const failureClass = String(response.failureClass ?? response.failureJsonContent?.failureClass ?? '');
+    const prioritizeFailureJson = response.status === 'failed' && /worker[-_ ]container[-_ ]startup|container[-_ ]startup/i.test(failureClass);
     const phaseDiagnosticEntryPoints: DiagnosticEntryPoint[] = [
       'decisions.jsonl',
       'caveman-routing.jsonl',
@@ -306,6 +314,7 @@ export class StatusArtifactHelper {
         : []),
     ];
     const diagnosticEntryPointCandidates: DiagnosticEntryPoint[] = [
+      ...(prioritizeFailureJson ? ['failure.json' as DiagnosticEntryPoint] : []),
       ...phaseDiagnosticEntryPoints,
       'failure.json',
       'analysis.md',
@@ -517,4 +526,23 @@ export class StatusArtifactHelper {
   private optionalNumber(value: unknown): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
   }
+}
+
+function redactFailureValues(value: unknown, key?: string): unknown {
+  if (key && isCredentialField(key)) return '[redacted credential]';
+  if (typeof value === 'string') {
+    return redactLogContent(value);
+  }
+  if (Array.isArray(value)) return value.map((item) => redactFailureValues(item));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([childKey, childValue]) => [
+      childKey,
+      redactFailureValues(childValue, childKey),
+    ]));
+  }
+  return value;
+}
+
+function isCredentialField(key: string): boolean {
+  return /^(?:api[_-]?key|access[_-]?token|authorization|auth[_-]?(?:key|token)|bearer[_-]?(?:key|token)?|client[_-]?secret|github[_-]?(?:api[_-]?)?token|openai[_-]?(?:api[_-]?)?key|private[_-]?key|refresh[_-]?token|secret(?:[_-]?(?:key|token))?|token|password|credential)$/i.test(key);
 }

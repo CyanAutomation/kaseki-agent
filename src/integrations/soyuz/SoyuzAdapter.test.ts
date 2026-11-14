@@ -426,6 +426,47 @@ describe('Soyuz adapter handoff', () => {
     }
   });
 
+  test('queues a concise failure.json diagnosis in Soyuz terminal callbacks', async () => {
+    const resultDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kaseki-soyuz-failure-callback-'));
+    try {
+      await fs.writeFile(path.join(resultDir, 'failure.json'), JSON.stringify({
+        failureClass: 'worker-container-startup',
+        diagnostic_reason: 'Worker image could not start because its registry secret was unavailable.',
+      }));
+      const { fetchImpl } = createFetch(runState());
+      const { scheduler } = createScheduler('host-a');
+      const job: Job = {
+        id: 'kaseki-failed',
+        status: 'failed',
+        failureClass: 'worker-container-startup',
+        exitCode: 1,
+        request: queuedRun.request,
+        createdAt: new Date(),
+        completedAt: new Date(),
+        resultDir,
+        soyuz: {
+          externalRunId: RUN_ID,
+          workerId: 'host-a',
+          contractVersion: '1',
+          startedCallbackId: '44444444-4444-4444-8444-444444444444',
+          startAuthorized: true,
+        },
+      };
+
+      await makeAdapter('host-a', scheduler, fetchImpl)['ensureTerminalCallback'](job);
+
+      expect(scheduler.persistSoyuzTerminalCallback).toHaveBeenCalledWith(job, expect.objectContaining({
+        eventType: 'failed',
+        payload: expect.objectContaining({
+          failureClass: 'worker-container-startup',
+          failureMessage: 'Kaseki reported worker-container-startup: Worker image could not start because its registry secret was unavailable.',
+        }),
+      }));
+    } finally {
+      await fs.rm(resultDir, { recursive: true, force: true });
+    }
+  });
+
   test('continues terminal delivery when an older Soyuz host rejects the artifact report event', async () => {
     const resultDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kaseki-soyuz-legacy-report-'));
     try {

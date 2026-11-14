@@ -30,6 +30,8 @@ export function classifyFailure(
     typeof metadata.failed_command === 'string' ? metadata.failed_command.trim() : '';
   const workerErrorType =
     typeof metadata.worker_error_type === 'string' ? metadata.worker_error_type.trim() : '';
+  const preValidationFailureReason =
+    typeof metadata.pre_validation_failure_reason === 'string' ? metadata.pre_validation_failure_reason : '';
   const providerFailure = classifyProviderFailure(metadata, failedCommand);
 
   if (normalizedExitCode === 0) return 'none';
@@ -38,6 +40,10 @@ export function classifyFailure(
   // as secondary diagnostic context and classify the root run outcome below.
   if (workerErrorType && workerErrorType !== 'metadata_write_invalid') return workerErrorType;
   if (providerFailure) return providerFailure;
+  if (
+    failedCommand === 'pre-agent validation' &&
+    /validation_toolchain_preflight_failed:\s*missing executable\b/i.test(preValidationFailureReason)
+  ) return 'validation-tool-unavailable';
 
   const exactRules: Array<[string, boolean]> = [
     ['timeout', normalizedExitCode === 124],

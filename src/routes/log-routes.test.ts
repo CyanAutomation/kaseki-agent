@@ -7,6 +7,63 @@ import { createLogRoutes } from './log-routes';
 import { createMockScheduler, createTestConfig } from '../test-utils';
 
 describe('log route rate limiting', () => {
+  test('analysis returns the primary failure reason, diagnostic entry point, and runner image provenance', async () => {
+    const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-log-analysis-failure-'));
+    const localId = 'kaseki-analysis-failure';
+    const jobDir = path.join(resultsDir, 'persisted', localId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'failure.json'), JSON.stringify({
+      failureClass: 'worker-container-startup',
+      diagnostic_reason: 'Docker could not start the worker because the runner image was unavailable.',
+    }));
+    fs.writeFileSync(path.join(jobDir, 'metadata.json'), JSON.stringify({
+      runner_image_reference: 'ghcr.io/cyan/kaseki-runner:1.159.1',
+      runner_image_id: `sha256:${'a'.repeat(64)}`,
+    }));
+    fs.writeFileSync(path.join(jobDir, '.gateway-diagnostics.jsonl'), '{}\n');
+
+    const config = createTestConfig(resultsDir);
+    const scheduler = createMockScheduler({
+      [localId]: {
+        id: localId,
+        status: 'failed',
+        createdAt: new Date('2026-11-14T00:00:00.000Z'),
+        completedAt: new Date('2026-11-14T00:01:00.000Z'),
+        exitCode: 1,
+        failureClass: 'worker-container-startup',
+        resultDir: jobDir,
+      },
+    });
+    const app = express();
+    app.use(createLogRoutes(scheduler as any, config));
+    const server = app.listen(0, '127.0.0.1');
+    await new Promise<void>((resolve, reject) => {
+      server.once('listening', resolve);
+      server.once('error', reject);
+    });
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/runs/${localId}/analysis`);
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        error: 'Docker could not start the worker because the runner image was unavailable.',
+        diagnosticEntryPoint: 'failure.json',
+        diagnosticSummary: {
+          primaryReason: 'Docker could not start the worker because the runner image was unavailable.',
+        },
+        runner: {
+          imageReference: 'ghcr.io/cyan/kaseki-runner:1.159.1',
+          imageId: `sha256:${'a'.repeat(64)}`,
+        },
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
   test('returns the Soyuz UUID and local diagnostic ID in event snapshots', async () => {
     const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-log-soyuz-id-'));
     const localId = 'kaseki-log-soyuz-id';

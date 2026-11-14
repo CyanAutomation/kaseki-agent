@@ -212,6 +212,14 @@ describe('instance-failure-extraction', () => {
       expect(classifyFailure({ failed_command: 'validation' }, null)).toBe('validation');
     });
 
+    test('classifies missing pre-validation tools distinctly from test failures', () => {
+      expect(classifyFailure({
+        failed_command: 'pre-agent validation',
+        pre_validation_exit_code: 127,
+        pre_validation_failure_reason: 'validation_toolchain_preflight_failed: missing executable pnpm',
+      }, 127)).toBe('validation-tool-unavailable');
+    });
+
     // Quality
     test('should classify "quality checks" command as quality', () => {
       expect(classifyFailure({ failed_command: 'quality checks' }, null)).toBe('quality');

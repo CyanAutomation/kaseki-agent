@@ -239,33 +239,17 @@ export interface RunResponse {
 /**
  * Structured progress information for a run.
  */
-export type DiagnosticEntryPoint =
-  | 'failure.json'
-  | 'analysis.md'
-  | 'result-summary.md'
-  | 'stderr.log'
-  | 'stdout.log'
-  | 'pre-validation.log'
-  | 'test-baseline-comparison.json'
-  | 'goal-setting-validation-errors.jsonl'
-  | 'goal-setting-stderr.log'
-  | 'scouting-validation-errors.jsonl'
-  | 'scouting-contract-diagnostics.jsonl'
-  | 'scouting-retry-diagnostics.jsonl'
-  | 'scouting-stderr.log'
-  | 'goal-check-validation-errors.jsonl'
-  | 'goal-check-stderr.log'
-  | 'decisions.jsonl'
-  | 'caveman-routing.jsonl'
-  | 'hashline-failure.json'
-  | 'empty-diff.json'
-  | 'pi-agent-diagnostics.jsonl'
-  | 'pi-events.jsonl'
-  | 'pi-summary.json'
-  | 'gateway-summary.json'
-  | 'token-ledger.jsonl'
-  | 'progress-stream-diagnostics.log'
-  | '.gateway-diagnostics.jsonl';
+export const DIAGNOSTIC_ENTRY_POINTS = [
+  'failure.json', 'analysis.md', 'result-summary.md', 'stderr.log', 'stdout.log',
+  'pre-validation.log', 'test-baseline-comparison.json',
+  'goal-setting-validation-errors.jsonl', 'goal-setting-stderr.log',
+  'scouting-validation-errors.jsonl', 'scouting-contract-diagnostics.jsonl', 'scouting-retry-diagnostics.jsonl', 'scouting-stderr.log',
+  'goal-check-validation-errors.jsonl', 'goal-check-stderr.log',
+  'decisions.jsonl', 'caveman-routing.jsonl', 'hashline-failure.json', 'empty-diff.json',
+  'pi-agent-diagnostics.jsonl', 'pi-events.jsonl', 'pi-summary.json', 'gateway-summary.json', 'token-ledger.jsonl',
+  'progress-stream-diagnostics.log', '.gateway-diagnostics.jsonl',
+] as const;
+export type DiagnosticEntryPoint = typeof DIAGNOSTIC_ENTRY_POINTS[number];
 
 export interface StructuredProgress {
   stage: string; // Required: current stage name
@@ -424,6 +408,8 @@ export interface StatusResponse {
     message?: string;
   };
   error?: string;
+  /** Validated worker image identity from the run's metadata, when available. */
+  runner?: import('./utils/runner-image-projection').RunnerImageProjection;
   /** Internal-only filesystem path used by status assembly; stripped from public API responses. */
   resultDir?: string;
   /** Canonical GitHub pull-request URL, when a patch run successfully published one. */
@@ -583,6 +569,10 @@ export interface AnalysisResponse {
   elapsedSeconds?: number;
   exitCode?: number;
   failureClass?: string;
+  error?: string;
+  diagnosticSummary?: StatusResponse['diagnosticSummary'];
+  diagnosticEntryPoint?: DiagnosticEntryPoint;
+  runner?: StatusResponse['runner'];
   metadata?: {
     model?: string;
     instance?: string;
@@ -626,12 +616,14 @@ export interface RunsListResponse {
     failedCommand?: string;
     criticalChangeContract?: StatusResponse['criticalChangeContract'];
     error?: string;
+    diagnosticSummary?: StatusResponse['diagnosticSummary'];
+    diagnosticEntryPoint?: StatusResponse['diagnosticEntryPoint'];
+    runner?: StatusResponse['runner'];
     lifecyclePhase?: 'queued' | 'executing' | 'finalizing' | 'terminal';
     elapsedSeconds?: number;
     taskProgressPercent?: number;
     progress?: StructuredProgress;
     phaseOutcome?: StatusResponse['phaseOutcome'];
-    diagnosticEntryPoint?: string;
     correlationId?: string;
     requestId?: string;
     projectName?: string;

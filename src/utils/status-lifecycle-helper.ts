@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import { Job } from '../kaseki-api-types';
 import type { StatusResponse } from '../kaseki-api-types';
 import { KasekiApiConfig } from '../kaseki-api-config';
+import { runResultDir } from './run-result-dir';
 
 type ProviderRetryMetadata = {
   retryCount: number;
@@ -138,7 +139,7 @@ export class StatusLifecycleHelper {
     metadata: ProviderRetryMetadata,
   ): void {
     const contractFailure = this.readPrimaryScoutingContractFailure(
-      job.resultDir || path.join(this.config.resultsDir, job.id)
+      runResultDir(job, this.config.resultsDir)
     );
     const rootCause = contractFailure?.detail || metadata.providerError || 'Scouting did not produce a valid handoff artifact.';
     response.attempt = {

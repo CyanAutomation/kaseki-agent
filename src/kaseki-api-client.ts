@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { RunRequest, StatusResponse, ValidationResponse, type ScorecardResponse, type ScorecardsListResponse } from './kaseki-api-types';
+import { DIAGNOSTIC_ENTRY_POINTS, RunRequest, StatusResponse, ValidationResponse, type ScorecardResponse, type ScorecardsListResponse } from './kaseki-api-types';
 import {
   RunScorecardCompletenessSchema,
   RunScorecardLifecycleStatusSchema,
@@ -36,6 +36,12 @@ const CriticalChangeContractSchema = z.object({
   retryCount: z.number(),
 });
 
+const RunnerImageSchema = z.object({
+  imageReference: z.string().optional(),
+  imageId: z.string().optional(),
+});
+const DiagnosticEntryPointSchema = z.enum(DIAGNOSTIC_ENTRY_POINTS);
+
 const StatusResponseSchema = z.object({
   id: z.string(),
   localRunId: z.string().optional(),
@@ -49,6 +55,12 @@ const StatusResponseSchema = z.object({
   criticalChangeFailureReason: z.string().optional(),
   goalCheckFailureReason: z.string().optional(),
   error: z.string().optional(),
+  runner: RunnerImageSchema.optional(),
+  diagnosticSummary: z.object({
+    primaryReason: z.string().optional(),
+    recoveryFailure: z.string().optional(),
+    recommendedEntryPoint: DiagnosticEntryPointSchema.optional(),
+  }).passthrough().optional(),
   exitCode: z.number().optional(),
   elapsedSeconds: z.number().optional(),
   timeoutRiskPercent: z.number().optional(),
@@ -74,26 +86,7 @@ const StatusResponseSchema = z.object({
     availableFiles: z.array(z.string()),
     diagnosticFiles: z.array(z.string()).optional(),
   }).optional(),
-  diagnosticEntryPoint: z.enum([
-    'failure.json',
-    'analysis.md',
-    'result-summary.md',
-    'stderr.log',
-    'stdout.log',
-    '.gateway-diagnostics.jsonl',
-    'pi-agent-diagnostics.jsonl',
-    'pi-events.jsonl',
-    'pi-summary.json',
-    'progress-stream-diagnostics.log',
-    'goal-setting-validation-errors.jsonl',
-    'goal-setting-stderr.log',
-    'scouting-validation-errors.jsonl',
-    'scouting-contract-diagnostics.jsonl',
-    'scouting-retry-diagnostics.jsonl',
-    'scouting-stderr.log',
-    'goal-check-validation-errors.jsonl',
-    'goal-check-stderr.log',
-  ]).optional(),
+  diagnosticEntryPoint: DiagnosticEntryPointSchema.optional(),
 });
 const ScorecardResponseSchema = RunScorecardSchema;
 const ScorecardSummarySchema = z.object({
