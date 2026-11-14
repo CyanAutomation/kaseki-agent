@@ -6,16 +6,17 @@ dockerfile="$repo_root/Dockerfile"
 toolchain_manifest="$repo_root/docker/image-toolchain/package.json"
 
 if ! jq -e '
-  .dependencies.npm == "11.21.0" and
+  .dependencies.npm == "12.2.2" and
   .dependencies["@earendil-works/pi-coding-agent"] == "1.5.2" and
   .dependencies["@earendil-works/pi-server"] == "1.1.0" and
-  .dependencies["brace-expansion"] == "5.0.12" and
+  .dependencies["brace-expansion"] == "5.0.13" and
   .dependencies["brace-expansion-v1"] == "npm:brace-expansion@1.1.21" and
   .dependencies["brace-expansion-v2"] == "npm:brace-expansion@2.1.7" and
   (.dependencies | has("brace-expansion-v3") | not) and
-  .dependencies.undici == "8.12.3" and
+  .dependencies.undici == "8.12.4" and
   .dependencies["undici-v6"] == "npm:undici@6.29.1" and
   .dependencies["undici-v7"] == "npm:undici@7.30.1" and
+  .overrides["brace-expansion"] == "5.0.13" and
   .overrides.npm["brace-expansion"] == "5.0.12" and
   .overrides.npm.undici == "6.29.1" and
   .overrides["@earendil-works/pi-coding-agent"]["brace-expansion"] == "5.0.12" and
