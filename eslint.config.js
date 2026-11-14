@@ -79,7 +79,9 @@ const baseRules = {
   'no-multiple-empty-lines': ['warn', { max: 1 }],
   'no-console': 'off',
   'no-process-exit': 'off',
-  'no-empty': ['error', { allowEmptyCatch: true }]
+  'no-empty': ['error', { allowEmptyCatch: true }],
+  'preserve-caught-error': 'off',
+  'no-useless-assignment': 'off'
 };
 
 // TypeScript-specific unused-imports rules (shared across TS configs)
