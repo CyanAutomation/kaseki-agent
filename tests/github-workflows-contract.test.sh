@@ -271,6 +271,10 @@ assert_job_contains "$DEPENDENCY_REVIEW_WORKFLOW" 'dependency-review' 'fail-on-s
 assert_dependabot_group_type 'development-dependencies' 'development'
 assert_dependabot_group_type 'production-dependencies' 'production'
 assert_dependabot_group_type 'image-toolchain-dependencies' 'production'
+assert_contains "$DEPENDABOT_CONFIG" '    open-pull-requests-limit: 5' \
+  'Dependabot must set its open pull request limit at the update level'
+assert_not_contains "$DEPENDABOT_CONFIG" 'pull-requests:' \
+  'Dependabot updates must not use the unsupported pull-requests key'
 assert_not_contains "$DEPENDABOT_CONFIG" 'dependency-types:' \
   'Dependabot groups must not use the unsupported plural dependency-type key'
 assert_not_matching "$DEPENDABOT_CONFIG" '^[[:space:]]+- "(dev|prod)"$' \
