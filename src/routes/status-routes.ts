@@ -112,7 +112,7 @@ export function createStatusRoutes(
     res.json(response);
   });
 
-  router.get('/runs/:id', async (req: Request, res: Response) => {
+  router.get('/runs/:id', async (req: Request<{ id: string }>, res: Response) => {
     const job = await findRunJob(scheduler, req.params.id);
     if (!job && submissionClient && isCanonicalSoyuzId(req.params.id)) {
       try {
@@ -172,7 +172,7 @@ function registerRunStatusRoute(
   statusBuilder: StatusResponseBuilder,
   submissionClient?: SoyuzSubmissionClient,
 ): void {
-  router.get('/runs/:id/status', async (req: Request, res: Response) => {
+  router.get('/runs/:id/status', async (req: Request<{ id: string }>, res: Response) => {
     const job = await findRunJob(scheduler, req.params.id);
     if (job) {
       const { resultDir: _resultDir, ...response } = statusBuilder.buildStatus(job);
@@ -224,7 +224,7 @@ function registerRunCancelRoute(
   statusBuilder: StatusResponseBuilder,
   submissionClient?: SoyuzSubmissionClient,
 ): void {
-  router.post('/runs/:id/cancel', async (req: Request, res: Response) => {
+  router.post('/runs/:id/cancel', async (req: Request<{ id: string }>, res: Response) => {
     const requestedId = req.params.id;
     const resolvedJob = await findCancelableJob(scheduler, requestedId);
     if (await respondWithRemoteCancellation(submissionClient, resolvedJob, requestedId, res)) return;
