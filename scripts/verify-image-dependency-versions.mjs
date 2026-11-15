@@ -3,85 +3,48 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { compareVersions, dependencyRule } from './image-dependency-rules.mjs';
 
-const FIXED_VERSIONS = {
-  'brace-expansion': {
-    1: '1.1.21',
-    2: '2.1.7',
-    // 3.x and 4.x have no fixed release; Trivy's first fixed major is 5.0.7.
-    3: '5.0.7',
-    4: '5.0.7',
-    5: '5.0.12',
-  },
-  handlebars: {
-    4: '4.7.10',
-  },
-  undici: {
-    6: '6.29.1',
-    7: '7.30.1',
-    8: '8.12.3',
-  },
-};
-
-function parseVersion(version) {
-  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(version);
-  if (!match) return null;
-  return {
-    numbers: match.slice(1, 4).map(Number),
-    prerelease: match[4] ?? null,
-  };
-}
-
-function compareVersions(left, right) {
-  const parsedLeft = parseVersion(left);
-  const parsedRight = parseVersion(right);
-  if (!parsedLeft || !parsedRight) return null;
-  for (let index = 0; index < parsedLeft.numbers.length; index += 1) {
-    if (parsedLeft.numbers[index] !== parsedRight.numbers[index]) {
-      return parsedLeft.numbers[index] < parsedRight.numbers[index] ? -1 : 1;
+function* packageManifestPaths(root) {
+  const directories = [root];
+  while (directories.length > 0) {
+    const directory = directories.pop();
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory() && entry.name !== '.bin') {
+        directories.push(entryPath);
+      } else if (entry.isFile() && entry.name === 'package.json') {
+        yield entryPath;
+      }
     }
   }
-  if (parsedLeft.prerelease === parsedRight.prerelease) return 0;
-  if (parsedLeft.prerelease === null) return 1;
-  if (parsedRight.prerelease === null) return -1;
-  return parsedLeft.prerelease.localeCompare(parsedRight.prerelease);
+}
+
+function vulnerabilityForPackage(root, entryPath) {
+  const packageJson = JSON.parse(readFileSync(entryPath, 'utf8'));
+  const installedMajor = Number.parseInt(packageJson.version?.split('.')[0] ?? '', 10);
+  const rule = dependencyRule(packageJson.name, installedMajor);
+  if (!rule) return undefined;
+
+  const comparison = compareVersions(packageJson.version, rule.fixedVersion);
+  if (comparison !== null && comparison >= 0) return undefined;
+
+  const relativePath = path.relative(root, entryPath).split(path.sep).join('/');
+  return {
+    path: path.join(path.basename(root), relativePath).split(path.sep).join('/'),
+    name: packageJson.name,
+    version: packageJson.version,
+    fixedVersion: rule.fixedVersion,
+  };
 }
 
 export function findVulnerableDependencyVersions(roots) {
   const findings = [];
-
   for (const rootArgument of roots) {
     const root = path.resolve(rootArgument);
-    const directories = [root];
-    while (directories.length > 0) {
-      const directory = directories.pop();
-      for (const entry of readdirSync(directory, { withFileTypes: true })) {
-        const entryPath = path.join(directory, entry.name);
-        if (entry.isDirectory() && entry.name !== '.bin') {
-          directories.push(entryPath);
-          continue;
-        }
-        if (!entry.isFile() || entry.name !== 'package.json') continue;
-
-        const packageJson = JSON.parse(readFileSync(entryPath, 'utf8'));
-        const packageFixes = FIXED_VERSIONS[packageJson.name];
-        if (!packageFixes) continue;
-
-        const installedMajor = Number.parseInt(packageJson.version?.split('.')[0] ?? '', 10);
-        const fixedVersion = packageFixes[installedMajor];
-        if (!fixedVersion) continue;
-
-        const comparison = compareVersions(packageJson.version, fixedVersion);
-        if (comparison === null || comparison < 0) {
-          const relativePath = path.relative(root, entryPath).split(path.sep).join('/');
-          findings.push({
-            path: path.join(path.basename(root), relativePath).split(path.sep).join('/'),
-            name: packageJson.name,
-            version: packageJson.version,
-            fixedVersion,
-          });
-        }
-      }
+    for (const entryPath of packageManifestPaths(root)) {
+      const finding = vulnerabilityForPackage(root, entryPath);
+      if (finding) findings.push(finding);
     }
   }
 

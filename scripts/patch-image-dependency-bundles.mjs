@@ -3,62 +3,7 @@
 import { cpSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-
-const FIXED_VERSIONS = {
-  'brace-expansion': {
-    1: '1.1.21',
-    2: '2.1.7',
-    5: '5.0.12',
-  },
-  undici: {
-    6: '6.29.1',
-    7: '7.30.1',
-    8: '8.12.3',
-  },
-};
-
-// The advisory has no fixed 3.x or 4.x release. Do not hide the finding with
-// an automatic major-version replacement; require an explicit compatibility review.
-const VULNERABLE_UNPATCHED_MAJORS = {
-  'brace-expansion': new Set([3, 4]),
-};
-
-const SOURCE_DIRECTORIES = {
-  'brace-expansion': {
-    1: 'brace-expansion-v1',
-    2: 'brace-expansion-v2',
-    5: 'brace-expansion',
-  },
-  undici: {
-    6: 'undici-v6',
-    7: 'undici-v7',
-    8: 'undici',
-  },
-};
-
-function parseVersion(version) {
-  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(version ?? '');
-  if (!match) return null;
-  return {
-    numbers: match.slice(1, 4).map(Number),
-    prerelease: match[4] ?? null,
-  };
-}
-
-function compareVersions(left, right) {
-  const parsedLeft = parseVersion(left);
-  const parsedRight = parseVersion(right);
-  if (!parsedLeft || !parsedRight) return null;
-  for (let index = 0; index < parsedLeft.numbers.length; index += 1) {
-    if (parsedLeft.numbers[index] !== parsedRight.numbers[index]) {
-      return parsedLeft.numbers[index] < parsedRight.numbers[index] ? -1 : 1;
-    }
-  }
-  if (parsedLeft.prerelease === parsedRight.prerelease) return 0;
-  if (parsedLeft.prerelease === null) return 1;
-  if (parsedRight.prerelease === null) return -1;
-  return parsedLeft.prerelease.localeCompare(parsedRight.prerelease);
-}
+import { compareVersions, dependencyRule } from './image-dependency-rules.mjs';
 
 function packageInventory(roots) {
   const packages = [];
@@ -82,19 +27,17 @@ function packageInventory(roots) {
   return packages;
 }
 
-function sourceForPackage(sourcesRoot, packageName, major) {
-  const sourceDirectory = SOURCE_DIRECTORIES[packageName]?.[major];
-  const fixedVersion = FIXED_VERSIONS[packageName]?.[major];
-  if (!sourceDirectory || !fixedVersion) {
-    throw new Error(`No fixed source package is configured for ${packageName}@${major}.x`);
+function sourceForPackage(sourcesRoot, packageName, rule) {
+  if (!rule.sourceDirectory) {
+    throw new Error(`No fixed source package is configured for ${packageName}@${rule.fixedVersion}.`);
   }
 
-  const sourcePath = path.resolve(sourcesRoot, sourceDirectory);
+  const sourcePath = path.resolve(sourcesRoot, rule.sourceDirectory);
   const sourcePackage = JSON.parse(readFileSync(path.join(sourcePath, 'package.json'), 'utf8'));
-  if (sourcePackage.name !== packageName || compareVersions(sourcePackage.version, fixedVersion) < 0) {
-    throw new Error(`Replacement source ${sourcePath} must be ${packageName}@${fixedVersion} or newer.`);
+  if (sourcePackage.name !== packageName || compareVersions(sourcePackage.version, rule.fixedVersion) < 0) {
+    throw new Error(`Replacement source ${sourcePath} must be ${packageName}@${rule.fixedVersion} or newer.`);
   }
-  return { sourcePath, fixedVersion };
+  return { sourcePath, fixedVersion: rule.fixedVersion };
 }
 
 export function patchVulnerableDependencyBundles(sourcesRoot, targetRoots) {
@@ -102,24 +45,23 @@ export function patchVulnerableDependencyBundles(sourcesRoot, targetRoots) {
   const replacements = [];
 
   for (const installedPackage of packageInventory(targetRoots)) {
-    const fixedVersions = FIXED_VERSIONS[installedPackage.name];
-    if (!fixedVersions) continue;
     const major = Number.parseInt(installedPackage.version?.split('.')[0], 10);
-    const fixedVersion = fixedVersions[major];
-    if (!fixedVersion) {
-      if (VULNERABLE_UNPATCHED_MAJORS[installedPackage.name]?.has(major)) {
-        throw new Error(`${installedPackage.name}@${installedPackage.version} has no patched ${major}.x source.`);
-      }
+    const rule = dependencyRule(installedPackage.name, major);
+    if (!rule) continue;
+    if (rule.noSameMajorFix) {
+      throw new Error(`${installedPackage.name}@${installedPackage.version} has no patched ${major}.x source.`);
+    }
+    if (!rule.sourceDirectory) {
       continue;
     }
 
-    const comparison = compareVersions(installedPackage.version, fixedVersion);
+    const comparison = compareVersions(installedPackage.version, rule.fixedVersion);
     if (comparison === null) {
       throw new Error(`Cannot compare ${installedPackage.name} version ${installedPackage.version ?? '(missing)'}.`);
     }
     if (comparison >= 0) continue;
 
-    const { sourcePath } = sourceForPackage(sourcesRoot, installedPackage.name, major);
+    const { sourcePath } = sourceForPackage(sourcesRoot, installedPackage.name, rule);
     if (path.resolve(installedPackage.directory) === sourcePath) {
       throw new Error(`Vulnerable replacement source found at ${sourcePath}.`);
     }
