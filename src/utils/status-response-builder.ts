@@ -79,6 +79,33 @@ export class StatusResponseBuilder {
     const runDir = runResultDir(job, this.config.resultsDir);
     const exitCode = this.metadataHelper.resolveExitCode(job, runDir);
     const metadata = this.metadataHelper.readMetadata(runDir);
+    const response = this.buildBaseStatus(job, metadata, exitCode);
+
+    this.addTimingInfo(response, job);
+    this.addProgressInfo(response, job);
+    this.addLifecycleInfo(response, job, metadata);
+    this.addPhaseOutcome(response, job, metadata);
+    this.addTaskProgressInfo(response, job);
+    this.addArtifactInfo(response, job);
+    this.addDiagnosticSummary(response, job);
+    this.addGoalCheckInfo(response, metadata);
+    this.addRunEvaluationInfo(response, metadata);
+    this.addPullRequestInfo(response, metadata);
+    this.addContractTelemetry(response, metadata, runDir);
+    this.addEfficiencyPolicy(response, runDir);
+
+    if (job.status === 'failed' && !response.error && response.diagnosticSummary?.primaryReason) {
+      response.error = response.diagnosticSummary.primaryReason;
+    }
+
+    return response;
+  }
+
+  private buildBaseStatus(
+    job: Job,
+    metadata: Record<string, unknown>,
+    exitCode: number | null,
+  ): StatusResponse {
     const validationReason = extractValidationFailureReason(metadata);
     const validationAllowlistReason = extractValidationAllowlistFailureReason(metadata);
     const qualityReason = extractQualityFailureReason(metadata);
@@ -113,24 +140,6 @@ export class StatusResponseBuilder {
       resultDir: job.resultDir,
       runner: projectRunnerImage(metadata),
     };
-
-    this.addTimingInfo(response, job);
-    this.addProgressInfo(response, job);
-    this.addLifecycleInfo(response, job, metadata);
-    this.addPhaseOutcome(response, job, metadata);
-    this.addTaskProgressInfo(response, job);
-    this.addArtifactInfo(response, job);
-    this.addDiagnosticSummary(response, job);
-    this.addGoalCheckInfo(response, metadata);
-    this.addRunEvaluationInfo(response, metadata);
-    this.addPullRequestInfo(response, metadata);
-    this.addContractTelemetry(response, metadata, runDir);
-    this.addEfficiencyPolicy(response, runDir);
-
-    if (job.status === 'failed' && !response.error && response.diagnosticSummary?.primaryReason) {
-      response.error = response.diagnosticSummary.primaryReason;
-    }
-
     return response;
   }
 

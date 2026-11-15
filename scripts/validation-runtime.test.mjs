@@ -75,3 +75,25 @@ test('smoke starts the installed binary with a real test config and reports earl
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('finds a workerd binary installed in a required nested worker workspace', () => {
+  const root = mkdtempSync(join(tmpdir(), 'kaseki-nested-workerd-'));
+  try {
+    const workspace = join(root, 'workers/auth');
+    const binaryDirectory = join(workspace, 'node_modules/workerd/bin');
+    mkdirSync(binaryDirectory, { recursive: true });
+    writeFileSync(join(root, 'package.json'), JSON.stringify({
+      scripts: { verify: 'npm run auth-worker:verify', 'auth-worker:verify': 'npm --prefix workers/auth run test' },
+    }));
+    writeFileSync(join(workspace, 'package.json'), JSON.stringify({
+      scripts: { test: 'vitest run' },
+      devDependencies: { '@cloudflare/vitest-pool-workers': '1.0.0' },
+    }));
+    writeFileSync(join(workspace, 'node_modules/workerd/package.json'), JSON.stringify({ name: 'workerd', version: '1.0.0' }));
+    writeFileSync(join(binaryDirectory, 'workerd'), '#!/bin/sh\n[ "$1" = test ] || exit 3\nexit 0\n', { mode: 0o755 });
+
+    assert.equal(smokeWorkerd(root, 'npm run verify').status, 'passed');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

@@ -1,3 +1,4 @@
+import { ReadableStream } from 'node:stream/web';
 import { SoyuzApiClient } from './SoyuzApiClient';
 import { MAX_SOYUZ_ARTIFACT_BYTES, loadSoyuzArtifacts } from './soyuz-artifacts';
 import type { SoyuzAdapterConfig } from './config';
@@ -18,6 +19,27 @@ const config: SoyuzAdapterConfig = {
 };
 
 describe('Soyuz artifact upload', () => {
+  test('cancels a response declared above the byte limit before buffering it', async () => {
+    let cancelled = false;
+    const response = new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(1));
+        controller.close();
+      },
+      cancel() {
+        cancelled = true;
+      },
+    }), {
+      headers: { 'content-length': String(128 * 1024 + 1) },
+    });
+    const fetchImpl = jest.fn(async () => response) as unknown as typeof fetch;
+    const client = new SoyuzApiClient(config, fetchImpl);
+
+    await expect(client.getRun('11111111-1111-4111-8111-111111111111'))
+      .rejects.toThrow('Soyuz response exceeded the 128 KB client limit');
+    expect(cancelled).toBe(true);
+  });
+
   test('uses the authenticated binary worker endpoint with the required metadata', async () => {
     const fetchImpl = jest.fn(async (_input: Parameters<typeof fetch>[0], _init?: Parameters<typeof fetch>[1]) =>
       new Response(JSON.stringify({ data: { id: 'artifact-id' } }), { status: 201 }));
