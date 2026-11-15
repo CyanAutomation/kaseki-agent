@@ -262,6 +262,8 @@ describe('decision workflow telemetry', () => {
     fs.writeFileSync(path.join(repoDir, 'src/api.ts'), 'export const endpoint = "/api/v1/runs";\nconst credential = "' + 'sk-or-' + 'P9m4Q2x7L8v3R1w6T0a5NcKd";\n');
     fs.writeFileSync(path.join(repoDir, 'scripts/run.sh'), 'npm run check\n');
     fs.writeFileSync(path.join(repoDir, '.env'), 'LOCAL_ONLY_SENTINEL=must-not-be-sent\n');
+    fs.writeFileSync(path.join(workspaceDir, 'outside.ts'), 'const secret = "OUTSIDE_REPOSITORY_SENTINEL";\n');
+    fs.symlinkSync(path.join(workspaceDir, 'outside.ts'), path.join(repoDir, 'src', 'linked-outside.ts'));
     fs.writeFileSync(path.join(resultsDir, 'changed-files.txt'), 'docs/API.md\n');
     fs.writeFileSync(path.join(resultsDir, 'git.diff'), 'diff --git a/docs/API.md b/docs/API.md\n+GET /api/v1/runs\n');
     fs.writeFileSync(path.join(resultsDir, 'goal-setting.json'), JSON.stringify({
@@ -269,7 +271,7 @@ describe('decision workflow telemetry', () => {
       success_criteria: [{
         id: 'criterion_1',
         criterion: 'Documentation statements match the current implementation.',
-        verification_sources: ['src/api.ts', '../outside.env', 'src/../.env', '.env'],
+        verification_sources: ['src/api.ts', 'src/linked-outside.ts', '../outside.env', 'src/../.env', '.env'],
       }],
     }));
     fs.writeFileSync(path.join(resultsDir, 'scouting.json'), JSON.stringify({
@@ -303,6 +305,7 @@ describe('decision workflow telemetry', () => {
     expect(JSON.stringify(capturedRequest?.input.state.implementation_evidence)).not.toContain('outside.env');
     expect(JSON.stringify(capturedRequest?.input.state.implementation_evidence)).not.toContain('.env');
     expect(JSON.stringify(capturedRequest?.input.state.implementation_evidence)).not.toContain('LOCAL_ONLY_SENTINEL');
+    expect(JSON.stringify(capturedRequest?.input.state.implementation_evidence)).not.toContain('OUTSIDE_REPOSITORY_SENTINEL');
   });
 
   it('omits implementation snippets for non-documentation changes', async () => {

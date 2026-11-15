@@ -34,90 +34,141 @@ function positiveInt(env: NodeJS.ProcessEnv, name: string, fallback: number, min
 }
 
 export function loadSoyuzAdapterConfig(env: NodeJS.ProcessEnv = process.env): SoyuzAdapterConfig {
-  const enabledValue = env.SOYUZ_ENABLED?.trim().toLowerCase() ?? 'false';
-  if (enabledValue !== 'true' && enabledValue !== 'false') {
-    throw new Error('SOYUZ_ENABLED must be true or false');
-  }
-  const enabled = enabledValue === 'true';
-  const submissionEnabledValue = env.SOYUZ_SUBMISSION_ENABLED?.trim().toLowerCase() ?? 'false';
-  if (submissionEnabledValue !== 'true' && submissionEnabledValue !== 'false') {
-    throw new Error('SOYUZ_SUBMISSION_ENABLED must be true or false');
-  }
-  const submissionEnabled = submissionEnabledValue === 'true';
-  const apiUrlRaw = env.SOYUZ_API_URL?.trim();
+  const enabled = booleanSetting(env, 'SOYUZ_ENABLED');
+  const submissionEnabled = booleanSetting(env, 'SOYUZ_SUBMISSION_ENABLED');
   const submissionApiToken = submissionEnabled
     ? readSecret(env, 'SOYUZ_SUBMISSION_API_TOKEN', 'soyuz_submission_api_token')
     : '';
+  if (!enabled && !submissionEnabled) return disabledConfig(timingSettings(env));
 
-  if (!enabled && !submissionEnabled) {
-    return {
-      enabled: false,
-      submissionEnabled: false,
-      submissionApiToken: '',
-      apiUrl: '',
-      workerApiToken: '',
-      accountId: '',
-      queueId: '',
-      queueApiToken: '',
-      workerId: '',
-      pollIntervalMs: positiveInt(env, 'SOYUZ_POLL_INTERVAL_MS', 5_000, 250, 60_000),
-      visibilityTimeoutMs: positiveInt(env, 'SOYUZ_VISIBILITY_TIMEOUT_MS', 120_000, 1_000, 43_200_000),
-      requestTimeoutMs: positiveInt(env, 'SOYUZ_REQUEST_TIMEOUT_MS', 20_000, 1_000, 120_000),
-      cancellationPollIntervalMs: positiveInt(env, 'SOYUZ_CANCELLATION_POLL_INTERVAL_MS', 15_000, 1_000, 300_000),
-      heartbeatIntervalMs: positiveInt(env, 'SOYUZ_HEARTBEAT_INTERVAL_MS', 60_000, 10_000, 900_000),
-    };
-  }
-
-  if (!apiUrlRaw) throw new Error('SOYUZ_API_URL is required when Soyuz submissions or queue consumption are enabled');
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(apiUrlRaw);
-  } catch {
-    throw new Error('SOYUZ_API_URL must be a valid URL');
-  }
-  if (parsedUrl.protocol !== 'https:' && !(parsedUrl.protocol === 'http:' && ['localhost', '127.0.0.1', '::1'].includes(parsedUrl.hostname))) {
-    throw new Error('SOYUZ_API_URL must use HTTPS except for localhost development');
-  }
-  if (parsedUrl.search || parsedUrl.hash) throw new Error('SOYUZ_API_URL must not include a query string or fragment');
-
-  if (submissionEnabled && submissionApiToken.length < 16) {
-    throw new Error('SOYUZ_SUBMISSION_API_TOKEN is required and must contain at least 16 characters when SOYUZ_SUBMISSION_ENABLED=true');
-  }
-
-  const workerApiToken = enabled || submissionEnabled ? readSecret(env, 'SOYUZ_WORKER_API_TOKEN', 'soyuz_worker_api_token') : '';
-  const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim() ?? '';
-  const queueId = env.CLOUDFLARE_QUEUE_ID?.trim() ?? '';
-  const queueApiToken = enabled ? readSecret(env, 'CLOUDFLARE_QUEUE_API_TOKEN', 'cloudflare_queue_api_token') : '';
-  const workerId = env.SOYUZ_WORKER_ID?.trim() ?? '';
-
-  if (enabled) {
-    if (!/^[a-f0-9]{32}$/i.test(accountId)) throw new Error('CLOUDFLARE_ACCOUNT_ID must be a 32-character hexadecimal account ID');
-    if (!queueId || queueId.length > 200) throw new Error('CLOUDFLARE_QUEUE_ID is required');
-    if (workerApiToken.length < 16) throw new Error('SOYUZ_WORKER_API_TOKEN is required and must contain at least 16 characters');
-    if (queueApiToken.length < 16) throw new Error('CLOUDFLARE_QUEUE_API_TOKEN is required and must contain at least 16 characters');
-    if (!/^[A-Za-z0-9_.:-]{1,200}$/.test(workerId)) throw new Error('SOYUZ_WORKER_ID is required and must be a stable, unique host identifier');
-  }
-  if (submissionEnabled && workerApiToken.length < 16) {
-    throw new Error('SOYUZ_WORKER_API_TOKEN is required for canonical run status reads when SOYUZ_SUBMISSION_ENABLED=true');
-  }
-  if (submissionEnabled && submissionApiToken === workerApiToken) {
-    throw new Error('SOYUZ_SUBMISSION_API_TOKEN must be distinct from SOYUZ_WORKER_API_TOKEN');
-  }
+  const apiUrl = validatedApiUrl(env.SOYUZ_API_URL);
+  validateSubmissionToken(submissionApiToken, submissionEnabled);
+  const credentials = readCredentials(env, enabled, submissionEnabled, submissionApiToken);
+  validateQueueCredentials(credentials, enabled);
+  validateSubmissionWorkerCredentials(credentials, submissionEnabled);
 
   return {
     enabled,
     submissionEnabled,
-    submissionApiToken,
-    apiUrl: apiUrlRaw.replace(/\/+$/, ''),
-    workerApiToken,
-    accountId,
-    queueId,
-    queueApiToken,
-    workerId,
+    ...credentials,
+    apiUrl,
+    ...timingSettings(env),
+  };
+}
+
+function booleanSetting(env: NodeJS.ProcessEnv, name: string): boolean {
+  const value = env[name]?.trim().toLowerCase() ?? 'false';
+  if (value !== 'true' && value !== 'false') throw new Error(`${name} must be true or false`);
+  return value === 'true';
+}
+
+type SoyuzTimingSettings = Pick<
+  SoyuzAdapterConfig,
+  'pollIntervalMs' | 'visibilityTimeoutMs' | 'requestTimeoutMs' | 'cancellationPollIntervalMs' | 'heartbeatIntervalMs'
+>;
+
+function timingSettings(env: NodeJS.ProcessEnv): SoyuzTimingSettings {
+  return {
     pollIntervalMs: positiveInt(env, 'SOYUZ_POLL_INTERVAL_MS', 5_000, 250, 60_000),
     visibilityTimeoutMs: positiveInt(env, 'SOYUZ_VISIBILITY_TIMEOUT_MS', 120_000, 1_000, 43_200_000),
     requestTimeoutMs: positiveInt(env, 'SOYUZ_REQUEST_TIMEOUT_MS', 20_000, 1_000, 120_000),
     cancellationPollIntervalMs: positiveInt(env, 'SOYUZ_CANCELLATION_POLL_INTERVAL_MS', 15_000, 1_000, 300_000),
     heartbeatIntervalMs: positiveInt(env, 'SOYUZ_HEARTBEAT_INTERVAL_MS', 60_000, 10_000, 900_000),
   };
+}
+
+function disabledConfig(timings: SoyuzTimingSettings): SoyuzAdapterConfig {
+  return {
+    enabled: false,
+    submissionEnabled: false,
+    submissionApiToken: '',
+    apiUrl: '',
+    workerApiToken: '',
+    accountId: '',
+    queueId: '',
+    queueApiToken: '',
+    workerId: '',
+    ...timings,
+  };
+}
+
+function validatedApiUrl(raw: string | undefined): string {
+  const value = raw?.trim();
+  if (!value) throw new Error('SOYUZ_API_URL is required when Soyuz submissions or queue consumption are enabled');
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error('SOYUZ_API_URL must be a valid URL');
+  }
+  const isLocalHttp = parsed.protocol === 'http:' && ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname);
+  if (parsed.protocol !== 'https:' && !isLocalHttp) {
+    throw new Error('SOYUZ_API_URL must use HTTPS except for localhost development');
+  }
+  if (parsed.search || parsed.hash) throw new Error('SOYUZ_API_URL must not include a query string or fragment');
+  return value.replace(/\/+$/, '');
+}
+
+interface SoyuzCredentials {
+  submissionApiToken: string;
+  workerApiToken: string;
+  accountId: string;
+  queueId: string;
+  queueApiToken: string;
+  workerId: string;
+}
+
+function readCredentials(
+  env: NodeJS.ProcessEnv,
+  enabled: boolean,
+  submissionEnabled: boolean,
+  submissionApiToken: string,
+): SoyuzCredentials {
+  return {
+    submissionApiToken,
+    workerApiToken: enabled || submissionEnabled
+      ? readSecret(env, 'SOYUZ_WORKER_API_TOKEN', 'soyuz_worker_api_token')
+      : '',
+    accountId: env.CLOUDFLARE_ACCOUNT_ID?.trim() ?? '',
+    queueId: env.CLOUDFLARE_QUEUE_ID?.trim() ?? '',
+    queueApiToken: enabled
+      ? readSecret(env, 'CLOUDFLARE_QUEUE_API_TOKEN', 'cloudflare_queue_api_token')
+      : '',
+    workerId: env.SOYUZ_WORKER_ID?.trim() ?? '',
+  };
+}
+
+function validateSubmissionToken(submissionApiToken: string, submissionEnabled: boolean): void {
+  if (!submissionEnabled) return;
+  if (submissionApiToken.length < 16) {
+    throw new Error('SOYUZ_SUBMISSION_API_TOKEN is required and must contain at least 16 characters when SOYUZ_SUBMISSION_ENABLED=true');
+  }
+}
+
+function validateSubmissionWorkerCredentials(credentials: SoyuzCredentials, submissionEnabled: boolean): void {
+  if (!submissionEnabled) return;
+  if (credentials.workerApiToken.length < 16) {
+    throw new Error('SOYUZ_WORKER_API_TOKEN is required for canonical run status reads when SOYUZ_SUBMISSION_ENABLED=true');
+  }
+  if (credentials.submissionApiToken === credentials.workerApiToken) {
+    throw new Error('SOYUZ_SUBMISSION_API_TOKEN must be distinct from SOYUZ_WORKER_API_TOKEN');
+  }
+}
+
+function validateQueueCredentials(credentials: SoyuzCredentials, enabled: boolean): void {
+  if (!enabled) return;
+  if (!/^[a-f0-9]{32}$/i.test(credentials.accountId)) {
+    throw new Error('CLOUDFLARE_ACCOUNT_ID must be a 32-character hexadecimal account ID');
+  }
+  if (!credentials.queueId || credentials.queueId.length > 200) throw new Error('CLOUDFLARE_QUEUE_ID is required');
+  if (credentials.workerApiToken.length < 16) {
+    throw new Error('SOYUZ_WORKER_API_TOKEN is required and must contain at least 16 characters');
+  }
+  if (credentials.queueApiToken.length < 16) {
+    throw new Error('CLOUDFLARE_QUEUE_API_TOKEN is required and must contain at least 16 characters');
+  }
+  if (!/^[A-Za-z0-9_.:-]{1,200}$/.test(credentials.workerId)) {
+    throw new Error('SOYUZ_WORKER_ID is required and must be a stable, unique host identifier');
+  }
 }

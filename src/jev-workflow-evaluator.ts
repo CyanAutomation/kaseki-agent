@@ -78,56 +78,98 @@ function implementationEvidence(resultsDir: string, goal: JsonObject, scouting: 
   let canonicalRepository: string;
   try { canonicalRepository = fs.realpathSync(repository); } catch { return []; }
 
-  const candidates: string[] = [];
-  for (const criterion of Array.isArray(goal.success_criteria) ? goal.success_criteria : []) {
-    if (!criterion || typeof criterion !== 'object' || Array.isArray(criterion)) continue;
-    const sources = (criterion as JsonObject).verification_sources;
-    if (Array.isArray(sources)) candidates.push(...sources.filter((source): source is string => typeof source === 'string'));
-  }
-  for (const item of Array.isArray(scouting.relevant_files) ? scouting.relevant_files : []) {
-    if (typeof item === 'string') candidates.push(item);
-    else if (item && typeof item === 'object' && !Array.isArray(item)) {
-      const file = (item as JsonObject).path;
-      if (typeof file === 'string') candidates.push(file);
-    }
-  }
-
+  const candidates = collectImplementationEvidenceCandidates(goal, scouting);
   const evidence: JsonObject[] = [];
   const seen = new Set<string>();
   let totalChars = 0;
   for (const candidate of candidates) {
     if (evidence.length >= 5 || totalChars >= 12000) break;
-    const requestedPath = candidate.trim().replaceAll('\\', '/');
-    if (!requestedPath || path.posix.isAbsolute(requestedPath)
-        || requestedPath.split('/').some((part) => part === '..')) continue;
-    const relativePath = path.posix.normalize(requestedPath);
-    if (/(^|\/)(?:\.env(?:\.[^/]*)?|credentials?(?:\.[^/]*)?|secrets?(?:\.[^/]*)?|id_(?:rsa|ed25519))$/i.test(relativePath)
-        || /\.(?:pem|key|p12|pfx|crt|cert)$/i.test(relativePath)
-        || relativePath.split('/').some((part) => part === '.git' || part === 'node_modules' || part === '.ssh')) continue;
-    let canonicalFile: string;
-    try { canonicalFile = fs.realpathSync(path.resolve(canonicalRepository, relativePath)); } catch { continue; }
-    if (!canonicalFile.startsWith(canonicalRepository + path.sep) || seen.has(canonicalFile)) continue;
+    const relativePath = safeImplementationEvidencePath(candidate);
+    if (!relativePath) continue;
+    const canonicalFile = canonicalImplementationEvidencePath(canonicalRepository, relativePath);
+    if (!canonicalFile || seen.has(canonicalFile)) continue;
     seen.add(canonicalFile);
-    let descriptor: number;
-    try {
-      descriptor = fs.openSync(canonicalFile, 'r');
-      const stats = fs.fstatSync(descriptor);
-      if (!stats.isFile()) { fs.closeSync(descriptor); continue; }
-      const buffer = Buffer.alloc(4096);
-      const content = buffer.subarray(0, fs.readSync(descriptor, buffer, 0, buffer.length, 0)).toString('utf8');
-      fs.closeSync(descriptor);
-      if (content.includes('\0')) continue;
-      const redactedContent = String(redactJevEvidence(content));
-      const remaining = 12000 - totalChars;
-      const boundedContent = redactedContent.slice(0, Math.min(4096, remaining));
-      if (!boundedContent.trim()) continue;
-      evidence.push({ path: relativePath, content: boundedContent, truncated: stats.size > 4096 || redactedContent.length > boundedContent.length });
-      totalChars += boundedContent.length;
-    } catch {
-      try { fs.closeSync(descriptor!); } catch { /* Ignore an already-closed descriptor. */ }
-    }
+    const item = readImplementationEvidence(canonicalFile, relativePath, 12000 - totalChars);
+    if (!item) continue;
+    evidence.push(item);
+    totalChars += String(item.content).length;
   }
   return evidence;
+}
+
+function collectImplementationEvidenceCandidates(goal: JsonObject, scouting: JsonObject): string[] {
+  const candidates: string[] = [];
+  for (const criterion of Array.isArray(goal.success_criteria) ? goal.success_criteria : []) {
+    if (!criterion || typeof criterion !== 'object' || Array.isArray(criterion)) continue;
+    const sources = (criterion as JsonObject).verification_sources;
+    if (Array.isArray(sources)) {
+      candidates.push(...sources.filter((source): source is string => typeof source === 'string'));
+    }
+  }
+  for (const item of Array.isArray(scouting.relevant_files) ? scouting.relevant_files : []) {
+    if (typeof item === 'string') {
+      candidates.push(item);
+      continue;
+    }
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const file = (item as JsonObject).path;
+    if (typeof file === 'string') candidates.push(file);
+  }
+  return candidates;
+}
+
+function safeImplementationEvidencePath(candidate: string): string | undefined {
+  const requestedPath = candidate.trim().replaceAll('\\', '/');
+  if (!requestedPath || path.posix.isAbsolute(requestedPath)
+      || requestedPath.split('/').some((part) => part === '..')) return undefined;
+  const relativePath = path.posix.normalize(requestedPath);
+  const sensitiveName = /(^|\/)(?:\.env(?:\.[^/]*)?|credentials?(?:\.[^/]*)?|secrets?(?:\.[^/]*)?|id_(?:rsa|ed25519))$/i;
+  const sensitiveExtension = /\.(?:pem|key|p12|pfx|crt|cert)$/i;
+  const excludedDirectory = relativePath.split('/').some((part) => part === '.git' || part === 'node_modules' || part === '.ssh');
+  if (sensitiveName.test(relativePath) || sensitiveExtension.test(relativePath) || excludedDirectory) return undefined;
+  return relativePath;
+}
+
+function canonicalImplementationEvidencePath(repository: string, relativePath: string): string | undefined {
+  let canonicalFile: string;
+  try {
+    canonicalFile = fs.realpathSync(path.resolve(repository, relativePath));
+  } catch {
+    return undefined;
+  }
+  return canonicalFile.startsWith(repository + path.sep) ? canonicalFile : undefined;
+}
+
+function readImplementationEvidence(
+  canonicalFile: string,
+  relativePath: string,
+  remainingChars: number,
+): JsonObject | undefined {
+  let descriptor: number | undefined;
+  try {
+    descriptor = fs.openSync(canonicalFile, 'r');
+    const stats = fs.fstatSync(descriptor);
+    if (!stats.isFile()) return undefined;
+    const buffer = Buffer.alloc(4096);
+    const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, 0);
+    const content = buffer.subarray(0, bytesRead).toString('utf8');
+    if (content.includes('\0')) return undefined;
+
+    const redactedContent = String(redactJevEvidence(content));
+    const boundedContent = redactedContent.slice(0, Math.min(4096, remainingChars));
+    if (!boundedContent.trim()) return undefined;
+    return {
+      path: relativePath,
+      content: boundedContent,
+      truncated: stats.size > 4096 || redactedContent.length > boundedContent.length,
+    };
+  } catch {
+    return undefined;
+  } finally {
+    if (descriptor !== undefined) {
+      try { fs.closeSync(descriptor); } catch { /* Closing an unavailable descriptor is best effort. */ }
+    }
+  }
 }
 
 function evidenceState(resultsDir: string): JsonObject {

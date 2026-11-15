@@ -1609,13 +1609,18 @@ export class JobScheduler {
 
   private recoverStagedArtifacts(job: Job): void {
     const resultDir = this.getResultDir(job.id);
+    this.copyStagedArtifacts(job.id, resultDir);
+    if (!job.currentStage) this.restoreCurrentStage(job, resultDir);
+  }
+
+  private copyStagedArtifacts(jobId: string, resultDir: string): void {
     // A controller deadline may race host-side staging promotion. Recover
     // registered evidence only; never follow symlinks or replace final artifacts.
     for (const parent of [this.config.resultsDir, resultDir]) {
       try {
         fs.mkdirSync(resultDir, { recursive: true });
         for (const entry of fs.readdirSync(parent, { withFileTypes: true })) {
-          if (!entry.isDirectory() || !entry.name.startsWith(`.staging-result-${job.id}-`)) continue;
+          if (!entry.isDirectory() || !entry.name.startsWith(`.staging-result-${jobId}-`)) continue;
           const staging = path.join(parent, entry.name);
           for (const name of Object.keys(ARTIFACT_METADATA_REGISTRY)) {
             if (['metadata.json', 'failure.json', 'result-summary.md', 'exit_code'].includes(name)) continue;
@@ -1629,19 +1634,26 @@ export class JobScheduler {
         }
       } catch { /* Evidence recovery cannot prevent timeout cleanup. */ }
     }
-    if (!job.currentStage) {
-      try {
-        const progress = fs.readFileSync(path.join(resultDir, 'progress.jsonl'), 'utf8').split('\n').reverse();
-        for (const line of progress) {
-          try {
-            const event = JSON.parse(line);
-            if (typeof event.stage === 'string' && event.stage.trim()) {
-              job.currentStage = event.stage.trim();
-              break;
-            }
-          } catch { /* Ignore incomplete event lines. */ }
-        }
-      } catch { /* Progress may never have started. */ }
+  }
+
+  private restoreCurrentStage(job: Job, resultDir: string): void {
+    try {
+      const progress = fs.readFileSync(path.join(resultDir, 'progress.jsonl'), 'utf8').split('\n').reverse();
+      for (const line of progress) {
+        const stage = this.parseProgressStage(line);
+        if (!stage) continue;
+        job.currentStage = stage;
+        return;
+      }
+    } catch { /* Progress may never have started. */ }
+  }
+
+  private parseProgressStage(line: string): string | undefined {
+    try {
+      const event = JSON.parse(line) as { stage?: unknown } | null;
+      return typeof event?.stage === 'string' && event.stage.trim() ? event.stage.trim() : undefined;
+    } catch {
+      return undefined;
     }
   }
 
