@@ -912,7 +912,7 @@ function registerRunRetryRoute(
    * Retry only a terminal run. The caller must supply a fresh UUID key; a
    * replay of that key returns the same newly-created run without accepting it twice.
    */
-  router.post('/runs/:id/retry', async (req: Request, res: Response) => {
+  router.post('/runs/:id/retry', async (req: Request<{ id: string }>, res: Response) => {
     const source = scheduler.getJob(req.params.id) ?? (
       typeof scheduler.getJobIncludingHistory === 'function'
         ? await scheduler.getJobIncludingHistory(req.params.id)

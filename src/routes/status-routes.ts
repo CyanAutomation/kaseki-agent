@@ -112,7 +112,7 @@ export function createStatusRoutes(
     res.json(response);
   });
 
-  router.get('/runs/:id', async (req: Request, res: Response) => {
+  router.get('/runs/:id', async (req: Request<{ id: string }>, res: Response) => {
     const job = await findRunJob(scheduler, req.params.id);
     if (!job && submissionClient && isCanonicalSoyuzId(req.params.id)) {
       try {
@@ -163,7 +163,7 @@ export function createStatusRoutes(
   /**
    * GET /api/v1/runs/:id/status - Get run status.
    */
-  router.get('/runs/:id/status', async (req: Request, res: Response) => {
+  router.get('/runs/:id/status', async (req: Request<{ id: string }>, res: Response) => {
     const job = await findRunJob(scheduler, req.params.id);
     if (!job) {
       if (submissionClient && isCanonicalSoyuzId(req.params.id)) {
@@ -196,7 +196,7 @@ export function createStatusRoutes(
   /**
    * POST /api/v1/runs/:id/cancel - Cancel a queued or running run.
    */
-  router.post('/runs/:id/cancel', async (req: Request, res: Response) => {
+  router.post('/runs/:id/cancel', async (req: Request<{ id: string }>, res: Response) => {
     const requestedId = req.params.id;
     const resolvedJob = typeof scheduler.getJobIncludingHistory === 'function'
       ? await scheduler.getJobIncludingHistory(requestedId) ?? (await scheduler.listAllJobs()).find((job) => job.id.toLowerCase() === requestedId.toLowerCase())

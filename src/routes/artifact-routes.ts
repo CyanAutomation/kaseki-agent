@@ -23,7 +23,7 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
    * GET /api/v1/results/:id/:file - Download artifact.
    * Serves all artifacts in ARTIFACT_METADATA_REGISTRY.
    */
-  router.get('/results/:id/:file', async (req: Request, res: Response) => {
+  router.get('/results/:id/:file', async (req: Request<{ id: string; file: string }>, res: Response) => {
     const job = await getJobOrRespond(scheduler, req.params.id, res);
     if (!job) {
       return;
@@ -41,7 +41,7 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
    * GET /api/v1/runs/:id/artifacts - List available artifacts.
    * Pass ?manifest=true to include unavailable registry entries as well.
    */
-  router.get('/runs/:id/artifacts', async (req: Request, res: Response) => {
+  router.get('/runs/:id/artifacts', async (req: Request<{ id: string }>, res: Response) => {
     const job = await getJobOrRespond(scheduler, req.params.id, res);
     if (!job) {
       return;
