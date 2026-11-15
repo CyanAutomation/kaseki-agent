@@ -77,6 +77,20 @@ export type ClassifyCavemanToolOutput = (
   input: Record<string, unknown>,
 ) => Promise<JevToolOutputDecision>;
 
+interface ToolOutputRoutingOptions {
+  enabled?: boolean;
+  minTokens?: number;
+  discardThreshold?: number;
+  condenseThreshold?: number;
+  phase?: string;
+  toolOutputTargetTokens?: number;
+  goalSummary?: string;
+}
+
+type ToolOutputPreflight =
+  | { result: CavemanToolOutputResult }
+  | { text: string; inputTokens: number };
+
 const DEFAULT_MIN_CHARS = 6_000;
 const LEVEL_THREE_MIN_CHARS = 3_000;
 const MAX_STRUCTURAL_SUMMARY_BYTES = 256_000;
@@ -241,46 +255,16 @@ function protectedEvidence(event: CavemanToolOutputEvent, text: string): boolean
 export async function routeSemanticToolOutput(
   event: CavemanToolOutputEvent,
   classify: ClassifyCavemanToolOutput,
-  options: {
-    enabled?: boolean;
-    minTokens?: number;
-    discardThreshold?: number;
-    condenseThreshold?: number;
-    phase?: string;
-    toolOutputTargetTokens?: number;
-    goalSummary?: string;
-  } = {},
+  options: ToolOutputRoutingOptions = {},
 ): Promise<CavemanToolOutputResult> {
-  const text = getText(event);
-  if (text === undefined) return { ...preserved(event, '', 'unsupported_content'), disposition: 'preserve', estimatedInputTokens: 0, estimatedOutputTokens: 0 };
-  const inputTokens = Math.ceil(Buffer.byteLength(text, 'utf8') / 4);
-  if (options.enabled === false) return { ...preserved(event, text, 'router_disabled'), disposition: 'preserve', estimatedInputTokens: inputTokens, estimatedOutputTokens: inputTokens };
-  if (protectedEvidence(event, text)) return { ...preserved(event, text, event.isError ? 'tool_error' : 'protected_evidence'), disposition: 'preserve', estimatedInputTokens: inputTokens, estimatedOutputTokens: inputTokens };
-  if (!isRouteCandidate(event)) return { ...preserved(event, text, 'tool_not_eligible'), disposition: 'preserve', estimatedInputTokens: inputTokens, estimatedOutputTokens: inputTokens };
-  const minTokens = options.minTokens ?? 1500;
-  if (inputTokens < minTokens) return { ...preserved(event, text, 'below_minimum_size'), disposition: 'preserve', estimatedInputTokens: inputTokens, estimatedOutputTokens: inputTokens };
+  const preflight = preflightToolOutput(event, options);
+  if ('result' in preflight) return preflight.result;
+  const { text, inputTokens } = preflight;
 
   const metadata = buildCavemanToolOutputMetadata(event, text, options);
-  if (metadata.consecutiveDuplicateLineRatio >= 0.9) {
-    const repeatedCompaction = compactResult(event, text);
-    if (repeatedCompaction !== undefined) {
-      const outputTokens = Math.ceil(Buffer.byteLength(repeatedCompaction, 'utf8') / 4);
-      return {
-        attempted: false,
-        transformed: true,
-        route: 'compact_repeated',
-        reason: 'deterministic_repeated_output',
-        inputChars: text.length,
-        outputChars: repeatedCompaction.length,
-        savedChars: text.length - repeatedCompaction.length,
-        content: [{ ...event.content[0], text: repeatedCompaction }],
-        metadata,
-        disposition: 'condense',
-        estimatedInputTokens: inputTokens,
-        estimatedOutputTokens: outputTokens,
-      };
-    }
-  }
+  const repeatedResult = compactRepeatedOutput(event, text, inputTokens, metadata);
+  if (repeatedResult) return repeatedResult;
+
   const started = performance.now();
   let decision: JevToolOutputDecision;
   try {
@@ -294,10 +278,86 @@ export async function routeSemanticToolOutput(
   }
   const routingLatencyMs = Math.round(performance.now() - started);
   const dispositionAnswer = (decision as JevToolOutputDecision | undefined)?.answers?.disposition;
-  const selected = semanticDisposition(dispositionAnswer, {
+  const selected = semanticDisposition(dispositionAnswer, routingThresholds(options));
+  return resultForDisposition(event, text, inputTokens, metadata, selected, dispositionAnswer, routingLatencyMs);
+}
+
+function preflightToolOutput(
+  event: CavemanToolOutputEvent,
+  options: ToolOutputRoutingOptions,
+): ToolOutputPreflight {
+  const text = getText(event);
+  if (text === undefined) {
+    return { result: { ...preserved(event, '', 'unsupported_content'), disposition: 'preserve', estimatedInputTokens: 0, estimatedOutputTokens: 0 } };
+  }
+  const inputTokens = Math.ceil(Buffer.byteLength(text, 'utf8') / 4);
+  if (options.enabled === false) return preserveBeforeRouting(event, text, inputTokens, 'router_disabled');
+  if (protectedEvidence(event, text)) {
+    return preserveBeforeRouting(event, text, inputTokens, event.isError ? 'tool_error' : 'protected_evidence');
+  }
+  if (!isRouteCandidate(event)) return preserveBeforeRouting(event, text, inputTokens, 'tool_not_eligible');
+  if (inputTokens < (options.minTokens ?? 1500)) return preserveBeforeRouting(event, text, inputTokens, 'below_minimum_size');
+  return { text, inputTokens };
+}
+
+function preserveBeforeRouting(
+  event: CavemanToolOutputEvent,
+  text: string,
+  inputTokens: number,
+  reason: string,
+): ToolOutputPreflight {
+  return {
+    result: {
+      ...preserved(event, text, reason),
+      disposition: 'preserve',
+      estimatedInputTokens: inputTokens,
+      estimatedOutputTokens: inputTokens,
+    },
+  };
+}
+
+function compactRepeatedOutput(
+  event: CavemanToolOutputEvent,
+  text: string,
+  inputTokens: number,
+  metadata: CavemanToolOutputMetadata,
+): CavemanToolOutputResult | undefined {
+  if (metadata.consecutiveDuplicateLineRatio < 0.9) return undefined;
+  const repeatedCompaction = compactResult(event, text);
+  if (repeatedCompaction === undefined) return undefined;
+  const outputTokens = Math.ceil(Buffer.byteLength(repeatedCompaction, 'utf8') / 4);
+  return {
+    attempted: false,
+    transformed: true,
+    route: 'compact_repeated',
+    reason: 'deterministic_repeated_output',
+    inputChars: text.length,
+    outputChars: repeatedCompaction.length,
+    savedChars: text.length - repeatedCompaction.length,
+    content: [{ ...event.content[0], text: repeatedCompaction }],
+    metadata,
+    disposition: 'condense',
+    estimatedInputTokens: inputTokens,
+    estimatedOutputTokens: outputTokens,
+  };
+}
+
+function routingThresholds(options: ToolOutputRoutingOptions): { discard: number; condense: number } {
+  return {
     discard: options.discardThreshold ?? DEFAULT_DISCARD_THRESHOLD,
     condense: options.condenseThreshold ?? DEFAULT_CONDENSE_THRESHOLD,
-  });
+  };
+}
+
+function resultForDisposition(
+  event: CavemanToolOutputEvent,
+  text: string,
+  inputTokens: number,
+  metadata: CavemanToolOutputMetadata,
+  selected: ContextRoutingDecision,
+  dispositionAnswer: ClassificationAnswer | undefined,
+  routingLatencyMs: number,
+): CavemanToolOutputResult {
   if (selected.disposition === 'preserve') {
     return { ...preserved(event, text, selected.reason || 'jev_preserved', { attempted: true, metadata, confidence: dispositionAnswer?.type === 'choice' ? dispositionAnswer.confidence ?? undefined : undefined }), disposition: 'preserve', decision: selected, estimatedInputTokens: inputTokens, estimatedOutputTokens: inputTokens, routingLatencyMs };
   }
