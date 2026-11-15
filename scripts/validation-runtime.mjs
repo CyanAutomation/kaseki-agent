@@ -111,41 +111,62 @@ function requiredRuntimeDirectories(workspace, commands) {
   return [...required];
 }
 
-function workerdBinaries(workspace, requiredDirs) {
-  if (!fs.existsSync(workspace)) return [];
-  const dirs = requiredDirs || [workspace];
-  for (const group of requiredDirs ? [] : ['workers', 'packages']) {
+function workerdDirectories(workspace, requiredDirs) {
+  if (requiredDirs) return requiredDirs;
+  const dirs = [workspace];
+  for (const group of ['workers', 'packages']) {
     try {
       for (const entry of fs.readdirSync(path.join(workspace, group), { withFileTypes: true })) {
         if (entry.isDirectory() && dirs.length < 16) dirs.push(path.join(workspace, group, entry.name));
       }
     } catch { /* Optional workspace groups. */ }
   }
+  return dirs;
+}
+
+function workerdDependencyRoots(workspace, dirs) {
   const dependencyRoots = [workspace];
   for (const dir of dirs) {
     try { dependencyRoots.push(fs.realpathSync(path.join(dir, 'node_modules'))); } catch { /* Not installed here. */ }
   }
+  return dependencyRoots;
+}
+
+function nativeWorkerdBinary(manifest) {
+  let binary = path.join(path.dirname(manifest), 'bin/workerd');
+  // Invoke the platform binary directly when present. Timing out npm's JS
+  // wrapper can otherwise leave its synchronous native child running.
+  const platform = os.platform() === 'win32' ? 'windows' : os.platform();
+  const arch = os.arch() === 'x64' ? '64' : os.arch();
+  const nativeRequire = createRequire(manifest);
+  for (const dependency of [`@cloudflare/workerd-${platform}-${arch}`, `@workerd/${platform}-${arch}`]) {
+    try {
+      const nativeManifest = nativeRequire.resolve(`${dependency}/package.json`);
+      const native = path.join(path.dirname(nativeManifest), 'bin', platform === 'windows' ? 'workerd.exe' : 'workerd');
+      if (fs.existsSync(native)) { binary = native; break; }
+    } catch { /* The package wrapper remains a fallback for other layouts. */ }
+  }
+  return fs.existsSync(binary) ? fs.realpathSync(binary) : undefined;
+}
+
+function workerdBinaryInDirectory(dir, dependencyRoots) {
+  try {
+    const require = createRequire(path.join(dir, 'package.json'));
+    const manifest = require.resolve('workerd/package.json');
+    if (!dependencyRoots.some(root => manifest.startsWith(root + path.sep))) return undefined;
+    return nativeWorkerdBinary(manifest);
+  } catch { /* Not installed in this workspace. */ }
+  return undefined;
+}
+
+function workerdBinaries(workspace, requiredDirs) {
+  if (!fs.existsSync(workspace)) return [];
+  const dirs = workerdDirectories(workspace, requiredDirs);
+  const dependencyRoots = workerdDependencyRoots(workspace, dirs);
   const binaries = new Set();
   for (const dir of dirs) {
-    try {
-      const require = createRequire(path.join(dir, 'package.json'));
-      const manifest = require.resolve('workerd/package.json');
-      if (!dependencyRoots.some(root => manifest.startsWith(root + path.sep))) continue;
-      let binary = path.join(path.dirname(manifest), 'bin/workerd');
-      // Invoke the platform binary directly when present. Timing out npm's JS
-      // wrapper can otherwise leave its synchronous native child running.
-      const platform = os.platform() === 'win32' ? 'windows' : os.platform();
-      const arch = os.arch() === 'x64' ? '64' : os.arch();
-      const nativeRequire = createRequire(manifest);
-      for (const dependency of [`@cloudflare/workerd-${platform}-${arch}`, `@workerd/${platform}-${arch}`]) {
-        try {
-          const nativeManifest = nativeRequire.resolve(`${dependency}/package.json`);
-          const native = path.join(path.dirname(nativeManifest), 'bin', platform === 'windows' ? 'workerd.exe' : 'workerd');
-          if (fs.existsSync(native)) { binary = native; break; }
-        } catch { /* The package wrapper remains a fallback for other layouts. */ }
-      }
-      if (fs.existsSync(binary)) binaries.add(fs.realpathSync(binary));
-    } catch { /* Not installed in this workspace. */ }
+    const binary = workerdBinaryInDirectory(dir, dependencyRoots);
+    if (binary) binaries.add(binary);
   }
   return [...binaries];
 }

@@ -160,78 +160,134 @@ export function createStatusRoutes(
     });
   });
 
-  /**
-   * GET /api/v1/runs/:id/status - Get run status.
-   */
-  router.get('/runs/:id/status', async (req: Request, res: Response) => {
-    const job = await findRunJob(scheduler, req.params.id);
-    if (!job) {
-      if (submissionClient && isCanonicalSoyuzId(req.params.id)) {
-        try {
-          const remote = await submissionClient.getWorkerRun(req.params.id);
-          return res.json({
-            id: remote.runId,
-            status: normalizeSoyuzRunStatus(remote.status),
-            lifecyclePhase: remote.status === 'queued' || remote.status === 'admitting' ? 'queued' : remote.status === 'completed' || remote.status === 'failed' || remote.status === 'cancelled' || remote.status === 'admission_failed' ? 'terminal' : 'executing',
-            progress: remote.stage ? { stage: remote.stage } : undefined,
-            updatedAt: remote.updatedAt,
-            cancelRequestedAt: remote.cancelRequestedAt ?? undefined,
-            operationalHealth: remote.operationalHealth,
-            origin: remote.origin,
-            retryOf: remote.retryOf ?? undefined,
-          });
-        } catch (error) {
-          if (error instanceof SoyuzApiError) {
-            return sendErrorResponse(res, error.status === 404 ? 404 : 503, error.status === 404 ? 'Not Found' : 'Soyuz Unavailable', error.message);
-          }
-          return sendErrorResponse(res, 503, 'Soyuz Unavailable', 'Could not read canonical Soyuz run state');
-        }
-      }
-      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
-    }
-    const { resultDir: _resultDir, ...response } = statusBuilder.buildStatus(job);
-    res.json(response);
-  });
-
-  /**
-   * POST /api/v1/runs/:id/cancel - Cancel a queued or running run.
-   */
-  router.post('/runs/:id/cancel', async (req: Request, res: Response) => {
-    const requestedId = req.params.id;
-    const resolvedJob = typeof scheduler.getJobIncludingHistory === 'function'
-      ? await scheduler.getJobIncludingHistory(requestedId) ?? (await scheduler.listAllJobs()).find((job) => job.id.toLowerCase() === requestedId.toLowerCase())
-      : scheduler.getJob(requestedId) ?? scheduler.listJobs().find((job) => job.id.toLowerCase() === requestedId.toLowerCase());
-    const wasTerminal = resolvedJob?.status === 'completed' || resolvedJob?.status === 'failed';
-    if (submissionClient && ((resolvedJob?.soyuz) || (!resolvedJob && isCanonicalSoyuzId(requestedId)))) {
-      const canonicalId = resolvedJob?.soyuz?.externalRunId ?? requestedId;
-      try {
-        const remote = await submissionClient.cancelRun(canonicalId);
-        return res.json({
-          id: remote.id,
-          ...(resolvedJob?.soyuz ? { localRunId: resolvedJob.id } : {}),
-          status: normalizeSoyuzRunStatus(remote.status),
-          origin: remote.origin,
-          cancelOutcome: remote.status === 'completed' || remote.status === 'failed' || remote.status === 'cancelled' ? 'already_terminal' : 'cancel_requested',
-          retryOf: remote.retryOf ?? undefined,
-        });
-      } catch (error) {
-        if (error instanceof SoyuzApiError) {
-          return sendErrorResponse(res, error.status === 404 ? 404 : 503, error.status === 404 ? 'Not Found' : 'Soyuz Cancel Failed', error.message, { code: error.code });
-        }
-        return sendErrorResponse(res, 503, 'Soyuz Cancel Uncertain', 'Could not confirm the Soyuz cancellation request');
-      }
-    }
-    const job = wasTerminal ? resolvedJob : resolvedJob ? scheduler.cancelJob(resolvedJob.id) : undefined;
-    if (!job) {
-      const hint = requestedId.toLowerCase() !== requestedId ? ` Did you mean: ${requestedId.toLowerCase()}?` : '';
-      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${requestedId}.${hint}`);
-    }
-
-    const { resultDir: _resultDir, ...response } = statusBuilder.buildStatus(job);
-    res.json({ ...response, cancelOutcome: wasTerminal ? 'already_terminal' : 'cancelled' });
-  });
+  registerRunStatusRoute(router, scheduler, statusBuilder, submissionClient);
+  registerRunCancelRoute(router, scheduler, statusBuilder, submissionClient);
 
   return router;
+}
+
+function registerRunStatusRoute(
+  router: Router,
+  scheduler: JobScheduler,
+  statusBuilder: StatusResponseBuilder,
+  submissionClient?: SoyuzSubmissionClient,
+): void {
+  router.get('/runs/:id/status', async (req: Request, res: Response) => {
+    const job = await findRunJob(scheduler, req.params.id);
+    if (job) {
+      const { resultDir: _resultDir, ...response } = statusBuilder.buildStatus(job);
+      return res.json(response);
+    }
+    if (await respondWithRemoteRunStatus(submissionClient, req.params.id, res)) return;
+    return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
+  });
+}
+
+async function respondWithRemoteRunStatus(
+  submissionClient: SoyuzSubmissionClient | undefined,
+  runId: string,
+  res: Response,
+): Promise<boolean> {
+  if (!submissionClient || !isCanonicalSoyuzId(runId)) return false;
+  try {
+    const remote = await submissionClient.getWorkerRun(runId);
+    const lifecyclePhase = remote.status === 'queued' || remote.status === 'admitting'
+      ? 'queued'
+      : ['completed', 'failed', 'cancelled', 'admission_failed'].includes(remote.status)
+        ? 'terminal'
+        : 'executing';
+    res.json({
+      id: remote.runId,
+      status: normalizeSoyuzRunStatus(remote.status),
+      lifecyclePhase,
+      progress: remote.stage ? { stage: remote.stage } : undefined,
+      updatedAt: remote.updatedAt,
+      cancelRequestedAt: remote.cancelRequestedAt ?? undefined,
+      operationalHealth: remote.operationalHealth,
+      origin: remote.origin,
+      retryOf: remote.retryOf ?? undefined,
+    });
+  } catch (error) {
+    if (error instanceof SoyuzApiError) {
+      sendErrorResponse(res, error.status === 404 ? 404 : 503, error.status === 404 ? 'Not Found' : 'Soyuz Unavailable', error.message);
+      return true;
+    }
+    sendErrorResponse(res, 503, 'Soyuz Unavailable', 'Could not read canonical Soyuz run state');
+    return true;
+  }
+  return true;
+}
+
+function registerRunCancelRoute(
+  router: Router,
+  scheduler: JobScheduler,
+  statusBuilder: StatusResponseBuilder,
+  submissionClient?: SoyuzSubmissionClient,
+): void {
+  router.post('/runs/:id/cancel', async (req: Request, res: Response) => {
+    const requestedId = req.params.id;
+    const resolvedJob = await findCancelableJob(scheduler, requestedId);
+    if (await respondWithRemoteCancellation(submissionClient, resolvedJob, requestedId, res)) return;
+    return respondWithLocalCancellation(scheduler, statusBuilder, resolvedJob, requestedId, res);
+  });
+}
+
+async function findCancelableJob(scheduler: JobScheduler, requestedId: string) {
+  if (typeof scheduler.getJobIncludingHistory === 'function') {
+    return await scheduler.getJobIncludingHistory(requestedId)
+      ?? (await scheduler.listAllJobs()).find((job) => job.id.toLowerCase() === requestedId.toLowerCase());
+  }
+  return scheduler.getJob(requestedId)
+    ?? scheduler.listJobs().find((job) => job.id.toLowerCase() === requestedId.toLowerCase());
+}
+
+async function respondWithRemoteCancellation(
+  submissionClient: SoyuzSubmissionClient | undefined,
+  resolvedJob: Awaited<ReturnType<typeof findCancelableJob>>,
+  requestedId: string,
+  res: Response,
+): Promise<boolean> {
+  if (!submissionClient || (!resolvedJob?.soyuz && (resolvedJob || !isCanonicalSoyuzId(requestedId)))) return false;
+  const canonicalId = resolvedJob?.soyuz?.externalRunId ?? requestedId;
+  try {
+    const remote = await submissionClient.cancelRun(canonicalId);
+    res.json({
+      id: remote.id,
+      ...(resolvedJob?.soyuz ? { localRunId: resolvedJob.id } : {}),
+      status: normalizeSoyuzRunStatus(remote.status),
+      origin: remote.origin,
+      cancelOutcome: isTerminalSoyuzStatus(remote.status) ? 'already_terminal' : 'cancel_requested',
+      retryOf: remote.retryOf ?? undefined,
+    });
+  } catch (error) {
+    if (error instanceof SoyuzApiError) {
+      sendErrorResponse(res, error.status === 404 ? 404 : 503, error.status === 404 ? 'Not Found' : 'Soyuz Cancel Failed', error.message, { code: error.code });
+    } else {
+      sendErrorResponse(res, 503, 'Soyuz Cancel Uncertain', 'Could not confirm the Soyuz cancellation request');
+    }
+  }
+  return true;
+}
+
+function respondWithLocalCancellation(
+  scheduler: JobScheduler,
+  statusBuilder: StatusResponseBuilder,
+  resolvedJob: Awaited<ReturnType<typeof findCancelableJob>>,
+  requestedId: string,
+  res: Response,
+) {
+  const wasTerminal = resolvedJob?.status === 'completed' || resolvedJob?.status === 'failed';
+  const job = wasTerminal ? resolvedJob : resolvedJob ? scheduler.cancelJob(resolvedJob.id) : undefined;
+  if (!job) {
+    const hint = requestedId.toLowerCase() !== requestedId ? ` Did you mean: ${requestedId.toLowerCase()}?` : '';
+    return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${requestedId}.${hint}`);
+  }
+  const { resultDir: _resultDir, ...response } = statusBuilder.buildStatus(job);
+  return res.json({ ...response, cancelOutcome: wasTerminal ? 'already_terminal' : 'cancelled' });
+}
+
+function isTerminalSoyuzStatus(status: string): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled';
 }
 
 function isCanonicalSoyuzId(value: string): boolean {

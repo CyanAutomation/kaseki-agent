@@ -12,7 +12,7 @@ ARG NODE_IMAGE=docker.io/library/node:26-bookworm-slim@sha256:add5c17c14752c54d2
 FROM ${NODE_IMAGE} AS base
 WORKDIR /opt/kaseki/image-toolchain
 COPY docker/image-toolchain/package.json docker/image-toolchain/package-lock.json ./
-COPY scripts/patch-image-dependency-bundles.mjs scripts/verify-image-dependency-versions.mjs /tmp/
+COPY scripts/patch-image-dependency-bundles.mjs scripts/verify-image-dependency-versions.mjs scripts/image-dependency-rules.mjs /tmp/
 RUN --mount=type=secret,id=proxy_ca,required=false \
     --mount=type=cache,target=/root/.npm \
     if [ -r /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi \
@@ -26,7 +26,7 @@ RUN --mount=type=secret,id=proxy_ca,required=false \
     && node /tmp/verify-image-dependency-versions.mjs /usr/local/lib/node_modules \
     && ln -sf /usr/local/lib/node_modules/bun/bin/bun.exe /usr/local/bin/bun \
     && bun --version \
-    && rm -rf /opt/kaseki/image-toolchain /tmp/patch-image-dependency-bundles.mjs /tmp/verify-image-dependency-versions.mjs
+    && rm -rf /opt/kaseki/image-toolchain /tmp/patch-image-dependency-bundles.mjs /tmp/verify-image-dependency-versions.mjs /tmp/image-dependency-rules.mjs
 WORKDIR /
 
 FROM base AS deps

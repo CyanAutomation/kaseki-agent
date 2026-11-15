@@ -160,7 +160,6 @@ export function selectConditionalHelper(condition1: string, condition2: string, 
   return conditionIndex === 0 ? condition1 : condition2;
 }
 
-
 export function failureDiagnosisFromAnswers(answers: Record<string, ClassificationAnswer>): RunEvaluationFailureDiagnosis | undefined {
   const cause = answers.validation_failure_cause;
   const action = answers.validation_recovery_action;

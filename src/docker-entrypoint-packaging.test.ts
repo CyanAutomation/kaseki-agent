@@ -110,6 +110,15 @@ build_allowlist_regex() {
     expect(missingAllowlistEntries).toEqual([]);
   });
 
+  test('image dependency helpers include their shared rules module in the base stage', () => {
+    const dockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf-8');
+
+    expect(dockerfile).toMatch(
+      /COPY scripts\/patch-image-dependency-bundles\.mjs scripts\/verify-image-dependency-versions\.mjs scripts\/image-dependency-rules\.mjs \/tmp\//,
+    );
+    expect(dockerfile).toMatch(/\/tmp\/image-dependency-rules\.mjs/);
+  });
+
   describe('docker-entrypoint command dispatch', () => {
     const entrypointScript = path.join(repoRoot, 'scripts/docker-entrypoint.sh');
 
