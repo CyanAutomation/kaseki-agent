@@ -964,7 +964,7 @@ function registerRunRetryRoute(
   router: Router,
   dependencies: RunRouteSharedDependencies & RunRouteHelpers,
 ): void {
-  router.post('/runs/:id/retry', (req: Request, res: Response) => handleRunRetry(req, res, dependencies));
+  router.post('/runs/:id/retry', (req: Request<{ id: string }>, res: Response) => handleRunRetry(req, res, dependencies));
 }
 
 type RunRetryResult =
@@ -974,7 +974,7 @@ type RunRetryResult =
   | { state: 'run_busy' };
 
 async function handleRunRetry(
-  req: Request,
+  req: Request<{ id: string }>,
   res: Response,
   dependencies: RunRouteSharedDependencies & RunRouteHelpers,
 ): Promise<Response | void> {
@@ -1012,7 +1012,7 @@ function shouldRetryThroughSoyuz(
 }
 
 async function retrySoyuzRun(
-  req: Request,
+  req: Request<{ id: string }>,
   res: Response,
   source: Job | undefined,
   idempotencyKey: string,
