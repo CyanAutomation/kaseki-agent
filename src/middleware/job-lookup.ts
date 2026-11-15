@@ -29,7 +29,7 @@ declare global {
  * ```
  */
 export function jobLookupMiddleware(scheduler: JobScheduler) {
-  return (req: Request, res: Response, next: NextFunction): void => {
+  return (req: Request<{ id: string }>, res: Response, next: NextFunction): void => {
     const jobId = req.params.id;
     if (!jobId) {
       return sendErrorResponse(res, 400, 'Bad Request', 'Job ID is required');

@@ -7,13 +7,13 @@ import { findRunJob } from '../utils/route-helpers';
 export function createWebhookDeliveryRoutes(scheduler: JobScheduler): Router {
   const router = Router();
 
-  router.get('/runs/:id/webhook-deliveries', async (req: Request, res: Response) => {
+  router.get('/runs/:id/webhook-deliveries', async (req: Request<{ id: string }>, res: Response) => {
     const job = await findRunJob(scheduler, req.params.id);
     if (!job) return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
     return res.json({ deliveries: scheduler.getWebhookDeliveries(req.params.id) });
   });
 
-  router.post('/runs/:id/webhook-deliveries/:deliveryId/retry', async (req: Request, res: Response) => {
+  router.post('/runs/:id/webhook-deliveries/:deliveryId/retry', async (req: Request<{ id: string; deliveryId: string }>, res: Response) => {
     const job = await findRunJob(scheduler, req.params.id);
     if (!job) return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
 

@@ -44,7 +44,7 @@ function summary(card: RunScorecard, job: Job): ScorecardSummary {
 
 export function createScorecardRoutes(scheduler: JobScheduler, cache: ResultCache): Router {
   const router = Router();
-  router.get('/runs/:id/scorecard', async (req: Request, res: Response) => {
+  router.get('/runs/:id/scorecard', async (req: Request<{ id: string }>, res: Response) => {
     const job = await findRunJob(scheduler, req.params.id);
     if (!job) return sendErrorResponse(res, 404, 'Run not found', `Unknown run: ${req.params.id}`);
     const result = readScorecard(job, cache);

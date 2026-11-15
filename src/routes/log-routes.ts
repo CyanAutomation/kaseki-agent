@@ -391,7 +391,7 @@ export function createLogRoutes(
    * This endpoint always prefers promoted progress.jsonl events, then appends
    * live Docker progress while a worker is still running.
    */
-  router.get('/runs/:id/events', async (req: Request, res: Response) => {
+  router.get('/runs/:id/events', async (req: Request<{ id: string }>, res: Response) => {
     const job = await getJobOrRespond(scheduler, req.params.id, res);
     if (!job) {
       return;
@@ -405,7 +405,7 @@ export function createLogRoutes(
   /**
    * GET /api/v1/runs/:id/events/stream - Server-Sent Events stream for progress updates.
    */
-  router.get('/runs/:id/events/stream', async (req: Request, res: Response) => {
+  router.get('/runs/:id/events/stream', async (req: Request<{ id: string }>, res: Response) => {
     const job = await getJobOrRespond(scheduler, req.params.id, res);
     if (!job) {
       return;
@@ -417,7 +417,7 @@ export function createLogRoutes(
   /**
    * GET /api/v1/runs/:id/logs/:logtype - Retrieve logs.
    */
-  router.get('/runs/:id/logs/:logtype', async (req: Request, res: Response) => {
+  router.get('/runs/:id/logs/:logtype', async (req: Request<{ id: string; logtype: string }>, res: Response) => {
     const job = await getJobOrRespond(scheduler, req.params.id, res);
     if (!job) {
       return;
@@ -515,7 +515,7 @@ export function createLogRoutes(
   /**
    * GET /api/v1/runs/:id/analysis - Comprehensive run analysis.
    */
-  router.get('/runs/:id/analysis', async (req: Request, res: Response) => {
+  router.get('/runs/:id/analysis', async (req: Request<{ id: string }>, res: Response) => {
     const job = await getJobOrRespond(scheduler, req.params.id, res);
     if (!job) {
       return;
