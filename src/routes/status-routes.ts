@@ -210,9 +210,10 @@ async function respondWithRemoteRunStatus(
   } catch (error) {
     if (error instanceof SoyuzApiError) {
       sendErrorResponse(res, error.status === 404 ? 404 : 503, error.status === 404 ? 'Not Found' : 'Soyuz Unavailable', error.message);
-    } else {
-      sendErrorResponse(res, 503, 'Soyuz Unavailable', 'Could not read canonical Soyuz run state');
+      return true;
     }
+    sendErrorResponse(res, 503, 'Soyuz Unavailable', 'Could not read canonical Soyuz run state');
+    return true;
   }
   return true;
 }

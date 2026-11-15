@@ -63,7 +63,7 @@ export async function readSoyuzResponseData<T>(
   }
 
   const data = parsed.data;
-  if (!data || typeof data !== 'object' || (!allowArrayData && Array.isArray(data))) {
+  if (data === null || typeof data !== 'object' || (!allowArrayData && Array.isArray(data))) {
     throw new Error('Soyuz response did not contain a data object');
   }
   return data as T;
