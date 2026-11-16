@@ -383,6 +383,11 @@ describe('JobPersistenceManager', () => {
     expect(await restartedManager.claimDueSoyuzCallbacks()).toHaveLength(1);
     expect(await restartedManager.getSoyuzOutboxStatus()).toMatchObject({ pending: 1, blocked: 0 });
     expect((await restartedManager.listPersistedJobs())[0].soyuz?.terminalCallbackBlocked).toBe(false);
+    const retriedIndex = JSON.parse(fs.readFileSync(path.join(tempDir, '.kaseki-api-jobs.json'), 'utf8')) as {
+      soyuzOutbox: SoyuzOutboxEntry[];
+    };
+    expect(retriedIndex.soyuzOutbox[0]).not.toHaveProperty('lastError');
+    expect(retriedIndex.soyuzOutbox[0]).not.toHaveProperty('lastErrorDetails');
   });
 
   test('persists an unconfirmed Soyuz claim intent across manager restart', async () => {

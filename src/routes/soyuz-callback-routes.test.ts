@@ -65,4 +65,20 @@ describe('Soyuz callback routes', () => {
     expect(response.status).toBe(409);
     expect(scheduler.retryBlockedSoyuzCallback).toHaveBeenCalledWith(callbackId);
   });
+
+  it('rejects malformed callback IDs before calling persistence', async () => {
+    const scheduler = {
+      getBlockedSoyuzCallbacks: jest.fn().mockResolvedValue([]),
+      retryBlockedSoyuzCallback: jest.fn().mockResolvedValue(false),
+    } as unknown as JobScheduler;
+    const app = express();
+    app.use(createSoyuzCallbackRoutes(scheduler));
+    const started = await listen(app);
+    server = started.server;
+
+    const response = await fetch(`${started.url}/soyuz/callbacks/not-a-uuid/retry`, { method: 'POST' });
+
+    expect(response.status).toBe(400);
+    expect(scheduler.retryBlockedSoyuzCallback).not.toHaveBeenCalled();
+  });
 });

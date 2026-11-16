@@ -3,6 +3,7 @@ export interface ApiUsageSnapshot {
   requestCount: number;
   diagnosticProbeCount: number;
   webhookTestCount: number;
+  soyuzCallbackRetryCount: number;
   /** Token-level spend is not available from the current gateway probe interface. */
   costUsd: null;
 }
@@ -11,6 +12,7 @@ export interface ApiAccessControllerOptions {
   requestsPerMinute?: number;
   diagnosticsPerHour?: number;
   webhookTestsPerHour?: number;
+  soyuzCallbackRetriesPerHour?: number;
   now?: () => number;
 }
 
@@ -44,15 +46,18 @@ export class ApiAccessController {
     usage.requestCount += 1;
 
     const isDiagnosticProbe = (normalizedPath === '/gateway-test' && hasCostlyDiagnosticQuery(query)) ||
-      (normalizedPath === '/preflight' && isQueryTrue(query.agentCapability)) ||
-      (method.toUpperCase() === 'POST' && /^\/soyuz\/callbacks\/[^/]+\/retry$/.test(normalizedPath));
+      (normalizedPath === '/preflight' && isQueryTrue(query.agentCapability));
+    const isSoyuzCallbackRetry = method.toUpperCase() === 'POST'
+      && /^\/soyuz\/callbacks\/[^/]+\/retry$/.test(normalizedPath);
     const isWebhookTest = (normalizedPath === '/webhooks/test' || /^\/runs\/[^/]+\/webhook-deliveries\/[^/]+\/retry$/.test(normalizedPath)) && method.toUpperCase() === 'POST';
     if (isDiagnosticProbe) usage.diagnosticProbeCount += 1;
+    if (isSoyuzCallbackRetry) usage.soyuzCallbackRetryCount += 1;
     if (isWebhookTest) usage.webhookTestCount += 1;
 
     const exceeded: number[] = [];
     this.consumeRate(apiKey, 'requests', 60_000, this.options.requestsPerMinute ?? 300, now, exceeded);
     if (isDiagnosticProbe) this.consumeRate(apiKey, 'diagnostics', 3_600_000, this.options.diagnosticsPerHour ?? 10, now, exceeded);
+    if (isSoyuzCallbackRetry) this.consumeRate(apiKey, 'soyuz-callback-retries', 3_600_000, this.options.soyuzCallbackRetriesPerHour ?? 100, now, exceeded);
     if (isWebhookTest) this.consumeRate(apiKey, 'webhooks', 3_600_000, this.options.webhookTestsPerHour ?? 10, now, exceeded);
     return exceeded.length > 0 ? Math.max(...exceeded) : undefined;
   }
@@ -64,6 +69,7 @@ export class ApiAccessController {
       requestCount: current.requestCount,
       diagnosticProbeCount: current.diagnosticProbeCount,
       webhookTestCount: current.webhookTestCount,
+      soyuzCallbackRetryCount: current.soyuzCallbackRetryCount,
       costUsd: null,
     };
   }
@@ -93,6 +99,7 @@ export class ApiAccessController {
         requestCount: 0,
         diagnosticProbeCount: 0,
         webhookTestCount: 0,
+        soyuzCallbackRetryCount: 0,
         costUsd: null,
       };
       this.usage.set(apiKey, current);

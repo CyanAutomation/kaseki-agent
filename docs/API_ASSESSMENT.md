@@ -47,7 +47,7 @@ Removed routes and aliases are listed below. Root `/health` and `/ready` remain 
 | `GET /api/v1/runs/{id}/webhook-deliveries` | Keep; add | Lists durable attempt/status history without exposing webhook secrets. |
 | `POST /api/v1/runs/{id}/webhook-deliveries/{deliveryId}/retry` | Keep; add | Requeues only failed deliveries, returns `202`, and is rate limited. |
 | `GET /api/v1/soyuz/callbacks/blocked` | Keep; add | Lists permanently rejected callback diagnostics without callback payloads. |
-| `POST /api/v1/soyuz/callbacks/{callbackId}/retry` | Keep; add | Requeues only a blocked durable callback with its persisted payload. |
+| `POST /api/v1/soyuz/callbacks/{callbackId}/retry` | Keep; add | Requeues only a blocked durable callback with its persisted payload; validates UUIDs and uses a dedicated per-key hourly limit. |
 | `GET /api/v1/usage` | Keep; add | Reports current process usage counters and configured limits for the authenticated key. Cost is `null` because gateway spend is unavailable. |
 | `GET /api/v1/openapi.json`, `GET /docs` | Keep; update | The OpenAPI document and local operation index are available from both service entry points; contract tests check the published paths, methods, schemas, and statuses. |
 

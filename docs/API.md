@@ -62,6 +62,7 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | `KASEKI_API_RATE_LIMIT_PER_MINUTE` | 300 | Per-key API request limit |
 | `KASEKI_API_DIAGNOSTIC_LIMIT_PER_HOUR` | 10 | Per-key limit for token-consuming diagnostics |
 | `KASEKI_API_WEBHOOK_TESTS_PER_HOUR` | 10 | Per-key limit for webhook tests and manual delivery retries |
+| `KASEKI_API_SOYUZ_CALLBACK_RETRIES_PER_HOUR` | 100 | Per-key limit for manually requeuing blocked Soyuz callbacks |
 | `KASEKI_WEBHOOK_ALLOWED_ORIGINS` | *(empty)* | Comma-separated exact HTTP(S) origins allowed to receive webhooks on private networks or over plain HTTP; only use for trusted receivers |
 | `KASEKI_API_LOG_DIR` | /var/log/kaseki-api/ | Log file output directory |
 | `KASEKI_RESULTS_DIR` | /agents/kaseki-results | Directory for run artifacts |
@@ -1063,7 +1064,7 @@ Requires a valid API key. Lists Soyuz callbacks stopped after a permanent 4xx re
 
 **POST `/api/v1/soyuz/callbacks/:callbackId/retry`**
 
-Requires a valid API key. Requeues one blocked callback and returns `202 Accepted`. It sends the same persisted callback payload; use it after correcting the remote validation/configuration issue. A callback that is not blocked returns `409 Conflict`.
+Requires a valid API key. `callbackId` must be a UUID. Requeues one blocked callback and returns `202 Accepted`. It sends the same persisted callback payload; use it after correcting the remote validation/configuration issue. Invalid IDs return `400 Bad Request`, and a callback that is not blocked returns `409 Conflict`. Retries have their own per-key hourly limit, configurable with `KASEKI_API_SOYUZ_CALLBACK_RETRIES_PER_HOUR`.
 
 Webhook delivery uses HTTPS and public internet destinations by default. The sender rejects private, loopback, link-local, and other non-public DNS answers, pins the selected address for the request, and does not follow redirects. To deliver to a trusted private receiver, set `KASEKI_WEBHOOK_ALLOWED_ORIGINS` to its exact origin (scheme, host, and port, no path). This explicitly permits that origin to use HTTP or resolve to private addresses.
 

@@ -599,6 +599,8 @@ export class JobPersistenceManager {
           deliveryState: 'pending' as const,
           nextAttemptAt,
           blockedAt: undefined,
+          lastError: undefined,
+          lastErrorDetails: undefined,
           deliveryLeaseExpiresAt: undefined,
         }
         : entry);

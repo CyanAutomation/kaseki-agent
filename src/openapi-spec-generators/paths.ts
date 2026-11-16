@@ -123,7 +123,7 @@ function buildUsagePath(errorResponseSchema: Record<string, unknown>): Record<st
         tags: ['Service Info'],
         security: [{ BearerAuth: [] }],
         responses: {
-          '200': { description: 'API usage snapshot', content: { 'application/json': { schema: { type: 'object', required: ['startedAt', 'requestCount', 'diagnosticProbeCount', 'webhookTestCount', 'costUsd', 'limits'], properties: { startedAt: { type: 'string', format: 'date-time' }, requestCount: { type: 'integer' }, diagnosticProbeCount: { type: 'integer' }, webhookTestCount: { type: 'integer' }, costUsd: { type: 'null' }, limits: { type: 'object' } } } } } },
+          '200': { description: 'API usage snapshot', content: { 'application/json': { schema: { type: 'object', required: ['startedAt', 'requestCount', 'diagnosticProbeCount', 'webhookTestCount', 'soyuzCallbackRetryCount', 'costUsd', 'limits'], properties: { startedAt: { type: 'string', format: 'date-time' }, requestCount: { type: 'integer' }, diagnosticProbeCount: { type: 'integer' }, webhookTestCount: { type: 'integer' }, soyuzCallbackRetryCount: { type: 'integer' }, costUsd: { type: 'null' }, limits: { type: 'object', properties: { soyuzCallbackRetriesPerHour: { type: 'integer' } } } } } } } },
           '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
         },
       },
@@ -1486,6 +1486,7 @@ function buildWebhookDeliveryPaths(errorResponseSchema: Record<string, unknown>)
         parameters: [{ name: 'callbackId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
         responses: {
           '202': { description: 'Retry queued', content: { 'application/json': { schema: retryBlockedCallbackResponseSchema } } },
+          '400': { description: 'Invalid callback ID', content: { 'application/problem+json': { schema: errorResponseSchema } } },
           '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
           '409': { description: 'Callback is not blocked', content: { 'application/problem+json': { schema: errorResponseSchema } } },
           '429': { description: 'Per-key callback retry limit exceeded', headers: { 'Retry-After': { schema: { type: 'integer' } } }, content: { 'application/problem+json': { schema: errorResponseSchema } } },
