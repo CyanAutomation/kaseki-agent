@@ -60,7 +60,7 @@ describe('OpenAPI Path Builders', () => {
     contract('/api/v1/runs/{id}/webhook-deliveries', 'get', 'listRunWebhookDeliveries', true, ['200', '401', '404'], 'Webhooks'),
     contract('/api/v1/runs/{id}/webhook-deliveries/{deliveryId}/retry', 'post', 'retryRunWebhookDelivery', true, ['202', '401', '404', '409', '429'], 'Webhooks'),
     contract('/api/v1/soyuz/callbacks/blocked', 'get', 'listBlockedSoyuzCallbacks', true, ['200', '401'], 'Soyuz Integration'),
-    contract('/api/v1/soyuz/callbacks/{callbackId}/retry', 'post', 'retryBlockedSoyuzCallback', true, ['202', '401', '409', '429'], 'Soyuz Integration'),
+    contract('/api/v1/soyuz/callbacks/{callbackId}/retry', 'post', 'retryBlockedSoyuzCallback', true, ['202', '400', '401', '409', '429'], 'Soyuz Integration'),
     contract('/api/v1/webhooks/test', 'post', 'testWebhook', true, ['200', '400', '401', '429'], 'Webhooks'),
   ];
 
@@ -467,7 +467,7 @@ describe('OpenAPI Path Builders', () => {
         '/api/v1/runs/{id}/webhook-deliveries': { get: ['401', '404'] },
         '/api/v1/runs/{id}/webhook-deliveries/{deliveryId}/retry': { post: ['401', '404', '409', '429'] },
         '/api/v1/soyuz/callbacks/blocked': { get: ['401'] },
-        '/api/v1/soyuz/callbacks/{callbackId}/retry': { post: ['401', '409', '429'] },
+        '/api/v1/soyuz/callbacks/{callbackId}/retry': { post: ['400', '401', '409', '429'] },
       };
 
       Object.entries(expectedErrorResponsesByOperation).forEach(([path, methods]) => {

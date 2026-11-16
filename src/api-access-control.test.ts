@@ -39,14 +39,23 @@ describe('API key request limits and usage', () => {
     });
   });
 
-  test('rate limits manual retries of blocked Soyuz callbacks', () => {
+  test('rate limits blocked Soyuz callback retries separately from diagnostics', () => {
     let now = 100_000;
-    const access = new ApiAccessController({ diagnosticsPerHour: 1, now: () => now });
+    const access = new ApiAccessController({
+      diagnosticsPerHour: 1,
+      soyuzCallbackRetriesPerHour: 2,
+      now: () => now,
+    });
     const path = '/soyuz/callbacks/22222222-2222-4222-8222-222222222222/retry';
 
+    expect(access.checkAndRecord('key-a', 'GET', '/gateway-test', { inference: 'true' })).toBeUndefined();
+    expect(access.checkAndRecord('key-a', 'POST', path, {})).toBeUndefined();
     expect(access.checkAndRecord('key-a', 'POST', path, {})).toBeUndefined();
     expect(access.checkAndRecord('key-a', 'POST', path, {})).toBeGreaterThan(0);
-    expect(access.getUsage('key-a').diagnosticProbeCount).toBe(2);
+    expect(access.getUsage('key-a')).toMatchObject({
+      diagnosticProbeCount: 1,
+      soyuzCallbackRetryCount: 3,
+    });
 
     now += 3_600_000;
     expect(access.checkAndRecord('key-a', 'POST', path, {})).toBeUndefined();

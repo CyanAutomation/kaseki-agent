@@ -132,7 +132,7 @@ Kaseki exposes integration metrics on its existing `/api/v1/metrics` endpoint:
 
 Use existing Kaseki log collection and Cloudflare Worker observability to alert on repeated Queue 401/403 responses, sustained pull failures, growing `soyuz_callbacks_pending`, repeated claim conflicts, unsupported contract errors, `soyuz_run_executor_lost`, and `soyuz_run_suspected_stalled`. Logs include run and correlation IDs; metrics intentionally have no run-ID labels. The stalled-run event is emitted once per stale heartbeat timestamp. There is no external paging provider configured by this integration.
 
-Blocked callback details are available from `GET /api/v1/soyuz/callbacks/blocked`. After resolving the cause, retry a specific callback with `POST /api/v1/soyuz/callbacks/{callbackId}/retry`; the endpoint reuses the persisted payload and only accepts callbacks in the blocked state.
+Blocked callback details are available from `GET /api/v1/soyuz/callbacks/blocked`. After resolving the cause, retry a specific callback with `POST /api/v1/soyuz/callbacks/{callbackId}/retry`; the endpoint reuses the persisted payload and only accepts callbacks in the blocked state. Retry traffic has its own per-key hourly limit, configured with `KASEKI_API_SOYUZ_CALLBACK_RETRIES_PER_HOUR` (default 100).
 
 If a locally running Soyuz job no longer has a live executor, Kaseki marks it failed with `failureClass: executor_lost` and sends its terminal callback without continuing canonical status reads. Kaseki restart recovery also terminalizes persisted running jobs before reconciliation.
 

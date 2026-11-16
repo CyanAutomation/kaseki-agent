@@ -157,6 +157,7 @@ export function createApiRouter(
     requestsPerMinute: config.apiRequestsPerMinute,
     diagnosticsPerHour: config.apiDiagnosticsPerHour,
     webhookTestsPerHour: config.apiWebhookTestsPerHour,
+    soyuzCallbackRetriesPerHour: config.apiSoyuzCallbackRetriesPerHour,
   });
   registerApiMiddleware(router, config, logger, apiAccess);
 
@@ -360,6 +361,7 @@ function registerApiInfoRoutes(
       requestsPerMinute: config.apiRequestsPerMinute ?? 300,
       diagnosticsPerHour: config.apiDiagnosticsPerHour ?? 10,
       webhookTestsPerHour: config.apiWebhookTestsPerHour ?? 10,
+      soyuzCallbackRetriesPerHour: config.apiSoyuzCallbackRetriesPerHour ?? 100,
     } });
   });
 
