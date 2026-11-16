@@ -389,6 +389,52 @@ describe('JobScheduler single-run behavior', () => {
     }
   });
 
+  test('fails and releases a running Soyuz job when its executor is no longer present', async () => {
+    const resultsDir = createResultsDir();
+    mockSpawn.mockReset().mockReturnValue(new MockProcess());
+    mockSpawnSync.mockReset().mockReturnValue({ stdout: '', stderr: '', status: 0 });
+    const scheduler = new JobScheduler({
+      port: 3000,
+      workspaceDir: '/tmp/workspace',
+      resultsDir,
+      runTimeoutMs: 300000,
+      agentTimeoutSeconds: 300,
+      apiKeys: [],
+    }, createMockWebhookManager());
+    const job = await scheduler.submitSoyuzJob({
+      repoUrl: 'https://github.com/example/repo',
+      ref: 'main',
+      taskPrompt: 'Recover a run whose local worker process disappeared.',
+      publishMode: 'none',
+    }, '44444444-4444-4444-8444-444444444444', 'host-test-1',
+    '55555555-5555-4555-8555-555555555555', '66666666-6666-4666-8666-666666666666');
+
+    try {
+      await scheduler.authorizeSoyuzStart(job.id);
+      for (let turn = 0; turn < 20 && !mockSpawn.mock.calls.length; turn += 1) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      expect(mockSpawn).toHaveBeenCalledTimes(1);
+
+      const schedulerRuntime = scheduler as unknown as {
+        running: Set<string>;
+        processes: Map<string, unknown>;
+      };
+      schedulerRuntime.running.delete(job.id);
+      schedulerRuntime.processes.delete(job.id);
+
+      await expect(scheduler.failOrphanedSoyuzJob(job.id)).resolves.toBe(true);
+      expect(job).toMatchObject({
+        status: 'failed',
+        failureClass: 'executor_lost',
+        error: 'Kaseki no longer has a live worker process for this run.',
+      });
+      expect(scheduler.isRunSlotAvailable()).toBe(true);
+    } finally {
+      await scheduler.shutdown();
+    }
+  });
+
   test('persists advisory JEV routing hints and forwards them only as worker guidance', async () => {
     const resultsDir = createResultsDir();
     const scheduler = new JobScheduler({

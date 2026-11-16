@@ -5,6 +5,7 @@ export class SoyuzApiError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    readonly details?: unknown,
   ) {
     super(message);
     this.name = 'SoyuzApiError';
@@ -59,6 +60,7 @@ export async function readSoyuzResponseData<T>(
       response.status,
       typeof error.code === 'string' ? error.code : 'SOYUZ_REQUEST_FAILED',
       typeof error.message === 'string' ? error.message : `Soyuz request failed (${response.status})`,
+      error.details,
     );
   }
 

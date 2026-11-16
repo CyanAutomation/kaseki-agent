@@ -227,6 +227,7 @@ describe('kaseki-api-config load configuration', () => {
     process.env.KASEKI_API_KEY_SCOPES = 'not-json-and-no-longer-read';
     process.env.KASEKI_API_RATE_LIMIT_PER_MINUTE = '90';
     process.env.KASEKI_API_DIAGNOSTIC_LIMIT_PER_HOUR = '4';
+    process.env.KASEKI_API_SOYUZ_CALLBACK_RETRIES_PER_HOUR = '80';
     process.env.KASEKI_RESULTS_DIR = testDir;
 
     const config = loadConfig();
@@ -234,6 +235,7 @@ describe('kaseki-api-config load configuration', () => {
     expect(config).not.toHaveProperty('apiKeyScopes');
     expect(config.apiRequestsPerMinute).toBe(90);
     expect(config.apiDiagnosticsPerHour).toBe(4);
+    expect(config.apiSoyuzCallbackRetriesPerHour).toBe(80);
   });
 
   test('loadConfig throws when KASEKI_API_PORT is invalid', () => {
