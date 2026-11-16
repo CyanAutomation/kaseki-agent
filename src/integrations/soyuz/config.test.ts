@@ -16,7 +16,7 @@ describe('loadSoyuzAdapterConfig', () => {
       pollIntervalMs: 5_000,
       visibilityTimeoutMs: 120_000,
       requestTimeoutMs: 20_000,
-      cancellationPollIntervalMs: 15_000,
+      cancellationPollIntervalMs: 60_000,
       heartbeatIntervalMs: 60_000,
     });
   });

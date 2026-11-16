@@ -42,6 +42,9 @@ export class SoyuzAdapter {
   private lastOutboxBacklogWarningAt = 0;
   private lastOutboxFullWarningAt = 0;
   private cancellationCheckAt = new Map<string, number>();
+  private nextCanonicalReadAt = new Map<string, number>();
+  private canonicalRunByJob = new Map<string, SoyuzWorkerRun>();
+  private canonicalReadFailures = new Map<string, number>();
 
   constructor(
     kasekiConfig: KasekiApiConfig,
@@ -85,7 +88,7 @@ export class SoyuzAdapter {
     await this.activeCycle;
     await this.loopPromise;
     try {
-      await this.reconcileLocalJobs();
+      await this.reconcileLocalJobs(true);
       await this.flushCallbackOutbox();
     } catch (error) {
       logger.error('Final Soyuz shutdown reconciliation failed; durable callback records will retry on restart', {
@@ -564,12 +567,45 @@ export class SoyuzAdapter {
     return this.handoffLocalJob(run, localJob, canonical, activeClaimCallbackId, handoffStartedAt);
   }
 
-  private async reconcileLocalJobs(): Promise<void> {
+  private async reconcileLocalJobs(forceCanonicalRefresh = false): Promise<void> {
     const jobs = await this.scheduler.listSoyuzJobs();
+    const retainedJobIds = new Set(jobs.map((job) => job.id));
+    for (const jobId of this.nextCanonicalReadAt.keys()) {
+      if (!retainedJobIds.has(jobId)) {
+        this.nextCanonicalReadAt.delete(jobId);
+        this.canonicalRunByJob.delete(jobId);
+        this.canonicalReadFailures.delete(jobId);
+        this.cancellationCheckAt.delete(jobId);
+      }
+    }
+
     for (const job of jobs) {
       if (!job.soyuz) continue;
       try {
-        const canonical = await this.api.getRun(job.soyuz.externalRunId);
+        const now = Date.now();
+        let canonical = this.canonicalRunByJob.get(job.id);
+        let canonicalRefreshed = false;
+        const nextReadAt = this.nextCanonicalReadAt.get(job.id) ?? 0;
+        if (forceCanonicalRefresh || !this.nextCanonicalReadAt.has(job.id) || now >= nextReadAt) {
+          try {
+            canonical = await this.api.getRun(job.soyuz.externalRunId);
+          } catch (error) {
+            const failures = (this.canonicalReadFailures.get(job.id) ?? 0) + 1;
+            this.canonicalReadFailures.set(job.id, failures);
+            const retryBaseMs = Math.max(1_000, this.config.pollIntervalMs);
+            const retryDelayMs = Math.min(
+              this.config.cancellationPollIntervalMs,
+              retryBaseMs * (2 ** Math.min(failures - 1, 6)),
+            );
+            this.nextCanonicalReadAt.set(job.id, Date.now() + retryDelayMs);
+            throw error;
+          }
+          this.canonicalReadFailures.delete(job.id);
+          this.nextCanonicalReadAt.set(job.id, Date.now() + this.config.cancellationPollIntervalMs);
+          this.canonicalRunByJob.set(job.id, canonical);
+          canonicalRefreshed = true;
+        }
+        if (!canonical) continue;
         if (isTerminal(canonical.status)) {
           if (job.status === 'queued') await this.scheduler.cancelSoyuzJob(job.id);
           if (this.scheduler.isJobExecuting(job.id)) await this.scheduler.cancelSoyuzJob(job.id);
@@ -582,7 +618,7 @@ export class SoyuzAdapter {
         }
         if (this.scheduler.isJobExecuting(job.id) || job.status === 'running'
           || (job.status === 'queued' && job.soyuz.startAuthorized && !job.soyuz.startNeedsCanonicalRecheck)) {
-          await this.monitorActiveRun(job, canonical);
+          await this.monitorActiveRun(job, canonical, canonicalRefreshed);
         }
         if ((job.status === 'completed' || job.status === 'failed')
           && !this.scheduler.isJobExecuting(job.id)
@@ -665,11 +701,11 @@ export class SoyuzAdapter {
     metricsRegistry.incSoyuzCounter('runs_started');
   }
 
-  private async monitorActiveRun(job: Job, canonical: SoyuzWorkerRun): Promise<void> {
+  private async monitorActiveRun(job: Job, canonical: SoyuzWorkerRun, canonicalRefreshed: boolean): Promise<void> {
     if (!job.soyuz) return;
     const now = Date.now();
     const nextCheck = this.cancellationCheckAt.get(job.id) ?? 0;
-    if (now >= nextCheck) {
+    if (canonicalRefreshed || now >= nextCheck) {
       this.cancellationCheckAt.set(job.id, now + this.config.cancellationPollIntervalMs);
       if (canonical.status === 'cancel_requested' && !job.soyuz.cancellationRequestedAt) {
         await this.scheduler.cancelSoyuzJob(job.id);
