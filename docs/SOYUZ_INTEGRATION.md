@@ -22,7 +22,7 @@ The jobs index also stores short-lived Soyuz claim intents. Kaseki writes an int
 | `SOYUZ_POLL_INTERVAL_MS` | `5000` | 250–60000 ms. |
 | `SOYUZ_VISIBILITY_TIMEOUT_MS` | `120000` | 1000 ms–12 hours. This covers the short handoff, not the coding run. |
 | `SOYUZ_REQUEST_TIMEOUT_MS` | `20000` | 1000–120000 ms for each API request. |
-| `SOYUZ_CANCELLATION_POLL_INTERVAL_MS` | `15000` | 1000–300000 ms. |
+| `SOYUZ_CANCELLATION_POLL_INTERVAL_MS` | `60000` | 1000–300000 ms between periodic canonical status reads for each tracked run; cancellation is applied as soon as a read observes it. |
 | `SOYUZ_HEARTBEAT_INTERVAL_MS` | `60000` | 10000–900000 ms between active-run heartbeat events. |
 
 Tokens may be supplied through environment variables or Kaseki's host secret reader. Secret file names are `soyuz_submission_api_token`, `soyuz_worker_api_token`, and `cloudflare_queue_api_token`, searched under `$KASEKI_SECRETS_DIR` (default `/run/secrets/kaseki`) and then `~/.kaseki/secrets`. Never put their values in the job index or logs. Configure the Queue token with Cloudflare Queues read and write permissions only.

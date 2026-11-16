@@ -46,7 +46,7 @@ function adapterConfig(workerId: string): SoyuzAdapterConfig {
     pollIntervalMs: 250,
     visibilityTimeoutMs: 120_000,
     requestTimeoutMs: 1_000,
-    cancellationPollIntervalMs: 15_000,
+    cancellationPollIntervalMs: 60_000,
     heartbeatIntervalMs: 60_000,
   };
 }
@@ -198,12 +198,14 @@ function runState() {
 function createFetch(state: ReturnType<typeof runState>, options: {
   loseFirstAck?: boolean;
   loseFirstClaimResponse?: boolean;
+  failFirstRunRead?: boolean;
   failFirstArtifactUpload?: boolean;
   rejectArtifactUploadReport?: boolean;
 } = {}) {
   let pulls = 0;
   let acks = 0;
   let claims = 0;
+  let runReads = 0;
   const calls: Array<{ url: string; method: string; body?: Record<string, unknown>; headers: Headers; payloadBytes?: number }> = [];
   const fetchImpl = jest.fn(async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     const url = String(input);
@@ -256,7 +258,13 @@ function createFetch(state: ReturnType<typeof runState>, options: {
       operationalHealth: 'healthy',
     });
 
-    if (method === 'GET' && action === RUN_ID) return jsonResponse({ data: responseData(), requestId: 'soyuz-request' });
+    if (method === 'GET' && action === RUN_ID) {
+      runReads += 1;
+      if (options.failFirstRunRead && runReads === 1) {
+        return jsonResponse({ error: { code: 'UPSTREAM_TIMEOUT', message: 'simulated status read failure' } }, 503);
+      }
+      return jsonResponse({ data: responseData(), requestId: 'soyuz-request' });
+    }
     if (method === 'POST' && action === 'claim') {
       claims += 1;
       await Promise.resolve();
@@ -344,6 +352,110 @@ describe('Soyuz adapter handoff', () => {
     await makeAdapter('host-a', scheduler, fetchImpl).runOnce();
 
     expect(calls.some((call) => call.url.endsWith('/messages/pull'))).toBe(false);
+  });
+
+  test('reads active canonical run status at most once per configured interval', async () => {
+    const now = Date.parse('2026-11-16T12:00:00.000Z');
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const state = runState();
+      state.status = 'running';
+      state.workerId = 'host-a';
+      state.claimCallbackId = '66666666-6666-4666-8666-666666666666';
+      const { fetchImpl, calls } = createFetch(state);
+      const { scheduler, jobs } = createScheduler('host-a');
+      jobs.push({
+        id: 'local-active-run',
+        status: 'running',
+        request: queuedRun.request,
+        createdAt: new Date(now),
+        correlationId: CORRELATION_ID,
+        requestId: REQUEST_ID,
+        soyuz: {
+          externalRunId: RUN_ID,
+          workerId: 'host-a',
+          contractVersion: '1',
+          claimCallbackId: state.claimCallbackId,
+          startedCallbackId: '44444444-4444-4444-8444-444444444444',
+          startAuthorized: true,
+          lastHeartbeatAt: new Date(now).toISOString(),
+          metadataUpdatedAt: new Date(now).toISOString(),
+        },
+      });
+      scheduler.isRunSlotAvailable.mockReturnValue(false);
+      const config = adapterConfig('host-a');
+      config.cancellationPollIntervalMs = 60_000;
+      config.heartbeatIntervalMs = 10_000;
+      const adapter = new SoyuzAdapter({ soyuz: config } as KasekiApiConfig, scheduler as never, undefined, config, fetchImpl);
+      const statusReads = () => calls.filter((call) => call.method === 'GET' && call.url.endsWith(`/v1/worker/runs/${RUN_ID}`));
+
+      await adapter.runOnce();
+      expect(statusReads()).toHaveLength(1);
+
+      clock.mockReturnValue(now + 59_000);
+      state.status = 'cancel_requested';
+      await adapter.runOnce();
+      expect(statusReads()).toHaveLength(1);
+      expect(scheduler.cancelSoyuzJob).not.toHaveBeenCalled();
+      expect(scheduler.enqueueSoyuzCallback).toHaveBeenCalledWith(expect.objectContaining({
+        eventType: 'event',
+        payload: expect.objectContaining({ type: 'worker.heartbeat' }),
+      }));
+
+      clock.mockReturnValue(now + 60_000);
+      await adapter.runOnce();
+      expect(statusReads()).toHaveLength(2);
+      expect(scheduler.cancelSoyuzJob).toHaveBeenCalledWith('local-active-run');
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  test('backs off failed canonical reads and resumes at the next retry time', async () => {
+    const now = Date.parse('2026-11-16T12:00:00.000Z');
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const state = runState();
+      state.status = 'running';
+      state.workerId = 'host-a';
+      const { fetchImpl, calls } = createFetch(state, { failFirstRunRead: true });
+      const { scheduler, jobs } = createScheduler('host-a');
+      jobs.push({
+        id: 'local-active-run',
+        status: 'running',
+        request: queuedRun.request,
+        createdAt: new Date(now),
+        correlationId: CORRELATION_ID,
+        requestId: REQUEST_ID,
+        soyuz: {
+          externalRunId: RUN_ID,
+          workerId: 'host-a',
+          contractVersion: '1',
+          startedCallbackId: '44444444-4444-4444-8444-444444444444',
+          startAuthorized: true,
+          lastHeartbeatAt: new Date(now).toISOString(),
+          metadataUpdatedAt: new Date(now).toISOString(),
+        },
+      });
+      scheduler.isRunSlotAvailable.mockReturnValue(false);
+      const config = adapterConfig('host-a');
+      config.pollIntervalMs = 5_000;
+      const adapter = new SoyuzAdapter({ soyuz: config } as KasekiApiConfig, scheduler as never, undefined, config, fetchImpl);
+      const statusReads = () => calls.filter((call) => call.method === 'GET' && call.url.endsWith(`/v1/worker/runs/${RUN_ID}`));
+
+      await adapter.runOnce();
+      expect(statusReads()).toHaveLength(1);
+
+      clock.mockReturnValue(now + 4_999);
+      await adapter.runOnce();
+      expect(statusReads()).toHaveLength(1);
+
+      clock.mockReturnValue(now + 5_000);
+      await adapter.runOnce();
+      expect(statusReads()).toHaveLength(2);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   test('uploads bounded allowlisted artifacts and retries them before reporting terminal status', async () => {
