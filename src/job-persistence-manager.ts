@@ -44,10 +44,23 @@ export interface SoyuzOutboxEntry {
   attemptCount: number;
   nextAttemptAt: string;
   lastError?: string;
-  deliveryState: 'pending' | 'delivering' | 'delivered';
+  deliveryState: 'pending' | 'delivering' | 'delivered' | 'blocked';
   deliveryLeaseExpiresAt?: string;
   createdAt: string;
   deliveredAt?: string;
+  blockedAt?: string;
+  lastErrorDetails?: string;
+}
+
+export interface SoyuzBlockedCallbackSummary {
+  externalRunId: string;
+  callbackId: string;
+  eventType: SoyuzCallbackType;
+  attemptCount: number;
+  createdAt: string;
+  blockedAt?: string;
+  lastError?: string;
+  lastErrorDetails?: string;
 }
 
 export interface SoyuzClaimIntent {
@@ -432,6 +445,7 @@ export class JobPersistenceManager {
           ...soyuz,
           terminalCallbackId: entry.callbackId,
           terminalCallbackDelivered: false,
+          terminalCallbackBlocked: false,
           metadataUpdatedAt: new Date(this.now()).toISOString(),
         },
       };
@@ -460,7 +474,7 @@ export class JobPersistenceManager {
       const nowMs = now.getTime();
       const leaseUntil = new Date(nowMs + leaseMs).toISOString();
       const due = outbox
-        .filter((entry) => entry.deliveryState !== 'delivered')
+        .filter((entry) => entry.deliveryState === 'pending' || entry.deliveryState === 'delivering')
         .filter((entry) => Date.parse(entry.nextAttemptAt) <= nowMs)
         .filter((entry) => entry.deliveryState !== 'delivering'
           || !entry.deliveryLeaseExpiresAt
@@ -498,7 +512,7 @@ export class JobPersistenceManager {
         if (persisted.soyuz?.terminalCallbackId !== callbackId) return persisted;
         return {
           ...persisted,
-          soyuz: { ...persisted.soyuz, terminalCallbackDelivered: true },
+          soyuz: { ...persisted.soyuz, terminalCallbackDelivered: true, terminalCallbackBlocked: false },
         };
       });
       this.writePersistedJobsIndex(jobs, compactOutbox);
@@ -518,14 +532,85 @@ export class JobPersistenceManager {
           deliveryState: 'pending' as const,
           nextAttemptAt,
           lastError: error.slice(0, 500),
+          blockedAt: undefined,
+          lastErrorDetails: undefined,
           deliveryLeaseExpiresAt: undefined,
         }
         : entry);
-      this.writePersistedJobsIndex(current.jobs ?? [], outbox);
+      const jobs = (current.jobs ?? []).map((job) => job.soyuz?.terminalCallbackId === callbackId
+        ? { ...job, soyuz: { ...job.soyuz, terminalCallbackBlocked: false } }
+        : job);
+      this.writePersistedJobsIndex(jobs, outbox);
     });
   }
 
-  async getSoyuzOutboxStatus(): Promise<{ pending: number; oldestPendingAt?: string; failures: number }> {
+  async blockSoyuzCallback(callbackId: string, error: string, details?: unknown): Promise<void> {
+    await this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
+      const current = this.readPersistedJobsIndex();
+      const serializedDetails = details === undefined ? undefined : JSON.stringify(details)?.slice(0, 2_000);
+      const now = new Date(this.now()).toISOString();
+      const outbox = (current.soyuzOutbox ?? []).map((entry) => entry.callbackId === callbackId
+        ? {
+          ...entry,
+          deliveryState: 'blocked' as const,
+          blockedAt: now,
+          lastError: error.slice(0, 500),
+          lastErrorDetails: serializedDetails,
+          deliveryLeaseExpiresAt: undefined,
+        }
+        : entry);
+      const jobs = (current.jobs ?? []).map((job) => job.soyuz?.terminalCallbackId === callbackId
+        ? {
+          ...job,
+          soyuz: { ...job.soyuz, terminalCallbackBlocked: true, metadataUpdatedAt: now },
+        }
+        : job);
+      this.writePersistedJobsIndex(jobs, outbox);
+    });
+  }
+
+  async getBlockedSoyuzCallbacks(): Promise<SoyuzBlockedCallbackSummary[]> {
+    return this.withLock(this.indexLockPath, 'Kaseki jobs index', () =>
+      (this.readPersistedJobsIndex().soyuzOutbox ?? [])
+        .filter((entry) => entry.deliveryState === 'blocked')
+        .sort((a, b) => (a.blockedAt ?? '').localeCompare(b.blockedAt ?? ''))
+        .map(({ externalRunId, callbackId, eventType, attemptCount, createdAt, blockedAt, lastError, lastErrorDetails }) => ({
+          externalRunId,
+          callbackId,
+          eventType,
+          attemptCount,
+          createdAt,
+          blockedAt,
+          lastError,
+          lastErrorDetails,
+        })),
+    );
+  }
+
+  async retryBlockedSoyuzCallback(callbackId: string): Promise<boolean> {
+    return this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
+      const current = this.readPersistedJobsIndex();
+      const outbox = current.soyuzOutbox ?? [];
+      if (!outbox.some((entry) => entry.callbackId === callbackId && entry.deliveryState === 'blocked')) return false;
+      const nextAttemptAt = new Date(this.now()).toISOString();
+      const updatedOutbox = outbox.map((entry) => entry.callbackId === callbackId
+        ? {
+          ...entry,
+          deliveryState: 'pending' as const,
+          nextAttemptAt,
+          blockedAt: undefined,
+          deliveryLeaseExpiresAt: undefined,
+        }
+        : entry);
+      const jobs = (current.jobs ?? []).map((job) => job.soyuz?.terminalCallbackId === callbackId
+        ? { ...job, soyuz: { ...job.soyuz, terminalCallbackBlocked: false } }
+        : job);
+      this.writePersistedJobsIndex(jobs, updatedOutbox);
+      return true;
+    });
+  }
+
+  async getSoyuzOutboxStatus(): Promise<{ pending: number; oldestPendingAt?: string; failures: number; blocked: number }> {
     return this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
       const entries = this.readPersistedJobsIndex().soyuzOutbox ?? [];
       const pending = entries.filter((entry) => entry.deliveryState !== 'delivered');
@@ -533,6 +618,7 @@ export class JobPersistenceManager {
         pending: pending.length,
         oldestPendingAt: pending.map((entry) => entry.createdAt).sort()[0],
         failures: pending.filter((entry) => entry.attemptCount > 0).length,
+        blocked: pending.filter((entry) => entry.deliveryState === 'blocked').length,
       };
     });
   }

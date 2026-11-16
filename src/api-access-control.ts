@@ -44,7 +44,8 @@ export class ApiAccessController {
     usage.requestCount += 1;
 
     const isDiagnosticProbe = (normalizedPath === '/gateway-test' && hasCostlyDiagnosticQuery(query)) ||
-      (normalizedPath === '/preflight' && isQueryTrue(query.agentCapability));
+      (normalizedPath === '/preflight' && isQueryTrue(query.agentCapability)) ||
+      (method.toUpperCase() === 'POST' && /^\/soyuz\/callbacks\/[^/]+\/retry$/.test(normalizedPath));
     const isWebhookTest = (normalizedPath === '/webhooks/test' || /^\/runs\/[^/]+\/webhook-deliveries\/[^/]+\/retry$/.test(normalizedPath)) && method.toUpperCase() === 'POST';
     if (isDiagnosticProbe) usage.diagnosticProbeCount += 1;
     if (isWebhookTest) usage.webhookTestCount += 1;

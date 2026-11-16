@@ -327,6 +327,64 @@ describe('JobPersistenceManager', () => {
     expect(persistedJob.soyuz?.terminalCallbackDelivered).toBe(true);
   });
 
+  test('persists blocked Soyuz callbacks without claiming them for automatic retry', async () => {
+    const callbackId = '22222222-2222-4222-8222-222222222222';
+    const now = new Date();
+    const job: Job = {
+      id: 'kaseki-blocked-callback',
+      status: 'failed',
+      request: { repoUrl: 'https://github.com/test/repo', ref: 'main' },
+      createdAt: now,
+      completedAt: now,
+      failureClass: 'api_restart',
+      correlationId: '33333333-3333-4333-8333-333333333333',
+      requestId: '44444444-4444-4444-8444-444444444444',
+      soyuz: {
+        externalRunId: '11111111-1111-4111-8111-111111111111',
+        workerId: 'host-test-1',
+        contractVersion: '1',
+        startedCallbackId: '55555555-5555-4555-8555-555555555555',
+        startAuthorized: true,
+      },
+    };
+    const entry: SoyuzOutboxEntry = {
+      externalRunId: '11111111-1111-4111-8111-111111111111',
+      callbackId,
+      eventType: 'failed',
+      payload: { callbackId, workerId: 'host-test-1', failureClass: 'api_restart', failureMessage: 'Kaseki restarted.' },
+      attemptCount: 3,
+      nextAttemptAt: new Date(0).toISOString(),
+      deliveryState: 'pending',
+      createdAt: new Date(0).toISOString(),
+    };
+    const details = [{ path: 'failureMessage', message: 'Invalid length' }];
+    await manager.persistSoyuzTerminalCallback(job, entry);
+
+    await manager.blockSoyuzCallback(callbackId, 'Failed callback failed validation', details);
+
+    const restartedManager = new JobPersistenceManager(config);
+    expect(await restartedManager.claimDueSoyuzCallbacks(new Date(), 60_000)).toEqual([]);
+    expect(await restartedManager.getSoyuzOutboxStatus()).toMatchObject({ pending: 1, failures: 1, blocked: 1 });
+    expect((await restartedManager.listPersistedJobs())[0].soyuz?.terminalCallbackBlocked).toBe(true);
+    const blockedCallbacks = await restartedManager.getBlockedSoyuzCallbacks();
+    expect(blockedCallbacks).toHaveLength(1);
+    expect(blockedCallbacks[0]).toMatchObject({ callbackId, lastErrorDetails: JSON.stringify(details) });
+    expect(blockedCallbacks[0]).not.toHaveProperty('payload');
+    const persisted = JSON.parse(fs.readFileSync(path.join(tempDir, '.kaseki-api-jobs.json'), 'utf8')) as {
+      soyuzOutbox: SoyuzOutboxEntry[];
+    };
+    expect(persisted.soyuzOutbox[0]).toMatchObject({
+      deliveryState: 'blocked',
+      lastError: 'Failed callback failed validation',
+      lastErrorDetails: JSON.stringify(details),
+    });
+
+    await expect(restartedManager.retryBlockedSoyuzCallback(callbackId)).resolves.toBe(true);
+    expect(await restartedManager.claimDueSoyuzCallbacks()).toHaveLength(1);
+    expect(await restartedManager.getSoyuzOutboxStatus()).toMatchObject({ pending: 1, blocked: 0 });
+    expect((await restartedManager.listPersistedJobs())[0].soyuz?.terminalCallbackBlocked).toBe(false);
+  });
+
   test('persists an unconfirmed Soyuz claim intent across manager restart', async () => {
     const intent: SoyuzClaimIntent = {
       externalRunId: '11111111-1111-4111-8111-111111111111',

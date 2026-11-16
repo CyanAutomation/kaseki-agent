@@ -763,6 +763,7 @@ export interface Job {
     lastHeartbeatAt?: string;
     terminalCallbackId?: string;
     terminalCallbackDelivered?: boolean;
+    terminalCallbackBlocked?: boolean;
     uploadedArtifactNames?: string[];
     artifactUploadReport?: {
       eventId: string;

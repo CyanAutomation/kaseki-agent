@@ -1,5 +1,5 @@
 import { ReadableStream } from 'node:stream/web';
-import { SoyuzApiClient } from './SoyuzApiClient';
+import { SoyuzApiClient, SoyuzApiError } from './SoyuzApiClient';
 import { MAX_SOYUZ_ARTIFACT_BYTES, loadSoyuzArtifacts } from './soyuz-artifacts';
 import type { SoyuzAdapterConfig } from './config';
 
@@ -19,6 +19,27 @@ const config: SoyuzAdapterConfig = {
 };
 
 describe('Soyuz artifact upload', () => {
+  test('preserves safe validation details from Soyuz callback errors', async () => {
+    const fetchImpl = jest.fn(async () => new Response(JSON.stringify({
+      error: {
+        code: 'INVALID_WORKER_CALLBACK',
+        message: 'Failed callback failed validation',
+        details: [{ path: 'failureMessage', message: 'String must contain at most 4000 character(s)' }],
+      },
+    }), { status: 422 }));
+    const client = new SoyuzApiClient(config, fetchImpl as typeof fetch);
+
+    const request = client.failed('11111111-1111-4111-8111-111111111111', {
+      callbackId: '22222222-2222-4222-8222-222222222222',
+    });
+    await expect(request).rejects.toMatchObject<Partial<SoyuzApiError>>({
+      status: 422,
+      code: 'INVALID_WORKER_CALLBACK',
+      details: [{ path: 'failureMessage', message: 'String must contain at most 4000 character(s)' }],
+    });
+    await expect(request).rejects.toThrow('Failed callback failed validation');
+  });
+
   test('cancels a response declared above the byte limit before buffering it', async () => {
     let cancelled = false;
     const response = new Response(new ReadableStream<Uint8Array>({
