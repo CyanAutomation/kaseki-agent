@@ -389,7 +389,7 @@ The external Soyuz adapter is opt-in. See [Soyuz host integration](SOYUZ_INTEGRA
 | `SOYUZ_POLL_INTERVAL_MS` | `5000` | integer | Queue poll interval (250–60000 ms). |
 | `SOYUZ_VISIBILITY_TIMEOUT_MS` | `120000` | integer | Queue lease duration (1000 ms–12 hours), for handoff only. |
 | `SOYUZ_REQUEST_TIMEOUT_MS` | `20000` | integer | Timeout for each external API request (1000–120000 ms). |
-| `SOYUZ_CANCELLATION_POLL_INTERVAL_MS` | `15000` | integer | Interval for active-run cancellation checks (1000–300000 ms). |
+| `SOYUZ_CANCELLATION_POLL_INTERVAL_MS` | `60000` | integer | Minimum interval between periodic canonical status reads per tracked run; cancellation is applied when observed (1000–300000 ms). |
 | `SOYUZ_HEARTBEAT_INTERVAL_MS` | `60000` | integer | Interval for active-run heartbeat events (10000–900000 ms). |
 
 ### Server Settings
