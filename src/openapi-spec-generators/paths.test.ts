@@ -59,6 +59,8 @@ describe('OpenAPI Path Builders', () => {
     contract('/api/v1/improvements', 'get', 'getRunImprovements', true, ['200', '400', '401'], 'Run Details'),
     contract('/api/v1/runs/{id}/webhook-deliveries', 'get', 'listRunWebhookDeliveries', true, ['200', '401', '404'], 'Webhooks'),
     contract('/api/v1/runs/{id}/webhook-deliveries/{deliveryId}/retry', 'post', 'retryRunWebhookDelivery', true, ['202', '401', '404', '409', '429'], 'Webhooks'),
+    contract('/api/v1/soyuz/callbacks/blocked', 'get', 'listBlockedSoyuzCallbacks', true, ['200', '401'], 'Soyuz Integration'),
+    contract('/api/v1/soyuz/callbacks/{callbackId}/retry', 'post', 'retryBlockedSoyuzCallback', true, ['202', '401', '409', '429'], 'Soyuz Integration'),
     contract('/api/v1/webhooks/test', 'post', 'testWebhook', true, ['200', '400', '401', '429'], 'Webhooks'),
   ];
 
@@ -306,6 +308,8 @@ describe('OpenAPI Path Builders', () => {
         listScorecards: ['list', 'scorecards'],
         listRunWebhookDeliveries: ['inspect', 'webhook', 'deliveries'],
         retryRunWebhookDelivery: ['retry', 'failed', 'webhook'],
+        listBlockedSoyuzCallbacks: ['inspect', 'blocked', 'soyuz callbacks'],
+        retryBlockedSoyuzCallback: ['retry', 'blocked', 'soyuz callback'],
         retryRun: ['retry', 'terminal', 'run'],
         testGateway: ['gateway', 'inference'],
         testWebhook: ['test', 'webhook'],
@@ -462,6 +466,8 @@ describe('OpenAPI Path Builders', () => {
         '/api/v1/webhooks/test': { post: ['400', '401', '429'] },
         '/api/v1/runs/{id}/webhook-deliveries': { get: ['401', '404'] },
         '/api/v1/runs/{id}/webhook-deliveries/{deliveryId}/retry': { post: ['401', '404', '409', '429'] },
+        '/api/v1/soyuz/callbacks/blocked': { get: ['401'] },
+        '/api/v1/soyuz/callbacks/{callbackId}/retry': { post: ['401', '409', '429'] },
       };
 
       Object.entries(expectedErrorResponsesByOperation).forEach(([path, methods]) => {
@@ -923,6 +929,7 @@ describe('OpenAPI Path Builders', () => {
         '/api/v1/runs/{id}/status': '200',
         '/api/v1/runs/{id}/scorecard': '200',
         '/api/v1/runs/{id}/webhook-deliveries': '200',
+        '/api/v1/soyuz/callbacks/blocked': '200',
         '/api/v1/scorecards': '200',
         '/health': '200',
         '/ready': '200'

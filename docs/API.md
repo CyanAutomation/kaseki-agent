@@ -1055,6 +1055,16 @@ Requires a valid API key. Returns durable, secret-free delivery state and attemp
 
 Requires a valid API key. Retries a terminal failed delivery and returns `202 Accepted`; retrying a successful or active delivery returns `409 Conflict`.
 
+### Soyuz Callback Outbox
+
+**GET `/api/v1/soyuz/callbacks/blocked`**
+
+Requires a valid API key. Lists Soyuz callbacks stopped after a permanent 4xx response, including the run ID, callback ID, attempt count, last error, and safe validation details. Callback payloads are not returned.
+
+**POST `/api/v1/soyuz/callbacks/:callbackId/retry`**
+
+Requires a valid API key. Requeues one blocked callback and returns `202 Accepted`. It sends the same persisted callback payload; use it after correcting the remote validation/configuration issue. A callback that is not blocked returns `409 Conflict`.
+
 Webhook delivery uses HTTPS and public internet destinations by default. The sender rejects private, loopback, link-local, and other non-public DNS answers, pins the selected address for the request, and does not follow redirects. To deliver to a trusted private receiver, set `KASEKI_WEBHOOK_ALLOWED_ORIGINS` to its exact origin (scheme, host, and port, no path). This explicitly permits that origin to use HTTP or resolve to private addresses.
 
 ### API Usage

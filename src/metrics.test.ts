@@ -1,6 +1,15 @@
 import { metricsRegistry } from './metrics';
 
 describe('API Prometheus metrics', () => {
+  it('exposes Soyuz callback and reconciliation backlog gauges', () => {
+    metricsRegistry.setSoyuzCallbacksBlocked(2);
+    metricsRegistry.setSoyuzTrackedRuns(7);
+
+    const metrics = metricsRegistry.renderPrometheus();
+    expect(metrics).toContain('soyuz_callbacks_blocked 2');
+    expect(metrics).toContain('soyuz_tracked_runs 7');
+  });
+
   it('exposes route-template request counts and valid duration summary samples', () => {
     metricsRegistry.observeHttpRequest('GET', '/runs/{id}', 404, 0.025);
     const metrics = metricsRegistry.renderPrometheus();

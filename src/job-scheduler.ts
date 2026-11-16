@@ -25,6 +25,7 @@ import {
   ExternalRunAlreadyPersistedError,
   JobPersistenceManager,
   type SoyuzClaimIntent,
+  type SoyuzBlockedCallbackSummary,
   type SoyuzOutboxEntry,
 } from './job-persistence-manager';
 import { EXIT_CODE_SPAWN_FAILED } from './exit-codes';
@@ -477,12 +478,12 @@ export class JobScheduler {
     const byId = new Map((await this.persistenceManager.listPersistedJobs())
       .filter((job) => job.soyuz !== undefined && (
         job.status === 'queued' || job.status === 'running' ||
-        (this.isTerminalJob(job) && !job.soyuz.terminalCallbackDelivered)
+        (this.isTerminalJob(job) && !job.soyuz.terminalCallbackDelivered && !job.soyuz.terminalCallbackBlocked)
       ))
       .map((job) => [job.id, job]));
     for (const job of this.getSoyuzJobs()) {
       if (job.status === 'queued' || job.status === 'running' ||
-        (this.isTerminalJob(job) && !job.soyuz?.terminalCallbackDelivered)) {
+        (this.isTerminalJob(job) && !job.soyuz?.terminalCallbackDelivered && !job.soyuz?.terminalCallbackBlocked)) {
         byId.set(job.id, job);
       }
     }
@@ -498,6 +499,7 @@ export class JobScheduler {
     const previous = { ...job.soyuz };
     job.soyuz.terminalCallbackId = entry.callbackId;
     job.soyuz.terminalCallbackDelivered = false;
+    job.soyuz.terminalCallbackBlocked = false;
     job.soyuz.metadataUpdatedAt = new Date().toISOString();
     try {
       await this.persistenceManager.persistSoyuzTerminalCallback(job, entry);
@@ -514,14 +516,37 @@ export class JobScheduler {
   async completeSoyuzCallback(callbackId: string): Promise<void> {
     await this.persistenceManager.completeSoyuzCallback(callbackId);
     const job = Array.from(this.jobs.values()).find((candidate) => candidate.soyuz?.terminalCallbackId === callbackId);
-    if (job?.soyuz) job.soyuz.terminalCallbackDelivered = true;
+    if (job?.soyuz) {
+      job.soyuz.terminalCallbackDelivered = true;
+      job.soyuz.terminalCallbackBlocked = false;
+    }
   }
 
   async retrySoyuzCallback(callbackId: string, nextAttemptAt: string, error: string): Promise<void> {
     await this.persistenceManager.retrySoyuzCallback(callbackId, nextAttemptAt, error);
+    const job = Array.from(this.jobs.values()).find((candidate) => candidate.soyuz?.terminalCallbackId === callbackId);
+    if (job?.soyuz) job.soyuz.terminalCallbackBlocked = false;
   }
 
-  async getSoyuzOutboxStatus(): Promise<{ pending: number; oldestPendingAt?: string; failures: number }> {
+  async blockSoyuzCallback(callbackId: string, error: string, details?: unknown): Promise<void> {
+    await this.persistenceManager.blockSoyuzCallback(callbackId, error, details);
+    const job = Array.from(this.jobs.values()).find((candidate) => candidate.soyuz?.terminalCallbackId === callbackId);
+    if (job?.soyuz) job.soyuz.terminalCallbackBlocked = true;
+  }
+
+  getBlockedSoyuzCallbacks(): Promise<SoyuzBlockedCallbackSummary[]> {
+    return this.persistenceManager.getBlockedSoyuzCallbacks();
+  }
+
+  async retryBlockedSoyuzCallback(callbackId: string): Promise<boolean> {
+    const retried = await this.persistenceManager.retryBlockedSoyuzCallback(callbackId);
+    if (!retried) return false;
+    const job = Array.from(this.jobs.values()).find((candidate) => candidate.soyuz?.terminalCallbackId === callbackId);
+    if (job?.soyuz) job.soyuz.terminalCallbackBlocked = false;
+    return true;
+  }
+
+  async getSoyuzOutboxStatus(): Promise<{ pending: number; oldestPendingAt?: string; failures: number; blocked: number }> {
     return this.persistenceManager.getSoyuzOutboxStatus();
   }
 
@@ -719,6 +744,29 @@ export class JobScheduler {
       processId: job.processId,
     });
     return job;
+  }
+
+  /** Mark a Soyuz run failed when its persisted running state has no local executor. */
+  async failOrphanedSoyuzJob(id: string): Promise<boolean> {
+    await this.ready();
+    const job = this.jobs.get(id);
+    if (!job?.soyuz || job.status !== 'running' || this.running.has(id) || this.isJobProcessAlive(id)) return false;
+
+    this.finalizeJobIfNeeded(job, {
+      status: 'failed',
+      exitCode: 143,
+      failureClass: 'executor_lost',
+      error: 'Kaseki no longer has a live worker process for this run.',
+      completedAt: new Date(),
+    });
+    this.clearExecutionState(id);
+    await this.persistenceManager.persistJobStrict(job);
+    this.logger.event('soyuz_run_executor_lost', {
+      jobId: job.id,
+      externalRunId: job.soyuz.externalRunId,
+      failureClass: job.failureClass,
+    });
+    return true;
   }
 
   /** Whether a new local or Soyuz run can reserve this agent. */

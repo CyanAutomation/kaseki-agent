@@ -1397,6 +1397,33 @@ function buildWebhookDeliveryPaths(errorResponseSchema: Record<string, unknown>)
       attempts: { type: 'array', items: attemptSchema },
     },
   };
+  const blockedCallbackSchema = {
+    type: 'object',
+    required: ['callbackId', 'externalRunId', 'eventType', 'attemptCount', 'createdAt'],
+    properties: {
+      callbackId: { type: 'string', format: 'uuid' },
+      externalRunId: { type: 'string', format: 'uuid' },
+      eventType: { type: 'string', enum: ['event', 'completed', 'failed', 'cancelled'] },
+      attemptCount: { type: 'integer' },
+      createdAt: { type: 'string', format: 'date-time' },
+      blockedAt: { type: 'string', format: 'date-time' },
+      lastError: { type: 'string' },
+      lastErrorDetails: { type: 'string' },
+    },
+  };
+  const blockedCallbacksResponseSchema = {
+    type: 'object',
+    required: ['callbacks'],
+    properties: { callbacks: { type: 'array', items: blockedCallbackSchema } },
+  };
+  const retryBlockedCallbackResponseSchema = {
+    type: 'object',
+    required: ['callbackId', 'status'],
+    properties: {
+      callbackId: { type: 'string', format: 'uuid' },
+      status: { type: 'string', enum: ['pending'] },
+    },
+  };
   return {
     '/api/v1/runs/{id}/webhook-deliveries': {
       get: {
@@ -1433,6 +1460,35 @@ function buildWebhookDeliveryPaths(errorResponseSchema: Record<string, unknown>)
           '404': { description: 'Run or delivery not found', content: { 'application/problem+json': { schema: errorResponseSchema } } },
           '409': { description: 'Delivery is not failed or changed before retry', content: { 'application/problem+json': { schema: errorResponseSchema } } },
           '429': { description: 'Per-key webhook request limit exceeded', headers: { 'Retry-After': { schema: { type: 'integer' } } }, content: { 'application/problem+json': { schema: errorResponseSchema } } },
+        },
+      },
+    },
+    '/api/v1/soyuz/callbacks/blocked': {
+      get: {
+        operationId: 'listBlockedSoyuzCallbacks',
+        summary: 'Inspect blocked Soyuz callbacks',
+        description: 'Returns callback delivery errors and safe validation details without callback payloads.',
+        tags: ['Soyuz Integration'],
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': { description: 'Blocked callbacks', content: { 'application/json': { schema: blockedCallbacksResponseSchema } } },
+          '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+        },
+      },
+    },
+    '/api/v1/soyuz/callbacks/{callbackId}/retry': {
+      post: {
+        operationId: 'retryBlockedSoyuzCallback',
+        summary: 'Retry a blocked Soyuz callback',
+        description: 'Requeues one blocked callback using the persisted payload. Requires a valid API key.',
+        tags: ['Soyuz Integration'],
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'callbackId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        responses: {
+          '202': { description: 'Retry queued', content: { 'application/json': { schema: retryBlockedCallbackResponseSchema } } },
+          '401': { description: 'Unauthorized', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '409': { description: 'Callback is not blocked', content: { 'application/problem+json': { schema: errorResponseSchema } } },
+          '429': { description: 'Per-key callback retry limit exceeded', headers: { 'Retry-After': { schema: { type: 'integer' } } }, content: { 'application/problem+json': { schema: errorResponseSchema } } },
         },
       },
     },

@@ -21,6 +21,9 @@ class SoyuzAdmissionRejectedError extends Error {
 }
 
 const MAX_NONTERMINAL_OUTBOX_PENDING = 250;
+const MAX_CANONICAL_READS_PER_MINUTE = 60;
+const CANONICAL_READ_WINDOW_MS = 60_000;
+const MAX_CANONICAL_READ_JITTER_MS = 5_000;
 const MAX_ARTIFACT_UPLOAD_RETRIES_BEFORE_TERMINAL = 3;
 const CLAIM_CALLBACK_NAMESPACE = Buffer.from('3b7d4c748b5b5f8fa2d0a13c4a44c955', 'hex');
 const logger = createEventLogger('soyuz-adapter');
@@ -45,6 +48,9 @@ export class SoyuzAdapter {
   private nextCanonicalReadAt = new Map<string, number>();
   private canonicalRunByJob = new Map<string, SoyuzWorkerRun>();
   private canonicalReadFailures = new Map<string, number>();
+  private canonicalReadWindowStartedAt = 0;
+  private canonicalReadsInWindow = 0;
+  private canonicalReadCursorJobId?: string;
 
   constructor(
     kasekiConfig: KasekiApiConfig,
@@ -140,6 +146,7 @@ export class SoyuzAdapter {
     if (!this.scheduler.isRunSlotAvailable()) return;
     const outbox = await this.scheduler.getSoyuzOutboxStatus();
     metricsRegistry.setSoyuzCallbacksPending(outbox.pending);
+    metricsRegistry.setSoyuzCallbacksBlocked(outbox.blocked);
     if (outbox.pending >= 5_000) {
       if (Date.now() - this.lastOutboxFullWarningAt >= 60_000) {
         this.lastOutboxFullWarningAt = Date.now();
@@ -569,6 +576,7 @@ export class SoyuzAdapter {
 
   private async reconcileLocalJobs(forceCanonicalRefresh = false): Promise<void> {
     const jobs = await this.scheduler.listSoyuzJobs();
+    metricsRegistry.setSoyuzTrackedRuns(jobs.length);
     const retainedJobIds = new Set(jobs.map((job) => job.id));
     for (const jobId of this.nextCanonicalReadAt.keys()) {
       if (!retainedJobIds.has(jobId)) {
@@ -579,14 +587,47 @@ export class SoyuzAdapter {
       }
     }
 
-    for (const job of jobs) {
+    const cursorIndex = this.canonicalReadCursorJobId
+      ? jobs.findIndex((job) => job.id === this.canonicalReadCursorJobId)
+      : 0;
+    const startIndex = cursorIndex < 0 ? 0 : cursorIndex;
+    const orderedJobs = [...jobs.slice(startIndex), ...jobs.slice(0, startIndex)];
+    let readBudgetExhausted = false;
+    for (const job of orderedJobs) {
       if (!job.soyuz) continue;
       try {
+        if ((job.status === 'completed' || job.status === 'failed')
+          && !this.scheduler.isJobExecuting(job.id)
+          && !this.scheduler.isJobProcessAlive(job.id)) {
+          await this.ensureTerminalCallback(job);
+          this.cancellationCheckAt.delete(job.id);
+          continue;
+        }
+
+        if (job.status === 'running' && !this.scheduler.isJobExecuting(job.id)) {
+          if (!this.scheduler.isJobProcessAlive(job.id)
+            && await this.scheduler.failOrphanedSoyuzJob(job.id)) {
+            await this.ensureTerminalCallback(job);
+          }
+          this.nextCanonicalReadAt.delete(job.id);
+          this.canonicalRunByJob.delete(job.id);
+          this.canonicalReadFailures.delete(job.id);
+          this.cancellationCheckAt.delete(job.id);
+          continue;
+        }
+
         const now = Date.now();
         let canonical = this.canonicalRunByJob.get(job.id);
         let canonicalRefreshed = false;
         const nextReadAt = this.nextCanonicalReadAt.get(job.id) ?? 0;
         if (forceCanonicalRefresh || !this.nextCanonicalReadAt.has(job.id) || now >= nextReadAt) {
+          if (!this.reserveCanonicalRead(now)) {
+            this.canonicalReadCursorJobId = job.id;
+            metricsRegistry.incSoyuzCounter('canonical_read_throttled');
+            readBudgetExhausted = true;
+            break;
+          }
+          metricsRegistry.incSoyuzCounter('canonical_run_read');
           try {
             canonical = await this.api.getRun(job.soyuz.externalRunId);
           } catch (error) {
@@ -601,7 +642,11 @@ export class SoyuzAdapter {
             throw error;
           }
           this.canonicalReadFailures.delete(job.id);
-          this.nextCanonicalReadAt.set(job.id, Date.now() + this.config.cancellationPollIntervalMs);
+          const jitterMs = Math.floor(Math.random() * Math.min(
+            MAX_CANONICAL_READ_JITTER_MS,
+            this.config.cancellationPollIntervalMs / 10,
+          ));
+          this.nextCanonicalReadAt.set(job.id, Date.now() + this.config.cancellationPollIntervalMs + jitterMs);
           this.canonicalRunByJob.set(job.id, canonical);
           canonicalRefreshed = true;
         }
@@ -634,6 +679,18 @@ export class SoyuzAdapter {
         });
       }
     }
+    if (!readBudgetExhausted) this.canonicalReadCursorJobId = undefined;
+  }
+
+  private reserveCanonicalRead(now: number): boolean {
+    if (now < this.canonicalReadWindowStartedAt
+      || now - this.canonicalReadWindowStartedAt >= CANONICAL_READ_WINDOW_MS) {
+      this.canonicalReadWindowStartedAt = now;
+      this.canonicalReadsInWindow = 0;
+    }
+    if (this.canonicalReadsInWindow >= MAX_CANONICAL_READS_PER_MINUTE) return false;
+    this.canonicalReadsInWindow += 1;
+    return true;
   }
 
   private async prepareRecoveryStart(job: Job, initialCanonical: SoyuzWorkerRun): Promise<{
@@ -703,6 +760,7 @@ export class SoyuzAdapter {
 
   private async monitorActiveRun(job: Job, canonical: SoyuzWorkerRun, canonicalRefreshed: boolean): Promise<void> {
     if (!job.soyuz) return;
+    if (!this.scheduler.isJobExecuting(job.id)) return;
     const now = Date.now();
     const nextCheck = this.cancellationCheckAt.get(job.id) ?? 0;
     if (canonicalRefreshed || now >= nextCheck) {
@@ -753,7 +811,8 @@ export class SoyuzAdapter {
   }
 
   private async ensureTerminalCallback(job: Job): Promise<void> {
-    if (!job.soyuz || job.soyuz.terminalCallbackDelivered || job.status === 'queued' || job.status === 'running') return;
+    if (!job.soyuz || job.soyuz.terminalCallbackDelivered || job.soyuz.terminalCallbackBlocked
+      || job.status === 'queued' || job.status === 'running') return;
     const callbackId = job.soyuz.terminalCallbackId ?? randomUUID();
     const completedAt = (job.completedAt ?? new Date()).toISOString();
     let eventType: SoyuzOutboxEntry['eventType'];
@@ -830,9 +889,26 @@ export class SoyuzAdapter {
         }
         await this.scheduler.completeSoyuzCallback(entry.callbackId);
       } catch (error) {
+        const errorText = error instanceof Error ? error.message : String(error);
+        if (isPermanentSoyuzCallbackError(error)) {
+          const details = error.details;
+          await this.scheduler.blockSoyuzCallback(entry.callbackId, errorText, details);
+          metricsRegistry.incSoyuzCounter('callbacks_blocked');
+          logger.error('Soyuz callback delivery is blocked after a permanent response', {
+            runId: entry.externalRunId,
+            callbackId: entry.callbackId,
+            eventType: entry.eventType,
+            attemptCount: entry.attemptCount,
+            status: error.status,
+            code: error.code,
+            error: errorText,
+            ...(details !== undefined ? { details } : {}),
+          });
+          continue;
+        }
+
         const retryMs = Math.min(15 * 60_000, 1_000 * (2 ** Math.min(entry.attemptCount, 10)));
         const jitteredRetryMs = Math.round(retryMs * (0.8 + Math.random() * 0.4));
-        const errorText = error instanceof Error ? error.message : String(error);
         await this.scheduler.retrySoyuzCallback(
           entry.callbackId,
           new Date(Date.now() + jitteredRetryMs).toISOString(),
@@ -853,6 +929,7 @@ export class SoyuzAdapter {
     }
     const status = await this.scheduler.getSoyuzOutboxStatus();
     metricsRegistry.setSoyuzCallbacksPending(status.pending);
+    metricsRegistry.setSoyuzCallbacksBlocked(status.blocked);
     if (status.pending >= 100 && Date.now() - this.lastOutboxBacklogWarningAt >= 60_000) {
       this.lastOutboxBacklogWarningAt = Date.now();
       logger.warn('Soyuz callback outbox backlog needs operator attention', {
@@ -999,6 +1076,14 @@ export class SoyuzAdapter {
       });
     }
   }
+}
+
+function isPermanentSoyuzCallbackError(error: unknown): error is SoyuzApiError {
+  return error instanceof SoyuzApiError
+    && error.status >= 400
+    && error.status < 500
+    && error.status !== 408
+    && error.status !== 429;
 }
 
 function isTerminal(status: SoyuzWorkerRun['status']): boolean {
