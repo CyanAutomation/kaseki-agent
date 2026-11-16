@@ -72,7 +72,7 @@ function timingSettings(env: NodeJS.ProcessEnv): SoyuzTimingSettings {
     pollIntervalMs: positiveInt(env, 'SOYUZ_POLL_INTERVAL_MS', 5_000, 250, 60_000),
     visibilityTimeoutMs: positiveInt(env, 'SOYUZ_VISIBILITY_TIMEOUT_MS', 120_000, 1_000, 43_200_000),
     requestTimeoutMs: positiveInt(env, 'SOYUZ_REQUEST_TIMEOUT_MS', 20_000, 1_000, 120_000),
-    cancellationPollIntervalMs: positiveInt(env, 'SOYUZ_CANCELLATION_POLL_INTERVAL_MS', 15_000, 1_000, 300_000),
+    cancellationPollIntervalMs: positiveInt(env, 'SOYUZ_CANCELLATION_POLL_INTERVAL_MS', 60_000, 1_000, 300_000),
     heartbeatIntervalMs: positiveInt(env, 'SOYUZ_HEARTBEAT_INTERVAL_MS', 60_000, 10_000, 900_000),
   };
 }
