@@ -4,6 +4,23 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.159.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.159.1...v1.159.2) (2026-11-16)
+
+
+### Bug Fixes
+
+* correct Dependabot dependency group types ([f591e6f](https://github.com/CyanAutomation/kaseki-agent/commit/f591e6fe88eb8c346ab0a14f589b5f5af1136e28))
+* disable new eslint rules breaking validate check ([ee87f95](https://github.com/CyanAutomation/kaseki-agent/commit/ee87f9528ebd4345ab2e0a90498cd40eee3ffd76))
+* keep Jest compatible with jsdom dependency ([aa73d3d](https://github.com/CyanAutomation/kaseki-agent/commit/aa73d3d17503bcf7f86405e2e81ae840e100291b))
+* pin TypeScript to v5 to satisfy eslint peer constraints ([d5bd582](https://github.com/CyanAutomation/kaseki-agent/commit/d5bd58229a2ec8996e71efcc7e5835112fc04950))
+* resolve dependency update checks ([f1114aa](https://github.com/CyanAutomation/kaseki-agent/commit/f1114aa20a12a37023440569f0a4b8f27868547c))
+* retain patched bundled undici lock entry ([fb1ecaf](https://github.com/CyanAutomation/kaseki-agent/commit/fb1ecafa8bcd80ca60b98c9c9020b444b8afae50))
+* separate Soyuz callback retry controls ([a5f60ee](https://github.com/CyanAutomation/kaseki-agent/commit/a5f60ee43a1ecb8babb88652cd618f7cfac226f6))
+* stop orphaned Soyuz reconciliation loops ([8f1f7bf](https://github.com/CyanAutomation/kaseki-agent/commit/8f1f7bfa2835be9cc1047d2a3a2332170bd61a4f))
+* stop orphaned Soyuz reconciliation loops ([#1581](https://github.com/CyanAutomation/kaseki-agent/issues/1581)) ([eded0b0](https://github.com/CyanAutomation/kaseki-agent/commit/eded0b0a61423f9da40b01ce96f13fc0447bcaaf))
+* throttle Soyuz active run status polling ([e0f6d51](https://github.com/CyanAutomation/kaseki-agent/commit/e0f6d51a199d6ba9984f5a38b5c5ddcb5106ddbe))
+* use supported Dependabot update configuration ([6ea6879](https://github.com/CyanAutomation/kaseki-agent/commit/6ea6879dad2161fce9b39404c640fe6b0336a0b2))
+
 ## [1.159.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.159.0...v1.159.1) (2026-11-13)
 
 
