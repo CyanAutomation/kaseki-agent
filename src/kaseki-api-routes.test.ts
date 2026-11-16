@@ -242,8 +242,10 @@ describe('API access quotas and request identifiers', () => {
       const body = await response.json() as any;
       expect(response.status).toBe(200);
       expect(body.requestCount).toBe(1);
+      expect(body.soyuzCallbackRetryCount).toBe(0);
       expect(body.costUsd).toBeNull();
       expect(body.limits.requestsPerMinute).toBeGreaterThan(0);
+      expect(body.limits.soyuzCallbackRetriesPerHour).toBeGreaterThan(0);
       expect(body).not.toHaveProperty('githubIssueLookupCount');
       expect(body.limits).not.toHaveProperty('githubIssuesPerMinute');
     } finally {

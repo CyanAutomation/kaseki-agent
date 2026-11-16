@@ -136,6 +136,15 @@ function createScheduler(_workerId: string) {
         job.failureClass = 'cancelled';
       }
     }),
+    failOrphanedSoyuzJob: jest.fn(async (localRunId: string) => {
+      const job = jobs.find((candidate) => candidate.id === localRunId);
+      if (job) {
+        job.status = 'failed';
+        job.failureClass = 'executor_lost';
+        return true;
+      }
+      return false;
+    }),
     holdSoyuzJob: jest.fn((localRunId: string) => {
       const job = jobs.find((candidate) => candidate.id === localRunId);
       if (job) job.status = 'failed';
@@ -163,7 +172,8 @@ function createScheduler(_workerId: string) {
         entry.nextAttemptAt = new Date(0).toISOString();
       }
     }),
-    getSoyuzOutboxStatus: jest.fn(async () => ({ pending: 0, failures: 0 })),
+    blockSoyuzCallback: jest.fn(async () => undefined),
+    getSoyuzOutboxStatus: jest.fn(async () => ({ pending: 0, failures: 0, blocked: 0 })),
     updateSoyuzJobMetadata: jest.fn(async (localRunId: string, update: Partial<NonNullable<Job['soyuz']>>) => {
       const job = jobs.find((candidate) => candidate.id === localRunId);
       if (job?.soyuz) Object.assign(job.soyuz, update);
@@ -201,6 +211,8 @@ function createFetch(state: ReturnType<typeof runState>, options: {
   failFirstRunRead?: boolean;
   failFirstArtifactUpload?: boolean;
   rejectArtifactUploadReport?: boolean;
+  rejectTerminalCallback?: boolean;
+  failTerminalCallback?: boolean;
 } = {}) {
   let pulls = 0;
   let acks = 0;
@@ -241,6 +253,16 @@ function createFetch(state: ReturnType<typeof runState>, options: {
       return jsonResponse({ data: { id: action } }, 201);
     }
     if (method === 'POST' && ['completed', 'failed', 'cancelled'].includes(action ?? '')) {
+      if (options.failTerminalCallback) {
+        return jsonResponse({ error: { code: 'UPSTREAM_UNAVAILABLE', message: 'Temporary Soyuz failure' } }, 503);
+      }
+      if (options.rejectTerminalCallback) {
+        return jsonResponse({ error: {
+          code: 'INVALID_WORKER_CALLBACK',
+          message: 'Failed callback failed validation',
+          details: [{ path: 'failureMessage', message: 'Invalid length' }],
+        } }, 422);
+      }
       state.status = action as 'completed' | 'failed' | 'cancelled';
       return jsonResponse({ data: { runId: RUN_ID }, requestId: 'soyuz-request' });
     }
@@ -357,6 +379,7 @@ describe('Soyuz adapter handoff', () => {
   test('reads active canonical run status at most once per configured interval', async () => {
     const now = Date.parse('2026-11-16T12:00:00.000Z');
     const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    const random = jest.spyOn(Math, 'random').mockReturnValue(0);
     try {
       const state = runState();
       state.status = 'running';
@@ -407,8 +430,134 @@ describe('Soyuz adapter handoff', () => {
       expect(statusReads()).toHaveLength(2);
       expect(scheduler.cancelSoyuzJob).toHaveBeenCalledWith('local-active-run');
     } finally {
+      random.mockRestore();
       clock.mockRestore();
     }
+  });
+
+  test('does not fetch canonical status for a terminal local run awaiting its callback', async () => {
+    const { fetchImpl, calls } = createFetch(runState());
+    const { scheduler, jobs } = createScheduler('host-a');
+    jobs.push({
+      id: 'local-terminal-run',
+      status: 'failed',
+      failureClass: 'execution_failed',
+      request: queuedRun.request,
+      createdAt: new Date(),
+      completedAt: new Date(),
+      correlationId: CORRELATION_ID,
+      requestId: REQUEST_ID,
+      soyuz: {
+        externalRunId: RUN_ID,
+        workerId: 'host-a',
+        contractVersion: '1',
+        startedCallbackId: '44444444-4444-4444-8444-444444444444',
+        startAuthorized: true,
+        terminalCallbackDelivered: false,
+      },
+    });
+    scheduler.isRunSlotAvailable.mockReturnValue(false);
+
+    await makeAdapter('host-a', scheduler, fetchImpl).runOnce();
+
+    expect(calls.some((call) => call.method === 'GET' && call.url.endsWith(`/v1/worker/runs/${RUN_ID}`))).toBe(false);
+    expect(scheduler.persistSoyuzTerminalCallback).toHaveBeenCalledWith(jobs[0], expect.objectContaining({ eventType: 'failed' }));
+  });
+
+  test('blocks permanent callback validation failures and retains their details', async () => {
+    const entry: SoyuzOutboxEntry = {
+      externalRunId: RUN_ID,
+      callbackId: '55555555-5555-4555-8555-555555555555',
+      eventType: 'failed',
+      payload: {
+        callbackId: '55555555-5555-4555-8555-555555555555',
+        workerId: 'host-a',
+        failureClass: 'execution_failed',
+        failureMessage: 'The run failed.',
+      },
+      attemptCount: 4,
+      nextAttemptAt: new Date(0).toISOString(),
+      deliveryState: 'delivering',
+      createdAt: new Date(0).toISOString(),
+    };
+    const { fetchImpl } = createFetch(runState(), { rejectTerminalCallback: true });
+    const { scheduler } = createScheduler('host-a');
+    scheduler.claimSoyuzCallbacks.mockResolvedValue([entry]);
+    scheduler.isRunSlotAvailable.mockReturnValue(false);
+
+    await makeAdapter('host-a', scheduler, fetchImpl).runOnce();
+
+    expect(scheduler.blockSoyuzCallback).toHaveBeenCalledWith(
+      entry.callbackId,
+      'Failed callback failed validation',
+      [{ path: 'failureMessage', message: 'Invalid length' }],
+    );
+    expect(scheduler.retrySoyuzCallback).not.toHaveBeenCalled();
+  });
+
+  test('continues retrying transient server failures', async () => {
+    const entry: SoyuzOutboxEntry = {
+      externalRunId: RUN_ID,
+      callbackId: '66666666-6666-4666-8666-666666666666',
+      eventType: 'failed',
+      payload: {
+        callbackId: '66666666-6666-4666-8666-666666666666',
+        workerId: 'host-a',
+        failureClass: 'execution_failed',
+        failureMessage: 'The run failed.',
+      },
+      attemptCount: 2,
+      nextAttemptAt: new Date(0).toISOString(),
+      deliveryState: 'delivering',
+      createdAt: new Date(0).toISOString(),
+    };
+    const { fetchImpl } = createFetch(runState(), { failTerminalCallback: true });
+    const { scheduler } = createScheduler('host-a');
+    scheduler.claimSoyuzCallbacks.mockResolvedValue([entry]);
+    scheduler.isRunSlotAvailable.mockReturnValue(false);
+
+    await makeAdapter('host-a', scheduler, fetchImpl).runOnce();
+
+    expect(scheduler.retrySoyuzCallback).toHaveBeenCalledWith(
+      entry.callbackId,
+      expect.any(String),
+      'Temporary Soyuz failure',
+    );
+    expect(scheduler.blockSoyuzCallback).not.toHaveBeenCalled();
+  });
+
+  test('terminalizes a running local job whose executor disappeared without polling Soyuz', async () => {
+    const state = runState();
+    state.status = 'running';
+    state.workerId = 'host-a';
+    const { fetchImpl, calls } = createFetch(state);
+    const { scheduler, jobs } = createScheduler('host-a');
+    jobs.push({
+      id: 'local-orphaned-run',
+      status: 'running',
+      request: queuedRun.request,
+      createdAt: new Date(),
+      correlationId: CORRELATION_ID,
+      requestId: REQUEST_ID,
+      soyuz: {
+        externalRunId: RUN_ID,
+        workerId: 'host-a',
+        contractVersion: '1',
+        startedCallbackId: '44444444-4444-4444-8444-444444444444',
+        startAuthorized: true,
+      },
+    });
+    scheduler.isJobExecuting.mockReturnValue(false);
+    scheduler.isRunSlotAvailable.mockReturnValue(false);
+
+    await makeAdapter('host-a', scheduler, fetchImpl).runOnce();
+
+    expect(scheduler.failOrphanedSoyuzJob).toHaveBeenCalledWith('local-orphaned-run');
+    expect(calls.some((call) => call.method === 'GET' && call.url.endsWith(`/v1/worker/runs/${RUN_ID}`))).toBe(false);
+    expect(scheduler.enqueueSoyuzCallback).not.toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'event',
+      payload: expect.objectContaining({ type: 'worker.heartbeat', payload: expect.objectContaining({ executionActive: false }) }),
+    }));
   });
 
   test('backs off failed canonical reads and resumes at the next retry time', async () => {
@@ -454,6 +603,108 @@ describe('Soyuz adapter handoff', () => {
       await adapter.runOnce();
       expect(statusReads()).toHaveLength(2);
     } finally {
+      clock.mockRestore();
+    }
+  });
+
+  test('caps canonical status reads globally and rotates deferred runs fairly', async () => {
+    const now = Date.parse('2026-11-16T12:00:00.000Z');
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const runIds = Array.from({ length: 61 }, (_, index) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`);
+      const calls: string[] = [];
+      const fetchImpl = jest.fn(async (input: Parameters<typeof fetch>[0]) => {
+        const runId = new URL(String(input)).pathname.split('/').pop()!;
+        calls.push(runId);
+        return jsonResponse({ data: {
+          runId,
+          contractVersion: '1',
+          status: 'running',
+          stage: null,
+          claimExpiresAt: null,
+          cancelRequestedAt: null,
+          workerId: 'host-a',
+          claimCallbackId: null,
+          updatedAt: new Date(now).toISOString(),
+          lastHeartbeatAt: null,
+          operationalHealth: 'healthy',
+        } });
+      }) as unknown as typeof fetch;
+      const { scheduler, jobs } = createScheduler('host-a');
+      jobs.push(...runIds.map((externalRunId, index): Job => ({
+        id: `local-run-${index}`,
+        status: 'running',
+        request: queuedRun.request,
+        createdAt: new Date(now),
+        correlationId: CORRELATION_ID,
+        requestId: REQUEST_ID,
+        soyuz: {
+          externalRunId,
+          workerId: 'host-a',
+          contractVersion: '1',
+          startedCallbackId: '44444444-4444-4444-8444-444444444444',
+          startAuthorized: true,
+        },
+      })));
+      scheduler.isRunSlotAvailable.mockReturnValue(false);
+      const config = adapterConfig('host-a');
+      config.cancellationPollIntervalMs = 60_000;
+      const adapter = new SoyuzAdapter({ soyuz: config } as KasekiApiConfig, scheduler as never, undefined, config, fetchImpl);
+
+      await adapter.runOnce();
+      expect(calls).toHaveLength(60);
+      expect(calls).not.toContain(runIds[60]);
+
+      clock.mockReturnValue(now + 60_000);
+      await adapter.runOnce();
+      expect(calls).toContain(runIds[60]);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  test('adds jitter after a canonical read so tracked runs do not synchronize', async () => {
+    const now = Date.parse('2026-11-16T12:00:00.000Z');
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    const random = jest.spyOn(Math, 'random').mockReturnValue(0.5);
+    try {
+      const state = runState();
+      state.status = 'running';
+      state.workerId = 'host-a';
+      const { fetchImpl, calls } = createFetch(state);
+      const { scheduler, jobs } = createScheduler('host-a');
+      jobs.push({
+        id: 'local-active-run',
+        status: 'running',
+        request: queuedRun.request,
+        createdAt: new Date(now),
+        correlationId: CORRELATION_ID,
+        requestId: REQUEST_ID,
+        soyuz: {
+          externalRunId: RUN_ID,
+          workerId: 'host-a',
+          contractVersion: '1',
+          startedCallbackId: '44444444-4444-4444-8444-444444444444',
+          startAuthorized: true,
+          lastHeartbeatAt: new Date(now).toISOString(),
+        },
+      });
+      scheduler.isRunSlotAvailable.mockReturnValue(false);
+      const config = adapterConfig('host-a');
+      config.cancellationPollIntervalMs = 60_000;
+      const adapter = new SoyuzAdapter({ soyuz: config } as KasekiApiConfig, scheduler as never, undefined, config, fetchImpl);
+      const statusReads = () => calls.filter((call) => call.method === 'GET' && call.url.endsWith(`/v1/worker/runs/${RUN_ID}`));
+
+      await adapter.runOnce();
+      clock.mockReturnValue(now + 60_000);
+      await adapter.runOnce();
+      expect(statusReads()).toHaveLength(1);
+
+      clock.mockReturnValue(now + 62_500);
+      await adapter.runOnce();
+      expect(statusReads()).toHaveLength(2);
+    } finally {
+      random.mockRestore();
       clock.mockRestore();
     }
   });

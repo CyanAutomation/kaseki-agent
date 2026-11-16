@@ -22,6 +22,7 @@ import { createLogRoutes } from './routes/log-routes';
 import { createArtifactRoutes } from './routes/artifact-routes';
 import { createWebhookRoutes } from './routes/webhook-routes';
 import { createWebhookDeliveryRoutes } from './routes/webhook-delivery-routes';
+import { createSoyuzCallbackRoutes } from './routes/soyuz-callback-routes';
 import { createHealthRoutes } from './routes/health-routes';
 import { createImprovementRoutes } from './routes/improvement-routes';
 import { ResultCache } from './result-cache';
@@ -156,6 +157,7 @@ export function createApiRouter(
     requestsPerMinute: config.apiRequestsPerMinute,
     diagnosticsPerHour: config.apiDiagnosticsPerHour,
     webhookTestsPerHour: config.apiWebhookTestsPerHour,
+    soyuzCallbackRetriesPerHour: config.apiSoyuzCallbackRetriesPerHour,
   });
   registerApiMiddleware(router, config, logger, apiAccess);
 
@@ -180,6 +182,7 @@ export function createApiRouter(
   router.use(createImprovementRoutes(scheduler, config));
   router.use(createWebhookRoutes());
   router.use(createWebhookDeliveryRoutes(scheduler));
+  router.use(createSoyuzCallbackRoutes(scheduler));
 
   router.use((error: unknown, req: Request, res: Response, next: NextFunction) => {
     if (res.headersSent) return next(error);
@@ -358,6 +361,7 @@ function registerApiInfoRoutes(
       requestsPerMinute: config.apiRequestsPerMinute ?? 300,
       diagnosticsPerHour: config.apiDiagnosticsPerHour ?? 10,
       webhookTestsPerHour: config.apiWebhookTestsPerHour ?? 10,
+      soyuzCallbackRetriesPerHour: config.apiSoyuzCallbackRetriesPerHour ?? 100,
     } });
   });
 

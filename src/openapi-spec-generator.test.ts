@@ -82,6 +82,8 @@ const expectedEndpoints: EndpointContract[] = [
   endpoint('/api/v1/improvements', 'get', 'getRunImprovements', 'protected', ['200'], ['400', '401']),
   endpoint('/api/v1/runs/{id}/webhook-deliveries', 'get', 'listRunWebhookDeliveries', 'protected', ['200'], ['401', '404']),
   endpoint('/api/v1/runs/{id}/webhook-deliveries/{deliveryId}/retry', 'post', 'retryRunWebhookDelivery', 'protected', ['202'], ['401', '404', '409', '429']),
+  endpoint('/api/v1/soyuz/callbacks/blocked', 'get', 'listBlockedSoyuzCallbacks', 'protected', ['200'], ['401']),
+  endpoint('/api/v1/soyuz/callbacks/{callbackId}/retry', 'post', 'retryBlockedSoyuzCallback', 'protected', ['202'], ['400', '401', '409', '429']),
   endpoint('/api/v1/webhooks/test', 'post', 'testWebhook', 'protected', ['200'], ['400', '401', '429']),
 ];
 

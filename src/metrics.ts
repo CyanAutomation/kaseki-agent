@@ -20,6 +20,8 @@ class MetricsRegistry {
   private apiRequestDurationCounts = new Map<string, number>();
   private soyuzCounters = new Map<string, number>();
   private soyuzCallbacksPending = 0;
+  private soyuzCallbacksBlocked = 0;
+  private soyuzTrackedRuns = 0;
   private soyuzHandoffDurationSum = 0;
   private soyuzHandoffDurationCount = 0;
   private storageAvailableBytes = -1;
@@ -56,12 +58,15 @@ class MetricsRegistry {
   incSoyuzCounter(name: string): void {
     const allowed = new Set([
       'queue_pull_success', 'queue_pull_failure', 'claim_success', 'claim_conflict',
-      'runs_started', 'runs_completed', 'runs_failed', 'callbacks_retry',
+      'runs_started', 'runs_completed', 'runs_failed', 'callbacks_retry', 'callbacks_blocked',
+      'canonical_run_read', 'canonical_read_throttled',
     ]);
     if (!allowed.has(name)) return;
     this.soyuzCounters.set(name, (this.soyuzCounters.get(name) ?? 0) + 1);
   }
   setSoyuzCallbacksPending(count: number): void { this.soyuzCallbacksPending = Math.max(0, count); }
+  setSoyuzCallbacksBlocked(count: number): void { this.soyuzCallbacksBlocked = Math.max(0, count); }
+  setSoyuzTrackedRuns(count: number): void { this.soyuzTrackedRuns = Math.max(0, count); }
   observeSoyuzHandoffDuration(seconds: number): void {
     if (!Number.isFinite(seconds) || seconds < 0) return;
     this.soyuzHandoffDurationSum += seconds;
@@ -131,7 +136,8 @@ class MetricsRegistry {
 
     for (const name of [
       'queue_pull_success', 'queue_pull_failure', 'claim_success', 'claim_conflict',
-      'runs_started', 'runs_completed', 'runs_failed', 'callbacks_retry',
+      'runs_started', 'runs_completed', 'runs_failed', 'callbacks_retry', 'callbacks_blocked',
+      'canonical_run_read', 'canonical_read_throttled',
     ]) {
       lines.push(`# HELP soyuz_${name}_total Soyuz integration ${name.replace(/_/g, ' ')}.`);
       lines.push(`# TYPE soyuz_${name}_total counter`);
@@ -140,6 +146,12 @@ class MetricsRegistry {
     lines.push('# HELP soyuz_callbacks_pending Pending durable Soyuz callbacks.');
     lines.push('# TYPE soyuz_callbacks_pending gauge');
     lines.push(`soyuz_callbacks_pending ${this.soyuzCallbacksPending}`);
+    lines.push('# HELP soyuz_callbacks_blocked Blocked callbacks requiring operator attention.');
+    lines.push('# TYPE soyuz_callbacks_blocked gauge');
+    lines.push(`soyuz_callbacks_blocked ${this.soyuzCallbacksBlocked}`);
+    lines.push('# HELP soyuz_tracked_runs Local Soyuz runs currently held for reconciliation or callback delivery.');
+    lines.push('# TYPE soyuz_tracked_runs gauge');
+    lines.push(`soyuz_tracked_runs ${this.soyuzTrackedRuns}`);
     lines.push('# HELP soyuz_execution_handoff_duration_seconds Time from queue pull to local durable acceptance and start authorization.');
     lines.push('# TYPE soyuz_execution_handoff_duration_seconds summary');
     lines.push(`soyuz_execution_handoff_duration_seconds_sum ${this.soyuzHandoffDurationSum}`);

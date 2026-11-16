@@ -22,7 +22,7 @@ The jobs index also stores short-lived Soyuz claim intents. Kaseki writes an int
 | `SOYUZ_POLL_INTERVAL_MS` | `5000` | 250–60000 ms. |
 | `SOYUZ_VISIBILITY_TIMEOUT_MS` | `120000` | 1000 ms–12 hours. This covers the short handoff, not the coding run. |
 | `SOYUZ_REQUEST_TIMEOUT_MS` | `20000` | 1000–120000 ms for each API request. |
-| `SOYUZ_CANCELLATION_POLL_INTERVAL_MS` | `60000` | 1000–300000 ms between periodic canonical status reads for each tracked run; cancellation is applied as soon as a read observes it. |
+| `SOYUZ_CANCELLATION_POLL_INTERVAL_MS` | `60000` | 1000–300000 ms between periodic canonical status reads for each tracked run; reads are capped at 60/minute per adapter instance and jittered, and cancellation is applied as soon as a read observes it. |
 | `SOYUZ_HEARTBEAT_INTERVAL_MS` | `60000` | 10000–900000 ms between active-run heartbeat events. |
 
 Tokens may be supplied through environment variables or Kaseki's host secret reader. Secret file names are `soyuz_submission_api_token`, `soyuz_worker_api_token`, and `cloudflare_queue_api_token`, searched under `$KASEKI_SECRETS_DIR` (default `/run/secrets/kaseki`) and then `~/.kaseki/secrets`. Never put their values in the job index or logs. Configure the Queue token with Cloudflare Queues read and write permissions only.
@@ -126,10 +126,15 @@ Kaseki exposes integration metrics on its existing `/api/v1/metrics` endpoint:
 - `soyuz_queue_pull_success_total`, `soyuz_queue_pull_failure_total`
 - `soyuz_claim_success_total`, `soyuz_claim_conflict_total`
 - `soyuz_runs_started_total`, `soyuz_runs_completed_total`, `soyuz_runs_failed_total`
-- `soyuz_callbacks_pending`, `soyuz_callbacks_retry_total`
+- `soyuz_callbacks_pending`, `soyuz_callbacks_blocked`, `soyuz_callbacks_retry_total`, `soyuz_callbacks_blocked_total`
+- `soyuz_tracked_runs`, `soyuz_canonical_run_read_total`, `soyuz_canonical_read_throttled_total`
 - `soyuz_execution_handoff_duration_seconds`
 
-Use existing Kaseki log collection and Cloudflare Worker observability to alert on repeated Queue 401/403 responses, sustained pull failures, growing `soyuz_callbacks_pending`, repeated claim conflicts, unsupported contract errors, and `soyuz_run_suspected_stalled`. Logs include run and correlation IDs; metrics intentionally have no run-ID labels. The stalled-run event is emitted once per stale heartbeat timestamp. There is no external paging provider configured by this integration.
+Use existing Kaseki log collection and Cloudflare Worker observability to alert on repeated Queue 401/403 responses, sustained pull failures, growing `soyuz_callbacks_pending`, repeated claim conflicts, unsupported contract errors, `soyuz_run_executor_lost`, and `soyuz_run_suspected_stalled`. Logs include run and correlation IDs; metrics intentionally have no run-ID labels. The stalled-run event is emitted once per stale heartbeat timestamp. There is no external paging provider configured by this integration.
+
+Blocked callback details are available from `GET /api/v1/soyuz/callbacks/blocked`. After resolving the cause, retry a specific callback with `POST /api/v1/soyuz/callbacks/{callbackId}/retry`; the endpoint reuses the persisted payload and only accepts callbacks in the blocked state. Retry traffic has its own per-key hourly limit, configured with `KASEKI_API_SOYUZ_CALLBACK_RETRIES_PER_HOUR` (default 100).
+
+If a locally running Soyuz job no longer has a live executor, Kaseki marks it failed with `failureClass: executor_lost` and sends its terminal callback without continuing canonical status reads. Kaseki restart recovery also terminalizes persisted running jobs before reconciliation.
 
 Suggested alert rules for an existing Prometheus/log alerting destination:
 
@@ -139,6 +144,7 @@ Suggested alert rules for an existing Prometheus/log alerting destination:
 | Critical | `min_over_time(soyuz_callbacks_pending[10m]) > 0` with `increase(soyuz_callbacks_retry_total[10m]) > 0` | Restore Soyuz API connectivity; preserve the results volume until the durable outbox drains. |
 | Critical | Queue backlog is nonzero and there is no `soyuz_queue_pull_success_total` increase for 5 minutes | Check controller health, adapter config, and host reachability before changing queue consumers. |
 | Warning | Cloudflare DLQ backlog increases, `increase(soyuz_claim_conflict_total[10m]) > 3`, or a `run.suspected_stalled` event appears | Review malformed/unsupported messages, host identity collisions, or stalled execution ownership; do not force-requeue. |
+| Critical | `soyuz_callbacks_blocked > 0` | Inspect the blocked callback details, correct the contract or configuration issue, then retry the callback by ID. |
 
 Wire these rules to the existing alert destination; this integration does not configure an external paging service. Cloudflare's deployed Queue currently needs an operator review for the DLQ setting before unattended consumption.
 
