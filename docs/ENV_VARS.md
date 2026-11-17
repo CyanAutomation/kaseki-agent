@@ -380,6 +380,7 @@ The external Soyuz adapter is opt-in. See [Soyuz host integration](SOYUZ_INTEGRA
 | ---------- | --------- | ------ | --------- |
 | `SOYUZ_ENABLED` | `false` | boolean | Enable the host-side Soyuz Queue consumer. |
 | `SOYUZ_SUBMISSION_ENABLED` | `false` | boolean | Route Kaseki API create/retry/cancel calls through Soyuz; requires the scoped submission token and worker status-read token. |
+| `SOYUZ_SUBMISSION_MODE` | `optional` | enum | `optional` preserves opt-in routing; `required` requires submission routing and prevents normal API create/retry requests from using the local scheduler. `/api/v1/runs/local` remains explicit local submission. |
 | `SOYUZ_API_URL` | — | URL | Soyuz API base URL; required when submission routing or Queue consumption is enabled. |
 | `SOYUZ_SUBMISSION_API_TOKEN` | host secret | secret | Scoped bearer token for Kaseki submissions; distinct from the worker token. Secret file: `soyuz_submission_api_token`. |
 | `SOYUZ_WORKER_API_TOKEN` | host secret | secret | Bearer token for Soyuz worker reads/callbacks and canonical status reads; distinct from the Queue token. |

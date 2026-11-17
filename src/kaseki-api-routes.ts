@@ -171,7 +171,15 @@ export function createApiRouter(
    */
   router.use(createGatewayTestRoutes());
   registerApiInfoRoutes(router, config, logger, apiAccess);
-  registerRunRoutes(router, scheduler, idempotencyStore, taskAdmissionEvaluator, logger, submissionClient);
+  registerRunRoutes(
+    router,
+    scheduler,
+    idempotencyStore,
+    taskAdmissionEvaluator,
+    logger,
+    submissionClient,
+    config.soyuz?.submissionMode === 'required',
+  );
   registerValidationRoute(router, preFlightValidator, taskAdmissionEvaluator, logger);
 
   // Register domain-focused route modules
@@ -487,6 +495,7 @@ function registerRunRoutes(
   taskAdmissionEvaluator: TaskAdmissionEvaluator,
   logger: ReturnType<typeof createEventLogger>,
   submissionClient?: SoyuzSubmissionClient,
+  submissionRequired = false,
 ): void {
   /**
    * Extract: Validate publish mode has proper authentication.
@@ -624,6 +633,7 @@ function registerRunRoutes(
     idempotencyStore,
     taskAdmissionEvaluator,
     logger,
+    submissionRequired,
     validatePublishModeAndAuth,
     validateTemplateReadiness,
     normalizeTaskMode,
@@ -635,6 +645,7 @@ function registerRunRoutes(
     idempotencyStore,
     taskAdmissionEvaluator,
     logger,
+    submissionRequired,
     validatePublishModeAndAuth,
     validateTemplateReadiness,
     normalizeTaskMode,
@@ -653,6 +664,7 @@ interface RunRouteSharedDependencies {
   idempotencyStore: IdempotencyStore;
   taskAdmissionEvaluator: TaskAdmissionEvaluator;
   logger: ReturnType<typeof createEventLogger>;
+  submissionRequired?: boolean;
   submissionClient?: SoyuzSubmissionClient;
 }
 
@@ -683,6 +695,14 @@ function registerRunSubmissionRoute(
   const submitRun = async (req: Request, res: Response, forceLocal: boolean) => {
     const routePath = forceLocal ? '/runs/local' : '/runs';
     const routeSubmissionClient = forceLocal ? undefined : submissionClient;
+    if (!forceLocal && dependencies.submissionRequired && !routeSubmissionClient) {
+      return sendErrorResponse(
+        res,
+        503,
+        'Soyuz Submission Required',
+        'This Kaseki host requires Soyuz for normal submissions. Use /api/v1/runs/local to submit directly to this host.',
+      );
+    }
     let idempotencyKeyForError: string | undefined;
     try {
       const runRequest = parseRunSubmissionRequest(req, routeSubmissionClient, res);
@@ -695,41 +715,38 @@ function registerRunSubmissionRoute(
       const effectivePublishMode = runRequest.publishMode || 'pr';
       runRequest.publishMode = effectivePublishMode;
 
-      // 1. Validate publish mode and authentication
-      const authValidation =
-        await validatePublishModeAndAuth(effectivePublishMode);
-      if (!authValidation.ok) {
-        return sendErrorResponse(
-          res,
-          400,
-          'Bad Request',
-          authValidation.error!,
-        );
-      }
-
-      // 2. Validate template readiness. Checkout freshness remains advisory in
-      // /api/v1/preflight so development checkouts cannot interrupt active runs.
-      const templateValidation =
-        await validateTemplateReadiness(effectivePublishMode);
-      if (!templateValidation.ok) {
-        return res
-          .status(templateValidation.statusCode || 400)
-          .json(templateValidation.response);
-      }
-
-      // 3. Normalize task mode
+      // 1. Normalize task mode
       normalizeTaskMode(runRequest);
 
-      // 4. Safety admission must happen before idempotency claim and scheduler submission.
-      const admission = await admitTaskWithLogging(taskAdmissionEvaluator, logger, runRequest);
-      if (!admission.allowed) {
-        return sendErrorResponse(res, 422, 'Task rejected by safety admission gate', admission.reason, {
-          exitCode: TASK_ADMISSION_EXIT_CODE,
-          admission,
-        });
+      // The execution host is authoritative for host readiness, publication
+      // credentials, and task safety on Soyuz-backed work. This lets Soyuz
+      // retain accepted work and record any Kaseki admission rejection as a
+      // canonical terminal outcome. Direct-local submissions keep synchronous
+      // admission checks; /api/v1/validate remains available for preflight.
+      let admission: Awaited<ReturnType<TaskAdmissionEvaluator>> | undefined;
+      if (!routeSubmissionClient) {
+        const authValidation = await validatePublishModeAndAuth(effectivePublishMode);
+        if (!authValidation.ok) {
+          return sendErrorResponse(res, 400, 'Bad Request', authValidation.error!);
+        }
+
+        const templateValidation = await validateTemplateReadiness(effectivePublishMode);
+        if (!templateValidation.ok) {
+          return res
+            .status(templateValidation.statusCode || 400)
+            .json(templateValidation.response);
+        }
+
+        admission = await admitTaskWithLogging(taskAdmissionEvaluator, logger, runRequest);
+        if (!admission.allowed) {
+          return sendErrorResponse(res, 422, 'Task rejected by safety admission gate', admission.reason, {
+            exitCode: TASK_ADMISSION_EXIT_CODE,
+            admission,
+          });
+        }
       }
 
-      // 5. Handle idempotency
+      // 2. Handle idempotency
       const requestFingerprint = buildRequestFingerprint(
         runRequest as Record<string, unknown>,
       );
@@ -786,7 +803,7 @@ function parseRunSubmissionRequest(
 }
 
 interface SubmitRunIdempotencyInput {
-  admission: Awaited<ReturnType<TaskAdmissionEvaluator>>;
+  admission?: Awaited<ReturnType<TaskAdmissionEvaluator>>;
   effectivePublishMode: string;
   handleIdempotency: RunRouteHelpers['handleIdempotency'];
   idempotencyKey: string;
@@ -850,7 +867,7 @@ async function createSubmittedRunResponse(
   scheduler: JobScheduler,
   submissionClient: SoyuzSubmissionClient | undefined,
   runRequest: RunRequest,
-  admission: Awaited<ReturnType<TaskAdmissionEvaluator>>,
+  admission: Awaited<ReturnType<TaskAdmissionEvaluator>> | undefined,
   idempotencyKey: string,
 ): Promise<RunResponse> {
   if (submissionClient) {
@@ -860,6 +877,7 @@ async function createSubmittedRunResponse(
     );
     return buildSoyuzRunResponse(remoteRun, runRequest);
   }
+  if (!admission) throw new Error('Task admission is required for direct local scheduling');
   const job = admission.routingHints
     ? await scheduler.submitJob(runRequest, admission.routingHints)
     : await scheduler.submitJob(runRequest);
@@ -987,7 +1005,24 @@ async function handleRunRetry(
   if (!isUuidV4(idempotencyKey)) {
     return sendErrorResponse(res, 400, 'Bad Request', 'A UUID idempotencyKey is required for retries');
   }
-  if (shouldRetryThroughSoyuz(source, req.params.id, dependencies.submissionClient)) {
+  const retryThroughSoyuz = shouldRetryThroughSoyuz(source, req.params.id, dependencies.submissionClient);
+  if (dependencies.submissionRequired && !dependencies.submissionClient) {
+    return sendErrorResponse(
+      res,
+      503,
+      'Soyuz Submission Required',
+      'This Kaseki host requires Soyuz for normal retries. Configure its Soyuz submission client before retrying.',
+    );
+  }
+  if (dependencies.submissionRequired && source && !source.soyuz) {
+    return sendErrorResponse(
+      res,
+      409,
+      'Local Run Retry Not Available',
+      'This host requires canonical Soyuz runs. Resubmit through POST /api/v1/runs, or explicitly submit a new local task through POST /api/v1/runs/local.',
+    );
+  }
+  if (retryThroughSoyuz) {
     return retrySoyuzRun(req, res, source, idempotencyKey, dependencies);
   }
   return retryLocalRun(res, source, req.params.id, idempotencyKey, dependencies);
