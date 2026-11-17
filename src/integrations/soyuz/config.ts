@@ -4,6 +4,8 @@ export interface SoyuzAdapterConfig {
   enabled: boolean;
   /** Enables API submissions through Soyuz independently from queue consumption. */
   submissionEnabled?: boolean;
+  /** Requires normal API create/retry requests to have a Soyuz-backed path. */
+  submissionMode?: 'optional' | 'required';
   /** Scoped Kaseki credential used only for create, retry, and cancel requests. */
   submissionApiToken?: string;
   apiUrl: string;
@@ -36,10 +38,14 @@ function positiveInt(env: NodeJS.ProcessEnv, name: string, fallback: number, min
 export function loadSoyuzAdapterConfig(env: NodeJS.ProcessEnv = process.env): SoyuzAdapterConfig {
   const enabled = booleanSetting(env, 'SOYUZ_ENABLED');
   const submissionEnabled = booleanSetting(env, 'SOYUZ_SUBMISSION_ENABLED');
+  const submissionMode = submissionModeSetting(env);
+  if (submissionMode === 'required' && !submissionEnabled) {
+    throw new Error('SOYUZ_SUBMISSION_MODE=required requires SOYUZ_SUBMISSION_ENABLED=true');
+  }
   const submissionApiToken = submissionEnabled
     ? readSecret(env, 'SOYUZ_SUBMISSION_API_TOKEN', 'soyuz_submission_api_token')
     : '';
-  if (!enabled && !submissionEnabled) return disabledConfig(timingSettings(env));
+  if (!enabled && !submissionEnabled) return disabledConfig(timingSettings(env), submissionMode);
 
   const apiUrl = validatedApiUrl(env.SOYUZ_API_URL);
   validateSubmissionToken(submissionApiToken, submissionEnabled);
@@ -50,6 +56,7 @@ export function loadSoyuzAdapterConfig(env: NodeJS.ProcessEnv = process.env): So
   return {
     enabled,
     submissionEnabled,
+    submissionMode,
     ...credentials,
     apiUrl,
     ...timingSettings(env),
@@ -60,6 +67,14 @@ function booleanSetting(env: NodeJS.ProcessEnv, name: string): boolean {
   const value = env[name]?.trim().toLowerCase() ?? 'false';
   if (value !== 'true' && value !== 'false') throw new Error(`${name} must be true or false`);
   return value === 'true';
+}
+
+function submissionModeSetting(env: NodeJS.ProcessEnv): SoyuzAdapterConfig['submissionMode'] {
+  const value = env.SOYUZ_SUBMISSION_MODE?.trim().toLowerCase() ?? 'optional';
+  if (value !== 'optional' && value !== 'required') {
+    throw new Error('SOYUZ_SUBMISSION_MODE must be optional or required');
+  }
+  return value;
 }
 
 type SoyuzTimingSettings = Pick<
@@ -77,10 +92,11 @@ function timingSettings(env: NodeJS.ProcessEnv): SoyuzTimingSettings {
   };
 }
 
-function disabledConfig(timings: SoyuzTimingSettings): SoyuzAdapterConfig {
+function disabledConfig(timings: SoyuzTimingSettings, submissionMode: SoyuzAdapterConfig['submissionMode']): SoyuzAdapterConfig {
   return {
     enabled: false,
     submissionEnabled: false,
+    submissionMode,
     submissionApiToken: '',
     apiUrl: '',
     workerApiToken: '',

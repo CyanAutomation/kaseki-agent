@@ -1,6 +1,6 @@
 # Soyuz host integration
 
-This document describes Kaseki's opt-in Soyuz Queue adapter and API submission path. Both are disabled by default. `SOYUZ_ENABLED=true` starts Queue consumption; `SOYUZ_SUBMISSION_ENABLED=true` routes Kaseki API create/retry/cancel operations through Soyuz. They can be enabled independently during rollout.
+This document describes Kaseki's opt-in Soyuz Queue adapter and API submission path. `SOYUZ_ENABLED=true` starts Queue consumption. `SOYUZ_SUBMISSION_ENABLED=true` routes normal Kaseki API create/retry/cancel operations through Soyuz. These can be enabled independently during rollout. `SOYUZ_SUBMISSION_MODE=required` makes missing submission configuration a startup error and prevents normal create/retry requests from using the local scheduler. The explicit `/api/v1/runs/local` outage path remains available.
 
 ## Host configuration
 
@@ -12,6 +12,7 @@ The jobs index also stores short-lived Soyuz claim intents. Kaseki writes an int
 | --- | --- | --- |
 | `SOYUZ_ENABLED` | `false` | `true` or `false`; turns the adapter on. |
 | `SOYUZ_SUBMISSION_ENABLED` | `false` | `true` or `false`; routes Kaseki API run creation and retry through Soyuz. Requires a scoped submission token and worker read token. |
+| `SOYUZ_SUBMISSION_MODE` | `optional` | `optional` preserves the current opt-in behavior. `required` requires `SOYUZ_SUBMISSION_ENABLED=true`; normal submissions and canonical retries must use Soyuz. |
 | `SOYUZ_API_URL` | — | Required when either feature is enabled; HTTPS URL (HTTP is allowed only for localhost), without a query or fragment. |
 | `SOYUZ_SUBMISSION_API_TOKEN` | host secret | Scoped credential for create, retry, and cancel only. Keep distinct from the worker token. |
 | `SOYUZ_WORKER_API_TOKEN` | host secret | Soyuz Worker API bearer token used by the adapter and canonical status reads. |
@@ -31,6 +32,7 @@ Example environment (fill secrets using the host's secret manager):
 
 ```sh
 SOYUZ_ENABLED=true
+SOYUZ_SUBMISSION_MODE=optional
 SOYUZ_SUBMISSION_ENABLED=true
 SOYUZ_API_URL=https://soyuz.example.workers.dev
 CLOUDFLARE_ACCOUNT_ID=0123456789abcdef0123456789abcdef
@@ -40,6 +42,8 @@ SOYUZ_POLL_INTERVAL_MS=5000
 SOYUZ_VISIBILITY_TIMEOUT_MS=120000
 ```
 
+Keep the mode `optional` while validating the deployment. Change it to `required` only after caller inventory and a canary pass.
+
 ## Kaseki submission contract
 
 Soyuz remains the shared control plane for cross-host run intake and canonical run history. New cross-host integrations should submit to Soyuz directly when it is available. Kaseki's submission proxy remains for existing Kaseki API clients during migration; `/api/v1/runs/local` is the standalone host path.
@@ -48,11 +52,13 @@ Each Kaseki agent consumes at most one queue message at a time and pulls one
 message only while its run slot is free. Add independent Kaseki agents when
 the Soyuz queue needs more concurrent execution capacity.
 
-With submission routing enabled, `POST /api/v1/runs` validates the request and its existing task-safety gate, persists the caller's idempotency key and request fingerprint, then sends the same UUID as the Soyuz `Idempotency-Key` header and body field. On a timeout or uncertain 5xx response Kaseki keeps that durable intent; clients must repeat the same request with the same key. Once the remote response is recorded, the Soyuz UUID is the public `id`; Kaseki includes `localRunId` after a worker host creates its local job mapping. Existing `kaseki-N` IDs remain valid for local logs, artifacts, and diagnostics.
+With submission routing enabled, `POST /api/v1/runs` validates the request contract, persists the caller's idempotency key and request fingerprint, then sends the same UUID as the Soyuz `Idempotency-Key` header and body field. Host readiness, template/publish compatibility, credentials, and task safety are checked by the Kaseki execution host before work starts. If that host rejects an accepted run, Kaseki records a canonical terminal admission failure. Use `POST /api/v1/validate` for synchronous preflight. On a timeout or uncertain 5xx response Kaseki keeps that durable intent; clients must repeat the same request with the same key. Once the remote response is recorded, the Soyuz UUID is the public `id`; Kaseki includes `localRunId` after a worker host creates its local job mapping. Existing `kaseki-N` IDs remain valid for local logs, artifacts, and diagnostics.
 
 `POST /api/v1/runs/local` is the explicit direct-submit path. It always submits to this Kaseki host's scheduler, bypasses Soyuz routing, and remains available when the Soyuz service is unreachable. It applies the local validation and safety gates and keeps a separate local idempotency record. Kaseki does not switch to this endpoint automatically. After an uncertain Soyuz timeout or 5xx response, inspect Soyuz's canonical state before submitting a local copy because the local and Soyuz backends cannot deduplicate each other's acceptance.
 
-Retries go through Soyuz's canonical retry operation and are accepted for terminal source runs (`completed`, `failed`, `cancelled`, or `admission_failed`) owned by the authenticated Kaseki identity. Kaseki callers supply a fresh UUID for each retry and reuse it after timeouts. Legacy local `kaseki-N` runs continue to use Kaseki's local retry path. Kaseki preserves its worker-side admission checks before execution.
+When `SOYUZ_SUBMISSION_MODE=required`, `POST /api/v1/runs` returns `503` rather than scheduling locally if its Soyuz submission client is absent. Retrying a local-only historical run returns `409`; resubmit it through Soyuz or explicitly create a direct local run through `/api/v1/runs/local`. Remote retries continue to use Soyuz's canonical retry operation.
+
+Retries for Soyuz-backed runs go through Soyuz's canonical retry operation and are accepted for terminal source runs (`completed`, `failed`, `cancelled`, or `admission_failed`) owned by the authenticated Kaseki identity. Kaseki callers supply a fresh UUID for each retry and reuse it after timeouts. In optional mode, legacy local `kaseki-N` runs can still use Kaseki's local retry path; required mode rejects those retries so normal retry requests cannot create work outside canonical history. Kaseki preserves its worker-side admission checks before execution.
 
 Soyuz contract v1 does not accept `webhookConfig`, because it can contain webhook secrets. Kaseki rejects such requests with submission routing enabled before persisting an idempotency intent or contacting Soyuz; it does not silently downgrade them to local runs. To handle a webhook-bearing request locally, disable submission routing for that host or remove the webhook configuration. Trusted `origin` and `retryOf` fields in Kaseki API and dashboard responses come from Soyuz's authenticated run record. The scoped Kaseki credential can cancel or retry only runs created by its configured Soyuz origin.
 

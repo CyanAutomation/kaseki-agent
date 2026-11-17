@@ -304,7 +304,7 @@ API route labels use Express route templates (for example `/runs/:id/status`) to
 
 **POST `/api/v1/runs`**
 
-Submit a new Kaseki run through the configured submission route. Returns immediately (async). With Soyuz submission routing enabled, Kaseki sends this request to Soyuz.
+Submit a new Kaseki run through the configured submission route. Returns immediately (async). With Soyuz submission routing enabled, Kaseki sends this request to Soyuz. Kaseki checks the request contract synchronously, then the execution host checks readiness, template/publish compatibility, credentials, and task safety before starting work. An execution-time rejection is recorded as a terminal Soyuz admission failure. Use `POST /api/v1/validate` for synchronous preflight. `SOYUZ_SUBMISSION_MODE=required` prevents this normal route from scheduling locally if its Soyuz submission client is unavailable.
 
 To intentionally bypass Soyuz and submit to this Kaseki host's scheduler, use the local-only endpoint:
 
@@ -316,15 +316,18 @@ curl -X POST http://localhost:8080/api/v1/runs/local \
   -d '{"repoUrl":"https://github.com/org/repo","ref":"main","taskPrompt":"Fix the parser bug","publishMode":"none"}'
 ```
 
-`POST /api/v1/runs/local` always uses this host's scheduler, even when `SOYUZ_SUBMISSION_ENABLED=true`. It uses the same authentication, validation, safety admission, and idempotency requirements as normal submission. Its idempotency records are local to Kaseki and separate from Soyuz submissions. It never activates automatically after a Soyuz failure. If a Soyuz request timed out or returned an uncertain server error, check Soyuz's canonical run state before submitting locally; the two backends cannot deduplicate an uncertain acceptance.
+`POST /api/v1/runs/local` always uses this host's scheduler, even when Soyuz submission mode is `required`. It uses the same authentication, validation, safety admission, and idempotency requirements as normal submission. Its idempotency records are local to Kaseki and separate from Soyuz submissions. It never activates automatically after a Soyuz failure. If a Soyuz request timed out or returned an uncertain server error, check Soyuz's canonical run state before submitting locally; the two backends cannot deduplicate an uncertain acceptance.
 
 The Kaseki web console exposes the same choice with **Submit directly to this Kaseki host**.
 
-Before accepting a run, Kaseki runs the task safety classifier. High-confidence
-requests involving credentials, permission changes, or security-boundary changes
-are rejected with HTTP `422` and exit code `9`; the response includes an
-`admission` object. Classifier outages are reported as degraded warnings and
-follow the configured fail-open policy.
+For direct-local submissions, Kaseki runs the task safety classifier before
+accepting the run. High-confidence requests involving credentials, permission
+changes, or security-boundary changes are rejected with HTTP `422` and exit
+code `9`; the response includes an `admission` object. For Soyuz-routed runs,
+the execution host runs this check before starting work and reports rejection
+as a terminal canonical outcome. Classifier outages are reported as degraded
+warnings and follow the configured fail-open policy. Use `POST /api/v1/validate`
+when you need a synchronous admission result before submitting.
 
 **Request:**
 
