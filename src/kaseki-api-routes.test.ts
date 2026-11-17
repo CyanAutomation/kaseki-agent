@@ -53,7 +53,7 @@ import type { TaskAdmissionEvaluator } from './task-admission';
 import * as gatewaySmoke from './kaseki-api-gateway-smoke';
 import { StorageCapacityError } from './storage-capacity';
 import { SoyuzSubmissionClient } from './integrations/soyuz/SoyuzSubmissionClient';
-import type { SoyuzAdapterConfig } from './integrations/soyuz/config';
+import { loadSoyuzAdapterConfig, type SoyuzAdapterConfig } from './integrations/soyuz/config';
 import {
   cleanupTestApp,
   createTestApp,
@@ -78,6 +78,176 @@ describe('kaseki-api-routes scorecard integration', () => {
       expect((await response.json()).title).toBe('Run not found');
     } finally {
       await cleanupTestApp(harness.server, harness.idempotencyStore);
+    }
+  });
+});
+
+describe('required Soyuz submission mode', () => {
+  test('fails closed on normal submissions while preserving explicit local submission', async () => {
+    const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-soyuz-required-'));
+    const scheduler = createMockScheduler();
+    scheduler.submitJob.mockResolvedValue({
+      id: 'kaseki-direct-local',
+      status: 'queued',
+      createdAt: new Date('2026-11-16T00:00:00.000Z'),
+      request: { repoUrl: 'https://github.com/org/repo', ref: 'main' },
+      resultDir: path.join(resultsDir, 'kaseki-direct-local'),
+    } as any);
+    const config = createTestConfig(resultsDir);
+    config.soyuz = { ...loadSoyuzAdapterConfig({}), submissionMode: 'required' };
+    const allowedAdmission = jest.fn<TaskAdmissionEvaluator>(async () => ({
+      allowed: true,
+      status: 'allowed',
+      reason: 'test accepted',
+      responseTime: 1,
+    }));
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config, allowedAdmission);
+    const requestBody = {
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      taskPrompt: 'Make this task use an explicit Soyuz route',
+      publishMode: 'none',
+    };
+
+    try {
+      const requiredResponse = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test-key',
+          'Content-Type': 'application/json',
+          'Idempotency-Key': '22222222-2222-4222-8222-222222222222',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      expect(requiredResponse.status).toBe(503);
+      expect((await requiredResponse.json()).title).toBe('Soyuz Submission Required');
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+
+      const localResponse = await fetch(`http://127.0.0.1:${port}/api/runs/local`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test-key',
+          'Content-Type': 'application/json',
+          'Idempotency-Key': '33333333-3333-4333-8333-333333333333',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      expect(localResponse.status).toBe(202);
+      expect(await localResponse.json()).toMatchObject({ id: 'kaseki-direct-local' });
+      expect(scheduler.submitJob).toHaveBeenCalledTimes(1);
+      expect(allowedAdmission).toHaveBeenCalledTimes(1);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('does not retry an unmapped local run through the local scheduler', async () => {
+    const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-soyuz-required-retry-'));
+    const source = {
+      id: 'kaseki-old-local',
+      status: 'completed',
+      createdAt: new Date('2026-11-15T00:00:00.000Z'),
+      completedAt: new Date('2026-11-15T00:01:00.000Z'),
+      request: { repoUrl: 'https://github.com/org/repo', ref: 'main', publishMode: 'none' },
+      resultDir: path.join(resultsDir, 'kaseki-old-local'),
+    };
+    const scheduler = createMockScheduler({ 'kaseki-old-local': source as any });
+    scheduler.submitJob.mockResolvedValue({ id: 'should-not-run', status: 'queued' } as any);
+    const config = createTestConfig(resultsDir);
+    config.soyuz = {
+      ...loadSoyuzAdapterConfig({}),
+      submissionEnabled: true,
+      submissionMode: 'required',
+    };
+    const submissionClient = {
+      retryRun: jest.fn(),
+      getWorkerRun: jest.fn(),
+    } as unknown as SoyuzSubmissionClient;
+    const { server, port, idempotencyStore } = await createTestApp(
+      scheduler,
+      config,
+      undefined,
+      submissionClient,
+    );
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/kaseki-old-local/retry`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test-key',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ idempotencyKey: '44444444-4444-4444-8444-444444444444' }),
+      });
+
+      expect(response.status).toBe(409);
+      expect((await response.json()).title).toBe('Local Run Retry Not Available');
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+      expect(submissionClient.retryRun).not.toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('uses the Soyuz client for normal submissions when required mode is configured', async () => {
+    const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-soyuz-required-submit-'));
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    config.soyuz = {
+      ...loadSoyuzAdapterConfig({}),
+      submissionEnabled: true,
+      submissionMode: 'required',
+    };
+    const createRun = jest.fn(async () => ({
+      id: '55555555-5555-4555-8555-555555555555',
+      status: 'queued' as const,
+      createdAt: '2026-11-16T00:00:00.000Z',
+    }));
+    const submissionClient = { createRun } as unknown as SoyuzSubmissionClient;
+    const allowedAdmission = jest.fn<TaskAdmissionEvaluator>(async () => ({
+      allowed: false,
+      status: 'rejected',
+      reason: 'execution host admission decides this',
+      responseTime: 1,
+    }));
+    const { server, port, idempotencyStore } = await createTestApp(
+      scheduler,
+      config,
+      allowedAdmission,
+      submissionClient,
+    );
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test-key',
+          'Content-Type': 'application/json',
+          'Idempotency-Key': '66666666-6666-4666-8666-666666666666',
+        },
+        body: JSON.stringify({
+          repoUrl: 'https://github.com/org/repo',
+          ref: 'main',
+          taskPrompt: 'Submit this task through canonical Soyuz control',
+          publishMode: 'none',
+        }),
+      });
+
+      expect(response.status).toBe(202);
+      expect(await response.json()).toMatchObject({
+        id: '55555555-5555-4555-8555-555555555555',
+        status: 'queued',
+      });
+      expect(createRun).toHaveBeenCalledTimes(1);
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+      expect(allowedAdmission).not.toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
     }
   });
 });
