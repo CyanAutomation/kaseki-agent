@@ -1,13 +1,30 @@
 # Kaseki Agent product boundary audit
 
-**Assessment update:** 2026-11-12
+**Initial assessment:** 2026-11-12
 
 - Kaseki origin/main: `5557fffcf1daa063624cb5950165ecc4acd05f88`
 - Soyuz origin/main: `df74f5937aa34cf93d84b1f24dcb234ae6153a2a`
 - Senku origin/main: `92f1ff0c65b1866df791f92fe63040515d74cb29`
+
+**Source refresh:** 2026-11-16
+
+- Kaseki origin/main: `a25e249dfda35388aa5b98e0fb7c8d10137d0ebc`
+- Soyuz main: `7ed33efc2d5d57001b7be691e174df7f24de9ab3`
+- Senku main: `acf9dce400e971d5d7eb2f7eeac4bcd78c15f7d5`
+
 **Scope:** Current product surface, execution/runtime ownership, API/UI, integration contracts, decision/evaluation code, operator documentation, and repository size indicators.
 
-This architecture and ownership audit was refreshed from the commits above. No production usage telemetry, deployment manifests, or customer workflows were available. The original assessment did not run tests; the follow-up implementation was verified with focused Kaseki and Senku test suites.
+The original assessment was based on the initial revisions above. The source refresh checked its recommendations against the newer Kaseki, Soyuz, and Senku source and documentation. This follow-up adds an opt-in Kaseki required-submission mode and records focused Kaseki verification below. No live deployment probes or production usage telemetry were available, so no production routing or retention changes were made.
+
+The current source still supports the central boundary recommendation:
+
+- Kaseki's UI explicitly offers **Submit directly to this Kaseki host**. Its `POST /api/v1/runs/local` route forces local scheduling, retains local authentication, validation, task admission, and idempotency, and does not activate automatically after an uncertain Soyuz response. Keep this UI and API path permanently.
+- Kaseki now has `SOYUZ_SUBMISSION_MODE=required` for a staged canonical-control-plane rollout. It requires the existing Soyuz submission setting, fails normal create/retry closed instead of silently using the local scheduler, rejects retries of Kaseki-only history, and leaves the explicit local create endpoint available. The default remains compatible with existing deployments until operators opt in.
+- Soyuz-routed create requests now validate the request contract at the API, then leave host readiness, publish configuration, template compatibility, and task safety to the Kaseki execution host. Admission rejection becomes a canonical terminal outcome; `/api/v1/validate` remains the synchronous preflight route, and explicit local submission keeps immediate checks.
+- Soyuz main owns `POST /v1/runs`, canonical run records, queue admission, cancellation, cross-host history and outcomes. Its authenticated dashboard remains read-only and its shared outcome view covers the newest 30 retained runs; this is not retention parity with Kaseki's local history.
+- Senku main exposes five Kaseki profiles and three Soyuz profiles. Its README still marks deployment readiness incomplete until production secrets are configured, so source availability does not establish live service readiness.
+- The Kaseki CLI's `--local-direct` option is rejected; its `run` command uses the regular submission route. The requested outage fallback is present in the UI and API, but not as a dedicated CLI selection. Add that only if terminal-based forced-local submission is also required.
+- Focused Kaseki verification passed: the Soyuz config, API config, and API route suites passed (156 tests), and TypeScript type-checking passed. No cross-repository source change was required in Senku; its registered Kaseki profiles are already present.
 
 ## Implementation follow-through
 
@@ -21,11 +38,13 @@ The repository follow-through now implements the actionable migrations from this
 
 The follow-up first added failing regressions for the public generic Senku route and the Kaseki profile smoke. Kaseki `test:unit` then passed (247 suites, 4,536 tests); Senku `npm test` passed (74 tests, OpenAPI validation, and Wrangler config checks), and Senku TypeScript checking passed. The cross-repository worker harness passed against the Senku worktree with a mocked provider. The live Senku and Soyuz services were not changed.
 
+The required-mode and managed-admission changes were added test first: the new Soyuz submission test initially returned `422` because Kaseki ran task safety before remote acceptance, then passed after host checks moved to execution time. Focused Kaseki verification passed (3 suites, 156 tests), along with TypeScript checking, JavaScript lint, Markdown-link checking, and environment-document consistency. No source changes were needed in Soyuz or Senku.
+
 The live Senku deployment was not probed. Before enabling these workflows on production hosts, deploy and verify the five Kaseki profiles and Kaseki identity permissions. Deploy Soyuz's compatible callback/read contract next, then update Kaseki hosts. Soyuz retains only the newest 30 run records, so removal of Kaseki's historical aggregation and normal submission proxy remains gated on retention parity and caller migration. The permanent direct-local form and route are not candidates for removal.
 
 ## Recommendation
 
-Keep Kaseki focused on executing one repository task safely on a host, with a local API, CLI, and small standalone console that remain usable when Soyuz is down. Make Soyuz the primary shared control plane and team run history. Make Senku the owner of typed JEV questions and inference. Remove duplicate control-plane and evaluation surfaces from Kaseki only after their replacements are in production and callers have migrated.
+Keep Kaseki focused on executing one repository task safely on a host, with a local execution API, host-operator CLI, and standalone console. Make Soyuz the primary shared control plane and team run history. Make Senku the owner of typed JEV questions and inference. Keep the console/API's explicit direct-local task path available when Soyuz is down. Remove duplicate control-plane and evaluation surfaces from Kaseki only after their replacements are in production and callers have migrated.
 
 The direct Kaseki submission path is already implemented and should remain a permanent capability:
 
@@ -43,7 +62,7 @@ Evidence: [Kaseki web console](../../src/kaseki-api-web.ts), [submission routes]
 | Disposable worker execution | Keep: Docker lifecycle, host capacity, repository checkout, dependency setup, Raspberry Pi support and the Pi adapter, coding inference, validation, patch creation, and GitHub publication. | This is Kaseki’s defining responsibility and requires host, filesystem, Docker, and repository access. Soyuz intentionally does not launch containers or perform host preflight. |
 | Deterministic safety and execution policy | Keep: repository destination checks, task admission enforcement, validation requirements, retry limits, publication policy, and local confidence/outcome gates. | Senku answers are advisory. They must never authorize a task, retry, publish, queue transition, or other side effect. |
 | Local direct API | Keep POST /api/v1/runs/local and local run list/status/cancel/report/artifact routes. Keep the local health and preflight endpoints. | A Kaseki host must still accept and manage work when the Soyuz control plane is unavailable. Local monitoring and diagnostics are part of making the fallback usable. |
-| Direct Kaseki UI and CLI | Keep the direct-submit choice in the Kaseki console and the CLI paths that submit to and inspect a Kaseki API. Keep the console behavior for host diagnostics and local run follow-through while Soyuz is unavailable. The current 4,332-line source is a maintainability concern, but its health and submission tabs, preflight, run selection, status, logs, artifacts, cancel, and retry controls are not evidenced as duplicate product modes. | Soyuz’s dashboard is read-only and has no task submission form. The Kaseki console also provides host preflight, recent-run selection, status, logs, artifacts, cancel, and retry controls for standalone operation. There is no usage or feature-parity evidence that supports removing those local controls. |
+| Direct Kaseki UI and local API | Keep the console's direct-submit choice and `POST /api/v1/runs/local`, plus the CLI paths for API submission and run inspection. Keep console host diagnostics and local run follow-through. The 4,332-line web source is a maintainability concern, but its health, preflight, run selection, status, logs, artifacts, cancel, and retry controls are not evidenced as duplicate product modes. The CLI currently has no forced-local selection (`--local-direct` is rejected), so it is not itself an outage submission path. | Soyuz's dashboard is read-only and has no task submission form. The Kaseki console provides host preflight and local run follow-through for standalone operation. There is no usage or feature-parity evidence that supports removing those local controls. |
 | Execution-side Soyuz adapter | Keep Queue intake, claim fencing, callbacks, heartbeat/cancellation handling, durable callback outbox, and the local-to-canonical run mapping. | These are host-side execution responsibilities, not duplicate control-plane responsibilities. Keep the local job record and raw logs/artifacts for recovery and standalone operation. |
 | Minimal per-run evidence | Keep bounded local results, diffs, validation results, raw execution logs, and diagnostic artifacts. | Soyuz intentionally receives a small sanitized set of artifacts; it is not a replacement for host-local debugging or recovery. |
 | CLI host operations and preflight | Keep only the setup, diagnosis, and secret-management flows needed to operate a Kaseki execution host. | Operators need to recover the worker independently of Soyuz. Avoid adding a second general-purpose deployment manager. |
@@ -60,7 +79,7 @@ Evidence: [Kaseki web console](../../src/kaseki-api-web.ts), [submission routes]
 
 ### Scorecard boundary
 
-Do not move the entire Kaseki scorecard package into either companion by name alone. The [scorecard implementation](../../src/run-scorecard.ts) currently spans 49 TypeScript files and about 4,595 lines including tests. Split responsibilities:
+Do not move the entire Kaseki scorecard package into either companion by name alone. The scorecard implementation currently spans 53 TypeScript files and about 5,156 lines including tests. Split responsibilities:
 
 - Kaseki may continue to emit a compact deterministic per-run evidence artifact for local reports and fallback.
 - Soyuz should own shared retention, history, filtering, and team-level views of run outcomes.
@@ -89,7 +108,7 @@ Senku must remain advisory and stateless. Kaseki keeps deterministic admission, 
 4. **Obsolete configuration and documentation:** continue the existing configuration rationalization work. Remove no-op and retired names from current templates/docs after their compatibility window; collapse overlapping current setup guidance. The existing configuration audit already calls out alias precedence, worker-internal fields, and retired JEV settings. Keep historical reports archived where they remain useful; the archive is not deployed runtime.
 5. **Redundant product modes:** remove an execution mode only when it is unused, not needed for a supported host, and covered by a simpler supported path. This review did not find enough usage evidence to recommend deleting Pi support, CLI setup, host diagnostics, webhook delivery, or optional workflow stages outright.
 
-Do not delete tests to reduce reported size. Under src, TypeScript files excluding .test.ts total about 61,925 lines; src TypeScript test files total about 61,653 lines. Tests exercise high-risk Docker, task-admission, API, and callback behavior; the volume is not evidence that the tests are redundant. The 133 Markdown files include 56 files under docs/archive, so the documentation count also overstates the current operator surface.
+Do not delete tests to reduce reported size. At the source refresh, tracked `src` TypeScript totals 125,636 lines: 62,802 non-test lines and 62,834 test lines. Tests exercise high-risk Docker, task-admission, API, and callback behavior; the volume is not evidence that the tests are redundant. The repository has 167 tracked Markdown files, including 56 under `docs/archive`, so the total overstates the current operator surface.
 
 ## Suggested migration order
 
@@ -110,5 +129,5 @@ Do not delete tests to reduce reported size. Under src, TypeScript files excludi
 ## Evidence reviewed
 
 - Kaseki README, API and Soyuz integration docs; task console and route code; decision client and JEV workflow evaluator; scorecard and improvement routes; documentation/configuration audits.
-- Soyuz README and architecture/API docs at [32e17e5](https://github.com/CyanAutomation/soyuz/tree/32e17e5), especially its [ownership boundary](https://github.com/CyanAutomation/soyuz/blob/32e17e5/docs/ARCHITECTURE.md#L36) and [API/dashboard overview](https://github.com/CyanAutomation/soyuz/blob/32e17e5/README.md#L35).
-- Senku README and profile contracts at [2d3a9c7](https://github.com/CyanAutomation/senku/tree/2d3a9c7), especially the [registered profiles](https://github.com/CyanAutomation/senku/blob/2d3a9c7/docs/PROFILES.md#L7) and [deployment readiness](https://github.com/CyanAutomation/senku/blob/2d3a9c7/README.md#L3).
+- Soyuz README and architecture/API docs at [7ed33ef](https://github.com/CyanAutomation/soyuz/tree/7ed33efc2d5d57001b7be691e174df7f24de9ab3), especially its [ownership boundary](https://github.com/CyanAutomation/soyuz/blob/7ed33efc2d5d57001b7be691e174df7f24de9ab3/docs/ARCHITECTURE.md) and [API/dashboard overview](https://github.com/CyanAutomation/soyuz/blob/7ed33efc2d5d57001b7be691e174df7f24de9ab3/README.md).
+- Senku README and profile contracts at [acf9dce](https://github.com/CyanAutomation/senku/tree/acf9dce400e971d5d7eb2f7eeac4bcd78c15f7d5), especially the [registered profiles](https://github.com/CyanAutomation/senku/blob/acf9dce400e971d5d7eb2f7eeac4bcd78c15f7d5/docs/PROFILES.md) and [deployment readiness](https://github.com/CyanAutomation/senku/blob/acf9dce400e971d5d7eb2f7eeac4bcd78c15f7d5/README.md).

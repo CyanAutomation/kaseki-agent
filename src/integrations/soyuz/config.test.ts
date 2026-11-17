@@ -6,6 +6,7 @@ describe('loadSoyuzAdapterConfig', () => {
     expect(loadSoyuzAdapterConfig({})).toEqual({
       enabled: false,
       submissionEnabled: false,
+      submissionMode: 'optional',
       submissionApiToken: '',
       apiUrl: '',
       workerApiToken: '',
@@ -33,6 +34,7 @@ describe('loadSoyuzAdapterConfig', () => {
     expect(config).toMatchObject({
       enabled: false,
       submissionEnabled: true,
+      submissionMode: 'optional',
       submissionApiToken: 'submission-token-123456',
       apiUrl: 'https://soyuz.example.test',
       workerApiToken: 'worker-token-123456',
@@ -41,6 +43,23 @@ describe('loadSoyuzAdapterConfig', () => {
       queueApiToken: '',
       workerId: '',
     });
+  });
+
+  it('requires submission routing to be enabled in required mode', () => {
+    expect(() => loadSoyuzAdapterConfig({ SOYUZ_SUBMISSION_MODE: 'required' }))
+      .toThrow('SOYUZ_SUBMISSION_MODE=required requires SOYUZ_SUBMISSION_ENABLED=true');
+  });
+
+  it('loads required mode when submission credentials are configured', () => {
+    const config = loadSoyuzAdapterConfig({
+      SOYUZ_SUBMISSION_MODE: 'required',
+      SOYUZ_SUBMISSION_ENABLED: 'true',
+      SOYUZ_API_URL: 'https://soyuz.example.test',
+      SOYUZ_SUBMISSION_API_TOKEN: 'submission-token-123456',
+      SOYUZ_WORKER_API_TOKEN: 'worker-token-123456',
+    });
+
+    expect(config).toMatchObject({ submissionEnabled: true, submissionMode: 'required' });
   });
 
   it('accepts localhost HTTP for development and requires queue credentials when enabled', () => {
@@ -79,6 +98,7 @@ describe('loadSoyuzAdapterConfig', () => {
   it.each([
     [{ SOYUZ_ENABLED: 'yes' }, 'SOYUZ_ENABLED must be true or false'],
     [{ SOYUZ_SUBMISSION_ENABLED: 'yes' }, 'SOYUZ_SUBMISSION_ENABLED must be true or false'],
+    [{ SOYUZ_SUBMISSION_MODE: 'automatic' }, 'SOYUZ_SUBMISSION_MODE must be optional or required'],
     [{ SOYUZ_SUBMISSION_ENABLED: 'true' }, 'SOYUZ_API_URL is required when Soyuz submissions or queue consumption are enabled'],
     [{ SOYUZ_SUBMISSION_ENABLED: 'true', SOYUZ_API_URL: 'http://soyuz.example.test' }, 'SOYUZ_API_URL must use HTTPS except for localhost development'],
     [{ SOYUZ_SUBMISSION_ENABLED: 'true', SOYUZ_API_URL: 'https://soyuz.example.test?token=x' }, 'SOYUZ_API_URL must not include a query string or fragment'],

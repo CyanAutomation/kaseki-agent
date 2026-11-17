@@ -139,6 +139,7 @@ describe('kaseki-api-config load configuration', () => {
     process.env.KASEKI_RESULTS_DIR = testDir;
     process.env.SOYUZ_ENABLED = 'false';
     process.env.SOYUZ_SUBMISSION_ENABLED = 'true';
+    process.env.SOYUZ_SUBMISSION_MODE = 'required';
     process.env.SOYUZ_API_URL = 'https://soyuz.example.test';
 
     const config = loadConfig();
@@ -146,6 +147,7 @@ describe('kaseki-api-config load configuration', () => {
     expect(config.soyuz).toMatchObject({
       enabled: false,
       submissionEnabled: true,
+      submissionMode: 'required',
       apiUrl: 'https://soyuz.example.test',
       submissionApiToken: 'submission-token-123456',
       workerApiToken: 'worker-read-token-123456',
