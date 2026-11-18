@@ -830,6 +830,63 @@ describe('Soyuz adapter handoff', () => {
     }
   });
 
+  test('delivers a pre-agent validation failure through the durable Soyuz callback outbox', async () => {
+    const resultDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kaseki-soyuz-pre-validation-failure-'));
+    try {
+      await fs.writeFile(path.join(resultDir, 'failure.json'), JSON.stringify({
+        failureClass: 'pre_agent_validation_failed',
+        pre_validation_failure_reason: 'validation_toolchain_preflight_failed: missing executable tsc',
+      }));
+      const state = runState();
+      state.status = 'running';
+      state.workerId = 'host-a';
+      state.claimCallbackId = '66666666-6666-4666-8666-666666666666';
+      const { fetchImpl, calls } = createFetch(state);
+      const { scheduler, jobs } = createScheduler('host-a');
+      scheduler.isRunSlotAvailable.mockReturnValue(false);
+      const job: Job = {
+        id: 'kaseki-pre-validation-failed',
+        status: 'failed',
+        failureClass: 'pre_agent_validation_failed',
+        exitCode: 127,
+        request: queuedRun.request,
+        createdAt: new Date(),
+        completedAt: new Date(),
+        resultDir,
+        correlationId: CORRELATION_ID,
+        requestId: REQUEST_ID,
+        soyuz: {
+          externalRunId: RUN_ID,
+          workerId: 'host-a',
+          contractVersion: '1',
+          claimCallbackId: state.claimCallbackId,
+          startedCallbackId: '44444444-4444-4444-8444-444444444444',
+          startAuthorized: true,
+        },
+      };
+      jobs.push(job);
+      const adapter = makeAdapter('host-a', scheduler, fetchImpl);
+
+      await adapter.runOnce();
+      expect(scheduler.persistSoyuzTerminalCallback).toHaveBeenCalledWith(job, expect.objectContaining({
+        eventType: 'failed',
+        payload: expect.objectContaining({
+          failureClass: 'pre_agent_validation_failed',
+          failureMessage: expect.stringContaining('missing executable tsc'),
+        }),
+      }));
+
+      await adapter.runOnce();
+      expect(calls.find((call) => call.method === 'POST' && call.url.endsWith('/failed'))?.body).toEqual(expect.objectContaining({
+        failureClass: 'pre_agent_validation_failed',
+        failureMessage: expect.stringContaining('missing executable tsc'),
+      }));
+      expect(state.status).toBe('failed');
+    } finally {
+      await fs.rm(resultDir, { recursive: true, force: true });
+    }
+  });
+
   test('continues terminal delivery when an older Soyuz host rejects the artifact report event', async () => {
     const resultDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kaseki-soyuz-legacy-report-'));
     try {

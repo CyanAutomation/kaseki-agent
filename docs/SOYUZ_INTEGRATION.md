@@ -100,6 +100,8 @@ A Soyuz cancellation signals the existing Kaseki process and waits for exit befo
 
 Soyuz records a separate `operationalHealth` classification. After five minutes without a heartbeat, a still-active run becomes `suspect_stalled`; its lifecycle remains `running` or `cancel_requested`, and it is not requeued. A heartbeat restores health to `healthy`. This is deliberately conservative: a missing heartbeat can mean a network partition or a reporting/controller failure while Docker continues to run.
 
+The Soyuz dashboard shows lifecycle status and `Health: Suspect stalled` separately. The warning includes the last heartbeat, explains that no terminal callback is recorded, and directs operators to the Kaseki job and callback outbox. The `run.suspected_stalled` event and structured Worker log include `staleForMs` for alerting and incident timelines.
+
 When a run is suspected stalled, inspect the Kaseki host logs, its persisted job mapping, and Docker/container state before retrying anything. Confirm the original execution has stopped and let Kaseki restart recovery send a terminal callback when the persistent host is available. If the host and its state volume are permanently lost, v1 has no safe automatic takeover or fencing workflow; leave the canonical run suspect until an operator verifies the original execution is stopped and applies the separately approved recovery procedure. Do not create a second run just because heartbeats stopped.
 
 ### Operator recovery steps
@@ -120,8 +122,11 @@ When a run is suspected stalled, inspect the Kaseki host logs, its persisted job
      "$KASEKI_RESULTS_DIR/.kaseki-api-jobs.json"
    ```
 
-4. Inspect Docker on the owner host using the local job ID and container names recorded in Kaseki logs. Confirm whether the process is still active before restarting Kaseki or moving the volume. If active, preserve it and restore connectivity/callback delivery. If exited, restart the controller with the same persistent volume and credentials; the outbox retries the same terminal callback IDs and payloads.
-5. If the host is permanently gone, verify its Docker host is unavailable or stop the execution through the normal host procedure, then inspect the repository for an already-created branch/PR before retrying. Keep `publishMode: none` for recovery validation. Any manual state repair or new run for work that could publish needs separate operator approval; do not force-requeue a running run.
+4. Read `GET /api/v1/soyuz/callbacks/blocked` on the Kaseki API host and match `externalRunId`. If the terminal callback is blocked, inspect its error and validation details, fix the cause, and confirm the execution has stopped before retrying that callback ID through `POST /api/v1/soyuz/callbacks/{callbackId}/retry`. If it is pending instead, restore API connectivity and let the durable outbox retry it; do not submit another run.
+5. Inspect Docker on the owner host using the local job ID and container names recorded in Kaseki logs. Confirm whether the process is still active before restarting Kaseki or moving the volume. If active, preserve it and restore connectivity/callback delivery. If exited, restart the controller with the same persistent volume and credentials; the outbox retries the same terminal callback IDs and payloads.
+6. If the host is permanently gone, verify its Docker host is unavailable or stop the execution through the normal host procedure, then inspect the repository for an already-created branch/PR before retrying. Keep `publishMode: none` for recovery validation. Any manual state repair or new run for work that could publish needs separate operator approval; do not force-requeue a running run.
+
+A pre-agent validation command such as `tsc -p tsconfig.api.json` exiting with code 127 means the executable was not available to the shell; it is not a TypeScript diagnostic. Check `pre-validation.log`, dependency installation, the project lockfile, and that the repository's `node_modules/.bin` is on `PATH`. Kaseki's command preflight records a missing direct executable explicitly; fix the project or worker toolchain before retrying.
 
 Disabling the adapter with `SOYUZ_ENABLED=false` stops new Queue polling. Keep the results volume and let the callback outbox drain before removing its credentials or host; direct Kaseki API/CLI operation is unaffected.
 
@@ -132,7 +137,7 @@ Kaseki exposes integration metrics on its existing `/api/v1/metrics` endpoint:
 - `soyuz_queue_pull_success_total`, `soyuz_queue_pull_failure_total`
 - `soyuz_claim_success_total`, `soyuz_claim_conflict_total`
 - `soyuz_runs_started_total`, `soyuz_runs_completed_total`, `soyuz_runs_failed_total`
-- `soyuz_callbacks_pending`, `soyuz_callbacks_blocked`, `soyuz_callbacks_retry_total`, `soyuz_callbacks_blocked_total`
+- `soyuz_callbacks_pending`, `soyuz_callbacks_oldest_pending_seconds`, `soyuz_callbacks_blocked`, `soyuz_callbacks_retry_total`, `soyuz_callbacks_blocked_total`
 - `soyuz_tracked_runs`, `soyuz_canonical_run_read_total`, `soyuz_canonical_read_throttled_total`
 - `soyuz_execution_handoff_duration_seconds`
 
@@ -148,6 +153,7 @@ Suggested alert rules for an existing Prometheus/log alerting destination:
 | --- | --- | --- |
 | Critical | `increase(soyuz_queue_pull_failure_total[5m]) > 5` while Cloudflare Queue backlog is nonzero, or structured logs show repeated Queue 401/403 | Check Queue token expiry/scope and host egress; leave polling enabled only after credentials are corrected. |
 | Critical | `min_over_time(soyuz_callbacks_pending[10m]) > 0` with `increase(soyuz_callbacks_retry_total[10m]) > 0` | Restore Soyuz API connectivity; preserve the results volume until the durable outbox drains. |
+| Warning | `soyuz_callbacks_oldest_pending_seconds > 300` for 5 minutes | Inspect pending and blocked callback details; restore delivery or correct the permanent error before retrying the callback. |
 | Critical | Queue backlog is nonzero and there is no `soyuz_queue_pull_success_total` increase for 5 minutes | Check controller health, adapter config, and host reachability before changing queue consumers. |
 | Warning | Cloudflare DLQ backlog increases, `increase(soyuz_claim_conflict_total[10m]) > 3`, or a `run.suspected_stalled` event appears | Review malformed/unsupported messages, host identity collisions, or stalled execution ownership; do not force-requeue. |
 | Critical | `soyuz_callbacks_blocked > 0` | Inspect the blocked callback details, correct the contract or configuration issue, then retry the callback by ID. |
