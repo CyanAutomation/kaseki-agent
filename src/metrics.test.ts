@@ -17,6 +17,9 @@ describe('API Prometheus metrics', () => {
       metricsRegistry.setSoyuzCallbacksOldestPendingAt(new Date(now - 180_000).toISOString());
       expect(metricsRegistry.renderPrometheus()).toContain('soyuz_callbacks_oldest_pending_seconds 180');
 
+      clock.mockReturnValue(now + 60_000);
+      expect(metricsRegistry.renderPrometheus()).toContain('soyuz_callbacks_oldest_pending_seconds 240');
+
       metricsRegistry.setSoyuzCallbacksOldestPendingAt(undefined);
       expect(metricsRegistry.renderPrometheus()).toContain('soyuz_callbacks_oldest_pending_seconds 0');
     } finally {

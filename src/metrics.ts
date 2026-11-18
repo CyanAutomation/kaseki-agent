@@ -20,7 +20,7 @@ class MetricsRegistry {
   private apiRequestDurationCounts = new Map<string, number>();
   private soyuzCounters = new Map<string, number>();
   private soyuzCallbacksPending = 0;
-  private soyuzCallbacksOldestPendingSeconds = 0;
+  private soyuzCallbacksOldestPendingAtMs: number | null = null;
   private soyuzCallbacksBlocked = 0;
   private soyuzTrackedRuns = 0;
   private soyuzHandoffDurationSum = 0;
@@ -68,9 +68,7 @@ class MetricsRegistry {
   setSoyuzCallbacksPending(count: number): void { this.soyuzCallbacksPending = Math.max(0, count); }
   setSoyuzCallbacksOldestPendingAt(timestamp?: string): void {
     const pendingAt = timestamp ? Date.parse(timestamp) : Number.NaN;
-    this.soyuzCallbacksOldestPendingSeconds = Number.isFinite(pendingAt)
-      ? Math.max(0, (Date.now() - pendingAt) / 1_000)
-      : 0;
+    this.soyuzCallbacksOldestPendingAtMs = Number.isFinite(pendingAt) ? pendingAt : null;
   }
   setSoyuzCallbacksBlocked(count: number): void { this.soyuzCallbacksBlocked = Math.max(0, count); }
   setSoyuzTrackedRuns(count: number): void { this.soyuzTrackedRuns = Math.max(0, count); }
@@ -155,7 +153,10 @@ class MetricsRegistry {
     lines.push(`soyuz_callbacks_pending ${this.soyuzCallbacksPending}`);
     lines.push('# HELP soyuz_callbacks_oldest_pending_seconds Age of the oldest undelivered Soyuz callback, including blocked callbacks.');
     lines.push('# TYPE soyuz_callbacks_oldest_pending_seconds gauge');
-    lines.push(`soyuz_callbacks_oldest_pending_seconds ${this.soyuzCallbacksOldestPendingSeconds}`);
+    const oldestPendingSeconds = this.soyuzCallbacksOldestPendingAtMs === null
+      ? 0
+      : Math.max(0, (Date.now() - this.soyuzCallbacksOldestPendingAtMs) / 1_000);
+    lines.push(`soyuz_callbacks_oldest_pending_seconds ${oldestPendingSeconds}`);
     lines.push('# HELP soyuz_callbacks_blocked Blocked callbacks requiring operator attention.');
     lines.push('# TYPE soyuz_callbacks_blocked gauge');
     lines.push(`soyuz_callbacks_blocked ${this.soyuzCallbacksBlocked}`);
