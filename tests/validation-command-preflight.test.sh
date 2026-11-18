@@ -74,6 +74,21 @@ done
 assert_missing eslint 'eslint .'
 assert_missing tsc 'tsc -p tsconfig.api.json'
 
+if validation_command_preflight 'tsc -p tsconfig.api.json' "$TMP_DIR/missing-tsc.log"; then
+  printf '✗ missing tsc executable unexpectedly passed validation preflight\n' >&2
+  exit 1
+else
+  preflight_status=$?
+fi
+[ "$preflight_status" -eq 127 ] || {
+  printf '✗ expected missing tsc to produce exit 127, got %s\n' "$preflight_status" >&2
+  exit 1
+}
+PATH="$ORIGINAL_PATH" grep -Fqx '[validation toolchain preflight] missing_executable=tsc' "$TMP_DIR/missing-tsc.log" || {
+  printf '✗ missing tsc failure did not identify the executable\n' >&2
+  exit 1
+}
+
 validation_prepend_repository_bins "$LOCAL_BIN_REPO"
 assert_available 'eslint .'
 assert_available 'tsc -p tsconfig.api.json'
@@ -103,4 +118,4 @@ toolchain_preflight_line="$(PATH="$ORIGINAL_PATH" grep -nF 'validation_command_p
   exit 1
 }
 
-printf '✓ validation command preflight identifies missing direct executables\n'
+printf '✓ validation command preflight identifies missing direct executables including tsc\n'

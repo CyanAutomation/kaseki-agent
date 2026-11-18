@@ -146,6 +146,7 @@ export class SoyuzAdapter {
     if (!this.scheduler.isRunSlotAvailable()) return;
     const outbox = await this.scheduler.getSoyuzOutboxStatus();
     metricsRegistry.setSoyuzCallbacksPending(outbox.pending);
+    metricsRegistry.setSoyuzCallbacksOldestPendingAt(outbox.oldestPendingAt);
     metricsRegistry.setSoyuzCallbacksBlocked(outbox.blocked);
     if (outbox.pending >= 5_000) {
       if (Date.now() - this.lastOutboxFullWarningAt >= 60_000) {
@@ -929,6 +930,7 @@ export class SoyuzAdapter {
     }
     const status = await this.scheduler.getSoyuzOutboxStatus();
     metricsRegistry.setSoyuzCallbacksPending(status.pending);
+    metricsRegistry.setSoyuzCallbacksOldestPendingAt(status.oldestPendingAt);
     metricsRegistry.setSoyuzCallbacksBlocked(status.blocked);
     if (status.pending >= 100 && Date.now() - this.lastOutboxBacklogWarningAt >= 60_000) {
       this.lastOutboxBacklogWarningAt = Date.now();

@@ -10,6 +10,23 @@ describe('API Prometheus metrics', () => {
     expect(metrics).toContain('soyuz_tracked_runs 7');
   });
 
+  it('exposes the age of the oldest undelivered Soyuz callback and resets when drained', () => {
+    const now = Date.parse('2026-11-18T12:00:00.000Z');
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      metricsRegistry.setSoyuzCallbacksOldestPendingAt(new Date(now - 180_000).toISOString());
+      expect(metricsRegistry.renderPrometheus()).toContain('soyuz_callbacks_oldest_pending_seconds 180');
+
+      clock.mockReturnValue(now + 60_000);
+      expect(metricsRegistry.renderPrometheus()).toContain('soyuz_callbacks_oldest_pending_seconds 240');
+
+      metricsRegistry.setSoyuzCallbacksOldestPendingAt(undefined);
+      expect(metricsRegistry.renderPrometheus()).toContain('soyuz_callbacks_oldest_pending_seconds 0');
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it('exposes route-template request counts and valid duration summary samples', () => {
     metricsRegistry.observeHttpRequest('GET', '/runs/{id}', 404, 0.025);
     const metrics = metricsRegistry.renderPrometheus();
