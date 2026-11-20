@@ -15,7 +15,7 @@ examples, see [advanced configuration](ADVANCED_CONFIG.md).
 | `REPO_URL` | `CyanAutomation/crudmapper` | string | Target repository URL ([https://github.com/owner/repo](https://github.com/owner/repo)) |
 | `GIT_REF` | `main` | string | Branch, tag, or commit hash |
 | `TASK_PROMPT` | (code fix task) | string | Agent instruction/task description |
-| `KASEKI_MODEL` | `dynamic/kaseki-agent` | string | LLM model identifier (for gateway production deployments, use `dynamic/kaseki-agent`; other providers may use their native model IDs) |
+| `KASEKI_MODEL` | `dynamic/kaseki-agent` | string | LLM model identifier (for gateway production deployments, use `dynamic/kaseki-agent`; `auto` resolves to `LLM_GATEWAY_MODEL` or the compiled default; other providers may use their native model IDs) |
 | `KASEKI_PROVIDER` | `gateway` | string | Primary LLM provider. `gateway` is the only supported coding-inference provider. |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | integer | Agent reasoning timeout in seconds (max 86400) |
 | `KASEKI_GOAL_SETTING` | `1` for patch runs; `0` by default for inspect runs | boolean | Enable the pre-scouting goal-setting phase; inspect mode requires an explicit enable |
@@ -63,6 +63,7 @@ The coding context target is set below the screenshot's roughly 39k-token reques
 
 | Variable | Default | Type | Purpose |
 | ---------- | --------- | ------ | --------- |
+| `KASEKI_CAVEMAN` | `1` | boolean | Legacy switch for terse communication guidance; `0` disables and `1` enables |
 | `KASEKI_CAVEMAN_LEVEL` | `2` | integer | Level 0 disables Caveman, level 1 adds terse response guidance, level 2 adds compact static prompts and metadata-routed large tool results, and level 3 asks JEV to consider results above a lower size threshold |
 | `KASEKI_CAVEMAN_ROUTER` | `jev` | string | Set to `off` to disable Senku-backed dynamic tool-result routing while keeping other Caveman behavior |
 | `KASEKI_CAVEMAN_ROUTER_MIN_CHARS` | `6000` (level 2); `3000` (level 3) | integer | Minimum result size for the legacy router; semantic routing uses `KASEKI_SEMANTIC_CONTEXT_MIN_TOKENS` |
@@ -204,8 +205,8 @@ When `GITHUB_APP_ENABLED=1` and credentials are not explicitly provided, kaseki-
 
 - `auto` — When explicitly selected, create a normal PR if credentials are found; gracefully skip publishing if they are missing
 - `none` — Always skip GitHub operations (ignore credentials)
-- `branch` — Require GitHub credentials; fail with exit code 7 if missing
-- `pr` (default) — Require GitHub credentials; fail with exit code 7 if missing (creates a normal PR)
+- `branch` — Require GitHub App credentials; API submission is rejected before queueing when they are missing
+- `pr` (default) — Require GitHub App credentials; API submission is rejected before queueing when they are missing (creates a normal PR)
 
 Controller API requests with omitted `publishMode` default to normal PR mode
 (`pr`); the scheduler therefore sends `KASEKI_PUBLISH_MODE=pr` to the worker unless the request
