@@ -18,6 +18,7 @@ describe('configuration values loaded from defaults and environment', () => {
     originalCleanupEnv = snapshotEnv([
       'KASEKI_AUTO_LINT_CLEANUP',
       'KASEKI_AUTO_LINT_CLEANUP_COMMANDS',
+      'KASEKI_PUBLISH_MODE',
       'KASEKI_PROVIDER',
     ]);
     originalGitHubAppEnv = snapshotEnv(['GITHUB_APP_ID', 'GITHUB_APP_CLIENT_ID']);
@@ -25,6 +26,7 @@ describe('configuration values loaded from defaults and environment', () => {
     clearEnv([
       'KASEKI_AUTO_LINT_CLEANUP',
       'KASEKI_AUTO_LINT_CLEANUP_COMMANDS',
+      'KASEKI_PUBLISH_MODE',
       'KASEKI_PROVIDER',
     ]);
     clearEnv(['GITHUB_APP_ID', 'GITHUB_APP_CLIENT_ID']);
@@ -42,6 +44,19 @@ describe('configuration values loaded from defaults and environment', () => {
 
   test('defaults provider to gateway', () => {
     expect(configManager.get('agent.provider')).toBe('gateway');
+  });
+
+  test('defaults the GitHub publishing switch to on, which maps to PR mode', () => {
+    expect(configManager.get('github.publish_mode')).toBe('on');
+  });
+
+  test.each(['auto', 'none', 'branch', 'pr'])('honors KASEKI_PUBLISH_MODE=%s from the environment', async (publishMode) => {
+    process.env.KASEKI_PUBLISH_MODE = publishMode;
+
+    const manager = new ConfigManager();
+    await manager.load();
+
+    expect(manager.get('github.publish_mode')).toBe(publishMode);
   });
 
   test('honors explicit openrouter provider from environment', async () => {

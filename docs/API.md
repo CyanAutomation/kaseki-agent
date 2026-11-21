@@ -318,7 +318,7 @@ curl -X POST http://localhost:8080/api/v1/runs/local \
 
 `POST /api/v1/runs/local` always uses this host's scheduler, even when Soyuz submission mode is `required`. It uses the same authentication, validation, safety admission, and idempotency requirements as normal submission. Its idempotency records are local to Kaseki and separate from Soyuz submissions. It never activates automatically after a Soyuz failure. If a Soyuz request timed out or returned an uncertain server error, check Soyuz's canonical run state before submitting locally; the two backends cannot deduplicate an uncertain acceptance.
 
-The Kaseki web console exposes the same choice with **Submit directly to this Kaseki host**.
+The Kaseki web console exposes the same choice with **Submit directly to this Kaseki host**. This isolated local example uses the rare `none` exception to avoid GitHub writes during testing; ordinary requests default to `pr`.
 
 For direct-local submissions, Kaseki runs the task safety classifier before
 accepting the run. High-confidence requests involving credentials, permission
@@ -347,7 +347,7 @@ curl -X POST http://localhost:8080/api/v1/runs \
     "validation": { "commands": ["npm run lint", "npm run test"] },
     "runEvaluation": { "enabled": true },
     "taskMode": "patch",
-    "publishMode": "auto"
+    "publishMode": "pr"
   }'
 ```
 
@@ -378,8 +378,11 @@ curl -X POST http://localhost:8080/api/v1/runs \
 The caller must generate and reuse a UUID v4 idempotency key for network retries. If both header and body fields are set, they must match. Omitting both returns `400`.
 
 Omitting `publishMode` defaults controller API runs to `pr`, which pushes
-a Kaseki branch and creates a normal pull request after validation. Set
-`publishMode` when a controller needs different publish behavior:
+a Kaseki branch and creates a normal pull request after validation. This is
+also the default for CLI and worker execution. Other modes are rare, explicit
+exceptions for narrowly scoped tests; do not use them for ordinary runs or
+to mask missing credentials. Set `publishMode` only when that exception is
+intentional and documented:
 `pr` creates a normal pull request after validation, `branch` pushes a Kaseki
 branch without opening a PR, `auto` creates a normal PR when credentials are
 available and gracefully skips when they are not, and `none` skips GitHub
