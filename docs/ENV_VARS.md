@@ -185,6 +185,8 @@ API keys currently have equal access. `KASEKI_API_KEY_SCOPES` is not supported a
 
 ### GitHub App Configuration
 
+**Default publication policy:** Normal workers, CLI runs and API requests use `pr`. A non-PR mode is an explicit, temporary exception for a narrowly scoped test; do not set `auto`, `none`, or `branch` as a routine deployment default. In particular, do not use `auto` to hide missing GitHub credentials: normal `pr` mode must fail admission when credentials are not ready.
+
 | Variable | Default | Type | Purpose |
 | ---------- | --------- | ------ | --------- |
 | `GITHUB_APP_ENABLED` | `1` (if credentials available) | boolean | Enable/disable GitHub operations (PR creation, branch push) |
@@ -209,9 +211,10 @@ When `GITHUB_APP_ENABLED=1` and credentials are not explicitly provided, kaseki-
 - `pr` (default) — Require GitHub App credentials; API submission is rejected before queueing when they are missing (creates a normal PR)
 
 Controller API requests with omitted `publishMode` default to normal PR mode
-(`pr`); the scheduler therefore sends `KASEKI_PUBLISH_MODE=pr` to the worker unless the request
-explicitly sets `publishMode` to `auto`, `none`, or `branch`. Explicit API
-`publishMode: "auto"` keeps the worker/CLI graceful auto behavior. Because
+(`pr`); the scheduler therefore sends `KASEKI_PUBLISH_MODE=pr` to the worker unless an
+explicit, test-specific request sets a different mode. The legacy built-in
+`github.publish_mode=on` and CLI fallback both map to effective `publishMode: "pr"`. Explicit API
+`publishMode: "auto"` retains the legacy graceful-auto behavior for exceptional tests. Because
 `branch` and `pr` are strict publishing modes, API submission fails before
 queueing when GitHub App credentials are not ready.
 
