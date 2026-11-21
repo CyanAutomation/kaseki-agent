@@ -115,7 +115,7 @@ ${essential8.kasekiApiKeys ? `# API auth key is stored in ~/.kaseki/secrets/kase
 # See docs/ADVANCED_CONFIG.md for complete reference
 
 # Execution zone
-# KASEKI_PUBLISH_MODE=none
+# KASEKI_PUBLISH_MODE=none # Test-only exception; normal runs default to pr.
 # KASEKI_PRE_AGENT_VALIDATION=false
 # KASEKI_VALIDATION_ALLOWLIST=src/**,tests/**
 

@@ -173,7 +173,7 @@ const DEFAULT_CONFIG: Config = {
   },
   github: {
     app_enabled: false,
-    publish_mode: 'auto',
+    publish_mode: 'on',
   },
   docker: {
     image: 'docker.io/cyanautomation/kaseki-agent:latest',

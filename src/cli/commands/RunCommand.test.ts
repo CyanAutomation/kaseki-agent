@@ -31,6 +31,7 @@ describe('RunCommand', () => {
     'KASEKI_DRY_RUN',
     'KASEKI_AGENT_TIMEOUT_SECONDS',
     'KASEKI_VALIDATION_COMMANDS',
+    'KASEKI_PUBLISH_MODE',
     ...INLINE_SECRET_ENV_VARS,
   ] as const;
   let originalEnv: Record<string, string | undefined>;
@@ -98,7 +99,7 @@ describe('RunCommand', () => {
       changedFilesAllowlist: ['src/lib/parser.ts', 'tests/parser.validation.ts'],
       maxDiffBytes: 400000,
       taskMode: 'patch',
-      publishMode: 'auto',
+      publishMode: 'pr',
       timeoutSeconds: 10800,
     }));
     expect(createRun.mock.calls[0][0].validationCommands).toBeUndefined();
