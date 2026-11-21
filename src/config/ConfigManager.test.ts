@@ -50,6 +50,15 @@ describe('configuration values loaded from defaults and environment', () => {
     expect(configManager.get('github.publish_mode')).toBe('on');
   });
 
+  test.each(['auto', 'none', 'branch', 'pr'])('honors KASEKI_PUBLISH_MODE=%s from the environment', async (publishMode) => {
+    process.env.KASEKI_PUBLISH_MODE = publishMode;
+
+    const manager = new ConfigManager();
+    await manager.load();
+
+    expect(manager.get('github.publish_mode')).toBe(publishMode);
+  });
+
   test('honors explicit openrouter provider from environment', async () => {
     process.env.KASEKI_PROVIDER = 'openrouter';
 
