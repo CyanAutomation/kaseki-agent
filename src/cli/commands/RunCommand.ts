@@ -132,7 +132,7 @@ export class RunCommand extends ApiBackedCommand<RunApiClient> {
       request.taskMode = taskMode;
     }
 
-    const githubPublishMode = this.configManager.get<string>('github.publish_mode', 'auto');
+    const githubPublishMode = this.configManager.get<string>('github.publish_mode', 'on');
     request.publishMode = githubPublishMode === 'off' ? 'none' : githubPublishMode === 'on' ? 'pr' : githubPublishMode;
 
     const timeoutSeconds = this.configManager.get<number>('agent.timeout_seconds', 0);

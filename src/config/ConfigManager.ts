@@ -88,7 +88,7 @@ const ConfigSchema = z.object({
   // GitHub integration
   github: z.object({
     app_enabled: z.boolean().optional(),
-    publish_mode: z.enum(['auto', 'on', 'off']).optional(),
+    publish_mode: z.enum(['auto', 'on', 'off', 'pr', 'none', 'branch']).optional(),
   }).partial(),
 
   // Docker configuration
@@ -173,7 +173,7 @@ const DEFAULT_CONFIG: Config = {
   },
   github: {
     app_enabled: false,
-    publish_mode: 'auto',
+    publish_mode: 'on',
   },
   docker: {
     image: 'docker.io/cyanautomation/kaseki-agent:latest',
@@ -332,6 +332,10 @@ export class ConfigManager {
       GITHUB_APP_PRIVATE_KEY_FILE: (v) => {
         if (!this.config.auth) this.config.auth = {};
         this.config.auth.github_app_private_key_file = v;
+      },
+      KASEKI_PUBLISH_MODE: (v) => {
+        if (!this.config.github) this.config.github = {};
+        this.config.github.publish_mode = v as NonNullable<Config['github']>['publish_mode'];
       },
 
       // Agent
