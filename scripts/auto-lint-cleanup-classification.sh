@@ -26,7 +26,12 @@ filter_cleanup_commands_to_available() {
   
   if [ ! -f "$package_json" ]; then
     # No package.json; still validate shell commands for availability
-    IFS=';' read -r -a command_array <<< "$commands"
+    if declare -f validation_split_commands >/dev/null 2>&1; then
+      validation_split_commands "$commands"
+      command_array=("${VALIDATION_COMMANDS[@]}")
+    else
+      IFS=';' read -r -a command_array <<< "$commands"
+    fi
     for command in "${command_array[@]}"; do
       trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
       [ -z "$trimmed" ] && continue
@@ -51,7 +56,12 @@ filter_cleanup_commands_to_available() {
   fi
   
   # Fallback: simple filtering without external helper
-  IFS=';' read -r -a command_array <<< "$commands"
+  if declare -f validation_split_commands >/dev/null 2>&1; then
+    validation_split_commands "$commands"
+    command_array=("${VALIDATION_COMMANDS[@]}")
+  else
+    IFS=';' read -r -a command_array <<< "$commands"
+  fi
   for command in "${command_array[@]}"; do
     trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
     [ -z "$trimmed" ] && continue
@@ -408,7 +418,12 @@ run_auto_lint_cleanup() {
   fi
 
   set +e
-  IFS=';' read -r -a cleanup_commands <<< "$KASEKI_AUTO_LINT_CLEANUP_COMMANDS"
+  if declare -f validation_split_commands >/dev/null 2>&1; then
+    validation_split_commands "$KASEKI_AUTO_LINT_CLEANUP_COMMANDS"
+    cleanup_commands=("${VALIDATION_COMMANDS[@]}")
+  else
+    IFS=';' read -r -a cleanup_commands <<< "$KASEKI_AUTO_LINT_CLEANUP_COMMANDS"
+  fi
   for command in "${cleanup_commands[@]}"; do
     trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
     [ -z "$trimmed" ] && continue

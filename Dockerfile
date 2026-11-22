@@ -319,7 +319,7 @@ ARG TARGETARCH
 # Runtime plus the Node and Go toolchains used by ephemeral repository checks.
 RUN apt-get update \
     && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends bash build-essential ca-certificates curl docker.io git jq libpcre2-8-0 make procps shellcheck tini \
+    && apt-get install -y --no-install-recommends bash build-essential ca-certificates curl docker.io git jq libpcre2-8-0 make procps python3 python3-pip python3-venv shellcheck tini \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10000 kaseki \
     && useradd --system --uid 10000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \

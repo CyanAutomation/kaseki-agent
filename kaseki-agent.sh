@@ -4934,7 +4934,8 @@ ensure_build_before_test_validation() {
   local commands="$1" command trimmed normalized="" has_build=0 has_test=0
   package_json_has_npm_script "build" || { printf '%s' "$commands"; return 0; }
   local -a command_array
-  IFS=';' read -r -a command_array <<< "$commands"
+  validation_split_commands "$commands"
+  command_array=("${VALIDATION_COMMANDS[@]}")
   for command in "${command_array[@]}"; do
     trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
     [ -z "$trimmed" ] && continue
@@ -4988,7 +4989,8 @@ construct_default_validation_commands() {
 all_requested_validation_scripts_are_missing() {
   local commands="$1" command trimmed missing=0 total=0
   local -a command_array
-  IFS=';' read -r -a command_array <<< "$commands"
+  validation_split_commands "$commands"
+  command_array=("${VALIDATION_COMMANDS[@]}")
   for command in "${command_array[@]}"; do
     trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
     [ -z "$trimmed" ] && continue
@@ -5757,7 +5759,8 @@ run_validation_commands() {
 
   if [ "$KASEKI_DRY_RUN" = "1" ] && [ "$execute_during_dry_run" != "true" ]; then
     printf '🔄 DRY-RUN MODE: Validation commands would be executed (not running in dry-run mode):\n' | tee -a "$log_file"
-    IFS=';' read -r -a validation_commands <<< "$commands"
+    validation_split_commands "$commands"
+    validation_commands=("${VALIDATION_COMMANDS[@]}")
     for command in "${validation_commands[@]}"; do
       trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
       [ -z "$trimmed" ] && continue
@@ -5789,7 +5792,8 @@ run_validation_commands() {
         commands="$fallback_commands"
       fi
       commands="$(validation_expand_commands "$commands")"
-      IFS=';' read -r -a validation_commands <<< "$commands"
+      validation_split_commands "$commands"
+      validation_commands=("${VALIDATION_COMMANDS[@]}")
       for command in "${validation_commands[@]}"; do
         trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
         [ -z "$trimmed" ] && continue
@@ -10514,30 +10518,42 @@ if [ "$KASEKI_PRE_AGENT_VALIDATION" = "1" ] && [ "$KASEKI_TASK_MODE" != "inspect
     validation_prepend_repository_bins "${KASEKI_WORKSPACE_DIR}/repo"
     validation_command_preflight \
       "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
-      "${KASEKI_RESULTS_DIR}/pre-validation.log"
+      "${KASEKI_RESULTS_DIR}/pre-validation.log" \
+      "${KASEKI_WORKSPACE_DIR}/repo"
   ); then
     validation_toolchain_preflight_status=0
   else
     validation_toolchain_preflight_status=$?
   fi
   if [ "$validation_toolchain_preflight_status" -ne 0 ]; then
-    missing_validation_executable="$(
-      validation_prepend_repository_bins "${KASEKI_WORKSPACE_DIR}/repo"
-      validation_command_missing_executable "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" || true
-    )"
     set_current_stage "pre-agent validation"
     STATUS="$validation_toolchain_preflight_status"
     FAILED_COMMAND="pre-agent validation"
     PRE_VALIDATION_EXIT="$validation_toolchain_preflight_status"
     PRE_VALIDATION_COMMANDS_ATTEMPTED=0
-    PRE_VALIDATION_FAILED_COMMAND_DETAIL="required executable '$missing_validation_executable' is not available after dependency preparation"
-    PRE_VALIDATION_FAILURE_REASON="validation_toolchain_preflight_failed: missing executable $missing_validation_executable"
-    record_stage_timing "pre-agent validation" "$validation_toolchain_preflight_status" 0 "preflight_missing_executable=$missing_validation_executable"
-    emit_progress "pre-agent validation" "blocked before validation because executable=$missing_validation_executable is missing after dependency preparation" "error"
-    emit_event "validation_toolchain_preflight_failed" "stage=pre-agent validation" "missing_executable=$missing_validation_executable" "commands=$KASEKI_PRE_AGENT_VALIDATION_COMMANDS"
-    emit_event "phase_not_reached" "phase=scouting" "reason=pre_agent_validation_toolchain_missing" "missing_executable=$missing_validation_executable"
-    emit_event "phase_not_reached" "phase=weaving" "reason=pre_agent_validation_toolchain_missing" "missing_executable=$missing_validation_executable"
-    emit_error_event "pre_agent_validation_toolchain_missing" "Pre-agent validation was not run because executable '$missing_validation_executable' was unavailable after dependency preparation. Declare/install it as a project dependency or provide it in the worker image." "exit"
+    if [ "$validation_toolchain_preflight_status" -eq 2 ]; then
+      PRE_VALIDATION_FAILED_COMMAND_DETAIL="configured validation command has invalid shell syntax; see pre-validation.log"
+      PRE_VALIDATION_FAILURE_REASON="validation_command_syntax_preflight_failed"
+      record_stage_timing "pre-agent validation" 2 0 "preflight_invalid_shell_syntax"
+      emit_progress "pre-agent validation" "blocked before validation because the configured command has invalid shell syntax" "error"
+      emit_event "validation_command_syntax_preflight_failed" "stage=pre-agent validation" "commands=$KASEKI_PRE_AGENT_VALIDATION_COMMANDS"
+      emit_event "phase_not_reached" "phase=scouting" "reason=pre_agent_validation_syntax_invalid"
+      emit_event "phase_not_reached" "phase=weaving" "reason=pre_agent_validation_syntax_invalid"
+      emit_error_event "pre_agent_validation_syntax_invalid" "Pre-agent validation was not run because the configured command has invalid shell syntax. See pre-validation.log." "exit"
+    else
+      missing_validation_executable="$(
+        validation_prepend_repository_bins "${KASEKI_WORKSPACE_DIR}/repo"
+        validation_command_missing_executable "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" || true
+      )"
+      PRE_VALIDATION_FAILED_COMMAND_DETAIL="required executable '$missing_validation_executable' is not available after dependency preparation"
+      PRE_VALIDATION_FAILURE_REASON="validation_toolchain_preflight_failed: missing executable $missing_validation_executable"
+      record_stage_timing "pre-agent validation" "$validation_toolchain_preflight_status" 0 "preflight_missing_executable=$missing_validation_executable"
+      emit_progress "pre-agent validation" "blocked before validation because executable=$missing_validation_executable is missing after dependency preparation" "error"
+      emit_event "validation_toolchain_preflight_failed" "stage=pre-agent validation" "missing_executable=$missing_validation_executable" "commands=$KASEKI_PRE_AGENT_VALIDATION_COMMANDS"
+      emit_event "phase_not_reached" "phase=scouting" "reason=pre_agent_validation_toolchain_missing" "missing_executable=$missing_validation_executable"
+      emit_event "phase_not_reached" "phase=weaving" "reason=pre_agent_validation_toolchain_missing" "missing_executable=$missing_validation_executable"
+      emit_error_event "pre_agent_validation_toolchain_missing" "Pre-agent validation was not run because executable '$missing_validation_executable' was unavailable after dependency preparation. Declare/install it as a project dependency or provide it in the worker image." "exit"
+    fi
     exit 0
   fi
 fi

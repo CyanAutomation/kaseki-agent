@@ -23,30 +23,117 @@ const STATEFUL_SHELL_BUILTINS = new Set([
   'unalias', 'unset', 'wait',
 ]);
 
-function splitSimpleAndChain(text) {
-  const pieces = text.split(/\s*&&\s*/).map((piece) => piece.trim());
-  if (pieces.length < 2) return undefined;
-  for (const piece of pieces) {
-    if (!piece) return undefined;
-    const words = piece.split(/\s+/);
-    let index = 0;
-    while (index < words.length && SAFE_ENVIRONMENT_ASSIGNMENT.test(words[index])) index += 1;
-    const executable = words[index];
-    if (!executable || STATEFUL_SHELL_BUILTINS.has(executable)) return undefined;
-    if (words.some((word) => !SIMPLE_COMMAND_TOKEN.test(word))) return undefined;
+export function splitValidationCommands(text) {
+  return splitShellCommandList(text, ';');
+}
+
+function splitShellCommandList(text, delimiter) {
+  const commands = [];
+  const nesting = [];
+  let start = 0;
+  let quote = null;
+  let escaped = false;
+  let comment = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (comment) {
+      if (character === '\n') comment = false;
+      continue;
+    }
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === '\\' && quote !== "'") {
+        escaped = true;
+      } else if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (character === "'") {
+      quote = "'";
+      continue;
+    }
+    if (character === '"' || character === '`') {
+      quote = character;
+      continue;
+    }
+    const previous = text[index - 1];
+    if (character === '#' && (index === 0 || /\s/.test(previous) || [';', '&', '|'].includes(previous))) {
+      comment = true;
+      continue;
+    }
+    const next = text[index + 1];
+    if (character === '$' && (next === '(' || next === '{')) {
+      nesting.push(next === '(' ? ')' : '}');
+      index += 1;
+      continue;
+    }
+    if (character === '(') {
+      nesting.push(')');
+      continue;
+    }
+    if (character === '{') {
+      nesting.push('}');
+      continue;
+    }
+    if ((character === ')' || character === '}') && nesting.at(-1) === character) {
+      nesting.pop();
+      continue;
+    }
+    if (nesting.length === 0 && text.startsWith(delimiter, index)) {
+      commands.push(text.slice(start, index).trim());
+      index += delimiter.length - 1;
+      start = index + 1;
+    }
   }
-  return pieces;
+
+  commands.push(text.slice(start).trim());
+  return commands;
+}
+
+// Only split a shell `&&` chain when each piece is a plain command. The same
+// predicate supports single-command npm aliases so `check -> build -> tsc` is
+// visible to executable preflight.
+function splitSimpleAndChain(text) {
+  const pieces = splitShellCommandList(text, '&&');
+  if (pieces.length < 2) return undefined;
+  return pieces.every(isSimpleCommand) ? pieces : undefined;
+}
+
+function isSimpleCommand(text) {
+  if (!text.trim()) return false;
+  const words = text.trim().split(/\s+/);
+  let index = 0;
+  while (index < words.length && SAFE_ENVIRONMENT_ASSIGNMENT.test(words[index])) index += 1;
+  const executable = words[index];
+  if (!executable || STATEFUL_SHELL_BUILTINS.has(executable)) return false;
+  return words.every((word) => SIMPLE_COMMAND_TOKEN.test(word));
+}
+
+function simpleScriptCommand(text) {
+  return isSimpleCommand(text) ? [text.trim()] : undefined;
 }
 
 // Split only simple command lists. Quotes, redirections, pipes, control flow,
 // and stateful builtins remain intact so separate shells preserve semantics.
-export function expandValidationCommands(commands, scripts) {
+export function expandValidationCommands(commands, scripts, { expandSimpleAliases = false } = {}) {
   function expandOne(command, seen) {
     const match = /^npm run ([\w:.-]+)$/.exec(command);
     if (!match) return [command];
     const name = match[1];
     if (!scripts[name] || scripts[`pre${name}`] || scripts[`post${name}`] || seen.has(name) || seen.size >= 12) return [command];
-    const nested = splitSimpleAndChain(scripts[name]);
+    const nested = splitSimpleAndChain(scripts[name]) ||
+      (expandSimpleAliases ? simpleScriptCommand(scripts[name]) : undefined);
     if (!nested) return [command];
     const next = new Set(seen).add(name);
     return nested.flatMap((piece) => expand(piece, next));
@@ -57,7 +144,7 @@ export function expandValidationCommands(commands, scripts) {
     if (pieces) return pieces.flatMap((piece) => expandOne(piece, seen));
     return expandOne(command.trim(), seen);
   }
-  return commands.split(';').flatMap(command => expand(command.trim())).join(';');
+  return splitValidationCommands(commands).flatMap(command => expand(command.trim())).join(';');
 }
 
 function readOptional(file, limit = 65536, tail = false) {
@@ -203,10 +290,12 @@ export function smokeWorkerd(workspace, commands) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [mode, arg] = process.argv.slice(2);
-  if (mode === 'expand') {
+  if (mode === 'expand' || mode === 'expand-preflight') {
     let scripts = {};
     try { scripts = JSON.parse(fs.readFileSync('package.json', 'utf8')).scripts || {}; } catch { /* Preserve commands without a manifest. */ }
-    process.stdout.write(expandValidationCommands(arg || '', scripts));
+    process.stdout.write(expandValidationCommands(arg || '', scripts, {
+      expandSimpleAliases: mode === 'expand-preflight',
+    }));
   } else if (mode === 'classify') {
     const reason = classifyRuntimeFailure(readOptional(arg, 1048576, true) || '');
     if (reason) process.stdout.write(reason);
@@ -215,8 +304,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const result = smokeWorkerd(arg || process.cwd(), process.argv[4]);
     process.stdout.write(JSON.stringify({ ...result, host: hostRuntimeIdentity() }) + '\n');
     if (result.status === 'failed') process.exitCode = 70;
+  } else if (mode === 'split') {
+    process.stdout.write(splitValidationCommands(arg || '').map(command => `${command}\0`).join(''));
   } else {
-    console.error('Usage: node validation-runtime.mjs expand COMMANDS | classify LOG | smoke WORKSPACE [COMMANDS]');
+    console.error('Usage: node validation-runtime.mjs expand COMMANDS | expand-preflight COMMANDS | split COMMANDS | classify LOG | smoke WORKSPACE [COMMANDS]');
     process.exitCode = 2;
   }
 }

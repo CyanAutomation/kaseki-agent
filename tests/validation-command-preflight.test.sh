@@ -28,6 +28,13 @@ EOF
 chmod +x "$TMP_DIR/bin/npm" "$TMP_DIR/bin/node"
 PATH="$TMP_DIR/bin"
 
+quoted_command="node -e 'const [major] = process.versions.node.split(\".\").map(Number); if (!major) process.exit(1)' && npm run check"
+PATH="$ORIGINAL_PATH" validation_split_commands "$quoted_command; npm test"
+[ "${#VALIDATION_COMMANDS[@]}" -eq 2 ] && [ "${VALIDATION_COMMANDS[0]}" = "$quoted_command" ] && [ "${VALIDATION_COMMANDS[1]}" = "npm test" ] || {
+  printf '✗ quote-aware command splitting changed a semicolon inside the Node expression\n' >&2
+  exit 1
+}
+
 assert_missing() {
   local expected="$1" commands="$2" actual
   actual="$(validation_command_missing_executable "$commands")" || {
@@ -63,6 +70,7 @@ LOCAL_BIN_REPO="$TMP_DIR/local-bin-repo"
 LOCAL_BIN_PATH="$LOCAL_BIN_REPO/node_modules/.bin"
 EMPTY_BIN_REPO="$TMP_DIR/empty-bin-repo"
 PATH="$ORIGINAL_PATH" mkdir -p "$LOCAL_BIN_PATH" "$EMPTY_BIN_REPO"
+LOCAL_BIN_PATH="$(cd "$LOCAL_BIN_PATH" && pwd -P)"
 (
   cd "$EMPTY_BIN_REPO"
   assert_missing ./node_modules/.bin/tsc './node_modules/.bin/tsc --noEmit'
@@ -88,6 +96,51 @@ PATH="$ORIGINAL_PATH" grep -Fqx '[validation toolchain preflight] missing_execut
   printf '✗ missing tsc failure did not identify the executable\n' >&2
   exit 1
 }
+
+# Npm scripts can hide a missing direct compiler in a nested `npm run check` chain.
+SCRIPT_REPO="$TMP_DIR/script-repo"
+PATH="$ORIGINAL_PATH" mkdir -p "$SCRIPT_REPO"
+PATH="$ORIGINAL_PATH" cat > "$SCRIPT_REPO/package.json" <<'JSON'
+{"scripts":{"check":"npm run lint && npm run build","lint":"true","build":"tsc -p tsconfig.app.json"}}
+JSON
+PATH="$ORIGINAL_PATH"
+if validation_command_preflight 'npm run check' "$TMP_DIR/nested-tsc.log" "$SCRIPT_REPO"; then
+  printf '✗ nested npm check unexpectedly passed without tsc\n' >&2
+  exit 1
+else
+  preflight_status=$?
+fi
+[ "$preflight_status" -eq 127 ] || {
+  printf '✗ expected nested missing tsc to produce exit 127, got %s\n' "$preflight_status" >&2
+  exit 1
+}
+PATH="$ORIGINAL_PATH" grep -Fqx '[validation toolchain preflight] missing_executable=tsc' "$TMP_DIR/nested-tsc.log" || {
+  printf '✗ nested npm check failure did not identify tsc\n' >&2
+  exit 1
+}
+
+# Syntax preflight must reject an unmatched quote without executing the command list.
+syntax_marker="$TMP_DIR/syntax-preflight-marker"
+malformed_command="printf executed > '$syntax_marker'; node -e 'const [major] = process.versions.node.split(\".\").map(Number)"
+if validation_command_preflight "$malformed_command" "$TMP_DIR/invalid-shell.log" "$SCRIPT_REPO"; then
+  printf '✗ malformed shell command unexpectedly passed preflight\n' >&2
+  exit 1
+else
+  preflight_status=$?
+fi
+[ "$preflight_status" -eq 2 ] || {
+  printf '✗ expected malformed shell command to produce exit 2, got %s\n' "$preflight_status" >&2
+  exit 1
+}
+[ ! -e "$syntax_marker" ] || {
+  printf '✗ shell syntax preflight executed part of a malformed command\n' >&2
+  exit 1
+}
+PATH="$ORIGINAL_PATH" grep -Fq '[validation command syntax preflight]' "$TMP_DIR/invalid-shell.log" || {
+  printf '✗ malformed shell command did not receive a syntax diagnostic\n' >&2
+  exit 1
+}
+PATH="$TMP_DIR/bin"
 
 validation_prepend_repository_bins "$LOCAL_BIN_REPO"
 assert_available 'eslint .'
