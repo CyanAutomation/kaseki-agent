@@ -100,10 +100,15 @@ PATH="$ORIGINAL_PATH" grep -Fqx '[validation toolchain preflight] missing_execut
 # Npm scripts can hide a missing direct compiler in a nested `npm run check` chain.
 SCRIPT_REPO="$TMP_DIR/script-repo"
 PATH="$ORIGINAL_PATH" mkdir -p "$SCRIPT_REPO"
+# Only Node is needed to expand npm scripts; keep runner-global tools like tsc out.
+PREFLIGHT_BIN="$TMP_DIR/preflight-bin"
+PATH="$ORIGINAL_PATH" mkdir -p "$PREFLIGHT_BIN"
+PATH="$ORIGINAL_PATH" ln -s "$(PATH="$ORIGINAL_PATH" command -v node)" "$PREFLIGHT_BIN/node"
+PATH="$ORIGINAL_PATH" ln -s "$(PATH="$ORIGINAL_PATH" command -v dirname)" "$PREFLIGHT_BIN/dirname"
 PATH="$ORIGINAL_PATH" cat > "$SCRIPT_REPO/package.json" <<'JSON'
 {"scripts":{"check":"npm run lint && npm run build","lint":"true","build":"tsc -p tsconfig.app.json"}}
 JSON
-PATH="$ORIGINAL_PATH"
+PATH="$PREFLIGHT_BIN"
 if validation_command_preflight 'npm run check' "$TMP_DIR/nested-tsc.log" "$SCRIPT_REPO"; then
   printf '✗ nested npm check unexpectedly passed without tsc\n' >&2
   exit 1
@@ -118,6 +123,7 @@ PATH="$ORIGINAL_PATH" grep -Fqx '[validation toolchain preflight] missing_execut
   printf '✗ nested npm check failure did not identify tsc\n' >&2
   exit 1
 }
+PATH="$ORIGINAL_PATH"
 
 # Syntax preflight must reject an unmatched quote without executing the command list.
 syntax_marker="$TMP_DIR/syntax-preflight-marker"
