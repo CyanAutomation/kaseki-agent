@@ -2,6 +2,20 @@
 # Return the missing executable in a tokenized simple command, if any. We only
 # inspect the first command word after leading assignments; wrapper commands
 # are intentionally left to the validation runner.
+validation_command_preflight_missing_executable() {
+  local log_file="$1" line
+  [ -r "$log_file" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      '[validation toolchain preflight] missing_executable='*)
+        printf '%s' "${line#*=}"
+        return 0
+        ;;
+    esac
+  done < "$log_file"
+  return 1
+}
+
 validation_command_first_missing_executable() {
   local word executable
   for word in "$@"; do
@@ -135,7 +149,7 @@ validation_command_preflight() {
 
   # Validate without evaluating any part of the submitted shell text. This
   # catches malformed requests before they can be split or partially run.
-  if syntax_output="$(/bin/bash -n -c "$commands" 2>&1)"; then
+  if syntax_output="$(bash -n -c "$commands" 2>&1)"; then
     syntax_status=0
   else
     syntax_status=$?

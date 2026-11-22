@@ -26,6 +26,7 @@ cat > "$TMP_DIR/bin/node" <<'EOF'
 exit 0
 EOF
 chmod +x "$TMP_DIR/bin/npm" "$TMP_DIR/bin/node"
+PATH="$ORIGINAL_PATH" ln -s "$(PATH="$ORIGINAL_PATH" command -v bash)" "$TMP_DIR/bin/bash"
 PATH="$TMP_DIR/bin"
 
 quoted_command="node -e 'const [major] = process.versions.node.split(\".\").map(Number); if (!major) process.exit(1)' && npm run check"
@@ -96,6 +97,10 @@ PATH="$ORIGINAL_PATH" grep -Fqx '[validation toolchain preflight] missing_execut
   printf '✗ missing tsc failure did not identify the executable\n' >&2
   exit 1
 }
+[ "$(validation_command_preflight_missing_executable "$TMP_DIR/missing-tsc.log")" = "tsc" ] || {
+  printf '✗ missing executable diagnostic did not return the preflight result\n' >&2
+  exit 1
+}
 
 # Npm scripts can hide a missing direct compiler in a nested `npm run check` chain.
 SCRIPT_REPO="$TMP_DIR/script-repo"
@@ -105,6 +110,7 @@ PREFLIGHT_BIN="$TMP_DIR/preflight-bin"
 PATH="$ORIGINAL_PATH" mkdir -p "$PREFLIGHT_BIN"
 PATH="$ORIGINAL_PATH" ln -s "$(PATH="$ORIGINAL_PATH" command -v node)" "$PREFLIGHT_BIN/node"
 PATH="$ORIGINAL_PATH" ln -s "$(PATH="$ORIGINAL_PATH" command -v dirname)" "$PREFLIGHT_BIN/dirname"
+PATH="$ORIGINAL_PATH" ln -s "$(PATH="$ORIGINAL_PATH" command -v bash)" "$PREFLIGHT_BIN/bash"
 PATH="$ORIGINAL_PATH" cat > "$SCRIPT_REPO/package.json" <<'JSON'
 {"scripts":{"check":"npm run lint && npm run build","lint":"true","build":"tsc -p tsconfig.app.json"}}
 JSON
@@ -123,17 +129,47 @@ PATH="$ORIGINAL_PATH" grep -Fqx '[validation toolchain preflight] missing_execut
   printf '✗ nested npm check failure did not identify tsc\n' >&2
   exit 1
 }
+[ "$(validation_command_preflight_missing_executable "$TMP_DIR/nested-tsc.log")" = "tsc" ] || {
+  printf '✗ nested missing executable diagnostic did not return the preflight result\n' >&2
+  exit 1
+}
 PATH="$ORIGINAL_PATH"
+
+# Syntax preflight uses the same Bash executable resolved by the validation runner.
+SYNTAX_BIN="$TMP_DIR/syntax-bin"
+PATH="$ORIGINAL_PATH" mkdir -p "$SYNTAX_BIN"
+SYNTAX_REAL_BASH="$(PATH="$ORIGINAL_PATH" command -v bash)"
+PATH="$ORIGINAL_PATH" ln -s "$(PATH="$ORIGINAL_PATH" command -v head)" "$SYNTAX_BIN/head"
+cat > "$SYNTAX_BIN/bash" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >> "$SYNTAX_BASH_CALLS"
+exec "$SYNTAX_REAL_BASH" "$@"
+EOF
+PATH="$ORIGINAL_PATH" chmod +x "$SYNTAX_BIN/bash"
+syntax_marker="$TMP_DIR/syntax-preflight-marker"
+safe_substitution_command="printf '%s' \"\$(touch '$syntax_marker')\""
+PATH="$SYNTAX_BIN" SYNTAX_BASH_CALLS="$TMP_DIR/bash-syntax-calls.log" SYNTAX_REAL_BASH="$SYNTAX_REAL_BASH" \
+  validation_command_preflight "$safe_substitution_command" "$TMP_DIR/syntax-valid.log"
+[ -s "$TMP_DIR/bash-syntax-calls.log" ] || {
+  printf '✗ syntax preflight did not use Bash from PATH\n' >&2
+  exit 1
+}
+[ ! -e "$syntax_marker" ] || {
+  printf '✗ syntax preflight executed a command substitution\n' >&2
+  exit 1
+}
 
 # Syntax preflight must reject an unmatched quote without executing the command list.
 syntax_marker="$TMP_DIR/syntax-preflight-marker"
 malformed_command="printf executed > '$syntax_marker'; node -e 'const [major] = process.versions.node.split(\".\").map(Number)"
-if validation_command_preflight "$malformed_command" "$TMP_DIR/invalid-shell.log" "$SCRIPT_REPO"; then
+if PATH="$SYNTAX_BIN" SYNTAX_BASH_CALLS="$TMP_DIR/bash-syntax-calls.log" SYNTAX_REAL_BASH="$SYNTAX_REAL_BASH" \
+  validation_command_preflight "$malformed_command" "$TMP_DIR/invalid-shell.log" "$SCRIPT_REPO"; then
   printf '✗ malformed shell command unexpectedly passed preflight\n' >&2
   exit 1
 else
   preflight_status=$?
 fi
+PATH="$ORIGINAL_PATH"
 [ "$preflight_status" -eq 2 ] || {
   printf '✗ expected malformed shell command to produce exit 2, got %s\n' "$preflight_status" >&2
   exit 1

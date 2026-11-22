@@ -10541,10 +10541,9 @@ if [ "$KASEKI_PRE_AGENT_VALIDATION" = "1" ] && [ "$KASEKI_TASK_MODE" != "inspect
       emit_event "phase_not_reached" "phase=weaving" "reason=pre_agent_validation_syntax_invalid"
       emit_error_event "pre_agent_validation_syntax_invalid" "Pre-agent validation was not run because the configured command has invalid shell syntax. See pre-validation.log." "exit"
     else
-      missing_validation_executable="$(
-        validation_prepend_repository_bins "${KASEKI_WORKSPACE_DIR}/repo"
-        validation_command_missing_executable "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" || true
-      )"
+      missing_validation_executable="$(validation_command_preflight_missing_executable \
+        "${KASEKI_RESULTS_DIR}/pre-validation.log" || true)"
+      [ -n "$missing_validation_executable" ] || missing_validation_executable="unknown"
       PRE_VALIDATION_FAILED_COMMAND_DETAIL="required executable '$missing_validation_executable' is not available after dependency preparation"
       PRE_VALIDATION_FAILURE_REASON="validation_toolchain_preflight_failed: missing executable $missing_validation_executable"
       record_stage_timing "pre-agent validation" "$validation_toolchain_preflight_status" 0 "preflight_missing_executable=$missing_validation_executable"
