@@ -94,8 +94,13 @@ filter_npm_commands_to_available() {
     return 0
   fi
   
-  # Split by semicolon
-  IFS=';' read -r -a command_array <<< "$commands"
+  # Use the shared quote-aware splitter when running inside the worker.
+  if declare -f validation_split_commands >/dev/null 2>&1; then
+    validation_split_commands "$commands"
+    command_array=("${VALIDATION_COMMANDS[@]}")
+  else
+    IFS=';' read -r -a command_array <<< "$commands"
+  fi
   
   for command in "${command_array[@]}"; do
     trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"

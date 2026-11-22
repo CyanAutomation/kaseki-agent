@@ -35,6 +35,24 @@ validation_expand_commands() {
   if [ -r "$helper" ]; then node "$helper" expand "$1"; else printf '%s' "$1"; fi
 }
 
+# Populate VALIDATION_COMMANDS with a quote-aware split of the configured
+# semicolon-delimited command list. NUL framing keeps embedded newlines intact.
+validation_split_commands() {
+  local commands="$1" helper command
+  VALIDATION_COMMANDS=()
+  helper="$(validation_runtime_helper)"
+  if [ -r "$helper" ] && command -v node >/dev/null 2>&1; then
+    while IFS= read -r -d '' command; do
+      VALIDATION_COMMANDS+=("$command")
+    done < <(node "$helper" split "$commands")
+  else
+    local -a fallback_commands=()
+    IFS=';' read -r -a fallback_commands <<< "$commands"
+    VALIDATION_COMMANDS=("${fallback_commands[@]}")
+  fi
+  return 0
+}
+
 validation_runtime_preflight() {
   local workspace="$1" log_file="$2" helper result runtime_exit=0
   helper="$(validation_runtime_helper)"
@@ -103,7 +121,8 @@ ensure_build_before_test_validation() {
   local commands="$1" command trimmed normalized="" has_build=0 has_test=0
   package_json_has_npm_script "build" || { printf '%s' "$commands"; return 0; }
   local -a command_array
-  IFS=';' read -r -a command_array <<< "$commands"
+  validation_split_commands "$commands"
+  command_array=("${VALIDATION_COMMANDS[@]}")
   for command in "${command_array[@]}"; do
     trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
     [ -z "$trimmed" ] && continue
@@ -202,7 +221,8 @@ construct_default_validation_commands() {
 all_requested_validation_scripts_are_missing() {
   local commands="$1" command trimmed missing=0 total=0
   local -a command_array
-  IFS=';' read -r -a command_array <<< "$commands"
+  validation_split_commands "$commands"
+  command_array=("${VALIDATION_COMMANDS[@]}")
   for command in "${command_array[@]}"; do
     trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
     [ -z "$trimmed" ] && continue
@@ -229,7 +249,8 @@ validation_commands_for_goal_prompt() {
   fi
   commands="$(maybe_replace_missing_validation_commands "$commands")"
   local -a command_array
-  IFS=';' read -r -a command_array <<< "$commands"
+  validation_split_commands "$commands"
+  command_array=("${VALIDATION_COMMANDS[@]}")
   for command in "${command_array[@]}"; do
     trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
     [ -n "$trimmed" ] || continue
@@ -421,7 +442,8 @@ run_validation_commands() {
 
   if [ "${KASEKI_DRY_RUN:-0}" = "1" ] && [ "$execute_during_dry_run" != "true" ]; then
     printf '🔄 DRY-RUN MODE: Validation commands would be executed (not running in dry-run mode):\n' | tee -a "$log_file"
-    IFS=';' read -r -a validation_commands <<< "$commands"
+    validation_split_commands "$commands"
+    validation_commands=("${VALIDATION_COMMANDS[@]}")
     for command in "${validation_commands[@]}"; do
       trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
       [ -z "$trimmed" ] && continue
@@ -444,7 +466,8 @@ run_validation_commands() {
   else
     set +e
     commands="$(validation_expand_commands "$commands")"
-    IFS=';' read -r -a validation_commands <<< "$commands"
+    validation_split_commands "$commands"
+    validation_commands=("${VALIDATION_COMMANDS[@]}")
     for command in "${validation_commands[@]}"; do
       trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
       [ -z "$trimmed" ] && continue

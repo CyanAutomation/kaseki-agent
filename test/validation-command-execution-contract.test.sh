@@ -65,6 +65,33 @@ EOF_PROFILE
   pass "Validation command did not source login shell profiles"
 }
 
+test_quoted_semicolon_is_not_treated_as_a_command_separator() {
+  local tmpdir fake_repo marker run_log run_exit command
+  new_test_context tmpdir
+  fake_repo="$tmpdir/fake-repo"
+  marker="$tmpdir/validation-marker.txt"
+  run_log="$tmpdir/kaseki-agent.log"
+  create_controlled_repo "$fake_repo" 1
+  command="node -e 'const [major] = process.versions.node.split(\".\").map(Number); if (!major) process.exit(1)' && npm run validate"
+
+  if run_kaseki_agent_for_validation \
+    "$tmpdir" \
+    "$fake_repo" \
+    "$command" \
+    "$run_log" \
+    VALIDATION_MARKER="$marker"; then
+    run_exit=0
+  else
+    run_exit=$?
+  fi
+
+  assert_agent_completed "$run_exit" "$run_log" "quoted semicolon split a valid Node validation command"
+  [ -f "$marker" ] || fail "Command after quoted Node expression did not run"
+  assert_file_contains "$tmpdir/results/pre-validation-timings.tsv" 'node -e.*split' "timings did not retain the complete Node validation command"
+
+  pass "Quoted semicolon stayed inside the Node validation command"
+}
+
 test_pre_agent_validation_runs_during_baseline_dry_run() {
   local tmpdir fake_repo marker run_log run_exit
   new_test_context tmpdir
@@ -94,4 +121,5 @@ test_pre_agent_validation_runs_during_baseline_dry_run() {
 printf '==> Validation command execution contract\n'
 test_validation_command_runs_in_cloned_repository_cwd
 test_validation_commands_do_not_source_login_profiles
+test_quoted_semicolon_is_not_treated_as_a_command_separator
 test_pre_agent_validation_runs_during_baseline_dry_run

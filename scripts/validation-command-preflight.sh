@@ -2,6 +2,20 @@
 # Return the missing executable in a tokenized simple command, if any. We only
 # inspect the first command word after leading assignments; wrapper commands
 # are intentionally left to the validation runner.
+validation_command_preflight_missing_executable() {
+  local log_file="$1" line
+  [ -r "$log_file" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      '[validation toolchain preflight] missing_executable='*)
+        printf '%s' "${line#*=}"
+        return 0
+        ;;
+    esac
+  done < "$log_file"
+  return 1
+}
+
 validation_command_first_missing_executable() {
   local word executable
   for word in "$@"; do
@@ -131,11 +145,41 @@ validation_command_missing_executable() {
 }
 
 validation_command_preflight() {
-  local commands="$1" log_file="$2" missing
-  missing="$(validation_command_missing_executable "$commands")" || return 0
+  local commands="$1" log_file="$2" repo_root="${3:-}" checked_commands="$1" missing syntax_output helper syntax_status
+
+  # Validate without evaluating any part of the submitted shell text. This
+  # catches malformed requests before they can be split or partially run.
+  if syntax_output="$(bash -n -c "$commands" 2>&1)"; then
+    syntax_status=0
+  else
+    syntax_status=$?
+  fi
+  if [ "$syntax_status" -ne 0 ]; then
+    {
+      printf '[validation command syntax preflight] invalid_shell_syntax\n'
+      printf '[validation command syntax preflight] commands=%s\n' "$commands"
+      printf '%s\n' "$syntax_output" | head -n 20
+      printf 'Validation was not started because the configured command has invalid shell syntax.\n'
+      printf 'exit_code=2\n'
+    } > "$log_file"
+    return 2
+  fi
+
+  # Expand straightforward npm run chains in the target repository so the
+  # preflight can catch missing tools such as tsc hidden in `npm run check`.
+  if [ -n "$repo_root" ] && [ -d "$repo_root" ]; then
+    helper="$(dirname "${BASH_SOURCE[0]}")/validation-runtime.mjs"
+    [ -r "$helper" ] || helper=/app/scripts/validation-runtime.mjs
+    if [ -r "$helper" ] && command -v node >/dev/null 2>&1; then
+      checked_commands="$(cd -- "$repo_root" && node "$helper" expand-preflight "$commands")" || checked_commands="$commands"
+    fi
+  fi
+
+  missing="$(validation_command_missing_executable "$checked_commands")" || return 0
   {
     printf '[validation toolchain preflight] missing_executable=%s\n' "$missing"
     printf '[validation toolchain preflight] commands=%s\n' "$commands"
+    [ "$checked_commands" = "$commands" ] || printf '[validation toolchain preflight] expanded_commands=%s\n' "$checked_commands"
     printf 'Validation was not started because the validation environment does not provide the required executable.\n'
     printf 'Install it as a project dependency or in the worker image, or choose a supported validation command.\n'
     printf 'exit_code=127\n'

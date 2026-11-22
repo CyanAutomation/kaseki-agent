@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { classifyRuntimeFailure, expandValidationCommands, smokeWorkerd } from './validation-runtime.mjs';
+import { classifyRuntimeFailure, expandValidationCommands, smokeWorkerd, splitValidationCommands } from './validation-runtime.mjs';
 
 test('classifies native address-space startup failure independently of exit 1 or timeout', () => {
   const fatal = 'MmapAligned() failed - unable to allocate with tag\nTCMalloc assumes a 48-bit virtual address space size\nFATAL ERROR: Out of memory trying to allocate internal tcmalloc data';
@@ -19,6 +19,23 @@ test('expands only plain npm run chains, preserves lifecycle hooks and shell sem
   assert.equal(expandValidationCommands('npm run verify || npm run lint', scripts), 'npm run verify || npm run lint');
   assert.equal(expandValidationCommands('npm run verify', { verify: 'npm run verify' }), 'npm run verify');
   assert.equal(expandValidationCommands('npm run verify', { verify: 'npm run build && echo done' }), 'npm run build;echo done');
+});
+
+test('expands nested npm script aliases for toolchain preflight', () => {
+  assert.equal(expandValidationCommands('npm run check', {
+    check: 'npm run build',
+    build: 'tsc -p tsconfig.app.json',
+  }, { expandSimpleAliases: true }), 'tsc -p tsconfig.app.json');
+});
+
+test('splits validation command lists only at unquoted top-level semicolons', () => {
+  const versionCheck = `node -e 'const [major] = process.versions.node.split(".").map(Number); if (!major) process.exit(1)' && npm run check`;
+  assert.deepEqual(splitValidationCommands(`${versionCheck}; npm test`), [versionCheck, 'npm test']);
+  assert.deepEqual(splitValidationCommands(`printf '%s' "$(printf 'left;right')"; npm test`), [
+    `printf '%s' "$(printf 'left;right')"`,
+    'npm test',
+  ]);
+  assert.deepEqual(splitValidationCommands('printf left\\;right; npm test'), ['printf left\\;right', 'npm test']);
 });
 
 test('splits simple && validation chains into independently timed commands', () => {

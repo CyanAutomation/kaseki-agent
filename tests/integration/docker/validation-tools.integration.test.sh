@@ -90,6 +90,10 @@ done
 /app/node_modules/.bin/eslint /app/src --config /app/eslint.config.js --ignore-pattern dist/
 /app/node_modules/.bin/jest --version
 shellcheck --version
+python3 --version
+python3 -m venv /tmp/kaseki-docs-check-venv
+/tmp/kaseki-docs-check-venv/bin/python -m pip --version
+rm -rf /tmp/kaseki-docs-check-venv
 CONTAINER_SCRIPT
 
 printf '\n✓ All validation tools are available in the Docker image.\n'
