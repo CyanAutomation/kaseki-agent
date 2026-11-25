@@ -1,0 +1,11 @@
+# Local persistence and retention
+
+Soyuz remains the authoritative record for externally coordinated runs. Kaseki keeps a bounded local job index, result files and callback-delivery state only to resume execution safely and complete delivery. It must not become an independent permanent run archive.
+
+For Soyuz-owned runs, use the Queue `createdAt` timestamp as the canonical local retention anchor. Local job history, callback payloads and claim intents expire no later than 90 days after that timestamp. A successful callback does not renew the deadline. A pending terminal callback may protect the local result needed for delivery before expiry, but expiry ends that protection. Expired queued work must not be resumed. Local history still applies the existing count-based cleanup as a shorter bound; it also enforces the absolute age ceiling independently. Cache contents are not run history and are preserved by the scheduled history sweep.
+
+The service starts a local retention sweep after scheduler initialization and repeats it every six hours. The sweep uses the existing lock-scoped job index and safe directory identity checks, preserves active work and active workspaces, prunes expired terminal job/outbox/claim-intent records, and removes expired result directories and associated logs. Failures are logged with a safe reason and retried by the next sweep; cleanup does not prune the shared dependency cache. A compromised or unavailable index is treated as unknown state and cleanup fails closed.
+
+Kaseki continues to upload its existing six Soyuz artifacts through Soyuz's claim-fenced API. It sends an engine identity header and records safe retry diagnostics without raw server error text. The artifact list remains `result-summary.md`, `failure.json`, `git.diff`, `changed-files.txt`, `run-scorecard.json`, and `run-evaluation.json`. Artifact delivery status remains distinct from execution outcome.
+
+Local implementation does not establish a host rollout. Production execution hosts must use the updated Kaseki source before claiming the local 90-day behavior. See [Soyuz Phase ABC persistence and retention](https://github.com/CyanAutomation/soyuz/blob/main/docs/PHASE-ABC-PERSISTENCE-RETENTION.md) for the policy and migration boundary.

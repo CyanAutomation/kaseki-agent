@@ -47,6 +47,7 @@ describe('ServiceBootstrapper', () => {
       });
       const scheduler = {
         ready: jest.fn().mockReturnValue(schedulerReady),
+        startRetentionMaintenance: jest.fn(),
         shutdown: jest.fn().mockResolvedValue(undefined),
       };
 
@@ -76,6 +77,7 @@ describe('ServiceBootstrapper', () => {
         preFlightValidator,
         scheduler,
       });
+      expect(scheduler.startRetentionMaintenance).toHaveBeenCalledTimes(1);
       expect(factories.createJobScheduler).toHaveBeenCalledWith(
         mockConfig,
         webhookManager,
@@ -102,7 +104,7 @@ describe('ServiceBootstrapper', () => {
         }),
         createPreFlightValidator: jest.fn(() => asService({ validate: jest.fn() })),
         createJobScheduler: jest.fn(() =>
-          asService({ ready: jest.fn(), shutdown: jest.fn().mockResolvedValue(undefined) }),
+          asService({ ready: jest.fn(), startRetentionMaintenance: jest.fn(), shutdown: jest.fn().mockResolvedValue(undefined) }),
         ),
       };
 

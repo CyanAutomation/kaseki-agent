@@ -443,6 +443,7 @@ export class SoyuzAdapter {
       canonical.retryOf,
       publicationRoute,
       publicationBaseSha,
+      new Date(run.createdAt),
     );
     return { kind: 'ready', canonical, job, callbackId };
   }
@@ -1040,9 +1041,9 @@ export class SoyuzAdapter {
         logger.warn('Soyuz artifact upload failed and will be retried with the terminal callback', {
           runId: entry.externalRunId,
           name: artifact.name,
+          attempt: entry.attemptCount + 1,
           status: error instanceof SoyuzApiError ? error.status : undefined,
           code: error instanceof SoyuzApiError ? error.code : undefined,
-          error: error instanceof Error ? error.message : String(error),
         });
       }
     }

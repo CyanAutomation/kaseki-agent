@@ -174,9 +174,12 @@ export class JobScheduler {
   private persistenceManager: JobPersistenceManager;
   private storageCapacityManager: StorageCapacityManager;
   private storageMonitor?: NodeJS.Timeout;
+  private retentionMonitor?: NodeJS.Timeout;
+  private retentionCleanupInFlight?: Promise<void>;
   private readonly storageGuardEnabled: boolean;
   private initializationPromise: Promise<void>;
   private static readonly SHUTDOWN_GRACE_MS = 5000;
+  private static readonly RETENTION_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 
   constructor(
     config: KasekiApiConfig,
@@ -286,6 +289,7 @@ export class JobScheduler {
     retryOf?: string | null,
     publicationRoute?: NonNullable<Job['soyuz']>['publicationRoute'],
     publicationBaseSha?: string,
+    canonicalCreatedAt?: Date,
   ): Promise<Job> {
     await this.ready();
     const existing = await this.findSoyuzJob(externalRunId);
@@ -302,7 +306,7 @@ export class JobScheduler {
         status: 'queued',
         request,
         advisoryRoutingHints,
-        createdAt: new Date(),
+        createdAt: canonicalCreatedAt ?? new Date(),
         resultDir: this.persistenceManager.getResultDir(instanceId),
         webhookConfig: request.webhookConfig,
         correlationId,
@@ -2063,6 +2067,11 @@ export class JobScheduler {
     await this.initializationPromise;
   }
 
+  /** Start the periodic local-history expiry sweep after service bootstrap. */
+  startRetentionMaintenance(): void {
+    this.startRetentionMonitor();
+  }
+
   private async initializeFromPersistence(): Promise<void> {
     await this.loadPersistedJobs();
     // A controller restart must re-check Soyuz's canonical state before it
@@ -2181,6 +2190,43 @@ export class JobScheduler {
     this.unrefTimer(this.storageMonitor);
   }
 
+  private startRetentionMonitor(): void {
+    if (this.retentionMonitor) return;
+    const sweep = () => {
+      if (this.isShuttingDown || this.retentionCleanupInFlight) return;
+      this.retentionCleanupInFlight = this.cleanupExpiredLocalHistory()
+        .catch((error) => {
+          this.logger.warn('Local retention sweep failed; persisted history was preserved', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        })
+        .finally(() => { this.retentionCleanupInFlight = undefined; });
+    };
+    sweep();
+    this.retentionMonitor = setInterval(sweep, JobScheduler.RETENTION_SWEEP_INTERVAL_MS);
+    this.unrefTimer(this.retentionMonitor);
+  }
+
+  private async cleanupExpiredLocalHistory(): Promise<void> {
+    await this.persistenceManager.pruneExpiredHistory();
+    const result = await cleanupOldRuns(
+      this.config.resultsDir,
+      this.config.hostCacheDir ?? '/agents/kaseki-cache',
+      Number.MAX_SAFE_INTEGER,
+      false,
+      {
+        logDir: this.config.resultsDir,
+        activeRunsDir: this.config.runsDir ?? '/agents/kaseki-runs',
+        preserveCache: true,
+      },
+    );
+    this.logger.event('local_retention_sweep_completed', {
+      expiredRunDirectoriesDeleted: result.deletedCount,
+      expiredRunLogsDeleted: result.deletedLogCount,
+      freedBytes: result.freedBytes,
+    });
+  }
+
   private async cleanupForStorage(pruneCache: boolean): Promise<{ freedBytes: number }> {
     const retention = await cleanupOldRuns(
       this.config.resultsDir,
@@ -2233,6 +2279,10 @@ export class JobScheduler {
     if (this.storageMonitor) {
       clearInterval(this.storageMonitor);
       this.storageMonitor = undefined;
+    }
+    if (this.retentionMonitor) {
+      clearInterval(this.retentionMonitor);
+      this.retentionMonitor = undefined;
     }
 
     for (const jobId of this.running) {

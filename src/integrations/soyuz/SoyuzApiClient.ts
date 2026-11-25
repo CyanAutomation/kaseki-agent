@@ -56,6 +56,7 @@ export class SoyuzApiClient {
           'content-length': String(artifact.body.byteLength),
           'x-artifact-name': artifact.name,
           'x-artifact-kind': artifact.kind,
+          'x-soyuz-engine-id': 'kaseki-agent',
           'x-soyuz-worker-id': workerId,
           'x-soyuz-claim-callback-id': claimCallbackId,
         },

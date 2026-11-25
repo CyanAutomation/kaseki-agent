@@ -74,7 +74,7 @@ describe('JobPersistenceManager', () => {
           repoUrl: 'https://github.com/test/repo',
           ref: 'main',
         },
-        createdAt: '2026-05-11T12:00:00Z',
+        createdAt: new Date().toISOString(),
         startedAt: '2026-05-11T12:01:00Z',
         completedAt: '2026-05-11T12:05:00Z',
         resultDir: manager.getResultDir('kaseki-1'),
@@ -103,7 +103,7 @@ describe('JobPersistenceManager', () => {
           repoUrl: 'https://github.com/test/repo',
           ref: 'main',
         },
-        createdAt: '2026-05-11T12:00:00Z',
+        createdAt: new Date().toISOString(),
         startedAt: '2026-05-11T12:01:00Z',
         resultDir: manager.getResultDir('kaseki-1'),
         correlationId: 'corr-1',
@@ -129,7 +129,7 @@ describe('JobPersistenceManager', () => {
           repoUrl: 'https://github.com/test/repo',
           ref: 'main',
         },
-        createdAt: '2026-05-11T12:00:00Z',
+        createdAt: new Date().toISOString(),
         resultDir: manager.getResultDir('kaseki-1'),
         correlationId: 'corr-1',
         requestId: 'req-1',
@@ -152,7 +152,7 @@ describe('JobPersistenceManager', () => {
         id: 'kaseki-claim',
         status: 'queued',
         request: { repoUrl: 'https://github.com/test/repo', ref: 'main' },
-        createdAt: '2026-05-11T12:00:00Z',
+        createdAt: new Date().toISOString(),
         resultDir: manager.getResultDir('kaseki-claim'),
         correlationId: 'corr-claim',
         requestId: 'req-claim',
@@ -225,7 +225,7 @@ describe('JobPersistenceManager', () => {
           repoUrl: 'https://github.com/test/repo',
           ref: 'main',
         },
-        createdAt: '2026-05-11T12:00:00Z',
+        createdAt: new Date().toISOString(),
         resultDir: manager.getResultDir('kaseki-1'),
         finalized: true,
         correlationId: 'corr-1',
@@ -276,6 +276,42 @@ describe('JobPersistenceManager', () => {
       expect(result.status).toBe('loaded');
       expect(result.jobs.map(({ id }) => id)).toEqual(['kaseki-1']);
     });
+  });
+
+  test('expires terminal job history and callback payloads at the run creation deadline', async () => {
+    const createdAt = Date.parse('2026-01-01T00:00:00.000Z');
+    let now = createdAt + 89 * 24 * 60 * 60 * 1_000;
+    const retentionManager = new JobPersistenceManager(config, { now: () => now });
+    const callbackId = '22222222-2222-4222-8222-222222222222';
+    const externalRunId = '11111111-1111-4111-8111-111111111111';
+    const job: Job = {
+      id: 'kaseki-90day',
+      status: 'failed',
+      request: { repoUrl: 'https://github.com/test/repo', ref: 'main', taskPrompt: 'sensitive old prompt' },
+      createdAt: new Date(createdAt),
+      completedAt: new Date(createdAt + 1_000),
+      failureClass: 'execution_failed',
+      correlationId: '33333333-3333-4333-8333-333333333333',
+      requestId: '44444444-4444-4444-8444-444444444444',
+      soyuz: {
+        externalRunId, workerId: 'host-test-1', contractVersion: '1',
+        startedCallbackId: '55555555-5555-4555-8555-555555555555', startAuthorized: true,
+      },
+    };
+    const entry: SoyuzOutboxEntry = {
+      externalRunId, callbackId, eventType: 'failed', payload: { failureClass: 'execution_failed' },
+      attemptCount: 2, nextAttemptAt: new Date(now).toISOString(), deliveryState: 'pending',
+      createdAt: new Date(now).toISOString(),
+    };
+
+    await retentionManager.persistSoyuzTerminalCallback(job, entry);
+    expect(JSON.parse(fs.readFileSync(path.join(tempDir, '.kaseki-api-jobs.json'), 'utf-8')).soyuzOutbox).toHaveLength(1);
+
+    now = createdAt + 90 * 24 * 60 * 60 * 1_000;
+    await retentionManager.pruneExpiredHistory();
+    const expired = JSON.parse(fs.readFileSync(path.join(tempDir, '.kaseki-api-jobs.json'), 'utf-8'));
+    expect(expired.jobs).toEqual([]);
+    expect(expired.soyuzOutbox).toEqual([]);
   });
 
   test('persists terminal Soyuz callbacks across a manager restart and records confirmation', async () => {
