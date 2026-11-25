@@ -296,7 +296,6 @@ export class JobPersistenceManager {
               job.error = 'Run retention deadline passed; queued execution was not resumed.';
               job.completedAt = new Date(this.now());
               job.finalized = true;
-              delete persisted.restartClaim;
               Object.assign(persisted, this.serializeJob(job));
               indexChanged = true;
             }
@@ -397,7 +396,7 @@ export class JobPersistenceManager {
         }
       }
       const merged = this.mergePersistedJobs(current.jobs || [], [persisted]);
-      this.writePersistedJobsIndex(merged, current.soyuzOutbox ?? []);
+      this.writePersistedJobsIndex(merged, current.soyuzOutbox ?? [], current.soyuzClaimIntents ?? []);
     });
   }
 
@@ -415,7 +414,7 @@ export class JobPersistenceManager {
         }
       }
       const merged = this.mergePersistedJobs(current.jobs ?? [], [this.serializeJob(job)]);
-      this.writePersistedJobsIndex(merged, current.soyuzOutbox ?? []);
+      this.writePersistedJobsIndex(merged, current.soyuzOutbox ?? [], current.soyuzClaimIntents ?? []);
     });
   }
 
@@ -476,7 +475,7 @@ export class JobPersistenceManager {
       };
       const jobs = this.mergePersistedJobs(current.jobs ?? [], [this.serializeJob(callbackJob)]);
       const outbox = this.addOutboxEntry(current.soyuzOutbox ?? [], entry);
-      this.writePersistedJobsIndex(jobs, outbox);
+      this.writePersistedJobsIndex(jobs, outbox, current.soyuzClaimIntents ?? []);
     });
   }
 
@@ -484,7 +483,7 @@ export class JobPersistenceManager {
     await this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
       const current = this.readPersistedJobsIndex();
       const outbox = this.addOutboxEntry(current.soyuzOutbox ?? [], entry);
-      this.writePersistedJobsIndex(current.jobs ?? [], outbox);
+      this.writePersistedJobsIndex(current.jobs ?? [], outbox, current.soyuzClaimIntents ?? []);
     });
   }
 
@@ -516,7 +515,7 @@ export class JobPersistenceManager {
           deliveryLeaseExpiresAt: leaseUntil,
         };
       });
-      if (due.length > 0) this.writePersistedJobsIndex(current.jobs ?? [], claimed);
+      if (due.length > 0) this.writePersistedJobsIndex(current.jobs ?? [], claimed, current.soyuzClaimIntents ?? []);
       return claimed.filter((entry) => ids.has(entry.callbackId));
     });
   }
@@ -540,7 +539,7 @@ export class JobPersistenceManager {
           soyuz: { ...persisted.soyuz, terminalCallbackDelivered: true, terminalCallbackBlocked: false },
         };
       });
-      this.writePersistedJobsIndex(jobs, compactOutbox);
+      this.writePersistedJobsIndex(jobs, compactOutbox, current.soyuzClaimIntents ?? []);
     });
   }
 
@@ -565,7 +564,7 @@ export class JobPersistenceManager {
       const jobs = (current.jobs ?? []).map((job) => job.soyuz?.terminalCallbackId === callbackId
         ? { ...job, soyuz: { ...job.soyuz, terminalCallbackBlocked: false } }
         : job);
-      this.writePersistedJobsIndex(jobs, outbox);
+      this.writePersistedJobsIndex(jobs, outbox, current.soyuzClaimIntents ?? []);
     });
   }
 
@@ -590,7 +589,7 @@ export class JobPersistenceManager {
           soyuz: { ...job.soyuz, terminalCallbackBlocked: true, metadataUpdatedAt: now },
         }
         : job);
-      this.writePersistedJobsIndex(jobs, outbox);
+      this.writePersistedJobsIndex(jobs, outbox, current.soyuzClaimIntents ?? []);
     });
   }
 
@@ -632,7 +631,7 @@ export class JobPersistenceManager {
       const jobs = (current.jobs ?? []).map((job) => job.soyuz?.terminalCallbackId === callbackId
         ? { ...job, soyuz: { ...job.soyuz, terminalCallbackBlocked: false } }
         : job);
-      this.writePersistedJobsIndex(jobs, updatedOutbox);
+      this.writePersistedJobsIndex(jobs, updatedOutbox, current.soyuzClaimIntents ?? []);
       return true;
     });
   }
@@ -743,13 +742,10 @@ export class JobPersistenceManager {
 
   private writePersistedJobsIndex(
     jobs: PersistedJob[],
-    soyuzOutbox?: SoyuzOutboxEntry[],
-    soyuzClaimIntents?: SoyuzClaimIntent[],
+    soyuzOutbox: SoyuzOutboxEntry[],
+    soyuzClaimIntents: SoyuzClaimIntent[],
   ): void {
-    const current = this.readPersistedJobsIndex();
-    const existingOutbox = soyuzOutbox ?? current.soyuzOutbox ?? [];
-    const existingClaimIntents = soyuzClaimIntents ?? current.soyuzClaimIntents ?? [];
-    const pruned = this.pruneExpiredIndexData(jobs, existingOutbox, existingClaimIntents, this.now());
+    const pruned = this.pruneExpiredIndexData(jobs, soyuzOutbox, soyuzClaimIntents, this.now());
     const payload = {
       version: 1,
       updatedAt: new Date(this.now()).toISOString(),

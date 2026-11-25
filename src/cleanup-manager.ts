@@ -165,10 +165,13 @@ export function createCleanupPlan(
   const now = options.now ?? Date.now();
   const persistedJobs = readPersistedJobIndex(resultsDir);
   const createdAtByName = new Map(persistedJobs.map((job) => [job.id, Date.parse(job.createdAt)]));
-  const allRuns = listRuns(resultsDir).map((run) => ({
-    ...run,
-    createdAtMs: Number.isFinite(createdAtByName.get(run.name)) ? createdAtByName.get(run.name) : run.birthtime,
-  }));
+  const allRuns = listRuns(resultsDir).map((run) => {
+    const ts = createdAtByName.get(run.name);
+    return {
+      ...run,
+      createdAtMs: ts !== undefined && Number.isFinite(ts) ? ts : run.birthtime,
+    };
+  });
   const schedulerActiveRunNames = activeNamesFromJobs(persistedJobs, now);
   const protectedRunNames = new Set(schedulerActiveRunNames);
   for (const runName of options.protectedRunNames ?? []) {

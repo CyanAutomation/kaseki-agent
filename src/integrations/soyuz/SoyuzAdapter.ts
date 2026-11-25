@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createEventLogger } from '../../logger';
+import { redactLogContent } from '../../routes/log-redaction';
 import { metricsRegistry } from '../../metrics';
 import type { KasekiApiConfig } from '../../kaseki-api-config';
 import type { Job, RunRequest } from '../../kaseki-api-types';
@@ -1044,6 +1045,7 @@ export class SoyuzAdapter {
           attempt: entry.attemptCount + 1,
           status: error instanceof SoyuzApiError ? error.status : undefined,
           code: error instanceof SoyuzApiError ? error.code : undefined,
+          error: redactLogContent(error instanceof Error ? `${error.name}: ${error.message}` : String(error)).slice(0, 500),
         });
       }
     }

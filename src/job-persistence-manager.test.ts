@@ -444,6 +444,26 @@ describe('JobPersistenceManager', () => {
   });
 
   describe('persistJobs', () => {
+    test('reads the index once before writing a queued job', async () => {
+      const indexPath = path.join(tempDir, '.kaseki-api-jobs.json');
+      fs.writeFileSync(indexPath, JSON.stringify({ jobs: [], soyuzOutbox: [], soyuzClaimIntents: [] }));
+      const indexFileReader = jest.fn((filePath: string) => fs.readFileSync(filePath, 'utf-8'));
+      manager = new JobPersistenceManager(config, { indexFileReader });
+      const job: Job = {
+        id: 'kaseki-single-index-read',
+        status: 'queued',
+        request: { repoUrl: 'https://github.com/test/repo', ref: 'main' },
+        createdAt: new Date(),
+        resultDir: manager.getResultDir('kaseki-single-index-read'),
+        correlationId: 'corr-single-read',
+        requestId: 'req-single-read',
+      };
+
+      await manager.persistQueuedJob(job);
+
+      expect(indexFileReader).toHaveBeenCalledTimes(1);
+    });
+
     test('leaves a malformed index untouched without attempting replacement', async () => {
       const indexPath = path.join(tempDir, '.kaseki-api-jobs.json');
       const malformedIndex = '{"jobs": [not valid json]';
