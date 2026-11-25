@@ -1,5 +1,6 @@
 import { ReadableStream } from 'node:stream/web';
 import { SoyuzApiClient, SoyuzApiError } from './SoyuzApiClient';
+import { MAX_PUBLICATION_REQUEST_BYTES } from './publication-manifest';
 import { MAX_SOYUZ_ARTIFACT_BYTES, loadSoyuzArtifacts } from './soyuz-artifacts';
 import type { SoyuzAdapterConfig } from './config';
 
@@ -98,6 +99,65 @@ describe('Soyuz artifact upload', () => {
     const init = fetchImpl.mock.calls[0][1];
     expect(Buffer.from(init?.body as Uint8Array).toString()).toBe('# Complete\n');
   });
+
+  test('uploads manifests and intents with the current worker claim headers', async () => {
+    const fetchImpl = jest.fn(async () => new Response(JSON.stringify({ data: { accepted: true } }), { status: 201 }));
+    const client = new SoyuzApiClient(config, fetchImpl as typeof fetch);
+    const runId = '019a6000-0000-7000-8000-000000000002';
+    const artifactId = '019a6000-0000-7000-8000-000000000003';
+    const claimCallbackId = '66666666-6666-4666-8666-666666666666';
+    const body = Buffer.from('{"contractVersion":"1"}');
+
+    await client.uploadPublicationManifest(runId, 'host-1', claimCallbackId, artifactId, body);
+    await client.registerPublicationIntent(runId, 'host-1', claimCallbackId, {
+      artifactId,
+      artifactDigest: `sha256:${'a'.repeat(64)}`,
+      mode: 'pr',
+      title: 'Kaseki updates demo-app',
+      body: `Automated changes from Soyuz run ${runId}.`,
+    });
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(1,
+      `https://soyuz.example.test/v1/worker/runs/${runId}/publication-manifests/${artifactId}`,
+      expect.objectContaining({
+        method: 'PUT',
+        headers: expect.objectContaining({
+          authorization: 'Bearer worker-secret',
+          'content-type': 'application/json; charset=utf-8',
+          'content-length': String(body.byteLength),
+          'x-soyuz-worker-id': 'host-1',
+          'x-soyuz-claim-callback-id': claimCallbackId,
+        }),
+      }));
+    expect(fetchImpl).toHaveBeenNthCalledWith(2,
+      `https://soyuz.example.test/v1/worker/runs/${runId}/publication-intents`,
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          authorization: 'Bearer worker-secret',
+          'x-soyuz-worker-id': 'host-1',
+          'x-soyuz-claim-callback-id': claimCallbackId,
+        }),
+        body: expect.stringContaining('"artifactId":"019a6000-0000-7000-8000-000000000003"'),
+      }));
+  });
+
+  test.each([Buffer.alloc(0), Buffer.alloc(MAX_PUBLICATION_REQUEST_BYTES + 1)])(
+    'rejects a publication manifest outside the supported upload size',
+    async (body) => {
+      const fetchImpl = jest.fn(async () => new Response(JSON.stringify({ data: { accepted: true } }), { status: 201 }));
+      const client = new SoyuzApiClient(config, fetchImpl as typeof fetch);
+
+      await expect(client.uploadPublicationManifest(
+        '019a6000-0000-7000-8000-000000000002',
+        'host-1',
+        '66666666-6666-4666-8666-666666666666',
+        '019a6000-0000-7000-8000-000000000003',
+        body,
+      )).rejects.toThrow('between 1 and 9437184 bytes');
+      expect(fetchImpl).not.toHaveBeenCalled();
+    },
+  );
 
   test('respects the local upload bound and skips artifacts already acknowledged by Soyuz', async () => {
     expect(MAX_SOYUZ_ARTIFACT_BYTES).toBeLessThan(25_000_000);

@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/scripts/lib/reject-retired-decision-settings.sh"
 KASEKI_VALIDATION_TIMEOUT_SECONDS="${KASEKI_VALIDATION_TIMEOUT_SECONDS:-$(validation_default_timeout_seconds)}"
 ROOT="${KASEKI_ROOT:-/agents}"
-RUNS="$ROOT/kaseki-runs"
+RUNS="${KASEKI_RUNS_DIR:-$ROOT/kaseki-runs}"
 RESULTS="$ROOT/kaseki-results"
 CACHE="${KASEKI_CACHE_DIR:-$ROOT/kaseki-cache}"
 if [ -n "${KASEKI_IMAGE:-}" ]; then
@@ -35,6 +35,7 @@ KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-pr}"
 KASEKI_AGENT_GUARDRAILS="${KASEKI_AGENT_GUARDRAILS:-1}"
 KASEKI_RESTORE_DISALLOWED_CHANGES="${KASEKI_RESTORE_DISALLOWED_CHANGES:-1}"
 KASEKI_TASK_MODE="${KASEKI_TASK_MODE:-patch}"
+KASEKI_BASE_SHA="${KASEKI_BASE_SHA:-}"
 if [ "$KASEKI_TASK_MODE" = "inspect" ]; then
   KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-1}"
 else
@@ -347,6 +348,7 @@ OPTIONS:
 ENVIRONMENT VARIABLES (override defaults, CLI args take precedence):
   REPO_URL                          Repository URL
   GIT_REF                           Git reference
+  KASEKI_BASE_SHA                   Optional pinned base commit for trusted publication runs
   LLM_GATEWAY_URL                   LLM Gateway endpoint URL (e.g., https://llmgateway.local.xyz/v1; Pi appends /responses)
   LLM_GATEWAY_API_KEY               LLM Gateway API key (or use LLM_GATEWAY_API_KEY_FILE)
   LLM_GATEWAY_API_KEY_FILE          Path to file containing API key
@@ -712,6 +714,11 @@ fi
 # Use parsed CLI arguments, falling back to env vars if not provided via CLI
 REPO_URL="$PARSED_REPO_URL"
 GIT_REF="$PARSED_GIT_REF"
+
+if [ -n "$KASEKI_BASE_SHA" ] && [[ ! "$KASEKI_BASE_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+  printf '%s\n' "KASEKI_BASE_SHA must be a lower-case Git SHA-1." >&2
+  exit 2
+fi
 
 mkdir -p "$RUNS" "$RESULTS" "$CACHE"
 
@@ -1267,6 +1274,7 @@ docker_args=(
   -e KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS="${KASEKI_BUILD_VALIDATION_TIMEOUT_SECONDS:-900}"
   -e REPO_URL="$WORKER_REPO_URL"
   -e GIT_REF="$GIT_REF"
+  -e KASEKI_BASE_SHA="$KASEKI_BASE_SHA"
   -e KASEKI_PROVIDER="$KASEKI_PROVIDER"
   -e KASEKI_MODEL="$KASEKI_MODEL"
   -e KASEKI_AGENT_TIMEOUT_SECONDS="$KASEKI_AGENT_TIMEOUT_SECONDS"

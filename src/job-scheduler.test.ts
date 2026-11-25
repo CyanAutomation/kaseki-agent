@@ -1049,6 +1049,67 @@ describe('JobScheduler timeout lifecycle', () => {
     }
   });
 
+  test('keeps GitHub write credentials and the Soyuz worker token out of Kirisame execution containers', async () => {
+    const names = [
+      'GITHUB_APP_ID', 'GITHUB_APP_CLIENT_ID', 'GITHUB_APP_PRIVATE_KEY',
+      'GITHUB_APP_ID_FILE', 'GITHUB_APP_CLIENT_ID_FILE', 'GITHUB_APP_PRIVATE_KEY_FILE',
+      'SOYUZ_SUBMISSION_API_TOKEN', 'SOYUZ_SUBMISSION_API_TOKEN_FILE',
+      'SOYUZ_WORKER_API_TOKEN', 'SOYUZ_WORKER_API_TOKEN_FILE',
+      'CLOUDFLARE_QUEUE_API_TOKEN', 'CLOUDFLARE_QUEUE_API_TOKEN_FILE',
+      'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_API_TOKEN_FILE',
+      'WORKER_API_TOKEN', 'WORKER_API_TOKEN_FILE',
+    ];
+    const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+    for (const name of names) process.env[name] = `host-only-${name}`;
+    const resultsDir = createResultsDir();
+    const scheduler = new JobScheduler({
+      port: 3000,
+      apiKeys: [],
+      resultsDir,
+      defaultTaskMode: 'patch',
+      maxDiffBytes: 400000,
+      agentTimeoutSeconds: 30,
+      logLevel: 'info',
+    }, createMockWebhookManager());
+    const job = {
+      id: 'kirisame-run',
+      status: 'queued',
+      request: { repoUrl: 'https://github.com/org/repo', ref: 'main', taskMode: 'patch', publishMode: 'pr' },
+      createdAt: new Date(),
+      correlationId: '22222222-2222-4222-8222-222222222222',
+      requestId: '33333333-3333-4333-8333-333333333333',
+      soyuz: {
+        externalRunId: '019a6000-0000-7000-8000-000000000002',
+        workerId: 'host-1',
+        contractVersion: '1',
+        startedCallbackId: '44444444-4444-4444-8444-444444444444',
+        startAuthorized: true,
+        publicationRoute: 'kirisame',
+        publicationBaseSha: '64e2e8195e5a4bc0a1a201603481e9d88cc4e37d',
+      },
+    } as Job;
+
+    try {
+      await scheduler.ready();
+      const buildEnvironment = (scheduler as unknown as {
+        buildProcessEnvironment: (job: Job, timeoutSeconds: number) => NodeJS.ProcessEnv;
+      }).buildProcessEnvironment;
+      const env = buildEnvironment.call(scheduler, job, 30);
+
+      expect(env.KASEKI_PUBLISH_MODE).toBe('none');
+      expect(env.KASEKI_KEEP_WORKSPACE).toBe('1');
+      expect(env.KASEKI_BASE_SHA).toBe('64e2e8195e5a4bc0a1a201603481e9d88cc4e37d');
+      expect(env.GITHUB_APP_ENABLED).toBe('0');
+      for (const name of names) expect(env[name]).toBeUndefined();
+    } finally {
+      for (const name of names) {
+        if (previous[name] === undefined) delete process.env[name];
+        else process.env[name] = previous[name];
+      }
+      await scheduler.shutdown();
+    }
+  });
+
   test('preserves explicitly configured GitHub App secret file paths for controller runs', async () => {
     process.env.GITHUB_APP_ID_FILE = '/configured/github_app_id';
     process.env.GITHUB_APP_CLIENT_ID_FILE = '/configured/github_app_client_id';

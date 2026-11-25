@@ -4083,6 +4083,23 @@ run_direct_clone() {
   git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" "$KASEKI_REPO_STAGING_DIR"
 }
 
+pin_publication_base() {
+  local base_sha="${KASEKI_BASE_SHA-}"
+  [ -n "$base_sha" ] || return 0
+  if [[ ! "$base_sha" =~ ^[a-f0-9]{40}$ ]]; then
+    emit_error_event "publication_base_invalid" "KASEKI_BASE_SHA must be a lower-case Git SHA-1" "abort_clone"
+    return 1
+  fi
+  if ! git -C "$KASEKI_REPO_STAGING_DIR" cat-file -e "$base_sha^{commit}" 2>/dev/null; then
+    git -C "$KASEKI_REPO_STAGING_DIR" fetch --no-tags --depth 1 origin "$base_sha" || {
+      emit_error_event "publication_base_unavailable" "Pinned publication base commit could not be fetched" "abort_clone"
+      return 1
+    }
+  fi
+  git -C "$KASEKI_REPO_STAGING_DIR" checkout --force --detach "$base_sha" || return 1
+  [ "$(git -C "$KASEKI_REPO_STAGING_DIR" rev-parse HEAD)" = "$base_sha" ]
+}
+
 repo_replacement_is_safe() {
   if [ "$KASEKI_REPO_SESSION_ACTIVE" = "1" ]; then
     emit_error_event "workspace_replacement_blocked" "Refusing to replace $KASEKI_REPO_DIR after the repository session has started" "abort_clone"
@@ -4112,6 +4129,7 @@ reset_repo_staging() {
 }
 
 promote_staged_repository() {
+  pin_publication_base || return 1
   repo_replacement_is_safe || return 1
   if [ ! -d "$KASEKI_REPO_STAGING_DIR/.git" ]; then
     emit_error_event "workspace_staging_invalid" "Staged repository is missing .git: $KASEKI_REPO_STAGING_DIR" "abort_clone"

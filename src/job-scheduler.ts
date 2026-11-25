@@ -284,6 +284,8 @@ export class JobScheduler {
     advisoryRoutingHints?: TaskAdmissionRoutingHints,
     origin?: NonNullable<Job['soyuz']>['origin'],
     retryOf?: string | null,
+    publicationRoute?: NonNullable<Job['soyuz']>['publicationRoute'],
+    publicationBaseSha?: string,
   ): Promise<Job> {
     await this.ready();
     const existing = await this.findSoyuzJob(externalRunId);
@@ -312,6 +314,8 @@ export class JobScheduler {
           workerId,
           contractVersion: '1',
           ...(claimCallbackId ? { claimCallbackId } : {}),
+          ...(publicationRoute ? { publicationRoute } : {}),
+          ...(publicationBaseSha ? { publicationBaseSha } : {}),
           startedCallbackId: randomUUID(),
           startAuthorized: false,
           metadataUpdatedAt: new Date().toISOString(),
@@ -845,7 +849,7 @@ export class JobScheduler {
       // directory so the API does not accidentally reserve the final result path.
       KASEKI_LOG_DIR: this.config.resultsDir,
       KASEKI_TASK_MODE: job.request.taskMode || this.config.defaultTaskMode,
-      KASEKI_PUBLISH_MODE: job.request.publishMode || 'pr',
+      KASEKI_PUBLISH_MODE: job.soyuz?.publicationRoute === 'kirisame' ? 'none' : job.request.publishMode || 'pr',
       KASEKI_MAX_DIFF_BYTES: String(
         Math.min(job.request.maxDiffBytes ?? this.config.maxDiffBytes ?? 400000, this.config.maxDiffBytes ?? 400000),
       ),
@@ -871,6 +875,7 @@ export class JobScheduler {
     }
 
     this.populateGitHubAppEnv(env);
+    this.configurePublicationEnvironment(env, job);
     this.setupLlmProvider(env);
     this.setupStartupCheckMode(job, env);
     this.setupValidationCommands(job, env);
@@ -880,6 +885,25 @@ export class JobScheduler {
     this.setupTaskPrompt(job, env);
 
     return env;
+  }
+
+  private configurePublicationEnvironment(env: NodeJS.ProcessEnv, job: Job): void {
+    if (job.soyuz?.publicationRoute !== 'kirisame') {
+      delete env.KASEKI_BASE_SHA;
+      return;
+    }
+    env.KASEKI_KEEP_WORKSPACE = '1';
+    env.KASEKI_BASE_SHA = job.soyuz.publicationBaseSha ?? '';
+    env.GITHUB_APP_ENABLED = '0';
+    for (const name of [
+      'GITHUB_APP_ID', 'GITHUB_APP_CLIENT_ID', 'GITHUB_APP_PRIVATE_KEY',
+      'GITHUB_APP_ID_FILE', 'GITHUB_APP_CLIENT_ID_FILE', 'GITHUB_APP_PRIVATE_KEY_FILE',
+      'SOYUZ_SUBMISSION_API_TOKEN', 'SOYUZ_SUBMISSION_API_TOKEN_FILE',
+      'SOYUZ_WORKER_API_TOKEN', 'SOYUZ_WORKER_API_TOKEN_FILE',
+      'CLOUDFLARE_QUEUE_API_TOKEN', 'CLOUDFLARE_QUEUE_API_TOKEN_FILE',
+      'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_API_TOKEN_FILE',
+      'WORKER_API_TOKEN', 'WORKER_API_TOKEN_FILE',
+    ]) delete env[name];
   }
 
   /**
