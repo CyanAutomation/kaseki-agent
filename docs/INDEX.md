@@ -25,6 +25,7 @@ disposition, see the [documentation inventory](internal/MARKDOWN_INVENTORY.md).
 | [Distributed setup](DISTRIBUTED_SETUP.md) | Multi-host and Kubernetes designs |
 | [CI/CD integration](CI_CD_INTEGRATION.md) | Use Kaseki from automation pipelines |
 | [Soyuz integration](SOYUZ_INTEGRATION.md) | Configure and operate the Soyuz queue adapter |
+| [Persistence and retention](PERSISTENCE-RETENTION.md) | Understand local execution artifact cleanup and the 90-day Soyuz retention boundary |
 | [Sentry integration](SENTRY_INTEGRATION.md) | Configure error tracking |
 | [Troubleshooting](TROUBLESHOOTING.md) | Diagnose setup and run failures |
 | [Exit codes](EXIT_CODES.md) | Interpret process and quality-gate results |

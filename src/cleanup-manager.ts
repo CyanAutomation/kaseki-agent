@@ -28,6 +28,8 @@ export interface RunInfo {
   birthtime: number;
   dev: number;
   ino: number;
+  /** Canonical Soyuz createdAt when known; otherwise the directory birth time. */
+  createdAtMs?: number;
 }
 
 export interface RunLogInfo {
@@ -56,6 +58,10 @@ export interface CleanupOptions {
   /** Preserve every cache entry; used by automatic storage recovery to protect dependency caches. */
   preserveCache?: boolean;
   afterPlanning?: () => void | Promise<void>;
+  /** Absolute local-result age ceiling, independent of count-based pruning. */
+  maxAgeMs?: number;
+  /** Deterministic cleanup clock for tests and maintenance tools. */
+  now?: number;
 }
 
 export interface AuxiliaryCleanupResult {
@@ -64,6 +70,7 @@ export interface AuxiliaryCleanupResult {
 }
 
 const STALE_STAGING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_LOCAL_RUN_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1_000;
 const STAGING_DIRECTORY_PATTERN = /^\.staging-(?:run|result)-(kaseki-\d+)-[A-Za-z0-9_-]+$/;
 
 const JOBS_INDEX_NAME = '.kaseki-api-jobs.json';
@@ -100,15 +107,15 @@ function schedulerIndexChanged(before: fs.Stats, after: fs.Stats): boolean {
   );
 }
 
-/** Read the scheduler-owned durable index and return every queued or running run ID. */
-export function getActiveRunNames(resultsDir: string): Set<string> {
+/** Read and validate one stable scheduler-index snapshot for cleanup planning. */
+function readPersistedJobIndex(resultsDir: string): PersistedJob[] {
   const indexPath = path.join(resultsDir, JOBS_INDEX_NAME);
   let descriptor: number;
 
   try {
     descriptor = fs.openSync(indexPath, 'r');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return new Set();
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw new SchedulerStateUnavailableError(indexPath, error);
   }
 
@@ -124,9 +131,7 @@ export function getActiveRunNames(resultsDir: string): Set<string> {
       throw new Error('scheduler index changed while it was being read');
     }
 
-    const parsed = JSON.parse(content) as {
-      jobs?: Array<{ id?: unknown; status?: unknown }>;
-    };
+    const parsed = JSON.parse(content) as { jobs?: unknown };
     if (parsed === null || typeof parsed !== 'object') {
       throw new Error('scheduler index must be an object');
     }
@@ -134,15 +139,7 @@ export function getActiveRunNames(resultsDir: string): Set<string> {
       throw new Error('jobs must be an array');
     }
 
-    return new Set(
-      (parsed.jobs ?? [])
-        .filter((job) => job.status === 'queued' || job.status === 'running')
-        .map((job) => job.id)
-        .filter(
-          (id): id is string =>
-            typeof id === 'string' && /^kaseki-\d+$/.test(id),
-        ),
-    );
+    return (parsed.jobs ?? []) as PersistedJob[];
   } catch (error) {
     throw new SchedulerStateUnavailableError(indexPath, error);
   } finally {
@@ -154,14 +151,28 @@ export function getActiveRunNames(resultsDir: string): Set<string> {
   }
 }
 
+/** Include live jobs and terminal runs whose callback still needs local artifacts. */
+export function getActiveRunNames(resultsDir: string, now = Date.now()): Set<string> {
+  return activeNamesFromJobs(readPersistedJobIndex(resultsDir), now);
+}
+
 /** Build a retention plan after excluding active scheduler jobs. */
 export function createCleanupPlan(
   resultsDir: string,
   retentionCount: number,
-  options: Pick<CleanupOptions, 'logDir' | 'activeRunsDir' | 'protectedRunNames'> = {},
+  options: Pick<CleanupOptions, 'logDir' | 'activeRunsDir' | 'protectedRunNames' | 'maxAgeMs' | 'now'> = {},
 ): CleanupPlan {
-  const allRuns = listRuns(resultsDir);
-  const schedulerActiveRunNames = getActiveRunNames(resultsDir);
+  const now = options.now ?? Date.now();
+  const persistedJobs = readPersistedJobIndex(resultsDir);
+  const createdAtByName = new Map(persistedJobs.map((job) => [job.id, Date.parse(job.createdAt)]));
+  const allRuns = listRuns(resultsDir).map((run) => {
+    const ts = createdAtByName.get(run.name);
+    return {
+      ...run,
+      createdAtMs: ts !== undefined && Number.isFinite(ts) ? ts : run.birthtime,
+    };
+  });
+  const schedulerActiveRunNames = activeNamesFromJobs(persistedJobs, now);
   const protectedRunNames = new Set(schedulerActiveRunNames);
   for (const runName of options.protectedRunNames ?? []) {
     if (/^kaseki-\d+$/.test(runName)) protectedRunNames.add(runName);
@@ -170,7 +181,13 @@ export function createCleanupPlan(
     protectedRunNames.add(runName);
   }
   const terminalRuns = allRuns.filter((run) => !protectedRunNames.has(run.name));
-  const runsToDelete = terminalRuns.slice(retentionCount);
+  const maxAgeMs = options.maxAgeMs ?? DEFAULT_LOCAL_RUN_MAX_AGE_MS;
+  const expiredByAge = terminalRuns.filter((run) => now - (run.createdAtMs ?? run.birthtime) >= maxAgeMs);
+  const expiredNames = new Set(expiredByAge.map((run) => run.name));
+  const runsToDelete = [
+    ...expiredByAge,
+    ...terminalRuns.filter((run) => !expiredNames.has(run.name)).slice(retentionCount),
+  ];
   const deletedRunNames = new Set(runsToDelete.map((run) => run.name));
   // Calculate this after active-run exclusion so their cache associations survive.
   const retainedRunNames = new Set(
@@ -688,10 +705,17 @@ function getDirectorySizeWithoutFollowingLinks(directory: string): number {
   return total;
 }
 
-function activeNamesFromJobs(jobs: readonly PersistedJob[]): Set<string> {
+function activeNamesFromJobs(jobs: readonly PersistedJob[], now = Date.now()): Set<string> {
   return new Set(
     jobs
-      .filter((job) => job.status === 'queued' || job.status === 'running')
+      .filter((job) => {
+        if (job.status === 'queued' || job.status === 'running') return true;
+        const createdAt = Date.parse(job.createdAt);
+        return job.soyuz?.terminalCallbackDelivered === false
+          && typeof job.soyuz.externalRunId === 'string'
+          && Number.isFinite(createdAt)
+          && now - createdAt < DEFAULT_LOCAL_RUN_MAX_AGE_MS;
+      })
       .map((job) => job.id)
       .filter((id) => /^kaseki-\d+$/.test(id)),
   );

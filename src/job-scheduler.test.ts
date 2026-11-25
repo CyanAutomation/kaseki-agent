@@ -311,6 +311,13 @@ describe('JobScheduler single-run behavior', () => {
         'host-test-1',
         '22222222-2222-4222-8222-222222222222',
         '33333333-3333-4333-8333-333333333333',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        new Date('2026-11-25T10:00:00.000Z'),
       );
       const duplicate = await scheduler.submitSoyuzJob(
         request,
@@ -328,6 +335,7 @@ describe('JobScheduler single-run behavior', () => {
       )).rejects.toMatchObject({ code: 'RUN_ALREADY_ACTIVE' });
 
       expect(duplicate.id).toBe(first.id);
+      expect(first.createdAt.toISOString()).toBe('2026-11-25T10:00:00.000Z');
       expect(first.soyuz?.startAuthorized).toBe(false);
       expect(scheduler.isRunSlotAvailable()).toBe(false);
       expect(scheduler.isJobExecuting(first.id)).toBe(false);
@@ -3072,7 +3080,7 @@ describe('JobScheduler persistence merge safety', () => {
               repoUrl: 'https://github.com/org/repo',
               ref: 'main',
             },
-            createdAt: '2026-05-04T00:00:00.000Z',
+            createdAt: new Date().toISOString(),
             resultDir: path.join(resultsDir, 'kaseki-1'),
             correlationId: 'claim-correlation',
             requestId: 'claim-request',
@@ -3304,25 +3312,25 @@ describe('JobScheduler persistence merge safety', () => {
             resultsDir,
             'kaseki-1',
             'completed',
-            '2026-05-01T00:00:00.000Z',
+            new Date(Date.now() - 3 * 24 * 60 * 60 * 1_000).toISOString(),
           ),
           persistedRuntimeJob(
             resultsDir,
             'kaseki-2',
             'failed',
-            '2026-05-02T00:00:00.000Z',
+            new Date(Date.now() - 2 * 24 * 60 * 60 * 1_000).toISOString(),
           ),
           persistedRuntimeJob(
             resultsDir,
             'kaseki-3',
             'completed',
-            '2026-05-03T00:00:00.000Z',
+            new Date(Date.now() - 24 * 60 * 60 * 1_000).toISOString(),
           ),
           persistedRuntimeJob(
             resultsDir,
             'kaseki-4',
             'queued',
-            '2026-05-04T00:00:00.000Z',
+            new Date().toISOString(),
           ),
         ],
       }),

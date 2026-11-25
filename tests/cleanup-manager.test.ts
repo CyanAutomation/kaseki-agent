@@ -98,6 +98,37 @@ describe('cleanup-manager', () => {
   });
 
   describe('cleanupOldRuns()', () => {
+    it('uses a persisted timestamp only when it is a finite number', () => {
+      const runPath = path.join(resultsDir, 'kaseki-1');
+      fs.mkdirSync(runPath);
+      const fallbackMtime = Date.parse('2026-11-01T00:00:00.000Z');
+      fs.utimesSync(runPath, fallbackMtime / 1_000, fallbackMtime / 1_000);
+      fs.writeFileSync(path.join(resultsDir, '.kaseki-api-jobs.json'), JSON.stringify({
+        jobs: [{ id: 'kaseki-1', status: 'completed', createdAt: 'not-a-timestamp' }],
+      }));
+
+      const plan = createCleanupPlan(resultsDir, Number.MAX_SAFE_INTEGER);
+
+      expect(plan.allRuns[0].createdAtMs).toBe(plan.allRuns[0].birthtime);
+    });
+
+    it('protects an unexpired terminal callback and expires it at the canonical 90-day deadline', () => {
+      const now = Date.now();
+      fs.mkdirSync(path.join(resultsDir, 'kaseki-1'));
+      fs.mkdirSync(path.join(resultsDir, 'kaseki-2'));
+      fs.writeFileSync(path.join(resultsDir, '.kaseki-api-jobs.json'), JSON.stringify({
+        jobs: [
+          { id: 'kaseki-1', status: 'completed', createdAt: new Date(now - 89 * 24 * 60 * 60 * 1_000).toISOString(), soyuz: { externalRunId: 'run-1', terminalCallbackDelivered: false } },
+          { id: 'kaseki-2', status: 'completed', createdAt: new Date(now - 90 * 24 * 60 * 60 * 1_000).toISOString(), soyuz: { externalRunId: 'run-2', terminalCallbackDelivered: false } },
+        ],
+      }));
+
+      const plan = createCleanupPlan(resultsDir, Number.MAX_SAFE_INTEGER, { now });
+
+      expect(plan.activeRunNames).toEqual(new Set(['kaseki-1']));
+      expect(plan.runsToDelete.map((run) => run.name)).toEqual(['kaseki-2']);
+    });
+
     it('keeps the most recent N runs', async () => {
       // Create 5 runs
       const now = Date.now() / 1000; // Convert to seconds

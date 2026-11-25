@@ -226,6 +226,7 @@ function createFetch(state: ReturnType<typeof runState>, options: {
   failFirstRunRead?: boolean;
   failFirstArtifactUpload?: boolean;
   rejectArtifactUploadReport?: boolean;
+  artifactUploadErrorMessage?: string;
   rejectTerminalCallback?: boolean;
   failTerminalCallback?: boolean;
 } = {}, runValue: unknown = queuedRun) {
@@ -263,7 +264,7 @@ function createFetch(state: ReturnType<typeof runState>, options: {
     const action = parsed.pathname.split('/').pop();
     if (method === 'PUT' && parsed.pathname.includes('/artifacts/')) {
       if (options.failFirstArtifactUpload && calls.filter((call) => call.method === 'PUT').length === 1) {
-        return jsonResponse({ error: { code: 'ARTIFACT_STORE_FAILED', message: 'simulated upload failure' } }, 503);
+        return jsonResponse({ error: { code: 'ARTIFACT_STORE_FAILED', message: options.artifactUploadErrorMessage ?? 'simulated upload failure' } }, 503);
       }
       return jsonResponse({ data: { id: action } }, 201);
     }
@@ -874,6 +875,7 @@ describe('Soyuz adapter handoff', () => {
 
   test('uploads bounded allowlisted artifacts and retries them before reporting terminal status', async () => {
     const resultDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kaseki-soyuz-terminal-'));
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
     try {
       await fs.writeFile(path.join(resultDir, 'result-summary.md'), '# Finished\n');
       await fs.writeFile(path.join(resultDir, 'git.diff'), 'diff --git a/a b/a\n');
@@ -886,7 +888,10 @@ describe('Soyuz adapter handoff', () => {
       state.status = 'running';
       state.workerId = 'host-a';
       state.claimCallbackId = '66666666-6666-4666-8666-666666666666';
-      const { fetchImpl, calls } = createFetch(state, { failFirstArtifactUpload: true });
+      const { fetchImpl, calls } = createFetch(state, {
+        failFirstArtifactUpload: true,
+        artifactUploadErrorMessage: 'storage token=ghp_ABCDEFGHIJKLMNOPQRSTUVWX rejected',
+      });
       const { scheduler, jobs } = createScheduler('host-a');
       jobs.push({
         id: 'kaseki-terminal',
@@ -946,8 +951,14 @@ describe('Soyuz adapter handoff', () => {
         failedCount: 0,
         skippedCount: 0,
       });
+      const uploadWarning = logSpy.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as { message?: string; detail?: Record<string, unknown> })
+        .find((entry) => entry.message === 'Soyuz artifact upload failed and will be retried with the terminal callback');
+      expect(uploadWarning?.detail?.error).toContain('storage token=[redacted] rejected');
+      expect(uploadWarning?.detail?.error).not.toContain('ghp_ABCDEFGHIJKLMNOPQRSTUVWX');
       expect(state.status).toBe('completed');
     } finally {
+      logSpy.mockRestore();
       await fs.rm(resultDir, { recursive: true, force: true });
     }
   });

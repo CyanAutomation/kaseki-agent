@@ -142,6 +142,7 @@ export async function bootstrapServices(
       run: () => scheduler.shutdown(),
     });
     await scheduler.ready();
+    scheduler.startRetentionMaintenance();
     const schedulerDuration = performance.now() - schedulerStartTime;
     componentTimings.push({ name: 'JobScheduler', durationMs: schedulerDuration });
     logger.info(`JobScheduler initialized (${schedulerDuration.toFixed(1)}ms)`);

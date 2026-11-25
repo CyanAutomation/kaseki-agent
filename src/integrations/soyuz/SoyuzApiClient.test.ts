@@ -91,6 +91,7 @@ describe('Soyuz artifact upload', () => {
           'content-type': artifact.contentType,
           'x-artifact-kind': 'report',
           'x-artifact-name': 'result-summary.md',
+          'x-soyuz-engine-id': 'kaseki-agent',
           'x-soyuz-worker-id': 'host-1',
           'x-soyuz-claim-callback-id': '66666666-6666-4666-8666-666666666666',
         }),
