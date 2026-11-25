@@ -47,4 +47,35 @@ if prepare_repo_staging; then
 fi
 [ -f "$KASEKI_REPO_DIR/sentinel" ] || fail "session repository was modified"
 
+SOURCE_REPO="$TMP_DIR/source"
+ORIGIN="$TMP_DIR/origin.git"
+PINNED_WORKSPACE="$TMP_DIR/pinned-workspace"
+git init --bare -q "$ORIGIN"
+git init -q "$SOURCE_REPO"
+git -C "$SOURCE_REPO" config user.name "Kaseki Test"
+git -C "$SOURCE_REPO" config user.email "kaseki-test@example.invalid"
+printf 'base\n' > "$SOURCE_REPO/file.txt"
+git -C "$SOURCE_REPO" add file.txt
+git -C "$SOURCE_REPO" commit -qm "base"
+BASE_SHA="$(git -C "$SOURCE_REPO" rev-parse HEAD)"
+git -C "$SOURCE_REPO" branch -M main
+git -C "$SOURCE_REPO" remote add origin "$ORIGIN"
+git -C "$SOURCE_REPO" push -q origin main
+printf 'new tip\n' > "$SOURCE_REPO/file.txt"
+git -C "$SOURCE_REPO" commit -qam "new tip"
+git -C "$SOURCE_REPO" push -q origin main
+
+KASEKI_REPO_DIR="$PINNED_WORKSPACE/repo"
+KASEKI_REPO_SESSION_MARKER="$PINNED_WORKSPACE/.kaseki-repo-session"
+KASEKI_REPO_SESSION_ACTIVE=0
+KASEKI_REPO_STAGING_DIR=""
+KASEKI_BASE_SHA="$BASE_SHA"
+REPO_URL="$ORIGIN"
+GIT_REF="main"
+prepare_repo_staging || fail "could not prepare the pinned workspace"
+run_direct_clone || fail "could not clone the current branch tip"
+promote_staged_repository || fail "could not promote the clone at the pinned base"
+ACTUAL_SHA="$(git -C "$KASEKI_REPO_DIR" rev-parse HEAD)"
+[ "$ACTUAL_SHA" = "$BASE_SHA" ] || fail "workspace was not checked out at KASEKI_BASE_SHA"
+
 printf 'PASS: %s\n' "$TEST_NAME"

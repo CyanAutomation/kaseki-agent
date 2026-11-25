@@ -383,7 +383,7 @@ describe('Soyuz adapter handoff', () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'kaseki-soyuz-kirisame-route-'));
     const repoPath = path.join(root, 'repo');
     const runsDir = path.join(root, 'runs');
-    const run = structuredClone(queuedRun);
+    const run = globalThis.structuredClone(queuedRun);
     run.request.repoUrl = 'https://github.com/CyanAutomation/somatic.git';
     run.request.publishMode = 'pr';
     const state = runState();
@@ -452,7 +452,7 @@ describe('Soyuz adapter handoff', () => {
   });
 
   test('keeps non-allowlisted destinations on the legacy publisher route', async () => {
-    const run = structuredClone(queuedRun);
+    const run = globalThis.structuredClone(queuedRun);
     run.request.publishMode = 'pr';
     const { fetchImpl } = createFetch(runState(), {}, run);
     const { scheduler, jobs } = createScheduler('host-a');
@@ -607,6 +607,53 @@ describe('Soyuz adapter handoff', () => {
       entry.callbackId,
       'Failed callback failed validation',
       [{ path: 'failureMessage', message: 'Invalid length' }],
+    );
+    expect(scheduler.retrySoyuzCallback).not.toHaveBeenCalled();
+  });
+
+  test('blocks a completed publication callback when host admission evidence is invalid', async () => {
+    const entry: SoyuzOutboxEntry = {
+      externalRunId: RUN_ID,
+      callbackId: '77777777-7777-4777-8777-777777777777',
+      eventType: 'completed',
+      payload: { completedAt: new Date().toISOString() },
+      attemptCount: 1,
+      nextAttemptAt: new Date(0).toISOString(),
+      deliveryState: 'delivering',
+      createdAt: new Date(0).toISOString(),
+    };
+    const { fetchImpl } = createFetch(runState());
+    const { scheduler, jobs } = createScheduler('host-a');
+    scheduler.claimSoyuzCallbacks.mockResolvedValue([entry]);
+    scheduler.isRunSlotAvailable.mockReturnValue(false);
+    jobs.push({
+      id: 'kirisame-invalid-publication',
+      status: 'completed',
+      exitCode: 0,
+      request: { ...queuedRun.request },
+      createdAt: new Date(),
+      completedAt: new Date(),
+      resultDir: '/tmp/kaseki-invalid-publication',
+      correlationId: CORRELATION_ID,
+      requestId: REQUEST_ID,
+      soyuz: {
+        externalRunId: RUN_ID,
+        workerId: 'host-a',
+        contractVersion: '1',
+        claimCallbackId: '88888888-8888-4888-8888-888888888888',
+        startedCallbackId: '44444444-4444-4444-8444-444444444444',
+        startAuthorized: true,
+        publicationRoute: 'kirisame',
+      },
+    });
+
+    await makeAdapter('host-a', scheduler, fetchImpl).runOnce();
+
+    const reason = 'Kirisame publication requires a successful host execution and pinned base commit.';
+    expect(scheduler.blockSoyuzCallback).toHaveBeenCalledWith(
+      entry.callbackId,
+      reason,
+      [{ path: 'publication', message: reason }],
     );
     expect(scheduler.retrySoyuzCallback).not.toHaveBeenCalled();
   });

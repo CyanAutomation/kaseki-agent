@@ -913,8 +913,10 @@ export class SoyuzAdapter {
         await this.scheduler.completeSoyuzCallback(entry.callbackId);
       } catch (error) {
         const errorText = error instanceof Error ? error.message : String(error);
-        if (isPermanentSoyuzCallbackError(error)) {
-          const details = error.details;
+        if (error instanceof SoyuzAdmissionRejectedError || isPermanentSoyuzCallbackError(error)) {
+          const details = error instanceof SoyuzApiError
+            ? error.details
+            : [{ path: 'publication', message: error.safeReason }];
           await this.scheduler.blockSoyuzCallback(entry.callbackId, errorText, details);
           metricsRegistry.incSoyuzCounter('callbacks_blocked');
           logger.error('Soyuz callback delivery is blocked after a permanent response', {
@@ -922,8 +924,8 @@ export class SoyuzAdapter {
             callbackId: entry.callbackId,
             eventType: entry.eventType,
             attemptCount: entry.attemptCount,
-            status: error.status,
-            code: error.code,
+            status: error instanceof SoyuzApiError ? error.status : undefined,
+            code: error instanceof SoyuzApiError ? error.code : 'PUBLICATION_ADMISSION_REJECTED',
             error: errorText,
             ...(details !== undefined ? { details } : {}),
           });

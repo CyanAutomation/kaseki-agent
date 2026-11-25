@@ -1098,6 +1098,7 @@ describe('JobScheduler timeout lifecycle', () => {
 
       expect(env.KASEKI_PUBLISH_MODE).toBe('none');
       expect(env.KASEKI_KEEP_WORKSPACE).toBe('1');
+      expect(env.KASEKI_BASE_SHA).toBe('64e2e8195e5a4bc0a1a201603481e9d88cc4e37d');
       expect(env.GITHUB_APP_ENABLED).toBe('0');
       for (const name of names) expect(env[name]).toBeUndefined();
     } finally {

@@ -888,8 +888,12 @@ export class JobScheduler {
   }
 
   private configurePublicationEnvironment(env: NodeJS.ProcessEnv, job: Job): void {
-    if (job.soyuz?.publicationRoute !== 'kirisame') return;
+    if (job.soyuz?.publicationRoute !== 'kirisame') {
+      delete env.KASEKI_BASE_SHA;
+      return;
+    }
     env.KASEKI_KEEP_WORKSPACE = '1';
+    env.KASEKI_BASE_SHA = job.soyuz.publicationBaseSha ?? '';
     env.GITHUB_APP_ENABLED = '0';
     for (const name of [
       'GITHUB_APP_ID', 'GITHUB_APP_CLIENT_ID', 'GITHUB_APP_PRIVATE_KEY',
@@ -1262,9 +1266,7 @@ export class JobScheduler {
         '--controller',
         'run',
         job.request.repoUrl,
-        job.soyuz?.publicationRoute === 'kirisame' && job.soyuz.publicationBaseSha
-          ? job.soyuz.publicationBaseSha
-          : job.request.ref,
+        job.request.ref,
         job.id,
       ],
       {

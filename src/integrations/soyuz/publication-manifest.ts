@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { lstat, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { TextDecoder, TextEncoder } from 'node:util';
+import { lstat, link, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const MAX_PUBLICATION_FILES = 100;
@@ -98,7 +99,9 @@ export async function loadOrCreatePublicationManifest(
   if (stored) return validateSavedManifest(stored, input);
   const built = await buildPublicationManifest(input);
   if (await persistNewManifest(filePath, resultDir, built)) return built;
-  return loadOrCreatePublicationManifest(resultDir, input);
+  const winner = await readSavedManifest(filePath);
+  if (!winner) throw new Error('A concurrent publication manifest write could not be recovered');
+  return validateSavedManifest(winner, input);
 }
 
 async function readSavedManifest(filePath: string): Promise<BuiltPublicationManifest | undefined> {
@@ -140,10 +143,11 @@ async function persistNewManifest(filePath: string, resultDir: string, built: Bu
   const tempPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
   await writeFile(tempPath, JSON.stringify({ ...built, body: undefined }), { flag: 'wx', mode: 0o600 });
   try {
-    await rename(tempPath, filePath);
+    await link(tempPath, filePath);
+    await unlink(tempPath).catch(() => undefined);
     return true;
   } catch (error) {
-    await import('node:fs/promises').then(({ unlink }) => unlink(tempPath).catch(() => undefined));
+    await unlink(tempPath).catch(() => undefined);
     if (isAlreadyExists(error)) return false;
     throw error;
   }
@@ -193,7 +197,7 @@ async function loadPublicationContent(repoPath: string, filePath: string): Promi
   const bytes = await readFile(absolutePath);
   if (bytes.byteLength > MAX_PUBLICATION_FILE_BYTES) throw new Error(`Publication file exceeds the 1 MiB limit: ${filePath}`);
   const text = decoder.decode(bytes);
-  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text)) {
+  if (hasUnsupportedTextControls(text)) {
     throw new Error(`Publication file contains unsupported control characters: ${filePath}`);
   }
   if (text.startsWith('version https://git-lfs.github.com/spec/v1\n')) {
@@ -300,12 +304,13 @@ export function parseGitHubRepository(repositoryUrl: string): { owner: string; n
 }
 
 export async function resolveGitHubBaseSha(repositoryUrl: string, baseRef: string): Promise<string> {
-  parseGitHubRepository(repositoryUrl);
+  const repository = parseGitHubRepository(repositoryUrl);
   if (!isSafeBaseRef(baseRef)) throw new Error('Publication base ref is invalid');
+  const canonicalRepositoryUrl = 'https://github.com/' + repository.owner + '/' + repository.name + '.git';
   const ref = `refs/heads/${baseRef}`;
   const stdout = await new Promise<string>((resolve, reject) => {
     import('node:child_process').then(({ execFile }) => {
-      execFile('git', ['ls-remote', '--exit-code', '--heads', repositoryUrl, ref], {
+      execFile('git', ['ls-remote', '--exit-code', '--heads', canonicalRepositoryUrl, ref], {
         timeout: 15_000,
         maxBuffer: 64 * 1024,
         encoding: 'utf8',
@@ -440,7 +445,7 @@ function validateContent(value: unknown): PublicationContent {
     throw new Error('Publication file content digest or length is invalid');
   }
   const text = decoder.decode(bytes);
-  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text)) throw new Error('Publication text has unsupported controls');
+  if (hasUnsupportedTextControls(text)) throw new Error('Publication text has unsupported controls');
   if (text.startsWith('version https://git-lfs.github.com/spec/v1\n')) throw new Error('Git LFS pointer content is unsupported');
   return value as PublicationContent;
 }
@@ -448,6 +453,14 @@ function validateContent(value: unknown): PublicationContent {
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Publication manifest object is invalid');
   return value as Record<string, unknown>;
+}
+
+function hasUnsupportedTextControls(value: string): boolean {
+  return [...value].some((character) => {
+    const codePoint = character.codePointAt(0)!;
+    return codePoint <= 0x08 || codePoint === 0x0b || codePoint === 0x0c
+      || (codePoint >= 0x0e && codePoint <= 0x1f) || codePoint === 0x7f;
+  });
 }
 
 function exactKeys(value: Record<string, unknown>, expected: string[]): void {

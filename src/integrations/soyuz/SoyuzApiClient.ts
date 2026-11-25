@@ -74,7 +74,7 @@ export class SoyuzApiClient {
     body: Buffer,
   ): Promise<void> {
     if (body.byteLength < 1 || body.byteLength > MAX_PUBLICATION_REQUEST_BYTES) {
-      throw new Error('Kirisame publication manifest exceeds the 9 MiB upload limit');
+      throw new Error('Kirisame publication manifest upload size must be between 1 and ' + MAX_PUBLICATION_REQUEST_BYTES + ' bytes');
     }
     const response = await this.fetchImpl(
       `${this.config.apiUrl}/v1/worker/runs/${encodeURIComponent(runId)}/publication-manifests/${encodeURIComponent(artifactId)}`,

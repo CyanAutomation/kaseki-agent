@@ -1,5 +1,6 @@
 import { ReadableStream } from 'node:stream/web';
 import { SoyuzApiClient, SoyuzApiError } from './SoyuzApiClient';
+import { MAX_PUBLICATION_REQUEST_BYTES } from './publication-manifest';
 import { MAX_SOYUZ_ARTIFACT_BYTES, loadSoyuzArtifacts } from './soyuz-artifacts';
 import type { SoyuzAdapterConfig } from './config';
 
@@ -140,6 +141,23 @@ describe('Soyuz artifact upload', () => {
         body: expect.stringContaining('"artifactId":"019a6000-0000-7000-8000-000000000003"'),
       }));
   });
+
+  test.each([Buffer.alloc(0), Buffer.alloc(MAX_PUBLICATION_REQUEST_BYTES + 1)])(
+    'rejects a publication manifest outside the supported upload size',
+    async (body) => {
+      const fetchImpl = jest.fn(async () => new Response(JSON.stringify({ data: { accepted: true } }), { status: 201 }));
+      const client = new SoyuzApiClient(config, fetchImpl as typeof fetch);
+
+      await expect(client.uploadPublicationManifest(
+        '019a6000-0000-7000-8000-000000000002',
+        'host-1',
+        '66666666-6666-4666-8666-666666666666',
+        '019a6000-0000-7000-8000-000000000003',
+        body,
+      )).rejects.toThrow('between 1 and 9437184 bytes');
+      expect(fetchImpl).not.toHaveBeenCalled();
+    },
+  );
 
   test('respects the local upload bound and skips artifacts already acknowledged by Soyuz', async () => {
     expect(MAX_SOYUZ_ARTIFACT_BYTES).toBeLessThan(25_000_000);

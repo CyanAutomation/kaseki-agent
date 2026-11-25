@@ -10,7 +10,6 @@ import {
 } from './publication-manifest';
 
 const RUN_ID = '019a6000-0000-7000-8000-000000000002';
-const BASE_SHA = '64e2e8195e5a4bc0a1a201603481e9d88cc4e37d';
 const REPO_URL = 'https://github.com/CyanAutomation/demo-app.git';
 
 describe('Kirisame v1 publication manifest contract', () => {
@@ -55,7 +54,7 @@ describe('Kirisame v1 publication manifest contract', () => {
     const fixture = JSON.parse(fsSync.readFileSync(path.join(process.cwd(), 'tests/fixtures/kirisame-publication-request-v1.json'), 'utf8')) as {
       value: { artifact: Record<string, any> };
     };
-    const artifact = structuredClone(fixture.value.artifact);
+    const artifact = globalThis.structuredClone(fixture.value.artifact);
     mutate(artifact);
 
     const resultDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kaseki-kirisame-invalid-contract-'));
@@ -129,6 +128,39 @@ describe('trusted workspace manifest production', () => {
     expect(retry.artifact.artifactId).toBe(initial.artifact.artifactId);
     expect(retry.artifactDigest).toBe(initial.artifactDigest);
     expect(retry.body).toEqual(initial.body);
+  });
+
+  test('keeps one immutable manifest when concurrent callbacks race to create it', async () => {
+    const baseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoPath, encoding: 'utf8' }).trim();
+    await fs.writeFile(path.join(repoPath, 'new.txt'), 'Concurrent callback\n');
+    const input = { repoPath, runId: RUN_ID, repositoryUrl: REPO_URL, baseRef: 'main', baseSha };
+
+    const [first, second] = await Promise.all([
+      loadOrCreatePublicationManifest(resultDir, input),
+      loadOrCreatePublicationManifest(resultDir, input),
+    ]);
+
+    expect(second.artifactDigest).toBe(first.artifactDigest);
+    expect(JSON.parse(await fs.readFile(path.join(resultDir, 'soyuz-publication-manifest-v1.json'), 'utf8')).artifactDigest)
+      .toBe(first.artifactDigest);
+  });
+
+  test('accepts valid Unicode format characters in publication text', async () => {
+    const baseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoPath, encoding: 'utf8' }).trim();
+    const familyEmoji = 'Family 👩‍👩‍👧‍👦\n';
+    await fs.writeFile(path.join(repoPath, 'new.txt'), familyEmoji);
+
+    const manifest = await loadOrCreatePublicationManifest(resultDir, {
+      repoPath,
+      runId: RUN_ID,
+      repositoryUrl: REPO_URL,
+      baseRef: 'main',
+      baseSha,
+    });
+    const newFile = manifest.artifact.files.find((file) => file.path === 'new.txt');
+    expect(newFile?.operation).toBe('add');
+    if (newFile?.operation !== 'add') throw new Error('Expected the Unicode test file in the manifest');
+    expect(Buffer.from(newFile.content.data, 'base64').toString('utf8')).toBe(familyEmoji);
   });
 
   test('normalizes HTTPS and SSH GitHub URLs and rejects credentials or other hosts', () => {
