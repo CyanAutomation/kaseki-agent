@@ -758,6 +758,10 @@ export interface Job {
     startedCallbackId: string;
     startAuthorized: boolean;
     startNeedsCanonicalRecheck?: boolean;
+    /** Durable per-run publication route; retries must not cross publisher boundaries. */
+    publicationRoute?: 'legacy' | 'kirisame';
+    /** Exact base commit used to prepare a Kirisame publication manifest. */
+    publicationBaseSha?: string;
     cancellationRequestedAt?: string;
     lastReportedStage?: string;
     lastHeartbeatAt?: string;

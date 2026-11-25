@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/scripts/lib/reject-retired-decision-settings.sh"
 KASEKI_VALIDATION_TIMEOUT_SECONDS="${KASEKI_VALIDATION_TIMEOUT_SECONDS:-$(validation_default_timeout_seconds)}"
 ROOT="${KASEKI_ROOT:-/agents}"
-RUNS="$ROOT/kaseki-runs"
+RUNS="${KASEKI_RUNS_DIR:-$ROOT/kaseki-runs}"
 RESULTS="$ROOT/kaseki-results"
 CACHE="${KASEKI_CACHE_DIR:-$ROOT/kaseki-cache}"
 if [ -n "${KASEKI_IMAGE:-}" ]; then

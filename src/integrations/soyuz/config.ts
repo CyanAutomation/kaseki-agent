@@ -1,4 +1,5 @@
 import { readHostSecret } from '../../secrets/host-secrets-reader';
+import path from 'node:path';
 
 export interface SoyuzAdapterConfig {
   enabled: boolean;
@@ -8,6 +9,9 @@ export interface SoyuzAdapterConfig {
   submissionMode?: 'optional' | 'required';
   /** Scoped Kaseki credential used only for create, retry, and cancel requests. */
   submissionApiToken?: string;
+  /** Opt-in host-side claim-bound manifest production; disabled by default. */
+  kirisamePublicationProducerEnabled?: boolean;
+  runsDir?: string;
   apiUrl: string;
   workerApiToken: string;
   accountId: string;
@@ -37,6 +41,10 @@ function positiveInt(env: NodeJS.ProcessEnv, name: string, fallback: number, min
 
 export function loadSoyuzAdapterConfig(env: NodeJS.ProcessEnv = process.env): SoyuzAdapterConfig {
   const enabled = booleanSetting(env, 'SOYUZ_ENABLED');
+  const kirisamePublicationProducerEnabled = booleanSetting(env, 'SOYUZ_KIRISAME_PRODUCER_ENABLED');
+  if (kirisamePublicationProducerEnabled && !enabled) {
+    throw new Error('SOYUZ_KIRISAME_PRODUCER_ENABLED=true requires SOYUZ_ENABLED=true');
+  }
   const submissionEnabled = booleanSetting(env, 'SOYUZ_SUBMISSION_ENABLED');
   const submissionMode = submissionModeSetting(env);
   if (submissionMode === 'required' && !submissionEnabled) {
@@ -45,7 +53,7 @@ export function loadSoyuzAdapterConfig(env: NodeJS.ProcessEnv = process.env): So
   const submissionApiToken = submissionEnabled
     ? readSecret(env, 'SOYUZ_SUBMISSION_API_TOKEN', 'soyuz_submission_api_token')
     : '';
-  if (!enabled && !submissionEnabled) return disabledConfig(timingSettings(env), submissionMode);
+  if (!enabled && !submissionEnabled) return disabledConfig(timingSettings(env), submissionMode, env);
 
   const apiUrl = validatedApiUrl(env.SOYUZ_API_URL);
   validateSubmissionToken(submissionApiToken, submissionEnabled);
@@ -57,6 +65,8 @@ export function loadSoyuzAdapterConfig(env: NodeJS.ProcessEnv = process.env): So
     enabled,
     submissionEnabled,
     submissionMode,
+    kirisamePublicationProducerEnabled,
+    runsDir: env.KASEKI_RUNS_DIR?.trim() || path.join(env.KASEKI_ROOT?.trim() || '/agents', 'kaseki-runs'),
     ...credentials,
     apiUrl,
     ...timingSettings(env),
@@ -92,11 +102,17 @@ function timingSettings(env: NodeJS.ProcessEnv): SoyuzTimingSettings {
   };
 }
 
-function disabledConfig(timings: SoyuzTimingSettings, submissionMode: SoyuzAdapterConfig['submissionMode']): SoyuzAdapterConfig {
+function disabledConfig(
+  timings: SoyuzTimingSettings,
+  submissionMode: SoyuzAdapterConfig['submissionMode'],
+  env: NodeJS.ProcessEnv,
+): SoyuzAdapterConfig {
   return {
     enabled: false,
     submissionEnabled: false,
     submissionMode,
+    kirisamePublicationProducerEnabled: false,
+    runsDir: env.KASEKI_RUNS_DIR?.trim() || path.join(env.KASEKI_ROOT?.trim() || '/agents', 'kaseki-runs'),
     submissionApiToken: '',
     apiUrl: '',
     workerApiToken: '',

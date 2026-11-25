@@ -7,6 +7,8 @@ describe('loadSoyuzAdapterConfig', () => {
       enabled: false,
       submissionEnabled: false,
       submissionMode: 'optional',
+      kirisamePublicationProducerEnabled: false,
+      runsDir: '/agents/kaseki-runs',
       submissionApiToken: '',
       apiUrl: '',
       workerApiToken: '',
@@ -48,6 +50,12 @@ describe('loadSoyuzAdapterConfig', () => {
   it('requires submission routing to be enabled in required mode', () => {
     expect(() => loadSoyuzAdapterConfig({ SOYUZ_SUBMISSION_MODE: 'required' }))
       .toThrow('SOYUZ_SUBMISSION_MODE=required requires SOYUZ_SUBMISSION_ENABLED=true');
+  });
+
+  it('keeps the claim-bound Kirisame producer opt-in and requires Soyuz queue consumption', () => {
+    expect(loadSoyuzAdapterConfig({}).kirisamePublicationProducerEnabled).toBe(false);
+    expect(() => loadSoyuzAdapterConfig({ SOYUZ_KIRISAME_PRODUCER_ENABLED: 'true' }))
+      .toThrow('SOYUZ_KIRISAME_PRODUCER_ENABLED=true requires SOYUZ_ENABLED=true');
   });
 
   it('loads required mode when submission credentials are configured', () => {

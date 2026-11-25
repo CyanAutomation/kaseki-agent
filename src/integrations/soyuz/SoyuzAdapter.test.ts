@@ -1,4 +1,5 @@
 import * as fs from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { KasekiApiConfig } from '../../kaseki-api-config';
@@ -15,7 +16,7 @@ jest.mock('../../kaseki-api-health-checks', () => ({
   isTemplateDoctorTimeout: jest.fn(() => false),
 }));
 
-const RUN_ID = '11111111-1111-4111-8111-111111111111';
+const RUN_ID = '019a6000-0000-7000-8000-000000000002';
 const CORRELATION_ID = '22222222-2222-4222-8222-222222222222';
 const REQUEST_ID = '33333333-3333-4333-8333-333333333333';
 
@@ -67,11 +68,23 @@ function createScheduler(_workerId: string) {
     getReadiness: jest.fn(() => ({ ready: true, reasons: [] })),
     listSoyuzJobs: jest.fn(async () => [...jobs]),
     findSoyuzJob: jest.fn(async (externalRunId: string) => jobs.find((job) => job.soyuz?.externalRunId === externalRunId)),
-    submitSoyuzJob: jest.fn(async (_request: unknown, externalRunId: string, owner: string, correlationId: string, requestId: string, claimCallbackId?: string) => {
+    submitSoyuzJob: jest.fn(async (
+      request: unknown,
+      externalRunId: string,
+      owner: string,
+      correlationId: string,
+      requestId: string,
+      claimCallbackId?: string,
+      _advisoryRoutingHints?: unknown,
+      _origin?: NonNullable<Job['soyuz']>['origin'],
+      _retryOf?: string | null,
+      publicationRoute?: NonNullable<Job['soyuz']>['publicationRoute'],
+      publicationBaseSha?: string,
+    ) => {
       const job: Job = {
         id: `kaseki-${jobs.length + 1}`,
         status: 'queued',
-        request: queuedRun.request,
+        request: request as Job['request'],
         createdAt: new Date(),
         correlationId,
         requestId,
@@ -80,6 +93,8 @@ function createScheduler(_workerId: string) {
           workerId: owner,
           contractVersion: '1',
           ...(claimCallbackId ? { claimCallbackId } : {}),
+          ...(publicationRoute ? { publicationRoute } : {}),
+          ...(publicationBaseSha ? { publicationBaseSha } : {}),
           startedCallbackId: '44444444-4444-4444-8444-444444444444',
           startAuthorized: false,
           metadataUpdatedAt: new Date().toISOString(),
@@ -213,7 +228,7 @@ function createFetch(state: ReturnType<typeof runState>, options: {
   rejectArtifactUploadReport?: boolean;
   rejectTerminalCallback?: boolean;
   failTerminalCallback?: boolean;
-} = {}) {
+} = {}, runValue: unknown = queuedRun) {
   let pulls = 0;
   let acks = 0;
   let claims = 0;
@@ -232,7 +247,7 @@ function createFetch(state: ReturnType<typeof runState>, options: {
         success: true,
         errors: [],
         result: {
-          messages: [{ body: queuedRun, id: 'ephemeral-message-id', timestamp_ms: Date.now(), attempts: pulls, lease_id: `lease-${pulls}` }],
+          messages: [{ body: runValue, id: 'ephemeral-message-id', timestamp_ms: Date.now(), attempts: pulls, lease_id: `lease-${pulls}` }],
         },
       });
     }
@@ -251,6 +266,12 @@ function createFetch(state: ReturnType<typeof runState>, options: {
         return jsonResponse({ error: { code: 'ARTIFACT_STORE_FAILED', message: 'simulated upload failure' } }, 503);
       }
       return jsonResponse({ data: { id: action } }, 201);
+    }
+    if (method === 'PUT' && parsed.pathname.includes('/publication-manifests/')) {
+      return jsonResponse({ data: { accepted: true } }, 201);
+    }
+    if (method === 'POST' && action === 'publication-intents') {
+      return jsonResponse({ data: { publicationId: '019a6000-0000-7000-8000-000000000004' } }, 201);
     }
     if (method === 'POST' && ['completed', 'failed', 'cancelled'].includes(action ?? '')) {
       if (options.failTerminalCallback) {
@@ -356,6 +377,101 @@ describe('Soyuz adapter handoff', () => {
   test('ignores the retired queue batch-size setting', () => {
     const config = loadSoyuzAdapterConfig({ SOYUZ_ENABLED: 'false', SOYUZ_BATCH_SIZE: '100' });
     expect(config).not.toHaveProperty('batchSize');
+  });
+
+  test('pins a Kirisame route once, uploads claim-bound evidence, and registers intent before completion', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'kaseki-soyuz-kirisame-route-'));
+    const repoPath = path.join(root, 'repo');
+    const runsDir = path.join(root, 'runs');
+    const run = structuredClone(queuedRun);
+    run.request.repoUrl = 'https://github.com/CyanAutomation/somatic.git';
+    run.request.publishMode = 'pr';
+    const state = runState();
+    const { fetchImpl, calls } = createFetch(state, {}, run);
+    const { scheduler, jobs } = createScheduler('host-a');
+    const config = adapterConfig('host-a');
+    config.kirisamePublicationProducerEnabled = true;
+    config.runsDir = runsDir;
+
+    try {
+      await fs.mkdir(path.join(repoPath, 'docs'), { recursive: true });
+      await fs.writeFile(path.join(repoPath, 'docs/guide.md'), 'Old guide\n');
+      await fs.writeFile(path.join(repoPath, 'obsolete.txt'), 'Remove me\n');
+      execFileSync('git', ['init', '-q'], { cwd: repoPath });
+      execFileSync('git', ['config', 'user.name', 'Kaseki Test'], { cwd: repoPath });
+      execFileSync('git', ['config', 'user.email', 'kaseki-test@example.invalid'], { cwd: repoPath });
+      execFileSync('git', ['add', '--all'], { cwd: repoPath });
+      execFileSync('git', ['commit', '-qm', 'base'], { cwd: repoPath });
+      const baseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoPath, encoding: 'utf8' }).trim();
+      await fs.writeFile(path.join(repoPath, 'docs/guide.md'), 'Updated guide\n');
+      await fs.rm(path.join(repoPath, 'obsolete.txt'));
+      await fs.writeFile(path.join(repoPath, 'new.txt'), 'New file\n');
+
+      const adapter = new SoyuzAdapter(
+        { soyuz: config } as KasekiApiConfig,
+        scheduler as never,
+        undefined,
+        config,
+        fetchImpl,
+        async () => baseSha,
+      );
+      await adapter.runOnce();
+      expect(jobs[0]?.soyuz).toMatchObject({ publicationRoute: 'kirisame', publicationBaseSha: baseSha });
+
+      const job = jobs[0]!;
+      const workspacePath = path.join(runsDir, job.id, 'workspace/repo');
+      await fs.mkdir(path.dirname(workspacePath), { recursive: true });
+      await fs.cp(repoPath, workspacePath, { recursive: true });
+      job.resultDir = path.join(root, 'results', job.id);
+      job.status = 'completed';
+      job.exitCode = 0;
+      job.completedAt = new Date('2026-11-24T12:00:00.000Z');
+
+      await adapter.runOnce();
+      await adapter.runOnce();
+
+      const manifestIndex = calls.findIndex((call) => call.url.includes('/publication-manifests/'));
+      const evidenceIndex = calls.findIndex((call) => call.url.endsWith('/events') && call.body?.type === 'validation.completed');
+      const intentIndex = calls.findIndex((call) => call.url.endsWith('/publication-intents'));
+      const completionIndex = calls.findIndex((call) => call.url.endsWith('/completed'));
+      expect(manifestIndex).toBeGreaterThanOrEqual(0);
+      expect(evidenceIndex).toBeGreaterThan(manifestIndex);
+      expect(intentIndex).toBeGreaterThan(evidenceIndex);
+      expect(completionIndex).toBeGreaterThan(intentIndex);
+      expect(calls[evidenceIndex]?.body?.claimCallbackId).toBe(jobs[0]?.soyuz?.claimCallbackId);
+      expect((calls[evidenceIndex]?.body?.payload as Record<string, unknown>)?.publicationEvidence).toMatchObject({
+        outcome: 'passed',
+        runId: RUN_ID,
+        baseSha,
+      });
+      expect(calls[completionIndex]?.body).not.toHaveProperty('publishedUrl');
+      expect(state.status).toBe('completed');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('keeps non-allowlisted destinations on the legacy publisher route', async () => {
+    const run = structuredClone(queuedRun);
+    run.request.publishMode = 'pr';
+    const { fetchImpl } = createFetch(runState(), {}, run);
+    const { scheduler, jobs } = createScheduler('host-a');
+    const config = adapterConfig('host-a');
+    config.kirisamePublicationProducerEnabled = true;
+    const resolveBaseSha = jest.fn(async () => '64e2e8195e5a4bc0a1a201603481e9d88cc4e37d');
+    const adapter = new SoyuzAdapter(
+      { soyuz: config } as KasekiApiConfig,
+      scheduler as never,
+      undefined,
+      config,
+      fetchImpl,
+      resolveBaseSha,
+    );
+
+    await adapter.runOnce();
+
+    expect(jobs[0]?.soyuz?.publicationRoute).toBe('legacy');
+    expect(resolveBaseSha).not.toHaveBeenCalled();
   });
 
   test('does not pull another message while this agent has an active run', async () => {

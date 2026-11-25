@@ -383,6 +383,7 @@ The external Soyuz adapter is opt-in. See [Soyuz host integration](SOYUZ_INTEGRA
 | Variable | Default | Type | Purpose |
 | ---------- | --------- | ------ | --------- |
 | `SOYUZ_ENABLED` | `false` | boolean | Enable the host-side Soyuz Queue consumer. |
+| `SOYUZ_KIRISAME_PRODUCER_ENABLED` | `false` | boolean | Opt in to the claim-bound v1 producer for patch PRs to `CyanAutomation/somatic` on `main`; requires `SOYUZ_ENABLED=true`. Other destinations stay on the legacy route. The trusted host pins the base SHA and suppresses direct publishing for that run. |
 | `SOYUZ_SUBMISSION_ENABLED` | `false` | boolean | Route Kaseki API create/retry/cancel calls through Soyuz; requires the scoped submission token and worker status-read token. |
 | `SOYUZ_SUBMISSION_MODE` | `optional` | enum | `optional` preserves opt-in routing; `required` requires submission routing and prevents normal API create/retry requests from using the local scheduler. `/api/v1/runs/local` remains explicit local submission. |
 | `SOYUZ_API_URL` | — | URL | Soyuz API base URL; required when submission routing or Queue consumption is enabled. |

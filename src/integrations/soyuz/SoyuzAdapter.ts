@@ -12,6 +12,7 @@ import { CloudflareQueueConsumer } from './CloudflareQueueConsumer';
 import { decodeQueueMessageBody, parseSoyuzQueuedRun, type CloudflarePulledMessage, type SoyuzQueuedRun, type SoyuzWorkerRun } from './contracts';
 import { SoyuzApiClient, SoyuzApiError } from './SoyuzApiClient';
 import { loadSoyuzArtifacts, loadSoyuzFailureMessage, loadSoyuzTerminalOutcome } from './soyuz-artifacts';
+import { loadOrCreatePublicationManifest, parseGitHubRepository, resolveGitHubBaseSha } from './publication-manifest';
 
 class SoyuzAdmissionRejectedError extends Error {
   constructor(readonly safeReason: string) {
@@ -35,6 +36,7 @@ export class SoyuzAdapter {
   private readonly api: SoyuzApiClient;
   private readonly queue: CloudflareQueueConsumer;
   private readonly taskAdmissionEvaluator: TaskAdmissionEvaluator;
+  private readonly baseShaResolver: (repositoryUrl: string, baseRef: string) => Promise<string>;
   private accepting = true;
   private stopping = false;
   private loopPromise?: Promise<void>;
@@ -58,11 +60,13 @@ export class SoyuzAdapter {
     taskAdmissionEvaluator: TaskAdmissionEvaluator = evaluateTaskAdmission,
     config: SoyuzAdapterConfig = kasekiConfig.soyuz ?? loadSoyuzAdapterConfig(),
     fetchImpl: typeof fetch = fetch,
+    baseShaResolver: (repositoryUrl: string, baseRef: string) => Promise<string> = resolveGitHubBaseSha,
   ) {
     this.config = config;
     this.api = new SoyuzApiClient(config, fetchImpl);
     this.queue = new CloudflareQueueConsumer(config, fetchImpl);
     this.taskAdmissionEvaluator = taskAdmissionEvaluator;
+    this.baseShaResolver = baseShaResolver;
   }
 
   start(): void {
@@ -404,8 +408,18 @@ export class SoyuzAdapter {
     | { kind: 'handled'; result: boolean }
   > {
     let request: RunRequest;
+    let publicationRoute: NonNullable<Job['soyuz']>['publicationRoute'] = 'legacy';
+    let publicationBaseSha: string | undefined;
     try {
       request = await this.assertKasekiAdmission(run);
+      if (isKirisameProducerEligible(this.config, request)) {
+        publicationRoute = 'kirisame';
+        try {
+          publicationBaseSha = await this.baseShaResolver(request.repoUrl, request.ref);
+        } catch {
+          throw new SoyuzAdmissionRejectedError('Kaseki could not pin the GitHub base ref before execution.');
+        }
+      }
     } catch (error) {
       if (!(error instanceof SoyuzAdmissionRejectedError)) throw error;
       return { kind: 'handled', result: await this.handleAdmissionFailure(run, canonical, callbackId) };
@@ -427,6 +441,8 @@ export class SoyuzAdapter {
       undefined,
       canonical.origin,
       canonical.retryOf,
+      publicationRoute,
+      publicationBaseSha,
     );
     return { kind: 'ready', canonical, job, callbackId };
   }
@@ -826,7 +842,7 @@ export class SoyuzAdapter {
         completedAt,
         exitCode: job.exitCode ?? 143,
         reason: 'Kaseki stopped execution after cancellation was applied.',
-        ...await loadSoyuzTerminalOutcome(job.resultDir),
+        ...await this.terminalOutcomeForJob(job),
       };
     } else if (job.status === 'completed') {
       eventType = 'completed';
@@ -835,7 +851,7 @@ export class SoyuzAdapter {
         workerId: this.config.workerId,
         completedAt,
         exitCode: 0,
-        ...await loadSoyuzTerminalOutcome(job.resultDir),
+        ...await this.terminalOutcomeForJob(job),
       };
     } else {
       eventType = 'failed';
@@ -847,7 +863,7 @@ export class SoyuzAdapter {
         exitCode: job.exitCode ?? 1,
         failureClass: (job.failureClass || 'execution_failed').slice(0, 120),
         failureMessage: await loadSoyuzFailureMessage(job.resultDir, job.failureClass || 'execution_failed'),
-        ...await loadSoyuzTerminalOutcome(job.resultDir),
+        ...await this.terminalOutcomeForJob(job),
       };
     }
     const entry = this.outboxEntry(job, callbackId, eventType, payload);
@@ -858,6 +874,12 @@ export class SoyuzAdapter {
       eventType,
       callbackId,
     });
+  }
+
+  private async terminalOutcomeForJob(job: Job): Promise<Awaited<ReturnType<typeof loadSoyuzTerminalOutcome>>> {
+    const outcome = await loadSoyuzTerminalOutcome(job.resultDir);
+    if (job.soyuz?.publicationRoute === 'kirisame') delete outcome.publishedUrl;
+    return outcome;
   }
 
   private async flushCallbackOutbox(): Promise<void> {
@@ -991,6 +1013,7 @@ export class SoyuzAdapter {
   private async uploadTerminalArtifacts(entry: SoyuzOutboxEntry): Promise<NonNullable<Job['soyuz']>['artifactUploadReport'] | undefined> {
     const job = await this.scheduler.findSoyuzJob(entry.externalRunId);
     if (!job?.soyuz || !job.resultDir || !job.soyuz.claimCallbackId) return undefined;
+    await this.createPublicationIntentIfNeeded(entry, job);
     if (job.soyuz.artifactUploadReport) return job.soyuz.artifactUploadReport;
     const uploaded = new Set(job.soyuz.uploadedArtifactNames ?? []);
     const failed = new Set<string>();
@@ -1042,10 +1065,74 @@ export class SoyuzAdapter {
     return report;
   }
 
+  private async createPublicationIntentIfNeeded(entry: SoyuzOutboxEntry, job: Job): Promise<void> {
+    if (job.soyuz?.publicationRoute !== 'kirisame' || entry.eventType !== 'completed') return;
+    await this.createKirisamePublicationIntent(entry, job);
+  }
+
+  private async createKirisamePublicationIntent(entry: SoyuzOutboxEntry, job: Job): Promise<void> {
+    if (!job.soyuz?.claimCallbackId || !job.soyuz.publicationBaseSha || !job.resultDir
+      || job.status !== 'completed' || job.exitCode !== 0) {
+      throw new SoyuzAdmissionRejectedError('Kirisame publication requires a successful host execution and pinned base commit.');
+    }
+    const workspacePath = `${this.config.runsDir ?? '/agents/kaseki-runs'}/${job.id}/workspace/repo`;
+    const built = await loadOrCreatePublicationManifest(job.resultDir, {
+      repoPath: workspacePath,
+      runId: entry.externalRunId,
+      repositoryUrl: job.request.repoUrl,
+      baseRef: job.request.ref,
+      baseSha: job.soyuz.publicationBaseSha,
+    });
+    const eventId = deterministicEvidenceEventId(entry.externalRunId, job.soyuz.claimCallbackId, built.artifactDigest);
+    const evidence = {
+      evidenceVersion: '1',
+      outcome: 'passed',
+      artifactId: built.artifact.artifactId,
+      artifactDigest: built.artifactDigest,
+      runId: entry.externalRunId,
+      repository: built.artifact.repository,
+      baseRef: built.artifact.baseRef,
+      baseSha: built.artifact.baseSha,
+    };
+    await this.api.uploadPublicationManifest(
+      entry.externalRunId,
+      job.soyuz.workerId,
+      job.soyuz.claimCallbackId,
+      built.artifact.artifactId,
+      built.body,
+    );
+    const evidenceTimestamp = job.completedAt?.toISOString()
+      ?? (typeof entry.payload.completedAt === 'string' ? entry.payload.completedAt : undefined);
+    await this.api.event(entry.externalRunId, eventId, job.soyuz.workerId, 'validation.completed', {
+      claimCallbackId: job.soyuz.claimCallbackId,
+      ...(evidenceTimestamp ? { timestamp: evidenceTimestamp } : {}),
+      payload: { publicationEvidence: evidence },
+    });
+    const mode = job.request.publishMode ?? 'pr';
+    if (mode !== 'pr' && mode !== 'branch') throw new Error('Kirisame publication route has an unsupported mode');
+    const intent = {
+      artifactId: built.artifact.artifactId,
+      artifactDigest: built.artifactDigest,
+      mode,
+      ...(mode === 'pr' ? {
+        title: `Kaseki updates ${built.artifact.repository.name}`.slice(0, 200),
+        body: `Automated changes produced by Kaseki for Soyuz run ${entry.externalRunId}.`,
+      } : {}),
+    };
+    await this.api.registerPublicationIntent(
+      entry.externalRunId,
+      job.soyuz.workerId,
+      job.soyuz.claimCallbackId,
+      intent,
+    );
+  }
+
   private async assertKasekiAdmission(run: SoyuzQueuedRun): Promise<RunRequest> {
     const readiness = this.scheduler.getReadiness();
     if (!readiness.ready) throw new Error(`Kaseki host is not ready: ${readiness.reasons.join(', ')}`);
     const request: RunRequest = { ...run.request };
+    request.taskMode ??= 'patch';
+    request.publishMode ??= 'pr';
     if (request.taskMode === 'inspect') {
       request.goalCheck = {
         ...request.goalCheck,
@@ -1053,9 +1140,10 @@ export class SoyuzAdapter {
       };
     }
     const publishMode = request.publishMode ?? 'pr';
+    const useKirisameProducer = isKirisameProducerEligible(this.config, request);
     const compatibility = checkTemplatePublishModeCompatibility(publishMode);
-    if (!compatibility.ok) throw new SoyuzAdmissionRejectedError('The configured Kaseki template does not support this publish mode.');
-    if ((publishMode === 'branch' || publishMode === 'pr') && !checkGitHubAppCredentials().ok) {
+    if (!useKirisameProducer && !compatibility.ok) throw new SoyuzAdmissionRejectedError('The configured Kaseki template does not support this publish mode.');
+    if (!useKirisameProducer && (publishMode === 'branch' || publishMode === 'pr') && !checkGitHubAppCredentials().ok) {
       throw new SoyuzAdmissionRejectedError(`publishMode=${publishMode} requires configured GitHub App credentials.`);
     }
     const template = getSubmissionTemplateHealthStatus().status;
@@ -1077,6 +1165,19 @@ export class SoyuzAdapter {
         warningCount: admission.warnings?.length ?? 0,
       });
     }
+  }
+}
+
+function isKirisameProducerEligible(config: SoyuzAdapterConfig, request: RunRequest): boolean {
+  if (!config.kirisamePublicationProducerEnabled
+    || request.taskMode !== 'patch'
+    || (request.publishMode ?? 'pr') !== 'pr'
+    || request.ref !== 'main') return false;
+  try {
+    const repository = parseGitHubRepository(request.repoUrl);
+    return repository.owner === 'cyanautomation' && repository.name === 'somatic';
+  } catch {
+    return false;
   }
 }
 
@@ -1102,6 +1203,17 @@ function claimCallbackId(runId: string, workerId: string, queuedAt: string, adap
   bytes[12] = '5';
   bytes[16] = ((Number.parseInt(bytes[16], 16) & 0x3) | 0x8).toString(16);
   const value = bytes.join('');
+  return `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`;
+}
+
+function deterministicEvidenceEventId(runId: string, claimCallbackId: string, artifactDigest: string): string {
+  const bytes = createHash('sha256')
+    .update(`kaseki-publication-evidence-v1:${runId}:${claimCallbackId}:${artifactDigest}`)
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = ((bytes[6]! & 0x0f) | 0x40);
+  bytes[8] = ((bytes[8]! & 0x3f) | 0x80);
+  const value = bytes.toString('hex');
   return `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`;
 }
 
