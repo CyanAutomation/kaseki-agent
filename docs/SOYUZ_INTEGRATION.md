@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 6179)
-Total output lines: 181
-
 # Soyuz host integration
 
 This document describes Kaseki's opt-in Soyuz Queue adapter and API submission path. `SOYUZ_ENABLED=true` starts Queue consumption. `SOYUZ_SUBMISSION_ENABLED=true` routes normal Kaseki API create/retry/cancel operations through Soyuz. These can be enabled independently during rollout. `SOYUZ_SUBMISSION_MODE=required` makes missing submission configuration a startup error and prevents normal create/retry requests from using the local scheduler. The explicit `/api/v1/runs/local` outage path remains available. The current observed deployment state and Phase 2C.2 gates are recorded in the [Soyuz Phase 2C.1 readiness snapshot](https://github.com/CyanAutomation/soyuz/blob/codex/phase-2c1-publication-reliability/docs/PHASE-2C1-READINESS.md); this guide documents source behavior and configuration, not proof that a host feature flag is enabled.
@@ -56,7 +53,81 @@ Each Kaseki agent consumes at most one queue message at a time and pulls one
 message only while its run slot is free. Add independent Kaseki agents when
 the Soyuz queue needs more concurrent execution capacity.
 
-With submission routing enabled, `POST /api/v1/runs` validates the request contract, persists the caller's idempotency key and request fingerprint, then sends the same UUID as the Soyuz `Idempotency-Key` header and body field. Host readiness, template/publish compatibility, credentials, and task safety are checked by the Kaseki execution host before work starts. If that host rejects an accepted run, Kaseki records a canonical terminal admission failure. Use `POST /api/v1/validate` for synchronous preflight. On a timeout …3179 tokens truncated…ep `publishMode: none` for recovery validation. Any manual state repair or new run for work that could publish needs separate operator approval; do not force-requeue a running run.
+With submission routing enabled, `POST /api/v1/runs` validates the request contract, persists the caller's idempotency key and request fingerprint, then sends the same UUID as the Soyuz `Idempotency-Key` header and body field. Host readiness, template/publish compatibility, credentials, and task safety are checked by the Kaseki execution host before work starts. If that host rejects an accepted run, Kaseki records a canonical terminal admission failure. Use `POST /api/v1/validate` for synchronous preflight. On a timeout or uncertain 5xx response Kaseki keeps that durable intent; clients must repeat the same request with the same key. Once the remote response is recorded, the Soyuz UUID is the public `id`; Kaseki includes `localRunId` after a worker host creates its local job mapping. Existing `kaseki-N` IDs remain valid for local logs, artifacts, and diagnostics.
+
+`POST /api/v1/runs/local` is the explicit direct-submit path. It always submits to this Kaseki host's scheduler, bypasses Soyuz routing, and remains available when the Soyuz service is unreachable. It applies the local validation and safety gates and keeps a separate local idempotency record. Kaseki does not switch to this endpoint automatically. After an uncertain Soyuz timeout or 5xx response, inspect Soyuz's canonical state before submitting a local copy because the local and Soyuz backends cannot deduplicate each other's acceptance.
+
+When `SOYUZ_SUBMISSION_MODE=required`, `POST /api/v1/runs` returns `503` rather than scheduling locally if its Soyuz submission client is absent. Retrying a local-only historical run returns `409`; resubmit it through Soyuz or explicitly create a direct local run through `/api/v1/runs/local`. Remote retries continue to use Soyuz's canonical retry operation.
+
+Retries for Soyuz-backed runs go through Soyuz's canonical retry operation and are accepted for terminal source runs (`completed`, `failed`, `cancelled`, or `admission_failed`) owned by the authenticated Kaseki identity. Kaseki callers supply a fresh UUID for each retry and reuse it after timeouts. In optional mode, legacy local `kaseki-N` runs can still use Kaseki's local retry path; required mode rejects those retries so normal retry requests cannot create work outside canonical history. Kaseki preserves its worker-side admission checks before execution.
+
+Soyuz contract v1 does not accept `webhookConfig`, because it can contain webhook secrets. Kaseki rejects such requests with submission routing enabled before persisting an idempotency intent or contacting Soyuz; it does not silently downgrade them to local runs. To handle a webhook-bearing request locally, disable submission routing for that host or remove the webhook configuration. Trusted `origin` and `retryOf` fields in Kaseki API and dashboard responses come from Soyuz's authenticated run record. The scoped Kaseki credential can cancel or retry only runs created by its configured Soyuz origin.
+
+| Kaseki API | Soyuz contract | Submission support |
+| --- | --- | --- |
+| Current Kaseki adapter | v1 | Create, canonical retry, cancellation, worker status, trusted origin, and `retryOf`; webhook configuration rejected. |
+| Older Kaseki API | v1 | Queue intake only; it does not route Kaseki API submissions or expose canonical IDs. |
+| Kaseki submission routing | Pre-v1 or unknown | Disabled until a compatible Soyuz deployment is confirmed. |
+
+## Queue setup and poison messages
+
+Create the Cloudflare HTTP pull consumer for the existing Soyuz Queue. Configure a finite retry count and a dead-letter queue (DLQ). If no DLQ is configured, Cloudflare deletes a message after the consumer's `max_retries` limit, so an unsupported contract version or malformed payload could otherwise be discarded. Review and replay DLQ messages only after correcting the host/configuration cause; replaying is safe because Soyuz run IDs are durable deduplication keys.
+
+The adapter retries malformed or unsupported messages with capped exponential delay and never executes them. Queue pull uses `visibility_timeout_ms` and `batch_size`; leases only identify ack/retry operations. They are not stored as run identity. See Cloudflare's current [HTTP pull consumer](https://developers.cloudflare.com/queues/configuration/pull-consumers/) and [dead-letter queue](https://developers.cloudflare.com/queues/configuration/dead-letter-queues/) documentation for retry and DLQ setup.
+
+## Handoff, execution and recovery
+
+The adapter validates contract version 1 and Kaseki's `RunRequestSchema`, checks host readiness, template/publish compatibility, GitHub App credentials when the legacy route needs them, and existing task admission, then persists a per-attempt claim intent and claims the canonical Soyuz run. After the claim succeeds, it writes the local job and external run ID mapping to Kaseki's existing jobs index before it sends `started`. Soyuz `started` must succeed, and Kaseki must durably persist that authorization, before the scheduler may launch Docker. The Queue message is acknowledged after this handoff succeeds; the Queue lease is not held for the full execution.
+
+When `SOYUZ_KIRISAME_PRODUCER_ENABLED=true`, only patch PR runs for `CyanAutomation/somatic` on `main` persist `publicationRoute: kirisame` and the resolved base SHA before execution. Other destinations retain `publicationRoute: legacy`. The Kirisame host starts the workspace at the pinned SHA and passes `KASEKI_PUBLISH_MODE=none`; GitHub App credentials and Soyuz/Cloudflare credentials are removed from the child environment. The host retains the run workspace, builds the v1 manifest from the pinned Git tree, uploads it under the active claim, records `validation.completed` evidence, and registers the publication intent before sending the terminal completion callback. Repeated callback delivery reuses the saved manifest, evidence event ID, and intent values. A persisted route is not changed by later configuration edits.
+
+Each claim has a `claimCallbackId` fencing token. The token is saved with the local job and echoed on `started`, progress/heartbeat, and terminal callbacks. Soyuz rejects callbacks from a prior claim even when a host accidentally reuses the same `workerId`. Old contract-v1 hosts may omit the optional field, so they remain readable during rollout but do not receive this fencing protection.
+
+| Failure point | Result and recovery |
+| --- | --- |
+| Before claim | No local job or Docker process. Retry the lease. |
+| Claim accepted, local mapping write fails | No `started` callback and no execution. The pre-claim intent survives a controller restart on the same results volume and lets Kaseki reconcile the accepted claim without creating a speculative job. If that volume is lost, follow the operator recovery procedure; do not force-requeue. |
+| Local job persisted, `started` fails | Job stays queued and gated. Retry; the external ID finds that same job. A claim owned by another host is never executed locally. |
+| `started` succeeds, Queue ack response is lost | The local mapping and start authorization are durable. Redelivery reuses the mapping and acknowledges without creating another job. Execution may already be underway. |
+| Controller restarts with an authorised queued job | Startup closes the local gate, checks canonical Soyuz status, and replays the stable `started` callback before reopening it. A pending cancellation is applied first. |
+| Controller restarts with a running job | Existing Kaseki recovery marks it `api_restart`; the durable terminal callback outbox reports this after restart. Kaseki does not automatically rerun it. |
+| Terminal callback request fails | The same callback ID and payload stay in the local outbox and retry with bounded exponential backoff plus jitter. |
+
+Queue delivery and callback delivery are at least once. Kaseki deduplicates by Soyuz `runId`; this is not an exactly-once guarantee. Keep the results volume persistent and monitor the callback outbox before allowing it to approach its 5,000-entry intake pause limit.
+
+During execution, the adapter polls canonical run state for cancellation, sends one heartbeat per configured interval, and sends stage changes from Kaseki's sanitized progress events. It never sends prompts or raw stdout/stderr logs to Soyuz. When finalizing a run, it uploads only regular, non-symlink `result-summary.md`, `failure.json`, `git.diff`, `changed-files.txt`, `run-scorecard.json`, and `run-evaluation.json` files, with a 2 MB per-file cap. Before terminal completion it reports uploaded, failed, and skipped counts through a retry-safe `artifacts.uploaded` timeline event. Older Soyuz versions that reject that optional event still receive terminal status. The terminal callback also carries the bounded summary, changed-file count, and a sanitized HTTPS publish URL when available. Artifact requests carry the current worker ID and claim fencing token. Soyuz serves the files only through authenticated reads and expires them at the canonical 90-day deadline of the owning run. Uploads get the initial attempt plus up to three retries with the durable terminal callback; after that, terminal status delivery continues and the host logs the artifact failure. Successful file names are persisted so a restarted controller can safely resume the handoff.
+
+A Soyuz cancellation signals the existing Kaseki process and waits for exit before reporting a terminal outcome. If that process exits successfully during the race, Soyuz receives `completed`; if cancellation stops it, Soyuz receives `cancelled`. Direct Kaseki API cancellation keeps its existing behavior.
+
+## Stalled runs and safe recovery
+
+Soyuz records a separate `operationalHealth` classification. After five minutes without a heartbeat, a still-active run becomes `suspect_stalled`; its lifecycle remains `running` or `cancel_requested`, and it is not requeued. A heartbeat restores health to `healthy`. This is deliberately conservative: a missing heartbeat can mean a network partition or a reporting/controller failure while Docker continues to run.
+
+The Soyuz dashboard shows lifecycle status and `Health: Suspect stalled` separately. The warning includes the last heartbeat, explains that no terminal callback is recorded, and directs operators to the Kaseki job and callback outbox. The `run.suspected_stalled` event and structured Worker log include `staleForMs` for alerting and incident timelines.
+
+When a run is suspected stalled, inspect the Kaseki host logs, its persisted job mapping, and Docker/container state before retrying anything. Confirm the original execution has stopped and let Kaseki restart recovery send a terminal callback when the persistent host is available. If the host and its state volume are permanently lost, v1 has no safe automatic takeover or fencing workflow; leave the canonical run suspect until an operator verifies the original execution is stopped and applies the separately approved recovery procedure. Do not create a second run just because heartbeats stopped.
+
+### Operator recovery steps
+
+1. Read canonical state with the Worker read token. This does not pull or lease Queue messages:
+
+   ```sh
+   curl --fail-with-body --silent --show-error \
+     "$SOYUZ_API_URL/v1/worker/runs/$RUN_ID" \
+     --header "Authorization: Bearer $SOYUZ_WORKER_API_TOKEN"
+   ```
+
+2. Confirm the run's `workerId`, `status`, `claimExpiresAt`, `lastHeartbeatAt`, and `operationalHealth`. A `running` or `cancel_requested` run marked `suspect_stalled` is still owned by its original execution; do not claim or resubmit it.
+3. On that host, inspect only the matching local metadata and outbox records. Avoid printing request prompts or secrets:
+
+   ```sh
+   jq --arg run "$RUN_ID" '{jobs: [.jobs[]? | select(.soyuz.externalRunId == $run) | {id, status, workerId: .soyuz.workerId, claimCallbackId: .soyuz.claimCallbackId, startAuthorized: .soyuz.startAuthorized}], claimIntents: [.soyuzClaimIntents[]? | select(.externalRunId == $run) | {workerId, claimCallbackId, createdAt}], callbacks: [.soyuzOutbox[]? | select(.externalRunId == $run) | {callbackId, eventType, attemptCount, deliveryState}]}' \
+     "$KASEKI_RESULTS_DIR/.kaseki-api-jobs.json"
+   ```
+
+4. Read `GET /api/v1/soyuz/callbacks/blocked` on the Kaseki API host and match `externalRunId`. If the terminal callback is blocked, inspect its error and validation details, fix the cause, and confirm the execution has stopped before retrying that callback ID through `POST /api/v1/soyuz/callbacks/{callbackId}/retry`. If it is pending instead, restore API connectivity and let the durable outbox retry it; do not submit another run.
+5. Inspect Docker on the owner host using the local job ID and container names recorded in Kaseki logs. Confirm whether the process is still active before restarting Kaseki or moving the volume. If active, preserve it and restore connectivity/callback delivery. If exited, restart the controller with the same persistent volume and credentials; the outbox retries the same terminal callback IDs and payloads.
+6. If the host is permanently gone, verify its Docker host is unavailable or stop the execution through the normal host procedure, then inspect the repository for an already-created branch/PR before retrying. Keep `publishMode: none` for recovery validation. Any manual state repair or new run for work that could publish needs separate operator approval; do not force-requeue a running run.
 
 A pre-agent validation command such as `tsc -p tsconfig.api.json` exiting with code 127 means the executable was not available to the shell; it is not a TypeScript diagnostic. Check `pre-validation.log`, dependency installation, the project lockfile, and that the repository's `node_modules/.bin` is on `PATH`. Kaseki's command preflight records a missing direct executable explicitly; fix the project or worker toolchain before retrying.
 
