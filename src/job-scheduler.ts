@@ -30,7 +30,7 @@ import {
 } from './job-persistence-manager';
 import { EXIT_CODE_SPAWN_FAILED } from './exit-codes';
 import { configureScoutingAndGoalCheckEnv } from './job-environment';
-import type { TaskAdmissionRoutingHints } from './task-admission';
+import type { SafeTaskAdmissionRecord, TaskAdmissionRoutingHints } from './task-admission';
 import {
   cleanupOldRuns,
   cleanupStaleStagingDirectories,
@@ -207,7 +207,11 @@ export class JobScheduler {
   }
 
   /** Submit a local run, rejecting it if this agent is already occupied. */
-  async submitJob(request: RunRequest, advisoryRoutingHints?: TaskAdmissionRoutingHints): Promise<Job> {
+  async submitJob(
+    request: RunRequest,
+    advisoryRoutingHints?: TaskAdmissionRoutingHints,
+    taskAdmission?: SafeTaskAdmissionRecord,
+  ): Promise<Job> {
     await this.ready();
     this.reserveRunSlot();
 
@@ -226,6 +230,7 @@ export class JobScheduler {
         status: 'queued',
         request,
         advisoryRoutingHints,
+        taskAdmission,
         createdAt: new Date(),
         resultDir: this.persistenceManager.getResultDir(instanceId),
         webhookConfig: request.webhookConfig,
@@ -290,6 +295,7 @@ export class JobScheduler {
     publicationRoute?: NonNullable<Job['soyuz']>['publicationRoute'],
     publicationBaseSha?: string,
     canonicalCreatedAt?: Date,
+    taskAdmission?: SafeTaskAdmissionRecord,
   ): Promise<Job> {
     await this.ready();
     const existing = await this.findSoyuzJob(externalRunId);
@@ -306,6 +312,7 @@ export class JobScheduler {
         status: 'queued',
         request,
         advisoryRoutingHints,
+        taskAdmission,
         createdAt: canonicalCreatedAt ?? new Date(),
         resultDir: this.persistenceManager.getResultDir(instanceId),
         webhookConfig: request.webhookConfig,
@@ -357,6 +364,7 @@ export class JobScheduler {
     claimCallbackId?: string,
     origin?: NonNullable<Job['soyuz']>['origin'],
     retryOf?: string | null,
+    taskAdmission?: SafeTaskAdmissionRecord,
   ): Promise<Job> {
     await this.ready();
     const existing = await this.findSoyuzJob(externalRunId);
@@ -367,6 +375,7 @@ export class JobScheduler {
       id: instanceId,
       status: 'failed',
       request,
+      taskAdmission,
       createdAt: now,
       completedAt: now,
       exitCode: 9,

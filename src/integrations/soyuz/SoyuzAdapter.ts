@@ -6,7 +6,12 @@ import type { KasekiApiConfig } from '../../kaseki-api-config';
 import type { Job, RunRequest } from '../../kaseki-api-types';
 import { JobScheduler } from '../../job-scheduler';
 import { checkGitHubAppCredentials, checkTemplatePublishModeCompatibility, getSubmissionTemplateHealthStatus, isTemplateDoctorTimeout } from '../../kaseki-api-health-checks';
-import { evaluateTaskAdmission, type TaskAdmissionEvaluator } from '../../task-admission';
+import {
+  evaluateTaskAdmission,
+  toSafeTaskAdmissionRecord,
+  type SafeTaskAdmissionRecord,
+  type TaskAdmissionEvaluator,
+} from '../../task-admission';
 import type { SoyuzOutboxEntry } from '../../job-persistence-manager';
 import { loadSoyuzAdapterConfig, type SoyuzAdapterConfig } from './config';
 import { CloudflareQueueConsumer } from './CloudflareQueueConsumer';
@@ -16,7 +21,7 @@ import { loadSoyuzArtifacts, loadSoyuzFailureMessage, loadSoyuzTerminalOutcome }
 import { loadOrCreatePublicationManifest, parseGitHubRepository, resolveGitHubBaseSha } from './publication-manifest';
 
 class SoyuzAdmissionRejectedError extends Error {
-  constructor(readonly safeReason: string) {
+  constructor(readonly safeReason: string, readonly taskAdmission?: SafeTaskAdmissionRecord) {
     super(safeReason);
     this.name = 'SoyuzAdmissionRejectedError';
   }
@@ -29,6 +34,20 @@ const MAX_CANONICAL_READ_JITTER_MS = 5_000;
 const MAX_ARTIFACT_UPLOAD_RETRIES_BEFORE_TERMINAL = 3;
 const CLAIM_CALLBACK_NAMESPACE = Buffer.from('3b7d4c748b5b5f8fa2d0a13c4a44c955', 'hex');
 const logger = createEventLogger('soyuz-adapter');
+
+type ArtifactUploadJob = Job & {
+  resultDir: string;
+  soyuz: NonNullable<Job['soyuz']> & { claimCallbackId: string; startAuthorized: true };
+};
+
+/** Pre-start failures remain claimed, so they must skip operational artifact reports. */
+function isArtifactUploadJob(job: Job | undefined): job is ArtifactUploadJob {
+  return Boolean(job?.soyuz?.claimCallbackId && job.soyuz.startAuthorized && job.resultDir);
+}
+
+function hasArtifactUploadWork(artifacts: readonly unknown[], skipped: readonly unknown[], uploaded: ReadonlySet<string>): boolean {
+  return artifacts.length > 0 || skipped.length > 0 || uploaded.size > 0;
+}
 
 export class SoyuzAdapter {
   private readonly adapterInstanceId = randomUUID();
@@ -342,6 +361,7 @@ export class SoyuzAdapter {
     run: SoyuzQueuedRun,
     initialCanonical: SoyuzWorkerRun,
     initialCallbackId?: string,
+    taskAdmission?: SafeTaskAdmissionRecord,
   ): Promise<boolean> {
     let canonical = initialCanonical;
     let callbackId = initialCallbackId;
@@ -369,6 +389,7 @@ export class SoyuzAdapter {
       callbackId,
       canonical.origin,
       canonical.retryOf,
+      taskAdmission,
     );
     if (callbackId) await this.scheduler.removeSoyuzClaimIntent(run.runId, callbackId);
     callbackId ??= canonical.claimCallbackId ?? undefined;
@@ -409,10 +430,13 @@ export class SoyuzAdapter {
     | { kind: 'handled'; result: boolean }
   > {
     let request: RunRequest;
+    let taskAdmission: SafeTaskAdmissionRecord | undefined;
     let publicationRoute: NonNullable<Job['soyuz']>['publicationRoute'] = 'legacy';
     let publicationBaseSha: string | undefined;
     try {
-      request = await this.assertKasekiAdmission(run);
+      const admission = await this.assertKasekiAdmission(run);
+      request = admission.request;
+      taskAdmission = admission.taskAdmission;
       if (isKirisameProducerEligible(this.config, request)) {
         publicationRoute = 'kirisame';
         try {
@@ -423,7 +447,10 @@ export class SoyuzAdapter {
       }
     } catch (error) {
       if (!(error instanceof SoyuzAdmissionRejectedError)) throw error;
-      return { kind: 'handled', result: await this.handleAdmissionFailure(run, canonical, callbackId) };
+      return {
+        kind: 'handled',
+        result: await this.handleAdmissionFailure(run, canonical, callbackId, error.taskAdmission ?? taskAdmission),
+      };
     }
 
     if (canonical.status === 'queued') {
@@ -445,6 +472,7 @@ export class SoyuzAdapter {
       publicationRoute,
       publicationBaseSha,
       new Date(run.createdAt),
+      taskAdmission,
     );
     return { kind: 'ready', canonical, job, callbackId };
   }
@@ -881,6 +909,7 @@ export class SoyuzAdapter {
   private async terminalOutcomeForJob(job: Job): Promise<Awaited<ReturnType<typeof loadSoyuzTerminalOutcome>>> {
     const outcome = await loadSoyuzTerminalOutcome(job.resultDir);
     if (job.soyuz?.publicationRoute === 'kirisame') delete outcome.publishedUrl;
+    if (job.taskAdmission) outcome.taskAdmission = job.taskAdmission;
     return outcome;
   }
 
@@ -1016,12 +1045,13 @@ export class SoyuzAdapter {
 
   private async uploadTerminalArtifacts(entry: SoyuzOutboxEntry): Promise<NonNullable<Job['soyuz']>['artifactUploadReport'] | undefined> {
     const job = await this.scheduler.findSoyuzJob(entry.externalRunId);
-    if (!job?.soyuz || !job.resultDir || !job.soyuz.claimCallbackId) return undefined;
+    if (!isArtifactUploadJob(job)) return undefined;
     await this.createPublicationIntentIfNeeded(entry, job);
     if (job.soyuz.artifactUploadReport) return job.soyuz.artifactUploadReport;
     const uploaded = new Set(job.soyuz.uploadedArtifactNames ?? []);
     const failed = new Set<string>();
     const { artifacts, skipped } = await loadSoyuzArtifacts(entry.externalRunId, job.resultDir, [...uploaded]);
+    if (!hasArtifactUploadWork(artifacts, skipped, uploaded)) return undefined;
     for (const item of skipped) {
       logger.warn('Skipping an unsafe or oversized Soyuz artifact', {
         runId: entry.externalRunId,
@@ -1132,7 +1162,7 @@ export class SoyuzAdapter {
     );
   }
 
-  private async assertKasekiAdmission(run: SoyuzQueuedRun): Promise<RunRequest> {
+  private async assertKasekiAdmission(run: SoyuzQueuedRun): Promise<{ request: RunRequest; taskAdmission: SafeTaskAdmissionRecord }> {
     const readiness = this.scheduler.getReadiness();
     if (!readiness.ready) throw new Error(`Kaseki host is not ready: ${readiness.reasons.join(', ')}`);
     const request: RunRequest = { ...run.request };
@@ -1155,14 +1185,15 @@ export class SoyuzAdapter {
     if (!template.ok && !isTemplateDoctorTimeout(template)) {
       throw new SoyuzAdmissionRejectedError('The Kaseki template is not ready for execution.');
     }
-    await this.validateTaskSafety(request);
-    return request;
+    const taskAdmission = await this.validateTaskSafety(request);
+    return { request, taskAdmission };
   }
 
-  private async validateTaskSafety(request: RunRequest): Promise<void> {
+  private async validateTaskSafety(request: RunRequest): Promise<SafeTaskAdmissionRecord> {
     const admission = await this.taskAdmissionEvaluator(request as unknown as Record<string, unknown>);
+    const taskAdmission = toSafeTaskAdmissionRecord(admission);
     if (admission.status === 'rejected' || !admission.allowed) {
-      throw new SoyuzAdmissionRejectedError('Kaseki task safety admission rejected this request.');
+      throw new SoyuzAdmissionRejectedError('Kaseki task safety admission rejected this request.', taskAdmission);
     }
     if (admission.degraded) {
       logger.event('soyuz_task_admission_degraded', {
@@ -1170,6 +1201,7 @@ export class SoyuzAdapter {
         warningCount: admission.warnings?.length ?? 0,
       });
     }
+    return taskAdmission;
   }
 }
 

@@ -4,6 +4,7 @@ import { open } from 'node:fs/promises';
 import path from 'node:path';
 import { SoyuzRunOutcomeSummarySchema, type SoyuzRunOutcomeSummary } from './run-outcome-summary';
 import { redactLogContent } from '../../routes/log-redaction';
+import type { SafeTaskAdmissionRecord } from '../../task-admission';
 
 export const MAX_SOYUZ_ARTIFACT_BYTES = 2_000_000;
 const SOYUZ_ARTIFACT_NAMESPACE = Buffer.from('d53a6a7436945ed7a108d82f89d94414', 'hex');
@@ -35,6 +36,7 @@ export interface SoyuzTerminalOutcome {
   publishedUrl?: string;
   changedFileCount?: number;
   outcomeSummary?: SoyuzRunOutcomeSummary;
+  taskAdmission?: SafeTaskAdmissionRecord;
 }
 
 export async function loadSoyuzTerminalOutcome(resultDir: string | undefined): Promise<SoyuzTerminalOutcome> {

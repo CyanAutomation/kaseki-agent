@@ -171,7 +171,7 @@ describe('kaseki API fast route/service integration', () => {
       repoUrl: 'https://github.com/example/repo',
       projectName: 'route-contract',
       publishMode: 'none',
-    }));
+    }), undefined, expect.objectContaining({ schemaVersion: 1 }));
     expect(scheduler.submitJob).toHaveBeenCalledTimes(1);
 
     const persistedLines = fs.readFileSync(

@@ -1,4 +1,4 @@
-import { buildTaskAdmissionRequest, evaluateTaskAdmission } from './task-admission';
+import { buildTaskAdmissionRequest, evaluateTaskAdmission, toSafeTaskAdmissionRecord } from './task-admission';
 import { decisionService, DecisionServiceError } from './decision-service';
 
 const TOKEN = 'synthetic-senku-kaseki-token-value-1234567890';
@@ -125,6 +125,79 @@ describe('task admission classifier', () => {
     expect(result).not.toHaveProperty('modelUsed');
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(JSON.parse(String(jest.mocked(global.fetch).mock.calls[0][1]?.body))).not.toHaveProperty('model');
+  });
+
+  it('projects an admission decision into safe, per-run diagnostic fields', async () => {
+    const evaluatedAt = new Date('2026-11-26T12:00:00.000Z');
+    global.fetch = jest.fn<typeof fetch>().mockResolvedValue(contractResponse(fullAnswers({
+      changes_permissions: 'true', risk_level: 'review', task_type: 'bug_fix', validation_focus: 'type_and_lint',
+    }))) as typeof fetch;
+
+    const result = await evaluateTaskAdmission({
+      repoUrl: 'https://github.com/example/repo',
+      taskPrompt: 'Private request wording that must not be retained in the admission record.',
+    });
+    const record = toSafeTaskAdmissionRecord(result, evaluatedAt);
+
+    expect(record).toMatchObject({
+      schemaVersion: 1,
+      status: 'rejected',
+      reasonCode: 'unsafe_condition',
+      signal: 'changes_permissions',
+      summary: expect.stringContaining('permission'),
+      riskLevel: 'review',
+      riskScore: 1,
+      evaluatedAt: evaluatedAt.toISOString(),
+    });
+    expect(record.responseTimeMs).toEqual(expect.any(Number));
+    expect(record).not.toHaveProperty('answers');
+    expect(record).not.toHaveProperty('reason');
+    expect(JSON.stringify(record)).not.toContain('Private request wording');
+  });
+
+  it('records a deterministic credential rejection without retaining the credential value', async () => {
+    const secret = 'sk-private-value-that-must-not-be-retained';
+    const result = await evaluateTaskAdmission({
+      repoUrl: 'https://github.com/example/repo',
+      taskPrompt: `Use api_key=${secret} in the task`,
+    });
+    const record = toSafeTaskAdmissionRecord(result, new Date('2026-11-26T12:00:00.000Z'));
+
+    expect(record).toMatchObject({
+      status: 'rejected',
+      reasonCode: 'credential_signal',
+      signal: 'local_credential_signal',
+    });
+    expect(JSON.stringify(record)).not.toContain(secret);
+  });
+
+  it('projects a generic rejection into a recognized safe reason code', () => {
+    const record = toSafeTaskAdmissionRecord({
+      allowed: false,
+      status: 'rejected',
+      reason: 'A local evaluator rejected this request.',
+      responseTime: 4,
+    }, new Date('2026-11-26T12:00:00.000Z'));
+
+    expect(record).toMatchObject({
+      status: 'rejected',
+      reasonCode: 'unsafe_condition',
+      summary: 'Task admission rejected after a local safety evaluation.',
+    });
+  });
+
+  it('keeps persisted risk diagnostics within the callback contract bounds', () => {
+    const record = toSafeTaskAdmissionRecord({
+      allowed: true,
+      status: 'allowed',
+      reason: 'ignored in the safe projection',
+      reasonCode: 'admitted',
+      riskLevel: 'high',
+      riskScore: 100,
+      responseTime: Number.NaN,
+    }, new Date('2026-11-26T12:00:00.000Z'));
+
+    expect(record).toMatchObject({ riskLevel: 'high', riskScore: 2, responseTimeMs: 0 });
   });
 
   it('fails open when Senku is unavailable without exposing thrown network details', async () => {
