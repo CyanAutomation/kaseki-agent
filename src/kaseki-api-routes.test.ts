@@ -845,7 +845,7 @@ describe('Soyuz submission routing', () => {
       expect(scheduler.submitJob).toHaveBeenCalledTimes(1);
       expect(scheduler.submitJob).toHaveBeenCalledWith(expect.objectContaining({
         webhookConfig: expect.objectContaining({ url: 'https://hooks.example.test/run' }),
-      }));
+      }), undefined, expect.objectContaining({ schemaVersion: 1 }));
       expect(soyuzResponse.status).toBe(202);
       expect(soyuzBody.id).toBe(soyuzId);
       expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -1333,7 +1333,9 @@ describe('kaseki-api-routes request aliases', () => {
           ref: 'main',
           taskPrompt: 'Run a first-time setup task smoke test',
           publishMode: 'none'
-        })
+        }),
+        undefined,
+        expect.objectContaining({ schemaVersion: 1 })
       );
     } finally {
       await cleanupTestApp(server, idempotencyStore);
@@ -1376,7 +1378,7 @@ describe('kaseki-api-routes request aliases', () => {
       expect(response.status).toBe(202);
       expect(scheduler.submitJob).toHaveBeenCalledWith(expect.objectContaining({
         validationCommands: ['npm run docs:check'],
-      }), hints);
+      }), hints, expect.objectContaining({ schemaVersion: 1, status: 'allowed', reasonCode: 'admitted' }));
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }
@@ -1738,7 +1740,9 @@ describe('kaseki-api-routes template readiness gate', () => {
           taskMode: 'inspect',
           publishMode: 'none',
           goalCheck: { enabled: false }
-        })
+        }),
+        undefined,
+        expect.objectContaining({ schemaVersion: 1 })
       );
     } finally {
       await cleanupTestApp(server, idempotencyStore);
@@ -3294,7 +3298,9 @@ exit 0
         expect.objectContaining({
           repoUrl: 'https://github.com/org/repo',
           publishMode: 'pr'
-        })
+        }),
+        undefined,
+        expect.objectContaining({ schemaVersion: 1 })
       );
     } finally {
       await cleanupTestApp(server, idempotencyStore);
@@ -3614,7 +3620,9 @@ exit 0
         expect.objectContaining({
           repoUrl: 'https://github.com/org/repo',
           publishMode: 'auto'
-        })
+        }),
+        undefined,
+        expect.objectContaining({ schemaVersion: 1 })
       );
     } finally {
       await cleanupTestApp(server, idempotencyStore);
@@ -4002,7 +4010,9 @@ describe('kaseki-api-routes publish mode validation', () => {
         expect.objectContaining({
           repoUrl: 'https://github.com/org/repo',
           publishMode: 'auto'
-        })
+        }),
+        undefined,
+        expect.objectContaining({ schemaVersion: 1 })
       );
     } finally {
       await cleanupTestApp(server, idempotencyStore);
@@ -4043,7 +4053,9 @@ describe('kaseki-api-routes publish mode validation', () => {
         expect.objectContaining({
           repoUrl: 'https://github.com/org/repo',
           publishMode: 'pr'
-        })
+        }),
+        undefined,
+        expect.objectContaining({ schemaVersion: 1 })
       );
     } finally {
       await cleanupTestApp(server, idempotencyStore);
