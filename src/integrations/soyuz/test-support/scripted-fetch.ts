@@ -61,7 +61,9 @@ function delayWithAbort(milliseconds: number, signal?: AbortSignal | null): Prom
     const abort = () => {
       clearTimeout(timer);
       signal?.removeEventListener('abort', abort);
-      reject(new DOMException('The scripted request was aborted.', 'AbortError'));
+      const error = new Error('The scripted request was aborted.');
+      error.name = 'AbortError';
+      reject(error);
     };
     const timer = setTimeout(() => {
       signal?.removeEventListener('abort', abort);

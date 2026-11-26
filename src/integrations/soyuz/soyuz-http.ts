@@ -25,13 +25,9 @@ export async function readSoyuzResponseText(response: Response): Promise<string>
   let size = 0;
   try {
     while (true) {
-      let result: ReadableStreamReadResult<Uint8Array>;
-      try {
-        result = await reader.read();
-      } catch {
+      const { done, value } = await reader.read().catch(() => {
         throw new Error('Soyuz response body could not be read');
-      }
-      const { done, value } = result;
+      });
       if (done) break;
       size += value.byteLength;
       if (size > MAX_SOYUZ_RESPONSE_BYTES) {
