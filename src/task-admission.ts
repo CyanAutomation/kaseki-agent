@@ -17,8 +17,7 @@ export type TaskAdmissionReasonCode =
   | 'unsafe_condition'
   | 'high_risk'
   | 'credential_signal'
-  | 'evaluation_unavailable'
-  | 'rejected';
+  | 'evaluation_unavailable';
 export type TaskAdmissionSignal =
   | 'contains_credentials'
   | 'changes_permissions'
@@ -224,11 +223,10 @@ function buildClassifiedResult(
 
 const SAFE_ADMISSION_SUMMARIES: Record<TaskAdmissionReasonCode, string> = {
   admitted: 'Task admission allowed after safety evaluation.',
-  unsafe_condition: 'Task admission rejected after a high-confidence unsafe-condition classification.',
+  unsafe_condition: 'Task admission rejected after a local safety evaluation.',
   high_risk: 'Task admission rejected after a high-confidence high-risk classification.',
   credential_signal: 'Task admission rejected by deterministic credential screening.',
   evaluation_unavailable: 'Task admission evaluation was unavailable; the configured fail-open policy was applied.',
-  rejected: 'Task admission rejected this run for a local safety condition.',
 };
 
 const SAFE_SIGNAL_SUMMARIES: Partial<Record<TaskAdmissionSignal, string>> = {
@@ -243,7 +241,7 @@ function inferredReasonCode(result: TaskAdmissionResult, classification?: TaskAd
   if (result.reasonCode) return result.reasonCode;
   if (classification && classification.reasonCode !== 'admitted') return classification.reasonCode;
   if (result.status === 'degraded') return 'evaluation_unavailable';
-  return result.status === 'rejected' ? 'rejected' : 'admitted';
+  return result.status === 'rejected' ? 'unsafe_condition' : 'admitted';
 }
 
 function safeRiskResult(

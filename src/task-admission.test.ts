@@ -171,6 +171,21 @@ describe('task admission classifier', () => {
     expect(JSON.stringify(record)).not.toContain(secret);
   });
 
+  it('projects a generic rejection into a recognized safe reason code', () => {
+    const record = toSafeTaskAdmissionRecord({
+      allowed: false,
+      status: 'rejected',
+      reason: 'A local evaluator rejected this request.',
+      responseTime: 4,
+    }, new Date('2026-11-26T12:00:00.000Z'));
+
+    expect(record).toMatchObject({
+      status: 'rejected',
+      reasonCode: 'unsafe_condition',
+      summary: 'Task admission rejected after a local safety evaluation.',
+    });
+  });
+
   it('keeps persisted risk diagnostics within the callback contract bounds', () => {
     const record = toSafeTaskAdmissionRecord({
       allowed: true,
