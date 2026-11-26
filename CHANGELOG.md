@@ -4,6 +4,22 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.160.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.159.2...v1.160.0) (2026-11-26)
+
+
+### Bug Fixes
+
+* address Kirisame publication review comments ([b152216](https://github.com/CyanAutomation/kaseki-agent/commit/b1522161ec54aac4a7e6415969194db95cf75ffa))
+* default CLI publication to pull requests ([04636a4](https://github.com/CyanAutomation/kaseki-agent/commit/04636a454ed0cf0899cde4cac2bdc4bf3949ee7f))
+* honor publish mode environment in CLI ([46edfce](https://github.com/CyanAutomation/kaseki-agent/commit/46edfcec7961b1ebe4475502a384cba288d86b09))
+
+
+### Features
+
+* bound Kaseki Agent local persistence retention ([#1596](https://github.com/CyanAutomation/kaseki-agent/issues/1596)) ([0202fe3](https://github.com/CyanAutomation/kaseki-agent/commit/0202fe36aa50b1f3e38b24b33e8b18f2f3ad41ae))
+* produce claim-bound Kirisame manifests ([4f53253](https://github.com/CyanAutomation/kaseki-agent/commit/4f532533f1c0595e0d22dcfe47b1001a63764a8c))
+* produce claim-bound Kirisame manifests ([#1595](https://github.com/CyanAutomation/kaseki-agent/issues/1595)) ([e04f2bf](https://github.com/CyanAutomation/kaseki-agent/commit/e04f2bf9f2fe10e29a5ed6510f9b059b2b5b9413))
+
 ## [1.159.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.159.1...v1.159.2) (2026-11-16)
 
 
