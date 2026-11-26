@@ -363,6 +363,38 @@ describe('JobPersistenceManager', () => {
     expect(persistedJob.soyuz?.terminalCallbackDelivered).toBe(true);
   });
 
+  test('retains the safe task-admission result with the run across a manager restart', async () => {
+    const taskAdmission: NonNullable<Job['taskAdmission']> = {
+      schemaVersion: 1,
+      status: 'rejected',
+      reasonCode: 'high_risk',
+      signal: 'risk_level',
+      summary: 'Task admission rejected after a high-confidence high-risk classification.',
+      riskLevel: 'high',
+      riskScore: 2,
+      responseTimeMs: 17,
+      evaluatedAt: '2026-11-26T12:00:00.000Z',
+    };
+    const job: Job = {
+      id: 'kaseki-admission-result',
+      status: 'failed',
+      request: { repoUrl: 'https://github.com/test/repo', ref: 'main' },
+      taskAdmission,
+      createdAt: new Date(),
+      completedAt: new Date(),
+      failureClass: 'kaseki_admission_rejected',
+      correlationId: '33333333-3333-4333-8333-333333333333',
+      requestId: '44444444-4444-4444-8444-444444444444',
+    };
+
+    await manager.persistJobStrict(job);
+    const restartedManager = new JobPersistenceManager(config);
+    const persisted = await restartedManager.listPersistedJobs();
+
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0].taskAdmission).toEqual(taskAdmission);
+  });
+
   test('persists blocked Soyuz callbacks without claiming them for automatic retry', async () => {
     const callbackId = '22222222-2222-4222-8222-222222222222';
     const now = new Date();

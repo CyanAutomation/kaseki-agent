@@ -3023,6 +3023,64 @@ describe('JobScheduler persistence merge safety', () => {
     cleanupResultsDirs();
   });
 
+  test('lists a persisted Soyuz admission failure with its safe admission result', async () => {
+    const resultsDir = createResultsDir();
+    const taskAdmission = {
+      schemaVersion: 1,
+      status: 'rejected',
+      reasonCode: 'high_risk',
+      signal: 'risk_level',
+      summary: 'Task admission rejected after a high-confidence high-risk classification.',
+      riskLevel: 'high',
+      riskScore: 2,
+      responseTimeMs: 17,
+      evaluatedAt: '2026-11-26T12:00:00.000Z',
+    } as const;
+    fs.writeFileSync(path.join(resultsDir, '.kaseki-api-jobs.json'), JSON.stringify({
+      version: 1,
+      jobs: [{
+        id: 'kaseki-admission-failure',
+        status: 'failed',
+        request: { repoUrl: 'https://github.com/org/repo', ref: 'main' },
+        taskAdmission,
+        createdAt: '2026-10-09T12:00:00.000Z',
+        completedAt: '2026-10-09T12:00:01.000Z',
+        resultDir: path.join(resultsDir, 'kaseki-admission-failure'),
+        failureClass: 'kaseki_admission_rejected',
+        correlationId: '22222222-2222-4222-8222-222222222222',
+        requestId: '33333333-3333-4333-8333-333333333333',
+        soyuz: {
+          externalRunId: '11111111-1111-4111-8111-111111111111',
+          workerId: 'host-a',
+          contractVersion: '1',
+          startedCallbackId: '44444444-4444-4444-8444-444444444444',
+          startAuthorized: false,
+          terminalCallbackDelivered: false,
+        },
+      }],
+    }));
+    const scheduler = new JobScheduler({
+      port: 8080,
+      apiKeys: ['test-key'],
+      resultsDir,
+      runTimeoutMs: 300000,
+      soyuz: { enabled: true } as never,
+    }, createMockWebhookManager());
+
+    try {
+      await scheduler.ready();
+      const jobs = await scheduler.listSoyuzJobs();
+
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0]).toMatchObject({
+        failureClass: 'kaseki_admission_rejected',
+        taskAdmission,
+      });
+    } finally {
+      await scheduler.shutdown();
+    }
+  });
+
   test('rechecks Soyuz canonical state before resuming an authorized queued job after restart', async () => {
     const resultsDir = createResultsDir();
     fs.writeFileSync(path.join(resultsDir, '.kaseki-api-jobs.json'), JSON.stringify({

@@ -730,6 +730,8 @@ export interface Job {
   request: RunRequest;
   /** Task-admission routing hints; advisory only and excluded from the public run request. */
   advisoryRoutingHints?: import('./task-admission').TaskAdmissionRoutingHints;
+  /** Safe, bounded admission reason and risk result retained with this run. */
+  taskAdmission?: import('./task-admission').SafeTaskAdmissionRecord;
   createdAt: Date;
   startedAt?: Date;
   completedAt?: Date;

@@ -41,7 +41,12 @@ import { createGatewayTestRoutes } from './routes/gateway-test-routes';
 import { createScorecardRoutes } from './routes/scorecard-routes';
 import { testPiGatewayProviderSmoke } from './kaseki-api-gateway-smoke';
 import { getPackageVersion } from './openapi-spec-generators/components';
-import { evaluateTaskAdmission, TASK_ADMISSION_EXIT_CODE, type TaskAdmissionEvaluator } from './task-admission';
+import {
+  evaluateTaskAdmission,
+  TASK_ADMISSION_EXIT_CODE,
+  toSafeTaskAdmissionRecord,
+  type TaskAdmissionEvaluator,
+} from './task-admission';
 import { ApiAccessController } from './api-access-control';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import { getStorageCapacityError, storageErrorFields } from './storage-capacity';
@@ -878,9 +883,11 @@ async function createSubmittedRunResponse(
     return buildSoyuzRunResponse(remoteRun, runRequest);
   }
   if (!admission) throw new Error('Task admission is required for direct local scheduling');
-  const job = admission.routingHints
-    ? await scheduler.submitJob(runRequest, admission.routingHints)
-    : await scheduler.submitJob(runRequest);
+  const job = await scheduler.submitJob(
+    runRequest,
+    admission.routingHints,
+    toSafeTaskAdmissionRecord(admission),
+  );
   job.idempotencyKey = idempotencyKey;
   return buildRunResponse(job);
 }
@@ -1191,9 +1198,11 @@ async function submitLocalRetryUnderLock(
     const existing = await handleIdempotency(idempotencyKey, fingerprint);
     if (existing.state !== 'fresh') return existing;
     try {
-      const job = admission.routingHints
-        ? await scheduler.submitJob(retryRequest, admission.routingHints)
-        : await scheduler.submitJob(retryRequest);
+      const job = await scheduler.submitJob(
+        retryRequest,
+        admission.routingHints,
+        toSafeTaskAdmissionRecord(admission),
+      );
       job.idempotencyKey = idempotencyKey;
       const response = buildRunResponse(job);
       await idempotencyStore.storeResponse(idempotencyKey, response, fingerprint);

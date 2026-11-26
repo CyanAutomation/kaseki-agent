@@ -12,10 +12,42 @@ export type TaskTypeHint = 'feature' | 'bug_fix' | 'refactor' | 'documentation' 
 export type ValidationFocusHint = 'unit_tests' | 'integration_tests' | 'type_and_lint' | 'docs_checks' | 'repo_defined_checks';
 export interface TaskAdmissionRoutingHints { taskType: TaskTypeHint; validationFocus: ValidationFocusHint; }
 
+export type TaskAdmissionReasonCode =
+  | 'admitted'
+  | 'unsafe_condition'
+  | 'high_risk'
+  | 'credential_signal'
+  | 'evaluation_unavailable'
+  | 'rejected';
+export type TaskAdmissionSignal =
+  | 'contains_credentials'
+  | 'changes_permissions'
+  | 'crosses_security_boundary'
+  | 'risk_level'
+  | 'local_credential_signal';
+export type TaskAdmissionRiskLevel = 'low' | 'review' | 'high';
+
+/** Bounded, non-sensitive admission metadata retained with a run and sent to Soyuz. */
+export interface SafeTaskAdmissionRecord {
+  schemaVersion: 1;
+  status: 'allowed' | 'rejected' | 'degraded';
+  reasonCode: TaskAdmissionReasonCode;
+  signal?: TaskAdmissionSignal;
+  summary: string;
+  riskLevel?: TaskAdmissionRiskLevel;
+  riskScore?: number;
+  responseTimeMs: number;
+  evaluatedAt: string;
+}
+
 export interface TaskAdmissionResult {
   allowed: boolean;
   status: 'allowed' | 'rejected' | 'degraded';
   reason: string;
+  /** Machine-readable safe classification; classifier answers are deliberately excluded from the run record. */
+  reasonCode?: TaskAdmissionReasonCode;
+  signal?: TaskAdmissionSignal;
+  riskLevel?: TaskAdmissionRiskLevel;
   riskScore?: number;
   responseTime: number;
   outputTokens?: number;
@@ -82,6 +114,11 @@ function riskScore(answer: TaskAdmissionAnswer | undefined): number | undefined 
   return { low: 0, review: 1, high: 2 }[answer.choice];
 }
 
+function riskLevel(answer: TaskAdmissionAnswer | undefined): TaskAdmissionRiskLevel | undefined {
+  if (answer?.type !== 'choice' || !['low', 'review', 'high'].includes(answer.choice)) return undefined;
+  return answer.choice as TaskAdmissionRiskLevel;
+}
+
 function firstUnsafeQuestion(answers: Record<string, TaskAdmissionAnswer>): string | undefined {
   return ['contains_credentials', 'changes_permissions', 'crosses_security_boundary']
     .find((name) => answerIsUnsafe(answers[name]));
@@ -91,6 +128,45 @@ function isHighConfidenceRisk(answer: TaskAdmissionAnswer | undefined): boolean 
   return answer?.type === 'choice'
     && answer.choice === 'high'
     && answerConfidence(answer) >= confidenceThreshold();
+}
+
+interface TaskAdmissionClassification {
+  reasonCode: TaskAdmissionReasonCode;
+  reason: string;
+  signal?: TaskAdmissionSignal;
+  riskLevel?: TaskAdmissionRiskLevel;
+  riskScore?: number;
+}
+
+function classifyTaskAdmissionAnswers(answers: Record<string, TaskAdmissionAnswer>): TaskAdmissionClassification {
+  const riskAnswer = answers.risk_level;
+  const classifiedRiskLevel = riskLevel(riskAnswer);
+  const classifiedRiskScore = riskScore(riskAnswer);
+  const unsafeSignal = firstUnsafeQuestion(answers) as TaskAdmissionSignal | undefined;
+  if (unsafeSignal) {
+    return {
+      reasonCode: 'unsafe_condition',
+      reason: `Task admission rejected: ${unsafeSignal}.`,
+      signal: unsafeSignal,
+      riskLevel: classifiedRiskLevel,
+      riskScore: classifiedRiskScore,
+    };
+  }
+  if (isHighConfidenceRisk(riskAnswer)) {
+    return {
+      reasonCode: 'high_risk',
+      reason: 'Task admission rejected: evaluation risk score is high.',
+      signal: 'risk_level',
+      riskLevel: classifiedRiskLevel,
+      riskScore: classifiedRiskScore,
+    };
+  }
+  return {
+    reasonCode: 'admitted',
+    reason: 'Task Admission evaluation found no high-confidence unsafe condition.',
+    riskLevel: classifiedRiskLevel,
+    riskScore: classifiedRiskScore,
+  };
 }
 
 function routingHints(answers: Record<string, TaskAdmissionAnswer>): TaskAdmissionRoutingHints | undefined {
@@ -124,17 +200,18 @@ function buildClassifiedResult(
   usage: Record<string, unknown>,
   started: number,
 ): TaskAdmissionResult {
-  const unsafeQuestion = firstUnsafeQuestion(answers);
-  const rejected = Boolean(unsafeQuestion || isHighConfidenceRisk(answers.risk_level));
+  const classification = classifyTaskAdmissionAnswers(answers);
+  const rejected = classification.reasonCode !== 'admitted';
   const uncertainQuestions = uncertainQuestionNames(answers);
   const threshold = confidenceThreshold();
   return {
     allowed: !rejected,
     status: rejected ? 'rejected' : 'allowed',
-    reason: rejected
-      ? `Task admission rejected: ${unsafeQuestion || 'evaluation risk score is high'}.`
-      : 'Task Admission evaluation found no high-confidence unsafe condition.',
-    riskScore: riskScore(answers.risk_level),
+    reasonCode: classification.reasonCode,
+    ...(classification.signal ? { signal: classification.signal } : {}),
+    riskLevel: classification.riskLevel,
+    reason: classification.reason,
+    riskScore: classification.riskScore,
     responseTime: Math.round(performance.now() - started),
     outputTokens: typeof usage.output_tokens === 'number' ? usage.output_tokens : undefined,
     answers,
@@ -142,6 +219,75 @@ function buildClassifiedResult(
     warnings: uncertainQuestions.length > 0
       ? [`Task Admission evaluation confidence is below ${threshold} for: ${uncertainQuestions.join(', ')}.`]
       : undefined,
+  };
+}
+
+const SAFE_ADMISSION_SUMMARIES: Record<TaskAdmissionReasonCode, string> = {
+  admitted: 'Task admission allowed after safety evaluation.',
+  unsafe_condition: 'Task admission rejected after a high-confidence unsafe-condition classification.',
+  high_risk: 'Task admission rejected after a high-confidence high-risk classification.',
+  credential_signal: 'Task admission rejected by deterministic credential screening.',
+  evaluation_unavailable: 'Task admission evaluation was unavailable; the configured fail-open policy was applied.',
+  rejected: 'Task admission rejected this run for a local safety condition.',
+};
+
+const SAFE_SIGNAL_SUMMARIES: Partial<Record<TaskAdmissionSignal, string>> = {
+  contains_credentials: 'Task admission rejected after a credential-related safety signal.',
+  changes_permissions: 'Task admission rejected after a permission-change safety signal.',
+  crosses_security_boundary: 'Task admission rejected after a security-boundary safety signal.',
+  risk_level: SAFE_ADMISSION_SUMMARIES.high_risk,
+  local_credential_signal: SAFE_ADMISSION_SUMMARIES.credential_signal,
+};
+
+function inferredReasonCode(result: TaskAdmissionResult, classification?: TaskAdmissionClassification): TaskAdmissionReasonCode {
+  if (result.reasonCode) return result.reasonCode;
+  if (classification && classification.reasonCode !== 'admitted') return classification.reasonCode;
+  if (result.status === 'degraded') return 'evaluation_unavailable';
+  return result.status === 'rejected' ? 'rejected' : 'admitted';
+}
+
+function safeRiskResult(
+  result: TaskAdmissionResult,
+  classification?: TaskAdmissionClassification,
+): Pick<SafeTaskAdmissionRecord, 'riskLevel' | 'riskScore'> {
+  const safeRiskLevel = result.riskLevel ?? classification?.riskLevel;
+  const candidateRiskScore = result.riskScore ?? classification?.riskScore;
+  const safeRiskScore = safeRiskLevel
+    ? { low: 0, review: 1, high: 2 }[safeRiskLevel]
+    : typeof candidateRiskScore === 'number' && Number.isInteger(candidateRiskScore) && candidateRiskScore >= 0 && candidateRiskScore <= 2
+      ? candidateRiskScore
+      : undefined;
+  return {
+    ...(safeRiskLevel ? { riskLevel: safeRiskLevel } : {}),
+    ...(safeRiskScore !== undefined ? { riskScore: safeRiskScore } : {}),
+  };
+}
+
+function safeResponseTimeMs(responseTime: number): number {
+  return Number.isFinite(responseTime)
+    ? Math.trunc(Math.max(0, Math.min(86_400_000, responseTime)))
+    : 0;
+}
+
+/** Project a full classifier response into the small safe record persisted for a run. */
+export function toSafeTaskAdmissionRecord(
+  result: TaskAdmissionResult,
+  evaluatedAt = new Date(),
+): SafeTaskAdmissionRecord {
+  const classification = result.answers ? classifyTaskAdmissionAnswers(result.answers) : undefined;
+  const reasonCode = inferredReasonCode(result, classification);
+  const signal = result.signal ?? classification?.signal;
+  const summary = (signal ? SAFE_SIGNAL_SUMMARIES[signal] : undefined) ?? SAFE_ADMISSION_SUMMARIES[reasonCode];
+  const risk = safeRiskResult(result, classification);
+  return {
+    schemaVersion: 1,
+    status: result.status,
+    reasonCode,
+    ...(signal ? { signal } : {}),
+    summary,
+    ...risk,
+    responseTimeMs: safeResponseTimeMs(result.responseTime),
+    evaluatedAt: evaluatedAt.toISOString(),
   };
 }
 
@@ -157,6 +303,8 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
     return {
       allowed: false,
       status: 'rejected',
+      reasonCode: 'credential_signal',
+      signal: 'local_credential_signal',
       reason: 'Task request contains a credential or secret-like value.',
       responseTime: Math.round(performance.now() - started),
       warnings: ['Rejected by deterministic local credential screening.'],
@@ -167,6 +315,7 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
     return {
       allowed: true,
       status: 'degraded',
+      reasonCode: 'evaluation_unavailable',
       degraded: true,
       reason: 'Task admission evaluation is unavailable because retired settings were detected; submission remains fail-open. Configure the stage-based settings.',
       responseTime: Math.round(performance.now() - started),
@@ -198,6 +347,7 @@ export async function evaluateTaskAdmission(request: Record<string, unknown>): P
     return {
       allowed: true,
       status: 'degraded',
+      reasonCode: 'evaluation_unavailable',
       degraded: true,
       reason: 'Task Admission evaluation failed; submission allowed by fail-open policy.',
       responseTime: Math.round(performance.now() - started),

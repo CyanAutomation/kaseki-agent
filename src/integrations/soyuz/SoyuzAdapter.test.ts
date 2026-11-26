@@ -80,11 +80,14 @@ function createScheduler(_workerId: string) {
       _retryOf?: string | null,
       publicationRoute?: NonNullable<Job['soyuz']>['publicationRoute'],
       publicationBaseSha?: string,
+      _canonicalCreatedAt?: Date,
+      taskAdmission?: Job['taskAdmission'],
     ) => {
       const job: Job = {
         id: `kaseki-${jobs.length + 1}`,
         status: 'queued',
         request: request as Job['request'],
+        taskAdmission,
         createdAt: new Date(),
         correlationId,
         requestId,
@@ -111,12 +114,16 @@ function createScheduler(_workerId: string) {
       correlationId: string,
       requestId: string,
       claimCallbackId?: string,
+      _origin?: NonNullable<Job['soyuz']>['origin'],
+      _retryOf?: string | null,
+      taskAdmission?: Job['taskAdmission'],
     ) => {
       const job: Job = {
         id: `kaseki-${jobs.length + 1}`,
         status: 'failed',
-        failureClass: 'admission_rejected',
+        failureClass: 'kaseki_admission_rejected',
         request: queuedRun.request,
+        taskAdmission,
         createdAt: new Date(),
         completedAt: new Date(),
         correlationId,
@@ -345,6 +352,9 @@ function createFetch(state: ReturnType<typeof runState>, options: {
     if (method === 'POST' && action === 'events') {
       if (options.rejectArtifactUploadReport && body?.type === 'artifacts.uploaded') {
         return jsonResponse({ error: { code: 'INVALID_WORKER_EVENT', message: 'Unsupported event type' } }, 422);
+      }
+      if (body?.type === 'artifacts.uploaded' && state.status !== 'running' && state.status !== 'cancel_requested') {
+        return jsonResponse({ error: { code: 'RUN_NOT_ACTIVE', message: 'Run no longer accepts operational events' } }, 409);
       }
       return jsonResponse({ data: { eventId: body?.eventId } }, 202);
     }
@@ -1233,19 +1243,75 @@ describe('Soyuz adapter handoff', () => {
       allowed: false,
       status: 'rejected',
       reason: 'unsafe task',
+      reasonCode: 'high_risk',
+      signal: 'risk_level',
+      riskLevel: 'high',
+      riskScore: 2,
       responseTime: 1,
     });
 
-    await makeAdapter('host-a', scheduler, fetchImpl, rejectAdmission).runOnce();
+    const adapter = makeAdapter('host-a', scheduler, fetchImpl, rejectAdmission);
+    await adapter.runOnce();
+    // The callback is durably queued during admission handling and delivered on
+    // the next adapter cycle, matching the production outbox lifecycle.
+    await adapter.runOnce();
 
-    expect(state.status).toBe('claimed');
+    expect(state.status).toBe('failed');
     expect(jobs).toHaveLength(1);
     expect(jobs[0].status).toBe('failed');
+    expect(jobs[0]).toMatchObject({
+      taskAdmission: {
+        status: 'rejected',
+        reasonCode: 'high_risk',
+        signal: 'risk_level',
+        riskLevel: 'high',
+        riskScore: 2,
+      },
+    });
     expect(scheduler.recordSoyuzAdmissionFailure).toHaveBeenCalledTimes(1);
     expect(scheduler.authorizeSoyuzStart).not.toHaveBeenCalled();
     expect(calls.some((call) => call.url.endsWith('/started'))).toBe(false);
+    expect(calls.some((call) => call.url.endsWith('/events') && call.body?.type === 'artifacts.uploaded')).toBe(false);
+    const failedCallback = calls.find((call) => call.url.endsWith('/failed'));
+    expect(failedCallback?.body).toMatchObject({
+      failureClass: 'kaseki_admission_rejected',
+      taskAdmission: {
+        reasonCode: 'high_risk',
+        riskLevel: 'high',
+        riskScore: 2,
+      },
+    });
     expect(calls.some((call) => call.url.endsWith('/messages/ack'))).toBe(true);
     expect(claimIntents).toHaveLength(0);
+  });
+
+  test('retains the bounded admission result on a run that passes admission', async () => {
+    const state = runState();
+    const { fetchImpl } = createFetch(state);
+    const { scheduler, jobs } = createScheduler('host-a');
+    const admitWithRisk: TaskAdmissionEvaluator = async () => ({
+      allowed: true,
+      status: 'allowed',
+      reason: 'Task Admission evaluation found no high-confidence unsafe condition.',
+      reasonCode: 'admitted',
+      riskLevel: 'review',
+      riskScore: 1,
+      responseTime: 7,
+      answers: { private_classifier_output: { type: 'text', text: 'must not persist' } } as never,
+    });
+
+    await makeAdapter('host-a', scheduler, fetchImpl, admitWithRisk).runOnce();
+
+    expect(jobs[0]).toMatchObject({
+      taskAdmission: {
+        status: 'allowed',
+        reasonCode: 'admitted',
+        riskLevel: 'review',
+        riskScore: 1,
+      },
+    });
+    expect(JSON.stringify(jobs[0].taskAdmission)).not.toContain('private_classifier_output');
+    expect(JSON.stringify(jobs[0].taskAdmission)).not.toContain('must not persist');
   });
 
   test('two simulated hosts cannot both claim and schedule one Soyuz run', async () => {
