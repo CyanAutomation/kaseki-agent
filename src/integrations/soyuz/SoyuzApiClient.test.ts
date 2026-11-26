@@ -3,6 +3,7 @@ import { SoyuzApiClient, SoyuzApiError } from './SoyuzApiClient';
 import { MAX_PUBLICATION_REQUEST_BYTES } from './publication-manifest';
 import { MAX_SOYUZ_ARTIFACT_BYTES, loadSoyuzArtifacts } from './soyuz-artifacts';
 import type { SoyuzAdapterConfig } from './config';
+import { createScriptedFetch } from './test-support/scripted-fetch';
 
 const config: SoyuzAdapterConfig = {
   enabled: true,
@@ -60,6 +61,34 @@ describe('Soyuz artifact upload', () => {
     await expect(client.getRun('11111111-1111-4111-8111-111111111111'))
       .rejects.toThrow('Soyuz response exceeded the 128 KB client limit');
     expect(cancelled).toBe(true);
+  });
+
+  test('maps malformed and interrupted response bodies to stable client errors', async () => {
+    const malformed = new SoyuzApiClient(config, (async () => new Response('PRIVATE_UPSTREAM_BODY {')) as typeof fetch);
+    await expect(malformed.getRun('11111111-1111-4111-8111-111111111111'))
+      .rejects.toThrow('Soyuz returned invalid JSON (200)');
+
+    const interruptedBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error('PRIVATE_SOCKET_DETAIL'));
+      },
+    });
+    const interrupted = new SoyuzApiClient(config, (async () => new Response(interruptedBody)) as typeof fetch);
+    const readFailure = await interrupted.getRun('11111111-1111-4111-8111-111111111111').catch((error: unknown) => error);
+    expect(readFailure).toMatchObject({ message: 'Soyuz response body could not be read' });
+    expect(JSON.stringify(readFailure)).not.toContain('PRIVATE_SOCKET_DETAIL');
+  });
+
+  test('aborts delayed Soyuz responses at the configured request deadline', async () => {
+    const delayedFetch = jest.fn(createScriptedFetch(async () => new Response('{"data":{}}'), [{
+      method: 'GET', pathSuffix: '/runs/11111111-1111-4111-8111-111111111111', phase: 'after',
+      effect: { kind: 'delay', milliseconds: 1_000 },
+    }]));
+    const client = new SoyuzApiClient({ ...config, requestTimeoutMs: 5 }, delayedFetch);
+
+    await expect(client.getRun('11111111-1111-4111-8111-111111111111'))
+      .rejects.toMatchObject({ name: 'AbortError' });
+    expect(delayedFetch).toHaveBeenCalledTimes(1);
   });
 
   test('uses the authenticated binary worker endpoint with the required metadata', async () => {
