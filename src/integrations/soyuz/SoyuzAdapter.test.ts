@@ -8,6 +8,7 @@ import type { SoyuzOutboxEntry } from '../../job-persistence-manager';
 import type { TaskAdmissionEvaluator } from '../../task-admission';
 import { SoyuzAdapter } from './SoyuzAdapter';
 import { loadSoyuzAdapterConfig, type SoyuzAdapterConfig } from './config';
+import { createScriptedFetch, type FetchFaultRule } from './test-support/scripted-fetch';
 
 jest.mock('../../kaseki-api-health-checks', () => ({
   checkGitHubAppCredentials: jest.fn(() => ({ name: 'github-app', ok: true })),
@@ -238,11 +239,9 @@ function createFetch(state: ReturnType<typeof runState>, options: {
   failTerminalCallback?: boolean;
 } = {}, runValue: unknown = queuedRun) {
   let pulls = 0;
-  let acks = 0;
-  let claims = 0;
   let runReads = 0;
   const calls: Array<{ url: string; method: string; body?: Record<string, unknown>; headers: Headers; payloadBytes?: number }> = [];
-  const fetchImpl = jest.fn(async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+  const handler: typeof fetch = async (input, init) => {
     const url = String(input);
     const method = init?.method ?? 'GET';
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : undefined;
@@ -260,10 +259,6 @@ function createFetch(state: ReturnType<typeof runState>, options: {
       });
     }
     if (url.endsWith('/messages/ack')) {
-      acks += 1;
-      if (options.loseFirstAck && acks === 1) {
-        return jsonResponse({ success: false, errors: [{ message: 'simulated lost acknowledgement response' }] }, 503);
-      }
       return jsonResponse({ success: true, errors: [], result: {} });
     }
 
@@ -317,7 +312,6 @@ function createFetch(state: ReturnType<typeof runState>, options: {
       return jsonResponse({ data: responseData(), requestId: 'soyuz-request' });
     }
     if (method === 'POST' && action === 'claim') {
-      claims += 1;
       await Promise.resolve();
       if (state.status !== 'queued') {
         if ((state.status === 'claimed' || state.status === 'running')
@@ -331,9 +325,6 @@ function createFetch(state: ReturnType<typeof runState>, options: {
       state.workerId = String(body?.workerId);
       state.claimCallbackId = String(body?.callbackId);
       state.claimExpiresAt = new Date(Date.now() + 120_000).toISOString();
-      if (options.loseFirstClaimResponse && claims === 1) {
-        return jsonResponse({ error: { code: 'UPSTREAM_TIMEOUT', message: 'simulated lost claim response' } }, 503);
-      }
       return jsonResponse({ data: responseData(), requestId: 'soyuz-request' });
     }
     if (method === 'POST' && action === 'started') {
@@ -359,7 +350,21 @@ function createFetch(state: ReturnType<typeof runState>, options: {
       return jsonResponse({ data: { eventId: body?.eventId } }, 202);
     }
     throw new Error(`Unexpected request ${method} ${url}`);
-  });
+  };
+  const faults: FetchFaultRule[] = [];
+  if (options.loseFirstAck) {
+    faults.push({
+      method: 'POST', pathSuffix: '/messages/ack', phase: 'after', times: 1,
+      effect: { kind: 'response', response: jsonResponse({ success: false, errors: [{ message: 'simulated lost acknowledgement response' }] }, 503) },
+    });
+  }
+  if (options.loseFirstClaimResponse) {
+    faults.push({
+      method: 'POST', pathSuffix: '/claim', phase: 'after', times: 1,
+      effect: { kind: 'reject', error: new Error('Synthetic connection closed after claim commit.') },
+    });
+  }
+  const fetchImpl = jest.fn(createScriptedFetch(handler, faults));
   return { fetchImpl, calls };
 }
 
