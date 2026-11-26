@@ -20,6 +20,24 @@ describe('scripted Soyuz fetch faults', () => {
     await expect(fetchImpl('https://soyuz.test/v1/worker/runs/run-1/claim', { method: 'POST' })).resolves.toMatchObject({ status: 200 });
   });
 
+  test('runs the handler after a before-phase delay completes', async () => {
+    const events: string[] = [];
+    const fetchImpl = createScriptedFetch(async () => {
+      events.push('handler');
+      return new Response('ok');
+    }, [{
+      method: 'GET', pathSuffix: '/runs/run-1', phase: 'before',
+      effect: { kind: 'delay', milliseconds: 0 },
+    }]);
+
+    const request = fetchImpl('https://soyuz.test/v1/worker/runs/run-1');
+    events.push('request-started');
+    const response = await request;
+
+    expect(response.status).toBe(200);
+    expect(events).toEqual(['request-started', 'handler']);
+  });
+
   test('holds a response until the request timeout aborts it', async () => {
     const fetchImpl = createScriptedFetch(async () => new Response('ok'), [{
       method: 'GET', pathSuffix: '/runs/run-1', phase: 'after',

@@ -76,7 +76,15 @@ describe('Soyuz artifact upload', () => {
     const interrupted = new SoyuzApiClient(config, (async () => new Response(interruptedBody)) as typeof fetch);
     const readFailure = await interrupted.getRun('11111111-1111-4111-8111-111111111111').catch((error: unknown) => error);
     expect(readFailure).toMatchObject({ message: 'Soyuz response body could not be read' });
-    expect(JSON.stringify(readFailure)).not.toContain('PRIVATE_SOCKET_DETAIL');
+    expect(readFailure).toBeInstanceOf(Error);
+    const failureMessages: string[] = [];
+    let cause: unknown = readFailure;
+    while (cause instanceof Error) {
+      failureMessages.push(cause.message);
+      cause = cause.cause;
+    }
+    failureMessages.push(String(cause));
+    expect(failureMessages.join('\n')).not.toContain('PRIVATE_SOCKET_DETAIL');
   });
 
   test('aborts delayed Soyuz responses at the configured request deadline', async () => {

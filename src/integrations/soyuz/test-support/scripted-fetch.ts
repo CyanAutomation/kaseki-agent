@@ -1,6 +1,7 @@
 export type FetchFaultEffect =
   | { kind: 'response'; response: Response }
   | { kind: 'reject'; error: Error }
+  /** Waits, then continues the before/after flow: before runs the handler; after returns its response. */
   | { kind: 'delay'; milliseconds: number };
 
 export interface FetchFaultRule {
@@ -37,7 +38,7 @@ export function createScriptedFetch(
 
     if (scripted?.rule.phase === 'before') {
       const result = await applyFault(scripted.rule.effect, init?.signal);
-      if (result) return result;
+      if (result !== undefined) return result;
     }
 
     const response = await handler(input, init);
