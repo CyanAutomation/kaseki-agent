@@ -99,6 +99,7 @@ describe('Senku decision transport', () => {
       profileId: 'task_admission_v1',
       input: { taskPrompt: 'Update the README wording' },
       timeoutMs: 1000,
+      correlationId: 'kaseki-test-request-42',
     });
 
     const [url, init] = fetchImpl.mock.calls[0];
@@ -106,10 +107,15 @@ describe('Senku decision transport', () => {
     expect(init?.method).toBe('POST');
     expect(init?.redirect).toBe('manual');
     expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${TOKEN}`);
+    expect(new Headers(init?.headers).get('x-correlation-id')).toBe('kaseki-test-request-42');
+    const deadline = Number(new Headers(init?.headers).get('x-senku-deadline-ms'));
+    expect(deadline).toBeGreaterThan(Date.now());
+    expect(deadline).toBeLessThanOrEqual(Date.now() + 1000);
     expect(JSON.parse(String(init?.body))).toEqual({ schemaVersion: '1', input: { taskPrompt: 'Update the README wording' } });
     expect(result).toMatchObject({
       provider: 'senku', profileId: 'task_admission_v1', profileVersion: '1',
       model: 'typesafe/jev-resolved-test', attemptCount: 1,
+      correlationId: 'kaseki-test-request-42',
     });
     expect(result.responseTime).toBeGreaterThanOrEqual(0);
   });
@@ -277,6 +283,18 @@ describe('Senku decision transport', () => {
     })).toBe(0);
   });
 
+  it('accepts additive envelope fields and reports more than one provider attempt', async () => {
+    const body = profileResponse('task_admission_v1', taskAdmissionAnswers, {
+      attemptCount: 2,
+      serverTiming: { providerAttempts: 2 },
+    });
+    const fetchImpl = jest.fn<typeof fetch>().mockResolvedValue(jsonResponse(body));
+
+    const result = await requestSenkuProfile('task_admission_v1', {}, makeOptions(fetchImpl));
+
+    expect(result.attemptCount).toBe(2);
+  });
+
   it.each([
     ['unsupported schema version', profileResponse('task_admission_v1', taskAdmissionAnswers, { schemaVersion: '2' })],
     ['missing answer', profileResponse('task_admission_v1', {})],
@@ -286,7 +304,7 @@ describe('Senku decision transport', () => {
       contains_credentials: { ...noulAnswer(), probabilities: { false: 0.4, true: 0.4 } },
     })],
     ['unexpected model control character', profileResponse('task_admission_v1', taskAdmissionAnswers, { model: 'model\nforged-log-line' })],
-    ['invalid attempt count', profileResponse('task_admission_v1', taskAdmissionAnswers, { attemptCount: 2 })],
+    ['invalid attempt count', profileResponse('task_admission_v1', taskAdmissionAnswers, { attemptCount: 0 })],
     ['invalid reported usage', profileResponse('task_admission_v1', taskAdmissionAnswers, { usage: { input_tokens: -1 } })],
   ])('rejects %s without exposing response details', async (_label, body) => {
     const fetchImpl = jest.fn<typeof fetch>().mockResolvedValue(jsonResponse(body));
@@ -312,6 +330,7 @@ describe('Senku decision transport', () => {
     [401, 'credentials', 'UNAUTHENTICATED'],
     [403, 'credentials', 'FORBIDDEN'],
     [413, 'invalid_request', 'PAYLOAD_TOO_LARGE'],
+    [429, 'rate_limited', 'PROVIDER_RATE_LIMITED'],
     [502, 'provider_failure', 'PROVIDER_UNAVAILABLE'],
     [503, 'service_unavailable', 'NOT_CONFIGURED'],
     [504, 'timeout', 'PROVIDER_TIMEOUT'],
@@ -409,9 +428,9 @@ describe('Senku decision transport', () => {
 
   it('rejects invalid profile endpoints and credentials before making a request', async () => {
     expect(() => resolveSenkuProfileUrl('task_admission_v1', { SENKU_URL: 'http://senku.example.test' })).toThrow(DecisionServiceError);
+    expect(() => resolveSenkuProfileUrl('task_admission_v1', { NODE_ENV: 'production' })).toThrow(DecisionServiceError);
     expect(() => resolveSenkuProfileUrl('task_admission_v1', { NODE_ENV: 'production', SENKU_URL: 'http://127.0.0.1:4011' })).toThrow(DecisionServiceError);
     for (const SENKU_URL of [
-      'https://user:pass@senku.example.test',
       'https://senku.example.test/path',
       'https://senku.example.test/?question=1',
       'https://senku.example.test/#fragment',
@@ -444,11 +463,13 @@ describe('Senku decision transport', () => {
 
   it('checks credentials before serializing an oversized profile input', async () => {
     const fetchImpl = jest.fn<typeof fetch>();
+    const readFile = jest.fn(() => { throw new Error('synthetic missing token file'); });
     await expect(requestSenkuProfile('task_admission_v1', { text: 'x'.repeat(130 * 1024) }, {
       fetchImpl,
       env: { NODE_ENV: 'test', SENKU_URL: 'https://senku.example.test' },
-      readFile: () => { throw new Error('synthetic missing token file'); },
+      readFile,
     })).rejects.toMatchObject({ category: 'credentials', credentialSource: 'none' });
+    expect(readFile).not.toHaveBeenCalled();
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 

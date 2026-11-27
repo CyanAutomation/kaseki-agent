@@ -333,7 +333,7 @@ async function runGoalCheck(
         ...(verificationSources?.length ? { verificationSources } : {}),
       })),
     },
-    timeoutMs: Number.parseInt(process.env.KASEKI_GOAL_CHECK_DECISION_TIMEOUT_MS || '15000', 10),
+    timeoutMs: Number.parseInt(process.env.KASEKI_GOAL_CHECK_DECISION_TIMEOUT_MS || '17000', 10),
   });
   const threshold = confidenceThreshold();
   const assessments = buildGoalCriterionAssessments(effectiveCriteria, result.answers, threshold);
@@ -482,7 +482,7 @@ async function runEvaluation(resultsDir: string, dependencies: DecisionWorkflowD
       state: stateForRunEvaluation(state, goalCheck),
       includeFailureDiagnosis: hasRunFailureEvidence(state),
     },
-    timeoutMs: Number.parseInt(process.env.KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS || '15000', 10),
+    timeoutMs: Number.parseInt(process.env.KASEKI_RUN_EVALUATION_DECISION_TIMEOUT_MS || '17000', 10),
   });
   const classification = runEvaluationClassification(result.answers);
   recordRunEvaluationTelemetry(resultsDir, result, classification, dependencies);
@@ -522,7 +522,7 @@ async function runValidationRecovery(resultsDir: string, dependencies: DecisionW
     const result = await dependencies.decisionService.evaluateProfile({
       profileId: 'validation_recovery_v1',
       input,
-      timeoutMs: Number.parseInt(process.env.KASEKI_VALIDATION_RECOVERY_DECISION_TIMEOUT_MS || '15000', 10),
+      timeoutMs: Number.parseInt(process.env.KASEKI_VALIDATION_RECOVERY_DECISION_TIMEOUT_MS || '17000', 10),
     });
     const decision = decideValidationRetry({
       mode,
@@ -559,6 +559,7 @@ async function runValidationRecovery(resultsDir: string, dependencies: DecisionW
       errorCode: failure.code,
       ...(failure.httpStatus ? { httpStatus: failure.httpStatus } : {}),
       ...(failure.requestId ? { requestId: failure.requestId } : {}),
+      ...(failure.correlationId ? { correlationId: failure.correlationId } : {}),
     }, dependencies.appendTelemetry);
     return buildValidationRecoveryArtifact({
       ...base,
@@ -622,6 +623,7 @@ export async function evaluateWorkflow(
         errorCode: failure.code,
         ...(failure.httpStatus ? { httpStatus: failure.httpStatus } : {}),
         ...(failure.requestId ? { requestId: failure.requestId } : {}),
+        ...(failure.correlationId ? { correlationId: failure.correlationId } : {}),
       }, dependencies.appendTelemetry);
     }
     throw error;

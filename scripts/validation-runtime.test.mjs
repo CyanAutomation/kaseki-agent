@@ -29,10 +29,10 @@ test('expands nested npm script aliases for toolchain preflight', () => {
 });
 
 test('splits validation command lists only at unquoted top-level semicolons', () => {
-  const versionCheck = `node -e 'const [major] = process.versions.node.split(".").map(Number); if (!major) process.exit(1)' && npm run check`;
+  const versionCheck = 'node -e \'const [major] = process.versions.node.split(".").map(Number); if (!major) process.exit(1)\' && npm run check';
   assert.deepEqual(splitValidationCommands(`${versionCheck}; npm test`), [versionCheck, 'npm test']);
-  assert.deepEqual(splitValidationCommands(`printf '%s' "$(printf 'left;right')"; npm test`), [
-    `printf '%s' "$(printf 'left;right')"`,
+  assert.deepEqual(splitValidationCommands('printf \'%s\' "$(printf \'left;right\')"; npm test'), [
+    'printf \'%s\' "$(printf \'left;right\')"',
     'npm test',
   ]);
   assert.deepEqual(splitValidationCommands('printf left\\;right; npm test'), ['printf left\\;right', 'npm test']);
