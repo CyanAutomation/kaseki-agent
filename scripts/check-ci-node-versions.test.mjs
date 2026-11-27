@@ -13,5 +13,5 @@ test('workflow Node version check ignores unrelated step-scoped VERSION values',
   });
 
   assert.match(output, /OK \.github\/workflows\/publish-npm\.yml: Node 26 satisfies/);
-  assert.match(output, /OK Dockerfile \(NODE_IMAGE\): Node 26 satisfies/);
+  assert.match(output, /OK Dockerfile \(NODE_IMAGE\): Node 26(?:\.\d+(?:\.\d+)?)? satisfies/);
 });

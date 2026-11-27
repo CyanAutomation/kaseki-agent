@@ -1,10 +1,10 @@
 # BuildKit's bundled Dockerfile frontend is used to avoid pulling syntax from Docker Hub.
 # Bump the pinned Node base image monthly with a security review.
-# Node 26 Bookworm slim base image, pinned to a reviewed multi-architecture digest.
+# Node 26 Trixie slim base image, pinned to a reviewed multi-architecture digest.
 # Pull the canonical Docker Official Image from Docker Hub. CI and image-publish
 # workflows authenticate when Docker Hub credentials are available.
 # Using ARG for DRY principle - base image used in both stages
-ARG NODE_IMAGE=docker.io/library/node:26-bookworm-slim@sha256:add5c17c14752c54d2f3d519ec46a3815684d41c33f198bcb09fb998f7dcbf68
+ARG NODE_IMAGE=docker.io/library/node:26.13.1-trixie-slim@sha256:abe7e5a82b61a8ef67b315b85497c9e65173387ccf2f4a029248184b8e020be5
 
 # The Node image bundles npm, whose dependency tree is part of every image
 # stage. Install reviewed tool versions from a lockfile and repair bundled
@@ -71,9 +71,11 @@ RUN mkdir -p /opt/kaseki/pi-extensions
 
 
 FROM base AS runtime
+ARG APT_REFRESH=local
 
 # System dependencies + user setup (consolidated)
-RUN apt-get update \
+RUN printf 'Refreshing Debian packages for build %s\n' "$APT_REFRESH" \
+    && apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends bash build-essential ca-certificates curl docker.io git golang-go jq libpcre2-8-0 procps ruby shellcheck tini \
     && rm -rf /var/lib/apt/lists/* \
@@ -315,9 +317,11 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 #
 FROM base AS final
 ARG TARGETARCH
+ARG APT_REFRESH=local
 
 # Runtime plus the Node and Go toolchains used by ephemeral repository checks.
-RUN apt-get update \
+RUN printf 'Refreshing Debian packages for build %s\n' "$APT_REFRESH" \
+    && apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends bash build-essential ca-certificates curl docker.io git jq libpcre2-8-0 make procps python3 python3-pip python3-venv shellcheck tini \
     && rm -rf /var/lib/apt/lists/* \
