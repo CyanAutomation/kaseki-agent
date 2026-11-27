@@ -508,7 +508,7 @@ assert_not_contains "$ROOT_DIR/package.json" '"test:publish-smoke": "npm run tes
 assert_contains "$ROOT_DIR/package.json" 'node --test scripts/check-trivy-image-findings.test.mjs' \
   'Workflow contract checks must include the Trivy gate behavior tests'
 
-assert_contains "$ROOT_DIR/Dockerfile" 'node:26-bookworm-slim@sha256:' \
+assert_contains "$ROOT_DIR/Dockerfile" 'node:26.13.1-trixie-slim@sha256:' \
   'The Docker base image must be pinned by digest'
 assert_contains "$ROOT_DIR/Dockerfile" 'ARG NODE_IMAGE=docker.io/library/node:' \
   'The Docker base image must use the canonical Docker Official Image'

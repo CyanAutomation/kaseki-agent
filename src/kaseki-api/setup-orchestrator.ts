@@ -46,7 +46,7 @@ export function assertSupportedNodeVersion(
 
   if (!isValidVersion || !Number.isFinite(major) || major < minimumMajor) {
     logger.error(
-      `Unsupported Node.js runtime v${normalizedVersion}. Kaseki API service requires Node.js >= ${minimumMajor}. Please upgrade Node or deploy the Docker image built from this repo's Dockerfile (node:26-bookworm-slim).`,
+      `Unsupported Node.js runtime v${normalizedVersion}. Kaseki API service requires Node.js >= ${minimumMajor}. Please upgrade Node or deploy the Docker image built from this repo's Dockerfile (node:26-trixie-slim).`,
     );
     process.exit(1);
   }

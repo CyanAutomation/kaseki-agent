@@ -221,6 +221,8 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: |
+            APT_REFRESH=${{ github.run_id }}-${{ github.run_attempt }}
           tags: |
             ${{ needs.prepare.outputs.candidate_hub_tags }}
             ${{ needs.prepare.outputs.candidate_ghcr_tags }}

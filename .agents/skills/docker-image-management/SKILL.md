@@ -12,7 +12,7 @@ multi-architecture builds, image size, or the Raspberry Pi Compose setup.
 
 ## Current image layout
 
-- `Dockerfile` uses a digest-pinned `node:26-bookworm-slim` base. Read the
+- `Dockerfile` uses a digest-pinned `node:26-trixie-slim` base. Read the
   `NODE_IMAGE` argument there for the current tag and digest; do not duplicate
   an old base version in documentation.
 - `docker/image-toolchain/package.json` and its lockfile pin Pi CLI and server
@@ -45,6 +45,10 @@ The Dockerfile uses BuildKit cache mounts for npm downloads and a separate
 workspace cache seed. Keep proxy CA material in BuildKit secrets rather than
 Docker build arguments or image layers. Preserve `--strict-ssl=true` and the
 dependency verification steps.
+The Docker publish workflow passes a unique `APT_REFRESH` build argument on
+each run attempt so BuildKit does not reuse stale Debian package-install
+layers. Use a new `APT_REFRESH` value for a local build that must fetch current
+OS package updates.
 
 ## Measure image changes
 
