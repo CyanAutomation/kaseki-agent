@@ -12,9 +12,9 @@ Rotate credentials through the environment's managed rotation process. Verify th
 
 ## REST contract
 
-Kaseki sends an approved profile identifier and the structured input required by that profile to the Senku evaluate route. It propagates a correlation ID and a bounded caller deadline. The profile definitions and response shapes are derived from the pinned Senku contract artifact.
+Kaseki sends an approved profile identifier and the structured input required by that profile to the Senku evaluate route. It propagates a correlation ID and a bounded caller deadline. The profile definitions and response shapes are checked against the pinned Senku contract artifact. The artifact source revision and SHA-256 are recorded in the root `.senku-contract.sha256` file; review any artifact and pin update together.
 
-The client validates the response fields it depends on, including profile identity, answer identities, labels, and score scales. Unknown top-level fields are ignored for additive compatibility. Request and response sizes are bounded before results are accepted.
+The client makes one HTTP request to Senku and validates the response fields it depends on, including profile identity, answer identities, labels, and score scales. Unknown top-level fields are ignored for additive compatibility; `attemptCount` may be any positive integer because Senku can retry one qualifying upstream 429. Nested profile answers remain strict. The Kaseki request carries a stable correlation ID and an absolute deadline, leaving time for response processing after Senku's provider budget. Request and response sizes are bounded before results are accepted.
 
 Kaseki does not send raw task prompts, repository URLs, validation logs, artifacts, generated UI messages, caller-defined questions, model selections, or provider credentials. Senku constructs the profile-specific questions and validates provider output.
 
