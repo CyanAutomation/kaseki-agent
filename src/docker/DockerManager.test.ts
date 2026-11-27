@@ -243,6 +243,7 @@ describe('DockerManager', () => {
       expect(spawnArgs).toContain('/results:/results:rw');
       expect(spawnArgs).toContain('/cache:/cache:rw');
       expect(spawnArgs).toContain('/secrets/key:/run/secrets/llm_gateway_api_key:ro');
+      expect(spawnArgs.some((arg: string) => arg.includes('docker.sock') || arg.includes('/run/secrets/kaseki'))).toBe(false);
 
       expect(spawnArgs).toContain('-e');
       expect(spawnArgs).toContain('REPO_URL=https://github.com/test/repo');

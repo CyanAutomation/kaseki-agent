@@ -331,11 +331,7 @@ function readGitChanges(repoPath: string, baseSha: string): Array<{
   oldMode?: string;
   newMode?: string;
 }> {
-  const output = execFileSync('git', ['diff', '--raw', '--no-abbrev', '--no-renames', '-z', baseSha, '--'], {
-    cwd: repoPath,
-    encoding: null,
-    maxBuffer: MAX_PUBLICATION_REQUEST_BYTES,
-  });
+  const output = runWorkspaceGit(repoPath, ['diff', '--no-ext-diff', '--raw', '--no-abbrev', '--no-renames', '-z', baseSha, '--']);
   const tokens = decodeNulSeparated(output);
   const changes: Array<{ filePath: string; operation: 'add' | 'modify' | 'delete'; baseBlobSha?: string; oldMode?: string; newMode?: string }> = [];
   for (let index = 0; index < tokens.length;) {
@@ -357,12 +353,27 @@ function readGitChanges(repoPath: string, baseSha: string): Array<{
 }
 
 function readUntrackedPaths(repoPath: string): string[] {
-  const output = execFileSync('git', ['ls-files', '--others', '--exclude-standard', '-z'], {
+  const output = runWorkspaceGit(repoPath, ['ls-files', '--others', '--exclude-standard', '-z']);
+  return decodeNulSeparated(output);
+}
+
+/** A completed coding run can edit its local .git/config; keep Git helpers disabled in host reads. */
+function runWorkspaceGit(repoPath: string, args: string[]): Buffer {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (!name.startsWith('GIT_') && name !== 'SSH_AUTH_SOCK' && name !== 'SSH_AGENT_PID' && name !== 'SSH_ASKPASS') {
+      env[name] = value;
+    }
+  }
+  env.GIT_CONFIG_NOSYSTEM = '1';
+  env.GIT_CONFIG_GLOBAL = '/dev/null';
+  env.GIT_TERMINAL_PROMPT = '0';
+  return execFileSync('git', ['-c', 'core.fsmonitor=false', ...args], {
     cwd: repoPath,
     encoding: null,
     maxBuffer: MAX_PUBLICATION_REQUEST_BYTES,
+    env,
   });
-  return decodeNulSeparated(output);
 }
 
 function decodeNulSeparated(value: Buffer): string[] {

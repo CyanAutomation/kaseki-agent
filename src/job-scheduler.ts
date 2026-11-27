@@ -41,6 +41,34 @@ import {
 import { StorageCapacityManager, type StorageCapacityStatus } from './storage-capacity';
 import { ARTIFACT_METADATA_REGISTRY } from './artifact-metadata';
 
+const KIRISAME_CHILD_SECRET_PREFIXES = [
+  'SOYUZ_', 'KIRISAME_', 'CLOUDFLARE_', 'CF_', 'DOCKER_', 'SENKU_', 'AWS_', 'AZURE_', 'GOOGLE_', 'GCP_', 'GCLOUD_', 'VAULT_',
+];
+const KIRISAME_CHILD_SECRET_NAMES = new Set([
+  'KASEKI_API_KEY', 'KASEKI_API_KEYS', 'KASEKI_API_KEY_FILE', 'KASEKI_API_KEYS_FILE',
+  'KASEKI_SECRETS_DIR', 'KASEKI_HOST_SECRETS_DIR', 'WORKER_API_TOKEN', 'WORKER_API_TOKEN_FILE',
+  'NETRC', 'CURL_HOME', 'WGETRC', 'NPM_TOKEN', 'NODE_AUTH_TOKEN', 'NPM_CONFIG_USERCONFIG',
+  'KUBECONFIG',
+]);
+
+function isPrivilegedKirisameChildEnvironmentVariable(name: string): boolean {
+  const normalized = name.toUpperCase();
+  return KIRISAME_CHILD_SECRET_PREFIXES.some((prefix) => normalized.startsWith(prefix))
+    || KIRISAME_CHILD_SECRET_NAMES.has(normalized)
+    || (normalized.startsWith('GITHUB_') && normalized !== 'GITHUB_APP_ENABLED')
+    || normalized.startsWith('GH_')
+    || /^GIT_(?:ASKPASS|SSH|CONFIG|CREDENTIAL)/.test(normalized)
+    || /^SSH_(?:AUTH_SOCK|AGENT_PID|ASKPASS)$/.test(normalized)
+    || /^NPM_CONFIG_(?:USERCONFIG|GLOBALCONFIG)$/.test(normalized);
+}
+
+function removePrivilegedKirisameChildEnvironment(env: NodeJS.ProcessEnv): void {
+  for (const name of Object.keys(env)) {
+    if (isPrivilegedKirisameChildEnvironmentVariable(name)) delete env[name];
+  }
+  env.GITHUB_APP_ENABLED = '0';
+}
+
 function isLowRiskTaskPrompt(prompt?: string): boolean {
   if (!prompt) {
     return false;
@@ -907,16 +935,7 @@ export class JobScheduler {
     }
     env.KASEKI_KEEP_WORKSPACE = '1';
     env.KASEKI_BASE_SHA = job.soyuz.publicationBaseSha ?? '';
-    env.GITHUB_APP_ENABLED = '0';
-    for (const name of [
-      'GITHUB_APP_ID', 'GITHUB_APP_CLIENT_ID', 'GITHUB_APP_PRIVATE_KEY',
-      'GITHUB_APP_ID_FILE', 'GITHUB_APP_CLIENT_ID_FILE', 'GITHUB_APP_PRIVATE_KEY_FILE',
-      'SOYUZ_SUBMISSION_API_TOKEN', 'SOYUZ_SUBMISSION_API_TOKEN_FILE',
-      'SOYUZ_WORKER_API_TOKEN', 'SOYUZ_WORKER_API_TOKEN_FILE',
-      'CLOUDFLARE_QUEUE_API_TOKEN', 'CLOUDFLARE_QUEUE_API_TOKEN_FILE',
-      'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_API_TOKEN_FILE',
-      'WORKER_API_TOKEN', 'WORKER_API_TOKEN_FILE',
-    ]) delete env[name];
+    removePrivilegedKirisameChildEnvironment(env);
   }
 
   /**
