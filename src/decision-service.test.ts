@@ -76,9 +76,11 @@ describe('Senku DecisionService', () => {
   });
 
   it('normalizes decision failure metadata without retaining error text', () => {
-    const timeout = new DecisionServiceError('timeout', { attemptCount: 1, httpStatus: 504, requestId: 'dec-timeout' });
+    const timeout = new DecisionServiceError('timeout', {
+      attemptCount: 1, httpStatus: 504, requestId: 'dec-timeout', correlationId: 'kaseki-correlation-1',
+    });
     expect(decisionFailureMetadata(timeout)).toEqual({
-      code: 'timeout', attemptCount: 1, httpStatus: 504, requestId: 'dec-timeout',
+      code: 'timeout', attemptCount: 1, httpStatus: 504, requestId: 'dec-timeout', correlationId: 'kaseki-correlation-1',
     });
     expect(decisionFailureMetadata(new Error('private state content'))).toEqual({ code: 'provider_failure' });
   });

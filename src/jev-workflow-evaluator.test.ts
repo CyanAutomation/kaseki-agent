@@ -147,7 +147,7 @@ describe('decision workflow telemetry', () => {
     ]);
     const call = evaluateProfile.mock.calls[0]?.[0];
     expect(call?.profileId).toBe(mode === 'goal-check' ? 'kaseki_goal_check_v1' : mode === 'run-evaluation' ? 'kaseki_run_evaluation_v1' : 'validation_recovery_v1');
-    expect(call?.timeoutMs).toBe(15_000);
+    expect(call?.timeoutMs).toBe(17_000);
     if (mode === 'goal-check') {
       expect(call?.input).toMatchObject({ criteria: [{ id: 'criterion_1', criterion: 'The requested implementation is complete' }] });
       expect(call?.input).toHaveProperty('state');
@@ -259,7 +259,7 @@ describe('decision workflow telemetry', () => {
     const repoDir = path.join(workspaceDir, 'repo');
     fs.mkdirSync(path.join(repoDir, 'src'), { recursive: true });
     fs.mkdirSync(path.join(repoDir, 'scripts'), { recursive: true });
-    fs.writeFileSync(path.join(repoDir, 'src/api.ts'), 'export const endpoint = "/api/v1/runs";\nconst credential = "' + 'sk-or-' + 'P9m4Q2x7L8v3R1w6T0a5NcKd";\n');
+    fs.writeFileSync(path.join(repoDir, 'src/api.ts'), 'export const endpoint = "/api/v1/runs";\nconst password = "SYNTHETIC_REDACTION_SENTINEL";\n');
     fs.writeFileSync(path.join(repoDir, 'scripts/run.sh'), 'npm run check\n');
     fs.writeFileSync(path.join(repoDir, '.env'), 'LOCAL_ONLY_SENTINEL=must-not-be-sent\n');
     fs.writeFileSync(path.join(workspaceDir, 'outside.ts'), 'const secret = "OUTSIDE_REPOSITORY_SENTINEL";\n');
@@ -301,7 +301,7 @@ describe('decision workflow telemetry', () => {
         expect.objectContaining({ path: 'scripts/run.sh', content: expect.stringContaining('npm run check') }),
       ],
     });
-    expect(JSON.stringify(capturedRequest?.input.state)).not.toContain('P9m4Q2x7L8v3R1w6T0a5NcKd');
+    expect(JSON.stringify(capturedRequest?.input.state)).not.toContain('SYNTHETIC_REDACTION_SENTINEL');
     expect(JSON.stringify(capturedRequest?.input.state.implementation_evidence)).not.toContain('outside.env');
     expect(JSON.stringify(capturedRequest?.input.state.implementation_evidence)).not.toContain('.env');
     expect(JSON.stringify(capturedRequest?.input.state.implementation_evidence)).not.toContain('LOCAL_ONLY_SENTINEL');
@@ -312,7 +312,7 @@ describe('decision workflow telemetry', () => {
     const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-workflow-repo-'));
     const repoDir = path.join(workspaceDir, 'repo');
     fs.mkdirSync(path.join(repoDir, 'src'), { recursive: true });
-    fs.writeFileSync(path.join(repoDir, 'src/api.ts'), 'export const endpoint = "/api/v1/runs";\n');
+    fs.writeFileSync(path.join(repoDir, 'src/api.ts'), 'export const endpoint = "/api/v1/runs";\nconst password = "SYNTHETIC_REDACTION_SENTINEL";\n');
     fs.writeFileSync(path.join(resultsDir, 'changed-files.txt'), 'src/api.ts\n');
     fs.writeFileSync(path.join(resultsDir, 'goal-setting.json'), JSON.stringify({
       outcome_policy: 'change_required',

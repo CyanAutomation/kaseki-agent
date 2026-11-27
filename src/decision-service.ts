@@ -14,6 +14,7 @@ export interface DecisionResult {
   usage: Record<string, unknown>;
   responseTime: number;
   attemptCount: number;
+  correlationId: string;
 }
 
 export interface ProfileDecisionRequest {
@@ -21,6 +22,7 @@ export interface ProfileDecisionRequest {
   input: Record<string, unknown>;
   timeoutMs?: number;
   signal?: AbortSignal;
+  correlationId?: string;
 }
 
 export interface ProfileDecisionResult extends DecisionResult {
@@ -38,6 +40,8 @@ export interface DecisionFailureMetadata {
   attemptCount?: number;
   httpStatus?: number;
   requestId?: string;
+  correlationId?: string;
+  retryAfterSeconds?: number;
 }
 
 export function decisionFailureMetadata(error: unknown): DecisionFailureMetadata {
@@ -49,6 +53,8 @@ export function decisionFailureMetadata(error: unknown): DecisionFailureMetadata
       ? { httpStatus: error.httpStatus }
       : {}),
     ...(error.requestId ? { requestId: error.requestId } : {}),
+    ...(error.correlationId ? { correlationId: error.correlationId } : {}),
+    ...(error.retryAfterSeconds !== undefined ? { retryAfterSeconds: error.retryAfterSeconds } : {}),
   };
 }
 
@@ -63,6 +69,7 @@ export class SenkuDecisionService implements DecisionService {
       ...this.options,
       timeoutMs: request.timeoutMs,
       signal: request.signal,
+      correlationId: request.correlationId,
     });
     return {
       provider: this.providerId,
@@ -71,6 +78,7 @@ export class SenkuDecisionService implements DecisionService {
       usage: result.usage ?? {},
       responseTime: result.responseTime,
       attemptCount: result.attemptCount,
+      correlationId: result.correlationId,
       profileId: result.profileId,
       profileVersion: result.profileVersion,
     };

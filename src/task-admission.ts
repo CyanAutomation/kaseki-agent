@@ -59,7 +59,7 @@ export interface TaskAdmissionResult {
 
 export type TaskAdmissionEvaluator = (request: Record<string, unknown>) => Promise<TaskAdmissionResult>;
 
-const DEFAULT_TIMEOUT_MS = 5000;
+const DEFAULT_TIMEOUT_MS = 6000;
 const DEFAULT_CONFIDENCE_THRESHOLD = 0.8;
 
 function confidenceThreshold(): number {
