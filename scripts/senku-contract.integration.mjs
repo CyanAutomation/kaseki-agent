@@ -23,6 +23,7 @@ const soyuzToken = 'synthetic-soyuz-machine-token-0123456789abcdef';
 const providerToken = 'synthetic-openrouter-provider-key-never-sent-over-network';
 let workerRequestCount = 0;
 let providerAttemptCount = 0;
+let rateLimitProviderOnce = false;
 let malformedProviderResponse = false;
 let observedKasekiAuthorization;
 
@@ -30,6 +31,13 @@ const providerFetch = async (input, init = {}) => {
   providerAttemptCount += 1;
   assert.equal(String(input), 'https://openrouter.ai/api/alpha/decisions');
   assert.equal(new Headers(init.headers).get('authorization'), `Bearer ${providerToken}`);
+  if (rateLimitProviderOnce) {
+    rateLimitProviderOnce = false;
+    return new Response('synthetic provider rate limit body', {
+      status: 429,
+      headers: { 'retry-after': '0' },
+    });
+  }
   if (malformedProviderResponse) {
     return new Response('provider private trace that must stay inside Senku', {
       status: 200,
@@ -59,12 +67,18 @@ const providerFetch = async (input, init = {}) => {
 };
 
 const worker = createWorker({ fetchImpl: providerFetch, logger: () => undefined });
+const allowRateLimit = { limit: async () => ({ success: true }) };
 const workerEnv = {
-  OPENROUTER_API_KEY: providerToken,
+  SENKU_PROVIDER_REQUEST_URL: 'https://openrouter.ai/api/alpha/decisions',
+  SENKU_PROVIDER_AUTHORIZATION: `Bearer ${providerToken}`,
   SENKU_KASEKI_API_TOKEN: kasekiToken,
   SENKU_SOYUZ_API_TOKEN: soyuzToken,
   SENKU_PUBLIC_BASE_URL: 'https://senku.example.test',
   SENKU_PROVIDER_TIMEOUT_MS: '15000',
+  SENKU_RATE_LIMIT_IP: allowRateLimit,
+  SENKU_RATE_LIMIT_KASEKI: allowRateLimit,
+  SENKU_RATE_LIMIT_SOYUZ: allowRateLimit,
+  SENKU_RATE_LIMIT_RUSTY_FOSSIL: allowRateLimit,
 };
 
 const server = createServer(async (incoming, outgoing) => {
@@ -177,7 +191,20 @@ try {
   assert.equal(workerRequestCount, 4);
   assert.equal(providerAttemptCount, 3);
 
-  process.stdout.write('Senku Worker contract integration passed: authenticated Kaseki profiles, one provider attempt per evaluation, and safe failures.\n');
+  malformedProviderResponse = false;
+  rateLimitProviderOnce = true;
+  const rateLimitRetry = await service.evaluateProfile({
+    profileId: 'kaseki_run_evaluation_v1',
+    input: {
+      state: { status: 'completed', task_mode: 'inspect', validation_status: 'passed', summary: 'Synthetic 429 retry check.' },
+      includeFailureDiagnosis: false,
+    },
+  });
+  assert.equal(rateLimitRetry.attemptCount, 2);
+  assert.equal(workerRequestCount, 5);
+  assert.equal(providerAttemptCount, 5);
+
+  process.stdout.write('Senku Worker contract integration passed: authenticated Kaseki profiles, one bounded provider retry, and safe failures.\n');
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }
