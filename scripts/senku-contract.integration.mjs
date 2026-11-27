@@ -27,6 +27,14 @@ let rateLimitProviderOnce = false;
 let malformedProviderResponse = false;
 let observedKasekiAuthorization;
 
+function choiceProbabilities(labels) {
+  assert.ok(labels.length > 0, 'Choice questions must include at least one criterion.');
+  if (labels.length === 1) return { [labels[0]]: 1 };
+  return Object.fromEntries(labels.map((label, index) => [label, index === 0 ? 0.97 : 0.03 / (labels.length - 1)]));
+}
+
+assert.deepEqual(choiceProbabilities(['only']), { only: 1 });
+
 const providerFetch = async (input, init = {}) => {
   providerAttemptCount += 1;
   assert.equal(String(input), 'https://openrouter.ai/api/alpha/decisions');
@@ -48,7 +56,7 @@ const providerFetch = async (input, init = {}) => {
   const answers = Object.fromEntries(Object.entries(request.questions).map(([id, question]) => {
     if (question.type === 'choice') {
       const labels = Object.keys(question.criteria);
-      const probabilities = Object.fromEntries(labels.map((label, index) => [label, index === 0 ? 0.97 : 0.03 / (labels.length - 1)]));
+      const probabilities = choiceProbabilities(labels);
       return [id, { type: 'choice', choice: labels[0], probabilities, confidence: 0.97 }];
     }
     if (question.type === 'score') {
