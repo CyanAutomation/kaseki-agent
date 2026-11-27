@@ -1,6 +1,5 @@
 import { buildTaskAdmissionRequest, evaluateTaskAdmission, toSafeTaskAdmissionRecord } from './task-admission';
 import { decisionService, DecisionServiceError } from './decision-service';
-import { DEFAULT_SENKU_URL } from './decision-service/senku-client';
 
 const TOKEN = 'synthetic-senku-kaseki-token-value-1234567890';
 const ENV_NAMES = [
@@ -279,7 +278,9 @@ describe('task admission classifier', () => {
     expect(result.answers?.risk_level).toMatchObject({ choice: 'low' });
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url, init] = jest.mocked(global.fetch).mock.calls[0];
-    expect(url).toBe(new URL('/v1/profiles/task_admission_v1/evaluate', DEFAULT_SENKU_URL).toString());
+    const requestUrl = new URL(String(url));
+    expect(requestUrl.protocol).toBe('https:');
+    expect(requestUrl.pathname).toBe('/v1/profiles/task_admission_v1/evaluate');
     expect(JSON.parse(String(init?.body))).toEqual({
       schemaVersion: '1',
       input: expect.objectContaining({

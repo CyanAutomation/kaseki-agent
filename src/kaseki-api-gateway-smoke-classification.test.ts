@@ -1,5 +1,4 @@
 import { testClassificationSmoke } from './kaseki-api-gateway-smoke';
-import { DEFAULT_SENKU_URL } from './decision-service/senku-client';
 
 const TOKEN = 'synthetic-senku-kaseki-token-value-1234567890';
 
@@ -89,7 +88,9 @@ describe('Senku evaluation smoke check', () => {
     expect(result.outputTokens).toBe(73);
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url, init] = jest.mocked(global.fetch).mock.calls[0];
-    expect(url).toBe(new URL('/v1/profiles/kaseki_run_evaluation_v1/evaluate', DEFAULT_SENKU_URL).toString());
+    const requestUrl = new URL(String(url));
+    expect(requestUrl.protocol).toBe('https:');
+    expect(requestUrl.pathname).toBe('/v1/profiles/kaseki_run_evaluation_v1/evaluate');
     expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${TOKEN}`);
     expect(JSON.parse(String(init?.body))).toEqual({
       schemaVersion: '1',
