@@ -116,6 +116,24 @@ describe('trusted workspace manifest production', () => {
     expect(manifest.artifactDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
+  test('does not execute an fsmonitor command configured by the untrusted workspace', async () => {
+    const baseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoPath, encoding: 'utf8' }).trim();
+    const marker = path.join(root, 'fsmonitor-ran');
+    const hook = path.join(root, 'fsmonitor-hook.sh');
+    const quotedMarker = `'${marker.replaceAll("'", "'\\''")}'`;
+    await fs.writeFile(hook, `#!/bin/sh\nprintf called > ${quotedMarker}\nprintf '\\n'\n`);
+    await fs.chmod(hook, 0o700);
+    execFileSync('git', ['config', 'core.fsmonitor', hook], { cwd: repoPath });
+    await fs.writeFile(path.join(repoPath, 'new.txt'), 'new content\n');
+
+    const manifest = await loadOrCreatePublicationManifest(resultDir, {
+      repoPath, runId: RUN_ID, repositoryUrl: REPO_URL, baseRef: 'main', baseSha,
+    });
+
+    expect(manifest.artifact.files.map((file) => file.path)).toContain('new.txt');
+    await expect(fs.access(marker)).rejects.toThrow();
+  });
+
   test('stores an immutable manifest for retries after the workspace is removed', async () => {
     const baseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoPath, encoding: 'utf8' }).trim();
     await fs.writeFile(path.join(repoPath, 'new.txt'), 'Retry stable\n');
