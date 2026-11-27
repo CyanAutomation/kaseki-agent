@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.160.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.160.0...v1.160.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* Pin Senku contract and update integration harness ([#1602](https://github.com/CyanAutomation/kaseki-agent/issues/1602)) ([f2e7127](https://github.com/CyanAutomation/kaseki-agent/commit/f2e71279789c92ad26dfc33b5ecf49d814ef9645))
+
 # [1.160.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.159.2...v1.160.0) (2026-11-26)
 
 
