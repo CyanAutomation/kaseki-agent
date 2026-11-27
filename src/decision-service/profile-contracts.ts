@@ -13,8 +13,12 @@ export type ProfileAnswerContract =
 type JsonRecord = Record<string, unknown>;
 type PinnedProfile = (typeof profilesArtifact.profiles)[number];
 
+function isRecord(value: unknown): value is JsonRecord {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 function record(value: unknown): JsonRecord {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
+  return isRecord(value) ? value : {};
 }
 
 function pinnedProfile(profileId: SenkuProfileId): PinnedProfile {
@@ -84,8 +88,8 @@ export function profileAnswerContracts(
     const variant = variantContracts(profileId, 'with_applicability');
     const contracts: Record<string, ProfileAnswerContract> = {};
     for (const item of input.criteria) {
-      if (!record(item) || typeof record(item).id !== 'string' || !/^criterion_[1-9][0-9]*$/.test(record(item).id as string)) return {};
-      const { id } = record(item) as { id: string };
+      if (!isRecord(item) || typeof item.id !== 'string' || !/^criterion_[1-9][0-9]*$/.test(item.id)) return {};
+      const { id } = item;
       if (typeof record(item).appliesWhen === 'string' && (record(item).appliesWhen as string).trim()) {
         contracts[`${id}_applicability`] = renameDynamicTemplate(variant, 'criterion_1_applicability');
       }

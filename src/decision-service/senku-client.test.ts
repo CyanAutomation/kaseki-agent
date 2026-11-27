@@ -353,12 +353,14 @@ describe('Senku decision transport', () => {
     await expect(requestSenkuProfile('task_admission_v1', {}, makeOptions(upstreamInvalid)))
       .rejects.toMatchObject({ category: 'invalid_response' });
 
+    const correlationId = 'kaseki-redirect-test';
     const redirect = jest.fn<typeof fetch>().mockResolvedValue(new Response('', {
       status: 302,
       headers: { location: 'https://attacker.example/collect' },
     }));
-    await expect(requestSenkuProfile('task_admission_v1', {}, makeOptions(redirect)))
-      .rejects.toMatchObject({ category: 'invalid_response', httpStatus: 302 });
+    await expect(requestSenkuProfile('task_admission_v1', {}, {
+      ...makeOptions(redirect), correlationId,
+    })).rejects.toMatchObject({ category: 'invalid_response', httpStatus: 302, correlationId });
     expect(redirect).toHaveBeenCalledTimes(1);
     expect(redirect.mock.calls[0][1]?.redirect).toBe('manual');
   });
@@ -371,6 +373,18 @@ describe('Senku decision transport', () => {
     expect(error.message).not.toContain('private-value');
     expect(error.message).not.toContain('DNS details');
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves the correlation ID in the unexpected network fallback', async () => {
+    const response = Object.defineProperty(jsonResponse(profileResponse()), 'status', {
+      get() { throw new Error('synthetic response accessor failure'); },
+    });
+    const fetchImpl = jest.fn<typeof fetch>().mockResolvedValue(response);
+    const correlationId = 'kaseki-unexpected-response-test';
+
+    await expect(requestSenkuProfile('task_admission_v1', {}, {
+      ...makeOptions(fetchImpl), correlationId,
+    })).rejects.toMatchObject({ category: 'network', correlationId });
   });
 
   it('enforces the timeout before headers and during response-body reading', async () => {

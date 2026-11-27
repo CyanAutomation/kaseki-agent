@@ -493,7 +493,7 @@ async function requestSenku<T extends object>(
     }
 
     if (response.status >= 300 && response.status < 400) {
-      throw new DecisionServiceError('invalid_response', { httpStatus: response.status, attemptCount: 1 });
+      throw new DecisionServiceError('invalid_response', { httpStatus: response.status, attemptCount: 1, correlationId });
     }
     if (!response.ok) throw await responseError(response, correlationId);
 
@@ -522,7 +522,7 @@ async function requestSenku<T extends object>(
         retryAfterSeconds: error.retryAfterSeconds,
       });
     }
-    throw new DecisionServiceError('network', { attemptCount: 1 });
+    throw new DecisionServiceError('network', { attemptCount: 1, correlationId });
   } finally {
     if (timer) clearTimeout(timer);
     removeExternalAbort();
