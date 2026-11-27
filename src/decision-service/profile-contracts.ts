@@ -1,4 +1,4 @@
-import profilesArtifact from './senku-profiles.v1.json';
+import profilesArtifact from './senku-profiles.v1.json' with { type: 'json' };
 
 export const SENKU_PROFILE_IDS = [
   'task_admission_v1', 'kaseki_goal_check_v1', 'kaseki_run_evaluation_v1', 'kaseki_context_routing_v1', 'validation_recovery_v1',
